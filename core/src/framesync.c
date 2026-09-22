@@ -52,32 +52,57 @@ typedef struct VmafFrameSyncContext {
     int aborted;
 } VmafFrameSyncContext;
 
+static void free_partial_context(VmafFrameSyncContext *ctx, bool retrieve_lock_initialized,
+                                 bool condition_initialized)
+{
+    if (condition_initialized)
+        (void)pthread_cond_destroy(&(ctx->retrieve));
+    if (retrieve_lock_initialized)
+        (void)pthread_mutex_destroy(&(ctx->retrieve_lock));
+    (void)pthread_mutex_destroy(&(ctx->acquire_lock));
+    free(ctx);
+}
+
 int vmaf_framesync_init(VmafFrameSyncContext **fs_ctx)
 {
-    VmafFrameSyncContext *const ctx = *fs_ctx = malloc(sizeof(VmafFrameSyncContext));
+    if (!fs_ctx)
+        return -EINVAL;
+    *fs_ctx = (VmafFrameSyncContext *)0;
+
+    VmafFrameSyncContext *const ctx = malloc(sizeof(VmafFrameSyncContext));
     if (!ctx)
         return -ENOMEM;
     memset(ctx, 0, sizeof(VmafFrameSyncContext));
     ctx->buf_cnt = 1;
 
-    pthread_mutex_init(&(ctx->acquire_lock), NULL);
-    pthread_mutex_init(&(ctx->retrieve_lock), NULL);
-    pthread_cond_init(&(ctx->retrieve), NULL);
-
-    VmafFrameSyncBuf *buf_que = ctx->buf_que = malloc(sizeof(VmafFrameSyncBuf));
-    if (!buf_que) {
-        pthread_cond_destroy(&(ctx->retrieve));
-        pthread_mutex_destroy(&(ctx->retrieve_lock));
-        pthread_mutex_destroy(&(ctx->acquire_lock));
+    int error = pthread_mutex_init(&(ctx->acquire_lock), (pthread_mutexattr_t *)0);
+    if (error) {
         free(ctx);
-        *fs_ctx = NULL;
+        return -error;
+    }
+    error = pthread_mutex_init(&(ctx->retrieve_lock), (pthread_mutexattr_t *)0);
+    if (error) {
+        free_partial_context(ctx, false, false);
+        return -error;
+    }
+    error = pthread_cond_init(&(ctx->retrieve), (pthread_condattr_t *)0);
+    if (error) {
+        free_partial_context(ctx, true, false);
+        return -error;
+    }
+
+    VmafFrameSyncBuf *const buf_que = malloc(sizeof(VmafFrameSyncBuf));
+    if (!buf_que) {
+        free_partial_context(ctx, true, true);
         return -ENOMEM;
     }
 
-    buf_que->frame_data = NULL;
+    buf_que->frame_data = (char *)0;
     buf_que->buf_status = BUF_FREE;
     buf_que->index = -1;
-    buf_que->next = NULL;
+    buf_que->next = (VmafFrameSyncBuf *)0;
+    ctx->buf_que = buf_que;
+    *fs_ctx = ctx;
 
     return 0;
 }
@@ -110,7 +135,7 @@ int vmaf_framesync_acquire_new_buf(VmafFrameSyncContext *fs_ctx, void **data, un
                                    unsigned index)
 {
     VmafFrameSyncBuf *buf_que = fs_ctx->buf_que;
-    *data = NULL;
+    *data = (char *)0;
 
     int rc = pthread_mutex_lock(&(fs_ctx->acquire_lock));
     if (rc != 0)
@@ -129,12 +154,12 @@ int vmaf_framesync_acquire_new_buf(VmafFrameSyncContext *fs_ctx, void **data, un
             break;
         }
         // move to next node
-        if (buf_que->next != NULL)
+        if (buf_que->next != (VmafFrameSyncBuf *)0)
             buf_que = buf_que->next;
     }
 
     // create a new node if all nodes are occupied in the list and append to the tail
-    if (*data == NULL) {
+    if (*data == (char *)0) {
         VmafFrameSyncBuf *new_buf_node = malloc(sizeof(VmafFrameSyncBuf));
         if (!new_buf_node) {
             (void)pthread_mutex_unlock(&(fs_ctx->acquire_lock));
@@ -142,12 +167,12 @@ int vmaf_framesync_acquire_new_buf(VmafFrameSyncContext *fs_ctx, void **data, un
         }
         new_buf_node->buf_status = BUF_FREE;
         new_buf_node->index = -1;
-        new_buf_node->next = NULL;
+        new_buf_node->next = (VmafFrameSyncBuf *)0;
 
         new_buf_node->frame_data = *data = malloc(data_sz);
         if (!new_buf_node->frame_data) {
             free(new_buf_node);
-            *data = NULL;
+            *data = (char *)0;
             (void)pthread_mutex_unlock(&(fs_ctx->acquire_lock));
             return -ENOMEM;
         }
@@ -195,7 +220,7 @@ int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, void *data, 
         }
 
         // move to next node
-        if (NULL != buf_que->next)
+        if ((VmafFrameSyncBuf *)0 != buf_que->next)
             buf_que = buf_que->next;
     }
 
@@ -206,14 +231,27 @@ int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, void *data, 
     return ret;
 }
 
+static bool retrieve_buffer(VmafFrameSyncContext *fs_ctx, void **data, signed long frame_index)
+{
+    VmafFrameSyncBuf *buf_que = fs_ctx->buf_que;
+    for (unsigned i = 0; i < fs_ctx->buf_cnt; i++) {
+        if ((buf_que->index == frame_index) && (buf_que->buf_status == BUF_FILLED)) {
+            buf_que->buf_status = BUF_RETRIEVED;
+            *data = buf_que->frame_data;
+            return true;
+        }
+        if ((VmafFrameSyncBuf *)0 != buf_que->next)
+            buf_que = buf_que->next;
+    }
+    return false;
+}
+
 int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **data, unsigned index)
 {
     const signed long frame_index = (signed long)index;
-    *data = NULL;
+    *data = (char *)0;
 
-    while (*data == NULL) {
-        VmafFrameSyncBuf *buf_que = fs_ctx->buf_que;
-
+    while (*data == (char *)0) {
         // M0-before-M1: spine first, condvar lock second. The
         // `pthread_cond_wait` below atomically releases M1 and waits;
         // M0 is dropped before the wait so producers can make
@@ -227,20 +265,7 @@ int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **dat
             return -rc;
         }
 
-        // loop until a free buffer is found
-        for (unsigned i = 0; i < fs_ctx->buf_cnt; i++) {
-            if ((buf_que->index == frame_index) && (buf_que->buf_status == BUF_FILLED)) {
-                buf_que->buf_status = BUF_RETRIEVED;
-                *data = buf_que->frame_data;
-                break;
-            }
-
-            // move to next node
-            if (NULL != buf_que->next)
-                buf_que = buf_que->next;
-        }
-
-        if (*data == NULL) {
+        if (!retrieve_buffer(fs_ctx, data, frame_index)) {
             // Check abort flag (under M1) before sleeping; a producer that
             // died after calling vmaf_framesync_abort() may have broadcast
             // before we entered cond_wait, but the flag is persistent.
@@ -289,14 +314,14 @@ int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, void *data, unsigne
             }
 
             free(buf_que->frame_data);
-            buf_que->frame_data = NULL;
+            buf_que->frame_data = (char *)0;
             buf_que->buf_status = BUF_FREE;
             buf_que->index = -1;
             break;
         }
 
         // move to next node
-        if (NULL != buf_que->next)
+        if ((VmafFrameSyncBuf *)0 != buf_que->next)
             buf_que = buf_que->next;
     }
 
@@ -328,6 +353,8 @@ int vmaf_framesync_abort(VmafFrameSyncContext *fs_ctx)
 
 int vmaf_framesync_destroy(VmafFrameSyncContext *fs_ctx)
 {
+    if (!fs_ctx)
+        return 0;
     VmafFrameSyncBuf *buf_que = fs_ctx->buf_que;
 
     /* Safety net: abort any consumer still in retrieve_filled_data so the
@@ -337,16 +364,16 @@ int vmaf_framesync_destroy(VmafFrameSyncContext *fs_ctx)
      * before calling destroy, but this broadcast provides defence-in-depth. */
     (void)vmaf_framesync_abort(fs_ctx);
 
-    pthread_mutex_destroy(&(fs_ctx->acquire_lock));
-    pthread_mutex_destroy(&(fs_ctx->retrieve_lock));
-    pthread_cond_destroy(&(fs_ctx->retrieve));
+    (void)pthread_mutex_destroy(&(fs_ctx->acquire_lock));
+    (void)pthread_mutex_destroy(&(fs_ctx->retrieve_lock));
+    (void)pthread_cond_destroy(&(fs_ctx->retrieve));
 
     //check for any data buffers which are not freed
-    while (buf_que != NULL) {
+    while (buf_que != (VmafFrameSyncBuf *)0) {
         VmafFrameSyncBuf *next = buf_que->next;
-        if (NULL != buf_que->frame_data) {
+        if ((char *)0 != buf_que->frame_data) {
             free(buf_que->frame_data);
-            buf_que->frame_data = NULL;
+            buf_que->frame_data = (char *)0;
         }
         free(buf_que);
         buf_que = next;

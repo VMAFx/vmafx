@@ -642,7 +642,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
  * `PRESET_MAX_ORDINAL = 9.0` and `CRF_MAX = 63.0`. The PRESET_ORDINAL
  * table below mirrors lines 169..234 of that file. When the trainer
  * changes either constant, update both sides — see the AGENTS.md
- * note under libvmaf/src/dnn/.
+ * note under core/src/dnn/.
  * ============================================================ */
 
 /* One (preset name → raw ordinal) row of an encoder's preset vocabulary. */

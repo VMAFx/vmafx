@@ -230,73 +230,103 @@ type roiParams struct {
 // Go/Python argv-parity test can exercise it without a binary on disk.
 func buildRoiArgv(bin, outPath string, args map[string]any) ([]string, roiParams, error) {
 	var p roiParams
+	a, err := parseRoiArgs(args)
+	if err != nil {
+		return nil, p, err
+	}
+
+	argv := []string{
+		bin,
+		"--reference", a.ref,
+		"--width", strconv.Itoa(a.width),
+		"--height", strconv.Itoa(a.height),
+		"--frame", strconv.Itoa(a.frame),
+		"--output", outPath,
+		"--pixel_format", a.pixfmt,
+		"--bitdepth", strconv.Itoa(a.bitdepth),
+		"--ctu-size", strconv.Itoa(a.ctuSize),
+		"--encoder", a.encoder,
+		"--strength", strconv.FormatFloat(a.strength, 'f', -1, 64),
+	}
+	if a.saliency != "" {
+		argv = append(argv, "--saliency-model", a.saliency)
+	}
+	p = roiParams{
+		encoder:  a.encoder,
+		ctuSize:  a.ctuSize,
+		frame:    a.frame,
+		width:    a.width,
+		height:   a.height,
+		saliency: a.saliency != "",
+	}
+	return argv, p, nil
+}
+
+// roiArgs is the validated form of the vmaf_roi tool arguments.
+type roiArgs struct {
+	ref      string
+	width    int
+	height   int
+	frame    int
+	pixfmt   string
+	bitdepth int
+	ctuSize  int
+	encoder  string
+	strength float64
+	saliency string
+}
+
+// parseRoiArgs validates every vmaf_roi argument against the bounds vmaf_roi.c enforces,
+// so an out-of-range request is refused here with a named reason instead of turning into
+// a bare non-zero exit from the sidecar.
+func parseRoiArgs(args map[string]any) (roiArgs, error) {
+	var a roiArgs
 	ref, err := libvmaf.ValidatePath(strArg(args, "reference", ""))
 	if err != nil {
-		return nil, p, fmt.Errorf("reference: %w", err)
+		return a, fmt.Errorf("reference: %w", err)
 	}
 	// vmaf_roi.c: width/height 1..VMAF_ROI_MAX_DIM (16384), frame 0..1000000.
 	width := intArg(args, "width", 0)
 	height := intArg(args, "height", 0)
 	if width < 1 || width > 16384 || height < 1 || height > 16384 {
-		return nil, p, fmt.Errorf("width and height must be between 1 and 16384")
+		return a, fmt.Errorf("width and height must be between 1 and 16384")
 	}
 	frame := intArg(args, "frame", -1)
 	if frame < 0 || frame > 1000000 {
-		return nil, p, fmt.Errorf("frame must be between 0 and 1000000")
+		return a, fmt.Errorf("frame must be between 0 and 1000000")
 	}
 	pixfmt := strArg(args, "pixel_format", "420")
 	if !sidecarPixfmts[pixfmt] {
-		return nil, p, fmt.Errorf("invalid pixel_format %q: must be one of 420|422|444", pixfmt)
+		return a, fmt.Errorf("invalid pixel_format %q: must be one of 420|422|444", pixfmt)
 	}
 	bitdepth := intArg(args, "bitdepth", 8)
 	if !validSidecarBitdepth(bitdepth) {
-		return nil, p, fmt.Errorf("invalid bitdepth %d: must be one of 8|10|12|16", bitdepth)
+		return a, fmt.Errorf("invalid bitdepth %d: must be one of 8|10|12|16", bitdepth)
 	}
 	ctuSize := intArg(args, "ctu_size", 64)
 	if ctuSize < 8 || ctuSize > 128 {
-		return nil, p, fmt.Errorf("ctu_size must be between 8 and 128")
+		return a, fmt.Errorf("ctu_size must be between 8 and 128")
 	}
 	encoder := strArg(args, "encoder", "x265")
 	if encoder != "x265" && encoder != "svt-av1" {
-		return nil, p, fmt.Errorf("invalid encoder %q: must be x265 or svt-av1", encoder)
+		return a, fmt.Errorf("invalid encoder %q: must be x265 or svt-av1", encoder)
 	}
 	strength := floatArg(args, "strength", 6.0)
 	if strength < 0 || strength > 64 {
-		return nil, p, fmt.Errorf("strength must be between 0 and 64")
+		return a, fmt.Errorf("strength must be between 0 and 64")
 	}
 	saliency := ""
 	if raw := strArg(args, "saliency_model", ""); raw != "" {
 		saliency, err = libvmaf.ValidatePath(raw)
 		if err != nil {
-			return nil, p, fmt.Errorf("saliency_model: %w", err)
+			return a, fmt.Errorf("saliency_model: %w", err)
 		}
 	}
-
-	argv := []string{
-		bin,
-		"--reference", ref,
-		"--width", strconv.Itoa(width),
-		"--height", strconv.Itoa(height),
-		"--frame", strconv.Itoa(frame),
-		"--output", outPath,
-		"--pixel_format", pixfmt,
-		"--bitdepth", strconv.Itoa(bitdepth),
-		"--ctu-size", strconv.Itoa(ctuSize),
-		"--encoder", encoder,
-		"--strength", strconv.FormatFloat(strength, 'f', -1, 64),
-	}
-	if saliency != "" {
-		argv = append(argv, "--saliency-model", saliency)
-	}
-	p = roiParams{
-		encoder:  encoder,
-		ctuSize:  ctuSize,
-		frame:    frame,
-		width:    width,
-		height:   height,
-		saliency: saliency != "",
-	}
-	return argv, p, nil
+	return roiArgs{
+		ref: ref, width: width, height: height, frame: frame,
+		pixfmt: pixfmt, bitdepth: bitdepth, ctuSize: ctuSize,
+		encoder: encoder, strength: strength, saliency: saliency,
+	}, nil
 }
 
 func handleVmafRoi(ctx context.Context, args map[string]any) (any, error) {

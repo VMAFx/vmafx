@@ -312,6 +312,19 @@ static const VmafOption options[] = {
     },
     {0}};
 
+/* Release the two scratch planes and the feature-name dictionary. Shared by
+ * `init`'s partial-allocation unwind and by `close`: both must release exactly
+ * the same three resources. Factoring it out lets `init` unwind with a plain
+ * early return instead of a `goto` (HISS-01). */
+static void adm_state_release(AdmState *s)
+{
+    if (s->ref)
+        aligned_free(s->ref);
+    if (s->dist)
+        aligned_free(s->dist);
+    vmaf_dictionary_free(&s->feature_name_dict);
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -321,26 +334,104 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     AdmState *s = fex->priv;
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
     s->ref = aligned_malloc(s->float_stride * h, 32);
-    if (!s->ref)
-        goto fail;
+    if (!s->ref) {
+        adm_state_release(s);
+        return -ENOMEM;
+    }
     s->dist = aligned_malloc(s->float_stride * h, 32);
-    if (!s->dist)
-        goto fail;
+    if (!s->dist) {
+        adm_state_release(s);
+        return -ENOMEM;
+    }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto fail;
+    if (!s->feature_name_dict) {
+        adm_state_release(s);
+        return -ENOMEM;
+    }
 
     return 0;
+}
 
-fail:
-    if (s->ref)
-        aligned_free(s->ref);
-    if (s->dist)
-        aligned_free(s->dist);
-    vmaf_dictionary_free(&s->feature_name_dict);
-    return -ENOMEM;
+/* Emit the four per-scale ADM ratios. Lifted out of `extract` verbatim — the
+ * same appends, in the same order, with the same arguments — so `extract` stays
+ * under the HISS-04 / NASA Rule 4 function-size limit (ADR-0141). */
+static int adm_append_scale_scores(VmafFeatureCollector *feature_collector, const AdmState *s,
+                                   const double *scores, unsigned index)
+{
+    int err = 0;
+
+    /* When adm_skip_scale0 is set the scale-0 DWT is skipped; scores[0..1]
+     * hold a 0/1e-10 sentinel.  Mirror the float_vif.c:296 pattern and emit
+     * an explicit 0 rather than relying on the sentinel arithmetic.         */
+    if (s->adm_skip_scale0) {
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       "VMAF_feature_adm_scale0_score", 0.0, index);
+    } else {
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       "VMAF_feature_adm_scale0_score",
+                                                       scores[0] / scores[1], index);
+    }
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_feature_adm_scale1_score",
+                                                   scores[2] / scores[3], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_feature_adm_scale2_score",
+                                                   scores[4] / scores[5], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_feature_adm_scale3_score",
+                                                   scores[6] / scores[7], index);
+
+    return err;
+}
+
+/* Emit the debug-only raw numerators and denominators. Lifted out of `extract`
+ * verbatim for the same reason as adm_append_scale_scores(); the caller still
+ * gates the call on s->debug. */
+static int adm_append_debug_scores(VmafFeatureCollector *feature_collector, const AdmState *s,
+                                   double score, double score_num, double score_den,
+                                   const double *scores, unsigned index)
+{
+    int err = 0;
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "adm",
+                                                   score, index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_num", score_num, index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_den", score_den, index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_num_scale0", scores[0], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_den_scale0", scores[1], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_num_scale1", scores[2], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_den_scale1", scores[3], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_num_scale2", scores[4], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_den_scale2", scores[5], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_num_scale3", scores[6], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "adm_den_scale3", scores[7], index);
+
+    return err;
 }
 
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -394,77 +485,19 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
             index);
     }
 
-    /* When adm_skip_scale0 is set the scale-0 DWT is skipped; scores[0..1]
-     * hold a 0/1e-10 sentinel.  Mirror the float_vif.c:296 pattern and emit
-     * an explicit 0 rather than relying on the sentinel arithmetic.         */
-    if (s->adm_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_feature_adm_scale0_score", 0.0, index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_feature_adm_scale0_score",
-                                                       scores[0] / scores[1], index);
-    }
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_adm_scale1_score",
-                                                   scores[2] / scores[3], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_adm_scale2_score",
-                                                   scores[4] / scores[5], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_adm_scale3_score",
-                                                   scores[6] / scores[7], index);
+    err |= adm_append_scale_scores(feature_collector, s, scores, index);
 
     if (!s->debug)
         return err;
 
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "adm",
-                                                   score, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_num", score_num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_den", score_den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_num_scale0", scores[0], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_den_scale0", scores[1], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_num_scale1", scores[2], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_den_scale1", scores[3], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_num_scale2", scores[4], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_den_scale2", scores[5], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_num_scale3", scores[6], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "adm_den_scale3", scores[7], index);
-
-    return err;
+    return err | adm_append_debug_scores(feature_collector, s, score, score_num, score_den, scores,
+                                         index);
 }
 
 static int close(VmafFeatureExtractor *fex)
 {
     AdmState *s = fex->priv;
-    if (s->ref)
-        aligned_free(s->ref);
-    if (s->dist)
-        aligned_free(s->dist);
-    vmaf_dictionary_free(&s->feature_name_dict);
+    adm_state_release(s);
     return 0;
 }
 

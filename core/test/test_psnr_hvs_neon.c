@@ -10,7 +10,7 @@
  * Bit-exactness contract (ADR-0159 mirror, ADR-0160): the NEON
  * `od_bin_fdct8x8_neon` — the heart of the calc_psnrhvs NEON port —
  * produces byte-for-byte identical int32 DCT coefficients to the
- * scalar reference in libvmaf/src/feature/third_party/xiph/psnr_hvs.c
+ * scalar reference in core/src/feature/third_party/xiph/psnr_hvs.c
  * under FLT_EVAL_METHOD == 0 for every 12-bit input.
  *
  * Scope:

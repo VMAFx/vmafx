@@ -208,9 +208,9 @@ class CharacterBuffer(object):
         something outside what's allowable by the predicate."""
         chars = []
         countChars = 0
-        while True:
-            if maxChars != 0 and countChars >= maxChars:
-                break
+        # maxChars == 0 means "no explicit limit"; the scan then ends at the
+        # first character the predicate rejects, or at end of stream.
+        while maxChars == 0 or countChars < maxChars:
             ch = self.getch()
             if ch != "" and predicate(ch):
                 chars.append(ch)
@@ -277,13 +277,18 @@ class CharacterBufferFromFile(CharacterBuffer):
 
 
 def readiter(inputFile, *args):
-    """Returns an iterator that calls read(*args) on the inputFile."""
-    while True:
+    """Returns an iterator that calls read(*args) on the inputFile.
+
+    The trailing ``raise StopIteration`` is how the upstream module signalled
+    exhaustion. Since PEP 479 that surfaces to the caller as a RuntimeError
+    rather than ending the generator quietly; it is kept verbatim because this
+    pass only restructures the loop, it does not change what callers observe.
+    """
+    ch = inputFile.read(*args)
+    while ch:
+        yield ch
         ch = inputFile.read(*args)
-        if ch:
-            yield ch
-        else:
-            raise StopIteration
+    raise StopIteration
 
 
 def isIterable(thing):
@@ -426,13 +431,13 @@ def isWhitespaceChar(ch, _set=_WHITESPACE_SET):
 def handleWhitespace(buffer):
     """Scans for whitespace.  Returns all the whitespace it collects."""
     chars = []
-    while True:
+    ch = buffer.getch()
+    while isWhitespaceChar(ch):
+        chars.append(ch)
         ch = buffer.getch()
-        if isWhitespaceChar(ch):
-            chars.append(ch)
-        else:
-            buffer.ungetch(ch)
-            break
+    # The first non-whitespace character (or the empty string at end of
+    # stream) belongs to the next scan, so hand it back.
+    buffer.ungetch(ch)
     return "".join(chars)
 
 
@@ -588,10 +593,10 @@ def compile(formatString):
     """
     handlers = []
     formatBuffer = CharacterBufferFromIterable(formatString)
-    while True:
-        ch = formatBuffer.getch()
-        if ch == "":
-            break
+    # The scan is bounded by the format string: getch() returns the empty
+    # string once every character of it has been consumed.
+    ch = formatBuffer.getch()
+    while ch != "":
         if isWhitespaceChar(ch):
             handleWhitespace(formatBuffer)
             handlers.append(makeIgnoredHandler(handleWhitespace))
@@ -599,6 +604,7 @@ def compile(formatString):
             handlers.append(_compileFormat(formatBuffer))
         else:
             handlers.append(makeIgnoredHandler(makeHandleLiteral(ch)))
+        ch = formatBuffer.getch()
     return CompiledPattern(handlers, formatString)
 
 

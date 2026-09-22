@@ -1,6 +1,6 @@
 name: Standards
 
-# Praetor / HISS-16 governance gate (ADR-1249).
+# Praetor / HISS-21 governance gate (ADR-1249, ADR-1274).
 #
 # Runs on every pull request with no `paths:` filter on purpose: the HISS scan
 # reads source, the baseline ratchet has to see every change, and a required
@@ -19,6 +19,10 @@ concurrency:
 # Least-privilege default for the whole workflow (ADR-0875).
 permissions:
   contents: read
+
+env:
+  # Exact engine used to record the baseline and replay HISS evidence.
+  PRAETOR_REF: f41e74d8f9a3db6ab1f08e787db5b2e94a721561
 
 jobs:
   standards:
@@ -45,10 +49,6 @@ jobs:
       # is a deliberate PR: a newer praetor can tighten a policy and turn this
       # gate red on unrelated work.
       - name: Install praetorctl
-        env:
-          PRAETOR_REF: 846da5908d15b3cf5581ca6b0205cc644b249599  # praetor main, 2026-09-19; the baseline is recorded against this engine.
-          # Bumped from e4b35cb3c7fe after proving both engines record byte-identical
-          # infraction sets on master (1414 entries, same fingerprints) -- see PR body.
         run: |
           go install "github.com/cordanaLLM/praetor/cmd/standardsctl@${PRAETOR_REF}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
@@ -79,3 +79,51 @@ jobs:
       # (ADR-1249).
       - name: Audit HISS invariants against the baseline
         run: standardsctl audit
+
+      # The general HISS audit and its baseline do not include the AST clone
+      # detector. Keep this explicit and fail-closed: duplicate implementation
+      # families are defects regardless of origin or historical ownership.
+      - name: Reject duplicate implementation families
+        run: standardsctl dedupe scan .
+
+      - name: Replay HISS enforcement evidence
+        run: standardsctl hiss coverage --verify
+
+  # required-aggregator: HISS Replay Evidence (Linux)
+  # required-aggregator: HISS Replay Evidence (macOS)
+  # required-aggregator: HISS Replay Evidence (Windows)
+  hiss-replay-platforms:
+    name: HISS Replay Evidence (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-26.04
+          - name: macOS
+            os: macos-15
+          - name: Windows
+            os: windows-2025
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install pinned praetorctl
+        run: |
+          go install "github.com/cordanaLLM/praetor/cmd/standardsctl@${PRAETOR_REF}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Replay HISS enforcement evidence
+        run: standardsctl hiss coverage --verify

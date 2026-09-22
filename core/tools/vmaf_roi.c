@@ -484,7 +484,7 @@ static int parse_args(int argc, char **argv, struct vmaf_roi_opts *o)
     int c = 0;
     /* getopt_long is the standard CLI argument loop; the "not thread safe"
      * warning is inherent to CLI option parsing and matches upstream
-     * libvmaf/tools/cli_parse.c. CLI parsing happens before any threads
+     * core/tools/cli_parse.cpp. CLI parsing happens before any threads
      * are spawned, so this is safe. */
     /* NOLINTNEXTLINE(concurrency-mt-unsafe) -- ADR-0247: CLI parsing completes before threads. */
     while ((c = getopt_long(argc, argv, "h", g_long_opts, NULL)) != -1) {

@@ -32,3 +32,10 @@ without first removing that actor from live ruleset. Missing, truncated, or
 error API data must fail. Checker only reads; CI must never gain
 administration credentials or automatic apply path. Run its offline
 adversarial controls after every change.
+
+`hw_encoder_corpus.py` is a long-running, append-only corpus producer. It may
+retain rows from successful quality points for diagnosis, but any encode,
+decode, score, or canonical-row failure must make the process return non-zero.
+Never turn a failed quality point into a successful partial corpus. Preserve
+the positive, failed-encode, empty-metrics, and missing-input controls in
+`tests/test_hw_encoder_corpus.py`.

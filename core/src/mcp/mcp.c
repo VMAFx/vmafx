@@ -255,6 +255,83 @@ int vmaf_mcp_start_sse(VmafMcpServer *server, VmafMcpSseConfig *cfg)
     return 0;
 }
 
+/* Create, bind, chmod and listen on the AF_UNIX socket at `path`.  Returns the
+ * listening fd (>= 0) or a negative errno.  Every failure path performs the
+ * same cleanup, in the same order, as the inline version it replaces (unlink
+ * before close where the socket file already existed); clearing
+ * server->uds_running stays with the caller so that store keeps happening last
+ * on every failure, exactly as before. */
+static int mcp_uds_listen(const char *path, size_t path_len)
+{
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+        return -errno;
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    memcpy(addr.sun_path, path, path_len + 1u);
+
+    /* Best-effort unlink of a stale socket file — ignore ENOENT. */
+    if (unlink(path) != 0 && errno != ENOENT) {
+        int saved = errno;
+        (void)close(fd);
+        return -saved;
+    }
+    if (bind(fd, (const struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        int saved = errno;
+        (void)close(fd);
+        return saved == EADDRINUSE ? -EADDRINUSE : -saved;
+    }
+    /* Per ADR-0128 § "Operational guardrails" — UDS file is mode
+     * 0700 (owner-only). chmod after bind so the umask cannot
+     * loosen permissions. */
+    if (chmod(path, S_IRWXU) != 0) {
+        int saved = errno;
+        (void)unlink(path);
+        (void)close(fd);
+        return -saved;
+    }
+    /* listen-backlog SOMAXCONN-equivalent;
+     * VMAF_MCP_LISTEN_BACKLOG is generous for the embedded use
+     * case. */
+    if (listen(fd, VMAF_MCP_LISTEN_BACKLOG) != 0) {
+        int saved = errno;
+        (void)unlink(path);
+        (void)close(fd);
+        return -saved;
+    }
+    return fd;
+}
+
+/* Take ownership of `fd`, publish it on `server` and start the accept thread.
+ * On failure it undoes the publication in the original order (unlink, free,
+ * clear the owned path, close, clear the fd) and returns a negative errno. */
+static int mcp_uds_publish(VmafMcpServer *server, const char *path, size_t path_len, int fd)
+{
+    char *path_dup = (char *)malloc(path_len + 1u);
+    if (path_dup == NULL) {
+        (void)unlink(path);
+        (void)close(fd);
+        return -ENOMEM;
+    }
+    memcpy(path_dup, path, path_len + 1u);
+
+    server->uds_listen_fd = fd;
+    server->uds_path_owned = path_dup;
+
+    int rc = pthread_create(&server->uds_thread, NULL, vmaf_mcp_uds_thread_main, server);
+    if (rc != 0) {
+        (void)unlink(path_dup);
+        free(path_dup);
+        server->uds_path_owned = NULL;
+        (void)close(fd);
+        server->uds_listen_fd = -1;
+        return -rc;
+    }
+    return 0;
+}
+
 int vmaf_mcp_start_uds(VmafMcpServer *server, const VmafMcpUdsConfig *cfg)
 {
     if (server == NULL)
@@ -280,74 +357,16 @@ int vmaf_mcp_start_uds(VmafMcpServer *server, const VmafMcpUdsConfig *cfg)
      * wins. */
     assert(atomic_load(&server->uds_running) == 1);
 
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    int fd = mcp_uds_listen(cfg->path, path_len);
     if (fd < 0) {
         atomic_store(&server->uds_running, 0);
-        return -errno;
+        return fd;
     }
 
-    struct sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    memcpy(addr.sun_path, cfg->path, path_len + 1u);
-
-    /* Best-effort unlink of a stale socket file — ignore ENOENT. */
-    if (unlink(cfg->path) != 0 && errno != ENOENT) {
-        int saved = errno;
-        (void)close(fd);
+    int rc = mcp_uds_publish(server, cfg->path, path_len, fd);
+    if (rc != 0)
         atomic_store(&server->uds_running, 0);
-        return -saved;
-    }
-    if (bind(fd, (const struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        int saved = errno;
-        (void)close(fd);
-        atomic_store(&server->uds_running, 0);
-        return saved == EADDRINUSE ? -EADDRINUSE : -saved;
-    }
-    /* Per ADR-0128 § "Operational guardrails" — UDS file is mode
-     * 0700 (owner-only). chmod after bind so the umask cannot
-     * loosen permissions. */
-    if (chmod(cfg->path, S_IRWXU) != 0) {
-        int saved = errno;
-        (void)unlink(cfg->path);
-        (void)close(fd);
-        atomic_store(&server->uds_running, 0);
-        return -saved;
-    }
-    /* listen-backlog SOMAXCONN-equivalent;
-     * VMAF_MCP_LISTEN_BACKLOG is generous for the embedded use
-     * case. */
-    if (listen(fd, VMAF_MCP_LISTEN_BACKLOG) != 0) {
-        int saved = errno;
-        (void)unlink(cfg->path);
-        (void)close(fd);
-        atomic_store(&server->uds_running, 0);
-        return -saved;
-    }
-
-    char *path_dup = (char *)malloc(path_len + 1u);
-    if (path_dup == NULL) {
-        (void)unlink(cfg->path);
-        (void)close(fd);
-        atomic_store(&server->uds_running, 0);
-        return -ENOMEM;
-    }
-    memcpy(path_dup, cfg->path, path_len + 1u);
-
-    server->uds_listen_fd = fd;
-    server->uds_path_owned = path_dup;
-
-    int rc = pthread_create(&server->uds_thread, NULL, vmaf_mcp_uds_thread_main, server);
-    if (rc != 0) {
-        (void)unlink(path_dup);
-        free(path_dup);
-        server->uds_path_owned = NULL;
-        (void)close(fd);
-        server->uds_listen_fd = -1;
-        atomic_store(&server->uds_running, 0);
-        return -rc;
-    }
-    return 0;
+    return rc;
 }
 
 int vmaf_mcp_start_stdio(VmafMcpServer *server, const VmafMcpStdioConfig *cfg)

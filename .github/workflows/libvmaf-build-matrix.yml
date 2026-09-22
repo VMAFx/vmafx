@@ -43,20 +43,27 @@ jobs:
       matrix:
         include:
           # --- CPU-only builds ---
+          # ADR-1297 — every row below reports a check on every non-draft PR
+          # and is named in required-aggregator.yml. Before ADR-1297 only the
+          # `+DNN` siblings were gated, so the plain gcc/clang/ARM/static legs
+          # could be red while the merge button stayed green.
+          # required-aggregator
           - os: ubuntu-latest
             CC: ccache gcc-14
             CXX: ccache g++-14
             name: Ubuntu gcc
+          # required-aggregator
           - os: ubuntu-latest
             CC: ccache clang-22
             CXX: ccache clang++-22
             name: Ubuntu clang
+          # required-aggregator
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
             meson_extra: -Denable_metal=disabled
             name: macOS clang
-            experimental: true
+          # required-aggregator
           - os: ubuntu-26.04-arm
             CC: ccache clang-22
             CXX: ccache clang++-22
@@ -67,8 +74,13 @@ jobs:
           # to ensure the ORT C-API surface compiles on every CPU leg, not
           # only the dedicated `Tiny AI` job. Each leg installs ONNX Runtime
           # (Linux: MS tarball pinned to 1.22.0; macOS: Homebrew) and runs
-          # the meson dnn suite. macOS leg stays `experimental: true` so a
-          # Homebrew ORT bump that breaks ABI doesn't block merge.
+          # the meson dnn suite. The macOS leg used to carry
+          # `experimental: true`; ADR-1297 removed it. `continue-on-error`
+          # never neutralised the check-run conclusion anyway (the leg
+          # reported `failure` on PR #1518 with the flag set), so the flag
+          # only made the workflow claim the leg was advisory while nothing
+          # acted on that claim. A Homebrew ORT bump that breaks ABI is a
+          # supply-chain pinning problem, not a reason the leg cannot gate.
           # required-aggregator
           - os: ubuntu-latest
             CC: ccache gcc-14
@@ -83,13 +95,13 @@ jobs:
             dnn: true
             meson_extra: -Denable_dnn=enabled
             name: Ubuntu clang+DNN
+          # required-aggregator
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
             dnn: true
             meson_extra: -Denable_dnn=enabled -Denable_metal=disabled
             name: macOS clang+DNN
-            experimental: true
 
           # --- Vulkan backend removed (ADR-0726) ---
           # The Vulkan backend was removed in ADR-0726; the Ubuntu Vulkan
@@ -129,6 +141,7 @@ jobs:
           # Apple Silicon (M1+ / GPU Family Apple 7+) is the runtime
           # target; the scaffold lane builds on whichever macos-latest
           # arch GitHub provides today (Apple Silicon as of 2026).
+          # required-aggregator
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
@@ -136,6 +149,7 @@ jobs:
             name: macOS Metal
 
           # --- Static library builds ---
+          # required-aggregator
           - os: ubuntu-latest
             CC: ccache gcc-14
             CXX: ccache g++-14
@@ -149,6 +163,7 @@ jobs:
           # could catch shows up first on the dynamic lane). The
           # CUDA Static lane stays because it exercises a distinct
           # NVCC-static interaction not covered by the dynamic build.
+          # required-aggregator
           - os: ubuntu-latest
             CC: ccache gcc-14
             CXX: ccache g++-14
@@ -159,6 +174,7 @@ jobs:
           # --- SYCL build (icpx for both host + SYCL sources so the device
           #     image is registered at the .so link step; see post-T7-8
           #     SYCL revival in core/src/meson.build) ---
+          # required-aggregator
           - os: ubuntu-latest
             CC: icx
             CXX: icpx
@@ -167,6 +183,7 @@ jobs:
             name: Ubuntu SYCL
 
           # --- CUDA build (gcc + nvcc) ---
+          # required-aggregator
           - os: ubuntu-latest
             CC: ccache gcc-14
             CXX: ccache g++-14
@@ -176,6 +193,7 @@ jobs:
 
           # --- SYCL + CUDA combined (icpx host so SYCL link works; nvcc
           #     handles the CUDA TUs separately via -Denable_nvcc=true) ---
+          # required-aggregator
           - os: ubuntu-latest
             CC: icx
             CXX: icpx
@@ -187,9 +205,11 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
-    # ADR-0726: Vulkan backend removed. continue-on-error now depends only on
-    # matrix.experimental (no matrix row has moltenvk:true).
-    continue-on-error: ${{ matrix.experimental == true }}
+    # ADR-0726 removed the Vulkan/MoltenVK rows; ADR-1297 removed the last two
+    # `experimental: true` rows (macOS clang, macOS clang+DNN) and with them the
+    # `continue-on-error: ${{ matrix.experimental == true }}` expression that
+    # guarded them. No row in this matrix is advisory: every one of them is a
+    # required context, so a red leg blocks the merge rather than annotating it.
     env:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
@@ -1082,9 +1102,12 @@ jobs:
   # compiled by gcc/clang (Ubuntu ARM clang, macOS) and MSVC only ever
   # saw the x86 tree. CPU only: CUDA 13.3.1, the repository pin, ships
   # no windows-arm64 packages (13.4.1 is the first that does); a
-  # CUDA-on-WoA leg waits for the coordinated 13.4 bump. Advisory --
-  # not in required-aggregator.yml -- until the maintainer promotes
-  # it. See ADR-1260.
+  # CUDA-on-WoA leg waits for the coordinated 13.4 bump. ADR-1260 left
+  # this lane advisory -- "not in required-aggregator.yml -- until the
+  # maintainer promotes it". ADR-1297 is that promotion: the lane is in
+  # required-aggregator.yml, and in that file's `strictMustReport` list
+  # because the runner label below is a single point of failure and a
+  # lane that silently stops registering must not read as a pass.
   #
   # Runner: `windows-11-vs2026-arm` (GA 2026-08-19, runner-images
   # #14592) rather than `windows-11-arm`, which is being migrated to
@@ -1103,6 +1126,7 @@ jobs:
   # core/src/meson.build, so nothing is missing for ARM64.
   windows-arm64:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # required-aggregator
     name: Windows ARM64 MSVC
     runs-on: windows-11-vs2026-arm
     timeout-minutes: 60

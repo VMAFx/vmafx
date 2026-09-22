@@ -337,8 +337,30 @@ def aggregate_clip_stats(features: np.ndarray) -> np.ndarray:
         raise ValueError(f"expected 2-D features, got shape {features.shape}")
     if features.shape[0] == 0:
         return np.full((4 * features.shape[1],), np.nan, dtype=np.float32)
+    # An entirely-NaN feature column is a documented input (see above) whose
+    # stats are NaN. NumPy already returns NaN for it, but reaching that answer
+    # makes it emit "Mean of empty slice" / "All-NaN slice encountered"
+    # RuntimeWarnings for a case this function decides deliberately. Give those
+    # columns a finite placeholder before reducing and restore the NaN
+    # afterwards, so the warning has no cause to raise rather than being
+    # filtered away (ADR-1278).
+    #
+    # The placeholder is written into a layout-preserving copy, and only into
+    # columns whose result is discarded, so every populated column is still
+    # reduced over identically-strided memory. That keeps the reduction
+    # bit-exact: NumPy picks its summation order from the stride pattern, so a
+    # re-laid-out array (e.g. the F-contiguous copy that boolean column
+    # indexing returns) would shift the last ULP of mean/std.
+    all_nan = np.all(np.isnan(features), axis=0)
+    degenerate = bool(all_nan.any())
+    if degenerate:
+        features = features.copy(order="K")
+        features[:, all_nan] = 0.0
     mean = np.nanmean(features, axis=0)
     p10 = np.nanpercentile(features, 10, axis=0)
     p90 = np.nanpercentile(features, 90, axis=0)
     std = np.nanstd(features, axis=0)
-    return np.concatenate([mean, p10, p90, std]).astype(np.float32)
+    stats = np.concatenate([mean, p10, p90, std]).astype(np.float32)
+    if degenerate:
+        stats.reshape(4, -1)[:, all_nan] = np.nan
+    return stats

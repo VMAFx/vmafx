@@ -1,6 +1,227 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
+
+1. **`scripts/ci/silent-revert-allowlist.json` describes the *difference* between
+   this branch and `master`, not a permanent policy.** Both entries exist only
+   because master still carries the state being superseded: the retired numbered
+   workspace root that `c2a3c7e0f` wrote in place of `.corpus/` (ADR-1277), and the
+   by-value HIP ADM kernels that `92ea978a4` left after silently reverting ADR-0759.
+   Once master carries the superseded state, `check-silent-revert.py` stops producing
+   those findings and the entries are dead weight — delete them rather than carrying
+   them forward. A rebase that keeps an entry whose finding no longer exists has left
+   a suppression behind, which is the failure ADR-1291's `undoes` + `evidence` fields
+   exist to make visible.
+2. **Do not widen an entry to resolve a rebase conflict.** Each entry matches on the
+   detector, the exact path, the commit undone and *every* evidence line. If a rebase
+   moves the reversal onto new paths or new lines, the honest resolution is to re-run
+   `make silent-revert-check`, read the new findings, and re-derive the entry from
+   them; dropping `undoes` or loosening `evidence` to make the gate quiet converts a
+   declaration into the path exclusion ADR-1291 refused.
+3. **The two detector repairs are behavioural, not cosmetic.** `reverse-hunk` now
+   skips paths the merge deletes and `resurrected` now requires the line to be text
+   the target once held and lost. A rebase that restores either detector's older body
+   — for instance by taking master's side of `check-silent-revert.py` wholesale — puts
+   back twelve false findings on this branch alone. `scripts/ci/tests/test_check_silent_revert.py`
+   is the tell: five of its cases fail against the unrepaired gate.
+
+## chore/hiss21-core-tools — governance surfaces a rebase must not undo (2026-09-21)
+
+1. **`.standards-baseline.json` was re-recorded downward, 1411 → 965 → 938**, with
+   `praetorctl baseline -record` from a clean clone of this branch, after the branch's
+   HISS-21 burn-down cleared the debt. The 965 step was recorded against the praetorctl
+   build pinned on 2026-09-21 (`7c0f803d40ee`); 938 is the same tree re-recorded against
+   `7ec6f6ca5e28`, which fixes that build's signature-relative function-length regression.
+   The file is append-only downward (see the rule further down this page): resolve a
+   rebase conflict here by re-recording on the merged tree, never by taking whichever side
+   has the larger count, and never with `-allow-increase`.
+2. **`README.md` carries a managed `<!-- praetor:readme-governance:start -->` block.**
+   The audit engine validates its content, not just the markers, so the block is not free
+   prose: a rebase that reflows it, renames the commands back to `standardsctl`, or lets
+   the `Debt Baseline` row drift from `.standards-baseline.json`'s recorded count will fail
+   `praetorctl audit` with `managed README governance block is stale`. Keep the row in step
+   with the baseline whenever the baseline is re-recorded.
+3. **`.config/hiss/testdata/HISS-04/c/negative/loc-at-cap-60.c` is length-critical.**
+   `exactly_sixty` must span exactly 60 lines from its **opening** brace through its
+   closing brace, which is what the brace-tracked Praetor matcher counts; the signature
+   lines above the brace are not counted. Adding or removing one line inside the function
+   turns the negative fixture into a false positive or stops it pinning the boundary, and
+   `praetorctl hiss coverage --verify` fails either way. Measured against praetorctl
+   `7ec6f6ca5e28`: a brace-to-brace span of 60 is clean, 61 is reported. Note the two
+   enforcers differ by exactly one line — clang-tidy's `readability-function-size`
+   (`LineThreshold: 60`) counts closing-brace line minus opening-brace line, so it is clean
+   at a span of 61 and reports at 62 (clang-tidy 22.1.8, this repository's `.clang-tidy`).
+   A function Praetor rejects can still be clean under clang-tidy; Praetor is the stricter
+   of the two and is what gates.
+
+   Historical note for anyone re-reading an older commit message on this branch: the
+   praetorctl build pinned on 2026-09-21 (`7c0f803d40ee`) measured the span from the
+   *signature* line instead of the opening brace, which inflated every wrapped-signature
+   function by one or more lines. Commit messages and notes written against that build
+   quote signature-relative spans; the numbers above are the corrected, brace-relative
+   ones. Re-measure rather than trusting a quoted span.
+
+## chore/hiss21-core-tools — `yuv_input_open` cleanup path is fork-shaped (2026-09-21)
+
+Upstream keeps the `goto fail` form; the fork splits the pixel-format and buffer-size decision into `yuv_input_set_plane_geometry()` (ADR-0977's size_t-precision cast lives there now), so resolve a sync conflict in favour of the helper rather than restoring the label.
+## fix/bug-arm64-tidy — the ratchet grows an arm64 cross lane (2026-09-21)
+
+No upstream C-source impact: the change is `Makefile` (fork-only section below
+the "Fork-specific targets" marker), `.github/workflows/lint-and-format.yml`,
+`scripts/ci/AGENTS.md`, `docs/`, and the new
+`scripts/ci/tidy-baseline-arm64.json`. Netflix ships none of these.
+
+Rebase impact for anyone touching `core/src/feature/arm64/`. Those 20
+translation units, and the `ARCH_AARCH64` bodies of the `core/test/` SIMD
+parity tests, are now measured by the ADR-1283 `arm64` ratchet lane and only by
+it — no x86 build in the project emits a compile command for them. Re-measure
+after any change there:
+
+```bash
+meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
+    -Denable_cuda=false -Denable_sycl=false -Db_lto=false
+make tidy-ratchet LANE=arm64 TIDY_RATCHET_BUILD_DIR=build-arm64
+```
+
+Two invariants the lane depends on. `TIDY_RATCHET_EXTRA_arm64` must keep both
+`--extra-arg=--target=…` and `--extra-arg=--sysroot=…`: the compile database is
+produced by `aarch64-linux-gnu-gcc`, and clang-tidy will otherwise parse
+`<arm_neon.h>` / `<arm_sve.h>` against the host's x86 headers and fail every
+NEON translation unit as a compile error (ratchet exit 4, which is a *failed*
+measurement, never a clean one). And the generated model-JSON → C sources under
+`build-arm64/src/` must exist on disk before measuring, exactly as the `cpu`
+lane builds before it measures.
+
+`exclude_untidyable()` in `lint-and-format.yml` keeps its
+`^core/src/feature/arm64/` entry on purpose — that job's CPU-only `build/`
+really has no command for those files. Do not "fix" it by deleting the line on
+a conflict; the lane, not the exclusion list, is what bounds this tree.
+
+The baseline in this change was recorded on a workstation cross toolchain, so
+it is comparable only against the same one. If the lane is ever promoted to a
+CI context, re-record it from that runner's own measurement (ADR-1230), the way
+`tidy-baseline-cpu.json` is taken from the `tidy-ratchet-cpu` artifact.
+## fix/bug-silent-revert — a merge may not quietly rewind the target (2026-09-21)
+
+Fork-local CI tooling; no upstream C-source impact. Preserve
+`scripts/ci/check-silent-revert.py`, its fixture suite
+`scripts/ci/tests/test_check_silent_revert.py`, the `Silent-Revert Guard` job
+in `rule-enforcement.yml` and its entry in `required-aggregator.yml` when
+resolving workflow conflicts. The gate must keep measuring the **merge result**
+(`git merge-tree --write-tree base head`), not `git diff base..head`: the
+branch-tree form reports every file the target changed that the branch never
+touched and is unusable on any branch that is behind. It must keep resolving
+the **live** target tip rather than `github.event.pull_request.base.sha`, since
+the defect class is master moving after the branch was cut.
+
+Do not add an in-tree suppression path — no annotation, allowlist or per-path
+exclusion. The only opt-out is a declaration in the PR itself (`revert:` title,
+`reverts: #N`, `intentional revert: <reason>`), and the unedited
+`intentional revert: REASON` placeholder must keep failing. Keep the
+fail-closed exits (unresolvable ref, no merge base, conflicting merge, git
+below 2.38) — a case the gate cannot analyse must never print "clean".
+
+`GENERATED_PREFIXES` covers rendered files only (`CHANGELOG.md`,
+`docs/adr/README.md`, `docs/adr/by-tag/`, `mkdocs.yml`, the standards and tidy
+baselines); do not widen it to source trees to quiet a finding. The
+conflict-marker exclusion in `is_evidence()` is load-bearing: `0c494cca0` once
+committed three markers into `core/src/feature/cuda/integer_vif_cuda.c` and the
+PR that deleted them reset the file to its pre-marker blob.
+
+Regression command: `python3 scripts/ci/tests/test_check_silent_revert.py`
+(12 tests; `test_real_history_replay` needs `31a51afb2` and `92ea978a4` in the
+clone and skips otherwise). See ADR-1284.
+## fix/bug-gpu-lint — GPU NOLINT citations and the SYCL tidy database (2026-09-22)
+
+Fork-local; no upstream Netflix C source is touched (upstream has no SYCL, HIP
+or Metal backend, and the CUDA edits are comment-only). Two invariants to
+preserve when rebasing lint tooling:
+
+1. `make tidy-ratchet` / `tidy-ratchet-write` must keep expanding the per-lane
+   `TIDY_RATCHET_COMPDB_<lane>` hook between `write-compile-commands.py` and
+   `tidy-ratchet.py`. For `sycl` that hook is
+   `scripts/ci/gen-sycl-compile-commands.py`; meson emits the SYCL feature TUs
+   as `CUSTOM_COMMAND` rules, so dropping the hook silently returns the lane to
+   measuring zero SYCL translation units.
+   `scripts/ci/tests/test_tidy_ratchet_sycl_compdb.py` is the regression
+   contract. The GPU lanes additionally need `-Db_lto=false` and a build
+   directory outside the repository; both are documented in the Makefile and
+   `docs/development/ci.md`.
+2. Every GPU-lane `NOLINT` now carries an inline `ADR-NNNN` token inside the
+   window `count_uncited_nolints()` scans (previous, same or next line, or the
+   enclosing `/* ... */` comment — note the block scan looks *forward* only, so
+   a citation placed above the marker in the same comment does not count). Do
+   not reflow those comments in a way that moves the token out of the window,
+   and do not restore the seven suppressions this branch deleted: each was
+   verified to suppress a diagnostic that clang-tidy does not emit.
+   `launch_dwt_hori_pair` in `core/src/feature/sycl/integer_adm_sycl.cpp` lost
+   its unused `h_add` parameter and the matching `DwtShifts` field; the
+   horizontal pass derives that addend from `h_shift`, so do not reintroduce
+   the parameter on a merge.
+
+## fix/configured-lint-warning-exit — diagnostics cannot pass as green (2026-09-21)
+
+The fork-local configured-lint driver must pass `--warnings-as-errors=*` to
+every clang-tidy invocation. Clang-tidy's default exit status is zero for
+ordinary warnings, so relying on return codes alone silently accepts findings
+from upstream, vendored, test, GPU, and fork-native translation units. Preserve
+the all-diagnostic promotion and its zero-exit-warning regression fixture when
+rebasing CI tooling. Do not replace it with a baseline, touched-file filter,
+log-text heuristic, or origin exemption. Cppcheck must still run after any
+clang-tidy failure so both reports remain available.
+
+## fix/go-duplicate-cleanup — shared Go service and CLI plumbing (2026-09-21)
+
+Fork-local ownership cleanup with no upstream C-source impact. Preserve
+`internal/app/scoringservice` as the single implementation of server/controller
+metrics, scorer lifecycle, legacy probes, and JSON responses. Preserve
+`pkg/model.CLIArgument{,OrDefault}` as the formatter for Go subprocess callers,
+the corpus alias to `scorebackend.UnavailableError`, standard-library sorted
+registry keys, and the shared root-resource deep-copy helper. When rebasing a
+binary or Go port, adapt the shared owner rather than restoring a local copy.
+`praetorctl dedupe scan .` is the regression command and must remain explicit
+in the required Standards workflow, pre-commit, pre-push, and
+`make verify-all`; the general audit does not include it.
+
+## fix/ci-fail-closed — test and scan exit status is evidence (fork-local, 2026-09-20)
+
+No upstream C-source impact. Preserve `scripts/ci/test_fail_closed_ci.py` and
+both of its callers when resolving workflow or hook conflicts. Required test,
+coverage, benchmark, and discovery commands return their real exit status. A
+step may continue solely to collect diagnostics when a later `if: always()`
+step checks `steps.<id>.outcome` and fails the job. Advisory Semgrep policy is
+unchanged, but its command must still expose a failed step outcome. Do not
+restore `ignore_outcome`, coverage `-i`, `|| true`, or disabled `pipefail` on
+these paths. `Coverage GPU` is required and listed by the aggregator; do not
+restore its stale `(advisory)` name or job-level `continue-on-error`.
+## fix/ai-trainer-warning-cleanup — preserve executable trainer helpers (2026-09-21)
+
+The five AI corpus/trainer scripts in this cleanup are fork-local. Upstream
+syncs have no direct overlap, but future trainer refactors must preserve two
+runtime fixes: `train_fr_regressor._standardize()` returns new arrays instead
+of mutating pandas-owned NumPy views, and `train_konvid_mos_head._export_onnx()`
+uses `dynamic_shapes` with a two-row example batch so current PyTorch exports a
+genuinely dynamic batch axis without warning. Do not restore the old in-place
+normalisation or `dynamic_axes` call. Parser and workflow helpers remain below
+the HISS-04 60-line limit; no public CLI option or model threshold changed.
+## fix/sycl-strict-clean — strict SYCL diagnostics and AOT command contract (fork-local, 2026-09-21)
+
+All touched `core/src/feature/sycl/*.cpp` files are intentionally warning-free
+under the fork's oneAPI, clang-tidy, cppcheck, and HISS profiles. Upstream
+origin is not an exemption: when resolving conflicts, preserve the phase
+helpers and explicit size-domain arithmetic rather than restoring long kernel
+lambdas or analyzer suppressions. Device-side arithmetic remains fp32-only and
+filter/reduction order remains unchanged.
+
+The icpx multi-target command must keep
+`-Xsycl-target-backend=spir64_gen '-device <list>'`; unqualified `-Xs` sends the
+device selector to the portable `spir64` target and produces an unused-argument
+warning. Keep the paired removal in
+`scripts/ci/gen-sycl-compile-commands.py` and its
+`test_sycl_aot_command.py` pre-commit contract when either Meson source or the
+lint projection is rebased. Language standards stay in Meson's built-in
+fallback lists; do not restore manual `-std=` probes.
 ## fix/pelorus-interop-sync-v022 — exact v0.2.2 parser safety mirror (2026-09-20)
 
 No Netflix-upstream file is involved. The cross-repo conflict surface is the
@@ -615,12 +836,17 @@ See Research-2045 and `core/src/feature/x86/AGENTS.md`. No public/FFmpeg impact.
 
 ## fix/cppcheck-c-header-model-20260908 — official pthread type model (2026-09-08)
 
-Keep `--library=posix` in both configured local lint and the required Cppcheck
-workflow. It models pthread's C types without forcing a target platform or
-language. Preserve actual-header positive/negative controls, fail-closed missing
-model behavior, diagnostic categories and compile-database variants. No native
-header constructors or member suppressions are needed for the 24 modeled
-aggregate warnings. Fork-only analyzer wiring; no libvmaf/FFmpeg API impact.
+Keep `write_cppcheck_posix_model.py` in both configured local lint and the
+required Cppcheck workflow, and load its generated path rather than bare
+`--library=posix`. The full installed model supplies pthread's C aggregate
+types without forcing a platform or language. Versions lacking
+`pthread_cond_init` receive its correct contract; the newer defective model
+loses only argument 2's non-null marker because POSIX permits default
+attributes as `NULL`. Preserve actual-header positive/negative controls,
+install-relative fallback, analyzer validation, atomic publication, diagnostic
+categories and compile-database variants. Do not replace the correction with
+call-site suppressions, native header constructors, or a vendored full model.
+Fork-only analyzer wiring; no libvmaf/FFmpeg API impact.
 
 ## fix/tensor-io-test-cleanup-20260908 — preserve tensor test coverage (2026-09-08)
 
@@ -716,6 +942,30 @@ back while resolving a conflict; the failure is `[Errno 122] Disk quota
 exceeded`, not a full disk. In `run:` blocks use `${RUNNER_TEMP}`; in action
 inputs use `${{ runner.temp }}`, because `with:` has no shell. The contract test
 `scripts/ci/test_e2e_runtime_contract.py` enforces exactly that split.
+## fix/bug-mypy-pyver — mypy models the required Python (2026-09-21)
+
+`[tool.mypy] python_version` in `pyproject.toml` is `3.14` and tracks
+`requires-python`; take `3.14` on any conflict and never resolve back towards
+`3.10`. Below 3.12 mypy refuses to parse the PEP 695 `type` statement in numpy's
+bundled `__init__.pyi`, and that blocking `[syntax]` error aborts the entire
+`ai/src/` pass before a single source file is checked. The comment above the
+value carries that reason; keep it with the value. The 60 findings the raise
+makes visible are pre-existing debt — measured against a merge base carrying the
+same `3.14`, the change introduces none — so do not absorb a conflict here by
+adding `type: ignore`, widening `ignore_missing_imports`, or relaxing `strict`.
+`[tool.black]` and `[tool.ruff]` `target-version` are deliberately left at their
+older values in this change. The pairing is now enforced rather than commented:
+`check_mypy_python_version` in `scripts/ci/check-workflow-versions.py` fails the
+always-run pre-commit gate when `python_version`, the `requires-python` floor and
+`PYTHON_CI_VERSION` stop agreeing, or when `python_version` is deleted instead of
+reverted. A rebase that moves `requires-python` must move `python_version` in the
+same commit, and `scripts/ci/tests/test_mypy_python_version_single_source.py`
+(discovered by the `test-base-image-single-source` hook's `test_*single_source.py`
+pattern) is the fixture that says so. CI's own `Python Lint` job is untouched by
+any of this: it installs only `mypy`, so its output is byte-identical at `3.10`
+and `3.14` and it checks zero source files either way. Fork-only tooling; no
+native API or FFmpeg patch impact. See ADR-1282.
+
 ## fix/pre-push-mypy-delta — introduced findings only (2026-09-19)
 
 `scripts/git-hooks/pre-push-mypy.py` keeps the `ai/`/`scripts/` merge-base
@@ -727,10 +977,9 @@ files are re-checked at the merge base in a disposable worktree and only new
 findings fail, because CI's `mypy` is advisory and inherited findings vary with
 the checkout's installed stub packages. Do not restore the raw exit-status
 propagation: an unattributable non-zero exit now fails closed with its own
-message, which the regression suite pins. Do not raise `python_version` while
-resolving a conflict here; `3.10` is stale but `3.14` unmasks 175 findings on
-master and belongs to its own change. Fork-only tooling; no native API or
-FFmpeg patch impact.
+message, which the regression suite pins. `python_version` moved to `3.14` in its
+own change (ADR-1282, `fix/bug-mypy-pyver`); take `3.14` on any conflict here.
+Fork-only tooling; no native API or FFmpeg patch impact.
 
 ## fix/pre-push-mypy-scope — merge-base ownership (2026-09-08)
 
@@ -1207,6 +1456,13 @@ No rebase impact: `docs/state.md`, `scripts/ci/check-state-md-rows.sh` and its t
 The gate exists **because** of rebases: resolving a `docs/state.md` conflict by keeping both sides is
 the documented shortcut for the append-only sections, and it silently duplicates a row that a PR was
 moving between sections. After any such resolution, run `bash scripts/ci/check-state-md-rows.sh`.
+
+A rebase can also drop the *move* hunk while keeping the status edit, which leaves one copy of the
+row under `## Open bugs` with `closed` or `fixed` in its own status cell — no duplicate, and every
+id/row check passes. The gate now compares each row's status token against the section heading it
+sits under, so that resolution fails too. The status cell is the column a header calls `Status`, or
+the last non-empty cell, and only the word that *opens* it is read; the repair is to move the row,
+never to rewrite the status to match where the rebase left it.
 
 ## fix/sycl-motion2-checkerboard-drift — clip integer_motion2 score to motion_max_val (2026-09-05)
 
@@ -14558,7 +14814,7 @@ inline.*
   individually-cited ADRs / research digests in their own
   References columns.
 - **Decision dossier**:
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](../.workingdir2/decisions/section-a-decisions-2026-04-28.md).
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`.
 - **Source audit**:
   [`docs/backlog-audit-2026-04-28.md`](backlog-audit-2026-04-28.md).
 - **Upstream source**: fork-local. Pure backlog hygiene PR; no
@@ -25173,7 +25429,7 @@ inline.*
   individually-cited ADRs / research digests in their own
   References columns.
 - **Decision dossier**:
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](../.workingdir2/decisions/section-a-decisions-2026-04-28.md).
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`.
 - **Source audit**:
   [`docs/backlog-audit-2026-04-28.md`](backlog-audit-2026-04-28.md).
 - **Upstream source**: fork-local. Pure backlog hygiene PR; no
@@ -35619,7 +35875,7 @@ inline.*
   individually-cited ADRs / research digests in their own
   References columns.
 - **Decision dossier**:
-  [`.workingdir2/decisions/section-a-decisions-2026-04-28.md`](../.workingdir2/decisions/section-a-decisions-2026-04-28.md).
+  `.workingdir2/decisions/section-a-decisions-2026-04-28.md`.
 - **Source audit**:
   [`docs/backlog-audit-2026-04-28.md`](backlog-audit-2026-04-28.md).
 - **Upstream source**: fork-local. Pure backlog hygiene PR; no
@@ -51518,7 +51774,18 @@ Three results outlive it:
   ratchet, or be converted — either is a clean rebase.
 - **Tidy Changed** in `.github/workflows/lint-and-format.yml` defines its
   exclusion list once, as `exclude_untidyable()`. Add a family there, not in the
-  four trigger branches that used to carry copies of it.
+  four trigger branches that used to carry copies of it. Two of its entries are
+  not backend lanes and are easy to mistake for dead weight on a conflict:
+  `^\.config/hiss/testdata/` is the HISS rule engine's own fixture tree, where
+  the planted defect is the fixture (`HISS-08/c/positive/gets.c` calls `gets`),
+  and `^compat/python-vmaf/matlab/` is the upstream MATLAB MEX harness, which
+  dies in the preprocessor on `mex.h` because the MATLAB SDK is not on any
+  runner. Neither family has an entry in `build/compile_commands.json`, so the
+  whole-tree ratchet does not measure them either; deleting either line puts
+  hard `clang-diagnostic-error` output back into the gate. The same reasoning
+  puts `-exclude-dir=.config/hiss/testdata` on the `gosec` step in
+  `go-ci.yml` — `go build` / `go vet` / `go test` skip that tree twice over
+  (dot-directory and `testdata`), and gosec's own walker honours neither rule.
 ## libvmaf C++ flags and the exported-symbol gate (ADR-0379 follow-up)
 
 - **`core/src/svm.cpp`** (upstream libsvm mirror) changes one line:
@@ -51717,3 +51984,478 @@ restores the `^`-only anchor, `Tidy Ratchet` will start reporting every header f
    an alias differently from the CPU emits a different feature key for the same
    request. `float_adm`'s aliases are `scf` / `scfd`; a sync that brings back
    `cs` / `cds` reintroduces the split key.
+
+## HISS-21 claims require replay evidence (ADR-1274)
+
+The HISS catalog under `.config/hiss/` is executable evidence, not generated
+decoration. Preserve the catalog and its positive, negative, and gap fixtures
+when syncing governance files. `make hiss-coverage` must pass with Praetor's
+pinned engine on Linux, macOS, and Windows. A new scanner rule or newly closed
+gap requires a catalog update and a fixture in the same change; never make the
+matrix green by dropping the contradictory fixture or removing a required
+context from `.github/workflows/required-aggregator.yml`. The four governance
+contexts live in `strictMustReport`: absence, skip, or neutral is a failure, not
+an ADR-0313 path-filter exemption.
+
+Hosted replay validation also proved that the draft-only Scorecard guard runs
+before its artifacts exist. Preserve the non-draft predicate on the artifact
+upload in `.github/workflows/scorecard-policy.yml`; `if-no-files-found: error`
+remains mandatory once a real scan starts. Keep that workflow in
+`.github/ci-impact.json`'s `full_patterns` so changes exercise its contracts.
+
+Meson 1.12 does not materialise `compile_commands.json` for the configured
+Ninja builds used by the native lint gates. Preserve the explicit
+`scripts/ci/write-compile-commands.py` call between each build and its analyzer,
+including before the SYCL custom-command augmentation. The exporter must request
+exactly `c_COMPILER` and `cpp_COMPILER`; an unfiltered `ninja -t compdb` brings
+link, generator, and phony commands back into analyzer scope. Failed or partial
+exports must leave the last valid database intact and fail the lane.
+
+The top-level Makefile must also prepend `VIRTUAL_ENV_ABS`, never relative
+`.venv/bin`, when invoking Meson and Ninja. Meson persists the resolved Ninja
+name and launches it from the build directory during reconfiguration; restoring
+the relative recipe prefix makes that launch target
+`core/build/.venv/bin/ninja` and prevents the native lint gate from starting.
+
+The test-only C build of `core/src/log.c` preserves a Clang+C23 branch using
+`__builtin_va_start(args, fmt)`. Clang 21 does not model the
+`__builtin_c23_va_start` emitted by its standard macro and otherwise reports a
+false uninitialized `va_list`; GCC and MSVC still use `va_start`. Preserve the
+non-reserved `VMAF_SRC_LOG_H_` include guard in `log.h` when porting upstream
+logging changes.
+
+Cppcheck's installed POSIX model is now corrected by
+`scripts/ci/write_cppcheck_posix_model.py` before both local and hosted runs.
+Pre-2.22 models lack `pthread_cond_init` and receive its correct schema; 2.22's
+invalid attributes-pointer non-null marker is removed while the condition
+object remains non-null. Preserve real-tool positive/negative controls and the
+validation-before-atomic-replace sequence. An upstream model fix is accepted
+unchanged; duplicate or malformed shapes still fail closed.
+
+`vmaf_framesync_init` publishes no partial context. Preserve its staged
+acquire-mutex, retrieve-mutex, condition, and queue-node initialization; every
+failure returns the negated pthread error and frees only initialized state.
+`test_framesync_init_failure_impl` is a separately compiled object whose four
+pthread init/destroy symbols are mapped to test wrappers. Do not replace it
+with a production injection hook, textual `.c` include, NOLINT, or
+platform-specific linker interposition.
+
+The PR-body pre-push guard must bound `gh pr view` because a locked desktop
+keyring can otherwise hang every push. Preserve the public-page fallback, raw
+Markdown body extraction, schema validation, confirmed-no-PR-only skip, and
+fail-closed behavior when both metadata sources are unavailable. Do not map an
+authentication, network, or markup failure to “no open PR.”
+## CAMBI strict-clean bounded searches and live helpers (2026-09-21)
+
+`core/src/feature/cambi.c` has no file-local clang-tidy or Cppcheck
+suppression. Preserve that state during upstream syncs. In particular, retain
+the 16-step TVI bisection, the `UINT16_MAX` VLT terminus, and the `n`/partition
+span bounds in quick-select; their comparison, pivot, swap, and accumulation
+order is score-sensitive. Keep `read_only_picture_view()` as the adapter from
+the mutable extractor callback ABI to CAMBI's const reads.
+
+All ten `cambi_internal.h` helper exports are deliberately called by the
+CPU/reference implementation as well as by optional GPU twins. Do not restore
+`unusedFunction` annotations or bypass the wrappers when resolving an upstream
+conflict. The compact `CAMBI_OPTION` descriptors are the unchanged public
+option table and keep the declaration below HISS-04's 60-line boundary.
+
+The 48-frame 576x324 regression fixture produced identical scalar and
+dispatched CPU JSON before and after this cleanup: mean
+`0.51441210777008473`, normalized SHA-256
+`2fed4234f9f8c018ac9af0810dbf43a0c7a30765bee00e4e55c23de983a1a523`.
+Re-run `core/test/test_cambi.c` after any conflict; its unreachable VLT,
+threshold-extreme TVI, and duplicate/descending quick-select cases pin the
+termination behavior directly.
+
+## CUDA integer ADM negative rounding constant (Research-2076)
+
+ADR-0155 still requires the scales 1-3 integer-ADM rounding term to be
+`INT32_MIN`; changing it to a positive 2^31 value moves Netflix golden scores.
+Preserve the direct `INT32_MIN` spelling in `integer_adm/adm_csf.cu` and both
+fused paths in `integer_adm/adm_cm.cu`. Do not restore the prior `1u << 31`
+unsigned-to-signed conversion, which emits NVCC diagnostic `#68-D`, and do not
+replace it with a warning suppression or a widened type. CUDA 13.4 generated
+byte-identical ADM-CSF and ADM-CM fatbins for the isolated constant-spelling
+change. The final touched-file cleanup also decomposes oversized kernels into
+forced-inline helpers; preserve those boundaries even though they change binary
+layout, because all four CUDA ADM regression executables remain exactly
+base-identical at runtime.
+
+## Core extractor control-flow cleanup (2026-09-21)
+
+`y_funque_plus.c::init()` and `libvmaf.c` no longer carry their seven historical
+HISS baseline findings. Preserve structured reverse-order subsystem cleanup,
+the CUDA collect-before-submit batch boundary, and the SYCL
+wait/checksum/collect/submit order when resolving upstream conflicts. The
+helper boundaries are structural only: extractor selection, pending indices,
+error propagation, and score output remain unchanged. No new public surface or
+rebase-sensitive policy was introduced.
+
+## SYCL integer VIF warning-clean phases (2026-09-21)
+
+Rebase impact: `core/src/feature/sycl/integer_vif_sycl.cpp` only; no public
+surface, option, metric, tolerance, golden assertion, or twin algorithm
+changes. The source is decomposed into bounded vertical-accumulation,
+horizontal-work-item, and initialization phases so strict clang-tidy and
+HISS-04 pass without suppressions. Private declarations live in short
+anonymous-namespace blocks; keep those blocks short because HISS measures the
+block scope too. Do not reintroduce the five forced-unroll pragmas: oneAPI 2026
+cannot honour every request across the supported target list and diagnoses the
+failure. Preserve fp32 device gain, integer operation order, ceiling
+downsample stride, and the existing init cleanup points. After conflict
+resolution, compare both `vif_fused=false` and `vif_fused=true` against the
+pre-rebase object on 8-bit and 10-bit inputs; this change measured zero
+full-precision delta in all four comparisons.
+## MCP timeout-drain warning regression (2026-09-21)
+
+No rebase impact: this changes only the fork-local Python MCP timeout test.
+The timeout fake closes the first coroutine when injecting `TimeoutError`, then
+actually awaits the second `communicate()` call so the production post-kill
+drain lifecycle is exercised. Do not restore the former `RuntimeWarning`
+suppression or replace the drain await with a fabricated return value.
+
+## Python feature-extractor test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
+## Python test HISS cleanup (T-HISS-PYTHON-TESTS-2026-09-21)
+
+No rebase impact on product behavior: twenty Python and MCP test/harness files only split
+existing setup, fixture data, CLI argument registration, matrix execution, and assertion blocks
+into class constants or private helpers. The CLI PTY reader and manual YUV-reader tests also
+replace `while True` with bounded loops that preserve the same EOF/error checks. Test names,
+execution order, fixtures, assertion expressions, numeric constants, expected values, tolerances,
+and parity-gate CLI/output behavior stay unchanged. An upstream textual conflict may take the
+upstream test body, then reapply the helper boundaries needed by HISS.
+
+## Python process execution and 5PL fitting are warning-free (ADR-1278)
+
+`compat/python-vmaf/tools/misc.py` must not restore upstream's forced global
+`fork` start method or its fork-only globals. `parallel_map()` uses loky,
+executor callers group equal `str(asset)` keys for serial evaluation, and FIFO
+helpers use an explicit `spawn` context. Preserve ordered results and the
+duplicate-asset serialization regression when resolving upstream conflicts.
+
+`compat/python-vmaf/core/train_test_model.py` implements the published 5PL
+curve with `b1` multiplying the sigmoid and uses `scipy.special.expit`.
+Upstream currently carries the additive-`b1`/raw-`exp` form; accepting it would
+restore an unidentifiable parameter pair, SciPy covariance warnings, and
+overflow warnings. Netflix golden assertions remain unchanged.
+
+The warning gate is load-bearing too: root `pyproject.toml` and
+`python/tox.ini` promote warnings to errors, and tox no longer disables the
+warnings plugin. Do not restore `-p no:warnings` or add `ignore` filters when an
+upstream sync starts warning; fix the emitting code or dependency usage.
+
+## Go recommend and corpus orchestrator warning cleanup (2026-09-21)
+
+no rebase impact: `cmd/vmafx-tune/cmd/recommend.go` and `pkg/corpus/corpus.go`
+are fork-only Go surfaces. The helper boundaries only enforce the 60-line
+limit; preserve existing CLI flags/output, corpus row order/schema, the
+distorted-decode fallback, and explicit source-hash/encode-cleanup errors.
+
+## Worktree-safe private-state synchronization (ADR-1280)
+
+No Netflix rebase impact: `scripts/githooks/state-sync.sh`, `lefthook.yml`,
+and the hook fixture are fork-only governance tooling. Preserve the regular
+linked-worktree mirror, common-Git exclusive lock, active-worktree Git
+identity, cache preservation, symlink refusal, and the rule that only derived
+`STATE.md` is copied back to canonical private state.
+## Local data roots are separated by lifecycle (ADR-1277)
+
+Do not restore the retired numbered workspace path during an upstream sync.
+Local state, bounded cache, evidence, and recovery material use `.workingdir/`;
+datasets, extracted media, reusable encodes, and derived feature tables use
+`.corpus/`. A mechanical substitution of every legacy path with `.workingdir/`
+is incorrect because it recreates the former mixed-lifecycle tree.
+
+Public Markdown may show these paths in operator commands but must not link
+into either ignored directory. Durable claims must cite tracked docs, ADRs,
+research, or manifests. Preserve historically accurate prose in old ADRs and
+changelog entries, while keeping it non-clickable and non-authoritative.
+
+The same cleanup makes `scripts/ci/agent-eligibility-precheck.py` and
+`scripts/dev/hw_encoder_corpus.py` fail closed. These are fork-only tools with
+no Netflix merge-conflict surface. Preserve non-zero outcomes for unavailable
+eligibility evidence and for every failed corpus quality point; explicit
+offline `--skip-*` flags remain deliberate operator choices.
+## Non-CUDA high-signal Cppcheck and touched-HISS cleanup (2026-09-21)
+
+Score arithmetic and registration order do not change. The native sources narrow error-variable
+lifetimes, remove two SpEED QR aliases, make two Xiph loop initializers explicit, and simplify a
+high-bit-depth rounding branch after its 8-bit early return. The picture-pool test replaces obsolete
+`usleep` with the same 100 microsecond POSIX `nanosleep` (and existing one-millisecond Windows
+delay).
+
+`vmaf.cpp` no longer has a file-wide anonymous namespace or cleanup `goto` spine. Keep its short,
+reopened anonymous-namespace blocks separate: they provide internal linkage without exceeding the
+scanner's 60-line block limit. `CliRunState` plus `CliRunGuard` own the one teardown order documented
+in `core/tools/AGENTS.md`. `vmaf_bench.c` likewise keeps one post-stage cleanup call in
+`bench_feature()` / `run_feature_collect()` and a dedicated SYCL-profile cleanup owner. A rebase
+must not restore early returns after those owners acquire resources. The compact SpEED option rows
+preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
+conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
+Research-2075.
+- Praetor engine pin moved from `846da590` to `f41e74d8f` and `.standards-baseline.json` re-recorded (1411 -> 959). The pin, the baseline and the managed README block's recorded count are one unit: a rebase that reintroduces the old pin must re-record the baseline with the old engine and restore the old count in README.md (ADR-1249).
+
+## vmafx-mcp tool schemas fail closed (2026-09-21)
+
+`cmd/vmafx-mcp/tools.go` registers every tool through `toolRegistrar.add`, which is
+the only place a tool's `InputSchema` is set. `add` marshals the `schemaObj` itself;
+a marshal failure records the tool name, registers nothing, and makes every later
+`add` a no-op, so `registerTools` returns an error, `buildServer` discards the
+half-built server, and the fx provider `buildMCPServer` fails the graph.
+
+Preserve that chain on conflict. A rebase that restores `InputSchema:` inside the
+`&mcp.Tool{...}` literal — or that collapses `buildServer` / `buildMCPServer` back to
+a single return value — has nowhere to put a marshal failure but a log line, and the
+only thing left to register is a schema that validates nothing. The permissive
+`{"type":"object"}` is indistinguishable over the wire from a healthy tool while
+accepting every argument map, and the Python-parity tests would not catch it because
+they only compare the tools that are registered.
+`cmd/vmafx-mcp/tool_schema_test.go` pins each link; `cmd/vmafx-mcp/AGENTS.md`
+invariants #19 and the `buildServer` seam carry the same rule.
+## Upstream MATLAB MEX helpers are extracted, not re-inlined (T-HISS-PY-COMPAT-2026-09-21)
+
+On conflict in `compat/python-vmaf/matlab/`, reapply the `static` band/parse helpers (`reduce_*` / `expand_*` / `wrap_*` sections, the `Extend()` reduce/expand halves, the `corrDn` / `upConv` / `histo` / `pointOp` argument parsers, and the STMAD block-statistics helpers) instead of restoring the inline `INPROD` macros — every index expression and accumulation order is unchanged, which a stubbed-MEX differential harness confirmed bit-identical over ~16k recorded outputs, and the `reflect1` default now uses a bounded copy because HISS-08 bans `strcpy()`.
+
+## chore/hiss21-core-test — C test bodies split into helpers (2026-09-21)
+
+Upstream-mirrored tests under `core/test/` (`test.h`, `test_dict.cpp`, `test_predict.c`, `test_model.c`, `test_feature.cpp`, `test_cuda_pic_preallocation.c`) keep every assertion string, expected value and registered test name; on conflict reapply the helper split rather than restoring the single bodies, and keep the added `mu_assert_msg` in `test.h`, the short reopened anonymous-namespace blocks in the C++ tests, and the shared `core/test/hip_parity_skip.h`.
+
+`core/test/test_barten_csf.c` is the explicit exception and is **not** split. Its body is the upstream `mu_assert(almost_equal(...))` sequence carried verbatim from Netflix `c70debb1`, and upstream keeps appending cases to it (`c2155d6cd` added the 2160p CSF rows). Any reshaping of that sequence turns every later upstream sync of this file into a hand-merge, which is the load-bearing invariant its cited `// NOLINTNEXTLINE(readability-function-size)` protects (ADR-0141 §2, ADR-0278). On conflict, take upstream's case list verbatim and keep the suppression.
+
+### `chore/hiss21-core-src-simd`
+
+`core/src/sycl/common.cpp` gained five same-TU `static` helpers
+(`sycl_resolve_device`, `sycl_log_fp64_note`, `sycl_profiling_enabled`,
+`sycl_queue_props`, `sycl_enqueue_plane_upload`, `sycl_shared_frame_release`,
+`sycl_any_extractor_wants_graph`, `sycl_run_compute_phase`,
+`sycl_apply_input_barriers`, `sycl_enqueue_all_phases`) to clear HISS-01/HISS-04;
+`sycl_shared_frame_release()` is now the single cleanup owner that replaced the
+`fail:` label, so a rebase must not reintroduce `goto fail` or an early return
+that skips it. The SIMD kernels under `core/src/feature/{x86,arm64}` were left
+unsplit on purpose — their per-TU `-ffp-contract=off` carve-outs and inline
+horizontal reductions are ADR-0138/ADR-0139 bit-exactness invariants.
+
+- `chore/hiss21-core-src-root`: HISS-21 burn-down removed every `goto` from `core/src/picture.c`, `picture_pool.c`, `picture_pool.cpp`, `gpu_picture_pool.cpp`, `predict.c`, `read_json_model.c` and split `vmaf_picture_pool_fetch`, `vmaf_mcp_start_uds` and the three `interop/pelorus_interop.c` entry points into `static` teardown/compute owners; on conflict reapply the owner boundaries documented in `core/src/AGENTS.md` (free order is the contract, arithmetic was moved statement-for-statement only) rather than restoring the upstream label chains.
+- `chore/hiss21-core-src-root` (vendored mirror): `core/src/interop/pelorus_interop.c` and `core/src/interop/pelorus_qp_report_csv.c` are ADR-1113 verbatim mirrors of `libpelorus/src/interop.c` and `src/qp_report_csv.c` at `PELORUS_VENDOR_SHA`. This branch edited both, so `scripts/sync-pelorus-interop.sh <pelorus checkout>` reports DRIFT (tracked as `T-PELORUS-MIRROR-SOURCE-DRIFT-2026-09-22` in `docs/state.md`). A re-vendor (`--update`) will overwrite these hunks: carry the splits — `validate_pack_args`, `pack_total_size`, `pack_write_sections`, `blob_validate_framing` (which publishes the header so the blob is cast once per constness), `qp_report_copy_frame_stats`, `qp_cell_average`, `qp_fold_blocks_to_cells`, `csv_parse_finish` and the bounded `split_fields` — upstream into `VMAFx/pelorus` first, then re-vendor and bump the pin; do not re-apply them onto a freshly vendored file.
+
+HISS-21 `core/src/feature/` top level (2026-09-21): `ciede`, `feature_collector`, `feature_dists`, `feature_lpips`, `float_moment`, `float_ms_ssim`, `float_psnr`, `float_ssim`, `motion` and `pu21` lost their cleanup `goto` ladders to `*_init_unwind` / `*_append_*` `static` helpers in the same TU — on conflict reapply the helper boundaries rather than restoring the label ladders, and keep every arithmetic expression whole across them (ADR-1253).
+
+- `chore/hiss21-core-src-hip` — HIP host code (`core/src/feature/hip/**`) replaced its `goto` cleanup ladders with cascading `static` unwind helpers and split oversized init/submit/collect/close functions; on conflict keep the helper boundaries and re-check that each tier still frees the same set in the same order as the upstream-twin CUDA ladder it mirrors.
+  The `VmafOption` tables, `g_weights[108]` and `g_hip_features[]` keep the upstream-twin
+  one-entry-per-line layout: an earlier revision of this branch packed them behind
+  `// clang-format off` to shrink a HISS-04 block finding that the current praetor engine no longer
+  raises for file-scope initialiser tables, and the packing was reverted. In `ssimulacra2_hip.c`,
+  `ss2h_picture_to_linear_rgb()`, `ss2h_run_scale_gpu()` and `extract_fex_hip()` are split into
+  `ss2h_yuv_primaries()`, `ss2h_upload_xyb()`, `ss2h_download_blurred()` and
+  `ss2h_downsample_for_next_scale()` under
+  [ADR-1289](adr/1289-hip-ssimulacra2-host-helper-split.md), which withdraws the ADR-0141 §2 no-split
+  citations those three used to carry; on conflict keep the split side and keep the invariants the
+  comments now name (the ADR-1205 / ADR-0891 `fmaf()` chain, the eight-launch order inside
+  `ss2h_run_scale_gpu()`, the per-scale order in `extract_fex_hip()`). `ssimulacra2_cuda.c` and
+  `core/src/feature/ssimulacra2.c` still carry their own no-split citations and must not be split
+  along with it.
+
+`core/src/cuda/` and `core/src/feature/cuda/` no longer contain any explicit `goto` statement, and
+the long init/submit/flush functions are split into `static` helpers (HISS-01 / HISS-04): each old
+cleanup label is now a `*_unwind` helper holding that label's statements verbatim, the three
+fall-through cascades take an explicit stage argument, and `CHECK_CUDA_GOTO` plus the labels it
+targets are unchanged. On conflict, reapply the helper boundaries rather than restoring the labels,
+and keep every moved arithmetic statement whole — splitting one would let FMA contraction change the
+score.
+
+## The CUDA pin is sixteen literals, not one tag (2026-09-21)
+
+`build-config.env`'s `CUDA_VERSION` is the authority for a release that is
+spelled out in sixteen places across seven files. A merge that carries one of
+them forward and not the rest now fails
+`scripts/ci/check-cuda-pin-lockstep.py`, which is the point — but it also means
+a conflict resolution that keeps the incoming `nvidia/cuda` tag has to move
+`CUDA_VERSION`, both `Jimver/cuda-toolkit` inputs, both `$cudaVersion` and
+`$cudaMajorMinor` literals, both `cuda-toolkit-NN-N` apt names and the
+`org.opencontainers.image.description` label on the CUDA runtime image with it.
+`make cuda-pin-sync` derives the last five from `CUDA_VERSION`; the rest are
+edits. The gate also fails on a CUDA release literal in a spelling it does not
+recognise, so a rebase that introduces a new one has to teach both the gate and
+`renovate.json`'s CUDA manager in the same change (ADR-1285).
+
+Do not fold the CUDA manager into the base-image custom manager on conflict:
+`scripts/ci/tests/test_renovate_file_patterns.py` asserts there is exactly one
+docker-datasource manager without a `depNameTemplate`, and the CUDA one carries
+`nvidia/cuda` precisely so the group rule can name it.
+
+## fix/bug-hip-adr0759 — HIP ADM buffer stays by pointer (2026-09-21)
+
+Fork-local; no upstream Netflix surface. The four HIP integer ADM `__global__`
+kernels that read `AdmBufferHip` take
+`const AdmBufferHip *__restrict__ buf_ptr`, and `AdmStateHip` owns a device copy
+(`buf_dev`) uploaded once at the end of `init_fex_hip()`, passed as `args[0]` by
+address, and freed in `close_fex_hip()` and on the init failure path.
+
+That failure path is expressed as the tail-calling `adm_hip_unwind_*` helper
+chain, not as `goto` labels: the HISS-01 zero-`goto` refactor of this file and
+the ADR-0759 re-application were developed in parallel and reconciled when they
+met. `adm_hip_unwind_buf_dev()` is the `buf_dev` tier and releases first, since
+`buf_dev` is the last thing init allocates. A resolution that reintroduces a
+`fail_buf_dev:` label restores the by-pointer change at the cost of the
+zero-`goto` invariant; keep both.
+
+This has already been lost once: ADR-0759 landed it in `31a51afb2` (#101) and
+`92ea978a4` (#102), a squash of a branch cut from an older base, put the
+by-value signatures back the same day while leaving the AGENTS.md invariant note
+in place. If a rebase, a squash of a stale branch, or an upstream-shaped
+conflict resolution reintroduces `AdmBufferHip buf` in any of
+`adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4`, `i4_adm_cm_line_kernel` or
+`adm_cm_line_kernel_8`, take the pointer side — it is the decided design, not a
+stylistic preference, and it is worth 320 bytes of kernel arguments per launch
+plus roughly 310 bytes of per-thread scratch on the scale-0 CM kernel.
+
+The single upload is only correct while nothing writes `s->buf` after init. Any
+change that starts mutating a field of `s->buf` per frame has to re-upload the
+device copy before the next launch, or add a per-frame refresh; the invariant is
+stated in `core/src/feature/hip/AGENTS.md`.
+
+`AdmFixedParametersHip` (248 bytes) is deliberately still by value — ADR-0759's
+deferred follow-up. Do not "finish the job" on a rebase without an ADR.
+
+## `python/vmaf/__init__.py` — resolve the compat shim by file location (ADR-1292)
+
+The shim must not redirect by deleting itself from `sys.modules` and re-importing
+its own name. That strategy is correct only while `compat/` precedes `python/` on
+`sys.path`, and a `multiprocessing` spawn child inherits a `sys.path` where it
+does not: the shim then resolves back to itself and recurses until
+`RecursionError`, killing the child before it releases the semaphore its parent
+is blocked on. The parent's `sem.acquire()` in
+`Executor._open_workfiles_in_fifo_mode` has no timeout, so the run hangs until
+the CI job is cancelled — 62 minutes of silence on the Ubuntu legs.
+
+Keep the `importlib.util.spec_from_file_location(__name__, compat/vmaf/__init__.py,
+submodule_search_locations=[compat/vmaf])` load and the `sys.modules[__name__] = _module`
+assignment *before* `exec_module`. An upstream-shaped or "simplify this shim"
+resolution that restores the four-line re-import reintroduces the hang, and it
+reintroduces it invisibly: every in-process test still passes, because the parent
+interpreter only takes the working path.
+
+The paired invariant lives in `compat/python-vmaf/core/executor.py`: ADR-1278's
+`_MULTIPROCESSING_CONTEXT = multiprocessing.get_context("spawn")` is what makes a
+fresh interpreter import `vmaf` at all. Reverting it to the interpreter default
+would also mask the shim bug, by going back to `forkserver`; do not treat that as
+a fix for anything.
+
+## `ai/train/qat.py` — QAT prepares through torchao pt2e (ADR-1293)
+
+Do not restore `torch.ao.quantization.quantize_fx.prepare_qat_fx` or
+`get_default_qat_qconfig_mapping("x86")`. PyTorch deprecated that API
+wholesale; with `ai/pyproject.toml`'s `filterwarnings = ["error"]` the call is
+a test failure, not a log line, and the API has a published removal. The hook
+captures with `torch.export.export(module, example_inputs, strict=True).module()`
+and prepares with `torchao.quantization.pt2e.quantize_pt2e.prepare_qat_pt2e`
+under `X86InductorQuantizer`.
+
+Three invariants a rebase can quietly undo:
+
+- `_set_mode()` must stay. An exported graph module raises
+  `NotImplementedError` on `.train()` / `.eval()`; `_qat_fine_tune` is called
+  with both a raw Lightning module and the prepared graph, so the dispatch on
+  `isinstance(module, torch.fx.GraphModule)` is load-bearing. A resolution that
+  puts `qat_model.cpu().eval()` back fails the smoke test immediately.
+- Phase 4's ONNX export must not go back to `dynamo=False`. Its export target
+  is a fresh fp32 module carrying transferred weights, with no observers, so
+  the quantisation buffers that originally justified the legacy TorchScript
+  exporter are not there — and that exporter now warns on its own. The caller's
+  `dynamic_axes` is translated into positional `dynamic_shapes` ordered by
+  `input_names`; restoring `dynamic_axes` under the dynamo exporter draws a
+  different warning and fails the same test.
+- `torch.export.export_for_training` does not exist in torch 2.14. Guides
+  written against 2.5–2.9 still name it; it folded back into
+  `torch.export.export`.
+
+The two-step pipeline ADR-0207 made load-bearing is unchanged: QAT conditions
+weights, ORT `quantize_static` emits the QDQ graph, `convert_pt2e` is never
+called — for the same reason `convert_fx` never was.
+
+## `core/src/feature/hip/integer_adm_hip.c` + `ssimulacra2_hip.c` — unwind ladders (T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22, ADR-1296)
+
+A conflict resolution on either file's `init` can silently reinstate a
+use-after-free. Three things must not come back:
+
+- **No unwind tier may be handed `hipSuccess`.** Both ladders terminate in
+  `hip_rc(rc)` / `ss2h_hip_rc(rc)`, which map `hipSuccess` to `0`, so a tier
+  given `hipSuccess` makes the whole unwind report a successful `init` over a
+  state it has just released. `git log -S hipSuccess` on these two files finds
+  the three sites that did this. If a resolution reintroduces
+  `return ss2h_init_unwind_mod_mul(s, hip_rc);` in `init_fex_hip`, or
+  `ss2h_load_modules`'s `hipError_t *rc_out` out-parameter — whose only purpose
+  was ferrying that `hipSuccess` — the bug is back.
+- **`adm_hip_unwind_buf_dev_to_host()` must stay deleted.** It entered the
+  ladder at the host tier, jumping over `d_dis_luma` and `d_ref_luma`. That
+  skip came from a pre-HISS-01 `goto fail_host` whose label sat below
+  `fail_ref_luma:`, and ADR-0759 threaded `buf_dev` through it without
+  revisiting it. Because `vmaf_feature_extractor_context_close` rejects an
+  uninitialised context, `close_fex_hip` never runs after a failed `init`, so a
+  skipped tier is a permanent leak. The dictionary path now enters at
+  `adm_hip_unwind_buf_dev()`, which is the exact reverse of the allocation
+  order.
+- **The `core/src/feature/hip/AGENTS.md` note that called this intentional must
+  not be restored.** An earlier revision recorded "two of them deliberately
+  report the `hipSuccess` left by the last successful HIP call … not bugs to
+  fix inside a structural refactor". That sentence is why three separate passes
+  over these lines preserved the defect. It is replaced by two invariants with
+  the opposite sense.
+
+HISS-01 still holds: the ladders stay `goto`-free, one `static` helper per
+former label, each tail-calling the next-earlier tier. The fix changes *which
+tier a failure enters at* and *what value it returns*, not the chain's shape.
+
+`core/test/test_hip_adm_init_unwind.c` and
+`core/test/test_hip_ssimulacra2_init_unwind.c` (`fast` suite, no GPU needed)
+fail on any of the three regressions. They compile the extractor TU against a
+complete stub set, so they also break — loudly, at link time — if either TU
+gains a HIP runtime call; regenerate the stub list with `nm -u` on the object.
+
+## `.github/workflows/required-aggregator.yml` — the `required` array is the whole gate (ADR-1297)
+
+Branch protection on this repository requires exactly one status context,
+`Required Checks Aggregator` (ruleset 22587111). Everything else is decided by
+`const required = [...]` inside that workflow. A rebase or conflict resolution
+that shortens the array silently shortens the merge gate, and a shorter gate is
+invisible in a diff review: nothing goes red, no job disappears, no test fails.
+The 44 checks that reported and blocked nothing before ADR-1297 had been in that
+state for months precisely because the absence of a name looks like nothing.
+
+Rules for any resolution that touches this file:
+
+- **Never drop a name to resolve a conflict.** Take the union of both sides and
+  reconcile afterwards. Removing a required context is a decision that needs its
+  own ADR superseding ADR-1297, not a merge artefact.
+- **`scripts/ci/check-aggregator-names.sh` must print OK** and is the only
+  mechanical check on this. It enforces set equality in *both* directions between
+  the array and the `# required-aggregator` markers in the other workflow files,
+  plus one job per required name. It does **not** and cannot tell you whether a
+  name that belongs in the gate is missing from both sides at once — that is
+  exactly the failure it read OK through. Re-derive the set from the live check
+  list (`gh pr checks <n>`) when the workflow set changes, not from this file.
+- **Comments inside the array must not contain apostrophes or single-quoted
+  phrases.** The checker extracts names with `'([^']+)'` over the whole array
+  block, so a `'` in prose mis-pairs the quotes and silently corrupts the parsed
+  name set. Write "the ADR-0313 rule", not "ADR-0313's rule".
+- **Three check names are load-bearing renames.** `Docs Site Build` (docs.yml)
+  and `Doxygen Public API` (doxygen-public-api.yml) exist so those jobs stop
+  reporting under their bare job ids `build` and `doxygen`; a required context
+  called `build` would be shared by any future unnamed `build` job, and the
+  aggregator keeps only the newest run per name
+  (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18). `Tidy SYCL` lost its
+  "(advisory)" suffix together with its `continue-on-error`. Restoring any of the
+  three old names reopens a masking hole or re-asserts an advisory status that no
+  longer exists.
+- **`experimental: true` must not come back** on the `macOS clang` or
+  `macOS clang+DNN` rows of `libvmaf-build-matrix.yml`, and
+  `continue-on-error: ${{ matrix.experimental == true }}` must not come back on
+  that job. Measured: `continue-on-error` does not neutralise the check-run
+  conclusion — both legs reported `failure` on PR #1518 with the flag set — so
+  the flag never made them advisory, it only made the workflow claim they were.
+- **`strictMustReport` membership has a precondition.** A name belongs there only
+  if its job has no trigger path filter, no conditional skip, and reports on both
+  `pull_request` and `push` to master, because this workflow runs on both. That
+  is why `Sanitizers ASan+UBSan` is required but not strict: its `if:` excludes
+  `push`.

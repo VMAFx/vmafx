@@ -371,93 +371,127 @@ func ComputeMap(videoPath string, width, height int, session Session, opts MapOp
 	}
 	indices := SampleFrameIndices(nframes, samples)
 
-	pixels := width * height
-	accum := make([]float64, pixels)
-	maxMask := make([]float64, pixels)
-	var emaMask []float64
-	weightSum := 0.0
-	var prevY []byte
-
+	acc := newMaskAccumulator(cfg, width*height)
 	for _, fi := range indices {
 		frame, readErr := ReadFrame(videoPath, fi, width, height)
 		if readErr != nil {
 			return nil, readErr
 		}
-		tensor := frame.ToRGBImageNet()
-		padded, padH, padW := PadToMultiple(tensor, height, width, 32)
+		mask, maskErr := inferMask(session, frame, width, height)
+		if maskErr != nil {
+			return nil, maskErr
+		}
+		acc.add(mask, frame.Y)
+	}
+	return acc.result(), nil
+}
 
-		raw, runErr := session.Run(padded, padH, padW)
-		if runErr != nil {
-			return nil, fmt.Errorf("%w: %v", ErrUnavailable, runErr)
-		}
-		if len(raw) < padH*padW {
-			return nil, fmt.Errorf(
-				"saliency: model returned %d values, want at least %d for a %dx%d mask",
-				len(raw), padH*padW, padW, padH)
-		}
-		// Crop the padded mask back to the source geometry.
-		mask := make([]float64, pixels)
-		for y := 0; y < height; y++ {
-			for x := 0; x < width; x++ {
-				mask[y*width+x] = float64(raw[y*padW+x])
-			}
-		}
+// inferMask runs the model over one frame and crops the padded output back to
+// the source geometry.
+func inferMask(session Session, frame Frame420p, width, height int) ([]float64, error) {
+	tensor := frame.ToRGBImageNet()
+	padded, padH, padW := PadToMultiple(tensor, height, width, 32)
 
-		switch cfg.TemporalAggregator {
-		case AggMean:
-			for i, v := range mask {
-				accum[i] += v
-			}
-		case AggMax:
-			for i, v := range mask {
-				if v > maxMask[i] {
-					maxMask[i] = v
-				}
-			}
-		case AggEMA:
-			if emaMask == nil {
-				emaMask = append([]float64(nil), mask...)
-			} else {
-				for i, v := range mask {
-					emaMask[i] = cfg.EMAAlpha*v + (1.0-cfg.EMAAlpha)*emaMask[i]
-				}
-			}
-		case AggMotionWeighted:
-			weight := MotionWeight(prevY, frame.Y)
-			for i, v := range mask {
-				accum[i] += v * weight
-			}
-			weightSum += weight
-			prevY = append([]byte(nil), frame.Y...)
+	raw, runErr := session.Run(padded, padH, padW)
+	if runErr != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, runErr)
+	}
+	if len(raw) < padH*padW {
+		return nil, fmt.Errorf(
+			"saliency: model returned %d values, want at least %d for a %dx%d mask",
+			len(raw), padH*padW, padW, padH)
+	}
+	mask := make([]float64, width*height)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			mask[y*width+x] = float64(raw[y*padW+x])
 		}
 	}
+	return mask, nil
+}
 
-	var result []float64
-	switch cfg.TemporalAggregator {
+// maskAccumulator folds the per-frame masks into one aggregate, carrying only
+// the state its configured temporal aggregator needs.
+type maskAccumulator struct {
+	cfg       Config
+	accum     []float64
+	maxMask   []float64
+	emaMask   []float64
+	weightSum float64
+	prevY     []byte
+	frames    int
+}
+
+// newMaskAccumulator allocates the per-pixel buffers for a pixels-sized mask.
+func newMaskAccumulator(cfg Config, pixels int) *maskAccumulator {
+	return &maskAccumulator{
+		cfg:     cfg,
+		accum:   make([]float64, pixels),
+		maxMask: make([]float64, pixels),
+	}
+}
+
+// add folds one frame's mask in. y is the frame's luma plane, which only the
+// motion-weighted aggregator reads.
+func (a *maskAccumulator) add(mask []float64, y []byte) {
+	a.frames++
+	switch a.cfg.TemporalAggregator {
 	case AggMean:
-		n := float64(len(indices))
-		result = accum
+		for i, v := range mask {
+			a.accum[i] += v
+		}
+	case AggMax:
+		for i, v := range mask {
+			if v > a.maxMask[i] {
+				a.maxMask[i] = v
+			}
+		}
+	case AggEMA:
+		if a.emaMask == nil {
+			a.emaMask = append([]float64(nil), mask...)
+			return
+		}
+		for i, v := range mask {
+			a.emaMask[i] = a.cfg.EMAAlpha*v + (1.0-a.cfg.EMAAlpha)*a.emaMask[i]
+		}
+	case AggMotionWeighted:
+		weight := MotionWeight(a.prevY, y)
+		for i, v := range mask {
+			a.accum[i] += v * weight
+		}
+		a.weightSum += weight
+		a.prevY = append([]byte(nil), y...)
+	}
+}
+
+// result reduces the accumulated state to the final mask, pinned to [0, 1]
+// against FP drift on the boundary.
+func (a *maskAccumulator) result() []float64 {
+	var result []float64
+	switch a.cfg.TemporalAggregator {
+	case AggMean:
+		n := float64(a.frames)
+		result = a.accum
 		for i := range result {
 			result[i] /= n
 		}
 	case AggMax:
-		result = maxMask
+		result = a.maxMask
 	case AggEMA:
-		result = emaMask
+		result = a.emaMask
 		if result == nil {
-			result = accum
+			result = a.accum
 		}
 	case AggMotionWeighted:
-		result = accum
+		result = a.accum
 		for i := range result {
-			result[i] /= weightSum
+			result[i] /= a.weightSum
 		}
 	}
-	// Pin to [0, 1] against FP drift on the boundary.
 	for i := range result {
 		result[i] = math.Max(0.0, math.Min(1.0, result[i]))
 	}
-	return result, nil
+	return result
 }
 
 // MotionWeight returns a non-zero saliency weight from luma motion energy:
@@ -664,40 +698,8 @@ func SupportedEncoders() []string {
 // for x265 zones, 64x64 super-blocks for SVT-AV1, 64x64 CTUs for VVenC.
 func BuildAugment(encoder string, qpMap []int, width, height, durationFrames int) (Augment, error) {
 	switch encoder {
-	case "libx264":
-		blocks, err := ReduceToBlocks(qpMap, width, height, X264MBSide)
-		if err != nil {
-			return Augment{}, err
-		}
-		return Augment{
-			SidecarBody:   X264QPFile(blocks, durationFrames),
-			SidecarSuffix: ".qpfile.txt",
-		}, nil
-
-	case "libaom-av1":
-		// The fork's FFmpeg patch stack teaches libaom-av1 to consume the
-		// same x264-style qpfile, mapping each 16x16 macroblock delta onto
-		// libaom's mode-info grid and segment-QP table. Unlike x264 the path
-		// arrives through a top-level -qpfile AVOption, not an opaque
-		// encoder-params key.
-		blocks, err := ReduceToBlocks(qpMap, width, height, X264MBSide)
-		if err != nil {
-			return Augment{}, err
-		}
-		return Augment{
-			SidecarBody:   X264QPFile(blocks, durationFrames),
-			SidecarSuffix: ".libaom-qpfile.txt",
-		}, nil
-
-	case "libx265":
-		blocks, err := ReduceToBlocks(qpMap, width, height, X264MBSide)
-		if err != nil {
-			return Augment{}, err
-		}
-		zones := X265ZonesArg(blocks, durationFrames)
-		return Augment{
-			ExtraParams: []string{"-x265-params", "zones=" + zones},
-		}, nil
+	case "libx264", "libaom-av1", "libx265":
+		return buildMacroblockAugment(encoder, qpMap, width, height, durationFrames)
 
 	case "libsvtav1":
 		blocks, err := ReduceToBlocks(qpMap, width, height, SVTAV1SBSide)
@@ -720,10 +722,51 @@ func BuildAugment(encoder string, qpMap []int, width, height, durationFrames int
 		}, nil
 
 	default:
-		supported := SupportedEncoders()
-		sort.Strings(supported)
-		return Augment{}, &UnsupportedEncoderError{Encoder: encoder, Supported: supported}
+		return Augment{}, unsupportedEncoder(encoder)
 	}
+}
+
+// buildMacroblockAugment covers the three encoders that consume a 16x16
+// macroblock grid, so the reduction is shared and only the carrier differs.
+//
+// x264 and libaom-av1 both take the x264-style qpfile: the fork's FFmpeg patch
+// stack teaches libaom-av1 to map each macroblock delta onto libaom's
+// mode-info grid and segment-QP table, though the path arrives through a
+// top-level -qpfile AVOption rather than an opaque encoder-params key. x265
+// takes the same blocks as a zones= parameter instead of a sidecar.
+func buildMacroblockAugment(
+	encoder string, qpMap []int, width, height, durationFrames int,
+) (Augment, error) {
+	blocks, err := ReduceToBlocks(qpMap, width, height, X264MBSide)
+	if err != nil {
+		return Augment{}, err
+	}
+	switch encoder {
+	case "libx264":
+		return Augment{
+			SidecarBody:   X264QPFile(blocks, durationFrames),
+			SidecarSuffix: ".qpfile.txt",
+		}, nil
+	case "libaom-av1":
+		return Augment{
+			SidecarBody:   X264QPFile(blocks, durationFrames),
+			SidecarSuffix: ".libaom-qpfile.txt",
+		}, nil
+	case "libx265":
+		zones := X265ZonesArg(blocks, durationFrames)
+		return Augment{
+			ExtraParams: []string{"-x265-params", "zones=" + zones},
+		}, nil
+	default:
+		return Augment{}, unsupportedEncoder(encoder)
+	}
+}
+
+// unsupportedEncoder builds the error that names what is supported instead.
+func unsupportedEncoder(encoder string) error {
+	supported := SupportedEncoders()
+	sort.Strings(supported)
+	return &UnsupportedEncoderError{Encoder: encoder, Supported: supported}
 }
 
 // ExtraParamsFor returns the ffmpeg params that reference a written sidecar

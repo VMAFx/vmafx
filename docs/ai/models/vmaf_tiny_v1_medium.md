@@ -28,7 +28,7 @@ checkpoint; it supersedes v1_medium in all production contexts.
 | Feature order | `adm2, vif_scale0, vif_scale1, vif_scale2, vif_scale3, motion2` |
 | Output | `vmaf` — float32 `[N]` |
 | ONNX opset | 17 |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Registry entry | `vmaf_tiny_v1_medium` in `model/tiny/registry.json` |
 | SHA-256 | `97f6116b44913f4076170a2f0cb78042db85aac7c56d432e14d9fe138ab952b7` |
 

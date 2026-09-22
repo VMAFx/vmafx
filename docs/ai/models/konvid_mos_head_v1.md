@@ -92,8 +92,8 @@ python ai/scripts/train_konvid_mos_head.py --smoke
 
 # Production — real KonViD JSONL drops on disk:
 python ai/scripts/train_konvid_mos_head.py \
-    --konvid-1k   .workingdir2/konvid-1k/konvid_1k.jsonl \
-    --konvid-150k .workingdir2/konvid-150k/konvid_150k.jsonl \
+    --konvid-1k   .corpus/konvid-1k/konvid_1k.jsonl \
+    --konvid-150k .corpus/konvid-150k/konvid_150k.jsonl \
     --out-onnx    model/konvid_mos_head_v1.onnx \
     --out-manifest model/konvid_mos_head_v1.json
 
@@ -122,7 +122,7 @@ CHUG HDR subjective-MOS training uses the CHUG-specific wrapper
 `ai/scripts/train_chug_hdr_mos_head.py`; do not pass CHUG shards through
 the KonViD-named flags. That wrapper defaults to its own
 `chug-hdr-wide-v1` schema and writes local-only `chug_hdr_mos_head_v1`
-manifests under `.workingdir2/chug/`; it does not change this committed
+manifests under `.corpus/chug/`; it does not change this committed
 11-feature KonViD model contract.
 
 Both KonViD and CHUG MOS-head manifests include `run_provenance`. The
@@ -201,9 +201,9 @@ python ai/scripts/train_konvid_mos_head.py --smoke
 ## License and redistribution
 
 The training corpus (KonViD-1k / KonViD-150k) is **not** redistributed —
-it remains local under `.workingdir2/` per ADR-0325 §Constraint 1.
+it remains local under `.corpus/` per ADR-0325 §Constraint 1.
 The derived ONNX weights and manifest sidecar redistribute under the
-fork's BSD-3-Clause-Plus-Patent licence.
+fork's BSD-2-Clause-Patent licence.
 
 ## Feature coverage gap — speed_chroma / speed_temporal (ADR-0559)
 

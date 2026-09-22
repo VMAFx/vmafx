@@ -21,7 +21,7 @@ back if the registry was flipped prematurely.
 
 | Requirement       | Expected value                                                                                  |
 |-------------------|-------------------------------------------------------------------------------------------------|
-| YUV corpus        | `.workingdir2/netflix/` (gitignored; consumed by the Phase A pre-step, not the trainer)         |
+| YUV corpus        | `.corpus/netflix/` (gitignored; consumed by the Phase A pre-step, not the trainer)              |
 | YUV contents      | 9 reference + 70 distorted YUVs (full Netflix Public Dataset)                                   |
 | Phase A JSONL     | `runs/phase_a/full_grid/per_frame_canonical6.jsonl` (overridable via `$CORPUS_JSONL`)           |
 | Phase A row count | ~33,840 per-frame rows (9 sources × {h264_nvenc, h264_qsv} × 4 CQs; per Research-0075)          |
@@ -49,13 +49,19 @@ Netflix sources × {`h264_nvenc`, `h264_qsv`} × CQs ∈ {19, 25, 31,
 37}, then concatenate the per-call JSONLs into the canonical
 location (~33,840 rows total per Research-0075).
 
+The producer returns non-zero if any requested CQ fails to encode, decode,
+score, or emit canonical metric rows. It may retain successful rows from the
+same invocation for diagnosis, but callers must treat that non-zero status as
+an incomplete corpus and must not concatenate the part until the failed CQ is
+rerun successfully.
+
 If the JSONL already exists from a previous run, skip this step
 and jump to step 1. The JSONL is gitignored and lives under
 `runs/`, so it won't be picked up by other clones; either re-run
 this step on a fresh machine or copy the file across.
 
 ```bash
-# Layout assumed: .workingdir2/netflix/<src>/<src>.yuv at WxH@FPS.
+# Layout assumed: .corpus/netflix/<src>/<src>.yuv at WxH@FPS.
 # Adjust SOURCES if your local corpus uses a flat / different
 # naming convention; the producer is per-source per-encoder.
 
@@ -72,7 +78,7 @@ encoders=(h264_nvenc h264_qsv)
 cqs=(19 25 31 37)
 
 for src in "${sources[@]}"; do
-  src_yuv=".workingdir2/netflix/${src}/${src}.yuv"  # adjust to local layout
+  src_yuv=".corpus/netflix/${src}/${src}.yuv"  # adjust to local layout
   for enc in "${encoders[@]}"; do
     out="$out_root/parts/${src}__${enc}.jsonl"
     python3 scripts/dev/hw_encoder_corpus.py \
@@ -104,8 +110,8 @@ test -f runs/phase_a/full_grid/per_frame_canonical6.jsonl  # required
 wc -l runs/phase_a/full_grid/per_frame_canonical6.jsonl    # expect ~33,840
 
 # Informational — the YUV directory is consumed by step 0, not the trainer.
-ls -d .workingdir2/netflix/                      # should exist for step 0
-find .workingdir2/netflix/ -name '*.yuv' | wc -l # should be > 0 for step 0
+ls -d .corpus/netflix/                      # should exist for step 0
+find .corpus/netflix/ -name '*.yuv' | wc -l # should be > 0 for step 0
 ```
 
 ### 2. Kick off the wrapper

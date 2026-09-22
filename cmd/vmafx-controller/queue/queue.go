@@ -254,37 +254,7 @@ func (q *SQLiteQueue) PullWork(ctx context.Context, nodeID string, capacity Node
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	backendSet := make(map[string]struct{}, len(capacity.Backends))
-	for _, b := range capacity.Backends {
-		backendSet[b] = struct{}{}
-	}
-
-	// Find the first PENDING job whose backend requirement is satisfied.
-	matchIdx := -1
-	var matchID string
-	for i, id := range q.pendingFIFO {
-		job, err := q.getUnlocked(id)
-		if err != nil {
-			q.log.Warn("queue: failed to fetch pending job", "id", id, "error", err)
-			continue
-		}
-		if job.Status != StatusPending {
-			// Stale FIFO entry (job was cancelled externally) — drop it.
-			continue
-		}
-		// Backend match: if the job specifies a backend, the node must support it.
-		if job.Scoring.Backend == "" || len(backendSet) == 0 {
-			matchIdx = i
-			matchID = id
-			break
-		}
-		if _, ok := backendSet[job.Scoring.Backend]; ok {
-			matchIdx = i
-			matchID = id
-			break
-		}
-	}
-
+	matchIdx, matchID := q.findPendingMatch(capacity)
 	if matchIdx < 0 {
 		return nil, nil
 	}
@@ -316,26 +286,67 @@ func (q *SQLiteQueue) PullWork(ctx context.Context, nodeID string, capacity Node
 
 	q.runningSet[matchID] = struct{}{}
 
-	job, err := q.getUnlocked(matchID)
+	job, err := q.fetchAssignedJob(matchID)
 	if err != nil {
-		// The SQL UPDATE already committed (status=running, assigned_node set)
-		// and the FIFO entry was removed.  We must roll back all three changes
-		// so the job is not permanently stranded in RUNNING state.
-		// ADR-0961: PullWork rollback on post-update Get failure.
-		rbErr := q.rollbackTopending(matchID)
-		if rbErr != nil {
-			q.log.Error("CRITICAL: rollback failed after PullWork Get error; job is stranded in RUNNING state — restart controller to recover",
-				"job_id", matchID,
-				"get_error", err,
-				"rollback_error", rbErr,
-			)
-			return nil, fmt.Errorf("queue: fetch assigned job %s: %w; rollback also failed: %v", matchID, err, rbErr)
-		}
-		return nil, fmt.Errorf("queue: fetch assigned job %s: %w", matchID, err)
+		return nil, err
 	}
 
 	q.log.Info("job assigned", "job_id", matchID, "node_id", nodeID)
 	return job, nil
+}
+
+// findPendingMatch returns the FIFO index and id of the oldest PENDING job the node can
+// run, or (-1, "") when nothing matches. Must be called with q.mu held.
+//
+// A node that advertises no backends at all is treated as able to run anything, which is
+// what keeps a pre-capability node from starving.
+func (q *SQLiteQueue) findPendingMatch(capacity NodeCapacity) (int, string) {
+	backendSet := make(map[string]struct{}, len(capacity.Backends))
+	for _, b := range capacity.Backends {
+		backendSet[b] = struct{}{}
+	}
+	for i, id := range q.pendingFIFO {
+		job, err := q.getUnlocked(id)
+		if err != nil {
+			q.log.Warn("queue: failed to fetch pending job", "id", id, "error", err)
+			continue
+		}
+		if job.Status != StatusPending {
+			// Stale FIFO entry (job was cancelled externally) — drop it.
+			continue
+		}
+		// Backend match: if the job specifies a backend, the node must support it.
+		if job.Scoring.Backend == "" || len(backendSet) == 0 {
+			return i, id
+		}
+		if _, ok := backendSet[job.Scoring.Backend]; ok {
+			return i, id
+		}
+	}
+	return -1, ""
+}
+
+// fetchAssignedJob reads back the job PullWork has just moved to RUNNING, undoing the
+// assignment when that read fails. Must be called with q.mu held.
+//
+// By this point the SQL UPDATE has committed (status=running, assigned_node set) and the
+// FIFO entry is gone, so all three changes have to be reversed or the job is stranded in
+// RUNNING for good. ADR-0961: PullWork rollback on post-update Get failure.
+func (q *SQLiteQueue) fetchAssignedJob(matchID string) (*Job, error) {
+	job, err := q.getUnlocked(matchID)
+	if err == nil {
+		return job, nil
+	}
+	rbErr := q.rollbackTopending(matchID)
+	if rbErr != nil {
+		q.log.Error("CRITICAL: rollback failed after PullWork Get error; job is stranded in RUNNING state — restart controller to recover",
+			"job_id", matchID,
+			"get_error", err,
+			"rollback_error", rbErr,
+		)
+		return nil, fmt.Errorf("queue: fetch assigned job %s: %w; rollback also failed: %v", matchID, err, rbErr)
+	}
+	return nil, fmt.Errorf("queue: fetch assigned job %s: %w", matchID, err)
 }
 
 // rollbackTopending reverses a PullWork that succeeded at the SQL UPDATE step
@@ -527,29 +538,7 @@ func (q *SQLiteQueue) SetGetUnlockedHookForTest(fn func(id string) error) {
 // queue.  Used by controllerServer.StreamJobs to send a consistent snapshot
 // (ADR-0962).
 func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, error) {
-	var (
-		rows *sql.Rows
-		err  error
-	)
-
-	if len(statuses) == 0 {
-		rows, err = q.db.Query(
-			"SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), COALESCE(tenant_id,''), created_at, updated_at FROM jobs ORDER BY created_at ASC",
-		)
-	} else {
-		// Build a parameterised IN clause.  We limit statuses to the known set
-		// (max 5) so the query never becomes unbounded.
-		placeholders := make([]any, len(statuses))
-		for i, s := range statuses {
-			placeholders[i] = s
-		}
-		// #nosec G202 -- The concatenated fragment is repeatCommaQ output, a
-		// pure ",?,?,..." placeholder string of length len(statuses)-1; no
-		// user data enters the SQL text. Status values bind through
-		// `placeholders...` as parameterised arguments.
-		query := "SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), COALESCE(tenant_id,''), created_at, updated_at FROM jobs WHERE status IN (?" + repeatCommaQ(len(statuses)-1) + ") ORDER BY created_at ASC"
-		rows, err = q.db.Query(query, placeholders...)
-	}
+	rows, err := q.queryJobs(statuses)
 	if err != nil {
 		return nil, fmt.Errorf("queue: list all jobs: %w", err)
 	}
@@ -561,35 +550,70 @@ func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, err
 
 	var out []*Job
 	for rows.Next() {
-		var (
-			job          Job
-			scoringJSON  string
-			featuresJSON string
-			createdAt    int64
-			updatedAt    int64
-		)
-		if err = rows.Scan(
-			&job.ID, &job.Status, &scoringJSON, &job.AssignedNode,
-			&job.Score, &featuresJSON, &job.Error, &job.TenantID,
-			&createdAt, &updatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("queue: scan job row in ListAll: %w", err)
+		job, scanErr := scanJobRow(rows)
+		if scanErr != nil {
+			return nil, scanErr
 		}
-		if err = json.Unmarshal([]byte(scoringJSON), &job.Scoring); err != nil {
-			return nil, fmt.Errorf("queue: unmarshal scoring in ListAll: %w", err)
-		}
-		if err = json.Unmarshal([]byte(featuresJSON), &job.Features); err != nil {
-			job.Features = map[string]float64{}
-		}
-		job.CreatedAt = time.Unix(createdAt, 0)
-		job.UpdatedAt = time.Unix(updatedAt, 0)
-		cp := job
-		out = append(out, &cp)
+		out = append(out, job)
 	}
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("queue: iterate jobs in ListAll: %w", err)
 	}
 	return out, nil
+}
+
+// queryJobs runs the ListAll SELECT, narrowed to statuses when any are given.
+func (q *SQLiteQueue) queryJobs(statuses []string) (*sql.Rows, error) {
+	const columns = "SELECT id, status, scoring, COALESCE(assigned_node,''), " +
+		"COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), " +
+		"COALESCE(tenant_id,''), created_at, updated_at FROM jobs"
+	if len(statuses) == 0 {
+		return q.db.Query(columns + " ORDER BY created_at ASC")
+	}
+	// Build a parameterised IN clause.  We limit statuses to the known set
+	// (max 5) so the query never becomes unbounded.
+	placeholders := make([]any, len(statuses))
+	for i, s := range statuses {
+		placeholders[i] = s
+	}
+	// #nosec G202 -- The concatenated fragment is repeatCommaQ output, a
+	// pure ",?,?,..." placeholder string of length len(statuses)-1; no
+	// user data enters the SQL text. Status values bind through
+	// `placeholders...` as parameterised arguments.
+	query := columns + " WHERE status IN (?" + repeatCommaQ(len(statuses)-1) + ") ORDER BY created_at ASC"
+	return q.db.Query(query, placeholders...)
+}
+
+// scanJobRow decodes one ListAll row into a freshly allocated Job, so callers own the
+// value rather than aliasing the loop variable.
+//
+// Unreadable features decode to an empty map rather than failing the whole snapshot: the
+// features are reporting detail, while the scoring request is the job's identity and a
+// job whose scoring cannot be read is not reportable at all.
+func scanJobRow(rows *sql.Rows) (*Job, error) {
+	var (
+		job          Job
+		scoringJSON  string
+		featuresJSON string
+		createdAt    int64
+		updatedAt    int64
+	)
+	if err := rows.Scan(
+		&job.ID, &job.Status, &scoringJSON, &job.AssignedNode,
+		&job.Score, &featuresJSON, &job.Error, &job.TenantID,
+		&createdAt, &updatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("queue: scan job row in ListAll: %w", err)
+	}
+	if err := json.Unmarshal([]byte(scoringJSON), &job.Scoring); err != nil {
+		return nil, fmt.Errorf("queue: unmarshal scoring in ListAll: %w", err)
+	}
+	if err := json.Unmarshal([]byte(featuresJSON), &job.Features); err != nil {
+		job.Features = map[string]float64{}
+	}
+	job.CreatedAt = time.Unix(createdAt, 0)
+	job.UpdatedAt = time.Unix(updatedAt, 0)
+	return &job, nil
 }
 
 // repeatCommaQ returns n comma-prefixed "?" placeholders (e.g. n=2 → ",?,?").

@@ -16,12 +16,13 @@
 use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use vmafx_sys::safe::{VmafContext, VmafModel, alloc_yuv420p_8bit, unref_picture};
 
 const WIDTH: u32 = 576;
 const HEIGHT: u32 = 324;
+const N_FRAMES: u32 = 240;
 // 76.66890519623612 — full src01 pair, vmaf_v0.6.1.json, CPU scalar.
 // Rounded to places=3: 76.669. (Python golden gate uses places=2 here.)
 const EXPECTED_SCORE: f64 = 76.669;
@@ -31,16 +32,31 @@ fn repo_root() -> PathBuf {
     if let Ok(v) = env::var("VMAFX_REPO") {
         return PathBuf::from(v);
     }
-    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    loop {
-        if dir.join("model").exists() {
-            return dir;
-        }
-        if !dir.pop() {
-            break;
-        }
-    }
-    PathBuf::from(".")
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir
+        .ancestors()
+        .find(|dir| dir.join("model").exists())
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
+}
+
+fn golden_paths() -> (String, String, String) {
+    let root = repo_root();
+    let reference = env::var("VMAFX_YUV_REF").unwrap_or_else(|_| {
+        root.join("python/test/resource/yuv/src01_hrc00_576x324.yuv")
+            .to_string_lossy()
+            .into_owned()
+    });
+    let distorted = env::var("VMAFX_YUV_DIST").unwrap_or_else(|_| {
+        root.join("python/test/resource/yuv/src01_hrc01_576x324.yuv")
+            .to_string_lossy()
+            .into_owned()
+    });
+    let model = env::var("VMAFX_MODEL").unwrap_or_else(|_| {
+        root.join("model/vmaf_v0.6.1.json")
+            .to_string_lossy()
+            .into_owned()
+    });
+    (reference, distorted, model)
 }
 
 fn read_frame(file: &mut File, pic: &mut vmafx_sys::VmafPicture) -> bool {
@@ -69,6 +85,7 @@ fn read_frame(file: &mut File, pic: &mut vmafx_sys::VmafPicture) -> bool {
         "libvmaf produced negative stride"
     );
     #[allow(clippy::cast_sign_loss)]
+    // SAFETY: allocated picture planes cover the declared dimensions and strides.
     unsafe {
         for row in 0..h {
             let src = &luma[row * w..(row + 1) * w];
@@ -89,23 +106,7 @@ fn read_frame(file: &mut File, pic: &mut vmafx_sys::VmafPicture) -> bool {
 
 #[test]
 fn netflix_golden_score() {
-    let root = repo_root();
-
-    let yuv_ref = env::var("VMAFX_YUV_REF").unwrap_or_else(|_| {
-        root.join("python/test/resource/yuv/src01_hrc00_576x324.yuv")
-            .to_string_lossy()
-            .into_owned()
-    });
-    let yuv_dist = env::var("VMAFX_YUV_DIST").unwrap_or_else(|_| {
-        root.join("python/test/resource/yuv/src01_hrc01_576x324.yuv")
-            .to_string_lossy()
-            .into_owned()
-    });
-    let model_path = env::var("VMAFX_MODEL").unwrap_or_else(|_| {
-        root.join("model/vmaf_v0.6.1.json")
-            .to_string_lossy()
-            .into_owned()
-    });
+    let (yuv_ref, yuv_dist, model_path) = golden_paths();
 
     // Skip the test gracefully if the test data isn't present (e.g. CI without fixtures).
     if !std::path::Path::new(&yuv_ref).exists() {
@@ -122,7 +123,7 @@ fn netflix_golden_score() {
     let mut dist_file = File::open(&yuv_dist).expect("open dist YUV");
 
     let mut n_frames = 0u32;
-    loop {
+    for frame_index in 0..N_FRAMES {
         let mut ref_pic = alloc_yuv420p_8bit(WIDTH, HEIGHT).expect("alloc ref pic");
         let mut dist_pic = alloc_yuv420p_8bit(WIDTH, HEIGHT).expect("alloc dist pic");
 
@@ -133,9 +134,9 @@ fn netflix_golden_score() {
         }
 
         // Pass by move: ownership of both pictures transfers to libvmaf.
-        ctx.read_pictures(ref_pic, dist_pic, n_frames)
+        ctx.read_pictures(ref_pic, dist_pic, frame_index)
             .expect("vmaf_read_pictures failed");
-        n_frames += 1;
+        n_frames = frame_index + 1;
     }
 
     ctx.flush().expect("flush failed");

@@ -105,10 +105,12 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
     s->ref = aligned_malloc(s->float_stride * h, 32);
     if (!s->ref)
-        goto fail;
+        return -ENOMEM;
     s->dist = aligned_malloc(s->float_stride * h, 32);
-    if (!s->dist)
-        goto free_ref;
+    if (!s->dist) {
+        free(s->ref);
+        return -ENOMEM;
+    }
 
     if (bpc == 8) {
         s->peak = 255.0;
@@ -123,7 +125,10 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         s->peak = 255.99609375;
         s->psnr_max = 108.0;
     } else {
-        goto fail;
+        /* Unsupported bitdepth. Upstream parity: the buffers allocated above
+         * are intentionally left to the extractor teardown path, exactly as
+         * the former `fail:` unwind target did (it skipped `free_ref:`). */
+        return -ENOMEM;
     }
 
     s->noise_line = float_psnr_noise_line_c;
@@ -147,11 +152,6 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 #endif
 
     return 0;
-
-free_ref:
-    free(s->ref);
-fail:
-    return -ENOMEM;
 }
 
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,

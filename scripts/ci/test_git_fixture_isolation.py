@@ -36,6 +36,34 @@ def snapshot(directory: Path) -> dict[str, bytes]:
     }
 
 
+def git_environment() -> dict[str, str]:
+    clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
+    return clean
+
+
+def git(
+    path: Path, *args: str, environment: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603 -- isolated disposable Git caller
+        [GIT, "-C", str(path), *args],
+        env=git_environment() if environment is None else environment,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+
+def write_hook(hook: Path, marker: Path, command: list[str]) -> None:
+    hook.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, subprocess\nfrom pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text(json.dumps({{'GIT_DIR': os.environ.get('GIT_DIR')}}))\n"
+        f"subprocess.run({command!r}, check=True)\n"
+    )
+    hook.chmod(0o700)
+
+
 class GitFixtureIsolation(unittest.TestCase):
     def exercise(self, helper: str, variables: tuple[str, ...]) -> None:
         with tempfile.TemporaryDirectory(prefix="git-fixture-isolation-") as directory:
@@ -46,26 +74,16 @@ class GitFixtureIsolation(unittest.TestCase):
             temporary.mkdir()
             # Even the adversarial test's setup must never inherit a real
             # caller's repository, index, object store or config overrides.
-            clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-            clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
+            clean = git_environment()
 
-            def git(*args: str) -> None:
-                subprocess.run(  # noqa: S603 -- disposable caller, isolated environment
-                    [GIT, "-C", str(caller), *args],
-                    env=clean,
-                    text=True,
-                    capture_output=True,
-                    check=True,
-                )
-
-            git("init", "-q", "-b", "master")
-            git("config", "user.name", "Isolation Test")
-            git("config", "user.email", "fixture@example.invalid")
+            git(caller, "init", "-q", "-b", "master", environment=clean)
+            git(caller, "config", "user.name", "Isolation Test", environment=clean)
+            git(caller, "config", "user.email", "fixture@example.invalid", environment=clean)
             (caller / "tracked").write_text("committed caller work\n")
-            git("add", "tracked")
-            git("commit", "-qm", "test: caller baseline")
+            git(caller, "add", "tracked", environment=clean)
+            git(caller, "commit", "-qm", "test: caller baseline", environment=clean)
             (caller / "staged").write_text("unique staged caller work\n")
-            git("add", "staged")
+            git(caller, "add", "staged", environment=clean)
             (caller / "tracked").write_text("unique unstaged caller work\n")
             poison = {
                 "GIT_DIR": str(caller / ".git"),
@@ -135,29 +153,21 @@ class GitFixtureIsolation(unittest.TestCase):
                 caller = root / "caller"
                 linked = root / "linked"
                 caller.mkdir()
-                clean = {
-                    key: value for key, value in os.environ.items() if not key.startswith("GIT_")
-                }
-                clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
-
-                def git(
-                    path: Path, *args: str, environment: dict[str, str] = clean
-                ) -> subprocess.CompletedProcess[str]:
-                    return subprocess.run(  # noqa: S603 -- isolated disposable Git caller
-                        [GIT, "-C", str(path), *args],
-                        env=environment,
-                        text=True,
-                        capture_output=True,
-                        check=True,
-                    )
-
                 git(caller, "init", "-q", "-b", "master")
                 git(caller, "config", "user.name", "Linked Hook Test")
                 git(caller, "config", "user.email", "fixture@example.invalid")
                 (caller / "tracked").write_text("committed caller work\n")
                 git(caller, "add", "tracked")
                 git(caller, "commit", "-qm", "test: linked hook baseline")
-                git(caller, "worktree", "add", "-q", "-b", "linked", str(linked))
+                git(
+                    caller,
+                    "worktree",
+                    "add",
+                    "-q",
+                    "-b",
+                    "linked",
+                    str(linked),
+                )
                 for path in (caller, linked):
                     (path / "staged").write_text("unique staged work\n")
                     git(path, "add", "staged")
@@ -176,13 +186,7 @@ class GitFixtureIsolation(unittest.TestCase):
                     ]
                 )
                 hook = caller / ".git/hooks/pre-commit"
-                hook.write_text(
-                    f"#!{sys.executable}\n"
-                    "import json, os, subprocess\nfrom pathlib import Path\n"
-                    f"Path({str(marker)!r}).write_text(json.dumps({{'GIT_DIR': os.environ.get('GIT_DIR')}}))\n"
-                    f"subprocess.run({command!r}, check=True)\n"
-                )
-                hook.chmod(0o700)
+                write_hook(hook, marker, command)
                 before_caller, before_linked = snapshot(caller), snapshot(linked)
                 git(linked, "hook", "run", "pre-commit")
                 inherited = json.loads(marker.read_text())["GIT_DIR"]

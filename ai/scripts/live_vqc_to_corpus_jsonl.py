@@ -14,7 +14,7 @@ Downstream trainer code must account for the cross-corpus scale split.
 
 Pipeline shape::
 
-    .workingdir2/live-vqc/
+    .corpus/live-vqc/
       +-- .download-progress.json
       +-- manifest.csv
       +-- clips/
@@ -307,7 +307,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--live-vqc-dir",
         type=Path,
         default=_DEFAULT_LIVE_VQC_DIR,
-        help="Local LIVE-VQC working directory (default: .workingdir2/live-vqc/).",
+        help="Local LIVE-VQC working directory (default: .corpus/live-vqc/).",
     )
     ap.add_argument("--manifest-csv", type=Path, default=None)
     ap.add_argument("--progress-path", type=Path, default=None)
@@ -325,7 +325,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=_DEFAULT_OUTPUT,
-        help="Output JSONL path (default: .workingdir2/live-vqc/live_vqc.jsonl).",
+        help="Output JSONL path (default: .corpus/live-vqc/live_vqc.jsonl).",
     )
     ap.add_argument(
         "--manifest-out",
@@ -353,20 +353,10 @@ def _build_parser() -> argparse.ArgumentParser:
     return ap
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    args = _build_parser().parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.output.with_suffix(".manifest.json")
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-    if shutil.which(args.curl_bin) is None:
-        _LOG.warning("curl binary %r not on PATH; downloads will fail", args.curl_bin)
-    max_rows: int | None = None if args.full else args.max_rows
+def _run_ingest(args: argparse.Namespace, max_rows: int | None) -> RunStats | int:
+    """Run the ingest and return RunStats on success or int error code on failure."""
     try:
-        stats = run(
+        return run(
             live_vqc_dir=args.live_vqc_dir,
             output=args.output,
             manifest_csv=args.manifest_csv,
@@ -383,13 +373,22 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
         print(
-            "hint: obtain LIVE-VQC from " "https://live.ece.utexas.edu/research/LIVEVQC/index.html",
+            "hint: obtain LIVE-VQC from https://live.ece.utexas.edu/research/LIVEVQC/index.html",
             file=sys.stderr,
         )
         return 2
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+
+
+def _write_live_vqc_manifest(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    stats: RunStats,
+    max_rows: int | None,
+) -> None:
+    """Write the replay manifest sidecar for a completed LIVE-VQC ingest."""
     write_ingest_manifest(
         args.manifest_out,
         schema="live-vqc-corpus-jsonl-manifest-v1",
@@ -415,6 +414,24 @@ def main(argv: list[str] | None = None) -> int:
             "attrition_warn_threshold": args.attrition_warn_threshold,
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    if shutil.which(args.curl_bin) is None:
+        _LOG.warning("curl binary %r not on PATH; downloads will fail", args.curl_bin)
+    max_rows: int | None = None if args.full else args.max_rows
+    result = _run_ingest(args, max_rows)
+    if isinstance(result, int):
+        return result
+    _write_live_vqc_manifest(args, raw_argv, result, max_rows)
     return 0
 
 

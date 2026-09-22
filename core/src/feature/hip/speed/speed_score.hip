@@ -5,7 +5,7 @@
  *
  *  HIP compute kernels for speed_chroma and speed_temporal feature
  *  extractors (ADR-0567).  Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/speed/speed_score.cu`.
+ *  `core/src/feature/cuda/speed/speed_score.cu`.
  *
  *  Algorithm: SpEED (Spatial Efficient Entropy Descriptor) tile-parallel
  *  work — means, covariance accumulation, independent-term scatter,

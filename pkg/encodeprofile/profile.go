@@ -322,27 +322,9 @@ func BuildEncodeRequest(
 	rec Recommendation,
 	opts BuildOptions,
 ) (EncodeRequest, error) {
-	// Profiles written by older vmaf-tune versions store "source" as a plain
-	// path string rather than a metadata dict; normalise before use.
-	sourceMeta := map[string]any{}
-	switch t := profile["source"].(type) {
-	case map[string]any:
-		sourceMeta = t
-	case string:
-		sourceMeta = map[string]any{"path": t}
-	}
-	runMeta, _ := profile["run"].(map[string]any)
-	if runMeta == nil {
-		runMeta = map[string]any{}
-	}
+	sourceMeta, runMeta := profileMetadata(profile)
 
-	// Both branches go through pathString: argparse types --src as a Path, so
-	// CPython normalises an overridden source exactly as it normalises a
-	// stored one, and the normalised form is what lands in the argv.
-	source := pathString(opts.SourceOverride)
-	if opts.SourceOverride == "" {
-		source = pathString(pyStrOr(sourceMeta["path"], ""))
-	}
+	source := resolveSource(sourceMeta, opts)
 	if source == "" {
 		return EncodeRequest{}, errors.New("profile has no source path; pass --src")
 	}
@@ -352,15 +334,8 @@ func BuildEncodeRequest(
 		return EncodeRequest{}, errors.New("selected recommendation has no codec")
 	}
 
-	qualityVal, hasCRF := rec["crf"]
-	if !hasCRF {
-		qualityVal = rec["quality"]
-		if qualityVal == nil {
-			qualityVal = json.Number("-1")
-		}
-	}
-	quality, ok := toInt(qualityVal)
-	if !ok || quality < 0 {
+	quality, ok := resolveQuality(rec)
+	if !ok {
 		return EncodeRequest{}, errors.New("selected recommendation has no usable CRF/quality")
 	}
 
@@ -373,39 +348,15 @@ func BuildEncodeRequest(
 	height := pickInt(opts.HeightOverride, sourceMeta["height"])
 	framerate := pickFloat(opts.FramerateOverride, sourceMeta["fps"])
 
-	pixFmt := opts.PixFmtOverride
-	if pixFmt == "" {
-		pixFmt = pyStrOr(runMeta["pix_fmt"], "")
-	}
-	if pixFmt == "" {
-		pixFmt = "yuv420p"
-	}
+	pixFmt := resolvePixFmt(opts.PixFmtOverride, runMeta)
 
 	if !sourceIsContainer && (width <= 0 || height <= 0 || framerate <= 0) {
 		return EncodeRequest{}, errors.New(
 			"raw sources require width, height, and framerate in profile or flags")
 	}
 
-	preset := opts.PresetOverride
-	if preset == "" {
-		preset = pyStrOr(rec["preset"], "")
-	}
-	if preset == "" {
-		preset = pyStrOr(runMeta["preset"], "")
-	}
-	if preset == "" || preset == "adapter default" {
-		preset = DefaultPreset(codec)
-	}
-
-	var duration float64
-	if opts.DurationOverride != nil {
-		duration = *opts.DurationOverride
-	} else {
-		duration = finiteFloatOr(sourceMeta["duration_s"], 0)
-		if math.IsNaN(duration) {
-			duration = 0
-		}
-	}
+	preset := resolvePreset(opts.PresetOverride, rec, runMeta, codec)
+	duration := resolveDuration(opts.DurationOverride, sourceMeta)
 
 	return EncodeRequest{
 		Source:            source,
@@ -423,6 +374,97 @@ func BuildEncodeRequest(
 		SourceIsContainer: sourceIsContainer,
 		DurationS:         duration,
 	}, nil
+}
+
+// profileMetadata splits a profile into its source and run metadata blocks.
+//
+// Profiles written by older vmaf-tune versions store "source" as a plain path
+// string rather than a metadata dict; both shapes normalise to a dict here.
+func profileMetadata(profile Profile) (sourceMeta, runMeta map[string]any) {
+	sourceMeta = map[string]any{}
+	switch t := profile["source"].(type) {
+	case map[string]any:
+		sourceMeta = t
+	case string:
+		sourceMeta = map[string]any{"path": t}
+	}
+	runMeta, _ = profile["run"].(map[string]any)
+	if runMeta == nil {
+		runMeta = map[string]any{}
+	}
+	return sourceMeta, runMeta
+}
+
+// resolveSource picks the source path: the --src override when given, else the
+// one stored in the profile.
+//
+// Both branches go through pathString: argparse types --src as a Path, so
+// CPython normalises an overridden source exactly as it normalises a stored
+// one, and the normalised form is what lands in the argv.
+func resolveSource(sourceMeta map[string]any, opts BuildOptions) string {
+	if opts.SourceOverride != "" {
+		return pathString(opts.SourceOverride)
+	}
+	return pathString(pyStrOr(sourceMeta["path"], ""))
+}
+
+// resolveQuality reads the recommendation's CRF, falling back to the generic
+// "quality" key. A missing or negative value is reported as unusable.
+func resolveQuality(rec Recommendation) (int, bool) {
+	qualityVal, hasCRF := rec["crf"]
+	if !hasCRF {
+		qualityVal = rec["quality"]
+		if qualityVal == nil {
+			qualityVal = json.Number("-1")
+		}
+	}
+	quality, ok := toInt(qualityVal)
+	if !ok || quality < 0 {
+		return 0, false
+	}
+	return quality, true
+}
+
+// resolvePixFmt picks the pixel format: the override, else the recorded run's,
+// else the yuv420p default.
+func resolvePixFmt(override string, runMeta map[string]any) string {
+	if override != "" {
+		return override
+	}
+	if stored := pyStrOr(runMeta["pix_fmt"], ""); stored != "" {
+		return stored
+	}
+	return "yuv420p"
+}
+
+// resolvePreset picks the preset: the override, else the recommendation's,
+// else the recorded run's, else the codec adapter's default. The literal
+// "adapter default" is a placeholder the profile writer emits, not a preset.
+func resolvePreset(override string, rec Recommendation, runMeta map[string]any, codec string) string {
+	preset := override
+	if preset == "" {
+		preset = pyStrOr(rec["preset"], "")
+	}
+	if preset == "" {
+		preset = pyStrOr(runMeta["preset"], "")
+	}
+	if preset == "" || preset == "adapter default" {
+		return DefaultPreset(codec)
+	}
+	return preset
+}
+
+// resolveDuration picks the source duration: the override when given, else the
+// stored value, with NaN collapsed to zero.
+func resolveDuration(override *float64, sourceMeta map[string]any) float64 {
+	if override != nil {
+		return *override
+	}
+	duration := finiteFloatOr(sourceMeta["duration_s"], 0)
+	if math.IsNaN(duration) {
+		return 0
+	}
+	return duration
 }
 
 // pickInt implements CPython's `int(override or stored or 0)`: a zero override

@@ -5,7 +5,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP host glue for the integer VIF feature extractor.
- *  Mirrors libvmaf/src/feature/cuda/integer_vif_cuda.h field-for-field,
+ *  Mirrors core/src/feature/cuda/integer_vif_cuda.h field-for-field,
  *  replacing CUDA Driver API types with HIP equivalents.
  */
 

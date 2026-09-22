@@ -11,7 +11,7 @@
  *  kernel arrives in T8-1c; this test is the gate that the runtime
  *  surface itself works.
  *
- *  Mirrors libvmaf/test/test_hip_smoke.c.
+ *  Mirrors core/test/test_hip_smoke.c.
  */
 
 #include <errno.h>
@@ -45,7 +45,7 @@ static int try_get_ctx(VmafMetalContext **ctx_out)
     return vmaf_metal_context_new(ctx_out, -1);
 }
 
-/* ---- Internal context (libvmaf/src/metal/common.h) ---- */
+/* ---- Internal context (core/src/metal/common.h) ---- */
 
 static char *test_context_new_rejects_null_out(void)
 {
@@ -88,7 +88,7 @@ static char *test_device_count_nonnegative(void)
     return NULL;
 }
 
-/* ---- Public C-API (libvmaf/include/libvmaf/libvmaf_metal.h) ---- */
+/* ---- Public C-API (core/include/libvmaf/libvmaf_metal.h) ---- */
 
 static char *test_available_reports_built(void)
 {

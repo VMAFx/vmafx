@@ -458,12 +458,7 @@ func SelectValidationShots(
 			"unknown strategy %q; expected %q or %q", strategy, Stratified, Head)
 	}
 
-	ranked := make([]pershot.Shot, len(shots))
-	copy(ranked, shots)
-	sort.SliceStable(ranked, func(i, j int) bool {
-		return featuresByShot[ranked[i]].ProbeBitrateKbps <
-			featuresByShot[ranked[j]].ProbeBitrateKbps
-	})
+	ranked := rankByProbeBitrate(shots, featuresByShot)
 
 	quartileSize := len(ranked) / 4
 	perQuartile := k / 4
@@ -478,32 +473,53 @@ func SelectValidationShots(
 		if lo >= hi {
 			continue
 		}
-		quartile := ranked[lo:hi]
 		nPick := perQuartile
 		if i == 3 {
 			nPick += extra
 		}
-		if nPick > len(quartile) {
-			nPick = len(quartile)
-		}
-		if nPick == 0 {
-			continue
-		}
-		// Evenly spaced within the quartile so adjacent shots are not
-		// double-sampled.
-		step := len(quartile) / nPick
-		if step < 1 {
-			step = 1
-		}
-		for j := 0; j < nPick; j++ {
-			idx := j * step
-			if idx > len(quartile)-1 {
-				idx = len(quartile) - 1
-			}
-			selected = append(selected, quartile[idx])
-		}
+		selected = append(selected, spreadOverQuartile(ranked[lo:hi], nPick)...)
 	}
 	return selected, nil
+}
+
+// rankByProbeBitrate orders a copy of shots by ascending probe bitrate. A shot
+// missing from the map ranks at bitrate 0, which puts unmeasured content in
+// the lowest quartile where it belongs.
+func rankByProbeBitrate(
+	shots []pershot.Shot, featuresByShot map[pershot.Shot]ShotFeatures,
+) []pershot.Shot {
+	ranked := make([]pershot.Shot, len(shots))
+	copy(ranked, shots)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return featuresByShot[ranked[i]].ProbeBitrateKbps <
+			featuresByShot[ranked[j]].ProbeBitrateKbps
+	})
+	return ranked
+}
+
+// spreadOverQuartile picks nPick shots evenly spaced across one quartile so
+// adjacent shots are not double-sampled. Asking for more than the quartile
+// holds yields the whole quartile; asking for none yields none.
+func spreadOverQuartile(quartile []pershot.Shot, nPick int) []pershot.Shot {
+	if nPick > len(quartile) {
+		nPick = len(quartile)
+	}
+	if nPick <= 0 {
+		return nil
+	}
+	step := len(quartile) / nPick
+	if step < 1 {
+		step = 1
+	}
+	picked := make([]pershot.Shot, 0, nPick)
+	for j := 0; j < nPick; j++ {
+		idx := j * step
+		if idx > len(quartile)-1 {
+			idx = len(quartile) - 1
+		}
+		picked = append(picked, quartile[idx])
+	}
+	return picked
 }
 
 // FeatureExtractor computes the feature vector for one shot.

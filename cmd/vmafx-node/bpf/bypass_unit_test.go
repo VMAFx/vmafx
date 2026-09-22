@@ -147,15 +147,21 @@ func TestStubClose_Objects(t *testing.T) {
 
 	// rcloneBypassMaps.Close — all map fields nil.
 	var maps rcloneBypassMaps
-	maps.Close() // must not panic
+	if err := maps.Close(); err != nil { // must not panic, must report no failure
+		t.Errorf("rcloneBypassMaps.Close on nil maps: got %v, want nil", err)
+	}
 
 	// rcloneBypassPrograms.Close — all program fields nil.
 	var progs rcloneBypassPrograms
-	progs.Close() // must not panic
+	if err := progs.Close(); err != nil { // must not panic, must report no failure
+		t.Errorf("rcloneBypassPrograms.Close on nil programs: got %v, want nil", err)
+	}
 
 	// rcloneBypassObjects.Close — embeds the above; calls both sub-Close.
 	var objs rcloneBypassObjects
-	objs.Close() // must not panic
+	if err := objs.Close(); err != nil { // must not panic, must report no failure
+		t.Errorf("rcloneBypassObjects.Close on zero objects: got %v, want nil", err)
+	}
 }
 
 // TestLoadRcloneBypassObjects_StubReturnsError verifies that the stub

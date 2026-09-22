@@ -282,21 +282,17 @@ static int vmaf_ctx_subsystems_init(VmafContext *v)
     if (err)
         return err;
     err = vmaf_feature_collector_init(&(v->feature_collector));
-    if (err)
-        goto free_framesync;
-    err = feature_extractor_vector_init(&(v->registered_feature_extractors));
-    if (err)
-        goto free_feature_collector;
-    err = vmaf_ctx_thread_pools_init(v);
-    if (err)
-        goto free_feature_extractor_vector;
-    return 0;
-
-free_feature_extractor_vector:
-    feature_extractor_vector_destroy(&(v->registered_feature_extractors));
-free_feature_collector:
-    vmaf_feature_collector_destroy(v->feature_collector);
-free_framesync:
+    if (!err) {
+        err = feature_extractor_vector_init(&(v->registered_feature_extractors));
+        if (!err) {
+            err = vmaf_ctx_thread_pools_init(v);
+            if (!err) {
+                return 0;
+            }
+            feature_extractor_vector_destroy(&(v->registered_feature_extractors));
+        }
+        vmaf_feature_collector_destroy(v->feature_collector);
+    }
     (void)vmaf_framesync_destroy(v->framesync);
     return err;
 }
@@ -699,7 +695,7 @@ int vmaf_metal_read_imported_pictures(VmafContext *vmaf, unsigned index)
  * caller, vmaf_close() clears the pointer without freeing, and the
  * caller calls vmaf_hip_state_free() after vmaf_close().
  *
- * Implementation lives here (not in libvmaf/src/hip/common.c) because
+ * Implementation lives here (not in core/src/hip/common.c) because
  * it needs VmafContext field-level access. The CUDA / SYCL / Metal
  * twins follow the same convention. */
 int vmaf_hip_import_state(VmafContext *vmaf, VmafHipState *hip_state)
@@ -2622,8 +2618,8 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
     return err;
 }
 
-/* Upstream dispatch function. Refactoring is tracked in .workingdir2/OPEN.md.
- * `ref` / `dist` are only read on the CPU configuration cppcheck analyses,
+/* Upstream dispatch function. `ref` / `dist` are only read on the CPU
+ * configuration cppcheck analyses,
  * but the SYCL build hands them to vmaf_sycl_shared_frame_upload(), whose
  * prototype (src/sycl/common.h) takes mutable pictures, so they cannot be
  * const-qualified for every backend. Suppression cited per ADR-0278. */
@@ -2695,13 +2691,8 @@ typedef struct ReadPicturesFrame {
  *  Vulkan / SYCL extractors keep their per-frame collect/submit
  *  ordering — only CUDA participates in the batch.
  */
-static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref_device,
-                                             VmafPicture *dist_device, unsigned index)
+static int read_pictures_cuda_collect_pending(VmafContext *vmaf)
 {
-    if (!vmaf->cuda.state.ctx) {
-        return 0;
-    }
-
     /* Phase 1: batched drain + per-extractor collect of the prev
      * frame's pending GPU work. */
     int err = vmaf_cuda_drain_batch_flush(&vmaf->cuda.state);
@@ -2729,11 +2720,17 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
         }
     }
     vmaf_cuda_drain_batch_close();
+    return 0;
+}
 
+static int read_pictures_cuda_submit_current(VmafContext *vmaf, VmafPicture *ref_device,
+                                             VmafPicture *dist_device, unsigned index)
+{
     /* Phase 2: batched submit of the curr frame. The drain batch is
      * re-opened so each extractor's submit() registers its
      * ``finished`` event for the next frame's drain_flush. */
     vmaf_cuda_drain_batch_open(&vmaf->cuda.state);
+    int err = 0;
     for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
         VmafFeatureExtractorContext *fex_ctx = vmaf->registered_feature_extractors.fex_ctx[i];
         if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)) {
@@ -2775,6 +2772,19 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
     /* Drain batch stays open until the next frame's drain_flush —
      * Phase 1 above closes it before reopening. */
     return 0;
+}
+
+static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref_device,
+                                             VmafPicture *dist_device, unsigned index)
+{
+    if (!vmaf->cuda.state.ctx) {
+        return 0;
+    }
+    const int err = read_pictures_cuda_collect_pending(vmaf);
+    if (err) {
+        return err;
+    }
+    return read_pictures_cuda_submit_current(vmaf, ref_device, dist_device, index);
 }
 #endif /* HAVE_CUDA */
 
@@ -3010,6 +3020,46 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
 }
 
 #ifdef HAVE_SYCL
+static int read_pictures_sycl_extractors(VmafContext *vmaf, unsigned index)
+{
+    for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
+        VmafFeatureExtractorContext *fex_ctx = vmaf->registered_feature_extractors.fex_ctx[i];
+        if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)) {
+            continue;
+        }
+        if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL) &&
+            (vmaf->cfg.n_subsample > 1) && (index % vmaf->cfg.n_subsample)) {
+            continue;
+        }
+
+        /* Initialize lazily because picture parameters arrive with the first frame. */
+        int err = 0;
+        if (!fex_ctx->is_initialized) {
+            err = vmaf_feature_extractor_context_init(fex_ctx, vmaf->pic_params.pix_fmt,
+                                                      vmaf->pic_params.bpc, vmaf->pic_params.w,
+                                                      vmaf->pic_params.h);
+            if (err) {
+                return err;
+            }
+        }
+        if (fex_ctx->gpu_pending) {
+            err = vmaf_feature_extractor_context_collect(fex_ctx, fex_ctx->gpu_pending_index,
+                                                         vmaf->feature_collector);
+            fex_ctx->gpu_pending = false;
+            if (err) {
+                return err;
+            }
+        }
+        err = vmaf_feature_extractor_context_submit_nocopy(fex_ctx, index);
+        if (err) {
+            return err;
+        }
+        fex_ctx->gpu_pending = true;
+        fex_ctx->gpu_pending_index = index;
+    }
+    return 0;
+}
+
 int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
 {
     if (!vmaf)
@@ -3019,14 +3069,12 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     if (vmaf->flushed)
         return -EINVAL;
 
-    int err = 0;
-
     // Ensure de-tile kernels on the primary queue have finished reading from
     // imported VA surface memory.  After this function returns, the caller
     // (FFmpeg filter) may release the AVFrame, letting the QSV hwupload pool
     // reuse the VA surface for the next frame.  Without this wait, the async
     // de-tile could race with the hwupload writing new data.
-    err = vmaf_sycl_queue_wait(vmaf->sycl.state);
+    const int err = vmaf_sycl_queue_wait(vmaf->sycl.state);
     if (err)
         return err;
     /* Increment only after queue_wait succeeds so a retry on error does not
@@ -3050,47 +3098,10 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     (void)vmaf_sycl_checksum_y_slot(vmaf->sycl.state, 1, vmaf->pic_cnt - 1, "sycl");
     (void)vmaf_sycl_checksum_y_slot(vmaf->sycl.state, 0, vmaf->pic_cnt - 1, "sycl");
 
-    // GPU extractor loop: collect previous results, then submit new work.
-    // No upload needed — caller already wrote Y plane data into the shared
-    // SYCL USM device buffers (e.g. via VPL Level Zero interop).
-    for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
-        VmafFeatureExtractorContext *fex_ctx = vmaf->registered_feature_extractors.fex_ctx[i];
-
-        if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL))
-            continue;
-
-        if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)) {
-            if ((vmaf->cfg.n_subsample > 1) && (index % vmaf->cfg.n_subsample))
-                continue;
-        }
-
-        // Lazy initialization
-        if (!fex_ctx->is_initialized) {
-            err = vmaf_feature_extractor_context_init(fex_ctx, vmaf->pic_params.pix_fmt,
-                                                      vmaf->pic_params.bpc, vmaf->pic_params.w,
-                                                      vmaf->pic_params.h);
-            if (err)
-                return err;
-        }
-
-        // Collect previous frame's results (double-buffered)
-        if (fex_ctx->gpu_pending) {
-            err = vmaf_feature_extractor_context_collect(fex_ctx, fex_ctx->gpu_pending_index,
-                                                         vmaf->feature_collector);
-            fex_ctx->gpu_pending = false;
-            if (err)
-                return err;
-        }
-
-        // Submit current frame (GPU buffers already populated)
-        err = vmaf_feature_extractor_context_submit_nocopy(fex_ctx, index);
-        if (err)
-            return err;
-        fex_ctx->gpu_pending = true;
-        fex_ctx->gpu_pending_index = index;
-    }
-
-    return err;
+    /* GPU buffers are already populated (for example through VPL Level Zero
+     * interop), so the extractor pass only collects prior work and submits the
+     * current frame without an upload. */
+    return read_pictures_sycl_extractors(vmaf, index);
 }
 
 int vmaf_flush_sycl(VmafContext *vmaf)
@@ -3114,9 +3125,10 @@ int vmaf_flush_sycl(VmafContext *vmaf)
             }
         }
         for (unsigned i = 0; i < rfe.cnt; i++) {
-            if (rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)
+            if (rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL) {
                 err |=
                     vmaf_feature_extractor_context_flush(rfe.fex_ctx[i], vmaf->feature_collector);
+            }
         }
         vmaf_sycl_queue_wait(vmaf->sycl.state);
         vmaf_sycl_print_timing(vmaf->sycl.state);

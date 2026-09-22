@@ -23,7 +23,7 @@
  * The algorithm is a clean-room C reimplementation guided by the published
  * papers (arXiv:2304.03412 "One Transform To Compute Them All";
  * arXiv:2202.11241 FUNQUE; Nadenau HVS-CSF; Wang/Simoncelli/Bovik MS-SSIM)
- * and the verified design dossier .workingdir2/rc/metrics/y-funque-plus.md.
+ * and the tracked design in docs/metrics/y-funque-plus.md and ADR-1114.
  * The reference funque_plus implementation
  * (github.com/abhinaukumar/funque_plus, MIT License, (c) 2023 Abhinau Kumar)
  * is MIT-licensed and therefore compatible with this fork's
@@ -683,24 +683,23 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -EINVAL;
     }
 
-    if (yf_alloc_buffers(s))
-        goto fail;
+    int err = yf_alloc_buffers(s);
+    if (!err) {
+        s->have_prev = false;
+        s->prev_approx = NULL;
+        s->prev_approx_w = s->ref_pyr[YF_LEVELS - 1u].approx.w;
+        s->prev_approx_h = s->ref_pyr[YF_LEVELS - 1u].approx.h;
 
-    s->have_prev = false;
-    s->prev_approx = NULL;
-    s->prev_approx_w = s->ref_pyr[YF_LEVELS - 1u].approx.w;
-    s->prev_approx_h = s->ref_pyr[YF_LEVELS - 1u].approx.h;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto fail;
-
-    return 0;
-
-fail:
-    yf_free_all(s);
-    return -ENOMEM;
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict) {
+            err = -ENOMEM;
+        }
+    }
+    if (err) {
+        yf_free_all(s);
+    }
+    return err;
 }
 
 /* MAD-Ref atom: mean|ref_approx_last[t] - ref_approx_last[t-1]|; 0 on the

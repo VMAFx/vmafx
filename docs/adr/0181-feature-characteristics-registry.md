@@ -167,7 +167,7 @@ under existing load before adding 14 new metrics.
 - Source: user direction 2026-04-26 ("global, not per-backend
   ... just a module for every backendtype and done").
 - Backlog row: T7-26 in
-  [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md).
+  `.workingdir2/BACKLOG.md`.
 - Related: [ADR-0127](0127-vulkan-backend-decision.md) (Vulkan
   backend decision); [ADR-0175](0175-vulkan-backend-scaffold.md)
   (Vulkan scaffold).

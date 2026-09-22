@@ -277,98 +277,163 @@ func optIntArg(args map[string]any, key string) *int {
 }
 
 // parseScoreExtras extracts and validates the optional scoring pass-through flags from args.
+//
+// The groups run in the order the flags were validated inline, so the first complaint a
+// caller sees for a request with several bad values is the same one as before.
 func parseScoreExtras(args map[string]any) (scoreExtras, error) {
+	var ex scoreExtras
+	for _, parse := range []func(map[string]any, *scoreExtras) error{
+		parseTinyExtras,
+		parseCTCExtras,
+		parseFrameExtras,
+		parseDeviceExtras,
+		parseOutputExtras,
+	} {
+		if err := parse(args, &ex); err != nil {
+			return scoreExtras{}, err
+		}
+	}
+	ex.features = parseFeatureExtras(args)
+	return ex, nil
+}
+
+// parseTinyExtras validates and stores the tiny-AI / DNN pass-through flags.
+func parseTinyExtras(args map[string]any, ex *scoreExtras) error {
 	tinyDevice := strArg(args, "tiny_device", "")
 	dnnEP := strArg(args, "dnn_ep", "")
 	if tinyDevice != "" && dnnEP != "" && tinyDevice != dnnEP {
-		return scoreExtras{}, fmt.Errorf("conflicting tiny_device (%q) and dnn_ep (%q) values", tinyDevice, dnnEP)
+		return fmt.Errorf("conflicting tiny_device (%q) and dnn_ep (%q) values", tinyDevice, dnnEP)
 	}
 	if tinyDevice == "" {
 		tinyDevice = dnnEP
 	}
 	if tinyDevice != "" && !validTinyDevices[tinyDevice] {
-		return scoreExtras{}, fmt.Errorf("invalid tiny_device %q: must be one of auto|cpu|cuda|openvino|openvino-npu|openvino-cpu|openvino-gpu|coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm", tinyDevice)
+		return fmt.Errorf("invalid tiny_device %q: must be one of auto|cpu|cuda|openvino|openvino-npu|openvino-cpu|openvino-gpu|coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm", tinyDevice)
 	}
 
 	tinyResize := strArg(args, "tiny_resize", "")
 	if tinyResize != "" && !validTinyResizes[tinyResize] {
-		return scoreExtras{}, fmt.Errorf("invalid tiny_resize %q: must be one of bilinear|nearest|bicubic|disabled", tinyResize)
+		return fmt.Errorf("invalid tiny_resize %q: must be one of bilinear|nearest|bicubic|disabled", tinyResize)
 	}
 
 	tinyCRF := optIntArg(args, "tiny_crf")
 	if tinyCRF != nil && (*tinyCRF < 0 || *tinyCRF > 63) {
-		return scoreExtras{}, fmt.Errorf("invalid tiny_crf %d: must be in range [0, 63]", *tinyCRF)
+		return fmt.Errorf("invalid tiny_crf %d: must be in range [0, 63]", *tinyCRF)
 	}
 
 	tinyThreads := optIntArg(args, "tiny_threads")
 	if tinyThreads != nil && *tinyThreads < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid tiny_threads %d: must be >= 0", *tinyThreads)
+		return fmt.Errorf("invalid tiny_threads %d: must be >= 0", *tinyThreads)
 	}
 
+	ex.tinyModel = strArg(args, "tiny_model", "")
+	ex.tinyDevice = tinyDevice
+	ex.tinyThreads = tinyThreads
+	ex.tinyFP16 = boolArg(args, "tiny_fp16", false)
+	ex.tinyModelVerify = boolArg(args, "tiny_model_verify", false)
+	ex.tinyCodec = strArg(args, "tiny_codec", "")
+	ex.tinyPreset = strArg(args, "tiny_preset", "")
+	ex.tinyCRF = tinyCRF
+	ex.tinyResize = tinyResize
+	ex.noReference = boolArg(args, "no_reference", false)
+	return nil
+}
+
+// parseCTCExtras validates and stores the Common Test Conditions preset selectors.
+func parseCTCExtras(args map[string]any, ex *scoreExtras) error {
 	aomCTC := strArg(args, "aom_ctc", "")
 	if aomCTC != "" && !validAOMCTCs[aomCTC] {
-		return scoreExtras{}, fmt.Errorf("invalid aom_ctc %q: must be one of v1.0|v2.0|v3.0|v4.0|v5.0|v6.0|v7.0", aomCTC)
+		return fmt.Errorf("invalid aom_ctc %q: must be one of v1.0|v2.0|v3.0|v4.0|v5.0|v6.0|v7.0", aomCTC)
 	}
 
 	nflxCTC := strArg(args, "nflx_ctc", "")
 	if nflxCTC != "" && !validNFLXCTCs[nflxCTC] {
-		return scoreExtras{}, fmt.Errorf("invalid nflx_ctc %q: must be v1.0", nflxCTC)
+		return fmt.Errorf("invalid nflx_ctc %q: must be v1.0", nflxCTC)
 	}
 
+	ex.aomCTC = aomCTC
+	ex.nflxCTC = nflxCTC
+	return nil
+}
+
+// parseFrameExtras validates and stores the worker-count and frame-range selectors.
+func parseFrameExtras(args map[string]any, ex *scoreExtras) error {
 	threads := optIntArg(args, "threads")
 	if threads != nil && *threads < 1 {
-		return scoreExtras{}, fmt.Errorf("invalid threads %d: must be >= 1", *threads)
+		return fmt.Errorf("invalid threads %d: must be >= 1", *threads)
 	}
 
 	frameCnt := optIntArg(args, "frame_cnt")
 	if frameCnt != nil && *frameCnt < 1 {
-		return scoreExtras{}, fmt.Errorf("invalid frame_cnt %d: must be >= 1", *frameCnt)
+		return fmt.Errorf("invalid frame_cnt %d: must be >= 1", *frameCnt)
 	}
 
 	frameSkipRef := optIntArg(args, "frame_skip_ref")
 	if frameSkipRef != nil && *frameSkipRef < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid frame_skip_ref %d: must be non-negative", *frameSkipRef)
+		return fmt.Errorf("invalid frame_skip_ref %d: must be non-negative", *frameSkipRef)
 	}
 
 	frameSkipDist := optIntArg(args, "frame_skip_dist")
 	if frameSkipDist != nil && *frameSkipDist < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid frame_skip_dist %d: must be non-negative", *frameSkipDist)
+		return fmt.Errorf("invalid frame_skip_dist %d: must be non-negative", *frameSkipDist)
 	}
 
 	subsample := intArg(args, "subsample", 1)
 	if subsample < 1 {
-		return scoreExtras{}, fmt.Errorf("invalid subsample %d: must be >= 1", subsample)
+		return fmt.Errorf("invalid subsample %d: must be >= 1", subsample)
 	}
 
+	ex.threads = threads
+	ex.frameCnt = frameCnt
+	ex.frameSkipRef = frameSkipRef
+	ex.frameSkipDist = frameSkipDist
+	ex.noPrediction = boolArg(args, "no_prediction", false)
+	ex.subsample = subsample
+	return nil
+}
+
+// parseDeviceExtras validates and stores the CPU and GPU device selectors.
+func parseDeviceExtras(args map[string]any, ex *scoreExtras) error {
 	cpumask := optIntArg(args, "cpumask")
 	if cpumask != nil && *cpumask < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid cpumask %d: must be non-negative", *cpumask)
+		return fmt.Errorf("invalid cpumask %d: must be non-negative", *cpumask)
 	}
 
 	gpumask := optIntArg(args, "gpumask")
 	if gpumask != nil && *gpumask < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid gpumask %d: must be non-negative", *gpumask)
+		return fmt.Errorf("invalid gpumask %d: must be non-negative", *gpumask)
 	}
 
 	syclDevice := optIntArg(args, "sycl_device")
 	if syclDevice != nil && *syclDevice < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid sycl_device %d: must be non-negative", *syclDevice)
+		return fmt.Errorf("invalid sycl_device %d: must be non-negative", *syclDevice)
 	}
 
 	hipDevice := optIntArg(args, "hip_device")
 	if hipDevice != nil && *hipDevice < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid hip_device %d: must be non-negative", *hipDevice)
+		return fmt.Errorf("invalid hip_device %d: must be non-negative", *hipDevice)
 	}
 
 	metalDevice := optIntArg(args, "metal_device")
 	if metalDevice != nil && *metalDevice < 0 {
-		return scoreExtras{}, fmt.Errorf("invalid metal_device %d: must be non-negative", *metalDevice)
+		return fmt.Errorf("invalid metal_device %d: must be non-negative", *metalDevice)
 	}
 
+	ex.cpumask = cpumask
+	ex.gpumask = gpumask
+	ex.syclDevice = syclDevice
+	ex.hipDevice = hipDevice
+	ex.metalDevice = metalDevice
+	return nil
+}
+
+// parseOutputExtras resolves the output format from the csv/sub shorthands and the
+// output_fmt (or legacy format) key, rejecting combinations that disagree.
+func parseOutputExtras(args map[string]any, ex *scoreExtras) error {
 	csvFlag := boolArg(args, "csv", false)
 	subFlag := boolArg(args, "sub", false)
 	if csvFlag && subFlag {
-		return scoreExtras{}, fmt.Errorf("conflicting csv and sub flags: cannot specify both")
+		return fmt.Errorf("conflicting csv and sub flags: cannot specify both")
 	}
 	rawFmt := strArg(args, "output_fmt", "")
 	if rawFmt == "" {
@@ -377,58 +442,42 @@ func parseScoreExtras(args map[string]any) (scoreExtras, error) {
 	outputFmt := rawFmt
 	if csvFlag {
 		if rawFmt != "" && rawFmt != "csv" {
-			return scoreExtras{}, fmt.Errorf("conflicting output format: csv flag cannot be used with output_fmt %q", rawFmt)
+			return fmt.Errorf("conflicting output format: csv flag cannot be used with output_fmt %q", rawFmt)
 		}
 		outputFmt = "csv"
 	} else if subFlag {
 		if rawFmt != "" && rawFmt != "sub" {
-			return scoreExtras{}, fmt.Errorf("conflicting output format: sub flag cannot be used with output_fmt %q", rawFmt)
+			return fmt.Errorf("conflicting output format: sub flag cannot be used with output_fmt %q", rawFmt)
 		}
 		outputFmt = "sub"
 	} else if outputFmt == "" {
 		outputFmt = "json"
 	}
 	if !validOutputFmts[outputFmt] {
-		return scoreExtras{}, fmt.Errorf("invalid output_fmt %q: must be one of json|xml|csv|sub", outputFmt)
+		return fmt.Errorf("invalid output_fmt %q: must be one of json|xml|csv|sub", outputFmt)
 	}
 
-	ex := scoreExtras{
-		aomCTC:          aomCTC,
-		nflxCTC:         nflxCTC,
-		tinyModel:       strArg(args, "tiny_model", ""),
-		tinyDevice:      tinyDevice,
-		tinyThreads:     tinyThreads,
-		tinyFP16:        boolArg(args, "tiny_fp16", false),
-		tinyModelVerify: boolArg(args, "tiny_model_verify", false),
-		tinyCodec:       strArg(args, "tiny_codec", ""),
-		tinyPreset:      strArg(args, "tiny_preset", ""),
-		tinyCRF:         tinyCRF,
-		tinyResize:      tinyResize,
-		noReference:     boolArg(args, "no_reference", false),
-		threads:         threads,
-		frameCnt:        frameCnt,
-		frameSkipRef:    frameSkipRef,
-		frameSkipDist:   frameSkipDist,
-		noPrediction:    boolArg(args, "no_prediction", false),
-		subsample:       subsample,
-		cpumask:         cpumask,
-		gpumask:         gpumask,
-		syclDevice:      syclDevice,
-		hipDevice:       hipDevice,
-		metalDevice:     metalDevice,
-		outputFmt:       outputFmt,
-		disableClip:     boolArg(args, "disable_clip", false),
-		enableTransform: boolArg(args, "enable_transform", false),
-	}
+	ex.outputFmt = outputFmt
+	ex.disableClip = boolArg(args, "disable_clip", false)
+	ex.enableTransform = boolArg(args, "enable_transform", false)
+	return nil
+}
 
-	if raw, ok := args["feature"].([]any); ok {
-		for _, f := range raw {
-			if s, isStr := f.(string); isStr && s != "" {
-				ex.features = append(ex.features, s)
-			}
+// parseFeatureExtras collects the repeated --feature values, skipping entries that are
+// not non-empty strings. The schema already constrains them; this keeps a malformed
+// client from injecting a blank flag.
+func parseFeatureExtras(args map[string]any) []string {
+	raw, ok := args["feature"].([]any)
+	if !ok {
+		return nil
+	}
+	var features []string
+	for _, f := range raw {
+		if s, isStr := f.(string); isStr && s != "" {
+			features = append(features, s)
 		}
 	}
-	return ex, nil
+	return features
 }
 
 // appendArgs appends every set scoring-extra flag to argv in a fixed,
@@ -450,6 +499,14 @@ func (ex scoreExtras) appendArgs(argv []string) []string {
 	if ex.nflxCTC != "" {
 		argv = append(argv, "--nflx_ctc", ex.nflxCTC)
 	}
+	argv = ex.appendTinyArgs(argv)
+	argv = ex.appendFrameArgs(argv)
+	return ex.appendDeviceArgs(argv)
+}
+
+// appendTinyArgs appends the tiny-AI / DNN flags, in the order the Python server emits
+// them.
+func (ex scoreExtras) appendTinyArgs(argv []string) []string {
 	if ex.tinyModel != "" {
 		argv = append(argv, "--tiny-model", ex.tinyModel)
 	}
@@ -480,6 +537,11 @@ func (ex scoreExtras) appendArgs(argv []string) []string {
 	if ex.noReference {
 		argv = append(argv, "--no-reference")
 	}
+	return argv
+}
+
+// appendFrameArgs appends the worker-count and frame-range flags.
+func (ex scoreExtras) appendFrameArgs(argv []string) []string {
 	if ex.threads != nil {
 		argv = append(argv, "--threads", strconv.Itoa(*ex.threads))
 	}
@@ -495,6 +557,11 @@ func (ex scoreExtras) appendArgs(argv []string) []string {
 	if ex.noPrediction {
 		argv = append(argv, "--no_prediction")
 	}
+	return argv
+}
+
+// appendDeviceArgs appends the CPU and GPU device-selector flags.
+func (ex scoreExtras) appendDeviceArgs(argv []string) []string {
 	if ex.cpumask != nil {
 		argv = append(argv, "--cpumask", strconv.Itoa(*ex.cpumask))
 	}
@@ -675,7 +742,20 @@ func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfm
 		return nil, fmt.Errorf("vmaf exited %v: %s", err, stderr.String())
 	}
 
-	// #nosec G304 -- outPath is the value returned by os.CreateTemp above, not
+	return decodeVmafOutput(outPath, backend, model, width, height, extras)
+}
+
+// decodeVmafOutput reads the file the vmaf CLI wrote and shapes it into the tool response.
+//
+// A non-JSON format is handed back verbatim under "output"; JSON is parsed so the backend
+// attribution and the resolution-mismatch warning can be attached to the payload the
+// caller receives.
+func decodeVmafOutput(
+	outPath, backend, model string,
+	width, height int,
+	extras scoreExtras,
+) (map[string]any, error) {
+	// #nosec G304 -- outPath is the os.CreateTemp path the caller created, not
 	// a caller-supplied path; it cannot escape /tmp.
 	data, err := os.ReadFile(outPath)
 	if err != nil {
@@ -1052,6 +1132,26 @@ func handleDescribeWorstFrames(ctx context.Context, args map[string]any) (any, e
 		return nil, fmt.Errorf("unsupported pixfmt/bitdepth: %s/%d", pixfmt, bitdepth)
 	}
 
+	return map[string]any{
+		"model_id": nil,
+		"frames":   extractWorstFramePNGs(ctx, dis, tmpDir, worst, width, height, pixFmtFFmpeg),
+	}, nil
+}
+
+// extractWorstFramePNGs writes one PNG per selected frame and returns the per-frame
+// records the tool reports.
+//
+// A frame whose extraction fails is still reported, with the failure in its description
+// and an empty png path: one unreadable frame must not cost the caller the whole answer.
+// The description is a placeholder on the success path too, because the Go server carries
+// no VLM -- that is what the Python server's "vlm extras not installed" branch returns.
+func extractWorstFramePNGs(
+	ctx context.Context,
+	dis, tmpDir string,
+	worst [][2]any,
+	width, height int,
+	pixFmtFFmpeg string,
+) []map[string]any {
 	var outFrames []map[string]any
 	for _, fw := range worst {
 		frameIdx := fw[0].(int)
@@ -1072,10 +1172,7 @@ func handleDescribeWorstFrames(ctx context.Context, args map[string]any) (any, e
 			"description": desc,
 		})
 	}
-	return map[string]any{
-		"model_id": nil,
-		"frames":   outFrames,
-	}, nil
+	return outFrames
 }
 
 // pickWorstFrames returns the n frames with the lowest VMAF score.
@@ -1171,14 +1268,8 @@ func handleProbeBackend(ctx context.Context, args map[string]any) (any, error) {
 	compiledIn := backend == "cpu" || advertised[backend]
 
 	if !compiledIn {
-		return map[string]any{
-			"backend":         backend,
-			"compiled_in":     false,
-			"runtime_healthy": false,
-			"latency_ms":      nil,
-			"score":           nil,
-			"error":           fmt.Sprintf("backend %q is not compiled into the local vmaf binary", backend),
-		}, nil
+		return probeResult(backend, false, false, nil, nil,
+			fmt.Sprintf("backend %q is not compiled into the local vmaf binary", backend)), nil
 	}
 
 	tmpDir, err := os.MkdirTemp("", "vmaf-mcp-probe-*")
@@ -1187,29 +1278,11 @@ func handleProbeBackend(ctx context.Context, args map[string]any) (any, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	refYUV := filepath.Join(tmpDir, "ref.yuv")
-	disYUV := filepath.Join(tmpDir, "dis.yuv")
-	outJSON := filepath.Join(tmpDir, "out.json")
-	if err := os.WriteFile(refYUV, probeYUVData, 0o600); err != nil {
+	refYUV, disYUV, outJSON, err := writeProbeFixtures(tmpDir)
+	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(disYUV, probeYUVData, 0o600); err != nil {
-		return nil, err
-	}
-
-	argv := []string{
-		"-r", refYUV, "-d", disYUV,
-		"--width", strconv.Itoa(probeYUVWidth), "--height", strconv.Itoa(probeYUVHeight),
-		"-p", "420", "-b", "8",
-		"-m", "version=vmaf_v0.6.1",
-		"--precision", "legacy", // %.6f — matches C CLI default (ADR-0119)
-		"-q", "-o", outJSON, "--json",
-	}
-	if siblings, ok := backendDisable[backend]; ok {
-		for _, s := range siblings {
-			argv = append(argv, "--no_"+s)
-		}
-	}
+	argv := probeArgv(backend, refYUV, disYUV, outJSON)
 
 	t0 := time.Now()
 	// #nosec G204 -- vmafBin resolved via libvmaf.FindBinary (env-overridable
@@ -1223,64 +1296,95 @@ func handleProbeBackend(ctx context.Context, args map[string]any) (any, error) {
 	runErr := cmd.Run()
 	latencyMs := float64(time.Since(t0).Microseconds()) / 1000.0
 
+	latency := roundF(latencyMs, 1)
 	if runErr != nil {
-		return map[string]any{
-			"backend":         backend,
-			"compiled_in":     compiledIn,
-			"runtime_healthy": false,
-			"latency_ms":      roundF(latencyMs, 1),
-			"score":           nil,
-			"error":           fmt.Sprintf("vmaf exited %v: %s", runErr, truncate(stderr.String(), 500)),
-		}, nil
+		return probeResult(backend, compiledIn, false, latency, nil,
+			fmt.Sprintf("vmaf exited %v: %s", runErr, truncate(stderr.String(), 500))), nil
 	}
 
 	// #nosec G304 -- outJSON is an os.MkdirTemp-derived path joined with a
 	// literal filename ("out.json"); not caller-controlled.
 	data, err := os.ReadFile(outJSON)
 	if err != nil {
-		return map[string]any{
-			"backend":         backend,
-			"compiled_in":     compiledIn,
-			"runtime_healthy": false,
-			"latency_ms":      roundF(latencyMs, 1),
-			"score":           nil,
-			"error":           fmt.Sprintf("failed to read output: %v", err),
-		}, nil
+		return probeResult(backend, compiledIn, false, latency, nil,
+			fmt.Sprintf("failed to read output: %v", err)), nil
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return map[string]any{
-			"backend":         backend,
-			"compiled_in":     compiledIn,
-			"runtime_healthy": false,
-			"latency_ms":      roundF(latencyMs, 1),
-			"score":           nil,
-			"error":           fmt.Sprintf("failed to parse output: %v", err),
-		}, nil
+		return probeResult(backend, compiledIn, false, latency, nil,
+			fmt.Sprintf("failed to parse output: %v", err)), nil
 	}
+	return probeScoreResult(backend, compiledIn, latency, payload), nil
+}
+
+// probeResult shapes the probe_backend response body.
+//
+// Every field is present on every path, so a caller sees the same keys whether the probe
+// ran, never started, or produced an unusable score; that is the shape the Python server
+// returns and what the byte-parity contract rests on.
+func probeResult(backend string, compiledIn, healthy bool, latencyMs, score, probeErr any) map[string]any {
+	return map[string]any{
+		"backend":         backend,
+		"compiled_in":     compiledIn,
+		"runtime_healthy": healthy,
+		"latency_ms":      latencyMs,
+		"score":           score,
+		"error":           probeErr,
+	}
+}
+
+// probeScoreResult reads the pooled VMAF mean out of a successful probe run and decides
+// whether the backend is healthy.
+//
+// runtime_healthy requires a non-null, finite score: a null score indicates the backend
+// kernel failed silently (e.g. ADM sub-minimum resolution, driver absent) even though the
+// process returned exit code 0. Mirrors the Python server's `score is not None` guard
+// (server.py), and additionally rejects non-finite values (NaN/Inf) defensively.
+func probeScoreResult(backend string, compiledIn bool, latencyMs any, payload map[string]any) map[string]any {
 	pooled, _ := payload["pooled_metrics"].(map[string]any)
 	vmafPool, _ := pooled["vmaf"].(map[string]any)
 	score := vmafPool["mean"]
 
-	// runtime_healthy requires a non-null, finite score: a null score
-	// indicates the backend kernel failed silently (e.g. ADM sub-minimum
-	// resolution, driver absent) even though the process returned exit code 0.
-	// Mirrors the Python server's `score is not None` guard (server.py), and
-	// additionally rejects non-finite values (NaN/Inf) defensively.
 	healthy := scoreIsHealthy(score)
 	var probeErr any
 	if !healthy {
 		probeErr = "vmaf returned exit 0 but score was null"
 	}
+	return probeResult(backend, compiledIn, healthy, latencyMs, score, probeErr)
+}
 
-	return map[string]any{
-		"backend":         backend,
-		"compiled_in":     compiledIn,
-		"runtime_healthy": healthy,
-		"latency_ms":      roundF(latencyMs, 1),
-		"score":           score,
-		"error":           probeErr,
-	}, nil
+// writeProbeFixtures materialises the flat-grey YUV pair the probe scores inside tmpDir,
+// and names the JSON file the run will write.
+func writeProbeFixtures(tmpDir string) (refYUV, disYUV, outJSON string, err error) {
+	refYUV = filepath.Join(tmpDir, "ref.yuv")
+	disYUV = filepath.Join(tmpDir, "dis.yuv")
+	outJSON = filepath.Join(tmpDir, "out.json")
+	if err = os.WriteFile(refYUV, probeYUVData, 0o600); err != nil {
+		return "", "", "", err
+	}
+	if err = os.WriteFile(disYUV, probeYUVData, 0o600); err != nil {
+		return "", "", "", err
+	}
+	return refYUV, disYUV, outJSON, nil
+}
+
+// probeArgv builds the vmaf argv for one backend probe, disabling every sibling backend so
+// the requested one is the only path that can service the run.
+func probeArgv(backend, refYUV, disYUV, outJSON string) []string {
+	argv := []string{
+		"-r", refYUV, "-d", disYUV,
+		"--width", strconv.Itoa(probeYUVWidth), "--height", strconv.Itoa(probeYUVHeight),
+		"-p", "420", "-b", "8",
+		"-m", "version=vmaf_v0.6.1",
+		"--precision", "legacy", // %.6f — matches C CLI default (ADR-0119)
+		"-q", "-o", outJSON, "--json",
+	}
+	if siblings, ok := backendDisable[backend]; ok {
+		for _, s := range siblings {
+			argv = append(argv, "--no_"+s)
+		}
+	}
+	return argv
 }
 
 // scoreIsHealthy reports whether a probe score represents a successful run.

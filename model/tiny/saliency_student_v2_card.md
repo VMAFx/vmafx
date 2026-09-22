@@ -11,7 +11,7 @@
 | Lineage | Fork (`saliency_student_v2.onnx`); architectural successor to `saliency_student_v1` (the production weights for the C-side `mobilesal` extractor); upstream lineage = none |
 | Files | `model/tiny/saliency_student_v2.onnx`, `model/tiny/saliency_student_v2.json` |
 | ONNX opset | 17 |
-| License | BSD-3-Clause-Plus-Patent (weights wholly fork-owned) |
+| License | BSD-2-Clause-Patent (weights wholly fork-owned) |
 | Status | Parallel artefact under `model/tiny/`. Production weights for the `mobilesal` extractor remain `saliency_student_v1` until a follow-up PR validates v2 in real ROI encodes. |
 
 ## Intended use

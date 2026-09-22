@@ -5,7 +5,7 @@
  *
  *  HIP compute kernel for the float_psnr feature extractor (T7-10b /
  *  ADR-0254). Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/float_psnr/float_psnr_score.cu`.
+ *  `core/src/feature/cuda/float_psnr/float_psnr_score.cu`.
  *
  *  Per-pixel `(ref - dis)^2` (float), warp-reduced + per-block partial
  *  written to a contiguous float buffer; host accumulates in `double`
@@ -24,7 +24,7 @@
  *  equivalent `--genco` for HSACO fat binary). The meson.build
  *  `enable_hipcc=true` path calls `hipcc --genco` and embeds the result
  *  via `xxd -i`; identical to the CUDA nvcc + bin2c approach in
- *  `libvmaf/src/meson.build`.
+ *  `core/src/meson.build`.
  */
 
 #include <hip/hip_runtime.h>

@@ -3,7 +3,7 @@
 
 # DNN unit tests.
 #
-# These exercise the internal helpers in libvmaf/src/dnn/ directly (tensor I/O,
+# These exercise the internal helpers in core/src/dnn/ directly (tensor I/O,
 # operator allowlist, model loader). They compile the dnn sources into the
 # test binaries instead of linking libvmaf, because the helpers are
 # file-private to the dnn/ TU set.

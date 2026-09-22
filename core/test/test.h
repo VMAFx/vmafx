@@ -36,6 +36,17 @@ extern "C" {
 typedef char *mu_message_t;
 #endif
 
+/* Propagate a helper's failure message. Mirrors mu_assert for helpers that
+ * already return "NULL on success, or the message to fail with", which is how
+ * a test body that outgrows the 60-line function budget is split into phase
+ * helpers without changing which message a failure reports (ADR-1142). */
+#define mu_assert_msg(expr)                                                                        \
+    do {                                                                                           \
+        mu_message_t mu_helper_msg = (expr);                                                       \
+        if (mu_helper_msg)                                                                         \
+            return mu_helper_msg;                                                                  \
+    } while (0)
+
 extern int mu_tests_run;
 
 /* Set by a test that could not exercise its subject at all -- no GPU device

@@ -31,11 +31,11 @@ MOS-corpus JSONL shard the trainer consumes alongside LSVQ
 
 ## Prerequisites
 
-1. ~2 TB free disk under `.workingdir2/youtube-ugc/` for the
+1. ~2 TB free disk under `.corpus/youtube-ugc/` for the
    whole-corpus run, or ~10 GB for the laptop-class default.
 2. `curl` and `ffprobe` on `$PATH`.
 3. The manifest CSV from the bucket dropped at
-   `.workingdir2/youtube-ugc/manifest.csv` (or pass
+   `.corpus/youtube-ugc/manifest.csv` (or pass
    `--manifest-csv` to point elsewhere).
 
 ## Quick start (laptop-class subset)
@@ -43,10 +43,10 @@ MOS-corpus JSONL shard the trainer consumes alongside LSVQ
 ```bash
 # Drop original_videos.csv at the default location, then:
 python ai/scripts/youtube_ugc_to_corpus_jsonl.py
-# -> reads .workingdir2/youtube-ugc/manifest.csv
+# -> reads .corpus/youtube-ugc/manifest.csv
 # -> caps at the first --max-rows=300 clips (default)
-# -> downloads each via curl into .workingdir2/youtube-ugc/clips/
-# -> writes .workingdir2/youtube-ugc/youtube-ugc.jsonl
+# -> downloads each via curl into .corpus/youtube-ugc/clips/
+# -> writes .corpus/youtube-ugc/youtube-ugc.jsonl
 ```
 
 If the manifest CSV does not carry a URL column (the canonical
@@ -71,13 +71,13 @@ python ai/scripts/youtube_ugc_to_corpus_jsonl.py --full
 This disables the `--max-rows` cap. Working set is ~2 TB on the
 canonical original-videos manifest. The run is resumable:
 `Ctrl-C` mid-download is safe, and re-running picks up from
-`.workingdir2/youtube-ugc/.download-progress.json` (atomic
+`.corpus/youtube-ugc/.download-progress.json` (atomic
 tempfile-rename writes).
 
 ## Output schema
 
 One JSON object per line in
-`.workingdir2/youtube-ugc/youtube-ugc.jsonl`:
+`.corpus/youtube-ugc/youtube-ugc.jsonl`:
 
 ```jsonc
 {
@@ -149,7 +149,7 @@ to `Gaming_720P-25aa_orig.mp4` by appending `--clip-suffix`
 ## Operator flags
 
 ```text
---ugc-dir PATH                Working dir (default: .workingdir2/youtube-ugc/)
+--ugc-dir PATH                Working dir (default: .corpus/youtube-ugc/)
 --manifest-csv PATH           Path to manifest CSV (default: <dir>/manifest.csv)
 --progress-path PATH          Resumable state file
                               (default: <dir>/.download-progress.json)

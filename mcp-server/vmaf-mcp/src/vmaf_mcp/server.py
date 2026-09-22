@@ -165,6 +165,50 @@ async def _communicate_with_timeout(
 # ---------------------------------------------------------------------------
 
 
+def _nan_to_none_visit(
+    node: Any,
+    depth: int,
+    parent_out: Any,
+    key: Any,
+    stack: list[tuple[Any, int, Any, Any]],
+    max_depth: int,
+) -> None:
+    """Write one node's result into ``parent_out[key]``, queueing its children.
+
+    Scalars are written directly; containers allocate their output container
+    first and push their children so later iterations fill it in. Children are
+    pushed in source order, which the LIFO stack then walks in reverse — the
+    same traversal the single-function version performed.
+    """
+    # Depth-exceeded or non-container scalars: write result directly.
+    if depth > max_depth:
+        parent_out[key] = None
+        return
+
+    if isinstance(node, float):
+        parent_out[key] = None if (math.isnan(node) or math.isinf(node)) else node
+        return
+
+    if not isinstance(node, (dict, list, tuple)):
+        # int, str, bool, NoneType, etc. — pass through unchanged.
+        parent_out[key] = node
+        return
+
+    # Container node: allocate output container, link it to parent, then
+    # push all children so they are filled on subsequent iterations.
+    if isinstance(node, dict):
+        out: Any = {}
+        parent_out[key] = out
+        for k, child in node.items():
+            stack.append((child, depth + 1, out, k))
+    else:
+        # list or tuple — always rebuild as list (json.dumps treats both alike).
+        out = [None] * len(node)
+        parent_out[key] = out
+        for i, child in enumerate(node):
+            stack.append((child, depth + 1, out, i))
+
+
 def _nan_to_none(value: Any, *, _max_depth: int = 200) -> Any:
     """Replace non-finite floats with ``None`` using an iterative stack walk.
 
@@ -200,34 +244,7 @@ def _nan_to_none(value: Any, *, _max_depth: int = 200) -> Any:
 
     while stack:
         node, depth, parent_out, key = stack.pop()
-
-        # Depth-exceeded or non-container scalars: write result directly.
-        if depth > _max_depth:
-            parent_out[key] = None
-            continue
-
-        if isinstance(node, float):
-            parent_out[key] = None if (math.isnan(node) or math.isinf(node)) else node
-            continue
-
-        if not isinstance(node, (dict, list, tuple)):
-            # int, str, bool, NoneType, etc. — pass through unchanged.
-            parent_out[key] = node
-            continue
-
-        # Container node: allocate output container, link it to parent, then
-        # push all children so they are filled on subsequent iterations.
-        if isinstance(node, dict):
-            out: Any = {}
-            parent_out[key] = out
-            for k, child in node.items():
-                stack.append((child, depth + 1, out, k))
-        else:
-            # list or tuple — always rebuild as list (json.dumps treats both alike).
-            out = [None] * len(node)
-            parent_out[key] = out
-            for i, child in enumerate(node):
-                stack.append((child, depth + 1, out, i))
+        _nan_to_none_visit(node, depth, parent_out, key, stack, _max_depth)
 
     return root_out[0]
 
@@ -506,26 +523,22 @@ _VALID_BACKENDS: set[str] = {"auto", "cpu", "cuda", "sycl", "hip", "metal"}
 _VALID_OUTPUT_FMTS: set[str] = {"json", "xml", "csv", "sub"}
 
 
-def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
-    """Build a :class:`ScoreExtras` from a raw tool-call ``arguments`` dict.
+def _opt_int(arguments: dict[str, Any], key: str) -> int | None:
+    """``arguments[key]`` as an int, or None when the key is absent or null."""
+    return int(arguments[key]) if key in arguments and arguments[key] is not None else None
 
-    Only keys that are present are forwarded; absent keys leave the field at
-    its default (``None`` / ``False`` / ``()``), so no CLI flag is emitted.
-    Mirrors the Go server's ``parseScoreExtras`` (cmd/vmafx-mcp/impl.go).
-    """
-    raw_features = arguments.get("feature")
-    features: tuple[str, ...] = ()
-    if isinstance(raw_features, list):
-        features = tuple(str(f) for f in raw_features if isinstance(f, str) and f)
 
-    def _opt_int(key: str) -> int | None:
-        return int(arguments[key]) if key in arguments and arguments[key] is not None else None
+def _opt_str(arguments: dict[str, Any], key: str) -> str | None:
+    """``arguments[key]`` as a str, or None when the key is absent or null."""
+    return str(arguments[key]) if key in arguments and arguments[key] is not None else None
 
-    def _opt_str(key: str) -> str | None:
-        return str(arguments[key]) if key in arguments and arguments[key] is not None else None
 
-    tiny_dev = _opt_str("tiny_device")
-    dnn_ep = _opt_str("dnn_ep")
+def _tiny_extras_from_args(
+    arguments: dict[str, Any],
+) -> tuple[str | None, str | None, int | None, int | None]:
+    """Validate the tiny-AI options; returns (device, resize, crf, threads)."""
+    tiny_dev = _opt_str(arguments, "tiny_device")
+    dnn_ep = _opt_str(arguments, "dnn_ep")
     if tiny_dev is not None and dnn_ep is not None and tiny_dev != dnn_ep:
         raise ValueError(f"conflicting tiny_device ('{tiny_dev}') and dnn_ep ('{dnn_ep}') values")
     if tiny_dev is None:
@@ -537,43 +550,55 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
             "coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm"
         )
 
-    tiny_resize = _opt_str("tiny_resize")
+    tiny_resize = _opt_str(arguments, "tiny_resize")
     if tiny_resize is not None and tiny_resize not in _VALID_TINY_RESIZES:
         raise ValueError(
             f"invalid tiny_resize '{tiny_resize}': must be one of bilinear|nearest|bicubic|disabled"
         )
 
-    tiny_crf = _opt_int("tiny_crf")
+    tiny_crf = _opt_int(arguments, "tiny_crf")
     if tiny_crf is not None and not (0 <= tiny_crf <= 63):
         raise ValueError(f"invalid tiny_crf {tiny_crf}: must be in range [0, 63]")
 
-    tiny_threads = _opt_int("tiny_threads")
+    tiny_threads = _opt_int(arguments, "tiny_threads")
     if tiny_threads is not None and tiny_threads < 0:
         raise ValueError(f"invalid tiny_threads {tiny_threads}: must be non-negative")
 
-    aom_ctc = _opt_str("aom_ctc")
+    return tiny_dev, tiny_resize, tiny_crf, tiny_threads
+
+
+def _ctc_and_frame_extras_from_args(
+    arguments: dict[str, Any],
+) -> tuple[str | None, str | None, int | None, int | None, int | None, int | None]:
+    """Validate the CTC presets, thread count and frame-window options.
+
+    ``subsample`` is validated here too even though it is not part of
+    :class:`ScoreExtras`; rejecting a bad value is the only thing the original
+    straight-line code did with it.
+    """
+    aom_ctc = _opt_str(arguments, "aom_ctc")
     if aom_ctc is not None and aom_ctc not in _VALID_AOM_CTC:
         raise ValueError(
             f"invalid aom_ctc '{aom_ctc}': must be one of v1.0|v2.0|v3.0|v4.0|v5.0|v6.0|v7.0"
         )
 
-    nflx_ctc = _opt_str("nflx_ctc")
+    nflx_ctc = _opt_str(arguments, "nflx_ctc")
     if nflx_ctc is not None and nflx_ctc not in _VALID_NFLX_CTC:
         raise ValueError(f"invalid nflx_ctc '{nflx_ctc}': must be v1.0")
 
-    threads = _opt_int("threads")
+    threads = _opt_int(arguments, "threads")
     if threads is not None and threads < 1:
         raise ValueError(f"invalid threads {threads}: must be >= 1")
 
-    frame_cnt = _opt_int("frame_cnt")
+    frame_cnt = _opt_int(arguments, "frame_cnt")
     if frame_cnt is not None and frame_cnt < 1:
         raise ValueError(f"invalid frame_cnt {frame_cnt}: must be >= 1")
 
-    frame_skip_ref = _opt_int("frame_skip_ref")
+    frame_skip_ref = _opt_int(arguments, "frame_skip_ref")
     if frame_skip_ref is not None and frame_skip_ref < 0:
         raise ValueError(f"invalid frame_skip_ref {frame_skip_ref}: must be non-negative")
 
-    frame_skip_dist = _opt_int("frame_skip_dist")
+    frame_skip_dist = _opt_int(arguments, "frame_skip_dist")
     if frame_skip_dist is not None and frame_skip_dist < 0:
         raise ValueError(f"invalid frame_skip_dist {frame_skip_dist}: must be non-negative")
 
@@ -581,23 +606,26 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
     if subsample < 1:
         raise ValueError(f"invalid subsample {subsample}: must be >= 1")
 
-    cpumask = _opt_int("cpumask")
-    if cpumask is not None and cpumask < 0:
-        raise ValueError(f"invalid cpumask {cpumask}: must be non-negative")
-    gpumask = _opt_int("gpumask")
-    if gpumask is not None and gpumask < 0:
-        raise ValueError(f"invalid gpumask {gpumask}: must be non-negative")
-    sycl_device = _opt_int("sycl_device")
-    if sycl_device is not None and sycl_device < 0:
-        raise ValueError(f"invalid sycl_device {sycl_device}: must be non-negative")
-    hip_device = _opt_int("hip_device")
-    if hip_device is not None and hip_device < 0:
-        raise ValueError(f"invalid hip_device {hip_device}: must be non-negative")
-    metal_device = _opt_int("metal_device")
-    if metal_device is not None and metal_device < 0:
-        raise ValueError(f"invalid metal_device {metal_device}: must be non-negative")
+    return aom_ctc, nflx_ctc, threads, frame_cnt, frame_skip_ref, frame_skip_dist
 
-    output_fmt = _opt_str("output_fmt") or _opt_str("format")
+
+def _device_masks_from_args(
+    arguments: dict[str, Any],
+) -> tuple[int | None, int | None, int | None, int | None, int | None]:
+    """Validate the CPU/GPU affinity masks and the per-backend device indices."""
+    masks: list[int | None] = []
+    for key in ("cpumask", "gpumask", "sycl_device", "hip_device", "metal_device"):
+        value = _opt_int(arguments, key)
+        if value is not None and value < 0:
+            raise ValueError(f"invalid {key} {value}: must be non-negative")
+        masks.append(value)
+    cpumask, gpumask, sycl_device, hip_device, metal_device = masks
+    return cpumask, gpumask, sycl_device, hip_device, metal_device
+
+
+def _output_fmt_from_args(arguments: dict[str, Any]) -> str:
+    """Resolve output_fmt / format together with the csv and sub shorthand flags."""
+    output_fmt = _opt_str(arguments, "output_fmt") or _opt_str(arguments, "format")
     csv_flag = bool(arguments.get("csv", False))
     sub_flag = bool(arguments.get("sub", False))
     if csv_flag and sub_flag:
@@ -620,17 +648,43 @@ def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
     if output_fmt not in _VALID_OUTPUT_FMTS:
         raise ValueError(f"invalid output_fmt '{output_fmt}': must be one of json|xml|csv|sub")
 
+    return output_fmt
+
+
+def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
+    """Build a :class:`ScoreExtras` from a raw tool-call ``arguments`` dict.
+
+    Only keys that are present are forwarded; absent keys leave the field at
+    its default (``None`` / ``False`` / ``()``), so no CLI flag is emitted.
+    Mirrors the Go server's ``parseScoreExtras`` (cmd/vmafx-mcp/impl.go).
+
+    The per-group helpers run in the same order the single-function version
+    validated in, so a payload with several bad values still reports the same
+    first error.
+    """
+    raw_features = arguments.get("feature")
+    features: tuple[str, ...] = ()
+    if isinstance(raw_features, list):
+        features = tuple(str(f) for f in raw_features if isinstance(f, str) and f)
+
+    tiny_dev, tiny_resize, tiny_crf, tiny_threads = _tiny_extras_from_args(arguments)
+    aom_ctc, nflx_ctc, threads, frame_cnt, frame_skip_ref, frame_skip_dist = (
+        _ctc_and_frame_extras_from_args(arguments)
+    )
+    cpumask, gpumask, sycl_device, hip_device, metal_device = _device_masks_from_args(arguments)
+    output_fmt = _output_fmt_from_args(arguments)
+
     return ScoreExtras(
         features=features,
         aom_ctc=aom_ctc,
         nflx_ctc=nflx_ctc,
-        tiny_model=_opt_str("tiny_model"),
+        tiny_model=_opt_str(arguments, "tiny_model"),
         tiny_device=tiny_dev,
         tiny_threads=tiny_threads,
         tiny_fp16=bool(arguments.get("tiny_fp16", False)),
         tiny_model_verify=bool(arguments.get("tiny_model_verify", False)),
-        tiny_codec=_opt_str("tiny_codec"),
-        tiny_preset=_opt_str("tiny_preset"),
+        tiny_codec=_opt_str(arguments, "tiny_codec"),
+        tiny_preset=_opt_str(arguments, "tiny_preset"),
         tiny_crf=tiny_crf,
         tiny_resize=tiny_resize,
         no_reference=bool(arguments.get("no_reference", False)),
@@ -912,24 +966,64 @@ def _build_vmaf_argv(
     return argv
 
 
+async def _assert_backend_advertised(vmaf: Path, backend: str) -> None:
+    """Refuse a backend the local binary does not advertise.
+
+    Bug #1 from the 2026-05-17 MCP probe: caller-requested backend
+    silently fell through to CPU when the binary lacked the runtime.
+    Refuse explicitly (and let auto pass through unchanged).
+    ADR-1023: use the async wrapper to avoid blocking the event loop.
+    """
+    if backend == "auto":
+        return
+    advertised = await _probe_backends_async(vmaf)
+    if backend not in advertised:
+        raise RuntimeError(
+            f"backend {backend!r} requested but the local vmaf binary "
+            f"does not advertise it (available: {sorted(advertised)}); "
+            "refusing to fall back silently. Pass backend='auto' to let "
+            "vmaf pick, or rebuild with the requested backend enabled."
+        )
+
+
+def _score_payload(req: ScoreRequest, output: Path, fmt: str) -> dict[str, Any]:
+    """Turn the vmaf output file into the tool response payload."""
+    if fmt != "json":
+        return {
+            "format": fmt,
+            "output": output.read_text(encoding="utf-8"),
+            "backend_requested": req.backend,
+            "backend_used": req.backend,
+        }
+    # Pin UTF-8 explicitly so the parse does not pick up the server
+    # process's locale (LC_ALL may differ between MCP-stdio launches
+    # and CI runners, and a non-UTF-8 default decoder would crash on
+    # legitimate accented filenames in the vmaf JSON payload).
+    try:
+        payload: dict[str, Any] = json.loads(output.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"vmaf output unreadable (disk-full or OOM kill?): {exc}") from exc
+    # Bug #1 (echo): tell the caller which backend actually ran, so
+    # downstream parity tests can assert it instead of trusting the
+    # request silently.
+    payload["backend_requested"] = req.backend
+    payload["backend_used"] = (
+        req.backend if req.backend != "auto" else _infer_backend_from_payload(payload)
+    )
+    # Bug #5: surface a resolution-mismatch warning when the model's
+    # training resolution preset disagrees with the source frame size.
+    warning = _resolution_mismatch_warning(req.model, req.width, req.height)
+    if warning is not None:
+        payload["mismatched_model_warning"] = warning
+    return payload
+
+
 async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
     vmaf = _vmaf_binary()
     if not vmaf.exists():
         raise RuntimeError(f"vmaf binary not found at {vmaf}. Build first: meson compile -C build.")
 
-    # Bug #1 from the 2026-05-17 MCP probe: caller-requested backend
-    # silently fell through to CPU when the binary lacked the runtime.
-    # Refuse explicitly (and let auto pass through unchanged).
-    # ADR-1023: use the async wrapper to avoid blocking the event loop.
-    if req.backend != "auto":
-        advertised = await _probe_backends_async(vmaf)
-        if req.backend not in advertised:
-            raise RuntimeError(
-                f"backend {req.backend!r} requested but the local vmaf binary "
-                f"does not advertise it (available: {sorted(advertised)}); "
-                "refusing to fall back silently. Pass backend='auto' to let "
-                "vmaf pick, or rebuild with the requested backend enabled."
-            )
+    await _assert_backend_advertised(vmaf, req.backend)
 
     # Concurrency cap: acquire _SCORE_SEM before spawning the vmaf subprocess.
     # Each vmaf process loads the model and allocates per-frame buffers; unbounded
@@ -960,36 +1054,7 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
                 raise RuntimeError(
                     f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace')}"
                 )
-            if fmt != "json":
-                return {
-                    "format": fmt,
-                    "output": output.read_text(encoding="utf-8"),
-                    "backend_requested": req.backend,
-                    "backend_used": req.backend,
-                }
-            # Pin UTF-8 explicitly so the parse does not pick up the server
-            # process's locale (LC_ALL may differ between MCP-stdio launches
-            # and CI runners, and a non-UTF-8 default decoder would crash on
-            # legitimate accented filenames in the vmaf JSON payload).
-            try:
-                payload: dict[str, Any] = json.loads(output.read_text(encoding="utf-8"))
-            except json.JSONDecodeError as exc:
-                raise RuntimeError(
-                    f"vmaf output unreadable (disk-full or OOM kill?): {exc}"
-                ) from exc
-            # Bug #1 (echo): tell the caller which backend actually ran, so
-            # downstream parity tests can assert it instead of trusting the
-            # request silently.
-            payload["backend_requested"] = req.backend
-            payload["backend_used"] = (
-                req.backend if req.backend != "auto" else _infer_backend_from_payload(payload)
-            )
-            # Bug #5: surface a resolution-mismatch warning when the model's
-            # training resolution preset disagrees with the source frame size.
-            warning = _resolution_mismatch_warning(req.model, req.width, req.height)
-            if warning is not None:
-                payload["mismatched_model_warning"] = warning
-            return payload
+            return _score_payload(req, output, fmt)
         finally:
             output.unlink(missing_ok=True)
 
@@ -1526,6 +1591,28 @@ def _strip_model_ext(filename: str) -> str:
     return filename
 
 
+def _describe_model_by_path(name_or_path: str, repo: Path) -> dict[str, Any] | None:
+    """Describe the model at an explicit path, or None when it does not name one.
+
+    Carries an explicit allowlist guard — it mirrors _validate_path() so the
+    security invariant is unconditional rather than relying on the model/
+    directory being under an allowlisted root by construction.
+    """
+    candidate = Path(name_or_path)
+    if not candidate.is_absolute():
+        candidate = repo / candidate
+    candidate = candidate.resolve()
+    if not (candidate.is_file() and candidate.suffix.lower() in _MODEL_EXTENSIONS):
+        return None
+    allowed = _allowed_roots()
+    if not any(candidate.is_relative_to(r) for r in allowed):
+        raise ValueError(
+            f"model path {candidate} not under an allowlisted root; "
+            "set VMAF_MCP_ALLOW to extend."
+        )
+    return _describe_model_file(candidate, repo)
+
+
 def _describe_model(name_or_path: str) -> dict[str, Any]:
     """Return metadata for the VMAF model identified by @p name_or_path.
 
@@ -1552,21 +1639,9 @@ def _describe_model(name_or_path: str) -> dict[str, Any]:
     models_dir = repo / "model"
 
     # --- Step 1: try as a direct path ---
-    candidate = Path(name_or_path)
-    if not candidate.is_absolute():
-        candidate = repo / candidate
-    candidate = candidate.resolve()
-    if candidate.is_file() and candidate.suffix.lower() in _MODEL_EXTENSIONS:
-        # Explicit allowlist guard — mirrors _validate_path() to make the
-        # security invariant unconditional rather than relying on the model/
-        # directory being under an allowlisted root by construction.
-        allowed = _allowed_roots()
-        if not any(candidate.is_relative_to(r) for r in allowed):
-            raise ValueError(
-                f"model path {candidate} not under an allowlisted root; "
-                "set VMAF_MCP_ALLOW to extend."
-            )
-        return _describe_model_file(candidate, repo)
+    described = _describe_model_by_path(name_or_path, repo)
+    if described is not None:
+        return described
 
     # --- Step 2: search by filename match (full name, no extension) ---
     # Build index keyed by EXACT filename (no ext) for unambiguous lookup.
@@ -2521,6 +2596,116 @@ _PROBE_YUV_BYTES = _PROBE_YUV_WIDTH * _PROBE_YUV_HEIGHT * 3 // 2  # 6144 for 4:2
 _PROBE_YUV_DATA = bytes([128]) * _PROBE_YUV_BYTES
 
 
+def _probe_argv(
+    vmaf: Path, backend: str, ref_yuv: Path, dis_yuv: Path, out_json: Path
+) -> list[str]:
+    """The 1-frame probe command line, with the sibling backends disabled."""
+    argv = [
+        str(vmaf),
+        "-r",
+        str(ref_yuv),
+        "-d",
+        str(dis_yuv),
+        "--width",
+        str(_PROBE_YUV_WIDTH),
+        "--height",
+        str(_PROBE_YUV_HEIGHT),
+        "-p",
+        "420",
+        "-b",
+        "8",
+        "-m",
+        "version=vmaf_v0.6.1",
+        "--precision",
+        "legacy",  # %.6f — matches C CLI default (ADR-0119)
+        "-q",
+        "-o",
+        str(out_json),
+        "--json",
+    ]
+    if backend in _BACKEND_DISABLE:
+        for sibling in _BACKEND_DISABLE[backend]:
+            argv.append(f"--no_{sibling}")
+    return argv
+
+
+def _probe_score(out_json: Path, backend: str) -> tuple[Any, str | None]:
+    """Pooled VMAF mean from the probe output, or (None, error) when unreadable."""
+    try:
+        payload = json.loads(out_json.read_text(encoding="utf-8"))
+        pooled = payload.get("pooled_metrics") or {}
+        vmaf_pool = pooled.get("vmaf") or {}
+        return vmaf_pool.get("mean"), None
+    except Exception as exc:
+        _logger.warning("probe %s: failed to parse vmaf JSON output", backend, exc_info=True)
+        return None, f"failed to parse vmaf output: {exc}"
+
+
+async def _execute_probe(
+    vmaf: Path, backend: str, compiled_in: bool, tmp_path: Path
+) -> dict[str, Any]:
+    """Run the probe subprocess inside @p tmp_path and build its health dict."""
+    import time
+
+    ref_yuv = tmp_path / "ref.yuv"
+    dis_yuv = tmp_path / "dis.yuv"
+    out_json = tmp_path / "out.json"
+    ref_yuv.write_bytes(_PROBE_YUV_DATA)
+    dis_yuv.write_bytes(_PROBE_YUV_DATA)
+
+    argv = _probe_argv(vmaf, backend, ref_yuv, dis_yuv, out_json)
+
+    t0 = time.monotonic()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        _stdout, stderr = await _communicate_with_timeout(proc)
+    except OSError as exc:
+        return {
+            "backend": backend,
+            "compiled_in": compiled_in,
+            "runtime_healthy": False,
+            "latency_ms": None,
+            "score": None,
+            "error": f"failed to exec vmaf: {exc}",
+        }
+    latency_ms = (time.monotonic() - t0) * 1000.0
+
+    if proc.returncode != 0:
+        return {
+            "backend": backend,
+            "compiled_in": compiled_in,
+            "runtime_healthy": False,
+            "latency_ms": round(latency_ms, 1),
+            "score": None,
+            "error": f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace').strip()[:500]}",
+        }
+
+    score, parse_error = _probe_score(out_json, backend)
+    if parse_error is not None:
+        return {
+            "backend": backend,
+            "compiled_in": compiled_in,
+            "runtime_healthy": False,
+            "latency_ms": round(latency_ms, 1),
+            "score": None,
+            "error": parse_error,
+        }
+
+    # runtime_healthy requires a non-null score: a null score indicates
+    # the backend kernel failed silently (e.g. ADM sub-minimum resolution,
+    # driver absent) even though the process returned exit code 0.
+    return {
+        "backend": backend,
+        "compiled_in": compiled_in,
+        "runtime_healthy": score is not None,
+        "latency_ms": round(latency_ms, 1),
+        "score": score,
+        "error": None if score is not None else "vmaf returned exit 0 but score was null",
+    }
+
+
 async def _probe_backend(backend: str) -> dict[str, Any]:
     """Run a 1-frame VMAF score with @p backend and return a health dict.
 
@@ -2545,102 +2730,35 @@ async def _probe_backend(backend: str) -> dict[str, Any]:
         }
 
     import tempfile
-    import time
 
     with tempfile.TemporaryDirectory(prefix="vmaf-mcp-probe-") as tmp:
-        tmp_path = Path(tmp)
-        ref_yuv = tmp_path / "ref.yuv"
-        dis_yuv = tmp_path / "dis.yuv"
-        out_json = tmp_path / "out.json"
-        ref_yuv.write_bytes(_PROBE_YUV_DATA)
-        dis_yuv.write_bytes(_PROBE_YUV_DATA)
-
-        argv = [
-            str(vmaf),
-            "-r",
-            str(ref_yuv),
-            "-d",
-            str(dis_yuv),
-            "--width",
-            str(_PROBE_YUV_WIDTH),
-            "--height",
-            str(_PROBE_YUV_HEIGHT),
-            "-p",
-            "420",
-            "-b",
-            "8",
-            "-m",
-            "version=vmaf_v0.6.1",
-            "--precision",
-            "legacy",  # %.6f — matches C CLI default (ADR-0119)
-            "-q",
-            "-o",
-            str(out_json),
-            "--json",
-        ]
-        if backend in _BACKEND_DISABLE:
-            for sibling in _BACKEND_DISABLE[backend]:
-                argv.append(f"--no_{sibling}")
-
-        t0 = time.monotonic()
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            _stdout, stderr = await _communicate_with_timeout(proc)
-        except OSError as exc:
-            return {
-                "backend": backend,
-                "compiled_in": compiled_in,
-                "runtime_healthy": False,
-                "latency_ms": None,
-                "score": None,
-                "error": f"failed to exec vmaf: {exc}",
-            }
-        latency_ms = (time.monotonic() - t0) * 1000.0
-
-        if proc.returncode != 0:
-            return {
-                "backend": backend,
-                "compiled_in": compiled_in,
-                "runtime_healthy": False,
-                "latency_ms": round(latency_ms, 1),
-                "score": None,
-                "error": f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace').strip()[:500]}",
-            }
-
-        try:
-            payload = json.loads(out_json.read_text(encoding="utf-8"))
-            pooled = payload.get("pooled_metrics") or {}
-            vmaf_pool = pooled.get("vmaf") or {}
-            score = vmaf_pool.get("mean")
-        except Exception as exc:
-            _logger.warning("probe %s: failed to parse vmaf JSON output", backend, exc_info=True)
-            return {
-                "backend": backend,
-                "compiled_in": compiled_in,
-                "runtime_healthy": False,
-                "latency_ms": round(latency_ms, 1),
-                "score": None,
-                "error": f"failed to parse vmaf output: {exc}",
-            }
-
-        # runtime_healthy requires a non-null score: a null score indicates
-        # the backend kernel failed silently (e.g. ADM sub-minimum resolution,
-        # driver absent) even though the process returned exit code 0.
-        return {
-            "backend": backend,
-            "compiled_in": compiled_in,
-            "runtime_healthy": score is not None,
-            "latency_ms": round(latency_ms, 1),
-            "score": score,
-            "error": None if score is not None else "vmaf returned exit 0 but score was null",
-        }
+        return await _execute_probe(vmaf, backend, compiled_in, Path(tmp))
 
 
 # ---------------------------------------------------------------------------
 # vmaf_version — binary identity + build flags (ADR-0608 / C-P0-3)
 # ---------------------------------------------------------------------------
+
+
+def _read_vmaf_version_banner(vmaf: Path) -> str | None:
+    """The version string from ``vmaf --version``, or None when it cannot be read.
+
+    Blocking by design — callers hand it to ``asyncio.to_thread`` (ADR-1023).
+    """
+    try:
+        result = subprocess.run(
+            [str(vmaf), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        blob = (result.stdout or "") + (result.stderr or "")
+        # The banner looks like "vmaf 3.0.0-lusoris.5" or just "3.0.0".
+        m = re.search(r"(\d+\.\d+[\w.\-]*)", blob)
+        return m.group(1) if m else blob.strip().splitlines()[0] if blob.strip() else None
+    except (subprocess.TimeoutExpired, OSError):
+        return None  # Binary present but --version timed out; fall through.
 
 
 async def _vmaf_version() -> dict[str, Any]:
@@ -2673,23 +2791,7 @@ async def _vmaf_version() -> dict[str, Any]:
         }
 
     # --- version string (blocking subprocess.run, run in thread) ---
-    def _get_version() -> str | None:
-        try:
-            result = subprocess.run(
-                [str(vmaf), "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            blob = (result.stdout or "") + (result.stderr or "")
-            # The banner looks like "vmaf 3.0.0-lusoris.5" or just "3.0.0".
-            m = re.search(r"(\d+\.\d+[\w.\-]*)", blob)
-            return m.group(1) if m else blob.strip().splitlines()[0] if blob.strip() else None
-        except (subprocess.TimeoutExpired, OSError):
-            return None  # Binary present but --version timed out; fall through.
-
-    version_str = await asyncio.to_thread(_get_version)
+    version_str = await asyncio.to_thread(_read_vmaf_version_banner, vmaf)
 
     # --- build flags from --help (same as _probe_backends but we don't use the cache
     #     so callers always get a fresh view even when the binary changes after startup) ---
@@ -2728,13 +2830,31 @@ _PIXFMT_TO_FFMPEG: dict[tuple[str, int], str] = {
 }
 
 
-def _ffprobe_geometry(path: Path) -> tuple[int, int, str, int]:
-    """Return ``(width, height, pixfmt, bitdepth)`` for the first video stream
-    in @p path.  ``pixfmt`` is ``"420"`` / ``"422"`` / ``"444"``.
+# ffmpeg pix_fmt name -> the vmaf (pixfmt, bitdepth) pair.
+_FFMPEG_PIXFMT_TO_VMAF: dict[str, tuple[str, int]] = {
+    "yuv420p": ("420", 8),
+    "yuvj420p": ("420", 8),
+    "yuv422p": ("422", 8),
+    "yuvj422p": ("422", 8),
+    "yuv444p": ("444", 8),
+    "yuvj444p": ("444", 8),
+    "yuv420p10le": ("420", 10),
+    "yuv422p10le": ("422", 10),
+    "yuv444p10le": ("444", 10),
+    "yuv420p12le": ("420", 12),
+    "yuv422p12le": ("422", 12),
+    "yuv444p12le": ("444", 12),
+    "yuv420p10be": ("420", 10),
+    "yuv422p10be": ("422", 10),
+    "yuv444p10be": ("444", 10),
+}
 
-    Raises :class:`RuntimeError` when ffprobe is unavailable or the probe
-    fails, and :class:`ValueError` when the stream has no video or the pixel
-    format cannot be mapped.
+
+def _ffprobe_stream_info(path: Path) -> dict[str, Any]:
+    """Raw ffprobe JSON for the first video stream of @p path.
+
+    Raises :class:`RuntimeError` when ffprobe is missing, fails, or returns
+    output that is not JSON.
     """
     if not shutil.which("ffprobe"):
         raise RuntimeError("ffprobe not on PATH; install ffmpeg to use vmaf_score_encoded")
@@ -2762,11 +2882,23 @@ def _ffprobe_geometry(path: Path) -> tuple[int, int, str, int]:
             f"ffprobe failed (rc={result.returncode}): {result.stderr.strip()[:300]}"
         )
     try:
-        info = json.loads(result.stdout)
+        info: dict[str, Any] = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
             f"ffprobe output malformed (empty stdout or no video track?): {exc}"
         ) from exc
+    return info
+
+
+def _ffprobe_geometry(path: Path) -> tuple[int, int, str, int]:
+    """Return ``(width, height, pixfmt, bitdepth)`` for the first video stream
+    in @p path.  ``pixfmt`` is ``"420"`` / ``"422"`` / ``"444"``.
+
+    Raises :class:`RuntimeError` when ffprobe is unavailable or the probe
+    fails, and :class:`ValueError` when the stream has no video or the pixel
+    format cannot be mapped.
+    """
+    info = _ffprobe_stream_info(path)
     streams = info.get("streams") or []
     if not streams:
         raise ValueError(f"no video stream found in {path}")
@@ -2782,25 +2914,7 @@ def _ffprobe_geometry(path: Path) -> tuple[int, int, str, int]:
     height = int(height_raw)
     pix_fmt_raw = str(s.get("pix_fmt", "yuv420p"))
 
-    # Map ffmpeg pix_fmt names to the vmaf (pixfmt, bitdepth) pair.
-    _map: dict[str, tuple[str, int]] = {
-        "yuv420p": ("420", 8),
-        "yuvj420p": ("420", 8),
-        "yuv422p": ("422", 8),
-        "yuvj422p": ("422", 8),
-        "yuv444p": ("444", 8),
-        "yuvj444p": ("444", 8),
-        "yuv420p10le": ("420", 10),
-        "yuv422p10le": ("422", 10),
-        "yuv444p10le": ("444", 10),
-        "yuv420p12le": ("420", 12),
-        "yuv422p12le": ("422", 12),
-        "yuv444p12le": ("444", 12),
-        "yuv420p10be": ("420", 10),
-        "yuv422p10be": ("422", 10),
-        "yuv444p10be": ("444", 10),
-    }
-    mapped = _map.get(pix_fmt_raw)
+    mapped = _FFMPEG_PIXFMT_TO_VMAF.get(pix_fmt_raw)
     if mapped is None:
         raise ValueError(
             f"pixel format {pix_fmt_raw!r} cannot be mapped to a vmaf pixfmt/bitdepth; "
@@ -2929,18 +3043,8 @@ async def _run_vmaf_score_encoded(
 # ---------------------------------------------------------------------------
 
 
-def _scoring_extra_properties() -> dict[str, Any]:
-    """Return the optional pass-through scoring parameters shared by
-    ``vmaf_score`` and ``vmaf_score_encoded`` (ADR-1117).
-
-    Each property maps onto a ``vmaf`` CLI flag verified against
-    ``core/tools/cli_parse.c``. Every property is optional and only forwarded
-    to the CLI when the caller supplies it, so existing callers are unaffected.
-
-    MUST stay byte-identical to the Go server's ``scoringExtraProperties()``
-    (cmd/vmafx-mcp/tools.go) — same keys, enums, defaults, and descriptions —
-    per cmd/vmafx-mcp/AGENTS.md.
-    """
+def _scoring_feature_properties() -> dict[str, Any]:
+    """Feature-selection and CTC-preset properties."""
     return {
         # --- Feature selection + CTC presets ---
         "feature": {
@@ -2962,6 +3066,12 @@ def _scoring_extra_properties() -> dict[str, Any]:
             "description": "Netflix Common Test Conditions preset (--nflx_ctc). Mutually "
             "exclusive with manual feature/model config.",
         },
+    }
+
+
+def _scoring_tiny_model_properties() -> dict[str, Any]:
+    """Tiny-AI model and execution-provider selection properties."""
+    return {
         # --- Tiny-AI / DNN scoring surface (ADR-1117) ---
         "tiny_model": {
             "type": "string",
@@ -3005,6 +3115,12 @@ def _scoring_extra_properties() -> dict[str, Any]:
             "description": "Alias for tiny_device: ONNX Runtime execution provider for the "
             "tiny model (--dnn-ep / --tiny-device). Default: auto.",
         },
+    }
+
+
+def _scoring_tiny_runtime_properties() -> dict[str, Any]:
+    """Tiny-AI runtime, codec-awareness and no-reference properties."""
+    return {
         "tiny_threads": {
             "type": "integer",
             "minimum": 0,
@@ -3044,6 +3160,12 @@ def _scoring_extra_properties() -> dict[str, Any]:
             "ONNX model); the reference path becomes a formality — pass any valid YUV "
             "of matching geometry since only the distorted picture is scored.",
         },
+    }
+
+
+def _scoring_param_properties() -> dict[str, Any]:
+    """Thread-count, frame-window and prediction score-param properties."""
+    return {
         # --- Score-param completeness ---
         "threads": {
             "type": "integer",
@@ -3069,6 +3191,12 @@ def _scoring_extra_properties() -> dict[str, Any]:
             "type": "boolean",
             "description": "Extract features only, skip VMAF prediction (--no_prediction).",
         },
+    }
+
+
+def _scoring_device_properties() -> dict[str, Any]:
+    """CPU/GPU affinity mask and per-backend device-index properties."""
+    return {
         # --- Device selectors ---
         "cpumask": {
             "type": "integer",
@@ -3095,6 +3223,12 @@ def _scoring_extra_properties() -> dict[str, Any]:
             "minimum": 0,
             "description": "Select Metal GPU device by index (--metal_device).",
         },
+    }
+
+
+def _scoring_output_properties() -> dict[str, Any]:
+    """Output-format and model-flag properties."""
+    return {
         # --- Output format ---
         "output_fmt": {
             "type": "string",
@@ -3122,7 +3256,203 @@ def _scoring_extra_properties() -> dict[str, Any]:
     }
 
 
-async def _list_tools() -> list[Tool]:
+def _scoring_extra_properties() -> dict[str, Any]:
+    """Return the optional pass-through scoring parameters shared by
+    ``vmaf_score`` and ``vmaf_score_encoded`` (ADR-1117).
+
+    Each property maps onto a ``vmaf`` CLI flag verified against
+    ``core/tools/cli_parse.c``. Every property is optional and only forwarded
+    to the CLI when the caller supplies it, so existing callers are unaffected.
+
+    MUST stay byte-identical to the Go server's ``scoringExtraProperties()``
+    (cmd/vmafx-mcp/tools.go) — same keys, enums, defaults, and descriptions —
+    per cmd/vmafx-mcp/AGENTS.md. The per-section helpers below are merged in
+    declaration order, so the resulting key order is unchanged too.
+    """
+    return {
+        **_scoring_feature_properties(),
+        **_scoring_tiny_model_properties(),
+        **_scoring_tiny_runtime_properties(),
+        **_scoring_param_properties(),
+        **_scoring_device_properties(),
+        **_scoring_output_properties(),
+    }
+
+
+def _vmaf_per_shot_properties_a() -> dict[str, Any]:
+    """First half of the input-schema properties (split for length only)."""
+    return {
+        "reference": {
+            "type": "string",
+            "description": ("Reference raw planar YUV path (must be under an allowlisted root)."),
+        },
+        "width": {"type": "integer", "minimum": 16, "maximum": 65535},
+        "height": {"type": "integer", "minimum": 16, "maximum": 65535},
+        "pixel_format": {
+            "type": "string",
+            "enum": ["420", "422", "444"],
+            "default": "420",
+            "description": "Planar YUV subsampling (--pixel_format).",
+        },
+        "bitdepth": {
+            "type": "integer",
+            "enum": [8, 10, 12, 16],
+            "default": 8,
+            "description": "Planar YUV bit depth (--bitdepth).",
+        },
+        "target_vmaf": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 90,
+            "description": ("Target VMAF score the CRF predictor aims at (--target-vmaf)."),
+        },
+    }
+
+
+def _vmaf_per_shot_properties_b() -> dict[str, Any]:
+    """Second half of the input-schema properties (split for length only)."""
+    return {
+        "crf_min": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63,
+            "default": 18,
+            "description": "Lower CRF clamp (--crf-min). Must not exceed crf_max.",
+        },
+        "crf_max": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63,
+            "default": 35,
+            "description": "Upper CRF clamp (--crf-max).",
+        },
+        "diff_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 255,
+            "description": ("Shot-detector frame-diff cutoff (--diff-threshold; C default 12)."),
+        },
+        "format": {
+            "type": "string",
+            "enum": ["json", "csv"],
+            "default": "json",
+            "description": (
+                "Plan encoding (--format). The MCP tool defaults to json "
+                "(the C CLI defaults to csv) so the plan comes back structured."
+            ),
+        },
+    }
+
+
+def _vmaf_per_shot_properties() -> dict[str, Any]:
+    """Input-schema properties for the matching tool declaration."""
+    return {**_vmaf_per_shot_properties_a(), **_vmaf_per_shot_properties_b()}
+
+
+def _vmaf_roi_properties() -> dict[str, Any]:
+    """Input-schema properties for the matching tool declaration."""
+    return {
+        "reference": {
+            "type": "string",
+            "description": ("Reference raw planar YUV path (must be under an allowlisted root)."),
+        },
+        "width": {"type": "integer", "minimum": 1, "maximum": 16384},
+        "height": {"type": "integer", "minimum": 1, "maximum": 16384},
+        "frame": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000,
+            "description": "0-based frame index to score (--frame).",
+        },
+        "pixel_format": {
+            "type": "string",
+            "enum": ["420", "422", "444"],
+            "default": "420",
+        },
+        "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16], "default": 8},
+        "ctu_size": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 128,
+            "default": 64,
+            "description": "CTU grid cell size (--ctu-size; x265 max-ctu).",
+        },
+        "encoder": {
+            "type": "string",
+            "enum": ["x265", "svt-av1"],
+            "default": "x265",
+            "description": "Sidecar dialect (--encoder).",
+        },
+        "strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 64,
+            "default": 6.0,
+            "description": ("QP-offset gain applied to the saliency grid (--strength)."),
+        },
+        "saliency_model": {
+            "type": "string",
+            "description": (
+                "Optional ONNX [1,1,H,W] luma->[0,1] saliency model "
+                "(--saliency-model). Must be under an allowlisted root."
+            ),
+        },
+    }
+
+
+def _vmaf_bench_properties() -> dict[str, Any]:
+    """Input-schema properties for the matching tool declaration."""
+    return {
+        "frames": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 48,
+            "description": "Frames per benchmark (--frames; C default 10, max 48).",
+        },
+        "resolution": {
+            "type": "string",
+            "enum": [
+                "576x324",
+                "640x480",
+                "1280x720",
+                "1920x1080",
+                "3840x2160",
+            ],
+            "description": ("Single resolution to test (--resolution). Omit to test all."),
+        },
+        "bpc": {
+            "type": "integer",
+            "enum": [8, 10, 12, 16],
+            "description": "Bits per component (--bpc; C default 8).",
+        },
+        "data_dir": {
+            "type": "string",
+            "description": (
+                "Test-data directory (--data-dir). Must be a directory under "
+                "an allowlisted root."
+            ),
+        },
+        "validate": {
+            "type": "boolean",
+            "default": False,
+            "description": "GPU-vs-CPU correctness comparison (--validate).",
+        },
+        "gpu_only": {
+            "type": "boolean",
+            "default": False,
+            "description": "Skip the CPU targets (--gpu-only).",
+        },
+        "device_list": {
+            "type": "boolean",
+            "default": False,
+            "description": ("List the available GPU devices and exit (--list-devices)."),
+        },
+    }
+
+
+def _score_and_listing_tools() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
     return [
         Tool(
             name="vmaf_score",
@@ -3173,6 +3503,12 @@ async def _list_tools() -> list[Tool]:
             ),
             inputSchema={"type": "object", "properties": {}},
         ),
+    ]
+
+
+def _benchmark_and_model_tools() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         Tool(
             name="run_benchmark",
             description=(
@@ -3226,6 +3562,12 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+    ]
+
+
+def _worst_frames_tool() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         Tool(
             name="describe_worst_frames",
             description=(
@@ -3261,6 +3603,12 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+    ]
+
+
+def _probe_and_version_tools() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         # --- new tools (ADR-0608) ---
         Tool(
             name="probe_backend",
@@ -3297,6 +3645,12 @@ async def _list_tools() -> list[Tool]:
             ),
             inputSchema={"type": "object", "properties": {}},
         ),
+    ]
+
+
+def _score_encoded_tool() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         Tool(
             name="vmaf_score_encoded",
             description=(
@@ -3345,6 +3699,12 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+    ]
+
+
+def _extractor_and_model_tools() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         # ── P1 tools (ADR-0608) ─────────────────────────────────────────────
         Tool(
             name="list_extractors",
@@ -3382,6 +3742,12 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+    ]
+
+
+def _run_compare_tool() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         Tool(
             name="run_compare",
             description=(
@@ -3424,6 +3790,12 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+    ]
+
+
+def _run_ladder_tool() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         Tool(
             name="run_ladder",
             description=(
@@ -3473,6 +3845,12 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+    ]
+
+
+def _run_tune_per_shot_tool() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         Tool(
             name="run_tune_per_shot",
             description=(
@@ -3516,6 +3894,12 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+    ]
+
+
+def _vmaf_per_shot_tool() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         # ── Sidecar-binary bridge (#1240 item b) ────────────────────────
         # Byte-compatible twins of cmd/vmafx-mcp/tools.go; keep the
         # descriptions, enums, defaults and bounds identical.
@@ -3531,70 +3915,15 @@ async def _list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "required": ["reference", "width", "height"],
-                "properties": {
-                    "reference": {
-                        "type": "string",
-                        "description": (
-                            "Reference raw planar YUV path (must be under an allowlisted root)."
-                        ),
-                    },
-                    "width": {"type": "integer", "minimum": 16, "maximum": 65535},
-                    "height": {"type": "integer", "minimum": 16, "maximum": 65535},
-                    "pixel_format": {
-                        "type": "string",
-                        "enum": ["420", "422", "444"],
-                        "default": "420",
-                        "description": "Planar YUV subsampling (--pixel_format).",
-                    },
-                    "bitdepth": {
-                        "type": "integer",
-                        "enum": [8, 10, 12, 16],
-                        "default": 8,
-                        "description": "Planar YUV bit depth (--bitdepth).",
-                    },
-                    "target_vmaf": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 100,
-                        "default": 90,
-                        "description": (
-                            "Target VMAF score the CRF predictor aims at (--target-vmaf)."
-                        ),
-                    },
-                    "crf_min": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 63,
-                        "default": 18,
-                        "description": "Lower CRF clamp (--crf-min). Must not exceed crf_max.",
-                    },
-                    "crf_max": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 63,
-                        "default": 35,
-                        "description": "Upper CRF clamp (--crf-max).",
-                    },
-                    "diff_threshold": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 255,
-                        "description": (
-                            "Shot-detector frame-diff cutoff (--diff-threshold; C default 12)."
-                        ),
-                    },
-                    "format": {
-                        "type": "string",
-                        "enum": ["json", "csv"],
-                        "default": "json",
-                        "description": (
-                            "Plan encoding (--format). The MCP tool defaults to json "
-                            "(the C CLI defaults to csv) so the plan comes back structured."
-                        ),
-                    },
-                },
+                "properties": _vmaf_per_shot_properties(),
             },
         ),
+    ]
+
+
+def _vmaf_roi_tool() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         Tool(
             name="vmaf_roi",
             description=(
@@ -3608,59 +3937,15 @@ async def _list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "required": ["reference", "width", "height", "frame"],
-                "properties": {
-                    "reference": {
-                        "type": "string",
-                        "description": (
-                            "Reference raw planar YUV path (must be under an allowlisted root)."
-                        ),
-                    },
-                    "width": {"type": "integer", "minimum": 1, "maximum": 16384},
-                    "height": {"type": "integer", "minimum": 1, "maximum": 16384},
-                    "frame": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 1000000,
-                        "description": "0-based frame index to score (--frame).",
-                    },
-                    "pixel_format": {
-                        "type": "string",
-                        "enum": ["420", "422", "444"],
-                        "default": "420",
-                    },
-                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16], "default": 8},
-                    "ctu_size": {
-                        "type": "integer",
-                        "minimum": 8,
-                        "maximum": 128,
-                        "default": 64,
-                        "description": "CTU grid cell size (--ctu-size; x265 max-ctu).",
-                    },
-                    "encoder": {
-                        "type": "string",
-                        "enum": ["x265", "svt-av1"],
-                        "default": "x265",
-                        "description": "Sidecar dialect (--encoder).",
-                    },
-                    "strength": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 64,
-                        "default": 6.0,
-                        "description": (
-                            "QP-offset gain applied to the saliency grid (--strength)."
-                        ),
-                    },
-                    "saliency_model": {
-                        "type": "string",
-                        "description": (
-                            "Optional ONNX [1,1,H,W] luma->[0,1] saliency model "
-                            "(--saliency-model). Must be under an allowlisted root."
-                        ),
-                    },
-                },
+                "properties": _vmaf_roi_properties(),
             },
         ),
+    ]
+
+
+def _vmaf_bench_tool() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         Tool(
             name="vmaf_bench",
             description=(
@@ -3673,58 +3958,15 @@ async def _list_tools() -> list[Tool]:
             ),
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "frames": {
-                        "type": "integer",
-                        "minimum": 2,
-                        "maximum": 48,
-                        "description": "Frames per benchmark (--frames; C default 10, max 48).",
-                    },
-                    "resolution": {
-                        "type": "string",
-                        "enum": [
-                            "576x324",
-                            "640x480",
-                            "1280x720",
-                            "1920x1080",
-                            "3840x2160",
-                        ],
-                        "description": (
-                            "Single resolution to test (--resolution). Omit to test all."
-                        ),
-                    },
-                    "bpc": {
-                        "type": "integer",
-                        "enum": [8, 10, 12, 16],
-                        "description": "Bits per component (--bpc; C default 8).",
-                    },
-                    "data_dir": {
-                        "type": "string",
-                        "description": (
-                            "Test-data directory (--data-dir). Must be a directory under "
-                            "an allowlisted root."
-                        ),
-                    },
-                    "validate": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": "GPU-vs-CPU correctness comparison (--validate).",
-                    },
-                    "gpu_only": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": "Skip the CPU targets (--gpu-only).",
-                    },
-                    "device_list": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": (
-                            "List the available GPU devices and exit (--list-devices)."
-                        ),
-                    },
-                },
+                "properties": _vmaf_bench_properties(),
             },
         ),
+    ]
+
+
+def _vmaf_vpl_tool() -> list[Tool]:
+    """One slice of the tool catalogue returned by _list_tools()."""
+    return [
         Tool(
             name="vmaf_vpl",
             description=(
@@ -3779,6 +4021,30 @@ async def _list_tools() -> list[Tool]:
             },
         ),
     ]
+
+
+async def _list_tools() -> list[Tool]:
+    # The declarations are grouped into helpers purely to keep each function
+    # readable; the groups are concatenated in the same order the single list
+    # literal declared them, so the advertised catalogue is unchanged.
+    tools: list[Tool] = []
+    for group in (
+        _score_and_listing_tools,
+        _benchmark_and_model_tools,
+        _worst_frames_tool,
+        _probe_and_version_tools,
+        _score_encoded_tool,
+        _extractor_and_model_tools,
+        _run_compare_tool,
+        _run_ladder_tool,
+        _run_tune_per_shot_tool,
+        _vmaf_per_shot_tool,
+        _vmaf_roi_tool,
+        _vmaf_bench_tool,
+        _vmaf_vpl_tool,
+    ):
+        tools.extend(group())
+    return tools
 
 
 async def _call_tool(
@@ -4065,6 +4331,31 @@ def _check_depth(obj: Any, max_depth: int = 50, depth: int = 0) -> None:
             _check_depth(item, max_depth, depth + 1)
 
 
+def _classify_parse_error(raw_line: str) -> tuple[str | int | None, int, str]:
+    """Classify an unparseable stdin line into (id, error_code, error_message)."""
+    _id: str | int | None = None
+    _error_code = -32700
+    _error_message = "Parse error"
+    try:
+        _partial = json.loads(raw_line)
+        if isinstance(_partial, list):
+            # Valid JSON array: this is a batch request.  The mcp library does
+            # not implement JSON-RPC 2.0 batching; respond with -32600
+            # (Invalid Request) because the payload is syntactically correct
+            # JSON — it is the request structure that is not supported.
+            _error_code = -32600
+            _error_message = "Invalid Request"
+        else:
+            _raw_id = _partial.get("id") if isinstance(_partial, dict) else None
+            if isinstance(_raw_id, (str, int)):
+                _id = _raw_id
+    except Exception:
+        # raw_line is not valid JSON (or not a dict); _id stays None and the
+        # JSON-RPC error response will carry id=null, which is spec-conformant.
+        pass
+    return _id, _error_code, _error_message
+
+
 def _emit_parse_error(raw_line: str, exc: Exception) -> None:
     """Write a conformant JSON-RPC parse-error response to stdout.
 
@@ -4093,26 +4384,7 @@ def _emit_parse_error(raw_line: str, exc: Exception) -> None:
     writer may not have been set up yet, and because parse errors should be
     acknowledged immediately rather than queued behind in-flight tool results.
     """
-    _id: str | int | None = None
-    _error_code = -32700
-    _error_message = "Parse error"
-    try:
-        _partial = json.loads(raw_line)
-        if isinstance(_partial, list):
-            # Valid JSON array: this is a batch request.  The mcp library does
-            # not implement JSON-RPC 2.0 batching; respond with -32600
-            # (Invalid Request) because the payload is syntactically correct
-            # JSON — it is the request structure that is not supported.
-            _error_code = -32600
-            _error_message = "Invalid Request"
-        else:
-            _raw_id = _partial.get("id") if isinstance(_partial, dict) else None
-            if isinstance(_raw_id, (str, int)):
-                _id = _raw_id
-    except Exception:
-        # raw_line is not valid JSON (or not a dict); _id stays None and the
-        # JSON-RPC error response will carry id=null, which is spec-conformant.
-        pass
+    _id, _error_code, _error_message = _classify_parse_error(raw_line)
 
     _err_payload = json.dumps(
         {

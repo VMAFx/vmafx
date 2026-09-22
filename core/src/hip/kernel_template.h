@@ -3,7 +3,7 @@
  *  SPDX-License-Identifier: EUPL-1.2
  *
  *  HIP per-feature kernel scaffolding template — first-consumer
- *  mirror of `libvmaf/src/cuda/kernel_template.h` (ADR-0221).
+ *  mirror of `core/src/cuda/kernel_template.h` (ADR-0221).
  *
  *  T7-10 first-consumer PR (ADR-0241). The CUDA template captured
  *  the lifecycle every fork-added CUDA feature kernel converged on
@@ -20,7 +20,7 @@
  *  `vmaf_hip_kernel_readback_alloc/_free`,
  *  `vmaf_hip_kernel_submit_pre_launch`,
  *  `vmaf_hip_kernel_collect_wait` are declared here and stubbed in
- *  `libvmaf/src/hip/kernel_template.c`. Every helper currently returns
+ *  `core/src/hip/kernel_template.c`. Every helper currently returns
  *  -ENOSYS until the runtime PR replaces the bodies with real HIP
  *  calls. The consumer (`integer_psnr_hip.c`) calls them through the
  *  same call-graph the CUDA reference uses, so the runtime PR can
@@ -48,10 +48,10 @@
  *  contract this PR pins.
  *
  *  Reference implementation (CUDA): see
- *  `libvmaf/src/cuda/kernel_template.h` and
- *  `libvmaf/src/feature/cuda/integer_psnr_cuda.c`.
+ *  `core/src/cuda/kernel_template.h` and
+ *  `core/src/feature/cuda/integer_psnr_cuda.c`.
  *  First HIP consumer:
- *  `libvmaf/src/feature/hip/integer_psnr_hip.c`.
+ *  `core/src/feature/hip/integer_psnr_hip.c`.
  *
  *  Migration guide: `docs/backends/kernel-scaffolding.md`.
  */
@@ -174,7 +174,7 @@ int vmaf_hip_kernel_readback_free(VmafHipKernelReadback *rb, VmafHipContext *ctx
  * readback is complete before the host reads the pinned buffer.
  *
  * Mirrors `vmaf_cuda_kernel_submit_post_record` from
- * `libvmaf/src/cuda/kernel_template.h`. PR #612 adds this helper for
+ * `core/src/cuda/kernel_template.h`. PR #612 adds this helper for
  * `float_psnr_hip`; batch-1 (ADR-0372) also requires it for
  * `integer_psnr_hip`. On merge conflict with
  * PR #612 at merge time, keep one copy and discard the duplicate.

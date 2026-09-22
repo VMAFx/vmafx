@@ -761,17 +761,22 @@ static inline float ref_read_plane(const simd_plane_t *p, unsigned lw, unsigned 
     return (float)row[sx];
 }
 
-/* Scalar reference: picture_to_linear_rgb. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — test scaffolding (ADR-0141)
-static void ref_picture_to_linear_rgb(int yuv_matrix, unsigned bpc, unsigned w, unsigned h,
-                                      const simd_plane_t planes[3], float *out)
+/* The YUV->RGB matrix and range constants one `yuv_matrix` selects. Each field
+ * is the same `float` expression the reference used to compute inline, so the
+ * rounding of every constant is unchanged. */
+typedef struct {
+    float cr_r;
+    float cb_b;
+    float cb_g;
+    float cr_g;
+    float y_scale;
+    float c_scale;
+    float y_off;
+    float c_off;
+} ref_yuv_consts_t;
+
+static ref_yuv_consts_t ref_yuv_consts(int yuv_matrix)
 {
-    const size_t plane_sz = (size_t)w * (size_t)h;
-    float *rp = out;
-    float *gp = out + plane_sz;
-    float *bp = out + 2 * plane_sz;
-    const float peak = (float)((1u << bpc) - 1u);
-    const float inv_peak = 1.0f / peak;
     float kr;
     float kg;
     float kb;
@@ -798,14 +803,37 @@ static void ref_picture_to_linear_rgb(int yuv_matrix, unsigned bpc, unsigned w, 
         kb = 0.114f;
         break;
     }
-    const float cr_r = 2.0f * (1.0f - kr);
-    const float cb_b = 2.0f * (1.0f - kb);
-    const float cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
-    const float cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
-    const float y_scale = limited ? (255.0f / 219.0f) : 1.0f;
-    const float c_scale = limited ? (255.0f / 224.0f) : 1.0f;
-    const float y_off = limited ? (16.0f / 255.0f) : 0.0f;
-    const float c_off = 0.5f;
+    ref_yuv_consts_t c;
+    c.cr_r = 2.0f * (1.0f - kr);
+    c.cb_b = 2.0f * (1.0f - kb);
+    c.cb_g = -(2.0f * kb * (1.0f - kb)) / kg;
+    c.cr_g = -(2.0f * kr * (1.0f - kr)) / kg;
+    c.y_scale = limited ? (255.0f / 219.0f) : 1.0f;
+    c.c_scale = limited ? (255.0f / 224.0f) : 1.0f;
+    c.y_off = limited ? (16.0f / 255.0f) : 0.0f;
+    c.c_off = 0.5f;
+    return c;
+}
+
+/* Scalar reference: picture_to_linear_rgb. */
+static void ref_picture_to_linear_rgb(int yuv_matrix, unsigned bpc, unsigned w, unsigned h,
+                                      const simd_plane_t planes[3], float *out)
+{
+    const size_t plane_sz = (size_t)w * (size_t)h;
+    float *rp = out;
+    float *gp = out + plane_sz;
+    float *bp = out + 2 * plane_sz;
+    const float peak = (float)((1u << bpc) - 1u);
+    const float inv_peak = 1.0f / peak;
+    const ref_yuv_consts_t c = ref_yuv_consts(yuv_matrix);
+    const float cr_r = c.cr_r;
+    const float cb_b = c.cb_b;
+    const float cb_g = c.cb_g;
+    const float cr_g = c.cr_g;
+    const float y_scale = c.y_scale;
+    const float c_scale = c.c_scale;
+    const float y_off = c.y_off;
+    const float c_off = c.c_off;
     for (unsigned y = 0; y < h; y++) {
         for (unsigned x = 0; x < w; x++) {
             const float Y = ref_read_plane(&planes[0], w, h, (int)x, (int)y, bpc) * inv_peak;
@@ -865,32 +893,32 @@ static ptlr_fn_t pick_ptlr(void)
     return NULL;
 }
 
-/* Test all 6 common (yuv_matrix × subsampling) combinations on small frames. */
-/* Test helper — drives all 5 format variants (420/422/444 × 8/10-bit)
- * through one parameterised entry point. Splitting would duplicate
- * the per-plane fixture setup + 3× xorshift fill + shell. */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size) — test scaffolding (ADR-0141)
-static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsigned uh_div)
+#if !(defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__))
+/* Fill `count` samples of `buf` with pseudo-random values in [0, maxv],
+ * carrying the xorshift state across planes so each plane gets its own
+ * sequence -- exactly the order the three inline copies produced. */
+static void fill_random_plane(void *buf, size_t count, unsigned bpc, unsigned maxv, uint32_t *state)
 {
-    /*
-     * TODO(ssimulacra2-ptlr-mingw): scalar fmaf() on MinGW-w64's libm
-     * (compiled without -mfma) is not guaranteed to be correctly
-     * single-rounded, so scalar-vs-AVX2 / scalar-vs-AVX-512
-     * bit-exactness fails on Windows MinGW64 CI even after the
-     * ADR-0891 FMA unification. Skip the whole test there for now;
-     * Linux/macOS libm fmaf() is correctly rounded and the test runs
-     * fine on those hosts. Mirrors the existing skip in
-     * core/test/test_ms_ssim_decimate.c (see TODO(ms-ssim-mingw)).
-     */
-#if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
-    (void)yuv_matrix;
-    (void)bpc;
-    (void)uw_div;
-    (void)uh_div;
-    (void)fprintf(stderr, "skipping: Windows libm fmaf not bit-exact with hw FMA "
-                          "(see TODO(ssimulacra2-ptlr-mingw))\n");
-    return NULL;
-#else
+    uint32_t s = *state;
+    for (size_t i = 0; i < count; i++) {
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        const unsigned v = s % (maxv + 1);
+        if (bpc > 8) {
+            ((uint16_t *)buf)[i] = (uint16_t)v;
+        } else {
+            ((uint8_t *)buf)[i] = (uint8_t)v;
+        }
+    }
+    *state = s;
+}
+
+/* One (yuv_matrix, bpc, subsampling) case: build the fixture planes, run the
+ * scalar reference and the dispatched SIMD kernel over them, and require the
+ * two outputs to be byte-identical (ADR-0163). */
+static char *run_ptlr_case(int yuv_matrix, unsigned bpc, unsigned uw_div, unsigned uh_div)
+{
     ptlr_fn_t fn = pick_ptlr();
     if (!fn)
         return NULL;
@@ -913,39 +941,9 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     /* Fill with pseudo-random 8/16-bit pixel values. */
     uint32_t s = 0xabadcafeu ^ (uint32_t)(yuv_matrix * 7 + bpc * 13 + uw_div * 5 + uh_div);
     const unsigned maxv = (1u << bpc) - 1u;
-    for (size_t i = 0; i < y_sz; i++) {
-        s ^= s << 13;
-        s ^= s >> 17;
-        s ^= s << 5;
-        const unsigned v = s % (maxv + 1);
-        if (bpc > 8) {
-            ((uint16_t *)y_buf)[i] = (uint16_t)v;
-        } else {
-            ((uint8_t *)y_buf)[i] = (uint8_t)v;
-        }
-    }
-    for (size_t i = 0; i < c_sz; i++) {
-        s ^= s << 13;
-        s ^= s >> 17;
-        s ^= s << 5;
-        const unsigned v = s % (maxv + 1);
-        if (bpc > 8) {
-            ((uint16_t *)u_buf)[i] = (uint16_t)v;
-        } else {
-            ((uint8_t *)u_buf)[i] = (uint8_t)v;
-        }
-    }
-    for (size_t i = 0; i < c_sz; i++) {
-        s ^= s << 13;
-        s ^= s >> 17;
-        s ^= s << 5;
-        const unsigned v = s % (maxv + 1);
-        if (bpc > 8) {
-            ((uint16_t *)v_buf)[i] = (uint16_t)v;
-        } else {
-            ((uint8_t *)v_buf)[i] = (uint8_t)v;
-        }
-    }
+    fill_random_plane(y_buf, y_sz, bpc, maxv, &s);
+    fill_random_plane(u_buf, c_sz, bpc, maxv, &s);
+    fill_random_plane(v_buf, c_sz, bpc, maxv, &s);
     const simd_plane_t planes[3] = {
         {y_buf, (ptrdiff_t)LW * (ptrdiff_t)elem, LW, LH},
         {u_buf, (ptrdiff_t)UW * (ptrdiff_t)elem, UW, UH},
@@ -973,6 +971,34 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     free(out_simd);
     mu_assert("picture_to_linear_rgb SIMD not bit-identical to scalar", match);
     return NULL;
+}
+#endif /* !_WIN32 / MINGW */
+
+/* Test all 6 common (yuv_matrix × subsampling) combinations on small frames.
+ * Drives all 5 format variants (420/422/444 × 8/10-bit) through one
+ * parameterised entry point. */
+static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsigned uh_div)
+{
+    /*
+     * TODO(ssimulacra2-ptlr-mingw): scalar fmaf() on MinGW-w64's libm
+     * (compiled without -mfma) is not guaranteed to be correctly
+     * single-rounded, so scalar-vs-AVX2 / scalar-vs-AVX-512
+     * bit-exactness fails on Windows MinGW64 CI even after the
+     * ADR-0891 FMA unification. Skip the whole test there for now;
+     * Linux/macOS libm fmaf() is correctly rounded and the test runs
+     * fine on those hosts. Mirrors the existing skip in
+     * core/test/test_ms_ssim_decimate.c (see TODO(ms-ssim-mingw)).
+     */
+#if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
+    (void)yuv_matrix;
+    (void)bpc;
+    (void)uw_div;
+    (void)uh_div;
+    (void)fprintf(stderr, "skipping: Windows libm fmaf not bit-exact with hw FMA "
+                          "(see TODO(ssimulacra2-ptlr-mingw))\n");
+    return NULL;
+#else
+    return run_ptlr_case(yuv_matrix, bpc, uw_div, uh_div);
 #endif /* _WIN32 / MINGW */
 }
 

@@ -806,16 +806,18 @@ def test_subprocess_timeout_s_zero_falls_back(monkeypatch: pytest.MonkeyPatch) -
 
 def test_communicate_with_timeout_raises_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     """When asyncio.wait_for raises TimeoutError, _communicate_with_timeout must
-    kill the process and re-raise as RuntimeError."""
+    kill the process, await its drain, and re-raise as RuntimeError."""
 
     class _Proc:
         _killed = False
+        _communicate_calls = 0
         returncode = None
 
         def kill(self) -> None:
             self._killed = True
 
         async def communicate(self) -> tuple[bytes, bytes]:
+            self._communicate_calls += 1
             return b"", b""
 
     proc = _Proc()
@@ -828,23 +830,17 @@ def test_communicate_with_timeout_raises_on_timeout(monkeypatch: pytest.MonkeyPa
             # Close the coroutine to suppress "never awaited" warnings.
             coro.close()
             raise asyncio.TimeoutError()
-        # Second call (drain attempt): close and return as if it succeeded.
-        # The coro may be a fresh communicate() call from the suppress block.
-        import contextlib
-
-        with contextlib.suppress(Exception):
-            coro.close()
-        return b"", b""
+        # The second call is the post-kill drain. Exercise it rather than
+        # fabricating its return value so its coroutine lifecycle is covered.
+        return await coro
 
     monkeypatch.setattr(srv.asyncio, "wait_for", _fake_wait_for)
 
-    # Suppress the RuntimeWarning from the drain coroutine in the suppress block.
-    import warnings
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        with pytest.raises(RuntimeError, match="timed out"):
-            asyncio.run(srv._communicate_with_timeout(proc, timeout=0.001))
+    with pytest.raises(RuntimeError, match="timed out"):
+        asyncio.run(srv._communicate_with_timeout(proc, timeout=0.001))
+    assert proc._killed
+    assert proc._communicate_calls == 1
+    assert len(call_count) == 2
 
 
 # ===========================================================================

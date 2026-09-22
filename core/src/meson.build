@@ -274,7 +274,7 @@ if is_hipcc_enabled and is_hip_enabled
         # `integer_motion_hip.h` resolved to an undefined link reference
         # whenever `enable_hipcc=true` was paired with `enable_hip=true`
         # (i.e. the dev-MCP container's default build mode). The kernel
-        # source has lived at `libvmaf/src/feature/hip/integer_motion/
+        # source has lived at `core/src/feature/hip/integer_motion/
         # motion_score.hip` since ADR-0523 added the registration; this
         # entry closes the loop. Surfaced during ADR-0529 container
         # rebuild verification.
@@ -1373,7 +1373,7 @@ if is_cuda_enabled
     # feature_collector.h and cuda/common.h, both of which `#include
     # <pthread.h>`. nvcc shells the host pass out to cl.exe, which
     # has no pthread.h on its system include path. The shim at
-    # libvmaf/src/compat/win32/pthread.h is wired into the C/C++ builds
+    # core/src/compat/win32/pthread.h is wired into the C/C++ builds
     # via pthread_dependency, but custom_target nvcc invocations build
     # their own -I list — so add the shim path explicitly here too.
     # Netflix/vmaf#1573 hunk (b): these used to be RELATIVE paths ('./src',
@@ -1530,7 +1530,9 @@ if is_sycl_enabled
     #          When `sycl_icpx_aot_targets` is non-empty (the default),
     #          we additionally pass `-fsycl-targets=spir64_gen,spir64` to
     #          request AOT compilation into native GPU ISA, and
-    #          `-Xs '-device <list>'` to specify target micro-architectures.
+    #          `-Xsycl-target-backend=spir64_gen '-device <list>'` to specify
+    #          target micro-architectures without forwarding the option to the
+    #          portable `spir64` target.
     #          This eliminates the JIT cold-start cost paid on every first
     #          kernel launch. The binary embeds native ISA blobs for each
     #          listed target plus a SPIR-V fallback for unlisted devices.
@@ -1545,12 +1547,14 @@ if is_sycl_enabled
         icpx_aot_targets = get_option('sycl_icpx_aot_targets')
         if icpx_aot_targets != ''
             # AOT path: emit spir64_gen (IGC) ISA blobs for the listed targets.
-            # `-Xs '-device <list>'` is forwarded to IGC via clang-offload-wrapper.
+            # Scope the device list to IGC. The unqualified `-Xs` form is
+            # ambiguous in a multi-target command and oneAPI 2026 reports it as
+            # unused when the portable `spir64` fallback is present.
             # `spir64` fallback embeds portable SPIR-V for any unlisted device.
             sycl_toolchain_args = [
                 '-fsycl',
                 '-fsycl-targets=spir64_gen,spir64',
-                '-Xs', '-device ' + icpx_aot_targets,
+                '-Xsycl-target-backend=spir64_gen', '-device ' + icpx_aot_targets,
             ]
             message('SYCL AOT targets (icpx): ' + icpx_aot_targets)
         else
@@ -1922,7 +1926,7 @@ if is_sycl_enabled
     # AdaptiveCpp doesn't accept `-fp-model=precise`; it uses the
     # underlying clang's `-ffp-contract=off` plus the source-level
     # `precise` decoration on per-kernel arithmetic. Per
-    # `libvmaf/src/sycl/AGENTS.md`, the precise-FP contract is
+    # `core/src/sycl/AGENTS.md`, the precise-FP contract is
     # load-bearing for places=4 conformance, so emit `-ffp-contract=off`
     # under acpp; the residual numerical drift vs icpx is documented
     # in ADR-0335 §"Numerical conformance".

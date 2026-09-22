@@ -447,6 +447,20 @@ static char *test_ssim_accumulate_neon_matches_scalar(void)
     return NULL;
 }
 
+/* The normalised separable Gaussian window `iqa_ssim()` is driven with, using
+ * symmetric boundary handling. */
+static void init_gaussian_window(struct iqa_kernel *window)
+{
+    window->kernel = (float *)g_gaussian_window;
+    window->kernel_h = (float *)g_gaussian_window_h;
+    window->kernel_v = (float *)g_gaussian_window_v;
+    window->w = GAUSSIAN_LEN;
+    window->h = GAUSSIAN_LEN;
+    window->normalized = 1;
+    window->bnd_opt = KBND_SYMMETRIC;
+    window->bnd_const = 0.0f;
+}
+
 /* End-to-end: the same picture pair through the real `iqa_ssim()` with
  * the NEON dispatch installed and with no dispatch at all. Unlike the
  * three kernel tests above, this one runs against the *compiled*
@@ -478,14 +492,7 @@ static char *test_ssim_neon_end_to_end_matches_scalar(void)
 
     mu_assert("out of memory", ref && cmp);
 
-    window.kernel = (float *)g_gaussian_window;
-    window.kernel_h = (float *)g_gaussian_window_h;
-    window.kernel_v = (float *)g_gaussian_window_v;
-    window.w = GAUSSIAN_LEN;
-    window.h = GAUSSIAN_LEN;
-    window.normalized = 1;
-    window.bnd_opt = KBND_SYMMETRIC;
-    window.bnd_const = 0.0f;
+    init_gaussian_window(&window);
 
     for (size_t i = 0; i < n; ++i) {
         ref[i] = 128.0f + rng_float(&state, 120.0f);

@@ -301,9 +301,8 @@ CPU and each GPU backend. See [usage/bench.md](../usage/bench.md) for more detai
 > on a modern GPU. Real MCP clients hold the connection open. The heredoc test pattern
 > (`docker exec -i ... vmaf-mcp << EOF ... EOF`) causes the server to shut down on
 > stdin EOF before the benchmark completes. Use a persistent pipe (`sleep 120 |`)
-> when testing from the command line. The original Finding 9 citation names
-> `.workingdir/bbb_reports/E2E_TEST_MATRIX_v9.md`; that report is unavailable
-> in the current repository.
+> when testing from the command line. ADR-0517 preserves the tracked diagnosis
+> and repair rationale for the original benchmark failure.
 >
 > **Error contract**: `run_benchmark` raises `RuntimeError("benchmark failed — no
 > output line containing pooled score / Pearson correlation")` on partial / silent

@@ -20,7 +20,7 @@
  *  Vulkan-on-lavapipe-less-CI pattern documented in
  *  ADR-0212 §"What lands next" point 1.
  *
- *  Mirrors libvmaf/test/test_vulkan_smoke.c.
+ *  Mirrors core/test/test_vulkan_smoke.c.
  */
 
 #include <errno.h>
@@ -66,7 +66,7 @@ int test_hip_memcpy_round_trip(void *device, void *host_pinned, size_t bytes)
     return 0;
 }
 
-/* ---- Internal context (libvmaf/src/hip/common.h) ---- */
+/* ---- Internal context (core/src/hip/common.h) ---- */
 
 static char *test_context_new_returns_zeroed_struct(void)
 {
@@ -107,14 +107,14 @@ static char *test_device_count_runtime_returns_nonneg(void)
     return NULL;
 }
 
-/* ---- Public C-API (libvmaf/include/libvmaf/libvmaf_hip.h) ---- */
+/* ---- Public C-API (core/include/libvmaf/libvmaf_hip.h) ---- */
 
 static char *test_available_reports_build_flag(void)
 {
     /* When this TU compiles under -Denable_hip=true the meson glue
      * defines HAVE_HIP=1 for the test executable, so the function
      * reports 1; on the default no-HIP build it reports 0. The smoke
-     * test is wired in libvmaf/test/meson.build only under
+     * test is wired in core/test/meson.build only under
      * `if get_option('enable_hip') == true`, so this branch matches
      * the build that exercises the test. */
     const int avail = vmaf_hip_available();
@@ -146,7 +146,7 @@ static char *test_state_init_runtime_contract(void)
 static char *test_import_state_validates_arguments(void)
 {
     /* ADR-0519: the library-side state-binding stub was promoted from
-     * -ENOSYS to a real implementation in libvmaf/src/libvmaf.c. The
+     * -ENOSYS to a real implementation in core/src/libvmaf.c. The
      * function now stashes the caller-imported VmafHipState on the
      * VmafContext (same lifetime model as SYCL / Vulkan / Metal).
      * NULL arguments return -EINVAL; the device-bound success path is
@@ -479,7 +479,7 @@ static char *test_integer_motion_hip_dispatch_picks_hip(void)
 /*
  * One assertion per newly-registered HIP feature extractor. Pins the
  * load-bearing contract that ADR-0523 first established: every TU under
- * `libvmaf/src/feature/hip/` that defines a `VmafFeatureExtractor
+ * `core/src/feature/hip/` that defines a `VmafFeatureExtractor
  * vmaf_fex_*_hip` symbol must be discoverable via
  * `vmaf_get_feature_extractor_by_name(<name>)` once compiled into the
  * HIP runtime archive. Without these assertions a future drop-out from
@@ -591,7 +591,7 @@ static char *test_integer_vif_hip_dispatch_picks_hip(void)
  * `mu_run_test` macro-expands to a branching pair per test, blowing
  * past clang-tidy's `readability-function-size` 15-branch budget at
  * 9 sub-tests. The table-driven form is also what
- * libvmaf/test/test_vulkan_smoke.c grew to once its sub-test count
+ * core/test/test_vulkan_smoke.c grew to once its sub-test count
  * climbed past the threshold. */
 typedef char *(*test_fn)(void);
 

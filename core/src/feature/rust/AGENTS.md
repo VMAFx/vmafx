@@ -31,8 +31,8 @@ Rust feature extractor crates (ADR-0707 cbindgen pilot).
    source-tree dependency on build artifact.
 
 6. **`publish = false` on every fork-license crate in this tree.**
-   `vmafx-tad` declares `BSD-3-Clause-Plus-Patent`; SPDX parser in
-   `cargo-deny` 0.19.8 does not yet recognise it. `publish = false` opts
+   `vmafx-tad` inherits the workspace `license = "BSD-2-Clause-Patent"`.
+   `publish = false` opts
    crate out of crates.io publishing AND makes
    `[licenses.private] ignore = true` in `deny.toml` skip license check
    for workspace member. New Rust feature extractors on fork license

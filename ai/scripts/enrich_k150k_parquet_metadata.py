@@ -12,24 +12,53 @@ content-level split columns are filled into the parquet.
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
+if TYPE_CHECKING:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
+else:
+    try:
+        from ai.scripts._script_bootstrap import bootstrap_ai_script
+    except ModuleNotFoundError:
+        from _script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
-from extract_k150k_features import DEFAULT_CHUG_SPLIT_SEED, _load_jsonl_metadata  # noqa: E402
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
+def _load_runtime_helpers() -> tuple[Any, ...]:
+    """Import helpers after the direct-script bootstrap installs package roots."""
+    from ai.scripts.extract_k150k_features import DEFAULT_CHUG_SPLIT_SEED, _load_jsonl_metadata
+
+    from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
+    from aiutils.parquet_utils import write_parquet_atomic
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+    return (
+        DEFAULT_CHUG_SPLIT_SEED,
+        _load_jsonl_metadata,
+        collect_cli_argv,
+        make_argument_parser,
+        write_parquet_atomic,
+        build_run_provenance,
+        write_manifest_json,
+    )
+
+
+(
+    DEFAULT_CHUG_SPLIT_SEED,
+    _load_jsonl_metadata,
+    collect_cli_argv,
+    make_argument_parser,
+    write_parquet_atomic,
+    build_run_provenance,
+    write_manifest_json,
+) = _load_runtime_helpers()
 
 
 def _is_missing(value: Any) -> bool:
@@ -76,9 +105,9 @@ def enrich_frame(
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(
+def _build_enrich_parser() -> argparse.ArgumentParser:
+    """Build and return the argument parser for enrich_k150k_parquet_metadata."""
+    ap: argparse.ArgumentParser = make_argument_parser(
         prog="enrich_k150k_parquet_metadata.py",
         description=__doc__,
     )
@@ -92,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         "--metadata-jsonl",
         type=Path,
         required=True,
-        help="Corpus JSONL sidecar, e.g. .workingdir2/chug/chug.jsonl.",
+        help="Corpus JSONL sidecar, e.g. .corpus/chug/chug.jsonl.",
     )
     ap.add_argument(
         "--out",
@@ -120,24 +149,17 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the derived parquet."
         ),
     )
-    args = ap.parse_args(raw_argv)
+    return ap
 
-    if not args.features_parquet.is_file():
-        raise SystemExit(f"error: features parquet not found: {args.features_parquet}")
-    if not args.metadata_jsonl.is_file():
-        raise SystemExit(f"error: metadata JSONL not found: {args.metadata_jsonl}")
 
-    metadata = _load_jsonl_metadata(args.metadata_jsonl, split_seed=args.split_seed)
-    frame = pd.read_parquet(args.features_parquet)
-    enriched, stats = enrich_frame(
-        frame,
-        metadata,
-        overwrite=args.overwrite_metadata,
-    )
-    out_path = args.out or args.features_parquet
-    if args.manifest_out is None:
-        args.manifest_out = out_path.with_suffix(".manifest.json")
-    write_parquet_atomic(enriched, out_path, index=False)
+def _write_enrich_manifest(
+    args: Any,
+    raw_argv: list[str],
+    stats: dict[str, int],
+    metadata: dict[str, dict[str, Any]],
+    out_path: Path,
+) -> None:
+    """Write enrichment run-provenance manifest JSON sidecar."""
     write_manifest_json(
         args.manifest_out,
         {
@@ -158,6 +180,29 @@ def main(argv: list[str] | None = None) -> int:
             ),
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_enrich_parser().parse_args(raw_argv)
+
+    if not args.features_parquet.is_file():
+        raise SystemExit(f"error: features parquet not found: {args.features_parquet}")
+    if not args.metadata_jsonl.is_file():
+        raise SystemExit(f"error: metadata JSONL not found: {args.metadata_jsonl}")
+
+    metadata = _load_jsonl_metadata(args.metadata_jsonl, split_seed=args.split_seed)
+    frame = pd.read_parquet(args.features_parquet)
+    enriched, stats = enrich_frame(
+        frame,
+        metadata,
+        overwrite=args.overwrite_metadata,
+    )
+    out_path = args.out or args.features_parquet
+    if args.manifest_out is None:
+        args.manifest_out = out_path.with_suffix(".manifest.json")
+    write_parquet_atomic(enriched, out_path, index=False)
+    _write_enrich_manifest(args, raw_argv, stats, metadata, out_path)
     print(
         json.dumps(
             {"out": str(out_path), "manifest": str(args.manifest_out), **stats}, sort_keys=True

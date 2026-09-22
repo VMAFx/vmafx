@@ -149,23 +149,21 @@ static int run_case(const float *filter, int filter_width, int width, int height
     PoisonBuf tmp = {0};
     int ok = 0;
 
-    if (poison_buf_alloc(&src, stride, height))
-        goto out;
-    if (poison_buf_alloc(&dst, stride, height))
-        goto out;
-    if (poison_buf_alloc(&tmp, stride, height))
-        goto out;
+    if (poison_buf_alloc(&src, stride, height) == 0 &&
+        poison_buf_alloc(&dst, stride, height) == 0 &&
+        poison_buf_alloc(&tmp, stride, height) == 0) {
+        poison_buf_fill_plane(&src, stride, width, height);
 
-    poison_buf_fill_plane(&src, stride, width, height);
+        convolution_y_c_s(filter, filter_width, src.plane, tmp.plane, width, height, stride, stride,
+                          1);
+        convolution_x_c_s(filter, filter_width, tmp.plane, dst.plane, width, height, stride, stride,
+                          1);
 
-    convolution_y_c_s(filter, filter_width, src.plane, tmp.plane, width, height, stride, stride, 1);
-    convolution_x_c_s(filter, filter_width, tmp.plane, dst.plane, width, height, stride, stride, 1);
+        ok = plane_all_finite(dst.plane, stride, width, height) &&
+             poison_buf_guards_intact(&dst, stride, width, height) &&
+             poison_buf_guards_intact(&tmp, stride, width, height);
+    }
 
-    ok = plane_all_finite(dst.plane, stride, width, height) &&
-         poison_buf_guards_intact(&dst, stride, width, height) &&
-         poison_buf_guards_intact(&tmp, stride, width, height);
-
-out:
     poison_buf_free(&src);
     poison_buf_free(&dst);
     poison_buf_free(&tmp);

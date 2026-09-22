@@ -1391,7 +1391,28 @@ nav:
         - "ADR-1263: hip-platform-macro-single-source": adr/1263-hip-platform-macro-single-source.md
         - "ADR-1264: hip-scaffold-enosys-contract": adr/1264-hip-scaffold-enosys-contract.md
         - "ADR-1265: clang-tidy-header-filter-absolute-paths": adr/1265-clang-tidy-header-filter-absolute-paths.md
+        - "ADR-1274: hiss-21-replay-gate": adr/1274-hiss-21-replay-gate.md
         - "ADR-1276: pelorus-v022-parser-safety-repin": adr/1276-pelorus-v022-parser-safety-repin.md
+        - "ADR-1277: workingdir-contract-cleanup": adr/1277-workingdir-contract-cleanup.md
+        - "ADR-1278: python-safe-parallel-execution": adr/1278-python-safe-parallel-execution.md
+        - "ADR-1280: worktree-state-sync": adr/1280-worktree-state-sync.md
+        - "ADR-1282: mypy-python-version-follows-requires-python": adr/1282-mypy-python-version-follows-requires-python.md
+        - "ADR-1283: whole-tree-ratchet-arm64-lane": adr/1283-whole-tree-ratchet-arm64-lane.md
+        - "ADR-1284: silent-revert-detection-gate": adr/1284-silent-revert-detection-gate.md
+        - "ADR-1285: cuda-coordinated-pin-lockstep": adr/1285-cuda-coordinated-pin-lockstep.md
+        - "ADR-1286: retiring-cited-lint-suppressions": adr/1286-retiring-cited-lint-suppressions.md
+        - "ADR-1287: cli-tool-unbounded-loop-ceilings": adr/1287-cli-tool-unbounded-loop-ceilings.md
+        - "ADR-1288: mcp-tool-schema-fail-closed": adr/1288-mcp-tool-schema-fail-closed.md
+        - "ADR-1289: hip-ssimulacra2-host-helper-split": adr/1289-hip-ssimulacra2-host-helper-split.md
+        - "ADR-1290: sycl-tidy-lane-compile-database": adr/1290-sycl-tidy-lane-compile-database.md
+        - "ADR-1291: silent-revert-declared-reversals": adr/1291-silent-revert-declared-reversals.md
+        - "ADR-1292: compat-shim-spawn-safe": adr/1292-compat-shim-spawn-safe.md
+        - "ADR-1293: tinyai-qat-torchao-pt2e": adr/1293-tinyai-qat-torchao-pt2e.md
+        - "ADR-1294: docs-build-concurrency-per-job": adr/1294-docs-build-concurrency-per-job.md
+        - "ADR-1295: sureal-degenerate-opinion-score-statistics": adr/1295-sureal-degenerate-opinion-score-statistics.md
+        - "ADR-1296: gpu-failure-path-stub-interposition": adr/1296-gpu-failure-path-stub-interposition.md
+        - "ADR-1297: ci-gate-every-reporting-check": adr/1297-ci-gate-every-reporting-check.md
+        - "ADR-1298: hiss-audit-merge-touched-scope": adr/1298-hiss-audit-merge-touched-scope.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

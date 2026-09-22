@@ -54,7 +54,7 @@ func TestFastCmdFlagSurface(t *testing.T) {
 		// Derived, not literal: the Go and Python defaults must match each
 		// other, and ADR-1169 moved both to the v1.0.16 generation.
 		{flag: "vmaf-model", wantDefault: model.DefaultVersion},
-		{flag: "encode-dir", wantDefault: ".workingdir2/fast"},
+		{flag: "encode-dir", wantDefault: ".workingdir/cache/vmafx-tune/fast"},
 		{flag: "output", wantDefault: ""},
 	}
 

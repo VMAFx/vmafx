@@ -19,8 +19,7 @@ readme.workspace = true
 # Not published to crates.io — internal pilot crate consumed by the libvmaf
 # build via Meson + cbindgen (ADR-0707). `publish = false` opts the crate out
 # of crates.io publish AND makes `cargo-deny` treat it as private under
-# `[licenses.private] ignore = true` (so the non-SPDX-recognised
-# `BSD-3-Clause-Plus-Patent` short-id does not flag as `unlicensed`).
+# `[licenses.private] ignore = true`.
 publish = false
 
 [lib]

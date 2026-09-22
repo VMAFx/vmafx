@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -165,7 +166,7 @@ func BuildVMAFCommand(
 		"--height", strconv.Itoa(cfg.Height),
 		"--pixel_format", pixFmtToVMAF(cfg.pixFmtOrDefault()),
 		"--bitdepth", strconv.Itoa(bitDepthFor(cfg.pixFmtOrDefault())),
-		"--model", modelArg(cfg.vmafModelOrDefault()),
+		"--model", model.CLIArgument(cfg.vmafModelOrDefault()),
 		"--json",
 		"--output", jsonOutput,
 	}
@@ -182,15 +183,6 @@ func BuildVMAFCommand(
 		cmd = append(cmd, "--frame_cnt", strconv.Itoa(frameCnt))
 	}
 	return cmd
-}
-
-// modelArg formats the --model argument. A bare version identifier is wrapped
-// as version=...; a pre-formatted key=value string passes through.
-func modelArg(model string) string {
-	if strings.Contains(model, "=") {
-		return model
-	}
-	return "version=" + model
 }
 
 // pixFmtToVMAF maps an ffmpeg pix_fmt to libvmaf's --pixel_format vocabulary.
@@ -575,9 +567,10 @@ func runVMAF(
 	}
 	jsonPath := tmp.Name()
 	if closeErr := tmp.Close(); closeErr != nil {
+		removeFastArtifact(jsonPath, "unclosed score output")
 		return nil, fmt.Errorf("fast: close score temp: %w", closeErr)
 	}
-	defer func() { _ = os.Remove(jsonPath) }()
+	defer removeFastArtifact(jsonPath, "score output")
 
 	if needsRawDecode(distorted) {
 		decoded := strings.TrimSuffix(distorted, filepath.Ext(distorted)) + ".decoded.yuv"
@@ -588,7 +581,7 @@ func runVMAF(
 		if decodeErr := decodeToRawYUV(ctx, cfg, distorted, decoded, clamp); decodeErr != nil {
 			return nil, fmt.Errorf("fast: decode %q to raw YUV: %w", distorted, decodeErr)
 		}
-		defer func() { _ = os.Remove(decoded) }()
+		defer removeFastArtifact(decoded, "decoded input")
 		distorted = decoded
 	}
 
@@ -603,4 +596,10 @@ func runVMAF(
 		return nil, fmt.Errorf("fast: read libvmaf output: %w", readErr)
 	}
 	return raw, nil
+}
+
+func removeFastArtifact(path, description string) {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		slog.Warn("fast: remove "+description, "error", err, "path", path)
+	}
 }

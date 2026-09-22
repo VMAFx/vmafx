@@ -27,7 +27,7 @@ LOSO baseline* referenced in
 | Feature order | `adm2, vif_scale0, vif_scale1, vif_scale2, vif_scale3, motion2` |
 | Output | `vmaf` — float32 `[N]` |
 | ONNX opset | 17 |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Registry entry | `vmaf_tiny_v1` in `model/tiny/registry.json` |
 | SHA-256 | `d30201dfa8a0cb1d6d5bbe342b0f9049e40bf86e57b2e3b14cbfcade9231e7a6` |
 

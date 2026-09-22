@@ -286,14 +286,11 @@ def test_ladder_cli_source_shape_flags() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_report_handles_nan_rows(tmp_path: Path) -> None:
-    """Bug #6: ``vmaf-tune report`` must em-dash NaN cells, never ``nan kbps``.
+def _nan_row_report_data() -> ReportData:
+    """One successful codec row plus one failed row carrying NaN numerics.
 
-    Builds a :class:`ReportData` with one successful row and one
-    failed row (NaN numerics, ``ok=False``) and asserts the markdown
-    + HTML renderers substitute the em-dash placeholder for every
-    NaN cell. Also confirms the CLI ``_run_report`` aggregator
-    flips the top-level ``ok`` flag to ``False`` when any row failed.
+    The failed row is what Bug #6 regressed on: the renderers used to
+    print ``nan kbps`` instead of the em-dash placeholder.
     """
     src = SourceInfo(
         path="/tmp/x.mp4",
@@ -305,7 +302,7 @@ def test_report_handles_nan_rows(tmp_path: Path) -> None:
         codec="h264",
         size_bytes=1_000_000,
     )
-    data = ReportData(
+    return ReportData(
         source=src,
         target_vmaf=92.0,
         codec_rows=(
@@ -322,6 +319,18 @@ def test_report_handles_nan_rows(tmp_path: Path) -> None:
             ),
         ),
     )
+
+
+def test_report_handles_nan_rows(tmp_path: Path) -> None:
+    """Bug #6: ``vmaf-tune report`` must em-dash NaN cells, never ``nan kbps``.
+
+    Builds a :class:`ReportData` with one successful row and one
+    failed row (NaN numerics, ``ok=False``) and asserts the markdown
+    + HTML renderers substitute the em-dash placeholder for every
+    NaN cell. Also confirms the CLI ``_run_report`` aggregator
+    flips the top-level ``ok`` flag to ``False`` when any row failed.
+    """
+    data = _nan_row_report_data()
     md = render_markdown(data)
     # The whole rendered output must NOT contain literal ``nan kbps``
     # / ``nan`` tokens (the renderer used to print them; Bug #6).

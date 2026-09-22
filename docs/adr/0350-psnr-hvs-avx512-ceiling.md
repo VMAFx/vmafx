@@ -8,7 +8,7 @@
 
 ## Context
 
-T3-9 in [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md)
+T3-9 in `.workingdir2/BACKLOG.md`
 is the unified AVX-512 follow-up audit sweep covering three
 candidate widening targets, each gated by the same methodology:
 **bench AVX-512 first against the existing AVX2 path on the Netflix
@@ -129,7 +129,7 @@ rule, pointing back to this ADR as the empirical close-out.
   - Matrix row `psnr_hvs / x86 / avx512` stays empty — visually
     asymmetric next to AVX2 + NEON. Mitigated by the explicit
     ceiling row in
-    [`.workingdir2/analysis/metrics-backends-matrix.md`](../../.workingdir2/analysis/metrics-backends-matrix.md)
+    `.workingdir2/analysis/metrics-backends-matrix.md`
     pointing at this ADR.
 - **Neutral / follow-ups**:
   - T3-9 (a) marked DONE-as-ceiling in BACKLOG.md.
@@ -206,7 +206,7 @@ below the T3-9 1.3× ship gate.
   reduction-stays-scalar discipline that locks the 78 % scalar
   share against vectorisation.
 - T3-9 backlog row at
-  [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md):540 —
+  `.workingdir2/BACKLOG.md`:540 —
   unified AVX-512 audit sweep, sub-row (a) closed by this ADR.
 - User direction (paraphrased): implement T3-9 (a) bench-first
   per the methodology; if the 16-lane path doesn't clear 1.3×

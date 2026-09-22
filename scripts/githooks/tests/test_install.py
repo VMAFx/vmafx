@@ -91,6 +91,8 @@ class HookInstallTests(unittest.TestCase):
         precommit_job = workflow.split("  pre-commit:\n", 1)[1].split("  clang-tidy:\n", 1)[0]
         self.assertIn("# required-aggregator", precommit_job)
         self.assertIn("run: python3 scripts/githooks/tests/test_install.py", precommit_job)
+        lefthook = (ROOT / "lefthook.yml").read_text()
+        self.assertIn("scripts/githooks/state-sync.sh", lefthook)
 
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="vmafx-hook-test-")
@@ -126,7 +128,7 @@ class HookInstallTests(unittest.TestCase):
         self.write("docs/index.md", "# Docs\n")
         self.write("mkdocs.yml", "site_name: fixture\n")
         self.write("scripts/ci/validate-pr-body.sh", "#!/bin/sh\nexit 0\n", executable=True)
-        self.write(".gitignore", ".claude/\n")
+        self.write(".gitignore", ".claude/\n.workingdir\n")
         self.run_git("add", ".")
         self.run_git("commit", "-m", "test: fixture")
         self.remote = self.base / "remote.git"
@@ -317,6 +319,66 @@ class HookInstallTests(unittest.TestCase):
                 self.log.unlink(missing_ok=True)
                 self.run_command("bash", "scripts/git-hooks/pre-push-mkdocs-strict.sh")
                 self.assertIn(["mkdocs"], self.events())
+
+    def test_state_sync_uses_regular_worktree_mirror_and_shared_state(self) -> None:
+        canonical_state = self.repo / ".workingdir"
+        canonical_state.mkdir()
+        ledger_names = (
+            "OPEN.md",
+            "BACKLOG.md",
+            "BUGS.md",
+            "QUESTIONS.md",
+            "STATE.md",
+            "bugs.meta.json",
+        )
+        for name in ledger_names:
+            (canonical_state / name).write_text(f"canonical:{name}\n")
+
+        worktree = self.base / "state worktree"
+        self.run_git("worktree", "add", "-b", "state-sync-fixture", str(worktree))
+        local_state = worktree / ".workingdir"
+        (local_state / "cache").mkdir(parents=True)
+        (local_state / "cache/keep.txt").write_text("preserve me\n")
+        self.write_bin(
+            "praetorctl",
+            "#!/bin/sh\n"
+            "set -eu\n"
+            '[ "$1" = state ]\n'
+            '[ "$2" = sync ]\n'
+            "root=$3\n"
+            '[ "$root" = "$PWD" ]\n'
+            '[ -d "$root/.workingdir" ]\n'
+            '[ ! -L "$root/.workingdir" ]\n'
+            "for name in OPEN.md BACKLOG.md BUGS.md QUESTIONS.md STATE.md bugs.meta.json; do\n"
+            '  grep -qx "canonical:$name" "$root/.workingdir/$name"\n'
+            "done\n"
+            'branch=$(git -C "$root" branch --show-current)\n'
+            'printf \'synced:%s\\n\' "$branch" >> "$root/.workingdir/STATE.md"\n',
+        )
+
+        self.run_command("bash", "scripts/githooks/state-sync.sh", cwd=worktree)
+
+        self.assertEqual(
+            (canonical_state / "STATE.md").read_text(),
+            "canonical:STATE.md\nsynced:state-sync-fixture\n",
+        )
+        self.assertEqual((local_state / "cache/keep.txt").read_text(), "preserve me\n")
+        for name in ledger_names:
+            self.assertTrue((local_state / name).is_file())
+            self.assertFalse((local_state / name).is_symlink())
+        self.assertEqual((canonical_state / "OPEN.md").read_text(), "canonical:OPEN.md\n")
+
+        shutil.rmtree(local_state)
+        local_state.symlink_to(canonical_state, target_is_directory=True)
+        result = self.run_command(
+            "bash", "scripts/githooks/state-sync.sh", cwd=worktree, check=False
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be a directory, not a symlink", result.stderr)
+        self.assertEqual(
+            (canonical_state / "STATE.md").read_text(),
+            "canonical:STATE.md\nsynced:state-sync-fixture\n",
+        )
 
 
 if __name__ == "__main__":

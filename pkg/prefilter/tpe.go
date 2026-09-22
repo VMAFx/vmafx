@@ -389,9 +389,17 @@ func normalPPF(p float64) float64 {
 	case p >= 1.0:
 		return math.Inf(1)
 	case p > 0.5:
-		return -normalPPF(1.0 - p)
+		// 1-p lies strictly below 0.5 for every p in (0.5, 1), so the
+		// reflection always lands in the lower half and needs the core
+		// directly rather than a self-call (HISS-01).
+		return -normalPPFLowerHalf(1.0 - p)
 	}
+	return normalPPFLowerHalf(p)
+}
 
+// normalPPFLowerHalf evaluates the probit for p <= 0.5 (and for NaN, which
+// falls through every guard in normalPPF exactly as it did before).
+func normalPPFLowerHalf(p float64) float64 {
 	// Acklam's coefficients.
 	a := [6]float64{
 		-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,

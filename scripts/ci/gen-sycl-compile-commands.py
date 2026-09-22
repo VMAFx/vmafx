@@ -27,6 +27,34 @@ import re
 import sys
 from pathlib import Path
 
+SYCL_COMMAND_PATTERN = re.compile(
+    r"^build\s+\S+:\s+CUSTOM_COMMAND\s+(\S+\.cpp)\s+\|.*icpx\s*\n"
+    r"(?:[ \t]+\S[^\n]*\n)*?"
+    r"[ \t]+COMMAND\s*=\s*(.+?)(?:\n|$)",
+    re.MULTILINE,
+)
+
+
+def _clang_tidy_command(raw_command: str) -> str:
+    """Translate an icpx SYCL command into a stock-clang analyzer command."""
+    command = re.sub(
+        r"(?:/opt/intel/oneapi/compiler/[^/]+/bin/)?icpx\b",
+        "clang++",
+        raw_command,
+    )
+    command = re.sub(r"\s+-fsycl-targets=\S+", "", command)
+    command = re.sub(r"\s+-fsycl\b", "", command)
+    command = re.sub(
+        r"\s+-Xsycl-target-backend=\S+\s+(?:'[^']*'|\"[^\"]*\"|\S+)",
+        "",
+        command,
+    )
+    command = re.sub(r"\s+-Xs\s+'[^']*'", "", command)
+    command = re.sub(r"\s+-Xs\s+\S+", "", command)
+    command = re.sub(r"\s+-fp-model=\S+", "", command)
+    command = re.sub(r"\s+-pedantic\b", "", command)
+    return re.sub(r"\s+-o\s+\S+", "", command)
+
 
 def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
     """Extract CUSTOM_COMMAND entries for SYCL .cpp files from build.ninja.
@@ -39,17 +67,7 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
     content = build_ninja_path.read_text(encoding="utf-8")
 
     entries = []
-    # Match lines of the form:
-    #   build <out>: CUSTOM_COMMAND <src.cpp> | <compiler>
-    #    COMMAND = <icpx flags ...> <src.cpp> -o <out>
-    pattern = re.compile(
-        r"^build\s+\S+:\s+CUSTOM_COMMAND\s+(\S+\.cpp)\s+\|.*icpx\s*\n"
-        r"(?:[ \t]+\S[^\n]*\n)*?"
-        r"[ \t]+COMMAND\s*=\s*(.+?)(?:\n|$)",
-        re.MULTILINE,
-    )
-
-    for m in pattern.finditer(content):
+    for m in SYCL_COMMAND_PATTERN.finditer(content):
         src_relative = m.group(1)  # e.g. ../src/./sycl/picture_sycl.cpp
         raw_command = m.group(2).strip()
 
@@ -62,7 +80,9 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
         # Flags removed:
         #   -fsycl-targets  — SYCL device targets; unsupported by clang++
         #   -fsycl          — SYCL device-compilation; unsupported by clang++
-        #   -Xs ...         — icpx AOT device compilation flags
+        #   -Xs ...         — legacy icpx AOT device compilation flags
+        #   -Xsycl-target-backend=<target> <arg>
+        #                   — target-scoped icpx AOT backend argument
         #   -fp-model=...   — icpx floating point model
         #   -pedantic       — harmless but generates noise from SYCL headers
         #
@@ -73,20 +93,7 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
         #
         # We still keep the -I include paths and -D defines from the original
         # icpx command so clang-tidy can resolve project headers.
-        cmd = re.sub(
-            r"(?:/opt/intel/oneapi/compiler/[^/]+/bin/)?icpx\b",
-            "clang++",
-            raw_command,
-        )
-        cmd = re.sub(r"\s+-fsycl-targets=\S+", "", cmd)
-        cmd = re.sub(r"\s+-fsycl\b", "", cmd)
-        cmd = re.sub(r"\s+-Xs\s+'[^']*'", "", cmd)
-        cmd = re.sub(r"\s+-Xs\s+\S+", "", cmd)
-        cmd = re.sub(r"\s+-fp-model=\S+", "", cmd)
-        cmd = re.sub(r"\s+-pedantic\b", "", cmd)
-        # Replace the output argument -o <obj> with nothing (clang-tidy
-        # ignores compilation output).
-        cmd = re.sub(r"\s+-o\s+\S+", "", cmd)
+        cmd = _clang_tidy_command(raw_command)
 
         entries.append(
             {

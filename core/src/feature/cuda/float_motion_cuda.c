@@ -118,13 +118,77 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return err;
 }
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+/* ------------------------------------------------------------------ */
+/* float_motion_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * HISS-01: lifted verbatim from the former `free_buffers` label. The same
+ * resources are released in the same order on every exit path, and the
+ * value returned is the one the label returned.
+ */
+static int float_motion_init_unwind(VmafFeatureExtractor *fex, FloatMotionStateCuda *s, int ret)
 {
-    (void)pix_fmt;
-    FloatMotionStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
+    if (s->ref_in) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
+        free(s->ref_in);
+    }
+    if (s->blur[0]) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->blur[0]);
+        free(s->blur[0]);
+    }
+    if (s->blur[1]) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
+        free(s->blur[1]);
+    }
+    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    return ret;
+}
 
+/* float_motion_alloc_buffers - device buffers, readback slot and name dict.
+ *
+ * HISS-04: the allocation tail of init_fex_cuda, moved whole. The `ret |=`
+ * accumulation keeps its order and every failure still routes through
+ * float_motion_init_unwind with the same `ret`, so each exit path frees the
+ * same resources and returns the same code.
+ */
+static int float_motion_alloc_buffers(VmafFeatureExtractor *fex, FloatMotionStateCuda *s,
+                                      unsigned w, unsigned h, unsigned bpc)
+{
+    const size_t bpp = (bpc <= 8u) ? 1u : 2u;
+    const size_t plane_bytes = (size_t)w * h * bpp;
+    const size_t blur_bytes = (size_t)w * h * sizeof(float);
+    const unsigned gx = (w + FM_BX - 1u) / FM_BX;
+    const unsigned gy = (h + FM_BY - 1u) / FM_BY;
+    s->wg_count = gx * gy;
+    const size_t pbytes = (size_t)s->wg_count * sizeof(float);
+
+    int ret = 0;
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[0], blur_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], blur_bytes);
+    if (ret)
+        return float_motion_init_unwind(fex, s, ret);
+    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, pbytes);
+    if (ret)
+        return float_motion_init_unwind(fex, s, ret);
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict) {
+        ret = -ENOMEM;
+        return float_motion_init_unwind(fex, s, ret);
+    }
+    return 0;
+}
+
+/* float_motion_check_frame_size - refuse frames below the 5-tap minimum.
+ *
+ * HISS-04: the entry guard of init_fex_cuda, moved whole - same condition,
+ * same message, same -EINVAL.
+ */
+static int float_motion_check_frame_size(unsigned w, unsigned h)
+{
     /* The 5-tap CUDA float_motion kernel uses reflect-101 mirror padding;
      * mirror() returns 2*sup - idx - 2, which is negative when sup < 3.
      * Refuse smaller frames up front to prevent out-of-bounds device reads.
@@ -136,6 +200,19 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                  w, h);
         return -EINVAL;
     }
+    return 0;
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    FloatMotionStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
+
+    const int size_err = float_motion_check_frame_size(w, h);
+    if (size_err)
+        return size_err;
 
     s->frame_w = w;
     s->frame_h = h;
@@ -169,49 +246,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return 0;
     }
 
-    const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-    const size_t plane_bytes = (size_t)w * h * bpp;
-    const size_t blur_bytes = (size_t)w * h * sizeof(float);
-    const unsigned gx = (w + FM_BX - 1u) / FM_BX;
-    const unsigned gy = (h + FM_BY - 1u) / FM_BY;
-    s->wg_count = gx * gy;
-    const size_t pbytes = (size_t)s->wg_count * sizeof(float);
-
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[0], blur_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], blur_bytes);
-    if (ret)
-        goto free_buffers;
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, pbytes);
-    if (ret)
-        goto free_buffers;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        goto free_buffers;
-    }
-    return 0;
-
-free_buffers:
-    if (s->ref_in) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
-        free(s->ref_in);
-    }
-    if (s->blur[0]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->blur[0]);
-        free(s->blur[0]);
-    }
-    if (s->blur[1]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
-        free(s->blur[1]);
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    return float_motion_alloc_buffers(fex, s, w, h, bpc);
 
 fail:
     if (ctx_pushed)
@@ -219,6 +254,38 @@ fail:
 fail_after_pop:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
+}
+
+/* float_motion_launch - dispatch the 8bpc or 16bpc motion kernel.
+ *
+ * HISS-04: the launch branch of submit_fex_cuda, moved whole. Both argument
+ * arrays keep their exact element order and the launch keeps the same grid and
+ * block geometry and stream, so the kernel sees identical parameters.
+ * cuLaunchKernel copies the parameter values before it returns, so pointing at
+ * this frame's `plane_pitch` / `compute_sad` copies is safe.
+ */
+static int float_motion_launch(FloatMotionStateCuda *s, CudaFunctions *cu_f, CUstream pic_stream,
+                               ptrdiff_t plane_pitch, unsigned cur_idx, unsigned prev_idx,
+                               unsigned compute_sad, unsigned grid_x, unsigned grid_y)
+{
+    if (s->bpc == 8u) {
+        void *args[] = {
+            &s->ref_in->data,         (void *)&plane_pitch, &s->blur[cur_idx]->data,
+            &s->blur[prev_idx]->data, (void *)s->rb.device, (void *)&s->frame_w,
+            (void *)&s->frame_h,      (void *)&compute_sad,
+        };
+        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_x, grid_y, 1, FM_BX, FM_BY, 1, 0,
+                                               pic_stream, args, NULL));
+    } else {
+        void *args[] = {
+            &s->ref_in->data,         (void *)&plane_pitch, &s->blur[cur_idx]->data,
+            &s->blur[prev_idx]->data, (void *)s->rb.device, (void *)&s->frame_w,
+            (void *)&s->frame_h,      (void *)&s->bpc,      (void *)&compute_sad,
+        };
+        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_x, grid_y, 1, FM_BX, FM_BY, 1, 0,
+                                               pic_stream, args, NULL));
+    }
+    return 0;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -258,23 +325,10 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     const unsigned grid_x = (s->frame_w + FM_BX - 1u) / FM_BX;
     const unsigned grid_y = (s->frame_h + FM_BY - 1u) / FM_BY;
 
-    if (s->bpc == 8u) {
-        void *args[] = {
-            &s->ref_in->data,         (void *)&plane_pitch, &s->blur[cur_idx]->data,
-            &s->blur[prev_idx]->data, (void *)s->rb.device, (void *)&s->frame_w,
-            (void *)&s->frame_h,      (void *)&compute_sad,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_x, grid_y, 1, FM_BX, FM_BY, 1, 0,
-                                               pic_stream, args, NULL));
-    } else {
-        void *args[] = {
-            &s->ref_in->data,         (void *)&plane_pitch, &s->blur[cur_idx]->data,
-            &s->blur[prev_idx]->data, (void *)s->rb.device, (void *)&s->frame_w,
-            (void *)&s->frame_h,      (void *)&s->bpc,      (void *)&compute_sad,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_x, grid_y, 1, FM_BX, FM_BY, 1, 0,
-                                               pic_stream, args, NULL));
-    }
+    const int launch_err = float_motion_launch(s, cu_f, pic_stream, plane_pitch, cur_idx, prev_idx,
+                                               compute_sad, grid_x, grid_y);
+    if (launch_err)
+        return launch_err;
 
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));

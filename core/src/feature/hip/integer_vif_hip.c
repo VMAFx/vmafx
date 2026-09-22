@@ -6,7 +6,7 @@
  *
  *  Integer VIF feature extractor — HIP backend.
  *
- *  Direct port of libvmaf/src/feature/cuda/integer_vif_cuda.c.
+ *  Direct port of core/src/feature/cuda/integer_vif_cuda.c.
  *  Call graph, struct layout, and score formula are preserved verbatim.
  *
  *  ADR-0537: filter table uploaded to device memory at init time and

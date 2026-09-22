@@ -1,75 +1,106 @@
 # Research-2043: CAMBI production lint without numerical changes
 
-The complete CPU-profile Cppcheck receipt at `fa792ba4d` covers 277 tracked
-sources and 1,149 compile commands. Its `cambi.c` and `cambi_internal.h` blobs
-are identical to the starting `07d536aeb` tree. CAMBI has five const/shadow
-findings and ten `unusedFunction` findings on private GPU helper exports.
-Fresh focused analysis reproduces those findings; clang-tidy starts at zero.
+## 2026-09-21 strict-clean follow-up
 
-The five source corrections make two validation views read-only, rename the
-unused row-callback argument that shadows the reciprocal table, qualify the
-private preprocessing input, and qualify the scale-score input in both its
-wrapper declaration and definition. No calculation, constant, loop, branch,
-return, option, feature name or callback type changes. The shared extractor
-callback still requires mutable `VmafPicture *` arguments. Two exact
-`constParameterCallback` annotations document that type constraint after
-const propagation exposes it; changing the callback type is outside this
-internal cleanup.
+The earlier 2026-09-08 cleanup documented ten narrow `unusedFunction`
+annotations and callback/null-pointer suppressions in `cambi.c`. That posture
+is superseded: the file now has zero `NOLINT` and zero Cppcheck suppression
+markers. The production fixes make every retained helper live, bound every
+search loop, and express the shared callback constraint in code while keeping
+the CAMBI score path byte-for-byte stable.
 
-## Private helpers remain available
+### Findings and code fixes
 
-All ten trampolines stay in place under the existing ADR-0205 / ADR-1146
-private-helper contract. Each receives only an `unusedFunction` annotation,
-with the reason cited beside the definition. This preserves the explicitly
-requested scaffolds and does not disable unused-function checking elsewhere.
-Seven functions have tracked GPU callers outside the CPU build profile:
+| Finding | Root cause | Strict-clean implementation |
+| --- | --- | --- |
+| `modernize-use-nullptr` | Clang treats this C23 translation unit as supporting `nullptr`, while MSVC's C mode still needs `NULL`. | `CAMBI_NULL_POINTER` selects `nullptr` except under `_MSC_VER`, where it selects `NULL`. |
+| `misc-use-internal-linkage` | The extractor registry definition had no prior external declaration in this translation unit. | A matching `extern VmafFeatureExtractor vmaf_fex_cambi` declaration records the cross-TU contract. |
+| `constStatement` | The TVI bisection's exhaustive flag handling ended in an impossible `(void)0` branch. | A fixed 16-step bisection has only the two state updates and the successful return. |
+| `constParameterCallback` | The shared extractor ABI supplies mutable picture pointers although CAMBI only reads them. | `read_only_picture_view()` adapts the ABI arguments to const views before validation and preprocessing. |
+| `unusedFunction` on ten private exports | Seven helpers were only called by optional GPU translation units and three were scaffold-only. | CPU/reference paths now use the same ten wrappers directly; the wrappers remain available to CUDA, HIP, SYCL, and Metal twins. |
+| HISS-04 long function | The public option table occupied most of the translation unit's largest declaration. | `CAMBI_OPTION` expresses the same option records compactly, without changing names, aliases, defaults, limits, help text, or order. |
 
-| Helper suffix after `vmaf_cambi_` | Concrete callers under `core/src/feature/` |
-| --- | --- |
-| `calculate_c_values` | `cuda/integer_cambi_cuda.c:1033`, `hip/integer_cambi_hip.c:821`, `sycl/integer_cambi_sycl.cpp:870`, `metal/integer_cambi_metal.mm:753` |
-| `spatial_pooling` | CUDA:1040, HIP:828, SYCL:877, Metal:759 in the same files |
-| `weight_scores_per_scale` | CUDA:1050, HIP:833, SYCL:882, Metal:769 in the same files |
-| `get_pixels_in_window` | CUDA:1049, HIP:832, SYCL:881, Metal:768 in the same files |
-| `default_callbacks` | CUDA:656, HIP:665, SYCL:699, Metal:564 in the same files |
-| `preprocessing` | CUDA:812, HIP:720, SYCL:753, Metal:662 in the same files |
-| `init_tvi_and_vlt` | `sycl/integer_cambi_sycl.cpp:653` |
+Three unbounded constructs were also made finite without changing the legal
+score path:
 
-`get_spatial_mask`, `decimate` and `filter_mode` have no tracked callers in
-this tree. They remain deliberate private helper scaffolds declared in
-`cambi_internal.h` and protected by the package's existing GPU-helper
-invariant. An absent CPU caller is not a reason to remove that interface.
+- TVI bisection performs 16 iterations, enough to exhaust the `uint16_t`
+  sample domain after its existing endpoint checks.
+- VLT scans through `UINT16_MAX` and returns that endpoint when no sample can
+  meet the requested luminance. The previous `uint16_t` increment wrapped to
+  zero forever for an unreachable threshold.
+- Quick-select bounds its outer work by `n` and each partition scan by the
+  initial partition span. Pivot choice, comparison direction, and swap order
+  are unchanged.
 
-The read-only scale-score declaration is consumed directly by all four GPU
-wrappers above, with no matching callback-pointer consumer. Their mutable
-arrays remain valid arguments to the const-qualified declaration. The
-`VmafCambiRangeUpdater`, `VmafCambiDerivativeCalculator` and shared extractor
-callback types are unchanged.
+Initialization now returns through `fail_init()` instead of `goto`, and the
+`SWAP_FLOATS` statement macro is an inline function. `ceil_log2()` is a
+32-step `for` loop. These are control-flow changes only; constants,
+accumulation order, option semantics, feature names, and public callback types
+are unchanged. This is an internal bug/lint cleanup, so no new ADR, public
+usage document, or FFmpeg patch-stack refresh is required.
 
-## Validation and scope
+### Alternatives considered
 
-A fresh GCC 15.2 release build keeps default LTO and assembly enabled, with
-CUDA/SYCL/HIP/Metal/DNN/MCP disabled. `meson test -C build test_cambi` passes
-all 23 cases before and after. Every existing test assertion remains intact.
-The compiled test includes the real private implementation: its entire
-263,640-byte `.text` and 45,431-byte `.rodata` sections are byte-identical
-before and after. A token comparison independently permits exactly the five
-reviewed source edits and the paired header qualification, ignoring only
-comments and whitespace; all remaining 11,820 production tokens match.
+| Alternative | Decision | Reason |
+| --- | --- | --- |
+| Keep narrow analyzer suppressions | Rejected | The whole-tree standard requires touched source to express the invariant in code. |
+| Delete helpers unused by the CPU build | Rejected | They are the stable host seam for optional GPU twins and documented rebase invariants. |
+| Change the shared extractor callback ABI to const pointers | Rejected | That would fan out across every extractor for a CAMBI-local read-only contract. |
+| Bound the existing algorithms and route CPU work through retained helpers | Chosen | It removes the warning causes locally and preserves calculation order and cross-backend seams. |
 
-Actual scoped clang-tidy measures zero warnings, uncited exceptions and
-compiler failures. The scoped baseline writer verifies the existing zero
-allowance without changing the baseline. Focused Cppcheck has no finding in
-either touched native file; an unused inline helper in untouched
-`feature_collector.h` still fails that reduced-context invocation, showing
-unused checks remain active outside the exact annotations. The complete CPU
-profile also reports no warning, style or error in either touched native file;
-CAMBI retains only the standard branch-analysis-limit information. Its overall
-exit remains 1 on findings elsewhere in the tree. This is touched-file
-acceptance, not a whole-tree lint pass.
+### Focused regression coverage
 
-No new API, user-visible behavior or architectural decision is introduced,
-so no new ADR, usage guide or FFmpeg patch refresh is needed. This does not
-establish GPU compilation/runtime, Windows, Darwin or Netflix Python golden
-acceptance. Commands, exact tool/source hashes, compile variants, analyzer
-logs, equivalence script and test receipts are retained under
-`.workingdir2/evidence/2026-09-08-cambi-production-lint/`.
+`core/test/test_cambi.c` directly includes the shipped implementation and now
+adds three termination/order checks:
+
+- threshold extrema across differences 1, 2, 4, 8, 16, and 32 exercise the
+  bounded TVI search and verify the returned transition;
+- an infinite luminance threshold proves VLT terminates at `UINT16_MAX`;
+- all-equal and descending inputs pin quick-select progress and partition
+  order.
+
+The test binary reports 25/25 passing cases. Before the VLT bound was added,
+the infinite-threshold regression timed out, so the test distinguishes the
+fixed implementation from the old wraparound loop.
+
+### Validation receipt
+
+The strict-clean tree was compared with base `e0d31c5bc` using the repository's
+48-frame 576x324 fixture, with prediction disabled and `--precision max`.
+Both dispatched CPU and `--cpumask 0` scalar runs produce mean CAMBI score
+`0.51441210777008473`. After removing volatile `version` and `fps` fields,
+all four base/current JSON outputs are byte-identical with SHA-256
+`2fed4234f9f8c018ac9af0810dbf43a0c7a30765bee00e4e55c23de983a1a523`.
+
+Validation commands:
+
+```text
+ninja -C build test/test_cambi tools/vmaf
+meson test -C build test_cambi --print-errorlogs
+clang-tidy -p build core/src/feature/cambi.c --extra-arg=-flto
+cppcheck --enable=all --check-level=exhaustive --inline-suppr \
+  --library=posix --library=scripts/ci/cppcheck-public-entrypoints.cfg \
+  --suppressions-list=.cppcheck-suppressions.txt \
+  --project=build/compile_commands.json \
+  --file-filter='*/core/src/feature/cambi.c' --error-exitcode=1
+praetorctl audit -touched core/src/feature/cambi.c,core/test/test_cambi.c
+```
+
+Clang-tidy and Cppcheck report zero findings in `cambi.c`; the reduced-context
+Cppcheck command still reports the unrelated inline helper in untouched
+`feature_collector.h`, demonstrating that `unusedFunction` remains enabled.
+The touched HISS audit is clean at 1,330 active findings against the 1,411
+baseline. No baseline, Netflix golden assertion, or snapshot was changed.
+
+Durable run receipts belong under
+`.workingdir/evidence/2026-09-21-cambi-strict-clean/`; `.workingdir2` is not a
+repository interface and is not referenced by the new workflow.
+
+## Historical 2026-09-08 receipt
+
+The original cleanup made five const/shadow corrections and retained ten
+private helper trampolines using exact annotations because the CPU profile did
+not call them. It measured byte-identical `.text`/`.rodata` and zero focused
+clang-tidy findings with the then-current suppressions. That evidence remains
+useful as the starting point, but its annotation policy and `.workingdir2`
+location are historical and no longer describe the source.

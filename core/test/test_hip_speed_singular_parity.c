@@ -54,6 +54,8 @@
 
 #include "test.h"
 
+#include "hip_parity_skip.h"
+
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
@@ -183,6 +185,35 @@ static char *feed(VmafContext *vmaf, unsigned index, unsigned ref_pattern, unsig
     return NULL;
 }
 
+/* Push the frame sequence `mode` selects through `vmaf`. Returns a failure
+ * message, or NULL with `*scaffold` set when a HIP frame submit reported the
+ * -ENOSYS scaffold posture. Split out of drive() so that body stays inside the
+ * 60-line function budget. */
+static char *feed_mode_frames(VmafContext *vmaf, int mode, int use_gpu, int *scaffold)
+{
+    const unsigned frames = (mode == MODE_CHROMA_BOTH_SINGULAR) ? CHROMA_FRAMES : TEMPORAL_FRAMES;
+    for (unsigned i = 0; i < frames; i++) {
+        unsigned ref_pattern = i;
+        unsigned dis_pattern = i;
+        int singular_chroma = 0;
+        if (mode == MODE_CHROMA_BOTH_SINGULAR) {
+            singular_chroma = (i == frames - 1u);
+        } else if (mode == MODE_TEMPORAL_ONE_SIDED) {
+            ref_pattern = 0u; /* frozen reference -> zero diff -> singular */
+        } else {
+            ref_pattern = 0u;
+            dis_pattern = 0u;
+        }
+        char *msg =
+            feed(vmaf, i, ref_pattern, dis_pattern, singular_chroma, use_gpu ? scaffold : NULL);
+        if (msg)
+            return msg;
+        if (*scaffold)
+            return NULL;
+    }
+    return NULL;
+}
+
 /* Run `fex_name` over the fixture selected by `mode` and read `key` at
  * `read_index`. On a machine without a HIP device (or under the enable_hipcc=false scaffold posture)
  * `*skipped` is set and the score is left NaN. */
@@ -224,32 +255,12 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
     }
     mu_assert("vmaf_use_feature failed", !err);
 
-    const unsigned frames = (mode == MODE_CHROMA_BOTH_SINGULAR) ? CHROMA_FRAMES : TEMPORAL_FRAMES;
-    for (unsigned i = 0; i < frames; i++) {
-        unsigned ref_pattern = i;
-        unsigned dis_pattern = i;
-        int singular_chroma = 0;
-        if (mode == MODE_CHROMA_BOTH_SINGULAR) {
-            singular_chroma = (i == frames - 1u);
-        } else if (mode == MODE_TEMPORAL_ONE_SIDED) {
-            ref_pattern = 0u; /* frozen reference -> zero diff -> singular */
-        } else {
-            ref_pattern = 0u;
-            dis_pattern = 0u;
-        }
-        int scaffold = 0;
-        char *msg =
-            feed(vmaf, i, ref_pattern, dis_pattern, singular_chroma, use_gpu ? &scaffold : NULL);
-        if (msg)
-            return msg;
-        if (scaffold) {
-            (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on submit] ");
-            *skipped = 1;
-            (void)vmaf_close(vmaf);
-            vmaf_hip_state_free(&hip_state);
-            return NULL;
-        }
-    }
+    int scaffold = 0;
+    char *msg = feed_mode_frames(vmaf, mode, use_gpu, &scaffold);
+    if (msg)
+        return msg;
+    if (scaffold)
+        return hip_parity_skip(vmaf, &hip_state, skipped, " on submit");
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 

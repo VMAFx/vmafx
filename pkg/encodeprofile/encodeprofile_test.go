@@ -197,28 +197,46 @@ func sameJSON(a, b map[string]any) bool {
 	return string(ja) == string(jb)
 }
 
+// normaliseJSON copies a decoded JSON tree, collapsing every json.Number to
+// the float64 (or string) it denotes.
+//
+// The traversal carries its own work stack instead of calling itself
+// (HISS-01). Each frame pairs a source node with the slot its rewritten copy
+// belongs in, so the copy is assembled top-down as the stack drains.
 func normaliseJSON(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for k, val := range t {
-			out[k] = normaliseJSON(val)
-		}
-		return out
-	case []any:
-		out := make([]any, len(t))
-		for i, val := range t {
-			out[i] = normaliseJSON(val)
-		}
-		return out
-	case json.Number:
-		if f, err := t.Float64(); err == nil {
-			return f
-		}
-		return t.String()
-	default:
-		return v
+	type frame struct {
+		src   any
+		store func(any)
 	}
+	var root any
+	stack := []frame{{src: v, store: func(x any) { root = x }}}
+	for len(stack) > 0 {
+		fr := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		switch t := fr.src.(type) {
+		case map[string]any:
+			out := make(map[string]any, len(t))
+			fr.store(out)
+			for k, val := range t {
+				stack = append(stack, frame{src: val, store: func(x any) { out[k] = x }})
+			}
+		case []any:
+			out := make([]any, len(t))
+			fr.store(out)
+			for i, val := range t {
+				stack = append(stack, frame{src: val, store: func(x any) { out[i] = x }})
+			}
+		case json.Number:
+			if f, err := t.Float64(); err == nil {
+				fr.store(f)
+			} else {
+				fr.store(t.String())
+			}
+		default:
+			fr.store(fr.src)
+		}
+	}
+	return root
 }
 
 // TestSelectRecommendationErrors pins the rejection paths. The messages match

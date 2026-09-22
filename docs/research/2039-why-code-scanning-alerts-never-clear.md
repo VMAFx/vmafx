@@ -125,3 +125,96 @@ SARIF post-processing step (an in-tree, reviewed allowlist that filters results
 before upload) or a manual dismissal. ADR-1222 lays out both and takes neither:
 per the standing rule, agents analyse and fix, and the maintainer decides
 dismissals.
+
+## Addendum 2026-09-22 — the dismissal is what holds, and it does not survive code motion
+
+Cause 1 above was inferred from Semgrep's documentation. It is now measured, and
+the measurement is sharper than the inference.
+
+Semgrep's SARIF does carry the `nosemgrep` directive: a suppressed result is
+emitted with `"suppressions": [{"kind": "inSource"}]` (reproduced locally with
+semgrep 1.177.0 on `core/test/test_windows_cuda_compiler_discovery.py`, the same
+three registry packs `security-scans.yml` runs). GitHub ingests that result and
+opens the alert anyway — `most_recent_instance.state` is `open`. Two independent
+observations:
+
+- Alert **1062** was opened on 2026-09-15 and the `nosemgrep` for it landed in
+  `fbab6d65c` on 2026-09-16. Its dismissal comment reasons that "the alert
+  predates it", which assumed the directive would have prevented it.
+- Alert **1240** was opened on 2026-09-22 from a tree that had carried that same
+  directive for six days. It did not.
+
+So the directive never suppressed anything on the Security tab; the **manual
+dismissal** is the only thing that has ever closed one of these. That matters
+because a dismissal is bound to the alert, and Semgrep OSS emits no
+`partialFingerprints`, so GitHub matches an alert by location and snippet. The
+HISS-21 refactor `50657c98f` lifted `_run_meson` out of a class body to module
+level: same call, same `# noqa`, same `# nosemgrep`, but line 120 → 145 and
+column 17 → 9. GitHub could not map it to the dismissed 1062 and minted 1240,
+which fails the (non-required, per [ADR-0037](../adr/0037-master-branch-protection.md))
+`Semgrep OSS` check as "1 new alert".
+
+The finding itself is unchanged and pre-existing: master's copy of the file
+produces the identical result under the identical config. Nor can the code stop
+matching. The rule's only sanitizer is `shlex.quote(...)`, which is wrong for a
+member of an argv **list** executed without a shell; taint propagates through
+`shutil.which()` and `Path.resolve()` (both measured); and the taint source is
+`MESON = os.environ.get("VMAFX_TEST_MESON") or shutil.which("meson")`, whose
+value `core/test/meson.build` supplies so the test runs the same Meson that
+launched it. Every channel a build system has for telling a test where a tool
+lives — environment or argv — is a source for this rule.
+
+That leaves exactly the two options ADR-1222 put to the maintainer, and this
+addendum changes neither of them: the gating `Semgrep` job (local `.semgrep.yml`
+rules, 0 findings tree-wide) stays green, `Semgrep OSS` stays a reporting
+signal, and the dismissal remains the maintainer's call.
+
+## Addendum 2026-09-22 (second) — the taint claim was wrong; the code could stop matching
+
+The addendum above concluded that the Semgrep finding "cannot stop matching",
+on the reasoning that "every channel a build system has for telling a test
+where a tool lives — environment or argv — is a source for this rule". Half of
+that is right and the conclusion drawn from it is wrong, so the alert was closed
+by fixing the code, not by dismissing it.
+
+Read from the rule itself rather than from its behaviour
+(`https://semgrep.dev/c/r/python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args`),
+the source set is exactly: `os.environ`, `os.environ.get`, `os.environb`,
+`os.getenv`, `os.getenvb`, `sys.argv`, `sys.orig_argv`, and argparse / optparse
+/ getopt results. The sole sanitiser is `shlex.quote(...)`.
+
+Three consequences the earlier reading missed:
+
+- **argv really is a source**, so passing the Meson path as a test argument
+  would not have helped. That half of the claim holds.
+- **`shutil.which("meson")` is not a source.** It reads `PATH` internally, but
+  the rule matches syntax, not library behaviour, and a literal argument taints
+  nothing. The earlier note that "taint propagates through `shutil.which()`"
+  only holds when its *argument* is already tainted.
+- **A value the interpreter derives about itself is not a source either.**
+  `sys.executable` appears nowhere in the source set.
+
+That last point is the fix. Meson ships as an ordinary Python package, and
+`import('python').find_installation()` hands a test the interpreter Meson is
+running under — measured directly: under `meson test` the child's
+`sys.executable` is the venv Python that owns the `mesonbuild` package. So
+`[sys.executable, "-m", "mesonbuild.mesonmain", "setup", ...]` runs *the same
+Meson* the environment variable was there to name, with no hand-off from the
+build system and no tainted value in the argv. `core/test/meson.build` no longer
+sets `VMAFX_TEST_MESON`, and the module-level read of it is gone.
+
+Measured with semgrep 1.177.0 over the packs `security-scans.yml` runs, with
+`--disable-nosem` so no directive could mask the result: **1 finding before, 0
+after**. The stale `nosemgrep` comment was deleted rather than moved — it had
+never suppressed anything, as the first addendum established.
+
+The generalisable point, which replaces "the code cannot stop matching": a taint
+rule is a syntactic source list, and the question to ask is never "is this value
+attacker-controlled in practice" but "does this expression match one of the
+listed sources". Fetch the rule and read it before concluding a finding is
+unfixable. The same check applied to CodeQL's `cpp/world-writable-file-creation`
+(`DoNotCreateWorldWritable.ql`) showed it reads the literal mode argument of the
+creating call, so moving `core/test/test_pelorus_interop.c` from
+`fopen(path, "w")` to a descriptor opened `S_IRUSR | S_IWUSR` clears it — and
+that one was not a false positive at all: the old form measures 0666 under
+umask 000.

@@ -4,8 +4,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  AVX2 dispatch for `float_moment`.
- *  See ADR-0179 — closes the only remaining fully-scalar SIMD-matrix
- *  row identified in `.workingdir2/analysis/metrics-backends-matrix.md`.
+ *  See ADR-0179 and docs/metrics/features.md for the dispatch contract.
  */
 
 #ifndef LIBVMAF_FEATURE_X86_MOMENT_AVX2_H_

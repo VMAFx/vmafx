@@ -28,6 +28,8 @@
 
 #include "test.h"
 
+#include "hip_parity_skip.h"
+
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
@@ -120,22 +122,12 @@ static char *run_hip_float_motion(double *score, int *skipped)
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
     err = vmaf_use_feature(vmaf, "float_motion_hip", NULL);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    if (err == -ENOSYS)
+        return hip_parity_skip(vmaf, &hip_state, skipped, "");
     mu_assert("HIP: vmaf_use_feature(float_motion_hip) failed", !err);
     err = feed_two_frames(vmaf);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on feed] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    if (err == -ENOSYS)
+        return hip_parity_skip(vmaf, &hip_state, skipped, " on feed");
     if (err == -ENOSYS) {
         /* Documented scaffold contract: an unimplemented HIP extractor returns
          * -ENOSYS from init (see the HIP extractors under
@@ -149,13 +141,8 @@ static char *run_hip_float_motion(double *score, int *skipped)
     }
     mu_assert("HIP: feed_two_frames failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on EOS] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    if (err == -ENOSYS)
+        return hip_parity_skip(vmaf, &hip_state, skipped, " on EOS");
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "VMAF_feature_motion_score", score, 1u);
     mu_assert("HIP: VMAF_feature_motion_score missing", !err);

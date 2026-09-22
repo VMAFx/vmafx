@@ -21,6 +21,7 @@ Pins one regression per finding per ADR-0499.
 
 from __future__ import annotations
 
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -164,6 +165,79 @@ def test_maybe_decode_reference_caches_across_calls(tmp_path: Path) -> None:
     assert len(invocations) == 1, "second call must hit the on-disk cache"
 
 
+def _materialising_runner(size: int = 4096, stderr: str = ""):
+    """Runner stub that writes `size` zero bytes to the argv's trailing path.
+
+    ffmpeg argv ends with the output path, so this is enough to make the
+    corpus pipeline believe an encode or decode leg succeeded.
+    """
+
+    def _run(argv: list[str], **_kwargs: Any) -> _FakeCompleted:
+        out_path = Path(argv[-1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"\x00" * size)
+        return _FakeCompleted(returncode=0, stderr=stderr)
+
+    return _run
+
+
+def _capturing_score_runner(captures: list[list[str]], mean: float):
+    """``score_runner`` stub recording argv and writing a pooled_metrics JSON."""
+
+    def _run(argv: list[str], **_kwargs: Any) -> _FakeCompleted:
+        captures.append(list(argv))
+        if "--output" in argv:
+            json_path = Path(argv[argv.index("--output") + 1])
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            json_path.write_text(
+                json.dumps({"pooled_metrics": {"vmaf": {"mean": mean}}}),
+                encoding="utf-8",
+            )
+        return _FakeCompleted(returncode=0, stderr="VMAF version 3.0.0\n")
+
+    return _run
+
+
+def _container_job(src: Path, tmp_path: Path, cells: tuple[Any, ...], encode_dir: Path):
+    """One-source corpus job/options pair over a container reference."""
+    job = CorpusJob(
+        source=src,
+        width=1920,
+        height=1080,
+        pix_fmt="yuv420p",
+        framerate=30.0,
+        duration_s=5.0,
+        cells=cells,
+    )
+    opts = CorpusOptions(
+        encoder="libx264",
+        output=tmp_path / "corpus.jsonl",
+        encode_dir=encode_dir,
+        src_sha256=False,
+    )
+    return job, opts
+
+
+def _assert_raw_yuv_legs(cmd: list[str], container_src: Path) -> None:
+    """Both vmaf legs must be raw YUV, and neither may still be the container.
+
+    Suffix-checked rather than extension-stripped: the pre-ADR-0499 bug
+    specifically left the source ``.mp4`` in the ``--reference`` slot,
+    which the binary then aborted on with a file-size mismatch.
+    """
+    ref_path = Path(cmd[cmd.index("--reference") + 1])
+    dist_path = Path(cmd[cmd.index("--distorted") + 1])
+    assert (
+        ref_path.suffix.lower() in _VMAF_RAW_SUFFIXES
+    ), f"reference handed to vmaf must be raw YUV; got {ref_path}"
+    assert (
+        dist_path.suffix.lower() in _VMAF_RAW_SUFFIXES
+    ), f"distorted handed to vmaf must be raw YUV; got {dist_path}"
+    assert (
+        ref_path != container_src
+    ), "container reference must be decoded before being handed to vmaf"
+
+
 def test_ladder_decodes_reference_for_container_source(tmp_path: Path) -> None:
     """End-to-end pin: an .mp4 reference triggers a reference decode.
 
@@ -180,28 +254,6 @@ def test_ladder_decodes_reference_for_container_source(tmp_path: Path) -> None:
 
     score_captures: list[list[str]] = []
 
-    def _encode_runner(argv: list[str], **_kwargs: Any) -> _FakeCompleted:
-        # Synthesize the distorted output so the corpus pipeline thinks
-        # the encode succeeded.
-        # ffmpeg argv ends with the output path.
-        out_path = Path(argv[-1])
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"\x00" * 4096)
-        return _FakeCompleted(returncode=0, stderr="ffmpeg version 6.0\n")
-
-    def _score_runner(argv: list[str], **_kwargs: Any) -> _FakeCompleted:
-        score_captures.append(list(argv))
-        # Write a minimal JSON the vmaf parser will accept.
-        if "--output" in argv:
-            out_idx = argv.index("--output") + 1
-            json_path = Path(argv[out_idx])
-            json_path.parent.mkdir(parents=True, exist_ok=True)
-            json_path.write_text(
-                '{"pooled_metrics": {"vmaf": {"mean": 95.5}}}',
-                encoding="utf-8",
-            )
-        return _FakeCompleted(returncode=0, stderr="VMAF version 3.0.0\n")
-
     # The reference decode + distorted decode steps both shell out via
     # ``subprocess.run`` directly (the score/encode runner injection
     # only covers the vmaf and ffmpeg-encode CLIs respectively). Patch
@@ -209,38 +261,18 @@ def test_ladder_decodes_reference_for_container_source(tmp_path: Path) -> None:
     # so the corpus pipeline can proceed.
     import subprocess as _sp
 
-    def _decode_runner(argv: list[str], **_kwargs: Any) -> _FakeCompleted:
-        out_path = Path(argv[-1])
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"\x00" * 4096)
-        return _FakeCompleted(returncode=0)
-
     original_run = _sp.run
-    _sp.run = _decode_runner
+    _sp.run = _materialising_runner()
 
-    job = CorpusJob(
-        source=src,
-        width=1920,
-        height=1080,
-        pix_fmt="yuv420p",
-        framerate=30.0,
-        duration_s=5.0,
-        cells=(("medium", 28),),
-    )
-    opts = CorpusOptions(
-        encoder="libx264",
-        output=tmp_path / "corpus.jsonl",
-        encode_dir=encode_dir,
-        src_sha256=False,
-    )
+    job, opts = _container_job(src, tmp_path, (("medium", 28),), encode_dir)
 
     try:
         rows = list(
             iter_rows(
                 job,
                 opts,
-                encode_runner=_encode_runner,
-                score_runner=_score_runner,
+                encode_runner=_materialising_runner(stderr="ffmpeg version 6.0\n"),
+                score_runner=_capturing_score_runner(score_captures, 95.5),
             )
         )
     finally:
@@ -251,22 +283,7 @@ def test_ladder_decodes_reference_for_container_source(tmp_path: Path) -> None:
     assert row["exit_status"] == 0, f"row failed: {row.get('vmaf_score')!r}"
     assert score_captures, "vmaf CLI was never invoked — sampler short-circuited"
 
-    # Both --reference and --distorted paths handed to the vmaf binary
-    # must be raw YUV (suffix-checked, not extension-stripped).
-    cmd = score_captures[0]
-    ref_idx = cmd.index("--reference") + 1
-    dist_idx = cmd.index("--distorted") + 1
-    ref_path = Path(cmd[ref_idx])
-    dist_path = Path(cmd[dist_idx])
-    assert (
-        ref_path.suffix.lower() in _VMAF_RAW_SUFFIXES
-    ), f"reference handed to vmaf must be raw YUV; got {ref_path}"
-    assert (
-        dist_path.suffix.lower() in _VMAF_RAW_SUFFIXES
-    ), f"distorted handed to vmaf must be raw YUV; got {dist_path}"
-    # The pre-ADR-0499 bug specifically left the source .mp4 in the
-    # --reference slot. Pin against that exact shape.
-    assert ref_path != src, "container reference must be decoded before being handed to vmaf"
+    _assert_raw_yuv_legs(score_captures[0], src)
 
 
 def test_reference_decode_failure_fails_every_cell_cleanly(tmp_path: Path) -> None:
@@ -305,20 +322,8 @@ def test_reference_decode_failure_fails_every_cell_cleanly(tmp_path: Path) -> No
     original_run = _sp.run
     _sp.run = _decode_failing_runner
     try:
-        job = CorpusJob(
-            source=src,
-            width=1920,
-            height=1080,
-            pix_fmt="yuv420p",
-            framerate=30.0,
-            duration_s=5.0,
-            cells=(("medium", 23), ("medium", 28)),
-        )
-        opts = CorpusOptions(
-            encoder="libx264",
-            output=tmp_path / "corpus.jsonl",
-            encode_dir=tmp_path / "encodes",
-            src_sha256=False,
+        job, opts = _container_job(
+            src, tmp_path, (("medium", 23), ("medium", 28)), tmp_path / "encodes"
         )
         rows = list(
             iter_rows(

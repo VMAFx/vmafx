@@ -1,5 +1,38 @@
+[project.urls]
+Homepage = "https://github.com/Netflix/vmaf"
+
+# Moved here from setup.py's `entry_points={"console_scripts": [...]}`.
+# setuptools treats a `[project]` table as authoritative: anything setup.py
+# passes that `[project]` neither declares nor lists as `dynamic` raises
+# `_MissingDynamic`, and on the Coverage Gate runner that is fatal, not a
+# warning — `python3 setup.py --version` exited 1 with
+# "`authors` defined outside of `pyproject.toml`". Same eight names, same
+# targets, so the generated console scripts are unchanged.
+[project.scripts]
+run_cleaning_cache = "vmaf.script.run_cleaning_cache:main"
+run_psnr = "vmaf.script.run_psnr:main"
+run_result_assembly = "vmaf.script.run_result_assembly:main"
+run_testing = "vmaf.script.run_testing:main"
+run_toddnoiseclassifier = "vmaf.script.run_toddnoiseclassifier:main"
+run_vmaf = "vmaf.script.run_vmaf:main"
+run_vmaf_cross_validation = "vmaf.script.run_vmaf_cross_validation:main"
+run_vmaf_training = "vmaf.script.run_vmaf_training:main"
+
 [build-system]
-requires = ["setuptools", "wheel", "Cython", "numpy>=2.5.3"]
+# setuptools>=77.0.1 is a hard floor, not a preference: `[project].license`
+# below is a PEP 639 SPDX expression (a bare string). setuptools only
+# learned that form in 77.0.0 (yanked; 77.0.1 is the first installable
+# release), and every earlier release rejects it outright --
+# `configuration error: project.license must be valid exactly by one
+# definition` -- so `setup.py` aborts before it can report a version.
+# Ubuntu 24.04 still ships setuptools 68.1.2, and `pip install --user`
+# does not upgrade it, which is exactly how the Coverage Gate hit this.
+# packaging>=24.2 travels with that floor. setuptools>=77 validates the SPDX
+# expression through `packaging.licenses`, which only exists from 24.2, and
+# when it is missing `dist._finalize_license_expression()` raises
+# `ImportError: Cannot import \`packaging.licenses\`` and setup.py exits 1 --
+# the same failure the setuptools floor was meant to end, one layer down.
+requires = ["setuptools>=77.0.1", "packaging>=24.2", "wheel", "Cython", "numpy>=2.5.3"]
 
 [project]
 name = "vmaf"
@@ -7,6 +40,7 @@ name = "vmaf"
 dynamic = ["version"]
 description = "VMAF — Video Multimethod Assessment Fusion (VMAFx fork)"
 readme = "README.rst"
+authors = [{ name = "Zhi Li", email = "zli@netflix.com" }]
 license = "BSD-2-Clause-Patent"
 requires-python = ">=3.10"
 dependencies = [
@@ -15,6 +49,7 @@ dependencies = [
     "matplotlib>=3.11.2",
     "pandas>=3.0.6",
     "scikit-learn>=1.9.1",
+    "joblib>=1.6.0",
     "scikit-image>=0.26.0",
     "h5py>=3.16.0",
     "sureal>=0.9.0",

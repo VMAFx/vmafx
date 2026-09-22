@@ -334,7 +334,7 @@ and writes no checkpoint. Use `--smoke` when the desired input is synthetic.
 
 ## C1 (Netflix corpus) — runnable training prep
 
-Once the local Netflix corpus exists at `.workingdir2/netflix/` (see
+Once the local Netflix corpus exists at `.corpus/netflix/` (see
 [training-data.md](training-data.md) for the layout and ADR-0242 for
 scope), the prep stack under [`ai/data/`](../../ai/data/) and
 [`ai/train/`](../../ai/train/) replaces the parquet-driven flow above
@@ -354,7 +354,7 @@ ninja -C build
 # $VMAF_TINY_AI_CACHE (default ~/.cache/vmaf-tiny-ai); subsequent runs
 # only re-train.
 python ai/train/train.py \
-    --data-root .workingdir2/netflix \
+    --data-root .corpus/netflix \
     --model-arch mlp_small \
     --epochs 30 \
     --batch-size 256 \
@@ -372,7 +372,7 @@ bash ai/scripts/run_training.sh
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--data-root` | `.workingdir2/netflix` | Directory with `ref/` and `dis/`. |
+| `--data-root` | `.corpus/netflix` | Directory with `ref/` and `dis/`. |
 | `--model-arch` | `mlp_small` | One of `linear`, `mlp_small`, `mlp_medium`. |
 | `--epochs` | 10 | `0` runs the smoke-export path and exits. |
 | `--batch-size` | 256 | SGD batch size. |
@@ -413,7 +413,7 @@ import numpy as np
 from ai.train.dataset import NetflixFrameDataset
 from ai.train.eval import evaluate
 
-val = NetflixFrameDataset(Path('.workingdir2/netflix'), split='val')
+val = NetflixFrameDataset(Path('.corpus/netflix'), split='val')
 X, y = val.numpy_arrays()
 report = evaluate(
     features=X,
@@ -631,7 +631,7 @@ output layout stay identical.
 # fully in training. Mirrors the canonical ADR-0203 split so the
 # result is directly comparable to mlp_small / mlp_medium baselines.
 python ai/train/train_combined.py \
-    --netflix-root .workingdir2/netflix \
+    --netflix-root .corpus/netflix \
     --konvid-parquet ai/data/konvid_vmaf_pairs.parquet \
     --model-arch mlp_small \
     --epochs 30 \

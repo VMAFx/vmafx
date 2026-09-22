@@ -69,6 +69,10 @@ import (
 
 // Ensure C import is used (avoids "imported and not used" errors when build
 // tags exclude cgo usage at link time).
+//
+// SAFETY: unsafe.Sizeof on an untyped-int constant is evaluated at compile
+// time and dereferences nothing; the expression exists only to keep the
+// unsafe import live and touches no memory at run time.
 var _ = unsafe.Sizeof(0)
 
 // Scorer is the public Go API for VMAF scoring.
@@ -149,29 +153,44 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 		}
 	}()
 
-	args := []string{
+	if err := s.runScoreBinary(ctx, scoreArgv(ref, dis, modelPath, tmpOut.Name())); err != nil {
+		return 0, nil, err
+	}
+	return parseOutput(tmpOut.Name())
+}
+
+// scoreArgv builds the vmaf CLI argument vector for one (ref, dis) pair,
+// writing JSON output to outPath.
+//
+// ADR-1190: the CLI splits option strings on ":" and "=", so a model path
+// containing either has to be escaped or it is truncated/rejected.
+func scoreArgv(ref, dis, modelPath, outPath string) []string {
+	return []string{
 		"-r", ref,
 		"-d", dis,
-		// ADR-1190: the CLI splits option strings on ":" and "=", so a model
-		// path containing either has to be escaped or it is truncated/rejected.
 		"-m", "path=" + cliopt.EscapeValue(modelPath),
-		"-o", tmpOut.Name(),
+		"-o", outPath,
 		"--json",
 	}
+}
 
-	// exec.CommandContext wires SIGKILL to ctx.Done() so a cancelled context
-	// (client disconnect, deadline elapsed, parent shutdown) tears down the
-	// subprocess instead of leaving it running with the file descriptors of
-	// the dropped request.  Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
-	//
-	// WaitDelay enforces a hard upper bound on how long cmd.Run() blocks
-	// after the context is cancelled.  Without it, Go waits for every
-	// inherited file descriptor in the child (including those held by
-	// grandchildren the vmaf binary may have forked) to close, which can
-	// hang indefinitely.  After WaitDelay elapses, Go closes the I/O
-	// pipes and returns; the underlying SIGKILL ensures the kernel will
-	// reap the children eventually.  2 s is generous: in practice the
-	// kernel completes process teardown in single-digit milliseconds.
+// runScoreBinary runs the vmaf CLI once and maps its failure modes onto Go
+// errors, distinguishing a genuine binary failure from a context-driven kill.
+//
+// exec.CommandContext wires SIGKILL to ctx.Done() so a cancelled context
+// (client disconnect, deadline elapsed, parent shutdown) tears down the
+// subprocess instead of leaving it running with the file descriptors of
+// the dropped request.  Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
+//
+// WaitDelay enforces a hard upper bound on how long cmd.Run() blocks
+// after the context is cancelled.  Without it, Go waits for every
+// inherited file descriptor in the child (including those held by
+// grandchildren the vmaf binary may have forked) to close, which can
+// hang indefinitely.  After WaitDelay elapses, Go closes the I/O
+// pipes and returns; the underlying SIGKILL ensures the kernel will
+// reap the children eventually.  2 s is generous: in practice the
+// kernel completes process teardown in single-digit milliseconds.
+func (s *Scorer) runScoreBinary(ctx context.Context, args []string) error {
 	cmd := exec.CommandContext(ctx, s.binaryPath, args...) //nolint:gosec // paths are operator-supplied
 	cmd.WaitDelay = 2 * time.Second
 	var stderr bytes.Buffer
@@ -182,13 +201,12 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 		// can distinguish "vmaf binary genuinely failed" from "we killed it
 		// because the request went away".
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return 0, nil, fmt.Errorf("libvmaf: vmaf subprocess cancelled: %w (run err: %v, stderr: %s)",
+			return fmt.Errorf("libvmaf: vmaf subprocess cancelled: %w (run err: %v, stderr: %s)",
 				ctxErr, err, stderr.String())
 		}
-		return 0, nil, fmt.Errorf("libvmaf: vmaf binary failed: %w\nstderr: %s", err, stderr.String())
+		return fmt.Errorf("libvmaf: vmaf binary failed: %w\nstderr: %s", err, stderr.String())
 	}
-
-	return parseOutput(tmpOut.Name())
+	return nil
 }
 
 // Close releases any resources held by the Scorer.

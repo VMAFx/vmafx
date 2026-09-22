@@ -10,7 +10,7 @@
  * gate; ADR-0421 first-kernel Metal scaffolding).
  *
  * The PSNR-HVS extractor is registered under the name `psnr_hvs` on the
- * CPU (libvmaf/src/feature/third_party/xiph/psnr_hvs.c) and emits
+ * CPU (core/src/feature/third_party/xiph/psnr_hvs.c) and emits
  * psnr_hvs_y / psnr_hvs_cb / psnr_hvs_cr / psnr_hvs. The Metal twin
  * `integer_psnr_hvs_metal`
  * (core/src/feature/metal/integer_psnr_hvs_metal.mm +

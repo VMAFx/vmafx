@@ -30,8 +30,8 @@
  *
  *  Design choice (no mongoose):
  *      The original v3 plan vendored cesanta/mongoose. Mongoose's
- *      effective license is GPL-2.0-only-OR-commercial — incompatible
- *      with the fork's BSD-3-Clause-Plus-Patent terms. We instead
+ *      effective license is GPL-2.0-only-OR-commercial, which
+ *      ADR-0332 judged a licence blocker for vendoring here. We instead
  *      implement the minimal HTTP/1.1 surface the SSE transport
  *      needs in plain POSIX sockets, mirroring the same
  *      accept/read/write patterns the UDS transport already uses.
@@ -86,15 +86,14 @@
  * line + status preamble fit in a single allocation. */
 #define VMAF_MCP_SSE_LINE_HEADROOM 256u
 
-/* Bounded scan budget when extracting a single string field from a
- * raw JSON-RPC fragment (no allocator, no full parser). Power-of-10
- * §1.2 rule 2: every loop terminates. */
-#define VMAF_MCP_SSE_FIELD_SCAN_BUDGET 64u
-
 /* Poll-loop heartbeat for the SSE service worker. The thread blocks
  * up to this many microseconds on read() before re-checking the
  * shutdown flag, bounding shutdown latency without a wake-up FD. */
-#define VMAF_MCP_SSE_POLL_USEC (200 * 1000)
+#define VMAF_MCP_SSE_POLL_USEC 200000L
+
+/* Consecutive interrupted syscalls are retried, but a signal storm must not
+ * trap a transport worker forever without making I/O progress. */
+#define VMAF_MCP_SSE_IO_RETRY_LIMIT 64u
 
 /* Drain scratch used by the SSE service worker — inbound bytes on a
  * subscribed event stream are discarded. 64 bytes is enough to flush
@@ -115,59 +114,63 @@
  * uds_read_line in transport_uds.c. */
 static ssize_t sse_read_line(int fd, char *buf, size_t max_len)
 {
-    if (max_len < 2u)
+    if (max_len < 2u) {
         return -1;
+    }
     size_t n = 0u;
-    for (;;) {
-        if (n >= max_len - 1u)
-            return -2;
+    size_t consumed = 0u;
+    size_t interruptions = 0u;
+    while (consumed < max_len - 1u) {
         char c = 0;
-        ssize_t r = read(fd, &c, 1);
+        const ssize_t r = read(fd, &c, 1);
         if (r == 0) {
-            if (n == 0u)
+            if (n == 0u) {
                 return 0;
+            }
             buf[n] = '\0';
             return (ssize_t)n;
         }
         if (r < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR && interruptions < VMAF_MCP_SSE_IO_RETRY_LIMIT) {
+                interruptions++;
                 continue;
+            }
             return -1;
         }
+        interruptions = 0u;
+        consumed++;
         if (c == '\n') {
             buf[n] = '\0';
             return (ssize_t)n;
         }
-        if (c == '\r')
+        if (c == '\r') {
             continue;
+        }
         buf[n++] = c;
     }
+    return -2;
 }
 
-/* Write `len` bytes to `fd`, looped against partial writes / EINTR.
- * Holds `mtx` for the duration so multiple SSE writers (future
- * fan-out) can serialise. Returns 0 on success, -errno on error. */
-static int sse_write_all(int fd, pthread_mutex_t *mtx, const char *buf, size_t len)
+static int sse_write_bytes(int fd, const char *buf, size_t len)
 {
-    int lock_rc = pthread_mutex_lock(mtx);
-    if (lock_rc != 0)
-        return -lock_rc;
-    int rc = 0;
     size_t off = 0u;
+    size_t interruptions = 0u;
     while (off < len) {
-        ssize_t w = write(fd, buf + off, len - off);
+        const ssize_t w = write(fd, buf + off, len - off);
         if (w < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR && interruptions < VMAF_MCP_SSE_IO_RETRY_LIMIT) {
+                interruptions++;
                 continue;
-            rc = -errno;
-            break;
+            }
+            return -errno;
         }
+        if (w == 0) {
+            return -EIO;
+        }
+        interruptions = 0u;
         off += (size_t)w;
     }
-    int unlock_rc = pthread_mutex_unlock(mtx);
-    if (unlock_rc != 0 && rc == 0)
-        rc = -unlock_rc;
-    return rc;
+    return 0;
 }
 
 /* Parse "GET /path HTTP/1.1" into method (3 bytes) + url (caller
@@ -251,15 +254,20 @@ static long sse_drain_headers(int fd)
 static int sse_read_n(int fd, char *buf, size_t n)
 {
     size_t off = 0u;
+    size_t interruptions = 0u;
     while (off < n) {
-        ssize_t r = read(fd, buf + off, n - off);
-        if (r == 0)
-            return -1;
-        if (r < 0) {
-            if (errno == EINTR)
-                continue;
+        const ssize_t r = read(fd, buf + off, n - off);
+        if (r == 0) {
             return -1;
         }
+        if (r < 0) {
+            if (errno == EINTR && interruptions < VMAF_MCP_SSE_IO_RETRY_LIMIT) {
+                interruptions++;
+                continue;
+            }
+            return -1;
+        }
+        interruptions = 0u;
         off += (size_t)r;
     }
     return 0;
@@ -267,60 +275,54 @@ static int sse_read_n(int fd, char *buf, size_t n)
 
 /* Compose and emit one SSE event frame. Per WHATWG SSE §9.2 the
  * event is terminated by a blank line ("\n\n"). `event_name` and
- * `id_field` may be NULL. `data` MUST be non-NULL and SHOULD be
+ * `id_field` may be null. `data` MUST be non-null and SHOULD be
  * single-line (we do not split on embedded newlines because the
  * dispatcher's response is a JSON object on one line).
  *
- * Reserved for v4 (broadcast pattern): the v3 SSE transport ships
- * the inline POST-response shape; v4 will fan responses out on the
- * subscribed GET stream via this helper. Marked `__attribute__
- * ((unused))` so the v3 build stays warning-free; not `static
- * inline` because we do not want it inlined / dropped. */
-__attribute__((unused)) static int sse_emit_event(int fd, pthread_mutex_t *mtx,
-                                                  const char *event_name, const char *id_field,
-                                                  const char *data)
+ * The ready event uses this path today; v4 can reuse it for response fan-out. */
+static int sse_emit_event(int fd, const char *event_name, const char *id_field, const char *data)
 {
-    if (data == NULL)
+    if (data == nullptr) {
         return -EINVAL;
+    }
     /* Compose into a heap buffer sized to fit the longest JSON-RPC
      * response we can produce (compute_vmaf wraps a stringified
      * JSON object, so reserve VMAF_MCP_MAX_LINE_BYTES + headroom). */
     size_t cap = VMAF_MCP_MAX_LINE_BYTES + VMAF_MCP_SSE_LINE_HEADROOM;
     char *frame = (char *)malloc(cap);
-    if (frame == NULL)
+    if (frame == nullptr) {
         return -ENOMEM;
+    }
     int written = 0;
-    int rc = 0;
-    if (event_name != NULL && event_name[0] != '\0') {
-        int n = snprintf(frame + written, cap - (size_t)written, "event: %s\n", event_name);
+    if (event_name != nullptr && event_name[0] != '\0') {
+        const int n = snprintf(frame + written, cap - (size_t)written, "event: %s\n", event_name);
         if (n < 0 || (size_t)n >= cap - (size_t)written) {
-            rc = -ENOSPC;
-            goto done;
+            free(frame);
+            return -ENOSPC;
         }
         written += n;
     }
-    if (id_field != NULL && id_field[0] != '\0') {
-        int n = snprintf(frame + written, cap - (size_t)written, "id: %s\n", id_field);
+    if (id_field != nullptr && id_field[0] != '\0') {
+        const int n = snprintf(frame + written, cap - (size_t)written, "id: %s\n", id_field);
         if (n < 0 || (size_t)n >= cap - (size_t)written) {
-            rc = -ENOSPC;
-            goto done;
+            free(frame);
+            return -ENOSPC;
         }
         written += n;
     }
-    int n2 = snprintf(frame + written, cap - (size_t)written, "data: %s\n\n", data);
+    const int n2 = snprintf(frame + written, cap - (size_t)written, "data: %s\n\n", data);
     if (n2 < 0 || (size_t)n2 >= cap - (size_t)written) {
-        rc = -ENOSPC;
-        goto done;
+        free(frame);
+        return -ENOSPC;
     }
     written += n2;
-    rc = sse_write_all(fd, mtx, frame, (size_t)written);
-done:;
+    const int rc = sse_write_bytes(fd, frame, (size_t)written);
     free(frame);
     return rc;
 }
 
 /* Emit the SSE stream-prelude headers (HTTP 200 + content-type). */
-static int sse_emit_stream_headers(int fd, pthread_mutex_t *mtx)
+static int sse_emit_stream_headers(int fd)
 {
     static const char headers[] = "HTTP/1.1 200 OK\r\n"
                                   "Content-Type: text/event-stream\r\n"
@@ -330,62 +332,28 @@ static int sse_emit_stream_headers(int fd, pthread_mutex_t *mtx)
                                   "\r\n"
                                   /* Initial comment frame keeps proxies awake. */
                                   ": vmaf-mcp-sse stream open\n\n";
-    return sse_write_all(fd, mtx, headers, sizeof(headers) - 1u);
+    return sse_write_bytes(fd, headers, sizeof(headers) - 1u);
 }
 
 /* Emit a fixed HTTP response (status + body). */
-static int sse_emit_status(int fd, pthread_mutex_t *mtx, int code, const char *reason,
-                           const char *content_type, const char *body)
+static int sse_emit_status(int fd, int code, const char *reason, const char *content_type,
+                           const char *body)
 {
     char hdr[VMAF_MCP_SSE_STATUS_BUF];
-    size_t body_len = body != NULL ? strlen(body) : 0u;
+    size_t body_len = body != nullptr ? strlen(body) : 0u;
     int n = snprintf(hdr, sizeof(hdr),
                      "HTTP/1.1 %d %s\r\n"
                      "Content-Type: %s\r\n"
                      "Content-Length: %zu\r\n"
                      "Connection: close\r\n"
                      "\r\n",
-                     code, reason, content_type != NULL ? content_type : "text/plain", body_len);
+                     code, reason, content_type != nullptr ? content_type : "text/plain", body_len);
     if (n < 0 || (size_t)n >= sizeof(hdr))
         return -ENOSPC;
-    int rc = sse_write_all(fd, mtx, hdr, (size_t)n);
-    if (rc != 0 || body == NULL || body_len == 0u)
+    int rc = sse_write_bytes(fd, hdr, (size_t)n);
+    if (rc != 0 || body == nullptr || body_len == 0u)
         return rc;
-    return sse_write_all(fd, mtx, body, body_len);
-}
-
-/* Extract the JSON-RPC `id` field from a response string. Caller
- * receives a heap-allocated NUL-terminated copy or NULL if absent.
- * Bounded scan — no full JSON parse, just pattern-match on
- * `"id":<value>` and copy until comma/`}`.
- *
- * Reserved for v4 (broadcast pattern); see sse_emit_event above. */
-__attribute__((unused)) static char *sse_extract_id(const char *resp)
-{
-    if (resp == NULL)
-        return NULL;
-    const char *p = strstr(resp, "\"id\":");
-    if (p == NULL)
-        return NULL;
-    p += 5u;
-    while (*p == ' ' || *p == '\t')
-        p++;
-    const char *end = p;
-    /* Cap the scan so a malformed input cannot run away. */
-    size_t budget = VMAF_MCP_SSE_FIELD_SCAN_BUDGET;
-    while (*end != '\0' && *end != ',' && *end != '}' && budget > 0u) {
-        end++;
-        budget--;
-    }
-    if (end == p)
-        return NULL;
-    size_t len = (size_t)(end - p);
-    char *out = (char *)malloc(len + 1u);
-    if (out == NULL)
-        return NULL;
-    memcpy(out, p, len);
-    out[len] = '\0';
-    return out;
+    return sse_write_bytes(fd, body, body_len);
 }
 
 /* Service one SSE-stream client (GET /<path>). Emits a single
@@ -400,14 +368,17 @@ __attribute__((unused)) static char *sse_extract_id(const char *resp)
  * immediately. */
 static void sse_serve_stream(struct VmafMcpServer *server, int client_fd)
 {
-    int rc = sse_emit_stream_headers(client_fd, &server->write_mtx);
+    int rc = sse_emit_stream_headers(client_fd);
     if (rc != 0)
         return;
     /* Per WHATWG SSE §9.2.5 (accessed 2026-05-09) a comment line
      * (begins with `:`) is ignored by the parser but keeps
      * intermediaries from buffering. */
-    static const char hello[] = "event: ready\ndata: {\"transport\":\"sse\",\"version\":3}\n\n";
-    (void)sse_write_all(client_fd, &server->write_mtx, hello, sizeof(hello) - 1u);
+    static const char ready_data[] = "{\"transport\":\"sse\",\"version\":3}";
+    rc = sse_emit_event(client_fd, "ready", nullptr, ready_data);
+    if (rc != 0) {
+        return;
+    }
 
     /* Bound poll loop — Power-of-10 §1.2 rule 2. Each iteration
      * waits up to 200 ms; the loop terminates on EOF, error, or
@@ -440,14 +411,13 @@ static void sse_serve_stream(struct VmafMcpServer *server, int client_fd)
 static void sse_serve_post(struct VmafMcpServer *server, int client_fd, long content_length)
 {
     if (content_length <= 0 || content_length > (long)VMAF_MCP_SSE_BODY_MAX) {
-        (void)sse_emit_status(client_fd, &server->write_mtx, 400, "Bad Request", "text/plain",
+        (void)sse_emit_status(client_fd, 400, "Bad Request", "text/plain",
                               "missing or oversized Content-Length");
         return;
     }
     char *body = (char *)malloc((size_t)content_length + 1u);
-    if (body == NULL) {
-        (void)sse_emit_status(client_fd, &server->write_mtx, 500, "Internal Error", "text/plain",
-                              "oom");
+    if (body == nullptr) {
+        (void)sse_emit_status(client_fd, 500, "Internal Error", "text/plain", "oom");
         return;
     }
     if (sse_read_n(client_fd, body, (size_t)content_length) != 0) {
@@ -456,19 +426,17 @@ static void sse_serve_post(struct VmafMcpServer *server, int client_fd, long con
     }
     body[content_length] = '\0';
 
-    char *response = NULL;
+    char *response = nullptr;
     int drc = vmaf_mcp_dispatch(server, body, &response);
     free(body);
-    if (drc != 0 && response == NULL) {
-        (void)sse_emit_status(client_fd, &server->write_mtx, 500, "Internal Error", "text/plain",
-                              "dispatch failed");
+    if (drc != 0 && response == nullptr) {
+        (void)sse_emit_status(client_fd, 500, "Internal Error", "text/plain", "dispatch failed");
         return;
     }
-    if (response == NULL) {
+    if (response == nullptr) {
         /* Notification — no body. Per JSON-RPC 2.0 §4.1, a 204 is
          * the spec-aligned response when no result is produced. */
-        (void)sse_emit_status(client_fd, &server->write_mtx, 204, "No Content", "application/json",
-                              NULL);
+        (void)sse_emit_status(client_fd, 204, "No Content", "application/json", nullptr);
         return;
     }
 
@@ -480,7 +448,7 @@ static void sse_serve_post(struct VmafMcpServer *server, int client_fd, long con
      * v3 emits the inline form; SSE-stream broadcast is a v4 follow-up.
      * Per WHATWG SSE §9.2 (accessed 2026-05-09) the framing is
      * `event:`/`id:`/`data:` LF-separated, blank-line terminated. */
-    (void)sse_emit_status(client_fd, &server->write_mtx, 200, "OK", "application/json", response);
+    (void)sse_emit_status(client_fd, 200, "OK", "application/json", response);
     free(response);
 }
 
@@ -504,20 +472,19 @@ static void sse_serve_client(struct VmafMcpServer *server, int client_fd)
     char method[VMAF_MCP_SSE_METHOD_BUF];
     char url[VMAF_MCP_SSE_HEADER_LINE_MAX];
     if (sse_parse_request_line(req_line, method, sizeof(method), url, sizeof(url)) != 0) {
-        (void)sse_emit_status(client_fd, &server->write_mtx, 400, "Bad Request", "text/plain",
+        (void)sse_emit_status(client_fd, 400, "Bad Request", "text/plain",
                               "malformed request line");
         return;
     }
 
     long content_length = sse_drain_headers(client_fd);
     if (content_length < 0) {
-        (void)sse_emit_status(client_fd, &server->write_mtx, 400, "Bad Request", "text/plain",
-                              "header parse error");
+        (void)sse_emit_status(client_fd, 400, "Bad Request", "text/plain", "header parse error");
         return;
     }
 
     const char *configured_path =
-        server->sse_path_owned != NULL ? server->sse_path_owned : VMAF_MCP_SSE_DEFAULT_PATH;
+        server->sse_path_owned != nullptr ? server->sse_path_owned : VMAF_MCP_SSE_DEFAULT_PATH;
     int is_path_match = strcmp(url, configured_path) == 0 ? 1 : 0;
     int is_health = strcmp(url, "/") == 0 ? 1 : 0;
 
@@ -530,24 +497,23 @@ static void sse_serve_client(struct VmafMcpServer *server, int client_fd)
         return;
     }
     if (strcmp(method, "GET") == 0 && is_health != 0) {
-        (void)sse_emit_status(client_fd, &server->write_mtx, 200, "OK", "application/json",
+        (void)sse_emit_status(client_fd, 200, "OK", "application/json",
                               "{\"server\":\"vmaf-mcp\",\"transport\":\"sse\"}");
         return;
     }
-    (void)sse_emit_status(client_fd, &server->write_mtx, 404, "Not Found", "text/plain",
-                          "no such endpoint");
+    (void)sse_emit_status(client_fd, 404, "Not Found", "text/plain", "no such endpoint");
 }
 
 void *vmaf_mcp_sse_thread_main(void *arg)
 {
-    assert(arg != NULL);
+    assert(arg != nullptr);
     struct VmafMcpServer *server = (struct VmafMcpServer *)arg;
-    if (server == NULL)
-        return NULL;
+    if (server == nullptr)
+        return nullptr;
     assert(server->sse_listen_fd >= 0);
 
     while (atomic_load(&server->sse_running) == 1) {
-        int client_fd = accept(server->sse_listen_fd, NULL, NULL);
+        int client_fd = accept(server->sse_listen_fd, nullptr, nullptr);
         if (client_fd < 0) {
             if (errno == EINTR)
                 continue;
@@ -560,5 +526,5 @@ void *vmaf_mcp_sse_thread_main(void *arg)
     }
 
     atomic_store(&server->sse_running, 0);
-    return NULL;
+    return nullptr;
 }

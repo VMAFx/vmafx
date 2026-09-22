@@ -32,6 +32,11 @@
 
 #include "spinner.h"
 
+/* The translation-unit-local fixtures and cases below sit in short anonymous
+ * namespaces rather than one file-wide block: that is what gives them C++
+ * internal linkage without any one brace scope outgrowing the 60-line budget
+ * the repository applies to the whole tree (ADR-1142), the same shape the
+ * SYCL extractors use. */
 namespace
 {
 
@@ -50,6 +55,10 @@ bool table_is_ascii_only(const char *const *table, unsigned length)
     }
     return true;
 }
+} // namespace
+
+namespace
+{
 
 const char *test_utf8_console_gets_the_braille_table()
 {
@@ -74,6 +83,10 @@ const char *test_legacy_code_pages_get_the_ascii_table()
     }
     return nullptr;
 }
+} // namespace
+
+namespace
+{
 
 const char *test_erase_eol_is_vt_gated()
 {

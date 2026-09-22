@@ -7,8 +7,6 @@
 
   <img src="docs/assets/vmafx-readme-banner.svg" alt="VMAFx — perceptual video quality assessment, GPU-accelerated and SIMD-tuned" width="100%" />
 
-  # 🎬 VMAFx
-
   **Perceptual video quality assessment — GPU-accelerated, SIMD-tuned, numerically exact**
 
   *A fork of [Netflix/vmaf](https://github.com/Netflix/vmaf) that keeps the reference scores byte-for-byte*
@@ -22,7 +20,7 @@
   [![Rust](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
 
   [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/VMAFx/vmafx/badge?style=for-the-badge)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
-  [![HISS-16](https://img.shields.io/badge/Standards-HISS--16-06B6D4?style=for-the-badge&logo=nasa)](AGENTS.md)
+  [![HISS-21](https://img.shields.io/badge/Standards-HISS--21-06B6D4?style=for-the-badge&logo=nasa)](AGENTS.md)
   [![Power of 10](https://img.shields.io/badge/NASA_JPL-Power_of_10-0B3D91?style=for-the-badge&logo=nasa)](docs/principles.md)
   [![Conventional Commits](https://img.shields.io/badge/Commits-Conventional-FE5196?style=for-the-badge&logo=conventionalcommits&logoColor=white)](CONTRIBUTING.md)
 
@@ -163,11 +161,16 @@ The per-file tags are authoritative; this paragraph is a summary.
 
 ## Standards & Governance
 
-This repository conforms to High-Integrity Systems Standards (HISS-16)
+This repository conforms to High-Integrity Systems Standards (HISS-21)
 and modernized NASA JPL Power-of-10 rules.
 
-| Gate | Command | Description |
+<!-- praetor:readme-governance:start -->
+Praetor manages this repository's declared governance policy. This managed block records adoption state; it is not a verification certificate.
+
+| Gate | Command | Contract |
 | :--- | :--- | :--- |
-| **Verification** | `make verify-all` | Runs full audit, test suite, and context integrity check |
-| **HISS Audit** | `standardsctl audit` | Enforces zero technical debt regression against baseline |
-| **Context Sync** | `standardsctl compile-context` | Transpiles canonical `AGENTS.md` to all AI targets |
+| **Verification** | `make verify-all` | Runs the repository's configured verification cascade |
+| **HISS Audit** | `praetorctl audit` | Enforces policy, generated-surface integrity, and the debt ratchet |
+| **Context Sync** | `praetorctl compile-context --verify` | Verifies every generated agent context against `AGENTS.md` |
+| **Debt Baseline** | `.standards-baseline.json` | 276 recorded infractions; audit forbids growth |
+<!-- praetor:readme-governance:end -->

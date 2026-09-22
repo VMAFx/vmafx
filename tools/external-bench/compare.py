@@ -53,8 +53,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 # Default expected paths. When the user does not pass --bvi-dvc-root /
 # --netflix-public-root we look in these locations and fail clearly
 # if neither is present.
-DEFAULT_BVI_DVC_ROOT = pathlib.Path.home() / ".workingdir2" / "bvi-dvc"
-DEFAULT_NETFLIX_PUBLIC_ROOT = HERE.parent.parent / ".workingdir2" / "netflix"
+DEFAULT_BVI_DVC_ROOT = pathlib.Path.home() / ".corpus" / "bvi-dvc"
+DEFAULT_NETFLIX_PUBLIC_ROOT = HERE.parent.parent / ".corpus" / "netflix"
 
 
 @dataclasses.dataclass(frozen=True)

@@ -546,27 +546,30 @@ static int run_score_st(SpeedTemporalHipState *s, float *score_out)
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
-static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                             unsigned w, unsigned h)
+/* Releases every host-side scratch buffer allocated by init_temporal_hip().
+ * Extracted so the init error paths and close_temporal_hip() free the exact same
+ * set in the exact same order (HISS-01: no goto-chained cleanup ladder). */
+static void st_free_cpu_buffers(SpeedTemporalHipState *s)
 {
-    (void)pix_fmt;
-    (void)bpc;
-    SpeedTemporalHipState *s = fex->priv;
+    aligned_free(s->h_ref[0]);
+    aligned_free(s->h_ref[1]);
+    aligned_free(s->h_dis[0]);
+    aligned_free(s->h_dis[1]);
+    aligned_free(s->h_eigenvalues);
+    aligned_free(s->h_eig_scratch);
+    aligned_free(s->h_Q);
+    aligned_free(s->h_R);
+    aligned_free(s->h_qr_scratch);
+    aligned_free(s->h_indterm_ref);
+    aligned_free(s->h_indterm_dis);
+    aligned_free(s->h_qt_scratch);
+}
 
-    s->opt = (SpeedInternalOptions){
-        .speed_kernelscale = s->speed_temporal_kernelscale,
-        .speed_prescale = s->speed_temporal_prescale,
-        .speed_prescale_method = s->speed_temporal_prescale_method,
-        .speed_sigma_nn = s->speed_temporal_sigma_nn,
-        .speed_nn_floor = s->speed_temporal_nn_floor,
-        .speed_weight_var_mode = 0,
-    };
-
-    int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
-    if (err)
-        return err;
-    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
-
+/* Allocates the host scratch buffers and validates the mandatory ones.
+ * Releases everything and reports -ENOMEM on failure, exactly as the former
+ * inline block did (HISS-04 split of init_temporal_hip). */
+static int st_alloc_cpu_buffers(SpeedTemporalHipState *s)
+{
     const size_t stride_px = s->float_stride / sizeof(float);
     const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
@@ -590,18 +593,31 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
 
     if (!s->h_ref[0] || !s->h_ref[1] || !s->h_dis[0] || !s->h_dis[1] || !s->h_eigenvalues ||
         !s->h_Q || !s->h_R) {
-        err = -ENOMEM;
-        goto free_cpu;
+        st_free_cpu_buffers(s);
+        return -ENOMEM;
     }
+    return 0;
+}
 
 #ifdef HAVE_HIPCC
-    err = st_hip_module_load(s);
-    if (err)
-        goto free_cpu;
+/* Loads the HSACO, creates the stream, queries the wavefront width and
+ * allocates the device buffers. Every failure path releases the same
+ * resources, in the same order, as the goto ladder this replaces. */
+static int st_hip_setup(SpeedTemporalHipState *s)
+{
+    int err = st_hip_module_load(s);
+    if (err) {
+        st_free_cpu_buffers(s);
+        return err;
+    }
 
     if (hipStreamCreate(&s->stream) != hipSuccess) {
-        err = -EIO;
-        goto free_module;
+        if (s->module) {
+            (void)hipModuleUnload(s->module);
+            s->module = NULL;
+        }
+        st_free_cpu_buffers(s);
+        return -EIO;
     }
 
     /* Query actual wavefront size — 64 on GCN/RDNA1, 32 on RDNA2+.
@@ -616,8 +632,44 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
     }
 
     err = st_hip_bufs_alloc(s);
+    if (err) {
+        free_hip_buffers_st(s);
+        st_free_cpu_buffers(s);
+        return err;
+    }
+    return 0;
+}
+#endif /* HAVE_HIPCC */
+
+static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                             unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    SpeedTemporalHipState *s = fex->priv;
+
+    s->opt = (SpeedInternalOptions){
+        .speed_kernelscale = s->speed_temporal_kernelscale,
+        .speed_prescale = s->speed_temporal_prescale,
+        .speed_prescale_method = s->speed_temporal_prescale_method,
+        .speed_sigma_nn = s->speed_temporal_sigma_nn,
+        .speed_nn_floor = s->speed_temporal_nn_floor,
+        .speed_weight_var_mode = 0,
+    };
+
+    int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
     if (err)
-        goto free_hip;
+        return err;
+    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
+
+    err = st_alloc_cpu_buffers(s);
+    if (err)
+        return err;
+
+#ifdef HAVE_HIPCC
+    err = st_hip_setup(s);
+    if (err)
+        return err;
 #else
     return -ENOSYS;
 #endif /* HAVE_HIPCC */
@@ -625,71 +677,24 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
-        err = -ENOMEM;
 #ifdef HAVE_HIPCC
-        goto free_hip;
+        free_hip_buffers_st(s);
 #endif
+        st_free_cpu_buffers(s);
+        return -ENOMEM;
     }
 
     s->frame_index = 0;
     return 0;
-
-#ifdef HAVE_HIPCC
-free_hip:
-    free_hip_buffers_st(s);
-    goto free_cpu;
-free_module:
-    if (s->module) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
-    }
-#endif /* HAVE_HIPCC */
-free_cpu:
-    aligned_free(s->h_ref[0]);
-    aligned_free(s->h_ref[1]);
-    aligned_free(s->h_dis[0]);
-    aligned_free(s->h_dis[1]);
-    aligned_free(s->h_eigenvalues);
-    aligned_free(s->h_eig_scratch);
-    aligned_free(s->h_Q);
-    aligned_free(s->h_R);
-    aligned_free(s->h_qr_scratch);
-    aligned_free(s->h_indterm_ref);
-    aligned_free(s->h_indterm_dis);
-    aligned_free(s->h_qt_scratch);
-    return err;
 }
 
-static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                                VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                                VmafPicture *dist_pic_90, unsigned index,
-                                VmafFeatureCollector *feature_collector)
+#ifdef HAVE_HIPCC
+/* Builds the temporal difference planes for both sides and runs the host
+ * filter/downscale over them. Extracted from extract_temporal_hip() for
+ * HISS-04; each subtract/filter call and its argument order is copied
+ * unchanged. */
+static int st_prepare_diff_planes(SpeedTemporalHipState *s, int cyclic, int other)
 {
-    (void)ref_pic_90;
-    (void)dist_pic_90;
-
-#ifndef HAVE_HIPCC
-    (void)fex;
-    (void)ref_pic;
-    (void)dist_pic;
-    (void)index;
-    (void)feature_collector;
-    return -ENOSYS;
-#else
-    SpeedTemporalHipState *s = fex->priv;
-
-    const int cyclic = (int)(index % 2u);
-    const int other = (int)((index + 1u) % 2u);
-
-    picture_copy(s->h_ref[cyclic], s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
-    picture_copy(s->h_dis[cyclic], s->float_stride, dist_pic, -128, dist_pic->bpc, 0);
-
-    if (index == 0) {
-        return vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "Speed_temporal_feature_speed_temporal_score",
-            0.0, index);
-    }
-
     const int orig_w = (int)s->dim.original_width;
     const int orig_h = (int)s->dim.original_height;
     subtract_plane(s->h_ref[other], s->h_ref[cyclic], orig_w, orig_h, s->float_stride);
@@ -709,7 +714,14 @@ static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_dis[other], tmp_filter,
                                         s->float_stride);
     aligned_free(tmp_filter);
+    return 0;
+}
 
+/* Runs the reference and distorted GPU pipelines plus the CPU linear algebra
+ * over the prepared diff planes and produces the frame score. The singular
+ * rule (ADR-1218) and the `run_score_st` call are copied verbatim. */
+static int st_score_diff(SpeedTemporalHipState *s, int other, float *score_out)
+{
     /* Reference diff: means → cov → indterm, then eigendecomp + QR. Uploads ref
      * eigenvalues into the shared d_eigenvalues buffer. */
     int err = run_gpu_pipeline_st(s, s->h_ref[other], s->d_indterm_ref, s->h_indterm_ref);
@@ -759,6 +771,50 @@ static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         if (err)
             return err;
     }
+    *score_out = score;
+    return 0;
+}
+
+#endif /* HAVE_HIPCC */
+
+static int extract_temporal_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+                                VmafPicture *ref_pic_90, VmafPicture *dist_pic,
+                                VmafPicture *dist_pic_90, unsigned index,
+                                VmafFeatureCollector *feature_collector)
+{
+    (void)ref_pic_90;
+    (void)dist_pic_90;
+
+#ifndef HAVE_HIPCC
+    (void)fex;
+    (void)ref_pic;
+    (void)dist_pic;
+    (void)index;
+    (void)feature_collector;
+    return -ENOSYS;
+#else
+    SpeedTemporalHipState *s = fex->priv;
+
+    const int cyclic = (int)(index % 2u);
+    const int other = (int)((index + 1u) % 2u);
+
+    picture_copy(s->h_ref[cyclic], s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
+    picture_copy(s->h_dis[cyclic], s->float_stride, dist_pic, -128, dist_pic->bpc, 0);
+
+    if (index == 0) {
+        return vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "Speed_temporal_feature_speed_temporal_score",
+            0.0, index);
+    }
+
+    int err = st_prepare_diff_planes(s, cyclic, other);
+    if (err)
+        return err;
+
+    float score = 0.0f;
+    err = st_score_diff(s, other, &score);
+    if (err)
+        return err;
 
     const double mxv = s->speed_temporal_max_val;
     const double clipped = (double)score < mxv ? (double)score : mxv;
@@ -775,18 +831,7 @@ static int close_temporal_hip(VmafFeatureExtractor *fex)
 #ifdef HAVE_HIPCC
     free_hip_buffers_st(s);
 #endif
-    aligned_free(s->h_ref[0]);
-    aligned_free(s->h_ref[1]);
-    aligned_free(s->h_dis[0]);
-    aligned_free(s->h_dis[1]);
-    aligned_free(s->h_eigenvalues);
-    aligned_free(s->h_eig_scratch);
-    aligned_free(s->h_Q);
-    aligned_free(s->h_R);
-    aligned_free(s->h_qr_scratch);
-    aligned_free(s->h_indterm_ref);
-    aligned_free(s->h_indterm_dis);
-    aligned_free(s->h_qt_scratch);
+    st_free_cpu_buffers(s);
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
     return 0;

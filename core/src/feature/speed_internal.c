@@ -408,7 +408,6 @@ static void si_qr_step_size2(float *d, float *sd, float x, float z)
 
 static void si_qr_step_general(float *d, float *sd, int n, float x, float z)
 {
-    float ak = 0.0f;
     float bk = 0.0f;
     float zk = 0.0f;
     float ap = d[0];
@@ -428,7 +427,6 @@ static void si_qr_step_general(float *d, float *sd, int n, float x, float z)
         const float aq1 = s * (s * ap + c * bp) + c * (s * bp + c * aq);
         const float bq1 = c * bq;
 
-        ak = ap1;
         bk = bp1;
         zk = zp1;
         ap = aq1;
@@ -441,7 +439,7 @@ static void si_qr_step_general(float *d, float *sd, int n, float x, float z)
             bq = sd[k + 2];
         }
 
-        d[k] = ak;
+        d[k] = ap1;
         if (k > 0) {
             sd[k - 1] = bk1;
         }

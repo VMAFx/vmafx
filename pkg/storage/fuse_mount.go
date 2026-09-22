@@ -83,13 +83,41 @@ func (s *FUSEMountStorage) Prepare(ctx context.Context, sourceURI string) (strin
 		return "", func() {}, fmt.Errorf("storage: create mount dir: %w", err)
 	}
 
-	argv := s.buildMountArgs(remoteRoot, mountDir)
-
 	s.log.Debug("starting rclone mount",
 		"remote_root", remoteRoot,
 		"mount_dir", mountDir,
 		"asset", assetRel,
 	)
+
+	cmd, startErr := s.startMount(ctx, remoteRoot, mountDir)
+	if startErr != nil {
+		return "", func() {}, startErr
+	}
+
+	assetPath := filepath.Join(mountDir, strings.TrimPrefix(assetRel, "/"))
+
+	// Wait for the asset to appear on the FUSE mount.
+	if readyErr := waitForPath(ctx, assetPath, mountReadyTimeout); readyErr != nil {
+		return "", func() {}, s.teardownAfterTimeout(cmd, mountDir, readyErr)
+	}
+
+	s.log.Info("rclone mount ready",
+		"path", assetPath,
+		"remote_root", remoteRoot,
+	)
+
+	return assetPath, s.mountCleanup(cmd, mountDir), nil
+}
+
+// startMount spawns the rclone mount for remoteRoot at mountDir.
+//
+// On a start failure the mount dir is removed again, and the removal error is
+// joined with the start failure so a stray empty mount dir does not get
+// silently leaked when removal also fails.
+func (s *FUSEMountStorage) startMount(
+	ctx context.Context, remoteRoot, mountDir string,
+) (*exec.Cmd, error) {
+	argv := s.buildMountArgs(remoteRoot, mountDir)
 
 	// #nosec G204 -- argv[0] is s.rcloneBin (configured at FUSEMountStorage
 	// construction from operator-supplied trusted config); argv[1:] mixes
@@ -99,38 +127,41 @@ func (s *FUSEMountStorage) Prepare(ctx context.Context, sourceURI string) (strin
 	cmd.Stderr = os.Stderr
 
 	if startErr := cmd.Start(); startErr != nil {
-		// Join the start failure with any cleanup error so a stray empty
-		// mount dir does not get silently leaked when removal also fails.
 		errs := []error{fmt.Errorf("storage: start rclone mount: %w", startErr)}
 		if removeErr := os.Remove(mountDir); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("storage: remove mount dir after failed start: %w", removeErr))
 		}
-		return "", func() {}, errors.Join(errs...)
+		return nil, errors.Join(errs...)
 	}
+	return cmd, nil
+}
 
-	assetPath := filepath.Join(mountDir, strings.TrimPrefix(assetRel, "/"))
-
-	// Wait for the asset to appear on the FUSE mount.
-	if readyErr := waitForPath(ctx, assetPath, mountReadyTimeout); readyErr != nil {
-		// Unmount + kill + rmdir on the readiness-timeout path; surface
-		// every failure via errors.Join so an operator can see whether the
-		// mount actually came down or is still leaking under /tmp.
-		errs := []error{fmt.Errorf("storage: rclone mount did not become ready: %w", readyErr)}
-		if umErr := s.unmount(mountDir); umErr != nil {
-			errs = append(errs, fmt.Errorf("storage: unmount after timeout: %w", umErr))
-		}
-		if killErr := killProcess(cmd); killErr != nil {
-			errs = append(errs, fmt.Errorf("storage: kill rclone after timeout: %w", killErr))
-		}
-		if removeErr := os.RemoveAll(mountDir); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			errs = append(errs, fmt.Errorf("storage: remove mount dir after timeout: %w", removeErr))
-		}
-		return "", func() {}, errors.Join(errs...)
+// teardownAfterTimeout unmounts, kills and rmdirs after a readiness timeout.
+//
+// Every failure is surfaced via errors.Join so an operator can see whether the
+// mount actually came down or is still leaking under /tmp.
+func (s *FUSEMountStorage) teardownAfterTimeout(
+	cmd *exec.Cmd, mountDir string, readyErr error,
+) error {
+	errs := []error{fmt.Errorf("storage: rclone mount did not become ready: %w", readyErr)}
+	if umErr := s.unmount(mountDir); umErr != nil {
+		errs = append(errs, fmt.Errorf("storage: unmount after timeout: %w", umErr))
 	}
+	if killErr := killProcess(cmd); killErr != nil {
+		errs = append(errs, fmt.Errorf("storage: kill rclone after timeout: %w", killErr))
+	}
+	if removeErr := os.RemoveAll(mountDir); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		errs = append(errs, fmt.Errorf("storage: remove mount dir after timeout: %w", removeErr))
+	}
+	return errors.Join(errs...)
+}
 
-	cleanup := func() {
-		// Cleanup runs from defer paths in production, so we can't propagate
-		// errors out — log each failure but do not swallow silently.
+// mountCleanup builds the teardown closure the caller defers.
+//
+// Cleanup runs from defer paths in production, so we can't propagate errors
+// out — each failure is logged rather than swallowed silently.
+func (s *FUSEMountStorage) mountCleanup(cmd *exec.Cmd, mountDir string) func() {
+	return func() {
 		if umErr := s.unmount(mountDir); umErr != nil {
 			s.log.Warn("storage: unmount during cleanup", "error", umErr, "mount_dir", mountDir)
 		}
@@ -141,13 +172,6 @@ func (s *FUSEMountStorage) Prepare(ctx context.Context, sourceURI string) (strin
 			s.log.Warn("storage: remove mount dir during cleanup", "error", removeErr, "mount_dir", mountDir)
 		}
 	}
-
-	s.log.Info("rclone mount ready",
-		"path", assetPath,
-		"remote_root", remoteRoot,
-	)
-
-	return assetPath, cleanup, nil
 }
 
 // buildMountArgs constructs the rclone mount argument list.
@@ -199,7 +223,11 @@ func waitForPath(ctx context.Context, assetPath string, timeout time.Duration) e
 	deadline := time.Now().Add(timeout)
 	tick := time.NewTicker(mountReadyPollInterval)
 	defer tick.Stop()
-	for {
+	// One poll per tick plus the immediate first attempt bounds the loop; the
+	// deadline check below is what normally ends it, and the bound only keeps
+	// a stalled clock from turning this into a spin (HISS-02).
+	maxPolls := int(timeout/mountReadyPollInterval) + 2
+	for poll := 0; poll < maxPolls; poll++ {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out after %v waiting for %s", timeout, assetPath)
 		}
@@ -212,4 +240,5 @@ func waitForPath(ctx context.Context, assetPath string, timeout time.Duration) e
 		case <-tick.C:
 		}
 	}
+	return fmt.Errorf("gave up after %d polls waiting for %s", maxPolls, assetPath)
 }

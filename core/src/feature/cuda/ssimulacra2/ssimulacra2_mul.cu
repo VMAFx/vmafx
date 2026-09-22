@@ -4,7 +4,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  *
  *  CUDA kernel for the ssimulacra2 elementwise plane multiply.
- *  Mirrors `multiply_3plane` in libvmaf/src/feature/ssimulacra2.c
+ *  Mirrors `multiply_3plane` in core/src/feature/ssimulacra2.c
  *  — operates on a contiguous 3-plane buffer; out[i] = a[i] * b[i].
  *
  *  Per-scale dispatch: grid = ceil(w / 16) * ceil(h / 8); each thread

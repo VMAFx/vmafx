@@ -14,7 +14,7 @@
 /*
  * AVX2 variant of the 8x8 Daala/Xiph forward integer DCT butterfly
  * (`od_bin_fdct8x8`). Byte-for-byte identical output to the scalar
- * reference in libvmaf/src/feature/third_party/xiph/psnr_hvs.c under
+ * reference in core/src/feature/third_party/xiph/psnr_hvs.c under
  * FLT_EVAL_METHOD == 0. Operates on a single 8x8 block of int32
  * coefficients (row-major, `ystride == xstride == 8`).
  *

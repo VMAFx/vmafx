@@ -12,7 +12,7 @@ Shared infrastructure: :mod:`ai.src.corpus.base` (ADR-0371).
 
 Pipeline shape::
 
-    .workingdir2/konvid-150k/
+    .corpus/konvid-150k/
       +-- .download-progress.json
       +-- manifest.csv              # URL manifest layout, optional
       +-- clips/                    # URL manifest download cache
@@ -335,21 +335,12 @@ def run(
 # ---------------------------------------------------------------------------
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    ap = make_argument_parser(
-        prog="konvid_150k_to_corpus_jsonl.py",
-        description=(
-            "Phase 2 of ADR-0325: walk a local KonViD-150k extraction "
-            "(or build one via resumable downloads), probe each clip via "
-            "ffprobe, join with the manifest CSV's MOS scores, and emit "
-            "one JSONL row per clip."
-        ),
-    )
+def _add_path_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--konvid-dir",
         type=Path,
         default=_DEFAULT_KONVID_DIR,
-        help="Local KonViD-150k working directory (default: .workingdir2/konvid-150k/).",
+        help="Local KonViD-150k working directory (default: .corpus/konvid-150k/).",
     )
     ap.add_argument(
         "--manifest-csv",
@@ -369,7 +360,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=_DEFAULT_OUTPUT,
-        help="Output JSONL path (default: .workingdir2/konvid-150k/konvid_150k.jsonl).",
+        help="Output JSONL path (default: .corpus/konvid-150k/konvid_150k.jsonl).",
     )
     ap.add_argument(
         "--manifest-out",
@@ -377,6 +368,19 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
     )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    ap = make_argument_parser(
+        prog="konvid_150k_to_corpus_jsonl.py",
+        description=(
+            "Phase 2 of ADR-0325: walk a local KonViD-150k extraction "
+            "(or build one via resumable downloads), probe each clip via "
+            "ffprobe, join with the manifest CSV's MOS scores, and emit "
+            "one JSONL row per clip."
+        ),
+    )
+    _add_path_arguments(ap)
     ap.add_argument(
         "--ffprobe-bin", default=os.environ.get("FFPROBE_BIN", "ffprobe"), help="ffprobe binary."
     )

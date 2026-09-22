@@ -97,6 +97,23 @@ Example — reproduce the best x265 row at target 95:
     --target-vmaf 95 \
     --output encoded.mkv`
 
+	registerEncodeProfileFlags(cmd, flags)
+
+	// Required-flag enforcement lives in runEncodeProfile, not
+	// MarkFlagRequired, so a missing flag exits 2 like the Python CLI.
+	useUsageExitCode(cmd)
+
+	// The command prints its own JSON result and then exits with FFmpeg's
+	// status; cobra must not append an "Error: ..." line after that payload.
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+
+	return cmd
+}
+
+// registerEncodeProfileFlags registers the flags of the encode-profile subcommand and records the flag set on
+// flags, which runEncodeProfile consults to tell an explicit override from a default.
+func registerEncodeProfileFlags(cmd *cobra.Command, flags *encodeProfileFlags) {
 	f := cmd.Flags()
 	flags.flagSet = f
 	f.StringVar(&flags.profile, "profile", "",
@@ -127,17 +144,6 @@ Example — reproduce the best x265 row at target 95:
 		"Override the profile's ffmpeg_bin (default: profile value, then ffmpeg)")
 	f.BoolVar(&flags.dryRun, "dry-run", false,
 		"Print the selected recommendation and ffmpeg argv without encoding")
-
-	// Required-flag enforcement lives in runEncodeProfile, not
-	// MarkFlagRequired, so a missing flag exits 2 like the Python CLI.
-	useUsageExitCode(cmd)
-
-	// The command prints its own JSON result and then exits with FFmpeg's
-	// status; cobra must not append an "Error: ..." line after that payload.
-	cmd.SilenceErrors = true
-	cmd.SilenceUsage = true
-
-	return cmd
 }
 
 // runEncodeProfile is the implementation of the encode-profile subcommand.
@@ -154,44 +160,12 @@ func runEncodeProfile(ctx context.Context, d deps, flags *encodeProfileFlags) er
 		return err
 	}
 
-	rec, err := encodeprofile.SelectRecommendation(profile, encodeprofile.SelectOptions{
-		Codec:      flags.codec,
-		TargetVMAF: flags.targetVMAFOpt(),
-		Index:      flags.recommendationIndexOpt(),
-	})
+	rec, req, err := selectEncodeRequest(profile, flags)
 	if err != nil {
 		return err
 	}
 
-	req, err := encodeprofile.BuildEncodeRequest(profile, rec, encodeprofile.BuildOptions{
-		Output:            flags.output,
-		SourceOverride:    flags.src,
-		PresetOverride:    flags.preset,
-		PixFmtOverride:    flags.pixFmt,
-		FramerateOverride: flags.framerateOpt(),
-		WidthOverride:     flags.widthOpt(),
-		HeightOverride:    flags.heightOpt(),
-		DurationOverride:  flags.durationOpt(),
-		SourceKind:        flags.sourceKind,
-		SampleClipSeconds: flags.sampleClipSeconds,
-		SampleClipStartS:  flags.sampleClipStartS,
-		ExtraParams:       flags.extraFFmpegArgs,
-	})
-	if err != nil {
-		return err
-	}
-
-	ffmpegBin := flags.ffmpegBin
-	if ffmpegBin == "" {
-		if runMeta, ok := profile["run"].(map[string]any); ok {
-			if v, ok := runMeta["ffmpeg_bin"].(string); ok {
-				ffmpegBin = v
-			}
-		}
-	}
-	if ffmpegBin == "" {
-		ffmpegBin = "ffmpeg"
-	}
+	ffmpegBin := resolveProfileFFmpegBin(flags.ffmpegBin, profile)
 
 	argv, err := encodeprofile.BuildFFmpegCommand(req, ffmpegBin)
 	if err != nil {
@@ -211,18 +185,41 @@ func runEncodeProfile(ctx context.Context, d deps, flags *encodeProfileFlags) er
 		})
 	}
 
+	return encodeAndReport(ctx, d, flags, encodeRun{
+		rec:       rec,
+		req:       req,
+		argv:      argv,
+		ffmpegBin: ffmpegBin,
+	})
+}
+
+// encodeRun bundles what the encode step needs from the selection step.
+type encodeRun struct {
+	rec       encodeprofile.Recommendation
+	req       encodeprofile.EncodeRequest
+	argv      []string
+	ffmpegBin string
+}
+
+// encodeAndReport runs the selected encode and emits the JSON result, then carries
+// FFmpeg's own exit status out to the caller.
+//
+// The JSON body is written even when FFmpeg failed -- it is the record of what was
+// attempted, and the exit status is one of its fields -- so the status is only turned into
+// an error afterwards.
+func encodeAndReport(ctx context.Context, d deps, flags *encodeProfileFlags, run encodeRun) error {
 	// G301: 0o750 keeps the directory accessible to the owner group only.
-	if dir := filepath.Dir(req.Output); dir != "" && dir != "." {
+	if dir := filepath.Dir(run.req.Output); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return fmt.Errorf("create output dir: %w", err)
 		}
 	}
 
 	d.Log.InfoContext(ctx, "encoding profile recommendation",
-		"profile", flags.profile, "codec", req.Encoder, "preset", req.Preset,
-		"crf", req.CRF, "output", req.Output)
+		"profile", flags.profile, "codec", run.req.Encoder, "preset", run.req.Preset,
+		"crf", run.req.CRF, "output", run.req.Output)
 
-	result, err := encodeprofile.RunEncode(req, ffmpegBin, nil)
+	result, err := encodeprofile.RunEncode(run.req, run.ffmpegBin, nil)
 	if err != nil {
 		return err
 	}
@@ -230,9 +227,9 @@ func runEncodeProfile(ctx context.Context, d deps, flags *encodeProfileFlags) er
 	if err := emitEncodeProfileJSON(map[string]any{
 		"ok":                result.ExitStatus == 0,
 		"profile":           encodeprofile.NormalisePath(flags.profile),
-		"selected":          map[string]any(rec),
-		"ffmpeg_argv":       toAnySlice(argv),
-		"output":            req.Output,
+		"selected":          map[string]any(run.rec),
+		"ffmpeg_argv":       toAnySlice(run.argv),
+		"output":            run.req.Output,
 		"exit_status":       result.ExitStatus,
 		"encode_size_bytes": result.EncodeSizeBytes,
 		"encode_time_ms":    result.EncodeTimeMS,
@@ -252,6 +249,56 @@ func runEncodeProfile(ctx context.Context, d deps, flags *encodeProfileFlags) er
 		}
 	}
 	return nil
+}
+
+// selectEncodeRequest picks the recommendation the flags name and turns it into the encode
+// request, returning both because the recommendation is echoed in the JSON result.
+func selectEncodeRequest(
+	profile map[string]any,
+	flags *encodeProfileFlags,
+) (encodeprofile.Recommendation, encodeprofile.EncodeRequest, error) {
+	var noReq encodeprofile.EncodeRequest
+	rec, err := encodeprofile.SelectRecommendation(profile, encodeprofile.SelectOptions{
+		Codec:      flags.codec,
+		TargetVMAF: flags.targetVMAFOpt(),
+		Index:      flags.recommendationIndexOpt(),
+	})
+	if err != nil {
+		return nil, noReq, err
+	}
+
+	req, err := encodeprofile.BuildEncodeRequest(profile, rec, encodeprofile.BuildOptions{
+		Output:            flags.output,
+		SourceOverride:    flags.src,
+		PresetOverride:    flags.preset,
+		PixFmtOverride:    flags.pixFmt,
+		FramerateOverride: flags.framerateOpt(),
+		WidthOverride:     flags.widthOpt(),
+		HeightOverride:    flags.heightOpt(),
+		DurationOverride:  flags.durationOpt(),
+		SourceKind:        flags.sourceKind,
+		SampleClipSeconds: flags.sampleClipSeconds,
+		SampleClipStartS:  flags.sampleClipStartS,
+		ExtraParams:       flags.extraFFmpegArgs,
+	})
+	if err != nil {
+		return nil, noReq, err
+	}
+	return rec, req, nil
+}
+
+// resolveProfileFFmpegBin picks the ffmpeg binary for the encode: the --ffmpeg-bin
+// override, then the one recorded in the profile's run metadata, then plain "ffmpeg".
+func resolveProfileFFmpegBin(override string, profile map[string]any) string {
+	if override != "" {
+		return override
+	}
+	if runMeta, ok := profile["run"].(map[string]any); ok {
+		if v, ok := runMeta["ffmpeg_bin"].(string); ok && v != "" {
+			return v
+		}
+	}
+	return "ffmpeg"
 }
 
 // resultWriter is where the subcommand's JSON result goes. It is a variable

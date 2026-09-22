@@ -8,8 +8,7 @@
 /*
  * Unit test: integer_vif vif_skip_scale0 option (CPU path).
  *
- * Gap closed: the audit at .workingdir/audit-test-coverage-2026-05-16.md §1
- * noted that GPU backends (CUDA, SYCL) do not expose vif_skip_scale0,
+ * Gap closed: GPU backends historically did not expose vif_skip_scale0,
  * meaning their output for the scale0 score diverges from the CPU path when
  * a model requests this option.  The Python golden tests
  * (feature_extractor_test.py) cover the CPU path via bindings but there is

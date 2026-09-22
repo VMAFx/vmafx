@@ -99,7 +99,7 @@
 namespace
 {
 
-static constexpr int CAMBI_SYCL_NUM_SCALES = 5;
+constexpr int CAMBI_SYCL_NUM_SCALES = 5;
 static constexpr int CAMBI_SYCL_MIN_WIDTH_HEIGHT = CAMBI_MIN_WIDTH_HEIGHT;
 static constexpr unsigned CAMBI_SYCL_MASK_FILTER_SIZE = 7U;
 static constexpr double CAMBI_SYCL_DEFAULT_MAX_VAL = 1000.0;
@@ -112,15 +112,20 @@ static constexpr int CAMBI_SYCL_DEFAULT_MAX_LOG_CONTRAST = 2;
  * use a `char[]` so the array decays to `char *` without a const cast.
  * Mirrors the CUDA twin `CAMBI_CUDA_DEFAULT_EOTF` which uses a `#define`
  * macro for the same reason. */
-static char CAMBI_SYCL_DEFAULT_EOTF[] = "bt1886";
+char CAMBI_SYCL_DEFAULT_EOTF[] = "bt1886";
 
 /* Work-group tile size. */
 static constexpr size_t WG_X = 16;
-static constexpr size_t WG_Y = 16;
+constexpr size_t WG_Y = 16;
+
+} // namespace
 
 /* ------------------------------------------------------------------ */
 /* State                                                               */
 /* ------------------------------------------------------------------ */
+namespace
+{
+
 struct CambiStateSycl {
     VmafSyclState *sycl_state;
 
@@ -178,9 +183,14 @@ struct CambiStateSycl {
     VmafDictionary *feature_name_dict;
 };
 
+} // namespace
+
 /* ------------------------------------------------------------------ */
 /* Helpers (mirrors integer_cambi_cuda.c's static helpers). */
 /* ------------------------------------------------------------------ */
+namespace
+{
+
 static uint16_t cambi_sycl_adjust_window(int window_size, unsigned w, unsigned h,
                                          bool cambi_high_res_speedup)
 {
@@ -196,6 +206,11 @@ static uint16_t cambi_sycl_adjust_window(int window_size, unsigned w, unsigned h
     return (uint16_t)adjusted;
 }
 
+} // namespace
+
+namespace
+{
+
 static uint16_t cambi_sycl_ceil_log2(uint32_t num)
 {
     if (num == 0u)
@@ -209,6 +224,11 @@ static uint16_t cambi_sycl_ceil_log2(uint32_t num)
     return shift;
 }
 
+} // namespace
+
+namespace
+{
+
 static uint16_t cambi_sycl_get_mask_index(unsigned w, unsigned h, unsigned filter_size)
 {
     uint32_t const shifted_wh = (w >> 6) * (h >> 6);
@@ -217,63 +237,76 @@ static uint16_t cambi_sycl_get_mask_index(unsigned w, unsigned h, unsigned filte
                       1u);
 }
 
+} // namespace
+
 /* ------------------------------------------------------------------ */
 /* SYCL kernel 1: Spatial mask                                         */
 /* Port of cambi_spatial_mask_kernel from cambi_score.cu.              */
 /* ------------------------------------------------------------------ */
-/* Returns the submit event so callers can chain depends_on without a q.wait(). */
-static sycl::event launch_spatial_mask(sycl::queue &q, const uint16_t *image, uint16_t *mask,
-                                       unsigned width, unsigned height, unsigned stride_words,
+namespace
+{
+
+static inline bool is_zero_derivative(const uint16_t *image, int x, int y, unsigned width,
+                                      unsigned height, unsigned stride)
+{
+    const uint16_t pixel = image[(size_t)(unsigned)y * stride + (unsigned)x];
+    const int right_x = x == (int)width - 1 ? x : x + 1;
+    const int below_y = y == (int)height - 1 ? y : y + 1;
+    const uint16_t right = image[(size_t)(unsigned)y * stride + (unsigned)right_x];
+    const uint16_t below = image[(size_t)(unsigned)below_y * stride + (unsigned)x];
+    return (x == (int)width - 1 || pixel == right) && (y == (int)height - 1 || pixel == below);
+}
+
+} // namespace
+
+namespace
+{
+
+static inline unsigned spatial_box_sum(const uint16_t *image, int x, int y, unsigned width,
+                                       unsigned height, unsigned stride)
+{
+    unsigned sum = 0u;
+    for (int delta_y = -3; delta_y <= 3; ++delta_y) {
+        const int row = y + delta_y;
+        if (row < 0 || std::cmp_greater_equal(row, height)) {
+            continue;
+        }
+        for (int delta_x = -3; delta_x <= 3; ++delta_x) {
+            const int column = x + delta_x;
+            if (column >= 0 && std::cmp_less(column, width)) {
+                sum += (unsigned)is_zero_derivative(image, column, row, width, height, stride);
+            }
+        }
+    }
+    return sum;
+}
+
+} // namespace
+
+namespace
+{
+
+static sycl::event launch_spatial_mask(sycl::queue &queue, const uint16_t *image, uint16_t *mask,
+                                       unsigned width, unsigned height, unsigned stride,
                                        unsigned mask_index)
 {
     const size_t global_x = ((size_t)width + WG_X - 1u) / WG_X * WG_X;
     const size_t global_y = ((size_t)height + WG_Y - 1u) / WG_Y * WG_Y;
-    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
-
-    const unsigned e_w = width;
-    const unsigned e_h = height;
-    const unsigned e_stride = stride_words;
-    const unsigned e_mask_index = mask_index;
-    const uint16_t *e_image = image;
-    uint16_t *e_mask = mask;
-
-    return q.submit([=](sycl::handler &h) {
-        h.parallel_for(ndr, [=](sycl::nd_item<2> it) {
-            const int x = (int)it.get_global_id(1);
-            const int y = (int)it.get_global_id(0);
-            if (std::cmp_greater_equal(x, e_w) || std::cmp_greater_equal(y, e_h))
-                return;
-
-            /* 7×7 box sum of zero_deriv field — mirrors the CUDA kernel
-             * strategy: each thread reads its own 7×7 window (49 global
-             * reads) independently. Bit-exact with cambi.c's SAT path. */
-            static constexpr int HALF = 3;
-            unsigned box_sum = 0u;
-            for (int dy = -HALF; dy <= HALF; dy++) {
-                const int ry = y + dy;
-                if (ry < 0 || std::cmp_greater_equal(ry, e_h))
-                    continue;
-                for (int dx = -HALF; dx <= HALF; dx++) {
-                    const int rx = x + dx;
-                    if (rx < 0 || std::cmp_greater_equal(rx, e_w))
-                        continue;
-                    const uint16_t p = e_image[(size_t)(unsigned)ry * e_stride + (unsigned)rx];
-                    const int rx_right = (rx == (int)e_w - 1) ? rx : rx + 1;
-                    const int ry_below = (ry == (int)e_h - 1) ? ry : ry + 1;
-                    const uint16_t r =
-                        e_image[(size_t)(unsigned)ry * e_stride + (unsigned)rx_right];
-                    const uint16_t b =
-                        e_image[(size_t)(unsigned)ry_below * e_stride + (unsigned)rx];
-                    const int eq_right = (rx == (int)e_w - 1) || (p == r);
-                    const int eq_below = (ry == (int)e_h - 1) || (p == b);
-                    box_sum += (unsigned)(eq_right && eq_below);
-                }
+    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
+    return queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
+            const int x = (int)item.get_global_id(1);
+            const int y = (int)item.get_global_id(0);
+            if (std::cmp_less(x, width) && std::cmp_less(y, height)) {
+                const unsigned sum = spatial_box_sum(image, x, y, width, height, stride);
+                mask[(size_t)(unsigned)y * stride + (unsigned)x] =
+                    (uint16_t)(sum > mask_index ? 1u : 0u);
             }
-            e_mask[(size_t)(unsigned)y * e_stride + (unsigned)x] =
-                (uint16_t)(box_sum > e_mask_index ? 1u : 0u);
         });
     });
 }
+
+} // namespace
 
 /* ------------------------------------------------------------------ */
 /* SYCL kernel 2: 2× decimate                                          */
@@ -281,9 +314,12 @@ static sycl::event launch_spatial_mask(sycl::queue &q, const uint16_t *image, ui
 /* ------------------------------------------------------------------ */
 /* Returns the submit event; dep is a prerequisite event (use a default-constructed
  * sycl::event{} when there is no explicit dependency). */
+namespace
+{
+
 static sycl::event launch_decimate(sycl::queue &q, const uint16_t *src, uint16_t *dst,
                                    unsigned out_w, unsigned out_h, unsigned src_stride_words,
-                                   unsigned dst_stride_words, sycl::event dep)
+                                   unsigned dst_stride_words, const sycl::event &dep)
 {
     const size_t global_x = ((size_t)out_w + WG_X - 1u) / WG_X * WG_X;
     const size_t global_y = ((size_t)out_h + WG_Y - 1u) / WG_Y * WG_Y;
@@ -304,10 +340,13 @@ static sycl::event launch_decimate(sycl::queue &q, const uint16_t *src, uint16_t
             if (x >= e_out_w || y >= e_out_h)
                 return;
             /* Strict stride-2 subsample — bit-exact with cambi.c::decimate. */
-            e_dst[(size_t)y * e_dst_stride + x] = e_src[(size_t)(y * 2u) * e_src_stride + x * 2u];
+            e_dst[(size_t)y * e_dst_stride + x] =
+                e_src[(size_t)y * 2u * e_src_stride + (size_t)x * 2u];
         });
     });
 }
+
+} // namespace
 
 /* ------------------------------------------------------------------ */
 /* SYCL kernel 3: Separable 3-tap mode filter                          */
@@ -315,439 +354,558 @@ static sycl::event launch_decimate(sycl::queue &q, const uint16_t *src, uint16_t
 /* axis=0 → horizontal, axis=1 → vertical.                             */
 /* ------------------------------------------------------------------ */
 /* Returns the submit event; dep is a prerequisite event. */
-static sycl::event launch_filter_mode(sycl::queue &q, const uint16_t *in, uint16_t *out,
-                                      unsigned width, unsigned height, unsigned stride_words,
-                                      int axis, sycl::event dep)
+namespace
+{
+
+static inline uint16_t mode3(uint16_t first, uint16_t second, uint16_t third)
+{
+    if (first == second || first == third) {
+        return first;
+    }
+    if (second == third) {
+        return second;
+    }
+    return first < second ? (first < third ? first : third) : (second < third ? second : third);
+}
+
+} // namespace
+
+namespace
+{
+
+static inline uint16_t filter_mode_pixel(const uint16_t *input, int x, int y, unsigned width,
+                                         unsigned height, unsigned stride, int axis)
+{
+    if (axis == 0) {
+        const int left = x > 0 ? x - 1 : 0;
+        const int right = x < (int)width - 1 ? x + 1 : (int)width - 1;
+        return mode3(input[(size_t)(unsigned)y * stride + (unsigned)left],
+                     input[(size_t)(unsigned)y * stride + (unsigned)x],
+                     input[(size_t)(unsigned)y * stride + (unsigned)right]);
+    }
+    const int above = y > 0 ? y - 1 : 0;
+    const int below = y < (int)height - 1 ? y + 1 : (int)height - 1;
+    return mode3(input[(size_t)(unsigned)above * stride + (unsigned)x],
+                 input[(size_t)(unsigned)y * stride + (unsigned)x],
+                 input[(size_t)(unsigned)below * stride + (unsigned)x]);
+}
+
+} // namespace
+
+namespace
+{
+
+static sycl::event launch_filter_mode(sycl::queue &queue, const uint16_t *input, uint16_t *output,
+                                      unsigned width, unsigned height, unsigned stride, int axis,
+                                      const sycl::event &dependency)
 {
     const size_t global_x = ((size_t)width + WG_X - 1u) / WG_X * WG_X;
     const size_t global_y = ((size_t)height + WG_Y - 1u) / WG_Y * WG_Y;
-    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
-
-    const unsigned e_w = width;
-    const unsigned e_h = height;
-    const unsigned e_stride = stride_words;
-    const int e_axis = axis;
-    const uint16_t *e_in = in;
-    uint16_t *e_out = out;
-
-    return q.submit([=](sycl::handler &h) {
-        h.depends_on(dep);
-        h.parallel_for(ndr, [=](sycl::nd_item<2> it) {
-            const int x = (int)it.get_global_id(1);
-            const int y = (int)it.get_global_id(0);
-            if (std::cmp_greater_equal(x, e_w) || std::cmp_greater_equal(y, e_h))
+    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
+    return queue.submit([=](sycl::handler &handler) {
+        handler.depends_on(dependency);
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
+            const int x = (int)item.get_global_id(1);
+            const int y = (int)item.get_global_id(0);
+            if (std::cmp_greater_equal(x, width) || std::cmp_greater_equal(y, height)) {
                 return;
-
-            /* Vertical pass mirrors cambi.c: row 0 and row height-1 are never
-             * overwritten by filter_mode; e_out already contains the pre-filter pixels. */
-            if (e_axis == 1 && (y == 0 || y >= (int)e_h - 1))
+            }
+            if (axis == 1 && (y == 0 || y >= (int)height - 1)) {
                 return;
-
-            uint16_t a;
-            uint16_t b;
-            uint16_t c;
-            if (e_axis == 0) {
-                /* Horizontal: neighbours in x. */
-                const int xl = (x > 0) ? x - 1 : 0;
-                const int xr = (x < (int)e_w - 1) ? x + 1 : (int)e_w - 1;
-                a = e_in[(size_t)(unsigned)y * e_stride + (unsigned)xl];
-                b = e_in[(size_t)(unsigned)y * e_stride + (unsigned)x];
-                c = e_in[(size_t)(unsigned)y * e_stride + (unsigned)xr];
-            } else {
-                /* Vertical: neighbours in y. */
-                const int yu = (y > 0) ? y - 1 : 0;
-                const int yd = (y < (int)e_h - 1) ? y + 1 : (int)e_h - 1;
-                a = e_in[(size_t)(unsigned)yu * e_stride + (unsigned)x];
-                b = e_in[(size_t)(unsigned)y * e_stride + (unsigned)x];
-                c = e_in[(size_t)(unsigned)yd * e_stride + (unsigned)x];
             }
-
-            /* mode3: two equal → that value; all distinct → min.
-             * Bit-exact with mode3_dev from cambi_score.cu. */
-            uint16_t result;
-            if (a == b || a == c) {
-                result = a;
-            } else if (b == c) {
-                result = b;
-            } else {
-                result = (a < b) ? ((a < c) ? a : c) : ((b < c) ? b : c);
-            }
-            e_out[(size_t)(unsigned)y * e_stride + (unsigned)x] = result;
+            output[(size_t)(unsigned)y * stride + (unsigned)x] =
+                filter_mode_pixel(input, x, y, width, height, stride, axis);
         });
     });
 }
 
-} /* anonymous namespace */
+} // namespace
 
 /* ------------------------------------------------------------------ */
 /* Options (mirrors integer_cambi_cuda.c). */
 /* ------------------------------------------------------------------ */
-extern "C" {
+namespace
+{
 
-static const VmafOption options_cambi_sycl[] = {
-    {
-        .name = "cambi_max_val",
-        .help = "maximum value allowed; larger values will be clipped",
-        .alias = "cmxv",
-        .offset = offsetof(CambiStateSycl, cambi_max_val),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_MAX_VAL,
-        .min = 0.0,
-        .max = 1000.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "enc_width",
-        .help = "Encoding width",
-        .alias = "encw",
-        .offset = offsetof(CambiStateSycl, enc_width),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 180,
-        .max = 7680,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "enc_height",
-        .help = "Encoding height",
-        .alias = "ench",
-        .offset = offsetof(CambiStateSycl, enc_height),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 150,
-        .max = 7680,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "enc_bitdepth",
-        .help = "Encoding bitdepth",
-        .alias = "encbd",
-        .offset = offsetof(CambiStateSycl, enc_bitdepth),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = 0,
-        .min = 6,
-        .max = 16,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "window_size",
-        .help = "Window size to compute CAMBI: 65 corresponds to ~1 degree at 4k",
-        .alias = "ws",
-        .offset = offsetof(CambiStateSycl, window_size),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = CAMBI_SYCL_DEFAULT_WINDOW_SIZE,
-        .min = 15,
-        .max = 127,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "topk",
-        .help = "Ratio of pixels for the spatial pooling computation",
-        .alias = nullptr,
-        .offset = offsetof(CambiStateSycl, topk),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_TOPK,
-        .min = 0.0001,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "cambi_topk",
-        .help = "Ratio of pixels for the spatial pooling computation",
-        .alias = "ctpk",
-        .offset = offsetof(CambiStateSycl, cambi_topk),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_TOPK,
-        .min = 0.0001,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "tvi_threshold",
-        .help = "Visibility threshold: delta-L < tvi_threshold * L_mean",
-        .alias = "tvit",
-        .offset = offsetof(CambiStateSycl, tvi_threshold),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_TVI,
-        .min = 0.0001,
-        .max = 1.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "cambi_vis_lum_threshold",
-        .help = "Luminance value below which banding is assumed invisible",
-        .alias = "vlt",
-        .offset = offsetof(CambiStateSycl, cambi_vis_lum_threshold),
-        .type = VMAF_OPT_TYPE_DOUBLE,
-        .default_val.d = CAMBI_SYCL_DEFAULT_VLT,
-        .min = 0.0,
-        .max = 300.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "max_log_contrast",
-        .help = "Maximum log contrast (0 to 5, default 2)",
-        .alias = "mlc",
-        .offset = offsetof(CambiStateSycl, max_log_contrast),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val.i = CAMBI_SYCL_DEFAULT_MAX_LOG_CONTRAST,
-        .min = 0,
-        .max = 5,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "eotf",
-        .help = "EOTF for visibility-threshold conversion (bt1886 / pq)",
-        .alias = nullptr,
-        .offset = offsetof(CambiStateSycl, eotf),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = CAMBI_SYCL_DEFAULT_EOTF,
-        .min = 0.0,
-        .max = 0.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "cambi_eotf",
-        .help = "EOTF override for cambi (defaults to eotf)",
-        .alias = "ceot",
-        .offset = offsetof(CambiStateSycl, cambi_eotf),
-        .type = VMAF_OPT_TYPE_STRING,
-        .default_val.s = CAMBI_SYCL_DEFAULT_EOTF,
-        .min = 0.0,
-        .max = 0.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {
-        .name = "cambi_high_res_speedup",
-        .help =
-            "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p",
-        .alias = "hrs",
-        .offset = offsetof(CambiStateSycl, cambi_high_res_speedup),
-        .type = VMAF_OPT_TYPE_INT,
-        .default_val = {.i = 0},
-        .min = 0,
-        .max = CAMBI_4K_HEIGHT,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-    },
-    {nullptr},
+constexpr VmafOption double_option(const char *name, const char *help, const char *alias,
+                                   int offset, double value, double minimum,
+                                   double maximum) noexcept
+{
+    return {.name = name,
+            .help = help,
+            .alias = alias,
+            .offset = offset,
+            .type = VMAF_OPT_TYPE_DOUBLE,
+            .default_val = {.d = value},
+            .min = minimum,
+            .max = maximum,
+            .flags = VMAF_OPT_FLAG_FEATURE_PARAM};
+}
+
+} // namespace
+
+namespace
+{
+
+constexpr VmafOption int_option(const char *name, const char *help, const char *alias, int offset,
+                                int value, int minimum, int maximum) noexcept
+{
+    return {.name = name,
+            .help = help,
+            .alias = alias,
+            .offset = offset,
+            .type = VMAF_OPT_TYPE_INT,
+            .default_val = {.i = value},
+            .min = (double)minimum,
+            .max = (double)maximum,
+            .flags = VMAF_OPT_FLAG_FEATURE_PARAM};
+}
+
+} // namespace
+
+namespace
+{
+
+constexpr VmafOption string_option(const char *name, const char *help, const char *alias,
+                                   int offset) noexcept
+{
+    return {.name = name,
+            .help = help,
+            .alias = alias,
+            .offset = offset,
+            .type = VMAF_OPT_TYPE_STRING,
+            .default_val = {.s = CAMBI_SYCL_DEFAULT_EOTF},
+            .flags = VMAF_OPT_FLAG_FEATURE_PARAM};
+}
+
+} // namespace
+
+static constexpr VmafOption options_cambi_sycl[] = {
+    double_option("cambi_max_val", "maximum value allowed; larger values will be clipped", "cmxv",
+                  offsetof(CambiStateSycl, cambi_max_val), CAMBI_SYCL_DEFAULT_MAX_VAL, 0.0, 1000.0),
+    int_option("enc_width", "Encoding width", "encw", offsetof(CambiStateSycl, enc_width), 0, 180,
+               7680),
+    int_option("enc_height", "Encoding height", "ench", offsetof(CambiStateSycl, enc_height), 0,
+               150, 7680),
+    int_option("enc_bitdepth", "Encoding bitdepth", "encbd", offsetof(CambiStateSycl, enc_bitdepth),
+               0, 6, 16),
+    int_option("window_size", "Window size to compute CAMBI: 65 corresponds to ~1 degree at 4k",
+               "ws", offsetof(CambiStateSycl, window_size), CAMBI_SYCL_DEFAULT_WINDOW_SIZE, 15,
+               127),
+    double_option("topk", "Ratio of pixels for the spatial pooling computation", nullptr,
+                  offsetof(CambiStateSycl, topk), CAMBI_SYCL_DEFAULT_TOPK, 0.0001, 1.0),
+    double_option("cambi_topk", "Ratio of pixels for the spatial pooling computation", "ctpk",
+                  offsetof(CambiStateSycl, cambi_topk), CAMBI_SYCL_DEFAULT_TOPK, 0.0001, 1.0),
+    double_option("tvi_threshold", "Visibility threshold: delta-L < tvi_threshold * L_mean", "tvit",
+                  offsetof(CambiStateSycl, tvi_threshold), CAMBI_SYCL_DEFAULT_TVI, 0.0001, 1.0),
+    double_option("cambi_vis_lum_threshold",
+                  "Luminance value below which banding is assumed invisible", "vlt",
+                  offsetof(CambiStateSycl, cambi_vis_lum_threshold), CAMBI_SYCL_DEFAULT_VLT, 0.0,
+                  300.0),
+    int_option("max_log_contrast", "Maximum log contrast (0 to 5, default 2)", "mlc",
+               offsetof(CambiStateSycl, max_log_contrast), CAMBI_SYCL_DEFAULT_MAX_LOG_CONTRAST, 0,
+               5),
+    string_option("eotf", "EOTF for visibility-threshold conversion (bt1886 / pq)", nullptr,
+                  offsetof(CambiStateSycl, eotf)),
+    string_option("cambi_eotf", "EOTF override for cambi (defaults to eotf)", "ceot",
+                  offsetof(CambiStateSycl, cambi_eotf)),
+    int_option("cambi_high_res_speedup",
+               "Speed up the processing by downsampling post spatial mask for resolutions >= 1080p",
+               "hrs", offsetof(CambiStateSycl, cambi_high_res_speedup), 0, 0, CAMBI_4K_HEIGHT),
+    {.name = nullptr},
 };
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
-// entry points use C-style `static` rather than an anonymous namespace because
-// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
-// the bottom of this file, which the C ABI consumes through the
-// function-pointer types in `feature_extractor.h`. A namespace cannot appear
-// inside this linkage specification at all. Same band, same reason, as
-// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
-// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
-/* ------------------------------------------------------------------ */
-/* init_fex_sycl                                                        */
-/* ------------------------------------------------------------------ */
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+namespace
 {
-    (void)pix_fmt;
-    auto *s = static_cast<CambiStateSycl *>(fex->priv);
 
-    if (!fex->sycl_state) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: no SYCL state\n");
-        return -EINVAL;
+static bool speedup_is_valid(int requested, int pixels)
+{
+    if (requested == 1080) {
+        return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p;
     }
-    s->sycl_state = fex->sycl_state;
+    if (requested == 1440) {
+        return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p;
+    }
+    if (requested == 2160) {
+        return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p;
+    }
+    return false;
+}
 
-    /* Option dictionary serialization timing (ADR-1154):
-     * Must be called BEFORE internal dimension defaults (enc_width, enc_height)
-     * are assigned to options marked with VMAF_OPT_FLAG_FEATURE_PARAM. */
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        return -ENOMEM;
+} // namespace
 
-    /* Resolve enc geometry (mirrors cambi.c / integer_cambi_cuda.c). */
-    if (s->enc_bitdepth == 0)
+namespace
+{
+
+static int configure_cambi(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height)
+{
+    if (s->enc_bitdepth == 0) {
         s->enc_bitdepth = (int)bpc;
-    if (s->enc_width == 0 || s->enc_height == 0) {
-        s->enc_width = (int)w;
-        s->enc_height = (int)h;
     }
-    if ((unsigned)s->enc_height > h || (unsigned)s->enc_width > w) {
-        s->enc_width = (int)w;
-        s->enc_height = (int)h;
+    if (s->enc_width == 0 || s->enc_height == 0 || std::cmp_greater(s->enc_height, height) ||
+        std::cmp_greater(s->enc_width, width)) {
+        s->enc_width = (int)width;
+        s->enc_height = (int)height;
     }
-    if (!cambi_validate_dimensions(static_cast<unsigned>(s->enc_width),
-                                   static_cast<unsigned>(s->enc_height))) {
+    if (!cambi_validate_dimensions((unsigned)s->enc_width, (unsigned)s->enc_height)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: encoded resolution %dx%d below minimum %d\n",
                  s->enc_width, s->enc_height, CAMBI_MIN_WIDTH_HEIGHT);
         return -EINVAL;
     }
-
-    const int enc_pix = s->enc_width * s->enc_height;
-    switch (s->cambi_high_res_speedup) {
-    case 1080:
-        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p)
-            s->cambi_high_res_speedup = 0;
-        break;
-    case 1440:
-        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p)
-            s->cambi_high_res_speedup = 0;
-        break;
-    case 2160:
-        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p)
-            s->cambi_high_res_speedup = 0;
-        break;
-    default:
+    if (!speedup_is_valid(s->cambi_high_res_speedup, s->enc_width * s->enc_height)) {
         s->cambi_high_res_speedup = 0;
-        break;
     }
-
-    s->src_width = w;
-    s->src_height = h;
+    s->src_width = width;
+    s->src_height = height;
     s->src_bpc = bpc;
     s->proc_width = (unsigned)s->enc_width;
     s->proc_height = (unsigned)s->enc_height;
     s->adjusted_window = cambi_sycl_adjust_window(s->window_size, s->proc_width, s->proc_height,
                                                   (bool)s->cambi_high_res_speedup);
-
-    const size_t buf_elements = (size_t)s->proc_width * s->proc_height;
-    const size_t buf_bytes = buf_elements * sizeof(uint16_t);
-
-    /* USM device buffers. */
-    s->d_image = static_cast<uint16_t *>(vmaf_sycl_malloc_device(s->sycl_state, buf_bytes));
-    s->d_mask = static_cast<uint16_t *>(vmaf_sycl_malloc_device(s->sycl_state, buf_bytes));
-    s->d_tmp = static_cast<uint16_t *>(vmaf_sycl_malloc_device(s->sycl_state, buf_bytes));
-    /* USM host staging for D2H. */
-    s->h_image = static_cast<uint16_t *>(vmaf_sycl_malloc_host(s->sycl_state, buf_bytes));
-    s->h_mask = static_cast<uint16_t *>(vmaf_sycl_malloc_host(s->sycl_state, buf_bytes));
-
-    if (!s->d_image || !s->d_mask || !s->d_tmp || !s->h_image || !s->h_mask) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: USM allocation failed\n");
-        return -ENOMEM;
-    }
-
-    /* Host VmafPictures for the CPU residual. */
-    int err =
-        vmaf_picture_alloc(&s->pics[0], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
-    if (err)
-        goto free_ref;
-    err = vmaf_picture_alloc(&s->pics[1], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
-    if (err)
-        goto free_ref;
-
-    /* Host scratch buffers (mirrors integer_cambi_cuda.c::init). */
-    {
-        const int num_diffs = 1 << s->max_log_contrast;
-        s->buffers.diffs_to_consider =
-            static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)num_diffs));
-        s->buffers.diff_weights = static_cast<int *>(malloc(sizeof(int) * (size_t)num_diffs));
-        s->buffers.all_diffs =
-            static_cast<int *>(malloc(sizeof(int) * (size_t)(2 * num_diffs + 1)));
-        if (!s->buffers.diffs_to_consider || !s->buffers.diff_weights || !s->buffers.all_diffs) {
-            err = -ENOMEM;
-            goto free_ref;
-        }
-
-        static const int contrast_weights[32] = {1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8,
-                                                 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
-        for (int d = 0; d < num_diffs; d++) {
-            s->buffers.diffs_to_consider[d] = (uint16_t)(d + 1);
-            s->buffers.diff_weights[d] = contrast_weights[d];
-        }
-        for (int d = -num_diffs; d <= num_diffs; d++)
-            s->buffers.all_diffs[d + num_diffs] = d;
-
-        s->buffers.tvi_for_diff =
-            static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)num_diffs));
-        if (!s->buffers.tvi_for_diff) {
-            err = -ENOMEM;
-            goto free_ref;
-        }
-
-        err = vmaf_cambi_init_tvi_and_vlt(num_diffs, s->buffers.diffs_to_consider, s->tvi_threshold,
-                                          s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
-                                          s->buffers.tvi_for_diff, &s->vlt_luma,
-                                          &s->buffers.v_band_base, &s->buffers.v_band_size);
-        if (err)
-            goto free_ref;
-
-        s->buffers.c_values =
-            static_cast<float *>(malloc(sizeof(float) * s->proc_width * s->proc_height));
-        if (!s->buffers.c_values) {
-            err = -ENOMEM;
-            goto free_ref;
-        }
-
-        const uint16_t num_bins =
-            (uint16_t)(1024u +
-                       (unsigned)(s->buffers.all_diffs[2 * num_diffs] - s->buffers.all_diffs[0]));
-        const size_t hist_bins =
-            s->buffers.v_band_size > num_bins ? (size_t)s->buffers.v_band_size : (size_t)num_bins;
-        s->buffers.c_values_histograms =
-            static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)s->proc_width * hist_bins));
-        if (!s->buffers.c_values_histograms) {
-            err = -ENOMEM;
-            goto free_ref;
-        }
-
-        const int pad_size = (int)(CAMBI_SYCL_MASK_FILTER_SIZE / 2u);
-        const int dp_width = (int)s->proc_width + 2 * pad_size + 1;
-        const int dp_height = 2 * pad_size + 2;
-        s->buffers.mask_dp = static_cast<uint32_t *>(
-            malloc(sizeof(uint32_t) * (size_t)dp_width * (size_t)dp_height));
-        if (!s->buffers.mask_dp) {
-            err = -ENOMEM;
-            goto free_ref;
-        }
-
-        s->buffers.filter_mode_buffer =
-            static_cast<uint16_t *>(malloc(sizeof(uint16_t) * 3u * s->proc_width));
-        s->buffers.derivative_buffer =
-            static_cast<uint16_t *>(malloc(sizeof(uint16_t) * s->proc_width));
-        if (!s->buffers.filter_mode_buffer || !s->buffers.derivative_buffer) {
-            err = -ENOMEM;
-            goto free_ref;
-        }
-    }
-
-    vmaf_cambi_default_callbacks(&s->inc_range_callback, &s->dec_range_callback,
-                                 &s->derivative_callback);
-
-    s->has_pending = false;
     return 0;
-
-free_ref:
-    (void)vmaf_picture_unref(&s->pics[0]);
-    (void)vmaf_picture_unref(&s->pics[1]);
-    if (s->d_image)
-        vmaf_sycl_free(s->sycl_state, s->d_image);
-    if (s->d_mask)
-        vmaf_sycl_free(s->sycl_state, s->d_mask);
-    if (s->d_tmp)
-        vmaf_sycl_free(s->sycl_state, s->d_tmp);
-    if (s->h_image)
-        vmaf_sycl_free(s->sycl_state, s->h_image);
-    if (s->h_mask)
-        vmaf_sycl_free(s->sycl_state, s->h_mask);
-    free(s->buffers.diffs_to_consider);
-    free(s->buffers.diff_weights);
-    free(s->buffers.all_diffs);
-    free(s->buffers.tvi_for_diff);
-    free(s->buffers.c_values);
-    free(s->buffers.c_values_histograms);
-    free(s->buffers.mask_dp);
-    free(s->buffers.filter_mode_buffer);
-    free(s->buffers.derivative_buffer);
-    if (s->feature_name_dict)
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
-    return (err != 0) ? err : -ENOMEM;
 }
 
-/* ------------------------------------------------------------------ */
-/* submit_fex_sycl                                                      */
-/*                                                                      */
-/* Synchronous per-scale loop (matches CUDA v1 posture). GPU work and  */
-/* CPU residual both run in submit(); collect() only emits the score.   */
-/* ------------------------------------------------------------------ */
+} // namespace
+
+namespace
+{
+
+template <typename T> static void release_sycl_buffer(VmafSyclState *state, T *&pointer)
+{
+    if (pointer) {
+        vmaf_sycl_free(state, pointer);
+        pointer = nullptr;
+    }
+}
+
+template <typename T> static void release_host_buffer(T *&pointer)
+{
+    free(pointer);
+    pointer = nullptr;
+}
+
+} // namespace
+
+namespace
+{
+
+static void release_cambi_resources(CambiStateSycl *s)
+{
+    if (s->sycl_state) {
+        release_sycl_buffer(s->sycl_state, s->d_image);
+        release_sycl_buffer(s->sycl_state, s->d_mask);
+        release_sycl_buffer(s->sycl_state, s->d_tmp);
+        release_sycl_buffer(s->sycl_state, s->h_image);
+        release_sycl_buffer(s->sycl_state, s->h_mask);
+    }
+    (void)vmaf_picture_unref(&s->pics[0]);
+    (void)vmaf_picture_unref(&s->pics[1]);
+    release_host_buffer(s->buffers.diffs_to_consider);
+    release_host_buffer(s->buffers.diff_weights);
+    release_host_buffer(s->buffers.all_diffs);
+    release_host_buffer(s->buffers.tvi_for_diff);
+    release_host_buffer(s->buffers.c_values);
+    release_host_buffer(s->buffers.c_values_histograms);
+    release_host_buffer(s->buffers.mask_dp);
+    release_host_buffer(s->buffers.filter_mode_buffer);
+    release_host_buffer(s->buffers.derivative_buffer);
+    if (s->feature_name_dict) {
+        (void)vmaf_dictionary_free(&s->feature_name_dict);
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static int allocate_cambi_core(CambiStateSycl *s)
+{
+    const size_t bytes = (size_t)s->proc_width * s->proc_height * sizeof(uint16_t);
+    s->d_image = static_cast<uint16_t *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
+    s->d_mask = static_cast<uint16_t *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
+    s->d_tmp = static_cast<uint16_t *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
+    s->h_image = static_cast<uint16_t *>(vmaf_sycl_malloc_host(s->sycl_state, bytes));
+    s->h_mask = static_cast<uint16_t *>(vmaf_sycl_malloc_host(s->sycl_state, bytes));
+    if (!s->d_image || !s->d_mask || !s->d_tmp || !s->h_image || !s->h_mask) {
+        return -ENOMEM;
+    }
+    int error =
+        vmaf_picture_alloc(&s->pics[0], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
+    if (!error) {
+        error = vmaf_picture_alloc(&s->pics[1], VMAF_PIX_FMT_YUV400P, 10, s->proc_width,
+                                   s->proc_height);
+    }
+    return error;
+}
+
+} // namespace
+
+namespace
+{
+
+static int allocate_cambi_differences(CambiStateSycl *s, int differences)
+{
+    static const int weights[32] = {1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8,
+                                    8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
+    s->buffers.diffs_to_consider =
+        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)differences));
+    s->buffers.diff_weights = static_cast<int *>(malloc(sizeof(int) * (size_t)differences));
+    s->buffers.all_diffs = static_cast<int *>(malloc(sizeof(int) * (size_t)(2 * differences + 1)));
+    if (!s->buffers.diffs_to_consider || !s->buffers.diff_weights || !s->buffers.all_diffs) {
+        return -ENOMEM;
+    }
+    for (int difference = 0; difference < differences; ++difference) {
+        s->buffers.diffs_to_consider[difference] = (uint16_t)(difference + 1);
+        s->buffers.diff_weights[difference] = weights[difference];
+    }
+    for (int difference = -differences; difference <= differences; ++difference) {
+        s->buffers.all_diffs[difference + differences] = difference;
+    }
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
+
+static int allocate_cambi_thresholds(CambiStateSycl *s, int differences)
+{
+    s->buffers.tvi_for_diff =
+        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)differences));
+    if (!s->buffers.tvi_for_diff) {
+        return -ENOMEM;
+    }
+    return vmaf_cambi_init_tvi_and_vlt(differences, s->buffers.diffs_to_consider, s->tvi_threshold,
+                                       s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
+                                       s->buffers.tvi_for_diff, &s->vlt_luma,
+                                       &s->buffers.v_band_base, &s->buffers.v_band_size);
+}
+
+} // namespace
+
+namespace
+{
+
+static int allocate_cambi_analysis(CambiStateSycl *s, int differences)
+{
+    const size_t final_difference = (size_t)differences * 2u;
+    const uint16_t bins = (uint16_t)(1024u + (unsigned)(s->buffers.all_diffs[final_difference] -
+                                                        s->buffers.all_diffs[0]));
+    const size_t histogram_bins =
+        s->buffers.v_band_size > bins ? (size_t)s->buffers.v_band_size : (size_t)bins;
+    const int padding = (int)(CAMBI_SYCL_MASK_FILTER_SIZE / 2u);
+    const int dp_width = (int)s->proc_width + 2 * padding + 1;
+    const int dp_height = 2 * padding + 2;
+    s->buffers.c_values =
+        static_cast<float *>(malloc(sizeof(float) * s->proc_width * s->proc_height));
+    s->buffers.c_values_histograms =
+        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)s->proc_width * histogram_bins));
+    s->buffers.mask_dp =
+        static_cast<uint32_t *>(malloc(sizeof(uint32_t) * (size_t)dp_width * (size_t)dp_height));
+    s->buffers.filter_mode_buffer =
+        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * 3u * s->proc_width));
+    s->buffers.derivative_buffer =
+        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * s->proc_width));
+    return s->buffers.c_values && s->buffers.c_values_histograms && s->buffers.mask_dp &&
+                   s->buffers.filter_mode_buffer && s->buffers.derivative_buffer ?
+               0 :
+               -ENOMEM;
+}
+
+} // namespace
+
+namespace
+{
+
+static int allocate_cambi_scratch(CambiStateSycl *s)
+{
+    const int differences = 1 << s->max_log_contrast;
+    int error = allocate_cambi_differences(s, differences);
+    if (!error) {
+        error = allocate_cambi_thresholds(s, differences);
+    }
+    if (!error) {
+        error = allocate_cambi_analysis(s, differences);
+    }
+    return error;
+}
+
+} // namespace
+
+namespace
+{
+
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned width, unsigned height)
+{
+    (void)pix_fmt;
+    auto *s = static_cast<CambiStateSycl *>(fex->priv);
+    if (!fex->sycl_state) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: no SYCL state\n");
+        return -EINVAL;
+    }
+    s->sycl_state = fex->sycl_state;
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    int error = s->feature_name_dict ? configure_cambi(s, bpc, width, height) : -ENOMEM;
+    if (!error) {
+        error = allocate_cambi_core(s);
+    }
+    if (!error) {
+        error = allocate_cambi_scratch(s);
+    }
+    if (error) {
+        release_cambi_resources(s);
+        return error;
+    }
+    vmaf_cambi_default_callbacks(&s->inc_range_callback, &s->dec_range_callback,
+                                 &s->derivative_callback);
+    s->has_pending = false;
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
+
+struct CambiScaleState {
+    uint16_t *image = nullptr;
+    uint16_t *mask = nullptr;
+    uint16_t *scratch = nullptr;
+    unsigned width = 0;
+    unsigned height = 0;
+    sycl::event previous{};
+};
+
+template <typename Picture>
+static int upload_cambi_image(CambiStateSycl *s, sycl::queue &queue, Picture *distorted)
+{
+    const int error = vmaf_cambi_preprocessing(distorted, &s->pics[0], (int)s->proc_width,
+                                               (int)s->proc_height, s->enc_bitdepth);
+    if (error) {
+        return error;
+    }
+    const auto *source = static_cast<const uint8_t *>(s->pics[0].data[0]);
+    const size_t row_bytes = (size_t)s->proc_width * sizeof(uint16_t);
+    for (unsigned row = 0; row < s->proc_height; ++row) {
+        queue.memcpy(s->d_image + (size_t)row * s->proc_width,
+                     source + (size_t)row * (size_t)s->pics[0].stride[0], row_bytes);
+    }
+    queue.wait();
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
+
+static void decimate_cambi_scale(sycl::queue &queue, CambiScaleState &state)
+{
+    const unsigned new_width = (state.width + 1u) >> 1;
+    const unsigned new_height = (state.height + 1u) >> 1;
+    const sycl::event image_event =
+        launch_decimate(queue, state.image, state.scratch, new_width, new_height, state.width,
+                        new_width, state.previous);
+    std::swap(state.image, state.scratch);
+    const sycl::event mask_event =
+        launch_decimate(queue, state.mask, state.scratch, new_width, new_height, state.width,
+                        new_width, state.previous);
+    std::swap(state.mask, state.scratch);
+    state.width = new_width;
+    state.height = new_height;
+    state.previous = queue.submit([&](sycl::handler &handler) {
+        handler.depends_on({image_event, mask_event});
+        handler.single_task([=]() {});
+    });
+}
+
+} // namespace
+
+namespace
+{
+
+static void filter_cambi_scale(sycl::queue &queue, CambiScaleState &state)
+{
+    const sycl::event horizontal =
+        launch_filter_mode(queue, state.image, state.scratch, state.width, state.height,
+                           state.width, 0, state.previous);
+    state.previous = launch_filter_mode(queue, state.scratch, state.image, state.width,
+                                        state.height, state.width, 1, horizontal);
+}
+
+} // namespace
+
+namespace
+{
+
+static void copy_cambi_plane(VmafPicture *picture, const uint16_t *source, unsigned width,
+                             unsigned height)
+{
+    auto *destination = static_cast<uint8_t *>(picture->data[0]);
+    const size_t row_bytes = (size_t)width * sizeof(uint16_t);
+    for (unsigned row = 0; row < height; ++row) {
+        (void)memcpy(destination + (size_t)row * (size_t)picture->stride[0],
+                     source + (size_t)row * width, row_bytes);
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static void download_cambi_scale(CambiStateSycl *s, sycl::queue &queue, CambiScaleState &state)
+{
+    state.previous.wait();
+    const size_t bytes = (size_t)state.width * state.height * sizeof(uint16_t);
+    queue.memcpy(s->h_image, state.image, bytes);
+    queue.memcpy(s->h_mask, state.mask, bytes);
+    queue.wait();
+    copy_cambi_plane(&s->pics[0], s->h_image, state.width, state.height);
+    copy_cambi_plane(&s->pics[1], s->h_mask, state.width, state.height);
+}
+
+} // namespace
+
+namespace
+{
+
+static double score_cambi_scale(CambiStateSycl *s, unsigned width, unsigned height, int differences,
+                                double topk)
+{
+    vmaf_cambi_calculate_c_values(&s->pics[0], &s->pics[1], s->buffers.c_values,
+                                  s->buffers.c_values_histograms, s->adjusted_window,
+                                  (uint16_t)differences, s->buffers.tvi_for_diff, s->vlt_luma,
+                                  s->buffers.diff_weights, s->buffers.all_diffs, (int)width,
+                                  (int)height, s->inc_range_callback, s->dec_range_callback);
+    return vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, width, height);
+}
+
+} // namespace
+
+namespace
+{
+
+static double process_cambi_scale(CambiStateSycl *s, sycl::queue &queue, CambiScaleState &state,
+                                  int scale, int differences, double topk)
+{
+    if (scale > 0 || s->cambi_high_res_speedup) {
+        decimate_cambi_scale(queue, state);
+    }
+    filter_cambi_scale(queue, state);
+    download_cambi_scale(s, queue, state);
+    return score_cambi_scale(s, state.width, state.height, differences, topk);
+}
+
+} // namespace
+
+namespace
+{
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -755,159 +913,51 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     (void)ref_pic_90;
     (void)dist_pic_90;
     auto *s = static_cast<CambiStateSycl *>(fex->priv);
-    auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr) {
+    auto *queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    if (!queue) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: null queue pointer\n");
         return -EINVAL;
     }
-    sycl::queue &q = *qptr;
-
-    /* Step 1: host preprocessing → pics[0] (10-bit luma, proc_w × proc_h). */
-    int const err = vmaf_cambi_preprocessing(dist_pic, &s->pics[0], (int)s->proc_width,
-                                             (int)s->proc_height, s->enc_bitdepth);
-    if (err)
-        return err;
-
-    /* Step 2: H2D upload pics[0].data[0] → d_image (stride-aware).
-     * q.wait() after the row-loop drains all H2D transfers before the first
-     * GPU kernel.  The subsequent GPU-to-GPU steps use event chains and do
-     * not require a queue drain (SY-1 fix). */
-    {
-        const ptrdiff_t src_stride_bytes = s->pics[0].stride[0];
-        const uint8_t *src = static_cast<const uint8_t *>(s->pics[0].data[0]);
-        const size_t row_bytes = s->proc_width * sizeof(uint16_t);
-        for (unsigned row = 0; row < s->proc_height; row++) {
-            const uint8_t *src_row = src + (size_t)row * (size_t)src_stride_bytes;
-            uint16_t *dst_row = s->d_image + (size_t)row * s->proc_width;
-            q.memcpy(dst_row, src_row, row_bytes);
-        }
-        q.wait(); /* drain H2D before first GPU kernel */
+    const int upload_error = upload_cambi_image(s, *queue, dist_pic);
+    if (upload_error) {
+        return upload_error;
     }
-
-    /* Step 3: GPU spatial mask at full scale.
-     * Capture the event so the per-scale loop can depend_on it without an
-     * intermediate q.wait() (SY-1 fix). */
-    sycl::event ev_prev;
-    {
-        const unsigned mask_index = (unsigned)cambi_sycl_get_mask_index(
-            s->proc_width, s->proc_height, CAMBI_SYCL_MASK_FILTER_SIZE);
-        ev_prev = launch_spatial_mask(q, s->d_image, s->d_mask, s->proc_width, s->proc_height,
-                                      s->proc_width, mask_index);
-        /* No q.wait() here — the event is threaded into the scale loop. */
+    const unsigned mask_index = (unsigned)cambi_sycl_get_mask_index(s->proc_width, s->proc_height,
+                                                                    CAMBI_SYCL_MASK_FILTER_SIZE);
+    CambiScaleState state = {
+        .image = s->d_image,
+        .mask = s->d_mask,
+        .scratch = s->d_tmp,
+        .width = s->proc_width,
+        .height = s->proc_height,
+        .previous = launch_spatial_mask(*queue, s->d_image, s->d_mask, s->proc_width,
+                                        s->proc_height, s->proc_width, mask_index),
+    };
+    const int differences = 1 << s->max_log_contrast;
+    const double topk = s->topk != CAMBI_SYCL_DEFAULT_TOPK ? s->topk : s->cambi_topk;
+    double scores[CAMBI_SYCL_NUM_SCALES]{};
+    for (int scale = 0; scale < CAMBI_SYCL_NUM_SCALES; ++scale) {
+        scores[scale] = process_cambi_scale(s, *queue, state, scale, differences, topk);
     }
-
-    /* Step 4: per-scale loop. */
-    unsigned scaled_w = s->proc_width;
-    unsigned scaled_h = s->proc_height;
-    const int num_diffs = 1 << s->max_log_contrast;
-    double scores_per_scale[CAMBI_SYCL_NUM_SCALES] = {0.0, 0.0, 0.0, 0.0, 0.0};
-    const double topk = (s->topk != CAMBI_SYCL_DEFAULT_TOPK) ? s->topk : s->cambi_topk;
-
-    /* d_image / d_mask pointers are swapped each scale; track via locals. */
-    uint16_t *cur_image = s->d_image;
-    uint16_t *cur_mask = s->d_mask;
-    uint16_t *cur_tmp = s->d_tmp;
-
-    for (int scale = 0; scale < CAMBI_SYCL_NUM_SCALES; scale++) {
-        if (scale > 0 || s->cambi_high_res_speedup) {
-            /* GPU decimate cur_image → cur_tmp.  Depends on prior event
-             * (spatial_mask or previous scale's filter_mode V). */
-            const unsigned new_w = (scaled_w + 1u) >> 1;
-            const unsigned new_h = (scaled_h + 1u) >> 1;
-            sycl::event ev_dec_img =
-                launch_decimate(q, cur_image, cur_tmp, new_w, new_h, scaled_w, new_w, ev_prev);
-            {
-                uint16_t *t = cur_image;
-                cur_image = cur_tmp;
-                cur_tmp = t;
-            }
-            /* GPU decimate cur_mask → cur_tmp.  Can run concurrently with
-             * ev_dec_img on independent buffers; share the same predecessor. */
-            sycl::event ev_dec_mask =
-                launch_decimate(q, cur_mask, cur_tmp, new_w, new_h, scaled_w, new_w, ev_prev);
-            {
-                uint16_t *t = cur_mask;
-                cur_mask = cur_tmp;
-                cur_tmp = t;
-            }
-            scaled_w = new_w;
-            scaled_h = new_h;
-            /* filter_mode H must wait for both decimations; combine via
-             * a no-op barrier submitted with both events as deps. */
-            ev_prev = q.submit([&](sycl::handler &h) {
-                h.depends_on({ev_dec_img, ev_dec_mask});
-                h.single_task([=]() {});
-            });
-        }
-
-        /* GPU filter_mode H: cur_image → cur_tmp.  Depends on ev_prev
-         * (spatial_mask for scale 0; combined decimate fence for scale > 0). */
-        sycl::event const ev_filt_h =
-            launch_filter_mode(q, cur_image, cur_tmp, scaled_w, scaled_h, scaled_w, 0, ev_prev);
-        /* GPU filter_mode V: cur_tmp → cur_image.  Depends on H. */
-        ev_prev =
-            launch_filter_mode(q, cur_tmp, cur_image, scaled_w, scaled_h, scaled_w, 1, ev_filt_h);
-        /* ev_prev holds the filter_mode V event.  Wait for it specifically
-         * before issuing D2H copies so the copies read fully-written device
-         * data.  Using ev_prev.wait() instead of q.wait() avoids draining
-         * unrelated in-flight work (SY-1 fix). */
-        ev_prev.wait();
-
-        /* D2H: cur_image → h_image, cur_mask → h_mask.
-         *
-         * One copy each, not one per row: both sides are packed at
-         * `scaled_w` and the loop walked them contiguously, so the region is
-         * a single run of bytes. Per-row enqueues cost `scaled_h` submissions
-         * per scale per frame for a copy the runtime does in one. */
-        {
-            const size_t plane_bytes = (size_t)scaled_w * (size_t)scaled_h * sizeof(uint16_t);
-            q.memcpy(s->h_image, cur_image, plane_bytes);
-            q.memcpy(s->h_mask, cur_mask, plane_bytes);
-            q.wait(); /* drain the D2H copies before the CPU residual */
-        }
-
-        /* Copy h_image / h_mask → pics[0] / pics[1] (stride-aware). */
-        {
-            const ptrdiff_t pic_stride_bytes = s->pics[0].stride[0];
-            uint8_t *dst0 = static_cast<uint8_t *>(s->pics[0].data[0]);
-            uint8_t *dst1 = static_cast<uint8_t *>(s->pics[1].data[0]);
-            const size_t row_bytes = scaled_w * sizeof(uint16_t);
-            for (unsigned row = 0; row < scaled_h; row++) {
-                (void)memcpy(dst0 + (size_t)row * (size_t)pic_stride_bytes,
-                             s->h_image + (size_t)row * scaled_w, row_bytes);
-                (void)memcpy(dst1 + (size_t)row * (size_t)pic_stride_bytes,
-                             s->h_mask + (size_t)row * scaled_w, row_bytes);
-            }
-        }
-
-        /* CPU residual: calculate_c_values + spatial pooling. */
-        vmaf_cambi_calculate_c_values(&s->pics[0], &s->pics[1], s->buffers.c_values,
-                                      s->buffers.c_values_histograms, s->adjusted_window,
-                                      (uint16_t)num_diffs, s->buffers.tvi_for_diff, s->vlt_luma,
-                                      s->buffers.diff_weights, s->buffers.all_diffs, (int)scaled_w,
-                                      (int)scaled_h, s->inc_range_callback, s->dec_range_callback);
-
-        scores_per_scale[scale] =
-            vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, scaled_w, scaled_h);
+    const uint16_t pixels = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
+    const double raw_score = vmaf_cambi_weight_scores_per_scale(scores, pixels);
+    s->score = raw_score > s->cambi_max_val ? s->cambi_max_val : raw_score;
+    if (s->score < 0.0) {
+        s->score = 0.0;
     }
-
-    /* Final score. */
-    const uint16_t pixels_in_window = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
-    double score = vmaf_cambi_weight_scores_per_scale(scores_per_scale, pixels_in_window);
-    if (score > s->cambi_max_val)
-        score = s->cambi_max_val;
-    if (score < 0.0)
-        score = 0.0;
-
-    s->score = score;
     s->pending_index = index;
     s->has_pending = true;
     return 0;
 }
 
+} // namespace
+
 /* ------------------------------------------------------------------ */
 /* collect_fex_sycl — emit the pre-computed score. */
 /* ------------------------------------------------------------------ */
+namespace
+{
+
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
@@ -916,41 +966,24 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                                                    "Cambi_feature_cambi_score", s->score, index);
 }
 
+} // namespace
+
 /* ------------------------------------------------------------------ */
 /* close_fex_sycl */
 /* ------------------------------------------------------------------ */
+namespace
+{
+
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<CambiStateSycl *>(fex->priv);
-    if (s->sycl_state) {
-        if (s->d_image)
-            vmaf_sycl_free(s->sycl_state, s->d_image);
-        if (s->d_mask)
-            vmaf_sycl_free(s->sycl_state, s->d_mask);
-        if (s->d_tmp)
-            vmaf_sycl_free(s->sycl_state, s->d_tmp);
-        if (s->h_image)
-            vmaf_sycl_free(s->sycl_state, s->h_image);
-        if (s->h_mask)
-            vmaf_sycl_free(s->sycl_state, s->h_mask);
-    }
-    (void)vmaf_picture_unref(&s->pics[0]);
-    (void)vmaf_picture_unref(&s->pics[1]);
-    free(s->buffers.c_values);
-    free(s->buffers.c_values_histograms);
-    free(s->buffers.mask_dp);
-    free(s->buffers.filter_mode_buffer);
-    free(s->buffers.derivative_buffer);
-    free(s->buffers.diffs_to_consider);
-    free(s->buffers.diff_weights);
-    free(s->buffers.all_diffs);
-    free(s->buffers.tvi_for_diff);
-    if (s->feature_name_dict)
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
+    release_cambi_resources(s);
     return 0;
 }
 
 static const char *provided_features_cambi_sycl[] = {"Cambi_feature_cambi_score", nullptr};
+
+} // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_cambi_sycl = {
     .name = "cambi_sycl",
@@ -976,6 +1009,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_cambi_sycl = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_DIRECT,
         },
 };
-
-} /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
