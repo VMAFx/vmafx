@@ -85,21 +85,31 @@ explicitly:
 
 Five `NOLINTNEXTLINE(readability-function-size)` comments in three
 fork-local files became untrue once their functions were split, and were
-removed with the split: two in `test_ssimulacra2_simd.c`, whose text was
-the bare category "test scaffolding (ADR-0141)" and named no invariant;
-two in `test_sycl_motion3_parity.c` and one in
-`test_sycl_motion_add_uv_parity.c`, whose text claimed that splitting
-"hides which assertion fired" and would obscure the `sycl_state`
-ownership model. Both claims are refuted by the split that replaced
-them: every `mu_assert` string is byte-identical and is returned to the
-caller through `mu_assert_msg()`, so the failing stage still names
-itself, and `sycl_state` is still initialised and released exactly once
-in `run_sycl_motion_uv()`, which now says so in one sentence instead of
-relying on the reader inferring it from a single long body. None of the
-three files is upstream-mirrored, so no sync story depends on their
-shape. The boundary this draws — a cited suppression may be retired only
-when the refactor that replaces it demonstrably satisfies the invariant
-the citation names — is recorded in
+removed with the split. `core/test/` holds 40 citations for this check
+before the pass and 35 after; the five are:
+
+- two in `test_ssimulacra2_simd.c` and one in
+  `test_sycl_motion3_parity.c`, whose text was a bare category — "test
+  scaffolding (ADR-0141)" and "test harness setup and per-frame loop" —
+  and named no invariant at all;
+- the two stacked over `run_sycl_motion_uv()` in
+  `test_sycl_motion_add_uv_parity.c`: one claiming that splitting "hides
+  which assertion fired", one that it would force the opaque `sycl_state`
+  pointer through the `mu_assert` return protocol and obscure the
+  ownership model.
+
+The first three state no claim to satisfy. The two over
+`run_sycl_motion_uv()` do, and both are refuted by the split that
+replaced them: every `mu_assert` string is byte-identical and is returned
+to the caller through `mu_assert_msg()`, so the failing stage still names
+itself, and `sycl_state` is still initialised once and released after
+both passes in `run_sycl_motion_uv()`, which now says so in one sentence
+instead of relying on the reader inferring it from a single long body.
+None of the three files exists upstream (`git cat-file -e
+upstream/master:libvmaf/test/<file>` fails for each), so no sync story
+depends on their shape. The boundary this draws — a cited suppression may
+be retired only when the refactor that replaces it demonstrably satisfies
+the invariant the citation names — is recorded in
 [ADR-1286](../adr/1286-retiring-cited-lint-suppressions.md). No NOLINT
 was added.
 
