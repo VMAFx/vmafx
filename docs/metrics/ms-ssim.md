@@ -20,13 +20,21 @@ user-visible. Read from the twins' own `options[]` tables:
 | Twin | `enable_lcs` | `enable_db` | `clip_db` | `enable_chroma` |
 |---|---|---|---|---|
 | `float_ms_ssim_cuda` | yes | yes | yes | **no** |
-| `float_ms_ssim_sycl` | yes | yes | yes | yes — fully implemented (3 planes) |
+| `float_ms_ssim_sycl` | yes | yes | yes | yes — **accepted but a no-op** |
 | `integer_ms_ssim_hip` | yes | yes | yes | yes — **accepted but a no-op** |
 
 What that means when a model requests `enable_chroma`:
 
-- **SYCL** computes it. `n_planes` becomes 3 and `_cb` / `_cr` are produced on
-  the GPU.
+- **SYCL** accepts the option and clamps to luma only, exactly as HIP does.
+  `s->n_planes` is set to 3 at
+  `core/src/feature/sycl/integer_ms_ssim_sycl.cpp:412` and then never read —
+  the identifier occurs exactly twice in the translation unit, once as the
+  struct field and once in that assignment — so the kernel reads plane 0
+  whatever the option says. The twin advertises only `float_ms_ssim` and
+  `float_ms_ssim_sycl` in `provided_features`, so a model asking for
+  `float_ms_ssim_cb` / `_cr` routes those two features to the CPU twin by name
+  (the ADR-0530 fallback). The score is correct; the chroma planes are not
+  GPU-accelerated.
 - **HIP** accepts the option and clamps to luma only; its own option help says
   so. It does not advertise `float_ms_ssim_cb` / `_cr` in `provided_features`,
   so those two features route to the CPU twin by name (the ADR-0530 fallback).
