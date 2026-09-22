@@ -740,7 +740,7 @@ jobs:
           python3 -m pip install --user pytest-timeout
           # Wrap in `timeout` + --kill-after so stuck vmaf CLI subprocesses
           # from failing vmafexec tests can't zombie-hang the step past the
-          # job budget. pytest-timeout=180 per-test is the first line; the
+          # job budget. pytest-timeout per-test is the first line; the
           # outer timeout is the backstop.
           # CommandLineTest (the first class in command_line_test.py) runs
           # run_testing.py with --parallelize across multiple video pairs —
@@ -751,15 +751,74 @@ jobs:
           # paths (vif.c, adm.c, motion.c, …) that vmaf runs on 576×324 clips
           # in under 10 s each, and their gcov data is what pushes overall
           # coverage above 40%. Deselecting CommandLineTest (but NOT
-          # VmafexecCommandLineTest, which is fast and stays in) lets the
-          # alphabetically-later suites execute and contribute coverage.
-          # The CommandLineTest scenarios are covered by the full Python test
-          # suite in the Netflix golden gate (which has no per-test timeout).
-          # --timeout=180: raised from 60 s to 180 s to accommodate
-          # large-kernel VIF tests (e.g. vifks360o97, which uses a 65-tap
-          # Gaussian and takes ~138 s in a debug+gcov build).  These tests
-          # are correctness-essential and must run; they just need a wider
-          # per-test budget in the instrumented build.
+          # VmafexecCommandLineTest, which is fast and stays in) was meant to
+          # let the alphabetically-later suites execute and contribute
+          # coverage.
+          # MEASURED CAVEAT (2026-09-22): that --deselect matches nothing.
+          # pytest resolves rootdir to python/ via python/tox.ini, so the
+          # node IDs are test/command_line_test.py::…, and the repo-relative
+          # spelling below never matches. All 15 CommandLineTest tests ran in
+          # both jobs 106740470243 and 106785621316 (96.1 s / 111.7 s for the
+          # 19 command_line_test items). `-m "not slow"` is likewise a no-op:
+          # python/tox.ini registers only the `main` marker and nothing in
+          # python/test/ is marked slow, so all 711 items are selected. Both
+          # are left in place deliberately — the budget below is sized for the
+          # suite that actually runs, and narrowing the measurement to fit the
+          # budget is the anti-pattern this branch exists to undo. The claim
+          # that CommandLineTest is "covered by the full Python suite in the
+          # Netflix golden gate" is also stale: that gate runs exactly two
+          # tests (test_run_vmaf_runner and …_checkerboard).
+          #
+          # --timeout=600: raised from 180 s, which was itself raised from
+          # 60 s off a single observation (vifks360o97 ≈ 138 s). A point
+          # estimate with no variance allowance is what broke: pytest-timeout
+          # with --timeout-method=thread does not fail just the slow test, it
+          # dumps stacks and calls os._exit(1), aborting the whole session, so
+          # one test crossing the line takes the remaining 40% of the suite
+          # with it. Job 106785621316 (run 35739609510) died that way at 60%,
+          # on test_run_vmaf_runner_float_vifks2, blocked in
+          # subprocess.communicate()/stdout.read() reading a still-running,
+          # perfectly healthy vmaf CLI.
+          #
+          # The measured distribution, reconstructed from the -v timestamp
+          # deltas of the two Coverage Gate jobs on this branch — 106740470243
+          # (run 35726244060, 12:16Z) and 106785621316 (run 35739609510,
+          # 14:20Z), same recipe, same ubuntu-latest class:
+          #   test                               job …243   job …316
+          #   vifks360o97                         142.7 s    not reached
+          #   vifks24o10                           91.1 s    not reached
+          #   vifks2                               78.4 s    >180 s (killed)
+          #   vifks3o2                             50.9 s    not reached
+          #   ensemblevmaf_different_models        30.8 s      47.2 s  1.53x
+          #   ensemblevmaf_same_models             30.7 s      47.1 s  1.53x
+          #   local_explainer_with_bootstrap       15.7 s      24.1 s  1.53x
+          #   bootstrap_residue_bootstrap_model    15.5 s      23.9 s  1.55x
+          #   bootstrap_with_transform_score       15.4 s      23.7 s  1.54x
+          #   explain_vmaf_results                 15.7 s      23.7 s  1.51x
+          #   bootstrap_vmaf_runner                15.4 s      23.7 s  1.54x
+          #   bagging_vmaf_runner                  15.4 s      23.7 s  1.54x
+          #   float_nvd6 / float_rdh540            15.4 s      23.6 s  1.53x
+          #   bootstrap_10models                   15.4 s      23.4 s  1.52x
+          #   bootstrap_default_model_json_model   15.5 s      23.4 s  1.51x
+          #   bootstrap_with_4k_1d5H_model         15.5 s      23.3 s  1.51x
+          #   bootstrap_specific_model             15.5 s      23.3 s  1.51x
+          #   feature_assembler_whole_feature_…    15.4 s      23.2 s  1.51x
+          # Variance between the two runners: 1.51–1.55x uniformly across the
+          # vmaf-CLI-bound tests, and >=2.30x on vifks2 (78.4 s -> >180 s). The
+          # "Run meson unit suite" step above shows the same degradation
+          # independently — 30 s in …243 vs 118 s in …316, 3.9x. So the budget
+          # has to cover the slowest test times the worst observed inflation:
+          # 142.7 s * 2.30 = 328 s. 600 s is 1.8x that, 4.2x the slowest time
+          # ever actually observed, and 18% of the 55m outer backstop, so the
+          # outer stays a genuine backstop rather than the first thing to fire.
+          #
+          # What 600 s does NOT catch: (a) a real slowdown that keeps every
+          # single test under 10 min — vifks360o97 could double again and pass;
+          # (b) an aggregate blow-up, where every test is under 600 s but the
+          # sum exceeds the outer 55m — that surfaces as `timeout` killing the
+          # step (exit 124), not as a named test; (c) because the thread method
+          # aborts the session, the test named in the dump is whichever one was
+          # running, which need not be the one that is actually pathological.
           #
           # The outer budget is 55m, raised from a 20m that was never big
           # enough for the suite it wraps. Until this branch the step ended in
@@ -770,22 +829,27 @@ jobs:
           # asserting the step outcome turned that into the failure it always
           # was.
           #
-          # Where 55 comes from. The killed run gives exact per-file costs for
-          # the 448 tests that did execute (quality_runner_test 758 s / 46,
-          # feature_extractor_test 195 s / 75, the rest under 100 s each). The
-          # 263 that did not were measured locally against a release build and
-          # scaled by the factor the two runs share on feature_extractor_test
-          # (195.2 s CI / 15.3 s local = 12.8x for debug + -O0 + gcov on a
-          # 4-core hosted runner): vmafexec_feature_extractor ~470 s,
-          # vmafexec ~230 s, the quality_runner tail ~260 s, routine ~150 s,
-          # everything else ~250 s. That is ~22 min on top of the 20 already
-          # spent, so ~42 min for the whole suite; 55 leaves ~30% headroom for
-          # runner variance. pytest-timeout=180 per test remains the real
-          # anti-hang gate -- the outer `timeout` only exists so a wedged
-          # subprocess cannot eat the job budget before gcovr runs.
+          # Where 55 comes from, re-derived from measurement rather than the
+          # earlier estimate. Job 106740470243 ran 448 of the 711 items in
+          # 1190.6 s before the outer kill; job 106785621316 ran 431 in
+          # 901.2 s. The 263 items neither run reached measure 86.3 s locally
+          # against a release build; the debug+gcov+4-core factor, anchored on
+          # feature_extractor_test.py (194.4 s in …243 / 16.4 s local), is
+          # 11.9x for …243 and 14.0x for …316, i.e. a 1024–1208 s tail. Full
+          # suite: ~2215 s (36.9 min) at the …243 pace, 2702–3077 s
+          # (45.0–51.3 min) at the …316 pace. Non-pytest job overhead measured
+          # 5m05s (…243) / 6m25s (…316) before the step plus ~30 s of gcovr
+          # after, against a 75 min job budget.
+          # So 55m still fits, but the margin is 7–18% at the slower runner,
+          # not the ~30% claimed before. If a Coverage Gate run is ever killed
+          # by the outer `timeout` (exit 124) rather than by a test, raise this
+          # to 70m and timeout-minutes to 85 — do not shrink the suite.
+          # pytest-timeout=600 per test remains the real anti-hang gate; the
+          # outer `timeout` only exists so a wedged subprocess cannot eat the
+          # job budget before gcovr runs.
           timeout --kill-after=30s 55m python3 -m pytest python/test/ -v \
             -m "not slow" --tb=short \
-            --timeout=180 --timeout-method=thread \
+            --timeout=600 --timeout-method=thread \
             --ignore=python/test/resource \
             --ignore=python/test/cy_test.py \
             --ignore=python/test/cambi_test.py \
