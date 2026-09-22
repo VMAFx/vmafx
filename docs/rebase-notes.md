@@ -1,6 +1,37 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/pelorus-interop-sync-v022 — exact v0.2.2 parser safety mirror (2026-09-20)
+
+No Netflix-upstream file is involved. The cross-repo conflict surface is the
+fork-local Pelorus mirror, its sync/lint tooling, and the existing required
+Pre-Commit workflow. ADR-1276 records the re-pin and fail-closed maintenance
+contract while preserving ADR-1113's base mirror decision.
+
+- `PELORUS_VENDOR_SHA` is the full released v0.2.2 commit
+  `93bef1206d68d9e09024c08a12732fb8e77b9b16`. ABI stays 1.3. A future rebase
+  must not infer that an unchanged ABI minor makes a parser fix optional:
+  reviewed correctness/security releases are re-pin triggers too.
+- `pelorus_interop.c` copies the wire header and directory entries into aligned
+  locals before access. Do not restore pointer casts from byte addresses; a
+  valid caller buffer may have any base alignment. Keep the rejection of a
+  `header_size` that is not 8-byte aligned.
+- From its first vendored include onward, `test_pelorus_interop.c` is exact
+  Pelorus source except for the include rewrite. Do not reapply PR #1351's
+  VMAFx-only `NOLINT` band or `(void)` casts. Formatting/tidy exclusions belong
+  in VMAFx tooling. The drift guard renders the VMAFx prefix canonically from
+  the source pin and ABI version, then compares the complete fixture exactly.
+- Native-lint exemption uses an explicit manifest-owned path set. The sync
+  guard rejects extra or missing tracked files in the Pelorus header/source
+  namespaces; do not restore prefix-wide exemption without that fail-closed
+  manifest check.
+- The guard must keep reading the pinned Git object and failing closed for a
+  plain directory or a checkout that lacks it. The existing required
+  `Pre-Commit` job checks out that exact object and runs the default guard.
+- The fixture's `fopen(path, "w")` remains an upstream-owned CodeQL finding,
+  tracked separately in `docs/state.md`. Fix it in Pelorus and re-vendor; do not
+  patch only the VMAFx mirror.
+
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 
 Everything here is fork-local: upstream Netflix/vmaf ships AVX2 CAMBI kernels
