@@ -4,11 +4,15 @@ project('libvmaf', ['c', 'cpp'],
                        'warning_level=2',
                        'buildtype=release',
                        'default_library=both',
-                       # Meson selects the first standard supported by the
-                       # active compiler. MSVC-style C drivers fall back to
-                       # c17, then receive /std:clatest below so the build uses
-                       # the newest C mode rather than Meson's /std:c17 map.
-                       'c_std=c23,c2x,c17',
+                       # Meson selects the first standard the active compiler
+                       # accepts. cl.exe falls back to c17 and icx-cl all the
+                       # way to 'none' -- Meson's intel-llvm-cl backend only
+                       # advertises c89/c99/c11, so without 'none' in the list
+                       # configure aborts outright. Every MSVC-syntax driver
+                       # then receives /std:clatest below, which overrides
+                       # whatever Meson emitted and gives the build the newest
+                       # C mode regardless of where it landed in this list.
+                       'c_std=c23,c2x,c17,none',
                        'cpp_std=c++26,c++23,c++latest',
                        'b_lto=true',
                        # ADR-1172: bound the per-link LTO partition parallelism. GCC's

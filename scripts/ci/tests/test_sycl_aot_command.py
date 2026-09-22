@@ -28,7 +28,12 @@ class MesonCommandContractTest(unittest.TestCase):
     def test_language_standards_are_meson_builtin_options(self) -> None:
         source = (ROOT / "core" / "meson.build").read_text(encoding="utf-8")
 
-        self.assertIn("'c_std=c23,c2x,c17'", source)
+        # 'none' has to stay last in the c_std list: Meson's intel-llvm-cl
+        # backend advertises only c89/c99/c11, so a list without a value every
+        # backend accepts aborts configure on the Windows MSVC+SYCL leg. Every
+        # MSVC-syntax driver is handed /std:clatest separately, so landing on
+        # 'none' there still compiles in the newest C mode.
+        self.assertIn("'c_std=c23,c2x,c17,none'", source)
         self.assertIn("'cpp_std=c++26,c++23,c++latest'", source)
         self.assertNotRegex(source, r"add_project_arguments\([^\n]*(?:-std=|_std_(?:args|flag))")
 
