@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 import unittest
@@ -496,12 +497,21 @@ class ConfigTest(unittest.TestCase):
     def test_download_reactively_propagates_http_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             target = os.path.join(tmpdir, "404.bin")
+            # `urllib.error.HTTPError` derives from `urllib.response.addbase`,
+            # which is `tempfile._TemporaryFileWrapper`: constructing one
+            # attaches a `_TemporaryFileCloser` (over an `io.BytesIO` when `fp`
+            # is None) whose finaliser emits `ResourceWarning` unless `close()`
+            # was called. Left to the cyclic GC it fires inside whatever
+            # unrelated test is running when the cycle comes round, which under
+            # the ADR-1278 warnings-are-errors policy fails that test instead of
+            # this one. Close it here rather than leaving the lifetime to chance.
             err = urllib.error.HTTPError(
                 "https://example.invalid/x", 404, "Not Found", hdrs=None, fp=None
             )
-            with mock.patch.object(vmaf_config.urllib.request, "urlretrieve", side_effect=err):
-                with self.assertRaises(urllib.error.HTTPError):
-                    download_reactively(target, "https://example.invalid/x")
+            with contextlib.closing(err):
+                with mock.patch.object(vmaf_config.urllib.request, "urlretrieve", side_effect=err):
+                    with self.assertRaises(urllib.error.HTTPError):
+                        download_reactively(target, "https://example.invalid/x")
 
     def test_external_config_path_lookups_return_none_without_externals(self):
         # On a clean checkout with no externals.py, every external lookup
