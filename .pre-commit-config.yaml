@@ -461,17 +461,20 @@ repos:
         types_or: [c, c++, cuda, python]
         # Paths this hook skips: (a) upstream vendored subprojects,
         # (b) test fixtures, (c) compat/python-vmaf/resource/ +
-        # python/test/resource/ assets, (d) compat/python-vmaf/matlab/ —
-        # Netflix-upstream MATLAB MEX C sources (they call `sprintf` /
-        # `strcpy` etc., which are banned by .semgrep.yml but are out of
-        # scope for fork-local hygiene; cleaning them up is an upstream
-        # change, not ours).
+        # python/test/resource/ assets. All three are data or downloaded
+        # build dependencies, not fork-compiled sources.
+        # Nothing is skipped for being upstream-authored. The Netflix MATLAB
+        # MEX C sources under compat/python-vmaf/matlab/ used to be listed
+        # here, on the reasoning that their banned libc calls were "an
+        # upstream change, not ours" — the exact origin-based exemption
+        # ADR-1142 retired. Their last such call went in bc00da0be and the
+        # tree scans clean, so the entry was dropped on 2026-09-21.
         # The vendored JSON code the library links — core/src/pdjson.{c,h}
-        # and core/src/mcp/3rdparty/cJSON/ — is deliberately NOT skipped
+        # and core/src/mcp/3rdparty/cJSON/ — is likewise NOT skipped
         # (ADR-0683, ADR-1142): this hook is the commit-time guard that
         # stops a re-vendor from bringing banned libc calls back, and the
         # whole-tree Semgrep CI job has always scanned pdjson anyway.
-        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/'
+        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/'
         # Runs at pre-commit time — fast on a single-file diff and the
         # rules in .semgrep.yml are the project's own, not p/cert-c-strict.
         # `pass_filenames: true` (the default) because semgrep accepts
