@@ -221,6 +221,14 @@ jobs:
           #     core/test/test_sycl* — require `-Denable_sycl=true` and
           #     the `icpx` compiler; no compile_commands in the CPU-only
           #     `build/`. Local lint runs against `core/build-sycl/`.
+          #     core/test/test_integer_cambi_sycl.c is the one member of
+          #     that family that does not carry the `test_sycl` prefix, so
+          #     it needs its own line: it is `#if HAVE_SYCL`-gated like the
+          #     rest, meson builds it only under `-Denable_sycl=true`, and
+          #     without a compile command clang-tidy parses it with default
+          #     flags and dies on `'config.h' file not found`
+          #     (clang-diagnostic-error). Bounded by the ADR-1290 `sycl`
+          #     ratchet lane, same posture as the rest of the family.
           #   - core/tools/vmaf_vpl.c — VAAPI integration; needs
           #     `va/va.h` from libva-dev plus the CUDA/SYCL link path; no
           #     compile_commands entry in the CPU-only build.
@@ -296,6 +304,7 @@ jobs:
               -e '^core/src/sycl/' \
               -e '^core/src/feature/sycl/' \
               -e '^core/test/test_sycl' \
+              -e '^core/test/test_integer_cambi_sycl\.c$' \
               -e '^core/tools/vmaf_vpl\.c$' \
               -e '^core/src/mcp/' \
               -e '^core/test/test_mcp' \
