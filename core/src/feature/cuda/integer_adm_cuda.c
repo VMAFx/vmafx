@@ -531,25 +531,50 @@ static int i4_adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, i
     return 0;
 }
 
-static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_stride,
-                         int csf_a_stride, AdmFixedParametersCuda *p, CudaFunctions *cu_f,
-                         CUstream c_stream)
+/* AdmCmBorder - the active-region geometry the two int16 CM dispatchers
+ * share.
+ *
+ * HISS-04: lifted verbatim out of adm_cm_device / adm_cm_aim_device, which
+ * computed these ten values with identical expressions.
+ */
+typedef struct AdmCmBorder {
+    int left;
+    int top;
+    int right;
+    int bottom;
+    int start_col;
+    int end_col;
+    int start_row;
+    int end_row;
+    int buffer_stride;
+    int buffer_h;
+} AdmCmBorder;
+
+static void adm_cm_border(AdmCmBorder *b, int w, int h)
 {
+    b->left = w * (float)(ADM_BORDER_FACTOR)-0.5f;
+    b->top = h * (float)(ADM_BORDER_FACTOR)-0.5f;
+    b->right = w - b->left;
+    b->bottom = h - b->top;
 
-    int scale = 0;
-    int left = w * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int top = h * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int right = w - left;
-    int bottom = h - top;
+    b->start_col = MAX(0, b->left);
+    b->end_col = MIN(b->right, w);
+    b->start_row = MAX(0, b->top);
+    b->end_row = MIN(b->bottom, h);
 
-    int start_col = MAX(0, left);
-    int end_col = MIN(right, w);
-    int start_row = MAX(0, top);
-    int end_row = MIN(bottom, h);
+    b->buffer_stride = b->end_col - b->start_col;
+    b->buffer_h = b->end_row - b->start_row;
+}
 
-    int buffer_stride = end_col - start_col;
-    int buffer_h = end_row - start_row;
-
+/* adm_cm_warp_shifts - the per-band warp shift table.
+ *
+ * HISS-04: lifted verbatim out of adm_cm_device. adm_cm_aim_device spelled
+ * out the same computation with `scale` pinned to 0 and now shares this
+ * body; at scale 0 both forms assign exactly the same values in the same
+ * order.
+ */
+static void adm_cm_warp_shifts(WarpShift *ws, int w, int scale)
+{
     // precompute warp shift per band
     //const int32_t shift_sub[3] = {10, 10, 12};
     const int fixed_shift[3] = {4, 4, 3};
@@ -559,19 +584,30 @@ static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int 
     const int32_t add_shift_xsq[3] = {268435456, 268435456, 536870912};
 
     const int NUM_BANDS = 3;
-    WarpShift ws;
     for (int band = 0; band < NUM_BANDS; ++band) {
-        ws.shift_cub[band] = (uint32_t)(ceil(log2f(w)));
+        ws->shift_cub[band] = (uint32_t)(ceil(log2f(w)));
         if (scale == 0) {
-            ws.shift_cub[band] -= fixed_shift[band];
-            ws.shift_sq[band] = shift_xsq[band];
-            ws.add_shift_sq[band] = add_shift_xsq[band];
+            ws->shift_cub[band] -= fixed_shift[band];
+            ws->shift_sq[band] = shift_xsq[band];
+            ws->add_shift_sq[band] = add_shift_xsq[band];
         } else {
-            ws.shift_sq[band] = 30;
-            ws.add_shift_sq[band] = (1 << (ws.shift_sq[band] - 1));
+            ws->shift_sq[band] = 30;
+            ws->add_shift_sq[band] = (1 << (ws->shift_sq[band] - 1));
         }
-        ws.add_shift_cub[band] = 1 << (ws.shift_cub[band] - 1);
+        ws->add_shift_cub[band] = 1 << (ws->shift_cub[band] - 1);
     }
+}
+
+static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_stride,
+                         int csf_a_stride, AdmFixedParametersCuda *p, CudaFunctions *cu_f,
+                         CUstream c_stream)
+{
+    int scale = 0;
+    AdmCmBorder bd;
+    adm_cm_border(&bd, w, h);
+
+    WarpShift ws;
+    adm_cm_warp_shifts(&ws, w, scale);
 
     // precompute global shift
     uint32_t shift_inner_accum = (uint32_t)(ceil(log2f(h)));
@@ -586,18 +622,18 @@ static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int 
         void *args[] = {&*buf,
                         &h,
                         &w,
-                        &top,
-                        &bottom,
-                        &left,
-                        &right,
-                        &start_row,
-                        &end_row,
-                        &start_col,
-                        &end_col,
+                        &bd.top,
+                        &bd.bottom,
+                        &bd.left,
+                        &bd.right,
+                        &bd.start_row,
+                        &bd.end_row,
+                        &bd.start_col,
+                        &bd.end_col,
                         &src_stride,
                         &csf_a_stride,
-                        &buffer_h,
-                        &buffer_stride,
+                        &bd.buffer_h,
+                        &bd.buffer_stride,
                         &buf->tmp_accum->data,
                         &*p,
                         &scale,
@@ -607,8 +643,8 @@ static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int 
                         &add_shift_inner_accum};
 
         CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_cm_line_kernel_8, 1,
-                                               DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread), 3,
-                                               BLOCKX, BLOCKY, 1, 0, c_stream, args, NULL));
+                                               DIV_ROUND_UP(bd.buffer_h, BLOCKY * rows_per_thread),
+                                               3, BLOCKX, BLOCKY, 1, 0, c_stream, args, NULL));
     }
     return 0;
 }
@@ -652,83 +688,73 @@ static int i4_adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int 
 }
 
 /* AIM CM dispatch for scale 0 (int16 path) — ADR-0746. */
+/* adm_cm_aim_rows_per_thread - pick `rows_per_thread` so the launch actually
+ * fills the device (ADR-1226). This kernel's only parallelism is one block
+ * per `BLOCKY * rows_per_thread` rows, times the three orientation bands;
+ * there is no x-decomposition, because each row's warp reduction has to
+ * cover the whole row before the single `>> shift_inner_accum` rounding
+ * step, and splitting it across blocks would round differently from the
+ * CPU reference.
+ *
+ * At the old fixed 8, a 1080p frame produced 42 blocks against an RTX
+ * 4090's 128 SMs. Halving it doubles the block count at no arithmetic
+ * cost: each row is still reduced across all of its columns inside one
+ * block, so the emitted score is bit-identical either way.
+ *
+ * Measured on an RTX 4090 (mean ms per call, 48 frames, ADR-1226):
+ *
+ *              rows=8   rows=4   rows=2
+ *   1920x1080   0.801    0.553    0.586
+ *    640x480    0.299    0.203    0.159
+ *    576x324    0.300    0.178    0.141
+ *
+ * The optimum tracks block count, not frame size: 4 wins once the frame
+ * is large enough to keep roughly half the SMs busy, 2 wins below that.
+ * Going further (rows=1, 327 blocks at 1080p) regresses to 0.622 — past
+ * the point where more blocks pay for the extra per-thread setup.
+ */
+static int adm_cm_aim_rows_per_thread(const AdmStateCuda *s, int buffer_h, int blocky)
+{
+    const int blocks_at_4 = DIV_ROUND_UP(buffer_h, blocky * 4) * 3;
+    return (s->sm_count == 0 || blocks_at_4 * 2 >= s->sm_count) ? 4 : 2;
+}
+
+/* AIM CM dispatch for scale 0 (int16 path) — ADR-0746. */
 static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_stride,
                              int csf_a_stride, AdmFixedParametersCuda *p, CudaFunctions *cu_f,
                              CUstream c_stream)
 {
     const int scale = 0;
-    int left = w * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int top = h * (float)(ADM_BORDER_FACTOR)-0.5f;
-    int right = w - left;
-    int bottom = h - top;
-    int start_col = MAX(0, left);
-    int end_col = MIN(right, w);
-    int start_row = MAX(0, top);
-    int end_row = MIN(bottom, h);
-    int buffer_stride = end_col - start_col;
-    int buffer_h = end_row - start_row;
+    AdmCmBorder bd;
+    adm_cm_border(&bd, w, h);
 
-    const int fixed_shift[3] = {4, 4, 3};
-    const int32_t shift_xsq[3] = {29, 29, 30};
-    const int32_t add_shift_xsq[3] = {268435456, 268435456, 536870912};
-    const int NUM_BANDS = 3;
     WarpShift ws;
-    for (int band = 0; band < NUM_BANDS; ++band) {
-        ws.shift_cub[band] = (uint32_t)(ceil(log2f(w)));
-        ws.shift_cub[band] -= fixed_shift[band];
-        ws.shift_sq[band] = shift_xsq[band];
-        ws.add_shift_sq[band] = add_shift_xsq[band];
-        ws.add_shift_cub[band] = 1 << (ws.shift_cub[band] - 1);
-    }
+    adm_cm_warp_shifts(&ws, w, scale);
+
     uint32_t shift_inner_accum = (uint32_t)(ceil(log2f(h)));
     uint32_t add_shift_inner_accum = 1 << (shift_inner_accum - 1);
 
     const int BLOCKX = 32;
     const int BLOCKY = 4;
 
-    /* Pick `rows_per_thread` so the launch actually fills the device
-     * (ADR-1226). This kernel's only parallelism is one block per
-     * `BLOCKY * rows_per_thread` rows, times the three orientation bands;
-     * there is no x-decomposition, because each row's warp reduction has to
-     * cover the whole row before the single `>> shift_inner_accum` rounding
-     * step, and splitting it across blocks would round differently from the
-     * CPU reference.
-     *
-     * At the old fixed 8, a 1080p frame produced 42 blocks against an RTX
-     * 4090's 128 SMs. Halving it doubles the block count at no arithmetic
-     * cost: each row is still reduced across all of its columns inside one
-     * block, so the emitted score is bit-identical either way.
-     *
-     * Measured on an RTX 4090 (mean ms per call, 48 frames, ADR-1226):
-     *
-     *              rows=8   rows=4   rows=2
-     *   1920x1080   0.801    0.553    0.586
-     *    640x480    0.299    0.203    0.159
-     *    576x324    0.300    0.178    0.141
-     *
-     * The optimum tracks block count, not frame size: 4 wins once the frame
-     * is large enough to keep roughly half the SMs busy, 2 wins below that.
-     * Going further (rows=1, 327 blocks at 1080p) regresses to 0.622 — past
-     * the point where more blocks pay for the extra per-thread setup. */
-    const int blocks_at_4 = DIV_ROUND_UP(buffer_h, BLOCKY * 4) * 3;
-    const int rows_per_thread = (s->sm_count == 0 || blocks_at_4 * 2 >= s->sm_count) ? 4 : 2;
+    const int rows_per_thread = adm_cm_aim_rows_per_thread(s, bd.buffer_h, BLOCKY);
     const CUfunction aim_line_kernel = (rows_per_thread == 4) ? s->func_adm_cm_aim_line_kernel_4 :
                                                                 s->func_adm_cm_aim_line_kernel_2;
     void *args[] = {&*buf,
                     &h,
                     &w,
-                    &top,
-                    &bottom,
-                    &left,
-                    &right,
-                    &start_row,
-                    &end_row,
-                    &start_col,
-                    &end_col,
+                    &bd.top,
+                    &bd.bottom,
+                    &bd.left,
+                    &bd.right,
+                    &bd.start_row,
+                    &bd.end_row,
+                    &bd.start_col,
+                    &bd.end_col,
                     &src_stride,
                     &csf_a_stride,
-                    &buffer_h,
-                    &buffer_stride,
+                    &bd.buffer_h,
+                    &bd.buffer_stride,
                     &buf->tmp_accum->data,
                     &*p,
                     &scale,
@@ -737,7 +763,7 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
                     &shift_inner_accum,
                     &add_shift_inner_accum};
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(aim_line_kernel, 1,
-                                           DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread), 3,
+                                           DIV_ROUND_UP(bd.buffer_h, BLOCKY * rows_per_thread), 3,
                                            BLOCKX, BLOCKY, 1, 0, c_stream, args, NULL));
     return 0;
 }
@@ -950,27 +976,35 @@ typedef struct write_score_parameters_adm {
     unsigned index, h, w;
 } write_score_parameters_adm;
 
-static void write_scores(write_score_parameters_adm *params)
-{
-    VmafFeatureCollector *feature_collector = params->feature_collector;
-    AdmStateCuda *s = params->s;
-    unsigned index = params->index;
-
+/* AdmScoreSet - everything write_scores derives before it hands anything to
+ * the feature collector. */
+typedef struct AdmScoreSet {
     double scores[8];
     double score;
     double score_num;
     double score_den;
+    double score_aim;
+    double score_adm3;
+} AdmScoreSet;
+
+/* adm_accumulate_scales - the per-scale num/den pooling loop.
+ *
+ * HISS-04: lifted verbatim out of write_scores. The loop body, the
+ * skip-scale0 short circuit and the accumulation order are unchanged, so
+ * num, den and scores[] come out bit-identical.
+ */
+static void adm_accumulate_scales(const write_score_parameters_adm *params, AdmStateCuda *s,
+                                  double scores[8], double *num_out, double *den_out)
+{
+    unsigned w = params->w;
+    unsigned h = params->h;
 
     double num = 0;
     double den = 0;
 
-    unsigned w = params->w;
-    unsigned h = params->h;
-
     int64_t *adm_cm = (int64_t *)s->buf.results_host;
     /* adm_csf_den starts at slot 12 (4 scales × 3 bands); adm_aim_cm at slot 24. */
     uint64_t *adm_csf = &((uint64_t *)s->buf.results_host)[4 * 3];
-    int64_t *adm_aim_cm = &((int64_t *)s->buf.results_host)[4 * 3 * 2];
     float num_scale;
     float den_scale;
     for (unsigned scale = 0; scale < 4; ++scale) {
@@ -998,6 +1032,135 @@ static void write_scores(write_score_parameters_adm *params)
         scores[2 * scale + 0] = num_scale;
         scores[2 * scale + 1] = den_scale;
     }
+    *num_out = num;
+    *den_out = den;
+}
+
+/* adm_accumulate_aim - the AIM numerator over the four scales (ADR-0746).
+ *
+ * HISS-04: lifted verbatim out of write_scores. noise_weight = 0 for AIM
+ * (conclude_adm_cm is called with 0.0f), and the skip-scale0 short circuit
+ * is the one the loop always had.
+ */
+static double adm_accumulate_aim(const write_score_parameters_adm *params, AdmStateCuda *s)
+{
+    double aim_num = 0.0;
+    if (s->adm_skip_aim)
+        return aim_num;
+
+    int64_t *adm_aim_cm = &((int64_t *)s->buf.results_host)[4 * 3 * 2];
+    /* Reset w/h to full frame for aim loop. */
+    unsigned aim_w = params->w;
+    unsigned aim_h = params->h;
+    for (unsigned scale = 0; scale < 4; ++scale) {
+        aim_w = (aim_w + 1) / 2;
+        aim_h = (aim_h + 1) / 2;
+        float aim_num_scale = 0.0f;
+        conclude_adm_cm(&adm_aim_cm[scale * 3], aim_h, aim_w, scale,
+                        0.0f /* noise_weight = 0 for AIM */, s->adm_p_norm, &aim_num_scale);
+        if (scale == 0u && s->adm_skip_scale0)
+            continue;
+        aim_num += aim_num_scale;
+    }
+    return aim_num;
+}
+
+/* adm_append_debug_scores - the debug-only feature rows.
+ *
+ * HISS-04: lifted verbatim out of write_scores; the rows are appended in
+ * the same order and the accumulated status is discarded exactly as before.
+ */
+static void adm_append_debug_scores(VmafFeatureCollector *feature_collector, AdmStateCuda *s,
+                                    const AdmScoreSet *o, unsigned index)
+{
+    int err = 0;
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm", o->score, index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_num", o->score_num, index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_den", o->score_den, index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_num_scale0", o->scores[0], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_den_scale0", o->scores[1], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_num_scale1", o->scores[2], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_den_scale1", o->scores[3], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_num_scale2", o->scores[4], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_den_scale2", o->scores[5], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_num_scale3", o->scores[6], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_den_scale3", o->scores[7], index);
+    (void)err; // accumulated collector status intentionally discarded; void writer API
+}
+
+/* adm_append_scores - the always-emitted feature rows, then the debug ones.
+ *
+ * HISS-04: lifted verbatim out of write_scores.
+ */
+static void adm_append_scores(VmafFeatureCollector *feature_collector, AdmStateCuda *s,
+                              const AdmScoreSet *o, unsigned index)
+{
+    int err = 0;
+    err |=
+        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                "VMAF_integer_feature_adm2_score", o->score, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_integer_feature_aim_score", o->score_aim,
+                                                   index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_integer_feature_adm3_score", o->score_adm3,
+                                                   index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_scale0",
+                                                   o->scores[0] / o->scores[1], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_scale1",
+                                                   o->scores[2] / o->scores[3], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_scale2",
+                                                   o->scores[4] / o->scores[5], index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "integer_adm_scale3",
+                                                   o->scores[6] / o->scores[7], index);
+    (void)err; // accumulated collector status intentionally discarded; void writer API
+
+    if (!s->debug)
+        return;
+
+    adm_append_debug_scores(feature_collector, s, o, index);
+}
+
+static void write_scores(write_score_parameters_adm *params)
+{
+    VmafFeatureCollector *feature_collector = params->feature_collector;
+    AdmStateCuda *s = params->s;
+    unsigned index = params->index;
+
+    AdmScoreSet o = {0};
+    double num = 0;
+    double den = 0;
+    adm_accumulate_scales(params, s, o.scores, &num, &den);
+
     /* CPU parity (integer_adm.c::integer_compute_adm): the precision floor
      * scales with the FULL-FRAME area, not the scale-3 area that `w`/`h`
      * hold after the loop above. */
@@ -1007,117 +1170,68 @@ static void write_scores(write_score_parameters_adm *params)
     den = den < numden_limit ? 0 : den;
 
     if (den == 0.0) {
-        score = 1.0f;
+        o.score = 1.0f;
     } else {
-        score = num / den;
+        o.score = num / den;
     }
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
      * applies MAX(..., adm_min_val) to the adm3 expression alone). The
      * Netflix golden `adm_min_val=0.98` case pins adm2 at 0.93451485, below
      * the floor. Clamping here would diverge from the CPU twin. */
-    score_num = num;
-    score_den = den;
+    o.score_num = num;
+    o.score_den = den;
 
-    /* AIM score (ADR-0746): compute aim_num over 4 scales, normalize by den.
-     * noise_weight = 0 for AIM (conclude_adm_cm called with 0.0f). */
-    double aim_num = 0.0;
-    if (!s->adm_skip_aim) {
-        /* Reset w/h to full frame for aim loop. */
-        unsigned aim_w = params->w;
-        unsigned aim_h = params->h;
-        for (unsigned scale = 0; scale < 4; ++scale) {
-            aim_w = (aim_w + 1) / 2;
-            aim_h = (aim_h + 1) / 2;
-            float aim_num_scale = 0.0f;
-            conclude_adm_cm(&adm_aim_cm[scale * 3], aim_h, aim_w, scale,
-                            0.0f /* noise_weight = 0 for AIM */, s->adm_p_norm, &aim_num_scale);
-            if (scale == 0u && s->adm_skip_scale0)
-                continue;
-            aim_num += aim_num_scale;
-        }
-    }
-    double score_aim = (den == 0.0) ? 1.0 : (aim_num / den);
-    double score_adm3 = (score * s->adm_dlm_weight) + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
-    if (score_adm3 < s->adm_min_val)
-        score_adm3 = s->adm_min_val;
+    /* AIM score (ADR-0746): compute aim_num over 4 scales, normalize by den. */
+    const double aim_num = adm_accumulate_aim(params, s);
+    o.score_aim = (den == 0.0) ? 1.0 : (aim_num / den);
+    o.score_adm3 = (o.score * s->adm_dlm_weight) + (1.0 - o.score_aim) * (1.0 - s->adm_dlm_weight);
+    if (o.score_adm3 < s->adm_min_val)
+        o.score_adm3 = s->adm_min_val;
 
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_adm2_score", score, index);
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "VMAF_integer_feature_aim_score", score_aim, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_adm3_score", score_adm3,
-                                                   index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_scale0", scores[0] / scores[1], index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_scale1", scores[2] / scores[3], index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_scale2", scores[4] / scores[5], index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_scale3", scores[6] / scores[7], index);
-
-    if (!s->debug)
-        return;
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm", score, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num", score_num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den", score_den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num_scale0", scores[0], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den_scale0", scores[1], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num_scale1", scores[2], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den_scale1", scores[3], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num_scale2", scores[4], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den_scale2", scores[5], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num_scale3", scores[6], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den_scale3", scores[7], index);
-    (void)err; // accumulated collector status intentionally discarded; void writer API
-
-    return;
+    adm_append_scores(feature_collector, s, &o, index);
 }
 
-static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
-                                    VmafPicture *ref_pic, VmafPicture *dis_pic, AdmBufferCuda *buf,
-                                    double adm_enhn_gain_limit, double adm_norm_view_dist,
-                                    int adm_ref_display_height)
+/* adm_sync_picture_events - push the fex context, make s->str wait on both
+ * per-picture events, pop.
+ *
+ * HISS-01: lifted out of the dwt2 loop so the former `goto push_ok` (which
+ * only skipped the failure block) becomes an ordinary return. The
+ * CHECK_CUDA_GOTO labels are unchanged: the pop still runs exactly when the
+ * push succeeded, and the same _cuda_err reaches the caller.
+ */
+static int adm_sync_picture_events(VmafFeatureExtractor *fex, AdmStateCuda *s, CudaFunctions *cu_f)
 {
-    CudaFunctions *cu_f = fex->cu_state->f;
-    int w = ref_pic->w[0];
-    int h = ref_pic->h[0];
+    int _cuda_err = 0;
+    int ctx_pushed = 0;
+    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), push_fail);
+    ctx_pushed = 1;
+    CHECK_CUDA_GOTO(cu_f, cuStreamWaitEvent(s->str, s->dis_event, CU_EVENT_WAIT_DEFAULT),
+                    push_fail);
+    CHECK_CUDA_GOTO(cu_f, cuStreamWaitEvent(s->str, s->ref_event, CU_EVENT_WAIT_DEFAULT),
+                    push_fail);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), after_pop);
+    return 0;
 
-    AdmFixedParametersCuda p = {
+push_fail:
+    if (ctx_pushed)
+        (void)cu_f->cuCtxPopCurrent(NULL);
+after_pop:
+    return _cuda_err;
+}
+
+/* adm_fill_fixed_params - the constant kernel parameter block plus the
+ * per-scale rfactor tables.
+ *
+ * HISS-04: lifted verbatim out of integer_compute_adm_cuda; the designated
+ * initialiser, the per-scale loop and the memcpy into s->rfactor are
+ * unchanged, so every kernel sees the same parameter bytes as before.
+ */
+static void adm_fill_fixed_params(AdmStateCuda *s, AdmFixedParametersCuda *p, int w, int h,
+                                  double adm_enhn_gain_limit, double adm_norm_view_dist,
+                                  int adm_ref_display_height)
+{
+    *p = (AdmFixedParametersCuda){
         .dwt2_db2_coeffs_lo = {15826, 27411, 7345, -4240},
         .dwt2_db2_coeffs_hi = {-4240, -7345, 27411, -15826},
         .dwt2_db2_coeffs_lo_sum = 46342,
@@ -1134,23 +1248,201 @@ static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
         const AdmCsfFactors f =
             adm_csf_factors(scale, adm_norm_view_dist, adm_ref_display_height, s->adm_csf_mode,
                             s->adm_csf_scale, s->adm_csf_diag_scale);
-        p.rfactor[scale * 3] = f.factor1;
-        p.rfactor[scale * 3 + 1] = f.factor1;
-        p.rfactor[scale * 3 + 2] = f.factor2;
+        p->rfactor[scale * 3] = f.factor1;
+        p->rfactor[scale * 3 + 1] = f.factor1;
+        p->rfactor[scale * 3 + 2] = f.factor2;
         if (scale == 0) {
             uint16_t i_rf[3];
-            adm_csf_rfactor_scale0(p.rfactor, adm_norm_view_dist, adm_ref_display_height,
+            adm_csf_rfactor_scale0(p->rfactor, adm_norm_view_dist, adm_ref_display_height,
                                    s->adm_csf_mode, i_rf);
-            p.i_rfactor[0] = i_rf[0];
-            p.i_rfactor[1] = i_rf[1];
-            p.i_rfactor[2] = i_rf[2];
+            p->i_rfactor[0] = i_rf[0];
+            p->i_rfactor[1] = i_rf[1];
+            p->i_rfactor[2] = i_rf[2];
         } else {
-            p.i_rfactor[scale * 3] = (uint32_t)(p.rfactor[scale * 3] * pow2_32);
-            p.i_rfactor[scale * 3 + 1] = (uint32_t)(p.rfactor[scale * 3 + 1] * pow2_32);
-            p.i_rfactor[scale * 3 + 2] = (uint32_t)(p.rfactor[scale * 3 + 2] * pow2_32);
+            p->i_rfactor[scale * 3] = (uint32_t)(p->rfactor[scale * 3] * pow2_32);
+            p->i_rfactor[scale * 3 + 1] = (uint32_t)(p->rfactor[scale * 3 + 1] * pow2_32);
+            p->i_rfactor[scale * 3 + 2] = (uint32_t)(p->rfactor[scale * 3 + 2] * pow2_32);
         }
     }
-    memcpy(s->rfactor, p.rfactor, sizeof(p.rfactor));
+    memcpy(s->rfactor, p->rfactor, sizeof(p->rfactor));
+}
+
+/* adm_compute_dwt0 - the scale-0 DWT pair plus the picture-stream events.
+ *
+ * HISS-04: lifted verbatim out of integer_compute_adm_cuda's scale-0 branch.
+ */
+static int adm_compute_dwt0(AdmStateCuda *s, AdmBufferCuda *buf, VmafPicture *ref_pic,
+                            VmafPicture *dis_pic, int w, int h, size_t curr_ref_stride,
+                            size_t curr_dis_stride, size_t buf_stride, AdmFixedParametersCuda *p,
+                            CudaFunctions *cu_f)
+{
+    // run these first dwt kernels on the input iamge stream to make sure it is consumed afterwards continue
+    // consumes reference picture
+    // produces buf->ref_dwt2, buf->dis_dwt2
+    int err = 0;
+    if (ref_pic->bpc == 8) {
+        err = dwt2_8_device(s, (const uint8_t *)ref_pic->data[0], &buf->ref_dwt2, buf->i4_ref_dwt2,
+                            w, h, curr_ref_stride, buf_stride, p, cu_f,
+                            vmaf_cuda_picture_get_stream(ref_pic));
+        if (err)
+            return err;
+
+        err = dwt2_8_device(s, (const uint8_t *)dis_pic->data[0], &buf->dis_dwt2, buf->i4_dis_dwt2,
+                            w, h, curr_dis_stride, buf_stride, p, cu_f,
+                            vmaf_cuda_picture_get_stream(dis_pic));
+        if (err)
+            return err;
+    } else {
+        err = adm_dwt2_16_device(s, (uint16_t *)ref_pic->data[0], &buf->ref_dwt2, buf->i4_ref_dwt2,
+                                 w, h, curr_ref_stride, buf_stride, ref_pic->bpc, p, cu_f,
+                                 vmaf_cuda_picture_get_stream(ref_pic));
+        if (err)
+            return err;
+
+        err = adm_dwt2_16_device(s, (uint16_t *)dis_pic->data[0], &buf->dis_dwt2, buf->i4_dis_dwt2,
+                                 w, h, curr_dis_stride, buf_stride, dis_pic->bpc, p, cu_f,
+                                 vmaf_cuda_picture_get_stream(dis_pic));
+        if (err)
+            return err;
+    }
+    CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->ref_event, vmaf_cuda_picture_get_stream(ref_pic)));
+    CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->dis_event, vmaf_cuda_picture_get_stream(dis_pic)));
+    return 0;
+}
+
+/* adm_compute_scale0 - the whole scale-0 (int16) pass.
+ *
+ * HISS-04: lifted verbatim out of integer_compute_adm_cuda. `w` and `h` are
+ * halved in place exactly where the loop used to halve them, so the later
+ * scales see the same dimensions.
+ */
+static int adm_compute_scale0(VmafFeatureExtractor *fex, AdmStateCuda *s, AdmBufferCuda *buf,
+                              VmafPicture *ref_pic, VmafPicture *dis_pic, int *w, int *h,
+                              size_t curr_ref_stride, size_t curr_dis_stride, size_t buf_stride,
+                              AdmFixedParametersCuda *p, CudaFunctions *cu_f,
+                              double adm_norm_view_dist, int adm_ref_display_height)
+{
+    int err = adm_compute_dwt0(s, buf, ref_pic, dis_pic, *w, *h, curr_ref_stride, curr_dis_stride,
+                               buf_stride, p, cu_f);
+    if (err)
+        return err;
+
+    *w = (*w + 1) / 2;
+    *h = (*h + 1) / 2;
+
+    /* Push the fex context briefly to sync the local str stream
+     * with the per-picture events; the helper's unwind runs the pop
+     * even if a wait fails mid-sequence. */
+    const int sync_err = adm_sync_picture_events(fex, s, cu_f);
+    if (sync_err)
+        return sync_err;
+
+    // consumes buf->ref_dwt2
+    // produces buf->adm_csf_den[0]
+    err = adm_csf_den_scale_device(s, buf, *w, *h, buf_stride, adm_norm_view_dist,
+                                   adm_ref_display_height, cu_f, s->str);
+    if (err)
+        return err;
+
+    // consumes buf->ref_dwt2 , buf->dis_dwt2 (inline decouple)
+    // produces buf->csf_f
+    err = adm_csf_device(s, buf, *w, *h, buf_stride, p, cu_f, s->str);
+    if (err)
+        return err;
+
+    // consumes buf->ref_dwt2, buf->dis_dwt2, buf->csf_f (inline decouple + csf_a)
+    // produces buf->adm_cm[0]
+    err = adm_cm_device(s, buf, *w, *h, buf_stride, buf_stride, p, cu_f, s->str);
+    if (err)
+        return err;
+
+    // AIM CM scale 0: consumes ref_dwt2, dis_dwt2 (inline decouple, no csf_f)
+    // produces buf->adm_aim_cm[0]
+    if (!s->adm_skip_aim) {
+        err = adm_cm_aim_device(s, buf, *w, *h, buf_stride, buf_stride, p, cu_f, s->str);
+        if (err)
+            return err;
+    }
+    return 0;
+}
+
+/* adm_compute_scale_n - the scales 1-3 (i4) pass.
+ *
+ * HISS-04: lifted verbatim out of integer_compute_adm_cuda.
+ *
+ * CUDA device pointers arrive as CUdeviceptr (unsigned long long) and
+ * must be cast to host-visible pointer types to populate kernel-args
+ * structs / layout helpers for cuLaunchKernel. The cast is inherent to
+ * the CUDA Driver API and cannot be refactored away without changing
+ * the public libvmaf-CUDA contract. Per ADR-0141 touched-file rule,
+ * upstream-parity exception.
+ */
+// NOLINTBEGIN(performance-no-int-to-ptr)
+static int adm_compute_scale_n(AdmStateCuda *s, AdmBufferCuda *buf, int32_t *i4_curr_ref_scale,
+                               int32_t *i4_curr_dis_scale, int *w, int *h, size_t curr_ref_stride,
+                               size_t curr_dis_stride, size_t buf_stride, unsigned scale,
+                               AdmFixedParametersCuda *p, CudaFunctions *cu_f,
+                               double adm_norm_view_dist, int adm_ref_display_height)
+{
+    // consumes buf->i4_ref_dwt2.band_a , buf->i4_dis_dwt2.band_a
+    // produces buf->i4_ref_dwt2.band_[ahvd] , buf->i4_dis_dwt2.band_[ahvd]
+    // uses buf->tmp_ref
+    int err = adm_dwt2_s123_combined_device(s, i4_curr_ref_scale, (int32_t *)buf->tmp_ref->data,
+                                            buf->i4_ref_dwt2, *w, *h, curr_ref_stride, buf_stride,
+                                            scale, p, cu_f, s->str);
+    if (err)
+        return err;
+    err = adm_dwt2_s123_combined_device(s, i4_curr_dis_scale, (int32_t *)buf->tmp_dis->data,
+                                        buf->i4_dis_dwt2, *w, *h, curr_dis_stride, buf_stride,
+                                        scale, p, cu_f, s->str);
+    if (err)
+        return err;
+
+    *w = (*w + 1) / 2;
+    *h = (*h + 1) / 2;
+
+    // consumes buf->i4_ref_dwt2
+    // produces buf->adm_csf_den[1,2,3]
+    err = adm_csf_den_s123_device(s, buf, scale, *w, *h, buf_stride, adm_norm_view_dist,
+                                  adm_ref_display_height, cu_f, s->str);
+    if (err)
+        return err;
+
+    // consumes buf->i4_ref_dwt2 , buf->i4_dis_dwt2 (inline decouple)
+    // produces buf->i4_csf_f
+    err = i4_adm_csf_device(s, buf, scale, *w, *h, buf_stride, p, cu_f, s->str);
+    if (err)
+        return err;
+
+    // consumes buf->i4_ref_dwt2, buf->i4_dis_dwt2, buf->i4_csf_f (inline decouple + csf_a)
+    // produces buf->adm_cm[1,2,3]
+    err = i4_adm_cm_device(s, buf, *w, *h, buf_stride, buf_stride, scale, p, cu_f, s->str);
+    if (err)
+        return err;
+
+    // AIM CM scales 1-3: consumes i4_ref_dwt2, i4_dis_dwt2 (fully inline)
+    // produces buf->adm_aim_cm[1,2,3]
+    if (!s->adm_skip_aim) {
+        err = i4_adm_cm_aim_device(s, buf, *w, *h, buf_stride, buf_stride, scale, p, cu_f, s->str);
+        if (err)
+            return err;
+    }
+    return 0;
+}
+// NOLINTEND(performance-no-int-to-ptr)
+
+static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
+                                    VmafPicture *ref_pic, VmafPicture *dis_pic, AdmBufferCuda *buf,
+                                    double adm_enhn_gain_limit, double adm_norm_view_dist,
+                                    int adm_ref_display_height)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    int w = ref_pic->w[0];
+    int h = ref_pic->h[0];
+
+    AdmFixedParametersCuda p;
+    adm_fill_fixed_params(s, &p, w, h, adm_enhn_gain_limit, adm_norm_view_dist,
+                          adm_ref_display_height);
     CHECK_CUDA_RETURN(
         cu_f, cuMemsetD8Async(buf->tmp_res->data, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str));
 
@@ -1172,143 +1464,16 @@ static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
     int err = 0;
     for (unsigned scale = 0; scale < 4; ++scale) {
         if (scale == 0) {
-            // run these first dwt kernels on the input iamge stream to make sure it is consumed afterwards continue
-            // consumes reference picture
-            // produces buf->ref_dwt2, buf->dis_dwt2
-            if (ref_pic->bpc == 8) {
-                err = dwt2_8_device(s, (const uint8_t *)ref_pic->data[0], &buf->ref_dwt2,
-                                    buf->i4_ref_dwt2, w, h, curr_ref_stride, buf_stride, &p, cu_f,
-                                    vmaf_cuda_picture_get_stream(ref_pic));
-                if (err)
-                    return err;
-
-                err = dwt2_8_device(s, (const uint8_t *)dis_pic->data[0], &buf->dis_dwt2,
-                                    buf->i4_dis_dwt2, w, h, curr_dis_stride, buf_stride, &p, cu_f,
-                                    vmaf_cuda_picture_get_stream(dis_pic));
-                if (err)
-                    return err;
-            } else {
-                err = adm_dwt2_16_device(s, (uint16_t *)ref_pic->data[0], &buf->ref_dwt2,
-                                         buf->i4_ref_dwt2, w, h, curr_ref_stride, buf_stride,
-                                         ref_pic->bpc, &p, cu_f,
-                                         vmaf_cuda_picture_get_stream(ref_pic));
-                if (err)
-                    return err;
-
-                err = adm_dwt2_16_device(s, (uint16_t *)dis_pic->data[0], &buf->dis_dwt2,
-                                         buf->i4_dis_dwt2, w, h, curr_dis_stride, buf_stride,
-                                         dis_pic->bpc, &p, cu_f,
-                                         vmaf_cuda_picture_get_stream(dis_pic));
-                if (err)
-                    return err;
-            }
-            CHECK_CUDA_RETURN(cu_f,
-                              cuEventRecord(s->ref_event, vmaf_cuda_picture_get_stream(ref_pic)));
-            CHECK_CUDA_RETURN(cu_f,
-                              cuEventRecord(s->dis_event, vmaf_cuda_picture_get_stream(dis_pic)));
-
-            w = (w + 1) / 2;
-            h = (h + 1) / 2;
-
-            /* Push the fex context briefly to sync the local str stream
-             * with the per-picture events. Use goto-style unwind so the
-             * pop runs even if a wait fails mid-sequence. */
-            int _cuda_err = 0;
-            int ctx_pushed = 0;
-            CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), push_fail);
-            ctx_pushed = 1;
-            CHECK_CUDA_GOTO(cu_f, cuStreamWaitEvent(s->str, s->dis_event, CU_EVENT_WAIT_DEFAULT),
-                            push_fail);
-            CHECK_CUDA_GOTO(cu_f, cuStreamWaitEvent(s->str, s->ref_event, CU_EVENT_WAIT_DEFAULT),
-                            push_fail);
-            CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), after_pop);
-            goto push_ok;
-        push_fail:
-            if (ctx_pushed)
-                (void)cu_f->cuCtxPopCurrent(NULL);
-        after_pop:
-            return _cuda_err;
-        push_ok:;
-
-            // consumes buf->ref_dwt2
-            // produces buf->adm_csf_den[0]
-            err = adm_csf_den_scale_device(s, buf, w, h, buf_stride, adm_norm_view_dist,
-                                           adm_ref_display_height, cu_f, s->str);
-            if (err)
-                return err;
-
-            // consumes buf->ref_dwt2 , buf->dis_dwt2 (inline decouple)
-            // produces buf->csf_f
-            err = adm_csf_device(s, buf, w, h, buf_stride, &p, cu_f, s->str);
-            if (err)
-                return err;
-
-            // consumes buf->ref_dwt2, buf->dis_dwt2, buf->csf_f (inline decouple + csf_a)
-            // produces buf->adm_cm[0]
-            err = adm_cm_device(s, buf, w, h, buf_stride, buf_stride, &p, cu_f, s->str);
-            if (err)
-                return err;
-
-            // AIM CM scale 0: consumes ref_dwt2, dis_dwt2 (inline decouple, no csf_f)
-            // produces buf->adm_aim_cm[0]
-            if (!s->adm_skip_aim) {
-                err = adm_cm_aim_device(s, buf, w, h, buf_stride, buf_stride, &p, cu_f, s->str);
-                if (err)
-                    return err;
-            }
+            err = adm_compute_scale0(fex, s, buf, ref_pic, dis_pic, &w, &h, curr_ref_stride,
+                                     curr_dis_stride, buf_stride, &p, cu_f, adm_norm_view_dist,
+                                     adm_ref_display_height);
         } else {
-            // consumes buf->i4_ref_dwt2.band_a , buf->i4_dis_dwt2.band_a
-            // produces buf->i4_ref_dwt2.band_[ahvd] , buf->i4_dis_dwt2.band_[ahvd]
-            // uses buf->tmp_ref
-            // CUDA device pointers arrive as CUdeviceptr (unsigned long long) and
-            // must be cast to host-visible pointer types to populate kernel-args
-            // structs / layout helpers for cuLaunchKernel. The cast is inherent to
-            // the CUDA Driver API and cannot be refactored away without changing
-            // the public libvmaf-CUDA contract. Per ADR-0141 touched-file rule,
-            // upstream-parity exception.
-            // NOLINTBEGIN(performance-no-int-to-ptr)
-            err = adm_dwt2_s123_combined_device(s, i4_curr_ref_scale, (int32_t *)buf->tmp_ref->data,
-                                                buf->i4_ref_dwt2, w, h, curr_ref_stride, buf_stride,
-                                                scale, &p, cu_f, s->str);
-            if (err)
-                return err;
-            err = adm_dwt2_s123_combined_device(s, i4_curr_dis_scale, (int32_t *)buf->tmp_dis->data,
-                                                buf->i4_dis_dwt2, w, h, curr_dis_stride, buf_stride,
-                                                scale, &p, cu_f, s->str);
-            if (err)
-                return err;
-
-            w = (w + 1) / 2;
-            h = (h + 1) / 2;
-
-            // consumes buf->i4_ref_dwt2
-            // produces buf->adm_csf_den[1,2,3]
-            err = adm_csf_den_s123_device(s, buf, scale, w, h, buf_stride, adm_norm_view_dist,
-                                          adm_ref_display_height, cu_f, s->str);
-            if (err)
-                return err;
-
-            // consumes buf->i4_ref_dwt2 , buf->i4_dis_dwt2 (inline decouple)
-            // produces buf->i4_csf_f
-            err = i4_adm_csf_device(s, buf, scale, w, h, buf_stride, &p, cu_f, s->str);
-            if (err)
-                return err;
-
-            // consumes buf->i4_ref_dwt2, buf->i4_dis_dwt2, buf->i4_csf_f (inline decouple + csf_a)
-            // produces buf->adm_cm[1,2,3]
-            err = i4_adm_cm_device(s, buf, w, h, buf_stride, buf_stride, scale, &p, cu_f, s->str);
-            if (err)
-                return err;
-
-            // AIM CM scales 1-3: consumes i4_ref_dwt2, i4_dis_dwt2 (fully inline)
-            // produces buf->adm_aim_cm[1,2,3]
-            if (!s->adm_skip_aim) {
-                err = i4_adm_cm_aim_device(s, buf, w, h, buf_stride, buf_stride, scale, &p, cu_f,
-                                           s->str);
-                if (err)
-                    return err;
-            }
+            err = adm_compute_scale_n(s, buf, i4_curr_ref_scale, i4_curr_dis_scale, &w, &h,
+                                      curr_ref_stride, curr_dis_stride, buf_stride, scale, &p, cu_f,
+                                      adm_norm_view_dist, adm_ref_display_height);
         }
+        if (err)
+            return err;
 
         i4_curr_ref_scale = buf->i4_ref_dwt2.band_a;
         i4_curr_dis_scale = buf->i4_dis_dwt2.band_a;
@@ -1326,6 +1491,12 @@ static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
     return 0;
 }
 
+/* The four band-layout helpers below turn a CUdeviceptr (unsigned long long)
+ * into the host-visible pointer types the kernel-args structs need. The cast
+ * is inherent to the CUDA Driver API and cannot be refactored away without
+ * changing the public libvmaf-CUDA contract. Per ADR-0141 touched-file rule,
+ * upstream-parity exception. */
+// NOLINTBEGIN(performance-no-int-to-ptr)
 static CUdeviceptr init_dwt_band_cuda(struct VmafCudaState *cu_state,
                                       struct cuda_adm_dwt_band_t *band, CUdeviceptr data_top,
                                       size_t stride)
@@ -1437,201 +1608,15 @@ static CUdeviceptr init_res_aim_cm_cuda(struct VmafCudaState *cu_state, int64_t 
 
 // NOLINTEND(performance-no-int-to-ptr)
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+/* ------------------------------------------------------------------ */
+/* adm_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * HISS-01: lifted verbatim from the former `free_ref` label. The same
+ * resources are released in the same order on every exit path, and the
+ * value returned is the one the label returned.
+ */
+static int adm_init_unwind(VmafFeatureExtractor *fex, AdmStateCuda *s, int ret)
 {
-    AdmStateCuda *s = fex->priv;
-
-    (void)pix_fmt;
-    (void)bpc;
-
-    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
-     * represent before any device resource is claimed, so an unsupported
-     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
-     * Same accept/reject set as the CPU reference. */
-    {
-        const int csf_err = adm_csf_config_check(s);
-        if (csf_err) {
-            return csf_err;
-        }
-    }
-
-    int ret = 0;
-    CudaFunctions *cu_f = fex->cu_state->f;
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    /* ADR-1090 — graduated labels so earlier allocations are freed when a
-     * later step fails; previously all paths jumped to `fail` which only
-     * popped the context, leaking the stream and events. */
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->ref_event, CU_EVENT_DEFAULT), fail_after_finished);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->dis_event, CU_EVENT_DEFAULT), fail_after_ref_event);
-
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_dwt_module, adm_dwt2_ptx), fail_after_events);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_module, adm_csf_ptx), fail_after_events);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_den_module, adm_csf_den_ptx),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_cm_module, adm_cm_ptx), fail_after_events);
-
-    // Get DWT kernel function pointers check adm_dwt2.cu for __global__ templated kernels
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_0_0_int32_t,
-                                        s->adm_dwt_module,
-                                        "dwt_s123_combined_vert_kernel_0_0_int32_t"),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_32768_16_int32_t,
-                                        s->adm_dwt_module,
-                                        "dwt_s123_combined_vert_kernel_32768_16_int32_t"),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_16384_15,
-                                        s->adm_dwt_module,
-                                        "dwt_s123_combined_hori_kernel_16384_15"),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_32768_16,
-                                        s->adm_dwt_module,
-                                        "dwt_s123_combined_hori_kernel_32768_16"),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(
-                        &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
-                        s->adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t"),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(
-                        &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t,
-                        s->adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t"),
-                    fail_after_events);
-
-    // Get csf kernel function pointers check adm_csf.cu for __global__ templated kernels
-    CHECK_CUDA_GOTO(
-        cu_f,
-        cuModuleGetFunction(&s->func_adm_csf_kernel_1_4, s->adm_csf_module, "adm_csf_kernel_1_4"),
-        fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_i4_adm_csf_kernel_1_4, s->adm_csf_module,
-                                        "i4_adm_csf_kernel_1_4"),
-                    fail_after_events);
-
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_csf_den_scale_line_kernel,
-                                        s->adm_csf_den_module,
-                                        "adm_csf_den_scale_line_kernel_8_128"),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_csf_den_s123_line_kernel,
-                                        s->adm_csf_den_module,
-                                        "adm_csf_den_s123_line_kernel_8_128"),
-                    fail_after_events);
-
-    /* adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused. */
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_cm_line_kernel_8, s->adm_cm_module,
-                                        "adm_cm_line_kernel_8"),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_i4_adm_cm_line_kernel_fused, s->adm_cm_module,
-                                        "i4_adm_cm_line_kernel_fused"),
-                    fail_after_events);
-    /* AIM CM kernel function pointers (ADR-0746). */
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_cm_aim_line_kernel_2, s->adm_cm_module,
-                                        "adm_cm_aim_line_kernel_2"),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_cm_aim_line_kernel_4, s->adm_cm_module,
-                                        "adm_cm_aim_line_kernel_4"),
-                    fail_after_events);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_i4_adm_cm_aim_line_kernel_fused, s->adm_cm_module,
-                                        "i4_adm_cm_aim_line_kernel_fused"),
-                    fail_after_events);
-
-    /* SM count for the AIM CM launch heuristic (ADR-1226). A failure here is
-     * not fatal: `adm_cm_aim_line` treats sm_count == 0 as "unknown" and picks
-     * the wider instantiation, which is what the kernel did unconditionally
-     * before. */
-    if (cu_f->cuDeviceGetAttribute(&s->sm_count, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
-                                   fex->cu_state->dev) != CUDA_SUCCESS) {
-        s->sm_count = 0;
-    }
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-
-    // s->dwt2_8 = dwt2_8_device;
-
-    s->integer_stride = ALIGN_CEIL(w * sizeof(int32_t));
-    s->buf.ind_size_x = ALIGN_CEIL(((w + 1) / 2) * sizeof(int32_t));
-    s->buf.ind_size_y = ALIGN_CEIL(((h + 1) / 2) * sizeof(int32_t));
-    size_t buf_sz_one = s->buf.ind_size_x * ((h + 1) / 2);
-
-    /* Buffer layout after decouple/csf_a elimination:
-     * Scale 0 (int16): ref_dwt2(4), dis_dwt2(4), csf_f(3) = 11 half-bands = 5.5 buf_sz_one
-     * Scale 1-3 (int32): i4_ref_dwt2(4), i4_dis_dwt2(4), i4_csf_f(3) = 11 full-bands = 11 buf_sz_one
-     * Total = 16.5 buf_sz_one → allocate 17 (round up) */
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.data_buf,
-                                 buf_sz_one * 11 + buf_sz_one / 2 * 11);
-    if (ret)
-        goto free_ref;
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_ref,
-                                 (s->integer_stride * 4 * ((h + 1) / 2)));
-    if (ret)
-        goto free_ref;
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_dis,
-                                 (s->integer_stride * 4 * ((h + 1) / 2)));
-    if (ret)
-        goto free_ref;
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_accum, sizeof(uint64_t) * 3 * w * h);
-    if (ret)
-        goto free_ref;
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_accum_h, sizeof(uint64_t) * 3 * h);
-    if (ret)
-        goto free_ref;
-    ret =
-        vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_res, sizeof(uint64_t) * RES_BUFFER_SIZE);
-    if (ret)
-        goto free_ref;
-    ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->buf.results_host,
-                                      sizeof(uint64_t) * RES_BUFFER_SIZE);
-    if (ret)
-        goto free_ref;
-
-    CUdeviceptr cu_res_top;
-    ret = vmaf_cuda_buffer_get_dptr(s->buf.tmp_res, &cu_res_top);
-    if (ret)
-        goto free_ref;
-
-    cu_res_top = init_res_cm_cuda(fex->cu_state, s->buf.adm_cm, cu_res_top);
-    cu_res_top = init_res_csf_cuda(fex->cu_state, s->buf.adm_csf_den, cu_res_top);
-    cu_res_top = init_res_aim_cm_cuda(fex->cu_state, s->buf.adm_aim_cm, cu_res_top);
-
-    CUdeviceptr cu_data_top;
-    vmaf_cuda_buffer_get_dptr(s->buf.data_buf, &cu_data_top);
-
-    cu_data_top = init_dwt_band_cuda(fex->cu_state, &s->buf.ref_dwt2, cu_data_top, buf_sz_one / 2);
-    cu_data_top = init_dwt_band_cuda(fex->cu_state, &s->buf.dis_dwt2, cu_data_top, buf_sz_one / 2);
-    cu_data_top = init_dwt_band_hvd_cuda(fex->cu_state, &s->buf.csf_f, cu_data_top, buf_sz_one / 2);
-
-    cu_data_top =
-        i4_init_dwt_band_cuda(fex->cu_state, &s->buf.i4_ref_dwt2, cu_data_top, buf_sz_one);
-    cu_data_top =
-        i4_init_dwt_band_cuda(fex->cu_state, &s->buf.i4_dis_dwt2, cu_data_top, buf_sz_one);
-    cu_data_top =
-        i4_init_dwt_band_hvd_cuda(fex->cu_state, &s->buf.i4_csf_f, cu_data_top, buf_sz_one);
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto free_ref;
-
-    return 0;
-
-free_ref:
     if (s->buf.data_buf) {
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.data_buf);
         free(s->buf.data_buf);
@@ -1663,36 +1648,322 @@ free_ref:
     (void)ret; // accumulated cleanup status intentionally discarded on error path
 
     return -ENOMEM;
+}
 
-fail_after_events:
-    /* One or more cuModuleLoadData / cuModuleGetFunction calls failed.
-     * Unload any modules that were successfully loaded before releasing
-     * stream and events (cuModuleUnload is a no-op on a NULL handle). */
-    if (s->adm_cm_module)
-        (void)cu_f->cuModuleUnload(s->adm_cm_module);
-    if (s->adm_csf_den_module)
-        (void)cu_f->cuModuleUnload(s->adm_csf_den_module);
-    if (s->adm_csf_module)
-        (void)cu_f->cuModuleUnload(s->adm_csf_module);
-    if (s->adm_dwt_module)
-        (void)cu_f->cuModuleUnload(s->adm_dwt_module);
-    s->adm_cm_module = s->adm_csf_den_module = s->adm_csf_module = s->adm_dwt_module = NULL;
-fail_after_ref_event:
-    (void)cu_f->cuEventDestroy(s->dis_event);
-    s->dis_event = 0;
-fail_after_finished:
-    (void)cu_f->cuEventDestroy(s->ref_event);
-    s->ref_event = 0;
-fail_after_stream:
-    (void)cu_f->cuEventDestroy(s->finished);
-    s->finished = 0;
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    return _cuda_err;
+/* AdmInitStage - how far init_fex_cuda's CUDA-context setup got before it
+ * failed, i.e. which rung of the former `fail_after_*` label ladder the
+ * unwind has to start at. */
+typedef enum AdmInitStage {
+    ADM_INIT_POP_ONLY = 0,
+    ADM_INIT_AFTER_STREAM,
+    ADM_INIT_AFTER_FINISHED,
+    ADM_INIT_AFTER_REF_EVENT,
+    ADM_INIT_AFTER_EVENTS,
+} AdmInitStage;
+
+/* adm_init_kernel_unwind - the former graduated fail_after_* ladder.
+ *
+ * HISS-01 / HISS-04: the ladder's statements are lifted verbatim and still
+ * run in the same fall-through order, so every exit path releases the same
+ * resources in the same sequence and returns the same errno the labels did.
+ */
+static int adm_init_kernel_unwind(AdmStateCuda *s, CudaFunctions *cu_f, AdmInitStage stage,
+                                  int cuda_err)
+{
+    if (stage >= ADM_INIT_AFTER_EVENTS) {
+        /* One or more cuModuleLoadData / cuModuleGetFunction calls failed.
+         * Unload any modules that were successfully loaded before releasing
+         * stream and events (cuModuleUnload is a no-op on a NULL handle). */
+        if (s->adm_cm_module)
+            (void)cu_f->cuModuleUnload(s->adm_cm_module);
+        if (s->adm_csf_den_module)
+            (void)cu_f->cuModuleUnload(s->adm_csf_den_module);
+        if (s->adm_csf_module)
+            (void)cu_f->cuModuleUnload(s->adm_csf_module);
+        if (s->adm_dwt_module)
+            (void)cu_f->cuModuleUnload(s->adm_dwt_module);
+        s->adm_cm_module = s->adm_csf_den_module = s->adm_csf_module = s->adm_dwt_module = NULL;
+    }
+    if (stage >= ADM_INIT_AFTER_REF_EVENT) {
+        (void)cu_f->cuEventDestroy(s->dis_event);
+        s->dis_event = 0;
+    }
+    if (stage >= ADM_INIT_AFTER_FINISHED) {
+        (void)cu_f->cuEventDestroy(s->ref_event);
+        s->ref_event = 0;
+    }
+    if (stage >= ADM_INIT_AFTER_STREAM) {
+        (void)cu_f->cuEventDestroy(s->finished);
+        s->finished = 0;
+        (void)cu_f->cuStreamDestroy(s->str);
+        s->str = 0;
+    }
+    (void)cu_f->cuCtxPopCurrent(NULL);
+    return cuda_err;
+}
+
+/* adm_create_stream_and_events - the stream plus the three events.
+ *
+ * `*stage` tracks which rung the unwind must start at, exactly matching the
+ * label each CHECK_CUDA_GOTO used to jump to.
+ */
+static int adm_create_stream_and_events(AdmStateCuda *s, CudaFunctions *cu_f, AdmInitStage *stage)
+{
+    *stage = ADM_INIT_POP_ONLY;
+    CHECK_CUDA_RETURN(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0));
+    /* ADR-1090 — graduated stages so earlier allocations are freed when a
+     * later step fails; previously all paths only popped the context,
+     * leaking the stream and events. */
+    *stage = ADM_INIT_AFTER_STREAM;
+    CHECK_CUDA_RETURN(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT));
+    *stage = ADM_INIT_AFTER_FINISHED;
+    CHECK_CUDA_RETURN(cu_f, cuEventCreate(&s->ref_event, CU_EVENT_DEFAULT));
+    *stage = ADM_INIT_AFTER_REF_EVENT;
+    CHECK_CUDA_RETURN(cu_f, cuEventCreate(&s->dis_event, CU_EVENT_DEFAULT));
+    *stage = ADM_INIT_AFTER_EVENTS;
+    return 0;
+}
+
+/* adm_load_modules - the four PTX modules. */
+static int adm_load_modules(AdmStateCuda *s, CudaFunctions *cu_f)
+{
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->adm_dwt_module, adm_dwt2_ptx));
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->adm_csf_module, adm_csf_ptx));
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->adm_csf_den_module, adm_csf_den_ptx));
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->adm_cm_module, adm_cm_ptx));
+    return 0;
+}
+
+// Get DWT kernel function pointers check adm_dwt2.cu for __global__ templated kernels
+static int adm_get_dwt_functions(AdmStateCuda *s, CudaFunctions *cu_f)
+{
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_0_0_int32_t,
+                                                s->adm_dwt_module,
+                                                "dwt_s123_combined_vert_kernel_0_0_int32_t"));
+    CHECK_CUDA_RETURN(cu_f,
+                      cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_32768_16_int32_t,
+                                          s->adm_dwt_module,
+                                          "dwt_s123_combined_vert_kernel_32768_16_int32_t"));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_16384_15,
+                                                s->adm_dwt_module,
+                                                "dwt_s123_combined_hori_kernel_16384_15"));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_32768_16,
+                                                s->adm_dwt_module,
+                                                "dwt_s123_combined_hori_kernel_32768_16"));
+    CHECK_CUDA_RETURN(
+        cu_f, cuModuleGetFunction(&s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
+                                  s->adm_dwt_module,
+                                  "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t"));
+    CHECK_CUDA_RETURN(
+        cu_f, cuModuleGetFunction(&s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t,
+                                  s->adm_dwt_module,
+                                  "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t"));
+    return 0;
+}
+
+// Get csf kernel function pointers check adm_csf.cu for __global__ templated kernels
+static int adm_get_csf_functions(AdmStateCuda *s, CudaFunctions *cu_f)
+{
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_adm_csf_kernel_1_4, s->adm_csf_module,
+                                                "adm_csf_kernel_1_4"));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_i4_adm_csf_kernel_1_4, s->adm_csf_module,
+                                                "i4_adm_csf_kernel_1_4"));
+
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_adm_csf_den_scale_line_kernel,
+                                                s->adm_csf_den_module,
+                                                "adm_csf_den_scale_line_kernel_8_128"));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_adm_csf_den_s123_line_kernel,
+                                                s->adm_csf_den_module,
+                                                "adm_csf_den_s123_line_kernel_8_128"));
+    return 0;
+}
+
+/* adm_get_cm_functions - the CM and AIM CM kernel handles. */
+static int adm_get_cm_functions(AdmStateCuda *s, CudaFunctions *cu_f)
+{
+    /* adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused. */
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_adm_cm_line_kernel_8, s->adm_cm_module,
+                                                "adm_cm_line_kernel_8"));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_i4_adm_cm_line_kernel_fused,
+                                                s->adm_cm_module, "i4_adm_cm_line_kernel_fused"));
+    /* AIM CM kernel function pointers (ADR-0746). */
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_adm_cm_aim_line_kernel_2, s->adm_cm_module,
+                                                "adm_cm_aim_line_kernel_2"));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_adm_cm_aim_line_kernel_4, s->adm_cm_module,
+                                                "adm_cm_aim_line_kernel_4"));
+    CHECK_CUDA_RETURN(cu_f,
+                      cuModuleGetFunction(&s->func_i4_adm_cm_aim_line_kernel_fused,
+                                          s->adm_cm_module, "i4_adm_cm_aim_line_kernel_fused"));
+    return 0;
+}
+
+/* adm_load_modules_and_kernels - the module loads plus every handle lookup. */
+static int adm_load_modules_and_kernels(AdmStateCuda *s, CudaFunctions *cu_f)
+{
+    int err = adm_load_modules(s, cu_f);
+    if (err)
+        return err;
+    err = adm_get_dwt_functions(s, cu_f);
+    if (err)
+        return err;
+    err = adm_get_csf_functions(s, cu_f);
+    if (err)
+        return err;
+    return adm_get_cm_functions(s, cu_f);
+}
+
+/* adm_init_cuda_context - push the context, create stream and events, load
+ * the modules, resolve every kernel handle and pop the context again.
+ *
+ * HISS-01 / HISS-04: lifted out of init_fex_cuda. The former `fail` and
+ * `fail_after_pop` labels are the two CHECK_CUDA_RETURN sites here (a failed
+ * push pops nothing, a failed pop returns straight away without releasing
+ * stream, events or modules — both exactly as before); every other failure
+ * routes through adm_init_kernel_unwind() at the same rung.
+ */
+static int adm_init_cuda_context(VmafFeatureExtractor *fex, AdmStateCuda *s, CudaFunctions *cu_f)
+{
+    CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
+
+    AdmInitStage stage = ADM_INIT_POP_ONLY;
+    int err = adm_create_stream_and_events(s, cu_f, &stage);
+    if (err)
+        return adm_init_kernel_unwind(s, cu_f, stage, err);
+
+    err = adm_load_modules_and_kernels(s, cu_f);
+    if (err)
+        return adm_init_kernel_unwind(s, cu_f, ADM_INIT_AFTER_EVENTS, err);
+
+    /* SM count for the AIM CM launch heuristic (ADR-1226). A failure here is
+     * not fatal: `adm_cm_aim_line` treats sm_count == 0 as "unknown" and picks
+     * the wider instantiation, which is what the kernel did unconditionally
+     * before. */
+    if (cu_f->cuDeviceGetAttribute(&s->sm_count, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
+                                   fex->cu_state->dev) != CUDA_SUCCESS) {
+        s->sm_count = 0;
+    }
+
+    CHECK_CUDA_RETURN(cu_f, cuCtxPopCurrent(NULL));
+    return 0;
+}
+
+/* adm_alloc_device_buffers - every device and pinned-host allocation.
+ *
+ * HISS-04: lifted verbatim out of init_fex_cuda; the allocations run in the
+ * same order and the caller still unwinds through adm_init_unwind().
+ */
+static int adm_alloc_device_buffers(VmafFeatureExtractor *fex, AdmStateCuda *s, unsigned w,
+                                    unsigned h, size_t *buf_sz_one_out)
+{
+    s->integer_stride = ALIGN_CEIL(w * sizeof(int32_t));
+    s->buf.ind_size_x = ALIGN_CEIL(((w + 1) / 2) * sizeof(int32_t));
+    s->buf.ind_size_y = ALIGN_CEIL(((h + 1) / 2) * sizeof(int32_t));
+    size_t buf_sz_one = s->buf.ind_size_x * ((h + 1) / 2);
+    *buf_sz_one_out = buf_sz_one;
+
+    /* Buffer layout after decouple/csf_a elimination:
+     * Scale 0 (int16): ref_dwt2(4), dis_dwt2(4), csf_f(3) = 11 half-bands = 5.5 buf_sz_one
+     * Scale 1-3 (int32): i4_ref_dwt2(4), i4_dis_dwt2(4), i4_csf_f(3) = 11 full-bands = 11 buf_sz_one
+     * Total = 16.5 buf_sz_one → allocate 17 (round up) */
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.data_buf,
+                                     buf_sz_one * 11 + buf_sz_one / 2 * 11);
+    if (ret)
+        return ret;
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_ref,
+                                 (s->integer_stride * 4 * ((h + 1) / 2)));
+    if (ret)
+        return ret;
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_dis,
+                                 (s->integer_stride * 4 * ((h + 1) / 2)));
+    if (ret)
+        return ret;
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_accum, sizeof(uint64_t) * 3 * w * h);
+    if (ret)
+        return ret;
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_accum_h, sizeof(uint64_t) * 3 * h);
+    if (ret)
+        return ret;
+    ret =
+        vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.tmp_res, sizeof(uint64_t) * RES_BUFFER_SIZE);
+    if (ret)
+        return ret;
+    return vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->buf.results_host,
+                                       sizeof(uint64_t) * RES_BUFFER_SIZE);
+}
+
+/* adm_map_buffer_layout - carve the result and data buffers into bands.
+ *
+ * HISS-04: lifted verbatim out of init_fex_cuda; the carve order decides
+ * every band's device address, so it is unchanged.
+ */
+static int adm_map_buffer_layout(VmafFeatureExtractor *fex, AdmStateCuda *s, size_t buf_sz_one)
+{
+    CUdeviceptr cu_res_top;
+    int ret = vmaf_cuda_buffer_get_dptr(s->buf.tmp_res, &cu_res_top);
+    if (ret)
+        return ret;
+
+    cu_res_top = init_res_cm_cuda(fex->cu_state, s->buf.adm_cm, cu_res_top);
+    cu_res_top = init_res_csf_cuda(fex->cu_state, s->buf.adm_csf_den, cu_res_top);
+    cu_res_top = init_res_aim_cm_cuda(fex->cu_state, s->buf.adm_aim_cm, cu_res_top);
+
+    CUdeviceptr cu_data_top;
+    vmaf_cuda_buffer_get_dptr(s->buf.data_buf, &cu_data_top);
+
+    cu_data_top = init_dwt_band_cuda(fex->cu_state, &s->buf.ref_dwt2, cu_data_top, buf_sz_one / 2);
+    cu_data_top = init_dwt_band_cuda(fex->cu_state, &s->buf.dis_dwt2, cu_data_top, buf_sz_one / 2);
+    cu_data_top = init_dwt_band_hvd_cuda(fex->cu_state, &s->buf.csf_f, cu_data_top, buf_sz_one / 2);
+
+    cu_data_top =
+        i4_init_dwt_band_cuda(fex->cu_state, &s->buf.i4_ref_dwt2, cu_data_top, buf_sz_one);
+    cu_data_top =
+        i4_init_dwt_band_cuda(fex->cu_state, &s->buf.i4_dis_dwt2, cu_data_top, buf_sz_one);
+    cu_data_top =
+        i4_init_dwt_band_hvd_cuda(fex->cu_state, &s->buf.i4_csf_f, cu_data_top, buf_sz_one);
+    return 0;
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    AdmStateCuda *s = fex->priv;
+
+    (void)pix_fmt;
+    (void)bpc;
+
+    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
+     * represent before any device resource is claimed, so an unsupported
+     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
+     * Same accept/reject set as the CPU reference. */
+    {
+        const int csf_err = adm_csf_config_check(s);
+        if (csf_err) {
+            return csf_err;
+        }
+    }
+
+    CudaFunctions *cu_f = fex->cu_state->f;
+    const int cuda_err = adm_init_cuda_context(fex, s, cu_f);
+    if (cuda_err)
+        return cuda_err;
+
+    // s->dwt2_8 = dwt2_8_device;
+
+    size_t buf_sz_one = 0;
+    int ret = adm_alloc_device_buffers(fex, s, w, h, &buf_sz_one);
+    if (ret)
+        return adm_init_unwind(fex, s, ret);
+
+    ret = adm_map_buffer_layout(fex, s, buf_sz_one);
+    if (ret)
+        return adm_init_unwind(fex, s, ret);
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return adm_init_unwind(fex, s, ret);
+
+    return 0;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,

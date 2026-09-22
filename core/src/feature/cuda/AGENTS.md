@@ -846,3 +846,18 @@ kernel variants at runtime. Current policy table is in ADR-0753.
   `__restrict__` extraction pattern; do not add writes through these pointers (they are
   read-only inputs). ADR-0773 completes ADR-0756 `adm_decouple` dispatch item.
   See [ADR-0773](../../../../docs/adr/0773-cuda-adm-decouple-inline-ldg.md).
+
+- **The `*_unwind` / `*_init_unwind` helpers are the single teardown path for
+  their extractor, and the arithmetic helpers must stay `static` in the same
+  translation unit (HISS-21 / 2026-09-21).** Every extractor's old `free_ref` /
+  `free_buffers` / `fail_cuda` label now lives in one `static` helper that holds
+  the label's statements verbatim; callers pass their live `err` / `ret` so the
+  returned code is unchanged. `ssim_cuda.c`'s `issim_init_unwind` takes an
+  `ISSIM_UNWIND_*` stage because it replaced a three-level fall-through cascade —
+  adding a resource means adding a stage, not a second exit path. The helpers
+  carrying score arithmetic (`integer_ssim_setup_geometry`'s `c1` / `c2`,
+  `motion_v2_stamp_value`, `motion_v2_emit_frame`, `float_psnr_peak_for_bpc`)
+  must stay `static` and keep each expression in one statement: moving an operand
+  across a call boundary, or letting one of these become external, re-opens the
+  FMA-contraction divergence ADR-1253 closed. On rebase: reapply the helper
+  boundary, never restore the label.

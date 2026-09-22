@@ -51968,3 +51968,11 @@ HISS-21 `core/src/feature/` top level (2026-09-21): `ciede`, `feature_collector`
   `ss2h_run_scale_gpu()`, the per-scale order in `extract_fex_hip()`). `ssimulacra2_cuda.c` and
   `core/src/feature/ssimulacra2.c` still carry their own no-split citations and must not be split
   along with it.
+
+`core/src/cuda/` and `core/src/feature/cuda/` no longer contain any explicit `goto` statement, and
+the long init/submit/flush functions are split into `static` helpers (HISS-01 / HISS-04): each old
+cleanup label is now a `*_unwind` helper holding that label's statements verbatim, the three
+fall-through cascades take an explicit stage argument, and `CHECK_CUDA_GOTO` plus the labels it
+targets are unchanged. On conflict, reapply the helper boundaries rather than restoring the labels,
+and keep every moved arithmetic statement whole — splitting one would let FMA contraction change the
+score.
