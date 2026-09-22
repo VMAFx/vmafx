@@ -52246,3 +52246,42 @@ Three invariants a rebase can quietly undo:
 The two-step pipeline ADR-0207 made load-bearing is unchanged: QAT conditions
 weights, ORT `quantize_static` emits the QDQ graph, `convert_pt2e` is never
 called — for the same reason `convert_fx` never was.
+
+## `core/src/feature/hip/integer_adm_hip.c` + `ssimulacra2_hip.c` — unwind ladders (T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22, ADR-1296)
+
+A conflict resolution on either file's `init` can silently reinstate a
+use-after-free. Three things must not come back:
+
+- **No unwind tier may be handed `hipSuccess`.** Both ladders terminate in
+  `hip_rc(rc)` / `ss2h_hip_rc(rc)`, which map `hipSuccess` to `0`, so a tier
+  given `hipSuccess` makes the whole unwind report a successful `init` over a
+  state it has just released. `git log -S hipSuccess` on these two files finds
+  the three sites that did this. If a resolution reintroduces
+  `return ss2h_init_unwind_mod_mul(s, hip_rc);` in `init_fex_hip`, or
+  `ss2h_load_modules`'s `hipError_t *rc_out` out-parameter — whose only purpose
+  was ferrying that `hipSuccess` — the bug is back.
+- **`adm_hip_unwind_buf_dev_to_host()` must stay deleted.** It entered the
+  ladder at the host tier, jumping over `d_dis_luma` and `d_ref_luma`. That
+  skip came from a pre-HISS-01 `goto fail_host` whose label sat below
+  `fail_ref_luma:`, and ADR-0759 threaded `buf_dev` through it without
+  revisiting it. Because `vmaf_feature_extractor_context_close` rejects an
+  uninitialised context, `close_fex_hip` never runs after a failed `init`, so a
+  skipped tier is a permanent leak. The dictionary path now enters at
+  `adm_hip_unwind_buf_dev()`, which is the exact reverse of the allocation
+  order.
+- **The `core/src/feature/hip/AGENTS.md` note that called this intentional must
+  not be restored.** An earlier revision recorded "two of them deliberately
+  report the `hipSuccess` left by the last successful HIP call … not bugs to
+  fix inside a structural refactor". That sentence is why three separate passes
+  over these lines preserved the defect. It is replaced by two invariants with
+  the opposite sense.
+
+HISS-01 still holds: the ladders stay `goto`-free, one `static` helper per
+former label, each tail-calling the next-earlier tier. The fix changes *which
+tier a failure enters at* and *what value it returns*, not the chain's shape.
+
+`core/test/test_hip_adm_init_unwind.c` and
+`core/test/test_hip_ssimulacra2_init_unwind.c` (`fast` suite, no GPU needed)
+fail on any of the three regressions. They compile the extractor TU against a
+complete stub set, so they also break — loudly, at link time — if either TU
+gains a HIP runtime call; regenerate the stub list with `nm -u` on the object.

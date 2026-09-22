@@ -884,9 +884,11 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
             return hip_rc(rc);
     }
 
-    /* reduce kernel */
+    /* reduce kernel. The reduction consumes 4 values per thread; that count is
+     * baked into the kernel itself and shows up in its name
+     * (`..._reduce_line_kernel_4`), so the host side does not pass it and an
+     * unused `val_per_thread` local only tripped -Wunused-variable. */
     {
-        const int val_per_thread = 4;
         const int warps_per_cta = 4;
         const int BLOCKX = 32 * warps_per_cta;
         void *args[] = {
@@ -1397,25 +1399,6 @@ static int adm_hip_unwind_buf_dev(AdmStateHip *s, hipError_t rc)
     return adm_hip_unwind_dis_luma(s, rc);
 }
 
-/* The feature-name-dictionary failure path only. It releases buf_dev and then
- * re-enters the ladder at the host tier, jumping over d_dis_luma / d_ref_luma.
- *
- * That skip is not an oversight: the pre-HISS-01 `goto fail_host` on this path
- * landed below `fail_ref_luma:`, so it never freed the two luma stagers, and
- * HISS-01 preserved the behaviour verbatim rather than fixing it under cover of
- * a refactor. ADR-0759 adds buf_dev to the path but does not change which other
- * tiers it visits, so the skip is carried through here unchanged. The two
- * stagers therefore still leak on this one path — tracked separately, since
- * `close` is never invoked after a failed `init`
- * (`vmaf_feature_extractor_context_close` rejects an uninitialised context), so
- * nothing downstream reclaims them. */
-static int adm_hip_unwind_buf_dev_to_host(AdmStateHip *s, hipError_t rc)
-{
-    (void)hipFree(s->buf_dev);
-    s->buf_dev = NULL;
-    return adm_hip_unwind_host(s, rc);
-}
-
 /* Private stream plus the three synchronisation events. */
 static int adm_hip_create_stream_events(AdmStateHip *s)
 {
@@ -1658,13 +1641,29 @@ static int adm_hip_init_device(VmafFeatureExtractor *fex, AdmStateHip *s, unsign
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (s->feature_name_dict == NULL) {
-        /* The former `goto fail_host` reported hip_rc(hip_err) with hip_err
-         * still holding the hipSuccess of the last successful HIP call, and it
-         * deliberately skipped the d_ref_luma / d_dis_luma tier. Both are
-         * preserved verbatim. ADR-0759 inserts buf_dev — allocated after those
-         * two and so released before them — ahead of the host tier and changes
-         * nothing else about this path. */
-        return adm_hip_unwind_buf_dev_to_host(s, hipSuccess);
+        /* A host allocation failed, so there is no hipError_t to translate.
+         * Enter the ladder at buf_dev — the last allocation init performs, so
+         * the first tier released — and let it run to the bottom: that is the
+         * exact reverse of the allocation order and is the only thing that
+         * reclaims d_dis_luma and d_ref_luma, because
+         * `vmaf_feature_extractor_context_close` rejects an uninitialised
+         * context and so `close_fex_hip` never runs after a failed `init`.
+         *
+         * Report -ENOMEM, as every sibling HIP extractor does. Feeding
+         * hipSuccess to the ladder's terminal would make `hip_rc` return 0 and
+         * announce a successful init over a state whose every buffer, module,
+         * event and stream has just been released; the errno therefore does
+         * not travel through `hip_rc`. The ladder's own result is still
+         * checked, and a genuine HIP failure wins over -ENOMEM.
+         *
+         * History: before HISS-01 this path was a `goto fail_host` that landed
+         * below `fail_ref_luma:`, so it skipped both luma stagers; HISS-01 kept
+         * that skip verbatim and ADR-0759 threaded buf_dev through it. The skip
+         * was a leak, the hipSuccess was a use-after-free, and both are fixed
+         * here rather than carried forward — see
+         * core/src/feature/hip/AGENTS.md. */
+        const int unwind_err = adm_hip_unwind_buf_dev(s, hipSuccess);
+        return (unwind_err != 0) ? unwind_err : -ENOMEM;
     }
 
     return 0;

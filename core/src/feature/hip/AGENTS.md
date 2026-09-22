@@ -696,12 +696,36 @@ Rebase-sensitive invariants:
   then calls the helper for the label it used to fall into. The release **set**
   and the release **ORDER** on every exit path must stay byte-for-byte what the
   ladder produced. Do not "simplify" a cascade into a single free-everything
-  call: several tiers deliberately skip an earlier tier (e.g. `speed_chroma`'s
-  buffer-allocation failure leaves the module loaded and the stream alive;
-  `integer_adm_hip.c`'s dictionary failure skips the `d_ref_luma` tier), and
-  two of them deliberately report the `hipSuccess` left by the last successful
-  HIP call. Those are pre-existing behaviours, preserved verbatim, not bugs to
-  fix inside a structural refactor.
+  call: a tier may deliberately skip an earlier one (e.g. `speed_chroma`'s
+  buffer-allocation failure leaves the module loaded and the stream alive,
+  because those were claimed before the buffers and are released by a later
+  failure, not this one).
+- **A tier's `hipError_t` argument must be a real failure. Never
+  `hipSuccess`.** Every ladder terminates in `hip_rc(rc)` / `ss2h_hip_rc(rc)`,
+  which map `hipSuccess` to `0`. Handing a tier `hipSuccess` therefore makes
+  the whole unwind return success: `init` reports 0,
+  `vmaf_feature_extractor_context_init` sets `is_initialized`, and the first
+  `extract` or `submit` runs against buffers, modules, events and a stream the
+  ladder has already released. Three call sites did exactly that until T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22
+  — `integer_adm_hip.c`'s feature-name-dictionary failure, and both allocator
+  branches in `ssimulacra2_hip.c` — and an earlier revision of this file
+  described the behaviour as pre-existing and not to be fixed inside a
+  refactor. It was a use-after-free. When the failure is a host allocation with
+  no `hipError_t` of its own, capture the ladder's result, and return the
+  caller's own errno (`-ENOMEM` for the ADM dictionary;
+  `ss2h_init_unwind_alloc()` forwards the allocator's) unless the ladder itself
+  reports a genuine HIP error.
+- **Enter the ladder at the tier matching the LAST successful allocation.**
+  `integer_adm_hip.c`'s dictionary failure used to enter at
+  `adm_hip_unwind_host()`, skipping `d_dis_luma` and `d_ref_luma`; the skip was
+  inherited verbatim from a pre-HISS-01 `goto fail_host` whose label sat below
+  `fail_ref_luma:`. Because `vmaf_feature_extractor_context_close` rejects an
+  uninitialised context, `close_fex_hip` never runs after a failed `init`, so
+  nothing downstream reclaims a tier the ladder skips — a skipped tier is a
+  permanent leak, not a deferral. That path now enters at
+  `adm_hip_unwind_buf_dev()`, the exact reverse of the allocation order. The
+  now-deleted `adm_hip_unwind_buf_dev_to_host()` existed only to reproduce the
+  old label placement; do not resurrect it.
 - **Helpers stay `static` and in the same translation unit.** They exist so
   codegen stays equivalent to the inline code they replace. Do not give them
   external linkage, do not route them through function pointers, and do not

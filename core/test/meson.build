@@ -3533,6 +3533,55 @@ test('test_hip_adm_parity', test_hip_adm_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
+# T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22 -- the HIP integer-ADM init failure path.
+#
+# integer_adm_hip.c is compiled straight into this target rather than linked
+# from libvmaf, and test_hip_adm_init_unwind.c defines every symbol the TU
+# references: the ~17 hip* entry points, the four HSACO blobs, and four
+# libvmaf helpers. `vmaf_feature_name_dict_from_provided_features` is the
+# injection point and returns NULL, which drives the one init path that used
+# to release every resource and then report success (hipSuccess through the
+# unwind ladder's terminal hip_rc()), leaking the two luma stagers on the way
+# out. The stubs mean no AMD device is needed, so this runs in the `fast`
+# suite on any host -- it is NOT in the `gpu` suite and never skips.
+#
+# It is gated on enable_hipcc as well as enable_hip because the failure path
+# only exists under HAVE_HIPCC; the scaffold build returns -ENOSYS from init
+# long before the dictionary is built. `hip_deps` is here for the ROCm
+# include directory (hipError_t and friends); the stub definitions in the
+# target's own objects are what the calls resolve to.
+if get_option('enable_hipcc') == true
+test_hip_adm_init_unwind = executable('test_hip_adm_init_unwind',
+    ['test.c', 'test_hip_adm_init_unwind.c', '../src/feature/hip/integer_adm_hip.c'],
+    # Same include set the library build gives this TU. `../src/cuda` is in it
+    # because integer_adm_hip.c's `#include "common.h"` resolves there -- there
+    # is no common.h under src/ or src/feature/, and dropping the directory
+    # breaks the compile. Keep it until that include is disambiguated.
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'),
+                           include_directories('../src/feature/common/'),
+                           include_directories('../src/cuda/')],
+    dependencies: [pthread_dependency, math_lib, hip_deps],
+    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
+)
+test('test_hip_adm_init_unwind', test_hip_adm_init_unwind, suite : ['fast'])
+
+# T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22, second site -- the two SSIMULACRA2 HIP allocator failure branches.
+# Same device-free interposition as the ADM gate above; here the injection is
+# an allocator that fails on a chosen call index, so both ss2h_alloc_device()
+# and ss2h_alloc_pinned() can be driven independently.
+test_hip_ssimulacra2_init_unwind = executable('test_hip_ssimulacra2_init_unwind',
+    ['test.c', 'test_hip_ssimulacra2_init_unwind.c', '../src/feature/hip/ssimulacra2_hip.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'),
+                           include_directories('../src/feature/common/'),
+                           include_directories('../src/cuda/')],
+    dependencies: [pthread_dependency, math_lib, hip_deps],
+    c_args: ['-DHAVE_HIP=1', '-DHAVE_HIPCC']
+)
+test('test_hip_ssimulacra2_init_unwind', test_hip_ssimulacra2_init_unwind, suite : ['fast'])
+endif
+
 # ADR-1167 — ADM small-frame border parity test (i == 0 && top <= 0 branch).
 test_hip_adm_small_border = executable('test_hip_adm_small_border',
     ['test.c', 'test_adm_small_border.c'],

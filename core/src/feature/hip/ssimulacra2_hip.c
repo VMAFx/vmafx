@@ -988,6 +988,21 @@ static int ss2h_init_unwind_mod_mul(Ssimu2StateHip *s, hipError_t rc)
     return ss2h_init_unwind_mod_blur(s, rc);
 }
 
+/* Unwind after a failure that carries a negative errno of its own rather than a
+ * hipError_t — ss2h_alloc_device() and ss2h_alloc_pinned() both report one.
+ * Feeding hipSuccess to the ladder makes its terminal ss2h_hip_rc() return 0,
+ * which would announce a successful init over a state whose every buffer,
+ * module and stream has just been released; `init_fex_hip` would return 0,
+ * `vmaf_feature_extractor_context_init` would set is_initialized, and the first
+ * extract would run on freed device memory. So the ladder's result is checked
+ * but the caller's errno is what propagates unless the ladder reports a real
+ * HIP failure. */
+static int ss2h_init_unwind_alloc(Ssimu2StateHip *s, int err)
+{
+    const int unwind_err = ss2h_init_unwind_mod_mul(s, hipSuccess);
+    return (unwind_err != 0) ? unwind_err : err;
+}
+
 #endif /* HAVE_HIPCC */
 
 /* ------------------------------------------------------------------ */
@@ -997,9 +1012,8 @@ static int ss2h_init_unwind_mod_mul(Ssimu2StateHip *s, hipError_t rc)
 #ifdef HAVE_HIPCC
 /* Loads both HSACO modules and resolves the three kernel handles. On failure
  * it returns through the same unwind tier the inline code used, so the release
- * order is unchanged; on success `*rc_out` carries the hipSuccess the caller's
- * later unwind tiers historically reported. */
-static int ss2h_load_modules(Ssimu2StateHip *s, hipError_t *rc_out)
+ * order is unchanged. */
+static int ss2h_load_modules(Ssimu2StateHip *s)
 {
     hipError_t hip_rc;
     hip_rc = hipModuleLoadData(&s->module_blur, ssimulacra2_blur_hsaco);
@@ -1017,7 +1031,6 @@ static int ss2h_load_modules(Ssimu2StateHip *s, hipError_t *rc_out)
     hip_rc = hipModuleGetFunction(&s->func_mul3, s->module_mul, "ssimulacra2_mul3");
     if (hip_rc != hipSuccess)
         return ss2h_init_unwind_mod_mul(s, hip_rc);
-    *rc_out = hip_rc;
     return 0;
 }
 
@@ -1059,20 +1072,21 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (hip_rc != hipSuccess)
         return ss2h_hip_rc(hip_rc);
 
-    int mod_err = ss2h_load_modules(s, &hip_rc);
+    int mod_err = ss2h_load_modules(s);
     if (mod_err)
         return mod_err;
 
-    /* NOTE: the unwind tier reports `hip_rc`, which at this point still holds
-     * the hipSuccess left by the last hipModuleGetFunction above. That is the
-     * pre-existing return value of this path and is preserved verbatim here;
-     * changing it would change observable behaviour. */
+    /* Both allocators return a negative errno, never a hipError_t; route it
+     * through ss2h_init_unwind_alloc() so the failure keeps its error code.
+     * These two paths used to hand the unwind tier a `hip_rc` still holding
+     * the hipSuccess of the last hipModuleGetFunction, which made init report
+     * 0 after releasing everything. */
     int ret = ss2h_alloc_device(s);
     if (ret)
-        return ss2h_init_unwind_mod_mul(s, hip_rc);
+        return ss2h_init_unwind_alloc(s, ret);
     ret = ss2h_alloc_pinned(s);
     if (ret)
-        return ss2h_init_unwind_mod_mul(s, hip_rc);
+        return ss2h_init_unwind_alloc(s, ret);
     return 0;
 #endif
 }

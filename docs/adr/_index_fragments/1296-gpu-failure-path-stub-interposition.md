@@ -1,0 +1,1 @@
+| [ADR-1296](1296-gpu-failure-path-stub-interposition.md) | GPU `init` failure paths are tested device-free: the backend TU is compiled into a test target that defines every symbol it references, and the failure is injected from one of those stubs. | Accepted | testing, hip, cuda, sycl, gpu, code-quality, agents |
