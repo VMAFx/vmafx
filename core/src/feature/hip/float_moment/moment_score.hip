@@ -5,9 +5,9 @@
  *
  *  HIP compute kernels for the float_moment feature extractor
  *  (T7-10b batch-3 / ADR-0374). Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/integer_moment/moment_score.cu`.
+ *  `core/src/feature/cuda/integer_moment/moment_score.cu`.
  *
- *  Algorithm (mirrors libvmaf/src/feature/float_moment.c::extract):
+ *  Algorithm (mirrors core/src/feature/float_moment.c::extract):
  *      for each pixel:
  *          ref1 += ref;        ref2 += ref * ref;
  *          dis1 += dis;        dis2 += dis * dis;

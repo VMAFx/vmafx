@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"strconv"
@@ -82,7 +83,13 @@ func LoadTable(path string, want []string) (*Table, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open parquet: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		// Read handle: the data is already in hand, so a close failure has
+		// nothing left to invalidate. Report it rather than drop it.
+		if closeErr := f.Close(); closeErr != nil {
+			slog.Warn("modeleval: close parquet", "path", path, "error", closeErr)
+		}
+	}()
 
 	info, err := f.Stat()
 	if err != nil {
@@ -100,36 +107,8 @@ func LoadTable(path string, want []string) (*Table, error) {
 		names[i] = fl.Name()
 	}
 
-	// Index the columns we care about by their leaf position. The
-	// feature tables written by ai/scripts/*.py are flat (one leaf per
-	// top-level field), which keeps field index == column-chunk index.
-	wanted := map[int]string{}
-	for i, n := range names {
-		if n == KeyColumn {
-			wanted[i] = n
-			continue
-		}
-		for _, w := range want {
-			if n == w {
-				wanted[i] = n
-				break
-			}
-		}
-	}
-
-	tbl := &Table{
-		Rows:    int(pf.NumRows()),
-		Numeric: map[string][]float64{},
-		Names:   names,
-	}
-	for _, n := range wanted {
-		if n == KeyColumn {
-			tbl.HasKey = true
-			tbl.Keys = make([]string, 0, tbl.Rows)
-			continue
-		}
-		tbl.Numeric[n] = make([]float64, 0, tbl.Rows)
-	}
+	wanted := selectColumns(names, want)
+	tbl := newTable(int(pf.NumRows()), names, wanted)
 
 	// Row groups are laid out sequentially, so appending per group in
 	// file order reconstructs the original row order — which the split
@@ -148,13 +127,62 @@ func LoadTable(path string, want []string) (*Table, error) {
 	return tbl, nil
 }
 
+// selectColumns indexes the columns the caller asked for by their leaf
+// position. The feature tables written by ai/scripts/*.py are flat (one leaf
+// per top-level field), which keeps field index == column-chunk index. The key
+// column is always selected when the file has one.
+func selectColumns(names, want []string) map[int]string {
+	wanted := map[int]string{}
+	for i, n := range names {
+		if n == KeyColumn {
+			wanted[i] = n
+			continue
+		}
+		for _, w := range want {
+			if n == w {
+				wanted[i] = n
+				break
+			}
+		}
+	}
+	return wanted
+}
+
+// newTable allocates the destination table with per-column capacity for rows
+// values, so the append loops in readChunk never grow a slice.
+func newTable(rows int, names []string, wanted map[int]string) *Table {
+	tbl := &Table{
+		Rows:    rows,
+		Numeric: map[string][]float64{},
+		Names:   names,
+	}
+	for _, n := range wanted {
+		if n == KeyColumn {
+			tbl.HasKey = true
+			tbl.Keys = make([]string, 0, tbl.Rows)
+			continue
+		}
+		tbl.Numeric[n] = make([]float64, 0, tbl.Rows)
+	}
+	return tbl
+}
+
 // readChunk appends every value in one column chunk to the table.
 func readChunk(cc parquet.ColumnChunk, name string, tbl *Table) error {
 	pages := cc.Pages()
-	defer func() { _ = pages.Close() }()
+	defer func() {
+		if closeErr := pages.Close(); closeErr != nil {
+			slog.Warn("modeleval: close column pages", "column", name, "error", closeErr)
+		}
+	}()
 
+	// Every page and every ReadValues batch carries at least one value, so the
+	// chunk's own value count bounds both loops; +1 tolerates a trailing empty
+	// page. A reader that stops making progress therefore fails loudly here
+	// instead of spinning (HISS-02).
+	budget := cc.NumValues() + 1
 	buf := make([]parquet.Value, 512)
-	for {
+	for page := int64(0); page < budget; page++ {
 		pg, err := pages.ReadPage()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -162,24 +190,37 @@ func readChunk(cc parquet.ColumnChunk, name string, tbl *Table) error {
 			}
 			return fmt.Errorf("read page: %w", err)
 		}
-		vr := pg.Values()
-		for {
-			n, err := vr.ReadValues(buf)
-			for i := range n {
-				if name == KeyColumn {
-					tbl.Keys = append(tbl.Keys, valueToString(buf[i]))
-				} else {
-					tbl.Numeric[name] = append(tbl.Numeric[name], valueToFloat(buf[i]))
-				}
-			}
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				return fmt.Errorf("read values: %w", err)
-			}
+		if err := readPageValues(pg, name, tbl, buf); err != nil {
+			return err
 		}
 	}
+	return fmt.Errorf("column %q: reader produced more than %d pages without EOF", name, budget)
+}
+
+// readPageValues drains one page into the table.
+func readPageValues(pg parquet.Page, name string, tbl *Table, buf []parquet.Value) error {
+	vr := pg.Values()
+	// Each batch that makes progress consumes at least one of the page's
+	// values, so the page's value count bounds the loop; +1 admits the final
+	// batch that returns io.EOF alongside the last values.
+	budget := pg.NumValues() + 1
+	for batch := int64(0); batch < budget; batch++ {
+		n, err := vr.ReadValues(buf)
+		for i := range n {
+			if name == KeyColumn {
+				tbl.Keys = append(tbl.Keys, valueToString(buf[i]))
+			} else {
+				tbl.Numeric[name] = append(tbl.Numeric[name], valueToFloat(buf[i]))
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("read values: %w", err)
+		}
+	}
+	return fmt.Errorf("column %q: page yielded more than %d batches without EOF", name, budget)
 }
 
 // valueToFloat widens a parquet value to float64, mapping NULL to NaN

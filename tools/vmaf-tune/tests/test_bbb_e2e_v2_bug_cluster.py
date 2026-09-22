@@ -195,16 +195,58 @@ def test_ladder_cross_resolution_against_yuv_source() -> None:
     assert (job.src_width, job.src_height) == (1920, 1080)
 
 
-def test_corpus_emits_scale_filter_when_src_dims_differ(tmp_path: Path, monkeypatch: Any) -> None:
-    """``iter_rows`` injects ``-vf scale=W:H`` for cross-res YUV sources.
+def _recording_encode_runner(argvs: list[list[str]]):
+    """``encode_runner`` stub: records the argv and writes a 1 KiB output."""
 
-    ADR-0501 follow-up: the reference decode now also downscales to the
-    rung target on cross-res rungs (Bug #V4-B); the test must stub the
-    ffmpeg decode subprocess so it doesn't shell out against the 1-byte
-    fixture YUV. The encode-side argv assertions remain unchanged.
+    def _run(argv: list[str], **_kw: Any) -> _FakeCompleted:
+        argvs.append(list(argv))
+        out = Path(argv[-1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"\x00" * 1024)
+        return _FakeCompleted(returncode=0, stderr="ffmpeg version 6.0\n")
+
+    return _run
+
+
+def _fixed_score_runner(mean: float):
+    """``score_runner`` stub writing a pooled_metrics JSON reporting `mean`."""
+
+    def _run(argv: list[str], **_kw: Any) -> _FakeCompleted:
+        out = Path(argv[argv.index("--output") + 1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"pooled_metrics": {"vmaf": {"mean": mean}}}) + "\n")
+        return _FakeCompleted(returncode=0, stderr="VMAF version 3.0.0-test\n")
+
+    return _run
+
+
+def _recording_decode_run(argvs: list[list[str]]):
+    """``subprocess.run`` stub for the ffmpeg decode legs.
+
+    Covers both ``_maybe_decode_reference`` (cross-res raw YUV, ADR-0501)
+    and ``_maybe_decode_distorted`` (container to raw, ADR-0499). The
+    fixture YUV is a 1-byte placeholder, so a real ffmpeg call would
+    fail; writing the destination lets the cell loop reach the
+    encode/score stubs.
     """
-    import vmaftune.corpus as corpus_mod
-    from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows
+
+    def _run(argv: list[Any], **_kw: Any) -> _FakeCompleted:
+        argvs.append([str(a) for a in argv])
+        dest = Path(argv[-1])
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"\x00" * 1024)
+        return _FakeCompleted(returncode=0)
+
+    return _run
+
+
+def _crossres_job_and_opts(tmp_path: Path) -> tuple[Any, Any]:
+    """A 1080p raw source driven at a 720p rung — the cross-res case under test.
+
+    The fixture YUV is a 1-byte placeholder; every ffmpeg leg is stubbed,
+    so its contents never matter.
+    """
+    from vmaftune.corpus import CorpusJob, CorpusOptions
 
     job = CorpusJob(
         source=tmp_path / "src.yuv",
@@ -224,42 +266,37 @@ def test_corpus_emits_scale_filter_when_src_dims_differ(tmp_path: Path, monkeypa
         encode_dir=tmp_path / "enc",
         src_sha256=False,
     )
+    return job, opts
+
+
+def test_corpus_emits_scale_filter_when_src_dims_differ(tmp_path: Path, monkeypatch: Any) -> None:
+    """``iter_rows`` injects ``-vf scale=W:H`` for cross-res YUV sources.
+
+    ADR-0501 follow-up: the reference decode now also downscales to the
+    rung target on cross-res rungs (Bug #V4-B); the test must stub the
+    ffmpeg decode subprocess so it doesn't shell out against the 1-byte
+    fixture YUV. The encode-side argv assertions remain unchanged.
+    """
+    import vmaftune.corpus as corpus_mod
+    from vmaftune.corpus import iter_rows
+
+    job, opts = _crossres_job_and_opts(tmp_path)
     encode_argvs: list[list[str]] = []
     decode_argvs: list[list[str]] = []
 
-    def _enc_runner(argv: list[str], **_kw: Any) -> _FakeCompleted:
-        encode_argvs.append(list(argv))
-        out = Path(argv[-1])
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"\x00" * 1024)
-        return _FakeCompleted(returncode=0, stderr="ffmpeg version 6.0\n")
-
-    def _score_runner(argv: list[str], **_kw: Any) -> _FakeCompleted:
-        out = Path(argv[argv.index("--output") + 1])
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text('{"pooled_metrics": {"vmaf": {"mean": 80.0}}}\n')
-        return _FakeCompleted(returncode=0, stderr="VMAF version 3.0.0-test\n")
-
-    # Stub the ffmpeg decode subprocess used by both
-    # ``_maybe_decode_reference`` (cross-res raw YUV, ADR-0501) and
-    # ``_maybe_decode_distorted`` (container->raw, ADR-0499). They
-    # both shell out via ``subprocess.run``; the test fixture is a
-    # 1-byte placeholder so a real ffmpeg call would fail. Producing
-    # the destination file with ``\x00`` bytes lets the iter_rows
-    # cell loop reach the encode/score stubs.
     import subprocess as _sp
 
-    def _fake_sp_run(argv: list[Any], **_kw: Any) -> _FakeCompleted:
-        decode_argvs.append([str(a) for a in argv])
-        dest = Path(argv[-1])
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(b"\x00" * 1024)
-        return _FakeCompleted(returncode=0)
-
-    monkeypatch.setattr(_sp, "run", _fake_sp_run)
+    monkeypatch.setattr(_sp, "run", _recording_decode_run(decode_argvs))
     monkeypatch.setattr(corpus_mod, "_sha256_file", lambda *_a, **_kw: "")
 
-    rows = list(iter_rows(job, opts, encode_runner=_enc_runner, score_runner=_score_runner))
+    rows = list(
+        iter_rows(
+            job,
+            opts,
+            encode_runner=_recording_encode_runner(encode_argvs),
+            score_runner=_fixed_score_runner(80.0),
+        )
+    )
     assert rows, "iter_rows produced no rows"
     assert encode_argvs, "encode runner never called"
     argv = encode_argvs[0]
@@ -396,6 +433,36 @@ def test_vmaf_explicit_backend_failure_errors() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _ok_score_runner(argv: list[str], **_kw: Any) -> _FakeCompleted:
+    """``score_runner`` stub that merely succeeds; the encode leg is under test."""
+    return _FakeCompleted(returncode=0)
+
+
+def _bisect_one_iteration(encoder: str, encode_runner: Any, workdir: Path) -> Any:
+    """One-iteration bisect over CRF 28-30 with every other knob pinned.
+
+    Only the encoder, its encode runner and the workdir vary between the
+    encoder-missing and genuine-failure cases.
+    """
+    from vmaftune.bisect import bisect_target_vmaf
+
+    return bisect_target_vmaf(
+        Path("ref.yuv"),
+        encoder,
+        target_vmaf=90.0,
+        width=1280,
+        height=720,
+        pix_fmt="yuv420p",
+        framerate=30.0,
+        duration_s=2.0,
+        crf_range=(28, 30),
+        max_iterations=1,
+        encode_runner=encode_runner,
+        score_runner=_ok_score_runner,
+        workdir=workdir,
+    )
+
+
 def test_compare_distinguishes_encoder_missing_vs_encode_failure(tmp_path: Path) -> None:
     """Follow-up #6: bisect surfaces "encoder unavailable" for missing encoders.
 
@@ -404,7 +471,6 @@ def test_compare_distinguishes_encoder_missing_vs_encode_failure(tmp_path: Path)
     ``encode failed at CRF NN (exit=1): Encoder not found`` the
     pre-ADR-0498 path emitted.
     """
-    from vmaftune.bisect import bisect_target_vmaf
 
     def _missing_encoder_runner(argv: list[str], **_kw: Any) -> _FakeCompleted:
         # Simulate ffmpeg's "Encoder not found" failure.
@@ -415,24 +481,7 @@ def test_compare_distinguishes_encoder_missing_vs_encode_failure(tmp_path: Path)
             ),
         )
 
-    def _score_runner(argv: list[str], **_kw: Any) -> _FakeCompleted:
-        return _FakeCompleted(returncode=0)
-
-    result = bisect_target_vmaf(
-        Path("ref.yuv"),
-        "libsvtav1",
-        target_vmaf=90.0,
-        width=1280,
-        height=720,
-        pix_fmt="yuv420p",
-        framerate=30.0,
-        duration_s=2.0,
-        crf_range=(28, 30),
-        max_iterations=1,
-        encode_runner=_missing_encoder_runner,
-        score_runner=_score_runner,
-        workdir=tmp_path,
-    )
+    result = _bisect_one_iteration("libsvtav1", _missing_encoder_runner, tmp_path)
     assert not result.ok
     assert (
         "encoder unavailable" in result.error
@@ -446,21 +495,7 @@ def test_compare_distinguishes_encoder_missing_vs_encode_failure(tmp_path: Path)
             stderr="ffmpeg version 6.0\n[libx264 @ 0x55] some other error\n",
         )
 
-    result2 = bisect_target_vmaf(
-        Path("ref.yuv"),
-        "libx264",
-        target_vmaf=90.0,
-        width=1280,
-        height=720,
-        pix_fmt="yuv420p",
-        framerate=30.0,
-        duration_s=2.0,
-        crf_range=(28, 30),
-        max_iterations=1,
-        encode_runner=_real_failure_runner,
-        score_runner=_score_runner,
-        workdir=tmp_path / "b",
-    )
+    result2 = _bisect_one_iteration("libx264", _real_failure_runner, tmp_path / "b")
     assert not result2.ok
     assert "encoder unavailable" not in result2.error
     assert "encode failed" in result2.error

@@ -183,7 +183,7 @@ def _scaffold_corpus(
     pre_existing_clips: list[str] | None = None,
     n_csv_rows: int | None = None,
 ) -> Path:
-    """Build a minimal ``.workingdir2/lsvq/``-shaped tree under tmp_path.
+    """Build a minimal ``.corpus/lsvq/``-shaped tree under tmp_path.
 
     By default no clips are pre-staged on disk — the run must
     download them via the mocked curl. Pass ``pre_existing_clips``

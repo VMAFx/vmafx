@@ -266,6 +266,49 @@ class _FakeCompleted:
         self.stderr = stderr
 
 
+def _write_pooled_vmaf_json(cmd: list[str], score: float) -> _FakeCompleted:
+    """Write a modern ``pooled_metrics`` result to the ``--output`` path in `cmd`.
+
+    Stands in for one real ``vmaf`` invocation: the CLI only reads the
+    JSON it asked the binary to write, plus the version banner on stderr.
+    """
+    Path(cmd[cmd.index("--output") + 1]).write_text(
+        json.dumps({"pooled_metrics": {"vmaf": {"mean": score}}}),
+        encoding="utf-8",
+    )
+    return _FakeCompleted(0, stderr="VMAF version: smoke-mock\n")
+
+
+def _write_smoke_yuv_pair(tmp_path: Path) -> tuple[Path, Path]:
+    """Write the 4x4 reference/distorted YUV pair the CLI smokes drive.
+
+    The byte pattern is load-bearing: the synthetic-mask smoke asserts on
+    the exact blended output derived from these planes.
+    """
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    ref.write_bytes(bytes([10] * 16 + [20] * 4 + [30] * 4))
+    dis.write_bytes(bytes([110] * 16 + [120] * 4 + [130] * 4))
+    return ref, dis
+
+
+def _roi_argv(ref: Path, dis: Path, out: Path, *extra: str) -> list[str]:
+    """Common ``vmaf-roi-score`` argv for the 4x4 smoke pair, plus `extra`."""
+    return [
+        "--reference",
+        str(ref),
+        "--distorted",
+        str(dis),
+        "--width",
+        "4",
+        "--height",
+        "4",
+        *extra,
+        "--output",
+        str(out),
+    ]
+
+
 def test_cli_synthetic_smoke(monkeypatch, tmp_path: Path):
     """Drive ``main`` end-to-end with a mocked vmaf binary.
 
@@ -275,42 +318,27 @@ def test_cli_synthetic_smoke(monkeypatch, tmp_path: Path):
     - the blended score equals the (identical) underlying scores;
     - the schema_version matches the package constant.
     """
-    ref = tmp_path / "ref.yuv"
-    dis = tmp_path / "dis.yuv"
-    ref.write_bytes(bytes([10] * 16 + [20] * 4 + [30] * 4))
-    dis.write_bytes(bytes([110] * 16 + [120] * 4 + [130] * 4))
+    ref, dis = _write_smoke_yuv_pair(tmp_path)
     out = tmp_path / "result.json"
     distorted_paths: list[Path] = []
     masked_bytes: list[bytes] = []
 
     def _fake_run(cmd, capture_output=False, text=False, check=False):
-        # Find the --output path argparse handed us and drop a JSON
-        # there in the modern pooled_metrics shape.
-        dis_idx = cmd.index("--distorted")
-        distorted = Path(cmd[dis_idx + 1])
+        distorted = Path(cmd[cmd.index("--distorted") + 1])
         distorted_paths.append(distorted)
         if distorted != dis:
+            # The masked YUV lives in a TemporaryDirectory that is gone by
+            # the time the assertions run, so snapshot it here.
             masked_bytes.append(distorted.read_bytes())
-        out_idx = cmd.index("--output")
-        score = 80.0 if distorted == dis else 90.0
-        Path(cmd[out_idx + 1]).write_text(
-            json.dumps({"pooled_metrics": {"vmaf": {"mean": score}}}),
-            encoding="utf-8",
-        )
-        return _FakeCompleted(0, stderr="VMAF version: smoke-mock\n")
+        return _write_pooled_vmaf_json(cmd, 80.0 if distorted == dis else 90.0)
 
     monkeypatch.setattr("vmafroiscore.score.subprocess.run", _fake_run)
 
     rc = main(
-        [
-            "--reference",
-            str(ref),
-            "--distorted",
-            str(dis),
-            "--width",
-            "4",
-            "--height",
-            "4",
+        _roi_argv(
+            ref,
+            dis,
+            out,
             "--synthetic-mask",
             "0.5",
             "--threshold",
@@ -319,9 +347,7 @@ def test_cli_synthetic_smoke(monkeypatch, tmp_path: Path):
             "1",
             "--weight",
             "0.7",
-            "--output",
-            str(out),
-        ]
+        )
     )
     assert rc == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
@@ -339,26 +365,16 @@ def test_cli_synthetic_smoke(monkeypatch, tmp_path: Path):
 
 def test_cli_saliency_model_materialises_mask(monkeypatch, tmp_path: Path):
     """The --saliency-model path materialises a masked YUV and scores it."""
-    ref = tmp_path / "ref.yuv"
-    dis = tmp_path / "dis.yuv"
+    ref, dis = _write_smoke_yuv_pair(tmp_path)
     fake_model = tmp_path / "saliency.onnx"
     out = tmp_path / "result.json"
-    ref.write_bytes(bytes([10] * 16 + [20] * 4 + [30] * 4))
-    dis.write_bytes(bytes([110] * 16 + [120] * 4 + [130] * 4))
     fake_model.write_bytes(b"")  # presence is enough; cli only checks exists()
 
     seen_distorted: list[Path] = []
 
     def _fake_run(cmd, capture_output=False, text=False, check=False):
-        distorted = Path(cmd[cmd.index("--distorted") + 1])
-        seen_distorted.append(distorted)
-        out_idx = cmd.index("--output")
-        score = 90.0 if len(seen_distorted) == 1 else 95.0
-        Path(cmd[out_idx + 1]).write_text(
-            json.dumps({"pooled_metrics": {"vmaf": {"mean": score}}}),
-            encoding="utf-8",
-        )
-        return _FakeCompleted(0, stderr="VMAF version: smoke-mock\n")
+        seen_distorted.append(Path(cmd[cmd.index("--distorted") + 1]))
+        return _write_pooled_vmaf_json(cmd, 90.0 if len(seen_distorted) == 1 else 95.0)
 
     def _fake_mask(req, *, inference=None):
         req.output.write_bytes(b"masked-yuv")
@@ -367,24 +383,7 @@ def test_cli_saliency_model_materialises_mask(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("vmafroiscore.score.subprocess.run", _fake_run)
     monkeypatch.setattr("vmafroiscore.mask.apply_saliency_mask", _fake_mask)
 
-    rc = main(
-        [
-            "--reference",
-            str(ref),
-            "--distorted",
-            str(dis),
-            "--width",
-            "4",
-            "--height",
-            "4",
-            "--saliency-model",
-            str(fake_model),
-            "--weight",
-            "0.25",
-            "--output",
-            str(out),
-        ]
-    )
+    rc = main(_roi_argv(ref, dis, out, "--saliency-model", str(fake_model), "--weight", "0.25"))
     assert rc == 0
     assert seen_distorted[0] == dis
     assert seen_distorted[1].name == "distorted.saliency-masked.yuv"

@@ -265,18 +265,28 @@ ADR (e.g. [ADR-0208](../adr/0208-learned-filter-v1-qat-impl.md)).
 
 **Pipeline.** Per [ADR-0207](../adr/0207-tinyai-qat-design.md) the
 QAT pass runs in three phases: (1) fp32 warm-start training,
-(2) FX fake-quant insertion via
-`torch.ao.quantization.quantize_fx.prepare_qat_fx` with the default
-symmetric per-tensor activation + per-channel weight qconfig, (3)
-QAT fine-tune at 10× reduced learning rate (defaulting to
-`fp32_lr / 10`). Phase 4 — ONNX export — bridges
-PyTorch 2.11's two broken ONNX exporters by copying the
-QAT-conditioned weights back into a fresh fp32 module, exporting the
-fp32 graph, then running `onnxruntime.quantization.quantize_static`
-with a calibration set drawn from the QAT training distribution.
-The output is a QDQ-format `.int8.onnx` bit-identical in structure
-to the static-PTQ artefact — the QAT effect is preserved entirely
-through weight pre-conditioning.
+(2) fake-quant insertion — `torch.export` captures the trained module
+and `torchao.quantization.pt2e.prepare_qat_pt2e` inserts the observers
+under `X86InductorQuantizer`'s default recipe (per-tensor `uint8`
+activations, per-channel symmetric `int8` weights on `ch_axis=0`),
+(3) QAT fine-tune at 10× reduced learning rate (defaulting to
+`fp32_lr / 10`). Phase 4 — ONNX export — copies the QAT-conditioned
+weights back into a fresh fp32 module, exports that graph, then runs
+`onnxruntime.quantization.quantize_static` with a calibration set
+drawn from the QAT training distribution. The output is a QDQ-format
+`.int8.onnx` bit-identical in structure to the static-PTQ artefact —
+the QAT effect is preserved entirely through weight pre-conditioning.
+
+[ADR-1293](../adr/1293-tinyai-qat-torchao-pt2e.md) records the move off
+`torch.ao.quantization.quantize_fx.prepare_qat_fx`, which PyTorch
+deprecated wholesale and which raises a `DeprecationWarning` the
+repository treats as an error. Weight quantisation is unchanged; the
+activation range widens from the old mapping's reduce-range [0, 127] to
+the full [0, 255], which is what ORT `quantize_static` has always used
+on the other side of the handoff. Phase 4 also moved to the
+`torch.export`-based ONNX exporter: the export target is a plain fp32
+module, so the quantisation buffers that once forced the legacy
+TorchScript path are not present.
 
 **CLI knobs.** `--epochs-fp32` (default 20), `--epochs-qat`
 (default 10), `--lr-qat` (default fp32-lr / 10), `--n-calibration`

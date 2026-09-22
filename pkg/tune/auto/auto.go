@@ -510,15 +510,7 @@ type scoredCell struct {
 // stable codec/index ordering — the same total order the Python min/max keys
 // impose, so both implementations pick the same cell.
 func PickAutoWinner(cells []map[string]any, targetVMAF, maxBudgetKbps float64) map[string]any {
-	scored := make([]scoredCell, 0, len(cells))
-	for i, cell := range cells {
-		vmaf, vmafOK := finiteFloat(cell["estimated_vmaf"])
-		bitrate, bitrateOK := finiteFloat(cell["estimated_bitrate_kbps"])
-		if !vmafOK || !bitrateOK {
-			continue
-		}
-		scored = append(scored, scoredCell{index: i, cell: cell, vmaf: vmaf, bitrate: bitrate})
-	}
+	scored := scoreCells(cells)
 	if len(scored) == 0 {
 		return map[string]any{
 			"status": StatusNoEligibleCells,
@@ -526,52 +518,7 @@ func PickAutoWinner(cells []map[string]any, targetVMAF, maxBudgetKbps float64) m
 		}
 	}
 
-	var passing, qualityOnly []scoredCell
-	for _, item := range scored {
-		if item.vmaf >= targetVMAF {
-			qualityOnly = append(qualityOnly, item)
-			if item.bitrate <= maxBudgetKbps {
-				passing = append(passing, item)
-			}
-		}
-	}
-
-	var status string
-	var selected scoredCell
-	switch {
-	case len(passing) > 0:
-		status = StatusBudgetAndQualityMet
-		selected = minBy(passing, func(a, b scoredCell) bool {
-			return lessTuple(
-				[]float64{a.bitrate, -a.vmaf, -float64(cellRung(a.cell))},
-				[]float64{b.bitrate, -b.vmaf, -float64(cellRung(b.cell))},
-				cellCodec(a.cell), cellCodec(b.cell),
-				float64(a.index), float64(b.index),
-			)
-		})
-	case len(qualityOnly) > 0:
-		status = StatusQualityMetBudgetExceeded
-		selected = minBy(qualityOnly, func(a, b scoredCell) bool {
-			return lessTuple(
-				[]float64{a.bitrate - maxBudgetKbps, a.bitrate, -a.vmaf, -float64(cellRung(a.cell))},
-				[]float64{b.bitrate - maxBudgetKbps, b.bitrate, -b.vmaf, -float64(cellRung(b.cell))},
-				cellCodec(a.cell), cellCodec(b.cell),
-				float64(a.index), float64(b.index),
-			)
-		})
-	default:
-		status = StatusTargetUnmet
-		// Python's max() over (vmaf, -bitrate, rung, codec, -index): invert
-		// every component to reuse the same "strictly less" comparator.
-		selected = minBy(scored, func(a, b scoredCell) bool {
-			return lessTuple(
-				[]float64{-a.vmaf, a.bitrate, -float64(cellRung(a.cell))},
-				[]float64{-b.vmaf, b.bitrate, -float64(cellRung(b.cell))},
-				invertString(cellCodec(a.cell)), invertString(cellCodec(b.cell)),
-				float64(a.index), float64(b.index),
-			)
-		})
-	}
+	status, selected := selectWinner(scored, targetVMAF, maxBudgetKbps)
 
 	return map[string]any{
 		"status":                 status,
@@ -583,6 +530,70 @@ func PickAutoWinner(cells []map[string]any, targetVMAF, maxBudgetKbps float64) m
 		"estimated_bitrate_kbps": selected.bitrate,
 		"quality_margin":         selected.vmaf - targetVMAF,
 		"budget_margin_kbps":     maxBudgetKbps - selected.bitrate,
+	}
+}
+
+// scoreCells keeps the cells that carry both finite estimates, in input order.
+// A cell missing either one cannot be compared and is dropped.
+func scoreCells(cells []map[string]any) []scoredCell {
+	scored := make([]scoredCell, 0, len(cells))
+	for i, cell := range cells {
+		vmaf, vmafOK := finiteFloat(cell["estimated_vmaf"])
+		bitrate, bitrateOK := finiteFloat(cell["estimated_bitrate_kbps"])
+		if !vmafOK || !bitrateOK {
+			continue
+		}
+		scored = append(scored, scoredCell{index: i, cell: cell, vmaf: vmaf, bitrate: bitrate})
+	}
+	return scored
+}
+
+// selectWinner applies the three-tier preference: a cell that meets both
+// quality and budget, else the smallest budget overage among the cells that
+// met quality, else the closest quality miss.
+func selectWinner(
+	scored []scoredCell, targetVMAF, maxBudgetKbps float64,
+) (string, scoredCell) {
+	var passing, qualityOnly []scoredCell
+	for _, item := range scored {
+		if item.vmaf >= targetVMAF {
+			qualityOnly = append(qualityOnly, item)
+			if item.bitrate <= maxBudgetKbps {
+				passing = append(passing, item)
+			}
+		}
+	}
+
+	switch {
+	case len(passing) > 0:
+		return StatusBudgetAndQualityMet, minBy(passing, func(a, b scoredCell) bool {
+			return lessTuple(
+				[]float64{a.bitrate, -a.vmaf, -float64(cellRung(a.cell))},
+				[]float64{b.bitrate, -b.vmaf, -float64(cellRung(b.cell))},
+				cellCodec(a.cell), cellCodec(b.cell),
+				float64(a.index), float64(b.index),
+			)
+		})
+	case len(qualityOnly) > 0:
+		return StatusQualityMetBudgetExceeded, minBy(qualityOnly, func(a, b scoredCell) bool {
+			return lessTuple(
+				[]float64{a.bitrate - maxBudgetKbps, a.bitrate, -a.vmaf, -float64(cellRung(a.cell))},
+				[]float64{b.bitrate - maxBudgetKbps, b.bitrate, -b.vmaf, -float64(cellRung(b.cell))},
+				cellCodec(a.cell), cellCodec(b.cell),
+				float64(a.index), float64(b.index),
+			)
+		})
+	default:
+		// Python's max() over (vmaf, -bitrate, rung, codec, -index): invert
+		// every component to reuse the same "strictly less" comparator.
+		return StatusTargetUnmet, minBy(scored, func(a, b scoredCell) bool {
+			return lessTuple(
+				[]float64{-a.vmaf, a.bitrate, -float64(cellRung(a.cell))},
+				[]float64{-b.vmaf, b.bitrate, -float64(cellRung(b.cell))},
+				invertString(cellCodec(a.cell)), invertString(cellCodec(b.cell)),
+				float64(a.index), float64(b.index),
+			)
+		})
 	}
 }
 
@@ -752,312 +763,388 @@ type Plan struct {
 
 // RunAuto drives the F.1 + F.2 + F.3 + F.4 decision tree.
 //
-// stage order is the public contract (plan.metadata.short_circuits records the
-// firing order). Splitting it into per-stage helpers would thread eight
-// mutable locals through eight signatures and make the Python-parity diff
-// unreadable; the stage banners below carry the structure instead.
-//
-//nolint:funlen,gocyclo // The driver is a linear ten-stage decision tree whose
+// Stage order is the public contract: plan.metadata.short_circuits records the
+// firing order, so the stages run in exactly the sequence listed here. The
+// state they share lives on autoRun rather than in locals, which is what lets
+// each stage be named without threading eight values through eight signatures.
 func RunAuto(ctx context.Context, opts Options) (Plan, error) {
+	run := newAutoRun(opts)
+	run.resolveSourceMeta(ctx)               // Stage -1 — source metadata.
+	run.applyRecipe()                        // Stage 0  — F.4 per-content-type override.
+	run.selectRungs()                        // Stage 1  — short-circuit #1.
+	run.selectCodecs()                       // Stage 2  — short-circuit #2.
+	run.applyHDRGate()                       // Stage 3  — short-circuit #5.
+	run.propagateSampleClip()                // Stage 4  — short-circuit #6.
+	if err := run.buildCells(); err != nil { // Stage 5 — predictor + escalation.
+		return Plan{}, err
+	}
+	run.applyTailGates() // Stages 6-10.
+	return run.plan(), nil
+}
+
+// autoRun carries the state the ten stages share.
+type autoRun struct {
+	opts Options
+	log  *slog.Logger
+
+	// Stage -1.
+	meta        *SourceMeta
+	detectedHDR *hdr.Info
+	hdrInfo     *hdr.Info
+	planState   *PlanState
+
+	// Stage 0.
+	thresholds               ConfidenceThresholds
+	recipeClass              string
+	recipe                   map[string]any
+	effectivePredictorTarget float64
+	forceSingleRung          bool
+	saliencyIntensity        string
+
+	// Stages 1, 2, 4.
+	rungs          []int
+	codecs         []string
+	propagatedClip float64
+
+	// Stage 5.
+	escalations []any
+	cells       []map[string]any
+}
+
+// newAutoRun seeds the run with the caller's options and the plan state the
+// short-circuit gates record into.
+func newAutoRun(opts Options) *autoRun {
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
 	}
+	return &autoRun{
+		opts: opts,
+		log:  log,
+		planState: &PlanState{
+			TargetVMAF:      opts.TargetVMAF,
+			MaxBudgetKbps:   opts.MaxBudgetKbps,
+			AllowCodecs:     append([]string(nil), opts.AllowCodecs...),
+			UserPinnedCodec: opts.UserPinnedCodec,
+		},
+	}
+}
 
-	// ------------------------------------------------------------------
-	// Stage -1 — source metadata.
-	// ------------------------------------------------------------------
-	var detectedHDR *hdr.Info
-	meta := opts.MetaOverride
-	if !opts.Smoke && meta == nil {
+// resolveSourceMeta runs Stage -1: probe the source unless the caller
+// injected metadata or the run is a smoke run, then settle the HDR info that
+// the metadata implies.
+func (r *autoRun) resolveSourceMeta(ctx context.Context) {
+	meta := r.opts.MetaOverride
+	if !r.opts.Smoke && meta == nil {
 		probed, info := ProbeSourceMeta(
-			ctx, opts.Src, opts.SampleClipSeconds, opts.FFprobeBin, opts.ProbeRunner, log)
+			ctx, r.opts.Src, r.opts.SampleClipSeconds, r.opts.FFprobeBin, r.opts.ProbeRunner, r.log)
 		meta = &probed
-		detectedHDR = info
+		r.detectedHDR = info
 	}
 	if meta == nil {
-		synthetic := DefaultSourceMeta(opts.SampleClipSeconds)
+		synthetic := DefaultSourceMeta(r.opts.SampleClipSeconds)
 		meta = &synthetic
 	}
+	r.meta = meta
 
-	hdrInfo := detectedHDR
+	r.hdrInfo = r.detectedHDR
 	if !meta.IsHDR {
-		hdrInfo = nil
-	} else if hdrInfo == nil {
-		hdrInfo = hdr.DefaultForMetadataOnly()
+		r.hdrInfo = nil
+	} else if r.hdrInfo == nil {
+		r.hdrInfo = hdr.DefaultForMetadataOnly()
 	}
+}
 
-	planState := &PlanState{
-		TargetVMAF:      opts.TargetVMAF,
-		MaxBudgetKbps:   opts.MaxBudgetKbps,
-		AllowCodecs:     append([]string(nil), opts.AllowCodecs...),
-		UserPinnedCodec: opts.UserPinnedCodec,
-	}
-
-	// ------------------------------------------------------------------
-	// Stage 0 — F.4 per-content-type recipe override.
-	//
-	// Fires *before* the F.2 short-circuits so a recipe can flip
-	// force_single_rung and have the ladder stage honour it. The predictor's
-	// effective target VMAF is offset by target_vmaf_offset, but the
-	// production-flip gate that ships models is NOT shifted by that value.
-	// ------------------------------------------------------------------
+// applyRecipe runs Stage 0: the F.4 per-content-type recipe override.
+//
+// It fires *before* the F.2 short-circuits so a recipe can flip
+// force_single_rung and have the ladder stage honour it. The predictor's
+// effective target VMAF is offset by target_vmaf_offset, but the
+// production-flip gate that ships models is NOT shifted by that value.
+func (r *autoRun) applyRecipe() {
 	baseThresholds := DefaultConfidenceThresholds()
-	if opts.ConfidenceThresholds != nil {
-		baseThresholds = *opts.ConfidenceThresholds
+	if r.opts.ConfidenceThresholds != nil {
+		baseThresholds = *r.opts.ConfidenceThresholds
 	}
-	recipes := opts.Recipes
+	recipes := r.opts.Recipes
 	if recipes == nil {
-		recipes = NewRecipeTable(".", log)
+		recipes = NewRecipeTable(".", r.log)
 	}
-	recipeClass := ResolveRecipeClass(*meta)
-	recipe := recipes.ForClass(recipeClass)
-	thresholds := applyRecipeThresholds(recipe, recipeClass, baseThresholds)
+	r.recipeClass = ResolveRecipeClass(*r.meta)
+	r.recipe = recipes.ForClass(r.recipeClass)
+	r.thresholds = applyRecipeThresholds(r.recipe, r.recipeClass, baseThresholds)
 
-	targetVMAFOffset := recipeFloat(recipe, RecipeKeyTargetVMAFOffset, 0.0)
-	effectivePredictorTarget := opts.TargetVMAF + targetVMAFOffset
-	forceSingleRung := recipeBool(recipe, RecipeKeyForceSingleRung, false)
-	saliencyIntensity := recipeString(recipe, RecipeKeySaliencyIntensity, "default")
+	targetVMAFOffset := recipeFloat(r.recipe, RecipeKeyTargetVMAFOffset, 0.0)
+	r.effectivePredictorTarget = r.opts.TargetVMAF + targetVMAFOffset
+	r.forceSingleRung = recipeBool(r.recipe, RecipeKeyForceSingleRung, false)
+	r.saliencyIntensity = recipeString(r.recipe, RecipeKeySaliencyIntensity, "default")
+}
 
-	// ------------------------------------------------------------------
-	// Stage 1 — ladder rung selection (short-circuit #1).
-	// ------------------------------------------------------------------
-	var rungs []int
-	if ShouldShortCircuitSingleRungLadder(*meta, planState) || forceSingleRung {
-		planState.Fired(SCLadderSingleRung)
-		rungs = []int{meta.Height}
-	} else {
-		// Multi-rung path — production wiring delegates to pkg/ladder.
-		rungs = []int{2160, 1440, 1080, 720, 540}
+// selectRungs runs Stage 1: ladder rung selection (short-circuit #1). The
+// multi-rung path's production wiring delegates to pkg/ladder.
+func (r *autoRun) selectRungs() {
+	if ShouldShortCircuitSingleRungLadder(*r.meta, r.planState) || r.forceSingleRung {
+		r.planState.Fired(SCLadderSingleRung)
+		r.rungs = []int{r.meta.Height}
+		return
 	}
+	r.rungs = []int{2160, 1440, 1080, 720, 540}
+}
 
-	// ------------------------------------------------------------------
-	// Stage 2 — codec shortlist (short-circuit #2).
-	// ------------------------------------------------------------------
-	var codecs []string
-	if ShouldShortCircuitCodecPinned(*meta, planState) {
-		planState.Fired(SCCodecPinned)
-		if opts.UserPinnedCodec != "" {
-			codecs = []string{opts.UserPinnedCodec}
-		} else {
-			codecs = append([]string(nil), opts.AllowCodecs...)
+// selectCodecs runs Stage 2: the codec shortlist (short-circuit #2).
+// Production wiring delegates to compare.shortlist; the smoke path keeps the
+// full allow-list.
+func (r *autoRun) selectCodecs() {
+	if ShouldShortCircuitCodecPinned(*r.meta, r.planState) {
+		r.planState.Fired(SCCodecPinned)
+		if r.opts.UserPinnedCodec != "" {
+			r.codecs = []string{r.opts.UserPinnedCodec}
+			return
 		}
-	} else {
-		// Production wiring delegates to compare.shortlist; the smoke path
-		// keeps the full allow-list.
-		codecs = append([]string(nil), opts.AllowCodecs...)
 	}
+	r.codecs = append([]string(nil), r.opts.AllowCodecs...)
+}
 
-	// ------------------------------------------------------------------
-	// Stage 3 — HDR pipeline (short-circuit #5).
-	// ------------------------------------------------------------------
-	if ShouldShortCircuitSDRSkip(*meta, planState) {
-		planState.Fired(SCSDRSkip)
-		hdrInfo = nil
+// applyHDRGate runs Stage 3: the HDR pipeline (short-circuit #5).
+func (r *autoRun) applyHDRGate() {
+	if ShouldShortCircuitSDRSkip(*r.meta, r.planState) {
+		r.planState.Fired(SCSDRSkip)
+		r.hdrInfo = nil
 	}
+}
 
-	// ------------------------------------------------------------------
-	// Stage 4 — sample-clip propagation (short-circuit #6).
-	// ------------------------------------------------------------------
-	propagatedClip := 0.0
-	if ShouldShortCircuitSampleClipPropagate(*meta, planState) {
-		planState.Fired(SCSampleClipPropagate)
-		propagatedClip = meta.SampleClipSeconds
+// propagateSampleClip runs Stage 4: sample-clip propagation
+// (short-circuit #6).
+func (r *autoRun) propagateSampleClip() {
+	if ShouldShortCircuitSampleClipPropagate(*r.meta, r.planState) {
+		r.planState.Fired(SCSampleClipPropagate)
+		r.propagatedClip = r.meta.SampleClipSeconds
 	}
+}
 
-	// ------------------------------------------------------------------
-	// Stage 5 — per-cell predictor + escalation (short-circuit #3 plus the
-	// F.3 confidence-aware override).
-	//
-	// In smoke mode we synthesise a GOSPEL verdict so the F.2 gate fires in
-	// the unit smoke run; production wiring sets the verdict from the
-	// validation report and the width from the conformal interval.
-	// ------------------------------------------------------------------
-	if opts.Smoke {
-		planState.PredictorVerdict = VerdictGospel
+// buildCells runs Stage 5: the per-cell predictor plus escalation
+// (short-circuit #3 and the F.3 confidence-aware override).
+//
+// In smoke mode a GOSPEL verdict is synthesised so the F.2 gate fires in the
+// unit smoke run; production wiring sets the verdict from the validation
+// report and the width from the conformal interval.
+func (r *autoRun) buildCells() error {
+	if r.opts.Smoke {
+		r.planState.PredictorVerdict = VerdictGospel
 	}
 
 	intervalLookup := map[string]CellInterval{}
-	for _, ci := range opts.CellIntervals {
+	for _, ci := range r.opts.CellIntervals {
 		intervalLookup[cellKey(ci.Rung, ci.Codec)] = ci
 	}
 
-	var pred *predictor.Predictor
-	var features predictor.ShotFeatures
-	if !opts.Smoke {
-		pred = opts.Predictor
-		if pred == nil {
-			// The analytical fallback: what the Python auto driver builds
-			// with Predictor() and no model path.
-			pred = predictor.New()
+	pred, features := r.resolvePredictor()
+
+	r.escalations = make([]any, 0, len(r.rungs)*len(r.codecs))
+	r.cells = make([]map[string]any, 0, len(r.rungs)*len(r.codecs))
+
+	for _, rung := range r.rungs {
+		for _, codecName := range r.codecs {
+			if err := r.buildCell(rung, codecName, intervalLookup, pred, features); err != nil {
+				return err
+			}
 		}
-		features = predictorFeaturesFromMeta(*meta)
+	}
+	return nil
+}
+
+// resolvePredictor returns the predictor and its feature vector, or (nil,
+// zero) in smoke mode where no prediction runs. A production run with no
+// injected predictor gets the analytical fallback, which is what the Python
+// auto driver builds with Predictor() and no model path.
+func (r *autoRun) resolvePredictor() (*predictor.Predictor, predictor.ShotFeatures) {
+	if r.opts.Smoke {
+		return nil, predictor.ShotFeatures{}
+	}
+	pred := r.opts.Predictor
+	if pred == nil {
+		pred = predictor.New()
+	}
+	return pred, predictorFeaturesFromMeta(*r.meta)
+}
+
+// buildCell appends one (rung, codec) cell and its escalation record.
+func (r *autoRun) buildCell(
+	rung int,
+	codecName string,
+	intervalLookup map[string]CellInterval,
+	pred *predictor.Predictor,
+	features predictor.ShotFeatures,
+) error {
+	// Per-cell state: the GOSPEL firing is recorded on the cell and carried
+	// back up so the metadata block records that it fired at least once.
+	cellState := *r.planState
+	cellState.ShortCircuits = append([]string(nil), r.planState.ShortCircuits...)
+	if ShouldShortCircuitPredictorGospel(*r.meta, &cellState) {
+		cellState.Fired(SCPredictorGospel)
+		r.planState.Fired(SCPredictorGospel)
 	}
 
-	escalations := make([]any, 0, len(rungs)*len(codecs))
-	cells := make([]map[string]any, 0, len(rungs)*len(codecs))
+	cellVerdict, cellWidth := r.cellConfidence(rung, codecName, intervalLookup)
+	decision, err := ConfidenceAwareEscalation(cellVerdict, cellWidth, r.thresholds)
+	if err != nil {
+		return err
+	}
 
-	for _, rung := range rungs {
-		for _, codecName := range codecs {
-			// Per-cell state: the GOSPEL firing is recorded on the cell and
-			// carried back up so the metadata block records that it fired at
-			// least once.
-			cellState := *planState
-			cellState.ShortCircuits = append([]string(nil), planState.ShortCircuits...)
-			if ShouldShortCircuitPredictorGospel(*meta, &cellState) {
-				cellState.Fired(SCPredictorGospel)
-				planState.Fired(SCPredictorGospel)
-			}
-
-			cellVerdict := planState.PredictorVerdict
-			cellWidth := math.NaN()
-			if ci, ok := intervalLookup[cellKey(rung, codecName)]; ok {
-				cellVerdict = ci.Verdict
-				cellWidth = ci.IntervalWidth
-			} else if opts.CellIntervals == nil && opts.Smoke {
-				// Synthetic smoke default: a tight interval below the gate so
-				// the F.3 branch is exercised deterministically without ONNX.
-				cellWidth = 1.0
-			}
-
-			decision, err := ConfidenceAwareEscalation(cellVerdict, cellWidth, thresholds)
-			if err != nil {
-				return Plan{}, err
-			}
-
-			cellHDRArgs := []any{}
-			if hdrInfo != nil {
-				for _, arg := range hdr.CodecArgs(codecName, hdrInfo, log) {
-					cellHDRArgs = append(cellHDRArgs, arg)
-				}
-			}
-
-			escalations = append(escalations, map[string]any{
-				"rung":           rung,
-				"codec":          codecName,
-				"verdict":        orUnknown(cellVerdict),
-				"interval_width": cellWidth,
-				"decision":       string(decision),
-			})
-
-			crf := 23
-			estimatedVMAF := opts.TargetVMAF
-			estimatedBitrate := opts.MaxBudgetKbps
-			predictionSource := "smoke-placeholder"
-			if pred != nil {
-				picked, err := pred.PickCRF(features, effectivePredictorTarget, codecName)
-				if err != nil {
-					return Plan{}, err
-				}
-				crf = picked
-				estimatedVMAF = pred.PredictVMAF(features, crf, codecName)
-				estimatedBitrate = estimateCellBitrateKbps(features, codecName, crf)
-				predictionSource = "predictor"
-			}
-
-			cells = append(cells, map[string]any{
-				"rung":                            rung,
-				"codec":                           codecName,
-				"verdict":                         orUnknown(firstNonEmpty(cellVerdict, planState.PredictorVerdict)),
-				"crf":                             crf,
-				"estimated_vmaf":                  estimatedVMAF,
-				"estimated_bitrate_kbps":          estimatedBitrate,
-				"hdr_args":                        cellHDRArgs,
-				"sample_clip_seconds":             propagatedClip,
-				"confidence_decision":             string(decision),
-				"interval_width":                  cellWidth,
-				"effective_predictor_target_vmaf": effectivePredictorTarget,
-				"prediction_source":               predictionSource,
-				"saliency_intensity":              saliencyIntensity,
-			})
+	cellHDRArgs := []any{}
+	if r.hdrInfo != nil {
+		for _, arg := range hdr.CodecArgs(codecName, r.hdrInfo, r.log) {
+			cellHDRArgs = append(cellHDRArgs, arg)
 		}
 	}
 
-	// ------------------------------------------------------------------
-	// Stage 6 — saliency gate (short-circuit #4). Otherwise production
-	// wiring would apply the saliency stage to every cell.
-	// ------------------------------------------------------------------
-	if ShouldShortCircuitSkipSaliency(*meta, planState) {
-		planState.Fired(SCSkipSaliency)
+	r.escalations = append(r.escalations, map[string]any{
+		"rung":           rung,
+		"codec":          codecName,
+		"verdict":        orUnknown(cellVerdict),
+		"interval_width": cellWidth,
+		"decision":       string(decision),
+	})
+
+	crf, estimatedVMAF, estimatedBitrate, predictionSource, err :=
+		r.cellEstimates(codecName, pred, features)
+	if err != nil {
+		return err
 	}
 
-	// ------------------------------------------------------------------
-	// Stage 7 — per-shot refinement gate (short-circuit #7).
-	// ------------------------------------------------------------------
-	if ShouldShortCircuitSkipPerShot(*meta, planState) {
-		planState.Fired(SCSkipPerShot)
+	r.cells = append(r.cells, map[string]any{
+		"rung":                            rung,
+		"codec":                           codecName,
+		"verdict":                         orUnknown(firstNonEmpty(cellVerdict, r.planState.PredictorVerdict)),
+		"crf":                             crf,
+		"estimated_vmaf":                  estimatedVMAF,
+		"estimated_bitrate_kbps":          estimatedBitrate,
+		"hdr_args":                        cellHDRArgs,
+		"sample_clip_seconds":             r.propagatedClip,
+		"confidence_decision":             string(decision),
+		"interval_width":                  cellWidth,
+		"effective_predictor_target_vmaf": r.effectivePredictorTarget,
+		"prediction_source":               predictionSource,
+		"saliency_intensity":              r.saliencyIntensity,
+	})
+	return nil
+}
+
+// cellConfidence resolves one cell's verdict and interval width. An injected
+// interval wins; otherwise a smoke run with no intervals at all gets a
+// synthetic tight interval below the gate, so the F.3 branch is exercised
+// deterministically without ONNX.
+func (r *autoRun) cellConfidence(
+	rung int, codecName string, intervalLookup map[string]CellInterval,
+) (string, float64) {
+	if ci, ok := intervalLookup[cellKey(rung, codecName)]; ok {
+		return ci.Verdict, ci.IntervalWidth
 	}
-
-	// ------------------------------------------------------------------
-	// Stage 8 — low-complexity source (short-circuit #8). Dormant when
-	// complexity_score is 0.0 / NaN (no probe yet).
-	// ------------------------------------------------------------------
-	if ShouldShortCircuitLowComplexity(*meta, planState) {
-		planState.Fired(SCLowComplexity)
+	if r.opts.CellIntervals == nil && r.opts.Smoke {
+		return r.planState.PredictorVerdict, 1.0
 	}
+	return r.planState.PredictorVerdict, math.NaN()
+}
 
-	// ------------------------------------------------------------------
-	// Stage 9 — baseline already meets target (short-circuit #9). Dormant
-	// when baseline_vmaf is 0.0 / NaN (no baseline yet).
-	// ------------------------------------------------------------------
-	if ShouldShortCircuitBaselineMeetsTarget(*meta, planState) {
-		planState.Fired(SCBaselineMeetsTarget)
+// cellEstimates returns one cell's CRF and its VMAF / bitrate estimates. With
+// no predictor (smoke mode) the placeholders echo the caller's own target and
+// budget.
+func (r *autoRun) cellEstimates(
+	codecName string, pred *predictor.Predictor, features predictor.ShotFeatures,
+) (int, float64, float64, string, error) {
+	if pred == nil {
+		return 23, r.opts.TargetVMAF, r.opts.MaxBudgetKbps, "smoke-placeholder", nil
 	}
-
-	// ------------------------------------------------------------------
-	// Stage 10 — per-cell no-two-pass gate (short-circuit #10). The flag is
-	// resolved from the first codec in the list; an unknown codec resolves
-	// to false, matching the Python KeyError branch.
-	// ------------------------------------------------------------------
-	if len(codecs) > 0 {
-		supportsTwoPass := false
-		if adapter, err := codecadapter.Get(codecs[0]); err == nil {
-			supportsTwoPass = adapter.SupportsTwoPass
-		}
-		planState.AdapterSupportsTwoPass = &supportsTwoPass
-		if ShouldShortCircuitNoTwoPass(*meta, planState) {
-			planState.Fired(SCNoTwoPass)
-		}
+	crf, err := pred.PickCRF(features, r.effectivePredictorTarget, codecName)
+	if err != nil {
+		return 0, 0, 0, "", err
 	}
+	return crf,
+		pred.PredictVMAF(features, crf, codecName),
+		estimateCellBitrateKbps(features, codecName, crf),
+		"predictor",
+		nil
+}
 
-	winner := PickAutoWinner(cells, opts.TargetVMAF, opts.MaxBudgetKbps)
-	markSelectedCell(cells, winner)
+// applyTailGates runs Stages 6-10: the gates that only record a short-circuit.
+//
+//   - Stage 6, saliency (#4): otherwise production wiring would apply the
+//     saliency stage to every cell.
+//   - Stage 7, per-shot refinement (#7).
+//   - Stage 8, low-complexity source (#8); dormant when complexity_score is
+//     0.0 / NaN (no probe yet).
+//   - Stage 9, baseline already meets target (#9); dormant when baseline_vmaf
+//     is 0.0 / NaN (no baseline yet).
+//   - Stage 10, per-cell no-two-pass (#10); the flag is resolved from the
+//     first codec in the list, and an unknown codec resolves to false,
+//     matching the Python KeyError branch.
+func (r *autoRun) applyTailGates() {
+	if ShouldShortCircuitSkipSaliency(*r.meta, r.planState) {
+		r.planState.Fired(SCSkipSaliency)
+	}
+	if ShouldShortCircuitSkipPerShot(*r.meta, r.planState) {
+		r.planState.Fired(SCSkipPerShot)
+	}
+	if ShouldShortCircuitLowComplexity(*r.meta, r.planState) {
+		r.planState.Fired(SCLowComplexity)
+	}
+	if ShouldShortCircuitBaselineMeetsTarget(*r.meta, r.planState) {
+		r.planState.Fired(SCBaselineMeetsTarget)
+	}
+	if len(r.codecs) == 0 {
+		return
+	}
+	supportsTwoPass := false
+	if adapter, err := codecadapter.Get(r.codecs[0]); err == nil {
+		supportsTwoPass = adapter.SupportsTwoPass
+	}
+	r.planState.AdapterSupportsTwoPass = &supportsTwoPass
+	if ShouldShortCircuitNoTwoPass(*r.meta, r.planState) {
+		r.planState.Fired(SCNoTwoPass)
+	}
+}
 
-	allowCodecs := make([]any, len(opts.AllowCodecs))
-	for i, c := range opts.AllowCodecs {
+// plan picks the winning cell and assembles the returned plan plus its
+// metadata block.
+func (r *autoRun) plan() Plan {
+	winner := PickAutoWinner(r.cells, r.opts.TargetVMAF, r.opts.MaxBudgetKbps)
+	markSelectedCell(r.cells, winner)
+
+	allowCodecs := make([]any, len(r.opts.AllowCodecs))
+	for i, c := range r.opts.AllowCodecs {
 		allowCodecs[i] = c
 	}
 	var pinned any
-	if opts.UserPinnedCodec != "" {
-		pinned = opts.UserPinnedCodec
+	if r.opts.UserPinnedCodec != "" {
+		pinned = r.opts.UserPinnedCodec
 	}
-	shortCircuits := make([]any, len(planState.ShortCircuits))
-	for i, sc := range planState.ShortCircuits {
+	shortCircuits := make([]any, len(r.planState.ShortCircuits))
+	for i, sc := range r.planState.ShortCircuits {
 		shortCircuits[i] = sc
 	}
 
 	metadata := map[string]any{
-		"src":                          opts.Src,
-		"target_vmaf":                  opts.TargetVMAF,
-		"max_budget_kbps":              opts.MaxBudgetKbps,
+		"src":                          r.opts.Src,
+		"target_vmaf":                  r.opts.TargetVMAF,
+		"max_budget_kbps":              r.opts.MaxBudgetKbps,
 		"allow_codecs":                 allowCodecs,
 		"user_pinned_codec":            pinned,
-		"smoke":                        opts.Smoke,
-		"source_meta":                  meta.asMap(),
+		"smoke":                        r.opts.Smoke,
+		"source_meta":                  r.meta.asMap(),
 		"short_circuits":               shortCircuits,
-		"confidence_aware_escalations": escalations,
+		"confidence_aware_escalations": r.escalations,
 		"confidence_thresholds": map[string]any{
-			"tight_interval_max_width": thresholds.TightIntervalMaxWidth,
-			"wide_interval_min_width":  thresholds.WideIntervalMinWidth,
-			"source":                   thresholds.Source,
+			"tight_interval_max_width": r.thresholds.TightIntervalMaxWidth,
+			"wide_interval_min_width":  r.thresholds.WideIntervalMinWidth,
+			"source":                   r.thresholds.Source,
 		},
-		"recipe_applied":                  recipeClass,
-		"recipe_overrides":                recipe,
-		"effective_predictor_target_vmaf": effectivePredictorTarget,
+		"recipe_applied":                  r.recipeClass,
+		"recipe_overrides":                r.recipe,
+		"effective_predictor_target_vmaf": r.effectivePredictorTarget,
 		"winner":                          winner,
 	}
 
-	return Plan{Cells: cells, Metadata: metadata}, nil
+	return Plan{Cells: r.cells, Metadata: metadata}
 }
 
 // applyRecipeThresholds folds the recipe's tight_interval_max_width override

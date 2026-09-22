@@ -312,90 +312,123 @@ def test_cli_compare_requires_geometry_without_predicate_module(capsys, tmp_path
     assert "--width and --height are required" in err
 
 
-def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
-    """Geometry flags build the Phase-B bisect predicate for each codec."""
-    from vmaftune import cli as cli_module
+def _capturing_make_bisect_predicate(captured: list[dict], result_fn):
+    """``make_bisect_predicate`` stand-in that records the kwargs it was bound with.
 
-    captured: list[dict] = []
+    Every call appends its kwargs dict to `captured`; the predicate it
+    returns defers to ``result_fn(codec, target_vmaf, kwargs)`` so each
+    test decides what the fake bisect "found" while sharing the capture
+    plumbing.
+    """
 
-    def fake_make_bisect_predicate(**kwargs):
+    def _make(**kwargs):
         captured.append(kwargs)
 
         def predicate(codec: str, src: Path, target_vmaf: float) -> RecommendResult:
-            return RecommendResult(
-                codec=codec,
-                best_crf=23 if codec == "libx264" else 27,
-                bitrate_kbps=2400.0 if codec == "libx264" else 1700.0,
-                encode_time_ms=100.0,
-                vmaf_score=target_vmaf,
-                encoder_version=f"{codec}-fake",
-            )
+            return result_fn(codec, target_vmaf, kwargs)
 
         return predicate
 
-    monkeypatch.setattr(
-        "vmaftune.bisect.make_bisect_predicate",
-        fake_make_bisect_predicate,
-    )
+    return _make
 
-    rc = cli_module.main(
-        [
-            "compare",
-            "--src",
-            str(tmp_path / "ref.yuv"),
-            "--target-vmaf",
-            "92",
-            "--encoders",
-            "libx264,libx265",
-            "--width",
-            "1920",
-            "--height",
-            "1080",
-            "--framerate",
-            "24",
-            "--duration",
-            "10",
-            "--sample-clip-seconds",
-            "4",
-            "--crf-min",
-            "15",
-            "--crf-max",
-            "40",
-            "--format",
-            "json",
-        ]
-    )
-    assert rc == 0
-    # ADR-0577 added ``decode_semaphore`` to the kwargs; check all other
-    # keys explicitly and then verify decode_semaphore is a Semaphore(1).
-    assert len(captured) == 1
-    kwargs = captured[0]
+
+# The exact kwargs ``compare`` must bind into make_bisect_predicate for the
+# geometry flags in ``test_cli_compare_binds_real_bisect_predicate``. Kept as a
+# module constant so the test body stays about the wiring, not the table.
+_EXPECTED_BOUND_BISECT_KWARGS = {
+    "target_vmaf": 92.0,
+    "width": 1920,
+    "height": 1080,
+    "pix_fmt": "yuv420p",
+    "framerate": 24.0,
+    "duration_s": 10.0,
+    "sample_clip_seconds": 4.0,
+    "preset": "medium",  # ADR-1077: default changed from None to "medium"
+    "crf_range": (15, 40),
+    "max_iterations": 8,
+    "vmaf_model": DEFAULT_MODEL,  # ADR-1169: follows the fork default
+    "score_backend": None,
+    "ffmpeg_bin": "ffmpeg",
+    "vmaf_bin": "vmaf",
+    "workdir": None,
+}
+
+
+def _assert_bisect_kwargs(kwargs: dict, expected: dict) -> None:
+    """Compare bound bisect kwargs, checking the two dynamic keys by shape first.
+
+    ADR-0577's ``decode_semaphore`` is a live ``threading.Semaphore`` and
+    ADR-0624's ``nr_proxy_backend`` is ``None`` unless ``--fast-nr`` was
+    passed. Both are asserted by shape and removed, so `expected` can
+    pin every remaining key exactly.
+    """
     import threading as _threading
 
     decode_sem = kwargs.pop("decode_semaphore", None)
     assert isinstance(
         decode_sem, _threading.Semaphore
     ), f"Expected decode_semaphore to be a threading.Semaphore, got {decode_sem!r}"
-    # ADR-0624: nr_proxy_backend=None is forwarded when --fast-nr is not passed.
     nr_proxy = kwargs.pop("nr_proxy_backend", "MISSING")
     assert nr_proxy is None, f"Expected nr_proxy_backend=None (no --fast-nr), got {nr_proxy!r}"
-    assert kwargs == {
-        "target_vmaf": 92.0,
-        "width": 1920,
-        "height": 1080,
-        "pix_fmt": "yuv420p",
-        "framerate": 24.0,
-        "duration_s": 10.0,
-        "sample_clip_seconds": 4.0,
-        "preset": "medium",  # ADR-1077: default changed from None to "medium"
-        "crf_range": (15, 40),
-        "max_iterations": 8,
-        "vmaf_model": DEFAULT_MODEL,  # ADR-1169: follows the fork default
-        "score_backend": None,
-        "ffmpeg_bin": "ffmpeg",
-        "vmaf_bin": "vmaf",
-        "workdir": None,
-    }
+    assert kwargs == expected
+
+
+def _compare_argv(src: Path, *extra: str) -> list[str]:
+    """``compare`` argv over `src` at target VMAF 92, with `extra` appended."""
+    return ["compare", "--src", str(src), "--target-vmaf", "92", *extra]
+
+
+def _flag_argv(*pairs: tuple[str, str]) -> list[str]:
+    """Flatten ``(flag, value)`` pairs into the flat token list argparse wants.
+
+    Callers pass one tuple per CLI flag, so the formatter lays the argv out
+    one flag-and-its-value per line — the way the command is read on a
+    terminal — while ``main()`` still receives the flat ``["--width", "1920",
+    ...]`` sequence.
+    """
+    return [token for pair in pairs for token in pair]
+
+
+def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
+    """Geometry flags build the Phase-B bisect predicate for each codec."""
+    from vmaftune import cli as cli_module
+
+    captured: list[dict] = []
+
+    def _result(codec: str, target_vmaf: float, _kwargs: dict) -> RecommendResult:
+        return RecommendResult(
+            codec=codec,
+            best_crf=23 if codec == "libx264" else 27,
+            bitrate_kbps=2400.0 if codec == "libx264" else 1700.0,
+            encode_time_ms=100.0,
+            vmaf_score=target_vmaf,
+            encoder_version=f"{codec}-fake",
+        )
+
+    monkeypatch.setattr(
+        "vmaftune.bisect.make_bisect_predicate",
+        _capturing_make_bisect_predicate(captured, _result),
+    )
+
+    rc = cli_module.main(
+        _compare_argv(
+            tmp_path / "ref.yuv",
+            *_flag_argv(
+                ("--encoders", "libx264,libx265"),
+                ("--width", "1920"),
+                ("--height", "1080"),
+                ("--framerate", "24"),
+                ("--duration", "10"),
+                ("--sample-clip-seconds", "4"),
+                ("--crf-min", "15"),
+                ("--crf-max", "40"),
+                ("--format", "json"),
+            ),
+        )
+    )
+    assert rc == 0
+    assert len(captured) == 1
+    _assert_bisect_kwargs(captured[0], _EXPECTED_BOUND_BISECT_KWARGS)
     payload = json.loads(capsys.readouterr().out)
     assert [row["codec"] for row in payload["rows"]] == ["libx265", "libx264"]
 
@@ -406,51 +439,37 @@ def test_cli_compare_runtime_variant_binds_per_encoder_ffmpeg(monkeypatch, capsy
 
     captured: list[dict] = []
 
-    def fake_make_bisect_predicate(**kwargs):
-        captured.append(dict(kwargs))
+    def _result(codec: str, target_vmaf: float, kwargs: dict) -> RecommendResult:
         ffmpeg_bin = kwargs["ffmpeg_bin"]
-
-        def predicate(codec: str, src: Path, target_vmaf: float) -> RecommendResult:
-            bitrate = 1800.0 if ffmpeg_bin.endswith("ffmpeg-main") else 1600.0
-            return RecommendResult(
-                codec=codec,
-                best_crf=27,
-                bitrate_kbps=bitrate,
-                encode_time_ms=100.0,
-                vmaf_score=target_vmaf,
-                encoder_version=f"{codec}:{Path(ffmpeg_bin).name}",
-            )
-
-        return predicate
+        bitrate = 1800.0 if ffmpeg_bin.endswith("ffmpeg-main") else 1600.0
+        return RecommendResult(
+            codec=codec,
+            best_crf=27,
+            bitrate_kbps=bitrate,
+            encode_time_ms=100.0,
+            vmaf_score=target_vmaf,
+            encoder_version=f"{codec}:{Path(ffmpeg_bin).name}",
+        )
 
     monkeypatch.setattr(
         "vmaftune.bisect.make_bisect_predicate",
-        fake_make_bisect_predicate,
+        _capturing_make_bisect_predicate(captured, _result),
     )
 
     rc = cli_module.main(
-        [
-            "compare",
-            "--src",
-            str(tmp_path / "ref.yuv"),
-            "--target-vmaf",
-            "92",
-            "--encoders",
-            "libsvtav1,libsvtav1@svt-av1-hdr",
-            "--ffmpeg-bin",
-            "/opt/ffmpeg-main",
-            "--encoder-ffmpeg-bin",
-            "libsvtav1@svt-av1-hdr=/opt/ffmpeg-hdr",
-            "--width",
-            "1920",
-            "--height",
-            "1080",
-            "--duration",
-            "10",
-            "--format",
-            "json",
+        _compare_argv(
+            tmp_path / "ref.yuv",
+            *_flag_argv(
+                ("--encoders", "libsvtav1,libsvtav1@svt-av1-hdr"),
+                ("--ffmpeg-bin", "/opt/ffmpeg-main"),
+                ("--encoder-ffmpeg-bin", "libsvtav1@svt-av1-hdr=/opt/ffmpeg-hdr"),
+                ("--width", "1920"),
+                ("--height", "1080"),
+                ("--duration", "10"),
+                ("--format", "json"),
+            ),
             "--no-parallel",
-        ]
+        )
     )
 
     assert rc == 0
@@ -657,24 +676,19 @@ def test_cli_compare_passes_probed_framerate_for_container_src(monkeypatch, caps
 
     captured: list[dict] = []
 
-    def fake_make_bisect_predicate(**kwargs):
-        captured.append(kwargs)
-
-        def predicate(codec: str, src: Path, target_vmaf: float) -> RecommendResult:
-            return RecommendResult(
-                codec=codec,
-                best_crf=28,
-                bitrate_kbps=1000.0,
-                encode_time_ms=100.0,
-                vmaf_score=target_vmaf,
-                encoder_version=f"{codec}-fake",
-            )
-
-        return predicate
+    def _result(codec: str, target_vmaf: float, _kwargs: dict) -> RecommendResult:
+        return RecommendResult(
+            codec=codec,
+            best_crf=28,
+            bitrate_kbps=1000.0,
+            encode_time_ms=100.0,
+            vmaf_score=target_vmaf,
+            encoder_version=f"{codec}-fake",
+        )
 
     monkeypatch.setattr(
         "vmaftune.bisect.make_bisect_predicate",
-        fake_make_bisect_predicate,
+        _capturing_make_bisect_predicate(captured, _result),
     )
     # Stub probe_source so the test doesn't shell out to ffprobe.
     monkeypatch.setattr(
@@ -684,23 +698,17 @@ def test_cli_compare_passes_probed_framerate_for_container_src(monkeypatch, caps
 
     src = tmp_path / "bbb.mp4"
     src.touch()
+    # No --framerate / --duration — auto-probe must fill them.
     rc = cli_module.main(
-        [
-            "compare",
-            "--src",
-            str(src),
-            "--target-vmaf",
-            "92",
-            "--encoders",
-            "libx264",
-            "--width",
-            "1920",
-            "--height",
-            "1080",
-            # No --framerate / --duration — auto-probe must fill them.
-            "--format",
-            "json",
-        ]
+        _compare_argv(
+            src,
+            *_flag_argv(
+                ("--encoders", "libx264"),
+                ("--width", "1920"),
+                ("--height", "1080"),
+                ("--format", "json"),
+            ),
+        )
     )
     assert rc == 0
     assert len(captured) == 1

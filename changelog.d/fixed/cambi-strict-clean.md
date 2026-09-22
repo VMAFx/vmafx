@@ -1,0 +1,1 @@
+- Bound CAMBI's TVI, VLT, and top-k searches and remove every analyzer exemption from the production implementation while preserving byte-exact scalar and dispatched CPU scores.

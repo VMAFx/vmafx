@@ -85,6 +85,11 @@ Runs every feature through every compiled backend on the staged data and prints
 CPU↔GPU ULP deltas per feature. Used by `/cross-backend-diff` and by reviewers
 checking SIMD/GPU PRs.
 
+An extractor setup, frame submission or final flush failure is reported as a
+`SKIP` for that CPU/GPU pair instead of comparing incomplete score arrays.
+SYCL `--gpu-profile` returns non-zero when frame submission or final flush
+fails; automation may rely on that status without scraping stderr.
+
 Target: max absolute difference ≤ 2 ULP for integer features, ≤ 1e-5 relative
 for float features. Larger deltas are a regression and should block merge
 unless justified inline ([`.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md)

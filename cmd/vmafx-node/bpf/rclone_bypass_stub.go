@@ -8,11 +8,17 @@
 // exported symbols so the package compiles in CI without a BPF toolchain.
 // Replace with `go generate` output before running in production.
 //
+// The Close methods return an error, matching the signature bpf2go emits for
+// the real bindings (cmd/bpf2go/gen/output.tpl), so swapping the generated file
+// in is a drop-in replacement for callers.
+//
 // ADR-0779.
 package bpf
 
 import (
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/cilium/ebpf"
 )
@@ -24,9 +30,8 @@ type rcloneBypassObjects struct {
 	rcloneBypassMaps
 }
 
-func (o *rcloneBypassObjects) Close() {
-	o.rcloneBypassPrograms.Close()
-	o.rcloneBypassMaps.Close()
+func (o *rcloneBypassObjects) Close() error {
+	return errors.Join(o.rcloneBypassPrograms.Close(), o.rcloneBypassMaps.Close())
 }
 
 type rcloneBypassPrograms struct {
@@ -35,16 +40,8 @@ type rcloneBypassPrograms struct {
 	TpCloseEnter  *ebpf.Program `ebpf:"tp_close_enter"`
 }
 
-func (p *rcloneBypassPrograms) Close() {
-	if p.TpOpenatEnter != nil {
-		_ = p.TpOpenatEnter.Close()
-	}
-	if p.TpOpenatExit != nil {
-		_ = p.TpOpenatExit.Close()
-	}
-	if p.TpCloseEnter != nil {
-		_ = p.TpCloseEnter.Close()
-	}
+func (p *rcloneBypassPrograms) Close() error {
+	return closeAll(p.TpOpenatEnter, p.TpOpenatExit, p.TpCloseEnter)
 }
 
 type rcloneBypassMaps struct {
@@ -54,19 +51,28 @@ type rcloneBypassMaps struct {
 	Events         *ebpf.Map `ebpf:"events"`
 }
 
-func (m *rcloneBypassMaps) Close() {
-	if m.MountPrefixMap != nil {
-		_ = m.MountPrefixMap.Close()
+func (m *rcloneBypassMaps) Close() error {
+	return closeAll(m.MountPrefixMap, m.ScratchPaths, m.BypassFds, m.Events)
+}
+
+// closeAll releases every closer and reports the failures that occurred.
+//
+// It deliberately continues past a failing Close instead of returning early, so a single
+// failure cannot leak the handles behind the closers that follow it; that is the
+// close-everything behaviour the hand-written nil guards used to provide, with the errors
+// now propagated to the caller instead of discarded.
+//
+// A nil *ebpf.Map or *ebpf.Program is safe to pass: both Close methods guard their nil
+// receiver and return nil (ebpf v0.22.0 map.go:1518, prog.go:809), which is what lets the
+// zero-valued stub objects close cleanly.
+func closeAll(closers ...io.Closer) error {
+	errs := make([]error, 0, len(closers))
+	for _, closer := range closers {
+		if err := closer.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	if m.ScratchPaths != nil {
-		_ = m.ScratchPaths.Close()
-	}
-	if m.BypassFds != nil {
-		_ = m.BypassFds.Close()
-	}
-	if m.Events != nil {
-		_ = m.Events.Close()
-	}
+	return errors.Join(errs...)
 }
 
 // loadRcloneBypassObjects loads the BPF programs and maps.

@@ -16,75 +16,73 @@
 #define PAD 0.49999 /* A hair below 1/2, to avoid roundoff errors */
 #define MAXBINS 20000
 
-void mexFunction(int nlhs,             /* Num return vals on lhs */
-                 mxArray *plhs[],      /* Matrices on lhs      */
-                 int nrhs,             /* Num args on rhs    */
-                 const mxArray *prhs[] /* Matrices on rhs */
-)
+/* FIND min, max, mean values of MTX */
+static void mtx_extremes(const double *im, int size, double *mn_out, double *mx_out,
+                         double *mean_out)
 {
-    register double temp;
-    register int binnum, i, size;
-    register double *im, binsize;
-    register double origin, *hist, mn, mx, mean;
-    register int nbins;
-    double *bincenters;
-    mxArray *arg;
-    double *mxMat;
+    double temp, mn = *im, mx = *im, sum = 0;
+    int i;
 
-    if (nrhs < 1)
-        mexErrMsgTxt("requires at least 1 argument.");
-
-    /* ARG 1: MATRIX  */
-    arg = prhs[0];
-    if notDblMtx (arg)
-        mexErrMsgTxt("MTX arg must be a real non-sparse matrix.");
-    im = mxGetPr(arg);
-    size = (int)mxGetM(arg) * mxGetN(arg);
-
-    /* FIND min, max, mean values of MTX */
-    mn = *im;
-    mx = *im;
-    binsize = 0;
     for (i = 1; i < size; i++) {
         temp = im[i];
         if (temp < mn)
             mn = temp;
         else if (temp > mx)
             mx = temp;
-        binsize += temp;
+        sum += temp;
     }
-    mean = binsize / size;
+    *mn_out = mn;
+    *mx_out = mx;
+    *mean_out = sum / size;
+}
 
-    /* ARG 3: BIN_CENTER */
-    if (nrhs > 2) {
-        arg = prhs[2];
-        if notDblMtx (arg)
-            mexErrMsgTxt("BIN_CENTER arg must be a real scalar.");
-        if (mxGetM(arg) * mxGetN(arg) != 1)
-            mexErrMsgTxt("BIN_CENTER must be a real scalar.");
-        mxMat = mxGetPr(arg);
-        origin = *mxMat;
-    } else
-        origin = mean;
+/* ARG 3: BIN_CENTER (defaults to the matrix mean) */
+static double parse_bin_center(int nrhs, const mxArray *prhs[], double mean)
+{
+    const mxArray *arg;
+    double *mxMat;
 
-    /* ARG 2: If positive, NBINS.  If negative, -BINSIZE. */
-    if (nrhs > 1) {
-        arg = prhs[1];
-        if notDblMtx (arg)
-            mexErrMsgTxt("NBINS_OR_BINSIZE arg must be a real scalar.");
-        if (mxGetM(arg) * mxGetN(arg) != 1)
-            mexErrMsgTxt("NBINS_OR_BINSIZE must be a real scalar.");
-        mxMat = mxGetPr(arg);
-        binsize = *mxMat;
-    } else {
-        binsize = 101; /* DEFAULT: 101 bins */
-    }
+    if (nrhs <= 2)
+        return mean;
 
-    /* --------------------------------------------------
-     Adjust origin, binsize, nbins such that
-        mx <= origin + (nbins-1)*binsize + PAD*binsize
+    arg = prhs[2];
+    if notDblMtx (arg)
+        mexErrMsgTxt("BIN_CENTER arg must be a real scalar.");
+    if (mxGetM(arg) * mxGetN(arg) != 1)
+        mexErrMsgTxt("BIN_CENTER must be a real scalar.");
+    mxMat = mxGetPr(arg);
+    return *mxMat;
+}
+
+/* ARG 2: If positive, NBINS.  If negative, -BINSIZE. */
+static double parse_nbins_or_binsize(int nrhs, const mxArray *prhs[])
+{
+    const mxArray *arg;
+    double *mxMat;
+
+    if (nrhs <= 1)
+        return 101; /* DEFAULT: 101 bins */
+
+    arg = prhs[1];
+    if notDblMtx (arg)
+        mexErrMsgTxt("NBINS_OR_BINSIZE arg must be a real scalar.");
+    if (mxGetM(arg) * mxGetN(arg) != 1)
+        mexErrMsgTxt("NBINS_OR_BINSIZE must be a real scalar.");
+    mxMat = mxGetPr(arg);
+    return *mxMat;
+}
+
+/* --------------------------------------------------
+ Adjust origin, binsize, nbins such that
+    mx <= origin + (nbins-1)*binsize + PAD*binsize
 	mn >= origin - PAD*binsize
-     -------------------------------------------------- */
+ -------------------------------------------------- */
+static int adjust_bins(double mn, double mx, double *origin_io, double *binsize_io)
+{
+    double origin = *origin_io;
+    double binsize = *binsize_io;
+    int nbins, i;
+
     if (binsize < 0) /* user specified BINSIZE */
     {
         binsize = -binsize;
@@ -103,6 +101,45 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
             binsize = (mx - origin) / ((nbins - 1 - i) + PAD);
         origin -= binsize * ceil((origin - mn - PAD * binsize) / binsize);
     }
+
+    *origin_io = origin;
+    *binsize_io = binsize;
+    return nbins;
+}
+
+void mexFunction(int nlhs,             /* Num return vals on lhs */
+                 mxArray *plhs[],      /* Matrices on lhs      */
+                 int nrhs,             /* Num args on rhs    */
+                 const mxArray *prhs[] /* Matrices on rhs */
+)
+{
+    register double temp;
+    register int binnum, i, size;
+    register double *im;
+    register double *hist;
+    register int nbins;
+    /* mn, mx, mean, origin and binsize are filled in through pointers by the
+       helpers above, so they cannot carry the register storage class. */
+    double binsize, origin, mn, mx, mean;
+    double *bincenters;
+    const mxArray *arg;
+
+    if (nrhs < 1)
+        mexErrMsgTxt("requires at least 1 argument.");
+
+    /* ARG 1: MATRIX  */
+    arg = prhs[0];
+    if notDblMtx (arg)
+        mexErrMsgTxt("MTX arg must be a real non-sparse matrix.");
+    im = mxGetPr(arg);
+    size = (int)mxGetM(arg) * mxGetN(arg);
+
+    mtx_extremes(im, size, &mn, &mx, &mean);
+
+    origin = parse_bin_center(nrhs, prhs, mean);
+    binsize = parse_nbins_or_binsize(nrhs, prhs);
+
+    nbins = adjust_bins(mn, mx, &origin, &binsize);
 
     if (nbins > MAXBINS) {
         mexPrintf("nbins: %d,  MAXBINS: %d\n", nbins, MAXBINS);

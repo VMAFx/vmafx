@@ -8,6 +8,11 @@
 #include <cstring>
 #include <memory>
 
+/* The translation-unit-local fixtures and cases below sit in short anonymous
+ * namespaces rather than one file-wide block: that is what gives them C++
+ * internal linkage without any one brace scope outgrowing the 60-line budget
+ * the repository applies to the whole tree (ADR-1142), the same shape the
+ * SYCL extractors use. */
 namespace
 {
 
@@ -48,6 +53,10 @@ int read_blank_frame(VmafContext *vmaf)
     }
     return vmaf_read_pictures(vmaf, &ref, &dis, 0);
 }
+} // namespace
+
+namespace
+{
 
 mu_message_t test_public_option_registration()
 {

@@ -16,7 +16,7 @@ pooled-only schema the smoke output had).
 Usage:
     python3 scripts/dev/hw_encoder_corpus.py \\
         --vmaf-bin core/build-cuda/tools/vmaf \\
-        --source .workingdir2/netflix/ref/BigBuckBunny_25fps.yuv \\
+        --source .corpus/netflix/ref/BigBuckBunny_25fps.yuv \\
         --width 1920 --height 1080 --pix-fmt yuv420p --framerate 25 \\
         --encoder h264_nvenc --cq 19 --cq 25 --cq 31 --cq 37 \\
         --out runs/phase_a/bbb_h264_nvenc.jsonl
@@ -31,6 +31,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import TextIO
 
 CANONICAL_6 = (
     "integer_adm2",
@@ -39,6 +40,20 @@ CANONICAL_6 = (
     "integer_vif_scale2",
     "integer_vif_scale3",
     "integer_motion2",
+)
+
+ENCODERS = (
+    "h264_nvenc",
+    "hevc_nvenc",
+    "av1_nvenc",
+    "h264_qsv",
+    "hevc_qsv",
+    "av1_qsv",
+    "h264_vaapi",
+    "hevc_vaapi",
+    "h264_videotoolbox",
+    "hevc_videotoolbox",
+    "libx264",
 )
 
 
@@ -221,7 +236,7 @@ def emit_rows(
     return rows
 
 
-def main() -> int:
+def _build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--vmaf-bin", type=Path, required=True)
     ap.add_argument("--source", type=Path, required=True)
@@ -232,19 +247,7 @@ def main() -> int:
     ap.add_argument(
         "--encoder",
         required=True,
-        choices=[
-            "h264_nvenc",
-            "hevc_nvenc",
-            "av1_nvenc",
-            "h264_qsv",
-            "hevc_qsv",
-            "av1_qsv",
-            "h264_vaapi",
-            "hevc_vaapi",
-            "h264_videotoolbox",
-            "hevc_videotoolbox",
-            "libx264",
-        ],
+        choices=ENCODERS,
         help="hardware encoder family. NVENC (NVIDIA), QSV (Intel iHD), "
         "VAAPI (Intel/AMD), VideoToolbox (Apple Silicon / Intel Mac T2), "
         "or libx264 CPU baseline.",
@@ -261,83 +264,107 @@ def main() -> int:
     ap.add_argument("--qsv-device", type=Path, default=Path("/dev/dri/renderD129"))
     ap.add_argument("--vaapi-device", type=Path, default=Path("/dev/dri/renderD129"))
     ap.add_argument("--out", type=Path, required=True)
-    args = ap.parse_args()
+    return ap
 
+
+def _validate_inputs(args: argparse.Namespace) -> bool:
     if not args.source.is_file():
         print(f"error: source not found: {args.source}", file=sys.stderr)
-        return 2
+        return False
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found: {args.vmaf_bin}", file=sys.stderr)
-        return 2
+        return False
+    return True
+
+
+def _encoded_yuv(
+    args: argparse.Namespace, cq: int, temp_dir: Path, src_stem: str
+) -> tuple[Path, float, int] | None:
+    mp4 = temp_dir / f"{src_stem}_{args.encoder}_cq{cq}.mp4"
+    rc, enc_ms, size = encode_hw(
+        args.source,
+        args.width,
+        args.height,
+        args.pix_fmt,
+        args.framerate,
+        args.encoder,
+        cq,
+        mp4,
+        qsv_device=args.qsv_device,
+        vaapi_device=args.vaapi_device,
+    )
+    if rc != 0 or size == 0:
+        print(f"[skip] {src_stem} {args.encoder} cq{cq}: encode rc={rc}", file=sys.stderr)
+        return None
+    yuv = temp_dir / f"{src_stem}_{args.encoder}_cq{cq}.yuv"
+    if decode_to_raw(mp4, yuv, args.pix_fmt) != 0 or not yuv.exists():
+        print(f"[skip] {src_stem} {args.encoder} cq{cq}: decode failed", file=sys.stderr)
+        return None
+    return yuv, enc_ms, size
+
+
+def _write_quality_rows(
+    args: argparse.Namespace, cq: int, output: TextIO, src_stem: str
+) -> tuple[int, bool]:
+    with tempfile.TemporaryDirectory(prefix="hwenc_") as temp_name:
+        temp_dir = Path(temp_name)
+        encoded = _encoded_yuv(args, cq, temp_dir, src_stem)
+        if encoded is None:
+            return 0, True
+        yuv, enc_ms, size = encoded
+        json_out = temp_dir / "vmaf.json"
+        rc = score_cuda(
+            args.vmaf_bin, args.source, yuv, args.width, args.height, args.pix_fmt, json_out
+        )
+        if rc != 0 or not json_out.exists():
+            print(f"[skip] {src_stem} {args.encoder} cq{cq}: score failed", file=sys.stderr)
+            return 0, True
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        rows = emit_rows(
+            payload,
+            src=src_stem,
+            encoder=args.encoder,
+            cq=cq,
+            enc_bytes=size,
+            enc_time_ms=enc_ms,
+        )
+        if not rows:
+            print(
+                f"[skip] {src_stem} {args.encoder} cq{cq}: no canonical metric rows",
+                file=sys.stderr,
+            )
+            return 0, True
+        for row in rows:
+            output.write(json.dumps(row) + "\n")
+        print(
+            f"[ok] {src_stem} {args.encoder} cq{cq}: {len(rows)} rows, "
+            f"vmaf_pool={payload['pooled_metrics']['vmaf']['mean']:.2f}, "
+            f"enc={enc_ms:.0f}ms, sz={size}",
+            flush=True,
+        )
+        return len(rows), False
+
+
+def _run_sweep(args: argparse.Namespace) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
     src_stem = args.source.stem
     written = 0
+    failures = 0
     with args.out.open("a", encoding="utf-8") as fh:
         for cq in args.cq:
-            with tempfile.TemporaryDirectory(prefix="hwenc_") as td:
-                td_path = Path(td)
-                mp4 = td_path / f"{src_stem}_{args.encoder}_cq{cq}.mp4"
-                rc, enc_ms, sz = encode_hw(
-                    args.source,
-                    args.width,
-                    args.height,
-                    args.pix_fmt,
-                    args.framerate,
-                    args.encoder,
-                    cq,
-                    mp4,
-                    qsv_device=args.qsv_device,
-                    vaapi_device=args.vaapi_device,
-                )
-                if rc != 0 or sz == 0:
-                    print(
-                        f"[skip] {src_stem} {args.encoder} cq{cq}: encode rc={rc}", file=sys.stderr
-                    )
-                    continue
-                yuv = td_path / f"{src_stem}_{args.encoder}_cq{cq}.yuv"
-                if decode_to_raw(mp4, yuv, args.pix_fmt) != 0 or not yuv.exists():
-                    print(
-                        f"[skip] {src_stem} {args.encoder} cq{cq}: decode failed", file=sys.stderr
-                    )
-                    continue
-                json_out = td_path / "vmaf.json"
-                if (
-                    score_cuda(
-                        args.vmaf_bin,
-                        args.source,
-                        yuv,
-                        args.width,
-                        args.height,
-                        args.pix_fmt,
-                        json_out,
-                    )
-                    != 0
-                    or not json_out.exists()
-                ):
-                    print(f"[skip] {src_stem} {args.encoder} cq{cq}: score failed", file=sys.stderr)
-                    continue
-                payload = json.loads(json_out.read_text())
-                rows = emit_rows(
-                    payload,
-                    src=src_stem,
-                    encoder=args.encoder,
-                    cq=cq,
-                    enc_bytes=sz,
-                    enc_time_ms=enc_ms,
-                )
-                for r in rows:
-                    fh.write(json.dumps(r) + "\n")
-                written += len(rows)
-                print(
-                    f"[ok] {src_stem} {args.encoder} cq{cq}: "
-                    f"{len(rows)} rows, vmaf_pool="
-                    f"{payload['pooled_metrics']['vmaf']['mean']:.2f}, "
-                    f"enc={enc_ms:.0f}ms, sz={sz}",
-                    flush=True,
-                )
-    print(f"[done] wrote {written} rows -> {args.out}")
-    return 0
+            row_count, failed = _write_quality_rows(args, cq, fh, src_stem)
+            written += row_count
+            failures += int(failed)
+    print(f"[done] wrote {written} rows -> {args.out}; failed qualities={failures}")
+    return 1 if failures else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    if not _validate_inputs(args):
+        return 2
+    return _run_sweep(args)
 
 
 if __name__ == "__main__":

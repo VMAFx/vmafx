@@ -14,8 +14,8 @@ info:
     See [docs/server/rest.md](../../docs/server/rest.md) for operator guidance.
   version: "1.0.0"
   license:
-    name: BSD-3-Clause-Plus-Patent
-    url: https://github.com/VMAFx/vmafx/blob/master/LICENSE
+    name: EUPL-1.2
+    url: https://github.com/VMAFx/vmafx/blob/master/LICENSES/EUPL-1.2.txt
   contact:
     name: VMAFX fork
     url: https://github.com/VMAFx/vmafx

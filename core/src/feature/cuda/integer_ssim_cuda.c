@@ -143,6 +143,99 @@ static const VmafOption options[] = {
     {0},
 };
 
+/* ------------------------------------------------------------------ */
+/* integer_ssim_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * HISS-01: lifted verbatim from the former `free_ref` label. The same
+ * resources are released in the same order on every exit path, and the
+ * value returned is the one the label returned.
+ */
+static int integer_ssim_init_unwind(VmafFeatureExtractor *fex, SsimStateCuda *s, int ret)
+{
+    if (s->h_ref_mu) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_mu);
+        free(s->h_ref_mu);
+        s->h_ref_mu = NULL;
+    }
+    if (s->h_cmp_mu) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_mu);
+        free(s->h_cmp_mu);
+        s->h_cmp_mu = NULL;
+    }
+    if (s->h_ref_sq) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_sq);
+        free(s->h_ref_sq);
+        s->h_ref_sq = NULL;
+    }
+    if (s->h_cmp_sq) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_sq);
+        free(s->h_cmp_sq);
+        s->h_cmp_sq = NULL;
+    }
+    if (s->h_refcmp) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_refcmp);
+        free(s->h_refcmp);
+        s->h_refcmp = NULL;
+    }
+    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    return ret;
+}
+
+/* integer_ssim_setup_geometry - plane geometry, SSIM constants, buffers.
+ *
+ * HISS-04: the geometry-and-allocation tail of init_fex_cuda, moved whole.
+ * The c1 / c2 stabiliser expressions are copied character for character and
+ * stay inside a single statement each, so the compiler contracts them exactly
+ * as it did inline - splitting `(K1 * L) * (K1 * L)` across a call boundary is
+ * precisely what would change the score. The `ret |=` accumulation and the
+ * three unwind points keep their original order.
+ */
+static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda *s, unsigned w,
+                                       unsigned h, unsigned bpc)
+{
+    s->width = w;
+    s->height = h;
+    s->bpc = bpc;
+    s->w_horiz = w - (SSIM_K - 1);
+    s->h_horiz = h;
+    s->w_final = w - (SSIM_K - 1);
+    s->h_final = h - (SSIM_K - 1);
+    const float L = 255.0f;
+    const float K1 = 0.01f;
+    const float K2 = 0.03f;
+    s->c1 = (K1 * L) * (K1 * L);
+    s->c2 = (K2 * L) * (K2 * L);
+
+    const unsigned grid_x = (s->w_final + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
+    const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
+    s->partials_capacity = grid_x * grid_y;
+    const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
+    const size_t partials_bytes = (size_t)s->partials_capacity * sizeof(float);
+
+    int ret = 0;
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_mu, horiz_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_mu, horiz_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_sq, horiz_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_sq, horiz_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_refcmp, horiz_bytes);
+    if (ret)
+        return integer_ssim_init_unwind(fex, s, ret);
+
+    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, partials_bytes);
+    if (ret)
+        return integer_ssim_init_unwind(fex, s, ret);
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict) {
+        ret = -ENOMEM;
+        return integer_ssim_init_unwind(fex, s, ret);
+    }
+    return 0;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -191,76 +284,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
-    s->width = w;
-    s->height = h;
-    s->bpc = bpc;
-    s->w_horiz = w - (SSIM_K - 1);
-    s->h_horiz = h;
-    s->w_final = w - (SSIM_K - 1);
-    s->h_final = h - (SSIM_K - 1);
-    const float L = 255.0f;
-    const float K1 = 0.01f;
-    const float K2 = 0.03f;
-    s->c1 = (K1 * L) * (K1 * L);
-    s->c2 = (K2 * L) * (K2 * L);
-
-    const unsigned grid_x = (s->w_final + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
-    const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
-    s->partials_capacity = grid_x * grid_y;
-    const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
-    const size_t partials_bytes = (size_t)s->partials_capacity * sizeof(float);
-
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_mu, horiz_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_mu, horiz_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_sq, horiz_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_sq, horiz_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_refcmp, horiz_bytes);
-    if (ret)
-        goto free_ref;
-
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, partials_bytes);
-    if (ret)
-        goto free_ref;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        goto free_ref;
-    }
-    return 0;
-
-free_ref:
-    if (s->h_ref_mu) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_mu);
-        free(s->h_ref_mu);
-        s->h_ref_mu = NULL;
-    }
-    if (s->h_cmp_mu) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_mu);
-        free(s->h_cmp_mu);
-        s->h_cmp_mu = NULL;
-    }
-    if (s->h_ref_sq) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_sq);
-        free(s->h_ref_sq);
-        s->h_ref_sq = NULL;
-    }
-    if (s->h_cmp_sq) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_sq);
-        free(s->h_cmp_sq);
-        s->h_cmp_sq = NULL;
-    }
-    if (s->h_refcmp) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_refcmp);
-        free(s->h_refcmp);
-        s->h_refcmp = NULL;
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    return integer_ssim_setup_geometry(fex, s, w, h, bpc);
 
 fail:
     if (ctx_pushed)
@@ -270,33 +294,50 @@ fail_after_pop:
     return _cuda_err;
 }
 
-static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+/* integer_ssim_launch_vert - pass 2: vertical accumulation and SSIM combine.
+ *
+ * HISS-04: the pass-2 launch of submit_fex_cuda, moved whole. params2 keeps
+ * its element order and still points at s->c1 / s->c2 themselves, so the
+ * kernel reads the same stabiliser constants; the grid and block geometry and
+ * the stream are unchanged.
+ */
+static int integer_ssim_launch_vert(SsimStateCuda *s, CudaFunctions *cu_f, CUstream stream,
+                                    unsigned grid_x, unsigned grid_y)
 {
-    (void)ref_pic_90;
-    (void)dist_pic_90;
-    SsimStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
+    /* Pass 2 — vertical + SSIM combine. Grid sized over
+     * (W-10) × (H-10). The horiz pass writes happen-before
+     * the vert pass reads on the same stream — implicit
+     * stream ordering, no extra event needed. */
+    void *params2[] = {
+        (void *)s->h_ref_mu,
+        (void *)s->h_cmp_mu,
+        (void *)s->h_ref_sq,
+        (void *)s->h_cmp_sq,
+        (void *)s->h_refcmp,
+        (void *)s->rb.device,
+        &s->w_horiz,
+        &s->w_final,
+        &s->h_final,
+        &s->c1,
+        &s->c2,
+    };
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_vert, grid_x, grid_y, 1, SSIM_BLOCK_X,
+                                           SSIM_BLOCK_Y, 1, 0, stream, params2, NULL));
+    return 0;
+}
 
-    s->index = index;
-    const unsigned grid_x = (s->w_final + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
-    const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
-    s->partials_count = grid_x * grid_y;
-
-    /* v1 dispatches luma plane only (kernel reads data[0]).
-     * When enable_chroma=true, n_planes=3 but the kernel loop is deferred
-     * to v2 (requires passing plane index into the kernel). */
-
-    /* Sync ref-side stream against dist's ready event (matches
-     * psnr_cuda's pattern). */
-    CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(vmaf_cuda_picture_get_stream(ref_pic),
-                                              vmaf_cuda_picture_get_ready_event(dist_pic),
-                                              CU_EVENT_WAIT_DEFAULT));
-
-    /* Pass 1 — horizontal. Grid sized over (W-10) × H. */
-    const unsigned grid_horiz_x = (s->w_horiz + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
-    const unsigned grid_horiz_y = (s->h_horiz + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
-    CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
+/* integer_ssim_launch_horiz - pass 1: the 8bpc or 16bpc horizontal kernel.
+ *
+ * HISS-04: the pass-1 branch of submit_fex_cuda, moved whole. Both parameter
+ * arrays keep their exact element order (the 16bpc one still carries the extra
+ * &bpc slot) and the grid geometry is passed in unchanged, so each kernel sees
+ * identical arguments. cuLaunchKernel copies the parameter values before it
+ * returns, so pointing at this frame's `width` / `bpc` copies is safe.
+ */
+static int integer_ssim_launch_horiz(SsimStateCuda *s, CudaFunctions *cu_f, CUstream stream,
+                                     VmafPicture *ref_pic, VmafPicture *dist_pic,
+                                     unsigned grid_horiz_x, unsigned grid_horiz_y)
+{
     if (s->bpc == 8) {
         unsigned width = s->width;
         void *params[] = {
@@ -329,26 +370,44 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                           cuLaunchKernel(s->func_horiz_16, grid_horiz_x, grid_horiz_y, 1,
                                          SSIM_BLOCK_X, SSIM_BLOCK_Y, 1, 0, stream, params, NULL));
     }
+    return 0;
+}
 
-    /* Pass 2 — vertical + SSIM combine. Grid sized over
-     * (W-10) × (H-10). The horiz pass writes happen-before
-     * the vert pass reads on the same stream — implicit
-     * stream ordering, no extra event needed. */
-    void *params2[] = {
-        (void *)s->h_ref_mu,
-        (void *)s->h_cmp_mu,
-        (void *)s->h_ref_sq,
-        (void *)s->h_cmp_sq,
-        (void *)s->h_refcmp,
-        (void *)s->rb.device,
-        &s->w_horiz,
-        &s->w_final,
-        &s->h_final,
-        &s->c1,
-        &s->c2,
-    };
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_vert, grid_x, grid_y, 1, SSIM_BLOCK_X,
-                                           SSIM_BLOCK_Y, 1, 0, stream, params2, NULL));
+static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+{
+    (void)ref_pic_90;
+    (void)dist_pic_90;
+    SsimStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
+
+    s->index = index;
+    const unsigned grid_x = (s->w_final + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
+    const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
+    s->partials_count = grid_x * grid_y;
+
+    /* v1 dispatches luma plane only (kernel reads data[0]).
+     * When enable_chroma=true, n_planes=3 but the kernel loop is deferred
+     * to v2 (requires passing plane index into the kernel). */
+
+    /* Sync ref-side stream against dist's ready event (matches
+     * psnr_cuda's pattern). */
+    CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(vmaf_cuda_picture_get_stream(ref_pic),
+                                              vmaf_cuda_picture_get_ready_event(dist_pic),
+                                              CU_EVENT_WAIT_DEFAULT));
+
+    /* Pass 1 — horizontal. Grid sized over (W-10) × H. */
+    const unsigned grid_horiz_x = (s->w_horiz + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
+    const unsigned grid_horiz_y = (s->h_horiz + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
+    CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
+    const int horiz_err =
+        integer_ssim_launch_horiz(s, cu_f, stream, ref_pic, dist_pic, grid_horiz_x, grid_horiz_y);
+    if (horiz_err)
+        return horiz_err;
+
+    const int vert_err = integer_ssim_launch_vert(s, cu_f, stream, grid_x, grid_y);
+    if (vert_err)
+        return vert_err;
 
     /* DtoH copy of the partials on our private stream. */
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, stream));

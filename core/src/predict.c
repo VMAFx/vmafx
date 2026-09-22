@@ -416,29 +416,33 @@ static int predict_init_feature_vectors(VmafModel *model, VmafFeatureCollector *
 /* Round-5 race fix (finding #3): serialise the three lazy-init blocks with
  * model->predict_cache_lock (initialised in vmaf_read_json_model()).  The lock
  * is held only during the one-time init, not during SVM inference. */
-static int predict_ensure_caches(VmafModel *model, VmafFeatureCollector *feature_collector)
+/* The three lazy-init blocks themselves.  Callers must hold
+ * model->predict_cache_lock; returning instead of jumping to an unlock label
+ * keeps the lock/unlock pair adjacent in predict_ensure_caches below. */
+static int predict_fill_caches(VmafModel *model, VmafFeatureCollector *feature_collector)
 {
-    pthread_mutex_lock(&model->predict_cache_lock);
-    int err = 0;
-
     if (!model->predict_feature_names) {
-        err = predict_init_feature_names(model);
+        const int err = predict_init_feature_names(model);
         if (err)
-            goto unlock;
+            return err;
     }
 
     if (!model->predict_nodes) {
         model->predict_nodes = malloc(sizeof(struct svm_node) * (model->n_features + 1));
-        if (!model->predict_nodes) {
-            err = -ENOMEM;
-            goto unlock;
-        }
+        if (!model->predict_nodes)
+            return -ENOMEM;
     }
 
     if (!model->predict_feature_vectors)
-        err = predict_init_feature_vectors(model, feature_collector);
+        return predict_init_feature_vectors(model, feature_collector);
 
-unlock:
+    return 0;
+}
+
+static int predict_ensure_caches(VmafModel *model, VmafFeatureCollector *feature_collector)
+{
+    pthread_mutex_lock(&model->predict_cache_lock);
+    const int err = predict_fill_caches(model, feature_collector);
     pthread_mutex_unlock(&model->predict_cache_lock);
     return err;
 }
@@ -702,29 +706,31 @@ static int vmaf_bootstrap_predict_score_at_index(VmafModelCollection *model_coll
     if (!scores)
         return -ENOMEM;
 
+    /* Nested rather than extracted into a helper: every arithmetic statement
+     * below stays in this function, in this order, so no floating-point
+     * expression can be re-associated or contracted by the move (ADR-1253).
+     * The `if (!err)` chain reproduces the former `goto out` skips exactly, and
+     * free(scores) remains the single unwind the `out` label provided. */
     err = bootstrap_gather_scores(model_collection, feature_collector, index, scores);
-    if (err)
-        goto out;
+    if (!err) {
+        score->type = VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP;
 
-    score->type = VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP;
+        double score_plus_delta;
+        double score_minus_delta;
+        bootstrap_compute_statistics(model_collection, scores, score, &score_plus_delta,
+                                     &score_minus_delta);
 
-    double score_plus_delta;
-    double score_minus_delta;
-    bootstrap_compute_statistics(model_collection, scores, score, &score_plus_delta,
-                                 &score_minus_delta);
+        const VmafModel *model = model_collection->model[0];
+        err = bootstrap_transform_and_clip(model, score, &score_plus_delta, &score_minus_delta);
+        if (!err) {
+            const double delta = 0.01;
+            const double slope = (score_plus_delta - score_minus_delta) / (2.0 * delta);
+            score->bootstrap.stddev *= slope;
 
-    const VmafModel *model = model_collection->model[0];
-    err = bootstrap_transform_and_clip(model, score, &score_plus_delta, &score_minus_delta);
-    if (err)
-        goto out;
+            err = bootstrap_append_named_scores(model_collection, feature_collector, index, score);
+        }
+    }
 
-    const double delta = 0.01;
-    const double slope = (score_plus_delta - score_minus_delta) / (2.0 * delta);
-    score->bootstrap.stddev *= slope;
-
-    err = bootstrap_append_named_scores(model_collection, feature_collector, index, score);
-
-out:
     free(scores);
     return err;
 }

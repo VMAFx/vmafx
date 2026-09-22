@@ -96,6 +96,80 @@ Exit codes:
 | 1    | PR body would fail (same `::error` lines as CI emits).   |
 | 2    | Usage error — missing body, unreadable diff file, etc.   |
 
+## Where the body comes from
+
+Four gates read a PR body, and all four classify `fd 0` the same way,
+through the shared helper [`scripts/ci/pr-body-input.sh`][input]:
+
+| Gate                              | Rule enforced                    |
+|-----------------------------------|----------------------------------|
+| [`deliverables-check.sh`][deliv]  | ADR-0108 six deliverables        |
+| `validate-pr-body.sh`             | the same parser, run locally     |
+| `ffmpeg-patches-surface-check.sh` | ADR-0186 ffmpeg-patch surface    |
+| `state-md-touch-check.sh`         | ADR-0165 `docs/state.md` hygiene |
+
+The body is resolved in this order:
+
+1. `--body PATH` (`validate-pr-body.sh` only).
+2. `$PR_BODY`. For the two deliverables entry points, **set counts** — even
+   to the empty string, because setting it is the caller's answer, so a blank
+   one is reported against the variable rather than quietly replaced from
+   stdin. This is the path CI takes
+   (`PR_BODY: ${{ github.event.pull_request.body }}`) and the path
+   `make pr-check` takes. The surface and `state.md` gates instead take the
+   variable only when it is **non-empty**: for them a blank `$PR_BODY` and a
+   blank stdin end at the same empty body, so falling through costs nothing
+   and lets an explicitly blank variable still be overridden by a real pipe.
+3. stdin, **when fd 0 is a pipe, a regular file or a socket**.
+
+What happens when none of those supplies a body differs by gate, because the
+gates differ in what else they have to go on:
+
+- `deliverables-check.sh` and `validate-pr-body.sh` exist only to parse a
+  body. No body is a **usage error (exit 2)** naming what fd 0 actually is.
+- `ffmpeg-patches-surface-check.sh` and `state-md-touch-check.sh` also have a
+  diff to check. No body makes their opt-out sentinel unclaimable, so they
+  **name what fd 0 was and fall through to the diff** — passing when it is
+  clean, failing when it is not. Neither is weakened by an absent body; both
+  fail closed.
+
+The classification matters because `[ ! -t 0 ]` — the test all four scripts
+used until it was replaced — answers "is fd 0 something other than a
+terminal", not "did anybody pipe a PR body":
+
+| fd 0                    | `[ ! -t 0 ]` | Now                                          |
+|-------------------------|--------------|----------------------------------------------|
+| pipe / file with a body | true         | read (unchanged)                             |
+| pipe carrying no bytes  | true         | fail closed: the producer sent nothing       |
+| `/dev/null`             | true         | named as unreadable, never read as a body    |
+| closed (`0<&-`)         | true         | named as closed, never read — used to hang   |
+| terminal                | false        | named as a terminal (unchanged)              |
+
+The closed case was the sharp one. `PR_BODY="$(cat)"` with fd 0 closed does
+not fail, it **deadlocks**: the command substitution opens a pipe, the
+kernel hands out the lowest free descriptor, with fd 0 free that pipe's
+read end lands on fd 0, and `cat` reads the pipe it is writing to. Reproduce
+the old behaviour on any pre-fix checkout with:
+
+```bash
+timeout 10 bash scripts/ci/deliverables-check.sh 0<&- ; echo $?            # 124
+timeout 12 env -u PR_BODY bash -c \
+    'bash scripts/ci/state-md-touch-check.sh 0<&-' ; echo $?               # 124
+```
+
+Reading the classified stream is a three-step contract, and the third step is
+not optional: `pr_body_classify_stdin` hands out a **duplicate** of fd 0 (the
+duplicate is what makes the read safe, since no later command substitution can
+claim a descriptor that is already taken), `pr_body_read_stdin` reads it, and
+`pr_body_close_stdin` releases it. The release cannot be folded into the read
+— that runs inside `$( )`, so closing there would close the subshell's copy
+and leave the caller's open, inherited by every `git`, `python3` and `mktemp`
+the gate spawns afterwards.
+
+`scripts/ci/tests/test-pr-body-input-selection.sh` pins every row of that
+table for all four gates, plus the descriptor release, under `timeout`, so a
+re-regression is reported as a hang instead of becoming one.
+
 ## What the hook does on push
 
 1. Resolves the current branch via `git rev-parse --abbrev-ref HEAD`.
@@ -168,3 +242,4 @@ GitHub Actions log surfaces them as inline annotations.
 
 [rule-yml]: ../../.github/workflows/rule-enforcement.yml
 [deliv]: ../../scripts/ci/deliverables-check.sh
+[input]: ../../scripts/ci/pr-body-input.sh

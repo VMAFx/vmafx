@@ -12,7 +12,7 @@
 use std::env;
 use std::path::PathBuf;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prefix = env::var("LIBVMAF_PREFIX").unwrap_or_else(|_| "/usr/local".to_string());
     let include_dir = format!("{prefix}/include");
     let lib_dir = format!("{prefix}/lib");
@@ -36,11 +36,9 @@ fn main() {
         .allowlist_type("Vmaf.*")
         .allowlist_var("VMAF_.*")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .generate()
-        .expect("Unable to generate bindings for libvmaf");
+        .generate()?;
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Could not write bindings.rs");
+    let out_path = PathBuf::from(env::var("OUT_DIR")?);
+    bindings.write_to_file(out_path.join("bindings.rs"))?;
+    Ok(())
 }

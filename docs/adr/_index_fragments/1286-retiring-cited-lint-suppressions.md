@@ -1,0 +1,1 @@
+| [ADR-1286](1286-retiring-cited-lint-suppressions.md) | A cited lint suppression is retired only by a refactor that satisfies the invariant the citation names; a citation naming an external contract (upstream-verbatim text, bit-exactness) is not retirable by refactoring at all. | Accepted | code-quality, process, agents, ci |

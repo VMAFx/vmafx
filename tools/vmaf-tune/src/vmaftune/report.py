@@ -355,6 +355,114 @@ class CodecSweepPoint:
     bisect_samples: tuple[BisectSamplePoint, ...] = ()
 
 
+def _source_from_dict(d: dict[str, Any]) -> SourceInfo:
+    """Rebuild :class:`SourceInfo` from its ``to_dict`` mapping."""
+    src_d = d.get("source", {})
+    return SourceInfo(
+        path=src_d.get("path", ""),
+        width=src_d.get("width", 0),
+        height=src_d.get("height", 0),
+        fps=float(src_d.get("fps", 0.0)),
+        duration_s=float(src_d.get("duration_s", 0.0)),
+        frame_count=src_d.get("frame_count", 0),
+        codec=src_d.get("codec", ""),
+        size_bytes=src_d.get("size_bytes", 0),
+    )
+
+
+def _codec_rows_from_dict(d: dict[str, Any]) -> tuple[CodecRow, ...]:
+    """Rebuild the ``codec_rows`` tuple; a missing key yields an empty tuple."""
+    return tuple(
+        CodecRow(
+            codec=r.get("codec", ""),
+            encoder_version=r.get("encoder_version", ""),
+            best_crf=r.get("best_crf", 0),
+            bitrate_kbps=float(r.get("bitrate_kbps", 0.0)),
+            encode_time_ms=float(r.get("encode_time_ms", 0.0)),
+            vmaf_score=float(r.get("vmaf_score", 0.0)),
+            ok=bool(r.get("ok", True)),
+            error=r.get("error", ""),
+        )
+        for r in d.get("codec_rows", ())
+    )
+
+
+def _sweep_points_from_dict(d: dict[str, Any]) -> tuple[CodecSweepPoint, ...]:
+    """Rebuild the ``sweep_points`` tuple, including each point's bisect samples."""
+    sweep_points: list[CodecSweepPoint] = []
+    for p in d.get("sweep_points", ()):
+        samples = tuple(
+            BisectSamplePoint(
+                crf=s.get("crf", 0),
+                bitrate_kbps=float(s.get("bitrate_kbps", 0.0)),
+                vmaf_score=float(s.get("vmaf_score", 0.0)),
+                encode_time_ms=float(s.get("encode_time_ms", 0.0)),
+            )
+            for s in p.get("bisect_samples", ())
+        )
+        sweep_points.append(
+            CodecSweepPoint(
+                codec=p.get("codec", ""),
+                encoder_version=p.get("encoder_version", ""),
+                target_vmaf=float(p.get("target_vmaf", 0.0)),
+                best_crf=p.get("best_crf", 0),
+                bitrate_kbps=float(p.get("bitrate_kbps", 0.0)),
+                encode_time_ms=float(p.get("encode_time_ms", 0.0)),
+                vmaf_score=float(p.get("vmaf_score", 0.0)),
+                ok=bool(p.get("ok", True)),
+                error=p.get("error", ""),
+                bisect_samples=samples,
+            )
+        )
+    return tuple(sweep_points)
+
+
+def _ladder_samples_from_dict(d: dict[str, Any]) -> tuple[LadderSample, ...]:
+    """Rebuild the ``ladder_samples`` tuple (every probed rung candidate)."""
+    return tuple(
+        LadderSample(
+            width=s.get("width", 0),
+            height=s.get("height", 0),
+            bitrate_kbps=float(s.get("bitrate_kbps", 0.0)),
+            vmaf=float(s.get("vmaf", 0.0)),
+            crf=s.get("crf", 0),
+        )
+        for s in d.get("ladder_samples", ())
+    )
+
+
+def _ladder_rungs_from_dict(d: dict[str, Any]) -> tuple[LadderRung, ...]:
+    """Rebuild the ``ladder_rungs`` tuple (the rungs actually selected)."""
+    return tuple(
+        LadderRung(
+            width=r.get("width", 0),
+            height=r.get("height", 0),
+            bitrate_kbps=float(r.get("bitrate_kbps", 0.0)),
+            vmaf=float(r.get("vmaf", 0.0)),
+            crf=r.get("crf", 0),
+        )
+        for r in d.get("ladder_rungs", ())
+    )
+
+
+def _shots_from_dict(d: dict[str, Any]) -> tuple[ShotRow, ...]:
+    """Rebuild the per-shot ``shots`` tuple."""
+    return tuple(
+        ShotRow(
+            shot_index=s.get("shot_index", 0),
+            start_frame=s.get("start_frame", 0),
+            end_frame=s.get("end_frame", 0),
+            width=s.get("width", 0),
+            height=s.get("height", 0),
+            best_crf=s.get("best_crf", 0),
+            vmaf=float(s.get("vmaf", 0.0)),
+            bitrate_kbps=float(s.get("bitrate_kbps", 0.0)),
+            duration_s=float(s.get("duration_s", 0.0)),
+        )
+        for s in d.get("shots", ())
+    )
+
+
 @dataclasses.dataclass(frozen=True)
 class ReportData:
     """All structured inputs for one report."""
@@ -402,95 +510,23 @@ class ReportData:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ReportData:
-        """Construct a ReportData instance from its to_dict() serialization."""
-        src_d = d.get("source", {})
-        src = SourceInfo(
-            path=src_d.get("path", ""),
-            width=src_d.get("width", 0),
-            height=src_d.get("height", 0),
-            fps=float(src_d.get("fps", 0.0)),
-            duration_s=float(src_d.get("duration_s", 0.0)),
-            frame_count=src_d.get("frame_count", 0),
-            codec=src_d.get("codec", ""),
-            size_bytes=src_d.get("size_bytes", 0),
-        )
-        codec_rows = tuple(
-            CodecRow(
-                codec=r.get("codec", ""),
-                encoder_version=r.get("encoder_version", ""),
-                best_crf=r.get("best_crf", 0),
-                bitrate_kbps=float(r.get("bitrate_kbps", 0.0)),
-                encode_time_ms=float(r.get("encode_time_ms", 0.0)),
-                vmaf_score=float(r.get("vmaf_score", 0.0)),
-                ok=bool(r.get("ok", True)),
-                error=r.get("error", ""),
-            )
-            for r in d.get("codec_rows", ())
-        )
-        sweep_points: list[CodecSweepPoint] = []
-        for p in d.get("sweep_points", ()):
-            samples = tuple(
-                BisectSamplePoint(
-                    crf=s.get("crf", 0),
-                    bitrate_kbps=float(s.get("bitrate_kbps", 0.0)),
-                    vmaf_score=float(s.get("vmaf_score", 0.0)),
-                    encode_time_ms=float(s.get("encode_time_ms", 0.0)),
-                )
-                for s in p.get("bisect_samples", ())
-            )
-            sweep_points.append(
-                CodecSweepPoint(
-                    codec=p.get("codec", ""),
-                    encoder_version=p.get("encoder_version", ""),
-                    target_vmaf=float(p.get("target_vmaf", 0.0)),
-                    best_crf=p.get("best_crf", 0),
-                    bitrate_kbps=float(p.get("bitrate_kbps", 0.0)),
-                    encode_time_ms=float(p.get("encode_time_ms", 0.0)),
-                    vmaf_score=float(p.get("vmaf_score", 0.0)),
-                    ok=bool(p.get("ok", True)),
-                    error=p.get("error", ""),
-                    bisect_samples=samples,
-                )
-            )
-        ladder_samples = tuple(
-            LadderSample(
-                width=s.get("width", 0),
-                height=s.get("height", 0),
-                bitrate_kbps=float(s.get("bitrate_kbps", 0.0)),
-                vmaf=float(s.get("vmaf", 0.0)),
-                crf=s.get("crf", 0),
-            )
-            for s in d.get("ladder_samples", ())
-        )
-        ladder_rungs = tuple(
-            LadderRung(
-                width=r.get("width", 0),
-                height=r.get("height", 0),
-                bitrate_kbps=float(r.get("bitrate_kbps", 0.0)),
-                vmaf=float(r.get("vmaf", 0.0)),
-                crf=r.get("crf", 0),
-            )
-            for r in d.get("ladder_rungs", ())
-        )
-        shots = tuple(
-            ShotRow(
-                shot_index=s.get("shot_index", 0),
-                start_frame=s.get("start_frame", 0),
-                end_frame=s.get("end_frame", 0),
-                width=s.get("width", 0),
-                height=s.get("height", 0),
-                best_crf=s.get("best_crf", 0),
-                vmaf=float(s.get("vmaf", 0.0)),
-                bitrate_kbps=float(s.get("bitrate_kbps", 0.0)),
-                duration_s=float(s.get("duration_s", 0.0)),
-            )
-            for s in d.get("shots", ())
-        )
+        """Construct a ReportData instance from its to_dict() serialization.
+
+        Each collection is rebuilt by its own module-private helper; every
+        field falls back to the same default ``to_dict`` would have
+        written, so a partial mapping round-trips rather than raising.
+        """
+        src = _source_from_dict(d)
+        codec_rows = _codec_rows_from_dict(d)
+        sweep_points = _sweep_points_from_dict(d)
+        ladder_samples = _ladder_samples_from_dict(d)
+        ladder_rungs = _ladder_rungs_from_dict(d)
+        shots = _shots_from_dict(d)
         return cls(
             source=src,
             target_vmaf=float(d.get("target_vmaf", 0.0)),
             codec_rows=codec_rows,
-            sweep_points=tuple(sweep_points),
+            sweep_points=sweep_points,
             sweep_targets=tuple(float(t) for t in d.get("sweep_targets", ())),
             ladder_samples=ladder_samples,
             ladder_rungs=ladder_rungs,
@@ -648,18 +684,19 @@ def _recommendation_row(
     }
 
 
-def build_encoder_profile(data: ReportData) -> dict[str, Any]:
-    """Build the machine-readable profile payload embedded in every report."""
-    codecs = _codecs_in_report(data)
-    frontier_keys = {
-        (p.codec, p.target_vmaf, p.best_crf)
-        for p in compute_pareto_frontier(data.sweep_points)
-        if p.ok
-    }
-    recommendations: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
-    preset = data.encoder_preset
+def _append_compare_rows(
+    data: ReportData,
+    preset: str,
+    recommendations: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
+) -> None:
+    """Fold the ``compare`` rows into the shared recommendation/failure lists.
 
+    Appends in place. Must run before :func:`_append_sweep_rows`: that
+    pass reads ``len(recommendations)`` for its provisional index, and
+    every compare row is treated as on the Pareto frontier (a compare run
+    produces one row per codec, so there is nothing to dominate it).
+    """
     for row in data.codec_rows:
         if row.ok and not _is_missing(row.bitrate_kbps) and not _is_missing(row.vmaf_score):
             recommendations.append(
@@ -687,6 +724,20 @@ def build_encoder_profile(data: ReportData) -> dict[str, Any]:
                 }
             )
 
+
+def _append_sweep_rows(
+    data: ReportData,
+    preset: str,
+    frontier_keys: set[tuple[str, float, int]],
+    recommendations: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
+) -> None:
+    """Fold the ``sweep`` points into the shared recommendation/failure lists.
+
+    Appends in place, after :func:`_append_compare_rows`. Unlike a compare
+    row, a sweep point is flagged ``selected_pareto`` only when its
+    ``(codec, target, crf)`` key is on the computed frontier.
+    """
     for point in data.sweep_points:
         if point.ok and not _is_missing(point.bitrate_kbps) and not _is_missing(point.vmaf_score):
             recommendations.append(
@@ -715,17 +766,14 @@ def build_encoder_profile(data: ReportData) -> dict[str, Any]:
                 }
             )
 
-    recommendations.sort(
-        key=lambda r: (
-            not bool(r["selected_pareto"]),
-            float(r["target_vmaf"]),
-            float(r["bitrate_kbps"]),
-            str(r["codec"]),
-        )
-    )
-    for idx, rec in enumerate(recommendations):
-        rec["index"] = idx
 
+def _encoder_profile_payload(
+    data: ReportData,
+    codecs: tuple[str, ...],
+    recommendations: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Assemble the profile mapping around the already-ranked rows."""
     return {
         "schema": ENCODER_PROFILE_SCHEMA,
         "schema_version": ENCODER_PROFILE_VERSION,
@@ -753,9 +801,36 @@ def build_encoder_profile(data: ReportData) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Charts (lazy matplotlib import)
-# ---------------------------------------------------------------------------
+def build_encoder_profile(data: ReportData) -> dict[str, Any]:
+    """Build the machine-readable profile payload embedded in every report."""
+    codecs = _codecs_in_report(data)
+    frontier_keys = {
+        (p.codec, p.target_vmaf, p.best_crf)
+        for p in compute_pareto_frontier(data.sweep_points)
+        if p.ok
+    }
+    recommendations: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    preset = data.encoder_preset
+
+    _append_compare_rows(data, preset, recommendations, failures)
+    _append_sweep_rows(data, preset, frontier_keys, recommendations, failures)
+
+    # Frontier picks first, then by target, then cheapest, then codec name.
+    recommendations.sort(
+        key=lambda r: (
+            not bool(r["selected_pareto"]),
+            float(r["target_vmaf"]),
+            float(r["bitrate_kbps"]),
+            str(r["codec"]),
+        )
+    )
+    # Renumber after the sort: the provisional index assigned on append
+    # reflects discovery order, not the ranking the consumer reads.
+    for idx, rec in enumerate(recommendations):
+        rec["index"] = idx
+
+    return _encoder_profile_payload(data, codecs, recommendations, failures)
 
 
 def _render_chart(width_in: float, height_in: float, plot_fn) -> bytes:
@@ -1055,6 +1130,275 @@ def _dedup_bisect_samples(
     return out
 
 
+def _draw_sweep_sample_curves(ax, data: ReportData) -> bool:
+    """Draw the ADR-0530 bisect-sample curves; True when anything was drawn.
+
+    One thin line per codec through every CRF the bisect probed, with
+    the picked-CRF rows circled on top so the per-target winners stay
+    visible against the full R-Q signal.
+    """
+    plotted_any = False
+    curves = _dedup_bisect_samples(data.sweep_points)
+    picked_by_codec: dict[str, list[CodecSweepPoint]] = {}
+    for p in data.sweep_points:
+        if not p.ok or _is_missing(p.bitrate_kbps) or _is_missing(p.vmaf_score):
+            continue
+        picked_by_codec.setdefault(p.codec, []).append(p)
+    picked_crf_labeled = False
+    for idx, (codec, samples) in enumerate(sorted(curves.items())):
+        if not samples:
+            continue
+        colour = _codec_colour(codec, idx)
+        first_picked = picked_by_codec.get(codec, [])
+        ver = first_picked[0].encoder_version if first_picked else ""
+        label = f"{codec} ({ver})" if ver else codec
+        xs = [s.bitrate_kbps for s in samples]
+        ys = [s.vmaf_score for s in samples]
+        # Bisect-sample curve: small markers, thin line — the
+        # genuine codec R-Q signal.
+        ax.plot(
+            xs,
+            ys,
+            marker="o",
+            markersize=3.5,
+            linewidth=1.2,
+            color=colour,
+            alpha=0.85,
+            label=label,
+        )
+        # Picked-CRF overlay: larger hollow markers so the eye
+        # spots them as the actual per-target winners.
+        if first_picked:
+            pxs = [p.bitrate_kbps for p in first_picked]
+            pys = [p.vmaf_score for p in first_picked]
+            ax.scatter(
+                pxs,
+                pys,
+                s=80,
+                facecolors="none",
+                edgecolors=colour,
+                linewidths=1.8,
+                zorder=8,
+                label="picked CRF" if not picked_crf_labeled else None,
+            )
+            picked_crf_labeled = True
+        plotted_any = True
+    return plotted_any
+
+
+def _draw_sweep_legacy_curves(ax, data: ReportData) -> bool:
+    """Draw the schema-v1 connect-the-dots curves; True when anything was drawn.
+
+    Fallback for reports without ``bisect_samples``: one line per codec
+    through its picked-CRF rows, ordered by target. The caveat note in
+    the title is applied by :func:`_style_sweep_axes`.
+    """
+    plotted_any = False
+    by_codec: dict[str, list[CodecSweepPoint]] = {}
+    for p in data.sweep_points:
+        by_codec.setdefault(p.codec, []).append(p)
+    for idx, (codec, pts) in enumerate(sorted(by_codec.items())):
+        ok_pts = [
+            p
+            for p in pts
+            if p.ok and not _is_missing(p.bitrate_kbps) and not _is_missing(p.vmaf_score)
+        ]
+        if not ok_pts:
+            continue
+        ok_pts.sort(key=lambda p: p.target_vmaf)
+        xs = [p.bitrate_kbps for p in ok_pts]
+        ys = [p.vmaf_score for p in ok_pts]
+        label = codec
+        ver = ok_pts[0].encoder_version
+        if ver:
+            label = f"{codec} ({ver})"
+        ax.plot(
+            xs,
+            ys,
+            marker="o",
+            linewidth=1.6,
+            markersize=6,
+            color=_codec_colour(codec, idx),
+            label=label,
+        )
+        plotted_any = True
+    return plotted_any
+
+
+def _draw_sweep_pareto(ax, data: ReportData) -> None:
+    """Overlay the Pareto frontier and annotate each codec's cheapest point."""
+    # Pareto frontier overlay (always from the picked-CRF rows).
+    frontier = compute_pareto_frontier(data.sweep_points)
+    if frontier:
+        fxs = [p.bitrate_kbps for p in frontier]
+        fys = [p.vmaf_score for p in frontier]
+        ax.plot(
+            fxs,
+            fys,
+            color="#000",
+            linestyle="--",
+            linewidth=2.4,
+            alpha=0.55,
+            label="pareto frontier",
+            zorder=10,
+        )
+        frontier_by_codec: dict[str, CodecSweepPoint] = {}
+        for p in frontier:
+            if (
+                p.codec not in frontier_by_codec
+                or p.bitrate_kbps < frontier_by_codec[p.codec].bitrate_kbps
+            ):
+                frontier_by_codec[p.codec] = p
+        for p in frontier_by_codec.values():
+            ax.annotate(
+                f"{p.codec} @ {_fmt_kbps(p.bitrate_kbps)}",
+                xy=(p.bitrate_kbps, p.vmaf_score),
+                xytext=(5, 5),
+                textcoords="offset points",
+                fontsize=7,
+                color="#000",
+                alpha=0.7,
+            )
+
+
+def _draw_sweep_failures(ax, data: ReportData) -> None:
+    """Mark every failed sweep target (#10).
+
+    A failure with a usable bitrate is circled in place; one without
+    falls back to the codec's largest known bitrate, and failing that
+    to a left-margin annotation at the requested target.
+    """
+    # Mark failed targets in the sweep chart (#10).
+    failed_points = [p for p in data.sweep_points if not p.ok]
+    failed_labeled = False
+    for p in failed_points:
+        target_x = None
+        if not _is_missing(p.bitrate_kbps) and p.bitrate_kbps > 0:
+            target_x = p.bitrate_kbps
+            target_y = p.vmaf_score if not _is_missing(p.vmaf_score) else p.target_vmaf
+        else:
+            last_known = [
+                other.bitrate_kbps
+                for other in data.sweep_points
+                if other.codec == p.codec and other.ok and not _is_missing(other.bitrate_kbps)
+            ]
+            if last_known:
+                target_x = max(last_known)
+            target_y = p.target_vmaf
+
+        lbl = "failed target" if not failed_labeled else None
+        if target_x is not None:
+            ax.scatter(
+                [target_x],
+                [target_y],
+                s=80,
+                facecolors="none",
+                edgecolors="#d62728",
+                linewidths=1.8,
+                linestyle="--",
+                zorder=9,
+                label=lbl,
+            )
+            ax.annotate(
+                f"{p.codec} failed",
+                xy=(target_x, target_y),
+                xytext=(5, -10),
+                textcoords="offset points",
+                fontsize=7,
+                color="#d62728",
+                alpha=0.85,
+            )
+            failed_labeled = True
+        else:
+            ax.annotate(
+                f"{p.codec} failed @ VMAF {p.target_vmaf:g}",
+                xy=(0.02, p.target_vmaf),
+                xycoords=("axes fraction", "data"),
+                xytext=(5, 0),
+                textcoords="offset points",
+                fontsize=7,
+                color="#d62728",
+                alpha=0.85,
+            )
+
+
+def _set_sweep_title(ax, *, use_samples: bool) -> None:
+    """Title the sweep chart, adding the overshoot caveat in legacy mode.
+
+    Connect-the-dots mode can show a lower VMAF at a higher target when
+    the bisect overshoots, so the caveat box is part of the contract for
+    that mode (ADR-0530), not decoration.
+    """
+    if use_samples:
+        ax.set_title("Rate-quality sweep — bisect samples; picked-CRF circled")
+        return
+    ax.set_title("Rate-quality sweep — picked rows only; bisect samples unavailable")
+    ax.text(
+        0.015,
+        0.91,
+        "Caveat: connect-the-dots may show overshoot.",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=7,
+        color="#333",
+        bbox={
+            "boxstyle": "round,pad=0.25",
+            "facecolor": "white",
+            "alpha": 0.75,
+            "lw": 0,
+        },
+    )
+
+
+def _annotate_sweep_targets(ax, data: ReportData) -> None:
+    """Horizontal reference line plus right-margin label at each sweep target."""
+    for t in data.sweep_targets:
+        ax.axhline(t, color="#888", linestyle=":", alpha=0.35, linewidth=0.8)
+        ax.annotate(
+            f"target {t:g}",
+            xy=(0.995, t),
+            xycoords=("axes fraction", "data"),
+            xytext=(-4, 0),
+            textcoords="offset points",
+            ha="right",
+            va="center",
+            fontsize=7,
+            color="#555",
+            alpha=0.8,
+        )
+
+
+def _style_sweep_axes(ax, data: ReportData, *, use_samples: bool) -> None:
+    """Axes, limits, title, target rules and legend for the sweep chart."""
+    _apply_bitrate_xaxis(ax, log_scale=True)
+    ax.set_xlabel("bitrate (kbps, log scale; left is smaller)")
+    ax.set_ylabel("VMAF achieved (higher is better)")
+    plotted_vmafs = [
+        p.vmaf_score for p in data.sweep_points if p.ok and not _is_missing(p.vmaf_score)
+    ]
+    plotted_vmafs.extend(float(t) for t in data.sweep_targets)
+    _set_padded_ylim(ax, plotted_vmafs, lower=0.0, upper=100.0, min_pad=0.75)
+    _set_sweep_title(ax, use_samples=use_samples)
+    ax.grid(True, alpha=0.3, which="both")
+    _annotate_sweep_targets(ax, data)
+    ax.text(
+        0.015,
+        0.985,
+        "Read: for the same VMAF, farther left is smaller.",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=7,
+        color="#333",
+        bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.75, "lw": 0},
+    )
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        by_label = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), loc="lower right", fontsize=7)
+
+
 def _sweep_plot_fn(data: ReportData):
     """Rate-quality line plot — one curve per codec, pareto highlighted.
 
@@ -1080,313 +1424,118 @@ def _sweep_plot_fn(data: ReportData):
             ax.set_axis_off()
             return
         use_samples = _has_bisect_samples(data.sweep_points)
-        plotted_any = False
+        # Draw order is load-bearing: codec curves first, then the
+        # frontier overlay and failure markers on top of them, then
+        # the axis styling that reads the finished artist list.
         if use_samples:
-            curves = _dedup_bisect_samples(data.sweep_points)
-            picked_by_codec: dict[str, list[CodecSweepPoint]] = {}
-            for p in data.sweep_points:
-                if not p.ok or _is_missing(p.bitrate_kbps) or _is_missing(p.vmaf_score):
-                    continue
-                picked_by_codec.setdefault(p.codec, []).append(p)
-            picked_crf_labeled = False
-            for idx, (codec, samples) in enumerate(sorted(curves.items())):
-                if not samples:
-                    continue
-                colour = _codec_colour(codec, idx)
-                first_picked = picked_by_codec.get(codec, [])
-                ver = first_picked[0].encoder_version if first_picked else ""
-                label = f"{codec} ({ver})" if ver else codec
-                xs = [s.bitrate_kbps for s in samples]
-                ys = [s.vmaf_score for s in samples]
-                # Bisect-sample curve: small markers, thin line — the
-                # genuine codec R-Q signal.
-                ax.plot(
-                    xs,
-                    ys,
-                    marker="o",
-                    markersize=3.5,
-                    linewidth=1.2,
-                    color=colour,
-                    alpha=0.85,
-                    label=label,
-                )
-                # Picked-CRF overlay: larger hollow markers so the eye
-                # spots them as the actual per-target winners.
-                if first_picked:
-                    pxs = [p.bitrate_kbps for p in first_picked]
-                    pys = [p.vmaf_score for p in first_picked]
-                    ax.scatter(
-                        pxs,
-                        pys,
-                        s=80,
-                        facecolors="none",
-                        edgecolors=colour,
-                        linewidths=1.8,
-                        zorder=8,
-                        label="picked CRF" if not picked_crf_labeled else None,
-                    )
-                    picked_crf_labeled = True
-                plotted_any = True
+            plotted_any = _draw_sweep_sample_curves(ax, data)
         else:
-            by_codec: dict[str, list[CodecSweepPoint]] = {}
-            for p in data.sweep_points:
-                by_codec.setdefault(p.codec, []).append(p)
-            for idx, (codec, pts) in enumerate(sorted(by_codec.items())):
-                ok_pts = [
-                    p
-                    for p in pts
-                    if p.ok and not _is_missing(p.bitrate_kbps) and not _is_missing(p.vmaf_score)
-                ]
-                if not ok_pts:
-                    continue
-                ok_pts.sort(key=lambda p: p.target_vmaf)
-                xs = [p.bitrate_kbps for p in ok_pts]
-                ys = [p.vmaf_score for p in ok_pts]
-                label = codec
-                ver = ok_pts[0].encoder_version
-                if ver:
-                    label = f"{codec} ({ver})"
-                ax.plot(
-                    xs,
-                    ys,
-                    marker="o",
-                    linewidth=1.6,
-                    markersize=6,
-                    color=_codec_colour(codec, idx),
-                    label=label,
-                )
-                plotted_any = True
-        # Pareto frontier overlay (always from the picked-CRF rows).
-        frontier = compute_pareto_frontier(data.sweep_points)
-        if frontier:
-            fxs = [p.bitrate_kbps for p in frontier]
-            fys = [p.vmaf_score for p in frontier]
-            ax.plot(
-                fxs,
-                fys,
-                color="#000",
-                linestyle="--",
-                linewidth=2.4,
-                alpha=0.55,
-                label="pareto frontier",
-                zorder=10,
-            )
-            frontier_by_codec: dict[str, CodecSweepPoint] = {}
-            for p in frontier:
-                if (
-                    p.codec not in frontier_by_codec
-                    or p.bitrate_kbps < frontier_by_codec[p.codec].bitrate_kbps
-                ):
-                    frontier_by_codec[p.codec] = p
-            for p in frontier_by_codec.values():
-                ax.annotate(
-                    f"{p.codec} @ {_fmt_kbps(p.bitrate_kbps)}",
-                    xy=(p.bitrate_kbps, p.vmaf_score),
-                    xytext=(5, 5),
-                    textcoords="offset points",
-                    fontsize=7,
-                    color="#000",
-                    alpha=0.7,
-                )
-        # Mark failed targets in the sweep chart (#10).
-        failed_points = [p for p in data.sweep_points if not p.ok]
-        failed_labeled = False
-        for p in failed_points:
-            target_x = None
-            if not _is_missing(p.bitrate_kbps) and p.bitrate_kbps > 0:
-                target_x = p.bitrate_kbps
-                target_y = p.vmaf_score if not _is_missing(p.vmaf_score) else p.target_vmaf
-            else:
-                last_known = [
-                    other.bitrate_kbps
-                    for other in data.sweep_points
-                    if other.codec == p.codec and other.ok and not _is_missing(other.bitrate_kbps)
-                ]
-                if last_known:
-                    target_x = max(last_known)
-                target_y = p.target_vmaf
-
-            lbl = "failed target" if not failed_labeled else None
-            if target_x is not None:
-                ax.scatter(
-                    [target_x],
-                    [target_y],
-                    s=80,
-                    facecolors="none",
-                    edgecolors="#d62728",
-                    linewidths=1.8,
-                    linestyle="--",
-                    zorder=9,
-                    label=lbl,
-                )
-                ax.annotate(
-                    f"{p.codec} failed",
-                    xy=(target_x, target_y),
-                    xytext=(5, -10),
-                    textcoords="offset points",
-                    fontsize=7,
-                    color="#d62728",
-                    alpha=0.85,
-                )
-                failed_labeled = True
-            else:
-                ax.annotate(
-                    f"{p.codec} failed @ VMAF {p.target_vmaf:g}",
-                    xy=(0.02, p.target_vmaf),
-                    xycoords=("axes fraction", "data"),
-                    xytext=(5, 0),
-                    textcoords="offset points",
-                    fontsize=7,
-                    color="#d62728",
-                    alpha=0.85,
-                )
+            plotted_any = _draw_sweep_legacy_curves(ax, data)
+        _draw_sweep_pareto(ax, data)
+        _draw_sweep_failures(ax, data)
         if not plotted_any:
             ax.text(0.5, 0.5, "no successful sweep rows", ha="center", va="center")
             ax.set_axis_off()
             return
-        _apply_bitrate_xaxis(ax, log_scale=True)
-        ax.set_xlabel("bitrate (kbps, log scale; left is smaller)")
-        ax.set_ylabel("VMAF achieved (higher is better)")
-        plotted_vmafs = [
-            p.vmaf_score for p in data.sweep_points if p.ok and not _is_missing(p.vmaf_score)
-        ]
-        plotted_vmafs.extend(float(t) for t in data.sweep_targets)
-        _set_padded_ylim(ax, plotted_vmafs, lower=0.0, upper=100.0, min_pad=0.75)
-        if use_samples:
-            ax.set_title("Rate-quality sweep — bisect samples; picked-CRF circled")
-        else:
-            ax.set_title("Rate-quality sweep — picked rows only; bisect samples unavailable")
-            ax.text(
-                0.015,
-                0.91,
-                "Caveat: connect-the-dots may show overshoot.",
-                transform=ax.transAxes,
-                ha="left",
-                va="top",
-                fontsize=7,
-                color="#333",
-                bbox={
-                    "boxstyle": "round,pad=0.25",
-                    "facecolor": "white",
-                    "alpha": 0.75,
-                    "lw": 0,
-                },
-            )
-        ax.grid(True, alpha=0.3, which="both")
-        # Horizontal reference lines at each sweep target.
-        for t in data.sweep_targets:
-            ax.axhline(t, color="#888", linestyle=":", alpha=0.35, linewidth=0.8)
-            ax.annotate(
-                f"target {t:g}",
-                xy=(0.995, t),
-                xycoords=("axes fraction", "data"),
-                xytext=(-4, 0),
-                textcoords="offset points",
-                ha="right",
-                va="center",
-                fontsize=7,
-                color="#555",
-                alpha=0.8,
-            )
-        ax.text(
-            0.015,
-            0.985,
-            "Read: for the same VMAF, farther left is smaller.",
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=7,
-            color="#333",
-            bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.75, "lw": 0},
-        )
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            by_label = dict(zip(labels, handles))
-            ax.legend(by_label.values(), by_label.keys(), loc="lower right", fontsize=7)
+        _style_sweep_axes(ax, data, use_samples=use_samples)
 
     return _plot
 
 
+def _draw_shot_bands(ax, ax2, data: ReportData) -> None:
+    """Draw one CRF band (left axis) and one VMAF band (right axis) per shot.
+
+    ADR-0512 Bug B: the historical ``ax.step([start], [crf], ...)``
+    produced a zero-length path for a single-shot source, which the SVG
+    backend silently dropped and left the chart visually empty. Bands
+    over each frame range always give the user a drawable element; the
+    midpoint markers are extra insurance for small output sizes where a
+    band can collapse.
+    """
+    for shot in data.shots:
+        x0 = shot.start_frame
+        x1 = shot.end_frame
+        ax.hlines(
+            shot.best_crf,
+            x0,
+            x1,
+            colors="#1f77b4",
+            linewidth=2.5,
+        )
+        ax2.hlines(
+            shot.vmaf,
+            x0,
+            x1,
+            colors="#d62728",
+            linewidth=2.5,
+            alpha=0.7,
+        )
+        mid = (x0 + x1) / 2.0
+        ax.plot(mid, shot.best_crf, marker="o", color="#1f77b4", markersize=4)
+        ax2.plot(mid, shot.vmaf, marker="o", color="#d62728", markersize=4, alpha=0.7)
+
+
+def _set_shot_limits(ax, ax2, data: ReportData) -> None:
+    """Pin explicit axis ranges so a degenerate dataset still bounds sensibly.
+
+    matplotlib's autoscale degenerates on a single point plus an hline
+    pair at the same coordinate. ADR-0531 Bug B: the right side uses
+    ``1.05 * last_end`` and the left a 0.02-span pad, because when
+    ``last_end`` lands exactly on the axes boundary the clip box trims
+    the rightmost pixel of the hlines artist and the final shot's band
+    looks invisible at small output sizes.
+    """
+    last_end = max(shot.end_frame for shot in data.shots)
+    first_start = min(shot.start_frame for shot in data.shots)
+    x_pad_left = max(1.0, 0.02 * (last_end - first_start))
+    x_pad_right = max(1.0, 0.05 * last_end)
+    ax.set_xlim(first_start - x_pad_left, last_end + x_pad_right)
+    crfs = [shot.best_crf for shot in data.shots]
+    vmafs = [shot.vmaf for shot in data.shots]
+    if min(crfs) == max(crfs):
+        ax.set_ylim(min(crfs) - 2.0, max(crfs) + 2.0)
+    if min(vmafs) == max(vmafs):
+        ax2.set_ylim(min(vmafs) - 1.0, min(100.0, max(vmafs) + 1.0))
+
+
+def _style_shot_axes(ax, ax2) -> None:
+    """Legends, labels, title and grid for the per-shot timeline.
+
+    The legend handles are synthetic ``Line2D`` proxies: matplotlib's
+    auto-legend skips hline artists in older versions, so the proxies
+    keep both legends populated regardless of backend version.
+    """
+    from matplotlib.lines import Line2D
+
+    ax.legend(
+        handles=[Line2D([0], [0], color="#1f77b4", lw=2.5, label="best CRF")],
+        loc="upper left",
+        fontsize=8,
+    )
+    ax2.legend(
+        handles=[Line2D([0], [0], color="#d62728", lw=2.5, alpha=0.7, label="VMAF")],
+        loc="upper right",
+        fontsize=8,
+    )
+    ax.set_xlabel("frame")
+    ax.set_ylabel("CRF")
+    ax2.set_ylabel("VMAF")
+    ax.set_title("Per-shot tuning timeline")
+    ax.grid(True, alpha=0.3)
+
+
 def _shot_plot_fn(data: ReportData):
+    """Per-shot CRF / VMAF timeline — CRF on the left axis, VMAF on the right."""
+
     def _plot(ax) -> None:
         if not data.shots:
             ax.text(0.5, 0.5, "no per-shot data", ha="center", va="center")
             ax.set_axis_off()
             return
         ax2 = ax.twinx()
-        # ADR-0512 Bug B: when the source resolves to a single shot the
-        # historical ``ax.step([start], [crf], ...)`` produced a
-        # zero-length path that the SVG backend silently dropped, leaving
-        # the chart visually empty even though the axes/title rendered.
-        # Render each shot as a horizontal band over its frame range so
-        # the user always sees a drawable element — for the 1-shot case
-        # this becomes a single full-width band labelled with the
-        # tuner's pick.
-        for shot in data.shots:
-            x0 = shot.start_frame
-            x1 = shot.end_frame
-            ax.hlines(
-                shot.best_crf,
-                x0,
-                x1,
-                colors="#1f77b4",
-                linewidth=2.5,
-            )
-            ax2.hlines(
-                shot.vmaf,
-                x0,
-                x1,
-                colors="#d62728",
-                linewidth=2.5,
-                alpha=0.7,
-            )
-            # Midpoint markers — extra insurance that the segment is
-            # visible even when the band collapses on a print-at-small
-            # output size.
-            mid = (x0 + x1) / 2.0
-            ax.plot(mid, shot.best_crf, marker="o", color="#1f77b4", markersize=4)
-            ax2.plot(mid, shot.vmaf, marker="o", color="#d62728", markersize=4, alpha=0.7)
-        # Provide explicit axis ranges so a single-shot dataset still
-        # picks sensible bounds (matplotlib's autoscale degenerates on a
-        # single point + hline pair at the same coordinate).
-        #
-        # ADR-0531 Bug B: use 1.05 * last_end (right side) + 0.02-span
-        # left-side padding so the last shot's CRF band is always fully
-        # inside the axes viewport. When last_end is exactly on the axes
-        # right boundary, matplotlib's clip box trims the rightmost pixel
-        # of the hlines artist, making the final shot's band appear
-        # invisible at small output sizes.
-        last_end = max(shot.end_frame for shot in data.shots)
-        first_start = min(shot.start_frame for shot in data.shots)
-        x_pad_left = max(1.0, 0.02 * (last_end - first_start))
-        x_pad_right = max(1.0, 0.05 * last_end)
-        ax.set_xlim(first_start - x_pad_left, last_end + x_pad_right)
-        crfs = [shot.best_crf for shot in data.shots]
-        vmafs = [shot.vmaf for shot in data.shots]
-        if min(crfs) == max(crfs):
-            ax.set_ylim(min(crfs) - 2.0, max(crfs) + 2.0)
-        if min(vmafs) == max(vmafs):
-            ax2.set_ylim(min(vmafs) - 1.0, min(100.0, max(vmafs) + 1.0))
-        # Synthetic legend handles — matplotlib's auto-legend skips
-        # hline artists in older versions; the proxies keep the legend
-        # populated regardless of backend version.
-        from matplotlib.lines import Line2D
-
-        ax.legend(
-            handles=[Line2D([0], [0], color="#1f77b4", lw=2.5, label="best CRF")],
-            loc="upper left",
-            fontsize=8,
-        )
-        ax2.legend(
-            handles=[Line2D([0], [0], color="#d62728", lw=2.5, alpha=0.7, label="VMAF")],
-            loc="upper right",
-            fontsize=8,
-        )
-        ax.set_xlabel("frame")
-        ax.set_ylabel("CRF")
-        ax2.set_ylabel("VMAF")
-        ax.set_title("Per-shot tuning timeline")
-        ax.grid(True, alpha=0.3)
+        _draw_shot_bands(ax, ax2, data)
+        _set_shot_limits(ax, ax2, data)
+        _style_shot_axes(ax, ax2)
 
     return _plot
 
@@ -1583,16 +1732,10 @@ def _render_sweep_summary_table_md(data: ReportData) -> list[str]:
     return lines
 
 
-def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
-    """Render the report to Markdown.
-
-    If ``assets_dir`` is provided, PNG charts are written under it and
-    referenced via relative paths. If omitted, charts are inlined as
-    base64 data URLs (less diff-friendly but single-file).
-    """
+def _md_header_section(data: ReportData) -> list[str]:
+    """Title, source table, target and quick takeaways."""
     lines: list[str] = []
     src = data.source
-
     lines.append(f"# vmaf-tune report — `{_md_cell(Path(src.path).name)}`")
     lines.append("")
     lines.append(
@@ -1617,7 +1760,12 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     for takeaway in _quick_takeaways(data):
         lines.append(f"- {_md_cell(takeaway)}")
     lines.append("")
+    return lines
 
+
+def _md_codec_section(data: ReportData, assets_dir: Path | None) -> list[str]:
+    """Rate-quality sweep, or the legacy codec-comparison table."""
+    lines: list[str] = []
     # Codec comparison table + chart. Schema v2 (sweep_points) takes
     # priority — when both are present (legacy + new in the same
     # report), the sweep view is the useful one and the bar+dot chart
@@ -1663,7 +1811,12 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
             _embed_png(_render_chart(7, 3.5, _codec_plot_fn(data)), "codec_compare", assets_dir)
         )
         lines.append("")
+    return lines
 
+
+def _md_ladder_section(data: ReportData, assets_dir: Path | None) -> list[str]:
+    """ABR ladder rungs and chart; empty when the run produced no ladder."""
+    lines: list[str] = []
     # Ladder
     if data.ladder_rungs or data.ladder_samples:
         lines.append("## ABR ladder")
@@ -1683,7 +1836,12 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
             lines.append("")
         lines.append(_embed_png(_render_chart(7, 4, _ladder_plot_fn(data)), "ladder", assets_dir))
         lines.append("")
+    return lines
 
+
+def _md_shots_section(data: ReportData, assets_dir: Path | None) -> list[str]:
+    """Per-shot tuning table and timeline chart; empty when no shots."""
+    lines: list[str] = []
     # Per-shot
     if data.shots:
         lines.append("## Per-shot tuning")
@@ -1704,7 +1862,12 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
         lines.append("")
         lines.append(_embed_png(_render_chart(7, 3.5, _shot_plot_fn(data)), "shots", assets_dir))
         lines.append("")
+    return lines
 
+
+def _md_json_footer(data: ReportData) -> list[str]:
+    """Collapsed raw-JSON dump for downstream tooling."""
+    lines: list[str] = []
     lines.append("---")
     lines.append("")
     lines.append("Raw JSON dump for downstream tooling:")
@@ -1718,6 +1881,25 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     lines.append("```")
     lines.append("")
     lines.append("</details>")
+    return lines
+
+
+def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
+    """Render the report to Markdown.
+
+    If ``assets_dir`` is provided, PNG charts are written under it and
+    referenced via relative paths. If omitted, charts are inlined as
+    base64 data URLs (less diff-friendly but single-file).
+
+    Section order is the document order; each helper returns its own
+    block and returns an empty list when the run carries no data for it.
+    """
+    lines: list[str] = []
+    lines.extend(_md_header_section(data))
+    lines.extend(_md_codec_section(data, assets_dir))
+    lines.extend(_md_ladder_section(data, assets_dir))
+    lines.extend(_md_shots_section(data, assets_dir))
+    lines.extend(_md_json_footer(data))
     return "\n".join(lines) + "\n"
 
 
@@ -1853,86 +2035,98 @@ def _row_html(row: CodecRow) -> str:
     )
 
 
-def _sweep_summary_table_html(data: ReportData) -> str:
-    """Render the per-codec / per-target summary table as HTML."""
-    targets = list(data.sweep_targets) or sorted({p.target_vmaf for p in data.sweep_points})
-    by_codec = _per_codec_targets(data.sweep_points, targets)
+def _sweep_summary_head_html(targets: list[float]) -> str:
+    """Header row for the sweep summary table.
 
+    ``th.num`` is applied to the numeric columns: the per-target bitrate
+    columns (index 2 onward) and "Encode time" (second-to-last).
+    """
     head_cells = ["Codec", "Encoder"]
     head_cells.extend(f"@ VMAF {t:g}" for t in targets)
     head_cells.extend(["CRF picks", "Encode time", "Status"])
-    # Apply th.num to numeric columns: per-target bitrate columns (index 2
-    # through 2+len(targets)-1) and "Encode time" (second-to-last column).
-    _num_head_indices: set[int] = set(range(2, 2 + len(targets))) | {len(head_cells) - 2}
-    head = "".join(
+    num_head_indices: set[int] = set(range(2, 2 + len(targets))) | {len(head_cells) - 2}
+    return "".join(
         (
             f"<th class='num'>{_html_escape(c)}</th>"
-            if i in _num_head_indices
+            if i in num_head_indices
             else f"<th>{_html_escape(c)}</th>"
         )
         for i, c in enumerate(head_cells)
     )
 
-    body_rows: list[str] = []
-    for codec in sorted(by_codec):
-        per_target = by_codec[codec]
-        rows = [p for p in per_target.values() if p is not None]
-        ok_rows = [p for p in rows if p.ok]
-        encoder_version = next((p.encoder_version for p in rows if p.encoder_version), "—")
-        cells: list[str] = [
-            f"<td>{_codec_chip_html(codec)}</td>",
-            f"<td>{_html_escape(encoder_version)}</td>",
-        ]
-        for t in targets:
-            p = per_target.get(t)
-            if p is None or not p.ok or _is_missing(p.bitrate_kbps):
-                cells.append(f"<td class='num'>{_DASH}</td>")
-            else:
-                cells.append(f"<td class='num'>{_fmt_kbps(p.bitrate_kbps)}</td>")
-        cells.append(f"<td>{_html_escape(_sweep_crf_picks(ok_rows))}</td>")
-        if ok_rows:
-            avg_ms = sum(p.encode_time_ms for p in ok_rows) / float(len(ok_rows))
-            cells.append(f"<td class='num'>{_fmt_ms(avg_ms)}</td>")
-        else:
-            cells.append(f"<td class='num'>{_DASH}</td>")
-        status = _sweep_row_status(list(per_target.values()), targets)
-        tag_class = "ok" if status == "OK" else "bad"
-        cells.append(f"<td><span class='tag {tag_class}'>{_html_escape(status)}</span></td>")
-        # Dim the entire row when the codec has at least one failure so the
-        # reader's eye is not pulled to failed rows as potential winners.
-        row_class = " class='failed'" if tag_class == "bad" else ""
-        body_rows.append(f"<tr{row_class}>" + "".join(cells) + "</tr>")
 
+def _sweep_summary_row_html(
+    codec: str, per_target: dict[float, CodecSweepPoint | None], targets: list[float]
+) -> str:
+    """One codec's row: bitrate per target, CRF picks, mean encode time, status."""
+    rows = [p for p in per_target.values() if p is not None]
+    ok_rows = [p for p in rows if p.ok]
+    encoder_version = next((p.encoder_version for p in rows if p.encoder_version), "—")
+    cells: list[str] = [
+        f"<td>{_codec_chip_html(codec)}</td>",
+        f"<td>{_html_escape(encoder_version)}</td>",
+    ]
+    for t in targets:
+        p = per_target.get(t)
+        if p is None or not p.ok or _is_missing(p.bitrate_kbps):
+            cells.append(f"<td class='num'>{_DASH}</td>")
+        else:
+            cells.append(f"<td class='num'>{_fmt_kbps(p.bitrate_kbps)}</td>")
+    cells.append(f"<td>{_html_escape(_sweep_crf_picks(ok_rows))}</td>")
+    if ok_rows:
+        avg_ms = sum(p.encode_time_ms for p in ok_rows) / float(len(ok_rows))
+        cells.append(f"<td class='num'>{_fmt_ms(avg_ms)}</td>")
+    else:
+        cells.append(f"<td class='num'>{_DASH}</td>")
+    status = _sweep_row_status(list(per_target.values()), targets)
+    tag_class = "ok" if status == "OK" else "bad"
+    cells.append(f"<td><span class='tag {tag_class}'>{_html_escape(status)}</span></td>")
+    # Dim the entire row when the codec has at least one failure so the
+    # reader's eye is not pulled to failed rows as potential winners.
+    row_class = " class='failed'" if tag_class == "bad" else ""
+    return f"<tr{row_class}>" + "".join(cells) + "</tr>"
+
+
+def _sweep_frontier_html(data: ReportData) -> str:
+    """Pareto-frontier list rendered under the summary table; empty when none."""
+    frontier = compute_pareto_frontier(data.sweep_points)
+    if not frontier:
+        return ""
+    items = "".join(
+        f"<li>VMAF {p.target_vmaf:g}: {_codec_chip_html(p.codec)} "
+        f"({_html_escape(p.encoder_version or '—')}) "
+        f"@ {_fmt_kbps(p.bitrate_kbps)} (CRF {_fmt_crf(p.best_crf)})</li>"
+        for p in frontier
+    )
+    return (
+        "<p><strong>Pareto frontier</strong> "
+        "(lowest bitrate at each target):</p>"
+        f"<ul>{items}</ul>"
+    )
+
+
+def _sweep_summary_table_html(data: ReportData) -> str:
+    """Render the per-codec / per-target summary table as HTML."""
+    targets = list(data.sweep_targets) or sorted({p.target_vmaf for p in data.sweep_points})
+    by_codec = _per_codec_targets(data.sweep_points, targets)
+
+    head = _sweep_summary_head_html(targets)
+    body_rows = [
+        _sweep_summary_row_html(codec, by_codec[codec], targets) for codec in sorted(by_codec)
+    ]
     table = (
         "<div class='table-scroll'><table><thead><tr>"
         f"{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table></div>"
     )
-
-    frontier = compute_pareto_frontier(data.sweep_points)
-    frontier_html = ""
-    if frontier:
-        items = "".join(
-            f"<li>VMAF {p.target_vmaf:g}: {_codec_chip_html(p.codec)} "
-            f"({_html_escape(p.encoder_version or '—')}) "
-            f"@ {_fmt_kbps(p.bitrate_kbps)} (CRF {_fmt_crf(p.best_crf)})</li>"
-            for p in frontier
-        )
-        frontier_html = (
-            "<p><strong>Pareto frontier</strong> "
-            "(lowest bitrate at each target):</p>"
-            f"<ul>{items}</ul>"
-        )
-    return table + frontier_html
+    return table + _sweep_frontier_html(data)
 
 
-def render_html(data: ReportData) -> str:
-    """Render the report to a single self-contained HTML file."""
-    src = data.source
-    takeaways = "".join(f"<li>{_html_escape(takeaway)}</li>" for takeaway in _quick_takeaways(data))
-    takeaways_section = (
-        "<div class='panel'><h2 style='margin-top:0'>Quick takeaways</h2>"
-        f"<ul>{takeaways}</ul></div>"
-    )
+def _html_codec_section(data: ReportData) -> str:
+    """Rate-quality sweep panel, or the legacy codec-comparison panel.
+
+    Empty string when the run carries neither; the template drops the
+    slot entirely in that case.
+    """
     codec_section = ""
     if data.sweep_points:
         # Schema v2 — rate-quality sweep takes priority over the
@@ -1960,7 +2154,11 @@ def render_html(data: ReportData) -> str:
             f"<tbody>{rows}</tbody></table></div>"
             f"<div class='chart'>{chart}</div></div>"
         )
+    return codec_section
 
+
+def _html_ladder_section(data: ReportData) -> str:
+    """ABR-ladder panel; empty string when the run produced no ladder."""
     ladder_section = ""
     if data.ladder_rungs or data.ladder_samples:
         rungs_html = ""
@@ -1983,7 +2181,11 @@ def render_html(data: ReportData) -> str:
             f"<p class='note'>{_html_escape(_SECTION_GUIDANCE['ladder'])}</p>"
             f"{rungs_html}<div class='chart'>{chart}</div></div>"
         )
+    return ladder_section
 
+
+def _html_shots_section(data: ReportData) -> str:
+    """Per-shot tuning panel; empty string when no shots were detected."""
     shots_section = ""
     if data.shots:
         rows = "".join(
@@ -2005,7 +2207,17 @@ def render_html(data: ReportData) -> str:
             f"<tbody>{rows}</tbody></table></div>"
             f"<div class='chart'>{chart}</div></div>"
         )
+    return shots_section
 
+
+def render_html(data: ReportData) -> str:
+    """Render the report to a single self-contained HTML file."""
+    src = data.source
+    takeaways = "".join(f"<li>{_html_escape(takeaway)}</li>" for takeaway in _quick_takeaways(data))
+    takeaways_section = (
+        "<div class='panel'><h2 style='margin-top:0'>Quick takeaways</h2>"
+        f"<ul>{takeaways}</ul></div>"
+    )
     return _HTML_TEMPLATE.format(
         source_name=_html_escape(Path(src.path).name),
         source_path=_html_escape(src.path),
@@ -2020,9 +2232,9 @@ def render_html(data: ReportData) -> str:
         tool_version=_html_escape(data.tool_version),
         generated_at=f" on {_html_escape(data.generated_at_iso)}" if data.generated_at_iso else "",
         takeaways_section=takeaways_section,
-        codec_section=codec_section,
-        ladder_section=ladder_section,
-        shots_section=shots_section,
+        codec_section=_html_codec_section(data),
+        ladder_section=_html_ladder_section(data),
+        shots_section=_html_shots_section(data),
         profile_guidance=_html_escape(_SECTION_GUIDANCE["profile"]),
         json_dump=_html_escape(_portable_json_dump(data.to_dict())),
     )
@@ -2033,16 +2245,16 @@ def render_html(data: ReportData) -> str:
 # ---------------------------------------------------------------------------
 
 
-def probe_source(path: Path) -> SourceInfo:
-    """Run ffprobe and return a :class:`SourceInfo`.
+def _probe_ffprobe_json(path: Path) -> bytes | None:
+    """Run ffprobe over `path`; ``None`` when it is unavailable or fails.
 
-    Falls back to zero-filled values when ffprobe is unavailable; the
-    caller should treat the result as best-effort.
+    Every failure mode (missing binary, non-zero exit, 30 s timeout) is a
+    fall-back-to-best-effort condition, not an error the caller handles.
     """
     import subprocess
 
     try:
-        out = subprocess.check_output(
+        return subprocess.check_output(
             [
                 "ffprobe",
                 "-v",
@@ -2061,28 +2273,53 @@ def probe_source(path: Path) -> SourceInfo:
             timeout=30,
         )
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        size = path.stat().st_size if path.exists() else 0
-        return SourceInfo(
-            path=str(path),
-            width=0,
-            height=0,
-            fps=0.0,
-            duration_s=0.0,
-            frame_count=0,
-            codec="unknown",
-            size_bytes=size,
-        )
+        return None
+
+
+def _parse_frame_rate(fps_str: str) -> float:
+    """Parse ffprobe's ``num/den`` rate string; ``0.0`` when unparseable."""
+    try:
+        num, den = fps_str.split("/")
+        return float(num) / float(den) if float(den) else 0.0
+    except (ValueError, ZeroDivisionError):
+        return 0.0
+
+
+def _unprobed_source(path: Path) -> SourceInfo:
+    """Zero-filled :class:`SourceInfo` used when ffprobe yields nothing.
+
+    The on-disk size is still reported when the file exists, since that
+    needs no probe.
+    """
+    return SourceInfo(
+        path=str(path),
+        width=0,
+        height=0,
+        fps=0.0,
+        duration_s=0.0,
+        frame_count=0,
+        codec="unknown",
+        size_bytes=path.stat().st_size if path.exists() else 0,
+    )
+
+
+def probe_source(path: Path) -> SourceInfo:
+    """Run ffprobe and return a :class:`SourceInfo`.
+
+    Falls back to zero-filled values when ffprobe is unavailable; the
+    caller should treat the result as best-effort.
+    """
+    out = _probe_ffprobe_json(path)
+    if out is None:
+        return _unprobed_source(path)
 
     info = json.loads(out)
     stream = (info.get("streams") or [{}])[0]
     fmt = info.get("format") or {}
-    fps_str = stream.get("r_frame_rate", "0/1")
-    try:
-        num, den = fps_str.split("/")
-        fps = float(num) / float(den) if float(den) else 0.0
-    except (ValueError, ZeroDivisionError):
-        fps = 0.0
+    fps = _parse_frame_rate(stream.get("r_frame_rate", "0/1"))
     duration = float(stream.get("duration") or fmt.get("duration") or 0.0)
+    # nb_frames is absent or 0 on many containers; derive it from the
+    # duration in that case.
     frame_count = int(stream.get("nb_frames") or 0) or int(duration * fps)
     return SourceInfo(
         path=str(path),

@@ -4,9 +4,9 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
  *  psnr_hvs feature extractor on the Metal backend — Metal twin of the
- *  CUDA reference libvmaf/src/feature/cuda/integer_psnr_hvs_cuda.c (+
+ *  CUDA reference core/src/feature/cuda/integer_psnr_hvs_cuda.c (+
  *  integer_psnr_hvs/psnr_hvs_score.cu) and the CPU reference
- *  libvmaf/src/feature/third_party/xiph/psnr_hvs.c (feature "psnr_hvs").
+ *  core/src/feature/third_party/xiph/psnr_hvs.c (feature "psnr_hvs").
  *
  *  Per-plane single-dispatch design: one MTLComputeCommandEncoder per
  *  plane (Y, Cb, Cr), one threadgroup per output 8x8 image block

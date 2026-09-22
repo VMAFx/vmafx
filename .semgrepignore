@@ -4,12 +4,18 @@
 # don't author or modify — semgrep findings there would be noise we can't
 # act on without diverging from upstream.
 
-# Netflix-upstream MATLAB MEX helpers. Pure research reference, not linked
-# into libvmaf. The MEX sources use sprintf() in mexErrMsgTxt calls and
-# match our CERT STR31-C guard rule (vmaf-no-strcpy-strcat-sprintf).
-# Paths updated for ADR-0700 rename (python/vmaf/ → compat/python-vmaf/):
-python/vmaf/matlab/
-compat/python-vmaf/matlab/
+# The Netflix-upstream MATLAB MEX helpers under compat/python-vmaf/matlab/
+# are deliberately NOT listed. The entry that stood here was added on
+# 2026-05-28 because the ADR-0700 rename (python/vmaf/ → compat/python-vmaf/)
+# moved the tree out from under the old `python/vmaf/matlab/` line and
+# vmaf-no-strcpy-strcat-sprintf started firing on it. The one call it covered
+# — a `sprintf` whose result was passed to mexErrMsgTxt in
+# MEX/innerProd.c — was replaced by a bounded snprintf in bc00da0be, so from
+# then on the entry only hid the tree from every future finding. Those sources
+# now scan clean, and ADR-1142 makes upstream origin a non-reason for an
+# exemption in the first place.
+# scripts/ci/tests/test_semgrep_vendored_scope.py fails if either path
+# comes back here, in a rule-level exclude, or in the semgrep-local hook.
 
 # Netflix-upstream Python training resource tree (datasets, param/feature
 # dicts). Not C/C++; included here for completeness since semgrep's Python

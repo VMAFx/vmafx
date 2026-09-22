@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,22 +39,27 @@ import (
 // repoRoot walks up from the working directory to the repository root (marked
 // by CLAUDE.md), mirroring libvmaf.RepoRoot without importing an unexported
 // helper.
+//
+// filepath.Dir drops one element per step and is a fixed point only at the root, so the
+// starting path's separator count bounds how many directories the walk can visit.
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	for {
+	for range strings.Count(dir, string(filepath.Separator)) + 1 {
 		if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err == nil {
 			return dir
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatalf("repo root (CLAUDE.md) not found from %s", dir)
+			break
 		}
 		dir = parent
 	}
+	t.Fatalf("repo root (CLAUDE.md) not found from %s", dir)
+	return ""
 }
 
 // startStreamTestServer starts an in-process gRPC server whose Scorer resolves
@@ -183,10 +189,14 @@ func TestGRPCScoreStream_EndToEnd(t *testing.T) {
 		sendErr <- stream.CloseSend()
 	}()
 
-	// Consume the response stream: N FrameScore then exactly one Aggregate.
+	// Consume the response stream: N FrameScore then exactly one Aggregate. That
+	// contract is nFrames+1 responses, so the read is bounded one past it: far enough to
+	// observe the EOF, and short enough that a server which never stops sending fails the
+	// test by name instead of hanging it.
 	var frameScores int
 	var aggregate *vmafxv1.AggregateScore
-	for {
+	streamed := 0
+	for range nFrames + 2 {
 		resp, err := stream.Recv()
 		if err == io.EOF {
 			break
@@ -215,6 +225,10 @@ func TestGRPCScoreStream_EndToEnd(t *testing.T) {
 		default:
 			t.Fatalf("response had neither frame_score nor aggregate: %+v", resp)
 		}
+		streamed++
+	}
+	if streamed > nFrames+1 {
+		t.Fatalf("server streamed more than %d responses without EOF", nFrames+1)
 	}
 
 	if err := <-sendErr; err != nil {

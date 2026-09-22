@@ -113,19 +113,8 @@ func InitOTel(ctx context.Context, serviceName string, log *slog.Logger) OTelShu
 		return noopShutdown
 	}
 
-	// Resolve service name — env wins over caller argument (OTel convention).
-	resolvedName := serviceName
-	if envName := os.Getenv(otelServiceNameEnv); envName != "" {
-		resolvedName = envName
-	}
-
-	// Resolve sample ratio — env wins, else default.
-	sampleRatio := DefaultTraceSampleRatio
-	if raw := os.Getenv(otelTracesSamplerArgEnv); raw != "" {
-		if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed >= 0 && parsed <= 1 {
-			sampleRatio = parsed
-		}
-	}
+	resolvedName := resolveServiceName(serviceName)
+	sampleRatio := resolveSampleRatio()
 
 	res, err := buildResource(ctx, resolvedName)
 	if err != nil {
@@ -134,27 +123,8 @@ func InitOTel(ctx context.Context, serviceName string, log *slog.Logger) OTelShu
 		return noopShutdown
 	}
 
-	tp, traceShutdown, err := buildTracerProvider(ctx, res, sampleRatio)
-	if err != nil {
-		logInfo(log, "otel: tracer provider init failed, traces disabled",
-			"error", err.Error())
-		traceShutdown = noopShutdown
-	} else {
-		otel.SetTracerProvider(tp)
-		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{},
-			propagation.Baggage{},
-		))
-	}
-
-	mp, metricShutdown, err := buildMeterProvider(ctx, res)
-	if err != nil {
-		logInfo(log, "otel: meter provider init failed, OTel metrics disabled",
-			"error", err.Error())
-		metricShutdown = noopShutdown
-	} else {
-		otel.SetMeterProvider(mp)
-	}
+	traceShutdown := installTracerProvider(ctx, res, sampleRatio, log)
+	metricShutdown := installMeterProvider(ctx, res, log)
 
 	logInfo(log, "otel: initialised",
 		"service", resolvedName,
@@ -170,6 +140,69 @@ func InitOTel(ctx context.Context, serviceName string, log *slog.Logger) OTelShu
 			metricShutdown(shutdownCtx),
 		)
 	}
+}
+
+// resolveServiceName picks the service name: the environment wins over the
+// caller's argument, which is the OTel convention.
+func resolveServiceName(serviceName string) string {
+	if envName := os.Getenv(otelServiceNameEnv); envName != "" {
+		return envName
+	}
+	return serviceName
+}
+
+// resolveSampleRatio picks the trace sample ratio: the environment wins when
+// it parses to a probability, otherwise the package default stands.
+//
+// The bound check is written as an accept predicate on purpose. Its De Morgan
+// dual (err != nil || parsed < 0 || parsed > 1) is not equivalent, because
+// strconv.ParseFloat("NaN", 64) returns NaN with a nil error and NaN compares
+// false against every bound: the dual would find nothing to reject and hand
+// NaN to the sampler, where uint64(NaN * (1<<63)) is implementation-defined.
+func resolveSampleRatio() float64 {
+	raw := os.Getenv(otelTracesSamplerArgEnv)
+	if raw == "" {
+		return DefaultTraceSampleRatio
+	}
+	if parsed, err := strconv.ParseFloat(raw, 64); err == nil && parsed >= 0 && parsed <= 1 {
+		return parsed
+	}
+	return DefaultTraceSampleRatio
+}
+
+// installTracerProvider registers the tracer provider and the W3C propagators
+// globally, returning its shutdown hook. A failed init degrades to a no-op
+// rather than taking the process down: telemetry is never load-bearing.
+func installTracerProvider(
+	ctx context.Context, res *resource.Resource, sampleRatio float64, log *slog.Logger,
+) OTelShutdown {
+	tp, traceShutdown, err := buildTracerProvider(ctx, res, sampleRatio)
+	if err != nil {
+		logInfo(log, "otel: tracer provider init failed, traces disabled",
+			"error", err.Error())
+		return noopShutdown
+	}
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+	return traceShutdown
+}
+
+// installMeterProvider registers the meter provider globally, returning its
+// shutdown hook. A failed init degrades to a no-op, as for traces.
+func installMeterProvider(
+	ctx context.Context, res *resource.Resource, log *slog.Logger,
+) OTelShutdown {
+	mp, metricShutdown, err := buildMeterProvider(ctx, res)
+	if err != nil {
+		logInfo(log, "otel: meter provider init failed, OTel metrics disabled",
+			"error", err.Error())
+		return noopShutdown
+	}
+	otel.SetMeterProvider(mp)
+	return metricShutdown
 }
 
 // buildResource constructs the OTel resource describing the running

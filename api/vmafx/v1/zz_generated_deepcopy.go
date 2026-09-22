@@ -14,8 +14,37 @@
 package v1
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
+
+func deepCopyResourceMetadata(
+	inType metav1.TypeMeta,
+	inObject *metav1.ObjectMeta,
+	outType *metav1.TypeMeta,
+	outObject *metav1.ObjectMeta,
+) {
+	*outType = inType
+	inObject.DeepCopyInto(outObject)
+}
+
+func deepCopyResource[Object, Spec, Status any](
+	in, out *Object,
+	inType *metav1.TypeMeta,
+	inObject *metav1.ObjectMeta,
+	outType *metav1.TypeMeta,
+	outObject *metav1.ObjectMeta,
+	inSpec *Spec,
+	outSpec *Spec,
+	inStatus *Status,
+	outStatus *Status,
+	copyStatus func(*Status, *Status),
+) {
+	*out = *in
+	deepCopyResourceMetadata(*inType, inObject, outType, outObject)
+	*outSpec = *inSpec
+	copyStatus(inStatus, outStatus)
+}
 
 // --------------------------------------------------------------------------
 // VmafxJob
@@ -23,11 +52,7 @@ import (
 
 // DeepCopyInto copies all fields of VmafxJob into out.
 func (in *VmafxJob) DeepCopyInto(out *VmafxJob) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec = in.Spec
-	in.Status.DeepCopyInto(&out.Status)
+	deepCopyResource(in, out, &in.TypeMeta, &in.ObjectMeta, &out.TypeMeta, &out.ObjectMeta, &in.Spec, &out.Spec, &in.Status, &out.Status, (*VmafxJobStatus).DeepCopyInto)
 }
 
 // DeepCopy returns a deep copy of VmafxJob.
@@ -99,11 +124,7 @@ func (in *VmafxJobList) DeepCopyObject() runtime.Object {
 
 // DeepCopyInto copies all fields of VmafxNode into out.
 func (in *VmafxNode) DeepCopyInto(out *VmafxNode) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec = in.Spec
-	in.Status.DeepCopyInto(&out.Status)
+	deepCopyResource(in, out, &in.TypeMeta, &in.ObjectMeta, &out.TypeMeta, &out.ObjectMeta, &in.Spec, &out.Spec, &in.Status, &out.Status, (*VmafxNodeStatus).DeepCopyInto)
 }
 
 // DeepCopy returns a deep copy of VmafxNode.
@@ -172,8 +193,7 @@ func (in *VmafxNodeList) DeepCopyObject() runtime.Object {
 // DeepCopyInto copies all fields of VmafxModelTraining into out.
 func (in *VmafxModelTraining) DeepCopyInto(out *VmafxModelTraining) {
 	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	deepCopyResourceMetadata(in.TypeMeta, &in.ObjectMeta, &out.TypeMeta, &out.ObjectMeta)
 	in.Spec.DeepCopyInto(&out.Spec)
 	in.Status.DeepCopyInto(&out.Status)
 }

@@ -20,9 +20,9 @@
  * Border columns / rows use the same scalar fallback as the AVX2
  * variant.
  *
- * Invariants (rebase-sensitive; see libvmaf/src/feature/AGENTS.md):
+ * Invariants (rebase-sensitive; see core/src/feature/AGENTS.md):
  *   - Coefficients in this TU MUST equal `ms_ssim_lpf_{h,v}` in
- *     libvmaf/src/feature/ms_ssim_decimate.c and the AVX2 variant.
+ *     core/src/feature/ms_ssim_decimate.c and the AVX2 variant.
  *   - Mirror semantics MUST equal the scalar reference's
  *     `ms_ssim_decimate_mirror`.
  */

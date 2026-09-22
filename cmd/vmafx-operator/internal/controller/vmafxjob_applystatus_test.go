@@ -17,8 +17,8 @@ import (
 	"os"
 	"testing"
 
-	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	vmafxv1 "github.com/VMAFx/vmafx/api/vmafx/v1"
+	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 )
 
 // TestApplyRemoteStatus_AllTransitions verifies that applyRemoteStatus

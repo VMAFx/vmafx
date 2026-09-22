@@ -147,11 +147,47 @@ tools/
     silently succeed. `per_shot_long_opts` table maps `--help` to
     `'H'`; `per_shot_parse_args` handles `'H'` for help and `'?'` for
     error path. Never change short-option value.
+  - **Scan stops at `VMAF_PER_SHOT_MAX_FRAMES`.** `per_shot_scan_loop`
+    counts frames in a `uint32_t` and `per_shot_record_frame` stores that
+    index, so an endless input (FIFO with live writer, `/dev/zero`) used to
+    spin forever and would wrap numbering past `UINT32_MAX`. Loop now
+    reports `-EFBIG` at bound. Never restore bare `for (;;)`. The bound is
+    the counter width, not a timeout — do not shrink it to make an endless
+    input fail faster, because any smaller value can truncate real content
+    ([ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md)).
+    The ceiling is tested *after* the loop, so the scan is conservative by
+    exactly one frame: an input of `UINT32_MAX` frames is rejected even
+    though every frame was numbered without wrapping, and the largest
+    accepted input is `UINT32_MAX - 1` frames. That is deliberate and
+    unreachable (about a petabyte at 576x324); do not relax the guard past
+    the counter width to recover it.
+    The ceiling is tested *after* the loop, so the scan is conservative by
+    exactly one frame: an input of `UINT32_MAX` frames is reported `-EFBIG`
+    even though every frame was numbered without wrapping. That is
+    deliberate and unreachable (about a petabyte at 576x324); do not
+    "fix" it by relaxing the guard past the counter width.
   - **Chroma skip uses `fseeko` / `_fseeki64`** (rebase-sensitive).
     `per_shot_read_luma` skips chroma bytes via `fseeko` (POSIX) or
     `_fseeki64` (WIN32). Never revert to `fseek((long)...)` —
     `long` cast silently truncates on 32-bit targets for frames
     larger than 2 GiB, seeking to wrong position without error.
+- `vmaf_vpl.c` — VPL decode -> SYCL pipeline (fork-local, not upstream).
+  - **`vpl_decode_frame` retries under `VPL_DECODE_MAX_ATTEMPTS`.** The
+    ceiling is *derived*: `VPL_SYNC_TIMEOUT_MS` / `VPL_DECODE_RETRY_US`, i.e.
+    the 60 s timeout the same function already hands
+    `MFXVideoCORE_SyncOperation()` at the 1 ms back-off it already used.
+    Change one of the three macros and the other two must still describe the
+    same wall clock. Never restore bare `for (;;)`, and never widen the
+    ceiling without re-deriving it from a measured busy-loop distribution
+    ([ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md)).
+  - **`VplFallbackState` flags are load-bearing, not defensive.**
+    `vpl_fallback_release()` reads `have_ref_img` / `have_dis_img` /
+    `have_ref_map` / `have_dis_map` / `have_ref_pic` / `have_dis_pic` to
+    release exactly what the acquisition stages managed to take, in the order
+    the retired `cleanup:` label used. Setting a flag without a matching
+    release branch (or vice versa) leaks or double-frees; this is what
+    replaced the `clang-analyzer-deadcode.DeadStores` NOLINT that used to sit
+    on `have_dis_pic`.
 - [ADR-0104](../../docs/adr/0104-picture-pool-always-on.md) — picture
   pool is always compiled in and sized for live-picture set; this
   is what makes `--frame_skip_*` unref invariant load-bearing.
@@ -180,12 +216,18 @@ tools/
   `width` / `height` (YUV) **before** multiply. 4:4:4 paths
   in `y4m_input.c` already cast for same reason. If upstream
   re-introduces `pic_w * pic_h` in `int` precision on sync, keep
-  fork's cast.
+  fork's cast. In `yuv_input.c` that cast now lives in
+  `yuv_input_set_plane_geometry()`, which `yuv_input_open` calls in place
+  of upstream's `switch` plus `goto fail` label. Helper returns -1 for
+  unsupported `pix_fmt`; caller frees reader state and returns NULL, same
+  as label did. Sync conflict here resolves to fork's helper, not
+  upstream's label — cast must not follow label back.
   **bench GPU-state lifetime invariant**:
-  `vmaf_bench::bench_feature` declares `cu_state` / `sycl_state` at
-  function scope, routes every exit through `bench_cleanup`
-  label so `vmaf_*_state_free` always runs. Mirrors T5
-  state-leak audit pattern in same file's `run_feature_collect`.
+  `BenchGpuState` owns CUDA / SYCL handles. `bench_feature()` and
+  `run_feature_collect()` execute guarded stages, then call
+  `bench_cleanup_resources()` exactly once; `run_sycl_gpu_profile()` does the
+  same through `cleanup_sycl_profile()`. Keep context close before GPU-state
+  free and do not add early returns after ownership begins.
 - [ADR-0520](../../docs/adr/0520-cli-no-reference-wiring.md) —
   `--no-reference` wiring.
   **CLI gate invariant**: reference-required gate at end of
@@ -195,7 +237,7 @@ tools/
   auto-injected (SVM consumes FR feature columns, would always
   fail downstream). If `/sync-upstream` reintroduces unconditional
   `if (!settings->path_ref)` block, restore `no_reference` guard.
-  **Frame-loop invariant**: in NR mode `vmaf.cpp::main` opens
+  **Frame-loop invariant**: in NR mode `vmaf.cpp::open_cli_inputs` opens
   distorted source twice (two `video_input` handles) so
   `vmaf_read_pictures` receives non-null picture pair; this
   satisfies public-API contract without exposing new entry
@@ -221,8 +263,13 @@ tools/
   - In `y4m_input.c`, all plane dimensions, strides, and buffer index
     calculations use `ptrdiff_t` / `size_t` precision to avoid 32-bit
     multiplication overflow.
-  - In `vmaf.cpp`, `ModelArrays` encapsulated with private members and RAII
-    accessors; all internal helpers reside in anonymous namespace.
+  - In `vmaf.cpp`, `CliRunState` owns files, input readers, context, GPU
+    handles and model arrays. `CliRunGuard` invokes one ordered cleanup path on
+    every return after parsing: context, GPU handles, readers, files, CLI
+    settings, then model arrays. Internal declarations live in short, reopened
+    anonymous-namespace blocks so clang-tidy sees internal linkage while every
+    scanner-visible block remains within the 60-line HISS limit. Do not merge
+    those blocks back into one file-wide namespace.
 
 - [ADR-1190](../../docs/adr/1190-cli-option-string-escape-grammar.md) —
   **Escape-aware `--model` / `--feature` option-string splitting.**
@@ -269,10 +316,11 @@ On POSIX both selectors called with `SPINNER_CODEPAGE_UTF8` and
 `vt_enabled = 1`, so emitted bytes are identical to pre-ADR-1166 form.
 Keep it that way — golden-gate CLI invocations parse this stream.
 
-`WindowsConsoleGuard` in `vmaf.cpp` is declared in `main()` **before every
-`goto cleanup` target**, which is what makes restore run on error
-paths. Moving its declaration below jump target is ill-formed C++, would
-silently leave user's console in UTF-8 + VT mode after error exit.
+`WindowsConsoleGuard` in `vmaf.cpp` has static storage and is initialised
+before `cli_parse()`. That is load-bearing: `cli_parse()` calls `exit()` for
+help, version and parse errors, which skips automatic destructors but runs
+static destructors. `CliRunGuard` is created immediately after successful
+parsing and owns all ordinary-return cleanup.
 
 ## `parse_unsigned` rejects negatives on purpose (ADR-1209)
 

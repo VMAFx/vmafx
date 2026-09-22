@@ -689,7 +689,12 @@ static unsigned char utf16_literal_codepoint(const unsigned char *const first_se
 {
     unsigned int first_code = 0;
     unsigned int second_code = 0;
-    const unsigned char *second_sequence = first_sequence + 6;
+    /* Formed only once the bounds check below proves the six bytes exist:
+     * first_sequence + 6 is past one-past-the-end of the parse buffer for a
+     * truncated literal, and forming such a pointer is undefined even when it
+     * is never dereferenced (C17 6.5.6p8; UBSan -fsanitize=pointer-overflow).
+     * The pre-refactor code computed it inside the surrogate-pair branch. */
+    const unsigned char *second_sequence = NULL;
 
     if ((input_end - first_sequence) < 6) {
         /* input ends unexpectedly */
@@ -710,6 +715,7 @@ static unsigned char utf16_literal_codepoint(const unsigned char *const first_se
     }
 
     /* UTF16 surrogate pair */
+    second_sequence = first_sequence + 6;
     if ((input_end - second_sequence) < 6) {
         /* input ends unexpectedly */
         return 0;

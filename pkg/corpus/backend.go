@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/VMAFx/vmafx/pkg/scorebackend"
 )
 
 // AllBackends are the backends the vmaf CLI accepts via --backend NAME.
@@ -35,25 +37,9 @@ var AllBackends = []string{"cpu", "cuda", "sycl", "hip"}
 // always-available floor.
 var DefaultFallbacks = []string{"cuda", "sycl", "hip", "cpu"}
 
-// BackendUnavailableError reports that the user explicitly requested a backend
-// the host cannot provide. It is never returned by "auto" selection — that path
-// falls back.
-type BackendUnavailableError struct {
-	Requested string
-	Available []string
-}
-
-func (e *BackendUnavailableError) Error() string {
-	avail := strings.Join(e.Available, ", ")
-	if avail == "" {
-		avail = "cpu"
-	}
-	return fmt.Sprintf(
-		"backend %q requested but not available on this host (available: %s). "+
-			"Check that the local vmaf binary was built with the matching backend "+
-			"support and the corresponding runtime/driver is installed.",
-		e.Requested, avail)
-}
+// BackendUnavailableError is the shared typed error for an explicitly
+// requested backend that the host cannot provide.
+type BackendUnavailableError = scorebackend.UnavailableError
 
 // vmafHelp returns the vmaf --help output (stdout and stderr joined).
 // It returns "" on any error so the probe logic degrades to "binary does not

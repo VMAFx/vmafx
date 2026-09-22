@@ -47,6 +47,11 @@ jobs:
     # Dockerfile parses. Expected pooled mean ≈ 94.32; tolerance ±0.5 VMAF
     # points to absorb model-version float rounding while still catching gross
     # regressions (e.g., wrong model loaded, binary segfault, wrong pixel format).
+    # "Promoted to blocking" above described intent, not configuration: the
+    # name was never added to required-aggregator.yml, so for three months the
+    # job reported and nothing acted on it. ADR-1297 finishes the promotion.
+    # ADR-1102 makes this container the canonical published artifact.
+    # required-aggregator
     name: Docker Image Build
     runs-on: ubuntu-latest
     timeout-minutes: 45

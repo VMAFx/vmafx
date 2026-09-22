@@ -49,10 +49,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # ADR-1297 — both rows are required checks. They build FFmpeg n8.1
+          # --enable-libvmaf against the freshly installed library, which is
+          # the consumer contract agent hard rule 11 exists to protect. The
+          # `paths:` filter above means absence on an unrelated PR is an
+          # ADR-0313 path skip, so they are not in `strictMustReport`.
+          # required-aggregator
           - os: ubuntu-latest
             CC: gcc
             CXX: g++
             name: FFmpeg Ubuntu gcc
+          # required-aggregator
           - os: macos-latest
             CC: clang
             CXX: clang++
@@ -96,11 +103,14 @@ jobs:
           cd ffmpeg
           ./configure --enable-version3 --enable-libvmaf --disable-indevs \
             --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
-          sudo make --quiet -j $(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu) install
+          sudo make --quiet -j "$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)" install
 
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
   ffmpeg-sycl:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1297 — required. Build-only FFmpeg with the SYCL patch applied; no
+    # other leg links that patch-stack surface.
+    # required-aggregator
     name: FFmpeg SYCL
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -136,10 +146,10 @@ jobs:
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
           cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
-          cmake --build /tmp/level-zero/build -j$(nproc)
+          cmake --build /tmp/level-zero/build -j"$(nproc)"
           sudo cmake --install /tmp/level-zero/build
           rm -rf /tmp/level-zero
-          echo "/opt/intel/oneapi/compiler/latest/bin" >> $GITHUB_PATH
+          echo "/opt/intel/oneapi/compiler/latest/bin" >> "$GITHUB_PATH"
           echo "/opt/intel/oneapi/compiler/latest/lib" | sudo tee /etc/ld.so.conf.d/oneapi.conf
           sudo ldconfig
 
@@ -152,7 +162,21 @@ jobs:
           CC: icx
           CXX: icpx
         run: |
-          source /opt/intel/oneapi/setvars.sh
+          # setvars.sh is reached through a variable, the same shape the
+          # clang-tidy-sycl job in lint-and-format.yml uses. actionlint passes
+          # --external-sources to shellcheck, so on a machine that has oneAPI
+          # installed the linter inlines setvars.sh. Every top-level
+          # branch of that file ends in `return`, and shellcheck models a
+          # top-level `return` in an inlined file as terminating the caller
+          # rather than handing control back to it, so it reported every
+          # command below this line as unreachable (SC2317). bash does hand
+          # control back; the finding was false, and it appeared only on
+          # machines with oneAPI present, which is why the workflow linted
+          # clean in CI and dirty on a SYCL dev box. `builtin` bypasses any
+          # function shadowing `source`; `--force` lets setvars.sh re-run if
+          # the step is retried in an already-initialised shell.
+          oneapi_setvars=/opt/intel/oneapi/setvars.sh
+          builtin source "$oneapi_setvars" --force
           # b_lto=false: see libvmaf-build-matrix.yml note; icx + meson's
           # -flto=auto leaves the static archive without LTO bitcode and
           # breaks the .so link.
@@ -180,7 +204,7 @@ jobs:
           ./configure --enable-version3 --enable-libvmaf \
             --enable-libvpl --disable-indevs --cc="$CC" --cxx="$CXX" \
             || { tail -50 ffbuild/config.log; exit 1; }
-          sudo make --quiet -j $(nproc) install
+          sudo make --quiet -j "$(nproc)" install
           echo "FFmpeg with SYCL support built successfully"
 
   # ffmpeg-vulkan job removed per ADR-0726: the Vulkan backend was dropped from

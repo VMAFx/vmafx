@@ -24,7 +24,7 @@
  *
  * libvmaf is compiled with -fvisibility=hidden so that only explicitly
  * annotated symbols appear in the dynamic symbol table of libvmaf.so.3.
- * Every function declared in libvmaf/include/libvmaf/ that is part of the
+ * Every function declared in core/include/libvmaf/ that is part of the
  * public C API must carry this attribute so that consumers can resolve the
  * symbol at link time.
  *

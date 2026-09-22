@@ -86,13 +86,60 @@ func (s *HTTPServeStorage) Prepare(ctx context.Context, sourceURI string) (strin
 	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	argv := s.buildServeArgs(remoteRoot, addr)
 
 	s.log.Debug("starting rclone serve http",
 		"remote_root", remoteRoot,
 		"addr", addr,
 		"asset", assetRel,
 	)
+
+	cmd, startErr := s.startServe(ctx, remoteRoot, addr)
+	if startErr != nil {
+		return "", func() {}, startErr
+	}
+
+	if readyErr := waitForHTTP(ctx, addr, serveReadyTimeout); readyErr != nil {
+		return "", func() {}, killAfterReadinessTimeout(cmd, readyErr)
+	}
+
+	readableURL := fmt.Sprintf("http://%s/%s", addr, strings.TrimPrefix(assetRel, "/"))
+
+	s.log.Info("rclone serve http ready",
+		"url", readableURL,
+		"remote_root", remoteRoot,
+	)
+
+	return readableURL, s.serveCleanup(cmd), nil
+}
+
+// killAfterReadinessTimeout tears down a serve that never became ready.
+//
+// Both the readiness failure and any kill-cleanup failure are surfaced via
+// errors.Join so an orphaned rclone process does not get silently masked.
+func killAfterReadinessTimeout(cmd *exec.Cmd, readyErr error) error {
+	errs := []error{fmt.Errorf("storage: rclone serve did not become ready: %w", readyErr)}
+	if killErr := killProcess(cmd); killErr != nil {
+		errs = append(errs, fmt.Errorf("storage: kill rclone after readiness timeout: %w", killErr))
+	}
+	return errors.Join(errs...)
+}
+
+// serveCleanup builds the teardown closure the caller defers. It runs from
+// defer paths in production, so the kill failure is logged rather than
+// propagated.
+func (s *HTTPServeStorage) serveCleanup(cmd *exec.Cmd) func() {
+	return func() {
+		if killErr := killProcess(cmd); killErr != nil {
+			s.log.Warn("storage: kill rclone during cleanup", "error", killErr)
+		}
+	}
+}
+
+// startServe spawns "rclone serve http" for remoteRoot on addr.
+func (s *HTTPServeStorage) startServe(
+	ctx context.Context, remoteRoot, addr string,
+) (*exec.Cmd, error) {
+	argv := s.buildServeArgs(remoteRoot, addr)
 
 	// #nosec G204 -- argv[0] is s.rcloneBin (configured at construction);
 	// argv[1:] mixes literals with remoteRoot (validated by caller) and addr
@@ -101,34 +148,9 @@ func (s *HTTPServeStorage) Prepare(ctx context.Context, sourceURI string) (strin
 	cmd.Stderr = os.Stderr
 
 	if startErr := cmd.Start(); startErr != nil {
-		return "", func() {}, fmt.Errorf("storage: start rclone serve: %w", startErr)
+		return nil, fmt.Errorf("storage: start rclone serve: %w", startErr)
 	}
-
-	// Wait for the server to be ready. On timeout, surface both the
-	// readiness failure and any kill-cleanup failure via errors.Join so
-	// an orphaned rclone process does not get silently masked.
-	if readyErr := waitForHTTP(ctx, addr, serveReadyTimeout); readyErr != nil {
-		errs := []error{fmt.Errorf("storage: rclone serve did not become ready: %w", readyErr)}
-		if killErr := killProcess(cmd); killErr != nil {
-			errs = append(errs, fmt.Errorf("storage: kill rclone after readiness timeout: %w", killErr))
-		}
-		return "", func() {}, errors.Join(errs...)
-	}
-
-	readableURL := fmt.Sprintf("http://%s/%s", addr, strings.TrimPrefix(assetRel, "/"))
-
-	cleanup := func() {
-		if killErr := killProcess(cmd); killErr != nil {
-			s.log.Warn("storage: kill rclone during cleanup", "error", killErr)
-		}
-	}
-
-	s.log.Info("rclone serve http ready",
-		"url", readableURL,
-		"remote_root", remoteRoot,
-	)
-
-	return readableURL, cleanup, nil
+	return cmd, nil
 }
 
 // buildServeArgs constructs the rclone serve http argument list.
@@ -180,7 +202,11 @@ func waitForHTTP(ctx context.Context, addr string, timeout time.Duration) error 
 	client := &http.Client{Timeout: 2 * time.Second}
 	tick := time.NewTicker(serveReadyPollInterval)
 	defer tick.Stop()
-	for {
+	// One poll per tick plus the immediate first attempt bounds the loop; the
+	// deadline check below is what normally ends it, and the bound only keeps
+	// a stalled clock from turning this into a spin (HISS-02).
+	maxPolls := int(timeout/serveReadyPollInterval) + 2
+	for poll := 0; poll < maxPolls; poll++ {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out after %v waiting for http://%s/", timeout, addr)
 		}
@@ -201,6 +227,7 @@ func waitForHTTP(ctx context.Context, addr string, timeout time.Duration) error 
 		case <-tick.C:
 		}
 	}
+	return fmt.Errorf("gave up after %d polls waiting for http://%s/", maxPolls, addr)
 }
 
 // killProcess sends SIGKILL to cmd and waits for it to exit. The kill failure

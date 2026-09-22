@@ -1,6 +1,7 @@
 import os
 import re
 from abc import ABC, ABCMeta, abstractmethod
+from types import SimpleNamespace
 
 import defusedxml.ElementTree as ElementTree
 import numpy as np
@@ -1169,133 +1170,40 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
     def get_feature_scores_key(cls, atom_feature):
         return "{type}_{atom_feature}_scores".format(type=cls.TYPE, atom_feature=atom_feature)
 
-    def _generate_result(self, asset):
-        # routine to call the command-line executable and generate quality
-        # scores in the log file.
+    def _optional(self, key, default):
+        """Value of *key* in ``self.optional_dict``, or *default* when absent."""
+        if self.optional_dict is not None and key in self.optional_dict:
+            return self.optional_dict[key]
+        return default
 
-        log_file_path = self._get_log_file_path(asset)
+    def _default_model_spec(self):
+        """The ``name=vmaf:path=...`` spec used when the caller passes no models."""
+        model0 = ["name=vmaf"]
 
-        if (
-            self.optional_dict is not None
-            and "models" in self.optional_dict
-            and self.optional_dict["models"] is not None
-        ):
-            assert isinstance(self.optional_dict["models"], list)
-            models = self.optional_dict["models"]
-        elif self.optional_dict is not None and "use_default_built_in_model" in self.optional_dict:
-            use_default_built_in_model = self.optional_dict["use_default_built_in_model"]
-            assert isinstance(use_default_built_in_model, bool)
-            if use_default_built_in_model:
-                models = []
-        else:
-            model0 = ["name=vmaf"]
+        model_filepath = self._optional("model_filepath", self.DEFAULT_MODEL_FILEPATH)
+        assert isinstance(model_filepath, str)
+        model0.append(f"path={model_filepath}")
 
-            if self.optional_dict is not None and "model_filepath" in self.optional_dict:
-                model_filepath = self.optional_dict["model_filepath"]
-            else:
-                model_filepath = self.DEFAULT_MODEL_FILEPATH
-            assert isinstance(model_filepath, str)
-            model0.append(f"path={model_filepath}")
+        disable_clip_score = self._optional("disable_clip_score", False)
+        assert isinstance(disable_clip_score, bool)
+        if disable_clip_score:
+            model0.append("disable_clip")
 
-            if self.optional_dict is not None and "disable_clip_score" in self.optional_dict:
-                disable_clip_score = self.optional_dict["disable_clip_score"]
-            else:
-                disable_clip_score = False
-            assert isinstance(disable_clip_score, bool)
-            if disable_clip_score:
-                model0.append("disable_clip")
+        return ":".join(model0)
 
-            models = [":".join(model0)]
-
-        if self.optional_dict is not None and "float_psnr" in self.optional_dict:
-            float_psnr = self.optional_dict["float_psnr"]
-        else:
-            float_psnr = False
-        assert isinstance(float_psnr, bool)
-
-        if self.optional_dict is not None and "float_ssim" in self.optional_dict:
-            float_ssim = self.optional_dict["float_ssim"]
-        else:
-            float_ssim = False
-        assert isinstance(float_ssim, bool)
-
-        if self.optional_dict is not None and "float_ms_ssim" in self.optional_dict:
-            float_ms_ssim = self.optional_dict["float_ms_ssim"]
-        else:
-            float_ms_ssim = False
-        assert isinstance(float_ms_ssim, bool)
-
-        if self.optional_dict is not None and "float_moment" in self.optional_dict:
-            float_moment = self.optional_dict["float_moment"]
-        else:
-            float_moment = False
-        assert isinstance(float_ssim, bool)
-
-        if self.optional_dict is not None and "psnr" in self.optional_dict:
-            psnr = self.optional_dict["psnr"]
-        else:
-            psnr = False
-        assert isinstance(psnr, bool)
-
-        if self.optional_dict is not None and "ssim" in self.optional_dict:
-            ssim = self.optional_dict["ssim"]
-        else:
-            ssim = False
-        assert isinstance(ssim, bool)
-
-        if self.optional_dict is not None and "ms_ssim" in self.optional_dict:
-            ms_ssim = self.optional_dict["ms_ssim"]
-        else:
-            ms_ssim = False
-        assert isinstance(ms_ssim, bool)
-
-        if self.optional_dict is not None and "no_prediction" in self.optional_dict:
-            no_prediction = self.optional_dict["no_prediction"]
-        else:
-            no_prediction = False
-        assert isinstance(no_prediction, bool)
-
-        if self.optional_dict is not None and "subsample" in self.optional_dict:
-            subsample = self.optional_dict["subsample"]
-        else:
-            subsample = 1
-        assert isinstance(subsample, int) and subsample >= 1
-
-        if self.optional_dict is not None and "n_threads" in self.optional_dict:
-            n_threads = self.optional_dict["n_threads"]
-        else:
-            n_threads = 1
-        assert isinstance(n_threads, int) and n_threads >= 1
-
-        if self.optional_dict is not None and "disable_avx" in self.optional_dict:
-            disable_avx = self.optional_dict["disable_avx"]
-        else:
-            disable_avx = False
-        assert isinstance(disable_avx, bool)
-
-        disable_enhn_gain = (
-            self.optional_dict["disable_enhn_gain"]
-            if self.optional_dict is not None and "disable_enhn_gain" in self.optional_dict
-            else None
-        )
+    def _read_enhn_gain_options(self):
+        """The three enhancement-gain options plus their mutual-exclusion assert."""
+        disable_enhn_gain = self._optional("disable_enhn_gain", None)
         assert disable_enhn_gain is None or isinstance(disable_enhn_gain, bool)
 
-        vif_enhn_gain_limit = (
-            self.optional_dict["vif_enhn_gain_limit"]
-            if self.optional_dict is not None and "vif_enhn_gain_limit" in self.optional_dict
-            else None
-        )
+        vif_enhn_gain_limit = self._optional("vif_enhn_gain_limit", None)
         assert (
             vif_enhn_gain_limit is None
             or isinstance(vif_enhn_gain_limit, int)
             or isinstance(vif_enhn_gain_limit, float)
         )
 
-        adm_enhn_gain_limit = (
-            self.optional_dict["adm_enhn_gain_limit"]
-            if self.optional_dict is not None and "adm_enhn_gain_limit" in self.optional_dict
-            else None
-        )
+        adm_enhn_gain_limit = self._optional("adm_enhn_gain_limit", None)
         assert (
             adm_enhn_gain_limit is None
             or isinstance(adm_enhn_gain_limit, int)
@@ -1308,13 +1216,11 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
             and adm_enhn_gain_limit is None
         )
 
-        if self.optional_dict is not None and "motion_force_zero" in self.optional_dict:
-            motion_force_zero = self.optional_dict["motion_force_zero"]
-        else:
-            motion_force_zero = False
-        assert isinstance(motion_force_zero, bool)
+        return disable_enhn_gain, vif_enhn_gain_limit, adm_enhn_gain_limit
 
-        # ==== translate disable_enhn_gain into vif_enhn_gain_limit and adm_enhn_gain_limit: ====
+    @staticmethod
+    def _translate_enhn_gain(disable_enhn_gain, vif_enhn_gain_limit, adm_enhn_gain_limit):
+        """Translate disable_enhn_gain into vif_enhn_gain_limit and adm_enhn_gain_limit."""
         if disable_enhn_gain is None:
             pass
         elif (
@@ -1329,14 +1235,111 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
                 pass
         else:
             assert False
+        return vif_enhn_gain_limit, adm_enhn_gain_limit
+
+    def _read_feature_flags(self):
+        """The per-feature enable flags and thread / subsample settings."""
+        float_psnr = self._optional("float_psnr", False)
+        assert isinstance(float_psnr, bool)
+
+        float_ssim = self._optional("float_ssim", False)
+        assert isinstance(float_ssim, bool)
+
+        float_ms_ssim = self._optional("float_ms_ssim", False)
+        assert isinstance(float_ms_ssim, bool)
+
+        float_moment = self._optional("float_moment", False)
+        assert isinstance(float_ssim, bool)
+
+        psnr = self._optional("psnr", False)
+        assert isinstance(psnr, bool)
+
+        ssim = self._optional("ssim", False)
+        assert isinstance(ssim, bool)
+
+        ms_ssim = self._optional("ms_ssim", False)
+        assert isinstance(ms_ssim, bool)
+
+        no_prediction = self._optional("no_prediction", False)
+        assert isinstance(no_prediction, bool)
+
+        subsample = self._optional("subsample", 1)
+        assert isinstance(subsample, int) and subsample >= 1
+
+        n_threads = self._optional("n_threads", 1)
+        assert isinstance(n_threads, int) and n_threads >= 1
+
+        disable_avx = self._optional("disable_avx", False)
+        assert isinstance(disable_avx, bool)
+
+        return {
+            "float_psnr": float_psnr,
+            "float_ssim": float_ssim,
+            "float_ms_ssim": float_ms_ssim,
+            "float_moment": float_moment,
+            "psnr": psnr,
+            "ssim": ssim,
+            "ms_ssim": ms_ssim,
+            "no_prediction": no_prediction,
+            "subsample": subsample,
+            "n_threads": n_threads,
+            "disable_avx": disable_avx,
+        }
+
+    def _resolve_vmafexec_options(self):
+        """Every optional_dict-derived setting the vmafexec call needs.
+
+        The option reads keep their original order and asserts. Note that
+        ``models`` stays deliberately unassigned when the caller passes
+        ``use_default_built_in_model=False`` — upstream leaves that branch
+        without a value, and the resulting UnboundLocalError is preserved here.
+        """
+        if (
+            self.optional_dict is not None
+            and "models" in self.optional_dict
+            and self.optional_dict["models"] is not None
+        ):
+            assert isinstance(self.optional_dict["models"], list)
+            models = self.optional_dict["models"]
+        elif self.optional_dict is not None and "use_default_built_in_model" in self.optional_dict:
+            use_default_built_in_model = self.optional_dict["use_default_built_in_model"]
+            assert isinstance(use_default_built_in_model, bool)
+            if use_default_built_in_model:
+                models = []
+        else:
+            models = [self._default_model_spec()]
+
+        flags = self._read_feature_flags()
+
+        disable_enhn_gain, vif_enhn_gain_limit, adm_enhn_gain_limit = self._read_enhn_gain_options()
+
+        motion_force_zero = self._optional("motion_force_zero", False)
+        assert isinstance(motion_force_zero, bool)
+
+        # ==== translate disable_enhn_gain into vif_enhn_gain_limit and adm_enhn_gain_limit: ====
+        vif_enhn_gain_limit, adm_enhn_gain_limit = self._translate_enhn_gain(
+            disable_enhn_gain, vif_enhn_gain_limit, adm_enhn_gain_limit
+        )
+
+        return SimpleNamespace(
+            models=models,
+            vif_enhn_gain_limit=vif_enhn_gain_limit,
+            adm_enhn_gain_limit=adm_enhn_gain_limit,
+            motion_force_zero=motion_force_zero,
+            **flags,
+        )
+
+    def _generate_result(self, asset):
+        # routine to call the command-line executable and generate quality
+        # scores in the log file.
+
+        log_file_path = self._get_log_file_path(asset)
+        opts = self._resolve_vmafexec_options()
 
         quality_width, quality_height = asset.quality_width_height
-
         fmt = self._get_workfile_yuv_type(asset)
-
         ref_path = asset.ref_procfile_path
         dis_path = asset.dis_procfile_path
-
         reference = ref_path
         distorted = dis_path
         width = quality_width
@@ -1358,24 +1361,24 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
             height,
             pixel_format,
             bitdepth,
-            float_psnr,
-            psnr,
-            float_ssim,
-            ssim,
-            float_ms_ssim,
-            ms_ssim,
-            float_moment,
-            no_prediction,
-            models,
-            subsample,
-            n_threads,
-            disable_avx,
+            opts.float_psnr,
+            opts.psnr,
+            opts.float_ssim,
+            opts.ssim,
+            opts.float_ms_ssim,
+            opts.ms_ssim,
+            opts.float_moment,
+            opts.no_prediction,
+            opts.models,
+            opts.subsample,
+            opts.n_threads,
+            opts.disable_avx,
             output,
             exe,
             logger,
-            vif_enhn_gain_limit,
-            adm_enhn_gain_limit,
-            motion_force_zero,
+            opts.vif_enhn_gain_limit,
+            opts.adm_enhn_gain_limit,
+            opts.motion_force_zero,
             enc_width,
             enc_height,
             enc_bitdepth,
@@ -1384,89 +1387,75 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
     def _get_exec(self):
         return None  # signaling default
 
-    def _get_quality_scores(self, asset):
-        # routine to read the quality scores from the log file, and return
-        # the scores in a dictionary format.
-
-        log_file_path = self._get_log_file_path(asset)
-        tree = ElementTree.parse(log_file_path)
-        root = tree.getroot()
-        scores_dict = {}
-
-        feature_scores = [[] for _ in self.FEATURES]
-        feature_nicknames = [None for _ in self.FEATURES]
-
-        if self.optional_dict is not None and "no_prediction" in self.optional_dict:
-            no_prediction = self.optional_dict["no_prediction"]
-        else:
-            no_prediction = False
-        assert isinstance(no_prediction, bool)
+    def _resolve_scores_keys(self, no_prediction):
+        """Score keys to read per frame.
 
         # if no_prediction, scores keys are empty
         # if >=1 models are passed in through optional_dict, assign keys from model's name
         # else default to a single key as "vmaf"
+        """
         if no_prediction:
-            scores_keys = []
-        elif self.optional_dict is not None and "models" in self.optional_dict:
+            return []
+        if self.optional_dict is not None and "models" in self.optional_dict:
             assert isinstance(self.optional_dict["models"], list)
             scores_keys = []
             for model in self.optional_dict["models"]:
                 scores_keys.append(model.split("name=")[1].split(":")[0])
-        else:
-            scores_keys = ["vmaf"]
+            return scores_keys
+        return ["vmaf"]
 
-        for scores_key in scores_keys:
-            scores_dict[scores_key] = []
+    def _discover_frame_features(self, frame, feature_scores, feature_nicknames):
+        """Harvest every declared feature from one frame element.
 
-        for frame in root.findall("frames/frame"):
-            if not no_prediction:
-                for scores_key in scores_keys:
-                    scores_dict[scores_key].append(float(frame.attrib[scores_key]))
-            for i_feature, feature in enumerate(self.FEATURES):
+        Each feature is looked for in a fixed order — exact ``integer_xxx``,
+        exact ``xxx``, wildcard ``integer_xxx_*``, wildcard ``xxx_*`` — and the
+        first hit wins, so an integer implementation shadows the float one.
+        """
+        for i_feature, feature in enumerate(self.FEATURES):
 
-                # first look for exact match integer_xxx
-                feature_found = self._discover_feature_exact(
-                    frame,
-                    i_feature,
-                    "integer_" + feature,
-                    feature,
-                    feature_scores,
-                    feature_nicknames,
-                )
-
-                if feature_found:
-                    continue
-
-                # look for exact match xxx
-                feature_found = self._discover_feature_exact(
-                    frame, i_feature, feature, feature, feature_scores, feature_nicknames
-                )
-
-                if feature_found:
-                    continue
-
-                # wildcard discovery: look for integer_xxx_*
-                feature_found = self._discover_feature_wildcard(
-                    frame,
-                    i_feature,
-                    "integer_" + feature + "_",
-                    feature,
-                    feature_scores,
-                    feature_nicknames,
-                )
-
-                if feature_found:
-                    continue
-
-                # wildcard discovery: look for xxx_*
-                feature_found = self._discover_feature_wildcard(
-                    frame, i_feature, feature + "_", feature, feature_scores, feature_nicknames
-                )
-
-        for scores_key in scores_keys:
-            assert len(scores_dict[scores_key]) != 0 or any(
-                [len(feature_score) != 0 for feature_score in feature_scores]
+            # first look for exact match integer_xxx
+            feature_found = self._discover_feature_exact(
+                frame,
+                i_feature,
+                "integer_" + feature,
+                feature,
+                feature_scores,
+                feature_nicknames,
             )
+
+            if feature_found:
+                continue
+
+            # look for exact match xxx
+            feature_found = self._discover_feature_exact(
+                frame, i_feature, feature, feature, feature_scores, feature_nicknames
+            )
+
+            if feature_found:
+                continue
+
+            # wildcard discovery: look for integer_xxx_*
+            feature_found = self._discover_feature_wildcard(
+                frame,
+                i_feature,
+                "integer_" + feature + "_",
+                feature,
+                feature_scores,
+                feature_nicknames,
+            )
+
+            if feature_found:
+                continue
+
+            # wildcard discovery: look for xxx_*. Last chance in the chain, so
+            # the hit flag has no reader left -- the call is kept for the
+            # feature_scores / feature_nicknames it appends to.
+            self._discover_feature_wildcard(
+                frame, i_feature, feature + "_", feature, feature_scores, feature_nicknames
+            )
+
+    def _assemble_quality_result(self, scores_keys, scores_dict, feature_scores, feature_nicknames):
+        """Map the harvested per-frame lists onto their public result keys."""
         quality_result = {}
         for scores_key in scores_keys:
             if scores_key != "vmaf":
@@ -1481,6 +1470,40 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
                     feature_scores[i_feature]
                 )
         return quality_result
+
+    def _get_quality_scores(self, asset):
+        # routine to read the quality scores from the log file, and return
+        # the scores in a dictionary format.
+
+        log_file_path = self._get_log_file_path(asset)
+        tree = ElementTree.parse(log_file_path)
+        root = tree.getroot()
+        scores_dict = {}
+
+        feature_scores = [[] for _ in self.FEATURES]
+        feature_nicknames = [None for _ in self.FEATURES]
+
+        no_prediction = self._optional("no_prediction", False)
+        assert isinstance(no_prediction, bool)
+
+        scores_keys = self._resolve_scores_keys(no_prediction)
+
+        for scores_key in scores_keys:
+            scores_dict[scores_key] = []
+
+        for frame in root.findall("frames/frame"):
+            if not no_prediction:
+                for scores_key in scores_keys:
+                    scores_dict[scores_key].append(float(frame.attrib[scores_key]))
+            self._discover_frame_features(frame, feature_scores, feature_nicknames)
+
+        for scores_key in scores_keys:
+            assert len(scores_dict[scores_key]) != 0 or any(
+                [len(feature_score) != 0 for feature_score in feature_scores]
+            )
+        return self._assemble_quality_result(
+            scores_keys, scores_dict, feature_scores, feature_nicknames
+        )
 
 
 class SpeedChromaQualityRunner(QualityRunnerFromFeatureExtractor, ABC):

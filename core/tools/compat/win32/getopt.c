@@ -131,6 +131,76 @@ static int handle_short(int argc, char *const argv[], const char *optstring, cha
     return (unsigned char)opt;
 }
 
+/* Resolve the "--name" token in @p arg (@p nlen characters, the part before
+ * any '=') against the longopts table.
+ *
+ * Exact match first; fall through to a unique-prefix match. Returns the index
+ * of the entry, or -1 when nothing matched. *ambig is set when the prefix
+ * matched more than one entry — the caller rejects both cases alike. */
+static int match_long_option(const struct option *longopts, const char *arg, size_t nlen,
+                             int *ambig)
+{
+    int match = -1;
+
+    *ambig = 0;
+    for (int i = 0; longopts[i].name; i++) {
+        if (strncmp(longopts[i].name, arg, nlen) == 0) {
+            if (strlen(longopts[i].name) == nlen) {
+                match = i;
+                *ambig = 0;
+                break;
+            }
+            if (match < 0)
+                match = i;
+            else
+                *ambig = 1;
+        }
+    }
+    return match;
+}
+
+/* Consume whatever argument @p lo takes, advancing optind and setting optarg.
+ *
+ * @p eq points at the '=' inside the current argv element, or is NULL when the
+ * token carried no inline value. Returns 0 when the option was accepted, or
+ * the character the caller must hand back ('?' or ':') on an argument error. */
+static int take_long_option_arg(int argc, const char *prog, const char *optstring,
+                                const struct option *lo, const char *eq, char **argv_w)
+{
+    if (lo->has_arg == no_argument) {
+        if (eq) {
+            if (opterr) {
+                (void)fprintf(stderr, "%s: option '--%s' doesn't allow an argument\n",
+                              prog ? prog : "getopt", lo->name);
+            }
+            optind++;
+            optopt = lo->val;
+            return '?';
+        }
+        optind++;
+        return 0;
+    }
+    if (eq) {
+        optarg = (char *)(eq + 1);
+        optind++;
+        return 0;
+    }
+    if (lo->has_arg == optional_argument) {
+        optarg = NULL;
+        optind++;
+        return 0;
+    }
+    /* required_argument */
+    optind++;
+    if (optind >= argc) {
+        report_missing_arg(prog, 0, 1, lo->name);
+        optopt = lo->val;
+        return (optstring && optstring[0] == ':') ? ':' : '?';
+    }
+    optarg = argv_w[optind++];
+    return 0;
+}
+
 static int handle_long(int argc, char *const argv[], const char *optstring,
                        const struct option *longopts, int *longindex, char **argv_w)
 {
@@ -139,22 +209,8 @@ static int handle_long(int argc, char *const argv[], const char *optstring,
     const char *eq = strchr(arg, '=');
     size_t nlen = eq ? (size_t)(eq - arg) : strlen(arg);
 
-    /* Exact match first; fall through to a unique-prefix match. */
-    int match = -1;
     int ambig = 0;
-    for (int i = 0; longopts[i].name; i++) {
-        if (strncmp(longopts[i].name, arg, nlen) == 0) {
-            if (strlen(longopts[i].name) == nlen) {
-                match = i;
-                ambig = 0;
-                break;
-            }
-            if (match < 0)
-                match = i;
-            else
-                ambig = 1;
-        }
-    }
+    const int match = match_long_option(longopts, arg, nlen, &ambig);
 
     if (match < 0 || ambig) {
         if (opterr) {
@@ -170,31 +226,9 @@ static int handle_long(int argc, char *const argv[], const char *optstring,
     if (longindex)
         *longindex = match;
 
-    if (lo->has_arg == no_argument) {
-        if (eq) {
-            if (opterr) {
-                (void)fprintf(stderr, "%s: option '--%s' doesn't allow an argument\n",
-                              prog ? prog : "getopt", lo->name);
-            }
-            optind++;
-            optopt = lo->val;
-            return '?';
-        }
-        optind++;
-    } else if (eq) {
-        optarg = (char *)(eq + 1);
-        optind++;
-    } else if (lo->has_arg == optional_argument) {
-        optarg = NULL;
-        optind++;
-    } else { /* required_argument */
-        optind++;
-        if (optind >= argc) {
-            report_missing_arg(prog, 0, 1, lo->name);
-            optopt = lo->val;
-            return (optstring && optstring[0] == ':') ? ':' : '?';
-        }
-        optarg = argv_w[optind++];
+    const int arg_err = take_long_option_arg(argc, prog, optstring, lo, eq, argv_w);
+    if (arg_err != 0) {
+        return arg_err;
     }
 
     if (lo->flag) {

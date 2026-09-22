@@ -160,13 +160,66 @@ static const VmafOption options[] = {
     },
     {0}};
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+/* ------------------------------------------------------------------ */
+/* motion_v2_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * HISS-01: lifted verbatim from the former `free_buffers` label. The same
+ * resources are released in the same order on every exit path, and the
+ * value returned is the one the label returned.
+ */
+static int motion_v2_init_unwind(VmafFeatureExtractor *fex, MotionV2StateCuda *s, int ret)
 {
-    (void)pix_fmt;
-    MotionV2StateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
+    if (s->pix[0]) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->pix[0]);
+        free(s->pix[0]);
+        s->pix[0] = NULL;
+    }
+    if (s->pix[1]) {
+        (void)vmaf_cuda_buffer_free(fex->cu_state, s->pix[1]);
+        free(s->pix[1]);
+        s->pix[1] = NULL;
+    }
+    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    return ret;
+}
 
+/* motion_v2_alloc_buffers - the two pixel planes, the readback slot, the dict.
+ *
+ * HISS-04: the allocation tail of init_fex_cuda, moved whole. The `ret |=`
+ * accumulation keeps its order and every failure still routes through
+ * motion_v2_init_unwind with the same `ret`.
+ */
+static int motion_v2_alloc_buffers(VmafFeatureExtractor *fex, MotionV2StateCuda *s)
+{
+    int ret = 0;
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[0], s->plane_bytes);
+    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[1], s->plane_bytes);
+    if (ret)
+        return motion_v2_init_unwind(fex, s, ret);
+
+    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, sizeof(uint64_t));
+    if (ret)
+        return motion_v2_init_unwind(fex, s, ret);
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict) {
+        ret = -ENOMEM;
+        return motion_v2_init_unwind(fex, s, ret);
+    }
+
+    return 0;
+}
+
+/* motion_v2_check_frame_size - refuse frames below the 5-tap minimum.
+ *
+ * HISS-04: the entry guard of init_fex_cuda, moved whole - same condition,
+ * same message, same -EINVAL.
+ */
+static int motion_v2_check_frame_size(unsigned w, unsigned h)
+{
     /* The 5-tap CUDA motion_v2 kernel uses reflect-101 mirror padding;
      * mirror() returns 2*sup - idx - 2, which is negative when sup < 3.
      * Refuse smaller frames up front to prevent out-of-bounds device reads.
@@ -178,6 +231,19 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                  w, h);
         return -EINVAL;
     }
+    return 0;
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    MotionV2StateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
+
+    const int size_err = motion_v2_check_frame_size(w, h);
+    if (size_err)
+        return size_err;
 
     s->frame_w = w;
     s->frame_h = h;
@@ -201,40 +267,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[0], s->plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[1], s->plane_bytes);
-    if (ret)
-        goto free_buffers;
-
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, sizeof(uint64_t));
-    if (ret)
-        goto free_buffers;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        goto free_buffers;
-    }
-
-    return 0;
-
-free_buffers:
-    if (s->pix[0]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->pix[0]);
-        free(s->pix[0]);
-        s->pix[0] = NULL;
-    }
-    if (s->pix[1]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->pix[1]);
-        free(s->pix[1]);
-        s->pix[1] = NULL;
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    return motion_v2_alloc_buffers(fex, s);
 
 fail:
     if (ctx_pushed)
@@ -242,6 +275,65 @@ fail:
 fail_after_pop:
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
+}
+
+/* motion_v2_launch - dispatch the 8bpc or 16bpc SAD kernel.
+ *
+ * HISS-04: the launch branch of submit_fex_cuda, moved whole. Both argument
+ * arrays keep their exact element order (the 16bpc one still carries the extra
+ * &s->bpc slot) and the grid/block geometry is passed in unchanged, so the
+ * kernel sees identical parameters. cuLaunchKernel copies the parameter values
+ * before it returns, so pointing at this frame's plane_pitch copy is safe.
+ */
+static int motion_v2_launch(MotionV2StateCuda *s, CudaFunctions *cu_f, CUstream pic_stream,
+                            unsigned cur_idx, unsigned prev_idx, ptrdiff_t plane_pitch,
+                            unsigned grid_dim_x, unsigned grid_dim_y, unsigned block_dim_x,
+                            unsigned block_dim_y)
+{
+    if (s->bpc == 8u) {
+        void *args[] = {
+            &s->pix[prev_idx]->data, &s->pix[cur_idx]->data, (void *)&plane_pitch,
+            (void *)&plane_pitch,    (void *)s->rb.device,   (void *)&s->frame_w,
+            (void *)&s->frame_h,
+        };
+        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_dim_x, grid_dim_y, 1, block_dim_x,
+                                               block_dim_y, 1, 0, pic_stream, args, NULL));
+    } else {
+        void *args[] = {
+            &s->pix[prev_idx]->data, &s->pix[cur_idx]->data, (void *)&plane_pitch,
+            (void *)&plane_pitch,    (void *)s->rb.device,   (void *)&s->frame_w,
+            (void *)&s->frame_h,     (void *)&s->bpc,
+        };
+        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_dim_x, grid_dim_y, 1, block_dim_x,
+                                               block_dim_y, 1, 0, pic_stream, args, NULL));
+    }
+    return 0;
+}
+
+/* motion_v2_cache_plane - pack this frame's Y plane into pix[cur_idx].
+ *
+ * HISS-04: the D2D staging copy of submit_fex_cuda, moved whole. The
+ * descriptor fields are assigned in the same order, dstPitch is still the
+ * packed width and WidthInBytes still takes its value from dstPitch, so the
+ * bytes that land in pix[cur_idx] are unchanged.
+ */
+static int motion_v2_cache_plane(MotionV2StateCuda *s, CudaFunctions *cu_f, CUstream pic_stream,
+                                 const VmafPicture *ref_pic, unsigned cur_idx)
+{
+    /* Source stride may exceed plane width — copy row by row with
+     * cuMemcpy2D so we land a tightly-packed copy in pix[cur_idx].
+     * Width of the copy = w * bpp; height = h. */
+    CUDA_MEMCPY2D copy = {0};
+    copy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+    copy.srcDevice = (CUdeviceptr)ref_pic->data[0];
+    copy.srcPitch = ref_pic->stride[0];
+    copy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+    copy.dstDevice = (CUdeviceptr)s->pix[cur_idx]->data;
+    copy.dstPitch = s->frame_w * (s->bpc <= 8u ? 1u : 2u);
+    copy.WidthInBytes = copy.dstPitch;
+    copy.Height = s->frame_h;
+    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, pic_stream));
+    return 0;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -269,19 +361,9 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f,
                       cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(ref_pic),
                                         CU_EVENT_WAIT_DEFAULT));
-    /* Source stride may exceed plane width — copy row by row with
-     * cuMemcpy2D so we land a tightly-packed copy in pix[cur_idx].
-     * Width of the copy = w * bpp; height = h. */
-    CUDA_MEMCPY2D copy = {0};
-    copy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    copy.srcDevice = (CUdeviceptr)ref_pic->data[0];
-    copy.srcPitch = ref_pic->stride[0];
-    copy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    copy.dstDevice = (CUdeviceptr)s->pix[cur_idx]->data;
-    copy.dstPitch = s->frame_w * (s->bpc <= 8u ? 1u : 2u);
-    copy.WidthInBytes = copy.dstPitch;
-    copy.Height = s->frame_h;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, pic_stream));
+    const int copy_err = motion_v2_cache_plane(s, cu_f, pic_stream, ref_pic, cur_idx);
+    if (copy_err)
+        return copy_err;
 
     /* Frame 0: nothing more to do — emit 0 in collect. */
     if (index == 0) {
@@ -303,23 +385,10 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     const unsigned grid_dim_y = DIV_ROUND_UP(s->frame_h, block_dim_y);
     const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * (s->bpc <= 8u ? 1u : 2u));
 
-    if (s->bpc == 8u) {
-        void *args[] = {
-            &s->pix[prev_idx]->data, &s->pix[cur_idx]->data, (void *)&plane_pitch,
-            (void *)&plane_pitch,    (void *)s->rb.device,   (void *)&s->frame_w,
-            (void *)&s->frame_h,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_dim_x, grid_dim_y, 1, block_dim_x,
-                                               block_dim_y, 1, 0, pic_stream, args, NULL));
-    } else {
-        void *args[] = {
-            &s->pix[prev_idx]->data, &s->pix[cur_idx]->data, (void *)&plane_pitch,
-            (void *)&plane_pitch,    (void *)s->rb.device,   (void *)&s->frame_w,
-            (void *)&s->frame_h,     (void *)&s->bpc,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_dim_x, grid_dim_y, 1, block_dim_x,
-                                               block_dim_y, 1, 0, pic_stream, args, NULL));
-    }
+    const int launch_err = motion_v2_launch(s, cu_f, pic_stream, cur_idx, prev_idx, plane_pitch,
+                                            grid_dim_x, grid_dim_y, block_dim_x, block_dim_y);
+    if (launch_err)
+        return launch_err;
 
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
@@ -351,6 +420,84 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                                                    sad_score, index);
 }
 
+/* motion_v2_stamp_value - the motion3_v2 seed emitted for indices < min_idx.
+ *
+ * HISS-04: the seeding block of flush_fex_cuda, moved whole. The
+ * MIN(motion_blend(...), motion_max_val) expression is copied character for
+ * character and stays one statement, so no operand crosses a call boundary and
+ * the compiler contracts it exactly as it did inline.
+ */
+static double motion_v2_stamp_value(const MotionV2StateCuda *s,
+                                    VmafFeatureCollector *feature_collector, const char *sad_name,
+                                    unsigned n_frames, unsigned min_idx)
+{
+    double stamp_value = 0.;
+    if (n_frames > min_idx) {
+        double sad_at_min_idx;
+        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
+                                              min_idx)) {
+            stamp_value =
+                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
+                    s->motion_max_val);
+        }
+    }
+    return stamp_value;
+}
+
+/* motion_v2_emit_frame - emit motion2_v2 and motion3_v2 for one frame index.
+ *
+ * HISS-04: the body of flush_fex_cuda's emit loop, moved whole. Every
+ * arithmetic statement is copied character for character and keeps its
+ * position, so nothing is reassociated: score_cur / score_next are still
+ * weighted before the min, and the moving average still reads the previous
+ * `processed` before overwriting it. `prev_processed` is the loop-carried
+ * accumulator, so it is passed by pointer rather than recomputed.
+ */
+static int motion_v2_emit_frame(MotionV2StateCuda *s, VmafFeatureCollector *feature_collector,
+                                const char *sad_name, unsigned i, unsigned n_frames,
+                                unsigned min_idx, double stamp_value, double *prev_processed)
+{
+    double score_cur;
+    double score_next;
+    vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);
+    /* Apply fps weight — mirrors CPU integer_motion_v2.c flush logic.
+     * Bit-exact when motion_fps_weight = 1.0 (default). */
+    score_cur *= s->motion_fps_weight;
+
+    double motion2;
+    if (i + 1 < n_frames) {
+        vmaf_feature_collector_get_score(feature_collector, sad_name, &score_next, i + 1);
+        score_next *= s->motion_fps_weight;
+        motion2 = score_cur < score_next ? score_cur : score_next;
+    } else {
+        motion2 = score_cur;
+    }
+
+    int append_err = vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_v2_score", motion2,
+        i);
+    if (append_err)
+        return append_err;
+
+    /* motion3_v2_score: per-frame blend + clip + optional moving-average.
+     * Mirrors integer_motion_v2.c::flush lines 466-481 byte-for-byte. */
+    double motion3;
+    if (i < min_idx) {
+        motion3 = stamp_value;
+        *prev_processed = stamp_value;
+    } else {
+        double processed =
+            MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
+                s->motion_max_val);
+        motion3 = s->motion_moving_average ? (processed + *prev_processed) / 2.0 : processed;
+        *prev_processed = processed;
+    }
+
+    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_integer_feature_motion3_v2_score", motion3,
+                                                   i);
+}
+
 static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     MotionV2StateCuda *s = fex->priv;
@@ -375,60 +522,15 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
      * min_idx, clipped to motion_max_val; it is emitted for all indices
      * i < min_idx. */
     const unsigned min_idx = 1;
-    double stamp_value = 0.;
-    if (n_frames > min_idx) {
-        double sad_at_min_idx;
-        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
-                                              min_idx)) {
-            stamp_value =
-                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-        }
-    }
+    const double stamp_value =
+        motion_v2_stamp_value(s, feature_collector, sad_name, n_frames, min_idx);
 
     double prev_processed = 0.;
     for (unsigned i = 0; i < n_frames; i++) {
-        double score_cur;
-        double score_next;
-        vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);
-        /* Apply fps weight — mirrors CPU integer_motion_v2.c flush logic.
-         * Bit-exact when motion_fps_weight = 1.0 (default). */
-        score_cur *= s->motion_fps_weight;
-
-        double motion2;
-        if (i + 1 < n_frames) {
-            vmaf_feature_collector_get_score(feature_collector, sad_name, &score_next, i + 1);
-            score_next *= s->motion_fps_weight;
-            motion2 = score_cur < score_next ? score_cur : score_next;
-        } else {
-            motion2 = score_cur;
-        }
-
-        int append_err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_v2_score",
-            motion2, i);
-        if (append_err)
-            return append_err;
-
-        /* motion3_v2_score: per-frame blend + clip + optional moving-average.
-         * Mirrors integer_motion_v2.c::flush lines 466-481 byte-for-byte. */
-        double motion3;
-        if (i < min_idx) {
-            motion3 = stamp_value;
-            prev_processed = stamp_value;
-        } else {
-            double processed =
-                MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-            motion3 = s->motion_moving_average ? (processed + prev_processed) / 2.0 : processed;
-            prev_processed = processed;
-        }
-
-        append_err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_v2_score",
-            motion3, i);
-        if (append_err)
-            return append_err;
+        const int emit_err = motion_v2_emit_frame(s, feature_collector, sad_name, i, n_frames,
+                                                  min_idx, stamp_value, &prev_processed);
+        if (emit_err)
+            return emit_err;
     }
 
     return 1;

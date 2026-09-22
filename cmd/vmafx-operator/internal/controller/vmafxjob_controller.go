@@ -74,17 +74,11 @@ func (r *VmafxJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Initialise Phase on a brand-new object.
 	if job.Status.Phase == "" {
-		job.Status.Phase = vmafxv1.VmafxJobPhasePending
-		if err := r.Status().Update(ctx, &job); err != nil {
-			logger.Error(err, "Failed to set initial phase to Pending")
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{RequeueAfter: jobPollInterval}, nil
+		return r.initialisePhase(ctx, &job)
 	}
 
 	// Terminal phases need no further action.
-	if job.Status.Phase == vmafxv1.VmafxJobPhaseSucceeded ||
-		job.Status.Phase == vmafxv1.VmafxJobPhaseFailed {
+	if isTerminalJobPhase(job.Status.Phase) {
 		return ctrl.Result{}, nil
 	}
 
@@ -119,11 +113,30 @@ func (r *VmafxJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		"controllerJobID", job.Status.ControllerJobID)
 
 	// Terminal phase reached — no requeue.
-	if job.Status.Phase == vmafxv1.VmafxJobPhaseSucceeded ||
-		job.Status.Phase == vmafxv1.VmafxJobPhaseFailed {
+	if isTerminalJobPhase(job.Status.Phase) {
 		return ctrl.Result{}, nil
 	}
 
+	return ctrl.Result{RequeueAfter: jobPollInterval}, nil
+}
+
+// isTerminalJobPhase reports whether a phase is one the reconciler will never move out of,
+// which is what tells Reconcile to stop requeueing the object.
+func isTerminalJobPhase(phase vmafxv1.VmafxJobPhase) bool {
+	return phase == vmafxv1.VmafxJobPhaseSucceeded || phase == vmafxv1.VmafxJobPhaseFailed
+}
+
+// initialisePhase stamps Pending on a brand-new object so every later pass has a phase to
+// branch on, then requeues to pick the job up once that write has landed.
+func (r *VmafxJobReconciler) initialisePhase(
+	ctx context.Context,
+	job *vmafxv1.VmafxJob,
+) (ctrl.Result, error) {
+	job.Status.Phase = vmafxv1.VmafxJobPhasePending
+	if err := r.Status().Update(ctx, job); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to set initial phase to Pending")
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{RequeueAfter: jobPollInterval}, nil
 }
 

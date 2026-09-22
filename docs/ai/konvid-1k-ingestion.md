@@ -34,7 +34,7 @@ corpus, the per-clip MOS values, or any derived per-clip statistics**
 the upstream source and place it locally:
 
 ```text
-.workingdir2/konvid-1k/
+.corpus/konvid-1k/
   ├── KoNViD_1k_videos/
   │     ├── 1.mp4
   │     ├── 2.mp4
@@ -43,8 +43,8 @@ the upstream source and place it locally:
         └── KoNViD_1k_attributes.csv
 ```
 
-Both paths are gitignored (`.workingdir2/` is the fork's standard
-research-data drop, see CLAUDE.md §5). The companion downloader
+Both paths are gitignored (`.corpus/` is the fork's standard
+research-data root, see AGENTS.md §5). The companion downloader
 [`ai/scripts/fetch_konvid_1k.py`](../../ai/scripts/fetch_konvid_1k.py)
 will fetch + extract everything to a similarly-shaped location under
 `$VMAF_DATA_ROOT/konvid-1k/`; the ingestion script accepts either
@@ -61,12 +61,12 @@ Dataset URL: <https://database.mmsp-kn.de/konvid-1k-database.html>
 The Phase 1 ingestion is a single transform:
 
 ```text
-   .workingdir2/konvid-1k/
+   .corpus/konvid-1k/
             │
             │  ai/scripts/konvid_1k_to_corpus_jsonl.py
             │      (ffprobe per clip + CSV MOS join)
             ▼
-   .workingdir2/konvid-1k/konvid_1k.jsonl
+   .corpus/konvid-1k/konvid_1k.jsonl
             │
             │  (Phase 3 — out of scope here, ADR-0325 §Phase 3)
             ▼
@@ -82,13 +82,13 @@ re-runs idempotent.
 
 ## 4. Run command
 
-After dropping the extracted KonViD-1k under `.workingdir2/konvid-1k/`:
+After dropping the extracted KonViD-1k under `.corpus/konvid-1k/`:
 
 ```bash
 python ai/scripts/konvid_1k_to_corpus_jsonl.py
 ```
 
-Default output path is `.workingdir2/konvid-1k/konvid_1k.jsonl`. Override
+Default output path is `.corpus/konvid-1k/konvid_1k.jsonl`. Override
 with `--output`. Override the input layout with `--konvid-dir`. Override
 the ffprobe binary with `--ffprobe-bin` (also picked up from
 `$FFPROBE_BIN`).
@@ -167,7 +167,7 @@ across machines produce identical hashes for identical clips.
 CI cannot retrain end-to-end (the corpus is non-redistributable). The
 adapter is exercised by [`ai/tests/test_konvid_1k.py`](../../ai/tests/test_konvid_1k.py),
 which mocks ffprobe via a synthesised JSON payload and stands up a
-temporary `.workingdir2/konvid-1k/`-shaped tree on disk. The tests run
+temporary `.corpus/konvid-1k/`-shaped tree on disk. The tests run
 in well under one second and require neither ffprobe nor the corpus.
 
 ## 8. Operational notes

@@ -164,25 +164,34 @@ func (r *Registry) Infer(ctx context.Context, modelName string, inputs []float64
 	cmd.WaitDelay = 2 * time.Second
 	out, runErr := cmd.Output()
 	if runErr != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, fmt.Errorf("ai: vmafx-ort-runner cancelled: %w (run err: %v)", ctxErr, runErr)
-		}
-		// The runner explains itself on stderr ("libvmaf was built without
-		// DNN support", "model not found", ...); cmd.Output captured it, so
-		// surface it instead of a bare "exit status N".
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			if msg := strings.TrimSpace(string(exitErr.Stderr)); msg != "" {
-				return nil, fmt.Errorf("ai: vmafx-ort-runner failed: %w: %s", runErr, msg)
-			}
-		}
-		return nil, fmt.Errorf("ai: vmafx-ort-runner failed: %w", runErr)
+		return nil, explainRunnerFailure(ctx, runErr)
 	}
 
 	if err := json.Unmarshal(out, &outputs); err != nil {
 		return nil, fmt.Errorf("ai: parse ort-runner output: %w; raw=%s", err, string(out))
 	}
 	return outputs, nil
+}
+
+// explainRunnerFailure turns a vmafx-ort-runner exec failure into the error
+// the caller sees.
+//
+// The runner explains itself on stderr ("libvmaf was built without DNN
+// support", "model not found", ...) and cmd.Output captured it, so that text
+// is surfaced instead of a bare "exit status N". A cancelled context takes
+// precedence: it tells the caller we killed the runner rather than that the
+// runner failed.
+func explainRunnerFailure(ctx context.Context, runErr error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("ai: vmafx-ort-runner cancelled: %w (run err: %v)", ctxErr, runErr)
+	}
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		if msg := strings.TrimSpace(string(exitErr.Stderr)); msg != "" {
+			return fmt.Errorf("ai: vmafx-ort-runner failed: %w: %s", runErr, msg)
+		}
+	}
+	return fmt.Errorf("ai: vmafx-ort-runner failed: %w", runErr)
 }
 
 // ErrORTRunnerNotFound is returned by Infer when vmafx-ort-runner is absent

@@ -73,6 +73,20 @@ fails (older kernel without Level Zero VA import, or a DRM render node
 mismatch), re-run with `--fallback` to confirm the SYCL backend itself
 is healthy and isolate the issue to the import path.
 
+A single `vmaf_vpl` frame decode is capped at 60 000
+`DecodeFrameAsync` attempts. On a device that keeps reporting
+`MFX_WRN_DEVICE_BUSY` the attempts are 1 ms apart, so the cap is the
+same 60 s ceiling the tool already gives each sync operation; attempts
+that only refill the bitstream do not sleep and are charged against the
+same budget, so the bound is on attempts rather than exactly on wall
+clock. On exhaustion the tool prints `DecodeFrameAsync yielded no frame
+after 60000 attempts`, reports `Decode error at frame N` and stops,
+instead of retrying a wedged device forever. The ceiling has not been
+exercised against real Intel hardware — see
+`T-VPL-DECODE-CEILING-UNVERIFIED-2026-09-21` in
+[state.md](../state.md) and
+[ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md).
+
 ## Status
 
 The tool tracks ADR-0183 (FFmpeg `libvmaf_sycl` filter) — both share

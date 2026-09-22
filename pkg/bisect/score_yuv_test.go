@@ -8,7 +8,6 @@
 package bisect
 
 import (
-	"github.com/VMAFx/vmafx/pkg/model"
 	"math"
 	"reflect"
 	"strings"
@@ -48,23 +47,6 @@ func TestBitdepthFor(t *testing.T) {
 	for in, want := range cases {
 		if got := bitdepthFor(in); got != want {
 			t.Errorf("bitdepthFor(%q) = %d, want %d", in, got, want)
-		}
-	}
-}
-
-func TestModelArg(t *testing.T) {
-	t.Parallel()
-	cases := map[string]string{
-		"vmaf_v0.6.1":            "version=vmaf_v0.6.1",
-		"vmaf_v0.6.1neg":         "version=vmaf_v0.6.1neg",
-		"path=/abs/model.json":   "path=/abs/model.json",
-		"version=vmaf_4k_v0.6.1": "version=vmaf_4k_v0.6.1",
-		// An empty model falls back to the production default (ADR-1169).
-		"": "version=" + model.DefaultVersion,
-	}
-	for in, want := range cases {
-		if got := modelArg(in); got != want {
-			t.Errorf("modelArg(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

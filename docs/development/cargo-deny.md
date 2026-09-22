@@ -68,13 +68,14 @@ The three most common cases:
 
 ## Notes on the workspace's own licenses
 
-- `vmafx-sys` declares `BSD-3-Clause` — recognised by cargo-deny's
-  SPDX parser, so it passes the license check directly.
-- `vmafx-tad` declares `BSD-3-Clause-Plus-Patent`. The SPDX short
-  identifier exists but cargo-deny's parser does not recognise it
-  yet, so the crate is marked `publish = false` to fall under
-  `[licenses.private] ignore = true`. If you add a new pilot crate
-  using the fork license, follow the same pattern.
+- `vmafx-sys` and `vmafx-tad` both inherit the workspace
+  `license = "BSD-2-Clause-Patent"` — a valid SPDX identifier that
+  cargo-deny's parser recognises and that `deny.toml` allows
+  (ADR-1036), so they pass the license check directly.
+- `vmafx-tad` is additionally marked `publish = false`: it is an
+  internal pilot crate consumed via Meson (ADR-0707), and that also
+  places it under `[licenses.private] ignore = true`. If you add a
+  new pilot crate, follow the same pattern.
 
 ## Related
 

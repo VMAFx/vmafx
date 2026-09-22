@@ -46,7 +46,7 @@ upstream training recipe (per the U-2-Net paper) is:
 
 For a fork-trained alternative on the same DUTS-TR corpus see
 [`saliency_student_v2`](saliency_student_v2.md) — that model is smaller,
-fork-owned, and ships under BSD-3-Clause-Plus-Patent rather than
+fork-owned, and ships under BSD-2-Clause-Patent rather than
 Apache-2.0.
 
 ## 3. ONNX op-allowlist coverage

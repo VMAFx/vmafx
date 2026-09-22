@@ -21,7 +21,7 @@
  * entry points are called, so it runs safely on the CI macOS runner even
  * when no Apple-Family-7 device is present.
  *
- * Meson guard in `libvmaf/test/meson.build`:
+ * Meson guard in `core/test/meson.build`:
  *   `if host_machine.system() == 'darwin'` — not built on Linux/Windows.
  */
 

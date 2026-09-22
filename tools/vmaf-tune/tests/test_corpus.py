@@ -528,14 +528,14 @@ def _make_runners(*, scores_by_crf):
     return fake_encode, fake_score
 
 
-def test_coarse_to_fine_canonical_visits_15_points(tmp_path: Path):
-    """Coarse-to-fine with target=92 visits exactly 5 + 10 = 15 encodes."""
-    src = _make_yuv(tmp_path / "ref.yuv")
-    # Synthesise scores: monotone-decreasing in CRF; target=92 gates at ~CRF 5,
-    # but we want best-coarse to be 30 to exercise refinement around the middle.
+def _canonical_c2f_scores() -> dict[int, float]:
+    """CRF->VMAF table where the best coarse point is CRF 30.
+
+    Monotone-decreasing in CRF, arranged so the coarse pass (10/20/30/40/50)
+    finds 30 as the highest CRF still clearing target 92 — which puts the
+    refinement window in the middle of the axis rather than at an edge.
+    """
     scores = {c: _crf_to_score(c) for c in range(52)}
-    # Make CRF=30 score exactly 95 (passes target=92), CRF=40 score 85 (fails).
-    # That makes best-coarse = 30 (highest CRF still passing).
     scores[10] = 99.0
     scores[20] = 96.0
     scores[30] = 92.5  # <- highest passing
@@ -545,8 +545,17 @@ def test_coarse_to_fine_canonical_visits_15_points(tmp_path: Path):
         scores[c] = 92.5 + (30 - c) * 0.2  # passes
     for c in range(31, 40):
         scores[c] = 92.5 - (c - 30) * 0.5  # 31:92.0 ... 35:90.0 ... 39:88.0
+    return scores
 
-    enc_run, score_run = _make_runners(scores_by_crf=scores)
+
+# 5 coarse (10/20/30/40/50) + 10 fine (25..29, 31..35) around the best = 15.
+_CANONICAL_C2F_CRFS = [10, 20, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 40, 50]
+
+
+def test_coarse_to_fine_canonical_visits_15_points(tmp_path: Path):
+    """Coarse-to-fine with target=92 visits exactly 5 + 10 = 15 encodes."""
+    src = _make_yuv(tmp_path / "ref.yuv")
+    enc_run, score_run = _make_runners(scores_by_crf=_canonical_c2f_scores())
 
     job = CorpusJob(
         source=src,
@@ -575,24 +584,7 @@ def test_coarse_to_fine_canonical_visits_15_points(tmp_path: Path):
 
     assert len(rows) == 15, f"expected 15 visited encodes, got {len(rows)}"
     visited_crfs = sorted({int(r["crf"]) for r in rows})
-    # 5 coarse + 10 fine (25..29, 31..35) = 15 unique CRFs around the best=30
-    assert visited_crfs == [
-        10,
-        20,
-        25,
-        26,
-        27,
-        28,
-        29,
-        30,
-        31,
-        32,
-        33,
-        34,
-        35,
-        40,
-        50,
-    ]
+    assert visited_crfs == _CANONICAL_C2F_CRFS
 
 
 def test_coarse_to_fine_one_pass_shortcut_when_coarse_max_meets_target(tmp_path: Path):

@@ -42,7 +42,7 @@ def _sidecar(path: Path, **overrides) -> None:
         "name": path.stem,
         "kind": "fr",
         "dataset": "netflix-public-v1",
-        "license": "BSD-3-Clause-Plus-Patent",
+        "license": "BSD-2-Clause-Patent",
         "train_commit": "deadbeef",
         "input_names": ["features"],
         "output_names": ["score"],

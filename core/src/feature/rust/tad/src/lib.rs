@@ -44,7 +44,7 @@ use std::os::raw::{c_char, c_double, c_int, c_uint, c_void};
 
 /// Opaque handle for the libvmaf picture buffer (`VmafPicture`).
 /// We only read width, height, stride, bpc, and data[0] (luma plane).
-/// The layout must match `libvmaf/include/libvmaf/picture.h`.
+/// The layout must match `core/include/libvmaf/picture.h`.
 #[repr(C)]
 pub struct VmafPicture {
     /// `pix_fmt` enum (ignored by TAD — we only touch luma plane 0)
@@ -156,6 +156,7 @@ pub unsafe extern "C" fn vmafx_tad_extract(
         return -22; /* EINVAL */
     }
 
+    // SAFETY: null checks above establish live pointers supplied by libvmaf for this call.
     let (state, ref_p, dis_p) = unsafe { (&*state_ptr.cast::<TadState>(), &*ref_pic, &*dis_pic) };
 
     let w = ref_p.w[0] as usize;
@@ -166,6 +167,7 @@ pub unsafe extern "C" fn vmafx_tad_extract(
         return -22;
     }
 
+    // SAFETY: validated libvmaf pictures expose luma planes covering their declared dimensions.
     let sad: u64 = unsafe { compute_sad(ref_p, dis_p, w, h, peak) };
 
     // Normalise to [0.0, 1.0].
@@ -177,6 +179,7 @@ pub unsafe extern "C" fn vmafx_tad_extract(
     #[allow(clippy::cast_precision_loss)]
     let tad: f64 = sad as f64 / (n_pixels * f64::from(peak));
 
+    // SAFETY: the collector is live and the feature name is a static NUL-terminated C string.
     let mut err = unsafe {
         vmaf_feature_collector_append(
             feature_collector,
@@ -193,6 +196,7 @@ pub unsafe extern "C" fn vmafx_tad_extract(
     // as above — sub-ULP rounding is acceptable for a debug signal.
     #[allow(clippy::cast_precision_loss)]
     let sad_f64 = sad as f64;
+    // SAFETY: the collector is live and the feature name is a static NUL-terminated C string.
     err = unsafe {
         vmaf_feature_collector_append(
             feature_collector,
@@ -231,6 +235,7 @@ pub unsafe extern "C" fn vmafx_tad_close(state_ptr: *mut c_void) -> c_int {
 /// # Safety
 /// Caller must ensure `ref_pic.data[0]` and `dis_pic.data[0]` are valid for
 /// `h * stride` bytes and contain `w * h` valid samples.
+// SAFETY: callers must provide the valid, dimensioned luma planes documented above.
 unsafe fn compute_sad(
     ref_pic: &VmafPicture,
     dis_pic: &VmafPicture,
@@ -252,7 +257,9 @@ unsafe fn compute_sad(
 
         for row in 0..h {
             for col in 0..w {
+                // SAFETY: the caller guarantees a luma allocation covering every indexed sample.
                 let r = i32::from(unsafe { *ref_data.add(row * ref_stride + col) });
+                // SAFETY: the caller guarantees a luma allocation covering every indexed sample.
                 let d = i32::from(unsafe { *dis_data.add(row * dis_stride + col) });
                 sad += u64::from((r - d).unsigned_abs());
             }
@@ -269,7 +276,9 @@ unsafe fn compute_sad(
 
         for row in 0..h {
             for col in 0..w {
+                // SAFETY: the caller guarantees a luma allocation covering every indexed sample.
                 let r = i32::from(unsafe { *ref_data.add(row * ref_stride + col) });
+                // SAFETY: the caller guarantees a luma allocation covering every indexed sample.
                 let d = i32::from(unsafe { *dis_data.add(row * dis_stride + col) });
                 sad += u64::from((r - d).unsigned_abs());
             }
@@ -321,6 +330,7 @@ mod tests {
     fn identical_frames_give_zero_sad() {
         let (ref_pic, _r_buf) = make_pic_8bit(4, 4, 128);
         let (dis_pic, _d_buf) = make_pic_8bit(4, 4, 128);
+        // SAFETY: both test buffers own exactly the 4x4 luma planes described by their pictures.
         let sad = unsafe { compute_sad(&ref_pic, &dis_pic, 4, 4, 255) };
         assert_eq!(sad, 0);
     }
@@ -330,6 +340,7 @@ mod tests {
         // ref all-0, dis all-255 → each pixel contributes 255.
         let (ref_pic, _r_buf) = make_pic_8bit(4, 4, 0);
         let (dis_pic, _d_buf) = make_pic_8bit(4, 4, 255);
+        // SAFETY: both test buffers own exactly the 4x4 luma planes described by their pictures.
         let sad = unsafe { compute_sad(&ref_pic, &dis_pic, 4, 4, 255) };
         assert_eq!(sad, 4 * 4 * 255);
     }
@@ -339,6 +350,7 @@ mod tests {
         // ref all-100, dis all-101 → each pixel contributes 1.
         let (ref_pic, _r_buf) = make_pic_8bit(8, 8, 100);
         let (dis_pic, _d_buf) = make_pic_8bit(8, 8, 101);
+        // SAFETY: both test buffers own exactly the 8x8 luma planes described by their pictures.
         let sad = unsafe { compute_sad(&ref_pic, &dis_pic, 8, 8, 255) };
         assert_eq!(sad, 64);
     }
@@ -348,6 +360,7 @@ mod tests {
         // Max diff: normalised TAD should equal 1.0.
         let (ref_pic, _r_buf) = make_pic_8bit(2, 2, 0);
         let (dis_pic, _d_buf) = make_pic_8bit(2, 2, 255);
+        // SAFETY: both test buffers own exactly the 2x2 luma planes described by their pictures.
         let sad = unsafe { compute_sad(&ref_pic, &dis_pic, 2, 2, 255) };
         let n_pixels = 4_f64;
         let tad = sad as f64 / (n_pixels * 255_f64);
@@ -359,6 +372,7 @@ mod tests {
         // ref all-0, dis all-128 → TAD ≈ 128/255 ≈ 0.502.
         let (ref_pic, _r_buf) = make_pic_8bit(4, 4, 0);
         let (dis_pic, _d_buf) = make_pic_8bit(4, 4, 128);
+        // SAFETY: both test buffers own exactly the 4x4 luma planes described by their pictures.
         let sad = unsafe { compute_sad(&ref_pic, &dis_pic, 4, 4, 255) };
         let tad = sad as f64 / (16.0 * 255.0);
         assert!((tad - 128.0 / 255.0).abs() < 1e-12);

@@ -4,7 +4,7 @@
  *
  *  SYCL dispatch_strategy — translates a per-feature descriptor into a
  *  SYCL submission strategy (direct submit vs graph replay). Consumed
- *  from libvmaf/src/sycl/common.cpp; replaces the inline
+ *  from core/src/sycl/common.cpp; replaces the inline
  *  GRAPH_AREA_THRESHOLD logic. See ADR-0181.
  */
 #ifndef LIBVMAF_SYCL_DISPATCH_STRATEGY_H_

@@ -120,6 +120,14 @@ Example:
     --target-vmaf 93 --encoder libx264 --preset medium \
     --output fast.json`
 
+	registerFastFlags(cmd, flags)
+	markCommandFlagsRequired(cmd, "target-vmaf")
+
+	return cmd
+}
+
+// registerFastFlags binds all fast-subcommand flags onto cmd.
+func registerFastFlags(cmd *cobra.Command, flags *fastFlags) {
 	cmd.Flags().StringVar(&flags.src, "src", "",
 		"Source video (raw YUV or any ffmpeg-readable container); required unless --smoke")
 	cmd.Flags().IntVar(&flags.width, "width", 0,
@@ -160,14 +168,10 @@ Example:
 		"Path to the libvmaf CLI binary")
 	cmd.Flags().StringVar(&flags.vmafModel, "vmaf-model", model.DefaultVersion,
 		"vmaf model version string")
-	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir2/fast",
+	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir/cache/vmafx-tune/fast",
 		"Scratch dir for probe + verify encodes")
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "",
 		"JSON destination for the recommendation payload (default: stdout)")
-
-	_ = cmd.MarkFlagRequired("target-vmaf")
-
-	return cmd
 }
 
 // runFast drives the fast subcommand end to end and emits the JSON payload.
@@ -222,7 +226,14 @@ func runFast(ctx context.Context, d deps, flags *fastFlags) error {
 		return err
 	}
 	result.ScoreBackend = selectedBackend
+	return writeFastResult(ctx, d, flags, result)
+}
 
+// writeFastResult serialises result, writes or prints the payload, logs
+// completion, and returns exitOOD when the proxy/verify gap exceeds tolerance.
+func writeFastResult(
+	ctx context.Context, d deps, flags *fastFlags, result fast.RecommendResult,
+) error {
 	rendered, marshalErr := json.MarshalIndent(result, "", "  ")
 	if marshalErr != nil {
 		return fmt.Errorf("render fast recommendation: %w", marshalErr)

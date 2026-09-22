@@ -278,77 +278,8 @@ func selectRenditions(hull []Point, maxRungs int, minBitrateGapKbps float64) []R
 		maxRungs = DefaultMaxRungs
 	}
 
-	// Normalisation bounds.
-	minB, maxB := hull[0].BitratekBps, hull[len(hull)-1].BitratekBps
-	minV := hull[0].VMAF
-	maxV := hull[0].VMAF
-	for _, p := range hull {
-		if p.VMAF < minV {
-			minV = p.VMAF
-		}
-		if p.VMAF > maxV {
-			maxV = p.VMAF
-		}
-	}
-	normB := func(b float64) float64 {
-		if maxB == minB {
-			return 0
-		}
-		return (b - minB) / (maxB - minB)
-	}
-	normV := func(v float64) float64 {
-		if maxV == minV {
-			return 0
-		}
-		return (v - minV) / (maxV - minV)
-	}
-
-	// Recursive knee search over an index range [lo, hi].
-	type indexRange struct{ lo, hi int }
-	selected := make(map[int]bool)
-	// Always include the endpoints.
-	selected[0] = true
-	selected[len(hull)-1] = true
-
-	queue := []indexRange{{0, len(hull) - 1}}
-	for len(queue) > 0 && len(selected) < maxRungs {
-		r := queue[0]
-		queue = queue[1:]
-		if r.hi-r.lo <= 1 {
-			continue
-		}
-
-		// Find interior point with maximum perpendicular distance from
-		// the chord [r.lo, r.hi].
-		ax, ay := normB(hull[r.lo].BitratekBps), normV(hull[r.lo].VMAF)
-		bx, by := normB(hull[r.hi].BitratekBps), normV(hull[r.hi].VMAF)
-		dx, dy := bx-ax, by-ay
-		chordLen := math.Hypot(dx, dy)
-
-		bestIdx := -1
-		bestDist := -1.0
-		for i := r.lo + 1; i < r.hi; i++ {
-			px, py := normB(hull[i].BitratekBps), normV(hull[i].VMAF)
-			var dist float64
-			if chordLen < 1e-12 {
-				dist = math.Hypot(px-ax, py-ay)
-			} else {
-				// Perpendicular distance from point to the chord line.
-				dist = math.Abs(dy*(px-ax)-dx*(py-ay)) / chordLen
-			}
-			if dist > bestDist {
-				bestDist = dist
-				bestIdx = i
-			}
-		}
-		if bestIdx < 0 {
-			continue
-		}
-
-		selected[bestIdx] = true
-		queue = append(queue, indexRange{r.lo, bestIdx})
-		queue = append(queue, indexRange{bestIdx, r.hi})
-	}
+	norm := newHullNormaliser(hull)
+	selected := selectKneeIndices(hull, norm, maxRungs)
 
 	// Collect and sort selected indices.
 	indices := make([]int, 0, len(selected))
@@ -372,6 +303,107 @@ func selectRenditions(hull []Point, maxRungs int, minBitrateGapKbps float64) []R
 	})
 
 	return renditions
+}
+
+// hullNormaliser maps a hull's bitrate and VMAF axes onto [0,1] so the knee
+// distances below are comparable across two units. A degenerate axis (every
+// point equal) collapses to 0 rather than dividing by zero.
+type hullNormaliser struct {
+	minB, maxB float64
+	minV, maxV float64
+}
+
+// newHullNormaliser derives the normalisation bounds from the hull. Bitrate is
+// monotonically increasing along the hull, so its bounds are the endpoints;
+// VMAF is scanned.
+func newHullNormaliser(hull []Point) hullNormaliser {
+	n := hullNormaliser{
+		minB: hull[0].BitratekBps,
+		maxB: hull[len(hull)-1].BitratekBps,
+		minV: hull[0].VMAF,
+		maxV: hull[0].VMAF,
+	}
+	for _, p := range hull {
+		if p.VMAF < n.minV {
+			n.minV = p.VMAF
+		}
+		if p.VMAF > n.maxV {
+			n.maxV = p.VMAF
+		}
+	}
+	return n
+}
+
+// bitrate maps a bitrate onto [0,1].
+func (n hullNormaliser) bitrate(b float64) float64 {
+	if n.maxB == n.minB {
+		return 0
+	}
+	return (b - n.minB) / (n.maxB - n.minB)
+}
+
+// vmaf maps a VMAF score onto [0,1].
+func (n hullNormaliser) vmaf(v float64) float64 {
+	if n.maxV == n.minV {
+		return 0
+	}
+	return (v - n.minV) / (n.maxV - n.minV)
+}
+
+// selectKneeIndices runs the knee search over the hull, returning the chosen
+// index set. The endpoints are always in it; each further rung is the interior
+// point furthest from the chord of the segment it splits, and the two
+// sub-segments are queued behind it until maxRungs is reached.
+//
+// The search is a work queue rather than recursion: every segment it queues is
+// strictly shorter than the one it came from, and the queue drains.
+func selectKneeIndices(hull []Point, norm hullNormaliser, maxRungs int) map[int]bool {
+	type indexRange struct{ lo, hi int }
+	selected := map[int]bool{0: true, len(hull) - 1: true}
+
+	queue := []indexRange{{0, len(hull) - 1}}
+	for len(queue) > 0 && len(selected) < maxRungs {
+		r := queue[0]
+		queue = queue[1:]
+		if r.hi-r.lo <= 1 {
+			continue
+		}
+		bestIdx := farthestFromChord(hull, norm, r.lo, r.hi)
+		if bestIdx < 0 {
+			continue
+		}
+		selected[bestIdx] = true
+		queue = append(queue, indexRange{r.lo, bestIdx}, indexRange{bestIdx, r.hi})
+	}
+	return selected
+}
+
+// farthestFromChord returns the interior index between lo and hi with the
+// greatest perpendicular distance from the chord joining them, or -1 when the
+// span has no interior point. A degenerate chord falls back to the plain
+// distance from its start point.
+func farthestFromChord(hull []Point, norm hullNormaliser, lo, hi int) int {
+	ax, ay := norm.bitrate(hull[lo].BitratekBps), norm.vmaf(hull[lo].VMAF)
+	bx, by := norm.bitrate(hull[hi].BitratekBps), norm.vmaf(hull[hi].VMAF)
+	dx, dy := bx-ax, by-ay
+	chordLen := math.Hypot(dx, dy)
+
+	bestIdx := -1
+	bestDist := -1.0
+	for i := lo + 1; i < hi; i++ {
+		px, py := norm.bitrate(hull[i].BitratekBps), norm.vmaf(hull[i].VMAF)
+		var dist float64
+		if chordLen < 1e-12 {
+			dist = math.Hypot(px-ax, py-ay)
+		} else {
+			dist = math.Abs(dy*(px-ax)-dx*(py-ay)) / chordLen
+		}
+		if dist > bestDist {
+			bestDist = dist
+			bestIdx = i
+		}
+	}
+	return bestIdx
 }
 
 // toRendition converts a Point to a Rendition.

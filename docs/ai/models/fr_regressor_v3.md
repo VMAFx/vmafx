@@ -241,7 +241,7 @@ real Phase-A training result.
 | Input | `features` `[N, 6]`, `codec_block` `[N, 18]` |
 | Output | `vmaf` `[N]` |
 | ONNX opset | 17 |
-| License | BSD-3-Clause-Plus-Patent |
+| License | BSD-2-Clause-Patent |
 | Registry entry | `fr_regressor_v3` in `model/tiny/registry.json` (`"smoke": false`) |
 | SHA-256 | `eaa16d23461eda74940b2ed590edfcaf13428aade294e47792a5a15f4d3b999c` |
 

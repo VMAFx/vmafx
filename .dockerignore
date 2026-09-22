@@ -8,11 +8,12 @@ python/.tox
 *.yuv
 *.mov
 
-# Local-only state dirs — without these the dev-MCP build context balloons
-# to ~52 GB on dev hosts that hold the .workingdir2/ corpora (KonViD-150k
-# 179 GB + CHUG 37 GB + scratch).
-.workingdir2/
+# Local-only state — without this the dev-MCP build context can include
+# machine-local evidence, recovery bundles, and scratch output. The retired
+# numbered root stays visible to Git but remains excluded here as a defensive
+# boundary for stale worktrees that have not yet completed local migration.
 .workingdir/
+.workingdir2/
 .claude/
 
 # Corpora / training data (can exceed 1 TB on developer hosts)

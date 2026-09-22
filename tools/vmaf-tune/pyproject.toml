@@ -40,6 +40,7 @@ packages = ["src/vmaftune"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = ["error"]
 markers = [
     # Tests >30 s wall (or that exercise real GPUs / containers and may grow
     # past 30 s). Exclude with `pytest -m 'not slow'` for fast iteration.

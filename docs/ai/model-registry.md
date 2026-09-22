@@ -23,7 +23,7 @@ formalised the schema and wired `--tiny-model-verify` to `cosign verify-blob`.
       "quant_mode": "dynamic",             // fp32 | dynamic | static | qat
       "int8_sha256": "1cff6fe…2d3",
       "quant_accuracy_budget_plcc": 0.01,
-      "license": "BSD-3-Clause-Plus-Patent",
+      "license": "BSD-2-Clause-Patent",
       "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
       "sigstore_bundle": "learned_filter_v1.onnx.sigstore.json",
       "description": "Tiny residual filter for vmaf_pre — degraded → clean luma.",
@@ -47,7 +47,7 @@ Fields documented inline; key invariants:
   runtime verifier (`--tiny-model-verify`) treats absence as a fail-closed
   signal.
 - `license` is an SPDX identifier when possible; for fork-trained models
-  this is `BSD-3-Clause-Plus-Patent` (matches libvmaf). Upstream-derived
+  this is `BSD-2-Clause-Patent` (matches libvmaf). Upstream-derived
   models carry the upstream license verbatim (e.g. LPIPS-Sq is `BSD-2-Clause`).
 
 ## Validating the registry

@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_LOG_H__
-#define __VMAF_SRC_LOG_H__
+#ifndef VMAF_SRC_LOG_H_
+#define VMAF_SRC_LOG_H_
 
 #include "libvmaf/libvmaf.h"
 
@@ -50,4 +50,4 @@ void vmaf_log(enum VmafLogLevel log_level, const char *fmt, ...);
 } /* extern "C" */
 #endif
 
-#endif /* __VMAF_SRC_LOG_H__ */
+#endif /* VMAF_SRC_LOG_H_ */

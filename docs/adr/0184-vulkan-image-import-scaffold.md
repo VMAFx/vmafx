@@ -134,7 +134,7 @@ because its call path needs the implementation to exist.
 ## References
 
 - Source: T7-29 in
-  [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md);
+  `.workingdir2/BACKLOG.md`;
   exposed as the symmetric gap to T7-28 by PR #126 review.
 - Pattern parent: [ADR-0175](0175-vulkan-backend-scaffold.md)
   (original Vulkan scaffold-first decision); [ADR-0183](0183-ffmpeg-libvmaf-sycl-filter.md)

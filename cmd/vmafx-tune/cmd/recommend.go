@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/VMAFx/vmafx/pkg/model"
 	"io"
 	"math"
 	"os"
@@ -22,6 +21,7 @@ import (
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
 	"github.com/VMAFx/vmafx/pkg/corpusrow"
 	"github.com/VMAFx/vmafx/pkg/ffencode"
+	"github.com/VMAFx/vmafx/pkg/model"
 	"github.com/VMAFx/vmafx/pkg/pyjson"
 	"github.com/VMAFx/vmafx/pkg/recommend"
 	"github.com/VMAFx/vmafx/pkg/scorecli"
@@ -64,17 +64,7 @@ type recommendFlags struct {
 	jsonOutput    bool
 }
 
-// newRecommendCmd builds the "recommend" cobra subcommand.
-func newRecommendCmd() *cobra.Command {
-	flags := &recommendFlags{}
-
-	cmd := clikit.Command("recommend",
-		"Find the smallest CRF whose VMAF meets --target-vmaf",
-		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
-			return runRecommend(ctx, d, flags)
-		})),
-	)
-	cmd.Long = `Pick the CRF that meets a quality or bitrate target.
+const recommendLong = `Pick the CRF that meets a quality or bitrate target.
 
 Two modes:
 
@@ -107,6 +97,23 @@ Examples:
     --source src.yuv --width 1920 --height 1080 --preset medium \
     --target-vmaf 93 --output corpus.jsonl`
 
+// newRecommendCmd builds the "recommend" cobra subcommand.
+func newRecommendCmd() *cobra.Command {
+	flags := &recommendFlags{}
+	cmd := clikit.Command("recommend",
+		"Find the smallest CRF whose VMAF meets --target-vmaf",
+		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
+			return runRecommend(ctx, d, flags)
+		})),
+	)
+	cmd.Long = recommendLong
+	addRecommendInputFlags(cmd, flags)
+	addRecommendSearchFlags(cmd, flags)
+	addRecommendSelectionFlags(cmd, flags)
+	return cmd
+}
+
+func addRecommendInputFlags(cmd *cobra.Command, flags *recommendFlags) {
 	cmd.Flags().StringArrayVar(&flags.sources, "source", nil,
 		"Reference video (repeatable); required unless --from-corpus is used")
 	cmd.Flags().IntVar(&flags.width, "width", 0, "Raw-YUV reference width")
@@ -121,7 +128,7 @@ Examples:
 		"Encoder preset (repeatable); required unless --from-corpus is used")
 	cmd.Flags().StringVar(&flags.output, "output", "corpus.jsonl",
 		"JSONL destination for the visited points")
-	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir2/encodes",
+	cmd.Flags().StringVar(&flags.encodeDir, "encode-dir", ".workingdir/cache/vmafx-tune/encodes",
 		"Scratch directory for the probe encodes")
 	cmd.Flags().BoolVar(&flags.keepEncodes, "keep-encodes", false,
 		"Keep the encoded artefacts instead of deleting them after scoring")
@@ -133,7 +140,9 @@ Examples:
 		"libvmaf scoring backend: auto, cpu, cuda, sycl, hip")
 	cmd.Flags().BoolVar(&flags.noSourceHash, "no-source-hash", false,
 		"Skip the source SHA-256 (faster on very large sources)")
+}
 
+func addRecommendSearchFlags(cmd *cobra.Command, flags *recommendFlags) {
 	cmd.Flags().BoolVar(&flags.coarseToFine, "coarse-to-fine", false,
 		"Run the 2-pass coarse-then-fine CRF search (always on for recommend)")
 	cmd.Flags().IntVar(&flags.coarseStep, "coarse-step", 10,
@@ -143,7 +152,9 @@ Examples:
 	cmd.Flags().IntVar(&flags.fineStep, "fine-step", 1, "CRF step for the fine pass")
 	cmd.Flags().Float64Var(&flags.targetVMAF, "target-vmaf", math.NaN(),
 		"Target VMAF score; the smallest CRF whose score meets it wins")
+}
 
+func addRecommendSelectionFlags(cmd *cobra.Command, flags *recommendFlags) {
 	cmd.Flags().BoolVar(&flags.withUncertainty, "with-uncertainty", false,
 		"Consume conformal prediction intervals when picking the CRF (ADR-0279)")
 	cmd.Flags().StringVar(&flags.uncertaintySidecar, "uncertainty-sidecar", "",
@@ -155,8 +166,6 @@ Examples:
 		"With --from-corpus: pick the row whose bitrate is closest to this (kbps)")
 	cmd.Flags().BoolVar(&flags.jsonOutput, "json", false,
 		"Emit the recommendation as a single JSON object on stdout")
-
-	return cmd
 }
 
 // runRecommend dispatches to the corpus-pick or the encode-driven path.
@@ -181,60 +190,18 @@ func runRecommendFromCorpus(ctx context.Context, d deps, flags *recommendFlags) 
 	if err != nil {
 		return err
 	}
-
-	targetVMAF := optionalFloat(flags.targetVMAF)
-	targetBitrate := optionalFloat(flags.targetBitrate)
-	if targetVMAF != nil && targetBitrate != nil {
-		return errors.New("--target-vmaf and --target-bitrate are mutually exclusive")
+	targetVMAF, targetBitrate, targetErr := recommendTargets(flags)
+	if targetErr != nil {
+		return targetErr
 	}
-
-	preset := ""
-	if len(flags.presets) > 0 {
-		preset = flags.presets[0]
+	if corpusUsesUncertainty(ctx, d, flags, targetBitrate) && targetVMAF != nil {
+		return emitCorpusUncertaintyPick(d, flags, rows, *targetVMAF)
 	}
-
-	withUncertainty := flags.withUncertainty
-	if withUncertainty && targetBitrate != nil {
-		// No interval-aware bitrate predicate exists, so fall through to the
-		// point estimate rather than silently ignoring one of the two flags.
-		d.Log.WarnContext(ctx,
-			"--with-uncertainty is not supported with --target-bitrate; "+
-				"falling back to the point estimate")
-		withUncertainty = false
-	}
-
-	if withUncertainty && targetVMAF != nil {
-		thresholds := uncertainty.LoadThresholds(flags.uncertaintySidecar, d.Log)
-		result, pickErr := recommend.PickTargetVMAFWithUncertainty(rows,
-			recommend.UncertaintyRequest{
-				TargetVMAF: *targetVMAF,
-				Thresholds: thresholds,
-				Encoder:    flags.encoder,
-				Preset:     preset,
-			})
-		if pickErr != nil {
-			return pickErr
-		}
-		if flags.jsonOutput {
-			return emitRowJSON(result.Row)
-		}
-		status := "OK"
-		if result.Margin < 0 {
-			status = "UNMET"
-		}
-		_, printErr := fmt.Printf(
-			"crf=%v  vmaf=%.3f  kbps=%.0f  predicate=%s  decision=%s  visited=%d/%d  [%s]\n",
-			result.Row["crf"], rowFloat(result.Row, "vmaf_score"),
-			rowFloat(result.Row, "bitrate_kbps"), result.Predicate,
-			result.Decision, result.Visited, len(rows), status)
-		return printErr
-	}
-
 	pick, pickErr := recommend.Recommend(rows, recommend.Request{
 		TargetVMAF:        targetVMAF,
 		TargetBitrateKbps: targetBitrate,
 		Encoder:           flags.encoder,
-		Preset:            preset,
+		Preset:            firstPreset(flags.presets),
 	})
 	if pickErr != nil {
 		return pickErr
@@ -242,14 +209,71 @@ func runRecommendFromCorpus(ctx context.Context, d deps, flags *recommendFlags) 
 	if flags.jsonOutput {
 		return emitRowJSON(pick.Row)
 	}
-	status := "OK"
-	if pick.Margin < 0 {
-		status = "UNMET"
-	}
+	status := recommendationStatus(pick.Margin)
 	_, printErr := fmt.Printf("crf=%v  vmaf=%.3f  kbps=%.0f  predicate=%s  [%s]\n",
 		pick.Row["crf"], rowFloat(pick.Row, "vmaf_score"),
 		rowFloat(pick.Row, "bitrate_kbps"), pick.Predicate, status)
 	return printErr
+}
+
+func recommendTargets(flags *recommendFlags) (*float64, *float64, error) {
+	targetVMAF := optionalFloat(flags.targetVMAF)
+	targetBitrate := optionalFloat(flags.targetBitrate)
+	if targetVMAF != nil && targetBitrate != nil {
+		return nil, nil, errors.New("--target-vmaf and --target-bitrate are mutually exclusive")
+	}
+	return targetVMAF, targetBitrate, nil
+}
+
+func firstPreset(presets []string) string {
+	if len(presets) == 0 {
+		return ""
+	}
+	return presets[0]
+}
+
+func corpusUsesUncertainty(
+	ctx context.Context, d deps, flags *recommendFlags, targetBitrate *float64,
+) bool {
+	if !flags.withUncertainty || targetBitrate == nil {
+		return flags.withUncertainty
+	}
+	d.Log.WarnContext(ctx,
+		"--with-uncertainty is not supported with --target-bitrate; "+
+			"falling back to the point estimate")
+	return false
+}
+
+func emitCorpusUncertaintyPick(
+	d deps, flags *recommendFlags, rows []recommend.Row, targetVMAF float64,
+) error {
+	thresholds := uncertainty.LoadThresholds(flags.uncertaintySidecar, d.Log)
+	result, err := recommend.PickTargetVMAFWithUncertainty(rows,
+		recommend.UncertaintyRequest{
+			TargetVMAF: targetVMAF,
+			Thresholds: thresholds,
+			Encoder:    flags.encoder,
+			Preset:     firstPreset(flags.presets),
+		})
+	if err != nil {
+		return err
+	}
+	if flags.jsonOutput {
+		return emitRowJSON(result.Row)
+	}
+	_, printErr := fmt.Printf(
+		"crf=%v  vmaf=%.3f  kbps=%.0f  predicate=%s  decision=%s  visited=%d/%d  [%s]\n",
+		result.Row["crf"], rowFloat(result.Row, "vmaf_score"),
+		rowFloat(result.Row, "bitrate_kbps"), result.Predicate,
+		result.Decision, result.Visited, len(rows), recommendationStatus(result.Margin))
+	return printErr
+}
+
+func recommendationStatus(margin float64) string {
+	if margin < 0 {
+		return "UNMET"
+	}
+	return "OK"
 }
 
 // rowFloat reads a numeric row field, returning NaN when absent.
@@ -284,60 +308,83 @@ func emitRowJSON(row recommend.Row) error {
 
 // runRecommendFromEncodes runs the coarse-to-fine sweep and picks from it.
 func runRecommendFromEncodes(ctx context.Context, d deps, flags *recommendFlags) error {
+	targetVMAF, backend, err := validateRecommendEncodeFlags(flags)
+	if err != nil {
+		return err
+	}
+	d.Log.InfoContext(ctx, "starting coarse-to-fine recommend sweep",
+		"sources", flags.sources, "presets", flags.presets,
+		"encoder", flags.encoder, "target_vmaf", targetVMAF,
+		"score_backend", flags.scoreBackend)
+	visited, sweepErr := collectRecommendRows(ctx, d, flags, backend)
+	if sweepErr != nil {
+		return sweepErr
+	}
+	if writeErr := writeRecommendRows(visited, flags.output); writeErr != nil {
+		return writeErr
+	}
+	return emitEncodedRecommendation(d, flags, visited, targetVMAF)
+}
+
+func validateRecommendEncodeFlags(flags *recommendFlags) (float64, string, error) {
 	if len(flags.sources) == 0 || flags.width <= 0 || flags.height <= 0 ||
 		len(flags.presets) == 0 {
-		return errors.New(
+		return 0, "", errors.New(
 			"--source, --width, --height and --preset are required unless " +
 				"--from-corpus is used")
 	}
 	targetVMAF := optionalFloat(flags.targetVMAF)
 	if targetVMAF == nil {
-		return errors.New("recommend requires --target-vmaf")
+		return 0, "", errors.New("recommend requires --target-vmaf")
 	}
-	adapter, adapterErr := codecadapter.Get(flags.encoder)
-	if adapterErr != nil {
-		return adapterErr
+	adapter, err := codecadapter.Get(flags.encoder)
+	if err != nil {
+		return 0, "", err
 	}
 	for _, preset := range flags.presets {
 		if !adapter.HasPreset(preset) {
-			return fmt.Errorf("unknown %s preset %q; expected one of %v",
+			return 0, "", fmt.Errorf("unknown %s preset %q; expected one of %v",
 				adapter.Name, preset, adapter.Presets)
 		}
 	}
-
 	backend := flags.scoreBackend
-	if backend == "auto" || backend == "" {
-		// The libvmaf CLI picks its own default when --backend is omitted;
-		// "auto" is the CLI-level spelling of that.
+	if backend == "auto" {
 		backend = ""
 	}
-	d.Log.InfoContext(ctx, "starting coarse-to-fine recommend sweep",
-		"sources", flags.sources, "presets", flags.presets,
-		"encoder", flags.encoder, "target_vmaf", *targetVMAF,
-		"score_backend", flags.scoreBackend)
+	return *targetVMAF, backend, nil
+}
 
+func collectRecommendRows(
+	ctx context.Context, d deps, flags *recommendFlags, backend string,
+) ([]recommend.Row, error) {
 	var visited []recommend.Row
 	for _, source := range flags.sources {
 		rows, err := sweepOneSource(ctx, d, flags, source, backend)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		visited = append(visited, rows...)
 	}
+	return visited, nil
+}
 
-	corpusRows := make([]corpusrow.Row, len(visited))
-	for i, r := range visited {
-		corpusRows[i] = corpusrow.Row(r)
+func writeRecommendRows(rows []recommend.Row, output string) error {
+	corpusRows := make([]corpusrow.Row, len(rows))
+	for i, row := range rows {
+		corpusRows[i] = corpusrow.Row(row)
 	}
-	if _, err := corpusrow.WriteJSONL(corpusRows, flags.output); err != nil {
-		return err
-	}
+	_, err := corpusrow.WriteJSONL(corpusRows, output)
+	return err
+}
 
+func emitEncodedRecommendation(
+	d deps, flags *recommendFlags, visited []recommend.Row, targetVMAF float64,
+) error {
 	if flags.withUncertainty {
 		thresholds := uncertainty.LoadThresholds(flags.uncertaintySidecar, d.Log)
 		result, pickErr := recommend.PickTargetVMAFWithUncertainty(visited,
 			recommend.UncertaintyRequest{
-				TargetVMAF: *targetVMAF, Thresholds: thresholds,
+				TargetVMAF: targetVMAF, Thresholds: thresholds,
 			})
 		if pickErr != nil {
 			return fmt.Errorf(
@@ -352,11 +399,11 @@ func runRecommendFromEncodes(ctx context.Context, d deps, flags *recommendFlags)
 		return printErr
 	}
 
-	src, preset, crf, score, ok := recommend.SmallestPassingCRF(visited, *targetVMAF)
+	src, preset, crf, score, ok := recommend.SmallestPassingCRF(visited, targetVMAF)
 	if !ok {
 		return fmt.Errorf(
 			"no CRF meets target VMAF >= %g; visited %d encodes -> %s",
-			*targetVMAF, len(visited), flags.output)
+			targetVMAF, len(visited), flags.output)
 	}
 	_, printErr := fmt.Printf("src=%s preset=%s crf=%d vmaf=%.3f (visited %d encodes)\n",
 		src, preset, crf, score, len(visited))

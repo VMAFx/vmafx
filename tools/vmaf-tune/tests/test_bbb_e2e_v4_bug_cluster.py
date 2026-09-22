@@ -322,61 +322,77 @@ def test_build_and_emit_threads_samples_into_json(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_report_encoder_unavailable_does_not_gate_ok(tmp_path: Path, capsys: Any) -> None:
-    """An ``encoder unavailable`` row should keep ``ok=true`` and set ``degraded=true``.
+def _compare_row(
+    codec: str,
+    encoder_version: str,
+    *,
+    best_crf: int,
+    bitrate_kbps: float | None,
+    encode_time_ms: float | None,
+    vmaf_score: float | None,
+    ok: bool,
+    error: str,
+) -> dict[str, Any]:
+    """One ``compare.json`` row in the schema the report reader consumes."""
+    return {
+        "codec": codec,
+        "encoder_version": encoder_version,
+        "best_crf": best_crf,
+        "bitrate_kbps": bitrate_kbps,
+        "encode_time_ms": encode_time_ms,
+        "vmaf_score": vmaf_score,
+        "ok": ok,
+        "error": error,
+    }
 
-    Reproducer for Bug #V4-C: the v4 probe ran ``compare`` with three
-    encoders, one of which (libsvtav1) is not present in the dev-mcp
-    ffmpeg build. The bisect discriminator marks the row
-    ``ok=false, error="encoder unavailable (libsvtav1): …"``. The
-    report aggregation used to flip the run to ``ok=false`` purely
-    because of this infrastructure-gap row; ADR-0501 surfaces a new
-    ``degraded`` flag for it instead.
+
+def _ok_compare_row(
+    codec: str, encoder_version: str, best_crf: int, kbps: float, ms: float, vmaf: float
+) -> dict[str, Any]:
+    """A successful compare row."""
+    return _compare_row(
+        codec,
+        encoder_version,
+        best_crf=best_crf,
+        bitrate_kbps=kbps,
+        encode_time_ms=ms,
+        vmaf_score=vmaf,
+        ok=True,
+        error="",
+    )
+
+
+def _failed_compare_row(codec: str, encoder_version: str, error: str) -> dict[str, Any]:
+    """A failed compare row: no numerics, ``ok=False``, and `error` verbatim.
+
+    The error text is what the report aggregation classifies on — an
+    ``encoder unavailable`` prefix means degraded, anything else means a
+    real failure.
     """
+    return _compare_row(
+        codec,
+        encoder_version,
+        best_crf=-1,
+        bitrate_kbps=None,
+        encode_time_ms=None,
+        vmaf_score=None,
+        ok=False,
+        error=error,
+    )
+
+
+def _write_compare_fixture(tmp_path: Path, rows: list[dict[str, Any]]) -> tuple[Path, Path]:
+    """Write a 1080p source placeholder plus a ``compare.json`` holding `rows`."""
     src = tmp_path / "src.yuv"
     src.write_bytes(b"\x00" * (1920 * 1080 * 3 // 2))
     compare_json = tmp_path / "compare.json"
-    compare_json.write_text(
-        json.dumps(
-            {
-                "rows": [
-                    {
-                        "codec": "libx264",
-                        "encoder_version": "n6.0",
-                        "best_crf": 26,
-                        "bitrate_kbps": 4000.0,
-                        "encode_time_ms": 100.0,
-                        "vmaf_score": 94.0,
-                        "ok": True,
-                        "error": "",
-                    },
-                    {
-                        "codec": "libx265",
-                        "encoder_version": "n3.5",
-                        "best_crf": 30,
-                        "bitrate_kbps": 3200.0,
-                        "encode_time_ms": 200.0,
-                        "vmaf_score": 93.0,
-                        "ok": True,
-                        "error": "",
-                    },
-                    {
-                        "codec": "libsvtav1",
-                        "encoder_version": "",
-                        "best_crf": -1,
-                        "bitrate_kbps": None,
-                        "encode_time_ms": None,
-                        "vmaf_score": None,
-                        "ok": False,
-                        "error": "encoder unavailable (libsvtav1): Encoder not found",
-                    },
-                ]
-            }
-        )
-    )
-    output = tmp_path / "card.md"
+    compare_json.write_text(json.dumps({"rows": rows}))
+    return src, compare_json
 
-    rc = cli_main(
+
+def _run_report_cli(src: Path, compare_json: Path, output: Path) -> int:
+    """Drive ``vmaf-tune report`` over `compare_json` at target VMAF 93."""
+    return cli_main(
         [
             "report",
             "--src",
@@ -391,6 +407,30 @@ def test_report_encoder_unavailable_does_not_gate_ok(tmp_path: Path, capsys: Any
             "93",
         ]
     )
+
+
+def test_report_encoder_unavailable_does_not_gate_ok(tmp_path: Path, capsys: Any) -> None:
+    """An ``encoder unavailable`` row should keep ``ok=true`` and set ``degraded=true``.
+
+    Reproducer for Bug #V4-C: the v4 probe ran ``compare`` with three
+    encoders, one of which (libsvtav1) is not present in the dev-mcp
+    ffmpeg build. The bisect discriminator marks the row
+    ``ok=false, error="encoder unavailable (libsvtav1): …"``. The
+    report aggregation used to flip the run to ``ok=false`` purely
+    because of this infrastructure-gap row; ADR-0501 surfaces a new
+    ``degraded`` flag for it instead.
+    """
+    src, compare_json = _write_compare_fixture(
+        tmp_path,
+        [
+            _ok_compare_row("libx264", "n6.0", 26, 4000.0, 100.0, 94.0),
+            _ok_compare_row("libx265", "n3.5", 30, 3200.0, 200.0, 93.0),
+            _failed_compare_row(
+                "libsvtav1", "", "encoder unavailable (libsvtav1): Encoder not found"
+            ),
+        ],
+    )
+    rc = _run_report_cli(src, compare_json, tmp_path / "card.md")
     out = capsys.readouterr().out
     assert rc == 0, out
     payload = json.loads(out.strip().splitlines()[-1])
@@ -409,52 +449,14 @@ def test_report_real_encode_failure_flips_ok_false(tmp_path: Path, capsys: Any) 
     "encoder unavailable" coverage accidentally swallow real
     bisect-side failures too.
     """
-    src = tmp_path / "src.yuv"
-    src.write_bytes(b"\x00" * (1920 * 1080 * 3 // 2))
-    compare_json = tmp_path / "compare.json"
-    compare_json.write_text(
-        json.dumps(
-            {
-                "rows": [
-                    {
-                        "codec": "libx264",
-                        "encoder_version": "n6.0",
-                        "best_crf": 26,
-                        "bitrate_kbps": 4000.0,
-                        "encode_time_ms": 100.0,
-                        "vmaf_score": 94.0,
-                        "ok": True,
-                        "error": "",
-                    },
-                    {
-                        "codec": "libx265",
-                        "encoder_version": "n3.5",
-                        "best_crf": -1,
-                        "bitrate_kbps": None,
-                        "encode_time_ms": None,
-                        "vmaf_score": None,
-                        "ok": False,
-                        "error": "bisect bounds did not converge",
-                    },
-                ]
-            }
-        )
-    )
-    rc = cli_main(
+    src, compare_json = _write_compare_fixture(
+        tmp_path,
         [
-            "report",
-            "--src",
-            str(src),
-            "--compare-json",
-            str(compare_json),
-            "--output",
-            str(tmp_path / "card.md"),
-            "--format",
-            "markdown",
-            "--target-vmaf",
-            "93",
-        ]
+            _ok_compare_row("libx264", "n6.0", 26, 4000.0, 100.0, 94.0),
+            _failed_compare_row("libx265", "n3.5", "bisect bounds did not converge"),
+        ],
     )
+    rc = _run_report_cli(src, compare_json, tmp_path / "card.md")
     out = capsys.readouterr().out
     assert rc == 0, out
     payload = json.loads(out.strip().splitlines()[-1])

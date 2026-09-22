@@ -66,7 +66,7 @@ option('sycl_acpp_targets',
 option('sycl_icpx_aot_targets',
     type: 'string',
     value: 'dg2-g10,dg2-g11,acm-g10,acm-g11,acm-g12,tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p,mtl-h,mtl-u,arl-h,arl-s,arl-u,lnl-m,bmg-g21,bmg-g31',
-    description: 'Comma-separated list of Intel SYCL AOT targets for icpx -fsycl-targets=spir64_gen -Xs \'-device <list>\'. Covers Arc dGPU + all common Intel iGPU silicon (Tiger Lake / Alder Lake / Raptor Lake / Meteor Lake / Arrow Lake / Lunar Lake / Battlemage). Set to empty string to fall back to SPIR-V JIT (smaller binary, slower first launch). Set to a single target (e.g. "dg2-g11") to shrink fat-binary for a known fleet. Ignored when sycl_compiler != "icpx". See ADR-0568.')
+    description: 'Comma-separated list of Intel SYCL AOT targets for icpx -fsycl-targets=spir64_gen,spir64 -Xsycl-target-backend=spir64_gen \'-device <list>\'. Covers Arc dGPU + all common Intel iGPU silicon (Tiger Lake / Alder Lake / Raptor Lake / Meteor Lake / Arrow Lake / Lunar Lake / Battlemage). Set to empty string to fall back to SPIR-V JIT (smaller binary, slower first launch). Set to a single target (e.g. "dg2-g11") to shrink fat-binary for a known fleet. Ignored when sycl_compiler != "icpx". See ADR-0568.')
 
 option('enable_dnn',
     type: 'feature',
@@ -85,7 +85,7 @@ option('enable_mcp',
 option('enable_mcp_sse',
     type: 'feature',
     value: 'auto',
-    description: 'Compile in the SSE (Server-Sent Events / loopback HTTP) transport for the embedded MCP server. Requires enable_mcp=true. Implemented in plain POSIX sockets — no third-party HTTP library is vendored (the original v3 plan to vendor cesanta/mongoose was abandoned because mongoose is GPL-2.0-only-OR-commercial, incompatible with the fork BSD-3-Clause-Plus-Patent license). T5-2d / ADR-0332 § "Status update 2026-05-09".')
+    description: 'Compile in the SSE (Server-Sent Events / loopback HTTP) transport for the embedded MCP server. Requires enable_mcp=true. Implemented in plain POSIX sockets — no third-party HTTP library is vendored (the original v3 plan to vendor cesanta/mongoose was abandoned because mongoose is GPL-2.0-only-OR-commercial, which ADR-0332 judged a licence blocker for vendoring into this tree). T5-2d / ADR-0332 § "Status update 2026-05-09".')
 
 option('enable_mcp_uds',
     type: 'boolean',
@@ -132,7 +132,7 @@ option('enable_metal',
 option('fuzz',
     type: 'boolean',
     value: false,
-    description: 'Build libFuzzer harnesses under libvmaf/test/fuzz/ (ADR-0270, OSSF Scorecard `Fuzzing` remediation). Requires clang. Pair with `-Db_sanitize=address` for heap coverage. Default OFF — opt-in only.')
+    description: 'Build libFuzzer harnesses under core/test/fuzz/ (ADR-0270, OSSF Scorecard `Fuzzing` remediation). Requires clang. Pair with `-Db_sanitize=address` for heap coverage. Default OFF — opt-in only.')
 
 option('enable_rust_features',
     type: 'boolean',

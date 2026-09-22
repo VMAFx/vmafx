@@ -50,7 +50,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
@@ -64,6 +63,7 @@ import (
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
+	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 	buildversion "github.com/VMAFx/vmafx/pkg/version"
@@ -107,67 +107,49 @@ func main() {
 		return
 	}
 
-	fx.New(
-		// golusoris foundation: config + log + clock + id + validate + crypto,
-		// the OTel module, and the build-version supply (ADR-1119).
+	fx.New(productionOptions(fx.Replace(serverEnvOptions(true)))...).Run()
+}
+
+// productionOptions is shared by main and the lifecycle tests so the tested
+// provider order cannot drift from the binary's real composition.
+func productionOptions(envReplace fx.Option) []fx.Option {
+	return []fx.Option{
 		bootstrap.Base,
-		// Override the env prefix so the whole graph reads VMAFX_* config keys,
-		// keeping the underscore-bearing grpc.* leaves intact (serverEnvOptions).
-		fx.Replace(serverEnvOptions(true)),
-		// Route fx lifecycle events onto the golusoris slog logger.
+		envReplace,
 		bootstrap.FxLogger(),
-
-		// Server modules.
-		golusoris.HTTP,        // chi *chi.Mux (as chi.Router) + graceful *http.Server.
-		bootstrap.HTTPTracing, // otelhttp server span on every HTTP route (ADR-0782 / ADR-1119).
-		grpcmod.Module,        // *grpc.Server with OTel + logging + recovery interceptors.
-
-		// Domain providers.
-		fx.Provide(
-			provideScorer,       // (fx.Lifecycle, *config.Config, *slog.Logger) -> (*libvmaf.Scorer, error)
-			provideMetrics,      // () -> (*prometheus.Registry, *observability.Metrics)
-			provideScoreLimiter, // (*config.Config) -> (*ScoreLimiter, error)
-			provideStatusRegistry,
-			newGRPCServerImpl, // -> *grpcServer (depends on *libvmaf.Scorer)
-		),
-
-		// R1 (cgo lifetime, FORWARD-LOOKING): force the Scorer to be constructed
-		// BEFORE the gRPC server. fx appends OnStop hooks in construction order
-		// and runs them in reverse, so realising the Scorer first (its Close hook
-		// appended in provideScorer) before the gRPC server (its GracefulStop hook
-		// appended by grpcmod) makes gRPC drain in-flight Score calls BEFORE the
-		// Scorer closes. libvmaf.Scorer.Close() is presently a no-op (the scorer
-		// is subprocess-based and holds no live C handle), so this ordering does
-		// not currently prevent a use-after-free — it is a forward-looking guard
-		// for when Close() acquires a real cgo resource. This invoke is registered
-		// ahead of the gRPC registration invoke so the Scorer's hook lands first.
-		// See app_test.go.
-		fx.Invoke(func(_ *libvmaf.Scorer) {}),
-
-		// Register the gRPC service implementation on the golusoris server.
-		// grpcmod.Module provides a *google.golang.org/grpc.Server directly.
-		// The arg order (scorer-bearing impl first, then the server) also keeps
-		// the Scorer ahead of the server in construction order, reinforcing R1.
-		fx.Invoke(func(impl *grpcServer, s *googlegrpc.Server) {
-			vmafxv1.RegisterVmafxScoringServer(s, impl)
-		}),
-
-		// Mount HTTP routes (health, /metrics, REST adapter, swagger UI) and the
-		// readiness check on the chi router.
+		golusoris.HTTP,
+		bootstrap.HTTPTracing,
+		grpcmod.Module,
+		serverProviders(),
+		fx.Invoke(realiseScorer),
+		fx.Invoke(registerScoringService),
 		fx.Invoke(mountHTTPRoutes),
 		fx.Invoke(registerHealthChecks),
-
-		// F1 / DTL-2: force construction of golusoris' graceful *http.Server.
-		// fx providers are lazy — nothing else in the graph consumes
-		// *http.Server, so without this invoke the httpx/server listener never
-		// binds and the process serves gRPC only (nothing on VMAFX_HTTP_ADDR).
-		// Placed AFTER the gRPC registration invoke and AFTER mountHTTPRoutes so
-		// the server's OnStop is appended LAST and therefore fires FIRST in fx's
-		// reverse-order stop: HTTP stops accepting → gRPC GracefulStop drains
-		// in-flight Score calls → scorer.Close(). See app_test.go.
-		fx.Invoke(func(_ *http.Server) {}),
-	).Run()
+		fx.Invoke(realiseHTTPServer),
+	}
 }
+
+func serverProviders() fx.Option {
+	return fx.Provide(
+		provideScorer,
+		scoringservice.ProvideMetrics,
+		provideScoreLimiter,
+		provideStatusRegistry,
+		newGRPCServerImpl,
+	)
+}
+
+// realiseScorer preserves R1: its stop hook is appended before gRPC's hook,
+// so reverse-order shutdown drains gRPC before closing the scorer.
+func realiseScorer(_ *libvmaf.Scorer) {}
+
+func registerScoringService(impl *grpcServer, s *googlegrpc.Server) {
+	vmafxv1.RegisterVmafxScoringServer(s, impl)
+}
+
+// realiseHTTPServer forces the lazy listener after routes and health checks
+// are mounted. Its stop hook is therefore first during reverse-order shutdown.
+func realiseHTTPServer(_ *http.Server) {}
 
 // provideScorer constructs the libvmaf cgo scorer from config and registers its
 // Close as an OnStop hook. Because fx runs OnStop hooks in reverse of
@@ -182,43 +164,7 @@ func main() {
 // cgo-lifetime invariant already holds the day Close() starts releasing a real
 // C resource.
 func provideScorer(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) (*libvmaf.Scorer, error) {
-	binary := cfg.Get("vmaf.binary")
-	// golusoris env transform: VMAFX_MODEL_DIR -> strip prefix -> "MODEL_DIR" ->
-	// lowercase + every '_' becomes the "." delimiter -> "model.dir". (The env
-	// var name VMAFX_MODEL_DIR is unchanged; only the koanf key it lands under
-	// is "model.dir", not "vmaf.model_dir".) R5-1 / MODELDIR.
-	modelDir := cfg.Get("model.dir")
-	scorer, err := libvmaf.New(binary, modelDir)
-	if err != nil {
-		return nil, fmt.Errorf("init scorer: %w", err)
-	}
-	log.Info("scorer initialised",
-		"version", version(),
-		"vmaf_binary", binary,
-		"model_dir", modelDir,
-	)
-	lc.Append(fx.Hook{
-		OnStop: func(_ context.Context) error {
-			log.Info("closing scorer (after gRPC drain)")
-			scorer.Close()
-			return nil
-		},
-	})
-	return scorer, nil
-}
-
-// provideMetrics builds the isolated Prometheus registry and the vmafx metric
-// instruments. golusoris OTel is OTLP, not a Prometheus registry, so the
-// Prometheus exposition path is preserved here unchanged (mounted at /metrics
-// by mountHTTPRoutes).
-func provideMetrics() (*prometheus.Registry, *observability.Metrics) {
-	registry := prometheus.NewRegistry()
-	// Go runtime + process collectors (collectors.* replaces the deprecated
-	// prometheus.NewGoCollector / NewProcessCollector — staticcheck SA1019).
-	registry.MustRegister(collectors.NewGoCollector())
-	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	metrics := observability.NewMetrics(registry)
-	return registry, metrics
+	return scoringservice.ProvideScorer(lc, cfg, log, version())
 }
 
 // provideScoreLimiter builds the shared concurrency cap. The cap is read from

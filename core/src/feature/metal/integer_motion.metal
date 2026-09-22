@@ -4,9 +4,9 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal compute kernel for integer_motion (v1) (T8-1i / ADR-0421).
- *  Mirrors `libvmaf/src/feature/vulkan/shaders/motion.comp`.
+ *  Mirrors `core/src/feature/vulkan/shaders/motion.comp`.
  *
- *  Algorithm (must match CPU libvmaf/src/feature/integer_motion.c,
+ *  Algorithm (must match CPU core/src/feature/integer_motion.c,
  *  separable Gaussian blur V→H + SAD):
  *    1. Vertical filter:
  *         v[i,j] = (sum_k FILTER[k] * src[mirror(i-2+k), j] + (1<<(bpc-1))) >> bpc

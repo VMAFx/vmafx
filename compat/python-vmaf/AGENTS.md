@@ -109,6 +109,69 @@ python/vmaf/
   `scripts/ci/check-python-requirements-single-source.sh --write`
   (`make python-deps-sync`); never edit manually. Renovate ignores
   `python/requirements.txt`, avoids duplicate PRs.
+- **Python worker creation is fork-free (ADR-1278).**
+  `tools.misc.parallel_map()` uses joblib's `loky` backend so local callables
+  remain supported without inheriting live threads through POSIX `fork`.
+  `Executor.run()` and `run_executors_in_parallel()` group equal
+  `str(asset)` keys into serial work units and restore input order; do not
+  replace that grouping with independently dispatched duplicates. FIFO helper
+  processes use the explicit `spawn` context. The classic 5PL curve in
+  `core/train_test_model.py` keeps `b1` as the sigmoid amplitude and uses
+  `scipy.special.expit`; additive `b1` is redundant with `b5` and a raw
+  exponential overflows.
+- **Pytest warnings are errors, without carve-outs (ADR-1278).** The root,
+  package-local, and legacy `python/tox.ini` configs all promote every warning
+  to an error. Never restore `-p no:warnings`, add an `ignore` warning filter,
+  or weaken a CI invocation to make a warning-producing test pass. Fix the
+  warning's cause instead. `tools.misc.import_python_file()` must close its
+  override temporary file before reopening it and remove the path in `finally`;
+  relying on garbage collection emits `ResourceWarning` on Python 3.14.
+
+- **Object lifetime in the harness is explicit, never GC-driven
+  (T-PY-HARNESS-OBJECT-LIFETIME-WARNINGS-2026-09-22).** Never write
+  `tempfile.NamedTemporaryFile(...).name`: the expression drops the wrapper,
+  and its finaliser emits `ResourceWarning` from whatever test the cyclic
+  collector happens to interrupt. Use `tempfile.mkstemp()` and close the
+  descriptor, or keep the object in a `with` block. The same finaliser hides
+  in `urllib.error.HTTPError`: `urllib.response.addbase`, which it inherits
+  through `addinfourl`, *is* `tempfile._TemporaryFileWrapper`, and CPython
+  3.14 gives it an `io.BytesIO` when `fp is None` -- so a constructed
+  `HTTPError` must be closed too. And never call sureal's
+  `SubjectiveModel.from_dataset_file()` (or `PairedCompSubjectiveModel`'s
+  override): it imports the dataset through
+  `SourceFileLoader.load_module()`, which Python 3.15 removes and 3.12+ warns
+  on. `routine.py` imports the dataset with
+  `tools.misc._import_dataset_and_filter()` and constructs
+  `subj_model_class(dataset_reader_class(dataset))` itself; an upstream merge
+  that restores the `from_dataset_file()` call re-breaks the harness.
+
+- **HISS-04 helpers are extraction, not redesign (T-HISS-PY-COMPAT-2026-09-21).**
+  The oversized routines were split so each piece stays under the 60-LOC
+  scanner bound, and the split points were chosen to keep observable output
+  identical: `VmafFeatureExtractor` / `VmafIntegerFeatureExtractor` route
+  options through `VMAF_FLOAT_FEATURE_OPTION_TARGETS` /
+  `VMAF_INTEGER_FEATURE_OPTION_TARGETS` (an unlisted option is still ignored
+  silently), `quality_runner._resolve_vmafexec_options()` keeps `models`
+  deliberately unassigned for `use_default_built_in_model=False` because
+  upstream does, `perf_metric` and `noref_feature_extractor` preserve the
+  accumulation order of every reduction, and `local_explainer` /
+  `nn_train_test_model` keep the per-sample RNG draw order so a seeded run
+  reproduces. `result.scores_key_wildcard_match()`'s doctests were
+  redistributed across the new helpers, not dropped — `doctest.testmod()`
+  must still find all twelve.
+- **Bounded frame loops replace `while True` (HISS-02).** The PyPSNR loop in
+  `core/feature_extractor.py` walks `min(ref.num_frms, dis.num_frms)`, which
+  `YuvReader` already validates as an exact count at construction; do not
+  reintroduce a `try/except StopIteration` spin. `tools/scanf.py` carries its
+  termination in the loop header; `readiter()` keeps its trailing
+  `raise StopIteration` (a PEP 479 RuntimeError for callers) on purpose —
+  changing that is a behaviour change, not a cleanup.
+- **The MATLAB MEX sources are refactored in place (ADR-0030 / ADR-0038).**
+  `matlab/strred/matlabPyrTools/MEX/` and `matlab/STMAD_2011_MatlabCode/`
+  now carry `static` helpers instead of the long `INPROD` macro bodies and
+  inline argument parsing. Every index expression, accumulation order and
+  error string is unchanged; `edges[]` is filled with a bounded copy because
+  HISS-08 bans `strcpy()`. See `docs/rebase-notes.md`.
 
 ## Governing ADRs
 
@@ -119,3 +182,4 @@ python/vmaf/
 - [ADR-0030](../../docs/adr/0030-matlab-sources-relocated.md) — MATLAB source relocation.
 - [ADR-0038](../../docs/adr/0038-purge-upstream-matlab-mex-binaries.md) — MEX binary purge.
 - [ADR-1236](../../docs/adr/1236-version-single-source-tree.md) — single-source package versions and unify Python dependencies.
+- [ADR-1278](../../docs/adr/1278-python-safe-parallel-execution.md) — fork-free process execution and reference 5PL fitting.

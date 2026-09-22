@@ -175,6 +175,62 @@ def test_vmaf_backend_vulkan_rejected_after_adr_0726() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _materialise_argv_target(argv: list[Any], size: int = 1024) -> None:
+    """Create the file the ffmpeg argv writes to (always the trailing path)."""
+    out = Path(argv[-1])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(b"\x00" * size)
+
+
+def _stub_decode_run(argv: list[Any], **_kw: Any) -> _FakeCompleted:
+    """``subprocess.run`` stub for the decode legs: just produce the output."""
+    _materialise_argv_target(argv)
+    return _FakeCompleted(returncode=0)
+
+
+def _capturing_encode_runner(argvs: list[Any]):
+    """``encode_runner`` stub recording argv and producing the encoded output."""
+
+    def _run(argv: list[str], **_kw: Any) -> _FakeCompleted:
+        argvs.append(list(argv))
+        _materialise_argv_target(argv)
+        return _FakeCompleted(returncode=0, stderr="ffmpeg version 6.0\nx264 - core 164\n")
+
+    return _run
+
+
+def _fixed_score_runner(mean: float):
+    """``score_runner`` stub writing a pooled_metrics JSON reporting `mean`."""
+
+    def _run(argv: list[str], **_kw: Any) -> _FakeCompleted:
+        out = Path(argv[argv.index("--output") + 1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"pooled_metrics": {"vmaf": {"mean": mean}}}) + "\n")
+        return _FakeCompleted(returncode=0, stderr="VMAF version 3.0.0-test\n")
+
+    return _run
+
+
+def _one_cell_job(src: Path, tmp_path: Path) -> tuple[Any, Any]:
+    """A single-cell 1080p corpus job over `src`, encoding into ``tmp_path/enc``."""
+    job = CorpusJob(
+        source=src,
+        width=1920,
+        height=1080,
+        pix_fmt="yuv420p",
+        framerate=30.0,
+        duration_s=2.0,
+        cells=(("medium", 28),),
+    )
+    opts = CorpusOptions(
+        encoder="libx264",
+        output=tmp_path / "corpus.jsonl",
+        encode_dir=tmp_path / "enc",
+        src_sha256=False,
+    )
+    return job, opts
+
+
 def test_iter_rows_marks_container_source_for_encoder(tmp_path: Path, monkeypatch: Any) -> None:
     """A ``.mp4`` source must surface as ``source_is_container=True`` (V5-2).
 
@@ -191,49 +247,23 @@ def test_iter_rows_marks_container_source_for_encoder(tmp_path: Path, monkeypatc
 
     src = tmp_path / "bbb.mp4"
     src.write_bytes(b"\x00")
-    encode_dir = tmp_path / "enc"
-    job = CorpusJob(
-        source=src,
-        width=1920,
-        height=1080,
-        pix_fmt="yuv420p",
-        framerate=30.0,
-        duration_s=2.0,
-        cells=(("medium", 28),),
-    )
-    opts = CorpusOptions(
-        encoder="libx264",
-        output=tmp_path / "corpus.jsonl",
-        encode_dir=encode_dir,
-        src_sha256=False,
-    )
+    job, opts = _one_cell_job(src, tmp_path)
 
-    def _fake_sp_run(argv: list[Any], **_kw: Any) -> _FakeCompleted:
-        Path(argv[-1]).parent.mkdir(parents=True, exist_ok=True)
-        Path(argv[-1]).write_bytes(b"\x00" * 1024)
-        return _FakeCompleted(returncode=0)
-
-    monkeypatch.setattr(subprocess, "run", _fake_sp_run)
+    monkeypatch.setattr(subprocess, "run", _stub_decode_run)
     monkeypatch.setattr(corpus_mod, "_sha256_file", lambda *_a, **_kw: "")
 
+    # Captured so the assertions below can inspect the encode argv: the
+    # driver must NOT emit -f rawvideo against a container source.
     captured_reqs: list[Any] = []
 
-    def _enc_runner(argv: list[str], **_kw: Any) -> _FakeCompleted:
-        # Inspect argv: the encode driver must NOT emit -f rawvideo
-        # against a container source.
-        captured_reqs.append(list(argv))
-        out = Path(argv[-1])
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"\x00" * 1024)
-        return _FakeCompleted(returncode=0, stderr="ffmpeg version 6.0\nx264 - core 164\n")
-
-    def _score_runner(argv: list[str], **_kw: Any) -> _FakeCompleted:
-        out = Path(argv[argv.index("--output") + 1])
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text('{"pooled_metrics": {"vmaf": {"mean": 92.0}}}\n')
-        return _FakeCompleted(returncode=0, stderr="VMAF version 3.0.0-test\n")
-
-    rows = list(iter_rows(job, opts, encode_runner=_enc_runner, score_runner=_score_runner))
+    rows = list(
+        iter_rows(
+            job,
+            opts,
+            encode_runner=_capturing_encode_runner(captured_reqs),
+            score_runner=_fixed_score_runner(92.0),
+        )
+    )
     assert rows, "iter_rows produced no rows"
     assert captured_reqs, "encode runner never invoked"
     encode_argv = captured_reqs[0]
@@ -455,6 +485,46 @@ def test_make_default_sampler_passes_cloud_sink_through(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _require_container_corpus() -> tuple[str, str]:
+    """Return ``(container, bbb_source_path)``, skipping when either is absent.
+
+    Bails cleanly rather than failing: the dev-mcp container and the BBB
+    corpus are both optional on a developer box.
+    """
+    container = os.environ.get("VMAF_DEV_MCP_CONTAINER", "vmaf-dev-mcp")
+    probe = subprocess.run(
+        ["docker", "exec", container, "true"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if probe.returncode != 0:
+        pytest.skip(f"dev-mcp container {container!r} not reachable")
+    corpus_root = os.environ.get("VMAF_CORPUS_DIR", "/workspace/.corpus/bbb_e2e")
+    src = f"{corpus_root}/bbb_sunflower_1080p_30fps_normal.mp4"
+    corpus_check = subprocess.run(
+        ["docker", "exec", container, "test", "-f", src],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if corpus_check.returncode != 0:
+        pytest.skip(f"BBB corpus missing in container at {src}")
+    return container, src
+
+
+def _read_container_json(container: str, path: str) -> Any:
+    """``cat`` a JSON file out of the container and parse it."""
+    cat = subprocess.run(
+        ["docker", "exec", container, "cat", path],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert cat.returncode == 0, cat.stderr
+    return json.loads(cat.stdout)
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(
     shutil.which("docker") is None,
@@ -478,26 +548,7 @@ def test_ladder_against_bbb_container_yields_plausible_vmaf() -> None:
     "garbage encode" failure mode, not to gate fine-grained
     perceptual quality.
     """
-    container = os.environ.get("VMAF_DEV_MCP_CONTAINER", "vmaf-dev-mcp")
-    # Quick probe — bail cleanly when the container isn't up.
-    probe = subprocess.run(
-        ["docker", "exec", container, "true"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    if probe.returncode != 0:
-        pytest.skip(f"dev-mcp container {container!r} not reachable")
-    _corpus_root = os.environ.get("VMAF_CORPUS_DIR", "/workspace/.corpus/bbb_e2e")
-    src = f"{_corpus_root}/bbb_sunflower_1080p_30fps_normal.mp4"
-    corpus_check = subprocess.run(
-        ["docker", "exec", container, "test", "-f", src],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    if corpus_check.returncode != 0:
-        pytest.skip(f"BBB corpus missing in container at {src}")
+    container, src = _require_container_corpus()
     out_json = "/tmp/v5_ladder_e2e.json"
     cmd = [
         "docker",
@@ -522,14 +573,7 @@ def test_ladder_against_bbb_container_yields_plausible_vmaf() -> None:
     assert (
         proc.returncode == 0
     ), f"ladder CLI exit {proc.returncode}; stderr={proc.stderr[-2000:]!r}"
-    cat = subprocess.run(
-        ["docker", "exec", container, "cat", out_json],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert cat.returncode == 0, cat.stderr
-    payload = json.loads(cat.stdout)
+    payload = _read_container_json(container, out_json)
     samples = payload.get("samples", [])
     # V5-2 root-cause assertion: full per-CRF sweep emitted, not
     # collapsed to per-target picks. 2 res x 3 CRFs = 6.

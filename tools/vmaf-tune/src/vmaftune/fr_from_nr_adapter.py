@@ -89,7 +89,7 @@ class NrInputRow:
     """Minimal NR-corpus row shape this adapter consumes.
 
     Mirrors the (subset of) keys present in the K150K JSONL on disk
-    at ``.workingdir2/konvid-150k/konvid_150k.jsonl``. Extra keys are
+    at ``.corpus/konvid-150k/konvid_150k.jsonl``. Extra keys are
     ignored; missing required keys raise ``KeyError`` at build time.
     """
 
@@ -262,7 +262,7 @@ class NrToFrAdapter:
 
     crf_sweep: tuple[int, ...] = DEFAULT_CRF_SWEEP
     preset: str = DEFAULT_PRESET
-    scratch_dir: Path = Path(".workingdir2/fr_from_nr_scratch")
+    scratch_dir: Path = Path(".workingdir/cache/fr_from_nr")
     keep_intermediate_yuv: bool = False
     options: CorpusOptions = dataclasses.field(default_factory=CorpusOptions)
 

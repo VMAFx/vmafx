@@ -44,7 +44,7 @@ paths and selected Path C (degrade gracefully + document):
   research-pass window. Subjective HDR corpora (LIVE-HDR,
   LIVE-HDRvsSDR, LIVE-TMHDR) are gated behind manual access forms
   with unclear redistribution-of-derived-weights terms for
-  BSD-3-Clause-Plus-Patent shipping, and a multi-day grid-search
+  BSD-2-Clause-Patent shipping, and a multi-day grid-search
   training run exceeded the autonomous task budget. Filed as a
   follow-up backlog row in [`docs/state.md`](../docs/state.md).
 - **Path C — degrade gracefully + document** (chosen). Ship this
@@ -87,5 +87,5 @@ Either of:
 
 ## License
 
-This documentation file is BSD-3-Clause-Plus-Patent, matching the
-fork's license. It contains no model weights.
+This documentation file is BSD-2-Clause-Patent, matching the licence
+the fork declares in `LICENSE`. It contains no model weights.

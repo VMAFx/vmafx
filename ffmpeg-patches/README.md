@@ -166,7 +166,7 @@ for daily stable-release updates, diagnostics and conflict recovery.
 
 ## License
 
-BSD-3-Clause-Plus-Patent for patches authored in this repo; patches are
+EUPL-1.2 for patches authored in this repo; patches are
 applied against FFmpeg (LGPL / GPL) — the resulting linked binary's
 distribution terms are governed by FFmpeg's license, not this one.
 

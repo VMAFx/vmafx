@@ -4,7 +4,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP host glue header for the CAMBI banding-detection feature extractor.
- *  Direct port of `libvmaf/src/feature/cuda/integer_cambi_cuda.h`
+ *  Direct port of `core/src/feature/cuda/integer_cambi_cuda.h`
  *  (T3-15 / ADR-0360) to the HIP backend.
  *
  *  The HSACO fat binary is compiled from `integer_cambi/cambi_score.hip`

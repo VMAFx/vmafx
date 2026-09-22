@@ -4,10 +4,10 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  motion_v2 feature extractor on the HIP backend -- sixth consumer
- *  of `libvmaf/src/hip/kernel_template.h` (T7-10b follow-up /
+ *  of `core/src/hip/kernel_template.h` (T7-10b follow-up /
  *  ADR-0267).  Real kernel promotion: T7-10b batch-4 / ADR-0377.
  *
- *  This TU mirrors `libvmaf/src/feature/cuda/integer_motion_v2_cuda.c`
+ *  This TU mirrors `core/src/feature/cuda/integer_motion_v2_cuda.c`
  *  call-graph-for-call-graph. When `HAVE_HIPCC` is defined the real HIP
  *  Module API path is active: module load, raw-pixel ping-pong (`pix[2]`)
  *  via `hipMalloc`, per-frame HtoD copy + `hipModuleLaunchKernel`, and a
@@ -572,12 +572,12 @@ static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_sc
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip;` in
- * `libvmaf/src/feature/feature_extractor.c`'s
+ * `core/src/feature/feature_extractor.cpp`'s
  * `feature_extractor_list[]`. Making this static would unlink the
  * extractor from the registry and fail every name lookup. Same
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_integer_motion_v2_cuda` in
- * `libvmaf/src/feature/cuda/integer_motion_v2_cuda.c`). */
+ * `core/src/feature/cuda/integer_motion_v2_cuda.c`). */
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip = {
     .name = "motion_v2_hip",

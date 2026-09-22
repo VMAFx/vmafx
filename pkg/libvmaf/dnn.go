@@ -117,6 +117,10 @@ func dnnErr(op string, rc int) error {
 // server's CPUExecutionProvider default would for a CPU-only build.
 func OpenDNNSession(path string) (*DNNSession, error) {
 	cPath := C.CString(path)
+	// SAFETY: cPath is the C.CString malloc'd on the line above; it is never
+	// re-assigned and has no other owner, and vmaf_dnn_session_open copies
+	// what it needs from the path before returning, so the deferred free
+	// releases a live block exactly once.
 	defer C.free(unsafe.Pointer(cPath))
 
 	var sess *C.VmafDnnSession
@@ -142,6 +146,9 @@ func OpenDNNSession(path string) (*DNNSession, error) {
 // cgo pointer rules bite (a descriptor struct holding Go pointers must be
 // pinned), and that bug is otherwise unreachable without an ORT build.
 func newSessionWithDummyHandleForTest() *DNNSession {
+	// SAFETY: unsafe.Sizeof on a zero VmafDnnSession value is a compile-time
+	// constant equal to the C struct's size, so the calloc block is exactly
+	// one whole session-sized object with no partial-object arithmetic.
 	h := (*C.VmafDnnSession)(C.calloc(1, C.size_t(unsafe.Sizeof(C.VmafDnnSession{}))))
 	return &DNNSession{sess: h, path: "<dummy>"}
 }
@@ -153,6 +160,10 @@ func (s *DNNSession) freeDummyHandleForTest() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.sess != nil {
+		// SAFETY: this method is documented as the sole owner-side release
+		// for handles minted by newSessionWithDummyHandleForTest, which are
+		// plain calloc blocks; s.mu is held and s.sess is nil'd immediately,
+		// so the block cannot be freed twice.
 		C.free(unsafe.Pointer(s.sess))
 		s.sess = nil
 	}
@@ -221,20 +232,28 @@ func (s *DNNSession) run(inputName string, x []float32, rows, cols int) ([]float
 	var cName *C.char
 	if inputName != "" {
 		cName = C.CString(inputName)
+		// SAFETY: cName is the C.CString malloc'd on the line above; it is
+		// never re-assigned, has no other owner, and outlives every C call
+		// in runLocked because the defer fires only after run returns.
 		defer C.free(unsafe.Pointer(cName))
 	}
+	return s.runLocked(cName, x, rows, cols)
+}
 
+// runLocked binds the descriptors and drives vmaf_dnn_session_run. The caller
+// holds s.mu, has checked the shape, and owns cName's lifetime.
+//
+// The descriptor structs are Go memory that holds Go pointers (into x, shape
+// and out), and we pass their addresses to C. The cgo pointer rules forbid
+// passing a Go pointer to Go memory containing pointers to *unpinned* Go
+// memory — without pinning this panics with "cgo argument has Go pointer to
+// unpinned Go pointer" on every call. Pinning the three backing arrays makes
+// it legal and keeps them from moving while ORT reads and writes them.
+// C.CString memory is malloc'd and needs no pin.
+func (s *DNNSession) runLocked(cName *C.char, x []float32, rows, cols int) ([]float32, error) {
 	shape := []C.int64_t{C.int64_t(rows), C.int64_t(cols)}
 	out := make([]float32, rows)
 
-	// The descriptor structs are Go memory that holds Go pointers (into
-	// x, shape and out), and we pass their addresses to C. The cgo
-	// pointer rules forbid passing a Go pointer to Go memory containing
-	// pointers to *unpinned* Go memory — without pinning this panics with
-	// "cgo argument has Go pointer to unpinned Go pointer" on every call.
-	// Pinning the three backing arrays makes it legal and keeps them from
-	// moving while ORT reads and writes them. C.CString memory is malloc'd
-	// and needs no pin.
 	var pinner runtime.Pinner
 	defer pinner.Unpin()
 	pinner.Pin(&x[0])
@@ -242,35 +261,31 @@ func (s *DNNSession) run(inputName string, x []float32, rows, cols int) ([]float
 	pinner.Pin(&out[0])
 
 	in := C.VmafDnnInput{
-		name:  cName,
-		data:  (*C.float)(unsafe.Pointer(&x[0])),
+		name: cName,
+		// SAFETY: x is non-empty (len(x) == rows*cols, rows and cols both
+		// positive) and pinned above, so &x[0] addresses rows*cols live
+		// float32s that cannot move for the duration of the C call.
+		data: (*C.float)(unsafe.Pointer(&x[0])),
+		// SAFETY: shape is the two-element slice literal above and is pinned,
+		// so &shape[0] addresses exactly the rank-2 extent declared below.
 		shape: (*C.int64_t)(unsafe.Pointer(&shape[0])),
 		rank:  2,
 	}
 	outDesc := C.VmafDnnOutput{
-		name:     nil,
+		name: nil,
+		// SAFETY: out has rows > 0 elements and is pinned above; capacity is
+		// set from len(out) on the next line, so ORT cannot write past it.
 		data:     (*C.float)(unsafe.Pointer(&out[0])),
 		capacity: C.size_t(len(out)),
 	}
 
 	rc := int(C.vmaf_dnn_session_run(s.sess, &in, 1, &outDesc, 1))
-
-	// On -ENOSPC the call still reports how many elements the graph
-	// would have produced. Resize and retry once so a model whose
-	// output arity differs from one-per-row reaches the caller as a
-	// shape mismatch rather than an opaque buffer error.
 	if rc == rcENOSPC {
-		need := int(outDesc.written)
-		if need <= 0 || need == len(out) {
-			return nil, dnnErr("vmaf_dnn_session_run", rc)
+		grown, retryRC, err := s.retryWithGrownOutput(&in, &outDesc, out, &pinner)
+		if err != nil {
+			return nil, err
 		}
-		out = make([]float32, need)
-		// Fresh allocation: pin it too before it is handed to C.
-		pinner.Pin(&out[0])
-		outDesc.data = (*C.float)(unsafe.Pointer(&out[0]))
-		outDesc.capacity = C.size_t(need)
-		outDesc.written = 0
-		rc = int(C.vmaf_dnn_session_run(s.sess, &in, 1, &outDesc, 1))
+		out, rc = grown, retryRC
 	}
 	if err := dnnErr("vmaf_dnn_session_run", rc); err != nil {
 		return nil, err
@@ -281,4 +296,32 @@ func (s *DNNSession) run(inputName string, x []float32, rows, cols int) ([]float
 		out = out[:written]
 	}
 	return out, nil
+}
+
+// retryWithGrownOutput handles -ENOSPC: the call still reports how many
+// elements the graph would have produced, so resize and retry once. That
+// lets a model whose output arity differs from one-per-row reach the caller
+// as a shape mismatch rather than an opaque buffer error. It returns the
+// replacement buffer and the retry's return code, or the original -ENOSPC
+// error when the reported size gives nothing to retry with.
+func (s *DNNSession) retryWithGrownOutput(
+	in *C.VmafDnnInput,
+	outDesc *C.VmafDnnOutput,
+	out []float32,
+	pinner *runtime.Pinner,
+) ([]float32, int, error) {
+	need := int(outDesc.written)
+	if need <= 0 || need == len(out) {
+		return nil, rcENOSPC, dnnErr("vmaf_dnn_session_run", rcENOSPC)
+	}
+	grown := make([]float32, need)
+	// Fresh allocation: pin it too before it is handed to C.
+	pinner.Pin(&grown[0])
+	// SAFETY: grown has need > 0 elements and was just pinned; capacity is
+	// set to the same need on the line below, so ORT cannot overrun it.
+	outDesc.data = (*C.float)(unsafe.Pointer(&grown[0]))
+	outDesc.capacity = C.size_t(need)
+	outDesc.written = 0
+	rc := int(C.vmaf_dnn_session_run(s.sess, in, 1, outDesc, 1))
+	return grown, rc, nil
 }

@@ -247,7 +247,12 @@ static char *test_verify_registry_no_slash_in_path(void)
     /* registry_path is a basename only — no '/'. */
     const int err = vmaf_dnn_verify_signature("/tmp/r.onnx", "reg_noslash.json");
 
-    (void)chdir(cwd_save);
+    /* `chdir` is declared `warn_unused_result`, which a `(void)` cast does not
+     * silence under GCC. Restoring the cwd is also load-bearing: every
+     * assertion below, and every later test in this binary, runs relative to
+     * it. Check it. */
+    const int restored = chdir(cwd_save);
+    mu_assert("restore cwd", restored == 0);
     mu_assert("no-slash registry + missing bundle -> -ENOENT", err == -ENOENT);
 
     cleanup_in_dir(dir, "reg_noslash.json");

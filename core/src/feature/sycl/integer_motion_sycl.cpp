@@ -59,7 +59,7 @@
  * T3-15(c) / ADR-0219. */
 static constexpr double MOTION_SYCL_DEFAULT_MAX_VAL = 10000.0;
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage) — ADR-0141 §2 load-bearing invariant: the
 // TU-local helpers and the `init_fex_sycl` / `extract_fex_sycl` /
 // `submit_fex_sycl` / `collect_fex_sycl` / `flush_fex_sycl` /
 // `close_fex_sycl` entry-point functions all use C-style `static` instead of
@@ -397,7 +397,6 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
                     item.barrier(sycl::access::fence_space::local_space);
 
                     if (lid == 0) {
-                        // NOLINTNEXTLINE(misc-const-correctness): atomic_ref / reduction-loop target — clang-tidy cannot see the writes through SYCL atomic_ref or sub-group reductions, but the variable is mutated and must not be const
                         int64_t total = 0;
                         for (uint32_t s = 0; s < n_subgroups; s++)
                             total += lmem[s];

@@ -127,3 +127,9 @@ them.
     `TestKnobTable_isTheFrozenContract` pins all ten. Out-of-contract
     options (`sample`, `blur`, `planes`, `meta`) excluded on purpose,
     must stay rejected.
+
+14. **Registry names are sorted through the standard library.**
+    `codecadapter.Known`, `prefilter.KnownFilters`, and the private knob-name
+    diagnostic use `slices.Sorted(maps.Keys(...))`. Do not re-grow parallel
+    key-collection/sort loops; CLI choice and diagnostic order stays
+    deterministic.

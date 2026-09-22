@@ -135,139 +135,12 @@ static int psnr_hvs_hip_module_load(PsnrHvsStateHip *s)
 }
 #endif /* HAVE_HIPCC */
 
-static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                        unsigned w, unsigned h)
+#ifdef HAVE_HIPCC
+/* Releases every per-plane device + pinned allocation made by
+ * psnr_hvs_alloc_plane_buffers(). Shared verbatim by the init unwind path and
+ * close_fex_hip() so both free the same set in the same order (HISS-01). */
+static void psnr_hvs_free_plane_buffers(PsnrHvsStateHip *s)
 {
-    PsnrHvsStateHip *s = fex->priv;
-
-    if (bpc > 12u) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: invalid bitdepth (%u); bpc must be <= 12\n",
-                 bpc);
-        return -EINVAL;
-    }
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "psnr_hvs_hip: YUV400P unsupported (psnr_hvs needs all 3 planes)\n");
-        return -EINVAL;
-    }
-    if (w < (unsigned)PSNR_HVS_BLOCK || h < (unsigned)PSNR_HVS_BLOCK) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: input %ux%u smaller than 8x8 block\n", w, h);
-        return -EINVAL;
-    }
-
-    s->bpc = bpc;
-    const int32_t samplemax = (int32_t)((1u << bpc) - 1u);
-    s->samplemax_sq = samplemax * samplemax;
-
-    s->width[0] = w;
-    s->height[0] = h;
-    switch (pix_fmt) {
-    case VMAF_PIX_FMT_YUV420P:
-        s->width[1] = s->width[2] = (w + 1u) >> 1;
-        s->height[1] = s->height[2] = (h + 1u) >> 1;
-        break;
-    case VMAF_PIX_FMT_YUV422P:
-        s->width[1] = s->width[2] = (w + 1u) >> 1;
-        s->height[1] = s->height[2] = h;
-        break;
-    case VMAF_PIX_FMT_YUV444P:
-        s->width[1] = s->width[2] = w;
-        s->height[1] = s->height[2] = h;
-        break;
-    default:
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: unsupported pix_fmt\n");
-        return -EINVAL;
-    }
-
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        if (s->width[p] < (unsigned)PSNR_HVS_BLOCK || s->height[p] < (unsigned)PSNR_HVS_BLOCK) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "psnr_hvs_hip: plane %d dims %ux%u smaller than 8x8 block\n", p, s->width[p],
-                     s->height[p]);
-            return -EINVAL;
-        }
-        s->num_blocks_x[p] = (s->width[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1u;
-        s->num_blocks_y[p] = (s->height[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1u;
-        s->num_blocks[p] = s->num_blocks_x[p] * s->num_blocks_y[p];
-    }
-
-    int err = vmaf_hip_context_new(&s->ctx, 0);
-    if (err != 0)
-        return err;
-
-    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0)
-        goto fail_after_ctx;
-
-#ifdef HAVE_HIPCC
-    err = psnr_hvs_hip_module_load(s);
-    if (err != 0)
-        goto fail_after_lc;
-
-    const unsigned bpc_bytes = (s->bpc <= 8u ? 1u : 2u);
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
-        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
-        const size_t uint_bytes = (size_t)s->width[p] * s->height[p] * bpc_bytes;
-
-        hipError_t rc = hipMalloc((void **)&s->d_ref[p], plane_bytes);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipMalloc((void **)&s->d_dist[p], plane_bytes);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipMalloc((void **)&s->d_partials[p], partials_bytes);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-
-        rc = hipHostMalloc((void **)&s->h_ref[p], plane_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipHostMalloc((void **)&s->h_dist[p], plane_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipHostMalloc((void **)&s->h_partials[p], partials_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipHostMalloc(&s->h_uint_ref[p], uint_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-        rc = hipHostMalloc(&s->h_uint_dist[p], uint_bytes, hipHostMallocDefault);
-        if (rc != hipSuccess) {
-            err = -ENOMEM;
-            goto fail_after_module;
-        }
-    }
-#endif /* HAVE_HIPCC */
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
-#ifdef HAVE_HIPCC
-        goto fail_after_module;
-#else
-        goto fail_after_lc;
-#endif
-    }
-    return 0;
-
-#ifdef HAVE_HIPCC
-fail_after_module:
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
         if (s->d_ref[p]) {
             (void)hipFree(s->d_ref[p]);
@@ -302,17 +175,170 @@ fail_after_module:
             s->h_uint_dist[p] = NULL;
         }
     }
+}
+
+/* Allocates the per-plane device + pinned staging buffers. On the first
+ * failure it returns -ENOMEM and leaves the partially-filled state for the
+ * caller's unwind tier to release, exactly as the former goto ladder did. */
+static int psnr_hvs_alloc_plane_buffers(PsnrHvsStateHip *s)
+{
+    const unsigned bpc_bytes = (s->bpc <= 8u ? 1u : 2u);
+    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+        const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
+        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
+        const size_t uint_bytes = (size_t)s->width[p] * s->height[p] * bpc_bytes;
+
+        if (hipMalloc((void **)&s->d_ref[p], plane_bytes) != hipSuccess)
+            return -ENOMEM;
+        if (hipMalloc((void **)&s->d_dist[p], plane_bytes) != hipSuccess)
+            return -ENOMEM;
+        if (hipMalloc((void **)&s->d_partials[p], partials_bytes) != hipSuccess)
+            return -ENOMEM;
+
+        if (hipHostMalloc((void **)&s->h_ref[p], plane_bytes, hipHostMallocDefault) != hipSuccess)
+            return -ENOMEM;
+        if (hipHostMalloc((void **)&s->h_dist[p], plane_bytes, hipHostMallocDefault) != hipSuccess)
+            return -ENOMEM;
+        if (hipHostMalloc((void **)&s->h_partials[p], partials_bytes, hipHostMallocDefault) !=
+            hipSuccess)
+            return -ENOMEM;
+        if (hipHostMalloc(&s->h_uint_ref[p], uint_bytes, hipHostMallocDefault) != hipSuccess)
+            return -ENOMEM;
+        if (hipHostMalloc(&s->h_uint_dist[p], uint_bytes, hipHostMallocDefault) != hipSuccess)
+            return -ENOMEM;
+    }
+    return 0;
+}
+#endif /* HAVE_HIPCC */
+
+/* ------------------------------------------------------------------ */
+/* init failure unwind — cascading tiers replacing the goto ladder.    */
+/* Each tier releases exactly its own acquisition then delegates to    */
+/* the next-earlier tier, preserving the fall-through release order.   */
+/* ------------------------------------------------------------------ */
+
+static int psnr_hvs_unwind_ctx(PsnrHvsStateHip *s, int err)
+{
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
+    return err;
+}
+
+static int psnr_hvs_unwind_lc(PsnrHvsStateHip *s, int err)
+{
+    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+    return psnr_hvs_unwind_ctx(s, err);
+}
+
+#ifdef HAVE_HIPCC
+static int psnr_hvs_unwind_module(PsnrHvsStateHip *s, int err)
+{
+    psnr_hvs_free_plane_buffers(s);
     if (s->module != NULL) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
     }
+    return psnr_hvs_unwind_lc(s, err);
+}
 #endif /* HAVE_HIPCC */
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
-    return err;
+
+/* Derives the per-plane dimensions and block counts for `pix_fmt`.
+ * Extracted from init_fex_hip() to keep that function inside the HISS-04
+ * 60-LOC bound; the arithmetic is copied statement-for-statement. */
+static int psnr_hvs_set_plane_geometry(PsnrHvsStateHip *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                                       unsigned h)
+{
+    s->width[0] = w;
+    s->height[0] = h;
+    switch (pix_fmt) {
+    case VMAF_PIX_FMT_YUV420P:
+        s->width[1] = s->width[2] = (w + 1u) >> 1;
+        s->height[1] = s->height[2] = (h + 1u) >> 1;
+        break;
+    case VMAF_PIX_FMT_YUV422P:
+        s->width[1] = s->width[2] = (w + 1u) >> 1;
+        s->height[1] = s->height[2] = h;
+        break;
+    case VMAF_PIX_FMT_YUV444P:
+        s->width[1] = s->width[2] = w;
+        s->height[1] = s->height[2] = h;
+        break;
+    default:
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: unsupported pix_fmt\n");
+        return -EINVAL;
+    }
+
+    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+        if (s->width[p] < (unsigned)PSNR_HVS_BLOCK || s->height[p] < (unsigned)PSNR_HVS_BLOCK) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "psnr_hvs_hip: plane %d dims %ux%u smaller than 8x8 block\n", p, s->width[p],
+                     s->height[p]);
+            return -EINVAL;
+        }
+        s->num_blocks_x[p] = (s->width[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1u;
+        s->num_blocks_y[p] = (s->height[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1u;
+        s->num_blocks[p] = s->num_blocks_x[p] * s->num_blocks_y[p];
+    }
+
+    return 0;
+}
+
+static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                        unsigned w, unsigned h)
+{
+    PsnrHvsStateHip *s = fex->priv;
+
+    if (bpc > 12u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: invalid bitdepth (%u); bpc must be <= 12\n",
+                 bpc);
+        return -EINVAL;
+    }
+    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "psnr_hvs_hip: YUV400P unsupported (psnr_hvs needs all 3 planes)\n");
+        return -EINVAL;
+    }
+    if (w < (unsigned)PSNR_HVS_BLOCK || h < (unsigned)PSNR_HVS_BLOCK) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: input %ux%u smaller than 8x8 block\n", w, h);
+        return -EINVAL;
+    }
+
+    s->bpc = bpc;
+    const int32_t samplemax = (int32_t)((1u << bpc) - 1u);
+    s->samplemax_sq = samplemax * samplemax;
+
+    int err = psnr_hvs_set_plane_geometry(s, pix_fmt, w, h);
+    if (err != 0)
+        return err;
+
+    err = vmaf_hip_context_new(&s->ctx, 0);
+    if (err != 0)
+        return err;
+
+    err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
+    if (err != 0)
+        return psnr_hvs_unwind_ctx(s, err);
+
+#ifdef HAVE_HIPCC
+    err = psnr_hvs_hip_module_load(s);
+    if (err != 0)
+        return psnr_hvs_unwind_lc(s, err);
+
+    err = psnr_hvs_alloc_plane_buffers(s);
+    if (err != 0)
+        return psnr_hvs_unwind_module(s, err);
+#endif /* HAVE_HIPCC */
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (s->feature_name_dict == NULL) {
+#ifdef HAVE_HIPCC
+        return psnr_hvs_unwind_module(s, -ENOMEM);
+#else
+        return psnr_hvs_unwind_lc(s, -ENOMEM);
+#endif
+    }
+    return 0;
 }
 
 #ifdef HAVE_HIPCC
@@ -521,40 +547,7 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
 
 #ifdef HAVE_HIPCC
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        if (s->d_ref[p]) {
-            (void)hipFree(s->d_ref[p]);
-            s->d_ref[p] = NULL;
-        }
-        if (s->d_dist[p]) {
-            (void)hipFree(s->d_dist[p]);
-            s->d_dist[p] = NULL;
-        }
-        if (s->d_partials[p]) {
-            (void)hipFree(s->d_partials[p]);
-            s->d_partials[p] = NULL;
-        }
-        if (s->h_ref[p]) {
-            (void)hipHostFree(s->h_ref[p]);
-            s->h_ref[p] = NULL;
-        }
-        if (s->h_dist[p]) {
-            (void)hipHostFree(s->h_dist[p]);
-            s->h_dist[p] = NULL;
-        }
-        if (s->h_partials[p]) {
-            (void)hipHostFree(s->h_partials[p]);
-            s->h_partials[p] = NULL;
-        }
-        if (s->h_uint_ref[p]) {
-            (void)hipHostFree(s->h_uint_ref[p]);
-            s->h_uint_ref[p] = NULL;
-        }
-        if (s->h_uint_dist[p]) {
-            (void)hipHostFree(s->h_uint_dist[p]);
-            s->h_uint_dist[p] = NULL;
-        }
-    }
+    psnr_hvs_free_plane_buffers(s);
     if (s->module != NULL) {
         hipError_t hip_err = hipModuleUnload(s->module);
         if (hip_err != hipSuccess && rc == 0)

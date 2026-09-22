@@ -637,7 +637,9 @@ def write_full_baseline(path: Path, measured: Measurement, expected: bytes | Non
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--lane", default="cpu", help="baseline lane name (cpu, cuda, sycl, hip)")
+    parser.add_argument(
+        "--lane", default="cpu", help="baseline lane name (cpu, cuda, sycl, hip, arm64)"
+    )
     parser.add_argument("--build-dir", default="build", type=Path)
     parser.add_argument("--repo-root", default=".", type=Path)
     parser.add_argument(

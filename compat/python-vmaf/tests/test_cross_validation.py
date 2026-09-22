@@ -19,6 +19,54 @@ from vmaf.core.cross_validation import ModelCrossValidation
 # ---------------------------------------------------------------------------
 
 
+class _FakeModel:
+    """Per-instance fake model: records its params and returns fixed stats."""
+
+    def __init__(self, model_param, stats, logger=None, optional_dict2=None):
+        self.model_param = model_param
+        self._stats = stats
+
+    def train(self, xys):
+        pass
+
+    def evaluate(self, xs, ys):
+        return dict(self._stats)
+
+
+class _FakeResultsMixin:
+    """The class-level results interface ModelCrossValidation calls."""
+
+    @classmethod
+    def reset(cls):
+        cls.reset_called += 1
+
+    @classmethod
+    def get_xys_from_results(cls, results, indexs=None):
+        # Return a minimal xys dict; content doesn't matter for CV logic tests.
+        n = len(results) if indexs is None else len(indexs)
+        return {"label": [float(i) for i in range(n)], "content_id": list(range(n))}
+
+    @classmethod
+    def get_xs_from_results(cls, results, indexs=None):
+        n = len(results) if indexs is None else len(indexs)
+        return {"feature_x": [float(i) for i in range(n)]}
+
+    @classmethod
+    def get_ys_from_results(cls, results, indexs=None):
+        n = len(results) if indexs is None else len(indexs)
+        return {"label": [float(i) for i in range(n)], "content_id": list(range(n))}
+
+    @classmethod
+    def aggregate_stats_list(cls, statss):
+        # Simple element-wise mean of SRCC, PCC, RMSE.
+        keys = ("SRCC", "PCC", "RMSE")
+        return {k: sum(s[k] for s in statss) / len(statss) for k in keys}
+
+    @staticmethod
+    def get_objective_score(stats, score_type="SRCC"):
+        return stats.get(score_type, 0.0)
+
+
 def _make_model_class(srcc: float = 0.9, pcc: float = 0.85, rmse: float = 5.0):
     """Return a minimal fake train-test model class for cross-validation tests.
 
@@ -32,60 +80,21 @@ def _make_model_class(srcc: float = 0.9, pcc: float = 0.85, rmse: float = 5.0):
     - aggregate_stats_list(statss) -> aggregated stats
     - get_objective_score(stats, score_type) -> float
     """
+    stats = {"SRCC": srcc, "PCC": pcc, "RMSE": rmse}
 
-    class FakeModel:
-        def __init__(self, model_param, logger=None, optional_dict2=None):
-            self.model_param = model_param
-
-        def train(self, xys):
-            pass
-
-        def evaluate(self, xs, ys):
-            return {"SRCC": srcc, "PCC": pcc, "RMSE": rmse}
-
-    class FakeModelClass:
+    class FakeModelClass(_FakeResultsMixin):
         """Mimics the class-level interface of TrainTestModel."""
 
         reset_called = 0
 
-        @classmethod
-        def reset(cls):
-            cls.reset_called += 1
-
-        @classmethod
-        def get_xys_from_results(cls, results, indexs=None):
-            # Return a minimal xys dict; content doesn't matter for CV logic tests.
-            n = len(results) if indexs is None else len(indexs)
-            return {"label": [float(i) for i in range(n)], "content_id": list(range(n))}
-
-        @classmethod
-        def get_xs_from_results(cls, results, indexs=None):
-            n = len(results) if indexs is None else len(indexs)
-            return {"feature_x": [float(i) for i in range(n)]}
-
-        @classmethod
-        def get_ys_from_results(cls, results, indexs=None):
-            n = len(results) if indexs is None else len(indexs)
-            return {"label": [float(i) for i in range(n)], "content_id": list(range(n))}
-
         def __init__(self, model_param, logger=None, optional_dict2=None):
-            self._model = FakeModel(model_param, logger, optional_dict2)
+            self._model = _FakeModel(model_param, stats, logger, optional_dict2)
 
         def train(self, xys):
             self._model.train(xys)
 
         def evaluate(self, xs, ys):
             return self._model.evaluate(xs, ys)
-
-        @classmethod
-        def aggregate_stats_list(cls, statss):
-            # Simple element-wise mean of SRCC, PCC, RMSE.
-            keys = ("SRCC", "PCC", "RMSE")
-            return {k: sum(s[k] for s in statss) / len(statss) for k in keys}
-
-        @staticmethod
-        def get_objective_score(stats, score_type="SRCC"):
-            return stats.get(score_type, 0.0)
 
     return FakeModelClass
 

@@ -260,6 +260,15 @@ static void ms_ssim_hip_init_dims(MsSsimStateHip *s, unsigned w, unsigned h, uns
 
 #ifdef HAVE_HIPCC
 
+/* Unloads the freshly-loaded module and reports `rc`. Extracted from the
+ * former `fail:` label in ms_ssim_hip_module_load() (HISS-01). */
+static int ms_ssim_unload_module(MsSsimStateHip *s, hipError_t rc)
+{
+    (void)hipModuleUnload(s->module);
+    s->module = NULL;
+    return ms_ssim_hip_rc(rc);
+}
+
 /* Load the HSACO and resolve the three kernel function handles. */
 static int ms_ssim_hip_module_load(MsSsimStateHip *s)
 {
@@ -269,138 +278,100 @@ static int ms_ssim_hip_module_load(MsSsimStateHip *s)
 
     hip_rc = hipModuleGetFunction(&s->func_decimate, s->module, "ms_ssim_decimate");
     if (hip_rc != hipSuccess)
-        goto fail;
+        return ms_ssim_unload_module(s, hip_rc);
     hip_rc = hipModuleGetFunction(&s->func_horiz, s->module, "ms_ssim_horiz");
     if (hip_rc != hipSuccess)
-        goto fail;
+        return ms_ssim_unload_module(s, hip_rc);
     hip_rc = hipModuleGetFunction(&s->func_vert_lcs, s->module, "ms_ssim_vert_lcs");
     if (hip_rc != hipSuccess)
-        goto fail;
+        return ms_ssim_unload_module(s, hip_rc);
     return 0;
-
-fail:
-    (void)hipModuleUnload(s->module);
-    s->module = NULL;
-    return ms_ssim_hip_rc(hip_rc);
 }
 
-/* Allocate all device buffers. Returns 0 or negative errno.
- * On failure, already-allocated buffers are freed and NULL-ed. */
-static int ms_ssim_hip_bufs_alloc(MsSsimStateHip *s)
+/* ------------------------------------------------------------------ */
+/* bufs_alloc failure unwind — one helper per former label.            */
+/*                                                                    */
+/* The former ladder let each label fall through into the next-earlier */
+/* one. Each helper below reproduces exactly its own label body and    */
+/* then tail-calls the label it used to fall into, so the release set  */
+/* and release ORDER are unchanged for every entry point (HISS-01).    */
+/* ------------------------------------------------------------------ */
+
+static int ms_ssim_unwind_cmp0(MsSsimStateHip *s, hipError_t rc)
 {
-    const size_t level0_bytes = (size_t)s->scale_w[0] * s->scale_h[0] * sizeof(float);
-    const size_t horiz_max = (size_t)s->scale_w_horiz[0] * s->scale_h_horiz[0] * sizeof(float);
+    (void)hipFree(s->d_ref0);
+    s->d_ref0 = NULL;
+    return ms_ssim_hip_rc(rc);
+}
 
-    hipError_t hip_rc;
-    /* Level 0 float staging buffers (device). */
-    hip_rc = hipMalloc(&s->d_ref0, level0_bytes);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_hip_rc(hip_rc);
-    hip_rc = hipMalloc(&s->d_cmp0, level0_bytes);
-    if (hip_rc != hipSuccess)
-        goto fail_cmp0;
+static int ms_ssim_unwind_h_ref(MsSsimStateHip *s, hipError_t rc)
+{
+    (void)hipFree(s->d_cmp0);
+    s->d_cmp0 = NULL;
+    return ms_ssim_unwind_cmp0(s, rc);
+}
 
-    /* Pinned host float buffers for picture_copy → H2D upload. */
-    hip_rc = hipHostMalloc((void **)&s->h_ref, level0_bytes, hipHostMallocDefault);
-    if (hip_rc != hipSuccess)
-        goto fail_h_ref;
-    hip_rc = hipHostMalloc((void **)&s->h_cmp, level0_bytes, hipHostMallocDefault);
-    if (hip_rc != hipSuccess)
-        goto fail_h_cmp;
+static int ms_ssim_unwind_h_cmp(MsSsimStateHip *s, hipError_t rc)
+{
+    if (s->h_ref) {
+        (void)hipHostFree(s->h_ref);
+        s->h_ref = NULL;
+    }
+    return ms_ssim_unwind_h_ref(s, rc);
+}
 
-    /* Pyramid levels 0..4 for ref and cmp. */
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t lvl = (size_t)s->scale_w[i] * s->scale_h[i] * sizeof(float);
-        hip_rc = hipMalloc(&s->pyramid_ref[i], lvl);
-        if (hip_rc != hipSuccess)
-            goto fail_pyramid;
-        hip_rc = hipMalloc(&s->pyramid_cmp[i], lvl);
-        if (hip_rc != hipSuccess) {
+/* Former `fail_intermed:` was empty and fell straight into `fail_pyramid:`,
+ * so both entry points share this helper. */
+static int ms_ssim_unwind_pyramid(MsSsimStateHip *s, hipError_t rc)
+{
+    for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
+        if (s->pyramid_cmp[i]) {
+            (void)hipFree(s->pyramid_cmp[i]);
+            s->pyramid_cmp[i] = NULL;
+        }
+        if (s->pyramid_ref[i]) {
             (void)hipFree(s->pyramid_ref[i]);
             s->pyramid_ref[i] = NULL;
-            goto fail_pyramid;
         }
     }
-
-    /* SSIM intermediate float buffers (sized for scale 0, reused per scale). */
-    hip_rc = hipMalloc(&s->d_ref_mu, horiz_max);
-    if (hip_rc != hipSuccess)
-        goto fail_intermed;
-    hip_rc = hipMalloc(&s->d_cmp_mu, horiz_max);
-    if (hip_rc != hipSuccess)
-        goto fail_cmp_mu;
-    hip_rc = hipMalloc(&s->d_ref_sq, horiz_max);
-    if (hip_rc != hipSuccess)
-        goto fail_ref_sq;
-    hip_rc = hipMalloc(&s->d_cmp_sq, horiz_max);
-    if (hip_rc != hipSuccess)
-        goto fail_cmp_sq;
-    hip_rc = hipMalloc(&s->d_refcmp, horiz_max);
-    if (hip_rc != hipSuccess)
-        goto fail_refcmp;
-
-    /* Per-scale device partials (sizeof(double) per ADR-0990). */
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
-        hip_rc = hipMalloc(&s->l_partials[i], pb);
-        if (hip_rc != hipSuccess)
-            goto fail_partials;
-        hip_rc = hipMalloc(&s->c_partials[i], pb);
-        if (hip_rc != hipSuccess) {
-            (void)hipFree(s->l_partials[i]);
-            s->l_partials[i] = NULL;
-            goto fail_partials;
-        }
-        hip_rc = hipMalloc(&s->s_partials[i], pb);
-        if (hip_rc != hipSuccess) {
-            (void)hipFree(s->c_partials[i]);
-            s->c_partials[i] = NULL;
-            (void)hipFree(s->l_partials[i]);
-            s->l_partials[i] = NULL;
-            goto fail_partials;
-        }
+    /* Falls through to free h_cmp, h_ref, d_cmp0, d_ref0. */
+    if (s->h_cmp) {
+        (void)hipHostFree(s->h_cmp);
+        s->h_cmp = NULL;
     }
+    return ms_ssim_unwind_h_cmp(s, rc);
+}
 
-    /* Pinned host partials for async DtoH (write-combined, sizeof(double)). */
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
-        hip_rc = hipHostMalloc((void **)&s->h_l_partials[i], pb, hipHostMallocWriteCombined);
-        if (hip_rc != hipSuccess)
-            goto fail_pinned;
-        hip_rc = hipHostMalloc((void **)&s->h_c_partials[i], pb, hipHostMallocWriteCombined);
-        if (hip_rc != hipSuccess) {
-            (void)hipHostFree(s->h_l_partials[i]);
-            s->h_l_partials[i] = NULL;
-            goto fail_pinned;
-        }
-        hip_rc = hipHostMalloc((void **)&s->h_s_partials[i], pb, hipHostMallocWriteCombined);
-        if (hip_rc != hipSuccess) {
-            (void)hipHostFree(s->h_c_partials[i]);
-            s->h_c_partials[i] = NULL;
-            (void)hipHostFree(s->h_l_partials[i]);
-            s->h_l_partials[i] = NULL;
-            goto fail_pinned;
-        }
-    }
-    return 0;
+static int ms_ssim_unwind_cmp_mu(MsSsimStateHip *s, hipError_t rc)
+{
+    (void)hipFree(s->d_ref_mu);
+    s->d_ref_mu = NULL;
+    return ms_ssim_unwind_pyramid(s, rc);
+}
 
-    /* Unwind in reverse. Labels mark the first that failed. */
-fail_pinned:
-    for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
-        if (s->h_s_partials[i]) {
-            (void)hipHostFree(s->h_s_partials[i]);
-            s->h_s_partials[i] = NULL;
-        }
-        if (s->h_c_partials[i]) {
-            (void)hipHostFree(s->h_c_partials[i]);
-            s->h_c_partials[i] = NULL;
-        }
-        if (s->h_l_partials[i]) {
-            (void)hipHostFree(s->h_l_partials[i]);
-            s->h_l_partials[i] = NULL;
-        }
-    }
-fail_partials:
+static int ms_ssim_unwind_ref_sq(MsSsimStateHip *s, hipError_t rc)
+{
+    (void)hipFree(s->d_cmp_mu);
+    s->d_cmp_mu = NULL;
+    return ms_ssim_unwind_cmp_mu(s, rc);
+}
+
+static int ms_ssim_unwind_cmp_sq(MsSsimStateHip *s, hipError_t rc)
+{
+    (void)hipFree(s->d_ref_sq);
+    s->d_ref_sq = NULL;
+    return ms_ssim_unwind_ref_sq(s, rc);
+}
+
+static int ms_ssim_unwind_refcmp(MsSsimStateHip *s, hipError_t rc)
+{
+    (void)hipFree(s->d_cmp_sq);
+    s->d_cmp_sq = NULL;
+    return ms_ssim_unwind_cmp_sq(s, rc);
+}
+
+static int ms_ssim_unwind_partials(MsSsimStateHip *s, hipError_t rc)
+{
     for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
         if (s->s_partials[i]) {
             (void)hipFree(s->s_partials[i]);
@@ -417,51 +388,166 @@ fail_partials:
     }
     (void)hipFree(s->d_refcmp);
     s->d_refcmp = NULL;
-fail_refcmp:
-    (void)hipFree(s->d_cmp_sq);
-    s->d_cmp_sq = NULL;
-fail_cmp_sq:
-    (void)hipFree(s->d_ref_sq);
-    s->d_ref_sq = NULL;
-fail_ref_sq:
-    (void)hipFree(s->d_cmp_mu);
-    s->d_cmp_mu = NULL;
-fail_cmp_mu:
-    (void)hipFree(s->d_ref_mu);
-    s->d_ref_mu = NULL;
-fail_intermed:
-fail_pyramid:
-    for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
-        if (s->pyramid_cmp[i]) {
-            (void)hipFree(s->pyramid_cmp[i]);
-            s->pyramid_cmp[i] = NULL;
-        }
-        if (s->pyramid_ref[i]) {
-            (void)hipFree(s->pyramid_ref[i]);
-            s->pyramid_ref[i] = NULL;
-        }
-    }
-    /* Falls through to free h_cmp, h_ref, d_cmp0, d_ref0. */
-    if (s->h_cmp) {
-        (void)hipHostFree(s->h_cmp);
-        s->h_cmp = NULL;
-    }
-fail_h_cmp:
-    if (s->h_ref) {
-        (void)hipHostFree(s->h_ref);
-        s->h_ref = NULL;
-    }
-fail_h_ref:
-    (void)hipFree(s->d_cmp0);
-    s->d_cmp0 = NULL;
-fail_cmp0:
-    (void)hipFree(s->d_ref0);
-    s->d_ref0 = NULL;
-    return ms_ssim_hip_rc(hip_rc);
+    return ms_ssim_unwind_refcmp(s, rc);
 }
 
-/* Free all device and pinned-host buffers. Safe with NULL pointers. */
-static void ms_ssim_hip_bufs_free(MsSsimStateHip *s)
+static int ms_ssim_unwind_pinned(MsSsimStateHip *s, hipError_t rc)
+{
+    for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
+        if (s->h_s_partials[i]) {
+            (void)hipHostFree(s->h_s_partials[i]);
+            s->h_s_partials[i] = NULL;
+        }
+        if (s->h_c_partials[i]) {
+            (void)hipHostFree(s->h_c_partials[i]);
+            s->h_c_partials[i] = NULL;
+        }
+        if (s->h_l_partials[i]) {
+            (void)hipHostFree(s->h_l_partials[i]);
+            s->h_l_partials[i] = NULL;
+        }
+    }
+    return ms_ssim_unwind_partials(s, rc);
+}
+
+/* Level-0 float staging (device) plus the pinned host upload buffers. */
+static int ms_ssim_alloc_base(MsSsimStateHip *s, size_t level0_bytes)
+{
+    hipError_t hip_rc = hipMalloc(&s->d_ref0, level0_bytes);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_hip_rc(hip_rc);
+    hip_rc = hipMalloc(&s->d_cmp0, level0_bytes);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_unwind_cmp0(s, hip_rc);
+
+    /* Pinned host float buffers for picture_copy -> H2D upload. */
+    hip_rc = hipHostMalloc((void **)&s->h_ref, level0_bytes, hipHostMallocDefault);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_unwind_h_ref(s, hip_rc);
+    hip_rc = hipHostMalloc((void **)&s->h_cmp, level0_bytes, hipHostMallocDefault);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_unwind_h_cmp(s, hip_rc);
+    return 0;
+}
+
+/* Pyramid levels 0..4 for ref and cmp. */
+static int ms_ssim_alloc_pyramid(MsSsimStateHip *s)
+{
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        const size_t lvl = (size_t)s->scale_w[i] * s->scale_h[i] * sizeof(float);
+        hipError_t hip_rc = hipMalloc(&s->pyramid_ref[i], lvl);
+        if (hip_rc != hipSuccess)
+            return ms_ssim_unwind_pyramid(s, hip_rc);
+        hip_rc = hipMalloc(&s->pyramid_cmp[i], lvl);
+        if (hip_rc != hipSuccess) {
+            (void)hipFree(s->pyramid_ref[i]);
+            s->pyramid_ref[i] = NULL;
+            return ms_ssim_unwind_pyramid(s, hip_rc);
+        }
+    }
+    return 0;
+}
+
+/* SSIM intermediate float buffers (sized for scale 0, reused per scale). */
+static int ms_ssim_alloc_intermed(MsSsimStateHip *s, size_t horiz_max)
+{
+    hipError_t hip_rc = hipMalloc(&s->d_ref_mu, horiz_max);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_unwind_pyramid(s, hip_rc);
+    hip_rc = hipMalloc(&s->d_cmp_mu, horiz_max);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_unwind_cmp_mu(s, hip_rc);
+    hip_rc = hipMalloc(&s->d_ref_sq, horiz_max);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_unwind_ref_sq(s, hip_rc);
+    hip_rc = hipMalloc(&s->d_cmp_sq, horiz_max);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_unwind_cmp_sq(s, hip_rc);
+    hip_rc = hipMalloc(&s->d_refcmp, horiz_max);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_unwind_refcmp(s, hip_rc);
+    return 0;
+}
+
+/* Per-scale device partials (sizeof(double) per ADR-0990). */
+static int ms_ssim_alloc_partials(MsSsimStateHip *s)
+{
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
+        hipError_t hip_rc = hipMalloc(&s->l_partials[i], pb);
+        if (hip_rc != hipSuccess)
+            return ms_ssim_unwind_partials(s, hip_rc);
+        hip_rc = hipMalloc(&s->c_partials[i], pb);
+        if (hip_rc != hipSuccess) {
+            (void)hipFree(s->l_partials[i]);
+            s->l_partials[i] = NULL;
+            return ms_ssim_unwind_partials(s, hip_rc);
+        }
+        hip_rc = hipMalloc(&s->s_partials[i], pb);
+        if (hip_rc != hipSuccess) {
+            (void)hipFree(s->c_partials[i]);
+            s->c_partials[i] = NULL;
+            (void)hipFree(s->l_partials[i]);
+            s->l_partials[i] = NULL;
+            return ms_ssim_unwind_partials(s, hip_rc);
+        }
+    }
+    return 0;
+}
+
+/* Pinned host partials for async DtoH (write-combined, sizeof(double)). */
+static int ms_ssim_alloc_pinned(MsSsimStateHip *s)
+{
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
+        hipError_t hip_rc =
+            hipHostMalloc((void **)&s->h_l_partials[i], pb, hipHostMallocWriteCombined);
+        if (hip_rc != hipSuccess)
+            return ms_ssim_unwind_pinned(s, hip_rc);
+        hip_rc = hipHostMalloc((void **)&s->h_c_partials[i], pb, hipHostMallocWriteCombined);
+        if (hip_rc != hipSuccess) {
+            (void)hipHostFree(s->h_l_partials[i]);
+            s->h_l_partials[i] = NULL;
+            return ms_ssim_unwind_pinned(s, hip_rc);
+        }
+        hip_rc = hipHostMalloc((void **)&s->h_s_partials[i], pb, hipHostMallocWriteCombined);
+        if (hip_rc != hipSuccess) {
+            (void)hipHostFree(s->h_c_partials[i]);
+            s->h_c_partials[i] = NULL;
+            (void)hipHostFree(s->h_l_partials[i]);
+            s->h_l_partials[i] = NULL;
+            return ms_ssim_unwind_pinned(s, hip_rc);
+        }
+    }
+    return 0;
+}
+
+/* Allocate all device buffers. Returns 0 or negative errno.
+ * On failure, already-allocated buffers are freed and NULL-ed. */
+static int ms_ssim_hip_bufs_alloc(MsSsimStateHip *s)
+{
+    const size_t level0_bytes = (size_t)s->scale_w[0] * s->scale_h[0] * sizeof(float);
+    const size_t horiz_max = (size_t)s->scale_w_horiz[0] * s->scale_h_horiz[0] * sizeof(float);
+
+    int err = ms_ssim_alloc_base(s, level0_bytes);
+    if (err != 0)
+        return err;
+    err = ms_ssim_alloc_pyramid(s);
+    if (err != 0)
+        return err;
+    err = ms_ssim_alloc_intermed(s, horiz_max);
+    if (err != 0)
+        return err;
+    err = ms_ssim_alloc_partials(s);
+    if (err != 0)
+        return err;
+    return ms_ssim_alloc_pinned(s);
+}
+
+/* Per-scale partial / pyramid buffers. Extracted from ms_ssim_hip_bufs_free()
+ * to keep both halves inside the HISS-04 60-LOC bound; release order is
+ * unchanged. */
+static void ms_ssim_free_per_scale(MsSsimStateHip *s)
 {
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
         if (s->h_s_partials[i]) {
@@ -497,6 +583,11 @@ static void ms_ssim_hip_bufs_free(MsSsimStateHip *s)
             s->pyramid_ref[i] = NULL;
         }
     }
+}
+
+/* The scale-independent staging buffers, released after the per-scale ones. */
+static void ms_ssim_free_shared(MsSsimStateHip *s)
+{
     if (s->d_refcmp) {
         (void)hipFree(s->d_refcmp);
         s->d_refcmp = NULL;
@@ -533,6 +624,13 @@ static void ms_ssim_hip_bufs_free(MsSsimStateHip *s)
         (void)hipFree(s->d_ref0);
         s->d_ref0 = NULL;
     }
+}
+
+/* Free all device and pinned-host buffers. Safe with NULL pointers. */
+static void ms_ssim_hip_bufs_free(MsSsimStateHip *s)
+{
+    ms_ssim_free_per_scale(s);
+    ms_ssim_free_shared(s);
 }
 
 /* Normalise a uint VmafPicture luma plane into a pinned float host buffer,
@@ -639,24 +737,38 @@ static double ms_ssim_convert_to_db(double score, double max_db)
     return db < max_db ? db : max_db;
 }
 
-static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                        unsigned w, unsigned h)
+/* ------------------------------------------------------------------ */
+/* init_fex_hip failure unwind — one helper per former label, each     */
+/* tail-calling the label it used to fall into (HISS-01).              */
+/* ------------------------------------------------------------------ */
+
+static int ms_ssim_init_unwind_ctx(MsSsimStateHip *s, int err)
 {
-    (void)pix_fmt;
-    MsSsimStateHip *s = fex->priv;
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
+    return err;
+}
 
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P || !s->enable_chroma) {
-        s->n_planes = 1u;
-    } else {
-        s->n_planes = 1u; /* reserved: MS-SSIM chroma extension not yet impl. */
-    }
+static int ms_ssim_init_unwind_lc(MsSsimStateHip *s, int err)
+{
+    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
+    return ms_ssim_init_unwind_ctx(s, err);
+}
 
-    int err = ms_ssim_hip_validate(w, h);
-    if (err != 0)
-        return err;
+#ifdef HAVE_HIPCC
+static int ms_ssim_init_unwind_module(MsSsimStateHip *s, int err)
+{
+    (void)hipModuleUnload(s->module);
+    s->module = NULL;
+    return ms_ssim_init_unwind_lc(s, err);
+}
+#endif /* HAVE_HIPCC */
 
-    ms_ssim_hip_init_dims(s, w, h, bpc);
-
+/* Derives the dB ceiling from the frame geometry. Extracted from
+ * init_fex_hip() for HISS-04; `ceil(10. * log10(peak * peak / mse))` is copied
+ * as a single unsplit expression, so the value is bit-identical. */
+static void ms_ssim_hip_set_max_db(MsSsimStateHip *s, unsigned bpc, unsigned w, unsigned h)
+{
     /* ADR-1221 — `clip_db` is a CEILING on the dB output, not a clamp on the
      * linear score. float_ms_ssim.c derives it from the frame geometry:
      *
@@ -676,6 +788,27 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
             s->max_db = INFINITY;
         }
     }
+}
+
+static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                        unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    MsSsimStateHip *s = fex->priv;
+
+    if (pix_fmt == VMAF_PIX_FMT_YUV400P || !s->enable_chroma) {
+        s->n_planes = 1u;
+    } else {
+        s->n_planes = 1u; /* reserved: MS-SSIM chroma extension not yet impl. */
+    }
+
+    int err = ms_ssim_hip_validate(w, h);
+    if (err != 0)
+        return err;
+
+    ms_ssim_hip_init_dims(s, w, h, bpc);
+
+    ms_ssim_hip_set_max_db(s, bpc, w, h);
 
     err = vmaf_hip_context_new(&s->ctx, 0);
     if (err != 0)
@@ -683,46 +816,31 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 
     err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err != 0)
-        goto fail_after_ctx;
+        return ms_ssim_init_unwind_ctx(s, err);
 
 #ifdef HAVE_HIPCC
     err = ms_ssim_hip_module_load(s);
     if (err != 0)
-        goto fail_after_lc;
+        return ms_ssim_init_unwind_lc(s, err);
 
     err = ms_ssim_hip_bufs_alloc(s);
     if (err != 0)
-        goto fail_after_module;
+        return ms_ssim_init_unwind_module(s, err);
 #else
-    err = -ENOSYS;
-    if (err != 0)
-        goto fail_after_lc;
+    return ms_ssim_init_unwind_lc(s, -ENOSYS);
 #endif /* HAVE_HIPCC */
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (s->feature_name_dict == NULL) {
-        err = -ENOMEM;
 #ifdef HAVE_HIPCC
         ms_ssim_hip_bufs_free(s);
-        goto fail_after_module;
+        return ms_ssim_init_unwind_module(s, -ENOMEM);
 #else
-        goto fail_after_lc;
+        return ms_ssim_init_unwind_lc(s, -ENOMEM);
 #endif
     }
     return 0;
-
-#ifdef HAVE_HIPCC
-fail_after_module:
-    (void)hipModuleUnload(s->module);
-    s->module = NULL;
-#endif
-fail_after_lc:
-    (void)vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_after_ctx:
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
-    return err;
 }
 
 static int close_fex_hip(VmafFeatureExtractor *fex)
@@ -760,6 +878,41 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 /* submit / collect                                                    */
 /* ------------------------------------------------------------------ */
 
+#ifdef HAVE_HIPCC
+/* Copies the normalised level-0 planes into the pyramid and builds levels
+ * 1..4 with the decimate kernel. Pure enqueue; no host arithmetic, so the
+ * split cannot perturb any score (HISS-04 split of submit_fex_hip). */
+static int ms_ssim_hip_build_pyramid(MsSsimStateHip *s, hipStream_t str)
+{
+    int err = 0;
+    /* Copy the normalised float level-0 planes into the pyramid. */
+    const size_t l0_bytes = (size_t)s->scale_w[0] * s->scale_h[0] * sizeof(float);
+    hipError_t hip_rc =
+        hipMemcpyAsync(s->pyramid_ref[0], s->d_ref0, l0_bytes, hipMemcpyDeviceToDevice, str);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_hip_rc(hip_rc);
+    hip_rc = hipMemcpyAsync(s->pyramid_cmp[0], s->d_cmp0, l0_bytes, hipMemcpyDeviceToDevice, str);
+    if (hip_rc != hipSuccess)
+        return ms_ssim_hip_rc(hip_rc);
+
+    /* Build pyramid levels 1..4 via the decimate kernel. */
+    for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
+        err = ms_ssim_hip_launch_decimate(s, str, s->pyramid_ref[i], s->pyramid_ref[i + 1],
+                                          s->scale_w[i], s->scale_h[i], s->scale_w[i + 1],
+                                          s->scale_h[i + 1]);
+        if (err != 0)
+            return err;
+        err = ms_ssim_hip_launch_decimate(s, str, s->pyramid_cmp[i], s->pyramid_cmp[i + 1],
+                                          s->scale_w[i], s->scale_h[i], s->scale_w[i + 1],
+                                          s->scale_h[i + 1]);
+        if (err != 0)
+            return err;
+    }
+    return 0;
+}
+
+#endif /* HAVE_HIPCC */
+
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -790,29 +943,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (err != 0)
         return err;
 
-    /* Copy the normalised float level-0 planes into the pyramid. */
-    const size_t l0_bytes = (size_t)s->scale_w[0] * s->scale_h[0] * sizeof(float);
-    hipError_t hip_rc =
-        hipMemcpyAsync(s->pyramid_ref[0], s->d_ref0, l0_bytes, hipMemcpyDeviceToDevice, str);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_hip_rc(hip_rc);
-    hip_rc = hipMemcpyAsync(s->pyramid_cmp[0], s->d_cmp0, l0_bytes, hipMemcpyDeviceToDevice, str);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_hip_rc(hip_rc);
-
-    /* Build pyramid levels 1..4 via the decimate kernel. */
-    for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
-        err = ms_ssim_hip_launch_decimate(s, str, s->pyramid_ref[i], s->pyramid_ref[i + 1],
-                                          s->scale_w[i], s->scale_h[i], s->scale_w[i + 1],
-                                          s->scale_h[i + 1]);
-        if (err != 0)
-            return err;
-        err = ms_ssim_hip_launch_decimate(s, str, s->pyramid_cmp[i], s->pyramid_cmp[i + 1],
-                                          s->scale_w[i], s->scale_h[i], s->scale_w[i + 1],
-                                          s->scale_h[i + 1]);
-        if (err != 0)
-            return err;
-    }
+    err = ms_ssim_hip_build_pyramid(s, str);
+    if (err != 0)
+        return err;
 
     /* Per-scale horiz + vert_lcs + DtoH. All enqueued on the same stream. */
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
@@ -822,13 +955,45 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     }
 
     /* Record the submit event and register with the lifecycle. */
-    hip_rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
+    hipError_t hip_rc = hipEventRecord((hipEvent_t)s->lc.submit, str);
     if (hip_rc != hipSuccess)
         return ms_ssim_hip_rc(hip_rc);
 
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 #endif /* HAVE_HIPCC */
 }
+
+#ifdef HAVE_HIPCC
+/* Emits the per-scale l/c/s means under `enable_lcs`. Emission only — the
+ * means were already computed by the caller (HISS-04 split of
+ * collect_fex_hip). */
+static int ms_ssim_hip_emit_lcs(VmafFeatureCollector *feature_collector, unsigned index,
+                                const double l_means[MS_SSIM_SCALES],
+                                const double c_means[MS_SSIM_SCALES],
+                                const double s_means[MS_SSIM_SCALES])
+{
+    int err = 0;
+    static const char *const l_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
+        "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
+    };
+    static const char *const c_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
+        "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
+    };
+    static const char *const s_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
+        "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
+    };
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        err |= vmaf_feature_collector_append(feature_collector, l_names[i], l_means[i], index);
+        err |= vmaf_feature_collector_append(feature_collector, c_names[i], c_means[i], index);
+        err |= vmaf_feature_collector_append(feature_collector, s_names[i], s_means[i], index);
+    }
+    return err;
+}
+
+#endif /* HAVE_HIPCC */
 
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
@@ -877,25 +1042,8 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 
     err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                   "float_ms_ssim", score, index);
-    if (s->enable_lcs) {
-        static const char *const l_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
-            "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
-        };
-        static const char *const c_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
-            "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
-        };
-        static const char *const s_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
-            "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
-        };
-        for (int i = 0; i < MS_SSIM_SCALES; i++) {
-            err |= vmaf_feature_collector_append(feature_collector, l_names[i], l_means[i], index);
-            err |= vmaf_feature_collector_append(feature_collector, c_names[i], c_means[i], index);
-            err |= vmaf_feature_collector_append(feature_collector, s_names[i], s_means[i], index);
-        }
-    }
+    if (s->enable_lcs)
+        err |= ms_ssim_hip_emit_lcs(feature_collector, index, l_means, c_means, s_means);
     return err;
 #endif /* HAVE_HIPCC */
 }

@@ -90,4 +90,7 @@ rounding nondeterminism.
 
 ## License
 
-BSD-3-Clause-Plus-Patent — matches the rest of the fork.
+EUPL-1.2 — matches the rest of the fork's own code (see
+[ADR-1250](../docs/adr/1250-eupl-fork-relicense.md)). Model weights under
+`model/` carry their own licence, recorded per entry in
+`model/tiny/registry.json`.

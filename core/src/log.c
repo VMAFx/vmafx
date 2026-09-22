@@ -64,9 +64,16 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
         return;
 
     va_list args;
+#if defined(__clang__) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+    /* Clang 21 lowers the C23 va_start macro to __builtin_c23_va_start,
+     * which its VAList analyzer does not model yet. The traditional builtin
+     * has identical initialization semantics and remains available in C23. */
+    __builtin_va_start(args, fmt);
+#else
+    va_start(args, fmt);
+#endif
     (void)fprintf(stderr, "%slibvmaf%s %s%s%s ", istty ? "\x1B[35m" : "", istty ? "\x1B[0m" : "",
                   istty ? level_str_color[level] : "", level_str[level], istty ? "\x1B[0m" : "");
-    va_start(args, fmt);
     (void)vfprintf(stderr, fmt, args);
     va_end(args);
 }

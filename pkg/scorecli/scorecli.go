@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -31,6 +31,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 )
 
 // Canonical6Features are the six libvmaf feature extractors the fork's
@@ -90,18 +92,6 @@ type Result struct {
 	FeatureStds       map[string]float64
 }
 
-// modelArg formats the --model argument. Bare identifiers are wrapped as
-// "version=..."; pre-formatted key=value strings pass through.
-func modelArg(model string) string {
-	if model == "" {
-		model = vmafmodel.DefaultVersion
-	}
-	if strings.Contains(model, "=") {
-		return model
-	}
-	return "version=" + model
-}
-
 // pixFmtToVMAF maps an ffmpeg pix_fmt onto libvmaf's --pixel_format
 // vocabulary. Anything unrecognised falls back to 420.
 func pixFmtToVMAF(pixFmt string) string {
@@ -144,7 +134,7 @@ func BuildCommand(req Request, jsonOutput, vmafBin, backend string) []string {
 		"--height", strconv.Itoa(req.Height),
 		"--pixel_format", pixFmtToVMAF(req.PixFmt),
 		"--bitdepth", strconv.Itoa(bitdepthFor(req.PixFmt)),
-		"--model", modelArg(req.Model),
+		"--model", vmafmodel.CLIArgumentOrDefault(req.Model),
 		"--json",
 		"--output", jsonOutput,
 	}
@@ -309,13 +299,7 @@ func Run(ctx context.Context, req Request, vmafBin, backend string, runner Runne
 	if err != nil {
 		return Result{}, fmt.Errorf("create score workdir: %w", err)
 	}
-	defer func() {
-		if rmErr := os.RemoveAll(workdir); rmErr != nil {
-			// Best effort: a leaked temp dir is far less bad than losing
-			// the score we just computed.
-			_ = rmErr
-		}
-	}()
+	defer removeScoreWorkdir(workdir)
 
 	jsonPath := filepath.Join(workdir, "vmaf.json")
 	argv := BuildCommand(req, jsonPath, vmafBin, backend)
@@ -327,25 +311,7 @@ func Run(ctx context.Context, req Request, vmafBin, backend string, runner Runne
 		return Result{}, fmt.Errorf("run vmaf: %w", runErr)
 	}
 
-	score := math.NaN()
-	means := map[string]float64{}
-	stds := map[string]float64{}
-	if exitStatus == 0 {
-		// #nosec G304 -- jsonPath is this function's own MkdirTemp output.
-		data, readErr := os.ReadFile(jsonPath)
-		switch {
-		case readErr != nil:
-			exitStatus = 65
-		default:
-			parsed, parseErr := ParseJSON(data)
-			if parseErr != nil {
-				exitStatus = 65
-			} else {
-				score = parsed
-			}
-			means, stds = ParseFeatureAggregates(data, Canonical6Features)
-		}
-	}
+	score, means, stds, exitStatus := parseRunOutput(jsonPath, exitStatus)
 
 	version := "unknown"
 	if m := vmafVersionRE.FindStringSubmatch(stderr); m != nil {
@@ -362,6 +328,34 @@ func Run(ctx context.Context, req Request, vmafBin, backend string, runner Runne
 		FeatureMeans:      means,
 		FeatureStds:       stds,
 	}, nil
+}
+
+func removeScoreWorkdir(workdir string) {
+	if err := os.RemoveAll(workdir); err != nil {
+		slog.Warn("scorecli: remove score workdir", "error", err, "path", workdir)
+	}
+}
+
+func parseRunOutput(path string, exitStatus int) (float64, map[string]float64, map[string]float64, int) {
+	score := math.NaN()
+	means := map[string]float64{}
+	stds := map[string]float64{}
+	if exitStatus != 0 {
+		return score, means, stds, exitStatus
+	}
+	// #nosec G304 -- path is this function's driver-owned JSON sidecar.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return score, means, stds, 65
+	}
+	parsed, err := ParseJSON(data)
+	if err != nil {
+		exitStatus = 65
+	} else {
+		score = parsed
+	}
+	means, stds = ParseFeatureAggregates(data, Canonical6Features)
+	return score, means, stds, exitStatus
 }
 
 // tail returns the last n bytes of text.

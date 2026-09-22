@@ -13,7 +13,7 @@ below.
 
 ## Corpus availability (status 2026-05-15)
 
-The corpus is **materialized locally** at `.workingdir2/konvid-150k/`
+The corpus is **materialized locally** at `.corpus/konvid-150k/`
 (gitignored, ~179 GB). Inventory:
 
 | Artefact | Size | Purpose |
@@ -66,7 +66,7 @@ ADR-0325 §License).
 URL-manifest layout:
 
 ```text
-.workingdir2/konvid-150k/
+.corpus/konvid-150k/
   ├── manifest.csv                   # operator drops this
   ├── .download-progress.json        # written by this script (resumable state)
   ├── clips/                         # populated by this script
@@ -79,7 +79,7 @@ URL-manifest layout:
 Split score-drop layout:
 
 ```text
-.workingdir2/konvid-150k/
+.corpus/konvid-150k/
   ├── k150ka_scores.csv              # video_name,video_score
   ├── k150ka_extracted/              # K150K-A MP4 clips
   ├── k150kb_scores.csv              # video_name,mos,video_score
@@ -87,8 +87,8 @@ Split score-drop layout:
   └── konvid_150k.jsonl              # written by this script (output)
 ```
 
-All of these paths are gitignored (`.workingdir2/` is the fork's
-standard research-data drop, see CLAUDE.md §5). With a URL manifest,
+All of these paths are gitignored (`.corpus/` is the fork's
+standard research-data root, see AGENTS.md §5). With a URL manifest,
 the script downloads on demand into `clips/`. With the split score
 layout, the script reads the local extracted MP4s directly; it does
 not try to reconstruct source URLs.
@@ -101,13 +101,13 @@ The Phase 2 ingestion is a per-row download → ffprobe → JSONL emit
 loop:
 
 ```text
-   .workingdir2/konvid-150k/manifest.csv
+   .corpus/konvid-150k/manifest.csv
             │
             │  ai/scripts/konvid_150k_to_corpus_jsonl.py
             │      (per row: curl → ffprobe → MOS join)
             │      (writes .download-progress.json after each clip)
             ▼
-   .workingdir2/konvid-150k/konvid_150k.jsonl
+   .corpus/konvid-150k/konvid_150k.jsonl
             │
             │  (Phase 3 — out of scope here, ADR-0325 §Phase 3)
             ▼
@@ -134,13 +134,13 @@ parquet shards.
 ## 4. Run command
 
 After dropping either the URL manifest or the split score/extracted
-layout under `.workingdir2/konvid-150k/`:
+layout under `.corpus/konvid-150k/`:
 
 ```bash
 python ai/scripts/konvid_150k_to_corpus_jsonl.py
 ```
 
-Default output path is `.workingdir2/konvid-150k/konvid_150k.jsonl`.
+Default output path is `.corpus/konvid-150k/konvid_150k.jsonl`.
 Override with `--output`. The adapter writes `<output>.manifest.json` by
 default; pass `--manifest-out PATH` when the replay sidecar should live in
 a dated experiment bundle. Override the input root with `--konvid-dir`.
@@ -164,7 +164,7 @@ The summary line lands on stderr on completion:
 The single largest difference from Phase 1: a full pass takes
 hours-to-days, so `Ctrl-C` + re-run **must** pick up where the prior
 run left off without re-downloading. State is recorded in
-`.workingdir2/konvid-150k/.download-progress.json`, written
+`.corpus/konvid-150k/.download-progress.json`, written
 atomically (tempfile + rename) at most every 50 clips and once at the
 end of every run.
 
@@ -288,7 +288,7 @@ adapter is exercised by
 [`ai/tests/test_konvid_150k.py`](../../ai/tests/test_konvid_150k.py),
 which mocks both ffprobe **and** curl via the script's injectable
 `runner` seam and stands up a temporary
-`.workingdir2/konvid-150k/`-shaped tree on disk. The tests run in well
+`.corpus/konvid-150k/`-shaped tree on disk. The tests run in well
 under one second and require neither curl, ffprobe, nor the corpus.
 
 ## 11. Operational notes

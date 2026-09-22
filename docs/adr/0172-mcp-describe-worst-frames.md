@@ -7,7 +7,7 @@
 
 ## Context
 
-[BACKLOG T6-6](../../.workingdir2/BACKLOG.md) /
+BACKLOG T6-6 /
 [Wave 1 roadmap § 2.7](../ai/roadmap.md) called for an MCP tool that
 picks the worst-VMAF frames in a `(ref, dis)` pair and emits a short
 text description via a vision-language model — a debugging
@@ -159,7 +159,7 @@ Runtime + pandas + scipy) stay separate.
 
 ## References
 
-- [BACKLOG T6-6](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T6-6 — backlog row.
 - [Wave 1 roadmap § 2.7](../ai/roadmap.md) — original spec.
 - [ADR-0166](0166-mcp-server-release-channel.md) — MCP release
   channel; this tool ships in the next release tag.

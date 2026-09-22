@@ -51,7 +51,7 @@ foreground-vs-background distortion affects subjective quality.
 | ONNX opset | 17 |
 | Training corpus | DUTS-TR (Wang et al. 2017) — 10 553 RGB images + binary saliency masks; *not* redistributed in-tree |
 | Held-out validation IoU | recorded in `build_artifacts/saliency_student_v1_train.json` (`best_val_iou`); ship gate is ≥ 0.5 |
-| License | BSD-3-Clause-Plus-Patent (the trained weights are wholly fork-owned; DUTS images are training input only and not bundled) |
+| License | BSD-2-Clause-Patent (the trained weights are wholly fork-owned; DUTS images are training input only and not bundled) |
 | Exporter | `ai/scripts/train_saliency_student.py` |
 
 The training run is deterministic given a fixed `--seed` (default 42)

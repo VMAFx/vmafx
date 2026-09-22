@@ -14,6 +14,20 @@ RES = pointOp(IM, LUT, ORIGIN, INCREMENT, WARNINGS)
 
 void internal_pointop();
 
+/* Read a mandatory-or-optional real scalar argument.  @p name is used in the
+   two diagnostics, which keep the exact wording the inline checks had. */
+static double read_scalar_arg(const mxArray *arg, const char *type_msg, const char *size_msg)
+{
+    double *mxMat;
+
+    if notDblMtx (arg)
+        mexErrMsgTxt(type_msg);
+    if (mxGetM(arg) * mxGetN(arg) != 1)
+        mexErrMsgTxt(size_msg);
+    mxMat = mxGetPr(arg);
+    return *mxMat;
+}
+
 void mexFunction(int nlhs,             /* Num return vals on lhs */
                  mxArray *plhs[],      /* Matrices on lhs      */
                  int nrhs,             /* Num args on rhs    */
@@ -24,8 +38,7 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
     double origin, increment;
     int x_dim, y_dim, lx_dim, ly_dim;
     int warnings = 1;
-    mxArray *arg;
-    double *mxMat;
+    const mxArray *arg;
 
     if (nrhs < 4)
         mexErrMsgTxt("requres  at least 4 args.");
@@ -49,33 +62,17 @@ void mexFunction(int nlhs,             /* Num return vals on lhs */
         mexErrMsgTxt("Lookup table must be a row or column vector.");
 
     /* ARG 3: ORIGIN */
-    arg = prhs[2];
-    if notDblMtx (arg)
-        mexErrMsgTxt("ORIGIN arg must be a real scalar.");
-    if (mxGetM(arg) * mxGetN(arg) != 1)
-        mexErrMsgTxt("ORIGIN arg must be a real scalar.");
-    mxMat = mxGetPr(arg);
-    origin = *mxMat;
+    origin = read_scalar_arg(prhs[2], "ORIGIN arg must be a real scalar.",
+                             "ORIGIN arg must be a real scalar.");
 
     /* ARG 4: INCREMENT */
-    arg = prhs[3];
-    if notDblMtx (arg)
-        mexErrMsgTxt("INCREMENT arg must be a real scalar.");
-    if (mxGetM(arg) * mxGetN(arg) != 1)
-        mexErrMsgTxt("INCREMENT arg must be a real scalar.");
-    mxMat = mxGetPr(arg);
-    increment = *mxMat;
+    increment = read_scalar_arg(prhs[3], "INCREMENT arg must be a real scalar.",
+                                "INCREMENT arg must be a real scalar.");
 
     /* ARG 5: WARNINGS */
-    if (nrhs > 4) {
-        arg = prhs[4];
-        if notDblMtx (arg)
-            mexErrMsgTxt("WARINGS arg must be a real scalar.");
-        if (mxGetM(arg) * mxGetN(arg) != 1)
-            mexErrMsgTxt("WARNINGS arg must be a real scalar.");
-        mxMat = mxGetPr(arg);
-        warnings = (int)*mxMat;
-    }
+    if (nrhs > 4)
+        warnings = (int)read_scalar_arg(prhs[4], "WARINGS arg must be a real scalar.",
+                                        "WARNINGS arg must be a real scalar.");
 
     plhs[0] = (mxArray *)mxCreateDoubleMatrix(x_dim, y_dim, mxREAL);
     if (plhs[0] == NULL)

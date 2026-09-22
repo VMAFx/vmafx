@@ -90,6 +90,12 @@ class ScorecardWorkflowTests(unittest.TestCase):
         self.assertNotIn("needs:", workflow)
         self.assertNotIn("download-artifact", workflow)
         self.assertIn('run: test "$IS_DRAFT" = false', workflow)
+        self.assertIn(
+            "if: ${{ always() && github.event.pull_request.draft == false }}",
+            workflow,
+        )
+        self.assertIn("if-no-files-found: error", workflow)
+        self.assertNotIn("        if: always()\n", workflow)
         self.assertIn("ref: ${{ github.event.pull_request.head.sha }}", workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("publish_results: false", workflow)

@@ -334,6 +334,53 @@ const char *vmaf_model_feature_name(const VmafModel *model, unsigned index)
     return model->feature[index].name;
 }
 
+/* Build a fresh, empty collection sized for the first model.
+ *
+ * Every failure path frees whatever this function itself allocated and returns
+ * -ENOMEM with *out untouched, so the caller never sees a half-built
+ * collection. Keeping the unwind local to each early return is what lets
+ * vmaf_model_collection_append() drop its cascading unwind labels (HISS-01);
+ * the ordering of the frees is unchanged — mc->model before mc. */
+static int model_collection_new(VmafModelCollection **out, const VmafModel *model)
+{
+    VmafModelCollection *mc = malloc(sizeof(*mc));
+    if (!mc)
+        return -ENOMEM;
+    memset(mc, 0, sizeof(*mc));
+
+    const size_t initial_sz = 8 * sizeof(*mc->model);
+    mc->model = (VmafModel **)malloc(initial_sz);
+    if (!mc->model) {
+        free(mc);
+        return -ENOMEM;
+    }
+    memset((void *)mc->model, 0, initial_sz);
+    mc->size = 8;
+    mc->type = model->type;
+
+    /* Guard against size_t underflow when name is shorter than the
+     * ".json" suffix we strip (5 chars).  An empty or very short
+     * model name is a caller error; reject it cleanly.  mc->model was
+     * already allocated above and must be freed before mc itself. */
+    if (strlen(model->name) < 5) {
+        free((void *)mc->model);
+        free(mc);
+        return -ENOMEM;
+    }
+    const size_t name_sz = strlen(model->name) - 5 + 1;
+    mc->name = malloc(name_sz);
+    if (!mc->name) {
+        free((void *)mc->model);
+        free(mc);
+        return -ENOMEM;
+    }
+    memset((char *)mc->name, 0, name_sz);
+    strncpy((char *)mc->name, model->name, name_sz - 1);
+
+    *out = mc;
+    return 0;
+}
+
 int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafModel *model)
 {
     if (!model_collection)
@@ -344,30 +391,14 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
     VmafModelCollection *mc = *model_collection;
 
     if (!mc) {
-        mc = *model_collection = malloc(sizeof(*mc));
-        if (!mc)
-            goto fail;
-        memset(mc, 0, sizeof(*mc));
-        const size_t initial_sz = 8 * sizeof(*mc->model);
-        mc->model = (VmafModel **)malloc(initial_sz);
-        if (!mc->model)
-            goto fail_mc;
-        memset((void *)mc->model, 0, initial_sz);
-        mc->size = 8;
-        mc->type = model->type;
-        /* Guard against size_t underflow when name is shorter than the
-         * ".json" suffix we strip (5 chars).  An empty or very short
-         * model name is a caller error; reject it cleanly.  Use fail_model
-         * (not fail_mc): mc->model was already allocated above and must be
-         * freed before mc itself. */
-        if (strlen(model->name) < 5)
-            goto fail_model;
-        const size_t name_sz = strlen(model->name) - 5 + 1;
-        mc->name = malloc(name_sz);
-        if (!mc->name)
-            goto fail_model;
-        memset((char *)mc->name, 0, name_sz);
-        strncpy((char *)mc->name, model->name, name_sz - 1);
+        const int err = model_collection_new(&mc, model);
+        if (err) {
+            /* Match the historical contract: a failed first append leaves the
+             * caller's handle NULL rather than dangling. */
+            *model_collection = NULL;
+            return err;
+        }
+        *model_collection = mc;
     }
 
     if (mc->type != model->type)
@@ -387,14 +418,6 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
 
     mc->model[mc->cnt++] = model;
     return 0;
-
-fail_model:
-    free((void *)mc->model);
-fail_mc:
-    free(mc);
-fail:
-    *model_collection = NULL;
-    return -ENOMEM;
 }
 
 void vmaf_model_collection_destroy(VmafModelCollection *model_collection)

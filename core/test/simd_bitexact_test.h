@@ -97,7 +97,7 @@ static inline uint32_t simd_test_xorshift32(uint32_t *state)
  *
  * C11 `aligned_alloc` is unavailable on MinGW (no feature-test macro
  * exposes it under `-std=c11 -pedantic`) and on MSVC (which never
- * shipped it). Mirrors the wrapper in `libvmaf/src/mem.c` so the
+ * shipped it). Mirrors the wrapper in `core/src/mem.cpp` so the
  * tests stay free of an internal-header dependency. See PR #198.
  * ------------------------------------------------------------------- */
 

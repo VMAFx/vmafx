@@ -1,0 +1,1 @@
+| [ADR-1295](1295-sureal-degenerate-opinion-score-statistics.md) | Correct sureal's Gaussian density for unanimously rated stimuli in-process, so a zero opinion-score scale takes its Dirac-delta limit instead of dividing by zero and silently dropping those observations from the log-likelihood. | Proposed | python, numerical-correctness, dependencies, testing |

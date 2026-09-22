@@ -147,7 +147,11 @@ func TestControllerStreamRoundTrip(t *testing.T) {
 		t.Fatalf("StreamJobs over the wire failed: %v", err)
 	}
 	var got []controllerv1.JobStatus
-	for {
+	// The fixture holds two matching jobs, so the stream is two messages plus EOF. The
+	// bound reads one past the contract to observe the EOF and fails loudly rather than
+	// hanging if the server keeps sending.
+	const wantJobs = 2
+	for range wantJobs + 2 {
 		job, err := stream.Recv()
 		if err == io.EOF {
 			break
@@ -156,6 +160,9 @@ func TestControllerStreamRoundTrip(t *testing.T) {
 			t.Fatalf("stream Recv: %v", err)
 		}
 		got = append(got, job.GetStatus())
+	}
+	if len(got) > wantJobs {
+		t.Fatalf("server streamed %d jobs without EOF, want %d", len(got), wantJobs)
 	}
 	if len(got) != 2 || got[0] != controllerv1.JobStatus_RUNNING || got[1] != controllerv1.JobStatus_PENDING {
 		t.Errorf("streamed statuses = %v, want [RUNNING PENDING]", got)
