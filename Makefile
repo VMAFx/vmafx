@@ -173,6 +173,24 @@ lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
 # lane goes through scripts/ci/clang-tidy-sycl.sh. `tidy-ratchet-write`
 # regenerates scripts/ci/tidy-baseline-$(LANE).json after a cleanup —
 # commit it in the same PR; never hand-edit a baseline.
+#
+# Configure TIDY_RATCHET_BUILD_DIR with -Db_lto=false and put it OUTSIDE the
+# repository, e.g.
+#   meson setup /tmp/tidy-hip core -Db_lto=false -Denable_hip=true \
+#       -Denable_hipcc=false -Denable_cuda=false -Denable_sycl=false
+#   make tidy-ratchet LANE=hip TIDY_RATCHET_BUILD_DIR=/tmp/tidy-hip
+# Two reasons, both of which otherwise make the measurement unusable:
+#   * the project default carries b_lto_threads=4 (ADR-1172), which meson
+#     renders as GCC's -flto=4. clang-tidy parses these compile commands with
+#     clang, which rejects it ("unsupported argument '4' to option '-flto='"),
+#     so every translation unit is reported as a compile failure. The CPU CI
+#     lane already configures its throwaway build with -Db_lto=false for this.
+#   * an in-repo build dir puts the generated *_hsaco.c / *.json.c translation
+#     units inside the measured source set, which the committed baselines do
+#     not contain.
+# Open: T-TIDY-RATCHET-GPU-LANES-UNREPRODUCIBLE-2026-09-22 in docs/state.md
+# tracks the residual per-file drift between this configuration and the numbers
+# the committed GPU baselines were recorded with.
 LANE ?= cpu
 TIDY_RATCHET_BUILD_DIR ?= $(BUILD_DIR)
 TIDY_RATCHET_EXTRA_cpu :=

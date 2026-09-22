@@ -51953,3 +51953,18 @@ horizontal reductions are ADR-0138/ADR-0139 bit-exactness invariants.
 - `chore/hiss21-core-src-root` (vendored mirror): `core/src/interop/pelorus_interop.c` and `core/src/interop/pelorus_qp_report_csv.c` are ADR-1113 verbatim mirrors of `libpelorus/src/interop.c` and `src/qp_report_csv.c` at `PELORUS_VENDOR_SHA`. This branch edited both, so `scripts/sync-pelorus-interop.sh <pelorus checkout>` reports DRIFT (tracked as `T-PELORUS-MIRROR-SOURCE-DRIFT-2026-09-22` in `docs/state.md`). A re-vendor (`--update`) will overwrite these hunks: carry the splits — `validate_pack_args`, `pack_total_size`, `pack_write_sections`, `blob_validate_framing` (which publishes the header so the blob is cast once per constness), `qp_report_copy_frame_stats`, `qp_cell_average`, `qp_fold_blocks_to_cells`, `csv_parse_finish` and the bounded `split_fields` — upstream into `VMAFx/pelorus` first, then re-vendor and bump the pin; do not re-apply them onto a freshly vendored file.
 
 HISS-21 `core/src/feature/` top level (2026-09-21): `ciede`, `feature_collector`, `feature_dists`, `feature_lpips`, `float_moment`, `float_ms_ssim`, `float_psnr`, `float_ssim`, `motion` and `pu21` lost their cleanup `goto` ladders to `*_init_unwind` / `*_append_*` `static` helpers in the same TU — on conflict reapply the helper boundaries rather than restoring the label ladders, and keep every arithmetic expression whole across them (ADR-1253).
+
+- `chore/hiss21-core-src-hip` — HIP host code (`core/src/feature/hip/**`) replaced its `goto` cleanup ladders with cascading `static` unwind helpers and split oversized init/submit/collect/close functions; on conflict keep the helper boundaries and re-check that each tier still frees the same set in the same order as the upstream-twin CUDA ladder it mirrors.
+  The `VmafOption` tables, `g_weights[108]` and `g_hip_features[]` keep the upstream-twin
+  one-entry-per-line layout: an earlier revision of this branch packed them behind
+  `// clang-format off` to shrink a HISS-04 block finding that the current praetor engine no longer
+  raises for file-scope initialiser tables, and the packing was reverted. In `ssimulacra2_hip.c`,
+  `ss2h_picture_to_linear_rgb()`, `ss2h_run_scale_gpu()` and `extract_fex_hip()` are split into
+  `ss2h_yuv_primaries()`, `ss2h_upload_xyb()`, `ss2h_download_blurred()` and
+  `ss2h_downsample_for_next_scale()` under
+  [ADR-1289](adr/1289-hip-ssimulacra2-host-helper-split.md), which withdraws the ADR-0141 §2 no-split
+  citations those three used to carry; on conflict keep the split side and keep the invariants the
+  comments now name (the ADR-1205 / ADR-0891 `fmaf()` chain, the eight-launch order inside
+  `ss2h_run_scale_gpu()`, the per-scale order in `extract_fex_hip()`). `ssimulacra2_cuda.c` and
+  `core/src/feature/ssimulacra2.c` still carry their own no-split citations and must not be split
+  along with it.
