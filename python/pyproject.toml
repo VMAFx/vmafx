@@ -27,7 +27,12 @@ run_vmaf_training = "vmaf.script.run_vmaf_training:main"
 # definition` -- so `setup.py` aborts before it can report a version.
 # Ubuntu 24.04 still ships setuptools 68.1.2, and `pip install --user`
 # does not upgrade it, which is exactly how the Coverage Gate hit this.
-requires = ["setuptools>=77.0.1", "wheel", "Cython", "numpy>=2.5.3"]
+# packaging>=24.2 travels with that floor. setuptools>=77 validates the SPDX
+# expression through `packaging.licenses`, which only exists from 24.2, and
+# when it is missing `dist._finalize_license_expression()` raises
+# `ImportError: Cannot import \`packaging.licenses\`` and setup.py exits 1 --
+# the same failure the setuptools floor was meant to end, one layer down.
+requires = ["setuptools>=77.0.1", "packaging>=24.2", "wheel", "Cython", "numpy>=2.5.3"]
 
 [project]
 name = "vmaf"

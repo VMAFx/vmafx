@@ -655,7 +655,7 @@ jobs:
           # how setup_metadata_test.py failed the first time this lane ran the
           # whole Python suite to completion.
           python3 -m pip install --user -r python/requirements.txt pytest \
-            'gcovr>=8.0' 'setuptools>=77.0.1'
+            'gcovr>=8.0' 'setuptools>=77.0.1' 'packaging>=24.2'
       # Cache the ORT GPU .tgz so we don't re-download ~150 MB from
       # github.com/microsoft/onnxruntime/releases on every Coverage Gate
       # run. Key is purely the ORT version pinned in the env block of the
@@ -1008,7 +1008,7 @@ jobs:
           # how setup_metadata_test.py failed the first time this lane ran the
           # whole Python suite to completion.
           python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout \
-            'setuptools>=77.0.1'
+            'setuptools>=77.0.1' 'packaging>=24.2'
           # Scope GPU test runs with VMAF_FORCE_BACKEND away from the Netflix golden assertions
           # (ADR-0024 / AGENTS.md §8) to avoid failing on ULP-relaxed GPU float differences.
           VMAF_FORCE_BACKEND=cuda python3 -m pytest python/test/ -v \

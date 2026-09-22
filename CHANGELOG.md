@@ -26543,6 +26543,9 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   honoured). Total test count in `test_output` raised from 8 to 11.
 
 
+- Fixed `setup.py` still exiting 1 on the Coverage Gate runner after the setuptools floor landed. setuptools>=77 validates `[project].license`'s PEP 639 SPDX expression through `packaging.licenses`, which only exists from packaging 24.2; below that, `dist._finalize_license_expression()` raises `ImportError: Cannot import 'packaging.licenses'` and the invocation dies before any command runs. `packaging>=24.2` now travels with `setuptools>=77.0.1` in all four places that floor is declared — `[build-system].requires`, the `cythonize-deps` venv, and both Coverage lanes.
+
+
 - Enforce the documented 512-container JSON model nesting limit before changing
   parser state; reject a 513th nested array or object and invalid stack-growth
   overrides before allocation. Preserve parser behavior
