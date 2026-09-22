@@ -10,6 +10,7 @@ branch and checks that the selected compiler also supplies the include root.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -21,7 +22,35 @@ import unittest
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[1] / "src" / "meson.build"
-MESON = os.environ.get("VMAFX_TEST_MESON") or shutil.which("meson")
+
+
+def _meson_command() -> list[str]:
+    """Resolve the Meson that configures the fixture project.
+
+    Meson ships as an ordinary Python package, so the interpreter running this
+    test can almost always run it directly. Under ``meson test`` that package
+    *is* the Meson driving the suite, which is exactly the version the fixture
+    has to be configured with, and asking the interpreter for it needs no
+    hand-off from the build system at all. A PATH lookup covers the remaining
+    case of a test interpreter that cannot import Meson.
+
+    Deriving the command here rather than reading a build-supplied environment
+    variable also keeps an attacker-settable value out of the ``subprocess``
+    argv, which is what Semgrep's ``dangerous-subprocess-use-tainted-env-args``
+    objects to (the rule treats ``os.environ`` *and* ``sys.argv`` as sources,
+    so passing the path as a test argument would not have helped).
+    """
+    try:
+        spec = importlib.util.find_spec("mesonbuild.mesonmain")
+    except (ImportError, ValueError):
+        spec = None
+    if spec is not None:
+        return [sys.executable, "-m", "mesonbuild.mesonmain"]
+    on_path = shutil.which("meson")
+    return [] if on_path is None else [on_path]
+
+
+MESON_COMMAND = _meson_command()
 
 
 def discovery_block() -> str:
@@ -133,17 +162,15 @@ def _build_fixture(root: Path, *, vswhere: str, path_compiler: bool) -> tuple[Pa
 
 def _run_meson(root: Path, binary_dir: Path, cross: Path) -> subprocess.CompletedProcess[str]:
     """Configure the fixture project with only the stub binaries on PATH."""
-    # No real cl/PowerShell may leak into the missing-tool cases.
+    # No real cl/PowerShell may leak into the missing-tool cases. Repointing
+    # PATH at this test's own fixture directory is the point of the case; the
+    # child never reaches it to resolve argv[0], which is an absolute path.
     environment = {**os.environ, "PATH": str(binary_dir)}
-    # Controlled Meson executable and test-owned paths; no shell. The
-    # environment is os.environ with PATH repointed at this test's own
-    # fixture directory, which is the point of the case, not tainted
-    # input: argv is a fixed list of literals and paths this test just
-    # created under its own tmpdir.
+    # argv is the interpreter-resolved Meson command plus literals and paths
+    # this test just created under its own tmpdir. No shell is involved.
     return subprocess.run(  # noqa: S603
-        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         [
-            str(MESON),
+            *MESON_COMMAND,
             "setup",
             str(root / "build"),
             str(root),
@@ -161,7 +188,7 @@ def _run_meson(root: Path, binary_dir: Path, cross: Path) -> subprocess.Complete
 
 class WindowsCudaCompilerDiscovery(unittest.TestCase):
     def configure(self, *, vswhere: str, path_compiler: bool) -> subprocess.CompletedProcess[str]:
-        self.assertIsNotNone(MESON, "Meson is required for this configure regression")
+        self.assertTrue(MESON_COMMAND, "Meson is required for this configure regression")
         with tempfile.TemporaryDirectory(prefix="vmafx-windows-discovery-") as temporary:
             root = Path(temporary)
             binary_dir, cross = _build_fixture(root, vswhere=vswhere, path_compiler=path_compiler)

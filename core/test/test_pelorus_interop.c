@@ -40,6 +40,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
@@ -586,10 +592,28 @@ static void test_qp_report_fold(void)
 }
 
 /* Write the x265-shaped CSV fixture. Returns 0 on success, -1 when the file
- * could not be opened (already reported through CHECK). */
+ * could not be opened (already reported through CHECK).
+ *
+ * Created 0600 through a descriptor rather than with a bare fopen(), which
+ * asks for 0666 and leaves the rest to whatever umask the caller happens to
+ * run with -- CodeQL rates that high (cpp/world-writable-file-creation), and a
+ * fixture another user can rewrite between the write and the parse would make
+ * the conformance result meaningless. Same shape as the fix already carried by
+ * write_backend_error_json() in core/tools/vmaf.cpp: POSIX opens with an
+ * explicit mode, Windows keeps fopen() because its ACL model has no
+ * world-writable permission bit for open() to withhold. */
 static int write_csv_fixture(const char *path, const char *csv)
 {
+#ifdef _WIN32
     FILE *fp = fopen(path, "w");
+#else
+    const int raw_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    FILE *fp = (raw_fd >= 0) ? fdopen(raw_fd, "w") : NULL;
+    if (fp == NULL && raw_fd >= 0) {
+        /* POSIX leaves the descriptor open when fdopen() fails. */
+        (void)close(raw_fd);
+    }
+#endif
     CHECK(fp != NULL);
     if (fp == NULL) {
         return -1;

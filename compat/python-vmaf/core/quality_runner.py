@@ -1447,8 +1447,10 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
             if feature_found:
                 continue
 
-            # wildcard discovery: look for xxx_*
-            feature_found = self._discover_feature_wildcard(
+            # wildcard discovery: look for xxx_*. Last chance in the chain, so
+            # the hit flag has no reader left -- the call is kept for the
+            # feature_scores / feature_nicknames it appends to.
+            self._discover_feature_wildcard(
                 frame, i_feature, feature + "_", feature, feature_scores, feature_nicknames
             )
 

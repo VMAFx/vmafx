@@ -168,3 +168,53 @@ That leaves exactly the two options ADR-1222 put to the maintainer, and this
 addendum changes neither of them: the gating `Semgrep` job (local `.semgrep.yml`
 rules, 0 findings tree-wide) stays green, `Semgrep OSS` stays a reporting
 signal, and the dismissal remains the maintainer's call.
+
+## Addendum 2026-09-22 (second) — the taint claim was wrong; the code could stop matching
+
+The addendum above concluded that the Semgrep finding "cannot stop matching",
+on the reasoning that "every channel a build system has for telling a test
+where a tool lives — environment or argv — is a source for this rule". Half of
+that is right and the conclusion drawn from it is wrong, so the alert was closed
+by fixing the code, not by dismissing it.
+
+Read from the rule itself rather than from its behaviour
+(`https://semgrep.dev/c/r/python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args`),
+the source set is exactly: `os.environ`, `os.environ.get`, `os.environb`,
+`os.getenv`, `os.getenvb`, `sys.argv`, `sys.orig_argv`, and argparse / optparse
+/ getopt results. The sole sanitiser is `shlex.quote(...)`.
+
+Three consequences the earlier reading missed:
+
+- **argv really is a source**, so passing the Meson path as a test argument
+  would not have helped. That half of the claim holds.
+- **`shutil.which("meson")` is not a source.** It reads `PATH` internally, but
+  the rule matches syntax, not library behaviour, and a literal argument taints
+  nothing. The earlier note that "taint propagates through `shutil.which()`"
+  only holds when its *argument* is already tainted.
+- **A value the interpreter derives about itself is not a source either.**
+  `sys.executable` appears nowhere in the source set.
+
+That last point is the fix. Meson ships as an ordinary Python package, and
+`import('python').find_installation()` hands a test the interpreter Meson is
+running under — measured directly: under `meson test` the child's
+`sys.executable` is the venv Python that owns the `mesonbuild` package. So
+`[sys.executable, "-m", "mesonbuild.mesonmain", "setup", ...]` runs *the same
+Meson* the environment variable was there to name, with no hand-off from the
+build system and no tainted value in the argv. `core/test/meson.build` no longer
+sets `VMAFX_TEST_MESON`, and the module-level read of it is gone.
+
+Measured with semgrep 1.177.0 over the packs `security-scans.yml` runs, with
+`--disable-nosem` so no directive could mask the result: **1 finding before, 0
+after**. The stale `nosemgrep` comment was deleted rather than moved — it had
+never suppressed anything, as the first addendum established.
+
+The generalisable point, which replaces "the code cannot stop matching": a taint
+rule is a syntactic source list, and the question to ask is never "is this value
+attacker-controlled in practice" but "does this expression match one of the
+listed sources". Fetch the rule and read it before concluding a finding is
+unfixable. The same check applied to CodeQL's `cpp/world-writable-file-creation`
+(`DoNotCreateWorldWritable.ql`) showed it reads the literal mode argument of the
+creating call, so moving `core/test/test_pelorus_interop.c` from
+`fopen(path, "w")` to a descriptor opened `S_IRUSR | S_IWUSR` clears it — and
+that one was not a false positive at all: the old form measures 0666 under
+umask 000.

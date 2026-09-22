@@ -15,7 +15,6 @@ if build_machine.system() != 'windows'
     test('test_windows_cuda_compiler_discovery',
         import('python').find_installation(),
         args : files('test_windows_cuda_compiler_discovery.py'),
-        env : ['VMAFX_TEST_MESON=' + find_program('meson', native : true).full_path()],
         suite : ['fast'],
         timeout : 90,
     )

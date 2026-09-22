@@ -21336,6 +21336,29 @@ Batch 6 mechanical defect fixes. No user-visible behaviour change.
   dead on 64-bit but live on the CI-gated i686 target.
 
 
+- **The two code-scanning gates failed on findings that were real, so the code
+  changed rather than the alerts.** `core/test/test_windows_cuda_compiler_discovery.py`
+  took the Meson to configure its fixture project from a `VMAFX_TEST_MESON`
+  environment variable that `core/test/meson.build` set, and fed it straight
+  into a `subprocess` argv — the taint flow Semgrep's
+  `dangerous-subprocess-use-tainted-env-args` reports. The test now asks its own
+  interpreter for the `mesonbuild` package (falling back to a `PATH` lookup),
+  which under `meson test` *is* the Meson running the suite, so the hand-off and
+  the environment variable are both gone. Passing the path as a test argument
+  instead would not have helped: the rule treats `sys.argv` as a source too.
+  `core/test/test_pelorus_interop.c` created its x265 CSV fixture with a bare
+  `fopen(path, "w")`, i.e. mode 0666 before umask — measured world-writable
+  under a permissive umask — which CodeQL rates high
+  (`cpp/world-writable-file-creation`); it now opens a descriptor with an
+  explicit 0600 and wraps it, the same shape `write_backend_error_json()` in
+  `core/tools/vmaf.cpp` already used. `_discover_frame_features()` in
+  `compat/python-vmaf/core/quality_runner.py` assigned its hit flag one last
+  time with no reader left (CodeQL `py/multiple-definition`); the call stays for
+  its side effects and the dead store is gone. No alert was dismissed, no rule
+  was disabled, and the stale `nosemgrep` directive the finding used to carry
+  was removed rather than repositioned.
+
+
 Resolved 28 CodeQL C++ note-level alerts across 18 files:
 - **cpp/declaration-hides-parameter** (8 alerts): renamed shadowing loop/buffer
   variables in `adm_avx2.c`, `adm_avx512.c`, `integer_adm.c`, `feature_collector.c`.
@@ -21694,6 +21717,21 @@ Fix 6 reproducible test failures introduced by the recent PR train:
   413 / 526 ≈ 78.5 % and clearing the gate with ~0.5 pp safety
   margin. ADR-0114's `PER_FILE_MIN["core/src/dnn/ort_backend.c"]=78`
   override stays in place.
+
+
+- The Coverage Gate's Python suite now gets a budget it fits in: 55 minutes
+  instead of 20, with the job raised to 75. The 20-minute cap was never large
+  enough — the step used to end in `|| true`, so `timeout` killing pytest
+  looked like success. Master's own last full run was cut off at 64% of 711
+  tests and this branch's at 63%, both silently; removing `|| true` and
+  asserting the step's outcome turned that into the failure it always was.
+  The new figure is measured, not guessed: exact per-file costs from the
+  killed run for the 448 tests that executed, plus the remaining 263 timed
+  locally and scaled by the 12.8x factor the two runs share on
+  `feature_extractor_test.py`, giving ~42 minutes for the whole suite.
+  `pytest-timeout=180` per test is still the anti-hang gate; the outer
+  `timeout` only keeps a wedged subprocess from eating the job budget before
+  gcovr runs.
 
 
 Deselect `test_run_vmaf_runner_float_vifks360o97` from the coverage-job pytest run to stop the test from timing out (vif_kernelscale=3.71 exceeds the 60 s per-test limit on GitHub-hosted runners) and truncating the suite at 61%, which dropped overall coverage from 70% to 56.4%. The test is retained in the Netflix golden gate where no per-test timeout applies.
@@ -23231,6 +23269,22 @@ in the score aggregation. The suppression logic now matches `float_vif_cuda`.
 
 
 `ai/scripts/extract_k150k_features.py` now splits CUDA extraction into explicit CUDA feature names plus a CPU residual pass, fixing CHUG/K150K 10-bit local runs that failed through the mixed all-feature `--backend cuda` path.
+
+
+- `test_framesync_init_failure` now injects its pthread failures through a
+  force-included header (`core/test/test_framesync_interpose.h`) instead of
+  four `-D` flags on the compile line. A command-line `-D` is already in force
+  when `<pthread.h>` is read, so it renamed the entry points that header
+  *declares* as well as framesync.c's calls to them. That is harmless where
+  the declarations are `extern` (glibc, macOS libSystem, MinGW winpthreads)
+  and fatal where `<pthread.h>` defines them inline: `core/src/compat/win32/`
+  `pthread.h`, the SRWLOCK / CONDITION_VARIABLE shim every MSVC and clang-cl
+  build uses, is header-only and `static inline`, so the rename landed on the
+  definitions, framesync.c called the real primitives under the wrapper's
+  name, and no injected failure ever occurred. The header reads `<pthread.h>`
+  first and defines the renames after it, so they reach call sites only.
+  Surfaced on `Windows ARM64 MSVC`, the one MSVC lane that runs `meson test`
+  rather than a named subset of test executables.
 
 
 - **`vmaf_framesync_retrieve_filled_data` hangs forever when the producer
@@ -26203,6 +26257,15 @@ identical test count on a `-Denable_asm=false` x86-64 build, the default
 x86-64 build, and an aarch64 cross build under `qemu-aarch64-static`.
 
 
+- `BrisqueNorefFeatureExtractor.extract_aggd_features` no longer flattens its
+  patch by assigning to `ndarray.shape`, which NumPy 2.5 deprecates. The
+  replacement (`np.reshape` on the C-contiguous copy) reads the same elements
+  in the same order, so the AGGD fit — and the NIQE scores built on it — are
+  bit-identical. With the Python harness now running under
+  `filterwarnings = error`, the deprecation was failing
+  `quality_runner_test::test_run_niqe_runner` in the Coverage Gate.
+
+
 - The dev container no longer becomes unbuildable when `code.ffmpeg.org` is down. The
   nv-codec-headers layer now falls back to `github.com/FFmpeg/nv-codec-headers` for the same
   pinned tag, and asserts the archive actually carries `ffnvcodec/dynlink_cuda.h` and the
@@ -28936,6 +28999,20 @@ models are currently quantised.
 
 
 - `model/tiny/registry.json`: refresh `vmaf_tiny_v1_medium` sha256 to match the inlined-external-data file shipped by [#1226](https://github.com/VMAFx/vmafx/pull/1226). The repack changed the file's bytes (and therefore its sha) but the registry entry was not updated in the same PR, so `meson test --suite=dnn` failed locally and would fail in CI on `test_registry`.
+
+
+- Tiny-AI ONNX exports migrated off `dynamic_axes` to `dynamic_shapes`
+  (`vmaf_train.models.exports`, `ai/train/train.py`,
+  `ai/scripts/train_fr_regressor_v3.py`) and `export_u2netp_mirror.py` off the
+  legacy TorchScript exporter. `torch.onnx.export` has defaulted to the dynamo
+  exporter since torch 2.9 and warns on both spellings. Every migration was
+  checked on torch 2.14 to produce a byte-identical ONNX graph; the U2NETP
+  mirror was additionally checked against the real upstream architecture
+  (identical onnxruntime output, H/W still dynamic, graph still allowlist-clean).
+- `FRRegressor._loss` split out of `FRRegressor._step`, so the loss arithmetic
+  can be exercised without the Trainer-scoped `self.log()` calls that Lightning
+  warns about when no `Trainer` is attached. Logging behaviour inside a real
+  fit loop is unchanged — same metric names, same flags.
 
 
 - `python/tox.ini` test env bumped `py311` → `py314` to match the CI Python
