@@ -218,13 +218,16 @@ TIDY_RATCHET_EXTRA_sycl := --clang-tidy scripts/ci/clang-tidy-sycl.sh
 TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
 	--extra-arg=--sysroot=$(AARCH64_SYSROOT)
 
-# meson emits the SYCL feature TUs as CUSTOM_COMMAND rules (icpx -fsycl), so
-# write-compile-commands.py -- which exports only the native c/cpp_COMPILER
-# rules -- never sees them. Without this second pass the sycl lane measures
-# zero SYCL feature TUs and the baseline silently records an empty backend.
+# nvcc, hipcc and icpx compile through meson custom targets, which leaves their
+# translation units out of compile_commands.json: write-compile-commands.py
+# exports only the native c/cpp_COMPILER rules, so without this second pass the
+# cuda and hip lanes measure the host files only and the sycl lane measures zero
+# SYCL feature TUs, recording an empty backend in its baseline.
 TIDY_RATCHET_COMPDB_cpu :=
-TIDY_RATCHET_COMPDB_cuda :=
-TIDY_RATCHET_COMPDB_hip :=
+TIDY_RATCHET_COMPDB_cuda := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-commands.py \
+	"$(TIDY_RATCHET_BUILD_DIR)"
+TIDY_RATCHET_COMPDB_hip := $(PYTHON_INTERPRETER) scripts/ci/gen-gpu-compile-commands.py \
+	"$(TIDY_RATCHET_BUILD_DIR)"
 TIDY_RATCHET_COMPDB_sycl := $(PYTHON_INTERPRETER) scripts/ci/gen-sycl-compile-commands.py \
 	"$(TIDY_RATCHET_BUILD_DIR)"
 TIDY_RATCHET_COMPDB_arm64 :=

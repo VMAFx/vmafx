@@ -274,6 +274,13 @@ instead of a touched-files rule:
   existed the lane measured **zero** SYCL translation units and
   `tidy-baseline-sycl.json` recorded an empty backend.
 
+  The `cuda` and `hip` lanes need the same treatment for a different
+  generator: meson compiles `.cu` and `.hip` through custom targets too, so
+  `scripts/ci/gen-gpu-compile-commands.py` runs in the same slot
+  (`TIDY_RATCHET_COMPDB_cuda` / `_hip`, contract-tested by
+  `scripts/ci/tests/test_gen_gpu_compile_commands.py`). Without it those lanes
+  measure the host files only.
+
   These lanes become PR-required contexts as soon as a hosted
   toolchain exists for the lane; until then a lane that cannot run is reported
   as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux

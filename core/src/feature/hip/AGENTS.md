@@ -272,7 +272,7 @@ Pattern is load-bearing. Do not "fix" it by adding additional
 `extern "C"` which is legal in C++ but redundant and confusing to
 reviewers.
 
-## AdmBufferHip MUST be passed by pointer — invariant (ADR-0759)
+## AdmBufferHip is passed by pointer — invariant (ADR-0759, T-HIP-ADM-ADR0759-REVERTED-2026-09-18)
 
 `AdmBufferHip` (`integer_adm_hip.h`) is 328 bytes on LP64: six DWT band
 sub-structs of four device pointers each, plus `ind_size_x` /
@@ -300,19 +300,18 @@ regression — re-apply the pointer form, do not "fix" this note.
 **Host side.** `AdmStateHip` carries `void *buf_dev`, a device-resident
 copy of `buf`:
 
-1. `adm_hip_upload_buf_dev()` allocates it with `hipMalloc` and uploads
+1. `adm_hip_upload_buf()` allocates it with `hipMalloc` and uploads
    it with `hipMemcpy(hipMemcpyHostToDevice)` **after** the band-slicing
    and result-slicing blocks, once every pointer inside `s->buf` is
    final.
 2. Each of the four launch helpers passes `&s->buf_dev` — the address
    of the pointer variable, so the kernel argument is the 8-byte device
    address — as `args[0]`.
-3. `close_fex_hip()` frees it. So does the init failure ladder, which
-   HISS-01 expresses as tail-calling `adm_hip_unwind_*` helpers rather
-   than `goto` labels: `adm_hip_unwind_buf_dev()` is the tier for it,
-   and because `buf_dev` is the last allocation init makes, it is the
-   first tier released. Do not reintroduce a `fail_buf_dev:` label —
-   the zero-`goto` rule is what removed it.
+3. `close_fex_hip()` frees it, and so does every init failure path:
+   `adm_hip_free_buf_dev()` is called first there, because `buf_dev` is
+   the last allocation init makes and the release order is the exact
+   reverse of the acquisition order. Do not reintroduce a
+   `fail_buf_dev:` label — the zero-`goto` rule is what removed it.
 
 One upload serves every launch **only because nothing writes `s->buf`
 after init**: it is written by the allocation and slicing blocks in
@@ -340,6 +339,38 @@ the by-value copy was being spilled.
 four kernels. That is the deferred follow-up in ADR-0759's consequences
 section, not an oversight — do not describe it as fixed. Do not add any
 further by-value large-struct kernel parameter without an ADR.
+
+- `adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4` (`integer_adm/adm_csf.hip`),
+  `i4_adm_cm_line_kernel` and `adm_cm_line_kernel_8` (`integer_adm/adm_cm.hip`)
+  take `const AdmBufferHip *__restrict__ buf_ptr`. By value, the 328-byte
+  struct was copied into every launch's kernel arguments.
+- Host: `AdmStateHip::buf_dev` is a device copy of `s->buf`.
+  `adm_hip_upload_buf()` (`hipMalloc` + `hipMemcpy` HtoD) runs at the end of
+  `adm_hip_init_device()`, after `adm_hip_slice_bands()` and
+  `adm_hip_slice_results()`. `adm_hip_free_buf_dev()` frees it in
+  `close_fex_hip()` and on both init failure paths.
+- Launch argument = `(void *)&s->buf_dev`, the address of the variable that
+  holds the device pointer (ADR-0537 rule above).
+- Precondition: nothing writes `s->buf` between init and close, and no launch
+  passes a modified copy. Code that changes `s->buf` after init (per-scale
+  band pointers, a resize) must upload it again before the next launch, or
+  the kernels read stale pointers.
+- New ADM kernels that need `AdmBufferHip` take a pointer.
+  `AdmFixedParametersHip` (248 bytes) and `WarpShift` are still passed by
+  value; changing them needs its own measurement.
+- History: #101 (`31a51afb2`) implemented this; #102 (`92ea978a4`, a CUDA
+  ciede change cut from an older base) reverted it in a merge without
+  mentioning it. On a conflict in these files keep the pointer form;
+  `grep -n 'AdmBufferHip buf' core/src/feature/hip/integer_adm/*.hip` must
+  print nothing.
+- Measured on gfx1036: each kernel's argument segment is 320 bytes smaller;
+  per-thread scratch and VGPRs do not change because of the pointer. The
+  936-byte scratch of `adm_cm_line_kernel_8` is VGPR spilling (239 spills at
+  the 128-register cap), not the struct. End-to-end fps is unchanged within
+  noise.
+- Not a CUDA mirror: the CUDA twin passes `AdmBufferCuda` by value and always
+  has (the ADR-0756 audit lists those kernels). Research-0759's statement that
+  CUDA uses a pointer, and ADR-0759's "matches the CUDA pattern", are wrong.
 
 ## ms_ssim_vert_lcs kernel and host partials must both be `double` (ADR-1071)
 
@@ -689,6 +720,21 @@ it. Name the set in prose: "the .c files under core/src/feature/hip/".
 Rule 1), and split the oversized init / submit / collect / close / score-writer
 functions into cohesive `static` helpers (HISS-04 / NASA Rule 4).
 
+`integer_adm_hip.c` is the exception to the helper NAMES below, not to the
+rules. #1507 rewrote that file's init and teardown while this branch was open,
+so its release path is a straight-line cascade of paired acquire / release
+helpers — `adm_hip_create_stream` / `adm_hip_destroy_stream`,
+`adm_hip_load_modules` / `adm_hip_unload_modules`, `adm_hip_alloc_buffers` /
+`adm_hip_free_buffers`, `adm_hip_alloc_luma` / `adm_hip_free_luma`,
+`adm_hip_upload_buf` / `adm_hip_free_buf_dev` — driven by
+`adm_hip_init_device()` and `init_fex_hip()`, with no `*_unwind_<label>()`
+tier functions at all. The `adm_hip_unwind_*` names this section used to
+document no longer exist; do not resurrect them. Every rule below still binds
+that file: same release set, same release order, a real errno on every failure
+exit, helpers `static` in the same TU, and no arithmetic expression split
+across a helper boundary. The other six files keep the tier helpers as
+described.
+
 Rebase-sensitive invariants:
 
 - **One helper per former label, tail-calling the next-earlier tier.** Each
@@ -707,7 +753,9 @@ Rebase-sensitive invariants:
   `vmaf_feature_extractor_context_init` sets `is_initialized`, and the first
   `extract` or `submit` runs against buffers, modules, events and a stream the
   ladder has already released. Three call sites did exactly that until T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22
-  — `integer_adm_hip.c`'s feature-name-dictionary failure, and both allocator
+  — `integer_adm_hip.c`'s feature-name-dictionary failure (independently fixed
+  by #1507, whose rewrite of that file is what the tree now carries), and both
+  allocator
   branches in `ssimulacra2_hip.c` — and an earlier revision of this file
   described the behaviour as pre-existing and not to be fixed inside a
   refactor. It was a use-after-free. When the failure is a host allocation with
@@ -715,26 +763,28 @@ Rebase-sensitive invariants:
   caller's own errno (`-ENOMEM` for the ADM dictionary;
   `ss2h_init_unwind_alloc()` forwards the allocator's) unless the ladder itself
   reports a genuine HIP error.
-- **Enter the ladder at the tier matching the LAST successful allocation.**
-  `integer_adm_hip.c`'s dictionary failure used to enter at
-  `adm_hip_unwind_host()`, skipping `d_dis_luma` and `d_ref_luma`; the skip was
-  inherited verbatim from a pre-HISS-01 `goto fail_host` whose label sat below
-  `fail_ref_luma:`. Because `vmaf_feature_extractor_context_close` rejects an
-  uninitialised context, `close_fex_hip` never runs after a failed `init`, so
-  nothing downstream reclaims a tier the ladder skips — a skipped tier is a
-  permanent leak, not a deferral. That path now enters at
-  `adm_hip_unwind_buf_dev()`, the exact reverse of the allocation order. The
-  now-deleted `adm_hip_unwind_buf_dev_to_host()` existed only to reproduce the
-  old label placement; do not resurrect it.
+- **Release from the tier matching the LAST successful allocation.**
+  `integer_adm_hip.c`'s dictionary failure used to skip `d_dis_luma` and
+  `d_ref_luma`; the skip was inherited verbatim from a pre-HISS-01
+  `goto fail_host` whose label sat below `fail_ref_luma:`. Because
+  `vmaf_feature_extractor_context_close` rejects an uninitialised context,
+  `close_fex_hip` never runs after a failed `init`, so nothing downstream
+  reclaims a tier that is skipped — a skipped tier is a permanent leak, not a
+  deferral. `init_fex_hip()` now releases the full set in exact reverse of the
+  acquisition order (`adm_hip_free_buf_dev`, `adm_hip_free_luma`,
+  `adm_hip_free_buffers`, `adm_hip_unload_modules`, `adm_hip_destroy_stream`)
+  and returns `-ENOMEM`. Any new resource acquired in `adm_hip_init_device()`
+  gets its release added to BOTH that list and `close_fex_hip()`.
 - **Helpers stay `static` and in the same translation unit.** They exist so
   codegen stays equivalent to the inline code they replace. Do not give them
   external linkage, do not route them through function pointers, and do not
   move them to a shared header.
 - **No arithmetic expression was split across a helper boundary and no
-  accumulation order changed.** `adm_hip_reduce_scales()`,
-  `ms_ssim_hip_set_max_db()`, `adm_hip_init_csf_factors()` and
+  accumulation order changed.** `ms_ssim_hip_set_max_db()` and
   `sc_score_channel()` were lifted at statement boundaries precisely so the
-  scores stay bit-identical. A rebase that re-splits any of them must re-run
+  scores stay bit-identical; `integer_adm_hip.c`'s score writers
+  (`adm_hip_scale_scores()`, `adm_hip_append_scores()`) carry the same
+  constraint under #1507's names.
   the HIP parity suite (`meson test -C <build> --suite hip`) before landing.
 - **The twins stay recognisable.** These files are deliberate twins of
   `../cuda/*.c`. The unwind helpers mirror the CUDA labels one-for-one and keep
@@ -771,3 +821,28 @@ Rebase-sensitive invariants:
   helper names and boundaries so the twins read against each other again.
   A split that leaves a no-split citation in place, or moves one onto the
   extracted helper, is still a defect — that is what ADR-1289 fixes here.
+
+## Integer ADM tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)
+
+- `init_fex_hip()` calls `adm_frame_size_check()` first, before any device
+  resource. Bound = CPU bound (17x17).
+- Host shift rounding constant = `adm_half_shift(x)`. In-kernel scale-0 shift
+  in `adm_cm_reduce_line_kernel_body` -> guarded ternary, 0 when shift = 0.
+  Never bare `1u << (x - 1)`.
+- Scale-0 CM kernel (`adm_cm_line_kernel_body`): `x + 1` -> `min(.., w - 1)`,
+  `y + 1` -> `min(.., h - 1)`; `x - 1`, `y - 1` -> `abs()` (ADR-1210 rule).
+- HIP twin emits no `adm3_score` (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05).
+  Shared CUDA/HIP tests skip `adm3` under `HAVE_HIP`.
+- HIP ADM tests run without `should_fail` since ADR-1211 staging; all pass on
+  gfx1036. Do not re-add `should_fail` to hide a failure.
+
+## Integer ADM 16-bit vertical DWT sums in int64 (T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18)
+
+- `core/src/feature/hip/integer_adm/adm_dwt2.hip`, scale-0 fused kernel: vertical accumulator = `DwtVertAccum<T>::type`
+  -> int64 for `uint16_t`, int32 for `uint8_t`.
+- Low-pass taps 1-3 sum 50582 -> int32 sum overflows (UB) once 3 16-bit
+  samples >= 42456. CPU twin: `adm_dwt2_vpass16_tap4()` (int64).
+- Normalised value fits int32 -> int64 form = old wrapped result. Scores
+  identical; never narrow back to int32 for speed.
+- Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
+  (parity only; device wrap hides the UB itself).

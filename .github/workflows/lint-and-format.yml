@@ -358,6 +358,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Self-test the ratchet tooling
+        # Runs on every PR, not only C ones: the tooling itself lives under
+        # scripts/ci/, and the GPU lanes run it only on workstations.
+        run: |
+          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_tidy_ratchet.py'
+          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_gen_gpu_compile_commands.py'
       - name: Plan CI impact (ADR-1140)
         id: impact
         env:

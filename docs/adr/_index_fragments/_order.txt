@@ -1011,3 +1011,4 @@
 1296-gpu-failure-path-stub-interposition
 1294-docs-build-concurrency-per-job
 1297-ci-gate-every-reporting-check
+1298-hiss-audit-merge-touched-scope

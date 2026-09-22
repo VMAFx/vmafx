@@ -82,6 +82,34 @@ instead of copying `buf.field` onto the device register file. All load addresses
 identical. Runtime verification on AMD hardware is deferred but the change is safe to
 merge into a DRAFT PR.
 
+## Addendum 2026-09-18: reverted, re-applied, measured
+
+- **Reverted.** The implementation (#101, `31a51afb2`) was undone by the next
+  merge, #102 (`92ea978a4`), a CUDA ciede change whose branch predated it. The
+  kernels passed the struct by value from then until
+  `perf/hip-adm-buffer-by-pointer` re-applied the change on the current code
+  (T-HIP-ADM-ADR0759-REVERTED-2026-09-18 in `docs/state.md`).
+- **Size.** `AdmBufferHip` is 328 bytes, not ~272: the gfx1036 kernel argument
+  layout puts the next argument at offset 328. `AdmFixedParametersHip` is 248
+  bytes.
+- **CUDA parity statement above is wrong.** The CUDA twin passes
+  `AdmBufferCuda` by value; the ADR-0756 audit lists those kernels, and none
+  was changed.
+- **Runtime verification done** on a gfx1036 iGPU (ROCm 7.2): HIP output is
+  byte-identical at `%.17g` before and after on 8, 10, 12 and 16-bit inputs,
+  odd frame sizes and 1080p clips.
+- **Measured effect.** Each of the four kernels' argument segment shrinks by
+  320 bytes (856 to 536 on the CSF kernels, 904 to 584 and 968 to 648 on the
+  CM kernels). Per-thread scratch and VGPR counts do not change because of the
+  pointer. The 936-byte scratch on `adm_cm_line_kernel_8` is VGPR spilling
+  (239 spills at the 128-register cap), not a copy of the struct; a
+  `__launch_bounds__(128)` experiment raised the cap to 256 and still spilled
+  112 registers. End-to-end HIP ADM throughput on a 60-frame 1080p 10-bit clip
+  is unchanged within noise (median 29.5 fps before, 30.0 after, 10
+  alternating runs, spread 27.4 to 31.1).
+
+The 2026-09-21 section below re-measures two claims made here: the per-thread scratch figure and whether the by-value copy was being spilled. Where the two disagree, the later measurement stands.
+
 ## 2026-09-21 — re-application, and what the original write-up got wrong
 
 The convention above landed as `31a51afb2` (PR #101) and was gone again the same

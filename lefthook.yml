@@ -31,7 +31,13 @@ pre-commit:
     context-check:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl compile-context --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl compile-context --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     hiss-audit:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl audit; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl audit; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      # ADR-1298 — scripts/git-hooks/hiss-audit.sh, not a bare `praetorctl
+      # audit`. praetorctl derives its touched-file set from `git diff
+      # --name-only HEAD`, and during a merge HEAD is the pre-merge tip, so that
+      # names every file the other side changed. The wrapper scopes the rule to
+      # the conflict resolutions for a merge and changes nothing for an ordinary
+      # commit.
+      run: bash scripts/git-hooks/hiss-audit.sh
     hiss-evidence:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl hiss coverage --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl hiss coverage --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     dedupe-scan:

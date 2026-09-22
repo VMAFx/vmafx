@@ -181,6 +181,24 @@ static const int16_t dwt2_db2_coeffs_hi[10] = {-4240, -7345, 27411, -15826};
 static const int32_t dwt2_db2_coeffs_lo_sum = 46342;
 static const int32_t dwt2_db2_coeffs_hi_sum = 0;
 
+/* One vertical-pass output of the 16-bit DWT: the four-tap response,
+ * normalised from (0..N) to (-N/2..N/2), then rounded by `shift`. The
+ * low-pass response of a bright 16-bit column reaches 50582 * 65535 before
+ * normalisation, past INT32_MAX, so it is formed in int64. The normalised
+ * value of any in-range sample fits in int32, so the result is bit-exact
+ * with the wrapping int32 arithmetic upstream relies on. */
+static inline int32_t adm_dwt2_vpass16_tap4(const int16_t *filter, int32_t filter_sum, uint16_t s0,
+                                            uint16_t s1, uint16_t s2, uint16_t s3, int32_t add,
+                                            int shift)
+{
+    int64_t accum = (int64_t)filter[0] * s0;
+    accum += (int64_t)filter[1] * s1;
+    accum += (int64_t)filter[2] * s2;
+    accum += (int64_t)filter[3] * s3;
+    accum -= (int64_t)filter_sum * add;
+    return (int32_t)((accum + add) >> shift);
+}
+
 #ifndef ONE_BY_15
 #define ONE_BY_15 8738
 #endif

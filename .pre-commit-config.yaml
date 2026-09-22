@@ -262,10 +262,16 @@ repos:
         pass_filenames: false
 
       - id: test-tidy-ratchet-lanes
+        # The lane-flag cases lived in tests/test_tidy_ratchet_extra_args.py
+        # until #1504/#1507 consolidated ExtraArgForwarding into
+        # tests/test_tidy_ratchet.py and deleted the file. Arm64LaneFlags moved
+        # with it. Pointing `discover -p` at a deleted file is not a failure
+        # anyone sees as one: unittest exits 5 with "NO TESTS RAN", so the hook
+        # goes red without naming a defect.
         name: Ratchet lane flags reach clang-tidy (ADR-1142, ADR-1283)
-        entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_ratchet_extra_args.py
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_ratchet.py
         language: system
-        files: '^(Makefile|scripts/ci/(tidy-ratchet\.py|tidy-baseline-arm64\.json|tests/test_tidy_ratchet_extra_args\.py)|build-aux/aarch64-linux-gnu\.ini|\.pre-commit-config\.yaml)$'
+        files: '^(Makefile|scripts/ci/(tidy-ratchet\.py|tidy-baseline-arm64\.json|tests/test_tidy_ratchet\.py)|build-aux/aarch64-linux-gnu\.ini|\.pre-commit-config\.yaml)$'
         pass_filenames: false
       - id: test-tidy-ratchet-sycl-compdb
         name: SYCL tidy lane augments its compilation database

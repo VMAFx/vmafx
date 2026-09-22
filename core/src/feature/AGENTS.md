@@ -1755,3 +1755,16 @@ Functions carrying ADR-0141 §2 bit-exactness carve-outs stay unsplit —
 `niqe_extract_aggd`, `create_recursive_gaussian`, `picture_to_linear_rgb`.
 Their paired SIMD ports match them line for line; splitting one forces
 matching splits in four SIMD files and breaks scalar-diff audit story.
+
+## Integer ADM's 16-bit vertical DWT sums in int64
+
+- `adm_dwt2_vpass16_tap4()` (`integer_adm.h`) = only 16-bit vertical DWT
+  response. Scalar `adm_dwt2_vpass_16()`, `adm_dwt2_16_avx2()`,
+  `adm_dwt2_16_avx512()` call it.
+- Low-pass taps 1-3 sum 50582 -> int32 partial sum overflows at 16 bpc once
+  3 samples >= 42456. Upstream form = int32 = UB.
+- Normalised result fits int32 -> int64 form bit-exact with old wrap. Never
+  "optimise" back to int32; outputs match, UB returns.
+- Guard: `test_integer_adm_dwt16_range` (sanitizer lane halts on the UB).
+- 8-bit pass stays int32: 255 * 50582 fits.
+- T-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18.

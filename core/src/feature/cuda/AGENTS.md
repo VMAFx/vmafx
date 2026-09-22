@@ -861,3 +861,37 @@ kernel variants at runtime. Current policy table is in ADR-0753.
   across a call boundary, or letting one of these become external, re-opens the
   FMA-contraction divergence ADR-1253 closed. On rebase: reapply the helper
   boundary, never restore the label.
+  `integer_adm_cuda.c` is out of scope for the helper NAMES above: #1507
+  rewrote its init and teardown while this branch was open, so it releases
+  through paired helpers (`adm_cuda_init_device` / `adm_cuda_release_device`,
+  `adm_cuda_init_buffers` / `adm_cuda_free_buffers`,
+  `adm_cuda_load_modules` / `adm_cuda_unload_modules`) and keeps one
+  `CHECK_CUDA_GOTO` ladder inside `adm_cuda_init_device_locked()`, the same
+  macro the rest of the CUDA tree uses. The rules are unchanged for it: the
+  release set and release order on every exit path, a real error code out of
+  every failure, and no arithmetic expression split across a boundary.
+
+## Integer ADM tiny frames (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)
+
+- `init_fex_cuda()` calls `adm_frame_size_check()` first, before any device
+  resource. Bound = CPU bound (17x17).
+- Shift rounding constant = `adm_half_shift(x)`. Never `1 << (x - 1)`:
+  scale-0 h/v cube shift = 0 at frame width 17..32 -> 2^31 on x86.
+- Scale-0 CM kernels (`adm_cm_line_kernel`, `adm_cm_aim_line_kernel`):
+  `x - 1`, `y - 1` -> `abs()`; `x + 1` -> `min(.., w - 1)`;
+  `y + 1` -> `min(.., h - 1)`. Same rule as CPU `adm_cm_thresh()` (ADR-1210).
+  Edges enter CM region only for bands <= 14 samples.
+- Upstream Netflix form differs; keep fork form on sync (`docs/rebase-notes.md`).
+- Guard: `test_cuda_adm_tiny_frames` (scalar CPU ref, 1e-4; rejection test
+  needs no device).
+
+## Integer ADM 16-bit vertical DWT sums in int64 (T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18)
+
+- `core/src/feature/cuda/integer_adm/adm_dwt2.cu`, scale-0 fused kernel: vertical accumulator = `DwtVertAccum<T>::type`
+  -> int64 for `uint16_t`, int32 for `uint8_t`.
+- Low-pass taps 1-3 sum 50582 -> int32 sum overflows (UB) once 3 16-bit
+  samples >= 42456. CPU twin: `adm_dwt2_vpass16_tap4()` (int64).
+- Normalised value fits int32 -> int64 form = old wrapped result. Scores
+  identical; never narrow back to int32 for speed.
+- Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
+  (parity only; device wrap hides the UB itself).

@@ -26,6 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE = ROOT / "Makefile"
 GENERATOR = "gen-sycl-compile-commands.py"
+GPU_GENERATOR = "gen-gpu-compile-commands.py"
 HOOK = "$(TIDY_RATCHET_COMPDB_$(LANE))"
 TARGETS = ("tidy-ratchet", "tidy-ratchet-write")
 
@@ -54,9 +55,17 @@ class SyclLaneAugmentsCompileCommands(unittest.TestCase):
     def test_sycl_hook_runs_the_generator(self) -> None:
         self.assertIn(GENERATOR, variable("TIDY_RATCHET_COMPDB_sycl", makefile()))
 
-    def test_native_lanes_have_an_empty_hook(self) -> None:
+    def test_gpu_lanes_run_the_nvcc_hipcc_generator(self) -> None:
+        """nvcc and hipcc also compile through meson custom targets (#1507)."""
         text = makefile()
-        for lane in ("cpu", "cuda", "hip"):
+        for lane in ("cuda", "hip"):
+            with self.subTest(lane=lane):
+                self.assertIn(GPU_GENERATOR, variable(f"TIDY_RATCHET_COMPDB_{lane}", text))
+
+    def test_native_lanes_have_an_empty_hook(self) -> None:
+        """cpu and arm64 compile entirely through meson's native compiler rules."""
+        text = makefile()
+        for lane in ("cpu", "arm64"):
             with self.subTest(lane=lane):
                 self.assertEqual(variable(f"TIDY_RATCHET_COMPDB_{lane}", text), "")
 
