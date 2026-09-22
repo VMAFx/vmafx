@@ -588,7 +588,10 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Coverage Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 75, not 30: the Python suite step below is budgeted 55 min and the rest
+    # of the job (apt + pip, the gcov build, the meson unit suite, gcovr) has
+    # measured at ~5.5 min. See that step for where 55 comes from.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -757,7 +760,30 @@ jobs:
           # Gaussian and takes ~138 s in a debug+gcov build).  These tests
           # are correctness-essential and must run; they just need a wider
           # per-test budget in the instrumented build.
-          timeout --kill-after=30s 20m python3 -m pytest python/test/ -v \
+          #
+          # The outer budget is 55m, raised from a 20m that was never big
+          # enough for the suite it wraps. Until this branch the step ended in
+          # `|| true`, so `timeout` killing pytest looked like success: the run
+          # on master at 371ff589 (job 106056156937) was cut off after 20 min
+          # at 64% of 711 tests, and the first run on this branch
+          # (job 106740470243) at 63%, both silently. Removing `|| true` and
+          # asserting the step outcome turned that into the failure it always
+          # was.
+          #
+          # Where 55 comes from. The killed run gives exact per-file costs for
+          # the 448 tests that did execute (quality_runner_test 758 s / 46,
+          # feature_extractor_test 195 s / 75, the rest under 100 s each). The
+          # 263 that did not were measured locally against a release build and
+          # scaled by the factor the two runs share on feature_extractor_test
+          # (195.2 s CI / 15.3 s local = 12.8x for debug + -O0 + gcov on a
+          # 4-core hosted runner): vmafexec_feature_extractor ~470 s,
+          # vmafexec ~230 s, the quality_runner tail ~260 s, routine ~150 s,
+          # everything else ~250 s. That is ~22 min on top of the 20 already
+          # spent, so ~42 min for the whole suite; 55 leaves ~30% headroom for
+          # runner variance. pytest-timeout=180 per test remains the real
+          # anti-hang gate -- the outer `timeout` only exists so a wedged
+          # subprocess cannot eat the job budget before gcovr runs.
+          timeout --kill-after=30s 55m python3 -m pytest python/test/ -v \
             -m "not slow" --tb=short \
             --timeout=180 --timeout-method=thread \
             --ignore=python/test/resource \
