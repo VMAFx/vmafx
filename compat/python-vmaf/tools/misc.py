@@ -1,5 +1,6 @@
 import errno
 import itertools
+import multiprocessing
 import os
 import re
 import subprocess
@@ -329,6 +330,17 @@ def parallel_map(func, list_args, processes=None):
         if package_parent in sys.path:
             sys.path.remove(package_parent)
         sys.path.insert(0, package_parent)
+        # Loky leaves the worker's default start method set to its own
+        # "loky" context. That name only resolves in an interpreter that has
+        # already imported loky, so any *stdlib* process the worker starts
+        # afterwards -- `vmaf.core.executor` opens its fifo work/proc files
+        # through a spawn context -- records "loky" in its preparation data
+        # and dies in `prepare()` with "cannot find context for 'loky'"
+        # before it can release the semaphore the parent is waiting on.
+        # Pinning the default back to a start method the child can resolve
+        # keeps nested process creation working; loky itself always passes
+        # its own context explicitly and is unaffected.
+        multiprocessing.set_start_method("spawn", force=True)
 
     return Parallel(
         n_jobs=processes,
