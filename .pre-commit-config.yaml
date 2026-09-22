@@ -267,6 +267,12 @@ repos:
         language: system
         files: '^(Makefile|scripts/ci/(tidy-ratchet\.py|tidy-baseline-arm64\.json|tests/test_tidy_ratchet_extra_args\.py)|build-aux/aarch64-linux-gnu\.ini|\.pre-commit-config\.yaml)$'
         pass_filenames: false
+      - id: test-tidy-ratchet-sycl-compdb
+        name: SYCL tidy lane augments its compilation database
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_ratchet_sycl_compdb.py
+        language: system
+        files: '^(Makefile|scripts/ci/(gen-sycl-compile-commands\.py|tidy-ratchet\.py|tests/test_tidy_ratchet_sycl_compdb\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
 
       - id: test-sycl-aot-command
         name: SYCL AOT and language-standard command contract

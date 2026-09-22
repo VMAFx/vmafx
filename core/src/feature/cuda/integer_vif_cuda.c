@@ -305,9 +305,8 @@ static int vif_init_cuda_context(VmafFeatureExtractor *fex, VifStateCuda *s, Cud
  * be cast to host-visible pointer types to carve the buffer into typed
  * subregions the launch-time kernel-args struct references. The cast is
  * inherent to the CUDA Driver API and cannot be refactored away without
- * changing the public libvmaf-CUDA contract. Per ADR-0141 touched-file
- * rule, upstream-parity exception.
- */
+ * changing the public libvmaf-CUDA contract. Per the touched-file
+ * rule, upstream-parity exception (ADR-0141 §2 load-bearing invariant). */
 // NOLINTBEGIN(performance-no-int-to-ptr)
 static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFunctions *cu_f,
                              unsigned h, size_t rd_size)

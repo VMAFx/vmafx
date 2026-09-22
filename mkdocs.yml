@@ -1404,6 +1404,7 @@ nav:
         - "ADR-1287: cli-tool-unbounded-loop-ceilings": adr/1287-cli-tool-unbounded-loop-ceilings.md
         - "ADR-1288: mcp-tool-schema-fail-closed": adr/1288-mcp-tool-schema-fail-closed.md
         - "ADR-1289: hip-ssimulacra2-host-helper-split": adr/1289-hip-ssimulacra2-host-helper-split.md
+        - "ADR-1290: sycl-tidy-lane-compile-database": adr/1290-sycl-tidy-lane-compile-database.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

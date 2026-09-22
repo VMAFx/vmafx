@@ -82,6 +82,18 @@ required pre-commit contract for the Meson AOT spelling, built-in language
 standard policy, and translator output. Do not exempt a SYCL TU because it was
 ported from upstream or predates the gate.
 
+Running the generator is not left to the caller. `make tidy-ratchet` and
+`make tidy-ratchet-write` expand `TIDY_RATCHET_COMPDB_$(LANE)` between the
+native `write-compile-commands.py` export and the measurement; for `sycl` that
+variable runs `gen-sycl-compile-commands.py`, and for `cpu` / `cuda` / `hip` /
+`arm64` it is empty ([ADR-1290](../../docs/adr/1290-sycl-tidy-lane-compile-database.md)).
+Keep the hook in both targets and keep it ordered between the two: while it was
+missing the lane measured zero SYCL feature TUs, and `tidy-baseline-sycl.json`
+recorded an empty backend while still reporting the lane as clean.
+`test_tidy_ratchet_sycl_compdb.py` pins that wiring. The GPU lanes also need
+their build dir configured `-Db_lto=false` and placed outside the repository;
+see the variable block in the `Makefile`.
+
 Real-Make fixtures create failing/recording pip sentinel before fake
 Meson and Ninja, satisfying recursive build dependency graph without tool
 bootstrap. GNU Make does not propagate `-o` to sub-makes. Keep `PIP_NO_INDEX=1`

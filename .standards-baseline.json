@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-09-22T09:45:12Z",
+  "generated_at": "2026-09-22T10:18:07Z",
   "repository": "",
   "commit_sha": "",
   "total_infractions": 286,
@@ -1599,7 +1599,7 @@
       "file_path": "core/src/feature/sycl/integer_adm_sycl.cpp",
       "line_number": 405,
       "symbol": "launch_dwt_vert_pair",
-      "message": "Function 'launch_dwt_vert_pair' (138 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'launch_dwt_vert_pair' (137 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:405:HISS-04"
     },
     {
@@ -1623,32 +1623,32 @@
       "file_path": "core/src/feature/sycl/integer_adm_sycl.cpp",
       "line_number": 948,
       "symbol": "launch_csf_den_cm_3band",
-      "message": "Function 'launch_csf_den_cm_3band' (397 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'launch_csf_den_cm_3band' (393 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:948:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/integer_adm_sycl.cpp",
-      "line_number": 1442,
+      "line_number": 1438,
       "symbol": "close_fex_sycl",
       "message": "Function 'close_fex_sycl' (143 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:1442:HISS-04"
+      "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:1438:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/integer_adm_sycl.cpp",
-      "line_number": 1593,
+      "line_number": 1589,
       "symbol": "enqueue_adm_work_impl",
-      "message": "Function 'enqueue_adm_work_impl' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:1593:HISS-04"
+      "message": "Function 'enqueue_adm_work_impl' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:1589:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/integer_adm_sycl.cpp",
-      "line_number": 1726,
+      "line_number": 1721,
       "symbol": "collect_fex_sycl",
       "message": "Function 'collect_fex_sycl' (115 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:1726:HISS-04"
+      "fingerprint": "core/src/feature/sycl/integer_adm_sycl.cpp:1721:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -1663,32 +1663,32 @@
       "file_path": "core/src/feature/sycl/integer_motion_sycl.cpp",
       "line_number": 275,
       "symbol": "launch_blur_sad_fused",
-      "message": "Function 'launch_blur_sad_fused' (139 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "message": "Function 'launch_blur_sad_fused' (138 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/sycl/integer_motion_sycl.cpp:275:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/integer_motion_sycl.cpp",
-      "line_number": 429,
+      "line_number": 428,
       "symbol": "close_fex_sycl",
       "message": "Function 'close_fex_sycl' (155 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/integer_motion_sycl.cpp:429:HISS-04"
+      "fingerprint": "core/src/feature/sycl/integer_motion_sycl.cpp:428:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/integer_motion_sycl.cpp",
-      "line_number": 708,
+      "line_number": 707,
       "symbol": "submit_fex_sycl",
       "message": "Function 'submit_fex_sycl' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/integer_motion_sycl.cpp:708:HISS-04"
+      "fingerprint": "core/src/feature/sycl/integer_motion_sycl.cpp:707:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/integer_motion_sycl.cpp",
-      "line_number": 779,
+      "line_number": 778,
       "symbol": "collect_fex_sycl",
       "message": "Function 'collect_fex_sycl' (93 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/integer_motion_sycl.cpp:779:HISS-04"
+      "fingerprint": "core/src/feature/sycl/integer_motion_sycl.cpp:778:HISS-04"
     },
     {
       "rule_id": "HISS-04",

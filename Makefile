@@ -217,10 +217,23 @@ TIDY_RATCHET_EXTRA_hip := --extra-arg=-x --extra-arg=hip \
 TIDY_RATCHET_EXTRA_sycl := --clang-tidy scripts/ci/clang-tidy-sycl.sh
 TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
 	--extra-arg=--sysroot=$(AARCH64_SYSROOT)
+
+# meson emits the SYCL feature TUs as CUSTOM_COMMAND rules (icpx -fsycl), so
+# write-compile-commands.py -- which exports only the native c/cpp_COMPILER
+# rules -- never sees them. Without this second pass the sycl lane measures
+# zero SYCL feature TUs and the baseline silently records an empty backend.
+TIDY_RATCHET_COMPDB_cpu :=
+TIDY_RATCHET_COMPDB_cuda :=
+TIDY_RATCHET_COMPDB_hip :=
+TIDY_RATCHET_COMPDB_sycl := $(PYTHON_INTERPRETER) scripts/ci/gen-sycl-compile-commands.py \
+	"$(TIDY_RATCHET_BUILD_DIR)"
+TIDY_RATCHET_COMPDB_arm64 :=
+
 tidy-ratchet: $(NINJA)
 	$(call require-tool,clang-tidy,install clang-tools)
 	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
 	    --build-dir "$(TIDY_RATCHET_BUILD_DIR)" --ninja "$(NINJA)"
+	$(TIDY_RATCHET_COMPDB_$(LANE))
 	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) \
 	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 
@@ -228,6 +241,7 @@ tidy-ratchet-write: $(NINJA)
 	$(call require-tool,clang-tidy,install clang-tools)
 	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
 	    --build-dir "$(TIDY_RATCHET_BUILD_DIR)" --ninja "$(NINJA)"
+	$(TIDY_RATCHET_COMPDB_$(LANE))
 	python3 scripts/ci/tidy-ratchet.py --lane $(LANE) --write \
 	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 

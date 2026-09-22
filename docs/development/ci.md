@@ -238,16 +238,47 @@ instead of a touched-files rule:
   the `cpu` lane is always measured with `--build-dir build` at the repository
   root, as CI does. The nightly workflow runs the same lane and fails on drift
   (it used to swallow the full scan with `|| true`).
-- **`cuda`, `sycl`, `hip` lanes** — baselines committed from the 2026-09-02
-  workstation measurement (clang-tidy 22.1.8 against a `-Denable_cuda=true
-  -Denable_sycl=true -Denable_hip=true` build; CUDA TUs analysed with
-  `--cuda-host-only -nocudalib`, HIP with `-x hip -D__HIP_PLATFORM_AMD__=1`,
-  SYCL through `scripts/ci/clang-tidy-sycl.sh`). Run locally with
-  `make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=build-gpu` (same for
-  `sycl`, `hip`). They become PR-required contexts as soon as a hosted
+- **`cuda`, `sycl`, `hip` lanes** — re-measured on 2026-09-22 (clang-tidy
+  22.1.8; CUDA TUs analysed with `--cuda-host-only -nocudalib`, HIP with
+  `-x hip -D__HIP_PLATFORM_AMD__=1`, SYCL through
+  `scripts/ci/clang-tidy-sycl.sh`). Each lane wants its **own** build
+  directory, and that directory has two preconditions the `cpu` lane does
+  not share:
+
+  ```bash
+  # one lane per build dir; -Db_lto=false and an out-of-repo path are required
+  meson setup ~/.cache/vmafx-gpu-tidy/cuda core \
+      -Denable_cuda=true -Denable_sycl=false -Denable_hip=false -Db_lto=false
+  make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=~/.cache/vmafx-gpu-tidy/cuda
+  ```
+
+  1. **`-Db_lto=false`.** `core/meson.build` sets `b_lto_threads=4`
+     ([ADR-1172](../adr/1172-bound-lto-link-parallelism.md)), which meson
+     renders as GCC's `-flto=4`. clang-tidy parses these compile commands
+     with clang, which
+     rejects the argument outright, so *every* TU comes back as a compile
+     failure and the run exits 4. The `cpu` lane in `lint-and-format.yml`
+     already configures with `-Db_lto=false` for the same reason.
+  2. **A build directory outside the repository.** Anything inside it makes
+     meson's generated model sources (`<build>/src/*.json.c`) part of the
+     measurement, and their baseline keys then embed the build-dir name. The
+     committed GPU baselines contain `core/` entries only.
+
+  The `sycl` lane additionally needs `scripts/ci/gen-sycl-compile-commands.py`
+  to run between the native database export and the measurement: meson emits
+  the SYCL feature TUs as `CUSTOM_COMMAND` rules (`icpx -fsycl`), so
+  `write-compile-commands.py` never sees them. `make tidy-ratchet` /
+  `tidy-ratchet-write` now do this automatically per lane
+  (`TIDY_RATCHET_COMPDB_<lane>`, contract-tested by
+  `scripts/ci/tests/test_tidy_ratchet_sycl_compdb.py`). Before that hook
+  existed the lane measured **zero** SYCL translation units and
+  `tidy-baseline-sycl.json` recorded an empty backend.
+
+  These lanes become PR-required contexts as soon as a hosted
   toolchain exists for the lane; until then a lane that cannot run is reported
   as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux
-  toolchain and is tracked by structural proxy only.
+  toolchain and is tracked by structural proxy only, so its `NOLINT` citations
+  are checked by the tree-wide scan rather than by a lane measurement.
 - **`arm64` lane** ([ADR-1283](../adr/1283-whole-tree-ratchet-arm64-lane.md)) —
   the NEON and SVE2 tree. 32 translation units are compiled only on an
   aarch64 host — the 20 sources under `core/src/feature/arm64/`,

@@ -297,8 +297,7 @@ static const VmafOption options[] = {
 
 /* Verbatim port of the libjxl Charalampidis 2016 derivation; per
  * ADR-0141 carve-out, splitting the linear-system solve would
- * obscure the scalar-diff audit trail.
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+ * obscure the scalar-diff audit trail. */
 static void ss2c_setup_gaussian(Ssimu2StateCuda *s, double sigma)
 {
     const double radius = round(3.2795 * sigma + 0.2546);

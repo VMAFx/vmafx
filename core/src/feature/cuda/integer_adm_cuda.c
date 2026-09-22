@@ -1374,9 +1374,8 @@ static int adm_compute_scale0(VmafFeatureExtractor *fex, AdmStateCuda *s, AdmBuf
  * must be cast to host-visible pointer types to populate kernel-args
  * structs / layout helpers for cuLaunchKernel. The cast is inherent to
  * the CUDA Driver API and cannot be refactored away without changing
- * the public libvmaf-CUDA contract. Per ADR-0141 touched-file rule,
- * upstream-parity exception.
- */
+ * the public libvmaf-CUDA contract. Per the touched-file rule,
+ * upstream-parity exception (ADR-0141 §2 load-bearing invariant). */
 // NOLINTBEGIN(performance-no-int-to-ptr)
 static int adm_compute_scale_n(AdmStateCuda *s, AdmBufferCuda *buf, int32_t *i4_curr_ref_scale,
                                int32_t *i4_curr_dis_scale, int *w, int *h, size_t curr_ref_stride,
@@ -1494,8 +1493,8 @@ static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
 /* The four band-layout helpers below turn a CUdeviceptr (unsigned long long)
  * into the host-visible pointer types the kernel-args structs need. The cast
  * is inherent to the CUDA Driver API and cannot be refactored away without
- * changing the public libvmaf-CUDA contract. Per ADR-0141 touched-file rule,
- * upstream-parity exception. */
+ * changing the public libvmaf-CUDA contract. Per the touched-file rule,
+ * upstream-parity exception (ADR-0141 §2 load-bearing invariant). */
 // NOLINTBEGIN(performance-no-int-to-ptr)
 static CUdeviceptr init_dwt_band_cuda(struct VmafCudaState *cu_state,
                                       struct cuda_adm_dwt_band_t *band, CUdeviceptr data_top,

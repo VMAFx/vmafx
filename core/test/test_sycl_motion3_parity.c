@@ -260,7 +260,7 @@ static int fill_checkerboard_fixture(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): test harness setup and per-frame loop */
+// NOLINTNEXTLINE(readability-function-size): test harness setup and per-frame loop (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static char *run_cpu_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, double *m3_f2)
 {
     int err = 0;

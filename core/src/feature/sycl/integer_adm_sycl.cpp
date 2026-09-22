@@ -56,7 +56,7 @@
 #include "sycl/common.h"
 #include "log.h"
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): see
+// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage) — ADR-0141 §2 load-bearing invariant: see
 // integer_motion_sycl.cpp for the rationale — C-style `static` is required
 // because the entry-point function addresses are consumed via the
 // `extern "C" VmafFeatureExtractor` struct at the bottom of this TU; the
@@ -477,7 +477,6 @@ static sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, i
                     int const x = tile_col + tc;
                     int const y = row_start + tr;
                     if (e_scale == 0) {
-                        // NOLINTNEXTLINE(bugprone-branch-clone): SYCL template specialization branch — both arms reach the same code today but the conditional pins the bit-exactness contract for future SCALE / SG_SIZE divergence.
                         if (e_bpc <= 8) {
                             tile[tr][tc] = static_cast<const uint8_t *>(p_in)[y * e_in_stride + x];
                         } else {
@@ -546,12 +545,13 @@ static sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, i
 /* ------------------------------------------------------------------ */
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static sycl::event launch_dwt_hori_pair(
-    sycl::queue &q, const int32_t *dwt_tmp_ref, int32_t *ref_band_a, int32_t *ref_band_h,
-    int32_t *ref_band_v, int32_t *ref_band_d, const int32_t *dwt_tmp_dis, int32_t *dis_band_a,
-    int32_t *dis_band_h, int32_t *dis_band_v, int32_t *dis_band_d, unsigned width, unsigned height,
-    // NOLINTNEXTLINE(misc-unused-parameters): SYCL kernel parameter kept for ABI symmetry across the band-launch lambda specialisations.
-    unsigned buf_stride, unsigned h_shift, unsigned h_add)
+static sycl::event launch_dwt_hori_pair(sycl::queue &q, const int32_t *dwt_tmp_ref,
+                                        int32_t *ref_band_a, int32_t *ref_band_h,
+                                        int32_t *ref_band_v, int32_t *ref_band_d,
+                                        const int32_t *dwt_tmp_dis, int32_t *dis_band_a,
+                                        int32_t *dis_band_h, int32_t *dis_band_v,
+                                        int32_t *dis_band_d, unsigned width, unsigned height,
+                                        unsigned buf_stride, unsigned h_shift)
 {
     unsigned const half_w = (width + 1) / 2;
     unsigned const half_h = (height + 1) / 2;
@@ -1038,11 +1038,9 @@ static sycl::event launch_csf_den_cm_3band(
                 const int32_t *ref_band = (band_idx == 0) ? ref_band_h :
                                           (band_idx == 1) ? ref_band_v :
                                                             ref_band_d;
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
                 int64_t *csf_accum_ptr = (band_idx == 0) ? csf_accum_h :
                                          (band_idx == 1) ? csf_accum_v :
                                                            csf_accum_d;
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
                 int64_t *cm_accum_ptr = (band_idx == 0) ? cm_accum_h :
                                         (band_idx == 1) ? cm_accum_v :
                                                           cm_accum_d;
@@ -1312,9 +1310,7 @@ static sycl::event launch_csf_den_cm_3band(
                 item.barrier(sycl::access::fence_space::local_space);
 
                 if (lid == 0) {
-                    // NOLINTNEXTLINE(misc-const-correctness): atomic_ref / reduction-loop target — clang-tidy cannot see the writes through SYCL atomic_ref or sub-group reductions, but the variable is mutated and must not be const
                     int64_t total_csf = 0;
-                    // NOLINTNEXTLINE(misc-const-correctness): atomic_ref / reduction-loop target — clang-tidy cannot see the writes through SYCL atomic_ref or sub-group reductions, but the variable is mutated and must not be const
                     int64_t total_cm = 0;
                     for (uint32_t s = 0; s < n_subgroups; s++) {
                         total_csf += lmem[s];
@@ -1593,14 +1589,13 @@ static void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_
 {
     // DWT shift parameters per scale
     struct DwtShifts {
-        unsigned v_shift, v_add, h_shift, h_add;
+        unsigned v_shift, v_add, h_shift;
     };
     DwtShifts dwt_shifts[4];
-    dwt_shifts[0] = {
-        .v_shift = s->bpc, .v_add = 1u << (s->bpc - 1), .h_shift = 16u, .h_add = 32768u};
-    dwt_shifts[1] = {.v_shift = 0u, .v_add = 0u, .h_shift = 15u, .h_add = 16384u};
-    dwt_shifts[2] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 16u, .h_add = 32768u};
-    dwt_shifts[3] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 15u, .h_add = 16384u};
+    dwt_shifts[0] = {.v_shift = s->bpc, .v_add = 1u << (s->bpc - 1), .h_shift = 16u};
+    dwt_shifts[1] = {.v_shift = 0u, .v_add = 0u, .h_shift = 15u};
+    dwt_shifts[2] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 16u};
+    dwt_shifts[3] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 15u};
 
     unsigned cur_w = s->width;
     unsigned cur_h = s->height;
@@ -1630,7 +1625,7 @@ static void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_
         launch_dwt_hori_pair(q, s->d_dwt_tmp_ref, s->d_ref_band[0], s->d_ref_band[1],
                              s->d_ref_band[2], s->d_ref_band[3], s->d_dwt_tmp_dis, s->d_dis_band[0],
                              s->d_dis_band[1], s->d_dis_band[2], s->d_dis_band[3], cur_w, cur_h,
-                             cur_stride, dwt_shifts[scale].h_shift, dwt_shifts[scale].h_add);
+                             cur_stride, dwt_shifts[scale].h_shift);
 
         // Decouple + CSF → writes only d_csf_f (r and csf_a recomputed in CM kernel)
         launch_decouple_csf<false>(q, scale, half_w, half_h, cur_stride, s->adm_enhn_gain_limit,

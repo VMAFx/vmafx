@@ -1003,3 +1003,4 @@
 1283-whole-tree-ratchet-arm64-lane
 1285-cuda-coordinated-pin-lockstep
 1284-silent-revert-detection-gate
+1290-sycl-tidy-lane-compile-database

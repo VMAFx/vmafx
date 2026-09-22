@@ -132,8 +132,8 @@ static char *run_cpu_float_vif(bool neg_opts, const char *key, double *score)
     return NULL;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): the -ENOSYS scaffold skip contract
- * has to be checked after each of the four HIP entry points, which is what
+/* NOLINTNEXTLINE(readability-function-size): the ADR-1264 -ENOSYS scaffold skip
+ * contract has to be checked after each of the four HIP entry points, which is what
  * makes this longer than the CPU leg. Mirrors test_hip_float_psnr_parity.c. */
 static char *run_hip_float_vif(bool neg_opts, const char *key, double *score, int *skipped)
 {

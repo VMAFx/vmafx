@@ -107,6 +107,33 @@ PR that deleted them reset the file to its pre-marker blob.
 Regression command: `python3 scripts/ci/tests/test_check_silent_revert.py`
 (12 tests; `test_real_history_replay` needs `31a51afb2` and `92ea978a4` in the
 clone and skips otherwise). See ADR-1284.
+## fix/bug-gpu-lint — GPU NOLINT citations and the SYCL tidy database (2026-09-22)
+
+Fork-local; no upstream Netflix C source is touched (upstream has no SYCL, HIP
+or Metal backend, and the CUDA edits are comment-only). Two invariants to
+preserve when rebasing lint tooling:
+
+1. `make tidy-ratchet` / `tidy-ratchet-write` must keep expanding the per-lane
+   `TIDY_RATCHET_COMPDB_<lane>` hook between `write-compile-commands.py` and
+   `tidy-ratchet.py`. For `sycl` that hook is
+   `scripts/ci/gen-sycl-compile-commands.py`; meson emits the SYCL feature TUs
+   as `CUSTOM_COMMAND` rules, so dropping the hook silently returns the lane to
+   measuring zero SYCL translation units.
+   `scripts/ci/tests/test_tidy_ratchet_sycl_compdb.py` is the regression
+   contract. The GPU lanes additionally need `-Db_lto=false` and a build
+   directory outside the repository; both are documented in the Makefile and
+   `docs/development/ci.md`.
+2. Every GPU-lane `NOLINT` now carries an inline `ADR-NNNN` token inside the
+   window `count_uncited_nolints()` scans (previous, same or next line, or the
+   enclosing `/* ... */` comment — note the block scan looks *forward* only, so
+   a citation placed above the marker in the same comment does not count). Do
+   not reflow those comments in a way that moves the token out of the window,
+   and do not restore the seven suppressions this branch deleted: each was
+   verified to suppress a diagnostic that clang-tidy does not emit.
+   `launch_dwt_hori_pair` in `core/src/feature/sycl/integer_adm_sycl.cpp` lost
+   its unused `h_add` parameter and the matching `DwtShifts` field; the
+   horizontal pass derives that addend from `h_shift`, so do not reintroduce
+   the parameter on a merge.
 
 ## fix/configured-lint-warning-exit — diagnostics cannot pass as green (2026-09-21)
 

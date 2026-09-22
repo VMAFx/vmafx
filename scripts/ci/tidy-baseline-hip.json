@@ -352,7 +352,7 @@
   ],
   "compile_failures": [],
   "total_warnings": 1234,
-  "total_nolint_uncited": 1,
+  "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
     "core/include/libvmaf/feature.h": 1,
@@ -500,9 +500,7 @@
     "core/tools/vidinput.h": 12,
     "core/tools/vmaf.cpp": 1
   },
-  "nolint_uncited": {
-    "core/test/test_hip_float_vif_parity.c": 1
-  },
+  "nolint_uncited": {},
   "scoped_updates": [
     {
       "sources": [
