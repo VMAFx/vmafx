@@ -322,7 +322,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 742,
+  "total_warnings": 739,
   "total_nolint_uncited": 0,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -365,12 +365,12 @@
     "core/src/feature/feature_collector.cpp": 13,
     "core/src/feature/feature_collector.h": 4,
     "core/src/feature/feature_name.h": 1,
-    "core/src/feature/float_adm.c": 5,
+    "core/src/feature/float_adm.c": 4,
     "core/src/feature/float_moment.c": 2,
     "core/src/feature/float_ms_ssim.c": 2,
     "core/src/feature/float_ssim.c": 2,
     "core/src/feature/float_vif.c": 8,
-    "core/src/feature/integer_motion.c": 11,
+    "core/src/feature/integer_motion.c": 9,
     "core/src/feature/integer_motion.h": 4,
     "core/src/feature/integer_motion_v2.c": 4,
     "core/src/feature/iqa/iqa.h": 1,
@@ -1199,5 +1199,30 @@
     "core/tools/vidinput.h:70:1: [modernize-use-using]",
     "core/tools/vidinput.h:98:1: [modernize-use-using]",
     "core/tools/vidinput.h:98:9: [performance-enum-size]"
+  ],
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/float_adm.c",
+        "core/src/feature/integer_motion.c",
+        "core/src/model.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/float_adm.c": {
+          "warnings": [
+            5,
+            4
+          ]
+        },
+        "core/src/feature/integer_motion.c": {
+          "warnings": [
+            11,
+            9
+          ]
+        }
+      },
+      "previous_baseline_sha256": "8b22b2cdd9c34bece507a15a9c8af7803ea8b46e45472e9b0052698ce1c0b27a"
+    }
   ]
 }

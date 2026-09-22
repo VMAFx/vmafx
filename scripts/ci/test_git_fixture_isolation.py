@@ -137,6 +137,9 @@ class GitFixtureIsolation(unittest.TestCase):
     def test_level_zero_fixture(self) -> None:
         self.check_helper("scripts/ci/tests/test_level_zero_single_source.py")
 
+    def test_pelorus_sync_fixture(self) -> None:
+        self.check_helper("scripts/ci/tests/test-sync-pelorus-interop.sh")
+
     def test_real_linked_worktree_hook_preserves_shared_repository(self) -> None:
         # A real Git hook supplies GIT_DIR even when its caller has no Git
         # variables. Keep both the old-command control and fixed helper inside
@@ -212,6 +215,7 @@ class GitFixtureIsolation(unittest.TestCase):
             "scripts/dev/test-cleanup-agent-state.sh",
             "scripts/ci/test-classify-dependency-pr.sh",
             "scripts/ci/tests/test_level_zero_single_source.py",
+            "scripts/ci/tests/test-sync-pelorus-interop.sh",
             ".pre-commit-config.yaml",
         ):
             self.assertIsNotNone(re.search(pattern, path), path)

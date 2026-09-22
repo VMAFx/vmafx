@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-22T16:39:38Z",
+  "generated_at": "2026-09-22T17:38:57Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 279,
+  "total_infractions": 276,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1207,35 +1207,6 @@
     },
     {
       "rule_id": "HISS-01",
-      "file_path": "core/src/feature/float_adm.c",
-      "line_number": 325,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/float_adm.c:325:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/float_adm.c",
-      "line_number": 328,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/float_adm.c:328:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/float_adm.c",
-      "line_number": 333,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/float_adm.c:333:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/float_adm.c",
-      "line_number": 349,
-      "symbol": "extract",
-      "message": "Function 'extract' (110 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/float_adm.c:349:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
       "file_path": "core/src/feature/float_vif.c",
       "line_number": 240,
       "message": "Legacy non-DAG control flow jump (goto)",
@@ -1387,29 +1358,6 @@
       "symbol": "filter1d_8_horizontal_kernel_2_17_9",
       "message": "Function 'filter1d_8_horizontal_kernel_2_17_9' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/hip/integer_vif/vif_statistics.hip:351:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/integer_motion.c",
-      "line_number": 254,
-      "symbol": "init",
-      "message": "Function 'init' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/integer_motion.c:254:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/integer_motion.c",
-      "line_number": 351,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/integer_motion.c:351:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/integer_motion.c",
-      "line_number": 399,
-      "symbol": "flush",
-      "message": "Function 'flush' (92 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/integer_motion.c:399:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -2035,40 +1983,43 @@
       "fingerprint": "core/src/feature/x86/vif_avx512.c:993:HISS-04"
     },
     {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/model.c",
-      "line_number": 349,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/model.c:349:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/model.c",
-      "line_number": 354,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/model.c:354:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/model.c",
-      "line_number": 364,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/model.c:364:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/model.c",
-      "line_number": 368,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/model.c:368:HISS-01"
+      "rule_id": "HISS-04",
+      "file_path": "core/src/interop/pelorus_interop.c",
+      "line_number": 125,
+      "symbol": "pel_blob_pack",
+      "message": "Function 'pel_blob_pack' (85 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/interop/pelorus_interop.c:125:HISS-04"
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "core/src/model.c",
-      "line_number": 338,
-      "symbol": "vmaf_model_collection_append",
-      "message": "Function 'vmaf_model_collection_append' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/model.c:338:HISS-04"
+      "file_path": "core/src/interop/pelorus_interop.c",
+      "line_number": 236,
+      "symbol": "pel_blob_find_section",
+      "message": "Function 'pel_blob_find_section' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/interop/pelorus_interop.c:236:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "core/src/interop/pelorus_interop.c",
+      "line_number": 318,
+      "symbol": "pel_qp_report_from_blocks",
+      "message": "Function 'pel_qp_report_from_blocks' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/interop/pelorus_interop.c:318:HISS-04"
+    },
+    {
+      "rule_id": "HISS-02",
+      "file_path": "core/src/interop/pelorus_qp_report_csv.c",
+      "line_number": 121,
+      "message": "Legacy unbounded loop in native code",
+      "fingerprint": "core/src/interop/pelorus_qp_report_csv.c:121:HISS-02"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "core/src/interop/pelorus_qp_report_csv.c",
+      "line_number": 284,
+      "symbol": "pel_x265_csv_parse",
+      "message": "Function 'pel_x265_csv_parse' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/interop/pelorus_qp_report_csv.c:284:HISS-04"
     },
     {
       "rule_id": "HISS-02",
@@ -2151,6 +2102,38 @@
       "symbol": "test_barten_csf",
       "message": "Function 'test_barten_csf' (87 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_barten_csf.c:48:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "core/test/test_pelorus_interop.c",
+      "line_number": 67,
+      "symbol": "test_roundtrip",
+      "message": "Function 'test_roundtrip' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/test/test_pelorus_interop.c:67:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "core/test/test_pelorus_interop.c",
+      "line_number": 322,
+      "symbol": "test_qp_report_roundtrip",
+      "message": "Function 'test_qp_report_roundtrip' (72 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/test/test_pelorus_interop.c:322:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "core/test/test_pelorus_interop.c",
+      "line_number": 400,
+      "symbol": "test_motion_conf_roundtrip",
+      "message": "Function 'test_motion_conf_roundtrip' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/test/test_pelorus_interop.c:400:HISS-04"
+    },
+    {
+      "rule_id": "HISS-04",
+      "file_path": "core/test/test_pelorus_interop.c",
+      "line_number": 562,
+      "symbol": "test_x265_csv_reader",
+      "message": "Function 'test_x265_csv_reader' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/test/test_pelorus_interop.c:562:HISS-04"
     },
     {
       "rule_id": "HISS-04",

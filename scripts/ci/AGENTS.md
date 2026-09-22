@@ -590,6 +590,37 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
   parse/compile failures still invalidate that measurement. Reports retain
   actual `measured_sources` and `compile_failures` so partial/error output
   never presented as successful whole-tree scan.
+- ADR-1113's Pelorus mirror and ADR-1276's manifest-owned boundary are outside
+  native-lint ownership.
+  `pelorus-mirror-paths.txt` is the single exact-path exemption set consumed by
+  the sync guard, format hooks, changed-file tidy gate, and `tidy-ratchet.py`;
+  do not restore prefix/directory classification. Keep one shared
+  `is_exact_pelorus_mirror()` predicate inside the ratchet for TU selection,
+  header diagnostics, and legacy-baseline normalization. A scoped baseline
+  write must preserve historical entries for this excluded scope; only a full
+  generated write may remove them. Fix mirror diagnostics in Pelorus and
+  re-pin; never edit the fixture or raise a baseline locally. Tests live in
+  `test_pelorus_mirror.py`, `test_tidy_ratchet.py`, and
+  `test_tidy_scoped_write.py`.
+
+## Pelorus mirror provenance gate (ADR-1113, ADR-1276)
+
+`tests/test-sync-pelorus-interop.sh` proves the top-level mirror guard fails
+closed for a plain directory and for a Git checkout lacking the exact pin. It
+reconstructs source fixtures in disposable repositories, clears inherited
+`GIT_*`, disables caller Git configuration, and proves the canonical fixture
+prefix, tracked-path allowlist, and final-newline comparisons fail closed while
+a synthetic re-pin/update refreshes every banner. The fixture uses a portable
+Python byte rewrite, not platform-specific `sed -i`. Keep it wired into
+required Pre-Commit through `.pre-commit-config.yaml`.
+
+The real CI check belongs in the existing `Pre-Commit` job in
+`lint-and-format.yml`: derive the 40-character pin from
+`scripts/sync-pelorus-interop.sh`, check out `VMAFx/pelorus` at that object,
+then run the script's default mode. Never replace the object with a branch/tag
+or restore its working-tree fallback; a green check must bind every complete
+rendered mirror and the exact tracked lint-exemption set to reviewed source
+bytes.
 
 ## release-pr-exempt.sh invariants (ADR-1151)
 

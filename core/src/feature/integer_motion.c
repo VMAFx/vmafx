@@ -249,6 +249,46 @@ static inline uint64_t motion_score_pipeline_16(const uint8_t *prev_u8, ptrdiff_
     return sad;
 }
 
+/* Pick the SAD pipeline for this bit depth and CPU. Lifted out of `init`
+ * verbatim — the same assignments guarded by the same ISA checks, evaluated in
+ * the same order, so the last matching ISA still wins — to keep `init` under
+ * the HISS-04 / NASA Rule 4 function-size limit (ADR-0141). s->bpc is already
+ * set by the caller, so the AArch64 branch reads the same value as before. */
+static void motion_select_pipeline(MotionState *s, unsigned bpc)
+{
+    if (bpc == 8)
+        s->pipeline = motion_score_pipeline_8;
+    else
+        s->pipeline = motion_score_pipeline_16;
+
+#if ARCH_X86
+    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
+        if (bpc == 8)
+            s->pipeline = motion_score_pipeline_8_avx2;
+        else
+            s->pipeline = motion_score_pipeline_16_avx2;
+    }
+#if HAVE_AVX512
+    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX512) {
+        if (bpc == 8)
+            s->pipeline = motion_score_pipeline_8_avx512;
+        else
+            s->pipeline = motion_score_pipeline_16_avx512;
+    }
+#endif
+#endif
+
+#if ARCH_AARCH64
+    {
+        unsigned flags = vmaf_get_cpu_flags();
+        if (flags & VMAF_ARM_CPU_FLAG_NEON) {
+            s->pipeline =
+                s->bpc == 8 ? motion_score_pipeline_8_neon : motion_score_pipeline_16_neon;
+        }
+    }
+#endif
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -299,37 +339,7 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (!s->y_row)
         return -ENOMEM;
 
-    if (bpc == 8)
-        s->pipeline = motion_score_pipeline_8;
-    else
-        s->pipeline = motion_score_pipeline_16;
-
-#if ARCH_X86
-    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
-        if (bpc == 8)
-            s->pipeline = motion_score_pipeline_8_avx2;
-        else
-            s->pipeline = motion_score_pipeline_16_avx2;
-    }
-#if HAVE_AVX512
-    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX512) {
-        if (bpc == 8)
-            s->pipeline = motion_score_pipeline_8_avx512;
-        else
-            s->pipeline = motion_score_pipeline_16_avx512;
-    }
-#endif
-#endif
-
-#if ARCH_AARCH64
-    {
-        unsigned flags = vmaf_get_cpu_flags();
-        if (flags & VMAF_ARM_CPU_FLAG_NEON) {
-            s->pipeline =
-                s->bpc == 8 ? motion_score_pipeline_8_neon : motion_score_pipeline_16_neon;
-        }
-    }
-#endif
+    motion_select_pipeline(s, bpc);
 
     return 0;
 }
@@ -347,32 +357,33 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     double score = 0.;
     int err = 0;
 
-    if (s->motion_force_zero)
-        goto write_score;
+    /* motion_force_zero pins the reported score at 0 and skips the SAD
+     * pipeline entirely; the score is still appended below, exactly as when
+     * the pipeline runs. */
+    if (!s->motion_force_zero) {
+        /* motion_five_frame_window=true is rejected in init() (ADR-0337);
+         * by the time extract() runs, motion_five_frame_window is always false.
+         * The min_idx / prev_ref selection below retains the 5-frame branching
+         * skeleton so the flush() path compiles cleanly and the deferral is
+         * reversible once prev_prev_ref is plumbed into the framework. */
+        const unsigned min_idx = s->motion_five_frame_window ? 2 : 1;
+        if (index >= min_idx) {
+            const VmafPicture *prev = &fex->prev_ref;
+            if (!prev->ref)
+                return -EINVAL;
 
-    /* motion_five_frame_window=true is rejected in init() (ADR-0337);
-     * by the time extract() runs, motion_five_frame_window is always false.
-     * The min_idx / prev_ref selection below retains the 5-frame branching
-     * skeleton so the flush() path compiles cleanly and the deferral is
-     * reversible once prev_prev_ref is plumbed into the framework. */
-    const unsigned min_idx = s->motion_five_frame_window ? 2 : 1;
-    if (index >= min_idx) {
-        const VmafPicture *prev = &fex->prev_ref;
-        if (!prev->ref)
-            return -EINVAL;
+            const unsigned w = s->w;
+            const unsigned h = s->h;
+            const uint8_t *prev_data = (const uint8_t *)prev->data[0];
+            const uint8_t *cur_data = (const uint8_t *)ref_pic->data[0];
 
-        const unsigned w = s->w;
-        const unsigned h = s->h;
-        const uint8_t *prev_data = (const uint8_t *)prev->data[0];
-        const uint8_t *cur_data = (const uint8_t *)ref_pic->data[0];
+            uint64_t sad = s->pipeline(prev_data, prev->stride[0], cur_data, ref_pic->stride[0],
+                                       s->y_row, w, h, s->bpc);
 
-        uint64_t sad = s->pipeline(prev_data, prev->stride[0], cur_data, ref_pic->stride[0],
-                                   s->y_row, w, h, s->bpc);
-
-        score = MIN((double)sad / 256. / (w * h) * s->motion_fps_weight, s->motion_max_val);
+            score = MIN((double)sad / 256. / (w * h) * s->motion_fps_weight, s->motion_max_val);
+        }
     }
 
-write_score:
     err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                   "VMAF_integer_feature_motion_sad_score", score,
                                                   index);
@@ -393,6 +404,65 @@ static int close_fex(VmafFeatureExtractor *fex)
     MotionState *s = fex->priv;
     free(s->y_row);
     return vmaf_dictionary_free(&s->feature_name_dict);
+}
+
+/* Derive and append motion2 / motion3 for one frame index.
+ *
+ * Lifted verbatim out of flush()'s per-index loop: the same statements in the
+ * same order, with the loop-carried `prev_processed` threaded through a pointer
+ * so the moving-average recurrence is unchanged. No arithmetic was rewritten,
+ * so every emitted score is bit-identical. Keeps flush() under the HISS-04 /
+ * NASA Rule 4 function-size limit (ADR-0141). */
+static int motion_flush_one(VmafFeatureCollector *feature_collector, MotionState *s,
+                            const char *sad_name, unsigned i, unsigned min_idx, unsigned stride,
+                            double stamp_value, double *prev_processed)
+{
+    double sad_i;
+    vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_i, i);
+
+    double motion2;
+
+    if (i < min_idx) {
+        motion2 = 0.;
+    } else {
+        const int lo_idx = (int)i - (int)(stride - 1);
+        const int hi_idx = (int)i + 1;
+        double hi;
+        const bool has_hi =
+            !vmaf_feature_collector_get_score(feature_collector, sad_name, &hi, hi_idx);
+        if (!has_hi) {
+            motion2 = sad_i;
+        } else if (lo_idx >= (int)min_idx) {
+            double lo;
+            vmaf_feature_collector_get_score(feature_collector, sad_name, &lo, lo_idx);
+            motion2 = lo < hi ? lo : hi;
+        } else {
+            motion2 = hi;
+        }
+    }
+
+    int append_err = vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", motion2, i);
+    if (append_err)
+        return append_err;
+
+    double motion3;
+    if (i < min_idx) {
+        motion3 = stamp_value;
+        *prev_processed = stamp_value;
+    } else {
+        double processed =
+            MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
+                s->motion_max_val);
+        motion3 = s->motion_moving_average ? (processed + *prev_processed) / 2.0 : processed;
+        *prev_processed = processed;
+    }
+
+    append_err = vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_score", motion3, i);
+    if (append_err)
+        return append_err;
+    return 0;
 }
 
 static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
@@ -436,53 +506,10 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
 
     double prev_processed = 0.;
     for (unsigned i = 0; i < n; i++) {
-        double sad_i;
-        vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_i, i);
-
-        double motion2;
-
-        if (i < min_idx) {
-            motion2 = 0.;
-        } else {
-            const int lo_idx = (int)i - (int)(stride - 1);
-            const int hi_idx = (int)i + 1;
-            double hi;
-            const bool has_hi =
-                !vmaf_feature_collector_get_score(feature_collector, sad_name, &hi, hi_idx);
-            if (!has_hi) {
-                motion2 = sad_i;
-            } else if (lo_idx >= (int)min_idx) {
-                double lo;
-                vmaf_feature_collector_get_score(feature_collector, sad_name, &lo, lo_idx);
-                motion2 = lo < hi ? lo : hi;
-            } else {
-                motion2 = hi;
-            }
-        }
-
-        int append_err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", motion2,
-            i);
-        if (append_err)
-            return append_err;
-
-        double motion3;
-        if (i < min_idx) {
-            motion3 = stamp_value;
-            prev_processed = stamp_value;
-        } else {
-            double processed =
-                MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-            motion3 = s->motion_moving_average ? (processed + prev_processed) / 2.0 : processed;
-            prev_processed = processed;
-        }
-
-        append_err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_score", motion3,
-            i);
-        if (append_err)
-            return append_err;
+        const int loop_err = motion_flush_one(feature_collector, s, sad_name, i, min_idx, stride,
+                                              stamp_value, &prev_processed);
+        if (loop_err)
+            return loop_err;
     }
 
     vmaf_dictionary_free(&s->feature_name_dict);

@@ -71,10 +71,12 @@ repos:
     rev: v23.1.1
     hooks:
       - id: clang-format
+        entry: python3 scripts/ci/pelorus_mirror.py clang-format
         types_or: [c, c++, cuda]
-        # core/src/interop + core/include/libvmaf/pelorus = vendored read-only
-        # mirror of VMAFx/pelorus (ADR-1113); must stay byte-identical, never reformatted.
-        exclude: '^subprojects/|^core/test/data/|^core/src/interop/|^core/include/libvmaf/pelorus/'
+        # Pelorus interop sources, headers, and shared conformance fixture are
+        # a vendored read-only mirror (ADR-1113). The wrapper exempts only paths
+        # in the shared exact-path manifest; an added pelorus_*.cpp stays linted.
+        exclude: '^subprojects/|^core/test/data/'
 
   - repo: https://github.com/psf/black
     rev: 26.5.1
@@ -305,7 +307,7 @@ repos:
         name: Git fixtures preserve caller repositories
         entry: python3 scripts/ci/test_git_fixture_isolation.py
         language: system
-        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/test_level_zero_single_source\.py|scripts/dev/test-cleanup-agent-state\.sh|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/(test_level_zero_single_source\.py|test-sync-pelorus-interop\.sh)|scripts/dev/test-cleanup-agent-state\.sh|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -535,6 +537,14 @@ repos:
         entry: bash scripts/ci/test-sycl-bench-env.sh
         language: system
         files: '^(scripts/ci/(sycl-bench-env|test-sycl-bench-env)\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-sync-pelorus-interop
+        name: Pelorus mirror guard fails closed without its exact Git pin
+        entry: bash scripts/ci/tests/test-sync-pelorus-interop.sh
+        language: system
+        files: '^(scripts/sync-pelorus-interop\.sh|scripts/ci/pelorus[-_]mirror[^/]*|scripts/ci/tests/(test-sync-pelorus-interop\.sh|test_pelorus_mirror\.py)|\.github/workflows/lint-and-format\.yml|Makefile|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

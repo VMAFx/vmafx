@@ -328,7 +328,6 @@ nav:
       - Release: development/release.md
       - CI: development/ci.md
       - CI runners: development/ci-runners.md
-      - Python process execution: development/python-process-execution.md
       - Cross-backend gate: development/cross-backend-gate.md
       - Fuzzing: development/fuzzing.md
       - IDE setup: development/ide-setup.md
@@ -1393,6 +1392,7 @@ nav:
         - "ADR-1264: hip-scaffold-enosys-contract": adr/1264-hip-scaffold-enosys-contract.md
         - "ADR-1265: clang-tidy-header-filter-absolute-paths": adr/1265-clang-tidy-header-filter-absolute-paths.md
         - "ADR-1274: hiss-21-replay-gate": adr/1274-hiss-21-replay-gate.md
+        - "ADR-1276: pelorus-v022-parser-safety-repin": adr/1276-pelorus-v022-parser-safety-repin.md
         - "ADR-1277: workingdir-contract-cleanup": adr/1277-workingdir-contract-cleanup.md
         - "ADR-1278: python-safe-parallel-execution": adr/1278-python-safe-parallel-execution.md
         - "ADR-1280: worktree-state-sync": adr/1280-worktree-state-sync.md

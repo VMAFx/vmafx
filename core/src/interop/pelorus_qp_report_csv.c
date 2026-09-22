@@ -17,7 +17,8 @@
  */
 
 /*
- * VENDORED FROM VMAFx/pelorus@818d844 — DO NOT EDIT. Append-only ABI; single
+ * VENDORED FROM VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16 — DO NOT EDIT.
+ * Append-only ABI; single
  * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.
  * See docs/adr/1113-vendor-pelorus-interop-abi.md.
  *
@@ -105,25 +106,19 @@ static char *trim(char *s)
 /* Split line (mutated: commas overwritten by NUL) into trimmed field pointers.
  * Writes up to max_fields into fields[]; returns the field count.
  *
- * Loop bound (P10 r2 / HISS-02): `line` is always a fgets-filled, NUL-terminated
- * buffer of <= PEL_CSV_LINE_MAX bytes, so the scan advances one byte per step and
- * reaches the terminator within PEL_CSV_LINE_MAX steps; `step` states that bound
- * instead of leaving it implicit. Every well-formed line therefore still returns
- * from inside the loop exactly where the old `break` did. Exhausting the bound
- * means the buffer was not NUL-terminated, i.e. corrupt input: report zero fields,
- * which the two call sites already treat as a rejected line (a header with no
- * QP/Bits column -> PEL_ERR_ABSENT, a data row -> skipped). */
+ * Loop bound (P10 r2): `line` is always a fgets-filled, NUL-terminated buffer of
+ * <= PEL_CSV_LINE_MAX bytes, so the walk hits '\0' in a bounded number of steps;
+ * the `n >= max_fields` break bounds the field count independently. */
 static size_t split_fields(char *line, char **fields, size_t max_fields)
 {
     size_t n = 0;
-    size_t step;
     char *cur = line;
     char *p = line;
 
     if (max_fields == 0) {
         return 0;
     }
-    for (step = 0; step < PEL_CSV_LINE_MAX; step++) {
+    for (;;) {
         if (*p == ',' || *p == '\0') {
             int last = (*p == '\0');
             *p = '\0';
@@ -132,13 +127,13 @@ static size_t split_fields(char *line, char **fields, size_t max_fields)
                 n++;
             }
             if (last || n >= max_fields) {
-                return n;
+                break;
             }
             cur = p + 1;
         }
         p++;
     }
-    return 0;
+    return n;
 }
 
 /* Case-insensitive whole-name match (header names are already trimmed). */
@@ -284,32 +279,6 @@ static void row_to_frame(char **fields, size_t nf, const csv_cols *c, PelorusX26
     fr->slice_type = (t[0] != '\0') ? ascii_upper(t[0]) : '?';
 }
 
-/* Close the stream and turn the accumulated parse state into a result code.
- * Statement-for-statement the tail of pel_x265_csv_parse: ferror before fclose,
- * the empty-file downgrade after it, then *out_count, then the code. */
-static pel_result csv_parse_finish(FILE *fp, pel_result rc, int have_header, int truncated,
-                                   size_t count, size_t *out_count)
-{
-    /* Distinguish EOF from a mid-file read error (CERT FIO35-C): fgets returns
-     * NULL for both, so without this a truncated read would report PEL_OK. */
-    if (ferror(fp) && rc == PEL_OK) {
-        rc = PEL_ERR_TRUNCATED;
-    }
-    (void)fclose(fp);
-
-    /* Empty file: no header was ever seen and rc is still PEL_OK -> ABSENT. A
-     * bad-header break already set rc = PEL_ERR_ABSENT, so the `rc == PEL_OK`
-     * guard makes this a no-op on that path (not a double-assign hazard). */
-    if (!have_header && rc == PEL_OK) {
-        rc = PEL_ERR_ABSENT;
-    }
-    *out_count = count;
-    if (rc != PEL_OK) {
-        return rc;
-    }
-    return truncated ? PEL_ERR_RANGE : PEL_OK;
-}
-
 pel_result pel_x265_csv_parse(const char *path, PelorusX265Frame *out_frames, size_t cap,
                               size_t *out_count)
 {
@@ -357,7 +326,24 @@ pel_result pel_x265_csv_parse(const char *path, PelorusX265Frame *out_frames, si
         count++;
     }
 
-    return csv_parse_finish(fp, rc, have_header, truncated, count, out_count);
+    /* Distinguish EOF from a mid-file read error (CERT FIO35-C): fgets returns
+     * NULL for both, so without this a truncated read would report PEL_OK. */
+    if (ferror(fp) && rc == PEL_OK) {
+        rc = PEL_ERR_TRUNCATED;
+    }
+    (void)fclose(fp);
+
+    /* Empty file: no header was ever seen and rc is still PEL_OK -> ABSENT. A
+     * bad-header break already set rc = PEL_ERR_ABSENT, so the `rc == PEL_OK`
+     * guard makes this a no-op on that path (not a double-assign hazard). */
+    if (!have_header && rc == PEL_OK) {
+        rc = PEL_ERR_ABSENT;
+    }
+    *out_count = count;
+    if (rc != PEL_OK) {
+        return rc;
+    }
+    return truncated ? PEL_ERR_RANGE : PEL_OK;
 }
 
 /* honored_fraction: sign-agreement between the requested per-frame delta-QP (vs

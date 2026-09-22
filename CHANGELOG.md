@@ -13925,6 +13925,22 @@ See `docs/research/0755-hip-backend-audit-20260529.md`.
   or tolerance.
 
 
+- **refactor(core):** Restore `core/src/interop/pelorus_*.c` to a verbatim copy
+  of the pinned Pelorus source and absorb the debt that came back with it. The
+  HISS-21 burn-down had split four functions inside the vendored mirror, which
+  ADR-1113 forbids; reconciling with the v0.2.2 re-vendor reinstated nine
+  recorded HISS findings. Rather than raise the ratchet, twelve real findings
+  were cleared in the fork's own code: the cascading allocation-unwind `goto`
+  labels in `vmaf_model_collection_append`, the `goto fail` unwinds in
+  `float_adm.c`'s `init`, the forward `goto write_score` in
+  `integer_motion.c`'s `extract`, and four oversized functions split at
+  statement boundaries (`float_adm.c` `extract`, `integer_motion.c` `init` and
+  `flush`). The debt baseline therefore fell 279 → 276 with no exception flag.
+  Scores are bit-identical: all three Netflix golden pairs produce byte-equal
+  JSON at `--precision max` before and after. The four splits still want
+  landing upstream in `VMAFx/pelorus`. (ADR-1113, ADR-0141)
+
+
 docs(research): hardware backend audit recommends dropping Vulkan backend (#733)
 
 Research digest 0733 audits all six GPU backends (CUDA, HIP, SYCL, Vulkan, Metal)
@@ -26503,6 +26519,15 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   overrides before allocation. Preserve parser behavior
   through dedicated Unicode, streaming, malformed-input and allocator tests,
   and remove the vendored parser's blanket lint suppression.
+
+
+- **Pelorus v0.2.2 interop blobs no longer trigger undefined behavior when the
+  caller's byte buffer has a misaligned base.** The vendored parser now moves
+  wire headers and directory entries through aligned locals with `memcpy` and
+  rejects a `header_size` that would misalign the section directory. ABI 1.3 is
+  unchanged. The shared fixture is again exact Pelorus source (16 vectors), and
+  a required fail-closed drift check plus VMAFx-side lint exclusions prevent
+  local fixture edits from diverging again.
 
 
 `vmaf-tune` per-shot report: Bitrate column now shows real kbps values (was "—" for
