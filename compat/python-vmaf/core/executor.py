@@ -15,7 +15,6 @@ from vmaf.tools.misc import (
     get_file_name_extension,
     make_parent_dirs_if_nonexist,
     match_any_files,
-    parallel_map,
     run_process,
 )
 from vmaf.tools.reader import YuvReader
