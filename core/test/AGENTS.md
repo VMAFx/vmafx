@@ -87,18 +87,28 @@ and teardown.
   its own sources and maps the four init/destroy entry points to test-owned
   wrapper symbols through `c_args`. Those `-D` renames reach every translation
   unit in the target, so `test_framesync_init_failure.c` undefines them above
-  its first `#include`. **Rebase-sensitive**: do not lift `framesync.c` back
-  out into a `static_library` consumed with `link_whole`. That is the only
-  `-force_load` the build would contain, and under `b_lto=true` Apple's linker
-  loses every cross-module definition while running LTO codegen over a
-  force-loaded bitcode archive (`ld: symbol(s) defined in LTO objects are
-  referenced but missing in compiled objects`), which breaks all five macOS
-  legs. Keep the test source an ordinary translation unit otherwise: do not
-  include executable `.c` files, add a production hook, or replace the
+  its first `#include`. Keep the test source an ordinary translation unit: do
+  not include executable `.c` files, add a production hook, or replace the
   deterministic wrappers with a platform-specific linker interposer. The test
   must cover each initialization stage, a null init-output pointer, the
   documented null destroy no-op, unpublished context, and exact partial
   unwind.
+- **A test target that links nothing but its own bitcode objects must keep
+  default symbol visibility.** **Rebase-sensitive**: do not give
+  `test_framesync_init_failure` (or any other target whose link line carries no
+  library) `vmaf_cflags_common`, and do not reintroduce `framesync.c` as a
+  `static_library` consumed with `link_whole`. `vmaf_cflags_common` carries the
+  library's `-fvisibility=hidden` (ADR-0379). Under `b_lto=true` a bitcode
+  symbol survives only if the linker adds it to libLTO's must-preserve list,
+  and ld builds that list from the names referenced by *non*-LTO atoms, the
+  entry point, and atoms that still have global scope (ld64,
+  `src/ld/parsers/lto_file.cpp`, `Parser::optimize`). An all-bitcode link
+  contributes no non-LTO references and hidden visibility removes global scope,
+  so the list collapses to `_main`, every cross-translation-unit symbol in the
+  target becomes discardable, and Apple's linker rejects the result with `ld:
+  symbol(s) defined in LTO objects are referenced but missing in compiled
+  objects`. That took out all five macOS legs; the 15 sibling all-bitcode test
+  targets link because they keep default visibility.
 - **SIMD parity tests check what kernel leaves outside its output, not only
   what it writes inside.** Kernel storing past its region passes region-only
   comparison. Netflix/vmaf `03b5562c5` + `ea012e387` both that shape, unnoticed

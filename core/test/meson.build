@@ -1265,24 +1265,45 @@ test_framesync = executable('test_framesync',
     dependencies : [pthread_dependency, thread_lib, sycl_dependency],
 )
 
-# Compile an isolated framesync object with test-owned pthread entry points so
-# primitive failures are deterministic without a production hook or C include.
-# framesync.c is compiled straight into the executable, the way every other
-# target in this file recompiles the sources it exercises. It was briefly a
-# `static_library` consumed through `link_whole`, which was the only
-# -force_load in the whole build: under `b_lto=true` that hands Apple's
-# linker a force-loaded bitcode archive, and ld then drops every cross-module
-# definition during LTO codegen ("ld: symbol(s) defined in LTO objects are
-# referenced but missing in compiled objects"), breaking all five macOS legs.
+# framesync.c is recompiled into the executable, the way every other target in
+# this file recompiles the sources it exercises, with its four pthread entry
+# points renamed on the command line so the deterministic wrappers in
+# test_framesync_init_failure.c are what it calls. The renames reach all three
+# translation units: test.c never mentions pthreads, so they are inert there,
+# and test_framesync_init_failure.c undefines them above its first #include so
+# it still sees the real entry points to wrap.
 #
-# The pthread renames therefore apply to all three translation units instead
-# of just framesync.c. test.c never mentions pthreads, so they are inert
-# there, and test_framesync_init_failure.c undefines them before its first
-# include so it still sees the real entry points to wrap.
+# Do not add `vmaf_cflags_common` to this target. That is the *library* flag
+# set, and its `-fvisibility=hidden` (ADR-0379, which exists so the shipped
+# libvmaf.so exports only the VMAF_EXPORT'ed vmaf_* entry points) does not
+# survive an LTO link that has no library on it. A bitcode symbol survives LTO
+# only if the linker puts it on libLTO's must-preserve list, and ld builds that
+# list from the names referenced by *non*-LTO atoms, plus the entry point, plus
+# atoms that still have global scope -- "If a symbol is not listed in exportList
+# then LTO is free to optimize it away" (ld64, src/ld/parsers/lto_file.cpp,
+# Parser::optimize). This target links nothing but its own `b_lto=true` bitcode
+# objects, so there are no non-LTO references to contribute, and hidden
+# visibility demotes every definition to linkage-unit scope, so the list
+# collapses to _main and every cross-translation-unit symbol in the target
+# becomes eligible to be discarded -- mu_tests_run from test.c included, which
+# has nothing to do with framesync. Apple's linker then refuses the output:
+#
+#   Use `-u <symbol_name>` to build missing LTO symbols for architecture arm64:
+#     '_vmafx_test_pthread_cond_destroy' ... '_vmaf_framesync_init' ...
+#     '_mu_tests_run' ...
+#   ld: symbol(s) defined in LTO objects are referenced but missing in
+#       compiled objects for architecture arm64
+#
+# Of the 78 executables the macOS build links, 16 take no input but their own
+# bitcode objects; this was the only one of those 16 also built
+# -fvisibility=hidden, and the only one of the 78 that failed. The 15 siblings
+# (test_pdjson, test_thread_pool, test_dict, ...) keep default visibility.
+# Nothing here wants the library flags anyway: framesync.c includes only libc
+# and framesync.h, and a test executable is not installed and exports nothing.
 test_framesync_init_failure = executable('test_framesync_init_failure',
     ['test.c', 'test_framesync_init_failure.c', '../src/framesync.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    c_args : vmaf_cflags_common + [
+    c_args : [
         '-Dpthread_mutex_init=vmafx_test_pthread_mutex_init',
         '-Dpthread_cond_init=vmafx_test_pthread_cond_init',
         '-Dpthread_mutex_destroy=vmafx_test_pthread_mutex_destroy',
@@ -4309,7 +4330,18 @@ test_integer_vif_avx2_stages = executable('test_integer_vif_avx2_stages',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
 )
-test('test_integer_vif_avx2_stages', test_integer_vif_avx2_stages, suite : ['fast', 'simd'])
+# The sweep behind these two tests is 12 widths x 4 heights x 9 bit depths
+# x 4 scales x 2 patterns = 3456 scalar/SIMD kernel pairs, each followed by a
+# full-fixture memcmp. That is cheap in an optimised build (~2 s on a modern
+# desktop) but the Coverage Gate runs it under --buildtype=debug -Db_coverage=true
+# with -fprofile-update=atomic, where every basic block carries a locked counter
+# increment. On the slower GitHub hosted runner classes that pushes both tests
+# past Meson's 30 s default: master runs 35499436272 (both TIMEOUT) and
+# 35505304660 (29.94 s / TIMEOUT) failed the gate on exactly this. Give them a
+# budget that fits the instrumented build instead of trimming the sweep -- the
+# exhaustive comparison is the bit-exactness guarantee itself.
+test('test_integer_vif_avx2_stages', test_integer_vif_avx2_stages,
+    suite : ['fast', 'simd'], timeout : 180)
 endif
 
 # Research-2046: configured private integer-VIF objects also work in shared builds.
@@ -4335,5 +4367,16 @@ test_integer_vif_avx512_stages = executable('test_integer_vif_avx512_stages',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
 )
-test('test_integer_vif_avx512_stages', test_integer_vif_avx512_stages, suite : ['fast', 'simd'])
+# The sweep behind these two tests is 12 widths x 4 heights x 9 bit depths
+# x 4 scales x 2 patterns = 3456 scalar/SIMD kernel pairs, each followed by a
+# full-fixture memcmp. That is cheap in an optimised build (~2 s on a modern
+# desktop) but the Coverage Gate runs it under --buildtype=debug -Db_coverage=true
+# with -fprofile-update=atomic, where every basic block carries a locked counter
+# increment. On the slower GitHub hosted runner classes that pushes both tests
+# past Meson's 30 s default: master runs 35499436272 (both TIMEOUT) and
+# 35505304660 (29.94 s / TIMEOUT) failed the gate on exactly this. Give them a
+# budget that fits the instrumented build instead of trimming the sweep -- the
+# exhaustive comparison is the bit-exactness guarantee itself.
+test('test_integer_vif_avx512_stages', test_integer_vif_avx512_stages,
+    suite : ['fast', 'simd'], timeout : 180)
 endif
