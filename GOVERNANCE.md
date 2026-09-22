@@ -55,9 +55,12 @@ A maintainer is responsible for:
 ### 2.3 Contributors
 
 Anyone who opens an issue or PR is a contributor. Contributors do not
-need to sign a CLA — by submitting code, they agree to license under
-BSD-3-Clause-Plus-Patent (see [`LICENSE`](LICENSE) and
-[`CONTRIBUTING.md`](CONTRIBUTING.md)).
+need to sign a CLA — by submitting code, they agree to license that
+contribution under the licence governing the file they touch: EUPL-1.2
+for new and fork-authored files, and the inherited licence for files
+that carry someone else's code (see [`LICENSE`](LICENSE),
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[ADR-1250](docs/adr/1250-eupl-fork-relicense.md)).
 
 ## 3. Decision-making
 

@@ -1085,7 +1085,7 @@ upload is a separate PR.
   silently accepting non-Apache license text breaks ADR-0671.
 - **Recommended saliency weights remain
   `saliency_student_v1`** (ADR-0286, fork-trained DUTS student
-  under BSD-3-Clause-Plus-Patent). `u2netp_mirror` is the named
+  under BSD-2-Clause-Patent). `u2netp_mirror` is the named
   *fallback* for upstream-lineage citation, comparative
   evaluation, or downstream pipelines pinned to upstream
   behaviour. Do NOT flip `model/tiny/registry.json`'s default

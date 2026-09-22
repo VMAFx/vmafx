@@ -291,7 +291,7 @@ vmaf-train register \
   --model model/tiny/fr_regressor_v1.onnx \
   --kind fr \
   --dataset netflix-public-drop \
-  --license BSD-3-Clause-Plus-Patent \
+  --license BSD-2-Clause-Patent \
   --train-commit "$(git rev-parse HEAD)" \
   --train-config ai/configs/fr_regressor.toml
 ```

@@ -30,8 +30,8 @@
  *
  *  Design choice (no mongoose):
  *      The original v3 plan vendored cesanta/mongoose. Mongoose's
- *      effective license is GPL-2.0-only-OR-commercial — incompatible
- *      with the fork's BSD-3-Clause-Plus-Patent terms. We instead
+ *      effective license is GPL-2.0-only-OR-commercial, which
+ *      ADR-0332 judged a licence blocker for vendoring here. We instead
  *      implement the minimal HTTP/1.1 surface the SSE transport
  *      needs in plain POSIX sockets, mirroring the same
  *      accept/read/write patterns the UDS transport already uses.

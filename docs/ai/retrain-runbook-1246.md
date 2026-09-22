@@ -593,7 +593,7 @@ in compliance with the 5-point bar of [ADR-0042](../adr/0042-tinyai-docs-require
 1. Plain-English functional summary.
 2. Output range and qualitative interpretation.
 3. Runnable usage example (CLI, C API, or Python).
-4. Full provenance: trained against teacher `vmaf_v1.0.16_3d0h`, dataset composition, git SHA, license (`BSD-3-Clause-Plus-Patent`).
+4. Full provenance: trained against teacher `vmaf_v1.0.16_3d0h`, dataset composition, git SHA, license (`BSD-2-Clause-Patent`).
 5. Known limitations (geometry bounds, color spaces, unsupported options).
 
 ---

@@ -49,7 +49,7 @@ that threshold.
 | Training corpus | Netflix Public Dataset refresh table `runs/full_features_netflix_refresh_20260520.parquet` (11190 rows, 30 cols; source YUVs remain local-only) |
 | Teacher | `vmaf_v0.6.1` per-frame score |
 | Held-out PLCC | `0.9982 ± 0.0014` mean 9-fold LOSO |
-| License | BSD-3-Clause-Plus-Patent (fork-local; checkpoint is non-redistributable Netflix data derivative — see *Provenance* below) |
+| License | BSD-2-Clause-Patent (fork-local; checkpoint is non-redistributable Netflix data derivative — see *Provenance* below) |
 | Exporter | `ai/scripts/train_fr_regressor.py` |
 
 The sidecar JSON pins the training-time per-feature mean / std vector
@@ -91,7 +91,7 @@ Dataset, distributed by Netflix under a license that forbids
 redistribution. The shipped ONNX is a derivative: parameters were
 fitted to per-frame `vmaf_v0.6.1` teacher scores computed locally on
 that corpus. The fork ships the resulting ONNX (~few KB of
-parameters) under BSD-3-Clause-Plus-Patent on the basis that the
+parameters) under BSD-2-Clause-Patent on the basis that the
 parameter values are a derived statistical summary, not a redistribution
 of the YUV bitstreams or the (separately access-gated) DMOS sidecar
 CSV. If your jurisdiction reads "derivative work" more broadly, treat

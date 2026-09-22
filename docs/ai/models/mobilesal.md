@@ -63,7 +63,7 @@ model in T6-2b and exports the map in encoder-native format.
 | SHA-256 | `f122631089977c4be7d60b9bf3d4daf186d275bd0587db2c9878578e006b91d4` |
 | ONNX opset | 17 |
 | Upstream source (paper) | [yuhuan-wu/MobileSal](https://github.com/yuhuan-wu/MobileSal) (HEAD `8f42ded5`; not currently shippable — see ADR-0257) |
-| License (placeholder) | BSD-3-Clause-Plus-Patent (this fork) |
+| License (placeholder) | BSD-2-Clause-Patent (this fork) |
 | License (upstream MobileSal weights) | CC BY-NC-SA 4.0 — **incompatible with the fork**; per `yuhuan-wu/MobileSal/README.md` §License. ADR-0218's MIT claim was inaccurate; corrected here and in ADR-0257. |
 | Exporter (placeholder) | `scripts/gen_mobilesal_placeholder_onnx.py` |
 | Registry entry | `mobilesal_placeholder_v0` in `model/tiny/registry.json` (smoke=true) |

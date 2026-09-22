@@ -6,15 +6,15 @@ predictors and two external open-source competitors:
 
 | Competitor | Surface | Upstream | Upstream licence |
 |---|---|---|---|
-| `fork-fr-regressor` | `fr_regressor_v2_ensemble` (full-reference) | this repo | BSD-3-Clause-Plus-Patent |
-| `fork-nr-metric`    | `nr_metric_v1` (no-reference)               | this repo | BSD-3-Clause-Plus-Patent |
+| `fork-fr-regressor` | `fr_regressor_v2_ensemble` (full-reference) | this repo | BSD-2-Clause-Patent |
+| `fork-nr-metric`    | `nr_metric_v1` (no-reference)               | this repo | BSD-2-Clause-Patent |
 | `x264-pvmaf`        | Synamedia/Quortex predicted-VMAF           | [quortex/x264-pVMAF](https://github.com/quortex/x264-pVMAF) (Nov 2024) | **GPL-2.0** |
 | `dover-mobile`      | DOVER-Mobile no-reference quality predictor | [DOVER](https://github.com/QualityAssessment/DOVER) | Apache-2.0 (code) / CC-BY-NC-SA 4.0 (weights) |
 
 ## Licence boundary — wrapper-only architecture
 
-The fork is BSD-3-Clause-Plus-Patent. **`x264-pVMAF` is GPL-2.0**, which is
-incompatible with redistribution alongside permissive-licensed code.
+**`x264-pVMAF` is GPL-2.0**, which ADR-0332 judged incompatible with
+redistribution alongside this fork's own code.
 [ADR-0332](../../docs/adr/0332-external-bench-wrapper-only.md) records the
 mitigation: each external competitor lives in its own
 `tools/external-bench/<competitor>/run.sh` that:

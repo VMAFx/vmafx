@@ -85,7 +85,7 @@ option('enable_mcp',
 option('enable_mcp_sse',
     type: 'feature',
     value: 'auto',
-    description: 'Compile in the SSE (Server-Sent Events / loopback HTTP) transport for the embedded MCP server. Requires enable_mcp=true. Implemented in plain POSIX sockets — no third-party HTTP library is vendored (the original v3 plan to vendor cesanta/mongoose was abandoned because mongoose is GPL-2.0-only-OR-commercial, incompatible with the fork BSD-3-Clause-Plus-Patent license). T5-2d / ADR-0332 § "Status update 2026-05-09".')
+    description: 'Compile in the SSE (Server-Sent Events / loopback HTTP) transport for the embedded MCP server. Requires enable_mcp=true. Implemented in plain POSIX sockets — no third-party HTTP library is vendored (the original v3 plan to vendor cesanta/mongoose was abandoned because mongoose is GPL-2.0-only-OR-commercial, which ADR-0332 judged a licence blocker for vendoring into this tree). T5-2d / ADR-0332 § "Status update 2026-05-09".')
 
 option('enable_mcp_uds',
     type: 'boolean',

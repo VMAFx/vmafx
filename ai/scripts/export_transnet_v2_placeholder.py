@@ -134,7 +134,7 @@ def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None 
         "boundary_threshold": 0.5,
         "smoke": True,
         "name": "vmaf_tiny_transnet_v2_placeholder_v0",
-        "license": "BSD-3-Clause-Plus-Patent",
+        "license": "BSD-2-Clause-Patent",
         "notes": (
             "Placeholder TransNet V2 shot-boundary detector "
             "(T6-3a). 100-frame window of 27x48 RGB thumbnails "
@@ -164,7 +164,7 @@ def _update_registry(onnx_path: Path) -> None:
         "opset": 17,
         "sha256": digest,
         "smoke": True,
-        "license": "BSD-3-Clause-Plus-Patent",
+        "license": "BSD-2-Clause-Patent",
         "notes": (
             "Placeholder TransNet V2 shot-boundary detector (T6-3a). "
             "100-frame window of 27x48 RGB thumbnails -> per-frame "

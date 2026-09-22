@@ -10,8 +10,9 @@ wrapper-output schema, and [`README.md`](README.md) for operator usage.
 
 ## Rebase-sensitive invariants
 
-- **No GPL'd code in fork.** Fork = BSD-3-Clause-Plus-Patent;
-  `x264-pVMAF` = GPL-2.0. Harness MUST stay wrapper-only: every external
+- **No GPL'd code in fork.** `x264-pVMAF` = GPL-2.0, which ADR-0332
+  judged incompatible with vendoring into this tree. Harness MUST stay
+  wrapper-only: every external
   competitor lives in `<competitor>/run.sh`, invokes user-installed binary
   (path via env var). Never vendor, link, or copy code from any GPL'd
   competitor into this tree. Reviewer flags "vendoring x264-pVMAF would be

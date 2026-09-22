@@ -203,7 +203,7 @@ python ai/scripts/train_konvid_mos_head.py --smoke
 The training corpus (KonViD-1k / KonViD-150k) is **not** redistributed —
 it remains local under `.corpus/` per ADR-0325 §Constraint 1.
 The derived ONNX weights and manifest sidecar redistribute under the
-fork's BSD-3-Clause-Plus-Patent licence.
+fork's BSD-2-Clause-Patent licence.
 
 ## Feature coverage gap — speed_chroma / speed_temporal (ADR-0559)
 
