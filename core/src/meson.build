@@ -274,7 +274,7 @@ if is_hipcc_enabled and is_hip_enabled
         # `integer_motion_hip.h` resolved to an undefined link reference
         # whenever `enable_hipcc=true` was paired with `enable_hip=true`
         # (i.e. the dev-MCP container's default build mode). The kernel
-        # source has lived at `libvmaf/src/feature/hip/integer_motion/
+        # source has lived at `core/src/feature/hip/integer_motion/
         # motion_score.hip` since ADR-0523 added the registration; this
         # entry closes the loop. Surfaced during ADR-0529 container
         # rebuild verification.
@@ -1368,7 +1368,7 @@ if is_cuda_enabled
     # feature_collector.h and cuda/common.h, both of which `#include
     # <pthread.h>`. nvcc shells the host pass out to cl.exe, which
     # has no pthread.h on its system include path. The shim at
-    # libvmaf/src/compat/win32/pthread.h is wired into the C/C++ builds
+    # core/src/compat/win32/pthread.h is wired into the C/C++ builds
     # via pthread_dependency, but custom_target nvcc invocations build
     # their own -I list — so add the shim path explicitly here too.
     # Netflix/vmaf#1573 hunk (b): these used to be RELATIVE paths ('./src',
@@ -1912,7 +1912,7 @@ if is_sycl_enabled
     # AdaptiveCpp doesn't accept `-fp-model=precise`; it uses the
     # underlying clang's `-ffp-contract=off` plus the source-level
     # `precise` decoration on per-kernel arithmetic. Per
-    # `libvmaf/src/sycl/AGENTS.md`, the precise-FP contract is
+    # `core/src/sycl/AGENTS.md`, the precise-FP contract is
     # load-bearing for places=4 conformance, so emit `-ffp-contract=off`
     # under acpp; the residual numerical drift vs icpx is documented
     # in ADR-0335 §"Numerical conformance".

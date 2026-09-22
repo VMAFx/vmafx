@@ -695,7 +695,7 @@ int vmaf_metal_read_imported_pictures(VmafContext *vmaf, unsigned index)
  * caller, vmaf_close() clears the pointer without freeing, and the
  * caller calls vmaf_hip_state_free() after vmaf_close().
  *
- * Implementation lives here (not in libvmaf/src/hip/common.c) because
+ * Implementation lives here (not in core/src/hip/common.c) because
  * it needs VmafContext field-level access. The CUDA / SYCL / Metal
  * twins follow the same convention. */
 int vmaf_hip_import_state(VmafContext *vmaf, VmafHipState *hip_state)

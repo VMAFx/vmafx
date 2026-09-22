@@ -153,7 +153,7 @@ Never:
   C++ compiler.
 
 When porting upstream Netflix/vmaf commit modifying original
-`libvmaf/src/metadata_handler.c`: apply diff content to
+`core/src/metadata_handler.cpp`: apply diff content to
 `core/src/metadata_handler.cpp` (C code valid C++; `extern "C"` block
 in header stays). Run `make test-netflix-golden` post-port.
 
@@ -194,7 +194,7 @@ Never:
   two parser variants in lockstep — leak is identical in both.
 
 When porting upstream Netflix/vmaf commit modifying
-`libvmaf/src/read_json_model.c` or `libvmaf/src/model.c::vmaf_model_destroy`,
+`core/src/read_json_model.c` or `core/src/model.c::vmaf_model_destroy`,
 keep both `sync_n_features` calls and `min(feature_cap, n_features)`
 bound in destroy, plus `free`-before-`strdup` guard in
 `append_feature_name`; re-apply fork's hunks on top of any upstream

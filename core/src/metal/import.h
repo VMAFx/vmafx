@@ -4,10 +4,10 @@
  *
  *  Internal bridge between libvmaf.c (HAVE_METAL block) and the
  *  Objective-C++ IOSurface import TU (picture_import.mm). The C-API
- *  surface lives in libvmaf/include/libvmaf/libvmaf_metal.h; this
+ *  surface lives in core/include/libvmaf/libvmaf_metal.h; this
  *  header carries only the helpers libvmaf.c needs to translate
  *  vmaf_metal_read_imported_pictures() into a vmaf_read_pictures()
- *  call — mirrors libvmaf/src/vulkan/import_picture.h.
+ *  call — mirrors core/src/vulkan/import_picture.h.
  */
 
 #ifndef LIBVMAF_METAL_IMPORT_H_

@@ -6,7 +6,7 @@
  *  HIP host glue for the float_vif feature extractor — ninth
  *  kernel-template consumer (T7-10b batch-5 / ADR-0379).
  *
- *  Mirrors libvmaf/src/feature/cuda/float_vif_cuda.h. The HSACO
+ *  Mirrors core/src/feature/cuda/float_vif_cuda.h. The HSACO
  *  symbol declared here is produced by the meson
  *  `hip_hsaco_c_float_vif_score` custom_target pipeline:
  *  `xxd -i -n float_vif_score_hsaco float_vif_score.hsaco >

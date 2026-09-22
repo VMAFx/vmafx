@@ -6,7 +6,7 @@
  *  CUDA kernel for the ssimulacra2 separable FastGaussian IIR blur.
  *  Mirrors the libjxl Charalampidis 2016 3-pole recursive Gaussian
  *  (k = {1, 3, 5}, sigma=1.5, zero-padded boundaries) implemented
- *  in libvmaf/src/feature/ssimulacra2.c::fast_gaussian_1d.
+ *  in core/src/feature/ssimulacra2.c::fast_gaussian_1d.
  *
  *  The IIR is sequential along the scan axis. Separability lets us
  *  parallelise across the orthogonal axis:

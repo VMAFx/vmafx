@@ -28,7 +28,7 @@
 /* The integer ADM HIP kernels now build standalone (ADR-0539); the four
  * `adm_*_hsaco` weak stubs that previously lived here have been removed.
  * Their strong symbols come from the xxd-embedded targets registered in
- * `libvmaf/src/meson.build::hip_kernel_sources`.
+ * `core/src/meson.build::hip_kernel_sources`.
  *
  * No other HIP extractor currently requires a weak HSACO stub. The macro
  * above is retained as the recommended pattern for future port-in-progress

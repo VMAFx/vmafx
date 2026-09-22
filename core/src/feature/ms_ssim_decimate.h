@@ -29,7 +29,7 @@
  * This function is the scalar-separable reference. AVX2 / AVX-512
  * specialisations (when available) produce *bit-identical* output to
  * this scalar path; that is the correctness contract tested in
- * libvmaf/test/test_ms_ssim_decimate.c.
+ * core/test/test_ms_ssim_decimate.c.
  */
 
 /**
@@ -49,7 +49,7 @@ int ms_ssim_decimate_scalar(const float *src, int w, int h, float *dst, int *rw,
 /**
  * Auto-dispatching entry point: picks AVX2 / AVX-512 / scalar based on
  * runtime CPU capability. Output is byte-identical across all three
- * implementations (see libvmaf/test/test_ms_ssim_decimate.c).
+ * implementations (see core/test/test_ms_ssim_decimate.c).
  *
  * Signature identical to ms_ssim_decimate_scalar.
  */

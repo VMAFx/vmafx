@@ -493,7 +493,7 @@ static const char *provided_features[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs
                                           NULL};
 
 /* External linkage is required — the extractor registry iterates over
- * `vmaf_fex_*` externs in libvmaf/src/feature/feature_extractor.c. */
+ * `vmaf_fex_*` externs in core/src/feature/feature_extractor.cpp. */
 // NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables) — ADR-0141 / ADR-0278: extractor registry external linkage
 VmafFeatureExtractor vmaf_fex_psnr_hvs = {
     .name = "psnr_hvs",

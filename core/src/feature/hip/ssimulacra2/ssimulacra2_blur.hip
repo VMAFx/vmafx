@@ -5,7 +5,7 @@
  *
  *  HIP kernel for the ssimulacra2 separable FastGaussian IIR blur.
  *  Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`.
+ *  `core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`.
  *
  *  H pass: one thread per row, scans left to right.
  *  V pass: one thread per column, scans top to bottom.

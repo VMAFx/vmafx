@@ -3,7 +3,7 @@
  *  SPDX-License-Identifier: EUPL-1.2
  *
  *  Internal MCP runtime types — not part of the public ABI. The
- *  public header (`libvmaf/include/libvmaf/libvmaf_mcp.h`) only
+ *  public header (`core/include/libvmaf/libvmaf_mcp.h`) only
  *  forward-declares `VmafMcpServer`; this header carries the
  *  storage class for the live stdio + UDS + SSE runtime.
  *

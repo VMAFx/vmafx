@@ -7,7 +7,7 @@
  *
  *  HIP compute kernels for the float_ssim feature extractor
  *  (T7-10b batch-3 / ADR-0374). Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/integer_ssim/ssim_score.cu`.
+ *  `core/src/feature/cuda/integer_ssim/ssim_score.cu`.
  *
  *  Two-pass design mirrors the GLSL Vulkan shader and the CUDA twin:
  *

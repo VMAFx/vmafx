@@ -44,7 +44,7 @@ use std::os::raw::{c_char, c_double, c_int, c_uint, c_void};
 
 /// Opaque handle for the libvmaf picture buffer (`VmafPicture`).
 /// We only read width, height, stride, bpc, and data[0] (luma plane).
-/// The layout must match `libvmaf/include/libvmaf/picture.h`.
+/// The layout must match `core/include/libvmaf/picture.h`.
 #[repr(C)]
 pub struct VmafPicture {
     /// `pix_fmt` enum (ignored by TAD — we only touch luma plane 0)

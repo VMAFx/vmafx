@@ -16,7 +16,7 @@ consumed by the `--tiny-model` CLI flag and the ffmpeg `libvmaf` filter's
 
 ## Public API
 
-Declared in [`libvmaf/include/libvmaf/dnn.h`](../../include/libvmaf/dnn.h):
+Declared in [`core/include/libvmaf/dnn.h`](../../include/libvmaf/dnn.h):
 
 ```c
 int vmaf_dnn_available(void);

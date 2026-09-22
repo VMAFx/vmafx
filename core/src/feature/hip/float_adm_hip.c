@@ -4,9 +4,9 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_adm feature extractor on the HIP backend — ninth consumer
- *  of `libvmaf/src/hip/kernel_template.h` (T7-10b batch-2 / ADR-0468).
+ *  of `core/src/hip/kernel_template.h` (T7-10b batch-2 / ADR-0468).
  *
- *  This TU mirrors `libvmaf/src/feature/cuda/float_adm_cuda.c`
+ *  This TU mirrors `core/src/feature/cuda/float_adm_cuda.c`
  *  call-graph-for-call-graph. When `HAVE_HIPCC` is defined (i.e.,
  *  `enable_hipcc=true` at configure time), the `init`, `submit`, and
  *  `collect` functions use real HIP Module API calls following the
@@ -877,7 +877,7 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           NULL};
 
 /* Load-bearing: registered via `extern VmafFeatureExtractor vmaf_fex_float_adm_hip;`
- * in `libvmaf/src/feature/feature_extractor.c`'s `feature_extractor_list[]`.
+ * in `core/src/feature/feature_extractor.cpp`'s `feature_extractor_list[]`.
  * Ninth HIP kernel-template consumer (ADR-0468). Same pattern as
  * every CUDA / SYCL / Vulkan / HIP feature extractor. */
 // NOLINTNEXTLINE(misc-use-internal-linkage): ADR-0468 — registration symbol must have external linkage

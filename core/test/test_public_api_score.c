@@ -178,7 +178,7 @@ static char *test_vmaf_model_collection_load()
  * "/tmp" inside the GitHub Actions `windows-latest` runner — `mkstemp`
  * against a hardcoded `/tmp/...` template fails with ENOENT and the
  * test aborts with "mkstemp failed". Mirror the pattern used in
- * `libvmaf/test/dnn/test_model_loader.c::test_sidecar_parses` (added
+ * `core/test/dnn/test_model_loader.c::test_sidecar_parses` (added
  * for the same reason): on Windows query GetTempPathA() and synthesise
  * a deterministic filename inside it; on POSIX keep mkstemp() on
  * "/tmp" so the test retains O_CREAT|O_EXCL atomicity there.

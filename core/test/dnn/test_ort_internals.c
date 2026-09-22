@@ -232,7 +232,7 @@ static char *test_convert_non_float_output_types(void)
 /* ---------- ort_backend NULL-guard branches ------------------------ */
 /* These guards short-circuit before any ORT call, so they're safe to
  * exercise without a session. They reach lines uncovered through the
- * public dnn.h API because libvmaf/src/dnn/dnn_api.c validates inputs
+ * public dnn.h API because core/src/dnn/dnn_api.c validates inputs
  * one layer up and never passes NULLs through. */
 
 static char *test_ort_attached_ep_null_session(void)

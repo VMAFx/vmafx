@@ -5,7 +5,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP host header for the integer_motion feature extractor.
- *  Mirrors `libvmaf/src/feature/cuda/integer_motion_cuda.h`.
+ *  Mirrors `core/src/feature/cuda/integer_motion_cuda.h`.
  *
  *  When `HAVE_HIPCC` is defined (enable_hipcc=true build), the
  *  HSACO fat binary embedded by xxd is exposed here so the host TU

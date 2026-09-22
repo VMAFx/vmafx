@@ -416,7 +416,7 @@ static char *run_backend_tests(void)
  * with `model_cnt == 0`) is not injected — the SVM consumes FR feature
  * columns and would always fail downstream. The failure case (NR mode
  * without `--tiny-model`) calls the `_Noreturn` `usage()` and so cannot
- * be exercised in-process; the shell smoke at `libvmaf/test/dnn/test_cli.sh`
+ * be exercised in-process; the shell smoke at `core/test/dnn/test_cli.sh`
  * §5a covers it. */
 static char *test_no_reference_with_tiny_model_passes_parse(void)
 {

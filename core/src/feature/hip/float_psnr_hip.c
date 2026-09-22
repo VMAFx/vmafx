@@ -7,9 +7,9 @@
  *  (T7-10b / ADR-0254). Second kernel-template consumer.
  *  enable_chroma option ported from CUDA twin (ADR-0469).
  *
- *  Mirrors `libvmaf/src/feature/cuda/float_psnr_cuda.c` call-graph-for-
+ *  Mirrors `core/src/feature/cuda/float_psnr_cuda.c` call-graph-for-
  *  call-graph. The device-side kernel lives in
- *  `libvmaf/src/feature/hip/float_psnr/float_psnr_score.hip` and is
+ *  `core/src/feature/hip/float_psnr/float_psnr_score.hip` and is
  *  loaded at init() time via the HIP module API (`hipModuleLoadData` +
  *  `hipModuleGetFunction`), the direct analog of CUDA's
  *  `cuModuleLoadData` + `cuModuleGetFunction` used by the twin.

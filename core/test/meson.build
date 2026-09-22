@@ -189,7 +189,7 @@ test_flush_context_ordering = executable('test_flush_context_ordering',
 
 # Coverage follow-up to PR #313 (R3 from
 # docs/development/coverage-gap-analysis-2026-05-02.md): exercise
-# libvmaf/src/output.c writers (XML / JSON / CSV / SUB) end-to-end.
+# core/src/output.cpp writers (XML / JSON / CSV / SUB) end-to-end.
 #
 # macOS/ld64 invariant: test_output must link one libvmaf definition only.
 # Do not include libvmaf.c/output.c directly while also linking libvmaf.a;
@@ -811,8 +811,8 @@ endif
 
 # speed_chroma + speed_temporal registration smoke tests — link against
 # libvmaf_feature_static_lib for the extractor list (mirrors test_lpips).
-# Both extractors live in libvmaf/src/feature/speed.c, which is only
-# compiled when -Denable_float=true (see libvmaf/src/meson.build); the
+# Both extractors live in core/src/feature/speed.c, which is only
+# compiled when -Denable_float=true (see core/src/meson.build); the
 # corresponding entries in feature_extractor.c's extractor list are
 # wrapped in `#if VMAF_FLOAT_FEATURES`. Gate the test on the same option
 # so a default `meson setup` (enable_float=false) doesn't fail on a
@@ -2480,7 +2480,7 @@ endif
 
 # T6-2b / ADR-0247 — vmaf-roi sidecar core helpers (per-CTU mean reduce
 # + saliency-to-QP-offset). Header-only test that compiles
-# libvmaf/tools/vmaf_roi_core.h and exercises clamp / sign / monotonicity
+# core/tools/vmaf_roi_core.h and exercises clamp / sign / monotonicity
 # without needing the full binary.
 test_vmaf_roi_libm = cc.find_library('m', required : false)
 test_vmaf_roi = executable('test_vmaf_roi',

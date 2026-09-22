@@ -6,7 +6,7 @@
  *  §"What lands next" steps 1+2).
  *
  *  Replaces the audit-first `-ENOSYS` stubs with real ROCm HIP
- *  runtime calls. Mirrors libvmaf/src/vulkan/common.c.
+ *  runtime calls. Mirrors core/src/vulkan/common.c.
  *
  *    - `vmaf_hip_device_count`  -> hipGetDeviceCount
  *    - `vmaf_hip_state_init`    -> hipSetDevice +
@@ -16,7 +16,7 @@
  *                                  hipGetDeviceProperties (logs one
  *                                  line per device, returns count)
  *
- *  `vmaf_hip_import_state` lives in `libvmaf/src/libvmaf.c` (next to
+ *  `vmaf_hip_import_state` lives in `core/src/libvmaf.c` (next to
  *  the CUDA / SYCL / Vulkan / Metal `_import_state` twins) because it
  *  needs `VmafContext` field-level access to stash the borrowed state
  *  pointer. Removed from this TU by ADR-0519.
@@ -152,7 +152,7 @@ int vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg)
     return 0;
 }
 
-/* vmaf_hip_import_state moved to libvmaf/src/libvmaf.c — needs
+/* vmaf_hip_import_state moved to core/src/libvmaf.c — needs
  * VmafContext field-level access. ADR-0519. */
 
 void vmaf_hip_state_free(VmafHipState **state)

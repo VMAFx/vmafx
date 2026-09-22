@@ -6,7 +6,7 @@
  *
  *  One descriptor per feature, attached to `VmafFeatureExtractor`.
  *  Backends consume the descriptor through their own
- *  `dispatch_strategy` modules (libvmaf/src/{sycl,cuda,vulkan}/).
+ *  `dispatch_strategy` modules (core/src/{sycl,cuda,hip,metal}/).
  *  The registry is the single source of truth for "what does this
  *  feature look like to a dispatch heuristic"; the per-backend
  *  glue translates that into the backend's own primitive.
