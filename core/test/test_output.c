@@ -7,7 +7,7 @@
 
 /*
  * Coverage gap follow-up (R3 from docs/development/coverage-gap-analysis-2026-05-02.md):
- * exercise libvmaf/src/output.c writer-format paths.
+ * exercise core/src/output.cpp writer-format paths.
  *
  * The four writers (XML, JSON, CSV, SUB) are reached end-to-end only by full
  * VMAF runs — pre-this test the CPU coverage gate measured output.c at 28%

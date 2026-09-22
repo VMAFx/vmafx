@@ -6,7 +6,7 @@
  *  CUDA compute kernels for the SpEED feature extractor (ADR-0567).
  *
  *  These kernels implement the tile-parallel layer of the SpEED algorithm.
- *  The CPU reference lives in libvmaf/src/feature/speed.c.
+ *  The CPU reference lives in core/src/feature/speed.c.
  *
  *  Kernel map (matches CPU est_params steps):
  *

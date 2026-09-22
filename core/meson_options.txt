@@ -132,7 +132,7 @@ option('enable_metal',
 option('fuzz',
     type: 'boolean',
     value: false,
-    description: 'Build libFuzzer harnesses under libvmaf/test/fuzz/ (ADR-0270, OSSF Scorecard `Fuzzing` remediation). Requires clang. Pair with `-Db_sanitize=address` for heap coverage. Default OFF — opt-in only.')
+    description: 'Build libFuzzer harnesses under core/test/fuzz/ (ADR-0270, OSSF Scorecard `Fuzzing` remediation). Requires clang. Pair with `-Db_sanitize=address` for heap coverage. Default OFF — opt-in only.')
 
 option('enable_rust_features',
     type: 'boolean',

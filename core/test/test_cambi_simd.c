@@ -71,7 +71,7 @@
 /*
  * Inline scalar implementation of calculate_c_values_row.
  *
- * Mirrors the production function in libvmaf/src/feature/cambi.c verbatim.
+ * Mirrors the production function in core/src/feature/cambi.c verbatim.
  * The only difference: the production version reads the reciprocal LUT
  * from a file-scope global; here we accept it as an explicit parameter
  * (which the SIMD kernels also do, so the calling convention is unified).

@@ -11,7 +11,7 @@
  *  Vulkan precedent in [ADR-0216](../../docs/adr/0216-vulkan-chroma-psnr.md),
  *  CUDA twin in PR #520 / commit 7f3d58a5).
  *
- *  Algorithm (mirrors libvmaf/src/feature/integer_psnr.c::sse_line_{8,16}):
+ *  Algorithm (mirrors core/src/feature/integer_psnr.c::sse_line_{8,16}):
  *      diff = (int64)ref - (int64)dis;     (per pixel)
  *      sse  += diff * diff;                (atomic int64 reduction)
  *
@@ -23,14 +23,14 @@
  *
  *  Buffer layout differs from luma: luma reads from the SYCL state's
  *  shared frame buffer (`vmaf_sycl_shared_frame_init`, set up
- *  luma-only by design — see `libvmaf/src/sycl/common.h`). Chroma
+ *  luma-only by design — see `core/src/sycl/common.h`). Chroma
  *  rides on per-extractor device buffers populated by host-side
  *  staging copies in `pre_fn` (the parallel pattern used by
  *  `float_psnr_sycl.cpp`). Direct enqueue on the combined queue
  *  preserves in-order ordering with the graph-replayed luma kernel.
  *
  *  Phases (combined-graph contract — see `vmaf_sycl_graph_register`
- *  docs in `libvmaf/src/sycl/common.h`):
+ *  docs in `core/src/sycl/common.h`):
  *      pre_fn   : zero all 3 SSE accumulators + H2D copy chroma planes.
  *      enqueue  : luma SSE reduction kernel (graph-recordable).
  *      post_fn  : chroma SSE reduction kernels (direct) + D2H all 3
@@ -478,7 +478,7 @@ namespace
 {
 
 /* psnr_name[p] — same array as the CPU path
- * (libvmaf/src/feature/integer_psnr.c::psnr_name). */
+ * (core/src/feature/integer_psnr.c::psnr_name). */
 static const char *const psnr_name[PSNR_NUM_PLANES] = {"psnr_y", "psnr_cb", "psnr_cr"};
 
 } // namespace

@@ -5,7 +5,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  *
  *  Metal compute kernels for float_ms_ssim (T8-2b / ADR-0488).
- *  Port of `libvmaf/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
+ *  Port of `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
  *  to MSL — same 5-scale pyramid, same Wang weights, same formulas.
  *
  *  Three kernel functions, dispatched in order by

@@ -33,7 +33,7 @@
 
 /*
  * MS-SSIM 9-tap 9/7 biorthogonal wavelet LPF coefficients moved to
- * libvmaf/src/feature/ms_ssim_decimate.c (separable form). The 2-D
+ * core/src/feature/ms_ssim_decimate.c (separable form). The 2-D
  * `g_lpf` array in upstream Netflix/vmaf ms_ssim.c is no longer used
  * on this fork because the decimate path switched from
  * `iqa_decimate(..., 2, &lpf_2d, ...)` to the separable scalar-FMA
@@ -42,7 +42,7 @@
  * REBASE-SENSITIVE INVARIANT: if Netflix upstream modifies `g_lpf`,
  * `g_lpf_h`, or `g_lpf_v` in this file during a sync, mirror the
  * change to `ms_ssim_lpf_h` / `ms_ssim_lpf_v` in ms_ssim_decimate.c.
- * See `libvmaf/src/feature/AGENTS.md` and docs/rebase-notes.md.
+ * See `core/src/feature/AGENTS.md` and docs/rebase-notes.md.
  */
 #define LPF_LEN 9
 

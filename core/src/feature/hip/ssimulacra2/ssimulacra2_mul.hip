@@ -5,7 +5,7 @@
  *
  *  HIP kernel for the ssimulacra2 elementwise plane multiply.
  *  Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/ssimulacra2/ssimulacra2_mul.cu`.
+ *  `core/src/feature/cuda/ssimulacra2/ssimulacra2_mul.cu`.
  *
  *  out[i] = a[i] * b[i] for all (x, y, channel) samples.
  *  FMA-free by definition (pure multiply, no accumulation).

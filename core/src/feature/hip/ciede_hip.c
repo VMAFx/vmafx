@@ -5,10 +5,10 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND MIT
  *
  *  ciede2000 feature extractor on the HIP backend — third consumer of
- *  `libvmaf/src/hip/kernel_template.h` (T7-10b follow-up / ADR-0259).
+ *  `core/src/hip/kernel_template.h` (T7-10b follow-up / ADR-0259).
  *  Real kernel promotion: T7-10b batch-4 / ADR-0377.
  *
- *  This TU mirrors `libvmaf/src/feature/cuda/integer_ciede_cuda.c`
+ *  This TU mirrors `core/src/feature/cuda/integer_ciede_cuda.c`
  *  call-graph-for-call-graph. When `HAVE_HIPCC` is defined the real HIP
  *  Module API path is active: `hipModuleLoadData` + `hipModuleGetFunction`
  *  + per-frame HtoD copies of all 6 YUV planes + `hipModuleLaunchKernel`.
@@ -434,12 +434,12 @@ static const char *provided_features[] = {"ciede2000", NULL};
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_ciede_hip;` in
- * `libvmaf/src/feature/feature_extractor.c`'s
+ * `core/src/feature/feature_extractor.cpp`'s
  * `feature_extractor_list[]`. Making this static would unlink the
  * extractor from the registry and fail every name lookup. Same
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_ciede_cuda` in
- * `libvmaf/src/feature/cuda/integer_ciede_cuda.c`). */
+ * `core/src/feature/cuda/integer_ciede_cuda.c`). */
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_ciede_hip = {
     .name = "ciede_hip",

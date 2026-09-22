@@ -5,7 +5,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  *
  *  float_ms_ssim feature extractor on the Metal backend (T8-2b / ADR-0488).
- *  Port of `libvmaf/src/feature/float_ms_ssim.c` — same 5-scale pyramid,
+ *  Port of `core/src/feature/float_ms_ssim.c` — same 5-scale pyramid,
  *  same Wang weights, same host accumulation logic, float-precision pixels.
  *
  *  Algorithm summary:

@@ -6,7 +6,7 @@
  *  ADR-0212 §"What lands next" step 1).
  *
  *  Replaces the audit-first `-ENOSYS` stubs (ADR-0241) with real
- *  ROCm HIP runtime calls. Mirrors `libvmaf/src/cuda/kernel_template.h`'s
+ *  ROCm HIP runtime calls. Mirrors `core/src/cuda/kernel_template.h`'s
  *  inline helpers but as out-of-line definitions so the runtime PR
  *  can flip implementations without forcing every consumer TU to
  *  recompile.

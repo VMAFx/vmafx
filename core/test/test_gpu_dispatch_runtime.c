@@ -274,7 +274,7 @@ static char *test_sycl_dispatch_env_overrides(void)
  * the kernel-routing table (ADR-0212 §"What lands next"). This pin
  * makes any future "accidentally support a feature before the
  * routing table lands" regression caught at test time, not at the
- * vmaf --backend hip CLI exit path. Mirrors libvmaf/test/
+ * vmaf --backend hip CLI exit path. Mirrors core/test/
  * test_metal_smoke.c's vmaf_metal_dispatch_supports pin.
  */
 

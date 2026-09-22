@@ -9,7 +9,7 @@
  * ADR-0541 — integer_vif CPU vs. CUDA parity test.
  *
  * The 2026-05-18 deep audit (finding 23) flagged
- * `libvmaf/src/feature/cuda/integer_vif_cuda.c:180` (`s->n_planes = 1`) as a
+ * `core/src/feature/cuda/integer_vif_cuda.c:180` (`s->n_planes = 1`) as a
  * real "not implemented" gap, on the (incorrect) premise that the CPU twin
  * processed three planes. In fact every libvmaf backend, and upstream
  * Netflix/vmaf, reads `data[0]` only — VIF is a luma-only metric by design

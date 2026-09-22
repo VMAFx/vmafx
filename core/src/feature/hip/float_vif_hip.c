@@ -6,7 +6,7 @@
  *  float_vif feature extractor on the HIP backend — ninth
  *  kernel-template consumer (T7-10b batch-5 / ADR-0379).
  *
- *  This TU mirrors `libvmaf/src/feature/cuda/float_vif_cuda.c`
+ *  This TU mirrors `core/src/feature/cuda/float_vif_cuda.c`
  *  call-graph-for-call-graph: same private-state struct shape, same
  *  init/submit/collect/close lifecycle, same provided_features list,
  *  and the same `vif_kernelscale == 1.0` validation gate.

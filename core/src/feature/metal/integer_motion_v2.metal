@@ -4,7 +4,7 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal compute kernel for integer_motion_v2 (T8-1c / ADR-0421).
- *  Translation of `libvmaf/src/feature/cuda/integer_motion_v2/
+ *  Translation of `core/src/feature/cuda/integer_motion_v2/
  *  motion_v2_score.cu` (ADR-0192 / ADR-0193) — same algorithm,
  *  threadgroup-shared tile, separable filter, atomic SAD reduction.
  *

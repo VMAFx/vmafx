@@ -9,7 +9,7 @@
  *  of moment_vulkan (PR #133) and moment_cuda (this PR's batch
  *  1d part 2).
  *
- *  Algorithm (mirrors libvmaf/src/feature/float_moment.c::extract):
+ *  Algorithm (mirrors core/src/feature/float_moment.c::extract):
  *      for each pixel:
  *          ref1 += ref;        ref2 += ref * ref;
  *          dis1 += dis;        dis2 += dis * dis;
