@@ -119,6 +119,71 @@ static int pool_preallocate_pictures(VmafPicturePool *p, VmafPicturePoolConfig c
     return 0;
 }
 
+/* Construction stages in acquisition order.  pool_destruct_partial() releases
+ * exactly the resources a stage owns, in the reverse of this order, and is a
+ * one-for-one replacement of the former
+ * free_cond -> free_mutex -> free_free_list -> free_pictures -> free_pool
+ * goto ladder: stage N frees what label N used to free, in the same order. */
+enum {
+    POOL_STAGE_NONE = 0,
+    POOL_STAGE_POOL = 1,
+    POOL_STAGE_PICTURES = 2,
+    POOL_STAGE_FREE_LIST = 3,
+    POOL_STAGE_MUTEX = 4,
+    POOL_STAGE_COND = 5,
+};
+
+static void pool_destruct_partial(VmafPicturePool *p, unsigned stage)
+{
+    if (stage >= POOL_STAGE_COND)
+        pthread_cond_destroy(&p->available);
+    if (stage >= POOL_STAGE_MUTEX)
+        pthread_mutex_destroy(&p->lock);
+    if (stage >= POOL_STAGE_FREE_LIST)
+        free(p->free_list);
+    if (stage >= POOL_STAGE_PICTURES)
+        free(p->pictures);
+    if (stage >= POOL_STAGE_POOL)
+        free(p);
+}
+
+/* Acquire every pool resource in order, recording how far it got in *stage so
+ * the caller can unwind exactly that much.  Returns 0 or a negative errno --
+ * the same values the goto ladder's `err ? err : -ENOMEM` produced. */
+static int pool_construct(VmafPicturePool **pool, VmafPicturePoolConfig cfg, unsigned *stage)
+{
+    VmafPicturePool *const p = *pool = malloc(sizeof(*p));
+    if (!p)
+        return -ENOMEM;
+    *stage = POOL_STAGE_POOL;
+    memset(p, 0, sizeof(*p));
+    p->cfg = cfg;
+
+    p->pictures = malloc(sizeof(*p->pictures) * cfg.pic_cnt);
+    if (!p->pictures)
+        return -ENOMEM;
+    *stage = POOL_STAGE_PICTURES;
+    memset(p->pictures, 0, sizeof(*p->pictures) * cfg.pic_cnt);
+
+    // Allocate free list (stack of available picture indices)
+    p->free_list = malloc(sizeof(*p->free_list) * cfg.pic_cnt);
+    if (!p->free_list)
+        return -ENOMEM;
+    *stage = POOL_STAGE_FREE_LIST;
+
+    int err = pthread_mutex_init(&p->lock, NULL);
+    if (err)
+        return err;
+    *stage = POOL_STAGE_MUTEX;
+
+    err = pthread_cond_init(&p->available, NULL);
+    if (err)
+        return err;
+    *stage = POOL_STAGE_COND;
+
+    return pool_preallocate_pictures(p, cfg);
+}
+
 int vmaf_picture_pool_init(VmafPicturePool **pool, VmafPicturePoolConfig cfg)
 {
     if (!pool)
@@ -128,55 +193,15 @@ int vmaf_picture_pool_init(VmafPicturePool **pool, VmafPicturePoolConfig cfg)
     if (!cfg.w || !cfg.h)
         return -EINVAL;
 
-    int err = 0;
+    unsigned stage = POOL_STAGE_NONE;
+    const int err = pool_construct(pool, cfg, &stage);
+    if (!err)
+        return 0;
 
-    VmafPicturePool *const p = *pool = malloc(sizeof(*p));
-    if (!p)
-        goto fail;
-    memset(p, 0, sizeof(*p));
-    p->cfg = cfg;
-
-    p->pictures = malloc(sizeof(*p->pictures) * cfg.pic_cnt);
-    if (!p->pictures) {
-        err = -ENOMEM;
-        goto free_pool;
-    }
-    memset(p->pictures, 0, sizeof(*p->pictures) * cfg.pic_cnt);
-
-    // Allocate free list (stack of available picture indices)
-    p->free_list = malloc(sizeof(*p->free_list) * cfg.pic_cnt);
-    if (!p->free_list) {
-        err = -ENOMEM;
-        goto free_pictures;
-    }
-
-    err = pthread_mutex_init(&p->lock, NULL);
-    if (err)
-        goto free_free_list;
-
-    err = pthread_cond_init(&p->available, NULL);
-    if (err)
-        goto free_mutex;
-
-    err = pool_preallocate_pictures(p, cfg);
-    if (err)
-        goto free_cond;
-
-    return 0;
-
-free_cond:
-    pthread_cond_destroy(&p->available);
-free_mutex:
-    pthread_mutex_destroy(&p->lock);
-free_free_list:
-    free(p->free_list);
-free_pictures:
-    free(p->pictures);
-free_pool:
-    free(p);
-fail:
+    if (stage != POOL_STAGE_NONE)
+        pool_destruct_partial(*pool, stage);
     *pool = NULL;
-    return err ? err : -ENOMEM;
+    return err;
 }
 
 int vmaf_picture_pool_close(VmafPicturePool *pool)
@@ -207,13 +232,29 @@ int vmaf_picture_pool_close(VmafPicturePool *pool)
     return 0;
 }
 
-int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
+/* Push `idx` back onto the free list and wake one waiter.  This is the former
+ * `return_to_pool` label moved verbatim: same lock, same push, same signal,
+ * same unlock, in the same order. */
+static void pool_return_index(VmafPicturePool *pool, unsigned idx)
 {
-    if (!pool)
-        return -EINVAL;
-    if (!pic)
-        return -EINVAL;
+    // If we failed after popping from free list, return the picture
+    pthread_mutex_lock(&pool->lock);
+    pool->free_list[pool->free_list_top++] = idx;
+    /* ADR-0960 (round-25 audit A.2) — signal waiters; without this a
+     * thread blocked in pthread_cond_wait (pool exhausted) would not
+     * wake after an index is pushed back on a fetch-error path.
+     * See feedback_shared_resource_outlive_worker_scope (PR #1415,
+     * ADR-0607) for the canonical "shared resource must outlive its
+     * owner" pattern this mirrors. */
+    pthread_cond_signal(&pool->available);
+    pthread_mutex_unlock(&pool->lock);
+}
 
+/* Block until a slot is free, pop its index, and copy the slot out while the
+ * lock is still held.  Returns 0, or the pthread error that aborted the wait
+ * (the lock is released on every error path, as before). */
+static int pool_pop_slot(VmafPicturePool *pool, unsigned *idx, VmafPicture *snapshot)
+{
     int err = pthread_mutex_lock(&pool->lock);
     if (err)
         return err;
@@ -228,7 +269,7 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
     }
 
     // Pop picture index from free list - O(1) operation
-    unsigned idx = pool->free_list[--pool->free_list_top];
+    *idx = pool->free_list[--pool->free_list_top];
 
     /* Copy the pre-allocated picture slot to a local while still holding the
      * lock.  Although a popped index cannot be re-issued (it is off the free
@@ -236,33 +277,36 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
      * array element: another thread calling pool_close could free the array
      * between our unlock and the read.  Copying under the lock makes the
      * read race-free and keeps the critical section small (one struct copy). */
-    VmafPicture pic_snapshot = pool->pictures[idx];
+    *snapshot = pool->pictures[*idx];
 
     pthread_mutex_unlock(&pool->lock);
+    return 0;
+}
 
-    // Apply the pre-allocated picture snapshot (all metadata + data pointers)
-    *pic = pic_snapshot;
-
+/* Attach the pool bookkeeping to a freshly fetched picture.  Each failure frees
+ * exactly what it had allocated and leaves pic->priv NULL, matching the three
+ * former `goto return_to_pool` sites; pushing the index back is the caller's
+ * job, so the free-list handling stays in one place. */
+static int pool_attach_priv(VmafPicturePool *pool, VmafPicture *pic, unsigned idx)
+{
     // Set up extended priv with pool information
     PooledPicturePriv *priv = malloc(sizeof(*priv));
-    if (!priv) {
-        err = -ENOMEM;
-        goto return_to_pool;
-    }
+    if (!priv)
+        return -ENOMEM;
     memset(priv, 0, sizeof(*priv));
     priv->pool = pool;
     priv->pic_idx = idx;
     pic->priv = (VmafPicturePrivate *)priv;
 
     // Set custom release callback to return picture to pool
-    err = vmaf_picture_set_release_callback(pic, NULL, pooled_picture_release);
+    int err = vmaf_picture_set_release_callback(pic, NULL, pooled_picture_release);
     if (err) {
         free(priv);
         /* ADR-0960 (round-25 audit A.3) — null pic->priv after free so
          * any caller that inspects it after a failed fetch does not read
          * freed memory. */
         pic->priv = NULL;
-        goto return_to_pool;
+        return err;
     }
 
     // Initialize refcount to 1
@@ -271,22 +315,31 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
         free(priv);
         /* ADR-0960 (round-25 audit A.3) — same dangling-priv guard. */
         pic->priv = NULL;
-        goto return_to_pool;
+        return err;
     }
 
     return 0;
+}
 
-return_to_pool:
-    // If we failed after popping from free list, return the picture
-    pthread_mutex_lock(&pool->lock);
-    pool->free_list[pool->free_list_top++] = idx;
-    /* ADR-0960 (round-25 audit A.2) — signal waiters; without this a
-     * thread blocked in pthread_cond_wait (pool exhausted) would not
-     * wake after an index is pushed back on a fetch-error path.
-     * See feedback_shared_resource_outlive_worker_scope (PR #1415,
-     * ADR-0607) for the canonical "shared resource must outlive its
-     * owner" pattern this mirrors. */
-    pthread_cond_signal(&pool->available);
-    pthread_mutex_unlock(&pool->lock);
+int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
+{
+    if (!pool)
+        return -EINVAL;
+    if (!pic)
+        return -EINVAL;
+
+    unsigned idx = 0;
+    VmafPicture pic_snapshot;
+    int err = pool_pop_slot(pool, &idx, &pic_snapshot);
+    if (err)
+        return err;
+
+    // Apply the pre-allocated picture snapshot (all metadata + data pointers)
+    *pic = pic_snapshot;
+
+    err = pool_attach_priv(pool, pic, idx);
+    if (err)
+        pool_return_index(pool, idx);
+
     return err;
 }

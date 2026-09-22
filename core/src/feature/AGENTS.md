@@ -70,13 +70,16 @@ feature/
 
 ## Rebase-sensitive invariants
 
-- **CAMBI read-only views and retained private helpers** (ADR-0205 / ADR-1146):
-  keep CPU validation/preprocessing views and paired scale-score wrapper
-  declaration read-only without changing shared extractor callback types.
-  Ten exact `unusedFunction` annotations preserve seven exports with GPU
-  callers outside CPU builds and three documented helper scaffolds. They do
-  not authorize general unused-function exemptions. Preserve every numerical
-  body and all trampolines; see
+- **CAMBI bounded searches and live private helpers** (ADR-0205 / ADR-1146):
+  `cambi.c` is strict-clean: it contains no `NOLINT` or Cppcheck suppression.
+  Preserve the 16-step TVI bisection, the `UINT16_MAX`-bounded VLT scan, and
+  the `n`/partition-span bounds on quick-select without changing comparison,
+  pivot, swap, or accumulation order. The shared extractor callback ABI stays
+  mutable; `read_only_picture_view()` is the const-view adapter Cppcheck can
+  verify. All ten helpers declared in `cambi_internal.h` must remain exercised
+  by real CPU/reference paths as well as available to GPU twins; do not replace
+  those calls with analyzer annotations. Keep the compact `CAMBI_OPTION`
+  descriptors equivalent to the public option table. See
   [measured source and binary equivalence](../../../docs/research/2043-cambi-production-lint-2026-09-08.md).
 
 - **Floating-point VIF lint decomposition** (ADR-0141 / ADR-1142):
@@ -432,6 +435,11 @@ feature/
   overflow stays. See
   [ADR-0155](../../../docs/adr/0155-adm-i4-rounding-deferred-netflix-955.md)
   and [rebase-notes 0048](../../../docs/rebase-notes.md).
+  CUDA mirrors name the same negative value directly as `INT32_MIN` in
+  `cuda/integer_adm/adm_csf.cu` and both fused paths in
+  `cuda/integer_adm/adm_cm.cu`. Do not restore the `1u << 31`
+  unsigned-to-signed conversion there: NVCC diagnoses it as `#68-D`, while
+  widening it would violate this numerical invariant.
 
 - **`integer_adm.c` DWT mirror table for tiny extents** (fork-only fix,
   [Research-2063](../../../docs/research/2063-upstream-sync-2026-09-adm-vif-simd.md)):
@@ -1706,3 +1714,57 @@ every non-default option, so `cs` on the twin and `scf` on the CPU means two
 different keys for one feature. And copy the *semantics* from the branch the
 twin actually implements — `adm_csf_scale` is a Barten-mode argument, so in the
 Watson-only twins it must be a no-op exactly as it is on the CPU.
+
+## Error exits use unwind helpers, not label ladders (HISS-01, 2026-09-21)
+
+Cleanup `goto` is gone from `ciede`, `feature_collector`, `feature_dists`,
+`feature_lpips`, `float_moment`, `float_ms_ssim`, `float_psnr`, `float_ssim`,
+`motion` and `pu21`. Pattern that replaced it: one `static` unwind helper per
+constructor, in same translation unit, releasing resources in same order old
+`free_*:` chain used. Shallow exits reach same helper; members not yet acquired
+are still NULL, and `free(NULL)` is no-op. Where release set cannot be inferred
+from NULL — feature-collector mutex and aggregate vector, pu21 buffer pair —
+helper takes explicit stage enum and releases every stage at or below it,
+highest first.
+
+Two rules for anyone adding error path here:
+
+- Do not reintroduce `goto`. Add case to unwind helper instead.
+- Free order is behaviour. Enumerate exit paths before and after any edit
+  and check them against each other. `pthread_mutex_destroy` before
+  `free(fc)`, `aligned_free` in acquisition-reverse order, `vmaf_picture_unref`
+  before scratch release.
+
+Two upstream-parity quirks are preserved on purpose: `float_psnr` leaves its
+buffers to extractor teardown when bit depth is unsupported, and `ciede`
+reports `-EINVAL` rather than `-ENOMEM` for same case. Both matched old label
+ladders. Fixing either is behavioural change and needs own commit plus test.
+
+## Split helpers must not split an expression (HISS-04, ADR-1253)
+
+When function here is split to fit 60-LOC bound, helper is `static` in same
+TU, never reached through function pointer, never in another TU. Arithmetic
+moves whole: each statement lives on one side of helper boundary. Reason is
+FMA contraction — `a * b + c` inside helper contracts same way it did inline,
+but `t = a * b;` in caller plus `t + c` in helper does not, and that is 1 ULP
+that ssimulacra2 pooling amplifies into visible score delta (ADR-1205).
+Reductions keep their order: move whole accumulation loop, never partial sums.
+
+Functions carrying ADR-0141 §2 bit-exactness carve-outs stay unsplit —
+`compute_adm`, `adm_dwt2_s`, `calc_ssim`, `brisque_fit_aggd`,
+`niqe_extract_aggd`, `create_recursive_gaussian`, `picture_to_linear_rgb`.
+Their paired SIMD ports match them line for line; splitting one forces
+matching splits in four SIMD files and breaks scalar-diff audit story.
+
+## Integer ADM's 16-bit vertical DWT sums in int64
+
+- `adm_dwt2_vpass16_tap4()` (`integer_adm.h`) = only 16-bit vertical DWT
+  response. Scalar `adm_dwt2_vpass_16()`, `adm_dwt2_16_avx2()`,
+  `adm_dwt2_16_avx512()` call it.
+- Low-pass taps 1-3 sum 50582 -> int32 partial sum overflows at 16 bpc once
+  3 samples >= 42456. Upstream form = int32 = UB.
+- Normalised result fits int32 -> int64 form bit-exact with old wrap. Never
+  "optimise" back to int32; outputs match, UB returns.
+- Guard: `test_integer_adm_dwt16_range` (sanitizer lane halts on the UB).
+- 8-bit pass stays int32: 255 * 50582 fits.
+- T-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18.

@@ -32,7 +32,7 @@
  * 9-tap 9/7 biorthogonal wavelet LPF, separable form.
  *
  * REBASE-SENSITIVE INVARIANT: these coefficients MUST match
- * `g_lpf_h` / `g_lpf_v` in libvmaf/src/feature/ms_ssim.c. If Netflix
+ * `g_lpf_h` / `g_lpf_v` in core/src/feature/ms_ssim.c. If Netflix
  * upstream changes the coefficients there, mirror the change here.
  * See docs/adr/0125-ms-ssim-decimate-simd.md.
  */
@@ -152,7 +152,7 @@ int ms_ssim_decimate_scalar(const float *src, int w, int h, float *dst, int *rw,
  * available on the host CPU. AVX2 / AVX-512 kernels produce
  * byte-identical output to the scalar reference (per-lane sequential
  * FMA, same coefficients, same mirror). See
- * libvmaf/test/test_ms_ssim_decimate.c.
+ * core/test/test_ms_ssim_decimate.c.
  */
 int ms_ssim_decimate(const float *src, int w, int h, float *dst, int *rw, int *rh)
 {

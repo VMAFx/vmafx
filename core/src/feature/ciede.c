@@ -173,6 +173,17 @@ static void ciede_select_preprocess(CiedeState *s)
 #endif
 }
 
+/* Release the scratch line buffers, in the exact order the former `fail_tmp:`
+ * label used (ascending index). Every init() error exit runs this and only
+ * this, so the free set and free order are identical on all of them. */
+static void ciede_release_tmp(CiedeState *s)
+{
+    for (int i = 0; i < 6; i++) {
+        if (s->tmp[i])
+            aligned_free(s->tmp[i]);
+    }
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -192,8 +203,10 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (s->preprocess_8 || s->preprocess_16) {
         for (int i = 0; i < 6; i++) {
             s->tmp[i] = aligned_malloc(w * sizeof(float), 32);
-            if (!s->tmp[i])
-                goto fail_tmp;
+            if (!s->tmp[i]) {
+                ciede_release_tmp(s);
+                return -ENOMEM;
+            }
         }
     }
 
@@ -210,28 +223,24 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         s->scale_chroma_planes = scale_chroma_planes_hbd;
         break;
     default:
-        /* Unsupported bitdepth is a caller error, not OOM: set -EINVAL so the
-         * `return err ? err : -ENOMEM` at fail_tmp reports the right code. */
-        err = -EINVAL;
-        goto fail_tmp;
+        /* Unsupported bitdepth is a caller error, not OOM: report -EINVAL,
+         * exactly as the former `err = -EINVAL;` + jump-to-`fail_tmp` pair did. */
+        ciede_release_tmp(s);
+        return -EINVAL;
     }
 
     err = vmaf_picture_alloc(&s->ref, VMAF_PIX_FMT_YUV444P, bpc, w, h);
-    if (err)
-        goto fail_tmp;
+    if (err) {
+        ciede_release_tmp(s);
+        return err;
+    }
     err = vmaf_picture_alloc(&s->dist, VMAF_PIX_FMT_YUV444P, bpc, w, h);
     if (err) {
         (void)vmaf_picture_unref(&s->ref);
-        goto fail_tmp;
+        ciede_release_tmp(s);
+        return err;
     }
     return 0;
-
-fail_tmp:
-    for (int i = 0; i < 6; i++) {
-        if (s->tmp[i])
-            aligned_free(s->tmp[i]);
-    }
-    return err ? err : -ENOMEM;
 }
 
 static float get_h_prime(const float x, const float y)

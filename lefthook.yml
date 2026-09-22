@@ -1,4 +1,4 @@
-# Lefthook Configuration (Go 1.27+ & HISS-16 Governance)
+# Lefthook Configuration (Go 1.27+ & HISS-21 Governance)
 # Governance commands fail closed: a failing or missing praetorctl blocks the commit or push.
 agent-checkpoint-tool:
   commands:
@@ -29,16 +29,26 @@ pre-commit:
         elif command -v pre-commit >/dev/null 2>&1; then pre-commit run; \
         else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi
     context-check:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl compile-context --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl compile-context --verify; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl compile-context --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl compile-context --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     hiss-audit:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl audit; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl audit; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      # ADR-1298 — scripts/git-hooks/hiss-audit.sh, not a bare `praetorctl
+      # audit`. praetorctl derives its touched-file set from `git diff
+      # --name-only HEAD`, and during a merge HEAD is the pre-merge tip, so that
+      # names every file the other side changed. The wrapper scopes the rule to
+      # the conflict resolutions for a merge and changes nothing for an ordinary
+      # commit.
+      run: bash scripts/git-hooks/hiss-audit.sh
+    hiss-evidence:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl hiss coverage --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl hiss coverage --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+    dedupe-scan:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe scan .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe scan .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
 
 post-commit:
   commands:
     state-sync:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl state sync .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl state sync .; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: scripts/githooks/state-sync.sh
     dedupe-cadence:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe cadence --threshold=20 --record .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe cadence --threshold=20 --record .; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe cadence --threshold=20 --record .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe cadence --threshold=20 --record .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
 
 pre-push:
   parallel: false
@@ -59,9 +69,13 @@ pre-push:
     security:
       run: if command -v govulncheck >/dev/null 2>&1; then govulncheck ./...; else echo govulncheck is not installed, skipping >&2; fi
     flavor-audit:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl flavor audit .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl flavor audit .; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl flavor audit .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl flavor audit .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     audit:
-      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl audit; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl audit; else echo HISS-16 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl audit; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl audit; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+    hiss-evidence:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl hiss coverage --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl hiss coverage --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
+    dedupe-scan:
+      run: if command -v praetorctl >/dev/null 2>&1; then praetorctl dedupe scan .; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl dedupe scan .; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     # The praetor gating pipeline is deliberately NOT run pre-push here. Its
     # race-detector stage runs `go test -race ./...` in a bare isolated worktree,
     # and every Go package in this repository is cgo over libvmaf

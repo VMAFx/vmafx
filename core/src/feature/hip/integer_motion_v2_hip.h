@@ -7,7 +7,7 @@
  *  kernel-template consumer (T7-10b follow-up / ADR-0267).
  *  Real kernel promotion: T7-10b batch-4 / ADR-0377.
  *
- *  Mirrors libvmaf/src/feature/cuda/integer_motion_v2_cuda.h. The HIP
+ *  Mirrors core/src/feature/cuda/integer_motion_v2_cuda.h. The HIP
  *  kernel artefact (`motion_v2_score.hip`) is compiled by hipcc to a HSACO
  *  fat binary and embedded as a C byte array when `enable_hipcc=true`.
  *  The host code loads it via `hipModuleLoadData` + `hipModuleLaunchKernel`

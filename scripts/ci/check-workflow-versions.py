@@ -25,6 +25,13 @@ script rather than more shell in check-base-image-single-source.sh because the
 Level Zero clone puts `--branch vX.Y.Z` and the repository URL on different
 lines, which a line-oriented grep cannot match.
 
+`[tool.mypy] python_version` is the same problem inside one file. It promises
+to track `requires-python` in a comment and nothing compared the two, so it sat
+at `3.10` against a `>=3.14` floor until ADR-1282; below 3.12 mypy refuses to
+parse the PEP 695 `type` statement in numpy's bundled stubs and aborts the
+`ai/src/` pass entirely. `check_mypy_python_version` compares the pin to the
+floor beside it and to `PYTHON_CI_VERSION`.
+
 The formatter pins are the same problem one directory over. The Makefile
 installs ruff and black at versions it promises are identical to
 `.pre-commit-config.yaml`, and Renovate only ever moved the pre-commit side:
@@ -42,6 +49,11 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+# tomllib sorts here rather than with the stdlib imports above because ruff is still
+# configured with `target-version = "py310"`, where tomllib did not yet exist. That pin
+# is the drift ADR-1282 deliberately left alone; move this import up when it is raised.
+import tomllib
 
 # A `git clone` invocation, following backslash continuations, that mentions
 # level-zero somewhere in it.
@@ -215,6 +227,94 @@ def check_formatter_pins(root: Path) -> list[str]:
     return problems
 
 
+# `requires-python` is a PEP 440 specifier set. Only the clauses that state a
+# lower bound say where the project's floor is; `<`, `<=` and `!=` clauses are
+# ignored. `==3.14.*` is a floor as well as a ceiling.
+REQUIRES_FLOOR_RE = re.compile(r"(>=|~=|==)\s*([0-9]+)\.([0-9]+)")
+
+
+def requires_python_floor(spec: str) -> str | None:
+    """The oldest `major.minor` language version a `requires-python` admits.
+
+    A specifier set is a conjunction, so when more than one clause states a
+    lower bound the strictest of them is the effective floor -- `>=3.9,>=3.14`
+    admits nothing below 3.14.
+    """
+    floors = [
+        (int(match.group(2)), int(match.group(3))) for match in REQUIRES_FLOOR_RE.finditer(spec)
+    ]
+    if not floors:
+        return None
+    major, minor = max(floors)
+    return f"{major}.{minor}"
+
+
+def mypy_pin_problem(modelled: object, requires: str, floor: str) -> str | None:
+    """Describe how `[tool.mypy] python_version` fails to match the floor, if it does."""
+    if modelled is None:
+        # Deleting the key is the other way the two drift apart: mypy then
+        # models whichever interpreter the caller happens to run. ADR-1282
+        # rejected that explicitly.
+        return (
+            f"pyproject.toml: [tool.mypy] has no python_version; requires-python "
+            f"('{requires}') floors the project at {floor}, and ADR-1282 requires the "
+            "value be pinned rather than inherited from the running interpreter"
+        )
+    if not isinstance(modelled, str):
+        return (
+            f"pyproject.toml: [tool.mypy] python_version = {modelled!r} must be a quoted "
+            f'string, as in python_version = "{floor}"'
+        )
+    if modelled != floor:
+        return (
+            f"pyproject.toml: [tool.mypy] python_version = '{modelled}' but "
+            f"requires-python = '{requires}' floors the project at {floor}; "
+            "raise them in lockstep (ADR-1282)"
+        )
+    return None
+
+
+def check_mypy_python_version(root: Path, py_ci: str | None = None) -> list[str]:
+    """`[tool.mypy] python_version` tracks `requires-python` (ADR-1282).
+
+    The pin sat at `3.10` for as long as it did because nothing compared it to
+    the floor beside it. A silent revert has no other guard: mypy accepts any
+    version it knows, and below 3.12 it refuses to parse the PEP 695 `type`
+    statement in numpy's bundled `__init__.pyi`, which aborts the whole
+    `ai/src/` pass in every checkout that has numpy installed instead of
+    reporting anything about this file.
+    """
+    path = root / "pyproject.toml"
+    if not path.is_file():
+        return []
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        return [f"pyproject.toml is not valid TOML: {exc}"]
+    project = data.get("project")
+    mypy = data.get("tool", {}).get("mypy")
+    requires = project.get("requires-python") if isinstance(project, dict) else None
+    if not isinstance(mypy, dict) or not isinstance(requires, str):
+        return []
+
+    floor = requires_python_floor(requires)
+    if floor is None:
+        return [
+            f"pyproject.toml: requires-python = '{requires}' states no lower bound, "
+            "so [tool.mypy] python_version cannot be checked against it"
+        ]
+
+    modelled = mypy.get("python_version")
+    problem = mypy_pin_problem(modelled, requires, floor)
+    if problem is None and py_ci and ".".join(py_ci.split(".")[:2]) != modelled:
+        problem = (
+            f"pyproject.toml: [tool.mypy] python_version = '{modelled}' but "
+            f"build-config.env says PYTHON_CI_VERSION = '{py_ci}'; "
+            "the checker must model the version CI installs (ADR-1282)"
+        )
+    return [problem] if problem is not None else []
+
+
 def main() -> int:
     # S603: the argument vector is a fixed literal -- no user input reaches it.
     root = Path(
@@ -235,6 +335,7 @@ def main() -> int:
     problems.extend(check_workflows(root, lz_want, py_want))
     problems.extend(check_vmafx_version(root, ver_want))
     problems.extend(check_formatter_pins(root))
+    problems.extend(check_mypy_python_version(root, py_want))
 
     for problem in problems:
         print(f"::error title=version drift::{problem}", file=sys.stderr)

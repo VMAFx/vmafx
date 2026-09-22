@@ -159,9 +159,9 @@ static inline int adm_csf_check_scale(int scale, const float rfactor1[3], double
 
 /**
  * 0 when a `w` x `h` frame is inside the integer-ADM range, otherwise -EINVAL
- * after logging which extractor refused it. Called from init(), so that the
- * backends refuse the same frames; the GPU twins that do not call it yet are
- * T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18.
+ * after logging which extractor refused it. The CPU, CUDA, HIP and SYCL
+ * extractors call it from init(), and Metal has the same check inline, so every
+ * backend refuses the same frames.
  */
 static inline int adm_frame_size_check(const char *extractor, unsigned w, unsigned h)
 {

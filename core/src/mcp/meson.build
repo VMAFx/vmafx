@@ -1,8 +1,8 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
-# Included from libvmaf/src/meson.build via `subdir('mcp')`. Paths
-# below are relative to libvmaf/src/mcp/.
+# Included from core/src/meson.build via `subdir('mcp')`. Paths
+# below are relative to core/src/mcp/.
 #
 # T5-2 scaffold (ADR-0209) shipped mcp.c only with `-ENOSYS`.
 # T5-2b runtime (PR #490) added dispatcher.c + transport_stdio.c +
@@ -13,10 +13,10 @@
 # T5-2d (this PR — MCP runtime v3) adds transport_sse.c (loopback
 # HTTP + Server-Sent Events) — implemented in plain POSIX sockets,
 # NOT via the originally-planned mongoose vendor. Mongoose is
-# GPL-2.0-only-OR-commercial; the fork ships under
-# BSD-3-Clause-Plus-Patent, so a vendored copy would be a license
-# blocker. See ADR-0332 § "Status update 2026-05-09 (v3 SSE)" for
-# the decision matrix.
+# GPL-2.0-only-OR-commercial, which ADR-0332 judged a licence
+# blocker for vendoring into this tree. See ADR-0332
+# § "Status update 2026-05-09 (v3 SSE)" for the decision matrix,
+# and ADR-1250 for the fork's current licensing.
 
 mcp_sources = files(
     'mcp.c',

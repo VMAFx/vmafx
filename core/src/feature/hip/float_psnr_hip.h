@@ -6,7 +6,7 @@
  *  HIP host glue for the float_psnr feature extractor — second
  *  kernel-template consumer (T7-10b / ADR-0254).
  *
- *  Mirrors libvmaf/src/feature/cuda/float_psnr_cuda.h. The HIP kernel
+ *  Mirrors core/src/feature/cuda/float_psnr_cuda.h. The HIP kernel
  *  artefact (`float_psnr_score.hip`) is compiled by hipcc to a HSACO
  *  fat binary and embedded as a C byte array when `enable_hipcc=true`.
  *  The host code loads it via `hipModuleLoadData` + `hipModuleLaunchKernel`

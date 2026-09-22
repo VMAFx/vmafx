@@ -402,29 +402,40 @@ only.
 
 ##### Small frames
 
-The fixed-point `adm` extractor needs at least 17x17 pixels. Each of its four
-DWT levels halves the band, and below 17 pixels the coarsest level has a
-single sample. Smaller input fails when the extractor starts, with `-EINVAL`
-and this error:
+The fixed-point `adm` extractor needs at least 17x17 pixels, on every
+backend. Each of its four DWT levels halves the band, and below 17 pixels the
+coarsest level has a single sample. Smaller input fails with `-EINVAL` when
+the extractor starts. The CPU, CUDA, HIP and SYCL extractors also log an error
+that names them:
 
 ```text
 libvmaf ERROR integer_adm requires width >= 17 and height >= 17 (got 16x16)
+libvmaf ERROR adm_cuda requires width >= 17 and height >= 17 (got 16x16)
 ```
 
-Frames from 17 to 32 pixels wide or high are the smallest it accepts. Two
-things were wrong at those sizes and are fixed:
+The CUDA, HIP and SYCL twins (`adm_cuda`, `adm_hip`, `adm_sycl`) used to
+accept such frames; they now refuse them like the CPU and Metal extractors.
+
+Frames from 17 to 32 pixels wide or high are the smallest it accepts. These
+were wrong at those sizes and are fixed:
 
 - Scale 3 read outside its band, so `integer_adm_scale3` could change between
   two runs on the same input.
 - For frames 17 to 32 pixels wide, the AVX-512 path scored scale 0 up to 0.01
-  away from the scalar path. The scalar, AVX2, AVX-512 and NEON paths now
-  give identical scores at every width in that range.
+  away from the scalar path.
+- For the same widths, the CUDA and HIP twins scored scale 0 up to 0.2 away
+  from the CPU, and 32x32 frames came out as NaN.
 
-The CUDA and HIP `integer_adm` twins still score frames 17 to 32 pixels wide
-wrongly, with scale 0 up to 0.2 off the CPU value. The CUDA, HIP and SYCL twins
-also accept frames below 17x17. Score frames that small on the CPU until
-`T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18` in [the bug tracker](../state.md) is
-closed.
+The scalar, AVX2, AVX-512 and NEON paths now give identical scores at every
+width in that range. The CUDA, HIP and SYCL twins agree with them within the
+1e-4 cross-backend tolerance, as they do on larger frames.
+
+The SYCL twin also used to drift on content with very large band
+coefficients, such as independent random noise, where the CPU's 16-bit
+intermediates wrap: `integer_adm_scale0` came out up to 2.1e-4 away from the
+CPU. It now wraps at the same points and rounds its scale 1-3 terms the way
+the CPU, CUDA and HIP do, which moves SYCL's ordinary-video scores by less
+than 1e-6, toward the CPU.
 
 ##### Fixed-point CSF limits
 
@@ -479,6 +490,12 @@ Netflix ADM.
 
 **Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 `float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
+
+The `adm` SIMD paths (AVX2, AVX-512, NEON) produce the same scores as the
+scalar path bit for bit, on any content. Until this release the AVX2 and
+AVX-512 paths differed from scalar by up to 7e-4 on content with very large
+band coefficients, such as full-range noise; ordinary video, including the
+Netflix reference clips, was already identical.
 
 **32-bit x86** — the fork is 64-bit only (ADR-1258). The ADM x86
 sources still extract 64-bit lanes through 32-bit-safe helpers

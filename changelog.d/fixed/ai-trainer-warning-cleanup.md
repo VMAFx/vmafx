@@ -1,0 +1,1 @@
+- Made the legacy AI corpus and trainer entry points HISS-clean, kept FR normalisation compatible with read-only pandas arrays, and migrated MOS-head ONNX export to PyTorch's warning-free dynamic-shape API.

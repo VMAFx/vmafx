@@ -71,10 +71,12 @@ repos:
     rev: v23.1.1
     hooks:
       - id: clang-format
+        entry: python3 scripts/ci/pelorus_mirror.py clang-format
         types_or: [c, c++, cuda]
-        # core/src/interop + core/include/libvmaf/pelorus = vendored read-only
-        # mirror of VMAFx/pelorus (ADR-1113); must stay byte-identical, never reformatted.
-        exclude: '^subprojects/|^core/test/data/|^core/src/interop/|^core/include/libvmaf/pelorus/'
+        # Pelorus interop sources, headers, and shared conformance fixture are
+        # a vendored read-only mirror (ADR-1113). The wrapper exempts only paths
+        # in the shared exact-path manifest; an added pelorus_*.cpp stays linted.
+        exclude: '^subprojects/|^core/test/data/'
 
   - repo: https://github.com/psf/black
     rev: 26.5.1
@@ -226,11 +228,18 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-cuda-pin-lockstep
+        name: CUDA release is one pin in sixteen places
+        entry: scripts/ci/check-cuda-pin-lockstep.py
+        language: script
+        pass_filenames: false
+        always_run: true
+
       - id: test-base-image-single-source
         name: Base image and toolchain single-source tests
         entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
         language: system
-        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|dev/Containerfile|renovate\.json|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-workflow-versions\.py|tests/test_(base_image|level_zero|formatter_pins)_single_source\.py))$'
+        files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|libvmaf-build-matrix)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version)_single_source\.py))$'
         pass_filenames: false
 
       - id: test-envtest-single-source
@@ -244,7 +253,40 @@ repos:
         name: Configured native lint scope and failure propagation
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_lint_configured.py
         language: system
-        files: '^(Makefile|scripts/ci/(lint-configured\.py|cppcheck-public-entrypoints\.cfg|tests/test_(lint_configured|cppcheck_posix_model)\.py)|core/include/libvmaf/[^/]+\.(h|build)|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(Makefile|scripts/ci/(lint-configured\.py|write-compile-commands\.py|write_cppcheck_posix_model\.py|cppcheck-public-entrypoints\.cfg|tests/test_(lint_configured|write_compile_commands|cppcheck_posix_model)\.py)|core/include/libvmaf/[^/]+\.(h|build)|\.github/workflows/(lint-and-format|nightly)\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-compile-commands-export
+        name: Explicit Ninja compilation database export
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_write_compile_commands.py
+        language: system
+        files: '^(Makefile|scripts/ci/(write-compile-commands\.py|tests/test_write_compile_commands\.py)|\.github/workflows/(lint-and-format|nightly)\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-tidy-ratchet-lanes
+        # The lane-flag cases lived in tests/test_tidy_ratchet_extra_args.py
+        # until #1504/#1507 consolidated ExtraArgForwarding into
+        # tests/test_tidy_ratchet.py and deleted the file. Arm64LaneFlags moved
+        # with it. Pointing `discover -p` at a deleted file is not a failure
+        # anyone sees as one: unittest exits 5 with "NO TESTS RAN", so the hook
+        # goes red without naming a defect.
+        name: Ratchet lane flags reach clang-tidy (ADR-1142, ADR-1283)
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_ratchet.py
+        language: system
+        files: '^(Makefile|scripts/ci/(tidy-ratchet\.py|tidy-baseline-arm64\.json|tests/test_tidy_ratchet\.py)|build-aux/aarch64-linux-gnu\.ini|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+      - id: test-tidy-ratchet-sycl-compdb
+        name: SYCL tidy lane augments its compilation database
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_ratchet_sycl_compdb.py
+        language: system
+        files: '^(Makefile|scripts/ci/(gen-sycl-compile-commands\.py|tidy-ratchet\.py|tests/test_tidy_ratchet_sycl_compdb\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-sycl-aot-command
+        name: SYCL AOT and language-standard command contract
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_sycl_aot_command.py
+        language: system
+        files: '^(core/(meson\.build|src/meson\.build)|scripts/ci/(gen-sycl-compile-commands\.py|tests/test_sycl_aot_command\.py)|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
       - id: test-renovate-file-patterns
@@ -265,13 +307,19 @@ repos:
         name: Git fixtures preserve caller repositories
         entry: python3 scripts/ci/test_git_fixture_isolation.py
         language: system
-        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/test_level_zero_single_source\.py|scripts/dev/test-cleanup-agent-state\.sh|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/(test_level_zero_single_source\.py|test-sync-pelorus-interop\.sh)|scripts/dev/test-cleanup-agent-state\.sh|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
       - id: check-no-tracked-venv
         name: No virtualenv path is tracked (dir or symlink)
         entry: scripts/ci/check-no-tracked-venv.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+      - id: check-local-data-contract
+        name: Local state, corpus, and public evidence stay separated
+        entry: scripts/ci/check-local-data-contract.sh
         language: script
         pass_filenames: false
         always_run: true
@@ -287,6 +335,13 @@ repos:
         entry: scripts/ci/check-aggregator-names.sh
         language: script
         files: '^\.github/workflows/.*\.ya?ml$|^scripts/ci/(tests/test-)?check-aggregator-names\.sh$'
+        pass_filenames: false
+
+      - id: hiss-replay-contract
+        name: HISS replay evidence remains fail-closed
+        entry: python3 -B scripts/ci/tests/test_hiss_replay_contract.py
+        language: system
+        files: '^(\.config/hiss/|\.github/workflows/(required-aggregator|standards-gate)\.yml|\.pre-commit-config\.yaml|AGENTS\.md|Makefile|README\.md|lefthook\.yml|scripts/ci/tests/test_hiss_replay_contract\.py)$'
         pass_filenames: false
       - id: check-copyright
         name: ADR-0105 copyright header present (C/C++/CUDA)
@@ -375,6 +430,22 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: fail-closed-ci-contract
+        name: Test and scan failures remain observable in CI
+        entry: python3 -B scripts/ci/test_fail_closed_ci.py
+        language: system
+        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|\.github/workflows/(nightly|required-aggregator|rule-enforcement|sanitizers|security-scans|tests-and-quality-gates)\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: dedupe-gate-contract
+        name: Duplicate implementation scan remains fail-closed
+        entry: bash scripts/ci/tests/test-dedupe-gate.sh
+        language: system
+        files: '^(Makefile|lefthook\.yml|scripts/ci/tests/test-dedupe-gate\.sh|\.github/workflows/(rule-enforcement|standards-gate)\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: mypy-scope-contract
         name: Check pre-push mypy merge-base scope
         entry: python3 scripts/git-hooks/test-pre-push-mypy.py
@@ -418,17 +489,20 @@ repos:
         types_or: [c, c++, cuda, python]
         # Paths this hook skips: (a) upstream vendored subprojects,
         # (b) test fixtures, (c) compat/python-vmaf/resource/ +
-        # python/test/resource/ assets, (d) compat/python-vmaf/matlab/ —
-        # Netflix-upstream MATLAB MEX C sources (they call `sprintf` /
-        # `strcpy` etc., which are banned by .semgrep.yml but are out of
-        # scope for fork-local hygiene; cleaning them up is an upstream
-        # change, not ours).
+        # python/test/resource/ assets. All three are data or downloaded
+        # build dependencies, not fork-compiled sources.
+        # Nothing is skipped for being upstream-authored. The Netflix MATLAB
+        # MEX C sources under compat/python-vmaf/matlab/ used to be listed
+        # here, on the reasoning that their banned libc calls were "an
+        # upstream change, not ours" — the exact origin-based exemption
+        # ADR-1142 retired. Their last such call went in bc00da0be and the
+        # tree scans clean, so the entry was dropped on 2026-09-21.
         # The vendored JSON code the library links — core/src/pdjson.{c,h}
-        # and core/src/mcp/3rdparty/cJSON/ — is deliberately NOT skipped
+        # and core/src/mcp/3rdparty/cJSON/ — is likewise NOT skipped
         # (ADR-0683, ADR-1142): this hook is the commit-time guard that
         # stops a re-vendor from bringing banned libc calls back, and the
         # whole-tree Semgrep CI job has always scanned pdjson anyway.
-        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/'
+        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/'
         # Runs at pre-commit time — fast on a single-file diff and the
         # rules in .semgrep.yml are the project's own, not p/cert-c-strict.
         # `pass_filenames: true` (the default) because semgrep accepts
@@ -466,6 +540,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: test-sync-pelorus-interop
+        name: Pelorus mirror guard fails closed without its exact Git pin
+        entry: bash scripts/ci/tests/test-sync-pelorus-interop.sh
+        language: system
+        files: '^(scripts/sync-pelorus-interop\.sh|scripts/ci/pelorus[-_]mirror[^/]*|scripts/ci/tests/(test-sync-pelorus-interop\.sh|test_pelorus_mirror\.py)|\.github/workflows/lint-and-format\.yml|Makefile|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: test-dev-mcp-entrypoint-probe
         name: dev-mcp entrypoint probes run argv, never eval
         entry: bash scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh
@@ -476,7 +558,7 @@ repos:
 
       - id: ffmpeg-patches-apply-check
         name: FFmpeg patch stack on the configured release
-        entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir2/cache/ffmpeg-patch-stack/hooks
+        entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir/cache/ffmpeg-patch-stack/hooks
         language: system
         # CI helpers are authority inputs (ADR-1140), including the replay
         # script's config/refresh helpers. Public API/build changes can make
@@ -494,10 +576,35 @@ repos:
         stages: [pre-push]
         # Always runs regardless of which files changed — the check is
         # about the PR description, not the code under review. Skip if
-        # gh CLI is absent or no open PR exists (both handled gracefully
-        # inside the script). See docs/development/pr-body-sentinel-guide.md.
+        # no open PR exists. A bounded gh lookup falls back to the public
+        # PR page and fails closed if neither source is readable. See
+        # docs/development/pr-body-sentinel-guide.md.
         always_run: true
         pass_filenames: false
+
+      - id: test-pr-body-lookup
+        name: PR-body metadata lookup fails closed without hanging
+        entry: python3 scripts/git-hooks/test-pre-push-pr-body-lint.py
+        language: system
+        files: '^(scripts/git-hooks/(?:pre-push-pr-body-lint\.sh|test-pre-push-pr-body-lint\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-pr-body-input-selection
+        name: PR-body gates classify stdin before reading it
+        # `[ ! -t 0 ]` answers "is fd 0 a terminal", not "was a body
+        # piped". A closed fd 0 used to deadlock all four gates that
+        # read a PR body; /dev/null used to be read as an empty body.
+        # Bounded by `timeout`, so a re-regression reports a hang
+        # instead of hanging this hook. Every gate that sources
+        # pr-body-input.sh belongs in `files:` below — the defect
+        # survived its first fix by living in two scripts nobody had
+        # listed.
+        entry: bash scripts/ci/tests/test-pr-body-input-selection.sh
+        language: system
+        files: '^(scripts/ci/(?:deliverables-check|validate-pr-body|pr-body-input|ffmpeg-patches-surface-check|state-md-touch-check)\.sh|scripts/ci/tests/test-pr-body-input-selection\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       - id: mkdocs-strict
         name: Build changed documentation with MkDocs strict validation

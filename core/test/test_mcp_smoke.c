@@ -442,6 +442,34 @@ static int write_yuv420p10_fixture(const char *path, unsigned width, unsigned he
     return rc == 0 && close_rc == 0 ? 0 : -1;
 }
 
+/* Issue one compute_vmaf call over the harness for a 10-bit 192x192 pair and
+ * assert the reply. Returns a failure message, or NULL; the caller owns the
+ * harness and the fixture files either way. */
+static char *request_10bit_score(McpHarness *h, const char *ref_path, const char *dis_path)
+{
+    char req[640];
+    int n = snprintf(req, sizeof(req),
+                     "{\"jsonrpc\":\"2.0\",\"id\":100,\"method\":\"tools/call\","
+                     "\"params\":{\"name\":\"compute_vmaf\",\"arguments\":{"
+                     "\"reference_path\":\"%s\","
+                     "\"distorted_path\":\"%s\","
+                     "\"width\":192,\"height\":192,\"bitdepth\":10,"
+                     "\"model_version\":\"vmaf_v0.6.1\"}}}\n",
+                     ref_path, dis_path);
+    mu_assert("req snprintf", n > 0 && (size_t)n < sizeof(req));
+
+    static char line[16384];
+    char *err = send_and_read(h, req, (size_t)n, line, sizeof(line));
+    if (err != NULL)
+        return err;
+    mu_assert("compute_vmaf 10-bit id 100", strstr(line, "\"id\":100") != NULL);
+    mu_assert("compute_vmaf 10-bit returns score", strstr(line, "\\\"score\\\"") != NULL);
+    mu_assert("compute_vmaf 10-bit reports bitdepth", strstr(line, "\\\"bitdepth\\\":10") != NULL);
+    mu_assert("compute_vmaf 10-bit reports frames",
+              strstr(line, "\\\"frames_scored\\\":2") != NULL);
+    return NULL;
+}
+
 static char *test_compute_vmaf_yuv420p10_score(void)
 {
     char ref_path[96];
@@ -472,37 +500,13 @@ static char *test_compute_vmaf_yuv420p10_score(void)
     McpHarness h;
     mu_assert("harness init", harness_init(&h) == 0);
 
-    char req[640];
-    int n = snprintf(req, sizeof(req),
-                     "{\"jsonrpc\":\"2.0\",\"id\":100,\"method\":\"tools/call\","
-                     "\"params\":{\"name\":\"compute_vmaf\",\"arguments\":{"
-                     "\"reference_path\":\"%s\","
-                     "\"distorted_path\":\"%s\","
-                     "\"width\":192,\"height\":192,\"bitdepth\":10,"
-                     "\"model_version\":\"vmaf_v0.6.1\"}}}\n",
-                     ref_path, dis_path);
-    mu_assert("req snprintf", n > 0 && (size_t)n < sizeof(req));
-
-    static char line[16384];
-    char *err = send_and_read(&h, req, (size_t)n, line, sizeof(line));
-    if (err != NULL) {
-        harness_teardown(&h);
-        (void)unsetenv("VMAF_MCP_ALLOW");
-        (void)unlink(ref_path);
-        (void)unlink(dis_path);
-        return err;
-    }
-    mu_assert("compute_vmaf 10-bit id 100", strstr(line, "\"id\":100") != NULL);
-    mu_assert("compute_vmaf 10-bit returns score", strstr(line, "\\\"score\\\"") != NULL);
-    mu_assert("compute_vmaf 10-bit reports bitdepth", strstr(line, "\\\"bitdepth\\\":10") != NULL);
-    mu_assert("compute_vmaf 10-bit reports frames",
-              strstr(line, "\\\"frames_scored\\\":2") != NULL);
+    char *err = request_10bit_score(&h, ref_path, dis_path);
 
     harness_teardown(&h);
     (void)unsetenv("VMAF_MCP_ALLOW");
     (void)unlink(ref_path);
     (void)unlink(dis_path);
-    return NULL;
+    return err;
 }
 
 /* ============================================================

@@ -9,7 +9,7 @@
  *  float_moment_ref{1st,2nd} + float_moment_dis{1st,2nd} — in
  *  a single kernel pass via four uint64 atomic counters.
  *
- *  Algorithm (mirrors libvmaf/src/feature/float_moment.c::extract):
+ *  Algorithm (mirrors core/src/feature/float_moment.c::extract):
  *      for each pixel:
  *          ref1 += ref;        ref2 += ref * ref;
  *          dis1 += dis;        dis2 += dis * dis;

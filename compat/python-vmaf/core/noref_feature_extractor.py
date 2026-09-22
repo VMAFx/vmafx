@@ -227,41 +227,36 @@ class BrisqueNorefFeatureExtractor(NorefExecutorMixin, FeatureExtractor):
         return feature_result
 
     @classmethod
+    def _bilinear_downscale(cls, img, factor):
+        """Bilinear resize of *img* to 1/*factor* of its width and height."""
+        return np.array(
+            Image.fromarray(img).resize(
+                (int(np.shape(img)[1] / factor), int(np.shape(img)[0] / factor)),
+                Image.Resampling.BILINEAR,
+            )
+        )
+
+    @classmethod
+    def _paired_aggd_features(cls, m_image):
+        """AGGD (alpha, N, lsq, rsq) of the V, H, D1 and D2 paired products.
+
+        paired_p() yields the four orientations in that fixed order, so the
+        returned flat list keeps the historical 4-per-orientation layout.
+        """
+        features = []
+        for pps in cls.paired_p(m_image):
+            alpha, N, bl, br, lsq, rsq = cls.extract_aggd_features(pps)
+            features.extend([alpha, N, lsq, rsq])
+        return features
+
+    @classmethod
     def mscn_extract(cls, img):
-        img2 = np.array(
-            Image.fromarray(img).resize(
-                (int(np.shape(img)[1] / 2.0), int(np.shape(img)[0] / 2.0)),
-                Image.Resampling.BILINEAR,
-            )
-        )
-        img3 = np.array(
-            Image.fromarray(img).resize(
-                (int(np.shape(img)[1] / 4.0), int(np.shape(img)[0] / 4.0)),
-                Image.Resampling.BILINEAR,
-            )
-        )
+        img2 = cls._bilinear_downscale(img, 2.0)
+        img3 = cls._bilinear_downscale(img, 4.0)
+
         m_image, _, _ = cls.calc_image(img)
         m_image2, _, _ = cls.calc_image(img2)
         m_image3, _, _ = cls.calc_image(img3)
-
-        pps11, pps12, pps13, pps14 = cls.paired_p(m_image)
-        pps21, pps22, pps23, pps24 = cls.paired_p(m_image2)
-        pps31, pps32, pps33, pps34 = cls.paired_p(m_image3)
-
-        alpha11, N11, bl11, br11, lsq11, rsq11 = cls.extract_aggd_features(pps11)
-        alpha12, N12, bl12, br12, lsq12, rsq12 = cls.extract_aggd_features(pps12)
-        alpha13, N13, bl13, br13, lsq13, rsq13 = cls.extract_aggd_features(pps13)
-        alpha14, N14, bl14, br14, lsq14, rsq14 = cls.extract_aggd_features(pps14)
-
-        alpha21, N21, bl21, br21, lsq21, rsq21 = cls.extract_aggd_features(pps21)
-        alpha22, N22, bl22, br22, lsq22, rsq22 = cls.extract_aggd_features(pps22)
-        alpha23, N23, bl23, br23, lsq23, rsq23 = cls.extract_aggd_features(pps23)
-        alpha24, N24, bl24, br24, lsq24, rsq24 = cls.extract_aggd_features(pps24)
-
-        alpha31, N31, bl31, br31, lsq31, rsq31 = cls.extract_aggd_features(pps31)
-        alpha32, N32, bl32, br32, lsq32, rsq32 = cls.extract_aggd_features(pps32)
-        alpha33, N33, bl33, br33, lsq33, rsq33 = cls.extract_aggd_features(pps33)
-        alpha34, N34, bl34, br34, lsq34, rsq34 = cls.extract_aggd_features(pps34)
 
         alpha_m1, sq_m1 = cls.extract_ggd_features(m_image)
         alpha_m2, sq_m2 = cls.extract_ggd_features(m_image2)
@@ -278,57 +273,11 @@ class BrisqueNorefFeatureExtractor(NorefExecutorMixin, FeatureExtractor):
             ]
         )
 
+        # 12 groups of (alpha, N, lsq, rsq): three scales x (V, H, D1, D2).
         pp_features = np.array(
-            [
-                alpha11,
-                N11,
-                lsq11,
-                rsq11,  # 6, 7, 8, 9 (V)
-                alpha12,
-                N12,
-                lsq12,
-                rsq12,  # 10, 11, 12, 13 (H)
-                alpha13,
-                N13,
-                lsq13,
-                rsq13,  # 14, 15, 16, 17 (D1)
-                alpha14,
-                N14,
-                lsq14,
-                rsq14,  # 18, 19, 20, 21 (D2)
-                alpha21,
-                N21,
-                lsq21,
-                rsq21,  # 6, 7, 8, 9 (V)
-                alpha22,
-                N22,
-                lsq22,
-                rsq22,  # 10, 11, 12, 13 (H)
-                alpha23,
-                N23,
-                lsq23,
-                rsq23,  # 14, 15, 16, 17 (D1)
-                alpha24,
-                N24,
-                lsq24,
-                rsq24,  # 18, 19, 20, 21 (D2)
-                alpha31,
-                N31,
-                lsq31,
-                rsq31,  # 6, 7, 8, 9 (V)
-                alpha32,
-                N32,
-                lsq32,
-                rsq32,  # 10, 11, 12, 13 (H)
-                alpha33,
-                N33,
-                lsq33,
-                rsq33,  # 14, 15, 16, 17 (D1)
-                alpha34,
-                N34,
-                lsq34,
-                rsq34,  # 18, 19, 20, 21 (D2)
-            ]
+            cls._paired_aggd_features(m_image)
+            + cls._paired_aggd_features(m_image2)
+            + cls._paired_aggd_features(m_image3)
         )
 
         return mscn_features, pp_features
@@ -390,8 +339,10 @@ class BrisqueNorefFeatureExtractor(NorefExecutorMixin, FeatureExtractor):
 
     @classmethod
     def extract_aggd_features(cls, imdata):
-        imdata_cp = imdata.copy()
-        imdata_cp.shape = (len(imdata_cp.flat),)
+        # NumPy 2.5 deprecated assigning to `ndarray.shape`; `np.reshape` on the
+        # C-contiguous copy is the documented replacement and reads the same
+        # elements in the same order, so the AGGD fit is bit-identical.
+        imdata_cp = np.reshape(imdata.copy(), -1)
         imdata2 = imdata_cp * imdata_cp
         left_data = imdata2[imdata_cp < 0]
         right_data = imdata2[imdata_cp >= 0]
@@ -513,6 +464,16 @@ class NiqeNorefFeatureExtractor(BrisqueNorefFeatureExtractor):
             np.save(log_file, scores_mtx)
 
     @classmethod
+    def _niqe_patch_features(cls, m_patch):
+        """One NIQE level vector: the patch's own AGGD pair then its paired products.
+
+        Layout is (alpha, (bl + br) / 2) followed by 4 x (alpha, N, lsq, rsq)
+        for the V, H, D1 and D2 orientations — 18 values in total.
+        """
+        alpha_m, N, bl, br, lsq, rsq = cls.extract_aggd_features(m_patch)
+        return np.array([alpha_m, (bl + br) / 2.0] + cls._paired_aggd_features(m_patch))
+
+    @classmethod
     def mscn_extract_niqe(cls, img, patch_size, mode):
         h, w = img.shape
 
@@ -535,67 +496,8 @@ class NiqeNorefFeatureExtractor(BrisqueNorefFeatureExtractor):
                 m_patch1 = m_image1[j : j + block_h, i : i + block_w]
                 m_patch2 = m_image2[j // 2 : (j + block_h) // 2, i // 2 : (i + block_w) // 2]
 
-                alpha_m1, N1, bl1, br1, lsq1, rsq1 = cls.extract_aggd_features(m_patch1)
-                alpha_m2, N2, bl2, br2, lsq2, rsq2 = cls.extract_aggd_features(m_patch2)
-
-                pps11, pps12, pps13, pps14 = cls.paired_p(m_patch1)
-                pps21, pps22, pps23, pps24 = cls.paired_p(m_patch2)
-
-                alpha11, N11, bl11, br11, lsq11, rsq11 = cls.extract_aggd_features(pps11)
-                alpha12, N12, bl12, br12, lsq12, rsq12 = cls.extract_aggd_features(pps12)
-                alpha13, N13, bl13, br13, lsq13, rsq13 = cls.extract_aggd_features(pps13)
-                alpha14, N14, bl14, br14, lsq14, rsq14 = cls.extract_aggd_features(pps14)
-
-                alpha21, N21, bl21, br21, lsq21, rsq21 = cls.extract_aggd_features(pps21)
-                alpha22, N22, bl22, br22, lsq22, rsq22 = cls.extract_aggd_features(pps22)
-                alpha23, N23, bl23, br23, lsq23, rsq23 = cls.extract_aggd_features(pps23)
-                alpha24, N24, bl24, br24, lsq24, rsq24 = cls.extract_aggd_features(pps24)
-
-                lvl1_features = np.array(
-                    [
-                        alpha_m1,
-                        (bl1 + br1) / 2.0,
-                        alpha11,
-                        N11,
-                        lsq11,
-                        rsq11,  # 6, 7, 8, 9 (V)
-                        alpha12,
-                        N12,
-                        lsq12,
-                        rsq12,  # 10, 11, 12, 13 (H)
-                        alpha13,
-                        N13,
-                        lsq13,
-                        rsq13,  # 14, 15, 16, 17 (D1)
-                        alpha14,
-                        N14,
-                        lsq14,
-                        rsq14,  # 18, 19, 20, 21 (D2)
-                    ]
-                )
-
-                lvl2_features = np.array(
-                    [
-                        alpha_m2,
-                        (bl2 + br2) / 2.0,
-                        alpha21,
-                        N21,
-                        lsq21,
-                        rsq21,  # 6, 7, 8, 9 (V)
-                        alpha22,
-                        N22,
-                        lsq22,
-                        rsq22,  # 10, 11, 12, 13 (H)
-                        alpha23,
-                        N23,
-                        lsq23,
-                        rsq23,  # 14, 15, 16, 17 (D1)
-                        alpha24,
-                        N24,
-                        lsq24,
-                        rsq24,  # 18, 19, 20, 21 (D2)
-                    ]
-                )
+                lvl1_features = cls._niqe_patch_features(m_patch1)
+                lvl2_features = cls._niqe_patch_features(m_patch2)
 
                 list_features.append(np.hstack((lvl1_features, lvl2_features)))
 

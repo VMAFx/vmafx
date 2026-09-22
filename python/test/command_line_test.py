@@ -200,7 +200,14 @@ class VmafexecCommandLineTest(MyTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.output_file_path = tempfile.NamedTemporaryFile().name
+        # `NamedTemporaryFile().name` keeps the wrapper alive only until the
+        # cyclic GC reaches it, and `_TemporaryFileCloser.__del__` then emits
+        # `ResourceWarning` from whatever test happens to be running at that
+        # moment — fatal under the ADR-1278 warnings-are-errors policy.
+        # `mkstemp()` hands back a bare fd with no finaliser attached; close
+        # it right away and let `tearDown` remove the path.
+        handle, self.output_file_path = tempfile.mkstemp()
+        os.close(handle)
 
     def tearDown(self) -> None:
         if os.path.exists(self.output_file_path):

@@ -24,9 +24,9 @@
  * contiguous source floats into two float32x4_t vectors: .val[0] =
  * even lanes [p0, p2, p4, p6], .val[1] = odd lanes.
  *
- * Invariants (rebase-sensitive; see libvmaf/src/feature/AGENTS.md):
+ * Invariants (rebase-sensitive; see core/src/feature/AGENTS.md):
  *   - Coefficients in this TU MUST equal `ms_ssim_lpf_{h,v}` in
- *     libvmaf/src/feature/ms_ssim_decimate.c and the x86 variants.
+ *     core/src/feature/ms_ssim_decimate.c and the x86 variants.
  *   - Mirror semantics MUST equal the scalar reference's
  *     `ms_ssim_decimate_mirror`.
  */

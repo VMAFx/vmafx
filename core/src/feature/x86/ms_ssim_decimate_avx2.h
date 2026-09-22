@@ -22,12 +22,12 @@
  * cross the image edge are handled by an inline scalar fallback using
  * the same `fmaf` + KBND_SYMMETRIC mirror as the scalar reference.
  *
- * Tested in libvmaf/test/test_ms_ssim_decimate.c — the byte-identity
+ * Tested in core/test/test_ms_ssim_decimate.c — the byte-identity
  * assertion runs on synthetic + real-YUV inputs.
  *
- * Invariants (rebase-sensitive; see libvmaf/src/feature/AGENTS.md):
+ * Invariants (rebase-sensitive; see core/src/feature/AGENTS.md):
  *   - Coefficients in this TU MUST equal `ms_ssim_lpf_{h,v}` in
- *     libvmaf/src/feature/ms_ssim_decimate.c.
+ *     core/src/feature/ms_ssim_decimate.c.
  *   - Mirror semantics MUST equal `ms_ssim_decimate_mirror` in the
  *     scalar reference.
  */

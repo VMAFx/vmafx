@@ -43,6 +43,11 @@ constexpr int FVIF_BY = 16;
 constexpr int FVIF_MAX_FW = 17;
 constexpr int FVIF_MAX_HFW = 8;
 
+} // namespace
+
+namespace
+{
+
 struct FloatVifStateSycl {
     bool debug;
     double vif_enhn_gain_limit;
@@ -80,369 +85,545 @@ struct FloatVifStateSycl {
     VmafDictionary *feature_name_dict;
 };
 
-static const float FVIF_COEFF_S0[FVIF_MAX_FW] = {
+} // namespace
+
+namespace
+{
+
+constexpr float FVIF_COEFF_S0[FVIF_MAX_FW] = {
     0.00745626912f, 0.0142655009f, 0.0250313189f, 0.0402820669f, 0.0594526194f, 0.0804751068f,
     0.0999041125f,  0.113746084f,  0.118773937f,  0.113746084f,  0.0999041125f, 0.0804751068f,
     0.0594526194f,  0.0402820669f, 0.0250313189f, 0.0142655009f, 0.00745626912f};
-static const float FVIF_COEFF_S1[FVIF_MAX_FW] = {
+constexpr float FVIF_COEFF_S1[FVIF_MAX_FW] = {
     0.0189780835f, 0.0558981746f, 0.120920904f,  0.192116052f, 0.224173605f, 0.192116052f,
     0.120920904f,  0.0558981746f, 0.0189780835f, 0.0f,         0.0f,         0.0f,
     0.0f,          0.0f,          0.0f,          0.0f,         0.0f};
-static const float FVIF_COEFF_S2[FVIF_MAX_FW] = {
+constexpr float FVIF_COEFF_S2[FVIF_MAX_FW] = {
     0.054488685f, 0.244201347f, 0.402619958f, 0.244201347f, 0.054488685f, 0.0f, 0.0f, 0.0f, 0.0f,
     0.0f,         0.0f,         0.0f,         0.0f,         0.0f,         0.0f, 0.0f, 0.0f};
-static const float FVIF_COEFF_S3[FVIF_MAX_FW] = {
+constexpr float FVIF_COEFF_S3[FVIF_MAX_FW] = {
     0.166378498f, 0.667243004f, 0.166378498f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
     0.0f,         0.0f,         0.0f,         0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
-static inline int fvif_fw_for(int scale)
+} // namespace
+
+namespace
 {
-    static const int fw[4] = {17, 9, 5, 3};
-    return fw[scale];
+
+using VifLocal = sycl::local_accessor<float, 1>;
+
+struct VifComputeArgs {
+    const void *reference_raw;
+    const void *distorted_raw;
+    const float *reference_float;
+    const float *distorted_float;
+    float *numerator;
+    float *denominator;
+    unsigned raw_stride;
+    unsigned float_stride;
+    unsigned width;
+    unsigned height;
+    unsigned bpc;
+    unsigned group_columns;
+    float noise_variance;
+    float gain_limit;
+    float sigma_max_inverse;
+    float coefficients[FVIF_MAX_FW];
+};
+
+struct VifScratch {
+    VifLocal reference;
+    VifLocal distorted;
+    VifLocal vertical_reference_mean;
+    VifLocal vertical_distorted_mean;
+    VifLocal vertical_reference_square;
+    VifLocal vertical_distorted_square;
+    VifLocal vertical_cross_product;
+    VifLocal numerator_subgroups;
+    VifLocal denominator_subgroups;
+};
+
+struct VifMoments {
+    float reference_mean;
+    float distorted_mean;
+    float reference_square;
+    float distorted_square;
+    float cross_product;
+};
+
+struct VifContribution {
+    float numerator;
+    float denominator;
+};
+
+} // namespace
+
+namespace
+{
+
+struct VifDecimateArgs {
+    const void *reference_raw;
+    const void *distorted_raw;
+    const float *reference_float;
+    const float *distorted_float;
+    float *reference_output;
+    float *distorted_output;
+    unsigned raw_stride;
+    unsigned float_stride;
+    unsigned output_stride;
+    unsigned output_width;
+    unsigned output_height;
+    unsigned input_width;
+    unsigned input_height;
+    unsigned bpc;
+    float coefficients[FVIF_MAX_FW];
+};
+
+struct VifSamplePair {
+    float reference;
+    float distorted;
+};
+
+} // namespace
+
+namespace
+{
+
+static inline int vif_mirror(int index, int extent)
+{
+    if (index < 0) {
+        return -index;
+    }
+    if (index >= extent) {
+        return 2 * extent - index - 2;
+    }
+    return index;
+}
+
+static inline float vif_raw_scale(unsigned bpc)
+{
+    if (bpc == 10u) {
+        return 4.0f;
+    }
+    if (bpc == 12u) {
+        return 16.0f;
+    }
+    return bpc == 16u ? 256.0f : 1.0f;
+}
+
+static inline float read_vif_raw_plane(const void *plane, unsigned stride, unsigned bpc, int y,
+                                       int x)
+{
+    const size_t row_offset = (size_t)y * stride;
+    if (bpc <= 8u) {
+        return (float)static_cast<const uint8_t *>(plane)[row_offset + (size_t)x] - 128.0f;
+    }
+    const auto *row =
+        reinterpret_cast<const uint16_t *>(static_cast<const uint8_t *>(plane) + row_offset);
+    return (float)row[x] / vif_raw_scale(bpc) - 128.0f;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline float read_vif_raw(const VifComputeArgs &args, const void *plane, int y, int x)
+{
+    return read_vif_raw_plane(plane, args.raw_stride, args.bpc, y, x);
 }
 
 template <int SCALE>
-static sycl::event launch_compute(sycl::queue &q, const void *ref_raw, const void *dis_raw,
-                                  unsigned raw_stride_bytes, const float *ref_f, const float *dis_f,
-                                  unsigned f_stride_floats, float *num_partials,
-                                  float *den_partials, unsigned width, unsigned height,
-                                  unsigned bpc, unsigned grid_x_count, float vif_sigma_nsq,
-                                  float vif_egl, float sigma_max_inv)
+static inline float read_vif_sample(const VifComputeArgs &args, const void *raw, const float *plane,
+                                    int y, int x)
 {
-    constexpr int FW = (SCALE == 0) ? 17 : (SCALE == 1) ? 9 : (SCALE == 2) ? 5 : 3;
-    constexpr int HFW = FW / 2;
-    constexpr int MAX_TILE_W = FVIF_BX + 2 * FVIF_MAX_HFW;
-    const float *coeff = (SCALE == 0) ? FVIF_COEFF_S0 :
-                         (SCALE == 1) ? FVIF_COEFF_S1 :
-                         (SCALE == 2) ? FVIF_COEFF_S2 :
-                                        FVIF_COEFF_S3;
+    if constexpr (SCALE == 0) {
+        return read_vif_raw(args, raw, y, x);
+    }
+    return plane[(size_t)y * args.float_stride + (size_t)x];
+}
 
-    const size_t global_x = ((static_cast<size_t>(width) + FVIF_BX - 1) / FVIF_BX) * FVIF_BX;
-    const size_t global_y = ((static_cast<size_t>(height) + FVIF_BY - 1) / FVIF_BY) * FVIF_BY;
-    const unsigned e_w = width;
-    const unsigned e_h = height;
-    const unsigned e_bpc = bpc;
-    const unsigned e_raw_stride = raw_stride_bytes;
-    const unsigned e_f_stride = f_stride_floats;
-    const unsigned e_grid_x = grid_x_count;
-    const float e_nsq = vif_sigma_nsq;
-    const float e_egl = vif_egl;
-    const float e_sigma_max_inv = sigma_max_inv;
-    const void *e_ref_raw = ref_raw;
-    const void *e_dis_raw = dis_raw;
-    const float *e_ref_f = ref_f;
-    const float *e_dis_f = dis_f;
-    float *e_num = num_partials;
-    float *e_den = den_partials;
+} // namespace
 
-    /* Local copy of filter coeffs into a plain array for kernel
-     * capture (sycl can't capture pointers to host-only static data). */
-    float local_coeff[FVIF_MAX_FW];
-    for (int i = 0; i < FVIF_MAX_FW; i++)
-        local_coeff[i] = coeff[i];
+namespace
+{
 
-    return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 1> const s_ref(sycl::range<1>(MAX_TILE_W * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> const s_dis(sycl::range<1>(MAX_TILE_W * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> const s_v_mu1(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> const s_v_mu2(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> const s_v_xx(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> const s_v_yy(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> const s_v_xy(sycl::range<1>(FVIF_BY * MAX_TILE_W), cgh);
-        sycl::local_accessor<float, 1> const s_num_warps(sycl::range<1>(FVIF_BX * FVIF_BY / 32),
-                                                         cgh);
-        sycl::local_accessor<float, 1> const s_den_warps(sycl::range<1>(FVIF_BX * FVIF_BY / 32),
-                                                         cgh);
-        cgh.parallel_for(
-            sycl::nd_range<2>(sycl::range<2>(global_y, global_x), sycl::range<2>(FVIF_BY, FVIF_BX)),
-            [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                const int gx = (int)item.get_global_id(1);
-                const int gy = (int)item.get_global_id(0);
-                const int lx = (int)item.get_local_id(1);
-                const int ly = (int)item.get_local_id(0);
-                const unsigned lid = (unsigned)(ly * FVIF_BX + lx);
-                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
-                const int tile_w = FVIF_BX + 2 * HFW;
-                const int tile_h = FVIF_BY + 2 * HFW;
-                const int tile_oy = (int)(item.get_group(0) * FVIF_BY) - HFW;
-                const int tile_ox = (int)(item.get_group(1) * FVIF_BX) - HFW;
-                const int tile_elems = tile_h * tile_w;
-                const bool is_raw = (SCALE == 0);
+template <int SCALE>
+static inline void load_vif_tile(sycl::nd_item<2> item, const VifComputeArgs &args,
+                                 const VifScratch &scratch)
+{
+    constexpr int width = SCALE == 0 ? 17 : SCALE == 1 ? 9 : SCALE == 2 ? 5 : 3;
+    constexpr int half_width = width / 2;
+    constexpr size_t maximum_tile_width = FVIF_BX + 2 * FVIF_MAX_HFW;
+    const int tile_width = FVIF_BX + 2 * half_width;
+    const int tile_height = FVIF_BY + 2 * half_width;
+    const int origin_y = (int)(item.get_group(0) * FVIF_BY) - half_width;
+    const int origin_x = (int)(item.get_group(1) * FVIF_BX) - half_width;
+    const int local = (int)(item.get_local_id(0) * FVIF_BX + item.get_local_id(1));
+    for (int offset = local; offset < tile_height * tile_width; offset += FVIF_BX * FVIF_BY) {
+        const int tile_y = offset / tile_width;
+        const int tile_x = offset - tile_y * tile_width;
+        const int y = vif_mirror(origin_y + tile_y, (int)args.height);
+        const int x = vif_mirror(origin_x + tile_x, (int)args.width);
+        const size_t index = (size_t)tile_y * maximum_tile_width + (size_t)tile_x;
+        scratch.reference[index] =
+            read_vif_sample<SCALE>(args, args.reference_raw, args.reference_float, y, x);
+        scratch.distorted[index] =
+            read_vif_sample<SCALE>(args, args.distorted_raw, args.distorted_float, y, x);
+    }
+}
 
-                auto mirror_v = [](int idx, int sup) -> int {
-                    if (idx < 0)
-                        return -idx;
-                    if (idx >= sup)
-                        return 2 * sup - idx - 2;
-                    return idx;
-                };
-                auto mirror_h = [](int idx, int sup) -> int {
-                    if (idx < 0)
-                        return -idx;
-                    if (idx >= sup)
-                        return 2 * sup - idx - 2; /* AVX2 border-path mirror */
-                    return idx;
-                };
+} // namespace
 
-                auto read_raw = [&](const void *plane, int y, int x) -> float {
-                    if (e_bpc <= 8u) {
-                        return (float)static_cast<const uint8_t *>(plane)[y * e_raw_stride + x] -
-                               128.0f;
-                    }
-                    const uint16_t v = reinterpret_cast<const uint16_t *>(
-                        static_cast<const uint8_t *>(plane) + y * e_raw_stride)[x];
-                    float scaler = 1.0f;
-                    if (e_bpc == 10u) {
-                        scaler = 4.0f;
-                    } else if (e_bpc == 12u) {
-                        scaler = 16.0f;
-                    } else if (e_bpc == 16u) {
-                        scaler = 256.0f;
-                    }
-                    return (float)v / scaler - 128.0f;
-                };
+namespace
+{
 
-                /* Phase 1: tile load. */
-                for (int i = (int)lid; i < tile_elems; i += FVIF_BX * FVIF_BY) {
-                    const int tr = i / tile_w;
-                    const int tc = i - tr * tile_w;
-                    const int py = mirror_v(tile_oy + tr, (int)e_h);
-                    const int px = mirror_h(tile_ox + tc, (int)e_w);
-                    float r;
-                    float d;
-                    if (is_raw) {
-                        r = read_raw(e_ref_raw, py, px);
-                        d = read_raw(e_dis_raw, py, px);
-                    } else {
-                        r = e_ref_f[py * e_f_stride + px];
-                        d = e_dis_f[py * e_f_stride + px];
-                    }
-                    s_ref[tr * MAX_TILE_W + tc] = r;
-                    s_dis[tr * MAX_TILE_W + tc] = d;
-                }
-                item.barrier(sycl::access::fence_space::local_space);
+template <int SCALE>
+static inline VifMoments vertical_vif_moments(const VifComputeArgs &args, const VifScratch &scratch,
+                                              int row, int column)
+{
+    constexpr int width = SCALE == 0 ? 17 : SCALE == 1 ? 9 : SCALE == 2 ? 5 : 3;
+    constexpr int maximum_tile_width = FVIF_BX + 2 * FVIF_MAX_HFW;
+    VifMoments moments{};
+    for (int tap = 0; tap < width; ++tap) {
+        const float coefficient = args.coefficients[tap];
+        const size_t index = (size_t)(row + tap) * maximum_tile_width + (size_t)column;
+        const float reference = scratch.reference[index];
+        const float distorted = scratch.distorted[index];
+        moments.reference_mean += coefficient * reference;
+        moments.distorted_mean += coefficient * distorted;
+        moments.reference_square += coefficient * (reference * reference);
+        moments.distorted_square += coefficient * (distorted * distorted);
+        moments.cross_product += coefficient * (reference * distorted);
+    }
+    return moments;
+}
 
-                /* Phase 2: vertical filter for WG_Y rows × tile_w cols. */
-                const int vert_total = FVIF_BY * tile_w;
-                for (int i = (int)lid; i < vert_total; i += FVIF_BX * FVIF_BY) {
-                    const int r = i / tile_w;
-                    const int c = i - r * tile_w;
-                    float a_mu1 = 0.0f, a_mu2 = 0.0f, a_xx = 0.0f, a_yy = 0.0f, a_xy = 0.0f;
-#pragma unroll
-                    for (int k = 0; k < FW; k++) {
-                        const float c_k = local_coeff[k];
-                        const float ref_v = s_ref[(r + k) * MAX_TILE_W + c];
-                        const float dis_v = s_dis[(r + k) * MAX_TILE_W + c];
-                        a_mu1 += c_k * ref_v;
-                        a_mu2 += c_k * dis_v;
-                        a_xx += c_k * (ref_v * ref_v);
-                        a_yy += c_k * (dis_v * dis_v);
-                        a_xy += c_k * (ref_v * dis_v);
-                    }
-                    s_v_mu1[r * MAX_TILE_W + c] = a_mu1;
-                    s_v_mu2[r * MAX_TILE_W + c] = a_mu2;
-                    s_v_xx[r * MAX_TILE_W + c] = a_xx;
-                    s_v_yy[r * MAX_TILE_W + c] = a_yy;
-                    s_v_xy[r * MAX_TILE_W + c] = a_xy;
-                }
-                item.barrier(sycl::access::fence_space::local_space);
+} // namespace
 
-                /* Phase 3: horizontal filter + vif_stat. */
-                float my_num = 0.0f;
-                float my_den = 0.0f;
-                if (valid) {
-                    float mu1 = 0.0f, mu2 = 0.0f, xx = 0.0f, yy = 0.0f, xy = 0.0f;
-#pragma unroll
-                    for (int k = 0; k < FW; k++) {
-                        const float c_k = local_coeff[k];
-                        mu1 += c_k * s_v_mu1[ly * MAX_TILE_W + (lx + k)];
-                        mu2 += c_k * s_v_mu2[ly * MAX_TILE_W + (lx + k)];
-                        xx += c_k * s_v_xx[ly * MAX_TILE_W + (lx + k)];
-                        yy += c_k * s_v_yy[ly * MAX_TILE_W + (lx + k)];
-                        xy += c_k * s_v_xy[ly * MAX_TILE_W + (lx + k)];
-                    }
-                    const float eps = 1.0e-10f;
-                    /* Captured from the extractor's options; these used to be
-                     * hardcoded to the defaults, silently ignoring every
-                     * non-default value. ADR-1217. */
-                    const float vif_sigma_nsq = e_nsq;
-                    const float vif_egl = e_egl;
-                    const float sigma_max_inv = e_sigma_max_inv;
+namespace
+{
 
-                    float sigma1_sq = xx - mu1 * mu1;
-                    float sigma2_sq = yy - mu2 * mu2;
-                    float const sigma12 = xy - mu1 * mu2;
-                    sigma1_sq = sycl::fmax(sigma1_sq, 0.0f);
-                    sigma2_sq = sycl::fmax(sigma2_sq, 0.0f);
-                    float g = sigma12 / (sigma1_sq + eps);
-                    float sv_sq = sigma2_sq - g * sigma12;
-                    if (sigma1_sq < eps) {
-                        g = 0.0f;
-                        sv_sq = sigma2_sq;
-                        sigma1_sq = 0.0f;
-                    }
-                    if (sigma2_sq < eps) {
-                        g = 0.0f;
-                        sv_sq = 0.0f;
-                    }
-                    if (g < 0.0f) {
-                        sv_sq = sigma2_sq;
-                        g = 0.0f;
-                    }
-                    sv_sq = sycl::fmax(sv_sq, eps);
-                    g = sycl::fmin(g, vif_egl);
+template <int SCALE>
+static inline void filter_vif_vertical(sycl::nd_item<2> item, const VifComputeArgs &args,
+                                       const VifScratch &scratch)
+{
+    constexpr int width = SCALE == 0 ? 17 : SCALE == 1 ? 9 : SCALE == 2 ? 5 : 3;
+    constexpr int half_width = width / 2;
+    constexpr int maximum_tile_width = FVIF_BX + 2 * FVIF_MAX_HFW;
+    const int tile_width = FVIF_BX + 2 * half_width;
+    const int local = (int)(item.get_local_id(0) * FVIF_BX + item.get_local_id(1));
+    for (int offset = local; offset < FVIF_BY * tile_width; offset += FVIF_BX * FVIF_BY) {
+        const int row = offset / tile_width;
+        const int column = offset - row * tile_width;
+        const VifMoments moments = vertical_vif_moments<SCALE>(args, scratch, row, column);
+        const size_t index = (size_t)row * maximum_tile_width + (size_t)column;
+        scratch.vertical_reference_mean[index] = moments.reference_mean;
+        scratch.vertical_distorted_mean[index] = moments.distorted_mean;
+        scratch.vertical_reference_square[index] = moments.reference_square;
+        scratch.vertical_distorted_square[index] = moments.distorted_square;
+        scratch.vertical_cross_product[index] = moments.cross_product;
+    }
+}
 
-                    float num_val =
-                        sycl::log2(1.0f + (g * g * sigma1_sq) / (sv_sq + vif_sigma_nsq));
-                    float den_val = sycl::log2(1.0f + sigma1_sq / vif_sigma_nsq);
-                    if (sigma12 < 0.0f)
-                        num_val = 0.0f;
-                    if (sigma1_sq < vif_sigma_nsq) {
-                        num_val = 1.0f - sigma2_sq * sigma_max_inv;
-                        den_val = 1.0f;
-                    }
-                    my_num = num_val;
-                    my_den = den_val;
-                }
+} // namespace
 
-                /* Phase 4: subgroup + cross-subgroup reduction. */
-                sycl::sub_group const sg = item.get_sub_group();
-                const float wn = sycl::reduce_over_group(sg, my_num, sycl::plus<float>{});
-                const float wd = sycl::reduce_over_group(sg, my_den, sycl::plus<float>{});
-                const uint32_t sg_id = sg.get_group_linear_id();
-                const uint32_t sg_lid = sg.get_local_linear_id();
-                const uint32_t n_sg = sg.get_group_linear_range();
-                if (sg_lid == 0) {
-                    s_num_warps[sg_id] = wn;
-                    s_den_warps[sg_id] = wd;
-                }
-                item.barrier(sycl::access::fence_space::local_space);
-                if (lid == 0) {
-                    float total_n = 0.0f;
-                    float total_d = 0.0f;
-                    for (uint32_t i = 0; i < n_sg; i++) {
-                        total_n += s_num_warps[i];
-                        total_d += s_den_warps[i];
-                    }
-                    const size_t wg_idx = item.get_group(0) * e_grid_x + item.get_group(1);
-                    e_num[wg_idx] = total_n;
-                    e_den[wg_idx] = total_d;
-                }
-            });
+namespace
+{
+
+template <int SCALE>
+static inline VifMoments horizontal_vif_moments(sycl::nd_item<2> item, const VifComputeArgs &args,
+                                                const VifScratch &scratch)
+{
+    constexpr int width = SCALE == 0 ? 17 : SCALE == 1 ? 9 : SCALE == 2 ? 5 : 3;
+    constexpr int maximum_tile_width = FVIF_BX + 2 * FVIF_MAX_HFW;
+    const size_t row = item.get_local_id(0) * maximum_tile_width;
+    const size_t column = item.get_local_id(1);
+    VifMoments moments{};
+    for (int tap = 0; tap < width; ++tap) {
+        const float coefficient = args.coefficients[tap];
+        const size_t index = row + column + (size_t)tap;
+        moments.reference_mean += coefficient * scratch.vertical_reference_mean[index];
+        moments.distorted_mean += coefficient * scratch.vertical_distorted_mean[index];
+        moments.reference_square += coefficient * scratch.vertical_reference_square[index];
+        moments.distorted_square += coefficient * scratch.vertical_distorted_square[index];
+        moments.cross_product += coefficient * scratch.vertical_cross_product[index];
+    }
+    return moments;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline VifContribution vif_contribution(const VifComputeArgs &args,
+                                               const VifMoments &moments)
+{
+    constexpr float epsilon = 1.0e-10f;
+    float reference_variance =
+        moments.reference_square - moments.reference_mean * moments.reference_mean;
+    float distorted_variance =
+        moments.distorted_square - moments.distorted_mean * moments.distorted_mean;
+    const float covariance =
+        moments.cross_product - moments.reference_mean * moments.distorted_mean;
+    reference_variance = sycl::fmax(reference_variance, 0.0f);
+    distorted_variance = sycl::fmax(distorted_variance, 0.0f);
+    float gain = covariance / (reference_variance + epsilon);
+    float residual_variance = distorted_variance - gain * covariance;
+    if (reference_variance < epsilon) {
+        gain = 0.0f;
+        residual_variance = distorted_variance;
+        reference_variance = 0.0f;
+    }
+    if (distorted_variance < epsilon) {
+        gain = 0.0f;
+        residual_variance = 0.0f;
+    }
+    if (gain < 0.0f) {
+        residual_variance = distorted_variance;
+        gain = 0.0f;
+    }
+    residual_variance = sycl::fmax(residual_variance, epsilon);
+    gain = sycl::fmin(gain, args.gain_limit);
+    VifContribution result = {
+        .numerator = sycl::log2(1.0f + (gain * gain * reference_variance) /
+                                           (residual_variance + args.noise_variance)),
+        .denominator = sycl::log2(1.0f + reference_variance / args.noise_variance),
+    };
+    if (covariance < 0.0f) {
+        result.numerator = 0.0f;
+    }
+    if (reference_variance < args.noise_variance) {
+        result.numerator = 1.0f - distorted_variance * args.sigma_max_inverse;
+        result.denominator = 1.0f;
+    }
+    return result;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline void reduce_vif_group(sycl::nd_item<2> item, const VifComputeArgs &args,
+                                    const VifScratch &scratch, VifContribution value)
+{
+    sycl::sub_group const subgroup = item.get_sub_group();
+    const float numerator = sycl::reduce_over_group(subgroup, value.numerator, sycl::plus<float>{});
+    const float denominator =
+        sycl::reduce_over_group(subgroup, value.denominator, sycl::plus<float>{});
+    const uint32_t subgroup_id = subgroup.get_group_linear_id();
+    if (subgroup.get_local_linear_id() == 0) {
+        scratch.numerator_subgroups[subgroup_id] = numerator;
+        scratch.denominator_subgroups[subgroup_id] = denominator;
+    }
+    item.barrier(sycl::access::fence_space::local_space);
+    const size_t local = item.get_local_id(0) * FVIF_BX + item.get_local_id(1);
+    if (local != 0) {
+        return;
+    }
+    float numerator_total = 0.0f;
+    float denominator_total = 0.0f;
+    for (uint32_t group = 0; group < subgroup.get_group_linear_range(); ++group) {
+        numerator_total += scratch.numerator_subgroups[group];
+        denominator_total += scratch.denominator_subgroups[group];
+    }
+    const size_t index = item.get_group(0) * args.group_columns + item.get_group(1);
+    args.numerator[index] = numerator_total;
+    args.denominator[index] = denominator_total;
+}
+
+} // namespace
+
+namespace
+{
+
+template <int SCALE> static constexpr const float *vif_coefficients()
+{
+    if constexpr (SCALE == 0) {
+        return FVIF_COEFF_S0;
+    }
+    if constexpr (SCALE == 1) {
+        return FVIF_COEFF_S1;
+    }
+    if constexpr (SCALE == 2) {
+        return FVIF_COEFF_S2;
+    }
+    return FVIF_COEFF_S3;
+}
+
+} // namespace
+
+namespace
+{
+
+static VifScratch make_vif_scratch(sycl::handler &handler)
+{
+    constexpr size_t tile_width = FVIF_BX + 2 * FVIF_MAX_HFW;
+    const sycl::range<1> tile_range(tile_width * tile_width);
+    const sycl::range<1> vertical_range((size_t)FVIF_BY * tile_width);
+    const sycl::range<1> subgroup_range((size_t)FVIF_BX * FVIF_BY / 32);
+    return {.reference = VifLocal(tile_range, handler),
+            .distorted = VifLocal(tile_range, handler),
+            .vertical_reference_mean = VifLocal(vertical_range, handler),
+            .vertical_distorted_mean = VifLocal(vertical_range, handler),
+            .vertical_reference_square = VifLocal(vertical_range, handler),
+            .vertical_distorted_square = VifLocal(vertical_range, handler),
+            .vertical_cross_product = VifLocal(vertical_range, handler),
+            .numerator_subgroups = VifLocal(subgroup_range, handler),
+            .denominator_subgroups = VifLocal(subgroup_range, handler)};
+}
+
+} // namespace
+
+namespace
+{
+
+template <int SCALE>
+static sycl::event
+launch_compute(sycl::queue &queue, const void *reference_raw, const void *distorted_raw,
+               unsigned raw_stride, const float *reference_float, const float *distorted_float,
+               unsigned float_stride, float *numerator, float *denominator, unsigned width,
+               unsigned height, unsigned bpc, unsigned group_columns, float noise_variance,
+               float gain_limit, float sigma_max_inverse)
+{
+    VifComputeArgs args = {.reference_raw = reference_raw,
+                           .distorted_raw = distorted_raw,
+                           .reference_float = reference_float,
+                           .distorted_float = distorted_float,
+                           .numerator = numerator,
+                           .denominator = denominator,
+                           .raw_stride = raw_stride,
+                           .float_stride = float_stride,
+                           .width = width,
+                           .height = height,
+                           .bpc = bpc,
+                           .group_columns = group_columns,
+                           .noise_variance = noise_variance,
+                           .gain_limit = gain_limit,
+                           .sigma_max_inverse = sigma_max_inverse,
+                           .coefficients = {}};
+    const float *coefficients = vif_coefficients<SCALE>();
+    for (int tap = 0; tap < FVIF_MAX_FW; ++tap) {
+        args.coefficients[tap] = coefficients[tap];
+    }
+    const size_t global_x = ((size_t)width + FVIF_BX - 1) / FVIF_BX * FVIF_BX;
+    const size_t global_y = ((size_t)height + FVIF_BY - 1) / FVIF_BY * FVIF_BY;
+    return queue.submit([&](sycl::handler &handler) {
+        const VifScratch scratch = make_vif_scratch(handler);
+        const sycl::nd_range<2> range({global_y, global_x}, {FVIF_BY, FVIF_BX});
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
+            load_vif_tile<SCALE>(item, args, scratch);
+            item.barrier(sycl::access::fence_space::local_space);
+            filter_vif_vertical<SCALE>(item, args, scratch);
+            item.barrier(sycl::access::fence_space::local_space);
+            VifContribution value{};
+            if (item.get_global_id(1) < args.width && item.get_global_id(0) < args.height) {
+                value = vif_contribution(args, horizontal_vif_moments<SCALE>(item, args, scratch));
+            }
+            reduce_vif_group(item, args, scratch, value);
+        });
     });
+}
+
+} // namespace
+
+namespace
+{
+
+template <int SCALE>
+static inline VifSamplePair read_decimate_pair(const VifDecimateArgs &args, int y, int x)
+{
+    if constexpr (SCALE == 1) {
+        return {
+            .reference = read_vif_raw_plane(args.reference_raw, args.raw_stride, args.bpc, y, x),
+            .distorted = read_vif_raw_plane(args.distorted_raw, args.raw_stride, args.bpc, y, x)};
+    }
+    const size_t index = (size_t)y * args.float_stride + (size_t)x;
+    return {.reference = args.reference_float[index], .distorted = args.distorted_float[index]};
 }
 
 template <int SCALE>
-static sycl::event launch_decimate(sycl::queue &q, const void *ref_raw, const void *dis_raw,
-                                   unsigned raw_stride_bytes, const float *ref_f,
-                                   const float *dis_f, unsigned f_stride_floats, float *ref_out,
-                                   float *dis_out, unsigned out_stride_floats, unsigned out_w,
-                                   unsigned out_h, unsigned in_w, unsigned in_h, unsigned bpc)
+static inline VifSamplePair decimate_vif_pixel(const VifDecimateArgs &args, int x, int y)
 {
-    constexpr int FW = (SCALE == 1) ? 9 : (SCALE == 2) ? 5 : 3;
-    constexpr int HFW = FW / 2;
-    const float *coeff = (SCALE == 1) ? FVIF_COEFF_S1 :
-                         (SCALE == 2) ? FVIF_COEFF_S2 :
-                                        FVIF_COEFF_S3;
+    constexpr int width = SCALE == 1 ? 9 : SCALE == 2 ? 5 : 3;
+    constexpr int half_width = width / 2;
+    VifSamplePair result{};
+    for (int horizontal_tap = 0; horizontal_tap < width; ++horizontal_tap) {
+        const float horizontal_coefficient = args.coefficients[horizontal_tap];
+        const int source_x = vif_mirror(2 * x - half_width + horizontal_tap, (int)args.input_width);
+        VifSamplePair vertical{};
+        for (int vertical_tap = 0; vertical_tap < width; ++vertical_tap) {
+            const float vertical_coefficient = args.coefficients[vertical_tap];
+            const int source_y =
+                vif_mirror(2 * y - half_width + vertical_tap, (int)args.input_height);
+            const VifSamplePair sample = read_decimate_pair<SCALE>(args, source_y, source_x);
+            vertical.reference += vertical_coefficient * sample.reference;
+            vertical.distorted += vertical_coefficient * sample.distorted;
+        }
+        result.reference += horizontal_coefficient * vertical.reference;
+        result.distorted += horizontal_coefficient * vertical.distorted;
+    }
+    return result;
+}
 
-    const size_t global_x = ((static_cast<size_t>(out_w) + FVIF_BX - 1) / FVIF_BX) * FVIF_BX;
-    const size_t global_y = ((static_cast<size_t>(out_h) + FVIF_BY - 1) / FVIF_BY) * FVIF_BY;
-    const unsigned e_out_w = out_w;
-    const unsigned e_out_h = out_h;
-    const unsigned e_in_w = in_w;
-    const unsigned e_in_h = in_h;
-    const unsigned e_bpc = bpc;
-    const unsigned e_raw_stride = raw_stride_bytes;
-    const unsigned e_f_stride = f_stride_floats;
-    const unsigned e_out_stride = out_stride_floats;
-    const void *e_ref_raw = ref_raw;
-    const void *e_dis_raw = dis_raw;
-    const float *e_ref_f = ref_f;
-    const float *e_dis_f = dis_f;
-    float *e_ref_out = ref_out;
-    float *e_dis_out = dis_out;
+} // namespace
 
-    float local_coeff[FVIF_MAX_FW];
-    for (int i = 0; i < FVIF_MAX_FW; i++)
-        local_coeff[i] = coeff[i];
+namespace
+{
 
-    return q.submit([&](sycl::handler &cgh) {
-        cgh.parallel_for(
-            sycl::nd_range<2>(sycl::range<2>(global_y, global_x), sycl::range<2>(FVIF_BY, FVIF_BX)),
-            [=](sycl::nd_item<2> item) {
-                const int gx = (int)item.get_global_id(1);
-                const int gy = (int)item.get_global_id(0);
-                if (std::cmp_greater_equal(gx, e_out_w) || std::cmp_greater_equal(gy, e_out_h))
-                    return;
-                const int in_x = 2 * gx;
-                const int in_y = 2 * gy;
-                const bool is_raw = (SCALE == 1);
-
-                auto mirror_v = [](int idx, int sup) -> int {
-                    if (idx < 0)
-                        return -idx;
-                    if (idx >= sup)
-                        return 2 * sup - idx - 2;
-                    return idx;
-                };
-                auto mirror_h = [](int idx, int sup) -> int {
-                    if (idx < 0)
-                        return -idx;
-                    if (idx >= sup)
-                        return 2 * sup - idx - 2; /* AVX2 border-path mirror */
-                    return idx;
-                };
-                auto read_raw = [&](const void *plane, int y, int x) -> float {
-                    if (e_bpc <= 8u) {
-                        return (float)static_cast<const uint8_t *>(plane)[y * e_raw_stride + x] -
-                               128.0f;
-                    }
-                    const uint16_t v = reinterpret_cast<const uint16_t *>(
-                        static_cast<const uint8_t *>(plane) + y * e_raw_stride)[x];
-                    float scaler = 1.0f;
-                    if (e_bpc == 10u) {
-                        scaler = 4.0f;
-                    } else if (e_bpc == 12u) {
-                        scaler = 16.0f;
-                    } else if (e_bpc == 16u) {
-                        scaler = 256.0f;
-                    }
-                    return (float)v / scaler - 128.0f;
-                };
-
-                float acc_ref = 0.0f, acc_dis = 0.0f;
-#pragma unroll
-                for (int kj = 0; kj < FW; kj++) {
-                    const float c_j = local_coeff[kj];
-                    const int px = mirror_h(in_x - HFW + kj, (int)e_in_w);
-                    float v_ref = 0.0f, v_dis = 0.0f;
-#pragma unroll
-                    for (int ki = 0; ki < FW; ki++) {
-                        const float c_i = local_coeff[ki];
-                        const int py = mirror_v(in_y - HFW + ki, (int)e_in_h);
-                        float r;
-                        float d;
-                        if (is_raw) {
-                            r = read_raw(e_ref_raw, py, px);
-                            d = read_raw(e_dis_raw, py, px);
-                        } else {
-                            r = e_ref_f[py * e_f_stride + px];
-                            d = e_dis_f[py * e_f_stride + px];
-                        }
-                        v_ref += c_i * r;
-                        v_dis += c_i * d;
-                    }
-                    acc_ref += c_j * v_ref;
-                    acc_dis += c_j * v_dis;
-                }
-                e_ref_out[gy * e_out_stride + gx] = acc_ref;
-                e_dis_out[gy * e_out_stride + gx] = acc_dis;
-            });
+template <int SCALE>
+static sycl::event
+launch_decimate(sycl::queue &queue, const void *reference_raw, const void *distorted_raw,
+                unsigned raw_stride, const float *reference_float, const float *distorted_float,
+                unsigned float_stride, float *reference_output, float *distorted_output,
+                unsigned output_stride, unsigned output_width, unsigned output_height,
+                unsigned input_width, unsigned input_height, unsigned bpc)
+{
+    VifDecimateArgs args = {.reference_raw = reference_raw,
+                            .distorted_raw = distorted_raw,
+                            .reference_float = reference_float,
+                            .distorted_float = distorted_float,
+                            .reference_output = reference_output,
+                            .distorted_output = distorted_output,
+                            .raw_stride = raw_stride,
+                            .float_stride = float_stride,
+                            .output_stride = output_stride,
+                            .output_width = output_width,
+                            .output_height = output_height,
+                            .input_width = input_width,
+                            .input_height = input_height,
+                            .bpc = bpc,
+                            .coefficients = {}};
+    const float *coefficients = vif_coefficients<SCALE>();
+    for (int tap = 0; tap < FVIF_MAX_FW; ++tap) {
+        args.coefficients[tap] = coefficients[tap];
+    }
+    const size_t global_x = ((size_t)output_width + FVIF_BX - 1) / FVIF_BX * FVIF_BX;
+    const size_t global_y = ((size_t)output_height + FVIF_BY - 1) / FVIF_BY * FVIF_BY;
+    return queue.submit([&](sycl::handler &handler) {
+        const sycl::nd_range<2> range({global_y, global_x}, {FVIF_BY, FVIF_BX});
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
+            const size_t x = item.get_global_id(1);
+            const size_t y = item.get_global_id(0);
+            if (x >= args.output_width || y >= args.output_height) {
+                return;
+            }
+            const VifSamplePair value = decimate_vif_pixel<SCALE>(args, (int)x, (int)y);
+            const size_t index = y * args.output_stride + x;
+            args.reference_output[index] = value.reference;
+            args.distorted_output[index] = value.distorted;
+        });
     });
 }
 
-template <typename T>
-static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned h)
+} // namespace
+
+namespace
+{
+
+template <typename T> static void copy_y_plane(VmafPicture *pic, void *dst, unsigned w, unsigned h)
 {
     const T *src = static_cast<const T *>(pic->data[0]);
     T *out = static_cast<T *>(dst);
@@ -455,9 +636,10 @@ static void copy_y_plane(const VmafPicture *pic, void *dst, unsigned w, unsigned
     }
 }
 
-} /* anonymous namespace */
+} // namespace
 
-extern "C" {
+namespace
+{
 
 static const VmafOption options_float_vif_sycl[] = {
     {.name = "debug",
@@ -466,8 +648,8 @@ static const VmafOption options_float_vif_sycl[] = {
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false}},
     {.name = "vif_enhn_gain_limit",
-     .alias = "egl",
      .help = "enhancement gain (>=1.0)",
+     .alias = "egl",
      .offset = offsetof(FloatVifStateSycl, vif_enhn_gain_limit),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 100.0},
@@ -483,8 +665,8 @@ static const VmafOption options_float_vif_sycl[] = {
      .max = 4.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "vif_sigma_nsq",
-     .alias = "snsq",
      .help = "neural noise variance",
+     .alias = "snsq",
      .offset = offsetof(FloatVifStateSycl, vif_sigma_nsq),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 2.0},
@@ -492,268 +674,346 @@ static const VmafOption options_float_vif_sycl[] = {
      .max = 5.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "vif_skip_scale0",
-     .alias = "ssclz",
      .help = "when set, skip scale 0 calculations",
+     .alias = "ssclz",
      .offset = offsetof(FloatVifStateSycl, vif_skip_scale0),
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false},
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {nullptr}};
+    {.name = nullptr}};
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
-// entry points use C-style `static` rather than an anonymous namespace because
-// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
-// the bottom of this file, which the C ABI consumes through the
-// function-pointer types in `feature_extractor.h`. A namespace cannot appear
-// inside this linkage specification at all. Same band, same reason, as
-// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
-// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+} // namespace
+
+namespace
 {
-    (void)pix_fmt;
-    auto *s = static_cast<FloatVifStateSycl *>(fex->priv);
-    s->width = w;
-    s->height = h;
-    s->bpc = bpc;
-    s->has_pending = false;
 
-    if (s->vif_kernelscale != 1.0)
+static int configure_vif_state(FloatVifStateSycl &state, VmafSyclState *sycl_state, unsigned bpc,
+                               unsigned width, unsigned height)
+{
+    state.width = width;
+    state.height = height;
+    state.bpc = bpc;
+    state.has_pending = false;
+    if (state.vif_kernelscale != 1.0 || sycl_state == nullptr) {
         return -EINVAL;
-
-    /* Cross-backend parity with the CPU floor (ADR-0214 places=4). The
-     * four-scale ladder halves the working dimension once per scale, so the
-     * binding constraint is scale 3 -- at the default kernelscale the minimum
-     * is 16, not 8. This backend previously had no dimension floor at all, admitting the
-     * 8..15px range that walks the reflect-101 mirror out of the plane at
-     * scale 3 (Netflix/vmaf#1582, the same defect fixed on the CPU path).
-     * vif_get_min_dim() is the single source of truth shared with
-     * float_vif.c; see its derivation in vif_tools.c. */
-    const int vif_min_dim = vif_get_min_dim((float)s->vif_kernelscale);
-    if (w < (unsigned)vif_min_dim || h < (unsigned)vif_min_dim) {
+    }
+    /* The four-scale ladder makes scale 3 the binding dimension floor. */
+    const int minimum_dimension = vif_get_min_dim((float)state.vif_kernelscale);
+    if (std::cmp_less(width, minimum_dimension) || std::cmp_less(height, minimum_dimension)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "float_vif_sycl: width and height must be >= %d for the four-scale VIF "
                  "ladder (got %ux%u)\n",
-                 vif_min_dim, w, h);
+                 minimum_dimension, width, height);
         return -EINVAL;
     }
-
-    s->scale_w[0] = w;
-    s->scale_h[0] = h;
-    for (int i = 1; i < 4; i++) {
-        s->scale_w[i] = s->scale_w[i - 1] / 2u;
-        s->scale_h[i] = s->scale_h[i - 1] / 2u;
+    state.scale_w[0] = width;
+    state.scale_h[0] = height;
+    for (int scale = 1; scale < 4; ++scale) {
+        state.scale_w[scale] = state.scale_w[scale - 1] / 2u;
+        state.scale_h[scale] = state.scale_h[scale - 1] / 2u;
     }
-
-    if (!fex->sycl_state)
-        return -EINVAL;
-    s->sycl_state = fex->sycl_state;
-
-    const size_t bpp = (bpc <= 8) ? 1u : 2u;
-    const size_t raw_bytes = (size_t)w * h * bpp;
-    s->h_ref_raw = vmaf_sycl_malloc_host(s->sycl_state, raw_bytes);
-    s->h_dis_raw = vmaf_sycl_malloc_host(s->sycl_state, raw_bytes);
-    s->d_ref_raw = vmaf_sycl_malloc_device(s->sycl_state, raw_bytes);
-    s->d_dis_raw = vmaf_sycl_malloc_device(s->sycl_state, raw_bytes);
-
-    const size_t fbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(float);
-    s->d_ref_buf[0] = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, fbytes));
-    s->d_dis_buf[0] = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, fbytes));
-    s->d_ref_buf[1] = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, fbytes));
-    s->d_dis_buf[1] = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, fbytes));
-
-    for (int i = 0; i < 4; i++) {
-        const unsigned gx = (s->scale_w[i] + FVIF_BX - 1u) / FVIF_BX;
-        const unsigned gy = (s->scale_h[i] + FVIF_BY - 1u) / FVIF_BY;
-        s->wg_count[i] = gx * gy;
-        const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
-        s->d_num[i] = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, pbytes));
-        s->d_den[i] = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, pbytes));
-        s->h_num[i] = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, pbytes));
-        s->h_den[i] = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, pbytes));
-    }
-
-    if (!s->h_ref_raw || !s->h_dis_raw || !s->d_ref_raw || !s->d_dis_raw || !s->d_ref_buf[0] ||
-        !s->d_dis_buf[0] || !s->d_ref_buf[1] || !s->d_dis_buf[1])
-        return -ENOMEM;
-    for (int i = 0; i < 4; i++) {
-        if (!s->d_num[i] || !s->d_den[i] || !s->h_num[i] || !s->h_den[i])
-            return -ENOMEM;
-    }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        return -ENOMEM;
+    state.sycl_state = sycl_state;
     return 0;
 }
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+} // namespace
+
+namespace
 {
-    (void)ref_pic_90;
-    (void)dist_pic_90;
-    auto *s = static_cast<FloatVifStateSycl *>(fex->priv);
-    auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
-        return -EINVAL;
-    sycl::queue &q = *qptr;
 
-    const size_t bpp = (s->bpc <= 8) ? 1u : 2u;
-    const unsigned raw_stride_bytes = (unsigned)(s->width * bpp);
-    if (s->bpc <= 8) {
-        copy_y_plane<uint8_t>(ref_pic, s->h_ref_raw, s->width, s->height);
-        copy_y_plane<uint8_t>(dist_pic, s->h_dis_raw, s->width, s->height);
+static bool allocate_vif_planes(FloatVifStateSycl &state)
+{
+    const size_t bytes_per_pixel = state.bpc <= 8 ? 1u : 2u;
+    const size_t raw_bytes = (size_t)state.width * state.height * bytes_per_pixel;
+    state.h_ref_raw = vmaf_sycl_malloc_host(state.sycl_state, raw_bytes);
+    state.h_dis_raw = vmaf_sycl_malloc_host(state.sycl_state, raw_bytes);
+    state.d_ref_raw = vmaf_sycl_malloc_device(state.sycl_state, raw_bytes);
+    state.d_dis_raw = vmaf_sycl_malloc_device(state.sycl_state, raw_bytes);
+    const size_t float_bytes = (size_t)state.scale_w[1] * state.scale_h[1] * sizeof(float);
+    for (int buffer = 0; buffer < 2; ++buffer) {
+        state.d_ref_buf[buffer] =
+            static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, float_bytes));
+        state.d_dis_buf[buffer] =
+            static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, float_bytes));
+    }
+    return state.h_ref_raw != nullptr && state.h_dis_raw != nullptr && state.d_ref_raw != nullptr &&
+           state.d_dis_raw != nullptr && state.d_ref_buf[0] != nullptr &&
+           state.d_dis_buf[0] != nullptr && state.d_ref_buf[1] != nullptr &&
+           state.d_dis_buf[1] != nullptr;
+}
+
+} // namespace
+
+namespace
+{
+
+static bool allocate_vif_partials(FloatVifStateSycl &state)
+{
+    bool allocated = true;
+    for (int scale = 0; scale < 4; ++scale) {
+        const unsigned columns = (state.scale_w[scale] + FVIF_BX - 1u) / FVIF_BX;
+        const unsigned rows = (state.scale_h[scale] + FVIF_BY - 1u) / FVIF_BY;
+        state.wg_count[scale] = columns * rows;
+        const size_t bytes = (size_t)state.wg_count[scale] * sizeof(float);
+        state.d_num[scale] = static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, bytes));
+        state.d_den[scale] = static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, bytes));
+        state.h_num[scale] = static_cast<float *>(vmaf_sycl_malloc_host(state.sycl_state, bytes));
+        state.h_den[scale] = static_cast<float *>(vmaf_sycl_malloc_host(state.sycl_state, bytes));
+        allocated = allocated && state.d_num[scale] != nullptr && state.d_den[scale] != nullptr &&
+                    state.h_num[scale] != nullptr && state.h_den[scale] != nullptr;
+    }
+    return allocated;
+}
+
+} // namespace
+
+namespace
+{
+
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned width, unsigned height)
+{
+    (void)pix_fmt;
+    auto &state = *static_cast<FloatVifStateSycl *>(fex->priv);
+    const int configure_error = configure_vif_state(state, fex->sycl_state, bpc, width, height);
+    if (configure_error != 0) {
+        return configure_error;
+    }
+    if (!allocate_vif_planes(state) || !allocate_vif_partials(state)) {
+        return -ENOMEM;
+    }
+    state.feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, &state);
+    return state.feature_name_dict == nullptr ? -ENOMEM : 0;
+}
+
+} // namespace
+
+namespace
+{
+
+static unsigned upload_vif_pictures(FloatVifStateSycl &state, sycl::queue &queue,
+                                    VmafPicture *reference, VmafPicture *distorted)
+{
+    const size_t bytes_per_pixel = state.bpc <= 8 ? 1u : 2u;
+    if (state.bpc <= 8) {
+        copy_y_plane<uint8_t>(reference, state.h_ref_raw, state.width, state.height);
+        copy_y_plane<uint8_t>(distorted, state.h_dis_raw, state.width, state.height);
     } else {
-        copy_y_plane<uint16_t>(ref_pic, s->h_ref_raw, s->width, s->height);
-        copy_y_plane<uint16_t>(dist_pic, s->h_dis_raw, s->width, s->height);
+        copy_y_plane<uint16_t>(reference, state.h_ref_raw, state.width, state.height);
+        copy_y_plane<uint16_t>(distorted, state.h_dis_raw, state.width, state.height);
     }
-    const size_t raw_bytes = (size_t)s->width * s->height * bpp;
-    q.memcpy(s->d_ref_raw, s->h_ref_raw, raw_bytes);
-    q.memcpy(s->d_dis_raw, s->h_dis_raw, raw_bytes);
+    const size_t raw_bytes = (size_t)state.width * state.height * bytes_per_pixel;
+    queue.memcpy(state.d_ref_raw, state.h_ref_raw, raw_bytes);
+    queue.memcpy(state.d_dis_raw, state.h_dis_raw, raw_bytes);
+    return (unsigned)((size_t)state.width * bytes_per_pixel);
+}
 
-    /* Reset partials. */
-    for (int i = 0; i < 4; i++) {
-        q.memset(s->d_num[i], 0, (size_t)s->wg_count[i] * sizeof(float));
-        q.memset(s->d_den[i], 0, (size_t)s->wg_count[i] * sizeof(float));
+static void reset_vif_partials(FloatVifStateSycl &state, sycl::queue &queue)
+{
+    for (int scale = 0; scale < 4; ++scale) {
+        const size_t bytes = (size_t)state.wg_count[scale] * sizeof(float);
+        queue.memset(state.d_num[scale], 0, bytes);
+        queue.memset(state.d_den[scale], 0, bytes);
     }
+}
 
-    /* vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM
-     * options; the compute kernel used to hardcode their defaults, which
-     * silently ignored every non-default value (ADR-1217).  sigma_max_inv is
-     * derived exactly as the CPU does in vif_tools.c::vif_statistic_s:
-     * powf(nsq, 2.0f) in float, divided in double, narrowed to float. */
-    const float vif_nsq_f = (float)s->vif_sigma_nsq;
-    const float vif_egl_f = (float)s->vif_enhn_gain_limit;
-    const float sigma_max_inv = (float)(std::pow((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
+} // namespace
 
-    /* Scale 0 compute. */
-    {
-        const unsigned grid_x = (s->scale_w[0] + FVIF_BX - 1u) / FVIF_BX;
-        launch_compute<0>(q, s->d_ref_raw, s->d_dis_raw, raw_stride_bytes, nullptr, nullptr,
-                          s->scale_w[0], s->d_num[0], s->d_den[0], s->scale_w[0], s->scale_h[0],
-                          s->bpc, grid_x, vif_nsq_f, vif_egl_f, sigma_max_inv);
+namespace
+{
+
+static void launch_vif_scale_zero(const FloatVifStateSycl &state, sycl::queue &queue,
+                                  unsigned raw_stride, float noise_variance, float gain_limit,
+                                  float sigma_max_inverse)
+{
+    const unsigned columns = (state.scale_w[0] + FVIF_BX - 1u) / FVIF_BX;
+    launch_compute<0>(queue, state.d_ref_raw, state.d_dis_raw, raw_stride, nullptr, nullptr,
+                      state.scale_w[0], state.d_num[0], state.d_den[0], state.scale_w[0],
+                      state.scale_h[0], state.bpc, columns, noise_variance, gain_limit,
+                      sigma_max_inverse);
+}
+
+} // namespace
+
+namespace
+{
+
+template <int SCALE>
+static void launch_vif_scaled(const FloatVifStateSycl &state, sycl::queue &queue,
+                              unsigned raw_stride, float noise_variance, float gain_limit,
+                              float sigma_max_inverse)
+{
+    constexpr int scale = SCALE;
+    const unsigned output_buffer = (scale - 1) % 2u;
+    const bool input_is_raw = scale == 1;
+    const unsigned input_buffer = output_buffer == 0 ? 1u : 0u;
+    const float *reference_input = input_is_raw ? nullptr : state.d_ref_buf[input_buffer];
+    const float *distorted_input = input_is_raw ? nullptr : state.d_dis_buf[input_buffer];
+    const unsigned input_stride = input_is_raw ? 0u : state.scale_w[scale - 1];
+    float *reference_output = state.d_ref_buf[output_buffer];
+    float *distorted_output = state.d_dis_buf[output_buffer];
+    launch_decimate<scale>(queue, state.d_ref_raw, state.d_dis_raw, raw_stride, reference_input,
+                           distorted_input, input_stride, reference_output, distorted_output,
+                           state.scale_w[scale], state.scale_w[scale], state.scale_h[scale],
+                           state.scale_w[scale - 1], state.scale_h[scale - 1], state.bpc);
+    const unsigned columns = (state.scale_w[scale] + FVIF_BX - 1u) / FVIF_BX;
+    launch_compute<scale>(queue, nullptr, nullptr, 0, reference_output, distorted_output,
+                          state.scale_w[scale], state.d_num[scale], state.d_den[scale],
+                          state.scale_w[scale], state.scale_h[scale], state.bpc, columns,
+                          noise_variance, gain_limit, sigma_max_inverse);
+}
+
+static void launch_vif_scaled_ladder(const FloatVifStateSycl &state, sycl::queue &queue,
+                                     unsigned raw_stride, float noise_variance, float gain_limit,
+                                     float sigma_max_inverse)
+{
+    launch_vif_scaled<1>(state, queue, raw_stride, noise_variance, gain_limit, sigma_max_inverse);
+    launch_vif_scaled<2>(state, queue, raw_stride, noise_variance, gain_limit, sigma_max_inverse);
+    launch_vif_scaled<3>(state, queue, raw_stride, noise_variance, gain_limit, sigma_max_inverse);
+}
+
+} // namespace
+
+namespace
+{
+
+static void download_vif_partials(FloatVifStateSycl &state, sycl::queue &queue)
+{
+    for (int scale = 0; scale < 4; ++scale) {
+        const size_t bytes = (size_t)state.wg_count[scale] * sizeof(float);
+        queue.memcpy(state.h_num[scale], state.d_num[scale], bytes);
+        queue.memcpy(state.h_den[scale], state.d_den[scale], bytes);
     }
+}
 
-    /* Scales 1, 2, 3: decimate then compute. */
-    for (int n = 1; n < 4; n++) {
-        const unsigned dst_idx = (n - 1) % 2u;
-        const bool prev_is_raw = (n == 1);
-        const float *ref_in_f =
-            prev_is_raw ? nullptr : (dst_idx == 0 ? s->d_ref_buf[1] : s->d_ref_buf[0]);
-        const float *dis_in_f =
-            prev_is_raw ? nullptr : (dst_idx == 0 ? s->d_dis_buf[1] : s->d_dis_buf[0]);
-        const unsigned in_f_stride = prev_is_raw ? 0 : s->scale_w[n - 1];
-        float *ref_out = (dst_idx == 0) ? s->d_ref_buf[0] : s->d_ref_buf[1];
-        float *dis_out = (dst_idx == 0) ? s->d_dis_buf[0] : s->d_dis_buf[1];
-        const unsigned out_stride = s->scale_w[n];
-        if (n == 1) {
-            launch_decimate<1>(q, s->d_ref_raw, s->d_dis_raw, raw_stride_bytes, ref_in_f, dis_in_f,
-                               in_f_stride, ref_out, dis_out, out_stride, s->scale_w[n],
-                               s->scale_h[n], s->scale_w[n - 1], s->scale_h[n - 1], s->bpc);
-        } else if (n == 2) {
-            launch_decimate<2>(q, s->d_ref_raw, s->d_dis_raw, raw_stride_bytes, ref_in_f, dis_in_f,
-                               in_f_stride, ref_out, dis_out, out_stride, s->scale_w[n],
-                               s->scale_h[n], s->scale_w[n - 1], s->scale_h[n - 1], s->bpc);
-        } else {
-            launch_decimate<3>(q, s->d_ref_raw, s->d_dis_raw, raw_stride_bytes, ref_in_f, dis_in_f,
-                               in_f_stride, ref_out, dis_out, out_stride, s->scale_w[n],
-                               s->scale_h[n], s->scale_w[n - 1], s->scale_h[n - 1], s->bpc);
-        }
-
-        const unsigned grid_x = (s->scale_w[n] + FVIF_BX - 1u) / FVIF_BX;
-        if (n == 1) {
-            launch_compute<1>(q, nullptr, nullptr, 0, ref_out, dis_out, s->scale_w[n], s->d_num[n],
-                              s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x, vif_nsq_f,
-                              vif_egl_f, sigma_max_inv);
-        } else if (n == 2) {
-            launch_compute<2>(q, nullptr, nullptr, 0, ref_out, dis_out, s->scale_w[n], s->d_num[n],
-                              s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x, vif_nsq_f,
-                              vif_egl_f, sigma_max_inv);
-        } else {
-            launch_compute<3>(q, nullptr, nullptr, 0, ref_out, dis_out, s->scale_w[n], s->d_num[n],
-                              s->d_den[n], s->scale_w[n], s->scale_h[n], s->bpc, grid_x, vif_nsq_f,
-                              vif_egl_f, sigma_max_inv);
-        }
+static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *reference,
+                           VmafPicture *reference_rotated, VmafPicture *distorted,
+                           VmafPicture *distorted_rotated, unsigned index)
+{
+    (void)reference_rotated;
+    (void)distorted_rotated;
+    auto &state = *static_cast<FloatVifStateSycl *>(fex->priv);
+    auto *queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state.sycl_state));
+    if (queue == nullptr) {
+        return -EINVAL;
     }
-
-    for (int i = 0; i < 4; i++) {
-        q.memcpy(s->h_num[i], s->d_num[i], (size_t)s->wg_count[i] * sizeof(float));
-        q.memcpy(s->h_den[i], s->d_den[i], (size_t)s->wg_count[i] * sizeof(float));
-    }
-
-    s->pending_index = index;
-    s->has_pending = true;
+    const unsigned raw_stride = upload_vif_pictures(state, *queue, reference, distorted);
+    reset_vif_partials(state, *queue);
+    const float noise_variance = (float)state.vif_sigma_nsq;
+    const float gain_limit = (float)state.vif_enhn_gain_limit;
+    const float sigma_max_inverse =
+        (float)(std::pow((float)state.vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
+    launch_vif_scale_zero(state, *queue, raw_stride, noise_variance, gain_limit, sigma_max_inverse);
+    launch_vif_scaled_ladder(state, *queue, raw_stride, noise_variance, gain_limit,
+                             sigma_max_inverse);
+    download_vif_partials(state, *queue);
+    state.pending_index = index;
+    state.has_pending = true;
     return 0;
 }
+
+} // namespace
+
+namespace
+{
+
+static void sum_vif_partials(const FloatVifStateSycl &state, double *scores)
+{
+    for (int scale = 0; scale < 4; ++scale) {
+        double numerator = 0.0;
+        double denominator = 0.0;
+        for (unsigned group = 0; group < state.wg_count[scale]; ++group) {
+            numerator += (double)state.h_num[scale][group];
+            denominator += (double)state.h_den[scale][group];
+        }
+        const size_t output = (size_t)scale * 2;
+        scores[output] = numerator;
+        scores[output + 1] = denominator;
+    }
+}
+
+static int append_vif_scale_scores(const FloatVifStateSycl &state, const double *scores,
+                                   unsigned index, VmafFeatureCollector *collector)
+{
+    int err = 0;
+    err |= vmaf_feature_collector_append_with_dict(
+        collector, state.feature_name_dict, "VMAF_feature_vif_scale0_score",
+        state.vif_skip_scale0 ? 0.0 : scores[0] / scores[1], index);
+    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
+                                                   "VMAF_feature_vif_scale1_score",
+                                                   scores[2] / scores[3], index);
+    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
+                                                   "VMAF_feature_vif_scale2_score",
+                                                   scores[4] / scores[5], index);
+    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
+                                                   "VMAF_feature_vif_scale3_score",
+                                                   scores[6] / scores[7], index);
+    return err;
+}
+
+} // namespace
+
+namespace
+{
+
+static int append_vif_debug_scores(const FloatVifStateSycl &state, const double *scores,
+                                   unsigned index, VmafFeatureCollector *collector)
+{
+    const double numerator =
+        (state.vif_skip_scale0 ? 0.0 : scores[0]) + scores[2] + scores[4] + scores[6];
+    const double denominator =
+        (state.vif_skip_scale0 ? 0.0 : scores[1]) + scores[3] + scores[5] + scores[7];
+    const double score = denominator == 0.0 ? 1.0 : numerator / denominator;
+    int err = 0;
+    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict, "vif", score,
+                                                   index);
+    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict, "vif_num",
+                                                   numerator, index);
+    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict, "vif_den",
+                                                   denominator, index);
+    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
+                                                   "vif_num_scale0",
+                                                   state.vif_skip_scale0 ? 0.0 : scores[0], index);
+    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
+                                                   "vif_den_scale0",
+                                                   state.vif_skip_scale0 ? -1.0 : scores[1], index);
+    const char *const names[6] = {"vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
+                                  "vif_den_scale2", "vif_num_scale3", "vif_den_scale3"};
+    for (int output = 0; output < 6; ++output) {
+        err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
+                                                       names[output], scores[output + 2], index);
+    }
+    return err;
+}
+
+} // namespace
+
+namespace
+{
 
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
-    auto *s = static_cast<FloatVifStateSycl *>(fex->priv);
-    auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
+    auto &state = *static_cast<FloatVifStateSycl *>(fex->priv);
+    auto *queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state.sycl_state));
+    if (queue == nullptr) {
         return -EINVAL;
-    qptr->wait();
-
-    double scores[8];
-    for (int i = 0; i < 4; i++) {
-        double n = 0.0;
-        double d = 0.0;
-        for (unsigned j = 0; j < s->wg_count[i]; j++) {
-            n += (double)s->h_num[i][j];
-            d += (double)s->h_den[i][j];
-        }
-        scores[2 * i + 0] = n;
-        scores[2 * i + 1] = d;
     }
-
-    int err = 0;
-    /* vif_skip_scale0: emit 0.0 for scale-0 and exclude from aggregate,
-     * mirroring float_vif.c collect path (host-side suppression only). */
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale0_score",
-        s->vif_skip_scale0 ? 0.0 : scores[0] / scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale1_score",
-                                                   scores[2] / scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale2_score",
-                                                   scores[4] / scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale3_score",
-                                                   scores[6] / scores[7], index);
-
-    if (s->debug && !err) {
-        /* Exclude scale-0 from aggregate when vif_skip_scale0 is set. */
-        double const score_num =
-            (s->vif_skip_scale0 ? 0.0 : scores[0]) + scores[2] + scores[4] + scores[6];
-        double const score_den =
-            (s->vif_skip_scale0 ? 0.0 : scores[1]) + scores[3] + scores[5] + scores[7];
-        double const score = score_den == 0.0 ? 1.0 : score_num / score_den;
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif", score, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num", score_num, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_den", score_den, index);
-        /* Emit 0.0 / -1.0 for scale-0 debug outputs when skip is set (matches float_vif.c). */
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num_scale0",
-                                                       s->vif_skip_scale0 ? 0.0 : scores[0], index);
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "vif_den_scale0",
-            s->vif_skip_scale0 ? -1.0 : scores[1], index);
-        const char const *names[6] = {"vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
-                                      "vif_den_scale2", "vif_num_scale3", "vif_den_scale3"};
-        for (int i = 0; i < 6; i++) {
-            err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                           names[i], scores[i + 2], index);
-        }
+    queue->wait();
+    double scores[8];
+    sum_vif_partials(state, scores);
+    int err = append_vif_scale_scores(state, scores, index, feature_collector);
+    if (state.debug && err == 0) {
+        err |= append_vif_debug_scores(state, scores, index, feature_collector);
     }
     return err;
 }
+
+} // namespace
+
+namespace
+{
 
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
@@ -789,6 +1049,11 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     return 0;
 }
 
+} // namespace
+
+namespace
+{
+
 static const char *provided_features_float_vif_sycl[] = {"VMAF_feature_vif_scale0_score",
                                                          "VMAF_feature_vif_scale1_score",
                                                          "VMAF_feature_vif_scale2_score",
@@ -806,6 +1071,8 @@ static const char *provided_features_float_vif_sycl[] = {"VMAF_feature_vif_scale
                                                          "vif_den_scale3",
                                                          nullptr};
 
+} // namespace
+
 extern "C" VmafFeatureExtractor vmaf_fex_float_vif_sycl = {
     .name = "float_vif_sycl",
     .init = init_fex_sycl,
@@ -819,6 +1086,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_vif_sycl = {
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_float_vif_sycl,
 };
-
-} /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

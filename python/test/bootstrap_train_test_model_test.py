@@ -51,6 +51,11 @@ class BootstrapTrainTestModelTest(MyTestCase):
         ys = BootstrapLibsvmNusvrTrainTestModel.get_ys_from_results(self.features)
         xys = BootstrapLibsvmNusvrTrainTestModel.get_xys_from_results(self.features)
 
+        self._check_bootstrap_libsvm_normalizations(xs, ys, xys)
+        self._check_bootstrap_libsvm_clipped_and_raw(xs, ys, xys)
+
+    def _check_bootstrap_libsvm_normalizations(self, xs, ys, xys):
+
         model = BootstrapLibsvmNusvrTrainTestModel({"norm_type": "normalize"}, None)
         model.train(xys)
         self.assertAlmostEqual(model.evaluate(xs, ys)["RMSE"], 0.6226308662005923, places=4)
@@ -78,6 +83,8 @@ class BootstrapTrainTestModelTest(MyTestCase):
         self.assertAlmostEqual(
             model.evaluate_stddev(xs)["mean_ci95_high"], 4.742621319805588, places=2
         )
+
+    def _check_bootstrap_libsvm_clipped_and_raw(self, xs, ys, xys):
 
         model = BootstrapLibsvmNusvrTrainTestModel(
             {
@@ -230,6 +237,12 @@ class BootstrapTrainTestModelTest(MyTestCase):
         ys = BootstrapSklearnRandomForestTrainTestModel.get_ys_from_results(self.features)
         xys = BootstrapSklearnRandomForestTrainTestModel.get_xys_from_results(self.features)
 
+        self._check_bootstrap_randomforest_normalizations(xs, ys, xys)
+        self._check_bootstrap_randomforest_clipped(xs, ys, xys)
+        self._check_bootstrap_randomforest_raw(xs, ys, xys)
+
+    def _check_bootstrap_randomforest_normalizations(self, xs, ys, xys):
+
         model = BootstrapSklearnRandomForestTrainTestModel(
             {"norm_type": "normalize", "n_estimators": 10, "random_state": 0}, None
         )
@@ -263,6 +276,8 @@ class BootstrapTrainTestModelTest(MyTestCase):
         self.assertAlmostEqual(
             model.evaluate_stddev(xs)["mean_ci95_high"], 4.667805555555555, places=1
         )
+
+    def _check_bootstrap_randomforest_clipped(self, xs, ys, xys):
 
         model = BootstrapSklearnRandomForestTrainTestModel(
             {
@@ -307,6 +322,8 @@ class BootstrapTrainTestModelTest(MyTestCase):
         self.assertAlmostEqual(
             model.evaluate_stddev(xs)["mean_ci95_high"], 4.686916666666666, places=2
         )
+
+    def _check_bootstrap_randomforest_raw(self, xs, ys, xys):
 
         model = BootstrapSklearnRandomForestTrainTestModel(
             {"norm_type": "none", "n_estimators": 10, "random_state": 0}, None

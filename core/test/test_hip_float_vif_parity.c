@@ -38,6 +38,8 @@
 
 #include "test.h"
 
+#include "hip_parity_skip.h"
+
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
@@ -130,8 +132,8 @@ static char *run_cpu_float_vif(bool neg_opts, const char *key, double *score)
     return NULL;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): the -ENOSYS scaffold skip contract
- * has to be checked after each of the four HIP entry points, which is what
+/* NOLINTNEXTLINE(readability-function-size): the ADR-1264 -ENOSYS scaffold skip
+ * contract has to be checked after each of the four HIP entry points, which is what
  * makes this longer than the CPU leg. Mirrors test_hip_float_psnr_parity.c. */
 static char *run_hip_float_vif(bool neg_opts, const char *key, double *score, int *skipped)
 {
@@ -159,25 +161,16 @@ static char *run_hip_float_vif(bool neg_opts, const char *key, double *score, in
     }
     err = vmaf_use_feature(vmaf, "float_vif_hip", opts);
     if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
-        *skipped = 1;
         (void)vmaf_feature_dictionary_free(&opts);
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
+        return hip_parity_skip(vmaf, &hip_state, skipped, "");
     }
     if (err)
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("HIP: vmaf_use_feature(float_vif_hip) failed", !err);
 
     err = feed_frame(vmaf);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on feed] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    if (err == -ENOSYS)
+        return hip_parity_skip(vmaf, &hip_state, skipped, " on feed");
     if (err == -ENOSYS) {
         /* Documented scaffold contract: an unimplemented HIP extractor returns
          * -ENOSYS from init (see the HIP extractors under
@@ -192,13 +185,8 @@ static char *run_hip_float_vif(bool neg_opts, const char *key, double *score, in
     mu_assert("HIP: feed_frame failed", !err);
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on EOS] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    if (err == -ENOSYS)
+        return hip_parity_skip(vmaf, &hip_state, skipped, " on EOS");
     mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, score, 0u);

@@ -274,7 +274,7 @@ if is_hipcc_enabled and is_hip_enabled
         # `integer_motion_hip.h` resolved to an undefined link reference
         # whenever `enable_hipcc=true` was paired with `enable_hip=true`
         # (i.e. the dev-MCP container's default build mode). The kernel
-        # source has lived at `libvmaf/src/feature/hip/integer_motion/
+        # source has lived at `core/src/feature/hip/integer_motion/
         # motion_score.hip` since ADR-0523 added the registration; this
         # entry closes the loop. Surfaced during ADR-0529 container
         # rebuild verification.
@@ -330,10 +330,13 @@ if is_hipcc_enabled and is_hip_enabled
     }
     foreach name, src : hip_kernel_sources
         per_kernel_flags = hip_cu_extra_flags.get(name, [])
+        # hipcc ignores -MD/-MF under --genco; the device frontend writes the
+        # depfile when asked directly, so header edits rebuild the HSACO.
         hsaco_target = custom_target('hip_hsaco_' + name,
             build_by_default: true,
             output: name + '.hsaco',
             input: src,
+            depfile: name + '.hsaco.d',
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
                      hip_include_flags + per_kernel_flags +
                      ['-I', meson.current_source_dir(),
@@ -341,6 +344,8 @@ if is_hipcc_enabled and is_hip_enabled
                       '-I', meson.current_source_dir() + '/feature/hip',
                       '-I', meson.current_source_dir() + '/hip',
                       '-I', meson.current_build_dir(),
+                      '-Xclang', '-dependency-file', '-Xclang', '@DEPFILE@',
+                      '-Xclang', '-MT', '-Xclang', '@OUTPUT@',
                       '@INPUT@', '-o', '@OUTPUT@'],
         )
         hsaco_c_target = custom_target('hip_hsaco_c_' + name,
@@ -1368,7 +1373,7 @@ if is_cuda_enabled
     # feature_collector.h and cuda/common.h, both of which `#include
     # <pthread.h>`. nvcc shells the host pass out to cl.exe, which
     # has no pthread.h on its system include path. The shim at
-    # libvmaf/src/compat/win32/pthread.h is wired into the C/C++ builds
+    # core/src/compat/win32/pthread.h is wired into the C/C++ builds
     # via pthread_dependency, but custom_target nvcc invocations build
     # their own -I list — so add the shim path explicitly here too.
     # Netflix/vmaf#1573 hunk (b): these used to be RELATIVE paths ('./src',
@@ -1390,6 +1395,13 @@ if is_cuda_enabled
         '-I', meson.current_source_dir() / 'feature',
         '-I', meson.current_source_dir() / cuda_dir,
     ]
+    # nvcc writes the headers each kernel includes to a depfile, so editing
+    # one (a struct passed to a kernel by value, say) rebuilds the fatbin
+    # instead of leaving a stale kernel that no longer matches the host. Not
+    # on Windows, where nvcc preprocesses through cl.exe; that lane builds
+    # from clean.
+    nvcc_dep_flags = host_machine.system() == 'windows' ? [] : [
+        '-MD', '-MF', '@DEPFILE@', '-MT', '@OUTPUT@']
     ptx_files = {}
     foreach name, _cu : cuda_cu_sources
         per_kernel_flags = cuda_cu_extra_flags.get(name, [])
@@ -1397,6 +1409,7 @@ if is_cuda_enabled
             build_by_default: true,
             output : ['@0@.fatbin'.format(name)],
             input : _cu,
+            depfile : '@0@.fatbin.d'.format(name),
             command : [nvcc_exe,
                 gencode,
                 '@INPUT@',
@@ -1405,6 +1418,7 @@ if is_cuda_enabled
                 cuda_extra_includes,
                 '-DDEVICE_CODE',
             ] + nvcc_thread_flags + cuda_flags + nvcc_ccbin_flags + nvcc_host_includes + per_kernel_flags
+              + nvcc_dep_flags
         )
         ptx_files += {name : [t]}
     endforeach
@@ -1516,7 +1530,9 @@ if is_sycl_enabled
     #          When `sycl_icpx_aot_targets` is non-empty (the default),
     #          we additionally pass `-fsycl-targets=spir64_gen,spir64` to
     #          request AOT compilation into native GPU ISA, and
-    #          `-Xs '-device <list>'` to specify target micro-architectures.
+    #          `-Xsycl-target-backend=spir64_gen '-device <list>'` to specify
+    #          target micro-architectures without forwarding the option to the
+    #          portable `spir64` target.
     #          This eliminates the JIT cold-start cost paid on every first
     #          kernel launch. The binary embeds native ISA blobs for each
     #          listed target plus a SPIR-V fallback for unlisted devices.
@@ -1531,12 +1547,14 @@ if is_sycl_enabled
         icpx_aot_targets = get_option('sycl_icpx_aot_targets')
         if icpx_aot_targets != ''
             # AOT path: emit spir64_gen (IGC) ISA blobs for the listed targets.
-            # `-Xs '-device <list>'` is forwarded to IGC via clang-offload-wrapper.
+            # Scope the device list to IGC. The unqualified `-Xs` form is
+            # ambiguous in a multi-target command and oneAPI 2026 reports it as
+            # unused when the portable `spir64` fallback is present.
             # `spir64` fallback embeds portable SPIR-V for any unlisted device.
             sycl_toolchain_args = [
                 '-fsycl',
                 '-fsycl-targets=spir64_gen,spir64',
-                '-Xs', '-device ' + icpx_aot_targets,
+                '-Xsycl-target-backend=spir64_gen', '-device ' + icpx_aot_targets,
             ]
             message('SYCL AOT targets (icpx): ' + icpx_aot_targets)
         else
@@ -1908,7 +1926,7 @@ if is_sycl_enabled
     # AdaptiveCpp doesn't accept `-fp-model=precise`; it uses the
     # underlying clang's `-ffp-contract=off` plus the source-level
     # `precise` decoration on per-kernel arithmetic. Per
-    # `libvmaf/src/sycl/AGENTS.md`, the precise-FP contract is
+    # `core/src/sycl/AGENTS.md`, the precise-FP contract is
     # load-bearing for places=4 conformance, so emit `-ffp-contract=off`
     # under acpp; the residual numerical drift vs icpx is documented
     # in ADR-0335 §"Numerical conformance".
@@ -2154,7 +2172,8 @@ libvmaf_sources = [
     # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband +
     # denoise param contracts, x265 CSV QP-report reader, version/result-string
     # accessors). CPU-only, dependency-free, NO Vulkan. Verbatim mirror of
-    # VMAFx/pelorus@818d844 (ABI 1.3) — DO NOT EDIT; re-sync via
+    # VMAFx/pelorus@93bef1206d68d9e09024c08a12732fb8e77b9b16 (ABI 1.3).
+    # DO NOT EDIT; re-sync via
     # scripts/sync-pelorus-interop.sh. See docs/api/pelorus-interop.md.
     src_dir + 'interop/pelorus_interop.c',
     src_dir + 'interop/pelorus_deband_params.c',

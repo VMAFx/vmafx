@@ -212,6 +212,64 @@ class Receipt(TypedDict, total=False):
     error: str
 
 
+def resolve_target_tag(replay: Replay, remote: str, current_tag: str, latest: bool) -> str:
+    """The tag to land on: the configured one, or upstream's newest stable release."""
+    if not latest:
+        return current_tag
+    target_tag = latest_release(replay.git("ls-remote", "--tags", "--refs", remote, "refs/tags/n*"))
+    if stable_version(target_tag) < stable_version(current_tag):
+        raise ValueError("upstream latest stable release would downgrade the maintained tag")
+    return target_tag
+
+
+def regenerate_patches(
+    replay: Replay, repo: Path, output: Path, names: list[str], commits: list[str]
+) -> dict[Path, bytes]:
+    """Re-export every replayed commit as a patch and stage the candidate copies."""
+    updates: dict[Path, bytes] = {}
+    candidate = output / "patches"
+    candidate.mkdir(exist_ok=True)
+    for name, commit in zip(names, commits, strict=True):
+        patch = replay.git(
+            "format-patch",
+            "-1",
+            "--stdout",
+            "--zero-commit",
+            "--no-signature",
+            "--no-numbered",
+            "--full-index",
+            commit,
+        ).encode()
+        updates[repo / "ffmpeg-patches" / name] = patch
+        (candidate / name).write_bytes(patch)
+    return updates
+
+
+def plan_updates(
+    repo: Path, updates: dict[Path, bytes], remote: str, target_tag: str, refresh: bool
+) -> tuple[list[str], str]:
+    """Fold the mirrors and build-config entries in; returns (changed paths, status)."""
+    updates.update(mirrors(repo, remote, target_tag))
+    config = repo / "build-config.env"
+    updates[config] = re.sub(
+        r"(?m)^FFMPEG_TAG=.*$", f'FFMPEG_TAG="{target_tag}"', config.read_text()
+    ).encode()
+    changed = [
+        str(path.relative_to(repo)) for path, data in updates.items() if path.read_bytes() != data
+    ]
+    return changed, "refreshed" if refresh else "checked"
+
+
+def commit_updates(updates: dict[Path, bytes], changed: list[str], refresh: bool) -> None:
+    """Write the refreshed files, or fail the check when drift was detected."""
+    if refresh:
+        replace_files(updates)
+    elif changed:
+        raise ValueError(
+            "patch/configuration drift; run python3 scripts/ci/ffmpeg_patch_stack.py --refresh"
+        )
+
+
 def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> Receipt:
     receipt: Receipt = {}
     output.mkdir(parents=True, exist_ok=True)
@@ -223,15 +281,7 @@ def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> Receipt:
         with tempfile.TemporaryDirectory(prefix="vmafx-ffmpeg-") as temporary:
             replay = Replay(Path(temporary), output)
             replay.git("init", "--quiet")
-            target_tag = current_tag
-            if latest:
-                target_tag = latest_release(
-                    replay.git("ls-remote", "--tags", "--refs", remote, "refs/tags/n*")
-                )
-                if stable_version(target_tag) < stable_version(current_tag):
-                    raise ValueError(
-                        "upstream latest stable release would downgrade the maintained tag"
-                    )
+            target_tag = resolve_target_tag(replay, remote, current_tag, latest)
             base = replay.fetch(remote, current_tag)
             replay.git("switch", "--quiet", "--detach", base)
             for name in names:
@@ -253,39 +303,10 @@ def maintain(repo: Path, output: Path, refresh: bool, latest: bool) -> Receipt:
                 raise ValueError(
                     "refresh changed the number of patches; review upstreamed/empty patches"
                 )
-            updates = {}
-            candidate = output / "patches"
-            candidate.mkdir(exist_ok=True)
-            for name, commit in zip(names, commits, strict=True):
-                patch = replay.git(
-                    "format-patch",
-                    "-1",
-                    "--stdout",
-                    "--zero-commit",
-                    "--no-signature",
-                    "--no-numbered",
-                    "--full-index",
-                    commit,
-                ).encode()
-                updates[repo / "ffmpeg-patches" / name] = patch
-                (candidate / name).write_bytes(patch)
-            updates.update(mirrors(repo, remote, target_tag))
-            config = repo / "build-config.env"
-            updates[config] = re.sub(
-                r"(?m)^FFMPEG_TAG=.*$", f'FFMPEG_TAG="{target_tag}"', config.read_text()
-            ).encode()
-            changed = [
-                str(path.relative_to(repo))
-                for path, data in updates.items()
-                if path.read_bytes() != data
-            ]
-            receipt.update({"changed": changed, "status": "refreshed" if refresh else "checked"})
-            if refresh:
-                replace_files(updates)
-            elif changed:
-                raise ValueError(
-                    "patch/configuration drift; run python3 scripts/ci/ffmpeg_patch_stack.py --refresh"
-                )
+            updates = regenerate_patches(replay, repo, output, names, commits)
+            changed, status = plan_updates(repo, updates, remote, target_tag, refresh)
+            receipt.update({"changed": changed, "status": status})
+            commit_updates(updates, changed, refresh)
     except (KeyError, ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as error:
         receipt.update({"status": "failed", "error": str(error)})
         raise

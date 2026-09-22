@@ -10,7 +10,9 @@ fails the gate. Each retry costs a 3–10 minute CI cycle.
 The pre-push hook (`scripts/git-hooks/pre-push-pr-body-lint.sh`,
 wired by `make hooks-install`) and the standalone validator
 (`scripts/ci/validate-pr-body.sh`) run the same parser locally
-before the push so failures are caught in under 5 seconds.
+before the push. The hook bounds `gh` lookup time, falls back to the
+repository's public pull-request pages when local credentials are unavailable,
+and blocks the push if neither source can establish the PR state and body.
 
 ## Quick start
 
@@ -132,16 +134,27 @@ Exit codes:
 | 1 | PR body would fail (same `::error` lines as CI emits) |
 | 2 | Usage error — missing body, unreadable diff file, etc. |
 
-## Bypassing the pre-push hook
+For these two deliverables entry points, exit 2 also covers every shape where
+stdin cannot carry a body at all: a terminal, a closed `fd 0`, or `/dev/null`.
+Those are the producer's fault, not the PR author's, and the scripts say so
+rather than parsing an empty string into six missing deliverables.
 
-The standard escape hatch skips **all** pre-push checks:
+The other two gates that read a PR body —
+`scripts/ci/ffmpeg-patches-surface-check.sh` (ADR-0186) and
+`scripts/ci/state-md-touch-check.sh` (ADR-0165) — classify `fd 0` through the
+same helper but answer an absent body differently: they have a diff to fall
+back on, so they name what fd 0 was and then decide on the diff alone, with
+their opt-out sentinel unclaimable. None of the four may read a closed `fd 0`,
+which used to hang them outright. See
+[pr-body-validator.md](pr-body-validator.md#where-the-body-comes-from).
 
-```bash
-git push --no-verify
-```
+## Metadata lookup failures
 
-Use this only when the PR body is correct but the hook cannot validate
-it (for example, `gh` authentication is broken on the current machine).
+A locked keyring or broken `gh` authentication must not hang the push and must
+not turn validation off. After the bounded authenticated lookup, the hook reads
+the public pull-request list and page for this public repository. If both paths
+are unavailable or GitHub's page shape cannot be validated, the hook fails
+closed. Restore connectivity or credentials and retry; do not skip the hook.
 
 ## See also
 

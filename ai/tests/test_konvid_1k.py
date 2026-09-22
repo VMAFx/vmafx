@@ -90,7 +90,7 @@ def _scaffold_corpus(
     csv_rows: list[dict[str, Any]] | None = None,
     csv_filename: str = "KoNViD_1k_attributes.csv",
 ) -> Path:
-    """Build a minimal ``.workingdir2/konvid-1k/``-shaped tree under tmp_path."""
+    """Build a minimal ``.corpus/konvid-1k/``-shaped tree under tmp_path."""
     konvid_dir = tmp_path / "konvid-1k"
     videos_dir = konvid_dir / "KoNViD_1k_videos"
     metadata_dir = konvid_dir / "KoNViD_1k_metadata"

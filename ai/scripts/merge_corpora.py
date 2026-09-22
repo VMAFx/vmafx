@@ -7,7 +7,7 @@ The vmaf-tune corpus schema is the row contract emitted by
 ``tools/vmaf-tune/src/vmaftune/corpus.py`` (Phase A, ADR-0237). It is
 also the input contract consumed by
 ``ai/scripts/train_fr_regressor_v2.py``. When mixing the Netflix Public
-drop (``.workingdir2/netflix/``) with BVI-DVC (ADR-0310), this utility
+drop (``.corpus/netflix/``) with BVI-DVC (ADR-0310), this utility
 concatenates row streams, validates each row carries the canonical
 :data:`vmaftune.CORPUS_ROW_KEYS`, and de-duplicates by ``src_sha256`` —
 the corpus uses a content hash of the source YUV as the natural key

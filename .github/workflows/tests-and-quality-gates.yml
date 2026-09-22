@@ -71,6 +71,14 @@ jobs:
         run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Netflix CPU Golden Tests satisfied without running (ADR-1140)"
       - name: Install build deps
         if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          # pip unpacks every wheel it downloads into $TMPDIR before it
+          # installs it, so the staging area — not just the install target —
+          # has to be on disk. On the ubuntu-26.04 image /tmp is a RAM-backed
+          # tmpfs and systemd v258 puts a per-user quota on it (80% of the
+          # mount), which is what produced "[Errno 122] Disk quota exceeded".
+          # RUNNER_TEMP is on the runner's disk and is emptied per job.
+          TMPDIR: ${{ runner.temp }}
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm pkg-config \
@@ -166,34 +174,6 @@ jobs:
         with:
           path: python/test/resource
           key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
-
-  # ===== Cross-backend ULP gate =====
-  # Requires GPU hardware + local YUV fixtures not present on GitHub-hosted
-  # runners. Disabled until a self-hosted GPU runner is available.
-  cross-backend:
-    name: Cross-Backend ULP Diff
-    if: false
-    runs-on: ubuntu-latest
-    needs: netflix-golden
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build nasm pkg-config python3-pip
-          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
-          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
-          python3 -m pip install --user numpy
-      - name: Build CPU
-        working-directory: core
-        run: |
-          meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=release
-          meson compile -C build
-      - name: Compute CPU scores against snapshot
-        run: |
-          ./testdata/bench_all.sh --backend=cpu --snapshot-only --tolerance-ulp=2
 
   # ADR-0726: vulkan-vif-cross-backend, vulkan-parity-matrix-gate, and
   # vulkan-vif-arc-nightly jobs deleted (Vulkan backend removed).
@@ -358,11 +338,8 @@ jobs:
           # versions. Each test object has `name` and `suite[]` fields
           # which we join into the canonical `libvmaf:<name>` form
           # that meson test dispatch expects.
-          set +o pipefail
-          TESTS=$(meson introspect build --tests 2>&1 \
-                  | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
-                  | grep -vE "$EXCLUDE" || true)
-          set -o pipefail
+          TESTS=$(meson introspect build --tests \
+                  | python3 -c 'import json,re,sys; excluded=re.compile(sys.argv[1]); [print("libvmaf:"+t["name"]) for t in json.load(sys.stdin) if excluded.search(t["name"]) is None]' "$EXCLUDE")
           echo "test count: $(echo "$TESTS" | wc -l)"
           echo "first 3: $(echo "$TESTS" | head -3 | tr '\n' ' ')"
           if [ -z "$TESTS" ]; then
@@ -462,11 +439,18 @@ jobs:
         run: meson test -C build --suite=dnn --print-errorlogs
       - name: Set up Python + install vmaf-train
         if: steps.impact.outputs.tiny_ai == 'true'
-        # The venv lives under RUNNER_TEMP, not /tmp. On the ubuntu-26.04
-        # image /tmp is a RAM-backed tmpfs with a per-user quota (systemd
-        # enables one on a tmpfs /tmp), and the torch + CUDA wheel set is
-        # several gigabytes: pip died with "[Errno 122] Disk quota exceeded".
-        # RUNNER_TEMP is on the runner's disk and is emptied per job.
+        # Both the venv and pip's staging area live under RUNNER_TEMP, not
+        # /tmp. On the ubuntu-26.04 image /tmp is a RAM-backed tmpfs with a
+        # per-user quota (systemd v258 enables one on a tmpfs /tmp), and
+        # `pip install -e ai` pulls torch, torchvision and the nvidia-*-cu13
+        # wheel set — several gigabytes. Moving the venv alone is not enough:
+        # pip downloads and unpacks each wheel into $TMPDIR first and only
+        # then extracts it into the venv, so with TMPDIR unset the whole
+        # wheel set still lands on the tmpfs and pip dies with
+        # "[Errno 122] Disk quota exceeded". RUNNER_TEMP is on the runner's
+        # disk and is emptied per job.
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           venv="${RUNNER_TEMP}/vmaf-train-venv"
           python3 -m venv "${venv}"
@@ -485,6 +469,9 @@ jobs:
       # entries whose `quant_mode == "fp32"` (nothing to gate).
       - name: Run ai-quant-accuracy gate
         if: steps.impact.outputs.tiny_ai == 'true'
+        env:
+          # Same reason as the venv step above: pip stages wheels in $TMPDIR.
+          TMPDIR: ${{ runner.temp }}
         run: |
           "${RUNNER_TEMP}/vmaf-train-venv/bin/pip" install onnx onnxruntime numpy
           "${RUNNER_TEMP}/vmaf-train-venv/bin/python" ai/scripts/measure_quant_drop.py --all
@@ -513,6 +500,11 @@ jobs:
   #   ~/.cache/mcp-venv/bin/pytest tests/ -v
   mcp-smoke:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1297 — required, and in `strictMustReport`: it builds all four
+    # enable_mcp* transports and runs the MCP server suite, a shipped
+    # user-discoverable surface, and it has no path filter or conditional
+    # skip, so absence is never a legitimate outcome.
+    # required-aggregator
     name: MCP Smoke
     runs-on: ubuntu-26.04
     timeout-minutes: 12
@@ -564,8 +556,11 @@ jobs:
         # pytest-asyncio + ruff + mypy). There is no `[test]` extras —
         # `dev` is the right name. Editable install so test_smoke_e2e.py
         # resolves the repo root via __file__.parents[3].
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
-          # RUNNER_TEMP, not /tmp: see the Tiny AI job's venv step.
+          # RUNNER_TEMP, not /tmp: see the Tiny AI job's venv step. TMPDIR
+          # is redirected there too, because pip stages wheels in $TMPDIR.
           venv="${RUNNER_TEMP}/mcp-venv"
           python3 -m venv "${venv}"
           "${venv}/bin/pip" install --upgrade pip
@@ -596,9 +591,21 @@ jobs:
   # (core/src/dnn/, opt.c, read_json_model.c).
   coverage:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1297 — required, and in `strictMustReport`. This job enforces the
+    # principles.md §3 line-coverage floors and the per-PR delta tolerance
+    # (ADR-0922). It self-skips in-job via plan-ci-impact.py (ADR-1140)
+    # rather than by path filter, so it always reports and `skipped` is never
+    # its outcome. Leaving it ungated re-opened, from the other side, the
+    # same hole as the `|| true` this branch removed: `Coverage GPU`, the
+    # self-hosted sibling that legitimately skips, was gated while this one
+    # was not.
+    # required-aggregator
     name: Coverage Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 75, not 30: the Python suite step below is budgeted 55 min and the rest
+    # of the job (apt + pip, the gcov build, the meson unit suite, gcovr) has
+    # measured at ~5.5 min. See that step for where 55 comes from.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -640,8 +647,15 @@ jobs:
           # impossible >100% hit counts (e.g. dnn_api.c — 1176%). gcovr
           # also produces both Cobertura XML for CI tooling and a JSON
           # summary the gate script parses directly. See ADR-0110.
+          # setuptools>=77.0.1: the runner image ships 68.1.2 in
+          # /usr/lib/python3/dist-packages and `pip install --user` leaves it
+          # there, but python/pyproject.toml declares its license as a PEP 639
+          # SPDX expression, which only setuptools 77+ parses. Without this the
+          # ambient interpreter cannot run `python/setup.py` at all — which is
+          # how setup_metadata_test.py failed the first time this lane ran the
+          # whole Python suite to completion.
           python3 -m pip install --user -r python/requirements.txt pytest \
-            'gcovr>=8.0'
+            'gcovr>=8.0' 'setuptools>=77.0.1' 'packaging>=24.2'
       # Cache the ORT GPU .tgz so we don't re-download ~150 MB from
       # github.com/microsoft/onnxruntime/releases on every Coverage Gate
       # run. Key is purely the ORT version pinned in the env block of the
@@ -733,7 +747,9 @@ jobs:
         working-directory: core
         run: meson test -C build-coverage --print-errorlogs --num-processes 1
       - name: Run full Python test suite (instrumented libvmaf.so + vmaf CLI)
+        id: python_coverage_tests
         if: steps.impact.outputs.golden_harness == 'true'
+        continue-on-error: true
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
@@ -745,7 +761,7 @@ jobs:
           python3 -m pip install --user pytest-timeout
           # Wrap in `timeout` + --kill-after so stuck vmaf CLI subprocesses
           # from failing vmafexec tests can't zombie-hang the step past the
-          # job budget. pytest-timeout=180 per-test is the first line; the
+          # job budget. pytest-timeout per-test is the first line; the
           # outer timeout is the backstop.
           # CommandLineTest (the first class in command_line_test.py) runs
           # run_testing.py with --parallelize across multiple video pairs —
@@ -756,24 +772,111 @@ jobs:
           # paths (vif.c, adm.c, motion.c, …) that vmaf runs on 576×324 clips
           # in under 10 s each, and their gcov data is what pushes overall
           # coverage above 40%. Deselecting CommandLineTest (but NOT
-          # VmafexecCommandLineTest, which is fast and stays in) lets the
-          # alphabetically-later suites execute and contribute coverage.
-          # The CommandLineTest scenarios are covered by the full Python test
-          # suite in the Netflix golden gate (which has no per-test timeout).
-          # --timeout=180: raised from 60 s to 180 s to accommodate
-          # large-kernel VIF tests (e.g. vifks360o97, which uses a 65-tap
-          # Gaussian and takes ~138 s in a debug+gcov build).  These tests
-          # are correctness-essential and must run; they just need a wider
-          # per-test budget in the instrumented build.
-          timeout --kill-after=30s 20m python3 -m pytest python/test/ -v \
+          # VmafexecCommandLineTest, which is fast and stays in) was meant to
+          # let the alphabetically-later suites execute and contribute
+          # coverage.
+          # MEASURED CAVEAT (2026-09-22): that --deselect matches nothing.
+          # pytest resolves rootdir to python/ via python/tox.ini, so the
+          # node IDs are test/command_line_test.py::…, and the repo-relative
+          # spelling below never matches. All 15 CommandLineTest tests ran in
+          # both jobs 106740470243 and 106785621316 (96.1 s / 111.7 s for the
+          # 19 command_line_test items). `-m "not slow"` is likewise a no-op:
+          # python/tox.ini registers only the `main` marker and nothing in
+          # python/test/ is marked slow, so all 711 items are selected. Both
+          # are left in place deliberately — the budget below is sized for the
+          # suite that actually runs, and narrowing the measurement to fit the
+          # budget is the anti-pattern this branch exists to undo. The claim
+          # that CommandLineTest is "covered by the full Python suite in the
+          # Netflix golden gate" is also stale: that gate runs exactly two
+          # tests (test_run_vmaf_runner and …_checkerboard).
+          #
+          # --timeout=600: raised from 180 s, which was itself raised from
+          # 60 s off a single observation (vifks360o97 ≈ 138 s). A point
+          # estimate with no variance allowance is what broke: pytest-timeout
+          # with --timeout-method=thread does not fail just the slow test, it
+          # dumps stacks and calls os._exit(1), aborting the whole session, so
+          # one test crossing the line takes the remaining 40% of the suite
+          # with it. Job 106785621316 (run 35739609510) died that way at 60%,
+          # on test_run_vmaf_runner_float_vifks2, blocked in
+          # subprocess.communicate()/stdout.read() reading a still-running,
+          # perfectly healthy vmaf CLI.
+          #
+          # The measured distribution, reconstructed from the -v timestamp
+          # deltas of the two Coverage Gate jobs on this branch — 106740470243
+          # (run 35726244060, 12:16Z) and 106785621316 (run 35739609510,
+          # 14:20Z), same recipe, same ubuntu-latest class:
+          #   test                               job …243   job …316
+          #   vifks360o97                         142.7 s    not reached
+          #   vifks24o10                           91.1 s    not reached
+          #   vifks2                               78.4 s    >180 s (killed)
+          #   vifks3o2                             50.9 s    not reached
+          #   ensemblevmaf_different_models        30.8 s      47.2 s  1.53x
+          #   ensemblevmaf_same_models             30.7 s      47.1 s  1.53x
+          #   local_explainer_with_bootstrap       15.7 s      24.1 s  1.53x
+          #   bootstrap_residue_bootstrap_model    15.5 s      23.9 s  1.55x
+          #   bootstrap_with_transform_score       15.4 s      23.7 s  1.54x
+          #   explain_vmaf_results                 15.7 s      23.7 s  1.51x
+          #   bootstrap_vmaf_runner                15.4 s      23.7 s  1.54x
+          #   bagging_vmaf_runner                  15.4 s      23.7 s  1.54x
+          #   float_nvd6 / float_rdh540            15.4 s      23.6 s  1.53x
+          #   bootstrap_10models                   15.4 s      23.4 s  1.52x
+          #   bootstrap_default_model_json_model   15.5 s      23.4 s  1.51x
+          #   bootstrap_with_4k_1d5H_model         15.5 s      23.3 s  1.51x
+          #   bootstrap_specific_model             15.5 s      23.3 s  1.51x
+          #   feature_assembler_whole_feature_…    15.4 s      23.2 s  1.51x
+          # Variance between the two runners: 1.51–1.55x uniformly across the
+          # vmaf-CLI-bound tests, and >=2.30x on vifks2 (78.4 s -> >180 s). The
+          # "Run meson unit suite" step above shows the same degradation
+          # independently — 30 s in …243 vs 118 s in …316, 3.9x. So the budget
+          # has to cover the slowest test times the worst observed inflation:
+          # 142.7 s * 2.30 = 328 s. 600 s is 1.8x that, 4.2x the slowest time
+          # ever actually observed, and 18% of the 55m outer backstop, so the
+          # outer stays a genuine backstop rather than the first thing to fire.
+          #
+          # What 600 s does NOT catch: (a) a real slowdown that keeps every
+          # single test under 10 min — vifks360o97 could double again and pass;
+          # (b) an aggregate blow-up, where every test is under 600 s but the
+          # sum exceeds the outer 55m — that surfaces as `timeout` killing the
+          # step (exit 124), not as a named test; (c) because the thread method
+          # aborts the session, the test named in the dump is whichever one was
+          # running, which need not be the one that is actually pathological.
+          #
+          # The outer budget is 55m, raised from a 20m that was never big
+          # enough for the suite it wraps. Until this branch the step ended in
+          # `|| true`, so `timeout` killing pytest looked like success: the run
+          # on master at 371ff589 (job 106056156937) was cut off after 20 min
+          # at 64% of 711 tests, and the first run on this branch
+          # (job 106740470243) at 63%, both silently. Removing `|| true` and
+          # asserting the step outcome turned that into the failure it always
+          # was.
+          #
+          # Where 55 comes from, re-derived from measurement rather than the
+          # earlier estimate. Job 106740470243 ran 448 of the 711 items in
+          # 1190.6 s before the outer kill; job 106785621316 ran 431 in
+          # 901.2 s. The 263 items neither run reached measure 86.3 s locally
+          # against a release build; the debug+gcov+4-core factor, anchored on
+          # feature_extractor_test.py (194.4 s in …243 / 16.4 s local), is
+          # 11.9x for …243 and 14.0x for …316, i.e. a 1024–1208 s tail. Full
+          # suite: ~2215 s (36.9 min) at the …243 pace, 2702–3077 s
+          # (45.0–51.3 min) at the …316 pace. Non-pytest job overhead measured
+          # 5m05s (…243) / 6m25s (…316) before the step plus ~30 s of gcovr
+          # after, against a 75 min job budget.
+          # So 55m still fits, but the margin is 7–18% at the slower runner,
+          # not the ~30% claimed before. If a Coverage Gate run is ever killed
+          # by the outer `timeout` (exit 124) rather than by a test, raise this
+          # to 70m and timeout-minutes to 85 — do not shrink the suite.
+          # pytest-timeout=600 per test remains the real anti-hang gate; the
+          # outer `timeout` only exists so a wedged subprocess cannot eat the
+          # job budget before gcovr runs.
+          timeout --kill-after=30s 55m python3 -m pytest python/test/ -v \
             -m "not slow" --tb=short \
-            --timeout=180 --timeout-method=thread \
+            --timeout=600 --timeout-method=thread \
             --ignore=python/test/resource \
             --ignore=python/test/cy_test.py \
             --ignore=python/test/cambi_test.py \
-            --deselect python/test/command_line_test.py::CommandLineTest || true
+            --deselect python/test/command_line_test.py::CommandLineTest
       - name: Gather coverage report (gcovr)
-        if: steps.impact.outputs.golden_harness == 'true'
+        if: ${{ always() && steps.impact.outputs.golden_harness == 'true' }}
         working-directory: core
         run: |
           # gcovr deduplicates .gcno files belonging to the same source
@@ -831,6 +934,16 @@ jobs:
             core/build-coverage/coverage.json
             core/build-coverage/coverage.txt
           retention-days: 14
+      - name: Assert Python coverage suite passed
+        if: ${{ always() && steps.impact.outputs.golden_harness == 'true' }}
+        env:
+          PYTEST_OUTCOME: ${{ steps.python_coverage_tests.outcome }}
+        run: |
+          if [[ "$PYTEST_OUTCOME" != "success" ]]; then
+            echo "::error::Python coverage suite outcome was $PYTEST_OUTCOME" >&2
+            exit 1
+          fi
+          [[ "$PYTEST_OUTCOME" == "success" ]]
 
   # ===== GPU coverage (self-hosted) =====
   # Exercises fork-added CUDA / SYCL / HIP kernels, GPU runtime glue, and
@@ -838,16 +951,16 @@ jobs:
   # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL + AMD iGPU +
   # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
   #
-  # Advisory-only (continue-on-error) for now: merges are gated on the
-  # CPU coverage job above. Will be promoted to required once the runner
-  # has been stable for two weeks.
+  # The two-week stability window closed on 2026-06-02. Keep this required;
+  # the promotion was recorded in the changelog, but a later stale merge
+  # restored the advisory workflow body.
   coverage-gpu:
-    name: Coverage GPU (advisory)
+    # required-aggregator
+    name: Coverage GPU
     runs-on: [self-hosted, linux, gpu-full]
     # ADR-0331: also gate on draft PR status. Self-hosted runners are
     # scarce — drafts must not contend for them.
     if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
-    continue-on-error: true
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -862,18 +975,20 @@ jobs:
         run: |
           # See CPU coverage job for -fprofile-update=atomic rationale.
           # GPU build also runs SIMD CPU paths, so the same .gcda race applies.
-          source /opt/intel/oneapi/setvars.sh
           # b_lto=false: see libvmaf-build-matrix.yml note. Coverage build
           # uses --buildtype=debug which already disables LTO, but make it
           # explicit to avoid a future buildtype change re-introducing the
           # icx + -flto=auto incompatibility.
-          meson setup build-coverage-gpu --buildtype=debug \
-            -Db_coverage=true -Db_lto=false \
-            -Denable_cuda=true -Denable_sycl=true \
-            -Denable_float=true -Denable_avx512=true \
-            -Dc_args=-fprofile-update=atomic \
-            -Dcpp_args=-fprofile-update=atomic
-          ninja -C build-coverage-gpu
+          bash -e -o pipefail -c '
+            source /opt/intel/oneapi/setvars.sh
+            meson setup build-coverage-gpu --buildtype=debug \
+              -Db_coverage=true -Db_lto=false \
+              -Denable_cuda=true -Denable_sycl=true \
+              -Denable_float=true -Denable_avx512=true \
+              -Dc_args=-fprofile-update=atomic \
+              -Dcpp_args=-fprofile-update=atomic
+            ninja -C build-coverage-gpu
+          '
       - name: Run meson unit suite
         working-directory: core
         # See CPU coverage job for --num-processes 1 rationale: serialise
@@ -885,7 +1000,15 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage-gpu/src
         run: |
           export PATH="${{ github.workspace }}/core/build-coverage-gpu/tools:$PATH"
-          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
+          # setuptools>=77.0.1: the runner image ships 68.1.2 in
+          # /usr/lib/python3/dist-packages and `pip install --user` leaves it
+          # there, but python/pyproject.toml declares its license as a PEP 639
+          # SPDX expression, which only setuptools 77+ parses. Without this the
+          # ambient interpreter cannot run `python/setup.py` at all — which is
+          # how setup_metadata_test.py failed the first time this lane ran the
+          # whole Python suite to completion.
+          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout \
+            'setuptools>=77.0.1' 'packaging>=24.2'
           # Scope GPU test runs with VMAF_FORCE_BACKEND away from the Netflix golden assertions
           # (ADR-0024 / AGENTS.md §8) to avoid failing on ULP-relaxed GPU float differences.
           VMAF_FORCE_BACKEND=cuda python3 -m pytest python/test/ -v \
@@ -965,17 +1088,21 @@ jobs:
           CC: icx
           CXX: icpx
         run: |
-          source /opt/intel/oneapi/setvars.sh
-          meson setup build-sycl-parity --buildtype=release \
-            -Denable_cuda=false -Denable_sycl=true \
-            -Denable_float=true
-          ninja -C build-sycl-parity test_sycl_float_ssim_parity
+          bash -e -o pipefail -c '
+            source /opt/intel/oneapi/setvars.sh
+            meson setup build-sycl-parity --buildtype=release \
+              -Denable_cuda=false -Denable_sycl=true \
+              -Denable_float=true
+            ninja -C build-sycl-parity test_sycl_float_ssim_parity
+          '
       - name: Run test_sycl_float_ssim_parity
         working-directory: core
         run: |
-          source /opt/intel/oneapi/setvars.sh
-          meson test -C build-sycl-parity test_sycl_float_ssim_parity \
-            --print-errorlogs
+          bash -e -o pipefail -c '
+            source /opt/intel/oneapi/setvars.sh
+            meson test -C build-sycl-parity test_sycl_float_ssim_parity \
+              --print-errorlogs
+          '
 
   # ===== Power of 10 rule 5 — assertion density =====
   # Every fork-added (non-trivial) function must contain ≥1 assert().

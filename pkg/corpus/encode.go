@@ -242,8 +242,8 @@ func RunEncodeWithStats(
 
 	statsPath := statsFileFor(prefix)
 	defer func() {
-		_ = os.Remove(statsPath)
-		_ = os.Remove(statsPath + ".mbtree")
+		removeScratchFile(statsPath)
+		removeScratchFile(statsPath + ".mbtree")
 	}()
 
 	run(ctx, BuildPass1StatsCommand(req, prefix, ffmpegBin))
@@ -299,10 +299,10 @@ func RunTwoPassEncode(
 	statsPath := statsPathFor(req, scratchDir)
 	defer func() {
 		for _, candidate := range twoPassCleanupCandidates(statsPath) {
-			_ = os.Remove(candidate)
+			removeScratchFile(candidate)
 		}
 		if ownScratch {
-			_ = os.RemoveAll(scratchDir)
+			removeScratchTree(scratchDir)
 		}
 	}()
 

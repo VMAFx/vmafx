@@ -245,15 +245,7 @@ func CoarseToFineSearch(
 	ctx context.Context, job Job, opts Options, runners Runners,
 	params CoarseToFineParams, emit func(map[string]any) error,
 ) error {
-	// Distinct presets in first-seen order (dict.fromkeys semantics).
-	var presets []string
-	seen := map[string]bool{}
-	for _, cell := range job.Cells {
-		if !seen[cell.Preset] {
-			seen[cell.Preset] = true
-			presets = append(presets, cell.Preset)
-		}
-	}
+	presets := distinctPresets(job)
 	if len(presets) == 0 {
 		return nil
 	}
@@ -264,50 +256,83 @@ func CoarseToFineSearch(
 	}
 
 	for _, preset := range presets {
-		coarseJob := job
-		coarseJob.Cells = cellsFor(preset, coarseGrid)
-
-		var coarseRows []map[string]any
-		coarseErr := IterRows(ctx, coarseJob, opts, runners, func(row map[string]any) error {
-			coarseRows = append(coarseRows, row)
-			return emit(row)
-		})
-		if coarseErr != nil {
-			return coarseErr
-		}
-
-		bestCRF, haveBest := PickBestCRF(coarseRows, params.TargetVMAF)
-		bestScore := math.NaN()
-		if haveBest {
-			for _, r := range coarseRows {
-				if rowCRF(r) == bestCRF {
-					bestScore = rowScore(r)
-					break
-				}
-			}
-		}
-
-		if shouldSkipRefinement(bestCRF, haveBest, coarseGrid, params.TargetVMAF,
-			bestScore, params.CRFMax) {
-			continue
-		}
-
-		fineCRFs, fineErr := FineGridCRFs(bestCRF, params.FineRadius, params.FineStep,
-			params.CRFMin, params.CRFMax, coarseGrid)
-		if fineErr != nil {
-			return fineErr
-		}
-		if len(fineCRFs) == 0 {
-			continue
-		}
-
-		fineJob := job
-		fineJob.Cells = cellsFor(preset, fineCRFs)
-		if err := IterRows(ctx, fineJob, opts, runners, emit); err != nil {
+		if err := searchPreset(
+			ctx, job, opts, runners, params, preset, coarseGrid, emit,
+		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// distinctPresets lists the presets in job.Cells in first-seen order
+// (dict.fromkeys semantics).
+func distinctPresets(job Job) []string {
+	var presets []string
+	seen := map[string]bool{}
+	for _, cell := range job.Cells {
+		if !seen[cell.Preset] {
+			seen[cell.Preset] = true
+			presets = append(presets, cell.Preset)
+		}
+	}
+	return presets
+}
+
+// searchPreset runs the coarse-then-fine sweep for one preset, emitting every
+// row it produces. A preset whose coarse pass already answers the question
+// returns without a fine pass.
+func searchPreset(
+	ctx context.Context, job Job, opts Options, runners Runners,
+	params CoarseToFineParams, preset string, coarseGrid []int,
+	emit func(map[string]any) error,
+) error {
+	coarseJob := job
+	coarseJob.Cells = cellsFor(preset, coarseGrid)
+
+	var coarseRows []map[string]any
+	coarseErr := IterRows(ctx, coarseJob, opts, runners, func(row map[string]any) error {
+		coarseRows = append(coarseRows, row)
+		return emit(row)
+	})
+	if coarseErr != nil {
+		return coarseErr
+	}
+
+	bestCRF, haveBest := PickBestCRF(coarseRows, params.TargetVMAF)
+	bestScore := math.NaN()
+	if haveBest {
+		bestScore = scoreForCRF(coarseRows, bestCRF)
+	}
+
+	if shouldSkipRefinement(bestCRF, haveBest, coarseGrid, params.TargetVMAF,
+		bestScore, params.CRFMax) {
+		return nil
+	}
+
+	fineCRFs, fineErr := FineGridCRFs(bestCRF, params.FineRadius, params.FineStep,
+		params.CRFMin, params.CRFMax, coarseGrid)
+	if fineErr != nil {
+		return fineErr
+	}
+	if len(fineCRFs) == 0 {
+		return nil
+	}
+
+	fineJob := job
+	fineJob.Cells = cellsFor(preset, fineCRFs)
+	return IterRows(ctx, fineJob, opts, runners, emit)
+}
+
+// scoreForCRF returns the score of the first row measured at crf, or NaN when
+// no row carries it.
+func scoreForCRF(rows []map[string]any, crf int) float64 {
+	for _, r := range rows {
+		if rowCRF(r) == crf {
+			return rowScore(r)
+		}
+	}
+	return math.NaN()
 }
 
 // cellsFor pairs a preset with each CRF in the grid.

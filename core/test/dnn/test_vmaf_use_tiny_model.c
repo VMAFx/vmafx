@@ -30,6 +30,8 @@
 
 #ifndef _WIN32
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #endif
 
@@ -81,6 +83,13 @@ static int copy_file_600(const char *src, const char *dst)
     const int in_fd = open(src, O_RDONLY);
     if (in_fd < 0)
         return -1;
+
+    struct stat st;
+    if (fstat(in_fd, &st) != 0 || st.st_size < 0) {
+        (void)close(in_fd);
+        return -1;
+    }
+
     const int out_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (out_fd < 0) {
         (void)close(in_fd);
@@ -88,25 +97,32 @@ static int copy_file_600(const char *src, const char *dst)
     }
 
     unsigned char buf[4096];
-    int rc = 0;
-    for (;;) {
+    /* The copy loop carries a scalar upper bound derived from the source size
+     * measured before the first read: one iteration per full buffer plus one
+     * to observe end-of-file. `rc` stays -1 until that end-of-file iteration
+     * runs, so exhausting the bound (a fixture that grew mid-copy) is reported
+     * as a failure instead of yielding a silently truncated destination. */
+    const size_t max_chunks = (((size_t)st.st_size + sizeof(buf) - 1U) / sizeof(buf)) + 1U;
+    int rc = -1;
+    for (size_t chunk = 0; chunk < max_chunks; chunk++) {
         const ssize_t n = read(in_fd, buf, sizeof(buf));
-        if (n == 0)
-            break;
-        if (n < 0) {
-            rc = -1;
+        if (n == 0) {
+            rc = 0;
             break;
         }
+        if (n < 0)
+            break;
         ssize_t off = 0;
+        int short_write = 0;
         while (off < n) {
             const ssize_t w = write(out_fd, buf + off, (size_t)(n - off));
             if (w <= 0) {
-                rc = -1;
+                short_write = 1;
                 break;
             }
             off += w;
         }
-        if (rc != 0)
+        if (short_write)
             break;
     }
 

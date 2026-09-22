@@ -478,54 +478,59 @@ static void release_cuda_module_and_stream_st(SpeedTemporalCudaState *s, CudaFun
     }
 }
 
-static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                       unsigned w, unsigned h)
+/* ------------------------------------------------------------------ */
+/* speed_temporal_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * HISS-01: lifted verbatim from the former `free_all` label. The same
+ * resources are released in the same order on every exit path, and the
+ * value returned is the one the label returned.
+ */
+static int speed_temporal_init_unwind(SpeedTemporalCudaState *s, CudaFunctions *cu_f, int err)
 {
-    (void)pix_fmt;
-    (void)bpc;
+    release_cuda_module_and_stream_st(s, cu_f);
+    free_cuda_buffers_st(s, cu_f);
+    return err;
+}
 
-    SpeedTemporalCudaState *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
-    int _cuda_err = 0;
-    int err = 0;
+/* st_init_unwind_pop - the body the former `fail_pop` label ran, verbatim and
+ * in the same order.
+ */
+static int st_init_unwind_pop(SpeedTemporalCudaState *s, CudaFunctions *cu_f, int cuda_err)
+{
+    (void)cu_f->cuCtxPopCurrent(NULL);
+    release_cuda_module_and_stream_st(s, cu_f);
+    free_cuda_buffers_st(s, cu_f);
+    return cuda_err;
+}
 
-    s->opt = (SpeedInternalOptions){
-        .speed_kernelscale = s->speed_temporal_kernelscale,
-        .speed_prescale = s->speed_temporal_prescale,
-        .speed_prescale_method = s->speed_temporal_prescale_method,
-        .speed_sigma_nn = s->speed_temporal_sigma_nn,
-        .speed_nn_floor = s->speed_temporal_nn_floor,
-        .speed_weight_var_mode = 0,
-    };
+/* st_get_kernels - load the PTX module, resolve the kernels, create the
+ * stream.
+ *
+ * HISS-04: lifted verbatim out of init_fex_st. Inside a helper the macro is
+ * CHECK_CUDA_RETURN rather than CHECK_CUDA_GOTO; the caller routes a non-zero
+ * return into st_init_unwind_pop(), which is the body `fail_pop` ran.
+ */
+static int st_get_kernels(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
+{
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->module, speed_score_ptx));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_means, s->module, "speed_means_kernel"));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_cov, s->module, "speed_cov_kernel"));
+    CHECK_CUDA_RETURN(cu_f,
+                      cuModuleGetFunction(&s->func_indterm, s->module, "speed_indterm_kernel"));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_solve, s->module, "speed_solve_kernel"));
+    CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->func_score, s->module, "speed_score_kernel"));
+    CHECK_CUDA_RETURN(cu_f, cuStreamCreate(&s->stream, CU_STREAM_NON_BLOCKING));
+    return 0;
+}
 
-    err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
-    if (err)
-        return err;
-
-    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
-
-    const size_t stride_px = s->float_stride / sizeof(float);
-    const size_t num_blocks = s->dim.num_blocks;
-    const size_t plane_alloc = s->dim.alloc_height * stride_px * sizeof(float);
-    const size_t indterm_bytes = ST_ELEMENTS * num_blocks * sizeof(float);
-    const size_t cov_bytes = ST_ELEMENTS * ST_ELEMENTS * sizeof(float);
-    const size_t score_bytes = num_blocks * sizeof(float);
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, speed_score_ptx), fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_means, s->module, "speed_means_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_cov, s->module, "speed_cov_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_indterm, s->module, "speed_indterm_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_solve, s->module, "speed_solve_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_score, s->module, "speed_score_kernel"),
-                    fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuStreamCreate(&s->stream, CU_STREAM_NON_BLOCKING), fail_pop);
-
-#define ALLOC_D(field, sz) CHECK_CUDA_GOTO(cu_f, cuMemAlloc(&(s->field), (sz)), fail_pop)
+/* st_alloc_buffers - every device allocation plus the pinned host staging.
+ *
+ * HISS-04: lifted verbatim out of init_fex_st; same set, same order.
+ */
+static int st_alloc_buffers(SpeedTemporalCudaState *s, CudaFunctions *cu_f, size_t plane_alloc,
+                            size_t indterm_bytes, size_t cov_bytes, size_t score_bytes)
+{
+#define ALLOC_D(field, sz) CHECK_CUDA_RETURN(cu_f, cuMemAlloc(&(s->field), (sz)))
     ALLOC_D(d_plane, plane_alloc);
     ALLOC_D(d_means, indterm_bytes);
     ALLOC_D(d_cov_mat, cov_bytes);
@@ -543,16 +548,54 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
 #undef ALLOC_D
 
 #define ALLOC_H(field, sz)                                                                         \
-    CHECK_CUDA_GOTO(cu_f, cuMemHostAlloc((void **)&(s->field), (sz), 0x01u), fail_pop)
+    CHECK_CUDA_RETURN(cu_f, cuMemHostAlloc((void **)&(s->field), (sz), 0x01u))
     ALLOC_H(h_cov_mat, cov_bytes);
     ALLOC_H(h_ref_entropies, score_bytes);
     ALLOC_H(h_ref_variances, score_bytes);
     ALLOC_H(h_dis_entropies, score_bytes);
     ALLOC_H(h_dis_variances, score_bytes);
 #undef ALLOC_H
+    return 0;
+}
+
+/* st_init_cuda - push the context, set the device side up, pop it again.
+ *
+ * HISS-01 / HISS-04: lifted out of init_fex_st. The `fail` and `fail_pop`
+ * CHECK_CUDA_GOTO sites keep their labels; the `fail_pop` body became
+ * st_init_unwind_pop(), reached on exactly the failures that jumped to it.
+ */
+static int st_init_cuda(VmafFeatureExtractor *fex, SpeedTemporalCudaState *s, CudaFunctions *cu_f,
+                        size_t plane_alloc, size_t indterm_bytes, size_t cov_bytes,
+                        size_t score_bytes)
+{
+    int _cuda_err = 0;
+    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
+
+    int err = st_get_kernels(s, cu_f);
+    if (err)
+        return st_init_unwind_pop(s, cu_f, err);
+
+    err = st_alloc_buffers(s, cu_f, plane_alloc, indterm_bytes, cov_bytes, score_bytes);
+    if (err)
+        return st_init_unwind_pop(s, cu_f, err);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_pop);
+    return 0;
 
+fail_pop:
+    return st_init_unwind_pop(s, cu_f, _cuda_err);
+fail:
+    return _cuda_err;
+}
+
+/* st_alloc_host_scratch - the aligned CPU-side scratch buffers.
+ *
+ * HISS-04: lifted verbatim out of init_fex_st; the sizes, the order and the
+ * single combined NULL check are unchanged.
+ */
+static int st_alloc_host_scratch(SpeedTemporalCudaState *s, CudaFunctions *cu_f, size_t plane_alloc,
+                                 size_t cov_bytes, size_t indterm_bytes)
+{
     /* CPU buffers. */
     s->h_ref[0] = (float *)aligned_malloc(plane_alloc, 32);
     s->h_ref[1] = (float *)aligned_malloc(plane_alloc, 32);
@@ -571,53 +614,101 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     if (!s->h_ref[0] || !s->h_ref[1] || !s->h_dis[0] || !s->h_dis[1] || !s->h_eigenvalues ||
         !s->h_eig_scratch || !s->h_Q || !s->h_R || !s->h_qr_scratch || !s->h_indterm_ref ||
         !s->h_indterm_dis || !s->h_qt_scratch) {
-        err = -ENOMEM;
-        goto free_all;
+        return speed_temporal_init_unwind(s, cu_f, -ENOMEM);
     }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        goto free_all;
-    }
-
-    s->index = 0;
     return 0;
-
-free_all:
-    release_cuda_module_and_stream_st(s, cu_f);
-    free_cuda_buffers_st(s, cu_f);
-    return err;
-fail_pop:
-    (void)cu_f->cuCtxPopCurrent(NULL);
-    release_cuda_module_and_stream_st(s, cu_f);
-    free_cuda_buffers_st(s, cu_f);
-    return _cuda_err;
-fail:
-    return _cuda_err;
 }
 
-static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
-                          VmafFeatureCollector *feature_collector)
+static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                       unsigned w, unsigned h)
 {
-    (void)ref_pic_90;
-    (void)dist_pic_90;
+    (void)pix_fmt;
+    (void)bpc;
 
     SpeedTemporalCudaState *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
+
+    s->opt = (SpeedInternalOptions){
+        .speed_kernelscale = s->speed_temporal_kernelscale,
+        .speed_prescale = s->speed_temporal_prescale,
+        .speed_prescale_method = s->speed_temporal_prescale_method,
+        .speed_sigma_nn = s->speed_temporal_sigma_nn,
+        .speed_nn_floor = s->speed_temporal_nn_floor,
+        .speed_weight_var_mode = 0,
+    };
+
+    int err = speed_internal_init_dimensions(&s->dim, (int)w, (int)h, s->opt.speed_prescale);
+    if (err)
+        return err;
+
+    s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
+
+    const size_t stride_px = s->float_stride / sizeof(float);
+    const size_t num_blocks = s->dim.num_blocks;
+    const size_t plane_alloc = s->dim.alloc_height * stride_px * sizeof(float);
+    const size_t indterm_bytes = ST_ELEMENTS * num_blocks * sizeof(float);
+    const size_t cov_bytes = ST_ELEMENTS * ST_ELEMENTS * sizeof(float);
+    const size_t score_bytes = num_blocks * sizeof(float);
+
+    err = st_init_cuda(fex, s, cu_f, plane_alloc, indterm_bytes, cov_bytes, score_bytes);
+    if (err)
+        return err;
+
+    err = st_alloc_host_scratch(s, cu_f, plane_alloc, cov_bytes, indterm_bytes);
+    if (err)
+        return err;
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return speed_temporal_init_unwind(s, cu_f, -ENOMEM);
+
+    s->index = 0;
+    return 0;
+}
+
+/* speed_temporal_pop_ctx - the single teardown path for extract_fex_cuda.
+ *
+ * HISS-01: the body of the former `pop_ctx` label, unchanged. `pop_ctx` is
+ * still a CHECK_CUDA_GOTO target, so the label stays and now defers here;
+ * every path pops the context once and returns the same code.
+ */
+static int speed_temporal_pop_ctx(CudaFunctions *cu_f, int err)
+{
+    (void)cu_f->cuCtxPopCurrent(NULL);
+    return err;
+}
+
+/* st_pop_done - pop the context and mark the caller's early-return path.
+ *
+ * HISS-04: `*done` reproduces the fact that every
+ * `return speed_temporal_pop_ctx(...)` inside extract_fex_st returned from
+ * the extractor immediately, without emitting a feature — including the
+ * former `pop_ctx` label, which deliberately returned `err` (still 0 at both
+ * CHECK_CUDA_GOTO sites that target it) rather than `_cuda_err`.
+ */
+static int st_pop_done(CudaFunctions *cu_f, int err, bool *done)
+{
+    *done = true;
+    return speed_temporal_pop_ctx(cu_f, err);
+}
+
+/* st_stage_luma_planes - download both luma planes to host staging, then CPU
+ * copy them into the ping-pong buffers.
+ *
+ * HISS-04: lifted verbatim out of extract_fex_st.
+ *
+ * The CUDA pipeline feeds DEVICE-resident pictures (ref_pic->data[] are
+ * CUdeviceptr), but picture_copy reads HOST memory — download the luma
+ * plane first (same device-pointer SEGV as speed_chroma_cuda). The DtoH
+ * copy needs the CUDA context active (the GPU pipeline later pushes it
+ * again, so push/pop locally here).
+ */
+static int st_stage_luma_planes(VmafFeatureExtractor *fex, SpeedTemporalCudaState *s,
+                                CudaFunctions *cu_f, VmafPicture *ref_pic, VmafPicture *dist_pic,
+                                int cyclic)
+{
     int _cuda_err = 0;
-    int err = 0;
-
-    const int cyclic = (int)(index % 2u);
-    const int other = (int)((index + 1u) % 2u);
-
-    /* The CUDA pipeline feeds DEVICE-resident pictures (ref_pic->data[] are
-     * CUdeviceptr), but picture_copy reads HOST memory — download the luma
-     * plane first (same device-pointer SEGV as speed_chroma_cuda). The DtoH
-     * copy needs the CUDA context active (the GPU pipeline below pushes it
-     * again later, so push/pop locally here). */
     const size_t raw_ref_bytes = (size_t)ref_pic->h[0] * ref_pic->stride[0];
     const size_t raw_dis_bytes = (size_t)dist_pic->h[0] * dist_pic->stride[0];
     uint8_t *raw_ref = (uint8_t *)aligned_malloc(raw_ref_bytes, 32);
@@ -652,14 +743,15 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     picture_copy(s->h_dis[cyclic], s->float_stride, &host_dis, -128, ref_pic->bpc, 0);
     aligned_free(raw_ref);
     aligned_free(raw_dis);
+    return 0;
+}
 
-    /* Frame 0: emit score 0 (no previous frame to diff against). */
-    if (index == 0) {
-        return vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "Speed_temporal_feature_speed_temporal_score",
-            0.0, index);
-    }
-
+/* st_prepare_diff - the temporal difference planes, filtered and downscaled.
+ *
+ * HISS-04: lifted verbatim out of extract_fex_st.
+ */
+static int st_prepare_diff(SpeedTemporalCudaState *s, int cyclic, int other, size_t *plane_op_bytes)
+{
     /* Temporal difference: other_index = previous frame. */
     const int w = (int)s->dim.original_width;
     const int h = (int)s->dim.original_height;
@@ -684,27 +776,66 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
                                         s->float_stride);
     aligned_free(tmp_filter);
 
-    const size_t plane_op_bytes = s->dim.truncated_height * stride_px * sizeof(float);
+    *plane_op_bytes = s->dim.truncated_height * stride_px * sizeof(float);
+    return 0;
+}
 
+/* st_score_or_zero - the singular-side rule.
+ *
+ * HISS-04: lifted verbatim out of extract_fex_st.
+ *
+ * Exactly one side numerically unstable: report 0 rather than the inflated
+ * score a zeroed solution on one side produces. Verbatim the CPU rule in
+ * speed_extract_score() (speed.c), which this twin has to match. When BOTH
+ * sides are singular the CPU still scores, from two zeroed solutions — so do
+ * we, which is why the singular branch in run_cpu_linalg_st zeroes `d_sol` on
+ * the device. ADR-1218.
+ */
+static int st_score_or_zero(SpeedTemporalCudaState *s, CudaFunctions *cu_f, bool singular_ref,
+                            bool singular_dis, float *score_out)
+{
+    *score_out = 0.0f;
+    if (singular_ref != singular_dis)
+        return 0;
+    return run_score_st(s, cu_f, score_out);
+}
+
+/* st_gpu_score - push the context, run both diff passes and the score kernel,
+ * then pop the context again.
+ *
+ * HISS-01 / HISS-04: lifted verbatim out of extract_fex_st, labels included.
+ *
+ * The eigenvalue stash: the reference eigenvalues are copied aside before the
+ * distorted linalg pass overwrites s->d_eigenvalues. The CPU reference
+ * (est_params in speed.c) computes SEPARATE ref and dis covariance +
+ * eigenvalues; the score kernel needs both. The stream is synchronized first
+ * so the async eigenvalue H2D from run_cpu_linalg_st is complete before the
+ * DtoD copy.
+ *
+ * `fail_pop`: the pop itself failed after a successful push, so it is retried
+ * to keep the CUDA context stack balanced (otherwise a per-frame leak), and
+ * the original CUDA error is propagated rather than the success path's err.
+ */
+static int st_gpu_score(VmafFeatureExtractor *fex, SpeedTemporalCudaState *s, CudaFunctions *cu_f,
+                        int other, size_t plane_op_bytes, float *score_out, bool *done)
+{
+    int _cuda_err = 0;
+    int err = 0;
+    *done = false;
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
 
     /* GPU pipeline for reference diff. */
     err = run_gpu_pipeline_st(s, cu_f, s->h_ref[other], s->d_indterm_ref, plane_op_bytes);
     if (err)
-        goto pop_ctx;
+        return st_pop_done(cu_f, err, done);
 
     /* CPU eigendecomp + QR for the reference diff. Uploads ref eigenvalues
      * into the shared s->d_eigenvalues buffer. */
     bool singular_ref = false;
     err = run_cpu_linalg_st(s, cu_f, s->h_indterm_ref, s->d_sol_ref, &singular_ref);
     if (err)
-        goto pop_ctx;
+        return st_pop_done(cu_f, err, done);
 
-    /* Stash the reference eigenvalues aside before the distorted linalg pass
-     * overwrites s->d_eigenvalues. The CPU reference (est_params in speed.c)
-     * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
-     * needs both. Synchronize first so the async eigenvalue H2D from
-     * run_cpu_linalg_st is complete before the DtoD copy. */
     CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), pop_ctx);
     CHECK_CUDA_GOTO(
         cu_f, cuMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, ST_ELEMENTS * sizeof(float)),
@@ -714,51 +845,74 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
      * no save/restore of the ref covariance). */
     err = run_gpu_pipeline_st(s, cu_f, s->h_dis[other], s->d_indterm_dis, plane_op_bytes);
     if (err)
-        goto pop_ctx;
+        return st_pop_done(cu_f, err, done);
 
     /* CPU eigendecomp + QR for the distorted diff (uses the DIS cov_mat).
      * Uploads dis eigenvalues into s->d_eigenvalues. */
     bool singular_dis = false;
     err = run_cpu_linalg_st(s, cu_f, s->h_indterm_dis, s->d_sol_dis, &singular_dis);
     if (err)
-        goto pop_ctx;
+        return st_pop_done(cu_f, err, done);
 
-    /* Exactly one side numerically unstable: report 0 rather than the inflated
-     * score a zeroed solution on one side produces. Verbatim the CPU rule in
-     * speed_extract_score() (speed.c), which this twin has to match. When BOTH
-     * sides are singular the CPU still scores, from two zeroed solutions — so
-     * do we, which is why the singular branch above zeroes `d_sol` on the
-     * device. ADR-1218. */
-    float score = 0.0f;
-    if (singular_ref != singular_dis) {
-        score = 0.0f;
-    } else {
-        err = run_score_st(s, cu_f, &score);
-        if (err)
-            goto pop_ctx;
-    }
+    err = st_score_or_zero(s, cu_f, singular_ref, singular_dis, score_out);
+    if (err)
+        return st_pop_done(cu_f, err, done);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_pop);
+    return 0;
+
+pop_ctx:
+    return st_pop_done(cu_f, err, done);
+fail_pop:
+    (void)cu_f->cuCtxPopCurrent(NULL);
+    *done = true;
+    return _cuda_err;
+fail:
+    *done = true;
+    return _cuda_err;
+}
+
+static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+                          VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+                          VmafFeatureCollector *feature_collector)
+{
+    (void)ref_pic_90;
+    (void)dist_pic_90;
+
+    SpeedTemporalCudaState *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
+
+    const int cyclic = (int)(index % 2u);
+    const int other = (int)((index + 1u) % 2u);
+
+    int err = st_stage_luma_planes(fex, s, cu_f, ref_pic, dist_pic, cyclic);
+    if (err)
+        return err;
+
+    /* Frame 0: emit score 0 (no previous frame to diff against). */
+    if (index == 0) {
+        return vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "Speed_temporal_feature_speed_temporal_score",
+            0.0, index);
+    }
+
+    size_t plane_op_bytes = 0;
+    err = st_prepare_diff(s, cyclic, other, &plane_op_bytes);
+    if (err)
+        return err;
+
+    float score = 0.0f;
+    bool done = false;
+    err = st_gpu_score(fex, s, cu_f, other, plane_op_bytes, &score, &done);
+    if (done || err)
+        return err;
 
     const double clipped =
         (double)score < s->speed_temporal_max_val ? (double)score : s->speed_temporal_max_val;
 
-    err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                  "Speed_temporal_feature_speed_temporal_score",
-                                                  clipped, index);
-    return err;
-
-pop_ctx:
-    (void)cu_f->cuCtxPopCurrent(NULL);
-    return err;
-fail_pop:
-    /* The pop itself failed after a successful push: retry it so the CUDA
-     * context stack is not left unbalanced (a per-frame leak), then propagate
-     * the original CUDA error rather than the success path's err. */
-    (void)cu_f->cuCtxPopCurrent(NULL);
-    return _cuda_err;
-fail:
-    return _cuda_err;
+    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "Speed_temporal_feature_speed_temporal_score",
+                                                   clipped, index);
 }
 
 static int close_fex_st(VmafFeatureExtractor *fex)

@@ -54,14 +54,29 @@ EXPECTED_FEATURES = [
 ]
 
 
+_HASH_CHUNK = 1 << 20
+
+
 def _sha256(path: Path) -> str:
+    """Return the sha256 of ``path``, read in bounded chunks.
+
+    The iteration count is derived from the on-disk size before the first
+    read, so the loop carries an explicit scalar upper bound instead of
+    spinning until EOF. Exhausting the bound means the file grew while it
+    was being hashed, which is reported as an error rather than silently
+    producing a digest of a truncated read.
+    """
     h = hashlib.sha256()
+    size = path.stat().st_size
+    max_chunks = size // _HASH_CHUNK + 1
     with path.open("rb") as fh:
-        while True:
-            chunk = fh.read(1 << 20)
+        for _ in range(max_chunks):
+            chunk = fh.read(_HASH_CHUNK)
             if not chunk:
                 break
             h.update(chunk)
+        if fh.read(1):
+            raise OSError(f"{path} grew past {size} bytes while being hashed")
     return h.hexdigest()
 
 

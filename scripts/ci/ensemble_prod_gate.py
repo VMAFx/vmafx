@@ -54,31 +54,8 @@ SHIP_GATE_PLCC_SPREAD_MAX: float = 0.005
 DEFAULT_ENSEMBLE_SIZE: int = 5
 
 
-def build_argparser() -> argparse.ArgumentParser:
-    """Build the CLI argparser (exposed for test imports)."""
-    p = argparse.ArgumentParser(
-        prog="ensemble_prod_gate",
-        description=(
-            "Production-flip CI gate for fr_regressor_v2 deep ensemble "
-            "(ADR-0303). Returns exit 0 iff mean(PLCC_i) >= "
-            f"{SHIP_GATE_MEAN_PLCC} AND max(PLCC_i) - min(PLCC_i) <= "
-            f"{SHIP_GATE_PLCC_SPREAD_MAX}."
-        ),
-    )
-    p.add_argument(
-        "loso_dir",
-        type=Path,
-        help=(
-            "Directory containing loso_seed{N}.json artefacts emitted by "
-            "ai/scripts/train_fr_regressor_v2_ensemble_loso.py."
-        ),
-    )
-    p.add_argument(
-        "--seeds",
-        type=str,
-        default="0,1,2,3,4",
-        help=("Comma-separated seed list expected to be present " "(default: 0,1,2,3,4)."),
-    )
+def add_threshold_args(p: argparse.ArgumentParser) -> None:
+    """Register the ADR-0303 ship-gate threshold overrides."""
     p.add_argument(
         "--mean-plcc-threshold",
         type=float,
@@ -110,6 +87,34 @@ def build_argparser() -> argparse.ArgumentParser:
             "threshold blocks even an otherwise-passing ensemble."
         ),
     )
+
+
+def build_argparser() -> argparse.ArgumentParser:
+    """Build the CLI argparser (exposed for test imports)."""
+    p = argparse.ArgumentParser(
+        prog="ensemble_prod_gate",
+        description=(
+            "Production-flip CI gate for fr_regressor_v2 deep ensemble "
+            "(ADR-0303). Returns exit 0 iff mean(PLCC_i) >= "
+            f"{SHIP_GATE_MEAN_PLCC} AND max(PLCC_i) - min(PLCC_i) <= "
+            f"{SHIP_GATE_PLCC_SPREAD_MAX}."
+        ),
+    )
+    p.add_argument(
+        "loso_dir",
+        type=Path,
+        help=(
+            "Directory containing loso_seed{N}.json artefacts emitted by "
+            "ai/scripts/train_fr_regressor_v2_ensemble_loso.py."
+        ),
+    )
+    p.add_argument(
+        "--seeds",
+        type=str,
+        default="0,1,2,3,4",
+        help=("Comma-separated seed list expected to be present " "(default: 0,1,2,3,4)."),
+    )
+    add_threshold_args(p)
     p.add_argument(
         "--json",
         action="store_true",

@@ -246,14 +246,18 @@
             _mm256_add_epi32(_mm256_mullo_epi32(_mm256_abs_epi32(src01), one_by_15),               \
                              const_2048_32b),                                                      \
             12);                                                                                   \
+        /* Wrap each tap to int16, as adm_cm_thresh()'s (int16_t) cast does: */                    \
+        src01 = _mm256_srai_epi32(_mm256_slli_epi32(src01, 16), 16);                               \
         src11 = _mm256_srai_epi32(                                                                 \
             _mm256_add_epi32(_mm256_mullo_epi32(_mm256_abs_epi32(src11), one_by_15),               \
                              const_2048_32b),                                                      \
             12);                                                                                   \
+        src11 = _mm256_srai_epi32(_mm256_slli_epi32(src11, 16), 16);                               \
         src21 = _mm256_srai_epi32(                                                                 \
             _mm256_add_epi32(_mm256_mullo_epi32(_mm256_abs_epi32(src21), one_by_15),               \
                              const_2048_32b),                                                      \
             12);                                                                                   \
+        src21 = _mm256_srai_epi32(_mm256_slli_epi32(src21, 16), 16);                               \
         src01 = _mm256_sub_epi32(src01, flt01);                                                    \
         src11 = _mm256_sub_epi32(src11, flt11);                                                    \
         src21 = _mm256_sub_epi32(src21, flt21);                                                    \
@@ -3397,27 +3401,11 @@ void adm_dwt2_16_avx2(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer 
             uint16_t u_s2 = src[ind_y[2][i] * src_stride + j];
             uint16_t u_s3 = src[ind_y[3][i] * src_stride + j];
 
-            accum = 0;
-            accum += (int32_t)filter_lo[0] * (int32_t)u_s0;
-            accum += (int32_t)filter_lo[1] * (int32_t)u_s1;
-            accum += (int32_t)filter_lo[2] * (int32_t)u_s2;
-            accum += (int32_t)filter_lo[3] * (int32_t)u_s3;
-
-            /* normalizing is done for range from(0 to N) to (-N/2 to N/2) */
-            accum -= (int32_t)dwt2_db2_coeffs_lo_sum * add_shift_VP;
-
-            tmplo[j] = (accum + add_shift_VP) >> shift_VP;
-
-            accum = 0;
-            accum += (int32_t)filter_hi[0] * (int32_t)u_s0;
-            accum += (int32_t)filter_hi[1] * (int32_t)u_s1;
-            accum += (int32_t)filter_hi[2] * (int32_t)u_s2;
-            accum += (int32_t)filter_hi[3] * (int32_t)u_s3;
-
-            /* normalizing is done for range from(0 to N) to (-N/2 to N/2) */
-            accum -= (int32_t)dwt2_db2_coeffs_hi_sum * add_shift_VP;
-
-            tmphi[j] = (accum + add_shift_VP) >> shift_VP;
+            /* int64 inside: a bright 16-bit column overflows int32. */
+            tmplo[j] = (int16_t)adm_dwt2_vpass16_tap4(filter_lo, dwt2_db2_coeffs_lo_sum, u_s0, u_s1,
+                                                      u_s2, u_s3, add_shift_VP, shift_VP);
+            tmphi[j] = (int16_t)adm_dwt2_vpass16_tap4(filter_hi, dwt2_db2_coeffs_hi_sum, u_s0, u_s1,
+                                                      u_s2, u_s3, add_shift_VP, shift_VP);
         }
 
         /* Horizontal pass (lo and hi). */

@@ -13,6 +13,38 @@ from vmaf.routine import read_dataset
 from vmaf.tools.misc import import_python_file
 
 
+def _extract_raw_yuvs(assets, raw_video_h5py_file):
+    """Extract the raw YUVs of every asset into the given h5py cache."""
+    print("======================== Extract raw YUVs ==============================")
+
+    _, raw_yuvs = run_executors_in_parallel(
+        DisYUVRawVideoExtractor,
+        assets,
+        fifo_mode=True,
+        delete_workdir=True,
+        parallelize=False,  # CAN ONLY USE SERIAL MODE FOR DisYRawVideoExtractor
+        result_store=None,
+        optional_dict=None,
+        optional_dict2={"h5py_file": raw_video_h5py_file},
+    )
+    return raw_yuvs
+
+
+def _build_classifier(seed, n_epochs, patch_h5py_file):
+    """The Todd noise classifier, wired to its patch cache."""
+    return ToddNoiseClassifierTrainTestModel(
+        param_dict={
+            "seed": seed,
+            "n_epochs": n_epochs,
+        },
+        logger=None,
+        optional_dict2={  # for options that won't impact the result
+            # 'checkpoints_dir': VmafConfig.workspace_path('checkpoints_dir'),
+            "h5py_file": patch_h5py_file,
+        },
+    )
+
+
 def main():
     # parameters
     num_train = 500
@@ -33,32 +65,11 @@ def main():
     raw_video_h5py_filepath = VmafConfig.workdir_path("rawvideo.hdf5")
     raw_video_h5py_file = DisYUVRawVideoExtractor.open_h5py_file(raw_video_h5py_filepath)
 
-    print("======================== Extract raw YUVs ==============================")
-
-    _, raw_yuvs = run_executors_in_parallel(
-        DisYUVRawVideoExtractor,
-        assets,
-        fifo_mode=True,
-        delete_workdir=True,
-        parallelize=False,  # CAN ONLY USE SERIAL MODE FOR DisYRawVideoExtractor
-        result_store=None,
-        optional_dict=None,
-        optional_dict2={"h5py_file": raw_video_h5py_file},
-    )
+    raw_yuvs = _extract_raw_yuvs(assets, raw_video_h5py_file)
 
     patch_h5py_filepath = VmafConfig.workdir_path("patch.hdf5")
     patch_h5py_file = ToddNoiseClassifierTrainTestModel.open_h5py_file(patch_h5py_filepath)
-    model = ToddNoiseClassifierTrainTestModel(
-        param_dict={
-            "seed": seed,
-            "n_epochs": n_epochs,
-        },
-        logger=None,
-        optional_dict2={  # for options that won't impact the result
-            # 'checkpoints_dir': VmafConfig.workspace_path('checkpoints_dir'),
-            "h5py_file": patch_h5py_file,
-        },
-    )
+    model = _build_classifier(seed, n_epochs, patch_h5py_file)
 
     print("============================ Train model ===============================")
     xys = ToddNoiseClassifierTrainTestModel.get_xys_from_results(raw_yuvs[:num_train])

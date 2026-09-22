@@ -15,6 +15,161 @@ __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 
+def _pairwise_delong_pvalues(auc, covariance, M):
+    """Symmetric M x M matrix of DeLong p-values, mirroring the matlab loop:
+
+    % pX_DL = ones(M);
+    % for i=1:M-1
+    %     for j=i+1:M
+    %         pX_DL(i,j) = calpvalue(AUC([i,j]), C([i,j],[i,j]));
+    %         pX_DL(j,i) = pX_DL(i,j);
+    %     end
+    % end
+    """
+    pvalues = np.ones([M, M])
+    for i in range(1, M):
+        for j in range(i + 1, M + 1):
+            # http://stackoverflow.com/questions/4257394/slicing-of-a-numpy-2d-array-or-how-do-i-extract-an-mxm-submatrix-from-an-nxn-ar
+            pvalues[i - 1, j - 1] = calpvalue(
+                auc[[i - 1, j - 1]], covariance[[[i - 1], [j - 1]], [i - 1, j - 1]]
+            )
+            pvalues[j - 1, i - 1] = pvalues[i - 1, j - 1]
+    return pvalues
+
+
+def _auc_different_similar(objScoDif, signif):
+    """Different/Similar ROC analysis: returns (AUC_DS, pDS_DL, THR).
+
+    # M = size(objScoDif,1);
+    # D = abs(objScoDif(:,signif ~= 0));
+    # S = abs(objScoDif(:,signif == 0));
+    # samples.spsizes = [size(D,2),size(S,2)];
+    # samples.ratings = [D,S];
+    """
+    M = objScoDif.shape[0]
+    D = np.abs(objScoDif[:, indices(signif[0], lambda x: x != 0)])
+    S = np.abs(objScoDif[:, indices(signif[0], lambda x: x == 0)])
+    samples = empty_object()
+    samples.spsizes = [D.shape[1], S.shape[1]]
+    samples.ratings = np.hstack([D, S])
+
+    # % calculate AUCs
+    # [AUC_DS,C] = fastDeLong(samples);
+    AUC_DS, C, _, _ = fastDeLong(samples)
+
+    # % significance calculation
+    pDS_DL = _pairwise_delong_pvalues(AUC_DS, C, M)
+
+    ## [pDS_HM,CI_DS] = significanceHM(S, D, AUC_DS);
+    # pDS_HM, CI_DS = significanceHM(S, D, AUC_DS)
+
+    # THR = prctile(D',95);
+    THR = np.percentile(S, 95, axis=1)
+
+    return AUC_DS, pDS_DL, THR
+
+
+def _auc_better_worse(objScoDif, signif):
+    """Better/Worse ROC analysis: returns (AUC_BW, pBW_DL, CC_0, pCC0_b).
+
+    # B = [objScoDif(:,signif == 1),-objScoDif(:,signif == -1)];
+    # W = -B;
+    # samples.ratings = [B,W];
+    # samples.spsizes = [size(B,2),size(W,2)];
+    """
+    M = objScoDif.shape[0]
+    B1 = objScoDif[:, indices(signif[0], lambda x: x == 1)]
+    B2 = objScoDif[:, indices(signif[0], lambda x: x == -1)]
+    B = np.hstack([B1, -B2])
+    W = -B
+    samples = empty_object()
+    samples.ratings = np.hstack([B, W])
+    samples.spsizes = [B.shape[1], W.shape[1]]
+
+    # % calculate AUCs
+    # [AUC_BW,C] = fastDeLong(samples);
+    AUC_BW, C, _, _ = fastDeLong(samples)
+
+    # % calculate correct classification for DeltaOM = 0
+    # L = size(B,2) + size(W,2);
+    # CC_0 = zeros(M,1);
+    # for m=1:M
+    #     CC_0(m) = (sum(B(m,:)>0) + sum(W(m,:)<0)) / L;
+    # end
+    L = B.shape[1] + W.shape[1]
+    CC_0 = np.zeros(M)
+    for m in range(M):
+        CC_0[m] = float(np.sum(B[m, :] > 0) + np.sum(W[m, :] < 0)) / L
+
+    # % significance calculation
+    pBW_DL = _pairwise_delong_pvalues(AUC_BW, C, M)
+    pCC0_b = _pairwise_binomial_pvalues(CC_0, L, M)
+
+    # # [pBW_HM,CI_BW] = significanceHM(B, W, AUC_BW);
+    # pBW_HM, CI_BW = significanceHM(B, W, AUC_BW)
+
+    return AUC_BW, pBW_DL, CC_0, pCC0_b
+
+
+def _pairwise_binomial_pvalues(CC_0, L, M):
+    """Symmetric M x M matrix of binomial-test p-values on the CC_0 vector.
+
+    The matlab original also computed pCC0_F via Fisher's exact test; that
+    branch has been commented out upstream since the port and stays out here.
+
+    # pCC0_b(i,j) = significanceBinomial(CC_0(i), CC_0(j), L);
+    # pCC0_b(j,i) = pCC0_b(i,j);
+    """
+    pCC0_b = np.ones([M, M])
+    for i in range(1, M):
+        for j in range(i + 1, M + 1):
+            pCC0_b[i - 1, j - 1] = significanceBinomial(CC_0[i - 1], CC_0[j - 1], L)
+            pCC0_b[j - 1, i - 1] = pCC0_b[i - 1, j - 1]
+    return pCC0_b
+
+
+def _assemble_metrics_result(AUC_DS, pDS_DL, AUC_BW, pBW_DL, CC_0, pCC0_b, THR):
+    """Pack the Krasula outputs into the result dict.
+
+    # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    # % Adding outputs to the structure
+    # results.AUC_DS = AUC_DS;
+    # results.pDS_DL = pDS_DL;
+    # results.pDS_HM = pDS_HM;
+    # results.AUC_BW = AUC_BW;
+    # results.pBW_DL = pBW_DL;
+    # results.pBW_HM = pBW_HM;
+    # results.CC_0 = CC_0;
+    # results.pCC0_b = pCC0_b;
+    # results.pCC0_F = pCC0_F;
+    # results.THR = THR;
+
+    The matlab original optionally plotted the results here; that branch was
+    never ported and is kept as a comment for parity with the reference:
+
+    # %%%%%%%%%%%%%%%%%%%%%%%% Plot Results %%%%%%%%%%%%%%%%%%%%%%%%%%%
+    # if(doPlot == 1)
+    # % Using Benjamini-Hochberg procedure for multiple comparisons in plots
+    # % (note: correlation between groups has to be positive)
+    # plot_auc(results.pDS_HM,results.AUC_DS, CI_DS, 'AUC (-)','Different/Similar')
+    # plot_cc(results.pCC0_F,results.CC_0,'C_0 (%)','Better/Worse')
+    # plot_auc(results.pBW_HM,results.AUC_BW, CI_BW, 'AUC (-)','Better/Worse')
+    # end
+    """
+    return {
+        "AUC_DS": AUC_DS,
+        "pDS_DL": pDS_DL,
+        # 'pDS_HM': pDS_HM,
+        "AUC_BW": AUC_BW,
+        "pBW_DL": pBW_DL,
+        # 'pBW_HM': pBW_HM,
+        "CC_0": CC_0,
+        "pCC0_b": pCC0_b,
+        # 'pCC0_F': pCC0_F,
+        "THR": THR,
+    }
+
+
 class PerfMetric(TypeVersionEnabled):
 
     __metaclass__ = ABCMeta
@@ -69,6 +224,74 @@ class RawScorePerfMetric(PerfMetric):
         # require the raw scores to be more than 1
         for groundtruth in self.groundtruths:
             assert hasattr(groundtruth, "__len__") and len(groundtruth) > 1
+
+
+def _pairwise_mos_significance(a, b):
+    """Two-sample z test on raw score lists: -1 worse, 0 no difference, +1 better."""
+    mos_a = np.mean(a)
+    mos_b = np.mean(b)
+    n_a = len(a)
+    n_b = len(b)
+    var_a = np.var(a, ddof=1)
+    var_b = np.var(b, ddof=1)
+    den = var_a / n_a + var_b / n_b
+    if den == 0.0:
+        den = 1e-8
+    z = (mos_a - mos_b) / np.sqrt(den)
+    if z < -2:
+        return -1
+    elif z > 2:
+        return 1
+    else:
+        return 0
+
+
+def _pairwise_significance_matrix(groundtruths):
+    """N x N matrix of the paired-comparison outcome for every groundtruth pair."""
+    N = len(groundtruths)
+    signif_mtx = np.zeros([N, N])
+    i = 0
+    for groundtruth in groundtruths:
+        j = 0
+        for groundtruth2 in groundtruths:
+            signif = _pairwise_mos_significance(groundtruth, groundtruth2)
+            signif_mtx[i, j] = signif
+            j += 1
+        i += 1
+    return signif_mtx
+
+
+def _pairwise_score_difference_matrix(predictions, N):
+    """M x (N * N) matrix of objective-score differences, one row per metric.
+
+    A flat prediction list is treated as a single metric, matching the caller's
+    own single-metric / multi-metric split.
+    """
+    if isinstance(predictions[0], list):
+        M = len(predictions)
+    else:
+        M = 1
+
+    objscodif_all = np.zeros([M, N * N])
+    for metric_idx in range(M):
+        objscodif_mtx = np.zeros([N, N])
+
+        if isinstance(predictions[0], list):
+            metric_predictions = predictions[metric_idx]
+        else:
+            metric_predictions = predictions
+
+        i = 0
+        for prediction in metric_predictions:
+            j = 0
+            for prediction2 in metric_predictions:
+                objscodif = prediction - prediction2
+                objscodif_mtx[i, j] = objscodif
+                j += 1
+            i += 1
+
+        objscodif_all[metric_idx, :] = objscodif_mtx.reshape(1, N * N)
+    return objscodif_all
 
 
 class AucPerfMetric(RawScorePerfMetric):
@@ -147,156 +370,10 @@ class AucPerfMetric(RawScorePerfMetric):
         %                         are different
         """
 
-        # M = size(objScoDif,1);
-        # D = abs(objScoDif(:,signif ~= 0));
-        # S = abs(objScoDif(:,signif == 0));
-        # samples.spsizes = [size(D,2),size(S,2)];
-        # samples.ratings = [D,S];
+        AUC_DS, pDS_DL, THR = _auc_different_similar(objScoDif, signif)
+        AUC_BW, pBW_DL, CC_0, pCC0_b = _auc_better_worse(objScoDif, signif)
 
-        M = objScoDif.shape[0]
-        D = np.abs(objScoDif[:, indices(signif[0], lambda x: x != 0)])
-        S = np.abs(objScoDif[:, indices(signif[0], lambda x: x == 0)])
-        samples = empty_object()
-        samples.spsizes = [D.shape[1], S.shape[1]]
-        samples.ratings = np.hstack([D, S])
-
-        # % calculate AUCs
-
-        # [AUC_DS,C] = fastDeLong(samples);
-        AUC_DS, C, _, _ = fastDeLong(samples)
-
-        # % significance calculation
-
-        # pDS_DL = ones(M);
-        # for i=1:M-1
-        #     for j=i+1:M
-        #         pDS_DL(i,j) = calpvalue(AUC_DS([i,j]), C([i,j],[i,j]));
-        #         pDS_DL(j,i) = pDS_DL(i,j);
-        #     end
-        # end
-        pDS_DL = np.ones([M, M])
-        for i in range(1, M):
-            for j in range(i + 1, M + 1):
-                # http://stackoverflow.com/questions/4257394/slicing-of-a-numpy-2d-array-or-how-do-i-extract-an-mxm-submatrix-from-an-nxn-ar
-                pDS_DL[i - 1, j - 1] = calpvalue(
-                    AUC_DS[[i - 1, j - 1]], C[[[i - 1], [j - 1]], [i - 1, j - 1]]
-                )
-                pDS_DL[j - 1, i - 1] = pDS_DL[i - 1, j - 1]
-
-        ## [pDS_HM,CI_DS] = significanceHM(S, D, AUC_DS);
-        # pDS_HM, CI_DS = significanceHM(S, D, AUC_DS)
-
-        # THR = prctile(D',95);
-        THR = np.percentile(S, 95, axis=1)
-
-        # %%%%%%%%%%%%%%%%%%%%%%% Better / Worse %%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-        # B = [objScoDif(:,signif == 1),-objScoDif(:,signif == -1)];
-        # W = -B;
-        # samples.ratings = [B,W];
-        # samples.spsizes = [size(B,2),size(W,2)];
-        B1 = objScoDif[:, indices(signif[0], lambda x: x == 1)]
-        B2 = objScoDif[:, indices(signif[0], lambda x: x == -1)]
-        B = np.hstack([B1, -B2])
-        W = -B
-        samples = empty_object()
-        samples.ratings = np.hstack([B, W])
-        samples.spsizes = [B.shape[1], W.shape[1]]
-
-        # % calculate AUCs
-
-        # [AUC_BW,C] = fastDeLong(samples);
-        AUC_BW, C, _, _ = fastDeLong(samples)
-
-        # % calculate correct classification for DeltaOM = 0
-
-        # L = size(B,2) + size(W,2);
-        # CC_0 = zeros(M,1);
-        # for m=1:M
-        #     CC_0(m) = (sum(B(m,:)>0) + sum(W(m,:)<0)) / L;
-        # end
-        L = B.shape[1] + W.shape[1]
-        CC_0 = np.zeros(M)
-        for m in range(M):
-            CC_0[m] = float(np.sum(B[m, :] > 0) + np.sum(W[m, :] < 0)) / L
-
-        # % significance calculation
-
-        # pBW_DL = ones(M);
-        # pCC0_b = ones(M);
-        # pCC0_F = ones(M);
-        # for i=1:M-1
-        #     for j=i+1:M
-        #         pBW_DL(i,j) = calpvalue(AUC_BW([i,j]), C([i,j],[i,j]));
-        #         pBW_DL(j,i) = pBW_DL(i,j);
-        #
-        #         pCC0_b(i,j) = significanceBinomial(CC_0(i), CC_0(j), L);
-        #         pCC0_b(j,i) = pCC0_b(i,j);
-        #
-        #         pCC0_F(i,j) = fexact(CC_0(i)*L, 2*L, CC_0(i)*L + CC_0(j)*L, L, 'tail', 'b')/2;
-        #         pCC0_F(j,i) = pCC0_F(i,j);
-        #     end
-        # end
-        pBW_DL = np.ones([M, M])
-        pCC0_b = np.ones([M, M])
-        # pCC0_F = np.ones([M, M])
-        for i in range(1, M):
-            for j in range(i + 1, M + 1):
-                pBW_DL[i - 1, j - 1] = calpvalue(
-                    AUC_BW[[i - 1, j - 1]], C[[[i - 1], [j - 1]], [i - 1, j - 1]]
-                )
-                pBW_DL[j - 1, i - 1] = pBW_DL[i - 1, j - 1]
-
-                pCC0_b[i - 1, j - 1] = significanceBinomial(CC_0[i - 1], CC_0[j - 1], L)
-                pCC0_b[j - 1, i - 1] = pCC0_b[i - 1, j - 1]
-
-                # pCC0_F[i-1, j-1] = fexact(CC_0[i-1]*L, 2*L, CC_0[i-1]*L + CC_0[j-1]*L, L, 'tail', 'b') / 2.0
-                # pCC0_F[j-1, i-1] = pCC0_F[i-1,j]
-
-        # # [pBW_HM,CI_BW] = significanceHM(B, W, AUC_BW);
-        # pBW_HM, CI_BW = significanceHM(B, W, AUC_BW)
-
-        # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-        # % Adding outputs to the structure
-
-        # results.AUC_DS = AUC_DS;
-        # results.pDS_DL = pDS_DL;
-        # results.pDS_HM = pDS_HM;
-        # results.AUC_BW = AUC_BW;
-        # results.pBW_DL = pBW_DL;
-        # results.pBW_HM = pBW_HM;
-        # results.CC_0 = CC_0;
-        # results.pCC0_b = pCC0_b;
-        # results.pCC0_F = pCC0_F;
-        # results.THR = THR;
-        result = {
-            "AUC_DS": AUC_DS,
-            "pDS_DL": pDS_DL,
-            # 'pDS_HM': pDS_HM,
-            "AUC_BW": AUC_BW,
-            "pBW_DL": pBW_DL,
-            # 'pBW_HM': pBW_HM,
-            "CC_0": CC_0,
-            "pCC0_b": pCC0_b,
-            # 'pCC0_F': pCC0_F,
-            "THR": THR,
-        }
-
-        # %%%%%%%%%%%%%%%%%%%%%%%% Plot Results %%%%%%%%%%%%%%%%%%%%%%%%%%%
-        #
-        # if(doPlot == 1)
-        #
-        # % Using Benjamini-Hochberg procedure for multiple comparisons in plots
-        # % (note: correlation between groups has to be positive)
-        #
-        # plot_auc(results.pDS_HM,results.AUC_DS, CI_DS, 'AUC (-)','Different/Similar')
-        # plot_cc(results.pCC0_F,results.CC_0,'C_0 (%)','Better/Worse')
-        # plot_auc(results.pBW_HM,results.AUC_BW, CI_BW, 'AUC (-)','Better/Worse')
-        #
-        # end
-
-        return result
+        return _assemble_metrics_result(AUC_DS, pDS_DL, AUC_BW, pBW_DL, CC_0, pCC0_b, THR)
 
     @classmethod
     def _evaluate(cls, groundtruths, predictions, **kwargs):
@@ -304,60 +381,10 @@ class AucPerfMetric(RawScorePerfMetric):
         if isinstance(groundtruths, (list, tuple)) and isinstance(groundtruths[0], dict):
             raise TypeError("{} cannot handle dictionary-style daataset yet.".format(cls.__name__))
 
-        def _signif(a, b):
-            mos_a = np.mean(a)
-            mos_b = np.mean(b)
-            n_a = len(a)
-            n_b = len(b)
-            var_a = np.var(a, ddof=1)
-            var_b = np.var(b, ddof=1)
-            den = var_a / n_a + var_b / n_b
-            if den == 0.0:
-                den = 1e-8
-            z = (mos_a - mos_b) / np.sqrt(den)
-            if z < -2:
-                return -1
-            elif z > 2:
-                return 1
-            else:
-                return 0
-
         # generate pairs
         N = len(groundtruths)
-        signif_mtx = np.zeros([N, N])
-        i = 0
-        for groundtruth in groundtruths:
-            j = 0
-            for groundtruth2 in groundtruths:
-                signif = _signif(groundtruth, groundtruth2)
-                signif_mtx[i, j] = signif
-                j += 1
-            i += 1
-
-        if isinstance(predictions[0], list):
-            M = len(predictions)
-        else:
-            M = 1
-
-        objscodif_all = np.zeros([M, N * N])
-        for metric_idx in range(M):
-            objscodif_mtx = np.zeros([N, N])
-
-            if isinstance(predictions[0], list):
-                metric_predictions = predictions[metric_idx]
-            else:
-                metric_predictions = predictions
-
-            i = 0
-            for prediction in metric_predictions:
-                j = 0
-                for prediction2 in metric_predictions:
-                    objscodif = prediction - prediction2
-                    objscodif_mtx[i, j] = objscodif
-                    j += 1
-                i += 1
-
-            objscodif_all[metric_idx, :] = objscodif_mtx.reshape(1, N * N)
+        signif_mtx = _pairwise_significance_matrix(groundtruths)
+        objscodif_all = _pairwise_score_difference_matrix(predictions, N)
 
         # import matplotlib.pyplot as plt
         # plt.figure()
@@ -396,6 +423,186 @@ class AucPerfMetric(RawScorePerfMetric):
             assert len(self.groundtruths) == len(
                 self.predictions
             ), "The lengths of groundtruth labels and predictions do not match."
+
+
+def _resolving_power_inputs(groundtruths, predictions, deg_of_freedom):
+    """Per-condition vqm, viewer count, MOS and variance arrays.
+
+    # variance = std.^2;
+
+    # % Perform the vqm RMSE calculation using vqm.
+    # vqm_rmse = (sum((vqm-mos).^2)/(num_comb - deg_of_freedom))^0.5;
+    # (CodeQL py/unused-local-variable: vqm_rmse is computed by the
+    # source Matlab routine but never read by the resolving-power
+    # calculation below. Dropped the Python assignment; kept the
+    # commented Matlab line for traceability against the original.)
+    """
+    vqm = np.array(predictions)
+    num_viewers = np.array(list(map(len, groundtruths)))
+    mos = np.array(list(map(np.nanmean, groundtruths)))
+    std = np.array(
+        list(map(lambda groundtruth: np.nanstd(groundtruth, ddof=deg_of_freedom), groundtruths))
+    )
+    variance = std**2
+    return vqm, num_viewers, mos, variance
+
+
+def _pairwise_delta_and_confidence(vqm, mos, variance, num_viewers):
+    """Upper-triangle vqm deltas and the matching average-confidence values.
+
+    # % Perform the vqm resolution measurement using both vqm and mos.
+    # vqm_pairs = repmat(vqm,1,num_comb)-repmat(vqm',num_comb,1);
+    # mos_pairs = repmat(mos,1,num_comb)-repmat(mos',num_comb,1);
+    # stand_err_diff = sqrt(repmat(variance./num_viewers,1,num_comb) + repmat((variance./num_viewers)',num_comb,1));
+    # z_pairs = mos_pairs./stand_err_diff;
+    """
+    # num_comb = length(vqm);
+    num_comb = len(vqm)
+
+    vqm_pairs = np.tile(vqm, (num_comb, 1))
+    vqm_pairs = vqm_pairs - vqm_pairs.T
+    mos_pairs = np.tile(mos, (num_comb, 1))
+    mos_pairs = mos_pairs - mos_pairs.T
+    stand_err_diff = np.tile(variance / num_viewers, (num_comb, 1))
+    stand_err_diff = np.sqrt(stand_err_diff + stand_err_diff.T)
+    stand_err_diff[stand_err_diff == 0.0] = 1e-8
+    z_pairs = mos_pairs / stand_err_diff
+
+    # % Include everything above the diagonal.
+    # delta_vqm = [];
+    # z = [];
+    # for col = 2:num_comb
+    #     delta_vqm = [delta_vqm; vqm_pairs(1:col-1,col)];
+    #     z = [z; z_pairs(1:col-1,col)];
+    # end
+    delta_vqm = []
+    z = []
+    for col in range(2, num_comb + 1):
+        delta_vqm = np.hstack([delta_vqm, vqm_pairs[0 : col - 1, col - 1]])
+        z = np.hstack([z, z_pairs[0 : col - 1, col - 1]])
+
+    # % Switch on z and delta_vqm for negative delta_vqm
+    # z_vqm = z;
+    # negs_vqm = find(delta_vqm < 0);
+    # delta_vqm(negs_vqm) = -delta_vqm(negs_vqm);
+    # z_vqm(negs_vqm) = -z_vqm(negs_vqm);
+    z_vqm = z
+    negs_vqm = indices(delta_vqm, lambda x: x < 0)
+    delta_vqm[negs_vqm] = -delta_vqm[negs_vqm]
+    z_vqm[negs_vqm] = -z_vqm[negs_vqm]
+
+    # % Compute the average confidence that vqm(2) is worse than vqm(1) in mean_cdf_z_vqm.
+    # cdf_z_vqm = .5+erf(z_vqm/sqrt(2))/2;
+    cdf_z_vqm = 0.5 + scipy.special.erf(z_vqm / np.sqrt(2)) / 2
+
+    return delta_vqm, cdf_z_vqm
+
+
+def _delta_vqm_bins(delta_vqm):
+    """Sliding 50%-overlap bin edges over the full delta_vqm range.
+
+    # === original binning logic: ===
+    # % One control parameter for delta_vqm resolution plot; number of vqm bins,
+    # % equally spaced from min(delta_vqm) to max(delta_vqm).
+
+    # % Sliding neighborhood filter with 50% overlap means that there will actually
+    # % be vqm_bins*2-1 points on the delta_vqm resolution plot.
+    # vqm_bins = 10; % How many bins to divide full vqm range for local averaging
+    # vqm_low = min(delta_vqm); % lower limit on delta_vqm
+    # vqm_high = max(delta_vqm); % upper limit on delta_vqm
+    # vqm_step = (vqm_high-vqm_low)/vqm_bins; % size of delta_vqm bins
+
+    # % lower, upper, and center bin locations
+    # low_limits = [vqm_low:vqm_step/2:vqm_high-vqm_step];
+    # high_limits = [vqm_low+vqm_step:vqm_step/2:vqm_high];
+    # centers = [vqm_low+vqm_step/2:vqm_step/2:vqm_high-vqm_step/2];
+    """
+    vqm_bins = 10
+    vqm_low = min(delta_vqm)
+    vqm_high = max(delta_vqm)
+    vqm_step = (vqm_high - vqm_low) / vqm_bins
+
+    low_limits = np.arange(vqm_low, vqm_high - vqm_step, step=vqm_step / 2)
+    centers = low_limits.copy() + vqm_step / 2
+    high_limits = low_limits.copy() + vqm_step
+    # patch to cover entire range
+    if high_limits[-1] < vqm_high:
+        low_limits = np.hstack([low_limits, vqm_high - vqm_step])
+        high_limits = np.hstack([high_limits, vqm_high])
+        centers = np.hstack([centers, vqm_high - vqm_step / 2])
+
+    return low_limits, centers, high_limits
+
+
+def _mean_confidence_by_delta_bin(delta_vqm, cdf_z_vqm):
+    """Average confidence per delta_vqm bin, with the empty bins dropped.
+
+    # mean_cdf_z_vqm = zeros(1,2*vqm_bins-1);
+    # for i=1:2*vqm_bins-1
+    #     in_bin = find(low_limits(i) <= delta_vqm & delta_vqm < high_limits(i));
+    #     mean_cdf_z_vqm(i) = mean(cdf_z_vqm(in_bin));
+    # end
+    """
+    low_limits, centers, high_limits = _delta_vqm_bins(delta_vqm)
+
+    len_centers = len(centers)
+    assert len_centers == len(low_limits) == len(high_limits)
+
+    mean_cdf_z_vqm = np.zeros(len_centers)
+    for i in range(0, len_centers):
+        in_bin = indices(delta_vqm, lambda x: low_limits[i] <= x < high_limits[i])
+        if len(in_bin) == 0:
+            mean_cdf_z_vqm[i] = float("NaN")
+        else:
+            mean_cdf_z_vqm[i] = np.mean(cdf_z_vqm[in_bin])
+    centers__mean_cdf_z_vqm = filter(lambda p: not np.isnan(p[1]), zip(centers, mean_cdf_z_vqm))
+    centers, mean_cdf_z_vqm = zip(*centers__mean_cdf_z_vqm)
+    return centers, mean_cdf_z_vqm
+
+
+def _interpolate_resolving_power(mean_cdf_z_vqm, centers, percentile):
+    """Resolving power at *percentile*, or NaN when the curve cannot be interpolated.
+
+    # % % Optional code to plot resolving power curve.
+    # % % The x-axis is vqm(2)-vqm(1).  The Y-axis is always the average
+    # % % confidence that vqm(2) is worse than vqm(1).
+    # % figure(1)
+    # % plot(centers,mean_cdf_z_vqm)
+    # % grid
+    # % set(gca,'LineWidth',1)
+    # % set(gca,'FontName','Ariel')
+    # % set(gca,'fontsize',11)
+    # % xlabel('VQM (2) - VQM (1)')
+    # % ylabel('Average Confidence VQM (2) is worse than VQM (1)')
+    # % title('VQM Resolving Power')
+
+    The matlab original walked the curve backwards for each of the 95/90/75/68
+    percentiles; only the 95% figure is reported here, and scipy's interp1d
+    replaces the manual walk:
+
+    # % Compute each resolving power by interpolating the mean_cdf_z_vqm graph
+    # % 95% resolving power
+    # i = length(centers) - 1;
+    # while mean_cdf_z_vqm(i) > 0.95 && i > 1,
+    #     i = i -1;
+    # end
+    # j = min(length(centers), i+1);
+    # resolving_power(1) = interp1(mean_cdf_z_vqm(i:j),centers(i:j), 0.95);
+    # (the 0.90 / 0.75 / 0.68 blocks are identical bar the percentile)
+    #
+    # resolving_powers = []
+    # for perc in [0.95, 0.90, 0.75, 0.68]:
+    #     i = len(centers) - 1
+    #     while mean_cdf_z_vqm[i-1] > perc and i > 1:
+    #         i -= 1
+    #     j = min(len(centers), i+1)
+    #     resolving_power = scipy.interpolate.interp1d(mean_cdf_z_vqm[i-1:j], centers[i-1:j])(perc)
+    #     resolving_powers.append(resolving_power)
+    """
+    try:
+        return scipy.interpolate.interp1d(mean_cdf_z_vqm, centers, kind="linear")([percentile])[0]
+    except ValueError:
+        return float("NaN")
 
 
 class ResolvingPowerPerfMetric(RawScorePerfMetric):
@@ -446,7 +653,6 @@ class ResolvingPowerPerfMetric(RawScorePerfMetric):
 
     @classmethod
     def _evaluate(cls, groundtruths, predictions, **kwargs):
-
         # function [resolving_power] = vqm_accuracy (vqm, num_viewers, mos, std, deg_of_freedom) % MATLAB function [resolving_power] = ...
         # % vqm_accuracy (vqm, num_viewers, mos, std, deg_of_freedom)
         # %
@@ -475,176 +681,13 @@ class ResolvingPowerPerfMetric(RawScorePerfMetric):
 
         deg_of_freedom = kwargs["ddof"] if "ddof" in kwargs else 0
 
-        vqm = np.array(predictions)
-        num_viewers = np.array(list(map(len, groundtruths)))
-        mos = np.array(list(map(np.nanmean, groundtruths)))
-        std = np.array(
-            list(map(lambda groundtruth: np.nanstd(groundtruth, ddof=deg_of_freedom), groundtruths))
+        vqm, num_viewers, mos, variance = _resolving_power_inputs(
+            groundtruths, predictions, deg_of_freedom
         )
+        delta_vqm, cdf_z_vqm = _pairwise_delta_and_confidence(vqm, mos, variance, num_viewers)
+        centers, mean_cdf_z_vqm = _mean_confidence_by_delta_bin(delta_vqm, cdf_z_vqm)
 
-        # variance = std.^2;
-        variance = std**2
-
-        # num_comb = length(vqm);
-        num_comb = len(vqm)
-
-        # % Perform the vqm RMSE calculation using vqm.
-        # vqm_rmse = (sum((vqm-mos).^2)/(num_comb - deg_of_freedom))^0.5;
-        # (CodeQL py/unused-local-variable: vqm_rmse is computed by the
-        # source Matlab routine but never read by the resolving-power
-        # calculation below. Dropped the Python assignment; kept the
-        # commented Matlab line for traceability against the original.)
-
-        # % Perform the vqm resolution measurement using both vqm and mos.
-        # vqm_pairs = repmat(vqm,1,num_comb)-repmat(vqm',num_comb,1);
-        # mos_pairs = repmat(mos,1,num_comb)-repmat(mos',num_comb,1);
-        # stand_err_diff = sqrt(repmat(variance./num_viewers,1,num_comb) + repmat((variance./num_viewers)',num_comb,1));
-        # z_pairs = mos_pairs./stand_err_diff;
-        vqm_pairs = np.tile(vqm, (num_comb, 1))
-        vqm_pairs = vqm_pairs - vqm_pairs.T
-        mos_pairs = np.tile(mos, (num_comb, 1))
-        mos_pairs = mos_pairs - mos_pairs.T
-        stand_err_diff = np.tile(variance / num_viewers, (num_comb, 1))
-        stand_err_diff = np.sqrt(stand_err_diff + stand_err_diff.T)
-        stand_err_diff[stand_err_diff == 0.0] = 1e-8
-        z_pairs = mos_pairs / stand_err_diff
-
-        # % Include everything above the diagonal.
-        # delta_vqm = [];
-        # z = [];
-        # for col = 2:num_comb
-        #     delta_vqm = [delta_vqm; vqm_pairs(1:col-1,col)];
-        #     z = [z; z_pairs(1:col-1,col)];
-        # end
-        delta_vqm = []
-        z = []
-        for col in range(2, num_comb + 1):
-            delta_vqm = np.hstack([delta_vqm, vqm_pairs[0 : col - 1, col - 1]])
-            z = np.hstack([z, z_pairs[0 : col - 1, col - 1]])
-
-        # % Switch on z and delta_vqm for negative delta_vqm
-        # z_vqm = z;
-        # negs_vqm = find(delta_vqm < 0);
-        # delta_vqm(negs_vqm) = -delta_vqm(negs_vqm);
-        # z_vqm(negs_vqm) = -z_vqm(negs_vqm);
-        z_vqm = z
-        negs_vqm = indices(delta_vqm, lambda x: x < 0)
-        delta_vqm[negs_vqm] = -delta_vqm[negs_vqm]
-        z_vqm[negs_vqm] = -z_vqm[negs_vqm]
-
-        # % Compute the average confidence that vqm(2) is worse than vqm(1) in mean_cdf_z_vqm.
-        # cdf_z_vqm = .5+erf(z_vqm/sqrt(2))/2;
-        cdf_z_vqm = 0.5 + scipy.special.erf(z_vqm / np.sqrt(2)) / 2
-
-        # === original binning logic: ===
-        # % One control parameter for delta_vqm resolution plot; number of vqm bins,
-        # % equally spaced from min(delta_vqm) to max(delta_vqm).
-
-        # % Sliding neighborhood filter with 50% overlap means that there will actually
-        # % be vqm_bins*2-1 points on the delta_vqm resolution plot.
-        # vqm_bins = 10; % How many bins to divide full vqm range for local averaging
-        # vqm_low = min(delta_vqm); % lower limit on delta_vqm
-        # vqm_high = max(delta_vqm); % upper limit on delta_vqm
-        # vqm_step = (vqm_high-vqm_low)/vqm_bins; % size of delta_vqm bins
-        vqm_bins = 10
-        vqm_low = min(delta_vqm)
-        vqm_high = max(delta_vqm)
-        vqm_step = (vqm_high - vqm_low) / vqm_bins
-
-        # % lower, upper, and center bin locations
-        # low_limits = [vqm_low:vqm_step/2:vqm_high-vqm_step];
-        # high_limits = [vqm_low+vqm_step:vqm_step/2:vqm_high];
-        # centers = [vqm_low+vqm_step/2:vqm_step/2:vqm_high-vqm_step/2];
-        low_limits = np.arange(vqm_low, vqm_high - vqm_step, step=vqm_step / 2)
-        centers = low_limits.copy() + vqm_step / 2
-        high_limits = low_limits.copy() + vqm_step
-        # patch to cover entire range
-        if high_limits[-1] < vqm_high:
-            low_limits = np.hstack([low_limits, vqm_high - vqm_step])
-            high_limits = np.hstack([high_limits, vqm_high])
-            centers = np.hstack([centers, vqm_high - vqm_step / 2])
-
-        len_centers = len(centers)
-        assert len_centers == len(low_limits) == len(high_limits)
-
-        # mean_cdf_z_vqm = zeros(1,2*vqm_bins-1);
-        # for i=1:2*vqm_bins-1
-        #     in_bin = find(low_limits(i) <= delta_vqm & delta_vqm < high_limits(i));
-        #     mean_cdf_z_vqm(i) = mean(cdf_z_vqm(in_bin));
-        # end
-        mean_cdf_z_vqm = np.zeros(len_centers)
-        for i in range(0, len_centers):
-            in_bin = indices(delta_vqm, lambda x: low_limits[i] <= x < high_limits[i])
-            if len(in_bin) == 0:
-                mean_cdf_z_vqm[i] = float("NaN")
-            else:
-                mean_cdf_z_vqm[i] = np.mean(cdf_z_vqm[in_bin])
-        centers__mean_cdf_z_vqm = filter(lambda p: not np.isnan(p[1]), zip(centers, mean_cdf_z_vqm))
-        centers, mean_cdf_z_vqm = zip(*centers__mean_cdf_z_vqm)
-
-        # # % % Optional code to plot resolving power curve.
-        # # % % The x-axis is vqm(2)-vqm(1).  The Y-axis is always the average
-        # # % % confidence that vqm(2) is worse than vqm(1).
-        # # % figure(1)
-        # # % plot(centers,mean_cdf_z_vqm)
-        # # % grid
-        # # % set(gca,'LineWidth',1)
-        # #
-        # # % set(gca,'FontName','Ariel')
-        # # % set(gca,'fontsize',11)
-        # # % xlabel('VQM (2) - VQM (1)')
-        # # % ylabel('Average Confidence VQM (2) is worse than VQM (1)')
-        # # % title('VQM Resolving Power')
-        #
-        # # % Compute each resolving power by interpolating the mean_cdf_z_vqm graph
-        #
-        # # % 95% resolving power
-        # # i = length(centers) - 1;
-        # # while mean_cdf_z_vqm(i) > 0.95 && i > 1,
-        # #     i = i -1;
-        # # end
-        # # j = min(length(centers), i+1);
-        # # resolving_power(1) = interp1(mean_cdf_z_vqm(i:j),centers(i:j), 0.95);
-        #
-        # # % 90% resolving power
-        # # i = length(centers) - 1;
-        # # while mean_cdf_z_vqm(i) > 0.90 && i > 1,
-        # # i = i -1;
-        # # end
-        # # j = min(length(centers), i+1);
-        # # resolving_power(2) = interp1(mean_cdf_z_vqm(i:j),centers(i:j), 0.90);
-        #
-        # # % 75% resolving power
-        # # i = length(centers) - 1;
-        # # while mean_cdf_z_vqm(i) > 0.75 && i > 1,
-        # # i = i -1;
-        # # end
-        # # j = min(length(centers), i+1);
-        # # resolving_power(3) = interp1(mean_cdf_z_vqm(i:j),centers(i:j), 0.75);
-        #
-        # # % 68% resolving power
-        # # i = length(centers) - 1;
-        # # while mean_cdf_z_vqm(i) > 0.68 && i > 1,
-        # # i = i -1;
-        # # end
-        # # j = min(length(centers), i+1);
-        # # resolving_power(4) = interp1(mean_cdf_z_vqm(i:j),centers(i:j), 0.68);
-        #
-        # resolving_powers = []
-        # for perc in [0.95, 0.90, 0.75, 0.68]:
-        #     i = len(centers) - 1
-        #     while mean_cdf_z_vqm[i-1] > perc and i > 1:
-        #         i -= 1
-        #     j = min(len(centers), i+1)
-        #     resolving_power = scipy.interpolate.interp1d(mean_cdf_z_vqm[i-1:j], centers[i-1:j])(perc)
-        #     resolving_powers.append(resolving_power)
-
-        try:
-            res_pow_95 = scipy.interpolate.interp1d(mean_cdf_z_vqm, centers, kind="linear")([0.95])[
-                0
-            ]
-        except ValueError:
-            res_pow_95 = float("NaN")
+        res_pow_95 = _interpolate_resolving_power(mean_cdf_z_vqm, centers, 0.95)
 
         # % return infinity if can't compute
         # resolving_power(isnan(resolving_power)) = inf;

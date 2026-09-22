@@ -14,7 +14,7 @@
 
 /*
  * Bit-exact AVX2 SSIM SIMD helpers — mirror the scalar reference in
- * libvmaf/src/feature/iqa/ssim_tools.c byte-for-byte under
+ * core/src/feature/iqa/ssim_tools.c byte-for-byte under
  * FLT_EVAL_METHOD == 0. `precompute` and `variance` are pure elementwise
  * float operations (no reductions) — float IEEE-754 ops are identical to
  * scalar by construction. `accumulate` is the tricky one: scalar computes

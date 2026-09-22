@@ -1,0 +1,1 @@
+| [ADR-1293](1293-tinyai-qat-torchao-pt2e.md) | Prepare tiny-AI QAT through torchao's pt2e API instead of the deprecated `torch.ao.quantization` FX path, keeping the weight recipe and aligning the activation range with ORT. | Proposed | ai, python, dependencies, numerical-correctness |

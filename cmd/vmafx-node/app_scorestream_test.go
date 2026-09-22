@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,22 +32,27 @@ import (
 )
 
 // nodeRepoRoot walks up to the repo root (marked by CLAUDE.md).
+//
+// filepath.Dir drops one element per step and is a fixed point only at the root, so the
+// starting path's separator count bounds how many directories the walk can visit.
 func nodeRepoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	for {
+	for range strings.Count(dir, string(filepath.Separator)) + 1 {
 		if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err == nil {
 			return dir
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatalf("repo root not found from %s", dir)
+			break
 		}
 		dir = parent
 	}
+	t.Fatalf("repo root not found from %s", dir)
+	return ""
 }
 
 // TestAppScoreStreamEndToEnd boots the production fx graph with the in-tree
@@ -141,7 +147,12 @@ func TestAppScoreStreamEndToEnd(t *testing.T) {
 
 	var frameScores int
 	var aggregate *vmafxv1.AggregateScore
-	for {
+	// A conforming server sends one FrameScore per submitted frame and one terminal
+	// Aggregate, so nFrames+1 responses is the contract. Reading one past that is enough
+	// to observe the EOF; anything beyond it is a server bug, and the bound turns that
+	// into a named failure instead of a hung test.
+	streamed := 0
+	for range nFrames + 2 {
 		resp, err := stream.Recv()
 		if err == io.EOF {
 			break
@@ -149,11 +160,15 @@ func TestAppScoreStreamEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Recv: %v", err)
 		}
+		streamed++
 		if fs := resp.GetFrameScore(); fs != nil {
 			frameScores++
 		} else if agg := resp.GetAggregate(); agg != nil {
 			aggregate = agg
 		}
+	}
+	if streamed > nFrames+1 {
+		t.Fatalf("server streamed more than %d responses without EOF", nFrames+1)
 	}
 	if err := <-sendErr; err != nil {
 		t.Fatalf("send loop: %v", err)

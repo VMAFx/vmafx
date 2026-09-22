@@ -45,8 +45,8 @@ the corpus** (license is research-only — see
 Obtain it from the upstream source and place it locally:
 
 ```text
-.workingdir2/BVI-DVC Part 1.zip   # original archive (~84 GiB)
-.workingdir2/bvi-dvc-extracted/   # gitignored extraction target
+.corpus/bvi-dvc-raw/BVI-DVC Part 1.zip   # original archive (~84 GiB)
+.corpus/bvi-dvc-extracted/   # gitignored extraction target
 ```
 
 Both paths are gitignored. The repo never commits BVI-DVC YUV / MP4
@@ -91,7 +91,7 @@ canonical tiers (A/B/C/D) are also skipped with a warning.
 The end-to-end ingestion is two stages:
 
 ```text
-   .workingdir2/BVI-DVC Part 1.zip    OR    /path/to/bvi-dvc-extracted/
+   .corpus/bvi-dvc-raw/BVI-DVC Part 1.zip    OR    /path/to/bvi-dvc-extracted/
               │                                          │
               │  --bvi-zip (default)                    │  --bvi-dir (ADR-0527)
               └──────────────────────┬──────────────────┘

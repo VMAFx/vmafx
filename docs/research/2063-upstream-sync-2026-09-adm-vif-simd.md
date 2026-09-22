@@ -96,6 +96,17 @@ index, reading column `w` and rows past `h` for bands of 14 samples or fewer.
 CUDA, HIP and SYCL twins also accept frames below 17x17. The fixes are a
 separate PR because they touch GPU files outside this port.
 
+That PR (`fix/gpu-adm-tiny-frames`) measured the second defect alone on the
+gfx1036 iGPU as well: HIP gave the same 1.20869 against 0.99526 at 17x17 as
+CUDA. With both fixes, CUDA, HIP and SYCL agree with scalar within 1e-4 at
+every tested size from 17x17 to 640x360, and src01 on CUDA is unchanged.
+Cleaning the touched GPU files showed that the cuda, hip and sycl clang-tidy
+ratchet lanes had never been runnable: the lanes' compiler flags reached
+clang-tidy as clang-tidy options, and the `.cu` / `.hip` kernels were missing
+from `compile_commands.json`. It also showed that three HIP ADM tests were
+still registered `should_fail` long after their cause was fixed, which hid
+two tests reading a feature the HIP twin does not emit.
+
 ### checkasm versus the fork's parity tests
 
 checkasm compares each shipped scalar kernel against each ISA on random data,
@@ -108,6 +119,42 @@ compared region. The fork therefore ports the lesson and not the framework:
 guard-band helpers in `simd_bitexact_test.h`, real strides and sentinels in
 the ADM/VIF parity tests, and small-size sweeps.
 
+### Int32 overflow in the 16-bit vertical DWT pass
+
+Found while checking a report from the SYCL work: scale 0's vertical DWT pass
+forms `sum(filter[k] * s[k])` before subtracting `46342 * 2^(bpc - 1)`. The
+low-pass taps are `15826, 27411, 7345, -4240`, and the first three sum to
+50582, so at 16 bpc the partial sum passes `INT32_MAX` once three consecutive
+samples reach 42456. The scalar `adm_dwt2_vpass_16()` and the scalar vertical
+loops inside `adm_dwt2_16_avx2()` and `adm_dwt2_16_avx512()` all summed in
+`int32_t`. Upstream Netflix/vmaf has the same code.
+
+Measured with a clang `-fsanitize=undefined` build on 176x144 16-bit frames
+with luma in `[49152, 65535]`: nine reports, three per kernel (scalar
+`integer_adm.c:1463/1464/1513`, AVX2 `adm_avx2.c:3392/3393/3397`, AVX-512
+`adm_avx512.c:3495/3496/3500`). Scores were nevertheless right. The
+normalised value is at most `54822 * 32768` in magnitude, inside int32, so
+two's-complement wrap-around undoes itself. That is also why no parity test
+could see it: every path wrapped the same way.
+
+Options weighed for the fix:
+
+| Option | UB-free for | Cost | Taken |
+| --- | --- | --- | --- |
+| Accumulate in int64, then narrow | every input | one 64-bit add per tap | yes |
+| Centre each sample first, `sum(filter[k] * (s[k] - 2^(bpc-1)))` | in-range samples only; a 10-bit plane holding 16-bit garbage still overflows | one subtract per sample | no |
+| Accumulate in `uint32_t`, convert back | nothing: the final unsigned-to-signed conversion of a negative result is implementation-defined | none | no |
+
+The int64 form matches the file's own `i4_dwt2_tap4()`, which scales 1 to 3
+already use. It is `adm_dwt2_vpass16_tap4()` in `integer_adm.h`, shared by the
+scalar pass and both x86 kernels. For in-range input the narrowed result
+equals the old wrapped one, so no score moves: 12 runs (10, 12 and 16 bpc,
+scalar, AVX2 and AVX-512) are identical at `%.17g` before and after. NEON has
+no 16-bit DWT; it falls back to scalar. The CUDA, HIP and Metal twins carry
+the same int32 sum and are tracked in `docs/state.md`
+(`T-GPU-ADM-DWT2-16BIT-INT32-OVERFLOW-2026-09-18`); the SYCL twin already
+forms it in int64.
+
 ## Alternatives explored
 
 - Taking upstream's `-2/-3` DWT2 bound for the NEON tail. It is correct but one
@@ -119,10 +166,12 @@ the ADM/VIF parity tests, and small-size sweeps.
 
 ## Open questions
 
-- `adm_cm` AVX2 and AVX-512 are not bit-exact with scalar on uncorrelated
-  full-range noise: 576x324 `integer_adm_scale0` gives `0.45876092664583873`
+- `adm_cm` AVX2 and AVX-512 were not bit-exact with scalar on uncorrelated
+  full-range noise: 576x324 `integer_adm_scale0` gave `0.45876092664583873`
   scalar against `0.45858330648667378` AVX2, with identical numbers upstream.
-  Tracked in `docs/state.md`.
+  Cause: the scalar centre tap `(int16_t)(((ONE_BY_15 * abs(a)) + 2048) >> 12)`
+  wraps for `|a|` above about 15360, the vector macros kept 32 bits. Fixed by
+  `fix/adm-cm-simd-bitexact`; the Netflix golden pairs never reach the wrap.
 - Upstream's scalar and SIMD ADM still carry the `(uint32_t)pow(2, shift - 1)`
   conversion. Worth reporting to Netflix/vmaf with the instruction evidence
   above.

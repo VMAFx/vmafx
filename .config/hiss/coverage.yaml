@@ -1,0 +1,104 @@
+# Replayable enforcement evidence for VMAFx's HISS scanner claims (HISS-20).
+#
+# `praetorctl hiss coverage --verify` replays every fixture below in isolation.
+# Positive fixtures must be reported, negative fixtures must stay clean, and gap
+# fixtures must remain undetected until the catalog is updated. Claims delegated
+# to compilers or other CI tools are intentionally not listed here: this catalog
+# describes what the Praetor HISS scanner itself can prove.
+version: 1
+rules:
+  - id: HISS-01
+    title: Acyclic Control Flow
+    coverage:
+      - language: c
+        state: partial
+        mechanism: Praetor native goto matcher
+        rationale: goto is detected; native recursion remains an explicit gap.
+      - language: go
+        state: partial
+        mechanism: Praetor Go AST recursion and call-graph checks
+        rationale: direct recursion is detected; method-call cycles remain an explicit gap.
+
+  - id: HISS-02
+    title: Bounded Loops and I/O Timeouts
+    coverage:
+      - language: c
+        state: partial
+        mechanism: Praetor native unbounded-loop matcher
+        rationale: unbounded native loops are detected; the I/O-timeout half is not decided.
+      - language: python
+        state: partial
+        mechanism: Praetor Python while-true matcher
+        rationale: while True is detected; other loop and I/O bounds are not decided.
+      - language: rust
+        state: partial
+        mechanism: Praetor Rust loop matcher
+        rationale: loop and while true are detected; I/O timeouts are not decided.
+
+  - id: HISS-04
+    title: Complexity Bounds
+    coverage:
+      - language: c
+        state: partial
+        mechanism: Praetor native brace-tracked function-length check
+        rationale: function length is detected; cyclomatic complexity remains an explicit gap.
+      - language: go
+        state: partial
+        mechanism: Praetor Go AST function-length check
+        rationale: function length is detected; cyclomatic complexity remains an explicit gap.
+      - language: python
+        state: partial
+        mechanism: Praetor Python indentation-tracked function-length check
+        rationale: function length is detected; cyclomatic complexity remains an explicit gap.
+      - language: rust
+        state: partial
+        mechanism: Praetor Rust brace-tracked function-length check
+        rationale: function length is detected; cyclomatic complexity remains an explicit gap.
+
+  - id: HISS-07
+    title: Checked Errors
+    coverage:
+      - language: go
+        state: partial
+        mechanism: Praetor Go AST discarded-call-result check
+        rationale: blank-assigned call results are detected; bare discarded calls remain a gap.
+      - language: rust
+        state: partial
+        mechanism: Praetor Rust unwrap and expect matcher
+        rationale: unwrap and expect calls are detected; other discarded errors are not decided.
+
+  - id: HISS-08
+    title: Static Determinism and Banned Functions
+    coverage:
+      - language: c
+        state: partial
+        mechanism: Praetor native banned-call matcher
+        rationale: gets, strcpy, and sprintf are detected; shell execution remains a gap.
+      - language: python
+        state: partial
+        mechanism: Praetor Python banned-call matcher
+        rationale: bare eval and exec calls are detected; dynamic imports remain a gap.
+      - language: go
+        state: unsupported
+        mechanism: none
+        rationale: dynamic Go execution is delegated to repository linters, not Praetor's scanner.
+
+  - id: HISS-09
+    title: Reference Safety
+    coverage:
+      - language: go
+        state: partial
+        mechanism: Praetor Go AST unsafe-use proof check
+        rationale: direct unsafe uses need a SAFETY proof; aliased imports remain a gap.
+      - language: rust
+        state: partial
+        mechanism: Praetor Rust unsafe-block proof check
+        rationale: unsafe blocks need a SAFETY proof; unsafe trait declarations remain a gap.
+      - language: c
+        state: unsupported
+        mechanism: none
+        rationale: native pointer arithmetic has no Praetor reference-safety rule.
+      - language: python
+        state: unsupported
+        mechanism: none
+        rationale: ctypes memory operations have no Praetor reference-safety rule.

@@ -23,24 +23,47 @@ Primary, versioned sources:
 - [Cppcheck 2.21.1 POSIX model](https://github.com/danmar/cppcheck/blob/2.21.1/cfg/posix.cfg#L6355-L6367)
 - [Cppcheck 2.21.1 constructor analysis](https://github.com/danmar/cppcheck/blob/2.21.1/lib/checkclass.cpp)
 - [Cppcheck 2.13.0 POSIX model](https://github.com/danmar/cppcheck/blob/2.13.0/cfg/posix.cfg)
+- [POSIX `pthread_cond_init`](https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_cond_init.html)
+- [Current Cppcheck POSIX model](https://github.com/cppcheck-opensource/cppcheck/blob/main/cfg/posix.cfg)
 
 The installed `--help` documents library models separately from platform and
 language selection. The model already exists in the older 2.13.0 source used
 by distro toolchains; no vendored replacement or new native dependency is added.
 
+A later whole-tree replay exposed a version split inside that otherwise
+necessary model. Cppcheck 2.13 through 2.21 have no `pthread_cond_init` entry;
+2.22 adds one but declares argument 2 non-null, while POSIX defines a null
+attributes pointer as the default attributes. The newer false premise reported
+seven valid `pthread_cond_init(&condition, NULL)` calls as `nullPointer`; the
+older omission cannot detect an actually null condition object. Neither defect
+invalidates the pthread aggregate-type correction, so dropping the model would
+restore the original 24 false aggregate warnings.
+
 ## Durable correction
 
-Both `scripts/ci/lint-configured.py` and the required Cppcheck workflow load
-`--library=posix`. Their diagnostic categories, failure exit code, suppression
-list and compile database remain unchanged. This models an API the fork uses
-on every platform: `core/src/compat/win32/pthread.h` implements the same mutex
-and condition types on Windows. No Unix platform, C-only language or target
-architecture is forced; command variants and Windows defines remain intact.
+Both `scripts/ci/lint-configured.py` and the required Cppcheck workflow derive a
+corrected model from the installed analyzer's own `cfg/posix.cfg`, then load
+that generated file. `scripts/ci/write_cppcheck_posix_model.py` inserts the
+correct function contract when an older model lacks it, removes exactly the
+invalid argument-2 `not-null` marker from the newer defective shape, and leaves
+an already-correct entry unchanged. It uses `cppcheck --filesdir` where
+supported and the analyzer's install-relative data directory for older
+releases. Missing source, duplicate function/argument nodes, a missing
+argument-1 marker, or duplicate argument-2 markers are fatal. The selected
+Cppcheck binary validates the generated library before atomic publication, so
+failed regeneration cannot replace a last-valid model.
 
-No new ADR is needed: this supplies missing standard API knowledge to the
-existing analyzer contract. No alternatives: per-member suppression would hide
-the false premise, and constructors would change a shared C surface for the
-benefit of a misconfigured analyzer. No production or header changes are needed.
+Diagnostic categories, failure exit code, suppression list and compile database
+remain unchanged. This models an API the fork uses on every platform:
+`core/src/compat/win32/pthread.h` implements the same mutex and condition types
+on Windows. No Unix platform, C-only language or target architecture is forced;
+command variants and Windows defines remain intact.
+
+No new ADR is needed: this corrects standard API knowledge in the existing
+analyzer contract. No alternatives: suppressing seven call sites would hide the
+false premise, while dropping the POSIX model or adding constructors would
+restore unrelated aggregate noise or change a shared C surface. The correction
+does not change production code or public headers.
 
 ## Positive and negative controls
 
@@ -56,14 +79,21 @@ installation in the required Cppcheck job; missing tools or models fail.
 - A real `std::string`-containing class with an unset scalar still produces
   uninitialized-use diagnostics. On versions that implement
   `uninitMemberVarNoCtor`, that exact category also remains active.
+- `pthread_cond_init(&condition, NULL)` passes, while a null condition pointer
+  still produces `nullPointer`.
+- An older model without the function receives both controls, while an
+  already-correct entry remains unchanged.
+- Malformed model-shape drift fails closed and leaves a last-valid generated
+  file intact; a pre-`--filesdir` analyzer resolves its paired install-relative
+  model.
 
 The configured-driver fixtures independently require the model flag, unchanged
 severity/error flags, preserved C++ and Windows-target command arguments,
 unchanged native database bytes and the workflow's real-tool registration.
 This does not make cppcheck acceptance equivalent to Windows runtime validation.
 
-Raw versioned sources, compiler controls, analyzer XML and command/result hashes
-are retained under `.workingdir2/evidence/cppcheck-c-header-model-20260908`.
-The focused controls do not claim whole-tree `make lint`, `make test` or release
+The tracked real-tool fixtures and source links above are the durable evidence;
+local analyzer dumps are not part of the public documentation contract. The
+focused controls do not claim whole-tree `make lint`, `make test` or release
 acceptance. No clang-tidy baseline change is appropriate for this configuration
 fix; no native source was changed or newly measured for that ratchet.

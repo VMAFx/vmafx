@@ -15,8 +15,8 @@
 # unpack back to bit-identical YUVs.
 #
 # Default sources:
-#   $REPO_ROOT/.workingdir2/bvi-dvc-raw   (BVI-DVC, 192 GiB, 772 .yuv)
-#   $REPO_ROOT/.workingdir2/netflix       (Netflix drop, 37 GiB,
+#   $REPO_ROOT/.corpus/bvi-dvc-raw   (BVI-DVC, 192 GiB, 772 .yuv)
+#   $REPO_ROOT/.corpus/netflix       (Netflix drop, 37 GiB,
 #                                          9 ref + 70 dis .yuv)
 #
 # Output:
@@ -41,7 +41,7 @@ set -Eeuo pipefail
 # ---- defaults --------------------------------------------------------
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-OUT_DIR="${OUT_DIR:-$REPO_ROOT/.workingdir2/gdrive-bundle}"
+OUT_DIR="${OUT_DIR:-$REPO_ROOT/.workingdir/cache/gdrive-bundle}"
 CODEC="${CODEC:-hevc}"
 THREADS="${THREADS:-0}" # 0 = ffmpeg picks
 DRY_RUN=0
@@ -87,8 +87,8 @@ if [[ ${#CORPUS_DIRS[@]} -eq 0 ]]; then
   # resolutions — not what the ensemble kit's ``--ref-dir`` consumes.
   # Restrict to `ref/` so the bundle stays a pure reference-corpus.
   CORPUS_DIRS=(
-    "$REPO_ROOT/.workingdir2/bvi-dvc-raw"
-    "$REPO_ROOT/.workingdir2/netflix/ref"
+    "$REPO_ROOT/.corpus/bvi-dvc-raw"
+    "$REPO_ROOT/.corpus/netflix/ref"
   )
 fi
 

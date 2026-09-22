@@ -8,7 +8,7 @@
  *  float_moment_ref1st, float_moment_dis1st,
  *  float_moment_ref2nd, float_moment_dis2nd.
  *
- *  Algorithm (must match CPU libvmaf/src/feature/float_moment.c and
+ *  Algorithm (must match CPU core/src/feature/float_moment.c and
  *  all other GPU backends — CUDA/SYCL/Vulkan/HIP):
  *    For each plane in {ref, dis}:
  *      1st moment: sum  += val              (floating-point pixel)

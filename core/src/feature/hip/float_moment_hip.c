@@ -4,9 +4,9 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_moment feature extractor on the HIP backend — fourth consumer
- *  of `libvmaf/src/hip/kernel_template.h` (T7-10b batch-3 / ADR-0374).
+ *  of `core/src/hip/kernel_template.h` (T7-10b batch-3 / ADR-0374).
  *
- *  Mirrors `libvmaf/src/feature/cuda/integer_moment_cuda.c`
+ *  Mirrors `core/src/feature/cuda/integer_moment_cuda.c`
  *  call-graph-for-call-graph: same private-state struct shape, same
  *  init/submit/collect/close lifecycle, same template helper
  *  invocations. Single dispatch per frame; emits all four metrics
@@ -416,12 +416,12 @@ static const char *provided_features[] = {
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_float_moment_hip;` in
- * `libvmaf/src/feature/feature_extractor.c`'s
+ * `core/src/feature/feature_extractor.cpp`'s
  * `feature_extractor_list[]`. Making this static would unlink the
  * extractor from the registry and fail every name lookup. Same
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_float_moment_cuda` in
- * `libvmaf/src/feature/cuda/integer_moment_cuda.c`). */
+ * `core/src/feature/cuda/integer_moment_cuda.c`). */
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_moment_hip = {
     .name = "float_moment_hip",

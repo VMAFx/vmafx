@@ -266,7 +266,7 @@ That is a separate hardening task tracked under
   driver 595.71.05.
 - Phase 3b is **concluded with deferral**. State.md row updated to
   `T-VK-VIF-1.4-RESIDUAL-NVIDIA-DEFERRED`. Per
-  [`feedback_no_test_weakening`](../../.workingdir2/...) — the gate is
+  `feedback_no_test_weakening` — the gate is
   not relaxed; the API-1.4 bump itself stays blocked until the
   manual-reduction patch lands or NVIDIA ships a driver fix.
 - The fork's shipping default (API 1.3) gates **0/48 on every device**,

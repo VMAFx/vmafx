@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: EUPL-1.2
  *
  * libFuzzer harness for the vendored Daala Y4M parser
- * (libvmaf/tools/y4m_input.c) — exercised through the public
+ * (core/tools/y4m_input.c) — exercised through the public
  * `video_input_open` / `video_input_fetch_frame` /
  * `video_input_close` surface.
  *

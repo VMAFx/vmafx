@@ -190,6 +190,6 @@ to run flip `-Denable_vulkan=enabled` explicitly.
   audit pattern applied to docs / hooks.
 - [`/add-gpu-backend`](../../.claude/skills/add-gpu-backend/SKILL.md)
   — the skill that produced the initial scaffold.
-- [BACKLOG T5-1](../../.workingdir2/BACKLOG.md) — backlog row.
+- BACKLOG T5-1 — backlog row.
 - `req` — user popup choice 2026-04-25: "T5-1 Vulkan backend
   scaffold (L, Recommended)".

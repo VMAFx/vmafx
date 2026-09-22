@@ -385,6 +385,34 @@ func TestIterRowsKeepEncodes(t *testing.T) {
 	})
 }
 
+func TestIterRowsReportsEncodeCleanupFailure(t *testing.T) {
+	t.Parallel()
+
+	job, opts := rawYUVJob(t, []Cell{{Preset: "medium", CRF: 26}})
+	runners := scriptedRunners(nil)
+	runners.Encode = func(_ context.Context, argv []string) RunResult {
+		out := argv[len(argv)-1]
+		if err := os.MkdirAll(out, 0o750); err != nil {
+			return RunResult{ReturnCode: 1, Stderr: err.Error()}
+		}
+		if err := os.WriteFile(filepath.Join(out, "still-open"), []byte("x"), 0o600); err != nil {
+			return RunResult{ReturnCode: 1, Stderr: err.Error()}
+		}
+		return RunResult{Stderr: "ffmpeg version 7.1\nx264 - core 164\n"}
+	}
+	emitted := false
+	err := IterRows(context.Background(), job, opts, runners, func(map[string]any) error {
+		emitted = true
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "remove encoded output") {
+		t.Fatalf("IterRows error = %v, want an explicit cleanup failure", err)
+	}
+	if emitted {
+		t.Fatal("IterRows emitted a row before reporting that cleanup failed")
+	}
+}
+
 func TestIterRowsSourceHash(t *testing.T) {
 	t.Parallel()
 
@@ -808,7 +836,7 @@ func TestOptionsDefaults(t *testing.T) {
 	want := Options{
 		Encoder:         "libx264",
 		Output:          "corpus.jsonl",
-		EncodeDir:       filepath.Join(".workingdir2", "encodes"),
+		EncodeDir:       filepath.Join(".workingdir", "cache", "vmafx-tune", "encodes"),
 		VMAFModel:       Model1080P,
 		FFmpegBin:       "ffmpeg",
 		VMAFBin:         "vmaf",

@@ -170,7 +170,7 @@ def test_load_roundtrips_metadata_without_onnx(tmp_path: Path) -> None:
         normalization={"mean": [0.0], "std": [1.0]},
         dataset="synthetic",
         expected_output_range=[0.0, 100.0],
-        license="BSD-3-Clause-Plus-Patent",
+        license="BSD-2-Clause-Patent",
         notes="round-trip test",
     )
     sidecar = tmp_path / "example.json"

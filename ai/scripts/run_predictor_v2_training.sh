@@ -8,7 +8,7 @@
 # does.
 #
 # Pipeline:
-#   1. Discover what corpus is available under ~/.workingdir2/.
+#   1. Discover what corpus is available under ~/.corpus/.
 #   2. Run ai/scripts/train_predictor_v2_realcorpus.py to produce a
 #      per-codec JSON report (PLCC / SROCC / RMSE per fold + the
 #      ADR-0303 gate verdict).
@@ -53,9 +53,9 @@ corpus="${CORPUS:-}"
 # The trainer's --corpus-root flag is repeatable; we pass each space-
 # separated entry through.
 default_roots=(
-  "$HOME/.workingdir2/netflix"
-  "$HOME/.workingdir2/konvid-150k"
-  "$HOME/.workingdir2/bvi-dvc-raw"
+  "$HOME/.corpus/netflix"
+  "$HOME/.corpus/konvid-150k"
+  "$HOME/.corpus/bvi-dvc-raw"
 )
 corpus_roots="${CORPUS_ROOTS:-${default_roots[*]}}"
 

@@ -23,7 +23,7 @@ Two forces constrain the scope. First, `VmafPicture` carries **no
 transfer-function or colorimetry metadata**, so the extractor must *assume* a
 transfer function and primaries, exposed as options. Second, an adversarial
 verification of the dossier
-([`.workingdir2/rc/metrics/deltae-itp.md`](../../.workingdir2/rc/metrics/deltae-itp.md))
+(`.workingdir2/rc/metrics/deltae-itp.md`)
 confirmed that the PQ pipeline — every matrix, the five PQ constants, the ITP
 scaling, the ×720 factor — is triple-sourced against the normative ITU-R
 BT.2124-0 PDF plus independent references, whereas the HLG (Annex 3) and
@@ -78,7 +78,7 @@ independently validated.
   ICtCp definition.
 - SMPTE ST 2084:2014 — PQ EOTF.
 - Verified design dossier:
-  [`.workingdir2/rc/metrics/deltae-itp.md`](../../.workingdir2/rc/metrics/deltae-itp.md)
+  `.workingdir2/rc/metrics/deltae-itp.md`
   (adversarial verdict: GO-WITH-FIXES; all constants triple-sourced; required
   fixes — assert the full-precision ITP triple at places=4 instead of the
   pre-rounded 2.363, and ship PQ-only — applied).

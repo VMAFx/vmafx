@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -92,6 +93,11 @@ static constexpr float CSF_TABLES[3][64] = {
      0.330555063063f, 0.593906509971f, 0.802254508198f, 0.706020324706f, 0.587716619023f,
      0.478717061273f, 0.393021669543f, 0.330555063063f, 0.285345396658f}};
 
+} // namespace
+
+namespace
+{
+
 struct PsnrHvsStateSycl {
     unsigned width[PSNR_HVS_NUM_PLANES];
     unsigned height[PSNR_HVS_NUM_PLANES];
@@ -122,11 +128,33 @@ struct PsnrHvsStateSycl {
     VmafDictionary *feature_name_dict;
 };
 
+struct PsnrHvsKernelArgs {
+    const float *ref;
+    const float *dist;
+    float *partials;
+    unsigned width;
+    unsigned height;
+    unsigned blocks_x;
+    unsigned blocks_y;
+    int plane;
+    int bpc;
+};
+
+} // namespace
+
+namespace
+{
+
 /* OD_UNBIASED_RSHIFT32 — round-to-zero right shift. */
 static inline int od_dct_rshift(int a, int b)
 {
     return (int)(((unsigned int)a >> (32 - b)) + (unsigned int)a) >> b;
 }
+
+} // namespace
+
+namespace
+{
 
 static void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4, int &y5, int &y6, int &y7,
                          int x0, int x1, int x2, int x3, int x4, int x5, int x6, int x7)
@@ -139,19 +167,16 @@ static void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4, int &y5, i
     int t3 = x5;
     int t5 = x6;
     int t1 = x7;
-    int t1h;
-    int t4h;
-    int t6h;
     t1 = t0 - t1;
-    t1h = od_dct_rshift(t1, 1);
+    const int t1h = od_dct_rshift(t1, 1);
     t0 -= t1h;
     t4 += t5;
-    t4h = od_dct_rshift(t4, 1);
+    const int t4h = od_dct_rshift(t4, 1);
     t5 -= t4h;
     t3 = t2 - t3;
     t2 -= od_dct_rshift(t3, 1);
     t6 += t7;
-    t6h = od_dct_rshift(t6, 1);
+    const int t6h = od_dct_rshift(t6, 1);
     t7 = t6h - t7;
     t0 += t6h;
     t6 = t0 - t6;
@@ -185,6 +210,11 @@ static void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4, int &y5, i
     y6 = t6;
     y7 = t7;
 }
+
+} // namespace
+
+namespace
+{
 
 static void od_bin_fdct8x8(int blk[64])
 {
@@ -232,177 +262,215 @@ static void od_bin_fdct8x8(int blk[64])
     }
 }
 
+} // namespace
+
+namespace
+{
+
 static inline int sample_to_int(float v, int bpc)
 {
-    if (bpc == 8)
-        return (int)(v + 0.5f);
-    if (bpc == 10)
-        return (int)(v * 4.0f + 0.5f);
-    return (int)(v * 16.0f + 0.5f);
+    if (bpc == 8) {
+        return (int)sycl::floor(v + 0.5f);
+    }
+    if (bpc == 10) {
+        return (int)sycl::floor(v * 4.0f + 0.5f);
+    }
+    return (int)sycl::floor(v * 16.0f + 0.5f);
 }
 
-static void launch_psnr_hvs(sycl::queue &q, const float *ref, const float *dist, float *partials,
-                            unsigned width, unsigned height, unsigned num_blocks_x,
-                            unsigned num_blocks_y, int plane, int bpc)
+} // namespace
+
+namespace
+{
+
+static inline bool load_hvs_block(sycl::nd_item<2> item,
+                                  const sycl::local_accessor<int, 1> &local_ref,
+                                  const sycl::local_accessor<int, 1> &local_dist,
+                                  const PsnrHvsKernelArgs &args)
+{
+    const size_t block_y = item.get_group(0);
+    const size_t block_x = item.get_group(1);
+    const size_t local_y = item.get_local_id(0);
+    const size_t local_x = item.get_local_id(1);
+    const size_t local_index = local_y * 8u + local_x;
+    const size_t origin_x = block_x * 7u;
+    const size_t origin_y = block_y * 7u;
+    const bool valid = block_x < (size_t)args.blocks_x && block_y < (size_t)args.blocks_y &&
+                       origin_x + 7u < (size_t)args.width && origin_y + 7u < (size_t)args.height;
+    int ref = 0;
+    int dist = 0;
+    if (valid) {
+        const size_t source_index = (origin_y + local_y) * (size_t)args.width + origin_x + local_x;
+        ref = sample_to_int(args.ref[source_index], args.bpc);
+        dist = sample_to_int(args.dist[source_index], args.bpc);
+    }
+    local_ref[local_index] = ref;
+    local_dist[local_index] = dist;
+    return valid;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline void copy_hvs_block(const sycl::local_accessor<int, 1> &source, int output[64])
+{
+    for (int index = 0; index < 64; index++) {
+        output[index] = source[index];
+    }
+}
+
+static inline float hvs_variance_ratio(const int block[64])
+{
+    float means[4] = {0.f, 0.f, 0.f, 0.f};
+    float global_mean = 0.f;
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            const int subgroup = ((row & 12) >> 2) + ((col & 12) >> 1);
+            global_mean += (float)block[row * 8 + col];
+            means[subgroup] += (float)block[row * 8 + col];
+        }
+    }
+    global_mean /= 64.f;
+    means[0] /= 16.f;
+    means[1] /= 16.f;
+    means[2] /= 16.f;
+    means[3] /= 16.f;
+    float variances[4] = {0.f, 0.f, 0.f, 0.f};
+    float global_variance = 0.f;
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            const int subgroup = ((row & 12) >> 2) + ((col & 12) >> 1);
+            const float global_delta = (float)block[row * 8 + col] - global_mean;
+            const float subgroup_delta = (float)block[row * 8 + col] - means[subgroup];
+            global_variance += global_delta * global_delta;
+            variances[subgroup] += subgroup_delta * subgroup_delta;
+        }
+    }
+    global_variance *= 1.f / 63.f * 64.f;
+    variances[0] *= 1.f / 15.f * 16.f;
+    variances[1] *= 1.f / 15.f * 16.f;
+    variances[2] *= 1.f / 15.f * 16.f;
+    variances[3] *= 1.f / 15.f * 16.f;
+    if (global_variance > 0.f) {
+        global_variance =
+            (variances[0] + variances[1] + variances[2] + variances[3]) / global_variance;
+    }
+    return global_variance;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline void hvs_mask(float output[64], int plane)
+{
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            const float csf = CSF_TABLES[plane][row * 8 + col];
+            const float scaled = csf * 0.3885746225901003f;
+            output[row * 8 + col] = scaled * scaled;
+        }
+    }
+}
+
+static inline float hvs_mask_energy(const int block[64], const float mask[64])
+{
+    float energy = 0.f;
+    for (int row = 0; row < 8; row++) {
+        const int first_col = (row == 0) ? 1 : 0;
+        for (int col = first_col; col < 8; col++) {
+            const int coefficient = block[row * 8 + col];
+            energy += (float)(coefficient * coefficient) * mask[row * 8 + col];
+        }
+    }
+    return energy;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline float hvs_error(const int ref[64], const int dist[64], const float mask[64],
+                              float threshold, int plane)
+{
+    float error_sum = 0.f;
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            const int index = row * 8 + col;
+            const float csf = CSF_TABLES[plane][index];
+            float error = sycl::fabs((float)ref[index] - (float)dist[index]);
+            if (row != 0 || col != 0) {
+                const float masking = threshold / mask[index];
+                error = error < masking ? 0.f : error - masking;
+            }
+            error_sum += (error * csf) * (error * csf);
+        }
+    }
+    return error_sum;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline float score_hvs_block(const sycl::local_accessor<int, 1> &local_ref,
+                                    const sycl::local_accessor<int, 1> &local_dist, int plane)
+{
+    int ref[64];
+    int dist[64];
+    copy_hvs_block(local_ref, ref);
+    copy_hvs_block(local_dist, dist);
+    const float ref_ratio = hvs_variance_ratio(ref);
+    const float dist_ratio = hvs_variance_ratio(dist);
+    od_bin_fdct8x8(ref);
+    od_bin_fdct8x8(dist);
+    float mask[64];
+    hvs_mask(mask, plane);
+    const float ref_energy = hvs_mask_energy(ref, mask);
+    const float dist_energy = hvs_mask_energy(dist, mask);
+    float threshold = sycl::sqrt(ref_energy * ref_ratio) / 32.f;
+    const float dist_threshold = sycl::sqrt(dist_energy * dist_ratio) / 32.f;
+    if (dist_threshold > threshold) {
+        threshold = dist_threshold;
+    }
+    return hvs_error(ref, dist, mask, threshold, plane);
+}
+
+} // namespace
+
+namespace
+{
+
+static void launch_psnr_hvs(sycl::queue &q, PsnrHvsKernelArgs args)
 {
     sycl::nd_range<2> const ndr{
-        sycl::range<2>{(size_t)num_blocks_y * WG_DIM, (size_t)num_blocks_x * WG_DIM},
+        sycl::range<2>{(size_t)args.blocks_y * WG_DIM, (size_t)args.blocks_x * WG_DIM},
         sycl::range<2>{WG_DIM, WG_DIM}};
-    const unsigned e_w = width;
-    const unsigned e_h = height;
-    const unsigned e_nbx = num_blocks_x;
-    const unsigned e_nby = num_blocks_y;
-    const int e_plane = plane;
-    const int e_bpc = bpc;
-    const float *e_ref = ref;
-    const float *e_dist = dist;
-    float *e_partials = partials;
-
     q.submit([=](sycl::handler &h_) {
         sycl::local_accessor<int, 1> const s_ref(sycl::range<1>(64), h_);
         sycl::local_accessor<int, 1> const s_dist(sycl::range<1>(64), h_);
-
         h_.parallel_for(ndr, [=](sycl::nd_item<2> it) {
-            const size_t blk_y = it.get_group(0);
-            const size_t blk_x = it.get_group(1);
-            const size_t ly = it.get_local_id(0);
-            const size_t lx = it.get_local_id(1);
-            const size_t local_idx = ly * 8u + lx;
-
-            const size_t x0 = blk_x * 7u;
-            const size_t y0 = blk_y * 7u;
-            const bool valid_block = (blk_x < (size_t)e_nbx && blk_y < (size_t)e_nby &&
-                                      x0 + 7u < (size_t)e_w && y0 + 7u < (size_t)e_h);
-
-            int my_ref = 0;
-            int my_dist = 0;
-            if (valid_block) {
-                const size_t sx = x0 + lx;
-                const size_t sy = y0 + ly;
-                const size_t src_idx = sy * (size_t)e_w + sx;
-                my_ref = sample_to_int(e_ref[src_idx], e_bpc);
-                my_dist = sample_to_int(e_dist[src_idx], e_bpc);
-            }
-            s_ref[local_idx] = my_ref;
-            s_dist[local_idx] = my_dist;
+            const bool valid = load_hvs_block(it, s_ref, s_dist, args);
             it.barrier(sycl::access::fence_space::local_space);
-
-            if (local_idx != 0u)
+            if (it.get_local_linear_id() != 0u) {
                 return;
-
-            int dct_s[64];
-            int dct_d[64];
-            for (int i = 0; i < 64; i++)
-                dct_s[i] = s_ref[i];
-            for (int i = 0; i < 64; i++)
-                dct_d[i] = s_dist[i];
-
-            float s_means[4] = {0.f, 0.f, 0.f, 0.f};
-            float d_means[4] = {0.f, 0.f, 0.f, 0.f};
-            float s_vars[4] = {0.f, 0.f, 0.f, 0.f};
-            float d_vars[4] = {0.f, 0.f, 0.f, 0.f};
-            float s_gmean = 0.f;
-            float d_gmean = 0.f;
-            float s_gvar = 0.f;
-            float d_gvar = 0.f;
-            float s_mc = 0.f;
-            float d_mc = 0.f;
-
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
-                    const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                    s_gmean += (float)dct_s[i * 8 + j];
-                    d_gmean += (float)dct_d[i * 8 + j];
-                    s_means[sub] += (float)dct_s[i * 8 + j];
-                    d_means[sub] += (float)dct_d[i * 8 + j];
-                }
             }
-            s_gmean /= 64.f;
-            d_gmean /= 64.f;
-            for (int i = 0; i < 4; i++)
-                s_means[i] /= 16.f;
-            for (int i = 0; i < 4; i++)
-                d_means[i] /= 16.f;
-
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
-                    const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                    const float ds = (float)dct_s[i * 8 + j] - s_gmean;
-                    const float dd = (float)dct_d[i * 8 + j] - d_gmean;
-                    s_gvar += ds * ds;
-                    d_gvar += dd * dd;
-                    const float qs = (float)dct_s[i * 8 + j] - s_means[sub];
-                    const float qd = (float)dct_d[i * 8 + j] - d_means[sub];
-                    s_vars[sub] += qs * qs;
-                    d_vars[sub] += qd * qd;
-                }
-            }
-            s_gvar *= 1.f / 63.f * 64.f;
-            d_gvar *= 1.f / 63.f * 64.f;
-            for (int i = 0; i < 4; i++)
-                s_vars[i] *= 1.f / 15.f * 16.f;
-            for (int i = 0; i < 4; i++)
-                d_vars[i] *= 1.f / 15.f * 16.f;
-            if (s_gvar > 0.f)
-                s_gvar = (s_vars[0] + s_vars[1] + s_vars[2] + s_vars[3]) / s_gvar;
-            if (d_gvar > 0.f)
-                d_gvar = (d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar;
-
-            od_bin_fdct8x8(dct_s);
-            od_bin_fdct8x8(dct_d);
-
-            float mask[64];
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
-                    const float c = CSF_TABLES[e_plane][i * 8 + j];
-                    const float m = c * 0.3885746225901003f;
-                    mask[i * 8 + j] = m * m;
-                }
-            }
-            for (int i = 0; i < 8; i++) {
-                const int j0 = (i == 0) ? 1 : 0;
-                for (int j = j0; j < 8; j++) {
-                    const int sq = dct_s[i * 8 + j] * dct_s[i * 8 + j];
-                    s_mc += (float)sq * mask[i * 8 + j];
-                }
-            }
-            for (int i = 0; i < 8; i++) {
-                const int j0 = (i == 0) ? 1 : 0;
-                for (int j = j0; j < 8; j++) {
-                    const int sq = dct_d[i * 8 + j] * dct_d[i * 8 + j];
-                    d_mc += (float)sq * mask[i * 8 + j];
-                }
-            }
-            float sm = sycl::sqrt(s_mc * s_gvar) / 32.f;
-            const float dm = sycl::sqrt(d_mc * d_gvar) / 32.f;
-            if (dm > sm)
-                sm = dm;
-            const float thresh = sm;
-
-            float ret = 0.f;
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
-                    const float c = CSF_TABLES[e_plane][i * 8 + j];
-                    float err = sycl::fabs((float)dct_s[i * 8 + j] - (float)dct_d[i * 8 + j]);
-                    if (i != 0 || j != 0) {
-                        const float t = thresh / mask[i * 8 + j];
-                        err = err < t ? 0.f : err - t;
-                    }
-                    ret += (err * c) * (err * c);
-                }
-            }
-            if (!valid_block)
-                ret = 0.f;
-
-            const size_t slot = blk_y * (size_t)e_nbx + blk_x;
-            e_partials[slot] = ret;
+            const float score = valid ? score_hvs_block(s_ref, s_dist, args.plane) : 0.f;
+            const size_t slot = it.get_group(0) * (size_t)args.blocks_x + it.get_group(1);
+            args.partials[slot] = score;
         });
     });
 }
 
-} /* anonymous namespace */
+} // namespace
 
-extern "C" {
+namespace
+{
 
 static const VmafOption options_psnr_hvs_sycl[] = {
     {
@@ -412,82 +480,144 @@ static const VmafOption options_psnr_hvs_sycl[] = {
                 "psnr_hvs_y (mirrors CPU PR #946 / ADR-0453)",
         .offset = offsetof(PsnrHvsStateSycl, enable_chroma),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = true,
+        .default_val = {.b = true},
     },
-    {nullptr},
+    {.name = nullptr},
 };
 
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): the
-// `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
-// entry points use C-style `static` rather than an anonymous namespace because
-// their addresses are stored in the `extern "C" VmafFeatureExtractor` struct at
-// the bottom of this file, which the C ABI consumes through the
-// function-pointer types in `feature_extractor.h`. A namespace cannot appear
-// inside this linkage specification at all. Same band, same reason, as
-// float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
-// load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
-{
-    auto *s = static_cast<PsnrHvsStateSycl *>(fex->priv);
+} // namespace
 
+namespace
+{
+
+static int validate_hvs_input(enum VmafPixelFormat format, unsigned bpc, unsigned width,
+                              unsigned height)
+{
     if (bpc > 12) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: invalid bitdepth (%u); bpc must be ≤ 12\n",
                  bpc);
         return -EINVAL;
     }
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
+    if (format == VMAF_PIX_FMT_YUV400P) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "psnr_hvs_sycl: YUV400P unsupported (psnr_hvs needs all 3 planes)\n");
         return -EINVAL;
     }
-    if (w < (unsigned)PSNR_HVS_BLOCK || h < (unsigned)PSNR_HVS_BLOCK) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: input %ux%u smaller than 8×8 block\n", w, h);
+    if (width < (unsigned)PSNR_HVS_BLOCK || height < (unsigned)PSNR_HVS_BLOCK) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: input %ux%u smaller than 8×8 block\n", width,
+                 height);
         return -EINVAL;
+    }
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
+
+static int configure_hvs_geometry(PsnrHvsStateSycl *s, enum VmafPixelFormat format, unsigned width,
+                                  unsigned height)
+{
+    s->width[0] = width;
+    s->height[0] = height;
+    switch (format) {
+    case VMAF_PIX_FMT_YUV420P:
+        s->width[1] = s->width[2] = (width + 1u) >> 1;
+        s->height[1] = s->height[2] = (height + 1u) >> 1;
+        break;
+    case VMAF_PIX_FMT_YUV422P:
+        s->width[1] = s->width[2] = (width + 1u) >> 1;
+        s->height[1] = s->height[2] = height;
+        break;
+    case VMAF_PIX_FMT_YUV444P:
+        s->width[1] = s->width[2] = width;
+        s->height[1] = s->height[2] = height;
+        break;
+    default:
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: unsupported pix_fmt\n");
+        return -EINVAL;
+    }
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
+
+static int configure_hvs_blocks(PsnrHvsStateSycl *s)
+{
+    s->n_active_planes = s->enable_chroma ? (unsigned)PSNR_HVS_NUM_PLANES : 1U;
+    for (int plane = 0; std::cmp_less(plane, s->n_active_planes); plane++) {
+        if (s->width[plane] < (unsigned)PSNR_HVS_BLOCK ||
+            s->height[plane] < (unsigned)PSNR_HVS_BLOCK) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "psnr_hvs_sycl: plane %d dims %ux%u smaller than 8×8 block\n", plane,
+                     s->width[plane], s->height[plane]);
+            return -EINVAL;
+        }
+        s->num_blocks_x[plane] = (s->width[plane] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1;
+        s->num_blocks_y[plane] = (s->height[plane] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1;
+        s->num_blocks[plane] = s->num_blocks_x[plane] * s->num_blocks_y[plane];
+    }
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
+
+static int allocate_hvs_buffers(PsnrHvsStateSycl *s)
+{
+    for (int plane = 0; std::cmp_less(plane, s->n_active_planes); plane++) {
+        const size_t plane_bytes = (size_t)s->width[plane] * s->height[plane] * sizeof(float);
+        const size_t partials_bytes = (size_t)s->num_blocks[plane] * sizeof(float);
+        s->h_ref[plane] = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, plane_bytes));
+        s->h_dist[plane] = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, plane_bytes));
+        s->d_ref[plane] = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, plane_bytes));
+        s->d_dist[plane] =
+            static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, plane_bytes));
+        s->d_partials[plane] =
+            static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, partials_bytes));
+        s->h_partials[plane] =
+            static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, partials_bytes));
+        if (!s->h_ref[plane] || !s->h_dist[plane] || !s->d_ref[plane] || !s->d_dist[plane] ||
+            !s->d_partials[plane] || !s->h_partials[plane]) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: USM allocation failed\n");
+            return -ENOMEM;
+        }
+    }
+    return 0;
+}
+
+} // namespace
+
+namespace
+{
+
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    auto *s = static_cast<PsnrHvsStateSycl *>(fex->priv);
+
+    const int input_err = validate_hvs_input(pix_fmt, bpc, w, h);
+    if (input_err) {
+        return input_err;
     }
 
     s->bpc = bpc;
     const int32_t samplemax = (1 << bpc) - 1;
     s->samplemax_sq = samplemax * samplemax;
 
-    s->width[0] = w;
-    s->height[0] = h;
-    switch (pix_fmt) {
-    case VMAF_PIX_FMT_YUV420P:
-        /* CEILING division to match picture.c / CPU / CUDA / HIP; floor (w>>1)
-         * drops the last chroma 8x8 strip on odd-dimension frames -> wrong
-         * psnr_hvs_cb/cr/psnr_hvs scores. */
-        s->width[1] = s->width[2] = (w + 1u) >> 1;
-        s->height[1] = s->height[2] = (h + 1u) >> 1;
-        break;
-    case VMAF_PIX_FMT_YUV422P:
-        s->width[1] = s->width[2] = (w + 1u) >> 1;
-        s->height[1] = s->height[2] = h;
-        break;
-    case VMAF_PIX_FMT_YUV444P:
-        s->width[1] = s->width[2] = w;
-        s->height[1] = s->height[2] = h;
-        break;
-    default:
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: unsupported pix_fmt\n");
-        return -EINVAL;
+    const int geometry_err = configure_hvs_geometry(s, pix_fmt, w, h);
+    if (geometry_err) {
+        return geometry_err;
     }
-
-    /* Mirror CPU PR #946 / ADR-0453: clamp to luma-only when caller
-     * passes enable_chroma=false.  YUV400P is already rejected above,
-     * so this covers 4:2:0 / 4:2:2 / 4:4:4 callers that opt out. */
-    s->n_active_planes = s->enable_chroma ? (unsigned)PSNR_HVS_NUM_PLANES : 1U;
-
-    for (int p = 0; p < (int)s->n_active_planes; p++) {
-        if (s->width[p] < (unsigned)PSNR_HVS_BLOCK || s->height[p] < (unsigned)PSNR_HVS_BLOCK) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "psnr_hvs_sycl: plane %d dims %ux%u smaller than 8×8 block\n", p, s->width[p],
-                     s->height[p]);
-            return -EINVAL;
-        }
-        s->num_blocks_x[p] = (s->width[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1;
-        s->num_blocks_y[p] = (s->height[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1;
-        s->num_blocks[p] = s->num_blocks_x[p] * s->num_blocks_y[p];
+    const int block_err = configure_hvs_blocks(s);
+    if (block_err) {
+        return block_err;
     }
 
     if (!fex->sycl_state) {
@@ -496,37 +626,32 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
     s->sycl_state = fex->sycl_state;
 
-    for (int p = 0; p < (int)s->n_active_planes; p++) {
-        const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
-        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
-        s->h_ref[p] = (float *)vmaf_sycl_malloc_host(s->sycl_state, plane_bytes);
-        s->h_dist[p] = (float *)vmaf_sycl_malloc_host(s->sycl_state, plane_bytes);
-        s->d_ref[p] = (float *)vmaf_sycl_malloc_device(s->sycl_state, plane_bytes);
-        s->d_dist[p] = (float *)vmaf_sycl_malloc_device(s->sycl_state, plane_bytes);
-        s->d_partials[p] = (float *)vmaf_sycl_malloc_device(s->sycl_state, partials_bytes);
-        s->h_partials[p] = (float *)vmaf_sycl_malloc_host(s->sycl_state, partials_bytes);
-        if (!s->h_ref[p] || !s->h_dist[p] || !s->d_ref[p] || !s->d_dist[p] || !s->d_partials[p] ||
-            !s->h_partials[p]) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: USM allocation failed\n");
-            return -ENOMEM;
-        }
+    const int alloc_err = allocate_hvs_buffers(s);
+    if (alloc_err) {
+        return alloc_err;
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
         return -ENOMEM;
+    }
     s->has_pending = false;
     return 0;
 }
 
+} // namespace
+
+namespace
+{
+
 /* Per-plane picture_copy clone (since libvmaf's picture_copy
  * hardcodes plane 0). */
-static void picture_copy_plane(float *dst, VmafPicture *pic, int plane, unsigned width,
-                               unsigned height)
+template <typename Picture>
+static void picture_copy_plane(float *dst, Picture *pic, int plane, unsigned width, unsigned height)
 {
     if (pic->bpc <= 8) {
-        const uint8_t *src = (const uint8_t *)pic->data[plane];
+        const auto *src = static_cast<const uint8_t *>(pic->data[plane]);
         const size_t src_stride = (size_t)pic->stride[plane];
         for (unsigned y = 0; y < height; y++) {
             for (unsigned x = 0; x < width; x++) {
@@ -538,7 +663,7 @@ static void picture_copy_plane(float *dst, VmafPicture *pic, int plane, unsigned
                              (pic->bpc == 12) ? 16.0f :
                              (pic->bpc == 16) ? 256.0f :
                                                 1.0f;
-        const uint16_t *src = (const uint16_t *)pic->data[plane];
+        const auto *src = static_cast<const uint16_t *>(pic->data[plane]);
         const size_t src_stride_words = (size_t)pic->stride[plane] / sizeof(uint16_t);
         for (unsigned y = 0; y < height; y++) {
             for (unsigned x = 0; x < width; x++) {
@@ -548,6 +673,11 @@ static void picture_copy_plane(float *dst, VmafPicture *pic, int plane, unsigned
     }
 }
 
+} // namespace
+
+namespace
+{
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -555,11 +685,15 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     (void)dist_pic_90;
     auto *s = static_cast<PsnrHvsStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
+    if (!qptr) {
         return -EINVAL;
+    }
     sycl::queue &q = *qptr;
 
-    for (int p = 0; p < (int)s->n_active_planes; p++) {
+    for (int p = 0; p < PSNR_HVS_NUM_PLANES; ++p) {
+        if (std::cmp_greater_equal(p, s->n_active_planes)) {
+            break;
+        }
         picture_copy_plane(s->h_ref[p], ref_pic, p, s->width[p], s->height[p]);
         picture_copy_plane(s->h_dist[p], dist_pic, p, s->width[p], s->height[p]);
         const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
@@ -567,9 +701,19 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         q.memcpy(s->d_dist[p], s->h_dist[p], plane_bytes);
     }
 
-    for (int p = 0; p < (int)s->n_active_planes; p++) {
-        launch_psnr_hvs(q, s->d_ref[p], s->d_dist[p], s->d_partials[p], s->width[p], s->height[p],
-                        s->num_blocks_x[p], s->num_blocks_y[p], p, (int)s->bpc);
+    for (int p = 0; p < PSNR_HVS_NUM_PLANES; ++p) {
+        if (std::cmp_greater_equal(p, s->n_active_planes)) {
+            break;
+        }
+        launch_psnr_hvs(q, {.ref = s->d_ref[p],
+                            .dist = s->d_dist[p],
+                            .partials = s->d_partials[p],
+                            .width = s->width[p],
+                            .height = s->height[p],
+                            .blocks_x = s->num_blocks_x[p],
+                            .blocks_y = s->num_blocks_y[p],
+                            .plane = p,
+                            .bpc = (int)s->bpc});
     }
 
     s->pending_index = index;
@@ -577,59 +721,90 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
+} // namespace
+
+namespace
+{
+
+static const char *const plane_features[PSNR_HVS_NUM_PLANES] = {"psnr_hvs_y", "psnr_hvs_cb",
+                                                                "psnr_hvs_cr"};
+
+static void copy_hvs_partials(PsnrHvsStateSycl *s, sycl::queue &queue)
+{
+    for (int plane = 0; plane < PSNR_HVS_NUM_PLANES; ++plane) {
+        if (std::cmp_greater_equal(plane, s->n_active_planes)) {
+            break;
+        }
+        const size_t bytes = (size_t)s->num_blocks[plane] * sizeof(float);
+        queue.memcpy(s->h_partials[plane], s->d_partials[plane], bytes);
+    }
+    queue.wait();
+}
+
+static void reduce_hvs_planes(const PsnrHvsStateSycl *s, double scores[PSNR_HVS_NUM_PLANES])
+{
+    for (int plane = 0; plane < PSNR_HVS_NUM_PLANES; ++plane) {
+        if (std::cmp_greater_equal(plane, s->n_active_planes)) {
+            break;
+        }
+        float sum = 0.0f;
+        for (unsigned block = 0; block < s->num_blocks[plane]; block++) {
+            sum += s->h_partials[plane][block];
+        }
+        const int pixels = (int)(s->num_blocks[plane] * 64u);
+        sum /= (float)pixels;
+        sum /= (float)s->samplemax_sq;
+        scores[plane] = (double)sum;
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static int append_hvs_scores(VmafFeatureCollector *collector, const PsnrHvsStateSycl *s,
+                             const double scores[PSNR_HVS_NUM_PLANES], unsigned index)
+{
+    int err = 0;
+    for (int plane = 0; plane < PSNR_HVS_NUM_PLANES; ++plane) {
+        if (std::cmp_greater_equal(plane, s->n_active_planes)) {
+            break;
+        }
+        const double db = 10.0 * (-1.0 * std::log10(scores[plane]));
+        err |= vmaf_feature_collector_append(collector, plane_features[plane], db, index);
+    }
+    const double combined =
+        (s->n_active_planes == 1U) ? scores[0] : 0.8 * scores[0] + 0.1 * (scores[1] + scores[2]);
+    const double db = 10.0 * (-1.0 * std::log10(combined));
+    err |= vmaf_feature_collector_append(collector, "psnr_hvs", db, index);
+    return err;
+}
+
+} // namespace
+
+namespace
+{
+
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
     auto *s = static_cast<PsnrHvsStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr)
+    if (!qptr) {
         return -EINVAL;
+    }
     sycl::queue &q = *qptr;
-
-    for (int p = 0; p < (int)s->n_active_planes; p++) {
-        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
-        q.memcpy(s->h_partials[p], s->d_partials[p], partials_bytes);
-    }
-    q.wait();
-
-    /* Per-plane reduction matching CPU's float `ret` register.
-     *
-     * Zero-initialised because the combined score below reads indices 1 and 2
-     * whenever `n_active_planes != 1`, while this loop writes only
-     * `[0, n_active_planes)`. The two agree today — `n_active_planes` is set to
-     * exactly 1 or PSNR_HVS_NUM_PLANES at init — but nothing in the type says
-     * so, and clang-analyzer-core.UndefinedBinaryOperatorResult flags the read
-     * as a garbage value on that basis. The initialiser costs nothing, removes
-     * the undefined read if that invariant is ever broken, and changes no
-     * score while it holds. */
+    copy_hvs_partials(s, q);
     double plane_score[PSNR_HVS_NUM_PLANES] = {};
-    for (int p = 0; p < (int)s->n_active_planes; p++) {
-        float ret = 0.0f;
-        for (unsigned i = 0; i < s->num_blocks[p]; i++)
-            ret += s->h_partials[p][i];
-        const int pixels = (int)(s->num_blocks[p] * 64u);
-        ret /= (float)pixels;
-        ret /= (float)s->samplemax_sq;
-        plane_score[p] = (double)ret;
-    }
-
-    int err = 0;
-    static const char const *plane_features[PSNR_HVS_NUM_PLANES] = {"psnr_hvs_y", "psnr_hvs_cb",
-                                                                    "psnr_hvs_cr"};
-    for (int p = 0; p < (int)s->n_active_planes; p++) {
-        const double db = 10.0 * (-1.0 * std::log10(plane_score[p]));
-        err |= vmaf_feature_collector_append(feature_collector, plane_features[p], db, index);
-    }
-    /* When enable_chroma=false, psnr_hvs == psnr_hvs_y (luma-only).
-     * When enable_chroma=true, use the standard 0.8·Y + 0.1·(Cb+Cr)
-     * weighted combination (matches CPU integer_psnr_hvs). */
-    const double combined = (s->n_active_planes == 1U) ?
-                                plane_score[0] :
-                                0.8 * plane_score[0] + 0.1 * (plane_score[1] + plane_score[2]);
-    const double db_combined = 10.0 * (-1.0 * std::log10(combined));
-    err |= vmaf_feature_collector_append(feature_collector, "psnr_hvs", db_combined, index);
-    return err;
+    reduce_hvs_planes(s, plane_score);
+    return append_hvs_scores(feature_collector, s, plane_score, index);
 }
+
+} // namespace
+
+namespace
+{
 
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
@@ -650,13 +825,16 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
                 vmaf_sycl_free(s->sycl_state, s->h_partials[p]);
         }
     }
-    if (s->feature_name_dict)
+    if (s->feature_name_dict) {
         vmaf_dictionary_free(&s->feature_name_dict);
+    }
     return 0;
 }
 
 static const char *provided_features_psnr_hvs_sycl[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr",
                                                         "psnr_hvs", nullptr};
+
+} // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_psnr_hvs_sycl = {
     .name = "psnr_hvs_sycl",
@@ -678,6 +856,3 @@ extern "C" VmafFeatureExtractor vmaf_fex_psnr_hvs_sycl = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
-
-} /* extern "C" */
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

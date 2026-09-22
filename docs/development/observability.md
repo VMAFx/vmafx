@@ -200,6 +200,11 @@ and metrics but no slog → OTel bridge is wired (ADR-0927 Phase 3), so no
 log records are exported; set `VMAFX_OTEL_EXPORT_LOGS=false` to skip the
 exporter entirely if the collector has no logs pipeline.
 
+`vmafx-server` and `vmafx-controller` also log `write JSON response` or
+`write probe response` when a client disconnect or socket failure prevents an
+HTTP response from being written. The response status/body contract is
+unchanged; these messages make a previously silent transport failure visible.
+
 ## Disabling OTel entirely
 
 - Leave every endpoint variable unset (default) — no-op providers, one

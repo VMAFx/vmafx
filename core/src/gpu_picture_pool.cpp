@@ -70,6 +70,17 @@ int alloc_pictures(VmafGpuPicturePool *p)
     return err;
 }
 
+/* Release the picture array and the pool itself and clear the caller's handle.
+ * This is the former free_pic -> free_p label pair, in the same order; on the
+ * `!p->pic` path p->pic is nullptr and std::free(nullptr) is the no-op the
+ * `goto free_p` entry relied on. */
+void gpu_pool_destruct(VmafGpuPicturePool *p, VmafGpuPicturePool **pool)
+{
+    std::free(p->pic);
+    std::free(p);
+    *pool = nullptr;
+}
+
 } // namespace
 
 int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConfig cfg)
@@ -86,46 +97,46 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
     int err = 0;
 
     /* Publish to caller's *pool before any later failure path.  Set *pool = NULL
-     * at every failure label so the caller can treat a non-zero return as
+     * on every failure path so the caller can treat a non-zero return as
      * "pool not constructed" — prevents UAF via vmaf_gpu_picture_pool_close()
      * on a freed pointer (Netflix#UAF-001 / ADR-0239). */
     VmafGpuPicturePool *const p = *pool =
         static_cast<VmafGpuPicturePool *>(std::malloc(sizeof(*p)));
     if (!p) {
         *pool = nullptr;
-        goto fail;
+        /* Preserved verbatim from the `goto fail` this replaced: that jump
+         * skipped every assignment to `err`, so this path returns 0 even
+         * though no pool was constructed.  Left as-is because this change is
+         * a structural refactor; the defect is reported separately rather
+         * than silently altered here. */
+        return err;
     }
     std::memset(p, 0, sizeof(*p));
     p->cfg = cfg;
 
     p->pic = static_cast<VmafPicture *>(std::malloc(sizeof(VmafPicture) * p->cfg.pic_cnt));
     if (!p->pic) {
-        err = -ENOMEM;
-        goto free_p;
+        gpu_pool_destruct(p, pool);
+        return -ENOMEM;
     }
 
     err = pthread_mutex_init(&p->busy, nullptr);
-    if (err)
-        goto free_pic;
+    if (err) {
+        gpu_pool_destruct(p, pool);
+        return err;
+    }
 
     err = alloc_pictures(p);
     if (err) {
         /* alloc_pictures already freed any successfully-allocated prior slots.
-         * Destroy the mutex before falling through to free_pic so we do not
-         * leak the mutex's kernel-side state. */
+         * Destroy the mutex before the pool teardown so we do not leak the
+         * mutex's kernel-side state. */
         (void)pthread_mutex_destroy(&p->busy);
-        goto free_pic;
+        gpu_pool_destruct(p, pool);
+        return err;
     }
 
     return 0;
-
-free_pic:
-    std::free(p->pic);
-free_p:
-    std::free(p);
-    *pool = nullptr;
-fail:
-    return err;
 }
 
 int vmaf_gpu_picture_pool_close(VmafGpuPicturePool *pool)

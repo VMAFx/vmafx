@@ -394,23 +394,18 @@ static char *test_niqe_end_to_end(void)
     memset(&pic, 0, sizeof(pic));
 
     char *result = niqe_e2e_setup(&ctx, &fc, &pic, W, H);
-    if (result)
-        goto cleanup;
-
-    double score = NAN;
-    result = niqe_e2e_check_score(ctx, fc, &pic, &score);
-    if (result)
-        goto cleanup;
-
-    /* Fork golden-gate bound: places=4 (1e-4 absolute). */
-    if (!close_abs(score, oracle, 1e-4)) {
-        static char msg[160];
-        (void)snprintf(msg, sizeof(msg), "niqe end-to-end score %.10f != oracle %.10f (places=4)",
-                       score, oracle);
-        result = msg;
+    if (result == NULL) {
+        double score = NAN;
+        result = niqe_e2e_check_score(ctx, fc, &pic, &score);
+        /* Fork golden-gate bound: places=4 (1e-4 absolute). */
+        if (result == NULL && !close_abs(score, oracle, 1e-4)) {
+            static char msg[160];
+            (void)snprintf(msg, sizeof(msg),
+                           "niqe end-to-end score %.10f != oracle %.10f (places=4)", score, oracle);
+            result = msg;
+        }
     }
 
-cleanup:
     niqe_teardown(&pic, fc, ctx);
     return result;
 }
@@ -497,15 +492,12 @@ static char *test_niqe_odd_dim(void)
     memset(&pic, 0, sizeof(pic));
 
     char *result = niqe_odd_dim_setup(&ctx, &fc, &pic, W, H);
-    if (result)
-        goto cleanup;
+    if (result == NULL) {
+        niqe_fill_odd_dim_pattern(&pic, W, H);
 
-    niqe_fill_odd_dim_pattern(&pic, W, H);
-
-    double score = NAN;
-    result = niqe_odd_dim_check_score(ctx, fc, &pic, &score);
-
-cleanup:
+        double score = NAN;
+        result = niqe_odd_dim_check_score(ctx, fc, &pic, &score);
+    }
     niqe_teardown(&pic, fc, ctx);
     return result;
 }

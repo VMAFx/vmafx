@@ -15,7 +15,7 @@
 
 /*
  * Bit-exact NEON SSIM SIMD helpers — mirror the scalar reference in
- * libvmaf/src/feature/iqa/ssim_tools.c byte-for-byte under
+ * core/src/feature/iqa/ssim_tools.c byte-for-byte under
  * FLT_EVAL_METHOD == 0. See ADR-0139. `precompute` and `variance` are
  * pure elementwise float ops and are bit-exact to scalar by
  * construction. `accumulate` is the tricky one: scalar computes l and c

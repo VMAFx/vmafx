@@ -11,7 +11,7 @@ Shared infrastructure: :mod:`ai.src.corpus.base` (ADR-0371).
 
 Pipeline shape::
 
-    .workingdir2/youtube-ugc/
+    .corpus/youtube-ugc/
       +-- .download-progress.json
       +-- manifest.csv
       +-- clips/
@@ -312,17 +312,54 @@ def _build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _setup_logging(log_level: str, curl_bin: str) -> None:
+    """Configure logging and warn when curl_bin is absent from PATH."""
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    if shutil.which(curl_bin) is None:
+        _LOG.warning("curl binary %r not on PATH; downloads will fail", curl_bin)
+
+
+def _write_ugc_manifest(
+    args: "Any", raw_argv: list[str], stats: "Any", max_rows: "int | None"
+) -> None:
+    """Write the run-manifest sidecar JSON for this ingest run."""
+    write_ingest_manifest(
+        args.manifest_out,
+        schema="youtube-ugc-corpus-jsonl-manifest-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        corpus_label=_CORPUS_LABEL,
+        stats=stats,
+        inputs={
+            "ugc_dir": args.ugc_dir,
+            "manifest_csv": args.manifest_csv,
+            "progress_path": args.progress_path,
+        },
+        outputs={"jsonl": args.output, "manifest": args.manifest_out},
+        config={
+            "clips_subdir": args.clips_subdir,
+            "clip_suffix": args.clip_suffix,
+            "bucket_prefix": args.bucket_prefix,
+            "min_csv_rows": _UGC_MIN_ROWS,
+            "max_rows": max_rows,
+            "full": args.full,
+            "corpus_version": args.corpus_version,
+            "attrition_warn_threshold": args.attrition_warn_threshold,
+        },
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
     args = _build_parser().parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.output.with_suffix(".manifest.json")
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-    if shutil.which(args.curl_bin) is None:
-        _LOG.warning("curl binary %r not on PATH; downloads will fail", args.curl_bin)
+    _setup_logging(args.log_level, args.curl_bin)
     max_rows: int | None = None if args.full else args.max_rows
     try:
         stats = run(
@@ -351,32 +388,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    write_ingest_manifest(
-        args.manifest_out,
-        schema="youtube-ugc-corpus-jsonl-manifest-v1",
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=raw_argv,
-        args=args,
-        corpus_label=_CORPUS_LABEL,
-        stats=stats,
-        inputs={
-            "ugc_dir": args.ugc_dir,
-            "manifest_csv": args.manifest_csv,
-            "progress_path": args.progress_path,
-        },
-        outputs={"jsonl": args.output, "manifest": args.manifest_out},
-        config={
-            "clips_subdir": args.clips_subdir,
-            "clip_suffix": args.clip_suffix,
-            "bucket_prefix": args.bucket_prefix,
-            "min_csv_rows": _UGC_MIN_ROWS,
-            "max_rows": max_rows,
-            "full": args.full,
-            "corpus_version": args.corpus_version,
-            "attrition_warn_threshold": args.attrition_warn_threshold,
-        },
-    )
+    _write_ugc_manifest(args, raw_argv, stats, max_rows)
     return 0
 
 

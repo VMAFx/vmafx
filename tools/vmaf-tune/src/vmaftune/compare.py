@@ -868,13 +868,8 @@ def emit_sweep_csv(report: SweepReport) -> str:
     return buf.getvalue()
 
 
-def emit_sweep_markdown(report: SweepReport) -> str:
-    """Render a :class:`SweepReport` as a markdown rate-quality table.
-
-    The table is grouped per codec, with one row per (codec, target).
-    The summary table at the foot gives the bitrate at each target per
-    codec — useful for ad-hoc dashboards or commit-message snippets.
-    """
+def _sweep_markdown_detail(report: SweepReport) -> list[str]:
+    """Preamble plus the one-row-per-(codec, target) detail table."""
     lines: list[str] = [
         "# Codec rate-quality sweep",
         "",
@@ -900,22 +895,28 @@ def emit_sweep_markdown(report: SweepReport) -> str:
             f"{r.bitrate_kbps:.1f} | {r.encode_time_ms:.1f} | "
             f"{r.vmaf_score:.2f} | {status} |"
         )
-    # Summary table: bitrate at each target per codec.
+    return lines
+
+
+def _sweep_markdown_summary(report: SweepReport) -> list[str]:
+    """Foot table: bitrate at each target, one row per codec.
+
+    Codec row order follows first appearance in ``report.rows`` (dict
+    insertion order), matching the detail table above.
+    """
     by_codec: dict[str, dict[float, RecommendResult]] = {}
     for target, r in zip(report.row_targets, report.rows, strict=True):
         by_codec.setdefault(r.codec, {})[target] = r
 
-    lines.extend(
-        [
-            "",
-            "## Summary table",
-            "",
-            "| Codec | Encoder | "
-            + " | ".join(f"@ VMAF {t:g}" for t in report.target_vmafs)
-            + " | best preset |",
-            "|---|---|" + "|".join("---:" for _ in report.target_vmafs) + "|---|",
-        ]
-    )
+    lines: list[str] = [
+        "",
+        "## Summary table",
+        "",
+        "| Codec | Encoder | "
+        + " | ".join(f"@ VMAF {t:g}" for t in report.target_vmafs)
+        + " | best preset |",
+        "|---|---|" + "|".join("---:" for _ in report.target_vmafs) + "|---|",
+    ]
     for codec, per_target in by_codec.items():
         cells: list[str] = []
         first_row = next(iter(per_target.values()))
@@ -930,6 +931,18 @@ def emit_sweep_markdown(report: SweepReport) -> str:
             + " | ".join(cells)
             + " | adapter default |"
         )
+    return lines
+
+
+def emit_sweep_markdown(report: SweepReport) -> str:
+    """Render a :class:`SweepReport` as a markdown rate-quality table.
+
+    The table is grouped per codec, with one row per (codec, target).
+    The summary table at the foot gives the bitrate at each target per
+    codec — useful for ad-hoc dashboards or commit-message snippets.
+    """
+    lines = _sweep_markdown_detail(report)
+    lines.extend(_sweep_markdown_summary(report))
     return "\n".join(lines) + "\n"
 
 

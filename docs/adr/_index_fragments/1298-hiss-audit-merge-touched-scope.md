@@ -1,0 +1,1 @@
+| [ADR-1298](1298-hiss-audit-merge-touched-scope.md) | Scope the local HISS audit's touched-file rule to the conflict resolutions during a merge, so a branch taking an update from master is not judged on the debt master supplied. | Proposed | ci, agents, code-quality |

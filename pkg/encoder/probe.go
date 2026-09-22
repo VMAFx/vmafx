@@ -111,6 +111,14 @@ func ProbeSource(path, ffmpegPath string) SourceInfo {
 	if len(payload.Streams) == 0 {
 		return fallback
 	}
+	return sourceInfoFromProbe(path, payload)
+}
+
+// sourceInfoFromProbe folds ffprobe's first video stream and the container
+// format block into a SourceInfo, filling the gaps ffprobe leaves: a missing
+// nb_frames is derived from duration x fps, a missing format size is read off
+// the file, and a missing codec name stays "unknown".
+func sourceInfoFromProbe(path string, payload ffprobePayload) SourceInfo {
 	s := payload.Streams[0]
 
 	fps := parseFrameRate(s.RFrameRate)

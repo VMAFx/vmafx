@@ -4,11 +4,11 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  PSNR feature extractor on the HIP backend — first consumer of
- *  `libvmaf/src/hip/kernel_template.h` (T7-10 / ADR-0241).
+ *  `core/src/hip/kernel_template.h` (T7-10 / ADR-0241).
  *  Real kernel promotion: T7-10b batch-1 / ADR-0372.
  *  Chroma extension (psnr_cb / psnr_cr): ADR-0471.
  *
- *  This TU mirrors `libvmaf/src/feature/cuda/integer_psnr_cuda.c`
+ *  This TU mirrors `core/src/feature/cuda/integer_psnr_cuda.c`
  *  call-graph-for-call-graph. When `HAVE_HIPCC` is defined (i.e.,
  *  `enable_hipcc=true` at configure time), the `init`, `submit`, and
  *  `collect` functions use real HIP Module API calls:
@@ -494,12 +494,12 @@ static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_psnr_hip;` in
- * `libvmaf/src/feature/feature_extractor.c`'s
+ * `core/src/feature/feature_extractor.cpp`'s
  * `feature_extractor_list[]`. Making this static would unlink the
  * extractor from the registry and fail every name lookup. Same
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_psnr_cuda` in
- * `libvmaf/src/feature/cuda/integer_psnr_cuda.c`). */
+ * `core/src/feature/cuda/integer_psnr_cuda.c`). */
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr_hip = {
     .name = "psnr_hip",

@@ -7,7 +7,7 @@
  *  Integer twin of float_ssim.metal — mirrors the float twin's
  *  two-pass separable-Gaussian dispatch structure but swaps the
  *  float-domain 11-tap "valid" convolution for the exact fixed-point
- *  arithmetic of the CPU reference libvmaf/src/feature/integer_ssim.c.
+ *  arithmetic of the CPU reference core/src/feature/integer_ssim.c.
  *
  *  ALGORITHM (must match integer_ssim.c::calc_ssim bit-for-bit):
  *

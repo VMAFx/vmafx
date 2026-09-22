@@ -4,8 +4,6 @@
 > Audit of in-tree follow-up mentions (TODO / FIXME / "deferred" /
 > "scaffold only" / "v2" / etc.) cross-referenced against the
 > canonical backlog tracking surfaces:
-> [`.workingdir2/OPEN.md`](../.workingdir2/OPEN.md),
-> [`.workingdir2/BACKLOG.md`](../.workingdir2/BACKLOG.md),
 > [`docs/state.md`](state.md), [`docs/rebase-notes.md`](rebase-notes.md),
 > ADR Decision/Consequences blocks, and open GitHub issues / PRs.
 >
@@ -23,10 +21,8 @@
    `future work`, `out of scope`, `tbd`, `coming in a follow-up`,
    `next pr`, `feasibility spike`, `returns -ENOSYS`, `not yet wired`,
    `not yet live`, `Known follow-ups`, `Neutral / follow-ups` across
-   all tracked files (excluding `build/` and `.workingdir2/` from
-   keyword sweep, but using `.workingdir2/` for the tracked corpus).
-2. Tracked corpus: read `.workingdir2/OPEN.md`,
-   `.workingdir2/BACKLOG.md`, `docs/state.md`, `docs/rebase-notes.md`,
+   all tracked files (excluding build output and ignored local-data roots).
+2. Tracked corpus: read `docs/state.md`, `docs/rebase-notes.md`,
    `docs/adr/README.md`, plus `gh issue list --state open` and
    `gh pr list --state open`.
 3. Cluster the raw hits by topic, drop near-duplicates, then mark
@@ -38,12 +34,12 @@
 ```bash
 # raw mention corpus (run from repo root)
 rg -n -i 'TODO:|FIXME:|XXX:|HACK:|follow-up|follow up|followup|deferred|\bdefer\b|deferral|not yet implemented|stub|scaffold|placeholder|future work|out of scope|\btbd\b|coming in a follow-up|next pr|feasibility spike|returns -ENOSYS|not yet wired|not yet live|known follow-ups|neutral / follow-ups|\bv2\b' \
-    --glob '!build/' --glob '!.workingdir2/'
+    --glob '!build/' --glob '!.workingdir/' --glob '!.corpus/'
 
 # tracked corpus
 gh issue list --state open --limit 200
 gh pr list   --state open --limit 100
-sed -n '1,$p' .workingdir2/{OPEN,BACKLOG}.md docs/state.md
+sed -n '1,$p' docs/state.md docs/rebase-notes.md docs/adr/README.md
 ```
 
 ## Summary
@@ -274,7 +270,8 @@ Section A: an audit trail exists, but the backlog has no execution
 hook.
 
 > **Triage status (2026-04-28):** all five items have been evaluated
-> against the canonical backlog (`.workingdir2/BACKLOG.md`):
+> against the backlog that existed at audit time. Public status now lives in
+> `docs/state.md` and GitHub issues:
 > B.1 confirmed already-tracked transitively (T3-9 → closed as T7-21
 > "AVX2 ceiling" per ADR-0180); B.2–B.5 promoted to T7-31..T7-34
 > respectively. No further row-promotion action required.
@@ -443,9 +440,9 @@ Action: rewrite the three blurbs to reflect post-T5-1b reality.
 
 ## Recommended next steps
 
-1. Promote Section A items to **T-numbered backlog rows** in
-   `.workingdir2/BACKLOG.md` (one row each; group A.1.1–A.1.5 under
-   a new "GPU coverage long-tail" sub-tier if desired). Keep A.3.4
+1. Promote Section A items to **public backlog rows** in `docs/state.md` or
+   GitHub issues (one row each; group A.1.1–A.1.5 under a new
+   "GPU coverage long-tail" sub-tier if desired). Keep A.3.4
    and A.4.1 on the watch list (no row yet). **Open** — needs
    per-item user decision.
 2. For **Section B**, stop short of opening rows for B.1 (already

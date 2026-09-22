@@ -12,7 +12,7 @@ ships MOS on a 0-100 axis; this adapter stores that raw value as
 
 Pipeline shape::
 
-    .workingdir2/chug/
+    .corpus/chug/
       +-- manifest.csv              # downloaded from the CHUG repo
       +-- .download-progress.json
       +-- clips/
@@ -60,7 +60,7 @@ _CHUG_MIN_ROWS: int = 1000
 _CHUG_DEFAULT_MAX_ROWS: int = 500
 # Default working directory for CHUG inputs/outputs. Override with
 # ``VMAF_CHUG_DIR`` env var (e.g. inside the dev-mcp container or on
-# operator machines that don't use the maintainer's ``.workingdir2``
+# operator machines that don't use the repository's ``.corpus``
 # layout). Falls back to the in-tree default for backwards compatibility.
 _DEFAULT_CHUG_DIR: Path = Path(
     os.environ.get(

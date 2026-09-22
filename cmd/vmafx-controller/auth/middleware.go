@@ -234,6 +234,30 @@ func (c *jwksCache) refresh(kid string) (*rsa.PublicKey, error) {
 
 	c.log.Info("jwks: refreshing key cache", "endpoint", c.endpoint, "reason_kid", kid)
 
+	body, err := c.fetchJWKS()
+	if err != nil {
+		return nil, err
+	}
+
+	keys, err := parseJWKS(body)
+	if err != nil {
+		return nil, fmt.Errorf("jwks: parse: %w", err)
+	}
+
+	c.keys = buildKeyCache(keys, kid)
+	c.lastRefresh = time.Now()
+
+	c.log.Info("jwks: key cache updated", "key_count", len(c.keys))
+
+	k, ok := c.keys[kid]
+	if !ok {
+		return nil, fmt.Errorf("jwks: key %q not present in IdP's JWKS", kid)
+	}
+	return k, nil
+}
+
+// fetchJWKS GETs the JWKS document, bounded by jwksFetchTimeout and a 1 MiB read.
+func (c *jwksCache) fetchJWKS() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), jwksFetchTimeout)
 	defer cancel()
 
@@ -256,46 +280,38 @@ func (c *jwksCache) refresh(kid string) (*rsa.PublicKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jwks: read body: %w", err)
 	}
+	return body, nil
+}
 
-	keys, err := parseJWKS(body)
-	if err != nil {
-		return nil, fmt.Errorf("jwks: parse: %w", err)
-	}
-
-	// Build the cache from ALL parsed keys.  Round-3 R3-13: we must NOT
-	// truncate by document position — real OIDC providers (Auth0, Azure AD,
-	// Keycloak) publish more than jwksCacheMax keys during rotation-overlap
-	// windows, and a positional slice cut could drop exactly the requested
-	// kid, 401-ing valid tokens for the whole refresh-cooldown window.  The
-	// 1 MiB body limit above already bounds how many keys can arrive.
+// buildKeyCache turns the parsed JWKS keys into the cache map, keeping wantKid whatever
+// else has to go.
+//
+// The cache is built from ALL parsed keys. Round-3 R3-13: it must NOT truncate by
+// document position — real OIDC providers (Auth0, Azure AD, Keycloak) publish more than
+// jwksCacheMax keys during rotation-overlap windows, and a positional slice cut could drop
+// exactly the requested kid, 401-ing valid tokens for the whole refresh-cooldown window.
+// The 1 MiB body limit on the fetch already bounds how many keys can arrive.
+//
+// The eviction below is a defensive memory bound only: if the IdP advertises an
+// unreasonable number of keys, entries are dropped down to jwksCacheMax — but never
+// wantKid, so the caller's valid token is always honoured.
+func buildKeyCache(keys []jwkKey, wantKid string) map[string]*rsa.PublicKey {
 	next := make(map[string]*rsa.PublicKey, len(keys))
 	for _, k := range keys {
 		next[k.kid] = k.pub
 	}
-	// Defensive memory bound: if the IdP advertises an unreasonable number of
-	// keys, evict entries down to jwksCacheMax — but never evict the kid that
-	// triggered this refresh, so the caller's valid token is always honoured.
 	if len(next) > jwksCacheMax {
 		for evictKid := range next {
 			if len(next) <= jwksCacheMax {
 				break
 			}
-			if evictKid == kid {
+			if evictKid == wantKid {
 				continue
 			}
 			delete(next, evictKid)
 		}
 	}
-	c.keys = next
-	c.lastRefresh = time.Now()
-
-	c.log.Info("jwks: key cache updated", "key_count", len(c.keys))
-
-	k, ok := c.keys[kid]
-	if !ok {
-		return nil, fmt.Errorf("jwks: key %q not present in IdP's JWKS", kid)
-	}
-	return k, nil
+	return next
 }
 
 // parseJWKS parses a JWKS JSON document and returns RSA public keys.
@@ -370,54 +386,11 @@ func verifyJWT(token string, cache *jwksCache, issuer, audience string) (map[str
 		return nil, fmt.Errorf("jwt: decode payload: %w", err)
 	}
 
-	var hdr jwtHeader
-	if err = json.Unmarshal(headerJSON, &hdr); err != nil {
-		return nil, fmt.Errorf("jwt: parse header: %w", err)
+	if err = verifyJWTSignature(parts, headerJSON, cache); err != nil {
+		return nil, err
 	}
-	if hdr.Alg != "RS256" {
-		return nil, fmt.Errorf("jwt: unsupported algorithm %q (only RS256 accepted)", hdr.Alg)
-	}
-
-	pubKey, err := cache.Key(hdr.Kid)
-	if err != nil {
-		return nil, fmt.Errorf("jwt: fetch public key: %w", err)
-	}
-
-	// Verify signature.
-	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return nil, fmt.Errorf("jwt: decode signature: %w", err)
-	}
-	if err = verifyRS256([]byte(parts[0]+"."+parts[1]), sig, pubKey); err != nil {
-		return nil, fmt.Errorf("jwt: signature invalid: %w", err)
-	}
-
-	// Parse and validate standard claims.
-	var payload struct {
-		Iss string          `json:"iss"`
-		Sub string          `json:"sub"`
-		Aud json.RawMessage `json:"aud"`
-		Exp int64           `json:"exp"`
-		Nbf int64           `json:"nbf"`
-	}
-	if err = json.Unmarshal(payloadJSON, &payload); err != nil {
-		return nil, fmt.Errorf("jwt: parse payload: %w", err)
-	}
-
-	if payload.Iss != issuer {
-		return nil, fmt.Errorf("jwt: issuer mismatch (got %q, want %q)", payload.Iss, issuer)
-	}
-	now := time.Now().Unix()
-	if now > payload.Exp {
-		return nil, fmt.Errorf("jwt: token expired at %d", payload.Exp)
-	}
-	if payload.Nbf != 0 && now < payload.Nbf {
-		return nil, fmt.Errorf("jwt: token not yet valid (nbf=%d, now=%d)", payload.Nbf, now)
-	}
-	if audience != "" {
-		if err = checkAudience(payload.Aud, audience); err != nil {
-			return nil, err
-		}
+	if err = validateJWTClaims(payloadJSON, issuer, audience); err != nil {
+		return nil, err
 	}
 
 	// Return full claims map for claim extraction.
@@ -426,6 +399,66 @@ func verifyJWT(token string, cache *jwksCache, issuer, audience string) (map[str
 		return nil, fmt.Errorf("jwt: parse claims map: %w", err)
 	}
 	return claims, nil
+}
+
+// verifyJWTSignature checks the token's algorithm and RS256 signature against the key the
+// header's kid names.
+//
+// The algorithm is checked before the key is fetched, so a token declaring anything but
+// RS256 cannot even cause a JWKS lookup.
+func verifyJWTSignature(parts []string, headerJSON []byte, cache *jwksCache) error {
+	var hdr jwtHeader
+	if err := json.Unmarshal(headerJSON, &hdr); err != nil {
+		return fmt.Errorf("jwt: parse header: %w", err)
+	}
+	if hdr.Alg != "RS256" {
+		return fmt.Errorf("jwt: unsupported algorithm %q (only RS256 accepted)", hdr.Alg)
+	}
+
+	pubKey, err := cache.Key(hdr.Kid)
+	if err != nil {
+		return fmt.Errorf("jwt: fetch public key: %w", err)
+	}
+
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return fmt.Errorf("jwt: decode signature: %w", err)
+	}
+	if err = verifyRS256([]byte(parts[0]+"."+parts[1]), sig, pubKey); err != nil {
+		return fmt.Errorf("jwt: signature invalid: %w", err)
+	}
+	return nil
+}
+
+// validateJWTClaims checks the standard registered claims: issuer, expiry, not-before and
+// audience. An empty audience means the deployment does not pin one, so that check is
+// skipped rather than failing every token.
+func validateJWTClaims(payloadJSON []byte, issuer, audience string) error {
+	var payload struct {
+		Iss string          `json:"iss"`
+		Sub string          `json:"sub"`
+		Aud json.RawMessage `json:"aud"`
+		Exp int64           `json:"exp"`
+		Nbf int64           `json:"nbf"`
+	}
+	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+		return fmt.Errorf("jwt: parse payload: %w", err)
+	}
+
+	if payload.Iss != issuer {
+		return fmt.Errorf("jwt: issuer mismatch (got %q, want %q)", payload.Iss, issuer)
+	}
+	now := time.Now().Unix()
+	if now > payload.Exp {
+		return fmt.Errorf("jwt: token expired at %d", payload.Exp)
+	}
+	if payload.Nbf != 0 && now < payload.Nbf {
+		return fmt.Errorf("jwt: token not yet valid (nbf=%d, now=%d)", payload.Nbf, now)
+	}
+	if audience != "" {
+		return checkAudience(payload.Aud, audience)
+	}
+	return nil
 }
 
 // checkAudience validates that the "aud" claim contains the expected audience.
@@ -628,10 +661,17 @@ func ContextWithClaims(ctx context.Context, c Claims) context.Context {
 }
 
 // writeJSONError writes a JSON error body.
+//
+// The status line and headers are already on the wire when the body is written, so a
+// short or failed write leaves nothing to recover and no caller that could act on it: it
+// means the client hung up mid-reply. It is recorded so a peer that always drops the
+// connection on a 401 stays distinguishable from a server that never answers.
 func writeJSONError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("WWW-Authenticate", `Bearer realm="vmafx"`)
 	w.WriteHeader(code)
 	body := fmt.Sprintf(`{"error":%q}`, msg)
-	_, _ = w.Write([]byte(body))
+	if _, err := w.Write([]byte(body)); err != nil {
+		slog.Debug("auth: writing the JSON error body failed", "status", code, "error", err)
+	}
 }

@@ -159,7 +159,7 @@ func ParseStatsFile(path string) []PerFrameStats {
 	if err != nil {
 		return nil
 	}
-	defer func() { _ = f.Close() }()
+	defer func() { warnClose("stats file", f.Close()) }()
 
 	var frames []PerFrameStats
 	sc := bufio.NewScanner(f)

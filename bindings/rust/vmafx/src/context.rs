@@ -146,7 +146,10 @@ impl ContextBuilder {
                 "vmaf_init returned success but null pointer",
             ));
         }
-        Ok(Context { inner: ctx, _models: PhantomData })
+        Ok(Context {
+            inner: ctx,
+            _models: PhantomData,
+        })
     }
 }
 

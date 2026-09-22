@@ -122,7 +122,10 @@ def test_fr_regressor_codec_aware_training_step_finite() -> None:
     x = torch.randn(8, 6)
     codec = torch.tensor(codec_one_hot_batch(["x264"] * 4 + ["libsvtav1"] * 4))
     y = torch.randn(8) * 20 + 50  # realistic MOS range
-    loss = m._step((x, codec, y), "train")
+    # _loss, not _step: _step adds the Trainer-scoped self.log() calls, which
+    # have nowhere to write outside a fit loop. The arithmetic under test is
+    # the same either way.
+    loss, _ = m._loss((x, codec, y))
     assert torch.isfinite(loss)
     loss.backward()
     # First linear layer's weight column slice for the codec one-hot
@@ -142,5 +145,5 @@ def test_fr_regressor_v1_batch_unchanged_with_num_codecs_zero() -> None:
     m = FRRegressor(in_features=6, num_codecs=0)
     x = torch.randn(4, 6)
     y = torch.randn(4) * 20 + 50
-    loss = m._step((x, y), "train")
+    loss, _ = m._loss((x, y))
     assert torch.isfinite(loss)

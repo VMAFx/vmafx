@@ -39,6 +39,7 @@
 
 #include "sycl_compat.h"
 
+#include <cassert>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -55,12 +56,6 @@
 #include "feature_name.h"
 #include "sycl/common.h"
 #include "log.h"
-
-// NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): see
-// integer_motion_sycl.cpp for the rationale — C-style `static` is required
-// because the entry-point function addresses are consumed via the
-// `extern "C" VmafFeatureExtractor` struct at the bottom of this TU; the
-// C-API boundary is the load-bearing invariant per CLAUDE.md §12 r12.
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
@@ -79,21 +74,36 @@
 #undef I4_ONE_BY_15
 #endif
 
-static constexpr int ADM_NUM_SCALES = 4;
-static constexpr int ADM_NUM_BANDS = 3; // h, v, d (skip band_a for scoring)
-static constexpr double ADM_BORDER_FACTOR = 0.1;
+namespace
+{
+
+constexpr int ADM_NUM_SCALES = 4;
+constexpr int ADM_NUM_BANDS = 3; // h, v, d (skip band_a for scoring)
+constexpr double ADM_BORDER_FACTOR = 0.1;
 
 // DWT filter coefficients (DB2, 4-tap)
-static constexpr int32_t dwt_lo[4] = {15826, 27411, 7345, -4240};
-static constexpr int32_t dwt_hi[4] = {-4240, -7345, 27411, -15826};
-static constexpr int32_t dwt_lo_sum = 46342;
+constexpr int32_t dwt_lo[4] = {15826, 27411, 7345, -4240};
+constexpr int32_t dwt_hi[4] = {-4240, -7345, 27411, -15826};
+constexpr int32_t dwt_lo_sum = 46342;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-static constexpr int32_t ONE_BY_15 = 8738;
-static constexpr int32_t I4_ONE_BY_15 = 286331153;
+constexpr int32_t ONE_BY_15 = 8738;
+constexpr int32_t I4_ONE_BY_15 = 286331153;
+
+/*
+ * Rounding term of the scales 1-3 filter shifts (>> 32): csf_f and the 1/15
+ * centre tap of the masking threshold. The CPU stores 1u << 31 in an int32_t
+ * (i4_adm_round_terms() in integer_adm.c), which wraps to INT32_MIN, so it
+ * subtracts 2^31 where it means to add it. The Netflix golden values encode
+ * that (Netflix#955, ADR-0155), and the CUDA and HIP twins reproduce it.
+ * Adding +2^31 here left every term one higher than the CPU's, and scales
+ * 1-3 up to 1e-6 off the scalar CPU on noise. If Netflix#955 is ever fixed
+ * upstream, this constant follows the CPU.
+ */
+constexpr int64_t I4_FLT_ROUND = -(int64_t{1} << 31);
 
 /* ------------------------------------------------------------------ */
 /* Extractor private state                                             */
@@ -151,7 +161,7 @@ struct AdmStateSycl {
 /* Options                                                             */
 /* ------------------------------------------------------------------ */
 
-static const VmafOption options[] = {
+const VmafOption options[] = {
     {
         .name = "adm_csf_scale",
         .help = "scale coefficient for the horizontal & vertical direction terms of CSF",
@@ -292,8 +302,8 @@ static const VmafOption options[] = {
 /* CSF and visibility threshold helpers                                */
 /* ------------------------------------------------------------------ */
 
-static inline float dwt_quant_step(const struct dwt_model_params *params, int lambda, int theta,
-                                   double adm_norm_view_dist, int adm_ref_display_height)
+inline float dwt_quant_step(const struct dwt_model_params *params, int lambda, int theta,
+                            double adm_norm_view_dist, int adm_ref_display_height)
 {
     float const r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
     float const temp =
@@ -308,9 +318,8 @@ struct AdmCsfFactors {
     float factor2; /* diagonal band */
 };
 
-static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
-                                     int adm_ref_display_height, int adm_csf_mode,
-                                     double adm_csf_scale, double adm_csf_diag_scale)
+AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist, int adm_ref_display_height,
+                              int adm_csf_mode, double adm_csf_scale, double adm_csf_diag_scale)
 {
     AdmCsfFactors f;
     if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
@@ -335,9 +344,8 @@ static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
     return f;
 }
 
-static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
-                                   int adm_ref_display_height, int adm_csf_mode,
-                                   uint32_t i_rfactor[3])
+void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
+                            int adm_ref_display_height, int adm_csf_mode, uint32_t i_rfactor[3])
 {
     if (std::fabs(adm_norm_view_dist * adm_ref_display_height -
                   DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
@@ -364,7 +372,7 @@ static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view
  * break the option / feature-name parity contract (ADR-1183). Returns 0 or
  * -EINVAL.
  */
-static int adm_csf_config_check(const AdmStateSycl *s)
+int adm_csf_config_check(const AdmStateSycl *s)
 {
     for (int scale = 0; scale < 4; ++scale) {
         const AdmCsfFactors f =
@@ -384,7 +392,7 @@ static int adm_csf_config_check(const AdmStateSycl *s)
 /* Device-side helpers                                                 */
 /* ------------------------------------------------------------------ */
 
-static inline int dev_mirror_adm(int idx, int sup)
+inline int dev_mirror_adm(int idx, int sup)
 {
     if (idx < 0)
         return -idx;
@@ -393,15 +401,56 @@ static inline int dev_mirror_adm(int idx, int sup)
     return idx;
 }
 
+/*
+ * Scale 0 of the CPU pipeline stores its intermediate bands as int16_t
+ * (adm_dwt_band_t in core/src/feature/integer_adm.h), and so does the CUDA
+ * twin. A value that outgrows 16 bits wraps there, while this twin computes
+ * in int32 / int64 and used to keep it. Full-range noise reaches the wrap:
+ * integer_adm_scale0 was 2.1e-4 off the scalar CPU at 576x324
+ * (T-SYCL-ADM-INT16-SEMANTICS-2026-09-18). adm_i16() is the int16_t store,
+ * reduced modulo 2^16 explicitly so it does not depend on the compiler's
+ * conversion rule.
+ *
+ * Where the CPU narrows, and where this twin now does too:
+ *   - csf_a, adm_csf() (integer_adm.c:743-746): adm_s0_csf_a();
+ *   - csf_f, adm_csf() (integer_adm.c:747-748): launch_decouple_csf();
+ *   - the 1/15 centre tap, adm_cm_thresh() (integer_adm.c:1028):
+ *     launch_csf_den_cm_3band(). This is the one 8-bit content reaches
+ *     with the default weights: |csf_a| >= 15360 on the h and v bands.
+ * csf_a and csf_f wrap only with h / v weights above ~44000 (the default is
+ * 36453). The contrast measure itself is int32_t on the CPU, and
+ * launch_csf_den_cm_3band() evaluates it modulo 2^32 too. Stores that
+ * cannot overflow need no narrowing: the DWT row buffers and bands stay
+ * within +-27.4k, |r| <= |o|, and a = t - r lies between 0 and t.
+ */
+inline int32_t adm_i16(int32_t v)
+{
+    return static_cast<int16_t>(static_cast<uint16_t>(v));
+}
+
+/*
+ * Scale-0 csf_a of one band, as the CPU's adm_csf() computes it: i_shifts =
+ * {15, 15, 17} and i_shiftsadd = {16384, 16384, 65535}. The diagonal band
+ * rounds with 65535, not 1 << 16; the two differ only for diagonal weights
+ * divisible by 4, which the default 49417 is not. The products fit in int32
+ * because adm_csf_config_check() bounds i_rfactor below 2^16.
+ */
+inline int32_t adm_s0_csf_a(uint32_t i_rfactor, int32_t a_val, int band)
+{
+    int const shift = (band < 2) ? 15 : 17;
+    int64_t const rnd = (band < 2) ? 16384 : 65535;
+    return adm_i16(static_cast<int32_t>(((int64_t)i_rfactor * a_val + rnd) >> shift));
+}
+
 /* ------------------------------------------------------------------ */
 /* SYCL Kernel: DWT Vertical Pass (ref+dis fused)                     */
 /* ------------------------------------------------------------------ */
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, int32_t *dwt_tmp_ref,
-                                        const void *input_dis, int32_t *dwt_tmp_dis, int scale,
-                                        unsigned width, unsigned height, unsigned in_stride,
-                                        unsigned bpc, unsigned v_shift, unsigned v_add)
+sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, int32_t *dwt_tmp_ref,
+                                 const void *input_dis, int32_t *dwt_tmp_dis, int scale,
+                                 unsigned width, unsigned height, unsigned in_stride, unsigned bpc,
+                                 unsigned v_shift, unsigned v_add)
 {
     // Output: dwt_tmp has interleaved lo/hi rows:
     //   row i contains lo(i) and hi(i) for half_h rows
@@ -477,7 +526,6 @@ static sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, i
                     int const x = tile_col + tc;
                     int const y = row_start + tr;
                     if (e_scale == 0) {
-                        // NOLINTNEXTLINE(bugprone-branch-clone): SYCL template specialization branch — both arms reach the same code today but the conditional pins the bit-exactness contract for future SCALE / SG_SIZE divergence.
                         if (e_bpc <= 8) {
                             tile[tr][tc] = static_cast<const uint8_t *>(p_in)[y * e_in_stride + x];
                         } else {
@@ -546,12 +594,12 @@ static sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, i
 /* ------------------------------------------------------------------ */
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static sycl::event launch_dwt_hori_pair(
-    sycl::queue &q, const int32_t *dwt_tmp_ref, int32_t *ref_band_a, int32_t *ref_band_h,
-    int32_t *ref_band_v, int32_t *ref_band_d, const int32_t *dwt_tmp_dis, int32_t *dis_band_a,
-    int32_t *dis_band_h, int32_t *dis_band_v, int32_t *dis_band_d, unsigned width, unsigned height,
-    // NOLINTNEXTLINE(misc-unused-parameters): SYCL kernel parameter kept for ABI symmetry across the band-launch lambda specialisations.
-    unsigned buf_stride, unsigned h_shift, unsigned h_add)
+sycl::event launch_dwt_hori_pair(sycl::queue &q, const int32_t *dwt_tmp_ref, int32_t *ref_band_a,
+                                 int32_t *ref_band_h, int32_t *ref_band_v, int32_t *ref_band_d,
+                                 const int32_t *dwt_tmp_dis, int32_t *dis_band_a,
+                                 int32_t *dis_band_h, int32_t *dis_band_v, int32_t *dis_band_d,
+                                 unsigned width, unsigned height, unsigned buf_stride,
+                                 unsigned h_shift)
 {
     unsigned const half_w = (width + 1) / 2;
     unsigned const half_h = (height + 1) / 2;
@@ -674,7 +722,7 @@ struct GainLimitQ31 {
     int32_t gain_lo; // lower 16 bits of gain_q31
 };
 
-static inline GainLimitQ31 gain_limit_to_q31(double gain_limit)
+inline GainLimitQ31 gain_limit_to_q31(double gain_limit)
 {
     int64_t const gain_q31 = (int64_t)llround(gain_limit * (1LL << 31));
     return {
@@ -684,7 +732,7 @@ static inline GainLimitQ31 gain_limit_to_q31(double gain_limit)
 }
 
 template <bool UseFP64>
-static sycl::event
+sycl::event
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch lambda body, see comment block above (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278)
 launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
                     unsigned buf_stride, double adm_enhn_gain_limit, uint32_t i_rfactor_h,
@@ -898,20 +946,18 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
                 // --- Fused CSF ---
                 int32_t csf_f_val;
                 if (e_scale == 0) {
-                    // Scale 0: rfactor * 2^21 (h,v) or 2^23 (d)
-                    int const shift = (band < 2) ? 15 : 17;
-                    int64_t const rnd_csf = ((int64_t)1 << (shift - 1));
-                    int32_t const csf_a_val =
-                        (int32_t)(((int64_t)irf[band] * a_val + rnd_csf) >> shift);
+                    // Scale 0: rfactor * 2^21 (h,v) or 2^23 (d); int16
+                    // storage as in the CPU's adm_csf() (see adm_i16()).
+                    int32_t const csf_a_val = adm_s0_csf_a(irf[band], a_val, band);
                     // csf_f = (4369 * |csf_a| + 2048) >> 12
                     int32_t const abs_csf = csf_a_val < 0 ? -csf_a_val : csf_a_val;
-                    csf_f_val = (int32_t)(((int64_t)4369 * abs_csf + 2048) >> 12);
+                    csf_f_val = adm_i16((4369 * abs_csf + 2048) >> 12);
                 } else {
                     // Scales 1-3: rfactor * 2^32
                     int32_t const csf_a_val =
                         (int32_t)(((int64_t)irf[band] * a_val + (1LL << 27)) >> 28);
                     int32_t const abs_csf = csf_a_val < 0 ? -csf_a_val : csf_a_val;
-                    csf_f_val = (int32_t)(((int64_t)143165577 * abs_csf + (1LL << 31)) >> 32);
+                    csf_f_val = (int32_t)(((int64_t)143165577 * abs_csf + I4_FLT_ROUND) >> 32);
                 }
 
                 cf_ptr[band][idx] = csf_f_val;
@@ -935,7 +981,7 @@ launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
 /* ------------------------------------------------------------------ */
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static sycl::event launch_csf_den_cm_3band(
+sycl::event launch_csf_den_cm_3band(
     sycl::queue &q, int scale, unsigned half_w, unsigned half_h, unsigned buf_stride,
     // csf_den inputs
     const int32_t *ref_band_h, const int32_t *ref_band_v, const int32_t *ref_band_d,
@@ -1038,11 +1084,9 @@ static sycl::event launch_csf_den_cm_3band(
                 const int32_t *ref_band = (band_idx == 0) ? ref_band_h :
                                           (band_idx == 1) ? ref_band_v :
                                                             ref_band_d;
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
                 int64_t *csf_accum_ptr = (band_idx == 0) ? csf_accum_h :
                                          (band_idx == 1) ? csf_accum_v :
                                                            csf_accum_d;
-                // NOLINTNEXTLINE(misc-const-correctness): SYCL kernel-local — variable is mutated via atomic_ref / sub-group reduction the analyzer cannot trace.
                 int64_t *cm_accum_ptr = (band_idx == 0) ? cm_accum_h :
                                         (band_idx == 1) ? cm_accum_v :
                                                           cm_accum_d;
@@ -1219,10 +1263,7 @@ static sycl::event launch_csf_den_cm_3band(
                         // CSF: a = dis - r, csf_a = rfactor * a
                         int32_t const a_val = bth - r_val;
                         if (e_scale == 0) {
-                            int const shift = (b < 2) ? 15 : 17;
-                            int64_t const rnd_csf = ((int64_t)1 << (shift - 1));
-                            csf_a_vals[b] =
-                                (int32_t)(((int64_t)irf_all[b] * a_val + rnd_csf) >> shift);
+                            csf_a_vals[b] = adm_s0_csf_a(irf_all[b], a_val, b);
                         } else {
                             csf_a_vals[b] =
                                 (int32_t)(((int64_t)irf_all[b] * a_val + (1LL << 27)) >> 28);
@@ -1247,8 +1288,9 @@ static sycl::event launch_csf_den_cm_3band(
                                  * which only diverges once a scale's border crop
                                  * collapses to 0 — band dimensions <= 14 — since
                                  * only then are row 0 / col 0 inside the CM
-                                 * region. CUDA (adm_cm.cu) and HIP already carry
-                                 * the ADR-1167 fix; this twin was missed. */
+                                 * region. The CUDA and HIP scale 1-3 kernels had
+                                 * the ADR-1167 fix; their scale-0 kernels got it
+                                 * with T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18. */
                                 int ny = row + dy;
                                 int nx = col + dx;
                                 if (ny < 0)
@@ -1264,18 +1306,24 @@ static sycl::event launch_csf_den_cm_3band(
                         }
                         int32_t const abs_ca = csf_a_vals[b] < 0 ? -csf_a_vals[b] : csf_a_vals[b];
                         if (e_scale == 0) {
-                            thr += ((int64_t)ONE_BY_15 * abs_ca + 2048) >> 12;
+                            // int16 like the CPU's adm_cm_thresh(): wraps
+                            // negative once |csf_a| >= 15360.
+                            thr += adm_i16((ONE_BY_15 * abs_ca + 2048) >> 12);
                         } else {
-                            thr += ((int64_t)I4_ONE_BY_15 * abs_ca + (1LL << 31)) >> 32;
+                            thr += ((int64_t)I4_ONE_BY_15 * abs_ca + I4_FLT_ROUND) >> 32;
                         }
                     }
 
                     int32_t const r_val = r_vals[band_idx];
                     int64_t cm;
                     if (e_scale == 0) {
-                        cm = (int64_t)i_rfactor * r_val;
-                        cm = cm < 0 ? -cm : cm;
-                        cm -= (thr << e_cm_shift_sub);
+                        // adm_cm_accum_round() (integer_adm.c:1083) subtracts
+                        // the shifted threshold in int32_t, where thr << 12
+                        // can wrap on the diagonal band; so does this.
+                        int64_t const x = (int64_t)i_rfactor * r_val;
+                        auto const abs_x = static_cast<uint32_t>(x < 0 ? -x : x);
+                        cm = static_cast<int32_t>(abs_x -
+                                                  (static_cast<uint32_t>(thr) << e_cm_shift_sub));
                     } else {
                         int64_t const scaled_r = ((int64_t)i_rfactor * r_val + (1LL << 27)) >> 28;
                         cm = scaled_r < 0 ? -scaled_r : scaled_r;
@@ -1312,9 +1360,7 @@ static sycl::event launch_csf_den_cm_3band(
                 item.barrier(sycl::access::fence_space::local_space);
 
                 if (lid == 0) {
-                    // NOLINTNEXTLINE(misc-const-correctness): atomic_ref / reduction-loop target — clang-tidy cannot see the writes through SYCL atomic_ref or sub-group reductions, but the variable is mutated and must not be const
                     int64_t total_csf = 0;
-                    // NOLINTNEXTLINE(misc-const-correctness): atomic_ref / reduction-loop target — clang-tidy cannot see the writes through SYCL atomic_ref or sub-group reductions, but the variable is mutated and must not be const
                     int64_t total_cm = 0;
                     for (uint32_t s = 0; s < n_subgroups; s++) {
                         total_csf += lmem[s];
@@ -1347,8 +1393,8 @@ static sycl::event launch_csf_den_cm_3band(
 /* CPU scoring functions                                               */
 /* ------------------------------------------------------------------ */
 
-static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_weight,
-                            double p_norm, double *result)
+void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_weight,
+                     double p_norm, double *result)
 {
     int const left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int const top = (int)(h * ADM_BORDER_FACTOR - 0.5);
@@ -1390,8 +1436,8 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
     }
 }
 
-static void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, double *result,
-                                 const float rfactor[3], float noise_weight)
+void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, double *result,
+                          const float rfactor[3], float noise_weight)
 {
     int const left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int const top = (int)(h * ADM_BORDER_FACTOR - 0.5);
@@ -1428,20 +1474,26 @@ static void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale,
 /* ------------------------------------------------------------------ */
 
 // Forward declarations for combined graph callbacks (defined after enqueue_adm_work_impl)
-static void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis);
-static void adm_pre_graph(void *queue_ptr, void *priv);
-static void adm_post_graph(void *queue_ptr, void *priv);
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
+void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis);
+void adm_pre_graph(void *queue_ptr, void *priv);
+void adm_post_graph(void *queue_ptr, void *priv);
+int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 
-static int
-close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init-failure cleanup — SY-2a */
+int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init-failure cleanup — SY-2a */
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
+                  unsigned h)
 {
     (void)pix_fmt;
     auto *s = static_cast<AdmStateSycl *>(fex->priv);
+
+    /* Same frame-size bound as the CPU reference, checked before any device
+     * resource is claimed. */
+    const int size_err = adm_frame_size_check("adm_sycl", w, h);
+    if (size_err != 0) {
+        return size_err;
+    }
 
     s->width = w;
     s->height = h;
@@ -1588,19 +1640,24 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 /* ------------------------------------------------------------------ */
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref,
-                                  void *shared_dis)
+void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref, void *shared_dis)
 {
+    assert(s != nullptr);
+    assert(shared_ref != nullptr);
+    assert(shared_dis != nullptr);
+    /* Scale 0 shifts by bpc; a zero bpc would make the `1u << (s->bpc - 1)`
+     * rounding term below shift by 2^32 - 1. libvmaf accepts 8 to 16. */
+    assert(s->bpc >= 8u && s->bpc <= 16u);
+
     // DWT shift parameters per scale
     struct DwtShifts {
-        unsigned v_shift, v_add, h_shift, h_add;
+        unsigned v_shift, v_add, h_shift;
     };
     DwtShifts dwt_shifts[4];
-    dwt_shifts[0] = {
-        .v_shift = s->bpc, .v_add = 1u << (s->bpc - 1), .h_shift = 16u, .h_add = 32768u};
-    dwt_shifts[1] = {.v_shift = 0u, .v_add = 0u, .h_shift = 15u, .h_add = 16384u};
-    dwt_shifts[2] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 16u, .h_add = 32768u};
-    dwt_shifts[3] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 15u, .h_add = 16384u};
+    dwt_shifts[0] = {.v_shift = s->bpc, .v_add = 1u << (s->bpc - 1), .h_shift = 16u};
+    dwt_shifts[1] = {.v_shift = 0u, .v_add = 0u, .h_shift = 15u};
+    dwt_shifts[2] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 16u};
+    dwt_shifts[3] = {.v_shift = 16u, .v_add = 32768u, .h_shift = 15u};
 
     unsigned cur_w = s->width;
     unsigned cur_h = s->height;
@@ -1630,7 +1687,7 @@ static void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_
         launch_dwt_hori_pair(q, s->d_dwt_tmp_ref, s->d_ref_band[0], s->d_ref_band[1],
                              s->d_ref_band[2], s->d_ref_band[3], s->d_dwt_tmp_dis, s->d_dis_band[0],
                              s->d_dis_band[1], s->d_dis_band[2], s->d_dis_band[3], cur_w, cur_h,
-                             cur_stride, dwt_shifts[scale].h_shift, dwt_shifts[scale].h_add);
+                             cur_stride, dwt_shifts[scale].h_shift);
 
         // Decouple + CSF → writes only d_csf_f (r and csf_a recomputed in CM kernel)
         launch_decouple_csf<false>(q, scale, half_w, half_h, cur_stride, s->adm_enhn_gain_limit,
@@ -1667,7 +1724,7 @@ static void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_
 /* ------------------------------------------------------------------ */
 
 // Pre-graph: zero accumulators (direct enqueue, outside graph)
-static void adm_pre_graph(void *queue_ptr, void *priv)
+void adm_pre_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
@@ -1677,7 +1734,7 @@ static void adm_pre_graph(void *queue_ptr, void *priv)
 }
 
 // Graph-recorded: compute kernels only
-static void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis)
+void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
@@ -1685,7 +1742,7 @@ static void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void
 }
 
 // Post-graph: D2H accumulator download (direct enqueue, outside graph)
-static void adm_post_graph(void *queue_ptr, void *priv)
+void adm_post_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
@@ -1698,8 +1755,8 @@ static void adm_post_graph(void *queue_ptr, void *priv)
 /* Submit / Collect / Extract                                          */
 /* ------------------------------------------------------------------ */
 
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic;
     (void)ref_pic_90;
@@ -1721,8 +1778,8 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 }
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
-                            VmafFeatureCollector *feature_collector)
+int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
+                     VmafFeatureCollector *feature_collector)
 {
     auto *s = static_cast<AdmStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
@@ -1839,10 +1896,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     return 0;
 }
 
-static int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
-                            VmafPicture *ref_pic_90, VmafPicture *dist_pic,
-                            VmafPicture *dist_pic_90, unsigned index,
-                            VmafFeatureCollector *feature_collector)
+int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+                     VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+                     VmafFeatureCollector *feature_collector)
 {
     int const err = submit_fex_sycl(fex, ref_pic, ref_pic_90, dist_pic, dist_pic_90, index);
     if (err)
@@ -1850,7 +1906,7 @@ static int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return collect_fex_sycl(fex, index, feature_collector);
 }
 
-static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     (void)feature_collector;
     if (!fex)
@@ -1864,10 +1920,14 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     return 1; // done — collect already consumed pending work
 }
 
-static int close_fex_sycl(VmafFeatureExtractor *fex)
+int close_fex_sycl(VmafFeatureExtractor *fex)
 {
+    assert(fex != nullptr);
     auto *s = static_cast<AdmStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
+    /* The framework never closes an extractor it did not initialise, so priv
+     * is set whenever a state exists to free. */
+    assert(state == nullptr || s != nullptr);
 
     if (state) {
         (void)vmaf_sycl_queue_wait(state);
@@ -1917,25 +1977,25 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 /* Feature extractor definition                                        */
 /* ------------------------------------------------------------------ */
 
-static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
-                                          "integer_adm_scale0",
-                                          "integer_adm_scale1",
-                                          "integer_adm_scale2",
-                                          "integer_adm_scale3",
-                                          "integer_adm",
-                                          "integer_adm_num",
-                                          "integer_adm_den",
-                                          "integer_adm_num_scale0",
-                                          "integer_adm_den_scale0",
-                                          "integer_adm_num_scale1",
-                                          "integer_adm_den_scale1",
-                                          "integer_adm_num_scale2",
-                                          "integer_adm_den_scale2",
-                                          "integer_adm_num_scale3",
-                                          "integer_adm_den_scale3",
-                                          nullptr};
+const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
+                                   "integer_adm_scale0",
+                                   "integer_adm_scale1",
+                                   "integer_adm_scale2",
+                                   "integer_adm_scale3",
+                                   "integer_adm",
+                                   "integer_adm_num",
+                                   "integer_adm_den",
+                                   "integer_adm_num_scale0",
+                                   "integer_adm_den_scale0",
+                                   "integer_adm_num_scale1",
+                                   "integer_adm_den_scale1",
+                                   "integer_adm_num_scale2",
+                                   "integer_adm_den_scale2",
+                                   "integer_adm_num_scale3",
+                                   "integer_adm_den_scale3",
+                                   nullptr};
 
-// NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
+} // namespace
 
 extern "C" VmafFeatureExtractor vmaf_fex_integer_adm_sycl = {
     .name = "adm_sycl",

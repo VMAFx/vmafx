@@ -51,6 +51,43 @@ class VmafexecQualityRunnerTest(MyTestCase):
         super().setUp()
         self.result_store = FileSystemResultStore()
 
+    def _run_vmafexec(self, assets, optional_dict):
+        self.runner = VmafexecQualityRunner(
+            assets,
+            None,
+            fifo_mode=True,
+            delete_workdir=True,
+            result_store=None,
+            optional_dict=optional_dict,
+        )
+        self.runner.run(parallelize=True)
+        return self.runner.results
+
+    @staticmethod
+    def _sparks_assets():
+        ref_path = VmafConfig.test_resource_path("yuv", "sparks_ref_480x270.yuv42010le.yuv")
+        dis_path = VmafConfig.test_resource_path("yuv", "sparks_dis_480x270.yuv42010le.yuv")
+        asset = Asset(
+            dataset="test",
+            content_id=0,
+            asset_id=0,
+            workdir_root=VmafConfig.workdir_path(),
+            ref_path=ref_path,
+            dis_path=dis_path,
+            asset_dict={"width": 480, "height": 270, "yuv_type": "yuv420p10le"},
+        )
+
+        asset_original = Asset(
+            dataset="test",
+            content_id=0,
+            asset_id=1,
+            workdir_root=VmafConfig.workdir_path(),
+            ref_path=ref_path,
+            dis_path=ref_path,
+            asset_dict={"width": 480, "height": 270, "yuv_type": "yuv420p10le"},
+        )
+        return asset, asset_original
+
     def test_run_vmafexec_runner_matched_to_vmafossexec(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
@@ -305,16 +342,11 @@ class VmafexecQualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(results[1]["VMAFEXEC_psnr_cr_score"], 60.0, places=4)
 
     def test_run_vmafexec_runner_n_threads(self):
-
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 
-        self.runner = VmafexecQualityRunner(
+        results = self._run_vmafexec(
             [asset, asset_original],
-            None,
-            fifo_mode=True,
-            delete_workdir=True,
-            result_store=None,
-            optional_dict={
+            {
                 "float_psnr": True,
                 "float_ssim": True,
                 "float_ms_ssim": True,
@@ -322,9 +354,6 @@ class VmafexecQualityRunnerTest(MyTestCase):
                 "n_threads": 4,
             },
         )
-        self.runner.run(parallelize=True)
-
-        results = self.runner.results
 
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_vif_scale0_score"], 0.3636620710647402, places=4
@@ -733,43 +762,16 @@ class VmafexecQualityRunnerTest(MyTestCase):
 
     def test_run_vmafexec_runner_yuv420p10le_sparks(self):
 
-        ref_path = VmafConfig.test_resource_path("yuv", "sparks_ref_480x270.yuv42010le.yuv")
-        dis_path = VmafConfig.test_resource_path("yuv", "sparks_dis_480x270.yuv42010le.yuv")
-        asset = Asset(
-            dataset="test",
-            content_id=0,
-            asset_id=0,
-            workdir_root=VmafConfig.workdir_path(),
-            ref_path=ref_path,
-            dis_path=dis_path,
-            asset_dict={"width": 480, "height": 270, "yuv_type": "yuv420p10le"},
-        )
+        asset, asset_original = self._sparks_assets()
 
-        asset_original = Asset(
-            dataset="test",
-            content_id=0,
-            asset_id=1,
-            workdir_root=VmafConfig.workdir_path(),
-            ref_path=ref_path,
-            dis_path=ref_path,
-            asset_dict={"width": 480, "height": 270, "yuv_type": "yuv420p10le"},
-        )
-
-        self.runner = VmafexecQualityRunner(
+        results = self._run_vmafexec(
             [asset, asset_original],
-            None,
-            fifo_mode=True,
-            delete_workdir=True,
-            result_store=None,
-            optional_dict={
+            {
                 "float_psnr": True,
                 "float_ssim": True,
                 "float_ms_ssim": True,
             },
         )
-        self.runner.run(parallelize=True)
-
-        results = self.runner.results
 
         self.assertAlmostEqual(results[0]["VMAFEXEC_vif_scale0_score"], 0.9240746, places=4)
         self.assertAlmostEqual(

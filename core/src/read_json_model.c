@@ -640,21 +640,17 @@ static int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_st
     m->name = vmaf_model_generate_name(cfg);
     if (!m->name) {
         err = -ENOMEM;
-        goto fail;
+    } else {
+        VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
+
+        err = model_parse(s, m, cfg->flags);
+
+        vmaf_thread_locale_pop(locale_state);
+
+        if (!err)
+            return 0;
     }
 
-    VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
-
-    err = model_parse(s, m, cfg->flags);
-
-    vmaf_thread_locale_pop(locale_state);
-
-    if (err)
-        goto fail;
-
-    return 0;
-
-fail:
     /* Leak-free teardown on parse failure. `vmaf_model_destroy`
      * walks the partially-populated feature[] array (including any
      * dict + strdup'd feature_name allocations from model_parse) +

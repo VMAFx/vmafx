@@ -6,7 +6,7 @@
  *
  *  Implements a single-allocation device-memory pool per call.  The API
  *  deliberately mirrors `vmaf_cuda_picture_alloc` / `vmaf_cuda_picture_free`
- *  from `libvmaf/src/cuda/picture_cuda.c` so the two backends share the same
+ *  from `core/src/cuda/picture_cuda.c` so the two backends share the same
  *  conceptual model.
  *
  *  A pitched allocation (`hipMallocPitch`) would minimise bandwidth on tiled
@@ -19,7 +19,7 @@
  *       changing the signature would require touching all 9 extractor sites.
  *  A full pitched-pool follow-up is tracked as T7-10c.
  *
- *  ADR-0613: fix P1-2 from the scaffold audit (libvmaf/src/hip/picture_hip.c
+ *  ADR-0613: fix P1-2 from the scaffold audit (core/src/hip/picture_hip.c
  *  previously returned -ENOSYS, blocking zero-copy upload for all HIP
  *  extractors).
  *

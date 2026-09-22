@@ -340,25 +340,9 @@ func handleListJobs(ctx context.Context, args map[string]any) (any, error) {
 	if limit < 1 || limit > listJobsHardLimit {
 		return nil, fmt.Errorf("limit must be between 1 and %d", listJobsHardLimit)
 	}
-	var filter []controllerv1.JobStatus
-	if raw, ok := args["status_filter"]; ok && raw != nil {
-		list, isList := raw.([]any)
-		if !isList {
-			return nil, fmt.Errorf("status_filter must be an array of status strings")
-		}
-		for _, item := range list {
-			name, isStr := item.(string)
-			if !isStr {
-				return nil, fmt.Errorf("status_filter entries must be strings")
-			}
-			st, known := jobStatusValues[strings.ToUpper(strings.TrimSpace(name))]
-			if !known {
-				return nil, fmt.Errorf(
-					"invalid status %q: must be one of PENDING|RUNNING|COMPLETED|FAILED|CANCELLED",
-					name)
-			}
-			filter = append(filter, st)
-		}
+	filter, err := parseJobStatusFilter(args)
+	if err != nil {
+		return nil, err
 	}
 
 	conn, client, err := dialController()
@@ -374,21 +358,9 @@ func handleListJobs(ctx context.Context, args map[string]any) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("StreamJobs on %s: %w", controllerAddr(), err)
 	}
-	jobs := make([]map[string]any, 0, limit)
-	truncated := false
-	for {
-		job, recvErr := stream.Recv()
-		if errors.Is(recvErr, io.EOF) {
-			break
-		}
-		if recvErr != nil {
-			return nil, fmt.Errorf("StreamJobs on %s: %w", controllerAddr(), recvErr)
-		}
-		if len(jobs) >= limit {
-			truncated = true
-			break
-		}
-		jobs = append(jobs, jobToMap(job))
+	jobs, truncated, err := drainJobStream(stream, limit)
+	if err != nil {
+		return nil, err
 	}
 	return map[string]any{
 		"jobs":       jobs,
@@ -397,6 +369,65 @@ func handleListJobs(ctx context.Context, args map[string]any) (any, error) {
 		"limit":      limit,
 		"controller": controllerAddr(),
 	}, nil
+}
+
+// parseJobStatusFilter turns the optional status_filter argument into the enum values the
+// controller expects, rejecting anything that is not a known status name.
+func parseJobStatusFilter(args map[string]any) ([]controllerv1.JobStatus, error) {
+	raw, ok := args["status_filter"]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	list, isList := raw.([]any)
+	if !isList {
+		return nil, fmt.Errorf("status_filter must be an array of status strings")
+	}
+	filter := make([]controllerv1.JobStatus, 0, len(list))
+	for _, item := range list {
+		name, isStr := item.(string)
+		if !isStr {
+			return nil, fmt.Errorf("status_filter entries must be strings")
+		}
+		st, known := jobStatusValues[strings.ToUpper(strings.TrimSpace(name))]
+		if !known {
+			return nil, fmt.Errorf(
+				"invalid status %q: must be one of PENDING|RUNNING|COMPLETED|FAILED|CANCELLED",
+				name)
+		}
+		filter = append(filter, st)
+	}
+	return filter, nil
+}
+
+// drainJobStream reads the StreamJobs snapshot into at most limit jobs, reporting whether
+// the controller had more than that.
+//
+// StreamJobs sends the current snapshot and then closes (ADR-0962), so the drain normally
+// ends at io.EOF. The read is bounded anyway: limit records are kept and one further
+// record is read to decide truncated. A controller that keeps sending past that bound is
+// out of contract, and the bound turns that into a returned error rather than a read that
+// never ends.
+func drainJobStream(
+	stream controllerv1.VmafxController_StreamJobsClient,
+	limit int,
+) ([]map[string]any, bool, error) {
+	jobs := make([]map[string]any, 0, limit)
+	for range limit + 1 {
+		job, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			return jobs, false, nil
+		}
+		if recvErr != nil {
+			return nil, false, fmt.Errorf("StreamJobs on %s: %w", controllerAddr(), recvErr)
+		}
+		if len(jobs) >= limit {
+			return jobs, true, nil
+		}
+		jobs = append(jobs, jobToMap(job))
+	}
+	return nil, false, fmt.Errorf(
+		"StreamJobs on %s: the controller sent more than %d records without closing the stream",
+		controllerAddr(), limit+1)
 }
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ package corpus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -110,7 +111,7 @@ func NewOptions() Options {
 	return Options{
 		Encoder:         "libx264",
 		Output:          "corpus.jsonl",
-		EncodeDir:       filepath.Join(".workingdir2", "encodes"),
+		EncodeDir:       filepath.Join(".workingdir", "cache", "vmafx-tune", "encodes"),
 		VMAFModel:       Model1080P,
 		FFmpegBin:       "ffmpeg",
 		VMAFBin:         "vmaf",
@@ -379,213 +380,227 @@ func maybeDecodeReference(
 	return source, rc
 }
 
-// IterRows produces one JSONL row per (preset, crf) cell.
-//
-// Rows are streamed to emit as they complete so a long sweep can write
-// incrementally; emit returning an error aborts the sweep.
+type iterationState struct {
+	adapter           *codecadapter.Adapter
+	srcHash           string
+	clip              sampleClipPlan
+	shotMeta          ShotMetadata
+	hdrInfo           *HdrInfo
+	hdrForced         bool
+	hdrExtraParams    []string
+	baseScoreModel    string
+	scoreModelWarned  bool
+	decodedReference  string
+	referenceDecodeRC int
+}
+
+// IterRows produces and streams one JSONL row per (preset, crf) cell.
 func IterRows(
 	ctx context.Context, job Job, opts Options, runners Runners,
 	emit func(map[string]any) error,
 ) error {
-	adapter, err := codecadapter.Get(opts.Encoder)
+	state, err := prepareIterationState(ctx, job, opts, runners)
 	if err != nil {
 		return err
 	}
-
-	srcHash := ""
-	if opts.SrcSHA256 {
-		if _, statErr := os.Stat(job.Source); statErr == nil {
-			if h, hErr := FileSHA256(job.Source); hErr == nil {
-				srcHash = h
-			}
+	for _, cell := range job.Cells {
+		if cellErr := emitIterationCell(ctx, job, opts, runners, state, cell, emit); cellErr != nil {
+			return cellErr
 		}
 	}
+	return nil
+}
 
-	if mkErr := os.MkdirAll(opts.EncodeDir, 0o750); mkErr != nil {
-		return fmt.Errorf("create encode dir: %w", mkErr)
+func prepareIterationState(
+	ctx context.Context, job Job, opts Options, runners Runners,
+) (*iterationState, error) {
+	adapter, err := codecadapter.Get(opts.Encoder)
+	if err != nil {
+		return nil, err
 	}
-
-	clip := resolveSampleClip(job, opts)
-	shotMeta := resolveShotMetadata(ctx, job, runners.Shot)
-
-	// HDR resolution happens once per source: detection (or the forced
-	// synthetic info) is constant across the grid for a given input.
-	// Re-probing per cell would burn an ffprobe per encode for no signal.
+	srcHash, err := iterationSourceHash(job.Source, opts.SrcSHA256)
+	if err != nil {
+		return nil, err
+	}
+	if err = os.MkdirAll(opts.EncodeDir, 0o750); err != nil {
+		return nil, fmt.Errorf("create encode dir: %w", err)
+	}
+	baseModel, err := iterationScoreModel(job, opts)
+	if err != nil {
+		return nil, err
+	}
 	hdrInfo, hdrForced := resolveHDR(ctx, job, opts, runners.Probe)
-	var hdrExtraParams []string
-	if hdrInfo != nil {
-		hdrExtraParams = HDRCodecArgs(opts.Encoder, hdrInfo)
+	state := &iterationState{
+		adapter: adapter, srcHash: srcHash, clip: resolveSampleClip(job, opts),
+		shotMeta: resolveShotMetadata(ctx, job, runners.Shot),
+		hdrInfo:  hdrInfo, hdrForced: hdrForced, baseScoreModel: baseModel,
 	}
-	scoreModelWarned := false
+	if hdrInfo != nil {
+		state.hdrExtraParams = HDRCodecArgs(opts.Encoder, hdrInfo)
+	}
+	state.decodedReference, state.referenceDecodeRC = maybeDecodeReference(
+		ctx, job.Source, opts.EncodeDir, referenceDecodeParams(job, opts), runners.Decode)
+	return state, nil
+}
 
-	// ADR-0499 / Bug #V3-B: decode the reference leg to raw YUV once before
-	// iterating cells. The libvmaf CLI's raw_input_open path (active
-	// whenever --width / --height / --pixel_format / --bitdepth are passed,
-	// which vmaf-tune always does) refuses container / Y4M inputs.
-	refTargetW, refTargetH := 0, 0
+func iterationSourceHash(source string, enabled bool) (string, error) {
+	if !enabled {
+		return "", nil
+	}
+	hash, err := FileSHA256(source)
+	if err != nil {
+		return "", fmt.Errorf("hash source %q: %w", source, err)
+	}
+	return hash, nil
+}
+
+func iterationScoreModel(job Job, opts Options) (string, error) {
+	if !opts.ResolutionAware {
+		return opts.VMAFModel, nil
+	}
+	model, err := SelectVMAFModelVersion(job.Width, job.Height)
+	if err != nil {
+		return "", fmt.Errorf("select VMAF model: %w", err)
+	}
+	return model, nil
+}
+
+func referenceDecodeParams(job Job, opts Options) decodeSourceParams {
+	targetWidth, targetHeight := 0, 0
 	if job.SrcWidth > 0 && job.SrcHeight > 0 &&
 		(job.SrcWidth != job.Width || job.SrcHeight != job.Height) {
-		refTargetW, refTargetH = job.Width, job.Height
+		targetWidth, targetHeight = job.Width, job.Height
 	}
-	srcDimW, srcDimH := job.Width, job.Height
+	sourceWidth, sourceHeight := job.Width, job.Height
 	if job.SrcWidth > 0 {
-		srcDimW = job.SrcWidth
+		sourceWidth = job.SrcWidth
 	}
 	if job.SrcHeight > 0 {
-		srcDimH = job.SrcHeight
+		sourceHeight = job.SrcHeight
 	}
-	decodedReference, refDecodeRC := maybeDecodeReference(ctx, job.Source, opts.EncodeDir,
-		decodeSourceParams{
-			PixFmt: job.PixFmt,
-			// Cap the reference decode at the analysed window so a 10 s
-			// probe does not spill tens of GB of raw YUV (Bug #v2-A).
-			DurationS:       job.DurationS,
-			FFmpegBin:       opts.FFmpegBin,
-			TargetWidth:     refTargetW,
-			TargetHeight:    refTargetH,
-			SourceWidth:     srcDimW,
-			SourceHeight:    srcDimH,
-			SourceFramerate: job.Framerate,
-		}, runners.Decode)
+	return decodeSourceParams{
+		PixFmt: job.PixFmt, DurationS: job.DurationS, FFmpegBin: opts.FFmpegBin,
+		TargetWidth: targetWidth, TargetHeight: targetHeight,
+		SourceWidth: sourceWidth, SourceHeight: sourceHeight,
+		SourceFramerate: job.Framerate,
+	}
+}
 
-	for _, cell := range job.Cells {
-		if vErr := adapter.Validate(cell.Preset, cell.CRF); vErr != nil {
-			return vErr
+func emitIterationCell(
+	ctx context.Context, job Job, opts Options, runners Runners,
+	state *iterationState, cell Cell, emit func(map[string]any) error,
+) error {
+	if err := state.adapter.Validate(cell.Preset, cell.CRF); err != nil {
+		return err
+	}
+	out := encodePath(opts, job.Source, cell.Preset, cell.CRF)
+	scoreModel := resolveHDRScoreModel(
+		state.hdrInfo, state.baseScoreModel, &state.scoreModelWarned)
+	if state.referenceDecodeRC != 0 {
+		return emit(referenceDecodeFailureRow(job, opts, state, cell, out, scoreModel))
+	}
+	encReq := buildEncodeRequest(
+		job, opts, state.adapter, cell, out, state.clip, state.hdrExtraParams)
+	encRes := runCellEncode(ctx, opts, runners, state.adapter, encReq)
+	scoreReq := cellScoreRequest(job, state, out, scoreModel)
+	scoreRes := runCellScore(ctx, opts, runners, encRes, scoreReq)
+	row := buildRow(rowInput{
+		Job: job, Opts: opts, Cell: cell, SrcSHA: state.srcHash,
+		Enc: encRes, Score: scoreRes, ScoreModel: scoreModel,
+		ClipMode: state.clip.ClipMode, HDRInfo: state.hdrInfo,
+		HDRForced: state.hdrForced, ShotMeta: state.shotMeta,
+	})
+	if err := cleanupCellEncode(opts, encRes, out); err != nil {
+		return err
+	}
+	return emit(row)
+}
+
+func referenceDecodeFailureRow(
+	job Job, opts Options, state *iterationState, cell Cell, out, scoreModel string,
+) map[string]any {
+	rc := state.referenceDecodeRC
+	enc := EncodeResult{
+		Request: EncodeRequest{
+			Source: job.Source, Width: job.Width, Height: job.Height,
+			PixFmt: job.PixFmt, Framerate: job.Framerate,
+			Encoder: state.adapter.Encoder, Preset: cell.Preset,
+			CRF: cell.CRF, Output: out,
+		},
+		EncoderVersion: "skipped", FFmpegVersion: "skipped", ExitStatus: rc,
+		StderrTail: fmt.Sprintf("encode skipped: reference decode failed (rc=%d)", rc),
+	}
+	score := ScoreResult{
+		Request: ScoreRequest{
+			Reference: state.decodedReference, Distorted: out,
+			Width: job.Width, Height: job.Height, PixFmt: job.PixFmt,
+			Model: scoreModel, FrameSkipRef: state.clip.FrameSkipRef,
+			FrameCnt: state.clip.FrameCnt, DurationS: job.DurationS,
+		},
+		VMAFScore: math.NaN(), VMAFBinaryVersion: "skipped", ExitStatus: rc,
+		StderrTail: fmt.Sprintf(
+			"reference decode to raw YUV failed (rc=%d) for %s", rc, job.Source),
+	}
+	return buildRow(rowInput{
+		Job: job, Opts: opts, Cell: cell, SrcSHA: state.srcHash,
+		Enc: enc, Score: score, ScoreModel: scoreModel, ClipMode: state.clip.ClipMode,
+		HDRInfo: state.hdrInfo, HDRForced: state.hdrForced, ShotMeta: state.shotMeta,
+	})
+}
+
+func runCellEncode(
+	ctx context.Context, opts Options, runners Runners,
+	adapter *codecadapter.Adapter, request EncodeRequest,
+) EncodeResult {
+	switch {
+	case opts.TwoPass:
+		return RunTwoPassEncode(ctx, request, opts.FFmpegBin, runners.Encode, "")
+	case adapter.SupportsEncoderStats:
+		return RunEncodeWithStats(ctx, request, opts.FFmpegBin, runners.Encode, "")
+	default:
+		return RunEncode(ctx, request, opts.FFmpegBin, runners.Encode)
+	}
+}
+
+func cellScoreRequest(
+	job Job, state *iterationState, out, scoreModel string,
+) ScoreRequest {
+	return ScoreRequest{
+		Reference: state.decodedReference, Distorted: out,
+		Width: job.Width, Height: job.Height, PixFmt: job.PixFmt,
+		Model: scoreModel, FrameSkipRef: state.clip.FrameSkipRef,
+		FrameCnt: state.clip.FrameCnt, DurationS: job.DurationS,
+	}
+}
+
+func runCellScore(
+	ctx context.Context, opts Options, runners Runners,
+	encRes EncodeResult, request ScoreRequest,
+) ScoreResult {
+	if encRes.ExitStatus != 0 {
+		return ScoreResult{
+			Request: request, VMAFScore: math.NaN(), VMAFBinaryVersion: "skipped",
+			ExitStatus: encRes.ExitStatus, StderrTail: "encode failed; score skipped",
+			FeatureMeans: map[string]float64{}, FeatureStds: map[string]float64{},
 		}
-		out := encodePath(opts, job.Source, cell.Preset, cell.CRF)
+	}
+	decoded, decodeRC := MaybeDecodeDistorted(
+		ctx, request, opts.EncodeDir, opts.FFmpegBin, runners.Decode)
+	if decodeRC != 0 {
+		// Parity contract: score the unchanged container request so the row
+		// records the vmaf failure instead of silently dropping the cell.
+		slog.Warn("corpus: distorted decode failed; scoring original request",
+			"distorted", request.Distorted, "exit_status", decodeRC)
+	}
+	return RunScore(ctx, decoded, opts.VMAFBin, runners.Score, "", opts.ScoreBackend)
+}
 
-		baseModel := opts.VMAFModel
-		if opts.ResolutionAware {
-			if m, mErr := SelectVMAFModelVersion(job.Width, job.Height); mErr == nil {
-				baseModel = m
-			}
-		}
-		scoreModel := resolveHDRScoreModel(hdrInfo, baseModel, &scoreModelWarned)
-
-		if refDecodeRC != 0 {
-			// The once-per-sweep reference decode failed, so every cell's
-			// score would fail identically. Synthesise a failed result
-			// instead of re-running ffmpeg N times for output we cannot
-			// score.
-			row := buildRow(rowInput{
-				Job: job, Opts: opts, Cell: cell, SrcSHA: srcHash,
-				Enc: EncodeResult{
-					Request: EncodeRequest{
-						Source: job.Source, Width: job.Width, Height: job.Height,
-						PixFmt: job.PixFmt, Framerate: job.Framerate,
-						Encoder: adapter.Encoder, Preset: cell.Preset,
-						CRF: cell.CRF, Output: out,
-					},
-					EncoderVersion: "skipped",
-					FFmpegVersion:  "skipped",
-					ExitStatus:     refDecodeRC,
-					StderrTail: fmt.Sprintf(
-						"encode skipped: reference decode failed (rc=%d)", refDecodeRC),
-				},
-				Score: ScoreResult{
-					Request: ScoreRequest{
-						Reference: decodedReference, Distorted: out,
-						Width: job.Width, Height: job.Height, PixFmt: job.PixFmt,
-						Model: scoreModel, FrameSkipRef: clip.FrameSkipRef,
-						FrameCnt: clip.FrameCnt, DurationS: job.DurationS,
-					},
-					VMAFScore:         math.NaN(),
-					VMAFBinaryVersion: "skipped",
-					ExitStatus:        refDecodeRC,
-					StderrTail: fmt.Sprintf(
-						"reference decode to raw YUV failed (rc=%d) for %s",
-						refDecodeRC, job.Source),
-				},
-				ScoreModel: scoreModel,
-				ClipMode:   clip.ClipMode,
-				HDRInfo:    hdrInfo,
-				HDRForced:  hdrForced,
-				ShotMeta:   shotMeta,
-			})
-			if eErr := emit(row); eErr != nil {
-				return eErr
-			}
-			continue
-		}
-
-		encReq := buildEncodeRequest(job, opts, adapter, cell, out, clip, hdrExtraParams)
-
-		var encRes EncodeResult
-		switch {
-		case opts.TwoPass:
-			// ADR-0333: the driver falls back to single-pass when the
-			// adapter does not opt into 2-pass, keeping mixed-codec
-			// corpora honest.
-			encRes = RunTwoPassEncode(ctx, encReq, opts.FFmpegBin, runners.Encode, "")
-		case adapter.SupportsEncoderStats:
-			// ADR-0332: adapters that emit a parseable pass-1 stats file
-			// route through the stats-capturing wrapper; hardware
-			// encoders fall through to the plain single-pass path.
-			encRes = RunEncodeWithStats(ctx, encReq, opts.FFmpegBin, runners.Encode, "")
-		default:
-			encRes = RunEncode(ctx, encReq, opts.FFmpegBin, runners.Encode)
-		}
-
-		scoreReq := ScoreRequest{
-			// decodedReference is the pre-decoded raw-YUV path when the
-			// source was a container, or the source itself when it was
-			// already raw. Container sources that fail to decode are
-			// short-circuited above.
-			Reference:    decodedReference,
-			Distorted:    out,
-			Width:        job.Width,
-			Height:       job.Height,
-			PixFmt:       job.PixFmt,
-			Model:        scoreModel,
-			FrameSkipRef: clip.FrameSkipRef,
-			FrameCnt:     clip.FrameCnt,
-			// Bug #v2-A: forward the job duration so the post-encode
-			// container -> raw YUV decode is bounded.
-			DurationS: job.DurationS,
-		}
-
-		var scoreRes ScoreResult
-		if encRes.ExitStatus == 0 {
-			// The vmaf CLI only reads raw .yuv input; decode the encoded
-			// container to a temporary YUV before scoring. The decode
-			// always uses the decode runner — test stubs injected via
-			// the score runner handle vmaf CLI calls only.
-			// A failed decode leaves the request pointing at the
-			// container: the vmaf binary then fails on the undecodable
-			// input and the row records exit_status != 0, matching
-			// corpus._maybe_decode_distorted's pass-through contract.
-			scoreReq, _ = MaybeDecodeDistorted(
-				ctx, scoreReq, opts.EncodeDir, opts.FFmpegBin, runners.Decode)
-			scoreRes = RunScore(ctx, scoreReq, opts.VMAFBin, runners.Score,
-				"", opts.ScoreBackend)
-		} else {
-			// Skip scoring on encode failure; the row records it.
-			scoreRes = ScoreResult{
-				Request:           scoreReq,
-				VMAFScore:         math.NaN(),
-				VMAFBinaryVersion: "skipped",
-				ExitStatus:        encRes.ExitStatus,
-				StderrTail:        "encode failed; score skipped",
-				FeatureMeans:      map[string]float64{},
-				FeatureStds:       map[string]float64{},
-			}
-		}
-
-		row := buildRow(rowInput{
-			Job: job, Opts: opts, Cell: cell, SrcSHA: srcHash,
-			Enc: encRes, Score: scoreRes, ScoreModel: scoreModel,
-			ClipMode: clip.ClipMode, HDRInfo: hdrInfo, HDRForced: hdrForced,
-			ShotMeta: shotMeta,
-		})
-
-		if !opts.KeepEncodes && encRes.ExitStatus == 0 {
-			// Best-effort cleanup; the corpus row stays valid either way.
-			_ = os.Remove(out)
-		}
-
-		if eErr := emit(row); eErr != nil {
-			return eErr
-		}
+func cleanupCellEncode(opts Options, result EncodeResult, out string) error {
+	if opts.KeepEncodes || result.ExitStatus != 0 {
+		return nil
+	}
+	if err := os.Remove(out); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove encoded output %q: %w", out, err)
 	}
 	return nil
 }
@@ -668,36 +683,17 @@ type rowInput struct {
 
 // buildRow assembles one schema-v3 corpus row.
 func buildRow(in rowInput) map[string]any {
-	// Bitrate is computed against the *encoded* duration so sample-clip
-	// rows are not biased low by dividing slice bytes by full-source
-	// seconds. duration_s keeps the source provenance.
-	encodedDurationS := in.Job.DurationS
-	if in.Enc.Request.SampleClipSeconds > 0.0 {
-		encodedDurationS = in.Enc.Request.SampleClipSeconds
+	row := baseRow(in)
+	addCanonicalFeatures(row, in.Score)
+	for key, value := range AggregateStats(in.Enc.EncoderStats) {
+		row[key] = value
 	}
+	return row
+}
 
-	exitStatus := in.Enc.ExitStatus
-	if exitStatus == 0 {
-		exitStatus = in.Score.ExitStatus
-	}
-
-	encodePathValue := ""
-	if in.Opts.KeepEncodes {
-		encodePathValue = in.Enc.Request.Output
-	}
-
-	extraParams := in.Enc.Request.ExtraParams
-	if extraParams == nil {
-		extraParams = []string{}
-	}
-
-	hdrTransfer, hdrPrimaries := "", ""
-	if in.HDRInfo != nil {
-		hdrTransfer = in.HDRInfo.Transfer
-		hdrPrimaries = in.HDRInfo.Primaries
-	}
-
-	row := map[string]any{
+func baseRow(in rowInput) map[string]any {
+	hdrTransfer, hdrPrimaries := hdrFields(in.HDRInfo)
+	return map[string]any{
 		"schema_version":        SchemaVersion,
 		"run_id":                NewRunID(),
 		"timestamp":             UTCNowISO8601(),
@@ -712,17 +708,17 @@ func buildRow(in rowInput) map[string]any {
 		"encoder_version":       in.Enc.EncoderVersion,
 		"preset":                in.Cell.Preset,
 		"crf":                   in.Cell.CRF,
-		"extra_params":          extraParams,
-		"encode_path":           encodePathValue,
+		"extra_params":          rowExtraParams(in.Enc.Request.ExtraParams),
+		"encode_path":           rowEncodePath(in),
 		"encode_size_bytes":     int(in.Enc.EncodeSizeBytes),
-		"bitrate_kbps":          BitrateKbps(in.Enc.EncodeSizeBytes, encodedDurationS),
+		"bitrate_kbps":          BitrateKbps(in.Enc.EncodeSizeBytes, encodedDuration(in)),
 		"encode_time_ms":        in.Enc.EncodeTimeMS,
 		"vmaf_score":            in.Score.VMAFScore,
 		"vmaf_model":            in.ScoreModel,
 		"score_time_ms":         in.Score.ScoreTimeMS,
 		"ffmpeg_version":        in.Enc.FFmpegVersion,
 		"vmaf_binary_version":   in.Score.VMAFBinaryVersion,
-		"exit_status":           exitStatus,
+		"exit_status":           rowExitStatus(in),
 		"clip_mode":             in.ClipMode,
 		"hdr_transfer":          hdrTransfer,
 		"hdr_primaries":         hdrPrimaries,
@@ -731,30 +727,57 @@ func buildRow(in rowInput) map[string]any {
 		"shot_avg_duration_sec": in.ShotMeta.AvgDurationSec,
 		"shot_duration_std_sec": in.ShotMeta.DurationStdSec,
 	}
+}
 
-	// v3 canonical-6 aggregate columns (ADR-0366). Missing features — the
-	// model did not expose them, or scoring was skipped — become NaN so
-	// callers can filter on isnan() rather than train on synthetic zeros.
+func encodedDuration(in rowInput) float64 {
+	if in.Enc.Request.SampleClipSeconds > 0.0 {
+		return in.Enc.Request.SampleClipSeconds
+	}
+	return in.Job.DurationS
+}
+
+func rowExitStatus(in rowInput) int {
+	if in.Enc.ExitStatus != 0 {
+		return in.Enc.ExitStatus
+	}
+	return in.Score.ExitStatus
+}
+
+func rowEncodePath(in rowInput) string {
+	if in.Opts.KeepEncodes {
+		return in.Enc.Request.Output
+	}
+	return ""
+}
+
+func rowExtraParams(params []string) []string {
+	if params == nil {
+		return []string{}
+	}
+	return params
+}
+
+func hdrFields(info *HdrInfo) (string, string) {
+	if info == nil {
+		return "", ""
+	}
+	return info.Transfer, info.Primaries
+}
+
+// addCanonicalFeatures writes NaN for features the scorer did not expose.
+func addCanonicalFeatures(row map[string]any, score ScoreResult) {
 	for i, feature := range Canonical6Features {
 		meanVal := math.NaN()
-		if v, ok := in.Score.FeatureMeans[feature]; ok {
+		if v, ok := score.FeatureMeans[feature]; ok {
 			meanVal = v
 		}
 		stdVal := math.NaN()
-		if v, ok := in.Score.FeatureStds[feature]; ok {
+		if v, ok := score.FeatureStds[feature]; ok {
 			stdVal = v
 		}
 		row[Canonical6MeanKeys[i]] = meanVal
 		row[Canonical6StdKeys[i]] = stdVal
 	}
-
-	// ADR-0332: always emit the ten enc_internal_* columns so v3 rows are
-	// schema-uniform across codecs; the aggregator returns zeros for empty
-	// input.
-	for key, value := range AggregateStats(in.Enc.EncoderStats) {
-		row[key] = value
-	}
-	return row
 }
 
 // MissingRowKeys reports which canonical keys a row is missing. It is the

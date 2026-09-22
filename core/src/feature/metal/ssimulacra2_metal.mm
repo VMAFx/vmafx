@@ -374,8 +374,8 @@ static inline float ss2m_read_plane(const VmafPicture *pic, int plane, int x, in
     return (float)row[sx];
 }
 
-/* Verbatim port of ssimulacra2.c::picture_to_linear_rgb (ADR-0141
- * carve-out: line-for-line scalar-diff parity).
+/* Verbatim port of ssimulacra2.c::picture_to_linear_rgb: line-for-line
+ * scalar-diff parity (ADR-0141 §2 load-bearing invariant).
  * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
 static void ss2m_picture_to_linear_rgb(const Ssimu2StateMetal *s, const VmafPicture *pic, float *out)
 {

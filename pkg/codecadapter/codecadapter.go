@@ -20,7 +20,8 @@ package codecadapter
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 )
 
@@ -260,7 +261,19 @@ func videotoolbox(name string) *Adapter {
 }
 
 func init() {
-	for _, a := range []*Adapter{
+	registerAdapters(softwareAdapters())
+	registerAdapters(acceleratedAdapters())
+	registerAdapters(additionalAdapters())
+}
+
+func registerAdapters(adapters []*Adapter) {
+	for _, adapter := range adapters {
+		registry[adapter.Name] = adapter
+	}
+}
+
+func softwareAdapters() []*Adapter {
+	return []*Adapter{
 		{
 			Name: "libx264", Encoder: "libx264", QualityKnob: "crf",
 			QualityRange: [2]int{0, 51}, QualityDefault: 23, InvertQuality: true,
@@ -287,6 +300,11 @@ func init() {
 			qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
 			presetStyle: PresetFlagValue, presetFlag: "-cpu-used", presetMap: aomCPUUsedMap,
 		},
+	}
+}
+
+func acceleratedAdapters() []*Adapter {
+	return []*Adapter{
 		nvenc("h264_nvenc"), nvenc("hevc_nvenc"), nvenc("av1_nvenc"),
 		amf("h264_amf"), amf("hevc_amf"), amf("av1_amf"),
 		qsvAdapter("h264_qsv"), qsvAdapter("hevc_qsv"), qsvAdapter("av1_qsv"),
@@ -308,6 +326,11 @@ func init() {
 			unavailable: "av1_videotoolbox awaiting upstream FFmpeg encoder support — see ADR-0339",
 			availableFn: av1VideoToolboxAvailable,
 		},
+	}
+}
+
+func additionalAdapters() []*Adapter {
+	return []*Adapter{
 		{
 			Name: "libvvenc", Encoder: "libvvenc", AdapterVersion: "2", QualityKnob: "qp",
 			QualityRange: [2]int{17, 50}, QualityDefault: 32, InvertQuality: true,
@@ -333,8 +356,6 @@ func init() {
 			qualityTail: []string{"-b:v", "0"},
 			extraParams: []string{"-row-mt", "1"},
 		},
-	} {
-		registry[a.Name] = a
 	}
 }
 
@@ -350,12 +371,7 @@ func Get(name string) (*Adapter, error) {
 // Known returns the sorted list of registered codec names, matching the
 // Python known_codecs() ordering that drives the CLI's choices= lists.
 func Known() []string {
-	out := make([]string, 0, len(registry))
-	for k := range registry {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(registry))
 }
 
 // HasPreset reports whether preset is in the adapter's mnemonic table.

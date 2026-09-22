@@ -258,6 +258,67 @@ def _find_calibrated_recipes_path() -> Path | None:
     return None
 
 
+def _placeholder_recipes() -> dict[str, dict[str, object]]:
+    """Fresh copy of the F.4 placeholder table.
+
+    The inner dicts are copied too: callers overlay calibrated values
+    onto them, and the module-level table must stay pristine.
+    """
+    return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
+
+
+def _read_calibrated_recipes(path: Path) -> dict[str, object] | None:
+    """Return the ``recipes`` object from the calibration JSON.
+
+    Returns ``None`` (after warning) when the file is unreadable, is not
+    valid JSON, or carries no ``recipes`` object — every one of those is
+    a fall-back-to-placeholders condition, not an error.
+    """
+    try:
+        with path.open("rt", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        _LOG.warning(
+            "failed to read %s (%s); falling back to F.4 placeholders",
+            path,
+            exc,
+        )
+        return None
+
+    raw_recipes = payload.get("recipes")
+    if not isinstance(raw_recipes, dict):
+        _LOG.warning(
+            "%s missing 'recipes' object; falling back to F.4 placeholders",
+            path,
+        )
+        return None
+    return raw_recipes
+
+
+def _merge_recipe_overrides(raw_recipes: dict[str, object]) -> dict[str, dict[str, object]]:
+    """Overlay calibrated values onto the placeholders.
+
+    Unknown classes and non-dict entries are skipped. Within a class,
+    underscore-prefixed keys (``_provenance``) and keys outside
+    :data:`_RECIPE_KEYS` are dropped, so nothing leaks into
+    ``plan.metadata.recipe_overrides``. A class whose overrides reduce
+    to nothing keeps its placeholder.
+    """
+    merged = _placeholder_recipes()
+    for cls, rec in raw_recipes.items():
+        if cls not in merged or not isinstance(rec, dict):
+            continue
+        clean: dict[str, object] = {}
+        for key, value in rec.items():
+            if key.startswith("_"):
+                continue
+            if key in _RECIPE_KEYS:
+                clean[key] = value
+        if clean:
+            merged[cls] = clean
+    return merged
+
+
 def _load_calibrated_recipes() -> dict[str, dict[str, object]]:
     """Load the F.5-calibrated overrides, falling back to F.4 placeholders.
 
@@ -290,41 +351,12 @@ def _load_calibrated_recipes() -> dict[str, dict[str, object]]:
             "Run 'vmaf-tune auto --calibrate' or supply a recipes JSON to "
             "suppress this warning.",
         )
-        return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
-    try:
-        with path.open("rt", encoding="utf-8") as fh:
-            payload = json.load(fh)
-    except (OSError, json.JSONDecodeError) as exc:
-        _LOG.warning(
-            "failed to read %s (%s); falling back to F.4 placeholders",
-            path,
-            exc,
-        )
-        return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
+        return _placeholder_recipes()
 
-    raw_recipes = payload.get("recipes")
-    if not isinstance(raw_recipes, dict):
-        _LOG.warning(
-            "%s missing 'recipes' object; falling back to F.4 placeholders",
-            path,
-        )
-        return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
-
-    merged: dict[str, dict[str, object]] = {
-        cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()
-    }
-    for cls, rec in raw_recipes.items():
-        if cls not in merged or not isinstance(rec, dict):
-            continue
-        clean: dict[str, object] = {}
-        for key, value in rec.items():
-            if key.startswith("_"):
-                continue
-            if key in _RECIPE_KEYS:
-                clean[key] = value
-        if clean:
-            merged[cls] = clean
-    return merged
+    raw_recipes = _read_calibrated_recipes(path)
+    if raw_recipes is None:
+        return _placeholder_recipes()
+    return _merge_recipe_overrides(raw_recipes)
 
 
 # Resolved at module import — a single load, snapshotted into the

@@ -84,11 +84,15 @@ static int check_device_arch(VmafCudaState *cu_state, CUdevice dev)
     return -ENOTSUP;
 }
 
-static int init_with_primary_context(VmafCudaState *cu_state)
+/* primary_ctx_acquire_device - pick the device and retain its primary context.
+ *
+ * HISS-04: the prologue of init_with_primary_context, moved whole. Every
+ * `res |=` accumulation stays in this one function and in the same order, so
+ * the CUresult that the CUDA_SUCCESS comparisons see is unchanged. On success
+ * cu_state->ctx / release_ctx / dev are set exactly as before.
+ */
+static int primary_ctx_acquire_device(VmafCudaState *cu_state)
 {
-    if (!cu_state)
-        return -EINVAL;
-
     CUdevice cu_device = 0;
     CUcontext cu_context = 0;
     CUresult res = CUDA_SUCCESS;
@@ -122,6 +126,17 @@ static int init_with_primary_context(VmafCudaState *cu_state)
     cu_state->ctx = cu_context;
     cu_state->release_ctx = 1;
     cu_state->dev = cu_device;
+    return 0;
+}
+
+static int init_with_primary_context(VmafCudaState *cu_state)
+{
+    if (!cu_state)
+        return -EINVAL;
+
+    const int dev_err = primary_ctx_acquire_device(cu_state);
+    if (dev_err)
+        return dev_err;
 
     int _cuda_err = 0;
     int ctx_pushed = 0;
@@ -162,6 +177,27 @@ fail_after_stream:
     return _cuda_err;
 }
 
+/* provided_ctx_unwind - the single teardown path for
+ * init_with_provided_context.
+ *
+ * HISS-01: the former `fail` -> `fail_after_stream` fall-through, moved
+ * verbatim. ctx_pushed selects whether the context pop runs, exactly as the
+ * `fail` label did; `fail_after_stream` entered with the pop already done,
+ * so it passes 0. The stream teardown and the returned code are unchanged.
+ */
+static int provided_ctx_unwind(VmafCudaState *cu_state, int ctx_pushed, int cuda_err)
+{
+    if (ctx_pushed)
+        (void)cu_state->f->cuCtxPopCurrent(NULL);
+    /* ADR-0960 (round-25 audit A.1) — destroy the stream before returning
+     * the error; cuCtxPopCurrent failure on the success path previously
+     * jumped past cuStreamDestroy, leaking cu_state->str. */
+    if (cu_state->str)
+        (void)cu_state->f->cuStreamDestroy(cu_state->str);
+    cu_state->str = 0;
+    return cuda_err;
+}
+
 static int init_with_provided_context(VmafCudaState *cu_state, CUcontext cu_context)
 {
     if (!cu_state)
@@ -179,7 +215,7 @@ static int init_with_provided_context(VmafCudaState *cu_state, CUcontext cu_cont
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "failed to get CUDA device\n");
         _cuda_err = -EINVAL;
-        goto fail;
+        return provided_ctx_unwind(cu_state, ctx_pushed, _cuda_err);
     }
 
     /* ADR-1223 — the caller supplied the context, but the device behind it
@@ -187,7 +223,7 @@ static int init_with_provided_context(VmafCudaState *cu_state, CUcontext cu_cont
     const int arch_err = check_device_arch(cu_state, cu_device);
     if (arch_err) {
         _cuda_err = arch_err;
-        goto fail;
+        return provided_ctx_unwind(cu_state, ctx_pushed, _cuda_err);
     }
 
     cu_state->ctx = cu_context;
@@ -207,29 +243,20 @@ static int init_with_provided_context(VmafCudaState *cu_state, CUcontext cu_cont
     return 0;
 
 fail:
-    if (ctx_pushed)
-        (void)cu_state->f->cuCtxPopCurrent(NULL);
+    return provided_ctx_unwind(cu_state, ctx_pushed, _cuda_err);
 fail_after_stream:
-    /* ADR-0960 (round-25 audit A.1) — destroy the stream before returning
-     * the error; cuCtxPopCurrent failure on the success path previously
-     * jumped past cuStreamDestroy, leaking cu_state->str. */
-    if (cu_state->str)
-        (void)cu_state->f->cuStreamDestroy(cu_state->str);
-    cu_state->str = 0;
-    /* fall-through after fail_after_stream - no explicit goto target */
-    return _cuda_err;
+    return provided_ctx_unwind(cu_state, 0, _cuda_err);
 }
 
-int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg)
+/* cuda_state_load_driver - dlopen libcuda.so.1 and run cuInit(0).
+ *
+ * HISS-04: the driver-bring-up half of vmaf_cuda_state_init, moved whole.
+ * The caller still owns `c` and does the `free(c); *cu_state = NULL` that
+ * both failure branches used to do inline, so each exit path releases the
+ * same things in the same order and returns the same code.
+ */
+static int cuda_state_load_driver(VmafCudaState *c)
 {
-    if (!cu_state)
-        return -EINVAL;
-
-    VmafCudaState *const c = *cu_state = malloc(sizeof(*c));
-    if (!c)
-        return -ENOMEM;
-    memset(c, 0, sizeof(*c));
-
     /* cuda_load_functions dlopens libcuda.so.1 via nv-codec-headers. A
      * failure here is almost always a runtime-env issue, not a bug in
      * libvmaf: the driver stub is either missing, not on the loader
@@ -247,8 +274,6 @@ int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg)
                  "        ldconfig -p | grep -iE 'libcuda|libnvcuvid'\n"
                  "      The libvmaf_cuda backend cannot run without it. "
                  "See docs/backends/cuda/overview.md#runtime-requirements.\n");
-        free(c);
-        *cu_state = NULL;
         /* -ENOSYS: the runtime capability (libcuda.so.1) is absent from
          * this system — analogous to a syscall not implemented.  Callers
          * can probe this code to degrade gracefully to a CPU path.
@@ -265,14 +290,31 @@ int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg)
                  "device visible to the process.\n",
                  err);
         cuda_free_functions(&c->f);
-        free(c);
-        *cu_state = NULL;
         /* -ENODEV: the driver loaded but cuInit(0) failed — the most
          * common cause is no CUDA-capable device visible to the process
          * (VM with no GPU passthrough, driver/userspace version mismatch).
          * Mirror: sycl/common.cpp and cuda/cuda_helper.cuh both return
          * -ENODEV when no usable device is found. */
         return -ENODEV;
+    }
+    return 0;
+}
+
+int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg)
+{
+    if (!cu_state)
+        return -EINVAL;
+
+    VmafCudaState *const c = *cu_state = malloc(sizeof(*c));
+    if (!c)
+        return -ENOMEM;
+    memset(c, 0, sizeof(*c));
+
+    int err = cuda_state_load_driver(c);
+    if (err) {
+        free(c);
+        *cu_state = NULL;
+        return err;
     }
 
     /* Netflix#1300 — if the inner init fails (no visible device,
@@ -429,7 +471,12 @@ int vmaf_cuda_buffer_host_alloc(VmafCudaState *cu_state, void **p_buf, size_t si
     if (!(*p_buf)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "failed to allocate host memory\n");
         _cuda_err = -ENOMEM;
-        goto fail;
+        /* HISS-01: the former `goto fail`. The push above succeeded, so
+         * ctx_pushed is 1 and the label would have popped exactly once
+         * before returning _cuda_err - which is what this does. */
+        if (ctx_pushed)
+            (void)cu_state->f->cuCtxPopCurrent(NULL);
+        return _cuda_err;
     }
     CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_pop);
     return 0;

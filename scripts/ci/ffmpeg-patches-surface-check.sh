@@ -34,7 +34,13 @@
 #
 # Usage:
 #   scripts/ci/ffmpeg-patches-surface-check.sh
-#       Reads PR body from $PR_BODY env var or stdin.
+#       Reads PR body from $PR_BODY env var, or from stdin when fd 0 is
+#       a pipe, a regular file or a socket. A terminal, a closed fd 0
+#       and /dev/null carry no body; each is named and the gate runs on
+#       the diff alone, where the opt-out is unclaimable and a moved
+#       surface still fails. Classification lives in
+#       scripts/ci/pr-body-input.sh — see it for why `[ ! -t 0 ]` is
+#       the wrong test.
 #       Diff is computed from $BASE_SHA..$HEAD_SHA env vars,
 #       or falls back to $(git merge-base origin/master HEAD)..HEAD.
 #
@@ -48,16 +54,37 @@ set -euo pipefail
 
 # ---------- 1. Locate PR body ----------
 
+# Shared with deliverables-check.sh / validate-pr-body.sh / state-md-touch-
+# check.sh so every gate that reads a PR body decides what fd 0 is the same
+# way. Not `[ ! -t 0 ]`: that asks whether fd 0 is a terminal, which is a
+# different question from whether anybody piped a body, and `PR_BODY="$(cat)"`
+# on a closed fd 0 does not fail — it deadlocks. See
+# scripts/ci/pr-body-input.sh.
+_ffmpeg_surface_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/pr-body-input.sh
+. "${_ffmpeg_surface_dir}/pr-body-input.sh"
+
 if [ -n "${PR_BODY:-}" ]; then
   body_src="env"
-elif [ ! -t 0 ]; then
-  PR_BODY="$(cat)"
-  body_src="stdin"
 else
-  # Empty body is fine — opt-out is impossible, but if no surface is
-  # touched the gate still passes. Treat as "no body supplied".
-  PR_BODY=""
-  body_src="empty"
+  # Deliberately `-n`, not the `+x` "set counts as an answer" rule
+  # deliverables-check.sh uses. That gate reports a set-but-blank PR_BODY
+  # differently from an empty pipe; here both branches end at the same empty
+  # string, so an explicitly blank PR_BODY may still fall through to a pipe
+  # that does carry a body.
+  pr_body_classify_stdin
+  if [ "${PR_BODY_STDIN_KIND}" = "stream" ]; then
+    PR_BODY="$(pr_body_read_stdin)"
+    pr_body_close_stdin
+    body_src="stdin"
+  else
+    # Unlike deliverables-check.sh, an absent body is legal here: the opt-out
+    # becomes unclaimable, so the gate falls through to the diff check and
+    # fails closed if a consumed surface moved. Name what fd 0 was, so a CI
+    # step that meant to pipe a body can see that it did not.
+    PR_BODY=""
+    body_src="empty (${PR_BODY_STDIN_KIND} stdin)"
+  fi
 fi
 
 tmp_body="$(mktemp)"

@@ -20,11 +20,11 @@
  * 9-tap 9/7 biorthogonal wavelet LPF, separable form.
  *
  * REBASE-SENSITIVE INVARIANT: these coefficients MUST match
- * `ms_ssim_lpf_{h,v}` in libvmaf/src/feature/ms_ssim_decimate.c.
+ * `ms_ssim_lpf_{h,v}` in core/src/feature/ms_ssim_decimate.c.
  * Byte-identical bit-exactness vs. the scalar reference depends on
  * identical float32 bit patterns here.
  * See docs/adr/0125-ms-ssim-decimate-simd.md and
- *     libvmaf/src/feature/AGENTS.md.
+ *     core/src/feature/AGENTS.md.
  */
 #define MS_SSIM_DECIMATE_LPF_LEN 9
 #define MS_SSIM_DECIMATE_LPF_HALF 4

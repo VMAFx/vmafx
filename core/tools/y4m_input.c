@@ -160,8 +160,10 @@ static int y4m_parse_tags(y4m_input *const y4m, char *const tags)
         y4m->interlace = '?';
     if (!state.got_par)
         y4m->par_n = y4m->par_d = 0;
-    if (!state.got_chroma)
-        (void)strcpy(y4m->chroma_type, "420");
+    if (!state.got_chroma) {
+        static const char default_chroma[] = "420";
+        (void)memcpy(y4m->chroma_type, default_chroma, sizeof(default_chroma));
+    }
     return 0;
 }
 

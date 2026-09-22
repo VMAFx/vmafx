@@ -298,10 +298,14 @@ func (r *Registry) Count() int {
 // ADR-1119: the reaper context is owned by the Start/Close pair (fx
 // lifecycle) rather than a caller-supplied context, so Close() both stops
 // the loop and awaits this goroutine's return — no goroutine leaks.
+//
+// Cancellation is the loop's exit condition and is stated twice on purpose:
+// ctx.Err() ends the loop between ticks, and the ctx.Done() arm of the select
+// ends it while the goroutine is parked waiting for the next tick.
 func (r *Registry) reaper(ctx context.Context) {
 	ticker := time.NewTicker(HeartbeatTimeout / 3)
 	defer ticker.Stop()
-	for {
+	for ctx.Err() == nil {
 		select {
 		case <-ctx.Done():
 			return

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reclaim rebuildable bulk from the local working directories, keep the evidence.
 
-The gitignored state trees (`.workingdir2/` and friends) accumulate one directory
+The gitignored state trees (`.workingdir/` and friends) accumulate one directory
 per gate run. Each holds a small amount of evidence — receipts, help dumps,
 logs, CSVs, JSON — inside a large amount of rebuildable output: Go build caches,
 meson build trees, downloaded tool binaries, a rendered mkdocs `site/`.
@@ -240,13 +240,13 @@ def collect(state_root: Path, citations: set[str]) -> list[tuple[Path, int, str]
     return sorted(walk(state_root, citations), key=lambda item: -item[1])
 
 
-def main(argv: Iterable[str] | None = None) -> int:
+def _parse_args(argv: Iterable[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "state_root",
         nargs="?",
-        default=".workingdir2",
-        help="gitignored state tree to prune (default: .workingdir2)",
+        default=".workingdir",
+        help="gitignored state tree to prune (default: .workingdir)",
     )
     parser.add_argument("--apply", action="store_true", help="perform the deletions")
     parser.add_argument(
@@ -260,7 +260,24 @@ def main(argv: Iterable[str] | None = None) -> int:
         default=None,
         help="repository the state tree belongs to (default: this script's repository)",
     )
-    args = parser.parse_args(list(argv) if argv is not None else None)
+    return parser.parse_args(list(argv) if argv is not None else None)
+
+
+def _remove_victims(victims: list[tuple[Path, int, str]]) -> tuple[int, int]:
+    removed = 0
+    failed = 0
+    for path, size, _ in victims:
+        try:
+            remove(path)
+            removed += size
+        except OSError as error:
+            failed += 1
+            print(f"  could not remove {path}: {error}", file=sys.stderr)
+    return removed, failed
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    args = _parse_args(argv)
 
     repo_root = Path(args.repo_root).resolve() if args.repo_root else ROOT
     state_root = (repo_root / args.state_root).resolve()
@@ -296,15 +313,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             )
     write_manifest(state_root, grouped)
 
-    removed = 0
-    failed = 0
-    for path, size, _ in victims:
-        try:
-            remove(path)
-            removed += size
-        except OSError as error:
-            failed += 1
-            print(f"  could not remove {path}: {error}", file=sys.stderr)
+    removed, failed = _remove_victims(victims)
     print(f"\nreclaimed {human(removed)}; {failed} path(s) could not be removed")
     return 1 if failed else 0
 

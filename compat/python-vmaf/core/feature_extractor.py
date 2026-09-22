@@ -17,6 +17,96 @@ from vmaf.core.executor import Executor
 from vmaf.core.result import BasicResult, Result
 from vmaf.tools.reader import YuvReader
 
+# Option-name -> feature whose per-feature option dict owns it. The two
+# extractors below used to spell this out as a 30+ branch if/elif chain each;
+# the tables keep the exact same accepted names, the exact same destination
+# sub-dict, and the exact same "silently ignore anything unlisted" behaviour,
+# while keeping both _generate_result bodies inside the HISS-04 / NASA Rule 4
+# 60-LOC limit.
+VMAF_FLOAT_FEATURE_OPTION_TARGETS = {
+    "vif_enhn_gain_limit": "float_vif",
+    "vif_kernelscale": "float_vif",
+    "vif_sigma_nsq": "float_vif",
+    "vif_skip_scale0": "float_vif",
+    "vif_scale1_min_val": "float_vif",
+    "vif_scale2_min_val": "float_vif",
+    "vif_scale3_min_val": "float_vif",
+    "adm_csf_mode": "float_adm",
+    "adm_enhn_gain_limit": "float_adm",
+    "adm_norm_view_dist": "float_adm",
+    "adm_ref_display_height": "float_adm",
+    "adm_dlm_weight": "float_adm",
+    "adm_skip_scale0": "float_adm",
+    "adm_min_val": "float_adm",
+    "adm_noise_weight": "float_adm",
+    "adm_csf_scale": "float_adm",
+    "adm_csf_diag_scale": "float_adm",
+    "adm_f1s0": "float_adm",
+    "adm_f1s1": "float_adm",
+    "adm_f1s2": "float_adm",
+    "adm_f1s3": "float_adm",
+    "adm_f2s0": "float_adm",
+    "adm_f2s1": "float_adm",
+    "adm_f2s2": "float_adm",
+    "adm_f2s3": "float_adm",
+    "motion_force_zero": "float_motion",
+    "motion_fps_weight": "float_motion",
+    "motion_blend_factor": "float_motion",
+    "motion_blend_offset": "float_motion",
+    "motion_max_val": "float_motion",
+    "motion_filter_size": "float_motion",
+    "motion_five_frame_window": "float_motion",
+    "motion_moving_average": "float_motion",
+}
+
+VMAF_INTEGER_FEATURE_OPTION_TARGETS = {
+    "vif_enhn_gain_limit": "vif",
+    "vif_skip_scale0": "vif",
+    "adm_enhn_gain_limit": "adm",
+    "adm_norm_view_dist": "adm",
+    "adm_ref_display_height": "adm",
+    "adm_csf_mode": "adm",
+    "adm_csf_scale": "adm",
+    "adm_csf_diag_scale": "adm",
+    "adm_dlm_weight": "adm",
+    "adm_skip_scale0": "adm",
+    "adm_min_val": "adm",
+    "adm_noise_weight": "adm",
+    "motion_force_zero": "motion",
+    "motion_fps_weight": "motion",
+    "motion_blend_factor": "motion",
+    "motion_blend_offset": "motion",
+    "motion_max_val": "motion",
+    "motion_five_frame_window": "motion",
+    "motion_moving_average": "motion",
+}
+
+# Options that belong to the executable as a whole rather than to one feature.
+VMAFEXEC_GLOBAL_OPTION_NAMES = ("disable_avx", "n_threads")
+
+
+def apply_feature_options(options, optional_dict, option_targets):
+    """Route recognised entries of *optional_dict* into their feature sub-dict.
+
+    Names missing from *option_targets* are ignored, matching the trailing
+    ``else: pass`` of the if/elif chains this replaces.
+    """
+    if optional_dict is None:
+        return
+    for opt in optional_dict:
+        feature = option_targets.get(opt)
+        if feature is not None:
+            options[feature][opt] = optional_dict[opt]
+
+
+def apply_vmafexec_global_options(options, optional_dict2):
+    """Copy the executable-wide options out of *optional_dict2* into *options*."""
+    if optional_dict2 is None:
+        return
+    for opt in optional_dict2:
+        if opt in VMAFEXEC_GLOBAL_OPTION_NAMES:
+            options[opt] = optional_dict2[opt]
+
 
 class FeatureExtractor(Executor):
     """
@@ -298,83 +388,8 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
             "float_motion": {"debug": True},
         }
 
-        if self.optional_dict is not None:
-            for opt in self.optional_dict:
-                if opt == "vif_enhn_gain_limit":
-                    options["float_vif"]["vif_enhn_gain_limit"] = self.optional_dict[opt]
-                elif opt == "vif_kernelscale":
-                    options["float_vif"]["vif_kernelscale"] = self.optional_dict[opt]
-                elif opt == "vif_sigma_nsq":
-                    options["float_vif"]["vif_sigma_nsq"] = self.optional_dict[opt]
-                elif opt == "vif_skip_scale0":
-                    options["float_vif"]["vif_skip_scale0"] = self.optional_dict[opt]
-                elif opt == "vif_scale1_min_val":
-                    options["float_vif"]["vif_scale1_min_val"] = self.optional_dict[opt]
-                elif opt == "vif_scale2_min_val":
-                    options["float_vif"]["vif_scale2_min_val"] = self.optional_dict[opt]
-                elif opt == "vif_scale3_min_val":
-                    options["float_vif"]["vif_scale3_min_val"] = self.optional_dict[opt]
-                elif opt == "adm_csf_mode":
-                    options["float_adm"]["adm_csf_mode"] = self.optional_dict[opt]
-                elif opt == "adm_enhn_gain_limit":
-                    options["float_adm"]["adm_enhn_gain_limit"] = self.optional_dict[opt]
-                elif opt == "adm_norm_view_dist":
-                    options["float_adm"]["adm_norm_view_dist"] = self.optional_dict[opt]
-                elif opt == "adm_ref_display_height":
-                    options["float_adm"]["adm_ref_display_height"] = self.optional_dict[opt]
-                elif opt == "adm_dlm_weight":
-                    options["float_adm"]["adm_dlm_weight"] = self.optional_dict[opt]
-                elif opt == "adm_skip_scale0":
-                    options["float_adm"]["adm_skip_scale0"] = self.optional_dict[opt]
-                elif opt == "adm_min_val":
-                    options["float_adm"]["adm_min_val"] = self.optional_dict[opt]
-                elif opt == "adm_noise_weight":
-                    options["float_adm"]["adm_noise_weight"] = self.optional_dict[opt]
-                elif opt == "adm_csf_scale":
-                    options["float_adm"]["adm_csf_scale"] = self.optional_dict[opt]
-                elif opt == "adm_csf_diag_scale":
-                    options["float_adm"]["adm_csf_diag_scale"] = self.optional_dict[opt]
-                elif opt == "adm_f1s0":
-                    options["float_adm"]["adm_f1s0"] = self.optional_dict[opt]
-                elif opt == "adm_f1s1":
-                    options["float_adm"]["adm_f1s1"] = self.optional_dict[opt]
-                elif opt == "adm_f1s2":
-                    options["float_adm"]["adm_f1s2"] = self.optional_dict[opt]
-                elif opt == "adm_f1s3":
-                    options["float_adm"]["adm_f1s3"] = self.optional_dict[opt]
-                elif opt == "adm_f2s0":
-                    options["float_adm"]["adm_f2s0"] = self.optional_dict[opt]
-                elif opt == "adm_f2s1":
-                    options["float_adm"]["adm_f2s1"] = self.optional_dict[opt]
-                elif opt == "adm_f2s2":
-                    options["float_adm"]["adm_f2s2"] = self.optional_dict[opt]
-                elif opt == "adm_f2s3":
-                    options["float_adm"]["adm_f2s3"] = self.optional_dict[opt]
-                elif opt == "motion_force_zero":
-                    options["float_motion"]["motion_force_zero"] = self.optional_dict[opt]
-                elif opt == "motion_fps_weight":
-                    options["float_motion"]["motion_fps_weight"] = self.optional_dict[opt]
-                elif opt == "motion_blend_factor":
-                    options["float_motion"]["motion_blend_factor"] = self.optional_dict[opt]
-                elif opt == "motion_blend_offset":
-                    options["float_motion"]["motion_blend_offset"] = self.optional_dict[opt]
-                elif opt == "motion_max_val":
-                    options["float_motion"]["motion_max_val"] = self.optional_dict[opt]
-                elif opt == "motion_filter_size":
-                    options["float_motion"]["motion_filter_size"] = self.optional_dict[opt]
-                elif opt == "motion_five_frame_window":
-                    options["float_motion"]["motion_five_frame_window"] = self.optional_dict[opt]
-                elif opt == "motion_moving_average":
-                    options["float_motion"]["motion_moving_average"] = self.optional_dict[opt]
-                else:
-                    pass
-
-        if self.optional_dict2 is not None:
-            for opt in self.optional_dict2:
-                if opt == "disable_avx":
-                    options["disable_avx"] = self.optional_dict2["disable_avx"]
-                elif opt == "n_threads":
-                    options["n_threads"] = self.optional_dict2["n_threads"]
+        apply_feature_options(options, self.optional_dict, VMAF_FLOAT_FEATURE_OPTION_TARGETS)
+        apply_vmafexec_global_options(options, self.optional_dict2)
 
         ExternalProgramCaller.call_vmafexec_multi_features(
             features, yuv_type, ref_path, dis_path, w, h, log_file_path, logger, options=options
@@ -473,61 +488,8 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
             "motion": {"debug": True},
         }
 
-        if self.optional_dict is not None:
-            for opt in self.optional_dict:
-                if opt == "vif_enhn_gain_limit":
-                    options["vif"]["vif_enhn_gain_limit"] = self.optional_dict[
-                        "vif_enhn_gain_limit"
-                    ]
-                elif opt == "adm_enhn_gain_limit":
-                    options["adm"]["adm_enhn_gain_limit"] = self.optional_dict[
-                        "adm_enhn_gain_limit"
-                    ]
-                elif opt == "adm_norm_view_dist":
-                    options["adm"]["adm_norm_view_dist"] = self.optional_dict["adm_norm_view_dist"]
-                elif opt == "adm_ref_display_height":
-                    options["adm"]["adm_ref_display_height"] = self.optional_dict[
-                        "adm_ref_display_height"
-                    ]
-                elif opt == "adm_csf_mode":
-                    options["adm"]["adm_csf_mode"] = self.optional_dict[opt]
-                elif opt == "adm_csf_scale":
-                    options["adm"]["adm_csf_scale"] = self.optional_dict[opt]
-                elif opt == "adm_csf_diag_scale":
-                    options["adm"]["adm_csf_diag_scale"] = self.optional_dict[opt]
-                elif opt == "adm_dlm_weight":
-                    options["adm"]["adm_dlm_weight"] = self.optional_dict[opt]
-                elif opt == "adm_skip_scale0":
-                    options["adm"]["adm_skip_scale0"] = self.optional_dict[opt]
-                elif opt == "adm_min_val":
-                    options["adm"]["adm_min_val"] = self.optional_dict[opt]
-                elif opt == "adm_noise_weight":
-                    options["adm"]["adm_noise_weight"] = self.optional_dict[opt]
-                elif opt == "vif_skip_scale0":
-                    options["vif"]["vif_skip_scale0"] = self.optional_dict[opt]
-                elif opt == "motion_force_zero":
-                    options["motion"]["motion_force_zero"] = self.optional_dict["motion_force_zero"]
-                elif opt == "motion_fps_weight":
-                    options["motion"]["motion_fps_weight"] = self.optional_dict[opt]
-                elif opt == "motion_blend_factor":
-                    options["motion"]["motion_blend_factor"] = self.optional_dict[opt]
-                elif opt == "motion_blend_offset":
-                    options["motion"]["motion_blend_offset"] = self.optional_dict[opt]
-                elif opt == "motion_max_val":
-                    options["motion"]["motion_max_val"] = self.optional_dict[opt]
-                elif opt == "motion_five_frame_window":
-                    options["motion"]["motion_five_frame_window"] = self.optional_dict[opt]
-                elif opt == "motion_moving_average":
-                    options["motion"]["motion_moving_average"] = self.optional_dict[opt]
-                else:
-                    pass
-
-        if self.optional_dict2 is not None:
-            for opt in self.optional_dict2:
-                if opt == "disable_avx":
-                    options["disable_avx"] = self.optional_dict2["disable_avx"]
-                elif opt == "n_threads":
-                    options["n_threads"] = self.optional_dict2["n_threads"]
+        apply_feature_options(options, self.optional_dict, VMAF_INTEGER_FEATURE_OPTION_TARGETS)
+        apply_vmafexec_global_options(options, self.optional_dict2)
 
         ExternalProgramCaller.call_vmafexec_multi_features(
             features, yuv_type, ref_path, dis_path, w, h, log_file_path, logger, options=options
@@ -716,13 +678,15 @@ class PyPsnrFeatureExtractor(PyFeatureExtractorMixin, FeatureExtractor):
                 self._assert_bit_depth(ref_yuv_reader, dis_yuv_reader)
                 max_db = self._get_max_db(ref_yuv_reader)
 
-                frm = 0
-                while True:
-                    try:
-                        ref_yuv = ref_yuv_reader.next(format="float")
-                        dis_yuv = dis_yuv_reader.next(format="float")
-                    except StopIteration:
-                        break
+                # Both readers validate at construction that the file holds a
+                # whole number of frames, so num_frms is an exact count rather
+                # than an estimate. The pair is walked to the shorter of the
+                # two, which is where the previous unbounded loop broke out
+                # on the first StopIteration.
+                frame_count = min(ref_yuv_reader.num_frms, dis_yuv_reader.num_frms)
+                for frm in range(frame_count):
+                    ref_yuv = ref_yuv_reader.next(format="float")
+                    dis_yuv = dis_yuv_reader.next(format="float")
 
                     ref_y, ref_u, ref_v = ref_yuv
                     dis_y, dis_u, dis_v = dis_yuv
@@ -745,8 +709,6 @@ class PyPsnrFeatureExtractor(PyFeatureExtractorMixin, FeatureExtractor):
                             "psnrv": psnr_v,
                         }
                     )
-
-                    frm += 1
 
         log_file_path = self._get_log_file_path(asset)
         with open(log_file_path, "wt") as log_file:

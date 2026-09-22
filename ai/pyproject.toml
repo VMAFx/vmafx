@@ -49,6 +49,11 @@ dependencies = [
   "typer>=0.27.2",
   "rich>=15.0.0",
   "tqdm>=4.70.1",
+  # PyTorch deprecated `torch.ao.quantization` wholesale in 2.14 and removes it
+  # in 2.10 of the torchao series; torchao is the successor PyTorch itself names
+  # in the warning text. `ai/train/qat.py` uses its pt2e QAT API
+  # (`prepare_qat_pt2e` + `X86InductorQuantizer`). See ADR-1293.
+  "torchao>=0.18.0,<1.0",
 ]
 
 [project.optional-dependencies]
@@ -88,6 +93,7 @@ packages = ["src/vmaf_train", "src/aiutils"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = ["error"]
 # ai/scripts/ modules use _script_bootstrap which lives alongside them; add
 # the scripts/ directory so importlib-loaded batch scripts can resolve it.
 pythonpath = ["scripts", "src"]
