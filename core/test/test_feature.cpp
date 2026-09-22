@@ -39,6 +39,11 @@
  * (see `.github/codeql-config.yml`) suppresses this rule for new scans;
  * this comment carries the existing alert through to its next refresh. */
 
+/* The translation-unit-local fixtures and cases below sit in short anonymous
+ * namespaces rather than one file-wide block: that is what gives them C++
+ * internal linkage without any one brace scope outgrowing the 60-line budget
+ * the repository applies to the whole tree (ADR-1142), the same shape the
+ * SYCL extractors use. */
 namespace
 {
 
@@ -52,6 +57,11 @@ struct TestState {
     int opt_int;
     bool opt_bool2;
 };
+
+} // namespace
+
+namespace
+{
 
 /* ADR-0729 Wave 3: C99 nested designators (.default_val.b) are a GCC extension
  * not permitted in standard C++. Replace with explicit union member
@@ -102,6 +112,11 @@ VmafOption g_options[] = {{
                           },
                           {}};
 
+} // namespace
+
+namespace
+{
+
 /* Every override case shares the same baseline: only the fields a case names
  * differ from the option table's defaults. */
 constexpr TestState kAllDefaults = {
@@ -110,6 +125,11 @@ constexpr TestState kAllDefaults = {
     .opt_int = kOptIntDefault,
     .opt_bool2 = kOptBoolDefault,
 };
+
+} // namespace
+
+namespace
+{
 
 mu_message_t test_feature_name_all_defaults()
 {
@@ -121,6 +141,11 @@ mu_message_t test_feature_name_all_defaults()
     mu_assert("when all options are default, feature_name should not change", ok);
     return nullptr;
 }
+
+} // namespace
+
+namespace
+{
 
 mu_message_t test_feature_name_bool_override()
 {
@@ -138,6 +163,11 @@ mu_message_t test_feature_name_bool_override()
     return nullptr;
 }
 
+} // namespace
+
+namespace
+{
+
 mu_message_t test_feature_name_double_override()
 {
     TestState s = kAllDefaults;
@@ -153,6 +183,11 @@ mu_message_t test_feature_name_double_override()
               ok);
     return nullptr;
 }
+
+} // namespace
+
+namespace
+{
 
 mu_message_t test_feature_name_all_overridden()
 {
@@ -191,6 +226,11 @@ mu_message_t test_feature_name_all_overridden()
     return nullptr;
 }
 
+} // namespace
+
+namespace
+{
+
 /* Ported from the pre-conversion C twin core/test/test_feature.c (ADR-1153): these
  * seven assertions covered null handling, STRING options and dict allocation and
  * had no equivalent here, so the twin could not be deleted without them. */
@@ -223,6 +263,11 @@ mu_message_t test_feature_name_null_inputs()
 
     return nullptr;
 }
+
+} // namespace
+
+namespace
+{
 
 mu_message_t test_feature_name_string_option()
 {
@@ -259,6 +304,11 @@ mu_message_t test_feature_name_string_option()
 
     return nullptr;
 }
+
+} // namespace
+
+namespace
+{
 
 mu_message_t test_feature_name_dict_from_provided_features()
 {

@@ -61,6 +61,11 @@ extern "C" VMAF_WRAP_EXPORT void *__wrap_realloc(void *ptr, size_t bytes)
 }
 #endif
 
+/* The translation-unit-local fixtures and cases below sit in short anonymous
+ * namespaces rather than one file-wide block: that is what gives them C++
+ * internal linkage without any one brace scope outgrowing the 60-line budget
+ * the repository applies to the whole tree (ADR-1142), the same shape the
+ * SYCL extractors use. */
 namespace
 {
 
@@ -114,6 +119,11 @@ int append_context(RegisteredFeatureExtractors *entries, Context ctx)
     return err;
 }
 
+} // namespace
+
+namespace
+{
+
 mu_message_t check_motion_pair(const char *first, const char *second, unsigned count,
                                bool twin = false, bool legacy = false,
                                const char *second_key = "motion_force_zero")
@@ -137,6 +147,11 @@ mu_message_t check_motion_pair(const char *first, const char *second, unsigned c
     mu_assert("first registration was not preserved", vector.get().fex_ctx[0] == first_ptr);
     return nullptr;
 }
+
+} // namespace
+
+namespace
+{
 
 mu_message_t test_distinct_motion_options()
 {
@@ -188,6 +203,11 @@ mu_message_t test_capacity_arithmetic()
     return nullptr;
 }
 
+} // namespace
+
+namespace
+{
+
 int append_motion_variant(RegisteredFeatureExtractors *entries, unsigned value)
 {
     char option[16];
@@ -232,7 +252,12 @@ mu_message_t test_native_growth()
     return nullptr;
 }
 
+} // namespace
+
 #ifdef FEX_VECTOR_ALLOC_TEST
+namespace
+{
+
 mu_message_t check_retry(RegisteredFeatureExtractors *entries, Context incoming, unsigned count,
                          unsigned capacity)
 {
@@ -272,6 +297,11 @@ mu_message_t test_second_name_allocation_failure()
     return check_name_allocation_failure(2);
 }
 
+} // namespace
+
+namespace
+{
+
 mu_message_t test_growth_allocation_failure()
 {
     Vector vector;
@@ -293,7 +323,11 @@ mu_message_t test_growth_allocation_failure()
               vector_unchanged(&vector.get(), storage, 8, 8));
     return check_retry(&vector.get(), std::move(incoming), 9, 16);
 }
+} // namespace
 #endif
+
+namespace
+{
 
 mu_message_t run_identity_tests()
 {

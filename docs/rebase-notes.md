@@ -51867,3 +51867,7 @@ must not restore early returns after those owners acquire resources. The compact
 preserve name, alias, default, range and array order. Reapply these ownership/helper boundaries on
 conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit recorded in
 Research-2075.
+
+## chore/hiss21-core-test — C test bodies split into helpers (2026-09-21)
+
+Upstream-mirrored tests under `core/test/` (`test.h`, `test_barten_csf.c`, `test_dict.cpp`, `test_predict.c`, `test_model.c`, `test_feature.cpp`, `test_cuda_pic_preallocation.c`) keep every assertion string, expected value and registered test name; on conflict reapply the helper split rather than restoring the single bodies, and keep the added `mu_assert_msg` in `test.h`, the short reopened anonymous-namespace blocks in the C++ tests, and the shared `core/test/hip_parity_skip.h`.

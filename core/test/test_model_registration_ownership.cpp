@@ -9,6 +9,11 @@
 #include <cerrno>
 #include <memory>
 
+/* The translation-unit-local fixtures and cases below sit in short anonymous
+ * namespaces rather than one file-wide block: that is what gives them C++
+ * internal linkage without any one brace scope outgrowing the 60-line budget
+ * the repository applies to the whole tree (ADR-1142), the same shape the
+ * SYCL extractors use. */
 namespace
 {
 
@@ -37,6 +42,11 @@ int overload_motion(VmafModel *model, const char *key, const char *value)
     // A valid model/feature call consumes options, including on failure.
     return vmaf_model_feature_overload(model, "motion", options);
 }
+
+} // namespace
+
+namespace
+{
 
 mu_message_t check_rejected_options(const char *key, const char *value)
 {
@@ -71,6 +81,11 @@ mu_message_t test_unknown_option()
 {
     return check_rejected_options("motion_unknown_option", "true");
 }
+
+} // namespace
+
+namespace
+{
 
 mu_message_t test_valid_options_transfer()
 {

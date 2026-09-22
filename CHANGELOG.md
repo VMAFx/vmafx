@@ -24171,6 +24171,24 @@ to pass cleanly on CPU-only CI runners.
 The required standards gate now replays declared HISS enforcement fixtures on Linux, macOS, and Windows with strict-success aggregation; the canonical agent contract and README badge identify the current HISS-21 standard. Draft Scorecard runs retain their deliberate policy failure without adding a false missing-artifact error, and edits to that required workflow now force a full CI impact plan. Native lint lanes explicitly export and validate their C/C++ Ninja compilation database, closing the Meson 1.12 gap that could otherwise leave clang-tidy and cppcheck without configured inputs. Local Make recipes now give Meson an absolute virtual-environment path so reconfiguration cannot reinterpret `.venv/bin/ninja` below the build directory. The C23 logging fallback now remains warning-clean under Clang's VA-list analyzer, and its internal header no longer occupies the ISO-reserved identifier namespace. Configured Cppcheck derives and validates a version-correct POSIX pthread model instead of suppressing nullable default attributes, while framesync initialization now reports every pthread failure, unwinds only successfully initialized primitives, and honors the documented null-context destroy no-op. The PR-body pre-push guard now bounds a locked-keyring `gh` lookup, validates public-page fallback metadata, and fails closed rather than hanging or skipping an indeterminate check. The public engineering principles now link only to tracked state and security runbooks, not an ignored local working directory.
 
 
+- C unit tests under `core/test/` now satisfy the repository's own
+  HISS-21 invariants: 52 findings cleared without a baseline edit, a
+  suppression, or a weakened assertion. Two unbounded read loops
+  (`test_vmaf_tiny_v2.py`, `test_vmaf_use_tiny_model.c`) gained a
+  scalar bound derived from the file size, with bound exhaustion
+  reported as an error; four `goto` cleanup jumps in
+  `test_float_adm_dwt2_neon.c` became one unconditional buffer-release
+  path; and 46 over-long bodies were split into cohesive helpers. Every
+  assertion string, expected value and test registration is unchanged,
+  and the three CUDA picture-preallocation cases plus twelve HIP parity
+  scaffold-skip sites now share one implementation each
+  (`run_preallocation_method()`, `core/test/hip_parity_skip.h`).
+  `ref_calc_psnrhvs()` in `test_psnr_hvs_simd.c` is deliberately left
+  intact: its structure is the ADR-0138 bit-exactness contract. The
+  clang-tidy ratchet records no regression on any touched file; see
+  `docs/research/core-test-hiss21-burndown-2026-09-21.md`.
+
+
 
 - **FMA contraction was silently on in every strict-FP carve-out under the
   Intel compiler.** `-fp-model=precise` implies `-ffp-contract=on`, so

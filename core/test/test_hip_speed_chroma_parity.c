@@ -51,6 +51,8 @@
 
 #include "test.h"
 
+#include "hip_parity_skip.h"
+
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
@@ -127,13 +129,8 @@ static char *drive(const char *fex_name, int use_hip, double *out_score, int *sk
     }
 
     err = vmaf_use_feature(vmaf, fex_name, NULL);
-    if (use_hip && err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
+    if (use_hip && err == -ENOSYS)
+        return hip_parity_skip(vmaf, &hip_state, skipped, "");
     mu_assert("vmaf_use_feature failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -143,13 +140,8 @@ static char *drive(const char *fex_name, int use_hip, double *out_score, int *sk
         err = fill_fixture(&dist, i, 1);
         mu_assert("fill_fixture(dist) failed", !err);
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        if (use_hip && err == -ENOSYS) {
-            (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on submit] ");
-            *skipped = 1;
-            (void)vmaf_close(vmaf);
-            vmaf_hip_state_free(&hip_state);
-            return NULL;
-        }
+        if (use_hip && err == -ENOSYS)
+            return hip_parity_skip(vmaf, &hip_state, skipped, " on submit");
         mu_assert("vmaf_read_pictures failed", !err);
     }
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);

@@ -38,6 +38,15 @@ and teardown.
 - `mu_assert` / `mu_run_test` = 2 branches each (`if` + `do { } while (0)`) -> more than 7 in one function fails.
 - more than 7 tests -> `MU_TEST(fn)` rows + `mu_run_table()` from [mu_table.h](mu_table.h). 0 branches at any length.
 - assertion-heavy test -> `check_*` helpers, called as `char *msg = check_x(...); if (msg) return msg;` = 1 branch.
+- `mu_assert_msg(check_x(...))` from [test.h](test.h) is same propagation in one line. Use it; do not re-declare local copy.
+
+**Block length** (HISS-04, `praetorctl audit`, 60-line hard cap):
+
+- cap counts every brace block at file scope, function or not: anonymous `namespace`, table initializer, `switch` body.
+- C++ TU -> several short `namespace { ... } // namespace` blocks, one per cohesive group. Same internal linkage, no suppression. Same shape as SYCL extractors and `core/tools/vmaf.cpp`.
+- long `MuTest` table -> several short tables + one `mu_run_table()` call each, in order. Order and first-failure behaviour unchanged.
+- split test body -> phase helper returning `mu_message_t`, never per-block partial sums. Assertion strings and expected values stay byte-identical.
+- HIP parity test -> `hip_parity_skip()` from [hip_parity_skip.h](hip_parity_skip.h) for the `-ENOSYS` scaffold teardown. One definition; twelve tests share it.
 
 **Clean up before asserting:**
 

@@ -77,6 +77,32 @@ static char *test_cambi_sycl_registration(void)
     return NULL;
 }
 
+/* Allocate a `w` x `h` YUV420P 8-bpc picture pair and fill every plane of both
+ * with a flat mid-grey value (128). Split out of the smoke test so that body
+ * stays inside the 60-line function budget. */
+static char *alloc_flat_grey_pair(VmafPicture *ref_pic, VmafPicture *dis_pic, unsigned w,
+                                  unsigned h)
+{
+    int err = vmaf_picture_alloc(ref_pic, VMAF_PIX_FMT_YUV420P, 8, w, h);
+    mu_assert("ref picture alloc", err == 0);
+    err = vmaf_picture_alloc(dis_pic, VMAF_PIX_FMT_YUV420P, 8, w, h);
+    mu_assert("dis picture alloc", err == 0);
+
+    for (unsigned p = 0; p < 3; p++) {
+        unsigned pw = (p == 0) ? w : w / 2;
+        unsigned ph = (p == 0) ? h : h / 2;
+        uint8_t *plane = (uint8_t *)ref_pic->data[p];
+        for (unsigned r = 0; r < ph; r++) {
+            memset(plane + r * (size_t)ref_pic->stride[p], 128, pw);
+        }
+        plane = (uint8_t *)dis_pic->data[p];
+        for (unsigned r = 0; r < ph; r++) {
+            memset(plane + r * (size_t)dis_pic->stride[p], 128, pw);
+        }
+    }
+    return NULL;
+}
+
 /* ------------------------------------------------------------------ */
 /* Test 2: end-to-end smoke — init/submit/collect/close without crash.  */
 /* ------------------------------------------------------------------ */
@@ -107,27 +133,8 @@ static char *test_cambi_sycl_smoke(void)
 
     /* Allocate a synthetic 576×324 YUV420P 8-bpc picture pair.
      * Flat grey (value 64) — no banding, score should be 0. */
-    static const unsigned W = 576u;
-    static const unsigned H = 324u;
     VmafPicture ref_pic, dis_pic;
-    err = vmaf_picture_alloc(&ref_pic, VMAF_PIX_FMT_YUV420P, 8, W, H);
-    mu_assert("ref picture alloc", err == 0);
-    err = vmaf_picture_alloc(&dis_pic, VMAF_PIX_FMT_YUV420P, 8, W, H);
-    mu_assert("dis picture alloc", err == 0);
-
-    /* Fill luma planes with a flat mid-grey value (128). */
-    for (unsigned p = 0; p < 3; p++) {
-        unsigned pw = (p == 0) ? W : W / 2;
-        unsigned ph = (p == 0) ? H : H / 2;
-        uint8_t *plane = (uint8_t *)ref_pic.data[p];
-        for (unsigned r = 0; r < ph; r++) {
-            memset(plane + r * (size_t)ref_pic.stride[p], 128, pw);
-        }
-        plane = (uint8_t *)dis_pic.data[p];
-        for (unsigned r = 0; r < ph; r++) {
-            memset(plane + r * (size_t)dis_pic.stride[p], 128, pw);
-        }
-    }
+    mu_assert_msg(alloc_flat_grey_pair(&ref_pic, &dis_pic, 576u, 324u));
 
     /* Use vmaf_read_pictures to feed the frame through the pipeline.
      * cambi_sycl is registered and will be auto-selected when the SYCL
