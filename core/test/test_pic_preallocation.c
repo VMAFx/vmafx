@@ -375,10 +375,20 @@ static char *test_picture_pool_exhaustion()
     return NULL;
 }
 
+/* Upper bound on the worker count any caller asks for. The arrays below are
+ * sized from it rather than from `num_threads` because MSVC implements no
+ * variable-length arrays at all (C11 made them optional and /std:clatest
+ * rejects them with C2057/C2466/C2133), so a VLA here breaks every Windows
+ * leg of the build matrix. */
+enum { MAX_FETCH_THREADS = 16 };
+
 static char *run_thread_fetches(VmafContext *vmaf, int num_threads, int fetches_per_thread)
 {
-    pthread_t threads[num_threads];
-    thread_test_data thread_data[num_threads];
+    mu_assert("run_thread_fetches called with more workers than MAX_FETCH_THREADS",
+              num_threads >= 0 && num_threads <= MAX_FETCH_THREADS);
+
+    pthread_t threads[MAX_FETCH_THREADS];
+    thread_test_data thread_data[MAX_FETCH_THREADS];
     int threads_created = 0;
 
     for (int i = 0; i < num_threads; i++) {
