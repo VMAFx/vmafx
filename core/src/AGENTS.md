@@ -354,8 +354,62 @@ already stored NULL there). Contract this pins: "caller may inspect
 `*out` only on success; a non-zero return guarantees `*out == NULL`."
 
 Pattern: see `vmaf_gpu_picture_pool_init` in
-[`gpu_picture_pool.c`](gpu_picture_pool.c). Regression test:
-`core/test/test_gpu_picture_pool_uaf.c`.
+[`gpu_picture_pool.cpp`](gpu_picture_pool.cpp). Regression test:
+`core/test/test_gpu_picture_pool_uaf.c`. Since the HISS-21 burn-down that
+file carries no `goto`; the clearing now happens in `gpu_pool_destruct`.
+
+### Teardown owners replace the cleanup ladders (HISS-21)
+
+`picture.c`, `picture_pool.c`, `picture_pool.cpp`, `gpu_picture_pool.cpp`,
+`predict.c`, `read_json_model.c`, `mcp/mcp.c` and `interop/` hold no `goto`.
+Each former label chain is now one named `static` teardown owner, or a guard
+clause that unwinds inline:
+
+- `pool_destruct_partial(p, stage)` — `picture_pool.c` and `picture_pool.cpp`.
+  `stage` counts completed acquisitions; guards run newest-first, so stage N
+  frees what old label N freed, in old order. New resource: append one stage
+  at the end of the enum plus one guard at the **top** of the helper.
+- `gpu_pool_destruct` — `gpu_picture_pool.cpp`.
+- `pool_return_index` / `pool_pop_slot` / `pool_attach_priv` — pool fetch.
+  Only `pool_return_index` touches the free list, so the push-back and the
+  `pthread_cond_signal` of ADR-0960 stay in one place.
+- `mcp_uds_listen` / `mcp_uds_publish` — `mcp/mcp.c`. Both leave
+  `atomic_store(&server->uds_running, 0)` to the caller, so that store stays
+  last on every failure.
+
+Rebase rule: a conflict must not reintroduce an early `return` between an
+acquisition and its owner, and must not reorder the guards. Free order is the
+contract; `core/test/test_picture_pool_error_paths.c`,
+`test_picture_pool_cpp_error_paths.c` and `test_gpu_picture_pool_partial_init.c`
+pin it.
+
+`vmaf_gpu_picture_pool_init` keeps one behaviour verbatim from its old ladder:
+on `malloc` failure it returns 0 with `*pool == nullptr`, because the old
+`goto fail` skipped every `err` assignment. Latent defect, preserved on purpose
+by a structural-only change. Fix it in its own commit with a regression test.
+
+`predict.c` and `interop/pelorus_interop.c` hold scoring arithmetic. Helpers
+there were cut at statement boundaries only. Never split one arithmetic
+expression across a helper, and never reorder an accumulation: FMA contraction
+and re-association both move scores (ADR-1253).
+
+Two `interop/pelorus_interop.c` invariants that the split introduced, both
+pinned by the ADR-1142 clang-tidy ratchet (the file's allowance is 7):
+
+- `blob_validate_framing` publishes the `const PelorusSideData *` it already
+  derived. `pel_blob_find_section` consumes that pointer instead of casting the
+  image bytes to a header a second time, so the blob is cast to its header in
+  exactly one place per constness. Re-deriving it locally costs one extra
+  `bugprone-casting-through-void` and breaks the ratchet.
+- `qp_cell_average` holds the per-cell block fold. It exists so that
+  `qp_fold_blocks_to_cells` stays inside the `readability-function-size`
+  `NestingThreshold` of 4 — inlining it back puts the innermost statement at
+  level 5. Its `int64_t sum` accumulates row-major over the clamped block
+  window and the division truncates, so any reordering moves cell values
+  (ADR-1253).
+- `validate_pack_args` takes `out_len` as `const size_t *`: it inspects the
+  caller's out-parameters for NULL and never writes through them
+  (`readability-non-const-parameter`). `pel_blob_pack` still owns both stores.
 
 ### PREV_REF batch dispatch: unref before memset, zero f->prev_ref (ADR-1072)
 
