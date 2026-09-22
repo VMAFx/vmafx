@@ -52093,3 +52093,37 @@ Do not fold the CUDA manager into the base-image custom manager on conflict:
 `scripts/ci/tests/test_renovate_file_patterns.py` asserts there is exactly one
 docker-datasource manager without a `depNameTemplate`, and the CUDA one carries
 `nvidia/cuda` precisely so the group rule can name it.
+
+## fix/bug-hip-adr0759 — HIP ADM buffer stays by pointer (2026-09-21)
+
+Fork-local; no upstream Netflix surface. The four HIP integer ADM `__global__`
+kernels that read `AdmBufferHip` take
+`const AdmBufferHip *__restrict__ buf_ptr`, and `AdmStateHip` owns a device copy
+(`buf_dev`) uploaded once at the end of `init_fex_hip()`, passed as `args[0]` by
+address, and freed in `close_fex_hip()` and on the init failure path.
+
+That failure path is expressed as the tail-calling `adm_hip_unwind_*` helper
+chain, not as `goto` labels: the HISS-01 zero-`goto` refactor of this file and
+the ADR-0759 re-application were developed in parallel and reconciled when they
+met. `adm_hip_unwind_buf_dev()` is the `buf_dev` tier and releases first, since
+`buf_dev` is the last thing init allocates. A resolution that reintroduces a
+`fail_buf_dev:` label restores the by-pointer change at the cost of the
+zero-`goto` invariant; keep both.
+
+This has already been lost once: ADR-0759 landed it in `31a51afb2` (#101) and
+`92ea978a4` (#102), a squash of a branch cut from an older base, put the
+by-value signatures back the same day while leaving the AGENTS.md invariant note
+in place. If a rebase, a squash of a stale branch, or an upstream-shaped
+conflict resolution reintroduces `AdmBufferHip buf` in any of
+`adm_csf_kernel_1_4`, `i4_adm_csf_kernel_1_4`, `i4_adm_cm_line_kernel` or
+`adm_cm_line_kernel_8`, take the pointer side — it is the decided design, not a
+stylistic preference, and it is worth 320 bytes of kernel arguments per launch
+plus roughly 310 bytes of per-thread scratch on the scale-0 CM kernel.
+
+The single upload is only correct while nothing writes `s->buf` after init. Any
+change that starts mutating a field of `s->buf` per frame has to re-upload the
+device copy before the next launch, or add a per-frame refresh; the invariant is
+stated in `core/src/feature/hip/AGENTS.md`.
+
+`AdmFixedParametersHip` (248 bytes) is deliberately still by value — ADR-0759's
+deferred follow-up. Do not "finish the job" on a rebase without an ADR.

@@ -111,6 +111,14 @@ typedef struct AdmStateHip {
     hipFunction_t func_adm_cm_line_kernel_8;
     hipFunction_t func_i4_adm_cm_line_kernel;
 
+    /* ADR-0759: device-resident copy of `buf`. The two CSF and the two CM
+     * compute kernels take `const AdmBufferHip *` and read their band
+     * pointers from here, instead of receiving the whole 328-byte struct by
+     * value in the kernel-argument buffer on every launch. Uploaded once at
+     * the end of init_fex_hip(); nothing writes `buf` after that, so the copy
+     * stays equal to it until close_fex_hip(). */
+    void *buf_dev;
+
     /* ADR-1211: device staging for the scale-0 luma plane.
      * The HIP backend is host-pic (ADR-0530): `VmafPicture::data[]` points at
      * HOST memory. The DWT2 kernel is a device kernel, so the plane has to be
@@ -737,7 +745,7 @@ static int adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, i
     const int rows_per_thread = 1;
     const int BLOCKX = 32, BLOCKY = 4;
 
-    void *args[] = {buf, &top, &bottom, &left, &right, &stride, p};
+    void *args[] = {&s->buf_dev, &top, &bottom, &left, &right, &stride, p};
     hipError_t rc = hipModuleLaunchKernel(
         s->func_adm_csf_kernel_1_4, (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
         (uint32_t)DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3, (uint32_t)BLOCKX,
@@ -771,7 +779,7 @@ static int i4_adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int scale, i
     const int rows_per_thread = 1;
     const int BLOCKX = 32, BLOCKY = 4;
 
-    void *args[] = {buf, &scale, &top, &bottom, &left, &right, &stride, p};
+    void *args[] = {&s->buf_dev, &scale, &top, &bottom, &left, &right, &stride, p};
     hipError_t rc =
         hipModuleLaunchKernel(s->func_i4_adm_csf_kernel_1_4,
                               (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
@@ -866,7 +874,7 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
     {
         const int BLOCKX = 128;
         void *args[] = {
-            buf,           &h,         &w,        &top,           &bottom,         &left,
+            &s->buf_dev,   &h,         &w,        &top,           &bottom,         &left,
             &right,        &start_row, &end_row,  &start_col,     &end_col,        &src_stride,
             &csf_a_stride, &scale,     &buffer_h, &buffer_stride, &buf->tmp_accum, p};
         hipError_t rc = hipModuleLaunchKernel(
@@ -937,7 +945,7 @@ static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, in
     {
         const int rows_per_thread = 8;
         const int BLOCKX = 32, BLOCKY = 4;
-        void *args[] = {buf,
+        void *args[] = {&s->buf_dev,
                         &h,
                         &w,
                         &top,
@@ -1368,6 +1376,46 @@ static int adm_hip_unwind_ref_luma(AdmStateHip *s, hipError_t rc)
     return adm_hip_unwind_host(s, rc);
 }
 
+/* ADR-0759 adds an allocation after d_dis_luma, so for the first time a
+ * failure can occur with d_dis_luma live. The goto ladder had no
+ * `fail_dis_luma` label because d_dis_luma used to be the last allocation;
+ * this is the tier that label would have been, slotted between buf_dev and
+ * ref_luma so the release order stays the exact reverse of the allocation
+ * order. */
+static int adm_hip_unwind_dis_luma(AdmStateHip *s, hipError_t rc)
+{
+    (void)hipFree(s->d_dis_luma);
+    s->d_dis_luma = NULL;
+    return adm_hip_unwind_ref_luma(s, rc);
+}
+
+/* ADR-0759: buf_dev is allocated last, so it is released first. */
+static int adm_hip_unwind_buf_dev(AdmStateHip *s, hipError_t rc)
+{
+    (void)hipFree(s->buf_dev);
+    s->buf_dev = NULL;
+    return adm_hip_unwind_dis_luma(s, rc);
+}
+
+/* The feature-name-dictionary failure path only. It releases buf_dev and then
+ * re-enters the ladder at the host tier, jumping over d_dis_luma / d_ref_luma.
+ *
+ * That skip is not an oversight: the pre-HISS-01 `goto fail_host` on this path
+ * landed below `fail_ref_luma:`, so it never freed the two luma stagers, and
+ * HISS-01 preserved the behaviour verbatim rather than fixing it under cover of
+ * a refactor. ADR-0759 adds buf_dev to the path but does not change which other
+ * tiers it visits, so the skip is carried through here unchanged. The two
+ * stagers therefore still leak on this one path — tracked separately, since
+ * `close` is never invoked after a failed `init`
+ * (`vmaf_feature_extractor_context_close` rejects an uninitialised context), so
+ * nothing downstream reclaims them. */
+static int adm_hip_unwind_buf_dev_to_host(AdmStateHip *s, hipError_t rc)
+{
+    (void)hipFree(s->buf_dev);
+    s->buf_dev = NULL;
+    return adm_hip_unwind_host(s, rc);
+}
+
 /* Private stream plus the three synchronisation events. */
 static int adm_hip_create_stream_events(AdmStateHip *s)
 {
@@ -1556,6 +1604,72 @@ static void adm_hip_slice_results(AdmStateHip *s)
     }
 }
 
+/* ADR-0759: upload the device copy the two CSF and the two CM compute kernels
+ * read. It has to come after both slicing blocks, once every pointer inside
+ * `s->buf` is final. Nothing writes `s->buf` between here and close_fex_hip(),
+ * so this single upload serves every launch; code that starts changing
+ * `s->buf` after init has to upload it again before the next launch.
+ *
+ * This is the last allocation init performs, so it is the first tier the
+ * unwind ladder releases. A failed hipMalloc leaves buf_dev NULL and unwinds
+ * from d_dis_luma; a failed upload unwinds from buf_dev itself. */
+static int adm_hip_upload_buf_dev(AdmStateHip *s)
+{
+    hipError_t hip_err = hipMalloc(&s->buf_dev, sizeof(s->buf));
+    if (hip_err != hipSuccess) {
+        s->buf_dev = NULL;
+        return adm_hip_unwind_dis_luma(s, hip_err);
+    }
+
+    hip_err = hipMemcpy(s->buf_dev, &s->buf, sizeof(s->buf), hipMemcpyHostToDevice);
+    if (hip_err != hipSuccess)
+        return adm_hip_unwind_buf_dev(s, hip_err);
+
+    return 0;
+}
+
+/* Device bring-up: stream and events, HSACO modules, buffers, the pointer
+ * slicing, the ADR-0759 device copy of `buf`, and the feature-name dictionary.
+ * Split out of init_fex_hip() so that function stays inside the HISS-04 60-LOC
+ * budget. The sequence, and every failure path it hands to the unwind chain,
+ * are unchanged. */
+static int adm_hip_init_device(VmafFeatureExtractor *fex, AdmStateHip *s, unsigned w, unsigned h,
+                               unsigned bpc)
+{
+    int err = adm_hip_create_stream_events(s);
+    if (err != 0)
+        return err;
+
+    err = adm_hip_load_modules(s);
+    if (err != 0)
+        return err;
+
+    err = adm_hip_alloc_buffers(s, w, h, bpc);
+    if (err != 0)
+        return err;
+
+    adm_hip_slice_bands(s, h);
+    adm_hip_slice_results(s);
+
+    err = adm_hip_upload_buf_dev(s);
+    if (err != 0)
+        return err;
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (s->feature_name_dict == NULL) {
+        /* The former `goto fail_host` reported hip_rc(hip_err) with hip_err
+         * still holding the hipSuccess of the last successful HIP call, and it
+         * deliberately skipped the d_ref_luma / d_dis_luma tier. Both are
+         * preserved verbatim. ADR-0759 inserts buf_dev — allocated after those
+         * two and so released before them — ahead of the host tier and changes
+         * nothing else about this path. */
+        return adm_hip_unwind_buf_dev_to_host(s, hipSuccess);
+    }
+
+    return 0;
+}
+
 #endif /* HAVE_HIPCC */
 
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -1590,32 +1704,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     /* Scaffold: no runtime available. */
     return -ENOSYS;
 #else
-    int err = adm_hip_create_stream_events(s);
-    if (err != 0)
-        return err;
-
-    err = adm_hip_load_modules(s);
-    if (err != 0)
-        return err;
-
-    err = adm_hip_alloc_buffers(s, w, h, bpc);
-    if (err != 0)
-        return err;
-
-    adm_hip_slice_bands(s, h);
-    adm_hip_slice_results(s);
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (s->feature_name_dict == NULL) {
-        /* The former `goto fail_host` reported hip_rc(hip_err) with hip_err
-         * still holding the hipSuccess of the last successful HIP call, and it
-         * deliberately skipped the d_ref_luma / d_dis_luma tier. Both are
-         * preserved verbatim. */
-        return adm_hip_unwind_host(s, hipSuccess);
-    }
-
-    return 0;
+    return adm_hip_init_device(fex, s, w, h, bpc);
 #endif /* HAVE_HIPCC */
 }
 
@@ -1729,6 +1818,10 @@ static void adm_hip_close_release_buffers(AdmStateHip *s)
     if (s->d_dis_luma != NULL) {
         (void)hipFree(s->d_dis_luma);
         s->d_dis_luma = NULL;
+    }
+    if (s->buf_dev != NULL) {
+        (void)hipFree(s->buf_dev);
+        s->buf_dev = NULL;
     }
     if (s->buf.results_host != NULL) {
         (void)hipHostFree(s->buf.results_host);
