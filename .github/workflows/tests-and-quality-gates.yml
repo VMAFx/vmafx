@@ -71,6 +71,14 @@ jobs:
         run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Netflix CPU Golden Tests satisfied without running (ADR-1140)"
       - name: Install build deps
         if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          # pip unpacks every wheel it downloads into $TMPDIR before it
+          # installs it, so the staging area — not just the install target —
+          # has to be on disk. On the ubuntu-26.04 image /tmp is a RAM-backed
+          # tmpfs and systemd v258 puts a per-user quota on it (80% of the
+          # mount), which is what produced "[Errno 122] Disk quota exceeded".
+          # RUNNER_TEMP is on the runner's disk and is emptied per job.
+          TMPDIR: ${{ runner.temp }}
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build nasm pkg-config \
@@ -431,11 +439,18 @@ jobs:
         run: meson test -C build --suite=dnn --print-errorlogs
       - name: Set up Python + install vmaf-train
         if: steps.impact.outputs.tiny_ai == 'true'
-        # The venv lives under RUNNER_TEMP, not /tmp. On the ubuntu-26.04
-        # image /tmp is a RAM-backed tmpfs with a per-user quota (systemd
-        # enables one on a tmpfs /tmp), and the torch + CUDA wheel set is
-        # several gigabytes: pip died with "[Errno 122] Disk quota exceeded".
-        # RUNNER_TEMP is on the runner's disk and is emptied per job.
+        # Both the venv and pip's staging area live under RUNNER_TEMP, not
+        # /tmp. On the ubuntu-26.04 image /tmp is a RAM-backed tmpfs with a
+        # per-user quota (systemd v258 enables one on a tmpfs /tmp), and
+        # `pip install -e ai` pulls torch, torchvision and the nvidia-*-cu13
+        # wheel set — several gigabytes. Moving the venv alone is not enough:
+        # pip downloads and unpacks each wheel into $TMPDIR first and only
+        # then extracts it into the venv, so with TMPDIR unset the whole
+        # wheel set still lands on the tmpfs and pip dies with
+        # "[Errno 122] Disk quota exceeded". RUNNER_TEMP is on the runner's
+        # disk and is emptied per job.
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           venv="${RUNNER_TEMP}/vmaf-train-venv"
           python3 -m venv "${venv}"
@@ -454,6 +469,9 @@ jobs:
       # entries whose `quant_mode == "fp32"` (nothing to gate).
       - name: Run ai-quant-accuracy gate
         if: steps.impact.outputs.tiny_ai == 'true'
+        env:
+          # Same reason as the venv step above: pip stages wheels in $TMPDIR.
+          TMPDIR: ${{ runner.temp }}
         run: |
           "${RUNNER_TEMP}/vmaf-train-venv/bin/pip" install onnx onnxruntime numpy
           "${RUNNER_TEMP}/vmaf-train-venv/bin/python" ai/scripts/measure_quant_drop.py --all
@@ -533,8 +551,11 @@ jobs:
         # pytest-asyncio + ruff + mypy). There is no `[test]` extras —
         # `dev` is the right name. Editable install so test_smoke_e2e.py
         # resolves the repo root via __file__.parents[3].
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
-          # RUNNER_TEMP, not /tmp: see the Tiny AI job's venv step.
+          # RUNNER_TEMP, not /tmp: see the Tiny AI job's venv step. TMPDIR
+          # is redirected there too, because pip stages wheels in $TMPDIR.
           venv="${RUNNER_TEMP}/mcp-venv"
           python3 -m venv "${venv}"
           "${venv}/bin/pip" install --upgrade pip

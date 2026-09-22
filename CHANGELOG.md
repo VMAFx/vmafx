@@ -20884,6 +20884,17 @@ Resolved 8 pre-existing required-aggregator failures that blocked every PR post-
 Research digest: `docs/research/0735-ci-required-failures-round-3-2026-05-28.md`
 
 
+- `ffmpeg-integration.yml` is shellcheck-clean. The `SC2317` "command appears
+  unreachable" notes on its SYCL build step were a false positive that fired
+  only on machines with oneAPI installed: actionlint passes
+  `--external-sources`, so shellcheck inlined `/opt/intel/oneapi/setvars.sh`,
+  whose every top-level branch ends in `return`, and modelled that as
+  terminating the calling script rather than returning to it. The step now
+  reaches setvars.sh the way the `clang-tidy-sycl` job already does, and four
+  unquoted command substitutions in the same file (`SC2046` / `SC2086`) are
+  quoted.
+
+
 - **CI: a required check can no longer be masked by a second job with the
   same name.** Two workflows reported `Windows MSVC+CUDA`, and the required
   checks aggregator keeps only the newest run per name. The `build.yml` job is
@@ -20936,6 +20947,19 @@ Three CI regressions fixed in a single sweep:
   are required checks, so the same failure would block an ordinary PR
   on a busy day. They now get 5 minutes, matching `Markdown Lint`; a job
   that finishes in seconds costs nothing extra.
+
+
+- CI no longer stages gigabyte-scale downloads on the `ubuntu-26.04` runner's
+  RAM-backed `/tmp`. Relocating the virtualenvs and the end-to-end image tar to
+  `RUNNER_TEMP` was not enough, because two producers take their destination
+  from `$TMPDIR`, which GitHub Actions leaves unset: pip unpacks every wheel it
+  downloads under `$TMPDIR` before installing it, so the torch and CUDA wheel
+  set still landed on the tmpfs and failed with `[Errno 122] Disk quota
+  exceeded`; and `kind load docker-image` writes a single `images.tar` holding
+  all three end-to-end images there, re-creating on the tmpfs the tar the
+  `docker save` step had just been moved off. `TMPDIR` now points at
+  `runner.temp` for the pip-bearing steps in `tests-and-quality-gates.yml` and
+  for the kind load in `e2e-k8s.yml`.
 
 
 Add concurrency guards to nightly, nightly-bisect, supply-chain, and release-please
