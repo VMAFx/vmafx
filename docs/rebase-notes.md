@@ -51869,3 +51869,16 @@ conflict, then rerun the exhaustive Cppcheck command and touched-file HISS audit
 Research-2075.
 
 - `chore/hiss21-core-src-hip` — HIP host code (`core/src/feature/hip/**`) replaced its `goto` cleanup ladders with cascading `static` unwind helpers and split oversized init/submit/collect/close functions; on conflict keep the helper boundaries and re-check that each tier still frees the same set in the same order as the upstream-twin CUDA ladder it mirrors.
+  The `VmafOption` tables, `g_weights[108]` and `g_hip_features[]` keep the upstream-twin
+  one-entry-per-line layout: an earlier revision of this branch packed them behind
+  `// clang-format off` to shrink a HISS-04 block finding that the current praetor engine no longer
+  raises for file-scope initialiser tables, and the packing was reverted. In `ssimulacra2_hip.c`,
+  `ss2h_picture_to_linear_rgb()`, `ss2h_run_scale_gpu()` and `extract_fex_hip()` are split into
+  `ss2h_yuv_primaries()`, `ss2h_upload_xyb()`, `ss2h_download_blurred()` and
+  `ss2h_downsample_for_next_scale()` under
+  [ADR-1289](adr/1289-hip-ssimulacra2-host-helper-split.md), which withdraws the ADR-0141 §2 no-split
+  citations those three used to carry; on conflict keep the split side and keep the invariants the
+  comments now name (the ADR-1205 / ADR-0891 `fmaf()` chain, the eight-launch order inside
+  `ss2h_run_scale_gpu()`, the per-scale order in `extract_fex_hip()`). `ssimulacra2_cuda.c` and
+  `core/src/feature/ssimulacra2.c` still carry their own no-split citations and must not be split
+  along with it.

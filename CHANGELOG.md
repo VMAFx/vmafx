@@ -24188,18 +24188,19 @@ The required standards gate now replays declared HISS enforcement fixtures on Li
   boundary and no accumulation order was touched, so every score is
   bit-identical. Behaviour-preserving refactor only; no user-visible
   change.
-- HIP feature extractors: the four `VmafOption` tables and the
-  SSIMULACRA2 `g_weights[108]` vector are now hand-packed inside
-  `// clang-format off` fences, the same treatment
-  `core/src/feature/speed.c` gives the CPU SpEED tables, so each block
-  stays inside the HISS-04 60-line bound. Every option name, alias, help
-  string, default, range and flag — and the array order — is unchanged,
-  so no CLI surface, feature-name key or model lookup moves.
-- HIP backend runtime: the `g_hip_features[]` dispatch table in
-  `core/src/hip/dispatch_strategy.c` is packed the same way, so it also
-  stays inside the HISS-04 60-line bound. The feature-name strings,
-  their per-extractor comment headers and the array order (with the
-  `NULL` sentinel last) are unchanged.
+- HIP feature extractors: the three no-split citations in
+  `ssimulacra2_hip.c` are withdrawn and the comments now match the code
+  (ADR-1289). `ss2h_picture_to_linear_rgb()`, `ss2h_run_scale_gpu()` and
+  `extract_fex_hip()` claimed an ADR-0141 §2 carve-out on the grounds
+  that splitting them would break a line-for-line diff against the CPU
+  source and the CUDA twin; HIP-vs-CPU agreement is proved by
+  `test_hip_ssimulacra2_parity.c` and the ADR-0214 cross-backend gate
+  instead, and praetor's touched-file rule admits no carve-out. The
+  three `NOLINTNEXTLINE(readability-function-size)` suppressions are
+  removed rather than relocated, and the invariants that do hold — the
+  ADR-1205 / ADR-0891 `fmaf()` chain, the eight-launch order, the
+  per-scale order — are stated where they apply. The CPU source and the
+  CUDA twin are unchanged and keep their own citations.
 
 
 

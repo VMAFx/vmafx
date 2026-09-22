@@ -69,29 +69,116 @@ enum yuv_matrix_h {
 };
 
 /* libjxl 108 pooling weights — bit-identical to ssimulacra2.c::kWeights. */
-/* clang-format off: the SSIMULACRA2 weight vector is packed so the table stays
- * inside the HISS-04 60-line block bound. The 108 values and their order are
- * byte-for-byte unchanged. */
-// clang-format off
 static const double g_weights[108] = {
-    0.0, 0.0007376606707406586, 0.0, 0.0, 0.0007793481682867309, 0.0, 0.0, 0.0004371155730107379,
-    0.0, 1.1041726426657346, 0.00066284834129271, 0.00015231632783718752, 0.0,
-    0.0016406437456599754, 0.0, 1.8422455520539298, 11.441172603757666, 0.0, 0.0007989109436015163,
-    0.000176816438078653, 0.0, 1.8787594979546387, 10.94906990605142, 0.0, 0.0007289346991508072,
-    0.9677937080626833, 0.0, 0.00014003424285435884, 0.9981766977854967, 0.00031949755934435053,
-    0.0004550992113792063, 0.0, 0.0, 0.0013648766163243398, 0.0, 0.0, 0.0, 0.0, 0.0,
-    7.466890328078848, 0.0, 17.445833984131262, 0.0006235601634041466, 0.0, 0.0, 6.683678146179332,
-    0.00037724407979611296, 1.027889937768264, 225.20515300849274, 0.0, 0.0, 19.213238186143016,
-    0.0011401524586618361, 0.001237755635509985, 176.39317598450694, 0.0, 0.0, 24.43300999870476,
-    0.28520802612117757, 0.0004485436923833408, 0.0, 0.0, 0.0, 34.77906344483772,
-    44.835625328877896, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0008680556573291698, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0005313191874358747, 0.0, 0.00016533814161379112, 0.0, 0.0, 0.0, 0.0, 0.0,
-    0.0004179171803251336, 0.0017290828234722833, 0.0, 0.0020827005846636437, 0.0, 0.0,
-    8.826982764996862, 23.19243343998926, 0.0, 95.1080498811086, 0.9863978034400682,
-    0.9834382792465353, 0.0012286405048278493, 171.2667255897307, 0.9807858872435379, 0.0, 0.0, 0.0,
-    0.0005130064588990679, 0.0, 0.00010854057858411537,
+    0.0,
+    0.0007376606707406586,
+    0.0,
+    0.0,
+    0.0007793481682867309,
+    0.0,
+    0.0,
+    0.0004371155730107379,
+    0.0,
+    1.1041726426657346,
+    0.00066284834129271,
+    0.00015231632783718752,
+    0.0,
+    0.0016406437456599754,
+    0.0,
+    1.8422455520539298,
+    11.441172603757666,
+    0.0,
+    0.0007989109436015163,
+    0.000176816438078653,
+    0.0,
+    1.8787594979546387,
+    10.94906990605142,
+    0.0,
+    0.0007289346991508072,
+    0.9677937080626833,
+    0.0,
+    0.00014003424285435884,
+    0.9981766977854967,
+    0.00031949755934435053,
+    0.0004550992113792063,
+    0.0,
+    0.0,
+    0.0013648766163243398,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    7.466890328078848,
+    0.0,
+    17.445833984131262,
+    0.0006235601634041466,
+    0.0,
+    0.0,
+    6.683678146179332,
+    0.00037724407979611296,
+    1.027889937768264,
+    225.20515300849274,
+    0.0,
+    0.0,
+    19.213238186143016,
+    0.0011401524586618361,
+    0.001237755635509985,
+    176.39317598450694,
+    0.0,
+    0.0,
+    24.43300999870476,
+    0.28520802612117757,
+    0.0004485436923833408,
+    0.0,
+    0.0,
+    0.0,
+    34.77906344483772,
+    44.835625328877896,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0008680556573291698,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0005313191874358747,
+    0.0,
+    0.00016533814161379112,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0004179171803251336,
+    0.0017290828234722833,
+    0.0,
+    0.0020827005846636437,
+    0.0,
+    0.0,
+    8.826982764996862,
+    23.19243343998926,
+    0.0,
+    95.1080498811086,
+    0.9863978034400682,
+    0.9834382792465353,
+    0.0012286405048278493,
+    171.2667255897307,
+    0.9807858872435379,
+    0.0,
+    0.0,
+    0.0,
+    0.0005130064588990679,
+    0.0,
+    0.00010854057858411537,
 };
-// clang-format on
 
 typedef struct Ssimu2StateHip {
     /* Options. */
@@ -268,15 +355,20 @@ static inline float ss2h_read_plane(const VmafPicture *pic, int plane, int x, in
     return (float)row[sx];
 }
 
-/* Verbatim port of ssimulacra2.c::picture_to_linear_rgb.
- * Splitting would break the line-for-line scalar-diff audit trail
- * (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5 sweep
- * closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+/* Port of ssimulacra2.c::picture_to_linear_rgb, split for HISS-04 under
+ * ADR-1289. The earlier "splitting would break the line-for-line scalar-diff
+ * audit trail" citation is withdrawn there: HIP-vs-CPU agreement is proved by
+ * core/test/test_hip_ssimulacra2_parity.c and the ADR-0214 cross-backend gate,
+ * not by reading a diff. What is still load-bearing, and must survive any
+ * rebase, is the arithmetic: the ADR-1205 / ADR-0891 fmaf() chain in the
+ * per-pixel loop below stays one single-rounded multiply-add per term, and the
+ * YUV literals stay exactly as the CPU source spells them. The CPU scalar
+ * source and the CUDA twin are still un-split and keep their own citations. */
+
 /* Resolves the luma primaries for the configured YUV matrix and reports
- * whether the range is limited. Extracted from ss2h_picture_to_linear_rgb()
- * for HISS-04: the literals and the fallthrough structure are copied exactly,
- * and the ADR-1205 / ADR-0891 fmaf() chain downstream is untouched. */
+ * whether the range is limited. Lifted out of ss2h_picture_to_linear_rgb() at
+ * a statement boundary: the literals and the fallthrough structure are copied
+ * exactly, and the fmaf() chain downstream is untouched. */
 static int ss2h_yuv_primaries(int yuv_matrix, float *kr, float *kg, float *kb)
 {
     int limited = 1;
@@ -736,13 +828,15 @@ static double ss2h_pool_score(const double avg_ssim[6][6], const double avg_ed[6
     return ssim;
 }
 
-/* Per-scale GPU work: 3 mul + 5 blur.
- * Splitting would obscure the dispatch sequence required for parity
- * audit (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5
- * sweep closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+/* Per-scale GPU work is 3 mul + 5 blur, and the ORDER of those eight launches
+ * is the invariant. It stays spelled out in ss2h_run_scale_gpu() below; only
+ * the two pure-copy loops that bracket it moved into the helpers here, under
+ * ADR-1289 (the earlier "splitting would obscure the dispatch sequence"
+ * citation is withdrawn there). A rebase may reorder nothing between the first
+ * ss2h_launch_mul3() and the final hipStreamSynchronize(). */
+
 /* Per-plane host-to-device upload of the XYB buffers for one scale. Pure
- * enqueue; lifted out of ss2h_run_scale_gpu() for HISS-04. */
+ * enqueue; lifted out of ss2h_run_scale_gpu() at a statement boundary. */
 static int ss2h_upload_xyb(Ssimu2StateHip *s, void *ref_xyb, void *dis_xyb, size_t plane_full_bytes,
                            size_t scale_bytes_per_plane)
 {
@@ -985,10 +1079,10 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 
 #ifdef HAVE_HIPCC
 /* Halves both linear-RGB pyramids in place for the next scale. This is the
- * pyramid step, not part of the per-scale GPU dispatch order the parity audit
- * reads (see the NOLINT note on extract_fex_hip), so lifting it out leaves that
- * ordering visible in one place. ss2h_downsample_2x2() and the plane memcpys
- * are copied verbatim — no arithmetic here. */
+ * pyramid step, not part of the per-scale GPU dispatch order, so lifting it out
+ * (ADR-1289) leaves that ordering visible in one place in extract_fex_hip().
+ * ss2h_downsample_2x2() and the plane memcpys are copied verbatim — no
+ * arithmetic here. */
 static void ss2h_downsample_for_next_scale(Ssimu2StateHip *s, unsigned *cw, unsigned *ch,
                                            size_t plane_full)
 {
@@ -1008,11 +1102,13 @@ static void ss2h_downsample_for_next_scale(Ssimu2StateHip *s, unsigned *cw, unsi
 
 #endif /* HAVE_HIPCC */
 
-/* Per-scale orchestration mirrors the CUDA extract loop.
- * Splitting would obscure the dispatch ordering required for parity
- * audit (ADR-0141 §2 upstream-parity load-bearing invariant; T7-5
- * sweep closeout — ADR-0278).
- * NOLINTNEXTLINE(readability-function-size,google-readability-function-size) */
+/* Per-scale orchestration mirrors the CUDA extract loop. The ordering that
+ * matters — convert, then per scale run_scale_gpu / host_combine / halve — is
+ * still written out in the loop below; only the pyramid halving moved into
+ * ss2h_downsample_for_next_scale(), under ADR-1289 (the earlier "splitting
+ * would obscure the dispatch ordering" citation is withdrawn there). The CUDA
+ * twin extract_fex_cuda() is still un-split and keeps its own citation; when
+ * its HISS-21 slice lands it should mirror this boundary. */
 static int extract_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                            VmafFeatureCollector *feature_collector)

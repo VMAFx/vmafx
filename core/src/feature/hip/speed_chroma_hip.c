@@ -148,50 +148,84 @@ typedef struct SpeedChromaHipState {
     SpeedInternalSingularTally singular_tally;
 } SpeedChromaHipState;
 
-/* Keeps each option row inside the 100-column limit so the whole table stays
- * under the HISS-04 60-line block bound. Field order, values, ranges and
- * aliases are unchanged. */
-#define SC_OPT_OFF(field) offsetof(SpeedChromaHipState, field)
-
-/* clang-format off: the option rows are hand-packed so the whole table stays
- * inside the HISS-04 60-line block bound. Same treatment, and same guarantee,
- * as the CPU SpEED tables in core/src/feature/speed.c: name, alias, help,
- * default, range, flags and array order are byte-for-byte unchanged. */
-// clang-format off
 static const VmafOption options_chroma[] = {
-    {.name = "speed_kernelscale", .help = "scaling factor for the Gaussian kernel",
-     .offset = SC_OPT_OFF(speed_chroma_kernelscale), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = SC_DEFAULT_KERNELSCALE, .min = 0.1, .max = 4.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "ks"},
-    {.name = "speed_prescale", .help = "scaling factor for the frame",
-     .offset = SC_OPT_OFF(speed_chroma_prescale), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = SC_DEFAULT_PRESCALE, .min = 0.1, .max = 4.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "ps"},
-    {.name = "speed_prescale_method",
-     .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
-     .offset = SC_OPT_OFF(speed_chroma_prescale_method), .type = VMAF_OPT_TYPE_STRING,
-     .default_val.s = SC_DEFAULT_PRESCALE_METHOD, .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-     .alias = "psm"},
-    {.name = "speed_sigma_nn", .help = "standard deviation of neural noise",
-     .offset = SC_OPT_OFF(speed_chroma_sigma_nn), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = SC_DEFAULT_SIGMA_NN, .min = 0.1, .max = 2.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "snn"},
-    {.name = "speed_nn_floor", .help = "neural noise floor fraction",
-     .offset = SC_OPT_OFF(speed_chroma_nn_floor), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = SC_DEFAULT_NN_FLOOR, .min = 0.0, .max = 1.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "nnf"},
-    {.name = "speed_max_val", .help = "clip output to this maximum",
-     .offset = SC_OPT_OFF(speed_chroma_max_val), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = SC_DEFAULT_MAX_VAL, .min = 0.0, .max = 1000.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "mxv"},
-    {.name = "speed_weight_var_mode", .help = "variance weighting mode (0-6)",
-     .offset = SC_OPT_OFF(speed_weight_var_mode), .type = VMAF_OPT_TYPE_INT, .default_val.d = 0,
-     .min = 0, .max = 6, .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "wvm"},
+    {
+        .name = "speed_kernelscale",
+        .help = "scaling factor for the Gaussian kernel",
+        .offset = offsetof(SpeedChromaHipState, speed_chroma_kernelscale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = SC_DEFAULT_KERNELSCALE,
+        .min = 0.1,
+        .max = 4.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "ks",
+    },
+    {
+        .name = "speed_prescale",
+        .help = "scaling factor for the frame",
+        .offset = offsetof(SpeedChromaHipState, speed_chroma_prescale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = SC_DEFAULT_PRESCALE,
+        .min = 0.1,
+        .max = 4.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "ps",
+    },
+    {
+        .name = "speed_prescale_method",
+        .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
+        .offset = offsetof(SpeedChromaHipState, speed_chroma_prescale_method),
+        .type = VMAF_OPT_TYPE_STRING,
+        .default_val.s = SC_DEFAULT_PRESCALE_METHOD,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "psm",
+    },
+    {
+        .name = "speed_sigma_nn",
+        .help = "standard deviation of neural noise",
+        .offset = offsetof(SpeedChromaHipState, speed_chroma_sigma_nn),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = SC_DEFAULT_SIGMA_NN,
+        .min = 0.1,
+        .max = 2.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "snn",
+    },
+    {
+        .name = "speed_nn_floor",
+        .help = "neural noise floor fraction",
+        .offset = offsetof(SpeedChromaHipState, speed_chroma_nn_floor),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = SC_DEFAULT_NN_FLOOR,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "nnf",
+    },
+    {
+        .name = "speed_max_val",
+        .help = "clip output to this maximum",
+        .offset = offsetof(SpeedChromaHipState, speed_chroma_max_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = SC_DEFAULT_MAX_VAL,
+        .min = 0.0,
+        .max = 1000.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "mxv",
+    },
+    {
+        .name = "speed_weight_var_mode",
+        .help = "variance weighting mode (0-6)",
+        .offset = offsetof(SpeedChromaHipState, speed_weight_var_mode),
+        .type = VMAF_OPT_TYPE_INT,
+        .default_val.d = 0,
+        .min = 0,
+        .max = 6,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "wvm",
+    },
     {0},
 };
-// clang-format on
-
-#undef SC_OPT_OFF
 
 /* ------------------------------------------------------------------ */
 /* HIP helpers (compiled only when hipcc is present)                  */

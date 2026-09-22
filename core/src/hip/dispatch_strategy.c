@@ -21,60 +21,108 @@
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 #ifdef HAVE_HIPCC
-/* clang-format off: the feature-name rows are packed so the table stays inside
- * the HISS-04 60-line block bound, the same treatment the HIP option tables and
- * the CPU SpEED tables get. The strings, their per-extractor comment headers and
- * the array order (NULL sentinel last) are unchanged. */
-// clang-format off
 static const char *const g_hip_features[] = {
     /* integer_motion_v2_hip */
-    "motion_v2_hip", "VMAF_integer_feature_motion_v2_sad_score",
-    "VMAF_integer_feature_motion2_v2_score", "VMAF_integer_feature_motion3_v2_score",
+    "motion_v2_hip",
+    "VMAF_integer_feature_motion_v2_sad_score",
+    "VMAF_integer_feature_motion2_v2_score",
+    "VMAF_integer_feature_motion3_v2_score",
     /* float_psnr_hip */
-    "float_psnr_hip", "float_psnr",
+    "float_psnr_hip",
+    "float_psnr",
     /* float_moment_hip */
-    "float_moment_hip", "float_moment_ref1st", "float_moment_dis1st", "float_moment_ref2nd",
+    "float_moment_hip",
+    "float_moment_ref1st",
+    "float_moment_dis1st",
+    "float_moment_ref2nd",
     "float_moment_dis2nd",
     /* integer_psnr_hip */
-    "integer_psnr_hip", "psnr_y", "psnr_cb", "psnr_cr",
+    "integer_psnr_hip",
+    "psnr_y",
+    "psnr_cb",
+    "psnr_cr",
     /* float_motion_hip */
-    "float_motion_hip", "VMAF_feature_motion_score", "VMAF_feature_motion2_score",
+    "float_motion_hip",
+    "VMAF_feature_motion_score",
+    "VMAF_feature_motion2_score",
     /* integer_motion_hip */
-    "integer_motion_hip", "VMAF_integer_feature_motion_y_score",
+    "integer_motion_hip",
+    "VMAF_integer_feature_motion_y_score",
     "VMAF_integer_feature_motion2_score",
     /* float_ssim_hip */
-    "float_ssim_hip", "float_ssim",
+    "float_ssim_hip",
+    "float_ssim",
     /* integer_ssim_hip */
-    "integer_ssim_hip", "ssim",
+    "integer_ssim_hip",
+    "ssim",
     /* integer_ms_ssim_hip */
-    "integer_ms_ssim_hip", "float_ms_ssim",
+    "integer_ms_ssim_hip",
+    "float_ms_ssim",
     /* float_vif_hip */
-    "float_vif_hip", "VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
-    "VMAF_feature_vif_scale2_score", "VMAF_feature_vif_scale3_score", "vif", "vif_num", "vif_den",
-    "vif_num_scale0", "vif_den_scale0", "vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
-    "vif_den_scale2", "vif_num_scale3", "vif_den_scale3",
+    "float_vif_hip",
+    "VMAF_feature_vif_scale0_score",
+    "VMAF_feature_vif_scale1_score",
+    "VMAF_feature_vif_scale2_score",
+    "VMAF_feature_vif_scale3_score",
+    "vif",
+    "vif_num",
+    "vif_den",
+    "vif_num_scale0",
+    "vif_den_scale0",
+    "vif_num_scale1",
+    "vif_den_scale1",
+    "vif_num_scale2",
+    "vif_den_scale2",
+    "vif_num_scale3",
+    "vif_den_scale3",
     /* integer_vif_hip */
-    "integer_vif_hip", "VMAF_integer_feature_vif_scale0_score",
-    "VMAF_integer_feature_vif_scale1_score", "VMAF_integer_feature_vif_scale2_score",
-    "VMAF_integer_feature_vif_scale3_score", "integer_vif", "integer_vif_scale0",
-    "integer_vif_scale1", "integer_vif_scale2", "integer_vif_scale3",
+    "integer_vif_hip",
+    "VMAF_integer_feature_vif_scale0_score",
+    "VMAF_integer_feature_vif_scale1_score",
+    "VMAF_integer_feature_vif_scale2_score",
+    "VMAF_integer_feature_vif_scale3_score",
+    "integer_vif",
+    "integer_vif_scale0",
+    "integer_vif_scale1",
+    "integer_vif_scale2",
+    "integer_vif_scale3",
     /* float_adm_hip */
-    "float_adm_hip", "adm", "adm_num", "adm_den", "adm_num_scale0", "adm_den_scale0",
-    "adm_num_scale1", "adm_den_scale1", "adm_num_scale2", "adm_den_scale2", "adm_num_scale3",
+    "float_adm_hip",
+    "adm",
+    "adm_num",
+    "adm_den",
+    "adm_num_scale0",
+    "adm_den_scale0",
+    "adm_num_scale1",
+    "adm_den_scale1",
+    "adm_num_scale2",
+    "adm_den_scale2",
+    "adm_num_scale3",
     "adm_den_scale3",
     /* ciede_hip */
-    "ciede_hip", "ciede2000",
+    "ciede_hip",
+    "ciede2000",
     /* integer_psnr_hvs_hip */
-    "psnr_hvs_hip", "psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs_cr", "psnr_hvs",
+    "psnr_hvs_hip",
+    "psnr_hvs_y",
+    "psnr_hvs_cb",
+    "psnr_hvs_cr",
+    "psnr_hvs",
     /* integer_cambi_hip */
-    "cambi_hip", "Cambi_feature_cambi_score",
+    "cambi_hip",
+    "Cambi_feature_cambi_score",
     /* ssimulacra2_hip */
-    "ssimulacra2_hip", "ssimulacra2",
+    "ssimulacra2_hip",
+    "ssimulacra2",
     /* speed_chroma_hip & speed_temporal_hip */
-    "speed_chroma_hip", "speed_chroma_u", "speed_chroma_v", "speed_chroma_uv", "speed_temporal_hip",
-    "speed_temporal", NULL,
+    "speed_chroma_hip",
+    "speed_chroma_u",
+    "speed_chroma_v",
+    "speed_chroma_uv",
+    "speed_temporal_hip",
+    "speed_temporal",
+    NULL,
 };
-// clang-format on
 #endif /* HAVE_HIPCC */
 
 int vmaf_hip_dispatch_supports(const VmafHipContext *ctx, const char *feature)

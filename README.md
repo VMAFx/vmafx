@@ -164,8 +164,13 @@ The per-file tags are authoritative; this paragraph is a summary.
 This repository conforms to High-Integrity Systems Standards (HISS-21)
 and modernized NASA JPL Power-of-10 rules.
 
-| Gate | Command | Description |
+<!-- praetor:readme-governance:start -->
+Praetor manages this repository's declared governance policy. This managed block records adoption state; it is not a verification certificate.
+
+| Gate | Command | Contract |
 | :--- | :--- | :--- |
-| **Verification** | `make verify-all` | Runs full audit, test suite, and context integrity check |
-| **HISS Audit** | `standardsctl audit` | Enforces zero technical debt regression against baseline |
-| **Context Sync** | `standardsctl compile-context` | Transpiles canonical `AGENTS.md` to all AI targets |
+| **Verification** | `make verify-all` | Runs the repository's configured verification cascade |
+| **HISS Audit** | `praetorctl audit` | Enforces policy, generated-surface integrity, and the debt ratchet |
+| **Context Sync** | `praetorctl compile-context --verify` | Verifies every generated agent context against `AGENTS.md` |
+| **Debt Baseline** | `.standards-baseline.json` | 845 recorded infractions; audit forbids growth |
+<!-- praetor:readme-governance:end -->

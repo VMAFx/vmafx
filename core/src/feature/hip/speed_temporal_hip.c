@@ -137,50 +137,82 @@ typedef struct SpeedTemporalHipState {
     SpeedInternalSingularTally singular_tally;
 } SpeedTemporalHipState;
 
-/* Keeps each option row inside the 100-column limit so the whole table stays
- * under the HISS-04 60-line block bound. Field order, values, ranges and
- * aliases are unchanged. */
-#define ST_OPT_OFF(field) offsetof(SpeedTemporalHipState, field)
-
-/* clang-format off: the option rows are hand-packed so the whole table stays
- * inside the HISS-04 60-line block bound. Same treatment, and same guarantee,
- * as the CPU SpEED tables in core/src/feature/speed.c: name, alias, help,
- * default, range, flags and array order are byte-for-byte unchanged. */
-// clang-format off
 static const VmafOption options_temporal[] = {
-    {.name = "speed_kernelscale", .help = "scaling factor for the Gaussian kernel",
-     .offset = ST_OPT_OFF(speed_temporal_kernelscale), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = ST_DEFAULT_KERNELSCALE, .min = 0.1, .max = 4.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "ks"},
-    {.name = "speed_prescale", .help = "scaling factor for the frame",
-     .offset = ST_OPT_OFF(speed_temporal_prescale), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = ST_DEFAULT_PRESCALE, .min = 0.1, .max = 4.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "ps"},
-    {.name = "speed_prescale_method",
-     .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
-     .offset = ST_OPT_OFF(speed_temporal_prescale_method), .type = VMAF_OPT_TYPE_STRING,
-     .default_val.s = ST_DEFAULT_PRESCALE_METHOD, .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-     .alias = "psm"},
-    {.name = "speed_sigma_nn", .help = "standard deviation of neural noise",
-     .offset = ST_OPT_OFF(speed_temporal_sigma_nn), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = ST_DEFAULT_SIGMA_NN, .min = 0.1, .max = 2.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "snn"},
-    {.name = "speed_nn_floor", .help = "neural noise floor fraction",
-     .offset = ST_OPT_OFF(speed_temporal_nn_floor), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = ST_DEFAULT_NN_FLOOR, .min = 0.0, .max = 1.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "nnf"},
-    {.name = "speed_max_val", .help = "clip output to this maximum",
-     .offset = ST_OPT_OFF(speed_temporal_max_val), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = ST_DEFAULT_MAX_VAL, .min = 0.0, .max = 1000.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "mxv"},
-    {.name = "speed_use_ref_diff", .help = "use reference frame difference instead of distorted",
-     .offset = ST_OPT_OFF(speed_temporal_use_ref_diff), .type = VMAF_OPT_TYPE_BOOL,
-     .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM, .alias = "urd"},
+    {
+        .name = "speed_kernelscale",
+        .help = "scaling factor for the Gaussian kernel",
+        .offset = offsetof(SpeedTemporalHipState, speed_temporal_kernelscale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = ST_DEFAULT_KERNELSCALE,
+        .min = 0.1,
+        .max = 4.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "ks",
+    },
+    {
+        .name = "speed_prescale",
+        .help = "scaling factor for the frame",
+        .offset = offsetof(SpeedTemporalHipState, speed_temporal_prescale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = ST_DEFAULT_PRESCALE,
+        .min = 0.1,
+        .max = 4.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "ps",
+    },
+    {
+        .name = "speed_prescale_method",
+        .help = "scaling method [nearest, bilinear, bicubic, lanczos4]",
+        .offset = offsetof(SpeedTemporalHipState, speed_temporal_prescale_method),
+        .type = VMAF_OPT_TYPE_STRING,
+        .default_val.s = ST_DEFAULT_PRESCALE_METHOD,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "psm",
+    },
+    {
+        .name = "speed_sigma_nn",
+        .help = "standard deviation of neural noise",
+        .offset = offsetof(SpeedTemporalHipState, speed_temporal_sigma_nn),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = ST_DEFAULT_SIGMA_NN,
+        .min = 0.1,
+        .max = 2.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "snn",
+    },
+    {
+        .name = "speed_nn_floor",
+        .help = "neural noise floor fraction",
+        .offset = offsetof(SpeedTemporalHipState, speed_temporal_nn_floor),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = ST_DEFAULT_NN_FLOOR,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "nnf",
+    },
+    {
+        .name = "speed_max_val",
+        .help = "clip output to this maximum",
+        .offset = offsetof(SpeedTemporalHipState, speed_temporal_max_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = ST_DEFAULT_MAX_VAL,
+        .min = 0.0,
+        .max = 1000.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "mxv",
+    },
+    {
+        .name = "speed_use_ref_diff",
+        .help = "use reference frame difference instead of distorted",
+        .offset = offsetof(SpeedTemporalHipState, speed_temporal_use_ref_diff),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .alias = "urd",
+    },
     {0},
 };
-// clang-format on
-
-#undef ST_OPT_OFF
 
 /* ------------------------------------------------------------------ */
 /* HIP helpers                                                         */

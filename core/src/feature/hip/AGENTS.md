@@ -703,15 +703,34 @@ Rebase-sensitive invariants:
   `../cuda/*.c`. The unwind helpers mirror the CUDA labels one-for-one and keep
   the label names in the helper names, so a future CUDA-side port can be read
   against them.
-- **The packed option tables and `g_weights` stay inside their
-  `// clang-format off` / `on` fences.** `options_hip[]`
-  (`integer_adm_hip.c`), `options[]` (`integer_cambi_hip.c`),
-  `options_chroma[]` / `options_temporal[]` (the two SpEED HIP files) and
-  `g_weights[108]` (`ssimulacra2_hip.c`) are hand-packed so each block stays
-  under the HISS-04 60-line bound — the same treatment
-  `core/src/feature/speed.c` already gives the CPU SpEED tables. Letting
-  clang-format re-expand them puts the files straight back over the bound.
-  Row content is load-bearing: `test_integer_adm_hip_option_table_mirrors_cpu`
-  compares this table against the CPU twin, so a rebase must preserve every
-  name, alias, help string, default, range, flag and the array order when it
-  re-packs.
+- **The `VmafOption` tables and `g_weights[108]` stay one entry per line, with
+  no `clang-format` fence.** `options_hip[]` (`integer_adm_hip.c`),
+  `options[]` (`integer_cambi_hip.c`), `options_chroma[]` /
+  `options_temporal[]` (the two SpEED HIP files) and `g_weights[108]`
+  (`ssimulacra2_hip.c`) mirror their CPU and CUDA twins line for line, which
+  is what makes a three-way `diff` of the ports readable. An earlier revision
+  of this branch hand-packed them behind `// clang-format off` to shrink a
+  HISS-04 "block" finding; the praetor engine no longer counts a file-scope
+  initialiser table as a function, so the packing bought nothing and was
+  reverted. Do not re-introduce it. Row content is load-bearing:
+  `test_integer_adm_hip_option_table_mirrors_cpu` compares the ADM table
+  against the CPU twin, so a rebase must preserve every name, alias, help
+  string, default, range, flag and the array order.
+- **The three SSIMULACRA2 no-split citations are withdrawn — see
+  [ADR-1289](../../../../docs/adr/1289-hip-ssimulacra2-host-helper-split.md).**
+  `ss2h_picture_to_linear_rgb()`, `ss2h_run_scale_gpu()` and
+  `extract_fex_hip()` used to carry an ADR-0141 §2 carve-out claiming that
+  splitting them would break a line-for-line diff against the CPU source and
+  the CUDA twin. Praetor's touched-file rule has no such carve-out, and the
+  parity evidence is `core/test/test_hip_ssimulacra2_parity.c` plus the
+  ADR-0214 cross-backend gate, not a diff, so the three are split into
+  `ss2h_yuv_primaries()`, `ss2h_upload_xyb()`, `ss2h_download_blurred()` and
+  `ss2h_downsample_for_next_scale()` and the `NOLINTNEXTLINE` lines are gone.
+  What is still load-bearing: the ADR-1205 / ADR-0891 `fmaf()` chain in the
+  per-pixel loop, the eight-launch order inside `ss2h_run_scale_gpu()`, and the
+  per-scale order in `extract_fex_hip()`. `../cuda/ssimulacra2_cuda.c` and
+  `core/src/feature/ssimulacra2.c` are still un-split and keep their own
+  citations; when the CUDA HISS-21 slice lands it should mirror these four
+  helper names and boundaries so the twins read against each other again.
+  A split that leaves a no-split citation in place, or moves one onto the
+  extracted helper, is still a defect — that is what ADR-1289 fixes here.

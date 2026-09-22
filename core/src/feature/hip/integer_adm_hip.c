@@ -438,71 +438,142 @@ static void write_scores(const write_score_parameters_adm_hip *params)
 /* VmafOption table                                                     */
 /* ------------------------------------------------------------------ */
 
-/* clang-format off: the option rows are hand-packed so the whole table stays
- * inside the HISS-04 60-line block bound. Same treatment, and same guarantee,
- * as the CPU SpEED tables in core/src/feature/speed.c: name, alias, help,
- * default, range, flags and array order are byte-for-byte unchanged. */
-// clang-format off
 static const VmafOption options_hip[] = {
-    {.name = "debug", .help = "debug mode: enable additional output",
-     .offset = offsetof(AdmStateHip, debug), .type = VMAF_OPT_TYPE_BOOL, .default_val.b = false},
-    {.name = "adm_csf_scale", .alias = "scf",
-     .help = "scale coefficient for the horizontal & vertical direction terms of CSF",
-     .offset = offsetof(AdmStateHip, adm_csf_scale), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = DEFAULT_ADM_CSF_SCALE, .min = 0.0, .max = 50.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_csf_diag_scale", .alias = "scfd",
-     .help = "scale coefficient for the diagonal direction term of CSF",
-     .offset = offsetof(AdmStateHip, adm_csf_diag_scale), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = DEFAULT_ADM_CSF_DIAG_SCALE, .min = 0.0, .max = 50.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {/* FEATURE_PARAM: honoured for feature-name-key parity only. dlm_weight
-     * enters the arithmetic of VMAF_integer_feature_adm3_score, which this
-     * twin does not emit (see write_scores). Dropping it from the table
-     * would make this twin emit `integer_adm2_...` where the CPU twin emits
-     * `integer_adm2_dlmw_<v>_...` for the same opts dict, and the model
-     * lookup would miss. Same posture as the CPU reference, where
-     * adm_dlm_weight likewise has no arithmetic effect on adm2. */
-     .name = "adm_dlm_weight", .alias = "dlmw",
-     .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
-     .offset = offsetof(AdmStateHip, adm_dlm_weight), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = 0.5, .min = 0.0, .max = 1.0, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_enhn_gain_limit", .alias = "egl",
-     .help = "enhancement gain imposed on adm, must be >= 1.0, " "where 1.0 means the gain is completely disabled",
-     .offset = offsetof(AdmStateHip, adm_enhn_gain_limit), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = DEFAULT_ADM_ENHN_GAIN_LIMIT, .min = 1.0, .max = DEFAULT_ADM_ENHN_GAIN_LIMIT,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_norm_view_dist", .alias = "nvd",
-     .help = "normalized viewing distance = viewing distance / ref display's physical height",
-     .offset = offsetof(AdmStateHip, adm_norm_view_dist), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = DEFAULT_ADM_NORM_VIEW_DIST, .min = 0.75, .max = 24.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_ref_display_height", .alias = "rdh", .help = "reference display height in pixels",
-     .offset = offsetof(AdmStateHip, adm_ref_display_height), .type = VMAF_OPT_TYPE_INT,
-     .default_val.i = DEFAULT_ADM_REF_DISPLAY_HEIGHT, .min = 1, .max = 4320,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_csf_mode", .alias = "csf", .help = "contrast sensitivity function",
-     .offset = offsetof(AdmStateHip, adm_csf_mode), .type = VMAF_OPT_TYPE_INT,
-     .default_val.i = DEFAULT_ADM_CSF_MODE, .min = 0, .max = 3, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_noise_weight", .alias = "nw", .help = "noise weight",
-     .offset = offsetof(AdmStateHip, adm_noise_weight), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = DEFAULT_ADM_NOISE_WEIGHT, .min = 0.0, .max = 1500.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_skip_scale0", .alias = "ssz", .help = "skip the calculation of scale 0",
-     .offset = offsetof(AdmStateHip, adm_skip_scale0), .type = VMAF_OPT_TYPE_BOOL,
-     .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_min_val", .alias = "min",
-     .help = "minimum value allowed; lower values will be clipped to this value",
-     .offset = offsetof(AdmStateHip, adm_min_val), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = DEFAULT_ADM_MIN_VAL, .min = 0.0, .max = 1.0,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {.name = "adm_p_norm", .alias = "apn",
-     .help = "p-norm exponent for fixed-point ADM contrast-measure finalisation",
-     .offset = offsetof(AdmStateHip, adm_p_norm), .type = VMAF_OPT_TYPE_DOUBLE,
-     .default_val.d = 3.0, .min = 1.0, .max = 20.0, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    {0},
-};
-// clang-format on
+    {
+        .name = "debug",
+        .help = "debug mode: enable additional output",
+        .offset = offsetof(AdmStateHip, debug),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "adm_csf_scale",
+        .alias = "scf",
+        .help = "scale coefficient for the horizontal & vertical direction terms of CSF",
+        .offset = offsetof(AdmStateHip, adm_csf_scale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = DEFAULT_ADM_CSF_SCALE,
+        .min = 0.0,
+        .max = 50.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_csf_diag_scale",
+        .alias = "scfd",
+        .help = "scale coefficient for the diagonal direction term of CSF",
+        .offset = offsetof(AdmStateHip, adm_csf_diag_scale),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = DEFAULT_ADM_CSF_DIAG_SCALE,
+        .min = 0.0,
+        .max = 50.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        /* FEATURE_PARAM: honoured for feature-name-key parity only. dlm_weight
+         * enters the arithmetic of VMAF_integer_feature_adm3_score, which this
+         * twin does not emit (see write_scores). Dropping it from the table
+         * would make this twin emit `integer_adm2_...` where the CPU twin emits
+         * `integer_adm2_dlmw_<v>_...` for the same opts dict, and the model
+         * lookup would miss. Same posture as the CPU reference, where
+         * adm_dlm_weight likewise has no arithmetic effect on adm2. */
+        .name = "adm_dlm_weight",
+        .alias = "dlmw",
+        .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
+        .offset = offsetof(AdmStateHip, adm_dlm_weight),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 0.5,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_enhn_gain_limit",
+        .alias = "egl",
+        .help = "enhancement gain imposed on adm, must be >= 1.0, "
+                "where 1.0 means the gain is completely disabled",
+        .offset = offsetof(AdmStateHip, adm_enhn_gain_limit),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = DEFAULT_ADM_ENHN_GAIN_LIMIT,
+        .min = 1.0,
+        .max = DEFAULT_ADM_ENHN_GAIN_LIMIT,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_norm_view_dist",
+        .alias = "nvd",
+        .help = "normalized viewing distance = viewing distance / ref display's physical height",
+        .offset = offsetof(AdmStateHip, adm_norm_view_dist),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = DEFAULT_ADM_NORM_VIEW_DIST,
+        .min = 0.75,
+        .max = 24.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_ref_display_height",
+        .alias = "rdh",
+        .help = "reference display height in pixels",
+        .offset = offsetof(AdmStateHip, adm_ref_display_height),
+        .type = VMAF_OPT_TYPE_INT,
+        .default_val.i = DEFAULT_ADM_REF_DISPLAY_HEIGHT,
+        .min = 1,
+        .max = 4320,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_csf_mode",
+        .alias = "csf",
+        .help = "contrast sensitivity function",
+        .offset = offsetof(AdmStateHip, adm_csf_mode),
+        .type = VMAF_OPT_TYPE_INT,
+        .default_val.i = DEFAULT_ADM_CSF_MODE,
+        .min = 0,
+        .max = 3,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_noise_weight",
+        .alias = "nw",
+        .help = "noise weight",
+        .offset = offsetof(AdmStateHip, adm_noise_weight),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = DEFAULT_ADM_NOISE_WEIGHT,
+        .min = 0.0,
+        .max = 1500.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_skip_scale0",
+        .alias = "ssz",
+        .help = "skip the calculation of scale 0",
+        .offset = offsetof(AdmStateHip, adm_skip_scale0),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_min_val",
+        .alias = "min",
+        .help = "minimum value allowed; lower values will be clipped to this value",
+        .offset = offsetof(AdmStateHip, adm_min_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = DEFAULT_ADM_MIN_VAL,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_p_norm",
+        .alias = "apn",
+        .help = "p-norm exponent for fixed-point ADM contrast-measure finalisation",
+        .offset = offsetof(AdmStateHip, adm_p_norm),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 3.0,
+        .min = 1.0,
+        .max = 20.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {0}};
 
 /* ================================================================== */
 /* HAVE_HIPCC path — real kernel dispatch                              */
