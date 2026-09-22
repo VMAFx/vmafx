@@ -78,8 +78,11 @@ core/
 - **`meson_version` is pinned to `>= 1.4.0`, not upstream's value**
   (fork-local, ADR-0692 / T-CI-MESON-C23-APT-2026-08-30):
   [`meson.build`](meson.build) sets Meson's built-in fallback list
-  `c_std=c23,c2x,c17`. Meson selects the first spelling supported by the
-  active compiler; MSVC then receives `/std:clatest` as a narrow override.
+  `c_std=c23,c2x,c17,none`. Meson selects the first spelling supported by the
+  active compiler; MSVC-syntax drivers then receive `/std:clatest` as a narrow
+  override. Keep `none` last: Meson's `intel-llvm-cl` backend advertises only
+  `c89`/`c99`/`c11`, so a list without a value every backend accepts aborts
+  configure on the Windows MSVC+SYCL leg.
   `c23` is only recognised from Meson 1.4.0 onward (verified: 1.3.2 rejects
   it, 1.4.0 accepts it). Declared `meson_version` must stay at or above 1.4.0
   for as long as the fork keeps this standard policy. Upstream sync that
@@ -474,13 +477,16 @@ core/
   harnesses.
 
 - **Language standards are Meson built-in fallback lists** (ADR-1056,
-  2026-06-04): `project()` owns `c_std=c23,c2x,c17` and
+  2026-06-04): `project()` owns `c_std=c23,c2x,c17,none` and
   `cpp_std=c++26,c++23,c++latest`. Do not restore manual `-std=` probing or
   injection: it bypasses Meson's compiler checks, duplicates flags, and emits
   configure-time warnings on current Meson. Callers may still override either
-  built-in option. The only platform exception is the MSVC-style C driver:
-  after Meson selects `c17`, `/std:clatest` is appended both to project
-  arguments and feature probes so the fork retains its newest-C contract.
+  built-in option. The trailing `none` is not optional — it is the only value
+  every backend accepts, and `intel-llvm-cl` (icx-cl) reaches no other entry
+  in the list. The only platform exception is the MSVC-style C driver: after
+  Meson selects `c17` (cl.exe) or `none` (icx-cl), `/std:clatest` is appended
+  both to project arguments and feature probes so the fork retains its
+  newest-C contract.
 
 Backend-specific orientation:
 
