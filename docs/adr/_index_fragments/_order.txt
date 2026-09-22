@@ -1002,3 +1002,4 @@
 1282-mypy-python-version-follows-requires-python
 1283-whole-tree-ratchet-arm64-lane
 1285-cuda-coordinated-pin-lockstep
+1284-silent-revert-detection-gate

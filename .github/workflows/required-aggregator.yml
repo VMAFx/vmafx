@@ -111,6 +111,10 @@ jobs:
               'Doc-Substance Gate',
               'docs/state.md Gate',
               'FFmpeg-Patches Surface Sync',
+              // ADR-1284 — a merge that removes target work nobody asked it
+              // to remove is invisible in the PR diff, so the gate has to be
+              // required rather than advisory.
+              'Silent-Revert Guard',
               'FFmpeg Patch Stack',
               'ADR Collision Guard',
               'Release Script Contract',

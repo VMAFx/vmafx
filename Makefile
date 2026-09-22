@@ -122,7 +122,8 @@ cythonize-deps: $(VENV_PIP)
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
-        coverage coverage-html coverage-check assertion-density pr-check
+        coverage coverage-html coverage-check assertion-density pr-check \
+        silent-revert-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
 lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check
@@ -485,6 +486,24 @@ pr-check:
 	    exit 2; \
 	fi
 
+# silent-revert-check — local equivalent of the rule-enforcement.yml
+# Silent-Revert Guard (ADR-1284). Reports work the merge of this branch would
+# remove from the target that the branch never set out to touch: a file reset
+# to an older blob, a target commit undone hunk-for-hunk, or lines dropped or
+# resurrected by a conflict resolution.
+#
+# BASE_REF defaults to the live origin/master tip, not the PR's recorded base,
+# for the same reason CI does: the defect is master moving after the branch was
+# cut.
+#
+# Usage:
+#   make silent-revert-check
+#   make silent-revert-check BASE_REF=origin/master HEAD_REF=my-branch
+BASE_REF ?= origin/master
+HEAD_REF ?= HEAD
+silent-revert-check:
+	@python3 scripts/ci/check-silent-revert.py --base "$(BASE_REF)" --head "$(HEAD_REF)"
+
 # ── Go workspace (ADR-0702) ─────────────────────────────────────────────────
 #
 # go-build: compile all Go packages in the workspace (no output binary in the
@@ -569,6 +588,7 @@ help:
 	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"
 	@echo "  make sbom             — SPDX + CycloneDX SBOMs via syft"
 	@echo "  make pr-check         — ADR-0108 deliverables gate (PR=<num> or BODY=<file>)"
+	@echo "  make silent-revert-check — ADR-1284: work this merge would remove from BASE"
 	@echo "  make test-netflix-golden — D24 gate: 3 Netflix CPU test pairs"
 	@echo "  make test-sanitizers  — ASan + UBSan build + run"
 	@echo "  make test-fast        — meson --suite=fast (pre-push gate)"
