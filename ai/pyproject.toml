@@ -89,7 +89,6 @@ packages = ["src/vmaf_train", "src/aiutils"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["error"]
-asyncio_default_fixture_loop_scope = "function"
 # ai/scripts/ modules use _script_bootstrap which lives alongside them; add
 # the scripts/ directory so importlib-loaded batch scripts can resolve it.
 pythonpath = ["scripts", "src"]
