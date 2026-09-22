@@ -1408,6 +1408,7 @@ nav:
         - "ADR-1291: silent-revert-declared-reversals": adr/1291-silent-revert-declared-reversals.md
         - "ADR-1292: compat-shim-spawn-safe": adr/1292-compat-shim-spawn-safe.md
         - "ADR-1293: tinyai-qat-torchao-pt2e": adr/1293-tinyai-qat-torchao-pt2e.md
+        - "ADR-1295: sureal-degenerate-opinion-score-statistics": adr/1295-sureal-degenerate-opinion-score-statistics.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

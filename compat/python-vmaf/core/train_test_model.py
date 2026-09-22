@@ -23,10 +23,23 @@ from vmaf.core.perf_metric import (
 )
 from vmaf.tools.decorator import deprecated, override
 from vmaf.tools.exceptions import MissingLabelStddevError
-from vmaf.tools.misc import NoPrint, indices, linear_fit, linear_func
+from vmaf.tools.misc import NoPrint, indices, linear_func
+from vmaf.tools.stats import patch_sureal_vectorized_gaussian
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+
+# sureal 0.9.0 -- its newest release -- evaluates a Gaussian density by dividing
+# by the stimulus standard deviation, which is exactly zero whenever every
+# observer rated a stimulus identically. That division warns and produces a
+# `nan` which sureal's `numpy.nansum` then drops from the log-likelihood without
+# reducing the observation count it divides by. No upstream release carries a
+# fix and sureal offers no extension point to register one through, so the
+# harness installs its own zero-scale-safe density. It is installed from this
+# module because this is the one fork module that already hard-imports sureal
+# (`sureal.routine` above) and because `vmaf.routine` imports it before any
+# subjective-modelling entry point can fit a model. See ADR-1295.
+patch_sureal_vectorized_gaussian()
 
 
 class RegressorMixin(object):
@@ -320,8 +333,31 @@ class RegressorMixin(object):
         return content_ids, point_labels, plot_linear_fit, do_plot
 
     @staticmethod
+    def _least_squares_line(xs, ys):
+        """Return the least-squares ``(slope, intercept)`` of the points, or ``None``.
+
+        ``tools.misc.linear_fit`` wraps ``scipy.optimize.curve_fit``, which also
+        estimates a parameter covariance. A per-content group can hold as few as
+        two stimuli, which is exactly the number of free parameters in a line: the
+        fit is then the unique interpolant, no residual degree of freedom is left
+        from which the noise variance could be estimated, and SciPy reports that by
+        filling the covariance with infinities and raising ``OptimizeWarning``. The
+        scatter plot draws the line and never reads the covariance, so the line is
+        fitted directly and no covariance is requested. Fewer than two distinct
+        abscissae determine no line at all, and such a group gets no fit line.
+        """
+        xs = np.asarray(xs, dtype=float)
+        ys = np.asarray(ys, dtype=float)
+        if np.unique(xs).size < 2:
+            return None
+        intercept, slope = np.polynomial.Polynomial.fit(xs, ys, 1).convert().coef
+        return slope, intercept
+
+    @staticmethod
     def _plot_fit_line(ax, xlim, fit, color):
-        slope, intercept = fit[0]
+        if fit is None:
+            return
+        slope, intercept = fit
         ax.axline(
             (xlim[0], linear_func(xlim[0], slope, intercept)),
             (xlim[1], linear_func(xlim[1], slope, intercept)),
@@ -331,7 +367,7 @@ class RegressorMixin(object):
 
     @classmethod
     def _plot_overall_fit(cls, ax, xlim, ylim, ys_label, ys_label_pred):
-        overall_fit = linear_fit(ys_label, ys_label_pred)
+        overall_fit = cls._least_squares_line(ys_label, ys_label_pred)
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
         cls._plot_fit_line(ax, xlim, overall_fit, "gray")
@@ -369,7 +405,7 @@ class RegressorMixin(object):
         overall_fit, plot_linear_fit = fits
         if plot_linear_fit:
             cls._plot_fit_line(new_ax, xlim, overall_fit, "gray")
-            cls._plot_fit_line(new_ax, xlim, linear_fit(labels, predictions), "red")
+            cls._plot_fit_line(new_ax, xlim, cls._least_squares_line(labels, predictions), "red")
             new_ax.legend(["overall fit", "current fit"])
         new_ax.errorbar(
             labels,
@@ -384,7 +420,12 @@ class RegressorMixin(object):
         new_ax.set_xlabel("True Score")
         new_ax.set_ylabel("Predicted Score")
         new_ax.grid()
-        if point_labels:
+        # `point_labels` is the caller's label list sliced down to this content
+        # group, i.e. a NumPy array, whose truth value is ambiguous. Before the
+        # helper extraction the truthiness test ran against the caller's list and
+        # the slice was taken inside the branch; testing the slice for identity
+        # with `None` restores that behaviour for a group of any size.
+        if point_labels is not None:
             cls._annotate_points(new_ax, point_labels, labels, predictions)
 
     @classmethod
