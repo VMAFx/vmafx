@@ -1188,6 +1188,13 @@ The gate exists **because** of rebases: resolving a `docs/state.md` conflict by 
 the documented shortcut for the append-only sections, and it silently duplicates a row that a PR was
 moving between sections. After any such resolution, run `bash scripts/ci/check-state-md-rows.sh`.
 
+A rebase can also drop the *move* hunk while keeping the status edit, which leaves one copy of the
+row under `## Open bugs` with `closed` or `fixed` in its own status cell — no duplicate, and every
+id/row check passes. The gate now compares each row's status token against the section heading it
+sits under, so that resolution fails too. The status cell is the column a header calls `Status`, or
+the last non-empty cell, and only the word that *opens* it is read; the repair is to move the row,
+never to rewrite the status to match where the rebase left it.
+
 ## fix/sycl-motion2-checkerboard-drift — clip integer_motion2 score to motion_max_val (2026-09-05)
 
 no rebase impact: fork-local SYCL feature extractor and tests.

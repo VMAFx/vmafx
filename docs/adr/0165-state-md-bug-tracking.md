@@ -161,3 +161,51 @@ rows; `grep` / `find` for file / symbol claims). All VERIFIED
 rows got an `_(verified 2026-05-09)_` annotation in their
 rightmost column so a future spot-check is distinguishable from
 a pre-audit row.
+
+### Status update 2026-09-21: the gate now reads section against status
+
+The "Decision" above partitions the ledger into sections and the
+"Update protocol" in [`docs/state.md`](../state.md) says a PR that
+fixes a bug **moves** its row. Neither was machine-checked.
+`scripts/ci/check-state-md-rows.sh` enforced only the *duplicate*
+consequence of a missed move — the same id under two sections, or the
+same row twice — which is what a "keep both sides" rebase produces.
+
+A missed move need not produce a duplicate at all. If the row is
+appended to, or simply left under, `## Open bugs` while its own
+rightmost cell already reads `closed` or `fixed`, there is exactly one
+copy of it and every existing check passes. The bug then reads as open
+for every future session, which is the outcome this ADR exists to
+prevent. Measured on `master` at `fb06193b3`: 24 of the 62 rows under
+`## Open bugs` declared `closed` (6) or `fixed` (18) in their own
+status cell, and the gate reported the file clean. The row for
+`T-STATE-MD-ROW-GATE-BLIND-2026-09-16` was one of the 24.
+
+The gate now pairs each row's section heading with the status token in
+its status cell and requires them to agree — `closed` / `fixed` /
+`resolved` / `done` only under `## Recently closed`, `open` only under
+`## Open bugs`. The status cell is the column a table header calls
+`Status`, or the last non-empty cell when no header names one, and the
+token read is the word that *opens* that cell: `| fixed (PR #1425) |`
+is the same misfiled row as `| fixed |` and is judged the same way. The
+row shapes that lead with no status token — a verification date, a
+branch name, prose — make no section claim and are not guessed at.
+
+What the gate does *not* do is see every misfiled row. It reads one
+cell per row, so a status the extraction does not recognise — buried
+mid-cell, in a column that is neither the last nor headed `Status`, or
+spelled outside the vocabulary — is passed over in silence and the file
+still reports clean. Of the two ways the check can be silently
+disabled, it fails closed on one: if some row claims a status belonging
+to a section whose heading has been renamed or removed, the gate errors
+rather than passing over rows that have become ungated. The other — an
+unrecognised status cell — is uncovered, and is the likelier of the
+two, since it takes a single row edit rather than a heading rename. The
+check is a floor on this class of drift, not a proof of its absence.
+
+This is an enforcement change, not a new decision — the move
+discipline was already decided here and in the file's own update
+protocol. The 24 rows were moved into `## Recently closed` in the
+section's reverse-chronological order, with a tombstone comment left
+where they were; no status cell was edited to match where its row had
+landed and no row was deleted.

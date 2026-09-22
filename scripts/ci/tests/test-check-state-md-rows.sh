@@ -150,6 +150,131 @@ cat >"$tmp/headers.md" <<'MD'
 MD
 expect "repeated column headers do NOT fail" 0 "$tmp/headers.md"
 
+# Regression: a closed bug reads as open forever without any duplicate at all
+# when its row is filed under "## Open bugs" while its own status cell already
+# says `closed` or `fixed`. 24 of the 62 rows under "## Open bugs" were in that
+# state on 2026-09-21 -- including the row for this gate's own bug,
+# T-STATE-MD-ROW-GATE-BLIND-2026-09-16 -- and both checks above reported the
+# file clean, because nothing about it is a duplicate.
+cat >"$tmp/misfiled.md" <<'MD'
+## Open bugs
+
+| ID | Description | ADR | PR | Date | Status |
+| --- | --- | --- | --- | --- | --- |
+| **T-STATE-MD-ROW-GATE-BLIND-2026-09-16** | the gate was blind | — | PR #1425 | 2026-09-16 | fixed |
+
+## Recently closed
+
+| ID | Description | ADR | PR | Date | Status |
+| --- | --- | --- | --- | --- | --- |
+| **T-IOTA-2026-01-08** | genuinely closed | — | PR #2 | 2026-01-08 | closed |
+MD
+expect "a 'fixed' row under Open bugs fails" 1 "$tmp/misfiled.md"
+
+# The mirror case: a row that still says `open` filed under Recently closed.
+sed -e 's/| fixed |/| open |/' -e 's/| closed |/| open |/' \
+  "$tmp/misfiled.md" >"$tmp/reopened.md"
+expect "an 'open' row under Recently closed fails" 1 "$tmp/reopened.md"
+
+# Regression: the status is the token that OPENS the judged cell, not the whole
+# cell. The first version compared the whole normalised cell against the
+# vocabulary, so it caught `| fixed |` and passed `| fixed (PR #1425) |` -- the
+# same misfiled row, one parenthetical later. The fixture is misfiled.md with
+# exactly that one edit, and it passed (rc=0) before the widening, so rc=1 here
+# is attributable to the suffix and nothing else. 21 live rows in docs/state.md
+# carry their status in that shape.
+sed 's/| fixed |/| fixed (PR #1425) |/' "$tmp/misfiled.md" >"$tmp/suffixed.md"
+expect "a 'fixed (...)' row under Open bugs fails" 1 "$tmp/suffixed.md"
+
+# Regression: the status column is not always the last one. Appending a single
+# column after `Status` moved the status out of the judged cell, and the same
+# misfiled row passed. The header names the column, so it is read by name.
+cat >"$tmp/trailing.md" <<'MD'
+## Open bugs
+
+| ID | Description | ADR | Status | PR |
+| --- | --- | --- | --- | --- |
+| **T-STATE-MD-ROW-GATE-BLIND-2026-09-16** | the gate was blind | — | fixed | PR #1425 |
+
+## Recently closed
+
+| ID | Description | ADR | Status | PR |
+| --- | --- | --- | --- | --- |
+| **T-IOTA-2026-01-08** | genuinely closed | — | closed | PR #2 |
+MD
+expect "a misfiled row whose Status column is not last fails" 1 "$tmp/trailing.md"
+
+# Regression: `\|` inside an inline code span is an escaped pipe, not a cell
+# boundary -- docs/state.md spells it that way (`\|img - blur(img)\|`). Splitting
+# the raw line on `|` shifts every later cell by one, so the column the header
+# named `Status` is read from the wrong place and the misfiled row passes.
+cat >"$tmp/escaped.md" <<'MD'
+## Open bugs
+
+| ID | Description | Status |
+| --- | --- | --- |
+| **T-RHO-2026-01-16** | matched `\| **T-ID**` only | fixed |
+MD
+expect "an escaped pipe does not shift the judged column" 1 "$tmp/escaped.md"
+
+# Regression: a `|---|` separator retracts the record for the line above it,
+# which is its column header. When the header is gone -- a rebase that drops the
+# header hunk leaves the separator behind -- the retraction used to reach past
+# the blank line and delete the status of a real data row, silently unjudging
+# it. This file passed (rc=0) before `prevline` was reset alongside `prev`.
+cat >"$tmp/orphan.md" <<'MD'
+## Open bugs
+
+| **T-OMICRON-2026-01-14** | the gate was blind | fixed |
+
+| --- | --- | --- |
+| **T-PI-2026-01-15** | still broken | open |
+MD
+expect "a headerless separator does not unjudge the row above it" 1 "$tmp/orphan.md"
+
+# Fail closed: renaming or deleting the heading must not turn the check into a
+# no-op by moving every status-bearing row into an ungated section. The fixture
+# has to isolate that. Deriving it from misfiled.md did not: that file already
+# fails on its misfiled row, so the case passed whether the fail-closed branch
+# ran or not. Here every row agrees with the section it is filed under, the
+# control passes, and the two files differ by the heading alone -- so the
+# failure can only come from the missing heading.
+cat >"$tmp/heading-control.md" <<'MD'
+## Open bugs
+
+| ID | Description | Status |
+| --- | --- | --- |
+| **T-NU-2026-01-12** | still broken | open |
+
+## Recently closed
+
+| ID | Description | Status |
+| --- | --- | --- |
+| **T-XI-2026-01-13** | genuinely closed | closed |
+MD
+expect "the fail-closed control passes with both headings present" 0 "$tmp/heading-control.md"
+sed 's/^## Recently closed$/## Closed a while ago/' \
+  "$tmp/heading-control.md" >"$tmp/renamed.md"
+expect "a renamed section heading fails instead of skipping" 1 "$tmp/renamed.md"
+
+# Rows whose last cell is a verification date, a branch name or prose make no
+# status claim. Guessing at them would fabricate failures, so they pass.
+cat >"$tmp/nostatus.md" <<'MD'
+## Open bugs
+
+| ID | Description | Verification |
+| --- | --- | --- |
+| **T-KAPPA-2026-01-09** | still broken | Closes when the parity test passes |
+
+## Recently closed
+
+| ID | Description | Verification | Branch |
+| --- | --- | --- | --- |
+| **T-LAMBDA-2026-01-10** | closed | 12 of 12 runs pass | `fix/lambda` |
+| **T-MU-2026-01-11** | closed | reducer no longer reproduces | (2026-01-11) |
+MD
+expect "rows with no status token in the last cell pass" 0 "$tmp/nostatus.md"
+
 expect "a missing file is rc=2" 2 "$tmp/nope.md"
 
 # the real file must be clean
