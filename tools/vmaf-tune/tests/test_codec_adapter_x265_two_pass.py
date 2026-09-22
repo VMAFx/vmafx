@@ -517,25 +517,12 @@ def test_run_two_pass_encode_cleans_x264_passlog_files(tmp_path: Path):
 # --- Real-binary integration (opt-in) ---------------------------------
 
 
-@pytest.mark.skipif(
-    os.environ.get("VMAF_TUNE_INTEGRATION") != "1",
-    reason="set VMAF_TUNE_INTEGRATION=1 to exercise the real ffmpeg/x265 stack",
-)
-def test_real_x265_two_pass_smoke(tmp_path: Path):
-    """Synthetic 5-second clip → 1-pass and 2-pass libx265 encodes.
+def _synthesise_testsrc_yuv(tmp_path: Path) -> Path:
+    """Render a 5 s 64x64 yuv420p reference via lavfi ``testsrc``.
 
-    Asserts:
-
-    1. Both encodes succeed with non-zero output size.
-    2. The two bitstreams differ (the 2-pass run actually used the
-       stats file rather than re-running the 1-pass logic).
-    3. The encoded sizes are within a generous factor of each other
-       (sanity-check against a runaway encode).
+    Skips the test when ffmpeg cannot produce it — the clip is a
+    precondition, not the thing under test.
     """
-    if shutil.which("ffmpeg") is None:
-        pytest.skip("ffmpeg not on PATH")
-
-    # Synthesise a 5s 64x64 YUV420 reference via testsrc.
     ref = tmp_path / "ref.yuv"
     proc = subprocess.run(
         [
@@ -559,10 +546,17 @@ def test_real_x265_two_pass_smoke(tmp_path: Path):
     )
     if proc.returncode != 0:
         pytest.skip("could not synthesise YUV reference via lavfi testsrc")
+    return ref
 
-    # 1-pass encode.
-    out_1pass = tmp_path / "out_1pass.mp4"
-    req_1 = EncodeRequest(
+
+def _x265_smoke_request(ref: Path, output: Path) -> EncodeRequest:
+    """libx265 ultrafast CRF-28 request over the synthetic 64x64 clip.
+
+    Both legs of the smoke use identical parameters; only the pass
+    structure differs, which is what makes the bitstream comparison
+    meaningful.
+    """
+    return EncodeRequest(
         source=ref,
         width=64,
         height=64,
@@ -571,29 +565,42 @@ def test_real_x265_two_pass_smoke(tmp_path: Path):
         encoder="libx265",
         preset="ultrafast",
         crf=28,
-        output=out_1pass,
+        output=output,
     )
+
+
+@pytest.mark.skipif(
+    os.environ.get("VMAF_TUNE_INTEGRATION") != "1",
+    reason="set VMAF_TUNE_INTEGRATION=1 to exercise the real ffmpeg/x265 stack",
+)
+def test_real_x265_two_pass_smoke(tmp_path: Path):
+    """Synthetic 5-second clip → 1-pass and 2-pass libx265 encodes.
+
+    Asserts:
+
+    1. Both encodes succeed with non-zero output size.
+    2. The two bitstreams differ (the 2-pass run actually used the
+       stats file rather than re-running the 1-pass logic).
+    3. The encoded sizes are within a generous factor of each other
+       (sanity-check against a runaway encode).
+    """
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg not on PATH")
+
+    ref = _synthesise_testsrc_yuv(tmp_path)
+
+    # 1-pass encode.
+    out_1pass = tmp_path / "out_1pass.mp4"
     from vmaftune.encode import run_encode
 
-    res_1 = run_encode(req_1)
+    res_1 = run_encode(_x265_smoke_request(ref, out_1pass))
     if res_1.exit_status != 0:
         pytest.skip(f"libx265 unavailable in local ffmpeg build: {res_1.stderr_tail}")
     assert res_1.encode_size_bytes > 0
 
     # 2-pass encode at the same parameters.
     out_2pass = tmp_path / "out_2pass.mp4"
-    req_2 = EncodeRequest(
-        source=ref,
-        width=64,
-        height=64,
-        pix_fmt="yuv420p",
-        framerate=24.0,
-        encoder="libx265",
-        preset="ultrafast",
-        crf=28,
-        output=out_2pass,
-    )
-    res_2 = run_two_pass_encode(req_2)
+    res_2 = run_two_pass_encode(_x265_smoke_request(ref, out_2pass))
     assert res_2.exit_status == 0
     assert res_2.encode_size_bytes > 0
 

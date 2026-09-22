@@ -213,18 +213,15 @@ def test_gpu_verify_no_dead_backend_assignment() -> None:
     )
 
 
-def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> None:
-    """Backend kwarg must reach the run_score call inside the sample extractor."""
-    import unittest.mock
+def _recording_run_score(calls: list[dict]):
+    """``run_score`` stand-in recording the backend kwarg it was handed.
 
-    from vmaftune.fast import _build_production_sample_extractor
+    Returns a fixed-score :class:`ScoreResult` so the extractor can carry
+    on; only the recorded backend is under test.
+    """
 
-    calls: list[dict] = []
-
-    def _fake_run_score(req, *, vmaf_bin="vmaf", backend=None, **kw):
+    def _run(req, *, vmaf_bin="vmaf", backend=None, **kw):
         calls.append({"backend": backend})
-        # Return a minimal fake ScoreResult.
-
         from vmaftune.score import ScoreResult
 
         return ScoreResult(
@@ -235,34 +232,46 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
             stderr_tail="",
         )
 
-    def _fake_run_encode(req, *, ffmpeg_bin="ffmpeg", runner=None):
+    return _run
 
-        from vmaftune.encode import EncodeResult
 
-        # Create a fake output file.
-        req.output.parent.mkdir(parents=True, exist_ok=True)
-        req.output.write_bytes(b"\x00" * 512)
-        return EncodeResult(
-            request=req,
-            encode_size_bytes=512,
-            encode_time_ms=100.0,
-            encoder_version="libx264-164",
-            ffmpeg_version="n6.0",
-            exit_status=0,
-            stderr_tail="",
-        )
+def _stub_run_encode(req, *, ffmpeg_bin="ffmpeg", runner=None):
+    """``run_encode`` stand-in: writes a 512-byte output and reports success."""
+    from vmaftune.encode import EncodeResult
 
-    def _fake_probe_geometry(src, cfg, runner):
-        return 64, 64, 24.0
+    req.output.parent.mkdir(parents=True, exist_ok=True)
+    req.output.write_bytes(b"\x00" * 512)
+    return EncodeResult(
+        request=req,
+        encode_size_bytes=512,
+        encode_time_ms=100.0,
+        encoder_version="libx264-164",
+        ffmpeg_version="n6.0",
+        exit_status=0,
+        stderr_tail="",
+    )
 
+
+def _stub_probe_geometry(src, cfg, runner):
+    """``_probe_video_geometry`` stand-in: a fixed 64x64 @ 24 fps source."""
+    return 64, 64, 24.0
+
+
+def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> None:
+    """Backend kwarg must reach the run_score call inside the sample extractor."""
+    import unittest.mock
+
+    from vmaftune.fast import _build_production_sample_extractor
+
+    calls: list[dict] = []
     src = tmp_path / "src.yuv"
     src.write_bytes(b"\x80" * (64 * 64 * 3 // 2 * 5 * 24))  # ~5 s
 
     with (
-        unittest.mock.patch("vmaftune.score.run_score", _fake_run_score),
-        unittest.mock.patch("vmaftune.encode.run_encode", _fake_run_encode),
+        unittest.mock.patch("vmaftune.score.run_score", _recording_run_score(calls)),
+        unittest.mock.patch("vmaftune.encode.run_encode", _stub_run_encode),
         unittest.mock.patch(
-            "vmaftune.predictor_features._probe_video_geometry", _fake_probe_geometry
+            "vmaftune.predictor_features._probe_video_geometry", _stub_probe_geometry
         ),
     ):
         extractor = _build_production_sample_extractor(backend="cuda")

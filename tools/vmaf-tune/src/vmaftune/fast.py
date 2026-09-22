@@ -36,7 +36,13 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    # vmaftune.score is imported lazily at call time inside the factories
+    # below so `import vmaftune` stays cheap on hosts that never run the
+    # fast path. These names are for annotations only.
+    from .score import ScoreRequest, ScoreResult
 
 # Optuna is an optional dependency, gated behind the ``[fast]`` install
 # extra. Importing it lazily lets the rest of vmaftune import cleanly on
@@ -369,9 +375,8 @@ def _build_production_sample_extractor(
     """
     from . import CANONICAL6_FEATURES
     from .encode import EncodeRequest, bitrate_kbps, run_encode
-    from .predictor_features import _probe_video_geometry
     from .proxy import normalise_features
-    from .score import ScoreRequest, maybe_decode_distorted, run_score
+    from .score import ScoreRequest
 
     class _Cfg:
         ffprobe_bin: str = "ffprobe"
@@ -384,9 +389,7 @@ def _build_production_sample_extractor(
             tmpdir = Path(td)
             dist = tmpdir / "dist.mp4"
 
-            width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)  # type: ignore[arg-type]
-            if width == 0 or height == 0 or fps == 0.0:
-                raise RuntimeError(f"fast sample_extractor: ffprobe failed for {src}")
+            width, height, fps = _fast_probe_geometry(src, cfg, "sample_extractor")
 
             # Locate the centre window; clip to source length if shorter.
             duration_s = SAMPLE_CHUNK_SECONDS
@@ -426,21 +429,15 @@ def _build_production_sample_extractor(
                 frame_cnt=int(duration_s * fps),
                 duration_s=duration_s,
             )
-            score_req, decode_rc = maybe_decode_distorted(
+            score_result = _fast_score_distorted(
                 score_req,
-                workdir=tmpdir,
+                dist=dist,
+                tmpdir=tmpdir,
                 ffmpeg_bin=ffmpeg_bin,
+                vmaf_bin=vmaf_bin,
+                backend=_score_backend,
+                label="sample_extractor",
             )
-            if decode_rc != 0:
-                raise RuntimeError(
-                    f"fast sample_extractor: failed to decode distorted container {dist} to raw YUV (rc={decode_rc})"
-                )
-
-            score_result = run_score(score_req, vmaf_bin=vmaf_bin, backend=_score_backend)
-            if score_result.exit_status != 0:
-                raise RuntimeError(
-                    f"fast sample_extractor: score failed: {score_result.stderr_tail[-300:]}"
-                )
 
             raw_features = [
                 score_result.feature_means.get(f, float("nan")) for f in CANONICAL6_FEATURES
@@ -449,6 +446,57 @@ def _build_production_sample_extractor(
             return features, observed_kbps
 
     return _extract
+
+
+def _fast_probe_geometry(src: Path, cfg: object, label: str) -> tuple[int, int, float]:
+    """Probe ``(width, height, fps)`` for `src`.
+
+    `label` names the calling stage so the raised message matches the
+    stage the operator invoked. Raises ``RuntimeError`` when ffprobe
+    yields no usable geometry — a zero in any field means the encode
+    and score legs below would be built on garbage.
+    """
+    from .predictor_features import _probe_video_geometry
+
+    width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)  # type: ignore[arg-type]
+    if width == 0 or height == 0 or fps == 0.0:
+        raise RuntimeError(f"fast {label}: ffprobe failed for {src}")
+    return width, height, fps
+
+
+def _fast_score_distorted(
+    score_req: ScoreRequest,
+    *,
+    dist: Path,
+    tmpdir: Path,
+    ffmpeg_bin: str,
+    vmaf_bin: str,
+    backend: str | None,
+    label: str,
+) -> ScoreResult:
+    """Decode the distorted container to raw YUV when needed, then score it.
+
+    `dist` is the pre-decode container path, reported verbatim in the
+    decode-failure message; `score_req.distorted` may already have been
+    rewritten to the raw-YUV path by then. `backend` is the resolved
+    libvmaf backend (``None`` lets the CLI choose).
+    """
+    from .score import maybe_decode_distorted, run_score
+
+    score_req, decode_rc = maybe_decode_distorted(
+        score_req,
+        workdir=tmpdir,
+        ffmpeg_bin=ffmpeg_bin,
+    )
+    if decode_rc != 0:
+        raise RuntimeError(
+            f"fast {label}: failed to decode distorted container {dist} to raw YUV (rc={decode_rc})"
+        )
+
+    score_result = run_score(score_req, vmaf_bin=vmaf_bin, backend=backend)
+    if score_result.exit_status != 0:
+        raise RuntimeError(f"fast {label}: score failed: {score_result.stderr_tail[-300:]}")
+    return score_result
 
 
 def _build_production_encode_runner(
@@ -465,8 +513,7 @@ def _build_production_encode_runner(
     libvmaf score so the caller can compute the proxy/verify gap.
     """
     from .encode import EncodeRequest, bitrate_kbps, run_encode
-    from .predictor_features import _probe_video_geometry
-    from .score import ScoreRequest, maybe_decode_distorted, run_score
+    from .score import ScoreRequest
 
     class _Cfg:
         ffprobe_bin: str = "ffprobe"
@@ -478,9 +525,7 @@ def _build_production_encode_runner(
             tmpdir = Path(td)
             dist = tmpdir / "dist.mp4"
 
-            width, height, fps = _probe_video_geometry(src, cfg, subprocess.run)  # type: ignore[arg-type]
-            if width == 0 or height == 0 or fps == 0.0:
-                raise RuntimeError(f"fast encode_runner: ffprobe failed for {src}")
+            width, height, fps = _fast_probe_geometry(src, cfg, "encode_runner")
 
             is_container = src.suffix.lower() not in {".yuv", ".y4m", ""}
             enc_req = EncodeRequest(
@@ -511,25 +556,15 @@ def _build_production_encode_runner(
                 height=height,
                 pix_fmt=pix_fmt,
             )
-            score_req, decode_rc = maybe_decode_distorted(
+            score_result = _fast_score_distorted(
                 score_req,
-                workdir=tmpdir,
+                dist=dist,
+                tmpdir=tmpdir,
                 ffmpeg_bin=ffmpeg_bin,
-            )
-            if decode_rc != 0:
-                raise RuntimeError(
-                    f"fast encode_runner: failed to decode distorted container {dist} to raw YUV (rc={decode_rc})"
-                )
-
-            score_result = run_score(
-                score_req,
                 vmaf_bin=vmaf_bin,
                 backend=backend if backend != "auto" else None,
+                label="encode_runner",
             )
-            if score_result.exit_status != 0:
-                raise RuntimeError(
-                    f"fast encode_runner: score failed: {score_result.stderr_tail[-300:]}"
-                )
 
             # Duration from encoder stats if available, else encode time proxy.
             enc_duration_s = enc_result.encode_time_ms / 1000.0 or 1.0

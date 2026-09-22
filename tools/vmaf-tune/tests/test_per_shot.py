@@ -14,6 +14,7 @@ Covers:
 
 from __future__ import annotations
 
+import io
 import json
 import sys
 from pathlib import Path
@@ -303,41 +304,134 @@ def test_plan_to_shell_script_round_trip(tmp_path):
 # --------------------------------------------------------------------------- #
 
 
+def _shots_payload(*ranges: tuple[int, int]) -> str:
+    """``vmaf-perShot`` JSON for the given ``(start_frame, end_frame)`` ranges."""
+    return json.dumps({"shots": [{"start_frame": s, "end_frame": e} for s, e in ranges]})
+
+
+def _assert_is_ffmpeg(cmd) -> None:
+    """The non-``vmaf-perShot`` leg of tune-per-shot must be the ffmpeg extract."""
+    assert cmd[0] == "ffmpeg"
+
+
+def _stub_per_shot_run(payload: str, *, stdout: str, on_ffmpeg=None):
+    """``subprocess.run`` stand-in covering both legs of ``tune-per-shot``.
+
+    The ``vmaf-perShot`` leg writes `payload` to the ``--output`` tmpfile
+    (the current protocol: JSON to a file, progress on stdout). Every
+    other argv is the ffmpeg segment extraction, which just materialises
+    the raw YUV the next stage reads. `on_ffmpeg`, when given, inspects
+    that argv before the file is written.
+    """
+
+    def _run(cmd, capture_output, text, check):
+        if cmd[0] == "vmaf-perShot":
+            out_path = Path(cmd[cmd.index("--output") + 1])
+            out_path.write_text(payload, encoding="utf-8")
+            return _FakeCompleted(returncode=0, stdout=stdout)
+        if on_ffmpeg is not None:
+            on_ffmpeg(cmd)
+        out_yuv = Path(cmd[-1])
+        out_yuv.write_bytes(b"\x00" * 16)
+        return _FakeCompleted(returncode=0)
+
+    return _run
+
+
+def _stub_bisect_and_backend(monkeypatch, fake_bisect) -> None:
+    """Patch the bisect predicate plus the ADR-0613 ``select_backend`` precheck.
+
+    ``_run_tune_per_shot`` calls ``select_backend()`` before any work;
+    left unpatched it invokes the real vmaf binary.
+    """
+    monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
+    monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
+
+
+def _flag_argv(*pairs: tuple[str, str]) -> list[str]:
+    """Flatten ``(flag, value)`` pairs into the flat token list argparse wants.
+
+    Callers pass one tuple per CLI flag, so the formatter lays the argv out
+    one flag-and-its-value per line — the way the command is read on a
+    terminal — while ``main()`` still receives the flat ``["--width", "1920",
+    ...]`` sequence.
+    """
+    return [token for pair in pairs for token in pair]
+
+
+def _tune_per_shot_argv(src: Path, output: str, *extra: str) -> list[str]:
+    """``tune-per-shot`` argv: 1080p24 source, target VMAF 92, CRF 18-30."""
+    return [
+        "tune-per-shot",
+        *_flag_argv(
+            ("--src", str(src)),
+            ("--width", "1920"),
+            ("--height", "1080"),
+            ("--framerate", "24"),
+            ("--target-vmaf", "92"),
+            ("--encoder", "libx264"),
+            ("--crf-min", "18"),
+            ("--crf-max", "30"),
+            ("--max-iterations", "4"),
+            ("--output", output),
+        ),
+        *extra,
+    ]
+
+
+def _make_readonly_dir(tmp_path: Path, name: str) -> Path:
+    """Create a read-only directory under `tmp_path`.
+
+    Used as CWD so any relative write (e.g. ``Path("segments").mkdir()``)
+    fails with ``PermissionError`` — the condition ADR-0530 / ADR-0532
+    require the command to survive.
+    """
+    import stat
+
+    d = tmp_path / name
+    d.mkdir()
+    d.chmod(stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP)
+    return d
+
+
+def _restore_writable(d: Path) -> None:
+    """Give the directory back its owner write bit so pytest can clean up."""
+    import stat
+
+    d.chmod(stat.S_IRWXU)
+
+
+def _capture_stderr(monkeypatch) -> io.StringIO:
+    """Redirect ``sys.stderr`` into a buffer and return it."""
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", buf)
+    return buf
+
+
 def test_cli_tune_per_shot_binds_bisect_predicate(tmp_path, monkeypatch):
     src = tmp_path / "ref.yuv"
     src.write_bytes(b"\x00" * 16)
     plan_out = tmp_path / "plan.json"
     out = tmp_path / "out.mp4"
 
-    payload = json.dumps(
-        {
-            "shots": [
-                {"start_frame": 0, "end_frame": 23},
-                {"start_frame": 24, "end_frame": 71},
-            ]
-        }
-    )
-
     # Pretend the binary is available + intercept the subprocess call.
     monkeypatch.setattr("vmaftune.per_shot._which", lambda _b: "/fake/vmaf-perShot")
 
     extracted: list[Path] = []
 
-    def fake_run(cmd, capture_output, text, check):
-        if cmd[0] == "vmaf-perShot":
-            # New protocol: write JSON to the --output tmpfile, not stdout.
-            out_path = Path(cmd[cmd.index("--output") + 1])
-            out_path.write_text(payload, encoding="utf-8")
-            progress = f"vmaf-perShot: wrote 2 shot(s) to {out_path}\n"
-            return _FakeCompleted(returncode=0, stdout=progress)
-        assert cmd[0] == "ffmpeg"
+    def _on_ffmpeg(cmd) -> None:
+        _assert_is_ffmpeg(cmd)
         assert "-f" in cmd and "rawvideo" in cmd
-        out_path = Path(cmd[-1])
-        out_path.write_bytes(b"\x00" * 16)
-        extracted.append(out_path)
-        return _FakeCompleted(returncode=0)
+        extracted.append(Path(cmd[-1]))
 
-    monkeypatch.setattr("vmaftune.per_shot.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "vmaftune.per_shot.subprocess.run",
+        _stub_per_shot_run(
+            _shots_payload((0, 23), (24, 71)),
+            stdout="vmaf-perShot: wrote 2 shot(s)\n",
+            on_ffmpeg=_on_ffmpeg,
+        ),
+    )
 
     calls: list[tuple[Path, str, float]] = []
 
@@ -352,38 +446,9 @@ def test_cli_tune_per_shot_binds_bisect_predicate(tmp_path, monkeypatch):
             error="",
         )
 
-    monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
-    # ADR-0613: _run_tune_per_shot now calls select_backend() as a precheck.
-    # Patch it on the cli module so it doesn't invoke the real vmaf binary.
-    monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
+    _stub_bisect_and_backend(monkeypatch, fake_bisect)
 
-    rc = cli.main(
-        [
-            "tune-per-shot",
-            "--src",
-            str(src),
-            "--width",
-            "1920",
-            "--height",
-            "1080",
-            "--framerate",
-            "24",
-            "--target-vmaf",
-            "92",
-            "--encoder",
-            "libx264",
-            "--crf-min",
-            "18",
-            "--crf-max",
-            "30",
-            "--max-iterations",
-            "4",
-            "--output",
-            str(out),
-            "--plan-out",
-            str(plan_out),
-        ]
-    )
+    rc = cli.main(_tune_per_shot_argv(src, str(out), "--plan-out", str(plan_out)))
     assert rc == 0
     assert plan_out.exists()
     doc = json.loads(plan_out.read_text())
@@ -413,42 +478,24 @@ def test_cli_tune_per_shot_readonly_cwd_returns_zero(tmp_path, monkeypatch):
     cannot be created (e.g. a bind-mounted read-only container workspace), a
     WARN message is emitted to stderr and the command still returns 0.
     """
-    import stat
-
     src = tmp_path / "ref.yuv"
     src.write_bytes(b"\x00" * 16)
     plan_out = tmp_path / "plan.json"
     out = tmp_path / "out.mp4"
 
-    # Create a read-only directory to use as CWD; the default --output
-    # resolves relative to this directory, so segments/ would land there too
-    # without the ADR-0530 fix.
-    ro_dir = tmp_path / "ro_workspace"
-    ro_dir.mkdir()
-    ro_dir.chmod(stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP)
-
-    payload = json.dumps(
-        {
-            "shots": [
-                {"start_frame": 0, "end_frame": 23},
-                {"start_frame": 24, "end_frame": 47},
-            ]
-        }
-    )
+    # The default --output resolves relative to CWD, so segments/ would land
+    # in this read-only directory without the ADR-0530 fix.
+    ro_dir = _make_readonly_dir(tmp_path, "ro_workspace")
 
     monkeypatch.setattr("vmaftune.per_shot._which", lambda _b: "/fake/vmaf-perShot")
-
-    def fake_run(cmd, capture_output, text, check):
-        if cmd[0] == "vmaf-perShot":
-            out_path = Path(cmd[cmd.index("--output") + 1])
-            out_path.write_text(payload, encoding="utf-8")
-            return _FakeCompleted(returncode=0, stdout="wrote 2 shot(s)")
-        assert cmd[0] == "ffmpeg"
-        out_yuv = Path(cmd[-1])
-        out_yuv.write_bytes(b"\x00" * 16)
-        return _FakeCompleted(returncode=0)
-
-    monkeypatch.setattr("vmaftune.per_shot.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "vmaftune.per_shot.subprocess.run",
+        _stub_per_shot_run(
+            _shots_payload((0, 23), (24, 47)),
+            stdout="wrote 2 shot(s)",
+            on_ffmpeg=_assert_is_ffmpeg,
+        ),
+    )
 
     def fake_bisect(src_path, codec, target_vmaf, **kwargs):
         return SimpleNamespace(
@@ -459,51 +506,14 @@ def test_cli_tune_per_shot_readonly_cwd_returns_zero(tmp_path, monkeypatch):
             error="",
         )
 
-    monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
-    # ADR-0613: _run_tune_per_shot now calls select_backend() as a precheck.
-    # Patch it on the cli module so it doesn't invoke the real vmaf binary.
-    monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
+    _stub_bisect_and_backend(monkeypatch, fake_bisect)
 
-    # Change into the read-only directory so that any relative path write
-    # (e.g. Path("segments").mkdir()) would fail with PermissionError.
     monkeypatch.chdir(ro_dir)
+    _capture_stderr(monkeypatch)
 
-    import io
-    import sys
+    rc = cli.main(_tune_per_shot_argv(src, str(out), "--plan-out", str(plan_out)))
 
-    stderr_capture = io.StringIO()
-    monkeypatch.setattr(sys, "stderr", stderr_capture)
-
-    rc = cli.main(
-        [
-            "tune-per-shot",
-            "--src",
-            str(src),
-            "--width",
-            "1920",
-            "--height",
-            "1080",
-            "--framerate",
-            "24",
-            "--target-vmaf",
-            "92",
-            "--encoder",
-            "libx264",
-            "--crf-min",
-            "18",
-            "--crf-max",
-            "30",
-            "--max-iterations",
-            "4",
-            "--output",
-            str(out),
-            "--plan-out",
-            str(plan_out),
-        ]
-    )
-
-    # Restore write permissions so pytest can clean up tmp_path.
-    ro_dir.chmod(stat.S_IRWXU)
+    _restore_writable(ro_dir)
 
     assert rc == 0, f"expected exit 0, got {rc}"
     assert plan_out.exists(), "plan JSON must be written regardless of segments dir"
@@ -519,78 +529,32 @@ def test_cli_tune_per_shot_ro_cwd_no_plan_out_warns(tmp_path, monkeypatch):
     """When neither --plan-out nor --segment-dir is given and CWD is read-only,
     a WARN is emitted to stderr and the command still returns 0 (ADR-0530).
     """
-    import stat
-
     src = tmp_path / "ref.yuv"
     src.write_bytes(b"\x00" * 16)
 
-    ro_dir = tmp_path / "ro_cwd"
-    ro_dir.mkdir()
-    ro_dir.chmod(stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP)
-
-    payload = json.dumps({"shots": [{"start_frame": 0, "end_frame": 23}]})
+    ro_dir = _make_readonly_dir(tmp_path, "ro_cwd")
 
     monkeypatch.setattr("vmaftune.per_shot._which", lambda _b: "/fake/vmaf-perShot")
-
-    def fake_run(cmd, capture_output, text, check):
-        if cmd[0] == "vmaf-perShot":
-            out_path = Path(cmd[cmd.index("--output") + 1])
-            out_path.write_text(payload, encoding="utf-8")
-            return _FakeCompleted(returncode=0, stdout="wrote 1 shot(s)")
-        out_yuv = Path(cmd[-1])
-        out_yuv.write_bytes(b"\x00" * 16)
-        return _FakeCompleted(returncode=0)
-
-    monkeypatch.setattr("vmaftune.per_shot.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "vmaftune.per_shot.subprocess.run",
+        _stub_per_shot_run(_shots_payload((0, 23)), stdout="wrote 1 shot(s)"),
+    )
 
     def fake_bisect(src_path, codec, target_vmaf, **kwargs):
         return SimpleNamespace(
             ok=True, best_crf=23, measured_vmaf=target_vmaf, bitrate_kbps=1800.0, error=""
         )
 
-    monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
-    # ADR-0613: _run_tune_per_shot now calls select_backend() as a precheck.
-    # Patch it on the cli module so it doesn't invoke the real vmaf binary.
-    monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
+    _stub_bisect_and_backend(monkeypatch, fake_bisect)
 
-    # Use a relative --output that resolves inside the read-only CWD so
-    # the fallback seg_dir (output.parent/segments == ro_cwd/segments) is
-    # non-writable.
     monkeypatch.chdir(ro_dir)
+    stderr_capture = _capture_stderr(monkeypatch)
 
-    import io
-    import sys
+    # A relative --output resolves inside the read-only CWD, so the fallback
+    # seg_dir (output.parent/segments == ro_cwd/segments) is non-writable.
+    rc = cli.main(_tune_per_shot_argv(src, "per_shot_encode.mp4"))
 
-    stderr_capture = io.StringIO()
-    monkeypatch.setattr(sys, "stderr", stderr_capture)
-
-    rc = cli.main(
-        [
-            "tune-per-shot",
-            "--src",
-            str(src),
-            "--width",
-            "1920",
-            "--height",
-            "1080",
-            "--framerate",
-            "24",
-            "--target-vmaf",
-            "92",
-            "--encoder",
-            "libx264",
-            "--crf-min",
-            "18",
-            "--crf-max",
-            "30",
-            "--max-iterations",
-            "4",
-            "--output",
-            "per_shot_encode.mp4",
-        ]
-    )
-
-    ro_dir.chmod(stat.S_IRWXU)
+    _restore_writable(ro_dir)
 
     assert rc == 0, f"expected exit 0, got {rc}"
     stderr_out = stderr_capture.getvalue()
@@ -712,29 +676,15 @@ def test_cli_tune_per_shot_bitrate_kbps_propagates_from_bisect(tmp_path, monkeyp
     plan_out = tmp_path / "plan.json"
     out = tmp_path / "out.mp4"
 
-    payload = json.dumps(
-        {
-            "shots": [
-                {"start_frame": 0, "end_frame": 47},
-                {"start_frame": 48, "end_frame": 95},
-                {"start_frame": 96, "end_frame": 143},
-            ]
-        }
-    )
-
     monkeypatch.setattr("vmaftune.per_shot._which", lambda _b: "/fake/vmaf-perShot")
-
-    def fake_run(cmd, capture_output, text, check):
-        if cmd[0] == "vmaf-perShot":
-            out_path = Path(cmd[cmd.index("--output") + 1])
-            out_path.write_text(payload, encoding="utf-8")
-            return _FakeCompleted(returncode=0, stdout="wrote 3 shot(s)")
-        assert cmd[0] == "ffmpeg"
-        out_yuv = Path(cmd[-1])
-        out_yuv.write_bytes(b"\x00" * 16)
-        return _FakeCompleted(returncode=0)
-
-    monkeypatch.setattr("vmaftune.per_shot.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "vmaftune.per_shot.subprocess.run",
+        _stub_per_shot_run(
+            _shots_payload((0, 47), (48, 95), (96, 143)),
+            stdout="wrote 3 shot(s)",
+            on_ffmpeg=_assert_is_ffmpeg,
+        ),
+    )
 
     # Fake bisect returns distinct bitrate_kbps per call so we can assert
     # they land in the right shot slots.
@@ -750,38 +700,9 @@ def test_cli_tune_per_shot_bitrate_kbps_propagates_from_bisect(tmp_path, monkeyp
             error="",
         )
 
-    monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
-    # ADR-0613: _run_tune_per_shot now calls select_backend() as a precheck.
-    # Patch it on the cli module so it doesn't invoke the real vmaf binary.
-    monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
+    _stub_bisect_and_backend(monkeypatch, fake_bisect)
 
-    rc = cli.main(
-        [
-            "tune-per-shot",
-            "--src",
-            str(src),
-            "--width",
-            "1920",
-            "--height",
-            "1080",
-            "--framerate",
-            "24",
-            "--target-vmaf",
-            "92",
-            "--encoder",
-            "libx264",
-            "--crf-min",
-            "18",
-            "--crf-max",
-            "30",
-            "--max-iterations",
-            "4",
-            "--output",
-            str(out),
-            "--plan-out",
-            str(plan_out),
-        ]
-    )
+    rc = cli.main(_tune_per_shot_argv(src, str(out), "--plan-out", str(plan_out)))
     assert rc == 0
     doc = json.loads(plan_out.read_text())
     bitrates = [s["bitrate_kbps"] for s in doc["shots"]]
