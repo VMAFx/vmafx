@@ -1,3 +1,23 @@
+[project.urls]
+Homepage = "https://github.com/Netflix/vmaf"
+
+# Moved here from setup.py's `entry_points={"console_scripts": [...]}`.
+# setuptools treats a `[project]` table as authoritative: anything setup.py
+# passes that `[project]` neither declares nor lists as `dynamic` raises
+# `_MissingDynamic`, and on the Coverage Gate runner that is fatal, not a
+# warning — `python3 setup.py --version` exited 1 with
+# "`authors` defined outside of `pyproject.toml`". Same eight names, same
+# targets, so the generated console scripts are unchanged.
+[project.scripts]
+run_cleaning_cache = "vmaf.script.run_cleaning_cache:main"
+run_psnr = "vmaf.script.run_psnr:main"
+run_result_assembly = "vmaf.script.run_result_assembly:main"
+run_testing = "vmaf.script.run_testing:main"
+run_toddnoiseclassifier = "vmaf.script.run_toddnoiseclassifier:main"
+run_vmaf = "vmaf.script.run_vmaf:main"
+run_vmaf_cross_validation = "vmaf.script.run_vmaf_cross_validation:main"
+run_vmaf_training = "vmaf.script.run_vmaf_training:main"
+
 [build-system]
 # setuptools>=77.0.1 is a hard floor, not a preference: `[project].license`
 # below is a PEP 639 SPDX expression (a bare string). setuptools only
@@ -15,6 +35,7 @@ name = "vmaf"
 dynamic = ["version"]
 description = "VMAF — Video Multimethod Assessment Fusion (VMAFx fork)"
 readme = "README.rst"
+authors = [{ name = "Zhi Li", email = "zli@netflix.com" }]
 license = "BSD-2-Clause-Patent"
 requires-python = ">=3.10"
 dependencies = [
