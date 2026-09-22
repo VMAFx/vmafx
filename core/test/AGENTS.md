@@ -82,14 +82,23 @@ and teardown.
   Unchecked dereference is latent SIGSEGV under ASan
   `MALLOC_PERTURB_=198` (ADR-0971). **Rebase-sensitive**: this rule
   applies to every new test file.
-- **Framesync initializer failures use a separately compiled test object.**
-  `test_framesync_init_failure_impl` compiles `framesync.c` with its four
-  init/destroy entry points mapped to test-owned wrapper symbols. Keep the test
-  source as an ordinary translation unit: do not include executable `.c` files,
-  add a production hook, or replace the deterministic wrappers with a
-  platform-specific linker interposer. The test must cover each initialization
-  stage, a null init-output pointer, the documented null destroy no-op,
-  unpublished context, and exact partial unwind.
+- **Framesync initializer failures recompile `framesync.c` into the test
+  executable.** `test_framesync_init_failure` lists `../src/framesync.c` among
+  its own sources and maps the four init/destroy entry points to test-owned
+  wrapper symbols through `c_args`. Those `-D` renames reach every translation
+  unit in the target, so `test_framesync_init_failure.c` undefines them above
+  its first `#include`. **Rebase-sensitive**: do not lift `framesync.c` back
+  out into a `static_library` consumed with `link_whole`. That is the only
+  `-force_load` the build would contain, and under `b_lto=true` Apple's linker
+  loses every cross-module definition while running LTO codegen over a
+  force-loaded bitcode archive (`ld: symbol(s) defined in LTO objects are
+  referenced but missing in compiled objects`), which breaks all five macOS
+  legs. Keep the test source an ordinary translation unit otherwise: do not
+  include executable `.c` files, add a production hook, or replace the
+  deterministic wrappers with a platform-specific linker interposer. The test
+  must cover each initialization stage, a null init-output pointer, the
+  documented null destroy no-op, unpublished context, and exact partial
+  unwind.
 - **SIMD parity tests check what kernel leaves outside its output, not only
   what it writes inside.** Kernel storing past its region passes region-only
   comparison. Netflix/vmaf `03b5562c5` + `ea012e387` both that shape, unnoticed

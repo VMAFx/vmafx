@@ -5,6 +5,16 @@
  * SPDX-License-Identifier: EUPL-1.2
  */
 
+/* The target compiles framesync.c alongside this file and renames framesync's
+ * pthread entry points on the command line so the interposers below are what
+ * it calls. Those -D macros reach this translation unit too, so undo them
+ * before the first include: <pthread.h> must declare the real entry points
+ * here, otherwise each wrapper would tail-call itself. */
+#undef pthread_mutex_init
+#undef pthread_cond_init
+#undef pthread_mutex_destroy
+#undef pthread_cond_destroy
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>

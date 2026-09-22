@@ -1267,23 +1267,27 @@ test_framesync = executable('test_framesync',
 
 # Compile an isolated framesync object with test-owned pthread entry points so
 # primitive failures are deterministic without a production hook or C include.
-test_framesync_init_failure_impl = static_library('test_framesync_init_failure_impl',
-    '../src/framesync.c',
-    include_directories : [libvmaf_inc, include_directories('../src/')],
+# framesync.c is compiled straight into the executable, the way every other
+# target in this file recompiles the sources it exercises. It was briefly a
+# `static_library` consumed through `link_whole`, which was the only
+# -force_load in the whole build: under `b_lto=true` that hands Apple's
+# linker a force-loaded bitcode archive, and ld then drops every cross-module
+# definition during LTO codegen ("ld: symbol(s) defined in LTO objects are
+# referenced but missing in compiled objects"), breaking all five macOS legs.
+#
+# The pthread renames therefore apply to all three translation units instead
+# of just framesync.c. test.c never mentions pthreads, so they are inert
+# there, and test_framesync_init_failure.c undefines them before its first
+# include so it still sees the real entry points to wrap.
+test_framesync_init_failure = executable('test_framesync_init_failure',
+    ['test.c', 'test_framesync_init_failure.c', '../src/framesync.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common + [
         '-Dpthread_mutex_init=vmafx_test_pthread_mutex_init',
         '-Dpthread_cond_init=vmafx_test_pthread_cond_init',
         '-Dpthread_mutex_destroy=vmafx_test_pthread_mutex_destroy',
         '-Dpthread_cond_destroy=vmafx_test_pthread_cond_destroy',
     ],
-    dependencies : [pthread_dependency, thread_lib],
-)
-
-test_framesync_init_failure = executable('test_framesync_init_failure',
-    ['test.c', 'test_framesync_init_failure.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_whole : test_framesync_init_failure_impl,
-    c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib],
 )
 
