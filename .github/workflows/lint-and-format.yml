@@ -181,7 +181,14 @@ jobs:
           # commands in `build/compile_commands.json` don't cover these TUs
           # (CPU-only + ARM-only build here), so clang-tidy parses them with
           # default flags and spurious `clang-diagnostic-error` output:
-          #   - core/src/feature/arm64/ — NEON, needs cross-toolchain.
+          #   - core/src/feature/arm64/ — NEON / SVE2, needs a cross
+          #     toolchain. Measured by the ADR-1283 `arm64` ratchet lane:
+          #     `meson setup build-arm64 core --cross-file
+          #     build-aux/aarch64-linux-gnu.ini -Denable_cuda=false
+          #     -Denable_sycl=false -Db_lto=false` then `make tidy-ratchet
+          #     LANE=arm64 TIDY_RATCHET_BUILD_DIR=build-arm64`. Same posture
+          #     as the CUDA / HIP families below: excluded here, bounded
+          #     there.
           #   - core/src/cuda/ + core/src/feature/cuda/ — require
           #     `-Denable_cuda=true` meson setup to generate compile_commands
           #     (follow-up: add a parallel CUDA clang-tidy job once a

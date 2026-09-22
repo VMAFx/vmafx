@@ -248,6 +248,43 @@ instead of a touched-files rule:
   toolchain exists for the lane; until then a lane that cannot run is reported
   as *not run*, never as clean. Metal (`.mm` / `.metal`) has no Linux
   toolchain and is tracked by structural proxy only.
+- **`arm64` lane** ([ADR-1283](../adr/1283-whole-tree-ratchet-arm64-lane.md)) —
+  the NEON and SVE2 tree. 32 translation units are compiled only on an
+  aarch64 host — the 20 sources under `core/src/feature/arm64/`,
+  `core/src/arm/cpu.c`, and the 11 `core/test/test_*_neon.c` parity tests — so
+  before this lane existed no compile database in the project held them and the
+  `cpu` lane's "whole tree" stopped at the architecture boundary. The lane
+  cross-compiles with the in-tree cross file:
+
+  ```bash
+  meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
+      -Denable_cuda=false -Denable_sycl=false -Db_lto=false
+  # Codegen outputs must exist on disk before clang-tidy parses the TUs that
+  # include or are them — exactly why the cpu lane builds before it measures.
+  # A full `ninja -C build-arm64` does it; these are the only two groups needed:
+  ninja -C build-arm64 include/vcs_version.h
+  ninja -C build-arm64 $(ninja -C build-arm64 -t targets all \
+      | sed -n 's/^\(src\/[^:]*\.c\): CUSTOM_COMMAND.*/\1/p')
+  make tidy-ratchet LANE=arm64 TIDY_RATCHET_BUILD_DIR=build-arm64
+  ```
+
+  Skipping the codegen step is not a quiet inaccuracy: `vcs_version.h` alone
+  takes three translation units to `clang-diagnostic-error` and the ratchet
+  fails closed with exit 4 (a *failed* measurement, never a clean one).
+
+  Prerequisites are an aarch64 cross gcc and a glibc sysroot —
+  `aarch64-linux-gnu-gcc` plus `aarch64-linux-gnu-glibc` on Arch,
+  `gcc-aarch64-linux-gnu` plus `libc6-dev-arm64-cross` on Debian/Ubuntu — and
+  clang-tidy. `make` forwards `--target=$(AARCH64_TARGET)` and
+  `--sysroot=$(AARCH64_SYSROOT)` to clang-tidy so it parses the
+  `aarch64-linux-gnu-gcc` compile commands as AArch64; without the target it
+  reads `<arm_neon.h>` against the host's x86 headers and reports every NEON
+  translation unit as a compile failure (exit 4). Both default to the cross
+  package's own paths and are overridable on the `make` command line. Like the
+  GPU lanes this one is measured and committed but is not a PR-required
+  context; promoting it re-records the baseline from the gating toolchain's own
+  measurement, because the counts depend on the C compiler's system headers
+  (ADR-1230).
 - The changed-files job `Tidy Changed` stays as fast
   feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched
   file ends the PR at zero" is unchanged. The ratchet adds the bound on

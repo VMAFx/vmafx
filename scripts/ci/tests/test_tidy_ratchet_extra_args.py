@@ -91,5 +91,43 @@ class ExtraArgForwarding(unittest.TestCase):
         self.assertIn(str(source), output.split())
 
 
+class Arm64LaneFlags(unittest.TestCase):
+    """The arm64 lane's cross flags are load-bearing (ADR-1283).
+
+    Its compile database is produced by ``aarch64-linux-gnu-gcc`` from
+    ``build-aux/aarch64-linux-gnu.ini``. clang-tidy parses those commands with
+    its own driver, so without ``--target`` it reads ``<arm_neon.h>`` against
+    the host's x86 headers and every NEON translation unit becomes a
+    ``clang-diagnostic-error`` — ratchet exit 4, a failed measurement rather
+    than a clean one. Without ``--sysroot`` libc resolves against the host.
+    Dropping either flag silently turns the lane into the very defect it
+    exists to close, so the Makefile's definition is pinned here.
+    """
+
+    def lane_flags(self) -> str:
+        """Return TIDY_RATCHET_EXTRA_arm64's value, backslash continuations joined."""
+        text = (ROOT / "Makefile").read_text(encoding="utf-8")
+        joined = text.replace("\\\n", " ")
+        for line in joined.splitlines():
+            if line.startswith("TIDY_RATCHET_EXTRA_arm64"):
+                return line.split(":=", 1)[1]
+        self.fail("Makefile defines no TIDY_RATCHET_EXTRA_arm64 lane")
+        raise AssertionError  # unreachable; keeps the return type honest
+
+    def test_lane_forwards_target_and_sysroot(self) -> None:
+        flags = self.lane_flags().split()
+        self.assertIn("--extra-arg=--target=$(AARCH64_TARGET)", flags)
+        self.assertIn("--extra-arg=--sysroot=$(AARCH64_SYSROOT)", flags)
+
+    def test_lane_defaults_are_the_cross_packages_own_paths(self) -> None:
+        text = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("AARCH64_TARGET ?= aarch64-linux-gnu", text)
+        self.assertIn("AARCH64_SYSROOT ?= /usr/aarch64-linux-gnu", text)
+
+    def test_a_baseline_exists_for_the_lane(self) -> None:
+        """A lane with no committed baseline measures nothing on the next run."""
+        self.assertTrue((ROOT / "scripts/ci/tidy-baseline-arm64.json").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()
