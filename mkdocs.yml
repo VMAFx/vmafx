@@ -1398,6 +1398,7 @@ nav:
         - "ADR-1280: worktree-state-sync": adr/1280-worktree-state-sync.md
         - "ADR-1282: mypy-python-version-follows-requires-python": adr/1282-mypy-python-version-follows-requires-python.md
         - "ADR-1283: whole-tree-ratchet-arm64-lane": adr/1283-whole-tree-ratchet-arm64-lane.md
+        - "ADR-1285: cuda-coordinated-pin-lockstep": adr/1285-cuda-coordinated-pin-lockstep.md
         - "ADR-1286: retiring-cited-lint-suppressions": adr/1286-retiring-cited-lint-suppressions.md
         - "ADR-1287: cli-tool-unbounded-loop-ceilings": adr/1287-cli-tool-unbounded-loop-ceilings.md
         - "ADR-1288: mcp-tool-schema-fail-closed": adr/1288-mcp-tool-schema-fail-closed.md

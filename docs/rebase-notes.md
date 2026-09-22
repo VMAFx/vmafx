@@ -52043,3 +52043,23 @@ fall-through cascades take an explicit stage argument, and `CHECK_CUDA_GOTO` plu
 targets are unchanged. On conflict, reapply the helper boundaries rather than restoring the labels,
 and keep every moved arithmetic statement whole — splitting one would let FMA contraction change the
 score.
+
+## The CUDA pin is sixteen literals, not one tag (2026-09-21)
+
+`build-config.env`'s `CUDA_VERSION` is the authority for a release that is
+spelled out in sixteen places across seven files. A merge that carries one of
+them forward and not the rest now fails
+`scripts/ci/check-cuda-pin-lockstep.py`, which is the point — but it also means
+a conflict resolution that keeps the incoming `nvidia/cuda` tag has to move
+`CUDA_VERSION`, both `Jimver/cuda-toolkit` inputs, both `$cudaVersion` and
+`$cudaMajorMinor` literals, both `cuda-toolkit-NN-N` apt names and the
+`org.opencontainers.image.description` label on the CUDA runtime image with it.
+`make cuda-pin-sync` derives the last five from `CUDA_VERSION`; the rest are
+edits. The gate also fails on a CUDA release literal in a spelling it does not
+recognise, so a rebase that introduces a new one has to teach both the gate and
+`renovate.json`'s CUDA manager in the same change (ADR-1285).
+
+Do not fold the CUDA manager into the base-image custom manager on conflict:
+`scripts/ci/tests/test_renovate_file_patterns.py` asserts there is exactly one
+docker-datasource manager without a `depNameTemplate`, and the CUDA one carries
+`nvidia/cuda` precisely so the group rule can name it.

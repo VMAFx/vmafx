@@ -137,6 +137,23 @@ exceptions bind exact consumer and value, never broad unpinned-tag rule.
 repositories, wired through `test-base-image-single-source` in
 `.pre-commit-config.yaml`.
 
+### CUDA coordinated pin (ADR-1285)
+
+One CUDA release = sixteen literals, seven spellings, seven files. Authority =
+`build-config.env` `CUDA_VERSION`. `check-cuda-pin-lockstep.py` checks all of
+them, `--write` derives the five Renovate cannot express (`$cudaMajorMinor`,
+both `cuda-toolkit-NN-N` apt names, the OCI description label), and a residual
+sweep fails on any CUDA release literal in an unrecognised spelling. Never
+narrow the sweep to silence a new site: teach the gate its shape and add the
+file to `renovate.json`'s CUDA manager in the same change, or the site drifts.
+`--write` must never touch `CUDA_VERSION` (authority) or an image pin (digest
+is not derivable). Renovate side: custom manager resolving the plain `x.y.z`
+literals as `nvidia/cuda`, `extractVersion` stripping the flavour suffix
+because no bare tag exists, and the `CUDA release (coordinated pin)` rule
+scoped to major/minor/patch so digest refreshes stay in `Docker digests`.
+Fixture: `tests/test_cuda_pin_single_source.py`, run by the
+`test-base-image-single-source` hook.
+
 ### Level Zero version consumption (ADR-1231)
 
 `dev/Containerfile` copies and sources `build-config.env` in its SDK download
