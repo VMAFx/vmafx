@@ -1005,3 +1005,4 @@
 1284-silent-revert-detection-gate
 1290-sycl-tidy-lane-compile-database
 1291-silent-revert-declared-reversals
+1292-compat-shim-spawn-safe

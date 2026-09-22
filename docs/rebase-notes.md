@@ -52190,3 +52190,27 @@ stated in `core/src/feature/hip/AGENTS.md`.
 
 `AdmFixedParametersHip` (248 bytes) is deliberately still by value — ADR-0759's
 deferred follow-up. Do not "finish the job" on a rebase without an ADR.
+
+## `python/vmaf/__init__.py` — resolve the compat shim by file location (ADR-1292)
+
+The shim must not redirect by deleting itself from `sys.modules` and re-importing
+its own name. That strategy is correct only while `compat/` precedes `python/` on
+`sys.path`, and a `multiprocessing` spawn child inherits a `sys.path` where it
+does not: the shim then resolves back to itself and recurses until
+`RecursionError`, killing the child before it releases the semaphore its parent
+is blocked on. The parent's `sem.acquire()` in
+`Executor._open_workfiles_in_fifo_mode` has no timeout, so the run hangs until
+the CI job is cancelled — 62 minutes of silence on the Ubuntu legs.
+
+Keep the `importlib.util.spec_from_file_location(__name__, compat/vmaf/__init__.py,
+submodule_search_locations=[compat/vmaf])` load and the `sys.modules[__name__] = _module`
+assignment *before* `exec_module`. An upstream-shaped or "simplify this shim"
+resolution that restores the four-line re-import reintroduces the hang, and it
+reintroduces it invisibly: every in-process test still passes, because the parent
+interpreter only takes the working path.
+
+The paired invariant lives in `compat/python-vmaf/core/executor.py`: ADR-1278's
+`_MULTIPROCESSING_CONTEXT = multiprocessing.get_context("spawn")` is what makes a
+fresh interpreter import `vmaf` at all. Reverting it to the interpreter default
+would also mask the shim bug, by going back to `forkserver`; do not treat that as
+a fix for anything.

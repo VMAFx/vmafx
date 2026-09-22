@@ -1406,6 +1406,7 @@ nav:
         - "ADR-1289: hip-ssimulacra2-host-helper-split": adr/1289-hip-ssimulacra2-host-helper-split.md
         - "ADR-1290: sycl-tidy-lane-compile-database": adr/1290-sycl-tidy-lane-compile-database.md
         - "ADR-1291: silent-revert-declared-reversals": adr/1291-silent-revert-declared-reversals.md
+        - "ADR-1292: compat-shim-spawn-safe": adr/1292-compat-shim-spawn-safe.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

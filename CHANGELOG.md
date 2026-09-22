@@ -21466,6 +21466,9 @@ Stale `python/vmaf/workspace` and `python/vmaf/resource` references in
 `config.py` docstrings updated to `compat/python-vmaf/` (post-ADR-0700).
 
 
+- Fixed the `vmaf` compatibility shim recursing into itself inside `multiprocessing` spawn children, which killed the child before it released the FIFO workfile semaphore and left `Executor._open_workfiles_in_fifo_mode` blocked forever — the silent hang that cancelled the Ubuntu gcc and clang test legs. The shim now loads `compat/vmaf/__init__.py` by file location instead of re-entering the import system, so the redirect no longer depends on `sys.path` order (ADR-1292).
+
+
 - Keep configured-lint Make fixtures offline: provision their pip prerequisite
   before fake build tools and reject any bootstrap attempt, including recursive
   Make paths.
