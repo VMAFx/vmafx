@@ -111,7 +111,14 @@ class ListStats(object):
 
     @staticmethod
     def nonemean(my_list):
-        return np.mean(list(filter(lambda x: x is not None, my_list)))
+        # np.mean([]) is NaN, but it reaches that answer by warning
+        # "Mean of empty slice" first. The harness runs under
+        # `filterwarnings = error`, so an all-None input has to produce the
+        # same NaN without the warning.
+        values = [x for x in my_list if x is not None]
+        if not values:
+            return np.float64("nan")
+        return np.mean(values)
 
 
 if __name__ == "__main__":
