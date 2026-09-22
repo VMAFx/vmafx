@@ -1267,11 +1267,27 @@ test_framesync = executable('test_framesync',
 
 # framesync.c is recompiled into the executable, the way every other target in
 # this file recompiles the sources it exercises, with its four pthread entry
-# points renamed on the command line so the deterministic wrappers in
-# test_framesync_init_failure.c are what it calls. The renames reach all three
-# translation units: test.c never mentions pthreads, so they are inert there,
-# and test_framesync_init_failure.c undefines them above its first #include so
-# it still sees the real entry points to wrap.
+# points renamed so the deterministic wrappers in
+# test_framesync_init_failure.c are what it calls.
+#
+# The renames arrive through a force-included header, NOT through four -D
+# flags. A command-line -D is in force before <pthread.h> is read, so it also
+# rewrites whatever <pthread.h> declares -- harmless where the entry points
+# are extern (glibc, macOS libSystem, MinGW winpthreads), fatal where they are
+# defined inline. core/src/compat/win32/pthread.h is exactly that: a
+# header-only SRWLOCK / CONDITION_VARIABLE shim whose four entry points are
+# `static inline`, wired in by core/meson.build on every MSVC / clang-cl
+# build. Under -D the rename landed on those definitions, framesync.c called
+# the real primitives under the wrapper's name, no injected failure ever
+# happened, and test_init_failure_unwinds_initialized_primitives failed --
+# silently on every MSVC lane, visibly only on Windows ARM64 MSVC, the one
+# MSVC lane that runs `meson test` instead of a named subset of executables.
+# test_framesync_interpose.h reads <pthread.h> first and defines the renames
+# after it, so they reach call sites only. See that header for the full
+# argument. The force-include reaches all three translation units: test.c
+# never mentions pthreads, so it is inert there, and
+# test_framesync_init_failure.c undefines the four names above its first
+# #include so it still sees the real entry points to wrap.
 #
 # `framesync_interposer_lto_override` turns LTO off for this one target on
 # macOS. Two earlier attempts tried to steer *which* symbols survive LTO --
@@ -1316,15 +1332,19 @@ test_framesync = executable('test_framesync',
 # targets is safe whenever someone wants to.
 framesync_interposer_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
 
+# Force-include spelling. cl / clang-cl take /FI, everything else takes
+# -include; both resolve the file as if its #include were the first line of
+# the primary source. The path is absolute so neither has to fall back on an
+# include-path search.
+framesync_interpose_header = meson.current_source_dir() / 'test_framesync_interpose.h'
+framesync_interpose_args = cc.get_argument_syntax() == 'msvc' \
+    ? ['/FI' + framesync_interpose_header] \
+    : ['-include', framesync_interpose_header]
+
 test_framesync_init_failure = executable('test_framesync_init_failure',
     ['test.c', 'test_framesync_init_failure.c', '../src/framesync.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    c_args : [
-        '-Dpthread_mutex_init=vmafx_test_pthread_mutex_init',
-        '-Dpthread_cond_init=vmafx_test_pthread_cond_init',
-        '-Dpthread_mutex_destroy=vmafx_test_pthread_mutex_destroy',
-        '-Dpthread_cond_destroy=vmafx_test_pthread_cond_destroy',
-    ],
+    c_args : framesync_interpose_args,
     dependencies : [pthread_dependency, thread_lib],
     override_options : framesync_interposer_lto_override,
 )

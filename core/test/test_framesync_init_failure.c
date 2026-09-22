@@ -6,10 +6,14 @@
  */
 
 /* The target compiles framesync.c alongside this file and renames framesync's
- * pthread entry points on the command line so the interposers below are what
- * it calls. Those -D macros reach this translation unit too, so undo them
- * before the first include: <pthread.h> must declare the real entry points
- * here, otherwise each wrapper would tail-call itself. */
+ * pthread entry points through a force-included header
+ * (test_framesync_interpose.h) so the interposers below are what it calls.
+ * That header reaches this translation unit too, so undo its macros before
+ * the first include: the real entry points must be visible under their own
+ * names here, otherwise each wrapper would tail-call itself. The force-include
+ * has already read <pthread.h> un-renamed, so the declarations -- and, on
+ * Windows, the header-only shim's `static inline` definitions -- are intact
+ * once these four names are free again. */
 #undef pthread_mutex_init
 #undef pthread_cond_init
 #undef pthread_mutex_destroy
