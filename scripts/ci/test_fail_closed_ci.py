@@ -24,6 +24,19 @@ def workflow_step(text: str, name: str) -> str:
     return match.group(0)
 
 
+def executable_body(step: str) -> str:
+    """Return a step with its full-line YAML/shell comments removed.
+
+    The fail-open checks below look for literal strings like ``|| true`` in a
+    step's text. A comment is not executed, so a comment that *names* the
+    construct — for instance one recording why a suffix was removed — is not a
+    fail-open and must not be reported as one. Only lines whose first
+    non-whitespace character is ``#`` are dropped; an inline trailing comment
+    stays, because the command in front of it runs.
+    """
+    return "\n".join(line for line in step.splitlines() if not line.lstrip().startswith("#"))
+
+
 def workflow_job(text: str, job_id: str) -> str:
     """Return one top-level job block by its identifier."""
     match = re.search(
@@ -63,7 +76,7 @@ class FailClosedCIContract(unittest.TestCase):
         )
         self.assertIn("id: python_coverage_tests", pytest_step)
         self.assertIn("continue-on-error: true", pytest_step)
-        self.assertNotIn("|| true", pytest_step)
+        self.assertNotIn("|| true", executable_body(pytest_step))
 
         assertion = workflow_step(workflow, "Assert Python coverage suite passed")
         self.assertIn("steps.python_coverage_tests.outcome", assertion)
@@ -80,7 +93,7 @@ class FailClosedCIContract(unittest.TestCase):
         workflow = (WORKFLOWS / "nightly.yml").read_text(encoding="utf-8")
         benchmark = workflow_step(workflow, "Run benchmark")
         self.assertIn("bash testdata/bench_all.sh", benchmark)
-        self.assertNotIn("|| true", benchmark)
+        self.assertNotIn("|| true", executable_body(benchmark))
         upload = workflow.split("name: nightly-benchmark-results", maxsplit=1)[0]
         self.assertRegex(upload, r"(?m)^        if: always\(\)\s*$")
 
@@ -88,7 +101,7 @@ class FailClosedCIContract(unittest.TestCase):
         workflow = (WORKFLOWS / "security-scans.yml").read_text(encoding="utf-8")
         registry = workflow_step(workflow, "Run semgrep (registry rule packs — advisory)")
         self.assertIn("continue-on-error: true", registry)
-        self.assertNotIn("|| true", registry)
+        self.assertNotIn("|| true", executable_body(registry))
 
     def test_sanitizer_enumeration_does_not_mask_producer_errors(self) -> None:
         expected_counts = {"tests-and-quality-gates.yml": 1, "sanitizers.yml": 2}
@@ -100,8 +113,19 @@ class FailClosedCIContract(unittest.TestCase):
                 end = workflow.find('\n          echo "test count:', start.start())
                 self.assertNotEqual(-1, end, workflow_name)
                 enumeration = workflow[start.start() : end]
-                self.assertNotIn("|| true", enumeration, workflow_name)
-                self.assertNotIn("set +o pipefail", enumeration, workflow_name)
+                self.assertNotIn("|| true", executable_body(enumeration), workflow_name)
+                self.assertNotIn("set +o pipefail", executable_body(enumeration), workflow_name)
+
+    def test_executable_body_drops_comments_but_keeps_commands(self) -> None:
+        """A comment naming a fail-open is not one; a real suffix still is."""
+        commented = (
+            "        run: |\n          # removed the trailing || true here\n          pytest\n"
+        )
+        self.assertNotIn("|| true", executable_body(commented))
+        real = "        run: |\n          # documented\n          pytest || true\n"
+        self.assertIn("|| true", executable_body(real))
+        inline = "        run: pytest || true  # keep going\n"
+        self.assertIn("|| true", executable_body(inline))
 
 
 if __name__ == "__main__":

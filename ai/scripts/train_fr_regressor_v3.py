@@ -202,7 +202,7 @@ def _normalise_v3_columns(df, corpus_path: Path, feature_mean_cols):  # type: ig
     return df
 
 
-def _build_codec_block(df):  # type: ignore[no-untyped-def]
+def _build_codec_block(df: Any) -> tuple[Any, list[str], float, float]:
     """Encoder one-hot + preset/CRF normalisation block, and the CRF range.
 
     Split out of :func:`_load_corpus` for the HISS-04 60-LOC limit.
@@ -555,7 +555,7 @@ def fit_full_corpus(corpus: dict[str, Any], args: argparse.Namespace):  # type: 
 #
 # Built by a helper because torch is an optional import, resolved inside
 # export_onnx rather than at module scope.
-def _v3_dynamic_shapes():  # type: ignore[no-untyped-def]
+def _v3_dynamic_shapes() -> tuple[dict[int, str], dict[int, Any]]:
     import torch
 
     return ({0: "batch"}, {0: torch.export.Dim.DYNAMIC})

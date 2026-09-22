@@ -1,0 +1,1 @@
+- Fixed the fail-closed CI contract reporting a workflow comment as a fail-open: it searched a step's whole text for `|| true`, so a comment recording that the suffix had been removed failed the gate. Full-line comments are now dropped before the check; inline trailing comments and real suffixes are still caught, pinned by a new case in `scripts/ci/test_fail_closed_ci.py`.

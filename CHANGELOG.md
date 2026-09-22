@@ -22932,6 +22932,9 @@ proposed follow-up.
   of `dist_device`.
 
 
+- Fixed the fail-closed CI contract reporting a workflow comment as a fail-open: it searched a step's whole text for `|| true`, so a comment recording that the suffix had been removed failed the gate. Full-line comments are now dropped before the check; inline trailing comments and real suffixes are still caught, pinned by a new case in `scripts/ci/test_fail_closed_ci.py`.
+
+
 - **The allocation-failure tests no longer double-free under an optimised LTO
   build.** `test_fex_ctx_vector` and `test_registration_partial_copy` inject
   failures by intercepting a symbol — the first through GNU `-Wl,--wrap=`, the
@@ -29016,6 +29019,11 @@ models are currently quantised.
   can be exercised without the Trainer-scoped `self.log()` calls that Lightning
   warns about when no `Trainer` is attached. Logging behaviour inside a real
   fit loop is unchanged — same metric names, same flags.
+- `ai/scripts/train_fr_regressor_v3.py` discharged its ADR-0141 touched-file
+  debt in the same change: `_load_corpus` (149 LOC), `main` (122) and
+  `run_loso` (79) split into named helpers so every function is inside the
+  HISS-04 / NASA Rule 4 60-LOC limit. Pure extraction — no behavioural change —
+  and the repository's HISS infraction total drops from 286 to 283.
 
 
 - `python/tox.ini` test env bumped `py311` → `py314` to match the CI Python
