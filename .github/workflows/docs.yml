@@ -45,7 +45,22 @@ jobs:
     outputs:
       docs: ${{ steps.impact.outputs.docs }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 25, not 10. Every run that actually built docs hit the 10-minute ceiling,
+    # and GitHub reports a timed-out job as `cancelled`, which reads like
+    # contention rather than a budget. Measured 2026-09-22 at job level:
+    #   48300e324  19:29:21 -> 19:39:31  10m10s  cancelled
+    #   d9805a64f  18:05:31 -> 18:15:34  10m03s  cancelled
+    #   2487da308  17:58:19 -> 17:58:39     20s  success
+    # The one that passed is a dependency bump whose diff touches no docs, so
+    # the ADR-1140 impact planner skipped the build -- it never ran mkdocs. In
+    # the runs that did, `mkdocs build --strict` alone reported "Documentation
+    # built in 562.22 seconds", leaving about 38 s of the 600 s budget for
+    # checkout, setup-python, `pip install -r docs/requirements.txt` and
+    # `make docs-fragments-check`. The site carries ~1300 ADRs and grows every
+    # time one lands, so this ceiling was always going to be crossed. 25
+    # minutes is about 2.5x the measured build, with room for the
+    # hosted-runner spread (measured at up to 2.3x on the Coverage Gate).
+    timeout-minutes: 25
     # Ref-scoped: one docs build per branch, superseded only by a newer push to
     # that same branch. No cross-PR contention.
     concurrency:
@@ -84,18 +99,11 @@ jobs:
         if: steps.impact.outputs.docs == 'true'
         run: mkdocs build --strict
       # Only `deploy` consumes this, and `deploy` runs on `push` to master
-      # only. Uploading it on a pull request is pure contention: the artifact is
-      # named `github-pages`, which is repository-unique, so concurrent
-      # pull-request builds fight over one name with no consumer on the other
-      # end. Measured 2026-09-22 at 17:41, when five promoted dependency pull
-      # requests built docs within 20 seconds of each other: runs 35762358758,
-      # 35762362640 and 35762366615 were all cancelled inside
-      # `upload-pages-artifact`, 35762396857 survived, and run 35763524151 for
-      # PR #1518 was cancelled the same way at 17:53. ADR-1294 ref-scoped this
-      # job's concurrency group, which stops one workflow evicting another; it
-      # cannot stop an artifact-name collision, so the upload itself is scoped
-      # to the runs that actually deploy. Pull requests keep the validation
-      # that matters -- `make docs-fragments-check` and `mkdocs build --strict`.
+      # only, so a pull request uploading it gains nothing -- the artifact is
+      # named `github-pages`, repository-unique, with no consumer on the other
+      # end. Scoping it to deploying runs is right on its own terms, and it
+      # also saves a minute of the build's budget. It is NOT what fixed the
+      # cancellations; those were the 10-minute job timeout, see the note above.
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
         if: steps.impact.outputs.docs == 'true' && github.event_name == 'push'
         with:

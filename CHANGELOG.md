@@ -22849,6 +22849,9 @@ mcp/backends, mcp/http-transport).
 - Fixed a pull request's docs build being cancelled by an unrelated branch: `docs.yml` put every job in GitHub's global `pages` concurrency group, which is not scoped by ref, so `mkdocs build --strict` and `make docs-fragments-check` could be evicted before completing and the check reported `cancelled` rather than a result. The build job is now scoped to its own ref; only the Pages deployment keeps the global group (ADR-1294).
 
 
+- Fixed the docs site build failing on every pull request that touches documentation. `mkdocs build --strict` takes about 562 s against a 10-minute job budget, leaving roughly 38 s for checkout, Python setup, dependency install and the fragment freshness check, so the job hit its ceiling and GitHub reported it as `cancelled` — which reads like contention rather than a budget, and hid the cause. The budget is now 25 minutes, about 2.5x the measured build. The one run that appeared to pass had been skipped by the ADR-1140 impact planner and never ran mkdocs at all.
+
+
 - Repair broken developer and usage guide links using canonical ADR IDs, backend
   overview pages, and source paths; retain historical local-only references.
 - Block selected documentation pushes when MkDocs is unavailable, while direct
