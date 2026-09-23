@@ -720,7 +720,9 @@ Metal runtime contract for those devices.
 ## Licensing of the GPU headers (ADR-1250)
 
 `libvmaf_sycl.h`, `libvmaf_cuda.h`, `libvmaf_hip.h` and `libvmaf_metal.h` are
+<!-- REUSE-IgnoreStart -->
 fork-authored and carry `SPDX-License-Identifier: EUPL-1.2`. Linking against
+<!-- REUSE-IgnoreEnd -->
 them is use of the library, not modification: the reciprocity applies when you
 redistribute a **modified** libvmaf. See
 [ADR-1250](../adr/1250-eupl-fork-relicense.md) and the

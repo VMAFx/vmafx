@@ -51874,7 +51874,7 @@ Two things to know when replaying upstream changes:
 - **`core/src/feature/speed.c`** and the other upstream mirrors are unchanged by
   the relicensing. If a future sync adds a new upstream file, it arrives with
   Netflix's header and the classifier will leave it alone.
-- **A new fork-authored file** should carry `SPDX-License-Identifier: EUPL-1.2`.
+- **A new fork-authored file** should carry <!-- REUSE-IgnoreStart -->`SPDX-License-Identifier: EUPL-1.2`<!-- REUSE-IgnoreEnd -->.
   `scripts/dev/relicense_fork_files.py --check` says so mechanically; it needs the
   `upstream/master` ref present locally (`git fetch upstream`).
 - **The vendored Pelorus files are not relicensed.** The tool's `vendored-mirror`

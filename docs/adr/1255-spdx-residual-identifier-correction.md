@@ -9,7 +9,9 @@
 
 ## Context
 
+<!-- REUSE-IgnoreStart -->
 1,027 tracked files declared `SPDX-License-Identifier: BSD-3-Clause-Plus-Patent`.
+<!-- REUSE-IgnoreEnd -->
 Checked against the current SPDX licence list, **no such identifier exists** —
 the only patent-bearing BSD identifier SPDX defines is `BSD-2-Clause-Patent`
 ("BSD-2-Clause Plus Patent License"). There is no three-clause patent variant at

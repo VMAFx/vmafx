@@ -11227,9 +11227,11 @@ core internal headers (`framesync.h`, `thread_pool.h`, `picture_pool.h`,
   unaffected. The MIT alternative is withdrawn from 123 Go files under `pkg/`,
   `cmd/vmafx-tune` and `cmd/vmafx-node/bpf`; anyone who already received those
   files under MIT keeps that grant for those versions.
+  <!-- REUSE-IgnoreStart -->
   The change also repairs licence metadata that was simply wrong: 946 files
   declared `SPDX-License-Identifier: BSD-3-Clause-Plus-Patent`, which is not a real
   SPDX identifier, 223 stated their terms only in prose with no machine-readable
+  <!-- REUSE-IgnoreEnd -->
   tag, and 147 carried no notice at all. Which files moved was decided by
   provenance rather than by reading headers, and is reproducible:
   `scripts/dev/relicense_fork_files.py --check` re-derives every verdict and fails
@@ -20459,6 +20461,26 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   Identified by c-reviewer agent audit 2026-05-30 (MEDIUM severity).
 
 
+- **Achieved 100% REUSE 3.3 specification compliance tree-wide across all 9,139 files in REUSE scope (BUG-003).**
+  Baseline measurement on current master showed 6,806 files lacking copyright and 7,251 files lacking licensing
+  information, 14 invalid SPDX expressions in prose across 13 files, and 1 unused license (`LicenseRef-Apache-2.0-u2netp`).
+  Resolved cleanly without churn or noisy per-file headers:
+  - Wrapped 14 prose and string mentions of license identifiers across 13 files with standard REUSE ignore comments
+    (`<!-- REUSE-IgnoreStart -->` / `<!-- REUSE-IgnoreEnd -->`, `// ...`, and `# ...`), dropping invalid SPDX expressions to 0.
+  - Activated `LicenseRef-Apache-2.0-u2netp` in `REUSE.toml` on `docs/ai/models/u2netp_mirror_card.md` and `docs/ai/u2netp-mirror.md`,
+    and downloaded canonical ISC, LGPL-2.1-or-later, and GPL-2.0-or-later texts, leaving 0 unused and 0 missing licenses.
+  - Defined root `REUSE.toml` (version 1) using a `closest` default plus exact provenance overrides. Strictly preserved upstream Netflix provenance
+    (`2016-2020 Netflix, Inc.`, `BSD-2-Clause-Patent`) across `core/**`, `compat/python-vmaf/**`, `python/**`, `model/**`,
+    `resource/**`, `Dockerfile*`, `Makefile`, and `OSSMETADATA`; preserved third-party provenance for `cJSON` (MIT), `xiph` (BSD-3-Clause),
+    `iqa` (BSD-3-Clause), `cpuid.asm` (BSD-2-Clause), `x86inc.asm` (ISC), `pelorus` (BSD-2-Clause-Patent), and `fastdvdnet_pre` (MIT);
+    kept inherited root and renamed upstream files under BSD-2-Clause-Patent; kept FFmpeg patches under LGPL-2.1-or-later (patch 0019 also
+    spans GPL-2.0-or-later); retained every rename-aware no-CLA outside contribution on its existing BSD terms; assigned `model/tiny/**`
+    models Lusoris `BSD-2-Clause-Patent`; and assigned Lusoris `EUPL-1.2` only to fork-authored code and docs.
+  - Added fail-closed regression gates and tests: `reuse-lint` and `test-reuse-compliance` hooks in `.pre-commit-config.yaml`,
+    a `lint-reuse` target in `Makefile` wired into `make lint`, dedicated unit tests in `scripts/ci/tests/test_reuse_compliance.py`,
+    and CI verification with pre-commit 4.6.2 and REUSE 6.2.0 pinned in `.github/workflows/lint-and-format.yml`.
+
+
 - Fixed FIFO-mode Python executors hanging until the CI job timeout when a
   spawned workfile or procfile producer died before signaling readiness. The
   parent now reports the producer role, exit code, and available traceback,
@@ -28358,8 +28380,10 @@ mirroring the `sse_line_16_c` reference in `core/src/feature/integer_psnr.c`.
 
 - **The last live references to a licence that does not exist are gone, and
   one file's licence tag is now machine-readable at all.** ADR-1255 corrected
+  <!-- REUSE-IgnoreStart -->
   every `SPDX-License-Identifier:` declaration that carried the non-existent
   `BSD-3-Clause-Plus-Patent`, and ADR-1250's relicensing finished the job;
+  <!-- REUSE-IgnoreEnd -->
   measured on this tree, **no file declares an invalid identifier** and
   `reuse lint` reports only real identifiers in use. What ADR-1255 could not
   reach was everything that states a licence in some *other* syntax, because

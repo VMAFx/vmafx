@@ -35,8 +35,10 @@ Per the upstream LICENSE at the 7.18 tag (accessed 2026-05-09:
 > Alternatively, you can license this software under a commercial
 > license, as set out in <https://mongoose.ws/licensing/>.
 
+<!-- REUSE-IgnoreStart -->
 `mongoose.h` carries `SPDX-License-Identifier: GPL-2.0-only or
 commercial`. The combined work (libvmaf + mongoose) under the
+<!-- REUSE-IgnoreEnd -->
 GPL-2 leg would force GPL distribution terms onto every
 downstream that links libvmaf, which contradicts CLAUDE.md §1
 ("License: BSD-3-Clause-Plus-Patent ... preserved"). The
