@@ -262,8 +262,21 @@ def test_extras_validation_rejects_bad_inputs(args: dict, match: str) -> None:
     ],
 )
 def test_vmaf_score_rejects_invalid_core_params(args: dict, match: str) -> None:
+    # The fixture paths above are repository-relative, and _validate_path resolves
+    # a relative path against the process CWD. Run from the repo root they land on
+    # an allowlisted root and the call reaches the parameter checks these cases are
+    # about; run from mcp-server/vmaf-mcp/ -- the natural place to run this package's
+    # own suite -- they resolve outside the allowlist and every case fails on
+    # "not under an allowlisted root" instead, so the test silently stops asserting
+    # what it names. Anchoring them makes the case independent of the invocation
+    # directory. See the sibling tests below, which already resolve against
+    # _repo_root() for the same reason.
+    repo = srv._repo_root()
+    anchored = dict(args)
+    for key in ("ref", "dis"):
+        anchored[key] = str(repo / anchored[key])
     with pytest.raises(ValueError, match=match):
-        anyio.run(lambda: srv._call_tool_dispatch("vmaf_score", args, None))
+        anyio.run(lambda: srv._call_tool_dispatch("vmaf_score", anchored, None))
 
 
 def _score_fixture_pair() -> tuple[Path, Path]:
