@@ -47,7 +47,7 @@ for RES in $RESOLUTIONS; do
   ffmpeg -y -loglevel warning -i "$BBB" \
     -vf "scale=${W}:${H}" -pix_fmt yuv420p \
     -c:v libx264 -crf 28 -preset fast -an \
-    -frames:v "$FRAMES" -f mp4 - |
+    -frames:v "$FRAMES" -f mp4 -movflags frag_keyframe+empty_moov - |
     ffmpeg -y -loglevel warning -i - \
       -pix_fmt yuv420p -frames:v "$FRAMES" "$DIS"
 

@@ -35,6 +35,28 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/sycl-a380-snapshots-bug040 — CPU and A380 SYCL snapshots regenerated together (2026-09-23)
+
+1. **`testdata/scores_cpu_{720,1080,4k}.json` and `testdata/scores_sycl_a380_*.json` moved together on purpose.**
+   Only `ref/dis_576x324_48f.yuv` and `ref/dis_640x480_48f.yuv` are committed in the repository;
+   the 720p, 1080p, and 4k fixtures are gitignored and derived by `testdata/generate.sh` from the
+   authoritative Big Buck Bunny 4K MP4 source (`bbb_sunflower_2160p_30fps_normal.mp4`).
+   Because FFmpeg n9.0.1 (x264) encodes the distorted clips with slightly different bitstreams
+   than the historical April 2026 encoder, deriving fresh fixtures naturally shifted the CPU
+   scores at 720p, 1080p, and 4k by ~6-8 points. Both CPU and SYCL snapshots were regenerated from
+   the exact same newly-derived fixtures in the same pass. Do not "restore" the old CPU 720/1080/4k
+   snapshots during a rebase or merge conflict; doing so breaks cross-backend parity against the
+   regenerated SYCL snapshots.
+2. **`testdata/run_sycl_scores.py` requires `--backend sycl` and device pinning.**
+   The script previously selected the backend negatively with `--no_cuda`, which stopped selecting
+   SYCL once HIP was added. It now explicitly passes `--backend sycl`. It also configures
+   `ONEAPI_DEVICE_SELECTOR=level_zero:gpu` to select an Intel Level Zero GPU. The regenerated
+   576p and 4K snapshots were independently reproduced byte-for-byte (excluding the measured
+   `fps` field) with the diagnostic `VMAF_SYCL_CHECKSUM` path disabled, so the results do not
+   depend on its blocking checksum copy or hide a production queue race.
+3. **Committed 576x324 and 640x480 fixture files remain bit-identical.**
+   `testdata/ref_576x324_48f.yuv`, `dis_576x324_48f.yuv`, `ref_640x480_48f.yuv`, and
+   `dis_640x480_48f.yuv` were not regenerated and match master bit-for-bit.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
