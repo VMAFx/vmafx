@@ -26,6 +26,7 @@
 #include "dict.h"
 #include "metadata_handler.h"
 #include "feature_collector.h"
+#include "feature_collector_internal.h"
 #include "feature_name.h"
 #include "libvmaf/libvmaf.h"
 #include "log.h"
@@ -38,7 +39,7 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-static int aggregate_vector_init(AggregateVector *aggregate_vector)
+int aggregate_vector_init(AggregateVector *aggregate_vector)
 {
     if (!aggregate_vector)
         return -EINVAL;
@@ -54,8 +55,8 @@ static int aggregate_vector_init(AggregateVector *aggregate_vector)
     return 0;
 }
 
-static int aggregate_vector_append(AggregateVector *aggregate_vector, const char *feature_name,
-                                   double score)
+int aggregate_vector_append(AggregateVector *aggregate_vector, const char *feature_name,
+                            double score)
 {
     if (!aggregate_vector)
         return -EINVAL;
@@ -103,7 +104,7 @@ static int aggregate_vector_append(AggregateVector *aggregate_vector, const char
     return 0;
 }
 
-static void aggregate_vector_destroy(AggregateVector *aggregate_vector)
+void aggregate_vector_destroy(AggregateVector *aggregate_vector)
 {
     if (!aggregate_vector)
         return;
@@ -171,7 +172,7 @@ int vmaf_feature_collector_get_aggregate(VmafFeatureCollector *feature_collector
     return err;
 }
 
-static int feature_vector_init(FeatureVector **const feature_vector, const char *name)
+int feature_vector_init(FeatureVector **const feature_vector, const char *name)
 {
     if (!feature_vector)
         return -EINVAL;
@@ -205,7 +206,7 @@ fail:
     return -ENOMEM;
 }
 
-static void feature_vector_destroy(FeatureVector *feature_vector)
+void feature_vector_destroy(FeatureVector *feature_vector)
 {
     if (!feature_vector)
         return;
@@ -214,7 +215,7 @@ static void feature_vector_destroy(FeatureVector *feature_vector)
     free(feature_vector);
 }
 
-static int feature_vector_append(FeatureVector *feature_vector, unsigned index, double score)
+int feature_vector_append(FeatureVector *feature_vector, unsigned index, double score)
 {
     if (!feature_vector)
         return -EINVAL;
@@ -382,13 +383,9 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
     return err;
 }
 
-/* `model` is only compared by address here, but this prototype lives in
- * feature_collector.h and is shared with the C++ twin feature_collector.cpp
- * (compiled into test_predict and the collector coverage tests); the two
- * TUs must keep an identical signature, so it stays mutable until the twins
- * are reconciled. Suppression cited per ADR-0278. */
-/* cppcheck-suppress constParameterPointer ; prototype shared with the C++ twin, see above */
-int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
+/* `model` is only compared by address here. */
+int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector,
+                                         const VmafModel *model)
 {
     if (!feature_collector)
         return -EINVAL;

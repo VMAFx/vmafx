@@ -75,7 +75,7 @@ fuzz_cli_parse = executable('fuzz_cli_parse',
 )
 
 # fuzz_json_model — wraps the libvmaf SVM model JSON parser
-# (core/src/read_json_model.c) via its public buffer entry points
+# (core/src/read_json_model.cpp, the parser libvmaf ships) via its public buffer entry points
 # `vmaf_read_json_model_from_buffer` /
 # `vmaf_read_json_model_collection_from_buffer`. Those symbols are
 # fork-local (not VMAF_EXPORTed) and libvmaf is built with
@@ -85,13 +85,13 @@ fuzz_cli_parse = executable('fuzz_cli_parse',
 # called from the embedded SV-block parser.
 fuzz_json_model = executable('fuzz_json_model',
     ['fuzz_json_model.c',
-     '../../src/read_json_model.c',
+     '../../src/read_json_model.cpp',
      '../../src/pdjson.c',
      # dict.c became dict.cpp in the C++23 rewrite (#1054). It stays listed
      # here rather than relying on link_with so the parser under test is
      # compiled with libFuzzer coverage instrumentation like its siblings.
      '../../src/dict.cpp',
-     '../../src/log.c',
+     '../../src/log.cpp',
      json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,

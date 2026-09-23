@@ -196,7 +196,7 @@ core/
 
 - **`vmaf_picture_pool_fetch` error paths must always signal `pool->available`
   before unlocking** (fork-local, ADR-0960, round-25 audit A.2):
-  [`src/picture_pool.c`](src/picture_pool.c) `return_to_pool` block
+  [`src/picture_pool.cpp`](src/picture_pool.cpp) `return_to_pool` block
   must call `pthread_cond_signal(&pool->available)` every time an index is
   pushed back to `pool->free_list`, regardless of whether the push is from
   a normal `vmaf_picture_unref` or from a fetch error path. Omitting the
@@ -641,7 +641,7 @@ not as fixed constants.
      `gpu_dispatch_env_cpp23_lib` (ADR-0858), `metadata_handler_cpp20_lib` (ADR-0708),
      `log_cpp23_lib`, `opt_cpp23_lib`, `picture_pool_cpp23_lib`, `gpu_picture_pool_cpp23_lib`,
      `read_json_model_cpp23_lib`, `libvmaf_cpu_static_lib`, the `vmaf` / `vmafx` tools, the
-     `test_cli_parse*` / `test_picture_pool_cpp_error_paths` tests and `fuzz_cli_parse` are all
+     `test_cli_parse*` / `test_picture_pool_error_paths` tests and `fuzz_cli_parse` are all
      compiled at the project-wide C++ standard that `core/meson.build` injects through
      `add_project_arguments` (ADR-1003 / ADR-1056). That flag is emitted *after* any
      per-target `cpp_std=` option, so the former `override_options : ['cpp_std=...']`
@@ -761,9 +761,9 @@ not as fixed constants.
   `include/libvmaf/libvmaf.h` is frozen), `read_pictures_validate_and_prep`
   (`vmaf_sycl_shared_frame_upload()` takes mutable pictures on the SYCL
   build cppcheck never analyses) and `vmaf_feature_collector_unmount_model`
-  (prototype shared with the C++ twin `feature/feature_collector.cpp`, which
-  `test_predict` compiles). Drop a marker only when its cited constraint is
-  gone. `vmaf_feature_collector_get()` (`libvmaf_priv.h`) takes a
+  (its prototype in `feature/feature_collector.h` is part of the internal
+  ABI every extractor TU compiles against). Drop a marker only when its cited
+  constraint is gone. `vmaf_feature_collector_get()` (`libvmaf_priv.h`) takes a
   `const VmafContext *` — keep the declaration and definition in step.
 - **PREV_REF references are released only through `fex_release_prev_ref()`**
   and every CPU-pool skip decision goes through `batch_extractor_skip()` /

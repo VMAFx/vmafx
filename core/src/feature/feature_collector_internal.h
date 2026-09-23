@@ -18,12 +18,12 @@
 
 /* feature_collector_internal.h
  *
- * Internal helpers extracted from feature_collector.cpp so that both the
- * implementation TU and the C unit-test (test_feature_collector.c) can reach
- * aggregate_vector_* / feature_vector_* without #including the whole .cpp.
+ * Internal helpers of feature_collector.c that the unit tests reach directly
+ * (test_feature_collector_coverage.c): aggregate_vector_* / feature_vector_*.
  *
- * The six functions are declared here and defined in feature_collector.cpp.
- * The extern "C" wrapper lets C test code include this header directly.
+ * The six functions are declared here and defined in feature_collector.c.
+ * They are library-internal: libvmaf builds with -fvisibility=hidden, so they
+ * are not exported. The extern "C" wrapper keeps the header usable from C++.
  */
 
 #ifndef VMAF_FEATURE_COLLECTOR_INTERNAL_INCLUDED

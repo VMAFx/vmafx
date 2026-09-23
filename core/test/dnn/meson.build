@@ -138,11 +138,13 @@ test('test_vmaf_use_tiny_model', test_vmaf_use_tiny_model,
 if dnn_have_ort
     test_ort_error_injection = executable('test_ort_error_injection',
         ['../test.c', 'test_ort_error_injection.c',
-         '../../src/dnn/ort_backend.c',
-         '../../src/log.c'],
+         '../../src/dnn/ort_backend.c'],
         include_directories : dnn_test_inc,
         c_args : dnn_defines,
         dependencies : [math_lib, ort_dep],
+        # vmaf_log comes from the logger libvmaf ships (log.cpp, as test_log
+        # links it), not from a second copy compiled only for this test.
+        link_with : log_cpp23_lib,
     )
     test('test_ort_error_injection', test_ort_error_injection,
          workdir : meson.project_source_root() / '..',

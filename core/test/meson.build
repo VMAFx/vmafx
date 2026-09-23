@@ -349,7 +349,7 @@ test_model_collection_api = executable('test_model_collection_api',
 
 test_predict = executable('test_predict',
     ['test.c', 'test_predict.c', '../src/dict.cpp', '../src/metadata_handler.cpp',
-     '../src/feature/feature_collector.cpp', '../src/feature/alias.c', '../src/model.c',
+     '../src/feature/feature_collector.c', '../src/feature/alias.c', '../src/model.c',
      '../src/pdjson.c', json_model_c_sources, '../src/feature/feature_name.cpp', '../src/feature/feature_extractor.cpp',],    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : vmaf_cflags_common,
@@ -2431,26 +2431,20 @@ test_thread_safety_batch = executable('test_thread_safety_batch',
 )
 test('test_thread_safety_batch', test_thread_safety_batch, suite : ['fast'])
 
-# ADR-0960 (round-25 audit A.2 + A.3) — picture_pool.c error-path fixes:
+# ADR-0960 (round-25 audit A.2 + A.3) — picture-pool error-path fixes:
 # missing pthread_cond_signal on return_to_pool and dangling pic->priv after
-# free(priv). Compiles against the internal picture_pool.c so it can call the
-# vmaf_picture_pool_{init,fetch,close} symbols directly without going through
-# the high-level vmaf_preallocate_pictures API.
+# free(priv). Compiles picture_pool.cpp, the file libvmaf ships, directly so
+# it can call the vmaf_picture_pool_{init,fetch,close} symbols without going
+# through the high-level vmaf_preallocate_pictures API. (A second target used
+# to compile a picture_pool.c twin that the library never built; the twin is
+# gone, see the test-only-twin ADR.)
 test_picture_pool_error_paths = executable('test_picture_pool_error_paths',
-    ['test.c', 'test_picture_pool_error_paths.c',
-     '../src/picture_pool.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
-)
-test('test_picture_pool_error_paths', test_picture_pool_error_paths, suite : ['fast'])
-
-test_picture_pool_cpp_error_paths = executable('test_picture_pool_cpp_error_paths',
     ['test.c', 'test_picture_pool_error_paths.c',
      '../src/picture_pool.cpp', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
 )
-test('test_picture_pool_cpp_error_paths', test_picture_pool_cpp_error_paths, suite : ['fast'])
+test('test_picture_pool_error_paths', test_picture_pool_error_paths, suite : ['fast'])
 
 # ADR-0152 — monotonic-index guard on vmaf_read_pictures (Netflix#910).
 test_read_pictures_monotonic = executable('test_read_pictures_monotonic',
@@ -4147,18 +4141,16 @@ test_adm_csf_tools_coverage = executable('test_adm_csf_tools_coverage',
 )
 test('test_adm_csf_tools_coverage', test_adm_csf_tools_coverage, suite : ['fast'])
 
-# Coverage round 3 — core/src/feature/feature_collector.cpp branch
-# coverage push (62.5 % -> 80 %+).  Hits NULL guards, duplicate-key
-# rejects, and unmount-not-found paths via the internal header.
-# feature_collector.cpp is compiled directly into this test so the
-# non-static internal helpers (aggregate_vector_*, feature_vector_*)
-# declared in feature_collector_internal.h are resolvable at link time.
-# libvmaf includes only feature_collector.c (static helpers); the
-# duplicate-free compilation here is safe — see test_predict for the
-# same pattern.
+# Coverage round 3 — core/src/feature/feature_collector.c branch coverage.
+# Hits NULL guards, duplicate-key rejects, and unmount-not-found paths via
+# the internal header. feature_collector.c, the file libvmaf ships, is
+# compiled directly into this test so the internal helpers
+# (aggregate_vector_*, feature_vector_*) declared in
+# feature_collector_internal.h resolve at link time whatever the library's
+# symbol visibility — see test_predict for the same pattern.
 test_feature_collector_coverage = executable('test_feature_collector_coverage',
     ['test.c', 'test_feature_collector_coverage.c',
-     '../src/feature/feature_collector.cpp'],
+     '../src/feature/feature_collector.c'],
     include_directories : [libvmaf_inc, test_inc,
                            include_directories('../src/feature/'),
                            include_directories('../src/')],
