@@ -56,7 +56,7 @@ endif
 # project default (c_args only) and linked together with the C++ TUs.
 vmaf = executable(
     'vmaf',
-    ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c'],
+    ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_tool_deps,
     c_args : vmaf_tool_cflags,
@@ -73,7 +73,7 @@ vmaf = executable(
 if host_machine.system() == 'windows'
     vmafx = executable(
         'vmafx',
-        ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c'],
+        ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c', '../src/compat/path_utf8.c'],
         include_directories : [libvmaf_inc, vmaf_include],
         dependencies: vmaf_tool_deps,
         c_args : vmaf_tool_cflags,
@@ -105,7 +105,7 @@ endif
 
 vmaf_per_shot = executable(
     'vmaf-perShot',
-    ['vmaf_per_shot.c'],
+    ['vmaf_per_shot.c', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_per_shot_deps,
     c_args : vmaf_per_shot_cflags,
@@ -116,7 +116,7 @@ vmaf_per_shot = executable(
 # vmaf-roi — T6-2b per-CTU QP offset sidecar (x265 / SVT-AV1 ROI).
 vmaf_roi = executable(
     'vmaf_roi',
-    ['vmaf_roi.c'],
+    ['vmaf_roi.c', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies : [stdatomic_dependency, getopt_dependency],
     c_args : vmaf_tool_cflags,
@@ -141,7 +141,7 @@ vmaf_bench_link_target = get_option('default_library') == 'both' ? libvmaf.get_s
 
 vmaf_bench = executable(
     'vmaf_bench',
-    ['vmaf_bench.c'],
+    ['vmaf_bench.c', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_bench_deps,
     c_args : vmaf_bench_cflags,
@@ -168,7 +168,7 @@ if get_option('enable_sycl')
     if vmaf_vpl_ok
         vmaf_vpl = executable(
             'vmaf_vpl',
-            ['vmaf_vpl.c'],
+            ['vmaf_vpl.c', '../src/compat/path_utf8.c'],
             include_directories : [libvmaf_inc, vmaf_include],
             dependencies: vmaf_vpl_deps,
             c_args : vmaf_cflags_common + ['-DHAVE_SYCL=1'],

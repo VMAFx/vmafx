@@ -72,9 +72,23 @@ core/
 - [ADR-0025](../docs/adr/0025-copyright-handling-dual-notice.md) — dual-copyright policy.
 - [ADR-0137](../docs/adr/0137-thread-local-locale-for-numeric-io.md) —
   thread-local locale abstraction (`thread_locale.h`) for all numeric I/O.
+- [ADR-1182](../docs/adr/1182-windows-utf8-path-contract.md) —
+  Windows UTF-8 path contract and internal path shims.
 
 ## Rebase-sensitive invariants
 
+- **Windows UTF-8 path contract and internal path shims**
+  ([ADR-1182](../docs/adr/1182-windows-utf8-path-contract.md);
+  [Research-1182](../docs/research/1182-windows-utf8-path-contract.md)):
+  `core/src/compat/path_utf8.{h,c}` implements `vmaf_fopen_utf8` and
+  `vmaf_open_utf8`. On Windows (`_WIN32`), they decode UTF-8 paths to wide
+  strings via `MultiByteToWideChar` and dispatch to `_wfopen` / `_wopen`. On POSIX,
+  they map directly to `fopen` / `open`. `output_file_open` in
+  `core/src/libvmaf.c` and all fork tool/model openers must route through these
+  shims. The shims are internal and must NOT be exported from `libvmaf.so`
+  (no `VMAF_EXPORT`, preserving ADR-0379 ABI stability).
+  `core/src/interop/pelorus_qp_report_csv.c` must remain untouched to respect
+  the ADR-1113 Pelorus verbatim mirror invariant.
 - **`meson_version` is pinned to `>= 1.4.0`, not upstream's value**
   (fork-local, ADR-0692 / T-CI-MESON-C23-APT-2026-08-30):
   [`meson.build`](meson.build) sets Meson's built-in fallback list

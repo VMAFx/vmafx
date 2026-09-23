@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "compat/path_utf8.h"
 #include "libvmaf/dnn.h"
 #include "vmaf_roi_core.h"
 #include "vmaf_roi_input.h"
@@ -211,7 +212,7 @@ static size_t frame_bytes(int w, int h, enum vmaf_roi_pixfmt pf, int bitdepth)
 
 static int load_luma_frame(const struct vmaf_roi_opts *o, uint8_t *dst)
 {
-    FILE *fp = fopen(o->reference, "rb");
+    FILE *fp = vmaf_fopen_utf8(o->reference, "rb");
     if (fp == NULL) {
         const int saved = errno;
         (void)fprintf(stderr, "vmaf-roi: cannot open %s: errno=%d\n", o->reference, saved);
@@ -344,7 +345,7 @@ static int emit_sidecar(const struct vmaf_roi_opts *o, const float *grid, int co
     if (strcmp(o->output, "-") == 0) {
         fp = stdout;
     } else {
-        fp = fopen(o->output, (o->encoder == VMAF_ROI_ENCODER_SVTAV1) ? "wb" : "w");
+        fp = vmaf_fopen_utf8(o->output, (o->encoder == VMAF_ROI_ENCODER_SVTAV1) ? "wb" : "w");
         if (fp == NULL) {
             const int saved = errno;
             (void)fprintf(stderr, "vmaf-roi: cannot open %s for writing: errno=%d\n", o->output,

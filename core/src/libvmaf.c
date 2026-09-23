@@ -57,6 +57,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "metadata_handler.h"
 #include "fex_ctx_vector.h"
 #include "libvmaf_priv.h"
+#include "compat/path_utf8.h"
 #include "log.h"
 #include "model.h"
 #include "output.h"
@@ -3600,11 +3601,7 @@ const char *vmaf_version(void)
  * permission bits up front. Returns -errno of the failing call. */
 static int output_file_open(const char *output_path, FILE **outfile)
 {
-#ifdef _WIN32
-    const int outfd = _open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-#else
-    const int outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-#endif
+    const int outfd = vmaf_open_utf8(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (outfd < 0) {
         /* Capture errno immediately — it is clobbered by fprintf(3). */
         const int open_errno = errno;
@@ -3700,6 +3697,8 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
     int ret = output_file_open(output_path, &outfile);
     if (ret)
         return ret;
+    if (!outfile)
+        return -EIO;
 
     ret = output_write(vmaf, fmt, outfile, output_fps(vmaf), score_format);
 

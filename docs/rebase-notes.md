@@ -52663,3 +52663,22 @@ to an exception.
 - Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
   tests/test_coverage_round4.py::test_auth_413_on_large_body`.
 - Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.
+
+## fix/windows-utf8-path-contract-rc1 — Windows UTF-8 path contract (ADR-1182, 2026-09-24)
+
+1. **Internal UTF-8 shims (`core/src/compat/path_utf8.{h,c}`) must remain unexported.**
+   `vmaf_fopen_utf8` and `vmaf_open_utf8` are internal compatibility helpers; they
+   must not carry `VMAF_EXPORT` or be declared in `core/include/libvmaf/` public headers,
+   preserving ADR-0379 ABI stability and satisfying `check_exported_symbols.py`.
+2. **`output_file_open` in `core/src/libvmaf.c` and fork tool openers.**
+   Upstream's `output_file_open` used `_open()` on Windows, decoding path strings with
+   the ANSI code page. The fork routes `output_file_open()` through `vmaf_open_utf8()`,
+   which converts UTF-8 strings to UTF-16 with `MultiByteToWideChar` and calls `_wopen()`.
+   Fork-added model loaders (`core/src/dnn/model_loader.c`, `core/src/read_json_model.{c,cpp}`)
+   and tools (`vmaf.cpp`, `vmaf_bench.c`, `vmaf_per_shot.c`, `vmaf_roi.c`, `vmaf_vpl.c`)
+   similarly route filesystem openings through `vmaf_fopen_utf8()`.
+3. **Pelorus interop mirror invariant (ADR-1113).**
+   `core/src/interop/pelorus_qp_report_csv.c` must NOT be edited directly to use
+   `vmaf_fopen_utf8` — it is a verbatim mirror of `libpelorus`. Any upstream changes
+   to Pelorus must originate in `VMAFx/pelorus` and be re-vendored via
+   `scripts/sync-pelorus-interop.sh`.

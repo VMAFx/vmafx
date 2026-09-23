@@ -52,6 +52,7 @@
 #endif
 
 #include "libvmaf/picture.h"
+#include "compat/path_utf8.h"
 #include "libvmaf/libvmaf.h"
 
 #ifdef HAVE_CUDA
@@ -144,8 +145,8 @@ static int yuv_pair_open(YuvPair *yp, unsigned w, unsigned h)
     const char *ref_can = realpath(ref_path, ref_resolved);
     const char *dis_can = realpath(dis_path, dis_resolved);
 #endif
-    yp->ref_fp = ref_can ? fopen(ref_can, "rb") : NULL;
-    yp->dis_fp = dis_can ? fopen(dis_can, "rb") : NULL;
+    yp->ref_fp = ref_can ? vmaf_fopen_utf8(ref_can, "rb") : NULL;
+    yp->dis_fp = dis_can ? vmaf_fopen_utf8(dis_can, "rb") : NULL;
     if (!yp->ref_fp || !yp->dis_fp) {
         (void)fprintf(stderr,
                       "Cannot open test data for %ux%u\n"
