@@ -109,8 +109,14 @@ jobs:
             echo "FATAL: FFmpeg warning-hardening patch did not apply" >&2
             exit 1
           fi
+          # --disable-filter=coreimage: libavfilter/vf_coreimage.m builds against
+          # NSOpenGLPFAAccelerated, deprecated in macOS 10.14, and nothing in this
+          # integration uses the filter. Scoping it out is consistent with
+          # --disable-indevs above and leaves the warning gate meaningful, where
+          # -DGL_SILENCE_DEPRECATION would only hide it.
           ./configure --fatal-warnings \
             --enable-version3 --enable-libvmaf --disable-indevs \
+            --disable-filter=coreimage \
             --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
           build_jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
           make -j "$build_jobs" build 2>&1 | tee /tmp/ffmpeg-build.log
@@ -156,7 +162,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install meson
           sudo apt-get update
-          sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev
+          # libva-dev travels with libvpl-dev on purpose. --enable-libvpl turns on
+          # QSV, and on Linux QSV runs through VAAPI: without libva, FFmpeg
+          # compiles hwcontext_qsv.c with every #if CONFIG_VAAPI block dropped,
+          # which leaves seven declarations unused (185, 528, 533, 536, 1514,
+          # 1515, 2040 in n9.0.2) and trips the warning gate below. It is also a
+          # QSV configuration nobody ships. Installing it compiles those paths
+          # back in rather than patching FFmpeg to delete the variables.
+          sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev libva-dev
 
       - name: Install Intel oneAPI
         # oneAPI version comes from ONEAPI_APT_PACKAGE in build-config.env;
