@@ -170,7 +170,7 @@ the IQA header guards.
   [Netflix/vmaf#1472](https://github.com/Netflix/vmaf/pull/1472),
   commits `15745cdf` + `b7b65e64` (birkdev, 2026-03-16, OPEN).
 - Backlog: `.workingdir2/BACKLOG.md` T4-2.
-- [ADR-0122](0122-cuda-post-cubin-load-hardening.md) — fork's
+- [ADR-0122](0122-cuda-gencode-coverage-and-init-hardening.md) — fork's
   existing gencode coverage extension (Context for conflict 2).
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — touched-file
   lint-clean rule (drove the header-guard rename).

@@ -102,7 +102,7 @@ and ensures file-size arithmetic is 64-bit on MSVC.
 
 ## References
 
-- [ADR-0503](0503-vif-spill-reduction.md) — introduced the noinline/noclone helpers
+- [ADR-0503](0503-vif-subsample-rd-8-loop-fission.md) — introduced the noinline/noclone helpers
 - [ADR-0515](0515-test-public-api-score-mingw64-temp-path.md) — sibling MinGW64 fix (PR #1274)
 - CI run 26025892576 — PR #1274 MSVC+CUDA job log showing `vif_avx512.c(1045): error C2143`
 - CI run 26025892576 — PR #1274 MSVC+SYCL job log showing `yuv_input.c(70,46): error: call to undeclared function 'S_ISREG'`

@@ -101,8 +101,8 @@ C TUs must retain `NULL` rather than C23 `nullptr` to avoid breaking MSVC's
 ## References
 
 - [ADR-0141](0141-touched-file-cleanup-rule.md): Touched file cleanup rule
-- [ADR-0809](0809-vmaf-cli-cpp23-port.md): CLI C++23 migration
+- [ADR-0809](0809-cli-cpp23-conversion.md): CLI C++23 migration
 - [ADR-1138](1138-c-translation-units-keep-null.md): C translation units keep NULL
-- [ADR-1142](1142-whole-tree-clang-tidy-ratchet.md): Whole-tree clang-tidy ratchet
+- [ADR-1142](1142-whole-codebase-standards.md): Whole-tree clang-tidy ratchet
 - [ADR-1153](1153-twin-dead-sides-resolution.md): Twin dead sides resolution
 - Maintainer direction (2026-08-31): Upstream code not reworked to fork standards must be reworked, with Netflix goldens as the only invariant.

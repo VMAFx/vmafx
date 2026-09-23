@@ -163,7 +163,7 @@ load.
 - Q1.2 (scope): migrate every consumer at once, before 1.0.0.
 - Q1.3 (`gfx1036`): keep the target if it works — it does, natively, so the
   `HSA_OVERRIDE_GFX_VERSION` alias is dropped rather than kept.
-- [ADR-0541](0541-dev-container-kernel-abi-pins.md) — the kernel-ABI pins this revises.
+- [ADR-0541](0541-dev-container-sycl-hip-runtime-fix.md) — the kernel-ABI pins this revises.
 - [ADR-0542](0542-dev-container-full-gpu-plumbing.md) — introduced the `HSA_OVERRIDE_GFX_VERSION` pin this drops.
-- [ADR-0546](0546-audit-cleanup-bundle.md) — the `hip_gfx_targets` fallback list widened to include `gfx1036`.
+- [ADR-0546](0546-audit-bundle-vulkan-saliency-modelcard.md) — the `hip_gfx_targets` fallback list widened to include `gfx1036`.
 - [ADR-1129](1129-release-container-runtime-alignment.md) — the release-container runtime alignment whose ROCm reference this moves.

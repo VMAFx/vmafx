@@ -123,7 +123,7 @@ concatenation is deterministic.
 - ADR-0864 — `.markdownlint.json` tune + initial sweep (PR #332).
 - CLAUDE.md §12 rule 12 — touched-file lint-clean rule
   ([ADR-0141](0141-touched-file-cleanup-rule.md),
-  [ADR-0278](0278-nolint-citation-closeout.md)).
+  [ADR-0278](0278-t7-5-nolint-sweep.md)).
 - `markdownlint-cli2` upstream: <https://github.com/DavidAnson/markdownlint-cli2>.
 - Related PRs: lands after #332.
 - Source: `req` — direct user direction to wire the linter into

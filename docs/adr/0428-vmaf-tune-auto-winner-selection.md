@@ -48,6 +48,6 @@ amount, then the closest quality miss.
 
 ## References
 
-- [ADR-0325](0325-vmaf-tune-phase-f-auto.md)
+- [ADR-0397](0397-vmaf-tune-phase-f-auto.md)
 - [docs/usage/vmaf-tune.md](../usage/vmaf-tune.md)
 - Source: `req` ("well then go on, #787 has automerge on and i say something when its done, do the next backlog then")

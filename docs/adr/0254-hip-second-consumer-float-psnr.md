@@ -149,7 +149,7 @@ becomes runtime-visible and must be debugged against a real device.
   (T7-10 audit half).
 - [ADR-0241](0241-hip-first-consumer-psnr.md) — first kernel-template
   consumer (`integer_psnr_hip`); this ADR's predecessor.
-- [ADR-0221](0221-gpu-kernel-template.md) — original CUDA kernel
+- [ADR-0246](0246-gpu-kernel-template.md) — original CUDA kernel
   template that ADR-0241 mirrored onto HIP.
 - [ADR-0246](0246-gpu-kernel-template.md) — kernel-template
   generalisation across GPU backends.

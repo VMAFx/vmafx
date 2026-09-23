@@ -71,7 +71,7 @@ loaded.
   tiny-AI surfaces.
 - [ADR-0237](0237-quality-aware-encode-automation.md) — vmaf-tune Phase A
   corpus.
-- [ADR-0276](0276-vmaf-tune-phase-d-per-shot.md) — per-shot CRF
+- [ADR-0392](0392-vmaf-tune-phase-d-per-shot.md) — per-shot CRF
   scaffold the predictor feeds.
 - [`tools/vmaf-tune/src/vmaftune/predictor_train.py`](../../tools/vmaf-tune/src/vmaftune/predictor_train.py)
   — trainer.

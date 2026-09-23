@@ -63,6 +63,6 @@ condition.
 - `cmd/vmafx-mcp/AGENTS.md` invariants #19 and the `buildServer` seam.
 - `docs/mcp/index.md` § "Startup contract: all tools or none".
 - `docs/rebase-notes.md` § "vmafx-mcp tool schemas fail closed (2026-09-21)".
-- [ADR-1173](1173-mcp-grpc-bridge-go-only.md) — the Go-only gRPC bridge tools that share this registration path.
+- [ADR-1184](1184-mcp-grpc-bridge-go-only.md) — the Go-only gRPC bridge tools that share this registration path.
 - HISS-07 ("Checked Errors") in `.config/hiss/coverage.yaml`; baseline fingerprint `cmd/vmafx-mcp/tools.go:962:HISS-07`.
 - Source: adversarial review of branch `chore/hiss21-go-cmd`, paraphrased: a schema that accepts anything is not a safe fallback for a schema that failed to build; "handled" under HISS-07 means propagated or fatal, not swallowed into a permissive default.

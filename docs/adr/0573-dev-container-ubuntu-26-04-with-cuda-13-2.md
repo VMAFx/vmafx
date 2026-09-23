@@ -143,7 +143,7 @@ v0.2.35 supports 13.2.0 (verified in `src/links/linux-links.ts` and
 
 - Supersedes the ubuntu:26.04 attempt in PR #1330
   (branch chore/dev-container-ubuntu-26-04; failed on rsqrt + ROCm regression)
-- [ADR-0541](0541-dev-container-gpu-sdk-audit.md) — GPU SDK source decisions
+- [ADR-0541](0541-dev-container-sycl-hip-runtime-fix.md) — GPU SDK source decisions
 - CUDA 13.2 glibc 2.43 compatibility: NVIDIA Developer Blog, CUDA 13.2 release
   notes
 - `apt-cache show mesa-libgallium` on `ubuntu:26.04` (verified 2026-05-18):

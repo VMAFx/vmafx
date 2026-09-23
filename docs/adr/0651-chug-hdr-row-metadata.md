@@ -50,6 +50,6 @@ the extractor does not infer display-panel capability from clip metadata.
 ## References
 
 - [ADR-0426](0426-chug-hdr-corpus-ingestion.md)
-- [ADR-0427](0427-chug-hdr-fr-feature-materializer.md)
+- [ADR-0427](0427-chug-hdr-feature-materialisation.md)
 - Source: `req` — "well yeah and chug is hdr mos... so thats different because netflix (current) model is 8bit only etc..."
 - Source: `req` — "implement everything that is not blocked by the model"

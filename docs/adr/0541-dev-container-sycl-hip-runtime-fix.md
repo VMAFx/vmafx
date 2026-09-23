@@ -112,11 +112,11 @@ on container start if SYCL `level_zero:gpu` or HIP HSA agents are missing.
 - Intel graphics-compiler 2.34.4: NEO 26.18 release notes mandate IGC v2.34.4.
 - ROCm 7.2.3 release: `https://repo.radeon.com/rocm/apt/7.2.3/dists/noble/`
 - Prior ADRs:
-  - [ADR-0509](0509-dev-mcp-icd-loader-vk-icd.md) — initial dev-MCP backend
+  - [ADR-0514](0514-dev-container-full-backend-exposure.md) — initial dev-MCP backend
     visibility (Vulkan loader / LD_LIBRARY_PATH discipline).
-  - [ADR-0528](0528-dev-mcp-whole-dri-bind-mount.md) — `/dev/dri` whole-
+  - ADR-0528 — `/dev/dri` whole-
     directory bind-mount for stable Arc device-node passthrough.
-  - [ADR-0214](0214-cross-backend-parity-gate.md) — cross-backend parity gate
+  - [ADR-0214](0214-gpu-parity-ci-gate.md) — cross-backend parity gate
     that depends on real GPU execution in the dev-MCP container.
   - CLAUDE.md §12 r15 sub-rule 4 — "Don't reinvent host builds" container-
     default rule.

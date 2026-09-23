@@ -13,9 +13,9 @@ The `float_ms_ssim` extractor's `enable_lcs` option (defined in
 emits 15 extra per-scale metrics — `float_ms_ssim_{l,c,s}_scale{0..4}` —
 on top of the combined Wang-product score. The fork's GPU twins
 (`float_ms_ssim_cuda` from
-[ADR-0190](0190-float-ms-ssim-cuda.md) / PR #157;
+[ADR-0190](0190-ms-ssim-vulkan.md) / PR #157;
 `float_ms_ssim_vulkan` from
-[ADR-0190](0190-float-ms-ssim-cuda.md) / PR #141) shipped the
+[ADR-0190](0190-ms-ssim-vulkan.md) / PR #141) shipped the
 combined score only — both deferred `enable_lcs` to a follow-up
 (see the file-header comment at
 [`integer_ms_ssim_cuda.c:29`](../../core/src/feature/cuda/integer_ms_ssim_cuda.c#L29)
@@ -60,7 +60,7 @@ already computes the same per-scale means).
 |---|---|---|---|
 | **A. Gate 15 host-side `feature_collector_append` calls on the existing `enable_lcs` bool** (chosen) | No kernel changes; default path bit-identical; one ADR, ~30 LOC | None of substance | This is the trivial extension — the GPU vert kernel already emits L/C/S means; only the host-side emission was missing. |
 | B. Add 15 separate device readback buffers (one per metric) for parity with the CPU's metric-by-metric `compute_ms_ssim` API | Conceptual symmetry with CPU `l_scores[]` / `c_scores[]` / `s_scores[]` arrays | 15× the D2H bandwidth; allocates ~60 MB of pinned host buffers at 4K; redundant — the per-WG-block partials already reduce to per-scale means at host | Wasteful and not faster; the per-scale double accumulator already runs every frame. |
-| C. Treat LCS as a separate feature extractor (`float_ms_ssim_lcs_cuda` / `_vulkan`) | Cleaner registration; one extractor = one set of metrics | Forces a second pyramid + intermediates allocation; doubles VRAM; breaks API parity (CPU is one extractor with an option, not two) | API-parity with CPU is a hard constraint per [ADR-0190](0190-float-ms-ssim-cuda.md). |
+| C. Treat LCS as a separate feature extractor (`float_ms_ssim_lcs_cuda` / `_vulkan`) | Cleaner registration; one extractor = one set of metrics | Forces a second pyramid + intermediates allocation; doubles VRAM; breaks API parity (CPU is one extractor with an option, not two) | API-parity with CPU is a hard constraint per [ADR-0190](0190-ms-ssim-vulkan.md). |
 | D. Order the emitted metric names metric-wise (`{l_scale0..4, c_scale0..4, s_scale0..4}`) vs scale-wise (`{l_scale0, c_scale0, s_scale0, l_scale1, ...}`) | Either ordering works | Metric-wise matches CPU [`float_ms_ssim.c:189`](../../core/src/feature/float_ms_ssim.c#L189-L221) — that's what consumers (`pip install meson-python`) see today | We chose metric-wise to mirror the CPU emission order; downstream JSON consumers see identical key ordering across all backends. |
 
 ## Consequences
@@ -92,7 +92,7 @@ already computes the same per-scale means).
 ## References
 
 - T7-35 entry in `.workingdir2/BACKLOG.md`.
-- [ADR-0190](0190-float-ms-ssim-cuda.md) — original Vulkan/CUDA MS-SSIM extractors.
+- [ADR-0190](0190-ms-ssim-vulkan.md) — original Vulkan/CUDA MS-SSIM extractors.
 - [ADR-0125](0125-ms-ssim-decimate-simd.md) — the SIMD decimate framework that defines the LCS split.
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — matrix gate that picks up the new pseudo-feature.
 - Source: `req` — user direction 2026-04-28: "implement, do not de-advertise".

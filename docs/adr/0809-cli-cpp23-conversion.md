@@ -90,5 +90,5 @@ binary.
 
 - [ADR-0708](0708-vmafx-cpp23-internals-pilot.md) — C++23 internals pilot; `extern "C"` guard recipe.
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — touched-file lint-clean rule; goto-cleanup load-bearing invariant.
-- [ADR-0278](0278-nolint-citation-closeout.md) — NOLINT citation policy.
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — NOLINT citation policy.
 - req: "Convert `core/tools/cli_parse.c` and `core/tools/vmaf.c` to .cpp. CLI parsing benefits from std::expected/std::string_view; CLI main benefits from RAII. Add extern \"C\" guards in cli_parse.h. Conservative C++23 idioms only (nullptr, static_cast, [[nodiscard]])."

@@ -104,8 +104,8 @@ still writes it; only the host-side loop is removed).
   accumulators with a two-level GPU reduction that emits a single ~56-byte
   struct per scale per frame."
 - [ADR-0175](0175-vulkan-backend-scaffold.md) — Vulkan backend scaffold.
-- [ADR-0246](0246-vulkan-kernel-template.md) — VmafVulkanKernelPipeline template.
-- [ADR-0269](0269-vif-shared-memory-race.md) — memoryBarrierShared / barrier
+- [ADR-0246](0246-gpu-kernel-template.md) — VmafVulkanKernelPipeline template.
+- [ADR-0269](0269-vif-ciede-precise-step-a.md) — memoryBarrierShared / barrier
   pattern for the reduction scratch memory.
 - Vulkan 1.3 spec §7.1 "Execution and Memory Dependencies",
   §7.5.3 "VkMemoryBarrier" — the pipeline barrier between the per-WG

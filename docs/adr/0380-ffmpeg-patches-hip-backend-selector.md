@@ -108,7 +108,7 @@ documented in `docs/state.md` and `docs/rebase-notes.md`.
   [`ffmpeg-patches/README.md`](../../ffmpeg-patches/README.md).
 - Sibling backends:
   [ADR-0118](0118-ffmpeg-patch-series-application.md) (series replay gate),
-  [ADR-0350](0350-ffmpeg-libvmaf-cuda-backend-selector.md) (CUDA selector),
+  [ADR-0408](0408-ffmpeg-libvmaf-cuda-backend-selector.md) (CUDA selector),
   [ADR-0186](0186-vulkan-image-import-impl.md) (Vulkan dedicated filter),
   [ADR-0238](0238-vulkan-picture-preallocation.md) (lazy pool init pattern).
 - HIP C-API: [`core/include/libvmaf/libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h).

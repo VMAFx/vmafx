@@ -8,7 +8,7 @@
 - **Tags**: ai, fr-regressor, ensemble, probabilistic, loso, ci-gate, fork-local
 - **Related**: [ADR-0291](0291-fr-regressor-v2-prod-ship.md) (v2 deterministic
   prod flip — defines the 0.95 LOSO PLCC ship gate),
-  [ADR-0279](0279-fr-regressor-v2-probabilistic.md) (probabilistic head
+  [ADR-0393](0393-fr-regressor-v2-probabilistic.md) (probabilistic head
   scaffold — deep-ensemble + conformal),
   [ADR-0235](0235-codec-aware-fr-regressor.md) (codec-aware decision +
   the 0.95 LOSO PLCC ship gate it inherits),
@@ -121,7 +121,7 @@ the variance bound holds.
   sketch (Romano 2019), 9-fold LOSO protocol, expected PLCC baseline.
 - [ADR-0291](0291-fr-regressor-v2-prod-ship.md) — deterministic v2
   prod flip; defines the 0.95 LOSO PLCC ship gate this ADR inherits.
-- [ADR-0279](0279-fr-regressor-v2-probabilistic.md) — probabilistic
+- [ADR-0393](0393-fr-regressor-v2-probabilistic.md) — probabilistic
   head scaffold; the parent of the ensemble surface this ADR flips.
 - [ADR-0235](0235-codec-aware-fr-regressor.md) — codec-aware decision
   0.95 LOSO PLCC ship gate.

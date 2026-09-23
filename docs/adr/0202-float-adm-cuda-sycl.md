@@ -188,7 +188,7 @@ python3 scripts/ci/cross_backend_vif_diff.py \
 - [ADR-0199](0199-float-adm-vulkan.md) — Vulkan kernel parent.
 - [ADR-0197](0197-float-vif-gpu.md) — closest Group B float twin
   precedent (CUDA + SYCL pattern, fmad-off, mirror-trap notes).
-- [ADR-0178](0178-integer-adm-vulkan.md) — integer ADM Vulkan
+- [ADR-0178](0178-vulkan-adm-kernel.md) — integer ADM Vulkan
   parent (algorithm shape, dispatch grid).
 
 ### Status update 2026-05-08: SYCL DWT rewrite to group_load
@@ -203,7 +203,7 @@ horizontal passes in
 [`integer_adm_sycl.cpp`](../../core/src/feature/sycl/integer_adm_sycl.cpp)
 on top of `sycl::ext::oneapi::experimental::group_load`. The rewrite
 was attempted on 2026-05-08 and **deferred** under
-[ADR-0332](0332-sycl-adm-dwt-group-load-deferral.md). Two blockers
+[ADR-0406](0406-sycl-adm-dwt-group-load-deferral.md). Two blockers
 forced the deferral:
 
 1. The vertical-pass tile (`TILE_H × WG_X = 18 × 32 = 576` int32
@@ -225,5 +225,5 @@ Alchemist; no Xe2 available). The kernel remains bit-exact-untouched
 on this dimension; the cross-backend gate
 (`scripts/ci/cross_backend_vif_diff.py --feature adm --backend sycl`,
 `places=4`) continues to apply against the unchanged manual
-cooperative tile load. See [ADR-0332](0332-sycl-adm-dwt-group-load-deferral.md)
+cooperative tile load. See [ADR-0406](0406-sycl-adm-dwt-group-load-deferral.md)
 for the full alternatives matrix and re-open conditions.

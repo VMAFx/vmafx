@@ -168,7 +168,7 @@ under existing load before adding 14 new metrics.
   ... just a module for every backendtype and done").
 - Backlog row: T7-26 in
   `.workingdir2/BACKLOG.md`.
-- Related: [ADR-0127](0127-vulkan-backend-decision.md) (Vulkan
+- Related: [ADR-0127](0127-vulkan-compute-backend.md) (Vulkan
   backend decision); [ADR-0175](0175-vulkan-backend-scaffold.md)
   (Vulkan scaffold).
 - Existing dispatch logic this consolidates:

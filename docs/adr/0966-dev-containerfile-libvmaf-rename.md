@@ -64,7 +64,7 @@ with a parenthetical citation of ADR-0700.
 
 ## References
 
-- [ADR-0700](0700-rename-libvmaf-to-core.md) — original rename decision.
+- [ADR-0700](0700-vmafx-repo-layout.md) — original rename decision.
 - Research-0966 (this PR's companion digest): `docs/research/0966-dev-containerfile-libvmaf-rename-2026-05-31.md`
 - Memory rule: `feedback_fix_preexisting_bugs_too` — "Rename greps must be exhaustive"
   (added as corollary after a large rename left 9 stale `libvmaf/` refs in `ai/` tests).

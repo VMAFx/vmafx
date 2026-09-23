@@ -109,7 +109,7 @@ the maintenance bot for action SHAs).
   complements (not replaces).
 - [ADR-0117](0117-coverage-gate-warning-noise-suppression.md) —
   suspicious/negative-hit filter on the gcovr stderr.
-- [ADR-0637](0637-coverage-gate-floor-37pct-after-may-19-merge-burst.md) —
+- [ADR-0637](0637-ci-test-failures-omnibus.md) —
   current floor history.
 - PR #338 — fixed the gcovr gate after a `vmaf_ort_output_name_at`
   uncovered-line breach; cited as the reason `fail_ci_if_error:

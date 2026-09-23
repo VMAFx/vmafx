@@ -220,9 +220,9 @@ the test-side cleanup gap that masked the framework leaks before.
   [Netflix/vmaf#1300](https://github.com/Netflix/vmaf/issues/1300)
   ("CUDA-VMAF Memory Leak (preallocation method) in libvmaf"),
   OPEN since 2024; no maintainer fix as of 2026-04-24.
-- [ADR-0122](0122-cuda-framesync-segfault-hardening.md) — fork PR
+- [ADR-0122](0122-cuda-gencode-coverage-and-init-hardening.md) — fork PR
   #60 CUDA framesync hardening (preserved).
-- [ADR-0123](0123-cuda-null-guard.md) — fork PR #62 null-guard
+- [ADR-0123](0123-cuda-post-cubin-load-regression-32b115df.md) — fork PR #62 null-guard
   (preserved).
 - [ADR-0156](0156-cuda-graceful-error-propagation-netflix-1420.md)
   — CHECK_CUDA graceful error propagation (prerequisite; enables

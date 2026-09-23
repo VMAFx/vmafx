@@ -102,9 +102,9 @@ Add three new flagship scaffolding skills and one shared shell library:
 ## References
 
 - [ADR-0100](0100-project-wide-doc-substance-rule.md) — per-surface doc bar
-- [ADR-0703](0703-go-grpc-scoring-service.md) — Go MCP server (parity contract)
-- [ADR-0709](0709-vmafx-phase-4b-distributed-platform.md) — Phase 4b parent
-- [ADR-0714](0714-vmafx-operator-kubebuilder-skeleton.md) — operator skeleton
+- [ADR-0703](0703-vmafx-server-go-grpc.md) — Go MCP server (parity contract)
+- [ADR-0709](0709-vmafx-phase4b-distributed-platform.md) — Phase 4b parent
+- [ADR-0714](0714-vmafx-operator-skeleton.md) — operator skeleton
 - `req` — user direction (paraphrased): add the three missing flagship skills
   (MCP tool, k8s resource, modernization audit) and consolidate the two
   bisect skills onto a shared `lib/bisect-common.sh` so the

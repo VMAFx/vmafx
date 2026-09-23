@@ -161,8 +161,8 @@ Risk:
   §Optimization candidates §1, §2, §5.
 - Research digest:
   [`docs/research/0052-vulkan-submit-opt-batch.md`](../research/0052-vulkan-submit-opt-batch.md)
-- Template ADR: [`ADR-0221`](0221-gpu-kernel-template.md)
-- Cross-backend gate: [`ADR-0214`](0214-gpu-parity-gate.md) (places=4)
+- Template ADR: [`ADR-0221`](0246-gpu-kernel-template.md)
+- Cross-backend gate: [`ADR-0214`](0214-gpu-parity-ci-gate.md) (places=4)
 - ADR-0235 v2 async pending-fence ring (import path) — left unchanged
   by this PR.
 - req: user direction 2026-05-02 to bundle DEDUP-25 + VK-1 + VK-4

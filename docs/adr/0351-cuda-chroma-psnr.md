@@ -113,7 +113,7 @@ Mirrors the same posture chosen for Vulkan in ADR-0216.
   1, the original luma-only `psnr_cuda` row.
 - [ADR-0216](0216-vulkan-chroma-psnr.md) — Vulkan chroma PSNR;
   this ADR ports the same posture to CUDA.
-- [ADR-0246](0246-cuda-kernel-template.md) — CUDA kernel
+- [ADR-0246](0246-gpu-kernel-template.md) — CUDA kernel
   scaffolding template (private stream + event pair + readback
   helpers); the per-plane readback array reuses the existing
   helper unchanged.

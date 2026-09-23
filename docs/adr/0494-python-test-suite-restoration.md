@@ -15,7 +15,7 @@ silently restored the entire `python/vmaf/core/` Python tree —
 `routine.py` and several siblings — without the author running the broader
 Python test suite. The fork's CI workflow only runs
 `python/test/quality_runner_test.py` and `python/test/feature_extractor_test.py`
-(the two files that back the Netflix golden gate, [ADR-0024](0024-netflix-golden-tests.md));
+(the two files that back the Netflix golden gate, [ADR-0024](0024-netflix-golden-preserved.md));
 everything else under `python/test/` is exercised only locally or never.
 
 A subsequent audit (2026-05-17) found 33 test failures + 5 collection

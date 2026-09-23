@@ -90,7 +90,7 @@ baseline (`go-ci.yml`, `rust-ci.yml`, `sanitizers.yml`,
 
 - OpenSSF Scorecard — Pinned-Dependencies check.
 - GitHub docs — "Security hardening for GitHub Actions".
-- Prior fork ADRs: [ADR-0379](0379-symbol-visibility.md) (supply
+- Prior fork ADRs: [ADR-0379](0379-libvmaf-symbol-visibility.md) (supply
   chain), the earlier persist-credentials sweep at
   `changelog.d/security/actions-checkout-persist-credentials-false.md`.
 - Source: `req` — user-dispatched audit task ("Audit GitHub Actions

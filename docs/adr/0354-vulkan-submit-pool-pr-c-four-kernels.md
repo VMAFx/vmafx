@@ -87,9 +87,9 @@ ordering rule.
 
 ## References
 
-- [ADR-0256](0256-vulkan-submit-pool-template.md) — submit-pool template.
+- [ADR-0256](0256-vulkan-submit-opt-batch.md) — submit-pool template.
 - [ADR-0205](0205-cambi-gpu-feasibility.md) + [ADR-0210](0210-cambi-vulkan-integration.md) — cambi Vulkan.
-- [ADR-0201](0201-ssimulacra2-vulkan-precision.md) — ssimulacra2 precision contract.
+- [ADR-0201](0201-ssimulacra2-vulkan-kernel.md) — ssimulacra2 precision contract.
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — `places=4` gate.
 - PR #563 (PR-A), PR-B (in flight), PR #562 (VMA readback).
 - Source: `req` — agent dispatch brief from session 2026-05-09.

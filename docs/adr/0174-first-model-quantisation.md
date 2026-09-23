@@ -190,7 +190,7 @@ print('OK')
 
 ## References
 
-- [ADR-0129](0129-tinyai-ptq-int8-modes.md) — Proposed PTQ policy.
+- [ADR-0129](0129-tinyai-ptq-quantization.md) — Proposed PTQ policy.
 - [ADR-0173](0173-ptq-int8-audit-impl.md) — Audit-first harness
   this PR completes.
 - [ADR-0168](0168-tinyai-konvid-baselines.md) — `learned_filter_v1`

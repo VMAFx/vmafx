@@ -67,5 +67,5 @@ All other workflows were verified to have:
 
 - [OSSF Scorecard TokenPermissionsID check](https://github.com/ossf/scorecard/blob/main/docs/checks.md#token-permissions)
 - GitHub Actions documentation: `persist-credentials: false` in `actions/checkout`
-- [ADR-0253](0253-ossf-scorecard-policy.md) — Scorecard policy for this fork
+- [ADR-0263](0263-ossf-scorecard-policy.md) — Scorecard policy for this fork
 - Audit scope: `.github/workflows/*.yml` (28 files), 2026-06-06

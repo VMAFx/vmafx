@@ -162,10 +162,10 @@ We will:
   multi-codec adapter contract.
 - Sibling: [ADR-0288](0288-vmaf-tune-codec-adapter-x265.md) — the
   libx265 adapter this PR extends.
-- Cache key extension: [ADR-0298](0298-vmaf-tune-cache-key.md) — the
+- Cache key extension: [ADR-0298](0298-vmaf-tune-cache.md) — the
   pass-count field lands as a non-breaking extension.
-- Sample-clip composition: [ADR-0297](0297-vmaf-tune-sample-clip.md).
-- Phase E target-bitrate ladder: [ADR-0295](0295-vmaf-tune-bitrate-ladder.md),
+- Sample-clip composition: [ADR-0301](0301-vmaf-tune-sample-clip.md).
+- Phase E target-bitrate ladder: [ADR-0295](0295-vmaf-tune-phase-e-bitrate-ladder.md),
   [ADR-0307](0307-vmaf-tune-ladder-default-sampler.md) — 2-pass is the
   natural input once `--target-bitrate` paths land.
 - Source: `req` — user requested Phase F design + first PR

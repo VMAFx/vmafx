@@ -18,7 +18,7 @@ term (channel-wise variance) on VGG features, and is documented to
 correlate better than LPIPS on synthetic-distortion benchmarks. The
 two are complementary, not redundant.
 
-The fork already ships `lpips_sq` ([ADR-0041](0041-lpips-onnx-extractor.md))
+The fork already ships `lpips_sq` ([ADR-0041](0041-lpips-sq-extractor.md))
 as a tiny-AI FR extractor. We do not ship DISTS. The Bristol audit
 flagged this as actionable item #5 with effort estimate 1 week.
 
@@ -129,7 +129,7 @@ No new op gating needed.
   — actionable items table, item #5.
 - [`docs/research/0043-dists-extractor-design.md`](../research/0043-dists-extractor-design.md)
   — design digest landed alongside this ADR.
-- [ADR-0041](0041-lpips-onnx-extractor.md) — the LPIPS sibling whose
+- [ADR-0041](0041-lpips-sq-extractor.md) — the LPIPS sibling whose
   shape this proposal mirrors.
 - [ADR-0211](0211-model-registry-sigstore.md) — license + Sigstore
   bundle metadata that the new entry will populate once real weights

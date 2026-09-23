@@ -108,7 +108,7 @@ Three feature extractors now use this dispatch framework:
 - Research-0751: Cross-backend 4K baseline + PR #79 `adm_cm` A/B at 4K.
 - [ADR-0743](0743-cuda-vif-filter1d-ncu-driven-perf.md) — VIF filter1d register
   pressure ceiling pattern.
-- [ADR-0750](0750-adm-cm-cuda-launch-bounds.md) — `adm_cm_line_kernel_8`
+- [ADR-0750](0750-cuda-ms-ssim-decimate-adm-cm-measure.md) — `adm_cm_line_kernel_8`
   `__launch_bounds__(128,8)` measurement and policy.
 - req: "design (not implement) a dispatch policy that picks the right variant at
   runtime based on detected workload size. Scaffold the C-side glue + ADR

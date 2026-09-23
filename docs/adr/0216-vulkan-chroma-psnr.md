@@ -93,7 +93,7 @@ layout makes it a one-line change if needed.
 
 - [ADR-0182](0182-gpu-long-tail-batch-1.md) — GPU long-tail batch
   1, the original luma-only `psnr_vulkan` row.
-- [ADR-0125](0125-vulkan-image-import-feasibility.md) /
+- [ADR-0127](0127-vulkan-compute-backend.md) /
   [ADR-0175](0175-vulkan-backend-scaffold.md) — Vulkan backend
   framework already covers the buffer / descriptor / dispatch
   patterns this PR reuses; no fresh research digest needed.

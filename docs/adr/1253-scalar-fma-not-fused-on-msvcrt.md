@@ -64,8 +64,8 @@ The two call sites are `picture_to_linear_rgb` in
 
 ## References
 
-- [ADR-0891](0891-fma-unification.md) — the single-rounding contract this
-  preserves. [ADR-1205](1205-ssimulacra2-scalar-fma-miss.md) — what one missed
+- [ADR-0891](0891-simd-bit-exact-round2-fmaf-libvmaf-feature-icx.md) — the single-rounding contract this
+  preserves. [ADR-1205](1205-ssimulacra2-fma-unification-scalar-and-gpu.md) — what one missed
   copy costs. [ADR-1207](1207-feature-isa-invariance-gate.md) — the gate that
   measured it.
 - Boldo & Melquiond, *Emulation of FMA and correctly-rounded sums*, for the

@@ -172,7 +172,7 @@ Pre-existing PRs do not retroactively trigger.
 
 - [ADR-0100](0100-project-wide-doc-substance-rule.md) — the parent
   rule this enforces.
-- [ADR-0124](0124-rule-enforcement-ci.md) — the original
+- [ADR-0124](0124-automated-rule-enforcement.md) — the original
   rule-enforcement workflow scaffolding.
 - [`.claude/hooks/auto-snapshot-warn.sh`](../../.claude/hooks/auto-snapshot-warn.sh) —
   pattern this hook copies (informational stderr, no block).

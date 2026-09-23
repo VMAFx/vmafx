@@ -62,7 +62,7 @@ included `libvmaf_feature_static_lib`.
 
 ## References
 
-- [ADR-0708](0708-cpp23-migration-playbook.md) — C++23 migration playbook
+- [ADR-0708](0708-vmafx-cpp23-internals-pilot.md) — C++23 migration playbook
 - Related PR: cpp23 Wave 3 part B (this PR)
 - Wave 3 part A: parallel agent working `core/src/feature/feature_collector.c`,
   `feature_name.c`, `picture_copy.c`

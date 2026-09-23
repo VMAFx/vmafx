@@ -101,7 +101,7 @@ and re-emits the registry row with `smoke: false`,
 - [ADR-0215](0215-fastdvdnet-pre-filter.md) — original
   contract + placeholder rationale.
 - [ADR-0042](0042-tinyai-docs-required-per-pr.md) — tiny-AI doc bar.
-- [ADR-0174](0174-per-model-ptq.md) — per-model PTQ pattern (informs
+- [ADR-0174](0174-first-model-quantisation.md) — per-model PTQ pattern (informs
   T6-7d).
 - Source: per user direction (research+code task, "pick the smoke-only
   ONNX with the most accessible upstream weights and ship the real

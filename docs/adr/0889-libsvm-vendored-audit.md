@@ -128,7 +128,7 @@ load-bearing improvement that upstream has not adopted.
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — touched-file
   lint-clean rule; the `NOLINTBEGIN`/`NOLINTEND` cordon on `svm.cpp` is
   the load-bearing invariant the audit preserves.
-- [ADR-0278](0278-nolint-citation-closeout.md) — NOLINT citation rule;
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — NOLINT citation rule;
   the existing cordon comment is cited and not relaxed.
 - [ADR-0683](0683-cjson-banned-function-remediation.md) — sibling
   vendored-code remediation precedent (cJSON).

@@ -123,7 +123,7 @@ manifest's MOS column contains, without rescaling (matching LSVQ
 - Prior corpus ingestion ADRs:
   [ADR-0310](0310-bvi-dvc-corpus-ingestion.md) (BVI-DVC),
   ADR-0325 Phase 2 (KonViD-150k, in flight as PR #447),
-  [ADR-0333](0333-lsvq-corpus-ingestion.md) (LSVQ, in flight
+  [ADR-0367](0367-lsvq-corpus-ingestion.md) (LSVQ, in flight
   as PR #471).
 - Source: `req` — implementation task spec routed through the
   agent harness 2026-05-08, citing the contributor-pack digest

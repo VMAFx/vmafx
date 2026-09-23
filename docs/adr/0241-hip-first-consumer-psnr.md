@@ -19,7 +19,7 @@ deliberately deferred to a follow-up.
 This ADR is that follow-up's first half: land the **first kernel-template
 consumer** so the per-frame async lifecycle the runtime PR will need
 to implement is anchored to a concrete consumer, mirroring the role
-[ADR-0221](0221-gpu-kernel-template.md) and
+[ADR-0246](0246-gpu-kernel-template.md) and
 `core/src/feature/cuda/integer_psnr_cuda.c` play on the CUDA side.
 
 The CUDA kernel template (`core/src/cuda/kernel_template.h`) is the
@@ -149,7 +149,7 @@ documents the symbol the runtime PR will declare.
 
 - [ADR-0212](0212-hip-backend-scaffold.md) — HIP scaffold-only
   audit-first PR (T7-10).
-- [ADR-0221](0221-gpu-kernel-template.md) — CUDA kernel-template
+- [ADR-0246](0246-gpu-kernel-template.md) — CUDA kernel-template
   decision; this ADR is the HIP mirror.
 - [ADR-0175](0175-vulkan-backend-scaffold.md) — Vulkan
   scaffold-then-runtime split, the cadence template ADR-0212 / this

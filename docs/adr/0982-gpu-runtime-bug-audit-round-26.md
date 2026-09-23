@@ -41,6 +41,6 @@ Plus one cleanup: remove a stray `// test` trailing comment from `sycl/common.cp
 ## References
 
 - req: "Deep bug audit on GPU runtime surfaces. Bundle into ONE DRAFT PR." (session req, 2026-05-31)
-- [ADR-0960](0960-cuda-init-leak-audit-round-25.md) — round-25 CUDA init-leak audit (precedent)
-- [ADR-0840](0840-gpu-dispatch-env-snapshot.md) — env snapshot helper context for #5
+- [ADR-0960](0960-gpu-runtime-error-path-leaks-round25.md) — round-25 CUDA init-leak audit (precedent)
+- [ADR-0840](0840-gpu-dispatch-toctou-fence.md) — env snapshot helper context for #5
 - [Netflix#1300](https://github.com/Netflix/vmaf/issues/1300) — original CUDA init leak series

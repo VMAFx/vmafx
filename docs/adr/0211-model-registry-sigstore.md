@@ -82,7 +82,7 @@ with already-shipped registries.
   policy), [ADR-0042](0042-tinyai-docs-required-per-pr.md) (tiny-AI
   doc requirement), [ADR-0166](0166-mcp-server-release-channel.md)
   (cosign verify usage in the MCP release channel),
-  [ADR-0173](0173-ptq-audit-quant-modes.md) /
-  [ADR-0174](0174-ptq-audit-int8-sha256.md) (PTQ-era registry fields).
+  [ADR-0173](0173-ptq-int8-audit-impl.md) /
+  [ADR-0174](0174-first-model-quantisation.md) (PTQ-era registry fields).
 - Roadmap reference: `docs/ai/roadmap.md` §"Sigstore verification".
 - Supply chain doc: `docs/ai/security.md` Layer 4.

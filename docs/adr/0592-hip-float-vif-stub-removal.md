@@ -62,7 +62,7 @@ removal when its kernel becomes real.
 
 ## References
 
-- [ADR-0379](0379-hip-float-vif.md) — original HIP float_vif port (PR #1025).
+- ADR-0379 — original HIP float_vif port (PR #1025).
 - [ADR-0536](0536-per-shot-bitrate-predicate-chain.md) — original stubs file design (ADM-only weak stubs).
 - PR #1303 — extension that introduced the `float_vif_score_hsaco`
   weak stub (one of 13 weak symbols added at once).

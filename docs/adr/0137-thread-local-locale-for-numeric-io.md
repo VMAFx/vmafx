@@ -108,7 +108,7 @@ beyond the build-system plumbing.
 - Upstream PR: [Netflix/vmaf#1430][pr-1430] — Diego Nieto / Fluendo.
 - Upstream cherry-picked SHA: `054a97edc3b4409df84e0ad9630f27673ca18da6`.
 - Related: [ADR-0119](0119-cli-precision-default-revert.md) — `score_format` API shape that drives the test-call correction.
-- Related: [ADR-0025](0025-copyright-header-policy.md) / [ADR-0105](0105-copyright-header-enforcement.md) — copyright handling for upstream-authored files.
+- Related: [ADR-0025](0025-copyright-handling-dual-notice.md) / [ADR-0105](0105-copyright-handling-dual-notice.md) — copyright handling for upstream-authored files.
 - Related: [ADR-0121](0121-windows-gpu-build-only-legs.md) — Windows CI matrix that requires the `_configthreadlocale` branch.
 - Lusoris ↔ Lawrence Discord, 2026-04-20: multi-VMAF-in-one-ffmpeg
   failure mode on CUDA hosts, confirming the multi-session locale

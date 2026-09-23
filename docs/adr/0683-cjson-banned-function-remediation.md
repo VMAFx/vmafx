@@ -60,6 +60,6 @@ re-introduce the violations.
 
 - `docs/principles.md` §1.2 rule 30 (banned functions list).
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — touched-file lint-clean rule.
-- [ADR-0278](0278-nolint-citation-closeout.md) — NOLINT citation requirements.
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — NOLINT citation requirements.
 - Prior closed PRs: #890 (`fix/vendored-banned-functions-2026-05-16`), #891 (`fix/cjson-banned-functions-2026-05-16`).
 - Source: `feedback_vendored_in_scope` (MEMORY.md): vendored code (cJSON, libsvm, pdjson) receives the same audit and fix treatment as fork-original code; NOLINT cover is not a substitute.

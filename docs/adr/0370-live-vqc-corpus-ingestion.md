@@ -102,6 +102,6 @@ Waterloo IVC (ADR-0369):
 - [ADR-0325](0325-konvid-150k-corpus-ingestion.md) — KonViD-150k ingestion
 - [ADR-0366](0366-corpus-schema-v3.md) — corpus_v3 schema
 - [ADR-0367](0367-lsvq-corpus-ingestion.md) — LSVQ ingestion (template adapter)
-- [ADR-0368](0368-youtube-ugc-corpus-ingestion.md) — YouTube UGC ingestion
+- [ADR-0413](0413-youtube-ugc-corpus-ingestion.md) — YouTube UGC ingestion
 - [ADR-0369](0369-waterloo-ivc-4k-corpus-ingestion.md) — Waterloo IVC ingestion
 - [ADR-0340](0340-multi-corpus-aggregation.md) — aggregation / normalisation

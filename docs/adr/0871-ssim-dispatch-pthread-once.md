@@ -134,10 +134,10 @@ other becomes a no-op.
   [ADR-0125](0125-ms-ssim-decimate-simd.md) (iqa/ import hygiene),
   [ADR-0138](0138-iqa-convolve-avx2-bitexact-double.md)
   (`g_iqa_convolve` install path),
-  [ADR-0139](0139-vif-avx2-numerical.md) (bit-exactness as a
+  [ADR-0139](0139-ssim-simd-bitexact-double.md) (bit-exactness as a
   load-bearing invariant).
 - Related prior race fix:
-  [ADR-0607](0607-shared-resource-outlive-worker-scope.md)
+  [ADR-0607](0607-vmaftune-shared-ref-yuv-decode-once.md)
   (`feedback_shared_resource_outlive_worker_scope`), PR #1415.
 - Source: agent task `chore/mcp-tools-audit-20260529` —
   "Run TSan on the libvmaf threadpool + dispatcher paths to

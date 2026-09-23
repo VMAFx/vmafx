@@ -110,7 +110,7 @@ matrix without shelling into the container.
 
 - [ADR-0709](0709-vmafx-phase4b-distributed-platform.md) — Phase 4b umbrella (parent
   ADR); item 4b.4 is the direct parent scope.
-- [ADR-0541](0541-dev-container-ffmpeg-codec-matrix.md) — dev-container codec matrix
+- [ADR-0541](0541-dev-container-sycl-hip-runtime-fix.md) — dev-container codec matrix
   rationale (libaom exclusion, SVT-AV1 source build).
 - [ffmpeg-patches/README.md](../../ffmpeg-patches/README.md) — patch application
   invariants and verification gate.

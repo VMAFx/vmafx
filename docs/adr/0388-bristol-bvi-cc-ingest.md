@@ -81,7 +81,7 @@ local-build artifact, not committed.
 ## References
 
 - Companion: [Research-0046 — Bristol VI-Lab dataset feasibility](../research/0046-bristol-vi-lab-feasibility.md)
-- Prior: [ADR-0019 — Tiny-AI Netflix training](0019-tiny-ai-netflix-training.md)
+- Prior: [ADR-0242 — Tiny-AI Netflix training](0242-tiny-ai-netflix-training-corpus.md)
 - Prior: [ADR-0042 — Tiny-AI docs required per PR](0042-tinyai-docs-required-per-pr.md)
 - Prior: [ADR-0235 — Codec-aware fr_regressor v2](0235-codec-aware-fr-regressor.md)
 - Source: `req` (user direction, 2026-05-02 — feasibility investigation for Bristol BVI-* corpora)

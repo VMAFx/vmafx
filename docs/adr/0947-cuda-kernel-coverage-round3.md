@@ -84,10 +84,10 @@ behind this PR, and **~72 %** (13 of 18) once all three round PRs merge.
 
 ## References
 
-- [ADR-0214](0214-cross-backend-parity-gate.md) — cross-backend tolerance gate (`places=4`)
+- [ADR-0214](0214-gpu-parity-ci-gate.md) — cross-backend tolerance gate (`places=4`)
 - [ADR-0868](0868-gpu-backend-kernel-coverage.md) — round 1 (psnr + ciede)
 - [ADR-0886](0886-cuda-kernel-coverage-round2.md) — round 2 (adm/motion_v2/cambi/psnr_hvs/ssim)
 - [ADR-0108](0108-deep-dive-deliverables-rule.md) — six-deliverables rule
-- [ADR-0567](0567-speed-chroma-cuda-real-impl.md) — speed_chroma host-side eigendecomp
+- [ADR-0567](0567-speed-chroma-temporal-real-gpu.md) — speed_chroma host-side eigendecomp
 - `docs/research/gpu-backend-kernel-coverage-audit-2026-05-30.md` — round 1 audit + backlog
 - Source: req (CUDA kernel coverage round 3 — extend beyond PRs #351 + #374)

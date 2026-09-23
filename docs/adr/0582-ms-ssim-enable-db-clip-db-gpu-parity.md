@@ -78,7 +78,7 @@ pre-patch binary on both backends.
 
 - CPU reference: `core/src/feature/float_ms_ssim.c` lines 52–76
   (options table) and lines 131, 185–221 (enable_db / enable_lcs paths).
-- [ADR-0243](0243-ms-ssim-enable-lcs.md) — enable_lcs on CUDA (T7-35)
+- [ADR-0243](0243-enable-lcs-gpu.md) — enable_lcs on CUDA (T7-35)
 - [ADR-0453](0453-psnr-enable-chroma-gpu-parity.md) — precedent for this
   class of option-parity fix
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — GPU-parity CI gate

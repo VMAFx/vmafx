@@ -107,7 +107,7 @@ tools.
 - `docs/research/mcp-capability-audit-2026-05-19.md` — source audit, findings C-P0-1,
   C-P0-2, C-P0-3, D-6, E-1, F-1, F-2.
 - [ADR-0495](0495-mcp-probe-bug-fixes.md) — prior MCP probe bug-fix cluster.
-- [ADR-0511](0511-mcp-list-backends-help-probe.md) — `--help` probe replacing `--version`
+- [ADR-0511](0511-mcp-backend-probe-allowlist-and-ladder-backend.md) — `--help` probe replacing `--version`
   grep (the `tools.md` description had not been updated).
 - [ADR-0556](0556-python-mcp-ai-audit-2026-05-18.md) — prior MCP audit fixes.
 - req: "Fix `isError=False` spec-correctness bug ... Add `probe_backend` tool ... Add

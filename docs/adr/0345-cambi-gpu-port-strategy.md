@@ -185,7 +185,7 @@ oneAPI's. The SYCL port PR carries that empirical step.
 - Sibling ADR:
   [ADR-0241](0241-hip-first-consumer-psnr.md) — HIP consumer cadence.
 - Sibling ADR:
-  [ADR-0335](0335-sycl-adaptivecpp-second-toolchain.md) (in-flight,
+  [ADR-0407](0407-adaptivecpp-second-sycl-toolchain.md) (in-flight,
   PR #498) — dual SYCL toolchain scope.
 - Source: `req` — PR #520 §Ordering rationale, "Defer to a separate
   planning round once chroma is in — the cambi backlog is large

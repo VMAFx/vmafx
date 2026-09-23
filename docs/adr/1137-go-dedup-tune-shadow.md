@@ -174,7 +174,7 @@ inert duplicate it used to reproduce.
   left these duplicates, and the AMF de-duplication decision this ADR keeps.
 - [ADR-0705](0705-vmafx-tune-go-stage1.md) — the schema-forward byte-parity
   invariant every consolidated surface must still meet.
-- [ADR-0366](0366-corpus-nan-features.md) — why the corpus JSONL carries bare
+- [ADR-0366](0366-corpus-schema-v3.md) — why the corpus JSONL carries bare
   `NaN` tokens, i.e. why `encoding/json` cannot be the writer.
 - [#1187](https://github.com/VMAFx/vmafx/pull/1187) — the in-flight sidecar
   Python-parity fix that owns `pkg/tune/sidecar/` and

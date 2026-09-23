@@ -100,7 +100,7 @@ Land two thin shims:
 ## References
 
 - BACKLOG row T7-13 — "SYCL toolchain cleanup" (2026-04-28 audit).
-- [ADR-0127](0127-vif-as-sycl-pathfinder.md) — SYCL backend; `icpx` selection.
+- ADR-0127 — SYCL backend; `icpx` selection.
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — touched-file lint-clean rule.
 - T7-7 (cleared SYCL clang-tidy findings); T7-8 (oneAPI 2025.0.4 → 2025.3.1 bump).
 - `docs/development/oneapi-install.md` §"Verify SYCL clang-tidy still works" — the 4 residual errors closed by this ADR.
@@ -111,7 +111,7 @@ Land two thin shims:
 Per the ADR-0028 maintenance rule (status updates appended, body
 frozen). The icpx-only SYCL toolchain assumption embedded in this
 ADR's `## Decision` no longer holds:
-[ADR-0335](0335-adaptivecpp-second-sycl-toolchain.md) adds
+[ADR-0407](0407-adaptivecpp-second-sycl-toolchain.md) adds
 AdaptiveCpp (`acpp` / `syclcc`) as a supported alternative
 toolchain. The `clang-tidy-sycl.sh` wrapper described above remains
 icpx-coupled by design — it injects the icpx `<sycl/sycl.hpp>`

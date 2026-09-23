@@ -83,7 +83,7 @@ reconciled with upstream's.
   course"; "stay in your lane: python/test/ and python/vmaf/ only")
 - Related ADRs: [ADR-0024](0024-netflix-golden-preserved.md) (golden-data
   inviolability), [ADR-0108](0108-deep-dive-deliverables-rule.md)
-  (deep-dive deliverables), [ADR-0219](0219-motion-v2.md) (fork's
+  (deep-dive deliverables), [ADR-0219](0219-motion3-gpu-coverage.md) (fork's
   motion-v2 / aim port)
 - Upstream commits ported (4): `7df50f3a`, `38e905d1`, `e3827e4d`,
   `cf02b126` (plus `25ff9f18` as a no-op since the fork already removed

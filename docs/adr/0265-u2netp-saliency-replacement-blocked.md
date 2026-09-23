@@ -173,7 +173,7 @@ status only.
   — sibling blocker decision deferring MobileSal real weights and
   recommending the u2netp swap that this ADR is now also
   deferring.
-- [ADR-0253](0253-fastdvdnet-pre-real-weights.md) (PR #326) —
+- [ADR-0255](0255-fastdvdnet-pre-real-weights.md) (PR #326) —
   sibling real-weights swap that *did* succeed (FastDVDnet, MIT,
   GitHub-raw downloadable, RGB-only architecture). The pattern
   this ADR was supposed to mirror.
@@ -204,7 +204,7 @@ moved as follows:
   [ADR-0258](0258-onnx-allowlist-resize.md) (Accepted 2026-05-03).
   ADR-0258 opted *against* adding per-attribute enforcement for `Resize`
   to the op allowlist, aligning with the
-  [ADR-0169](0169-wire-scanner-scope.md) wire-scanner-scope rule —
+  [ADR-0169](0169-onnx-allowlist-loop-if.md) wire-scanner-scope rule —
   enforcement at scanner-level, not at op-allowlist-level. The
   allowlist itself was not widened; the security review simply moved
   to the wire scanner.
