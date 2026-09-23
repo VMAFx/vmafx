@@ -293,7 +293,9 @@ jobs:
           mkdir -p sbom mcp-sbom-root/distributions
           python -m pip install --disable-pip-version-check --no-compile \
             --ignore-installed --only-binary=:all: --target mcp-sbom-root \
-            "${wheels[0]}"
+            --require-hashes -r mcp-server/vmaf-mcp/requirements-runtime-lock.txt
+          python -m pip install --disable-pip-version-check --no-compile \
+            --ignore-installed --no-deps --target mcp-sbom-root mcp-dist/vmaf_mcp-*.whl
           cp -- "${wheels[0]}" "${sdists[0]}" mcp-sbom-root/distributions/
       - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
         env:
@@ -505,14 +507,16 @@ jobs:
         with:
           python-version: "3.14.7"
       - name: Install build deps
-        run: python -m pip install --disable-pip-version-check build==1.6.0
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes \
+          -r requirements/locks/package-build.txt
       - name: Build wheel + sdist
         working-directory: mcp-server/vmaf-mcp
         run: |
           SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           export SOURCE_DATE_EPOCH
           export PYTHONHASHSEED=0
-          python -m build --wheel --sdist --outdir ../../mcp-dist
+          python -m build --no-isolation --wheel --sdist --outdir ../../mcp-dist
       - name: Compute SHA256 hashes (SLSA input)
         id: hash
         env:

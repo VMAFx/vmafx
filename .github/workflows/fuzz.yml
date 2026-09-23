@@ -99,7 +99,8 @@ jobs:
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 22
-          sudo pip3 install --break-system-packages meson
+          sudo pip3 install --break-system-packages --require-hashes \
+            -r requirements/locks/build.txt
 
       - name: Configure (clang + ASan + libFuzzer)
         run: |

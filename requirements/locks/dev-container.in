@@ -1,0 +1,4 @@
+# Extra dependency that is not declared by the three editable projects installed
+# in dev/Containerfile. Project dependencies and extras are supplied as uv inputs
+# by requirements/locks/manifest.json.
+matplotlib==3.11.2

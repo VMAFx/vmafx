@@ -76,9 +76,7 @@ jobs:
         with:
           python-version: 3.14.7
       - name: Install meson and ninja
-        run: |
-          python -m pip install --upgrade pip
-          pip install meson
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
       - name: Install dependencies (ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -164,8 +162,7 @@ jobs:
           python-version: 3.14.7
       - name: Install meson, ninja, and dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install meson
+          python -m pip install --require-hashes -r requirements/locks/build.txt
           sudo apt-get update
           # libva-dev travels with libvpl-dev on purpose. --enable-libvpl turns on
           # QSV, and on Linux QSV runs through VAAPI: without libva, FFmpeg

@@ -43,6 +43,7 @@
     "pkg/",
     "proto/",
     "python/",
+    "requirements/",
     "resource/",
     "scripts/",
     "test/",
@@ -192,7 +193,9 @@
         "scripts/*.py",
         "scripts/**/*.py",
         "pyproject.toml",
-        "noxfile.py"
+        "noxfile.py",
+        "requirements/*",
+        "requirements/**"
       ]
     },
     "ai": {

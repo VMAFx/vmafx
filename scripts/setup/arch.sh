@@ -6,6 +6,9 @@
 # CUDA and oneAPI are both available in official repos — no AUR required for core deps.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+
 ENABLE_CUDA="${ENABLE_CUDA:-false}"
 ENABLE_SYCL="${ENABLE_SYCL:-false}"
 INSTALL_LINTERS="${INSTALL_LINTERS:-true}"
@@ -24,8 +27,8 @@ $SUDO pacman -Syu --noconfirm --needed \
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
   $SUDO pacman -S --noconfirm --needed shellcheck shfmt
-  python -m pip install --user --break-system-packages --upgrade \
-    pre-commit ruff black isort mypy semgrep
+  python -m pip install --user --break-system-packages --require-hashes \
+    -r "$REPO_ROOT/requirements/locks/dev-linters.txt"
 fi
 
 if [[ "$ENABLE_CUDA" == "true" ]]; then

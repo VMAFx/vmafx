@@ -35,6 +35,28 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/scorecard-pins-best-practices — hash-locked Python installs and OpenSSF hardening (2026-09-23)
+
+1. **`requirements/locks/manifest.json` is the sole compiler authority for Python locks.**
+   All lock files under `requirements/locks/`, `docs/`, `python/`, `ai/`, `mcp-server/`,
+   and `dev/` carry input digests and generator version metadata (`uv 0.12.18`).
+   Do not edit lock files by hand or resolve rebase conflicts by taking one side's hashes;
+   run `make python-locks-write` to regenerate them from the merged inputs.
+2. **`--require-hashes` is enforced repository-wide.**
+   Every executable pip install in `.github/workflows/`, `Dockerfile*`, `scripts/setup/`,
+   and `Makefile` must specify `--require-hashes -r <lockfile>`, or `--no-deps` for local
+   editables/wheels. `scripts/ci/check_python_dependency_locks.py check` enforces this
+   in `make lint` and pre-commit.
+3. **PEP 517 build-isolation dependencies for pure sdist packages.**
+   `docs/requirements.txt` pins `setuptools>=77.0.1` and `wheel>=0.45.1` so they are
+   hashed into `docs/requirements-lock.txt`. Workflows invoking this lockfile pass
+   `--no-build-isolation` to prevent pip from attempting unhashed PyPI downloads.
+4. **`dev-linters.txt` targets Python 3.12 portability.**
+   `dev-linters.in` is compiled with `--python-version 3.12` to ensure universal markers
+   include dependencies required on Python 3.12 workstations (e.g. `tomli`).
+5. **SLSA GitHub generator must remain tag-pinned.**
+   `slsa-framework/slsa-github-generator` requires semantic `@vX.Y.Z` tags for its trusted
+   builder verification (slsa-verifier#12; ADR-1128). Never convert its refs to commit SHAs.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

@@ -889,3 +889,17 @@ that line is itself a table row — `prev` and `prevline` both reset on a
 non-table line. A separator whose header was lost to a dropped rebase hunk
 otherwise retracts the status of the last data row above the blank line, which
 silently unjudges a real row.
+
+### Hash-locked Python dependency policy (ADR-1305)
+
+`check_python_dependency_locks.py` enforces cryptographic pinning and hermetic
+install policy across the repository:
+
+- All lock files are generated via `requirements/locks/manifest.json` using the reviewed `uv_version` (`0.12.18`).
+- Manifest outputs must be relative local repository paths (rejecting directory traversal `..`, absolute paths, and remote URLs).
+- Manifest inputs must not contain duplicate paths.
+- Manifest `compile_args` must not specify output overrides (`-o`, `--output-file`).
+- Every `*-lock.txt` and `requirements/locks/*.txt` in the tree must be registered in `manifest.json`.
+- All executable `pip install` invocations across workflows, Dockerfiles, setup scripts, and Makefiles must use `--require-hashes -r <lockfile>`, or install local wheels with `--no-deps`, or install local editable/source trees with both `--no-deps` and `--no-build-isolation`.
+- `write` is the only network-accessing path; `check` is offline and run in pre-commit and `make lint`.
+- Regressions are pinned in `scripts/ci/tests/test_python_dependency_locks.py`.

@@ -5,6 +5,9 @@
 # Fedora 40+ / RHEL 9 / Rocky 9 / Alma 9. RHEL-family needs EPEL for shellcheck.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+
 ENABLE_CUDA="${ENABLE_CUDA:-false}"
 ENABLE_SYCL="${ENABLE_SYCL:-false}"
 INSTALL_LINTERS="${INSTALL_LINTERS:-true}"
@@ -39,8 +42,8 @@ if [[ "$INSTALL_LINTERS" == "true" ]]; then
       "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
     $SUDO chmod +x /usr/local/bin/shfmt
   fi
-  python3 -m pip install --user --upgrade \
-    pre-commit ruff black isort mypy semgrep
+  python3 -m pip install --user --require-hashes \
+    -r "$REPO_ROOT/requirements/locks/dev-linters.txt"
 fi
 
 if [[ "$ENABLE_CUDA" == "true" ]]; then

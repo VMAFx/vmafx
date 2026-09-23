@@ -42,7 +42,8 @@ if (-not (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Build
 }
 
 if ($InstallLinters) {
-  python -m pip install --user --upgrade pre-commit ruff black isort mypy semgrep
+  $LockFile = Join-Path $PSScriptRoot "../../requirements/locks/dev-linters.txt"
+  python -m pip install --user --require-hashes -r $LockFile
   # clang-tidy and clang-format come with LLVM install above.
   # shellcheck + shfmt via scoop or WSL if needed — not strictly required on Windows.
 }

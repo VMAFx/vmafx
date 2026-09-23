@@ -188,7 +188,10 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
 
 # ---------- python tools ----------
 WORKDIR /vmaf
-RUN pip3 install --no-cache-dir --break-system-packages -r /vmaf/python/requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages --require-hashes \
+        -r /vmaf/requirements/locks/package-build.txt && \
+    pip3 install --no-cache-dir --break-system-packages --no-build-isolation --require-hashes \
+        -r /vmaf/python/requirements-lock.txt
 ENV PYTHONPATH=python
 
 RUN mkdir -p /data

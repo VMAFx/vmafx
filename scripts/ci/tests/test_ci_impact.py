@@ -181,6 +181,10 @@ class RoutingContract(unittest.TestCase):
         self.assertTrue(plan.selectors["golden_harness"])
         self.assertFalse(plan.selectors["c_core"])
 
+    def test_requirements_lock_change_selects_python(self) -> None:
+        plan = _plan_for(["requirements/locks/manifest.json"])
+        self.assertTrue(plan.selectors["python"])
+
     def test_shell_change_selects_shell_lane_only(self) -> None:
         plan = _plan_for(["dev/scripts/probe.sh"])
         self.assertTrue(plan.selectors["shell"])

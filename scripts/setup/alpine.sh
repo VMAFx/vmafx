@@ -7,6 +7,9 @@
 # Included for minimal CPU-only container images.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+
 ENABLE_CUDA="${ENABLE_CUDA:-false}"
 ENABLE_SYCL="${ENABLE_SYCL:-false}"
 INSTALL_LINTERS="${INSTALL_LINTERS:-true}"
@@ -31,8 +34,8 @@ $SUDO apk add --no-cache \
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
   $SUDO apk add --no-cache shellcheck shfmt
-  python3 -m pip install --break-system-packages --user --upgrade \
-    pre-commit ruff black isort mypy semgrep
+  python3 -m pip install --break-system-packages --user --require-hashes \
+    -r "$REPO_ROOT/requirements/locks/dev-linters.txt"
 fi
 
 echo ""

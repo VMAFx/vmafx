@@ -1,0 +1,105 @@
+{
+  "uv_version": "0.12.18",
+  "locks": [
+    {
+      "output": "requirements/locks/build.txt",
+      "inputs": ["requirements/locks/build.in"],
+      "compile_args": ["requirements/locks/build.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/tox.txt",
+      "inputs": ["requirements/locks/tox.in"],
+      "compile_args": ["requirements/locks/tox.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/pre-commit.txt",
+      "inputs": ["requirements/locks/pre-commit.in"],
+      "compile_args": ["requirements/locks/pre-commit.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/dev-linters.txt",
+      "inputs": ["requirements/locks/dev-linters.in"],
+      "compile_args": ["requirements/locks/dev-linters.in", "--universal", "--python-version", "3.12", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/cythonize.txt",
+      "inputs": ["requirements/locks/cythonize.in"],
+      "compile_args": ["requirements/locks/cythonize.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/mypy.txt",
+      "inputs": ["requirements/locks/mypy.in"],
+      "compile_args": ["requirements/locks/mypy.in", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/jsonschema.txt",
+      "inputs": ["requirements/locks/jsonschema.in"],
+      "compile_args": ["requirements/locks/jsonschema.in", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/package-build.txt",
+      "inputs": ["requirements/locks/package-build.in"],
+      "compile_args": ["requirements/locks/package-build.in", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/gcovr.txt",
+      "inputs": ["requirements/locks/gcovr.in"],
+      "compile_args": ["requirements/locks/gcovr.in", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/pytest-timeout.txt",
+      "inputs": ["requirements/locks/pytest-timeout.in"],
+      "compile_args": ["requirements/locks/pytest-timeout.in", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "docs/requirements-lock.txt",
+      "inputs": ["docs/requirements.txt"],
+      "compile_args": ["docs/requirements.txt", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "python/requirements-lock.txt",
+      "inputs": ["python/pyproject.toml", "python/requirements.txt"],
+      "compile_args": ["python/requirements.txt", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "python/requirements-test-lock.txt",
+      "inputs": ["python/pyproject.toml", "python/requirements.txt", "python/test/requirements.txt", "python/requirements-test.in"],
+      "compile_args": ["python/requirements-test.in", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "python/requirements-coverage-lock.txt",
+      "inputs": ["python/pyproject.toml", "python/requirements.txt", "python/test/requirements.txt", "python/requirements-coverage.in"],
+      "compile_args": ["python/requirements-coverage.in", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "ai/requirements-runtime-lock.txt",
+      "inputs": ["ai/pyproject.toml"],
+      "compile_args": ["ai/pyproject.toml", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "ai/requirements-dev-lock.txt",
+      "inputs": ["ai/pyproject.toml"],
+      "compile_args": ["ai/pyproject.toml", "--extra", "dev", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "mcp-server/vmaf-mcp/requirements-runtime-lock.txt",
+      "inputs": ["mcp-server/vmaf-mcp/pyproject.toml"],
+      "compile_args": ["mcp-server/vmaf-mcp/pyproject.toml", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "mcp-server/vmaf-mcp/requirements-production-lock.txt",
+      "inputs": ["mcp-server/vmaf-mcp/pyproject.toml"],
+      "compile_args": ["mcp-server/vmaf-mcp/pyproject.toml", "--extra", "eval", "--extra", "http", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "mcp-server/vmaf-mcp/requirements-dev-lock.txt",
+      "inputs": ["mcp-server/vmaf-mcp/pyproject.toml", "requirements/locks/mcp-dev-overlay.in"],
+      "compile_args": ["mcp-server/vmaf-mcp/pyproject.toml", "requirements/locks/mcp-dev-overlay.in", "--extra", "dev", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "dev/requirements-python-env-lock.txt",
+      "inputs": ["python/pyproject.toml", "python/requirements.txt", "ai/pyproject.toml", "tools/vmaf-tune/pyproject.toml", "requirements/locks/dev-container.in"],
+      "compile_args": ["python/requirements.txt", "ai/pyproject.toml", "tools/vmaf-tune/pyproject.toml", "requirements/locks/dev-container.in", "--extra", "dev", "--extra", "fast", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    }
+  ]
+}

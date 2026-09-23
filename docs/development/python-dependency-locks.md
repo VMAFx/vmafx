@@ -1,0 +1,96 @@
+<!-- markdownlint-disable MD013 -->
+# Python dependency hash-locking and supply-chain policy
+
+VMAFx enforces cryptographic artifact hashes (`--require-hashes`) for all Python
+dependency installations across the repository. This guarantees reproducible,
+hermetic builds, protects against upstream PyPI package mutation or dependency
+confusion, and satisfies OpenSSF Scorecard supply-chain integrity criteria.
+
+## Overview
+
+All Python dependencies are declared in input requirements files (`.in`, `pyproject.toml`,
+`docs/requirements.txt`) and deterministically locked with SHA-256 artifact digests
+into lock files (`requirements/locks/*.txt`, `*/*-lock.txt`).
+
+The central authority is `requirements/locks/manifest.json`, which pairs every
+lock file with its source files and compilation arguments using a reviewed, pinned
+version of `uv` (`0.12.18`).
+
+### Architecture
+
+```text
+Input manifests (.in, pyproject.toml)
+         │
+         ▼
+uv pip compile (pinned uv 0.12.18) ───► Manifest Writer (make python-locks-write)
+         │
+         ▼
+Committed hash-lock files (*.txt, *-lock.txt)
+         │
+         ├─────────────────────────────────────────┐
+         ▼                                         ▼
+CI Workflows & Dockerfiles                Local Workstation (make lint-tools, cythonize-deps)
+(pip install --require-hashes -r ...)     (pip install --require-hashes -r ...)
+```
+
+## Available targets
+
+| Command | Purpose |
+| --- | --- |
+| `make python-locks-check` | Validates that all lock files match their inputs and that every executed `pip install` in the repo uses `--require-hashes` or local `--no-deps`. Offline, fast. |
+| `make python-locks-write` | Networked refresh: runs the pinned `uv` compiler to update all lock files and re-stamp metadata headers. |
+| `make lint-tools` | Installs project linting tools (`ruff`, `black`, `mypy`) into `.venv` from `requirements/locks/dev-linters.txt` using `--require-hashes`. |
+| `make cythonize-deps` | Installs C-extension build dependencies (`Cython`, `numpy`, `setuptools`, `packaging`) from `requirements/locks/cythonize.txt` using `--require-hashes`. |
+
+## How to add or update a dependency
+
+1. **Update the source specification**:
+   - For developer linters: edit `requirements/locks/dev-linters.in`.
+   - For documentation: edit `docs/requirements.txt`.
+   - For python package: edit `python/pyproject.toml` or `python/requirements-*.in`.
+   - For MCP server: edit `mcp-server/vmaf-mcp/pyproject.toml`.
+   - For AI / training: edit `ai/pyproject.toml`.
+
+2. **Regenerate lock files**:
+
+   ```bash
+   make python-locks-write
+   ```
+
+   This invokes `scripts/ci/check_python_dependency_locks.py write` with the reviewed
+   `uv` release. It compiles each lock target in a temporary directory, writes
+   the SHA-256 fingerprint header, and verifies all locks.
+
+3. **Verify locally**:
+
+   ```bash
+   make python-locks-check
+   ```
+
+## Sdist packages and PEP 517 build isolation
+
+When pip installs a pure source distribution (`.tar.gz` sdist) under `--require-hashes`,
+its default PEP 517 build isolation attempts to spawn a temporary environment and
+download unhashed build backends (`setuptools`, `wheel`) from PyPI.
+
+To support pure sdists (e.g. `mkdocs-minify-plugin` dependencies) securely:
+
+1. Pinned versions of `setuptools` and `wheel` are declared in `docs/requirements.txt`
+   and hashed into `docs/requirements-lock.txt`.
+2. Installation commands must pass `--no-build-isolation`:
+
+   ```bash
+   pip install --no-build-isolation --require-hashes -r docs/requirements-lock.txt
+   ```
+
+## Enforcement and CI gates
+
+- **Pre-commit**: `check-python-dependency-locks` runs on commits touching Python
+  manifests, lock files, workflows, Dockerfiles, setup scripts, or Makefile.
+- **CI Impact Planner**: Changes to `requirements/` trigger the `python` CI lane
+  in `.github/ci-impact.json`.
+- **Bot PR Exemption**: Automated Renovate and Dependabot PRs updating `requirements/`
+  are classified as dependency-only by `scripts/ci/classify-dependency-pr.sh`.
+- **Renovate Configuration**: `renovate.json` is configured to propose updates against
+  the source inputs (`.in`, `pyproject.toml`, `docs/requirements.txt`) and ignore
+  compiled lock files.

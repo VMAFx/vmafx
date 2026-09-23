@@ -375,6 +375,14 @@ DIFF
 expect_exit "unrelated env file is NOT exempt" 1 "renovate[bot]" \
   "renovate/base-images" "${work}/case28_other_env.diff"
 
+cat >"${work}/case29_requirements_lock.diff" <<'DIFF'
+requirements/locks/build.in
+requirements/locks/build.txt
+requirements/locks/manifest.json
+DIFF
+expect_exit "requirements locks and manifests are exempt for bot" 0 "renovate[bot]" \
+  "renovate/python-deps" "${work}/case29_requirements_lock.diff"
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 

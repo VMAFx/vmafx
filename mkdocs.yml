@@ -344,6 +344,7 @@ nav:
       - Best Practices assessment: development/best-practices-assessment.md
       - Repository security: development/repository-security.md
       - Dependency bot: development/dependency-bot.md
+      - Python dependency locks: development/python-dependency-locks.md
       - Project modernization audit: development/project-modernization-audit.md
       - Self-hosted runner: development/self-hosted-runner.md
       - Agent dispatch: development/agent-dispatch.md
@@ -1422,6 +1423,7 @@ nav:
         - "ADR-1301: speed-nonfinite-score-fails-frame": adr/1301-speed-nonfinite-score-fails-frame.md
         - "ADR-1303: backlog-checklist-tracker-schema": adr/1303-backlog-checklist-tracker-schema.md
         - "ADR-1304: mcp-http-runtime-isolation": adr/1304-mcp-http-runtime-isolation.md
+        - "ADR-1305: hash-locked-python-installs": adr/1305-hash-locked-python-installs.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
