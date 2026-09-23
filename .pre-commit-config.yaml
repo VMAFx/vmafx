@@ -242,6 +242,14 @@ repos:
         files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|libvmaf-build-matrix)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version)_single_source\.py))$'
         pass_filenames: false
 
+      - id: test-dev-container-build-secret
+        name: Dev-container GitHub token uses an optional BuildKit secret
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_dev_container_build_secret.py
+        language: system
+        files: '^(\.github/workflows/dev-container-build\.yml|\.pre-commit-config\.yaml|dev/(Containerfile|docker-compose\.yml|scripts/fetch-intel-neo\.py)|docs/development/dev-mcp\.md|scripts/ci/(check-dev-container-build-secret\.py|tests/test_dev_container_build_secret\.py))$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: test-envtest-single-source
         name: Envtest installer and Make/CI version ownership
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_envtest_single_source.py
