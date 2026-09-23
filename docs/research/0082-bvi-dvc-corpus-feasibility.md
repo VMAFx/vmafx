@@ -96,10 +96,10 @@ Netflix-only baseline is not shipped to production weights.
 
 - Ma, Zhang, Bull. *BVI-DVC: A Training Database for Deep Video
   Compression*. IEEE Transactions on Multimedia, 2021.
-- [ADR-0203](../adr/0203-netflix-corpus-training-stack.md) — Netflix
+- [ADR-0203](../adr/0203-tiny-ai-training-prep-impl.md) — Netflix
   Public drop redistribution posture.
 - [ADR-0235](../adr/0235-codec-aware-fr-regressor.md) — `fr_regressor_v2`.
-- [ADR-0303](../adr/0303-fr-regressor-v2-ensemble-flip.md) — ensemble-flip
+- [ADR-0303](../adr/0303-fr-regressor-v2-ensemble-prod-flip.md) — ensemble-flip
   ship gate (corpus-expansion ship criterion lives here).
 - [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md) — this digest's
   decision record.

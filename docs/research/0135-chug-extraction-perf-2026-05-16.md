@@ -35,8 +35,8 @@ daemon architecture; deferred to a follow-up PR.
   F6-A, F6-B, F6-C.
 - `ai/scripts/extract_k150k_features.py` — implementation under study (original
   version at commit `7b10b27a2`).
-- [`ADR-0362`](../adr/0362-fr-from-nr-adapter.md) — FR-from-NR adapter rationale.
-- [`ADR-0382`](../adr/0382-k150k-parallel-extraction.md) — parallelism model and
+- [`ADR-0362`](../adr/0362-k150k-corpus-integration.md) — FR-from-NR adapter rationale.
+- [`ADR-0382`](../adr/0382-y4m-neg-dimension-rejection.md) — parallelism model and
   worker isolation.
 
 ## Findings

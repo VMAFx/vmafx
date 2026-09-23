@@ -66,4 +66,4 @@ NVENC / AMF / QSV use. Defer the codec-vocab schema-expansion + the
 - [ADR-0283](../adr/0283-vmaf-tune-videotoolbox-adapters.md) — this PR.
 - [ADR-0237](../adr/0237-quality-aware-encode-automation.md) — `vmaf-tune` umbrella.
 - [ADR-0235](../adr/0235-codec-aware-fr-regressor.md) — codec-aware FR ship gate (relevant to the deferred companion).
-- [ADR-0291](../adr/0291-fr-regressor-v2-prod-loso.md) — fr_regressor_v2 production checkpoint.
+- [ADR-0291](../adr/0291-fr-regressor-v2-prod-ship.md) — fr_regressor_v2 production checkpoint.

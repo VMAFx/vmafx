@@ -332,7 +332,7 @@ own six-deliverables set as usual.
   backend scaffold.
 - Sibling ADR: [ADR-0241](../adr/0241-hip-first-consumer-psnr.md) —
   HIP first consumer cadence.
-- Sibling ADR: [ADR-0335](../adr/0335-sycl-adaptivecpp-second-toolchain.md)
+- Sibling ADR: [ADR-0335](../adr/0335-hardware-capability-priors.md)
   (in-flight in PR #498) — dual SYCL toolchain scope.
 - CPU reference: [`core/src/feature/cambi.c`](../../core/src/feature/cambi.c)
   (1619 LOC) + SIMD twins + `cambi_internal.h`.

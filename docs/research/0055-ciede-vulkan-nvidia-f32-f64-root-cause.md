@@ -132,7 +132,7 @@ authoritative; NVIDIA hardware validation is a manual local gate.
 ## Open questions
 
 None — the experiment is conclusive for this question. Adjacent open
-question lives in PR #346 / [ADR-0265](../adr/0265-vif-ciede-precise-step-a.md):
+question lives in PR #346 / [ADR-0269](../adr/0269-vif-ciede-precise-step-a.md):
 the Vulkan-1.4 API-version bump tail (45/48 vif scale-2 mismatches at
 1.527e-02) — separate root cause, requires NVIDIA `NV_SHADER_DUMP`
 diff between 1.3 and 1.4 driver paths.

@@ -4,7 +4,7 @@
 **Companion to**: [ADR-0947](../adr/0947-cuda-kernel-coverage-round3.md)
 **Builds on**: [ADR-0868](../adr/0868-gpu-backend-kernel-coverage.md) (round 1),
 [ADR-0886](../adr/0886-cuda-kernel-coverage-round2.md) (round 2),
-[ADR-0214](../adr/0214-cross-backend-parity-gate.md) (places=4 / 1e-4 gate)
+[ADR-0214](../adr/0214-gpu-parity-ci-gate.md) (places=4 / 1e-4 gate)
 
 ## Context
 

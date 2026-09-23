@@ -10,7 +10,7 @@
 - **Pairs with**:
   [ADR-0303](../adr/0303-fr-regressor-v2-ensemble-prod-flip.md) (production-flip
   gate),
-  [ADR-0279](../adr/0279-fr-regressor-v2-probabilistic.md) (probabilistic head /
+  [ADR-0393](../adr/0393-fr-regressor-v2-probabilistic.md) (probabilistic head /
   conformal scaffold),
   [Research-0086 SOTA digest](0086-tiny-ai-sota-deep-dive-2026-05-08.md) (gap
   analysis backing the novelty claims).

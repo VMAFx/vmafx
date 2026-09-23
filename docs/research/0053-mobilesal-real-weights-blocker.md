@@ -162,7 +162,7 @@ this docs-only blocker PR.
 
 - [ADR-0218](../adr/0218-mobilesal-saliency-extractor.md) — original
   MobileSal extractor design with the smoke-only placeholder.
-- [ADR-0253](../adr/0253-fastdvdnet-pre-real-weights.md) — sibling
+- [ADR-0255](../adr/0255-fastdvdnet-pre-real-weights.md) — sibling
   real-weights swap that *did* succeed (FastDVDnet, MIT, GitHub-
   raw downloadable, RGB-only architecture).
 - Upstream paper: Wu, Liu, Cheng, Lu, Cheng, *"MobileSal: Extremely

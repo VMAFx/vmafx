@@ -4,7 +4,7 @@
 - **Date**: 2026-05-02
 - **Status**: Complete
 - **Authors**: Lusoris, Claude (Anthropic)
-- **Companion ADR**: [ADR-0242](../adr/0242-vmaf-tiny-v4-mlp-large.md)
+- **Companion ADR**: [ADR-0390](../adr/0390-vmaf-tiny-v4-mlp-large.md)
 
 ## Question
 

@@ -134,6 +134,57 @@ This is documented in the root `AGENTS.md` and enforced through `CLAUDE.md §12 
 An agent that hand-picks a number without calling `--claim` will pass the local
 pre-commit hook but may collide at the CI `adr-collision-check` gate.
 
+## Linking to an ADR
+
+Cite an ADR by number and link to its file:
+
+```markdown
+See [ADR-0165](../adr/0165-state-md-bug-tracking.md) for the bug-ledger rule.
+```
+
+That link carries the decision's identity **twice** — once as the number, once as
+the slug — and either half can go stale on its own:
+
+| Half that rotted | How it happens | Repair |
+| --- | --- | --- |
+| slug | the ADR was renamed; the number still names the right decision | from the number |
+| number | a collision sweep renumbered the file; the slug still names the right decision | from the slug, **and** the `[ADR-NNNN]` text |
+
+The second row is not hypothetical, and it is the larger half. `af227b026`
+(PR #310) and `fb14bc332` (PR #752) were ADR collision sweeps that renumbered
+duplicate-numbered ADRs — the second renamed 50 files, moving
+`0241-vmaf-tiny-v3-mlp-medium.md` to `0389-vmaf-tiny-v3-mlp-medium.md` and 27
+others into the 0388–0415 band. Each sweep moved the file and its index fragment
+and left every inbound citation sitting on the old number.
+
+`scripts/ci/check-adr-links.py` runs as the `check-adr-links` pre-commit hook on
+any change under `docs/`, and resolves **slug first**, then number:
+
+```bash
+python3 scripts/ci/check-adr-links.py         # report
+python3 scripts/ci/check-adr-links.py --fix   # repair what resolves unambiguously
+```
+
+That ordering is load-bearing, and getting it backwards is worse than doing
+nothing. Repairing every broken link from its number was tried first: for the 35
+links the sweeps had renumbered, it silently repointed the citation at whatever
+unrelated ADR now holds the old number — `[ADR-0241]` in a tiny-AI evaluation
+digest became a link to the HIP PSNR kernel-template ADR. Those links *resolve*,
+so they read as authoritative and no checker complains afterwards. A dead link is
+better than a confident wrong one.
+
+`--fix` refuses two cases and reports them instead: a citation where neither the
+number nor the slug matches anything, and one where the two halves disagree about
+which file they mean. Both need a person.
+
+When a number genuinely has no ADR — one that was planned and never written — drop
+the link and cite the number in plain text, so a reader is not sent to a 404.
+`docs/state.md` does this for ADR-0846, which the tree skips entirely.
+
+**What the gate does not check**: a citation whose number and slug agree and are
+both the wrong decision. That needs review, not a parser, and is tracked as
+`T-STALE-ADR-CITATIONS-2026-09-16`.
+
 ## Running the smoke tests
 
 ```bash

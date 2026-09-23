@@ -236,7 +236,7 @@ poll loop.
 **Optimization:** drop the polling and reschedule the aggregator on
 `workflow_run` for the sibling workflows (`completed` event). The aggregator
 fires once when the LAST sibling completes. Implementation pattern documented
-in [ADR-0313 §Implementation](../adr/0313-required-checks-aggregator.md).
+in [ADR-0313 §Implementation](../adr/0313-ci-required-checks-aggregator.md).
 
 ```yaml
 on:

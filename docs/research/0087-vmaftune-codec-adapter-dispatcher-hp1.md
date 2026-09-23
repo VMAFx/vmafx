@@ -3,7 +3,7 @@
 
 - **Date**: 2026-05-08
 - **Authors**: Lusoris
-- **Companion ADR**: [ADR-0326](../adr/0326-vmaftune-codec-adapter-runtime-contract.md)
+- **Companion ADR**: [ADR-0399](../adr/0399-vmaftune-codec-adapter-runtime-contract.md)
 
 ## Summary
 

@@ -112,6 +112,6 @@ fix; both deterministically crash without it.
 
 ## Related
 
-- ADRs: [ADR-0209](../adr/0209-embedded-mcp-scaffold.md)
+- ADRs: [ADR-0209](../adr/0209-mcp-embedded-scaffold.md)
 - PRs: #460 (flagged the defect in the audit follow-ups section)
 - Issues: none open

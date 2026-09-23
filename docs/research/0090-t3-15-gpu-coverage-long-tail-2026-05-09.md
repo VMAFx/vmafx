@@ -105,7 +105,7 @@ Optional / deferred (no implementation in this batch):
 ## Cross-backend gate plan for the first port
 
 `scripts/ci/cross_backend_vif_diff.py` (the canonical places=4 gate per
-[ADR-0214](../adr/0214-cross-backend-gate-stability.md)) supports
+[ADR-0214](../adr/0214-gpu-parity-ci-gate.md)) supports
 `--feature psnr` `--backend cuda`. Post-port:
 
 ```bash
@@ -151,7 +151,7 @@ running `make test-netflix-golden` against the rebuilt tree.
   CLAUDE.md §12 r8 freeze rule.
 - [ADR-0210](../adr/0210-cambi-vulkan-integration.md) — Strategy II hybrid for
   cambi (prerequisite reading for gaps #7-#8).
-- [ADR-0214](../adr/0214-cross-backend-gate-stability.md) — places=4 gate.
+- [ADR-0214](../adr/0214-gpu-parity-ci-gate.md) — places=4 gate.
 - [ADR-0216](../adr/0216-vulkan-chroma-psnr.md) — Vulkan PSNR chroma; this
   digest's first-port direct precedent.
 - [ADR-0219](../adr/0219-motion3-gpu-coverage.md) — motion3 GPU coverage in

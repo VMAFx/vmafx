@@ -20039,6 +20039,17 @@ no score floor was applied.
   resolves, and every numbered ADR has exactly one row.
 
 
+- **Every `adr/NNNN-slug.md` link under `docs/` now resolves, and a gate keeps it
+  that way.** An ADR link carries the decision's identity twice, as a number and
+  as a slug, and either half can rot alone: 98 were broken, 35 because an ADR
+  collision sweep (PR #310, PR #752) renumbered the file while the slug stayed
+  right, and 63 because the ADR was renamed while the number stayed right. Each is
+  repaired from whichever half still identifies it — slug first, which also
+  rewrites the `[ADR-NNNN]` text, since a renumbered citation is wrong in both
+  halves. `scripts/ci/check-adr-links.py` runs as a pre-commit hook on any `docs/`
+  change and refuses to guess when neither half resolves or the two disagree.
+
+
 Remove stale `_order.txt` slug entries left over from ADR renumbering (0452→0578, 0460-ms-ssim→0582). Duplicate fragment files deleted; 0578 fragment link corrected; 0582 fragment created; README regenerated.
 
 
@@ -25695,6 +25706,13 @@ so that MCP output is Netflix-compatible without explicit precision argument (AD
   the embedded runtime and release channel as stubs.
 
 
+- **MCP parameter-rejection tests no longer depend on the invocation directory.**
+  `test_vmaf_score_rejects_invalid_core_params` passed repository-relative fixture
+  paths, which resolve against the process CWD, so run from `mcp-server/vmaf-mcp/`
+  all three cases failed on the path allowlist instead of reaching the parameter
+  checks they name. The paths are now anchored to the repository root.
+
+
 - Removed the MCP subprocess-timeout test's `RuntimeWarning` suppression and made it prove that the post-kill `communicate()` drain is awaited exactly once.
 
 
@@ -28455,6 +28473,14 @@ brief cross-reference comment so reviewers can trace the shared constants.
 - `docs/state.md`: close stale open-bug row `T-CAMBI-HIP-NOT-STARTED`; PR #996
   (`9b5e23488`) already shipped the full CAMBI HIP kernel — the `-ENOSYS` scaffold
   was replaced months ago. Move row to the Recently closed section.
+
+
+- **`docs/state.md` reconciled against master.** The
+  `T-PRAETOR-README-GOVERNANCE-BLOCK-MISSING-2026-09-22` row stayed under
+  **Open bugs** after the branch that fixed it merged; it now sits under
+  **Recently closed** with the evidence. The `T-CI-DOCS-JOB-TIMEOUT-2026-09-19`
+  row claimed the docs-build ceiling is 20 minutes, where master carries 25 —
+  corrected, with the measurement that forced the second raise.
 
 
 Fix three broken ADR slug refs in `docs/state.md` that pointed to renamed ADR files:

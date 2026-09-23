@@ -37,7 +37,7 @@ following the LPIPS convention.
 
 ## Why this matters for the fork
 
-The fork ships `lpips_sq` ([ADR-0041](../adr/0041-lpips-onnx-extractor.md))
+The fork ships `lpips_sq` ([ADR-0041](../adr/0041-lpips-sq-extractor.md))
 as its only deep-feature FR extractor. Bristol VI-Lab's 2026 NVC
 review (audited as
 [Research-0033](0033-bristol-nvc-review-2026.md)) §5.3 lists DISTS
