@@ -144,7 +144,7 @@ test_context = executable('test_context',
 )
 
 test_picture = executable('test_picture',
-    ['test.c', 'test_picture.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp', '../src/thread_pool.c'],
+    ['test.c', 'test_picture.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
@@ -153,7 +153,7 @@ test_picture = executable('test_picture',
 test_picture_v2 = executable('test_picture_v2',
     ['test.c', 'test_picture_v2.c',
      '../src/picture.c', '../src/picture_v2.c',
-     '../src/mem.cpp', '../src/ref.cpp', '../src/thread_pool.c'],
+     '../src/mem.cpp', '../src/ref.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
@@ -285,7 +285,7 @@ test_cjson = executable('test_cjson',
 test('test_cjson', test_cjson, suite : ['fast'])
 
 test_model = executable('test_model',
-    ['test.c', 'test_model.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
+    ['test.c', 'test_model.c', '../src/dict.cpp', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
@@ -301,7 +301,7 @@ test_model = executable('test_model',
 # that touches it. Mirrors test_model's sources/objects because it drives the
 # same vmaf_read_json_model_from_buffer entry point.
 test_model_libsvm_dup_key = executable('test_model_libsvm_dup_key',
-    ['test.c', 'test_model_libsvm_dup_key.c', '../src/dict.cpp', '../src/pdjson.c',
+    ['test.c', 'test_model_libsvm_dup_key.c', '../src/dict.cpp',
      json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
@@ -314,7 +314,7 @@ test_model_libsvm_dup_key = executable('test_model_libsvm_dup_key',
 # Netflix/vmaf#1242 regression: VmafFeatureDictionary ownership contract on
 # vmaf_model_feature_overload / vmaf_model_collection_feature_overload.
 test_model_feature_overload_ownership = executable('test_model_feature_overload_ownership',
-    ['test.c', 'test_model_feature_overload_ownership.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
+    ['test.c', 'test_model_feature_overload_ownership.c', '../src/dict.cpp', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
@@ -366,7 +366,7 @@ test_model_collection_api = executable('test_model_collection_api',
 test_predict = executable('test_predict',
     ['test.c', 'test_predict.c', '../src/dict.cpp', '../src/metadata_handler.cpp',
      '../src/feature/feature_collector.cpp', '../src/feature/alias.c', '../src/model.c',
-     '../src/pdjson.c', json_model_c_sources, '../src/feature/feature_name.cpp', '../src/feature/feature_extractor.cpp',],    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+     json_model_c_sources, '../src/feature/feature_name.cpp', '../src/feature/feature_extractor.cpp',],    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],

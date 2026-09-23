@@ -625,3 +625,22 @@ does not reach any emitted ADM score: the CPU divides the accumulator by
 `2^(52 - shift_cub - shift_inner_accum)` and casts to `float`. No
 score-level tolerance detects it
 (T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19).
+
+## Test target source inclusion and reachability contracts (ADR-1142, Research-2078)
+
+Never include uncalled library implementation sources directly in test executable
+targets in `core/test/meson.build`. Test executables must only compile translation
+units they directly exercise or link against `libvmaf` (e.g. `test_picture` and
+`test_picture_v2` must not include `../src/thread_pool.c`; `test_predict` and
+`test_model*` must not include `../src/pdjson.c`). Compiling unused implementation
+files into test binaries introduces visibility seam leaks where static internal-linkage
+functions become unreachable from `main()`, tripping CodeQL `cpp/unused-static-function`
+findings across alerts 1066–1098. Research-2078 records the exact selected and
+pre-dismissed IDs; a local reachability repair does not claim hosted closure before a fresh
+CodeQL run. Furthermore, test helpers with internal linkage (such as
+`vector_unchanged` in `test_fex_ctx_vector.cpp`) must be verified via unconditional
+predicate test cases rather than gated behind conditional macros (e.g. `FEX_VECTOR_ALLOC_TEST`)
+or masked with `[[maybe_unused]]`. Specialized test binaries targeting macro
+configurations (such as `test_pdjson_stack_increment` with `PDJSON_STACK_INC=0` and
+`SIZE_MAX`) must provide executable reachability across all supported token paths
+(scalars, user/stream sources, and preallocated containers).

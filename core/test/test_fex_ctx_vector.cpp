@@ -228,13 +228,27 @@ bool unused_slots_clear(const RegisteredFeatureExtractors *entries)
     return true;
 }
 
-// Only the FEX_VECTOR_ALLOC_TEST cases below call this, so without that macro it is
-// unused and gcc warns; the attribute says so instead of hiding the helper in the #ifdef.
-[[maybe_unused]] bool vector_unchanged(const RegisteredFeatureExtractors *entries,
-                                       const void *storage, unsigned count, unsigned capacity)
+bool vector_unchanged(const RegisteredFeatureExtractors *entries, const void *storage,
+                      unsigned count, unsigned capacity)
 {
     return entries->cnt == count && entries->capacity == capacity &&
            static_cast<const void *>(entries->fex_ctx) == storage;
+}
+
+mu_message_t test_vector_unchanged_predicate()
+{
+    Vector vector;
+    mu_assert("vector init failed", feature_extractor_vector_init(&vector.get()) == 0);
+    const void *const initial_storage = static_cast<const void *>(vector.get().fex_ctx);
+    mu_assert("matching vector must report unchanged",
+              vector_unchanged(&vector.get(), initial_storage, 0, 8));
+    mu_assert("mismatched storage must report changed",
+              !vector_unchanged(&vector.get(), nullptr, 0, 8));
+    mu_assert("mismatched count must report changed",
+              !vector_unchanged(&vector.get(), initial_storage, 1, 8));
+    mu_assert("mismatched capacity must report changed",
+              !vector_unchanged(&vector.get(), initial_storage, 0, 16));
+    return nullptr;
 }
 
 mu_message_t test_native_growth()
@@ -346,6 +360,7 @@ mu_message_t run_legacy_and_growth_tests()
     mu_run_test(test_legacy_distinct);
     mu_run_test(test_legacy_different_name);
     mu_run_test(test_capacity_arithmetic);
+    mu_run_test(test_vector_unchanged_predicate);
     mu_run_test(test_native_growth);
     return nullptr;
 }
