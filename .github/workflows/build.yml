@@ -260,7 +260,7 @@ jobs:
         if: matrix.cuda && !matrix.windows
         uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d  # v0.2.36
         with:
-          cuda: '13.3.1'
+          cuda: '13.4.1'
           method: network
           sub-packages: '["nvcc", "cudart-dev"]'
 
@@ -331,8 +331,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
-          $cudaVersion = '13.3.1'
-          $cudaMajorMinor = '13.3'
+          $cudaVersion = '13.4.1'
+          $cudaMajorMinor = '13.4'
           $url = "https://developer.download.nvidia.com/compute/cuda/$cudaVersion/network_installers/cuda_${cudaVersion}_windows_network.exe"
           $installer = Join-Path $env:RUNNER_TEMP "cuda_${cudaVersion}_windows_network.exe"
           curl.exe --fail --location --retry 5 --retry-delay 10 --output $installer $url

@@ -351,7 +351,8 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
 # CUDA runtime libs — provided by host via nvidia-container-toolkit
-# CUDA 13.3.1 runtime is sourced from the official Ubuntu 24.04 image.
+# The CUDA runtime is sourced from the digest-pinned CUDA_RUNTIME image
+# (build-config.env), which is an Ubuntu 26.04 base, not 24.04.
 # Mismatching major versions (12.x runtime vs 13.x build) causes symbol-resolution failures.
 COPY --from=cuda-runtime-libs /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 
