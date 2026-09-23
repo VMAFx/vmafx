@@ -35,6 +35,13 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/rust-ci-path-filters — Rust CI triggers on libvmaf public C headers (2026-09-23)
+
+1. **`.github/workflows/rust-ci.yml` and `.github/ci-impact.json` include `core/include/libvmaf/**`.**
+   `vmafx-sys` generates FFI bindings directly from `core/include/libvmaf/libvmaf.h` using `bindgen`.
+   Earlier path filters only matched Rust files, `Cargo.*`, and `deny.toml`, which silently bypassed
+   `vmafx-sys CI` on public C API changes (T-PATH-FILTERS-WEAKEN-NEW-GATES-2026-09-22).
+   Do not narrow these path filters during rebase.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

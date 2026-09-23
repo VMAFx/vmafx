@@ -28071,6 +28071,10 @@ with `@abc.abstractmethod` on `infer`, so missing implementations raise
   + install.
 
 
+- Fixed Rust CI workflow path filters to include `core/include/libvmaf/**`, ensuring
+  `vmafx-sys CI` triggers whenever public C library headers bound by bindgen change.
+
+
 Fix Rust pilot clippy strictness — ptr_as_ptr, cast_lossless, borrow_as_ptr, use_self, missing_const_for_fn, missing_errors_doc in vmafx-sys/safe, vmafx, and vmafx-tad.
 
 
