@@ -9,6 +9,11 @@
  * reuses its fixtures across the depth/scale/pattern sweep, so gcov
  * instrumentation does not turn setup into the dominant cost.
  */
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe. ADR-1138. */
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -18,15 +23,9 @@
 #include "config.h"
 #include "feature/integer_vif.h"
 #include "feature/x86/vif_avx512.h"
+#include "feature/x86/vif_avx2.h"
 #include "test.h"
 #include "simd_bitexact_test.h"
-
-/* MSVC's C23 mode does not implement nullptr; other supported C23 compilers do. */
-#if defined(_MSC_VER)
-#define VIF_TEST_NULLPTR ((void *)0)
-#else
-#define VIF_TEST_NULLPTR nullptr
-#endif
 
 typedef struct VifStageFixture {
     VifPublicState state;
@@ -38,7 +37,7 @@ typedef struct VifStageFixture {
 
 static void free_fixture(VifStageFixture *fixture)
 {
-    if (fixture != VIF_TEST_NULLPTR) {
+    if (fixture != NULL) {
         free(fixture->storage);
         free(fixture);
     }
@@ -47,16 +46,16 @@ static void free_fixture(VifStageFixture *fixture)
 static VifStageFixture *alloc_fixture(unsigned width, unsigned height, const uint16_t *log2_table)
 {
     VifStageFixture *fixture = calloc(1, sizeof(*fixture));
-    if (fixture == VIF_TEST_NULLPTR)
-        return VIF_TEST_NULLPTR;
+    if (fixture == NULL)
+        return NULL;
     const size_t stride = (width * sizeof(uint16_t) + 31u) & ~(size_t)31u;
     const size_t plane = stride * (height + 16u);
     const size_t temporary = (width + 128u) * sizeof(uint32_t);
     fixture->bytes = plane * 4u + temporary * 7u;
     fixture->storage = calloc(1, fixture->bytes);
-    if (fixture->storage == VIF_TEST_NULLPTR) {
+    if (fixture->storage == NULL) {
         free_fixture(fixture);
-        return VIF_TEST_NULLPTR;
+        return NULL;
     }
     fixture->width = width;
     fixture->height = height;
@@ -126,8 +125,8 @@ static int compare_planes(const VifStageFixture *scalar, const VifStageFixture *
     return memcmp(scalar->storage, simd->storage, frames) != 0;
 }
 
-static int compare_statistic(VifStageFixture *scalar, VifStageFixture *simd, unsigned bpc,
-                             unsigned scale, unsigned pattern)
+static int compare_statistic(VifStageFixture *scalar, VifStageFixture *simd, VifStageFixture *avx2,
+                             unsigned bpc, unsigned scale, unsigned pattern)
 {
     const unsigned width = scalar->width;
     const unsigned height = scalar->height;
@@ -151,17 +150,36 @@ static int compare_statistic(VifStageFixture *scalar, VifStageFixture *simd, uns
     static_assert(sizeof(scalar_bits) == sizeof(scalar_result));
     memcpy(scalar_bits, scalar_result, sizeof(scalar_bits));
     memcpy(simd_bits, simd_result, sizeof(simd_bits));
-    const int different = !isfinite(simd_result[0]) || !isfinite(simd_result[1]) ||
-                          scalar_bits[0] != simd_bits[0] || scalar_bits[1] != simd_bits[1] ||
-                          compare_planes(scalar, simd, scale) != 0;
+    int different = !isfinite(simd_result[0]) || !isfinite(simd_result[1]) ||
+                    scalar_bits[0] != simd_bits[0] || scalar_bits[1] != simd_bits[1] ||
+                    compare_planes(scalar, simd, scale) != 0;
+
+    if (avx2 != NULL) {
+        memset(avx2->storage, 0, avx2->bytes);
+        fill_fixture(avx2, bpc, scale, pattern);
+        float avx2_result[2] = {0};
+        if (bpc == 8u && scale == 0u) {
+            vif_statistic_8_avx2(&avx2->state, avx2_result, avx2_result + 1, width, height);
+        } else {
+            vif_statistic_16_avx2(&avx2->state, avx2_result, avx2_result + 1, width, height,
+                                  (int)bpc, (int)scale);
+        }
+        uint32_t avx2_bits[2];
+        memcpy(avx2_bits, avx2_result, sizeof(avx2_bits));
+        if (!isfinite(avx2_result[0]) || !isfinite(avx2_result[1]) ||
+            scalar_bits[0] != avx2_bits[0] || scalar_bits[1] != avx2_bits[1]) {
+            different = 1;
+        }
+    }
     return different;
 }
 
-static int compare_depth(VifStageFixture *scalar, VifStageFixture *simd, unsigned bpc)
+static int compare_depth(VifStageFixture *scalar, VifStageFixture *simd, VifStageFixture *avx2,
+                         unsigned bpc)
 {
     for (unsigned scale = 0; scale < 4; ++scale) {
         for (unsigned pattern = 0; pattern < 2; ++pattern) {
-            const int result = compare_statistic(scalar, simd, bpc, scale, pattern);
+            const int result = compare_statistic(scalar, simd, avx2, bpc, scale, pattern);
             if (result != 0)
                 return result;
         }
@@ -174,28 +192,83 @@ static int compare_geometry(unsigned width, unsigned height, const uint16_t *log
     static const unsigned depths[] = {8, 9, 10, 11, 12, 13, 14, 15, 16};
     VifStageFixture *scalar = alloc_fixture(width, height, log2_table);
     VifStageFixture *simd = alloc_fixture(width, height, log2_table);
-    if (scalar == VIF_TEST_NULLPTR || simd == VIF_TEST_NULLPTR) {
+    VifStageFixture *avx2 = simd_test_have_avx2() ? alloc_fixture(width, height, log2_table) : NULL;
+    if (scalar == NULL || simd == NULL) {
         free_fixture(scalar);
         free_fixture(simd);
+        free_fixture(avx2);
         return -1;
     }
     int result = 0;
     for (size_t b = 0; b < sizeof(depths) / sizeof(depths[0]); ++b) {
-        result = compare_depth(scalar, simd, depths[b]);
+        result = compare_depth(scalar, simd, avx2, depths[b]);
         if (result != 0) {
-            (void)fprintf(stderr, "  %ux%u bpc %u differs from scalar\n", width, height, depths[b]);
+            (void)fprintf(stderr, "  %ux%u bpc %u differs from scalar/avx2\n", width, height,
+                          depths[b]);
             break;
         }
     }
     free_fixture(scalar);
     free_fixture(simd);
+    free_fixture(avx2);
     return result;
+}
+
+static char *test_integer_vif_avx512_stages_red_check(void)
+{
+    if (!simd_test_have_avx512())
+        return NULL;
+    static uint16_t log2_table[VIF_LOG2_TABLE_SIZE];
+    for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
+        log2_table[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
+    }
+    VifStageFixture *scalar = alloc_fixture(32, 17, log2_table);
+    VifStageFixture *simd = alloc_fixture(32, 17, log2_table);
+    VifStageFixture *avx2 = simd_test_have_avx2() ? alloc_fixture(32, 17, log2_table) : NULL;
+    if (scalar == NULL || simd == NULL) {
+        free_fixture(scalar);
+        free_fixture(simd);
+        free_fixture(avx2);
+        return "allocation failure in red check";
+    }
+
+    /* 1. Baseline must pass (bit-exact scalar == AVX512 [== AVX2]). */
+    int baseline = compare_statistic(scalar, simd, avx2, 8, 0, 0);
+    mu_assert("baseline must be bit-exact across scalar, AVX2, and AVX-512", baseline == 0);
+
+    /* 2. Red test: 1-bit perturbation in reference pixel input must turn RED (detected). */
+    ((uint8_t *)scalar->state.buf.ref)[0] ^= 1;
+    float res_scalar[2] = {0};
+    float res_simd[2] = {0};
+    vif_statistic_8(&scalar->state, res_scalar, res_scalar + 1, 32, 17);
+    vif_statistic_8_avx512(&simd->state, res_simd, res_simd + 1, 32, 17);
+    uint32_t bits_sc[2];
+    uint32_t bits_simd[2];
+    memcpy(bits_sc, res_scalar, sizeof(bits_sc));
+    memcpy(bits_simd, res_simd, sizeof(bits_simd));
+    const int input_perturbed_diff = (bits_sc[0] != bits_simd[0] || bits_sc[1] != bits_simd[1]);
+    mu_assert("red check: harness must detect 1-bit input perturbation", input_perturbed_diff != 0);
+
+    /* 3. Red test: 1-bit perturbation in intermediate plane must turn RED. */
+    fill_fixture(scalar, 8, 0, 0);
+    fill_fixture(simd, 8, 0, 0);
+    vif_statistic_8(&scalar->state, res_scalar, res_scalar + 1, 32, 17);
+    vif_statistic_8_avx512(&simd->state, res_simd, res_simd + 1, 32, 17);
+    simd->state.buf.tmp.ref[0] ^= 1;
+    const int plane_perturbed_diff = compare_planes(scalar, simd, 0);
+    mu_assert("red check: harness must detect 1-bit intermediate plane difference",
+              plane_perturbed_diff != 0);
+
+    free_fixture(scalar);
+    free_fixture(simd);
+    free_fixture(avx2);
+    return NULL;
 }
 
 static char *test_integer_vif_avx512_stages(void)
 {
     if (!simd_test_have_avx512())
-        return VIF_TEST_NULLPTR;
+        return NULL;
     static uint16_t log2_table[VIF_LOG2_TABLE_SIZE];
     for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
         log2_table[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
@@ -208,11 +281,14 @@ static char *test_integer_vif_avx512_stages(void)
                       compare_geometry(widths[w], heights[h], log2_table) == 0);
         }
     }
-    return VIF_TEST_NULLPTR;
+    return NULL;
 }
 
 char *run_tests(void)
 {
+    mu_run_test(test_integer_vif_avx512_stages_red_check);
     mu_run_test(test_integer_vif_avx512_stages);
-    return VIF_TEST_NULLPTR;
+    return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

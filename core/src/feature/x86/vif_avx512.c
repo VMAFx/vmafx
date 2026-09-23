@@ -332,13 +332,13 @@ static FORCE_INLINE void vif_horizontal_energy_add512(VifPair512 *acc, const uin
     acc->hi = _mm512_add_epi64(acc->hi, _mm512_mul_epu32(s2, f_tap));
 }
 
-static FORCE_INLINE __m512i vif_horizontal_energy_pack512(VifPair512 acc)
+static FORCE_INLINE __m512i vif_horizontal_energy_pack512(const VifPair512 *acc)
 {
     const __m512i mask2 =
         _mm512_set_epi32(30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0);
-    acc.lo = _mm512_srli_epi64(acc.lo, 16);
-    acc.hi = _mm512_srli_epi64(acc.hi, 16);
-    return _mm512_permutex2var_epi32(acc.lo, mask2, acc.hi);
+    const __m512i lo = _mm512_srli_epi64(acc->lo, 16);
+    const __m512i hi = _mm512_srli_epi64(acc->hi, 16);
+    return _mm512_permutex2var_epi32(lo, mask2, hi);
 }
 
 static FORCE_INLINE VifEnergies512 vif_horizontal_energies512(const VifBuffer *buf, unsigned j,
@@ -365,9 +365,9 @@ static FORCE_INLINE VifEnergies512 vif_horizontal_energies512(const VifBuffer *b
         vif_horizontal_energy_add512(&cross, buf->tmp.ref_dis, forward, f_tap);
     }
     const VifEnergies512 out = {
-        vif_horizontal_energy_pack512(ref),
-        vif_horizontal_energy_pack512(dis),
-        vif_horizontal_energy_pack512(cross),
+        vif_horizontal_energy_pack512(&ref),
+        vif_horizontal_energy_pack512(&dis),
+        vif_horizontal_energy_pack512(&cross),
     };
     return out;
 }
@@ -484,27 +484,28 @@ static FORCE_INLINE VifTaps8 vif_vertical_taps8(const uint8_t *plane, ptrdiff_t 
     return out;
 }
 
-static FORCE_INLINE void vif_vertical_mean8(VifPair512 *acc, VifTaps8 t, __m512i coefficients)
+static FORCE_INLINE void vif_vertical_mean8(VifPair512 *acc, const VifTaps8 *t,
+                                            __m512i coefficients)
 {
-    const __m512i paired0 = _mm512_add_epi16(t.back0, t.fwd0);
-    const __m512i paired1 = _mm512_add_epi16(t.back1, t.fwd1);
+    const __m512i paired0 = _mm512_add_epi16(t->back0, t->fwd0);
+    const __m512i paired1 = _mm512_add_epi16(t->back1, t->fwd1);
     const __m512i lo = _mm512_unpacklo_epi16(paired0, paired1);
     const __m512i hi = _mm512_unpackhi_epi16(paired0, paired1);
     acc->lo = _mm512_add_epi32(acc->lo, _mm512_madd_epi16(lo, coefficients));
     acc->hi = _mm512_add_epi32(acc->hi, _mm512_madd_epi16(hi, coefficients));
 }
 
-static FORCE_INLINE void vif_vertical_energy8(VifPair512 *acc, VifTaps8 a, VifTaps8 b,
+static FORCE_INLINE void vif_vertical_energy8(VifPair512 *acc, const VifTaps8 *a, const VifTaps8 *b,
                                               __m512i f_tap0, __m512i f_tap1)
 {
-    const __m512i a0lo = _mm512_unpacklo_epi16(a.back0, a.fwd0);
-    const __m512i a0hi = _mm512_unpackhi_epi16(a.back0, a.fwd0);
-    const __m512i a1lo = _mm512_unpacklo_epi16(a.back1, a.fwd1);
-    const __m512i a1hi = _mm512_unpackhi_epi16(a.back1, a.fwd1);
-    const __m512i b0lo = _mm512_unpacklo_epi16(b.back0, b.fwd0);
-    const __m512i b0hi = _mm512_unpackhi_epi16(b.back0, b.fwd0);
-    const __m512i b1lo = _mm512_unpacklo_epi16(b.back1, b.fwd1);
-    const __m512i b1hi = _mm512_unpackhi_epi16(b.back1, b.fwd1);
+    const __m512i a0lo = _mm512_unpacklo_epi16(a->back0, a->fwd0);
+    const __m512i a0hi = _mm512_unpackhi_epi16(a->back0, a->fwd0);
+    const __m512i a1lo = _mm512_unpacklo_epi16(a->back1, a->fwd1);
+    const __m512i a1hi = _mm512_unpackhi_epi16(a->back1, a->fwd1);
+    const __m512i b0lo = _mm512_unpacklo_epi16(b->back0, b->fwd0);
+    const __m512i b0hi = _mm512_unpackhi_epi16(b->back0, b->fwd0);
+    const __m512i b1lo = _mm512_unpacklo_epi16(b->back1, b->fwd1);
+    const __m512i b1hi = _mm512_unpackhi_epi16(b->back1, b->fwd1);
     const __m512i tap0lo = _mm512_madd_epi16(a0lo, b0lo);
     const __m512i tap0hi = _mm512_madd_epi16(a0hi, b0hi);
     const __m512i tap1lo = _mm512_madd_epi16(a1lo, b1lo);
@@ -515,24 +516,24 @@ static FORCE_INLINE void vif_vertical_energy8(VifPair512 *acc, VifTaps8 a, VifTa
     acc->hi = _mm512_add_epi32(acc->hi, _mm512_mullo_epi32(tap1hi, f_tap1));
 }
 
-static FORCE_INLINE void vif_vertical_store8(uint32_t *dst, VifPair512 acc)
+static FORCE_INLINE void vif_vertical_store8(uint32_t *dst, const VifPair512 *acc)
 {
     const __m512i perm_lo = _mm512_set_epi64(11, 10, 3, 2, 9, 8, 1, 0);
     const __m512i perm_hi = _mm512_set_epi64(15, 14, 7, 6, 13, 12, 5, 4);
-    const __m512i lo = _mm512_permutex2var_epi64(acc.lo, perm_lo, acc.hi);
-    const __m512i hi = _mm512_permutex2var_epi64(acc.lo, perm_hi, acc.hi);
+    const __m512i lo = _mm512_permutex2var_epi64(acc->lo, perm_lo, acc->hi);
+    const __m512i hi = _mm512_permutex2var_epi64(acc->lo, perm_hi, acc->hi);
     _mm512_storeu_si512((__m512i *)dst, lo);
     _mm512_storeu_si512((__m512i *)(dst + 16), hi);
 }
 
-static FORCE_INLINE void vif_vertical_store_mean8(uint32_t *dst, VifPair512 acc)
+static FORCE_INLINE void vif_vertical_store_mean8(uint32_t *dst, const VifPair512 *acc)
 {
     const __m512i round_128 = _mm512_set1_epi32(128);
-    acc.lo = _mm512_add_epi32(acc.lo, round_128);
-    acc.hi = _mm512_add_epi32(acc.hi, round_128);
-    acc.lo = _mm512_srli_epi32(acc.lo, 8);
-    acc.hi = _mm512_srli_epi32(acc.hi, 8);
-    vif_vertical_store8(dst, acc);
+    const VifPair512 rounded = {
+        _mm512_srli_epi32(_mm512_add_epi32(acc->lo, round_128), 8),
+        _mm512_srli_epi32(_mm512_add_epi32(acc->hi, round_128), 8),
+    };
+    vif_vertical_store8(dst, &rounded);
 }
 
 static FORCE_INLINE void vif_vertical_statistics8_block(const VifStatConfig512 *c, unsigned i,
@@ -550,17 +551,17 @@ static FORCE_INLINE void vif_vertical_statistics8_block(const VifStatConfig512 *
             _mm512_set1_epi32(c->vif_filt[tap] + (c->vif_filt[tap + 1] << 16));
         const VifTaps8 r = vif_vertical_taps8(c->buf.ref, c->buf.stride, back, forward, j);
         const VifTaps8 d = vif_vertical_taps8(c->buf.dis, c->buf.stride, back, forward, j);
-        vif_vertical_mean8(&acc.mu1, r, coefficients);
-        vif_vertical_mean8(&acc.mu2, d, coefficients);
-        vif_vertical_energy8(&acc.ref, r, r, f_tap0, f_tap1);
-        vif_vertical_energy8(&acc.dis, d, d, f_tap0, f_tap1);
-        vif_vertical_energy8(&acc.ref_dis, d, r, f_tap0, f_tap1);
+        vif_vertical_mean8(&acc.mu1, &r, coefficients);
+        vif_vertical_mean8(&acc.mu2, &d, coefficients);
+        vif_vertical_energy8(&acc.ref, &r, &r, f_tap0, f_tap1);
+        vif_vertical_energy8(&acc.dis, &d, &d, f_tap0, f_tap1);
+        vif_vertical_energy8(&acc.ref_dis, &d, &r, f_tap0, f_tap1);
     }
-    vif_vertical_store_mean8(c->buf.tmp.mu1 + j, acc.mu1);
-    vif_vertical_store_mean8(c->buf.tmp.mu2 + j, acc.mu2);
-    vif_vertical_store8(c->buf.tmp.ref + j, acc.ref);
-    vif_vertical_store8(c->buf.tmp.dis + j, acc.dis);
-    vif_vertical_store8(c->buf.tmp.ref_dis + j, acc.ref_dis);
+    vif_vertical_store_mean8(c->buf.tmp.mu1 + j, &acc.mu1);
+    vif_vertical_store_mean8(c->buf.tmp.mu2 + j, &acc.mu2);
+    vif_vertical_store8(c->buf.tmp.ref + j, &acc.ref);
+    vif_vertical_store8(c->buf.tmp.dis + j, &acc.dis);
+    vif_vertical_store8(c->buf.tmp.ref_dis + j, &acc.ref_dis);
 }
 
 static FORCE_INLINE void vif_vertical_statistics8(const VifStatConfig512 *c, unsigned w, unsigned i)
@@ -616,13 +617,13 @@ static FORCE_INLINE VifPair512 vif_vertical_weight16(__m512i pixels, __m512i f1)
     return out;
 }
 
-static FORCE_INLINE void vif_vertical_energy16(VifEnergy512 *acc, VifPair512 weighted,
+static FORCE_INLINE void vif_vertical_energy16(VifEnergy512 *acc, const VifPair512 *weighted,
                                                __m512i pixels)
 {
-    const __m512i sg0 = _mm512_cvtepu32_epi64(_mm512_castsi512_si256(weighted.lo));
-    const __m512i sg1 = _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(weighted.lo, 1));
-    const __m512i sg2 = _mm512_cvtepu32_epi64(_mm512_castsi512_si256(weighted.hi));
-    const __m512i sg3 = _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(weighted.hi, 1));
+    const __m512i sg0 = _mm512_cvtepu32_epi64(_mm512_castsi512_si256(weighted->lo));
+    const __m512i sg1 = _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(weighted->lo, 1));
+    const __m512i sg2 = _mm512_cvtepu32_epi64(_mm512_castsi512_si256(weighted->hi));
+    const __m512i sg3 = _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(weighted->hi, 1));
     const __m128i l0 = _mm512_castsi512_si128(pixels);
     const __m128i l1 = _mm512_extracti32x4_epi32(pixels, 1);
     const __m128i l2 = _mm512_extracti32x4_epi32(pixels, 2);
@@ -634,35 +635,28 @@ static FORCE_INLINE void vif_vertical_energy16(VifEnergy512 *acc, VifPair512 wei
     acc->lane3 = _mm512_add_epi64(acc->lane3, _mm512_mul_epu32(sg3, _mm512_cvtepu16_epi64(l3)));
 }
 
-static FORCE_INLINE void vif_vertical_store_mean16(uint32_t *dst, VifPair512 acc, int round,
+static FORCE_INLINE void vif_vertical_store_mean16(uint32_t *dst, const VifPair512 *acc, int round,
                                                    int shift)
 {
     const __m512i addnum = _mm512_set1_epi32(round);
-    acc.lo = _mm512_add_epi32(acc.lo, addnum);
-    acc.hi = _mm512_add_epi32(acc.hi, addnum);
-    acc.lo = _mm512_srli_epi32(acc.lo, shift);
-    acc.hi = _mm512_srli_epi32(acc.hi, shift);
-    _mm512_storeu_si512((__m512i *)dst, acc.lo);
-    _mm512_storeu_si512((__m512i *)(dst + 16), acc.hi);
+    const __m512i lo = _mm512_srli_epi32(_mm512_add_epi32(acc->lo, addnum), shift);
+    const __m512i hi = _mm512_srli_epi32(_mm512_add_epi32(acc->hi, addnum), shift);
+    _mm512_storeu_si512((__m512i *)dst, lo);
+    _mm512_storeu_si512((__m512i *)(dst + 16), hi);
 }
 
-static FORCE_INLINE void vif_vertical_store_energy16(uint32_t *dst, VifEnergy512 acc, int round,
-                                                     int shift)
+static FORCE_INLINE void vif_vertical_store_energy16(uint32_t *dst, const VifEnergy512 *acc,
+                                                     int round, int shift)
 {
     const __m512i addnum64 = _mm512_set1_epi64(round);
     const __m512i mask2 =
         _mm512_set_epi32(30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0);
-    acc.lane0 = _mm512_add_epi64(acc.lane0, addnum64);
-    acc.lane2 = _mm512_add_epi64(acc.lane2, addnum64);
-    acc.lane1 = _mm512_add_epi64(acc.lane1, addnum64);
-    acc.lane3 = _mm512_add_epi64(acc.lane3, addnum64);
-    acc.lane0 = _mm512_srli_epi64(acc.lane0, shift);
-    acc.lane2 = _mm512_srli_epi64(acc.lane2, shift);
-    acc.lane1 = _mm512_srli_epi64(acc.lane1, shift);
-    acc.lane3 = _mm512_srli_epi64(acc.lane3, shift);
-    _mm512_storeu_si512((__m512i *)dst, _mm512_permutex2var_epi32(acc.lane0, mask2, acc.lane1));
-    _mm512_storeu_si512((__m512i *)(dst + 16),
-                        _mm512_permutex2var_epi32(acc.lane2, mask2, acc.lane3));
+    const __m512i l0 = _mm512_srli_epi64(_mm512_add_epi64(acc->lane0, addnum64), shift);
+    const __m512i l2 = _mm512_srli_epi64(_mm512_add_epi64(acc->lane2, addnum64), shift);
+    const __m512i l1 = _mm512_srli_epi64(_mm512_add_epi64(acc->lane1, addnum64), shift);
+    const __m512i l3 = _mm512_srli_epi64(_mm512_add_epi64(acc->lane3, addnum64), shift);
+    _mm512_storeu_si512((__m512i *)dst, _mm512_permutex2var_epi32(l0, mask2, l1));
+    _mm512_storeu_si512((__m512i *)(dst + 16), _mm512_permutex2var_epi32(l2, mask2, l3));
 }
 
 static FORCE_INLINE void vif_vertical_statistics16_block(const VifStatConfig512 *c, int ii, int j)
@@ -686,17 +680,17 @@ static FORCE_INLINE void vif_vertical_statistics16_block(const VifStatConfig512 
         const VifPair512 dmul = vif_vertical_weight16(dis1, f1);
         dis_mu.lo = _mm512_add_epi32(dis_mu.lo, dmul.lo);
         dis_mu.hi = _mm512_add_epi32(dis_mu.hi, dmul.hi);
-        vif_vertical_energy16(&ref_sq, rmul, ref1);
-        vif_vertical_energy16(&ref_dis, rmul, dis1);
-        vif_vertical_energy16(&dis_sq, dmul, dis1);
+        vif_vertical_energy16(&ref_sq, &rmul, ref1);
+        vif_vertical_energy16(&ref_dis, &rmul, dis1);
+        vif_vertical_energy16(&dis_sq, &dmul, dis1);
     }
-    vif_vertical_store_mean16(c->buf.tmp.mu1 + j, ref_mu, c->add_shift_round_VP, c->shift_VP);
-    vif_vertical_store_mean16(c->buf.tmp.mu2 + j, dis_mu, c->add_shift_round_VP, c->shift_VP);
-    vif_vertical_store_energy16(c->buf.tmp.ref + j, ref_sq, c->add_shift_round_VP_sq,
+    vif_vertical_store_mean16(c->buf.tmp.mu1 + j, &ref_mu, c->add_shift_round_VP, c->shift_VP);
+    vif_vertical_store_mean16(c->buf.tmp.mu2 + j, &dis_mu, c->add_shift_round_VP, c->shift_VP);
+    vif_vertical_store_energy16(c->buf.tmp.ref + j, &ref_sq, c->add_shift_round_VP_sq,
                                 c->shift_VP_sq);
-    vif_vertical_store_energy16(c->buf.tmp.ref_dis + j, ref_dis, c->add_shift_round_VP_sq,
+    vif_vertical_store_energy16(c->buf.tmp.ref_dis + j, &ref_dis, c->add_shift_round_VP_sq,
                                 c->shift_VP_sq);
-    vif_vertical_store_energy16(c->buf.tmp.dis + j, dis_sq, c->add_shift_round_VP_sq,
+    vif_vertical_store_energy16(c->buf.tmp.dis + j, &dis_sq, c->add_shift_round_VP_sq,
                                 c->shift_VP_sq);
 }
 

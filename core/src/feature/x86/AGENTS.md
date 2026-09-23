@@ -296,6 +296,24 @@ vector extent rounded down to 16 samples but loads/stores 32 at time;
 production scratch padding owns those extra lanes, while scalar tails overwrite
 valid residual pixels. See [Research-2046](../../../../docs/research/2046-integer-vif-avx512-stage-lint.md).
 
+## Integer VIF AVX-512 stage helper parameter convention (Research-2078)
+
+Private forced-inline helpers in `vif_avx512.c`
+(`vif_horizontal_energy_pack512`, `vif_vertical_mean8`, `vif_vertical_energy8`,
+`vif_vertical_store8`, `vif_vertical_store_mean8`, `vif_vertical_energy16`,
+`vif_vertical_store_mean16`, `vif_vertical_store_energy16`) pass aggregate
+vector structs (`VifPair512`, `VifTaps8`, `VifEnergy512`) by `const *` rather
+than by value. Under System V AMD64 and Windows x64 ABIs, aggregates > 64 bytes
+cannot be passed in vector registers; passing them by value forces caller stack
+allocation and copies when out of line, triggering CodeQL `cpp/large-parameter`
+alerts 1108–1112. Under GCC 16 x86-64 System V ABI `-O3`, inlining folds
+pointer dereferences without stack spills or instruction count changes
+(verified by disassembly diff of the compiled object). Win64 correctness is
+proven separately by `scripts/ci/check-win64-stack-alignment.py` (0
+violations). Do not revert these internal parameters to pass-by-value on
+rebase. Public API signatures in `vif_avx512.h` remain unchanged. See
+[Research-2078](../../../../docs/research/2078-vif-avx512-large-parameter-codeql.md).
+
 ## Wide vector register pressure is a Windows correctness constraint (ADR-1254)
 
 A kernel here must not hold enough `__m512` / `__m256` values live to make
