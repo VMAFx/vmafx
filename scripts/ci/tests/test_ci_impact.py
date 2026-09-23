@@ -159,6 +159,14 @@ class RoutingContract(unittest.TestCase):
         self.assertTrue(plan.selectors["go_checks"])
         self.assertFalse(plan.selectors["docs"])
 
+    def test_libvmaf_public_header_change_selects_rust_and_c_core(self) -> None:
+        plan = _plan_for(["core/include/libvmaf/libvmaf.h"])
+        self.assertEqual(plan.mode, "impact")
+        self.assertTrue(plan.selectors["c_core"])
+        self.assertTrue(plan.selectors["rust"])
+        self.assertFalse(plan.selectors["go"])
+        self.assertFalse(plan.selectors["docs"])
+
     def test_model_json_change_runs_goldens(self) -> None:
         plan = _plan_for(["model/vmaf_v0.6.1.json"])
         self.assertTrue(plan.selectors["c_core"])

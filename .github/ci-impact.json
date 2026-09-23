@@ -228,6 +228,8 @@
       "patterns": [
         "bindings/*",
         "bindings/**",
+        "core/include/libvmaf/*",
+        "core/include/libvmaf/**",
         "core/src/feature/rust/*",
         "core/src/feature/rust/**",
         "Cargo.toml",

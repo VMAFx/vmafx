@@ -1,6 +1,14 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/rust-ci-path-filters — Rust CI triggers on libvmaf public C headers (2026-09-23)
+
+1. **`.github/workflows/rust-ci.yml` and `.github/ci-impact.json` include `core/include/libvmaf/**`.**
+   `vmafx-sys` generates FFI bindings directly from `core/include/libvmaf/libvmaf.h` using `bindgen`.
+   Earlier path filters only matched Rust files, `Cargo.*`, and `deny.toml`, which silently bypassed
+   `vmafx-sys CI` on public C API changes (T-PATH-FILTERS-WEAKEN-NEW-GATES-2026-09-22).
+   Do not narrow these path filters during rebase.
+
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
 1. **`scripts/ci/silent-revert-allowlist.json` describes the *difference* between

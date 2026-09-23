@@ -5,6 +5,7 @@ on:
     branches: ["master"]
     paths:
       - "bindings/rust/**"
+      - "core/include/libvmaf/**"
       - "core/src/feature/rust/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -13,6 +14,7 @@ on:
   pull_request:
     paths:
       - "bindings/rust/**"
+      - "core/include/libvmaf/**"
       - "core/src/feature/rust/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -36,9 +38,8 @@ jobs:
     # PR #1518 only because a newer push superseded it; the aggregator's
     # newest-run-per-name filter drops a superseded run, so that is not a
     # structural reason to leave the binding ungated.
-    # Known gap this gate does NOT close: the `paths:` filter above does not
-    # include core/include/libvmaf/**, although the binding binds that header.
-    # Tracked in docs/state.md; widening the filter is a separate change.
+    # Paths include core/include/libvmaf/** because vmafx-sys generates FFI
+    # bindings from libvmaf.h via bindgen (T-PATH-FILTERS-WEAKEN-NEW-GATES-2026-09-22).
     # required-aggregator
     name: vmafx-sys CI
     runs-on: ubuntu-26.04

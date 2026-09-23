@@ -63,3 +63,9 @@ Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
   `read_pictures` to borrowing signature; keep two crates' picture-ownership
   models aligned. `unref_picture` stays `pub` only for pictures **never**
   handed to `read_pictures` (e.g. partially-filled end-of-stream frame).
+- **CI Trigger Coverage for Public C Headers**: `vmafx-sys` generates FFI bindings
+  from `core/include/libvmaf/libvmaf.h` via `bindgen`. The GitHub Actions workflow
+  `.github/workflows/rust-ci.yml` and `.github/ci-impact.json` must explicitly
+  include `"core/include/libvmaf/**"` in their `paths:` / selector patterns so that
+  changes to public C library headers trigger `vmafx-sys CI` and cannot bypass
+  compilation and smoke testing (T-PATH-FILTERS-WEAKEN-NEW-GATES-2026-09-22).
