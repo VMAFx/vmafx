@@ -52610,3 +52610,21 @@ live producers. An upstream resolution that restores a shared semaphore or an
 unbounded acquire reopens BUG-090. See
 [Research-1292](research/1292-fifo-bounded-startup-wait-2026-09-23.md) for the
 failure model and selected supervisor tradeoffs.
+## fix/mcp-large-body-stream — aiohttp large-body test payload (2026-09-23)
+
+No rebase impact: the behavior change is test-only and confined to the
+fork-local Python MCP server. Preserve the `io.BytesIO` payload if the HTTP
+coverage files are reconciled: aiohttp 3.14.3 warns on raw byte bodies above
+its large-body threshold, and this repository promotes that `ResourceWarning`
+to an exception.
+
+- Research digest: no digest needed: trivial compatibility fix confirmed
+  against the installed aiohttp 3.14.3 payload implementation.
+- Decision matrix: no alternatives: aiohttp identifies `io.BytesIO` as the
+  streaming payload for this exact case, and filtering the warning would weaken
+  the warnings-as-errors contract.
+- AGENTS.md invariant note: no rebase-sensitive invariants; no production code
+  or public surface changed.
+- Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
+  tests/test_coverage_round4.py::test_auth_413_on_large_body`.
+- Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.

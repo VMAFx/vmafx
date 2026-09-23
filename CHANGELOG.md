@@ -25586,6 +25586,11 @@ Affected files: `float_moment_metal.mm`, `float_motion_metal.mm`,
   to exit with a dynamic linker error (zero smoke-test stdout) in under 2 ms.
 
 
+- Fixed the MCP HTTP body-limit regression on Python 3.14 with aiohttp 3.14.3:
+  the test client now streams its 4 MiB + 1 request through `io.BytesIO`, so
+  warnings-as-errors no longer abort before the request can assert HTTP 413.
+
+
 - MCP `list_backends` now probes the local `vmaf` binary via
   `--help` (looking for `--no_<backend>` disable flags) rather than
   grepping the `--version` banner — fixes a false `cuda=false` in

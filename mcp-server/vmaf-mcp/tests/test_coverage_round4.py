@@ -72,6 +72,7 @@ ADR-0108 deliverables:
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import os
@@ -1209,7 +1210,7 @@ if _HAS_HTTP:
         """A Content-Length exceeding MAX_REQUEST_BODY_BYTES must return 413."""
         from vmaf_mcp.http_transport import MAX_REQUEST_BODY_BYTES
 
-        oversized_body = b"x" * (MAX_REQUEST_BODY_BYTES + 1)
+        oversized_body = io.BytesIO(b"x" * (MAX_REQUEST_BODY_BYTES + 1))
         resp = await no_auth_r4_client.post(
             "/v1/score",
             data=oversized_body,
