@@ -93,7 +93,8 @@ for score JSONs.
 ## References
 
 - [ADR-0125 — MS-SSIM decimate SIMD bit-exactness](0125-ms-ssim-decimate-simd.md)
-- ADR-0138 — PSNR-HVS SIMD bit-exactness via `#pragma STDC FP_CONTRACT OFF`
+- [ADR-0159 — PSNR-HVS SIMD bit-exactness via `#pragma STDC FP_CONTRACT
+  OFF`](0159-psnr-hvs-avx2-bitexact.md)
 - [ADR-0161 — SSIMULACRA2 IIR blur SIMD bit-exactness](0161-ssimulacra2-simd-bitexact.md)
 - PRs #339, #382 — the two compiler-induced bit-exactness rounds
   that motivate this ADR.

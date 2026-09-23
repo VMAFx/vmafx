@@ -102,7 +102,7 @@ We will close all four gaps in `dev/Containerfile`,
 
 ## References
 
-- ADR-0509 — prior round that
+- [ADR-0514](0514-dev-container-full-backend-exposure.md) — prior round that
   unset `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` in the entrypoint.
 - [ADR-0514](0514-dev-container-full-backend-exposure.md) /
   ADR-0528 — GPU backend

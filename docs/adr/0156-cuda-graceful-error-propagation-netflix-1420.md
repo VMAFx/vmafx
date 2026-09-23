@@ -55,7 +55,7 @@ site used the `ret |= ...` pattern (see
 Callers were *ready* to handle a failure — but the macro never
 let the failure propagate.
 
-Fork PRs #60 and #62 (ADR-0122,
+Fork PRs #60 and #62 ([ADR-0122](0122-cuda-gencode-coverage-and-init-hardening.md),
 [ADR-0123](0123-cuda-post-cubin-load-regression-32b115df.md)) hardened the null-state
 path in `common.c` but left the assert-on-any-error semantics
 untouched. Netflix#1420 is the remaining half of that hardening
@@ -226,7 +226,7 @@ the process.
   ("Crash when 2 files are analyzed simultaneously
   .../src/cuda/common.c:166: vmaf_cuda_buffer_alloc:
   Assertion `0' failed."), OPEN as of 2026-04-24.
-- ADR-0122 —
+- [ADR-0122](0122-cuda-gencode-coverage-and-init-hardening.md) —
   fork PR #60 CUDA framesync hardening.
 - [ADR-0123](0123-cuda-post-cubin-load-regression-32b115df.md) — fork PR #62 null-guard
   at CUDA public entry points.

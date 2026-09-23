@@ -122,7 +122,7 @@ backend pair is exercised.
   (Vulkan motion T5-1c), [ADR-0193](0193-motion-v2-vulkan.md)
   (motion_v2 Vulkan), [ADR-0145](0145-motion-v2-neon-bitexact.md) (motion_v2
   NEON).
-- Cross-backend gate: ADR-0125,
+- Cross-backend gate: [ADR-0125](0125-ms-ssim-decimate-simd.md),
   [ADR-0138](0138-iqa-convolve-avx2-bitexact-double.md),
   [ADR-0214](0214-gpu-parity-ci-gate.md).
 - Backlog: `docs/backlog-audit-2026-04-28.md` row A.1.4 (Vulkan

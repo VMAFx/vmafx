@@ -16,3 +16,13 @@
   than the number half: `0335-sycl-adaptivecpp-second-toolchain` is
   `0407-adaptivecpp-second-sycl-toolchain` with two words swapped, and 0335 now
   belongs to an unrelated ADR about hardware capability priors.
+- Relink twelve citations that were left as plain text on the assumption their
+  ADR was never written. Each one's decision is recorded; the search just had
+  to reach past the two halves of the filename into the git history of the
+  citing commit. `[ADR-0122](0122-cuda-framesync-segfault-hardening.md)` is the
+  clearest: the citing sentence says "fork PR #60 CUDA framesync hardening",
+  and `d3b6fad62` is both PR #60 and the commit that created
+  `0122-cuda-gencode-coverage-and-init-hardening.md`. The number was right all
+  along; the slug had been minted from a `docs/state.md` bug-row label, and the
+  ADR never uses the word "framesync", which is why a text-match check
+  dismissed it.
