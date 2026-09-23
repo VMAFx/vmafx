@@ -324,29 +324,7 @@ jobs:
       - name: Install CUDA toolkit (Windows)
         if: matrix.windows && matrix.cuda
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $ProgressPreference = 'SilentlyContinue'
-          $cudaVersion = '13.4.1'
-          $cudaMajorMinor = '13.4'
-          $url = "https://developer.download.nvidia.com/compute/cuda/$cudaVersion/network_installers/cuda_${cudaVersion}_windows_network.exe"
-          $installer = Join-Path $env:RUNNER_TEMP "cuda_${cudaVersion}_windows_network.exe"
-          curl.exe --fail --location --retry 5 --retry-delay 10 --output $installer $url
-          $packages = @(
-            "nvcc_$cudaMajorMinor",
-            "cudart_$cudaMajorMinor",
-            "crt_$cudaMajorMinor",
-            "nvvm_$cudaMajorMinor",
-            "visual_studio_integration_$cudaMajorMinor"
-          )
-          $process = Start-Process -FilePath $installer -ArgumentList (@('-s') + $packages) -Wait -PassThru
-          if ($process.ExitCode -ne 0) { Write-Error "CUDA installer failed with exit code $($process.ExitCode)" }
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$cudaMajorMinor"
-          if (-not (Test-Path (Join-Path $cudaPath 'bin\nvcc.exe'))) { Write-Error "nvcc.exe not installed" }
-          "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CUDA_PATH_V13_4=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          (Join-Path $cudaPath 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          & (Join-Path $cudaPath 'bin\nvcc.exe') --version
+        run: pwsh -File scripts/ci/install-cuda-toolkit.ps1
 
       - name: Install nv-codec-headers (Windows)
         if: matrix.windows && matrix.cuda

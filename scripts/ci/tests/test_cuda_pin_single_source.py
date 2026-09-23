@@ -50,16 +50,17 @@ SPEC.loader.exec_module(MODULE)
 # Renovate substitutes the whole looked-up version into the slot it matched, so
 # a slot that wants less than the whole version can only be derived.
 GATE_OWNED_KINDS = {
-    "series": "$cudaMajorMinor wants major.minor, Renovate would write major.minor.patch",
     "apt": "cuda-toolkit-NN-N wants dashes and no patch component",
     "label": "prose inside an OCI description label, not a dependency reference",
-    "envvar": "the release is part of the VARIABLE NAME (CUDA_PATH_V13_4), not a value",
 }
-# Spellings a Renovate custom manager rewrites in place. "action" is absent
-# because no action installs CUDA any more: the Linux legs call
-# scripts/ci/install-cuda-toolkit.sh, which reads build-config.env, so there is
-# no third-party release table to pin against.
-RENOVATE_OWNED_KINDS = {"config", "installer", "image"}
+# Spellings a Renovate custom manager rewrites in place.
+#
+# "action", "installer", "series" and "envvar" are absent because no site in
+# the tree spells the release those ways any more (ADR-1300). No action
+# installs CUDA, and neither CI leg repeats the version: both call
+# scripts/ci/install-cuda-toolkit.{sh,ps1}, which read build-config.env at run
+# time and derive the series and the CUDA_PATH_V<major>_<minor> name from it.
+RENOVATE_OWNED_KINDS = {"config", "image"}
 
 
 def read_config() -> dict[str, Any]:
@@ -253,22 +254,10 @@ class CudaPinGate(unittest.TestCase):
     def test_the_fixture_starts_in_lockstep(self) -> None:
         result = self.gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("16 sites", result.stdout)
+        self.assertIn("10 sites", result.stdout)
 
     def test_each_spelling_is_caught_when_it_drifts(self) -> None:
         cases = (
-            (
-                ".github/workflows/build.yml",
-                "$cudaVersion = '13.4.1'",
-                "$cudaVersion = '13.5.0'",
-                "installer",
-            ),
-            (
-                ".github/workflows/build.yml",
-                "$cudaMajorMinor = '13.4'",
-                "$cudaMajorMinor = '13.5'",
-                "series",
-            ),
             (
                 "dev/Containerfile",
                 APT_INSTALL,
@@ -286,17 +275,6 @@ class CudaPinGate(unittest.TestCase):
                 "nvidia/cuda:13.4.1-runtime",
                 "nvidia/cuda:13.5.0-runtime",
                 "image",
-            ),
-            # The release is baked into the VARIABLE NAME here, so a bump
-            # renames it. A value-only check cannot see that: two sites kept
-            # spelling CUDA_PATH_V13_3 through a --write that moved every other
-            # spelling, which would have exported a 13.4 toolkit under the 13.3
-            # release's name.
-            (
-                ".github/workflows/build.yml",
-                "CUDA_PATH_V13_4",
-                "CUDA_PATH_V13_5",
-                "envvar",
             ),
         )
         for path, old, new, kind in cases:
@@ -323,11 +301,6 @@ class CudaPinGate(unittest.TestCase):
         self.assertIn("newlane.yml", result.stderr)
 
     def test_write_repairs_the_derived_spellings_only(self) -> None:
-        self.edit(
-            ".github/workflows/build.yml",
-            "$cudaMajorMinor = '13.4'",
-            "$cudaMajorMinor = '12.1'",
-        )
         self.edit("dev/Containerfile", APT_INSTALL, APT_INSTALL.replace("13-4", "12-1"))
         self.edit(
             "docker/Dockerfile.production-gpu",
@@ -337,8 +310,7 @@ class CudaPinGate(unittest.TestCase):
         self.edit("docker/Dockerfile.node", "nvidia/cuda:13.4.1-runtime", "nvidia/cuda:12.1.0-x")
         result = self.gate("--write")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        # The three derived spellings are repaired ...
-        self.assertIn("13.4", (self.repo / ".github/workflows/build.yml").read_text())
+        # The two derived spellings are repaired ...
         self.assertIn("cuda-toolkit-13-4", (self.repo / "dev/Containerfile").read_text())
         self.assertIn(
             "CUDA 13.4.1 runtime",

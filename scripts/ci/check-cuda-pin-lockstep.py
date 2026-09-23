@@ -5,19 +5,24 @@ Copyright 2026 Lusoris
 SPDX-License-Identifier: EUPL-1.2
 
 CUDA is not an image tag; it is a coordinated pin. One release is named in
-sixteen places across seven files, in seven different spellings:
+ten places across six files, in four different spellings:
 
-  * ``CUDA_VERSION="13.3.1"`` in ``build-config.env`` -- the authority.
-  * ``nvidia/cuda:13.3.1-...`` in ``build-config.env`` and the four Dockerfiles
+  * ``CUDA_VERSION="13.4.1"`` in ``build-config.env`` -- the authority.
+  * ``nvidia/cuda:13.4.1-...`` in ``build-config.env`` and the four Dockerfiles
     that mirror those pins as ARG defaults.
-  * ``cuda: '13.3.1'`` -- the ``Jimver/cuda-toolkit`` input on the Linux legs.
-  * ``$cudaVersion = '13.3.1'`` -- the Windows installer legs.
-  * ``$cudaMajorMinor = '13.3'`` -- the same legs, series only.
-  * ``cuda-toolkit-13-3`` -- the apt package name, in ``CUDA_APT_PACKAGE`` and
+  * ``cuda-toolkit-13-4`` -- the apt package name, in ``CUDA_APT_PACKAGE`` and
     literally in ``dev/Containerfile``.
-  * ``"VMAFX production CUDA 13.3.1 runtime"`` -- the published OCI description
+  * ``"VMAFX production CUDA 13.4.1 runtime"`` -- the published OCI description
     label on the CUDA runtime image. The residual sweep below is what found
     this one; it was in no inventory of the pin.
+
+It was sixteen places in seven spellings until ADR-1300. The CI legs stopped
+spelling the release at all: the Linux legs call
+``scripts/ci/install-cuda-toolkit.sh`` and the Windows legs
+``scripts/ci/install-cuda-toolkit.ps1``, and both read ``build-config.env`` at
+run time instead of repeating the version, the series and the
+``CUDA_PATH_V<major>_<minor>`` name in each workflow. A site that reads the
+authority is not a site that can drift from it.
 
 ``check-base-image-single-source.sh`` rule 3 knew only the image spelling: it
 compares ``CUDA_BUILDER`` and ``CUDA_RUNTIME`` against ``CUDA_VERSION`` and
@@ -70,34 +75,35 @@ SCOPE_PATTERNS = (
 # characters --write may replace.
 CONFIG_RE = re.compile(r'(?m)^CUDA_VERSION="(?P<value>[0-9][0-9.]*)"')
 IMAGE_RE = re.compile(r"nvidia/cuda:(?P<value>[0-9]+\.[0-9]+\.[0-9]+)-")
-ACTION_RE = re.compile(r"(?m)^\s*cuda:\s+'?(?P<value>[0-9]+\.[0-9]+\.[0-9]+)'?\s*$")
-INSTALLER_RE = re.compile(r"\$cudaVersion\s*=\s*'(?P<value>[0-9]+\.[0-9]+\.[0-9]+)'")
-SERIES_RE = re.compile(r"\$cudaMajorMinor\s*=\s*'(?P<value>[0-9]+\.[0-9]+)'")
 APT_RE = re.compile(r"cuda-toolkit-(?P<value>[0-9]+-[0-9]+)")
 LABEL_RE = re.compile(r"(?m)^\s*LABEL\s+[^\n]*\bCUDA (?P<value>[0-9]+\.[0-9]+\.[0-9]+)\b")
-# NVIDIA's Windows installer creates a per-release CUDA_PATH_V<major>_<minor>,
-# and the Windows legs re-export it by that name. The version is baked into the
-# variable NAME, so a release bump renames it: with CUDA_VERSION at 13.4.1 a
-# site still spelling CUDA_PATH_V13_3 exports the new toolkit under the old
-# release's name, which is wrong for anything reading the versioned variable
-# and invisible to a value-only check. Found 2026-09-23 with two such sites
-# surviving a --write that had moved every other spelling.
-ENVVAR_RE = re.compile(r"CUDA_PATH_V(?P<value>[0-9]+_[0-9]+)\b")
 
+# Four spellings used to live here and no longer have a single site in the
+# tree, so they are gone: a shape that matches nothing looks wired and does
+# nothing, which is the failure this gate exists to prevent.
+#
+#   action     `cuda: '13.3.1'`      -- the Jimver/cuda-toolkit input, removed
+#                                       with the action itself (ADR-1300).
+#   installer  `$cudaVersion = ...`  -- both Windows legs now call
+#   series     `$cudaMajorMinor ...`    scripts/ci/install-cuda-toolkit.ps1,
+#   envvar     `CUDA_PATH_V13_4`        which reads CUDA_VERSION at run time
+#                                       and derives the series and the
+#                                       CUDA_PATH_V<major>_<minor> name from it.
+#
+# Deleting a shape does not un-gate the spelling. RESIDUAL_RE below sweeps every
+# scoped file for any CUDA release literal a shape did not claim, so
+# re-introducing `$cudaVersion = '13.4.1'` in a workflow fails as an
+# unrecognised pin rather than passing silently.
 SITE_SHAPES = (
     ("config", CONFIG_RE),
     ("image", IMAGE_RE),
-    ("action", ACTION_RE),
-    ("installer", INSTALLER_RE),
-    ("series", SERIES_RE),
     ("apt", APT_RE),
     ("label", LABEL_RE),
-    ("envvar", ENVVAR_RE),
 )
 
 # Kinds --write may rewrite: everything that is a pure function of CUDA_VERSION
 # and carries no digest.
-DERIVED_KINDS = frozenset({"action", "installer", "series", "apt", "label", "envvar"})
+DERIVED_KINDS = frozenset({"apt", "label"})
 
 # The residual sweep. A CUDA release has a two-digit major (10.x through 13.x),
 # which separates it from the action's own `v0.2.36` and from `cuda-keyring_1.1-1`.
@@ -229,12 +235,8 @@ def load_cuda_version(root: Path) -> str:
 def expected_value(kind: str, version: str) -> str:
     """What a site of this kind must read, given the authoritative version."""
     series = ".".join(version.split(".")[:2])
-    if kind == "series":
-        return series
     if kind == "apt":
         return series.replace(".", "-")
-    if kind == "envvar":
-        return series.replace(".", "_")
     return version
 
 
