@@ -21,6 +21,15 @@ import vmaf
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = REPO_ROOT / "python" / "pyproject.toml"
+PACKAGE_PYPROJECTS = (
+    REPO_ROOT / "ai" / "pyproject.toml",
+    REPO_ROOT / "dev-llm" / "pyproject.toml",
+    REPO_ROOT / "mcp-server" / "vmaf-mcp" / "pyproject.toml",
+    REPO_ROOT / "python" / "pyproject.toml",
+    REPO_ROOT / "tools" / "ensemble-training-kit" / "pyproject.toml",
+    REPO_ROOT / "tools" / "vmaf-roi-score" / "pyproject.toml",
+    REPO_ROOT / "tools" / "vmaf-tune" / "pyproject.toml",
+)
 
 # The first setuptools release that parses a PEP 639 SPDX license expression
 # (a bare string in `[project].license`). 77.0.0 was yanked, so 77.0.1 is the
@@ -132,4 +141,14 @@ def test_build_backend_floor_covers_the_license_metadata_form():
             f"{PYPROJECT} ships a PEP 639 license expression but its setuptools "
             f"requirement {str(specifier)!r} still admits {version}, which "
             "cannot parse one -- setup.py would abort with a configuration error"
+        )
+
+
+def test_all_python_packages_use_pep639_license_expression():
+    """Every published Python package exposes the repository SPDX license."""
+    for pyproject in PACKAGE_PYPROJECTS:
+        project = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]
+        assert project.get("license") == "BSD-2-Clause-Patent", (
+            f"{pyproject} must use the PEP 639 SPDX string form; "
+            f"found {project.get('license')!r}"
         )
