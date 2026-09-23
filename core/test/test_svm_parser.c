@@ -198,6 +198,50 @@ static char *test_reject_unknown_svm_type(void)
     return NULL;
 }
 
+static char *test_parse_valid_minimal_model(void)
+{
+    static const char model[] = "svm_type c_svc\n"
+                                "kernel_type linear\n"
+                                "nr_class 2\n"
+                                "total_sv 2\n"
+                                "rho 0\n"
+                                "label 1 -1\n"
+                                "nr_sv 1 1\n"
+                                "SV\n"
+                                "1 1:1.0\n"
+                                "-1 1:-1.0\n";
+    svm_set_print_string_function(&silence_svm_log);
+    struct svm_model *m = svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    mu_assert("parser must accept valid minimal model", m != NULL);
+    mu_assert("nr_class == 2", m->nr_class == 2);
+    mu_assert("l == 2", m->l == 2);
+    mu_assert("SV[0] first feature index", m->SV[0][0].index == 1);
+    mu_assert("SV[0] sentinel index", m->SV[0][1].index == -1);
+    mu_assert("SV[1] first feature index", m->SV[1][0].index == 1);
+    mu_assert("SV[1] sentinel index", m->SV[1][1].index == -1);
+    svm_free_and_destroy_model(&m);
+    return NULL;
+}
+
+static char *test_reject_fewer_sv_than_total_sv(void)
+{
+    /* total_sv is 2, but only 1 SV row is present in the stream. */
+    static const char model[] = "svm_type c_svc\n"
+                                "kernel_type linear\n"
+                                "nr_class 2\n"
+                                "total_sv 2\n"
+                                "rho 0\n"
+                                "label 1 -1\n"
+                                "nr_sv 1 1\n"
+                                "SV\n"
+                                "1 1:1.0\n";
+    svm_set_print_string_function(&silence_svm_log);
+    const struct svm_model *const m =
+        svm_parse_model_from_buffer(model, (unsigned int)(sizeof(model) - 1));
+    mu_assert("parser must reject fewer SVs than total_sv declares", m == NULL);
+    return NULL;
+}
+
 static char *run_header_size_tests(void)
 {
     mu_run_test(test_reject_oversized_nr_class);
@@ -225,6 +269,8 @@ char *run_tests(void)
     mu_run_test(test_reject_missing_nr_class_at_sv_parse);
     mu_run_test(test_reject_empty_sv_section);
     mu_run_test(test_reject_unknown_svm_type);
+    mu_run_test(test_parse_valid_minimal_model);
+    mu_run_test(test_reject_fewer_sv_than_total_sv);
     return NULL;
 }
 
