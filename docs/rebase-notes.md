@@ -52663,3 +52663,16 @@ to an exception.
 - Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
   tests/test_coverage_round4.py::test_auth_413_on_large_body`.
 - Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.
+
+## fix/codeql-cjson-warning-alert — test_cjson denormal runtime probe (2026-09-23)
+
+`core/test/test_cjson.c` is a fork-added test file that exercises vendored cJSON
+and its fork delta (ADR-0683, ADR-1061). Upstream Netflix/vmaf does not vendor cJSON
+and has no `test_cjson.c`.
+
+**Rebase impact:** None. The file has no upstream counterpart; no rebase conflict
+with upstream Netflix/vmaf is possible. The change replaces the floating-point zero
+comparison probe in `test_print_number_precision` with a semantic assertion that
+the formatted string output from `cJSON_CreateNumber(DBL_TRUE_MIN)` matches either
+valid representation (`"0"` under DAZ or `"4.94065645841247e-324"` under IEEE-754),
+eliminating CodeQL alert 1216 while preserving full precision coverage across compilers.
