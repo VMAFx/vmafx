@@ -9,6 +9,17 @@ endif
 
 test_inc = include_directories('.')
 
+# Shared-device scheduling is part of Meson's public test metadata.  This check
+# reads the configured test registry and fails if any `gpu` suite member can run
+# concurrently with another test.
+test('check_gpu_test_serialization',
+    import('python').find_installation(),
+    args : [files('check_gpu_test_serialization.py'),
+            meson.global_build_root() / 'meson-info' / 'intro-tests.json',
+            meson.project_name() + ':gpu'],
+    suite : ['fast'],
+)
+
 # Execute Windows discovery with stubbed tools on POSIX build hosts. This
 # exercises Meson control flow without requiring a Windows SDK or CUDA device.
 if build_machine.system() != 'windows'
@@ -2100,8 +2111,12 @@ test_cuda_drain_batch = executable('test_cuda_drain_batch',
     c_args: ['-DHAVE_CUDA=1']
 )
 
-test('test_gpu_picture_pool', test_gpu_picture_pool, suite : ['fast', 'gpu'])
-test('test_cuda_pic_preallocation', test_cuda_pic_preallocation, suite : ['fast', 'gpu'])
+test('test_gpu_picture_pool', test_gpu_picture_pool,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+test('test_cuda_pic_preallocation', test_cuda_pic_preallocation,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 test('test_cuda_drain_batch', test_cuda_drain_batch, suite : ['fast'])
 
 # The flush drain loop must terminate (T-CUDA-SINGLE-FRAME-HANG-2026-09-05).
@@ -2144,7 +2159,9 @@ test_cuda_buffer_alloc_oom = executable('test_cuda_buffer_alloc_oom',
     dependencies: [pthread_dependency, cuda_dependency],
     c_args: ['-DHAVE_CUDA=1']
 )
-test('test_cuda_buffer_alloc_oom', test_cuda_buffer_alloc_oom, suite : ['fast', 'gpu'])
+test('test_cuda_buffer_alloc_oom', test_cuda_buffer_alloc_oom,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1223 — the compute-capability floor predicate. Pure function of
 # (major, minor), so it runs in the `fast` suite with no GPU: the architectures
@@ -2156,7 +2173,9 @@ test_cuda_arch_floor = executable('test_cuda_arch_floor',
     dependencies: [pthread_dependency, cuda_dependency],
     c_args: ['-DHAVE_CUDA=1']
 )
-test('test_cuda_arch_floor', test_cuda_arch_floor, suite : ['fast', 'gpu'])
+test('test_cuda_arch_floor', test_cuda_arch_floor,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # PR #850 — libvmaf.c CUDA-only NULL deref guard.
 # Before the fix, in CUDA-only mode (HW_FLAG_HOST not set) the
@@ -2172,7 +2191,8 @@ test_libvmaf_cuda_only_no_host = executable('test_libvmaf_cuda_only_no_host',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_libvmaf_cuda_only_no_host', test_libvmaf_cuda_only_no_host,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Netflix#1300 / ADR-0157 — preallocation-leak reducer. Runs N
 # init/preallocate/fetch/close cycles with FULL cleanup on each cycle
@@ -2187,7 +2207,9 @@ test_cuda_preallocation_leak = executable('test_cuda_preallocation_leak',
     dependencies: [pthread_dependency, cuda_dependency],
     c_args: ['-DHAVE_CUDA=1']
 )
-test('test_cuda_preallocation_leak', test_cuda_preallocation_leak, suite : ['fast', 'gpu'])
+test('test_cuda_preallocation_leak', test_cuda_preallocation_leak,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # CHUG audit gap-fill — motion3 CPU vs. CUDA parity (ADR-0214 gate).
 # The motion3 post-process (moving-average over blended motion2) is
@@ -2204,7 +2226,8 @@ test_cuda_motion3_parity = executable('test_cuda_motion3_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_motion3_parity', test_cuda_motion3_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0541 — integer_vif CPU vs. CUDA parity gate.  Pins the luma-only
 # design contract as a regression assertion so DEEP_AUDIT 2026-05-18
@@ -2220,7 +2243,8 @@ test_integer_vif_cpu_cuda_parity = executable('test_integer_vif_cpu_cuda_parity'
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0956 — CUDA kernel parity coverage round 4. Closes the last
 # three float-path CPU twins (`float_adm_cuda`, `float_motion_cuda`,
@@ -2237,7 +2261,8 @@ test_cuda_float_adm_parity = executable('test_cuda_float_adm_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_adm_parity', test_cuda_float_adm_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_motion_parity = executable('test_cuda_float_motion_parity',
     ['test.c', 'test_cuda_float_motion_parity.c'],
@@ -2247,7 +2272,8 @@ test_cuda_float_motion_parity = executable('test_cuda_float_motion_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_motion_parity', test_cuda_float_motion_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_ssim_parity = executable('test_cuda_float_ssim_parity',
     ['test.c', 'test_cuda_float_ssim_parity.c'],
@@ -2257,7 +2283,8 @@ test_cuda_float_ssim_parity = executable('test_cuda_float_ssim_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0956 — CUDA-only speed kernels. `speed_chroma_cuda` and
 # `speed_temporal_cuda` have no CPU twin emitting the same
@@ -2274,7 +2301,8 @@ test_cuda_speed_chroma_smoke = executable('test_cuda_speed_chroma_smoke',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_chroma_smoke', test_cuda_speed_chroma_smoke,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
     ['test.c', 'test_cuda_speed_temporal_smoke.c'],
@@ -2284,7 +2312,8 @@ test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0965 — speed_chroma + speed_temporal CPU vs. CUDA parity gates.
 # Pin the cross-backend tolerance (places=4) for the CUDA SpEED twins wired
@@ -2298,7 +2327,8 @@ test_cuda_speed_chroma_parity = executable('test_cuda_speed_chroma_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_chroma_parity', test_cuda_speed_chroma_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
     ['test.c', 'test_cuda_speed_temporal_parity.c'],
@@ -2308,7 +2338,8 @@ test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_speed_singular_parity = executable('test_cuda_speed_singular_parity',
     ['test.c', 'test_cuda_speed_singular_parity.c'],
@@ -2319,6 +2350,7 @@ test_cuda_speed_singular_parity = executable('test_cuda_speed_singular_parity',
 )
 test('test_cuda_speed_singular_parity', test_cuda_speed_singular_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 90)
 
 # ADR-0947 — CUDA kernel parity coverage, round 3. Closes the float-path
@@ -2335,7 +2367,8 @@ test_cuda_float_psnr_parity = executable('test_cuda_float_psnr_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_psnr_parity', test_cuda_float_psnr_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
     ['test.c', 'test_cuda_float_vif_parity.c'],
@@ -2345,7 +2378,8 @@ test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_vif_parity', test_cuda_float_vif_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_ms_ssim_parity = executable('test_cuda_float_ms_ssim_parity',
     ['test.c', 'test_cuda_float_ms_ssim_parity.c'],
@@ -2355,7 +2389,8 @@ test_cuda_float_ms_ssim_parity = executable('test_cuda_float_ms_ssim_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_ms_ssim_parity', test_cuda_float_ms_ssim_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
     ['test.c', 'test_cuda_float_moment_parity.c'],
@@ -2365,7 +2400,8 @@ test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
 # so a twin that accumulates the raw codeword instead of the bit-depth-normalised
@@ -2378,7 +2414,8 @@ test_cuda_float_moment_parity_10bit = executable('test_cuda_float_moment_parity_
     c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
 )
 test('test_cuda_float_moment_parity_10bit', test_cuda_float_moment_parity_10bit,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     ['test.c', 'test_cuda_ssimulacra2_parity.c'],
@@ -2388,7 +2425,8 @@ test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_ssimulacra2_parity', test_cuda_ssimulacra2_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — adm2/adm3 CPU vs. CUDA parity
 # (places=4). Round-1 (PR #351) covered psnr_cuda + ciede_cuda; ADM was
@@ -2402,7 +2440,8 @@ test_cuda_adm_parity = executable('test_cuda_adm_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_adm_parity', test_cuda_adm_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1167 — ADM small-frame border parity test (i == 0 && top <= 0 branch).
 test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
@@ -2413,7 +2452,8 @@ test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_adm_small_border', test_cuda_adm_small_border,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
 # wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
@@ -2425,7 +2465,8 @@ test_cuda_adm_tiny_frames = executable('test_cuda_adm_tiny_frames',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_adm_tiny_frames', test_cuda_adm_tiny_frames,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
 test_cuda_adm_wide_rounding = executable('test_cuda_adm_wide_rounding',
@@ -2436,7 +2477,8 @@ test_cuda_adm_wide_rounding = executable('test_cuda_adm_wide_rounding',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_adm_wide_rounding', test_cuda_adm_wide_rounding,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — motion_v2 CPU vs. CUDA parity
 # (places=4). Covers the SAD-weighted motion variant used by the
@@ -2450,7 +2492,8 @@ test_cuda_motion_v2_parity = executable('test_cuda_motion_v2_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_motion_v2_parity', test_cuda_motion_v2_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — cambi CPU vs. CUDA parity
 # (places=4). Fixture is 256x256 to satisfy CAMBI_MIN_WIDTH_HEIGHT=216.
@@ -2463,7 +2506,8 @@ test_cuda_cambi_parity = executable('test_cuda_cambi_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_cambi_parity', test_cuda_cambi_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — psnr_hvs CPU vs. CUDA parity
 # (places=4). Covers the HVS contrast-sensitivity-weighted DCT path
@@ -2476,7 +2520,8 @@ test_cuda_psnr_hvs_parity = executable('test_cuda_psnr_hvs_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_psnr_hvs_parity', test_cuda_psnr_hvs_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — integer_ssim CPU vs. CUDA
 # parity (places=4). Covers the 11x11 Gaussian-windowed SSIM kernel
@@ -2489,7 +2534,8 @@ test_cuda_ssim_parity = executable('test_cuda_ssim_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_ssim_parity', test_cuda_ssim_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — psnr CPU vs. CUDA parity (places=4).
 # Pre-existing CUDA tests covered motion3 + vif; psnr_cuda
@@ -2503,7 +2549,8 @@ test_cuda_psnr_parity = executable('test_cuda_psnr_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_psnr_parity', test_cuda_psnr_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1215 — the same TU at 10 bpc with non-flat chroma. The 16-bpc CUDA PSNR
 # kernel read data[0] for every plane, so high-bit-depth chroma PSNR was a luma
@@ -2516,7 +2563,8 @@ test_cuda_psnr_parity_10bit = executable('test_cuda_psnr_parity_10bit',
     c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
 )
 test('test_cuda_psnr_parity_10bit', test_cuda_psnr_parity_10bit,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — ciede2000 CPU vs. CUDA parity (places=4).
 # Covers integer_ciede_cuda.c + integer_ciede/ciede_score.cu, which had
@@ -2529,7 +2577,8 @@ test_cuda_ciede_parity = executable('test_cuda_ciede_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_ciede_parity', test_cuda_ciede_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1206 — large-fixture parity variants (resolution blind spot).
 #
@@ -2568,7 +2617,8 @@ foreach parity_test : cuda_parity_large_fixture_tests
         c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
     )
     test(parity_test + '_large', parity_large_exe,
-        suite : ['fast', 'gpu'])
+        suite : ['fast', 'gpu'],
+        is_parallel : false)
 endforeach
 
 endif
@@ -3081,8 +3131,12 @@ test_sycl_pic_preallocation = executable('test_sycl_pic_preallocation',
     c_args: ['-DHAVE_SYCL=1']
 )
 
-test('test_sycl', test_sycl, suite : ['fast', 'gpu', 'sycl'])
-test('test_sycl_pic_preallocation', test_sycl_pic_preallocation, suite : ['fast', 'gpu', 'sycl'])
+test('test_sycl', test_sycl,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+test('test_sycl_pic_preallocation', test_sycl_pic_preallocation,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_integer_cambi_sycl = executable('test_integer_cambi_sycl',
     ['test.c', 'test_integer_cambi_sycl.c'],
@@ -3091,7 +3145,9 @@ test_integer_cambi_sycl = executable('test_integer_cambi_sycl',
     dependencies: [pthread_dependency, sycl_dependency],
     c_args: ['-DHAVE_SYCL=1']
 )
-test('test_integer_cambi_sycl', test_integer_cambi_sycl, suite : ['fast', 'gpu', 'sycl'])
+test('test_integer_cambi_sycl', test_integer_cambi_sycl,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # T3-15(c) / ADR-0219 / ADR-0214 — motion3 CPU vs. SYCL parity gate.
 # The motion3 post-process (host-side moving-average over blended motion2)
@@ -3108,7 +3164,8 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0989 — motion_add_uv SYCL parity test.
 # Asserts (1) UV contribution is positive (UV-enabled score > Y-only)
@@ -3131,7 +3188,8 @@ test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
 # queried as VMAF_integer_feature_motion2_score) was also corrected in the
 # test source.  should_fail removed — the test must now pass.
 test('test_sycl_motion_add_uv_parity', test_sycl_motion_add_uv_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0946 — SYCL kernel coverage round 3. Five new CPU vs. SYCL
 # parity gates filling the float-family + PSNR-HVS gaps left after
@@ -3147,7 +3205,8 @@ test_sycl_float_psnr_parity = executable('test_sycl_float_psnr_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_psnr_parity', test_sycl_float_psnr_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
     ['test.c', 'test_sycl_float_adm_parity.c'],
@@ -3157,7 +3216,8 @@ test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_adm_parity', test_sycl_float_adm_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_float_vif_parity = executable('test_sycl_float_vif_parity',
     ['test.c', 'test_sycl_float_vif_parity.c'],
@@ -3167,7 +3227,8 @@ test_sycl_float_vif_parity = executable('test_sycl_float_vif_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_vif_parity', test_sycl_float_vif_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_float_motion_parity = executable('test_sycl_float_motion_parity',
     ['test.c', 'test_sycl_float_motion_parity.c'],
@@ -3177,7 +3238,8 @@ test_sycl_float_motion_parity = executable('test_sycl_float_motion_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_motion_parity', test_sycl_float_motion_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
     ['test.c', 'test_sycl_psnr_hvs_parity.c'],
@@ -3187,7 +3249,8 @@ test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_psnr_hvs_parity', test_sycl_psnr_hvs_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0957 — SYCL kernel coverage round 4. Four new CPU vs. SYCL
 # parity gates closing the last uncovered SYCL extractors after
@@ -3204,7 +3267,8 @@ test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_moment_parity', test_sycl_float_moment_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
 # so a twin that accumulates the raw codeword instead of the bit-depth-normalised
@@ -3217,7 +3281,8 @@ test_sycl_float_moment_parity_10bit = executable('test_sycl_float_moment_parity_
     c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_BPC=10u']
 )
 test('test_sycl_float_moment_parity_10bit', test_sycl_float_moment_parity_10bit,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0884 — SYCL kernel coverage round 2.
 # Five additional CPU-vs-SYCL parity gates: adm, ciede, integer_ssim,
@@ -3236,7 +3301,8 @@ test_sycl_adm_parity = executable('test_sycl_adm_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_adm_parity', test_sycl_adm_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
 # wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
@@ -3248,7 +3314,8 @@ test_sycl_adm_tiny_frames = executable('test_sycl_adm_tiny_frames',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     ['test.c', 'test_sycl_ciede_parity.c'],
@@ -3258,7 +3325,8 @@ test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ciede_parity', test_sycl_ciede_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     ['test.c', 'test_sycl_ssim_parity.c'],
@@ -3268,7 +3336,8 @@ test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ssim_parity', test_sycl_ssim_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_ms_ssim_parity = executable('test_sycl_ms_ssim_parity',
     ['test.c', 'test_sycl_ms_ssim_parity.c'],
@@ -3278,7 +3347,8 @@ test_sycl_ms_ssim_parity = executable('test_sycl_ms_ssim_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ms_ssim_parity', test_sycl_ms_ssim_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # float_ssim SYCL parity — Research-0985. Tolerance is places=3 (5e-04) to
 # accommodate the CPU/GPU formula difference (L×C×S vs combined) and Arc A380
@@ -3291,7 +3361,8 @@ test_sycl_float_ssim_parity = executable('test_sycl_float_ssim_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_ssim_parity', test_sycl_float_ssim_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
     ['test.c', 'test_sycl_motion_v2_parity.c'],
@@ -3301,7 +3372,8 @@ test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_motion_v2_parity', test_sycl_motion_v2_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — psnr CPU vs. SYCL parity (places=4).
 # Covers integer_psnr_sycl.cpp, which previously had no cross-backend
@@ -3315,7 +3387,8 @@ test_sycl_psnr_parity = executable('test_sycl_psnr_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_psnr_parity', test_sycl_psnr_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — VIF scale0 CPU vs. SYCL parity (places=3).
 # Covers integer_vif_sycl.cpp, the SYCL Gaussian filter + statistical
@@ -3329,7 +3402,8 @@ test_sycl_vif_parity = executable('test_sycl_vif_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_vif_parity', test_sycl_vif_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
 # Pin the cross-backend tolerance (places=4) for the SpEED-family GPU
@@ -3344,7 +3418,8 @@ test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
     ['test.c', 'test_sycl_speed_temporal_parity.c'],
@@ -3354,7 +3429,8 @@ test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_speed_singular_parity = executable('test_sycl_speed_singular_parity',
     ['test.c', 'test_sycl_speed_singular_parity.c'],
@@ -3365,6 +3441,7 @@ test_sycl_speed_singular_parity = executable('test_sycl_speed_singular_parity',
 )
 test('test_sycl_speed_singular_parity', test_sycl_speed_singular_parity,
     suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
     timeout : 90)
 
 test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
@@ -3375,7 +3452,8 @@ test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ssimulacra2_parity', test_sycl_ssimulacra2_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-1001 — CAMBI CPU vs. SYCL parity (round 5). Fills the gap left by
 # test_integer_cambi_sycl.c which is explicitly a smoke test, not a
@@ -3389,7 +3467,8 @@ test_sycl_cambi_parity = executable('test_sycl_cambi_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_cambi_parity', test_sycl_cambi_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 # ADR-1206 — large-fixture parity variants (resolution blind spot).
 #
 # Same rationale as the CUDA family above: every parity test here pins one
@@ -3437,7 +3516,8 @@ foreach parity_test : sycl_parity_large_fixture_tests
         c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
     )
     test(parity_test + '_large', parity_large_exe,
-        suite : ['fast', 'gpu', 'sycl'])
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
 endforeach
 
 
@@ -3537,7 +3617,9 @@ test_hip_smoke = executable('test_hip_smoke',
     dependencies: [pthread_dependency, hip_deps],
     c_args: ['-DHAVE_HIP=1']
 )
-test('test_hip_smoke', test_hip_smoke, suite : ['fast', 'gpu'])
+test('test_hip_smoke', test_hip_smoke,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # T3-15(c) / ADR-0219 / ADR-0214 — motion3 CPU vs. HIP parity gate.
 # The motion3 post-process (host-side moving-average over blended motion2)
@@ -3554,6 +3636,7 @@ test_hip_motion3_parity = executable('test_hip_motion3_parity',
 )
 test('test_hip_motion3_parity', test_hip_motion3_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-1106 / ADR-0214 — motion_v2 CPU vs. HIP parity gate.
@@ -3569,6 +3652,7 @@ test_hip_motion_v2_parity = executable('test_hip_motion_v2_parity',
 )
 test('test_hip_motion_v2_parity', test_hip_motion_v2_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-0539 — integer ADM CPU vs. HIP parity gate (places=4).
@@ -3587,6 +3671,7 @@ test_hip_adm_parity = executable('test_hip_adm_parity',
 # tests below pass on a gfx1036 device.
 test('test_hip_adm_parity', test_hip_adm_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22 -- the HIP integer-ADM init failure path.
@@ -3648,6 +3733,7 @@ test_hip_adm_small_border = executable('test_hip_adm_small_border',
 )
 test('test_hip_adm_small_border', test_hip_adm_small_border,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
@@ -3661,6 +3747,7 @@ test_hip_adm_tiny_frames = executable('test_hip_adm_tiny_frames',
 )
 test('test_hip_adm_tiny_frames', test_hip_adm_tiny_frames,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
@@ -3673,6 +3760,7 @@ test_hip_adm_wide_rounding = executable('test_hip_adm_wide_rounding',
 )
 test('test_hip_adm_wide_rounding', test_hip_adm_wide_rounding,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-0958 round-4 — HIP kernel parity gap-fill (2 extractors).
@@ -3700,6 +3788,7 @@ test_hip_ssimulacra2_parity = executable('test_hip_ssimulacra2_parity',
 )
 test('test_hip_ssimulacra2_parity', test_hip_ssimulacra2_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_ssim_parity = executable('test_hip_float_ssim_parity',
@@ -3711,6 +3800,7 @@ test_hip_float_ssim_parity = executable('test_hip_float_ssim_parity',
 )
 test('test_hip_float_ssim_parity', test_hip_float_ssim_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-0945 round-3 — HIP kernel parity gap-fill (4 extractors).
@@ -3732,6 +3822,7 @@ test_hip_cambi_parity = executable('test_hip_cambi_parity',
 )
 test('test_hip_cambi_parity', test_hip_cambi_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
@@ -3743,6 +3834,7 @@ test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
 )
 test('test_hip_float_adm_parity', test_hip_float_adm_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_motion_parity = executable('test_hip_float_motion_parity',
@@ -3754,6 +3846,7 @@ test_hip_float_motion_parity = executable('test_hip_float_motion_parity',
 )
 test('test_hip_float_motion_parity', test_hip_float_motion_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_psnr_parity = executable('test_hip_float_psnr_parity',
@@ -3765,6 +3858,7 @@ test_hip_float_psnr_parity = executable('test_hip_float_psnr_parity',
 )
 test('test_hip_float_psnr_parity', test_hip_float_psnr_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
@@ -3776,6 +3870,7 @@ test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
 )
 test('test_hip_float_vif_parity', test_hip_float_vif_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 # ADR-1212 — float_moment CPU vs. HIP parity, at 8 bpc and (via
 # -DFIXTURE_BPC=10u) at 10 bpc. The HIP twin had no cross-backend gate at all,
@@ -3790,6 +3885,7 @@ foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']]]
     )
     test('test_hip_float_moment_parity' + variant[0], hip_moment_exe,
         suite : ['fast', 'gpu'],
+        is_parallel : false,
         timeout : 60)
 endforeach
 
@@ -3810,6 +3906,7 @@ test_hip_ciede_parity = executable('test_hip_ciede_parity',
 )
 test('test_hip_ciede_parity', test_hip_ciede_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-1213 — the same TU at an odd luma width. `ciede_hip` sized its chroma
@@ -3825,6 +3922,7 @@ test_hip_ciede_parity_oddw = executable('test_hip_ciede_parity_oddw',
 )
 test('test_hip_ciede_parity_oddw', test_hip_ciede_parity_oddw,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_psnr_hvs_parity = executable('test_hip_psnr_hvs_parity',
@@ -3836,6 +3934,7 @@ test_hip_psnr_hvs_parity = executable('test_hip_psnr_hvs_parity',
 )
 test('test_hip_psnr_hvs_parity', test_hip_psnr_hvs_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_motion_parity = executable('test_hip_motion_parity',
@@ -3847,6 +3946,7 @@ test_hip_motion_parity = executable('test_hip_motion_parity',
 )
 test('test_hip_motion_parity', test_hip_motion_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-0564 — integer_ssim CPU vs. HIP parity, places=4 on every frame of an
@@ -3865,6 +3965,7 @@ foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']],
     )
     test('test_hip_ssim_parity' + variant[0], hip_ssim_exe,
         suite : ['fast', 'gpu'],
+        is_parallel : false,
         timeout : 60)
 endforeach
 
@@ -3881,6 +3982,7 @@ test_hip_upload_race = executable('test_hip_upload_race',
 )
 test('test_hip_upload_race', test_hip_upload_race,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 120)
 
 test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
@@ -3892,6 +3994,7 @@ test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
 )
 test('test_hip_ms_ssim_parity', test_hip_ms_ssim_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # GPU-kernel coverage gap-fill — psnr CPU vs. HIP parity (places=4).
@@ -3907,6 +4010,7 @@ test_hip_psnr_parity = executable('test_hip_psnr_parity',
 )
 test('test_hip_psnr_parity', test_hip_psnr_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # GPU-kernel coverage gap-fill — VIF scale0 CPU vs. HIP parity (places=3).
@@ -3922,6 +4026,7 @@ test_hip_vif_parity = executable('test_hip_vif_parity',
 )
 test('test_hip_vif_parity', test_hip_vif_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-1004 round 5 — speed_chroma + speed_temporal HIP parity gates.
@@ -3943,6 +4048,7 @@ test_hip_speed_chroma_parity = executable('test_hip_speed_chroma_parity',
 )
 test('test_hip_speed_chroma_parity', test_hip_speed_chroma_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_speed_temporal_parity = executable('test_hip_speed_temporal_parity',
@@ -3954,6 +4060,7 @@ test_hip_speed_temporal_parity = executable('test_hip_speed_temporal_parity',
 )
 test('test_hip_speed_temporal_parity', test_hip_speed_temporal_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_speed_singular_parity = executable('test_hip_speed_singular_parity',
@@ -3965,6 +4072,7 @@ test_hip_speed_singular_parity = executable('test_hip_speed_singular_parity',
 )
 test('test_hip_speed_singular_parity', test_hip_speed_singular_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 90)
 # ADR-1206 — large-fixture parity variants (resolution blind spot).
 # Same rationale as the CUDA and SYCL families. Verified on a gfx1030 once
@@ -3999,6 +4107,7 @@ foreach parity_test : hip_parity_large_fixture_tests
     )
     test(parity_test + '_large', parity_large_exe,
         suite : ['fast', 'gpu'],
+        is_parallel : false,
         timeout : 60)
 endforeach
 
@@ -4018,7 +4127,9 @@ test_metal_smoke = executable('test_metal_smoke',
     dependencies: [pthread_dependency],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_smoke', test_metal_smoke, suite : ['fast', 'gpu'])
+test('test_metal_smoke', test_metal_smoke,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0437 — install-gate: verify libvmaf_metal.h is reachable via the
 # installed include path and that vmaf_metal_import_state + the IOSurface
@@ -4033,7 +4144,9 @@ test_metal_install_header = executable('test_metal_install_header',
     dependencies: [pthread_dependency],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_install_header', test_metal_install_header, suite : ['fast', 'gpu'])
+test('test_metal_install_header', test_metal_install_header,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 endif
 
 # Metal kernel coverage round 3 — per-extractor parity tests for the four
@@ -4051,7 +4164,9 @@ test_metal_integer_motion_parity = executable('test_metal_integer_motion_parity'
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_motion_parity', test_metal_integer_motion_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_motion_parity', test_metal_integer_motion_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_motion_parity = executable('test_metal_float_motion_parity',
     ['test.c', 'test_metal_float_motion_parity.c'],
@@ -4060,7 +4175,9 @@ test_metal_float_motion_parity = executable('test_metal_float_motion_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_motion_parity', test_metal_float_motion_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_motion_parity', test_metal_float_motion_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
     ['test.c', 'test_metal_float_moment_parity.c'],
@@ -4069,7 +4186,9 @@ test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_moment_parity', test_metal_float_moment_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_moment_parity', test_metal_float_moment_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
     ['test.c', 'test_metal_float_ms_ssim_parity.c'],
@@ -4078,7 +4197,9 @@ test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Metal kernel coverage round 2 — per-extractor parity tests (ADR-0421 /
 # ADR-0589 / ADR-0214). Extend PR #351's registration audit with real CPU
@@ -4096,6 +4217,7 @@ test_metal_motion_v2_parity = executable('test_metal_motion_v2_parity',
 )
 test('test_metal_motion_v2_parity', test_metal_motion_v2_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     should_fail : false,
     protocol : 'exitcode',
     verbose : true,
@@ -4110,7 +4232,9 @@ test_metal_integer_ssim_parity = executable('test_metal_integer_ssim_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_ssim_parity', test_metal_integer_ssim_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_ssim_parity', test_metal_integer_ssim_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # float_vif_metal — 4-scale VIF pyramid (feature "float_vif"); CPU vs. Metal
 # parity, skips cleanly when no Metal device.
@@ -4121,7 +4245,9 @@ test_metal_float_vif_parity = executable('test_metal_float_vif_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_vif_parity', test_metal_float_vif_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_vif_parity', test_metal_float_vif_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # float_adm_metal — 4-scale DWT+CSF+CM (feature "float_adm"); CPU vs. Metal
 # parity, skips cleanly when no Metal device.
@@ -4132,7 +4258,9 @@ test_metal_float_adm_parity = executable('test_metal_float_adm_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_adm_parity', test_metal_float_adm_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_adm_parity', test_metal_float_adm_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # integer_vif_metal — 4-scale fixed-point VIF pyramid (feature "vif"); CPU vs.
 # Metal parity, skips cleanly when no Metal device.
@@ -4143,7 +4271,9 @@ test_metal_integer_vif_parity = executable('test_metal_integer_vif_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_vif_parity', test_metal_integer_vif_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_vif_parity', test_metal_integer_vif_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # integer_adm_metal — fixed-point 4-scale DWT+CSF+CM (feature "adm"); CPU vs.
 # Metal parity, skips cleanly when no Metal device.
@@ -4154,7 +4284,9 @@ test_metal_integer_adm_parity = executable('test_metal_integer_adm_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_adm_parity', test_metal_integer_adm_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_adm_parity', test_metal_integer_adm_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Standalone-metric Metal parity tests (ciede2000, psnr_hvs, cambi, ssimulacra2).
 foreach _m : ['integer_ciede', 'integer_psnr_hvs', 'integer_cambi', 'ssimulacra2']
@@ -4164,7 +4296,9 @@ foreach _m : ['integer_ciede', 'integer_psnr_hvs', 'integer_cambi', 'ssimulacra2
       link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
       dependencies: [pthread_dependency, math_lib],
       c_args: ['-DHAVE_METAL=1'])
-  test('test_metal_' + _m + '_parity', _exe, suite : ['fast', 'gpu'])
+  test('test_metal_' + _m + '_parity', _exe,
+      suite : ['fast', 'gpu'],
+      is_parallel : false)
 endforeach
 
 test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
@@ -4174,7 +4308,9 @@ test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_psnr_parity', test_metal_integer_psnr_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_psnr_parity', test_metal_integer_psnr_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_psnr_parity = executable('test_metal_float_psnr_parity',
     ['test.c', 'test_metal_float_psnr_parity.c'],
@@ -4183,7 +4319,9 @@ test_metal_float_psnr_parity = executable('test_metal_float_psnr_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_psnr_parity', test_metal_float_psnr_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_psnr_parity', test_metal_float_psnr_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_ssim_parity = executable('test_metal_float_ssim_parity',
     ['test.c', 'test_metal_float_ssim_parity.c'],
@@ -4192,7 +4330,9 @@ test_metal_float_ssim_parity = executable('test_metal_float_ssim_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_ssim_parity', test_metal_float_ssim_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_ssim_parity', test_metal_float_ssim_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Metal kernel coverage round 4 (closeout) — meta-audit regression guard
 # (ADR-0959). Enumerates the 8 .mm kernel basenames under
@@ -4209,7 +4349,9 @@ test_metal_kernel_coverage_audit = executable('test_metal_kernel_coverage_audit'
     dependencies: [pthread_dependency],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_kernel_coverage_audit', test_metal_kernel_coverage_audit, suite : ['fast', 'gpu'])
+test('test_metal_kernel_coverage_audit', test_metal_kernel_coverage_audit,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — extractor-registration audit for the
 # 8 Metal extractors (ADR-0361 T8-1c/d). Registration is compile-time
@@ -4224,7 +4366,8 @@ test_metal_kernel_registration = executable('test_metal_kernel_registration',
     c_args: ['-DHAVE_METAL=1']
 )
 test('test_metal_kernel_registration', test_metal_kernel_registration,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 endif
 
