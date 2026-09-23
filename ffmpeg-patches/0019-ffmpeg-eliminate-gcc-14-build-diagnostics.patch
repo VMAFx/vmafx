@@ -8,7 +8,7 @@ Move oversized production and test buffers to checked heap storage, prove array 
  libavcodec/a64multienc.c         |   7 +-
  libavcodec/aacenc.c              |   6 ++
  libavcodec/aacsbr_template.c     |  13 +--
- libavcodec/adpcm.c               |  14 +++-
+ libavcodec/adpcm.c               |  18 +++-
  libavcodec/ffv1.h                |   7 ++
  libavcodec/ffv1enc.c             |  13 ++-
  libavcodec/lcevc_parser.c        |   3 +-
@@ -55,7 +55,7 @@ Move oversized production and test buffers to checked heap storage, prove array 
  tests/checkasm/vvc_sao.c         |  66 ++++++++++-----
  tools/ismindex.c                 | 139 +++++++++++++++++++++++--------
  tools/seek_print.c               |   3 +-
- 50 files changed, 1008 insertions(+), 420 deletions(-)
+ 50 files changed, 1012 insertions(+), 420 deletions(-)
 
 diff --git a/libavcodec/a64multienc.c b/libavcodec/a64multienc.c
 index d81718dff5f73cc95a751554cab421a5bc5267a7..c835452354a2e5fc8af5d709b64517785815bf17 100644
@@ -142,10 +142,26 @@ index c10f5f312d03dc8e171709ee3023d36c6f0cd8b4..66e583fba8b5c8bc50cb00a7a0176dc1
          bs_pointer = get_bits(gb, ceil_log2[ch_data->bs_num_env]);
  
 diff --git a/libavcodec/adpcm.c b/libavcodec/adpcm.c
-index 74af2cb4d34424ea877203ae07d2a75867620da6..b5e51eb229f4c4023a7dabe9626389a9d86717e8 100644
+index 74af2cb4d34424ea877203ae07d2a75867620da6..714ffca5916e76f51bb91f74de52647a8b7fc377 100644
 --- a/libavcodec/adpcm.c
 +++ b/libavcodec/adpcm.c
-@@ -580,8 +580,10 @@ int16_t ff_adpcm_ima_qt_expand_nibble(ADPCMChannelStatus *c, int nibble)
+@@ -421,6 +421,7 @@ static inline int16_t adpcm_agm_expand_nibble(ADPCMChannelStatus *c, int8_t nibb
+     return pred;
+ }
+ 
++#if CONFIG_ADPCM_IMA_ESCAPE_DECODER
+ static inline int16_t adpcm_ima_escape_expand_nibble(ADPCMChannelStatus *c, int8_t nibble)
+ {
+     int step_index;
+@@ -443,6 +444,7 @@ static inline int16_t adpcm_ima_escape_expand_nibble(ADPCMChannelStatus *c, int8
+ 
+     return (int16_t)c->predictor;
+ }
++#endif
+ 
+ static inline int16_t adpcm_ima_expand_nibble(ADPCMChannelStatus *c, int8_t nibble, int shift)
+ {
+@@ -580,8 +582,10 @@ int16_t ff_adpcm_ima_qt_expand_nibble(ADPCMChannelStatus *c, int nibble)
      return c->predictor;
  }
  
@@ -158,7 +174,7 @@ index 74af2cb4d34424ea877203ae07d2a75867620da6..b5e51eb229f4c4023a7dabe9626389a9
  {
      ADPCMDecodeContext *c = avctx->priv_data;
      int st = avctx->ch_layout.nb_channels == 2;
-@@ -616,9 +618,12 @@ static void decode_adpcm_ima_hvqm2(AVCodecContext *avctx, int16_t *outbuf, int s
+@@ -616,9 +620,12 @@ static void decode_adpcm_ima_hvqm2(AVCodecContext *avctx, int16_t *outbuf, int s
  
      bytestream2_seek(gb, 0, SEEK_END);
  }
@@ -173,13 +189,29 @@ index 74af2cb4d34424ea877203ae07d2a75867620da6..b5e51eb229f4c4023a7dabe9626389a9
  {
      ADPCMDecodeContext *c = avctx->priv_data;
      int st = avctx->ch_layout.nb_channels == 2;
-@@ -659,6 +664,7 @@ static void decode_adpcm_ima_hvqm4(AVCodecContext *avctx, int16_t *outbuf, int s
+@@ -659,6 +666,7 @@ static void decode_adpcm_ima_hvqm4(AVCodecContext *avctx, int16_t *outbuf, int s
  
      bytestream2_seek(gb, 0, SEEK_END);
  }
 +#endif
  
  static inline int16_t adpcm_ms_expand_nibble(ADPCMChannelStatus *c, int nibble)
+ {
+@@ -764,6 +772,7 @@ static inline int16_t adpcm_mtaf_expand_nibble(ADPCMChannelStatus *c, uint8_t ni
+     return c->predictor;
+ }
+ 
++#if CONFIG_ADPCM_CIRCUS_DECODER
+ static inline int16_t adpcm_circus_expand_nibble(ADPCMChannelStatus *c, uint8_t nibble)
+ {
+     int32_t sample = c->predictor;
+@@ -784,6 +793,7 @@ static inline int16_t adpcm_circus_expand_nibble(ADPCMChannelStatus *c, uint8_t
+ 
+     return sample;
+ }
++#endif
+ 
+ static inline int16_t adpcm_zork_expand_nibble(ADPCMChannelStatus *c, uint8_t nibble)
  {
 diff --git a/libavcodec/ffv1.h b/libavcodec/ffv1.h
 index 012b92ec212ec943ff90d83fc73a168dab5e0c2c..614a00a1c3869b615bb8301f6805f6274e89f56f 100644
