@@ -24,6 +24,7 @@
 #include <stdbool.h>
 
 #include "mem.h"
+#include "adm_score.h"
 #include "adm_options.h"
 #include "adm_tools.h"
 #include "offset.h"
@@ -71,8 +72,6 @@ static int adm_dwt2_dispatch(const float *src, const adm_dwt_band_t_s *dst, int 
 }
 
 #define adm_dwt2 adm_dwt2_dispatch
-
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 static char *init_dwt_band(adm_dwt_band_t *band, char *data_top, size_t buf_sz_one)
 {
@@ -368,21 +367,11 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
     num = num < numden_limit ? 0 : num;
     den = den < numden_limit ? 0 : den;
 
-    if (den == 0.0) {
-        /* Flat/black frame: no distortion energy — both scores are perfect.
-         * *score_aim MUST be initialised here; the caller reads it
-         * unconditionally and the else-branch would be skipped.           */
-        *score = 1.0f;
-        *score_aim = 1.0f;
-    } else {
-        /* Normalize AIM score by the DLM denominator; clip to [0, 1]. */
-        *score_aim = MIN(aim_num / aim_den, 1.0f);
-        *score = num / den;
+    ret = vmaf_adm_finalize_scores(num, den, aim_num, aim_den, score, score_aim);
+    if (!ret) {
+        *score_num = num;
+        *score_den = den;
     }
-    *score_num = num;
-    *score_den = den;
-
-    ret = 0;
 
 fail:
     aligned_free(data_buf);

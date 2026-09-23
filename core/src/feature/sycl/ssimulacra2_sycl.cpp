@@ -49,6 +49,7 @@
 #include "sycl/common.h"
 
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_score.h"
 
 namespace
 {
@@ -670,8 +671,9 @@ void ss2s_host_combine(const Ssimu2StateSycl *s, int scale, double avg_ssim[6], 
             const double ed1 = std::fabs((double)r1[i] - (double)u1);
             const double ed2 = std::fabs((double)r2[i] - (double)u2);
             const double dd = (1.0 + ed2) / (1.0 + ed1) - 1.0;
-            const double art = dd > 0.0 ? dd : 0.0;
-            const double det = dd < 0.0 ? -dd : 0.0;
+            double art;
+            double det;
+            vmaf_ss2_split_edge_difference(dd, &art, &det);
             e_art += art;
             const double a2 = art * art;
             e_art4 += a2 * a2;
@@ -709,12 +711,7 @@ double ss2s_pool_score(const double avg_ssim[6][6], const double avg_ed[6][12], 
     ssim *= 0.9562382616834844;
     ssim = 2.326765642916932 * ssim - 0.020884521182843837 * ssim * ssim +
            6.248496625763138e-05 * ssim * ssim * ssim;
-    if (ssim > 0.0) {
-        ssim = 100.0 - 10.0 * std::pow(ssim, 0.6276336467831387);
-    } else {
-        ssim = 100.0;
-    }
-    return ssim;
+    return vmaf_ss2_finalize_score(ssim);
 }
 
 /* ---------------------------------------------------------------- */
@@ -873,6 +870,12 @@ int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPictur
     }
 
     const double score = ss2s_pool_score(avg_ssim, avg_ed, completed);
+    if (!vmaf_ss2_score_is_finite(score)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "ssimulacra2_sycl: non-finite score at frame %u (score=%g), failing frame\n",
+                 index, score);
+        return -EINVAL;
+    }
     return vmaf_feature_collector_append(feature_collector, "ssimulacra2", score, index);
 }
 

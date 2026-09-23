@@ -1133,6 +1133,25 @@ test_ssimulacra2_coverage = executable('test_ssimulacra2_coverage',
     ] + wave8_opt_only_objects
 )
 
+# Issue #1526: the two ordered-comparison sites that used to turn a failed
+# SSIMULACRA 2 computation into a perfect score are pure and fast enough to
+# exercise without an image fixture.
+test_ssimulacra2_nonfinite = executable('test_ssimulacra2_nonfinite',
+    ['test.c', 'test_ssimulacra2_nonfinite.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib],
+)
+test('test_ssimulacra2_nonfinite', test_ssimulacra2_nonfinite, suite : ['fast'])
+
+test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
+    ['test.c', 'test_adm_nonfinite_score.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib],
+)
+test('test_adm_nonfinite_score', test_adm_nonfinite_score, suite : ['fast'])
+
 # NIQE (no-reference, ADR-1112): niqe_math.h unit oracles + an end-to-end
 # score oracle driven through the public extractor-context API against frame 0
 # of the natural fixture testdata/ref_576x324_48f.yuv. NIQE_TESTDATA_DIR points

@@ -60,6 +60,7 @@
 #include "cuda/ssimulacra2_cuda.h"
 #include "cuda_helper.cuh"
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_score.h"
 #include "picture.h"
 #include "picture_cuda.h"
 
@@ -895,8 +896,9 @@ static void ss2c_host_combine(const Ssimu2StateCuda *s, int scale, double avg_ss
             const double ed1 = fabs((double)r1[i] - (double)u1);
             const double ed2 = fabs((double)r2[i] - (double)u2);
             const double dd = (1.0 + ed2) / (1.0 + ed1) - 1.0;
-            const double art = dd > 0.0 ? dd : 0.0;
-            const double det = dd < 0.0 ? -dd : 0.0;
+            double art;
+            double det;
+            vmaf_ss2_split_edge_difference(dd, &art, &det);
             e_art += art;
             const double a2 = art * art;
             e_art4 += a2 * a2;
@@ -934,12 +936,7 @@ static double ss2c_pool_score(const double avg_ssim[6][6], const double avg_ed[6
     ssim *= 0.9562382616834844;
     ssim = 2.326765642916932 * ssim - 0.020884521182843837 * ssim * ssim +
            6.248496625763138e-05 * ssim * ssim * ssim;
-    if (ssim > 0.0) {
-        ssim = 100.0 - 10.0 * pow(ssim, 0.6276336467831387);
-    } else {
-        ssim = 100.0;
-    }
-    return ssim;
+    return vmaf_ss2_finalize_score(ssim);
 }
 
 /* Ssimu2ScaleBufs - the device pointers and transfer sizes one scale needs.
@@ -1184,6 +1181,17 @@ static void ss2c_downsample_for_next_scale(Ssimu2StateCuda *s, unsigned *cw, uns
     *ch = nh;
 }
 
+static int ss2c_append_score(VmafFeatureCollector *feature_collector, unsigned index, double score)
+{
+    if (!vmaf_ss2_score_is_finite(score)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "ssimulacra2_cuda: non-finite score at frame %u (score=%g), failing frame\n",
+                 index, score);
+        return -EINVAL;
+    }
+    return vmaf_feature_collector_append(feature_collector, "ssimulacra2", score, index);
+}
+
 static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index,
@@ -1240,7 +1248,7 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     ctx_pushed = 0;
 
     const double score = ss2c_pool_score(avg_ssim, avg_ed, completed);
-    return vmaf_feature_collector_append(feature_collector, "ssimulacra2", score, index);
+    return ss2c_append_score(feature_collector, index, score);
 
 out:
     return ss2c_submit_unwind(cu_f, ctx_pushed, _cuda_err);

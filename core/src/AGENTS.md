@@ -393,6 +393,12 @@ there were cut at statement boundaries only. Never split one arithmetic
 expression across a helper, and never reorder an accumulation: FMA contraction
 and re-association both move scores (ADR-1253).
 
+`predict.c::piecewise_linear_mapping` rejects non-finite input before writing
+its `0.0` initialization (ADR-1302). Every ordered segment comparison is false
+for NaN, so moving that initialization back above the guard converts a failed
+model computation into a successful zero prediction. The regression requires
+the caller-owned output to remain unchanged on `-EINVAL`.
+
 Two `interop/pelorus_interop.c` invariants that the split introduced, both
 pinned by the ADR-1142 clang-tidy ratchet (the file's allowance is 7):
 

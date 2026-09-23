@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "cpu.h"
@@ -221,6 +222,18 @@ static double convert_to_db(double score, double max_db)
     return MIN(-10. * log10(1.0 - score), max_db);
 }
 
+static bool plane_scores_are_finite(double score, const double *l_scores, const double *c_scores,
+                                    const double *s_scores)
+{
+    if (!isfinite(score))
+        return false;
+    for (unsigned scale = 0; scale < 5; ++scale) {
+        if (!isfinite(l_scores[scale]) || !isfinite(c_scores[scale]) || !isfinite(s_scores[scale]))
+            return false;
+    }
+    return true;
+}
+
 static const char *const ms_ssim_feature_names[3] = {
     "float_ms_ssim",
     "float_ms_ssim_cb",
@@ -284,18 +297,19 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     (void)dist_pic_90;
 
     const unsigned n_planes = s->enable_chroma ? 3 : 1;
+    double plane_scores[3];
+    double l_scores[3][5];
+    double c_scores[3][5];
+    double structure_scores[3][5];
 
     for (unsigned p = 0; p < n_planes; p++) {
         const size_t plane_float_stride = ALIGN_CEIL(ref_pic->w[p] * sizeof(float));
         picture_copy(s->ref, plane_float_stride, ref_pic, 0, ref_pic->bpc, p);
         picture_copy(s->dist, plane_float_stride, dist_pic, 0, dist_pic->bpc, p);
 
-        double score;
-        double l_scores[5];
-        double c_scores[5];
-        double s_scores[5];
         err = compute_ms_ssim(s->ref, s->dist, ref_pic->w[p], ref_pic->h[p], plane_float_stride,
-                              plane_float_stride, &score, l_scores, c_scores, s_scores);
+                              plane_float_stride, &plane_scores[p], l_scores[p], c_scores[p],
+                              structure_scores[p]);
         if (err)
             return err;
 
@@ -305,20 +319,24 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
          * the raw score before the conversion, so the linear path that
          * appends it unbounded is covered too (mirrors the brisque.c and
          * y_funque_plus.c guards; SpEED has its own family-scoped helper). */
-        if (!isfinite(score)) {
+        if (!plane_scores_are_finite(plane_scores[p], l_scores[p], c_scores[p],
+                                     structure_scores[p])) {
             vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                     "float_ms_ssim: non-finite %s at frame %u (score=%g), failing frame\n",
-                     ms_ssim_feature_names[p], index, score);
+                     "float_ms_ssim: non-finite %s score or atom at frame %u "
+                     "(score=%g), failing frame\n",
+                     ms_ssim_feature_names[p], index, plane_scores[p]);
             return -EINVAL;
         }
         if (s->enable_db)
-            score = convert_to_db(score, s->max_db);
+            plane_scores[p] = convert_to_db(plane_scores[p], s->max_db);
+    }
 
-        err = vmaf_feature_collector_append(feature_collector, ms_ssim_feature_names[p], score,
-                                            index);
+    for (unsigned p = 0; p < n_planes; p++) {
+        err = vmaf_feature_collector_append(feature_collector, ms_ssim_feature_names[p],
+                                            plane_scores[p], index);
         if (p == 0 && s->enable_lcs) {
-            err |=
-                ms_ssim_append_lcs_scores(feature_collector, l_scores, c_scores, s_scores, index);
+            err |= ms_ssim_append_lcs_scores(feature_collector, l_scores[p], c_scores[p],
+                                             structure_scores[p], index);
         }
         if (err)
             return err;

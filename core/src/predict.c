@@ -158,6 +158,12 @@ static int piecewise_linear_mapping(double x, VmafPoint *knots, unsigned n_knots
     /* See piecewise_segment_apply: -EINVAL not +EINVAL. */
     if (n_knots <= 1)
         return -EINVAL;
+    /* Every ordered comparison against NaN is false. Without this guard no
+     * segment writes `y`, yet the function reports success with the plausible
+     * zero assigned below -- laundering a failed model computation into a
+     * valid score (Issue #1526). Keep the caller's output untouched on error. */
+    if (!isfinite(x))
+        return -EINVAL;
     unsigned n_seg = n_knots - 1;
 
     *y = 0.0;

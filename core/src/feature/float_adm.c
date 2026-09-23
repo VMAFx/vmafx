@@ -25,13 +25,13 @@
 #include "framesync.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "log.h"
 
 #include "adm.h"
 #include "adm_options.h"
+#include "adm_score.h"
 #include "mem.h"
 #include "picture_copy.h"
-
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
 typedef struct AdmState {
     size_t float_stride;
@@ -458,8 +458,25 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                       s->adm_noise_weight, s->adm_bypass_cm, s->adm_p_norm, &score_aim, s->adm_f1s0,
                       s->adm_f1s1, s->adm_f1s2, s->adm_f1s3, s->adm_f2s0, s->adm_f2s1, s->adm_f2s2,
                       s->adm_f2s3, s->adm_skip_aim_scale, s->adm_skip_scale0);
-    if (err)
+    if (err) {
+        if (err == -EINVAL) {
+            vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                     "float_adm: undefined or non-finite score at frame %u, failing frame\n",
+                     index);
+        }
         return err;
+    }
+
+    double score_adm3;
+    err = vmaf_adm3_score(score, score_aim, s->adm_adm3_apply_hm, s->adm_dlm_weight, s->adm_min_val,
+                          &score_adm3);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_adm: non-finite ADM3 score at frame %u "
+                 "(score=%g score_aim=%g), failing frame\n",
+                 index, score, score_aim);
+        return err;
+    }
 
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "VMAF_feature_adm2_score", score, index);
@@ -467,23 +484,8 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "VMAF_feature_aim_score", score_aim, index);
 
-    if (s->adm_adm3_apply_hm) {
-        /* Harmonic mean of score and score_aim.  When both are 0 the formula
-         * yields 0/0 = NaN which propagates silently through MAX().  Return 0
-         * explicitly for the all-zero case (score=0, score_aim=0 corresponds
-         * to maximum distortion; harmonic mean is 0 by definition).         */
-        const double hm =
-            (score + score_aim == 0.0) ? 0.0 : 2.0 * score * score_aim / (score + score_aim);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_feature_adm3_score",
-                                                       MAX(hm, s->adm_min_val), index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_adm3_score",
-            MAX(score * s->adm_dlm_weight + (1 - score_aim) * (1 - s->adm_dlm_weight),
-                s->adm_min_val),
-            index);
-    }
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_feature_adm3_score", score_adm3, index);
 
     err |= adm_append_scale_scores(feature_collector, s, scores, index);
 

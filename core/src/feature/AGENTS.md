@@ -147,6 +147,13 @@ feature/
 - `ssimulacra2.c` is fork-local (not upstream). It embeds several
   constant tables that must stay in lock-step with libjxl even across
   rebase:
+  - **Non-finite score semantics (ADR-1302)** are also lock-step across scalar,
+    AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and Metal host code. Edge
+    differences go through `ssimulacra2_score.h` before accumulation and every
+    polynomial pool goes through its finalizer; each extractor rejects a
+    non-finite result before collector publication. Do not restore inline
+    ordered comparisons: `NaN > 0` and `NaN < 0` are both false, which erases
+    the edge failure, and the old final `else` mapped NaN to perfect `100.0`.
   - **Opsin absorbance matrix** (`kM00`…`kM22`) and bias `kB` — see
     libjxl `lib/jxl/opsin_params.h`.
   - **`MakePositiveXYB` offsets** — `B=(B-Y)+0.55`, `X*=14`, `X+=0.42`,

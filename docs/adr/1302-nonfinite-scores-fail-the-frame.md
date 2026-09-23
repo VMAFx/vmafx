@@ -24,7 +24,10 @@ a NaN as the **best possible score**:
 | `float_ssim.c` `convert_to_db()` | `max_db` — perfect similarity |
 | `float_ms_ssim.c` `convert_to_db()` | `max_db` — the same, copied |
 | `float_vif.c:341,345,349` | `vif_scaleN_min_val`, 0.0 by default — the *worst* VIF value |
+| `float_adm.c:479,483` | `adm_min_val` |
 | `integer_adm.c:2269` | `adm_min_val` |
+| `transnet_v2.c:332` | boundary flag `0.0` |
+| `predict.c:147` | aggregate prediction `0.0` |
 
 The SSIM one is the sharpest illustration, because its guard was written *for
 this situation* and still misses it:
@@ -54,21 +57,22 @@ the extractor, the frame and the value, and return `-EINVAL`.
 
 The guard goes before the *first* append of the frame, not beside each clamp,
 so a frame fails atomically rather than leaving some features published and
-others missing.
+others missing. MS-SSIM therefore computes and validates every enabled plane
+before it appends any plane.
 
-This ADR covers the four sites landed here. Five more are held, not abandoned,
-and tracked in Issue #1526:
+The remaining six sites that could not take another inline guard are split at
+their natural scoring seams:
 
-| File | Why it is held |
+| Seam | Contract |
 | --- | --- |
-| `ssimulacra2.c` | the guard pushes `extract` past the 60-line `readability-function-size` limit, and the file has a second laundering site the first pass missed |
-| `float_adm.c` | same function-size regression against a required ratchet |
-| `transnet_v2.c` | same, in `transnet_v2_extract` |
-| `adm.c` | the site is inside `compute_adm`, which unwinds through a single `fail:` label; a bare early return would leak |
-| `predict.c` | the proposed guard rested on a premise that does not hold for any shipped model |
+| `adm_score.h` | ADM/AIM ratios and both ADM3 formulas validate every operand and computed result, write output only on success, and preserve the legitimate finite flat-frame `1.0` result. |
+| `ssimulacra2_score.h` | Edge-difference splitting preserves non-finite evidence and the final polynomial never maps it to `100.0`; scalar, SIMD, CUDA, HIP, SYCL and Metal hosts use the same helper. |
+| `transnet_v2_score.h` | Logit-to-probability/flag conversion validates before writing either output. |
+| `predict.c::piecewise_linear_mapping` | Rejects a non-finite input before assigning the old `0.0` default. |
 
-Each needs a helper extracted at the function's natural seam — the same
-refactor ADR-1301 applied twice — rather than a looser guard.
+All helpers publish output atomically: on `-EINVAL`, caller-owned output values
+remain unchanged. This gives the regression tests a deterministic injection
+point without changing Netflix golden fixtures or assertions.
 
 ## Alternatives considered
 
@@ -77,20 +81,23 @@ refactor ADR-1301 applied twice — rather than a looser guard.
 | **Guard, warn, fail the frame** (chosen) | Already the convention in three extractors; a caller can tell a failure from a measurement. |
 | Publish the NaN unclamped | Every consumer — collector, pooling, JSON writer — would have to learn to handle it, and a NaN in the pooled VMAF score is a worse surface than a failed frame. |
 | Clamp non-finite to the *worst* score | Still a lie, just a pessimistic one, and for VIF the worst value is already what a NaN becomes. |
-| Fix all twelve in one change | Five need a function split each, against a required ratchet, in Netflix golden-data paths. Landing the four that need no refactor keeps the reviewable part reviewable. |
+| Leave the five helper-sized paths for another PR | Rejected after the first bounded commit: it would leave Issue #1526 knowingly open and preserve the most flattering failures. The helper seams keep the completed change reviewable. |
 | Leave them, since no fixture produces a NaN today | The golden fixtures not reaching the path is exactly why this survived: it is invisible until it matters. |
 
 ## Consequences
 
-- **Positive**: a non-finite `vif`, `adm`, `ssim` or `ms_ssim` score is
-  reported as a failure instead of as a perfect or worst-case measurement.
-- **Positive**: the finiteness convention is now the same in six extractors.
+- **Positive**: every laundering site found by the 466-call-site sweep now
+  reports failure instead of a perfect, worst-case or otherwise plausible
+  measurement.
+- **Positive**: the finiteness convention is shared by the CPU, SIMD and GPU
+  SSIMULACRA2 hosts, rather than drifting by backend.
 - **Neutral for scores**: verified, not assumed. The Netflix golden gate is
   `271 passed, 12 skipped` both before and after.
 - **Negative**: a frame that previously produced a wrong-but-finite score now
   fails, which is the intent but is a behaviour change for any caller
   unknowingly consuming one.
-- **Negative**: five sites still launder a NaN until #1526 closes.
+- **Negative**: callers that unknowingly relied on a fabricated finite value
+  now receive `-EINVAL` and must handle the failed frame.
 
 ## References
 
@@ -100,4 +107,5 @@ refactor ADR-1301 applied twice — rather than a looser guard.
   SpEED, and the shared helper it introduced.
 - `core/src/feature/brisque.c` and `core/src/feature/y_funque_plus.c` — the
   convention this follows.
-- Issue #1526 — the five held sites.
+- Issue #1526 — the twelve-site inventory and closure target.
+- [Non-finite score laundering research digest](../research/nonfinite-score-laundering-2026-09-23.md).

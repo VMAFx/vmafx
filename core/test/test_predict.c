@@ -357,12 +357,35 @@ static char *test_piecewise_linear_mapping_returns_neg_einval(void)
     return NULL;
 }
 
+/* A failed upstream computation must not become the mapping's initial 0.0.
+ * Every ordered comparison against NaN is false, so without an explicit
+ * finite-input guard no segment writes `y` and the function reports success
+ * with the plausible zero score it assigned before the loop (Issue #1526). */
+/* NOLINTBEGIN(modernize-use-nullptr): retain portable C NULL spelling per ADR-1138. */
+static char *test_piecewise_linear_mapping_rejects_nonfinite_input(void)
+{
+    VmafPoint knots[] = {{.x = 0.0, .y = 0.0}, {.x = 100.0, .y = 100.0}};
+    double y = 42.0;
+
+    int err = piecewise_linear_mapping(NAN, knots, 2u, &y);
+
+    mu_assert("NaN input must return -EINVAL instead of publishing 0.0", err == -EINVAL);
+    mu_assert("a rejected NaN must not overwrite the caller's score", y == 42.0);
+
+    err = piecewise_linear_mapping(INFINITY, knots, 2u, &y);
+    mu_assert("infinite input must return -EINVAL instead of publishing 0.0", err == -EINVAL);
+    mu_assert("a rejected infinity must not overwrite the caller's score", y == 42.0);
+    return NULL;
+}
+/* NOLINTEND(modernize-use-nullptr) */
+
 char *run_tests(void)
 {
     mu_run_test(test_predict_score_at_index);
     mu_run_test(test_find_linear_function_parameters);
     mu_run_test(test_piecewise_linear_mapping);
     mu_run_test(test_piecewise_linear_mapping_returns_neg_einval);
+    mu_run_test(test_piecewise_linear_mapping_rejects_nonfinite_input);
     mu_run_test(test_propagate_metadata);
     return NULL;
 }

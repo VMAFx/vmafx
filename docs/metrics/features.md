@@ -118,6 +118,26 @@ feature-name key. Tracked as
 `T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in
 [`docs/state.md`](../state.md).
 
+## Non-finite result handling
+
+An extractor result is a measurement only when it is finite. If VIF, ADM,
+SSIM, MS-SSIM, SSIMULACRA2, TransNet V2, or the final VMAF piecewise mapping
+produces `NaN` or infinity, libvmaf fails that frame with `-EINVAL` instead of
+substituting a configured minimum, maximum, threshold result, or zero. The log
+callback names the extractor and frame where that information is available.
+
+This matters because those substitutions can look legitimate: an invalid
+SSIMULACRA2 result used to appear as the perfect `100.0`, an invalid SSIM as
+`max_db`, and an undefined ADM AIM ratio as the perfect `1.0`. A failed frame
+now produces no score for that extractor. The CLI treats the negative return as
+a runtime error and does not present the fabricated value in its report; C API
+callers should handle the existing negative-errno contract described in
+[API error semantics](../api/index.md#error-semantics).
+
+Finite results, including the defined flat-frame ADM result and scores that
+legitimately reach a configured clamp, are unchanged. SSIMULACRA2 applies the
+same rule on scalar, SIMD, CUDA, HIP, SYCL and Metal backends.
+
 ## Per-feature GPU dispatch hints (T7-26 / ADR-0181)
 
 Each feature carries a small `VmafFeatureCharacteristics` descriptor

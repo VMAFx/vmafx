@@ -52663,3 +52663,22 @@ to an exception.
 - Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
   tests/test_coverage_round4.py::test_auth_413_on_large_body`.
 - Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.
+
+## fix/nonfinite-emit-guards — non-finite scores fail the frame (2026-09-23)
+
+Netflix-mirror files `float_vif.c`, `integer_adm.c`, `float_ssim.c`,
+`float_ms_ssim.c`, `adm.c`, `float_adm.c` and `predict.c` now reject a
+non-finite score before any `MIN`, `MAX`, dB conversion, ratio or default value
+can turn it into a finite result. Preserve the finiteness check ahead of the
+comparison on rebase; moving it after publication restores Issue #1526.
+
+The new `adm_score.h` seam is load-bearing: its outputs are written only after
+both ADM/AIM ratios or the ADM3 blend are finite, while the finite `den == 0`
+flat-frame case remains a perfect `1.0`. `piecewise_linear_mapping` likewise
+checks before assigning its old `0.0` default.
+
+SSIMULACRA2 is fork-local, but its host calculation is duplicated across every
+backend. `ssimulacra2_score.h` owns the edge sign split and final polynomial
+mapping for scalar, AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and Metal. Do
+not re-inline one backend's old ordered comparisons: both are false for NaN and
+the old final `else` returned the perfect `100.0`.
