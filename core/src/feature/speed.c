@@ -644,7 +644,29 @@ static void matrix_qr_decomposition(Matrix *A, Matrix *Q, Matrix *R, Matrix *tmp
         int sign = get_sign(A->data[k * size + k]);
         vec[k] += sign * norm;
 
-        vector_div(vec, vector_norm(vec, size), vec, size);
+        /* A deflated minor can leave this column exactly zero in float: then
+         * `vec[k] += sign * norm` adds 0, `vec` is all-zero, and the divisor
+         * below is 0.0f, so every lane computes 0.0f/0.0f = NaN. That NaN
+         * propagates through Q into R and into the solved system, and comes
+         * out of update_entropy() as a NaN score.
+         *
+         * `is_matrix_regular()` does not prevent it: that gate reads the
+         * separately computed eigendecomposition and says nothing about a
+         * column going rank-deficient mid-Householder on an ill-conditioned
+         * 25x25 covariance.
+         *
+         * speed_internal.c's copy of this routine -- the one every GPU twin
+         * uses -- has always had this guard (si_householder_qr, `if (vn ==
+         * 0.0f) continue;`). Only the CPU reference was missing it, which made
+         * it the one backend that could manufacture a NaN here. Skipping the
+         * reflection when the vector is zero is what the identity says to do:
+         * I - v*v^T with v == 0 is the identity, so there is nothing to
+         * apply. */
+        const float vn = vector_norm(vec, size);
+        if (vn == 0.0f) {
+            continue;
+        }
+        vector_div(vec, vn, vec, size);
         matrix_identity_minus_v_vt(tmp_q, vec);
 
         matrix_mul(tmp_mul, tmp_q, tmp_z, matmul);
@@ -1389,17 +1411,38 @@ static int extract_chroma(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
         score_uv = (score_u + score_v) / 2.0;
     }
 
-    int err = 0;
+    /* MIN() is a less-than comparison, and every comparison against NaN is
+     * false, so it used to publish a non-finite score as speed_chroma_max_val
+     * -- a finite, plausible 1000.0 in place of a computation that produced no
+     * number. speed_internal_clamp_score() checks finiteness first and fails
+     * the frame instead, the way brisque.c and y_funque_plus.c already do.
+     * Clamping of finite scores is unchanged, so the golden mxv_45 assertions
+     * are untouched. */
+    double clamped_u = 0.0;
+    double clamped_v = 0.0;
+    double clamped_uv = 0.0;
+    int err = speed_internal_clamp_score(score_u, s->speed_chroma_max_val, index, "speed_chroma",
+                                         "speed_chroma_u", &clamped_u);
+    if (err)
+        return err;
+    err = speed_internal_clamp_score(score_v, s->speed_chroma_max_val, index, "speed_chroma",
+                                     "speed_chroma_v", &clamped_v);
+    if (err)
+        return err;
+    err = speed_internal_clamp_score(score_uv, s->speed_chroma_max_val, index, "speed_chroma",
+                                     "speed_chroma_uv", &clamped_uv);
+    if (err)
+        return err;
 
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "Speed_chroma_feature_speed_chroma_u_score",
-                                                   MIN(score_u, s->speed_chroma_max_val), index);
+                                                   clamped_u, index);
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "Speed_chroma_feature_speed_chroma_v_score",
-                                                   MIN(score_v, s->speed_chroma_max_val), index);
+                                                   clamped_v, index);
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "Speed_chroma_feature_speed_chroma_uv_score",
-                                                   MIN(score_uv, s->speed_chroma_max_val), index);
+                                                   clamped_uv, index);
     return err;
 }
 
@@ -1541,6 +1584,33 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
+/* Clamp and emit the temporal score. Lifted out of extract() to keep that
+ * function inside the 60-LOC limit (HISS-04).
+ *
+ * This path used to append `score` raw: it never applied
+ * speed_temporal_max_val, although the option is declared with .max = 1000.0
+ * and every GPU twin clamps against it (speed_temporal_cuda.c does so inline
+ * before its append). An option the reference ignores is the "looks wired,
+ * does nothing" failure, and it is also a cross-backend divergence the parity
+ * gate would only expose for a score above the bound. Clamping here makes the
+ * reference agree with its twins; no Python golden assertion pins
+ * speed_temporal, and a finite score below the bound is unchanged.
+ *
+ * The same call refuses a non-finite score rather than publishing it. */
+static int append_temporal_score(SpeedTemporalState *s, VmafFeatureCollector *feature_collector,
+                                 float score, unsigned index)
+{
+    double clamped = 0.0;
+    const int err = speed_internal_clamp_score(score, s->speed_temporal_max_val, index,
+                                               "speed_temporal", "speed_temporal", &clamped);
+    if (err)
+        return err;
+
+    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "Speed_temporal_feature_speed_temporal_score",
+                                                   clamped, index);
+}
+
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
@@ -1583,13 +1653,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     speed_extract_score(&s->speed_state, &s->speed_options, s->frame_buffer_ref[other_index],
                         s->frame_buffer_dis[other_index], &score);
 
-    err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                  "Speed_temporal_feature_speed_temporal_score",
-                                                  score, index);
-
-    if (err)
-        return err;
-    return 0;
+    return append_temporal_score(s, feature_collector, score, index);
 }
 
 static int close(VmafFeatureExtractor *fex)

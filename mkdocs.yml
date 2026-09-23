@@ -1419,6 +1419,7 @@ nav:
         - "ADR-1299: sycl-ms-ssim-chroma-implementation": adr/1299-sycl-ms-ssim-chroma-implementation.md
       - "1300-1399 — Misc":
         - "ADR-1300: cuda-install-from-nvidia-apt": adr/1300-cuda-install-from-nvidia-apt.md
+        - "ADR-1301: speed-nonfinite-score-fails-frame": adr/1301-speed-nonfinite-score-fails-frame.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

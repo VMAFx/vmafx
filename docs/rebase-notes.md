@@ -52556,3 +52556,36 @@ option, FFmpeg patch, or Netflix golden assertion. Within the fork,
 and selector. `pkg/corpus/backend.go` is compatibility-only; do not regrow
 backend probing there during a branch rebase. Model CLI selector formatting
 similarly belongs in `pkg/model`, not in individual tuning drivers.
+
+## fix/speed-nonfinite-score — the SpEED score guard (2026-09-23)
+
+`core/src/feature/speed.c` is an upstream mirror and now diverges from Netflix
+in three places. All three are in ADR-1301; keep them through any rebase.
+
+1. **`matrix_qr_decomposition()` gained a zero-norm guard.** Upstream reads
+   `vector_div(vec, vector_norm(vec, size), vec, size);` with no check. When a
+   deflated minor leaves that column exactly zero in float the divisor is
+   `0.0f` and every lane computes `0.0f / 0.0f`. The fork computes the norm
+   once into `vn` and `continue`s when it is zero, which is what
+   `speed_internal.c`'s `si_householder_qr` has always done. A rebase that
+   takes upstream's line back reintroduces a reachable NaN in the CPU
+   reference only — the GPU twins go through `speed_internal.c` and are
+   unaffected, so the symptom appears as a CPU/GPU parity failure rather than
+   as an obvious crash.
+
+2. **The chroma emit no longer uses `MIN`.** Upstream appends
+   `MIN(score_u, s->speed_chroma_max_val)` and two more like it. The fork calls
+   `speed_internal_clamp_score()`, which refuses a non-finite score before
+   comparing. Taking upstream's `MIN` back restores the masking: a NaN becomes
+   `speed_chroma_max_val`.
+
+3. **The temporal emit clamps.** Upstream appends `score` raw and never applies
+   `speed_temporal_max_val`, although it declares the option and documents it
+   as clipping. The fork clamps through the same helper, matching every GPU
+   twin. This one *does* change numbers relative to upstream, but only for a
+   score above the bound.
+
+`core/src/feature/speed_internal.c` gains `speed_internal_clamp_score()`. That
+file is fork-authored (ADR-0964) and has no upstream counterpart, so it carries
+no rebase risk; the CUDA, HIP and SYCL emit paths that call it are fork-local
+too.

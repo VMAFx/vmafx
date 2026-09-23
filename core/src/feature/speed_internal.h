@@ -308,6 +308,43 @@ void speed_internal_tally_solve(SpeedInternalSingularTally *tally, bool singular
  */
 void speed_internal_report_singular(const SpeedInternalSingularTally *tally, const char *who);
 
+/* ------------------------------------------------------------------ */
+/* Publishing a score: clamp, but never publish a non-finite one       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Clamp a SpEED score to its configured maximum, refusing a non-finite one.
+ *
+ * Every SpEED backend bounded its score with a less-than comparison --
+ * `MIN(x, max)`, `x < max ? x : max`, a local `CLIP` macro. Every comparison
+ * against NaN is false, so all of them published a NaN as `max_val`: a finite,
+ * plausible-looking number (1000.0 by default) in place of a computation that
+ * did not produce a number. The cross-backend parity harness asserts
+ * `isfinite` on the score it reads, so the clamp defeated precisely the check
+ * that would have caught it.
+ *
+ * Non-finite is reachable rather than theoretical. The entropy term is
+ * `log2(L_k * var + sigma_nn)`, and `var` is `x^T K x` for the solved system,
+ * which is non-negative only in exact arithmetic; an ill-conditioned solve in
+ * fp32 can return it slightly negative. With eigenvalues of a
+ * pixel-magnitude covariance running to 1e3-1e4, a `var` of -1e-5 already
+ * drives the argument negative, and `log2f` of a negative argument is NaN.
+ *
+ * The response follows the convention `brisque.c` and `y_funque_plus.c`
+ * already use for the same situation: warn, naming the frame and the value,
+ * and fail the frame rather than append something that is not a measurement.
+ *
+ * @param score    The score as computed, possibly non-finite.
+ * @param max_val  The extractor's `speed_*_max_val` option.
+ * @param index    Frame index, for the message.
+ * @param who      Extractor name used in the message, e.g. "speed_chroma_cuda".
+ * @param feature  Feature name used in the message, e.g. "speed_chroma_uv".
+ * @param out      Receives `min(score, max_val)`. Untouched on failure.
+ * @return 0 on success, -EINVAL when `score` is not finite.
+ */
+int speed_internal_clamp_score(double score, double max_val, unsigned index, const char *who,
+                               const char *feature, double *out);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

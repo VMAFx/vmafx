@@ -1067,6 +1067,48 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
+/* Clamp and emit the three chroma scores. Lifted out of extract_fex_cuda() to
+ * keep that function inside the 60-LOC limit (HISS-04).
+ *
+ * The clamps here were `CLIP(x)`, a less-than comparison, and every comparison
+ * against NaN is false, so a non-finite score was published as
+ * speed_chroma_max_val -- a finite, plausible 1000.0 standing in for a
+ * computation that produced no number, and invisible to the parity harness's
+ * own isfinite() assertion. speed_internal_clamp_score() checks finiteness
+ * first and fails the frame, matching the CPU reference and the brisque.c /
+ * y_funque_plus.c convention. Finite scores clamp exactly as before. */
+static int append_chroma_scores(SpeedChromaCudaState *s, VmafFeatureCollector *feature_collector,
+                                float score_u, float score_v, float score_uv, unsigned index)
+{
+    const double mxv = s->speed_chroma_max_val;
+    double clamped_u = 0.0;
+    double clamped_v = 0.0;
+    double clamped_uv = 0.0;
+    int err = speed_internal_clamp_score(score_u, mxv, index, "speed_chroma_cuda", "speed_chroma_u",
+                                         &clamped_u);
+    if (err)
+        return err;
+    err = speed_internal_clamp_score(score_v, mxv, index, "speed_chroma_cuda", "speed_chroma_v",
+                                     &clamped_v);
+    if (err)
+        return err;
+    err = speed_internal_clamp_score(score_uv, mxv, index, "speed_chroma_cuda", "speed_chroma_uv",
+                                     &clamped_uv);
+    if (err)
+        return err;
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "Speed_chroma_feature_speed_chroma_u_score",
+                                                   clamped_u, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "Speed_chroma_feature_speed_chroma_v_score",
+                                                   clamped_v, index);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "Speed_chroma_feature_speed_chroma_uv_score",
+                                                   clamped_uv, index);
+    return err;
+}
+
 static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
                             VmafPicture *dist_pic_90, unsigned index,
@@ -1102,21 +1144,15 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     const float score_uv = combine_chroma_uv(score_u, score_v, singular_u, singular_v);
 
-    const double mxv = s->speed_chroma_max_val;
-#define CLIP(x) ((double)(x) < (mxv) ? (double)(x) : (mxv))
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "Speed_chroma_feature_speed_chroma_u_score",
-                                                   CLIP(score_u), index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "Speed_chroma_feature_speed_chroma_v_score",
-                                                   CLIP(score_v), index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "Speed_chroma_feature_speed_chroma_uv_score",
-                                                   CLIP(score_uv), index);
-#undef CLIP
-
-    return err;
+    /* Every clamp here was a less-than comparison, and every comparison
+     * against NaN is false, so a non-finite score was published as
+     * speed_chroma_max_val -- a finite, plausible 1000.0 standing in for a
+     * computation that produced no number, and invisible to the parity
+     * harness's own isfinite() assertion. speed_internal_clamp_score() checks
+     * finiteness first and fails the frame, matching the CPU reference and
+     * the brisque.c / y_funque_plus.c convention. Finite scores clamp exactly
+     * as before. */
+    return append_chroma_scores(s, feature_collector, score_u, score_v, score_uv, index);
 
 fail_after_push:
     /* The context was pushed but the pop failed: attempt the pop once more so
