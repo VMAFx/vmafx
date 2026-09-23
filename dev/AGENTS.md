@@ -66,7 +66,7 @@ kernel's i915 / xe / KFD ioctl ABI, or `vmaf --backend sycl|hip`
 silently falls back to CPU. Two hard pins live in
 `dev/Containerfile`:
 
-- **`ARG NEO_VER=26.31.39395.13`** and shared `LEVEL_ZERO_VERSION`.
+- **`ARG NEO_VER`** and shared `LEVEL_ZERO_VERSION`.
   Pinned via GitHub releases: Intel's `noble/unified` APT repo's
   newest as of 2026-05-18 = `25.18.x`, too old for kernel ≥ 7.0.
   Level Zero loader comes from `oneapi-src/level-zero`. Its
@@ -81,6 +81,13 @@ silently falls back to CPU. Two hard pins live in
   ARGs. Matching `gmmlib` and `IGC` deb packages dynamically
   derived, verified against published sha256 checksums at build time
   by `dev/scripts/fetch-intel-neo.py`.
+  **GitHub credential transport (ADR-1271):** the optional API token is the
+  BuildKit secret `github_token`, exposed as `GITHUB_TOKEN` only to the NEO
+  fetch `RUN`. Never reintroduce `ARG GITHUB_TOKEN`, `ENV GITHUB_TOKEN`, or a
+  token-valued `--build-arg`. Raw anonymous builds omit `--secret`; Compose
+  maps the host variable and treats unset or empty input as anonymous. Keep
+  `scripts/ci/check-dev-container-build-secret.py`, its fixture tests, and the
+  Docker/Compose `--check` workflow steps wired together.
 - **Digest-pinned `rocm-src` stage**
   (`rocm/dev-ubuntu-26.04:10.0.0-full`) replaces old `ARG ROCM_VER` +
   `repo.radeon.com/rocm/apt/` install. **Invariant (ADR-1225 /

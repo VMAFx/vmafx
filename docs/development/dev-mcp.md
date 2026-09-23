@@ -60,6 +60,40 @@ docker compose --project-directory "$(pwd)" -f dev/docker-compose.yml build
 but it performs no such check and leaves the image recording
 `source_rev=unknown`.
 
+### Optional GitHub API authentication
+
+The Intel NEO resolver works without credentials. On a shared network, an
+authenticated GitHub API request can avoid the lower anonymous rate limit.
+For Compose and the wrapper scripts, export `GITHUB_TOKEN` before the build;
+`dev/docker-compose.yml` maps it to the optional `github_token` build secret.
+An unset or empty value keeps the build anonymous.
+
+For a raw anonymous build, omit the secret entirely:
+
+```bash
+env -u GITHUB_TOKEN docker build \
+  --file dev/Containerfile \
+  --target libvmaf-build \
+  --tag vmaf-dev-mcp:local \
+  .
+```
+
+For an authenticated raw build, pass the exported variable as a BuildKit
+secret:
+
+```bash
+docker build \
+  --file dev/Containerfile \
+  --target libvmaf-build \
+  --tag vmaf-dev-mcp:local \
+  --secret id=github_token,env=GITHUB_TOKEN \
+  .
+```
+
+Never pass this credential with `--build-arg`. The secret is mounted only for
+the NEO metadata-fetch instruction and is not recorded in image layers,
+metadata, or provenance. See [ADR-1271](../adr/1271-neo-buildkit-github-token-secret.md).
+
 > **Important — always pass `--project-directory`.**  Without it, Docker
 > Compose v2 sets the project directory to the compose-file's parent (`dev/`),
 > causing `context: .` to resolve to `dev/` instead of the repo root.  This
@@ -426,8 +460,14 @@ A mismatch silently degrades `vmaf --backend sycl|hip` to CPU.
 
 | Pin | Current value | Why pinned |
 |---|---|---|
-| `ARG NEO_VER` | `26.31.39395.13` | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. The matching `gmmlib` and `IGC` deb packages and checksums are dynamically derived at build time by `dev/scripts/fetch-intel-neo.py` (ADR-1145). |
+| `ARG NEO_VER` | Defined in [`dev/Containerfile`](../../dev/Containerfile) | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. The matching `gmmlib` and `IGC` deb packages and checksums are dynamically derived at build time by `dev/scripts/fetch-intel-neo.py` (ADR-1145). |
 | `rocm-src` stage image | `rocm/dev-ubuntu-24.04:10.0.0-full` (digest-pinned) | Replaces the old `ARG ROCM_VER` apt install: ROCm >= 7.14 ships only as a container image (ADR-1225). ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls; 10.0.0 was verified against Linux 7.2.3 on `gfx1036`. The stage prunes ~13 GB of math libraries libvmaf never links — but never `librocprofiler-register`, which `libamdhip64.so` needs at load. |
+
+The NEO resolver accepts only GitHub-hosted HTTPS URLs. API credentials are
+sent only to `api.github.com` and are removed before cross-host redirects.
+Metadata reads are bounded, package downloads use atomic temporary files with
+transient-error retries, and checksum or Debian-package validation failures
+remove the invalid output before the build stops.
 
 `dev-mcp-entrypoint.sh` emits a runtime visibility probe on container
 start (ADR-0543): `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP
