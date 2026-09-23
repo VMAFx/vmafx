@@ -109,14 +109,19 @@ jobs:
             echo "FATAL: FFmpeg warning-hardening patch did not apply" >&2
             exit 1
           fi
-          # --disable-filter=coreimage: libavfilter/vf_coreimage.m builds against
+          # --disable-filter=coreimage AND coreimagesrc: both filters live in
+          # libavfilter/vf_coreimage.m, so disabling only the first still built the
+          # file and kept all 14 of its warnings. Measured: the run still logged
+          # `OBJCC libavfilter/vf_coreimage.o` with coreimagesrc in the enabled list.
+          # The file builds against
           # NSOpenGLPFAAccelerated, deprecated in macOS 10.14, and nothing in this
           # integration uses the filter. Scoping it out is consistent with
           # --disable-indevs above and leaves the warning gate meaningful, where
           # -DGL_SILENCE_DEPRECATION would only hide it.
           ./configure --fatal-warnings \
             --enable-version3 --enable-libvmaf --disable-indevs \
-            --disable-filter=coreimage --disable-securetransport \
+            --disable-filter=coreimage --disable-filter=coreimagesrc \
+            --disable-securetransport \
             --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
           build_jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
           make -j "$build_jobs" build 2>&1 | tee /tmp/ffmpeg-build.log
