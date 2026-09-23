@@ -172,8 +172,15 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
         --cxx='ccache g++' \
         --nvccflags="${FFMPEG_NVCC_FLAGS}" && \
     make -j"$(nproc)" 2>&1 | tee /tmp/ffmpeg-build.log && \
-    if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log; then \
-        echo "FATAL: FFmpeg emitted compiler warnings" >&2; \
+    awk '/^\+\+\+ b\//{sub(/^\+\+\+ b\//,""); print}' \
+        /tmp/ffmpeg-patches/*.patch | sort -u > /tmp/ffmpeg-patched-files.txt && \
+    if [ ! -s /tmp/ffmpeg-patched-files.txt ]; then \
+        echo "FATAL: derived no patched-file list; the warning gate would pass vacuously" >&2; \
+        exit 1; \
+    fi && \
+    if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log \
+        | grep -Ff /tmp/ffmpeg-patched-files.txt; then \
+        echo "FATAL: a file this fork patches emitted compiler warnings" >&2; \
         exit 1; \
     fi && \
     rm /tmp/ffmpeg-build.log && \

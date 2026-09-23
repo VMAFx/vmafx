@@ -155,7 +155,27 @@ class E2ERuntimeContractTest(unittest.TestCase):
                 self.assertIn("--fatal-warnings", source)
                 self.assertIn("tee /tmp/ffmpeg-build.log", source)
                 self.assertIn("grep -Ei '(^|[[:space:]])warning([[:space:]#:])'", source)
-                self.assertIn("FATAL: FFmpeg emitted compiler warnings", source)
+                # The message differs by builder because the scope does. What is
+                # pinned is that a matched warning aborts the build, not one
+                # exact sentence.
+                self.assertRegex(source, r"FATAL: .*compiler warnings")
+
+        # These builders compile far more of upstream FFmpeg than the CI
+        # workflow legs do -- gpl, nonfree and some twenty external libraries,
+        # against whatever GCC each base image ships -- so their gate covers the
+        # files this fork patches rather than all of upstream. Upstream's own
+        # diagnostics under one distro's compiler are not a line this fork can
+        # hold. The narrowing is only safe while the file list is derived and
+        # non-empty: an empty list would turn the grep into a gate that always
+        # passes. Both halves are pinned so the scoping cannot decay into a
+        # vacuous check.
+        for dockerfile in (ROOT_DOCKERFILE, NODE_DOCKERFILE, DEV_CONTAINERFILE):
+            with self.subTest(scoped=dockerfile.name):
+                scoped = dockerfile.read_text(encoding="utf-8")
+                self.assertIn("ffmpeg-patches/*.patch", scoped)
+                self.assertIn("grep -Ff /tmp/ffmpeg-patched-files.txt", scoped)
+                self.assertIn("if [ ! -s /tmp/ffmpeg-patched-files.txt ]", scoped)
+                self.assertIn("derived no patched-file list", scoped)
 
         compatibility = FFMPEG_DOCKERFILE.read_text(encoding="utf-8")
         self.assertIn("COPY ffmpeg-patches/ /tmp/ffmpeg-patches/", compatibility)
