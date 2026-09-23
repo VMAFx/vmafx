@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/semgrep-python-warning-alerts — Semgrep SHA-1 upgrade and socket permission invariant (2026-09-23)
+
+1. **`compat/python-vmaf/tools/decorator.py` memoization keys use SHA-256.**
+   The upgrade from `hashlib.sha1` to `hashlib.sha256(..., usedforsecurity=False)`
+   clears Semgrep alerts 947, 948, and 949 at source. Backward-compatible read-through
+   migration ensures legacy SHA-1 entries and files are read and promoted atomically to
+   SHA-256 without recomputing; new entries strictly use SHA-256. Do not revert to SHA-1
+   during upstream merges; if upstream changes `decorator.py`, retain SHA-256 with
+   read-through compatibility and `usedforsecurity=False`.
+2. **`ai/sidecar/online_trainer.py` Unix domain socket mode `0o660` is mandatory.**
+   Semgrep alert 946 flags `os.chmod(socket_path, 0o660)`. Mode `0o660` is required
+   for same-group Go peer IPC in Kubernetes pods (connecting requires `stat.S_IWGRP`);
+   Semgrep's suggested fix `0o644` strips group write and breaks IPC, while leaking
+   world read. Do not weaken or change `0o660` during rebases. An inline `# nosemgrep`
+   directive is maintained per ADR-1222 with research documented in Research-2078.
+
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
 1. **`scripts/ci/silent-revert-allowlist.json` describes the *difference* between

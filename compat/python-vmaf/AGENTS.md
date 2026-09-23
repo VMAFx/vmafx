@@ -175,6 +175,16 @@ python/vmaf/
   inline argument parsing. Every index expression, accumulation order and
   error string is unchanged; `edges[]` is filled with a bounded copy because
   HISS-08 bans `strcpy()`. See `docs/rebase-notes.md`.
+- **Memoization cache key stability (SHA-256) (T-SEMGREP-WARNING-ALERTS-946-949-2026-09-23).**
+  `tools/decorator.py` generates in-memory and per-process disk cache keys in
+  `@persist`, `@persist_to_file`, and `@persist_to_dir` using
+  `hashlib.sha256(..., usedforsecurity=False)` with backward-compatible read-through
+  migration for legacy SHA-1 entries. Legacy entries and files are loaded and promoted
+  atomically to SHA-256 without recomputing; new entries strictly use SHA-256. These keys
+  are strictly for non-security runtime memoization, do not touch durable pipeline models or
+  Netflix golden assertions, and resolve Semgrep warning alerts 947–949. Regression
+  tests in `compat/vmaf/tests/test_decorator_extended.py` guard key length (64 hex
+  characters), golden vectors, collision resistance, and legacy migration.
 
 ## Governing ADRs
 

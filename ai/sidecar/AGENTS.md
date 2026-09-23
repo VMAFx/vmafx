@@ -26,3 +26,13 @@ Implements vmafx-node online training sidecar (ADR-0781).
 5. **No NFL golden-data path** — package has no connection to Netflix
    golden-data test fixtures or `python/test/` assertion values. Changes here
    cannot affect those tests.
+
+6. **Unix socket permissions (mode `0o660`) and ownership** — The Unix domain
+   socket must be created with permission mode exactly `0o660` (`rw-rw----`)
+   and owned by the server process EUID/EGID. Mode `0o660` is intentional and
+   mandatory to allow the same-group Go node peer running in a shared Kubernetes
+   pod / `emptyDir` volume to connect and transmit feedback samples (requiring
+   `stat.S_IWGRP`). Alternative permissions (`0o644` strips group write, `0o600`
+   denies group access across UIDs) break IPC; mode `0o660` maintains strict
+   least-privilege with zero other/world access (`0o000`). Documented inline for
+   Semgrep alert 946 per ADR-1222.

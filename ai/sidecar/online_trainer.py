@@ -358,10 +358,7 @@ def _handle_connection(
     logger.debug("Connection from %s", addr)
     buf = b""
     try:
-        while True:
-            chunk = conn.recv(65536)
-            if not chunk:
-                break
+        while chunk := conn.recv(65536):
             buf += chunk
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
@@ -394,6 +391,7 @@ def run_server(
     socket_path: str = _SOCKET_PATH,
     trainer: OnlineTrainer | None = None,
     n_features: int = 80,
+    stop_event: threading.Event | None = None,
 ) -> None:
     """Start the Unix-socket server.  Blocks until SIGTERM/SIGINT.
 
@@ -405,6 +403,8 @@ def run_server(
         ``OnlineTrainer`` instance.  Constructed with defaults when None.
     n_features:
         Feature vector dimension.  Used only when *trainer* is None.
+    stop_event:
+        Optional ``threading.Event`` to trigger shutdown programmatically.
     """
     if trainer is None:
         trainer = OnlineTrainer(
@@ -423,27 +423,28 @@ def run_server(
         os.unlink(socket_path)
 
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(socket_path)
-    # Mode 0o660 grants user+group read/write with 0 world permissions;
-    # required for Unix-domain socket IPC with the Go node peer running in the same group.
-    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
-    os.chmod(socket_path, 0o660)
-    srv.listen(16)
-    srv.settimeout(1.0)  # allows the signal check below to fire promptly
-
-    _stop = threading.Event()
-
-    def _sighandler(signum: int, _frame: Any) -> None:
-        logger.info("Received signal %d — initiating shutdown", signum)
-        _stop.set()
-
-    signal.signal(signal.SIGTERM, _sighandler)
-    signal.signal(signal.SIGINT, _sighandler)
-
-    logger.info("vmafx-sidecar listening on %s", socket_path)
-
-    threads: list[threading.Thread] = []
     try:
+        srv.bind(socket_path)
+        # Mode 0o660 grants user+group read/write with 0 world permissions;
+        # required for Unix-domain socket IPC with the Go node peer running in the same group.
+        # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+        os.chmod(socket_path, 0o660)
+        srv.listen(16)
+        srv.settimeout(1.0)  # allows the signal check below to fire promptly
+
+        _stop = stop_event if stop_event is not None else threading.Event()
+
+        def _sighandler(signum: int, _frame: Any) -> None:
+            logger.info("Received signal %d — initiating shutdown", signum)
+            _stop.set()
+
+        with contextlib.suppress(ValueError):
+            signal.signal(signal.SIGTERM, _sighandler)
+            signal.signal(signal.SIGINT, _sighandler)
+
+        logger.info("vmafx-sidecar listening on %s", socket_path)
+
+        threads: list[threading.Thread] = []
         while not _stop.is_set():
             try:
                 conn, _ = srv.accept()
@@ -453,6 +454,10 @@ def run_server(
                 if _stop.is_set():
                     break
                 raise
+            if _stop.is_set():
+                with contextlib.suppress(OSError):
+                    conn.close()
+                break
             t = threading.Thread(
                 target=_handle_connection,
                 args=(conn, trainer),
@@ -463,6 +468,8 @@ def run_server(
             # Prune dead threads to avoid unbounded list growth.
             threads = [tt for tt in threads if tt.is_alive()]
     finally:
+        for t in threads:
+            t.join(timeout=1.0)
         srv.close()
         with contextlib.suppress(FileNotFoundError):
             os.unlink(socket_path)

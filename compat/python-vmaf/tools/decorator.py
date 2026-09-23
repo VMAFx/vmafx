@@ -32,6 +32,17 @@ def deprecated(func):
     return new_func
 
 
+def _write_json_cache_atomic(file_path, data):
+    """Write JSON data to a temporary file and atomically replace the destination."""
+    file_dir = os.path.dirname(file_path)
+    if file_dir:
+        os.makedirs(file_dir, exist_ok=True)
+    temp_file = f"{file_path}.tmp.{os.getpid()}"
+    with open(temp_file, "wt") as fh:
+        json.dump(data, fh)
+    os.replace(temp_file, file_path)
+
+
 def persist(original_func):
     """
     Cache returned value of function in a function. Useful when calling functions
@@ -42,15 +53,26 @@ def persist(original_func):
     cache = {}
 
     def new_func(*args):
-        # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
-        # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
+        raw_key = (str(original_func.__name__) + str(args)).encode()
+        # Primary lookup uses modern SHA-256 key (64 hex characters).
+        # usedforsecurity=False indicates non-cryptographic memoization (FIPS compliance).
+        h = hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
+        if h in cache:
+            return cache[h]
+
+        # Backward-compatible read-through migration: check legacy SHA-1 key.
+        # Required for compatibility lookup of pre-existing cache entries.
         # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-        h = hashlib.sha1(
-            (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
-        ).hexdigest()
-        if h not in cache:
-            cache[h] = original_func(*args)
-        return cache[h]
+        h_legacy = hashlib.sha1(raw_key, usedforsecurity=False).hexdigest()
+        if h_legacy in cache:
+            val = cache[h_legacy]
+            cache[h] = val
+            return val
+
+        # Absent from both: compute value and write SHA-256 key only. Never create new SHA-1 keys.
+        val = original_func(*args)
+        cache[h] = val
+        return val
 
     return new_func
 
@@ -114,19 +136,29 @@ def persist_to_file(file_name):
                 sys.exit(1)
 
         def new_func(*args):
-            # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
-            # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
+            raw_key = (str(original_func.__name__) + str(args)).encode()
+            # Primary lookup uses modern SHA-256 key (64 hex characters).
+            # usedforsecurity=False indicates non-cryptographic memoization (FIPS compliance).
+            h = hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
+            if h in cache:
+                return cache[h]
+
+            # Backward-compatible read-through migration: check legacy SHA-1 key in existing JSON cache.
+            # If an existing entry was created under prior SHA-1 indexing, read it and promote
+            # it to the SHA-256 key, persisting atomically so subsequent reads hit the primary key.
             # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            h = hashlib.sha1(
-                (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
-            ).hexdigest()
-            if h not in cache:
-                cache[h] = original_func(*args)
-                file_dir = os.path.dirname(file_name)
-                os.makedirs(file_dir, exist_ok=True)
-                with open(file_name, "wt") as fh:
-                    json.dump(cache, fh)
-            return cache[h]
+            h_legacy = hashlib.sha1(raw_key, usedforsecurity=False).hexdigest()
+            if h_legacy in cache:
+                val = cache[h_legacy]
+                cache[h] = val
+                _write_json_cache_atomic(file_name, cache)
+                return val
+
+            # Absent from both: compute value and write SHA-256 key only. Never write new SHA-1 keys.
+            val = original_func(*args)
+            cache[h] = val
+            _write_json_cache_atomic(file_name, cache)
+            return val
 
         return new_func
 
@@ -141,21 +173,31 @@ def persist_to_dir(dir_name):
     def decorator(original_func):
 
         def new_func(*args):
-            # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
-            # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            h = hashlib.sha1(
-                (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
-            ).hexdigest()
+            raw_key = (str(original_func.__name__) + str(args)).encode()
+            # Primary lookup uses modern SHA-256 filename (64 hex characters).
+            # usedforsecurity=False indicates non-cryptographic memoization (FIPS compliance).
+            h = hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
             file_name = os.path.join(dir_name, h)
-            if not os.path.exists(file_name):
-                os.makedirs(dir_name, exist_ok=True)
-                res = original_func(*args)
-                with open(file_name, "wt") as fh:
-                    json.dump(res, fh)
-            else:
+
+            if os.path.exists(file_name):
                 with open(file_name, "rt") as fh:
+                    return json.load(fh)
+
+            # Backward-compatible read-through migration: check legacy SHA-1 filename.
+            # If an existing cache file exists under the 40-hex SHA-1 name, load its value,
+            # promote it to the SHA-256 file atomically, and return it without re-computing.
+            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+            h_legacy = hashlib.sha1(raw_key, usedforsecurity=False).hexdigest()
+            legacy_file = os.path.join(dir_name, h_legacy)
+            if os.path.exists(legacy_file):
+                with open(legacy_file, "rt") as fh:
                     res = json.load(fh)
+                _write_json_cache_atomic(file_name, res)
+                return res
+
+            # Absent from both: compute value and write SHA-256 file only. Never create new SHA-1 files.
+            res = original_func(*args)
+            _write_json_cache_atomic(file_name, res)
             return res
 
         return new_func
