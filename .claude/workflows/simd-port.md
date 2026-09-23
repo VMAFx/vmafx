@@ -26,7 +26,7 @@ forbidden:
   - lower_test_thresholds
   - replace_libm_without_lut           # ADR-0164: deterministic LUTs only
 master_status_check: true
-backlog_id: null                       # set to the relevant T3-x / T7-x row
+backlog_id: null                       # copy the stable backtick ID from BACKLOG.md
 
 ---
 

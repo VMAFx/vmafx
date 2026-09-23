@@ -44,7 +44,7 @@ forbidden:
   - modify_netflix_golden_assertions
   - lower_test_thresholds
 master_status_check: true
-backlog_id: T3-9
+backlog_id: T-RC1-MASTER-GREEN
 ```
 
 The body below the front matter is the prompt template. `{{...}}`
@@ -77,6 +77,24 @@ verdict. Use `--task-tag` for deliberately untracked work. The two `--skip-*`
 flags are explicit offline overrides; without one, an incomplete check never
 becomes an eligible dispatch.
 
+The current local backlog uses an explicit checklist schema. Every checkbox
+must carry a stable backtick ID immediately after it:
+
+```markdown
+2. [ ] `T-RC1-MASTER-GREEN` **Master green and the queue drained**
+7. [ ] `T-RC1-BENCH-TUNE` **[BLOCKED]** **Bench and tune**
+1. [x] `T-RC1-RELEASE-PIPELINE` **Release pipeline correct and idle**
+```
+
+`[x]` means `DONE`; unchecked rows default to `OPEN` and may start their title
+with `**[BLOCKED]**`, `**[DEFERRED]**`, or `**[IN_FLIGHT]**`. Wrapped,
+indented lines remain part of the item. A checkbox without a stable ID, a
+duplicate ID, an unknown explicit marker, a marker that contradicts the
+checkbox, or an existing backlog with no tracked items is a schema error and
+blocks dispatch. The parser never invents an ID from list order, title text,
+or a GitHub issue number. Retired pipe-table rows remain readable during
+migration. See [ADR-1303](../adr/1303-backlog-checklist-tracker-schema.md).
+
 It runs three checks:
 
 1. **BACKLOG row not closed.** Parses
@@ -96,9 +114,9 @@ Verdicts go to **stderr** in GitHub Actions `::error` format so a
 wrapping CI script can parse them:
 
 ```bash
-$ python3 scripts/ci/agent-eligibility-precheck.py --backlog-id T0-1 --skip-gh-search --skip-active-scan
-agent-eligibility-precheck: scope=T0-1
-::error title=agent-eligibility: T0-1 is DONE::BACKLOG.md row already closed (PRs: #72). Title: Port cuMemFreeAsync → cuMemFree
+$ python3 scripts/ci/agent-eligibility-precheck.py --backlog-id T-RC1-RELEASE-PIPELINE --skip-gh-search --skip-active-scan
+agent-eligibility-precheck: scope=T-RC1-RELEASE-PIPELINE
+::error title=agent-eligibility: T-RC1-RELEASE-PIPELINE is DONE::BACKLOG.md row already closed (PRs: none recorded). Title: Release pipeline correct and idle
 agent-eligibility-precheck: VERDICT=FAIL — do not dispatch.
 
 $ echo "exit=$?"
@@ -106,9 +124,9 @@ exit=1
 ```
 
 ```bash
-$ python3 scripts/ci/agent-eligibility-precheck.py --backlog-id T3-7 --skip-gh-search --skip-active-scan
-agent-eligibility-precheck: scope=T3-7
-  backlog: T3-7 status=OPEN priority=3 — OK
+$ python3 scripts/ci/agent-eligibility-precheck.py --backlog-id T-RC1-MASTER-GREEN --skip-gh-search --skip-active-scan
+agent-eligibility-precheck: scope=T-RC1-MASTER-GREEN
+  backlog: T-RC1-MASTER-GREEN status=OPEN priority=None — OK
 agent-eligibility-precheck: VERDICT=PASS — dispatch eligible.
 
 $ echo "exit=$?"
@@ -148,11 +166,11 @@ bk = BacklogTracker()                    # autodetects .workingdir/BACKLOG.md
 bk.list_open()                           # -> list[BacklogItem]
 bk.list_in_flight()                      # -> list[BacklogItem]
 bk.list_closed()                         # -> list[BacklogItem]
-bk.get("T3-9")                           # -> BacklogItem | None
+bk.get("T-RC1-MASTER-GREEN")            # -> BacklogItem | None
 
 gh = GitHubTracker(repo="VMAFx/vmafx")
 gh.merged_prs_since(some_datetime)       # -> list[dict]
-gh.search_prs("T3-9 in:title,body")      # -> list[dict]
+gh.search_prs("T-RC1-MASTER-GREEN in:title,body")  # -> list[dict]
 gh.open_agent_branches()                 # -> list[str]
 ```
 
@@ -161,7 +179,7 @@ gh.open_agent_branches()                 # -> list[str]
 ```python
 @dataclass
 class BacklogItem:
-    id: str            # "T3-9", "T7-10b", "TA-VOCAB"
+    id: str            # "T-RC1-MASTER-GREEN"
     title: str         # markdown-stripped first cell
     status: str        # OPEN | IN_FLIGHT | DONE | CLOSED | REMOVED | BLOCKED | DEFERRED
     priority: int | None   # tier number (T0=0, T7=7, TA-* = None)

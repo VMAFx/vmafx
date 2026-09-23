@@ -28,7 +28,7 @@ forbidden:
   - skip_gpu_parity_gate               # T6-8 / ADR-0214 is a required CI status check
   - claim_gpu_bit_exact                # feedback_golden_gate_cpu_only: never claim CPU bit-exact
 master_status_check: true
-backlog_id: null                       # set to "T3-12", "T7-36", etc.
+backlog_id: null                       # copy the stable backtick ID from BACKLOG.md
 
 ---
 
