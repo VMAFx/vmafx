@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-22T17:38:57Z",
+  "generated_at": "2026-09-23T22:40:39Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 276,
+  "total_infractions": 268,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -640,66 +640,66 @@
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/adm.c",
-      "line_number": 175,
+      "line_number": 174,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:175:HISS-01"
+      "fingerprint": "core/src/feature/adm.c:174:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/adm.c",
-      "line_number": 181,
+      "line_number": 180,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:181:HISS-01"
+      "fingerprint": "core/src/feature/adm.c:180:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/adm.c",
-      "line_number": 197,
+      "line_number": 196,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:197:HISS-01"
+      "fingerprint": "core/src/feature/adm.c:196:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/adm.c",
-      "line_number": 213,
+      "line_number": 212,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:213:HISS-01"
+      "fingerprint": "core/src/feature/adm.c:212:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/adm.c",
-      "line_number": 238,
+      "line_number": 237,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:238:HISS-01"
+      "fingerprint": "core/src/feature/adm.c:237:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/adm.c",
-      "line_number": 241,
+      "line_number": 240,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:241:HISS-01"
+      "fingerprint": "core/src/feature/adm.c:240:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/adm.c",
-      "line_number": 249,
+      "line_number": 248,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:249:HISS-01"
+      "fingerprint": "core/src/feature/adm.c:248:HISS-01"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/adm.c",
-      "line_number": 252,
+      "line_number": 251,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:252:HISS-01"
+      "fingerprint": "core/src/feature/adm.c:251:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/adm.c",
-      "line_number": 124,
+      "line_number": 123,
       "symbol": "compute_adm",
-      "message": "Function 'compute_adm' (269 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/adm.c:124:HISS-04"
+      "message": "Function 'compute_adm' (259 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/adm.c:123:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -752,98 +752,98 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 81,
+      "line_number": 82,
       "symbol": "ssimulacra2_linear_rgb_to_xyb_neon",
       "message": "Function 'ssimulacra2_linear_rgb_to_xyb_neon' (93 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:81:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:82:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 231,
+      "line_number": 232,
       "symbol": "ssimulacra2_ssim_map_neon",
       "message": "Function 'ssimulacra2_ssim_map_neon' (63 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:231:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:232:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 298,
+      "line_number": 299,
       "symbol": "ssimulacra2_edge_diff_map_neon",
-      "message": "Function 'ssimulacra2_edge_diff_map_neon' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:298:HISS-04"
+      "message": "Function 'ssimulacra2_edge_diff_map_neon' (67 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:299:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 369,
+      "line_number": 372,
       "symbol": "hblur_4rows_neon",
       "message": "Function 'hblur_4rows_neon' (77 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:369:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:372:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 452,
+      "line_number": 455,
       "symbol": "vblur_simd_4cols_neon",
       "message": "Function 'vblur_simd_4cols_neon' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:452:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:455:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_neon.c",
-      "line_number": 632,
+      "line_number": 635,
       "symbol": "ssimulacra2_picture_to_linear_rgb_neon",
       "message": "Function 'ssimulacra2_picture_to_linear_rgb_neon' (113 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:632:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_neon.c:635:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 104,
+      "line_number": 105,
       "symbol": "ssimulacra2_linear_rgb_to_xyb_sve2",
       "message": "Function 'ssimulacra2_linear_rgb_to_xyb_sve2' (94 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:104:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:105:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 263,
+      "line_number": 264,
       "symbol": "ssimulacra2_ssim_map_sve2",
       "message": "Function 'ssimulacra2_ssim_map_sve2' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:263:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:264:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 333,
+      "line_number": 334,
       "symbol": "ssimulacra2_edge_diff_map_sve2",
-      "message": "Function 'ssimulacra2_edge_diff_map_sve2' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:333:HISS-04"
+      "message": "Function 'ssimulacra2_edge_diff_map_sve2' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:334:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 407,
+      "line_number": 410,
       "symbol": "hblur_4rows_sve2",
       "message": "Function 'hblur_4rows_sve2' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:407:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:410:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 487,
+      "line_number": 490,
       "symbol": "vblur_simd_4cols_sve2",
       "message": "Function 'vblur_simd_4cols_sve2' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:487:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:490:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_sve2.c",
-      "line_number": 673,
+      "line_number": 676,
       "symbol": "ssimulacra2_picture_to_linear_rgb_sve2",
       "message": "Function 'ssimulacra2_picture_to_linear_rgb_sve2' (114 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:673:HISS-04"
+      "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:676:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -1206,64 +1206,6 @@
       "fingerprint": "core/src/feature/feature_extractor.cpp:1263:HISS-01"
     },
     {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/float_vif.c",
-      "line_number": 240,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/float_vif.c:240:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/float_vif.c",
-      "line_number": 243,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/float_vif.c:243:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/float_vif.c",
-      "line_number": 246,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/float_vif.c:246:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/float_vif.c",
-      "line_number": 249,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/float_vif.c:249:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/float_vif.c",
-      "line_number": 261,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/float_vif.c:261:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/float_vif.c",
-      "line_number": 276,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/float_vif.c:276:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/float_vif.c",
-      "line_number": 190,
-      "symbol": "init",
-      "message": "Function 'init' (104 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/float_vif.c:190:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/float_vif.c",
-      "line_number": 298,
-      "symbol": "extract",
-      "message": "Function 'extract' (99 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/float_vif.c:298:HISS-04"
-    },
-    {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/hip/float_adm/float_adm_score.hip",
       "line_number": 359,
@@ -1394,33 +1336,33 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/ssimulacra2.c",
-      "line_number": 344,
+      "line_number": 346,
       "symbol": "create_recursive_gaussian",
       "message": "Function 'create_recursive_gaussian' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/ssimulacra2.c:344:HISS-04"
+      "fingerprint": "core/src/feature/ssimulacra2.c:346:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/ssimulacra2.c",
-      "line_number": 468,
+      "line_number": 470,
       "symbol": "picture_to_linear_rgb",
       "message": "Function 'picture_to_linear_rgb' (111 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/ssimulacra2.c:468:HISS-04"
+      "fingerprint": "core/src/feature/ssimulacra2.c:470:HISS-04"
     },
     {
       "rule_id": "HISS-01",
       "file_path": "core/src/feature/ssimulacra2.c",
-      "line_number": 1030,
+      "line_number": 1028,
       "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/ssimulacra2.c:1030:HISS-01"
+      "fingerprint": "core/src/feature/ssimulacra2.c:1028:HISS-01"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/ssimulacra2.c",
-      "line_number": 1075,
+      "line_number": 1084,
       "symbol": "extract",
       "message": "Function 'extract' (61 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/ssimulacra2.c:1075:HISS-04"
+      "fingerprint": "core/src/feature/ssimulacra2.c:1084:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -1585,26 +1527,26 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/ssimulacra2_sycl.cpp",
-      "line_number": 326,
+      "line_number": 327,
       "symbol": "ss2s_picture_to_linear_rgb",
       "message": "Function 'ss2s_picture_to_linear_rgb' (78 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:326:HISS-04"
+      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:327:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/ssimulacra2_sycl.cpp",
-      "line_number": 523,
+      "line_number": 524,
       "symbol": "launch_blur",
       "message": "Function 'launch_blur' (91 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:523:HISS-04"
+      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:524:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/ssimulacra2_sycl.cpp",
-      "line_number": 797,
+      "line_number": 794,
       "symbol": "extract_fex_sycl",
-      "message": "Function 'extract_fex_sycl' (81 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:797:HISS-04"
+      "message": "Function 'extract_fex_sycl' (87 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:794:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -1881,74 +1823,74 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/ssimulacra2_avx2.c",
-      "line_number": 112,
+      "line_number": 113,
       "symbol": "ssimulacra2_linear_rgb_to_xyb_avx2",
       "message": "Function 'ssimulacra2_linear_rgb_to_xyb_avx2' (109 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:112:HISS-04"
+      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:113:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/ssimulacra2_avx2.c",
-      "line_number": 331,
+      "line_number": 333,
       "symbol": "ssimulacra2_ssim_map_avx2",
       "message": "Function 'ssimulacra2_ssim_map_avx2' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:331:HISS-04"
+      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:333:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/ssimulacra2_avx2.c",
-      "line_number": 471,
+      "line_number": 473,
       "symbol": "hblur_8rows_avx2",
       "message": "Function 'hblur_8rows_avx2' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:471:HISS-04"
+      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:473:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/ssimulacra2_avx2.c",
-      "line_number": 554,
+      "line_number": 556,
       "symbol": "vblur_simd_8cols_avx2",
       "message": "Function 'vblur_simd_8cols_avx2' (75 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:554:HISS-04"
+      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:556:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/ssimulacra2_avx2.c",
-      "line_number": 764,
+      "line_number": 766,
       "symbol": "ssimulacra2_picture_to_linear_rgb_avx2",
       "message": "Function 'ssimulacra2_picture_to_linear_rgb_avx2' (129 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:764:HISS-04"
+      "fingerprint": "core/src/feature/x86/ssimulacra2_avx2.c:766:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/ssimulacra2_avx512.c",
-      "line_number": 126,
+      "line_number": 128,
       "symbol": "ssimulacra2_linear_rgb_to_xyb_avx512",
       "message": "Function 'ssimulacra2_linear_rgb_to_xyb_avx512' (93 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/ssimulacra2_avx512.c:126:HISS-04"
+      "fingerprint": "core/src/feature/x86/ssimulacra2_avx512.c:128:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/ssimulacra2_avx512.c",
-      "line_number": 279,
+      "line_number": 281,
       "symbol": "ssimulacra2_ssim_map_avx512",
       "message": "Function 'ssimulacra2_ssim_map_avx512' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/ssimulacra2_avx512.c:279:HISS-04"
+      "fingerprint": "core/src/feature/x86/ssimulacra2_avx512.c:281:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/ssimulacra2_avx512.c",
-      "line_number": 455,
+      "line_number": 457,
       "symbol": "vblur_simd_16cols_avx512",
       "message": "Function 'vblur_simd_16cols_avx512' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/ssimulacra2_avx512.c:455:HISS-04"
+      "fingerprint": "core/src/feature/x86/ssimulacra2_avx512.c:457:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/x86/ssimulacra2_avx512.c",
-      "line_number": 660,
+      "line_number": 662,
       "symbol": "ssimulacra2_picture_to_linear_rgb_avx512",
       "message": "Function 'ssimulacra2_picture_to_linear_rgb_avx512' (120 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/ssimulacra2_avx512.c:660:HISS-04"
+      "fingerprint": "core/src/feature/x86/ssimulacra2_avx512.c:662:HISS-04"
     },
     {
       "rule_id": "HISS-04",

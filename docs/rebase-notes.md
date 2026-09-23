@@ -52682,3 +52682,8 @@ backend. `ssimulacra2_score.h` owns the edge sign split and final polynomial
 mapping for scalar, AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and Metal. Do
 not re-inline one backend's old ordered comparisons: both are false for NaN and
 the old final `else` returned the perfect `100.0`.
+
+The helper extractions reduce the generated HISS baseline from 276 to 268
+infractions. Preserve the downward `.standards-baseline.json` ratchet and the
+matching managed count in `README.md`; regenerate with the pinned `praetorctl`
+instead of restoring stale line fingerprints during a rebase.

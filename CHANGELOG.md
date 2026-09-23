@@ -26654,7 +26654,9 @@ x86-64 build, and an aarch64 cross build under `qemu-aarch64-static`.
   piecewise mapping no longer reports `0.0`. SSIMULACRA2's scalar, SIMD, CUDA,
   HIP, SYCL and Metal hosts share the same failure semantics. See ADR-1302.
 - The Netflix golden gate is unchanged at `271 passed, 12 skipped`, and the
-  clang-tidy ratchet is unmoved, so no pinned score and no debt count moves.
+  touched clang-tidy warning allowances are unchanged. The generated HISS
+  baseline tightens from 276 to 268 after the helper extractions remove eight
+  infractions; no Netflix golden assertion changes.
 
 
 - `BrisqueNorefFeatureExtractor.extract_aggd_features` no longer flattens its
