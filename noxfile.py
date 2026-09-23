@@ -49,10 +49,10 @@ nox.options.reuse_existing_virtualenvs = True
 
 @nox.session(name="ai")
 def ai_tests(session: nox.Session) -> None:
-    """Run the ``ai/`` package pytest suite (tiny-AI training scripts)."""
+    """Run the ``ai/`` package pytest suite (tiny-AI training scripts and sidecar)."""
     session.install("-e", "./ai")
     session.install("pytest")
-    session.run("pytest", "ai/tests/", "-v", *session.posargs)
+    session.run("pytest", "ai/tests/", "ai/sidecar/tests/", "-v", *session.posargs)
 
 
 @nox.session(name="mcp")

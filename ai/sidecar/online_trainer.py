@@ -36,6 +36,7 @@ import signal
 import socket
 import sys
 import threading
+import time
 from typing import Any
 
 from .replay_buffer import ReplayBuffer, Sample
@@ -344,9 +345,57 @@ class OnlineTrainer:
 # ---------------------------------------------------------------------------
 
 
+class _ConnectionRegistry:
+    """Thread-safe registry for active client connections.
+
+    Encapsulates connection tracking and synchronization into an atomic
+    abstraction, preventing invalid half-state from separate collection and lock
+    parameters while preserving deterministic shutdown semantics.
+    """
+
+    def __init__(self) -> None:
+        self._conns: set[socket.socket] = set()
+        self._lock = threading.Lock()
+
+    def register_if_active(self, conn: socket.socket, stop_event: threading.Event) -> bool:
+        """Atomically register *conn* if *stop_event* is clear.
+
+        If *stop_event* is set, closes *conn* immediately and returns False,
+        preventing connection leaks during shutdown races.
+        """
+        with self._lock:
+            if stop_event.is_set():
+                with contextlib.suppress(OSError):
+                    conn.close()
+                return False
+            self._conns.add(conn)
+            return True
+
+    def discard(self, conn: socket.socket) -> None:
+        """Atomically remove *conn* without closing it."""
+        with self._lock:
+            self._conns.discard(conn)
+
+    def close_all(self) -> None:
+        """Atomically extract all connections, shut them down, and close them."""
+        with self._lock:
+            conns = list(self._conns)
+            self._conns.clear()
+        for c in conns:
+            with contextlib.suppress(OSError):
+                c.shutdown(socket.SHUT_RDWR)
+            with contextlib.suppress(OSError):
+                c.close()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._conns)
+
+
 def _handle_connection(
     conn: socket.socket,
     trainer: OnlineTrainer,
+    registry: _ConnectionRegistry | None = None,
 ) -> None:
     """Handle one client connection (vmafx-node goroutine).
 
@@ -354,14 +403,14 @@ def _handle_connection(
     writes JSON ACK responses.  The connection is closed when the client
     disconnects or sends malformed data.
     """
-    addr = conn.getpeername() if conn.type != socket.AF_UNIX else "<unix>"
+    try:
+        addr = conn.getpeername() if conn.type != socket.AF_UNIX else "<unix>"
+    except OSError:
+        addr = "<closed>"
     logger.debug("Connection from %s", addr)
     buf = b""
     try:
-        while True:
-            chunk = conn.recv(65536)
-            if not chunk:
-                break
+        while chunk := conn.recv(65536):
             buf += chunk
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
@@ -385,6 +434,8 @@ def _handle_connection(
     except OSError as exc:
         logger.debug("Connection closed: %s", exc)
     finally:
+        if registry is not None:
+            registry.discard(conn)
         with contextlib.suppress(OSError):
             conn.close()
     logger.debug("Connection from %s closed", addr)
@@ -394,6 +445,7 @@ def run_server(
     socket_path: str = _SOCKET_PATH,
     trainer: OnlineTrainer | None = None,
     n_features: int = 80,
+    stop_event: threading.Event | None = None,
 ) -> None:
     """Start the Unix-socket server.  Blocks until SIGTERM/SIGINT.
 
@@ -405,6 +457,8 @@ def run_server(
         ``OnlineTrainer`` instance.  Constructed with defaults when None.
     n_features:
         Feature vector dimension.  Used only when *trainer* is None.
+    stop_event:
+        Optional ``threading.Event`` to trigger shutdown programmatically.
     """
     if trainer is None:
         trainer = OnlineTrainer(
@@ -423,27 +477,32 @@ def run_server(
         os.unlink(socket_path)
 
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(socket_path)
-    # Mode 0o660 grants user+group read/write with 0 world permissions;
-    # required for Unix-domain socket IPC with the Go node peer running in the same group.
-    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
-    os.chmod(socket_path, 0o660)
-    srv.listen(16)
-    srv.settimeout(1.0)  # allows the signal check below to fire promptly
-
-    _stop = threading.Event()
-
-    def _sighandler(signum: int, _frame: Any) -> None:
-        logger.info("Received signal %d — initiating shutdown", signum)
-        _stop.set()
-
-    signal.signal(signal.SIGTERM, _sighandler)
-    signal.signal(signal.SIGINT, _sighandler)
-
-    logger.info("vmafx-sidecar listening on %s", socket_path)
-
     threads: list[threading.Thread] = []
+    registry = _ConnectionRegistry()
+    old_sigterm: Any = None
+    old_sigint: Any = None
+
     try:
+        srv.bind(socket_path)
+        # Mode 0o660 grants user+group read/write with 0 world permissions;
+        # required for Unix-domain socket IPC with the Go node peer running in the same group.
+        # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+        os.chmod(socket_path, 0o660)
+        srv.listen(16)
+        srv.settimeout(1.0)  # allows the signal check below to fire promptly
+
+        _stop = stop_event if stop_event is not None else threading.Event()
+
+        def _sighandler(signum: int, _frame: Any) -> None:
+            logger.info("Received signal %d — initiating shutdown", signum)
+            _stop.set()
+
+        with contextlib.suppress(ValueError):
+            old_sigterm = signal.signal(signal.SIGTERM, _sighandler)
+            old_sigint = signal.signal(signal.SIGINT, _sighandler)
+
+        logger.info("vmafx-sidecar listening on %s", socket_path)
+
         while not _stop.is_set():
             try:
                 conn, _ = srv.accept()
@@ -453,16 +512,39 @@ def run_server(
                 if _stop.is_set():
                     break
                 raise
-            t = threading.Thread(
-                target=_handle_connection,
-                args=(conn, trainer),
-                daemon=True,
-            )
-            t.start()
+
+            if not registry.register_if_active(conn, _stop):
+                break
+
+            try:
+                t = threading.Thread(
+                    target=_handle_connection,
+                    args=(conn, trainer, registry),
+                    daemon=True,
+                )
+                t.start()
+            except Exception:
+                registry.discard(conn)
+                with contextlib.suppress(OSError):
+                    conn.close()
+                raise
             threads.append(t)
             # Prune dead threads to avoid unbounded list growth.
             threads = [tt for tt in threads if tt.is_alive()]
     finally:
+        with contextlib.suppress(ValueError):
+            if old_sigterm is not None:
+                signal.signal(signal.SIGTERM, old_sigterm)
+            if old_sigint is not None:
+                signal.signal(signal.SIGINT, old_sigint)
+
+        # Promptly unblock and close any held client connections
+        registry.close_all()
+
+        deadline = time.monotonic() + 1.0
+        for t in threads:
+            remaining = max(0.0, deadline - time.monotonic())
+            t.join(timeout=remaining)
         srv.close()
         with contextlib.suppress(FileNotFoundError):
             os.unlink(socket_path)

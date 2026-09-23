@@ -1,1 +1,1 @@
-| [ADR-1222](1222-code-scanning-alert-triage-and-scope.md) | In-code suppressions do not close code-scanning alerts; scope the scan instead | Proposed | ci, security, docs, mcp |
+| [ADR-1222](1222-code-scanning-alert-triage-and-scope.md) | In-code suppressions do not close code-scanning alerts; scope the scan instead; partially superseded by [ADR-1307](1307-sha256-memoization-cache-invalidation.md) for SHA-1 memoization alert disposition | Proposed | ci, security, docs, mcp |

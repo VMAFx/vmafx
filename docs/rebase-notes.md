@@ -35,6 +35,34 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/semgrep-python-warning-alerts — Semgrep SHA-1 upgrade and socket permission invariant (2026-09-23)
+
+1. **`compat/python-vmaf/tools/decorator.py` memoization keys strictly use SHA-256.**
+   The upgrade from `hashlib.sha1` to `hashlib.sha256(..., usedforsecurity=False)`
+   is governed by ADR-1307 (partially superseding ADR-1222 for its SHA-1 keep-open disposition)
+   and clears Semgrep alerts 947, 948, and 949 at source (0 findings in SARIF). Ephemeral
+   runtime and per-process memoization caches accept clean cold invalidation on upgrade;
+   no legacy SHA-1 fallback or `# nosemgrep` suppression is retained. Concurrency is
+   serialized via `threading.RLock()`, cross-process cache updates in `persist_to_file`
+   are synchronized via re-entrant `_file_lock` (`fcntl.flock` on POSIX,
+   `msvcrt.locking` on Windows) and disk cache merge, including recursive entries,
+   and atomic writes use unique temporary files via `tempfile.mkstemp`.
+   Do not revert to SHA-1 or reintroduce PID-based temp files during upstream merges.
+2. **`ai/sidecar/online_trainer.py` Unix domain socket mode `0o660` is mandatory.**
+   Semgrep alert 946 flags `os.chmod(socket_path, 0o660)`. Mode `0o660` is required
+   for same-group Go peer IPC in Kubernetes pods (connecting requires `stat.S_IWGRP`);
+   Semgrep's suggested fix `0o644` strips group write and breaks IPC, while leaking
+   world read. Do not weaken or change `0o660` during rebases. An inline `# nosemgrep`
+   directive is maintained per ADR-1222; in SARIF, the finding remains present with
+   in-source suppression awaiting maintainer dismissal (False Positive / Won't Fix).
+   Server lifecycle invariants: initialize `threads`, `registry = _ConnectionRegistry()`,
+   `old_sigterm`, and `old_sigint` before `bind()`. Register accepted sockets in
+   `registry` via `register_if_active(conn, stop_event)` prior to worker thread spawn to
+   prevent accept/registration races, and shut down active client connections via
+   `registry.close_all()` on server exit to ensure prompt shutdown (< 1.5s).
+   Peer security is verified via Linux user namespaces with subordinate ID mappings
+   asserting `SO_PEERCRED`. Sidecar tests are wired across root `pyproject.toml`,
+   `ai/pyproject.toml`, `noxfile.py`, and CI.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

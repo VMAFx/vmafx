@@ -2,7 +2,7 @@
 
 # ADR-1222: In-code suppressions do not close code-scanning alerts; scope the scan instead
 
-- **Status**: Proposed
+- **Status**: Proposed (partially superseded by [ADR-1307](1307-sha256-memoization-cache-invalidation.md) for Alerts 947–949 SHA-1 memoization disposition)
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: `ci`, `security`, `docs`, `mcp`
@@ -91,8 +91,8 @@ We will treat the scan's **scope** as the thing to fix, not the code:
 | 168, 927 | `cpp/equality-on-floats` | `feature_name.cpp:146`, `predict.c:301` | **Correct as written.** Both are exact identity comparisons by design — "is this value the declared default?" and a sentinel check that already carries an inline justification. An epsilon band would be the bug. |
 | 908, 943, 955 | `cpp/include-non-header` | three files under `core/test/` | **Correct as written.** Whitebox unit tests include the translation unit under test to reach `static` functions. `paths-ignore: core/test` cannot exclude them because the C/C++ analysis builds them. |
 | 917, 918 | `py/cyclic-import` | `server.py`, `http_transport.py` | **Fixed in source (2026-09-23).** `http_transport.py` now consumes the shared `http_scoring.py` interface, while `server.py` installs the canonical scoring adapter. The package graph is acyclic without dynamic imports or query suppression; `tests/test_import_graph.py` pins the invariant. Live status before merge: 917 open, 918 fixed; final confirmation awaits CodeQL on merged `master`. |
-| 946 | `insecure-file-permissions` | `ai/sidecar/online_trainer.py:430` | **Correct as written.** `0o660` on a Unix-domain socket shared with a same-group Go peer; world access is denied. Carries a `nosemgrep` directive that cannot close the alert (cause 1 above). |
-| 947, 948, 949 | `insecure-hash-algorithm-sha1` | `compat/python-vmaf/tools/decorator.py` | **Correct as written.** SHA-1 as a memoisation cache key, already annotated `usedforsecurity=False`. Same `nosemgrep` limitation. |
+| 946 | `insecure-file-permissions` | `ai/sidecar/online_trainer.py` (`os.chmod(socket_path, 0o660)`) | **Correct as written.** `0o660` on a Unix-domain socket shared with a same-group Go peer; world access is denied. Carries a `nosemgrep` directive that cannot close the alert (cause 1 above). |
+| 947, 948, 949 | `insecure-hash-algorithm-sha1` | `compat/python-vmaf/tools/decorator.py` | **Superseded by [ADR-1307](1307-sha256-memoization-cache-invalidation.md).** Resolved at source by upgrading memoization cache keys to pure SHA-256 (`hashlib.sha256(..., usedforsecurity=False)`) with clean cold cache invalidation, eliminating all three findings from SARIF (0 findings). |
 | 1, 3 | Scorecard `CodeReviewID`, `CIIBestPracticesID` | repo-level | **Not code.** Repo-process metrics (approved-changeset count; OpenSSF badge). No code change clears them. |
 
 ## References

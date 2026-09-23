@@ -175,6 +175,22 @@ python/vmaf/
   inline argument parsing. Every index expression, accumulation order and
   error string is unchanged; `edges[]` is filled with a bounded copy because
   HISS-08 bans `strcpy()`. See `docs/rebase-notes.md`.
+- **Memoization cache key stability (SHA-256) (T-SEMGREP-WARNING-ALERTS-946-949-2026-09-23).**
+  `tools/decorator.py` generates in-memory and on-disk cache keys in
+  `@persist`, `@persist_to_file`, and `@persist_to_dir` using
+  `hashlib.sha256(..., usedforsecurity=False)` per [ADR-1307](../../docs/adr/1307-sha256-memoization-cache-invalidation.md)
+  (partially superseding ADR-1222 for its SHA-1 keep-open disposition). Clean cold invalidation of legacy caches
+  was accepted as keys are runtime/ephemeral memoization only, completely decoupled
+  from durable pipeline models or Netflix golden assertions. Thread concurrency is
+  serialized via `threading.RLock()` (avoiding dynamic programming recursion deadlock),
+  cross-process cache updates in `persist_to_file` are synchronized via re-entrant
+  `_file_lock` (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows) and disk cache
+  reloading/merging (preventing multi-process and recursive cache clobbering), and atomic
+  file writing is guaranteed via `tempfile.mkstemp` (avoiding
+  PID collisions). Removing SHA-1 entirely yields 0 Semgrep findings in SARIF, resolving warning
+  alerts 947–949 at source. Regression tests in `compat/vmaf/tests/test_decorator_extended.py`
+  (26 tests passing) guard key length (64 hex characters), golden vectors, thread concurrency,
+  cross-process concurrent updates, cross-process cache hits, Windows lock dispatch, and cold invalidation.
 
 ## Governing ADRs
 
@@ -186,3 +202,4 @@ python/vmaf/
 - [ADR-0038](../../docs/adr/0038-purge-upstream-matlab-mex-binaries.md) — MEX binary purge.
 - [ADR-1236](../../docs/adr/1236-version-single-source-tree.md) — single-source package versions and unify Python dependencies.
 - [ADR-1278](../../docs/adr/1278-python-safe-parallel-execution.md) — fork-free process execution and reference 5PL fitting.
+- [ADR-1307](../../docs/adr/1307-sha256-memoization-cache-invalidation.md) — SHA-256 memoization cache key upgrade and clean cold invalidation.
