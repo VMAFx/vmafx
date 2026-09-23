@@ -22,11 +22,8 @@
 
 #include "test.h"
 
-/* ADR-0729 Wave 3: feature_name.c renamed to feature_name.cpp; the test drives
- * translation-unit-local helpers, so the implementation is unity-included rather
- * than linked. The .cpp extension is deliberate and load-bearing here. */
-// NOLINTNEXTLINE(bugprone-suspicious-include) — ADR-0729 unity include, see above
-#include "feature/feature_name.cpp"
+#include "dict.h"
+#include "feature/feature_name.h"
 
 /* Fixtures for `vmaf_feature_name_from_options()` and
  * `vmaf_feature_name_dict_from_provided_features()`. The option table below is

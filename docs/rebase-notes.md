@@ -35,6 +35,19 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/codeql-include-non-header-alerts — internal header and link seams for test suites (2026-09-24)
+
+1. **Test targets link against libvmaf instead of unity-including source files.**
+   Alerts 908, 943, 955, 1043, 1203, 1218, and 1241 resolved `.c`/`.cpp` inclusions
+   by establishing proper internal header declarations:
+   - `core/src/feature/luminance_tools.h`: declares `range_foot_head` and `normalize_range` with `extern "C"`.
+   - `core/src/model.h`: declares `VmafBuiltInModel` and `vmaf_built_in_model_count()` with `BUILT_IN_MODEL_CNT` macro delegation.
+   - `core/src/libvmaf_priv.h`: declares `vmaf_context_is_flushed`, `vmaf_context_has_thread_pool`, and test flush triggers.
+   - `core/src/feature/cambi_internal.h`: declares scalar stage functions, callback types, and numerical helpers.
+   Do not re-introduce `#include "cambi.c"`, `#include "libvmaf.c"`, or other `.c` inclusions during rebase conflict resolution.
+2. **Meson test target dependencies**: `test_feature` builds `feature_name.cpp` directly;
+   `test_model`, `test_flush_context_ordering`, `test_cambi`, and `test_cambi_stage_simd` link
+   with `libvmaf` / `libvmaf.get_static_lib()`. Preserve these linker configurations in `core/test/meson.build`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

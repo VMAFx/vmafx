@@ -177,18 +177,14 @@ test_feature_collector = executable('test_feature_collector',
 )
 
 # Finding R2-10: flush_context terminal-flush ordering. White-box test that
-# includes libvmaf.c directly (same pattern as test_feature_collector) so it can
-# call the static flush_context_threaded() / flush_context() helpers and assert
-# the inner threaded flush no longer sets vmaf->flushed prematurely — the bug
+# calls internal test accessors in libvmaf_priv.h to assert the inner
+# threaded flush no longer sets vmaf->flushed prematurely — the bug
 # that let a CUDA-flush error skip flush_context_sycl with no retry possible.
 test_flush_context_ordering = executable('test_flush_context_ordering',
-    ['test.c', 'test_flush_context_ordering.c', '../src/predict.c',
-     '../src/metadata_handler.cpp', rev_target],
+    ['test.c', 'test_flush_context_ordering.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
-    link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-                 log_cpp23_lib],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, gpu_all_deps],
-    objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
 )
 
 # Coverage follow-up to PR #313 (R3 from
@@ -597,7 +593,8 @@ test_ref = executable('test_ref',
 )
 
 test_feature = executable('test_feature',
-    ['test.c', 'test_feature.cpp', '../src/feature/alias.c', '../src/dict.cpp'],
+    ['test.c', 'test_feature.cpp', '../src/feature/alias.c', '../src/dict.cpp',
+     '../src/feature/feature_name.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )
@@ -751,8 +748,8 @@ test_transnet_v2 = executable('test_transnet_v2',
 )
 
 test_cambi = executable('test_cambi',
-    ['test.c', 'test_cambi.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    ['test.c', 'test_cambi.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
 )
@@ -781,11 +778,10 @@ test_cambi_simd = executable('test_cambi_simd',
 
 # Every other CAMBI per-stage SIMD kernel (decimate, anti-dithering, mode
 # filter, derivative row, histogram range updates, c-values row and frame) on
-# AVX2, AVX-512 and NEON against the production scalar stages. The TU includes
-# cambi.c for those static references, so it links libvmaf like test_cambi.
+# AVX2, AVX-512 and NEON against the production scalar stages.
 test_cambi_stage_simd = executable('test_cambi_stage_simd',
-    ['test.c', 'test_cambi_stage_simd.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    ['test.c', 'test_cambi_stage_simd.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
 )

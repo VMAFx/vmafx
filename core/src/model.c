@@ -31,12 +31,6 @@
 #include "read_json_model.h"
 #include "svm.h"
 
-typedef struct VmafBuiltInModel {
-    const char *version;
-    const char *data;
-    const int *data_len;
-} VmafBuiltInModel;
-
 #if VMAF_BUILT_IN_MODELS
 #if VMAF_FLOAT_FEATURES
 extern const char src_vmaf_float_v0_6_1neg_json[];
@@ -170,7 +164,13 @@ static const VmafBuiltInModel built_in_models[] = {
 #endif
     {0}};
 
+#undef BUILT_IN_MODEL_CNT
 #define BUILT_IN_MODEL_CNT (((sizeof(built_in_models)) / (sizeof(built_in_models[0]))) - 1)
+
+unsigned vmaf_built_in_model_count(void)
+{
+    return BUILT_IN_MODEL_CNT;
+}
 
 int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version)
 {

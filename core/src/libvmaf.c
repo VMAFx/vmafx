@@ -3728,4 +3728,24 @@ VmafFeatureCollector *vmaf_feature_collector_get(const VmafContext *vmaf)
     return vmaf->feature_collector;
 }
 
+bool vmaf_context_is_flushed(const VmafContext *vmaf)
+{
+    return vmaf ? vmaf->flushed : false;
+}
+
+bool vmaf_context_has_thread_pool(const VmafContext *vmaf)
+{
+    return vmaf && vmaf->thread_pool != NULL;
+}
+
+int vmaf_context_flush_threaded_for_test(VmafContext *vmaf)
+{
+    return vmaf ? flush_context_threaded(vmaf) : -EINVAL;
+}
+
+int vmaf_context_flush_for_test(VmafContext *vmaf)
+{
+    return vmaf ? flush_context(vmaf) : -EINVAL;
+}
+
 /* NOLINTEND(modernize-use-nullptr) */

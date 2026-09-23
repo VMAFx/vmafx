@@ -72,6 +72,20 @@ double vmaf_luminance_pq_eotf(double V);
  */
 double vmaf_luminance_get_luminance(int sample, VmafLumaRange luma_range, VmafEOTF eotf);
 
+/*
+ * Internal helpers exercised by unit tests.
+ */
+#ifdef __cplusplus
+#define VMAF_NOEXCEPT noexcept
+#else
+#define VMAF_NOEXCEPT
+#endif
+
+int range_foot_head(int bitdepth, int pix_range, int *foot, int *head) VMAF_NOEXCEPT;
+double normalize_range(int sample, VmafLumaRange range) VMAF_NOEXCEPT;
+
+#undef VMAF_NOEXCEPT
+
 #ifdef __cplusplus
 }
 #endif

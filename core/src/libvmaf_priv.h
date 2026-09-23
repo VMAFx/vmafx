@@ -14,6 +14,8 @@
 #ifndef LIBVMAF_PRIV_H
 #define LIBVMAF_PRIV_H
 
+#include <stdbool.h>
+
 #include "feature/feature_collector.h"
 
 typedef struct VmafContext VmafContext;
@@ -24,5 +26,14 @@ typedef struct VmafContext VmafContext;
  * context layout.
  */
 VmafFeatureCollector *vmaf_feature_collector_get(const VmafContext *vmaf);
+
+/*
+ * Test accessors for inspecting internal context state and exercising
+ * flush ordering without including libvmaf.c directly.
+ */
+bool vmaf_context_is_flushed(const VmafContext *vmaf);
+bool vmaf_context_has_thread_pool(const VmafContext *vmaf);
+int vmaf_context_flush_threaded_for_test(VmafContext *vmaf);
+int vmaf_context_flush_for_test(VmafContext *vmaf);
 
 #endif /* LIBVMAF_PRIV_H */

@@ -18,8 +18,17 @@
 
 #include "test.h"
 #include "ref.h"
-// NOLINTNEXTLINE(bugprone-suspicious-include) — ADR-0141; docs/research/cambi-test-lint-2026-09-08.md: private static helper coverage.
-#include "feature/cambi.c"
+#include <math.h>
+#include <string.h>
+
+#include "cpu.h"
+#include "mem.h"
+#include "feature/cambi.h"
+#include "feature/cambi_internal.h"
+#include "feature/luminance_tools.h"
+#if ARCH_X86
+#include "feature/x86/cambi_avx2.h"
+#endif
 
 #ifdef _MSC_VER
 #define CAMBI_TEST_NULL_POINTER NULL

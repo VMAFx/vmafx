@@ -19768,6 +19768,15 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   [research digest 2031](docs/research/2031-codeql-float-widening-multiplication.md).
 
 
+- Resolved seven CodeQL `cpp/include-non-header` alerts (908, 943, 955, 1043,
+  1203, 1218, 1241) across libvmaf core test translation units. Replaced
+  unity-style `.c` and `.cpp` inclusions with internal header declarations and
+  link-time seams (`feature/luminance_tools.h`, `feature/feature_name.h`,
+  `model.h`, `libvmaf_priv.h`, and `feature/cambi_internal.h`). All white-box
+  unit tests and Netflix golden assertions are preserved without exposing private
+  APIs publicly or suppressing CodeQL findings.
+
+
 - `local_explainer_test`: recalibrate `test_run_vmaf_runner_local_explainer_with_bootstrap_model`
   assertion to the post-NEON-fix value (`75.40974...`) and relax to `places=3`
   per ADR-0418 macOS-libm pattern; fixes macOS arm64 CI failure introduced by PR #834

@@ -36,22 +36,30 @@
  *  tie branches.
  */
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "mem.h"
+
 #include "test.h"
 /* clang-format off — test.h has no header guard; must precede harness. */
 #include "simd_bitexact_test.h"
 /* clang-format on */
 
-/* The reference must be the shipped file-static scalar stages, not a copy
- * (ADR-1207), so the TU is included, as test_cambi.c does. */
-// NOLINTNEXTLINE(bugprone-suspicious-include) — ADR-0141 / ADR-1207: white-box reference to the static scalar stages.
-#include "feature/cambi.c"
+#include "cpu.h"
+#include "feature/cambi.h"
+#include "feature/cambi_internal.h"
 #include "feature/cambi_c_values_frame.h"
+#if ARCH_X86
+#include "feature/x86/cambi_avx2.h"
+#include "feature/x86/cambi_avx512.h"
+#elif ARCH_AARCH64
+#include "feature/arm64/cambi_neon.h"
+#endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's

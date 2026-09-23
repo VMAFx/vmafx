@@ -16,8 +16,10 @@
  *
  */
 
+#include <cerrno>
+
 #include "test.h"
-#include "feature/luminance_tools.cpp"
+#include "feature/luminance_tools.h"
 
 #define EPS 0.00001
 

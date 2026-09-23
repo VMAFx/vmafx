@@ -25,8 +25,7 @@
 #include "config.h"
 #include "mu_table.h"
 #include "test.h"
-// NOLINTNEXTLINE(bugprone-suspicious-include): white-box test deliberately includes model.c to inspect static built_in_models per ADR-0278 / ADR-0141.
-#include "model.c"
+#include "model.h"
 #include "read_json_model.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as

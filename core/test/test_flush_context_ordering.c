@@ -44,13 +44,9 @@
 
 #include "test.h"
 
-/* White-box include: pulls in the static flush_context* helpers and the full
- * VmafContext definition. Mirrors the established pattern in
- * test_feature_collector.c. */
-// NOLINTNEXTLINE(bugprone-suspicious-include): white-box test, see above (ADR-0141 / ADR-0278).
-#include "feature_collector.c"
-// NOLINTNEXTLINE(bugprone-suspicious-include): static flush_context* and the private VmafContext (ADR-0141 / ADR-0278).
-#include "libvmaf.c"
+#include "libvmaf/libvmaf.h"
+#include "libvmaf/picture.h"
+#include "libvmaf_priv.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -96,7 +92,8 @@ static char *prep_threaded_context(VmafContext **out)
     VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
-    mu_assert("thread_pool must be active for the threaded path", vmaf->thread_pool != NULL);
+    mu_assert("thread_pool must be active for the threaded path",
+              vmaf_context_has_thread_pool(vmaf));
 
     err = vmaf_use_feature(vmaf, "motion", NULL);
     mu_assert("vmaf_use_feature(motion) failed", !err);
@@ -112,7 +109,7 @@ static char *prep_threaded_context(VmafContext **out)
         mu_assert("vmaf_read_pictures failed", !err);
     }
 
-    mu_assert("flushed must be false before any flush", !vmaf->flushed);
+    mu_assert("flushed must be false before any flush", !vmaf_context_is_flushed(vmaf));
     *out = vmaf;
     return NULL;
 }
@@ -139,9 +136,10 @@ static char *test_threaded_flush_does_not_set_flushed(void)
     if (prep)
         return prep;
 
-    err = flush_context_threaded(vmaf);
+    err = vmaf_context_flush_threaded_for_test(vmaf);
     mu_assert("flush_context_threaded must succeed", !err);
-    mu_assert("flush_context_threaded must NOT set vmaf->flushed (R2-10)", !vmaf->flushed);
+    mu_assert("flush_context_threaded must NOT set vmaf->flushed (R2-10)",
+              !vmaf_context_is_flushed(vmaf));
 
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed", !err);
@@ -165,9 +163,10 @@ static char *test_central_flush_sets_flushed(void)
     if (prep)
         return prep;
 
-    err = flush_context(vmaf);
+    err = vmaf_context_flush_for_test(vmaf);
     mu_assert("flush_context must succeed", !err);
-    mu_assert("flush_context must set vmaf->flushed once all backends ran", vmaf->flushed);
+    mu_assert("flush_context must set vmaf->flushed once all backends ran",
+              vmaf_context_is_flushed(vmaf));
 
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed", !err);
@@ -236,11 +235,11 @@ static char *test_flush_via_public_api_sets_flushed(void)
     if (msg)
         return msg;
 
-    mu_assert("serial: flushed false before EOS", !vmaf->flushed);
+    mu_assert("serial: flushed false before EOS", !vmaf_context_is_flushed(vmaf));
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("serial: EOS flush failed", !err);
-    mu_assert("serial: flushed must be true after EOS", vmaf->flushed);
+    mu_assert("serial: flushed must be true after EOS", vmaf_context_is_flushed(vmaf));
 
     msg = check_double_flush_rejected_and_close(vmaf);
     if (msg)
