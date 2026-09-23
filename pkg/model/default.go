@@ -40,20 +40,21 @@ const DefaultVersion = "vmaf_v1.0.16_3d0h"
 // generations.
 const DefaultNEGVersion = "vmaf_v0.6.1neg"
 
-// CLIArgument formats a libvmaf --model value. Bare model versions are
-// wrapped as "version=..."; explicit key=value selectors pass through.
-func CLIArgument(name string) string {
-	if strings.Contains(name, "=") {
-		return name
+// CLIArgument formats model for libvmaf's --model option. Bare version names
+// become version= selectors; an already formatted key=value selector passes
+// through unchanged.
+func CLIArgument(model string) string {
+	if strings.Contains(model, "=") {
+		return model
 	}
-	return "version=" + name
+	return "version=" + model
 }
 
-// CLIArgumentOrDefault applies DefaultVersion before formatting an empty
-// libvmaf --model value.
-func CLIArgumentOrDefault(name string) string {
-	if name == "" {
-		name = DefaultVersion
+// CLIArgumentOrDefault formats model for libvmaf's --model option, using the
+// production default when the caller did not name a model.
+func CLIArgumentOrDefault(model string) string {
+	if model == "" {
+		model = DefaultVersion
 	}
-	return CLIArgument(name)
+	return CLIArgument(model)
 }

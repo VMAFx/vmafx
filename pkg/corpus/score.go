@@ -336,9 +336,11 @@ func RunScore(
 	run = runnerOrExec(run)
 	workdir, cleanup, err := prepareScoreWorkdir(workdir)
 	if err != nil {
-		return scoreFailure(req, err)
+		return scoreSetupFailure(req, err)
 	}
-	defer cleanup()
+	if cleanup != nil {
+		defer cleanup()
+	}
 
 	jsonPath := filepath.Join(workdir, "vmaf.json")
 	cmd := BuildVMAFCommand(req, jsonPath, vmafBin, backend)
@@ -346,8 +348,7 @@ func RunScore(
 	started := time.Now()
 	res := run(ctx, cmd)
 	elapsedMS := float64(time.Since(started).Nanoseconds()) / 1e6
-
-	score, featureMeans, featureStds, rc := parseScoreOutput(jsonPath, res.ReturnCode)
+	rc, score, featureMeans, featureStds := parseScoreOutput(jsonPath, res.ReturnCode)
 
 	version := firstSubmatch(vmafVersionRe, res.Stderr)
 	if version == "" {
@@ -371,7 +372,7 @@ func prepareScoreWorkdir(workdir string) (string, func(), error) {
 		if err := os.MkdirAll(workdir, 0o750); err != nil {
 			return "", nil, err
 		}
-		return workdir, func() {}, nil
+		return workdir, nil, nil
 	}
 	dir, err := os.MkdirTemp("", "vmaftune-score-")
 	if err != nil {
@@ -385,7 +386,7 @@ func prepareScoreWorkdir(workdir string) (string, func(), error) {
 	return dir, cleanup, nil
 }
 
-func scoreFailure(req ScoreRequest, err error) ScoreResult {
+func scoreSetupFailure(req ScoreRequest, err error) ScoreResult {
 	return ScoreResult{
 		Request:           req,
 		VMAFScore:         math.NaN(),
@@ -397,26 +398,33 @@ func scoreFailure(req ScoreRequest, err error) ScoreResult {
 	}
 }
 
-func parseScoreOutput(path string, rc int) (float64, map[string]float64, map[string]float64, int) {
+func parseScoreOutput(
+	jsonPath string, rc int,
+) (int, float64, map[string]float64, map[string]float64) {
 	score := math.NaN()
-	means := map[string]float64{}
-	stds := map[string]float64{}
+	featureMeans := map[string]float64{}
+	featureStds := map[string]float64{}
 	if rc != 0 {
-		return score, means, stds, rc
+		return rc, score, featureMeans, featureStds
 	}
-	// #nosec G304 -- path is the driver-owned JSON sidecar.
-	data, err := os.ReadFile(path)
+	// #nosec G304 -- jsonPath is a driver-generated sidecar path.
+	data, err := os.ReadFile(jsonPath)
 	if err != nil {
-		return score, means, stds, 65
+		return 65, score, featureMeans, featureStds
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return score, means, stds, 65
+		// vmaf exited 0 but wrote corrupt / partial JSON. Record a scoring
+		// error rather than crashing the corpus run.
+		return 65, score, featureMeans, featureStds
 	}
-	parsed, ok := ParseVMAFJSON(payload)
+	var ok bool
+	score, ok = ParseVMAFJSON(payload)
 	if !ok {
-		return score, means, stds, 65
+		rc = 65
 	}
-	means, stds = ParseFeatureAggregates(payload, Canonical6Features)
-	return parsed, means, stds, rc
+	// Per-feature aggregates are best-effort: a cambi-only model will not
+	// expose adm2 and the other canonical metrics.
+	featureMeans, featureStds = ParseFeatureAggregates(payload, Canonical6Features)
+	return rc, score, featureMeans, featureStds
 }

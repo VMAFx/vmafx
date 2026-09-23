@@ -70,17 +70,20 @@ two implementations must produce same bytes for same inputs.**
    instead would change recorded `vmaf_binary_version` and
    `stderr_tail` for that cell.
 
-7. **Backend selection never silently downgrades** (`backend.go`).
-   `auto` walks fallback chain; any explicit `--score-backend` name
-   that host cannot provide returns `*BackendUnavailableError`
-   (ADR-0299 / ADR-0314). Falling back would mask hardware/build
-   mismatch and lie about wall-clock expectations. Probes are
-   intentionally *not* `pkg/gpu.Detect()` — that package answers
-   "which vendor's device is present" (via `clinfo` for Intel), while
-   this one needs "does local vmaf binary advertise `--backend NAME`
-   and does matching runtime probe succeed" (`sycl-ls`, `rocminfo`).
-   Swapping in `pkg/gpu` would change which backend sweep picks
-   relative to Python.
+7. **Backend selection never silently downgrades**
+   (`pkg/scorebackend`; `backend.go` is compatibility-only).
+   `pkg/scorebackend` is the sole backend vocabulary, probe and selector;
+   `vmafx-tune-go corpus` imports it directly. `auto` walks its fallback
+   chain; any explicit `--score-backend` name that host cannot provide
+   returns `*scorebackend.UnavailableError` (aliased as the legacy
+   `corpus.BackendUnavailableError`) per ADR-0299 / ADR-0314. Falling back
+   would mask hardware/build mismatch and lie about wall-clock expectations.
+   Probes are intentionally *not* `pkg/gpu.Detect()` — that package answers
+   "which vendor's device is present" (via `clinfo` for Intel), while this
+   path needs "does local vmaf binary advertise `--backend NAME` and does
+   matching runtime probe succeed" (`sycl-ls`, `rocminfo`). Do not regrow
+   probe or selection logic under `pkg/corpus` during a rebase; update
+   `pkg/scorebackend` and keep the wrappers thin.
 
    The typed failure is owned by `pkg/scorebackend.UnavailableError`;
    `BackendUnavailableError` is an alias kept for corpus API compatibility.

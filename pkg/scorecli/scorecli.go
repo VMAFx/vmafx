@@ -311,18 +311,13 @@ func Run(ctx context.Context, req Request, vmafBin, backend string, runner Runne
 		return Result{}, fmt.Errorf("run vmaf: %w", runErr)
 	}
 
-	score, means, stds, exitStatus := parseRunOutput(jsonPath, exitStatus)
-
-	version := "unknown"
-	if m := vmafVersionRE.FindStringSubmatch(stderr); m != nil {
-		version = m[1]
-	}
+	exitStatus, score, means, stds := parseRunOutput(jsonPath, exitStatus)
 
 	return Result{
 		Request:           req,
 		VMAFScore:         score,
 		ScoreTimeMS:       elapsedMS,
-		VMAFBinaryVersion: version,
+		VMAFBinaryVersion: parseVMAFVersion(stderr),
 		ExitStatus:        exitStatus,
 		StderrTail:        tail(stderr, 2048),
 		FeatureMeans:      means,
@@ -332,21 +327,24 @@ func Run(ctx context.Context, req Request, vmafBin, backend string, runner Runne
 
 func removeScoreWorkdir(workdir string) {
 	if err := os.RemoveAll(workdir); err != nil {
+		// Best effort: a leaked temp dir is less harmful than losing the score.
 		slog.Warn("scorecli: remove score workdir", "error", err, "path", workdir)
 	}
 }
 
-func parseRunOutput(path string, exitStatus int) (float64, map[string]float64, map[string]float64, int) {
+func parseRunOutput(
+	jsonPath string, exitStatus int,
+) (int, float64, map[string]float64, map[string]float64) {
 	score := math.NaN()
 	means := map[string]float64{}
 	stds := map[string]float64{}
 	if exitStatus != 0 {
-		return score, means, stds, exitStatus
+		return exitStatus, score, means, stds
 	}
-	// #nosec G304 -- path is this function's driver-owned JSON sidecar.
-	data, err := os.ReadFile(path)
+	// #nosec G304 -- jsonPath is this function's own MkdirTemp output.
+	data, err := os.ReadFile(jsonPath)
 	if err != nil {
-		return score, means, stds, 65
+		return 65, score, means, stds
 	}
 	parsed, err := ParseJSON(data)
 	if err != nil {
@@ -355,7 +353,14 @@ func parseRunOutput(path string, exitStatus int) (float64, map[string]float64, m
 		score = parsed
 	}
 	means, stds = ParseFeatureAggregates(data, Canonical6Features)
-	return score, means, stds, exitStatus
+	return exitStatus, score, means, stds
+}
+
+func parseVMAFVersion(stderr string) string {
+	if match := vmafVersionRE.FindStringSubmatch(stderr); match != nil {
+		return match[1]
+	}
+	return "unknown"
 }
 
 // tail returns the last n bytes of text.

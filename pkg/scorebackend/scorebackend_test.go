@@ -257,6 +257,10 @@ func TestSelect(t *testing.T) {
 			fallbacks: []string{"sycl", "cuda", "cpu"}, want: "sycl",
 		},
 		{
+			name: "an explicit empty fallback chain goes directly to cpu", prefer: "auto",
+			available: []string{"cpu", "cuda"}, fallbacks: []string{}, want: "cpu",
+		},
+		{
 			name: "an explicit available backend is honoured", prefer: "cuda",
 			available: []string{"cpu", "cuda"}, want: "cuda",
 		},

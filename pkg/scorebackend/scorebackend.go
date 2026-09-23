@@ -78,8 +78,8 @@ type Options struct {
 	// VMAFBin is the libvmaf CLI to probe for --backend support.
 	// Empty selects "vmaf" (PATH lookup).
 	VMAFBin string
-	// Fallbacks overrides the prefer="auto" chain. Empty selects
-	// DefaultFallbacks.
+	// Fallbacks overrides the prefer="auto" chain. nil selects
+	// DefaultFallbacks; an explicit empty slice goes directly to the CPU floor.
 	Fallbacks []string
 	// Available short-circuits host detection with a literal list. Used by
 	// tests to keep the unit boundary tight; nil runs Detect.
@@ -98,7 +98,7 @@ func (o Options) vmafBin() string {
 }
 
 func (o Options) fallbacks() []string {
-	if len(o.Fallbacks) == 0 {
+	if o.Fallbacks == nil {
 		return DefaultFallbacks()
 	}
 	return o.Fallbacks

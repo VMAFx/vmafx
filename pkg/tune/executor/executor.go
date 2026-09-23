@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 	"log/slog"
 	"math"
 	"os"
@@ -37,6 +36,7 @@ import (
 	"time"
 
 	"github.com/VMAFx/vmafx/pkg/ffencode"
+	vmafmodel "github.com/VMAFx/vmafx/pkg/model"
 	"github.com/VMAFx/vmafx/pkg/pyjson"
 	"github.com/VMAFx/vmafx/pkg/tune/auto"
 )
@@ -563,54 +563,49 @@ func RunPlan(ctx context.Context, plan auto.Plan, src string, params Params) ([]
 	}()
 
 	width, height := effectiveGeometry(plan, params)
-
 	results := make([]ExecuteResult, 0, len(plan.Cells))
 	for _, cell := range plan.Cells {
 		selected := boolField(cell, "selected")
 		if !params.ExecuteAll && !selected {
 			continue
 		}
-		enc, score := executePlanCell(ctx, cell, src, params, width, height, log)
-		row := makeRow(cell, enc, score)
-		line, marshalErr := pyjson.MarshalStrict(row, 0)
-		if marshalErr != nil {
-			return results, fmt.Errorf("render results row: %w", marshalErr)
+		result := executePlanCell(ctx, cell, src, params, width, height, log)
+		if err := appendPlanResult(fh, result); err != nil {
+			return results, err
 		}
-		if _, writeErr := fh.WriteString(line + "\n"); writeErr != nil {
-			return results, fmt.Errorf("append results row: %w", writeErr)
-		}
-		results = append(results, ExecuteResult{Cell: cell, Encode: enc, Score: score, Row: row})
+		results = append(results, result)
 	}
 	return results, nil
 }
 
 func executePlanCell(
-	ctx context.Context,
-	cell map[string]any,
-	src string,
-	params Params,
-	width, height int,
-	log *slog.Logger,
-) (*EncodeResult, *ScoreResult) {
+	ctx context.Context, cell map[string]any, src string, params Params,
+	width, height int, log *slog.Logger,
+) ExecuteResult {
 	req := cellToEncodeRequest(cell, src, params, width, height)
 	encoded := RunEncode(ctx, req, params.FFmpegBin, params.EncodeRunner)
+	var score *ScoreResult
 	if encoded.ExitStatus != 0 {
 		log.Warn("executor: encode failed",
 			"cell_index", cell["cell_index"], "exit_status", encoded.ExitStatus)
-		return &encoded, nil
+	} else {
+		score = scorePlanCell(ctx, src, req, params, width, height, log)
 	}
+	return ExecuteResult{
+		Cell: cell, Encode: &encoded, Score: score,
+		Row: makeRow(cell, &encoded, score),
+	}
+}
 
+func scorePlanCell(
+	ctx context.Context, src string, req EncodeRequest, params Params,
+	width, height int, log *slog.Logger,
+) *ScoreResult {
 	workDir, err := os.MkdirTemp("", "vmafx-tune-score-")
 	if err != nil {
 		log.Warn("executor: score temp dir", "error", err)
-		return &encoded, nil
+		return nil
 	}
-	defer func() {
-		if err := os.RemoveAll(workDir); err != nil {
-			log.Warn("executor: remove score temp dir", "error", err, "path", workDir)
-		}
-	}()
-
 	scored := RunScore(ctx, ScoreRequest{
 		Reference: src,
 		Distorted: req.Output,
@@ -619,7 +614,21 @@ func executePlanCell(
 		PixFmt:    params.PixFmt,
 		Model:     params.VMAFModel,
 	}, params.VMAFBin, workDir, params.ScoreRunner)
-	return &encoded, &scored
+	if err := os.RemoveAll(workDir); err != nil {
+		log.Warn("executor: remove score temp dir", "error", err)
+	}
+	return &scored
+}
+
+func appendPlanResult(fh *os.File, result ExecuteResult) error {
+	line, err := pyjson.MarshalStrict(result.Row, 0)
+	if err != nil {
+		return fmt.Errorf("render results row: %w", err)
+	}
+	if _, err := fh.WriteString(line + "\n"); err != nil {
+		return fmt.Errorf("append results row: %w", err)
+	}
+	return nil
 }
 
 // effectiveGeometry pulls the frame geometry from the plan's source_meta
