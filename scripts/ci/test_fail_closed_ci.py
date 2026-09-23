@@ -92,6 +92,7 @@ class FailClosedCIContract(unittest.TestCase):
     def test_nightly_benchmark_failure_remains_a_failure(self) -> None:
         workflow = (WORKFLOWS / "nightly.yml").read_text(encoding="utf-8")
         benchmark = workflow_step(workflow, "Run benchmark")
+        self.assertIn("VMAF_BIN: ${{ github.workspace }}/build/tools/vmaf", benchmark)
         self.assertIn("bash testdata/bench_all.sh", benchmark)
         self.assertNotIn("|| true", executable_body(benchmark))
         upload = workflow.split("name: nightly-benchmark-results", maxsplit=1)[0]
