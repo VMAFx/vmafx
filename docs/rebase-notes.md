@@ -52589,3 +52589,24 @@ in three places. All three are in ADR-1301; keep them through any rebase.
 file is fork-authored (ADR-0964) and has no upstream counterpart, so it carries
 no rebase risk; the CUDA, HIP and SYCL emit paths that call it are fork-local
 too.
+## fix/fifo-bounded-wait — bounded FIFO producer readiness (BUG-090, 2026-09-23)
+
+`compat/python-vmaf/core/executor.py` keeps ADR-1278's explicit `spawn`
+context, but no FIFO path may restore the post-warning unconditional
+`sem.acquire()` inherited from Netflix #1376. Base `Executor` and
+`NorefExecutorMixin` workfile/procfile paths share these invariants:
+
+- one readiness semaphore and diagnostic pipe per producer, so readiness and
+  failure are attributable to the same child;
+- a five-second slow-start warning followed by a 60-second hard ceiling;
+- child exit status plus available target traceback propagation when readiness
+  was never signaled (bootstrap errors remain on inherited child stderr); and
+- sibling producer termination on startup failure.
+
+`ExecutorTest.test_fifo_helpers_surface_child_failure` uses real `spawn`
+processes and covers all four base/no-reference workfile and procfile variants;
+`test_fifo_helpers_bound_live_child_wait` proves the hard ceiling terminates
+live producers. An upstream resolution that restores a shared semaphore or an
+unbounded acquire reopens BUG-090. See
+[Research-1292](research/1292-fifo-bounded-startup-wait-2026-09-23.md) for the
+failure model and selected supervisor tradeoffs.
