@@ -338,6 +338,18 @@ change to feature extractor's emitted-metric names would silently
 invalidate `FEATURE_METRICS` rows. Re-run matrix gate after any
 upstream sync touching `core/src/feature/`.
 
+## Synthetic SYCL compile database
+
+`gen-sycl-compile-commands.py` converts Meson's `icpx` custom commands into
+stock-Clang commands for the SYCL tidy lane. Remove only device-compilation
+arguments that stock Clang cannot parse, and translate compatible spellings
+such as `-fp-model=` to `-ffp-model=`. Preserve every diagnostic option,
+including `-pedantic`, `-Wall`, `-Wextra`, and `-Werror`; analyzer noise is a
+defect to fix, not a reason to weaken the generated command. Keep
+`tests/test_gen_sycl_compile_commands.py` paired with translator changes and
+wired through the `test-sycl-compile-command-generator` pre-commit/pre-push
+hook; an unwired regression test protects no CI lane.
+
 ## PR-body deliverables validator (`validate-pr-body.sh`)
 
 `scripts/ci/validate-pr-body.sh`, `scripts/git-hooks/pre-push`, and

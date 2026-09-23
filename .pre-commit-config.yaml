@@ -297,6 +297,14 @@ repos:
         files: '^(core/(meson\.build|src/meson\.build)|scripts/ci/(gen-sycl-compile-commands\.py|tests/test_sycl_aot_command\.py)|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: test-sycl-compile-command-generator
+        name: SYCL tidy compile commands preserve diagnostic flags
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_gen_sycl_compile_commands.py
+        language: system
+        files: '^(scripts/ci/(gen-sycl-compile-commands\.py|tests/test_gen_sycl_compile_commands\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: test-renovate-file-patterns
         name: Renovate custom managers select real inputs
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_renovate_file_patterns.py

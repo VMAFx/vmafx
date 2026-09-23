@@ -6,7 +6,7 @@
 
 meson generates CUSTOM_COMMAND rules for icpx-compiled SYCL translation units,
 which means those TUs do NOT appear in compile_commands.json and are invisible
-to clang-tidy.  This script parses build.ninja, extracts those CUSTOM_COMMAND
+to clang-tidy. This script parses build.ninja, extracts those CUSTOM_COMMAND
 entries, translates them to clang-tidy-compatible compiler invocations (replacing
 icpx with clang++, dropping -fsycl), and appends the resulting entries to
 compile_commands.json so the changed-file SYCL lint gate can cover them.
@@ -34,25 +34,27 @@ SYCL_COMMAND_PATTERN = re.compile(
     re.MULTILINE,
 )
 
+EXPECTED_ARGUMENT_COUNT = 2
 
-def _clang_tidy_command(raw_command: str) -> str:
-    """Translate an icpx SYCL command into a stock-clang analyzer command."""
+
+def clang_tidy_command(raw_command: str) -> str:
+    """Translate one icpx command into the stock-clang analyzer profile."""
     command = re.sub(
         r"(?:/opt/intel/oneapi/compiler/[^/]+/bin/)?icpx\b",
         "clang++",
         raw_command,
     )
     command = re.sub(r"\s+-fsycl-targets=\S+", "", command)
+    command = re.sub(r"\s+-fno-sycl-rdc\b", "", command)
     command = re.sub(r"\s+-fsycl\b", "", command)
     command = re.sub(
-        r"\s+-Xsycl-target-backend=\S+\s+(?:'[^']*'|\"[^\"]*\"|\S+)",
+        r"\s+-Xsycl-target-backend(?:=\S+)?\s+(?:'[^']*'|\"[^\"]*\"|\S+)",
         "",
         command,
     )
     command = re.sub(r"\s+-Xs\s+'[^']*'", "", command)
     command = re.sub(r"\s+-Xs\s+\S+", "", command)
-    command = re.sub(r"\s+-fp-model=\S+", "", command)
-    command = re.sub(r"\s+-pedantic\b", "", command)
+    command = re.sub(r"(\s+)-fp-model=", r"\1-ffp-model=", command)
     return re.sub(r"\s+-o\s+\S+", "", command)
 
 
@@ -79,12 +81,20 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
         #
         # Flags removed:
         #   -fsycl-targets  — SYCL device targets; unsupported by clang++
+        #   -fno-sycl-rdc   — SYCL device-link policy; irrelevant to analysis
         #   -fsycl          — SYCL device-compilation; unsupported by clang++
+        #   -Xsycl-target-backend[=<target>] <arg>
+        #                   — icpx AOT backend argument, scoped or unscoped
         #   -Xs ...         — legacy icpx AOT device compilation flags
-        #   -Xsycl-target-backend=<target> <arg>
-        #                   — target-scoped icpx AOT backend argument
-        #   -fp-model=...   — icpx floating point model
-        #   -pedantic       — harmless but generates noise from SYCL headers
+        #
+        # Flags translated rather than dropped:
+        #   -fp-model=...   — rewritten to clang's -ffp-model spelling, so the
+        #                     analyzer sees the same floating-point contract the
+        #                     real build uses instead of clang's default.
+        #
+        # -pedantic is deliberately NOT stripped: it is the flag the build is
+        # held to, and the wrapper's -Wno-unknown-* pair below already silences
+        # the SYCL-header noise that stripping it used to avoid.
         #
         # The wrapper (clang-tidy-sycl.sh) injects:
         #   -isystem<sycl-include>  — resolves <sycl/sycl.hpp>
@@ -93,7 +103,8 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
         #
         # We still keep the -I include paths and -D defines from the original
         # icpx command so clang-tidy can resolve project headers.
-        cmd = _clang_tidy_command(raw_command)
+        # Replace the output argument too; clang-tidy ignores compilation output.
+        cmd = clang_tidy_command(raw_command)
 
         entries.append(
             {
@@ -107,7 +118,7 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:  # noqa: PLR2004 — 2 args is the spec
+    if len(argv) != EXPECTED_ARGUMENT_COUNT:
         print(
             f"usage: {argv[0]} <build-dir>",
             file=sys.stderr,
