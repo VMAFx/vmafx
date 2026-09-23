@@ -196,6 +196,17 @@ Raise all three in one commit. Fixture:
 trigger file to the `test-base-image-single-source` hook's `files:` regex, which
 is what decides when the `test_*single_source.py` discovery runs.
 
+### Dev-container GitHub build secret (ADR-1271)
+
+`check-dev-container-build-secret.py` binds five surfaces: the optional
+`github_token` mount in `dev/Containerfile`, its Compose environment source,
+the authenticated raw build in `dev-container-build.yml`, the NEO fetcher's
+rate-limit remedy, and the anonymous/authenticated operator examples. Never
+replace the secret with `ARG` or `ENV`, make it required, or expose it to the
+runtime service. `tests/test_dev_container_build_secret.py` mutation-checks
+those failure modes and is wired to pre-commit/pre-push; the Dev Container
+workflow additionally runs native Docker and Compose `--check` before building.
+
 ### Workflow coupling
 
 Following pairs tightly coupled — rename or signature
