@@ -16,7 +16,7 @@ pooled-only schema the smoke output had).
 Usage:
     python3 scripts/dev/hw_encoder_corpus.py \\
         --vmaf-bin core/build-cuda/tools/vmaf \\
-        --source .workingdir2/netflix/ref/BigBuckBunny_25fps.yuv \\
+        --source .corpus/netflix/ref/BigBuckBunny_25fps.yuv \\
         --width 1920 --height 1080 --pix-fmt yuv420p --framerate 25 \\
         --encoder h264_nvenc --cq 19 --cq 25 --cq 31 --cq 37 \\
         --out runs/phase_a/bbb_h264_nvenc.jsonl

@@ -713,7 +713,6 @@ def _add_runtime_arguments(ap: argparse.ArgumentParser) -> None:
         default=BACKEND_DEFAULT_DEVICE["sycl"],
     )
     add_output_and_calibration_args(ap)
-    return ap.parse_args()
 
 
 def requested_calibration(args: argparse.Namespace) -> CalibrationTable | None:

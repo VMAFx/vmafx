@@ -17,14 +17,16 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-
-from scripts.lib.safe_subprocess import TextCommandResult
-from scripts.lib.safe_subprocess import run as run_command
-
 SCRIPT = Path(__file__).resolve().parents[1] / "lint-configured.py"
+EXPORT_SCRIPT = SCRIPT.with_name("write-compile-commands.py")
+POSIX_MODEL_SCRIPT = SCRIPT.with_name("write_cppcheck_posix_model.py")
 ROOT = SCRIPT.parents[2]
 PUBLIC_MODEL = Path("scripts/ci/cppcheck-public-entrypoints.cfg")
+
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
 class PublicEntrypointModelTests(unittest.TestCase):
@@ -150,6 +152,7 @@ class PublicEntrypointModelTests(unittest.TestCase):
         for path in (
             str(PUBLIC_MODEL),
             "scripts/ci/lint-configured.py",
+            "scripts/ci/write_cppcheck_posix_model.py",
             "scripts/ci/tests/test_lint_configured.py",
             "scripts/ci/tests/test_cppcheck_posix_model.py",
             "core/include/libvmaf/libvmaf_hip.h",
@@ -190,13 +193,8 @@ class ConfiguredLintTests(unittest.TestCase):
             "core/src/feature/cuda/active.cu",
             "core/src/vendor/tracked.c",
         ]
-        for name in [*self.native, "core/src/feature/arm64/inactive.c"]:
-            path = self.root / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("int fixture;\n", encoding="utf-8")
-        (self.root / ".cppcheck-suppressions.txt").write_text("", encoding="utf-8")
-        (self.root / PUBLIC_MODEL).parent.mkdir(parents=True)
-        shutil.copy2(ROOT / PUBLIC_MODEL, self.root / PUBLIC_MODEL)
+        self.create_source_fixtures()
+        self.install_model_fixtures()
         self.command(["git", "init", "-q"])
         self.command(["git", "add", "."])
         self.entries = [self.entry(name) for name in self.native]
@@ -210,6 +208,31 @@ class ConfiguredLintTests(unittest.TestCase):
             }
         ]
         self.write_database()
+        self.install_analyzer_stubs()
+
+    def create_source_fixtures(self) -> None:
+        for name in [*self.native, "core/src/feature/arm64/inactive.c"]:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("int fixture;\n", encoding="utf-8")
+        (self.root / ".cppcheck-suppressions.txt").write_text("", encoding="utf-8")
+        (self.root / PUBLIC_MODEL).parent.mkdir(parents=True)
+        shutil.copy2(ROOT / PUBLIC_MODEL, self.root / PUBLIC_MODEL)
+
+    def install_model_fixtures(self) -> None:
+        shutil.copy2(POSIX_MODEL_SCRIPT, self.root / "scripts/ci/write_cppcheck_posix_model.py")
+        self.cppcheck_filesdir = self.root / "cppcheck-data"
+        posix_model = self.cppcheck_filesdir / "cfg/posix.cfg"
+        posix_model.parent.mkdir(parents=True)
+        posix_model.write_text(
+            "<?xml version='1.0'?><def format='2'><function name='pthread_cond_init'>"
+            "<arg nr='1'><not-null/></arg><arg nr='2'><not-null/></arg>"
+            "</function></def>\n",
+            encoding="utf-8",
+        )
+        self.env["CPPCHECK_FILESDIR"] = str(self.cppcheck_filesdir)
+
+    def install_analyzer_stubs(self) -> None:
         for name in ["clang-tidy", "cppcheck"]:
             stub = self.bin / name
             stub.write_text(
@@ -217,7 +240,16 @@ class ConfiguredLintTests(unittest.TestCase):
                 "import json, os, sys\n"
                 "from pathlib import Path\n"
                 "name = Path(sys.argv[0]).name\n"
+                "if name == 'cppcheck' and sys.argv[1:] == ['--filesdir']:\n"
+                "    print(os.environ['CPPCHECK_FILESDIR'])\n"
+                "    raise SystemExit(0)\n"
+                "if name == 'cppcheck' and '--check-library' in sys.argv[1:]:\n"
+                "    raise SystemExit(0)\n"
                 "Path(os.environ['CALLS'], name + '-' + str(os.getpid()) + '.json').write_text(json.dumps(sys.argv[1:]))\n"
+                "if name == 'clang-tidy' and os.environ.get('CLANG_TIDY_EMIT_WARNING') == '1':\n"
+                "    print('fixture.c:1:1: warning: visible fixture diagnostic [fixture-warning]')\n"
+                "    if '--warnings-as-errors=*' in sys.argv[1:]:\n"
+                "        raise SystemExit(1)\n"
                 "raise SystemExit(int(os.environ.get(name.upper().replace('-', '_') + '_EXIT', '0')))\n",
                 encoding="utf-8",
             )
@@ -231,6 +263,8 @@ class ConfiguredLintTests(unittest.TestCase):
             env=self.env,
             capture_output=True,
             text=True,
+            check=False,
+            timeout_seconds=600,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
@@ -294,6 +328,7 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(
             {args[-1] for args in calls}, {str(self.root / name) for name in self.native}
         )
+        self.assertTrue(all("--warnings-as-errors=*" in args for args in calls))
         self.assertEqual(len(calls), len(self.native))
         cppcheck_calls = [
             json.loads(path.read_text()) for path in self.calls.glob("cppcheck-*.json")
@@ -305,7 +340,7 @@ class ConfiguredLintTests(unittest.TestCase):
                 "--enable=all",
                 "--check-level=exhaustive",
                 "--inline-suppr",
-                "--library=posix",
+                f"--library={report / 'cppcheck-posix-vmafx.cfg'}",
                 f"--library={self.root / PUBLIC_MODEL}",
                 f"--suppressions-list={self.root / '.cppcheck-suppressions.txt'}",
                 f"--project={report / 'compile_commands.json'}",
@@ -345,7 +380,7 @@ class ConfiguredLintTests(unittest.TestCase):
         entries = json.loads((self.report() / "compile_commands.json").read_text())
         self.assertEqual(entries[0]["arguments"], self.entries[0]["arguments"])
         args = json.loads(next(self.calls.glob("cppcheck-*.json")).read_text())
-        self.assertIn("--library=posix", args)
+        self.assertIn(f"--library={self.report() / 'cppcheck-posix-vmafx.cfg'}", args)
         self.assertIn(f"--library={self.root / PUBLIC_MODEL}", args)
         self.assertIn("--check-level=exhaustive", args)
         self.assertFalse(any(arg.startswith(("--platform", "--language", "--std")) for arg in args))
@@ -354,7 +389,9 @@ class ConfiguredLintTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text()
         job = workflow.split("\n  cppcheck:\n", 1)[1].split("\n  python-lint:", 1)[0]
         self.assertIn("-p test_cppcheck_posix_model.py", job)
-        self.assertIn("--library=posix", job)
+        self.assertIn("scripts/ci/write_cppcheck_posix_model.py", job)
+        self.assertIn("--library=build/cppcheck-posix-vmafx.cfg", job)
+        self.assertNotIn("--library=posix", job)
         self.assertIn(f"--library={PUBLIC_MODEL.as_posix()}", job)
         self.assertIn("--check-level=exhaustive", job)
         self.assertNotIn("--check-level=normal", job)
@@ -370,6 +407,13 @@ class ConfiguredLintTests(unittest.TestCase):
                 result = self.run_driver(**{failing: "7"})
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(len(list(self.calls.glob("cppcheck-*.json"))), 2)
+
+    def test_clang_tidy_warning_is_promoted_to_gate_failure(self) -> None:
+        result = self.run_driver(CLANG_TIDY_EMIT_WARNING="1")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("visible fixture diagnostic", result.stdout)
+        receipt = json.loads((self.report() / "result.json").read_text())
+        self.assertEqual(len(receipt["clang_tidy_failed_sources"]), len(self.native))
 
     def test_missing_empty_and_invalid_database_fail_before_analyzers(self) -> None:
         cases = [None, "[]", "{}", "invalid", "[null]"]
@@ -504,52 +548,17 @@ class ConfiguredLintTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("invalid output", result.stderr)
 
-    def install_make_fixture_tools(self) -> tuple[Path, str]:
-        """Install the fail-closed pip and deterministic Meson/Ninja shims."""
-        # Recursive Make does not inherit -o: satisfy the actual tool prerequisites.
-        pip = self.root / "fixture-venv/bin/pip"
-        pip.parent.mkdir(parents=True)
-        pip_source = (
-            f"#!{sys.executable}\n"
-            "import os, sys\nfrom pathlib import Path\n"
-            "Path(os.environ['CALLS'], 'pip-bootstrap.txt').write_text(repr(sys.argv))\n"
-            "raise SystemExit('fixture must not bootstrap tools')\n"
-        )
-        pip.write_text(pip_source, encoding="utf-8")
-        pip.chmod(0o755)
-        meson = self.bin / "meson"
-        meson.write_text(
-            f"#!{sys.executable}\n"
-            "import os, sys\nfrom pathlib import Path\n"
-            "assert sys.argv[1:] == ['setup', '--reconfigure', 'configured-build', 'core']\n"
-            "assert os.environ['PATH'].split(os.pathsep)[0] == 'fixture-venv/bin'\n"
-            "Path('configured-build/compile_commands.json').write_bytes(Path('native-database.json').read_bytes())\n"
-            "Path('configured-build/configure-called.txt').write_text('same build options')\n",
-            encoding="utf-8",
-        )
-        meson.chmod(0o755)
-        ninja = self.bin / "ninja"
-        ninja.write_text(
-            f"#!{sys.executable}\n"
-            "import json, sys\n"
-            "from pathlib import Path\n"
-            "if '-t' in sys.argv:\n"
-            "    print(json.dumps([{'directory': str(Path.cwd()), 'file': 'generator.txt', 'arguments': ['generator']}]))\n"
-            "else:\n"
-            "    assert Path('configured-build/configure-called.txt').is_file()\n"
-            "    Path('configured-build/build-called.txt').write_text('generated prerequisites ready')\n",
-            encoding="utf-8",
-        )
-        ninja.chmod(0o755)
-        return pip, pip_source
-
-    def run_make_target(self, *, polluted: bool = False) -> None:
+    def prepare_make_fixture(self, polluted: bool) -> bytes:
         shutil.copy2(ROOT / "Makefile", self.root / "Makefile")
         target = self.root / "scripts/ci/lint-configured.py"
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SCRIPT, target)
+        shutil.copy2(EXPORT_SCRIPT, target.with_name("write-compile-commands.py"))
+        # The driver now imports the bounded-subprocess wrapper, so the sandbox
+        # needs it too -- without it `make lint-c` dies on ModuleNotFoundError
+        # before reaching anything this test is about.
         helper = self.root / "scripts/lib/safe_subprocess.py"
-        helper.parent.mkdir(parents=True)
+        helper.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
         original = self.database.read_bytes()
         (self.root / "native-database.json").write_bytes(original)
@@ -563,9 +572,56 @@ class ConfiguredLintTests(unittest.TestCase):
                 }
             ]
             self.write_database()
-        pip, pip_source = self.install_make_fixture_tools()
+        return original
+
+    def install_make_prerequisite_sentinel(self) -> tuple[Path, str]:
+        # Recursive Make does not inherit -o: satisfy the actual tool prerequisites.
+        pip = self.root / "fixture-venv/bin/pip"
+        pip.parent.mkdir(parents=True)
+        pip_source = (
+            f"#!{sys.executable}\n"
+            "import os, sys\nfrom pathlib import Path\n"
+            "Path(os.environ['CALLS'], 'pip-bootstrap.txt').write_text(repr(sys.argv))\n"
+            "raise SystemExit('fixture must not bootstrap tools')\n"
+        )
+        pip.write_text(pip_source, encoding="utf-8")
+        pip.chmod(0o755)
+        return pip, pip_source
+
+    def install_make_build_tools(self) -> None:
+        meson = self.bin / "meson"
+        meson.write_text(
+            f"#!{sys.executable}\n"
+            "import os, sys\nfrom pathlib import Path\n"
+            "assert sys.argv[1:] == ['setup', '--reconfigure', 'configured-build', 'core']\n"
+            "venv_bin = Path(os.environ['PATH'].split(os.pathsep)[0])\n"
+            "assert venv_bin == Path.cwd() / 'fixture-venv/bin'\n"
+            "assert venv_bin.is_absolute()\n"
+            "Path('configured-build/compile_commands.json').write_bytes(Path('native-database.json').read_bytes())\n"
+            "Path('configured-build/build.ninja').write_text('# fixture manifest\\n')\n"
+            "Path('configured-build/configure-called.txt').write_text('same build options')\n",
+            encoding="utf-8",
+        )
+        meson.chmod(0o755)
+        ninja = self.bin / "ninja"
+        ninja.write_text(
+            f"#!{sys.executable}\n"
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            "if sys.argv[-2:] == ['-t', 'rules']:\n"
+            "    print('c_COMPILER\\ncpp_COMPILER')\n"
+            "elif '-t' in sys.argv and 'compdb' in sys.argv:\n"
+            "    print(Path('native-database.json').read_text())\n"
+            "else:\n"
+            "    assert Path('configured-build/configure-called.txt').is_file()\n"
+            "    Path('configured-build/build-called.txt').write_text('generated prerequisites ready')\n",
+            encoding="utf-8",
+        )
+        ninja.chmod(0o755)
+
+    def invoke_make_lint(self) -> TextCommandResult:
         # Keep the initial configured-build target; recursive build checks real prerequisites.
-        result = self.command(
+        return self.command(
             [
                 "make",
                 "--no-print-directory",
@@ -582,10 +638,16 @@ class ConfiguredLintTests(unittest.TestCase):
                 "LINT_JOBS=2",
             ]
         )
+
+    def run_make_target(self, *, polluted: bool = False) -> None:
+        original = self.prepare_make_fixture(polluted)
+        pip, pip_source = self.install_make_prerequisite_sentinel()
+        self.install_make_build_tools()
+        result = self.invoke_make_lint()
         self.assertFalse((self.calls / "pip-bootstrap.txt").exists())
         self.assertFalse((self.root / "fixture-venv/pyvenv.cfg").exists())
         self.assertEqual(pip.read_text(encoding="utf-8"), pip_source)
-        self.assertEqual(self.database.read_bytes(), original)
+        self.assertEqual(json.loads(self.database.read_bytes()), json.loads(original))
         self.assertTrue((self.build / "build-called.txt").is_file())
         self.assertIn("Configured lint:", result.stdout)
         self.assertEqual(len(list(self.calls.glob("clang-tidy-*.json"))), len(self.native))

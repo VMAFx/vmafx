@@ -17,8 +17,11 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from scripts.lib.safe_subprocess import CommandFailed, CommandResult  # noqa: E402
-from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandFailed,
+    CommandResult,
+    TextCommandResult,
+)
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 SCRIPT = ROOT / "scripts/ci/agent-eligibility-precheck.py"

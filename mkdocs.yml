@@ -1391,6 +1391,7 @@ nav:
         - "ADR-1263: hip-platform-macro-single-source": adr/1263-hip-platform-macro-single-source.md
         - "ADR-1264: hip-scaffold-enosys-contract": adr/1264-hip-scaffold-enosys-contract.md
         - "ADR-1265: clang-tidy-header-filter-absolute-paths": adr/1265-clang-tidy-header-filter-absolute-paths.md
+        - "ADR-1270: bounded-process-execution": adr/1270-bounded-process-execution.md
         - "ADR-1271: neo-buildkit-github-token-secret": adr/1271-neo-buildkit-github-token-secret.md
         - "ADR-1274: hiss-21-replay-gate": adr/1274-hiss-21-replay-gate.md
         - "ADR-1276: pelorus-v022-parser-safety-repin": adr/1276-pelorus-v022-parser-safety-repin.md
@@ -1414,7 +1415,6 @@ nav:
         - "ADR-1296: gpu-failure-path-stub-interposition": adr/1296-gpu-failure-path-stub-interposition.md
         - "ADR-1297: ci-gate-every-reporting-check": adr/1297-ci-gate-every-reporting-check.md
         - "ADR-1298: hiss-audit-merge-touched-scope": adr/1298-hiss-audit-merge-touched-scope.md
-        - "ADR-1270: bounded-process-execution": adr/1270-bounded-process-execution.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
