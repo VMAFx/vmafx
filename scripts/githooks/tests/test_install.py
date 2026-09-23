@@ -136,7 +136,14 @@ class HookInstallTests(unittest.TestCase):
         self.write("docs/index.md", "# Docs\n")
         self.write("mkdocs.yml", "site_name: fixture\n")
         self.write("scripts/ci/validate-pr-body.sh", "#!/bin/sh\nexit 0\n", executable=True)
-        self.write(".gitignore", ".claude/\n.workingdir\n")
+        # __pycache__/ mirrors the real .gitignore (lines 13 and 23). The
+        # installer imports scripts.lib.safe_subprocess, so running it inside a
+        # worktree leaves scripts/lib/__pycache__/ there. Without this line the
+        # fixture repo counts that as untracked and `git worktree remove` below
+        # refuses with "contains modified or untracked files" -- a fixture that
+        # is less faithful than the repository it stands in for, not a defect in
+        # the installer.
+        self.write(".gitignore", ".claude/\n.workingdir\n__pycache__/\n*.py[cod]\n")
         self.run_git("add", ".")
         self.run_git("commit", "-m", "test: fixture")
         self.remote = self.base / "remote.git"

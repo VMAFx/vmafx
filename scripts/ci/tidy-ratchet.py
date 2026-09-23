@@ -343,7 +343,16 @@ def run_one(
         text=True,
         check=False,
         cwd=str(directory),
-        timeout_seconds=600,
+        # Not a measured figure -- a ceiling. Before the bounded wrapper this
+        # call had no timeout at all, and the Tidy Ratchet job completed inside
+        # its own 45-minute budget, so no legitimate translation unit can be
+        # slower than that job allows. 600 s was under a quarter of it and a
+        # real TU crossed it (`measurement/output failed: command timed out
+        # after 600s: clang-tidy`, 2026-09-23). 1800 s still fails a genuinely
+        # hung clang-tidy well before the job's own ceiling fires, while it
+        # cannot be the cause of a failure the unbounded version would not also
+        # have had. Tighten it when the slowest TU is actually measured.
+        timeout_seconds=1800,
         max_output_bytes=64 * 1_048_576,
     )
     return str(source), proc.stdout + "\n" + proc.stderr, proc.returncode

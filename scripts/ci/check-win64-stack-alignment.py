@@ -79,6 +79,16 @@ def _disassemble(objdump: str, path: Path) -> str:
         text=True,
         check=False,
         timeout_seconds=60,
+        # A whole-library disassembly is legitimately large, and the wrapper's
+        # 4 MiB default truncates it into a CommandOutputLimitExceeded rather
+        # than a short read. Measured 2026-09-23 on three local x86-64 builds:
+        # a 2.2-2.7 MiB libvmaf.so disassembles to 7.5-8.0 MiB in about 90 ms.
+        # The Windows MinGW64 artifact this check actually runs against carries
+        # more of the matrix, so 256 MiB is roughly 30x the measured size --
+        # still a real ceiling against a runaway objdump, with room for the
+        # library to keep growing. The 60 s timeout is untouched; the measured
+        # run is three orders of magnitude inside it.
+        max_output_bytes=256 * 1_048_576,
     )
     if proc.returncode != 0:
         return ""
