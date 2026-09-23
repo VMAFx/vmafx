@@ -16,7 +16,6 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-
 FEATURE_COLUMNS = (
     "adm2",
     "vif_scale0",
@@ -45,14 +44,14 @@ class ModelFacts:
     manifest: str | None = None
     dataset: str | None = None
     license: str | None = None
-    normalization: dict | None = None
+    normalization: dict[str, list[float]] | None = None
     feature_columns: list[str] = field(default_factory=list)
     feature_contract_ok: bool | None = None
     op_allowlist_status: str | None = None
     forbidden_ops: list[str] = field(default_factory=list)
     cross_backend_status: str | None = None
     cross_backend_max_err: float | None = None
-    eval_report: dict | None = None
+    eval_report: dict[str, str | int | float] | None = None
 
     def to_markdown(self) -> str:
         """Render the dataclass as a compact key: value block for the LLM."""
@@ -132,7 +131,7 @@ def _check_feature_contract(facts: ModelFacts) -> None:
 
 
 def _check_op_allowlist(onnx_path: Path, facts: ModelFacts, repo_root: Path) -> None:
-    allow_src = repo_root / "libvmaf" / "src" / "dnn" / "op_allowlist.c"
+    allow_src = repo_root / "core" / "src" / "dnn" / "op_allowlist.c"
     if not allow_src.is_file():
         return
     try:
@@ -143,9 +142,7 @@ def _check_op_allowlist(onnx_path: Path, facts: ModelFacts, repo_root: Path) -> 
 
     text = allow_src.read_text()
     # Match both `allowed_ops[]` and upstream's `ALLOWED_OPS[]`.
-    m = re.search(
-        r"(?i)[A-Z_]*ALLOWED_OPS[A-Z_]*\s*\[\s*\]\s*=\s*\{([^}]*)\}", text, re.S
-    )
+    m = re.search(r"(?i)[A-Z_]*ALLOWED_OPS[A-Z_]*\s*\[\s*\]\s*=\s*\{([^}]*)\}", text, re.DOTALL)
     if not m:
         return
     allowed = set(re.findall(r'"([A-Za-z][A-Za-z0-9_]*)"', m.group(1)))
@@ -156,9 +153,7 @@ def _check_op_allowlist(onnx_path: Path, facts: ModelFacts, repo_root: Path) -> 
     facts.op_allowlist_status = "ok" if not forbidden else "forbidden ops present"
 
 
-def _run_eval(
-    onnx_path: Path, parquet: Path, facts: ModelFacts, split: str = "test"
-) -> None:
+def _run_eval(onnx_path: Path, parquet: Path, facts: ModelFacts, split: str = "test") -> None:
     try:
         import numpy as np
         import onnxruntime as ort
@@ -177,8 +172,10 @@ def _run_eval(
             h = _h.sha256(f"vmaf-train-splits-v1:{k}".encode()).digest()
             return int.from_bytes(h[:8], "big") / (1 << 64)
 
-        which = df["key"].astype(str).map(
-            lambda k: "test" if bucket(k) < 0.1 else "val" if bucket(k) < 0.2 else "train"
+        which = (
+            df["key"]
+            .astype(str)
+            .map(lambda k: "test" if bucket(k) < 0.1 else "val" if bucket(k) < 0.2 else "train")
         )
         df = df[which == split]
     cols = [c for c in FEATURE_COLUMNS if c in df.columns]
@@ -193,7 +190,7 @@ def _run_eval(
         return
     facts.eval_report = {
         "split": split,
-        "n": int(len(x)),
+        "n": len(x),
         "plcc": float(pearsonr(pred, y).statistic),
         "srocc": float(spearmanr(pred, y).statistic),
         "rmse": float(np.sqrt(((pred - y) ** 2).mean())),

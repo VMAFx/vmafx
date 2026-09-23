@@ -36,7 +36,7 @@ def _tiny_onnx(path: Path, in_features: int = 6) -> None:
     onnx.save(model, str(path))
 
 
-def _sidecar(path: Path, **overrides) -> None:
+def _sidecar(path: Path, **overrides: object) -> None:
     base = {
         "schema_version": 1,
         "name": path.stem,
@@ -107,8 +107,8 @@ def test_op_allowlist_parsed_from_c_source(tmp_path: Path) -> None:
     _sidecar(onnx_path.with_suffix(".json"))
     # Build a minimal fake libvmaf tree with an allowlist containing Gemm
     # so our model's single op is allowed.
-    (tmp_path / "libvmaf" / "src" / "dnn").mkdir(parents=True)
-    (tmp_path / "libvmaf" / "src" / "dnn" / "op_allowlist.c").write_text(
+    (tmp_path / "core" / "src" / "dnn").mkdir(parents=True)
+    (tmp_path / "core" / "src" / "dnn" / "op_allowlist.c").write_text(
         'static const char *allowed_ops[] = {"Gemm", "Relu"};\n'
     )
     facts = collect_facts(onnx_path, repo_root=tmp_path)
@@ -122,8 +122,8 @@ def test_op_allowlist_flags_forbidden_op(tmp_path: Path) -> None:
 
     onnx_path = tmp_path / "m.onnx"
     _tiny_onnx(onnx_path)
-    (tmp_path / "libvmaf" / "src" / "dnn").mkdir(parents=True)
-    (tmp_path / "libvmaf" / "src" / "dnn" / "op_allowlist.c").write_text(
+    (tmp_path / "core" / "src" / "dnn").mkdir(parents=True)
+    (tmp_path / "core" / "src" / "dnn" / "op_allowlist.c").write_text(
         'static const char *allowed_ops[] = {"Conv"};\n'
     )
     facts = collect_facts(onnx_path, repo_root=tmp_path)

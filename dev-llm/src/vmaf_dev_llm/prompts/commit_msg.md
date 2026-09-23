@@ -1,4 +1,5 @@
-<!-- markdownlint-disable MD041 -->
+# Commit message prompt
+
 You are drafting a commit message for the VMAFx fork, which requires
 **Conventional Commits** format strictly.
 

@@ -1,4 +1,5 @@
-<!-- markdownlint-disable MD041 -->
+# CUDA review prompt
+
 You are reviewing a CUDA source file (`*.cu` / `*.cuh`) from the Lusoris
 VMAF fork's GPU backend. The file is compiled by `nvcc` and runs feature
 extractors on the GPU. Host-side code follows CERT C; device-side code

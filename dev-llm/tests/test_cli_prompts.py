@@ -6,8 +6,12 @@ substitutable. Does NOT exercise Ollama."""
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
+from typer.testing import CliRunner
+
+from vmaf_dev_llm import cli
 from vmaf_dev_llm.cli import _guess_prompt_for_file, _load_prompt
 from vmaf_dev_llm.config import Config
 
@@ -26,12 +30,12 @@ def test_all_prompts_present() -> None:
 
 
 def test_guess_prompt() -> None:
-    assert _guess_prompt_for_file(Path("foo.c"))      == "review_c.md"
-    assert _guess_prompt_for_file(Path("foo.cpp"))    == "review_c.md"
-    assert _guess_prompt_for_file(Path("foo.cu"))     == "review_cuda.md"
-    assert _guess_prompt_for_file(Path("foo.cuh"))    == "review_cuda.md"
+    assert _guess_prompt_for_file(Path("foo.c")) == "review_c.md"
+    assert _guess_prompt_for_file(Path("foo.cpp")) == "review_c.md"
+    assert _guess_prompt_for_file(Path("foo.cu")) == "review_cuda.md"
+    assert _guess_prompt_for_file(Path("foo.cuh")) == "review_cuda.md"
     assert _guess_prompt_for_file(Path("sycl/foo.cpp")) == "review_sycl.md"
-    assert _guess_prompt_for_file(Path("foo.rs"))     == "review_c.md"  # fallback
+    assert _guess_prompt_for_file(Path("foo.rs")) == "review_c.md"  # fallback
 
 
 def test_review_c_has_required_placeholders() -> None:
@@ -53,3 +57,16 @@ def test_doc_section_has_symbol_placeholder() -> None:
     assert "{{SYMBOL}}" in text
     assert "{{FILE_PATH}}" in text
     assert "{{SOURCE}}" in text
+
+
+def test_commitmsg_reports_git_stderr(monkeypatch) -> None:
+    def fail_git(*_args: object, **_kwargs: object) -> str:
+        raise subprocess.CalledProcessError(2, ["git"], stderr="fatal: fixture failure")
+
+    monkeypatch.setattr(cli, "load_config", Config)
+    monkeypatch.setattr(cli, "checked_output", fail_git)
+
+    result = CliRunner().invoke(cli.app, ["commitmsg"])
+
+    assert result.exit_code == 1
+    assert "git diff --staged failed: fatal: fixture failure" in result.output

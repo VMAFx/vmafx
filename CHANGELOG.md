@@ -22673,6 +22673,16 @@ discover Arc GPUs. ADR-0528.
   (ADR-1053)
 
 
+- **`vmaf-dev-llm commitmsg` can no longer hang indefinitely in Git.** Its
+  staged-diff subprocess is shell-free, resolves the executable before spawn,
+  disables external diff drivers, closes standard input, preserves failure
+  diagnostics, and enforces a finite 30-second wall-clock timeout. The
+  developer-helper package is also clean under the current Ruff profile, and
+  its packaged prompts use real Markdown headings instead of lint disables.
+  Model-card safety checks now read the real `core/src/dnn/op_allowlist.c`
+  repository path instead of silently skipping a nonexistent legacy path.
+
+
 **fix(dev): resolve dev-MCP container stage-3 EACCES + bundle earlier package fixes**
 
 Stage 3 (`libvmaf-build`) of `dev/Containerfile` failed with

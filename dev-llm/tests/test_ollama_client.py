@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from typing import Self
 from unittest.mock import patch
 
 import pytest
@@ -21,10 +22,10 @@ class _FakeResponse:
     def read(self) -> bytes:
         return self._payload
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args):  # noqa: ANN001
+    def __exit__(self, *_args: object) -> bool:
         return False
 
 
@@ -39,9 +40,11 @@ def test_generate_returns_response() -> None:
 def test_generate_raises_on_bad_payload() -> None:
     client = OllamaClient()
     payload = json.dumps({"no_response_field": True}).encode()
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(payload)):
-        with pytest.raises(OllamaError):
-            client.generate("qwen", "x")
+    with (
+        patch("urllib.request.urlopen", return_value=_FakeResponse(payload)),
+        pytest.raises(OllamaError),
+    ):
+        client.generate("qwen", "x")
 
 
 def test_available_false_on_error() -> None:

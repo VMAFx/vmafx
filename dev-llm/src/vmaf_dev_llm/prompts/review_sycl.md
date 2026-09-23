@@ -1,4 +1,5 @@
-<!-- markdownlint-disable MD041 -->
+# SYCL review prompt
+
 You are reviewing a SYCL source file from the VMAFx fork's oneAPI
 GPU backend. The file is compiled with `icpx -fsycl` against the Intel
 oneAPI runtime. Host-side code follows CERT C++; device-side follows SYCL

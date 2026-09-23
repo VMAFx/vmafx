@@ -9,23 +9,25 @@ import subprocess
 import sys
 from importlib import resources
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from rich.console import Console
 
 from .config import Config, load_config
 from .ollama_client import OllamaClient, OllamaError
+from .process import checked_output
 
 app = typer.Typer(add_completion=False, help="Local LLM dev helpers (Ollama-first).")
 console = Console()
 
 
 EXT_TO_PROMPT = {
-    ".c":   "review_c.md",
-    ".h":   "review_c.md",
+    ".c": "review_c.md",
+    ".h": "review_c.md",
     ".cpp": "review_c.md",
     ".hpp": "review_c.md",
-    ".cu":  "review_cuda.md",
+    ".cu": "review_cuda.md",
     ".cuh": "review_cuda.md",
     ".sycl": "review_sycl.md",
 }
@@ -52,7 +54,9 @@ def _guess_prompt_for_file(file_path: Path) -> str:
     return EXT_TO_PROMPT.get(file_path.suffix, "review_c.md")
 
 
-def _run_ollama(cfg: Config, *, prompt: str, system: str | None = None, model: str | None = None) -> str:
+def _run_ollama(
+    cfg: Config, *, prompt: str, system: str | None = None, model: str | None = None
+) -> str:
     client = OllamaClient(base_url=cfg.ollama.base_url, timeout_seconds=cfg.ollama.timeout_seconds)
     if not client.available():
         raise OllamaError(
@@ -64,8 +68,13 @@ def _run_ollama(cfg: Config, *, prompt: str, system: str | None = None, model: s
 
 @app.command()
 def review(
-    file: Path = typer.Option(..., "--file", "-f", help="Source file to review.", exists=True, readable=True),
-    model: str | None = typer.Option(None, "--model", "-m", help="Override config.ollama.default_model."),
+    file: Annotated[
+        Path,
+        typer.Option("--file", "-f", help="Source file to review.", exists=True, readable=True),
+    ],
+    model: str | None = typer.Option(
+        None, "--model", "-m", help="Override config.ollama.default_model."
+    ),
 ) -> None:
     """Run a local LLM code review against FILE and print review comments."""
     cfg = load_config()
@@ -87,9 +96,11 @@ def commitmsg(
     """Draft a Conventional-Commits message from `git diff --staged`."""
     cfg = load_config()
     try:
-        diff = subprocess.check_output(["git", "diff", "--staged", "--no-color"], text=True)
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]git diff --staged failed: {e}[/red]")
+        diff = checked_output(["git", "diff", "--staged", "--no-color", "--no-ext-diff"], text=True)
+    except (OSError, subprocess.SubprocessError) as e:
+        stderr = getattr(e, "stderr", None)
+        detail = stderr.strip() if isinstance(stderr, str) and stderr.strip() else str(e)
+        console.print(f"[red]git diff --staged failed: {detail}[/red]")
         sys.exit(1)
     if not diff.strip():
         console.print("[yellow]No staged changes — nothing to draft.[/yellow]")
@@ -107,7 +118,7 @@ def commitmsg(
 
 @app.command()
 def docgen(
-    file: Path = typer.Option(..., "--file", "-f", exists=True, readable=True),
+    file: Annotated[Path, typer.Option("--file", "-f", exists=True, readable=True)],
     symbol: str = typer.Option(..., "--symbol", "-s", help="Function or type name to document."),
     model: str | None = typer.Option(None, "--model", "-m"),
 ) -> None:
@@ -116,8 +127,7 @@ def docgen(
     template = _load_prompt(cfg, "doc_section.md")
     source = file.read_text()
     prompt = (
-        template
-        .replace("{{FILE_PATH}}", str(file))
+        template.replace("{{FILE_PATH}}", str(file))
         .replace("{{SYMBOL}}", symbol)
         .replace("{{SOURCE}}", source)
     )
@@ -131,25 +141,37 @@ def docgen(
 
 @app.command()
 def modelcard(
-    onnx: Path = typer.Option(..., "--onnx", "-o", exists=True, readable=True,
-                              help="ONNX model to describe."),
-    features: Path | None = typer.Option(
-        None, "--features", "-F", exists=True, readable=True,
-        help="Optional parquet feature cache for a live PLCC/SROCC/RMSE measurement."
-    ),
+    onnx: Annotated[
+        Path,
+        typer.Option("--onnx", "-o", exists=True, readable=True, help="ONNX model to describe."),
+    ],
+    features: Annotated[
+        Path | None,
+        typer.Option(
+            "--features",
+            "-F",
+            exists=True,
+            readable=True,
+            help="Optional parquet feature cache for a live PLCC/SROCC/RMSE measurement.",
+        ),
+    ] = None,
     split: str = typer.Option(
         "test", "--split", help="Split to evaluate on when --features is passed."
     ),
-    repo_root: Path | None = typer.Option(
-        None, "--repo-root",
-        help="Repo root (used to find core/src/dnn/op_allowlist.c). "
-             "Defaults to the current working directory."
-    ),
+    repo_root: Annotated[
+        Path | None,
+        typer.Option(
+            "--repo-root",
+            help="Repo root (used to find core/src/dnn/op_allowlist.c). "
+            "Defaults to the current working directory.",
+        ),
+    ] = None,
     facts_only: bool = typer.Option(
-        False, "--facts-only",
+        False,
+        "--facts-only",
         help="Print the collected facts block instead of calling the LLM. "
-             "Useful for debugging + for callers who want to render the card "
-             "with a different model."
+        "Useful for debugging + for callers who want to render the card "
+        "with a different model.",
     ),
     model: str | None = typer.Option(None, "--model", "-m"),
 ) -> None:
