@@ -128,12 +128,23 @@ class SmokeSafety(unittest.TestCase):
             }
         )
 
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="ffmpeg-smoke-safety-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.upstream = self.root / "upstream"
+        self.caller = self.root / "caller"
+        self.init_repositories()
+        self.create_project_fixture(self.create_upstream_patch())
+        self.create_fake_tools()
+        self.configure_caller_environment()
+
     def run_smoke(self) -> TextCommandResult:
         # Fixed Bash executable, copied repository script and fixture-owned cwd.
         bash = shutil.which("bash")
         self.assertIsNotNone(bash)
         assert bash is not None
-        return run_command(
+        result = run_command(
             [bash, str(self.script)],
             allowed_executables=(bash,),
             cwd=self.project,
@@ -142,7 +153,11 @@ class SmokeSafety(unittest.TestCase):
             capture_output=True,
             timeout_seconds=30,
         )
+        # A smoke run that succeeded must also have been quiet: this branch makes
+        # FFmpeg diagnostics fatal, so a passing exit code with a warning in the
+        # output would mean the gate it adds is not actually reading anything.
         if result.returncode == 0:
+            assert isinstance(result.stdout, str) and isinstance(result.stderr, str)
             self.assertNotRegex(result.stdout + result.stderr, r"(?i)warning:|error:")
         return result
 

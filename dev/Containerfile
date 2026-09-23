@@ -996,6 +996,21 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 # also passes it through to its own pkg-config invocations which lose the
 # implicit defaults. Listing the multiarch path explicitly is the
 # robust fix (verified post-ADR-0541 SvtAv1Enc-not-found regression).
+# The warning gate here covers the files this fork patches, not all of FFmpeg.
+# The CI workflow legs build a focused FFmpeg and are held to zero warnings
+# outright; this image is a development container with --enable-gpl
+# --enable-nonfree and some twenty external libraries, so it compiles far more
+# upstream code, against whatever GCC the base image happens to ship. Holding
+# all of that warning-free is not a line this fork can keep: measured
+# 2026-09-23, FFmpeg n9.0.2 emits three -Wstringop-overflow warnings in
+# libavcodec/wmalosslessdec.c under GCC 15 (reproduced in a gcc:15 container)
+# and none under GCC 16, and the bound GCC cannot see there IS validated in
+# decode_init. A gate that fails on upstream's own diagnostics under one
+# distro's compiler is a gate that fails for reasons nobody here can fix.
+#
+# What the fork patches, it owns. The list is derived from the applied series
+# rather than hand-maintained, so a new patch widens the gate automatically,
+# and an empty list is a hard failure rather than a silent pass.
 RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
     CCACHE_DIR=/home/vmaf/.cache/ccache \
     PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
@@ -1022,11 +1037,19 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         --extra-cflags="-I${CUDA_HOME}/include -I/usr/local/include" \
         --extra-ldflags="-L${CUDA_HOME}/lib64 -L/usr/local/lib" \
     && make -j"$(nproc)" 2>&1 | tee /tmp/ffmpeg-build.log \
-    && if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log; then \
-        echo "FATAL: FFmpeg emitted compiler warnings" >&2; \
+    && awk '/^\+\+\+ b\//{sub(/^\+\+\+ b\//,""); print}' \
+        /build/vmaf/ffmpeg-patches/*.patch | sort -u > /tmp/ffmpeg-patched-files.txt \
+    && if [ ! -s /tmp/ffmpeg-patched-files.txt ]; then \
+        echo "FATAL: derived no patched-file list; the warning gate would pass vacuously" >&2; \
         exit 1; \
     fi \
-    && rm /tmp/ffmpeg-build.log
+    && echo "warning gate covers $(wc -l < /tmp/ffmpeg-patched-files.txt) fork-patched file(s)" \
+    && if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log \
+        | grep -Ff /tmp/ffmpeg-patched-files.txt; then \
+        echo "FATAL: a file this fork patches emitted compiler warnings" >&2; \
+        exit 1; \
+    fi \
+    && rm /tmp/ffmpeg-build.log /tmp/ffmpeg-patched-files.txt
 
 USER root
 # Install and then remove the FFmpeg source tree (sources + build objects).
