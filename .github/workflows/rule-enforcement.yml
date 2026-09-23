@@ -41,6 +41,9 @@ jobs:
       - name: Verify Go required-check contract
         run: python3 scripts/ci/test_go_workflow_contract.py
 
+      - name: Verify SYCL required clang-tidy contract
+        run: python3 scripts/ci/test_sycl_tidy_workflow_contract.py
+
       - name: Verify Security Scans concurrency contract
         run: python3 scripts/ci/test_security_workflow_contract.py
 

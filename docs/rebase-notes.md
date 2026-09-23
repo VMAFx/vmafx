@@ -35,6 +35,19 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/sycl-tidy-required-rc1 — SYCL clang-tidy is a required non-advisory gate (2026-09-24)
+
+1. **`clang-tidy-sycl` (`Tidy SYCL`) in `.github/workflows/lint-and-format.yml` is a required non-advisory gate.**
+   Do not restore `continue-on-error: true` or append `(advisory)` to the job name during conflict resolution.
+   Its required status is coupled directly to `required-aggregator.yml` and enforced fail-closed by
+   `scripts/ci/test_sycl_tidy_workflow_contract.py`.
+2. **Changed-file detection in `lint-and-format.yml` covers SYCL headers.**
+   The file patterns for the job include `'core/src/sycl/*.h'` and `'core/src/feature/sycl/*.h'`
+   in addition to `.cpp` and `.hpp` across PR, push, and dispatch triggers. Do not revert to the
+   older `.cpp`/`.hpp`-only patterns.
+3. **`test_sycl_tidy_workflow_contract.py` is wired to CI and local hooks.**
+   The contract is executed by `deep-dive-checklist` in `rule-enforcement.yml` and by the
+   `test-sycl-tidy-workflow-contract` local hook in `.pre-commit-config.yaml`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

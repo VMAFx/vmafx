@@ -509,9 +509,9 @@ jobs:
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \
               "origin/${GH_BASE_REF}...HEAD" \
-              -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+              -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' 'core/src/sycl/*.h' \
                  'core/src/feature/sycl/*.cpp' \
-                 'core/src/feature/sycl/*.hpp' \
+                 'core/src/feature/sycl/*.hpp' 'core/src/feature/sycl/*.h' \
                  'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
                  'core/test/test_integer_cambi_sycl.c' \
               | tr '\n' ' ')
@@ -521,9 +521,9 @@ jobs:
             if [ -z "$before" ] || [ "$before" = "$zero" ]; then
               if git rev-parse HEAD~1 >/dev/null 2>&1; then
                 files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD \
-                  -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                  -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' 'core/src/sycl/*.h' \
                      'core/src/feature/sycl/*.cpp' \
-                     'core/src/feature/sycl/*.hpp' \
+                     'core/src/feature/sycl/*.hpp' 'core/src/feature/sycl/*.h' \
                      'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
                      'core/test/test_integer_cambi_sycl.c' \
                   | tr '\n' ' ')
@@ -532,18 +532,18 @@ jobs:
               fi
             else
               files=$(git diff --name-only --diff-filter=d "$before"..HEAD \
-                -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' 'core/src/sycl/*.h' \
                    'core/src/feature/sycl/*.cpp' \
-                   'core/src/feature/sycl/*.hpp' \
+                   'core/src/feature/sycl/*.hpp' 'core/src/feature/sycl/*.h' \
                    'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
                    'core/test/test_integer_cambi_sycl.c' \
                 | tr '\n' ' ')
             fi
           else
             files=$(git ls-files \
-              'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+              'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' 'core/src/sycl/*.h' \
               'core/src/feature/sycl/*.cpp' \
-              'core/src/feature/sycl/*.hpp' \
+              'core/src/feature/sycl/*.hpp' 'core/src/feature/sycl/*.h' \
               'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
               'core/test/test_integer_cambi_sycl.c' \
               | tr '\n' ' ')

@@ -475,6 +475,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: test-sycl-tidy-workflow-contract
+        name: SYCL clang-tidy required non-advisory gate contract
+        entry: python3 -B scripts/ci/test_sycl_tidy_workflow_contract.py
+        language: system
+        files: '^(scripts/ci/test_sycl_tidy_workflow_contract\.py|\.github/workflows/(lint-and-format|required-aggregator|rule-enforcement)\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: fail-closed-ci-contract
         name: Test and scan failures remain observable in CI
         entry: python3 -B scripts/ci/test_fail_closed_ci.py

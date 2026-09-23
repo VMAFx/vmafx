@@ -94,6 +94,13 @@ recorded an empty backend while still reporting the lane as clean.
 their build dir configured `-Db_lto=false` and placed outside the repository;
 see the variable block in the `Makefile`.
 
+In CI, the `clang-tidy-sycl` job (`Tidy SYCL`) in `lint-and-format.yml` is a
+required, non-advisory merge gate tracked in `required-aggregator.yml`
+(T-SYCL-CLANG-TIDY-DISABLED, ADR-1297). The job runs with no `continue-on-error`
+and covers all changed SYCL sources, headers (`.cpp`, `.hpp`, `.h`), and tests.
+The coupling between `lint-and-format.yml`, `required-aggregator.yml`, and
+`rule-enforcement.yml` is pinned fail-closed by `test_sycl_tidy_workflow_contract.py`.
+
 Real-Make fixtures create failing/recording pip sentinel before fake
 Meson and Ninja, satisfying recursive build dependency graph without tool
 bootstrap. GNU Make does not propagate `-o` to sub-makes. Keep `PIP_NO_INDEX=1`
@@ -230,6 +237,7 @@ until master fixed.
 | `test_calibration.py` | `tests-and-quality-gates.yml` — pytest collection (`pytest-tests` lane) | Discovered automatically by pytest; the test module name is part of the gate's contract. |
 | `test_e2e_runtime_contract.py` | `rule-enforcement.yml` and `e2e-k8s.yml` — `Verify E2E runtime contract` | The always-on PR gate and exact E2E lane enforce explicit CPU node + Go server targets, three-image transfer into kind, exact-local Helm pulls, and the real chart-backed scoring case. Keep it outside the E2E trigger gate as well as inside the image job. |
 | `test_go_workflow_contract.py` | `rule-enforcement.yml` — `Verify Go required-check contract` | Executes the embedded aggregator with Go pass/fail outcomes and guards ready-event coverage plus step-level `go_checks` routing. Keep it before authoring exemptions (ADR-1238). |
+| `test_sycl_tidy_workflow_contract.py` | `rule-enforcement.yml` — `Verify SYCL required clang-tidy contract`; `.pre-commit-config.yaml` — `test-sycl-tidy-workflow-contract` | Enforces that `Tidy SYCL` in `lint-and-format.yml` is a non-advisory required gate (`# required-aggregator`, no `continue-on-error`, full `.h`/`.cpp`/`.hpp` SYCL source and test coverage) and present in `required-aggregator.yml`. Executes the embedded Node.js aggregator script to prove a failed SYCL tidy check blocks merge while success passes. |
 | `test_security_workflow_contract.py` | `rule-enforcement.yml` — `Verify Security Scans concurrency contract` | The Security Scans group must include workflow, event name, and ref. This keeps same-event cancellation while preventing a schedule on `refs/heads/master` from canceling a master-push CodeQL run (or vice versa). |
 | `test_fail_closed_ci.py` | `rule-enforcement.yml` — `Verify fail-closed CI contract`; `.pre-commit-config.yaml` — `fail-closed-ci-contract` | Protects real exit propagation for tox coverage, CPU coverage pytest, nightly benchmarks, advisory Semgrep, and sanitizer test discovery. Diagnostic continuation is valid only when a final `if: always()` step reasserts the recorded raw outcome. Keep both callers wired. |
 | `tests/test-dedupe-gate.sh` | `standards-gate.yml` — `Reject duplicate implementation families`; `rule-enforcement.yml` — `Verify duplicate implementation gate`; `.pre-commit-config.yaml` — `dedupe-gate-contract`; `lefthook.yml`; `make verify-all` | The clone scan stays explicit in the required Standards job, both blocking local lefthook stages, and the aggregate local command. Its real-Make fixture proves a scanner failure makes `make verify-all` fail. `standardsctl audit` is not a substitute because it does not run the AST clone detector. |
