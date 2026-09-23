@@ -1415,6 +1415,7 @@ nav:
         - "ADR-1296: gpu-failure-path-stub-interposition": adr/1296-gpu-failure-path-stub-interposition.md
         - "ADR-1297: ci-gate-every-reporting-check": adr/1297-ci-gate-every-reporting-check.md
         - "ADR-1298: hiss-audit-merge-touched-scope": adr/1298-hiss-audit-merge-touched-scope.md
+        - "ADR-1299: sycl-ms-ssim-chroma-implementation": adr/1299-sycl-ms-ssim-chroma-implementation.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

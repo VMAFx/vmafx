@@ -48,6 +48,11 @@ namespace
 {
 
 static constexpr int MS_SSIM_SCALES = 5;
+/* Luma plus the two chroma planes. enable_chroma selects 1 or 3 of them; the
+ * pyramid, the staging buffers and every derived dimension are per plane,
+ * because a 4:2:0 chroma plane is a different size from luma and the kernels
+ * take those dimensions as row pitches. */
+static constexpr int MS_SSIM_MAX_PLANES = 3;
 static constexpr int MS_SSIM_GAUSSIAN_LEN = 11;
 static constexpr int MS_SSIM_K = 11;
 static constexpr int LPF_LEN = 9;
@@ -74,6 +79,27 @@ static constexpr float GAMMAS[MS_SSIM_SCALES] = {0.0448f, 0.2856f, 0.3001f, 0.23
 namespace
 {
 
+/* Everything the kernels need that varies per plane. Held once per plane so a
+ * chroma pass never reads a luma row pitch -- the failure that would produce is
+ * a silent wrong number plus an out-of-bounds read, not a crash. */
+struct MsSsimPlaneGeometry {
+    unsigned width;
+    unsigned height;
+    unsigned scale_w[MS_SSIM_SCALES];
+    unsigned scale_h[MS_SSIM_SCALES];
+    unsigned scale_w_horiz[MS_SSIM_SCALES];
+    unsigned scale_h_horiz[MS_SSIM_SCALES];
+    unsigned scale_w_final[MS_SSIM_SCALES];
+    unsigned scale_h_final[MS_SSIM_SCALES];
+    unsigned scale_wg_count_x[MS_SSIM_SCALES];
+    unsigned scale_wg_count_y[MS_SSIM_SCALES];
+    unsigned scale_wg_count[MS_SSIM_SCALES];
+    float *h_ref;
+    float *h_cmp;
+    float *d_pyramid_ref[MS_SSIM_SCALES];
+    float *d_pyramid_cmp[MS_SSIM_SCALES];
+};
+
 struct MsSsimStateSycl {
     bool enable_chroma;
     unsigned n_planes;
@@ -84,21 +110,13 @@ struct MsSsimStateSycl {
     unsigned width;
     unsigned height;
     unsigned bpc;
-    unsigned scale_w[MS_SSIM_SCALES];
-    unsigned scale_h[MS_SSIM_SCALES];
-    unsigned scale_w_horiz[MS_SSIM_SCALES];
-    unsigned scale_h_horiz[MS_SSIM_SCALES];
-    unsigned scale_w_final[MS_SSIM_SCALES];
-    unsigned scale_h_final[MS_SSIM_SCALES];
-    unsigned scale_wg_count_x[MS_SSIM_SCALES];
-    unsigned scale_wg_count_y[MS_SSIM_SCALES];
-    unsigned scale_wg_count[MS_SSIM_SCALES];
+    MsSsimPlaneGeometry geom[MS_SSIM_MAX_PLANES];
     float c1, c2, c3;
     VmafSyclState *sycl_state;
-    float *h_ref;
-    float *h_cmp;
-    float *d_pyramid_ref[MS_SSIM_SCALES];
-    float *d_pyramid_cmp[MS_SSIM_SCALES];
+    /* The reduction workspace below is deliberately NOT per plane. It is already
+     * reused across the five scales, and no chroma plane is larger than luma in
+     * any supported pixel format, so the plane-0 sizing dominates. Planes run
+     * sequentially for the same reason the scales do. */
     float *d_h_ref_mu;
     float *d_h_cmp_mu;
     float *d_h_ref_sq;
@@ -418,6 +436,29 @@ static int configure_ms_ssim(MsSsimStateSycl *s, enum VmafPixelFormat format, un
                  width, height, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN, min_dimension, min_dimension);
         return -EINVAL;
     }
+    /* Chroma is walked by the same 5-level pyramid, so it must clear the same
+     * minimum. Mirrors the check float_ms_ssim.c makes; without it a 4:2:0
+     * input between min_dimension and 2*min_dimension passes the luma test and
+     * then produces a degenerate chroma pyramid. Plane sizing follows
+     * vmaf_picture_alloc (picture.c:146-149). */
+    const unsigned ss_hor = format != VMAF_PIX_FMT_YUV444P ? 1u : 0u;
+    const unsigned ss_ver = format == VMAF_PIX_FMT_YUV420P ? 1u : 0u;
+    if (s->n_planes > 1U) {
+        const unsigned chroma_w = (width + ss_hor) >> ss_hor;
+        const unsigned chroma_h = (height + ss_ver) >> ss_ver;
+        if (chroma_w < min_dimension || chroma_h < min_dimension) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "ms_ssim_sycl: enable_chroma needs every plane to clear the pyramid"
+                     " minimum, but %ux%u luma gives %ux%u chroma and the %d-level %d-tap"
+                     " pyramid requires at least %ux%u. Use at least %ux%u luma for this"
+                     " pixel format, or leave enable_chroma off to score luma only.\n",
+                     width, height, chroma_w, chroma_h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN,
+                     min_dimension, min_dimension, min_dimension << ss_hor,
+                     min_dimension << ss_ver);
+            return -EINVAL;
+        }
+    }
+
     s->width = width;
     s->height = height;
     s->bpc = bpc;
@@ -428,11 +469,18 @@ static int configure_ms_ssim(MsSsimStateSycl *s, enum VmafPixelFormat format, un
     } else {
         s->max_db = INFINITY;
     }
-    s->scale_w[0] = width;
-    s->scale_h[0] = height;
-    for (int scale = 1; scale < MS_SSIM_SCALES; scale++) {
-        s->scale_w[scale] = (s->scale_w[scale - 1] / 2) + (s->scale_w[scale - 1] & 1);
-        s->scale_h[scale] = (s->scale_h[scale - 1] / 2) + (s->scale_h[scale - 1] & 1);
+    for (unsigned plane = 0; plane < s->n_planes; plane++) {
+        MsSsimPlaneGeometry &geometry = s->geom[plane];
+        geometry.width = plane == 0U ? width : (width + ss_hor) >> ss_hor;
+        geometry.height = plane == 0U ? height : (height + ss_ver) >> ss_ver;
+        geometry.scale_w[0] = geometry.width;
+        geometry.scale_h[0] = geometry.height;
+        for (int scale = 1; scale < MS_SSIM_SCALES; scale++) {
+            geometry.scale_w[scale] =
+                (geometry.scale_w[scale - 1] / 2) + (geometry.scale_w[scale - 1] & 1);
+            geometry.scale_h[scale] =
+                (geometry.scale_h[scale - 1] / 2) + (geometry.scale_h[scale - 1] & 1);
+        }
     }
     return 0;
 }
@@ -444,16 +492,20 @@ namespace
 
 static void configure_ms_ssim_scales(MsSsimStateSycl *s)
 {
-    for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
-        s->scale_w_horiz[scale] = s->scale_w[scale] - (MS_SSIM_K - 1);
-        s->scale_h_horiz[scale] = s->scale_h[scale];
-        s->scale_w_final[scale] = s->scale_w[scale] - (MS_SSIM_K - 1);
-        s->scale_h_final[scale] = s->scale_h[scale] - (MS_SSIM_K - 1);
-        s->scale_wg_count_x[scale] =
-            (s->scale_w_final[scale] + (unsigned)WG_X - 1) / (unsigned)WG_X;
-        s->scale_wg_count_y[scale] =
-            (s->scale_h_final[scale] + (unsigned)WG_Y - 1) / (unsigned)WG_Y;
-        s->scale_wg_count[scale] = s->scale_wg_count_x[scale] * s->scale_wg_count_y[scale];
+    for (unsigned plane = 0; plane < s->n_planes; plane++) {
+        MsSsimPlaneGeometry &geometry = s->geom[plane];
+        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
+            geometry.scale_w_horiz[scale] = geometry.scale_w[scale] - (MS_SSIM_K - 1);
+            geometry.scale_h_horiz[scale] = geometry.scale_h[scale];
+            geometry.scale_w_final[scale] = geometry.scale_w[scale] - (MS_SSIM_K - 1);
+            geometry.scale_h_final[scale] = geometry.scale_h[scale] - (MS_SSIM_K - 1);
+            geometry.scale_wg_count_x[scale] =
+                (geometry.scale_w_final[scale] + (unsigned)WG_X - 1) / (unsigned)WG_X;
+            geometry.scale_wg_count_y[scale] =
+                (geometry.scale_h_final[scale] + (unsigned)WG_Y - 1) / (unsigned)WG_Y;
+            geometry.scale_wg_count[scale] =
+                geometry.scale_wg_count_x[scale] * geometry.scale_wg_count_y[scale];
+        }
     }
     const float range = 255.0f;
     const float k1 = 0.01f;
@@ -470,24 +522,30 @@ namespace
 
 static void allocate_ms_ssim_buffers(MsSsimStateSycl *s)
 {
-    const size_t input_bytes = (size_t)s->width * s->height * sizeof(float);
-    s->h_ref = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, input_bytes));
-    s->h_cmp = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, input_bytes));
-    for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
-        const size_t bytes = (size_t)s->scale_w[scale] * s->scale_h[scale] * sizeof(float);
-        s->d_pyramid_ref[scale] =
-            static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
-        s->d_pyramid_cmp[scale] =
-            static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
+    for (unsigned plane = 0; plane < s->n_planes; plane++) {
+        MsSsimPlaneGeometry &geometry = s->geom[plane];
+        const size_t input_bytes = (size_t)geometry.width * geometry.height * sizeof(float);
+        geometry.h_ref = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, input_bytes));
+        geometry.h_cmp = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, input_bytes));
+        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
+            const size_t bytes =
+                (size_t)geometry.scale_w[scale] * geometry.scale_h[scale] * sizeof(float);
+            geometry.d_pyramid_ref[scale] =
+                static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
+            geometry.d_pyramid_cmp[scale] =
+                static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
+        }
     }
+    /* Plane 0 dominates: chroma is never wider or taller than luma in any
+     * supported pixel format, so these sizes cover every plane. */
     const size_t horizontal_bytes =
-        (size_t)s->scale_w_horiz[0] * s->scale_h_horiz[0] * sizeof(float);
+        (size_t)s->geom[0].scale_w_horiz[0] * s->geom[0].scale_h_horiz[0] * sizeof(float);
     s->d_h_ref_mu = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
     s->d_h_cmp_mu = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
     s->d_h_ref_sq = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
     s->d_h_cmp_sq = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
     s->d_h_refcmp = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
-    const size_t partial_bytes = (size_t)s->scale_wg_count[0] * sizeof(float);
+    const size_t partial_bytes = (size_t)s->geom[0].scale_wg_count[0] * sizeof(float);
     s->d_l_partials = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, partial_bytes));
     s->d_c_partials = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, partial_bytes));
     s->d_s_partials = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, partial_bytes));
@@ -503,14 +561,20 @@ namespace
 
 static bool ms_ssim_allocations_complete(const MsSsimStateSycl *s)
 {
-    if (!s->h_ref || !s->h_cmp || !s->d_h_ref_mu || !s->d_h_cmp_mu || !s->d_h_ref_sq ||
-        !s->d_h_cmp_sq || !s->d_h_refcmp || !s->d_l_partials || !s->d_c_partials ||
-        !s->d_s_partials || !s->h_l_partials || !s->h_c_partials || !s->h_s_partials) {
+    if (!s->d_h_ref_mu || !s->d_h_cmp_mu || !s->d_h_ref_sq || !s->d_h_cmp_sq || !s->d_h_refcmp ||
+        !s->d_l_partials || !s->d_c_partials || !s->d_s_partials || !s->h_l_partials ||
+        !s->h_c_partials || !s->h_s_partials) {
         return false;
     }
-    for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
-        if (!s->d_pyramid_ref[scale] || !s->d_pyramid_cmp[scale]) {
+    for (unsigned plane = 0; plane < s->n_planes; plane++) {
+        const MsSsimPlaneGeometry &geometry = s->geom[plane];
+        if (!geometry.h_ref || !geometry.h_cmp) {
             return false;
+        }
+        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
+            if (!geometry.d_pyramid_ref[scale] || !geometry.d_pyramid_cmp[scale]) {
+                return false;
+            }
         }
     }
     return true;
@@ -570,30 +634,35 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     }
     sycl::queue &q = *qptr;
 
-    /* picture_copy host-side → upload to pyramid level 0. */
-    picture_copy(s->h_ref, (ptrdiff_t)((size_t)s->width * sizeof(float)), ref_pic, 0, ref_pic->bpc,
-                 0);
-    picture_copy(s->h_cmp, (ptrdiff_t)((size_t)s->width * sizeof(float)), dist_pic, 0,
-                 dist_pic->bpc, 0);
+    /* Every plane is staged here, not in collect: libvmaf's double-buffered GPU
+     * dispatch (libvmaf.c, dispatch_gpu_double_buffer) releases the picture
+     * after submit returns, so collect has no VmafPicture to read from. The
+     * per-plane pyramids therefore all live until collect consumes them. */
+    for (unsigned plane = 0; plane < s->n_planes; plane++) {
+        MsSsimPlaneGeometry &geometry = s->geom[plane];
+        const ptrdiff_t stride = (ptrdiff_t)((size_t)geometry.width * sizeof(float));
+        picture_copy(geometry.h_ref, stride, ref_pic, 0, ref_pic->bpc, (int)plane);
+        picture_copy(geometry.h_cmp, stride, dist_pic, 0, dist_pic->bpc, (int)plane);
 
-    const size_t input_bytes = (size_t)s->width * s->height * sizeof(float);
-    q.memcpy(s->d_pyramid_ref[0], s->h_ref, input_bytes);
-    q.memcpy(s->d_pyramid_cmp[0], s->h_cmp, input_bytes);
+        const size_t input_bytes = (size_t)geometry.width * geometry.height * sizeof(float);
+        q.memcpy(geometry.d_pyramid_ref[0], geometry.h_ref, input_bytes);
+        q.memcpy(geometry.d_pyramid_cmp[0], geometry.h_cmp, input_bytes);
 
-    /* Build pyramid scales 1..4. */
-    for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
-        launch_decimate(q, {.source = s->d_pyramid_ref[i],
-                            .destination = s->d_pyramid_ref[i + 1],
-                            .width = s->scale_w[i],
-                            .height = s->scale_h[i],
-                            .output_width = s->scale_w[i + 1],
-                            .output_height = s->scale_h[i + 1]});
-        launch_decimate(q, {.source = s->d_pyramid_cmp[i],
-                            .destination = s->d_pyramid_cmp[i + 1],
-                            .width = s->scale_w[i],
-                            .height = s->scale_h[i],
-                            .output_width = s->scale_w[i + 1],
-                            .output_height = s->scale_h[i + 1]});
+        /* Build pyramid scales 1..4. */
+        for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
+            launch_decimate(q, {.source = geometry.d_pyramid_ref[i],
+                                .destination = geometry.d_pyramid_ref[i + 1],
+                                .width = geometry.scale_w[i],
+                                .height = geometry.scale_h[i],
+                                .output_width = geometry.scale_w[i + 1],
+                                .output_height = geometry.scale_h[i + 1]});
+            launch_decimate(q, {.source = geometry.d_pyramid_cmp[i],
+                                .destination = geometry.d_pyramid_cmp[i + 1],
+                                .width = geometry.scale_w[i],
+                                .height = geometry.scale_h[i],
+                                .output_width = geometry.scale_w[i + 1],
+                                .output_height = geometry.scale_h[i + 1]});
+        }
     }
 
     s->pending_index = index;
@@ -606,12 +675,14 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 namespace
 {
 
-static void compute_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, int scale, double &luminance,
-                              double &contrast, double &structure)
+static void compute_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, unsigned plane, int scale,
+                              double &luminance, double &contrast, double &structure)
 {
-    launch_horiz(queue, s->d_pyramid_ref[scale], s->d_pyramid_cmp[scale], s->d_h_ref_mu,
-                 s->d_h_cmp_mu, s->d_h_ref_sq, s->d_h_cmp_sq, s->d_h_refcmp, s->scale_w[scale],
-                 s->scale_w_horiz[scale], s->scale_h_horiz[scale]);
+    const MsSsimPlaneGeometry &geometry = s->geom[plane];
+    launch_horiz(queue, geometry.d_pyramid_ref[scale], geometry.d_pyramid_cmp[scale], s->d_h_ref_mu,
+                 s->d_h_cmp_mu, s->d_h_ref_sq, s->d_h_cmp_sq, s->d_h_refcmp,
+                 geometry.scale_w[scale], geometry.scale_w_horiz[scale],
+                 geometry.scale_h_horiz[scale]);
     launch_vert_lcs(queue, {.ref_mu = s->d_h_ref_mu,
                             .cmp_mu = s->d_h_cmp_mu,
                             .ref_sq = s->d_h_ref_sq,
@@ -620,14 +691,14 @@ static void compute_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, int scale,
                             .luminance = s->d_l_partials,
                             .contrast = s->d_c_partials,
                             .structure = s->d_s_partials,
-                            .horizontal_width = s->scale_w_horiz[scale],
-                            .final_width = s->scale_w_final[scale],
-                            .final_height = s->scale_h_final[scale],
-                            .group_columns = s->scale_wg_count_x[scale],
+                            .horizontal_width = geometry.scale_w_horiz[scale],
+                            .final_width = geometry.scale_w_final[scale],
+                            .final_height = geometry.scale_h_final[scale],
+                            .group_columns = geometry.scale_wg_count_x[scale],
                             .c1 = s->c1,
                             .c2 = s->c2,
                             .c3 = s->c3});
-    const size_t bytes = (size_t)s->scale_wg_count[scale] * sizeof(float);
+    const size_t bytes = (size_t)geometry.scale_wg_count[scale] * sizeof(float);
     queue.memcpy(s->h_l_partials, s->d_l_partials, bytes);
     queue.memcpy(s->h_c_partials, s->d_c_partials, bytes);
     queue.memcpy(s->h_s_partials, s->d_s_partials, bytes);
@@ -635,12 +706,13 @@ static void compute_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, int scale,
     double total_l = 0.0;
     double total_c = 0.0;
     double total_s = 0.0;
-    for (unsigned group = 0; group < s->scale_wg_count[scale]; group++) {
+    for (unsigned group = 0; group < geometry.scale_wg_count[scale]; group++) {
         total_l += (double)s->h_l_partials[group];
         total_c += (double)s->h_c_partials[group];
         total_s += (double)s->h_s_partials[group];
     }
-    const double pixels = (double)s->scale_w_final[scale] * (double)s->scale_h_final[scale];
+    const double pixels =
+        (double)geometry.scale_w_final[scale] * (double)geometry.scale_h_final[scale];
     luminance = total_l / pixels;
     contrast = total_c / pixels;
     structure = total_s / pixels;
@@ -709,20 +781,37 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     }
     sycl::queue &q = *qptr;
 
-    double l_means[MS_SSIM_SCALES] = {0};
-    double c_means[MS_SSIM_SCALES] = {0};
-    double s_means[MS_SSIM_SCALES] = {0};
-    for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
-        compute_scale_lcs(s, q, scale, l_means[scale], c_means[scale], s_means[scale]);
-    }
-    double score = combine_ms_ssim(l_means, c_means, s_means);
-    if (s->enable_db) {
-        score = ms_ssim_convert_to_db(score, s->max_db);
-    }
-    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "float_ms_ssim", score, index);
-    if (s->enable_lcs) {
-        err |= append_lcs_scores(feature_collector, l_means, c_means, s_means, index);
+    /* Feature names per plane, matching float_ms_ssim.c's ms_ssim_feature_names
+     * exactly -- a GPU twin that emitted different names would be scored as a
+     * different feature rather than as an accelerated one. */
+    static const char *const plane_feature_names[MS_SSIM_MAX_PLANES] = {
+        "float_ms_ssim",
+        "float_ms_ssim_cb",
+        "float_ms_ssim_cr",
+    };
+
+    int err = 0;
+    for (unsigned plane = 0; plane < s->n_planes; plane++) {
+        double l_means[MS_SSIM_SCALES] = {0};
+        double c_means[MS_SSIM_SCALES] = {0};
+        double s_means[MS_SSIM_SCALES] = {0};
+        /* Planes run sequentially for the same reason the scales do: the
+         * horizontal intermediates and the partials are one shared workspace,
+         * and compute_scale_lcs waits on its readback before returning. */
+        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
+            compute_scale_lcs(s, q, plane, scale, l_means[scale], c_means[scale], s_means[scale]);
+        }
+        double score = combine_ms_ssim(l_means, c_means, s_means);
+        if (s->enable_db) {
+            score = ms_ssim_convert_to_db(score, s->max_db);
+        }
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       plane_feature_names[plane], score, index);
+        /* The l/c/s per-scale breakdown is luma-only, as on the CPU twin:
+         * float_ms_ssim.c guards it with `p == 0`. */
+        if (plane == 0U && s->enable_lcs) {
+            err |= append_lcs_scores(feature_collector, l_means, c_means, s_means, index);
+        }
     }
     return err;
 }
@@ -742,9 +831,18 @@ static void free_ms_ssim_pointer(VmafSyclState *state, float *&pointer)
 
 static void free_ms_ssim_pyramid(MsSsimStateSycl *s)
 {
-    for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
-        free_ms_ssim_pointer(s->sycl_state, s->d_pyramid_ref[scale]);
-        free_ms_ssim_pointer(s->sycl_state, s->d_pyramid_cmp[scale]);
+    /* MS_SSIM_MAX_PLANES, not n_planes: close must free whatever init managed to
+     * allocate, and an init that failed part-way through plane 2 still leaves
+     * plane 0 and 1 live. free_ms_ssim_pointer null-checks, so the unused tail
+     * of a luma-only run costs nothing. */
+    for (unsigned plane = 0; plane < MS_SSIM_MAX_PLANES; plane++) {
+        MsSsimPlaneGeometry &geometry = s->geom[plane];
+        free_ms_ssim_pointer(s->sycl_state, geometry.h_ref);
+        free_ms_ssim_pointer(s->sycl_state, geometry.h_cmp);
+        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
+            free_ms_ssim_pointer(s->sycl_state, geometry.d_pyramid_ref[scale]);
+            free_ms_ssim_pointer(s->sycl_state, geometry.d_pyramid_cmp[scale]);
+        }
     }
 }
 
@@ -755,8 +853,6 @@ namespace
 
 static void free_ms_ssim_workspace(MsSsimStateSycl *s)
 {
-    free_ms_ssim_pointer(s->sycl_state, s->h_ref);
-    free_ms_ssim_pointer(s->sycl_state, s->h_cmp);
     free_ms_ssim_pointer(s->sycl_state, s->d_h_ref_mu);
     free_ms_ssim_pointer(s->sycl_state, s->d_h_cmp_mu);
     free_ms_ssim_pointer(s->sycl_state, s->d_h_ref_sq);
@@ -788,7 +884,12 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features_ms_ssim_sycl[] = {"float_ms_ssim", nullptr};
+/* All three plane features are advertised. Without _cb / _cr here the
+ * ADR-0530 name-based fallback routes them to the CPU twin, which is what made
+ * enable_chroma look harmless on this backend: the numbers still appeared, from
+ * the CPU, while the option silently did nothing on the GPU. */
+static const char *provided_features_ms_ssim_sycl[] = {"float_ms_ssim", "float_ms_ssim_cb",
+                                                       "float_ms_ssim_cr", nullptr};
 
 } // namespace
 

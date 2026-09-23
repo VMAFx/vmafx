@@ -53,6 +53,15 @@ SYCL_RUNTIME = re.compile(r"^_Z.*4sycl3_V\d")
 SANITIZER_SECTION_BOUND = re.compile(
     r"^__(?:start|stop)_(?:asan_globals|hwasan_globals|__sancov_\w+)$"
 )
+# icpx emits a per-variant entry point beside the real function when it clones
+# one for offload, spelling it `<name>|_._.<n>._.<m>`. The pipe cannot occur in
+# a C identifier, so the suffix is unambiguous. These are not new API: they are
+# the same public function, and the parent is what the header declares. Strip
+# the suffix before the public-name lookup so a variant is accepted exactly
+# when its parent is. Observed on the SYCL build as
+# `vmaf_dnn_session_run|_._.1._.1`, whose parent carries VMAF_EXPORT in
+# core/include/libvmaf/dnn.h.
+COMPILER_VARIANT_SUFFIX = re.compile(r"\|_\._\.\d+\._\.\d+$")
 
 
 def exported_symbols(library: Path) -> list[str]:
@@ -128,7 +137,11 @@ def public_identifiers(include_dir: Path) -> set[str]:
 def main() -> int:
     library, include_dir = Path(sys.argv[1]), Path(sys.argv[2])
     public = public_identifiers(include_dir)
-    candidates = [name for name in exported_symbols(library) if name not in public]
+    candidates = [
+        name
+        for name in exported_symbols(library)
+        if COMPILER_VARIANT_SUFFIX.sub("", name) not in public
+    ]
     plain = demangled(candidates)
     leaked = [name for name in candidates if not runtime_owned(name, plain[name])]
     if leaked:

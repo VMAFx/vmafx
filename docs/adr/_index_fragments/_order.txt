@@ -1,3 +1,4 @@
+1299-sycl-ms-ssim-chroma-implementation
 0001-stash-benchmark-noise-file
 0002-merge-path-master-default
 0003-workingdir2-empty-planning-dir

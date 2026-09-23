@@ -20,21 +20,24 @@ user-visible. Read from the twins' own `options[]` tables:
 | Twin | `enable_lcs` | `enable_db` | `clip_db` | `enable_chroma` |
 |---|---|---|---|---|
 | `float_ms_ssim_cuda` | yes | yes | yes | **no** |
-| `float_ms_ssim_sycl` | yes | yes | yes | yes — **accepted but a no-op** |
+| `float_ms_ssim_sycl` | yes | yes | yes | yes — computed on the GPU (3 planes) |
 | `integer_ms_ssim_hip` | yes | yes | yes | yes — **accepted but a no-op** |
 
 What that means when a model requests `enable_chroma`:
 
-- **SYCL** accepts the option and clamps to luma only, exactly as HIP does.
-  `s->n_planes` is set to 3 at
-  `core/src/feature/sycl/integer_ms_ssim_sycl.cpp:412` and then never read —
-  the identifier occurs exactly twice in the translation unit, once as the
-  struct field and once in that assignment — so the kernel reads plane 0
-  whatever the option says. The twin advertises only `float_ms_ssim` and
-  `float_ms_ssim_sycl` in `provided_features`, so a model asking for
-  `float_ms_ssim_cb` / `_cr` routes those two features to the CPU twin by name
-  (the ADR-0530 fallback). The score is correct; the chroma planes are not
-  GPU-accelerated.
+- **SYCL** computes it. Each plane gets its own geometry, staging buffer and
+  pyramid, and the planes run sequentially through the shared reduction
+  workspace the way the five scales already do. The twin advertises
+  `float_ms_ssim_cb` and `float_ms_ssim_cr` in `provided_features`, so those
+  features are served by the GPU rather than falling back to the CPU twin by
+  name. Verified on an Intel Arc A380 against the CPU twin with a
+  textured-chroma 4:2:0 fixture: identical to all six emitted digits across
+  three frames, with GPU time rising about 21% as the extra planes dispatch
+  (ADR-1299).
+
+  Until 2026-09-23 this option was accepted and silently ignored here —
+  `n_planes` was computed and never read — and the chroma numbers a model saw
+  came from the CPU twin under the ADR-0530 name fallback.
 - **HIP** accepts the option and clamps to luma only; its own option help says
   so. It does not advertise `float_ms_ssim_cb` / `_cr` in `provided_features`,
   so those two features route to the CPU twin by name (the ADR-0530 fallback).
@@ -43,6 +46,16 @@ What that means when a model requests `enable_chroma`:
   rejects it with `feature extractor 'float_ms_ssim_cuda': unknown option
   'enable_chroma'` and returns `-EINVAL`, so the run fails loudly rather than
   silently dropping chroma.
+
+### Minimum resolution with chroma
+
+The 5-level 11-tap pyramid needs every scored plane to be at least 176x176, and
+with `enable_chroma` that includes the subsampled ones. For 4:2:0 that means
+352x352 luma, not 176x176. Both the CPU and the SYCL twin now refuse a smaller
+input at init and name the chroma size they measured; before ADR-1299 the CPU
+twin checked luma only and a 4:2:0 input in between died mid-run with
+`error: scale below 1x1!` on stdout and no output file — including on this
+repository's own 576x324 Netflix fixture, whose chroma is 288x162.
 
 Note that `--feature float_ms_ssim=enable_chroma=true` does **not** exercise any
 of this: `--feature` selects the CPU extractor, so all three backends return
