@@ -91,6 +91,59 @@ def test_qat_run_smoke(tmp_path: Path) -> None:
     )
     assert out[0].shape == (1, 1, 32, 32)
 
+    # Verify QDQ format in the ONNX graph (QuantFormat.QDQ per #1242)
+    import onnx
+
+    model = onnx.load(str(int8_path))
+    node_ops = {node.op_type for node in model.graph.node}
+    assert {"QuantizeLinear", "DequantizeLinear"}.issubset(
+        node_ops
+    ), f"Expected QDQ nodes in graph, got {node_ops}"
+    assert not any(
+        op.startswith("QLinear") or op == "QGemm" for op in node_ops
+    ), f"Expected no QOperator nodes in graph, got {node_ops}"
+
+
+def test_qat_quantize_static_pins_qdq(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Regression test for issue #1242: _ort_static_quantize must pin QuantFormat.QDQ."""
+    import sys as _sys
+
+    if str(REPO_ROOT / "ai" / "src") not in _sys.path:
+        _sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+    if str(REPO_ROOT) not in _sys.path:
+        _sys.path.insert(0, str(REPO_ROOT))
+
+    from typing import Any
+
+    import onnxruntime.quantization as ort_quant
+    from onnxruntime.quantization import QuantFormat
+
+    from ai.train.qat import _ort_static_quantize
+
+    captured_kwargs: dict[str, Any] = {}
+
+    def spy_quantize_static(*args: Any, **kwargs: Any) -> None:
+        captured_kwargs.update(kwargs)
+        out_file = Path(
+            kwargs.get("model_output", args[1] if len(args) > 1 else tmp_path / "dummy.onnx")
+        )
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        out_file.write_bytes(b"dummy")
+        return None
+
+    monkeypatch.setattr(ort_quant, "quantize_static", spy_quantize_static)
+
+    fp32_dummy = tmp_path / "dummy.fp32.onnx"
+    fp32_dummy.write_bytes(b"dummy")
+    int8_target = tmp_path / "dummy.int8.onnx"
+
+    _ort_static_quantize(fp32_dummy, int8_target, [])
+
+    assert "quant_format" in captured_kwargs, "quant_format was not passed to quantize_static"
+    assert (
+        captured_kwargs["quant_format"] == QuantFormat.QDQ
+    ), f"Expected QuantFormat.QDQ, got {captured_kwargs['quant_format']}"
+
 
 def test_qat_train_cli_smoke(tmp_path: Path) -> None:
     """CLI: ``qat_train.py --smoke`` exits 0 and writes the int8 ONNX."""
