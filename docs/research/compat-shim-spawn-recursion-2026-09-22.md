@@ -117,9 +117,41 @@ vmaf.core.executor.__name__ = vmaf.core.executor
 VmafConfig.root_path() = <repo root>
 ```
 
-## Residual
+## Resolved follow-up: BUG-090
 
-`_open_workfiles_in_fifo_mode` and `_open_procfiles_in_fifo_mode` both end in a
-bare `sem.acquire()` after their warning branch. Any child that dies before
-releasing hangs the parent until the CI job's own ceiling rather than failing
-with the child's exit code. Tracked separately in `docs/state.md`.
+The dedicated supervision analysis, option matrix, and executable evidence are
+recorded in
+[Research-1292](1292-fifo-bounded-startup-wait-2026-09-23.md).
+
+The original semaphore port left `_open_workfiles_in_fifo_mode` and
+`_open_procfiles_in_fifo_mode` on an unconditional `sem.acquire()` after their
+warning branch. That amplifier is now removed: each producer owns a readiness
+semaphore and error pipe, the parent checks child state every 50 ms, preserves
+the five-second slow-start warning, and enforces a 60-second hard ceiling.
+Children that fail before readiness report their role, exit code, and traceback
+when their target started instead of consuming the outer CI deadline. Spawn
+bootstrap failures still print on inherited child stderr and now pair that log
+with a prompt parent exception and exit code. The same helper covers the
+one-input `NorefExecutorMixin` paths.
+
+The implementation is a bug fix under the process model already selected by
+[ADR-1278](../adr/1278-python-safe-parallel-execution.md), not a new process
+architecture. The choice was bounded by these failure-mode checks:
+
+| Approach | Dead child visible | Slow healthy child preserved | Readiness attributed to one child |
+| --- | --- | --- | --- |
+| Keep one shared semaphore and add only a hard timeout | Only at the timeout | Yes | No |
+| Poll two process exit codes around the shared semaphore | Yes | Yes | No; either child can consume either release |
+| Per-child semaphore plus error pipe and bounded polling | Yes, with traceback | Yes, up to the hard ceiling | Yes; chosen |
+
+Regression evidence:
+
+```text
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q -W error \
+  python/test/executor_test.py
+4 passed, 4 subtests passed
+
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q -W error \
+  python/test/raw_extractor_test.py
+4 passed
+```

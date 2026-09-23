@@ -3,7 +3,9 @@ import multiprocessing
 import os
 import shlex
 import shutil
+import traceback
 from abc import ABCMeta, abstractmethod
+from time import monotonic
 
 from vmaf.config import VmafExternalConfig
 from vmaf.core.asset import Asset
@@ -24,6 +26,120 @@ __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 _MULTIPROCESSING_CONTEXT = multiprocessing.get_context("spawn")
+_FIFO_OPEN_WARNING_SECONDS = 5.0
+_FIFO_OPEN_TIMEOUT_SECONDS = 60.0
+_FIFO_OPEN_POLL_SECONDS = 0.05
+_FIFO_OPEN_MAX_POLLS = int(_FIFO_OPEN_TIMEOUT_SECONDS / _FIFO_OPEN_POLL_SECONDS) + 1
+_FIFO_PROCESS_JOIN_SECONDS = 1.0
+
+
+def _run_fifo_worker(target, asset, ready_sem, error_sender):
+    try:
+        target(asset, True, open_sem=ready_sem)
+    except Exception:
+        try:
+            error_sender.send(traceback.format_exc())
+        except (BrokenPipeError, EOFError, OSError):
+            pass
+        raise
+    finally:
+        error_sender.close()
+
+
+def _start_fifo_worker(target, asset, label):
+    ready_sem = _MULTIPROCESSING_CONTEXT.Semaphore(0)
+    error_receiver, error_sender = _MULTIPROCESSING_CONTEXT.Pipe(duplex=False)
+    process = _MULTIPROCESSING_CONTEXT.Process(
+        name=f"vmaf-fifo-{label}",
+        target=_run_fifo_worker,
+        args=(target, asset, ready_sem, error_sender),
+    )
+    try:
+        process.start()
+    except Exception:
+        error_receiver.close()
+        error_sender.close()
+        raise
+    error_sender.close()
+    return label, process, ready_sem, error_receiver
+
+
+def _fifo_worker_failure(worker):
+    label, process, _ready_sem, error_receiver = worker
+    child_traceback = None
+    if error_receiver.poll():
+        try:
+            child_traceback = error_receiver.recv()
+        except EOFError:
+            pass
+    if child_traceback is None and process.exitcode is None:
+        return None
+    process.join(timeout=_FIFO_PROCESS_JOIN_SECONDS)
+    exit_code = process.exitcode
+    if child_traceback is None:
+        child_traceback = (
+            "<unavailable from child error channel; inspect the inherited child stderr>"
+        )
+    return RuntimeError(
+        f"FIFO {label} child exited before signaling readiness "
+        f"(exit code {exit_code}). Child traceback (also emitted on stderr):\n"
+        f"{child_traceback}"
+    )
+
+
+def _stop_fifo_workers(workers):
+    for _label, process, _ready_sem, _error_receiver in workers:
+        if process.is_alive():
+            process.terminate()
+    for _label, process, _ready_sem, _error_receiver in workers:
+        process.join(timeout=_FIFO_PROCESS_JOIN_SECONDS)
+    for _label, process, _ready_sem, _error_receiver in workers:
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=_FIFO_PROCESS_JOIN_SECONDS)
+
+
+def _open_fifo_workers(asset, worker_specs, logger, warning_message):
+    workers = []
+    try:
+        for label, target in worker_specs:
+            workers.append(_start_fifo_worker(target, asset, label))
+        _wait_for_fifo_workers(workers, logger, warning_message)
+    except Exception:
+        _stop_fifo_workers(workers)
+        raise
+    finally:
+        for _label, _process, _ready_sem, error_receiver in workers:
+            error_receiver.close()
+
+
+def _wait_for_fifo_workers(workers, logger, warning_message):
+    pending = list(workers)
+    started = monotonic()
+    warned = False
+    for _ in range(_FIFO_OPEN_MAX_POLLS):
+        pending = [worker for worker in pending if not worker[2].acquire(block=False)]
+        if not pending:
+            return
+        for worker in pending:
+            failure = _fifo_worker_failure(worker)
+            if failure is not None:
+                raise failure
+        elapsed = monotonic() - started
+        if elapsed >= _FIFO_OPEN_TIMEOUT_SECONDS:
+            break
+        if not warned and elapsed >= _FIFO_OPEN_WARNING_SECONDS:
+            if logger:
+                logger.warning(warning_message)
+            warned = True
+        wait_seconds = min(_FIFO_OPEN_POLL_SECONDS, _FIFO_OPEN_TIMEOUT_SECONDS - elapsed)
+        if pending[0][2].acquire(timeout=wait_seconds):
+            pending.pop(0)
+    labels = ", ".join(worker[0] for worker in pending)
+    raise TimeoutError(
+        f"FIFO helpers did not signal readiness within {_FIFO_OPEN_TIMEOUT_SECONDS:g} seconds: "
+        f"{labels}"
+    )
 
 
 class Executor(TypeVersionEnabled):
@@ -404,54 +520,38 @@ class Executor(TypeVersionEnabled):
         self._open_dis_workfile(asset, fifo_mode=False)
 
     def _open_workfiles_in_fifo_mode(self, asset):
-        sem = _MULTIPROCESSING_CONTEXT.Semaphore(0)
-        ref_p = _MULTIPROCESSING_CONTEXT.Process(
-            target=self._open_ref_workfile,
-            args=(asset, True),
-            kwargs={"open_sem": sem},
+        _open_fifo_workers(
+            asset,
+            (
+                ("reference workfile", self._open_ref_workfile),
+                ("distorted workfile", self._open_dis_workfile),
+            ),
+            self.logger,
+            (
+                ">5 seconds elapsed waiting for reference and/or distorted "
+                f"workfiles {asset.ref_workfile_path} and {asset.dis_workfile_path}; "
+                f"continuing up to the {_FIFO_OPEN_TIMEOUT_SECONDS:g}-second startup limit"
+            ),
         )
-        dis_p = _MULTIPROCESSING_CONTEXT.Process(
-            target=self._open_dis_workfile,
-            args=(asset, True),
-            kwargs={"open_sem": sem},
-        )
-        ref_p.start()
-        dis_p.start()
-
-        if not sem.acquire(timeout=5):
-            if self.logger:
-                self.logger.warn(
-                    f">5 seconds elapsed waiting for reference and/or distorted workfiles {asset.ref_workfile_path} and {asset.dis_workfile_path} to be created; now blocking until created"
-                )
-            sem.acquire()
-        sem.acquire()
 
     def _open_procfiles(self, asset):
         self._open_ref_procfile(asset, fifo_mode=False)
         self._open_dis_procfile(asset, fifo_mode=False)
 
     def _open_procfiles_in_fifo_mode(self, asset):
-        sem = _MULTIPROCESSING_CONTEXT.Semaphore(0)
-        ref_p = _MULTIPROCESSING_CONTEXT.Process(
-            target=self._open_ref_procfile,
-            args=(asset, True),
-            kwargs={"open_sem": sem},
+        _open_fifo_workers(
+            asset,
+            (
+                ("reference procfile", self._open_ref_procfile),
+                ("distorted procfile", self._open_dis_procfile),
+            ),
+            self.logger,
+            (
+                ">5 seconds elapsed waiting for reference and/or distorted "
+                f"procfiles {asset.ref_procfile_path} and {asset.dis_procfile_path}; "
+                f"continuing up to the {_FIFO_OPEN_TIMEOUT_SECONDS:g}-second startup limit"
+            ),
         )
-        dis_p = _MULTIPROCESSING_CONTEXT.Process(
-            target=self._open_dis_procfile,
-            args=(asset, True),
-            kwargs={"open_sem": sem},
-        )
-        ref_p.start()
-        dis_p.start()
-
-        if not sem.acquire(timeout=5):
-            if self.logger:
-                self.logger.warn(
-                    f">5 seconds elapsed waiting for reference and/or distorted procfiles {asset.ref_procfile_path} and {asset.dis_procfile_path} to be created; now blocking until created"
-                )
-            sem.acquire()
-        sem.acquire()
 
     def _close_workfiles(self, asset):
         self._close_ref_workfile(asset)
@@ -1084,22 +1184,16 @@ class NorefExecutorMixin(object):
 
     @override(Executor)
     def _open_workfiles_in_fifo_mode(self, asset):
-        sem = _MULTIPROCESSING_CONTEXT.Semaphore(0)
-        dis_p = _MULTIPROCESSING_CONTEXT.Process(
-            target=self._open_dis_workfile,
-            args=(asset, True),
-            kwargs={"open_sem": sem},
+        _open_fifo_workers(
+            asset,
+            (("distorted workfile", self._open_dis_workfile),),
+            self.logger,
+            (
+                f">5 seconds elapsed waiting for distorted workfile "
+                f"{asset.dis_workfile_path}; continuing up to the "
+                f"{_FIFO_OPEN_TIMEOUT_SECONDS:g}-second startup limit"
+            ),
         )
-        dis_p.start()
-
-        if not sem.acquire(timeout=5):
-            if self.logger:
-                # NOTE: the duplicated "to be created to be created" phrasing mirrors
-                # the upstream wording verbatim (Netflix/vmaf PR #1376). Do not "fix".
-                self.logger.warn(
-                    f">5 seconds elapsed waiting for distorted workfile {asset.dis_workfile_path} to be created to be created; now blocking until created"
-                )
-            sem.acquire()
 
     @override(Executor)
     def _open_procfiles(self, asset):
@@ -1107,22 +1201,16 @@ class NorefExecutorMixin(object):
 
     @override(Executor)
     def _open_procfiles_in_fifo_mode(self, asset):
-        sem = _MULTIPROCESSING_CONTEXT.Semaphore(0)
-        dis_p = _MULTIPROCESSING_CONTEXT.Process(
-            target=self._open_dis_procfile,
-            args=(asset, True),
-            kwargs={"open_sem": sem},
+        _open_fifo_workers(
+            asset,
+            (("distorted procfile", self._open_dis_procfile),),
+            self.logger,
+            (
+                f">5 seconds elapsed waiting for distorted procfile "
+                f"{asset.dis_procfile_path}; continuing up to the "
+                f"{_FIFO_OPEN_TIMEOUT_SECONDS:g}-second startup limit"
+            ),
         )
-        dis_p.start()
-
-        if not sem.acquire(timeout=5):
-            if self.logger:
-                # NOTE: the duplicated "to be created to be created" phrasing mirrors
-                # the upstream wording verbatim (Netflix/vmaf PR #1376). Do not "fix".
-                self.logger.warn(
-                    f">5 seconds elapsed waiting for distorted procfile {asset.dis_procfile_path} to be created to be created; now blocking until created"
-                )
-            sem.acquire()
 
     @override(Executor)
     def _close_workfiles(self, asset):

@@ -20459,6 +20459,13 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   Identified by c-reviewer agent audit 2026-05-30 (MEDIUM severity).
 
 
+- Fixed FIFO-mode Python executors hanging until the CI job timeout when a
+  spawned workfile or procfile producer died before signaling readiness. The
+  parent now reports the producer role, exit code, and available traceback,
+  retains the five-second slow-start warning, and fails after a bounded
+  60-second startup window (BUG-090).
+
+
 Harden three AI training-pipeline data-integrity paths surfaced by the
 2026-06-27 bug-hunt sweep (cluster T-BUGHUNT-AI-2026-06-27):
 

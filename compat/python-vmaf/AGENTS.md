@@ -115,7 +115,10 @@ python/vmaf/
   `Executor.run()` and `run_executors_in_parallel()` group equal
   `str(asset)` keys into serial work units and restore input order; do not
   replace that grouping with independently dispatched duplicates. FIFO helper
-  processes use the explicit `spawn` context. The classic 5PL curve in
+  processes use the explicit `spawn` context, one readiness semaphore per
+  child, and bounded readiness waits. A child that exits before signaling must
+  surface its role, exit code, and available traceback; never restore an unconditional
+  `sem.acquire()` after the five-second warning. The classic 5PL curve in
   `core/train_test_model.py` keeps `b1` as the sigmoid amplitude and uses
   `scipy.special.expit`; additive `b1` is redundant with `b5` and a raw
   exponential overflows.

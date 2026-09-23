@@ -77,6 +77,15 @@ that pickle records, and `VmafConfig.root_path()` returns the same directory.
 | Delete the shim and require `compat/` on `PYTHONPATH` | Removes the problem outright | Breaks `import vmaf` for existing callers, and the pytest `pythonpath` ini entry, mid-release | Out of scope for a hang fix; can follow once callers migrate |
 | Resolve by file location and self-replace in `sys.modules` | Order-independent; no global state; fails loudly when the target is missing | Slightly more code than the original four lines | Chosen |
 
+The BUG-090 follow-up kept ADR-1278's process model and compared three startup
+supervisors:
+
+| FIFO supervision option | Benefit | Failure mode | Decision |
+|---|---|---|---|
+| Shared semaphore plus hard timeout | Bounds the hang with the smallest diff | Cannot attribute readiness or failure to one producer | Rejected |
+| Shared semaphore plus exit-code polling | Surfaces a dead child promptly | Either producer can consume either readiness release | Rejected |
+| Per-child semaphore plus one-way error pipe | Attributes readiness and carries target tracebacks while preserving slow healthy starts | Adds one small process wrapper and bounded supervisor | Chosen |
+
 ## Consequences
 
 - **Positive**: the Ubuntu legs complete instead of being cancelled at the
@@ -86,11 +95,13 @@ that pickle records, and `VmafConfig.root_path()` returns the same directory.
 - **Negative**: the shim is longer than the four lines it replaces, and it now
   depends on `compat/vmaf/__init__.py` existing as a file rather than on
   whatever `import vmaf` happens to find.
-- **Neutral / follow-ups**: `Executor._open_workfiles_in_fifo_mode` and
-  `_open_procfiles_in_fifo_mode` still call `sem.acquire()` with no timeout
-  after their warning branch, so any future child that dies before releasing
-  the semaphore hangs the parent again rather than failing. That is a separate
-  robustness fix, tracked in `docs/state.md`.
+- **Neutral / follow-up resolved 2026-09-23**:
+  `Executor._open_workfiles_in_fifo_mode` and
+  `_open_procfiles_in_fifo_mode` now use one readiness semaphore and error pipe
+  per child, poll child state with a bounded deadline, and raise with the child
+  exit code plus any target traceback; spawn bootstrap errors remain on the
+  inherited child stderr. The five-second warning remains a warning; a
+  60-second hard ceiling replaces the old unconditional `sem.acquire()`.
 - An upstream sync touching `python/vmaf/__init__.py` must preserve the
   file-location load; see `docs/rebase-notes.md`.
 
@@ -104,3 +115,5 @@ that pickle records, and `VmafConfig.root_path()` returns the same directory.
   exposed it.
 - `docs/research/compat-shim-spawn-recursion-2026-09-22.md` — reproduction and
   measured `sys.path` states.
+- [Research-1292](../research/1292-fifo-bounded-startup-wait-2026-09-23.md) —
+  BUG-090 reproducer, supervision alternatives, cleanup contract, and evidence.
