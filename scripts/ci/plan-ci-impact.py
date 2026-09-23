@@ -26,15 +26,20 @@ import fnmatch
 import json
 import os
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import BinaryCommandResult
+from scripts.lib.safe_subprocess import run as run_command
+
 DEFAULT_CONFIG = Path(".github/ci-impact.json")
 ZERO_SHA = "0" * 40
-GIT = shutil.which("git") or "/usr/bin/git"  # absolute path: ruff S607
+_GIT_PATH = shutil.which("git")
+GIT = str(Path(_GIT_PATH).resolve(strict=True)) if _GIT_PATH is not None else None
 
 # Git environment inherited from a pre-commit / hook parent that must not leak
 # into the planner's own git invocations (it would point them at the wrong
@@ -182,12 +187,16 @@ def clean_git_environment() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if key not in _GIT_ENV_BLOCKLIST}
 
 
-def _git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(  # noqa: S603 -- fixed argv, absolute git, no shell
+def _git(repo_root: Path, *args: str) -> BinaryCommandResult:
+    if GIT is None:
+        raise PlanError("required executable not found: git")
+    return run_command(
         [GIT, "-C", str(repo_root), *args],
+        allowed_executables=(GIT,),
         capture_output=True,
         check=False,
         env=clean_git_environment(),
+        timeout_seconds=60,
     )
 
 

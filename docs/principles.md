@@ -165,9 +165,10 @@ See JPL rule 30 above — enforced by `.semgrep.yml` custom rules +
 - ✅ Conventional commit messages (enforced by commit-msg hook)
 - ✅ CI matrix green on Linux/macOS/Windows
 - ✅ Netflix source-of-truth golden tests pass (CPU, 3 pairs: 1 normal + 2 checkerboard)
-- ✅ GPU-parity matrix gate (T6-8 / ADR-0214) — CPU ↔ Vulkan/lavapipe variance
-  across every enabled feature; CUDA / SYCL / hardware-Vulkan advisory until a
-  self-hosted runner registers. See
+- ✅ SYCL parity (ADR-1177) — when `SYCL_ARC_RUNNER_ENABLED=true`, the required
+  Arc A380 lane runs the SYCL unit suite and the CPU↔SYCL `float_ssim` matrix
+  cell; a missing or offline enabled runner fails loudly. Broader CUDA/SYCL
+  sweeps remain explicit local or backend-specific test runs. See
   [development/cross-backend-gate.md](development/cross-backend-gate.md).
 - ✅ Coverage ≥ 70% overall, ≥ 85% for security-critical code (validation, parsing,
   crypto-adjacent)

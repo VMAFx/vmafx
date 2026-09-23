@@ -7,11 +7,15 @@ import importlib.util
 import json
 import os
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 SPEC = importlib.util.spec_from_file_location(
     "patch_stack", Path(__file__).with_name("ffmpeg_patch_stack.py")
@@ -41,9 +45,12 @@ class RealReplay(unittest.TestCase):
             key: value for key, value in os.environ.items() if not key.startswith("GIT_")
         }
         environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
-        return subprocess.check_output(  # noqa: S603
+        git = shutil.which("git")
+        self.assertIsNotNone(git)
+        assert git is not None
+        result = run_command(
             [
-                shutil.which("git") or "/usr/bin/git",
+                git,
                 "-c",
                 "core.hooksPath=/dev/null",
                 "-c",
@@ -56,10 +63,15 @@ class RealReplay(unittest.TestCase):
                 str(path),
                 *args,
             ],
+            allowed_executables=(git,),
+            capture_output=True,
             text=True,
-            stderr=subprocess.DEVNULL,
             env=environment,
+            check=True,
+            timeout_seconds=60,
         )
+        assert isinstance(result.stdout, str)
+        return result.stdout
 
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()

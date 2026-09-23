@@ -5,10 +5,15 @@
 
 import os
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 SMOKE = ROOT / "ffmpeg-patches/test/build-and-run.sh"
@@ -22,9 +27,12 @@ class SmokeSafety(unittest.TestCase):
             key: value for key, value in os.environ.items() if not key.startswith("GIT_")
         }
         environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
-        return subprocess.check_output(  # noqa: S603 -- fixed Git argv and fixture-owned paths
+        git = shutil.which("git")
+        self.assertIsNotNone(git)
+        assert git is not None
+        result = run_command(
             [
-                shutil.which("git") or "/usr/bin/git",
+                git,
                 "-c",
                 "core.hooksPath=/dev/null",
                 "-c",
@@ -37,10 +45,15 @@ class SmokeSafety(unittest.TestCase):
                 str(path),
                 *args,
             ],
+            allowed_executables=(git,),
+            capture_output=True,
             text=True,
-            stderr=subprocess.DEVNULL,
             env=environment,
+            check=True,
+            timeout_seconds=60,
         )
+        assert isinstance(result.stdout, str)
+        return result.stdout
 
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="ffmpeg-smoke-safety-")
@@ -100,15 +113,19 @@ class SmokeSafety(unittest.TestCase):
             }
         )
 
-    def run_smoke(self) -> subprocess.CompletedProcess[str]:
+    def run_smoke(self) -> TextCommandResult:
         # Fixed Bash executable, copied repository script and fixture-owned cwd.
-        return subprocess.run(  # noqa: S603
-            [shutil.which("bash") or "/bin/bash", str(self.script)],
+        bash = shutil.which("bash")
+        self.assertIsNotNone(bash)
+        assert bash is not None
+        return run_command(
+            [bash, str(self.script)],
+            allowed_executables=(bash,),
             cwd=self.project,
             env=self.env,
             text=True,
             capture_output=True,
-            timeout=30,
+            timeout_seconds=30,
         )
 
     def assert_caller_preserved(self) -> None:

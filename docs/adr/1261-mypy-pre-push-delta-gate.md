@@ -25,8 +25,9 @@ Raising `python_version` from its stale `3.10` to the `3.14` the project actuall
 The hook stays blocking, and it measures a delta.
 
 1. Files under `ai/src/` are checked in their own invocation with `--explicit-package-bases`, which names them from the `mypy_path` base alone, matching the module they have at runtime. Files outside it keep the plain invocation, so their module names, and the per-module overrides keyed on them, do not change.
-2. The same file set is checked again at the branch's merge base, in a disposable worktree, and only findings absent there are reported. Line numbers are not part of a finding's identity, so an edit above a finding does not make it look new.
-3. A non-zero exit with no attributable finding fails the push. That is mypy breaking rather than a clean run, and it must not pass silently.
+2. Blocking runs use `--no-site-packages` and disable the resulting `import-not-found` diagnostics. This makes the gate independent of whichever third-party PEP 561 packages happen to be installed while retaining checks over the selected repository source, resolved repository imports, and the standard library. The dependency-rich CI run remains advisory.
+3. The same file set is checked again at the branch's merge base, in a disposable worktree, and only findings absent there are reported. Line numbers are not part of a finding's identity, so an edit above a finding does not make it look new.
+4. A non-zero exit with no attributable finding fails the push. That is mypy breaking rather than a clean run, and it must not pass silently.
 
 `python_version` and the 175 findings behind it are left to their own change.
 
@@ -38,12 +39,14 @@ The hook stays blocking, and it measures a delta.
 | Make the hook advisory, like CI | Matches the CI contract exactly, and gives up the only place where mypy actually gates anything. A gate that cannot fail is documentation. |
 | Fix the 175 inherited findings first, keep the hook absolute | The right end state, and far too large to sit in front of every unrelated branch. It is also not stable: the finding set moves with the local environment's installed packages. |
 | Exclude `ai/src/` from the hook's file selection | Removes the hard error without checking those files at all, which is a coverage hole, not a fix: `ai/src` holds the shared AI helpers. |
+| Use the active environment's third-party stubs | Preserves dependency type detail, but makes a blocking gate depend on packages outside the repository contract. A NumPy stub using Python 3.12 syntax made mypy exit before it could check this repository's Python 3.10 target. The hosted advisory run still provides that signal. |
 | Raise `python_version` to 3.14 in the same change | Measured: 175 findings on `master`'s AI tree, and a second class of error from `compat/python-vmaf` not being an importable package name. A separate change with its own risk. |
 
 ## Consequences
 
 - A branch that edits a file under `ai/src/` can be pushed.
 - A branch that adds a type error is still rejected, and the message names the finding and says that inherited ones are not listed.
+- The blocking result no longer changes with locally installed PEP 561 packages. Missing-import diagnostics and third-party stub detail remain the responsibility of the advisory hosted run until the dependency surface has a pinned type-check environment.
 - Each push runs the checker twice and creates one disposable worktree under the cache directory, removed even when the run fails, so the ADR-0332 worktree-drift guard sees nothing.
 - The inherited-finding count is printed, so the debt stays visible instead of silently accepted.
 - Paying the debt down needs no change here: as findings disappear from the merge base, they disappear from the baseline.

@@ -10,13 +10,17 @@ import importlib.util
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
 from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import CommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 # A hang detector, not a timing assertion: these subprocesses finish in tens of
 # milliseconds locally, but a loaded CI runner has blown a 10-second cap and the
@@ -221,8 +225,11 @@ class ScorecardReportTests(unittest.TestCase):
             ]
 
             def run(args: list[str]) -> int:
-                return subprocess.run(  # noqa: S603 -- ADR-1247: fixed gate CLI with disposable reports
-                    args, capture_output=True, timeout=SUBPROCESS_TIMEOUT_S
+                return run_command(
+                    args,
+                    allowed_executables=(sys.executable,),
+                    capture_output=True,
+                    timeout_seconds=SUBPROCESS_TIMEOUT_S,
                 ).returncode
 
             self.assertNotEqual(run(command), 0)
@@ -272,13 +279,14 @@ class SourceBindingTests(unittest.TestCase):
         executable = shutil.which("git")
         self.assertIsNotNone(executable)
         assert executable is not None
-        return subprocess.run(  # noqa: S603 -- ADR-1247: fixed disposable Git fixture argv
+        return run_command(
             [executable, "-C", str(self.root), *args],
+            allowed_executables=(executable,),
             env=self.env,
             check=True,
             capture_output=True,
             text=True,
-            timeout=SUBPROCESS_TIMEOUT_S,
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
         ).stdout
 
     def test_clean_source_binding_and_only_generated_report_allowed(self) -> None:
@@ -371,9 +379,13 @@ class SourceBindingTests(unittest.TestCase):
             self.assertEqual(before, gate.source_identity(self.root, self.sha))
 
     @staticmethod
-    def run_cli(command: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.run(  # noqa: S603 -- ADR-1247: this test's fixed Python gate and fixture paths
-            command, env=env, capture_output=True, timeout=SUBPROCESS_TIMEOUT_S
+    def run_cli(command: list[str], env: dict[str, str]) -> CommandResult:
+        return run_command(
+            command,
+            allowed_executables=(sys.executable,),
+            env=env,
+            capture_output=True,
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
         )
 
     def test_actual_cli_missing_before_or_wrong_run_never_passes(self) -> None:

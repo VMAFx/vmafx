@@ -27,8 +27,9 @@ therefore cannot break hooks in the surviving checkout.
 The dispatcher forwards Git's arguments and pushed-ref input to
 `pre-commit hook-impl`. The framework selects checks and changed files
 from `.pre-commit-config.yaml`. Push checks include assertion density,
-twin drift, mypy, FFmpeg patch replay, PR deliverables, and MkDocs strict
-validation. The PR-body check may skip a first push or draft PR;
+twin drift, mypy, bounded-process regressions, FFmpeg patch replay, PR
+deliverables, and MkDocs strict validation. The PR-body check may skip a first
+push or draft PR;
 that does not skip the other checks. Existing framework `.legacy` hooks
 continue to run in framework stages.
 
@@ -103,6 +104,15 @@ checkout reports depends on which of those packages it has installed. A
 blocking local hook that reported all of them rejected findings that `master`
 produces on its own files.
 
+The blocking hook also passes `--no-site-packages` and
+`--disable-error-code=import-not-found`. Its result therefore does not depend
+on arbitrary PEP 561 packages in the active environment. Selected repository
+sources, repository imports that resolve, and standard-library types are still
+checked. Missing-import diagnostics and dependency-provided type detail remain
+in the dependency-rich but advisory hosted run. This separation prevents a
+newer installed stub from crashing a check configured for the repository's
+older Python target before any attributable finding is emitted.
+
 Files under `ai/src/` are checked in a separate run with
 `--explicit-package-bases`. That directory is a `mypy_path` base, so without
 the flag mypy sees each file under two module names and refuses the run
@@ -172,6 +182,8 @@ preserve the unstaged portion through the framework's stash/restore flow.
 ```bash
 python3 scripts/githooks/tests/test_install.py
 python3 scripts/git-hooks/test-pre-push-mypy.py
+python3 -m unittest scripts.lib.test_safe_subprocess \
+  scripts.ci.tests.test_agent_eligibility_precheck
 ```
 
 This runs real Git commits and pushes to disposable local repositories.

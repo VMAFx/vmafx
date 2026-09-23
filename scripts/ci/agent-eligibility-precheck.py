@@ -53,19 +53,16 @@ import argparse
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
-from importlib import import_module
 from pathlib import Path
 from typing import Any, Iterable, Protocol
 
 # The script lives at scripts/ci/, the lib package at scripts/lib/.
-_SCRIPTS = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_SCRIPTS))
-_BACKLOG_TRACKER = import_module("lib.backlog_tracker")
-BacklogTracker = _BACKLOG_TRACKER.BacklogTracker
-GitHubTracker = _BACKLOG_TRACKER.GitHubTracker
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))
+from scripts.lib.backlog_tracker import BacklogTracker, GitHubTracker  # noqa: E402
+from scripts.lib.safe_subprocess import CommandFailed  # noqa: E402
 
 
 class _BacklogReader(Protocol):
@@ -148,10 +145,11 @@ def check_no_merged_pr(backlog_id: str, tracker: _GitHubReader) -> bool:
             state="merged",
             limit=10,
         )
-    except subprocess.CalledProcessError as exc:
+    except CommandFailed as exc:
         _emit_error(
             "agent-eligibility: merged-PR check failed",
-            f"gh search exited {exc.returncode}; restore authentication or pass --skip-gh-search.",
+            f"gh search exited {exc.result.returncode}; "
+            "restore authentication or pass --skip-gh-search.",
         )
         return False
     except FileNotFoundError:
@@ -335,10 +333,10 @@ def _run_checks(args: argparse.Namespace, scope_token: str) -> bool:
     else:
         try:
             open_branches = github.open_agent_branches()
-        except subprocess.CalledProcessError as error:
+        except CommandFailed as error:
             _emit_error(
                 "agent-eligibility: open-branch check failed",
-                f"gh branch listing exited {error.returncode}; dispatch is blocked.",
+                f"gh branch listing exited {error.result.returncode}; dispatch is blocked.",
             )
             failed = True
         except FileNotFoundError as error:

@@ -9,7 +9,6 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -23,6 +22,11 @@ EXPORT_SCRIPT = SCRIPT.with_name("write-compile-commands.py")
 POSIX_MODEL_SCRIPT = SCRIPT.with_name("write_cppcheck_posix_model.py")
 ROOT = SCRIPT.parents[2]
 PUBLIC_MODEL = Path("scripts/ci/cppcheck-public-entrypoints.cfg")
+
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
 class PublicEntrypointModelTests(unittest.TestCase):
@@ -251,9 +255,16 @@ class ConfiguredLintTests(unittest.TestCase):
             )
             stub.chmod(0o755)
 
-    def command(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(  # noqa: S603 -- fixture-owned argv, no shell
-            argv, cwd=self.root, env=self.env, capture_output=True, text=True, check=False, **kwargs
+    def command(self, argv: list[str]) -> TextCommandResult:
+        result = run_command(
+            argv,
+            allowed_executables=("git", "make", sys.executable),
+            cwd=self.root,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=600,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
@@ -268,8 +279,8 @@ class ConfiguredLintTests(unittest.TestCase):
     def write_database(self) -> None:
         self.database.write_text(json.dumps(self.entries), encoding="utf-8")
 
-    def run_driver(self, **env: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603 -- execute fixture driver without shell
+    def run_driver(self, **env: str) -> TextCommandResult:
+        return run_command(
             [
                 sys.executable,
                 str(SCRIPT),
@@ -280,6 +291,7 @@ class ConfiguredLintTests(unittest.TestCase):
                 "--jobs",
                 "2",
             ],
+            allowed_executables=(sys.executable,),
             cwd=self.root,
             env={**self.env, **env},
             capture_output=True,
@@ -542,6 +554,12 @@ class ConfiguredLintTests(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SCRIPT, target)
         shutil.copy2(EXPORT_SCRIPT, target.with_name("write-compile-commands.py"))
+        # The driver now imports the bounded-subprocess wrapper, so the sandbox
+        # needs it too -- without it `make lint-c` dies on ModuleNotFoundError
+        # before reaching anything this test is about.
+        helper = self.root / "scripts/lib/safe_subprocess.py"
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
         original = self.database.read_bytes()
         (self.root / "native-database.json").write_bytes(original)
         if polluted:
@@ -601,7 +619,7 @@ class ConfiguredLintTests(unittest.TestCase):
         )
         ninja.chmod(0o755)
 
-    def invoke_make_lint(self) -> subprocess.CompletedProcess[str]:
+    def invoke_make_lint(self) -> TextCommandResult:
         # Keep the initial configured-build target; recursive build checks real prerequisites.
         return self.command(
             [

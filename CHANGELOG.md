@@ -30849,6 +30849,14 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   `>` as output redirection.
 
 
+- Bound repository automation subprocesses to explicit executables, arguments,
+  output memory, deadlines, and process-group cleanup on timeout, overflow, or
+  caller cancellation instead of relying on static-analysis waivers at each
+  call site; canonicalized the helper's Python package identity so direct
+  scripts, fail-soft consumers, and type checks exercise the same API; isolated
+  the blocking mypy delta check from environment-dependent third-party stubs.
+
+
 **Python type, dependency, and security audit bundle**
 
 This bundle consolidates four source PRs into a single coherent audit pass

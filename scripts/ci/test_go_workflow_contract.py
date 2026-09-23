@@ -8,10 +8,14 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
+import sys
 import textwrap
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 # A hang detector, not a timing assertion: these subprocesses finish in tens of
 # milliseconds locally, but a loaded CI runner has blown a 10-second cap and the
@@ -86,13 +90,14 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
   github, context, core, {env: {GITHUB_RUN_ID: '1'}}, VirtualDate, callback => callback()
 ).then(() => process.stdout.write(JSON.stringify(failures))).catch(error => {console.error(error); process.exitCode = 1;});
 """
-        result = subprocess.run(  # noqa: S603 -- fixed Node driver, repository-owned workflow input
+        result = run_command(
             [node, "-e", driver],
-            input=json.dumps({"script": script, "checks": checks}),
+            allowed_executables=(node,),
+            input_data=json.dumps({"script": script, "checks": checks}),
             text=True,
             capture_output=True,
             check=True,
-            timeout=SUBPROCESS_TIMEOUT_S,
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
         )
         payload: object = json.loads(result.stdout)
         if not isinstance(payload, list):

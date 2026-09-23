@@ -120,13 +120,14 @@ per-backend page below.
 
 ## Cross-backend parity
 
-Every backend pair is gated on every PR by the **GPU-parity matrix
-gate** (T6-8 / [ADR-0214](../adr/0214-gpu-parity-ci-gate.md)). The
-gate diffs per-frame metrics with a feature-specific absolute
-tolerance and emits one JSON / Markdown report per CI run. See
+The cross-backend matrix runner supports CPU, CUDA, and SYCL comparisons with
+feature-specific absolute tolerances. CI currently invokes it for CPU↔SYCL
+`float_ssim` on the conditionally enabled Arc A380 lane; it is not an
+all-backend, every-PR matrix. Backend-specific tests cover the wider native
+surface. See
 [../development/cross-backend-gate.md](../development/cross-backend-gate.md)
-for the tolerance table, how to read failure output, and how to add
-a new feature to the matrix.
+for the exact workflow coverage, tolerance table, failure output, and local
+sweep command.
 
 ### The parity tests are resolution-sensitive
 

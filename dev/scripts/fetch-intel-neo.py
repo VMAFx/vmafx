@@ -422,7 +422,11 @@ def main() -> None:
         sys.stderr.reconfigure(line_buffering=True)
 
     parser = argparse.ArgumentParser(description="Fetch and verify Intel NEO deb packages.")
-    parser.add_argument("--neo-ver", required=True, help="Pinned intel/compute-runtime release tag")
+    parser.add_argument(
+        "--neo-ver",
+        required=True,
+        help="Pinned intel/compute-runtime release tag (e.g. 26.31.39395.13)",
+    )
     parser.add_argument(
         "--output-dir", type=Path, default=Path(), help="Directory to save downloaded debs"
     )

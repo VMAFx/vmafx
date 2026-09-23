@@ -7,10 +7,15 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -30,6 +35,7 @@ class BaseImageGate(unittest.TestCase):
             GATE,
             "scripts/ci/check-workflow-versions.py",
             "scripts/ci/check-container-image-references.py",
+            "scripts/lib/safe_subprocess.py",
         ):
             source = ROOT / name
             if source.exists():
@@ -44,11 +50,16 @@ class BaseImageGate(unittest.TestCase):
         )
         self.run_command([GIT, "init", "--quiet"], check=True)
 
-    def run_command(
-        self, command: list[str], *, check: bool = False
-    ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603 -- fixed gate/Git commands in a disposable fixture
-            command, cwd=self.repo, env=self.env, capture_output=True, text=True, check=check
+    def run_command(self, command: list[str], *, check: bool = False) -> TextCommandResult:
+        return run_command(
+            command,
+            allowed_executables=(GIT, BASH),
+            cwd=self.repo,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            check=check,
+            timeout_seconds=120,
         )
 
     def check(self, text: str, expected: int, name: str = "Dockerfile", write: bool = False) -> str:

@@ -6,7 +6,7 @@
 An old remote tip is not a PR base after a rebase: its diff includes unrelated
 changes already integrated on master. Preserve the touched-file scope in AGENTS.md.
 
-Two properties this wrapper owes its callers, both learned from failures:
+Three properties this wrapper owes its callers, all learned from failures:
 
 * `ai/src` is on mypy's `mypy_path`, so a file under it has two possible module
   names, `aiutils.x` from that base and `ai.src.aiutils.x` from the repository
@@ -26,6 +26,13 @@ Two properties this wrapper owes its callers, both learned from failures:
   the same files are checked at the branch's merge base and only findings that
   are not there too are reported. Line numbers are left out of the comparison,
   because an edit above a finding shifts it without changing it.
+* Installed third-party stubs are not a stable part of the repository's type
+  contract. Their presence and supported Python syntax vary by checkout; for
+  example, a newer NumPy stub can use syntax newer than this repository's
+  configured mypy target and make the checker exit before reporting a source
+  finding. Runs therefore exclude site packages and suppress only the missing
+  imports that exclusion creates. Repository and standard-library types remain
+  checked, while hosted CI retains the advisory dependency-rich run.
 """
 
 from __future__ import annotations
@@ -33,10 +40,14 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import CommandFailed
+from scripts.lib.safe_subprocess import run as run_command
 
 # mypy writes `path:line: error: message  [code]`; `note:` lines are context.
 FINDING_RE = re.compile(
@@ -45,15 +56,22 @@ FINDING_RE = re.compile(
 # ai/src is a mypy_path base: see the module docstring.
 PACKAGE_BASE_PREFIX = "ai/src/"
 BASELINE_DIR_PREFIX = "vmafx-mypy-baseline-"
+ISOLATION_ARGS = ("--no-site-packages", "--disable-error-code=import-not-found")
 
 
 def git(*args: str) -> str:
     executable = shutil.which("git")
     if executable is None:
         raise RuntimeError("git is required")
-    result = subprocess.run(  # noqa: S603 -- literal git operations, argument vector
-        [executable, *args], capture_output=True, text=True, check=True
+    result = run_command(
+        [executable, *args],
+        allowed_executables=(executable,),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=120,
     )
+    assert isinstance(result.stdout, str)
     return result.stdout
 
 
@@ -77,13 +95,18 @@ def run_mypy(executable: str, paths: list[str], cwd: Path) -> tuple[int, str]:
     for args, group in ((["--explicit-package-bases"], based), ([], plain)):
         if not group:
             continue
-        completed = subprocess.run(  # noqa: S603 -- contained Git filenames, no shell
-            [executable, *args, *group],
+        completed = run_command(
+            [executable, *ISOLATION_ARGS, *args, *group],
+            allowed_executables=(executable,),
             cwd=cwd,
             capture_output=True,
             text=True,
             check=False,
+            timeout_seconds=1800,
+            max_output_bytes=64 * 1_048_576,
         )
+        assert isinstance(completed.stdout, str)
+        assert isinstance(completed.stderr, str)
         status = status or completed.returncode
         output += completed.stdout + completed.stderr
     return status, output
@@ -125,7 +148,7 @@ def baseline_fingerprints(executable: str, paths: list[str], root: Path, base: s
         # a cleanup failure must not mask the finding the caller is reporting.
         try:
             git("-C", str(root), "worktree", "remove", "--force", str(worktree))
-        except (OSError, RuntimeError, subprocess.CalledProcessError):
+        except (OSError, RuntimeError, CommandFailed):
             print(f"mypy: could not remove the baseline worktree {worktree}", file=sys.stderr)
 
 
@@ -202,7 +225,7 @@ def main() -> int:
             )
         inherited = baseline_fingerprints(executable, selected, root, base)
         return report(current - inherited, len(current & inherited))
-    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, RuntimeError, CommandFailed) as exc:
         print(f"mypy scope check failed: {exc}", file=sys.stderr)
         return 2
 

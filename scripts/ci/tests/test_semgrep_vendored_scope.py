@@ -37,10 +37,14 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 RULE = "vmaf-no-strcpy-strcat-sprintf"
@@ -109,8 +113,14 @@ class SemgrepVendoredScope(unittest.TestCase):
             "--no-git-ignore",
             *targets,
         ]
-        proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
-            argv, cwd=project, capture_output=True, text=True, check=False
+        proc = run_command(
+            argv,
+            allowed_executables=(self.semgrep,),
+            cwd=project,
+            capture_output=True,
+            text=True,
+            timeout_seconds=300,
+            max_output_bytes=16 * 1_048_576,
         )
         self.assertIn(proc.returncode, (0, 1), proc.stderr)
         counts: dict[str, int] = {}

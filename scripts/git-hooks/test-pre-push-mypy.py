@@ -8,16 +8,28 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
+
 SCRIPT = Path(__file__).with_name("pre-push-mypy.py").resolve()
+HELPER = SCRIPT.parents[1] / "lib/safe_subprocess.py"
 CONFIG = SCRIPT.parents[2] / ".pre-commit-config.yaml"
+ROOT = SCRIPT.parents[2]
 GIT = shutil.which("git") or "/usr/bin/git"
 PRE_COMMIT = shutil.which("pre-commit") or "/usr/bin/pre-commit"
+MYPY = (
+    str(Path(sys.executable).with_name("mypy"))
+    if Path(sys.executable).with_name("mypy").is_file()
+    else shutil.which("mypy")
+)
+MYPY_ISOLATION_ARGS = ["--no-site-packages", "--disable-error-code=import-not-found"]
 
 
 def hook_config(identifier: str) -> str:
@@ -81,12 +93,17 @@ class MypyScope(unittest.TestCase):
         self.environment["XDG_CACHE_HOME"] = str(self.directory / "cache")
 
     def git(self, *args: str) -> str:
-        return subprocess.check_output(  # noqa: S603 -- disposable Git fixture
+        result = run_command(
             [GIT, "-C", str(self.root), *args],
+            allowed_executables=(GIT,),
             env=self.environment,
+            capture_output=True,
             text=True,
-            stderr=subprocess.PIPE,
-        ).strip()
+            check=True,
+            timeout_seconds=60,
+        )
+        assert isinstance(result.stdout, str)
+        return result.stdout.strip()
 
     def write(self, filename: str, content: str = "owned: int = 1\n") -> Path:
         path = self.root / filename
@@ -98,19 +115,21 @@ class MypyScope(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-qm", message)
 
-    def run_hook(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603 -- shipped hook and disposable fixture
+    def run_hook(self, *args: str) -> TextCommandResult:
+        return run_command(
             [sys.executable, str(SCRIPT), *args],
+            allowed_executables=(sys.executable,),
             cwd=self.root,
             env=self.environment,
             capture_output=True,
             text=True,
             check=False,
+            timeout_seconds=300,
         )
 
-    def run_framework(self, from_ref: str, to_ref: str) -> subprocess.CompletedProcess[str]:
+    def run_framework(self, from_ref: str, to_ref: str) -> TextCommandResult:
         """Drive the shipped hook configuration through the installed framework."""
-        return subprocess.run(  # noqa: S603 -- installed framework, disposable Git fixture
+        return run_command(
             [
                 PRE_COMMIT,
                 "run",
@@ -122,11 +141,13 @@ class MypyScope(unittest.TestCase):
                 "--to-ref",
                 to_ref,
             ],
+            allowed_executables=(PRE_COMMIT,),
             cwd=self.root,
             env=self.environment,
             capture_output=True,
             text=True,
             check=False,
+            timeout_seconds=300,
         )
 
     def assert_checked(self, expected: list[str], status: int = 0) -> None:
@@ -154,6 +175,7 @@ class MypyScope(unittest.TestCase):
         # filename intersection is caught by the framework, not just unit calls.
         hook = hook_config("mypy-local")
         self.write("scripts/git-hooks/pre-push-mypy.py", SCRIPT.read_text())
+        self.write("scripts/lib/safe_subprocess.py", HELPER.read_text())
         self.write(
             ".pre-commit-config.yaml",
             "repos:\n  - repo: local\n    hooks:\n      - id: mypy-local\n" + hook,
@@ -172,7 +194,11 @@ class MypyScope(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(
             json.loads(self.receipt.read_text()),
-            ["scripts/git-hooks/pre-push-mypy.py", "scripts/owned.py"],
+            [
+                "scripts/git-hooks/pre-push-mypy.py",
+                "scripts/lib/safe_subprocess.py",
+                "scripts/owned.py",
+            ],
         )
         # An empty old-tip/new-tip file list must still recheck the owned set.
         result = self.run_framework("HEAD", "HEAD")
@@ -310,8 +336,11 @@ class MypyScope(unittest.TestCase):
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
         based = [call for call in calls if "--explicit-package-bases" in call]
         plain = [call for call in calls if "--explicit-package-bases" not in call]
-        self.assertEqual([c[1:] for c in based], [["ai/src/aiutils/mod.py"]])
-        self.assertEqual(plain, [["scripts/owned.py"]])
+        self.assertEqual(
+            based,
+            [[*MYPY_ISOLATION_ARGS, "--explicit-package-bases", "ai/src/aiutils/mod.py"]],
+        )
+        self.assertEqual(plain, [[*MYPY_ISOLATION_ARGS, "scripts/owned.py"]])
 
     def test_baseline_worktree_is_always_removed(self) -> None:
         self.write("scripts/owned.py", "planted: int = 1  # BAD\n")
@@ -331,6 +360,28 @@ class MypyScope(unittest.TestCase):
         self.assertIn("always_run: true", scope)
         self.assertIn("pass_filenames: false", scope)
         self.assertNotIn("\n        files:", scope)
+
+
+@unittest.skipUnless(MYPY, "mypy is not installed")
+class MypyModuleIdentity(unittest.TestCase):
+    def test_helper_and_hook_have_one_module_identity(self) -> None:
+        """Simultaneous roots must not name safe_subprocess twice."""
+        assert MYPY is not None
+        result = run_command(
+            [
+                MYPY,
+                *MYPY_ISOLATION_ARGS,
+                str(HELPER.relative_to(ROOT)),
+                str(SCRIPT.relative_to(ROOT)),
+            ],
+            allowed_executables=(MYPY,),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

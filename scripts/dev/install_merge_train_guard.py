@@ -13,11 +13,15 @@ import os
 import shlex
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import CommandFailed
+from scripts.lib.safe_subprocess import run as run_command
 
 SOURCE_PATH = "scripts/dev/merge_train_guard.py"
 RUNTIME_FILES = ("train.sh", "rebase-clean.sh", "watchdog.sh", "merge_train_operator.py")
@@ -32,12 +36,14 @@ def git(source: Path, *args: str) -> str:
     executable = shutil.which("git")
     if executable is None:
         raise ValueError("git is unavailable")
-    result = subprocess.run(  # noqa: S603 -- fixed Git arguments, no shell
+    result = run_command(
         [executable, "-C", str(source), *args],
+        allowed_executables=(executable,),
         env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
         capture_output=True,
         text=True,
         check=True,
+        timeout_seconds=60,
     )
     return result.stdout
 
@@ -222,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
             backup = install(value, committed, args.expect_plan)
             print(f"Installed paused adapters; originals and receipt: {backup}")
         return 0
-    except (OSError, ValueError, TypeError, KeyError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, CommandFailed) as exc:
         print(f"merge-train install refused: {exc}", file=sys.stderr)
         return 1
 

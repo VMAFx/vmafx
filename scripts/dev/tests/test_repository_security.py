@@ -97,7 +97,7 @@ class RepositorySecurityTests(unittest.TestCase):
     def test_graphql_errors_and_truncation_never_count_as_zero(self) -> None:
         with (
             patch.object(CHECK.shutil, "which", return_value="/fixture/bin/gh"),
-            patch.object(CHECK.subprocess, "run") as run,
+            patch.object(CHECK, "run_command") as run,
         ):
             run.return_value.stdout = json.dumps({"errors": [{"message": "denied"}]})
             with self.assertRaisesRegex(ValueError, "rejected"):

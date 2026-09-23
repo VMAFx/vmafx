@@ -35,9 +35,12 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 # `0000000000004414 <ssim_accumulate_avx512>:`
 _FUNC_RE = re.compile(r"^[0-9a-f]+ <(?P<name>[^>]+)>:$")
@@ -59,19 +62,33 @@ _ALIGNED_VEC_RE = re.compile(
 
 def _objdump_binary(explicit: str | None) -> str:
     for candidate in (explicit, "x86_64-w64-mingw32-objdump", "objdump"):
-        if candidate and shutil.which(candidate):
-            return candidate
+        if candidate:
+            resolved = shutil.which(candidate)
+            if resolved is not None:
+                return str(Path(resolved).resolve(strict=True))
     raise SystemExit(
         "error: no usable objdump found (tried --objdump, x86_64-w64-mingw32-objdump, objdump)"
     )
 
 
 def _disassemble(objdump: str, path: Path) -> str:
-    proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+    proc = run_command(
         [objdump, "-d", "--no-show-raw-insn", str(path)],
+        allowed_executables=(objdump,),
         capture_output=True,
         text=True,
         check=False,
+        timeout_seconds=60,
+        # A whole-library disassembly is legitimately large, and the wrapper's
+        # 4 MiB default truncates it into a CommandOutputLimitExceeded rather
+        # than a short read. Measured 2026-09-23 on three local x86-64 builds:
+        # a 2.2-2.7 MiB libvmaf.so disassembles to 7.5-8.0 MiB in about 90 ms.
+        # The Windows MinGW64 artifact this check actually runs against carries
+        # more of the matrix, so 256 MiB is roughly 30x the measured size --
+        # still a real ceiling against a runaway objdump, with room for the
+        # library to keep growing. The 60 s timeout is untouched; the measured
+        # run is three orders of magnitude inside it.
+        max_output_bytes=256 * 1_048_576,
     )
     if proc.returncode != 0:
         return ""

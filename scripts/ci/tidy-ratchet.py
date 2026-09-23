@@ -27,7 +27,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable, Iterator
@@ -35,6 +34,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 if os.name == "posix":
     import fcntl
@@ -294,8 +297,13 @@ def cc_version(build_dir: Path) -> str:
 def clang_tidy_version(binary: str) -> str:
     """Return the LLVM version string of *binary*, or "" when unavailable."""
     try:
-        out = subprocess.run(  # noqa: S603 -- fixed argv, no shell
-            [binary, "--version"], capture_output=True, text=True, check=False
+        out = run_command(
+            [binary, "--version"],
+            allowed_executables=(binary,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=30,
         ).stdout
     except OSError:
         return ""
@@ -328,8 +336,24 @@ def run_one(
         arg if arg.startswith("--extra-arg") else f"--extra-arg={arg}" for arg in extra_args
     ]
     argv = [binary, "-p", str(build_dir), *forwarded, str(source)]
-    proc = subprocess.run(  # noqa: S603 -- argv built from compile_commands, no shell
-        argv, capture_output=True, text=True, check=False, cwd=str(directory)
+    proc = run_command(
+        argv,
+        allowed_executables=(binary,),
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(directory),
+        # Not a measured figure -- a ceiling. Before the bounded wrapper this
+        # call had no timeout at all, and the Tidy Ratchet job completed inside
+        # its own 45-minute budget, so no legitimate translation unit can be
+        # slower than that job allows. 600 s was under a quarter of it and a
+        # real TU crossed it (`measurement/output failed: command timed out
+        # after 600s: clang-tidy`, 2026-09-23). 1800 s still fails a genuinely
+        # hung clang-tidy well before the job's own ceiling fires, while it
+        # cannot be the cause of a failure the unbounded version would not also
+        # have had. Tighten it when the slowest TU is actually measured.
+        timeout_seconds=1800,
+        max_output_bytes=64 * 1_048_576,
     )
     return str(source), proc.stdout + "\n" + proc.stderr, proc.returncode
 

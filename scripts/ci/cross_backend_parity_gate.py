@@ -43,21 +43,23 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import subprocess
+import os
 import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, cast
 
-# Calibration loader sits next to this script. Same sys.path tweak
-# as cross_backend_vif_diff.py so direct ``python3 scripts/ci/<this>.py``
-# invocations resolve the sibling module.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cross_backend_calibration import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+# The repository root above makes the sibling import canonical for both direct
+# script execution and package-aware type checking.
+from scripts.ci.cross_backend_calibration import (
     DEFAULT_CALIBRATION_PATH,
     CalibrationTable,
     load_calibration_table,
 )
+from scripts.lib.safe_subprocess import run as run_command
 
 # ---------------------------------------------------------------------------
 # Feature → metric-name list. Mirror of ``FEATURE_METRICS`` in
@@ -104,7 +106,7 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     "float_ssim": ("float_ssim",),
     "float_ms_ssim": ("float_ms_ssim",),
     # T7-35 / ADR-0215: enable_lcs adds 15 per-scale L/C/S triples on
-    # top of the combined float_ms_ssim score. The Vulkan/CUDA kernels
+    # top of the combined float_ms_ssim score. The CUDA/SYCL kernels
     # already produce the per-scale L/C/S means; gating only the
     # feature_collector_append calls keeps default-path output
     # bit-identical. Cell uses extractor `float_ms_ssim` with the
@@ -279,8 +281,6 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
 
 BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
     # No backend-specific aliases currently needed for CUDA or SYCL.
-    # Vulkan aliases ("adm"/"motion" → "integer_adm_vulkan"/"integer_motion_vulkan")
-    # were removed when Vulkan was dropped in ADR-0726.
 }
 
 
@@ -372,20 +372,34 @@ def run_one(
         device,
         output,
     )
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+    proc = run_command(
+        cmd,
+        allowed_executables=(binary,),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=600,
+        max_output_bytes=16 * 1_048_576,
+    )
     if proc.returncode != 0:
         return proc.returncode, (proc.stderr or proc.stdout)
     return 0, ""
 
 
-def load_frames(path: Path) -> list[dict]:
+def load_frames(path: Path) -> list[dict[str, Any]]:
     with path.open() as f:
-        return json.load(f)["frames"]
+        payload: Any = json.load(f)
+    if not isinstance(payload, dict) or not isinstance(payload.get("frames"), list):
+        raise ValueError(f"{path}: expected an object containing a frames array")
+    frames = payload["frames"]
+    if not all(isinstance(frame, dict) for frame in frames):
+        raise ValueError(f"{path}: every frame must be an object")
+    return [cast(dict[str, Any], frame) for frame in frames]
 
 
 def diff_frames(
-    a_frames: list[dict],
-    b_frames: list[dict],
+    a_frames: list[dict[str, Any]],
+    b_frames: list[dict[str, Any]],
     metrics: tuple[str, ...],
     tolerance: float,
 ) -> tuple[dict[str, float], dict[str, int]]:
@@ -608,14 +622,48 @@ def emit_md(results: list[CellResult], path: Path) -> None:
         f.write("\n".join(lines))
 
 
+def add_output_and_calibration_args(ap: argparse.ArgumentParser) -> None:
+    """Add artifact paths and ADR-0234 calibration controls."""
+    ap.add_argument(
+        "--workdir",
+        type=Path,
+        default=Path(tempfile.gettempdir()) / "vmaf_parity_gate",
+    )
+    ap.add_argument(
+        "--json-out",
+        type=Path,
+        default=None,
+        help="write machine-readable summary to this path",
+    )
+    ap.add_argument(
+        "--md-out",
+        type=Path,
+        default=None,
+        help="write Markdown summary to this path",
+    )
+    ap.add_argument(
+        "--gpu-id",
+        type=str,
+        default=None,
+        help=(
+            "runtime GPU identifier (Research-0041 schema, e.g. "
+            "'cuda:8.6' for Ampere RTX 30, 'sycl:0' for Intel Arc). "
+            "Used to look up per-arch tolerances in the "
+            "ADR-0234 calibration table; falls back to "
+            "FEATURE_TOLERANCE when omitted."
+        ),
+    )
+    ap.add_argument(
+        "--calibration-table",
+        type=Path,
+        default=DEFAULT_CALIBRATION_PATH,
+        help=f"path to the ADR-0234 calibration YAML (default: {DEFAULT_CALIBRATION_PATH})",
+    )
+
+
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument(
-        "--vmaf-binary",
-        type=Path,
-        required=True,
-        help="path to core/build/tools/vmaf",
-    )
+    ap.add_argument("--vmaf-binary", type=Path, required=True, help="path to core/build/tools/vmaf")
     ap.add_argument("--reference", type=Path, required=True)
     ap.add_argument("--distorted", type=Path, required=True)
     ap.add_argument("--width", type=int, required=True)
@@ -664,49 +712,37 @@ def _add_runtime_arguments(ap: argparse.ArgumentParser) -> None:
         type=int,
         default=BACKEND_DEFAULT_DEVICE["sycl"],
     )
-    ap.add_argument(
-        "--workdir",
-        type=Path,
-        default=Path(tempfile.gettempdir()) / "vmaf_parity_gate",
-    )
-    ap.add_argument(
-        "--json-out",
-        type=Path,
-        default=None,
-        help="write machine-readable summary to this path",
-    )
-    ap.add_argument(
-        "--md-out",
-        type=Path,
-        default=None,
-        help="write Markdown summary to this path",
-    )
-    ap.add_argument(
-        "--gpu-id",
-        type=str,
-        default=None,
-        help=(
-            "runtime GPU identifier (Research-0041 schema, e.g. "
-            "'cuda:8.6' for Ampere RTX 30, 'sycl:0' for Intel Arc). "
-            "Used to look up per-arch tolerances in the "
-            "ADR-0234 calibration table; falls back to "
-            "FEATURE_TOLERANCE when omitted."
-        ),
-    )
-    ap.add_argument(
-        "--calibration-table",
-        type=Path,
-        default=DEFAULT_CALIBRATION_PATH,
-        help=(f"path to the ADR-0234 calibration YAML (default: {DEFAULT_CALIBRATION_PATH})"),
-    )
+    add_output_and_calibration_args(ap)
 
 
-def _run_matrix(
+def requested_calibration(args: argparse.Namespace) -> CalibrationTable | None:
+    """Load and report the matching calibration row, when requested."""
+    # ADR-0234: load the calibration table once. ``None`` is the
+    # backward-compatible signal (pyyaml missing, file absent, or
+    # ``--gpu-id`` not supplied) and forces the per-feature default
+    # path everywhere downstream.
+    if args.gpu_id is None:
+        return None
+    calibration = load_calibration_table(args.calibration_table)
+    if calibration is None:
+        return None
+    entry = calibration.lookup(args.gpu_id)
+    if entry is None:
+        print(f"calibration: no row matches gpu_id={args.gpu_id}; using FEATURE_TOLERANCE defaults")
+    else:
+        print(
+            f"calibration: matched '{entry.gpu_id_pattern}' ({entry.label}, status={entry.status})"
+        )
+    return calibration
+
+
+def run_cells(
     args: argparse.Namespace,
     cells: list[Cell],
-    devices: dict[str, int],
     calibration: CalibrationTable | None,
+    devices: dict[str, int],
 ) -> list[CellResult]:
+    """Execute and report each backend-pair cell."""
     results: list[CellResult] = []
     for cell in cells:
         tolerance, tolerance_source = resolve_cell_tolerance(
@@ -743,49 +779,25 @@ def _run_matrix(
 
 def main() -> int:
     args = parse_args()
-
-    if not args.vmaf_binary.exists():
-        sys.stderr.write(f"vmaf binary not found: {args.vmaf_binary}\n")
+    try:
+        args.vmaf_binary = args.vmaf_binary.expanduser().resolve(strict=True)
+    except OSError as exc:
+        sys.stderr.write(f"vmaf binary not found: {args.vmaf_binary}: {exc}\n")
         return 2
-    for p in (args.reference, args.distorted):
-        if not p.exists():
-            sys.stderr.write(f"fixture not found: {p}\n")
+    if not args.vmaf_binary.is_file() or not os.access(args.vmaf_binary, os.X_OK):
+        sys.stderr.write(f"vmaf binary is not an executable file: {args.vmaf_binary}\n")
+        return 2
+    for path in (args.reference, args.distorted):
+        if not path.exists():
+            sys.stderr.write(f"fixture not found: {path}\n")
             return 2
-
-    args.workdir.mkdir(parents=True, exist_ok=True)
-    # Vulkan backend was removed per ADR-0726; only cuda and sycl are valid.
-    devices = {
-        "cuda": args.cuda_device,
-        "sycl": args.sycl_device,
-    }
-
     cells = build_matrix(args.features, args.backends)
     if not cells:
         sys.stderr.write("empty matrix — supply at least two backends or one feature\n")
         return 2
-
-    # ADR-0234: load the calibration table once. ``None`` is the
-    # backward-compatible signal (pyyaml missing, file absent, or
-    # ``--gpu-id`` not supplied) and forces the per-feature default
-    # path everywhere downstream.
-    calibration: CalibrationTable | None = None
-    if args.gpu_id is not None:
-        calibration = load_calibration_table(args.calibration_table)
-        if calibration is not None:
-            entry = calibration.lookup(args.gpu_id)
-            if entry is None:
-                print(
-                    f"calibration: no row matches gpu_id={args.gpu_id}; "
-                    f"using FEATURE_TOLERANCE defaults"
-                )
-            else:
-                print(
-                    f"calibration: matched '{entry.gpu_id_pattern}' "
-                    f"({entry.label}, status={entry.status})"
-                )
-
-    results = _run_matrix(args, cells, devices, calibration)
-
+    args.workdir.mkdir(parents=True, exist_ok=True)
+    devices = {"cuda": args.cuda_device, "sycl": args.sycl_device}
+    results = run_cells(args, cells, requested_calibration(args), devices)
     if args.json_out is not None:
         emit_json(results, args.json_out)
     if args.md_out is not None:

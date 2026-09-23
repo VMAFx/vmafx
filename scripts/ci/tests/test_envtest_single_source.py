@@ -9,12 +9,16 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 # A hang detector, not a timing assertion: these subprocesses finish in tens of
 # milliseconds locally, but a loaded CI runner has blown a 10-second cap and the
@@ -57,7 +61,7 @@ class EnvtestSingleSource(unittest.TestCase):
             FIXTURE_ROOT=str(self.root),
             ASSET_PATH=str(self.root / "assets with spaces"),
         )
-        (fake / "go").write_text("#!" + sys.executable + "\n" + r"""
+        go_script = rf"""#!{sys.executable}
 import json,os,pathlib,shutil,sys
 root=pathlib.Path(os.environ["FIXTURE_ROOT"])
 with (root/"go.jsonl").open("a") as f:f.write(json.dumps(sys.argv[1:])+"\n")
@@ -71,9 +75,10 @@ elif a[0]=="install":
 elif a[:2]==["version","-m"]:
  p=pathlib.Path(a[2]);print("mod\tsigs.k8s.io/controller-runtime/tools/setup-envtest\t"+(p.parent/"version").read_text())
 else:sys.exit(19)
-""")
+"""
+        (fake / "go").write_text(go_script)
         (fake / "go").chmod(0o755)
-        (self.root / "tool-template").write_text("#!" + sys.executable + "\n" + r"""
+        tool_script = rf"""#!{sys.executable}
 import json,os,pathlib,sys
 root=pathlib.Path(os.environ["FIXTURE_ROOT"])
 with (root/"tool.jsonl").open("a") as f:f.write(json.dumps(sys.argv[1:])+"\n")
@@ -82,23 +87,25 @@ if os.environ.get("MISSING_ASSETS"):
  (root/"download-attempt").touch()
 if os.environ.get("FAIL_ASSETS"):sys.exit(23)
 if not os.environ.get("EMPTY_ASSETS"):print(os.environ["ASSET_PATH"])
-""")
+"""
+        (self.root / "tool-template").write_text(tool_script)
         (self.root / "tool-template").chmod(0o755)
         # A stale PATH command must never supply assets or satisfy the pin.
         (fake / "setup-envtest").write_text("#!/bin/sh\nexit 99\n")
         (fake / "setup-envtest").chmod(0o755)
 
-    def run_command(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603 -- fixed fixture command vectors, no shell
+    def run_command(self, *args: str) -> TextCommandResult:
+        return run_command(
             list(args),
+            allowed_executables=(BASH, MAKE),
             cwd=self.root,
             env=self.env,
             text=True,
             capture_output=True,
-            timeout=SUBPROCESS_TIMEOUT_S,
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
         )
 
-    def helper_run(self, mode: str) -> subprocess.CompletedProcess[str]:
+    def helper_run(self, mode: str) -> TextCommandResult:
         return self.run_command(BASH, str(self.helper), mode)
 
     def calls(self, filename: str) -> list[list[str]]:

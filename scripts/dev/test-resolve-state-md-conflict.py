@@ -17,10 +17,13 @@ Usage:
         [scripts/dev/resolve-state-md-conflict.py]
 """
 
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 # Assembled rather than written literally so this file does not itself trip the
 # `no-conflict-markers` pre-commit hook.
@@ -44,9 +47,9 @@ CONFLICT = "\n".join(
 DEFAULT_SCRIPT = Path(__file__).with_name("resolve-state-md-conflict.py")
 
 
-def check(out):
+def check(out: str) -> list[str]:
     """Return the list of assertion failures for a resolved state.md body."""
-    failures = []
+    failures: list[str] = []
     if any(mark * 7 in out for mark in ("<", "=", ">")):
         failures.append("conflict markers survived")
     if out.count("T-SHARED-ROW-2026-08-01") != 1:
@@ -62,14 +65,16 @@ def check(out):
     return failures
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     script = Path(argv[1]).resolve() if len(argv) > 1 else DEFAULT_SCRIPT.resolve()
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "state.md"
         target.write_text(CONFLICT, encoding="utf-8")
-        subprocess.run(  # noqa: S603 — fixed argv, no shell, no user input
+        run_command(
             [sys.executable, str(script), str(target)],
+            allowed_executables=(sys.executable,),
             check=True,
+            timeout_seconds=30,
         )
         failures = check(target.read_text(encoding="utf-8"))
 

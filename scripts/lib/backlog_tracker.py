@@ -45,10 +45,15 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, cast
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 # Number of `|`-separated cells before the title cell in a parsed
 # BACKLOG.md row: cells[0] is the leading empty string before the
@@ -293,6 +298,19 @@ class _PR:
     merged_at: str | None
 
 
+def _decode_object_list(raw: str) -> list[dict[str, Any]]:
+    """Decode a JSON array whose entries are objects with string keys."""
+    payload: Any = json.loads(raw)
+    if not isinstance(payload, list):
+        raise ValueError("GitHub response must be a JSON array")
+    objects: list[dict[str, Any]] = []
+    for index, entry in enumerate(payload):
+        if not isinstance(entry, dict) or not all(isinstance(key, str) for key in entry):
+            raise ValueError(f"GitHub response entry {index} must be an object")
+        objects.append(cast(dict[str, Any], entry))
+    return objects
+
+
 class GitHubTracker:
     """Wrap `gh` CLI for PR / branch lookups used by the precheck.
 
@@ -309,23 +327,23 @@ class GitHubTracker:
     def _run(self, *args: str) -> str:
         """Run ``gh`` and return stdout. Raises on non-zero exit.
 
-        ``gh`` is the only command this wrapper ever executes; the
-        S603 lint warning ("untrusted input") is mitigated because
-        the caller-supplied ``args`` always become ``gh`` flags, not
-        a separate program. ``shell=True`` is intentionally not used.
+        ``gh`` is the only command this wrapper ever executes. Resolve it to
+        an absolute path before appending the fixed API argument vectors.
         """
         cmd = ["gh", *args]
-        result = subprocess.run(  # noqa: S603  fixed argv[0]=`gh`, no shell, see docstring
+        result = run_command(
             cmd,
+            allowed_executables=("gh",),
             check=True,
             capture_output=True,
             text=True,
+            timeout_seconds=60,
         )
         return result.stdout
 
     # -- Public API --------------------------------------------------
 
-    def merged_prs_since(self, ts: datetime) -> list[dict]:
+    def merged_prs_since(self, ts: datetime) -> list[dict[str, Any]]:
         """Return merged PRs whose ``mergedAt >= ts``.
 
         Uses ``gh pr list --state merged`` with a search filter. The
@@ -347,9 +365,9 @@ class GitHubTracker:
             "--limit",
             "200",
         )
-        return json.loads(out)
+        return _decode_object_list(out)
 
-    def search_prs(self, query: str, state: str = "all", limit: int = 30) -> list[dict]:
+    def search_prs(self, query: str, state: str = "all", limit: int = 30) -> list[dict[str, Any]]:
         """Free-form ``gh pr list --search`` wrapper.
 
         Returns a list of dicts with ``number / title / body /
@@ -370,7 +388,7 @@ class GitHubTracker:
             "--limit",
             str(limit),
         )
-        return json.loads(out)
+        return _decode_object_list(out)
 
     def open_agent_branches(self) -> list[str]:
         """List head-branch names of open PRs that look like agent runs.
