@@ -20,6 +20,16 @@ if build_machine.system() != 'windows'
     )
 endif
 
+# Execute the compiler-ID policy that selects strict floating-point flags in
+# src/meson.build. The fixture catches GCC-style flags leaking into MSVC-style
+# drivers without requiring a Windows SDK or Intel compiler on this host.
+test('test_strict_fp_compiler_args',
+    import('python').find_installation(),
+    args : files('test_strict_fp_compiler_args.py'),
+    suite : ['fast'],
+    timeout : 90,
+)
+
 # ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
 # ELF only (nm -D); skips with 77 when nm or c++filt is missing. Not in coverage
 # builds: libgcov links into the instrumented .so and exports its own globals
@@ -78,9 +88,9 @@ wave8_opt_only_objects = [
 # GCC defaults to -ffp-contract=off. Clang and icx default to
 # -ffp-contract=on which auto-contracts mul-add pairs to FMA.
 # Adding -ffp-contract=off keeps all three compilers consistent.
-# Intel icx (meson id 'intel-llvm') additionally ignores
-# #pragma STDC FP_CONTRACT OFF unless -fp-model=precise is also on the
-# command line, so we detect icx and append that flag. See ADR-0161.
+# Intel icx additionally needs its precise model. src/meson.build owns the
+# compiler-ID mapping so production carve-outs and these scalar references
+# cannot drift onto different contraction settings. See ADR-0161.
 #
 # ORDER MATTERS, measured. `-fp-model=precise` implies `-ffp-contract=on`, so
 # when it lands AFTER `-ffp-contract=off` it silently re-enables contraction --
@@ -88,12 +98,7 @@ wave8_opt_only_objects = [
 # the contract flag LAST. Same hazard, same fix, as the carve-outs in
 # core/src/meson.build; see T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07 in
 # docs/state.md for the vfmadd counts that measured it.
-_cc_id = cc.get_id()
-_simd_strict_fp_args = []
-if _cc_id == 'intel-llvm' or _cc_id == 'intel-llvm-cl'
-    _simd_strict_fp_args = ['-fp-model=precise']
-endif
-_simd_strict_fp_args += ['-ffp-contract=off']
+_simd_strict_fp_args = vmaf_strict_fp_args
 
 # PR #850 regression — HIP wavefront warpSize fix.
 # Pure host-side tree-reduce logic: verifies the shared-memory warp-partial
@@ -1624,8 +1629,9 @@ if ssimulacra2_simd_test_archs.contains(host_machine.cpu_family())
 #   the command line. This caused the "all-backends" CI failure on
 #   master 2026-05-30 where the scalar reference (auto-contracted)
 #   diverged from the SIMD lib (compiled with the strict-FP flags).
-# _simd_strict_fp_args = [-ffp-contract=off] on GCC/Clang;
-#                        [-ffp-contract=off, -fp-model=precise] on icx.
+# _simd_strict_fp_args aliases the source policy: [-ffp-contract=off] on
+# GCC/Clang, [-fp-model=precise, -ffp-contract=off] on Unix icx, and the
+# compiler-native MSVC-style spellings on Windows drivers.
 #
 # ADR-0891 (round-2 fix): the ssimulacra2 ptlr tests use fmaf() in the
 # scalar reference and fmadd intrinsics in the SIMD lib. On x86 without

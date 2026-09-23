@@ -26409,6 +26409,11 @@ matching the CUDA twin's behaviour. `enable_chroma` is accepted for symmetry
 (MS-SSIM is luma-only by construction).
 
 
+- Use compiler-native strict floating-point options for MSVC, Intel `icx-cl`,
+  clang-cl, AArch64 carve-outs, and the Windows nvcc host compiler instead of
+  passing Unix-only flags that those drivers warned about and ignored.
+
+
 ### Fixed
 
 `Build — Windows MSVC + CUDA` CI leg failed at configure time with meson error

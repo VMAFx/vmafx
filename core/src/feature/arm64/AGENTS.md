@@ -63,10 +63,11 @@ feature/arm64/
   `test_float_adm_dwt2_neon` (including signed zero) under Clang and GCC
   AArch64/QEMU.
 - **Float-arithmetic NEON TUs belong in `arm64_v8_fp`** (not `arm64_v8`).
-  Static lib `arm64_v8_fp` compiled with `-ffp-contract=off` (ADR-0873);
-  `arm64_v8` is integer-only, carries no FP flag. Adding float-arithmetic TU to
-  `arm64_v8` = bit-exactness regression risk. Moving integer-only TU to
-  `arm64_v8_fp` harmless but unnecessary.
+  Static lib `arm64_v8_fp` uses the compiler-native no-contraction arguments
+  from `vmaf_strict_fp_args` (ADR-0873); `arm64_v8` is integer-only and carries
+  no FP flag. Adding a float-arithmetic TU to `arm64_v8` is a bit-exactness
+  regression risk. Moving an integer-only TU to `arm64_v8_fp` is harmless but
+  unnecessary.
 - **`accumulate_error()` and similar reductions thread accumulators by
   pointer** — do NOT introduce local-float accumulator inside helper.
   ADR-0159: local accumulator drifts Netflix golden by ~5.5e-5
@@ -77,12 +78,13 @@ feature/arm64/
   brace-initialised or compound-literal vectors), no `_x2`/`_x3`/`_x4`
   multi-register loads, `__attribute__` / `#pragma GCC` / `#pragma clang`
   only under `#if defined(__GNUC__)` or `defined(__clang__)` guards as
-  today. `<arm_neon.h>` is the include on every compiler. Strict FP:
-  `arm64_strict_fp_args` in `core/src/meson.build` (`/fp:precise` on msvc,
-  `-ffp-contract=off` else); never a literal `-ffp-contract=off` in the
-  arm64 `c_args`. SVE2 TUs never build under MSVC (no `<arm_sve.h>`;
-  probe skipped). Local MSVC check impossible; qemu cross build covers
-  GCC/clang side only.
+  today. `<arm_neon.h>` is the include on every compiler. Strict FP comes from
+  the shared `vmaf_strict_fp_args` in `core/src/meson.build`: `/fp:precise` on
+  MSVC, `/fp:precise /Qfma-` on `intel-llvm-cl`,
+  `/clang:-ffp-contract=off` on clang-cl, and `-ffp-contract=off` on GCC/clang.
+  Never restore a literal strict-FP option in the arm64 `c_args`. SVE2 TUs
+  never build under MSVC (no `<arm_sve.h>`; probe skipped). Local MSVC check
+  is impossible; the QEMU cross build covers the GCC/clang side only.
 
 ## Twin-update rules
 
