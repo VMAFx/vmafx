@@ -129,7 +129,7 @@ jobs:
           # can fire either way.
           set +e
           ./build-fuzz/test/fuzz/${{ matrix.target }} \
-              -max_total_time=${MAX_TOTAL_TIME} \
+              -max_total_time="${MAX_TOTAL_TIME}" \
               -rss_limit_mb=${{ matrix.rss_limit_mb || 2048 }} \
               -malloc_limit_mb=1024 \
               -timeout=10 \

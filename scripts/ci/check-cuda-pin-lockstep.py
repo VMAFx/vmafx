@@ -75,6 +75,14 @@ INSTALLER_RE = re.compile(r"\$cudaVersion\s*=\s*'(?P<value>[0-9]+\.[0-9]+\.[0-9]
 SERIES_RE = re.compile(r"\$cudaMajorMinor\s*=\s*'(?P<value>[0-9]+\.[0-9]+)'")
 APT_RE = re.compile(r"cuda-toolkit-(?P<value>[0-9]+-[0-9]+)")
 LABEL_RE = re.compile(r"(?m)^\s*LABEL\s+[^\n]*\bCUDA (?P<value>[0-9]+\.[0-9]+\.[0-9]+)\b")
+# NVIDIA's Windows installer creates a per-release CUDA_PATH_V<major>_<minor>,
+# and the Windows legs re-export it by that name. The version is baked into the
+# variable NAME, so a release bump renames it: with CUDA_VERSION at 13.4.1 a
+# site still spelling CUDA_PATH_V13_3 exports the new toolkit under the old
+# release's name, which is wrong for anything reading the versioned variable
+# and invisible to a value-only check. Found 2026-09-23 with two such sites
+# surviving a --write that had moved every other spelling.
+ENVVAR_RE = re.compile(r"CUDA_PATH_V(?P<value>[0-9]+_[0-9]+)\b")
 
 SITE_SHAPES = (
     ("config", CONFIG_RE),
@@ -84,11 +92,12 @@ SITE_SHAPES = (
     ("series", SERIES_RE),
     ("apt", APT_RE),
     ("label", LABEL_RE),
+    ("envvar", ENVVAR_RE),
 )
 
 # Kinds --write may rewrite: everything that is a pure function of CUDA_VERSION
 # and carries no digest.
-DERIVED_KINDS = frozenset({"action", "installer", "series", "apt", "label"})
+DERIVED_KINDS = frozenset({"action", "installer", "series", "apt", "label", "envvar"})
 
 # The residual sweep. A CUDA release has a two-digit major (10.x through 13.x),
 # which separates it from the action's own `v0.2.36` and from `cuda-keyring_1.1-1`.
@@ -224,6 +233,8 @@ def expected_value(kind: str, version: str) -> str:
         return series
     if kind == "apt":
         return series.replace(".", "-")
+    if kind == "envvar":
+        return series.replace(".", "_")
     return version
 
 

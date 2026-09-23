@@ -53,9 +53,13 @@ GATE_OWNED_KINDS = {
     "series": "$cudaMajorMinor wants major.minor, Renovate would write major.minor.patch",
     "apt": "cuda-toolkit-NN-N wants dashes and no patch component",
     "label": "prose inside an OCI description label, not a dependency reference",
+    "envvar": "the release is part of the VARIABLE NAME (CUDA_PATH_V13_4), not a value",
 }
-# Spellings a Renovate custom manager rewrites in place.
-RENOVATE_OWNED_KINDS = {"config", "action", "installer", "image"}
+# Spellings a Renovate custom manager rewrites in place. "action" is absent
+# because no action installs CUDA any more: the Linux legs call
+# scripts/ci/install-cuda-toolkit.sh, which reads build-config.env, so there is
+# no third-party release table to pin against.
+RENOVATE_OWNED_KINDS = {"config", "installer", "image"}
 
 
 def read_config() -> dict[str, Any]:
@@ -253,7 +257,6 @@ class CudaPinGate(unittest.TestCase):
 
     def test_each_spelling_is_caught_when_it_drifts(self) -> None:
         cases = (
-            (".github/workflows/build.yml", "cuda: '13.4.1'", "cuda: '13.5.0'", "action"),
             (
                 ".github/workflows/build.yml",
                 "$cudaVersion = '13.4.1'",
@@ -283,6 +286,17 @@ class CudaPinGate(unittest.TestCase):
                 "nvidia/cuda:13.4.1-runtime",
                 "nvidia/cuda:13.5.0-runtime",
                 "image",
+            ),
+            # The release is baked into the VARIABLE NAME here, so a bump
+            # renames it. A value-only check cannot see that: two sites kept
+            # spelling CUDA_PATH_V13_3 through a --write that moved every other
+            # spelling, which would have exported a 13.4 toolkit under the 13.3
+            # release's name.
+            (
+                ".github/workflows/build.yml",
+                "CUDA_PATH_V13_4",
+                "CUDA_PATH_V13_5",
+                "envvar",
             ),
         )
         for path, old, new, kind in cases:
