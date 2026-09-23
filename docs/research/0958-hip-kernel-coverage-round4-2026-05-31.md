@@ -181,13 +181,13 @@ diverge from CPU IEEE-754 ordering.
 
 - [ADR-0958](../adr/0958-hip-kernel-coverage-round4.md) — this
   round's decision record.
-- Round 1: [ADR-0868](../adr/0868-hip-kernel-coverage-round1.md),
+- Round 1: [ADR-0868](../adr/0868-gpu-backend-kernel-coverage.md),
   PR #351.
 - Round 2: [ADR-0883](../adr/0883-hip-kernel-coverage-round2.md),
   PR #372.
 - Round 3: [ADR-0945](../adr/0945-hip-kernel-coverage-round3.md),
   PR #443.
 - Backend tolerance policy:
-  [ADR-0214](../adr/0214-gpu-numerical-tolerance.md).
+  [ADR-0214](../adr/0214-gpu-parity-ci-gate.md).
 - HIP backend audit motivating the rounds: Research-0755,
   `docs/research/0755-hip-backend-audit-20260529.md`.

@@ -230,7 +230,7 @@ before another saliency-replacement attempt.
 - [ADR-0257](../adr/0257-mobilesal-real-weights-deferred.md) /
   [Research-0053](0053-mobilesal-real-weights-blocker.md) (PR #328)
   — sibling MobileSal blocker; this digest extends the chain.
-- [ADR-0253](../adr/0253-fastdvdnet-pre-real-weights.md) (PR #326)
+- [ADR-0255](../adr/0255-fastdvdnet-pre-real-weights.md) (PR #326)
   — sibling real-weights swap that *did* succeed (FastDVDnet, MIT,
   GitHub-raw downloadable, RGB-only architecture). The pattern this
   digest was supposed to mirror.

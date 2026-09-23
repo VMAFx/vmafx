@@ -173,8 +173,8 @@ python3 ai/scripts/eval_loso_vmaf_tiny_v5.py \
 
 ## References
 
-- v2 baseline ADR: [ADR-0216](../adr/0216-vmaf-tiny-v2.md)
-- v3 arch ladder: [ADR-0241](../adr/0241-vmaf-tiny-v3-mlp-medium.md)
+- v2 baseline ADR: [ADR-0244](../adr/0244-vmaf-tiny-v2.md)
+- v3 arch ladder: [ADR-0389](../adr/0389-vmaf-tiny-v3-mlp-medium.md)
 - v4 arch ladder: ADR-0242 (mlp_large)
 - This digest's ADR: [ADR-0287](../adr/0287-vmaf-tiny-v5-corpus-expansion.md)
 - YouTube UGC dataset homepage: <https://media.withyoutube.com/>

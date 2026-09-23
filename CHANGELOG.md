@@ -20039,6 +20039,17 @@ no score floor was applied.
   resolves, and every numbered ADR has exactly one row.
 
 
+- **Every `adr/NNNN-slug.md` link under `docs/` now resolves, and a gate keeps it
+  that way.** An ADR link carries the decision's identity twice, as a number and
+  as a slug, and either half can rot alone: 98 were broken, 35 because an ADR
+  collision sweep (PR #310, PR #752) renumbered the file while the slug stayed
+  right, and 63 because the ADR was renamed while the number stayed right. Each is
+  repaired from whichever half still identifies it — slug first, which also
+  rewrites the `[ADR-NNNN]` text, since a renumbered citation is wrong in both
+  halves. `scripts/ci/check-adr-links.py` runs as a pre-commit hook on any `docs/`
+  change and refuses to guess when neither half resolves or the two disagree.
+
+
 Remove stale `_order.txt` slug entries left over from ADR renumbering (0452→0578, 0460-ms-ssim→0582). Duplicate fragment files deleted; 0578 fragment link corrected; 0582 fragment created; README regenerated.
 
 

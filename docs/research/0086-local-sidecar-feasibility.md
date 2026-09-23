@@ -3,10 +3,10 @@
 
 - **Status**: Active — scaffold-grade. Establishes the algorithm
   shortlist, privacy contract, cold-start posture, and drift-detection
-  hook for [ADR-0325](../adr/0325-local-sidecar-training.md). Not a
+  hook for [ADR-0394](../adr/0394-local-sidecar-training.md). Not a
   state-of-the-art ML survey; the goal is to fix the contract before
   a future PR replaces the linear baseline.
-- **Workstream**: [ADR-0325](../adr/0325-local-sidecar-training.md)
+- **Workstream**: [ADR-0394](../adr/0394-local-sidecar-training.md)
 - **Last updated**: 2026-05-08
 
 ## Question
@@ -133,7 +133,7 @@ collection PR. The scaffold ships the *hook*, not the *thresholds*.
 
 ## References
 
-- [ADR-0325](../adr/0325-local-sidecar-training.md) — the decision
+- [ADR-0394](../adr/0394-local-sidecar-training.md) — the decision
   this digest supports.
 - [Research-0087](0087-chatgpt-vision-and-claude-bias-audit.md) —
   Section 1 item 3 (the gap this scaffold opens).

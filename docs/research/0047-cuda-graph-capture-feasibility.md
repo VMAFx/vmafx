@@ -283,7 +283,7 @@ A reasonable trigger for revisiting:
   — reference consumer of the kernel template
 - [`core/src/gpu_picture_pool.c`](../../core/src/gpu_picture_pool.c)
   — pool round-robin (`pic_cnt = 4` for CUDA)
-- [ADR-0221 (kernel template)](../adr/0221-cuda-kernel-template.md)
+- [ADR-0221 (kernel template)](../adr/0221-changelog-adr-fragment-pattern.md)
 - [ADR-0239 (gpu picture pool dedup)](../adr/0239-gpu-picture-pool-dedup.md)
 - CUDA driver API: `cuStreamBeginCapture`, `cuStreamEndCapture`,
   `cuGraphInstantiate`, `cuGraphExecKernelNodeSetParams`, `cuGraphLaunch`

@@ -113,7 +113,7 @@ linked AGENTS.md before resolving conflicts.
   2026-06-15).
 
 - **dev-MCP Docker container**
-  ([ADR-0435](../adr/0435-local-dev-mcp-container.md)):
+  ([ADR-0451](../adr/0451-local-dev-mcp-container.md)):
   `dev/Containerfile` pins `cuda-toolkit-13-3`, the unversioned
   `intel-basekit` meta-package (Intel does not publish a
   `intel-basekit-2025.3` apt package), and the digest-pinned

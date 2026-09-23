@@ -5,7 +5,7 @@
 | ----------------- | -------------------------------------------------------------------------------------- |
 | **Date**          | 2026-05-02                                                                             |
 | **Status**        | Reconnaissance only; no downloads, no code change                                      |
-| **Companion ADR** | [ADR-0241](../adr/0241-bristol-bvi-cc-ingest.md) (Status: Draft)                       |
+| **Companion ADR** | [ADR-0388](../adr/0388-bristol-bvi-cc-ingest.md) (Status: Draft)                       |
 | **Tags**          | ai, fr-regressor, corpus, license, parity-soak, bristol, bvi                           |
 
 ## Why now

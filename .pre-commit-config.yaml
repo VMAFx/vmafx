@@ -380,6 +380,27 @@ repos:
         exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$'
         types_or: [c, c++, cuda]
 
+      - id: check-adr-links
+        name: ADR links resolve (slug drift, T-DOCS-ADR-LINK-SLUG-DRIFT-2026-09-23)
+        entry: python3 scripts/ci/check-adr-links.py
+        language: system
+        pass_filenames: false
+        # Fires on any docs/ Markdown change. ADRs are cited by number but the
+        # filename slug is in the link path, so renaming an ADR silently breaks
+        # every link written against the old slug. mkdocs --strict does not catch
+        # these -- 73 had accumulated across 43 files before anything noticed.
+        # `--fix` repoints a stale slug at the file carrying its number; a number
+        # with no file at all is never auto-fixed, because only a human knows
+        # whether it is a typo or an ADR that was never written.
+        files: '^docs/.*\.md$'
+
+      - id: test-check-adr-links
+        name: ADR link checker keeps its positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_adr_links.py
+        language: system
+        pass_filenames: false
+        files: '^scripts/ci/(check-adr-links\.py|tests/test_check_adr_links\.py)$'
+
       - id: check-adr-numbering
         name: ADR-0386 ADR number collision + heading consistency check
         entry: scripts/ci/check-adr-numbering.sh

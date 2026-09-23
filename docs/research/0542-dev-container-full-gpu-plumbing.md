@@ -30,9 +30,9 @@ backend?
   <https://github.com/intel/compute-runtime/blob/master/shared/source/os_interface/linux/drm_neo.cpp>
   (the `Drm::createDrm` path that probes `libva-drm.so.2` →
   `iHD_drv_video.so` during GPU enumeration).
-- Prior fork ADRs: [ADR-0509](../adr/0509-vulkan-icd-env-contract.md),
-  [ADR-0514](../adr/0514-dev-mcp-container-gpu-exposure.md),
-  [ADR-0528](../adr/0528-dev-dri-whole-directory-bind-mount.md),
+- Prior fork ADRs: [ADR-0509](../adr/0509-vmaf-tune-compare-container-source-framerate-probe.md),
+  [ADR-0514](../adr/0514-dev-container-full-backend-exposure.md),
+  [ADR-0528](../adr/0528-cli-parse-test-stderr-pipe-drain-and-error-fallback.md),
   [ADR-0530](../adr/0530-hip-feature-flag-promotion-and-picture-buffer.md),
   [ADR-0540](../adr/0540-dev-container-ffmpeg-av1-and-hwaccel-encoders.md).
 - Empirical measurement on the dev machine (2026-05-18):
@@ -156,9 +156,9 @@ drivers entirely).
 
 ## Related
 
-- ADRs: [ADR-0509](../adr/0509-vulkan-icd-env-contract.md),
-  [ADR-0514](../adr/0514-dev-mcp-container-gpu-exposure.md),
-  [ADR-0528](../adr/0528-dev-dri-whole-directory-bind-mount.md),
+- ADRs: [ADR-0509](../adr/0509-vmaf-tune-compare-container-source-framerate-probe.md),
+  [ADR-0514](../adr/0514-dev-container-full-backend-exposure.md),
+  [ADR-0528](../adr/0528-cli-parse-test-stderr-pipe-drain-and-error-fallback.md),
   [ADR-0530](../adr/0530-hip-feature-flag-promotion-and-picture-buffer.md),
   [ADR-0540](../adr/0540-dev-container-ffmpeg-av1-and-hwaccel-encoders.md),
   [ADR-0542](../adr/0542-dev-container-full-gpu-plumbing.md).

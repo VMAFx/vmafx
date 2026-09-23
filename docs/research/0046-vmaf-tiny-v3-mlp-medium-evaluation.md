@@ -2,7 +2,7 @@
 # Research-0046 — `vmaf_tiny_v3` mlp_medium evaluation vs v2 mlp_small
 
 - **Status**: Active
-- **Companion ADR**: [ADR-0241](../adr/0241-vmaf-tiny-v3-mlp-medium.md)
+- **Companion ADR**: [ADR-0389](../adr/0389-vmaf-tiny-v3-mlp-medium.md)
 - **Date**: 2026-05-02
 
 ## Question
@@ -137,8 +137,8 @@ python3 ai/scripts/eval_loso_vmaf_tiny_v3.py \
 
 ## See also
 
-- [ADR-0241 — vmaf_tiny_v3 ship decision](../adr/0241-vmaf-tiny-v3-mlp-medium.md)
-- [ADR-0216 — vmaf_tiny_v2 ship decision](../adr/0216-vmaf-tiny-v2.md)
+- [ADR-0389 — vmaf_tiny_v3 ship decision](../adr/0389-vmaf-tiny-v3-mlp-medium.md)
+- [ADR-0244 — vmaf_tiny_v2 ship decision](../adr/0244-vmaf-tiny-v2.md)
 - [Research-0028 — Phase-3 subset sweep](0028-phase3-subset-sweep.md)
 - [Research-0029 — Phase-3b StandardScaler results](0029-phase3b-standardscaler-results.md)
 - [Research-0030 — Phase-3b multi-seed validation](0030-phase3b-multiseed-validation.md)

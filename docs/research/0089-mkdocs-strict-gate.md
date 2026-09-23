@@ -2,7 +2,7 @@
 # Research-0089: mkdocs `--strict` gate — warning census + carve-out justification
 
 - **Date**: 2026-05-09
-- **Companion ADR**: [ADR-0332](../adr/0332-mkdocs-strict-gate-validation-policy.md)
+- **Companion ADR**: [ADR-0403](../adr/0403-mkdocs-strict-gate-validation-policy.md)
 
 ## Why
 
@@ -98,7 +98,7 @@ trip the strict gate. Anchor breakage in in-flight PR doc additions
 
 ## References
 
-- [ADR-0332](../adr/0332-mkdocs-strict-gate-validation-policy.md) — companion ADR.
+- [ADR-0403](../adr/0403-mkdocs-strict-gate-validation-policy.md) — companion ADR.
 - [ADR-0221](../adr/0221-changelog-adr-fragment-pattern.md) — fragment-tree concatenation pattern.
 - [ADR-0028](../adr/0028-adr-maintenance-rule.md) / [ADR-0106](../adr/0106-adr-maintenance-rule.md) — ADR-body immutability.
 - `.github/workflows/docs.yml` — the strict gate.

@@ -33,4 +33,4 @@ scratch cleanup behaviour in the shared encode driver.
 ## References
 
 - req: "find real backlogs/scaffolds and continue with real coding on a new branch"
-- [ADR-0333](../adr/0333-vmaf-tune-phase-f-two-pass.md)
+- [ADR-0333](../adr/0333-vmaf-tune-multi-pass-encoding.md)

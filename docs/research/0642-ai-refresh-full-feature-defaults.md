@@ -49,6 +49,6 @@ outputs are gitignored corpus artifacts and not part of this PR.
 
 ## References
 
-- [ADR-0026](../adr/0026-cross-metric-feature-fusion.md)
+- [ADR-0026](../adr/0026-workspace-relocated-under-python.md)
 - [ADR-0340](../adr/0340-multi-corpus-aggregation.md)
 - [ADR-0362](../adr/0362-k150k-corpus-integration.md)

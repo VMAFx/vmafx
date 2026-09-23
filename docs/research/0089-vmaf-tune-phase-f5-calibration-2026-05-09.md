@@ -2,10 +2,10 @@
 # Research-0089: `vmaf-tune` Phase F.5 — recipe calibration on K150K (2026-05-09)
 
 - **Date**: 2026-05-09
-- **Companion ADR**: [ADR-0325](../adr/0325-vmaf-tune-phase-f-auto.md)
+- **Companion ADR**: [ADR-0397](../adr/0397-vmaf-tune-phase-f-auto.md)
   (`### Status update 2026-05-09: F.5 calibrated`)
 - **Parent ADR**: [ADR-0237](../adr/0237-quality-aware-encode-automation.md)
-  (umbrella) and [ADR-0325](../adr/0325-vmaf-tune-phase-f-auto.md)
+  (umbrella) and [ADR-0397](../adr/0397-vmaf-tune-phase-f-auto.md)
 - **Companion digest**:
   [Research-0067](0067-vmaf-tune-phase-f-feasibility-2026-05-08.md)
   §"F.4 recipe-override placeholders" — the F.4 placeholders this
@@ -16,7 +16,7 @@
 
 ## Question
 
-Phase F.4 (PR #502, ADR-0325 §"Status update 2026-05-09") shipped four
+Phase F.4 (PR #502, ADR-0397 §"Status update 2026-05-09") shipped four
 content-class recipe overrides — `animation`, `screen_content`,
 `live_action_hdr`, `ugc` — with every threshold tagged
 `[provisional, calibrate against real corpus in F.5]`. F.5 closes the
@@ -88,7 +88,7 @@ above the mean than the lower-quartile MOS extends below, so the
 predictor target should nudge **up** on this corpus, not down.
 
 The disagreement is documented in the JSON metadata block
-(`metadata.ugc_baseline_mos`) and in the ADR-0325 status update.
+(`metadata.ugc_baseline_mos`) and in the ADR-0397 status update.
 A future re-calibration on a content-class-labelled corpus may
 re-test this — if a UGC-only subset of a labelled corpus shows a
 heavier lower tail, the offset would flip sign. The clamp
@@ -165,7 +165,7 @@ class-labelled corpus.
 
 ## References
 
-- ADR-0325 §"Status update 2026-05-09: F.5 calibrated".
+- ADR-0397 §"Status update 2026-05-09: F.5 calibrated".
 - Research-0067 §"F.4 recipe-override placeholders".
 - Hosu, V., Hahn, F., Zingman, I., Lin, H., Saupe, D. "Konstanz
   natural video database (KoNViD-1k)", QoMEX 2017 — the MOS-VMAF

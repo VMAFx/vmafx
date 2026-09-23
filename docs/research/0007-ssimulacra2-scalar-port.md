@@ -27,7 +27,7 @@ in a single PR small enough to review?
   at σ=1.5, truncate=3.33 is a valid substitute when bit-exactness with
   libjxl is not a goal.
 - BT.709 / BT.601 YUV matrices: ITU-R BT.709-6 §3.2 and BT.601-7 §3.
-- Prior fork ADRs: [ADR-0126](../adr/0126-ssimulacra2-feature-extractor.md)
+- Prior fork ADRs: [ADR-0126](../adr/0126-ssimulacra2-extractor.md)
   (proposal, PR #67), [ADR-0130](../adr/0130-ssimulacra2-scalar-implementation.md)
   (this implementation).
 
@@ -133,6 +133,6 @@ in a single PR small enough to review?
 
 ## Related
 
-- ADRs: [ADR-0126](../adr/0126-ssimulacra2-feature-extractor.md),
+- ADRs: [ADR-0126](../adr/0126-ssimulacra2-extractor.md),
   [ADR-0130](../adr/0130-ssimulacra2-scalar-implementation.md)
 - PRs: `#NNN` (this PR), `#67` (proposal), `#64` (unrelated, stakes ADR-0125)

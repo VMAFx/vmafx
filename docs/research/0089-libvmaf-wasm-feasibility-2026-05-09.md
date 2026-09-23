@@ -18,7 +18,7 @@ realistic surface look like across (a) the C99 metric engine,
 trade-offs does WASM impose that the fork cannot wave away?
 
 The decision matrix lives in the companion
-[ADR-0332](../adr/0332-libvmaf-wasm-target.md). This digest is the
+[ADR-0401](../adr/0401-libvmaf-wasm-target.md). This digest is the
 evidence base.
 
 All citations were retrieved on 2026-05-09. Per memory
@@ -303,7 +303,7 @@ new GPU backend.
 
 ## Related
 
-- [ADR-0332](../adr/0332-libvmaf-wasm-target.md) — the decision.
+- [ADR-0401](../adr/0401-libvmaf-wasm-target.md) — the decision.
 - [CLAUDE.md §12 r10](../../CLAUDE.md) — project-wide doc rule.
 - [CLAUDE.md §9](../../CLAUDE.md) — snapshot regeneration policy
   (the WASM build will need its own snapshot file under

@@ -6,7 +6,7 @@
   require running benchmarks (NN-VC quality lift) or proprietary roadmap
   access (VVenC GPU-port upstream plans). See "Verification status" below.
 - **Workstream**: [ADR-0315](../adr/0315-vendor-neutral-vvc-encode-strategy.md),
-  [ADR-0314](../adr/0314-vmaf-tune-vulkan-score-quick-win.md) (sibling,
+  [ADR-0314](../adr/0314-vmaf-tune-score-backend-vulkan.md) (sibling,
   scoped separately)
 - **Last updated**: 2026-05-06
 
@@ -68,7 +68,7 @@ present but not closeable from public documentation alone.
     NVENC adapter ladder (h264 / hevc / av1 only at write time).
   - [ADR-0127](../adr/0127-vulkan-compute-backend.md) — fork's
     Vulkan compute backend (scoring, not encoding).
-  - [ADR-0033](../adr/0033-hip-applicability.md) — prior HIP-port
+  - [ADR-0033](../adr/0033-codeql-config-moved-to-github.md) — prior HIP-port
     feasibility note (focused on VMAF features, not codecs).
 - `[verified]` NVIDIA Video Codec SDK 13.0 NVENC Application Note
   (<https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-application-note/index.html>) —
@@ -146,7 +146,7 @@ encode path on **any** vendor.
 
 The fork has a Vulkan compute backend ([ADR-0127](../adr/0127-vulkan-compute-backend.md))
 for VMAF scoring. This is the basis for the sibling
-[ADR-0314](../adr/0314-vmaf-tune-vulkan-score-quick-win.md) (separate
+[ADR-0314](../adr/0314-vmaf-tune-score-backend-vulkan.md) (separate
 PR) which wires `vmaf-tune --score-backend=vulkan`. That gives
 non-NVIDIA users vendor-neutral GPU **scoring** of CPU-encoded VVC
 bitstreams.
@@ -209,7 +209,7 @@ that depended on the fabricated NVENC-encode premise; that row is
 
 | Path | Effort | License risk | User value | Verdict |
 | --- | --- | --- | --- | --- |
-| **Vulkan-scoring quick-win** ([ADR-0314](../adr/0314-vmaf-tune-vulkan-score-quick-win.md), sibling) | Small | None | Non-NVIDIA users get GPU scoring for VVC encodes (encode stays on CPU) | **Tier 1**: ship now via the sibling PR. |
+| **Vulkan-scoring quick-win** ([ADR-0314](../adr/0314-vmaf-tune-score-backend-vulkan.md), sibling) | Small | None | Non-NVIDIA users get GPU scoring for VVC encodes (encode stays on CPU) | **Tier 1**: ship now via the sibling PR. |
 | **NN-VC documentation + corpus integration** | Small | Mixed (NN-VC weights are LGPL-derived; tooling is Apache-2.0) — `[UNVERIFIED]` exact split | Any-GPU users; quality lift magnitude `[UNVERIFIED]` until benchmarked | **Tier 1**: bundle with Vulkan-scoring rollout. |
 | **HIP port of vvenc hot kernels** | Medium-large; per-kernel CPU-time distribution `[UNVERIFIED]` until profiled | Apache-2.0 OK; Fraunhofer patent licence still applies | RDNA 3 / 4 / CDNA users; speedup `[UNVERIFIED]` until profile + prototype | **Tier 2**: gated on Tier 1 success and corpus profile. |
 | **SYCL port of same kernels** | Incremental over HIP | Apache-2.0 OK | Adds Intel PVC / Xe2 + cross-vendor via Codeplay plugins | **Tier 2.5**: deferred. |
@@ -337,7 +337,7 @@ Closed (as of 2026-05-06) by primary-source verification:
 - [ADR-0315](../adr/0315-vendor-neutral-vvc-encode-strategy.md) —
   the decision this digest feeds. Verified data points propagate into
   ADR-0315's `## Alternatives considered` matrix in the same PR.
-- [ADR-0314](../adr/0314-vmaf-tune-vulkan-score-quick-win.md) —
+- [ADR-0314](../adr/0314-vmaf-tune-score-backend-vulkan.md) —
   Tier-1 sibling, scoped separately, wires Vulkan scoring through
   `vmaf-tune`. This is the only concrete deliverable in the digest's
   Tier 1 today.

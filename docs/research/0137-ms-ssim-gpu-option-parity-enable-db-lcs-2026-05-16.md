@@ -3,7 +3,7 @@
 
 **Date**: 2026-05-16
 **Branch**: fix/ms-ssim-gpu-enable-db-lcs-sycl-2026-05-16
-**ADR**: [ADR-0460](../adr/0460-ms-ssim-enable-db-clip-db-gpu-parity.md)
+**ADR**: [ADR-0582](../adr/0582-ms-ssim-enable-db-clip-db-gpu-parity.md)
 
 ## Finding
 

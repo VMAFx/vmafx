@@ -2,7 +2,7 @@
 # Research-0067: `vmaf-tune` Phase F — adaptive recipe-aware composition feasibility
 
 - **Date**: 2026-05-08
-- **Companion ADR**: [ADR-0325](../adr/0325-vmaf-tune-phase-f-auto.md) (Proposed)
+- **Companion ADR**: [ADR-0397](../adr/0397-vmaf-tune-phase-f-auto.md) (Proposed)
 - **Parent ADR**: [ADR-0237](../adr/0237-quality-aware-encode-automation.md)
   (umbrella)
 - **Status**: Snapshot at proposal time. Implementation PRs (F.1+) will
@@ -21,7 +21,7 @@ subcommand:
   ([ADR-0306](../adr/0306-vmaf-tune-coarse-to-fine.md)).
 - `predict` — per-title CRF prediction (Phase C, fr_regressor_v2 client).
 - `tune-per-shot` — Phase D per-shot CRF orchestration
-  ([ADR-0276 phase-d](../adr/0276-vmaf-tune-phase-d-per-shot.md)).
+  ([ADR-0392 phase-d](../adr/0392-vmaf-tune-phase-d-per-shot.md)).
 - `recommend-saliency` — saliency-aware ROI tuning
   ([ADR-0293](../adr/0293-vmaf-tune-saliency-aware.md)).
 - `ladder` — Phase E per-title ABR ladder
@@ -165,7 +165,7 @@ These cases bypass entire phases:
    chosen (rung, codec) → skip `recommend.coarse_to_fine`; trust
    the predicted CRF for the final encode.
 4. **Short / low-variance source.** `duration < 5 min` or shot
-   variance below the [ADR-0276 phase-d](../adr/0276-vmaf-tune-phase-d-per-shot.md)
+   variance below the [ADR-0392 phase-d](../adr/0392-vmaf-tune-phase-d-per-shot.md)
    threshold → skip Phase D per-shot refine; one CRF for the whole
    title.
 5. **Photographic, non-screen, non-animation content.** Saliency

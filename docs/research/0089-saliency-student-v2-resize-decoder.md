@@ -3,7 +3,7 @@
 
 **Date**: 2026-05-09
 **Author**: Lusoris, Claude (Anthropic)
-**Status**: Final — companion to [ADR-0332](../adr/0332-saliency-student-v2-resize-decoder.md).
+**Status**: Final — companion to [ADR-0364](../adr/0364-saliency-student-v2-resize-decoder.md).
 
 ## Question
 

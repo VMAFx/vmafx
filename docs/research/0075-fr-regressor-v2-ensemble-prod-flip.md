@@ -189,7 +189,7 @@ python scripts/ci/ensemble_prod_gate.py runs/ensemble_loso/
   ensemble prod-flip trainer + CI gate decision (this digest).
 - [ADR-0291](../adr/0291-fr-regressor-v2-prod-ship.md) —
   deterministic v2 prod flip + 0.95 ship gate.
-- [ADR-0279](../adr/0279-fr-regressor-v2-probabilistic.md) —
+- [ADR-0393](../adr/0393-fr-regressor-v2-probabilistic.md) —
   probabilistic head + ensemble scaffold (PR #372).
 - [Research-0067 (prod-loso)](0067-fr-regressor-v2-prod-loso.md) —
   deterministic v2 LOSO baseline (mean PLCC=0.9681 ± 0.0207).

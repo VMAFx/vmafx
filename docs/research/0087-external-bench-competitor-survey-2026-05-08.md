@@ -1,6 +1,6 @@
 # Research-0087 — External-competitor benchmark survey (Synamedia x264-pVMAF, DOVER-Mobile)
 
-- **Status**: Scoping digest for [ADR-0332](../adr/0332-external-bench-wrapper-only.md).
+- **Status**: Scoping digest for [ADR-0368](../adr/0368-external-bench-wrapper-only.md).
   Captures the licence + integration-cost trade-off space behind the
   wrapper-only architecture decision.
 - **Workstream**: external-bench harness, fork-side predictor
@@ -79,7 +79,7 @@
 
 The runner-up options (vendor `x264-pVMAF`; skip the comparison;
 build a separate GPL'd sibling repo) are documented in
-[ADR-0332's "Alternatives considered" section](../adr/0332-external-bench-wrapper-only.md).
+[ADR-0368's "Alternatives considered" section](../adr/0368-external-bench-wrapper-only.md).
 
 ## References
 

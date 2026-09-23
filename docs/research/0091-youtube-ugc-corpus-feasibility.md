@@ -2,7 +2,7 @@
 
 - **Date**: 2026-05-08
 - **Author**: agent (YouTube UGC ingestion task)
-- **Companion ADR**: [ADR-0368](../adr/0368-youtube-ugc-corpus-ingestion.md)
+- **Companion ADR**: [ADR-0413](../adr/0413-youtube-ugc-corpus-ingestion.md)
 
 ## TL;DR
 

@@ -156,8 +156,8 @@ disruption:
 
 ## Related
 
-- ADRs: [ADR-0138](../adr/0138-simd-bit-exactness.md),
-  [ADR-0140](../adr/0140-cpu-simd-scalar-equality.md)
+- ADRs: [ADR-0138](../adr/0138-iqa-convolve-avx2-bitexact-double.md),
+  [ADR-0140](../adr/0140-simd-dx-framework.md)
 - Research: [Research-0024](0024-vif-upstream-divergence.md),
   Research-0053 (post-merge CPU profile, PR #333)
 - PRs: this PR (perf/vif-polynomial-log2-simd, docs-only)

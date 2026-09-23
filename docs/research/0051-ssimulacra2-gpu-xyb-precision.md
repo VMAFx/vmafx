@@ -203,7 +203,7 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json \
   precision investigation and host-XYB decision.
 - [ADR-0192](../adr/0192-gpu-long-tail-batch-3.md) — batch 3 GPU
   long-tail scope; ssimulacra2 is part 7.
-- [ADR-0164](../adr/0164-ssimulacra2-deterministic-eotf-cbrt.md) —
+- [ADR-0164](../adr/0164-ssimulacra2-snapshot-gate.md) —
   deterministic sRGB EOTF + cbrt scalar reference.
 - `core/src/feature/vulkan/shaders/ssimulacra2_xyb.comp` —
   the shader under investigation.

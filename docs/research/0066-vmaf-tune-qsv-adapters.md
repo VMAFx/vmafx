@@ -122,5 +122,5 @@ exposed through the package `__all__`.
 - FFmpeg QSV codec docs: <https://ffmpeg.org/ffmpeg-codecs.html#QSV-encoders>.
 - Intel Media SDK Developer's Guide, `MFX_RATECONTROL_ICQ`.
 - Parent ADR: [ADR-0237](../adr/0237-quality-aware-encode-automation.md).
-- Companion: [ADR-0235](../adr/0235-codec-collision-bucket.md)
+- Companion: [ADR-0235](../adr/0235-codec-aware-fr-regressor.md)
   (codec one-hot consumes the QSV bucket).
