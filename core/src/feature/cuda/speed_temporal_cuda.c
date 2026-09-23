@@ -907,8 +907,19 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (done || err)
         return err;
 
-    const double clipped =
-        (double)score < s->speed_temporal_max_val ? (double)score : s->speed_temporal_max_val;
+    /* Every clamp here was a less-than comparison, and every comparison
+     * against NaN is false, so a non-finite score was published as
+     * speed_temporal_max_val -- a finite, plausible 1000.0 standing in for a
+     * computation that produced no number, and invisible to the parity
+     * harness's own isfinite() assertion. speed_internal_clamp_score() checks
+     * finiteness first and fails the frame, matching the CPU reference and
+     * the brisque.c / y_funque_plus.c convention. Finite scores clamp exactly
+     * as before. */
+    double clipped = 0.0;
+    err = speed_internal_clamp_score(score, s->speed_temporal_max_val, index, "speed_temporal_cuda",
+                                     "speed_temporal", &clipped);
+    if (err)
+        return err;
 
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "Speed_temporal_feature_speed_temporal_score",

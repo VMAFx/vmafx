@@ -103,6 +103,34 @@ covariance matrices (more accurate but more expensive than `speed_qa`'s
 simpler local-variance estimator). `speed_qa` is a lightweight alternative
 that does not require float compilation.
 
+## Non-finite scores fail the frame (speed_chroma / speed_temporal)
+
+A SpEED score that is not finite is **not published**. The extractor logs a
+warning naming the extractor, the feature, the frame index and the value, and
+the frame fails with `-EINVAL`:
+
+```text
+libvmaf WARNING speed_chroma_cuda: non-finite speed_chroma_uv at frame 42 (score=nan), failing frame
+```
+
+This is a change from earlier releases. The score used to be bounded with a
+less-than comparison against `speed_max_val`, and every comparison against NaN
+is false, so a NaN was emitted as `speed_max_val` itself — a finite, plausible
+1000.0 that no caller could distinguish from a real measurement. `-Inf` passed
+the comparison and was published unclamped.
+
+If you see this warning, the frame's SpEED score is missing rather than wrong.
+The usual cause is a numerically degenerate block covariance — a flat or
+linearly-graded chroma plane — on which the solved system is ill-conditioned.
+Scores for other frames and other features are unaffected.
+
+`speed_max_val` itself is unchanged: a finite score above it is still clipped
+to it, on every backend. It now applies to `speed_temporal` on the CPU as well,
+which previously declared the option and ignored it while the GPU backends
+honoured it.
+
+See [ADR-1301](../adr/1301-speed-nonfinite-score-fails-frame.md).
+
 ## CPU SIMD dispatch (speed_chroma / speed_temporal)
 
 Two parts of the CPU SpEED path pick a vector kernel at runtime from the

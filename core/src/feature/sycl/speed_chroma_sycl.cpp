@@ -955,17 +955,40 @@ static int append_chroma_scores(SpeedChromaSyclState *s, VmafFeatureCollector *c
                                 unsigned index, ChromaResult u, ChromaResult v)
 {
     const float uv = combine_chroma_uv(u.score, v.score, u.singular, v.singular);
+    /* Every clamp here was a less-than comparison, and every comparison
+     * against NaN is false, so a non-finite score was published as
+     * speed_chroma_max_val -- a finite, plausible 1000.0 standing in for a
+     * computation that produced no number, and invisible to the parity
+     * harness's own isfinite() assertion. speed_internal_clamp_score() checks
+     * finiteness first and fails the frame, matching the CPU reference and
+     * the brisque.c / y_funque_plus.c convention. Finite scores clamp exactly
+     * as before. */
     const double maximum = s->speed_chroma_max_val;
-    int error = 0;
-    error |= vmaf_feature_collector_append_with_dict(
-        collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_u_score",
-        (double)u.score < maximum ? (double)u.score : maximum, index);
-    error |= vmaf_feature_collector_append_with_dict(
-        collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_v_score",
-        (double)v.score < maximum ? (double)v.score : maximum, index);
-    error |= vmaf_feature_collector_append_with_dict(
-        collector, s->feature_name_dict, "Speed_chroma_feature_speed_chroma_uv_score",
-        (double)uv < maximum ? (double)uv : maximum, index);
+    double clamped_u = 0.0;
+    double clamped_v = 0.0;
+    double clamped_uv = 0.0;
+    int error = speed_internal_clamp_score(u.score, maximum, index, "speed_chroma_sycl",
+                                           "speed_chroma_u", &clamped_u);
+    if (error)
+        return error;
+    error = speed_internal_clamp_score(v.score, maximum, index, "speed_chroma_sycl",
+                                       "speed_chroma_v", &clamped_v);
+    if (error)
+        return error;
+    error = speed_internal_clamp_score(uv, maximum, index, "speed_chroma_sycl", "speed_chroma_uv",
+                                       &clamped_uv);
+    if (error)
+        return error;
+
+    error |= vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict,
+                                                     "Speed_chroma_feature_speed_chroma_u_score",
+                                                     clamped_u, index);
+    error |= vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict,
+                                                     "Speed_chroma_feature_speed_chroma_v_score",
+                                                     clamped_v, index);
+    error |= vmaf_feature_collector_append_with_dict(collector, s->feature_name_dict,
+                                                     "Speed_chroma_feature_speed_chroma_uv_score",
+                                                     clamped_uv, index);
     return error;
 }
 

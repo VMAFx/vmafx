@@ -771,3 +771,23 @@ bool speed_internal_is_matrix_regular(const float *eigenvalues, size_t num_eleme
     }
     return true;
 }
+
+int speed_internal_clamp_score(double score, double max_val, unsigned index, const char *who,
+                               const char *feature, double *out)
+{
+    assert(who != NULL);
+    assert(feature != NULL);
+    assert(out != NULL);
+
+    /* Ordered so NaN is rejected rather than compared: every relational
+     * operator is false for NaN, which is the whole defect this guards. */
+    if (!isfinite(score)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "%s: non-finite %s at frame %u (score=%g), failing frame\n", who, feature, index,
+                 score);
+        return -EINVAL;
+    }
+
+    *out = score < max_val ? score : max_val;
+    return 0;
+}

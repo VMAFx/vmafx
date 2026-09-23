@@ -3519,6 +3519,16 @@ test_speed_singular_tally = executable('test_speed_singular_tally',
 )
 test('test_speed_singular_tally', test_speed_singular_tally, suite : ['fast'])
 
+# The score clamp is shared the same way, and is the one place a non-finite
+# score could be published as speed_*_max_val instead of failing the frame.
+test_speed_clamp_score = executable('test_speed_clamp_score',
+    ['test.c', 'test_speed_clamp_score.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+)
+test('test_speed_clamp_score', test_speed_clamp_score, suite : ['fast'])
+
 if get_option('enable_hip') == true
 test_hip_smoke = executable('test_hip_smoke',
     ['test.c', 'test_hip_smoke.c'],
