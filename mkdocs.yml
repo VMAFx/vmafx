@@ -1417,6 +1417,8 @@ nav:
         - "ADR-1297: ci-gate-every-reporting-check": adr/1297-ci-gate-every-reporting-check.md
         - "ADR-1298: hiss-audit-merge-touched-scope": adr/1298-hiss-audit-merge-touched-scope.md
         - "ADR-1299: sycl-ms-ssim-chroma-implementation": adr/1299-sycl-ms-ssim-chroma-implementation.md
+      - "1300-1399 — Misc":
+        - "ADR-1300: cuda-install-from-nvidia-apt": adr/1300-cuda-install-from-nvidia-apt.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

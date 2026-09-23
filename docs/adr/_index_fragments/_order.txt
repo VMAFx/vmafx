@@ -1017,3 +1017,4 @@
 1271-neo-buildkit-github-token-secret
 1270-bounded-process-execution
 1273-warning-clean-meson-language-standards
+1300-cuda-install-from-nvidia-apt

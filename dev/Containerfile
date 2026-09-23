@@ -288,7 +288,7 @@ RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu24
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    cuda-toolkit-13-3
+    cuda-toolkit-13-4
 
 # CUDA_HOME is the symlink the meta-package maintains pointing at the
 # latest installed major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).

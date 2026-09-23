@@ -38,7 +38,7 @@ GIT = shutil.which("git") or "/usr/bin/git"
 GATE = "scripts/ci/check-cuda-pin-lockstep.py"
 # The apt spelling also appears in the comment above the RUN, and a comment is
 # prose, not a pin. Anchor fixtures on the install line itself.
-APT_INSTALL = "--no-install-recommends \\\n    cuda-toolkit-13-3"
+APT_INSTALL = "--no-install-recommends \\\n    cuda-toolkit-13-4"
 
 SPEC = importlib.util.spec_from_file_location("cuda_pin_lockstep", ROOT / GATE)
 assert SPEC is not None and SPEC.loader is not None
@@ -50,12 +50,17 @@ SPEC.loader.exec_module(MODULE)
 # Renovate substitutes the whole looked-up version into the slot it matched, so
 # a slot that wants less than the whole version can only be derived.
 GATE_OWNED_KINDS = {
-    "series": "$cudaMajorMinor wants major.minor, Renovate would write major.minor.patch",
     "apt": "cuda-toolkit-NN-N wants dashes and no patch component",
     "label": "prose inside an OCI description label, not a dependency reference",
 }
 # Spellings a Renovate custom manager rewrites in place.
-RENOVATE_OWNED_KINDS = {"config", "action", "installer", "image"}
+#
+# "action", "installer", "series" and "envvar" are absent because no site in
+# the tree spells the release those ways any more (ADR-1300). No action
+# installs CUDA, and neither CI leg repeats the version: both call
+# scripts/ci/install-cuda-toolkit.{sh,ps1}, which read build-config.env at run
+# time and derive the series and the CUDA_PATH_V<major>_<minor> name from it.
+RENOVATE_OWNED_KINDS = {"config", "image"}
 
 
 def read_config() -> dict[str, Any]:
@@ -146,8 +151,8 @@ class CudaPinCoverage(unittest.TestCase):
     def test_a_new_site_outside_the_manager_is_not_silently_owned(self) -> None:
         """The coverage check must actually reject something."""
         cuda, _ = managers(self.config)
-        self.assertFalse(covers(cuda, "tools/newlane/setup.sh", "  cuda: '13.3.1'"))
-        self.assertFalse(covers(cuda, "build-config.env", 'CUDA_SERIES="13.3"'))
+        self.assertFalse(covers(cuda, "tools/newlane/setup.sh", "  cuda: '13.4.1'"))
+        self.assertFalse(covers(cuda, "build-config.env", 'CUDA_SERIES="13.4"'))
 
     def test_the_group_rule_names_every_renovate_owned_site(self) -> None:
         rules = [
@@ -169,7 +174,7 @@ class CudaPinCoverage(unittest.TestCase):
         self.assertNotIn("pin", rule["matchUpdateTypes"])
 
     def test_the_manager_extracts_a_version_nvidia_actually_publishes(self) -> None:
-        """A bare `13.3.1` matches no nvidia/cuda tag; extractVersion is load-bearing."""
+        """A bare `13.4.1` matches no nvidia/cuda tag; extractVersion is load-bearing."""
         cuda, _ = managers(self.config)
         pattern = re.compile(to_python(cuda["extractVersionTemplate"]))
         match = pattern.search("13.4.0-devel-ubuntu26.04")
@@ -249,39 +254,26 @@ class CudaPinGate(unittest.TestCase):
     def test_the_fixture_starts_in_lockstep(self) -> None:
         result = self.gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("16 sites", result.stdout)
+        self.assertIn("10 sites", result.stdout)
 
     def test_each_spelling_is_caught_when_it_drifts(self) -> None:
         cases = (
-            (".github/workflows/build.yml", "cuda: '13.3.1'", "cuda: '13.4.0'", "action"),
-            (
-                ".github/workflows/build.yml",
-                "$cudaVersion = '13.3.1'",
-                "$cudaVersion = '13.4.0'",
-                "installer",
-            ),
-            (
-                ".github/workflows/build.yml",
-                "$cudaMajorMinor = '13.3'",
-                "$cudaMajorMinor = '13.4'",
-                "series",
-            ),
             (
                 "dev/Containerfile",
                 APT_INSTALL,
-                APT_INSTALL.replace("13-3", "13-4"),
+                APT_INSTALL.replace("13-4", "13-5"),
                 "apt",
             ),
             (
                 "docker/Dockerfile.production-gpu",
-                "production CUDA 13.3.1 runtime",
-                "production CUDA 13.4.0 runtime",
+                "production CUDA 13.4.1 runtime",
+                "production CUDA 13.5.0 runtime",
                 "label",
             ),
             (
                 "docker/Dockerfile.node",
-                "nvidia/cuda:13.3.1-runtime",
-                "nvidia/cuda:13.4.0-runtime",
+                "nvidia/cuda:13.4.1-runtime",
+                "nvidia/cuda:13.5.0-runtime",
                 "image",
             ),
         )
@@ -299,7 +291,7 @@ class CudaPinGate(unittest.TestCase):
         workflow = self.repo / ".github/workflows/newlane.yml"
         workflow.write_text(
             "name: New lane\njobs:\n  build:\n    env:\n"
-            "      CUDA_TOOLKIT_RELEASE: 13.3.1  # cuda\n",
+            "      CUDA_TOOLKIT_RELEASE: 13.4.1  # cuda\n",
             encoding="utf-8",
         )
         self.git("add", "--", ".github/workflows/newlane.yml")
@@ -309,25 +301,19 @@ class CudaPinGate(unittest.TestCase):
         self.assertIn("newlane.yml", result.stderr)
 
     def test_write_repairs_the_derived_spellings_only(self) -> None:
-        self.edit(
-            ".github/workflows/build.yml",
-            "$cudaMajorMinor = '13.3'",
-            "$cudaMajorMinor = '12.1'",
-        )
-        self.edit("dev/Containerfile", APT_INSTALL, APT_INSTALL.replace("13-3", "12-1"))
+        self.edit("dev/Containerfile", APT_INSTALL, APT_INSTALL.replace("13-4", "12-1"))
         self.edit(
             "docker/Dockerfile.production-gpu",
-            "production CUDA 13.3.1 runtime",
+            "production CUDA 13.4.1 runtime",
             "production CUDA 12.1.0 runtime",
         )
-        self.edit("docker/Dockerfile.node", "nvidia/cuda:13.3.1-runtime", "nvidia/cuda:12.1.0-x")
+        self.edit("docker/Dockerfile.node", "nvidia/cuda:13.4.1-runtime", "nvidia/cuda:12.1.0-x")
         result = self.gate("--write")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        # The three derived spellings are repaired ...
-        self.assertIn("13.3", (self.repo / ".github/workflows/build.yml").read_text())
-        self.assertIn("cuda-toolkit-13-3", (self.repo / "dev/Containerfile").read_text())
+        # The two derived spellings are repaired ...
+        self.assertIn("cuda-toolkit-13-4", (self.repo / "dev/Containerfile").read_text())
         self.assertIn(
-            "CUDA 13.3.1 runtime",
+            "CUDA 13.4.1 runtime",
             (self.repo / "docker/Dockerfile.production-gpu").read_text(),
         )
         # ... and the image pin is not, because its digest cannot be derived.
@@ -348,7 +334,7 @@ class CudaPinGate(unittest.TestCase):
     def test_a_missing_authority_is_a_configuration_error_not_drift(self) -> None:
         config = self.repo / "build-config.env"
         config.write_text(
-            config.read_text(encoding="utf-8").replace('CUDA_VERSION="13.3.1"', ""),
+            config.read_text(encoding="utf-8").replace('CUDA_VERSION="13.4.1"', ""),
             encoding="utf-8",
         )
         self.git("add", "--", "build-config.env")
