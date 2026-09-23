@@ -20292,6 +20292,13 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
 - Bash strict-mode sweep across 9 in-tree shell scripts: promote `set -eu` to `set -euo pipefail`, add script-wide `mktemp` cleanup traps, add `LC_ALL=C` to filename-numeric sorts. Closes residual gaps left by PRs #318 (perf/release scripts) and #350 (dev-mcp-entrypoint, sycl-bench-env). Touched: `scripts/run_unittests.sh`, `scripts/ai/fetch-tiny-blobs.sh`, `dev/scripts/smoke-probe-loop.sh`, `scripts/ci/check-agent-worktree-drift.sh` + self-test, `scripts/ci/check-adr-numbering.sh`, `scripts/ci/check-dispatch-registry.sh`, `scripts/adr/next-free.sh`, `tools/ensemble-training-kit/_platform_detect.sh` (documented as deliberately sourced-without-strict-mode). See [ADR-0899](docs/adr/0899-bash-strict-mode-sweep.md).
 
 
+- **The quick CLI benchmark no longer reports throughput for failed or hung
+  VMAF processes.** Every external command now uses a resolved executable,
+  closed stdin, captured diagnostics, and a finite timeout. The harness exits
+  non-zero for command failures, timeouts, and an empty fixture set, and only
+  benchmarks complete reference/distorted pairs.
+
+
 - Correct VMAFx security support and release-verification claims for the
   pre-release project; clarify remediation targets and require tests for major
   new functionality. Add a dated OpenSSF passing-criteria evidence worksheet

@@ -362,6 +362,24 @@ scripts under `testdata/` (or paste the inlined `repeat_bench.py` /
 `simd_bench.py` / `precision_bench.py` from the
 [T7-37 PR description](https://github.com/VMAFx/vmafx/pulls?q=T7-37)).
 
+### Quick CLI smoke benchmark
+
+`testdata/bench_quick.py` runs the CPU CLI three times for every complete
+`ref_<width>x<height>_48f.yuv` / `dis_<width>x<height>_48f.yuv` pair it finds.
+It reports best and average fps without writing a snapshot:
+
+```bash
+VMAF_BIN="$(pwd)/core/build/tools/vmaf" \
+VMAF_TESTDATA="$(pwd)/testdata" \
+python3 testdata/bench_quick.py
+```
+
+Each Git lookup is limited to 10 seconds and each VMAF run to 300 seconds.
+The command exits 1 on a VMAF failure or timeout, exits 2 when no complete
+fixture pair exists, and prints the captured diagnostic on stderr. Missing
+resolutions are skipped; a reference without its matching distorted input is
+not treated as a runnable pair.
+
 ## FFmpeg lavfi performance harness
 
 `testdata/bench_perf.py` runs the FFmpeg filter path used by the historical
