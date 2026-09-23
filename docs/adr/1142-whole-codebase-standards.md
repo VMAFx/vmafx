@@ -154,8 +154,8 @@ touched-files rule.
   `sycl/common.cpp` 102, `hip/integer_vif/vif_statistics.hip` 95). Both
   are reproduced by `scripts/ci/tidy-ratchet.py --report`.
 - Related ADRs: [ADR-0141](0141-touched-file-cleanup-rule.md) (touched-file
-  rule, subsumed); [ADR-0278](0278-nolint-citation-closeout.md) (NOLINT
-  citations, now counted); [ADR-0313](0313-required-checks-aggregator.md)
+  rule, subsumed); [ADR-0278](0278-t7-5-nolint-sweep.md) (NOLINT
+  citations, now counted); [ADR-0313](0313-ci-required-checks-aggregator.md)
   (aggregator contexts); [ADR-1140](1140-ci-impact-planner.md) (impact
   routing of the new job); [ADR-0100](0100-project-wide-doc-substance-rule.md)
   and [ADR-0108](0108-deep-dive-deliverables-rule.md) (per-PR

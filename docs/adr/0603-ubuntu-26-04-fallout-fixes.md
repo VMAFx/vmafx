@@ -130,9 +130,9 @@ defensive additions:
 ## References
 
 - Renovate PR #1402 — triggered the Ubuntu 26.04 bump.
-- [ADR-0541](0541-dev-mcp-container-full-gpu-stack.md) — original container
+- [ADR-0541](0541-dev-container-sycl-hip-runtime-fix.md) — original container
   GPU stack design (CUDA, SYCL, Vulkan, ROCm, oneAPI).
-- [ADR-0568](0568-sdk-audit-2026-05-18.md) — SDK audit that introduced ORT
+- ADR-0568 — SDK audit that introduced ORT
   1.26.0, vvenc 1.14.0, AMF 1.5.2 (same PR round).
 - NVIDIA ubuntu2604 apt repo index: `https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/`
 - ROCm apt repo: `https://repo.radeon.com/rocm/apt/7.2.3/dists/` (noble only as of 2026-05-19).

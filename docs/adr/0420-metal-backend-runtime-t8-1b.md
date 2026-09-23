@@ -83,7 +83,7 @@ The `motion_v2_metal` extractor stays at "registered but kernel not ready" — t
 - [ADR-0361](0361-metal-compute-backend.md) — Metal compute backend scaffold (T8-1)
 - [ADR-0212](0212-hip-backend-scaffold.md) — HIP backend scaffold (audit-first pattern)
 - [ADR-0241](0241-hip-first-consumer-psnr.md) — HIP first kernel-template consumer (the structural twin)
-- [ADR-0246](0246-cuda-kernel-template.md) — CUDA kernel template (origin of the lifecycle shape)
+- [ADR-0246](0246-gpu-kernel-template.md) — CUDA kernel template (origin of the lifecycle shape)
 - [ADR-0338](0338-macos-vulkan-via-moltenvk-lane.md) — MoltenVK CI lane (the stopgap this PR will eventually retire)
 - Issue [#763](https://github.com/VMAFx/vmafx/issues/763) — T8-1b + T8-1c tracking
 - [Lusoris Homebrew tap](https://github.com/lusoris/homebrew-tap) — ships the MoltenVK stopgap; will swap to native Metal once T8-1c lands

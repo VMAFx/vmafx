@@ -113,7 +113,7 @@ the research digest.
 - Gate: `scripts/ci/check-cuda-pin-lockstep.py`;
   tests `scripts/ci/tests/test_cuda_pin_single_source.py`.
 - Container pin invariant:
-  [ADR-0435](0435-local-dev-mcp-container.md) (`dev/Containerfile` pins
+  [ADR-0451](0451-local-dev-mcp-container.md) (`dev/Containerfile` pins
   `cuda-toolkit-13-3`).
 - Renovate 44.103.6, read from the installed package:
   `dist/modules/datasource/common.js` (`applyExtractVersion`) and

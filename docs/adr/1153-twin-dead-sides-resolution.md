@@ -76,7 +76,7 @@ Detailed rationale per file:
 
 - [ADR-1135](1135-ci-twin-drift-gate.md) — CI twin-drift + stale-source-reference gate
 - [ADR-0729](0729-cpp23-wave3-bundle.md) — C++23 Wave 3 bundle
-- [ADR-0887](0887-json-model-array-validation.md) — model destroy bounds check
+- [ADR-0887](0887-vmaf-model-slopes-feature-mismatch-validation.md) — model destroy bounds check
 - PR #1024 — port upstream VMAF v1.0.16 SDR models
 - PR #1133 — wire C++23 Wave 1-5 twins
 - Task row `T-TWIN-DEAD-SIDES-2026-09-02` in `docs/state.md`

@@ -40,8 +40,8 @@ one-shot model retrain (`extract_k150k_features.py` runs `--threads 8`
 with both motion features). Single-threaded runs (the Netflix golden
 gate's path) were unaffected, which is why CI stayed green while the
 threaded path was broken. The earlier fixes to this same function
-([ADR-1072](1072-threaded-batch-prev-ref-leak.md) refcount leak,
-[ADR-1073](1073-threaded-flush-initialized-flag.md) flush gate) did not
+([ADR-1072](1072-prev-ref-batch-refcount-leak.md) refcount leak,
+[ADR-1073](1073-mcp-score-at-index-eagain-guard.md) flush gate) did not
 cover the multi-extractor case.
 
 ## Decision
@@ -97,10 +97,10 @@ are produced; it fails before this fix ("EOS failed") and passes after.
 
 ## References
 
-- Same-function precedent: [ADR-1072](1072-threaded-batch-prev-ref-leak.md),
-  [ADR-1073](1073-threaded-flush-initialized-flag.md);
-  thread-private `prev_ref` invariant [ADR-0795](0795-threaded-prev-ref-thread-private.md),
-  pool-exhaustion [ADR-1051](1051-threaded-prev-ref-unref.md).
+- Same-function precedent: [ADR-1072](1072-prev-ref-batch-refcount-leak.md),
+  [ADR-1073](1073-mcp-score-at-index-eagain-guard.md);
+  thread-private `prev_ref` invariant [ADR-0795](0795-prev-ref-thread-safety.md),
+  pool-exhaustion [ADR-1051](1051-upstream-batch-threading-picture-pool.md).
 - Source: surfaced by the one-shot-retrain K150K extraction smoke test
   (motion + motion_v2 under `--threads 8` failed 100%); operator chose the
   in-libvmaf fix over a script workaround.

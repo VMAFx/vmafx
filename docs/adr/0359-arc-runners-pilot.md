@@ -9,7 +9,7 @@
 The fork's CI matrix has 50+ required-check legs per PR. On the GitHub
 Actions free-tier shared runner pool, deep queue depth (observed 80+
 queued jobs across 40+ in-flight PRs on 2026-05-09) blocked the merge
-train for 2+ hours — the symptom that prompted [ADR-0358](0358-ci-aggregator-timeout-bump.md).
+train for 2+ hours — the symptom that prompted ADR-0358.
 The owner runs an `arc-runners` scale set
 ([actions/actions-runner-controller](https://github.com/actions/actions-runner-controller))
 in their personal Kubernetes cluster as a registered self-hosted

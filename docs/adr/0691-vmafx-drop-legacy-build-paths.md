@@ -68,9 +68,11 @@ Remove the following CI build configurations from `.github/workflows/`:
 
 ## References
 
-- Umbrella: [ADR-0686](0686-vmafx-rebrand-umbrella.md) (VMAFX rebrand Phase 1)
-- Folded-in MinGW ADR: [ADR-0115](0115-windows-build-integrated.md)
-- i686 workaround: [ADR-0151](0151-i686-no-asm-ci.md)
-- Required checks aggregator: [ADR-0313](0313-required-checks-aggregator.md)
+- Umbrella: [ADR-0686](0686-vmafx-rebrand-aggressive-modernization.md)
+  (VMAFX rebrand Phase 1)
+- Folded-in MinGW ADR:
+  [ADR-0115](0115-ci-trigger-master-only-and-matrix-consolidation.md)
+- i686 workaround: [ADR-0151](0151-i686-ci-netflix-1481.md)
+- Required checks aggregator: [ADR-0313](0313-ci-required-checks-aggregator.md)
 - PR: `#1547` (chore(build): drop legacy build paths per VMAFX rebrand plan)
 - Source: `req` — per user direction in the Phase 1C task brief (2026-05-28)

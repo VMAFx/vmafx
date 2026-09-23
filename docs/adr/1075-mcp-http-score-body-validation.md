@@ -79,5 +79,5 @@ empty body, and concurrent request ID uniqueness.
 - `mcp-server/vmaf-mcp/tests/test_mcp_http_edge_cases_adr1075.py` — regression tests.
 - [ADR-0967](0967-mcp-http-transport-security-hardening.md) — original security hardening
   (auth + body limit + bind default).
-- [ADR-0701](0701-vmafx-server-http-transport.md) — HTTP transport foundation.
+- [ADR-0701](0701-vmafx-cloud-native-redesign.md) — HTTP transport foundation.
 - [ADR-0108](0108-deep-dive-deliverables-rule.md) — six-deliverables rule.

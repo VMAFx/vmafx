@@ -59,8 +59,8 @@ declaration. No arithmetic is changed; no score path is altered.
 
 - [ADR-0754](0754-cuda-ssim-vert-combine-ldg-pinned-leak.md) — first application of this pattern (`calculate_ssim_vert_combine`).
 - [ADR-0757](0757-cuda-ms-ssim-vert-lcs-horiz-ldg.md) — second application (`ms_ssim_horiz` + `ms_ssim_vert_lcs`).
-- [ADR-0756](0756-cuda-kernel-f3-struct-value-audit.md) — PR #96 audit that identified `psnr_hvs` as candidate #5.
-- [ADR-0743](0743-cuda-vif-filter1d-ldg-launch-bounds.md) — original `__ldg()` + `__launch_bounds__` precedent on VIF filter1d.
-- [ADR-0214](0214-cross-backend-parity-gate.md) — cross-backend parity gate (places=4).
+- [ADR-0756](0756-cuda-f3-struct-by-value-audit.md) — PR #96 audit that identified `psnr_hvs` as candidate #5.
+- [ADR-0743](0743-cuda-vif-filter1d-ncu-driven-perf.md) — original `__ldg()` + `__launch_bounds__` precedent on VIF filter1d.
+- [ADR-0214](0214-gpu-parity-ci-gate.md) — cross-backend parity gate (places=4).
 - PR #96 candidate #5; PR #93 reference implementation.
 - Source: req — "Apply the F3 fix (`__restrict__` raw pointers + `__ldg()`) to `psnr_hvs` kernel. Mirror PR #93 pattern."

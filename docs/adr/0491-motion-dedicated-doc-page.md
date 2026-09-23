@@ -56,4 +56,4 @@ backend coverage table for each variant.
 - [ADR-0193](0193-motion-v2-vulkan.md) — `motion_v2` Vulkan kernel
 - [ADR-0196](0196-float-motion-gpu.md) — `float_motion` GPU kernels
 - [ADR-0219](0219-motion3-gpu-coverage.md) — motion3 GPU coverage
-- [ADR-0273](0273-float-motion-hip.md) — `float_motion` HIP backend
+- [ADR-0273](0273-hip-seventh-consumer-float-motion.md) — `float_motion` HIP backend

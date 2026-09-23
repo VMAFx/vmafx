@@ -86,7 +86,7 @@ This PR does not commit `testdata/scores_cpu_ssimulacra2.json`.
 - Charalampidis 2016: "Recursive Implementation of the Gaussian Filter
   Using Truncated Cosine Functions"
 - Python reference: [Pacidus/ssimulacra2](https://pypi.org/project/ssimulacra2/)
-- Proposal ADR: [ADR-0126](0126-ssimulacra2-feature-extractor.md) (Proposed in PR #67)
+- Proposal ADR: [ADR-0126](0126-ssimulacra2-extractor.md) (Proposed in PR #67)
 - Related research: [Research-0007](../research/0007-ssimulacra2-scalar-port.md)
 - Source: `req` — user popup answers "Full scalar port in one PR
   (Recommended)" + "Bundle FastGaussian into this PR, SIMD follows" +

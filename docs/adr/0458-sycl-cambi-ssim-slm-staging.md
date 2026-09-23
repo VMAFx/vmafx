@@ -81,7 +81,7 @@ Neither change touches `integer_ciede_sycl.cpp`, which has no convolution to opt
 
 - Research digest: [0135](../research/0135-sycl-cambi-ssim-ciede-perf-2026-05-16.md)
 - Perf audit source: `.workingdir/perf-audit-vulkan-sycl-2026-05-16.md` (SY-1 + SY-2)
-- Parent ADRs: [ADR-0371](0371-cambi-sycl-strategy-ii.md) (CAMBI SYCL strategy),
+- Parent ADRs: [ADR-0415](0415-cambi-sycl-port.md) (CAMBI SYCL strategy),
   [ADR-0188](0188-gpu-long-tail-batch-2.md) (SSIM SYCL)
 - SYCL 2020 spec §4.7.6 "In-order and out-of-order queues" — in-order queues serialise
   all operations automatically; explicit `wait()` between enqueued operations is only

@@ -129,8 +129,8 @@ Risk:
 
 - Profile doc: [`docs/development/vulkan-dedup-profile-2026-05-02.md`](../development/vulkan-dedup-profile-2026-05-02.md)
 - ADR-0256: [`0256-vulkan-submit-opt-batch.md`](0256-vulkan-submit-opt-batch.md)
-- ADR-0246: [`0246-vulkan-kernel-template.md`](0246-vulkan-kernel-template.md)
-- Cross-backend gate: [`ADR-0214`](0214-gpu-parity-gate.md) (places=4)
+- ADR-0246: [`0246-vulkan-kernel-template.md`](0246-gpu-kernel-template.md)
+- Cross-backend gate: [`ADR-0214`](0214-gpu-parity-ci-gate.md) (places=4)
 - req: user direction 2026-05-09 to migrate adm+motion+psnr as PR A of the
   remaining-13-extractors submit-pool batch (bottleneck #2 from the perf-hunt
   report; ADR-0256 follow-up).

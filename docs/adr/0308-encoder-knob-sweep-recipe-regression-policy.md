@@ -123,7 +123,7 @@ We will adopt the following recipe-revision policy for the fork:
   populated findings + recipe-revision proposals (this PR).
 - [ADR-0237](0237-quality-aware-encode-automation.md) — Phase A
   harness that produced the sweep.
-- [ADR-0297](0297-vmaf-tune-codec-dispatcher.md) — multi-codec
+- [ADR-0297](0297-vmaf-tune-encode-multi-codec.md) — multi-codec
   dispatcher used for the sweep.
 - [ADR-0301](0301-vmaf-tune-sample-clip.md) — `--sample-clip-seconds`
   mode used to keep sweep wall time tractable.

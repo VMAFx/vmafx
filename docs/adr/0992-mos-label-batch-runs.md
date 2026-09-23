@@ -79,6 +79,6 @@ was not importable when pytest ran from the repo root.
   materializer.
 - [ADR-0675](0675-mos-label-materializer-batch-manifest.md) — batch
   manifest schema and runner.
-- [ADR-0325](0325-konvid-corpus-ingestion.md) — KonViD-1k / KonViD-150k
+- [ADR-0325](0325-konvid-150k-corpus-ingestion.md) — KonViD-1k / KonViD-150k
   corpus ingestion.
 - Source: req — "MOS-label batch runs (KonViD/CHUG) — Script merged (PR #1498 archived) but no *.mos_label.* artifacts."

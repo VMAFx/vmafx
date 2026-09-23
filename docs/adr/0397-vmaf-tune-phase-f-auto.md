@@ -142,7 +142,7 @@ inference — Phase F is integration, not invention.
   umbrella decision (Phase A scaffold).
 - [ADR-0276 fast](0276-vmaf-tune-fast-path.md) — Phase A.5 proxy +
   Bayesian.
-- [ADR-0276 phase-d](0276-vmaf-tune-phase-d-per-shot.md) — Phase D
+- [ADR-0392 phase-d](0392-vmaf-tune-phase-d-per-shot.md) — Phase D
   per-shot scaffold.
 - [ADR-0289](0289-vmaf-tune-resolution-aware.md) — resolution-aware
   model selection.

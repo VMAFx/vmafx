@@ -92,6 +92,6 @@ We add real integer_ssim GPU kernels for all three backends and register them as
 - `core/src/feature/hip/integer_ssim_hip.c` — rewritten HIP host glue
 - `core/src/feature/hip/integer_ssim/integer_ssim_score.hip` — pre-existing HIP kernel
 - `core/src/feature/sycl/integer_ssim_sycl.cpp` — new SYCL extractor appended
-- [ADR-0220](0220-sycl-fp64-free-kernel-constraint.md) — fp64-free SYCL kernel constraint
+- [ADR-0220](0220-sycl-fp64-fallback.md) — fp64-free SYCL kernel constraint
 - [ADR-0533](0533-hip-all-extractors-registration-sweep.md) — HIP extractor registration sweep
 - Source: req (the user required bit-exact GPU integer_ssim; "Don't ship 'almost-right' integer-ssim — the whole purpose of integer SSIM is bit-exactness. Better to keep dispatching CPU on a backend than ship a wrong kernel.")

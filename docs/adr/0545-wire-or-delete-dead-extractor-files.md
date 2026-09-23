@@ -83,9 +83,9 @@ In summary:
   (paraphrased; deep-audit Finding 24, 2026-05-18)
 - [ADR-0490](0490-float-ms-ssim-metal-port.md) — `float_ms_ssim` Metal port
   (the Accepted ADR whose meson wiring this PR completes)
-- [ADR-0468 (metal-cambi)](0468-metal-cambi-real-kernel.md) — superseded for the
+- [ADR-0587 (metal-cambi)](0587-metal-cambi-real-kernel.md) — superseded for the
   Metal path by this deletion (no consumer ever materialised; kernel never wired)
-- [ADR-0468 (integer-adm-vulkan-canonical-rename)](0468-integer-adm-vulkan-canonical-rename.md)
+- [ADR-0586 (integer-adm-vulkan-canonical-rename)](0586-integer-adm-vulkan-canonical-rename.md)
   — explains why `adm_vulkan.c` (legacy shim) is retained while the dead
   `integer_*_vulkan.c` copies elsewhere are removed
 - [ADR-0421](0421-metal-first-kernel-motion-v2.md) — Metal kernel batch contract

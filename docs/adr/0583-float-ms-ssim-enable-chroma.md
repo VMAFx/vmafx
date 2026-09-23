@@ -63,6 +63,6 @@ Update `provided_features` to advertise all three names.
 
 - `core/src/feature/float_ms_ssim.c` — implementation
 - `core/src/feature/integer_psnr.c` — `enable_chroma` pattern precedent (ADR-0453)
-- [ADR-0460](0460-ssim-enable-chroma.md) — `enable_chroma` for integer SSIM (PR #939)
+- ADR-0460 — `enable_chroma` for integer SSIM (PR #939)
 - req: user brief 2026-05-16 ("Apply enable_chroma pattern to float_ms_ssim and
   integer_ms_ssim extractors; same pattern as psnr enable_chroma PR#895 and PR#939")

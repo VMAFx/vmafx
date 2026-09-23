@@ -101,12 +101,12 @@ its own diff-with-blame audit. The 6.0.1 step is the safe one.
 
 ## References
 
-- [ADR-0867](0867-semgrep-local-serial-execution.md) — in-flight,
+- ADR-0867 — in-flight,
   fixes the `semgrep-local` io_uring failure; this audit defers to it.
 - [ADR-0866](0866-wire-markdownlint-into-lint-pipeline.md) — in-flight,
   wires `markdownlint-cli2` into pre-commit; this audit does not touch
   that file region.
-- [ADR-0278](0278-nolint-citation-closeout.md) — touched-file
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — touched-file
   lint-clean rule (CLAUDE.md §12 r12) makes each gate strictness
   ratchet meaningful.
 - Source: `req` (user prompt 2026-05-30 — "Audit

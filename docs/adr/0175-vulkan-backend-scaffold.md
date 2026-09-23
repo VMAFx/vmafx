@@ -7,7 +7,7 @@
 
 ## Context
 
-[ADR-0127](0127-vulkan-backend-decision.md) (Proposed) decided the
+[ADR-0127](0127-vulkan-compute-backend.md) (Proposed) decided the
 fork would add a Vulkan compute backend alongside the existing CUDA
 and SYCL paths. The ADR sketched the runtime story (volk + glslc +
 VMA + DMABUF; VIF as the pathfinder feature; lavapipe for CI smoke).
@@ -182,7 +182,7 @@ to run flip `-Denable_vulkan=enabled` explicitly.
 
 ## References
 
-- [ADR-0127](0127-vulkan-backend-decision.md) — the Q2 governance
+- [ADR-0127](0127-vulkan-compute-backend.md) — the Q2 governance
   decision this ADR implements (audit-first half).
 - [ADR-0173](0173-ptq-int8-audit-impl.md) — the same audit-first
   pattern applied to the PTQ harness.

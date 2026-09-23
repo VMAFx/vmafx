@@ -89,7 +89,7 @@ follow-up without requiring further adapter changes.
 
 - Parent: [ADR-0237](0237-quality-aware-encode-automation.md)
   (`vmaf-tune` umbrella).
-- Companion: [ADR-0235](0235-codec-collision-bucket.md) (codec
+- Companion: [ADR-0235](0235-codec-aware-fr-regressor.md) (codec
   one-hot consumes the QSV bucket).
 - Sibling PRs (parallel work): NVENC adapter ADR (forthcoming),
   AMF adapter ADR (forthcoming).

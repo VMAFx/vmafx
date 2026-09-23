@@ -60,4 +60,4 @@ When a PR is classified as dependency-only, the classifier logs an informational
 - PR #1214: chore(deps): migrate Renovate config (failed deliverables gate)
 - [ADR-0100](0100-project-wide-doc-substance-rule.md): Project-Wide Documentation Substance Rule
 - [ADR-0108](0108-deep-dive-deliverables-rule.md): Deep-Dive Deliverables Rule
-- [ADR-0167](0167-doc-substance-gate-blocking-and-path-mapped.md): Path-Mapped Doc-Substance Gate
+- [ADR-0167](0167-doc-drift-enforcement.md): Path-Mapped Doc-Substance Gate

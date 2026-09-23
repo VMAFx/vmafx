@@ -167,7 +167,7 @@ to condition on first; the rest are second-order ablation knobs.
 
 **Path forward if NN-VC ever lands in upstream VVenC.** The
 self-activating placeholder pattern from
-[ADR-0294](0294-vmaf-tune-codec-dispatcher.md)'s codec dispatcher
+[ADR-0294](0294-vmaf-tune-codec-adapter-svtav1.md)'s codec dispatcher
 (adapter `__post_init__` runtime feature-detect + opt-in) applies
 directly. When a future VVenC release ships `IntraNN` / NN-loop /
 NN-SR keys, a follow-up ADR will reintroduce the toggles backed by

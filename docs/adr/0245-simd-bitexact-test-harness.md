@@ -99,10 +99,10 @@ risks shifting input bit patterns and is out of scope for this PR).
 
 - [PR #198](https://github.com/VMAFx/vmafx/pull/198) — portable
   aligned allocator MinGW fix that motivated centralising the helper.
-- [ADR-0138](0138-bit-exact-simd-contract.md) — bit-exactness contract
+- [ADR-0138](0138-iqa-convolve-avx2-bitexact-double.md) — bit-exactness contract
   for SIMD parity tests.
-- [ADR-0140](0140-simd-bit-exact-validation.md) — `places=4` /
+- [ADR-0140](0140-simd-dx-framework.md) — `places=4` /
   `places=8` validation gates the harness preserves verbatim.
-- [ADR-0179](0179-moment-simd-tolerance.md) — moment SIMD tolerance
+- [ADR-0179](0179-float-moment-simd.md) — moment SIMD tolerance
   contract that drives `SIMD_BITEXACT_ASSERT_RELATIVE`.
 - Source: `req` — fork-local DX simplification request 2026-04-29.

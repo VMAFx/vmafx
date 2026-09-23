@@ -102,15 +102,15 @@ We will close all four gaps in `dev/Containerfile`,
 
 ## References
 
-- [ADR-0509](0509-vulkan-icd-env-contract.md) — prior round that
+- ADR-0509 — prior round that
   unset `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` in the entrypoint.
-- [ADR-0514](0514-dev-mcp-container-gpu-exposure.md) /
-  [ADR-0528](0528-dev-dri-whole-directory-bind-mount.md) — GPU backend
+- [ADR-0514](0514-dev-container-full-backend-exposure.md) /
+  ADR-0528 — GPU backend
   exposure invariants, `/dev/dri` whole-directory bind-mount.
 - [ADR-0530](0530-hip-feature-flag-promotion-and-picture-buffer.md) /
   [ADR-0538](0538-premium-vmaf-target-defaults-and-bisect.md) — HIP
   runtime works against `gfx1036` once initialised.
-- [ADR-0540](0540-dev-mcp-ffmpeg-encoder-matrix.md) — FFmpeg encoder
+- [ADR-0540](0540-dev-container-ffmpeg-av1-and-hwaccel-encoders.md) — FFmpeg encoder
   matrix companion change to the GPU matrix.
 - ROCm supported-GPU list:
   <https://rocm.docs.amd.com/projects/install-on-linux/en/latest/reference/system-requirements.html>

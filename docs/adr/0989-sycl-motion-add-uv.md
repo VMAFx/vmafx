@@ -67,7 +67,7 @@ backends (SYCL, CUDA, Vulkan, HIP, Metal) to expose the same option surface.
 
 ## References
 
-- [ADR-0219](0219-motion3-gpu-contract.md) — motion3 GPU contract (motion_five_frame_window ENOTSUP rationale).
+- [ADR-0219](0219-motion3-gpu-coverage.md) — motion3 GPU contract (motion_five_frame_window ENOTSUP rationale).
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — cross-backend parity gate places=4.
 - `req`: the user directed wiring `motion_add_uv` through `integer_motion_sycl.cpp`
   parallel to the CPU implementation, and adding a clear runtime warning for

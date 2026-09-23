@@ -122,9 +122,9 @@ in a JWT library — RS256 verification is implemented directly over
 
 - req: "Build a multi-tenant auth gateway for vmafx-controller. Currently
   the controller exposes gRPC + HTTP without auth."
-- [ADR-0711](0711-vmafx-controller-phase4b1.md): vmafx-controller Phase
+- [ADR-0711](0711-vmafx-controller-impl.md): vmafx-controller Phase
   4b.1 scope expansion.
-- [ADR-0703](0703-vmafx-server-grpc-http.md): vmafx-server Go gRPC + HTTP service.
+- [ADR-0703](0703-vmafx-server-go-grpc.md): vmafx-server Go gRPC + HTTP service.
 - RFC 7517: JSON Web Key (JWK).
 - RFC 7519: JSON Web Token (JWT).
 - RFC 8414: OAuth 2.0 Authorization Server Metadata (OIDC discovery).

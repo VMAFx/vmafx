@@ -38,7 +38,7 @@ Ship `vmaf_tiny_v3.onnx` alongside (not replacing) `vmaf_tiny_v2.onnx` in `model
 ## References
 
 - Source: `req` (user-provided spec — paraphrased: "Train, export, and validate a new tiny-AI model `vmaf_tiny_v3` on the existing 4-corpus parquet, using a wider/deeper MLP architecture than v2 (`mlp_medium` 6 → 32 → 16 → 1). Goal: see whether the extra capacity buys headroom over v2's PLCC. Ship alongside v2 if it wins; report and don't ship if it regresses.")
-- v2 baseline: [ADR-0216](0216-vmaf-tiny-v2.md)
+- v2 baseline: [ADR-0244](0244-vmaf-tiny-v2.md)
 - Research digest: [Research-0046](../research/0046-vmaf-tiny-v3-mlp-medium-evaluation.md)
 - Trainer: [`ai/scripts/train_vmaf_tiny_v3.py`](../../ai/scripts/train_vmaf_tiny_v3.py)
 - Exporter: [`ai/scripts/export_vmaf_tiny_v3.py`](../../ai/scripts/export_vmaf_tiny_v3.py)

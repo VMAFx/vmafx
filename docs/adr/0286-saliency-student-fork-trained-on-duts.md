@@ -142,7 +142,7 @@ redistributed in-tree; only the trained weights are.
 
 ### Status update 2026-05-09: v2 trained
 
-[ADR-0332](0332-saliency-student-v2-resize-decoder.md) (Accepted
+[ADR-0364](0364-saliency-student-v2-resize-decoder.md) (Accepted
 2026-05-09) ships `saliency_student_v2` — the Resize-decoder
 ablation on the v1 recipe — as a parallel artefact under
 `model/tiny/`. v2 swaps v1's `ConvTranspose` decoder upsampler for

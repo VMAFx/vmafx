@@ -100,7 +100,7 @@ exist either — every `write_all*` helper loops until `off == len`.
   return value is checked or explicitly `(void)`-discarded").
 - [docs/principles.md](../principles.md) — NASA/JPL Power of 10
   applicable subset.
-- [ADR-0278](0278-nolint-citation-closeout.md) — NOLINT citation
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — NOLINT citation
   closeout precedent for rule-7 hygiene.
 - POSIX.1-2017 `read(2)`, `write(2)`, `close(2)`, `accept(2)` — EINTR
   semantics.

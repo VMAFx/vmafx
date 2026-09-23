@@ -18,12 +18,12 @@ shipped with `markdownlint v0.38.0` (the previous cli2 baseline), plus
 34 were second-pass MD013 hits whose detection changed across
 markdownlint minor versions.
 
-[ADR-0866](0866-markdown-lint-wired.md) wired the gate into pre-commit
+[ADR-0866](0866-wire-markdownlint-into-lint-pipeline.md) wired the gate into pre-commit
 in pass-only mode with `pass_filenames: true`; the gate consequently
 only ran on staged files and the 21,775-violation tail did not block
 innocent PRs. Two prior attempts to discharge the tail
-([ADR-0864](0864-markdown-lint-wave-deferral.md),
-[ADR-0979](0979-markdown-lint-blank-line-sweep.md)) chose **gate
+(ADR-0864,
+ADR-0979) chose **gate
 narrowing** as the response — ADR-0979 (proposed in PR #497) reduced
 `.markdownlint.json` from ~36 rules to 5 — because empirical evidence
 showed `markdownlint-cli2 --fix` corrupts technical content on this
@@ -65,7 +65,7 @@ verbatim:
    rules that file actually triggered. Two large special-case files
    (`docs/rebase-notes.md`, `docs/state.md`) get broader top-of-file
    disable sets covering their full violation profile.
-5. **Hard-rejected autofixes (per [ADR-0866](0866-markdown-lint-wired.md)
+5. **Hard-rejected autofixes (per [ADR-0866](0866-wire-markdownlint-into-lint-pipeline.md)
    and the user's directive)** — MD050, MD049, MD010, MD014, MD053 are
    never auto-rewritten; their violations are discharged exclusively via
    the per-file disable path. This preserves code-block content,
@@ -84,8 +84,8 @@ cli2 v0.22.1 (markdownlint v0.40.0). All 23 pre-commit hooks pass
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
 | **Chosen — content + per-file disable, full ruleset preserved** | Gate remains enforceable at full strictness for new PRs; no rule is silently disabled tree-wide; per-file disables are visible in `git grep` and reviewable | Adds a `<!-- markdownlint-disable ... -->` comment to ~1,400 files | Best balance: meets user directive, leaves a clear audit trail of which rules a file opts out of, and any future per-file cleanup PR can remove specific rules from the disable list |
-| Narrow `.markdownlint.json` to a 5-rule blank-line subset (PR #497 / [ADR-0979](0979-markdown-lint-blank-line-sweep.md)) | One-line config change; no per-file edits | Silently disables ~31 rules tree-wide for every future PR; rejected by user as "doing it improperly" | User-rejected; supersedes ADR-0979 |
-| Bulk `markdownlint-cli2 --fix` on the full rule set | One command, zero manual work | Empirically corrupts C identifiers (`__restrict__`), assembly tabs, shell prompts, cross-file references — documented in [ADR-0866](0866-markdown-lint-wired.md) and re-verified on this corpus in [ADR-0979](0979-markdown-lint-blank-line-sweep.md) | Unacceptable content damage |
+| Narrow `.markdownlint.json` to a 5-rule blank-line subset (PR #497 / ADR-0979) | One-line config change; no per-file edits | Silently disables ~31 rules tree-wide for every future PR; rejected by user as "doing it improperly" | User-rejected; supersedes ADR-0979 |
+| Bulk `markdownlint-cli2 --fix` on the full rule set | One command, zero manual work | Empirically corrupts C identifiers (`__restrict__`), assembly tabs, shell prompts, cross-file references — documented in [ADR-0866](0866-wire-markdownlint-into-lint-pipeline.md) and re-verified on this corpus in ADR-0979 | Unacceptable content damage |
 | Per-line `<!-- markdownlint-disable-next-line MDxxx -->` instead of per-file | Most surgical scope | 4,196 MD013 + 13,380 MD060 violations would need a one-line disable each, exploding the diff to 30k+ lines and making the per-line comments visually dominant in every file | Per-file scope is more legible and equally enforceable |
 | Calibrate per-rule config (`MD013.line_length: 200`, `MD060.style: any`, ...) | Less per-file noise | Hides the actual style drift instead of recording it; future maintainers can't see which files chose to opt out | The per-file disable approach makes the opt-out audit-able |
 
@@ -124,11 +124,11 @@ cli2 v0.22.1 (markdownlint v0.40.0). All 23 pre-commit hooks pass
 
 ## References
 
-- [ADR-0864](0864-markdown-lint-wave-deferral.md) — original deferral
+- ADR-0864 — original deferral
   rationale; empirical autofix-damage list.
-- [ADR-0866](0866-markdown-lint-wired.md) — pre-commit wiring contract;
+- [ADR-0866](0866-wire-markdownlint-into-lint-pipeline.md) — pre-commit wiring contract;
   `pass_filenames: true` semantics.
-- [ADR-0979](0979-markdown-lint-blank-line-sweep.md) — narrow-to-5-rules
+- ADR-0979 — narrow-to-5-rules
   approach rejected by user; **superseded by this ADR**.
 - Source: `req` — user direction "do it properly i guess? thats one
   time to do" (paraphrased); follow-on directive "DO NOT NARROW THE

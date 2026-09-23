@@ -94,7 +94,7 @@ We will implement all nine fixes in one PR:
 - `docs/research/scaffold-audit-2026-05-19.md` — source audit document (P2 section).
 - [ADR-0108](0108-deep-dive-deliverables-rule.md) — six-deliverables rule.
 - [ADR-0165](0165-state-md-bug-tracking.md) — state.md maintenance rule.
-- [ADR-0547](0547-corpus-dir-migration.md) — `.workingdir2/` → `.corpus/` migration (P2-7).
+- [ADR-0547](0547-ai-script-env-vars.md) — `.workingdir2/` → `.corpus/` migration (P2-7).
 - [ADR-0265](0265-u2netp-saliency-replacement-blocked.md) — u2netp forward-declaration decision (P2-8).
 - [ADR-0325](0325-konvid-150k-corpus-ingestion.md) / [ADR-0336](0336-konvid-mos-head-v1.md) — konvid MOS head context (P2-7).
 - Source: paraphrased from the `scaffold-audit-p2-half-finished` dispatch instructions in the task.

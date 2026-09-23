@@ -80,7 +80,7 @@ Convert `picture_pool.c` and `gpu_picture_pool.c` to `.cpp` with
 - [ADR-0708](0708-vmafx-cpp23-internals-pilot.md) — original C++23 migration
   playbook; defines the per-file conversion recipe and isolated-static-lib
   isolation pattern.
-- [ADR-0239](0239-gpu-picture-pool.md) — backend-agnostic GPU picture pool.
+- [ADR-0239](0239-gpu-picture-pool-dedup.md) — backend-agnostic GPU picture pool.
 - [ADR-0858](0858-cpp23-gpu-dispatch-env.md) — Wave 9 `gpu_dispatch_env`
   conversion (merged earlier in PR #531).
 - req: "cpp23 Wave 9: convert 2-3 more SMALL `core/src/*.c` files to `.cpp`.

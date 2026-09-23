@@ -96,7 +96,7 @@ dispatch geometry and push constants are untouched.
 
 ## References
 
-- [ADR-0256](0256-vulkan-submit-pool.md) — submit pool design.
+- [ADR-0256](0256-vulkan-submit-opt-batch.md) — submit pool design.
 - PR-A: branch `perf/vulkan-submit-pool-pr-a-adm-motion-psnr`, PR #563.
 - [ADR-0189](0189-ssim-vulkan.md) — SSIM Vulkan kernel.
 - [ADR-0190](0190-ms-ssim-vulkan.md) — MS-SSIM Vulkan kernel.

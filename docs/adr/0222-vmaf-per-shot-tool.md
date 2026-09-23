@@ -106,7 +106,7 @@ We will ship `vmaf-perShot` as a standalone executable under
 ## References
 
 - Roadmap: [`docs/ai/roadmap.md`](../ai/roadmap.md) §2.4.
-- Sister ADR: [ADR-0220](0220-transnet-v2-shot-detector.md) (T6-3a,
+- Sister ADR: [ADR-0223](0223-transnet-v2-shot-detector.md) (T6-3a,
   TransNet V2 extractor, in-flight).
 - Backlog: `.workingdir2/BACKLOG.md`
   row T6-2 part b T6-3b.

@@ -102,9 +102,9 @@ a pointer to the follow-up.  Open T-DNN-MULTI-OUTPUT in `docs/state.md` to track
 - `docs/research/scaffold-audit-2026-05-19.md` — source audit; P1-1 through P1-4.
 - [ADR-0556](0556-python-mcp-ai-audit-2026-05-18.md) — prior audit that first
   documented T-PYTHON-COMPARE-NO-BACKEND-PRECHECK.
-- [ADR-0511](0511-vmaftune-ladder-backend-precheck.md) — `ladder` `select_backend()`
+- [ADR-0511](0511-mcp-backend-probe-allowlist-and-ladder-backend.md) — `ladder` `select_backend()`
   pattern this PR replicates.
-- [ADR-0509](0509-vmaftune-compare-container-source-autoprobe.md) — the ADR whose
+- [ADR-0509](0509-vmaf-tune-compare-container-source-framerate-probe.md) — the ADR whose
   defer rationale was removed from `_run_tune_per_shot`.
 - [ADR-0212](0212-hip-backend-scaffold.md) — original HIP scaffold that stubbed
   `picture_hip.c`.

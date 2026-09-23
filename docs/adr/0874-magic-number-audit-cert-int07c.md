@@ -82,5 +82,5 @@ Per-file additions:
 - [`docs/principles.md`](../principles.md) — §1.2 rule 30 (banned functions),
   §2 (NASA/JPL Power of 10).
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — touched-file cleanup invariant.
-- [ADR-0278](0278-nolint-citation-closeout.md) — citation rigour.
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — citation rigour.
 - Source: `req` (direct user request, 2026-05-30) — paraphrased: sweep fork-added C code for magic numbers and hardcoded constants per CERT INT07-C and MISRA C:2012 rule 4.10.

@@ -91,6 +91,7 @@ interactive development.
   7 collisions enumerated in Context above.
 - Research digest: `docs/research/0386-adr-numbering-collision-2026-05-10.md`.
 - Related ADRs: [ADR-0028](0028-adr-maintenance-rule.md) (ADR maintenance rule),
-  [ADR-0106](0106-adr-backfill-policy.md) (ADR backfill policy),
+  [ADR-0106](0106-adr-maintenance-rule.md) (ADR maintenance rule — the
+    duplicate of ADR-0028 that this ADR exists to prevent),
   [ADR-0124](0124-automated-rule-enforcement.md) (automated rule enforcement).
 - Source: user direction in session 2026-05-10 (`req`).

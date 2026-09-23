@@ -97,7 +97,7 @@ merges. The kernel-coverage backlog is then closed.
 
 ## References
 
-- [ADR-0214](0214-cross-backend-parity-gate.md) — cross-backend tolerance gate (`places=4`)
+- [ADR-0214](0214-gpu-parity-ci-gate.md) — cross-backend tolerance gate (`places=4`)
 - [ADR-0567](0567-speed-chroma-temporal-real-gpu.md) — speed_chroma/temporal CUDA real-impl + host eigendecomp
 - [ADR-0868](0868-gpu-backend-kernel-coverage.md) — round 1 (psnr + ciede)
 - [ADR-0886](0886-cuda-kernel-coverage-round2.md) — round 2 (adm/motion_v2/cambi/psnr_hvs/ssim)

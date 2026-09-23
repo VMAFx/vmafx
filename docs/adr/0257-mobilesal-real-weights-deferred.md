@@ -149,7 +149,7 @@ status only.
   MobileSal extractor design with the smoke-only placeholder
   (this ADR supersedes the T6-2a-followup commitment from
   ADR-0218 §"Neutral / follow-ups").
-- [ADR-0253](0253-fastdvdnet-pre-real-weights.md) — sibling
+- [ADR-0255](0255-fastdvdnet-pre-real-weights.md) — sibling
   real-weights swap that *did* succeed (FastDVDnet, MIT,
   GitHub-raw downloadable, RGB-only architecture). The pattern
   this ADR was supposed to mirror.

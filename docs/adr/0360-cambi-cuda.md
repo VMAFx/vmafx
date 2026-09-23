@@ -119,7 +119,7 @@ event.
 
 - [ADR-0205](0205-cambi-gpu-feasibility.md) — feasibility spike (Strategy II verdict)
 - [ADR-0210](0210-cambi-vulkan-integration.md) — Vulkan twin reference implementation
-- [ADR-0192](0192-cuda-feature-extractor-cadence.md) — one PR per backend cadence
+- [ADR-0192](0192-gpu-long-tail-batch-3.md) — one PR per backend cadence
 - [Research-0020](../research/0020-cambi-gpu-strategies.md) — GPU strategy comparison
 - [Research-0032](../research/0032-cambi-vulkan-integration.md) — Vulkan integration trade-offs
 - [Research-0091](../research/0091-cambi-cuda-integration.md) — CUDA integration trade-offs (this PR)

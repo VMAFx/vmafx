@@ -111,7 +111,7 @@ were a software bug.
 
 - [ADR-0281](0281-vmaf-tune-qsv-adapters.md) — QSV adapter introduction
 - [ADR-0282](0282-vmaf-tune-amf-adapters.md) — AMF adapter introduction
-- [ADR-0516](0516-vmaftune-compare-v2-sweep.md) — `probe_encoder_available` introduction
+- [ADR-0516](0516-vmaf-tune-compare-rate-quality-sweep.md) — `probe_encoder_available` introduction
 - FFmpeg QSV Linux init: <https://trac.ffmpeg.org/wiki/Hardware/QuickSync>
 - AMD gfx1036 VCN decoder-only: <https://gpuopen.com/radeon-media-sdk/> (VCE block absent in Phoenix iGPU)
 - Source: `req` (user direction, 2026-05-18 session)

@@ -12,7 +12,7 @@ The Python test suite (`python/test/quality_runner_test.py`,
 `python/test/feature_extractor_test.py`) asserts numerical equality against
 hardcoded golden values computed by Netflix for a specific pair of YUV
 files: `src01_hrc00_576x324.yuv` and `src01_hrc01_576x324.yuv`. These two
-fixtures back the §8 Netflix golden gate (CLAUDE.md / [ADR-0024](0024-netflix-golden-tests.md)).
+fixtures back the §8 Netflix golden gate (CLAUDE.md / [ADR-0024](0024-netflix-golden-preserved.md)).
 
 Netflix removed both files from the upstream repo in 2020 (commit
 `bac8b6073`) and moved them to a sibling repository:
@@ -92,5 +92,5 @@ not just file presence. Specifically:
 - Canonical fixture source: <https://github.com/Netflix/vmaf_resource>
 - CI download path: `.github/workflows/tests-and-quality-gates.yml`
 - Reverted PR: [#1237](https://github.com/VMAFx/vmafx/pull/1237)
-- Related ADRs: [ADR-0024](0024-netflix-golden-tests.md) (Netflix golden gate)
+- Related ADRs: [ADR-0024](0024-netflix-golden-preserved.md) (Netflix golden gate)
 - Source: req (user investigation 2026-05-17 — "Investigate integer-VIF first")

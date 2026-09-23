@@ -118,7 +118,7 @@ not address them.
   `dnn` "Install ONNX Runtime (CPU)" step.
 - Related ADRs: [ADR-0042](0042-tinyai-docs-required-per-pr.md)
   (DNN docs requirement),
-  [ADR-0102](0102-dnn-ep-fallback-order.md) (DNN EP fallback that the
+  [ADR-0102](0102-dnn-ep-selection-and-fp16-io.md) (DNN EP fallback that the
   loaded ORT exercises),
   [ADR-0107](0107-tinyai-wave1-scope-expansion.md) (DNN scope).
 - Source: `req` — direct user direction on this PR ("Switch lcov →

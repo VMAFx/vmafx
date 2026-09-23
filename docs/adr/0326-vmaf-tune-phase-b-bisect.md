@@ -24,7 +24,7 @@ predicate, production callers had no working backend.
 
 The "Phase B pending" placeholder has been referenced from
 [ADR-0276](0276-vmaf-tune-fast-path.md),
-[ADR-0287](0287-vmaf-tune-saliency-aware-encoding.md),
+ADR-0287,
 [ADR-0295](0295-vmaf-tune-phase-e-bitrate-ladder.md),
 [ADR-0306](0306-vmaf-tune-coarse-to-fine.md), and others as the
 "production wiring" they each defer to. Promoting the placeholder is
@@ -156,7 +156,7 @@ existing `compare` / `recommend-saliency` / `predict` / `tune-per-shot`
   umbrella spec.
 - [ADR-0276](0276-vmaf-tune-fast-path.md) — Phase A.5 fast path; cites
   Phase B as the production target-VMAF backend.
-- [ADR-0287](0287-vmaf-tune-saliency-aware-encoding.md) — saliency-aware
+- ADR-0287 — saliency-aware
   encoding; consumes the same predicate seam.
 - [ADR-0295](0295-vmaf-tune-phase-e-bitrate-ladder.md) — Phase E ladder;
   default sampler composes Phase B with `recommend.pick_target_vmaf`.

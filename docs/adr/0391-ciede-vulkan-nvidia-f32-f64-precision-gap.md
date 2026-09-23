@@ -90,7 +90,7 @@ the Netflix golden gate is built around its current f32/f64 mix).
   reservation: "deferred to a CPU-side double-vs-float bisect
   follow-up"
 - [ADR-0187](0187-ciede-vulkan.md) — original ciede Vulkan kernel
-- [ADR-0265](0265-vif-ciede-precise-step-a.md) (in PR #346, not yet
+- [ADR-0269](0269-vif-ciede-precise-step-a.md) (in PR #346, not yet
   merged) — `precise` decorations rationale
 - [research-0055](../research/0055-ciede-vulkan-nvidia-f32-f64-root-cause.md)
   — full experimental data

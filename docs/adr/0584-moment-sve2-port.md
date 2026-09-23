@@ -94,7 +94,7 @@ choice (step size `svcntd()` vs `svcntw()`) is dictated by the semantics of
 
 - req: "Add ARM SVE2 SIMD path for ONE feature extractor that has NEON but not SVE2 yet"
 - [ADR-0213](0213-ssimulacra2-sve2.md) — first SVE2 port, established the pattern
-- [ADR-0419](0419-sve2-darwin-probe-gate.md) — Darwin SVE2 opt-out
-- [ADR-0179](0179-float-moment-neon-bitexact.md) — float_moment NEON bit-exactness contract
-- [ADR-0138](0138-simd-bitexact-contract.md) — SIMD bit-exactness general rule
+- [ADR-0419](0419-sve2-probe-darwin-gate.md) — Darwin SVE2 opt-out
+- [ADR-0179](0179-float-moment-simd.md) — float_moment NEON bit-exactness contract
+- ADR-0138 — SIMD bit-exactness general rule
 - [ADR-0245](0245-simd-bitexact-test-harness.md) — `simd_bitexact_test.h` harness

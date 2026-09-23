@@ -55,10 +55,10 @@ Forces:
   Vulkan-scoring backlog items.
 - **Demand-pull principle** — fork-local efforts only ship when a
   user reports the gap as binding (precedent:
-  [ADR-0009](0009-batch-a-upstream-port-strategy.md)).
+  ADR-0009).
 - **Hardware availability** — the fork's CI matrix does not include
   RDNA 3/4 or Intel PVC nodes; a HIP port without a CI gate cannot
-  satisfy [ADR-0214](0214-cross-backend-numerical-parity.md)'s
+  satisfy [ADR-0214](0214-gpu-parity-ci-gate.md)'s
   GPU-parity rule.
 - **Vendor-neutrality value** — non-NVIDIA users today have *zero*
   GPU acceleration on the VVC encode side; the gap is real, not
@@ -70,7 +70,7 @@ We will adopt a three-tier strategy. **Tier 1 ships today**:
 document NN-VC as the fork's vendor-neutral H.266 GPU story (it
 already runs on any ONNXRuntime EP) and wire the existing Vulkan
 backend to `vmaf-tune` for GPU-accelerated scoring of CPU-encoded
-VVC bitstreams (sibling [ADR-0314](0314-vmaf-tune-vulkan-score-quick-win.md),
+VVC bitstreams (sibling [ADR-0314](0314-vmaf-tune-score-backend-vulkan.md),
 scoped separately). **Tier 2 stays in the backlog**: a HIP port of
 VVenC's motion-estimation, transform, and loop-filter kernels, gated
 on three triggers (user-reported throughput pain on a real corpus,
@@ -88,7 +88,7 @@ decision artifact that points back to it.
 | --- | --- | --- | --- |
 | **A. Ship CUDA-VVC NVENC adapter** (mirror [ADR-0290](0290-vmaf-tune-nvenc-adapters.md) for h266) | Would help RTX-40 users **if NVENC supported H.266**; reuses adapter ladder pattern | **Verified false premise**: NVENC SDK 13.0 supports only H.264 / HEVC / AV1 (no H.266 encode). There is no `h266_nvenc` to wire up. | **Rejected** as factually impossible at write time. Re-evaluate if NVIDIA ships VVC encode silicon in a future SDK. |
 | **B. Wait for `VK_KHR_video_encode_h266` ratification** | Zero effort; eventually delivers vendor-neutral hardware encode on every Vulkan 1.4+ driver; reuses the fork's existing Vulkan loader / queue / DMABUF plumbing | **Verified non-existent** at write time (Khronos registry 404; zero Vulkan-Docs issues); AV1 precedent (`VK_KHR_video_encode_av1` ratified Nov-2024, Vulkan 1.3.302 → Mesa RADV implementation Aug-2025) shows ~9-month spec-to-driver lag *after* eventual ratification; abandons users who need a non-NVIDIA path **today** | Rejected as a standalone strategy. Reframed as Tier 3 (revisit quarterly) inside the chosen tiered approach. |
-| **C. HIP port of VVenC hot kernels (immediate)** | Vendor-neutral on AMD silicon; precedent for fork-side GPU ports exists ([ADR-0033](0033-hip-applicability.md)) | Eng-months `[UNVERIFIED]` until profile run; rebase burden against vvenc's release cadence; no CI hardware available; no demand signal yet beyond the question itself; verified that VVenC upstream has **no public CUDA/HIP/SYCL/OpenCL/Vulkan port** in its issue tracker | Rejected as immediate Tier 1; queued as Tier 2 with explicit demand-pull triggers. |
+| **C. HIP port of VVenC hot kernels (immediate)** | Vendor-neutral on AMD silicon; precedent for fork-side GPU ports exists (ADR-0033) | Eng-months `[UNVERIFIED]` until profile run; rebase burden against vvenc's release cadence; no CI hardware available; no demand signal yet beyond the question itself; verified that VVenC upstream has **no public CUDA/HIP/SYCL/OpenCL/Vulkan port** in its issue tracker | Rejected as immediate Tier 1; queued as Tier 2 with explicit demand-pull triggers. |
 | **D. Tiered approach (chosen)** | Ships *something* vendor-neutral today (NN-VC docs + Vulkan scoring); preserves option value on the HIP port without burning engineering hours speculatively; revisits Vulkan Video on a calendar | Communicates "no GPU vendor ships VVC encode silicon in 2026; we mitigate via NN-VC + Vulkan scoring"; relies on CPU encode for near-term throughput | **Chosen.** Matches the fork's demand-pull pattern; gives users an honest answer + a non-zero GPU contribution (NN-VC + scoring) immediately; preserves room for Tier 2 / Tier 3 to arrive when triggers fire. |
 | **E. ZLUDA-hosted hypothetical CUDA-VVC** | In theory runs CUDA codecs on AMD/Intel | No open-source CUDA VVC encoder exists; verified that ZLUDA's module tree covers cuBLAS / cuFFT / cuDNN / cuSPARSE / Driver+Runtime APIs only — **no NVENC/NVDEC module**, so even if a CUDA VVC encoder appeared it could not run on ZLUDA without further work; reviewers would reasonably reject the production posture | Rejected as not actionable. |
 
@@ -132,16 +132,16 @@ decision artifact that points back to it.
   — source survey, citations, cost/risk/value matrix.
 - [ADR-0290](0290-vmaf-tune-nvenc-adapters.md) — NVENC adapter ladder
   pattern that an h266_nvenc adapter would mirror.
-- [ADR-0314](0314-vmaf-tune-vulkan-score-quick-win.md) — Tier-1
+- [ADR-0314](0314-vmaf-tune-score-backend-vulkan.md) — Tier-1
   sibling, scoped separately, wires Vulkan scoring through
   `vmaf-tune`.
-- [ADR-0033](0033-hip-applicability.md) — prior HIP applicability
+- ADR-0033 — prior HIP applicability
   survey for libvmaf features.
 - [ADR-0127](0127-vulkan-compute-backend.md) — Vulkan compute backend
   (scoring).
-- [ADR-0009](0009-batch-a-upstream-port-strategy.md) — fork's
+- ADR-0009 — fork's
   demand-pull pattern for fork-local engineering effort.
-- [ADR-0214](0214-cross-backend-numerical-parity.md) — GPU-parity
+- [ADR-0214](0214-gpu-parity-ci-gate.md) — GPU-parity
   rule that Tier 2 has to satisfy on landing.
 - Source: `req` — paraphrased user request: "investigate whether the
   fork can offer GPU-accelerated VVC encode without NVIDIA hardware,

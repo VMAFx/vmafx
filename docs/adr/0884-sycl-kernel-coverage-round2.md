@@ -87,7 +87,7 @@ run in the pre-push gate when a SYCL toolchain is present.
 ## References
 
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — cross-backend places=4 gate.
-- [ADR-0219](0219-motion3-gpu-contract.md) — motion3 GPU contract,
+- [ADR-0219](0219-motion3-gpu-coverage.md) — motion3 GPU contract,
   source of the original SYCL parity-test pattern.
 - [ADR-0868](0868-gpu-backend-kernel-coverage.md) — round 1 (CUDA/HIP/SYCL
   PSNR + VIF + Metal registration audit).

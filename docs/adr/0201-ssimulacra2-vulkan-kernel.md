@@ -10,7 +10,7 @@
 [ADR-0192](0192-gpu-long-tail-batch-3.md) scopes GPU long-tail batch 3,
 which targets a Vulkan twin for every CPU extractor that still lacks
 one. ssimulacra2 — the SSIMULACRA 2 perceptual quality metric ported
-from libjxl ([ADR-0130](0130-ssimulacra2-feature-extractor.md)) — is
+from libjxl ([ADR-0130](0130-ssimulacra2-scalar-implementation.md)) — is
 the second-most complex remaining metric after cambi (deferred for a
 feasibility spike). Its CPU pipeline (full-resolution YUV → linear
 RGB → 6-scale pyramid; per scale: linear-RGB → XYB, separable
@@ -49,7 +49,7 @@ Host responsibilities (in `ssimulacra2_vulkan.c`):
 
 - YUV → linear RGB at full resolution, using the same scalar libjxl
   port as `ssimulacra2.c::picture_to_linear_rgb` (deterministic
-  sRGB EOTF LUT from [ADR-0164](0164-ssimulacra2-deterministic-eotf-cbrt.md)).
+  sRGB EOTF LUT from [ADR-0164](0164-ssimulacra2-snapshot-gate.md)).
 - 2×2 box downsample between scales (cheap vs the GPU work; keeps
   the GPU dispatch chain focused on the per-scale blur pipeline).
   The downsample uses the **full-resolution plane stride**
@@ -157,7 +157,7 @@ is dominated by the IIR (still GPU). Net wall-time impact under
 | Single fused kernel (XYB + blur + SSIM in one shader) | Fewer dispatches, lower CPU overhead | The IIR blur has carry-state along the scan axis incompatible with the SSIM stats' 2D parallel layout; would require expensive shared-memory thread-pinning per row/column | Correctness-first: separating the IIR into its own shader makes the per-stage data flow auditable against the CPU reference |
 | Keep XYB on GPU, accept `places=1` contract | Pure GPU per-scale pipeline; minimal host work | Diverges from ADR-0192's nominal `places=2` and from the rest of the Vulkan VIF/MS-SSIM family (all at `places=4`) | Rejected by the user (verbatim, paraphrased to neutral English: "places=1 is not good"); the §Precision investigation table shows host-side XYB clears the entire family's `places=4` bar with no measurable wall-time cost |
 | Host-side IIR blur (GPU does only XYB + SSIM) | Simpler host code, no IIR shader | Defeats the purpose — IIR is the dominant per-scale cost (~50% of CPU time) | Not chosen — would leave the hottest stage on CPU |
-| GPU-side YUV → linear RGB (sRGB EOTF on GPU) | Pure GPU pipeline, no host pre-pass | Requires uploading the 1024-entry sRGB EOTF LUT and an ifelse-heavy YUV-matrix dispatcher into the shader | Not chosen for v1 — host YUV→RGB is fast (already SIMD'd via [ADR-0163](0163-ssimulacra2-picture-to-linear-rgb-simd.md)); follow-up if profiling shows it's a bottleneck |
+| GPU-side YUV → linear RGB (sRGB EOTF on GPU) | Pure GPU pipeline, no host pre-pass | Requires uploading the 1024-entry sRGB EOTF LUT and an ifelse-heavy YUV-matrix dispatcher into the shader | Not chosen for v1 — host YUV→RGB is fast (already SIMD'd via [ADR-0163](0163-ssimulacra2-ptlr-simd.md)); follow-up if profiling shows it's a bottleneck |
 | Pack 3 channels into a single `vec3` per dispatch | One dispatch processes all 3 channels at once | Doubles per-pixel register pressure; the IIR's 6 prev-state floats + 6 outputs × 3 channels = 36 live floats per lane, exceeding most GPUs' register budget | Not chosen — per-channel iteration is simpler and matches the CPU reference one-for-one |
 | GPU-side XYB with `Float64` capability + `precise` everywhere | Could in principle keep XYB on GPU and still match CPU bit-for-bit | Requires `shaderFloat64` (not core on Vulkan 1.0; not supported on every consumer GPU); doubles the cube-root cost; the divide-amplification site (`0.5*(cbrt(l)-cbrt(m))`) still cancels in float at the consumer if the output buffer is float | Not chosen — host XYB is bit-exact by construction without any device-feature gating |
 
@@ -201,15 +201,15 @@ is dominated by the IIR (still GPU). Net wall-time impact under
 
 - Parent: [ADR-0192](0192-gpu-long-tail-batch-3.md) — GPU long-tail
   batch 3 scope.
-- CPU reference: [ADR-0130](0130-ssimulacra2-feature-extractor.md)
-  (extractor) + [ADR-0161](0161-ssimulacra2-simd.md) (SIMD
-  bit-exactness) + [ADR-0162](0162-ssimulacra2-blur-simd.md) (blur
-  SIMD) + [ADR-0163](0163-ssimulacra2-picture-to-linear-rgb-simd.md)
-  (YUV→RGB SIMD) + [ADR-0164](0164-ssimulacra2-deterministic-eotf-cbrt.md)
+- CPU reference: [ADR-0130](0130-ssimulacra2-scalar-implementation.md)
+  (extractor) + [ADR-0161](0161-ssimulacra2-simd-bitexact.md) (SIMD
+  bit-exactness) + [ADR-0162](0162-ssimulacra2-iir-blur-simd.md) (blur
+  SIMD) + [ADR-0163](0163-ssimulacra2-ptlr-simd.md)
+  (YUV→RGB SIMD) + [ADR-0164](0164-ssimulacra2-snapshot-gate.md)
   (deterministic EOTF + cbrt LUT/Newton).
-- Vulkan precedent: [ADR-0190](0190-float-ms-ssim-vulkan.md) —
+- Vulkan precedent: [ADR-0190](0190-ms-ssim-vulkan.md) —
   ms_ssim_vulkan, the closest precedent (5-level pyramid + per-scale
   SSIM stats with per-WG partials).
-- Min-dim guard precedent: [ADR-0153](0153-ms-ssim-min-dim-guard.md).
+- Min-dim guard precedent: [ADR-0153](0153-float-ms-ssim-min-dim-netflix-1414.md).
 - Source: `req` (user prompt for batch-3 part 7,
   `feat/ssimulacra2-vulkan` PR).

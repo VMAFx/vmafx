@@ -106,7 +106,7 @@ model.
   host-only environment drift.
 - Operator guide: [docs/development/dev-mcp.md](../development/dev-mcp.md).
 - Related ADRs:
-  [ADR-0024](0024-netflix-golden-tests.md) (Netflix golden gate),
+  [ADR-0024](0024-netflix-golden-preserved.md) (Netflix golden gate),
   [ADR-0493](0493-test-yuv-fixture-md5-verification.md) (canonical
   YUVs in container path).
 - Source: req (user direction 2026-05-17 — "fucking make this a

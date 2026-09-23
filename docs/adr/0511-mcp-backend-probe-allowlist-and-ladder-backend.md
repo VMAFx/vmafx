@@ -118,7 +118,7 @@ guarantees explicit going forward.
 - Related: [ADR-0495](0495-mcp-probe-bug-fixes.md) — the original
   MCP probe-driven bug-fix cluster; this ADR is a follow-on
   surfaced by the same probe harness.
-- Related: [ADR-0127](0127-cli-flag-unification.md) for the unified
+- Related: ADR-0127 for the unified
   `--backend NAME` selector this work depends on.
 - Related: [ADR-0175](0175-vulkan-backend-scaffold.md) for the
   Vulkan backend that participates in the probe matrix.

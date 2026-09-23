@@ -100,7 +100,7 @@ The PR ships:
 - [ADR-0259](0259-hip-third-consumer-ciede.md) — third
   kernel-template consumer (`ciede_hip`); sibling of this ADR in
   the same PR.
-- [ADR-0221](0221-gpu-kernel-template.md) — original CUDA kernel
+- [ADR-0246](0246-gpu-kernel-template.md) — original CUDA kernel
   template that ADR-0241 mirrored onto HIP.
 - `core/src/feature/cuda/integer_moment_cuda.c` — the CUDA
   reference whose call graph this consumer mirrors.

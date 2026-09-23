@@ -103,4 +103,4 @@ We will:
 - Probe triage: `/tmp/mcp_probe_findings.md` (process-local).
 - Related ADRs: [ADR-0172](0172-mcp-describe-worst-frames.md),
   [ADR-0119](0119-cli-precision-default-revert.md),
-  [ADR-0024](0024-netflix-golden-tests.md) (Bug #4 rationale).
+  [ADR-0024](0024-netflix-golden-preserved.md) (Bug #4 rationale).

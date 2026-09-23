@@ -94,12 +94,12 @@ this round.
 
 ## References
 
-- Round 1: [ADR-0868](0868-hip-kernel-coverage-round1.md), PR #351
+- Round 1: [ADR-0868](0868-gpu-backend-kernel-coverage.md), PR #351
 - Round 2: [ADR-0883](0883-hip-kernel-coverage-round2.md), PR #372
 - Round 3: [ADR-0945](0945-hip-kernel-coverage-round3.md), PR #443
 - Round 4 (origin of speed-family deferral):
   [ADR-0958](0958-hip-kernel-coverage-round4.md), PR #548
 - `speed_internal.c` implementation (unblocked link): PR #465
   [ADR-0964](0964-implement-speed-internal-and-wire-gpu-speed-extractors.md)
-- Backend tolerance policy: [ADR-0214](0214-gpu-numerical-tolerance.md)
+- Backend tolerance policy: [ADR-0214](0214-gpu-parity-ci-gate.md)
 - Source: per user direction (HIP kernel coverage round 5 dispatch)

@@ -74,7 +74,7 @@ Hardware: RTX 4090 via `build-cpu/tools/vmaf --backend cuda` (fork build).
 - `req`: "Write a K150K full-feature extraction script + run it on the local
   CUDA card..." (paraphrased: user requested the extraction pipeline, ADR,
   research digest, and all six ADR-0108 deliverables in this PR).
-- [ADR-0346](0346-fr-from-nr-adapter.md) — FR-from-NR adapter pattern.
+- [ADR-0346](0346-fr-features-from-nr-corpus.md) — FR-from-NR adapter pattern.
 - [Research-0026](../research/0026-full-features-set.md) — FULL_FEATURES 22-feature set.
 - [Research-0067](../research/0067-k150k-corpus-integration.md) — companion digest.
 - [ADR-0108](0108-deep-dive-deliverables-rule.md) — six deep-dive deliverables rule.

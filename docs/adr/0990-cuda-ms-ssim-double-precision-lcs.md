@@ -106,7 +106,7 @@ and match the scalar path.
 - Blamed commit: `8db2715ac2`.
 - Related ADR: [ADR-0139](0139-ssim-simd-bitexact-double.md) —
   same `2.0 *` double-promotion fix for AVX2/AVX-512 paths.
-- Related ADR: [ADR-0214](0214-gpu-parity-gate-places4.md) —
+- Related ADR: [ADR-0214](0214-gpu-parity-ci-gate.md) —
   places=4 GPU parity gate.
 - Scalar reference:
   `core/src/feature/iqa/ssim_tools.c` `ssim_accumulate_default_scalar`.

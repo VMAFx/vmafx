@@ -74,7 +74,7 @@ checks that fire on legitimate C source when clang-tidy parses
   fix the top 15 findings on fork-added C/C++ code).
 - [ADR-0725](0725-cpp23-pilot-log-v2.md) — C → C++23
   migration wave 1 (the migrated files this ADR ratchets against).
-- [ADR-0278](0278-nolint-citation-closeout.md) — every NOLINT must
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — every NOLINT must
   cite an ADR; no NOLINTs are introduced by this sweep.
 - [docs/principles.md §2](../principles.md) — coding-standards
   philosophy.

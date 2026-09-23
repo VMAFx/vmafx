@@ -90,7 +90,7 @@ We will:
   paraphrased to remove imperative-mood profanity).
 - CLAUDE.md §12 r12 — NOLINT citation rule, extended in spirit to
   `// #nosec` directives.
-- [ADR-0278](0278-nolint-citation-closeout.md) — citation closeout
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — citation closeout
   precedent for clang-tidy NOLINT comments.
 - [docs/research/gosec-findings-fix-sweep-2026-06-01.md](../research/gosec-findings-fix-sweep-2026-06-01.md)
   — per-finding fix rationale.

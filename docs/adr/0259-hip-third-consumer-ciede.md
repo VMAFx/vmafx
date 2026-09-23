@@ -115,7 +115,7 @@ handles failures today.
   consumer (`integer_psnr_hip`).
 - [ADR-0254](0254-hip-second-consumer-float-psnr.md) — second
   kernel-template consumer (`float_psnr_hip`); in flight as PR #324.
-- [ADR-0221](0221-gpu-kernel-template.md) — original CUDA kernel
+- [ADR-0246](0246-gpu-kernel-template.md) — original CUDA kernel
   template that ADR-0241 mirrored onto HIP.
 - [ADR-0187](0187-ciede-vulkan.md) — ciede precision /
   `places=4` empirical floor argument; carries to the HIP twin via

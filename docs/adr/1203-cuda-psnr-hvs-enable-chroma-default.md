@@ -79,7 +79,7 @@ explicit opt-out.
   `core/src/feature/third_party/xiph/psnr_hvs.c`,
   `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`,
   `core/src/feature/hip/integer_psnr_hvs_hip.c`
-- [ADR-0214](0214-cross-backend-tolerance.md) — the places=4 cross-backend gate
+- [ADR-0214](0214-gpu-parity-ci-gate.md) — the places=4 cross-backend gate
   this test enforces
 - `ai/data/feature_extractor.py` (`FULL_FEATURES`),
   `ai/scripts/extract_k150k_features.py` (`CUDA_EXTRACTOR_NAMES`)

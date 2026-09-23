@@ -129,8 +129,8 @@ python ai/scripts/validate_model_registry.py
   `.int8.onnx` redirect.
 - [ADR-0248](0248-nr-metric-v1-ptq.md) — `nr_metric_v1` PTQ; same
   recipe.
-- [ADR-0241](0241-vmaf-tiny-v3-mlp-medium.md) — v3 ship decision.
-- [ADR-0242](0242-vmaf-tiny-v4-mlp-large.md) — v4 ship decision.
+- [ADR-0389](0389-vmaf-tiny-v3-mlp-medium.md) — v3 ship decision.
+- [ADR-0390](0390-vmaf-tiny-v4-mlp-large.md) — v4 ship decision.
 - `req` — user direction 2026-05-03: paraphrased — "add INT8
   dynamic-PTQ sidecars for vmaf_tiny_v3 and vmaf_tiny_v4 with the
   ADR-0174 0.01-PLCC budget."

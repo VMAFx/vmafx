@@ -63,10 +63,9 @@ retaining the legacy `output_name` field for old single-output metadata.
 
 ## References
 
-- [ADR-0040](0040-tiny-dnn-feature-extractor.md) — original tiny-DNN attach
-  surface.
-- [ADR-0518](0518-fr-regressor-v2-codec-aware-runtime.md) — feature-vector tiny
-  models and sidecar-driven runtime metadata.
+- ADR-0040 — original tiny-DNN attach surface.
+- [ADR-0518](0518-tiny-model-loader-external-data-and-feature-rank.md) —
+  feature-vector tiny models and sidecar-driven runtime metadata.
 - [ADR-0639](0639-scaffold-audit-p1-feature-plumbing-fixes.md) — documented
   T-DNN-MULTI-OUTPUT as an implementation gap.
 - Source: req: "go on with backlog i guess, ai still rolling"

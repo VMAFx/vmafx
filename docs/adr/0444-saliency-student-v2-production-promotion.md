@@ -69,7 +69,7 @@ Superseded in its model card; the ONNX file and sidecar are retained.
 
 - [ADR-0286](0286-saliency-student-fork-trained-on-duts.md) —
   `saliency_student_v1` decision record.
-- [ADR-0332](0332-saliency-student-v2-resize-decoder.md) —
+- [ADR-0364](0364-saliency-student-v2-resize-decoder.md) —
   `saliency_student_v2` architectural decision + staging record.
 - [ADR-0258](0258-onnx-allowlist-resize.md) — admitted `Resize` to the
   op allowlist, enabling the v2 decoder.

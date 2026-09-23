@@ -45,7 +45,7 @@ training tables to be rebuilt through `ai/scripts/combine_full_feature_parquets.
 ## References
 
 - Research digest: [AI full-feature refresh defaults](../research/0642-ai-refresh-full-feature-defaults.md).
-- [ADR-0026](0026-cross-metric-feature-fusion.md) — full-feature table motivation.
+- ADR-0026 — full-feature table motivation.
 - [ADR-0340](0340-multi-corpus-aggregation.md) — multi-corpus aggregation.
 - [ADR-0362](0362-k150k-corpus-integration.md) — existing K150K full-feature precedent.
 - Source: `req` — "i wasnt talking about chug only, we bugfixed so many things, all our ai things must be stale"

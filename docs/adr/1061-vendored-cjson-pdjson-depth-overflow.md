@@ -114,7 +114,7 @@ Apply all five fixes to the live vendored sources:
 
 - `docs/principles.md` §1.2 rule 30 (banned functions).
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — touched-file lint-clean rule.
-- [ADR-0278](0278-nolint-citation-closeout.md) — NOLINT citation requirements.
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — NOLINT citation requirements.
 - [ADR-0683](0683-cjson-banned-function-remediation.md) — prior decision mandating these cJSON fixes.
 - CERT-C INT30-C: unsigned integer wraparound.
 - CERT-C INT31-C: signed/unsigned conversion overflow.

@@ -94,7 +94,7 @@ under three constraints:
 - [ADR-0237](0237-quality-aware-encode-automation.md) — vmaf-tune Phase A
   corpus schema (the merge contract).
 - [ADR-0272](0272-fr-regressor-v2-codec-aware-scaffold.md) — fr_regressor_v2 scaffold.
-- [ADR-0303](0303-fr-regressor-v2-ensemble-flip.md) — ensemble-flip ship gate.
+- [ADR-0303](0303-fr-regressor-v2-ensemble-prod-flip.md) — ensemble-flip ship gate.
 - [Research-0082](../research/0082-bvi-dvc-corpus-feasibility.md) — feasibility digest.
 - Ma, Zhang, Bull. *BVI-DVC: A Training Database for Deep Video
   Compression*. IEEE Transactions on Multimedia, 2021.

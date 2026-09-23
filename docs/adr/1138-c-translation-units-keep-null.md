@@ -84,7 +84,7 @@ file-by-file as files are touched under ADR-0141, not tree-wide.
 - [ADR-0915](0915-clang-tidy-modernize-sweep.md) — `modernize-*` family
   enabled, scoped to `.cpp` TUs in practice.
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — touched-file lint rule.
-- [ADR-0278](0278-nolint-citation-closeout.md) — NOLINT citation form.
+- [ADR-0278](0278-t7-5-nolint-sweep.md) — NOLINT citation form.
 - Microsoft Learn, "/std (Specify Language Standard Version)" and "Microsoft
   C/C++ language conformance" (retrieved 2026-09-02): C-mode feature lists do
   not include `nullptr`.

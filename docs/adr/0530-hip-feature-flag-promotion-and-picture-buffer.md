@@ -114,7 +114,7 @@ it requires its own kernel-level fix and its own ADR.
   runtime wiring needed for the model-driven path to pick it.
 - [ADR-0519](0519-hip-import-state-implementation.md) — HIP
   `vmaf_hip_import_state()` implementation; the grandparent.
-- [ADR-0468](0468-hip-integer-motion-port.md) — `integer_motion_hip`
+- [ADR-0468](0468-hip-float-adm-real-kernel.md) — `integer_motion_hip`
   scaffold + kernel port (the kernel this PR makes selectable).
 - [ADR-0212](0212-hip-backend-scaffold.md) — HIP scaffold + audit-first
   posture (the original `-ENOSYS` contract).

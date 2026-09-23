@@ -8,7 +8,7 @@
 
 ## Context
 
-[ADR-0129](0129-tinyai-ptq-int8-modes.md) (Proposed) defined the
+[ADR-0129](0129-tinyai-ptq-quantization.md) (Proposed) defined the
 **policy**: per-model `quant_mode` field in
 `model/registry.json`, three modes (`static`, `dynamic`, `qat`),
 calibration-set field for static, and a CI accuracy gate. The ADR
@@ -154,7 +154,7 @@ moving CI leg lands when there's a model to gate.
 
 ## References
 
-- [ADR-0129](0129-tinyai-ptq-int8-modes.md) — Proposed policy this
+- [ADR-0129](0129-tinyai-ptq-quantization.md) — Proposed policy this
   ADR implements.
 - [Research-0006](../research/0006-tinyai-ptq-accuracy-targets.md) —
   accuracy regression targets, ORT API comparison.

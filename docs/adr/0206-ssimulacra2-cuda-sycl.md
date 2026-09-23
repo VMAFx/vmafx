@@ -31,7 +31,7 @@ of the Vulkan hybrid host/GPU pipeline**:
   - YUV → linear RGB at full resolution
     (`ss2c_picture_to_linear_rgb` / `ss2s_picture_to_linear_rgb`,
     deterministic LUT-based sRGB EOTF per
-    [ADR-0164](0164-ssimulacra2-deterministic-eotf-cbrt.md)).
+    [ADR-0164](0164-ssimulacra2-snapshot-gate.md)).
   - 2×2 box downsample between scales.
   - **linear RGB → XYB** at every scale
     (`ss2c_host_linear_rgb_to_xyb` / `ss2s_host_linear_rgb_to_xyb`,
@@ -159,7 +159,7 @@ entirely.
     coverage matrix entry). Same hybrid host/GPU split would
     apply if added.
   - The host-side XYB and SSIM combine are vectorised on the CPU
-    reference path ([ADR-0163](0163-ssimulacra2-picture-to-linear-rgb-simd.md)),
+    reference path ([ADR-0163](0163-ssimulacra2-ptlr-simd.md)),
     but this PR's CUDA + SYCL host-side helpers are scalar.
     Vectorising them is a measure-first follow-up — host XYB
     isn't on the critical path on either backend.
@@ -173,9 +173,9 @@ entirely.
 - CUDA + SYCL precedent: [ADR-0202](0202-float-adm-cuda-sycl.md) —
   float_adm cuda+sycl, the per-kernel `--fmad=false` flag map, and
   the `.extract` vs `.submit`/`.collect` pattern decisions.
-- CPU reference: [ADR-0130](0130-ssimulacra2-feature-extractor.md)
-  (extractor) + [ADR-0161](0161-ssimulacra2-simd.md) (SIMD
-  bit-exactness) + [ADR-0164](0164-ssimulacra2-deterministic-eotf-cbrt.md)
+- CPU reference: [ADR-0130](0130-ssimulacra2-scalar-implementation.md)
+  (extractor) + [ADR-0161](0161-ssimulacra2-simd-bitexact.md) (SIMD
+  bit-exactness) + [ADR-0164](0164-ssimulacra2-snapshot-gate.md)
   (deterministic EOTF + cbrt LUT/Newton).
 - Source: `req` (user prompt for batch-3 part 7b/7c,
   `feat/ssimulacra2-cuda-sycl-v2` PR).

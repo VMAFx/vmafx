@@ -152,7 +152,7 @@ case. The fallback strictly improves degraded-mode behaviour.
 
 ## References
 
-- [ADR-0110](0110-coverage-instrumentation-atomic-update.md) — gcov
+- [ADR-0110](0110-coverage-gate-fprofile-update-atomic.md) — gcov
   atomic profile updates.
 - [ADR-0111](0111-coverage-gate-gcovr-with-ort.md) — gcovr migration
   and ORT install in coverage CI.

@@ -19,7 +19,7 @@ orchestration) +
 `adm_csf_den_scale_s`, `adm_cm_s`, `adm_sum_cube_s`).
 
 The integer ADM Vulkan kernel already ships
-([ADR-0178](0178-integer-adm-vulkan.md), 1099 LOC C + 677 LOC GLSL).
+([ADR-0178](0178-vulkan-adm-kernel.md), 1099 LOC C + 677 LOC GLSL).
 float_adm is a **separate** CPU extractor with float buffers and
 double host accumulators — same algorithmic shape (4-scale CDF 9/7
 DB2 wavelet → decouple → CSF → contrast measure), different precision
@@ -112,7 +112,7 @@ scalar reference at the same threshold as the other batch 3 metrics.
 ## References
 
 - Parent: [ADR-0192](0192-gpu-long-tail-batch-3.md) — batch 3 scope.
-- Integer precedent: [ADR-0178](0178-integer-adm-vulkan.md) — host
+- Integer precedent: [ADR-0178](0178-vulkan-adm-kernel.md) — host
   driver structure and 16-pipeline pattern.
 - Mirror-trap precedent: [ADR-0197](0197-float-vif-gpu.md) — float_vif
   GPU port's `-2` mirror; this ADR documents that float_adm does NOT

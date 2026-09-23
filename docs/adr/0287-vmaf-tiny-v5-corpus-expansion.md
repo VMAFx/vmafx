@@ -39,8 +39,8 @@ Train `vmaf_tiny_v5` with the **identical** mlp_small architecture, hyperparamet
 ## References
 
 - Source: `req` (parent-task spec — paraphrased: "Expand the tiny-AI training corpus beyond today's 4-corpus set and retrain `vmaf_tiny_v2` on the expanded corpus. Compare PLCC vs the shipped checkpoint. If improved, ship as `vmaf_tiny_v5` (don't overwrite v2).")
-- v2 baseline: [ADR-0216](0216-vmaf-tiny-v2.md)
-- v3 arch ladder: [ADR-0241](0241-vmaf-tiny-v3-mlp-medium.md)
+- v2 baseline: [ADR-0244](0244-vmaf-tiny-v2.md)
+- v3 arch ladder: [ADR-0389](0389-vmaf-tiny-v3-mlp-medium.md)
 - v4 arch ladder: ADR-0242 (mlp_large)
 - Research digest: [Research-0057](../research/0057-vmaf-tiny-v5-corpus-expansion.md)
 - Trainer: [`ai/scripts/train_vmaf_tiny_v5.py`](../../ai/scripts/train_vmaf_tiny_v5.py)
