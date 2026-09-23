@@ -92,6 +92,7 @@ public authority; documentation never links into either local root.
 
 | ID | Title | Status | Tags |
 | --- | --- | --- | --- |
+| [ADR-1299](1299-sycl-ms-ssim-chroma-implementation.md) | Compute MS-SSIM chroma on the SYCL twin instead of accepting `enable_chroma` and ignoring it, and enforce the pyramid minimum on every scored plane rather than luma only. Supersedes ADR-0526's claim that MS-SSIM is luma-only by construction. | Accepted | sycl, gpu, feature-extractor, ms-ssim, parity |
 | [ADR-0001](0001-stash-benchmark-noise-file.md) | Treat uncommitted benchmark result JSON as noise | Accepted | workspace, git, testing |
 | [ADR-0002](0002-merge-path-master-default.md) | Merge path gpu-opt → sycl → master, master is fork default | Accepted | git, release, workspace |
 | [ADR-0003](0003-workingdir2-empty-planning-dir.md) | Introduce `.workingdir2` as new planning directory | Superseded by ADR-1277 | workspace, planning, claude |

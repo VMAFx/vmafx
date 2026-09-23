@@ -9064,6 +9064,16 @@ default, producing silently-wrong scores when the caller expected a
 non-default weight.
 
 
+- **`enable_chroma` now computes chroma on the SYCL MS-SSIM twin instead of being
+  accepted and ignored.** The option derived `n_planes` and nothing ever read it,
+  so setting it changed nothing on the GPU and the chroma features a model saw
+  came from the CPU twin under the ADR-0530 name fallback. Each plane now has its
+  own geometry, staging buffer and pyramid, and `float_ms_ssim_cb` / `_cr` are
+  advertised by the GPU twin. Verified on an Intel Arc A380 against the CPU twin
+  with a textured-chroma 4:2:0 fixture: identical to all six emitted digits across
+  three frames (ADR-1299).
+
+
 - **SYCL `psnr` chroma extension** (`psnr_sycl` now emits `psnr_y`,
   `psnr_cb`, `psnr_cr`) — second port of T3-15 GPU coverage long-tail
   batch 4 (T3-15(b)). Sibling to the CUDA twin in PR #520 / commit
@@ -23028,6 +23038,15 @@ proposed follow-up.
   installation failures and shell-safe environment export.
 
 
+- **The exported-symbol gate no longer fails on a compiler-generated variant of a
+  public function.** icpx emits `<name>|_._.<n>._.<m>` beside a function it clones
+  for offload; the checker compared the decorated name against the header name set
+  and flagged `vmaf_dnn_session_run|_._.1._.1` as a leaked symbol, although its
+  parent carries `VMAF_EXPORT`. The suffix is now stripped before the lookup, so a
+  variant is accepted exactly when its parent is public — and still rejected when
+  it is not.
+
+
 - **external-bench**: Validate wrapper JSON at the subprocess boundary
   and report malformed payloads as clear wrapper errors instead of
   letting aggregation fail later with `KeyError` / `TypeError`.
@@ -26201,6 +26220,16 @@ Two host-side correctness fixes in `core/src/feature/vulkan/motion_vulkan.c`:
   Without the probes, a pending-collect that already wrote those scores at
   `frame_index-1` would cause a "cannot be overwritten" warning and surface as a
   context synchronisation error.
+
+
+- **`float_ms_ssim=enable_chroma=true` no longer dies mid-run on small 4:2:0
+  input.** The pyramid minimum was checked against luma only, so a 4:2:0 input
+  between 176x176 and 352x352 passed init and then failed inside upstream
+  `ms_ssim.c`, which prints `error: scale below 1x1!` to stdout and returns 1 —
+  surfacing as a bare "problem with feature extractor" and no output file at all.
+  This fired on the repository's own 576x324 Netflix fixture, whose chroma is
+  288x162. Both the CPU and SYCL twins now check every scored plane and refuse at
+  init with the chroma size they measured and the luma resolution that would work.
 
 
 **integer_ms_ssim_cuda: add missing `enable_db` / `clip_db` options** — the CUDA

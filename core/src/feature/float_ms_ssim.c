@@ -121,6 +121,40 @@ static void ms_ssim_init_simd_dispatch(void)
 #endif
 }
 
+/* The pyramid minimum applies to every plane that will actually be walked, and
+ * with enable_chroma that includes the subsampled ones. init()'s own check
+ * sees only luma, so a 4:2:0 input between min_dim and 2*min_dim passes it and
+ * then fails mid-run on exactly the "scale below 1x1!" print that check exists
+ * to prevent -- upstream ms_ssim.c writes that to stdout and returns 1, which
+ * surfaces as a bare "problem with feature extractor" and no output file at
+ * all. Reproduced on this repository's own primary fixture: 576x324 4:2:0 has
+ * 288x162 chroma, 162 < 176, and `--feature float_ms_ssim=enable_chroma=true`
+ * writes no JSON.
+ *
+ * Plane geometry mirrors vmaf_picture_alloc (picture.c:146-149): 4:2:0 halves
+ * both axes with a ceiling, 4:2:2 halves width only, 4:4:4 is full size.
+ * 4:0:0 has enable_chroma cleared before this is reached. ADR-1299. */
+static int check_chroma_min_dim(const VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                                unsigned w, unsigned h, unsigned min_dim)
+{
+    const unsigned ss_hor = pix_fmt != VMAF_PIX_FMT_YUV444P ? 1u : 0u;
+    const unsigned ss_ver = pix_fmt == VMAF_PIX_FMT_YUV420P ? 1u : 0u;
+    const unsigned chroma_w = (w + ss_hor) >> ss_hor;
+    const unsigned chroma_h = (h + ss_ver) >> ss_ver;
+
+    if (chroma_w >= min_dim && chroma_h >= min_dim)
+        return 0;
+
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "%s: enable_chroma needs every plane to clear the pyramid minimum, "
+             "but %ux%u luma gives %ux%u chroma and the %d-level %d-tap pyramid "
+             "requires at least %ux%u. Use at least %ux%u luma for this pixel "
+             "format, or leave enable_chroma off to score luma only.\n",
+             fex->name, w, h, chroma_w, chroma_h, SCALES, GAUSSIAN_LEN, min_dim, min_dim,
+             min_dim << ss_hor, min_dim << ss_ver);
+    return -EINVAL;
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -144,6 +178,12 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
                  "%d-tap MS-SSIM pyramid requires at least %ux%u (Netflix#1414)\n",
                  fex->name, w, h, SCALES, GAUSSIAN_LEN, min_dim, min_dim);
         return -EINVAL;
+    }
+
+    if (s->enable_chroma) {
+        const int chroma_err = check_chroma_min_dim(fex, pix_fmt, w, h, min_dim);
+        if (chroma_err)
+            return chroma_err;
     }
 
     const unsigned peak = (1 << bpc) - 1;

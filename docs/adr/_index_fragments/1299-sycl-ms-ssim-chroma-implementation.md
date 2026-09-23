@@ -1,0 +1,1 @@
+| [ADR-1299](1299-sycl-ms-ssim-chroma-implementation.md) | Compute MS-SSIM chroma on the SYCL twin instead of accepting `enable_chroma` and ignoring it, and enforce the pyramid minimum on every scored plane rather than luma only. Supersedes ADR-0526's claim that MS-SSIM is luma-only by construction. | Accepted | sycl, gpu, feature-extractor, ms-ssim, parity |
