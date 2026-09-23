@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <math.h>
 #include <string.h>
 #include <stddef.h>
 
@@ -185,6 +186,76 @@ static const VmafOption options[] = {
     },
     {0}};
 
+/* Release everything alloc_buffers() may have taken. Safe on a partial
+ * allocation: every pointer is NULL until its own aligned_malloc returns, so
+ * this doubles as the unwind path and as close()'s worker. */
+static void free_buffers(VifState *s)
+{
+    if (s->ref)
+        aligned_free(s->ref);
+    if (s->dist)
+        aligned_free(s->dist);
+    if (s->ref_scaled)
+        aligned_free(s->ref_scaled);
+    if (s->dist_scaled)
+        aligned_free(s->dist_scaled);
+    if (s->vif_buf)
+        aligned_free(s->vif_buf);
+    vmaf_dictionary_free(&s->feature_name_dict);
+}
+
+/* Take every buffer init() needs, or none of them.
+ *
+ * This was a ladder of `goto fail` into a single unwind label. HISS-01 forbids
+ * the jump, and the fork's touched-file rule (ADR-0141) makes it this change's
+ * problem. Splitting the ladder out is the shape the rest of the tree already
+ * uses: the caller unwinds by calling free_buffers(), which is idempotent on a
+ * partial allocation. Allocation order and sizes are unchanged. */
+static int alloc_buffers(VmafFeatureExtractor *fex, VifState *s, unsigned h)
+{
+    s->ref = aligned_malloc(s->float_stride * h, 32);
+    if (!s->ref)
+        return -ENOMEM;
+    s->dist = aligned_malloc(s->float_stride * h, 32);
+    if (!s->dist)
+        return -ENOMEM;
+    s->ref_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
+    if (!s->ref_scaled)
+        return -ENOMEM;
+    s->dist_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
+    if (!s->dist_scaled)
+        return -ENOMEM;
+
+    /*
+     * Allocate VIF scratch buffer once.  compute_vif carves 10 equal-sized
+     * sub-planes out of this contiguous block.  The geometry is fixed after
+     * init, so a single aligned_malloc here replaces an aligned_malloc +
+     * aligned_free on every frame — eliminating ~79 MB/frame of allocator
+     * traffic at 1080p.  See ADR-0452.
+     */
+    const size_t vif_plane_sz = s->scaled_float_stride * s->scaled_h;
+    s->vif_buf = aligned_malloc(vif_plane_sz * VIF_SCRATCH_BUF_CNT, MAX_ALIGN);
+    if (!s->vif_buf)
+        return -ENOMEM;
+
+    /*
+     * ADR-0500 Win #3: pre-compute Gaussian filters for all 4 scales so that
+     * compute_vif() can skip vif_get_filter() (which calls expf) on every frame.
+     * The kernelscale is immutable after init, so this is always correct.
+     */
+    for (int sc = 0; sc < 4; ++sc) {
+        s->filter_width_cache[sc] = vif_get_filter_size(sc, (float)s->vif_kernelscale);
+        vif_get_filter(s->filter_cache[sc], sc, (float)s->vif_kernelscale);
+    }
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return -ENOMEM;
+
+    return 0;
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -235,97 +306,22 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     }
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
     s->scaled_float_stride = ALIGN_CEIL(s->scaled_w * sizeof(float));
-    s->ref = aligned_malloc(s->float_stride * h, 32);
-    if (!s->ref)
-        goto fail;
-    s->dist = aligned_malloc(s->float_stride * h, 32);
-    if (!s->dist)
-        goto fail;
-    s->ref_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
-    if (!s->ref_scaled)
-        goto fail;
-    s->dist_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
-    if (!s->dist_scaled)
-        goto fail;
 
-    /*
-     * Allocate VIF scratch buffer once.  compute_vif carves 10 equal-sized
-     * sub-planes out of this contiguous block.  The geometry is fixed after
-     * init, so a single aligned_malloc here replaces an aligned_malloc +
-     * aligned_free on every frame — eliminating ~79 MB/frame of allocator
-     * traffic at 1080p.  See ADR-0452.
-     */
-    const size_t vif_plane_sz = s->scaled_float_stride * s->scaled_h;
-    s->vif_buf = aligned_malloc(vif_plane_sz * VIF_SCRATCH_BUF_CNT, MAX_ALIGN);
-    if (!s->vif_buf)
-        goto fail;
-
-    /*
-     * ADR-0500 Win #3: pre-compute Gaussian filters for all 4 scales so that
-     * compute_vif() can skip vif_get_filter() (which calls expf) on every frame.
-     * The kernelscale is immutable after init, so this is always correct.
-     */
-    for (int sc = 0; sc < 4; ++sc) {
-        s->filter_width_cache[sc] = vif_get_filter_size(sc, (float)s->vif_kernelscale);
-        vif_get_filter(s->filter_cache[sc], sc, (float)s->vif_kernelscale);
+    const int alloc_err = alloc_buffers(fex, s, h);
+    if (alloc_err) {
+        free_buffers(s);
+        return alloc_err;
     }
 
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto fail;
-
     return 0;
-
-fail:
-    if (s->ref)
-        aligned_free(s->ref);
-    if (s->dist)
-        aligned_free(s->dist);
-    if (s->ref_scaled)
-        aligned_free(s->ref_scaled);
-    if (s->dist_scaled)
-        aligned_free(s->dist_scaled);
-    if (s->vif_buf)
-        aligned_free(s->vif_buf);
-    vmaf_dictionary_free(&s->feature_name_dict);
-    return -ENOMEM;
 }
 
-static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
-                   VmafFeatureCollector *feature_collector)
+/* The four VMAF_feature_vif_scaleN_score emits. Lifted out of extract() to keep
+ * it inside the 60-LOC limit (HISS-04); the emits are unchanged. */
+static int append_scale_scores(VifState *s, VmafFeatureCollector *feature_collector, unsigned index,
+                               const double *scores)
 {
-    VifState *s = fex->priv;
     int err = 0;
-
-    (void)ref_pic_90;
-    (void)dist_pic_90;
-
-    picture_copy(s->ref, s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
-    picture_copy(s->dist, s->float_stride, dist_pic, -128, dist_pic->bpc, 0);
-
-    // The scaling method has been checked for validity in the init callback
-    enum vif_scaling_method scaling_method;
-    vif_get_scaling_method(s->vif_prescale_method, &scaling_method);
-
-    vif_scale_frame_s(scaling_method, s->ref, s->ref_scaled, ref_pic->w[0], ref_pic->h[0],
-                      s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
-                      s->scaled_float_stride / sizeof(float));
-
-    vif_scale_frame_s(scaling_method, s->dist, s->dist_scaled, dist_pic->w[0], dist_pic->h[0],
-                      s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
-                      s->scaled_float_stride / sizeof(float));
-
-    double score, score_num, score_den;
-    double scores[8];
-    err =
-        compute_vif(s->ref_scaled, s->dist_scaled, s->scaled_w, s->scaled_h, s->scaled_float_stride,
-                    s->scaled_float_stride, &score, &score_num, &score_den, scores,
-                    s->vif_enhn_gain_limit, s->vif_kernelscale, s->vif_skip_scale0,
-                    s->vif_sigma_nsq, (const float (*)[128])s->filter_cache, s->filter_width_cache);
-    if (err)
-        return err;
 
     if (s->vif_skip_scale0) {
         err |= vmaf_feature_collector_append_with_dict(
@@ -348,8 +344,16 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale3_score",
         MAX(scores[6] / scores[7], s->vif_scale3_min_val), index);
 
-    if (!s->debug)
-        return err;
+    return err;
+}
+
+/* The debug-only num/den breakdown. Also lifted for HISS-04: it is two thirds
+ * of what extract() used to be, and it runs only when s->debug is set. */
+static int append_debug_features(VifState *s, VmafFeatureCollector *feature_collector,
+                                 unsigned index, double score, double score_num, double score_den,
+                                 const double *scores)
+{
+    int err = 0;
 
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "vif",
                                                    score, index);
@@ -395,20 +399,72 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     return err;
 }
 
+static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+                   VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
+                   VmafFeatureCollector *feature_collector)
+{
+    VifState *s = fex->priv;
+    int err = 0;
+
+    (void)ref_pic_90;
+    (void)dist_pic_90;
+
+    picture_copy(s->ref, s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
+    picture_copy(s->dist, s->float_stride, dist_pic, -128, dist_pic->bpc, 0);
+
+    // The scaling method has been checked for validity in the init callback
+    enum vif_scaling_method scaling_method;
+    vif_get_scaling_method(s->vif_prescale_method, &scaling_method);
+
+    vif_scale_frame_s(scaling_method, s->ref, s->ref_scaled, ref_pic->w[0], ref_pic->h[0],
+                      s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
+                      s->scaled_float_stride / sizeof(float));
+
+    vif_scale_frame_s(scaling_method, s->dist, s->dist_scaled, dist_pic->w[0], dist_pic->h[0],
+                      s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
+                      s->scaled_float_stride / sizeof(float));
+
+    double score, score_num, score_den;
+    double scores[8];
+    err =
+        compute_vif(s->ref_scaled, s->dist_scaled, s->scaled_w, s->scaled_h, s->scaled_float_stride,
+                    s->scaled_float_stride, &score, &score_num, &score_den, scores,
+                    s->vif_enhn_gain_limit, s->vif_kernelscale, s->vif_skip_scale0,
+                    s->vif_sigma_nsq, (const float (*)[128])s->filter_cache, s->filter_width_cache);
+    if (err)
+        return err;
+
+    /* NaN/Inf guard: the MAX() emits below are bare comparisons, and every
+     * comparison against NaN is false -- a non-finite ratio would silently take
+     * the min_val arm and be published as a finite, plausible score (0.0 by
+     * default, the *worst* VIF value) that no caller can tell apart from a real
+     * measurement.  A zero or non-finite denominator is reachable whenever
+     * vif_sigma_nsq is driven to 0.0 (the option's declared minimum).  Guard at
+     * runtime in both builds and fail the frame instead of masking it (mirrors
+     * the brisque.c and y_funque_plus.c finite-score guards).  Scale 0 is left
+     * alone: it has no MAX(), so a non-finite ratio there surfaces as-is. */
+    if (!isfinite(scores[2] / scores[3]) || !isfinite(scores[4] / scores[5]) ||
+        !isfinite(scores[6] / scores[7])) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_vif: non-finite scale score at frame %u "
+                 "(scale1=%g/%g scale2=%g/%g scale3=%g/%g)\n",
+                 index, scores[2], scores[3], scores[4], scores[5], scores[6], scores[7]);
+        return -EINVAL;
+    }
+    err |= append_scale_scores(s, feature_collector, index, scores);
+
+    if (!s->debug)
+        return err;
+
+    return append_debug_features(s, feature_collector, index, score, score_num, score_den, scores);
+}
+
 static int close(VmafFeatureExtractor *fex)
 {
     VifState *s = fex->priv;
-    if (s->ref)
-        aligned_free(s->ref);
-    if (s->dist)
-        aligned_free(s->dist);
-    if (s->ref_scaled)
-        aligned_free(s->ref_scaled);
-    if (s->dist_scaled)
-        aligned_free(s->dist_scaled);
-    if (s->vif_buf)
-        aligned_free(s->vif_buf);
-    vmaf_dictionary_free(&s->feature_name_dict);
+    /* Byte-identical to the unwind init() uses, so it is the same function
+     * (HISS-19) rather than a second copy that can drift from it. */
+    free_buffers(s);
     return 0;
 }
 

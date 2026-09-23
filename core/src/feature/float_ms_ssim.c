@@ -299,6 +299,18 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         if (err)
             return err;
 
+        /* NaN/Inf guard: convert_to_db() below bounds the score with a
+         * comparison, and every comparison against NaN is false -- the NaN
+         * falls out of MIN() as max_db, the *best* dB score there is. Guard
+         * the raw score before the conversion, so the linear path that
+         * appends it unbounded is covered too (mirrors the brisque.c and
+         * y_funque_plus.c guards; SpEED has its own family-scoped helper). */
+        if (!isfinite(score)) {
+            vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                     "float_ms_ssim: non-finite %s at frame %u (score=%g), failing frame\n",
+                     ms_ssim_feature_names[p], index, score);
+            return -EINVAL;
+        }
         if (s->enable_db)
             score = convert_to_db(score, s->max_db);
 

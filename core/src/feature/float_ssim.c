@@ -24,6 +24,7 @@
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
+#include "log.h"
 
 #include "mem.h"
 #include "ssim.h"
@@ -183,6 +184,19 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     if (err)
         return err;
 
+    /* NaN/Inf guard: every comparison against NaN is false, so a non-finite
+     * score slips past convert_to_db()'s `score >= 1.0` test and MIN() then
+     * publishes it as max_db -- the value reserved for perfect similarity.
+     * Guard the raw score (and the l/c/s atoms, which share the same
+     * accumulators) before the dB conversion rather than after, so the
+     * conversion cannot launder a non-measurement into a plausible finite
+     * dB (mirrors the y_funque_plus.c finite-atom guard). */
+    if (!isfinite(score) || !isfinite(l_score) || !isfinite(c_score) || !isfinite(s_score)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_ssim: non-finite score at frame %u (score=%g l=%g c=%g s=%g)\n", index,
+                 score, l_score, c_score, s_score);
+        return -EINVAL;
+    }
     if (s->enable_db)
         score = convert_to_db(score, s->max_db);
 

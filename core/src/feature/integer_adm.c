@@ -2259,6 +2259,19 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     AdmResult r;
     integer_compute_adm(s, ref_pic, dist_pic, &r);
 
+    /* NaN/Inf guard: every relational operator is false for NaN, so the MAX()
+     * below would take its `adm_min_val` arm and publish the floor -- a finite,
+     * plausible number -- in place of a non-measurement. `adm_dlm_weight` and
+     * `adm_min_val` are both bounded [0, 1] by the option table, so the blend is
+     * non-finite exactly when one of these two atoms is. Guard at runtime in
+     * both builds and fail the frame (mirrors the y_funque_plus.c finite-atom
+     * guard; the float_adm.c twin carries the same check). */
+    if (!isfinite(r.score) || !isfinite(r.score_aim)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm: non-finite score at frame %u (score=%g score_aim=%g)\n", index,
+                 r.score, r.score_aim);
+        return -EINVAL;
+    }
     err |= vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm2_score", r.score, index);
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,

@@ -322,7 +322,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 739,
+  "total_warnings": 737,
   "total_nolint_uncited": 0,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -369,7 +369,7 @@
     "core/src/feature/float_moment.c": 2,
     "core/src/feature/float_ms_ssim.c": 2,
     "core/src/feature/float_ssim.c": 2,
-    "core/src/feature/float_vif.c": 8,
+    "core/src/feature/float_vif.c": 6,
     "core/src/feature/integer_motion.c": 9,
     "core/src/feature/integer_motion.h": 4,
     "core/src/feature/integer_motion_v2.c": 4,
@@ -1223,6 +1223,39 @@
         }
       },
       "previous_baseline_sha256": "8b22b2cdd9c34bece507a15a9c8af7803ea8b46e45472e9b0052698ce1c0b27a"
+    },
+    {
+      "sources": [
+        "core/src/feature/float_ms_ssim.c",
+        "core/src/feature/float_ssim.c",
+        "core/src/feature/float_vif.c",
+        "core/src/feature/integer_adm.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/float_vif.c": {
+          "warnings": [
+            8,
+            7
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c4cf5607045ad865fc4abecd87bb27f468dfc1ff786c34835c2036667d4d62f2"
+    },
+    {
+      "sources": [
+        "core/src/feature/float_vif.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/float_vif.c": {
+          "warnings": [
+            7,
+            6
+          ]
+        }
+      },
+      "previous_baseline_sha256": "11e2809864e93497e8da267884c84ba75b6a4ff5f867525f2c86128e325494ff"
     }
   ]
 }
