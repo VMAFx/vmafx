@@ -116,7 +116,7 @@ jobs:
           # -DGL_SILENCE_DEPRECATION would only hide it.
           ./configure --fatal-warnings \
             --enable-version3 --enable-libvmaf --disable-indevs \
-            --disable-filter=coreimage \
+            --disable-filter=coreimage --disable-securetransport \
             --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
           build_jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
           make -j "$build_jobs" build 2>&1 | tee /tmp/ffmpeg-build.log

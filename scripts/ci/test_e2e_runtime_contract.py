@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -177,16 +178,39 @@ class E2ERuntimeContractTest(unittest.TestCase):
         self.assertIn("0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch", series)
 
     def test_language_standards_use_warning_clean_meson_options(self) -> None:
+        """Language standards come from Meson's built-in preference lists.
+
+        This asserts ADR-1056, which is the policy the tree implements.
+        ADR-1273 would replace it with `c_std=c23,c2x,c17` / `cpp_std=c++23,
+        c++latest` and no `/std:` injection at all, but it is still **Proposed**
+        -- so asserting its spelling here would make the contract test enforce a
+        decision that has not been taken. Two parts of ADR-1056 are load-bearing
+        and are pinned individually below rather than by matching one long string.
+        """
         meson = CORE_MESON.read_text(encoding="utf-8")
 
-        self.assertIn("'c_std=c23,c2x,c17'", meson)
-        self.assertIn("'cpp_std=c++23,c++latest'", meson)
+        # The trailing `none` is not cosmetic: Meson's intel-llvm-cl backend
+        # advertises only c89/c99/c11, so it is the sole entry that backend can
+        # accept and configure aborts on the Windows MSVC+SYCL leg without it.
+        self.assertIn("'c_std=c23,c2x,c17,none'", meson)
+        self.assertIn("'cpp_std=c++26,c++23,c++latest'", meson)
+
+        # Accepting a C++23 spelling does not prove the paired standard library
+        # ships the API, so the probe stays regardless of which ADR governs.
         self.assertIn("std::expected in selected C++ standard", meson)
+
+        # No hand-rolled standard plumbing: those bypass Meson's compiler checks.
         self.assertNotIn("c_std_args", meson)
         self.assertNotIn("cxx_std_flag", meson)
-        self.assertNotRegex(
-            meson,
-            r"add_project_arguments\([^\n]*(?:-std=|/std:)",
+
+        # `/std:clatest` is injected for MSVC-syntax C drivers only, because Meson
+        # validates c_std for that backend and then emits no /std flag. Every other
+        # spelling of a standard flag through add_project_arguments stays banned.
+        std_injections = re.findall(r"add_project_arguments\([^\n]*(?:-std=|/std:)[^\n]*", meson)
+        self.assertEqual(
+            std_injections,
+            ["add_project_arguments('/std:clatest', language: 'c')"],
+            "only the MSVC /std:clatest injection is permitted (ADR-1056)",
         )
 
     def test_all_runtime_images_are_exported_and_loaded(self) -> None:
