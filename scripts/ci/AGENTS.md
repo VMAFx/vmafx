@@ -183,6 +183,11 @@ in `.pre-commit-config.yaml`, and a recipe may not spell `ruff==<n>` or
 `pre-commit hooks` group (two regex managers on `Makefile`); keep the group
 name identical on both rules or the bumps split into two pull requests and the
 first one fails this gate. Fixture: `tests/test_formatter_pins_single_source.py`.
+The same checker keeps `VIRTUAL_ENV_PATH` absolute and rejects recipe-local
+`$(VENV)/bin` prefixes: Meson persists the Ninja path and invokes it from the
+build directory while generating `compile_commands.json`, so a relative path
+breaks the canonical `make lint` gate. Cython likewise invokes the absolute
+`$(VENV_PYTHON)` after changing into `python/`.
 
 `check_mypy_python_version` owns the third pairing (ADR-1282): `pyproject.toml`'s
 `[tool.mypy] python_version` must equal the `major.minor` floor of
@@ -777,6 +782,15 @@ write only after whole candidate succeeds. Disposable Git must discard
 inherited `GIT_*` repository variables and caller Git configuration. Discovery
 scheduled, accepts only stable tags; ordinary checks use reviewed tag.
 Required aggregator name = exactly `FFmpeg Patch Stack`.
+
+`checkout-annotated-tag.sh` is the warning-clean release checkout shared by
+Docker, dev-container, hosted-integration, and smoke consumers. It must resolve
+the peeled commit for annotated tags, fetch that exact commit without inherited
+`GIT_*` or caller configuration, verify `HEAD`, and recreate the local tag for
+version discovery. Never replace it with `git clone --depth=1 --branch`: the
+container Git version warns that an annotated tag object is not a commit.
+`test_ffmpeg_patch_smoke_safety.py` uses an annotated fixture tag and rejects
+warning/error output.
 
 Fixture setup and assertions obey same isolation rule as production
 replayer. `test_ffmpeg_patch_stack.py`, `test_ffmpeg_patch_smoke_safety.py`

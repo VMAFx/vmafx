@@ -99,11 +99,47 @@ jobs:
 
       - name: Build FFmpeg
         run: |
-          git clone -q --branch "$FFMPEG_TAG" --depth=1 "$FFMPEG_REMOTE" ffmpeg
+          scripts/ci/checkout-annotated-tag.sh "$FFMPEG_REMOTE" "$FFMPEG_TAG" ffmpeg
           cd ffmpeg
-          ./configure --enable-version3 --enable-libvmaf --disable-indevs \
+          # This matrix intentionally avoids the fork integration series so it
+          # continues to prove compatibility with stock FFmpeg surfaces. Apply
+          # only the source-level warning hardening needed to make diagnostics
+          # fatal on the pinned release.
+          if ! git apply ../ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch; then
+            echo "FATAL: FFmpeg warning-hardening patch did not apply" >&2
+            exit 1
+          fi
+          # --disable-filter=coreimage AND coreimagesrc: both filters live in
+          # libavfilter/vf_coreimage.m, so disabling only the first still built the
+          # file and kept all 14 of its warnings. Measured: the run still logged
+          # `OBJCC libavfilter/vf_coreimage.o` with coreimagesrc in the enabled list.
+          # The file builds against
+          # NSOpenGLPFAAccelerated, deprecated in macOS 10.14, and nothing in this
+          # integration uses the filter. Scoping it out is consistent with
+          # --disable-indevs above and leaves the warning gate meaningful, where
+          # -DGL_SILENCE_DEPRECATION would only hide it.
+          ./configure --fatal-warnings \
+            --enable-version3 --enable-libvmaf --disable-indevs \
+            --disable-filter=coreimage --disable-filter=coreimagesrc \
+            --disable-securetransport \
             --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
-          sudo make --quiet -j "$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)" install
+          build_jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
+          make -j "$build_jobs" build 2>&1 | tee /tmp/ffmpeg-build.log
+          fate_list="$(make -s fate-list)"
+          fate_targets=()
+          while IFS= read -r target; do
+            fate_targets+=("$target")
+          done < <(printf '%s\n' "$fate_list" | awk '/^fate-/')
+          if (( ${#fate_targets[@]} == 0 )); then
+            echo "FATAL: FFmpeg generated no local FATE targets" >&2
+            exit 1
+          fi
+          make -j "$build_jobs" "${fate_targets[@]}" 2>&1 | tee -a /tmp/ffmpeg-build.log
+          if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log; then
+            echo "FATAL: FFmpeg emitted compiler warnings" >&2
+            exit 1
+          fi
+          sudo make install
 
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
   ffmpeg-sycl:
@@ -131,7 +167,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install meson
           sudo apt-get update
-          sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev
+          # libva-dev travels with libvpl-dev on purpose. --enable-libvpl turns on
+          # QSV, and on Linux QSV runs through VAAPI: without libva, FFmpeg
+          # compiles hwcontext_qsv.c with every #if CONFIG_VAAPI block dropped,
+          # which leaves seven declarations unused (185, 528, 533, 536, 1514,
+          # 1515, 2040 in n9.0.2) and trips the warning gate below. It is also a
+          # QSV configuration nobody ships. Installing it compiles those paths
+          # back in rather than patching FFmpeg to delete the variables.
+          sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev libva-dev
 
       - name: Install Intel oneAPI
         # oneAPI version comes from ONEAPI_APT_PACKAGE in build-config.env;
@@ -187,7 +230,7 @@ jobs:
 
       - name: Build FFmpeg with SYCL patch series
         run: |
-          git clone -q --branch "$FFMPEG_TAG" --depth=1 "$FFMPEG_REMOTE" ffmpeg
+          scripts/ci/checkout-annotated-tag.sh "$FFMPEG_REMOTE" "$FFMPEG_TAG" ffmpeg
           cd ffmpeg
           # Apply the patch series in series.txt order. Patch 0003 (SYCL)
           # depends on fields added by 0001 (tiny-AI), so applying out of
@@ -195,16 +238,33 @@ jobs:
           while IFS= read -r line; do
             case "$line" in ''|\#*) continue ;; esac
             echo "Applying ffmpeg-patches/$line"
-            git apply "../ffmpeg-patches/$line" \
-              || patch -p1 < "../ffmpeg-patches/$line"
+            if ! git apply "../ffmpeg-patches/$line"; then
+              echo "FATAL: ffmpeg-patches/$line did not apply against $FFMPEG_TAG" >&2
+              exit 1
+            fi
           done < ../ffmpeg-patches/series.txt
           # libvmaf-sycl is auto-detected by check_pkg_config in patch 0003;
           # there is no `--enable-libvmaf-sycl` flag to pass.
           PKG_CONFIG_PATH="/usr/local/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH" \
-          ./configure --enable-version3 --enable-libvmaf \
+          ./configure --fatal-warnings --enable-version3 --enable-libvmaf \
             --enable-libvpl --disable-indevs --cc="$CC" --cxx="$CXX" \
             || { tail -50 ffbuild/config.log; exit 1; }
-          sudo make --quiet -j "$(nproc)" install
+          make -j "$(nproc)" build 2>&1 | tee /tmp/ffmpeg-build.log
+          fate_list="$(make -s fate-list)"
+          fate_targets=()
+          while IFS= read -r target; do
+            fate_targets+=("$target")
+          done < <(printf '%s\n' "$fate_list" | awk '/^fate-/')
+          if (( ${#fate_targets[@]} == 0 )); then
+            echo "FATAL: FFmpeg generated no local FATE targets" >&2
+            exit 1
+          fi
+          make -j "$(nproc)" "${fate_targets[@]}" 2>&1 | tee -a /tmp/ffmpeg-build.log
+          if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log; then
+            echo "FATAL: FFmpeg emitted compiler warnings" >&2
+            exit 1
+          fi
+          sudo make install
           echo "FFmpeg with SYCL support built successfully"
 
   # ffmpeg-vulkan job removed per ADR-0726: the Vulkan backend was dropped from

@@ -14,7 +14,7 @@ ARG CUDA_BUILDER="nvidia/cuda:13.3.1-devel-ubuntu26.04@sha256:8cf42b8dc4c34d47fb
 FROM ${CUDA_BUILDER}
 
 ARG NV_CODEC_TAG="n13.1.15.0"
-ARG FFMPEG_TAG=n9.0.1
+ARG FFMPEG_TAG=n9.0.2
 ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 # Broadened gencode: Turing baseline (sm_75) + Ampere (sm_80) + Hopper (sm_90) +
 # Blackwell consumer (sm_120). CUDA 13 dropped sm_50/60/70.
@@ -140,24 +140,25 @@ RUN set -e; \
     while IFS= read -r line; do \
         case "$line" in ''|\#*) continue ;; esac; \
         echo "Applying ffmpeg-patches/$line"; \
-        git apply "/tmp/ffmpeg-patches/$line" 2>/dev/null \
-            || patch -p1 < "/tmp/ffmpeg-patches/$line"; \
+        if ! git apply "/tmp/ffmpeg-patches/$line"; then \
+            echo "FATAL: patch $line did not apply against ${FFMPEG_TAG}" >&2; \
+            exit 1; \
+        fi; \
     done < /tmp/ffmpeg-patches/series.txt
 
 # libvmaf-sycl is auto-detected by FFmpeg's check_pkg_config (added by
 # patch 0003); there is no `--enable-libvmaf-sycl` flag to pass. SYCL
 # support follows libvmaf's pkg-config (set by `-Denable_sycl=true` at
 # libvmaf build time).
-# `--enable-libnpp` is omitted: FFmpeg n8.1's libnpp probe carries an
-# explicit `die "ERROR: libnpp support is deprecated, version 13.0 and up
-# are not supported"` (configure:7335-7336) that fires on the base image's
-# CUDA 13.x libnpp. The npp_*_filter set (scale_npp, transpose_npp, etc.)
-# is unrelated to VMAF; cuvid + nvdec + nvenc + libvmaf-cuda are what we
-# actually use here. Revisit once we move to an FFmpeg release that
-# supports CUDA 13 libnpp upstream.
+# `--enable-libnpp` is omitted: FFmpeg n9.0.2 removed libnpp and retains the
+# option only as a warning-producing compatibility no-op. The npp_* filter set
+# is unrelated to VMAF; cuvid + nvdec + nvenc + libvmaf-cuda are the surfaces
+# this image uses. Re-add the option only if a future FFmpeg release restores
+# a real libnpp probe and the matching CUDA contract is validated.
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
     CCACHE_DIR=/root/.cache/ccache \
     ./configure \
+        --fatal-warnings \
         --enable-nonfree \
         --enable-nvdec \
         --enable-nvenc \
@@ -170,7 +171,19 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
         --cc='ccache gcc' \
         --cxx='ccache g++' \
         --nvccflags="${FFMPEG_NVCC_FLAGS}" && \
-    make -j"$(nproc)" && \
+    make -j"$(nproc)" 2>&1 | tee /tmp/ffmpeg-build.log && \
+    awk '/^\+\+\+ b\//{sub(/^\+\+\+ b\//,""); print}' \
+        /tmp/ffmpeg-patches/*.patch | sort -u > /tmp/ffmpeg-patched-files.txt && \
+    if [ ! -s /tmp/ffmpeg-patched-files.txt ]; then \
+        echo "FATAL: derived no patched-file list; the warning gate would pass vacuously" >&2; \
+        exit 1; \
+    fi && \
+    if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log \
+        | grep -Ff /tmp/ffmpeg-patched-files.txt; then \
+        echo "FATAL: a file this fork patches emitted compiler warnings" >&2; \
+        exit 1; \
+    fi && \
+    rm /tmp/ffmpeg-build.log && \
     make install
 
 # ---------- python tools ----------

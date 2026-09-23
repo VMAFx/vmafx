@@ -8,11 +8,13 @@ VIRTUAL_ENV_ABS := $(abspath $(VIRTUAL_ENV_PATH))
 
 # Build tools configured in the virtual environment
 PYTHON_INTERPRETER := python3
-VENV_PIP := $(VIRTUAL_ENV_PATH)/pip
+VENV_PIP := $(VENV)/bin/pip
 VENV_PYTHON := $(VIRTUAL_ENV_PATH)/python
-MESON := $(VIRTUAL_ENV_PATH)/meson
-MESON_SETUP := $(MESON) setup
-NINJA := $(VIRTUAL_ENV_PATH)/ninja
+MESON := $(VENV)/bin/meson
+MESON_EXEC := $(abspath $(MESON))
+MESON_SETUP := "$(MESON_EXEC)" setup
+NINJA := $(VENV)/bin/ninja
+NINJA_EXEC := $(abspath $(NINJA))
 
 # Lint and format tools resolve from the project venv first, then the system
 # PATH. Without this, `make lint-py` / `make format-check` silently found no
@@ -59,7 +61,7 @@ $(DEBUG_DIR): $(MESON) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) $(DEBUG_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_DEBUG) $(ENABLE_FLOAT) $(ENABLE_CUDA)
 
 cythonize: cythonize-deps
-	pushd python && ../$(VENV_PYTHON) setup.py build_ext --build-lib . && popd || exit 1
+	pushd python && "$(VENV_PYTHON)" setup.py build_ext --build-lib . && popd || exit 1
 
 build: $(BUILD_DIR) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR)

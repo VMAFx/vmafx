@@ -279,6 +279,61 @@ contract while preserving ADR-1113's base mirror decision.
 
 See [ADR-1270](adr/1270-bounded-process-execution.md) and
 [Research-2071](research/2071-bounded-process-execution.md).
+## chore/ffmpeg-n9.0.2 — stable patch baseline (fork-local, 2026-09-20)
+
+- `build-config.env` owns `FFMPEG_TAG=n9.0.2`; `Dockerfile`,
+  `Dockerfile.ffmpeg`, `dev/Containerfile`, and `docker/Dockerfile.node` are
+  generated mirrors. A future stable-tag refresh must update them through
+  `scripts/ci/ffmpeg_patch_stack.py --refresh`, never as independent pins.
+- The existing 18 integration patches remain byte-identical; patch 0019 adds
+  the 126-diagnostic GCC 14/16 warning-clean hardening. All 19 entries replay cumulatively on
+  upstream commit `946fcce07b6dcd0331c8cc609192aeff5e1924f8`, producing tree
+  `1fd76f79179a6a51b5bb773a89c5334c6324c755`. Preserve series order and run
+  `python3 scripts/ci/ffmpeg_patch_stack.py --check`; independent
+  `git apply --check` calls are not an equivalent gate.
+- FFmpeg n9.0.2 has removed libnpp support. Its retained
+  `--enable-libnpp` switch only warns that enabling it does nothing, so the
+  dev image deliberately omits the flag to keep configure warning-clean.
+  Re-add it only if a future FFmpeg release restores a real probe and the
+  matching CUDA contract is validated.
+- Patch 0019 must not be replaced by warning suppressions or component
+  removal. VVC remains enabled; its scaled-prediction scratch belongs to
+  `VVCLocalContext`. The maintained root CUDA, compatibility, dev, and node
+  FFmpeg builders, hosted integration lanes, and patch smoke harness all use
+  `--fatal-warnings` plus a compiler-log warning gate. The ordinary hosted
+  compatibility matrix applies patch 0019 alone so it remains independent of
+  fork integration surfaces while compiling the warning-clean pinned source.
+  Hosted integration and the smoke harness compile all test programs and run
+  every generated, sample-independent FATE target inside that log gate; do not
+  narrow it back to production objects because APV, CABAC, checkasm, and newer
+  compiler versions have their own warning inventory.
+  Capture `make -s fate-list` before filtering its output to `fate-*`; on a
+  pristine tree it can also emit a generated-makefile status line, which is
+  not a target. Release-tag checkouts must use
+  `scripts/ci/checkout-annotated-tag.sh`: direct shallow clones warn on
+  annotated FFmpeg and AMF tags in the container Git version.
+  `Dockerfile.ffmpeg` must continue replaying the canonical series rather than
+  the deleted `patches/ffmpeg-libvmaf-gpu.patch` path. No patch path may fall
+  back to fuzz-capable `patch -p1`. The dev image's encoder inventory is
+  fail-closed because listing compiled encoders needs no device.
+- The partial libvmaf builders in `docker/Dockerfile.node` and
+  `Dockerfile.go-server` must copy `scripts/ci/check-msvc-clz-shim.sh`, install
+  both `xxd` and `make`, preserve `libvmaf.so*` links with `cp -a`, and stage
+  Meson's generated `libvmaf.pc`. Do not restore the handwritten pkg-config
+  template based on `VMAFX_VERSION`: that is the product version, while FFmpeg
+  probes the independent libvmaf interface version.
+- `core/meson.build` uses ordered `c_std` / `cpp_std` preferences per ADR-1273;
+  do not restore direct standard flags from ADR-1056. `core/src/model.c` keeps
+  the built-in table behind `VMAF_BUILT_IN_MODELS`, and
+  `core/test/test_model.c` must continue passing with that option disabled.
+- The root Makefile resolves `VIRTUAL_ENV_PATH` with `$(abspath $(VENV))` and
+  passes that absolute directory to Meson/Ninja recipes. Meson invokes its
+  recorded Ninja path from `core/build` to create `compile_commands.json`;
+  restoring a relative `$(VENV)/bin` prefix makes `make lint` fail after the
+  build. Keep `check_makefile_venv_paths()` and its fixture in sync.
+
+See [Research-2073](research/2073-ffmpeg-n9-0-2-stable-refresh.md) and
+[ADR-1273](adr/1273-warning-clean-meson-language-standards.md).
 
 ## perf/cambi-simd-gaps-2 — AVX-512 and NEON for every CAMBI stage, scanned AVX2 c-values (fork-local, 2026-09-18)
 

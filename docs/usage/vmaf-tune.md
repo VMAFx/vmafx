@@ -1498,7 +1498,7 @@ alias on the argv for diagnosability.
 | 5 | `xq` | ProRes 4444 XQ | High-dynamic-range / wide-gamut master |
 
 Source: FFmpeg `libavcodec/videotoolboxenc.c` `prores_options` AVOption
-table for the supported FFmpeg n9.0.1 baseline.
+table for the supported FFmpeg n9.0.2 baseline.
 
 ProRes is intra-only — every frame is a keyframe — so `--keyint` /
 `--force-keyframes` flags are accepted but have no rate-distortion

@@ -1393,6 +1393,7 @@ nav:
         - "ADR-1265: clang-tidy-header-filter-absolute-paths": adr/1265-clang-tidy-header-filter-absolute-paths.md
         - "ADR-1270: bounded-process-execution": adr/1270-bounded-process-execution.md
         - "ADR-1271: neo-buildkit-github-token-secret": adr/1271-neo-buildkit-github-token-secret.md
+        - "ADR-1273: warning-clean-meson-language-standards": adr/1273-warning-clean-meson-language-standards.md
         - "ADR-1274: hiss-21-replay-gate": adr/1274-hiss-21-replay-gate.md
         - "ADR-1276: pelorus-v022-parser-safety-repin": adr/1276-pelorus-v022-parser-safety-repin.md
         - "ADR-1277: workingdir-contract-cleanup": adr/1277-workingdir-contract-cleanup.md

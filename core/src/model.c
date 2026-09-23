@@ -343,6 +343,12 @@ const char *vmaf_model_feature_name(const VmafModel *model, unsigned index)
  * the ordering of the frees is unchanged — mc->model before mc. */
 static int model_collection_new(VmafModelCollection **out, const VmafModel *model)
 {
+    /* Checked before anything is allocated: every strlen() below would
+     * dereference a null name, and the caller reaches here straight from a
+     * parsed model dictionary where the key can legitimately be absent. */
+    if (!model->name)
+        return -EINVAL;
+
     VmafModelCollection *mc = malloc(sizeof(*mc));
     if (!mc)
         return -ENOMEM;

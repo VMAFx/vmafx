@@ -13,7 +13,7 @@
 #                           ROCm latest (HIP toolchain;
 #                           build-only on NVIDIA host)
 #   Stage 3 (libvmaf)     — source build of libvmaf with all backends enabled
-#                           against an in-tree FFmpeg n9.0.1 (or `FFMPEG_TAG`
+#                           against an in-tree FFmpeg n9.0.2 (or `FFMPEG_TAG`
 #                           build-arg override) with the fork's
 #                           `ffmpeg-patches/series.txt` applied
 #   Stage 4 (python-env)  — install vmaf-train + vmaf-tune
@@ -727,7 +727,7 @@ RUN for B in cpu cuda sycl hip; do \
     done
 
 # ---------------------------------------------------------------------------
-# Stage 3.5 — FFmpeg n9.0.1 with our libvmaf integration patches
+# Stage 3.5 — FFmpeg n9.0.2 with our libvmaf integration patches
 # ---------------------------------------------------------------------------
 # Builds the same FFmpeg version the fork's `ffmpeg-patches/series.txt` is
 # pinned against. Applies every patch in series order, then configures with
@@ -737,7 +737,7 @@ RUN for B in cpu cuda sycl hip; do \
 # MCP probe can shell out to a real FFmpeg toolchain end-to-end.
 USER root
 
-# Codec dependencies for FFmpeg n9.0.1 build:
+# Codec dependencies for FFmpeg n9.0.2 build:
 #
 #   libx264-dev      H.264 software encoder
 #   libx265-dev      H.265 software encoder
@@ -822,7 +822,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # pkgconfig/`, which the FFmpeg `--enable-libsvtav1` configure probe
 # resolves via PKG_CONFIG_PATH.
 #
-# Pin to a release tag that FFmpeg n9.0.1's configure accepts
+# Pin to a release tag that FFmpeg n9.0.2's configure accepts
 # (`SvtAv1Enc >= 0.9.0`) and that ships modern presets (`-preset 6` /
 # `-preset 8` are the rate-quality knobs vmaf-tune's compare sweep
 # exercises). Tags 2.x are current at time of writing; 2.1.0 is a
@@ -891,25 +891,26 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-m
 #   `h264_amf` / `hevc_amf` / `av1_amf` will probe-fail at runtime ("encoder
 #   compiled in, dlopen libamfrt64.so failed"). vmaf-tune's probe handles
 #   that case as a per-encoder skip — see ADR-0541 §Consequences.
-# FFmpeg n9.0.1's configure probe is
+# FFmpeg n9.0.2's configure probe is
 # `AMF_VERSION >= 0x0001000400240000` (= 1.4.36); older AMF tags hard-error
 # with `ERROR: amf requested but not found`. v1.4.36 is the minimum compatible
-# tag (verified 2026-08-31 against the n9.0.1 configure source).
+# tag (verified 2026-09-20 against the n9.0.2 configure source).
 # 1.5.2 satisfies the >=1.4.36 probe. `--disable-filter=amf_capture` in the
 # FFmpeg configure already neutralises the DisplayCapture.h C++ header change
 # in 1.5.x. Bumped from 1.4.36 per ADR-0568 (SDK audit 2026-05-18).
 ARG AMF_VERSION=1.5.2
-RUN git clone --depth=1 --branch "v${AMF_VERSION}" \
-        https://github.com/GPUOpen-LibrariesAndSDKs/AMF.git /tmp/AMF \
+RUN /build/vmaf/scripts/ci/checkout-annotated-tag.sh \
+        https://github.com/GPUOpen-LibrariesAndSDKs/AMF.git "v${AMF_VERSION}" /tmp/AMF \
     && mkdir -p /usr/local/include/AMF \
     && cp -r /tmp/AMF/amf/public/include/* /usr/local/include/AMF/ \
     && rm -rf /tmp/AMF
 
 USER vmaf
 
-ARG FFMPEG_TAG=n9.0.1
+ARG FFMPEG_TAG=n9.0.2
 ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
-RUN git clone --depth=1 --branch ${FFMPEG_TAG} "${FFMPEG_REMOTE}" /build/ffmpeg
+RUN /build/vmaf/scripts/ci/checkout-annotated-tag.sh \
+        "${FFMPEG_REMOTE}" "${FFMPEG_TAG}" /build/ffmpeg
 WORKDIR /build/ffmpeg
 
 # Apply every patch from ffmpeg-patches/series.txt in order.
@@ -945,16 +946,14 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 #                          `scale_cuda`, `hwupload_cuda` etc. that the GPU
 #                          encode pipelines lean on). Requires CUDA_HOME.
 #
-#   `--enable-libnpp` is INTENTIONALLY OMITTED. FFmpeg n9.0.1's NPP
-#   compatibility ceiling is CUDA 12.x; passing the flag against
-#   CUDA 13.x (the version the dev image tracks via the unversioned
-#   `cuda-toolkit` apt meta-package) hard-errors at configure time with
-#   `ERROR: libnpp support is deprecated, version 13.0 and up are not
-#   supported`. `scale_cuda` (built via `--enable-cuda-nvcc`) covers
-#   the usual hwupload → scale → nvenc GPU pipeline without libnpp;
-#   `scale_npp` is the only filter we lose, and it has no consumer in
-#   the vmaf-tune / MCP / corpus scripts. Re-add `--enable-libnpp`
-#   only if the image is pinned to a CUDA <=12.x base.
+#   `--enable-libnpp` is INTENTIONALLY OMITTED. FFmpeg n9.0.2 has
+#   removed libnpp support; it retains the option only as a compatibility
+#   no-op and emits `libnpp has been removed and enabling it does nothing`.
+#   Passing it would therefore add no filter and would make a warning-clean
+#   configure impossible. `scale_cuda` (built via `--enable-cuda-nvcc`)
+#   covers the usual hwupload → scale → nvenc GPU pipeline. Re-add the
+#   option only if a future FFmpeg release restores a real libnpp probe and
+#   the image validates the matching CUDA contract.
 #
 #   Intel hardware (Arc / Xe / Gen11+):
 #     --enable-libvpl      Intel oneVPL — the modern unified API that
@@ -978,7 +977,7 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 #                          `extern "C"` blocks. FFmpeg compiles
 #                          `vsrc_amf.c` as plain C and chokes on the
 #                          C++ syntax (verified 2026-05-18 against AMF
-#                          v1.4.36 / FFmpeg n9.0.1). The filter is for
+#                          v1.4.36 / FFmpeg n9.0.2). The filter is for
 #                          screen-capture sources we don't use; the
 #                          `*_amf` encoders live in separate
 #                          translation units (`libavcodec/amfenc*.c`)
@@ -997,10 +996,26 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 # also passes it through to its own pkg-config invocations which lose the
 # implicit defaults. Listing the multiarch path explicitly is the
 # robust fix (verified post-ADR-0541 SvtAv1Enc-not-found regression).
+# The warning gate here covers the files this fork patches, not all of FFmpeg.
+# The CI workflow legs build a focused FFmpeg and are held to zero warnings
+# outright; this image is a development container with --enable-gpl
+# --enable-nonfree and some twenty external libraries, so it compiles far more
+# upstream code, against whatever GCC the base image happens to ship. Holding
+# all of that warning-free is not a line this fork can keep: measured
+# 2026-09-23, FFmpeg n9.0.2 emits three -Wstringop-overflow warnings in
+# libavcodec/wmalosslessdec.c under GCC 15 (reproduced in a gcc:15 container)
+# and none under GCC 16, and the bound GCC cannot see there IS validated in
+# decode_init. A gate that fails on upstream's own diagnostics under one
+# distro's compiler is a gate that fails for reasons nobody here can fix.
+#
+# What the fork patches, it owns. The list is derived from the applied series
+# rather than hand-maintained, so a new patch widens the gate automatically,
+# and an empty list is a hard failure rather than a silent pass.
 RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
     CCACHE_DIR=/home/vmaf/.cache/ccache \
     PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
     ./configure \
+        --fatal-warnings \
         --prefix=/usr/local \
         --enable-gpl --enable-version3 --enable-nonfree \
         --enable-libvmaf \
@@ -1021,7 +1036,20 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         --cxx='ccache g++' \
         --extra-cflags="-I${CUDA_HOME}/include -I/usr/local/include" \
         --extra-ldflags="-L${CUDA_HOME}/lib64 -L/usr/local/lib" \
-    && make -j"$(nproc)"
+    && make -j"$(nproc)" 2>&1 | tee /tmp/ffmpeg-build.log \
+    && awk '/^\+\+\+ b\//{sub(/^\+\+\+ b\//,""); print}' \
+        /build/vmaf/ffmpeg-patches/*.patch | sort -u > /tmp/ffmpeg-patched-files.txt \
+    && if [ ! -s /tmp/ffmpeg-patched-files.txt ]; then \
+        echo "FATAL: derived no patched-file list; the warning gate would pass vacuously" >&2; \
+        exit 1; \
+    fi \
+    && echo "warning gate covers $(wc -l < /tmp/ffmpeg-patched-files.txt) fork-patched file(s)" \
+    && if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log \
+        | grep -Ff /tmp/ffmpeg-patched-files.txt; then \
+        echo "FATAL: a file this fork patches emitted compiler warnings" >&2; \
+        exit 1; \
+    fi \
+    && rm /tmp/ffmpeg-build.log /tmp/ffmpeg-patched-files.txt
 
 USER root
 # Install and then remove the FFmpeg source tree (sources + build objects).
@@ -1034,15 +1062,13 @@ RUN make -C /build/ffmpeg install \
 
 # ---- Build-time encoder probe (ADR-0541) ----------------------------------
 # Walk every encoder this stage promises and grep the actual `ffmpeg
-# -encoders` output for it. The probe is a soft-gate (`|| echo WARN`)
-# because hardware encoders need the matching userspace driver to *load*
-# but not to be *listed*. The compile-in promise is what we lock down
-# here — if a future configure-flag tweak silently drops `--enable-amf`
-# or `--enable-libvvenc`, the WARN line catches it on every rebuild
-# instead of waiting for a user to run a sweep.
+# -encoders` output for it. Listing a compiled encoder does not require its
+# hardware device, so a missing promised encoder is a build failure rather
+# than a warning. This catches configure drift before a user runs a sweep.
 #
 # Mirrors the libvmaf backend probe at stage 3.
 RUN echo "=== ffmpeg encoder probe (ADR-0541) ===" \
+    && missing=0 \
     && for enc in libx264 libx265 libvpx-vp9 libsvtav1 libvvenc \
                   h264_nvenc hevc_nvenc av1_nvenc \
                   h264_qsv hevc_qsv av1_qsv \
@@ -1051,9 +1077,11 @@ RUN echo "=== ffmpeg encoder probe (ADR-0541) ===" \
              | awk -v e="$enc" '{ if ($2 == e) { print; found=1 } } END { exit !found }' ; then \
            printf "  ok   %s\n" "$enc" ; \
          else \
-           printf "  WARN %s missing from ffmpeg -encoders\n" "$enc" ; \
+           printf "  FATAL %s missing from ffmpeg -encoders\n" "$enc" >&2 ; \
+           missing=1 ; \
          fi ; \
-       done
+       done \
+    && test "$missing" -eq 0
 USER vmaf
 
 WORKDIR /build/vmaf

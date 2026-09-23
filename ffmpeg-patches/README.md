@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 -->
 # ffmpeg-patches/
 
-Local patches against FFmpeg **n9.0.1** for integrating this VMAF fork into
+Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
 `libavfilter/vf_libvmaf*` plus a new `vf_vmaf_pre` filter.
 
 ## Contents
@@ -47,7 +47,8 @@ Local patches against FFmpeg **n9.0.1** for integrating this VMAF fork into
   for ROCm hwdec zero-copy import is deferred until FFmpeg exposes a
   ROCm/HIP hardware-frame context (no `ffhipcodec` equivalent of
   `ffnvcodec` exists at this time). See
-  [ADR-0376](../docs/adr/0376-ffmpeg-patches-hip-backend-selector.md).- **`0013-libvmaf-add-libvmaf-metal-filter.patch`** — registers a
+  [ADR-0376](../docs/adr/0376-ffmpeg-patches-hip-backend-selector.md).
+- **`0013-libvmaf-add-libvmaf-metal-filter.patch`** — registers a
   dedicated `libvmaf_metal` filter for VideoToolbox hwdec zero-copy
   import. Consumes `AVFrame->format == AV_PIX_FMT_VIDEOTOOLBOX`,
   pulls the IOSurface backing each `CVPixelBufferRef` via
@@ -80,10 +81,19 @@ Local patches against FFmpeg **n9.0.1** for integrating this VMAF fork into
   `VMAF_HAVE_PERCENTILE_POOLING` and documents the pool options. Keep its
   context relative to all 17 preceding patches; adding the same mapper
   entries twice breaks the cumulative replay.
+- **`0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch`** — fixes all 126
+  diagnostics exposed by the GCC 14 release/FATE builds and independent GCC
+  16 production/full-target builds without disabling codecs or suppressing
+  warnings. Large VVC, median, FFV1, checkasm, APV, CABAC, swresample, snow,
+  and MPEG-TS scratch state moves off the stack; bounded parser, path,
+  AAC-window, and table invariants become explicit; disabled HVQM decoders no
+  longer leave dead helpers; and DASH, SmoothStreaming, RTSP, and ismindex
+  propagate the failures exposed while hardening those paths.
 
-Every patch is guarded by `check_pkg_config` so it degrades gracefully when
-libvmaf was built without the relevant feature (`-Denable_dnn`, `-Denable_sycl`,
-`-Denable_vulkan`, `-Denable_cuda`, `-Denable_hip`).
+Every libvmaf integration patch is guarded by `check_pkg_config` so it degrades
+gracefully when libvmaf was built without the relevant feature
+(`-Denable_dnn`, `-Denable_sycl`, `-Denable_vulkan`, `-Denable_cuda`,
+`-Denable_hip`). Patch 0019 hardens the pinned FFmpeg baseline itself.
 
 ## What works without a patch
 
@@ -109,17 +119,16 @@ Works with both the stock `libvmaf` filter and, via CUDA, the
 `libvmaf_cuda` filter (SSIMULACRA 2 currently has no CUDA path; it falls
 back to CPU SIMD — AVX-512 / AVX2 / NEON per ADR-0161 / 0162 / 0163).
 
-The patches in this directory only cover fork-added surfaces that
-DO NOT fit the generic `feature=` plumbing: the DNN session API
-(`tiny_model`), the learned pre-processing filter (`vmaf_pre`), the
-SYCL / Vulkan backend selectors on the `libvmaf` filter, and the
-dedicated `libvmaf_sycl` / `libvmaf_vulkan` filters for zero-copy
-hardware-frame import.
+Patches 0001–0018 cover fork-added surfaces that do not fit the generic
+`feature=` plumbing: the DNN session API (`tiny_model`), the learned
+pre-processing filter (`vmaf_pre`), backend selectors on the `libvmaf` filter,
+and dedicated filters for zero-copy hardware-frame import. Patch 0019 is the
+warning-clean compiler-hardening delta for the pinned FFmpeg release.
 
 ## How to apply
 
 ```bash
-cd /path/to/ffmpeg    # must be at tag n9.0.1
+cd /path/to/ffmpeg    # must be at tag n9.0.2
 while IFS= read -r patch; do
     case "$patch" in ""|\#*) continue ;; esac
     git am --3way "/path/to/vmaf/ffmpeg-patches/$patch" || exit 1
@@ -135,13 +144,32 @@ Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 > [ADR-0186](../docs/adr/0186-vulkan-image-import-impl.md), the
 > verification gate for any change touching a libvmaf C-API surface
 > the patches consume is a **series replay** against a pristine
-> `n9.0.1` checkout (cumulative `git am --3way`), NOT a per-patch
+> `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch
 > `git apply --check`. The latter rejects `0002+` because they
 > reference cumulative-state hunks that don't exist in pristine
-> `n9.0.1`. All 17 patches were replayed cumulatively and FFmpeg was built
-> successfully in the dev-MCP image on 2026-08-31. The migration record and
+> `n9.0.2`. All 19 patches replay cumulatively on upstream commit
+> `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; patches 0001–0018 remain
+> byte-identical to the n9.0.1 series, while 0019 carries the warning-clean
+> compiler hardening. The resulting tree is
+> `1fd76f79179a6a51b5bb773a89c5334c6324c755`. The refresh evidence and
 > earlier replay history live in
 > [`docs/rebase-notes.md`](../docs/rebase-notes.md).
+
+The maintained image builders, hosted FFmpeg integration workflow, and
+`test/build-and-run.sh` configure with `--fatal-warnings` and reject compiler
+warning output. Hosted integration and the full-series smoke harness compile
+all test programs and run every generated, sample-independent FATE target
+under the same log gate, so diagnostics from test translation units fail the
+build. The ordinary hosted GCC/Clang compatibility matrix applies
+patch 0019 alone, without the libvmaf integration series, so it still tests
+stock FFmpeg surfaces against the fork library on warning-clean pinned source.
+Patch replay is exact and fail-closed; no path falls back to fuzzy `patch -p1`.
+All release consumers resolve annotated tags to their peeled commit through
+`scripts/ci/checkout-annotated-tag.sh`, then recreate the local tag used by
+FFmpeg version discovery. This keeps Git checkout warnings fatal too. FATE
+collection captures `make -s fate-list` first and selects only `fate-*`
+targets, because a pristine tree may also print a generated-makefile status
+line during that command.
 
 ## How to smoke-test
 
