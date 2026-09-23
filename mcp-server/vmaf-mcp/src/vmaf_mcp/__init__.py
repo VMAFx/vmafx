@@ -7,6 +7,7 @@ Sub-modules:
 * :mod:`vmaf_mcp.server`         — JSON-RPC MCP server (tool registry,
   handlers, stdio + Unix-socket transports).
 * :mod:`vmaf_mcp.http_transport` — optional HTTP transport adapter.
+* :mod:`vmaf_mcp.http_scoring`   — scoring interface shared by transports.
 
 The package surface is a namespace per ADR-0911; downstream callers
 should import from sub-modules directly.

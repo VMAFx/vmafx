@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import ssl
 import subprocess
@@ -46,6 +47,7 @@ import pytest_asyncio  # noqa: E402
 from aiohttp.test_utils import TestClient  # noqa: E402
 
 from vmaf_mcp import http_transport as ht  # noqa: E402
+from vmaf_mcp.http_scoring import get_http_scoring_runtime  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helper: fresh isolated prometheus metrics registry
@@ -175,9 +177,9 @@ def test_build_ssl_context_logs_info_when_tls_enabled(
     with caplog.at_level(logging.INFO, logger="vmafx.http"):
         ht._build_ssl_context()
 
-    assert any(
-        "TLS enabled" in r.message for r in caplog.records
-    ), f"Expected 'TLS enabled' in log records; got: {[r.message for r in caplog.records]}"
+    assert any("TLS enabled" in r.message for r in caplog.records), (
+        f"Expected 'TLS enabled' in log records; got: {[r.message for r in caplog.records]}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -294,9 +296,9 @@ async def test_serve_logs_warning_when_token_unset_and_no_auth_not_set(
         await ht._serve(port=0, metrics=metrics)
 
     warning_msgs = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any(
-        "VMAFX_MCP_HTTP_TOKEN" in m for m in warning_msgs
-    ), f"Expected token-unset warning; got: {warning_msgs}"
+    assert any("VMAFX_MCP_HTTP_TOKEN" in m for m in warning_msgs), (
+        f"Expected token-unset warning; got: {warning_msgs}"
+    )
 
 
 @pytest.mark.asyncio
@@ -332,9 +334,9 @@ async def test_serve_logs_warning_when_no_auth_mode_enabled(
         await ht._serve(port=0, metrics=metrics)
 
     warning_msgs = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any(
-        "NO_AUTH" in m or "authentication disabled" in m for m in warning_msgs
-    ), f"Expected NO_AUTH warning; got: {warning_msgs}"
+    assert any("NO_AUTH" in m or "authentication disabled" in m for m in warning_msgs), (
+        f"Expected NO_AUTH warning; got: {warning_msgs}"
+    )
 
 
 @pytest.mark.asyncio
@@ -399,6 +401,103 @@ def _isolated_build_metrics(suffix: str) -> Any:
     return _builder
 
 
+class _UnusedScoringRuntime:
+    """Structural runtime stub for entry-point tests that replace ``_serve``."""
+
+    def vmaf_binary(self) -> Path:
+        return Path("vmaf")
+
+    def build_request(self, **fields: Any) -> dict[str, Any]:
+        return fields
+
+    async def run_score(self, request: Any) -> dict[str, Any]:
+        return {"request": request}
+
+    def dumps_strict(self, data: Any) -> str:
+        return "{}"
+
+
+class _RecordingScoringRuntime(_UnusedScoringRuntime):
+    """Injected adapter that records the complete HTTP scoring seam."""
+
+    def __init__(self) -> None:
+        self.built: dict[str, Any] | None = None
+        self.scored: Any = None
+
+    def build_request(self, **fields: Any) -> dict[str, Any]:
+        self.built = fields
+        return fields
+
+    async def run_score(self, request: Any) -> dict[str, Any]:
+        self.scored = request
+        return {"vmaf": 91.25}
+
+    def dumps_strict(self, data: Any) -> str:
+        return json.dumps(data, allow_nan=False)
+
+
+@pytest.mark.asyncio
+async def test_make_app_uses_injected_scoring_runtime(
+    aiohttp_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An embedded HTTP app scores entirely through its injected adapter."""
+    monkeypatch.setenv("VMAFX_MCP_HTTP_NO_AUTH", "1")
+    runtime = _RecordingScoringRuntime()
+    metrics = _fresh_metrics("r5_injected_runtime")
+    client = await aiohttp_client(ht._make_app(metrics, runtime=runtime))
+
+    response = await client.post(
+        "/v1/score",
+        json={
+            "reference": "/embedded/ref.yuv",
+            "distorted": "/embedded/dis.yuv",
+            "width": 1920,
+            "height": 1080,
+            "pixfmt": "420",
+            "bitdepth": 8,
+        },
+    )
+
+    assert response.status == 200
+    assert runtime.built is not None
+    assert runtime.built["reference"] == "/embedded/ref.yuv"
+    assert runtime.scored is runtime.built
+    assert (await response.json())["vmaf"] == 91.25
+
+
+def test_run_http_server_keeps_injected_runtime_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An embedded server must not replace the process-wide scoring runtime."""
+    import vmaf_mcp.server  # noqa: F401
+
+    canonical_runtime = get_http_scoring_runtime()
+    injected_runtime = _UnusedScoringRuntime()
+    observed_runtime: list[Any] = []
+
+    async def _fake_serve(
+        port: int,
+        metrics: dict[str, Any],
+        runtime: Any,
+    ) -> None:
+        observed_runtime.append(runtime)
+        assert get_http_scoring_runtime() is canonical_runtime
+        raise asyncio.CancelledError
+
+    with (
+        patch.object(ht, "_serve", side_effect=_fake_serve),
+        patch.object(
+            ht,
+            "_build_metrics",
+            side_effect=_isolated_build_metrics("r5_local_runtime"),
+        ),
+    ):
+        ht.run_http_server(port=0, log_level="WARNING", runtime=injected_runtime)
+
+    assert observed_runtime == [injected_runtime]
+    assert get_http_scoring_runtime() is canonical_runtime
+
+
 def test_run_http_server_cancelled_error_exits_cleanly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -411,7 +510,7 @@ def test_run_http_server_cancelled_error_exits_cleanly(
     monkeypatch.delenv("VMAFX_MCP_HTTP_TLS_KEY", raising=False)
 
     # Patch _serve to immediately raise CancelledError so the event loop exits.
-    async def _fake_serve(port: int, metrics: dict[str, Any]) -> None:
+    async def _fake_serve(port: int, metrics: dict[str, Any], runtime: Any) -> None:
         raise asyncio.CancelledError
 
     with (
@@ -419,7 +518,7 @@ def test_run_http_server_cancelled_error_exits_cleanly(
         patch.object(ht, "_build_metrics", side_effect=_isolated_build_metrics("r5_cancel")),
     ):
         # Must not raise.
-        ht.run_http_server(port=0, log_level="WARNING")
+        ht.run_http_server(port=0, log_level="WARNING", runtime=_UnusedScoringRuntime())
 
 
 def test_run_http_server_keyboard_interrupt_exits_cleanly(
@@ -433,14 +532,14 @@ def test_run_http_server_keyboard_interrupt_exits_cleanly(
     monkeypatch.delenv("VMAFX_MCP_HTTP_TLS_CERT", raising=False)
     monkeypatch.delenv("VMAFX_MCP_HTTP_TLS_KEY", raising=False)
 
-    async def _fake_serve(port: int, metrics: dict[str, Any]) -> None:
+    async def _fake_serve(port: int, metrics: dict[str, Any], runtime: Any) -> None:
         raise KeyboardInterrupt
 
     with (
         patch.object(ht, "_serve", side_effect=_fake_serve),
         patch.object(ht, "_build_metrics", side_effect=_isolated_build_metrics("r5_kbi")),
     ):
-        ht.run_http_server(port=0, log_level="WARNING")
+        ht.run_http_server(port=0, log_level="WARNING", runtime=_UnusedScoringRuntime())
 
 
 def test_run_http_server_closes_loop_in_finally(
@@ -468,7 +567,7 @@ def test_run_http_server_closes_loop_in_finally(
         loop.close = _patched_close  # type: ignore[method-assign]
         return loop
 
-    async def _fake_serve(port: int, metrics: dict[str, Any]) -> None:
+    async def _fake_serve(port: int, metrics: dict[str, Any], runtime: Any) -> None:
         raise asyncio.CancelledError
 
     with (
@@ -476,7 +575,7 @@ def test_run_http_server_closes_loop_in_finally(
         patch.object(ht, "_serve", side_effect=_fake_serve),
         patch.object(ht, "_build_metrics", side_effect=_isolated_build_metrics("r5_finally")),
     ):
-        ht.run_http_server(port=0, log_level="WARNING")
+        ht.run_http_server(port=0, log_level="WARNING", runtime=_UnusedScoringRuntime())
 
     assert closed_loops, "event loop was not closed in the finally block"
 
@@ -491,7 +590,7 @@ def test_make_score_handler_returns_callable() -> None:
     import inspect
 
     metrics = _fresh_metrics("r5_handler_factory")
-    handler = ht.make_score_handler(metrics)
+    handler = ht.make_score_handler(metrics, runtime=_UnusedScoringRuntime())
 
     # The returned handler must be a callable (coroutine function).
     assert callable(handler)

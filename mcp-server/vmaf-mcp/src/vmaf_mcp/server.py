@@ -76,6 +76,8 @@ from mcp.types import (
 )
 from pydantic import TypeAdapter
 
+from vmaf_mcp.http_scoring import HttpScoringRuntime, install_http_scoring_runtime
+
 _logger = logging.getLogger(__name__)
 
 # MCP 2.x passes request state directly to constructor-registered handlers.
@@ -1059,6 +1061,49 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
             output.unlink(missing_ok=True)
 
 
+class _ServerHttpScoringRuntime(HttpScoringRuntime):
+    """Expose canonical server scoring through the HTTP transport interface."""
+
+    def vmaf_binary(self) -> Path:
+        return _vmaf_binary()
+
+    def build_request(
+        self,
+        *,
+        reference: Any,
+        distorted: Any,
+        width: Any,
+        height: Any,
+        pixfmt: Any,
+        bitdepth: Any,
+        model: Any,
+        backend: Any,
+        precision: Any,
+    ) -> ScoreRequest:
+        return ScoreRequest(
+            ref=_validate_path(str(reference)),
+            dis=_validate_path(str(distorted)),
+            width=int(width),
+            height=int(height),
+            pixfmt=str(pixfmt),
+            bitdepth=int(bitdepth),
+            model=str(model),
+            backend=str(backend),
+            precision=str(precision),
+        )
+
+    async def run_score(self, request: Any) -> dict[str, Any]:
+        if not isinstance(request, ScoreRequest):
+            raise TypeError("HTTP scoring adapter requires a ScoreRequest")
+        return await _run_vmaf_score(request)
+
+    def dumps_strict(self, data: Any) -> str:
+        return _dumps_strict(data)
+
+
+install_http_scoring_runtime(_ServerHttpScoringRuntime())
+
+
 def _infer_backend_from_payload(payload: dict[str, Any]) -> str:
     """Best-effort backend identification from the vmaf JSON output.
 
@@ -1607,8 +1652,7 @@ def _describe_model_by_path(name_or_path: str, repo: Path) -> dict[str, Any] | N
     allowed = _allowed_roots()
     if not any(candidate.is_relative_to(r) for r in allowed):
         raise ValueError(
-            f"model path {candidate} not under an allowlisted root; "
-            "set VMAF_MCP_ALLOW to extend."
+            f"model path {candidate} not under an allowlisted root; set VMAF_MCP_ALLOW to extend."
         )
     return _describe_model_file(candidate, repo)
 
@@ -3429,8 +3473,7 @@ def _vmaf_bench_properties() -> dict[str, Any]:
         "data_dir": {
             "type": "string",
             "description": (
-                "Test-data directory (--data-dir). Must be a directory under "
-                "an allowlisted root."
+                "Test-data directory (--data-dir). Must be a directory under an allowlisted root."
             ),
         },
         "validate": {

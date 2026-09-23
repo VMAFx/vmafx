@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
+
+No upstream impact: `mcp-server/` is fork-only.  Preserve
+`vmaf_mcp/http_scoring.py` as the seam between the canonical scoring
+implementation in `server.py` and the HTTP adapter in `http_transport.py`.
+The dependency remains one-way: `server.py` may import the HTTP startup entry,
+but `http_transport.py` depends only on the shared interface and must never
+import `server.py`.  Canonical
+registration must not replace an adapter installed by an embedding process;
+direct `run_http_server` callers may inject one, which must be bound to that
+application without mutating the process-wide registry (ADR-1304), and must
+fail before binding when neither an injected nor canonical adapter exists.  Re-run
+`tests/test_import_graph.py` after resolving any conflict that touches these
+three modules; it walks function-local imports as well as module-level imports,
+matching the dependency edges CodeQL reports.
+
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
 1. **`scripts/ci/silent-revert-allowlist.json` describes the *difference* between
