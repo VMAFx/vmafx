@@ -12,7 +12,19 @@ The implementation is **read-only** by design — mutations to
 BACKLOG.md remain a manual editorial task per CLAUDE.md global rule
 "Read AND update local state files".
 
-Row format reference (real examples from BACKLOG.md):
+Row format reference. The current checklist schema puts a stable ID in a
+backtick span immediately after the checkbox::
+
+    2. [ ] `T-RC1-MASTER-GREEN` **Master green** (#1236)
+    7. [ ] `T-RC1-BENCH-TUNE` **[BLOCKED]** **Bench and tune**
+    1. [x] `T-RC1-RELEASE-PIPELINE` **Release pipeline correct**
+
+Checked items are ``DONE``. Unchecked items are ``OPEN`` unless the title
+starts with ``**[BLOCKED]**``, ``**[DEFERRED]**``, or
+``**[IN_FLIGHT]**``. Continuation lines belong to the preceding item, so PR
+references remain discoverable after Markdown wrapping.
+
+The retired table schema remains readable during migration::
 
     | **T3-7** | open row title | ... |
         ^^^^^^ — open: ID wrapped in bold only
@@ -60,6 +72,11 @@ from scripts.lib.safe_subprocess import run as run_command
 # first pipe, cells[1] holds the ID, cells[2] is the title.
 _TITLE_CELL_INDEX = 2
 
+
+class BacklogFormatError(ValueError):
+    """The backlog exists but does not satisfy a supported schema."""
+
+
 # ---------------------------------------------------------------------------
 # Locating BACKLOG.md
 # ---------------------------------------------------------------------------
@@ -100,13 +117,13 @@ DEFAULT_BACKLOG_PATH: Path = _find_backlog()
 
 @dataclass
 class BacklogItem:
-    """One row in BACKLOG.md, parsed into a typed shape."""
+    """One tracked BACKLOG.md item, parsed into a typed shape."""
 
     id: str
-    """Stable ID, e.g. ``T3-9``, ``T7-10b``, ``TA-VOCAB``."""
+    """Stable ID, e.g. ``T-RC1-MASTER-GREEN`` or legacy ``T3-9``."""
 
     title: str
-    """First text cell of the row, with markdown stripped."""
+    """Display title from the item start, with markdown stripped."""
 
     status: str
     """One of OPEN / IN_FLIGHT / DONE / CLOSED / REMOVED / BLOCKED / DEFERRED."""
@@ -130,18 +147,19 @@ class BacklogItem:
 # ---------------------------------------------------------------------------
 
 
-# Row ID forms we recognise:
+# Stable ID forms we recognise:
 #   **T3-9**             — open
 #   ~~**T0-1**~~         — strike-through ID (closed forms)
 #   **TA-VOCAB**         — addendum row
 #   **T7-10b**           — sub-row with a letter suffix
+_ITEM_ID = r"T[0-9A-Za-z]*(?:-[0-9A-Za-z]+)+"
 _ID_PATTERN = re.compile(
-    r"""
+    rf"""
     ^\|\s*                          # leading pipe + optional whitespace
     (?:~~)?                         # optional strike-through opener
     \*\*                            # bold opener
     (?P<id>
-        T[0-9A-Z]+(?:-[0-9A-Za-z]+)?   # T<n>-<n>[<suffix>] OR TA-WORD
+        {_ITEM_ID}                     # tiered or named stable ID
     )
     \*\*                            # bold closer
     (?:~~)?                         # optional strike-through closer
@@ -153,6 +171,22 @@ _ID_PATTERN = re.compile(
     """,
     re.VERBOSE,
 )
+
+_CHECKLIST_PATTERN = re.compile(
+    rf"^\s*(?:[-+*]|\d+[.)])\s+\[(?P<checked>[ xX])\]\s+"
+    rf"`(?P<id>{_ITEM_ID})`(?:\s+|$)(?P<title>.*)$"
+)
+_ANY_CHECKLIST_PATTERN = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+\[[ xX]\]\s+")
+_CHECKLIST_STATUS_PATTERN = re.compile(
+    r"^\*\*\[(?P<status>[A-Z][A-Z _-]*)\]\*\*\s*",
+    re.IGNORECASE,
+)
+_CHECKLIST_OPEN_STATUSES = {
+    "BLOCKED": "BLOCKED",
+    "DEFERRED": "DEFERRED",
+    "IN FLIGHT": "IN_FLIGHT",
+}
+_CHECKLIST_CLOSED_STATUSES = {"DONE", "CLOSED", "REMOVED"}
 
 # Match `PR #123` (case-insensitive, optional space). Not anchored.
 _PR_REF_PATTERN = re.compile(r"PR\s*#(\d+)", re.IGNORECASE)
@@ -200,6 +234,96 @@ def _classify_status(row: str) -> str:
     return "OPEN"
 
 
+def _parse_table_item(raw: str) -> BacklogItem | None:
+    match = _ID_PATTERN.match(raw)
+    if not match:
+        return None
+    item_id = match.group("id")
+    cells = raw.split("|")
+    title = _strip_md(cells[_TITLE_CELL_INDEX]) if len(cells) > _TITLE_CELL_INDEX else ""
+    return BacklogItem(
+        id=item_id,
+        title=title,
+        status=_classify_status(raw),
+        priority=_extract_priority(item_id),
+        pr_refs=sorted({int(ref) for ref in _PR_REF_PATTERN.findall(raw)}),
+        raw_row=raw,
+    )
+
+
+def _checklist_status(checked: str, title: str, line_number: int) -> tuple[str, str]:
+    marker = _CHECKLIST_STATUS_PATTERN.match(title)
+    explicit = re.sub(r"[ _-]+", " ", marker.group("status").upper()).strip() if marker else ""
+    clean_title = title[marker.end() :] if marker else title
+    known_statuses = {*_CHECKLIST_OPEN_STATUSES, *_CHECKLIST_CLOSED_STATUSES}
+    if explicit and explicit not in known_statuses:
+        raise BacklogFormatError(
+            f"checklist item on line {line_number} has unsupported status {explicit}"
+        )
+    if checked.lower() == "x":
+        if explicit:
+            raise BacklogFormatError(
+                f"checked checklist item on line {line_number} conflicts with status {explicit}"
+            )
+        return "DONE", clean_title
+    if explicit in _CHECKLIST_CLOSED_STATUSES:
+        raise BacklogFormatError(
+            f"unchecked checklist item on line {line_number} "
+            f"conflicts with closed status {explicit}"
+        )
+    return _CHECKLIST_OPEN_STATUSES.get(explicit, "OPEN"), clean_title
+
+
+def _finish_checklist_item(
+    start_line: int,
+    match: re.Match[str],
+    lines: list[str],
+) -> tuple[int, BacklogItem]:
+    raw = "\n".join(lines).rstrip()
+    status, title = _checklist_status(match.group("checked"), match.group("title"), start_line)
+    item_id = match.group("id")
+    return start_line, BacklogItem(
+        id=item_id,
+        title=_strip_md(title),
+        status=status,
+        priority=_extract_priority(item_id),
+        pr_refs=sorted({int(ref) for ref in _PR_REF_PATTERN.findall(raw)}),
+        raw_row=raw,
+    )
+
+
+def _parse_checklist_items(lines: list[str]) -> list[tuple[int, BacklogItem]]:
+    items: list[tuple[int, BacklogItem]] = []
+    current: tuple[int, re.Match[str], list[str]] | None = None
+    for line_number, raw in enumerate(lines, start=1):
+        match = _CHECKLIST_PATTERN.match(raw)
+        if match:
+            if current:
+                items.append(_finish_checklist_item(*current))
+            current = (line_number, match, [raw])
+            continue
+        if _ANY_CHECKLIST_PATTERN.match(raw):
+            raise BacklogFormatError(
+                f"checklist item on line {line_number} needs a stable backtick ID after its checkbox"
+            )
+        if current and (not raw.strip() or raw[:1].isspace()):
+            current[2].append(raw)
+        elif current:
+            items.append(_finish_checklist_item(*current))
+            current = None
+    if current:
+        items.append(_finish_checklist_item(*current))
+    return items
+
+
+def _reject_duplicate_ids(items: list[BacklogItem]) -> None:
+    seen: set[str] = set()
+    for item in items:
+        if item.id in seen:
+            raise BacklogFormatError(f"duplicate backlog ID {item.id}")
+        seen.add(item.id)
+
+
 class BacklogTracker:
     """Parse `.workingdir/BACKLOG.md` into typed `BacklogItem` rows.
 
@@ -220,40 +344,19 @@ class BacklogTracker:
             self._cached = []
             return self._cached
 
-        items: list[BacklogItem] = []
         text = self.path.read_text(encoding="utf-8")
-        for raw in text.splitlines():
-            m = _ID_PATTERN.match(raw)
-            if not m:
-                continue
-            item_id = m.group("id")
-            status = _classify_status(raw)
-            pr_refs = sorted({int(p) for p in _PR_REF_PATTERN.findall(raw)})
-            # First cell after the ID is the title cell. Split on
-            # `|` and pick index 2 (cells: '', '<id>', '<title>',
-            # ...).
-            cells = raw.split("|")
-            title = _strip_md(cells[_TITLE_CELL_INDEX]) if len(cells) > _TITLE_CELL_INDEX else ""
-            items.append(
-                BacklogItem(
-                    id=item_id,
-                    title=title,
-                    status=status,
-                    priority=_extract_priority(item_id),
-                    pr_refs=pr_refs,
-                    raw_row=raw,
-                )
-            )
-        # Deduplicate keeping the first occurrence (some rows appear
-        # both as a sub-row and a roll-up; the first hit is canonical).
-        seen: set[str] = set()
-        deduped: list[BacklogItem] = []
-        for it in items:
-            if it.id in seen:
-                continue
-            seen.add(it.id)
-            deduped.append(it)
-        self._cached = deduped
+        lines = text.splitlines()
+        indexed_items = _parse_checklist_items(lines)
+        for line_number, raw in enumerate(lines, start=1):
+            item = _parse_table_item(raw)
+            if item:
+                indexed_items.append((line_number, item))
+        indexed_items.sort(key=lambda entry: entry[0])
+        items = [item for _, item in indexed_items]
+        if not items:
+            raise BacklogFormatError(f"{self.path} contains no tracked items")
+        _reject_duplicate_ids(items)
+        self._cached = items
         return self._cached
 
     # -- Public API --------------------------------------------------
@@ -436,6 +539,7 @@ def explain(item_id: str, *, backlog: BacklogTracker | None = None) -> str:
 
 __all__ = [
     "DEFAULT_BACKLOG_PATH",
+    "BacklogFormatError",
     "BacklogItem",
     "BacklogTracker",
     "GitHubTracker",

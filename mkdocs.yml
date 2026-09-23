@@ -1420,6 +1420,7 @@ nav:
       - "1300-1399 — Misc":
         - "ADR-1300: cuda-install-from-nvidia-apt": adr/1300-cuda-install-from-nvidia-apt.md
         - "ADR-1301: speed-nonfinite-score-fails-frame": adr/1301-speed-nonfinite-score-fails-frame.md
+        - "ADR-1303: backlog-checklist-tracker-schema": adr/1303-backlog-checklist-tracker-schema.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

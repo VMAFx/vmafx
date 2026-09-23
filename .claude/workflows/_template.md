@@ -72,7 +72,7 @@ forbidden:
 # Pre-dispatch eligibility gate ------------------------------------
 
 master_status_check: true              # bail if master CI is currently red
-backlog_id: null                       # set to "T3-9", "T7-10b", etc. for the precheck
+backlog_id: null                       # copy the stable backtick ID from BACKLOG.md
 ---
 
 # {{TITLE}} — agent prompt template

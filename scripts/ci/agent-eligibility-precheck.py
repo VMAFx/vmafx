@@ -35,9 +35,9 @@ script can parse them.
 
 Usage::
 
-    scripts/ci/agent-eligibility-precheck.py --backlog-id T3-9
+    scripts/ci/agent-eligibility-precheck.py --backlog-id T-RC1-MASTER-GREEN
     scripts/ci/agent-eligibility-precheck.py --task-tag codeql-cpp-overflow
-    scripts/ci/agent-eligibility-precheck.py --backlog-id T7-5 --skip-gh-search
+    scripts/ci/agent-eligibility-precheck.py --backlog-id T-RC1-BENCH-TUNE --skip-gh-search
 
 The ``--task-tag`` form is for runs without a backlog row (e.g.
 CodeQL sweeps); checks 1 and 2 are skipped, only check 3 runs.
@@ -61,7 +61,11 @@ from typing import Any, Iterable, Protocol
 # The script lives at scripts/ci/, the lib package at scripts/lib/.
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
-from scripts.lib.backlog_tracker import BacklogTracker, GitHubTracker  # noqa: E402
+from scripts.lib.backlog_tracker import (  # noqa: E402
+    BacklogFormatError,
+    BacklogTracker,
+    GitHubTracker,
+)
 from scripts.lib.safe_subprocess import CommandFailed  # noqa: E402
 
 
@@ -272,7 +276,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backlog-id",
-        help="BACKLOG.md row identifier (e.g. T3-9, T7-10b, TA-VOCAB).",
+        help="BACKLOG.md stable item ID (e.g. T-RC1-MASTER-GREEN).",
     )
     parser.add_argument(
         "--task-tag",
@@ -313,7 +317,13 @@ def _run_checks(args: argparse.Namespace, scope_token: str) -> bool:
     backlog_path = Path(args.backlog_path) if args.backlog_path else None
     backlog = BacklogTracker(backlog_path)
     github = GitHubTracker(repo=args.repo)
-    failed = args.backlog_id is not None and not check_backlog_row_open(args.backlog_id, backlog)
+    try:
+        failed = args.backlog_id is not None and not check_backlog_row_open(
+            args.backlog_id, backlog
+        )
+    except BacklogFormatError as error:
+        _emit_error("agent-eligibility: malformed BACKLOG.md", str(error))
+        return True
     if (
         args.backlog_id
         and not args.skip_gh_search

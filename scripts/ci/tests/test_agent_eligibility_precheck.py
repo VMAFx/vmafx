@@ -48,6 +48,27 @@ class AgentEligibilityPrecheckTests(unittest.TestCase):
     def test_missing_backlog_row_blocks_dispatch(self) -> None:
         self.assertFalse(PRECHECK.check_backlog_row_open("T-NOT-THERE", _MissingBacklogItem()))
 
+    def test_malformed_backlog_schema_blocks_dispatch_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            backlog = Path(temporary) / "BACKLOG.md"
+            backlog.write_text("- [ ] task without a stable ID\n", encoding="utf-8")
+            with mock.patch.object(sys, "stderr") as stderr:
+                code = PRECHECK.main(
+                    [
+                        "--backlog-id",
+                        "T-MISSING-ID",
+                        "--backlog-path",
+                        str(backlog),
+                        "--skip-gh-search",
+                        "--skip-active-scan",
+                    ]
+                )
+
+        self.assertEqual(code, 1)
+        rendered = "".join(call.args[0] for call in stderr.write.call_args_list)
+        self.assertIn("malformed BACKLOG.md", rendered)
+        self.assertNotIn("Traceback", rendered)
+
     def test_missing_gh_blocks_active_branch_check(self) -> None:
         with mock.patch.object(PRECHECK.shutil, "which", return_value=None):
             code = PRECHECK.main(["--task-tag", "unit-scope", "--skip-gh-search"])

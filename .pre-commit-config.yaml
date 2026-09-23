@@ -209,9 +209,9 @@ repos:
 
       - id: test-safe-subprocess-boundary
         name: Bounded process execution and fail-soft consumer regressions
-        entry: python3 -m unittest scripts.lib.test_safe_subprocess scripts.ci.tests.test_agent_eligibility_precheck
+        entry: python3 -m unittest scripts.lib.test_safe_subprocess scripts.lib.test_backlog_tracker scripts.ci.tests.test_agent_eligibility_precheck
         language: system
-        files: '^(\.pre-commit-config\.yaml|scripts/(lib/(safe_subprocess|test_safe_subprocess)\.py|ci/(agent-eligibility-precheck\.py|tests/test_agent_eligibility_precheck\.py)))$'
+        files: '^(\.pre-commit-config\.yaml|scripts/(lib/((backlog_tracker|safe_subprocess|test_(backlog_tracker|safe_subprocess))\.py|testdata/current-backlog\.md)|ci/(agent-eligibility-precheck\.py|tests/test_agent_eligibility_precheck\.py)))$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

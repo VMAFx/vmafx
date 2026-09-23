@@ -20415,6 +20415,12 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
 - **CRITICAL**: AVX-512 float convolution dispatch from [#1261](https://github.com/VMAFx/vmafx/pull/1261) (ADR-0504) reads past the row buffer when row width isn't a multiple of 16 floats (64 bytes). Surfaces as `munmap_chunk(): invalid pointer` / SIGABRT in `speed_temporal` which calls `vif_filter1d_s` at downscaled widths like 45 (= 360 >> 3) on portrait sources. Guard the three AVX-512 dispatch sites in `core/src/feature/vif_tools.c` with `(w % 16) == 0` — narrower rows fall through to the AVX2 8-wide path. Caught by the CHUG re-extract failing with SIGABRT on every portrait clip after the dispatch landed in master.
 
 
+- Fixed the agent eligibility tracker parsing zero current backlog items after
+  the ledger moved from a pipe table to Markdown checklists. Checklist items now
+  carry stable IDs, schema drift blocks dispatch, and legacy rows remain
+  readable during migration.
+
+
 - Reject unpinned external container images that bypassed the central base-image
   guard through `FROM`, `COPY --from`, platform/other flags or instruction case.
   Preserve exact local image consumers and test mirror repair in isolated fixtures.
