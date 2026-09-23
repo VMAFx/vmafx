@@ -28457,6 +28457,14 @@ brief cross-reference comment so reviewers can trace the shared constants.
   was replaced months ago. Move row to the Recently closed section.
 
 
+- **`docs/state.md` reconciled against master.** The
+  `T-PRAETOR-README-GOVERNANCE-BLOCK-MISSING-2026-09-22` row stayed under
+  **Open bugs** after the branch that fixed it merged; it now sits under
+  **Recently closed** with the evidence. The `T-CI-DOCS-JOB-TIMEOUT-2026-09-19`
+  row claimed the docs-build ceiling is 20 minutes, where master carries 25 —
+  corrected, with the measurement that forced the second raise.
+
+
 Fix three broken ADR slug refs in `docs/state.md` that pointed to renamed ADR files:
 - `0273-ciede-vulkan-nvidia-f32-f64-precision-gap.md` → `0273-hip-seventh-consumer-float-motion.md` (2 occurrences)
 - `0539-hip-ssimulacra2-blur-fp-contract-off.md` → `0539-hip-adm-kernels-real.md`
