@@ -140,8 +140,18 @@ static int drain_stream_ensure(VmafCudaState *cu_state)
     CHECK_CUDA_GOTO(cu_f,
                     cuStreamCreateWithPriority(&g_drain_batch.drain_str, CU_STREAM_NON_BLOCKING, 0),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_stream);
     return 0;
+fail_after_stream:
+    /* Round-26 audit (ADR-0982): cuCtxPopCurrent failure on the success path
+     * previously dropped to fail_after_pop, which only NULLed the
+     * stream pointer — destroy the stream we just created here so
+     * the drain channel does not leak. */
+    if (g_drain_batch.drain_str != NULL) {
+        (void)cu_f->cuStreamDestroy(g_drain_batch.drain_str);
+        g_drain_batch.drain_str = NULL;
+    }
+    /* fall through */
 fail:
     if (ctx_pushed) {
         const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
@@ -149,7 +159,6 @@ fail:
             _cuda_err = vmaf_cuda_result_to_errno((int)pop_res);
         }
     }
-fail_after_pop:
     g_drain_batch.drain_str = NULL;
     return _cuda_err;
 }

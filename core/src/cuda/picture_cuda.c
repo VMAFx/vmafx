@@ -375,8 +375,10 @@ static int device_pic_unwind(VmafPicture *pic, VmafPicturePrivate *priv, CudaFun
          * (cuCtxPopCurrent failed, or we came from the cuMemAllocPitch loop
          * with ctx_pushed==1). */
         for (int i = 0; i < 3; i++) {
-            if (pic->data[i])
+            if (pic->data[i]) {
                 (void)cu_f->cuMemFree((CUdeviceptr)pic->data[i]);
+                pic->data[i] = NULL;
+            }
         }
         /* Pop once here and clear ctx_pushed so the tail below does not pop
          * a second time. */
@@ -441,6 +443,11 @@ int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie)
     if (!priv)
         return -ENOMEM;
 
+    /* Zero the priv struct so partial-init unwind can use NULL/0 sentinels
+     * to skip handles that were never created. priv was just malloc'd
+     * (uninitialised memory). Round-26 audit (ADR-0982). */
+    memset(priv, 0, sizeof(*priv));
+
     int _cuda_err = 0;
     int ctx_pushed = 0;
     /* Bound before the first jump: the unwind helper below takes cu_f, and
@@ -459,7 +466,7 @@ int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie)
 
     _cuda_err = device_pic_alloc_planes(pic, cu_f);
     if (_cuda_err)
-        return device_pic_unwind(pic, priv, cu_f, DEV_PIC_UNWIND_FINISHED, ctx_pushed, _cuda_err);
+        return device_pic_unwind(pic, priv, cu_f, DEV_PIC_UNWIND_DATA, ctx_pushed, _cuda_err);
 
     /* ADR-1090 — cuCtxPopCurrent failure leaves the context on the stack;
      * fall through to fail_after_data which frees device memory while the
