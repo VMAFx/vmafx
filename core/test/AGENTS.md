@@ -626,21 +626,28 @@ does not reach any emitted ADM score: the CPU divides the accumulator by
 score-level tolerance detects it
 (T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19).
 
-## Test target source inclusion and reachability contracts (ADR-1142, Research-2078)
+## Test target source identity contracts (ADR-1142, Research-2096)
 
-Never include uncalled library implementation sources directly in test executable
-targets in `core/test/meson.build`. Test executables must only compile translation
-units they directly exercise or link against `libvmaf` (e.g. `test_picture` and
-`test_picture_v2` must not include `../src/thread_pool.c`; `test_predict` and
-`test_model*` must not include `../src/pdjson.c`). Compiling unused implementation
-files into test binaries introduces visibility seam leaks where static internal-linkage
-functions become unreachable from `main()`, tripping CodeQL `cpp/unused-static-function`
-findings across alerts 1066–1098. Research-2078 records the exact selected and
-pre-dismissed IDs; a local reachability repair does not claim hosted closure before a fresh
-CodeQL run. Furthermore, test helpers with internal linkage (such as
-`vector_unchanged` in `test_fex_ctx_vector.cpp`) must be verified via unconditional
-predicate test cases rather than gated behind conditional macros (e.g. `FEX_VECTOR_ALLOC_TEST`)
-or masked with `[[maybe_unused]]`. Specialized test binaries targeting macro
-configurations (such as `test_pdjson_stack_increment` with `PDJSON_STACK_INC=0` and
-`SIZE_MAX`) must provide executable reachability across all supported token paths
-(scalars, user/stream sources, and preallocated containers).
+Do not add uncalled library implementation sources directly to test executables in
+`core/test/meson.build`. `test_picture*` must not compile `thread_pool.c`, and
+`test_predict` / `test_model*` must not compile redundant `pdjson.c` copies.
+
+When a test must compile an implementation source under a special configuration,
+its repeated definitions need unambiguous test-local identities. The pdjson
+default, zero-increment, and oversized-increment copies are separate static
+libraries. Their private helpers receive target-unique names while the public
+`json_*` API stays unchanged; each executable separately renames `run_tests` so
+its test body retains a distinct root. The backpressure test renames the four
+`vmaf_thread_pool_*` entry points around its intentional `thread_pool.c`
+inclusion. Keep definitions and test calls under the same aliases; never export
+the aliases from production headers or replace them with scanner suppressions.
+
+Configuration-only helpers must be emitted only in the configuration that uses
+them. In particular, `vector_unchanged` stays inside `FEX_VECTOR_ALLOC_TEST`; do
+not restore `[[maybe_unused]]` or add an unrelated unconditional test merely to
+manufacture analyzer reachability. The two specialized pdjson growth tests remain
+separate binaries and retain their focused invalid-increment assertions.
+
+CodeQL closure is proved by replaying `UnusedStaticFunctions.ql` against a fresh
+full-build database and then confirmed by a hosted default-branch run. Runtime
+coverage alone cannot prove this repeated-compilation identity contract.

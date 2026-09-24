@@ -35,34 +35,32 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
-## fix/codeql-unused-static-alerts — repair test visibility seams and reachability contracts for static functions (2026-09-24)
+## fix/codeql-unused-static-alerts — preserve test-local source identities (2026-09-24)
 
-1. **`core/test/meson.build` test target sources must not include uncalled library C files.**
-   `test_picture` and `test_picture_v2` must not include `../src/thread_pool.c` because they
-   exercise picture primitives and call zero thread pool functions. `test_predict`,
-   `test_model`, `test_model_libsvm_dup_key`, and `test_model_feature_overload_ownership`
-   must not compile `../src/pdjson.c` directly because they link against `libvmaf` (which
-   already bundles `pdjson.c`). Compiling complete library translation units into unrelated
-   test binaries leaves all static internal-linkage functions unreachable from `main()`,
-   tripping CodeQL `cpp/unused-static-function` findings in the 1066–1098 span. The live
-   audit covered 34 IDs including 1230: 33 selected findings, 25 currently open targets,
-   and nine pre-existing dismissals. A fresh hosted CodeQL analysis, not this local repair,
-   decides closure. Rebases against upstream must not re-add these source entries.
+1. **Do not restore redundant implementation sources.** `test_picture*` does not
+   compile `thread_pool.c`; `test_predict` and `test_model*` do not compile
+   `pdjson.c`. Those targets either do not use the implementation or already link
+   its owning library/object.
 
-2. **`core/test/test_fex_ctx_vector.cpp` preserves unconditional reachability of `vector_unchanged`.**
-   `vector_unchanged()` must not be masked with `[[maybe_unused]]` or gated solely inside
-   `#ifdef FEX_VECTOR_ALLOC_TEST` (which is disabled in default `b_lto=true` builds). The
-   dedicated predicate unit test `test_vector_unchanged_predicate()` registered in
-   `run_legacy_and_growth_tests()` exercises both positive and negative predicate paths
-   unconditionally across all build profiles (resolving Alert 1230).
+2. **Keep intentional direct copies uniquely identifiable.** Each pdjson copy is
+   built as a target-local static library whose private helpers have unique
+   names; its public `json_*` API remains unchanged. Each pdjson executable also
+   keeps a target-local `run_tests` alias. `test_thread_pool_backpressure`
+   retains aliases for the four `vmaf_thread_pool_*` entry points around the
+   deliberate `thread_pool.c` inclusion. This prevents CodeQL from coalescing a
+   repeated helper while orphaning one link-target-specific call graph, without
+   manufacturing unused public APIs for cppcheck. The aliases are test-only and
+   must not enter installed headers or the production ABI.
 
-3. **`core/test/test_pdjson_stack_increment.c` exercises complete scalar and container contracts.**
-   Under `-DPDJSON_STACK_INC=0` and `-DPDJSON_STACK_INC=SIZE_MAX`, `pdjson.c` cannot grow its
-   container state stack dynamically, but all scalar parsing (strings with Unicode/escapes,
-   numbers, booleans, null, streaming resets), user callbacks (`json_open_user`), stream
-   inputs (`json_open_stream`), and preallocated containers operate cleanly. Keep these
-   test cases intact so that specialized macro-build test executables maintain full
-   call-graph reachability to the static parsing engine.
+3. **Keep configuration-only helpers configuration-owned.**
+   `vector_unchanged` is defined and used only under `FEX_VECTOR_ALLOC_TEST`.
+   Do not restore `[[maybe_unused]]` or add unrelated default-build assertions to
+   make it appear reachable. Preserve the non-LTO allocation-failure tests that
+   exercise its actual contract.
+
+Research-2096 contains the exact-query evidence. Re-run the complete CodeQL
+database extraction after rebases that alter these target source lists or aliases;
+ordinary runtime tests cannot detect a repeated-compilation identity regression.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

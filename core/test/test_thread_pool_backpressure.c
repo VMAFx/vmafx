@@ -46,6 +46,7 @@ static int observed_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
     return pthread_cond_init(cond, attr);
 }
 
+/* cppcheck-suppress constParameterPointer ; Research-2096: POSIX requires mutable cond */
 static int observed_destroy(pthread_cond_t *cond)
 {
     destroy_calls++;
@@ -101,6 +102,10 @@ static int observed_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 #define pthread_cond_destroy observed_destroy
 #define pthread_cond_wait observed_wait
 #define pthread_cond_signal observed_signal
+#define vmaf_thread_pool_create vmafx_test_thread_pool_create
+#define vmaf_thread_pool_destroy vmafx_test_thread_pool_destroy
+#define vmaf_thread_pool_enqueue vmafx_test_thread_pool_enqueue
+#define vmaf_thread_pool_wait vmafx_test_thread_pool_wait
 // NOLINTNEXTLINE(bugprone-suspicious-include) -- ADR-0141: deterministic pthread injection; docs/research/2041-thread-pool-backpressure.md
 #include "../src/thread_pool.c"
 #undef pthread_create
@@ -445,5 +450,10 @@ char *run_tests(void)
     mu_run_test(test_primitive_and_total_worker_failures);
     return NULL;
 }
+
+#undef vmaf_thread_pool_create
+#undef vmaf_thread_pool_destroy
+#undef vmaf_thread_pool_enqueue
+#undef vmaf_thread_pool_wait
 
 // NOLINTEND(modernize-use-nullptr)

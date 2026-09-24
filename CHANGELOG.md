@@ -21621,17 +21621,14 @@ impact, confirmed by the 88/88 fast-suite gate including the Netflix CPU golden 
   No metric-path or golden-affecting change.
 
 
-- Repaired test build visibility seams and reachability contracts targeting 25
-  open CodeQL `cpp/unused-static-function` findings. The audited span contains
-  34 IDs (1066–1098 plus 1230), 33 selected findings, and nine pre-existing
-  dismissals; hosted closure remains pending a fresh CodeQL run.
-  Detached extraneous compilations of `thread_pool.c` and `pdjson.c` from test
-  executables (`test_picture`, `test_picture_v2`, `test_predict`, `test_model`,
-  `test_model_libsvm_dup_key`, `test_model_feature_overload_ownership`).
-  Extended `test_pdjson_stack_increment.c` to exercise scalar tokens across
-  string/stream/user sources and preallocated containers. Made `vector_unchanged`
-  in `test_fex_ctx_vector.cpp` unconditionally reachable via dedicated positive
-  and negative predicate assertions.
+- Repaired test-build identity seams behind 25 open CodeQL
+  `cpp/unused-static-function` findings. Redundant `pdjson.c` and
+  `thread_pool.c` compilations were removed, intentional source-based test copies
+  now isolate their private helper identities in test-local libraries, and the
+  allocation-only
+  `vector_unchanged` helper is emitted only with its non-LTO test harness. The
+  production ABI and runtime behavior are unchanged; hosted closure remains
+  pending a fresh default-branch analysis.
 
 
 - **docs/lint**: project-wide `codespell` sweep (ADR-0910).

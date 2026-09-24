@@ -257,17 +257,83 @@ if has_cond_timedwait
   )
 endif
 
+# `pdjson.c` is also part of libvmaf. Give each separately compiled test copy a
+# distinct internal symbol set: CodeQL otherwise coalesces same-location static
+# helpers across link targets and can orphan one copy from the public roots.
+# Keep the public json_* names intact so the test still exercises the production
+# API and whole-program analyzers see one truthful external symbol graph.
+pdjson_static_symbols = [
+    'json_begin_error',
+    'push',
+    'pop',
+    'buffer_peek',
+    'buffer_get',
+    'stream_get',
+    'stream_peek',
+    'init',
+    'is_match',
+    'pushchar',
+    'init_string',
+    'encode_utf8',
+    'hexchar',
+    'read_unicode_cp',
+    'read_unicode',
+    'read_escaped',
+    'char_needs_escaping',
+    'utf8_seq_length',
+    'is_legal_utf8',
+    'read_utf8',
+    'read_string',
+    'is_digit',
+    'read_digits',
+    'read_fraction',
+    'read_exponent',
+    'read_number',
+    'next_nonspace',
+    'read_value',
+    'read_array_item',
+    'read_member_name',
+    'read_object_item',
+    'finish_document',
+    'user_get',
+    'user_peek',
+]
+
+pdjson_default_impl_args = []
+foreach symbol : pdjson_static_symbols
+    pdjson_default_impl_args += ['-D' + symbol + '=vmafx_test_pdjson_default_' + symbol]
+endforeach
+pdjson_default_impl = static_library('test_pdjson_impl',
+    '../src/pdjson.c',
+    include_directories : include_directories('../src'),
+    c_args : pdjson_default_impl_args,
+)
+
 test_pdjson = executable('test_pdjson',
-    ['test.c', 'test_pdjson.c', '../src/pdjson.c'],
+    ['test.c', 'test_pdjson.c'],
     include_directories : [test_inc, include_directories('../src')],
+    link_with : pdjson_default_impl,
+    c_args : ['-Drun_tests=vmafx_test_pdjson_default_run_tests'],
 )
 
 foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
     increment_test_name = 'test_pdjson_stack_increment_' + increment_case[0]
+    increment_impl_args = ['-DPDJSON_STACK_INC=' + increment_case[1]]
+    foreach symbol : pdjson_static_symbols
+        increment_impl_args += [
+            '-D' + symbol + '=vmafx_test_pdjson_' + increment_case[0] + '_' + symbol,
+        ]
+    endforeach
+    increment_impl = static_library(increment_test_name + '_impl',
+        '../src/pdjson.c',
+        include_directories : include_directories('../src'),
+        c_args : increment_impl_args,
+    )
     increment_test = executable(increment_test_name,
-        ['test.c', 'test_pdjson_stack_increment.c', '../src/pdjson.c'],
+        ['test.c', 'test_pdjson_stack_increment.c'],
         include_directories : [test_inc, include_directories('../src')],
-        c_args : ['-DPDJSON_STACK_INC=' + increment_case[1]],
+        link_with : increment_impl,
+        c_args : ['-Drun_tests=vmafx_test_pdjson_' + increment_case[0] + '_run_tests'],
     )
     test(increment_test_name, increment_test, suite : ['fast'])
 endforeach
