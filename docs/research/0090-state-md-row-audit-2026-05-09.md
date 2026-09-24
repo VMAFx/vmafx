@@ -80,7 +80,7 @@ Worktree drift guard: every command ran against
 | RC13 | `cli_parse.c` long-only `error()` assert | "this PR" | **STALE — backfill** | `gh pr list --search "cli-parse-long-only-error-assertion"` → `#414 MERGED 2026-05-06T06:58:59Z`. |
 | RC14 | OSSF Scorecard imposter SHA | "this PR" | **STALE — backfill** | `gh pr list --search "ossf-scorecard-remediation"` → `#337 MERGED 2026-05-04T07:29:22Z`. |
 | RC15 | y4m 4:1:1 1-byte heap-OOB | PR #357 / `05ba29a6`, report PR #348 | **VERIFIED** | `gh pr view 357` → `MERGED 2026-05-04T23:48:47Z`; `gh pr view 348` → `MERGED 2026-05-04T16:53:48Z`. |
-| RC16 | Issue #239 (`libvmaf_vulkan` wall-clock) | PR #241 / `e266bf8e` | **VERIFIED** | `gh pr view 241` → `MERGED 2026-05-02T07:00:39Z`; `gh issue view 239` → `CLOSED 2026-05-03T14:51:50Z`. |
+| RC16 | Issue lusoris/vmaf#239 (`libvmaf_vulkan` wall-clock) | lusoris/vmaf#241 / `e266bf8e` | **VERIFIED** | `gh pr view 241 --repo lusoris/vmaf` → `MERGED 2026-05-02T07:00:39Z`; `gh issue view 239 --repo lusoris/vmaf` → `CLOSED 2026-05-03T14:51:50Z`. |
 | RC17 | `vmaf_tiny_v1.onnx` external-data ref | PR #296 / `fa81d5b4` | **VERIFIED** | `gh pr view 296` → `MERGED 2026-05-03T03:19:14Z`. |
 | RC18 | `kernel_template.h` 8-SSBO cap | PR #288 / `bb9d772e` + PR #292 / `76d6d41e` | **VERIFIED** | Both `gh pr view` calls return `MERGED`. |
 | RC19 | `deliverables-check.sh` backslash strip | PR #292 / `76d6d41e` | **VERIFIED** | `gh pr view 292` → `MERGED 2026-05-03T01:37:15Z`. |

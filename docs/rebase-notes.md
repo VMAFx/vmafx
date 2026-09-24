@@ -1,6 +1,23 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-issue-reference-provenance — archived tracker identities (2026-09-24)
+
+The active `VMAFx/vmafx` tracker reused `#239`, `#241`, `#310`, `#857`, and
+`#870` for pull requests unrelated to the historical records carried by this
+tree. Preserve the explicit `lusoris/vmaf#NNN` spelling in the protected
+Vulkan async-fence and CUDA CAMBI contexts. A conflict resolution that restores
+bare numbers silently points readers at the newer active-fork objects.
+
+`scripts/ci/check-issue-reference-provenance.py` is intentionally narrower
+than a generic Markdown link checker: it matches proven historical contexts by
+stable prose anchor and requires their archived repository namespace. Keep the
+checker, `scripts/ci/tests/test_issue_reference_provenance.py`, the always-run
+pre-commit hook, and the Rule Enforcement self-test together. Do not widen it
+to reject normal bare references to the active fork or `Netflix#NNN` upstream
+references. See
+[Research-2089](research/2089-archived-issue-reference-provenance.md).
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

@@ -16,7 +16,7 @@ until the GPU finishes the luma copy. This was the explicit
 "unblock T7-29 part 3 first, optimise later" choice noted in
 the parent ADR's `Alternatives considered`. lawrence's
 2026-04-30 profile of the FFmpeg `libvmaf_vulkan` filter
-(Issue #239) confirms the predicted bottleneck: the
+(Issue lusoris/vmaf#239) confirms the predicted bottleneck: the
 synchronous fence wait inside `vmaf_vulkan_import_image()`
 serialises the decoder thread and the libvmaf compute queue
 even though they share no data dependency until
@@ -108,7 +108,7 @@ timeline semaphores are the only correct primitive.
 ### 4. Stay on v1
 
 - **Pros**: Zero code, zero matrix grow.
-- **Cons**: Profile signal (Issue #239) is direct
+- **Cons**: Profile signal (Issue lusoris/vmaf#239) is direct
   evidence the wait dominates the FFmpeg filter wall-clock.
 
 Rejected — accepting the bottleneck indefinitely defeats
@@ -127,7 +127,7 @@ that flips Status to Accepted.
 
 - ADR-0186 (parent — declared this v2 follow-up).
 - ADR-0184 (grandparent — pinned the public ABI surface).
-- Issue #239 — profile signal.
+- lusoris/vmaf#239 — profile signal.
 - Khronos Vulkan-Docs wiki, "Synchronization examples"
   (<https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples>)
   — canonical fence-ring + timeline-semaphore patterns.

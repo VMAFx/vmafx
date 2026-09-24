@@ -15,7 +15,7 @@ records, submits, and waits the fence in-call. The ADR's
 `Alternatives considered` row called out async pending-fence as
 the v2 follow-up "once profiling shows the wait is a
 bottleneck." That signal arrived: lawrence's 2026-04-30 profile
-of the FFmpeg `libvmaf_vulkan` filter (Issue #239) confirms the
+of the FFmpeg `libvmaf_vulkan` filter (Issue lusoris/vmaf#239) confirms the
 synchronous fence wait inside `vmaf_vulkan_import_image()`
 serialises CPU and GPU work — exactly the bottleneck the parent
 ADR predicted. The decoder thread idles every other frame
@@ -54,7 +54,7 @@ destroying any handle.
 | **Per-frame fence pool, FIFO ring (chosen)** | Bounded memory, no runtime alloc, ABI-stable, matches the canonical Vulkan game-engine pattern | Ring size has to be picked up-front; if `max_outstanding_frames` < FFmpeg's filter graph depth the back-pressure stalls show up exactly where the v1 wait did | Simplest change that breaks the serial bottleneck without a Vulkan 1.2 hard dependency |
 | **Single fence with delayed wait** (record + submit in `import_image`, wait in `wait_compute`) | Minimal diff vs v1 | Only one frame can be in flight at any time — the decoder still blocks once it loops back to record the next frame against the same command buffer; gain over v1 is marginal | Doesn't actually remove the serialisation — only relocates the wait |
 | **Timeline semaphore with monotonic counter** (drop fences, signal a `VkSemaphore` of type `VK_SEMAPHORE_TYPE_TIMELINE`, wait on a value) | One synchronisation primitive instead of N fences; matches FFmpeg's hwframes context (`AVVkFrame::sem`); cleaner host API | Requires `VK_KHR_timeline_semaphore` (core in 1.2) — fork's pinned `api_version` is 1.3 so present everywhere we run, but the swap touches every kernel TU's submit path and complicates the FFmpeg filter's existing per-frame timeline-semaphore wait (would need a *second* timeline). Bigger blast radius than the ring | Deferred to v3; revisit when a feature kernel needs a queue family transfer (where timeline semaphores are the only correct primitive) |
-| **Stay on v1** | Zero new code, matrix unchanged | Profile signal (Issue #239) is direct evidence the wait dominates the FFmpeg filter wall-clock; staying on v1 means accepting that bottleneck indefinitely | The whole reason v1 existed was "we'll fix it when we have data." The data is in. |
+| **Stay on v1** | Zero new code, matrix unchanged | Profile signal (Issue lusoris/vmaf#239) is direct evidence the wait dominates the FFmpeg filter wall-clock; staying on v1 means accepting that bottleneck indefinitely | The whole reason v1 existed was "we'll fix it when we have data." The data is in. |
 
 ## Consequences
 
@@ -113,7 +113,7 @@ destroying any handle.
   deferred path-3 row of its `Alternatives considered`.
 - Grandparent: [ADR-0184](0184-vulkan-image-import-scaffold.md)
   — pinned the public ABI surface that v2 preserves.
-- Profile signal: Issue #239 — FFmpeg filter wall-clock
+- Profile signal: Issue lusoris/vmaf#239 — FFmpeg filter wall-clock
   serialisation report (lawrence, 2026-04-30).
 - Pattern source: Vulkan ring-fence is the canonical
   "frames in flight" pattern from Khronos

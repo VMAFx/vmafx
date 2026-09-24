@@ -10,6 +10,24 @@ upstream Netflix/vmaf has no equivalent tree, so rebase risk =
 
 ## Rebase-sensitive surfaces
 
+### Historical issue-reference provenance (BUG-048 Section E)
+
+`check-issue-reference-provenance.py` protects the small set of historical
+issue and pull-request contexts proven to belong to the retired
+`lusoris/vmaf` tracker. The active `VMAFx/vmafx` repository reused those
+numbers for unrelated pull requests, so restoring a bare `#NNN` inside one of
+the protected contexts silently changes the cited object. Keep the checker,
+its unit suite, the always-run pre-commit hook, and the Rule Enforcement
+self-test wired together.
+
+The contracts are intentionally context-scoped: ordinary bare `#NNN`
+references normally mean the active fork and must remain allowed, while
+`Netflix#NNN` is a separate upstream namespace. Add a contract only after Git
+history proves the archived identity. Each contract uses a stable prose anchor
+and a logical Markdown block; do not replace that with line numbers, exact
+whitespace, a repository-wide bare-reference ban, or a network lookup. See
+[Research-2089](../../docs/research/2089-archived-issue-reference-provenance.md).
+
 ### Local data-root separation (ADR-1277)
 
 `check-local-data-contract.sh` separates three authorities: private state and
