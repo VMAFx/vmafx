@@ -33,6 +33,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -52,7 +53,6 @@ from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import write_text_atomic  # noqa: E402
 from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
@@ -282,8 +282,7 @@ def _process_clip(
         rows = _frames_to_rows(key, vmaf_json, codec, teacher_model=teacher_name)
         if cache_dir is not None:
             cache_path = _cache_path(cache_dir, key, crf, teacher_name)
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            write_text_atomic(cache_path, vmaf_json.read_text())
+            write_manifest_json(cache_path, json.loads(vmaf_json.read_text()))
         return rows
     finally:
         ref_yuv.unlink(missing_ok=True)
@@ -391,12 +390,8 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    parser = make_argument_parser(
-        prog="konvid_to_full_features.py",
-        description=__doc__,
-    )
+def _add_io_args(parser: argparse.ArgumentParser) -> None:
+    """Register corpus, model, and output flags."""
     parser.add_argument(
         "--konvid-root",
         type=Path,
@@ -438,6 +433,10 @@ def main(argv: list[str] | None = None) -> int:
             "fold output, row counts, and exact CLI args."
         ),
     )
+
+
+def _add_runtime_args(parser: argparse.ArgumentParser) -> None:
+    """Register scratch, cache, and encoder-runtime flags."""
     parser.add_argument(
         "--scratch",
         type=Path,
@@ -472,41 +471,54 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Use ffprobe's source codec_name as the codec label instead of --codec.",
     )
-    args = parser.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.out.with_suffix(".manifest.json")
 
-    resolved_teacher = resolve_teacher_model(args.model)
 
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Assemble the command-line parser from bounded argument groups."""
+    parser = make_argument_parser(
+        prog="konvid_to_full_features.py",
+        description=__doc__,
+    )
+    _add_io_args(parser)
+    _add_runtime_args(parser)
+    return parser
+
+
+def _run_preflight_checks(args: argparse.Namespace, resolved_teacher: Any) -> int | None:
+    """Return an error code when binary or path-form model inputs are absent."""
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
         return 2
     if resolved_teacher.is_path and not Path(resolved_teacher.resolved).is_file():
         print(f"error: model not found at {resolved_teacher.resolved}", file=sys.stderr)
         return 2
+    return None
 
+
+def _resolve_clips(args: argparse.Namespace) -> tuple[Path, list[Path]] | None:
+    """Resolve the videos directory and selected clip list."""
     try:
         videos_dir = _resolve_videos_dir(args.konvid_root)
     except FileNotFoundError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
+        return None
 
     clips = sorted(videos_dir.glob("*.mp4"))
     if args.max_clips is not None:
         clips = clips[: args.max_clips]
     if not clips:
         print(f"error: no .mp4 clips found in {videos_dir}", file=sys.stderr)
-        return 2
+        return None
+    return videos_dir, clips
 
-    args.scratch.mkdir(parents=True, exist_ok=True)
-    cache_dir = None if args.no_cache else args.cache_dir
-    if cache_dir is not None:
-        cache_dir.mkdir(parents=True, exist_ok=True)
 
-    print(
-        f"[konvid-full] processing {len(clips)} clips from {videos_dir} -> {args.out}",
-        flush=True,
-    )
+def _process_all_clips(
+    clips: list[Path],
+    args: argparse.Namespace,
+    cache_dir: Path | None,
+    resolved_teacher: Any,
+) -> tuple[list[dict], float]:
+    """Extract all selected clips while isolating per-clip failures."""
     rows: list[dict] = []
     t0 = time.monotonic()
     for idx, clip in enumerate(clips):
@@ -543,6 +555,35 @@ def main(argv: list[str] | None = None) -> int:
                 f"{time.monotonic() - t0:.1f}s",
                 flush=True,
             )
+    return rows, time.monotonic() - t0
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_arg_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
+
+    resolved_teacher = resolve_teacher_model(args.model)
+    preflight_rc = _run_preflight_checks(args, resolved_teacher)
+    if preflight_rc is not None:
+        return preflight_rc
+
+    resolved = _resolve_clips(args)
+    if resolved is None:
+        return 2
+    videos_dir, clips = resolved
+
+    args.scratch.mkdir(parents=True, exist_ok=True)
+    cache_dir = None if args.no_cache else args.cache_dir
+    if cache_dir is not None:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+    print(
+        f"[konvid-full] processing {len(clips)} clips from {videos_dir} -> {args.out}",
+        flush=True,
+    )
+    rows, elapsed_s = _process_all_clips(clips, args, cache_dir, resolved_teacher)
 
     folds_out = None if args.no_folds_out else args.folds_out
     _write_outputs(rows, args.out, folds_out, args.fold_count)
@@ -554,7 +595,7 @@ def main(argv: list[str] | None = None) -> int:
         clips_selected=len(clips),
         rows=rows,
         folds_out=folds_out,
-        elapsed_s=time.monotonic() - t0,
+        elapsed_s=elapsed_s,
         teacher_model=resolved_teacher.name,
     )
     print(f"[konvid-full] wrote manifest {args.manifest_out}", flush=True)

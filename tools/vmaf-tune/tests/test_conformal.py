@@ -24,6 +24,7 @@ Pins:
 from __future__ import annotations
 
 import json
+import math
 import random
 import sys
 import warnings
@@ -50,6 +51,14 @@ from vmaftune.conformal import (
     save_split_calibration,
 )
 from vmaftune.predictor import Predictor, ShotFeatures
+
+
+def _loads_strict(payload: str) -> object:
+    def reject_nonfinite(token: str) -> None:
+        raise AssertionError(f"non-finite JSON token: {token}")
+
+    return json.loads(payload, parse_constant=reject_nonfinite)
+
 
 # ---------------------------------------------------------------------
 # Fixtures: synthetic calibration set with known noise model.
@@ -134,6 +143,18 @@ def test_split_conformal_round_trip_sidecar(tmp_path: Path) -> None:
     assert restored.alpha == original.alpha
     assert restored.residuals == original.residuals
     assert restored.quantile() == pytest.approx(original.quantile())
+
+
+def test_split_conformal_sidecar_replaces_all_nonfinite_values() -> None:
+    calibration = SplitConformalCalibration(residuals=(1.0,), alpha=0.05)
+    # Exercise the serializer as a final defensive boundary even if an
+    # in-memory object is corrupted after constructor validation.
+    object.__setattr__(calibration, "residuals", (math.nan, math.inf, -math.inf))
+
+    payload = _loads_strict(calibration.to_json())
+
+    assert isinstance(payload, dict)
+    assert payload["residuals"] == [None, None, None]
 
 
 def test_split_conformal_rejects_invalid_alpha() -> None:

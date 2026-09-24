@@ -10,6 +10,7 @@ expected Pareto-optimal subset is hand-derivable.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -33,6 +34,14 @@ from vmaftune.ladder import (
     select_knees,
 )
 from vmaftune.uncertainty import ConfidenceThresholds
+
+
+def _loads_strict(payload: str) -> object:
+    def reject_nonfinite(token: str) -> None:
+        raise AssertionError(f"non-finite JSON token: {token}")
+
+    return json.loads(payload, parse_constant=reject_nonfinite)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -435,6 +444,36 @@ def test_emit_json_round_trips_and_carries_schema_tag():
     # CRF + VMAF round-trip.
     assert payload["renditions"][-1]["crf"] == 21
     assert payload["renditions"][-1]["vmaf"] == 95.0
+
+
+def test_emit_json_replaces_all_nonfinite_quality_values():
+    nonfinite = (math.nan, math.inf, -math.inf)
+    renditions = [
+        Rendition(
+            width=640 + index,
+            height=360,
+            bitrate_kbps=1000.0 + index,
+            vmaf=value,
+            crf=25,
+        )
+        for index, value in enumerate(nonfinite)
+    ]
+    samples = [
+        LadderPoint(
+            width=640 + index,
+            height=360,
+            bitrate_kbps=1000.0 + index,
+            vmaf=value,
+            crf=25,
+        )
+        for index, value in enumerate(nonfinite)
+    ]
+
+    payload = _loads_strict(emit_manifest(renditions, format="json", samples=samples))
+
+    assert isinstance(payload, dict)
+    assert [row["vmaf"] for row in payload["renditions"]] == [None, None, None]
+    assert [row["vmaf"] for row in payload["samples"]] == [None, None, None]
 
 
 def test_emit_unknown_format_raises():

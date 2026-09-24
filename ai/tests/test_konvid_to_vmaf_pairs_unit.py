@@ -220,6 +220,47 @@ def test_process_clip_runs_pipeline_and_writes_cache(tmp_path: Path) -> None:
     assert json.loads((cache / "k.json").read_text()) == fake_rows
 
 
+def test_process_clip_cache_uses_strict_json(tmp_path: Path) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    cache = tmp_path / "cache"
+    rows = [
+        {
+            "key": "k",
+            "frame_index": 0,
+            "nan": float("nan"),
+            "pos_inf": float("inf"),
+            "neg_inf": float("-inf"),
+        }
+    ]
+    with (
+        patch.object(KVP, "_decode_yuv", return_value=(320, 240, 1)),
+        patch.object(KVP, "_encode_dis"),
+        patch.object(KVP, "_run_vmaf"),
+        patch.object(KVP, "_frames_to_rows", return_value=rows),
+    ):
+        KVP._process_clip(
+            "k",
+            tmp_path / "src.mp4",
+            tmp_path / "vmaf",
+            tmp_path / "model.json",
+            crf=35,
+            cache_dir=cache,
+            scratch=scratch,
+        )
+
+    raw = (cache / "k.json").read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    assert json.loads(raw)[0] == {
+        "frame_index": 0,
+        "key": "k",
+        "nan": None,
+        "neg_inf": None,
+        "pos_inf": None,
+    }
+
+
 def test_process_clip_without_cache(tmp_path: Path) -> None:
     scratch = tmp_path / "scratch"
     scratch.mkdir()

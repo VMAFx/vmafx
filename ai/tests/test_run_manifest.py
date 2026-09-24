@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
+import aiutils.run_manifest as run_manifest
 from aiutils.run_manifest import (
     build_run_manifest_payload,
     build_run_provenance,
@@ -16,6 +18,13 @@ from aiutils.run_manifest import (
     write_manifest_json,
     write_run_manifest,
 )
+
+
+def _loads_strict(payload: str) -> object:
+    def reject_nonfinite(token: str) -> None:
+        raise AssertionError(f"non-finite JSON token: {token}")
+
+    return json.loads(payload, parse_constant=reject_nonfinite)
 
 
 def test_describe_path_hashes_existing_files_relative_to_repo(tmp_path: Path) -> None:
@@ -84,6 +93,30 @@ def test_write_manifest_json_is_sorted_and_newline_terminated(tmp_path: Path) ->
     assert raw.endswith("\n")
     assert raw.splitlines()[1].strip().startswith('"a"')
     assert json.loads(raw) == {"a": {"b": 2}, "z": 1}
+
+
+def test_write_manifest_json_replaces_all_nonfinite_values(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    payload = [{"nan": math.nan, "positive_inf": math.inf, "negative_inf": -math.inf}]
+
+    write_manifest_json(manifest, payload)
+
+    raw = manifest.read_text(encoding="utf-8")
+    assert raw.endswith("\n")
+    assert _loads_strict(raw) == [{"nan": None, "negative_inf": None, "positive_inf": None}]
+
+
+def test_dumps_manifest_json_replaces_all_nonfinite_values() -> None:
+    payload = {"nan": math.nan, "positive_inf": math.inf, "negative_inf": -math.inf}
+
+    raw = run_manifest.dumps_manifest_json(payload)
+
+    assert raw.endswith("\n")
+    assert _loads_strict(raw) == {
+        "nan": None,
+        "negative_inf": None,
+        "positive_inf": None,
+    }
 
 
 def test_build_run_manifest_payload_deduplicates_common_envelope(tmp_path: Path) -> None:
