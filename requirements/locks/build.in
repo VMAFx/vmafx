@@ -1,4 +1,3 @@
 # Cross-platform bootstrap used by C/C++ build lanes.
-pip==26.2.1
 meson==1.12.1
 ninja==1.13.0

@@ -19,9 +19,10 @@ authoritative, cryptographically hash-locked dependency pins (`requirements/lock
    - Manifest validation rejects remote outputs, directory traversals, duplicate inputs, output flag overrides (`-o`), repeated install targets, and unregistered `*-lock.txt` files.
    - `install_aliases` are exact, reviewed objects bound to explicit consumer paths and context (preventing unrelated workflows from consuming alias paths). Traversal, Windows drive/UNC paths, duplicate JSON keys, and unreferenced/dead aliases are rejected. Never replace them with basename/suffix heuristics; a lookalike path outside the manifest is untrusted.
 
-2. **Build backend set (`requirements/locks/package-build.in`)**:
-   - Contains all PEP 517 build backend tools and dependencies for locked, unisolated builds (`--no-deps --no-build-isolation`): `build`, `hatchling`, `editables`, `setuptools`, `wheel`, `packaging`, `Cython`, `numpy`, `scipy`.
+2. **Build backend set and installer tooling exclusion**:
+   - `requirements/locks/package-build.in` contains all PEP 517 build backend tools and dependencies for locked, unisolated builds (`--no-deps --no-build-isolation`): `build`, `hatchling`, `editables`, `setuptools`, `wheel`, `packaging`, `Cython`, `numpy`, `scipy`.
    - Any package built from sdist or installed editable must have its backend dependencies satisfied here.
+   - Build locks (`requirements/locks/build.in`, `requirements/locks/build.txt`) cannot contain installer tooling such as `pip`; build locks pin build tools (`meson`, `ninja`) only to avoid collision or uninstallation failures with runner- or distro-managed pip installations lacking RECORD metadata.
 
 3. **Install policy**:
    - All CI and production pip commands must pass `--require-hashes -r <lockfile>`.

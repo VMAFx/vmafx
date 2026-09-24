@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 -->
-# Research: Python Dependency Hash-Lock and OpenSSF Supply-Chain Audit
+# Research-1305
 
 - **Date**: 2026-09-23
 - **Author**: Lusoris
@@ -136,16 +136,46 @@ interpreter running Nox. On a Python 3.14 workstation this violates the declared
 manifest-owned development locks compiled with `--universal` and pin those two sessions
 to Python 3.12 (and Python 3.14 for packages resolving on 3.14).
 
+### 3.6 Installer tooling exclusion from bootstrap build lock
+
+Hosted runners and Debian/Ubuntu container environments pre-install `pip` as a
+system package without `RECORD` metadata. Pinning `pip` in `build.in` caused
+`pip install -r requirements/locks/build.txt` to attempt an in-place uninstallation
+or re-installation of `pip`, failing when attempting to uninstall the externally managed
+system `pip` lacking `RECORD` metadata (`ERROR: Cannot uninstall pip ..., RECORD file not found. Hint: The package was installed by debian.`).
+Because `pip` is an installer rather than a project build dependency, it was removed
+from `build.in`, leaving only the true build tools (`meson`, `ninja`) in `build.txt`.
+
+### 3.7 Truthful package-wide license review for `text-unidecode`
+
+`python-slugify` depends on `text-unidecode`, dual-licensed under
+`Artistic-1.0-Perl OR GPL-1.0-only OR GPL-2.0-or-later`. VMAFx consumes the package
+under `Artistic-1.0-Perl`, but GitHub `actions/dependency-review-action` evaluates
+all disjunctive branches and flags `GPL-2.0-or-later` under `deny-licenses: GPL-3.0`.
+Because the action's PURL matcher evaluates package identity package-wide without
+considering version strings, `allow-dependencies-licenses: pkg:pypi/text-unidecode`
+truthfully permits the package without version ambiguity.
+
+### 3.8 Container Python virtual environment isolation
+
+In `Dockerfile`, installing `package-build.txt` directly against the system interpreter
+via `--break-system-packages` caused pip to conflict with Debian's pre-installed
+`python3-packaging` package. Creating an isolated virtual environment (`/opt/vmaf-venv`)
+and placing `/opt/vmaf-venv/bin` in `PATH` completely isolates the wheel installations
+from system packages, avoiding collisions without requiring `--break-system-packages`.
+
 ## 4. Verification Evidence
 
 - `scripts/ci/check_python_dependency_locks.py check`: Exit 0 (25 locks validated, all installs verified).
-- `python3 -m unittest scripts/ci/tests/test_python_dependency_locks.py`: Exit 0 (68 tests passing).
+- `python3 -m unittest scripts/ci/tests/test_python_dependency_locks.py`: Exit 0 (100 tests passing).
+- `python3 -m unittest scripts/ci/tests/test_scorecard_workflow.py`: Exit 0 (7 tests passing).
+- `pytest scripts/ci/tests`: Exit 0 (407 tests passing).
 - Pinned Nox 2026.8.17 installation from `requirements/locks/nox.txt`: Exit 0.
 - `nox -l`: Exit 0; ROI-score and ensemble-kit resolve to Python 3.12.
 - `nox -s vmaf_tune -- --collect-only -q`: Exit 0; locked session install
   succeeded and collected 2,053 tests.
 - `python3 scripts/ci/tests/test_ci_impact.py`: Exit 0 (31 tests passing).
 - `bash scripts/ci/test-classify-dependency-pr.sh`: Exit 0 (29 tests passing).
-- `actionlint`: Clean exit 0 across all workflows.
+- `actionlint .github/workflows/*.yml`: Clean exit 0 across all 34 workflows.
 - `shellcheck`: Clean exit 0 across all scripts.
 - `hadolint`: Clean exit 0 across all Dockerfiles.

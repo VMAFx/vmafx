@@ -70,6 +70,8 @@ OPTIONS_WITH_VALUES = {
 SHORT_OPTIONS_WITH_VALUES = {"b", "c", "e", "f", "i", "r", "t", "d", "C"}
 SUPPORTED_ABSOLUTE_PREFIXES = ("/build/", "/vmaf/", "/tmp/")  # noqa: S108
 REPO_LOCAL_WORKFLOW_PREFIXES = (
+    "ai/",
+    "compat/",
     "requirements/",
     "scripts/",
     "tools/",
@@ -1092,6 +1094,15 @@ def _extract_flag_value(
         return next_token
     if token.startswith(prefixes):
         return token.split("=", 1)[1]
+    for flag in flags:
+        if (
+            flag.startswith("-")
+            and not flag.startswith("--")
+            and token.startswith(flag)
+            and len(token) > len(flag)
+        ):
+            val = token[len(flag) :]
+            return val.split("=", 1)[1] if val.startswith("=") else val
     return None
 
 
@@ -1114,8 +1125,9 @@ def _check_precheckout_token(
 
 def _check_precheckout_command_tokens(tokens: list[str], root: Path | None = None) -> list[str]:
     findings: list[str] = []
-    for idx, token in enumerate(tokens):
-        next_tok = tokens[idx + 1] if idx + 1 < len(tokens) else None
+    norm = _normalize_pip_tokens(tokens)
+    for idx, token in enumerate(norm):
+        next_tok = norm[idx + 1] if idx + 1 < len(norm) else None
         findings.extend(_check_precheckout_token(token, next_tok, root))
     return findings
 
@@ -1177,6 +1189,24 @@ def _is_checkout_step(step: dict[str, Any]) -> bool:
     return True
 
 
+def _check_precheckout_pip_tokens(pip_tokens: list[str], root: Path | None = None) -> list[str]:
+    findings: list[str] = []
+    for edit in _extract_editable_targets(pip_tokens):
+        if edit and _is_repo_local_target(edit, root):
+            findings.append(f"consumes repo-local editable target {edit!r}")
+    for pkg in _package_arguments(pip_tokens):
+        if _is_repo_local_target(pkg, root):
+            findings.append(f"consumes repo-local source target {pkg!r}")
+    return findings
+
+
+def _check_precheckout_pip_invocations(command: str, root: Path | None = None) -> list[str]:
+    findings: list[str] = []
+    for pip_tokens in _pip_install_tokens(command):
+        findings.extend(_check_precheckout_pip_tokens(pip_tokens, root))
+    return findings
+
+
 def _step_consumes_repo_resources(step: dict[str, Any], root: Path | None = None) -> list[str]:
     findings: list[str] = []
     uses = str(step.get("uses", "")).strip()
@@ -1187,7 +1217,8 @@ def _step_consumes_repo_resources(step: dict[str, Any], root: Path | None = None
         for _line_num, command in logical_lines(run):
             tokens = _shell_tokens(command)
             findings.extend(_check_precheckout_command_tokens(tokens, root))
-    return findings
+            findings.extend(_check_precheckout_pip_invocations(command, root))
+    return list(dict.fromkeys(findings))
 
 
 def _parse_step_scalar(prop: str, val: str, step: dict[str, Any]) -> None:
@@ -1308,10 +1339,13 @@ def _load_workflow_jobs(text: str) -> dict[str, Any]:
     if yaml is not None:
         try:
             data = yaml.safe_load(text)
-            if isinstance(data, dict) and isinstance(data.get("jobs"), dict):
-                return cast(dict[str, Any], data["jobs"])
-        except Exception:
-            pass
+        except Exception as error:
+            raise ContractError(f"malformed workflow YAML: {error}") from error
+        if data is None:
+            return {}
+        if not isinstance(data, dict) or not isinstance(data.get("jobs"), dict):
+            raise ContractError("malformed workflow YAML: root or jobs mapping missing")
+        return cast(dict[str, Any], data["jobs"])
     return _parse_workflow_jobs_fallback(text)
 
 

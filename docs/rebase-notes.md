@@ -63,6 +63,22 @@ these Meson blocks.
    Bootstrap Nox from `requirements/locks/nox.txt`; each package session owns a
    dedicated development lock. Preserve Python 3.12 on `roi_score` and
    `ensemble_kit`, whose package metadata excludes Python 3.14.
+7. **Installer tooling (`pip`) excluded from bootstrap build locks.**
+   `requirements/locks/build.in` and `build.txt` pin build dependencies (`meson`, `ninja`)
+   only. `pip` is installer tooling provided by runners/operating systems; pinning `pip`
+   inside `build.txt` caused uninstallation failures on Debian/Ubuntu systems with packaged
+   pip distributions lacking `RECORD` metadata.
+8. **Truthful package-wide license review for `text-unidecode`.**
+   `actions/dependency-review-action` evaluates SPDX license expressions under
+   `deny-licenses: GPL-3.0, AGPL-3.0`. `python-slugify` brings in `text-unidecode`,
+   licensed as `Artistic-1.0-Perl OR GPL-1.0-only OR GPL-2.0-or-later`, which VMAFx
+   consumes under `Artistic-1.0-Perl`. GitHub Dependency Review compares PURLs
+   package-wide ignoring versions; `allow-dependencies-licenses: pkg:pypi/text-unidecode`
+   truthfully allows the package using exact package-wide purl syntax.
+9. **Root `Dockerfile` isolates Python tooling in `/opt/vmaf-venv`.**
+   Prevents packaging conflicts (such as Debian's pre-installed `python3-packaging`) when
+   installing hash-locked dependencies into the container image, eliminating the need for
+   `--break-system-packages`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

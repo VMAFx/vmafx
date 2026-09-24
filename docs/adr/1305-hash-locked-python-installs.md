@@ -117,6 +117,27 @@ entire repository using manifest-driven hash locks.
      semantic tags (`@v...`), which are exempted from SHA-only rules to
      preserve SLSA cryptographic attestation.
 
+9. **Installer tooling exclusion from bootstrap build locks**:
+   - `requirements/locks/build.in` pins build dependencies (`meson`, `ninja`) only.
+   - Installer tooling (`pip`) is excluded from build locks to prevent pip from
+     attempting to uninstall runner- or Debian-managed pip packages that lack
+     RECORD metadata.
+
+10. **Truthful package-wide license review for `text-unidecode`**:
+    - `actions/dependency-review-action` evaluates SPDX license expressions under
+      `deny-licenses: GPL-3.0, AGPL-3.0`.
+    - `python-slugify` brings in `text-unidecode`, dual-licensed under
+      `Artistic-1.0-Perl OR GPL-1.0-only OR GPL-2.0-or-later`, consumed under
+      `Artistic-1.0-Perl`.
+    - GitHub Dependency Review matches PURLs package-wide (ignoring versions);
+      `allow-dependencies-licenses: pkg:pypi/text-unidecode` explicitly and
+      truthfully allows the package using exact package-wide purl syntax.
+
+11. **Container Python virtual environment isolation**:
+    - Root `Dockerfile` installs locked Python packages into an isolated virtual
+      environment (`/opt/vmaf-venv`), avoiding conflicts with Debian system
+      packages (such as `python3-packaging`) without `--break-system-packages`.
+
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |

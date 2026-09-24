@@ -1016,6 +1016,80 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertFalse(self.checker._is_local_source("https://evil.com/pkg", root=ROOT))
         self.assertFalse(self.checker._is_local_source("git@github.com:evil/pkg.git", root=ROOT))
 
+    def test_build_lock_input_excludes_installer_tooling(self) -> None:
+        build_in = (ROOT / "requirements/locks/build.in").read_text(encoding="utf-8")
+        build_txt = (ROOT / "requirements/locks/build.txt").read_text(encoding="utf-8")
+        # Build lanes bootstrap meson and ninja; pip is installer tooling and must not be pinned
+        # in the build lock to avoid conflicting with Debian/runner-managed pip packages.
+        self.assertNotIn("pip==", build_in)
+        self.assertNotIn("pip==", build_txt)
+        self.assertIn("meson==", build_in)
+        self.assertIn("ninja==", build_in)
+        self.assertIn("meson==", build_txt)
+        self.assertIn("ninja==", build_txt)
+
+    def _assert_dockerfile_python_contract(self, dockerfile: str) -> None:
+        self.assertIn("python3 -m venv /opt/vmaf-venv", dockerfile)
+        self.assertEqual(
+            dockerfile.count("/opt/vmaf-venv/bin/pip install"),
+            2,
+            "Both Python installs in Dockerfile must use /opt/vmaf-venv/bin/pip install",
+        )
+        self.assertIn(
+            "/opt/vmaf-venv/bin/pip install --no-cache-dir --require-hashes \\\n"
+            "        -r /vmaf/requirements/locks/package-build.txt",
+            dockerfile,
+        )
+        self.assertIn(
+            "/opt/vmaf-venv/bin/pip install --no-cache-dir --no-build-isolation --require-hashes \\\n"
+            "        -r /vmaf/python/requirements-lock.txt",
+            dockerfile,
+        )
+        self.assertIn('ENV PATH="/opt/vmaf-venv/bin:${PATH}"', dockerfile)
+        self.assertNotIn("--break-system-packages", dockerfile)
+
+    def test_root_dockerfile_isolates_python_in_virtualenv(self) -> None:
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        self._assert_dockerfile_python_contract(dockerfile)
+        # Ensure scan_install_commands detects no violations in Dockerfile
+        findings = self.checker.scan_install_commands(Path("Dockerfile"), dockerfile, root=ROOT)
+        self.assertEqual(findings, [])
+
+    def test_root_dockerfile_contract_mutations_rejected(self) -> None:
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        # Mutation 1: Reverting invocation 1 to system pip
+        mut_inv1 = dockerfile.replace(
+            "/opt/vmaf-venv/bin/pip install --no-cache-dir --require-hashes \\\n"
+            "        -r /vmaf/requirements/locks/package-build.txt",
+            "pip install --no-cache-dir --require-hashes \\\n"
+            "        -r /vmaf/requirements/locks/package-build.txt",
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_dockerfile_python_contract(mut_inv1)
+
+        # Mutation 2: Reverting invocation 2 to system pip
+        mut_inv2 = dockerfile.replace(
+            "/opt/vmaf-venv/bin/pip install --no-cache-dir --no-build-isolation --require-hashes \\\n"
+            "        -r /vmaf/python/requirements-lock.txt",
+            "pip install --no-cache-dir --no-build-isolation --require-hashes \\\n"
+            "        -r /vmaf/python/requirements-lock.txt",
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_dockerfile_python_contract(mut_inv2)
+
+        # Mutation 3: Reverting ENV PATH
+        mut_path = dockerfile.replace(
+            'ENV PATH="/opt/vmaf-venv/bin:${PATH}"',
+            'ENV PATH="/usr/local/bin:${PATH}"',
+        )
+        with self.assertRaises(AssertionError):
+            self._assert_dockerfile_python_contract(mut_path)
+
+        # Mutation 4: Reverting virtualenv creation
+        mut_venv = dockerfile.replace("python3 -m venv /opt/vmaf-venv && \\\n    ", "")
+        with self.assertRaises(AssertionError):
+            self._assert_dockerfile_python_contract(mut_venv)
+
     def test_repository_contract_is_current(self) -> None:
         result = subprocess.run(  # noqa: S603
             [sys.executable, str(CHECKER), "--root", str(ROOT), "check"],
@@ -1373,6 +1447,82 @@ jobs:
                 "consumes repo-local requirements file 'requirements/locks/build.txt'",
                 fallback_res[0],
             )
+
+    def test_joined_pip_options_and_local_sources_rejected_both_modes(self) -> None:
+        template = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install
+        run: {cmd}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+"""
+        cases = [
+            (
+                "python -m pip install --require-hashes -rrequirements/locks/build.txt",
+                "consumes repo-local requirements file 'requirements/locks/build.txt'",
+            ),
+            (
+                "pip install --no-deps --no-build-isolation -eai",
+                "consumes repo-local editable target 'ai'",
+            ),
+            (
+                "pip install --no-build-isolation ai",
+                "consumes repo-local source target 'ai'",
+            ),
+            (
+                "pip install --no-deps --no-build-isolation ai",
+                "consumes repo-local source target 'ai'",
+            ),
+        ]
+        for cmd, expected in cases:
+            text = template.format(cmd=cmd)
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), text
+            )
+            self.assertEqual(len(pyyaml_res), 1, f"PyYAML failed to detect: {cmd}")
+            self.assertEqual(len(fallback_res), 1, f"Fallback failed to detect: {cmd}")
+            self.assertIn(expected, pyyaml_res[0])
+            self.assertIn(expected, fallback_res[0])
+
+    def test_post_checkout_joined_pip_options_and_local_sources_accepted_both_modes(self) -> None:
+        template = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install
+        run: {cmd}
+"""
+        cmds = [
+            "python -m pip install --require-hashes -rrequirements/locks/build.txt",
+            "pip install --no-deps --no-build-isolation -eai",
+            "pip install --no-build-isolation ai",
+            "pip install --no-deps --no-build-isolation ai",
+        ]
+        for cmd in cmds:
+            text = template.format(cmd=cmd)
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), text
+            )
+            self.assertEqual(pyyaml_res, [], f"PyYAML false positive on post-checkout: {cmd}")
+            self.assertEqual(fallback_res, [], f"Fallback false positive on post-checkout: {cmd}")
+
+    def test_malformed_yaml_fails_closed_with_pyyaml(self) -> None:
+        self.assertIsNotNone(self.checker.yaml)
+        malformed_texts = [
+            "jobs:\n  test:\n    steps:\n      - uses: [unclosed bracket",
+            "jobs:\n  test:\n    steps:\n      bad indentation:\n   key: val",
+            "not a mapping at top level",
+            "jobs: 'not a mapping'",
+        ]
+        for bad_yaml in malformed_texts:
+            with self.assertRaises(self.checker.ContractError):
+                self.checker.scan_workflow_checkout_ordering(
+                    Path(".github/workflows/test.yml"), bad_yaml, root=ROOT
+                )
 
     def test_repository_workflows_enforced_in_fallback_mode(self) -> None:
         workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
