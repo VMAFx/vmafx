@@ -47,7 +47,7 @@ ARG VMAFX_VERSION=dev
 ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:433790e515d27dc6003e847e644cc0af956985cf315c1c58a3b73ee2dd305183"
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97"
-ARG CUDA_RUNTIME="nvidia/cuda:13.4.1-runtime-ubuntu26.04@sha256:1725dba28b39fd0c3c35665c98284b603bef7b30e8f7990a98d4c3cbb905016a"
+ARG CUDA_RUNTIME="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"
 ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
 ARG ONEAPI_RUNTIME="intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f"
 
@@ -55,6 +55,9 @@ ARG ONEAPI_RUNTIME="intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:894
 # `COPY --from=<image>` is a base-image pin that no FROM-oriented search
 # finds. BuildKit prunes whichever the selected target does not use.
 FROM ${CUDA_RUNTIME} AS cuda-runtime-libs
+COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/
+RUN /tmp/install-cuda-toolkit.sh --mode=runtime /tmp \
+    && rm -rf /tmp/install-cuda-toolkit.sh /tmp/build-config.env /var/lib/apt/lists/*
 FROM ${ROCM_RUNTIME} AS rocm-runtime-libs
 FROM ${ONEAPI_RUNTIME} AS oneapi-runtime-libs
 

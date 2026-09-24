@@ -1,15 +1,12 @@
 # syntax=docker/dockerfile:1.27@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
-# Base: NVIDIA CUDA ≥13.3 devel on Ubuntu 26.04. Non-conservative pin per ADR D27 —
-# we follow latest-stable CUDA aggressively because the fork's value is GPU perf on
-# current hardware; being one release behind costs ~10-30% on kernel-bound stages.
-# Digest-pinned (sha256) for supply-chain reproducibility; update when upgrading the
-# CUDA tag. Gives us nvcc + cudart-dev without Ubuntu's stale 'nvidia-cuda-toolkit'
-# apt package.
+# Base: digest-pinned Ubuntu 26.04. CUDA compiler + runtime headers are installed
+# explicitly via scripts/ci/install-cuda-toolkit.sh from NVIDIA's apt repository (ADR-1306),
+# avoiding the OCI image publication lag that blocked bumping CUDA releases.
 # Base images come from build-config.env -- the single source of truth for
 # every container base in this repository. These defaults are mirrors kept in
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run that script with --write.
-ARG CUDA_BUILDER="nvidia/cuda:13.4.1-devel-ubuntu26.04@sha256:fe678162c7114158e170f2f727a7582162a3a55d7090ed31fac04f2dbc173378"
+ARG CUDA_BUILDER="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"
 
 FROM ${CUDA_BUILDER}
 
@@ -40,8 +37,19 @@ ARG DEBIAN_FRONTEND=noninteractive
 # pipefail for RUNs that use `|` (DL4006).
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# ---------- CUDA toolkit install (ADR-1306) ----------
+COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/install-cuda-toolkit.sh --mode=builder /tmp \
+    && rm -f /tmp/install-cuda-toolkit.sh /tmp/build-config.env
+
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
+
 # ---------- system dependencies ----------
-# CUDA toolkit + cudart are already present in the base image.
 # DL3008: we install tracked security-updated versions from the Ubuntu
 # 26.04 archive; pinning every patch version would break on every
 # upstream security update. apt-get update + install happens in one
@@ -51,19 +59,9 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # skip the network fetch. `sharing=locked` serialises concurrent BuildKit jobs
 # against the same cache. We INTENTIONALLY drop `rm -rf /var/lib/apt/lists/*`
 # here — with the cache mount the lists never make it into the image layer.
-# The CUDA apt list shipped in the base image is dropped first. NVIDIA's
-# ubuntu2604 index is currently malformed — `apt-get update` inside the pinned
-# digest fails with "Encountered a section with no Package: header ...
-# developer.download.nvidia.com_compute_cuda_repos_ubuntu2604_x86%5f64_Packages.lz4",
-# reproduced by running the pinned image directly, so it is upstream and not
-# ours. None of the packages below come from that repo and the CUDA toolkit is
-# baked into the image (nvcc 13.3 still resolves after the removal), so dropping
-# the list costs nothing. Same shape as the Microsoft/Azure source removal in
-# .github/workflows/go-ci.yml, which exists for this class of breakage.
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    rm -f /etc/apt/sources.list.d/cuda-*.list && \
     apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ccache \

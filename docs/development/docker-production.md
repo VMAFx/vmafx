@@ -40,9 +40,10 @@ docker run --rm \
 
 The CPU CLI uses `gcr.io/distroless/cc-debian13:nonroot`, matching its Debian 13
 builder ABI. The server uses the official Python 3.14 slim image (also Debian 13)
-because a virtualenv requires its matching interpreter and standard library. GPU
-variants use their vendors' pinned runtime families so the complete accelerator
-runtime stays aligned with the compiler that produced `libvmaf`.
+because a virtualenv requires its matching interpreter and standard library. The
+CUDA variant uses the same digest-pinned Ubuntu 26.04 base for its builder and
+runtime and installs exact NVIDIA apt packages in each stage. The other GPU
+variants use their vendors' pinned runtime families.
 
 ## Recovering a published image set
 
@@ -61,7 +62,7 @@ granting package-write or OIDC permissions.
 
 ## GPU variants
 
-### CUDA 13.3.1
+### CUDA 13.4.2
 
 ```bash
 docker pull ghcr.io/vmafx/vmafx:vX.Y.Z-cuda13
@@ -70,7 +71,7 @@ docker run --rm --gpus all \
   --version
 ```
 
-Requires the NVIDIA Container Toolkit and a host driver compatible with CUDA 13.3.1.
+Requires the NVIDIA Container Toolkit and a host driver compatible with CUDA 13.4.2.
 
 ### ROCm 7.2.4 (HIP)
 
@@ -209,10 +210,11 @@ Both Dockerfiles use a multi-stage build:
    the compiled binary, shared libraries, and model files.
 4. **Server runtime** (the same pinned `python:3.14-slim` image): provides the
    interpreter to which `/venv/bin/python` links. It runs as UID/GID 65532.
-5. **GPU builders/runtimes**: CUDA 13.3.1 uses NVIDIA devel/runtime images,
-   ROCm 7.2.4 uses AMD's supported dev/application image, and the Intel image
-   uses the oneAPI basekit image tagged 2025.3.2 with the latest published
-   2025.3.1 runtime. Every reference is digest-pinned.
+5. **GPU builders/runtimes**: CUDA 13.4.2 uses the same digest-pinned Ubuntu 26.04
+   base for its builder and runtime, installing exact NVIDIA apt packages in each
+   stage. ROCm 7.2.4 uses AMD's supported dev/application image, and the Intel
+   image uses the oneAPI basekit image tagged 2025.3.2 with the latest published
+   2025.3.1 runtime. Every base-image reference is digest-pinned.
 
 Publishing a GitHub release drives the two Docker workflows through the
 `release.published` event. Each workflow checks out

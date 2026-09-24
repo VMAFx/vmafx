@@ -6,7 +6,7 @@
 #
 # Targets use matching, digest-pinned build/runtime families:
 #   final-cpu        — Debian 13 builder + distroless Debian 13 runtime
-#   final-cuda13     — NVIDIA CUDA 13.4.1 devel + runtime images
+#   final-cuda13     — Ubuntu 26.04 + explicit pinned CUDA builder/runtime packages
 #   final-rocm10      — AMD ROCm 10.0.0 dev/application image
 #   final-oneapi2025 — Intel oneAPI 2025.3.2 basekit + 2025.3.1 runtime image
 #
@@ -28,8 +28,8 @@
 # these lines, then run `make base-images-sync`.
 ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97"
-ARG CUDA_BUILDER="nvidia/cuda:13.4.1-devel-ubuntu26.04@sha256:fe678162c7114158e170f2f727a7582162a3a55d7090ed31fac04f2dbc173378"
-ARG CUDA_RUNTIME="nvidia/cuda:13.4.1-runtime-ubuntu26.04@sha256:1725dba28b39fd0c3c35665c98284b603bef7b30e8f7990a98d4c3cbb905016a"
+ARG CUDA_BUILDER="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"
+ARG CUDA_RUNTIME="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"
 ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
 ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
 ARG ONEAPI_BUILDER="intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a"
@@ -91,13 +91,24 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cpu \
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/. /dist/model/
 
-# --- CUDA 13.4.1 build ---
+# --- CUDA 13.4.2 build (ADR-1306) ---
 FROM ${CUDA_BUILDER} AS builder-cuda13
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VMAF_BUILD_JOBS=4
 ARG NV_CODEC_HEADERS_COMMIT=876af32a202d0de83bd1d36fe74ee0f7fcf86b0d
 ARG MESON_VERSION=1.12.0
+
+COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    /tmp/install-cuda-toolkit.sh --mode=builder /tmp \
+    && rm -f /tmp/install-cuda-toolkit.sh /tmp/build-config.env
+
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -293,10 +304,15 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM ${CUDA_RUNTIME} AS final-cuda13
 LABEL org.opencontainers.image.title="vmafx"
-LABEL org.opencontainers.image.description="VMAFX production CUDA 13.4.1 runtime"
+LABEL org.opencontainers.image.description="VMAFX production CUDA 13.4.2 runtime"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
+COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/
+RUN /tmp/install-cuda-toolkit.sh --mode=runtime /tmp \
+    && rm -rf /tmp/install-cuda-toolkit.sh /tmp/build-config.env /var/lib/apt/lists/*
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH="${CUDA_HOME}/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
 COPY --from=builder-cuda13 /dist/lib/   /usr/local/lib/

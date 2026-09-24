@@ -35,12 +35,16 @@ creation step, exit code 13.
 
 ### CUDA package names
 
-- Use `cuda-toolkit` (current unversioned meta-package).
+- Use `scripts/ci/install-cuda-toolkit.sh --mode=full`; do not recreate an apt
+  bootstrap or install a bare `cuda-toolkit-<series>` here. `build-config.env`
+  owns `CUDA_APT_PACKAGE`, `CUDA_APT_LOCK_RELEASE`, and the exact toolkit,
+  nvcc, and cudart Debian versions (ADR-1285 / ADR-1306). The installer passes
+  `package=version` and verifies the installed dpkg values.
 - Do NOT install `libcuda1` (runtime driver) — must come from
   `nvidia-container-runtime` at run-time; baking it in shadows host
   driver.
 - Do NOT install `cuda-compiler` — legacy alias no longer existing in
-  NVIDIA CUDA channels; `cuda-toolkit` already provides `nvcc`.
+  NVIDIA CUDA channels; full mode installs the exact toolkit and nvcc packages.
 
 ### Intel oneAPI package name
 

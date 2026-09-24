@@ -21,6 +21,18 @@ whose default mirrors root-level `build-config.env`; edit that file, run
 `COPY --from=cuda-runtime-libs …`. BuildKit prunes unused stages, so extra
 stage = free. Four pins hidden this way were most out-of-date images in repo.
 
+CUDA base images (ADR-1306): `CUDA_BUILDER` and `CUDA_RUNTIME` are digest-pinned
+Ubuntu 26.04 (`ubuntu:26.04@sha256:...`) and must equal `DEV_BASE` exactly,
+including its digest; never re-introduce `nvidia/cuda` base images. The narrow
+`dev/ubuntu-26.04-cuda.Dockerfile` compatibility image is part of this owner;
+the Alpine, Arch, and Fedora compatibility files are not. Toolkit compiler and
+runtime packages install via `scripts/ci/install-cuda-toolkit.sh`
+(`--mode=builder` or `--mode=runtime`) with exact `package=version` operands and
+installed-version checks. `build-config.env` owns the release lock and exact
+toolkit/nvcc/cudart versions; a series-only apt package is not a pin.
+Renovate discovers `CUDA_VERSION` through the official NVIDIA redist HTML index
+(`custom.nvidia-cuda-redist`), never through `nvidia/cuda` Docker tags.
+
 See [docs/development/base-images.md](../docs/development/base-images.md).
 
 ## FFmpeg stable-release mirror
