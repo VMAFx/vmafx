@@ -19,9 +19,11 @@
 #       {"ok": false, "error": "message"}
 #
 # The Unix socket path defaults to /tmp/vmafx-sidecar.sock and is
-# overridden by VMAFX_SIDECAR_SOCKET.  The current Helm chart does not wire
-# this helper into the node pod; a standalone integrator must arrange a
-# same-UID peer and a private parent directory before starting the server.
+# overridden by VMAFX_SIDECAR_SOCKET.  Checkpoints default to
+# /mnt/vmafx-models/online and are overridden by VMAFX_SIDECAR_CHECKPOINT_DIR.
+# The current Helm chart does not wire this helper into the node pod; a
+# standalone integrator must arrange a same-UID peer, a private parent
+# directory, and a writable checkpoint directory before starting the server.
 #
 # ADR-0781: sidecar online training — SGD + EMA + replay buffer.
 

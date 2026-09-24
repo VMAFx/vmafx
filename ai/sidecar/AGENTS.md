@@ -52,3 +52,11 @@ Implements vmafx-node online training sidecar (ADR-0781).
    to unblock workers and guarantee deterministic shutdown (< 1.5s). Restore
    previous signal handlers on exit. The sidecar suite remains wired across root
    `pyproject.toml`, `ai/pyproject.toml`, `noxfile.py`, and CI.
+
+8. **Standalone checkpoint directory requirement** — `OnlineTrainer` defaults
+   `checkpoint_dir` to `/mnt/vmafx-models/online` (matching container/PVC mount
+   topology). Because `/mnt` is root-owned and unwritable in normal standalone
+   environments, any human-facing standalone sidecar example or integration
+   test must explicitly allocate and configure `VMAFX_SIDECAR_CHECKPOINT_DIR`
+   alongside `VMAFX_SIDECAR_SOCKET` with appropriate permissions and cleanup
+   traps. Never rely on the production `/mnt` default for host-side quick-starts.

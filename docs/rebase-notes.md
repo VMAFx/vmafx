@@ -68,6 +68,11 @@ these Meson blocks.
    absent from its base. When rebasing after that infrastructure lands, reconcile
    this direct pin with the manifest-owned lock selected for `build.yml`; do not
    restore an unversioned `pip install pytest`.
+4. **Standalone `ai/sidecar/online_trainer.py` invocations require `VMAFX_SIDECAR_CHECKPOINT_DIR`.**
+   The production default `/mnt/vmafx-models/online` assumes a container volume mount.
+   Standalone quick-starts and doc contracts must explicitly configure a writable
+   checkpoint directory alongside `VMAFX_SIDECAR_SOCKET` to avoid failing closed with
+   `PermissionError` on root-owned `/mnt`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

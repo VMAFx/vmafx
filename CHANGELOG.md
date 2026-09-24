@@ -31446,7 +31446,9 @@ See `docs/server/auth.md` for the full configuration guide.
   closure remains pending the post-merge Code Scanning run.
 - Correct the sidecar operator guide to the executable state: there is no current
   chart wiring, automatic feedback producer, node checkpoint consumer, CUDA
-  setting, HTTP trainer status service, or Prometheus counter registration.
+  setting, HTTP trainer status service, or Prometheus counter registration;
+  require standalone quick-start examples to configure a writable checkpoint
+  directory alongside the socket.
 
 
 - **Semgrep OSS warnings — 19/19 triaged (Research-0090)** — three real

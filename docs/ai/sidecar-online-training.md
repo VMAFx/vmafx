@@ -28,14 +28,23 @@ this release. Treat the architecture below as an implemented component awaiting
 deployment wiring, not as a description of the current chart.
 
 For isolated development, start the server directly after arranging a private
-socket directory and a same-UID client:
+runtime directory, a writable checkpoint directory, and a same-UID client:
 
 ```bash
 runtime_dir="$(mktemp -d)"
+trap 'rm -rf "$runtime_dir"' EXIT INT TERM
 chmod 700 "$runtime_dir"
+mkdir -p "$runtime_dir/checkpoints"
+
 VMAFX_SIDECAR_SOCKET="$runtime_dir/vmafx-sidecar.sock" \
+VMAFX_SIDECAR_CHECKPOINT_DIR="$runtime_dir/checkpoints" \
   python -m ai.sidecar.online_trainer
 ```
+
+The production default checkpoint directory (`/mnt/vmafx-models/online`) assumes
+a container mount backed by a persistent volume; standalone execution outside a
+container will fail with `PermissionError` on a root-owned `/mnt` unless
+`VMAFX_SIDECAR_CHECKPOINT_DIR` points to a writable directory.
 
 The server creates the unauthenticated socket and its adjacent lifetime-claim
 file as `0o600`; it does not create or validate the parent directory. The
@@ -103,6 +112,10 @@ The socket path (`VMAFX_SIDECAR_SOCKET`) defaults to `/tmp/vmafx-sidecar.sock`
 for compatibility with the Go client. For standalone or future production use,
 set the same override in both processes and place it below an owner-only runtime
 directory; socket mode alone does not secure a writable parent directory.
+Similarly, `VMAFX_SIDECAR_CHECKPOINT_DIR` defaults to `/mnt/vmafx-models/online`
+for container deployments with persistent volume mounts; standalone invocations
+must set `VMAFX_SIDECAR_CHECKPOINT_DIR` to a writable path to avoid startup
+`PermissionError` failures.
 
 ---
 
