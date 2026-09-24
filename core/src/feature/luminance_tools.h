@@ -19,30 +19,45 @@
 #ifndef VMAF_LUMINANCE_TOOLS_H_
 #define VMAF_LUMINANCE_TOOLS_H_
 
+#include <limits.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#ifdef __cplusplus
+using VmafEOTF = double (*)(double V);
+#else
 typedef double (*VmafEOTF)(double V);
+#endif
 
 /*
  * Limited pixel range means that only values between 16 and 235 will be used in 8 bits
  * (rescale the bounds appropriately for other bitdepths).
  * Full pixel range means that values from 0 to 2^bitdepth - 1 will be used.
  */
+#ifdef __cplusplus
+enum VmafPixelRange : unsigned int {
+#else
 enum VmafPixelRange {
-    VMAF_PIXEL_RANGE_UNKNOWN,
-    VMAF_PIXEL_RANGE_LIMITED,
-    VMAF_PIXEL_RANGE_FULL,
+#endif
+    VMAF_PIXEL_RANGE_UNKNOWN = 0,
+    VMAF_PIXEL_RANGE_LIMITED = 1,
+    VMAF_PIXEL_RANGE_FULL = 2,
+    VMAF_PIXEL_RANGE_ABI_UINT_MAX = UINT_MAX,
 };
 
 /*
  * Contains the necessary information to normalize a luma value down to [0, 1].
  */
-typedef struct VmafLumaRange {
+struct VmafLumaRange {
     int foot;
     int head;
-} VmafLumaRange;
+};
+
+#ifndef __cplusplus
+typedef struct VmafLumaRange VmafLumaRange;
+#endif
 
 /*
  * Constructor for the LumaRange struct.

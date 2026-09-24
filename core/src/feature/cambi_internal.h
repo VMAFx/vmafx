@@ -76,15 +76,22 @@ static inline bool cambi_validate_dimensions(unsigned w, unsigned h)
 
 /* Range update + derivative callback signatures (mirrors cambi.c
  * internal typedefs). */
+#ifdef __cplusplus
+using VmafCambiRangeUpdater = void (*)(uint16_t *arr, int left, int right);
+using VmafCambiDerivativeCalculator = void (*)(const uint16_t *image_data,
+                                               uint16_t *derivative_buffer, int width, int height,
+                                               int row, int stride);
+#else
 typedef void (*VmafCambiRangeUpdater)(uint16_t *arr, int left, int right);
 typedef void (*VmafCambiDerivativeCalculator)(const uint16_t *image_data,
                                               uint16_t *derivative_buffer, int width, int height,
                                               int row, int stride);
+#endif
 
 /* Buffer bundle mirror of cambi.c::CambiBuffers. The GPU twins
  * (CUDA, HIP) allocate these directly (no aligned_malloc helper —
  * device memory + plain malloc serve the host residual). */
-typedef struct VmafCambiHostBuffers {
+struct VmafCambiHostBuffers {
     float *c_values;
     uint32_t *mask_dp;
     uint16_t *c_values_histograms;
@@ -96,7 +103,11 @@ typedef struct VmafCambiHostBuffers {
     int *all_diffs;
     uint16_t v_band_base;
     uint16_t v_band_size;
-} VmafCambiHostBuffers;
+};
+
+#ifndef __cplusplus
+typedef struct VmafCambiHostBuffers VmafCambiHostBuffers;
+#endif
 
 /* ----- functions exported from cambi.c for GPU twins & consumers ----- */
 

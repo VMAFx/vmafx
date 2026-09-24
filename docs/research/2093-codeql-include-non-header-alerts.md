@@ -58,7 +58,8 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
 - Circular trampoline calls are eliminated (`calculate_c_values_default` invokes `calculate_c_values` directly).
 - Unprefixed declarations, test-only macros (`DEFAULT_CAMBI_TVI`, `NUM_SCALES`), and test-only enums are removed from `cambi_internal.h` and kept private to the respective test translation units.
 - Removed `#include "feature/cambi.c"` from both `test_cambi.c` and `test_cambi_stage_simd.c`, linking them against `libvmaf`.
-- Every allocation-returning link seam is checked before use. The anti-dithering and generic-decimation tests gather their first failure before releasing owned pictures, and c-values configuration releases contrast arrays when luminance initialization fails.
+- Every allocation-returning link seam is checked before use. The anti-dithering, decimation, filter-mode, spatial-mask, and generic-decimation tests gather their first failure before releasing each successfully owned picture exactly once; c-values configuration releases contrast arrays when luminance initialization fails.
+- The three touched internal headers are strict clang-tidy clean in both C and C++ consumers. C++ uses aliases while C retains typedef spelling, and internal enum width is explicitly pinned to its existing unsigned-int ABI with reserved maximum sentinels rather than shrinking layouts.
 - All numerical operation orderings, bounded-search tests, and SIMD stage coverage are preserved; all 25 `test_cambi` tests and 14 `test_cambi_stage_simd` tests pass bit-exact.
 
 ## Alternatives considered
@@ -80,8 +81,8 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
   - `test_cambi`: 25/25 passed
   - `test_cambi_stage_simd`: 14/14 passed
   - Total: 118/118 tests passed.
-- **Fast test suite**: `meson test -C build --suite=fast` ran 145 tests, 145 passed (0 failures).
+- **Fast test suite**: `meson test -C build --suite=fast` ran 147 tests, 147 passed (0 failures).
 - **Dynamic-symbol gate**: `meson test -C build check_exported_symbols` passed; no internal test seam entered the public ABI.
 - **Netflix golden assertions**: `pytest python/test/` executed 283 tests: 271 passed, 12 skipped, 0 failures. No golden scores moved.
 - **CodeQL non-header scan**: Confirmed zero non-header includes in all seven alerted test files.
-- **Touched-file tidy ratchet**: generated CPU baseline tightened from 739 to 720 warnings; `model.c` (8 to 0) and `test_luminance_tools.cpp` (11 to 0) are lint-clean.
+- **Touched-file tidy ratchet**: generated CPU baseline tightened from 739 to 686 warnings. The earlier seam cleanup removed 19 findings (`model.c`, 8 to 0; `test_luminance_tools.cpp`, 11 to 0), this corrective pass removed all 13 findings from `cambi_internal.h` (3 to 0), `luminance_tools.h` (3 to 0), and `model.h` (7 to 0), and the current generator normalized 21 stale exact-Pelorus-mirror findings out of the baseline as required by ADR-1113.

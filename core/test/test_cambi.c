@@ -190,25 +190,31 @@ static char *test_anti_dithering_filter()
 /* Banding detection functions */
 static char *test_decimate()
 {
-    VmafPicture pic;
-    int err = get_sample_image(&pic, 0);
-    mu_assert("test_decimate alloc error", !err);
+    VmafPicture pic = {0};
+    const int err = get_sample_image(&pic, 0);
+    const bool have_pic = !err;
+    char *error = CAMBI_TEST_NULL_POINTER;
 
-    const uint16_t *data = pic.data[0];
-    ptrdiff_t stride = pic.stride[0] >> 1;
-    uint16_t width = pic.w[0] >> 1;
-    uint16_t height = pic.h[0] >> 1;
+    if (err) {
+        error = "test_decimate alloc error";
+    } else {
+        const uint16_t *data = pic.data[0];
+        const ptrdiff_t stride = pic.stride[0] >> 1;
+        const uint16_t width = pic.w[0] >> 1;
+        const uint16_t height = pic.h[0] >> 1;
+        vmaf_cambi_decimate(&pic, width, height);
 
-    vmaf_cambi_decimate(&pic, width, height);
+        if (data[0] != 1)
+            error = "decimate pic wrong pixel value (0,0)";
+        if (!error && data[1] != 0)
+            error = "decimate pic wrong pixel value (1,0)";
+        if (!error && data[stride] != 0)
+            error = "decimate pic wrong pixel value (0,1)";
+        if (!error && data[1 + stride] != 0)
+            error = "decimate pic wrong pixel value (1,1)";
+    }
 
-    mu_assert("decimate pic wrong pixel value (0,0)", data[0] == 1);
-    mu_assert("decimate pic wrong pixel value (1,0)", data[1] == 0);
-    mu_assert("decimate pic wrong pixel value (0,1)", data[stride] == 0);
-    mu_assert("decimate pic wrong pixel value (1,1)", data[1 + stride] == 0);
-
-    vmaf_picture_unref(&pic);
-
-    return CAMBI_TEST_NULL_POINTER;
+    return unref_picture_if_allocated(&pic, have_pic, error, "test_decimate input unref failed");
 }
 
 /* Banding detection functions */
@@ -370,61 +376,74 @@ static char *check_filtered_center(const VmafPicture *filtered_image, const uint
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *test_filter_mode()
+static char *check_filter_mode_cases(VmafPicture *image, VmafPicture *filtered_image,
+                                     uint16_t *buffer)
 {
-    VmafPicture filtered_image;
-    VmafPicture image;
-    enum { w = 5, h = 5 };
-    uint16_t buffer[3 * w];
-
-    int err = 0;
-    err |= vmaf_picture_alloc(&filtered_image, VMAF_PIX_FMT_YUV400P, 10, w, h);
-    err |= vmaf_picture_alloc(&image, VMAF_PIX_FMT_YUV400P, 10, w, h);
-    mu_assert("test_filter_mode alloc error", !err);
-
-    uint16_t *data = image.data[0];
-    ptrdiff_t stride = image.stride[0] >> 1;
-    uint16_t *filtered_data = filtered_image.data[0];
-    ptrdiff_t output_stride = filtered_image.stride[0] >> 1;
+    const unsigned width = image->w[0];
+    const unsigned height = image->h[0];
+    uint16_t *data = image->data[0];
+    const ptrdiff_t stride = image->stride[0] >> 1;
+    uint16_t *filtered_data = filtered_image->data[0];
+    const ptrdiff_t output_stride = filtered_image->stride[0] >> 1;
 
     data[1 * stride + 2] = 1;
     data[2 * stride + 2] = 1;
     data[1 * stride + 3] = 1;
     data[3 * stride + 3] = 1;
-    memcpy(filtered_data, data, stride * h * sizeof(uint16_t));
-    vmaf_cambi_filter_mode(&filtered_image, w, h, buffer);
-    mu_assert("filter_mode: all zeros", data_pic_sum(&filtered_image) == 0);
+    memcpy(filtered_data, data, stride * height * sizeof(uint16_t));
+    vmaf_cambi_filter_mode(filtered_image, width, height, buffer);
+    if (data_pic_sum(filtered_image) != 0)
+        return "filter_mode: all zeros";
 
     data[3 * stride + 4] = 1;
-    memcpy(filtered_data, data, stride * h * sizeof(uint16_t));
-    vmaf_cambi_filter_mode(&filtered_image, w, h, buffer);
-
-    {
-        char *error = check_filtered_center(&filtered_image, filtered_data, output_stride);
-        if (error)
-            return error;
-    }
+    memcpy(filtered_data, data, stride * height * sizeof(uint16_t));
+    vmaf_cambi_filter_mode(filtered_image, width, height, buffer);
+    char *error = check_filtered_center(filtered_image, filtered_data, output_stride);
+    if (error)
+        return error;
 
     data[0 * stride + 0] = 2;
     data[0 * stride + 1] = 1;
-    memcpy(filtered_data, data, stride * h * sizeof(uint16_t));
-    vmaf_cambi_filter_mode(&filtered_image, w, h, buffer);
-    mu_assert("filter_mode: two in the corner check", filtered_data[0 * output_stride + 0] == 2);
+    memcpy(filtered_data, data, stride * height * sizeof(uint16_t));
+    vmaf_cambi_filter_mode(filtered_image, width, height, buffer);
+    if (filtered_data[0 * output_stride + 0] != 2)
+        return "filter_mode: two in the corner check";
     data[1 * stride + 0] = 1;
-    memcpy(filtered_data, data, stride * h * sizeof(uint16_t));
-    vmaf_cambi_filter_mode(&filtered_image, w, h, buffer);
-    mu_assert("filter_mode: two in the corner and adjacent one check",
-              filtered_data[0 * output_stride + 1] == 1);
+    memcpy(filtered_data, data, stride * height * sizeof(uint16_t));
+    vmaf_cambi_filter_mode(filtered_image, width, height, buffer);
+    if (filtered_data[0 * output_stride + 1] != 1)
+        return "filter_mode: two in the corner and adjacent one check";
     data[2 * stride + 0] = 2;
-    memcpy(filtered_data, data, stride * h * sizeof(uint16_t));
-    vmaf_cambi_filter_mode(&filtered_image, w, h, buffer);
-    mu_assert("filter_mode: two in corner and edge check",
-              filtered_data[1 * output_stride + 0] == 2);
-
-    vmaf_picture_unref(&image);
-    vmaf_picture_unref(&filtered_image);
+    memcpy(filtered_data, data, stride * height * sizeof(uint16_t));
+    vmaf_cambi_filter_mode(filtered_image, width, height, buffer);
+    if (filtered_data[1 * output_stride + 0] != 2)
+        return "filter_mode: two in corner and edge check";
 
     return CAMBI_TEST_NULL_POINTER;
+}
+
+static char *test_filter_mode()
+{
+    enum { w = 5, h = 5 };
+    uint16_t buffer[3 * w];
+    VmafPicture filtered_image = {0};
+    VmafPicture image = {0};
+    const int filtered_err = vmaf_picture_alloc(&filtered_image, VMAF_PIX_FMT_YUV400P, 10, w, h);
+    const int image_err = vmaf_picture_alloc(&image, VMAF_PIX_FMT_YUV400P, 10, w, h);
+    const bool have_filtered_image = !filtered_err;
+    const bool have_image = !image_err;
+    char *error = CAMBI_TEST_NULL_POINTER;
+
+    if (filtered_err || image_err) {
+        error = "test_filter_mode alloc error";
+    } else {
+        error = check_filter_mode_cases(&image, &filtered_image, buffer);
+    }
+
+    error = unref_picture_if_allocated(&image, have_image, error,
+                                       "test_filter_mode input unref failed");
+    return unref_picture_if_allocated(&filtered_image, have_filtered_image, error,
+                                      "test_filter_mode output unref failed");
 }
 
 static char *check_large_mask_indices(void)
@@ -484,57 +503,81 @@ static char *check_spatial_mask_first_image(const VmafPicture *image, VmafPictur
     return CAMBI_TEST_NULL_POINTER;
 }
 
+static char *check_spatial_mask_second_image(const VmafPicture *image, VmafPicture *mask,
+                                             uint32_t *mask_dp, uint16_t *derivative_buffer,
+                                             uint16_t filter_size, unsigned width, unsigned height)
+{
+    vmaf_cambi_test_get_spatial_mask_for_index(
+        image, mask, mask_dp, derivative_buffer, 3, filter_size, width, height,
+        (VmafCambiDerivativeCalculator)vmaf_cambi_test_get_derivative_data_for_row, compute_dp_row,
+        compute_mask_row);
+    if (data_pic_sum(mask) != 0)
+        return "spatial_mask_for_index wrong mask for index=3, image=4";
+    vmaf_cambi_test_get_spatial_mask_for_index(
+        image, mask, mask_dp, derivative_buffer, 2, filter_size, width, height,
+        (VmafCambiDerivativeCalculator)vmaf_cambi_test_get_derivative_data_for_row, compute_dp_row,
+        compute_mask_row);
+    if (data_pic_sum(mask) != 6)
+        return "spatial_mask_for_index wrong mask for index=2, image=4";
+    vmaf_cambi_test_get_spatial_mask_for_index(
+        image, mask, mask_dp, derivative_buffer, 1, filter_size, width, height,
+        (VmafCambiDerivativeCalculator)vmaf_cambi_test_get_derivative_data_for_row, compute_dp_row,
+        compute_mask_row);
+    if (data_pic_sum(mask) != 9)
+        return "spatial_mask_for_index wrong mask for index=1, image=4";
+
+    return CAMBI_TEST_NULL_POINTER;
+}
+
 static char *test_get_spatial_mask_for_index()
 {
-    VmafPicture image;
-    VmafPicture mask;
-    uint16_t filter_size = 3;
-    unsigned width = 4;
-    unsigned height = 4;
+    VmafPicture image = {0};
+    VmafPicture mask = {0};
+    const uint16_t filter_size = 3;
+    const unsigned width = 4;
+    const unsigned height = 4;
     // dp_width = width + 2 * (filter_size >> 2) + 1
     // dp_height = 2 * (filter_size >> 2) + 2
     uint32_t mask_dp[7 * 4];
-    int err = 0;
     uint16_t derivative_buffer[4];
+    bool have_image = false;
+    bool have_mask = false;
+    char *error = CAMBI_TEST_NULL_POINTER;
 
-    err |= get_sample_image(&image, 3);
-    mu_assert("test_get_spatial_mask_for_index alloc #1 error", !err);
-
-    err |= get_sample_image(&mask, 3);
-    mu_assert("test_get_spatial_mask_for_index alloc #2 error", !err);
-
-    {
-        char *error = check_spatial_mask_first_image(&image, &mask, mask_dp, derivative_buffer,
-                                                     filter_size, width, height);
-        if (error)
-            return error;
+    if (get_sample_image(&image, 3)) {
+        error = "test_get_spatial_mask_for_index alloc #1 error";
+    } else {
+        have_image = true;
+    }
+    if (!error && get_sample_image(&mask, 3)) {
+        error = "test_get_spatial_mask_for_index alloc #2 error";
+    } else if (!error) {
+        have_mask = true;
+    }
+    if (!error) {
+        error = check_spatial_mask_first_image(&image, &mask, mask_dp, derivative_buffer,
+                                               filter_size, width, height);
     }
 
-    vmaf_picture_unref(&image);
+    if (!error) {
+        error = unref_picture_if_allocated(&image, have_image, error,
+                                           "test_get_spatial_mask_for_index input #1 unref failed");
+        have_image = false;
+    }
+    if (!error && get_sample_image(&image, 4)) {
+        error = "test_get_spatial_mask_for_index alloc #3 error";
+    } else if (!error) {
+        have_image = true;
+    }
+    if (!error) {
+        error = check_spatial_mask_second_image(&image, &mask, mask_dp, derivative_buffer,
+                                                filter_size, width, height);
+    }
 
-    err |= get_sample_image(&image, 4);
-    mu_assert("test_get_spatial_mask_for_index alloc #3 error", !err);
-
-    vmaf_cambi_test_get_spatial_mask_for_index(
-        &image, &mask, mask_dp, derivative_buffer, 3, filter_size, width, height,
-        (VmafCambiDerivativeCalculator)vmaf_cambi_test_get_derivative_data_for_row, compute_dp_row,
-        compute_mask_row);
-    mu_assert("spatial_mask_for_index wrong mask for index=3, image=4", data_pic_sum(&mask) == 0);
-    vmaf_cambi_test_get_spatial_mask_for_index(
-        &image, &mask, mask_dp, derivative_buffer, 2, filter_size, width, height,
-        (VmafCambiDerivativeCalculator)vmaf_cambi_test_get_derivative_data_for_row, compute_dp_row,
-        compute_mask_row);
-    mu_assert("spatial_mask_for_index wrong mask for index=2, image=4", data_pic_sum(&mask) == 6);
-    vmaf_cambi_test_get_spatial_mask_for_index(
-        &image, &mask, mask_dp, derivative_buffer, 1, filter_size, width, height,
-        (VmafCambiDerivativeCalculator)vmaf_cambi_test_get_derivative_data_for_row, compute_dp_row,
-        compute_mask_row);
-    mu_assert("spatial_mask_for_index wrong mask for index=1, image=4", data_pic_sum(&mask) == 9);
-
-    vmaf_picture_unref(&image);
-    vmaf_picture_unref(&mask);
-
-    return CAMBI_TEST_NULL_POINTER;
+    error = unref_picture_if_allocated(&image, have_image, error,
+                                       "test_get_spatial_mask_for_index input #3 unref failed");
+    return unref_picture_if_allocated(&mask, have_mask, error,
+                                      "test_get_spatial_mask_for_index mask unref failed");
 }
 
 static char *check_c_values_4x4(const float *combined_c_values, const float *expected_values)
