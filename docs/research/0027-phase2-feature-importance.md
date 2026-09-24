@@ -276,6 +276,14 @@ entrypoint, original argv, parsed target / threshold / top-K arguments, source
 parquet path, and output report path. Treat that block as the replay contract
 when comparing refreshed feature-correlation runs across corpora.
 
+Input selection follows the parquet-backed physical dtype. Non-numeric columns
+are excluded, while numerically encoded categories remain candidates. Numeric
+columns containing only missing values are recorded and excluded before the
+complete-case row filter; otherwise one unavailable metric would reduce a
+mixed aggregate table to zero rows. `feature_cols` retains source-schema order,
+and the report records both exclusion sets so two runs can distinguish schema
+drift from missing feature extraction.
+
 ## References
 
 - **`req`** (user, 2026-04-29): *"and rebase #185"* + *"yeah write up"*

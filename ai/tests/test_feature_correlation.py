@@ -21,7 +21,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 # pylint: disable=wrong-import-position
-from feature_correlation import _pearson_matrix, _redundant_pairs, _top_k_consensus
+from feature_correlation import (
+    _pearson_matrix,
+    _redundant_pairs,
+    _select_feature_columns,
+    _top_k_consensus,
+)
 from feature_correlation import main as corr_main
 
 
@@ -84,6 +89,25 @@ def test_top_k_consensus_handles_missing_method():
     assert consensus == ["a"]
 
 
+def test_feature_selection_preserves_numeric_schema_order():
+    df = pd.DataFrame(
+        {
+            "nullable_float": pd.Series([1.0, None], dtype="Float64"),
+            "flag": pd.Series([True, False], dtype="boolean"),
+            "nullable_int": pd.Series([1, None], dtype="Int64"),
+            "category": pd.Series(["a", "b"], dtype="category"),
+            "all_nan": [np.nan, np.nan],
+            "constant": [2.0, 2.0],
+        }
+    )
+
+    usable, non_numeric, all_nan = _select_feature_columns(df, list(df.columns))
+
+    assert usable == ["nullable_float", "nullable_int", "constant"]
+    assert non_numeric == ["category", "flag"]
+    assert all_nan == ["all_nan"]
+
+
 def test_corr_main_skips_non_numeric_columns(tmp_path, monkeypatch, capsys):
     """Regression test: non-numeric columns (e.g. `codec` string) used to
     crash with `ValueError: could not convert string to float: 'x264'`.
@@ -125,6 +149,80 @@ def test_corr_main_skips_non_numeric_columns(tmp_path, monkeypatch, capsys):
     assert "codec" not in feature_keys
     assert "chug_orientation" not in feature_keys
     assert payload["feature_cols"] == ["feat_a", "feat_b"]
+    assert payload["skipped_non_numeric_columns"] == ["chug_orientation", "codec"]
+    assert payload["skipped_all_nan_columns"] == []
+
+
+def test_corr_main_skips_all_nan_numeric_columns(tmp_path, monkeypatch, capsys):
+    """Unavailable numeric features must not erase every complete-case row."""
+    pytest.importorskip("sklearn")
+    parquet = tmp_path / "syn_with_all_nan.parquet"
+    rng = np.random.default_rng(1)
+    n = 200
+    feature = rng.standard_normal(n)
+    target = 0.7 * feature + 0.1 * rng.standard_normal(n)
+    pd.DataFrame(
+        {
+            "source": ["clipA"] * n,
+            "frame_index": np.arange(n),
+            "feat_available": feature.astype(np.float32),
+            "feat_unavailable": np.full(n, np.nan, dtype=np.float32),
+            "vmaf": target.astype(np.float32),
+        }
+    ).to_parquet(parquet)
+    out = tmp_path / "report.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["feature_correlation.py", "--parquet", str(parquet), "--out", str(out)],
+    )
+
+    assert corr_main() == 0
+    assert "[corr] skipped all-NaN numeric columns: ['feat_unavailable']" in capsys.readouterr().out
+    payload = json.loads(out.read_text())
+    assert payload["feature_cols"] == ["feat_available"]
+    assert payload["skipped_all_nan_columns"] == ["feat_unavailable"]
+    assert "feat_unavailable" not in payload["pearson"]
+
+
+def test_corr_main_rejects_table_without_usable_numeric_features(tmp_path, monkeypatch):
+    """An all-unavailable feature schema must fail before NumPy or sklearn."""
+    parquet = tmp_path / "syn_without_usable_features.parquet"
+    pd.DataFrame(
+        {
+            "source": ["clipA", "clipB"],
+            "codec": ["x264", "x265"],
+            "feat_unavailable": [np.nan, np.nan],
+            "vmaf": [80.0, 81.0],
+        }
+    ).to_parquet(parquet)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["feature_correlation.py", "--parquet", str(parquet), "--out", str(tmp_path / "x")],
+    )
+
+    with pytest.raises(ValueError, match="no usable numeric feature columns remain"):
+        corr_main()
+
+
+def test_corr_main_rejects_table_without_complete_rows(tmp_path, monkeypatch):
+    parquet = tmp_path / "syn_without_complete_rows.parquet"
+    pd.DataFrame(
+        {
+            "feat_a": [1.0, np.nan],
+            "feat_b": [np.nan, 2.0],
+            "vmaf": [80.0, 81.0],
+        }
+    ).to_parquet(parquet)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["feature_correlation.py", "--parquet", str(parquet), "--out", str(tmp_path / "x")],
+    )
+
+    with pytest.raises(ValueError, match="no complete rows remain"):
+        corr_main()
 
 
 def test_corr_main_invokable_via_argparse(tmp_path, monkeypatch):

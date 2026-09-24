@@ -16,8 +16,11 @@ Output goes to a JSON report + a text summary printed to stdout.
 
 from __future__ import annotations
 
+import argparse
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from _script_bootstrap import bootstrap_ai_script
@@ -30,10 +33,20 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
+@dataclass(frozen=True)
+class _AnalysisInput:
+    x: np.ndarray
+    y: np.ndarray
+    feature_cols: list[str]
+    skipped_non_numeric: list[str]
+    skipped_all_nan: list[str]
+    n_rows_clean: int
+
+
 def _pearson_matrix(x: np.ndarray, names: list[str]) -> dict:
     n = len(names)
     out = {names[i]: {names[j]: 0.0 for j in range(n)} for i in range(n)}
-    corr = np.corrcoef(x, rowvar=False)
+    corr = np.atleast_2d(np.corrcoef(x, rowvar=False))
     for i in range(n):
         for j in range(n):
             out[names[i]][names[j]] = float(corr[i, j])
@@ -42,7 +55,7 @@ def _pearson_matrix(x: np.ndarray, names: list[str]) -> dict:
 
 def _redundant_pairs(x: np.ndarray, names: list[str], threshold: float) -> list[dict]:
     """Pairs with |Pearson r| ≥ threshold — redundant signal."""
-    corr = np.corrcoef(x, rowvar=False)
+    corr = np.atleast_2d(np.corrcoef(x, rowvar=False))
     pairs: list[dict] = []
     n = len(names)
     for i in range(n):
@@ -108,8 +121,19 @@ def _top_k_consensus(importances: dict[str, dict[str, float]], k: int) -> list[s
     return sorted(consensus)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _select_feature_columns(
+    df: Any, candidate_cols: list[str]
+) -> tuple[list[str], list[str], list[str]]:
+    """Partition candidates into usable numeric, non-numeric, and all-null columns."""
+    numeric_cols = list(df[candidate_cols].select_dtypes(include="number").columns)
+    skipped_non_numeric = sorted(set(candidate_cols) - set(numeric_cols))
+    skipped_all_nan = sorted(column for column in numeric_cols if not df[column].notna().any())
+    all_nan = set(skipped_all_nan)
+    usable = [column for column in numeric_cols if column not in all_nan]
+    return usable, skipped_non_numeric, skipped_all_nan
+
+
+def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap = make_argument_parser(prog="feature_correlation.py")
     ap.add_argument("--parquet", type=Path, required=True)
     ap.add_argument(
@@ -126,67 +150,91 @@ def main(argv: list[str] | None = None) -> int:
         help="|Pearson r| above which pairs are flagged as redundant.",
     )
     ap.add_argument("--top-k", type=int, default=8)
-    args = ap.parse_args(raw_argv)
+    return ap.parse_args(raw_argv)
 
+
+def _prepare_analysis_input(parquet: Path, target: str) -> _AnalysisInput:
     import pandas as pd
 
-    df = pd.read_parquet(args.parquet)
-    drop_cols = {"source", "dis_basename", "frame_index", "key", args.target}
-    candidate_cols = [c for c in df.columns if c not in drop_cols]
-    numeric = df[candidate_cols].select_dtypes(include="number").columns
-    feat_cols = list(numeric)
-    skipped = sorted(set(candidate_cols) - set(feat_cols))
-    print(
-        f"[corr] parquet={args.parquet} rows={len(df)} features={len(feat_cols)} "
-        f"target={args.target}"
-    )
-    if skipped:
-        print(f"[corr] skipped non-numeric columns: {skipped}")
+    df = pd.read_parquet(parquet)
+    if target not in df.columns:
+        raise ValueError(f"target column is missing: {target}")
+    drop_cols = {"source", "dis_basename", "frame_index", "key", target}
+    candidate_cols = [column for column in df.columns if column not in drop_cols]
+    feat_cols, skipped_non_numeric, skipped_all_nan = _select_feature_columns(df, candidate_cols)
+    print(f"[corr] parquet={parquet} rows={len(df)} features={len(feat_cols)} target={target}")
+    if skipped_non_numeric:
+        print(f"[corr] skipped non-numeric columns: {skipped_non_numeric}")
+    if skipped_all_nan:
+        print(f"[corr] skipped all-NaN numeric columns: {skipped_all_nan}")
+    if not feat_cols:
+        raise ValueError("no usable numeric feature columns remain after filtering")
 
-    df_clean = df.dropna(subset=[*feat_cols, args.target])
+    df_clean = df.dropna(subset=[*feat_cols, target])
     print(f"[corr] dropped NaN rows: {len(df) - len(df_clean)}; clean rows={len(df_clean)}")
-    x = df_clean[feat_cols].to_numpy(dtype=np.float64)
-    y = df_clean[args.target].to_numpy(dtype=np.float64)
+    if df_clean.empty:
+        raise ValueError("no complete rows remain after dropping feature/target NaN values")
+    return _AnalysisInput(
+        x=df_clean[feat_cols].to_numpy(dtype=np.float64),
+        y=df_clean[target].to_numpy(dtype=np.float64),
+        feature_cols=feat_cols,
+        skipped_non_numeric=skipped_non_numeric,
+        skipped_all_nan=skipped_all_nan,
+        n_rows_clean=len(df_clean),
+    )
 
+
+def _analyze(data: _AnalysisInput, threshold: float, top_k: int) -> dict[str, Any]:
     print("[corr] Pearson matrix...")
-    pearson = _pearson_matrix(x, feat_cols)
-    redundant = _redundant_pairs(x, feat_cols, args.redundancy_threshold)
-    print(f"[corr] redundant pairs (|r|>={args.redundancy_threshold}): " f"{len(redundant)}")
-    for p in redundant[:5]:
-        print(f"        {p['a']:<22} ↔ {p['b']:<22} r={p['r']:+.4f}")
+    pearson = _pearson_matrix(data.x, data.feature_cols)
+    redundant = _redundant_pairs(data.x, data.feature_cols, threshold)
+    print(f"[corr] redundant pairs (|r|>={threshold}): {len(redundant)}")
+    for pair in redundant[:5]:
+        print(f"        {pair['a']:<22} ↔ {pair['b']:<22} r={pair['r']:+.4f}")
 
     print("[corr] mutual information vs target...")
-    mi = _mutual_information_to_target(x, y, feat_cols)
-
+    mi = _mutual_information_to_target(data.x, data.y, data.feature_cols)
     print("[corr] LASSO importance...")
-    lasso = _lasso_importance(x, y, feat_cols)
-
+    lasso = _lasso_importance(data.x, data.y, data.feature_cols)
     print("[corr] random forest importance...")
-    rf = _random_forest_importance(x, y, feat_cols)
-
+    rf = _random_forest_importance(data.x, data.y, data.feature_cols)
     importances = {"mi": mi, "lasso": lasso, "rf": rf}
-    consensus = _top_k_consensus(importances, args.top_k)
-    print(f"[corr] top-{args.top_k} consensus ({len(consensus)}): {consensus}")
+    consensus = _top_k_consensus(importances, top_k)
+    print(f"[corr] top-{top_k} consensus ({len(consensus)}): {consensus}")
 
-    # Per-method top-k for the report
-    per_method_topk = {}
+    per_method_topk: dict[str, list[tuple[str, float]]] = {}
     for method, scores in importances.items():
-        finite = {n: v for n, v in scores.items() if not np.isnan(v)}
-        ranked = sorted(finite.items(), key=lambda kv: -kv[1])[: args.top_k]
-        per_method_topk[method] = ranked
-
-    report = {
-        "parquet": str(args.parquet),
-        "target": args.target,
-        "n_rows_clean": len(df_clean),
-        "feature_cols": feat_cols,
+        finite = {name: value for name, value in scores.items() if not np.isnan(value)}
+        per_method_topk[method] = sorted(finite.items(), key=lambda item: -item[1])[:top_k]
+    return {
         "pearson": pearson,
         "redundant_pairs": redundant,
-        "redundancy_threshold": args.redundancy_threshold,
         "importances": importances,
-        "top_k": args.top_k,
         "per_method_topk": per_method_topk,
         "consensus_topk": consensus,
+    }
+
+
+def _build_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    data: _AnalysisInput,
+    analysis: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "parquet": str(args.parquet),
+        "target": args.target,
+        "n_rows_clean": data.n_rows_clean,
+        "feature_cols": data.feature_cols,
+        "skipped_non_numeric_columns": data.skipped_non_numeric,
+        "skipped_all_nan_columns": data.skipped_all_nan,
+        "pearson": analysis["pearson"],
+        "redundant_pairs": analysis["redundant_pairs"],
+        "redundancy_threshold": args.redundancy_threshold,
+        "importances": analysis["importances"],
+        "top_k": args.top_k,
+        "per_method_topk": analysis["per_method_topk"],
+        "consensus_topk": analysis["consensus_topk"],
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
@@ -196,7 +244,14 @@ def main(argv: list[str] | None = None) -> int:
             outputs={"json_report": args.out},
         ),
     }
-    write_manifest_json(args.out, report)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    data = _prepare_analysis_input(args.parquet, args.target)
+    analysis = _analyze(data, args.redundancy_threshold, args.top_k)
+    write_manifest_json(args.out, _build_report(args, raw_argv, data, analysis))
     print(f"[corr] wrote {args.out}")
     return 0
 

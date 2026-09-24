@@ -7,9 +7,11 @@ No upstream impact: `ai/` is fork-only (`ai/scripts/feature_correlation.py`).
 Restores BUG-048 item A11 (originally commit `5fc73913b`, clobbered in `384d97d03`).
 Parquets containing string/metadata columns (e.g. `codec`, `chug_orientation`)
 are filtered through `select_dtypes(include='number')` before `to_numpy(dtype=np.float64)`,
-logging any skipped non-numeric columns to stdout.
-Companion regression test `test_corr_main_skips_non_numeric_columns` in
-`ai/tests/test_feature_correlation.py` covers string and metadata columns.
+then all-null numeric features are removed before complete-case row filtering.
+Both skipped sets are logged and recorded in the JSON report. Companion
+regressions in `ai/tests/test_feature_correlation.py` cover string/metadata
+columns, unavailable numeric columns, the one-feature case, and an empty usable
+schema.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

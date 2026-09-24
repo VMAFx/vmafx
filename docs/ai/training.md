@@ -280,7 +280,22 @@ Feature-analysis reports use the same convention where they produce durable
 JSON. `ai/scripts/feature_correlation.py --out` records the source parquet,
 target column, redundancy threshold, top-K setting, and report path alongside
 the Pearson / MI / LASSO / random-forest outputs, so signal-mix audits can be
-replayed from the report alone.
+replayed from the report alone. The analyzer treats a column as a feature only
+when its parquet-backed pandas dtype is numeric. Text, boolean, categorical,
+object, and decimal columns are skipped; a numerically encoded category is
+included because the physical dtype, not the column name, is authoritative.
+The report preserves input-schema order in `feature_cols` and records excluded
+columns in `skipped_non_numeric_columns` and `skipped_all_nan_columns`.
+
+All-null numeric features are common in partially populated aggregate tables.
+They are removed before complete-case filtering so one unavailable metric does
+not erase every row. Remaining per-row missing values still use complete-case
+filtering across the selected features and target. A table with no usable
+numeric feature, or no complete feature/target row, fails with a direct
+diagnostic instead of passing an empty array into NumPy or scikit-learn.
+Constant numeric columns remain candidates; their Pearson correlation is
+mathematically undefined and may appear as `NaN`, so they must not be read as
+useful signal merely because they remain in `feature_cols`.
 `ai/scripts/phase3_subset_sweep.py --out` also records `run_provenance` next to
 the subset result keys, including the source parquet, subset list, seed policy,
 standardization flag, and report path used for Phase-3 model-selection sweeps.
