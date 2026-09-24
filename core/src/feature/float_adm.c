@@ -407,7 +407,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                       s->adm_csf_mode, luminance_level, s->adm_csf_scale, s->adm_csf_diag_scale,
                       s->adm_noise_weight, s->adm_bypass_cm, s->adm_p_norm, &score_aim, s->adm_f1s0,
                       s->adm_f1s1, s->adm_f1s2, s->adm_f1s3, s->adm_f2s0, s->adm_f2s1, s->adm_f2s2,
-                      s->adm_f2s3, s->adm_skip_aim_scale, s->adm_skip_scale0);
+                      s->adm_f2s3, s->adm_skip_aim_scale, s->adm_skip_scale0, index);
     if (err) {
         if (err == -EINVAL) {
             vmaf_log(VMAF_LOG_LEVEL_WARNING,

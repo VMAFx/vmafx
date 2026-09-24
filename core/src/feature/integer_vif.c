@@ -29,6 +29,7 @@
 #include "feature_name.h"
 #include "log.h"
 #include "mem.h"
+#include "nonfinite_score.h"
 
 #include "picture.h"
 #include "integer_vif.h"
@@ -631,95 +632,27 @@ typedef struct VifScore {
     } scale[4];
 } VifScore;
 
-static const char *const vif_scale_score_names[4] = {
-    "VMAF_integer_feature_vif_scale0_score", "VMAF_integer_feature_vif_scale1_score",
-    "VMAF_integer_feature_vif_scale2_score", "VMAF_integer_feature_vif_scale3_score"};
-
-static const char *const vif_scale_num_names[4] = {
-    "integer_vif_num_scale0", "integer_vif_num_scale1", "integer_vif_num_scale2",
-    "integer_vif_num_scale3"};
-
-static const char *const vif_scale_den_names[4] = {
-    "integer_vif_den_scale0", "integer_vif_den_scale1", "integer_vif_den_scale2",
-    "integer_vif_den_scale3"};
-
-static int write_scale_scores(VmafFeatureCollector *feature_collector, unsigned index,
-                              const VifScore *vif, const VifState *s)
-{
-    int err = 0;
-
-    const float scale0 = s->vif_skip_scale0 ? 0.0f : vif->scale[0].num / vif->scale[0].den;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   vif_scale_score_names[0], scale0, index);
-
-    for (unsigned k = 1; k < 4; ++k) {
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, vif_scale_score_names[k],
-            vif->scale[k].num / vif->scale[k].den, index);
-    }
-
-    return err;
-}
-
-static int write_debug_scores(VmafFeatureCollector *feature_collector, unsigned index,
-                              const VifScore *vif, const VifState *s)
-{
-    int err = 0;
-    double score_num;
-    double score_den;
-
-    if (s->vif_skip_scale0) {
-        score_num =
-            (double)vif->scale[1].num + (double)vif->scale[2].num + (double)vif->scale[3].num;
-        score_den =
-            (double)vif->scale[1].den + (double)vif->scale[2].den + (double)vif->scale[3].den;
-    } else {
-        score_num = (double)vif->scale[0].num + (double)vif->scale[1].num +
-                    (double)vif->scale[2].num + (double)vif->scale[3].num;
-
-        score_den = (double)vif->scale[0].den + (double)vif->scale[1].den +
-                    (double)vif->scale[2].den + (double)vif->scale[3].den;
-    }
-
-    const double score = score_den == 0.0 ? 1.0f : score_num / score_den;
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif", score, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_num", score_num, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_den", score_den, index);
-
-    /* scale 0 is reported as (0, -1) when skipped */
-    const float num_scale0 = s->vif_skip_scale0 ? 0.0f : vif->scale[0].num;
-    const float den_scale0 = s->vif_skip_scale0 ? -1.0f : vif->scale[0].den;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   vif_scale_num_names[0], num_scale0, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   vif_scale_den_names[0], den_scale0, index);
-
-    for (unsigned k = 1; k < 4; ++k) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       vif_scale_num_names[k], vif->scale[k].num,
-                                                       index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       vif_scale_den_names[k], vif->scale[k].den,
-                                                       index);
-    }
-
-    return err;
-}
-
 static int write_scores(VmafFeatureCollector *feature_collector, unsigned index,
                         const VifScore *vif, const VifState *s)
 {
-    int err = write_scale_scores(feature_collector, index, vif, s);
-
-    if (!s->debug)
-        return err;
-
-    err |= write_debug_scores(feature_collector, index, vif, s);
-    return err;
+    VmafVifScoreSet output = {
+        .single_precision_ratio = true,
+        .skip_scale0 = s->vif_skip_scale0,
+        .debug = s->debug,
+    };
+    const unsigned scale_start = s->vif_skip_scale0 ? 1u : 0u;
+    for (unsigned scale = 0u; scale < 4u; ++scale) {
+        const size_t offset = (size_t)scale * 2u;
+        output.scale[offset] = vif->scale[scale].num;
+        output.scale[offset + 1u] = vif->scale[scale].den;
+        if (scale >= scale_start) {
+            output.score_num += vif->scale[scale].num;
+            output.score_den += vif->scale[scale].den;
+        }
+    }
+    output.score = output.score_den > 0.0 ? output.score_num / output.score_den : NAN;
+    return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "integer_vif", &output,
+                                VMAF_VIF_INTEGER_NAMES, index);
 }
 
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,

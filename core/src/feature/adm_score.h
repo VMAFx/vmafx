@@ -10,6 +10,19 @@
 #include <math.h>
 #include <stddef.h>
 
+static inline int vmaf_adm_floor_pair(double num, double den, double limit, double *floored_num,
+                                      double *floored_den)
+{
+    if (!floored_num || !floored_den || !isfinite(num) || !isfinite(den) || !isfinite(limit) ||
+        limit < 0.0)
+        return -EINVAL;
+    const double final_num = num < limit ? 0.0 : num;
+    const double final_den = den < limit ? 0.0 : den;
+    *floored_num = final_num;
+    *floored_den = final_den;
+    return 0;
+}
+
 static inline int vmaf_adm_finalize_scores(double num, double den, double aim_num, double aim_den,
                                            double *score, double *score_aim)
 {

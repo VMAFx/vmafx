@@ -546,34 +546,12 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
     double msssim = 1.0;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        if (!isfinite(l_means[i]) || !isfinite(c_means[i]) || !isfinite(s_means[i]))
-            return -EINVAL;
         msssim *= pow(l_means[i], (double)g_alphas[i]) * pow(c_means[i], (double)g_betas[i]) *
                   pow(fabs(s_means[i]), (double)g_gammas[i]);
     }
-
-    int err = vmaf_ssim_emit_score(feature_collector, s->feature_name_dict, "float_ms_ssim", msssim,
-                                   s->enable_db, s->max_db, index);
-    if (s->enable_lcs) {
-        static const char *const l_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
-            "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
-        };
-        static const char *const c_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
-            "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
-        };
-        static const char *const s_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
-            "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
-        };
-        for (int i = 0; i < MS_SSIM_SCALES; i++) {
-            err |= vmaf_feature_collector_append(feature_collector, l_names[i], l_means[i], index);
-            err |= vmaf_feature_collector_append(feature_collector, c_names[i], c_means[i], index);
-            err |= vmaf_feature_collector_append(feature_collector, s_names[i], s_means[i], index);
-        }
-    }
-    return err;
+    return vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict, "float_ms_ssim_cuda",
+                                    "float_ms_ssim", msssim, s->enable_db, s->max_db, l_means,
+                                    c_means, s_means, MS_SSIM_SCALES, s->enable_lcs, index);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)

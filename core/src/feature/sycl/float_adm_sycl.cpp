@@ -1239,14 +1239,14 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
     const int w = (int)s->scale_w[0];
     const int h = (int)s->scale_h[0];
     const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
-    if (score_num < numden_limit)
-        score_num = 0.0;
-    if (score_den < numden_limit)
-        score_den = 0.0;
     double score = 0.0;
     double score_aim = 0.0;
-    int err = vmaf_adm_finalize_scores_named("float_adm_sycl", index, score_num, score_den, aim_num,
-                                             aim_den, &score, &score_aim);
+    int err = vmaf_adm_floor_pair_named("float_adm_sycl", index, score_num, score_den, numden_limit,
+                                        &score_num, &score_den);
+    if (err)
+        return err;
+    err = vmaf_adm_finalize_scores_named("float_adm_sycl", index, score_num, score_den, aim_num,
+                                         aim_den, &score, &score_aim);
     if (err)
         return err;
     double score_adm3 = 0.0;
@@ -1261,24 +1261,24 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
         return err;
 
     VmafNamedScore values[18] = {
-        {"VMAF_feature_adm2_score", score},
-        {"VMAF_feature_adm_scale0_score", scale_scores[0]},
-        {"VMAF_feature_adm_scale1_score", scale_scores[1]},
-        {"VMAF_feature_adm_scale2_score", scale_scores[2]},
-        {"VMAF_feature_adm_scale3_score", scale_scores[3]},
-        {"VMAF_feature_aim_score", score_aim},
-        {"VMAF_feature_adm3_score", score_adm3},
+        {.name = "VMAF_feature_adm2_score", .value = score},
+        {.name = "VMAF_feature_adm_scale0_score", .value = scale_scores[0]},
+        {.name = "VMAF_feature_adm_scale1_score", .value = scale_scores[1]},
+        {.name = "VMAF_feature_adm_scale2_score", .value = scale_scores[2]},
+        {.name = "VMAF_feature_adm_scale3_score", .value = scale_scores[3]},
+        {.name = "VMAF_feature_aim_score", .value = score_aim},
+        {.name = "VMAF_feature_adm3_score", .value = score_adm3},
     };
     size_t value_count = 7u;
     if (s->debug) {
         static const char *const debug_names[8] = {
             "adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1",
             "adm_num_scale2", "adm_den_scale2", "adm_num_scale3", "adm_den_scale3"};
-        values[value_count++] = VmafNamedScore{"adm", score};
-        values[value_count++] = VmafNamedScore{"adm_num", score_num};
-        values[value_count++] = VmafNamedScore{"adm_den", score_den};
+        values[value_count++] = VmafNamedScore{.name = "adm", .value = score};
+        values[value_count++] = VmafNamedScore{.name = "adm_num", .value = score_num};
+        values[value_count++] = VmafNamedScore{.name = "adm_den", .value = score_den};
         for (size_t i = 0u; i < 8u; ++i)
-            values[value_count++] = VmafNamedScore{debug_names[i], scores[i]};
+            values[value_count++] = VmafNamedScore{.name = debug_names[i], .value = scores[i]};
     }
     return vmaf_feature_emit_finite_scores(fc, s->feature_name_dict, "float_adm_sycl", values,
                                            value_count, index);

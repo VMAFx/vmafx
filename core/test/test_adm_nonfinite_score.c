@@ -39,6 +39,20 @@ static char *test_nonfinite_adm3_is_rejected_atomically(void)
     return NULL;
 }
 
+static char *test_adm_nonfinite_reduction_is_rejected_before_floor(void)
+{
+    double num = 42.0;
+    double den = 43.0;
+    int err = vmaf_adm_floor_pair_named("adm_test", 6u, -INFINITY, 1.0, 1e-10, &num, &den);
+    mu_assert("negative infinity must not be floored to zero", err == -EINVAL);
+    mu_assert("failed floor leaves both outputs unchanged", num == 42.0 && den == 43.0);
+
+    err = vmaf_adm_floor_pair_named("adm_test", 7u, 1.0, NAN, 1e-10, &num, &den);
+    mu_assert("NaN denominator must fail before comparison", err == -EINVAL);
+    mu_assert("failed denominator floor leaves both outputs unchanged", num == 42.0 && den == 43.0);
+    return NULL;
+}
+
 static char *test_finite_scores_preserve_existing_results(void)
 {
     double score = 0.0;
@@ -52,10 +66,14 @@ static char *test_finite_scores_preserve_existing_results(void)
     err = vmaf_adm3_score(0.0, 0.0, 1, 0.5, 0.0, &adm3);
     mu_assert("zero harmonic mean succeeds", err == 0);
     mu_assert("zero harmonic mean stays zero", adm3 == 0.0);
+    return NULL;
+}
 
-    score = 0.0;
-    score_aim = 0.0;
-    err = vmaf_adm_finalize_scores(0.0, 0.0, 0.0, 0.0, &score, &score_aim);
+static char *test_flat_adm_scores_preserve_defined_results(void)
+{
+    double score = 0.0;
+    double score_aim = 0.0;
+    int err = vmaf_adm_finalize_scores(0.0, 0.0, 0.0, 0.0, &score, &score_aim);
     mu_assert("finite flat-frame ADM finalization succeeds", err == 0);
     mu_assert("finite flat frame remains perfect", score == 1.0 && score_aim == 1.0);
 
@@ -149,6 +167,89 @@ static char *test_vif_scale_zero_rejects_without_publication(void)
     return NULL;
 }
 
+static char *test_vif_complete_production_emit_rejects_debug_atom_atomically(void)
+{
+    VmafFeatureCollector *feature_collector = NULL;
+    mu_assert("collector initialises", vmaf_feature_collector_init(&feature_collector) == 0);
+
+    const VmafVifScoreSet scores = {
+        .scale = {1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0},
+        .score = NAN,
+        .score_num = 10.0,
+        .score_den = 10.0,
+        .debug = true,
+    };
+    const int err = vmaf_vif_emit_scores(feature_collector, NULL, "float_vif_test", &scores,
+                                         VMAF_VIF_FLOAT_NAMES, 19u);
+    mu_assert("non-finite VIF debug score fails with EINVAL", err == -EINVAL);
+
+    double published = 0.0;
+    mu_assert("VIF scale zero was not partially published",
+              vmaf_feature_collector_get_score(feature_collector, "VMAF_feature_vif_scale0_score",
+                                               &published, 19u) != 0);
+    mu_assert("VIF debug score was not published",
+              vmaf_feature_collector_get_score(feature_collector, "vif", &published, 19u) != 0);
+    vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
+static char *test_vif_complete_production_emit_rejects_invalid_denominator(void)
+{
+    VmafFeatureCollector *feature_collector = NULL;
+    mu_assert("collector initialises", vmaf_feature_collector_init(&feature_collector) == 0);
+
+    const VmafVifScoreSet scores = {
+        .scale = {1.0, 1.0, 2.0, -1.0, 3.0, 3.0, 4.0, 4.0},
+        .score = 1.0,
+        .score_num = 10.0,
+        .score_den = 7.0,
+        .debug = true,
+    };
+    const int err = vmaf_vif_emit_scores(feature_collector, NULL, "integer_vif_test", &scores,
+                                         VMAF_VIF_INTEGER_NAMES, 20u);
+    mu_assert("negative VIF denominator fails with EINVAL", err == -EINVAL);
+
+    double published = 0.0;
+    mu_assert("integer VIF scale zero was not partially published",
+              vmaf_feature_collector_get_score(feature_collector,
+                                               "VMAF_integer_feature_vif_scale0_score", &published,
+                                               20u) != 0);
+    vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
+static char *test_vif_complete_emitter_preserves_collector_ratio_precision(void)
+{
+    VmafFeatureCollector *feature_collector = NULL;
+    mu_assert("collector initialises", vmaf_feature_collector_init(&feature_collector) == 0);
+
+    VmafVifScoreSet scores = {
+        .scale = {1.0, 3.0, 1.0, 3.0, 1.0, 3.0, 1.0, 3.0},
+        .single_precision_ratio = true,
+    };
+    int err = vmaf_vif_emit_scores(feature_collector, NULL, "integer_vif_test", &scores,
+                                   VMAF_VIF_INTEGER_NAMES, 24u);
+    mu_assert("float-ratio integer VIF publish succeeds", err == 0);
+    double published = 0.0;
+    err = vmaf_feature_collector_get_score(
+        feature_collector, "VMAF_integer_feature_vif_scale0_score", &published, 24u);
+    mu_assert("integer VIF score is available", err == 0);
+    mu_assert("CPU/CUDA/HIP integer VIF keeps float division",
+              published == (double)((float)1.0 / (float)3.0));
+
+    scores.single_precision_ratio = false;
+    err = vmaf_vif_emit_scores(feature_collector, NULL, "integer_vif_sycl_test", &scores,
+                               VMAF_VIF_INTEGER_NAMES, 25u);
+    mu_assert("double-ratio integer VIF publish succeeds", err == 0);
+    err = vmaf_feature_collector_get_score(
+        feature_collector, "VMAF_integer_feature_vif_scale0_score", &published, 25u);
+    mu_assert("SYCL/Metal integer VIF score is available", err == 0);
+    mu_assert("SYCL/Metal integer VIF keeps double division", published == 1.0 / 3.0);
+
+    vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
 static char *test_ssim_production_emitter_rejects_without_publication(void)
 {
     VmafFeatureCollector *feature_collector = NULL;
@@ -223,19 +324,84 @@ static char *test_ssim_infinity_exception_does_not_admit_failed_inputs(void)
     return NULL;
 }
 
-char *run_tests(void)
+static char *test_ssim_ratio_production_emit_rejects_invalid_weight(void)
+{
+    VmafFeatureCollector *feature_collector = NULL;
+    mu_assert("collector initialises", vmaf_feature_collector_init(&feature_collector) == 0);
+
+    int err = vmaf_ssim_emit_ratio_score(feature_collector, NULL, "ssim_ratio_test", 1.0, NAN, 0,
+                                         0.0, 21u);
+    mu_assert("non-finite SSIM weight fails", err == -EINVAL);
+    err = vmaf_ssim_emit_ratio_score(feature_collector, NULL, "ssim_ratio_test", 0.0, -1.0, 0, 0.0,
+                                     22u);
+    mu_assert("negative SSIM weight fails", err == -EINVAL);
+
+    double published = 0.0;
+    mu_assert("invalid ratio was not published",
+              vmaf_feature_collector_get_score(feature_collector, "ssim_ratio_test", &published,
+                                               21u) != 0);
+    vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
+static char *test_ms_ssim_hidden_atom_is_rejected_before_headline(void)
+{
+    VmafFeatureCollector *feature_collector = NULL;
+    mu_assert("collector initialises", vmaf_feature_collector_init(&feature_collector) == 0);
+    const double luminance[2] = {NAN, 1.0};
+    const double contrast[2] = {1.0, 1.0};
+    const double structure[2] = {1.0, 1.0};
+
+    const int err =
+        vmaf_ms_ssim_emit_scores(feature_collector, NULL, "ms_ssim_test", "float_ms_ssim", 1.0, 0,
+                                 0.0, luminance, contrast, structure, 2u, false, 23u);
+    mu_assert("hidden non-finite MS-SSIM atom fails", err == -EINVAL);
+    double published = 0.0;
+    mu_assert(
+        "MS-SSIM headline was not partially published",
+        vmaf_feature_collector_get_score(feature_collector, "float_ms_ssim", &published, 23u) != 0);
+    vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
+static char *run_adm_tests(void)
 {
     mu_run_test(test_undefined_aim_ratio_is_rejected_atomically);
     mu_run_test(test_nonfinite_adm3_is_rejected_atomically);
+    mu_run_test(test_adm_nonfinite_reduction_is_rejected_before_floor);
     mu_run_test(test_finite_scores_preserve_existing_results);
+    mu_run_test(test_flat_adm_scores_preserve_defined_results);
     mu_run_test(test_adm_scale_ratios_define_flat_scale);
     mu_run_test(test_production_emitter_rejects_without_publication);
+    return NULL;
+}
+
+static char *run_vif_tests(void)
+{
     mu_run_test(test_vif_production_emitter_rejects_atomically);
     mu_run_test(test_vif_scale_zero_rejects_without_publication);
+    mu_run_test(test_vif_complete_production_emit_rejects_debug_atom_atomically);
+    mu_run_test(test_vif_complete_production_emit_rejects_invalid_denominator);
+    mu_run_test(test_vif_complete_emitter_preserves_collector_ratio_precision);
+    return NULL;
+}
+
+static char *run_ssim_tests(void)
+{
     mu_run_test(test_ssim_production_emitter_rejects_without_publication);
     mu_run_test(test_ssim_invalid_db_ceiling_rejects_without_publication);
     mu_run_test(test_ssim_unclipped_perfect_score_preserves_positive_infinity);
     mu_run_test(test_ssim_infinity_exception_does_not_admit_failed_inputs);
+    mu_run_test(test_ssim_ratio_production_emit_rejects_invalid_weight);
+    mu_run_test(test_ms_ssim_hidden_atom_is_rejected_before_headline);
+    return NULL;
+}
+
+char *run_tests(void)
+{
+    mu_assert_msg(run_adm_tests());
+    mu_assert_msg(run_vif_tests());
+    mu_assert_msg(run_ssim_tests());
     return NULL;
 }
 

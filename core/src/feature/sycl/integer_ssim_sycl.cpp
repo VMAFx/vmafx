@@ -44,6 +44,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "log.h"
 #include "picture.h"
 #include "../picture_copy.h"
@@ -572,10 +573,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     for (unsigned i = 0; i < s->wg_count; i++)
         total += (double)s->h_partials[i];
     const double n_pixels = (double)s->w_final * (double)s->h_final;
-    const double score = total / n_pixels;
-
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "float_ssim", score, index);
+    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                            "float_ssim_sycl", "float_ssim", total, n_pixels, 0,
+                                            0.0, index);
 }
 
 } // namespace
@@ -1187,12 +1187,9 @@ static int collect_fex_issim_sycl(VmafFeatureExtractor *fex, unsigned index,
         total_ssim += (double)s->h_partials[i];
         total_wgt += s->h_wgt[i];
     }
-    if (total_wgt == 0LL)
-        return -EINVAL;
-    const double score = total_ssim / (double)total_wgt;
-
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "ssim",
-                                                   score, index);
+    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                            "integer_ssim_sycl", "ssim", total_ssim,
+                                            (double)total_wgt, 0, 0.0, index);
 }
 
 } // namespace

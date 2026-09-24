@@ -26656,8 +26656,10 @@ x86-64 build, and an aarch64 cross build under `qemu-aarch64-static`.
   and Metal hosts; SSIMULACRA2's scalar and SIMD hosts share that failure
   contract too. ADM defines a finite flat per-scale `0/0` as the same perfect
   `1.0` used by its aggregate flat-frame result, and handles ADM/AIM
-  denominators independently. The documented unclipped perfect-score infinity
-  for SSIM/MS-SSIM remains unchanged. See ADR-1302.
+  denominators independently. Raw ADM reductions are checked before their
+  precision floor, and hidden MS-SSIM L/C/S atoms are checked even when their
+  debug output is disabled. The documented unclipped perfect-score infinity for
+  SSIM/MS-SSIM remains unchanged. See ADR-1302.
 - The Netflix golden gate is unchanged at `271 passed, 12 skipped`, and the
   touched clang-tidy warning allowances are unchanged. The generated HISS
   baseline tightens from 276 to 268 after the helper extractions remove eight

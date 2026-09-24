@@ -1035,12 +1035,12 @@ static int fadm_final_scores(const FloatAdmStateCuda *s, const FloatAdmPooled *o
     const int w = (int)s->scale_w[0];
     const int h = (int)s->scale_h[0];
     const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
-    if (f->score_num < numden_limit)
-        f->score_num = 0.0;
-    if (f->score_den < numden_limit)
-        f->score_den = 0.0;
-    int err = vmaf_adm_finalize_scores_named("float_adm_cuda", index, f->score_num, f->score_den,
-                                             o->aim_num, o->aim_den, &f->score, &f->aim);
+    int err = vmaf_adm_floor_pair_named("float_adm_cuda", index, f->score_num, f->score_den,
+                                        numden_limit, &f->score_num, &f->score_den);
+    if (err)
+        return err;
+    err = vmaf_adm_finalize_scores_named("float_adm_cuda", index, f->score_num, f->score_den,
+                                         o->aim_num, o->aim_den, &f->score, &f->aim);
     if (err)
         return err;
 

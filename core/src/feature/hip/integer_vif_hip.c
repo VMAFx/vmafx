@@ -31,6 +31,7 @@
  */
 
 #include <errno.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -38,6 +39,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "libvmaf/picture.h"
 
 #include "integer_vif.h"
@@ -152,55 +154,6 @@ typedef struct {
 } VifScore;
 
 #ifdef HAVE_HIPCC
-static const char *const vif_hip_num_names[4] = {
-    "integer_vif_num_scale0",
-    "integer_vif_num_scale1",
-    "integer_vif_num_scale2",
-    "integer_vif_num_scale3",
-};
-static const char *const vif_hip_den_names[4] = {
-    "integer_vif_den_scale0",
-    "integer_vif_den_scale1",
-    "integer_vif_den_scale2",
-    "integer_vif_den_scale3",
-};
-static const char *const vif_hip_score_names[4] = {
-    "VMAF_integer_feature_vif_scale0_score",
-    "VMAF_integer_feature_vif_scale1_score",
-    "VMAF_integer_feature_vif_scale2_score",
-    "VMAF_integer_feature_vif_scale3_score",
-};
-
-/* Debug-mode outputs: the aggregate integer_vif and every per-scale num / den.
- * vif_skip_scale0 drops scale 0 from the aggregate and reports it as 0 / -1. */
-static int write_debug_scores_hip(VmafFeatureCollector *feature_collector, VifStateHip *s,
-                                  const VifScore *vif, unsigned index)
-{
-    const bool skip0 = s->vif_skip_scale0;
-    const double score_num = (skip0 ? 0.0 : (double)vif->scale[0].num) + (double)vif->scale[1].num +
-                             (double)vif->scale[2].num + (double)vif->scale[3].num;
-    const double score_den = (skip0 ? 0.0 : (double)vif->scale[0].den) + (double)vif->scale[1].den +
-                             (double)vif->scale[2].den + (double)vif->scale[3].den;
-    const double score = (score_den == 0.0) ? 1.0 : score_num / score_den;
-
-    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "integer_vif", score, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_num", score_num, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_den", score_den, index);
-    for (unsigned sc = 0; sc < 4u; ++sc) {
-        const bool skipped = skip0 && sc == 0u;
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, vif_hip_num_names[sc],
-            skipped ? 0.0 : (double)vif->scale[sc].num, index);
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, vif_hip_den_names[sc],
-            skipped ? -1.0 : (double)vif->scale[sc].den, index);
-    }
-    return err;
-}
-
 static int write_scores_hip(VmafFeatureCollector *feature_collector, VifStateHip *s, unsigned index)
 {
     VifScore vif;
@@ -215,19 +168,23 @@ static int write_scores_hip(VmafFeatureCollector *feature_collector, VifStateHip
                     accum[sc].den_non_log);
     }
 
-    int err = 0;
+    VmafVifScoreSet output = {
+        .single_precision_ratio = true,
+        .skip_scale0 = s->vif_skip_scale0,
+        .debug = s->debug,
+    };
+    const unsigned scale_start = s->vif_skip_scale0 ? 1u : 0u;
     for (unsigned sc = 0; sc < 4u; ++sc) {
-        /* The ratio is taken in float, as the CPU and the CUDA twin take it. */
-        const float ratio = vif.scale[sc].num / vif.scale[sc].den;
-        const bool skipped = s->vif_skip_scale0 && sc == 0u;
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       vif_hip_score_names[sc],
-                                                       skipped ? 0.0 : (double)ratio, index);
+        output.scale[sc * 2u] = vif.scale[sc].num;
+        output.scale[sc * 2u + 1u] = vif.scale[sc].den;
+        if (sc >= scale_start) {
+            output.score_num += vif.scale[sc].num;
+            output.score_den += vif.scale[sc].den;
+        }
     }
-
-    if (!s->debug)
-        return err;
-    return err | write_debug_scores_hip(feature_collector, s, &vif, index);
+    output.score = output.score_den > 0.0 ? output.score_num / output.score_den : NAN;
+    return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "integer_vif_hip", &output,
+                                VMAF_VIF_INTEGER_NAMES, index);
 }
 #endif /* HAVE_HIPCC */
 

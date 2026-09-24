@@ -316,70 +316,22 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-/* The four VMAF_feature_vif_scaleN_score emits. Lifted out of extract() to keep
- * it inside the 60-LOC limit (HISS-04); the emits are unchanged. */
-static int append_scale_scores(VifState *s, VmafFeatureCollector *feature_collector, unsigned index,
-                               const double *scores)
+static int emit_vif_scores(VifState *s, VmafFeatureCollector *feature_collector, unsigned index,
+                           double score, double score_num, double score_den, const double scores[8])
 {
-    const double minimums[3] = {
-        s->vif_scale1_min_val,
-        s->vif_scale2_min_val,
-        s->vif_scale3_min_val,
+    VmafVifScoreSet output = {
+        .score = score,
+        .score_num = score_num,
+        .score_den = score_den,
+        .minimum = {s->vif_scale1_min_val, s->vif_scale2_min_val, s->vif_scale3_min_val},
+        .use_minimums = true,
+        .skip_scale0 = s->vif_skip_scale0,
+        .debug = s->debug,
     };
-    return vmaf_vif_emit_scale_scores(feature_collector, s->feature_name_dict, "float_vif", scores,
-                                      s->vif_skip_scale0, minimums, index);
-}
-
-/* The debug-only num/den breakdown. Also lifted for HISS-04: it is two thirds
- * of what extract() used to be, and it runs only when s->debug is set. */
-static int append_debug_features(VifState *s, VmafFeatureCollector *feature_collector,
-                                 unsigned index, double score, double score_num, double score_den,
-                                 const double *scores)
-{
-    int err = 0;
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "vif",
-                                                   score, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_num", score_num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_den", score_den, index);
-
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num_scale0", 0.0f, index);
-
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_den_scale0", -1.0f, index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num_scale0", scores[0], index);
-
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_den_scale0", scores[1], index);
-    }
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_num_scale1", scores[2], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_den_scale1", scores[3], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_num_scale2", scores[4], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_den_scale2", scores[5], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_num_scale3", scores[6], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_den_scale3", scores[7], index);
-
-    return err;
+    for (size_t i = 0u; i < 8u; ++i)
+        output.scale[i] = scores[i];
+    return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "float_vif", &output,
+                                VMAF_VIF_FLOAT_NAMES, index);
 }
 
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -417,22 +369,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     if (err)
         return err;
 
-    /* NaN/Inf guard: the minimum-value emits below are comparisons, and every
-     * comparison against NaN is false -- a non-finite ratio would silently take
-     * the min_val arm and be published as a finite, plausible score (0.0 by
-     * default, the *worst* VIF value) that no caller can tell apart from a real
-     * measurement.  A zero or non-finite denominator is reachable whenever
-     * vif_sigma_nsq is driven to 0.0 (the option's declared minimum).  Guard at
-     * runtime in both builds and fail the frame instead of masking it (mirrors
-     * the brisque.c and y_funque_plus.c finite-score guards).  Scale 0 is left
-     * alone: it has no minimum-value clamp, so a non-finite ratio there
-     * deliberately surfaces as-is. */
-    err = append_scale_scores(s, feature_collector, index, scores);
-
-    if (err || !s->debug)
-        return err;
-
-    return append_debug_features(s, feature_collector, index, score, score_num, score_den, scores);
+    return emit_vif_scores(s, feature_collector, index, score, score_num, score_den, scores);
 }
 
 static int close(VmafFeatureExtractor *fex)

@@ -64,15 +64,19 @@ invalid ceiling, or a non-finite dB conversion still fails before publication.
 The guard goes before the *first* append of the frame, not beside each clamp,
 so a frame fails atomically rather than leaving some features published and
 others missing. MS-SSIM therefore computes and validates every enabled plane
-before it appends any plane.
+before it appends any plane, and validates the raw L/C/S atoms even when they
+are not requested as output. ADM validates raw reductions before its precision
+floor, since an ordered floor comparison otherwise maps negative infinity to
+zero. VIF routes float and integer headline, scale, and debug results through
+one complete-set emitter on every registered backend.
 
 The remaining six sites that could not take another inline guard are split at
 their natural scoring seams:
 
 | Seam | Contract |
 | --- | --- |
-| `adm_score.h` | ADM/AIM and per-scale ratios plus both ADM3 formulas validate every operand and computed result, write output only on success, handle the ADM and AIM denominators independently, and define the legitimate finite flat-frame `0/0` ratio as `1.0`. |
-| `nonfinite_score.h` | VIF ratios, SSIM dB conversion and multi-value collector emission validate the complete score set before the first write; CPU, CUDA, HIP, SYCL and Metal hosts use the same ordering and failure contract. The ADR-1221 unclipped perfect-score infinity is the sole intentional non-finite output. |
+| `adm_score.h` | ADM/AIM and per-scale ratios plus both ADM3 formulas validate every operand and computed result, including raw aggregate values before the precision floor; they write output only on success, handle the ADM and AIM denominators independently, and define the legitimate finite flat-frame `0/0` ratio as `1.0`. |
+| `nonfinite_score.h` | Float and integer VIF ratios/debug atoms, SSIM reductions/dB conversion, hidden MS-SSIM L/C/S atoms, and multi-value collector emission validate the complete score set before the first write; CPU, CUDA, HIP, SYCL and Metal hosts use the same ordering and failure contract. The ADR-1221 unclipped perfect-score infinity is the sole intentional non-finite output. |
 | `ssimulacra2_score.h` | Edge-difference splitting preserves non-finite evidence and the final polynomial never maps it to `100.0`; scalar, SIMD, CUDA, HIP, SYCL and Metal hosts use the same helper. |
 | `transnet_v2_score.h` | Logit-to-probability/flag conversion validates before writing either output. |
 | `predict.c::piecewise_linear_mapping` | Rejects a non-finite input before assigning the old `0.0` default. |

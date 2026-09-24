@@ -179,8 +179,18 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         {"float_ssim_c", c_score},
         {"float_ssim_s", s_score},
     };
-    err = vmaf_ssim_emit_scores(feature_collector, NULL, "float_ssim", score, s->enable_db,
-                                s->max_db, atoms, s->enable_lcs ? 3u : 0u, index);
+    /* NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL for MSVC /std:clatest (ADR-1138). */
+    VmafDictionary *const feature_name_dict = NULL;
+    if (!s->enable_lcs) {
+        err = vmaf_feature_validate_finite_scores_named("float_ssim", atoms, 3u, index);
+        if (!err) {
+            err = vmaf_ssim_emit_score(feature_collector, feature_name_dict, "float_ssim", score,
+                                       s->enable_db, s->max_db, index);
+        }
+    } else {
+        err = vmaf_ssim_emit_scores(feature_collector, feature_name_dict, "float_ssim", score,
+                                    s->enable_db, s->max_db, atoms, 3u, index);
+    }
     if (err == -EINVAL) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "float_ssim: non-finite score at frame %u (score=%g l=%g c=%g s=%g)\n", index,

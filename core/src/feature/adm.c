@@ -25,6 +25,7 @@
 
 #include "mem.h"
 #include "adm_score.h"
+#include "nonfinite_score.h"
 #include "adm_options.h"
 #include "adm_tools.h"
 #include "offset.h"
@@ -119,7 +120,8 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
                 double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
                 int adm_bypass_cm, double adm_p_norm, double *score_aim, double adm_f1s0,
                 double adm_f1s1, double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1,
-                double adm_f2s2, double adm_f2s3, int adm_skip_aim_scale, bool adm_skip_scale0)
+                double adm_f2s2, double adm_f2s3, int adm_skip_aim_scale, bool adm_skip_scale0,
+                unsigned index)
 {
     /* ADM_OPT_SINGLE_PRECISION branch removed: the symbol was never defined
      * anywhere in the build system, making the 1e-2 threshold permanently
@@ -364,10 +366,11 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
         scores[2 * scale + 1] = den_scale;
     }
 
-    num = num < numden_limit ? 0 : num;
-    den = den < numden_limit ? 0 : den;
-
-    ret = vmaf_adm_finalize_scores(num, den, aim_num, aim_den, score, score_aim);
+    ret = vmaf_adm_floor_pair_named("float_adm", index, num, den, numden_limit, &num, &den);
+    if (!ret) {
+        ret = vmaf_adm_finalize_scores_named("float_adm", index, num, den, aim_num, aim_den, score,
+                                             score_aim);
+    }
     if (!ret) {
         *score_num = num;
         *score_den = den;

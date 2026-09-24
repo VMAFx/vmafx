@@ -343,10 +343,9 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
             ssimw_sum += (double)partsw[i];
         }
     }
-    double ssim = (ssimw_sum > 0.0) ? (ssim_sum / ssimw_sum) : 1.0;
-
-    return vmaf_ssim_emit_score(feature_collector, s->feature_name_dict, "ssim", ssim,
-                                s->enable_db, s->max_db, index);
+    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                            "integer_ssim_metal", "ssim", ssim_sum, ssimw_sum,
+                                            s->enable_db, s->max_db, index);
 }
 
 static int close_fex_metal(VmafFeatureExtractor *fex)

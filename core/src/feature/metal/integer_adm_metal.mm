@@ -1064,12 +1064,14 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
     const int w0 = (int)s->scale_w[0];
     const int h0 = (int)s->scale_h[0];
     const double numden_limit = 1e-10 * (double)(w0 * h0) / (1920.0 * 1080.0);
-    num = num < numden_limit ? 0.0 : num;
-    den = den < numden_limit ? 0.0 : den;
+    int err = vmaf_adm_floor_pair_named("integer_adm_metal", index, num, den, numden_limit, &num,
+                                        &den);
+    if (err)
+        return err;
 
     const double aggregate_pairs[4] = {num, den, aim_num, den};
     double aggregate_ratios[2];
-    int err = vmaf_adm_scale_ratios(aggregate_pairs, 2u, aggregate_ratios);
+    err = vmaf_adm_scale_ratios(aggregate_pairs, 2u, aggregate_ratios);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "integer_adm_metal: undefined or non-finite aggregate at frame %u "

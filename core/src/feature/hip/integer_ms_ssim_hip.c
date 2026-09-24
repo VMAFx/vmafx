@@ -953,38 +953,6 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #endif /* HAVE_HIPCC */
 }
 
-#ifdef HAVE_HIPCC
-/* Emits the per-scale l/c/s means under `enable_lcs`. Emission only — the
- * means were already computed by the caller (HISS-04 split of
- * collect_fex_hip). */
-static int ms_ssim_hip_emit_lcs(VmafFeatureCollector *feature_collector, unsigned index,
-                                const double l_means[MS_SSIM_SCALES],
-                                const double c_means[MS_SSIM_SCALES],
-                                const double s_means[MS_SSIM_SCALES])
-{
-    int err = 0;
-    static const char *const l_names[MS_SSIM_SCALES] = {
-        "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
-        "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
-    };
-    static const char *const c_names[MS_SSIM_SCALES] = {
-        "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
-        "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
-    };
-    static const char *const s_names[MS_SSIM_SCALES] = {
-        "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
-        "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
-    };
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        err |= vmaf_feature_collector_append(feature_collector, l_names[i], l_means[i], index);
-        err |= vmaf_feature_collector_append(feature_collector, c_names[i], c_means[i], index);
-        err |= vmaf_feature_collector_append(feature_collector, s_names[i], s_means[i], index);
-    }
-    return err;
-}
-
-#endif /* HAVE_HIPCC */
-
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
 {
@@ -1021,17 +989,12 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 
     double msssim = 1.0;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        if (!isfinite(l_means[i]) || !isfinite(c_means[i]) || !isfinite(s_means[i]))
-            return -EINVAL;
         msssim *= pow(l_means[i], (double)g_alphas[i]) * pow(c_means[i], (double)g_betas[i]) *
                   pow(fabs(s_means[i]), (double)g_gammas[i]);
     }
-
-    err = vmaf_ssim_emit_score(feature_collector, s->feature_name_dict, "float_ms_ssim", msssim,
-                               s->enable_db, s->max_db, index);
-    if (s->enable_lcs)
-        err |= ms_ssim_hip_emit_lcs(feature_collector, index, l_means, c_means, s_means);
-    return err;
+    return vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict, "float_ms_ssim_hip",
+                                    "float_ms_ssim", msssim, s->enable_db, s->max_db, l_means,
+                                    c_means, s_means, MS_SSIM_SCALES, s->enable_lcs, index);
 #endif /* HAVE_HIPCC */
 }
 

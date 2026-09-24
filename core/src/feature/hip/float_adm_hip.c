@@ -772,14 +772,14 @@ static int fadm_hip_emit(FloatAdmStateHip *s, VmafFeatureCollector *fc, FadmPool
     const int w = (int)s->scale_w[0];
     const int h = (int)s->scale_h[0];
     const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
-    if (p->score_num < numden_limit)
-        p->score_num = 0.0;
-    if (p->score_den < numden_limit)
-        p->score_den = 0.0;
     double score = 0.0;
     double score_aim = 0.0;
-    int err = vmaf_adm_finalize_scores_named("float_adm_hip", index, p->score_num, p->score_den,
-                                             p->aim_num, p->aim_den, &score, &score_aim);
+    int err = vmaf_adm_floor_pair_named("float_adm_hip", index, p->score_num, p->score_den,
+                                        numden_limit, &p->score_num, &p->score_den);
+    if (err)
+        return err;
+    err = vmaf_adm_finalize_scores_named("float_adm_hip", index, p->score_num, p->score_den,
+                                         p->aim_num, p->aim_den, &score, &score_aim);
     if (err)
         return err;
     double score_adm3 = 0.0;

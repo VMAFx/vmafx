@@ -212,16 +212,27 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-static bool plane_scores_are_finite(double score, const double *l_scores, const double *c_scores,
-                                    const double *s_scores)
+static int validate_plane_scores(const char *name, unsigned index, double score,
+                                 const double *l_scores, const double *c_scores,
+                                 const double *s_scores)
 {
-    if (!isfinite(score))
-        return false;
-    for (unsigned scale = 0; scale < 5; ++scale) {
-        if (!isfinite(l_scores[scale]) || !isfinite(c_scores[scale]) || !isfinite(s_scores[scale]))
-            return false;
+    if (!isfinite(score)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_ms_ssim: non-finite score at frame %u (feature=%s value=%g)\n", index, name,
+                 score);
+        return -EINVAL;
     }
-    return true;
+    for (unsigned scale = 0; scale < 5; ++scale) {
+        if (!isfinite(l_scores[scale]) || !isfinite(c_scores[scale]) ||
+            !isfinite(s_scores[scale])) {
+            vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                     "float_ms_ssim: non-finite atom at frame %u "
+                     "(feature=%s scale=%u l=%g c=%g s=%g)\n",
+                     index, name, scale, l_scores[scale], c_scores[scale], s_scores[scale]);
+            return -EINVAL;
+        }
+    }
+    return 0;
 }
 
 static const char *const ms_ssim_feature_names[3] = {
@@ -229,52 +240,6 @@ static const char *const ms_ssim_feature_names[3] = {
     "float_ms_ssim_cb",
     "float_ms_ssim_cr",
 };
-
-/* Publish the optional per-scale luminance / contrast / structure components.
- * Lifted out of extract() verbatim so extract() stays inside the HISS-04 /
- * NASA Rule 4 60-LOC bound: every value is the same array element the inline
- * block published, forwarded unchanged and in the same append order. */
-static int ms_ssim_append_lcs_scores(VmafFeatureCollector *feature_collector,
-                                     const double l_scores[5], const double c_scores[5],
-                                     const double s_scores[5], unsigned index)
-{
-    int err = 0;
-
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_l_scale0", l_scores[0],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_l_scale1", l_scores[1],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_l_scale2", l_scores[2],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_l_scale3", l_scores[3],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_l_scale4", l_scores[4],
-                                         index);
-
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_c_scale0", c_scores[0],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_c_scale1", c_scores[1],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_c_scale2", c_scores[2],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_c_scale3", c_scores[3],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_c_scale4", c_scores[4],
-                                         index);
-
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_s_scale0", s_scores[0],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_s_scale1", s_scores[1],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_s_scale2", s_scores[2],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_s_scale3", s_scores[3],
-                                         index);
-    err |= vmaf_feature_collector_append(feature_collector, "float_ms_ssim_s_scale4", s_scores[4],
-                                         index);
-
-    return err;
-}
 
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
@@ -291,6 +256,8 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     double l_scores[3][5];
     double c_scores[3][5];
     double structure_scores[3][5];
+    /* NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL for MSVC /std:clatest (ADR-1138). */
+    VmafDictionary *const feature_name_dict = NULL;
 
     for (unsigned p = 0; p < n_planes; p++) {
         const size_t plane_float_stride = ALIGN_CEIL(ref_pic->w[p] * sizeof(float));
@@ -303,14 +270,10 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         if (err)
             return err;
 
-        if (!plane_scores_are_finite(plane_scores[p], l_scores[p], c_scores[p],
-                                     structure_scores[p])) {
-            vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                     "float_ms_ssim: non-finite %s score or atom at frame %u "
-                     "(score=%g), failing frame\n",
-                     ms_ssim_feature_names[p], index, plane_scores[p]);
-            return -EINVAL;
-        }
+        err = validate_plane_scores(ms_ssim_feature_names[p], index, plane_scores[p], l_scores[p],
+                                    c_scores[p], structure_scores[p]);
+        if (err)
+            return err;
     }
 
     for (unsigned p = 0; p < n_planes; ++p) {
@@ -322,11 +285,15 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     }
 
     for (unsigned p = 0; p < n_planes; p++) {
-        err = vmaf_ssim_emit_score(feature_collector, NULL, ms_ssim_feature_names[p],
-                                   plane_scores[p], s->enable_db, s->max_db, index);
-        if (p == 0 && s->enable_lcs) {
-            err |= ms_ssim_append_lcs_scores(feature_collector, l_scores[p], c_scores[p],
-                                             structure_scores[p], index);
+        if (p == 0) {
+            err = vmaf_ms_ssim_emit_scores(feature_collector, feature_name_dict, "float_ms_ssim",
+                                           ms_ssim_feature_names[p], plane_scores[p], s->enable_db,
+                                           s->max_db, l_scores[p], c_scores[p], structure_scores[p],
+                                           5u, s->enable_lcs, index);
+        } else {
+            err = vmaf_ssim_emit_score_named(feature_collector, feature_name_dict, "float_ms_ssim",
+                                             ms_ssim_feature_names[p], plane_scores[p],
+                                             s->enable_db, s->max_db, index);
         }
         if (err)
             return err;

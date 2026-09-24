@@ -1875,12 +1875,13 @@ static size_t adm_src_stride(const VmafPicture *pic, unsigned bpc)
 static int adm_result_finalise(AdmResult *res, double num, double den, double aim_num,
                                double numden_limit, unsigned index)
 {
-    num = num < numden_limit ? 0 : num;
-    den = den < numden_limit ? 0 : den;
+    int err = vmaf_adm_floor_pair_named("integer_adm", index, num, den, numden_limit, &num, &den);
+    if (err)
+        return err;
 
     const double pairs[4] = {num, den, aim_num, den};
     double ratios[2];
-    int err = vmaf_adm_scale_ratios(pairs, 2u, ratios);
+    err = vmaf_adm_scale_ratios(pairs, 2u, ratios);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "integer_adm: undefined or non-finite aggregate at frame %u "

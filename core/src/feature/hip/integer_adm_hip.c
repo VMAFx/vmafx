@@ -398,15 +398,17 @@ static int write_scores(const write_score_parameters_adm_hip *params)
      * scales with the FULL-FRAME area, not the scale-3 area the per-scale
      * loop ends on. */
     const double numden_limit = 1e-10 * ((double)params->w * params->h) / (1920.0 * 1080.0);
-    num = num < numden_limit ? 0 : num;
-    den = den < numden_limit ? 0 : den;
+    int err = vmaf_adm_floor_pair_named("integer_adm_hip", params->index, num, den, numden_limit,
+                                        &num, &den);
+    if (err)
+        return err;
 
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
      * applies MAX(..., adm_min_val) to the adm3 expression alone). */
     const double aggregate_pair[2] = {num, den};
     double score = 0.0;
-    int err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
+    err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "integer_adm_hip: undefined or non-finite aggregate at frame %u "

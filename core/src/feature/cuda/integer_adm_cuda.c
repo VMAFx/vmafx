@@ -1078,8 +1078,10 @@ static int write_scores(write_score_parameters_adm *params)
      * terms were concluded at. */
     const double numden_limit = 1e-10 * ((double)params->w * params->h) / (1920.0 * 1080.0);
 
-    t.num = t.num < numden_limit ? 0 : t.num;
-    t.den = t.den < numden_limit ? 0 : t.den;
+    int err = vmaf_adm_floor_pair_named("integer_adm_cuda", params->index, t.num, t.den,
+                                        numden_limit, &t.num, &t.den);
+    if (err)
+        return err;
 
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
@@ -1094,7 +1096,7 @@ static int write_scores(write_score_parameters_adm *params)
     }
     const double aggregate_pairs[4] = {t.num, t.den, aim_num, t.den};
     double aggregate_ratios[2];
-    int err = vmaf_adm_scale_ratios(aggregate_pairs, 2u, aggregate_ratios);
+    err = vmaf_adm_scale_ratios(aggregate_pairs, 2u, aggregate_ratios);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "integer_adm_cuda: undefined or non-finite aggregate at frame %u "

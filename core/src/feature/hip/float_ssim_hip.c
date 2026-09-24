@@ -52,6 +52,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "libvmaf/picture.h"
 #include "log.h"
 
@@ -542,10 +543,9 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     for (unsigned i = 0; i < s->partials_count; i++)
         total += (double)partials[i];
     const double n_pixels = (double)s->w_final * (double)s->h_final;
-    const double score = total / n_pixels;
-
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "float_ssim", score, index);
+    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                            "float_ssim_hip", "float_ssim", total, n_pixels, 0, 0.0,
+                                            index);
 #endif /* HAVE_HIPCC */
 }
 

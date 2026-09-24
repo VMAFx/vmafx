@@ -416,8 +416,8 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         calc_ssim(ref_pic->data[0], ref_pic->stride[0], dist_pic->data[0], dist_pic->stride[0], 1.0,
                   ref_pic->bpc, ref_pic->w[0], ref_pic->h[0], s->accum8, s->accum16);
 
-    return vmaf_ssim_emit_score(feature_collector, NULL, "ssim", score, s->enable_db, s->max_db,
-                                index);
+    return vmaf_ssim_emit_score_named(feature_collector, NULL, "integer_ssim", "ssim", score,
+                                      s->enable_db, s->max_db, index);
 }
 
 static int close(VmafFeatureExtractor *fex)

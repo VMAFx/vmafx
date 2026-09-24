@@ -1153,6 +1153,12 @@ test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
 )
 test('test_adm_nonfinite_score', test_adm_nonfinite_score, suite : ['fast'])
 
+test('test_nonfinite_collector_wiring',
+    import('python').find_installation(),
+    args : files('test_nonfinite_collector_wiring.py'),
+    suite : ['fast'],
+)
+
 # NIQE (no-reference, ADR-1112): niqe_math.h unit oracles + an end-to-end
 # score oracle driven through the public extractor-context API against frame 0
 # of the natural fixture testdata/ref_576x324_48f.yuv. NIQE_TESTDATA_DIR points

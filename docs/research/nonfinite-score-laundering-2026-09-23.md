@@ -50,19 +50,23 @@ operations; each extractor still performs its own named frame log and returns
 `-EINVAL` before collector publication.
 
 ADM's helper validates raw operands, denominators and computed results before
-writing either output. The finite `0/0` flat-frame ratio is defined as `1.0`
-for ADM, AIM and per-scale scores, while nonzero-over-zero and non-finite
-operands fail. ADM and AIM denominators are evaluated independently, so a flat
-ADM aggregate does not overwrite a finite AIM ratio or vice versa. The ADM3
-helper retains the defined all-zero harmonic mean while rejecting a non-finite
-blend before `adm_min_val` can hide it.
+writing either output. Aggregate numerator and denominator reductions are
+validated before the precision floor, because `-Inf < limit` would otherwise
+turn a failed reduction into finite zero. The finite `0/0` flat-frame ratio is
+defined as `1.0` for ADM, AIM and per-scale scores, while nonzero-over-zero and
+non-finite operands fail. ADM and AIM denominators are evaluated independently,
+so a flat ADM aggregate does not overwrite a finite AIM ratio or vice versa.
+The ADM3 helper retains the defined all-zero harmonic mean while rejecting a
+non-finite blend before `adm_min_val` can hide it.
 
 MS-SSIM previously appended the luma plane before it knew whether an enabled
 chroma plane was valid. Its extraction now computes and validates all enabled
 planes and all L/C/S atoms first, then appends them, preserving the fail-frame
-atomicity stated by ADR-1302. VIF similarly validates all four ratios before
-publishing scale 0; scale 0 remains unclamped, while scales 1-3 then apply their
-configured minimum.
+atomicity stated by ADR-1302. L/C/S atoms are checked even when `enable_lcs` is
+off, closing the `pow(NaN, 0) == 1` escape. Float and integer VIF collectors
+similarly validate all four ratios plus enabled debug atoms before publishing
+scale 0; scale 0 remains unclamped, while scales 1-3 then apply their configured
+minimum.
 
 SSIM/MS-SSIM retain one explicit exception from ADR-1221: finite raw scores at
 or above `1.0` report positive infinity when dB output is enabled and clipping
@@ -78,7 +82,8 @@ meson setup core/build-nonfinite core -Db_lto=false \
   -Denable_metal=disabled -Denable_dnn=disabled
 ninja -C core/build-nonfinite -j4
 meson test -C core/build-nonfinite --print-errorlogs \
-  test_adm_nonfinite_score test_ssimulacra2_nonfinite \
+  test_adm_nonfinite_score test_nonfinite_collector_wiring \
+  test_ssimulacra2_nonfinite \
   test_ssimulacra2_coverage test_predict test_transnet_v2 \
   test_float_ms_ssim_coverage
 ```
@@ -86,13 +91,14 @@ meson test -C core/build-nonfinite --print-errorlogs \
 The release gate remains `make test-netflix-golden`; a passing unit test is not
 a substitute for the unchanged golden scores.
 
-On the completed worktree, the focused six-test command passes 6/6, the full
-Meson fast suite passes 148/148, and the five-file Netflix Python gate reports
+On the completed worktree, the focused seven-test command passes 7/7, the full
+Meson fast suite passes 149/149, and the five-file Netflix Python gate reports
 `271 passed, 12 skipped`. No Netflix-authored assertion or expected value is
 changed. Release builds with CUDA 13.4/NVCC, ROCm 7.2/HIPCC (`gfx1100`), and
 oneAPI 2026.0/SYCL (SPIR-V JIT) also compile the shared SSIMULACRA2 guard and
-their respective host twins successfully. Metal remains compile-verified by
-CI because this Linux workstation has no Apple toolchain.
+their respective host twins successfully. Metal compilation remains CI-only
+because this Linux workstation has no Apple toolchain; the wiring regression
+also checks its host and shader sources for the removed perfect-score fallbacks.
 
 The backend-twin edits are the same mechanical helper substitution in files
 that carry historical HISS debt. The local governance gate was therefore run

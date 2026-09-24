@@ -1838,17 +1838,17 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
      * the precision floor scales with the FULL-FRAME area, not the scale-3
      * area that `score_w` / `score_h` hold after the loop above. */
     double const numden_limit = 1e-10 * ((double)s->width * s->height) / (1920.0 * 1080.0);
-    if (num < numden_limit)
-        num = 0.0;
-    if (den < numden_limit)
-        den = 0.0;
+    int err =
+        vmaf_adm_floor_pair_named("integer_adm_sycl", index, num, den, numden_limit, &num, &den);
+    if (err)
+        return err;
 
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
      * applies MAX(..., adm_min_val) to the adm3 expression alone). */
     const double aggregate_pair[2] = {num, den};
     double score = 0.0;
-    int err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
+    err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "integer_adm_sycl: undefined or non-finite aggregate at frame %u "
@@ -1870,8 +1870,9 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         "integer_adm_scale0", "integer_adm_scale1", "integer_adm_scale2", "integer_adm_scale3"};
     double scale_pairs[ADM_NUM_SCALES * 2];
     for (int i = 0; i < ADM_NUM_SCALES; i++) {
-        scale_pairs[i * 2] = scores_num[i];
-        scale_pairs[i * 2 + 1] = scores_den[i];
+        const size_t offset = (size_t)i * 2u;
+        scale_pairs[offset] = scores_num[i];
+        scale_pairs[offset + 1u] = scores_den[i];
     }
     double scale_scores[ADM_NUM_SCALES];
     err = vmaf_adm_scale_ratios_named("integer_adm_sycl", index, scale_pairs, ADM_NUM_SCALES,
@@ -1880,9 +1881,11 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         return err;
 
     VmafNamedScore values[16] = {
-        {"VMAF_integer_feature_adm2_score", score}, {scale_names[0], scale_scores[0]},
-        {scale_names[1], scale_scores[1]},          {scale_names[2], scale_scores[2]},
-        {scale_names[3], scale_scores[3]},
+        {.name = "VMAF_integer_feature_adm2_score", .value = score},
+        {.name = scale_names[0], .value = scale_scores[0]},
+        {.name = scale_names[1], .value = scale_scores[1]},
+        {.name = scale_names[2], .value = scale_scores[2]},
+        {.name = scale_names[3], .value = scale_scores[3]},
     };
     size_t value_count = 5u;
     if (s->debug) {
@@ -1892,12 +1895,12 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         static const char *const den_names[ADM_NUM_SCALES] = {
             "integer_adm_den_scale0", "integer_adm_den_scale1", "integer_adm_den_scale2",
             "integer_adm_den_scale3"};
-        values[value_count++] = VmafNamedScore{"integer_adm", score};
-        values[value_count++] = VmafNamedScore{"integer_adm_num", num};
-        values[value_count++] = VmafNamedScore{"integer_adm_den", den};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm", .value = score};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm_num", .value = num};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm_den", .value = den};
         for (int i = 0; i < ADM_NUM_SCALES; ++i) {
-            values[value_count++] = VmafNamedScore{num_names[i], scores_num[i]};
-            values[value_count++] = VmafNamedScore{den_names[i], scores_den[i]};
+            values[value_count++] = VmafNamedScore{.name = num_names[i], .value = scores_num[i]};
+            values[value_count++] = VmafNamedScore{.name = den_names[i], .value = scores_den[i]};
         }
     }
     return vmaf_feature_emit_finite_scores(feature_collector, s->feature_name_dict,
