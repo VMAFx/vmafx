@@ -30,6 +30,7 @@
 
 #include "cambi_internal.h"
 #include "common/macros.h"
+#include "compat/path_utf8.h"
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -658,9 +659,9 @@ static int open_heatmaps(CambiState *s)
             return -ENAMETOOLONG;
 
 #ifdef _WIN32
-        int hfd = _open(path, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
+        int hfd = vmaf_open_utf8(path, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
 #else
-        int hfd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        int hfd = vmaf_open_utf8(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 #endif
         if (hfd < 0) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: could not open heatmaps_path: %s\n", path);
@@ -2020,6 +2021,21 @@ int vmaf_cambi_test_get_vlt_luma(double visibility_luminance_threshold, VmafLuma
                                  VmafEOTF eotf)
 {
     return get_vlt_luma(visibility_luminance_threshold, luma_range, eotf);
+}
+
+int vmaf_cambi_test_open_heatmaps(char *path, unsigned enc_width, unsigned enc_height)
+{
+    CambiState state = {
+        .enc_width = enc_width,
+        .enc_height = enc_height,
+        .heatmaps_path = path,
+    };
+    int err = open_heatmaps(&state);
+    for (int scale = 0; scale < NUM_SCALES; ++scale) {
+        if (state.heatmaps_files[scale] && fclose(state.heatmaps_files[scale]) && !err)
+            err = -EIO;
+    }
+    return err;
 }
 
 #undef CAMBI_NULL_POINTER

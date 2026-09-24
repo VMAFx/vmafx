@@ -43,6 +43,7 @@
 #endif
 
 #include "cli_parse.h"
+#include "compat/path_utf8.h"
 #include "spinner.h"
 #include "vidinput.h"
 
@@ -162,7 +163,7 @@ void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt
     /* Use open()+fdopen() with explicit 0644 mode so the created file is never
      * world-writable regardless of the caller's umask (CodeQL cpp/world-writable-file-creation). */
 #ifdef _WIN32
-    FILE *fp = fopen(output_path, "wb");
+    FILE *fp = vmaf_fopen_utf8(output_path, "wb");
 #else
     const int raw_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     FILE *fp = (raw_fd >= 0) ? fdopen(raw_fd, "wb") : nullptr;
@@ -1599,7 +1600,7 @@ void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat
     if (fmt != VMAF_OUTPUT_FORMAT_JSON)
         return;
 
-    FILE *fp = fopen(output_path, "rb+");
+    FILE *fp = vmaf_fopen_utf8(output_path, "rb+");
     if (!fp)
         return;
     if (fseek(fp, 0, SEEK_END) != 0) {
@@ -1731,12 +1732,12 @@ void print_cli_banner(const CLISettings *c, int istty)
 [[nodiscard]] int open_cli_inputs(CliRunState *state)
 {
     const char *const ref_path = state->c.no_reference ? state->c.path_dist : state->c.path_ref;
-    state->file_ref = fopen(ref_path, "rb");
+    state->file_ref = vmaf_fopen_utf8(ref_path, "rb");
     if (!state->file_ref) {
         (void)fprintf(stderr, "could not open file: %s\n", ref_path);
         return -1;
     }
-    state->file_dist = fopen(state->c.path_dist, "rb");
+    state->file_dist = vmaf_fopen_utf8(state->c.path_dist, "rb");
     if (!state->file_dist) {
         (void)fprintf(stderr, "could not open file: %s\n", state->c.path_dist);
         return -1;

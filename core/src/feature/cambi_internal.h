@@ -227,6 +227,7 @@ int vmaf_cambi_test_tvi_hard_threshold_condition(int sample, int diff, double tv
                                                  VmafLumaRange luma_range, VmafEOTF eotf);
 int vmaf_cambi_test_get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange luma_range,
                                  VmafEOTF eotf);
+int vmaf_cambi_test_open_heatmaps(char *path, unsigned enc_width, unsigned enc_height);
 
 #ifdef __cplusplus
 }

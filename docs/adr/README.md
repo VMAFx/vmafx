@@ -1016,6 +1016,7 @@ public authority; documentation never links into either local root.
 | [ADR-1188](1188-percentile-pooling-methods.md) | Percentile temporal pooling in the public C API | Accepted | core, api, pooling, abi, output-schema, golden-gate |
 | [ADR-1196](1196-speed-matmul-simd-dispatch.md) | Dispatch the SpEED dense matrix product through bit-exact AVX2 / AVX-512 kernels | Accepted | simd, feature, performance, testing |
 | [ADR-1194](1194-adm-angle-flag-single-source.md) | One integer-ADM `angle_flag` predicate for every backend | Accepted | cuda, hip, sycl, metal, simd, correctness |
+| [ADR-1182](1182-windows-utf8-path-contract.md) | Windows UTF-8 path contract (vmaf_fopen_utf8 / vmaf_open_utf8) | Accepted | core, compat, windows, utf8 |
 | [ADR-1185](1185-backend-perf-baseline-methodology.md) | Per-backend performance baselines are median-of-N, one backend per build dir | Accepted | perf, benchmarks, cuda, sycl, hip, docs |
 | [ADR-1198](1198-changelog-unknown-section-is-an-error.md) | An unknown `changelog.d/` subdirectory fails the run instead of warning | Proposed | ci, release, docs, testing |
 | [ADR-1199](1199-cuda-picture-handover-barrier.md) | Order caller-written CUDA pictures once per frame, at the dispatch point | Proposed | cuda, correctness, api, testing |

@@ -1311,6 +1311,7 @@ nav:
         - "ADR-1177: sycl-arc-self-hosted-runner": adr/1177-sycl-arc-self-hosted-runner.md
         - "ADR-1178: dev-container-image-publish": adr/1178-dev-container-image-publish.md
         - "ADR-1179: sycl-v1-model-crash-fix": adr/1179-sycl-v1-model-crash-fix.md
+        - "ADR-1182: windows-utf8-path-contract": adr/1182-windows-utf8-path-contract.md
         - "ADR-1183: model-options-gate-gpu-twin-selection": adr/1183-model-options-gate-gpu-twin-selection.md
         - "ADR-1184: mcp-grpc-bridge-go-only": adr/1184-mcp-grpc-bridge-go-only.md
         - "ADR-1185: backend-perf-baseline-methodology": adr/1185-backend-perf-baseline-methodology.md
@@ -1535,6 +1536,7 @@ nav:
         - "codeql": adr/by-tag/codeql.md
         - "colour": adr/by-tag/colour.md
         - "compare": adr/by-tag/compare.md
+        - "compat": adr/by-tag/compat.md
         - "compatibility": adr/by-tag/compatibility.md
         - "compliance": adr/by-tag/compliance.md
         - "concurrency": adr/by-tag/concurrency.md
@@ -1992,6 +1994,7 @@ nav:
         - "upstream-port": adr/by-tag/upstream-port.md
         - "upstream-sync": adr/by-tag/upstream-sync.md
         - "upstream": adr/by-tag/upstream.md
+        - "utf8": adr/by-tag/utf8.md
         - "ux": adr/by-tag/ux.md
         - "v4": adr/by-tag/v4.md
         - "validation": adr/by-tag/validation.md

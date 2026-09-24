@@ -2804,6 +2804,16 @@ test_score_pooled_eagain = executable('test_score_pooled_eagain',
 )
 test('test_score_pooled_eagain', test_score_pooled_eagain, suite : ['fast'])
 
+# ADR-1182 — Windows UTF-8 path contract (Netflix#1568).
+test_path_utf8 = executable('test_path_utf8',
+    ['test.c', 'test_path_utf8.c', '../src/compat/path_utf8.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, thread_lib],
+)
+test('test_path_utf8', test_path_utf8, suite : ['fast'])
+
 # ADR-1118 — Pelorus perceptual spatial-pooling weighting. Golden-gate
 # isolation proof: pooling is bit-exact without side-data (and when only one of
 # the two opt-in conditions holds), and shifts in the expected direction once
@@ -4601,12 +4611,13 @@ test('test_feature_collector_coverage', test_feature_collector_coverage, suite :
 # cambi.c's `heatmaps_path` sidecar, which no unit test exercises.  This
 # binary drives the public `mkdirp` symbol directly with NULL guard,
 # single-level mkdir, EEXIST idempotence, and double-slash normalization.
-# Compiles `mkdirp.c` into the binary directly — the file is part of
+# Compiles `mkdirp.cpp` and its UTF-8 path dependency into the binary directly.
+# The file is part of
 # libvmaf_feature_static_lib so linking against libvmaf would also work,
 # but a TU-local compile keeps the test self-contained and avoids
 # coupling to libvmaf's link graph.
 test_mkdirp = executable('test_mkdirp',
-    ['test.c', 'test_mkdirp.c', '../src/feature/mkdirp.cpp'],
+    ['test.c', 'test_mkdirp.c', '../src/feature/mkdirp.cpp', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )

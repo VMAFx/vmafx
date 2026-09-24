@@ -53055,3 +53055,25 @@ The helper extractions reduce the generated HISS baseline from 276 to 267
 infractions. Preserve the downward `.standards-baseline.json` ratchet and the
 matching managed count in `README.md`; regenerate with the pinned `praetorctl`
 instead of restoring stale line fingerprints during a rebase.
+## fix/windows-utf8-path-contract-rc1 — Windows UTF-8 path contract (ADR-1182, 2026-09-24)
+
+1. **Internal UTF-8 shims (`core/src/compat/path_utf8.{h,c}`) must remain unexported.**
+   The UTF-8 opener, canonicalization, metadata, mkdir, and remove functions are
+   internal compatibility helpers; they
+   must not carry `VMAF_EXPORT` or be declared in `core/include/libvmaf/` public headers,
+   preserving ADR-0379 ABI stability and satisfying `check_exported_symbols.py`.
+2. **`output_file_open` in `core/src/libvmaf.c` and fork tool openers.**
+   Upstream's `output_file_open` used `_open()` on Windows, decoding path strings with
+   the ANSI code page. The fork routes `output_file_open()` through `vmaf_open_utf8()`,
+   which converts UTF-8 strings to UTF-16 with `MultiByteToWideChar` and calls `_wopen()`.
+   Fork-added model loaders (`core/src/dnn/model_loader.c`, `core/src/read_json_model.{c,cpp}`)
+   and tools (`vmaf.cpp`, `vmaf_bench.c`, `vmaf_per_shot.c`, `vmaf_roi.c`, `vmaf_vpl.c`)
+   similarly route filesystem operations through the compatibility layer. Preserve
+   the DNN `_wfullpath`/`_wstat64` preflight and CAMBI `heatmaps_path` mkdir/open wiring;
+   widening only the final opener recreates the original failure.
+3. **Pelorus interop mirror invariant (ADR-1113).**
+   `core/src/interop/pelorus_qp_report_csv.c` must NOT be edited directly to use
+   `vmaf_fopen_utf8` — it is a verbatim mirror of `libpelorus`. Any upstream changes
+   to Pelorus must originate in `VMAFx/pelorus` and be re-vendored via
+   `scripts/sync-pelorus-interop.sh`. The original state item remains open until that
+   happens; do not describe the contract as covering `pel_x265_csv_parse()` meanwhile.

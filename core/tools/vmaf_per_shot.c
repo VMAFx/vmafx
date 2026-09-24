@@ -38,6 +38,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "compat/path_utf8.h"
 #include <string.h>
 #ifndef _WIN32
 #include <fcntl.h>
@@ -677,7 +678,7 @@ static FILE *per_shot_open_plan_file(const char *path)
     }
     return out;
 #else
-    FILE *out = fopen(path, "w");
+    FILE *out = vmaf_fopen_utf8(path, "w");
     if (out == NULL) {
         (void)fprintf(stderr, "vmaf-perShot: cannot open output %s\n", path);
     }
@@ -789,7 +790,7 @@ static int per_shot_scan(const struct vmaf_per_shot_settings *s, struct vmaf_per
     }
     if (s->width == 0U || s->height == 0U || s->bitdepth == 0U)
         return -EINVAL;
-    FILE *fin = fopen(s->reference, "rb");
+    FILE *fin = vmaf_fopen_utf8(s->reference, "rb");
     if (fin == NULL) {
         /* strerror() is concurrency-mt-unsafe; the path is enough
          * context for the user. */

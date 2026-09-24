@@ -16,11 +16,21 @@
  *
  */
 
-#include "test.h"
-#include "ref.h"
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#define CAMBI_TEST_PATH_SEPARATOR '\\'
+#else
+#include <unistd.h>
+#define CAMBI_TEST_PATH_SEPARATOR '/'
+#endif
+
+#include "test.h"
+#include "ref.h"
+#include "compat/path_utf8.h"
 #include "cpu.h"
 #include "mem.h"
 #include "feature/cambi.h"
@@ -1472,6 +1482,66 @@ static char *run_cambi_thresholds_rows_and_parity(void)
     return CAMBI_TEST_NULL_POINTER;
 }
 
+static int remove_cambi_directory(const char *path)
+{
+#ifdef _WIN32
+    wchar_t wpath[512];
+    const int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wpath, 512);
+    if (converted == 0)
+        return -1;
+    return RemoveDirectoryW(wpath) ? 0 : -1;
+#else
+    return rmdir(path);
+#endif
+}
+
+/* Real CAMBI heatmap seam: exercise mkdirp() and open_heatmaps() together so
+ * reverting either Windows wide-path call makes this fail at the exact
+ * non-ASCII directory requested by a user. */
+static char *test_open_heatmaps_utf8_path(void)
+{
+#ifdef _WIN32
+    const unsigned long process_id = (unsigned long)GetCurrentProcessId();
+#else
+    const unsigned long process_id = (unsigned long)getpid();
+#endif
+    char directory[256];
+    const int dir_len =
+        snprintf(directory, sizeof(directory), "vmaf_cambi_\xC3\xA9\xE6\x97\xA5_%lu", process_id);
+    mu_assert("CAMBI UTF-8 directory path overflow",
+              dir_len > 0 && (size_t)dir_len < sizeof(directory));
+    (void)remove_cambi_directory(directory);
+
+    const int open_rc = vmaf_cambi_test_open_heatmaps(directory, 16, 16);
+
+    int files_ok = open_rc == 0;
+    int scaled_w = 16;
+    int scaled_h = 16;
+    for (int scale = 0; scale < VMAF_CAMBI_NUM_SCALES; ++scale) {
+        char path[512];
+        const int path_len =
+            snprintf(path, sizeof(path), "%s%ccambi_heatmap_scale_%d_%dx%d_16b.gray", directory,
+                     CAMBI_TEST_PATH_SEPARATOR, scale, scaled_w, scaled_h);
+        if (path_len <= 0 || (size_t)path_len >= sizeof(path)) {
+            files_ok = 0;
+        } else {
+            FILE *file = vmaf_fopen_utf8(path, "rb");
+            files_ok &= file != NULL;
+            if (file)
+                files_ok &= fclose(file) == 0;
+            files_ok &= vmaf_remove_utf8(path) == 0;
+        }
+        scaled_w = (scaled_w + 1) >> 1;
+        scaled_h = (scaled_h + 1) >> 1;
+    }
+    const int rmdir_rc = remove_cambi_directory(directory);
+
+    mu_assert("CAMBI rejected a UTF-8 heatmaps_path", open_rc == 0);
+    mu_assert("CAMBI did not create every heatmap at the exact UTF-8 path", files_ok != 0);
+    mu_assert("CAMBI UTF-8 heatmap directory cleanup failed", rmdir_rc == 0);
+    return CAMBI_TEST_NULL_POINTER;
+}
+
 char *run_tests(void)
 {
     char *error;
@@ -1487,7 +1557,9 @@ char *run_tests(void)
     error = run_cambi_thresholds_rows_and_parity();
     if (error)
         return error;
+    mu_run_test(test_open_heatmaps_utf8_path);
     return CAMBI_TEST_NULL_POINTER;
 }
 
 #undef CAMBI_TEST_NULL_POINTER
+#undef CAMBI_TEST_PATH_SEPARATOR

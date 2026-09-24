@@ -41,6 +41,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "compat/path_utf8.h"
 #include <stdint.h>
 #include <time.h>
 #include <unistd.h>
@@ -223,7 +224,7 @@ static int vpl_attach_input(VplDecoder *dec, const char *filename)
     }
 
     /* Open input file */
-    dec->fp = fopen(filename, "rb");
+    dec->fp = vmaf_fopen_utf8(filename, "rb");
     if (!dec->fp) {
         (void)fprintf(stderr, "Cannot open %s\n", filename);
         return -1;

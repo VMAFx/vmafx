@@ -82,6 +82,12 @@ feature/
   descriptors equivalent to the public option table. See
   [measured source and binary equivalence](../../../docs/research/2043-cambi-production-lint-2026-09-08.md).
 
+- **CAMBI heatmap paths are UTF-8 on Windows** (ADR-1182):
+  `mkdirp.cpp` must create each component through `vmaf_mkdir_utf8`, and
+  `cambi.c::open_heatmaps` must open every `.gray` file through
+  `vmaf_open_utf8`. Keep `test_open_heatmaps_utf8_path` as a production-seam
+  regression; a helper-only path test does not protect this call-site wiring.
+
 - **Floating-point VIF lint decomposition** (ADR-0141 / ADR-1142):
   `vif.c` keeps ten-plane aligned layout and original convolution,
   decimation, statistic and scale-reduction order. Preserve float intermediate
