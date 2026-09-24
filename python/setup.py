@@ -80,6 +80,11 @@ class LazyExtensions(list):
             # language="c++" only selects the C++ driver for the link step —
             # the Cython-generated .c is still compiled as C by extension.
             self._extensions[0].sources.append(os.path.join("..", "core", "src", "mem.cpp"))
+            # The .pyx also text-includes adm.c. Its fail-closed score helpers
+            # call vmaf_log(), so the extension must carry the implementation;
+            # otherwise the wheel links but import fails with an undefined
+            # vmaf_log symbol (first exposed by the hosted ARM64 lane).
+            self._extensions[0].sources.append(os.path.join("..", "core", "src", "log.c"))
             self._extensions[0].language = "c++"
 
         return self._extensions

@@ -103,6 +103,29 @@ def test_cython_extension_include_dirs_cover_private_and_public_core_headers():
     )
 
 
+def test_cython_extension_links_the_nonfinite_logger_implementation():
+    """The text-included ADM source must not leave ``vmaf_log`` unresolved."""
+    setup_tree = ast.parse(SETUP_PY.read_text(encoding="utf-8"))
+    appended_source_parts = {
+        tuple(
+            part.value
+            for part in node.args[0].args
+            if isinstance(part, ast.Constant) and isinstance(part.value, str)
+        )
+        for node in ast.walk(setup_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "append"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Call)
+    }
+
+    assert ("..", "core", "src", "log.c") in appended_source_parts, (
+        "adm.c now uses nonfinite_score.h logging helpers; the Cython extension "
+        "must link core/src/log.c or its shared object imports with undefined symbol vmaf_log"
+    )
+
+
 def test_setup_metadata_version_matches_package_marker():
     """The release-please marker comment must not become the package version.
 

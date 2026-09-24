@@ -113,8 +113,8 @@ finding baseline, with no new debt.
 
 ## Post-rebase hosted falsification
 
-The first hosted run on the rebased exact head found three contracts that the
-local review had not proved under the hosted matrix:
+The hosted matrix on the rebased heads found four contracts that the local
+review had not initially proved:
 
 - both macOS Metal lanes rejected `float_ms_ssim_metal.mm` because the shared
   emitter call referenced `s->enable_db` and `s->max_db`, while the Metal state
@@ -125,7 +125,11 @@ local review had not proved under the hosted matrix:
   transitive public `libvmaf/model.h` include was unreachable;
 - the whole-tree Clang 22 tidy ratchet rejected the new
   `transnet_v2_score.h` helper because its three-way probability clamp omitted
-  braces required by `readability-braces-around-statements`.
+  braces required by `readability-braces-around-statements`;
+- after the public-header search path let the compatibility Cython extension
+  finish linking, its first runtime import exposed `vmaf_log` as undefined:
+  the text-included `adm.c` now reaches the logging wrappers in
+  `nonfinite_score.h`, but the extension had not linked `core/src/log.c`.
 
 The Metal call now supplies the existing surface's fixed linear-score settings,
 `false, INFINITY`, and a static wiring regression locks that contract down on
@@ -134,5 +138,7 @@ non-Apple hosts. The Python extension now includes both `../core/src` and
 Python 3.14 editable-wheel build completes successfully with the corrected
 path. The TransNet helper now braces all three branches, with the hosted tidy
 artifact providing the exact three-diagnostic reproducer. These are build and
-style-only corrections: they neither expand the Metal option surface nor
-change finite metric results.
+style-only corrections. The extension now links `core/src/log.c`, and its setup
+metadata regression rejects any future removal of that runtime dependency.
+Together these corrections neither expand the Metal option surface nor change
+finite metric results.
