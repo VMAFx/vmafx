@@ -646,29 +646,32 @@ feature/
   statements at default optimization anyway.
   **IMPORTANT — Intel icx (`intel-llvm`)**: `#pragma STDC FP_CONTRACT
   OFF` is also silently ignored by icx unless `-fp-model=precise` is
-  also on command line. SIMD carve-out static libs in
-  `core/src/meson.build` detect `cc.get_id() == 'intel-llvm'` and
-  append `-fp-model=precise`; SIMD test executables in
-  `core/test/meson.build` do same via `_simd_strict_fp_args`. Do
-  not remove these flags without re-running `--suite=fast --suite=simd`
-  under icx. AArch64 carve-outs use `arm64_strict_fp_args`
-  instead: `/fp:precise` on `msvc` (`Windows ARM64 MSVC` lane, ADR-1260),
-  `-ffp-contract=off` elsewhere; x86 carve-outs still pass the literal to
-  MSVC (D9002 noise, `T-MSVC-FFP-CONTRACT-D9002-2026-09-19`). Traced via
-  2026-05-30 all-backends CI failure. See
+  also on command line. `vmaf_fp_model_args` and `vmaf_strict_fp_args` in
+  `core/src/meson.build` are the shared compiler-ID policy for x86 and AArch64
+  carve-outs, scalar references, and `core/test/meson.build`'s
+  `_simd_strict_fp_args`. Unix icx uses `-fp-model=precise` followed by
+  `-ffp-contract=off`; `icx-cl` uses `/fp:precise /Qfma-`; MSVC uses
+  `/fp:precise`; clang-cl forwards `/clang:-ffp-contract=off`. Do not copy raw
+  strict-FP literals back into individual targets or duplicate the mapping in
+  the test build. `vmaf_cuda_host_strict_fp_args` separately forwards the
+  native host spelling through nvcc (`/fp:precise` on Windows). Do not remove
+  these flags without re-running `--suite=fast --suite=simd` under icx. Traced
+  via 2026-05-30
+  all-backends CI failure and closed by
+  `T-MSVC-FFP-CONTRACT-D9002-2026-09-19`. See
   [ADR-0160](../../../docs/adr/0160-psnr-hvs-neon-bitexact.md)
   and [rebase-notes 0052](../../../docs/rebase-notes.md).
   **two flags are order-sensitive and must not be re-sorted.**
   `-fp-model=precise` implies `-ffp-contract=on`, so it goes FIRST and
-  `-ffp-contract=off` LAST; other way round it re-enables
-  contraction pair exists to disable. Measured on
+  `-ffp-contract=off` LAST; the other order re-enables the contraction the
+  pair exists to disable. Measured on
   `speed_matmul_avx2` scalar tail with icx 2026.0: `-mfma
   -ffp-contract=off` emits zero `vfmadd`, adding `-fp-model=precise`
   after it emits nine, and putting `-fp-model=precise` before it emits
-  zero again. `core/src/meson.build` and `core/test/meson.build` must
-  be changed **together** — SIMD tests compile their own copies of
-  scalar references, so reordering only one file puts two sides
-  of every bit-exactness comparison on different contraction settings.
+  zero again. `core/test/meson.build` must continue to alias the shared
+  `vmaf_strict_fp_args` variable — SIMD tests compile their own copies of
+  scalar references, so replacing the alias with a divergent list puts two
+  sides of every bit-exactness comparison on different contraction settings.
   That is what broke `test_ssimulacra2_simd` first time reorder
   was tried; see `T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07` in
   [state.md](../../../docs/state.md).

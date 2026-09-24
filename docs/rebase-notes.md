@@ -16,6 +16,25 @@ fail before binding when neither an injected nor canonical adapter exists.  Re-r
 `tests/test_import_graph.py` after resolving any conflict that touches these
 three modules; it walks function-local imports as well as module-level imports,
 matching the dependency edges CodeQL reports.
+## fix/msvc-strict-fp-flags — compiler-native no-contraction flags (2026-09-23)
+
+`vmaf_fp_model_args` and `vmaf_strict_fp_args` in `core/src/meson.build` are a
+single policy consumed by x86 and AArch64 SIMD carve-outs, strict
+scalar-reference libraries, and `core/test/meson.build`.
+`vmaf_cuda_host_strict_fp_args` carries the host-side spelling through nvcc.
+Do not resolve a conflict by restoring
+per-target `['-ffp-contract=off']` literals or by rebuilding a separate test
+mapping: the old duplication sent ignored Unix flags to Windows drivers and
+could place a SIMD kernel and its scalar reference under different arithmetic
+semantics.
+
+Preserve the compiler distinctions and order. Unix `intel-llvm` requires
+`-fp-model=precise` first and `-ffp-contract=off` last; Windows
+`intel-llvm-cl` requires `/fp:precise /Qfma-`; MSVC uses `/fp:precise`; and
+clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
+`/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
+`core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
+these Meson blocks.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

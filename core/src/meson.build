@@ -717,21 +717,41 @@ libvmaf_cpu_static_lib = static_library(
 
 platform_specific_cpu_objects = []
 
+# BEGIN VMAF strict FP compiler-argument policy
+# Keep the value-safety model separate from the no-contraction policy: the
+# ordinary x86 libraries need the former under Intel LLVM, while only the
+# bit-exact carve-outs need both. The Windows-compatible Intel driver accepts
+# MSVC-style options; it warns and ignores the Unix spellings.
+_strict_fp_compiler_id = cc.get_id()
+vmaf_fp_model_args = []
+vmaf_strict_fp_args = ['-ffp-contract=off']
+vmaf_cuda_host_strict_fp_args = ['-Xcompiler=-ffp-contract=off']
+if host_machine.system() == 'windows'
+    # nvcc's Windows host compiler is cl.exe even when another driver builds
+    # libvmaf, so forward the native MSVC spelling rather than a Unix option.
+    vmaf_cuda_host_strict_fp_args = ['-Xcompiler=/fp:precise']
+endif
+if _strict_fp_compiler_id == 'intel-llvm'
+    vmaf_fp_model_args = ['-fp-model=precise']
+    # ORDER IS LOAD-BEARING: precise first, contraction-off last.
+    vmaf_strict_fp_args = vmaf_fp_model_args + ['-ffp-contract=off']
+elif _strict_fp_compiler_id == 'intel-llvm-cl'
+    vmaf_fp_model_args = ['/fp:precise']
+    # Intel's Windows driver has no -ffp-contract option. /Qfma- is the
+    # documented separate-rounding equivalent for AVX2-or-newer targets.
+    vmaf_strict_fp_args = vmaf_fp_model_args + ['/Qfma-']
+elif _strict_fp_compiler_id == 'msvc'
+    # Since Visual Studio 2022, /fp:precise leaves contraction disabled unless
+    # /fp:contract is explicitly requested.
+    vmaf_strict_fp_args = ['/fp:precise']
+elif _strict_fp_compiler_id == 'clang-cl'
+    # clang-cl requires Clang-only options to cross its MSVC-compatible driver.
+    vmaf_strict_fp_args = ['/clang:-ffp-contract=off']
+endif
+# END VMAF strict FP compiler-argument policy
+
 if is_asm_enabled
     if host_machine.cpu_family().startswith('arm64') or host_machine.cpu_family().startswith('aarch64')
-        # Strict-FP flag for the float NEON carve-outs below. GCC and
-        # clang take `-ffp-contract=off`. MSVC (the Windows ARM64 lane,
-        # ADR-1260) would only warn D9002 on that spelling; there the
-        # default `/fp:precise` generates no contractions (documented
-        # behaviour since Visual Studio 2022), so it is passed explicitly
-        # to carry the same intent. clang-cl is not covered: it accepts
-        # `/fp:precise` but keeps clang's in-statement contraction.
-        if cc.get_id() == 'msvc'
-            arm64_strict_fp_args = ['/fp:precise']
-        else
-            arm64_strict_fp_args = ['-ffp-contract=off']
-        endif
-
         # Integer-only NEON TUs — no floating-point arithmetic; no
         # `-ffp-contract=off` needed.  ADR-0873.
         arm64_int_sources = [
@@ -775,7 +795,7 @@ if is_asm_enabled
           'arm64_v8_fp',
           arm64_fp_sources,
           include_directories : vmaf_base_include,
-          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + arm64_strict_fp_args,
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + vmaf_strict_fp_args,
         )
 
         # float-ADM DWT2 NEON carve-out (ADR-1057).
@@ -788,7 +808,7 @@ if is_asm_enabled
           'arm64_adm_dwt2_neon',
           feature_src_dir + 'arm64/float_adm_dwt2_neon.c',
           include_directories : vmaf_base_include,
-          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + arm64_strict_fp_args,
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + vmaf_strict_fp_args,
         )
 
         # ssim_neon carve-out (mirror of ssimulacra2_neon and x86 ssim_avx2).
@@ -803,7 +823,7 @@ if is_asm_enabled
           'arm64_ssim_neon',
           feature_src_dir + 'arm64/ssim_neon.c',
           include_directories : vmaf_base_include,
-          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + arm64_strict_fp_args,
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + vmaf_strict_fp_args,
         )
 
         # ssimulacra2_neon.c compiles in its own static lib with
@@ -817,7 +837,7 @@ if is_asm_enabled
               feature_src_dir + 'arm64/ssimulacra2_host_neon.c',
           ],
           include_directories : vmaf_base_include,
-          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + arm64_strict_fp_args,
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64'] + vmaf_strict_fp_args,
         )
 
         platform_specific_cpu_objects += arm64_static_lib.extract_all_objects(recursive: false)
@@ -837,7 +857,7 @@ if is_asm_enabled
                 'arm64_ssimulacra2_sve2',
                 feature_src_dir + 'arm64/ssimulacra2_sve2.c',
                 include_directories : vmaf_base_include,
-                c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2'] + arm64_strict_fp_args,
+                c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2'] + vmaf_strict_fp_args,
             )
             platform_specific_cpu_objects += arm64_ssimulacra2_sve2_lib.extract_all_objects(recursive: false)
 
@@ -850,23 +870,21 @@ if is_asm_enabled
                 'arm64_moment_sve2',
                 feature_src_dir + 'arm64/moment_sve2.c',
                 include_directories : vmaf_base_include,
-                c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2'] + arm64_strict_fp_args,
+                c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2'] + vmaf_strict_fp_args,
             )
             platform_specific_cpu_objects += arm64_moment_sve2_lib.extract_all_objects(recursive: false)
         endif
     endif
 
     if host_machine.cpu_family().startswith('x86')
-      # icx (Intel oneAPI DPC++/C++, meson id 'intel-llvm' or 'intel-llvm-cl')
-      # ignores #pragma STDC FP_CONTRACT OFF in source files at -O3 unless
+      # Unix icx (Intel oneAPI DPC++/C++, meson id 'intel-llvm') ignores
+      # #pragma STDC FP_CONTRACT OFF in source files at -O3 unless
       # -fp-model=precise is also passed on the command line. For strict-FP
-      # carve-out static libs we add it alongside -ffp-contract=off so that
-      # both scalar tails and any C-level glue inside the SIMD TUs stay
-      # bit-exact with the scalar reference even under the icx optimizer.
-      # GCC and vanilla Clang do not recognise -fp-model=precise; we detect
-      # icx via cc.get_id() and append the flag only for that compiler.
+      # carve-out static libs the shared policy adds both flags so scalar tails
+      # and C-level glue stay bit-exact with their references. Windows icx-cl
+      # uses the equivalent `/fp:precise /Qfma-` spellings.
       #
-      # ORDER HAZARD, measured -- do not "tidy" the flag lists below.
+      # ORDER HAZARD, measured -- do not "tidy" the shared policy above.
       # `-fp-model=precise` implies `-ffp-contract=on`, so when it lands AFTER
       # `-ffp-contract=off` on the command line it silently re-enables FMA
       # contraction, which is the opposite of why it is here. icx 2026.0, on
@@ -875,24 +893,16 @@ if is_asm_enabled
       #     -mfma -ffp-contract=off                      ->  0 vfmadd
       #     -mfma -ffp-contract=off -fp-model=precise    ->  9 vfmadd   (!)
       #     -mfma -fp-model=precise -ffp-contract=off    ->  0 vfmadd
-      # Every carve-out below therefore has contraction ENABLED under icx today,
-      # despite asking for it off. Reordering the flags is NOT a safe blanket
-      # fix: it was tried and it breaks test_ssimulacra2_simd
-      # (`picture_to_linear_rgb SIMD not bit-identical to scalar`), because that
-      # kernel's agreement with its scalar reference currently depends on
-      # contraction being on. Each carve-out has to be re-validated against its
-      # own reference before its flags move -- tracked as
-      # T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07 in docs/state.md.
+      # The first attempted reorder changed only the production carve-outs and
+      # broke test_ssimulacra2_simd because its in-test scalar reference kept
+      # the old semantics. PR #1425 moved both sides together and closed
+      # T-ICX-FP-CONTRACT-FLAG-ORDER-2026-09-07; core/test/meson.build now
+      # aliases vmaf_strict_fp_args so that mismatch cannot recur.
       #
       # The durable fix for any individual kernel is to stop depending on the
       # flag at all and spell the multiply and the add as separate intrinsics,
       # which are not routed through llvm.fmuladd. speed_matmul_avx2.c does that
       # for both its vector bodies and its scalar tail.
-      _cc_id_x86 = cc.get_id()
-      _x86_simd_strict_fp_extra = []
-      if _cc_id_x86 == 'intel-llvm' or _cc_id_x86 == 'intel-llvm-cl'
-          _x86_simd_strict_fp_extra = ['-fp-model=precise']
-      endif
       x86_avx2_sources = [
           feature_src_dir + 'common/convolution_avx.c',
           feature_src_dir + 'x86/motion_avx2.c',
@@ -916,7 +926,7 @@ if is_asm_enabled
           'x86_avx2',
           x86_avx2_sources,
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_fp_model_args + vmaf_cflags_common,
       )
 
       # ssim_avx2 carve-out (mirror of psnr_hvs_avx2 / ms_ssim_decimate_avx2
@@ -930,7 +940,7 @@ if is_asm_enabled
           'x86_ssim_avx2',
           feature_src_dir + 'x86/ssim_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
 
@@ -945,13 +955,13 @@ if is_asm_enabled
           'x86_psnr_hvs_avx2',
           feature_src_dir + 'x86/psnr_hvs_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
       )
       x86_ms_ssim_decimate_avx2_lib = static_library(
           'x86_ms_ssim_decimate_avx2',
           feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
       # ssimulacra2 AVX2 compiles in its own static lib with
@@ -969,7 +979,7 @@ if is_asm_enabled
               feature_src_dir + 'x86/ssimulacra2_host_avx2.c',
           ],
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
       )
 
       platform_specific_cpu_objects += x86_avx2_static_lib.extract_all_objects(recursive: true)
@@ -989,7 +999,7 @@ if is_asm_enabled
           'x86_float_adm_avx2',
           feature_src_dir + 'x86/float_adm_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
       )
       platform_specific_cpu_objects += x86_float_adm_avx2_lib.extract_all_objects(recursive: true)
 
@@ -1004,7 +1014,7 @@ if is_asm_enabled
           'x86_speed_matmul_avx2',
           feature_src_dir + 'x86/speed_matmul_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + _x86_simd_strict_fp_extra + ['-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_strict_fp_args + vmaf_cflags_common,
       )
       platform_specific_cpu_objects += x86_speed_matmul_avx2_lib.extract_all_objects(recursive: true)
 
@@ -1032,7 +1042,7 @@ if is_asm_enabled
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
                       '-mavx512vl'] +
-                     _x86_simd_strict_fp_extra +
+                     vmaf_fp_model_args +
                      vmaf_cflags_common,
             # b_lto=false: with b_lto=true at meson.build top, LTO over
             # this lib drops the convolution_f32_avx512_{s,sq_s,xy_s}
@@ -1051,8 +1061,7 @@ if is_asm_enabled
             feature_src_dir + 'x86/ssimulacra2_avx512.c',
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] + _x86_simd_strict_fp_extra +
-                     ['-ffp-contract=off'] + vmaf_cflags_common,
+                      '-mavx512vl'] + vmaf_strict_fp_args + vmaf_cflags_common,
         )
 
         platform_specific_cpu_objects += x86_avx512_static_lib.extract_all_objects(recursive: true)
@@ -1065,8 +1074,7 @@ if is_asm_enabled
             feature_src_dir + 'x86/float_adm_avx512.c',
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] + _x86_simd_strict_fp_extra +
-                     ['-ffp-contract=off'] + vmaf_cflags_common,
+                      '-mavx512vl'] + vmaf_strict_fp_args + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_float_adm_avx512_lib.extract_all_objects(recursive: true)
 
@@ -1077,8 +1085,7 @@ if is_asm_enabled
             feature_src_dir + 'x86/speed_matmul_avx512.c',
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
-                      '-mavx512vl'] + _x86_simd_strict_fp_extra +
-                     ['-ffp-contract=off'] + vmaf_cflags_common,
+                      '-mavx512vl'] + vmaf_strict_fp_args + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_speed_matmul_avx512_lib.extract_all_objects(recursive: true)
       endif
@@ -1189,8 +1196,8 @@ if is_cuda_enabled
     # adm_cm_s. The integer ADM kernels use int64 accumulators so FMA
     # is irrelevant; default FMA-on flags stay for them.
     cuda_cu_extra_flags = {
-        'ssimulacra2_blur' : ['-Xcompiler=-ffp-contract=off', '--fmad=false'],
-        'float_adm_score' : ['-Xcompiler=-ffp-contract=off', '--fmad=false'],
+        'ssimulacra2_blur' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
+        'float_adm_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
     }
     message(cuda_cu_sources)
     # gpu_picture_pool.cpp moved to libvmaf_sources (always-compiled) per
@@ -1961,11 +1968,6 @@ endif
 # resulting asymmetry caused `test_ms_ssim_decimate` to diverge
 # from the SIMD path. Mirror the same flag onto every static-lib
 # that owns scalar references the SIMD tests compare against.
-_libvmaf_feature_icx_args = []
-if cc.get_id() == 'intel-llvm' or cc.get_id() == 'intel-llvm-cl'
-    _libvmaf_feature_icx_args = ['-fp-model=precise']
-endif
-
 # ssimulacra2.c scalar extractor compiles in its own static lib with
 # `-ffp-contract=off`. Rationale: `compute_vars` / `compute_masks` /
 # `accumulate_error` and the scalar fallback functions mix with the
@@ -1989,7 +1991,7 @@ libvmaf_psnr_hvs_scalar_static_lib = static_library(
     feature_src_dir + 'third_party/xiph/psnr_hvs.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + _libvmaf_feature_icx_args + ['-ffp-contract=off'],
+    c_args: vmaf_cflags_common + vmaf_strict_fp_args,
 )
 
 libvmaf_ssimulacra2_static_lib = static_library(
@@ -1997,7 +1999,7 @@ libvmaf_ssimulacra2_static_lib = static_library(
     feature_src_dir + 'ssimulacra2.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + _libvmaf_feature_icx_args + ['-ffp-contract=off'],
+    c_args: vmaf_cflags_common + vmaf_strict_fp_args,
 )
 
 # Y-FUNQUE+ atoms-only extractor (ADR-1114) compiles with `-ffp-contract=off`
@@ -2011,7 +2013,7 @@ libvmaf_y_funque_plus_static_lib = static_library(
     feature_src_dir + 'y_funque_plus.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + _libvmaf_feature_icx_args + ['-ffp-contract=off'],
+    c_args: vmaf_cflags_common + vmaf_strict_fp_args,
 )
 
 # ADR-0858: gpu_dispatch_env.cpp is compiled as an isolated C++23 static lib
@@ -2035,7 +2037,7 @@ libvmaf_feature_static_lib = static_library(
     # without each having to list the generated TU separately.
     libvmaf_feature_sources + brisque_model_c_sources + hip_sources + hip_hsaco_sources + metal_sources,
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
-    c_args : vmaf_cflags_common + _libvmaf_feature_icx_args,
+    c_args : vmaf_cflags_common + vmaf_fp_model_args,
     cpp_args : vmaf_cppflags_common,
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],
     objects: [common_cuda_objects, common_sycl_objects, sycl_feature_objects,
