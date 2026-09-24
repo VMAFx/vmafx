@@ -168,103 +168,155 @@ static char *check_utf8_file_operations(const Utf8PathFixture *fixture)
     return NULL;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278). */
-static char *test_fopen_utf8_roundtrip(void)
+static int make_utf8_temp_path(char *path, size_t path_size, const char *stem, const char *suffix)
 {
     char tmpdir[1024];
-    int rc = get_temp_directory(tmpdir, sizeof(tmpdir));
-    mu_assert("failed to retrieve temporary directory", rc == 0);
+    if (get_temp_directory(tmpdir, sizeof(tmpdir)) != 0)
+        return -1;
 
-    /* Construct UTF-8 path containing non-ASCII characters: é (\xC3\xA9) and 日 (\xE6\x97\xA5) */
-    char filepath[2048];
-    rc = snprintf(filepath, sizeof(filepath), "%s/vmaf_\xC3\xA9\xE6\x97\xA5.json", tmpdir);
-    mu_assert("snprintf filepath overflow", rc > 0 && (size_t)rc < sizeof(filepath));
+    const int length =
+        snprintf(path, path_size, "%s/%s_\xC3\xA9\xE6\x97\xA5%s", tmpdir, stem, suffix);
+    return length > 0 && (size_t)length < path_size ? 0 : -1;
+}
 
+static char *check_fopen_write_result(size_t written, size_t payload_len, int close_rc)
+{
+    mu_assert("fwrite failed to write full payload", written == payload_len);
+    mu_assert("fclose write handle failed", close_rc == 0);
+    return NULL;
+}
+
+#ifdef _WIN32
+static char *check_win32_created_path(int converted, DWORD attrs)
+{
+    mu_assert("MultiByteToWideChar failed on created path", converted > 0);
+    mu_assert("GetFileAttributesW failed on wide UTF-8 path", attrs != INVALID_FILE_ATTRIBUTES);
+    return NULL;
+}
+#endif
+
+static char *check_fopen_read_result(int opened, size_t bytes, size_t payload_len, int close_rc,
+                                     int remove_rc, const char *actual, const char *expected)
+{
+    mu_assert("vmaf_fopen_utf8 failed to open for reading", opened);
+    mu_assert("fread failed to read payload", bytes == payload_len);
+    mu_assert("fclose read handle failed", close_rc == 0);
+    mu_assert("vmaf_remove_utf8 failed after fopen round-trip", remove_rc == 0);
+    mu_assert("read payload does not match written payload",
+              memcmp(actual, expected, payload_len) == 0);
+    return NULL;
+}
+
+static char *check_fopen_utf8_roundtrip(const char *filepath)
+{
     const char payload[] = "{\"vmaf_version\":\"utf8_test\",\"score\":98.500000}\n";
     const size_t payload_len = strlen(payload);
     assert(payload_len > 0);
 
-    /* Write using vmaf_fopen_utf8 */
     FILE *fout = vmaf_fopen_utf8(filepath, "wb");
-    mu_assert("vmaf_fopen_utf8 failed to open for writing", fout != NULL);
-    size_t written = fwrite(payload, 1, payload_len, fout);
-    int close_rc = fclose(fout);
-    mu_assert("fwrite failed to write full payload", written == payload_len);
-    mu_assert("fclose write handle failed", close_rc == 0);
+    if (!fout)
+        return "vmaf_fopen_utf8 failed to open for writing";
+    const size_t written = fwrite(payload, 1, payload_len, fout);
+    const int close_write_rc = fclose(fout);
 
 #ifdef _WIN32
-    /* On Windows, additionally verify with wide Win32 API GetFileAttributesW */
     wchar_t wpath[2048];
-    int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filepath, -1, wpath, 2048);
-    mu_assert("MultiByteToWideChar failed on created path", wlen > 0);
-    DWORD attrs = GetFileAttributesW(wpath);
-    mu_assert("GetFileAttributesW failed on wide UTF-8 path", attrs != INVALID_FILE_ATTRIBUTES);
+    const int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filepath, -1, wpath, 2048);
+    const DWORD attrs = wlen > 0 ? GetFileAttributesW(wpath) : INVALID_FILE_ATTRIBUTES;
 #endif
 
-    /* Read back using vmaf_fopen_utf8 */
     FILE *fin = vmaf_fopen_utf8(filepath, "rb");
-    mu_assert("vmaf_fopen_utf8 failed to open for reading", fin != NULL);
+    const int read_opened = fin != NULL;
     char read_buf[256];
     memset(read_buf, 0, sizeof(read_buf));
-    size_t read_bytes = fread(read_buf, 1, sizeof(read_buf) - 1, fin);
-    close_rc = fclose(fin);
+    const size_t read_bytes = fin ? fread(read_buf, 1, sizeof(read_buf) - 1, fin) : 0u;
+    const int close_read_rc = fin ? fclose(fin) : -1;
     const int remove_rc = vmaf_remove_utf8(filepath);
 
-    mu_assert("fread failed to read payload", read_bytes == payload_len);
-    mu_assert("fclose read handle failed", close_rc == 0);
-    mu_assert("vmaf_remove_utf8 failed after fopen round-trip", remove_rc == 0);
-    mu_assert("read payload does not match written payload",
-              memcmp(read_buf, payload, payload_len) == 0);
+    char *failure = check_fopen_write_result(written, payload_len, close_write_rc);
+#ifdef _WIN32
+    if (!failure)
+        failure = check_win32_created_path(wlen, attrs);
+#endif
+    if (!failure) {
+        failure = check_fopen_read_result(read_opened, read_bytes, payload_len, close_read_rc,
+                                          remove_rc, read_buf, payload);
+    }
+    return failure;
+}
 
+static char *test_fopen_utf8_roundtrip(void)
+{
+    char filepath[2048];
+    const int path_rc = make_utf8_temp_path(filepath, sizeof(filepath), "vmaf", ".json");
+    mu_assert("failed to construct UTF-8 fopen path", path_rc == 0);
+    (void)vmaf_remove_utf8(filepath);
+    return check_fopen_utf8_roundtrip(filepath);
+}
+
+static char *check_open_write_result(long written, size_t payload_len, int close_rc)
+{
+    mu_assert("write failed", written == (long)payload_len);
+    mu_assert("close write fd failed", close_rc == 0);
     return NULL;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278). */
-static char *test_open_utf8_roundtrip(void)
+static char *check_open_read_result(int opened, long bytes, size_t payload_len, int close_rc,
+                                    int remove_rc, const char *actual, const char *expected)
 {
-    char tmpdir[1024];
-    int rc = get_temp_directory(tmpdir, sizeof(tmpdir));
-    mu_assert("failed to retrieve temporary directory", rc == 0);
+    mu_assert("vmaf_open_utf8 failed to open for reading", opened);
+    mu_assert("read failed", bytes == (long)payload_len);
+    mu_assert("close read fd failed", close_rc == 0);
+    mu_assert("vmaf_remove_utf8 failed after open round-trip", remove_rc == 0);
+    mu_assert("read payload mismatch", memcmp(actual, expected, payload_len) == 0);
+    return NULL;
+}
 
-    char filepath[2048];
-    rc = snprintf(filepath, sizeof(filepath), "%s/vmaf_open_\xC3\xA9\xE6\x97\xA5.bin", tmpdir);
-    mu_assert("snprintf filepath overflow", rc > 0 && (size_t)rc < sizeof(filepath));
-
+static char *check_open_utf8_roundtrip(const char *filepath)
+{
     const char payload[] = "vmaf_open_utf8 binary roundtrip payload\n";
     const size_t payload_len = strlen(payload);
     assert(payload_len > 0);
 
-    /* Open for writing with O_CREAT */
-    int wfd = vmaf_open_utf8(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    mu_assert("vmaf_open_utf8 failed to open for writing", wfd >= 0);
-    long n_written = WRITE_FD(wfd, payload, (unsigned int)payload_len);
-    int close_w = CLOSE_FD(wfd);
-    mu_assert("write failed", n_written == (long)payload_len);
-    mu_assert("close write fd failed", close_w == 0);
+    const int wfd = vmaf_open_utf8(filepath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (wfd < 0)
+        return "vmaf_open_utf8 failed to open for writing";
+    const long n_written = WRITE_FD(wfd, payload, (unsigned int)payload_len);
+    const int close_write_rc = CLOSE_FD(wfd);
 
 #ifdef _WIN32
     wchar_t wpath[2048];
-    int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filepath, -1, wpath, 2048);
-    mu_assert("MultiByteToWideChar failed on created path", wlen > 0);
-    DWORD attrs = GetFileAttributesW(wpath);
-    mu_assert("GetFileAttributesW failed on wide UTF-8 path", attrs != INVALID_FILE_ATTRIBUTES);
+    const int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filepath, -1, wpath, 2048);
+    const DWORD attrs = wlen > 0 ? GetFileAttributesW(wpath) : INVALID_FILE_ATTRIBUTES;
 #endif
 
-    /* Read back with vmaf_open_utf8 */
-    int rfd = vmaf_open_utf8(filepath, O_RDONLY, 0);
-    mu_assert("vmaf_open_utf8 failed to open for reading", rfd >= 0);
+    const int rfd = vmaf_open_utf8(filepath, O_RDONLY, 0);
+    const int read_opened = rfd >= 0;
     char read_buf[256];
     memset(read_buf, 0, sizeof(read_buf));
-    long n_read = READ_FD(rfd, read_buf, sizeof(read_buf) - 1);
-    int close_r = CLOSE_FD(rfd);
+    const long n_read = rfd >= 0 ? READ_FD(rfd, read_buf, sizeof(read_buf) - 1) : -1;
+    const int close_read_rc = rfd >= 0 ? CLOSE_FD(rfd) : -1;
     const int remove_rc = vmaf_remove_utf8(filepath);
 
-    mu_assert("read failed", n_read == (long)payload_len);
-    mu_assert("close read fd failed", close_r == 0);
-    mu_assert("vmaf_remove_utf8 failed after open round-trip", remove_rc == 0);
-    mu_assert("read payload mismatch", memcmp(read_buf, payload, payload_len) == 0);
+    char *failure = check_open_write_result(n_written, payload_len, close_write_rc);
+#ifdef _WIN32
+    if (!failure)
+        failure = check_win32_created_path(wlen, attrs);
+#endif
+    if (!failure) {
+        failure = check_open_read_result(read_opened, n_read, payload_len, close_read_rc, remove_rc,
+                                         read_buf, payload);
+    }
+    return failure;
+}
 
-    return NULL;
+static char *test_open_utf8_roundtrip(void)
+{
+    char filepath[2048];
+    const int path_rc = make_utf8_temp_path(filepath, sizeof(filepath), "vmaf_open", ".bin");
+    mu_assert("failed to construct UTF-8 descriptor path", path_rc == 0);
+    (void)vmaf_remove_utf8(filepath);
+    return check_open_utf8_roundtrip(filepath);
 }
 
 /* Canonicalization, metadata, and directory creation must use the same UTF-8
@@ -286,10 +338,8 @@ static char *test_utf8_path_operations(void)
     return NULL;
 }
 
-/* NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278). */
-static char *test_utf8_error_paths(void)
+static char *check_utf8_null_stream_errors(void)
 {
-    /* NULL path returns NULL / -1 with errno == EINVAL */
     errno = 0;
     const FILE *const f1 = vmaf_fopen_utf8(NULL, "rb");
     mu_assert("vmaf_fopen_utf8 with NULL path must return NULL", f1 == NULL);
@@ -299,12 +349,20 @@ static char *test_utf8_error_paths(void)
     const FILE *const f2 = vmaf_fopen_utf8("some_path.txt", NULL);
     mu_assert("vmaf_fopen_utf8 with NULL mode must return NULL", f2 == NULL);
     mu_assert("vmaf_fopen_utf8 with NULL mode must set errno=EINVAL", errno == EINVAL);
+    return NULL;
+}
 
+static char *check_utf8_null_descriptor_error(void)
+{
     errno = 0;
-    int fd1 = vmaf_open_utf8(NULL, O_RDONLY, 0);
+    const int fd1 = vmaf_open_utf8(NULL, O_RDONLY, 0);
     mu_assert("vmaf_open_utf8 with NULL path must return -1", fd1 == -1);
     mu_assert("vmaf_open_utf8 with NULL path must set errno=EINVAL", errno == EINVAL);
+    return NULL;
+}
 
+static char *check_utf8_null_path_utility_errors(void)
+{
     VmafPathInfo info;
     errno = 0;
     int info_rc = vmaf_path_info_utf8(NULL, &info);
@@ -320,8 +378,44 @@ static char *test_utf8_error_paths(void)
     int remove_rc = vmaf_remove_utf8(NULL);
     mu_assert("vmaf_remove_utf8 with NULL path must fail", remove_rc == -1);
     mu_assert("vmaf_remove_utf8 with NULL path must set errno=EINVAL", errno == EINVAL);
+    return NULL;
+}
 
-    /* Nonexistent file returns ENOENT */
+static char *check_utf8_null_fullpath_errors(void)
+{
+    char resolved[128];
+    errno = 0;
+    const char *result = vmaf_fullpath_utf8(NULL, resolved, sizeof(resolved));
+    mu_assert("vmaf_fullpath_utf8 with NULL path must fail", result == NULL);
+    mu_assert("vmaf_fullpath_utf8 with NULL path must set errno=EINVAL", errno == EINVAL);
+
+    errno = 0;
+    result = vmaf_fullpath_utf8("unused", NULL, sizeof(resolved));
+    mu_assert("vmaf_fullpath_utf8 with NULL destination must fail", result == NULL);
+    mu_assert("vmaf_fullpath_utf8 with NULL destination must set errno=EINVAL", errno == EINVAL);
+
+    errno = 0;
+    result = vmaf_fullpath_utf8("unused", resolved, 0u);
+    mu_assert("vmaf_fullpath_utf8 with zero-size destination must fail", result == NULL);
+    mu_assert("vmaf_fullpath_utf8 with zero-size destination must set errno=EINVAL",
+              errno == EINVAL);
+    return NULL;
+}
+
+static char *check_utf8_null_error_paths(void)
+{
+    char *failure = check_utf8_null_stream_errors();
+    if (!failure)
+        failure = check_utf8_null_descriptor_error();
+    if (!failure)
+        failure = check_utf8_null_path_utility_errors();
+    if (!failure)
+        failure = check_utf8_null_fullpath_errors();
+    return failure;
+}
+
+static char *check_utf8_nonexistent_error_paths(void)
+{
     errno = 0;
     const FILE *const f3 =
         vmaf_fopen_utf8("/path/that/definitely/does/not/exist/vmaf_12345.xyz", "rb");
@@ -332,9 +426,12 @@ static char *test_utf8_error_paths(void)
     int fd2 = vmaf_open_utf8("/path/that/definitely/does/not/exist/vmaf_12345.xyz", O_RDONLY, 0);
     mu_assert("vmaf_open_utf8 nonexistent path must return -1", fd2 == -1);
     mu_assert("vmaf_open_utf8 nonexistent path errno must be set", errno == ENOENT);
+    return NULL;
+}
 
 #ifdef _WIN32
-    /* Invalid UTF-8 sequence should map to EILSEQ on Windows */
+static char *check_invalid_utf8_error_paths(void)
+{
     errno = 0;
     FILE *f_bad = vmaf_fopen_utf8("\xFF\xFE\xFD", "rb");
     mu_assert("vmaf_fopen_utf8 with invalid UTF-8 must return NULL", f_bad == NULL);
@@ -344,8 +441,22 @@ static char *test_utf8_error_paths(void)
     int fd_bad = vmaf_open_utf8("\xFF\xFE\xFD", O_RDONLY, 0);
     mu_assert("vmaf_open_utf8 with invalid UTF-8 must return -1", fd_bad == -1);
     mu_assert("vmaf_open_utf8 with invalid UTF-8 must set errno=EILSEQ", errno == EILSEQ);
+
+    errno = 0;
+    f_bad = vmaf_fopen_utf8("unused", "\xFF\xFE\xFD");
+    mu_assert("vmaf_fopen_utf8 with invalid UTF-8 mode must return NULL", f_bad == NULL);
+    mu_assert("vmaf_fopen_utf8 with invalid UTF-8 mode must set errno=EILSEQ", errno == EILSEQ);
+    return NULL;
+}
 #endif
 
+static char *test_utf8_error_paths(void)
+{
+    mu_assert_msg(check_utf8_null_error_paths());
+    mu_assert_msg(check_utf8_nonexistent_error_paths());
+#ifdef _WIN32
+    mu_assert_msg(check_invalid_utf8_error_paths());
+#endif
     return NULL;
 }
 

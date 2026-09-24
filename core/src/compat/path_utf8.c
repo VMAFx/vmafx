@@ -102,7 +102,7 @@ FILE *vmaf_fopen_utf8(const char *path, const char *mode)
     const int res_mode =
         MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, mode, -1, wmode, UTF8_MODE_MAX);
     if (res_mode == 0) {
-        errno = EINVAL;
+        set_utf8_conversion_errno();
         return NULL;
     }
 

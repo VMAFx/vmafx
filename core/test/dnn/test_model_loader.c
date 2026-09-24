@@ -95,6 +95,36 @@ static int write_utf8_test_file(const char *path, const char *contents)
     return write_rc;
 }
 
+typedef struct SidecarUtf8Result {
+    int model_write_rc;
+    int sidecar_write_rc;
+    int load_rc;
+    int sidecar_remove_rc;
+    int model_remove_rc;
+} SidecarUtf8Result;
+
+static int make_sidecar_utf8_paths(char *onnx, size_t onnx_size, char *sidecar, size_t sidecar_size)
+{
+    const unsigned long process_id = test_process_id();
+    int length =
+        snprintf(onnx, onnx_size, "vmaf_sidecar_\xC3\xA9\xE6\x97\xA5_%lu.onnx", process_id);
+    if (length <= 0 || (size_t)length >= onnx_size)
+        return -1;
+    length =
+        snprintf(sidecar, sidecar_size, "vmaf_sidecar_\xC3\xA9\xE6\x97\xA5_%lu.json", process_id);
+    return length > 0 && (size_t)length < sidecar_size ? 0 : -1;
+}
+
+static char *check_sidecar_utf8_result(const SidecarUtf8Result *result)
+{
+    mu_assert("UTF-8 ONNX creation failed", result->model_write_rc == 0);
+    mu_assert("UTF-8 sidecar creation failed", result->sidecar_write_rc == 0);
+    mu_assert("UTF-8 sidecar did not pass the production loader", result->load_rc == 0);
+    mu_assert("UTF-8 sidecar cleanup failed", result->sidecar_remove_rc == 0);
+    mu_assert("UTF-8 ONNX cleanup failed", result->model_remove_rc == 0);
+    return NULL;
+}
+
 /* Production loader regression: a file created through the wide opener must
  * survive canonicalization, metadata validation, and the second wide open.
  * The pre-fix Windows path returned -ENOENT at its narrow stat() seam. */
@@ -127,31 +157,28 @@ static char *test_sidecar_utf8_model_path(void)
 {
     char onnx[512];
     char sidecar[512];
-    int path_len = snprintf(onnx, sizeof(onnx), "vmaf_sidecar_\xC3\xA9\xE6\x97\xA5_%lu.onnx",
-                            test_process_id());
-    mu_assert("UTF-8 ONNX path overflow", path_len > 0 && (size_t)path_len < sizeof(onnx));
-    path_len = snprintf(sidecar, sizeof(sidecar), "vmaf_sidecar_\xC3\xA9\xE6\x97\xA5_%lu.json",
-                        test_process_id());
-    mu_assert("UTF-8 sidecar path overflow", path_len > 0 && (size_t)path_len < sizeof(sidecar));
+    const int path_rc = make_sidecar_utf8_paths(onnx, sizeof(onnx), sidecar, sizeof(sidecar));
+    mu_assert("UTF-8 sidecar paths overflow", path_rc == 0);
 
-    const int model_write_rc = write_utf8_test_file(onnx, NULL);
-    mu_assert("UTF-8 ONNX creation failed", model_write_rc == 0);
-    const int sidecar_write_rc =
-        write_utf8_test_file(sidecar, "{\"name\":\"utf8\",\"kind\":\"fr\","
-                                      "\"input_name\":\"features\",\"output_name\":\"score\"}\n");
-    mu_assert("UTF-8 sidecar creation failed", sidecar_write_rc == 0);
+    SidecarUtf8Result result = {
+        .model_write_rc = write_utf8_test_file(onnx, NULL),
+        .sidecar_write_rc = -1,
+        .load_rc = -EINVAL,
+    };
+    if (result.model_write_rc == 0) {
+        result.sidecar_write_rc = write_utf8_test_file(
+            sidecar, "{\"name\":\"utf8\",\"kind\":\"fr\","
+                     "\"input_name\":\"features\",\"output_name\":\"score\"}\n");
+    }
 
     VmafModelSidecar meta;
-    const int err = vmaf_dnn_sidecar_load(onnx, &meta);
-    if (err == 0)
+    if (result.sidecar_write_rc == 0)
+        result.load_rc = vmaf_dnn_sidecar_load(onnx, &meta);
+    if (result.load_rc == 0)
         vmaf_dnn_sidecar_free(&meta);
-    const int sidecar_remove_rc = vmaf_remove_utf8(sidecar);
-    const int model_remove_rc = vmaf_remove_utf8(onnx);
-
-    mu_assert("UTF-8 sidecar did not pass the production loader", err == 0);
-    mu_assert("UTF-8 sidecar cleanup failed", sidecar_remove_rc == 0);
-    mu_assert("UTF-8 ONNX cleanup failed", model_remove_rc == 0);
-    return NULL;
+    result.sidecar_remove_rc = vmaf_remove_utf8(sidecar);
+    result.model_remove_rc = vmaf_remove_utf8(onnx);
+    return check_sidecar_utf8_result(&result);
 }
 
 #ifndef _WIN32
