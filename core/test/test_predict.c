@@ -384,7 +384,8 @@ static char *test_guided_feature_sentinel_semantics(void)
         const bool actual = float_values_equal(cases[i].lhs, cases[i].rhs);
         mu_assert(cases[i].message, actual == cases[i].expected);
     }
-    return nullptr;
+    /* NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr). */
+    return NULL;
 }
 
 char *run_tests(void)
