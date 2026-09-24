@@ -19789,6 +19789,12 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   [research digest 2031](docs/research/2031-codeql-float-widening-multiplication.md).
 
 
+- Restored direct YUV400P luma-only allocation and explicit CLI precision/SYCL
+  device parsing coverage lost in a silent revert. Registration invariants now
+  point at the current comprehensive Metal and HIP audit tests instead of
+  duplicating obsolete runtime-smoke cases.
+
+
 - Resolved seven CodeQL `cpp/include-non-header` alerts (908, 943, 955, 1043,
   1203, 1218, 1241) across libvmaf core test translation units. Replaced
   unity-style `.c` and `.cpp` inclusions with internal header declarations and
@@ -19796,10 +19802,6 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   `model.h`, `libvmaf_priv.h`, and `feature/cambi_internal.h`). All white-box
   unit tests and Netflix golden assertions are preserved without exposing private
   APIs publicly or suppressing CodeQL findings.
-- Restored direct YUV400P luma-only allocation and explicit CLI precision/SYCL
-  device parsing coverage lost in a silent revert. Registration invariants now
-  point at the current comprehensive Metal and HIP audit tests instead of
-  duplicating obsolete runtime-smoke cases.
 
 
 - `local_explainer_test`: recalibrate `test_run_vmaf_runner_local_explainer_with_bootstrap_model`
@@ -29348,6 +29350,13 @@ preallocation so it no longer describes the live
   With that and the preceding lint passes, all 23 SYCL translation units
   exit clean, so the gate passes rather than being tolerated as
   advisory.
+
+
+Give the SpEED chroma and temporal SYCL kernels distinct linker identities so
+Intel Arc runs no longer pair a host capture layout with the other twin's
+device image, restore the explicit moment-kernel output capture lost by an
+unrelated change, and guard both contracts alongside the fp64-free device
+regions.
 
 
 
