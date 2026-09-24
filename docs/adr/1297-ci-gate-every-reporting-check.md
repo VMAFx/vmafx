@@ -81,8 +81,8 @@ claim the legs were advisory while nothing acted on the claim.
   binding and its supply-chain policy, the documentation builds and the two
   code-scanning verdicts all block a merge when they fail.
 - **Positive**: `Coverage Gate`, `MCP Smoke`, `Markdown Lint`,
-  `No Conflict Markers`, `Tiny-Model Registry Validate` and
-  `Windows ARM64 MSVC` also join `strictMustReport`, so for those six "the check
+  `No Conflict Markers`, `Tiny-Model Registry Validate`, `Tidy SYCL` and
+  `Windows ARM64 MSVC` also join `strictMustReport`, so for those seven "the check
   never appeared" is a failure rather than an assumed path skip. They have no
   trigger path filter and no conditional skip, and they report on both
   `pull_request` and `push` to master, which is the precondition for that list.

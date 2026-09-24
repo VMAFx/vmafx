@@ -6,22 +6,19 @@
 Validates:
 1. .github/workflows/lint-and-format.yml declares job `clang-tidy-sycl` with name
    `Tidy SYCL`, marked `# required-aggregator`, without `continue-on-error` or
-   `if: false`, covering all SYCL headers (.h, .hpp) and sources (.cpp) alongside
-   tests, and failing closed on any tidy diagnostic.
+   any normalized constant-false job guard, covering all SYCL headers (.h, .hpp)
+   and sources (.cpp) alongside tests, and failing closed on any tidy diagnostic.
 2. .github/workflows/required-aggregator.yml registers exact check name `Tidy SYCL`
-   (and explicitly not any advisory variant).
+   in both `required` and `strictMustReport` (and not any advisory variant).
 3. The real Node.js aggregator execution fails closed when `Tidy SYCL` reports
-   failure, and passes when it succeeds or legitimately skips on unimpacted diffs.
+   failure, skip, or absence, and passes only when it reports success.
 4. Mutation tests prove the assertions are red-capable against relaxations.
 """
 
 from __future__ import annotations
 
-import json
 import re
-import shutil
 import sys
-import textwrap
 import unittest
 from pathlib import Path
 
@@ -30,9 +27,8 @@ WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+from scripts.ci.required_aggregator_harness import run_required_aggregator  # noqa: E402
 
-SUBPROCESS_TIMEOUT_S = 120
 SYCL_CHECK_NAME = "Tidy SYCL"
 SYCL_JOB_ID = "clang-tidy-sycl"
 
@@ -48,6 +44,26 @@ EXPECTED_FILE_PATTERNS = (
     "core/test/test_integer_cambi_sycl.c",
 )
 
+EVENT_SELECTION_ANCHORS = (
+    ("pull request", '"origin/${GH_BASE_REF}...HEAD"'),
+    ("push fallback", "HEAD~1..HEAD"),
+    ("push", '"$before"..HEAD'),
+    ("dispatch", "files=$(git ls-files"),
+)
+
+CONSTANT_FALSE_EXPRESSIONS = {
+    "false",
+    "null",
+    "0",
+    "-0",
+    "0.0",
+    "-0.0",
+    "''",
+    '""',
+    "!true",
+    "!1",
+}
+
 
 def extract_job_block(workflow_text: str, job_id: str) -> str:
     """Extract a top-level job definition block from workflow YAML."""
@@ -58,6 +74,63 @@ def extract_job_block(workflow_text: str, job_id: str) -> str:
     if match is None:
         raise AssertionError(f"Job '{job_id}' not found in workflow")
     return match.group(0)
+
+
+def _strip_balanced_outer_parentheses(expression: str) -> str:
+    """Remove parentheses that wrap an entire Actions expression."""
+    value = expression.strip()
+    while value.startswith("(") and value.endswith(")"):
+        depth = 0
+        wraps_entire_value = True
+        for index, character in enumerate(value):
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0 and index != len(value) - 1:
+                    wraps_entire_value = False
+                    break
+            if depth < 0:
+                wraps_entire_value = False
+                break
+        if depth != 0 or not wraps_entire_value:
+            break
+        value = value[1:-1].strip()
+    return value
+
+
+def is_constant_false_condition(raw_condition: str) -> bool:
+    """Recognize GitHub Actions literal-false job guards after normalizing wrappers."""
+    expression = raw_condition.split(" #", 1)[0].strip()
+    if expression.startswith("${{") and expression.endswith("}}"):
+        expression = expression[3:-2].strip()
+    expression = _strip_balanced_outer_parentheses(expression)
+    compact = re.sub(r"\s+", "", expression).casefold()
+    return compact in CONSTANT_FALSE_EXPRESSIONS
+
+
+def extract_file_selection(job_block: str, branch_name: str, anchor: str) -> str:
+    """Return the one git file-selection command identified by its event-branch anchor."""
+    lines = job_block.splitlines()
+    anchor_lines = [index for index, line in enumerate(lines) if anchor in line]
+    if len(anchor_lines) != 1:
+        raise AssertionError(
+            f"Job '{SYCL_JOB_ID}' must have exactly one {branch_name} selection anchor: {anchor}"
+        )
+
+    anchor_line = anchor_lines[0]
+    start = anchor_line
+    while start >= 0 and "files=$(git" not in lines[start]:
+        start -= 1
+    if start < 0:
+        raise AssertionError(f"Job '{SYCL_JOB_ID}' {branch_name} selection has no git command")
+
+    end = anchor_line
+    while end < len(lines) and "| tr '\\n' ' ')" not in lines[end]:
+        end += 1
+    if end == len(lines):
+        raise AssertionError(f"Job '{SYCL_JOB_ID}' {branch_name} selection is unterminated")
+    return "\n".join(lines[start : end + 1])
 
 
 def validate_sycl_workflow_structure(workflow_text: str) -> None:
@@ -78,21 +151,30 @@ def validate_sycl_workflow_structure(workflow_text: str) -> None:
             f"Job '{SYCL_JOB_ID}' must have exact 'name: {SYCL_CHECK_NAME}', found '{declared_name}'"
         )
 
-    # Ensure no continue-on-error anywhere in the job or its steps
+    # Ensure no continue-on-error anywhere in the job or its steps.
     for line in job_block.splitlines():
         stripped = line.strip()
         if stripped.startswith("continue-on-error:"):
             raise AssertionError(f"Job '{SYCL_JOB_ID}' must not contain continue-on-error: {line}")
-        if stripped == "if: false":
-            raise AssertionError(f"Job '{SYCL_JOB_ID}' must not be disabled with 'if: false'")
 
-    # Ensure all required SYCL source and header file patterns are tracked in detect step
-    for pattern in EXPECTED_FILE_PATTERNS:
-        quoted = f"'{pattern}'"
-        if quoted not in job_block:
-            raise AssertionError(
-                f"Job '{SYCL_JOB_ID}' detect step missing expected pattern: {quoted}"
-            )
+    job_if_match = re.search(r"^    if:\s*(.+?)\s*$", job_block, re.MULTILINE)
+    if job_if_match is not None and is_constant_false_condition(job_if_match.group(1)):
+        raise AssertionError(
+            f"Job '{SYCL_JOB_ID}' must not use a constant-false job guard: "
+            f"{job_if_match.group(1)}"
+        )
+
+    # Every event path owns a separate git command. Validate each independently
+    # so one complete branch cannot hide missing header coverage in another.
+    for branch_name, anchor in EVENT_SELECTION_ANCHORS:
+        selection = extract_file_selection(job_block, branch_name, anchor)
+        for pattern in EXPECTED_FILE_PATTERNS:
+            quoted = f"'{pattern}'"
+            if quoted not in selection:
+                raise AssertionError(
+                    f"Job '{SYCL_JOB_ID}' {branch_name} selection missing expected pattern: "
+                    f"{quoted}"
+                )
 
     # Ensure fail-closed exit check is present in execution step
     if "scripts/ci/clang-tidy-sycl.sh" not in job_block:
@@ -116,9 +198,20 @@ def validate_sycl_aggregator_declaration(aggregator_text: str) -> None:
     if "Tidy SYCL (advisory)" in names:
         raise AssertionError("required-aggregator.yml must not contain 'Tidy SYCL (advisory)'")
 
+    strict_match = re.search(r"const strictMustReport = \[(.*?)\];", aggregator_text, re.DOTALL)
+    if strict_match is None:
+        raise AssertionError(
+            "required-aggregator.yml must declare 'const strictMustReport = [...]'"
+        )
+    strict_names = re.findall(r"'([^']+)'", strict_match.group(1))
+    if SYCL_CHECK_NAME not in strict_names:
+        raise AssertionError(
+            f"required-aggregator.yml must declare '{SYCL_CHECK_NAME}' in strictMustReport"
+        )
+
 
 class SyclTidyWorkflowContractTest(unittest.TestCase):
-    """Contract assertions and mutation tests for SYCL clang-tidy gate promotion."""
+    """Contract assertions and mutation tests for SYCL clang-tidy gate hardening."""
 
     def test_lint_and_format_workflow_structure(self) -> None:
         workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
@@ -128,72 +221,29 @@ class SyclTidyWorkflowContractTest(unittest.TestCase):
         aggregator_text = (WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8")
         validate_sycl_aggregator_declaration(aggregator_text)
 
-    def _aggregate(self, sycl_conclusion: str | None) -> list[str]:
-        text = (WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8")
-        script = textwrap.dedent(text.split("          script: |\n", 1)[1])
-        required_block = re.search(r"const required = \[(.*?)\];", script, re.DOTALL)
-        if required_block is None:
-            self.fail("required aggregator must declare its check list")
-        names = re.findall(r"'([^']+)'", required_block.group(1))
-        self.assertIn(SYCL_CHECK_NAME, names)
-        checks = [
-            {"name": name, "conclusion": sycl_conclusion if name == SYCL_CHECK_NAME else "success"}
-            for name in names
-            if name != SYCL_CHECK_NAME or sycl_conclusion is not None
-        ]
-        node = shutil.which("node")
-        if node is None:
-            self.fail("Node.js is needed to exercise the Actions JavaScript")
-        driver = r"""
-const fs = require('fs');
-const input = JSON.parse(fs.readFileSync(0, 'utf8'));
-const now = Date.now();
-let clock = now;
-class VirtualDate extends Date { static now() { clock += 180000; return clock; } }
-const checks = input.checks.map(c => ({...c, status: 'completed', started_at: new Date(now).toISOString()}));
-const failures = [];
-const github = {rest: {
-  actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}})},
-  checks: {listForRef: async () => ({data: {check_runs: checks}})},
-}};
-const context = {eventName: 'pull_request', repo: {owner: 'test', repo: 'test'},
-  payload: {pull_request: {head: {ref: 'fix/example', sha: 'abc'}}}};
-const core = {info: () => {}, setFailed: message => failures.push(message)};
-const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', input.script)(
-  github, context, core, {env: {GITHUB_RUN_ID: '1'}}, VirtualDate, callback => callback()
-).then(() => process.stdout.write(JSON.stringify(failures))).catch(error => {console.error(error); process.exitCode = 1;});
-"""
-        result = run_command(
-            [node, "-e", driver],
-            allowed_executables=(node,),
-            input_data=json.dumps({"script": script, "checks": checks}),
-            text=True,
-            capture_output=True,
-            check=True,
-            timeout_seconds=SUBPROCESS_TIMEOUT_S,
-        )
-        payload: object = json.loads(result.stdout)
-        if not isinstance(payload, list):
-            self.fail("aggregator driver must return a list of failure messages")
-        failures: list[str] = []
-        for message in payload:
-            if not isinstance(message, str):
-                self.fail("aggregator failure messages must be strings")
-            failures.append(message)
-        return failures
-
     def test_failed_sycl_tidy_blocks_aggregator(self) -> None:
-        failures = self._aggregate("failure")
+        failures = run_required_aggregator(SYCL_CHECK_NAME, "failure")
         self.assertEqual(len(failures), 1)
         self.assertIn(f"{SYCL_CHECK_NAME}: failure", failures[0])
 
     def test_successful_sycl_tidy_passes_aggregator(self) -> None:
-        self.assertEqual(self._aggregate("success"), [])
+        self.assertEqual(run_required_aggregator(SYCL_CHECK_NAME, "success"), [])
 
-    def test_unreported_sycl_tidy_preserves_path_skip_semantics(self) -> None:
-        # SYCL tidy is path-filtered; an unimpacted PR does not run it and aggregator passes
-        self.assertEqual(self._aggregate(None), [])
+    def test_unreported_sycl_tidy_blocks_aggregator(self) -> None:
+        failures = run_required_aggregator(SYCL_CHECK_NAME, None)
+        self.assertEqual(len(failures), 1)
+        self.assertIn(
+            f"{SYCL_CHECK_NAME}: never reported (strict required context)",
+            failures[0],
+        )
+
+    def test_skipped_sycl_tidy_blocks_aggregator(self) -> None:
+        failures = run_required_aggregator(SYCL_CHECK_NAME, "skipped")
+        self.assertEqual(len(failures), 1)
+        self.assertIn(
+            f"{SYCL_CHECK_NAME}: skipped (strict required context)",
+            failures[0],
+        )
 
     # Red mutation tests proving contract sensitivity
     def test_mutation_continue_on_error_fails_contract(self) -> None:
@@ -205,6 +255,36 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
         with self.assertRaises(AssertionError) as ctx:
             validate_sycl_workflow_structure(mutated)
         self.assertIn("continue-on-error", str(ctx.exception))
+
+    def test_mutation_constant_false_job_guards_fail_contract(self) -> None:
+        workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
+        job_block = extract_job_block(workflow_text, SYCL_JOB_ID)
+        active_guard = (
+            "    if: github.event_name != 'pull_request' || "
+            "github.event.pull_request.draft == false\n"
+        )
+        false_guards = (
+            "false",
+            "( false )",
+            "${{ false }}",
+            "${{ (( false )) }}",
+            "0",
+            "null",
+            "${{ ! true }}",
+        )
+
+        for false_guard in false_guards:
+            with self.subTest(condition=false_guard):
+                mutated_job = job_block.replace(
+                    active_guard,
+                    f"    if: {false_guard}\n",
+                    1,
+                )
+                self.assertNotEqual(job_block, mutated_job)
+                mutated = workflow_text.replace(job_block, mutated_job, 1)
+                with self.assertRaises(AssertionError) as ctx:
+                    validate_sycl_workflow_structure(mutated)
+                self.assertIn("constant-false", str(ctx.exception))
 
     def test_mutation_advisory_name_fails_contract(self) -> None:
         workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
@@ -223,12 +303,19 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
             validate_sycl_workflow_structure(mutated)
         self.assertIn("# required-aggregator", str(ctx.exception))
 
-    def test_mutation_missing_header_pattern_fails_contract(self) -> None:
+    def test_mutation_missing_header_pattern_in_each_event_branch_fails_contract(self) -> None:
         workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
-        mutated = workflow_text.replace("'core/src/sycl/*.h' ", "")
-        with self.assertRaises(AssertionError) as ctx:
-            validate_sycl_workflow_structure(mutated)
-        self.assertIn("missing expected pattern", str(ctx.exception))
+        pattern = "'core/src/sycl/*.h'"
+        branch_names = ("pull request", "push fallback", "push", "dispatch")
+        positions = [match.start() for match in re.finditer(re.escape(pattern), workflow_text)]
+        self.assertEqual(len(positions), len(branch_names))
+
+        for branch_name, position in zip(branch_names, positions, strict=True):
+            with self.subTest(branch=branch_name):
+                mutated = workflow_text[:position] + workflow_text[position + len(pattern) :]
+                with self.assertRaises(AssertionError) as ctx:
+                    validate_sycl_workflow_structure(mutated)
+                self.assertIn(branch_name, str(ctx.exception))
 
     def test_mutation_omitted_from_aggregator_fails_contract(self) -> None:
         aggregator_text = (WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8")
@@ -236,6 +323,24 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
         with self.assertRaises(AssertionError) as ctx:
             validate_sycl_aggregator_declaration(mutated)
         self.assertIn(f"must declare '{SYCL_CHECK_NAME}' in required array", str(ctx.exception))
+
+    def test_mutation_omitted_from_strict_must_report_fails_contract(self) -> None:
+        aggregator_text = (WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8")
+        strict_match = re.search(
+            r"const strictMustReport = \[(.*?)\];",
+            aggregator_text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(strict_match)
+        strict_block = strict_match.group(0) if strict_match is not None else ""
+        mutated = aggregator_text.replace(
+            strict_block,
+            strict_block.replace(f"'{SYCL_CHECK_NAME}',", ""),
+            1,
+        )
+        with self.assertRaises(AssertionError) as ctx:
+            validate_sycl_aggregator_declaration(mutated)
+        self.assertIn("strictMustReport", str(ctx.exception))
 
 
 if __name__ == "__main__":

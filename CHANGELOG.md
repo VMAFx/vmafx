@@ -28968,8 +28968,8 @@ Fix the CI scoping defect in `.github/workflows/lint-and-format.yml`:
   nothing to gain from LTO.
 
 
-- **Promoted `Tidy SYCL` (`clang-tidy-sycl`) CI lane to a required, non-advisory merge gate (T-SYCL-CLANG-TIDY-DISABLED).**
-  Following verification across live master GitHub Actions runs confirming consistent green executions and stable job naming, the job was promoted under ADR-1297 with `continue-on-error: true` removed and registered in `required-aggregator.yml`. Changed-file detection in `lint-and-format.yml` was expanded to cover all SYCL header variants (`core/src/sycl/*.h`, `core/src/feature/sycl/*.h`) alongside sources and test files. Contract tests in `scripts/ci/test_sycl_tidy_workflow_contract.py` ensure the gate remains required, non-advisory, and fail-closed.
+- **Hardened the existing required `Tidy SYCL` (`clang-tidy-sycl`) CI lane and closed its stale ledger row (T-SYCL-CLANG-TIDY-DISABLED).**
+  Commit `6475fa9ea` had already removed the advisory status and added the ADR-1297 required context. This follow-up makes an absent check fail closed through `strictMustReport`, covers `.h` files independently in every pull-request, push-fallback, normal-push, and dispatch selection, and adds mutation-tested workflow contracts on one shared aggregator harness.
 
 
 - **SYCL float_ssim `enable_db` / `clip_db` option parity** (`integer_ssim_sycl.cpp`):

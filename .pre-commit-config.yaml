@@ -479,7 +479,7 @@ repos:
         name: SYCL clang-tidy required non-advisory gate contract
         entry: python3 -B scripts/ci/test_sycl_tidy_workflow_contract.py
         language: system
-        files: '^(scripts/ci/test_sycl_tidy_workflow_contract\.py|\.github/workflows/(lint-and-format|required-aggregator|rule-enforcement)\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/(required_aggregator_harness|test_(go|sycl)_workflow_contract)\.py|\.github/workflows/(lint-and-format|required-aggregator|rule-enforcement)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

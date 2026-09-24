@@ -35,19 +35,28 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
-## fix/sycl-tidy-required-rc1 — SYCL clang-tidy is a required non-advisory gate (2026-09-24)
+## fix/sycl-tidy-required-rc1 — SYCL tidy strict-reporting and header coverage (2026-09-24)
 
-1. **`clang-tidy-sycl` (`Tidy SYCL`) in `.github/workflows/lint-and-format.yml` is a required non-advisory gate.**
-   Do not restore `continue-on-error: true` or append `(advisory)` to the job name during conflict resolution.
-   Its required status is coupled directly to `required-aggregator.yml` and enforced fail-closed by
-   `scripts/ci/test_sycl_tidy_workflow_contract.py`.
+Commit `6475fa9ea` had already promoted `clang-tidy-sycl` (`Tidy SYCL`) to a
+required, non-advisory ADR-1297 gate. This branch hardens that existing policy;
+it does not perform the promotion.
+
+1. **`Tidy SYCL` belongs to both `required` and `strictMustReport`.**
+   The job has no workflow or job-level path filter: its detect step skips only
+   the expensive body, while the context itself reports on every eligible PR
+   and master push. Absence is therefore a workflow failure, never a path skip.
 2. **Changed-file detection in `lint-and-format.yml` covers SYCL headers.**
    The file patterns for the job include `'core/src/sycl/*.h'` and `'core/src/feature/sycl/*.h'`
-   in addition to `.cpp` and `.hpp` across PR, push, and dispatch triggers. Do not revert to the
-   older `.cpp`/`.hpp`-only patterns.
-3. **`test_sycl_tidy_workflow_contract.py` is wired to CI and local hooks.**
+   in addition to `.cpp` and `.hpp` in each pull-request, push-fallback,
+   normal-push, and dispatch command. Do not let one complete branch mask
+   missing coverage in another.
+3. **The Go and SYCL contract suites share one real aggregator driver.**
+   Keep execution in `scripts/ci/required_aggregator_harness.py`; duplicated
+   Node drivers can drift in polling time and result decoding.
+4. **`test_sycl_tidy_workflow_contract.py` is wired to CI and local hooks.**
    The contract is executed by `deep-dive-checklist` in `rule-enforcement.yml` and by the
-   `test-sycl-tidy-workflow-contract` local hook in `.pre-commit-config.yaml`.
+   `test-sycl-tidy-workflow-contract` local hook in `.pre-commit-config.yaml`. The exact
+   ADR-1297 strict set is also pinned in `scripts/ci/tests/test_hiss_replay_contract.py`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
