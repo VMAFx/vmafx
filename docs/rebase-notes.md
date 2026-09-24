@@ -97,6 +97,19 @@ reconciliation:
 
 No public C surface, FFmpeg patch, output schema, or Netflix golden assertion
 changes. Research and alternatives: [Research-2084](research/2084-dev-mcp-resilience-restoration.md).
+## fix/bug048-smoke-probe-contract — current CLI and Go MCP contracts (2026-09-24)
+
+No upstream impact: `dev/` and the Go MCP service are fork-local. Preserve the
+probe's evidence contract when resolving a conflict: each backend is selected
+with `--backend`, the raw fixture declares `--pixel_format 420 --bitdepth 8`,
+the score comes from the JSON output file, and `backend_used` must match the
+request. The production MCP binary is `vmafx-mcp`; a client must initialize the
+stdio session before calling `list_extractors` or `vmaf_score`, and must not
+close stdin until the response arrives because EOF disconnects the Go SDK
+session. The legacy probe JSON keys `list_features` and `compute_vmaf` remain
+stable consumer keys, not MCP operation names. Run
+`bash dev/scripts/test-smoke-probe-loop.sh` after any resolution touching the
+probe, CLI options, or Go MCP tool surface.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

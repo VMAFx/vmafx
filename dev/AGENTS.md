@@ -349,6 +349,36 @@ Keep Compose's 45-second start period for CUDA cold-start. The hermetic
 Reverting to a socket check leaves the container permanently `unhealthy` and
 prevents `smoke-probe-cron` from starting even though stdio is usable.
 
+### Smoke-probe contract (Research-2083)
+
+`dev/scripts/smoke-probe-loop.sh` is evidence-producing code, not a liveness
+ping. Preserve all of these constraints when the CLI, Go MCP server, or probe
+schema is rebased:
+
+1. Every CLI run uses the exclusive `--backend cpu|cuda|sycl|hip` selector,
+   writes `--json` to a real temporary file, and validates both
+   `pooled_metrics.vmaf.mean` and the matching `backend_used` receipt. Raw YUV
+   geometry is `--pixel_format 420 --bitdepth 8`; `yuv420p`, the retired
+   `--cuda` / `--sycl` / `--hip` switches, and `--no_prediction` are invalid
+   probe contracts.
+2. MCP probes execute the production `vmafx-mcp` Go binary over stdio, perform
+   `initialize` followed by `notifications/initialized`, and only then call
+   `list_extractors` or `vmaf_score`. The client keeps stdin open until the
+   response with request ID 2 arrives; EOF disconnects the Go SDK session and
+   can otherwise race the response. Do not restore the retired
+   `vmaf-mcp-server`, `list_features`, or `compute_vmaf` operations.
+3. The JSON keys `mcp_results.list_features` and
+   `mcp_results.compute_vmaf` remain stable for existing probe consumers even
+   though the underlying tool names changed. Error text is JSON-encoded, and
+   helper results use a non-whitespace delimiter so an empty score cannot
+   shift the duration and error fields.
+4. Keep `dev/scripts/test-smoke-probe-loop.sh` and the
+   `test-dev-mcp-smoke-probe` pre-commit hook coupled to changes in either
+   script. The MCP stub responds before EOF so the test also rejects the stdio
+   close-before-response race. It covers the healthy path, error strings
+   containing JSON metacharacters/control bytes, and a backend receipt
+   mismatch.
+
 ### Runtime dependency invariants (ADR-0541 / ADR-0568)
 
 1. **`LD_LIBRARY_PATH` must include `${ONEAPI_ROOT}/tbb/latest/lib`

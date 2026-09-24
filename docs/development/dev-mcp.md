@@ -1,9 +1,10 @@
 <!-- markdownlint-disable MD060 -->
 # dev-MCP Docker Container
 
-The `dev-MCP` container runs the full VMAF fork inside Docker with all four
-GPU backends enabled (CUDA, SYCL, Vulkan, HIP) plus the embedded MCP stdio
-server.  It is the standard environment for:
+The `dev-MCP` container runs the full VMAF fork inside Docker with the three
+active Linux GPU backends enabled (CUDA, SYCL, HIP), the CPU backend, and the
+production Go MCP stdio server. Metal remains a macOS-only backend. It is the
+standard environment for:
 
 - Live probing of VMAF scores across all backends from a single shell.
 - Running the continuous smoke-probe cron (`smoke-probe-cron` service).
@@ -171,7 +172,7 @@ than none, because it looks like evidence.
 ## How to start
 
 ```bash
-# CPU + Vulkan/lavapipe only (no GPU passthrough)
+# CPU only (no GPU passthrough)
 ./dev/scripts/dev-mcp-up.sh
 
 # With NVIDIA GPU passthrough
@@ -197,7 +198,7 @@ video` returns a different GID (for example, Arch Linux uses `985`/`986`).
 
 The `dev-mcp-up.sh` wrapper builds (if needed) then starts:
 
-1. `vmaf-dev-mcp` — primary container; runs `vmaf-mcp` via `docker exec -i`
+1. `vmaf-dev-mcp` — primary container; runs `vmafx-mcp` via `docker exec -i`
    stdio when requested. The service healthcheck verifies `vmaf --version`
    and, when `/dev/nvidia0` is exposed, requires a successful `nvidia-smi`
    driver query. It is not a socket check. A 45-second start period covers
@@ -266,10 +267,10 @@ Each probe file follows this schema:
   "ts": "2026-05-15T14:30:00Z",
   "host_id": "myhostname:abc123def456",
   "backend_results": {
-    "cpu":    { "score": 76.45, "duration_ms": 3200, "error": null },
-    "cuda":   { "score": 76.44, "duration_ms":  820, "error": null },
+    "cpu":  { "score": 94.32301, "duration_ms": 3200, "error": null },
+    "cuda": { "score": 94.32300, "duration_ms":  820, "error": null },
     "sycl":   { "score": null,  "duration_ms":    0, "error": "ENOSYS: no SYCL device" },
-    "vulkan": { "score": 76.45, "duration_ms": 1100, "error": null }
+    "hip":    { "score": null,  "duration_ms":    0, "error": "ENOSYS: no HIP device" }
   },
   "mcp_results": {
     "list_features": { "feature_count": 14, "duration_ms": 45, "error": null },
@@ -283,14 +284,22 @@ Each probe file follows this schema:
 | `score` | Aggregate VMAF score for the 48-frame 576×324 golden pair. `null` = backend failed. |
 | `duration_ms` | Wall-clock time for the full scoring run. |
 | `error` | Error message string, or `null` for success. |
-| `feature_count` | Number of features returned by the MCP `list_features` tool. |
+| `feature_count` | Number of extractors returned by the Go MCP `list_extractors` tool. |
+
+The `list_features` and `compute_vmaf` names in the probe JSON are stable
+schema keys retained for existing probe consumers. The operations behind them
+are the current Go MCP tools `list_extractors` and `vmaf_score`, respectively.
+Each MCP probe performs the required `initialize` / `notifications/initialized`
+handshake before its `tools/call` request and keeps the server's stdin open
+until the matching response arrives. Closing stdin after writing the request
+disconnects the Go SDK session and can race the asynchronous response.
 
 ### Expected values
 
-- CPU score: ~76.45 (matches the Netflix golden pair; exact value
+- CPU score: ~94.323 (matches the committed 48-frame fixture pair; exact value
   varies by model version).
-- CUDA / Vulkan scores: within ±0.01 of CPU (numeric parity is not bit-exact —
-  see [ADR-0214](../adr/0214-gpu-parity-ci-gate.md)).
+- CUDA / SYCL / HIP scores: within ±0.01 of CPU (numeric parity is not
+  bit-exact — see [ADR-0214](../adr/0214-gpu-parity-ci-gate.md)).
 - SYCL: `ENOSYS` on hosts without Intel GPU or oneAPI runtime; normal.
 - HIP: error on NVIDIA-only hosts; normal.
 
@@ -300,7 +309,7 @@ Each probe file follows this schema:
 | --- | --- | --- |
 | `ENOSYS: no CUDA device` | No NVIDIA GPU or Container Toolkit not installed | Install Container Toolkit and set `NVIDIA_VISIBLE_DEVICES=all` |
 | `ENOSYS: no SYCL device` | No Intel GPU / oneAPI runtime | Expected on non-Intel hosts; not a regression |
-| `mcp stdio returned empty response` | `vmafx-mcp` not in PATH or the go-build stage failed | Rebuild container; check `docker compose logs dev-mcp`. The binary comes from `cmd/vmafx-mcp` via the `go-build` stage, not from the venv. |
+| `mcp stdio returned empty response` | `vmafx-mcp` missing/failed, or a custom client closed stdin before the response | Rebuild and check `docker compose logs dev-mcp`; custom clients must keep stdin open through the matching response. The binary comes from `cmd/vmafx-mcp` via the `go-build` stage, not from the venv. |
 | Score drift >0.1 from baseline | Code regression or model change | Run `/validate-scores` skill; check recent commits |
 
 ---
@@ -312,11 +321,10 @@ Each probe file follows this schema:
 | HIP kernels cannot run on NVIDIA-only hosts | The HIP toolchain in the container compiles and embeds HSACO fat binaries, but the AMD ROCm runtime is not available. Feature extractors return an error at kernel dispatch. The container is still valuable for catching compile-time regressions in HIP paths. |
 | Metal is disabled on Linux | `libvmaf` is built with `-Denable_metal=auto`, which resolves to disabled on Linux. Metal kernels require macOS + Apple Silicon. |
 | SYCL requires Intel GPU or software emulation | Without the oneAPI Level Zero runtime, SYCL falls back to the OpenCL CPU device (if available) or returns `-ENOSYS`. Performance is significantly lower than on a dedicated Intel GPU. |
-| Vulkan lavapipe is CPU-backed | The lavapipe software Vulkan ICD shipped by mesa is enumerated last when no real ICD is available; it allows Vulkan correctness testing without a physical GPU, but throughput is 3–5× slower than real hardware. |
-| First build takes 20–40 minutes | All four GPU SDK layers are fetched during `docker compose build`. Subsequent builds are fast (layer cache). |
+| First build takes 20–40 minutes | All three Linux GPU SDK layers are fetched during `docker compose build`. Subsequent builds are fast (layer cache). |
 | `vmaf-tune report` requires matplotlib | Baked into `/opt/vmaf-venv` by `dev/Containerfile` (added 2026-05-18 per ADR-0498). When the container is rebuilt, `vmaf-tune report --format both` produces a self-contained HTML+Markdown report with inline charts. If you see `ModuleNotFoundError: No module named 'matplotlib'` inside the container, your image predates the ADR-0498 commit — `docker compose -f dev/docker-compose.yml build dev-mcp` rebuilds it. |
 
-## Backend matrix (post-ADR-0514)
+## Backend matrix
 
 On a host with NVIDIA + Intel Arc + AMD silicon and the NVIDIA Container
 Toolkit installed, every libvmaf backend should run inside the container:
@@ -326,7 +334,6 @@ Toolkit installed, every libvmaf backend should run inside the container:
 | `cpu` | VMAF score, rc=0 | always |
 | `cuda` | VMAF score, rc=0 (5-place-equal to CPU per ADR-0214) | NVIDIA GPU + Container Toolkit |
 | `sycl` | VMAF score, rc=0 (5-place-equal to CPU) | Intel GPU exposed via `/dev/dri` bind-mount (ADR-0528) |
-| `vulkan` | VMAF score, rc=0 (per-adapter device picker selects the first compatible ICD) | At least one Vulkan ICD: NVIDIA (via NVIDIA_DRIVER_CAPABILITIES=graphics), Intel/AMD (via mesa-vulkan-drivers), or lavapipe software fallback |
 | `hip` | VMAF score, rc=0 (5-place-equal to CPU) | AMD GPU via `/dev/kfd` + `/dev/dri/renderD*` |
 | `metal` | "built without metal support" on Linux containers | macOS host only |
 
@@ -334,7 +341,7 @@ Reproducer:
 
 ```bash
 docker exec vmaf-dev-mcp bash -c '
-  for B in cpu cuda sycl vulkan hip; do
+  for B in cpu cuda sycl hip; do
     vmaf --reference /workspace/python/test/resource/yuv/src01_hrc00_576x324.yuv \
          --distorted /workspace/python/test/resource/yuv/src01_hrc01_576x324.yuv \
          --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -346,30 +353,17 @@ docker exec vmaf-dev-mcp bash -c '
 
 ### Environment-variable contract
 
-The container pins one env-var family (HSA / ROCm) at compose-up
-time, rewrites one (`VK_DRIVER_FILES`) at entrypoint time based on
-what is visible on disk, and intentionally leaves everything else
-alone. Pinning the wrong subset silently hid one or more GPU
-backends in earlier image versions:
+The container pins the ROCm variables at compose-up time and carries the
+oneAPI runtime libraries needed for SYCL discovery. The VMAFx Vulkan backend
+was removed by ADR-0726 and is not part of this contract.
 
-| Env var | Contract | Why not pinned |
-|---|---|---|
-| `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` | unset by default; Vulkan loader uses `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/` search path | An earlier pin to `lvp_icd.x86_64.json` (typo of `lvp_icd.json`) hid every real GPU. ADR-0509 / Research-0138. |
-| `LD_LIBRARY_PATH` | includes `${ONEAPI_ROOT}/{compiler,umf,tcm,tbb}/latest/lib` | `tcm/latest/lib` carries `libhwloc.so.15` (level-zero UR adapter dlopens it at load time; dropping it causes SYCL "Platforms: 0" on Intel Arc). `tbb/latest/lib` carries `libtbb.so.12` (the Intel CPU OpenCL ICD dlopens it at platform enumeration; dropping it silently removes the Intel CPU OpenCL platform — ADR-0543). |
-| `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env) | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan. |
 | Env var | Contract | Rationale |
 | --- | --- | --- |
-| `VK_DRIVER_FILES` | Rewritten by `dev/scripts/dev-mcp-entrypoint.sh` at container start to the colon-separated list of every non-lavapipe ICD JSON visible under `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/`. Unset when no real ICD is present (CPU-only fallback). | An earlier image left both env vars unset and relied on alphabetical search order; on multi-vendor hosts where mesa's `lvp_icd.json` sorted before NVIDIA's `nvidia_icd.json` (or Intel/AMD mesa ICDs), `vmaf --vulkan_device 0` silently landed on lavapipe. ADR-0542 closes the race by filtering lavapipe out whenever a real ICD exists. |
-| `VK_ICD_FILENAMES` | Unset (deprecated by Khronos in favour of `VK_DRIVER_FILES`). | Setting it overrides the loader's allowlist semantics; the prior `lvp_icd.x86_64.json` typo (ADR-0509 / Research-0138) hid every real GPU. |
-| `LD_LIBRARY_PATH` | Includes `${ONEAPI_ROOT}/{compiler,umf,tcm}/latest/lib`. | `tcm/latest/lib` carries `libhwloc.so.15` — the level-zero UR adapter dlopens it at load time. Dropping it causes SYCL "Platforms: 0" on Intel Arc. |
-| `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env). | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan while leaving CUDA + nvidia-smi working — a hard regression to spot. |
+| `LD_LIBRARY_PATH` | Includes `${ONEAPI_ROOT}/{compiler,umf,tcm,tbb}/latest/lib`. | `tcm/latest/lib` carries `libhwloc.so.15` for the Level Zero adapter; `tbb/latest/lib` carries `libtbb.so.12` for the Intel CPU OpenCL ICD. Dropping either can silently remove a SYCL platform. |
 | `HSA_OVERRIDE_GFX_VERSION` | **Removed** (was `10.3.0`). | AMD `gfx1036` (Raphael iGPU, RDNA2 IP rev 10.3.6) was not on the ROCm 6.x/7.x supported-GPU allowlist, so without the override `hsa_init()` returned `HSA_STATUS_ERROR_OUT_OF_RESOURCES` and `rocminfo` reported "Unable to open /dev/kfd read-write: Invalid argument" even with `/dev/kfd` bind-mounted. ROCm 10 supports `gfx1036` natively, so the alias is not merely unnecessary but wrong — it would map the agent to `gfx1030` while meson compiles `gfx1036` code objects. ADR-0542, superseded on this point by ADR-1225. |
 | `HSA_ENABLE_SDMA` | Pinned to `0` in `common-env`. | On RDNA2 iGPUs sharing system RAM with the CPU, the SDMA copy engine triggers VM faults on small device→host transfers (libvmaf collect path is dominated by such transfers). ADR-0543. |
 | `ROCR_VISIBLE_DEVICES` | Pinned to `0` in `common-env`. | Pins HIP to the single AMD adapter on multi-iGPU + dGPU hosts so kernels cannot accidentally dispatch onto a non-RDNA2 device that needs a different `HSA_OVERRIDE_GFX_VERSION`. ADR-0542. |
 
-Operators that need to force a single Vulkan ICD per invocation can
-still `docker exec vmaf-dev-mcp env VK_DRIVER_FILES=/path/to/icd.json
-vmaf …` — the per-exec env var overrides the entrypoint-time pin.
 Operators on hosts with a ROCm-supported GPU on the allowlist
 (`gfx1030` / `gfx1100` / `gfx1101` desktop / workstation parts) can
 override `HSA_OVERRIDE_GFX_VERSION` to the empty string at

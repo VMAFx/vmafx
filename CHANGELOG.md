@@ -23033,6 +23033,15 @@ root `.dockerignore`). Closes the overlay2 accumulation regression.
   one is exposed, and libvmaf retries an output-file open once after `EINTR`.
 
 
+- **The periodic dev-MCP smoke probe again measures the backends it names.**
+  It now uses the current exclusive `--backend` CLI with complete raw-YUV
+  geometry, reads a real JSON score and verifies `backend_used`, and talks to
+  the production `vmafx-mcp` Go server with the required initialization
+  handshake and current tool schemas while keeping the stdio session open
+  until each response arrives. Backend failures remain valid JSON even when
+  their diagnostics contain quotes or control characters.
+
+
 - `dev/Containerfile`: add Intel GPU compute-runtime (`intel-opencl-icd`,
   `libze-intel-gpu1`) from Intel's GPU apt repo so the Level Zero loader can
   probe the Arc GPU ICD inside the container. Without these packages
