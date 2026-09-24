@@ -103,6 +103,14 @@ tools/
   protects rebase, and
   `core/test/test_cli_parse_long_only_args.c` protects
   unit-test path.
+- **`cli_parse.cpp::usage()` discrete overloads** (rebase-sensitive).
+  `usage()` provides discrete template overloads for 1, 2, and 3 arguments
+  and no variadic parameter-pack fallback. This prevents zero-argument pack
+  expansions that trip CodeQL
+  `cpp/unused-local-variable` and `cpp/unused-static-variable` (Alerts 1002/1003).
+  Do not collapse back into an unconstrained variadic pack without verifying
+  CodeQL analysis. Adversarial regression coverage is pinned by
+  `core/test/test_cli_parse_long_only_args.c`.
 - **`y4m_convert_411_422jpeg` chroma-row write guards are
   load-bearing** (rebase-sensitive). 4:1:1 → 4:2:2-jpeg upsample
   in [y4m_input.c](y4m_input.c) writes both even and odd output

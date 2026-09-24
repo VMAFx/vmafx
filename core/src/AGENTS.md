@@ -30,6 +30,12 @@ Preserve first-error diagnostic, streaming/peek/reset
 contract, UTF-8 validation and private getter const qualifiers. Dedicated
 `core/test/test_pdjson.c` suite covers these contracts. Never restore the old
 blanket NOLINT; only file-wide exception is ADR-1138's C `NULL` compatibility.
+`pdjson.h` explicitly assigns sequential integer values to all enumerators in
+`enum json_type` (`JSON_NONE = 0` .. `JSON_NULL = 11`), satisfying MISRA C++ /
+AV Rule 145 (CodeQL `cpp/irregular-enum-init`, Alert 1064) while preserving the
+public ABI. Dedicated `core/test/test_pdjson.c::test_enum_json_type_abi_contract`
+pins this contract. **Rebase-sensitive:** do not remove sequential assignments
+or alter enumerator order on upstream sync or rebase.
 
 Following invariants established during 2026-05-16 memory-safety
 audit (findings #7, #8, #10). Every PR that touches affected files — or

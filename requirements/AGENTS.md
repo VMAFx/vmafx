@@ -18,6 +18,11 @@ authoritative, cryptographically hash-locked dependency pins (`requirements/lock
    - Each lock file contains `# vmafx-uv-version:`, `# vmafx-input-sha256:`, and `# vmafx-inputs:` header metadata.
    - Manifest validation requires output, input, and alias-consumer bindings to be local repository-relative paths under both POSIX and Windows semantics. It rejects remote paths, surrounding whitespace, POSIX absolutes, Windows drive/UNC paths, directory traversal, duplicate inputs, output flag overrides (`-o`), repeated install targets, and unregistered `*-lock.txt` files.
    - `install_aliases` are exact, reviewed objects bound to explicit repo-relative consumer paths and context (preventing unrelated workflows from consuming alias paths). Consumer identity uses exact separator-normalized equality: `evil/scripts/setup/ubuntu.sh` never inherits authority from `scripts/setup/ubuntu.sh`. Duplicate JSON keys and unreferenced/dead aliases are rejected. Never replace exact equality with basename/suffix heuristics; a lookalike path outside the manifest is untrusted.
+   - A consumer running from the repository root uses the lock entry's canonical
+     `output` path directly and must not add an identical `install_aliases`
+     entry. In particular, the root-scoped CodeQL C/C++ configure step consumes
+     `requirements/locks/build.txt`; the former `../requirements/...` alias was
+     valid only while that step ran from `core/`.
 
 2. **Build backend set and installer tooling exclusion**:
    - `requirements/locks/package-build.in` contains all PEP 517 build backend tools and dependencies for locked, unisolated builds (`--no-deps --no-build-isolation`): `build`, `hatchling`, `editables`, `setuptools`, `wheel`, `packaging`, `Cython`, `numpy`, `scipy`.

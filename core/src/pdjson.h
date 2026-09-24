@@ -29,16 +29,16 @@ extern "C" {
 enum json_type {
     JSON_NONE = 0, /* Internal empty-lookahead sentinel; never emitted as an event. */
     JSON_ERROR = 1,
-    JSON_DONE,
-    JSON_OBJECT,
-    JSON_OBJECT_END,
-    JSON_ARRAY,
-    JSON_ARRAY_END,
-    JSON_STRING,
-    JSON_NUMBER,
-    JSON_TRUE,
-    JSON_FALSE,
-    JSON_NULL
+    JSON_DONE = 2,
+    JSON_OBJECT = 3,
+    JSON_OBJECT_END = 4,
+    JSON_ARRAY = 5,
+    JSON_ARRAY_END = 6,
+    JSON_STRING = 7,
+    JSON_NUMBER = 8,
+    JSON_TRUE = 9,
+    JSON_FALSE = 10,
+    JSON_NULL = 11
 };
 
 struct json_allocator {

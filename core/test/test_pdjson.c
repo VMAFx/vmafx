@@ -282,8 +282,25 @@ static char *run_input_tests(void)
     return NULL;
 }
 
+static char *test_enum_json_type_abi_contract(void)
+{
+    static const struct {
+        enum json_type val;
+        int expected;
+    } checks[] = {
+        {JSON_NONE, 0},       {JSON_ERROR, 1}, {JSON_DONE, 2},      {JSON_OBJECT, 3},
+        {JSON_OBJECT_END, 4}, {JSON_ARRAY, 5}, {JSON_ARRAY_END, 6}, {JSON_STRING, 7},
+        {JSON_NUMBER, 8},     {JSON_TRUE, 9},  {JSON_FALSE, 10},    {JSON_NULL, 11},
+    };
+    for (size_t i = 0; i < sizeof(checks) / sizeof(checks[0]); ++i) {
+        mu_assert("enum json_type ABI mismatch", (int)checks[i].val == checks[i].expected);
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
+    mu_run_test(test_enum_json_type_abi_contract);
     mu_run_test(test_event_sequence);
     mu_run_test(test_context_and_skip);
     mu_run_test(test_streaming_peek_reset);
