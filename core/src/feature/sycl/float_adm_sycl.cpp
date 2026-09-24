@@ -832,8 +832,8 @@ static const VmafOption options_float_adm_sycl[] = {
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false}},
     {.name = "adm_enhn_gain_limit",
-     .alias = "egl",
      .help = "enhancement gain (>=1.0)",
+     .alias = "egl",
      .offset = offsetof(FloatAdmStateSycl, adm_enhn_gain_limit),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 100.0},
@@ -841,8 +841,8 @@ static const VmafOption options_float_adm_sycl[] = {
      .max = 100.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_norm_view_dist",
-     .alias = "nvd",
      .help = "normalized viewing distance",
+     .alias = "nvd",
      .offset = offsetof(FloatAdmStateSycl, adm_norm_view_dist),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 3.0},
@@ -850,8 +850,8 @@ static const VmafOption options_float_adm_sycl[] = {
      .max = 24.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_ref_display_height",
-     .alias = "rdf",
      .help = "reference display height in pixels",
+     .alias = "rdf",
      .offset = offsetof(FloatAdmStateSycl, adm_ref_display_height),
      .type = VMAF_OPT_TYPE_INT,
      .default_val = {.i = 1080},
@@ -859,8 +859,8 @@ static const VmafOption options_float_adm_sycl[] = {
      .max = 4320,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_csf_mode",
-     .alias = "csf",
      .help = "contrast sensitivity function (mode 0 only on SYCL v1)",
+     .alias = "csf",
      .offset = offsetof(FloatAdmStateSycl, adm_csf_mode),
      .type = VMAF_OPT_TYPE_INT,
      .default_val = {.i = 0},
@@ -868,8 +868,8 @@ static const VmafOption options_float_adm_sycl[] = {
      .max = 9,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_csf_scale",
-     .alias = "scf",
      .help = "CSF band-scale multiplier for h/v bands (default 1.0 = no scaling)",
+     .alias = "scf",
      .offset = offsetof(FloatAdmStateSycl, adm_csf_scale),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_CSF_SCALE},
@@ -877,8 +877,8 @@ static const VmafOption options_float_adm_sycl[] = {
      .max = 100.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_csf_diag_scale",
-     .alias = "scfd",
      .help = "CSF band-scale multiplier for diagonal bands (default 1.0 = no scaling)",
+     .alias = "scfd",
      .offset = offsetof(FloatAdmStateSycl, adm_csf_diag_scale),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_CSF_DIAG_SCALE},
@@ -886,8 +886,8 @@ static const VmafOption options_float_adm_sycl[] = {
      .max = 100.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_noise_weight",
-     .alias = "nw",
      .help = "noise floor weight for CM numerator (default 0.03125 = 1/32)",
+     .alias = "nw",
      .offset = offsetof(FloatAdmStateSycl, adm_noise_weight),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_NOISE_WEIGHT},
@@ -896,15 +896,15 @@ static const VmafOption options_float_adm_sycl[] = {
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     /* ADR-0574: AIM / ADM3 options — mirrors CUDA twin. */
     {.name = "adm_adm3_apply_hm",
-     .alias = "aah",
      .help = "apply harmonic mean for adm3 score (false = linear blend)",
+     .alias = "aah",
      .offset = offsetof(FloatAdmStateSycl, adm_adm3_apply_hm),
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val = {.b = false},
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_p_norm",
-     .alias = "apn",
      .help = "p-norm exponent for AIM/ADM3 score (default 3.0)",
+     .alias = "apn",
      .offset = offsetof(FloatAdmStateSycl, adm_p_norm),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 3.0},
@@ -912,8 +912,8 @@ static const VmafOption options_float_adm_sycl[] = {
      .max = 20.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_dlm_weight",
-     .alias = "dlmw",
      .help = "DLM weight for linear-blend adm3 score (default 0.5)",
+     .alias = "dlmw",
      .offset = offsetof(FloatAdmStateSycl, adm_dlm_weight),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 0.5},
@@ -921,8 +921,8 @@ static const VmafOption options_float_adm_sycl[] = {
      .max = 1.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_min_val",
-     .alias = "min",
      .help = "minimum clamp for adm3 score (default 0.0)",
+     .alias = "min",
      .offset = offsetof(FloatAdmStateSycl, adm_min_val),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = DEFAULT_ADM_MIN_VAL},
@@ -940,6 +940,8 @@ static const VmafOption options_float_adm_sycl[] = {
 // inside this linkage specification at all. Same band, same reason, as
 // integer_motion_sycl.cpp and integer_adm_sycl.cpp. Per CLAUDE.md §12 r12 these
 // are load-bearing invariants of the SYCL <-> libvmaf C-API ABI.
+
+static int close_fex_sycl(VmafFeatureExtractor *fex);
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -1031,18 +1033,24 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
 
     if (!s->h_ref_raw || !s->h_dis_raw || !s->d_ref_raw || !s->d_dis_raw || !s->d_dwt_tmp_ref ||
-        !s->d_dwt_tmp_dis || !s->d_csf_a || !s->d_csf_f || !s->d_csf_a_aim || !s->d_csf_f_aim)
+        !s->d_dwt_tmp_dis || !s->d_csf_a || !s->d_csf_f || !s->d_csf_a_aim || !s->d_csf_f_aim) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
+    }
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         if (!s->d_ref_band[scale] || !s->d_dis_band[scale] || !s->d_accum[scale] ||
-            !s->h_accum[scale])
+            !s->h_accum[scale]) {
+            (void)close_fex_sycl(fex);
             return -ENOMEM;
+        }
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
+    }
     return 0;
 }
 

@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-sycl-usm-init-unwind — failed SYCL init owns its unwind (2026-09-24)
+
+The framework does not call `close` after an extractor `init` returns an error.
+Preserve the local `close_fex_sycl(fex)` (or `close_fex_issim_sycl`) call on
+every post-allocation, post-dictionary, and post-graph-registration failure in
+the twelve touched feature TUs. Do not resolve a conflict by restoring the
+historical bare returns from `5d070b0b4`, or by moving cleanup into the generic
+framework: four sibling TUs already self-unwind and would then be double-closed.
+
+The executable contract is `core/test/test_sycl_init_unwind.cpp`. It is a
+device-free GNU-ld interposer and is intentionally registered only on Linux,
+static-library builds with `b_lto=false`; LTO resolves the calls before
+`--wrap` can see them. Re-run `test_sycl_init_unwind` after any sync touching
+these init/close pairs. Research and the exact historical boundary are in
+`docs/research/2080-bug048-sycl-init-unwind-restoration-2026-09-24.md`.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

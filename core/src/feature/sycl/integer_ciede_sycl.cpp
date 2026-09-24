@@ -331,6 +331,8 @@ static const VmafOption options_ciede_sycl[] = {{nullptr}};
 // inside this linkage specification at all. Same band, same reason, as
 // float_adm_sycl.cpp and speed_chroma_sycl.cpp. Per CLAUDE.md §12 r12 these are
 // load-bearing invariants of the SYCL <-> libvmaf C-API ABI. ADR-0278.
+static int close_fex_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -376,13 +378,16 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         !s->d_ref_y || !s->d_ref_u || !s->d_ref_v || !s->d_dis_y || !s->d_dis_u || !s->d_dis_v ||
         !s->d_partials || !s->h_partials) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ciede_sycl: USM allocation failed\n");
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
+    }
 
     s->has_pending = false;
     return 0;

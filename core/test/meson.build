@@ -3090,6 +3090,33 @@ test_sycl_pic_preallocation = executable('test_sycl_pic_preallocation',
 test('test_sycl', test_sycl, suite : ['fast', 'gpu', 'sycl'])
 test('test_sycl_pic_preallocation', test_sycl_pic_preallocation, suite : ['fast', 'gpu', 'sycl'])
 
+# BUG-048 section E — deterministic, device-free init-failure unwind gate.
+# GNU ld wrapping sees calls from libvmaf.a only with LTO disabled; this is the
+# same constraint as test_registration_partial_copy above.  The dedicated gate
+# replaces USM allocation, dictionary construction, and graph registration so
+# every partial-init path can be exercised on hosts without a SYCL device.
+if host_machine.system() == 'linux' and get_option('default_library') != 'shared' \
+        and not get_option('b_lto')
+    test_sycl_init_unwind = executable('test_sycl_init_unwind',
+        ['test.c', 'test_sycl_init_unwind.cpp'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies : [pthread_dependency, sycl_dependency, math_lib],
+        cpp_args : ['-DHAVE_SYCL=1'],
+        link_args : [
+            '-Wl,--wrap=vmaf_sycl_malloc_device',
+            '-Wl,--wrap=vmaf_sycl_malloc_host',
+            '-Wl,--wrap=vmaf_sycl_free',
+            '-Wl,--wrap=vmaf_feature_name_dict_from_provided_features',
+            '-Wl,--wrap=vmaf_dictionary_free',
+            '-Wl,--wrap=vmaf_sycl_shared_frame_init',
+            '-Wl,--wrap=vmaf_sycl_graph_register',
+            '-Wl,--wrap=vmaf_sycl_graph_unregister',
+        ],
+    )
+    test('test_sycl_init_unwind', test_sycl_init_unwind, suite : ['fast', 'sycl'])
+endif
+
 test_integer_cambi_sycl = executable('test_integer_cambi_sycl',
     ['test.c', 'test_integer_cambi_sycl.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

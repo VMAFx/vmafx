@@ -93,6 +93,13 @@ and teardown.
   must cover each initialization stage, a null init-output pointer, the
   documented null destroy no-op, unpublished context, and exact partial
   unwind.
+- **`test_sycl_init_unwind` is a device-free GNU-ld interposer.** Keep it
+  Linux-only, statically linked, and disabled when `b_lto=true`: LLVM LTO
+  resolves libvmaf's internal allocator/dictionary/graph calls before
+  `--wrap` can rewrite them. It must remain in the `fast` + `sycl` suites and
+  cover all descriptors listed in
+  `docs/research/2080-bug048-sycl-init-unwind-restoration-2026-09-24.md`; adding a
+  SYCL init that owns USM requires adding its failure case here.
 - **`test_framesync_init_failure` builds with LTO off on Darwin, and that is
   load-bearing.** **Rebase-sensitive**: keep
   `override_options : framesync_interposer_lto_override` on the target. Under
