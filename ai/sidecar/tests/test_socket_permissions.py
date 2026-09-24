@@ -392,32 +392,40 @@ class TestSocketPermissionsAndOwnership:
         assert socket_path.readlink() == target
         assert target.read_text(encoding="utf-8") == "sentinel"
 
-    def test_shutdown_preserves_socket_rebound_at_owned_path(self, tmp_path: pathlib.Path) -> None:
+    def test_shutdown_preserves_socket_rebound_at_owned_path(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Cleanup must not unlink a replacement socket published after startup."""
         socket_path = str(tmp_path / "rebound.sock")
+        publication_complete = threading.Event()
+        real_socket = socket.socket
+
+        class PublicationSocket(real_socket):
+            def listen(self, backlog: int) -> None:
+                super().listen(backlog)
+                publication_complete.set()
+
+        monkeypatch.setattr("ai.sidecar.online_trainer.socket.socket", PublicationSocket)
         stop_event = threading.Event()
+        server_errors: list[BaseException] = []
+
+        def run_server() -> None:
+            try:
+                ot_mod.run_server(
+                    socket_path=socket_path,
+                    trainer=mock.MagicMock(),
+                    stop_event=stop_event,
+                )
+            except BaseException as exc:  # surfaced in the parent assertion below
+                server_errors.append(exc)
+
         server_thread = threading.Thread(
-            target=ot_mod.run_server,
-            kwargs={
-                "socket_path": socket_path,
-                "trainer": mock.MagicMock(),
-                "stop_event": stop_event,
-            },
+            target=run_server,
             daemon=True,
         )
         server_thread.start()
-
-        deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline:
-            try:
-                owner = os.lstat(socket_path)
-                if stat.S_ISSOCK(owner.st_mode):
-                    break
-            except FileNotFoundError:
-                pass
-            time.sleep(0.01)
-        else:
-            pytest.fail("original server did not publish its socket")
+        assert publication_complete.wait(timeout=3.0)
+        owner = os.lstat(socket_path)
 
         os.unlink(socket_path)
         replacement = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -430,6 +438,7 @@ class TestSocketPermissionsAndOwnership:
             stop_event.set()
             server_thread.join(timeout=2.0)
             assert not server_thread.is_alive()
+            assert server_errors == []
 
             current = os.lstat(socket_path)
             assert (current.st_dev, current.st_ino) == (rebound.st_dev, rebound.st_ino)
