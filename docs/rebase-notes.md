@@ -79,6 +79,14 @@ these Meson blocks.
    Prevents packaging conflicts (such as Debian's pre-installed `python3-packaging`) when
    installing hash-locked dependencies into the container image, eliminating the need for
    `--break-system-packages`.
+10. **Fail-closed authority edges are cross-platform and parser-independent.**
+    Preserve the classifier's explicit allowlist: generic `*.in` and `manifest.json`
+    basenames outside the owned requirements subtree are not dependency-only. The
+    workflow fallback accepts simple quoted block keys and must report the same
+    pre-checkout helper ordering failure as PyYAML. Nox annotated or literal
+    `getattr(session, "install")` aliases remain scanned. Manifest output, input,
+    and alias-consumer paths must be local and repo-relative under POSIX and
+    Windows semantics.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

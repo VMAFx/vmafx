@@ -150,7 +150,7 @@ is_allowed_dependency_path() {
       pyproject.toml | poetry.lock | uv.lock | tox.ini | \
       setup.py | setup.cfg | \
       requirements*.txt | constraints*.txt | \
-      requirements*.in | *.in | manifest.json | \
+      requirements*.in | \
       Dockerfile* | *.Dockerfile | \
       Chart.yaml | Chart.lock | \
       docker-compose.y*ml | docker-compose.*.y*ml | compose.y*ml)

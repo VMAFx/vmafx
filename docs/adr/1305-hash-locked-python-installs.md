@@ -46,6 +46,9 @@ entire repository using manifest-driven hash locks.
    - Every lock file includes header metadata containing the generator version,
      the inputs list, and a SHA-256 digest of input file contents and compiler
      arguments.
+   - Manifest output, input, and alias-consumer paths are local repository-relative
+     paths under both POSIX and Windows semantics; absolute, traversal, remote,
+     and whitespace-padded values are invalid.
    - Offline verification is performed via:
      `scripts/ci/check_python_dependency_locks.py check`.
    - Explicit network refresh is executed via:
@@ -61,7 +64,8 @@ entire repository using manifest-driven hash locks.
      `--no-deps` and `--no-build-isolation`.
    - The checker scans all shell scripts, workflows, Dockerfiles, Makefiles, and
      literal `session.install(...)` calls in `noxfile.py` for non-compliant
-     invocations. Dynamic Nox install arguments fail closed.
+     invocations. Plain, annotated, and literal `getattr` aliases do not escape
+     the Nox scan. Dynamic Nox install arguments fail closed.
    - A requirement target is accepted only when it exactly matches a manifest
      output or an explicit `install_aliases` entry. Basename and suffix matching
      are forbidden, so `/tmp/untrusted/requirements/locks/build.txt` cannot
@@ -107,8 +111,10 @@ entire repository using manifest-driven hash locks.
      `test-python-dependency-locks`.
    - CI impact planner (`.github/ci-impact.json`) adds `"requirements/"` prefix
      and routes requirements changes to the `python` testing lane.
-   - Dependency PR classifier (`scripts/ci/classify-dependency-pr.sh`) allows
-     `requirements/*`, `*.in`, and `manifest.json` for automated bot PRs.
+   - Dependency PR classifier (`scripts/ci/classify-dependency-pr.sh`) allows the
+     explicit dependency surface, including `requirements/*` and
+     `requirements*.in`, for automated bot PRs. Generic basename-wide `*.in`
+     and `manifest.json` exemptions are forbidden outside their owned subtree.
    - Renovate (`renovate.json`) monitors `requirements/locks/*.in`,
      `docs/requirements.txt`, and ignores compiled `*.txt` and `*-lock.txt`.
 

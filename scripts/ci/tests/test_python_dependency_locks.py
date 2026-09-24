@@ -383,6 +383,30 @@ class InstallCommandTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(self.findings(text, "noxfile.py")), 1)
 
+    def test_nox_annotated_session_alias_is_rejected_and_scanned(self) -> None:
+        text = (
+            "def tests(session):\n"
+            "    aliased: object = session\n"
+            '    aliased.install("malicious-pkg")\n'
+        )
+        self.assertGreaterEqual(len(self.findings(text, "noxfile.py")), 1)
+
+    def test_nox_getattr_install_alias_is_rejected_and_scanned(self) -> None:
+        text = (
+            "def tests(session):\n"
+            '    installer = getattr(session, "install")\n'
+            '    installer("malicious-pkg")\n'
+        )
+        self.assertGreaterEqual(len(self.findings(text, "noxfile.py")), 1)
+
+    def test_nox_annotated_method_alias_is_rejected_and_scanned(self) -> None:
+        text = (
+            "def tests(session):\n"
+            "    installer: object = session.install\n"
+            '    installer("malicious-pkg")\n'
+        )
+        self.assertGreaterEqual(len(self.findings(text, "noxfile.py")), 1)
+
     def test_nox_shell_runner_is_scanned_fail_closed(self) -> None:
         text_sh_bad = (
             'def tests(session):\n    session.run("sh", "-c", "pip install malicious-pkg")\n'
@@ -494,6 +518,24 @@ class LockValidationTests(unittest.TestCase):
         problems_abs = self.checker.validate_manifest_entry(entry_abs)
         self.assertTrue(any("cannot be remote, absolute, or traverse" in p for p in problems_abs))
 
+    def test_manifest_output_windows_absolute_paths_are_rejected_cross_platform(self) -> None:
+        for output in (
+            "C:/outside.txt",
+            r"C:\outside.txt",
+            r"C:outside.txt",
+            r"\\server\share\lock.txt",
+        ):
+            with self.subTest(output=output):
+                entry = {
+                    "output": output,
+                    "inputs": ["dummy.in"],
+                    "compile_args": ["dummy.in"],
+                }
+                problems = self.checker.validate_manifest_entry(entry)
+                self.assertTrue(
+                    any("cannot be remote, absolute, or traverse" in p for p in problems)
+                )
+
     def test_duplicate_inputs_is_rejected(self) -> None:
         entry = {
             "output": "dummy.txt",
@@ -584,6 +626,24 @@ class LockValidationTests(unittest.TestCase):
         }
         problems = self.checker.validate_manifest_entry(entry)
         self.assertTrue(any("cannot be remote, absolute, or traverse" in p for p in problems))
+
+    def test_manifest_input_windows_absolute_paths_are_rejected_cross_platform(self) -> None:
+        for manifest_input in (
+            "C:/outside.in",
+            r"C:\outside.in",
+            r"C:outside.in",
+            r"\\server\share\deps.in",
+        ):
+            with self.subTest(manifest_input=manifest_input):
+                entry = {
+                    "output": "dummy.txt",
+                    "inputs": [manifest_input],
+                    "compile_args": ["dummy.in"],
+                }
+                problems = self.checker.validate_manifest_entry(entry)
+                self.assertTrue(
+                    any("cannot be remote, absolute, or traverse" in p for p in problems)
+                )
 
     def test_compile_args_insecure_flags_rejected(self) -> None:
         insecure_flags = [
@@ -780,6 +840,50 @@ class LockValidationTests(unittest.TestCase):
                     ],
                 }
                 self.assertTrue(self.checker.validate_manifest_entry(entry))
+
+    def test_manifest_install_alias_consumers_must_be_repo_relative(self) -> None:
+        base_entry = {
+            "output": "dummy.txt",
+            "inputs": ["dummy.in"],
+            "compile_args": ["dummy.in"],
+        }
+        bad_consumers = (
+            "../Dockerfile",
+            r"..\Dockerfile",
+            "/etc/passwd",
+            "C:/repo/Dockerfile",
+            r"C:\repo\Dockerfile",
+            r"C:repo\Dockerfile",
+            r"\\server\share\Dockerfile",
+            "https://example.invalid/Dockerfile",
+        )
+        for consumer in bad_consumers:
+            with self.subTest(consumer=consumer):
+                entry = {
+                    **base_entry,
+                    "install_aliases": [
+                        {
+                            "alias": "runtime/lock.txt",
+                            "consumer": consumer,
+                            "context": "container-build",
+                        }
+                    ],
+                }
+                problems = self.checker.validate_manifest_entry(entry)
+                self.assertTrue(any("consumer path" in problem for problem in problems))
+
+        entry_list = {
+            **base_entry,
+            "install_aliases": [
+                {
+                    "alias": "runtime/lock.txt",
+                    "consumers": ["Dockerfile", "C:/repo/Dockerfile"],
+                    "context": "container-build",
+                }
+            ],
+        }
+        problems = self.checker.validate_manifest_entry(entry_list)
+        self.assertTrue(any("consumer path" in problem for problem in problems))
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -1365,6 +1469,37 @@ jobs:
         with mock.patch.object(self.checker, "yaml", None):
             fallback_findings = self.checker.scan_workflow_checkout_ordering(path, text, root=ROOT)
         return pyyaml_findings, fallback_findings
+
+    def test_quoted_jobs_job_and_steps_keys_match_pyyaml(self) -> None:
+        templates = (
+            """
+{quote}jobs{quote}:
+  {quote}test{quote}:
+    runs-on: ubuntu-latest
+    {quote}steps{quote}:
+      - name: Load config
+        run: scripts/ci/load-build-config.sh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+""",
+            """
+{quote}jobs{quote}:
+  {quote}test{quote}:
+    runs-on: ubuntu-latest
+    {quote}steps{quote}:
+      - {quote}name{quote}: Load config
+        {quote}run{quote}: scripts/ci/load-build-config.sh
+      - {quote}uses{quote}: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+""",
+        )
+        for template in templates:
+            for quote in ('"', "'"):
+                text = template.format(quote=quote)
+                pyyaml_res, fallback_res = self._scan_both_modes(
+                    Path(".github/workflows/test.yml"), text
+                )
+                self.assertEqual(fallback_res, pyyaml_res)
+                self.assertEqual(len(fallback_res), 1)
+                self.assertIn("consumes repo-local helper file", fallback_res[0])
 
     def test_spoofed_or_unpinned_checkout_rejected_both_modes(self) -> None:
         template = """

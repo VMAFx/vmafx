@@ -16,6 +16,9 @@ The central authority is `requirements/locks/manifest.json`, which pairs every
 lock file with its source files and compilation arguments using a reviewed, pinned
 version of `uv` (`0.12.18`).
 
+Manifest outputs, inputs, and alias consumer bindings are local repo-relative
+paths under both POSIX and Windows path semantics; drive/UNC or POSIX absolutes,
+traversal, remote references, and surrounding whitespace fail validation.
 Each install command may name the lock's repository output or one of its explicit
 `install_aliases`. Aliases exist only for reviewed paths created by container
 copies or platform scripts. Each alias is bound to an explicit repo-relative
@@ -103,17 +106,21 @@ To support pure sdists (e.g. `mkdocs-minify-plugin` dependencies) securely:
   manifests, lock files, workflows, Dockerfiles, setup scripts, or Makefile.
 - **Install-surface scanner**: executable pip calls and literal
   `session.install(...)` calls in `noxfile.py` must reference a manifest-owned
-  lock exactly. Dynamic Nox arguments and unmanifested requirement paths fail
-  closed.
+  lock exactly. Plain and annotated aliases plus literal
+  `getattr(session, "install")` aliases remain in the same scan; dynamic Nox
+  arguments and unmanifested requirement paths fail closed.
 - **Workflow checkout-order scanner**: repo-local requirements, packages, helper
   scripts, and local actions must follow an unconditional root checkout pinned to
   a full commit SHA. When PyYAML is unavailable, the fallback accepts its audited
-  block-style subset and explicitly rejects inline/flow-style `jobs` or `steps`
-  instead of treating an unparsed workflow as empty.
+  block-style subset, including simple quoted `jobs`, job-id, and `steps` keys,
+  and explicitly rejects inline/flow-style mappings instead of treating an
+  unparsed workflow as empty.
 - **CI Impact Planner**: Changes to `requirements/` trigger the `python` CI lane
   in `.github/ci-impact.json`.
-- **Bot PR Exemption**: Automated Renovate and Dependabot PRs updating `requirements/`
-  are classified as dependency-only by `scripts/ci/classify-dependency-pr.sh`.
+- **Bot PR Exemption**: Automated Renovate and Dependabot PRs updating the exact
+  dependency allowlist are classified as dependency-only. Generic basename-wide
+  `*.in` or `manifest.json` matching is forbidden, so source templates such as
+  `core/include/libvmaf/version.h.in` remain fully gated.
 - **Renovate Configuration**: `renovate.json` is configured to propose updates against
   the source inputs (`.in`, `pyproject.toml`, `docs/requirements.txt`) and ignore
   compiled lock files.

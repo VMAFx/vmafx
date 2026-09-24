@@ -23,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 
 try:
@@ -100,6 +100,11 @@ SHELL_RUNNERS = {
     "/usr/bin/bash",
     "/usr/bin/zsh",
 }
+WORKFLOW_JOB_INDENT = 2
+WORKFLOW_STEPS_INDENT = 4
+SIMPLE_YAML_MAPPING_RE = re.compile(
+    r'^(?:([a-zA-Z0-9_-]+)|"([a-zA-Z0-9_-]+)"|\'([a-zA-Z0-9_-]+)\')\s*:\s*(.*)$'
+)
 
 
 class ContractError(RuntimeError):
@@ -137,15 +142,28 @@ INSECURE_COMPILE_PREFIXES = (
 )
 
 
+def _is_repository_relative_path(path: str) -> bool:
+    """Return whether ``path`` stays repo-relative on POSIX and Windows."""
+
+    if not path or path != path.strip():
+        return False
+    if "://" in path or path.startswith(("git+", "hg+", "svn+", "bzr+")):
+        return False
+    normalized = path.replace("\\", "/")
+    posix_path = PurePosixPath(normalized)
+    windows_path = PureWindowsPath(path)
+    return not (
+        posix_path.is_absolute()
+        or windows_path.is_absolute()
+        or bool(windows_path.drive)
+        or ".." in posix_path.parts
+    )
+
+
 def _validate_manifest_output(output: Any) -> list[str]:
     if not isinstance(output, str) or not output:
         return ["manifest lock entry output must be a non-empty string"]
-    if (
-        "://" in output
-        or Path(output).is_absolute()
-        or ".." in Path(output).parts
-        or output.startswith(("/", "\\"))
-    ):
+    if "://" in output or not _is_repository_relative_path(output):
         return [
             f"manifest lock output {output!r} cannot be remote, absolute, or traverse outside the repository"
         ]
@@ -161,9 +179,8 @@ def _validate_manifest_inputs(output: str, inputs: Any) -> list[str]:
     for inp in inputs:
         if (
             "://" in inp
-            or inp.startswith(("git+", "hg+", "svn+", "bzr+", "/", "\\"))
-            or Path(inp).is_absolute()
-            or ".." in Path(inp).parts
+            or inp.startswith(("git+", "hg+", "svn+", "bzr+"))
+            or not _is_repository_relative_path(inp)
         ):
             problems.append(
                 f"{output}: manifest input {inp!r} cannot be remote, absolute, or traverse outside the repository"
@@ -235,6 +252,30 @@ def _check_alias_security(output: str, alias: str, norm: str, context: Any) -> l
     return problems
 
 
+def _extract_bound_consumers(alias_spec: dict[str, Any]) -> list[str]:
+    c_val = alias_spec.get("consumer")
+    c_list = alias_spec.get("consumers")
+    bound: list[str] = []
+    if isinstance(c_val, str):
+        bound.append(c_val)
+    elif isinstance(c_val, list):
+        bound.extend(c for c in c_val if isinstance(c, str))
+    if isinstance(c_list, list):
+        bound.extend(c for c in c_list if isinstance(c, str))
+    elif isinstance(c_list, str):
+        bound.append(c_list)
+    return bound
+
+
+def _validate_alias_consumer_paths(output: str, alias: str, item: dict[str, Any]) -> list[str]:
+    return [
+        f"{output}: manifest install alias {alias!r} consumer path "
+        f"{consumer_path!r} must be repository-relative without traversal"
+        for consumer_path in _extract_bound_consumers(item)
+        if not _is_repository_relative_path(consumer_path)
+    ]
+
+
 def _validate_alias_item(
     output: str,
     item: Any,
@@ -275,6 +316,8 @@ def _validate_alias_item(
         problems.append(
             f"{output}: manifest install alias {alias!r} consumers must be a non-empty array"
         )
+
+    problems.extend(_validate_alias_consumer_paths(output, alias, item))
 
     context = item.get("context") or item.get("provenance")
     if not isinstance(context, str) or not context:
@@ -670,21 +713,6 @@ def _matches_consumer(bound_consumers: list[str], consumer_str: str) -> bool:
     )
 
 
-def _extract_bound_consumers(alias_spec: dict[str, Any]) -> list[str]:
-    c_val = alias_spec.get("consumer")
-    c_list = alias_spec.get("consumers")
-    bound: list[str] = []
-    if isinstance(c_val, str):
-        bound.append(c_val)
-    elif isinstance(c_val, list):
-        bound.extend(c for c in c_val if isinstance(c, str))
-    if isinstance(c_list, list):
-        bound.extend(c for c in c_list if isinstance(c, str))
-    elif isinstance(c_list, str):
-        bound.append(c_list)
-    return bound
-
-
 def get_manifest_lock_targets_for_consumer(
     consumer: Path | str,
     manifest: dict[str, Any] | None = None,
@@ -896,23 +924,60 @@ def _parse_nox_run_call(node: ast.Call) -> tuple[bool, list[str] | None]:
     return _parse_direct_pip_run_call(node, first)
 
 
+def _nox_assignment_parts(
+    sub: ast.Assign | ast.AnnAssign,
+) -> tuple[list[ast.expr], ast.expr | None]:
+    if isinstance(sub, ast.Assign):
+        return sub.targets, sub.value
+    return [sub.target], sub.value
+
+
+def _nox_method_reference(value: ast.expr, session_aliases: set[str]) -> str | None:
+    if (
+        isinstance(value, ast.Attribute)
+        and isinstance(value.value, ast.Name)
+        and value.value.id in session_aliases
+        and value.attr in {"install", "run", "run_always"}
+    ):
+        return value.attr
+    if not (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and value.func.id == "getattr"
+        and len(value.args) >= 2  # noqa: PLR2004
+    ):
+        return None
+    receiver, attr_node = value.args[:2]
+    if not (
+        isinstance(receiver, ast.Name)
+        and receiver.id in session_aliases
+        and isinstance(attr_node, ast.Constant)
+        and isinstance(attr_node.value, str)
+        and attr_node.value in {"install", "run", "run_always"}
+    ):
+        return None
+    return attr_node.value
+
+
 def _scan_nox_assign(
-    sub: ast.Assign, session_aliases: set[str], method_aliases: dict[str, str]
+    sub: ast.Assign | ast.AnnAssign,
+    session_aliases: set[str],
+    method_aliases: dict[str, str],
 ) -> Iterable[tuple[int, list[str] | None]]:
-    if isinstance(sub.value, ast.Name) and sub.value.id in session_aliases:
-        for target in sub.targets:
+    targets, value = _nox_assignment_parts(sub)
+    if value is None:
+        return
+    if isinstance(value, ast.Name) and value.id in session_aliases:
+        for target in targets:
             if isinstance(target, ast.Name):
                 session_aliases.add(target.id)
                 yield sub.lineno, None
-    elif (
-        isinstance(sub.value, ast.Attribute)
-        and isinstance(sub.value.value, ast.Name)
-        and sub.value.value.id in session_aliases
-        and sub.value.attr in {"install", "run", "run_always"}
-    ):
-        for target in sub.targets:
+        return
+    method = _nox_method_reference(value, session_aliases)
+    if method is not None:
+        for target in targets:
             if isinstance(target, ast.Name):
-                method_aliases[target.id] = sub.value.attr
+                method_aliases[target.id] = method
                 yield sub.lineno, None
 
 
@@ -1016,7 +1081,7 @@ def _nox_install_tokens(text: str) -> Iterable[tuple[int, list[str] | None]]:
         method_aliases: dict[str, str] = {}
 
         for sub in ast.walk(node):
-            if isinstance(sub, ast.Assign):
+            if isinstance(sub, (ast.Assign, ast.AnnAssign)):
                 yield from _scan_nox_assign(sub, session_aliases, method_aliases)
             elif isinstance(sub, ast.Call):
                 yield from _scan_nox_call(sub, session_aliases, method_aliases)
@@ -1256,10 +1321,10 @@ def _parse_step_entry(
     indent: int,
     step: dict[str, Any],
 ) -> tuple[str, int]:
-    m = re.match(r"^\s*([a-zA-Z0-9_-]+):\s*(.*)$", raw_line)
-    if not m:
+    entry = _simple_yaml_mapping_entry(raw_line)
+    if entry is None:
         return "", 0
-    prop, val = m.group(1), m.group(2)
+    prop, val = entry
     if prop in {"uses", "if", "continue-on-error"}:
         _parse_step_scalar(prop, val, step)
         return "", 0
@@ -1280,10 +1345,11 @@ def _append_run_content(content: str, folded: bool, step: dict[str, Any]) -> Non
 def _append_step_block_line(line: str, mode: str, step: dict[str, Any]) -> None:
     content = line.strip()
     if mode == "with":
-        m = re.match(r"^([a-zA-Z0-9_-]+):\s*(.*)$", content)
-        if m:
-            val = m.group(2).split("#", 1)[0].strip().strip("\"'")
-            step.setdefault("with", {})[m.group(1)] = val
+        entry = _simple_yaml_mapping_entry(content)
+        if entry is not None:
+            key, raw_value = entry
+            val = raw_value.split("#", 1)[0].strip().strip("\"'")
+            step.setdefault("with", {})[key] = val
     elif mode in {"run_folded", "run_literal"}:
         _append_run_content(content, mode == "run_folded", step)
 
@@ -1296,7 +1362,7 @@ def _start_fallback_step(
     rest = raw_step.strip()
     if rest.startswith(("[", "{", "*", "&", "!", "<<:")):
         raise ContractError("fallback parser: unsupported flow-style step mapping")
-    if rest and re.match(r"^[a-zA-Z0-9_-]+\s*:", rest) is None:
+    if rest and _simple_yaml_mapping_entry(rest) is None:
         raise ContractError("fallback parser: unsupported workflow step structure")
     mode, indent = _parse_step_entry(rest, spaces, step) if rest else ("", 0)
     return step, mode, indent
@@ -1325,11 +1391,12 @@ def _handle_fallback_step_line(
     return None, "", 0
 
 
-def _fallback_mapping_value(line: str, key_pattern: str) -> str | None:
-    match = re.match(rf"^{key_pattern}\s*:\s*(.*)$", line)
+def _simple_yaml_mapping_entry(line: str) -> tuple[str, str] | None:
+    match = SIMPLE_YAML_MAPPING_RE.match(line.strip())
     if match is None:
         return None
-    return match.group(1).split("#", 1)[0].strip()
+    key = next(group for group in match.groups()[:3] if group is not None)
+    return key, match.group(4)
 
 
 def _parse_workflow_jobs_fallback(text: str) -> dict[str, list[dict[str, Any]]]:
@@ -1340,8 +1407,10 @@ def _parse_workflow_jobs_fallback(text: str) -> dict[str, list[dict[str, Any]]]:
     cur_step: dict[str, Any] | None = None
     mode, indent = "", 0
     for line in text.splitlines():
-        jobs_value = _fallback_mapping_value(line, "jobs")
-        if jobs_value is not None:
+        spaces = len(line) - len(line.lstrip(" "))
+        mapping = _simple_yaml_mapping_entry(line)
+        if spaces == 0 and mapping is not None and mapping[0] == "jobs":
+            jobs_value = mapping[1].split("#", 1)[0].strip()
             if jobs_value:
                 raise ContractError("fallback parser: unsupported flow-style jobs mapping")
             in_jobs = True
@@ -1350,15 +1419,20 @@ def _parse_workflow_jobs_fallback(text: str) -> dict[str, list[dict[str, Any]]]:
             in_jobs = False
         if not in_jobs:
             continue
-        m_job = re.match(r"^  ([a-zA-Z0-9_-]+)\s*:\s*(.*)$", line)
-        if m_job and not m_job.group(2).split("#", 1)[0].strip():
-            cur_job = m_job.group(1)
+        job_mapping = mapping if spaces == WORKFLOW_JOB_INDENT else None
+        if job_mapping and not job_mapping[1].split("#", 1)[0].strip():
+            cur_job = job_mapping[0]
             jobs[cur_job] = []
             in_steps, cur_step, mode, indent = False, None, "", 0
-        elif m_job:
+        elif job_mapping:
             raise ContractError("fallback parser: unsupported inline job mapping")
-        elif cur_job is not None and _fallback_mapping_value(line, r"    steps") is not None:
-            if _fallback_mapping_value(line, r"    steps"):
+        elif (
+            cur_job is not None
+            and spaces == WORKFLOW_STEPS_INDENT
+            and mapping is not None
+            and mapping[0] == "steps"
+        ):
+            if mapping[1].split("#", 1)[0].strip():
                 raise ContractError("fallback parser: unsupported flow-style steps sequence")
             in_steps = True
         elif in_steps and re.match(r"^    \S", line):

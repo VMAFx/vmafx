@@ -31024,6 +31024,10 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   is excluded from bootstrap build locks, Dependency Review truthfully
   permits dual-licensed `pkg:pypi/text-unidecode` package-wide, and
   root `Dockerfile` isolates Python installs into a dedicated virtual environment.
+  Follow-up fail-closed fixtures narrow dependency-only classification to the
+  explicit allowlist, make the no-PyYAML parser honor quoted block keys, keep
+  annotated and `getattr` Nox aliases under inspection, and enforce manifest
+  output/input/consumer paths as repo-relative on POSIX and Windows.
 
 
 - **libvmaf symbol visibility** — `libvmaf.so.3` no longer exports 207 internal

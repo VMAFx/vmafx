@@ -164,18 +164,42 @@ via `--break-system-packages` caused pip to conflict with Debian's pre-installed
 and placing `/opt/vmaf-venv/bin` in `PATH` completely isolates the wheel installations
 from system packages, avoiding collisions without requiring `--break-system-packages`.
 
+### 3.9 Adversarial fail-closed review
+
+A follow-up adversarial review found four parser/authority edges that the first
+fixture set did not cover:
+
+1. The dependency-PR classifier admitted any basename ending in `.in` and any
+   `manifest.json`, so a bot edit to `core/include/libvmaf/version.h.in` could
+   bypass the documentation gates. The exemption now follows the explicit
+   dependency allowlist: `requirements/*` and named `requirements*.in` inputs
+   retain authority, while generic `.in` and `manifest.json` basenames do not.
+2. The no-PyYAML workflow fallback recognized only unquoted `jobs`, job-id, and
+   `steps` keys. Simple single- or double-quoted block keys now parse identically
+   to PyYAML, so a pre-checkout repo-local helper is reported in both modes.
+3. The Nox AST scan followed plain assignments only. It now follows annotated
+   session/method aliases and literal `getattr(session, "install")` aliases,
+   keeping the eventual install call under the same fail-closed policy.
+4. `pathlib.Path` used host semantics while validating manifest paths, so a
+   Windows drive path could appear relative on a POSIX runner; alias consumer
+   paths were not validated at all. One POSIX-and-Windows predicate now requires
+   output, input, and consumer bindings to remain local and repo-relative.
+
+Each edge was first captured by a deterministic failing fixture, then corrected
+without changing any lock contents or Netflix golden-data assertion.
+
 ## 4. Verification Evidence
 
 - `scripts/ci/check_python_dependency_locks.py check`: Exit 0 (25 locks validated, all installs verified).
-- `python3 -m unittest scripts/ci/tests/test_python_dependency_locks.py`: Exit 0 (100 tests passing).
+- `python3 -m unittest scripts/ci/tests/test_python_dependency_locks.py`: Exit 0 (113 tests passing).
 - `python3 -m unittest scripts/ci/tests/test_scorecard_workflow.py`: Exit 0 (7 tests passing).
-- `pytest scripts/ci/tests`: Exit 0 (407 tests passing).
+- `pytest scripts/ci/tests`: Exit 0 (420 tests and 270 subtests passing).
 - Pinned Nox 2026.8.17 installation from `requirements/locks/nox.txt`: Exit 0.
 - `nox -l`: Exit 0; ROI-score and ensemble-kit resolve to Python 3.12.
 - `nox -s vmaf_tune -- --collect-only -q`: Exit 0; locked session install
   succeeded and collected 2,053 tests.
 - `python3 scripts/ci/tests/test_ci_impact.py`: Exit 0 (31 tests passing).
-- `bash scripts/ci/test-classify-dependency-pr.sh`: Exit 0 (29 tests passing).
+- `bash scripts/ci/test-classify-dependency-pr.sh`: Exit 0 (32 tests passing).
 - `actionlint .github/workflows/*.yml`: Clean exit 0 across all 34 workflows.
 - `shellcheck`: Clean exit 0 across all scripts.
 - `hadolint`: Clean exit 0 across all Dockerfiles.

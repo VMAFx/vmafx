@@ -12,3 +12,7 @@
   is excluded from bootstrap build locks, Dependency Review truthfully
   permits dual-licensed `pkg:pypi/text-unidecode` package-wide, and
   root `Dockerfile` isolates Python installs into a dedicated virtual environment.
+  Follow-up fail-closed fixtures narrow dependency-only classification to the
+  explicit allowlist, make the no-PyYAML parser honor quoted block keys, keep
+  annotated and `getattr` Nox aliases under inspection, and enforce manifest
+  output/input/consumer paths as repo-relative on POSIX and Windows.
