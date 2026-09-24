@@ -164,6 +164,15 @@ fields: otherwise GitHub or the aggregator can select the wrong same-named
 check. `scripts/ci/tests/test_ci_impact.py`, `actionlint`, and
 `scripts/ci/check-aggregator-names.sh` pin this structure.
 
+GitHub creates a dependent gate's check run only after every `needs` job has
+completed. Keep `delayedStrictDependencies` in `required-aggregator.yml`
+aligned with every planner/work display name, including every row of a matrix
+whose aggregate result feeds a gate. The aggregator uses those checks as
+registration proxies and gives the gate a bounded propagation window; without
+that mapping its two-minute missing-check grace can fail while legitimate work
+is still running. The check-run query must remain paginated: the converted
+workflows can put a full run above the API's 100-item page size.
+
 ### Cppcheck POSIX model correction
 
 The required Cppcheck job derives `build/cppcheck-posix-vmafx.cfg` from the

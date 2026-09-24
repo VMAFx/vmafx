@@ -557,7 +557,11 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
   accept only `true:success` or `false:skipped` and must fail when planning fails.
   Keep the `(?m)` multiline anchor in the no-path-filter regression: omitting it
   makes the assertion inspect only the beginning of the YAML and silently miss
-  every nested `paths:` key.
+  every nested `paths:` key. GitHub does not create the gate check until its
+  `needs` chain completes, so the required aggregator must keep polling while a
+  mapped planner/work proxy is active and briefly after it completes. Preserve
+  the complete `delayedStrictDependencies` map and paginated check-run fetch;
+  `test_hiss_replay_contract.py` executes both failure modes.
 
 ## tidy-ratchet.py invariants (ADR-1142)
 

@@ -44,7 +44,9 @@ these Meson blocks.
    distinctly named heavy `work` jobs; `if: always()` gate jobs alone own the exact
    required context names and fail closed on planner/work disagreement (BUG-098).
    Keep those twelve names in `strictMustReport`; absence is no longer an accepted
-   path-skip outcome.
+   path-skip outcome. GitHub creates each gate check only after its `needs` work
+   completes, so keep every planner/work display name in the aggregator's
+   `delayedStrictDependencies` map and preserve the paginated check-run fetch.
 2. **Keep public libvmaf headers in `selectors.rust.patterns`.** `vmafx-sys`
    generates FFI bindings from `core/include/libvmaf/libvmaf.h` using `bindgen`, so
    `core/include/libvmaf/**` must select Rust work even though trigger-level filters

@@ -7,8 +7,9 @@ name: CI
 # structural deadlock. This single workflow runs on every PR (no path filter)
 # and verifies that each named required check on the head SHA reported an
 # accepted result (with stricter success-only handling for strictMustReport). It becomes the
-# single required-status-check that branch protection enforces; the individual
-# build/lint workflows can keep their path filters.
+# single required-status-check that branch protection enforces. Required-context
+# workflows route expensive work in-job; only non-required/advisory workflows may
+# retain trigger path filters.
 
 on:
   pull_request:
@@ -287,6 +288,53 @@ jobs:
               'Doxygen Public API',
             ];
 
+            // GitHub does not create a dependent job's check run until every
+            // `needs` job has completed. The BUG-098 exact-name gates therefore
+            // remain absent while their distinctly named work checks run. Keep
+            // polling through that legitimate absence, plus a short propagation
+            // window after the last dependency completes. Matrix gates depend on
+            // the aggregate matrix result, so each maps every row in that matrix.
+            const delayedStrictDependencies = {
+              "Linux Intel LLVM": [
+                "Plan build impact",
+                "Linux Intel LLVM work",
+                "macOS Clang+Metal work",
+                "Windows MSVC+CUDA (full) work"
+              ],
+              "macOS Clang+Metal": [
+                "Plan build impact",
+                "Linux Intel LLVM work",
+                "macOS Clang+Metal work",
+                "Windows MSVC+CUDA (full) work"
+              ],
+              "Windows MSVC+CUDA (full)": [
+                "Plan build impact",
+                "Linux Intel LLVM work",
+                "macOS Clang+Metal work",
+                "Windows MSVC+CUDA (full) work"
+              ],
+              "FFmpeg Ubuntu gcc": [
+                "Plan FFmpeg impact",
+                "FFmpeg Ubuntu gcc work",
+                "FFmpeg macOS clang work"
+              ],
+              "FFmpeg macOS clang": [
+                "Plan FFmpeg impact",
+                "FFmpeg Ubuntu gcc work",
+                "FFmpeg macOS clang work"
+              ],
+              "FFmpeg SYCL": ["Plan FFmpeg impact", "FFmpeg SYCL work"],
+              "Docker Image Build": ["Plan Docker image impact", "Docker Image Build work"],
+              "Dev Container Build": [
+                "Plan dev-container impact",
+                "Dev Container Build work"
+              ],
+              "vmafx-sys CI": ["Plan Rust impact", "vmafx-sys CI work"],
+              "cargo-deny": ["Plan Rust impact", "cargo-deny work"],
+              "helm lint + template": ["Plan Helm impact", "helm lint + template work"],
+              "Doxygen Public API": ["Plan Doxygen impact", "Doxygen Public API work"]
+            };
+
             // ADR-1151 — absent-means-pass (below) is correct ADR-0313
             // semantics for a doc-only PR and wrong for the one PR whose merge
             // creates a release: a release PR's diff is
@@ -328,6 +376,10 @@ jobs:
             const runCreatedMs = Date.parse(currentRun.data.created_at);
             const minCreatedMs = runCreatedMs - 2 * 60 * 1000;
             const registrationGraceDeadline = Date.now() + 2 * 60 * 1000;
+            const registrationPropagationMs = 2 * 60 * 1000;
+            const activeStatuses = new Set([
+              'queued', 'in_progress', 'requested', 'waiting', 'pending',
+            ]);
 
             function runTimestampMs(run) {
               return Date.parse(run.started_at || run.created_at || run.completed_at || 0);
@@ -345,7 +397,34 @@ jobs:
               return byName;
             }
 
-            // Poll up to 90 minutes for sibling workflows to register their
+            async function listAllCheckRuns() {
+              const checkRuns = [];
+              for (let page = 1; page <= 20; page += 1) {
+                const { data } = await github.rest.checks.listForRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: sha,
+                  per_page: 100,
+                  page,
+                });
+                checkRuns.push(...data.check_runs);
+                if (data.check_runs.length < 100) return checkRuns;
+              }
+              throw new Error('more than 2000 check runs reported for one SHA');
+            }
+
+            function delayedRegistrationStillExpected(name, nowMs) {
+              return (delayedStrictDependencies[name] || []).some(dependency => {
+                const run = byName[dependency];
+                if (!run) return false;
+                if (activeStatuses.has(run.status)) return true;
+                const completedMs = Date.parse(run.completed_at || 0);
+                return Number.isFinite(completedMs) &&
+                  nowMs - completedMs <= registrationPropagationMs;
+              });
+            }
+
+            // Poll up to 240 minutes for sibling workflows to register their
             // check_runs and reach a terminal state. A run that has never
             // appeared after a short registration grace period is treated as
             // path-filter-not-applicable (acceptable). Older draft-era
@@ -379,23 +458,28 @@ jobs:
             const deadline = Date.now() + 240 * 60 * 1000;
             let byName = {};
             while (Date.now() < deadline) {
-              const { data: { check_runs } } = await github.rest.checks.listForRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: sha,
-                per_page: 100,
-              });
+              const check_runs = await listAllCheckRuns();
               byName = newestByName(check_runs);
               const missing = required.filter(n => !byName[n]);
               const stillRunning = required.filter(n => {
                 const run = byName[n];
-                return run && (run.status === 'queued' || run.status === 'in_progress');
+                return run && activeStatuses.has(run.status);
               });
-              if (stillRunning.length === 0 && (missing.length === 0 || Date.now() > registrationGraceDeadline)) {
+              const nowMs = Date.now();
+              const delayedMissing = missing.filter(name =>
+                delayedRegistrationStillExpected(name, nowMs));
+              if (stillRunning.length === 0 && delayedMissing.length === 0 &&
+                  (missing.length === 0 || nowMs > registrationGraceDeadline)) {
                 break;
               }
               core.info(`Waiting on: ${stillRunning.slice(0, 3).join(', ')}` +
                         (stillRunning.length > 3 ? ` (+${stillRunning.length - 3} more)` : ''));
+              if (delayedMissing.length > 0) {
+                core.info(`Waiting for dependent gate registration: ` +
+                          `${delayedMissing.slice(0, 3).join(', ')}` +
+                          (delayedMissing.length > 3
+                            ? ` (+${delayedMissing.length - 3} more)` : ''));
+              }
               if (missing.length > 0 && Date.now() <= registrationGraceDeadline) {
                 core.info(`Waiting for check registration: ${missing.slice(0, 3).join(', ')}` +
                           (missing.length > 3 ? ` (+${missing.length - 3} more)` : ''));

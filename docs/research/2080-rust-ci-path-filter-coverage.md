@@ -65,6 +65,15 @@ All twelve gate names also live in the aggregator's `strictMustReport` set. Each
 workflow now declares both pull-request and master-push triggers, so a missing gate
 is a broken registration rather than a legitimate not-applicable result.
 
+GitHub does not create a dependent job's check run when the workflow starts. It
+creates that check only after every job in `needs` completes. The aggregator's
+two-minute missing-registration grace therefore cannot judge the exact-name gates
+directly while 30-75 minute work jobs are running. It now maps each delayed gate to
+its planner/work check names, keeps polling while one is active, and allows a bounded
+two-minute propagation window after completion. It also reads every Checks API page;
+the conversion adds enough planner/work/gate checks that a full run can exceed the
+100-item page size.
+
 The routing is explicit:
 
 | Workflow | Selector | Required contexts |
@@ -100,13 +109,23 @@ consumer contract is broken and avoids check-name masking.
 
 - Red-cap: after fixing the multiline anchor, the workflow contract test found the
   seven files listed above instead of passing falsely.
+- Live GitHub evidence: in run `35953701621`, dependent check
+  `ShellCheck + shfmt` was not created until `Pre-Commit` completed; its
+  `created_at` was `2026-09-24T04:04:56Z`, over five minutes after the workflow
+  started at `03:59:06Z`. That falsifies the assumption that an `if: always()`
+  gate is visible during its `needs` work.
 - `python3 -m unittest scripts.ci.tests.test_hiss_replay_contract scripts.ci.tests.test_ci_impact scripts.ci.tests.test_rust_ci_workflow_contract -v`
-  passes 41 tests, including exact selector routes, planner/work/gate structure,
-  master-push coverage, and strict must-report membership.
-- `actionlint` passes all seven modified workflows.
-- PyYAML parses all seven modified workflows.
+  passes 45 tests, including exact selector routes, planner/work/gate structure,
+  all 576 planner/selector/work states across the twelve gates, master-push
+  coverage, strict must-report membership, delayed registration, and check-run
+  pagination.
+- `actionlint` passes all eight modified workflows.
+- PyYAML parses all eight modified workflows.
 - `bash scripts/ci/check-aggregator-names.sh` reports all 79 configured required
   checks exactly once; matrix work names are distinct from their gate names.
+- `python3 scripts/ci/test_ffmpeg_patch_workflow_contract.py` passes 13 tests
+  against the renamed FFmpeg work jobs and their existing warning-clean build
+  contract.
 
 Hosted CI and post-merge verification remain required before BUG-098 is marked closed
 on `master`.

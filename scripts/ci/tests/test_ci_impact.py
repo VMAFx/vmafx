@@ -30,6 +30,7 @@ PLANNER = REPO_ROOT / "scripts" / "ci" / "plan-ci-impact.py"
 CONFIG = REPO_ROOT / ".github" / "ci-impact.json"
 REQUIRED_AGGREGATOR = REPO_ROOT / ".github" / "workflows" / "required-aggregator.yml"
 GIT = shutil.which("git") or "/usr/bin/git"
+BASH = shutil.which("bash") or "/bin/bash"
 
 REQUIRED_CONSUMER_CONTRACTS = {
     "build.yml": (
@@ -501,6 +502,26 @@ class WorkflowContract(unittest.TestCase):
             raise AssertionError(f"missing job {job_id}")
         return match.group(1)
 
+    @staticmethod
+    def _literal_run(job_block: str) -> str:
+        """Extract the first literal run script from a raw workflow job."""
+        lines = job_block.splitlines()
+        try:
+            start = lines.index("        run: |") + 1
+        except ValueError as exc:
+            raise AssertionError("job has no literal run script") from exc
+        body = []
+        for line in lines[start:]:
+            if line.startswith("          "):
+                body.append(line[10:])
+            elif line:
+                break
+            else:
+                body.append("")
+        if not body:
+            raise AssertionError("literal run script is empty")
+        return "\n".join(body)
+
     def test_required_contexts_workflows_have_no_path_filters(self) -> None:
         """Every workflow hosting an aggregator-required check must always start;
         routing happens inside the job via the planner, never via `paths:`."""
@@ -566,6 +587,45 @@ class WorkflowContract(unittest.TestCase):
         self.assertIsNotNone(match)
         strict_names = set(re.findall(r"'([^']+)'", match.group(1) if match else ""))
         self.assertLessEqual(expected_strict, strict_names)
+
+    def test_gate_scripts_accept_only_the_two_valid_state_tuples(self) -> None:
+        workflow_root = REPO_ROOT / ".github" / "workflows"
+        for filename, (_selector, _work_jobs, gates) in REQUIRED_CONSUMER_CONTRACTS.items():
+            text = (workflow_root / filename).read_text(encoding="utf-8")
+            for gate_job, check_name, _work_job in gates:
+                script = self._literal_run(self._job_block(text, gate_job))
+                for plan_result in ("success", "failure", "cancelled", "skipped"):
+                    for selected in ("true", "false", ""):
+                        for work_result in ("success", "skipped", "failure", "cancelled"):
+                            expected = plan_result == "success" and (
+                                selected,
+                                work_result,
+                            ) in {("true", "success"), ("false", "skipped")}
+                            result = run_command(
+                                [BASH, "-eu", "-o", "pipefail", "-c", script],
+                                allowed_executables=(BASH,),
+                                capture_output=True,
+                                text=True,
+                                env={
+                                    **os.environ,
+                                    "PLAN_RESULT": plan_result,
+                                    "SELECTED": selected,
+                                    "WORK_RESULT": work_result,
+                                },
+                                timeout_seconds=60,
+                            )
+                            with self.subTest(
+                                workflow=filename,
+                                gate=check_name,
+                                plan=plan_result,
+                                selected=selected,
+                                work=work_result,
+                            ):
+                                self.assertEqual(
+                                    result.returncode == 0,
+                                    expected,
+                                    f"stdout={result.stdout!r}; stderr={result.stderr!r}",
+                                )
 
 
 if __name__ == "__main__":
