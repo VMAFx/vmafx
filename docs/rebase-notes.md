@@ -61,6 +61,8 @@ these Meson blocks.
    `VMAF_SYCL_NO_GRAPH=1` showed identical drift; the corruption was in host memory before any
    compute submitted. Do not re-introduce event dependencies between `combined_queue` operations
    to "fix" determinism — the root cause was a buffer lifetime issue, not a command-queue ordering.
+   The full investigation and rejected alternatives are recorded in
+   [Research-2082](research/2082-sycl-upload-host-lifetime.md).
 
 ## fix/sycl-a380-snapshots-bug040 — CPU and A380 SYCL snapshots regenerated together (2026-09-23)
 
