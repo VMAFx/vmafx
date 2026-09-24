@@ -8,8 +8,10 @@
     `to_numpy(dtype=np.float64)`, preventing `ValueError: could not convert
     string to float` when processing parquets with string metadata columns
     (e.g. `codec`, `chug_orientation`); exclude all-null numeric features before
-    complete-case filtering; and record both skipped sets in the JSON report.
+    complete-case filtering; exclude zero-variance features before Pearson and
+    ranking; and record all skipped sets in the JSON report.
   - `ai/tests/test_feature_correlation.py`: regression test
     `test_corr_main_skips_non_numeric_columns` verifies that string and metadata
     columns and unavailable all-null features are safely skipped, omitted from
-    analysis, and numeric feature columns are retained in schema order.
+    analysis, constant features cannot warn or enter consensus through a tie,
+    and varying numeric feature columns are retained in schema order.

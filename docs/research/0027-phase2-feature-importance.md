@@ -281,8 +281,11 @@ are excluded, while numerically encoded categories remain candidates. Numeric
 columns containing only missing values are recorded and excluded before the
 complete-case row filter; otherwise one unavailable metric would reduce a
 mixed aggregate table to zero rows. `feature_cols` retains source-schema order,
-and the report records both exclusion sets so two runs can distinguish schema
-drift from missing feature extraction.
+and the report records all exclusion sets so two runs can distinguish schema
+drift from missing feature extraction. Zero-variance numeric columns are
+recorded in `skipped_constant_columns` and excluded before Pearson and feature
+ranking: their correlation is undefined, and a zero-score tie is not evidence
+that they belong in a consensus top-K set.
 
 ## References
 

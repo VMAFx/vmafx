@@ -285,7 +285,8 @@ when its parquet-backed pandas dtype is numeric. Text, boolean, categorical,
 object, and decimal columns are skipped; a numerically encoded category is
 included because the physical dtype, not the column name, is authoritative.
 The report preserves input-schema order in `feature_cols` and records excluded
-columns in `skipped_non_numeric_columns` and `skipped_all_nan_columns`.
+columns in `skipped_non_numeric_columns`, `skipped_all_nan_columns`, and
+`skipped_constant_columns`.
 
 All-null numeric features are common in partially populated aggregate tables.
 They are removed before complete-case filtering so one unavailable metric does
@@ -293,9 +294,9 @@ not erase every row. Remaining per-row missing values still use complete-case
 filtering across the selected features and target. A table with no usable
 numeric feature, or no complete feature/target row, fails with a direct
 diagnostic instead of passing an empty array into NumPy or scikit-learn.
-Constant numeric columns remain candidates; their Pearson correlation is
-mathematically undefined and may appear as `NaN`, so they must not be read as
-useful signal merely because they remain in `feature_cols`.
+Constant numeric columns are also excluded before analysis: their Pearson
+correlation is undefined, NumPy warns under the required warnings-as-errors
+policy, and a zero-importance tie must not promote them into `consensus_topk`.
 `ai/scripts/phase3_subset_sweep.py --out` also records `run_provenance` next to
 the subset result keys, including the source parquet, subset list, seed policy,
 standardization flag, and report path used for Phase-3 model-selection sweeps.

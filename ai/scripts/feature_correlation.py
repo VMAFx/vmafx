@@ -40,6 +40,7 @@ class _AnalysisInput:
     feature_cols: list[str]
     skipped_non_numeric: list[str]
     skipped_all_nan: list[str]
+    skipped_constant: list[str]
     n_rows_clean: int
 
 
@@ -123,14 +124,17 @@ def _top_k_consensus(importances: dict[str, dict[str, float]], k: int) -> list[s
 
 def _select_feature_columns(
     df: Any, candidate_cols: list[str]
-) -> tuple[list[str], list[str], list[str]]:
-    """Partition candidates into usable numeric, non-numeric, and all-null columns."""
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Partition candidates into usable and explicitly skipped feature columns."""
     numeric_cols = list(df[candidate_cols].select_dtypes(include="number").columns)
     skipped_non_numeric = sorted(set(candidate_cols) - set(numeric_cols))
     skipped_all_nan = sorted(column for column in numeric_cols if not df[column].notna().any())
     all_nan = set(skipped_all_nan)
-    usable = [column for column in numeric_cols if column not in all_nan]
-    return usable, skipped_non_numeric, skipped_all_nan
+    populated = [column for column in numeric_cols if column not in all_nan]
+    skipped_constant = sorted(column for column in populated if df[column].dropna().nunique() <= 1)
+    constant = set(skipped_constant)
+    usable = [column for column in populated if column not in constant]
+    return usable, skipped_non_numeric, skipped_all_nan, skipped_constant
 
 
 def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
@@ -161,12 +165,16 @@ def _prepare_analysis_input(parquet: Path, target: str) -> _AnalysisInput:
         raise ValueError(f"target column is missing: {target}")
     drop_cols = {"source", "dis_basename", "frame_index", "key", target}
     candidate_cols = [column for column in df.columns if column not in drop_cols]
-    feat_cols, skipped_non_numeric, skipped_all_nan = _select_feature_columns(df, candidate_cols)
+    feat_cols, skipped_non_numeric, skipped_all_nan, skipped_constant = _select_feature_columns(
+        df, candidate_cols
+    )
     print(f"[corr] parquet={parquet} rows={len(df)} features={len(feat_cols)} target={target}")
     if skipped_non_numeric:
         print(f"[corr] skipped non-numeric columns: {skipped_non_numeric}")
     if skipped_all_nan:
         print(f"[corr] skipped all-NaN numeric columns: {skipped_all_nan}")
+    if skipped_constant:
+        print(f"[corr] skipped constant numeric columns: {skipped_constant}")
     if not feat_cols:
         raise ValueError("no usable numeric feature columns remain after filtering")
 
@@ -180,6 +188,7 @@ def _prepare_analysis_input(parquet: Path, target: str) -> _AnalysisInput:
         feature_cols=feat_cols,
         skipped_non_numeric=skipped_non_numeric,
         skipped_all_nan=skipped_all_nan,
+        skipped_constant=skipped_constant,
         n_rows_clean=len(df_clean),
     )
 
@@ -228,6 +237,7 @@ def _build_report(
         "feature_cols": data.feature_cols,
         "skipped_non_numeric_columns": data.skipped_non_numeric,
         "skipped_all_nan_columns": data.skipped_all_nan,
+        "skipped_constant_columns": data.skipped_constant,
         "pearson": analysis["pearson"],
         "redundant_pairs": analysis["redundant_pairs"],
         "redundancy_threshold": args.redundancy_threshold,

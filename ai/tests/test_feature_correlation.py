@@ -30,6 +30,10 @@ from feature_correlation import (
 from feature_correlation import main as corr_main
 
 
+def _reject_nonfinite_json(token: str) -> None:
+    raise AssertionError(f"non-finite JSON token: {token}")
+
+
 def _make_synthetic_parquet(path: Path, *, n: int = 500, seed: int = 0) -> Path:
     rng = np.random.default_rng(seed)
     base = rng.standard_normal(n)
@@ -92,20 +96,21 @@ def test_top_k_consensus_handles_missing_method():
 def test_feature_selection_preserves_numeric_schema_order():
     df = pd.DataFrame(
         {
-            "nullable_float": pd.Series([1.0, None], dtype="Float64"),
-            "flag": pd.Series([True, False], dtype="boolean"),
-            "nullable_int": pd.Series([1, None], dtype="Int64"),
-            "category": pd.Series(["a", "b"], dtype="category"),
-            "all_nan": [np.nan, np.nan],
-            "constant": [2.0, 2.0],
+            "nullable_float": pd.Series([1.0, 2.0, None], dtype="Float64"),
+            "flag": pd.Series([True, False, True], dtype="boolean"),
+            "nullable_int": pd.Series([1, 2, None], dtype="Int64"),
+            "category": pd.Series(["a", "b", "a"], dtype="category"),
+            "all_nan": [np.nan, np.nan, np.nan],
+            "constant": [2.0, 2.0, 2.0],
         }
     )
 
-    usable, non_numeric, all_nan = _select_feature_columns(df, list(df.columns))
+    usable, non_numeric, all_nan, constant = _select_feature_columns(df, list(df.columns))
 
-    assert usable == ["nullable_float", "nullable_int", "constant"]
+    assert usable == ["nullable_float", "nullable_int"]
     assert non_numeric == ["category", "flag"]
     assert all_nan == ["all_nan"]
+    assert constant == ["constant"]
 
 
 def test_corr_main_skips_non_numeric_columns(tmp_path, monkeypatch, capsys):
@@ -141,7 +146,7 @@ def test_corr_main_skips_non_numeric_columns(tmp_path, monkeypatch, capsys):
     assert rc == 0
     captured = capsys.readouterr().out
     assert "[corr] skipped non-numeric columns: ['chug_orientation', 'codec']" in captured
-    payload = json.loads(out.read_text())
+    payload = json.loads(out.read_text(), parse_constant=_reject_nonfinite_json)
     # non-numeric columns must be skipped; numeric features must be present
     feature_keys = set(payload.get("pearson", {}).keys())
     assert "feat_a" in feature_keys
@@ -151,6 +156,7 @@ def test_corr_main_skips_non_numeric_columns(tmp_path, monkeypatch, capsys):
     assert payload["feature_cols"] == ["feat_a", "feat_b"]
     assert payload["skipped_non_numeric_columns"] == ["chug_orientation", "codec"]
     assert payload["skipped_all_nan_columns"] == []
+    assert payload["skipped_constant_columns"] == []
 
 
 def test_corr_main_skips_all_nan_numeric_columns(tmp_path, monkeypatch, capsys):
@@ -179,10 +185,38 @@ def test_corr_main_skips_all_nan_numeric_columns(tmp_path, monkeypatch, capsys):
 
     assert corr_main() == 0
     assert "[corr] skipped all-NaN numeric columns: ['feat_unavailable']" in capsys.readouterr().out
-    payload = json.loads(out.read_text())
+    payload = json.loads(out.read_text(), parse_constant=_reject_nonfinite_json)
     assert payload["feature_cols"] == ["feat_available"]
     assert payload["skipped_all_nan_columns"] == ["feat_unavailable"]
     assert "feat_unavailable" not in payload["pearson"]
+
+
+def test_corr_main_skips_constant_numeric_columns(tmp_path, monkeypatch, capsys):
+    """Zero-variance features must not warn or enter rankings as useful signal."""
+    pytest.importorskip("sklearn")
+    parquet = tmp_path / "syn_with_constant.parquet"
+    feature = np.linspace(-1.0, 1.0, 200, dtype=np.float32)
+    pd.DataFrame(
+        {
+            "feat_varying": feature,
+            "feat_constant": np.full(feature.shape, 7.0, dtype=np.float32),
+            "vmaf": 50.0 + feature,
+        }
+    ).to_parquet(parquet)
+    out = tmp_path / "report.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["feature_correlation.py", "--parquet", str(parquet), "--out", str(out)],
+    )
+
+    assert corr_main() == 0
+    assert "[corr] skipped constant numeric columns: ['feat_constant']" in capsys.readouterr().out
+    payload = json.loads(out.read_text(), parse_constant=_reject_nonfinite_json)
+    assert payload["feature_cols"] == ["feat_varying"]
+    assert payload["skipped_constant_columns"] == ["feat_constant"]
+    assert "feat_constant" not in payload["pearson"]
+    assert "feat_constant" not in payload["consensus_topk"]
 
 
 def test_corr_main_rejects_table_without_usable_numeric_features(tmp_path, monkeypatch):
@@ -210,9 +244,9 @@ def test_corr_main_rejects_table_without_complete_rows(tmp_path, monkeypatch):
     parquet = tmp_path / "syn_without_complete_rows.parquet"
     pd.DataFrame(
         {
-            "feat_a": [1.0, np.nan],
-            "feat_b": [np.nan, 2.0],
-            "vmaf": [80.0, 81.0],
+            "feat_a": [1.0, 2.0, np.nan, np.nan],
+            "feat_b": [np.nan, np.nan, 2.0, 3.0],
+            "vmaf": [80.0, 81.0, 82.0, 83.0],
         }
     ).to_parquet(parquet)
     monkeypatch.setattr(
@@ -236,7 +270,7 @@ def test_corr_main_invokable_via_argparse(tmp_path, monkeypatch):
     )
     rc = corr_main()
     assert rc == 0
-    payload = json.loads(out.read_text())
+    payload = json.loads(out.read_text(), parse_constant=_reject_nonfinite_json)
     assert "pearson" in payload
     assert "consensus_topk" in payload
     assert "redundant_pairs" in payload
