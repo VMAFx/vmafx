@@ -15,8 +15,10 @@ No third-party dependencies (uses stdlib tomllib).
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -55,27 +57,50 @@ class PytestPythonpathContract(unittest.TestCase):
 
     def test_missing_pythonpath_red_demonstration(self) -> None:
         """Subprocess without src in sys.path must fail to import vmaf_mcp."""
-        cmd = [
-            sys.executable,
-            "-c",
-            "import sys; sys.path = [p for p in sys.path if 'vmaf' not in p and 'src' not in p]; import vmaf_mcp",
-        ]
-        proc = subprocess.run(  # noqa: S603 -- fixed argv test fixture
-            cmd, capture_output=True, text=True
-        )
-        self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("No module named 'vmaf_mcp'", proc.stderr)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            neutral_site = Path(temp_dir)
+            neutral_package = neutral_site / "vmaf_mcp"
+            neutral_package.mkdir()
+            (neutral_package / "__init__.py").write_text(
+                '__version__ = "neutral-wheel"\n', encoding="utf-8"
+            )
+            child_env = os.environ.copy()
+            child_env["PYTHONPATH"] = str(neutral_site)
+            cmd = [
+                sys.executable,
+                "-I",
+                "-S",
+                "-c",
+                "import vmaf_mcp",
+            ]
+            proc = subprocess.run(  # noqa: S603 -- fixed argv test fixture
+                cmd, env=child_env, capture_output=True, text=True
+            )
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("ModuleNotFoundError", proc.stderr)
+            self.assertIn("vmaf_mcp", proc.stderr)
 
     def test_present_pythonpath_import_success(self) -> None:
         """Subprocess with src prepended to sys.path must import vmaf_mcp successfully."""
-        src_path = str(REPO_ROOT / "mcp-server" / "vmaf-mcp" / "src")
+        src_path = REPO_ROOT / "mcp-server" / "vmaf-mcp" / "src"
+        src_path_literal = repr(str(src_path))
+        expected_init_literal = repr(str(src_path / "vmaf_mcp" / "__init__.py"))
         cmd = [
             sys.executable,
+            "-I",
+            "-S",
             "-c",
-            f"import sys; sys.path.insert(0, {src_path!r}); import vmaf_mcp; assert bool(vmaf_mcp.__version__)",
+            (
+                "import sys; from pathlib import Path; "
+                f"sys.path.insert(0, {src_path_literal}); "
+                "import vmaf_mcp; "
+                f"assert Path(vmaf_mcp.__file__).resolve() == Path({expected_init_literal}).resolve(); "
+                "assert bool(vmaf_mcp.__version__)"
+            ),
         ]
+        child_env = os.environ.copy()
         proc = subprocess.run(  # noqa: S603 -- fixed argv test fixture
-            cmd, capture_output=True, text=True
+            cmd, env=child_env, capture_output=True, text=True
         )
         self.assertEqual(proc.returncode, 0, f"Import failed: {proc.stderr}")
 

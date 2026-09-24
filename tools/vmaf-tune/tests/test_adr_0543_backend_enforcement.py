@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -330,45 +331,107 @@ def test_adr_0543_error_json_helper_wired_into_every_backend() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_binary_supports_backend_flag_accepts_backend(tmp_path: Path) -> None:
-    fake_bin = tmp_path / "fake_vmaf"
-    fake_bin.write_text("#!/bin/sh\necho 'Supported options: --backend $name'\n")
-    fake_bin.chmod(0o755)
+def test_binary_supports_backend_flag_accepts_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_bin = Path("fake-vmaf")
+    run = Mock(
+        return_value=subprocess.CompletedProcess(
+            [str(fake_bin), "--help"],
+            0,
+            stdout="Supported options: --backend NAME\n",
+            stderr="",
+        )
+    )
+    monkeypatch.setattr(subprocess, "run", run)
+
     assert _binary_supports_backend_flag(fake_bin) is True
+    run.assert_called_once_with(
+        [str(fake_bin), "--help"], capture_output=True, text=True, timeout=10
+    )
 
 
-def test_binary_supports_backend_flag_rejects_legacy(tmp_path: Path) -> None:
-    fake_bin = tmp_path / "legacy_vmaf"
-    fake_bin.write_text("#!/bin/sh\necho 'vmaf: unrecognized option --help'\nexit 255\n")
-    fake_bin.chmod(0o755)
+def test_binary_supports_backend_flag_rejects_legacy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_bin = Path("legacy-vmaf")
+    run = Mock(
+        return_value=subprocess.CompletedProcess(
+            [str(fake_bin), "--help"],
+            255,
+            stdout="",
+            stderr="vmaf: unrecognized option --help\n",
+        )
+    )
+    monkeypatch.setattr(subprocess, "run", run)
+
     assert _binary_supports_backend_flag(fake_bin) is False
 
 
-def test_binary_supports_backend_flag_handles_nonexistent_or_error(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "error",
+    [
+        OSError("not executable"),
+        subprocess.TimeoutExpired(["vmaf", "--help"], timeout=10),
+    ],
+)
+def test_binary_supports_backend_flag_handles_process_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    error: OSError | subprocess.TimeoutExpired,
 ) -> None:
-    assert _binary_supports_backend_flag(tmp_path / "nonexistent") is False
+    monkeypatch.setattr(subprocess, "run", Mock(side_effect=error))
+
+    assert _binary_supports_backend_flag(Path("unusable-vmaf")) is False
 
 
-def test_resolve_vmaf_binary_skips_legacy_system_binary(
+def test_resolve_vmaf_binary_prefers_explicit_override(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fake_bin = tmp_path / "vmaf"
-    fake_bin.write_text("#!/bin/sh\necho 'vmaf: legacy binary without backend'\n")
-    fake_bin.chmod(0o755)
-    monkeypatch.setenv("PATH", str(tmp_path))
-    monkeypatch.delenv("VMAF_BIN_FOR_TESTS", raising=False)
-    res = _resolve_vmaf_binary()
-    assert res != fake_bin
+    explicit = tmp_path / "explicit-vmaf"
+    explicit.touch()
+    which = Mock(return_value=str(tmp_path / "path-vmaf"))
+    capability = Mock(return_value=True)
+    monkeypatch.setenv("VMAF_BIN_FOR_TESTS", str(explicit))
+    monkeypatch.setattr(os, "access", Mock(return_value=True))
+    monkeypatch.setattr(shutil, "which", which)
+    monkeypatch.setattr(sys.modules[__name__], "_binary_supports_backend_flag", capability)
+
+    assert _resolve_vmaf_binary() == explicit
+    which.assert_not_called()
+    capability.assert_not_called()
 
 
-def test_resolve_vmaf_binary_accepts_valid_backend_binary(
+def test_resolve_vmaf_binary_accepts_capable_path_binary(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fake_bin = tmp_path / "vmaf"
-    fake_bin.write_text("#!/bin/sh\necho '--backend options available'\n")
-    fake_bin.chmod(0o755)
-    monkeypatch.setenv("PATH", str(tmp_path))
+    path_binary = tmp_path / "path-vmaf"
+    capability = Mock(return_value=True)
     monkeypatch.delenv("VMAF_BIN_FOR_TESTS", raising=False)
-    res = _resolve_vmaf_binary()
-    assert res == fake_bin
+    monkeypatch.setattr(shutil, "which", Mock(return_value=str(path_binary)))
+    monkeypatch.setattr(sys.modules[__name__], "_binary_supports_backend_flag", capability)
+
+    assert _resolve_vmaf_binary() == path_binary
+    capability.assert_called_once_with(path_binary)
+
+
+def test_resolve_vmaf_binary_filters_path_and_uses_capable_in_tree_build(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo_root = tmp_path / "repo"
+    fake_here = repo_root / "tools" / "vmaf-tune" / "tests"
+    fake_here.mkdir(parents=True)
+    (repo_root / "meson.build").touch()
+    in_tree = repo_root / "build" / "tools" / "vmaf"
+    in_tree.parent.mkdir(parents=True)
+    in_tree.touch()
+    legacy_path = tmp_path / "legacy-path-vmaf"
+    capability = Mock(side_effect=lambda path: path == in_tree)
+
+    monkeypatch.delenv("VMAF_BIN_FOR_TESTS", raising=False)
+    monkeypatch.setattr(sys.modules[__name__], "_HERE", fake_here)
+    monkeypatch.setattr(shutil, "which", Mock(return_value=str(legacy_path)))
+    monkeypatch.setattr(os, "access", Mock(return_value=True))
+    monkeypatch.setattr(sys.modules[__name__], "_binary_supports_backend_flag", capability)
+
+    assert _resolve_vmaf_binary() == in_tree
+    assert capability.call_args_list == [call(legacy_path), call(in_tree)]

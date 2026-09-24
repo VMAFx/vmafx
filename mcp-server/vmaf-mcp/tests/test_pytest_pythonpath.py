@@ -8,6 +8,7 @@ BUG-048 item A12.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,8 @@ def test_vmaf_mcp_importable_without_editable_install() -> None:
     """vmaf_mcp package must be importable via pytest pythonpath = ['src']."""
     import vmaf_mcp
 
+    expected_init = (_MCP_ROOT / "src" / "vmaf_mcp" / "__init__.py").resolve()
+    assert Path(vmaf_mcp.__file__).resolve() == expected_init
     assert hasattr(vmaf_mcp, "__version__")
     assert bool(vmaf_mcp.__version__)
 
@@ -37,25 +40,42 @@ def test_mcp_pyproject_toml_declares_src_pythonpath() -> None:
 
 
 def test_pythonpath_red_demonstration(tmp_path: Path) -> None:
-    """Demonstrate that omitting pythonpath causes ModuleNotFoundError under clean subprocess."""
-    clean_env = {
-        "PATH": "/usr/bin:/bin",
-        "HOME": str(tmp_path),
-        "PYTHONNOUSERSITE": "1",
-    }
+    """Only an explicit source path may satisfy the isolated child import."""
+    neutral_site = tmp_path / "neutral-site"
+    neutral_package = neutral_site / "vmaf_mcp"
+    neutral_package.mkdir(parents=True)
+    (neutral_package / "__init__.py").write_text(
+        '__version__ = "neutral-wheel"\n', encoding="utf-8"
+    )
+    child_env = os.environ.copy()
+    child_env["PYTHONPATH"] = str(neutral_site)
     cmd_fail = [
         sys.executable,
+        "-I",
+        "-S",
         "-c",
-        "import sys; sys.path = [p for p in sys.path if 'src' not in p]; import vmaf_mcp",
+        "import vmaf_mcp",
     ]
-    proc_fail = subprocess.run(cmd_fail, env=clean_env, capture_output=True, text=True)
+    proc_fail = subprocess.run(cmd_fail, env=child_env, capture_output=True, text=True)
     assert proc_fail.returncode != 0
-    assert "No module named 'vmaf_mcp'" in proc_fail.stderr
+    assert "ModuleNotFoundError" in proc_fail.stderr
+    assert "vmaf_mcp" in proc_fail.stderr
 
+    src_path = _MCP_ROOT / "src"
+    src_path_literal = repr(str(src_path))
+    expected_init_literal = repr(str(src_path / "vmaf_mcp" / "__init__.py"))
     cmd_pass = [
         sys.executable,
+        "-I",
+        "-S",
         "-c",
-        f"import sys; sys.path.insert(0, '{_MCP_ROOT / 'src'}'); import vmaf_mcp; assert vmaf_mcp.__version__",
+        (
+            "import sys; from pathlib import Path; "
+            f"sys.path.insert(0, {src_path_literal}); "
+            "import vmaf_mcp; "
+            f"assert Path(vmaf_mcp.__file__).resolve() == Path({expected_init_literal}).resolve(); "
+            "assert bool(vmaf_mcp.__version__)"
+        ),
     ]
-    proc_pass = subprocess.run(cmd_pass, env=clean_env, capture_output=True, text=True)
-    assert proc_pass.returncode == 0
+    proc_pass = subprocess.run(cmd_pass, env=child_env, capture_output=True, text=True)
+    assert proc_pass.returncode == 0, proc_pass.stderr
