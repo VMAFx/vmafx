@@ -16,7 +16,8 @@ authoritative, cryptographically hash-locked dependency pins (`requirements/lock
    - Pinned generator `uv_version` is exact (`0.12.18`). Bumping uv requires reviewed manifest update.
    - Every lock file is generated strictly through `make python-locks-write` (`check_python_dependency_locks.py write`). Never edit `*-lock.txt` or `requirements/locks/*.txt` manually.
    - Each lock file contains `# vmafx-uv-version:`, `# vmafx-input-sha256:`, and `# vmafx-inputs:` header metadata.
-   - Manifest validation rejects remote outputs, directory traversals, duplicate inputs, output flag overrides (`-o`), and unregistered `*-lock.txt` files.
+   - Manifest validation rejects remote outputs, directory traversals, duplicate inputs, output flag overrides (`-o`), repeated install targets, and unregistered `*-lock.txt` files.
+   - `install_aliases` are exact, reviewed objects bound to explicit consumer paths and context (preventing unrelated workflows from consuming alias paths). Traversal, Windows drive/UNC paths, duplicate JSON keys, and unreferenced/dead aliases are rejected. Never replace them with basename/suffix heuristics; a lookalike path outside the manifest is untrusted.
 
 2. **Build backend set (`requirements/locks/package-build.in`)**:
    - Contains all PEP 517 build backend tools and dependencies for locked, unisolated builds (`--no-deps --no-build-isolation`): `build`, `hatchling`, `editables`, `setuptools`, `wheel`, `packaging`, `Cython`, `numpy`, `scipy`.
@@ -27,6 +28,7 @@ authoritative, cryptographically hash-locked dependency pins (`requirements/lock
    - Local wheels require `--no-deps`.
    - Editable and local source tree installs require both `--no-deps` and `--no-build-isolation`.
    - Sdist installations under hash enforcement must use `--no-build-isolation` with backends pre-installed.
+   - `noxfile.py` sessions use one manifest-owned development lock per package compiled with `--universal` (workstation-portable, without Linux-only `--python-platform`), and each Nox session must explicitly pin its Python interpreter version to agree with the lock target. Nox itself comes from `requirements/locks/nox.txt`; never restore an unconstrained `pip install nox` bootstrap.
 
 4. **Bot & Renovation workflow**:
    - Renovate targets `requirements/locks/*.in` and `docs/requirements.txt` via `pip_requirements` manager.

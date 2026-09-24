@@ -11,6 +11,7 @@ offline, while ``write`` is the explicit networked refresh operation.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -34,14 +35,20 @@ PIP_NAME_RE = re.compile(
 PYTHON_NAME_RE = re.compile(r"(?:^|[/\\])(?:python(?:3|[0-9.]*)?|py)(?:\.exe)?$", re.IGNORECASE)
 LOCK_HEADER = "# VMAFx hash lock; regenerate with: make python-locks-write"
 OPTIONS_WITH_VALUES = {
+    "-b",
+    "--build",
     "-c",
     "--cache-dir",
     "--cert",
     "--client-cert",
     "--config-settings",
     "--constraint",
+    "-e",
+    "--editable",
     "--extra-index-url",
+    "-f",
     "--find-links",
+    "-i",
     "--index-url",
     "--prefix",
     "--proxy",
@@ -50,14 +57,37 @@ OPTIONS_WITH_VALUES = {
     "--retries",
     "--root",
     "--src",
+    "-t",
     "--target",
     "--timeout",
     "--trusted-host",
+}
+SHORT_OPTIONS_WITH_VALUES = {"b", "c", "e", "f", "i", "r", "t", "d", "C"}
+SUPPORTED_ABSOLUTE_PREFIXES = ("/build/", "/vmaf/", "/tmp/")  # noqa: S108
+SHELL_RUNNERS = {
+    "sh",
+    "bash",
+    "zsh",
+    "/bin/sh",
+    "/bin/bash",
+    "/bin/zsh",
+    "/usr/bin/sh",
+    "/usr/bin/bash",
+    "/usr/bin/zsh",
 }
 
 
 class ContractError(RuntimeError):
     """A lock or install surface violates the repository contract."""
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ContractError(f"{MANIFEST_PATH}: duplicate JSON key {key!r}")
+        result[key] = value
+    return result
 
 
 INSECURE_COMPILE_FLAGS = {
@@ -69,6 +99,7 @@ INSECURE_COMPILE_FLAGS = {
     "--trusted-host",
     "--no-index",
     "--default-index",
+    "--pre",
 }
 INSECURE_COMPILE_PREFIXES = (
     "-i=",
@@ -140,6 +171,129 @@ def _validate_manifest_compile_args(output: str, compile_args: Any) -> list[str]
     return problems
 
 
+def _normalize_install_target(target: str) -> str:
+    """Normalize separators before comparing manifest-owned install paths."""
+
+    return target.replace("\\", "/")
+
+
+def _check_alias_security(output: str, alias: str, norm: str, context: Any) -> list[str]:
+    problems: list[str] = []
+    if re.match(r"^[A-Za-z]:", alias):
+        problems.append(
+            f"{output}: manifest install alias {alias!r} must not be a Windows drive path"
+        )
+    if norm.startswith("/"):
+        if not any(norm.startswith(prefix) for prefix in SUPPORTED_ABSOLUTE_PREFIXES):
+            problems.append(
+                f"{output}: manifest install alias {alias!r} is an unsupported absolute path"
+            )
+        if ".." in norm.split("/"):
+            problems.append(
+                f"{output}: manifest install alias {alias!r} cannot contain path traversal"
+            )
+    else:
+        clean = norm.replace("${PSScriptRoot}", "scripts/setup").replace("$REPO_ROOT", "")
+        if clean.startswith("/"):
+            clean = clean[1:]
+        base_dir = (
+            context
+            if (isinstance(context, str) and context not in {"container-build", "container"})
+            else ""
+        )
+        candidate = f"{base_dir}/{clean}" if base_dir else clean
+        resolved = os.path.normpath(candidate)
+        if resolved.startswith("..") or resolved == "..":
+            problems.append(
+                f"{output}: manifest install alias {alias!r} traverses outside the repository"
+            )
+    return problems
+
+
+def _validate_alias_item(
+    output: str,
+    item: Any,
+    normalized_output: str,
+    seen_aliases: set[str],
+) -> list[str]:
+    if not isinstance(item, dict):
+        return [
+            f"{output}: manifest install_aliases must contain objects with alias, consumer, and context"
+        ]
+    alias = item.get("alias")
+    if not isinstance(alias, str) or not alias:
+        return [f"{output}: manifest install alias must have a non-empty 'alias' string"]
+    problems = []
+    consumer = item.get("consumer")
+    consumers = item.get("consumers")
+    if consumer is None and consumers is None:
+        problems.append(f"{output}: manifest install alias {alias!r} must specify a consumer")
+    elif consumer is not None and not (
+        (isinstance(consumer, str) and consumer)
+        or (
+            isinstance(consumer, list)
+            and consumer
+            and all(isinstance(c, str) and c for c in consumer)
+        )
+    ):
+        problems.append(
+            f"{output}: manifest install alias {alias!r} consumer must be a non-empty string or array"
+        )
+    elif consumers is not None and not (
+        (
+            isinstance(consumers, list)
+            and consumers
+            and all(isinstance(c, str) and c for c in consumers)
+        )
+        or (isinstance(consumers, str) and consumers)
+    ):
+        problems.append(
+            f"{output}: manifest install alias {alias!r} consumers must be a non-empty array"
+        )
+
+    context = item.get("context") or item.get("provenance")
+    if not isinstance(context, str) or not context:
+        problems.append(
+            f"{output}: manifest install alias {alias!r} must specify a context or provenance"
+        )
+
+    if alias != alias.strip():
+        problems.append(
+            f"{output}: manifest install alias {alias!r} must not contain surrounding whitespace"
+        )
+    if not alias.endswith(".txt"):
+        problems.append(f"{output}: manifest install alias {alias!r} must end with .txt")
+    if "/" not in alias and "\\" not in alias:
+        problems.append(f"{output}: manifest install alias {alias!r} must not be a bare filename")
+    if "://" in alias or alias.startswith(("git+", "hg+", "svn+", "bzr+")):
+        problems.append(f"{output}: manifest install alias {alias!r} must be a local path")
+
+    norm = _normalize_install_target(alias)
+    if norm in seen_aliases:
+        problems.append(f"{output}: manifest install_aliases contains duplicate alias: {alias!r}")
+    seen_aliases.add(norm)
+
+    if norm == normalized_output:
+        problems.append(f"{output}: manifest install alias {alias!r} duplicates output")
+
+    problems.extend(_check_alias_security(output, alias, norm, context))
+    return problems
+
+
+def _validate_manifest_install_aliases(output: str, aliases: Any) -> list[str]:
+    if aliases is None:
+        return []
+    if not isinstance(aliases, list):
+        return [f"{output}: manifest install_aliases must be an array of objects"]
+    problems = []
+    normalized_output = _normalize_install_target(output)
+    seen_aliases: set[str] = set()
+
+    for item in aliases:
+        problems.extend(_validate_alias_item(output, item, normalized_output, seen_aliases))
+    return problems
+
+
 def validate_manifest_entry(entry: dict[str, Any]) -> list[str]:
     output = entry.get("output")
     output_problems = _validate_manifest_output(output)
@@ -148,13 +302,17 @@ def validate_manifest_entry(entry: dict[str, Any]) -> list[str]:
     return [
         *_validate_manifest_inputs(output, entry.get("inputs")),
         *_validate_manifest_compile_args(output, entry.get("compile_args")),
+        *_validate_manifest_install_aliases(output, entry.get("install_aliases")),
     ]
 
 
 def load_manifest(root: Path) -> dict[str, Any]:
     path = root / MANIFEST_PATH
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+        )
     except (OSError, json.JSONDecodeError) as error:
         raise ContractError(f"{MANIFEST_PATH}: {error}") from error
     if not isinstance(data, dict) or not isinstance(data.get("locks"), list):
@@ -162,12 +320,26 @@ def load_manifest(root: Path) -> dict[str, Any]:
     version = data.get("uv_version")
     if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}", version):
         raise ContractError(f"{MANIFEST_PATH}: uv_version must be an exact release")
+    install_targets: set[str] = set()
     for raw_entry in data["locks"]:
         if not isinstance(raw_entry, dict):
             raise ContractError(f"{MANIFEST_PATH}: lock entry is not an object")
         entry_problems = validate_manifest_entry(raw_entry)
         if entry_problems:
             raise ContractError(f"{MANIFEST_PATH}: {'; '.join(entry_problems)}")
+        aliases: list[str] = []
+        for alias_item in raw_entry.get("install_aliases", []):
+            if isinstance(alias_item, dict):
+                a_str = alias_item.get("alias")
+                if isinstance(a_str, str):
+                    aliases.append(a_str)
+            elif isinstance(alias_item, str):
+                aliases.append(alias_item)
+        for target in [raw_entry["output"], *aliases]:
+            normalized = _normalize_install_target(target)
+            if normalized in install_targets:
+                raise ContractError(f"{MANIFEST_PATH}: install target {target!r} is repeated")
+            install_targets.add(normalized)
     return data
 
 
@@ -222,6 +394,31 @@ def _shell_tokens(command: str) -> list[str]:
         return command.split()
 
 
+def _normalize_pip_tokens(tokens: list[str]) -> list[str]:
+    """Normalize short option clusters and joined arguments in pip commands."""
+    normalized: list[str] = []
+    for token in tokens:
+        if token.startswith("-") and not token.startswith("--") and len(token) > 1:
+            s = token[1:]
+            idx = 0
+            while idx < len(s):
+                ch = s[idx]
+                if ch in SHORT_OPTIONS_WITH_VALUES:
+                    val = s[idx + 1 :]
+                    normalized.append(f"-{ch}")
+                    if val:
+                        if val.startswith("="):
+                            val = val[1:]
+                        if val:
+                            normalized.append(val)
+                    break
+                normalized.append(f"-{ch}")
+                idx += 1
+        else:
+            normalized.append(token)
+    return normalized
+
+
 def _pip_install_tokens(command: str) -> Iterable[list[str]]:
     """Yield normalized ``pip install`` token slices from executable shell text."""
 
@@ -233,22 +430,32 @@ def _pip_install_tokens(command: str) -> Iterable[list[str]]:
             and tokens[index - 1].lower() == "-m"
             and PYTHON_NAME_RE.search(tokens[index - 2]) is not None
         )
-        if PIP_NAME_RE.search(token) and not invoked_by_python and index + 1 < len(tokens):
-            if tokens[index + 1].lower() == "install":
-                arguments_at = index + 2
-        elif PYTHON_NAME_RE.search(token) and index + 3 < len(tokens):
-            if [part.lower() for part in tokens[index + 1 : index + 4]] == [
-                "-m",
-                "pip",
-                "install",
-            ]:
-                arguments_at = index + 4
+        pre_flags: list[str] = []
+        if PIP_NAME_RE.search(token) and not invoked_by_python:
+            j = index + 1
+            while j < len(tokens) and tokens[j] not in {"&", "&&", ";", "|", "||"}:
+                if tokens[j].lower() == "install":
+                    pre_flags = tokens[index + 1 : j]
+                    arguments_at = j + 1
+                    break
+                j += 1
+        elif PYTHON_NAME_RE.search(token) and index + 2 < len(tokens):
+            if tokens[index + 1].lower() == "-m" and PIP_NAME_RE.search(tokens[index + 2]):
+                j = index + 3
+                while j < len(tokens) and tokens[j] not in {"&", "&&", ";", "|", "||"}:
+                    if tokens[j].lower() == "install":
+                        pre_flags = tokens[index + 3 : j]
+                        arguments_at = j + 1
+                        break
+                    j += 1
         if arguments_at is None:
             continue
         end = arguments_at
         while end < len(tokens) and tokens[end] not in {"&", "&&", ";", "|", "||"}:
             end += 1
-        yield ["pip", "install", *tokens[arguments_at:end]]
+        raw_tail = [*pre_flags, *tokens[arguments_at:end]]
+        normalized_tail = _normalize_pip_tokens(raw_tail)
+        yield ["pip", "install", *normalized_tail]
 
 
 def _is_local_source(value: str) -> bool:
@@ -280,8 +487,146 @@ def _package_arguments(tokens: list[str]) -> list[str]:
     return packages
 
 
-def _is_secure_hash_install(tokens: list[str], lowered: list[str]) -> bool:
+def _has_insecure_pip_flags(lowered: list[str]) -> bool:
+    for token in lowered:
+        if token in INSECURE_COMPILE_FLAGS:
+            return True
+        if token.startswith(INSECURE_COMPILE_PREFIXES):
+            return True
+    return False
+
+
+def _has_requirement_or_constraint_flags(lowered: list[str]) -> bool:
+    for token in lowered:
+        if token in {"-r", "--requirement", "-c", "--constraint"}:
+            return True
+        if token.startswith(("-r=", "--requirement=", "-c=", "--constraint=")):
+            return True
+    return False
+
+
+def _has_constraint_flags(lowered: list[str]) -> bool:
+    for token in lowered:
+        if token in {"-c", "--constraint"}:
+            return True
+        if token.startswith(("-c=", "--constraint=")):
+            return True
+    return False
+
+
+def _has_editable_flags(lowered: list[str]) -> bool:
+    for token in lowered:
+        if token in {"-e", "--editable"}:
+            return True
+        if token.startswith(("-e=", "--editable=")):
+            return True
+    return False
+
+
+def get_manifest_lock_targets(root: Path | None = None) -> set[str]:
+    search_root = root
+    if search_root is None:
+        if (Path.cwd() / MANIFEST_PATH).exists():
+            search_root = Path.cwd()
+        else:
+            search_root = Path(__file__).resolve().parents[2]
+    try:
+        manifest = load_manifest(search_root)
+    except ContractError:
+        return set()
+    targets: set[str] = set()
+    for entry in manifest["locks"]:
+        targets.add(entry["output"])
+        for alias_item in entry.get("install_aliases", []):
+            if isinstance(alias_item, dict):
+                a_str = alias_item.get("alias")
+                if isinstance(a_str, str):
+                    targets.add(a_str)
+            elif isinstance(alias_item, str):
+                targets.add(alias_item)
+    return targets
+
+
+def _matches_consumer(bound_consumers: list[str], consumer_str: str) -> bool:
+    for b in bound_consumers:
+        norm_b = _normalize_install_target(b)
+        if (
+            norm_b == consumer_str
+            or consumer_str.endswith(f"/{norm_b}")
+            or norm_b.endswith(f"/{consumer_str}")
+        ):
+            return True
+    return False
+
+
+def _extract_bound_consumers(alias_spec: dict[str, Any]) -> list[str]:
+    c_val = alias_spec.get("consumer")
+    c_list = alias_spec.get("consumers")
+    bound: list[str] = []
+    if isinstance(c_val, str):
+        bound.append(c_val)
+    elif isinstance(c_val, list):
+        bound.extend(c for c in c_val if isinstance(c, str))
+    if isinstance(c_list, list):
+        bound.extend(c for c in c_list if isinstance(c, str))
+    elif isinstance(c_list, str):
+        bound.append(c_list)
+    return bound
+
+
+def get_manifest_lock_targets_for_consumer(
+    consumer: Path | str,
+    manifest: dict[str, Any] | None = None,
+    root: Path | None = None,
+) -> set[str]:
+    """Return all valid lock file targets (outputs and bound aliases) for a consumer."""
+    search_root = root
+    if manifest is None:
+        if search_root is None:
+            if (Path.cwd() / MANIFEST_PATH).exists():
+                search_root = Path.cwd()
+            else:
+                search_root = Path(__file__).resolve().parents[2]
+        try:
+            manifest = load_manifest(search_root)
+        except ContractError:
+            return set()
+    targets: set[str] = set()
+    consumer_str = _normalize_install_target(str(consumer))
+    for entry in manifest["locks"]:
+        targets.add(entry["output"])
+        for alias_spec in entry.get("install_aliases", []):
+            if isinstance(alias_spec, dict):
+                alias_name = alias_spec.get("alias")
+                if isinstance(alias_name, str) and _matches_consumer(
+                    _extract_bound_consumers(alias_spec), consumer_str
+                ):
+                    targets.add(alias_name)
+            elif isinstance(alias_spec, str):
+                targets.add(alias_spec)
+    return targets
+
+
+def _is_valid_lock_target(target: str, valid_lock_outputs: set[str] | None = None) -> bool:
+    if "://" in target or target.startswith(("git+", "hg+", "svn+", "bzr+")):
+        return False
+    t = target.strip("\"'")
+    targets = valid_lock_outputs if valid_lock_outputs is not None else get_manifest_lock_targets()
+    return _normalize_install_target(t) in {_normalize_install_target(item) for item in targets}
+
+
+def _is_secure_hash_install(
+    tokens: list[str], lowered: list[str], valid_lock_outputs: set[str] | None = None
+) -> bool:
     if "--require-hashes" not in lowered:
+        return False
+    if _package_arguments(tokens):
+        return False
+    if (
+        _has_editable_flags(lowered)
+        or _has_insecure_pip_flags(lowered)
+        or _has_constraint_flags(lowered)
+    ):
         return False
     req_targets: list[str] = []
     for index, token in enumerate(tokens):
@@ -292,7 +637,7 @@ def _is_secure_hash_install(tokens: list[str], lowered: list[str]) -> bool:
             req_targets.append(token.split("=", 1)[1])
     if not req_targets:
         return False
-    return not any("://" in t or t.startswith(("git+", "hg+", "svn+", "bzr+")) for t in req_targets)
+    return all(_is_valid_lock_target(t, valid_lock_outputs) for t in req_targets)
 
 
 def _extract_editable_target(tokens: list[str], lowered: list[str]) -> str | None:
@@ -308,45 +653,259 @@ def _extract_editable_target(tokens: list[str], lowered: list[str]) -> str | Non
     return None
 
 
-def _is_secure_install(tokens: list[str]) -> bool:
+def _is_secure_install(tokens: list[str], valid_lock_outputs: set[str] | None = None) -> bool:
     lowered = [token.lower() for token in tokens]
-    if _is_secure_hash_install(tokens, lowered):
+    if _is_secure_hash_install(tokens, lowered, valid_lock_outputs):
         return True
+
+    if _has_insecure_pip_flags(lowered) or _has_requirement_or_constraint_flags(lowered):
+        return False
 
     no_deps = "--no-deps" in lowered
     no_build_isolation = "--no-build-isolation" in lowered
 
     editable_target = _extract_editable_target(tokens, lowered)
     if editable_target is not None:
-        return no_deps and no_build_isolation and _is_local_source(editable_target)
+        return (
+            no_deps
+            and no_build_isolation
+            and _is_local_source(editable_target)
+            and not _package_arguments(tokens)
+        )
 
-    package_tokens = _package_arguments(tokens)
-    if not package_tokens:
+    if _has_editable_flags(lowered):
         return False
 
-    if all(token.lower().endswith(".whl") and _is_local_source(token) for token in package_tokens):
-        return no_deps
+    package_tokens = _package_arguments(tokens)
+    if not package_tokens or not no_deps:
+        return False
 
-    if all(_is_local_source(token) for token in package_tokens):
-        return no_deps and no_build_isolation
-
-    return False
+    is_whl = all(t.lower().endswith(".whl") and _is_local_source(t) for t in package_tokens)
+    return is_whl or (no_build_isolation and all(_is_local_source(t) for t in package_tokens))
 
 
-def scan_install_commands(path: Path, text: str) -> list[str]:
+def _extract_constant_strings(args: list[ast.expr]) -> list[str] | None:
+    values: list[str] = []
+    for arg in args:
+        if not isinstance(arg, ast.Constant) or not isinstance(arg.value, str):
+            return None
+        values.append(arg.value)
+    return values
+
+
+def _parse_shell_runner_call(node: ast.Call) -> tuple[bool, list[str] | None]:
+    c_index: int | None = None
+    for idx, arg in enumerate(node.args[1:], 1):
+        if isinstance(arg, ast.Constant) and arg.value == "-c":
+            c_index = idx
+            break
+    if c_index is None:
+        return False, None
+    if c_index + 1 >= len(node.args):
+        return True, None
+    cmd_node = node.args[c_index + 1]
+    if isinstance(cmd_node, ast.Constant) and isinstance(cmd_node.value, str):
+        pip_tokens = list(_pip_install_tokens(cmd_node.value))
+        if pip_tokens:
+            return True, pip_tokens[0]
+        return "pip" in cmd_node.value, None
+    return True, None
+
+
+def _parse_direct_pip_run_call(node: ast.Call, first: str) -> tuple[bool, list[str] | None]:
+    cmd_args: list[ast.expr] | None = None
+    if PIP_NAME_RE.search(first):
+        cmd_args = node.args[1:]
+    elif (
+        PYTHON_NAME_RE.search(first)
+        and len(node.args) >= 3  # noqa: PLR2004
+        and isinstance(node.args[1], ast.Constant)
+        and node.args[1].value == "-m"
+        and isinstance(node.args[2], ast.Constant)
+        and isinstance(node.args[2].value, str)
+        and PIP_NAME_RE.search(node.args[2].value)
+    ):
+        cmd_args = node.args[3:]
+    if cmd_args is None:
+        return False, None
+    if node.keywords:
+        return True, None
+    if (
+        cmd_args
+        and isinstance(cmd_args[0], ast.Constant)
+        and isinstance(cmd_args[0].value, str)
+        and cmd_args[0].value.lower() == "install"
+    ):
+        tail = _extract_constant_strings(cmd_args[1:])
+        return True, None if tail is None else ["pip", "install", *_normalize_pip_tokens(tail)]
+    return True, None
+
+
+def _parse_nox_run_call(node: ast.Call) -> tuple[bool, list[str] | None]:
+    if not node.args:
+        return False, None
+    first_arg = node.args[0]
+    if not isinstance(first_arg, ast.Constant) or not isinstance(first_arg.value, str):
+        return False, None
+    first = first_arg.value
+    first_lower = first.lower()
+    first_base = first_lower.split("/")[-1].split("\\")[-1]
+
+    if first_lower in SHELL_RUNNERS or first_base in {"sh", "bash", "zsh"}:
+        return _parse_shell_runner_call(node)
+    return _parse_direct_pip_run_call(node, first)
+
+
+def _scan_nox_assign(
+    sub: ast.Assign, session_aliases: set[str], method_aliases: dict[str, str]
+) -> Iterable[tuple[int, list[str] | None]]:
+    if isinstance(sub.value, ast.Name) and sub.value.id in session_aliases:
+        for target in sub.targets:
+            if isinstance(target, ast.Name):
+                session_aliases.add(target.id)
+                yield sub.lineno, None
+    elif (
+        isinstance(sub.value, ast.Attribute)
+        and isinstance(sub.value.value, ast.Name)
+        and sub.value.value.id in session_aliases
+        and sub.value.attr in {"install", "run", "run_always"}
+    ):
+        for target in sub.targets:
+            if isinstance(target, ast.Name):
+                method_aliases[target.id] = sub.value.attr
+                yield sub.lineno, None
+
+
+def _scan_nox_getattr_call(
+    sub: ast.Call, session_aliases: set[str]
+) -> Iterable[tuple[int, list[str] | None]]:
+    if not (
+        isinstance(sub.func, ast.Call)
+        and isinstance(sub.func.func, ast.Name)
+        and sub.func.func.id == "getattr"
+        and len(sub.func.args) >= 2  # noqa: PLR2004
+    ):
+        return
+    rec = sub.func.args[0]
+    attr_node = sub.func.args[1]
+    if (
+        isinstance(rec, ast.Name)
+        and rec.id in session_aliases
+        and isinstance(attr_node, ast.Constant)
+        and isinstance(attr_node.value, str)
+    ):
+        if attr_node.value == "install":
+            if sub.keywords:
+                yield sub.lineno, None
+            else:
+                args = _extract_constant_strings(sub.args)
+                yield (
+                    sub.lineno,
+                    None if args is None else ["pip", "install", *_normalize_pip_tokens(args)],
+                )
+        elif attr_node.value in {"run", "run_always"}:
+            is_pip, tokens = _parse_nox_run_call(sub)
+            if is_pip:
+                yield sub.lineno, tokens
+
+
+def _scan_nox_call(
+    sub: ast.Call, session_aliases: set[str], method_aliases: dict[str, str]
+) -> Iterable[tuple[int, list[str] | None]]:
+    if isinstance(sub.func, ast.Name) and sub.func.id in method_aliases:
+        attr = method_aliases[sub.func.id]
+        if attr == "install":
+            args = _extract_constant_strings(sub.args)
+            yield (
+                sub.lineno,
+                (
+                    None
+                    if (sub.keywords or args is None)
+                    else ["pip", "install", *_normalize_pip_tokens(args)]
+                ),
+            )
+        else:
+            yield sub.lineno, None
+        return
+
+    yield from _scan_nox_getattr_call(sub, session_aliases)
+
+    if not isinstance(sub.func, ast.Attribute):
+        return
+    rec = sub.func.value
+    if not (isinstance(rec, ast.Name) and rec.id in session_aliases):
+        return
+
+    attr = sub.func.attr
+    if attr == "install":
+        args = _extract_constant_strings(sub.args)
+        yield (
+            sub.lineno,
+            (
+                None
+                if (sub.keywords or args is None)
+                else ["pip", "install", *_normalize_pip_tokens(args)]
+            ),
+        )
+    elif attr in {"run", "run_always"}:
+        is_pip, tokens = _parse_nox_run_call(sub)
+        if is_pip:
+            yield sub.lineno, tokens
+
+
+def _nox_install_tokens(text: str) -> Iterable[tuple[int, list[str] | None]]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as error:
+        yield error.lineno or 1, None
+        return
+
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        session_param: str | None = None
+        if node.args.args:
+            session_param = node.args.args[0].arg
+        elif node.args.posonlyargs:
+            session_param = node.args.posonlyargs[0].arg
+
+        if not session_param:
+            continue
+
+        session_aliases: set[str] = {session_param}
+        method_aliases: dict[str, str] = {}
+
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Assign):
+                yield from _scan_nox_assign(sub, session_aliases, method_aliases)
+            elif isinstance(sub, ast.Call):
+                yield from _scan_nox_call(sub, session_aliases, method_aliases)
+
+
+def scan_install_commands(
+    path: Path, text: str, valid_lock_outputs: set[str] | None = None
+) -> list[str]:
     """Return unsafe executable pip-install commands in one supported surface."""
 
+    if valid_lock_outputs is None:
+        valid_lock_outputs = get_manifest_lock_targets_for_consumer(path)
+
     findings: list[str] = []
+    if path.name.lower() == "noxfile.py":
+        for line, tokens in _nox_install_tokens(text):
+            if tokens is not None and _is_secure_install(tokens, valid_lock_outputs):
+                continue
+            findings.append(
+                f"{path}:{line}: nox session.install must use literal arguments and the "
+                "hash-locked or local-source install policy"
+            )
+        return findings
     for line, command in logical_lines(text):
         stripped = command.lstrip()
         if not stripped or stripped.startswith("#"):
             continue
-        # Shell help/error text is data, not an executed package install.
-        prefix = re.sub(r"^(?:run:|RUN)\s*", "", stripped, flags=re.IGNORECASE).lstrip()
-        if prefix.startswith(("echo ", "printf ", "#")):
-            continue
         for tokens in _pip_install_tokens(command):
-            if _is_secure_install(tokens):
+            if _is_secure_install(tokens, valid_lock_outputs):
                 continue
             findings.append(
                 f"{path}:{line}: pip install must use --require-hashes with a lock file, "
@@ -370,10 +929,9 @@ def tracked_consumer_paths(root: Path) -> list[Path]:
             for raw in result.stdout.split(b"\0"):
                 if raw:
                     raw_paths.append(Path(os.fsdecode(raw)))
-        except (subprocess.CalledProcessError, OSError):
-            pass
-
-    if not raw_paths and not git_dir.exists():
+        except (subprocess.CalledProcessError, OSError) as error:
+            raise ContractError(f"git ls-files failed in {root}: {error}") from error
+    else:
         for path in root.rglob("*"):
             try:
                 rel = path.relative_to(root)
@@ -392,7 +950,7 @@ def tracked_consumer_paths(root: Path) -> list[Path]:
             relative.suffix.lower() in {".sh", ".ps1"}
             or (parts[:2] == (".github", "workflows") and relative.suffix in {".yml", ".yaml"})
             or name.startswith(("dockerfile", "containerfile"))
-            or name in {"makefile", "gnumakefile"}
+            or name in {"makefile", "gnumakefile", "noxfile.py"}
         )
         fixture = "tests" in parts or name.startswith(("test-", "test_"))
         if supported and not fixture:
@@ -476,8 +1034,8 @@ def find_lock_files(root: Path) -> list[Path]:
                 ):
                     locks.append(rel)
             return sorted(locks)
-        except (subprocess.CalledProcessError, OSError):
-            pass
+        except (subprocess.CalledProcessError, OSError) as error:
+            raise ContractError(f"git ls-files failed in {root}: {error}") from error
 
     for path in root.rglob("*"):
         try:
@@ -494,23 +1052,44 @@ def find_lock_files(root: Path) -> list[Path]:
     return sorted(locks)
 
 
+def _check_alias_liveness(root: Path, entries: list[dict[str, Any]]) -> list[str]:
+    problems: list[str] = []
+    for entry in entries:
+        for alias_item in entry.get("install_aliases", []):
+            if not isinstance(alias_item, dict):
+                continue
+            alias_str = alias_item.get("alias")
+            if not isinstance(alias_str, str):
+                continue
+            consumers = _extract_bound_consumers(alias_item)
+            for consumer in consumers:
+                consumer_path = root / consumer
+                if not consumer_path.is_file():
+                    problems.append(
+                        f"{entry['output']}: install alias {alias_str!r} declared consumer {consumer!r} does not exist"
+                    )
+                else:
+                    try:
+                        content = consumer_path.read_text(encoding="utf-8")
+                        if alias_str not in content:
+                            problems.append(
+                                f"{entry['output']}: install alias {alias_str!r} is not used in declared consumer {consumer!r}"
+                            )
+                    except (OSError, UnicodeDecodeError) as error:
+                        problems.append(f"{consumer}: {error}")
+    return problems
+
+
 def check(root: Path) -> int:
     try:
         manifest = load_manifest(root)
-        problems = []
-        outputs: set[str] = set()
-        for raw_entry in manifest["locks"]:
-            if not isinstance(raw_entry, dict):
-                problems.append("manifest lock entry is not an object")
-                continue
-            output = raw_entry.get("output")
-            if isinstance(output, str) and output in outputs:
-                problems.append(f"manifest repeats output {output}")
-            elif isinstance(output, str):
-                outputs.add(output)
-            problems.extend(validate_lock(root, manifest, raw_entry))
+        entries = manifest["locks"]
+        problems = [
+            problem for entry in entries for problem in validate_lock(root, manifest, entry)
+        ]
+        problems.extend(_check_alias_liveness(root, entries))
+        outputs_paths = {str(Path(entry["output"])) for entry in entries}
 
-        outputs_paths = {str(Path(o)) for o in outputs}
         for lock_file in find_lock_files(root):
             if str(lock_file) not in outputs_paths:
                 problems.append(f"unregistered lock file {lock_file} not present in manifest")
@@ -521,7 +1100,8 @@ def check(root: Path) -> int:
             except (OSError, UnicodeDecodeError) as error:
                 problems.append(f"{relative}: {error}")
                 continue
-            problems.extend(scan_install_commands(relative, text))
+            consumer_targets = get_manifest_lock_targets_for_consumer(relative, manifest, root)
+            problems.extend(scan_install_commands(relative, text, consumer_targets))
     except (ContractError, subprocess.CalledProcessError) as error:
         problems = [str(error)]
 

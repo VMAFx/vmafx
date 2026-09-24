@@ -59,8 +59,13 @@ entire repository using manifest-driven hash locks.
    - Local wheels must explicitly pass `--no-deps`.
    - Local editable and source tree installs must explicitly pass both
      `--no-deps` and `--no-build-isolation`.
-   - The checker scans all shell scripts, workflows, Dockerfiles, and Makefiles
-     for non-compliant invocations.
+   - The checker scans all shell scripts, workflows, Dockerfiles, Makefiles, and
+     literal `session.install(...)` calls in `noxfile.py` for non-compliant
+     invocations. Dynamic Nox install arguments fail closed.
+   - A requirement target is accepted only when it exactly matches a manifest
+     output or an explicit `install_aliases` entry. Basename and suffix matching
+     are forbidden, so `/tmp/untrusted/requirements/locks/build.txt` cannot
+     impersonate the reviewed lock.
 
 3. **PEP 517 build-isolation dependencies and `--no-build-isolation`**:
    - `docs/requirements.txt` explicitly includes `setuptools>=77.0.1` and
@@ -78,7 +83,17 @@ entire repository using manifest-driven hash locks.
      with `--universal --python-version 3.12 --generate-hashes`, resolving
      markers and fallbacks for both Python 3.12 and 3.14.
 
-5. **Executable Makefile pip installs under checker**:
+5. **Hash-locked Nox orchestration**:
+   - Nox itself is pinned in `requirements/locks/nox.in` and installed from the
+     generated `requirements/locks/nox.txt` with `--require-hashes`.
+   - Every fork-local package session installs a manifest-owned development lock,
+     then installs only its local source with `--no-deps --no-build-isolation`.
+     Each development lock includes the package's PEP 517 backend inputs.
+   - The ROI-score and ensemble-kit sessions request Python 3.12 because their
+     package metadata excludes Python 3.14. Nox may obtain the supported
+     standalone interpreter when it is absent locally.
+
+6. **Executable Makefile pip installs under checker**:
    - Makefile venv bootstrap targets (`$(VENV_PIP)`, `$(MESON)`, `$(NINJA)`)
      install from `requirements/locks/build.txt`.
    - `lint-tools` installs from `requirements/locks/dev-linters.txt`.
@@ -87,7 +102,7 @@ entire repository using manifest-driven hash locks.
      local entrypoints.
    - `python-locks-check` is integrated into `make lint`.
 
-6. **Tooling and CI impact integration**:
+7. **Tooling and CI impact integration**:
    - Pre-commit registers `check-python-dependency-locks` and
      `test-python-dependency-locks`.
    - CI impact planner (`.github/ci-impact.json`) adds `"requirements/"` prefix
@@ -97,7 +112,7 @@ entire repository using manifest-driven hash locks.
    - Renovate (`renovate.json`) monitors `requirements/locks/*.in`,
      `docs/requirements.txt`, and ignores compiled `*.txt` and `*-lock.txt`.
 
-7. **Preservation of SLSA tag requirement**:
+8. **Preservation of SLSA tag requirement**:
    - Workflows calling `slsa-framework/slsa-github-generator` retain exact
      semantic tags (`@v...`), which are exempted from SHA-only rules to
      preserve SLSA cryptographic attestation.
@@ -108,6 +123,8 @@ entire repository using manifest-driven hash locks.
 | --- | --- | --- | --- |
 | `pip-compile` (pip-tools) | Standard tooling | Slow resolution; platform-specific wheel hashes unless run on every OS | `uv pip compile` generates multi-platform universal hashes deterministically and orders of magnitude faster. |
 | Poetry / Pipenv locks | Rich metadata | Non-standard format; requires third-party tool at install time rather than native `pip --require-hashes` | Incompatible with minimal Docker containers and air-gapped CI environments. |
+| Basename or suffix recognition for copied locks | No manifest aliases to maintain | Any attacker-controlled path ending in a known lock name is misclassified as trusted | Exact manifest-owned aliases bound to explicit consumer paths and context preserve copied-container paths without weakening lock identity. |
+| One repository-wide Nox development lock | Fewer generated files | Co-resolves unrelated heavy packages and ignores incompatible `requires-python` ranges | Per-session locks preserve package isolation and use the interpreter version each package supports. |
 | Blanket SHA pinning for all Actions | 100% Scorecard check | Breaks SLSA builder attestation (`slsa-verifier` rejects SHA refs) | SLSA builder contract requires tag refs; overriding tag breaks release provenance. |
 
 ## Consequences
@@ -115,6 +132,8 @@ entire repository using manifest-driven hash locks.
 - **Positive**:
   - Full cryptographic tamper-evidence on every Python package installed in CI,
     containers, and developer environments.
+  - Nox bootstrap and per-package sessions obey the same manifest authority as
+    CI and container installs.
   - Offline lint and pre-commit checks prevent unhashed or unpinned dependencies
     from entering the repository.
   - Reproducible builds across Python 3.12, 3.13, and 3.14.

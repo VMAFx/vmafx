@@ -16,6 +16,14 @@ The central authority is `requirements/locks/manifest.json`, which pairs every
 lock file with its source files and compilation arguments using a reviewed, pinned
 version of `uv` (`0.12.18`).
 
+Each install command may name the lock's repository output or one of its explicit
+`install_aliases`. Aliases exist only for reviewed paths created by container
+copies or platform scripts. Each alias is bound to an explicit consumer path and
+context, preventing unrelated workflows from consuming alias paths. The checker
+rejects traversal, Windows drive paths, unsupported absolutes, and unreferenced aliases.
+The checker compares the complete normalized path and enforces consumer binding; it
+never trusts a matching basename or suffix.
+
 ### Architecture
 
 ```text
@@ -41,6 +49,7 @@ CI Workflows & Dockerfiles                Local Workstation (make lint-tools, cy
 | `make python-locks-write` | Networked refresh: runs the pinned `uv` compiler to update all lock files and re-stamp metadata headers. |
 | `make lint-tools` | Installs project linting tools (`ruff`, `black`, `mypy`) into `.venv` from `requirements/locks/dev-linters.txt` using `--require-hashes`. |
 | `make cythonize-deps` | Installs C-extension build dependencies (`Cython`, `numpy`, `setuptools`, `packaging`) from `requirements/locks/cythonize.txt` using `--require-hashes`. |
+| `python3 -m pip install --require-hashes -r requirements/locks/nox.txt` | Installs the reviewed Nox release and its transitive dependencies before running local package sessions. |
 
 ## How to add or update a dependency
 
@@ -50,6 +59,9 @@ CI Workflows & Dockerfiles                Local Workstation (make lint-tools, cy
    - For python package: edit `python/pyproject.toml` or `python/requirements-*.in`.
    - For MCP server: edit `mcp-server/vmaf-mcp/pyproject.toml`.
    - For AI / training: edit `ai/pyproject.toml`.
+   - For a Nox package session: edit that package's `pyproject.toml` and its
+     manifest entry; use an overlay `.in` file only for test tools not declared
+     by the package.
 
 2. **Regenerate lock files**:
 
@@ -87,6 +99,10 @@ To support pure sdists (e.g. `mkdocs-minify-plugin` dependencies) securely:
 
 - **Pre-commit**: `check-python-dependency-locks` runs on commits touching Python
   manifests, lock files, workflows, Dockerfiles, setup scripts, or Makefile.
+- **Install-surface scanner**: executable pip calls and literal
+  `session.install(...)` calls in `noxfile.py` must reference a manifest-owned
+  lock exactly. Dynamic Nox arguments and unmanifested requirement paths fail
+  closed.
 - **CI Impact Planner**: Changes to `requirements/` trigger the `python` CI lane
   in `.github/ci-impact.json`.
 - **Bot PR Exemption**: Automated Renovate and Dependabot PRs updating `requirements/`

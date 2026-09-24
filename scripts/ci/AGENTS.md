@@ -900,6 +900,11 @@ install policy across the repository:
 - Manifest inputs must not contain duplicate paths.
 - Manifest `compile_args` must not specify output overrides (`-o`, `--output-file`).
 - Every `*-lock.txt` and `requirements/locks/*.txt` in the tree must be registered in `manifest.json`.
-- All executable `pip install` invocations across workflows, Dockerfiles, setup scripts, and Makefiles must use `--require-hashes -r <lockfile>`, or install local wheels with `--no-deps`, or install local editable/source trees with both `--no-deps` and `--no-build-isolation`.
+- A requirement target must exactly equal a manifest output or explicit `install_aliases` entry bound to the specific consumer path and context. Aliases reject directory traversals (`..`), Windows drive/UNC paths, duplicate JSON keys, and unreferenced/dead aliases fail closed. Basename and suffix matches are never authority.
+- Executable pip invocations are strictly parsed: global pre-subcommand flags (`--trusted-host`, etc.) are preserved, joined short forms (`-qrfoo`, `-rmalicious.txt`, `-cconstraints.txt`) are split and validated, and unhashed or secondary requirement/constraint flags fail closed.
+- Nox AST scanner restricts receiver authority to `@nox.session` parameters, tracks and rejects session and method aliases (`installer = session.install; installer(...)`), and inspects literal shell runner invocations (`session.run("sh", "-c", ...)`) fail-closed.
+- Nox development locks must be workstation-portable (compiled with `--universal`, no `--python-platform`), and every Nox session must pin an explicit Python version that agrees with its lock resolution.
+- Git discovery and consumer tracking fail closed with `ContractError` on any process or filesystem error.
+- All executable `pip install` invocations across workflows, Dockerfiles, setup scripts, and Makefiles, plus literal `session.install(...)` calls in `noxfile.py`, must use `--require-hashes -r <lockfile>`, or install local wheels with `--no-deps`, or install local editable/source trees with both `--no-deps` and `--no-build-isolation`. Dynamic Nox arguments fail closed.
 - `write` is the only network-accessing path; `check` is offline and run in pre-commit and `make lint`.
 - Regressions are pinned in `scripts/ci/tests/test_python_dependency_locks.py`.

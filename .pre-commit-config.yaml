@@ -247,7 +247,7 @@ repos:
         name: Check hash-locked Python dependencies and secure pip installs
         entry: python3 scripts/ci/check_python_dependency_locks.py check
         language: system
-        files: '^(Makefile|requirements/.*|docs/requirements.*|python/requirements.*|ai/requirements.*|mcp-server/.*requirements.*|dev/requirements.*|\.github/workflows/.*|scripts/setup/.*|Dockerfile.*|dev/Containerfile|docker/.*|scripts/ci/check_python_dependency_locks\.py)$'
+        files: '^(Makefile|noxfile\.py|requirements/.*|docs/requirements.*|python/requirements.*|ai/requirements.*|mcp-server/.*requirements.*|dev/requirements.*|dev-llm/.*requirements.*|tools/.*requirements.*|\.github/workflows/.*|scripts/setup/.*|Dockerfile.*|dev/Containerfile|docker/.*|scripts/ci/check_python_dependency_locks\.py)$'
         pass_filenames: false
 
       - id: test-python-dependency-locks

@@ -1,0 +1,2 @@
+# Test runner overlay for tools/ensemble-training-kit/pyproject.toml.
+pytest>=9.1.1

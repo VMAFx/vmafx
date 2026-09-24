@@ -24,7 +24,7 @@ cryptographically verified SHA-256 artifact hashes.
 
 ## 2. Inventory of Python Install Surfaces
 
-A repository-wide audit identified four distinct consumer categories:
+A repository-wide audit identified five distinct consumer categories:
 
 1. **GitHub Actions Workflows (`.github/workflows/*.yml`)**:
    - `build.yml`, `docs.yml`, `ffmpeg-integration.yml`, `fuzz.yml`, `go-ci.yml`,
@@ -48,6 +48,14 @@ A repository-wide audit identified four distinct consumer categories:
    - `cythonize-deps` consumes `requirements/locks/cythonize.txt`.
    - Checker regex (`PIP_NAME_RE`) enhanced to scan variable expansions `$(VENV_PIP)`
      and `${VENV_PIP}`.
+
+5. **Nox Developer Orchestration (`noxfile.py`)**:
+   - Nox is installed from a dedicated manifest-owned hash lock rather than an
+     unconstrained `pip install nox` bootstrap.
+   - Literal `session.install(...)` arguments are parsed from the Python AST and
+     evaluated under the same hash/local-source policy as shell commands.
+   - Each package receives its own development lock, avoiding cross-package
+     resolution and preserving package-specific Python bounds.
 
 ## 3. Technical Discoveries & Resolutions
 
@@ -101,10 +109,41 @@ cryptographic provenance checks. Therefore, `slsa-github-generator` is intention
 exempted from SHA pinning and maintained at exact `@vX.Y.Z` release tags, codified in
 ADR-1128 and preserved in this hardening.
 
+### 3.4 Lock-path identity and scanner bypasses
+
+Early scanner variants accepted any local `-r` target and then any path whose
+basename or suffix resembled a registered lock. Those checks were insufficient:
+an injected package could follow a real `-r`, leading pip flags could hide the
+`install` subcommand, and an attacker-controlled path such as
+`/tmp/untrusted/requirements/locks/build.txt` could impersonate the reviewed file.
+
+The final contract accepts only exact outputs or explicit `install_aliases` from
+`requirements/locks/manifest.json`. Each alias is strictly bound to an explicit
+consumer path and context, rejecting directory traversal, normalized traversal, Windows
+drive/UNC paths, unsupported absolutes, and duplicate JSON keys, while enforcing
+consumer liveness. Pip option parsing strictly splits joined short options (`-qrfoo`,
+`-rmalicious.txt`, `-cconstraints.txt`), captures global pre-subcommand flags, and rejects
+untrusted flags. Nox AST scanner restricts receiver authority to `@nox.session`
+parameters, tracks/rejects session and method aliases, and evaluates shell runners fail-closed.
+All Nox development locks are workstation-portable (`--universal`), and Git consumer
+discovery fails closed with `ContractError`.
+
+### 3.5 Nox interpreter and dependency isolation
+
+The pre-existing Nox sessions installed package extras directly and inherited the
+interpreter running Nox. On a Python 3.14 workstation this violates the declared
+`<3.13` bounds of ROI-score and ensemble-kit. The hardened sessions use individual
+manifest-owned development locks compiled with `--universal` and pin those two sessions
+to Python 3.12 (and Python 3.14 for packages resolving on 3.14).
+
 ## 4. Verification Evidence
 
-- `scripts/ci/check_python_dependency_locks.py check`: Exit 0 (20 locks validated, all installs verified).
-- `python3 -m unittest scripts/ci/tests/test_python_dependency_locks.py`: Exit 0 (22 tests passing).
+- `scripts/ci/check_python_dependency_locks.py check`: Exit 0 (25 locks validated, all installs verified).
+- `python3 -m unittest scripts/ci/tests/test_python_dependency_locks.py`: Exit 0 (68 tests passing).
+- Pinned Nox 2026.8.17 installation from `requirements/locks/nox.txt`: Exit 0.
+- `nox -l`: Exit 0; ROI-score and ensemble-kit resolve to Python 3.12.
+- `nox -s vmaf_tune -- --collect-only -q`: Exit 0; locked session install
+  succeeded and collected 2,053 tests.
 - `python3 scripts/ci/tests/test_ci_impact.py`: Exit 0 (31 tests passing).
 - `bash scripts/ci/test-classify-dependency-pr.sh`: Exit 0 (29 tests passing).
 - `actionlint`: Clean exit 0 across all workflows.

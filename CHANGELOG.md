@@ -31017,8 +31017,10 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   compiled with reviewed `uv 0.12.18`. Pure sdist documentation
   dependencies pin `setuptools` and `wheel` under `--no-build-isolation`,
   `dev-linters.txt` targets Python 3.12 portability, Makefile variable
-  expansions are brought under contract checking, and SLSA builder tag
-  requirements are preserved.
+  expansions and Nox AST installs are brought under contract checking,
+  requirement paths must exactly match manifest-owned outputs or aliases,
+  package-specific Nox development locks replace editable extra resolution,
+  and SLSA builder tag requirements are preserved.
 
 
 - **libvmaf symbol visibility** — `libvmaf.so.3` no longer exports 207 internal

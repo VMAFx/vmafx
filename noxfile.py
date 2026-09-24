@@ -12,7 +12,7 @@ dev affordance, not a CI gate.
 
 Usage::
 
-    pip install nox
+    python3 -m pip install --require-hashes -r requirements/locks/nox.txt
     nox -l                          # list every defined session
     nox -s ai                       # run the ai/ pytest suite
     nox -s mcp vmaf_tune            # run multiple suites in sequence
@@ -34,10 +34,9 @@ from __future__ import annotations
 
 import nox
 
-# Default to the interpreter nox itself runs under; do not pin a matrix
-# here. The matrix lives in CI (tests-and-quality-gates.yml) where it
-# can vary per package. Locally, developers run whatever ``python3``
-# resolves to in their venv, matching the CI dev-container baseline.
+# Default to the interpreter nox itself runs under. Sessions whose package
+# metadata excludes that interpreter pin the supported CI version instead;
+# Nox can obtain that standalone interpreter when it is not installed locally.
 nox.options.sessions = ["lint", "all"]
 nox.options.reuse_existing_virtualenvs = True
 
@@ -47,16 +46,18 @@ nox.options.reuse_existing_virtualenvs = True
 # ---------------------------------------------------------------------------
 
 
-@nox.session(name="ai")
+@nox.session(name="ai", python="3.14")
 def ai_tests(session: nox.Session) -> None:
     """Run the ``ai/`` package pytest suite (tiny-AI training scripts)."""
     session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
-    session.install("--no-build-isolation", "--require-hashes", "-r", "ai/requirements-dev-lock.txt")
+    session.install(
+        "--no-build-isolation", "--require-hashes", "-r", "ai/requirements-dev-lock.txt"
+    )
     session.install("--no-deps", "--no-build-isolation", "-e", "./ai")
     session.run("pytest", "ai/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="mcp")
+@nox.session(name="mcp", python="3.14")
 def mcp_tests(session: nox.Session) -> None:
     """Run the ``mcp-server/vmaf-mcp/`` pytest suite."""
     session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
@@ -76,10 +77,9 @@ def mcp_tests(session: nox.Session) -> None:
     )
 
 
-@nox.session(name="vmaf_tune")
+@nox.session(name="vmaf_tune", python="3.14")
 def vmaf_tune_tests(session: nox.Session) -> None:
     """Run the ``tools/vmaf-tune/`` pytest suite."""
-    session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
     session.install(
         "--no-build-isolation",
         "--require-hashes",
@@ -90,10 +90,9 @@ def vmaf_tune_tests(session: nox.Session) -> None:
     session.run("pytest", "tools/vmaf-tune/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="dev_llm")
+@nox.session(name="dev_llm", python="3.14")
 def dev_llm_tests(session: nox.Session) -> None:
     """Run the ``dev-llm/`` pytest suite (local-LLM helper)."""
-    session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
     session.install(
         "--no-build-isolation",
         "--require-hashes",
@@ -104,10 +103,9 @@ def dev_llm_tests(session: nox.Session) -> None:
     session.run("pytest", "dev-llm/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="roi_score")
+@nox.session(name="roi_score", python="3.12")
 def roi_score_tests(session: nox.Session) -> None:
     """Run the ``tools/vmaf-roi-score/`` pytest suite."""
-    session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
     session.install(
         "--no-build-isolation",
         "--require-hashes",
@@ -118,22 +116,16 @@ def roi_score_tests(session: nox.Session) -> None:
     session.run("pytest", "tools/vmaf-roi-score/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="ensemble_kit")
+@nox.session(name="ensemble_kit", python="3.12")
 def ensemble_kit_tests(session: nox.Session) -> None:
     """Run the ``tools/ensemble-training-kit/`` pytest suite."""
-    session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
     session.install(
         "--no-build-isolation",
         "--require-hashes",
         "-r",
         "tools/ensemble-training-kit/requirements-dev-lock.txt",
     )
-    session.install(
-        "--no-deps",
-        "--no-build-isolation",
-        "-e",
-        "./tools/ensemble-training-kit",
-    )
+    session.install("--no-deps", "--no-build-isolation", "-e", "./tools/ensemble-training-kit")
     session.run(
         "pytest",
         "tools/ensemble-training-kit/tests/",
@@ -142,7 +134,7 @@ def ensemble_kit_tests(session: nox.Session) -> None:
     )
 
 
-@nox.session(name="python_harness")
+@nox.session(name="python_harness", python="3.14")
 def python_harness_tests(session: nox.Session) -> None:
     """Delegate to the legacy ``python/tox.ini`` harness.
 
@@ -171,7 +163,7 @@ def all_tests(session: nox.Session) -> None:
         session.notify(name)
 
 
-@nox.session(name="lint")
+@nox.session(name="lint", python="3.12")
 def lint(session: nox.Session) -> None:
     """Run ruff + black in check-only mode across Python trees (ADR-1126: no isort).
 

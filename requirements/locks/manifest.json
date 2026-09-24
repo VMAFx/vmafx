@@ -3,6 +3,18 @@
   "locks": [
     {
       "output": "requirements/locks/build.txt",
+      "install_aliases": [
+        {
+          "alias": "../requirements/locks/build.txt",
+          "consumer": ".github/workflows/security-scans.yml",
+          "context": "core"
+        },
+        {
+          "alias": "$REPO_ROOT/requirements/locks/build.txt",
+          "consumer": "scripts/setup/ubuntu.sh",
+          "context": "scripts/setup"
+        }
+      ],
       "inputs": ["requirements/locks/build.in"],
       "compile_args": ["requirements/locks/build.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
     },
@@ -12,12 +24,35 @@
       "compile_args": ["requirements/locks/tox.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
     },
     {
+      "output": "requirements/locks/nox.txt",
+      "inputs": ["requirements/locks/nox.in"],
+      "compile_args": ["requirements/locks/nox.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
       "output": "requirements/locks/pre-commit.txt",
       "inputs": ["requirements/locks/pre-commit.in"],
       "compile_args": ["requirements/locks/pre-commit.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
     },
     {
       "output": "requirements/locks/dev-linters.txt",
+      "install_aliases": [
+        {
+          "alias": "$REPO_ROOT/requirements/locks/dev-linters.txt",
+          "consumers": [
+            "scripts/setup/alpine.sh",
+            "scripts/setup/arch.sh",
+            "scripts/setup/fedora.sh",
+            "scripts/setup/macos.sh",
+            "scripts/setup/ubuntu.sh"
+          ],
+          "context": "scripts/setup"
+        },
+        {
+          "alias": "${PSScriptRoot}/../../requirements/locks/dev-linters.txt",
+          "consumer": "scripts/setup/windows.ps1",
+          "context": "scripts/setup"
+        }
+      ],
       "inputs": ["requirements/locks/dev-linters.in"],
       "compile_args": ["requirements/locks/dev-linters.in", "--universal", "--python-version", "3.12", "--generate-hashes"]
     },
@@ -38,11 +73,35 @@
     },
     {
       "output": "requirements/locks/package-build.txt",
+      "install_aliases": [
+        {
+          "alias": "/build/requirements/package-build.txt",
+          "consumer": "docker/Dockerfile.production",
+          "context": "container-build"
+        },
+        {
+          "alias": "/build/vmaf/requirements/locks/package-build.txt",
+          "consumer": "dev/Containerfile",
+          "context": "container-build"
+        },
+        {
+          "alias": "/vmaf/requirements/locks/package-build.txt",
+          "consumer": "Dockerfile",
+          "context": "container-build"
+        }
+      ],
       "inputs": ["requirements/locks/package-build.in"],
-      "compile_args": ["requirements/locks/package-build.in", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+      "compile_args": ["requirements/locks/package-build.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
     },
     {
       "output": "requirements/locks/gcovr.txt",
+      "install_aliases": [
+        {
+          "alias": "../requirements/locks/gcovr.txt",
+          "consumer": ".github/workflows/tests-and-quality-gates.yml",
+          "context": "core"
+        }
+      ],
       "inputs": ["requirements/locks/gcovr.in"],
       "compile_args": ["requirements/locks/gcovr.in", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
     },
@@ -58,6 +117,13 @@
     },
     {
       "output": "python/requirements-lock.txt",
+      "install_aliases": [
+        {
+          "alias": "/vmaf/python/requirements-lock.txt",
+          "consumer": "Dockerfile",
+          "context": "container-build"
+        }
+      ],
       "inputs": ["python/pyproject.toml", "python/requirements.txt"],
       "compile_args": ["python/requirements.txt", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
     },
@@ -79,27 +145,68 @@
     {
       "output": "ai/requirements-dev-lock.txt",
       "inputs": ["ai/pyproject.toml"],
-      "compile_args": ["ai/pyproject.toml", "--extra", "dev", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+      "compile_args": ["ai/pyproject.toml", "--extra", "dev", "--universal", "--python-version", "3.14", "--generate-hashes"]
     },
     {
       "output": "mcp-server/vmaf-mcp/requirements-runtime-lock.txt",
+      "install_aliases": [
+        {
+          "alias": "/tmp/requirements-runtime-lock.txt",
+          "consumer": "mcp-server/vmaf-mcp/Dockerfile",
+          "context": "container-build"
+        }
+      ],
       "inputs": ["mcp-server/vmaf-mcp/pyproject.toml"],
       "compile_args": ["mcp-server/vmaf-mcp/pyproject.toml", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
     },
     {
       "output": "mcp-server/vmaf-mcp/requirements-production-lock.txt",
+      "install_aliases": [
+        {
+          "alias": "/build/vmaf-mcp/requirements-production-lock.txt",
+          "consumer": "docker/Dockerfile.production",
+          "context": "container-build"
+        }
+      ],
       "inputs": ["mcp-server/vmaf-mcp/pyproject.toml"],
       "compile_args": ["mcp-server/vmaf-mcp/pyproject.toml", "--extra", "eval", "--extra", "http", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
     },
     {
       "output": "mcp-server/vmaf-mcp/requirements-dev-lock.txt",
       "inputs": ["mcp-server/vmaf-mcp/pyproject.toml", "requirements/locks/mcp-dev-overlay.in"],
-      "compile_args": ["mcp-server/vmaf-mcp/pyproject.toml", "requirements/locks/mcp-dev-overlay.in", "--extra", "dev", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+      "compile_args": ["mcp-server/vmaf-mcp/pyproject.toml", "requirements/locks/mcp-dev-overlay.in", "--extra", "dev", "--universal", "--python-version", "3.14", "--generate-hashes"]
     },
     {
       "output": "dev/requirements-python-env-lock.txt",
+      "install_aliases": [
+        {
+          "alias": "/build/vmaf/dev/requirements-python-env-lock.txt",
+          "consumer": "dev/Containerfile",
+          "context": "container-build"
+        }
+      ],
       "inputs": ["python/pyproject.toml", "python/requirements.txt", "ai/pyproject.toml", "tools/vmaf-tune/pyproject.toml", "requirements/locks/dev-container.in"],
       "compile_args": ["python/requirements.txt", "ai/pyproject.toml", "tools/vmaf-tune/pyproject.toml", "requirements/locks/dev-container.in", "--extra", "dev", "--extra", "fast", "--python-platform", "x86_64-unknown-linux-gnu", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "tools/vmaf-tune/requirements-dev-lock.txt",
+      "inputs": ["tools/vmaf-tune/pyproject.toml", "requirements/locks/package-build.in"],
+      "compile_args": ["tools/vmaf-tune/pyproject.toml", "requirements/locks/package-build.in", "--extra", "dev", "--universal", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "dev-llm/requirements-dev-lock.txt",
+      "inputs": ["dev-llm/pyproject.toml", "requirements/locks/package-build.in"],
+      "compile_args": ["dev-llm/pyproject.toml", "requirements/locks/package-build.in", "--extra", "dev", "--universal", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
+      "output": "tools/vmaf-roi-score/requirements-dev-lock.txt",
+      "inputs": ["tools/vmaf-roi-score/pyproject.toml", "requirements/locks/package-build.in"],
+      "compile_args": ["tools/vmaf-roi-score/pyproject.toml", "requirements/locks/package-build.in", "--extra", "dev", "--universal", "--python-version", "3.12", "--generate-hashes"]
+    },
+    {
+      "output": "tools/ensemble-training-kit/requirements-dev-lock.txt",
+      "inputs": ["tools/ensemble-training-kit/pyproject.toml", "requirements/locks/package-build.in", "requirements/locks/ensemble-kit-dev.in"],
+      "compile_args": ["tools/ensemble-training-kit/pyproject.toml", "requirements/locks/package-build.in", "requirements/locks/ensemble-kit-dev.in", "--universal", "--python-version", "3.12", "--generate-hashes"]
     }
   ]
 }
