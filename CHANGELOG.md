@@ -25749,6 +25749,16 @@ so that MCP output is Netflix-compatible without explicit precision argument (AD
     should pick `vmaf_v0.6.1neg` (which clips).
 
 
+- **mcp-server**: removed the CodeQL `py/cyclic-import` pair between the Python
+  stdio server and HTTP transport.  HTTP scoring now crosses the acyclic
+  `http_scoring` interface, while request validation, execution, and strict JSON
+  behavior remain owned by the canonical server implementation.  Embedded HTTP
+  launchers may inject a per-server adapter without mutating process-global
+  policy; missing adapters fail before socket binding. The default development
+  dependencies now include the metrics client so HTTP regression tests execute
+  in CI rather than silently skipping at collection.
+
+
 - **MCP `run_benchmark` tool** now returns a complete benchmark JSON instead of an
   error response. Three root causes were fixed: (1) spurious positional arguments
   (`-r`, `-d`, `--width`, `--height`) passed to `bench_all.sh` corrupted `$@` inside

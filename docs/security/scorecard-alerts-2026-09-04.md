@@ -110,7 +110,7 @@ or upstream-mirror behaviors:
 3. **Alerts 927 & 168 (`cpp/equality-on-floats` in `core/src/predict.c` and `core/src/feature/feature_name.cpp`)**:
    - Exact float comparisons (`==`) required for numerical parity and bit-exact contract under ADR-0138 and ADR-0139.
 4. **Alerts 917 & 918 (`py/cyclic-import` in `mcp-server/vmaf-mcp`)**:
-   - `http_transport.py` and `server.py` use function-local imports that do not execute at module initialization time. Documented in Research-2028; refactoring requires extracting shared symbols to a separate module.
+   - Fixed in source on 2026-09-23. `http_transport.py` consumes the acyclic `http_scoring.py` interface and no longer imports `server.py`; the canonical server installs the scoring adapter. A package import-DAG test includes function-local imports, so hiding an edge through lexical placement cannot regress silently. Live status before merge: 917 open, 918 fixed; final confirmation awaits CodeQL on merged `master`.
 5. **Alerts 947, 948, 949 (`python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1` in `compat/python-vmaf/tools/decorator.py`)**:
    - Hardened with `usedforsecurity=False` in commit `93ffd7333`. Used solely for non-cryptographic memoization cache keys in upstream-compatible Python harness.
 6. **Alert 946 (`python.lang.security.audit.insecure-file-permissions` in `ai/sidecar/online_trainer.py`)**:

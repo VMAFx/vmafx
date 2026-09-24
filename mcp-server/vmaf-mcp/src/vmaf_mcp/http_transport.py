@@ -52,6 +52,7 @@ take precedence over compiled-in defaults.
 
 ADR-0701: vmafx-server HTTP transport + observability foundation.
 ADR-0967: MCP HTTP transport security hardening (auth + body limit + bind default).
+ADR-1304: per-server scoring-runtime isolation for embedded HTTP launchers.
 """
 
 from __future__ import annotations
@@ -68,6 +69,11 @@ import time
 import uuid
 from collections.abc import Callable
 from typing import Any
+
+from vmaf_mcp.http_scoring import (
+    HttpScoringRuntime,
+    get_http_scoring_runtime,
+)
 
 # ---------------------------------------------------------------------------
 # Security constants (ADR-0967)
@@ -374,6 +380,13 @@ def _make_security_middleware() -> Any:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_scoring_runtime(
+    runtime: HttpScoringRuntime | None,
+) -> HttpScoringRuntime:
+    """Return an injected runtime or the process-wide canonical adapter."""
+    return runtime if runtime is not None else get_http_scoring_runtime()
+
+
 async def _handle_healthz(request: Any) -> Any:
     """GET /healthz — liveness probe.  Always 200 while the process is alive."""
     aiohttp = _require_aiohttp()
@@ -384,7 +397,7 @@ async def _handle_healthz(request: Any) -> Any:
     )
 
 
-async def _handle_readyz(request: Any) -> Any:
+async def _handle_readyz(request: Any, runtime: HttpScoringRuntime | None = None) -> Any:
     """GET /readyz — readiness probe.
 
     Returns 200 once the vmaf binary path resolves to an executable file;
@@ -392,10 +405,8 @@ async def _handle_readyz(request: Any) -> Any:
     so it doesn't slow down Kubernetes readiness polling.
     """
     aiohttp = _require_aiohttp()
-    # Import lazily to avoid a circular import; server.py imports us.
-    from vmaf_mcp.server import _vmaf_binary
-
-    vmaf = _vmaf_binary()
+    scoring_runtime = _resolve_scoring_runtime(runtime)
+    vmaf = scoring_runtime.vmaf_binary()
     if vmaf.exists() and vmaf.is_file():
         return aiohttp.web.Response(
             status=200,
@@ -478,8 +489,7 @@ async def _read_score_body(
             aiohttp,
             metrics,
             400,
-            f"expected JSON object, got {type(body).__name__}; "
-            "request body must be a JSON object",
+            f"expected JSON object, got {type(body).__name__}; request body must be a JSON object",
             request_id,
         )
 
@@ -502,28 +512,29 @@ async def _read_score_body(
 
 
 def _build_score_request(
-    aiohttp: Any, metrics: dict[str, Any], body: dict[str, Any], request_id: str
+    aiohttp: Any,
+    metrics: dict[str, Any],
+    body: dict[str, Any],
+    request_id: str,
+    runtime: HttpScoringRuntime | None = None,
 ) -> tuple[Any, Any]:
     """Build the ScoreRequest from a validated body; returns (request, error_response)."""
-    from vmaf_mcp.server import ScoreRequest, _validate_path
-
     try:
-        ref_path = _validate_path(str(body["reference"]))
-        dis_path = _validate_path(str(body["distorted"]))
-        score_req = ScoreRequest(
-            ref=ref_path,
-            dis=dis_path,
-            width=int(body["width"]),
-            height=int(body["height"]),
-            pixfmt=str(body["pixfmt"]),
-            bitdepth=int(body["bitdepth"]),
-            model=str(body.get("model", "version=vmaf_v0.6.1")),
-            backend=str(body.get("backend", "auto")),
+        scoring_runtime = _resolve_scoring_runtime(runtime)
+        score_req = scoring_runtime.build_request(
+            reference=body["reference"],
+            distorted=body["distorted"],
+            width=body["width"],
+            height=body["height"],
+            pixfmt=body["pixfmt"],
+            bitdepth=body["bitdepth"],
+            model=body.get("model", "version=vmaf_v0.6.1"),
+            backend=body.get("backend", "auto"),
             # "legacy" (%.6f) is the documented C-CLI default (ADR-0119) and the
             # ScoreRequest default; keep the HTTP path aligned with the stdio /
             # subprocess paths so a client gets the same numeric format from
             # either transport.
-            precision=str(body.get("precision", "legacy")),
+            precision=body.get("precision", "legacy"),
         )
     except (TypeError, ValueError, FileNotFoundError) as exc:
         # TypeError covers int(None) / int([...]) when the caller sends a
@@ -538,11 +549,14 @@ def _build_score_request(
 
 
 def _score_success_response(
-    aiohttp: Any, metrics: dict[str, Any], result: dict[str, Any], request_id: str, elapsed: float
+    aiohttp: Any,
+    metrics: dict[str, Any],
+    result: dict[str, Any],
+    request_id: str,
+    elapsed: float,
+    runtime: HttpScoringRuntime | None = None,
 ) -> Any:
     """200 response for a completed score, with the success counter recorded."""
-    from vmaf_mcp.server import _dumps_strict
-
     _log_with_rid(logging.INFO, f"POST /v1/score done in {elapsed:.0f}ms", request_id)
     metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="200").inc()
     result["request_id"] = request_id
@@ -552,11 +566,15 @@ def _score_success_response(
     return aiohttp.web.Response(
         status=200,
         content_type="application/json",
-        text=_dumps_strict(result),
+        text=_resolve_scoring_runtime(runtime).dumps_strict(result),
     )
 
 
-async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
+async def _handle_score(
+    request: Any,
+    metrics: dict[str, Any],
+    runtime: HttpScoringRuntime | None = None,
+) -> Any:
     """POST /v1/score — single scoring request.
 
     Request body (JSON):
@@ -583,8 +601,6 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
     inside ``request.json()``).
     """
     aiohttp = _require_aiohttp()
-    from vmaf_mcp.server import _run_vmaf_score
-
     request_id = str(uuid.uuid4())[:8]
     t0 = time.monotonic()
     _log_with_rid(logging.INFO, "POST /v1/score received", request_id)
@@ -593,14 +609,15 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
     if rejection is not None:
         return rejection
 
-    score_req, rejection = _build_score_request(aiohttp, metrics, body, request_id)
+    scoring_runtime = _resolve_scoring_runtime(runtime)
+    score_req, rejection = _build_score_request(aiohttp, metrics, body, request_id, scoring_runtime)
     if rejection is not None:
         return rejection
 
     # Run the scorer.
     try:
         with metrics["scoring_duration_seconds"].time():
-            result = await _run_vmaf_score(score_req)
+            result = await scoring_runtime.run_score(score_req)
     except Exception as exc:
         elapsed = (time.monotonic() - t0) * 1000
         # Log full exception detail server-side; return generic message to the
@@ -613,7 +630,7 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
         return rejection
 
     elapsed = (time.monotonic() - t0) * 1000
-    return _score_success_response(aiohttp, metrics, result, request_id, elapsed)
+    return _score_success_response(aiohttp, metrics, result, request_id, elapsed, scoring_runtime)
 
 
 # ---------------------------------------------------------------------------
@@ -646,7 +663,7 @@ def _install_sigterm_handler(runner: Any, loop: asyncio.AbstractEventLoop) -> No
 # ---------------------------------------------------------------------------
 
 
-def _make_app(metrics: dict[str, Any]) -> Any:
+def _make_app(metrics: dict[str, Any], runtime: HttpScoringRuntime | None = None) -> Any:
     """Build and return the aiohttp Application.
 
     The ``metrics`` dict is passed in so tests can inject a fresh registry
@@ -664,16 +681,23 @@ def _make_app(metrics: dict[str, Any]) -> Any:
 
     # Bind metrics into the score handler via a closure.
     async def _score_handler(request: Any) -> Any:
-        return await _handle_score(request, metrics)
+        return await _handle_score(request, metrics, runtime)
+
+    async def _ready_handler(request: Any) -> Any:
+        return await _handle_readyz(request, runtime)
 
     app.router.add_get("/healthz", _handle_healthz)
-    app.router.add_get("/readyz", _handle_readyz)
+    app.router.add_get("/readyz", _ready_handler)
     app.router.add_get("/metrics", _handle_metrics)
     app.router.add_post("/v1/score", _score_handler)
     return app
 
 
-async def _serve(port: int, metrics: dict[str, Any]) -> None:
+async def _serve(
+    port: int,
+    metrics: dict[str, Any],
+    runtime: HttpScoringRuntime | None = None,
+) -> None:
     """Run the HTTP server until the event loop is stopped.
 
     Separated from ``run_http_server`` so tests can call it directly
@@ -685,7 +709,7 @@ async def _serve(port: int, metrics: dict[str, Any]) -> None:
     ``VMAFX_MCP_HTTP_TLS_KEY`` to enable.
     """
     aiohttp = _require_aiohttp()
-    app = _make_app(metrics)
+    app = _make_app(metrics, runtime)
     runner = aiohttp.web.AppRunner(app)
     await runner.setup()
 
@@ -727,7 +751,12 @@ async def _serve(port: int, metrics: dict[str, Any]) -> None:
         await runner.cleanup()
 
 
-def run_http_server(port: int = 8080, log_level: str = "INFO") -> None:
+def run_http_server(
+    port: int = 8080,
+    log_level: str = "INFO",
+    *,
+    runtime: HttpScoringRuntime | None = None,
+) -> None:
     """Launch the HTTP server synchronously (blocks until SIGTERM / SIGINT).
 
     This is the entry point called by ``main()`` when
@@ -736,7 +765,15 @@ def run_http_server(port: int = 8080, log_level: str = "INFO") -> None:
     Args:
         port: TCP port to listen on.
         log_level: Python logging level name (INFO, DEBUG, WARNING, …).
+        runtime: Optional scoring adapter for embedded/direct callers. The
+            canonical CLI installs one while importing ``vmaf_mcp.server``.
     """
+    # Resolve before allocating an event loop or binding a socket. Direct
+    # callers that omit both the canonical server import and an injected
+    # adapter fail at startup instead of exposing healthy-but-broken routes.
+    # Keep the resolved adapter local: replacing the process registry would
+    # let overlapping embedded servers observe each other's scoring policy.
+    scoring_runtime = _resolve_scoring_runtime(runtime)
     configure_logging(log_level)
     pc = _require_prometheus()
     metrics = _build_metrics(pc)
@@ -747,7 +784,9 @@ def run_http_server(port: int = 8080, log_level: str = "INFO") -> None:
     _install_sigterm_handler(_DummyRunner(), loop)
 
     try:
-        loop.run_until_complete(asyncio.wait_for(_serve(port, metrics), timeout=None))
+        loop.run_until_complete(
+            asyncio.wait_for(_serve(port, metrics, scoring_runtime), timeout=None)
+        )
     except asyncio.CancelledError:
         # Normal shutdown path: the event loop was cancelled (e.g. SIGTERM
         # handler called loop.stop()).  Nothing to do; the finally block below
@@ -817,14 +856,18 @@ def _apply_env_overrides() -> None:
             os.environ["VMAF_MCP_ALLOW"] = f"{existing}:{model_dir}" if existing else model_dir
 
 
-def make_score_handler(metrics: dict[str, Any]) -> Callable[..., Any]:
+def make_score_handler(
+    metrics: dict[str, Any], runtime: HttpScoringRuntime | None = None
+) -> Callable[..., Any]:
     """Return the /v1/score handler bound to *metrics*.
 
     Exposed for testing: tests can inject a custom metrics dict and a fresh
     prometheus_client registry without mutating module-level state.
     """
 
+    scoring_runtime = _resolve_scoring_runtime(runtime)
+
     async def _handler(request: Any) -> Any:
-        return await _handle_score(request, metrics)
+        return await _handle_score(request, metrics, scoring_runtime)
 
     return _handler

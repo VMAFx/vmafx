@@ -25,6 +25,38 @@ VMAFX_PORT=8080 VMAFX_MCP_HTTP_TOKEN='replace-with-a-secret' \
   vmaf-mcp --transport http
 ```
 
+### Python embedding
+
+The supported command-line entry point installs the canonical scoring runtime
+automatically. Applications that embed the transport directly may instead pass
+an object implementing `vmaf_mcp.http_scoring.HttpScoringRuntime`:
+
+```python
+from vmaf_mcp.http_transport import run_http_server
+
+run_http_server(port=8080, runtime=my_scoring_runtime)
+```
+
+The injected runtime owns path validation, request construction, score
+execution, and strict JSON serialization. It implements these four methods:
+
+| Method | Contract |
+|---|---|
+| `vmaf_binary() -> pathlib.Path` | Return the executable path used by `/readyz`; the transport checks that it exists and is a file. |
+| `build_request(**fields) -> object` | Validate the ten documented score fields and return the request object consumed by `run_score`. Raise `TypeError`, `ValueError`, or `FileNotFoundError` for invalid client input; the transport maps those exceptions to HTTP 400 without exposing their text. |
+| `async run_score(request) -> dict[str, object]` | Execute one request and return the JSON-compatible score payload. Other exceptions are logged and mapped to HTTP 500. |
+| `dumps_strict(data) -> str` | Return RFC 8259 JSON for the response payload, rejecting or normalising non-finite numbers rather than emitting bare `NaN` or `Infinity`. |
+
+`run_http_server` resolves the object before allocating an event loop or
+binding a socket and keeps it bound to that server's aiohttp application for
+the server lifetime. It does not install the object into process-global state,
+so multiple embedded servers may use different runtimes concurrently; each
+runtime remains responsible for concurrency among requests handled by its own
+server. If direct startup has neither an injected runtime nor the canonical
+server runtime, it raises before exposing a healthy-but-unready HTTP process.
+Importing `vmaf_mcp.server` does not replace a runtime an embedding application
+installed first. See [ADR-1304](../adr/1304-mcp-http-runtime-isolation.md).
+
 ---
 
 ## Endpoint reference

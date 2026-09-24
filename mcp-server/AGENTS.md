@@ -135,6 +135,24 @@ references, bypasses `|| true`.
   `[http]`; omitting latter makes HTTP entrypoint fail at runtime.
   Netflix upstream has no MCP server; entire subtree fork-local, never
   merges upstream.
+- **HTTP transport tests run in the default dev environment** (ADR-1304).
+  The `[dev]` dependency group must keep `pytest-aiohttp` and
+  `prometheus-client`: `tests/test_http_transport_round5.py` skips at module
+  collection when either HTTP dependency is absent. CI and the top-level nox
+  session install `[dev]`, so dropping the Prometheus test dependency turns
+  the import-cycle and per-server runtime regressions into silent skips.
+- **Python transport imports stay acyclic** (CodeQL alerts 917/918).
+  `server.py` installs the canonical scoring adapter through
+  `http_scoring.py`; `http_transport.py` consumes that interface and must
+  never import `server.py` directly.  Keep transport-specific startup in
+  `server.py::main()` and keep validation, `ScoreRequest` construction,
+  scoring, and strict JSON behind the shared interface.  The production
+  package DAG is pinned by `tests/test_import_graph.py`.  Importing the
+  canonical server must not overwrite a runtime installed by an embedding
+  process.  Direct `run_http_server` callers inject their runtime explicitly;
+  the injected object is bound per application and must never temporarily
+  replace the process-wide registry.  Missing registration fails before any
+  socket is bound.  See ADR-1304.
 - **MCP 2.x uses constructor-registered low-level handlers** (ADR-1129).
   `Server.list_tools()` / `Server.call_tool()` decorators and
   `Server.request_context` removed in mcp 2.1. Keep `_mcp_list_tools` and
