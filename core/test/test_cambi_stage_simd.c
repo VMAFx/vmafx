@@ -423,6 +423,16 @@ typedef struct {
     uint16_t v_band_size;
 } CValuesConfig;
 
+static void config_free(CValuesConfig *c)
+{
+    aligned_free(c->diffs_to_consider);
+    aligned_free(c->diff_weights);
+    aligned_free(c->all_diffs);
+    c->diffs_to_consider = NULL;
+    c->diff_weights = NULL;
+    c->all_diffs = NULL;
+}
+
 static int config_init(CValuesConfig *c, int max_log_contrast, const char *eotf_name,
                        double vis_lum_threshold)
 {
@@ -443,8 +453,10 @@ static int config_init(CValuesConfig *c, int max_log_contrast, const char *eotf_
     VmafEOTF eotf;
     err = vmaf_luminance_init_luma_range(&luma_range, 10, VMAF_PIXEL_RANGE_LIMITED);
     err |= vmaf_luminance_init_eotf(&eotf, eotf_name);
-    if (err)
+    if (err) {
+        config_free(c);
         return err;
+    }
     for (int d = 0; d < num_diffs; d++) {
         c->tvi_for_diff[d] =
             (uint16_t)(vmaf_cambi_test_get_tvi_for_diff(c->diffs_to_consider[d], DEFAULT_CAMBI_TVI,
@@ -457,13 +469,6 @@ static int config_init(CValuesConfig *c, int max_log_contrast, const char *eotf_
     c->v_band_base = v_lo > 0 ? (uint16_t)v_lo : 0;
     c->v_band_size = (uint16_t)(last_tvi_for_diff + 1 - c->v_band_base);
     return 0;
-}
-
-static void config_free(CValuesConfig *c)
-{
-    aligned_free(c->diffs_to_consider);
-    aligned_free(c->diff_weights);
-    aligned_free(c->all_diffs);
 }
 
 /* Values concentrated on the scored band (plus some outside it), so most

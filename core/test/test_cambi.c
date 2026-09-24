@@ -148,24 +148,43 @@ static int get_sample_image_8x8(VmafPicture *pic, int pic_index)
     return 0;
 }
 
+static char *unref_picture_if_allocated(VmafPicture *pic, bool allocated, char *error,
+                                        char *unref_fail_msg)
+{
+    if (!allocated) {
+        return error;
+    }
+    const int err = vmaf_picture_unref(pic);
+    if (err && !error) {
+        return unref_fail_msg;
+    }
+    return error;
+}
+
 /* Preprocessing functions */
 static char *test_anti_dithering_filter()
 {
-    VmafPicture pic;
-    VmafPicture filtered_pic;
+    VmafPicture pic = {0};
+    VmafPicture filtered_pic = {0};
+    const int pic_err = get_sample_image(&pic, 0);
+    const int filtered_pic_err = get_sample_image(&filtered_pic, 1);
+    const bool have_pic = !pic_err;
+    const bool have_filtered_pic = !filtered_pic_err;
+    char *error = CAMBI_TEST_NULL_POINTER;
 
-    int err = 0;
-    err |= get_sample_image(&pic, 0);
-    err |= get_sample_image(&filtered_pic, 1);
-    mu_assert("test_anti_dithering_filter alloc error", !err);
-    vmaf_cambi_test_anti_dithering_filter(&pic, pic.w[0], pic.h[0]);
-    bool equal = pic_data_equality(&pic, &filtered_pic);
-    mu_assert("anti_dithering_filter output pic wrong", equal);
+    if (pic_err || filtered_pic_err) {
+        error = "test_anti_dithering_filter alloc error";
+    } else {
+        vmaf_cambi_test_anti_dithering_filter(&pic, pic.w[0], pic.h[0]);
+        if (!pic_data_equality(&pic, &filtered_pic))
+            error = "anti_dithering_filter output pic wrong";
+    }
 
-    vmaf_picture_unref(&pic);
-    vmaf_picture_unref(&filtered_pic);
-
-    return CAMBI_TEST_NULL_POINTER;
+    error = unref_picture_if_allocated(&pic, have_pic, error,
+                                       "test_anti_dithering_filter input unref failed");
+    error = unref_picture_if_allocated(&filtered_pic, have_filtered_pic, error,
+                                       "test_anti_dithering_filter expected unref failed");
+    return error;
 }
 
 /* Banding detection functions */
@@ -258,68 +277,87 @@ static char *check_decimate_9b(VmafPicture pic, VmafPicture out_pic)
     return CAMBI_TEST_NULL_POINTER;
 }
 
-static char *check_decimate_additional_inputs(VmafPicture pic, VmafPicture out_pic)
+static char *check_decimate_8b_output(const VmafPicture *out_pic)
 {
-    int err = 0;
-    const uint16_t *data = out_pic.data[0];
-    ptrdiff_t stride = out_pic.stride[0] >> 1;
-    VmafPicture out_pic_4x4;
-    err |= vmaf_picture_alloc(&out_pic_4x4, VMAF_PIX_FMT_YUV400P, 10, 4, 4);
-    mu_assert("test_decimate_generic alloc #3 error", !err);
-
-    pic.bpc = 10;
-    vmaf_cambi_test_decimate_generic_uint16_and_convert_to_10b(&pic, &out_pic_4x4, out_pic_4x4.w[0],
-                                                               out_pic_4x4.h[0]);
-
-    mu_assert("decimate generic 10b wrong for same dimensions",
-              pic_data_equality(&pic, &out_pic_4x4));
-
-    VmafPicture pic_8b;
-    err |= get_sample_image_8b(&pic_8b);
-    mu_assert("test_decimate_generic alloc #4 error", !err);
-
-    pic_8b.bpc = 8;
-    vmaf_cambi_test_decimate_generic_uint8_and_convert_to_10b(&pic_8b, &out_pic, out_pic.w[0],
-                                                              out_pic.h[0]);
-
+    const uint16_t *data = out_pic->data[0];
+    const ptrdiff_t stride = out_pic->stride[0] >> 1;
     mu_assert("decimate generic 8b to 10b wrong pixel value (0,0)", data[0] == 8);
     mu_assert("decimate generic 8b to 10b wrong pixel value (0,1)", data[1] == 400);
     mu_assert("decimate generic 8b to 10b wrong pixel value (1,0)", data[stride] == 8);
     mu_assert("decimate generic 8b to 10b wrong pixel value (1,1)", data[1 + stride] == 400);
-
-    vmaf_picture_unref(&pic_8b);
-    vmaf_picture_unref(&out_pic_4x4);
-
     return CAMBI_TEST_NULL_POINTER;
+}
+
+static char *check_decimate_additional_inputs(VmafPicture pic, VmafPicture out_pic)
+{
+    VmafPicture out_pic_4x4 = {0};
+    VmafPicture pic_8b = {0};
+    bool have_out_pic_4x4 = false;
+    bool have_pic_8b = false;
+    char *error = CAMBI_TEST_NULL_POINTER;
+
+    if (vmaf_picture_alloc(&out_pic_4x4, VMAF_PIX_FMT_YUV400P, 10, 4, 4)) {
+        error = "test_decimate_generic alloc #3 error";
+    } else {
+        have_out_pic_4x4 = true;
+        pic.bpc = 10;
+        vmaf_cambi_test_decimate_generic_uint16_and_convert_to_10b(
+            &pic, &out_pic_4x4, out_pic_4x4.w[0], out_pic_4x4.h[0]);
+        if (!pic_data_equality(&pic, &out_pic_4x4))
+            error = "decimate generic 10b wrong for same dimensions";
+    }
+
+    if (!error && get_sample_image_8b(&pic_8b)) {
+        error = "test_decimate_generic alloc #4 error";
+    } else if (!error) {
+        have_pic_8b = true;
+        pic_8b.bpc = 8;
+        vmaf_cambi_test_decimate_generic_uint8_and_convert_to_10b(&pic_8b, &out_pic, out_pic.w[0],
+                                                                  out_pic.h[0]);
+        error = check_decimate_8b_output(&out_pic);
+    }
+
+    error = unref_picture_if_allocated(&pic_8b, have_pic_8b, error,
+                                       "test_decimate_generic input #4 unref failed");
+    error = unref_picture_if_allocated(&out_pic_4x4, have_out_pic_4x4, error,
+                                       "test_decimate_generic output #3 unref failed");
+    return error;
 }
 
 static char *test_decimate_generic()
 {
-    VmafPicture pic;
-    int err = 0;
-    err |= get_sample_image(&pic, 0);
-    mu_assert("test_decimate_generic alloc #1 error", !err);
+    VmafPicture pic = {0};
+    VmafPicture out_pic = {0};
+    bool have_pic = false;
+    bool have_out_pic = false;
+    char *error = CAMBI_TEST_NULL_POINTER;
 
-    VmafPicture out_pic;
-    err |= vmaf_picture_alloc(&out_pic, VMAF_PIX_FMT_YUV400P, 10, 2, 2);
-    mu_assert("test_decimate_generic alloc #2 error", !err);
+    if (get_sample_image(&pic, 0)) {
+        error = "test_decimate_generic alloc #1 error";
+    } else {
+        have_pic = true;
+        if (vmaf_picture_alloc(&out_pic, VMAF_PIX_FMT_YUV400P, 10, 2, 2)) {
+            error = "test_decimate_generic alloc #2 error";
+        } else {
+            have_out_pic = true;
+        }
+    }
 
-    char *error;
-    error = check_decimate_10b(pic, out_pic);
-    if (error)
-        return error;
-    error = check_decimate_16b(pic, out_pic);
-    if (error)
-        return error;
-    error = check_decimate_12b(pic, out_pic);
-    if (error)
-        return error;
-    error = check_decimate_9b(pic, out_pic);
-    if (error)
-        return error;
-    error = check_decimate_additional_inputs(pic, out_pic);
-    vmaf_picture_unref(&pic);
-    vmaf_picture_unref(&out_pic);
+    if (!error)
+        error = check_decimate_10b(pic, out_pic);
+    if (!error)
+        error = check_decimate_16b(pic, out_pic);
+    if (!error)
+        error = check_decimate_12b(pic, out_pic);
+    if (!error)
+        error = check_decimate_9b(pic, out_pic);
+    if (!error)
+        error = check_decimate_additional_inputs(pic, out_pic);
+
+    error = unref_picture_if_allocated(&pic, have_pic, error,
+                                       "test_decimate_generic input #1 unref failed");
+    error = unref_picture_if_allocated(&out_pic, have_out_pic, error,
+                                       "test_decimate_generic output #2 unref failed");
     return error;
 }
 static char *check_filtered_center(const VmafPicture *filtered_image, const uint16_t *filtered_data,
@@ -518,19 +556,6 @@ static char *check_c_values_8x8(const float *combined_c_values_8x8)
     mu_assert("combined_c_values 8x8 error", almost_equal(sum, 195.382527));
 
     return CAMBI_TEST_NULL_POINTER;
-}
-
-static char *unref_picture_if_allocated(VmafPicture *pic, bool allocated, char *error,
-                                        char *unref_fail_msg)
-{
-    if (!allocated) {
-        return error;
-    }
-    const int err = vmaf_picture_unref(pic);
-    if (err && !error) {
-        return unref_fail_msg;
-    }
-    return error;
 }
 
 static char *calculate_c_values_8x8_phase(const uint16_t *tvi_for_diff, uint16_t vlt_luma,

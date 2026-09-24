@@ -58,7 +58,7 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
 - Circular trampoline calls are eliminated (`calculate_c_values_default` invokes `calculate_c_values` directly).
 - Unprefixed declarations, test-only macros (`DEFAULT_CAMBI_TVI`, `NUM_SCALES`), and test-only enums are removed from `cambi_internal.h` and kept private to the respective test translation units.
 - Removed `#include "feature/cambi.c"` from both `test_cambi.c` and `test_cambi_stage_simd.c`, linking them against `libvmaf`.
-- Every allocation-returning test seam is checked before use, and each test gathers its result before releasing pictures and contrast arrays; failure paths no longer bypass cleanup through `mu_assert`.
+- Every allocation-returning link seam is checked before use. The anti-dithering and generic-decimation tests gather their first failure before releasing owned pictures, and c-values configuration releases contrast arrays when luminance initialization fails.
 - All numerical operation orderings, bounded-search tests, and SIMD stage coverage are preserved; all 25 `test_cambi` tests and 14 `test_cambi_stage_simd` tests pass bit-exact.
 
 ## Alternatives considered
