@@ -12,7 +12,9 @@ The fork's licence metadata was wrong in three ways at once, found while measuri
 the tree for REUSE compliance.
 
 **An identifier that does not exist.** 946 files declared
+<!-- REUSE-IgnoreStart -->
 `SPDX-License-Identifier: BSD-3-Clause-Plus-Patent`. There is no such SPDX
+<!-- REUSE-IgnoreEnd -->
 identifier; one further file declared `BSD+Patent`, the deprecated spelling of
 `BSD-2-Clause-Patent`. A downstream tool reading either learns nothing.
 

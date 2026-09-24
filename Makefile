@@ -132,8 +132,20 @@ cythonize-deps: $(VENV_PIP)
         silent-revert-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
-lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check
+lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check lint-reuse
 	@echo "=== all lints passed ==="
+
+# REUSE 3.3 compliance check (BUG-003). Ensures 100% license and copyright coverage.
+.PHONY: lint-reuse
+lint-reuse:
+	@echo "--- REUSE 3.3 compliance check ---"
+	@if command -v reuse >/dev/null 2>&1; then \
+	    reuse lint; \
+	else \
+	    echo "ERROR: reuse executable not found on PATH. Install via 'pip install reuse==6.2.0'." >&2; \
+	    exit 1; \
+	fi
+
 
 # Go security scan (gosec). Skips generated files by default; surfaces every
 # G* finding outside the gen/ tree. Source of truth for the gate added by

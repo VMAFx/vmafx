@@ -229,6 +229,20 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: reuse-lint
+        name: REUSE 3.3 license and copyright compliance (BUG-003)
+        entry: reuse lint
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: test-reuse-compliance
+        name: REUSE compliance regression tests (BUG-003)
+        entry: python3 -m unittest scripts.ci.tests.test_reuse_compliance
+        language: system
+        files: '^(REUSE\.toml|scripts/ci/tests/test_reuse_compliance\.py|LICENSES/.*)$'
+        pass_filenames: false
+
       - id: check-base-image-single-source
         name: Container base images come from build-config.env
         entry: scripts/ci/check-base-image-single-source.sh

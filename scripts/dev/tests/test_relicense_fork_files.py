@@ -59,12 +59,14 @@ class TagRewriting(unittest.TestCase):
         )
         self.assertEqual(rewrite(src, "build.rs").count(f"{TAG} EUPL-1.2"), 2)
 
+    # REUSE-IgnoreStart
     def test_prose_that_names_the_tag_is_not_a_declaration(self) -> None:
         """ "carries an SPDX-License-Identifier: tag" is English, not a licence.
 
         The file has no licence of its own, so it gains one, and the sentence
         that merely names the tag is left exactly as it was.
         """
+        # REUSE-IgnoreEnd
         src = f"/*\n * Copyright 2026 Lusoris\n * Each file carries an {TAG} tag.\n */\n"
         out = rewrite(src)
         self.assertIn(f"Each file carries an {TAG} tag.", out)

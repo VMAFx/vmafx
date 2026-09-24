@@ -69,8 +69,8 @@ jobs:
           key: pre-commit-${{ runner.os }}-py3.14-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: |
             pre-commit-${{ runner.os }}-py3.14-
-      - name: Install pre-commit
-        run: python -m pip install --upgrade pip pre-commit
+      - name: Install pinned pre-commit and reuse
+        run: python -m pip install "pre-commit==4.6.2" "reuse==6.2.0"
       - name: Verify installed hook lifecycle and stage dispatch
         run: python3 scripts/githooks/tests/test_install.py
       - name: Run pre-commit on all files
@@ -79,6 +79,8 @@ jobs:
         env:
           SKIP: ffmpeg-patches-apply-check
         run: pre-commit run --show-diff-on-failure --color=always --all-files
+      - name: Verify REUSE 3.3 compliance
+        run: make lint-reuse
 
   clang-tidy:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false

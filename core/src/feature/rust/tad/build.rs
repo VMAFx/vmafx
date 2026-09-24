@@ -29,7 +29,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             " * DO NOT EDIT — regenerate via `cargo build` inside the tad crate.\n",
             " *\n",
             " * Copyright 2026 Lusoris\n",
+            // REUSE-IgnoreStart
             " * SPDX-License-Identifier: EUPL-1.2\n",
+            // REUSE-IgnoreEnd
             " */",
         ))
         .generate()?

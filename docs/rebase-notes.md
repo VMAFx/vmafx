@@ -52054,18 +52054,28 @@ golden gate.
 
 ## ADR-1250 — EUPL-1.2 relicensing of fork-authored code
 
-Upstream syncs are unaffected by design. Every file that moved to EUPL-1.2 has no
-counterpart path or file name in `upstream/master`, which is precisely the set a
-sync never touches. The files a sync does touch — the upstream mirrors, the
-`compat/python-vmaf/` tree, and the SIMD and GPU kernels that carry upstream code
-— all keep the terms and notices they had.
+BUG-003 extends ADR-1250 with a root `REUSE.toml` default and exact provenance
+overrides. Upstream syncs are therefore not automatically unaffected: a new or
+renamed inherited file is covered mechanically by the default but would be
+misclassified as Lusoris EUPL-1.2 work until an override is added. The same risk
+applies when an outside contributor edits a previously fork-only file or an
+append-only aggregate. `reuse lint` can remain 100% green through that error.
+Re-run the rename-aware audit in
+[`docs/research/bug-003-reuse-provenance-audit-2026-09-24.md`](research/bug-003-reuse-provenance-audit-2026-09-24.md),
+update `REUSE.toml` and `scripts/ci/tests/test_reuse_compliance.py` together,
+and require zero provenance residuals in addition to zero missing metadata.
+
+New `ffmpeg-patches/` files need a separate source-unit audit against the exact
+configured FFmpeg release. Preserve every licence and copyright represented by
+the touched upstream units; never let the root EUPL-1.2 default classify the
+patch by repository location alone.
 
 Two things to know when replaying upstream changes:
 
 - **`core/src/feature/speed.c`** and the other upstream mirrors are unchanged by
   the relicensing. If a future sync adds a new upstream file, it arrives with
   Netflix's header and the classifier will leave it alone.
-- **A new fork-authored file** should carry `SPDX-License-Identifier: EUPL-1.2`.
+- **A new fork-authored file** should carry <!-- REUSE-IgnoreStart -->`SPDX-License-Identifier: EUPL-1.2`<!-- REUSE-IgnoreEnd -->.
   `scripts/dev/relicense_fork_files.py --check` says so mechanically; it needs the
   `upstream/master` ref present locally (`git fetch upstream`).
 - **The vendored Pelorus files are not relicensed.** The tool's `vendored-mirror`
