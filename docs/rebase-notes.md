@@ -73,6 +73,13 @@ these Meson blocks.
    Standalone quick-starts and doc contracts must explicitly configure a writable
    checkpoint directory alongside `VMAFX_SIDECAR_SOCKET` to avoid failing closed with
    `PermissionError` on root-owned `/mnt`.
+5. **The required sidecar suite is warning-clean on PyTorch 2.14.** Preserve
+   equal-length flattened predictions and targets (including batch size one),
+   explicit count-mismatch rejection, and the opset-17 tuple-argument
+   `dynamic_shapes=({0: "batch"},)` export. Do not restore `squeeze(-1)` plus
+   broadcasting or the legacy `dynamic_axes` exporter argument. Socket lifecycle
+   regressions signal readiness only after the real `listen()` succeeds and surface
+   every server-thread exception to the parent test.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

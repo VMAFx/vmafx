@@ -26,6 +26,12 @@ All four Python Semgrep findings are removed at source.
    path. A lifetime claim lock, no-follow type checks, active/stale probing,
    device/inode validation, and identity-checked cleanup prevent cooperating
    servers and replacement paths from being deleted.
+4. **Required-suite correction**: wiring `ai/sidecar/tests` into the required AI
+   lane exposed a batch-size-one MSE broadcast warning and the legacy ONNX
+   `dynamic_axes` warning under PyTorch 2.14. Predictions and targets are now
+   equal-length vectors with an explicit mismatch error, and the opset-17
+   exporter uses tuple arguments plus `dynamic_shapes`. The complete suite is
+   warning-clean rather than merely its alert-focused subset.
 
 The previous version of this digest incorrectly said the base cache writer used
 PID-suffixed temporary files. Exact-base inspection shows it wrote JSON directly
@@ -134,6 +140,8 @@ The socket regression suite exercises:
 - stale-socket recovery with a changed inode;
 - symlink and ordinary-file refusal with contents preserved;
 - a rebound live socket and a regular-file replacement surviving shutdown;
+- readiness only after the real listener is published, with server-thread
+  exceptions captured and asserted in the parent test;
 - prompt shutdown of held connections and accept/registration races;
 - a real different-EUID/same-GID peer receiving `EACCES` from the shipped
   owner-only endpoint.
@@ -144,7 +152,7 @@ The socket regression suite exercises:
 |---|---|
 | `compat/vmaf/tests/test_decorator_extended.py` | 26 passed, including spawn-process cases |
 | `ai/sidecar/tests/test_socket_permissions.py` | 19 passed on POSIX; namespace-dependent cross-UID case may skip with an explicit reason |
-| `ai/sidecar/tests/` | Full package suite green; optional ML dependency cases may skip |
+| `ai/sidecar/tests/` | 93 passed on Python 3.14.7 / PyTorch 2.14.0 with warnings promoted to errors |
 | Semgrep `p/python` on both source files | 0 text findings and 0 SARIF results |
 | Nox | `compat_decorator` executes all 26 decorator tests |
 | Hosted CI | Linux/macOS plus real Windows execution in `build.yml` |

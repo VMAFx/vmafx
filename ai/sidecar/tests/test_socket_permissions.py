@@ -153,6 +153,54 @@ def _finish_peer(peer: _PeerProcess) -> str:
     return stdout
 
 
+@contextlib.contextmanager
+def _published_server(
+    socket_path: str, monkeypatch: pytest.MonkeyPatch
+) -> Generator[None, None, None]:
+    """Run a server whose readiness signal follows a successful listen()."""
+    publication_complete = threading.Event()
+    real_socket = socket.socket
+
+    class PublicationSocket(real_socket):
+        def listen(self, backlog: int = 0) -> None:
+            super().listen(backlog)
+            if self.getsockname() == socket_path:
+                publication_complete.set()
+
+    monkeypatch.setattr("ai.sidecar.online_trainer.socket.socket", PublicationSocket)
+    stop_event = threading.Event()
+    server_errors: list[BaseException] = []
+
+    def run_server() -> None:
+        try:
+            ot_mod.run_server(
+                socket_path=socket_path,
+                trainer=mock.MagicMock(),
+                stop_event=stop_event,
+            )
+        except BaseException as exc:  # surfaced in the parent assertion below
+            server_errors.append(exc)
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    if not publication_complete.wait(timeout=3.0):
+        stop_event.set()
+        server_thread.join(timeout=2.0)
+        if server_errors:
+            raise AssertionError("server failed before publishing its listener") from server_errors[
+                0
+            ]
+        pytest.fail("server did not publish its listener")
+    try:
+        yield
+    finally:
+        stop_event.set()
+        server_thread.join(timeout=2.0)
+    assert not server_thread.is_alive()
+    if server_errors:
+        raise AssertionError("server thread failed") from server_errors[0]
+
+
 class TestSocketPermissionsAndOwnership:
     """Regression tests for Unix socket permissions and pathname ownership."""
 
@@ -397,90 +445,34 @@ class TestSocketPermissionsAndOwnership:
     ) -> None:
         """Cleanup must not unlink a replacement socket published after startup."""
         socket_path = str(tmp_path / "rebound.sock")
-        publication_complete = threading.Event()
-        real_socket = socket.socket
-
-        class PublicationSocket(real_socket):
-            def listen(self, backlog: int) -> None:
-                super().listen(backlog)
-                publication_complete.set()
-
-        monkeypatch.setattr("ai.sidecar.online_trainer.socket.socket", PublicationSocket)
-        stop_event = threading.Event()
-        server_errors: list[BaseException] = []
-
-        def run_server() -> None:
-            try:
-                ot_mod.run_server(
-                    socket_path=socket_path,
-                    trainer=mock.MagicMock(),
-                    stop_event=stop_event,
-                )
-            except BaseException as exc:  # surfaced in the parent assertion below
-                server_errors.append(exc)
-
-        server_thread = threading.Thread(
-            target=run_server,
-            daemon=True,
-        )
-        server_thread.start()
-        assert publication_complete.wait(timeout=3.0)
-        owner = os.lstat(socket_path)
-
-        os.unlink(socket_path)
-        replacement = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        replacement: socket.socket | None = None
         try:
-            replacement.bind(socket_path)
-            replacement.listen(1)
-            rebound = os.lstat(socket_path)
-            assert (rebound.st_dev, rebound.st_ino) != (owner.st_dev, owner.st_ino)
-
-            stop_event.set()
-            server_thread.join(timeout=2.0)
-            assert not server_thread.is_alive()
-            assert server_errors == []
+            with _published_server(socket_path, monkeypatch):
+                owner = os.lstat(socket_path)
+                os.unlink(socket_path)
+                replacement = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                replacement.bind(socket_path)
+                replacement.listen(1)
+                rebound = os.lstat(socket_path)
+                assert (rebound.st_dev, rebound.st_ino) != (owner.st_dev, owner.st_ino)
 
             current = os.lstat(socket_path)
             assert (current.st_dev, current.st_ino) == (rebound.st_dev, rebound.st_ino)
         finally:
-            stop_event.set()
-            server_thread.join(timeout=2.0)
-            replacement.close()
+            if replacement is not None:
+                replacement.close()
             with contextlib.suppress(FileNotFoundError):
                 os.unlink(socket_path)
 
     def test_shutdown_preserves_regular_file_replacing_owned_socket(
-        self, tmp_path: pathlib.Path
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Cleanup must not remove a non-socket replacement at the configured path."""
         socket_path = str(tmp_path / "replacement-file.sock")
-        stop_event = threading.Event()
-        server_thread = threading.Thread(
-            target=ot_mod.run_server,
-            kwargs={
-                "socket_path": socket_path,
-                "trainer": mock.MagicMock(),
-                "stop_event": stop_event,
-            },
-            daemon=True,
-        )
-        server_thread.start()
+        with _published_server(socket_path, monkeypatch):
+            os.unlink(socket_path)
+            pathlib.Path(socket_path).write_text("replacement", encoding="utf-8")
 
-        deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline:
-            with contextlib.suppress(FileNotFoundError):
-                if stat.S_ISSOCK(os.lstat(socket_path).st_mode):
-                    break
-            time.sleep(0.01)
-        else:
-            pytest.fail("server did not publish its socket")
-
-        os.unlink(socket_path)
-        pathlib.Path(socket_path).write_text("replacement", encoding="utf-8")
-        stop_event.set()
-        server_thread.join(timeout=2.0)
-
-        assert not server_thread.is_alive()
         assert pathlib.Path(socket_path).read_text(encoding="utf-8") == "replacement"
 
     def test_owner_ipc_connection_succeeds_under_0o600(self, tmp_path: pathlib.Path) -> None:

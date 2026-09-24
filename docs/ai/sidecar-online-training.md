@@ -130,6 +130,10 @@ Each checkpoint export writes two files atomically:
 
 The ONNX file uses opset 17 (matching ADR-0249 and the rest of the tiny-AI
 export stack).  Input shape: `(batch, n_features)`.  Output shape: `(batch, 1)`.
+Both axes named `batch` are dynamic in the exported graph, including when a
+checkpoint follows a one-sample training step. Training treats predictions and
+targets as equal-length vectors and rejects mismatched sample counts instead of
+letting PyTorch broadcast them.
 
 No current `vmafx-node` path discovers or loads these files. The
 `VMAFX_BASE_MODEL_PATH` variable belongs to the Python trainer: setting it for a

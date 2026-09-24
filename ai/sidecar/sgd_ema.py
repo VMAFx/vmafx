@@ -141,7 +141,14 @@ class SGDEMATrainer:
             self._opt.zero_grad()
 
             preds = self._model(features)
-            loss = self._loss_fn(preds.squeeze(-1), targets.float().squeeze(-1))
+            pred_values = preds.reshape(-1)
+            target_values = targets.float().reshape(-1)
+            if pred_values.shape != target_values.shape:
+                raise ValueError(
+                    "prediction/target shape mismatch: "
+                    f"{tuple(preds.shape)} vs {tuple(targets.shape)}"
+                )
+            loss = self._loss_fn(pred_values, target_values)
             loss.backward()
 
             # Gradient clipping — protects against outlier feature vectors.
@@ -203,12 +210,12 @@ class SGDEMATrainer:
                 os.close(tmp_fd)
                 torch.onnx.export(
                     self._ema_model,
-                    dummy,
+                    (dummy,),
                     tmp_path,
                     opset_version=opset,
                     input_names=["features"],
                     output_names=["score"],
-                    dynamic_axes={"features": {0: "batch"}},
+                    dynamic_shapes=({0: "batch"},),
                     do_constant_folding=True,
                 )
                 os.replace(tmp_path, path)

@@ -17,3 +17,7 @@
   setting, HTTP trainer status service, or Prometheus counter registration;
   require standalone quick-start examples to configure a writable checkpoint
   directory alongside the socket.
+- Make the newly required sidecar suite warning-clean on PyTorch 2.14: preserve
+  batch-size-one training without MSE broadcasting, reject prediction/target
+  count mismatches, export a genuinely dynamic ONNX batch axis, and fail socket
+  lifecycle tests on server-thread exceptions.

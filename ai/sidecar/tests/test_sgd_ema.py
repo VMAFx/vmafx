@@ -141,6 +141,15 @@ class TestSGDEMAStep:
             ema_after, expected, atol=1e-5
         ), f"EMA mismatch: got {ema_after}, expected {expected}"
 
+    def test_step_rejects_mismatched_prediction_and_target_counts(self):
+        model = _tiny_model()
+        trainer = SGDEMATrainer(model)
+        features = torch.ones(2, N_FEATURES)
+        targets = torch.zeros(1)
+
+        with pytest.raises(ValueError, match="prediction/target shape mismatch"):
+            trainer.step(features, targets)
+
 
 # ---------------------------------------------------------------------------
 # Warmup
@@ -201,6 +210,10 @@ class TestCheckpoint:
             trainer.export_onnx(path, n_features=N_FEATURES)
             model_proto = onnx.load(path)
             onnx.checker.check_model(model_proto)
+            input_batch = model_proto.graph.input[0].type.tensor_type.shape.dim[0]
+            output_batch = model_proto.graph.output[0].type.tensor_type.shape.dim[0]
+            assert input_batch.dim_param == "batch"
+            assert output_batch.dim_param == "batch"
 
     def test_state_dict_round_trip(self):
         """state_dict / load_state_dict preserves step count and weights."""

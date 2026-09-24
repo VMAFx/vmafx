@@ -16,7 +16,12 @@ Implements vmafx-node online training sidecar (ADR-0781).
 
 3. **ONNX opset** — `SGDEMATrainer.export_onnx()` uses `opset_version=17`
    (ADR-0249 constraint). Do not bump without updating op-allowlist audit
-   and all downstream `onnxruntime-go` consumers.
+   and all downstream `onnxruntime-go` consumers. The PyTorch 2.14 exporter
+   receives tuple arguments and `dynamic_shapes=({0: "batch"},)`; restoring
+   legacy `dynamic_axes` emits a warning under the required dynamo exporter.
+   Training flattens predictions and targets to equal-length vectors, rejects
+   a count mismatch, and must keep batch-size-one steps warning-free. Run the
+   complete `ai/sidecar/tests` suite with warnings promoted to errors.
 
 4. **Replay buffer capacity default** — 10 000 samples = ADR-0781 design point.
    The executable source (`_REPLAY_BUFFER_CAPACITY`), focused tests, and the
