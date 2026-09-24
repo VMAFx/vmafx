@@ -20475,6 +20475,11 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   60-second startup window (BUG-090).
 
 
+- Restored the HIP float-motion force-zero close callback and made its
+  option-derived tail flush idempotent, preventing a feature-name dictionary
+  leak and repeated-flush failure.
+
+
 Harden three AI training-pipeline data-integrity paths surfaced by the
 2026-06-27 bug-hunt sweep (cluster T-BUGHUNT-AI-2026-06-27):
 

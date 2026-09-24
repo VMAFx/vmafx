@@ -95,6 +95,7 @@ Conventions:
 | [2072](2072-pelorus-interop-v022-sync-2026-09-20.md) | Pelorus v0.2.2 interop parser safety sync | Active | [ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md) |
 | [2073](2073-ffmpeg-n9-0-2-stable-refresh.md) | FFmpeg n9.0.2 stable refresh | Active | [ADR-1240](../adr/1240-ffmpeg-release-patch-lifecycle.md) |
 | [2079](2079-sycl-clang-tidy-required-gate-verification.md) | SYCL clang-tidy required-gate live verification and fail-closed contract hardening | Active | [ADR-1297](../adr/1297-ci-gate-every-reporting-check.md), [ADR-0623](../adr/0623-scaffold-audit-p2-half-finished.md) |
+| [2080](2080-hip-float-motion-lifecycle-flush.md) | HIP float-motion force-zero ownership and option-aware flush idempotency | Active | — (BUG048 A5 restoration) |
 | [2096](2096-codeql-unused-static-alerts-2026-09-24.md) | CodeQL unused-static-function identity audit for repeated test compilations | Active | [ADR-1142](../adr/1142-whole-codebase-standards.md) |
 | [2097](2097-codeql-equality-on-floats-2026-09-24.md) | Resolving live CodeQL cpp/equality-on-floats alerts | Active | [ADR-1308](../adr/1308-codeql-float-equality-contracts.md) |
 
