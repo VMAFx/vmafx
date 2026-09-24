@@ -298,6 +298,10 @@ class ExecutorTest(unittest.TestCase):
                 any("FIFO error channel delivery failed" in note for note in cm.exception.__notes__)
             )
 
+    @unittest.skipUnless(
+        os.path.isdir("/proc/self/fd"),
+        "real descriptor-close regression requires Linux /proc/self/fd",
+    )
     def test_fifo_worker_failure_immediate_eof_real_child_state_transition(self):
         label, process, ready_sem, error_receiver = executor_module._start_fifo_worker(
             _early_exit_fifo_target, None, "test-early-exit"
