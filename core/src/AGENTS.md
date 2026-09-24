@@ -458,8 +458,13 @@ Both ownership exits in `libvmaf.c` must preserve that wait:
 
 Do not replace either event wait with a global queue/device wait, and do not
 remove the threaded wait because one timing sample happened to let DMA finish
-before the worker. `testdata/test_sycl_4k_repeat_determinism.py` covers 20
-serial and 20 `--threads 1` runs against the full normalized score report.
+before the worker. In a combined CUDA+SYCL build, the wait must remain before
+CUDA's host-cleanup early return. `core/test/test_sycl_cuda_serial_upload_lifetime.c`
+pins that compile combination through the public serial API; the 4K release
+callback poisons host storage as soon as cleanup returns and PSNR proves DMA
+already consumed the original pixels. `testdata/test_sycl_4k_repeat_determinism.py`
+then covers 20 serial and 20 `--threads 1` runs against the full normalized
+score report.
 
 ### framesync producer-error paths must call vmaf_framesync_abort (ADR-1092)
 

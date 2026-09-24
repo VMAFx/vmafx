@@ -18,9 +18,13 @@
   The picture pool (`tools/vmaf.cpp`, 3 slots) recycled `dist` back to the reader thread
   while `copy_queue.memcpy` DMA was still reading from that host buffer, corrupting
   in-flight GPU data. Added `vmaf_sycl_wait_last_upload(vmaf->sycl.state)` to both serial
-  and `--threads` cleanup paths under `#ifdef HAVE_SYCL` to drain the last DMA event
-  without blocking GPU compute on `combined_queue`. Verified with 20 consecutive 4K runs
-  per path on Arc A380: vmaf=90.747255 adm2=1.013590 (bit-exact, vs CPU delta 1.6e-05 ≤
-  tolerance). `testdata/test_sycl_4k_repeat_determinism.py` binds the selected binary to
-  its exact library and compares the full normalized report; it skips gracefully without
-  4K YUV fixtures.
+  and `--threads` cleanup paths under `#ifdef HAVE_SYCL`; the serial wait runs before
+  CUDA's host-cleanup early return so an all-backend build cannot bypass it. This drains
+  the last DMA event without blocking GPU compute on `combined_queue`.
+  `core/test/test_sycl_cuda_serial_upload_lifetime.c` exercises that exact compile
+  combination and poisons released 4K host storage to pin the ordering in C. Verified
+  with 20 consecutive 4K runs per path on Arc A380: vmaf=90.747255 adm2=1.013590
+  (bit-exact, vs CPU delta 1.6e-05 ≤ tolerance).
+  `testdata/test_sycl_4k_repeat_determinism.py` binds the selected binary to its exact
+  library and compares the full normalized report; it skips gracefully without 4K YUV
+  fixtures.

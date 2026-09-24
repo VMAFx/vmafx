@@ -748,8 +748,9 @@ not as fixed constants.
   is device-only release after `threaded_read_pictures_batch` already unref'd
   host pictures (PR #838), but it still waits for the final SYCL upload event
   before the caller can reuse those pictures (BUG-040). The serial cleanup
-  must retain the same wait before its host unrefs. Only `#ifdef HAVE_CUDA`
-  left inside `vmaf_read_pictures` guards `read_pictures_frame_translate` call.
+  must retain the same wait before its host unrefs and before CUDA's host-cleanup
+  early return in a combined CUDA+SYCL build. Only `#ifdef HAVE_CUDA` left
+  inside `vmaf_read_pictures` guards `read_pictures_frame_translate` call.
   Helper exists only in CUDA builds (CPU no-op stub would leave
   provably-dead error branch that cppcheck flags). Never re-inline further
   backend blocks into `vmaf_read_pictures`; add branches to matching

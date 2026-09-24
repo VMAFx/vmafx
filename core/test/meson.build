@@ -3090,6 +3090,22 @@ test_sycl_pic_preallocation = executable('test_sycl_pic_preallocation',
 test('test_sycl', test_sycl, suite : ['fast', 'gpu', 'sycl'])
 test('test_sycl_pic_preallocation', test_sycl_pic_preallocation, suite : ['fast', 'gpu', 'sycl'])
 
+# BUG-040: this compile combination used CUDA's host-picture cleanup early
+# return, bypassing the SYCL upload wait on the serial path. The public-API
+# regression poisons each released 4K host picture and proves psnr_sycl saw the
+# pre-release pixels. A SYCL device is required at runtime; no CUDA device is.
+if get_option('enable_cuda')
+test_sycl_cuda_serial_upload_lifetime = executable('test_sycl_cuda_serial_upload_lifetime',
+    ['test.c', 'test_sycl_cuda_serial_upload_lifetime.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : libvmaf_public_link,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    c_args : ['-DHAVE_CUDA=1', '-DHAVE_SYCL=1'],
+)
+test('test_sycl_cuda_serial_upload_lifetime', test_sycl_cuda_serial_upload_lifetime,
+    suite : ['slow', 'gpu', 'sycl'], timeout : 120)
+endif
+
 test_integer_cambi_sycl = executable('test_integer_cambi_sycl',
     ['test.c', 'test_integer_cambi_sycl.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

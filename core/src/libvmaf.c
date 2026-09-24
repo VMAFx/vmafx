@@ -2944,6 +2944,13 @@ static void read_pictures_frame_select_host(ReadPicturesFrame *fr)
  * drains. */
 static int read_pictures_frame_cleanup(VmafContext *vmaf, ReadPicturesFrame *fr, int err)
 {
+#ifdef HAVE_SYCL
+    /* The CUDA host-cleanup branch below returns early in a combined
+     * CUDA+SYCL build. Drain SYCL's final host upload before any branch can
+     * release the caller's picture storage back to its pool. */
+    if (vmaf->sycl.state)
+        err |= vmaf_sycl_wait_last_upload(vmaf->sycl.state);
+#endif
 #ifdef HAVE_CUDA
     if (fr->hw_flags & HW_FLAG_HOST) {
         return err | read_pictures_cuda_cleanup(vmaf, &fr->ref_host, &fr->ref_device,
@@ -2951,10 +2958,6 @@ static int read_pictures_frame_cleanup(VmafContext *vmaf, ReadPicturesFrame *fr,
     }
 #else
     (void)vmaf;
-#endif
-#ifdef HAVE_SYCL
-    if (vmaf->sycl.state)
-        err |= vmaf_sycl_wait_last_upload(vmaf->sycl.state);
 #endif
     err |= vmaf_picture_unref(fr->ref);
     err |= vmaf_picture_unref(fr->dist);
