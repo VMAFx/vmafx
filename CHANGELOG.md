@@ -29015,6 +29015,10 @@ Fix the CI scoping defect in `.github/workflows/lint-and-format.yml`:
   nothing to gain from LTO.
 
 
+- **Hardened the existing required `Tidy SYCL` (`clang-tidy-sycl`) CI lane and closed its stale ledger row (T-SYCL-CLANG-TIDY-DISABLED).**
+  Commit `6475fa9ea` had already removed the advisory status and added the ADR-1297 required context. This follow-up makes an absent check fail closed through `strictMustReport`, covers `.h` files independently in every pull-request, push-fallback, normal-push, and dispatch selection, and adds mutation-tested workflow contracts on one shared aggregator harness.
+
+
 - **SYCL float_ssim `enable_db` / `clip_db` option parity** (`integer_ssim_sycl.cpp`):
   the SYCL backend silently dropped the `enable_db` and `clip_db` options
   present on the CPU extractor and the HIP/Vulkan twins. Added both options

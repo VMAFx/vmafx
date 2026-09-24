@@ -166,6 +166,28 @@ printf 'CodeQL replay artifacts: %s\n' "$codeql_run"
 2. **Meson test target dependencies**: `test_feature` builds `feature_name.cpp` directly;
    `test_model`, `test_flush_context_ordering`, `test_cambi`, and `test_cambi_stage_simd` link
    with `libvmaf` / `libvmaf.get_static_lib()`. Preserve these linker configurations in `core/test/meson.build`.
+## fix/sycl-tidy-required-rc1 — SYCL tidy strict-reporting and header coverage (2026-09-24)
+
+Commit `6475fa9ea` had already promoted `clang-tidy-sycl` (`Tidy SYCL`) to a
+required, non-advisory ADR-1297 gate. This branch hardens that existing policy;
+it does not perform the promotion.
+
+1. **`Tidy SYCL` belongs to both `required` and `strictMustReport`.**
+   The job has no workflow or job-level path filter: its detect step skips only
+   the expensive body, while the context itself reports on every eligible PR
+   and master push. Absence is therefore a workflow failure, never a path skip.
+2. **Changed-file detection in `lint-and-format.yml` covers SYCL headers.**
+   The file patterns for the job include `'core/src/sycl/*.h'` and `'core/src/feature/sycl/*.h'`
+   in addition to `.cpp` and `.hpp` in each pull-request, push-fallback,
+   normal-push, and dispatch command. Do not let one complete branch mask
+   missing coverage in another.
+3. **The Go and SYCL contract suites share one real aggregator driver.**
+   Keep execution in `scripts/ci/required_aggregator_harness.py`; duplicated
+   Node drivers can drift in polling time and result decoding.
+4. **`test_sycl_tidy_workflow_contract.py` is wired to CI and local hooks.**
+   The contract is executed by `deep-dive-checklist` in `rule-enforcement.yml` and by the
+   `test-sycl-tidy-workflow-contract` local hook in `.pre-commit-config.yaml`. The exact
+   ADR-1297 strict set is also pinned in `scripts/ci/tests/test_hiss_replay_contract.py`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

@@ -270,6 +270,12 @@ jobs:
               'Markdown Lint',
               'No Conflict Markers',
               'Tiny-Model Registry Validate',
+              // The Tidy SYCL job has no workflow or job-level path filter.
+              // Its detect step may skip the expensive body, but the job still
+              // reports success on every eligible PR and master push. Absence
+              // therefore means the workflow failed to register, not that a
+              // path filter legitimately omitted the context.
+              'Tidy SYCL',
               'Windows ARM64 MSVC',
             ];
 

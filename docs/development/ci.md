@@ -385,7 +385,7 @@ to CI:
 | Carve-out | Blocker | Owner / plan |
 | --- | --- | --- |
 | Changed-files clang-tidy job excludes `core/src/cuda/`, `core/src/feature/cuda/`, `core/test/test_cuda_*`, `core/test/test_gpu_picture_pool.c` | CUDA toolkit headers on the hosted runner (`--cuda-host-only` needs them) | cuda lane → PR-required; retire the `grep -v` lines in the same PR |
-| … excludes `core/src/sycl/`, `core/src/feature/sycl/`, `core/test/test_sycl*`; `Tidy SYCL (advisory)` job is `continue-on-error` | oneAPI on the runner (the advisory job already installs it) | sycl lane → PR-required first; drop `continue-on-error` |
+| `Tidy Changed` excludes `core/src/sycl/`, `core/src/feature/sycl/`, and `core/test/test_sycl*`; the separate `Tidy SYCL` job now covers those changed-file globs as a required, fail-closed gate, but no workflow runs `tidy-ratchet.py --lane sycl` and `core/tools/vmaf_vpl.c` remains outside that job's selectors | The CPU ratchet has no complete SYCL/oneVPL compile database; the dedicated oneAPI job currently measures changed SYCL TUs rather than the whole SYCL baseline | add a required whole-lane SYCL ratchet and include `core/tools/vmaf_vpl.c`; keep `Tidy SYCL` required |
 | … excludes `core/src/hip/`, `core/src/feature/hip/`, `core/test/test_hip*` | ROCm headers on the hosted runner | hip lane → PR-required |
 | … excludes `core/src/feature/arm64/` | no aarch64 compile DB on x86 runners | measure on the ARM build leg (cross `-target aarch64`) |
 | … excludes `core/src/mcp/`, `core/test/test_mcp*`, `core/test/fuzz/`, `core/src/compat/win32/`, `core/tools/vmaf_vpl.c` | needs `-Denable_mcp=true` / fuzz / libva / MinGW compile DBs | add those TUs to the cpu-lane build in CI |

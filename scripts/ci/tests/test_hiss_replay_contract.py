@@ -29,6 +29,9 @@ ADR_1297_STRICT_CONTEXTS = {
     "Markdown Lint",
     "No Conflict Markers",
     "Tiny-Model Registry Validate",
+    # The SYCL path decision is step-level. The job itself always reports on
+    # eligible PRs and master pushes, so absence cannot mean path-filter skip.
+    "Tidy SYCL",
     "Windows ARM64 MSVC",
 }
 
