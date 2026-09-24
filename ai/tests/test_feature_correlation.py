@@ -10,6 +10,7 @@ without a multi-hour full-feature extraction pass.
 
 from __future__ import annotations
 
+import builtins
 import json
 import sys
 from pathlib import Path
@@ -217,6 +218,58 @@ def test_corr_main_skips_constant_numeric_columns(tmp_path, monkeypatch, capsys)
     assert payload["skipped_constant_columns"] == ["feat_constant"]
     assert "feat_constant" not in payload["pearson"]
     assert "feat_constant" not in payload["consensus_topk"]
+
+
+def test_corr_main_skips_feature_constant_only_after_complete_case(tmp_path, monkeypatch, capsys):
+    """A feature can lose all variance after rows missing a sibling are dropped."""
+    parquet = tmp_path / "syn_with_retained_constant.parquet"
+    pd.DataFrame(
+        {
+            "feat_becomes_constant": [0.0] * 6 + [1.0, 2.0, 3.0, 4.0],
+            "feat_varying": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0] + [np.nan] * 4,
+            "vmaf": np.linspace(70.0, 79.0, 10),
+        }
+    ).to_parquet(parquet)
+    out = tmp_path / "report.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["feature_correlation.py", "--parquet", str(parquet), "--out", str(out)],
+    )
+
+    assert corr_main() == 0
+    assert (
+        "[corr] skipped constant numeric columns: ['feat_becomes_constant']"
+        in capsys.readouterr().out
+    )
+    payload = json.loads(out.read_text(), parse_constant=_reject_nonfinite_json)
+    assert payload["feature_cols"] == ["feat_varying"]
+    assert payload["skipped_constant_columns"] == ["feat_becomes_constant"]
+
+
+def test_corr_main_without_sklearn_writes_strict_json(tmp_path, monkeypatch):
+    """An unavailable optional analyser must not serialize NaN placeholders."""
+    parquet = _make_synthetic_parquet(tmp_path / "syn.parquet")
+    out = tmp_path / "report.json"
+    real_import = builtins.__import__
+
+    def import_without_sklearn(name, *args, **kwargs):
+        if name == "sklearn" or name.startswith("sklearn."):
+            raise ImportError("sklearn deliberately unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_sklearn)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["feature_correlation.py", "--parquet", str(parquet), "--out", str(out)],
+    )
+
+    assert corr_main() == 0
+    payload = json.loads(out.read_text(), parse_constant=_reject_nonfinite_json)
+    assert payload["importances"] == {"mi": {}, "lasso": {}, "rf": {}}
+    assert payload["per_method_topk"] == {"mi": [], "lasso": [], "rf": []}
+    assert payload["consensus_topk"] == []
 
 
 def test_corr_main_rejects_table_without_usable_numeric_features(tmp_path, monkeypatch):

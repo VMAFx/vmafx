@@ -77,9 +77,9 @@ def _mutual_information_to_target(
         from sklearn.feature_selection import mutual_info_regression
     except ImportError:
         print("  [skip] sklearn missing; mutual info skipped", file=sys.stderr)
-        return {n: float("nan") for n in names}
+        return {}
     mi = mutual_info_regression(x, y, random_state=0)
-    return {names[i]: float(mi[i]) for i in range(len(names))}
+    return {names[i]: float(mi[i]) for i in range(len(names)) if np.isfinite(mi[i])}
 
 
 def _lasso_importance(x: np.ndarray, y: np.ndarray, names: list[str]) -> dict[str, float]:
@@ -88,12 +88,16 @@ def _lasso_importance(x: np.ndarray, y: np.ndarray, names: list[str]) -> dict[st
         from sklearn.preprocessing import StandardScaler
     except ImportError:
         print("  [skip] sklearn missing; LASSO skipped", file=sys.stderr)
-        return {n: float("nan") for n in names}
+        return {}
     scaler = StandardScaler()
     xz = scaler.fit_transform(x)
     model = LassoCV(cv=5, random_state=0, n_jobs=-1, max_iter=10000)
     model.fit(xz, y)
-    return {names[i]: float(abs(model.coef_[i])) for i in range(len(names))}
+    return {
+        names[i]: float(abs(model.coef_[i]))
+        for i in range(len(names))
+        if np.isfinite(model.coef_[i])
+    }
 
 
 def _random_forest_importance(x: np.ndarray, y: np.ndarray, names: list[str]) -> dict[str, float]:
@@ -101,17 +105,21 @@ def _random_forest_importance(x: np.ndarray, y: np.ndarray, names: list[str]) ->
         from sklearn.ensemble import RandomForestRegressor
     except ImportError:
         print("  [skip] sklearn missing; RF importance skipped", file=sys.stderr)
-        return {n: float("nan") for n in names}
+        return {}
     rf = RandomForestRegressor(n_estimators=100, random_state=0, n_jobs=-1)
     rf.fit(x, y)
-    return {names[i]: float(rf.feature_importances_[i]) for i in range(len(names))}
+    return {
+        names[i]: float(rf.feature_importances_[i])
+        for i in range(len(names))
+        if np.isfinite(rf.feature_importances_[i])
+    }
 
 
 def _top_k_consensus(importances: dict[str, dict[str, float]], k: int) -> list[str]:
     """Features ranked top-K by EVERY method in `importances`."""
     sets: list[set[str]] = []
     for _method, scores in importances.items():
-        finite = {n: v for n, v in scores.items() if not np.isnan(v)}
+        finite = {n: v for n, v in scores.items() if np.isfinite(v)}
         if not finite:
             continue
         ranked = sorted(finite, key=lambda n: -finite[n])
@@ -135,6 +143,25 @@ def _select_feature_columns(
     constant = set(skipped_constant)
     usable = [column for column in populated if column not in constant]
     return usable, skipped_non_numeric, skipped_all_nan, skipped_constant
+
+
+def _complete_case_features(
+    df: Any, feature_cols: list[str], target: str
+) -> tuple[Any, list[str], list[str]]:
+    """Drop incomplete rows and remove features constant on retained rows."""
+    usable = list(feature_cols)
+    skipped_constant: list[str] = []
+    while usable:
+        df_clean = df.dropna(subset=[*usable, target])
+        if df_clean.empty:
+            raise ValueError("no complete rows remain after dropping feature/target NaN values")
+        constant = [column for column in usable if df_clean[column].nunique() <= 1]
+        if not constant:
+            return df_clean, usable, skipped_constant
+        skipped_constant.extend(constant)
+        constant_set = set(constant)
+        usable = [column for column in usable if column not in constant_set]
+    raise ValueError("no usable numeric feature columns remain after complete-case filtering")
 
 
 def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
@@ -168,6 +195,11 @@ def _prepare_analysis_input(parquet: Path, target: str) -> _AnalysisInput:
     feat_cols, skipped_non_numeric, skipped_all_nan, skipped_constant = _select_feature_columns(
         df, candidate_cols
     )
+    if not feat_cols:
+        raise ValueError("no usable numeric feature columns remain after filtering")
+    df_clean, feat_cols, retained_constants = _complete_case_features(df, feat_cols, target)
+    skipped_constant = sorted(set(skipped_constant) | set(retained_constants))
+
     print(f"[corr] parquet={parquet} rows={len(df)} features={len(feat_cols)} target={target}")
     if skipped_non_numeric:
         print(f"[corr] skipped non-numeric columns: {skipped_non_numeric}")
@@ -175,13 +207,7 @@ def _prepare_analysis_input(parquet: Path, target: str) -> _AnalysisInput:
         print(f"[corr] skipped all-NaN numeric columns: {skipped_all_nan}")
     if skipped_constant:
         print(f"[corr] skipped constant numeric columns: {skipped_constant}")
-    if not feat_cols:
-        raise ValueError("no usable numeric feature columns remain after filtering")
-
-    df_clean = df.dropna(subset=[*feat_cols, target])
     print(f"[corr] dropped NaN rows: {len(df) - len(df_clean)}; clean rows={len(df_clean)}")
-    if df_clean.empty:
-        raise ValueError("no complete rows remain after dropping feature/target NaN values")
     return _AnalysisInput(
         x=df_clean[feat_cols].to_numpy(dtype=np.float64),
         y=df_clean[target].to_numpy(dtype=np.float64),
@@ -213,7 +239,7 @@ def _analyze(data: _AnalysisInput, threshold: float, top_k: int) -> dict[str, An
 
     per_method_topk: dict[str, list[tuple[str, float]]] = {}
     for method, scores in importances.items():
-        finite = {name: value for name, value in scores.items() if not np.isnan(value)}
+        finite = {name: value for name, value in scores.items() if np.isfinite(value)}
         per_method_topk[method] = sorted(finite.items(), key=lambda item: -item[1])[:top_k]
     return {
         "pearson": pearson,

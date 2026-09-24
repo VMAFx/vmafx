@@ -297,6 +297,10 @@ diagnostic instead of passing an empty array into NumPy or scikit-learn.
 Constant numeric columns are also excluded before analysis: their Pearson
 correlation is undefined, NumPy warns under the required warnings-as-errors
 policy, and a zero-importance tie must not promote them into `consensus_topk`.
+The analyzer repeats this check after complete-case filtering because removing
+rows for a sibling feature can turn a globally varying column into a constant.
+If optional scikit-learn analysis is unavailable, its method maps and top-K
+lists are empty rather than carrying non-standard JSON `NaN` placeholders.
 `ai/scripts/phase3_subset_sweep.py --out` also records `run_provenance` next to
 the subset result keys, including the source parquet, subset list, seed policy,
 standardization flag, and report path used for Phase-3 model-selection sweeps.

@@ -7,13 +7,17 @@ No upstream impact: `ai/` is fork-only (`ai/scripts/feature_correlation.py`).
 Restores BUG-048 item A11 (originally commit `5fc73913b`, clobbered in `384d97d03`).
 Parquets containing string/metadata columns (e.g. `codec`, `chug_orientation`)
 are filtered through `select_dtypes(include='number')` before `to_numpy(dtype=np.float64)`,
-then all-null and constant numeric features are removed before complete-case
-row filtering and analysis. All skipped sets are logged and recorded in the
-JSON report; this prevents NumPy's undefined-correlation warning and prevents a
-constant feature entering `consensus_topk` through a zero-score tie. Companion
-regressions in `ai/tests/test_feature_correlation.py` cover string/metadata
-columns, unavailable and constant numeric columns, the one-feature case, and
-an empty usable schema.
+then all-null and constant numeric features are removed before analysis. The
+constant check is repeated after complete-case filtering because removing rows
+for a sibling feature can erase the variance of a previously valid column. All
+skipped sets are logged and recorded in the JSON report; this prevents NumPy's
+undefined-correlation warning and prevents a constant feature entering
+`consensus_topk` through a zero-score tie. An unavailable optional scikit-learn
+method emits an empty result map instead of a non-standard JSON `NaN` value.
+Companion regressions in `ai/tests/test_feature_correlation.py` cover
+string/metadata columns, unavailable and constant numeric columns including a
+retained-row constant, missing scikit-learn, the one-feature case, and an empty
+usable schema.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

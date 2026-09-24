@@ -285,7 +285,10 @@ and the report records all exclusion sets so two runs can distinguish schema
 drift from missing feature extraction. Zero-variance numeric columns are
 recorded in `skipped_constant_columns` and excluded before Pearson and feature
 ranking: their correlation is undefined, and a zero-score tie is not evidence
-that they belong in a consensus top-K set.
+that they belong in a consensus top-K set. Constancy is checked again on the
+complete-case rows because missing values in a sibling feature can erase all
+remaining variance. Missing optional scikit-learn methods emit empty result
+maps and top-K lists, preserving strict RFC JSON instead of serializing `NaN`.
 
 ## References
 
