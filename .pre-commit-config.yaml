@@ -601,6 +601,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: test-dev-mcp-smoke-probe
+        name: dev-mcp smoke probe follows current CLI and Go MCP contracts
+        entry: bash dev/scripts/test-smoke-probe-loop.sh
+        language: system
+        files: '^(dev/scripts/(smoke-probe-loop|test-smoke-probe-loop)\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: ffmpeg-patches-apply-check
         name: FFmpeg patch stack on the configured release
         entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir/cache/ffmpeg-patch-stack/hooks

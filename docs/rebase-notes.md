@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-smoke-probe-contract — current CLI and Go MCP contracts (2026-09-24)
+
+No upstream impact: `dev/` and the Go MCP service are fork-local. Preserve the
+probe's evidence contract when resolving a conflict: each backend is selected
+with `--backend`, the raw fixture declares `--pixel_format 420 --bitdepth 8`,
+the score comes from the JSON output file, and `backend_used` must match the
+request. The production MCP binary is `vmafx-mcp`; a client must initialize the
+stdio session before calling `list_extractors` or `vmaf_score`, and must not
+close stdin until the response arrives because EOF disconnects the Go SDK
+session. The legacy probe JSON keys `list_features` and `compute_vmaf` remain
+stable consumer keys, not MCP operation names. Run
+`bash dev/scripts/test-smoke-probe-loop.sh` after any resolution touching the
+probe, CLI options, or Go MCP tool surface.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve
