@@ -20459,6 +20459,11 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   Identified by c-reviewer agent audit 2026-05-30 (MEDIUM severity).
 
 
+Restore ADR-0480's single owner for bootstrap collection-score names. Both
+pooled and per-index score paths again consume `bootstrap_names.h`, with a fast
+source-contract test preventing the shared header from becoming orphaned.
+
+
 - Fixed FIFO-mode Python executors hanging until the CI job timeout when a
   spawned workfile or procfile producer died before signaling readiness. The
   parent now reports the producer role, exit code, and available traceback,

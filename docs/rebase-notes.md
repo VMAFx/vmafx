@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-bootstrap-name-owner — keep ADR-0480's shared suffix owner (2026-09-24)
+
+`core/src/bootstrap_names.h` is the sole owner of bootstrap collection-score
+suffixes and buffer sizing. Both `core/src/libvmaf.c` and `core/src/predict.c`
+must include it and use all four suffix symbols; do not resolve a layout-sync
+conflict by restoring local literals. The loops intentionally remain separate
+because one pools collector values and the other appends per-index scores.
+Run `python3 core/test/test_bootstrap_name_contract.py` after either consumer
+changes. No public API or numerical behavior changes (ADR-0480,
+Research-0480).
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

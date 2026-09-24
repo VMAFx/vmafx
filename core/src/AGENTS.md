@@ -494,6 +494,16 @@ XML / JSON writers in `output.cpp` iterate `pool_report_order[]`, **not**
 `pooled_metrics` schema by accident; add method to that table only as
 deliberate, documented output change.
 
+### Bootstrap score names have one owner (ADR-0480)
+
+`bootstrap_names.h` owns the four collection-score suffixes and
+`BOOTSTRAP_NAME_BUF_SZ()`. Both `libvmaf.c`'s pooled-score path and
+`predict.c`'s per-index append path include that header and use its symbols.
+Do not restore translation-unit-local string literals: the two paths would
+again be able to publish different feature names. The loops stay separate
+because their callees and ownership contracts differ. The fast source-contract
+test is `core/test/test_bootstrap_name_contract.py`.
+
 ## Doxygen comment invariant (ADR-1096)
 
 Following `core/src/*.h` internal headers now carry Doxygen `@brief`,

@@ -55,4 +55,6 @@ complexity than it removes.
 - `core/src/bootstrap_names.h` (new file)
 - `core/src/predict.c` — `bootstrap_append_named_scores()`
 - `core/src/libvmaf.c` — `vmaf_score_pooled_model_collection()`
+- `core/test/test_bootstrap_name_contract.py` — source-ownership regression
+- [Research-0480](../research/0480-bootstrap-name-owner-restoration.md)
 - TODO/FIXME audit: `.workingdir/audit-todo-fixme-2026-05-16.md` items #1 and #2
