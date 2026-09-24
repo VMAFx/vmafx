@@ -364,10 +364,11 @@ further by-value large-struct kernel parameter without an ADR.
   take `const AdmBufferHip *__restrict__ buf_ptr`. By value, the 328-byte
   struct was copied into every launch's kernel arguments.
 - Host: `AdmStateHip::buf_dev` is a device copy of `s->buf`.
-  `adm_hip_upload_buf()` (`hipMalloc` + `hipMemcpy` HtoD) runs at the end of
+  `adm_hip_upload_buf()` (`hipMalloc` + `hipMemcpy` HtoD) runs near the end of
   `adm_hip_init_device()`, after `adm_hip_slice_bands()` and
-  `adm_hip_slice_results()`. `adm_hip_free_buf_dev()` frees it in
-  `close_fex_hip()` and on both init failure paths.
+  `adm_hip_slice_results()`. A failed copy frees its unpublished local
+  allocation; after publication, `adm_hip_free_buf_dev()` frees it on the later
+  dictionary failure and in `close_fex_hip()`.
 - Launch argument = `(void *)&s->buf_dev`, the address of the variable that
   holds the device pointer (ADR-0537 rule above).
 - Precondition: nothing writes `s->buf` between init and close, and no launch

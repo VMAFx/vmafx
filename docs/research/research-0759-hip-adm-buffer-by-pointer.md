@@ -188,16 +188,18 @@ The missing protection is now executable in
 `core/test/test_hip_adm_buffer_pointer_contract.py`. The fast, device-free gate
 checks the four pointer kernel signatures, the four `&s->buf_dev` launch
 arrays, the buffer-free reduce kernel, allocation/copy/publication ordering,
-and the current dictionary-failure and close release order. Five mutation tests
-red-cap by-value parameters, stale host launch wiring, the wrong copy
-direction, missing BUG-092 cleanup, and an unnecessary reduce-kernel buffer.
+and the current dictionary-failure and close release order. Seven mutation tests
+red-cap by-value parameters, stale host launch wiring, the wrong copy direction,
+cleanup moved outside either failure branch, missing BUG-092 cleanup, and an
+unnecessary reduce-kernel buffer; a formatting variant rejects whitespace-only
+false alarms.
 As a historical control, the validator reports sixteen contract failures on
 the exact stale collector `92ea978a4`; it reports none on the current source.
 
-ROCm 7.2.53211 rebuilt the HIP targets for the host's idle `gfx1036`. The five
-ADM parity/border/tiny-frame executables, the large parity variant, the source
-contract and the device-free lifecycle test passed 7/7 serially; the border and
-wide-rounding probes reported zero CPU/HIP delta for every printed feature, so
+ROCm 7.2.53211 rebuilt the HIP targets for the host's idle `gfx1036`. The four
+ADM parity/border/tiny-frame/wide-rounding executables, the large parity variant,
+the source contract and the device-free lifecycle test passed 7/7 serially; the
+border and wide-rounding probes reported zero CPU/HIP delta for every printed feature, so
 the GPU cases executed rather than taking their no-device skip. The BUG-092
 harness initially failed to link because the collector's current score writer
 also references `vmaf_feature_collector_append`; adding that no-op symbol to

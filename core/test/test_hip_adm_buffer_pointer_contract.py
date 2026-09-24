@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 
 FEATURE_DIR = Path(__file__).resolve().parents[1] / "src" / "feature" / "hip"
@@ -15,7 +16,6 @@ SOURCE_PATHS = {
     "csf": "integer_adm/adm_csf.hip",
     "cm": "integer_adm/adm_cm.hip",
 }
-POINTER_DECL = "const AdmBufferHip *__restrict__ buf_ptr"
 LAUNCHERS = {
     "adm_csf_device_hip": "s->func_adm_csf_kernel_1_4",
     "i4_adm_csf_device_hip": "s->func_i4_adm_csf_kernel_1_4",
@@ -53,6 +53,7 @@ def _strip_comments(source: str) -> str:
             end = source.find("*/", index + 2)
             if end < 0:
                 raise ValueError("unterminated C block comment")
+            output.append(" ")
             output.extend("\n" for char in source[index : end + 2] if char == "\n")
             index = end + 2
             continue
@@ -63,6 +64,10 @@ def _strip_comments(source: str) -> str:
 
 def _normalize(source: str) -> str:
     return re.sub(r"\s+", " ", _strip_comments(source).replace("\\\n", " ")).strip()
+
+
+def _compact(source: str) -> str:
+    return re.sub(r"\s+", "", _strip_comments(source).replace("\\\n", ""))
 
 
 def _matching_delimiter(source: str, start: int, opening: str, closing: str) -> int:
@@ -118,6 +123,39 @@ def _macro(source: str, name: str) -> str:
     raise ValueError(f"missing macro definition: {name}")
 
 
+def _first_parameter(source: str, callable_name: str) -> str:
+    clean = _strip_comments(source).replace("\\\n", " ")
+    match = re.search(rf"\b{re.escape(callable_name)}\s*\(", clean)
+    if match is None:
+        raise ValueError(f"missing callable signature: {callable_name}")
+    open_paren = clean.find("(", match.start())
+    close_paren = _matching_delimiter(clean, open_paren, "(", ")")
+    parameters = clean[open_paren + 1 : close_paren]
+    return _normalize(parameters.split(",", 1)[0])
+
+
+def _block_after(source: str, pattern: str, start: int = 0) -> str:
+    clean = _strip_comments(source)
+    match = re.search(pattern, clean[start:])
+    if match is None:
+        raise ValueError(f"missing braced region: {pattern}")
+    match_end = start + match.end()
+    open_brace = clean.find("{", match_end - 1)
+    if open_brace < 0:
+        raise ValueError(f"missing opening brace after: {pattern}")
+    close_brace = _matching_delimiter(clean, open_brace, "{", "}")
+    return clean[open_brace + 1 : close_brace]
+
+
+def _sub_exact(source: str, pattern: str, replacement: str, count: int = 1) -> str:
+    mutated, replacements = re.subn(pattern, replacement, source, count=count)
+    if replacements != count:
+        raise AssertionError(
+            f"mutation expected {count} replacement(s), got {replacements}: {pattern}"
+        )
+    return mutated
+
+
 def _sources(feature_dir: Path = FEATURE_DIR) -> dict[str, str]:
     return {
         role: (feature_dir / relative).read_text(encoding="utf-8")
@@ -126,28 +164,36 @@ def _sources(feature_dir: Path = FEATURE_DIR) -> dict[str, str]:
 
 
 def _require_order(failures: list[str], scope: str, source: str, markers: tuple[str, ...]) -> None:
+    compact = _compact(source)
     cursor = 0
     for marker in markers:
-        found = source.find(marker, cursor)
+        needle = _compact(marker)
+        found = compact.find(needle, cursor)
         if found < 0:
             failures.append(f"{scope}: missing or reordered {marker}")
             return
-        cursor = found + len(marker)
+        cursor = found + len(needle)
 
 
 def _validate_kernel_signatures(sources: dict[str, str], failures: list[str]) -> None:
     clean_kernels = _strip_comments(sources["csf"] + "\n" + sources["cm"])
-    if re.search(r"\bAdmBufferHip\s+(?:buf|buf_ptr)\b", clean_kernels):
+    if re.search(r"\bAdmBufferHip\b(?!\s*[*&])\s+[A-Za-z_]\w*", clean_kernels):
         failures.append("kernels: AdmBufferHip must never be passed by value")
 
-    for macro_name in ("ADM_CSF_KERNEL", "I4_ADM_CSF_KERNEL"):
+    macro_kernels = {
+        "ADM_CSF_KERNEL": "adm_csf_kernel_##rows_per_thread##_##cols_per_thread",
+        "I4_ADM_CSF_KERNEL": "i4_adm_csf_kernel_##rows_per_thread##_##cols_per_thread",
+    }
+    pointer_pattern = r"const\s+AdmBufferHip\s*\*\s*__restrict__\s+\w+"
+    for macro_name, kernel_name in macro_kernels.items():
         macro = _macro(sources["csf"], macro_name)
-        if f"( {POINTER_DECL}," not in macro:
+        first_parameter = _first_parameter(macro, kernel_name)
+        if re.fullmatch(pointer_pattern, first_parameter) is None:
             failures.append(f"{macro_name}: first argument is not the device buffer pointer")
 
     for kernel in ("i4_adm_cm_line_kernel", "adm_cm_line_kernel_8"):
-        signature = _normalize(_function(sources["cm"], kernel).split("{", 1)[0])
-        if f"{kernel}({POINTER_DECL}," not in signature:
+        first_parameter = _first_parameter(_function(sources["cm"], kernel), kernel)
+        if re.fullmatch(pointer_pattern, first_parameter) is None:
             failures.append(f"{kernel}: first argument is not the device buffer pointer")
 
     reduce_signature = _normalize(
@@ -159,18 +205,28 @@ def _validate_kernel_signatures(sources: dict[str, str], failures: list[str]) ->
 
 def _validate_launches(host: str, failures: list[str]) -> None:
     for launcher, kernel_handle in LAUNCHERS.items():
-        body = _normalize(_function(host, launcher))
-        argument = "void *args[] = {(void *)&s->buf_dev,"
-        args_index = body.find(argument)
-        launch_index = body.find(kernel_handle)
-        if args_index < 0 or launch_index < 0 or args_index > launch_index:
+        body = _function(host, launcher)
+        launch_match = re.search(re.escape(kernel_handle), body)
+        arrays = list(re.finditer(r"\bvoid\s*\*\s*args\s*\[\s*\]\s*=\s*\{", body))
+        arrays = [
+            match for match in arrays if launch_match and match.start() < launch_match.start()
+        ]
+        if not arrays:
             failures.append(f"{launcher}: first kernel argument is not &s->buf_dev")
-        if body.count("&s->buf_dev") != 1:
+            continue
+        open_brace = body.find("{", arrays[-1].start())
+        close_brace = _matching_delimiter(body, open_brace, "{", "}")
+        initializer = body[open_brace + 1 : close_brace]
+        first_argument = initializer.split(",", 1)[0]
+        pointer_pattern = r"(?:\(\s*void\s*\*\s*\)\s*)?&\s*s\s*->\s*buf_dev"
+        if re.fullmatch(pointer_pattern, first_argument.strip()) is None:
+            failures.append(f"{launcher}: first kernel argument is not &s->buf_dev")
+        if len(re.findall(r"&\s*s\s*->\s*buf_dev\b", initializer)) != 1:
             failures.append(f"{launcher}: expected exactly one device-buffer argument")
 
 
 def _validate_upload(host: str, failures: list[str]) -> None:
-    upload = _normalize(_function(host, "adm_hip_upload_buf"))
+    upload = _function(host, "adm_hip_upload_buf")
     _require_order(
         failures,
         "adm_hip_upload_buf",
@@ -183,10 +239,28 @@ def _validate_upload(host: str, failures: list[str]) -> None:
             "s->buf_dev = dev;",
         ),
     )
-    if "hipMalloc((void **)&s->buf_dev" in upload:
+    if "hipMalloc((void**)&s->buf_dev" in _compact(upload):
         failures.append("adm_hip_upload_buf: publishes the allocation before the copy succeeds")
 
-    free_buf = _normalize(_function(host, "adm_hip_free_buf_dev"))
+    copy_match = re.search(r"hipMemcpy\s*\([^;]+hipMemcpyHostToDevice\s*\)\s*;", upload)
+    if copy_match is None:
+        failures.append("adm_hip_upload_buf: missing host-to-device copy")
+    else:
+        copy_failure = _block_after(
+            upload,
+            r"if\s*\(\s*hip_err\s*!=\s*hipSuccess\s*\)\s*\{",
+            copy_match.end(),
+        )
+        _require_order(
+            failures,
+            "adm_hip_upload_buf copy failure",
+            copy_failure,
+            ("hipFree(dev);", "return hip_rc(hip_err);"),
+        )
+        if "s->buf_dev" in copy_failure:
+            failures.append("adm_hip_upload_buf: publishes the allocation on copy failure")
+
+    free_buf = _function(host, "adm_hip_free_buf_dev")
     _require_order(
         failures,
         "adm_hip_free_buf_dev",
@@ -196,17 +270,21 @@ def _validate_upload(host: str, failures: list[str]) -> None:
 
 
 def _validate_lifecycle(host: str, failures: list[str]) -> None:
-    init_device = _normalize(_function(host, "adm_hip_init_device"))
+    init_device = _function(host, "adm_hip_init_device")
     _require_order(
         failures,
         "adm_hip_init_device upload",
         init_device,
         ("adm_hip_slice_bands(s, h);", "adm_hip_slice_results(s);", "adm_hip_upload_buf(s);"),
     )
+    upload_match = re.search(r"adm_hip_upload_buf\s*\(\s*s\s*\)\s*;", init_device)
+    if upload_match is None:
+        raise ValueError("adm_hip_init_device: missing upload call")
+    upload_failure = _block_after(init_device, r"if\s*\(\s*err\s*\)\s*\{", upload_match.end())
     _require_order(
         failures,
         "adm_hip_init_device upload failure",
-        init_device[init_device.find("adm_hip_upload_buf(s);") :],
+        upload_failure,
         (
             "adm_hip_free_luma(s);",
             "adm_hip_free_buffers(s);",
@@ -215,8 +293,11 @@ def _validate_lifecycle(host: str, failures: list[str]) -> None:
         ),
     )
 
-    init_fex = _normalize(_function(host, "init_fex_hip"))
-    dictionary_failure = init_fex[init_fex.find("s->feature_name_dict == NULL") :]
+    init_fex = _function(host, "init_fex_hip")
+    dictionary_failure = _block_after(
+        init_fex,
+        r"if\s*\(\s*s\s*->\s*feature_name_dict\s*==\s*NULL\s*\)\s*\{",
+    )
     _require_order(
         failures,
         "init_fex_hip dictionary failure",
@@ -231,7 +312,7 @@ def _validate_lifecycle(host: str, failures: list[str]) -> None:
         ),
     )
 
-    close = _normalize(_function(host, "close_fex_hip"))
+    close = _function(host, "close_fex_hip")
     _require_order(
         failures,
         "close_fex_hip",
@@ -249,9 +330,10 @@ def _validate_lifecycle(host: str, failures: list[str]) -> None:
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     host = sources["host"]
-    if _normalize(host).count("AdmBufferHip *buf_dev;") != 1:
+    state = _block_after(host, r"typedef\s+struct\s+AdmStateHip\s*\{")
+    if len(re.findall(r"\bAdmBufferHip\s*\*\s*buf_dev\s*;", state)) != 1:
         failures.append("AdmStateHip: expected one device-resident AdmBufferHip owner")
-    validators = (
+    validators: tuple[Callable[[], None], ...] = (
         lambda: _validate_kernel_signatures(sources, failures),
         lambda: _validate_launches(host, failures),
         lambda: _validate_upload(host, failures),
@@ -271,41 +353,106 @@ class HipAdmBufferPointerContractTest(unittest.TestCase):
 
     def test_by_value_kernel_regression_is_detected(self) -> None:
         sources = _sources()
-        sources["csf"] = sources["csf"].replace(POINTER_DECL, "AdmBufferHip buf", 1)
+        sources["cm"] = _sub_exact(
+            sources["cm"],
+            r"(__global__\s+void\s+i4_adm_cm_line_kernel\s*\(\s*)"
+            r"const\s+AdmBufferHip\s*\*\s*__restrict__\s+buf_ptr",
+            r"\1AdmBufferHip buffer",
+        )
         self.assertTrue(any("passed by value" in item for item in _contract_failures(sources)))
+
+    def test_benign_declaration_whitespace_is_accepted(self) -> None:
+        sources = _sources()
+        sources["csf"] = _sub_exact(
+            sources["csf"],
+            r"\(\s*\\\n\s*const AdmBufferHip",
+            "(const AdmBufferHip",
+            count=2,
+        )
+        sources["cm"] = _sub_exact(
+            sources["cm"],
+            r"(i4_adm_cm_line_kernel|adm_cm_line_kernel_8)\(\s*const AdmBufferHip",
+            r"\1(\n    const AdmBufferHip",
+            count=2,
+        )
+        sources["host"] = _sub_exact(
+            sources["host"],
+            r"void\s*\*\s*args\s*\[\s*\]\s*=\s*\{\s*"
+            r"\(\s*void\s*\*\s*\)\s*&\s*s\s*->\s*buf_dev\s*,",
+            "void *args[] = { (void*) &s->buf_dev,",
+            count=4,
+        )
+        sources["host"] = _sub_exact(
+            sources["host"],
+            r"AdmBufferHip\s*\*\s*buf_dev\s*;",
+            "AdmBufferHip* buf_dev;",
+        )
+        self.assertEqual(_contract_failures(sources), [])
 
     def test_host_launch_regression_is_detected(self) -> None:
         sources = _sources()
-        sources["host"] = sources["host"].replace("(void *)&s->buf_dev", "(void *)&s->buf", 1)
+        sources["host"] = _sub_exact(
+            sources["host"],
+            r"\(\s*void\s*\*\s*\)\s*&\s*s\s*->\s*buf_dev",
+            "(void *)&s->buf",
+        )
         failures = _contract_failures(sources)
         self.assertTrue(any("first kernel argument" in item for item in failures))
 
     def test_upload_order_and_direction_regressions_are_detected(self) -> None:
         sources = _sources()
-        sources["host"] = sources["host"].replace(
-            "hipMemcpy(dev, &s->buf, sizeof(s->buf), hipMemcpyHostToDevice)",
-            "hipMemcpy(dev, &s->buf, sizeof(s->buf), hipMemcpyDeviceToHost)",
-            1,
+        sources["host"] = _sub_exact(
+            sources["host"],
+            r"(hipMemcpy\s*\(\s*dev\s*,\s*&\s*s\s*->\s*buf\s*,\s*"
+            r"sizeof\s*\(\s*s\s*->\s*buf\s*\)\s*,\s*)hipMemcpyHostToDevice",
+            r"\1hipMemcpyDeviceToHost",
         )
         failures = _contract_failures(sources)
         self.assertTrue(any("adm_hip_upload_buf" in item for item in failures))
 
     def test_cleanup_regression_is_detected(self) -> None:
         sources = _sources()
-        sources["host"] = sources["host"].replace(
-            "        adm_hip_free_buf_dev(s);\n        adm_hip_free_luma(s);",
-            "        adm_hip_free_luma(s);",
-            1,
+        sources["host"] = _sub_exact(
+            sources["host"],
+            r"adm_hip_free_buf_dev\s*\(\s*s\s*\)\s*;\s*" r"(?=adm_hip_free_luma\s*\(\s*s\s*\))",
+            "",
         )
         failures = _contract_failures(sources)
         self.assertTrue(any("dictionary failure" in item for item in failures))
 
+    def test_upload_cleanup_must_remain_in_failure_branch(self) -> None:
+        sources = _sources()
+        sources["host"] = _sub_exact(
+            sources["host"],
+            r"if\s*\(\s*err\s*\)\s*\{\s*"
+            r"(?P<cleanup>adm_hip_free_luma\s*\(\s*s\s*\)\s*;\s*"
+            r"adm_hip_free_buffers\s*\(\s*s\s*\)\s*;\s*"
+            r"adm_hip_unload_modules\s*\(\s*s\s*\)\s*;\s*"
+            r"adm_hip_destroy_stream\s*\(\s*s\s*\)\s*;)\s*\}\s*"
+            r"(?P<result>return\s+err\s*;)",
+            r"if (err) {}\n\g<cleanup>\n\g<result>",
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("upload failure" in item for item in failures))
+
+    def test_copy_cleanup_must_remain_in_failure_branch(self) -> None:
+        sources = _sources()
+        sources["host"] = _sub_exact(
+            sources["host"],
+            r"if\s*\(\s*hip_err\s*!=\s*hipSuccess\s*\)\s*\{\s*"
+            r"\(\s*void\s*\)\s*hipFree\s*\(\s*dev\s*\)\s*;\s*"
+            r"(?P<result>return\s+hip_rc\s*\(\s*hip_err\s*\)\s*;)\s*\}",
+            r"if (hip_err != hipSuccess) { \g<result> }\n(void)hipFree(dev);",
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("copy failure" in item for item in failures))
+
     def test_reduce_kernel_stays_buffer_free(self) -> None:
         sources = _sources()
-        sources["cm"] = sources["cm"].replace(
-            "__global__ void adm_cm_reduce_line_kernel_4(",
-            "__global__ void adm_cm_reduce_line_kernel_4(const AdmBufferHip *buf_ptr, ",
-            1,
+        sources["cm"] = _sub_exact(
+            sources["cm"],
+            r"(__global__\s+void\s+adm_cm_reduce_line_kernel_4\s*\(\s*)",
+            r"\1const AdmBufferHip *buf_ptr, ",
         )
         failures = _contract_failures(sources)
         self.assertTrue(any("buffer-free reduce" in item for item in failures))

@@ -53032,8 +53032,8 @@ docker-datasource manager without a `depNameTemplate`, and the CUDA one carries
 Fork-local; no upstream Netflix surface. The four HIP integer ADM `__global__`
 kernels that read `AdmBufferHip` take
 `const AdmBufferHip *__restrict__ buf_ptr`, and `AdmStateHip` owns a device copy
-(`buf_dev`) uploaded once at the end of `init_fex_hip()`, passed as `args[0]` by
-address, and freed in `close_fex_hip()` and on the init failure path.
+(`buf_dev`) uploaded once near the end of `adm_hip_init_device()`, passed as
+`args[0]` by address, and freed in `close_fex_hip()` or during failed init.
 
 The current collector does **not** carry the old tail-calling
 `adm_hip_unwind_*` chain. PR #1507 reconciled ADR-0759 with BUG-092 as
