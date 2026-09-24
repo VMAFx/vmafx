@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import sys
@@ -37,8 +38,10 @@ from vmaftune.report import (
     _codec_plot_fn,
     _ladder_plot_fn,
     _sweep_plot_fn,
+    build_report_status,
     render_html,
     render_markdown,
+    write_report_outputs,
 )
 
 
@@ -135,6 +138,53 @@ def test_markdown_assets_dir_writes_pngs(tmp_path):
     assert len(pngs) >= 2  # ladder + codec + shot
     # md links them, not base64
     assert "data:image/png;base64" not in md
+
+
+def test_write_report_outputs_emits_strict_complete_bundle(tmp_path):
+    """The shared writer owns the JSON/HTML/Markdown artifact contract."""
+    data = _sample_data()
+    data = dataclasses.replace(
+        data,
+        codec_rows=(dataclasses.replace(data.codec_rows[0], vmaf_score=float("nan")),),
+    )
+    output = tmp_path / "profile.out"
+
+    paths = write_report_outputs(data, output=output, format_name="both")
+
+    assert paths == (
+        tmp_path / "profile.json",
+        tmp_path / "profile.html",
+        tmp_path / "profile.md",
+    )
+    payload_text = paths[0].read_text(encoding="utf-8")
+    assert "NaN" not in payload_text
+    assert json.loads(payload_text)["codec_rows"][0]["vmaf_score"] is None
+    assert "<title>vmaf-tune report" in paths[1].read_text(encoding="utf-8")
+    assert "# vmaf-tune report" in paths[2].read_text(encoding="utf-8")
+
+
+def test_build_report_status_distinguishes_unavailable_from_real_failure():
+    """Unavailable encoders degrade a report; real row failures fail it."""
+    data = _sample_data()
+
+    failed = build_report_status(data, outputs=(pathlib.Path("profile.html"),))
+
+    assert failed["ok"] is False
+    assert failed["degraded"] is False
+    assert failed["outputs"] == ["profile.html"]
+
+    unavailable_row = dataclasses.replace(
+        data.codec_rows[-1], error="encoder unavailable (libvpx): not built"
+    )
+    unavailable_data = dataclasses.replace(
+        data, codec_rows=(*data.codec_rows[:-1], unavailable_row)
+    )
+
+    degraded = build_report_status(unavailable_data)
+
+    assert degraded["ok"] is True
+    assert degraded["degraded"] is True
+    assert degraded["codec_rows_unavailable"] == 1
 
 
 def test_html_one_shot_timeline_renders_non_empty_chart():

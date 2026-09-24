@@ -142,6 +142,17 @@ because one pools collector values and the other appends per-index scores.
 Run `python3 core/test/test_bootstrap_name_contract.py` after either consumer
 changes. No public API or numerical behavior changes (ADR-0480,
 Research-0480).
+## fix/bug048-report-output-restoration — restore the shared complete bundle (2026-09-24)
+
+No upstream rebase impact: `tools/vmaf-tune/` is fork-only. Preserve the
+contract that `compare --format both` and `report --format both` each emit
+`.json`, `.html`, and `.md`, in that order. The report regression was hidden
+because its test copied the intended dispatch logic instead of calling the
+production writer; keep the regression bound to
+`vmaftune.report.write_report_outputs`. Both subcommands must keep calling that
+single helper; restoring CLI-local copies would reintroduce the B10 drift fixed
+by historical commit `3a63383af`. Research-0714 remains the design authority.
+No ADR is needed for these one-way restorations of already documented behavior.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

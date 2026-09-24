@@ -13,13 +13,17 @@ status aggregation logic that dashboards consume after rendering.
 - `ReportData` already centralises the structured report payload and encoder
   profile schema, so output writing belongs beside the renderer rather than in
   every CLI caller.
+- The shared writer owns the complete artifact contract: `both` emits strict
+  RFC-8259 JSON first, then HTML and Markdown; `--json-sidecar` adds that JSON
+  to either single-render mode. Keeping JSON in one writer prevents the report
+  and inline-compare paths from drifting again.
 - The top-level status JSON is part of the report surface, but the logic was
   only testable through the full CLI. Moving it into `vmaftune.report` keeps the
   behaviour identical while making unavailable-codec vs real-failure semantics
   directly testable.
-- No schema or text changes are needed for this slice. The helper preserves the
-  current `html`, `markdown`, and `both` suffix rules and the current status
-  fields.
+- No schema or rendered-text changes are needed for this slice. The helper
+  preserves the current suffix rules, artifact order, and status fields while
+  routing JSON through the package's strict serializer.
 
 ## Alternatives considered
 
@@ -37,3 +41,11 @@ status aggregation logic that dashboards consume after rendering.
 ```bash
 .venv/bin/python -m pytest tools/vmaf-tune/tests/test_report.py tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py::test_cli_compare_profile_report_both_writes_html_and_markdown -q
 ```
+
+## 2026-09-24 restoration
+
+Commit `3a63383af` originally moved both CLI paths onto this helper, but the
+production helper disappeared while this digest and its changelog fragment
+survived. BUG-048 B10 restores the module boundary on top of the separately
+restored B9 three-artifact behavior. Direct tests now reject JavaScript-only
+`NaN`/`Infinity` tokens and pin unavailable-encoder status semantics.

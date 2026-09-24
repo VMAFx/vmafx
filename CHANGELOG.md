@@ -10484,9 +10484,9 @@ capture used by the newer AI corpus/report tooling.
   Netflix golden gate: `76.6678` (places=4 pass). (ADR-0708)
 
 
-Refactored `vmaf-tune` report artifact writing and report status aggregation
-behind shared renderer helpers while preserving the existing report/profile
-schema.
+Restored shared `vmaf-tune` report artifact writing and status aggregation in
+`vmaftune.report`. Both CLI paths now use one strict-JSON/HTML/Markdown writer
+while preserving the existing report/profile schema and output order.
 
 
 Refactored `vmaf-tune` report and compare JSON emitters to use one strict
@@ -20565,6 +20565,11 @@ invalid ROI pooled score exits 65 without writing a report.
 - Restored the HIP float-motion force-zero close callback and made its
   option-derived tail flush idempotent, preventing a feature-name dictionary
   leak and repeated-flush failure.
+
+
+- Restore the complete `vmaf-tune report --format both` bundle: JSON, HTML,
+  and Markdown are emitted together again. The regression test now invokes the
+  production writer instead of duplicating its intended dispatch logic.
 
 
 Restored strict RFC-8259 serialization across AI manifests, evaluation reports,

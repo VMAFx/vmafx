@@ -1818,7 +1818,7 @@ vmaf-tune compare \
 vmaf-tune report \
     --src bbb_1080p_60fps.mp4 \
     --compare-json sweep.json --target-vmaf 92 \
-    --format html --output sweep_report.html
+    --format both --output sweep_report.html
 
 # Convenience path: render the same profile card directly from compare.
 vmaf-tune compare \
@@ -1836,6 +1836,12 @@ vmaf-tune encode-profile \
     --codec libsvtav1 --target-vmaf 96 \
     --output bbb_svtav1_vmaf96.mkv
 ```
+
+For both `compare` and `report`, `--format both` writes the complete
+three-file bundle next to `--output`: machine-readable `.json` plus the
+human-readable `.html` and `.md` renders. On a single-format HTML or
+Markdown run, pass `--json-sidecar` to add the same JSON payload without
+requesting both renders.
 
 **Why these defaults (ADR-0538 supersedes ADR-0530)**
 
@@ -1944,8 +1950,8 @@ from the ADR-0641 profile-report path (`--format both`) and list
 | `--score-backend` | scorer default | `cpu`, `cuda`, `sycl`, `hip`, or `auto`. (`vulkan` removed in ADR-0726.) |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Binary overrides. |
 | `--encoder-ffmpeg-bin ENCODER=PATH` | off | Bind one compare token to a specific FFmpeg binary. Use with `ADAPTER@VARIANT` labels such as `libsvtav1@svt-av1-hdr=/opt/ffmpeg-8.1.1-svtav1-hdr/bin/ffmpeg`; unbound tokens use `--ffmpeg-bin`. |
-| `--format` | `markdown` | One of `markdown`, `json`, `csv`, `html`, `both`. `html` and `both` render the profile-card report directly; `both` writes `.html` and `.md` next to `--output` and therefore requires `--output`. |
-| `--json-sidecar` | off | When emitting HTML or Markdown reports (`--format html`, `markdown`, or `both`), also write `<output>.json` containing `data.to_dict()` next to the rendered report. |
+| `--format` | `markdown` | One of `markdown`, `json`, `csv`, `html`, `both`. `html` and `both` render the profile-card report directly; `both` writes `.json`, `.html`, and `.md` next to `--output` and therefore requires `--output`. |
+| `--json-sidecar` | off | When emitting a single HTML or Markdown report, also write `<output>.json` containing the report payload next to the rendered report. `--format both` includes this JSON artifact automatically. |
 | `--no-parallel` | off | Run codecs sequentially (default: thread pool, one per codec). |
 | `--max-workers N` | `len(encoders)` | Cap on the parallel thread pool. |
 | `--predicate-module MOD:FN` | off | Advanced hook that bypasses the bisect backend. |
@@ -2403,7 +2409,9 @@ from one or more JSON dumps emitted upstream of it
 writes a one-line stdout JSON summary that downstream automation
 can pipe to `jq`. The rendered card starts with a Quick takeaways block
 that summarizes the concrete recommendation and coverage gaps before
-the detailed tables. The stdout fields:
+the detailed tables. `--format both` writes `.json`, `.html`, and `.md`
+artifacts; `--json-sidecar` adds `.json` when requesting only HTML or
+Markdown. The stdout fields:
 
 | Key | Meaning |
 | --- | --- |

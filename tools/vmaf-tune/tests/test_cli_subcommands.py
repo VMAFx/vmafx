@@ -849,10 +849,10 @@ class TestReportSubcommand:
         assert payload["ok"] is True
         assert len(payload["outputs"]) == 1
 
-    def test_report_both_format_writes_html_and_md(
+    def test_report_both_format_writes_all_artifacts(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
     ) -> None:
-        """``--format both`` emits .html and .md files."""
+        """``--format both`` emits machine-readable JSON with both renders."""
         out_base = tmp_path / "report.html"
 
         rc = main(
@@ -870,8 +870,16 @@ class TestReportSubcommand:
         assert rc == 0, capsys.readouterr().err
         assert out_base.with_suffix(".html").exists()
         assert out_base.with_suffix(".md").exists()
+        json_path = out_base.with_suffix(".json")
+        assert json_path.exists()
+        report = json.loads(json_path.read_text(encoding="utf-8"))
+        assert report["source"]["path"].endswith("source.yuv")
         payload = json.loads(capsys.readouterr().out)
-        assert len(payload["outputs"]) == 2
+        assert payload["outputs"] == [
+            str(json_path),
+            str(out_base.with_suffix(".html")),
+            str(out_base.with_suffix(".md")),
+        ]
 
     @pytest.mark.parametrize(
         "schema_builder,expected_codec_rows,expected_sweep_points",
