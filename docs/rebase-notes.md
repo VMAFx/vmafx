@@ -61,6 +61,30 @@ these Meson blocks.
 Research-2096 contains the exact-query evidence. Re-run the complete CodeQL
 database extraction after rebases that alter these target source lists or aliases;
 ordinary runtime tests cannot detect a repeated-compilation identity regression.
+The current receipt is
+`.workingdir/evidence/codeql-unused-static-2026-09-24/unused-static-final.csv`.
+From the repository root, the following commands reproduce its CodeQL 2.27.0,
+`codeql/cpp-queries` 1.8.3 extraction and query. `CODEQL_BIN` may override the
+documented local installation path; no repository wrapper exists for this scan.
+
+```bash
+set -euo pipefail
+mkdir -p .workingdir/cache
+codeql_bin="${CODEQL_BIN:-$HOME/.cache/codeql-2.27.0/codeql}"
+codeql_run="$(mktemp -d .workingdir/cache/codeql-unused-static-replay.XXXXXX)"
+codeql_spec='codeql/cpp-queries@1.8.3:Best Practices/Unused Entities/UnusedStaticFunctions.ql'
+"$codeql_bin" version | rg -q 'release 2\.27\.0\.'
+codeql_query="$("$codeql_bin" resolve queries --format=text -- "$codeql_spec")"
+"$codeql_bin" database create "$codeql_run/db" \
+  --language=cpp --source-root=. --threads=4 \
+  --command="meson setup $codeql_run/build core -Denable_cuda=false -Denable_sycl=false && meson compile -C $codeql_run/build"
+"$codeql_bin" query run --database="$codeql_run/db" \
+  --output="$codeql_run/unused-static.bqrs" "$codeql_query"
+"$codeql_bin" bqrs decode --format=csv \
+  --output="$codeql_run/unused-static.csv" "$codeql_run/unused-static.bqrs"
+cmp -s "$codeql_run/unused-static.csv" \
+  .workingdir/evidence/codeql-unused-static-2026-09-24/unused-static-final.csv
+```
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

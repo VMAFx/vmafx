@@ -10,8 +10,8 @@
 Whether the `cpp/unused-static-function` findings in `core/src/pdjson.c`,
 `core/src/thread_pool.c`, and `core/test/test_fex_ctx_vector.cpp` identify dead
 implementation code, and how to close them without deleting live behavior,
-changing public ABI, adding scanner suppressions, or weakening the tests that
-compile implementation sources under special configurations.
+changing public ABI, suppressing the CodeQL unused-static findings, or weakening
+the tests that compile implementation sources under special configurations.
 
 ## Sources
 
@@ -82,6 +82,13 @@ names. The aliases stay active through the test body, so definitions and calls
 refer to the same isolated external roots while the production library keeps its
 original symbols. The pthread interposition and all four runtime cases are
 unchanged.
+
+This test also carries one narrowly scoped cppcheck-only annotation on
+`observed_destroy`: `constParameterPointer` is suppressed because the wrapper
+must retain `pthread_cond_destroy`'s mutable `pthread_cond_t *` contract for the
+macro interposition, then pass that pointer to the POSIX function without a
+qualifier-discarding cast. The annotation cites this digest and does not suppress,
+exclude, or dismiss any `cpp/unused-static-function` result.
 
 ### `test_fex_ctx_vector.cpp`
 
