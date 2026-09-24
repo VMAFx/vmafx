@@ -150,10 +150,10 @@ func TestFeedbackClient_RetryQueuedAckIsAccepted(t *testing.T) {
 	}
 }
 
-// TestFeedbackClient_RetryableRejectionRequeuesWithoutDelivery verifies that
-// sidecar backpressure never consumes an unadmitted sample or inflates the
-// delivered counter.
-func TestFeedbackClient_RetryableRejectionRequeuesWithoutDelivery(t *testing.T) {
+// TestFeedbackClient_RetryableRejectionRetainsWithoutDelivery verifies that
+// sidecar backpressure leaves the unadmitted sample pending for reconnect and
+// does not inflate the delivered counter.
+func TestFeedbackClient_RetryableRejectionRetainsWithoutDelivery(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() {
 		_ = client.Close()
@@ -177,20 +177,124 @@ func TestFeedbackClient_RetryableRejectionRequeuesWithoutDelivery(t *testing.T) 
 
 	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
 	defer cancel()
-	err := fc.pump(ctx, client)
+	pending, err := fc.pump(ctx, client, nil)
 	if err == nil {
 		t.Fatal("pump returned nil for retryable sidecar rejection")
 	}
 	if got := fc.Delivered(); got != 0 {
 		t.Fatalf("Delivered() = %d after retryable rejection, want 0", got)
 	}
-	select {
-	case requeued := <-fc.queue:
-		if requeued != msg {
-			t.Fatalf("requeued message = %p, want original %p", requeued, msg)
+	if pending != msg {
+		t.Fatalf("pending retry = %p, want original %p", pending, msg)
+	}
+	if got := len(fc.queue); got != 0 {
+		t.Fatalf("queue length = %d after retaining retry, want 0", got)
+	}
+}
+
+// TestFeedbackClient_RetryableRejectionSurvivesFullQueueAcrossReconnect locks
+// in the race where another producer refills the bounded queue while a sample
+// is waiting for its sidecar ACK. The rejected sample remains the reconnect
+// priority even though there is no queue slot available for it.
+func TestFeedbackClient_RetryableRejectionSurvivesFullQueueAcrossReconnect(t *testing.T) {
+	sockPath := filepath.Join(t.TempDir(), "sidecar.sock")
+	lis, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen unix %s: %v", sockPath, err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+	t.Setenv(feedbackSocketEnv, sockPath)
+
+	fc := NewFeedbackClient(nil)
+	t.Cleanup(func() {
+		_ = lis.Close()
+		fc.Close()
+	})
+
+	retry := &FeedbackMessage{
+		JobID:     "retry-me",
+		Features:  []float32{0.1},
+		TrueScore: 75.0,
+	}
+	if !fc.Send(retry) {
+		t.Fatal("initial retry candidate was not enqueued")
+	}
+	fc.Start()
+
+	accept := func() net.Conn {
+		t.Helper()
+		unixLis, ok := lis.(*net.UnixListener)
+		if !ok {
+			t.Fatalf("listener type = %T, want *net.UnixListener", lis)
 		}
-	default:
-		t.Fatal("retryable rejection did not requeue the message")
+		if deadlineErr := unixLis.SetDeadline(time.Now().Add(2 * time.Second)); deadlineErr != nil {
+			t.Fatalf("set accept deadline: %v", deadlineErr)
+		}
+		conn, acceptErr := unixLis.Accept()
+		if acceptErr != nil {
+			t.Fatalf("accept sidecar connection: %v", acceptErr)
+		}
+		return conn
+	}
+	readMessage := func(conn net.Conn) FeedbackMessage {
+		t.Helper()
+		if deadlineErr := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); deadlineErr != nil {
+			t.Fatalf("set message read deadline: %v", deadlineErr)
+		}
+		line, readErr := bufio.NewReader(conn).ReadBytes('\n')
+		if readErr != nil {
+			t.Fatalf("read feedback message: %v", readErr)
+		}
+		var msg FeedbackMessage
+		if jsonErr := json.Unmarshal(line, &msg); jsonErr != nil {
+			t.Fatalf("decode feedback message: %v", jsonErr)
+		}
+		return msg
+	}
+
+	firstConn := accept()
+	first := readMessage(firstConn)
+	if first.JobID != retry.JobID {
+		t.Fatalf("first connection received job_id %q, want %q", first.JobID, retry.JobID)
+	}
+
+	// The retry candidate is now in flight and the queue slot it occupied is
+	// available. Refill every slot before the sidecar rejects the sample.
+	for i := range feedbackQueueCap {
+		if !fc.Send(&FeedbackMessage{JobID: "filler", TrueScore: float32(i)}) {
+			t.Fatalf("filler %d was dropped before the queue reached capacity", i)
+		}
+	}
+	if got := len(fc.queue); got != feedbackQueueCap {
+		t.Fatalf("queue length = %d, want full capacity %d", got, feedbackQueueCap)
+	}
+
+	if _, writeErr := firstConn.Write([]byte(
+		`{"ok":false,"retryable":true,"error":"pending training queue is full"}` + "\n",
+	)); writeErr != nil {
+		t.Fatalf("write retryable ACK: %v", writeErr)
+	}
+	_ = firstConn.Close()
+
+	secondConn := accept()
+	defer secondConn.Close()
+	second := readMessage(secondConn)
+	if second.JobID != retry.JobID {
+		t.Fatalf("first message after reconnect = %q, want retained %q", second.JobID, retry.JobID)
+	}
+	if _, writeErr := secondConn.Write([]byte(`{"ok":true,"step":1}` + "\n")); writeErr != nil {
+		t.Fatalf("write successful ACK: %v", writeErr)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for fc.Delivered() != 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := fc.Delivered(); got != 1 {
+		t.Fatalf("Delivered() = %d, want 1 after retained retry succeeds", got)
+	}
+	if got := fc.Dropped(); got != 0 {
+		t.Fatalf("Dropped() = %d, want 0; an in-flight retry must not compete for a queue slot", got)
 	}
 }
 

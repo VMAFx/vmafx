@@ -31459,9 +31459,11 @@ See `docs/server/auth.md` for the full configuration guide.
   Retry the oldest failed window without discarding concurrent samples and bound
   pending work with explicit backpressure. Admission-aware ACKs prevent a
   retained failed-step sample from being duplicated by caller retry; the Go
-  client requeues an explicitly retryable capacity rejection without counting a
-  delivery. Export a genuinely dynamic ONNX batch axis and fail socket lifecycle
-  tests on server-thread exceptions.
+  client retains an explicitly retryable capacity rejection across reconnects,
+  ahead of the bounded queue and without counting a delivery. A deterministic
+  full-queue regression proves concurrent senders cannot displace that retry.
+  Export a genuinely dynamic ONNX batch axis and fail socket lifecycle tests on
+  server-thread exceptions.
 
 
 - **Semgrep OSS warnings — 19/19 triaged (Research-0090)** — three real

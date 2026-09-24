@@ -77,9 +77,11 @@ The standalone Python sidecar implements:
    may train. Its ACK is admission-aware: an already-admitted triggering sample
    returns `ok: true`, `trained: false`, and `retry_queued: true`, while a sample
    deferred by full capacity remains unaccepted and receives `ok: false` plus
-   `retryable: true` if the oldest-window retry also fails. The Go client
-   requeues that sample without incrementing its delivered counter; it continues
-   to count the admitted `ok: true`, `retry_queued: true` case as delivered.
+   `retryable: true` if the oldest-window retry also fails. The Go client retains
+   that in-flight sample locally and retries it ahead of the bounded queue after
+   reconnecting, so a concurrent producer cannot consume its queue slot. It does
+   not increment the delivered counter until the retry succeeds; the admitted
+   `ok: true`, `retry_queued: true` case still counts as delivered.
 
 The Go transport (`cmd/vmafx-node/online_feedback.go`) separately implements a
 non-blocking `FeedbackClient.Send()` queue with a 1000-entry capacity and a

@@ -92,9 +92,11 @@ these Meson blocks.
    replay buffer. Preserve admission-aware ACKs: an admitted sample restored
    after a failed step is `ok: true` / `retry_queued: true` and must not be
    resubmitted, while a capacity-deferred sample remains `ok: false` with
-   `retryable: true` if the oldest-window step fails. The Go client must requeue
-   the latter without incrementing `delivered` while preserving the former as an
-   accepted delivery.
+   `retryable: true` if the oldest-window step fails. The Go client must retain
+   the latter in flight across reconnects and retry it ahead of the bounded
+   queue without incrementing `delivered`, while preserving the former as an
+   accepted delivery. Never put this retry back into a queue slot that a
+   concurrent producer can refill.
    Socket lifecycle regressions signal readiness only after the real `listen()`
    succeeds and surface every server-thread exception to the parent test.
 

@@ -62,8 +62,9 @@ into fx graph.
    `retry_queued: true`, and `training_error`: the sidecar retained the sample,
    so the Go client counts it delivered and logs the deferred training error
    without resubmitting. A capacity-deferred sample uses `ok: false` and
-   `retryable: true`; the client requeues it, returns to the reconnect loop, and
-   does not increment `delivered`. Non-retryable `ok: false` remains terminal.
+   `retryable: true`; the client retains that in-flight sample locally across
+   reconnects and retries it ahead of the bounded queue without competing for a
+   queue slot or incrementing `delivered`. Non-retryable `ok: false` remains terminal.
    Keep `feedbackAck` synchronized with the Python response.
 
 5. **Encoder probe is NON-FATAL and runs in OnStart** (`providers.go`,

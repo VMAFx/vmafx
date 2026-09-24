@@ -117,10 +117,12 @@ already admitted before a step failed, the sidecar logs the failure and returns
 the caller must not submit it again. The Go `FeedbackClient` counts that ACK as
 delivered and logs the deferred training error. If capacity prevented admission,
 a failed oldest-window retry returns
-`{"ok": false, "retryable": true, "error": "..."}`. The Go client requeues
-that unaccepted sample, reconnects, and does not increment `delivered`. Malformed
-or otherwise non-retryable input does not carry `retryable: true`. This
-distinction prevents both silent loss and duplicate feedback.
+`{"ok": false, "retryable": true, "error": "..."}`. The Go client retains
+that unaccepted in-flight sample locally, reconnects, and retries it before
+reading the bounded queue. It therefore cannot be lost when a concurrent sender
+refills the queue, and `delivered` does not increment until the retry succeeds.
+Malformed or otherwise non-retryable input does not carry `retryable: true`.
+This distinction prevents both silent loss and duplicate feedback.
 
 ---
 

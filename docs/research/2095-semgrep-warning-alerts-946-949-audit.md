@@ -39,8 +39,10 @@ All four Python Semgrep findings are removed at source.
    applies explicit retry backpressure rather than growing indefinitely or
    dropping samples. Admission-aware ACKs mark retained failed-step samples as
    accepted and retry-queued, while capacity-deferred samples carry
-   `ok: false`, `retryable: true`; the Go client requeues those without counting
-   delivery. Repeated failures therefore neither lose nor duplicate feedback.
+   `ok: false`, `retryable: true`; the Go client retains an in-flight rejection
+   across reconnects, ahead of its bounded queue, without counting delivery.
+   Concurrent queue refill therefore cannot lose the retry, and repeated
+   failures neither lose nor duplicate feedback.
    The opset-17 exporter uses tuple arguments plus `dynamic_shapes`. The
    complete suite is warning-clean rather than merely its alert-focused subset.
 

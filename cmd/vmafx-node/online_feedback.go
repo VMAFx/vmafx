@@ -217,6 +217,7 @@ func (fc *FeedbackClient) Delivered() int64 { return fc.delivered.Load() }
 // ctx.Err() checks are the same test applied after a step that may have blocked.
 func (fc *FeedbackClient) drainLoop(ctx context.Context) {
 	backoff := feedbackRetryBase
+	var pending *FeedbackMessage
 	for ctx.Err() == nil {
 		conn, err := fc.dial(ctx)
 		if err != nil {
@@ -243,7 +244,8 @@ func (fc *FeedbackClient) drainLoop(ctx context.Context) {
 		// Successful connection — reset backoff.
 		backoff = feedbackRetryBase
 		fc.log.Info("sidecar connected", slog.String("socket", fc.socketPath))
-		if err := fc.pump(ctx, conn); err != nil {
+		pending, err = fc.pump(ctx, conn, pending)
+		if err != nil {
 			if ctx.Err() != nil {
 				fc.closeConn(conn)
 				return
@@ -274,36 +276,44 @@ func (fc *FeedbackClient) dial(ctx context.Context) (net.Conn, error) {
 	return dialer.DialContext(ctx, "unix", fc.socketPath)
 }
 
-// pump reads messages from the queue and writes them to conn.
-// Returns a non-nil error when the connection breaks, and nil when ctx is cancelled.
+// pump writes pending first, then reads messages from the queue and writes them
+// to conn. It returns the in-flight message on a transport failure or explicit
+// retryable rejection so drainLoop can preserve it across reconnects without
+// competing with concurrent producers for a queue slot.
+//
+// A non-nil error means the connection must be replaced. A nil error means ctx
+// was cancelled; any returned pending message is intentionally discarded by
+// the Close contract, which does not flush in-flight or queued feedback.
 //
 // Cancellation is the loop's exit condition and is stated twice on purpose: ctx.Err()
 // ends the loop between messages, and the ctx.Done() arm of the select ends it while the
 // goroutine is parked waiting for the next queued message.
-func (fc *FeedbackClient) pump(ctx context.Context, conn net.Conn) error {
+func (fc *FeedbackClient) pump(
+	ctx context.Context,
+	conn net.Conn,
+	pending *FeedbackMessage,
+) (*FeedbackMessage, error) {
 	reader := bufio.NewReader(conn)
 	for ctx.Err() == nil {
-		select {
-		case <-ctx.Done():
-			return nil
-		case msg := <-fc.queue:
-			accepted, err := fc.sendOne(conn, reader, msg)
-			if err != nil {
-				// Re-enqueue on transport failure or explicit retryable rejection
-				// (best-effort; if the queue is now full it is dropped).
-				select {
-				case fc.queue <- msg:
-				default:
-					fc.dropped.Add(1)
-				}
-				return fmt.Errorf("send: %w", err)
-			}
-			if accepted {
-				fc.delivered.Add(1)
+		msg := pending
+		if msg == nil {
+			select {
+			case <-ctx.Done():
+				return nil, nil
+			case msg = <-fc.queue:
 			}
 		}
+
+		accepted, err := fc.sendOne(conn, reader, msg)
+		if err != nil {
+			return msg, fmt.Errorf("send: %w", err)
+		}
+		pending = nil
+		if accepted {
+			fc.delivered.Add(1)
+		}
 	}
-	return nil
+	return pending, nil
 }
 
 // sendOne serialises msg as JSON, writes it to conn, and reads the ACK.
