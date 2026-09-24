@@ -153,6 +153,19 @@ BUILD_SH
 python3 scripts/ci/check-codeql-unused-static.py "$codeql_run/unused-static.csv"
 printf 'CodeQL replay artifacts: %s\n' "$codeql_run"
 ```
+## fix/codeql-include-non-header-alerts — internal header and link seams for test suites (2026-09-24)
+
+1. **Test targets link against libvmaf instead of unity-including source files.**
+   Alerts 908, 943, 955, 1043, 1203, 1218, and 1241 resolved `.c`/`.cpp` inclusions
+   by establishing proper internal header declarations:
+   - `core/src/feature/luminance_tools.h`: declares narrow `vmaf_luminance_test_*` trampolines while the implementation helpers remain translation-unit-local.
+   - `core/src/model.h`: declares narrow built-in-model count and iterator-version test accessors while `VmafBuiltInModel` and `BUILT_IN_MODEL_CNT` remain private to `model.c`.
+   - `core/src/libvmaf_priv.h`: declares `vmaf_context_is_flushed`, `vmaf_context_has_thread_pool`, and test flush triggers.
+   - `core/src/feature/cambi_internal.h`: preserves GPU-facing `vmaf_cambi_*` routines and declares `vmaf_cambi_test_*` internal test trampolines for static stage and helper coverage.
+   Do not re-introduce `#include "cambi.c"`, `#include "libvmaf.c"`, or other `.c` inclusions during rebase conflict resolution.
+2. **Meson test target dependencies**: `test_feature` builds `feature_name.cpp` directly;
+   `test_model`, `test_flush_context_ordering`, `test_cambi`, and `test_cambi_stage_simd` link
+   with `libvmaf` / `libvmaf.get_static_lib()`. Preserve these linker configurations in `core/test/meson.build`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

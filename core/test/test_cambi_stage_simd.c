@@ -11,12 +11,12 @@
  *  The spatial-mask dp / mask rows have their own test
  *  (test_cambi_spatial_mask_simd).
  *
- *  The reference is the shipped scalar code: this TU includes cambi.c, the way
- *  test_cambi.c does, so it calls the same static functions the extractor
- *  falls back to and cannot drift from them the way a private copy can
- *  (ADR-1207). The CPU-flag mask is cleared first, so the one scalar stage that
- *  dispatches internally (anti_dithering_filter) takes its scalar body. SIMD
- *  kernels are called directly, gated on CPUID.
+ *  The reference is the shipped scalar code reached through the narrow
+ *  vmaf_cambi_test_* internal trampolines, so the test links the production
+ *  object instead of including an executable source file or maintaining a
+ *  private copy (ADR-1207). The CPU-flag mask is cleared first, so the one
+ *  scalar stage that dispatches internally (anti_dithering_filter) takes its
+ *  scalar body. SIMD kernels are called directly, gated on CPUID.
  *
  *  Every kernel is integer-only except the c-value multiply, which is a single
  *  int-to-float conversion times a LUT entry with no fused add, so SIMD and
@@ -36,27 +36,47 @@
  *  tie branches.
  */
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "mem.h"
+
 #include "test.h"
 /* clang-format off — test.h has no header guard; must precede harness. */
 #include "simd_bitexact_test.h"
 /* clang-format on */
 
-/* The reference must be the shipped file-static scalar stages, not a copy
- * (ADR-1207), so the TU is included, as test_cambi.c does. */
-// NOLINTNEXTLINE(bugprone-suspicious-include) — ADR-0141 / ADR-1207: white-box reference to the static scalar stages.
-#include "feature/cambi.c"
+#include "cpu.h"
+#include "feature/cambi.h"
+#include "feature/cambi_internal.h"
 #include "feature/cambi_c_values_frame.h"
+#if ARCH_X86
+#include "feature/x86/cambi_avx2.h"
+#include "feature/x86/cambi_avx512.h"
+#elif ARCH_AARCH64
+#include "feature/arm64/cambi_neon.h"
+#endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe. ADR-1138. */
+
+#define DEFAULT_CAMBI_TVI (0.019)
+
+typedef void (*VmafDecimate)(VmafPicture *image, unsigned width, unsigned height);
+typedef void (*VmafFilterMode)(const VmafPicture *image, int width, int height, uint16_t *buffer);
+typedef void (*VmafDerivativeCalculator)(const uint16_t *image_data, uint16_t *derivative_buffer,
+                                         int width, int height, int row, int stride);
+typedef void (*VmafCalcCValues)(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+                                uint16_t *histograms, uint16_t window_size,
+                                const uint16_t num_diffs, const uint16_t *tvi_for_diff,
+                                uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
+                                int width, int height);
 
 /* A frame-level c-values driver under test. */
 typedef struct {
@@ -82,14 +102,14 @@ typedef struct {
 
 static const StageKernels g_scalar = {
     "scalar",
-    decimate,
-    anti_dithering_filter,
-    filter_mode,
-    get_derivative_data_for_row,
-    increment_range,
-    decrement_range,
-    calculate_c_values_row,
-    {{"calculate_c_values", calculate_c_values}},
+    vmaf_cambi_decimate,
+    vmaf_cambi_test_anti_dithering_filter,
+    vmaf_cambi_filter_mode,
+    vmaf_cambi_test_get_derivative_data_for_row,
+    vmaf_cambi_test_increment_range,
+    vmaf_cambi_test_decrement_range,
+    vmaf_cambi_test_calculate_c_values_row,
+    {{"calculate_c_values", vmaf_cambi_test_calculate_c_values}},
 };
 
 /* Sentinel elements after every compared region. */
@@ -403,6 +423,16 @@ typedef struct {
     uint16_t v_band_size;
 } CValuesConfig;
 
+static void config_free(CValuesConfig *c)
+{
+    aligned_free(c->diffs_to_consider);
+    aligned_free(c->diff_weights);
+    aligned_free(c->all_diffs);
+    c->diffs_to_consider = NULL;
+    c->diff_weights = NULL;
+    c->all_diffs = NULL;
+}
+
 static int config_init(CValuesConfig *c, int max_log_contrast, const char *eotf_name,
                        double vis_lum_threshold)
 {
@@ -411,36 +441,34 @@ static int config_init(CValuesConfig *c, int max_log_contrast, const char *eotf_
     if (max_log_contrast < 0 || max_log_contrast > 5)
         return -EINVAL;
     const uint16_t num_diffs = (uint16_t)(1u << (unsigned)max_log_contrast);
-    if (num_diffs == 0u || num_diffs > sizeof(c->tvi_for_diff) / sizeof(c->tvi_for_diff[0]))
+    if (num_diffs > sizeof(c->tvi_for_diff) / sizeof(c->tvi_for_diff[0]))
         return -EINVAL;
     c->num_diffs = num_diffs;
-    int err =
-        set_contrast_arrays(num_diffs, &c->diffs_to_consider, &c->diff_weights, &c->all_diffs);
+    uint16_t last_tvi_for_diff = 0;
+    int err = vmaf_cambi_test_set_contrast_arrays(num_diffs, &c->diffs_to_consider,
+                                                  &c->diff_weights, &c->all_diffs);
     if (err)
         return err;
     VmafLumaRange luma_range;
     VmafEOTF eotf;
     err = vmaf_luminance_init_luma_range(&luma_range, 10, VMAF_PIXEL_RANGE_LIMITED);
     err |= vmaf_luminance_init_eotf(&eotf, eotf_name);
-    if (err)
+    if (err) {
+        config_free(c);
         return err;
-    for (int d = 0; d < num_diffs; d++) {
-        c->tvi_for_diff[d] = (uint16_t)(get_tvi_for_diff(c->diffs_to_consider[d], DEFAULT_CAMBI_TVI,
-                                                         10, luma_range, eotf) +
-                                        num_diffs);
     }
-    c->vlt_luma = (uint16_t)get_vlt_luma(vis_lum_threshold, luma_range, eotf);
+    for (int d = 0; d < num_diffs; d++) {
+        c->tvi_for_diff[d] =
+            (uint16_t)(vmaf_cambi_test_get_tvi_for_diff(c->diffs_to_consider[d], DEFAULT_CAMBI_TVI,
+                                                        10, luma_range, eotf) +
+                       num_diffs);
+        last_tvi_for_diff = c->tvi_for_diff[d];
+    }
+    c->vlt_luma = (uint16_t)vmaf_cambi_test_get_vlt_luma(vis_lum_threshold, luma_range, eotf);
     const int v_lo = (int)c->vlt_luma - 3 * (int)num_diffs + 1;
     c->v_band_base = v_lo > 0 ? (uint16_t)v_lo : 0;
-    c->v_band_size = (uint16_t)(c->tvi_for_diff[num_diffs - 1] + 1 - c->v_band_base);
+    c->v_band_size = (uint16_t)(last_tvi_for_diff + 1 - c->v_band_base);
     return 0;
-}
-
-static void config_free(CValuesConfig *c)
-{
-    aligned_free(c->diffs_to_consider);
-    aligned_free(c->diff_weights);
-    aligned_free(c->all_diffs);
 }
 
 /* Values concentrated on the scored band (plus some outside it), so most

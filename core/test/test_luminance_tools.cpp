@@ -16,10 +16,25 @@
  *
  */
 
+#include <cerrno>
+#include <type_traits>
+
 #include "test.h"
-#include "feature/luminance_tools.cpp"
+#include "feature/cambi_internal.h"
+#include "feature/luminance_tools.h"
+#include "libvmaf_priv.h"
+#include "model.h"
+
+static_assert(std::is_same_v<std::underlying_type_t<VmafPixelRange>, unsigned int>);
+static_assert(std::is_same_v<std::underlying_type_t<VmafModelType>, unsigned int>);
+static_assert(std::is_same_v<std::underlying_type_t<VmafModelNormalizationType>, unsigned int>);
+static_assert(std::is_same_v<VmafCambiRangeUpdater, void (*)(std::uint16_t *, int, int)>);
+static_assert(std::is_same_v<VmafContext, struct VmafContext>);
 
 #define EPS 0.00001
+
+namespace
+{
 
 /* Test support function */
 int almost_equal(double a, double b)
@@ -55,23 +70,50 @@ static mu_message_t test_pq_eotf()
     return nullptr;
 }
 
+} // namespace
+
+namespace
+{
+
 static mu_message_t test_range_foot_head()
 {
     int foot;
     int head;
 
-    int err = range_foot_head(8, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
+    int err = vmaf_luminance_test_range_foot_head(8, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
     mu_assert("limited 8b range computation must succeed", err == 0);
     mu_assert("wrong 'limited' 8b range computation", (foot == 16 && head == 235));
-    err = range_foot_head(8, VMAF_PIXEL_RANGE_FULL, &foot, &head);
+    err = vmaf_luminance_test_range_foot_head(8, VMAF_PIXEL_RANGE_FULL, &foot, &head);
     mu_assert("full 8b range computation must succeed", err == 0);
     mu_assert("wrong 'full' 8b range computation", (foot == 0 && head == 255));
-    err = range_foot_head(10, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
+    err = vmaf_luminance_test_range_foot_head(10, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
     mu_assert("limited 10b range computation must succeed", err == 0);
     mu_assert("wrong 'limited' 10b range computation", (foot == 64 && head == 940));
 
     return nullptr;
 }
+
+/* Coverage push: range_foot_head must reject unknown VmafPixelRange
+ * enum values with -EINVAL.  Exercises the default branch that was
+ * silently dead before. */
+static mu_message_t test_range_foot_head_invalid()
+{
+    int foot = 0xDEAD;
+    int head = 0xBEEF;
+
+    /* An integer the enum cannot legitimately hold. range_foot_head takes an
+     * int precisely so this stays well-defined — see the note on its
+     * definition; casting to the enum here would itself be UB. */
+    const int err = vmaf_luminance_test_range_foot_head(8, 0x7F, &foot, &head);
+    mu_assert("range_foot_head(unknown) must return -EINVAL", err == -EINVAL);
+
+    return nullptr;
+}
+
+} // namespace
+
+namespace
+{
 
 static mu_message_t test_get_luminance()
 {
@@ -109,22 +151,27 @@ static mu_message_t test_normalize_range()
     VmafLumaRange range_10b_limited;
     vmaf_luminance_init_luma_range(&range_10b_limited, 10, VMAF_PIXEL_RANGE_LIMITED);
 
-    double n = normalize_range(0, range_8b_full);
+    double n = vmaf_luminance_test_normalize_range(0, range_8b_full);
     mu_assert("wrong 'full' 8b normalize range", almost_equal(n, 0.0));
-    n = normalize_range(128, range_8b_limited);
+    n = vmaf_luminance_test_normalize_range(128, range_8b_limited);
     mu_assert("wrong 'limited' 8b normalize range", almost_equal(n, 0.5114155251141552));
-    n = normalize_range(255, range_8b_limited);
+    n = vmaf_luminance_test_normalize_range(255, range_8b_limited);
     mu_assert("wrong 'limited' 8b normalize range", almost_equal(n, 1.0));
 
-    n = normalize_range(65, range_10b_limited);
+    n = vmaf_luminance_test_normalize_range(65, range_10b_limited);
     mu_assert("wrong 'limited' 10b normalize range", almost_equal(n, 0.001141552511415525));
-    n = normalize_range(512, range_10b_limited);
+    n = vmaf_luminance_test_normalize_range(512, range_10b_limited);
     mu_assert("wrong 'limited' 10b normalize range", almost_equal(n, 0.5114155251141552));
-    n = normalize_range(939, range_10b_limited);
+    n = vmaf_luminance_test_normalize_range(939, range_10b_limited);
     mu_assert("wrong 'limited' 10b normalize range", almost_equal(n, 0.9988584474885844));
 
     return nullptr;
 }
+
+} // namespace
+
+namespace
+{
 
 /* Coverage push: vmaf_luminance_init_eotf accepts "bt1886" and "pq"
  * literally and otherwise returns -EINVAL.  The function was reachable
@@ -151,22 +198,7 @@ static mu_message_t test_init_eotf_dispatch()
     return nullptr;
 }
 
-/* Coverage push: range_foot_head must reject unknown VmafPixelRange
- * enum values with -EINVAL.  Exercises the default branch that was
- * silently dead before. */
-static mu_message_t test_range_foot_head_invalid()
-{
-    int foot = 0xDEAD;
-    int head = 0xBEEF;
-
-    /* An integer the enum cannot legitimately hold. range_foot_head takes an
-     * int precisely so this stays well-defined — see the note on its
-     * definition; casting to the enum here would itself be UB. */
-    int err = range_foot_head(8, 0x7F, &foot, &head);
-    mu_assert("range_foot_head(unknown) must return -EINVAL", err == -EINVAL);
-
-    return nullptr;
-}
+} // namespace
 
 mu_message_t run_tests()
 {
@@ -178,5 +210,5 @@ mu_message_t run_tests()
     mu_run_test(test_init_eotf_dispatch);
     mu_run_test(test_range_foot_head_invalid);
 
-    return NULL;
+    return nullptr;
 }

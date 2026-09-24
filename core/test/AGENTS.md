@@ -131,12 +131,21 @@ and teardown.
   `test_feature.cpp` are sole authoritative test files for `dict`
   and `feature_name`; uncompiled legacy C twins `test_dict.c` and
   `test_feature.c` were deleted as obsolete.
-- **CAMBI bounded-search regression seam**: `test_cambi.c` deliberately
-  includes the production `cambi.c` translation unit. Keep the tests for TVI
-  threshold/difference extremes, an unreachable VLT threshold, and duplicate
-  plus descending quick-select inputs. They pin termination bounds and
-  partition ordering directly; an end-to-end score alone cannot distinguish
-  a hang from a numerically wrong search result.
+- **CAMBI bounded-search regression seam**: `test_cambi.c` and
+  `test_cambi_stage_simd.c` exercise internal helper routines via
+  `feature/cambi_internal.h` linked against `libvmaf` (formerly unity-including
+  `cambi.c`, resolved per CodeQL cpp/include-non-header alerts 1218 and 1241).
+  Keep the tests for TVI threshold/difference extremes, an unreachable VLT
+  threshold, and duplicate plus descending quick-select inputs. They pin
+  termination bounds and partition ordering directly; an end-to-end score alone
+  cannot distinguish a hang from a numerically wrong search result.
+- **Internal C/C++ header boundary smoke**: `test_flush_context_ordering.c` (C)
+  and `test_luminance_tools.cpp` (C++) consume `cambi_internal.h`,
+  `luminance_tools.h`, `model.h`, and `libvmaf_priv.h` directly and assert enum
+  widths and ABI layout across the language boundary without expanding the
+  authoritative CPU tidy translation unit inventory. Keep these dual-use header
+  inclusions and static assertions when changing the CodeQL link seams; unity
+  includes formerly hid this boundary.
 - **GPU tests must skip gracefully when no device present.** Any
   test calling `vmaf_cuda_state_init`, `vmaf_hip_state_init`, or
   equivalent GPU-init helpers must check return value before

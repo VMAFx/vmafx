@@ -28,10 +28,9 @@
  *     <algorithm> — type-safe, no double-evaluation, no macro pollution.
  *   - The BT.1886 / PQ EOTF constants are `constexpr` variables rather
  *     than preprocessor literals — they participate in constant folding
- *     and are visible to the debugger.
- *   - `range_foot_head` and `normalize_range` become `[[nodiscard]]`
- *     inline helpers in an anonymous namespace — prevents accidental
- *     result discard at compile time.
+ *   - `range_foot_head` and `normalize_range` retain anonymous-namespace
+ *     linkage. Narrow `vmaf_luminance_test_*` trampolines provide white-box
+ *     coverage without making the implementation helpers externally visible.
  *   - `std::string_view` drives the EOTF dispatch in
  *     `vmaf_luminance_init_eotf`, eliminating the two `strcmp` calls
  *     and the implicit strlen traversals they entail.
@@ -55,9 +54,6 @@ constexpr double kBt1886Gamma = 2.4;
 constexpr double kBt1886Lw = 300.0;
 constexpr double kBt1886Lb = 0.01;
 
-/* `static` removed: anonymous namespace already provides internal linkage
- * (Power of 10 #10 / -Wredundant-decls; adversarial review 2026-05-28
- * finding #12). */
 /* `pix_range` is taken as `int`, not `enum VmafPixelRange`, on purpose.
  * VmafPixelRange is part of the public C API, so a caller can hand us any
  * integer; the `default:` arm below exists precisely to reject that. Reading
@@ -91,6 +87,17 @@ constexpr double kBt1886Lb = 0.01;
 }
 
 } // namespace
+
+extern "C" int vmaf_luminance_test_range_foot_head(int bitdepth, int pix_range, int *foot,
+                                                   int *head) noexcept
+{
+    return range_foot_head(bitdepth, pix_range, foot, head);
+}
+
+extern "C" double vmaf_luminance_test_normalize_range(int sample, VmafLumaRange range) noexcept
+{
+    return normalize_range(sample, range);
+}
 
 extern "C" int vmaf_luminance_init_luma_range(VmafLumaRange *luma_range, int bitdepth,
                                               enum VmafPixelRange pix_range)

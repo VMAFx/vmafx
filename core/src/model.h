@@ -16,11 +16,16 @@
  *
  */
 
-#ifndef __VMAF_SRC_MODEL_H__
-#define __VMAF_SRC_MODEL_H__
+#ifndef VMAF_SRC_MODEL_H_
+#define VMAF_SRC_MODEL_H_
 
-#include <pthread.h>
+#ifdef __cplusplus
+#include <climits>
+#else
+#include <limits.h>
 #include <stdbool.h>
+#endif
+#include <pthread.h>
 
 #include "dict.h"
 #include "libvmaf/model.h"
@@ -29,31 +34,50 @@
 extern "C" {
 #endif
 
+#ifdef __cplusplus
+enum VmafModelType : unsigned int {
+#else
 enum VmafModelType {
+#endif
     VMAF_MODEL_TYPE_UNKNOWN = 0,
-    VMAF_MODEL_TYPE_SVM_NUSVR,
-    VMAF_MODEL_BOOTSTRAP_SVM_NUSVR,
-    VMAF_MODEL_RESIDUE_BOOTSTRAP_SVM_NUSVR,
+    VMAF_MODEL_TYPE_SVM_NUSVR = 1,
+    VMAF_MODEL_BOOTSTRAP_SVM_NUSVR = 2,
+    VMAF_MODEL_RESIDUE_BOOTSTRAP_SVM_NUSVR = 3,
+    VMAF_MODEL_TYPE_ABI_UINT_MAX = UINT_MAX,
 };
 
+/* Narrow test accessors for the opaque built-in-model iterator. */
+unsigned vmaf_built_in_model_count_for_test(void);
+const char *vmaf_built_in_model_version_for_test(const void *built_in_model);
+
+#ifdef __cplusplus
+enum VmafModelNormalizationType : unsigned int {
+#else
 enum VmafModelNormalizationType {
+#endif
     VMAF_MODEL_NORMALIZATION_TYPE_UNKNOWN = 0,
-    VMAF_MODEL_NORMALIZATION_TYPE_NONE,
-    VMAF_MODEL_NORMALIZATION_TYPE_LINEAR_RESCALE,
+    VMAF_MODEL_NORMALIZATION_TYPE_NONE = 1,
+    VMAF_MODEL_NORMALIZATION_TYPE_LINEAR_RESCALE = 2,
+    VMAF_MODEL_NORMALIZATION_TYPE_ABI_UINT_MAX = UINT_MAX,
 };
 
-typedef struct {
+struct VmafModelFeature {
     char *name;
     double slope, intercept;
     VmafDictionary *opts_dict;
-} VmafModelFeature;
+};
 
-typedef struct {
+struct VmafPoint {
     double x;
     double y;
-} VmafPoint;
+};
 
-typedef struct VmafModel {
+#ifndef __cplusplus
+typedef struct VmafModelFeature VmafModelFeature;
+typedef struct VmafPoint VmafPoint;
+#endif
+
+struct VmafModel {
     char *path;
     char *name;
     enum VmafModelType type;
@@ -91,14 +115,14 @@ typedef struct VmafModel {
      * predict_ensure_caches().  Initialized in vmaf_read_json_model(),
      * destroyed in vmaf_model_destroy(). */
     pthread_mutex_t predict_cache_lock;
-} VmafModel;
+};
 
-typedef struct VmafModelCollection {
+struct VmafModelCollection {
     VmafModel **model;
     unsigned cnt, size;
     enum VmafModelType type;
     const char *name;
-} VmafModelCollection;
+};
 
 char *vmaf_model_generate_name(VmafModelConfig *cfg);
 
@@ -108,4 +132,4 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
 } /* extern "C" */
 #endif
 
-#endif /* __VMAF_SRC_MODEL_H__ */
+#endif /* VMAF_SRC_MODEL_H_ */
