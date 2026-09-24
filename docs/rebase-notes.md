@@ -35,6 +35,27 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/mypy-prepush-config-baseline-rc1 — baseline evaluates branch checker config (2026-09-24)
+
+1. **`scripts/git-hooks/pre-push-mypy.py` evaluates baseline mypy under branch checker configuration.**
+   When resolving rebase conflicts or updating pre-push hooks, preserve the configuration synchronization
+   logic in `baseline_fingerprints()` and the scope widening in `selected_paths()`. The disposable baseline
+   worktree checked out at the merge base must receive copies of the branch's checker configuration files
+   (`pyproject.toml`, `mypy.ini`, `.mypy.ini`, `setup.cfg`) before executing the baseline checker. This
+   ensures that configuration adjustments (such as `python_version` raises or strictness increases) do not
+   attribute pre-existing debt in merge-base code as new errors introduced by the branch.
+2. **Merge-base source files must remain preserved.**
+   The baseline worktree must not copy branch `.py` files into the baseline worktree. Only checker configuration
+   files are copied, while source code remains checked out at `base`.
+3. **Resolve `ai/src` through one module identity.**
+   Preserve `follow_imports = "skip"` on the legacy `ai.src.*` mypy override. The canonical
+   `vmaf_train.*` tree is checked by the dedicated `ai/src` invocation with
+   `--explicit-package-bases`; traversing both names in the widened configuration-change run makes
+   mypy abort with `Source file found twice` before any finding comparison.
+4. **Fail-closed behavior is required.**
+   If configuration parsing fails, mypy exits outside its ordinary 0/1 statuses, or exit 1 carries no
+   parseable finding, the hook raises a `RuntimeError` and terminates with exit code 2. A blocker remains
+   fatal even after partial findings, and one module-identity run's exit 1 must not mask a later blocker.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

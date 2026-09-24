@@ -27175,6 +27175,9 @@ Fix 23 pre-existing test failures across three packages.
   wire-level invariant.
 
 
+- `scripts/git-hooks/pre-push-mypy.py` now evaluates baseline type checking under the branch's checker configuration. Previously, the disposable baseline worktree evaluated files under the merge-base configuration, causing changes to `[tool.mypy]` in `pyproject.toml` or standalone mypy config files to attribute all newly unmasked baseline findings to the branch as introduced errors. The hook now copies branch checker configuration into the baseline worktree, expands evaluation across tracked Python files under `ai/` and `scripts/` when configuration changes, unlinks deleted config files, preserves merge-base source files, and fails closed on unparseable configuration or mypy's blocking exit status even when partial findings were printed. The legacy `ai.src.*` compatibility namespace is no longer traversed alongside canonical `vmaf_train.*`, preventing the widened run from loading `ai/src` files under two module identities.
+
+
 - Fix pre-push mypy scope after rebases: recheck every branch-owned Python
   file under `ai/` and `scripts/` against the master merge base, including
   unchanged outgoing files and Git type changes. Preserve internal symlink
