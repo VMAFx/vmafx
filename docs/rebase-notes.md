@@ -52663,3 +52663,19 @@ to an exception.
 - Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
   tests/test_coverage_round4.py::test_auth_413_on_large_body`.
 - Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.
+
+## fix/bug048-float-moment-metal — exact high-bit-depth reduction (2026-09-24)
+
+`float_moment.metal` and `float_moment_metal.mm` are fork-local Metal twins
+whose exact reduction was added by `0fce64b47` / PR #1029 and silently
+clobbered by `c2a3c7e0f` / PR #1067. Preserve this pipeline when reconciling
+the files: four raw `ulong` moments → four `threadgroup ulong[256]` scratch
+arrays → lane-0 exact sum → eight uint32 lo/hi output planes → host
+uint64 reconstruction → first/second-moment bit-depth scaling. Do not replay
+#1029's separate lo/hi `simd_sum(uint)` calls; they lose the carry out of the
+low half for 16-bit squares.
+
+The 8-bit and 10-bit parity executables are both load-bearing, while
+`test_metal_float_moment_contract.py` keeps the production source contract
+visible on non-Apple builders. No public header, C API, CLI flag, Meson option,
+Netflix golden assertion, or FFmpeg integration surface changes.

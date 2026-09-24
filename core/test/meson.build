@@ -30,6 +30,16 @@ test('test_strict_fp_compiler_args',
     timeout : 90,
 )
 
+# BUG-048 A6 / Research-2081: Linux has no Metal compiler or device, so pin
+# float_moment's exact uint64 workgroup reduction and host lo/hi reconstruction
+# as a source contract on every platform. The live parity test below remains
+# the Apple-Silicon execution gate.
+test('test_metal_float_moment_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_moment_contract.py'),
+    suite : ['fast'],
+)
+
 # ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
 # ELF only (nm -D); skips with 77 when nm or c++filt is missing. Not in coverage
 # builds: libgcov links into the instrumented .so and exports its own globals
@@ -4076,6 +4086,19 @@ test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
     c_args: ['-DHAVE_METAL=1']
 )
 test('test_metal_float_moment_parity', test_metal_float_moment_parity, suite : ['fast', 'gpu'])
+
+# ADR-1212 / BUG-048 A6: 8 bpc cannot expose either high-bit-depth scaling or
+# float-partial precision loss, so compile and execute the same live Metal
+# parity gate at 10 bpc on Apple Silicon.
+test_metal_float_moment_parity_10bit = executable('test_metal_float_moment_parity_10bit',
+    ['test.c', 'test_metal_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1', '-DFIXTURE_BPC=10u']
+)
+test('test_metal_float_moment_parity_10bit', test_metal_float_moment_parity_10bit,
+    suite : ['fast', 'gpu'])
 
 test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
     ['test.c', 'test_metal_float_ms_ssim_parity.c'],
