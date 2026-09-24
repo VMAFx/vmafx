@@ -39,7 +39,8 @@ these Meson blocks.
 
 1. **`compat/python-vmaf/core/executor.py` maintains active exception diagnostics for FIFO workers.**
    `_run_fifo_worker` catches `(BrokenPipeError, EOFError, OSError)` during traceback transmission,
-   safely bounds channel cleanup via `_safe_close_channel` in `finally`, attaches pipe failure diagnostics via `exc.add_note(...)` if available,
+   safely bounds channel cleanup via `_safe_close_channel` in `finally`, and uses `_safe_add_exception_note` to attach pipe
+   failure diagnostics without calling a custom exception override or allowing note-storage failure to replace the target exception,
    and guarantees secondary close or send failures never displace the primary target exception. `_fifo_worker_failure` treats EOF and OS-level
    read failures on the diagnostic pipe as immediate failures with synthesized child traceback context (distinguishing `EOFError` from `OSError`),
    ensuring dead child processes trigger `RuntimeError` rather than delaying on `None`.

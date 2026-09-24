@@ -119,8 +119,10 @@ python/vmaf/
   child, and bounded readiness waits. A child that exits before signaling must
   surface its role, exit code, and available traceback; never restore an unconditional
   `sem.acquire()` after the five-second warning. FIFO error channel delivery failure
-  closes the pipe and attaches diagnostic context rather than swallowing exceptions
-  (`_run_fifo_worker`); `_fifo_worker_failure` treats EOF on the error channel as
+  closes the pipe and attaches diagnostic context through `_safe_add_exception_note`,
+  which bypasses a potentially overridden `add_note` method and suppresses secondary
+  note-storage failures (`_run_fifo_worker`);
+  `_fifo_worker_failure` treats EOF on the error channel as
   immediate failure rather than returning `None`. `RegressorMixin._get_scatter_arrays`
   uses elementwise identity comparison `is None` rather than `== None` for None and
   NaN cleanup. The classic 5PL curve in

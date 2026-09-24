@@ -4,7 +4,7 @@
 
 - **Status**: Active
 - **Workstream**: CodeQL Python alert triage (alerts 1275, 1276, 1239)
-- **Last updated**: 2026-09-24
+- **Last updated**: 2026-09-25
 - **Date**: 2026-09-24
 - **Scope**: Open CodeQL Python alerts on `origin/master`: alert 1275 (`py/empty-except`), alert 1276 (`py/empty-except`), and alert 1239 (`py/test-equals-none`).
 
@@ -32,7 +32,7 @@ In `_run_fifo_worker`, a child process runs `target(asset, True, open_sem=ready_
 - The child attempts to transmit the formatted traceback back to the parent via an IPC pipe `error_sender.send(traceback.format_exc())`.
 - If the parent process has already closed its end of the pipe (e.g. parent timed out or another worker failed), `error_sender.send()` raises `BrokenPipeError`, `EOFError`, or `OSError`.
 - The prior code caught `(BrokenPipeError, EOFError, OSError)` with an empty `pass` before re-raising the primary exception.
-- **Intended Semantics**: The primary application failure must propagate and terminate the process with exit code 1; it must never be swallowed or replaced by a secondary `BrokenPipeError` or channel teardown failure. While `origin/master`'s `finally` block already closed the descriptor on normal and exceptional paths, passing inside the handler silently discarded the IPC delivery failure. Furthermore, attempting to close the descriptor directly within the exception handler or allowing a secondary `OSError` during `finally` closure could displace the target exception. The resolved code uses a narrow cleanup helper `_safe_close_channel` in `finally` and attaches diagnostic context (`exc.add_note(...)`) to the primary exception upon delivery failure, guaranteeing that send or close errors never replace the target exception while keeping resources bounded.
+- **Intended Semantics**: The primary application failure must propagate and terminate the process with exit code 1; it must never be swallowed or replaced by a secondary `BrokenPipeError` or channel teardown failure. While `origin/master`'s `finally` block already closed the descriptor on normal and exceptional paths, passing inside the handler silently discarded the IPC delivery failure. Furthermore, attempting to close the descriptor directly within the exception handler or allowing a secondary `OSError` during `finally` closure could displace the target exception. The resolved code uses a narrow cleanup helper `_safe_close_channel` in `finally` and attaches diagnostic context through `_safe_add_exception_note`. That helper calls the built-in `BaseException.add_note(...)` when available, bypasses a custom exception's `add_note` override, and treats a failure while storing `__notes__` as secondary, so send, note, or close handling cannot replace the target exception while resources remain bounded.
 
 ### 2.2 Alert 1276 — `_fifo_worker_failure` (`compat/python-vmaf/core/executor.py`)
 
@@ -71,7 +71,7 @@ An AST search across `compat/python-vmaf/` audited all `except ...: pass` occurr
 | :--- | :--- | :--- | :--- |
 | **Alert 1275** (`_run_fifo_worker`): Swallow IPC failure with `pass` | Zero lines added | Discards IPC delivery context (even though descriptor closed in `finally`) | Rejected |
 | **Alert 1275**: Replace target exception with `BrokenPipeError` | Surfaces IPC error | Masks original application error that caused the exit | Rejected |
-| **Alert 1275**: Narrow cleanup helper and attach `add_note` diagnostics (chosen) | Preserves primary exception, guarantees close/send errors never mask target failure, bounds resources | None | **Adopted** |
+| **Alert 1275**: Narrow cleanup and fail-soft exception-note helpers (chosen) | Preserves primary exception even when its class overrides `add_note` or note storage fails, guarantees close/send errors never mask target failure, bounds resources | None | **Adopted** |
 | **Alert 1276** (`_fifo_worker_failure`): Ignore EOF with `pass` | Low-complexity | Delays child exit detection until process exit reap | Rejected |
 | **Alert 1276**: Synthesize child traceback on EOF / OSError channel (chosen) | Immediate failure propagation, prevents supervisor stalls, distinguishes EOF from OSError | None | **Adopted** |
 | **Alert 1239** (`_get_scatter_arrays`): Keep `== None` with `# noqa: E711` | Minimal diff | Violates CodeQL rule, calls `__eq__` on unknown objects | Rejected |
@@ -82,7 +82,7 @@ An AST search across `compat/python-vmaf/` audited all `except ...: pass` occurr
 ## 5. Verification and Governance
 
 - **Focused Unit Tests**:
-  - `python/test/executor_test.py`: Real multiprocessing `Pipe` red-cap regression testing descriptor invalidation via `os.close(sender.fileno())`, closed handles, and broken pipes, proving that target `ValueError` remains primary and note is attached. Tested immediate EOF on `_fifo_worker_failure` with a real child process (`_early_exit_fifo_target`) where `process.exitcode` initially is `None` and `join` transitions state to 42. Verified faithful state transitions distinguishing `EOFError` (`(EOF)`) from `OSError` (`(OSError: ...)`) diagnostics.
+  - `python/test/executor_test.py`: Real multiprocessing `Pipe` red-cap regression testing POSIX descriptor invalidation via `os.close(sender.fileno())`, portable closed handles and broken pipes, a custom exception whose `add_note` override raises, and a custom `__setattr__` that rejects `__notes__` storage. These prove that the target exception remains primary and that runtimes providing a usable built-in note API attach the diagnostic. The raw-descriptor probe is skipped off POSIX because Windows `multiprocessing.Pipe` exposes native handles rather than file descriptors. Tested immediate EOF on `_fifo_worker_failure` with a Linux `/proc/self/fd` child probe where `process.exitcode` initially is `None` and `join` transitions state to 42; that probe is skipped when `/proc/self/fd` is unavailable. Verified faithful state transitions distinguishing `EOFError` (`(EOF)`) from `OSError` (`(OSError: ...)`) diagnostics.
   - `python/test/train_test_model_test.py`: Added `GetScatterArraysTest` with `StrictNoEqualityToNone` sentinel (verifying `== None` is never invoked), mixed None/NaN zeroing, all-None, all-NaN, and error cases.
   - `python/test/python_harness_scanf_locale_bugs_test.py`: Added `TestIsFileLike` (verifying `(IOError, OSError, ValueError)` safe returns) and `TestCheckScanfMatchFallback`.
 - **CodeQL Evaluation**:

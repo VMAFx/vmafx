@@ -42,6 +42,17 @@ def _safe_close_channel(channel):
         pass
 
 
+def _safe_add_exception_note(exc, note):
+    add_note = getattr(BaseException, "add_note", None)
+    if add_note is None:
+        return
+    try:
+        add_note(exc, note)
+    except Exception:
+        # Diagnostic enrichment is secondary and must not replace the target failure.
+        return
+
+
 def _run_fifo_worker(target, asset, ready_sem, error_sender):
     try:
         target(asset, True, open_sem=ready_sem)
@@ -53,8 +64,7 @@ def _run_fifo_worker(target, asset, ready_sem, error_sender):
             # or another worker failed). Attach the pipe communication error to
             # the target exception so diagnostic context is preserved without
             # replacing the primary failure.
-            if hasattr(exc, "add_note"):
-                exc.add_note(f"FIFO error channel delivery failed: {send_err}")
+            _safe_add_exception_note(exc, f"FIFO error channel delivery failed: {send_err}")
         raise
     finally:
         _safe_close_channel(error_sender)

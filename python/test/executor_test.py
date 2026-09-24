@@ -232,6 +232,10 @@ class ExecutorTest(unittest.TestCase):
             parent.join(5)
             receiver.close()
 
+    @unittest.skipUnless(
+        os.name == "posix",
+        "raw descriptor invalidation requires POSIX file descriptors",
+    )
     def test_fifo_worker_red_cap_invalidated_descriptor_preserves_target_exception(self):
         context = multiprocessing.get_context("spawn")
         receiver, sender = context.Pipe(duplex=False)
@@ -297,6 +301,49 @@ class ExecutorTest(unittest.TestCase):
             self.assertTrue(
                 any("FIFO error channel delivery failed" in note for note in cm.exception.__notes__)
             )
+
+    def test_fifo_worker_overridden_add_note_preserves_target_exception(self):
+        class NoteFailure(ValueError):
+            def add_note(self, note):
+                raise RuntimeError("secondary add_note failure")
+
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        receiver.close()
+
+        def target(asset, fifo_mode, open_sem=None):
+            raise NoteFailure("primary target failure")
+
+        with self.assertRaises(NoteFailure) as cm:
+            executor_module._run_fifo_worker(target, None, None, sender)
+
+        self.assertEqual(str(cm.exception), "primary target failure")
+        if hasattr(BaseException, "add_note"):
+            self.assertTrue(
+                any("FIFO error channel delivery failed" in note for note in cm.exception.__notes__)
+            )
+        else:
+            self.assertFalse(hasattr(cm.exception, "__notes__"))
+
+    def test_fifo_worker_note_storage_failure_preserves_target_exception(self):
+        class NoteStorageFailure(ValueError):
+            def __setattr__(self, name, value):
+                if name == "__notes__":
+                    raise RuntimeError("secondary note storage failure")
+                return super().__setattr__(name, value)
+
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        receiver.close()
+
+        def target(asset, fifo_mode, open_sem=None):
+            raise NoteStorageFailure("primary target failure")
+
+        with self.assertRaises(NoteStorageFailure) as cm:
+            executor_module._run_fifo_worker(target, None, None, sender)
+
+        self.assertEqual(str(cm.exception), "primary target failure")
+        self.assertFalse(hasattr(cm.exception, "__notes__"))
 
     @unittest.skipUnless(
         os.path.isdir("/proc/self/fd"),
