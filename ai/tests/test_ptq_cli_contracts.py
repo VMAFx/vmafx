@@ -12,6 +12,7 @@ import importlib.util
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Callable, TypeVar, cast
 
 import pytest
@@ -43,6 +44,22 @@ def _run_help(script: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _load_script(
+    script_name: str,
+    suffix: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> ModuleType:
+    """Load a script with the Python 3.14-safe importlib contract."""
+    spec = importlib.util.spec_from_file_location(
+        f"{script_name}_{suffix}", SCRIPTS_DIR / script_name
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, mod)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 @_parametrize("script_name", _TARGET_SCRIPTS)
 def test_cli_help_contract(script_name: str) -> None:
     """Entry-point must return 0 and surface meaningful CLI help."""
@@ -52,26 +69,18 @@ def test_cli_help_contract(script_name: str) -> None:
 
 
 @_parametrize("script_name", _TARGET_SCRIPTS)
-def test_cli_import_isolation_contract(script_name: str) -> None:
+def test_cli_import_isolation_contract(script_name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Import the module without executing main() — must not require heavy deps."""
-    spec = importlib.util.spec_from_file_location(
-        f"{script_name}_isolation_test", SCRIPTS_DIR / script_name
-    )
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = _load_script(script_name, "isolation_test", monkeypatch)
     assert callable(mod.main)
 
 
 @_parametrize("script_name", _TARGET_SCRIPTS)
-def test_cli_argument_contract_explicit_help(script_name: str) -> None:
+def test_cli_argument_contract_explicit_help(
+    script_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """main() must accept an explicit list of CLI argument strings."""
-    spec = importlib.util.spec_from_file_location(
-        f"{script_name}_explicit_argv_test", SCRIPTS_DIR / script_name
-    )
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = _load_script(script_name, "explicit_argv_test", monkeypatch)
     with pytest.raises(SystemExit) as exc_info:
         mod.main(["--help"])
     assert exc_info.value.code == 0
@@ -80,12 +89,7 @@ def test_cli_argument_contract_explicit_help(script_name: str) -> None:
 @_parametrize("script_name", _TARGET_SCRIPTS)
 def test_cli_argument_contract_none_argv(script_name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """main(None) must collect arguments from sys.argv via collect_cli_argv."""
-    spec = importlib.util.spec_from_file_location(
-        f"{script_name}_none_argv_test", SCRIPTS_DIR / script_name
-    )
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = _load_script(script_name, "none_argv_test", monkeypatch)
     monkeypatch.setattr(sys, "argv", [script_name, "--help"])
     with pytest.raises(SystemExit) as exc_info:
         mod.main(None)

@@ -51,8 +51,12 @@ not gain a broader import root implicitly.
 The regression covers exactly the twelve named files and the public CLI setup
 seam. Focused tests exercise explicit and `None` argv provenance, QAT/PTQ,
 per-execution-provider quantization reports, exporter manifests, and both
-direct-file and module `--help` invocation. No LOSO run, training, benchmark,
-model export, registry rewrite, or checkpoint mutation is part of this work.
+direct-file and module `--help` invocation. Their dynamic script loader
+pre-registers each module in `sys.modules` before `exec_module()`, preserving
+the repository's Python 3.14-safe import contract while pytest's `monkeypatch`
+restores the prior module table after each case. No LOSO run, training,
+benchmark, model export, registry rewrite, or checkpoint mutation is part of
+this work.
 
 ## Verification results
 
