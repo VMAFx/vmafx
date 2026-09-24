@@ -129,6 +129,15 @@ mechanisms:
    following that alias. Canonical `vmaf_train.*` modules remain checked in the
    `ai/src` explicit-package-base pass.
 
+## Alternatives considered
+
+| Approach | Outcome | Reason |
+| --- | --- | --- |
+| Evaluate merge-base source under the branch's checker configuration | Chosen | It compares the same source under the same rules and attributes only source deltas to the branch. |
+| Compare head and base under their own differing configurations | Rejected | A stricter branch configuration reports inherited debt as newly introduced and blocks its own rollout. |
+| Treat configuration-only changes as a no-op or bypass the delta gate | Rejected | It would let a checker-policy change land without proving that the new policy is executable and fail-closed. |
+| Add broad ignores or suppressions for newly exposed findings | Rejected | It hides inherited debt and checker failures instead of separating baseline findings from branch findings. |
+
 ## Verification evidence
 
 The regression suite in `scripts/git-hooks/test-pre-push-mypy.py` verifies all

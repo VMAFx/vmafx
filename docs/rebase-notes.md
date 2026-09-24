@@ -60,7 +60,7 @@ these Meson blocks.
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
 1. **`scripts/ci/silent-revert-allowlist.json` describes the *difference* between
-   this branch and `master`, not a permanent policy.** Both entries exist only
+   this branch and `master`, not a permanent policy.** Each entry exists only
    because master still carries the state being superseded: the retired numbered
    workspace root that `c2a3c7e0f` wrote in place of `.corpus/` (ADR-1277), and the
    by-value HIP ADM kernels that `92ea978a4` left after silently reverting ADR-0759.
@@ -171,10 +171,14 @@ touched and is unusable on any branch that is behind. It must keep resolving
 the **live** target tip rather than `github.event.pull_request.base.sha`, since
 the defect class is master moving after the branch was cut.
 
-Do not add an in-tree suppression path — no annotation, allowlist or per-path
-exclusion. The only opt-out is a declaration in the PR itself (`revert:` title,
-`reverts: #N`, `intentional revert: <reason>`), and the unedited
-`intentional revert: REASON` placeholder must keep failing. Keep the
+ADR-1291 supersedes this section's original no-allowlist rule with two narrow
+declaration mechanisms. A one-off whole-PR revert uses a `revert:` title,
+`reverts: #N`, or `intentional revert: <reason>`; the unedited
+`intentional revert: REASON` placeholder must keep failing. An accepted ADR
+may instead declare a live reversal in `silent-revert-allowlist.json`, but only
+with detector, exact path, exact full commit for `reverse-hunk`, and an evidence
+regex that matches every line. That file is an expiring declaration of one
+known reversal, never a bare path or source-tree exclusion. Keep the
 fail-closed exits (unresolvable ref, no merge base, conflicting merge, git
 below 2.38) — a case the gate cannot analyse must never print "clean".
 
@@ -186,7 +190,7 @@ committed three markers into `core/src/feature/cuda/integer_vif_cuda.c` and the
 PR that deleted them reset the file to its pre-marker blob.
 
 Regression command: `python3 scripts/ci/tests/test_check_silent_revert.py`
-(12 tests; `test_real_history_replay` needs `31a51afb2` and `92ea978a4` in the
+(22 tests; `test_real_history_replay` needs `31a51afb2` and `92ea978a4` in the
 clone and skips otherwise). See ADR-1284.
 ## fix/bug-gpu-lint — GPU NOLINT citations and the SYCL tidy database (2026-09-22)
 
@@ -52705,4 +52709,13 @@ is `python -m pytest ai/tests/test_ai_cli_helper_restoration.py
 ai/tests/test_eval_report_run_provenance.py
 ai/tests/test_legacy_eval_report_run_provenance.py ai/tests/test_qat_smoke.py
 ai/tests/test_ptq_scripts.py ai/tests/test_measure_quant_drop_per_ep.py
-ai/tests/test_dnn_exporter_run_provenance.py -q`.
+ai/tests/test_dnn_exporter_run_provenance.py
+ai/tests/test_ptq_cli_contracts.py -q`.
+
+The ADR-1291 `reverse-hunk` declaration for full commit
+`d170ef86affc8e29bf3d486f36018e129230ae97` is deliberately limited to
+`ai/scripts/measure_quant_drop.py`, `ai/scripts/ptq_dynamic.py`, and
+`ai/scripts/ptq_static.py`. Retain it only while rebasing this restoration onto
+a target that still contains the reverted state. Never widen its paths,
+commit, or evidence regex. Once the restoration is on `master` and the finding
+disappears, remove the entry rather than carrying a dormant suppression.

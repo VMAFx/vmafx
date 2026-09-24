@@ -60,10 +60,10 @@ model export, registry rewrite, or checkpoint mutation is part of this work.
 - restored semantic regression: 12 passed;
 - focused helper/provenance/QAT/PTQ/exporter set: 74 passed;
 - direct-file plus `python -m` `--help`: 24 of 24 invocations passed; and
-- complete `ai/` package: 1,315 passed, 1 skipped;
+- complete `ai/` package: 1,327 passed, 1 skipped;
 - Black 26.5.1 over all 292 `ai/` files plus Ruff lint and import-order checks:
   clean;
-- `make verify-all`: pass, with all 17 scanner-visible touched files clean and
+- `make verify-all`: pass, with all 28 scanner-visible touched files clean and
   the repository HISS count reduced to 264 within the 276-item baseline; and
 - final writable AGY implementation review: no unresolved behavior finding;
   remediated 7 pre-push mypy findings introduced across `eval_loso_mlp_small.py`,
