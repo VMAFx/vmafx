@@ -58,8 +58,8 @@ inside the private contract and no hot-path null branch is required.
 
 ## Implementation
 
-Internal static forced-inline helpers in `core/src/feature/x86/vif_avx512.c` were
-converted to accept aggregate vector structs via `const *`:
+Internal static forced-inline helpers in `core/src/feature/x86/vif_avx512.c`
+were converted to accept aggregate vector structs via `const *`:
 
 1. `vif_horizontal_energy_pack512(const VifPair512 *acc)`
 2. `vif_vertical_mean8(VifPair512 *acc, const VifTaps8 *t, __m512i coeff)`
@@ -75,8 +75,9 @@ converted to accept aggregate vector structs via `const *`:
 8. `vif_vertical_store_energy16(uint32_t *dst, const VifEnergy512 *acc, int r,`
    `int s)`
 
-All call sites in `vif_horizontal_energies512`, `vif_vertical_statistics8_block`,
-and `vif_vertical_statistics16_block` pass pointers (`&`) directly.
+All call sites in `vif_horizontal_energies512`,
+`vif_vertical_statistics8_block`, and `vif_vertical_statistics16_block` pass
+pointers (`&`) directly.
 
 ### Public ABI and Header Integrity
 
@@ -159,10 +160,24 @@ Win64 acceptance therefore remains pending.
     exhaustive checking, and a file-filter-specific `unusedFunction`
     suppression: no source or test finding. The ordinary changed-files
     preflight also passes without that suppression.
-  - Changelog/ADR fragment checks and Markdown lint: pass.
-  - `make verify-all`: governance audit, context compilation, HISS coverage,
-    and deduplication all pass; 276 active violations remain within the 276
-    baseline and all touched files are clean.
+  - `make verify-all` and `praetorctl audit -base origin/master`: governance
+    audit, context compilation, HISS coverage, and deduplication all pass.
+    The prior claim that touched files were clean under the 276 baseline was
+    false; `vif_avx512.c` contained two baselined HISS-04 violations in
+    `vif_subsample_rd_8_vert_j` (111 LOC) and `vif_subsample_rd_8_horiz_j`
+    (132 LOC), which blocked `praetorctl audit -base origin/master`. Under
+    ADR-1289 and ADR-1298, `-touched-debt-delta-reason` is rejected. The root
+    cause is now resolved: both functions retain their outer boundary
+    `static VMAF_NOINLINE_NOCLONE` (ADR-0503) and use bounded macros
+    (`VIF_VERT_LOAD10_REF`, `VIF_VERT_LOAD10_DIS`, `VIF_VERT_MADD5`, and
+    `VIF_HORIZ_TAP8`) to reduce function lengths to 45 LOC and 36 LOC
+    (both $\le 60$ LOC). Forced-inline function helpers were proven to
+    perturb GCC's register allocation due to address-taken vector pointers
+    (swapping `%zmm3` and `%zmm13`), whereas macros preserve 100% byte-identical
+    `.text` machine code (SHA-256:
+    `80b48e27e202ca98c3a124351740fdecba1e19df53adeebbcd237889fe44374c`).
+    Baseline debt is re-recorded from 276 to 274, the README governance block is
+    synchronized, and all touched files are genuinely HISS clean.
 
 ## Decision Matrix — no alternatives: only-one-way fix
 

@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-24T00:13:20Z",
+  "generated_at": "2026-09-24T17:47:59Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 276,
+  "total_infractions": 274,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1965,22 +1965,6 @@
       "symbol": "ssimulacra2_host_downsample_2x2_avx2",
       "message": "Function 'ssimulacra2_host_downsample_2x2_avx2' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/x86/ssimulacra2_host_avx2.c:188:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/vif_avx512.c",
-      "line_number": 858,
-      "symbol": "vif_subsample_rd_8_vert_j",
-      "message": "Function 'vif_subsample_rd_8_vert_j' (111 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/vif_avx512.c:858:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/vif_avx512.c",
-      "line_number": 987,
-      "symbol": "vif_subsample_rd_8_horiz_j",
-      "message": "Function 'vif_subsample_rd_8_horiz_j' (132 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/vif_avx512.c:987:HISS-04"
     },
     {
       "rule_id": "HISS-04",

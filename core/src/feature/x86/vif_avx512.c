@@ -845,11 +845,87 @@ typedef struct VifHorizCoeffs8 {
  * The accumulation order (s0/s1 via f0, s2/s3 via f1, …, g0/g1 via f0, …)
  * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
  */
-/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
- * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
- * ADR-0139 pin down; the size is the unrolling, not accidental
- * complexity. ADR-0141 / ADR-0278. */
-// NOLINTNEXTLINE(readability-function-size)
+#define VIF_VERT_LOAD10_REF(g0, g1, g2, g3, g4, g5, g6, g7, g8, g9)                                \
+    do {                                                                                           \
+        (g0) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(ref + (stride_bytes * (ii_check)) + (j))));       \
+        (g1) = _mm512_cvtepu8_epi16(_mm256_loadu_si256(                                            \
+            (const __m256i *)(ref + (stride_bytes * (ii_check)) + stride_bytes + (j))));           \
+        (g2) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(ref + (stride_bytes * ((ii_check) + 2)) + (j)))); \
+        (g3) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(ref + (stride_bytes * ((ii_check) + 3)) + (j)))); \
+        (g4) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(ref + (stride_bytes * ((ii_check) + 4)) + (j)))); \
+        (g5) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(ref + (stride_bytes * ((ii_check) + 5)) + (j)))); \
+        (g6) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(ref + (stride_bytes * ((ii_check) + 6)) + (j)))); \
+        (g7) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(ref + (stride_bytes * ((ii_check) + 7)) + (j)))); \
+        (g8) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(ref + (stride_bytes * ((ii_check) + 8)) + (j)))); \
+        (g9) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(ref + (stride_bytes * ((ii_check) + 9)) + (j)))); \
+    } while (0)
+
+#define VIF_VERT_LOAD10_DIS(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9)                                \
+    do {                                                                                           \
+        (s0) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * (ii_check)) + (j))));       \
+        (s1) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * ((ii_check) + 1)) + (j)))); \
+        (s2) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * ((ii_check) + 2)) + (j)))); \
+        (s3) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * ((ii_check) + 3)) + (j)))); \
+        (s4) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * ((ii_check) + 4)) + (j)))); \
+        (s5) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * ((ii_check) + 5)) + (j)))); \
+        (s6) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * ((ii_check) + 6)) + (j)))); \
+        (s7) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * ((ii_check) + 7)) + (j)))); \
+        (s8) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * ((ii_check) + 8)) + (j)))); \
+        (s9) = _mm512_cvtepu8_epi16(                                                               \
+            _mm256_loadu_si256((const __m256i *)(dis + (stride_bytes * ((ii_check) + 9)) + (j)))); \
+    } while (0)
+
+#define VIF_VERT_MADD5(p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, acc_lo, acc_hi)                     \
+    do {                                                                                           \
+        __m512i _t0lo = _mm512_unpacklo_epi16((p0), (p1));                                         \
+        __m512i _t0hi = _mm512_unpackhi_epi16((p0), (p1));                                         \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t0lo, c->f0));                    \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t0hi, c->f0));                    \
+        __m512i _t1lo = _mm512_unpacklo_epi16((p2), (p3));                                         \
+        __m512i _t1hi = _mm512_unpackhi_epi16((p2), (p3));                                         \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t1lo, c->f1));                    \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t1hi, c->f1));                    \
+        __m512i _t2lo = _mm512_unpacklo_epi16((p4), (p5));                                         \
+        __m512i _t2hi = _mm512_unpackhi_epi16((p4), (p5));                                         \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t2lo, c->f2));                    \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t2hi, c->f2));                    \
+        __m512i _t3lo = _mm512_unpacklo_epi16((p6), (p7));                                         \
+        __m512i _t3hi = _mm512_unpackhi_epi16((p6), (p7));                                         \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t3lo, c->f3));                    \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t3hi, c->f3));                    \
+        __m512i _t4lo = _mm512_unpacklo_epi16((p8), (p9));                                         \
+        __m512i _t4hi = _mm512_unpackhi_epi16((p8), (p9));                                         \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t4lo, c->f4));                    \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t4hi, c->f4));                    \
+    } while (0)
+
+/*
+ * Vertical-pass inner j-iteration: load 10 rows of ref/dis pixels starting
+ * at row `ii` and column `j`, apply the 9-tap separable filter in the
+ * vertical direction, and store 32 filtered ref and 32 filtered dis results
+ * into ref_convol[j..j+31] and dis_convol[j..j+31].
+ *
+ * The accumulation order (s0/s1 via f0, s2/s3 via f1, …, g0/g1 via f0, …)
+ * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
+ */
 static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, const uint8_t *dis,
                                                             ptrdiff_t stride_bytes, int ii, int j,
                                                             const VifVertCoeffs8 *c,
@@ -857,97 +933,38 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, 
                                                             uint32_t *dis_convol)
 {
     int ii_check = ii;
-    __m512i accum_mu2_lo;
-    __m512i accum_mu1_lo;
-    __m512i accum_mu2_hi;
-    __m512i accum_mu1_hi;
-    accum_mu2_lo = accum_mu2_hi = accum_mu1_lo = accum_mu1_hi = _mm512_setzero_si512();
+    __m512i accum_mu2_lo = _mm512_setzero_si512();
+    __m512i accum_mu1_lo = _mm512_setzero_si512();
+    __m512i accum_mu2_hi = _mm512_setzero_si512();
+    __m512i accum_mu1_hi = _mm512_setzero_si512();
 
-    {
-        __m512i g0 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + (stride_bytes * ii_check) + j)));
-        __m512i g1 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + stride_bytes * (ii_check) + stride_bytes + j)));
-        __m512i g2 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + stride_bytes * (ii_check + 2) + j)));
-        __m512i g3 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + stride_bytes * (ii_check + 3) + j)));
-        __m512i g4 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + stride_bytes * (ii_check + 4) + j)));
-        __m512i g5 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + stride_bytes * (ii_check + 5) + j)));
-        __m512i g6 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + stride_bytes * (ii_check + 6) + j)));
-        __m512i g7 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + stride_bytes * (ii_check + 7) + j)));
-        __m512i g8 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + stride_bytes * (ii_check + 8) + j)));
-        __m512i g9 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(ref + stride_bytes * (ii_check + 9) + j)));
+    __m512i g0;
+    __m512i g1;
+    __m512i g2;
+    __m512i g3;
+    __m512i g4;
+    __m512i g5;
+    __m512i g6;
+    __m512i g7;
+    __m512i g8;
+    __m512i g9;
 
-        __m512i s0 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + (stride_bytes * ii_check) + j)));
-        __m512i s1 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + stride_bytes * (ii_check + 1) + j)));
-        __m512i s2 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + stride_bytes * (ii_check + 2) + j)));
-        __m512i s3 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + stride_bytes * (ii_check + 3) + j)));
-        __m512i s4 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + stride_bytes * (ii_check + 4) + j)));
-        __m512i s5 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + stride_bytes * (ii_check + 5) + j)));
-        __m512i s6 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + stride_bytes * (ii_check + 6) + j)));
-        __m512i s7 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + stride_bytes * (ii_check + 7) + j)));
-        __m512i s8 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + stride_bytes * (ii_check + 8) + j)));
-        __m512i s9 = _mm512_cvtepu8_epi16(
-            _mm256_loadu_si256((__m256i *)(dis + stride_bytes * (ii_check + 9) + j)));
+    __m512i s0;
+    __m512i s1;
+    __m512i s2;
+    __m512i s3;
+    __m512i s4;
+    __m512i s5;
+    __m512i s6;
+    __m512i s7;
+    __m512i s8;
+    __m512i s9;
 
-        __m512i s0lo = _mm512_unpacklo_epi16(s0, s1);
-        __m512i s0hi = _mm512_unpackhi_epi16(s0, s1);
-        accum_mu2_lo = _mm512_add_epi32(accum_mu2_lo, _mm512_madd_epi16(s0lo, c->f0));
-        accum_mu2_hi = _mm512_add_epi32(accum_mu2_hi, _mm512_madd_epi16(s0hi, c->f0));
-        __m512i s1lo = _mm512_unpacklo_epi16(s2, s3);
-        __m512i s1hi = _mm512_unpackhi_epi16(s2, s3);
-        accum_mu2_lo = _mm512_add_epi32(accum_mu2_lo, _mm512_madd_epi16(s1lo, c->f1));
-        accum_mu2_hi = _mm512_add_epi32(accum_mu2_hi, _mm512_madd_epi16(s1hi, c->f1));
-        __m512i s2lo = _mm512_unpacklo_epi16(s4, s5);
-        __m512i s2hi = _mm512_unpackhi_epi16(s4, s5);
-        accum_mu2_lo = _mm512_add_epi32(accum_mu2_lo, _mm512_madd_epi16(s2lo, c->f2));
-        accum_mu2_hi = _mm512_add_epi32(accum_mu2_hi, _mm512_madd_epi16(s2hi, c->f2));
-        __m512i s3lo = _mm512_unpacklo_epi16(s6, s7);
-        __m512i s3hi = _mm512_unpackhi_epi16(s6, s7);
-        accum_mu2_lo = _mm512_add_epi32(accum_mu2_lo, _mm512_madd_epi16(s3lo, c->f3));
-        accum_mu2_hi = _mm512_add_epi32(accum_mu2_hi, _mm512_madd_epi16(s3hi, c->f3));
-        __m512i s4lo = _mm512_unpacklo_epi16(s8, s9);
-        __m512i s4hi = _mm512_unpackhi_epi16(s8, s9);
-        accum_mu2_lo = _mm512_add_epi32(accum_mu2_lo, _mm512_madd_epi16(s4lo, c->f4));
-        accum_mu2_hi = _mm512_add_epi32(accum_mu2_hi, _mm512_madd_epi16(s4hi, c->f4));
+    VIF_VERT_LOAD10_REF(g0, g1, g2, g3, g4, g5, g6, g7, g8, g9);
+    VIF_VERT_LOAD10_DIS(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9);
 
-        __m512i g0lo = _mm512_unpacklo_epi16(g0, g1);
-        __m512i g0hi = _mm512_unpackhi_epi16(g0, g1);
-        accum_mu1_lo = _mm512_add_epi32(accum_mu1_lo, _mm512_madd_epi16(g0lo, c->f0));
-        accum_mu1_hi = _mm512_add_epi32(accum_mu1_hi, _mm512_madd_epi16(g0hi, c->f0));
-        __m512i g1lo = _mm512_unpacklo_epi16(g2, g3);
-        __m512i g1hi = _mm512_unpackhi_epi16(g2, g3);
-        accum_mu1_lo = _mm512_add_epi32(accum_mu1_lo, _mm512_madd_epi16(g1lo, c->f1));
-        accum_mu1_hi = _mm512_add_epi32(accum_mu1_hi, _mm512_madd_epi16(g1hi, c->f1));
-        __m512i g2lo = _mm512_unpacklo_epi16(g4, g5);
-        __m512i g2hi = _mm512_unpackhi_epi16(g4, g5);
-        accum_mu1_lo = _mm512_add_epi32(accum_mu1_lo, _mm512_madd_epi16(g2lo, c->f2));
-        accum_mu1_hi = _mm512_add_epi32(accum_mu1_hi, _mm512_madd_epi16(g2hi, c->f2));
-        __m512i g3lo = _mm512_unpacklo_epi16(g6, g7);
-        __m512i g3hi = _mm512_unpackhi_epi16(g6, g7);
-        accum_mu1_lo = _mm512_add_epi32(accum_mu1_lo, _mm512_madd_epi16(g3lo, c->f3));
-        accum_mu1_hi = _mm512_add_epi32(accum_mu1_hi, _mm512_madd_epi16(g3hi, c->f3));
-        __m512i g4lo = _mm512_unpacklo_epi16(g8, g9);
-        __m512i g4hi = _mm512_unpackhi_epi16(g8, g9);
-        accum_mu1_lo = _mm512_add_epi32(accum_mu1_lo, _mm512_madd_epi16(g4lo, c->f4));
-        accum_mu1_hi = _mm512_add_epi32(accum_mu1_hi, _mm512_madd_epi16(g4hi, c->f4));
-    }
+    VIF_VERT_MADD5(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, accum_mu2_lo, accum_mu2_hi);
+    VIF_VERT_MADD5(g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, accum_mu1_lo, accum_mu1_hi);
 
     __m512i accumu1_lo =
         _mm512_add_epi32(c->x, _mm512_permutex2var_epi64(accum_mu1_lo, c->mask2, accum_mu1_hi));
@@ -967,6 +984,24 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, 
     _mm512_storeu_si512((__m512i *)(dis_convol + j + 16), accumu2_hi);
 }
 
+#undef VIF_VERT_LOAD10_REF
+#undef VIF_VERT_LOAD10_DIS
+#undef VIF_VERT_MADD5
+
+#define VIF_HORIZ_TAP8(offset, fcoeff)                                                             \
+    do {                                                                                           \
+        rv = _mm512_loadu_si512((const __m512i *)(ref_convol + (offset)));                         \
+        dv = _mm512_loadu_si512((const __m512i *)(dis_convol + (offset)));                         \
+        rlo = _mm512_mullo_epi16(rv, (fcoeff));                                                    \
+        rv = _mm512_mulhi_epu16(rv, (fcoeff));                                                     \
+        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));                     \
+        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));                     \
+        dlo = _mm512_mullo_epi16(dv, (fcoeff));                                                    \
+        dv = _mm512_mulhi_epu16(dv, (fcoeff));                                                     \
+        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));                     \
+        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));                     \
+    } while (0)
+
 /*
  * Horizontal-pass inner j-iteration: read 9 overlapping 512-bit windows of
  * ref_convol and dis_convol starting at jj_check, apply the 9-tap horizontal
@@ -975,11 +1010,6 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, 
  * The accumulation order (refconvol via fcoeff, refconvol1 via fcoeff1, …)
  * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
  */
-/* A fully unrolled AVX-512 kernel. Splitting it changes register allocation
- * and scheduling, which is what the bit-exactness contracts in ADR-0138 /
- * ADR-0139 pin down; the size is the unrolling, not accidental
- * complexity. ADR-0141 / ADR-0278. */
-// NOLINTNEXTLINE(readability-function-size)
 static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_horiz_j(const uint32_t *ref_convol,
                                                              const uint32_t *dis_convol,
                                                              int jj_check, const VifHorizCoeffs8 *c,
@@ -995,111 +1025,22 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_horiz_j(const uint32_t *ref
      * peak live-set from ~30 to ~13 ZMMs (4 accum + 7 const + 2 data). The
      * accumulation order for each accumulator is identical to the original: tap
      * 0 (fcoeff), tap 1 (fcoeff1), …, tap 8 (fcoeff). ADR-0138 / ADR-0139. */
-    {
-        __m512i rv;
-        __m512i rlo;
-        __m512i dv;
-        __m512i dlo;
+    __m512i rv;
+    __m512i rlo;
+    __m512i dv;
+    __m512i dlo;
 
-        rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check));
-        dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check));
-        rlo = _mm512_mullo_epi16(rv, c->fcoeff);
-        rv = _mm512_mulhi_epu16(rv, c->fcoeff);
-        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));
-        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));
-        dlo = _mm512_mullo_epi16(dv, c->fcoeff);
-        dv = _mm512_mulhi_epu16(dv, c->fcoeff);
-        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));
-        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));
+    VIF_HORIZ_TAP8(jj_check, c->fcoeff);
+    VIF_HORIZ_TAP8(jj_check + 1, c->fcoeff1);
+    VIF_HORIZ_TAP8(jj_check + 2, c->fcoeff2);
+    VIF_HORIZ_TAP8(jj_check + 3, c->fcoeff3);
+    VIF_HORIZ_TAP8(jj_check + 4, c->fcoeff4);
+    VIF_HORIZ_TAP8(jj_check + 5, c->fcoeff3);
+    VIF_HORIZ_TAP8(jj_check + 6, c->fcoeff2);
+    VIF_HORIZ_TAP8(jj_check + 7, c->fcoeff1);
+    VIF_HORIZ_TAP8(jj_check + 8, c->fcoeff);
 
-        rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check + 1));
-        dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check + 1));
-        rlo = _mm512_mullo_epi16(rv, c->fcoeff1);
-        rv = _mm512_mulhi_epu16(rv, c->fcoeff1);
-        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));
-        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));
-        dlo = _mm512_mullo_epi16(dv, c->fcoeff1);
-        dv = _mm512_mulhi_epu16(dv, c->fcoeff1);
-        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));
-        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));
-
-        rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check + 2));
-        dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check + 2));
-        rlo = _mm512_mullo_epi16(rv, c->fcoeff2);
-        rv = _mm512_mulhi_epu16(rv, c->fcoeff2);
-        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));
-        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));
-        dlo = _mm512_mullo_epi16(dv, c->fcoeff2);
-        dv = _mm512_mulhi_epu16(dv, c->fcoeff2);
-        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));
-        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));
-
-        rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check + 3));
-        dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check + 3));
-        rlo = _mm512_mullo_epi16(rv, c->fcoeff3);
-        rv = _mm512_mulhi_epu16(rv, c->fcoeff3);
-        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));
-        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));
-        dlo = _mm512_mullo_epi16(dv, c->fcoeff3);
-        dv = _mm512_mulhi_epu16(dv, c->fcoeff3);
-        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));
-        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));
-
-        rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check + 4));
-        dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check + 4));
-        rlo = _mm512_mullo_epi16(rv, c->fcoeff4);
-        rv = _mm512_mulhi_epu16(rv, c->fcoeff4);
-        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));
-        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));
-        dlo = _mm512_mullo_epi16(dv, c->fcoeff4);
-        dv = _mm512_mulhi_epu16(dv, c->fcoeff4);
-        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));
-        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));
-
-        rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check + 5));
-        dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check + 5));
-        rlo = _mm512_mullo_epi16(rv, c->fcoeff3);
-        rv = _mm512_mulhi_epu16(rv, c->fcoeff3);
-        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));
-        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));
-        dlo = _mm512_mullo_epi16(dv, c->fcoeff3);
-        dv = _mm512_mulhi_epu16(dv, c->fcoeff3);
-        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));
-        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));
-
-        rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check + 6));
-        dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check + 6));
-        rlo = _mm512_mullo_epi16(rv, c->fcoeff2);
-        rv = _mm512_mulhi_epu16(rv, c->fcoeff2);
-        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));
-        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));
-        dlo = _mm512_mullo_epi16(dv, c->fcoeff2);
-        dv = _mm512_mulhi_epu16(dv, c->fcoeff2);
-        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));
-        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));
-
-        rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check + 7));
-        dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check + 7));
-        rlo = _mm512_mullo_epi16(rv, c->fcoeff1);
-        rv = _mm512_mulhi_epu16(rv, c->fcoeff1);
-        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));
-        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));
-        dlo = _mm512_mullo_epi16(dv, c->fcoeff1);
-        dv = _mm512_mulhi_epu16(dv, c->fcoeff1);
-        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));
-        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));
-
-        rv = _mm512_loadu_si512((__m512i *)(ref_convol + jj_check + 8));
-        dv = _mm512_loadu_si512((__m512i *)(dis_convol + jj_check + 8));
-        rlo = _mm512_mullo_epi16(rv, c->fcoeff);
-        rv = _mm512_mulhi_epu16(rv, c->fcoeff);
-        accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(rlo, rv));
-        accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(rlo, rv));
-        dlo = _mm512_mullo_epi16(dv, c->fcoeff);
-        dv = _mm512_mulhi_epu16(dv, c->fcoeff);
-        accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(dlo, dv));
-        accumdhi = _mm512_add_epi32(accumdhi, _mm512_unpackhi_epi16(dlo, dv));
-    }
+#undef VIF_HORIZ_TAP8
 
     accumdlo = _mm512_add_epi32(accumdlo, c->addnum);
     accumdhi = _mm512_add_epi32(accumdhi, c->addnum);

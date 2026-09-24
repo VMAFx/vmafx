@@ -21632,11 +21632,13 @@ impact, confirmed by the 88/88 fast-suite gate including the Netflix CPU golden 
   `vif_statistic_*_avx512` is instruction-identical under GCC 16 x86-64
   System V ABI `-O3` (measured by disassembly diff of the compiled object).
   The host structural stack-alignment scan reports 0 violations; definitive
-  Win64 acceptance remains the hosted MinGW build. The public ABI
   (`vif_avx512.h`) is unchanged. Tri-way bit-exactness across scalar, AVX2, and
   AVX-512 is proven by `test_integer_vif_avx512_stages` with a red-capable
   perturbation check, sanitizers, and a clean host structural stack scan.
-  Research-2098.
+  Additionally, touched-file HISS-04 violations in `vif_subsample_rd_8_vert_j`
+  and `vif_subsample_rd_8_horiz_j` are resolved via bounded macros, reducing
+  function lengths to $\le 60$ LOC with byte-identical `.text` machine code and
+  ratcheting baseline debt from 276 to 274. Research-2098.
 
 
 - **docs/lint**: project-wide `codespell` sweep (ADR-0910).
