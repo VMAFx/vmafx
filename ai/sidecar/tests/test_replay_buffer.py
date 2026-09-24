@@ -66,6 +66,16 @@ class TestReplayBufferBasic:
         assert len(result) == 100
         assert {sample.true_score for sample in result} <= {1.0, 2.0}
 
+    def test_sample_without_replacement_when_history_is_sufficient(self):
+        buf = ReplayBuffer(capacity=20)
+        for i in range(10):
+            buf.push([float(i)], float(i))
+
+        result = buf.sample(5, rng=random.Random(2))
+
+        assert len(result) == 5
+        assert len({sample.true_score for sample in result}) == 5
+
     def test_sample_deterministic_with_seeded_rng(self):
         buf = ReplayBuffer(capacity=20)
         for i in range(10):

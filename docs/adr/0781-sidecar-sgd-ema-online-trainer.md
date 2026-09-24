@@ -60,21 +60,26 @@ The standalone Python sidecar implements:
    work (Research-0733 §3.3).
 3. **Checkpoint export** — EMA model exported to ONNX (opset 17, matching
    ADR-0249) with an atomic rename + SHA-256 sidecar file.  Dual-condition
-   trigger: `>= 10 min` AND `>= 1000 new samples` since last checkpoint.
+   trigger: `>= 10 min` AND `>= 1000 new samples` since last checkpoint. The
+   online trainer passes the reserved new-row count into each successful step;
+   replay rows do not advance this gate.
 4. **Socket server** (`online_trainer.py`) — newline-delimited JSON,
    one-thread-per-connection.
 5. **Bounded serialized admission** — each step reserves the oldest
    `batch_size - floor(batch_size * replay_mix_ratio)` new samples and fills only
-   the remainder from replay, sampling with replacement when replay history is
-   smaller than the requested share. One owner spans reservation through
+   the remainder from replay, sampling without replacement when history is
+   sufficient and with replacement only when it is smaller than the requested
+   share. One owner spans reservation through
    restore or commit. The admitted pending backlog defaults to 10 000 queued
    plus in-flight samples; capacity pressure returns an explicit retry error
    rather than silently dropping a sample or growing without bound. A failed
    runtime or shape step restores its reserved FIFO window before later samples
    may train. Its ACK is admission-aware: an already-admitted triggering sample
    returns `ok: true`, `trained: false`, and `retry_queued: true`, while a sample
-   deferred by full capacity remains unaccepted and receives `ok: false` if the
-   oldest-window retry also fails.
+   deferred by full capacity remains unaccepted and receives `ok: false` plus
+   `retryable: true` if the oldest-window retry also fails. The Go client
+   requeues that sample without incrementing its delivered counter; it continues
+   to count the admitted `ok: true`, `retry_queued: true` case as delivered.
 
 The Go transport (`cmd/vmafx-node/online_feedback.go`) separately implements a
 non-blocking `FeedbackClient.Send()` queue with a 1000-entry capacity and a

@@ -61,8 +61,10 @@ into fx graph.
    unchanged. Admission-aware trainer failures use `ok: true`,
    `retry_queued: true`, and `training_error`: the sidecar retained the sample,
    so the Go client counts it delivered and logs the deferred training error
-   without resubmitting. `ok: false` remains reserved for samples the sidecar
-   did not admit. Keep `feedbackAck` synchronized with the Python response.
+   without resubmitting. A capacity-deferred sample uses `ok: false` and
+   `retryable: true`; the client requeues it, returns to the reconnect loop, and
+   does not increment `delivered`. Non-retryable `ok: false` remains terminal.
+   Keep `feedbackAck` synchronized with the Python response.
 
 5. **Encoder probe is NON-FATAL and runs in OnStart** (`providers.go`,
    ADR-0717): `provideEncoderInventory` returns shared `*probe.Inventory`

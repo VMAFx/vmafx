@@ -32,15 +32,17 @@ All four Python Semgrep findings are removed at source.
    `dynamic_axes` warning under PyTorch 2.14. Predictions and targets are now
    equal-length vectors with an explicit mismatch error. Training now has one
    reserve-to-commit owner, consumes only the oldest new-sample portion of a
-   replay-mixed batch, fills replay slots with replacement even from cold or
-   capacity-limited history, and restores a failed window ahead of concurrent
-   arrivals. A bounded pending queue applies explicit retry backpressure rather
-   than growing indefinitely or dropping samples. Admission-aware ACKs mark
-   retained failed-step samples as accepted and retry-queued, while
-   capacity-deferred samples remain rejected and safe for caller retry; repeated
-   failures therefore neither lose nor duplicate feedback. The opset-17
-   exporter uses tuple arguments plus `dynamic_shapes`. The complete suite is
-   warning-clean rather than merely its alert-focused subset.
+   replay-mixed batch, samples replay without replacement when history is
+   sufficient and with replacement only when it is short, and restores a failed
+   window ahead of concurrent arrivals. Only successfully trained new rows count
+   toward the checkpoint gate; replay rows do not. A bounded pending queue
+   applies explicit retry backpressure rather than growing indefinitely or
+   dropping samples. Admission-aware ACKs mark retained failed-step samples as
+   accepted and retry-queued, while capacity-deferred samples carry
+   `ok: false`, `retryable: true`; the Go client requeues those without counting
+   delivery. Repeated failures therefore neither lose nor duplicate feedback.
+   The opset-17 exporter uses tuple arguments plus `dynamic_shapes`. The
+   complete suite is warning-clean rather than merely its alert-focused subset.
 
 The previous version of this digest incorrectly said the base cache writer used
 PID-suffixed temporary files. Exact-base inspection shows it wrote JSON directly
@@ -164,7 +166,7 @@ The socket regression suite exercises:
 |---|---|
 | `compat/vmaf/tests/test_decorator_extended.py` | 26 passed, including spawn-process cases |
 | `ai/sidecar/tests/test_socket_permissions.py` | 20 passed on POSIX; namespace-dependent cross-UID case may skip with an explicit reason |
-| `ai/sidecar/tests/` | 103 passed on Python 3.14.7 / PyTorch 2.14.0 with warnings promoted to errors |
+| `ai/sidecar/tests/` | 104 passed, 1 namespace-dependent skip on Python 3.14.7 / PyTorch 2.14.0 with warnings promoted to errors |
 | Semgrep `p/python` on both source files | 0 text findings and 0 SARIF results |
 | Nox | `compat_decorator` executes all 26 decorator tests |
 | Hosted CI | Linux/macOS plus real Windows execution in `build.yml` |

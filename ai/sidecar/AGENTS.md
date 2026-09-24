@@ -24,9 +24,11 @@ Implements vmafx-node online training sidecar (ADR-0781).
    `OnlineTrainer.ingest()` derives the new-sample window as
    `batch_size - floor(batch_size * replay_mix_ratio)` and reserves exactly that
    many oldest pending samples; replay fills the rest without consuming later
-   pending samples. Replay sampling uses replacement, so cold history or a
-   replay capacity below the replay share still yields the configured batch
-   size. One owner holds the complete reserve -> train ->
+   pending samples. Replay sampling is without replacement when history is
+   sufficient and uses replacement only when the requested share exceeds that
+   history, so a cold or capacity-limited buffer still yields the configured
+   batch size. Only the reserved new-sample count advances the checkpoint gate;
+   replay rows never do. One owner holds the complete reserve -> train ->
    restore/commit lifecycle, so a second complete window cannot train ahead of
    a failed first window. After either a `RuntimeError` or `ValueError`, the
    reserved window returns to the front before the owner is released. Concurrent
@@ -37,8 +39,9 @@ Implements vmafx-node online training sidecar (ADR-0781).
    whose triggering sample was already admitted returns `ok: true`,
    `trained: false`, and `retry_queued: true`; callers must not resubmit it. A
    capacity-deferred sample remains unaccepted when that retry fails, so the
-   exception / `ok: false` ACK tells the caller to retry. Run the complete
-   `ai/sidecar/tests` suite with warnings promoted to errors.
+   `ok: false`, `retryable: true` ACK makes the Go client requeue it without
+   incrementing `delivered`. Run the complete `ai/sidecar/tests` suite with
+   warnings promoted to errors.
 
 4. **Replay and pending capacity defaults** — both are 10 000 samples. The
    executable source (`_REPLAY_BUFFER_CAPACITY`, `_PENDING_CAPACITY`), focused

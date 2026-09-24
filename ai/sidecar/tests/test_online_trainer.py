@@ -264,7 +264,7 @@ class TestOnlineTrainerIngest:
         trainer = self._trainer(tmp_path, batch_size=batch_size)
         features = [1.0] * N_FEATURES
 
-        def reject_mismatched_batch(_batch: object) -> float:
+        def reject_mismatched_batch(_batch: object, _new_sample_count: int) -> float:
             raise error_type("trainer failure")
 
         monkeypatch.setattr(trainer, "_train_on_batch", reject_mismatched_batch)
@@ -297,7 +297,7 @@ class TestOnlineTrainerIngest:
         thread_results: list[dict[str, object]] = []
         thread_errors: list[BaseException] = []
 
-        def train_with_first_step_failure(batch: list[Sample]) -> float:
+        def train_with_first_step_failure(batch: list[Sample], _new_sample_count: int) -> float:
             scores = [sample.true_score for sample in batch]
             attempted_scores.append(scores)
             if len(attempted_scores) == 1:
@@ -371,7 +371,8 @@ class TestOnlineTrainerIngest:
             assert count == 2
             return replay
 
-        def record_batch(batch: list[Sample]) -> float:
+        def record_batch(batch: list[Sample], new_sample_count: int) -> float:
+            assert new_sample_count == 2
             attempted_scores.append([sample.true_score for sample in batch])
             return 0.0
 
@@ -390,7 +391,7 @@ class TestOnlineTrainerIngest:
         ]
 
     @pytest.mark.parametrize(
-        ("replay_mix_ratio", "buffer_capacity", "new_sample_count"),
+        ("replay_mix_ratio", "buffer_capacity", "expected_new_sample_count"),
         [(0.75, 10_000, 1), (0.5, 1, 2)],
     )
     def test_replay_mix_fills_batch_when_history_is_smaller_than_replay_share(
@@ -399,7 +400,7 @@ class TestOnlineTrainerIngest:
         monkeypatch: pytest.MonkeyPatch,
         replay_mix_ratio: float,
         buffer_capacity: int,
-        new_sample_count: int,
+        expected_new_sample_count: int,
     ) -> None:
         """Cold or capacity-limited replay still supplies a full batch."""
         trainer = OnlineTrainer(
@@ -412,7 +413,8 @@ class TestOnlineTrainerIngest:
         )
         attempted_scores: list[list[float]] = []
 
-        def record_batch(batch: list[Sample]) -> float:
+        def record_batch(batch: list[Sample], new_sample_count: int) -> float:
+            assert new_sample_count == expected_new_sample_count
             attempted_scores.append([sample.true_score for sample in batch])
             return 0.0
 
@@ -420,15 +422,15 @@ class TestOnlineTrainerIngest:
         monkeypatch.setattr(trainer, "_maybe_export_checkpoint", lambda: None)
 
         result = None
-        for score in range(1, new_sample_count + 1):
+        for score in range(1, expected_new_sample_count + 1):
             result = trainer.ingest([float(score)] * N_FEATURES, float(score))
 
         assert result is not None
         assert result["trained"] is True
         assert len(attempted_scores) == 1
         assert len(attempted_scores[0]) == 4
-        assert attempted_scores[0][:new_sample_count] == [
-            float(score) for score in range(1, new_sample_count + 1)
+        assert attempted_scores[0][:expected_new_sample_count] == [
+            float(score) for score in range(1, expected_new_sample_count + 1)
         ]
 
     @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
@@ -449,7 +451,7 @@ class TestOnlineTrainerIngest:
         )
         attempted_scores: list[list[float]] = []
 
-        def reject_batch(batch: list[Sample]) -> float:
+        def reject_batch(batch: list[Sample], _new_sample_count: int) -> float:
             attempted_scores.append([sample.true_score for sample in batch])
             raise error_type("persistent trainer failure")
 
@@ -627,7 +629,7 @@ class TestHandleConnection:
             config=_fast_config(),
         )
 
-        def reject_batch(_batch: object) -> float:
+        def reject_batch(_batch: object, _new_sample_count: int) -> float:
             raise ValueError("persistent trainer failure")
 
         monkeypatch.setattr(trainer, "_train_on_batch", reject_batch)
@@ -663,6 +665,7 @@ class TestHandleConnection:
             },
         )
         assert rejected["ok"] is False
+        assert rejected["retryable"] is True
         assert rejected["error"] == "persistent trainer failure"
         assert [sample.true_score for sample in trainer._pending] == [1.0, 2.0]
         assert trainer.status()["total_pushed"] == 2
@@ -677,6 +680,7 @@ class TestHandleConnection:
         ack = _send_recv(client_sock, payload)
         assert ack["ok"] is False
         assert "error" in ack
+        assert "retryable" not in ack
         client_sock.close()
 
     def test_malformed_json_returns_ok_false(self, tmp_path: pathlib.Path) -> None:
@@ -693,6 +697,7 @@ class TestHandleConnection:
             buf += chunk
         ack = json.loads(buf.split(b"\n", 1)[0])
         assert ack["ok"] is False
+        assert "retryable" not in ack
         client_sock.close()
 
     def test_empty_line_is_silently_skipped(self, tmp_path: pathlib.Path) -> None:

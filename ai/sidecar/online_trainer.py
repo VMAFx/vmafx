@@ -16,7 +16,9 @@
 #       {"job_id": "...", "features": [f0, f1, ...], "true_score": 42.7}
 #   Server → Client (ACK or error):
 #       {"ok": true, "step": 1234}
+#       {"ok": true, "trained": false, "retry_queued": true, "training_error": "..."}
 #       {"ok": false, "error": "message"}
+#       {"ok": false, "retryable": true, "error": "message"}
 #
 # The Unix socket path defaults to /tmp/vmafx-sidecar.sock and is
 # overridden by VMAFX_SIDECAR_SOCKET.  Checkpoints default to
@@ -54,6 +56,13 @@ except ImportError:
     _fcntl = None
 
 logger = logging.getLogger(__name__)
+
+
+def _mark_retryable(exc: RuntimeError | ValueError) -> RuntimeError | ValueError:
+    """Mark an ingest error whose triggering sample was not admitted."""
+    exc._vmafx_retryable = True  # type: ignore[union-attr]
+    return exc
+
 
 # ---------------------------------------------------------------------------
 # Configuration from environment
@@ -264,12 +273,13 @@ class OnlineTrainer:
         # reserve -> train -> restore/commit lifecycle while concurrent calls
         # enqueue behind the reserved FIFO window.
         try:
-            loss = self._train_on_batch(batch)
+            loss = self._train_on_batch(batch, len(reserved))
         except (RuntimeError, ValueError) as exc:
             # The gradient step failed (CUDA OOM, prediction/target mismatch,
             # ...). Restore its FIFO window before releasing the training owner.
             self._finish_training(restore=reserved)
             if sample_deferred:
+                _mark_retryable(exc)
                 raise
             return self._accepted_failure_result(exc)
 
@@ -331,9 +341,11 @@ class OnlineTrainer:
             sample_deferred = self._backlog_size_locked() >= self._pending_capacity
             if sample_deferred:
                 if self._training_active:
-                    raise RuntimeError(
-                        f"pending training queue is full ({self._pending_capacity} samples); "
-                        "retry later"
+                    raise _mark_retryable(
+                        RuntimeError(
+                            f"pending training queue is full ({self._pending_capacity} samples); "
+                            "retry later"
+                        )
                     )
             else:
                 self._pending.append(sample)
@@ -375,7 +387,7 @@ class OnlineTrainer:
         finally:
             self._finish_training(admit=admit)
 
-    def _train_on_batch(self, batch: list[Sample]) -> float:
+    def _train_on_batch(self, batch: list[Sample], new_sample_count: int) -> float:
         """Convert batch to tensors and call trainer.step()."""
         import torch
 
@@ -383,7 +395,7 @@ class OnlineTrainer:
             return 0.0
         feats = torch.tensor([s.features for s in batch], dtype=torch.float32)
         scores = torch.tensor([s.true_score for s in batch], dtype=torch.float32)
-        return self._trainer.step(feats, scores)
+        return self._trainer.step(feats, scores, new_sample_count=new_sample_count)
 
     def _maybe_export_checkpoint(self) -> str | None:
         """Atomically gate-check and export a checkpoint.
@@ -645,7 +657,10 @@ def _handle_connection(
                     # retry_queued. Exceptions reaching here are malformed input or
                     # failures for a sample that was not admitted, so ok:false is
                     # retry-safe and must not kill the connection thread (R3-3).
-                    err = json.dumps({"ok": False, "error": str(exc)}) + "\n"
+                    error_result = {"ok": False, "error": str(exc)}
+                    if getattr(exc, "_vmafx_retryable", False):
+                        error_result["retryable"] = True
+                    err = json.dumps(error_result) + "\n"
                     conn.sendall(err.encode())
     except OSError as exc:
         logger.debug("Connection closed: %s", exc)

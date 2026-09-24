@@ -90,9 +90,10 @@ about 200 hours of a hypothetical 50-sample/hour input stream.
 
 For a configured batch size `B` and replay fraction `R`, each gradient step
 reserves exactly the oldest `B - floor(B * R)` pending samples; replay fills the
-remaining slots, sampling with replacement when the available replay history is
-smaller than that share. Only those reserved new samples are consumed, so a 50%
-replay mix with batch size 4 trains pending samples 1 and 2 before samples 3 and 4.
+remaining slots without replacement when history is sufficient and with
+replacement only when the available history is smaller than that share. Only
+those reserved new samples are consumed, so a 50% replay mix with batch size 4
+trains pending samples 1 and 2 before samples 3 and 4.
 The reserve, train, and restore-or-commit lifecycle has one owner. Concurrent
 ingests can enqueue behind that owner, but cannot start a second step.
 
@@ -103,6 +104,8 @@ its sample enters either queue. When the queue is full and idle after a failed
 step, the next ingest retries the oldest window first and admits its new sample
 only if that retry succeeds. A `RuntimeError` or `ValueError` restores the
 reserved samples to the front, preserving FIFO retry order without silent loss.
+Only the reserved new-sample count advances the checkpoint sample gate; replay
+rows never make a checkpoint eligible.
 `OnlineTrainer.status()` exposes `pending_size`, `pending_capacity`, and
 `training_active` to embedding callers; the standalone process still does not
 provide an HTTP status endpoint.
@@ -113,9 +116,11 @@ already admitted before a step failed, the sidecar logs the failure and returns
 "training_error": "..."}`. The sample is already in the restored FIFO window;
 the caller must not submit it again. The Go `FeedbackClient` counts that ACK as
 delivered and logs the deferred training error. If capacity prevented admission,
-a failed oldest-window retry returns `{"ok": false, "error": "..."}` and the
-caller may retry that unaccepted sample. This distinction prevents both silent
-loss and duplicate feedback.
+a failed oldest-window retry returns
+`{"ok": false, "retryable": true, "error": "..."}`. The Go client requeues
+that unaccepted sample, reconnects, and does not increment `delivered`. Malformed
+or otherwise non-retryable input does not carry `retryable: true`. This
+distinction prevents both silent loss and duplicate feedback.
 
 ---
 
@@ -135,7 +140,7 @@ wired to supported Helm values in the current chart.
 | `VMAFX_SIDECAR_LR` | `0.0001` | SGD learning rate used by the executable. |
 | `VMAFX_SIDECAR_EMA_DECAY` | `0.999` | EMA decay beta. |
 | `VMAFX_SIDECAR_CKPT_INTERVAL_S` | `600` | Minimum seconds between checkpoints. |
-| `VMAFX_SIDECAR_MIN_SAMPLES_CKPT` | `1000` | Minimum new samples before checkpoint. |
+| `VMAFX_SIDECAR_MIN_SAMPLES_CKPT` | `1000` | Minimum successfully trained new samples before checkpoint; replay rows are excluded. |
 | `VMAFX_SIDECAR_N_FEATURES` | `80` | Feature vector dimension from vmafx-node. |
 
 The socket path (`VMAFX_SIDECAR_SOCKET`) defaults to `/tmp/vmafx-sidecar.sock`

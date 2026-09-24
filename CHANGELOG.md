@@ -31453,13 +31453,15 @@ See `docs/server/auth.md` for the full configuration guide.
 - Make the newly required sidecar suite warning-clean on PyTorch 2.14: preserve
   batch-size-one training without MSE broadcasting, reject prediction/target
   count mismatches, serialize each reserve-to-commit training lifecycle, consume
-  only the pending samples used by a replay-mixed batch, fill cold replay shares
-  with replacement, retry the oldest failed window without discarding concurrent
-  samples, and bound pending work with explicit backpressure. Admission-aware
-  ACKs prevent a retained failed-step sample from being duplicated by caller
-  retry while leaving capacity-rejected samples explicitly retryable. Export a
-  genuinely dynamic ONNX batch axis and fail socket lifecycle tests on
-  server-thread exceptions.
+  only the pending samples used by a replay-mixed batch, sample replay without
+  replacement when history suffices and with replacement only when it does not,
+  and count only successfully trained new rows toward checkpoint eligibility.
+  Retry the oldest failed window without discarding concurrent samples and bound
+  pending work with explicit backpressure. Admission-aware ACKs prevent a
+  retained failed-step sample from being duplicated by caller retry; the Go
+  client requeues an explicitly retryable capacity rejection without counting a
+  delivery. Export a genuinely dynamic ONNX batch axis and fail socket lifecycle
+  tests on server-thread exceptions.
 
 
 - **Semgrep OSS warnings — 19/19 triaged (Research-0090)** — three real

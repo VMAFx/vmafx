@@ -10,7 +10,7 @@
 //	→ {"job_id": "...", "features": [...], "true_score": 42.7}
 //	← {"ok": true, "step": 1234, "trained": false}
 //	← {"ok": true, "trained": false, "retry_queued": true, "training_error": "..."}
-//	← {"ok": false, "error": "message"}
+//	← {"ok": false, "retryable": true, "error": "message"}
 //
 // The client is intentionally fire-and-forget from the scoring path:
 // FeedbackClient.Send() is non-blocking — it enqueues into a bounded
@@ -83,6 +83,7 @@ type feedbackAck struct {
 	Loss          float64 `json:"loss,omitempty"`
 	Checkpoint    string  `json:"checkpoint,omitempty"`
 	Error         string  `json:"error,omitempty"`
+	Retryable     bool    `json:"retryable,omitempty"`
 	RetryQueued   bool    `json:"retry_queued,omitempty"`
 	TrainingError string  `json:"training_error,omitempty"`
 }
@@ -286,8 +287,9 @@ func (fc *FeedbackClient) pump(ctx context.Context, conn net.Conn) error {
 		case <-ctx.Done():
 			return nil
 		case msg := <-fc.queue:
-			if err := fc.sendOne(conn, reader, msg); err != nil {
-				// Re-enqueue on write error so the message is not lost
+			accepted, err := fc.sendOne(conn, reader, msg)
+			if err != nil {
+				// Re-enqueue on transport failure or explicit retryable rejection
 				// (best-effort; if the queue is now full it is dropped).
 				select {
 				case fc.queue <- msg:
@@ -296,7 +298,9 @@ func (fc *FeedbackClient) pump(ctx context.Context, conn net.Conn) error {
 				}
 				return fmt.Errorf("send: %w", err)
 			}
-			fc.delivered.Add(1)
+			if accepted {
+				fc.delivered.Add(1)
+			}
 		}
 	}
 	return nil
@@ -307,27 +311,27 @@ func (fc *FeedbackClient) sendOne(
 	conn net.Conn,
 	reader *bufio.Reader,
 	msg *FeedbackMessage,
-) error {
+) (bool, error) {
 	payload, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return false, fmt.Errorf("marshal: %w", err)
 	}
 	payload = append(payload, '\n')
 
 	if err := conn.SetWriteDeadline(time.Now().Add(feedbackWriteTimeout)); err != nil {
-		return fmt.Errorf("set write deadline: %w", err)
+		return false, fmt.Errorf("set write deadline: %w", err)
 	}
 	if _, err := conn.Write(payload); err != nil {
-		return fmt.Errorf("write: %w", err)
+		return false, fmt.Errorf("write: %w", err)
 	}
 
 	// Read ACK (optional — sidecar always sends one per message).
 	if err := conn.SetReadDeadline(time.Now().Add(feedbackWriteTimeout)); err != nil {
-		return fmt.Errorf("set read deadline: %w", err)
+		return false, fmt.Errorf("set read deadline: %w", err)
 	}
 	line, err := reader.ReadBytes('\n')
 	if err != nil {
-		return fmt.Errorf("read ack: %w", err)
+		return false, fmt.Errorf("read ack: %w", err)
 	}
 
 	var ack feedbackAck
@@ -336,12 +340,16 @@ func (fc *FeedbackClient) sendOne(
 		fc.log.Debug("sidecar ACK parse error",
 			slog.String("raw", string(line)),
 			slog.String("err", jsonErr.Error()))
-		return nil
+		return false, nil
 	}
 	if !ack.OK {
 		fc.log.Warn("sidecar rejected message",
 			slog.String("job_id", msg.JobID),
 			slog.String("error", ack.Error))
+		if ack.Retryable {
+			return false, fmt.Errorf("sidecar retryable rejection: %s", ack.Error)
+		}
+		return false, nil
 	} else if ack.RetryQueued {
 		fc.log.Warn("sidecar accepted message with training retry queued",
 			slog.String("job_id", msg.JobID),
@@ -352,5 +360,5 @@ func (fc *FeedbackClient) sendOne(
 			slog.String("path", ack.Checkpoint),
 			slog.Int64("step", ack.Step))
 	}
-	return nil
+	return true, nil
 }

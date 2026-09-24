@@ -81,16 +81,20 @@ these Meson blocks.
    `dynamic_shapes=({0: "batch"},)` export. Do not restore `squeeze(-1)` plus
    broadcasting or the legacy `dynamic_axes` exporter argument. Derive the
    new-sample window from batch size and replay mix, reserve only that oldest
-   window, fill the replay share with replacement when history is smaller, and
-   keep one training owner through restore or commit. A failed `RuntimeError`
+   window, sample replay without replacement when history is sufficient and with
+   replacement only when history is smaller, and keep one training owner through
+   restore or commit. Only the reserved new-row count advances the checkpoint
+   gate; replay rows never do. A failed `RuntimeError`
    or `ValueError` step restores that window at the front;
    concurrent arrivals remain queued behind it, cannot train ahead, and cannot
    be cleared by its eventual retry. Keep the admitted backlog bounded with
    explicit retry backpressure; do not admit a capacity-rejected sample to the
    replay buffer. Preserve admission-aware ACKs: an admitted sample restored
    after a failed step is `ok: true` / `retry_queued: true` and must not be
-   resubmitted, while a capacity-deferred sample remains `ok: false` and safe to
-   retry if the oldest-window step fails.
+   resubmitted, while a capacity-deferred sample remains `ok: false` with
+   `retryable: true` if the oldest-window step fails. The Go client must requeue
+   the latter without incrementing `delivered` while preserving the former as an
+   accepted delivery.
    Socket lifecycle regressions signal readiness only after the real `listen()`
    succeeds and surface every server-thread exception to the parent test.
 

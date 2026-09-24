@@ -188,6 +188,17 @@ class TestCheckpoint:
         trainer = SGDEMATrainer(_tiny_model(), cfg)
         assert not trainer.should_checkpoint()
 
+    def test_checkpoint_gate_counts_only_new_rows_in_mixed_batches(self):
+        cfg = SGDEMAConfig(checkpoint_interval_s=0.0, min_samples_per_checkpoint=4)
+        trainer = SGDEMATrainer(_tiny_model(), cfg)
+        features, scores = _batch(4)
+
+        trainer.step(features, scores, new_sample_count=2)
+        assert not trainer.should_checkpoint()
+
+        trainer.step(features, scores, new_sample_count=2)
+        assert trainer.should_checkpoint()
+
     def test_export_onnx_writes_file(self):
         cfg = SGDEMAConfig(checkpoint_interval_s=0.0, min_samples_per_checkpoint=0)
         trainer = SGDEMATrainer(_tiny_model(), cfg)

@@ -14,6 +14,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -114,6 +115,82 @@ func TestFeedbackAckRetryQueuedFields(t *testing.T) {
 	}
 	if !ack.OK || ack.Trained || !ack.RetryQueued || ack.TrainingError != "oom" {
 		t.Fatalf("retry-queued ACK decoded incorrectly: %+v", ack)
+	}
+}
+
+// TestFeedbackClient_RetryQueuedAckIsAccepted verifies that an admitted sample
+// remains accepted even when its gradient step is deferred for retry.
+func TestFeedbackClient_RetryQueuedAckIsAccepted(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = server.Close()
+	})
+
+	fc := NewFeedbackClient(nil)
+	t.Cleanup(fc.Close)
+	msg := &FeedbackMessage{JobID: "accepted", Features: []float32{0.1}, TrueScore: 75.0}
+
+	go func() {
+		scanner := bufio.NewScanner(server)
+		if !scanner.Scan() {
+			return
+		}
+		_, _ = server.Write([]byte(
+			`{"ok":true,"trained":false,"retry_queued":true,"training_error":"oom"}` + "\n",
+		))
+	}()
+
+	accepted, err := fc.sendOne(client, bufio.NewReader(client), msg)
+	if err != nil {
+		t.Fatalf("sendOne returned error for admitted retry-queued sample: %v", err)
+	}
+	if !accepted {
+		t.Fatal("sendOne rejected admitted retry-queued sample")
+	}
+}
+
+// TestFeedbackClient_RetryableRejectionRequeuesWithoutDelivery verifies that
+// sidecar backpressure never consumes an unadmitted sample or inflates the
+// delivered counter.
+func TestFeedbackClient_RetryableRejectionRequeuesWithoutDelivery(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = server.Close()
+	})
+
+	fc := NewFeedbackClient(nil)
+	t.Cleanup(fc.Close)
+	msg := &FeedbackMessage{JobID: "retry-me", Features: []float32{0.1}, TrueScore: 75.0}
+	fc.queue <- msg
+
+	go func() {
+		scanner := bufio.NewScanner(server)
+		if !scanner.Scan() {
+			return
+		}
+		_, _ = server.Write([]byte(
+			`{"ok":false,"retryable":true,"error":"pending training queue is full"}` + "\n",
+		))
+	}()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+	defer cancel()
+	err := fc.pump(ctx, client)
+	if err == nil {
+		t.Fatal("pump returned nil for retryable sidecar rejection")
+	}
+	if got := fc.Delivered(); got != 0 {
+		t.Fatalf("Delivered() = %d after retryable rejection, want 0", got)
+	}
+	select {
+	case requeued := <-fc.queue:
+		if requeued != msg {
+			t.Fatalf("requeued message = %p, want original %p", requeued, msg)
+		}
+	default:
+		t.Fatal("retryable rejection did not requeue the message")
 	}
 }
 
