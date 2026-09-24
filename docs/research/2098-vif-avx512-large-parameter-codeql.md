@@ -153,9 +153,17 @@ Win64 acceptance therefore remains pending.
   post-push Win64 acceptance check.
 - Format & lint:
   - Clang-format dry-run on both changed C files: pass.
-  - Clang-tidy 22.1.8 with all diagnostics promoted to errors: no touched-file
-    warning. The report contains two inherited-header diagnostics outside the
-    changed files (`core/src/cpu.h` and `core/src/x86/cpu.h`).
+  - Clang-tidy 22.1.8 with all diagnostics promoted to errors: direct execution
+    without suppression flags `vif_subsample_rd_8_horiz_j` for
+    `readability-function-size` (128 statements vs. threshold 120) because
+    `VIF_HORIZ_TAP8` unrolls 9 taps. Because extracting a function helper was
+    proven to perturb GCC SSA register allocation and break the byte-identical
+    contract, an ADR-0138 / ADR-0139 / ADR-0141 cited inline suppression
+    `NOLINTNEXTLINE(readability-function-size)` is placed on the function,
+    leaving 0 touched-file warnings. Macro locals in `VIF_VERT_MADD5` use
+    compliant names (`t0lo`–`t4hi`). The report contains two inherited-header
+    diagnostics outside the changed files (`core/src/cpu.h` and
+    `core/src/x86/cpu.h`).
   - Cppcheck 2.22.0 with the required CI POSIX/public-entrypoint models,
     exhaustive checking, and a file-filter-specific `unusedFunction`
     suppression: no source or test finding. The ordinary changed-files

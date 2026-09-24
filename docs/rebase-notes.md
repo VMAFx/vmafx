@@ -56,6 +56,23 @@ these Meson blocks.
    Its `test_integer_vif_avx512_stages_red_check` case verifies baseline
    bit-exactness and proves the harness detects 1-bit input and intermediate
    plane perturbations. Preserve both cases on rebase.
+4. **Bounded macros and narrow function-size suppression preserve the codegen invariant.**
+   In `core/src/feature/x86/vif_avx512.c`, `vif_subsample_rd_8_vert_j` and
+   `vif_subsample_rd_8_horiz_j` decompose repeated unrolled vector operations into bounded
+   macros (`VIF_VERT_LOAD10_REF`, `VIF_VERT_LOAD10_DIS`, `VIF_VERT_MADD5`, `VIF_HORIZ_TAP8`)
+   to satisfy HISS-04 / NASA Rule 4 function length constraints ($\le 60$ source LOC) without
+   raising baseline debt. Replacing the macros with static forced-inline helper functions
+   was proven to alter GCC SSA register allocation due to address-taken vector pointer
+   arguments (e.g. swapping `%zmm3` and `%zmm13`), breaking the byte-identical `.text`
+   machine code contract (SHA-256: `80b48e27e202ca98c3a124351740fdecba1e19df53adeebbcd237889fe44374c`).
+   Because `VIF_HORIZ_TAP8` unrolls 9 taps within `vif_subsample_rd_8_horiz_j`, direct
+   clang-tidy 22.1.8's `readability-function-size` counts macro-expanded statements (128
+   statements vs. threshold 120) despite source LOC being 36 ($\le 60$). A narrow inline
+   suppression `NOLINTNEXTLINE(readability-function-size)` citing ADR-0138, ADR-0139,
+   ADR-0141, and Research-2098 is required to preserve this bit-exact codegen invariant
+   without relaxing global tidy configuration or adding baseline debt. Macro locals in
+   `VIF_VERT_MADD5` use compliant non-reserved identifiers (`t0lo`–`t4hi`). Do not extract
+   helper functions or remove the suppression on rebase.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

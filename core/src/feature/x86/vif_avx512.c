@@ -895,26 +895,26 @@ typedef struct VifHorizCoeffs8 {
 
 #define VIF_VERT_MADD5(p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, acc_lo, acc_hi)                     \
     do {                                                                                           \
-        __m512i _t0lo = _mm512_unpacklo_epi16((p0), (p1));                                         \
-        __m512i _t0hi = _mm512_unpackhi_epi16((p0), (p1));                                         \
-        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t0lo, c->f0));                    \
-        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t0hi, c->f0));                    \
-        __m512i _t1lo = _mm512_unpacklo_epi16((p2), (p3));                                         \
-        __m512i _t1hi = _mm512_unpackhi_epi16((p2), (p3));                                         \
-        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t1lo, c->f1));                    \
-        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t1hi, c->f1));                    \
-        __m512i _t2lo = _mm512_unpacklo_epi16((p4), (p5));                                         \
-        __m512i _t2hi = _mm512_unpackhi_epi16((p4), (p5));                                         \
-        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t2lo, c->f2));                    \
-        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t2hi, c->f2));                    \
-        __m512i _t3lo = _mm512_unpacklo_epi16((p6), (p7));                                         \
-        __m512i _t3hi = _mm512_unpackhi_epi16((p6), (p7));                                         \
-        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t3lo, c->f3));                    \
-        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t3hi, c->f3));                    \
-        __m512i _t4lo = _mm512_unpacklo_epi16((p8), (p9));                                         \
-        __m512i _t4hi = _mm512_unpackhi_epi16((p8), (p9));                                         \
-        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(_t4lo, c->f4));                    \
-        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(_t4hi, c->f4));                    \
+        __m512i t0lo = _mm512_unpacklo_epi16((p0), (p1));                                          \
+        __m512i t0hi = _mm512_unpackhi_epi16((p0), (p1));                                          \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(t0lo, c->f0));                     \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(t0hi, c->f0));                     \
+        __m512i t1lo = _mm512_unpacklo_epi16((p2), (p3));                                          \
+        __m512i t1hi = _mm512_unpackhi_epi16((p2), (p3));                                          \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(t1lo, c->f1));                     \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(t1hi, c->f1));                     \
+        __m512i t2lo = _mm512_unpacklo_epi16((p4), (p5));                                          \
+        __m512i t2hi = _mm512_unpackhi_epi16((p4), (p5));                                          \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(t2lo, c->f2));                     \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(t2hi, c->f2));                     \
+        __m512i t3lo = _mm512_unpacklo_epi16((p6), (p7));                                          \
+        __m512i t3hi = _mm512_unpackhi_epi16((p6), (p7));                                          \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(t3lo, c->f3));                     \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(t3hi, c->f3));                     \
+        __m512i t4lo = _mm512_unpacklo_epi16((p8), (p9));                                          \
+        __m512i t4hi = _mm512_unpackhi_epi16((p8), (p9));                                          \
+        (acc_lo) = _mm512_add_epi32((acc_lo), _mm512_madd_epi16(t4lo, c->f4));                     \
+        (acc_hi) = _mm512_add_epi32((acc_hi), _mm512_madd_epi16(t4hi, c->f4));                     \
     } while (0)
 
 /*
@@ -1010,6 +1010,7 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, 
  * The accumulation order (refconvol via fcoeff, refconvol1 via fcoeff1, …)
  * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
  */
+/* NOLINTNEXTLINE(readability-function-size) — ADR-0138, ADR-0139, ADR-0141: function is under 60 source LOC (36 LOC); readability-function-size warning counts macro-expanded statements (128 > threshold 120) across unrolled taps; helper extraction changes load-bearing bit-exact codegen (Research-2098 / rebase-notes invariant). */
 static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_horiz_j(const uint32_t *ref_convol,
                                                              const uint32_t *dis_convol,
                                                              int jj_check, const VifHorizCoeffs8 *c,
