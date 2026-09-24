@@ -13,7 +13,9 @@ Validates:
    in both `required` and `strictMustReport` (and not any advisory variant).
 3. The real Node.js aggregator execution fails closed when `Tidy SYCL` reports
    failure, skip, or absence, and passes only when it reports success.
-4. Mutation tests prove the assertions are red-capable against relaxations.
+4. .pre-commit-config.yaml wires hook `test-sycl-tidy-workflow-contract` whose
+   files selector matches the actual contract filename and cannot silently drift.
+5. Mutation tests prove the assertions are red-capable against relaxations.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -32,6 +35,7 @@ from scripts.ci.required_aggregator_harness import run_required_aggregator  # no
 
 SYCL_CHECK_NAME = "Tidy SYCL"
 SYCL_JOB_ID = "clang-tidy-sycl"
+SYCL_HOOK_ID = "test-sycl-tidy-workflow-contract"
 ACTIVE_JOB_CONDITION = (
     "github.event_name != 'pull_request' || github.event.pull_request.draft == false"
 )
@@ -217,6 +221,70 @@ def validate_sycl_aggregator_declaration(aggregator_text: str) -> None:
         )
 
 
+def extract_hook_block(hooks_text: str, hook_id: str) -> str:
+    """Extract one hook definition block from .pre-commit-config.yaml."""
+    match = re.search(
+        rf"(?ms)^      - id: {re.escape(hook_id)}\n(?P<body>.*?)(?=^      - id:|\Z)",
+        hooks_text,
+    )
+    if match is None:
+        raise AssertionError(f"Hook '{hook_id}' not found in .pre-commit-config.yaml")
+    return match.group(0)
+
+
+def validate_sycl_pre_commit_hook(hooks_text: str) -> None:
+    """Validate that .pre-commit-config.yaml wires the SYCL tidy contract hook correctly."""
+    hook_block = extract_hook_block(hooks_text, SYCL_HOOK_ID)
+    contract_rel_path = Path(__file__).resolve().relative_to(REPO_ROOT).as_posix()
+
+    entry_match = re.search(r"^\s*entry:\s*(.+)$", hook_block, re.MULTILINE)
+    if not entry_match:
+        raise AssertionError(f"Hook '{SYCL_HOOK_ID}' missing entry field")
+    entry = entry_match.group(1).strip()
+    if contract_rel_path not in entry:
+        raise AssertionError(
+            f"Hook '{SYCL_HOOK_ID}' entry '{entry}' does not invoke '{contract_rel_path}'"
+        )
+
+    files_match = re.search(r"^\s*files:\s*'?([^'\n]+)'?$", hook_block, re.MULTILINE)
+    if not files_match:
+        raise AssertionError(f"Hook '{SYCL_HOOK_ID}' missing files regex pattern")
+    pattern = files_match.group(1).strip()
+    try:
+        compiled_pattern = re.compile(pattern)
+    except re.error as err:
+        raise AssertionError(
+            f"Hook '{SYCL_HOOK_ID}' invalid files regex '{pattern}': {err}"
+        ) from err
+
+    if not compiled_pattern.search(contract_rel_path):
+        raise AssertionError(
+            f"Hook '{SYCL_HOOK_ID}' files pattern '{pattern}' does not match "
+            f"actual contract filename '{contract_rel_path}'"
+        )
+
+    expected_dependencies = (
+        "scripts/ci/required_aggregator_harness.py",
+        "scripts/ci/test_go_workflow_contract.py",
+        ".github/workflows/lint-and-format.yml",
+        ".github/workflows/required-aggregator.yml",
+        ".github/workflows/rule-enforcement.yml",
+        ".pre-commit-config.yaml",
+    )
+    for expected_path in expected_dependencies:
+        if not compiled_pattern.search(expected_path):
+            raise AssertionError(
+                f"Hook '{SYCL_HOOK_ID}' files pattern '{pattern}' does not match "
+                f"expected dependency path '{expected_path}'"
+            )
+
+    if "pass_filenames: false" not in hook_block:
+        raise AssertionError(f"Hook '{SYCL_HOOK_ID}' must declare 'pass_filenames: false'")
+
+    if not re.search(r"stages:\s*\[.*pre-commit.*\]", hook_block):
+        raise AssertionError(f"Hook '{SYCL_HOOK_ID}' must include 'pre-commit' stage")
+
+
 class SyclTidyWorkflowContractTest(unittest.TestCase):
     """Contract assertions and mutation tests for SYCL clang-tidy gate hardening."""
 
@@ -227,6 +295,15 @@ class SyclTidyWorkflowContractTest(unittest.TestCase):
     def test_required_aggregator_declaration(self) -> None:
         aggregator_text = (WORKFLOWS_DIR / "required-aggregator.yml").read_text(encoding="utf-8")
         validate_sycl_aggregator_declaration(aggregator_text)
+
+    def test_pre_commit_hook_wiring_and_selector(self) -> None:
+        hooks_text = PRE_COMMIT_CONFIG.read_text(encoding="utf-8")
+        validate_sycl_pre_commit_hook(hooks_text)
+
+    def test_rule_enforcement_workflow_runs_contract(self) -> None:
+        workflow_text = (WORKFLOWS_DIR / "rule-enforcement.yml").read_text(encoding="utf-8")
+        contract_rel_path = Path(__file__).resolve().relative_to(REPO_ROOT).as_posix()
+        self.assertIn(f"python3 {contract_rel_path}", workflow_text)
 
     def test_failed_sycl_tidy_blocks_aggregator(self) -> None:
         failures = run_required_aggregator(SYCL_CHECK_NAME, "failure")
@@ -408,6 +485,34 @@ class SyclTidyWorkflowContractTest(unittest.TestCase):
         with self.assertRaises(AssertionError) as ctx:
             validate_sycl_aggregator_declaration(mutated)
         self.assertIn("strictMustReport", str(ctx.exception))
+
+    def test_mutation_hook_selector_drift_fails_contract(self) -> None:
+        hooks_text = PRE_COMMIT_CONFIG.read_text(encoding="utf-8")
+        hook_block = extract_hook_block(hooks_text, SYCL_HOOK_ID)
+        files_line_match = re.search(r"^        files:\s*.*$", hook_block, re.MULTILINE)
+        self.assertIsNotNone(files_line_match)
+        files_line = files_line_match.group(0) if files_line_match else ""
+        mutated_files_line = files_line.replace("sycl_tidy", "sycl")
+        self.assertNotEqual(files_line, mutated_files_line)
+        mutated_hook = hook_block.replace(files_line, mutated_files_line, 1)
+        mutated = hooks_text.replace(hook_block, mutated_hook)
+        with self.assertRaises(AssertionError) as ctx:
+            validate_sycl_pre_commit_hook(mutated)
+        self.assertIn("does not match actual contract filename", str(ctx.exception))
+
+    def test_mutation_hook_entry_drift_fails_contract(self) -> None:
+        hooks_text = PRE_COMMIT_CONFIG.read_text(encoding="utf-8")
+        hook_block = extract_hook_block(hooks_text, SYCL_HOOK_ID)
+        mutated_hook = hook_block.replace(
+            "test_sycl_tidy_workflow_contract.py",
+            "test_sycl_workflow_contract.py",
+            1,
+        )
+        self.assertNotEqual(hook_block, mutated_hook)
+        mutated = hooks_text.replace(hook_block, mutated_hook)
+        with self.assertRaises(AssertionError) as ctx:
+            validate_sycl_pre_commit_hook(mutated)
+        self.assertIn("does not invoke", str(ctx.exception))
 
 
 if __name__ == "__main__":
