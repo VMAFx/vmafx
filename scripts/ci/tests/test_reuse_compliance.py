@@ -20,6 +20,8 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 class ReuseComplianceTests(unittest.TestCase):
     """Ensure repository maintains 100% REUSE 3.3 specification compliance."""
 
+    project: reuse.project.Project
+
     @classmethod
     def setUpClass(cls) -> None:
         """Load the effective metadata once for provenance assertions."""
