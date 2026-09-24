@@ -9301,6 +9301,18 @@ non-empty, printable string. Closes a coverage gap noted in
   [ADR-0028](../docs/adr/0028-adr-maintenance-rule.md).
 
 
+**Add clip-level fp32-vs-int8 quantization parity gate `validate_quant_parity.py`** (Research-2029, #1242)
+
+- Added `ai/scripts/validate_quant_parity.py` and test suite `ai/tests/test_validate_quant_parity.py`
+  to gate fp32-vs-int8 drift on real feature clip datasets (`testdata/scores_cpu_576.json`,
+  `ai/testdata/bisect/features.parquet`) against Research-2029 §6 acceptance thresholds:
+  mean absolute delta $\le 0.10$ VMAF points, maximum single-frame absolute delta $\le 0.50$ VMAF
+  points, and PLCC $\ge 0.990$.
+- Emits structured JSON reports with ADR-0661 run provenance (`--out-json`) and supports `--fp32` /
+  `--int8` overrides. Shipped dynamic PTQ models fail strict defaults as expected until QAT
+  retraining under Epic #1246.
+
+
 - **`vf_libvmaf_tune` filter full scoring (ADR-0312 sub-decision retired).**
   `ffmpeg-patches/0008-add-libvmaf_tune-filter.patch` graduates from the
   scaffold pass-through state to a real in-process VMAF scorer: per-frame
@@ -27538,6 +27550,15 @@ version reported by ``setup.py``.
 
 
 - Removed all warnings from the classic Python harness regression batch by dropping an unused deprecated SciPy import, replacing unsafe multithreaded `fork` execution with ordered loky/spawn workers, closing override-import temporary files deterministically, preserving duplicate-asset serialization, restoring the reference overflow-safe five-parameter logistic equation, and making warnings fatal in root/package pytest and legacy tox runs without ignore rules (ADR-1278).
+
+
+**Pin `QuantFormat.QDQ` in `ai/train/qat.py` static quantize path** (ADR-0207, Research-2029, #1242)
+
+- `ai/train/qat.py` (`_ort_static_quantize`) now explicitly passes `quant_format=QuantFormat.QDQ`
+  to `onnxruntime.quantization.quantize_static`, guaranteeing that QAT static export cannot emit
+  QOperator-static ops (`QLinear*`, `QGemm`) rejected with `-EPERM` by `core/src/dnn/op_allowlist.c`.
+- Added regression tests in `ai/tests/test_qat_smoke.py` (`test_qat_quantize_static_pins_qdq` and
+  ONNX graph node verification in `test_qat_run_smoke`).
 
 
 **Dead code + unused-variable cleanup after r12 PR train** — two defects introduced

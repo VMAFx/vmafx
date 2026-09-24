@@ -559,10 +559,19 @@ The following thresholds are proposed for the 1.0.0 release pass:
 1. **Synthetic PLCC Drop (`measure_quant_drop.py`)**:
    - **Static PTQ**: PLCC drop $\le 0.002$ (tightened from 0.01; empirical smoke achieved 0.00046).
    - **QAT**: PLCC drop $\le 0.001$ (tightened from 0.01; empirical smoke achieved 0.00037).
-2. **Real Feature / Score Validation Gate**:
+2. **Real Feature / Score Validation Gate (`validate_quant_parity.py`)**:
    - Mean absolute VMAF score delta across held-out clips: $\le 0.10$ VMAF points.
    - Maximum single-frame absolute delta: $\le 0.50$ VMAF points.
    - Held-out feature set PLCC: $\ge 0.990$.
+
+   Execute the clip-level parity gate on validation feature data:
+
+   ```bash
+   docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/validate_quant_parity.py \
+     --all \
+     --features /workspace/testdata/scores_cpu_576.json \
+     --out-json /workspace/runs/quant_parity_report.json
+   ```
 
 ---
 
