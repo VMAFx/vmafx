@@ -110,6 +110,28 @@ session. The legacy probe JSON keys `list_features` and `compute_vmaf` remain
 stable consumer keys, not MCP operation names. Run
 `bash dev/scripts/test-smoke-probe-loop.sh` after any resolution touching the
 probe, CLI options, or Go MCP tool surface.
+## fix/bug048-feature-correlation — filter non-numeric columns in feature correlation (2026-09-24)
+
+No upstream impact: `ai/` is fork-only (`ai/scripts/feature_correlation.py`).
+Restores BUG-048 item A11 (originally commit `5fc73913b`, clobbered in `384d97d03`).
+Parquets containing string/metadata columns (e.g. `codec`, `chug_orientation`)
+are filtered through `select_dtypes(include='number')` before `to_numpy(dtype=np.float64)`,
+then all-null and constant numeric features are removed before analysis. The
+constant check is repeated after complete-case filtering because removing rows
+for a sibling feature can erase the variance of a previously valid column. All
+skipped sets are logged and recorded in the JSON report; this prevents NumPy's
+undefined-correlation warning and prevents a constant feature entering
+`consensus_topk` through a zero-score tie. An unavailable optional scikit-learn
+method emits an empty result map instead of a non-standard JSON `NaN` value.
+Selected feature and target rows must also be finite: `NaN` and both infinities
+are removed before Pearson or optional scikit-learn analysis. The CLI rejects
+non-finite `--redundancy-threshold` values, and the complete report is validated
+with `allow_nan=False` before the existing atomic manifest write. Preserve this
+fail-closed boundary when rebasing shared CLI or provenance helpers.
+Companion regressions in `ai/tests/test_feature_correlation.py` cover
+string/metadata columns, unavailable and constant numeric columns including a
+retained-row constant, non-finite feature/target rows and thresholds, missing
+scikit-learn, the one-feature case, and an empty usable schema.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
