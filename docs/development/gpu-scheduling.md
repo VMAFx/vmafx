@@ -2,8 +2,8 @@
 # GPU Scheduling in Kubernetes
 
 This guide explains how VMAFX maps GPU vendor device-plugins to Kubernetes
-resource limits, how Vulkan fits into the picture, and how to diagnose
-pending pods caused by insufficient GPU resources.
+resource limits, selects an active backend, and diagnoses pending pods caused
+by insufficient GPU resources.
 
 ## How GPU device-plugins work
 
@@ -20,27 +20,15 @@ VMAFX uses one device-plugin per GPU vendor:
 | AMD | `amd.com/gpu` | HIP | [k8s-device-plugin](https://github.com/RadeonOpenCompute/k8s-device-plugin) |
 | Intel | `gpu.intel.com/i915` | SYCL | [intel-device-plugins-for-kubernetes](https://github.com/intel/intel-device-plugins-for-kubernetes) |
 
-## Vulkan and Kubernetes
+## Backend selection
 
-**Vulkan is NOT a separate Kubernetes resource.** There is no
-`vulkan.khronos.org/gpu` or equivalent extended resource in any vendor's
-device-plugin.  Vulkan runs through whichever GPU device-plugin is allocated:
+Set `gpu.vendor` to the physical GPU vendor. The chart requests that vendor's
+device-plugin resource and sets `VMAFX_BACKEND` to `cuda`, `hip`, `sycl`, or
+`cpu` accordingly.
 
-- NVIDIA node with `nvidia.com/gpu: 1` → Vulkan addresses the NVIDIA GPU via the
-  NVIDIA Vulkan ICD.
-- AMD node with `amd.com/gpu: 1` → Vulkan addresses the AMD GPU via the
-  AMDVLK / Mesa RADV ICD.
-- Intel node with `gpu.intel.com/i915: 1` → Vulkan addresses the Intel GPU via
-  the Intel ANV / Mesa ANV ICD.
-
-The VMAFX container image ships all three Vulkan ICDs.  The runtime selects the
-correct ICD based on which device is present in `/dev/dri/` after the
-device-plugin allocation.
-
-**Consequence for the Helm chart:** set `gpu.vendor` to the physical GPU vendor.
-The chart requests the vendor's device-plugin resource and sets `VMAFX_BACKEND`
-accordingly.  Vulkan acceleration is available automatically on any allocated
-GPU node without a separate resource request.
+The Vulkan backend was removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md).
+It is not available through any vendor setting and the VMAFX images do not ship
+it as a fallback backend.
 
 ## Installing device-plugins
 

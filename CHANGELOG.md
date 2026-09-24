@@ -20574,6 +20574,10 @@ invalid ROI pooled score exits 65 without writing a report.
   leak and repeated-flush failure.
 
 
+- Stop Helm install notes, helper comments, and Kubernetes operator guides from
+  advertising the removed Vulkan backend as an implicit GPU capability.
+
+
 - Restore the complete `vmaf-tune report --format both` bundle: JSON, HTML,
   and Markdown are emitted together again. The regression test now invokes the
   production writer instead of duplicating its intended dispatch logic.

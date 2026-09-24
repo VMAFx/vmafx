@@ -174,6 +174,15 @@ value, or integration behavior changed. The public header, human API guide,
 test, research, changelog, state evidence, and this rebase note are
 fork-local documentation/test changes; Netflix golden assertions are
 untouched.
+## fix/bug048-helm-vulkan-docs — keep removed Vulkan out of live chart guidance (2026-09-24)
+
+The Helm chart maps NVIDIA, AMD, and Intel device-plugin resources only to the
+active CUDA, HIP, and SYCL backends. ADR-0726 removed Vulkan; an older chart
+change reintroduced prose claiming it remained available implicitly through
+every vendor allocation. Preserve the removal notice in `templates/NOTES.txt`,
+`templates/_helpers.tpl`, and the two Kubernetes operator guides when resolving
+conflicts with chart history. No runtime template expression or public API is
+changed.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
