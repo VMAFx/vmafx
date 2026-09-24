@@ -63,3 +63,9 @@ Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
   `read_pictures` to borrowing signature; keep two crates' picture-ownership
   models aligned. `unref_picture` stays `pub` only for pictures **never**
   handed to `read_pictures` (e.g. partially-filled end-of-stream frame).
+- **CI impact coverage for public C headers**: `vmafx-sys` generates FFI bindings
+  from `core/include/libvmaf/libvmaf.h` via `bindgen`. Keep
+  `"core/include/libvmaf/**"` in `.github/ci-impact.json`'s Rust selector so public
+  header changes run `vmafx-sys CI`. `.github/workflows/rust-ci.yml` must start
+  without workflow-level path filters and emit its exact required gate names even
+  when Rust work is not selected (BUG-098).

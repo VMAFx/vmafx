@@ -521,6 +521,26 @@ it does not perform the promotion.
     `getattr(session, "install")` aliases remain scanned. Manifest output, input,
     and alias-consumer paths must be local and repo-relative under POSIX and
     Windows semantics.
+## fix/rust-ci-path-filters — required workflows always emit gates (2026-09-24)
+
+1. **Do not restore workflow-level `paths:` or `paths-ignore:` to a workflow that
+   hosts an aggregator-required context.** `build.yml`, `dev-container-build.yml`,
+   `docker-image.yml`, `doxygen-public-api.yml`, `ffmpeg-integration.yml`,
+   `helm-chart.yml`, and `rust-ci.yml` must always start. Their `impact` jobs select
+   distinctly named heavy `work` jobs; `if: always()` gate jobs alone own the exact
+   required context names and fail closed on planner/work disagreement (BUG-098).
+   Keep those twelve names in `strictMustReport`; absence is no longer an accepted
+   path-skip outcome. GitHub creates each gate check only after its `needs` work
+   completes, so keep every planner/work display name in the aggregator's
+   `delayedStrictDependencies` map and preserve the paginated check-run fetch.
+2. **Keep public libvmaf headers in `selectors.rust.patterns`.** `vmafx-sys`
+   generates FFI bindings from `core/include/libvmaf/libvmaf.h` using `bindgen`, so
+   `core/include/libvmaf/**` must select Rust work even though trigger-level filters
+   no longer exist.
+3. **Keep each of these workflow files in `full_patterns`.** A change to routing or
+   gate structure must select every lane, not rely on the selector being edited.
+   Re-run `test_ci_impact.py`, the Rust workflow contract, `actionlint`, and
+   `check-aggregator-names.sh` after resolving conflicts in this block.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

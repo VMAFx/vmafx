@@ -148,6 +148,31 @@ check runs older than its current workflow run when selecting sibling
 outcomes; otherwise stale draft-era skipped check runs on same commit can
 mask real queued or failed ready-for-review checks.
 
+### Required contexts route work in-job (BUG-098)
+
+A workflow that hosts an aggregator-required context must not use
+workflow-level `paths:` or `paths-ignore:`. It starts on pull requests and
+master pushes, runs `scripts/ci/plan-ci-impact.py` in an unconditional
+`impact` job, gates expensive `... work` jobs on the selected output, and
+always emits an exact-name gate job. The gate accepts only
+`selected=true/work=success` or `selected=false/work=skipped`; planner failure,
+cancellation, and any other combination fail. Exact gate names belong in
+`strictMustReport` because absence is no longer a legitimate path skip.
+
+Keep heavy job names distinct from required gate names, including matrix
+fields: otherwise GitHub or the aggregator can select the wrong same-named
+check. `scripts/ci/tests/test_ci_impact.py`, `actionlint`, and
+`scripts/ci/check-aggregator-names.sh` pin this structure.
+
+GitHub creates a dependent gate's check run only after every `needs` job has
+completed. Keep `delayedStrictDependencies` in `required-aggregator.yml`
+aligned with every planner/work display name, including every row of a matrix
+whose aggregate result feeds a gate. The aggregator uses those checks as
+registration proxies and gives the gate a bounded propagation window; without
+that mapping its two-minute missing-check grace can fail while legitimate work
+is still running. The check-run query must remain paginated: the converted
+workflows can put a full run above the API's 100-item page size.
+
 ### Cppcheck POSIX model correction
 
 The required Cppcheck job derives `build/cppcheck-posix-vmafx.cfg` from the

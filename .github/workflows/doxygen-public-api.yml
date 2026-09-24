@@ -1,10 +1,10 @@
 # Doxygen build of the libvmaf public C API (core/include/libvmaf/).
 #
-# Required check since ADR-1297 (path-filtered to the public header surface,
-# so the ADR-0313 absent-means-skip rule applies on every other PR). Publishes
-# the generated HTML and the warnings log as build artifacts so a reviewer can
-# browse the rendered API or audit the warning count without re-running
-# locally, and fails when the warning count exceeds the committed ceiling.
+# Required check since ADR-1297. The workflow always emits its gate; the shared
+# impact planner runs Doxygen only for the public-header surface. The work job
+# publishes generated HTML and the warnings log so a reviewer can browse the
+# rendered API or audit the warning count without re-running locally, and fails
+# when the warning count exceeds the committed ceiling.
 #
 # WARN_AS_ERROR in core/doc/Doxyfile.public-api is still OFF. ADR-0953 planned
 # to flip it the moment this workflow joined required-aggregator.yml, on the
@@ -19,11 +19,10 @@ name: doxygen-public-api
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
   pull_request:
-    paths:
-      - "core/include/libvmaf/**"
-      - "core/doc/Doxyfile.public-api"
-      - ".github/workflows/doxygen-public-api.yml"
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -33,12 +32,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  doxygen:
-    # The job id was the reported check name (the job had no `name:`), which is
-    # too generic for a required context. The explicit name below is what
-    # required-aggregator.yml gates on.
-    # required-aggregator
-    name: Doxygen Public API
+  impact:
+    name: Plan Doxygen impact
+    runs-on: ubuntu-26.04
+    outputs:
+      selected: ${{ steps.impact.outputs.doxygen }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+  doxygen-work:
+    needs: impact
+    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    # Keep the expensive work name distinct from the exact required gate name
+    # below; otherwise one check can mask the other in the aggregator.
+    name: Doxygen Public API work
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -90,3 +109,25 @@ jobs:
           name: doxygen-public-api-html
           path: build/doxygen-public-api/html/
           if-no-files-found: warn
+
+  doxygen:
+    needs: [impact, doxygen-work]
+    if: always()
+    # required-aggregator
+    name: Doxygen Public API
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected Doxygen work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.doxygen-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid Doxygen gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac

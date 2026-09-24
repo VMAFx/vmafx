@@ -5,30 +5,9 @@ name: FFmpeg
 on:
   push:
     branches: [master]
-    paths:
-      # Path-filter introduced in ADR-0317. The FFmpeg-integration matrix
-      # (gcc / clang / SYCL) only needs to fire when the inputs
-      # it actually consumes change: the libvmaf sources it builds, the
-      # ffmpeg-patches/ series it applies, the meson options that gate
-      # the build, or this workflow file itself. Doc-only / Python-only
-      # / vmaf-tune-only PRs (#409, #411, #412) were burning 10–15 min
-      # of runner time per push without exercising any of these inputs.
-      - "core/**"
-      - "ffmpeg-patches/**"
-      - "meson.build"
-      - "meson_options.txt"
-      - ".github/workflows/ffmpeg-integration.yml"
   pull_request:
     branches: [master]
-    # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
-    # CI when a draft PR is promoted to ready-for-review.
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "core/**"
-      - "ffmpeg-patches/**"
-      - "meson.build"
-      - "meson_options.txt"
-      - ".github/workflows/ffmpeg-integration.yml"
   workflow_dispatch:
 
 permissions:
@@ -43,8 +22,29 @@ env:
   LD_LIBRARY_PATH: /usr/local/lib/x86_64-linux-gnu
 
 jobs:
-  ffmpeg:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+  impact:
+    name: Plan FFmpeg impact
+    runs-on: ubuntu-26.04
+    outputs:
+      selected: ${{ steps.impact.outputs.c_core }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+  ffmpeg-work:
+    needs: impact
+    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     strategy:
       fail-fast: false
       matrix:
@@ -52,19 +52,15 @@ jobs:
           # ADR-1297 — both rows are required checks. They build FFmpeg n8.1
           # --enable-libvmaf against the freshly installed library, which is
           # the consumer contract agent hard rule 11 exists to protect. The
-          # `paths:` filter above means absence on an unrelated PR is an
-          # ADR-0313 path skip, so they are not in `strictMustReport`.
-          # required-aggregator
           - os: ubuntu-latest
             CC: gcc
             CXX: g++
-            name: FFmpeg Ubuntu gcc
-          # required-aggregator
+            check_name: FFmpeg Ubuntu gcc
           - os: macos-latest
             CC: clang
             CXX: clang++
-            name: FFmpeg macOS clang
-    name: ${{ matrix.name }}
+            check_name: FFmpeg macOS clang
+    name: ${{ matrix.check_name }} work
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
@@ -139,12 +135,12 @@ jobs:
           sudo make install
 
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
-  ffmpeg-sycl:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+  ffmpeg-sycl-work:
+    needs: impact
+    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     # ADR-1297 — required. Build-only FFmpeg with the SYCL patch applied; no
     # other leg links that patch-stack surface.
-    # required-aggregator
-    name: FFmpeg SYCL
+    name: FFmpeg SYCL work
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -262,6 +258,72 @@ jobs:
           fi
           sudo make install
           echo "FFmpeg with SYCL support built successfully"
+
+  ffmpeg-ubuntu-gate:
+    needs: [impact, ffmpeg-work]
+    if: always()
+    # required-aggregator
+    name: FFmpeg Ubuntu gcc
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected FFmpeg matrix work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.ffmpeg-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid FFmpeg matrix gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac
+
+  ffmpeg-macos-gate:
+    needs: [impact, ffmpeg-work]
+    if: always()
+    # required-aggregator
+    name: FFmpeg macOS clang
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected FFmpeg matrix work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.ffmpeg-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid FFmpeg matrix gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac
+
+  ffmpeg-sycl-gate:
+    needs: [impact, ffmpeg-sycl-work]
+    if: always()
+    # required-aggregator
+    name: FFmpeg SYCL
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected FFmpeg SYCL work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.ffmpeg-sycl-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid FFmpeg SYCL gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac
 
   # ffmpeg-vulkan job removed per ADR-0726: the Vulkan backend was dropped from
   # the fork entirely (core/src/vulkan/, feature/vulkan/, libvmaf_vulkan.h all
