@@ -252,12 +252,12 @@ initialisers where cast already spells type. These match checks
 enabled by ADR-0915; deviating reintroduces warnings that touched-file
 rule (ADR-0141) requires discharging in same PR.
 
-### 10. Vendored libsvm — three fork patches must not regress on sync (ADR-0889)
+### 10. Vendored libsvm — four fork patches must not regress on sync (ADR-0889, Research-2094)
 
 `core/src/svm.cpp` + `core/src/svm.h` = verbatim vendored copy of
 upstream libsvm 3.24 (Chih-Chung Chang / Chih-Jen Lin), wrapped in
 file-level `NOLINTBEGIN` / `NOLINTEND` cordon so fork's
-touched-file lint-clean rule does not re-flow vendored body. Three
+touched-file lint-clean rule does not re-flow vendored body. Four
 fork-local patch families live inside that cordon and must survive any
 future upstream sync:
 
@@ -284,6 +284,15 @@ future upstream sync:
    Regression coverage lives in `core/test/test_svm_parser.c` (suite
    `fast`). *Cite sanitizer-real-bug-fixes changelog and ADR-0889
    in any commit touching these guards.*
+
+4. **Solver RAII lifecycle and loop safety (Research-2094)** — `Solver`
+   and `Solver_NU` manage working heap arrays (`p`, `y`, `alpha`,
+   `alpha_status`, `active_set`, `G`, `G_bar`) via idempotent
+   `solve_cleanup()` invoked by `solve_finish()`, `~Solver()`, and entry
+   of `solve_setup()`. Deleted copy/assignment operations prevent shallow
+   copying and double-free. In `parse_support_vectors()`, support-vector
+   parsing replaces outer `for` loop counter mutation with bounded `while`
+   loop verifying sentinel termination. Eliminates CodeQL alerts 1222–1226.
 
 Additionally:
 

@@ -482,6 +482,42 @@ static char *test_train_epsilon_svr(void)
     return NULL;
 }
 
+static char *test_train_all_formulations_lifecycle(void)
+{
+    /* Train NU_SVC, ONE_CLASS, and NU_SVR to exercise Solver and Solver_NU
+     * lifecycle, destructors, and cleanup under ASan/LSan. */
+    struct binary_fixture fx = {0};
+    mu_assert("fixture build", build_binary_problem(&fx) == 0);
+    svm_set_print_string_function(&silence_svm_log);
+
+    const int types[3] = {NU_SVC, ONE_CLASS, NU_SVR};
+    for (int i = 0; i < 3; ++i) {
+        struct svm_parameter p;
+        memset(&p, 0, sizeof(p));
+        p.svm_type = types[i];
+        p.kernel_type = LINEAR;
+        p.cache_size = 16.0;
+        p.eps = 1e-3;
+        p.C = 1.0;
+        p.nu = 0.5;
+        p.shrinking = 1;
+        p.probability = 0;
+        const char *err = svm_check_parameter(&fx.prob, &p);
+        mu_assert("svm_check_parameter ok", err == NULL);
+
+        struct svm_model *m = svm_train(&fx.prob, &p);
+        mu_assert("model trained", m != NULL);
+        mu_assert("svm_type matches", svm_get_svm_type(m) == types[i]);
+
+        const struct svm_node q[3] = {{1, 2.0}, {2, 2.0}, {-1, 0.0}};
+        (void)svm_predict(m, q);
+        svm_free_and_destroy_model(&m);
+    }
+
+    free_binary_problem(&fx);
+    return NULL;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Save + load round-trip                                             */
 /* ------------------------------------------------------------------ */
@@ -635,6 +671,7 @@ static char *run_train_predict_tests(void)
     mu_run_test(test_predict_probability_csvc);
     mu_run_test(test_train_epsilon_svr);
     mu_run_test(test_svm_labels_equal_semantics);
+    mu_run_test(test_train_all_formulations_lifecycle);
     return NULL;
 }
 

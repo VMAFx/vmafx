@@ -255,6 +255,20 @@ it does not perform the promotion.
    Upstream Netflix does not carry these unwinds. When syncing with upstream or resolving
    conflicts in `picture_cuda.c` or `common.c`, keep fork's `DEV_PIC_UNWIND_DATA` stage on plane
    allocation failures and the `fail_release_funcs` table cleanup in `vmaf_cuda_release()`.
+## fix/codeql-svm-lifecycle-alerts — Solver RAII cleanup and parser loop bounds (2026-09-24)
+
+1. **`core/src/svm.cpp` Solver lifecycle uses idempotent `solve_cleanup()`.**
+   `solve_cleanup()` frees and zeroes `p`, `y`, `alpha`, `alpha_status`,
+   `active_set`, `G`, and `G_bar`. Calling `solve_cleanup()` in `solve_finish()`,
+   `~Solver()`, and entry of `solve_setup()` eliminates exception leaks without
+   causing double-frees on normal completion. Do not revert to raw `delete[]` in
+   `solve_finish()` or remove pointer nulling on rebase, which reintroduces
+   heap-use-after-free/double-free aborts under ASan.
+2. **`parse_support_vectors()` uses a bounded while loop with sentinel check.**
+   Replacing `for (size_t i = 0; ...; ++i)` with `while (i < sv_buffer.size())`
+   and asserting `i < sv_buffer.size()` eliminates loop variable mutation inside
+   the body and prevents out-of-bounds reads. Function length must stay <= 60 LOC
+   to comply with HISS-04 (currently 59 LOC).
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
