@@ -25,6 +25,11 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+try:
+    import yaml
+except ImportError:
+    yaml = None  # type: ignore[assignment]
+
 MANIFEST_PATH = Path("requirements/locks/manifest.json")
 HASH_RE = re.compile(r"--hash=sha256:[0-9a-f]{64}(?:\s|$)")
 EXACT_REQUIREMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[^;\s]+")
@@ -64,6 +69,23 @@ OPTIONS_WITH_VALUES = {
 }
 SHORT_OPTIONS_WITH_VALUES = {"b", "c", "e", "f", "i", "r", "t", "d", "C"}
 SUPPORTED_ABSOLUTE_PREFIXES = ("/build/", "/vmaf/", "/tmp/")  # noqa: S108
+REPO_LOCAL_WORKFLOW_PREFIXES = (
+    "requirements/",
+    "scripts/",
+    "tools/",
+    "mcp-server/",
+    "core/",
+    "python/",
+    "dev/",
+    "docker/",
+    "model/",
+    "testdata/",
+    "LICENSES/",
+)
+WORKFLOW_REQ_FLAGS = {"-r", "--requirement", "-c", "--constraint"}
+WORKFLOW_REQ_PREFIXES = ("-r=", "--requirement=", "-c=", "--constraint=")
+WORKFLOW_EDIT_FLAGS = {"-e", "--editable"}
+WORKFLOW_EDIT_PREFIXES = ("-e=", "--editable=")
 SHELL_RUNNERS = {
     "sh",
     "bash",
@@ -1048,6 +1070,157 @@ def scan_install_commands(
     return findings
 
 
+def _is_repo_local_target(target: str, root: Path | None = None) -> bool:
+    clean = target.strip("\"'`$(){} \t\r\n")
+    if not clean or clean.startswith(("-", "http:", "https:", "git@", "ssh:")):
+        return False
+    if clean == "." or clean.startswith(("./", "../")):
+        return True
+    if any(clean == p.rstrip("/") or clean.startswith(p) for p in REPO_LOCAL_WORKFLOW_PREFIXES):
+        return True
+    search_root = _resolve_search_root(root)
+    try:
+        return (search_root / clean).exists()
+    except (ValueError, OSError):
+        return False
+
+
+def _extract_flag_value(
+    token: str, next_token: str | None, flags: set[str], prefixes: tuple[str, ...]
+) -> str | None:
+    if token in flags and next_token is not None:
+        return next_token
+    if token.startswith(prefixes):
+        return token.split("=", 1)[1]
+    return None
+
+
+def _check_precheckout_token(
+    token: str, next_token: str | None, root: Path | None = None
+) -> list[str]:
+    req = _extract_flag_value(token, next_token, WORKFLOW_REQ_FLAGS, WORKFLOW_REQ_PREFIXES)
+    if req and _is_repo_local_target(req, root):
+        return [f"consumes repo-local requirements file {req!r}"]
+    edit = _extract_flag_value(token, next_token, WORKFLOW_EDIT_FLAGS, WORKFLOW_EDIT_PREFIXES)
+    if edit and _is_repo_local_target(edit, root):
+        return [f"consumes repo-local editable target {edit!r}"]
+    clean = token.strip("\"'`();, \t")
+    if clean.startswith(("scripts/", "./scripts/", "testdata/")):
+        return [f"consumes repo-local helper file {clean!r}"]
+    if clean.endswith((".sh", ".py", ".bash")) and _is_repo_local_target(clean, root):
+        return [f"consumes repo-local helper file {clean!r}"]
+    return []
+
+
+def _check_precheckout_command_tokens(tokens: list[str], root: Path | None = None) -> list[str]:
+    findings: list[str] = []
+    for idx, token in enumerate(tokens):
+        next_tok = tokens[idx + 1] if idx + 1 < len(tokens) else None
+        findings.extend(_check_precheckout_token(token, next_tok, root))
+    return findings
+
+
+def _is_checkout_step(step: dict[str, Any]) -> bool:
+    uses = str(step.get("uses", "")).strip()
+    if not uses:
+        return False
+    action_name = uses.split("@", 1)[0].strip()
+    if not action_name.endswith("actions/checkout"):
+        return False
+    with_dict = step.get("with")
+    if isinstance(with_dict, dict):
+        repo = str(with_dict.get("repository", "")).strip()
+        if repo and repo not in {"${{ github.repository }}", "VMAFx/vmafx"}:
+            return False
+    return True
+
+
+def _step_consumes_repo_resources(step: dict[str, Any], root: Path | None = None) -> list[str]:
+    findings: list[str] = []
+    uses = str(step.get("uses", "")).strip()
+    if uses.startswith(("./", ".\\")):
+        findings.append(f"consumes local action {uses!r}")
+    run = step.get("run")
+    if isinstance(run, str):
+        for _line_num, command in logical_lines(run):
+            tokens = _shell_tokens(command)
+            findings.extend(_check_precheckout_command_tokens(tokens, root))
+    return findings
+
+
+def _update_fallback_step(line: str, step: dict[str, Any]) -> None:
+    m_uses = re.match(r"^\s*uses:\s*(.+)$", line)
+    if m_uses:
+        step["uses"] = m_uses.group(1).split("#")[0].strip()
+        return
+    m_run = re.match(r"^\s*run:\s*(.+)$", line)
+    if m_run:
+        step["run"] = step.get("run", "") + "\n" + m_run.group(1)
+    elif re.match(r"^\s{8,}\S", line) and "run" in step:
+        step["run"] = step["run"] + "\n" + line.strip()
+
+
+def _parse_workflow_jobs_fallback(text: str) -> dict[str, list[dict[str, Any]]]:
+    jobs: dict[str, list[dict[str, Any]]] = {}
+    current_job: str | None = None
+    in_steps = False
+    current_step: dict[str, Any] | None = None
+
+    for line in text.splitlines():
+        match_job = re.match(r"^  ([a-zA-Z0-9_-]+):\s*$", line)
+        if match_job:
+            current_job = match_job.group(1)
+            jobs[current_job] = []
+            in_steps = False
+            current_step = None
+        elif current_job is not None and re.match(r"^    steps:\s*$", line):
+            in_steps = True
+        elif in_steps and re.match(r"^      - ", line):
+            current_step = {}
+            jobs[current_job].append(current_step)
+            _update_fallback_step(line[8:], current_step)
+        elif in_steps and current_step is not None:
+            _update_fallback_step(line, current_step)
+    return jobs
+
+
+def _load_workflow_jobs(text: str) -> dict[str, Any]:
+    if yaml is not None:
+        try:
+            data = yaml.safe_load(text)
+            if isinstance(data, dict) and isinstance(data.get("jobs"), dict):
+                return data["jobs"]
+        except Exception:
+            pass
+    return _parse_workflow_jobs_fallback(text)
+
+
+def _scan_job_checkout_ordering(path: Path, job_id: str, raw_steps: Any, root: Path) -> list[str]:
+    if not isinstance(raw_steps, list):
+        return []
+    findings: list[str] = []
+    checked_out = False
+    for step in raw_steps:
+        if not isinstance(step, dict):
+            continue
+        if _is_checkout_step(step):
+            checked_out = True
+        elif not checked_out:
+            for reason in _step_consumes_repo_resources(step, root):
+                findings.append(f"{path}: job {job_id!r} {reason} before actions/checkout")
+    return findings
+
+
+def scan_workflow_checkout_ordering(path: Path, text: str, root: Path | None = None) -> list[str]:
+    search_root = _resolve_search_root(root)
+    jobs = _load_workflow_jobs(text)
+    findings: list[str] = []
+    for job_id, job_data in jobs.items():
+        raw_steps = job_data.get("steps") if isinstance(job_data, dict) else job_data
+        findings.extend(_scan_job_checkout_ordering(path, job_id, raw_steps, search_root))
+    return findings
+
+
 def tracked_consumer_paths(root: Path) -> list[Path]:
     git_dir = root / ".git"
     raw_paths: list[Path] = []
@@ -1241,6 +1414,11 @@ def check(root: Path) -> int:
                 continue
             consumer_targets = get_manifest_lock_targets_for_consumer(relative, manifest, root)
             problems.extend(scan_install_commands(relative, text, consumer_targets, root=root))
+            if relative.parts[:2] == (".github", "workflows") and relative.suffix.lower() in {
+                ".yml",
+                ".yaml",
+            }:
+                problems.extend(scan_workflow_checkout_ordering(relative, text, root=root))
     except (ContractError, subprocess.CalledProcessError) as error:
         problems = [str(error)]
 

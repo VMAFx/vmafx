@@ -906,5 +906,6 @@ install policy across the repository:
 - Nox development locks must be workstation-portable (compiled with `--universal`, no `--python-platform`), and every Nox session must pin an explicit Python version that agrees with its lock resolution.
 - Git discovery and consumer tracking fail closed with `ContractError` on any process or filesystem error.
 - All executable `pip install` invocations across workflows, Dockerfiles, setup scripts, and Makefiles, plus literal `session.install(...)` calls in `noxfile.py`, must use `--require-hashes -r <lockfile>`, or install local wheels with `--no-deps`, or install local editable/source trees with both `--no-deps` and `--no-build-isolation`. Dynamic Nox arguments fail closed.
+- Workflow steps that consume repo-local requirements locks, packages, helper scripts, or local actions must execute strictly after `actions/checkout` in that job; `check_python_dependency_locks.py` fail-closed scanner (`scan_workflow_checkout_ordering`) enforces this ordering across all workflows in `.github/workflows/*.yml`.
 - `write` is the only network-accessing path; `check` is offline and run in pre-commit and `make lint`.
 - Regressions are pinned in `scripts/ci/tests/test_python_dependency_locks.py`.

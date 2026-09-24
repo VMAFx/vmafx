@@ -1026,5 +1026,146 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
+class WorkflowCheckoutOrderingTests(unittest.TestCase):
+    checker: Any
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.checker = load_checker()
+
+    def test_workflow_checkout_ordering_enforced_across_repository(self) -> None:
+        workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+        self.assertGreaterEqual(len(workflows), 30)
+        for workflow in workflows:
+            text = workflow.read_text(encoding="utf-8")
+            findings = self.checker.scan_workflow_checkout_ordering(workflow, text, root=ROOT)
+            self.assertEqual(
+                findings,
+                [],
+                f"Workflow {workflow.name} consumes repo resources before actions/checkout: {findings}",
+            )
+
+    def test_precheckout_requirements_lockfile_rejected(self) -> None:
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertIn(
+            "consumes repo-local requirements file 'requirements/locks/build.txt'", findings[0]
+        )
+
+    def test_no_checkout_requirements_lockfile_rejected(self) -> None:
+        text = """
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare
+        run: python -m pip install --require-hashes -r mcp-server/vmaf-mcp/requirements-runtime-lock.txt
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/supply-chain.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertIn(
+            "consumes repo-local requirements file 'mcp-server/vmaf-mcp/requirements-runtime-lock.txt'",
+            findings[0],
+        )
+
+    def test_precheckout_helper_file_rejected(self) -> None:
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Load config
+        run: scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertIn(
+            "consumes repo-local helper file 'scripts/ci/load-build-config.sh'", findings[0]
+        )
+
+    def test_precheckout_editable_package_rejected(self) -> None:
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install editable
+        run: pip install --no-deps --no-build-isolation -e .
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertIn("consumes repo-local editable target '.'", findings[0])
+
+    def test_precheckout_local_action_rejected(self) -> None:
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/setup-build
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertIn("consumes local action './.github/actions/setup-build'", findings[0])
+
+    def test_post_checkout_consumers_accepted(self) -> None:
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Load config
+        run: scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
+      - name: Editable
+        run: pip install --no-deps --no-build-isolation -e .
+"""
+        findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(findings, [])
+
+    def test_fallback_parser_detects_precheckout_violations(self) -> None:
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run script
+        run: scripts/ci/load-build-config.sh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+"""
+        with mock.patch.object(self.checker, "yaml", None):
+            findings = self.checker.scan_workflow_checkout_ordering(
+                Path(".github/workflows/test.yml"), text, root=ROOT
+            )
+            self.assertEqual(len(findings), 1)
+            self.assertIn("consumes repo-local helper file", findings[0])
+
+
 if __name__ == "__main__":
     unittest.main()
