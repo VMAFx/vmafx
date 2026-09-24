@@ -389,6 +389,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-issue-reference-provenance
+        name: Historical issue references retain repository provenance
+        entry: python3 -B scripts/ci/check-issue-reference-provenance.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: check-aggregator-names
         name: Check required CI checks aggregator list matches workflows
         entry: scripts/ci/check-aggregator-names.sh

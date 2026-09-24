@@ -12255,7 +12255,7 @@ upstream string used in cached-result directory names.
   the 3 large blobs are still inlined in git pending the
   `tiny-blobs-v1` Release upload). `cuda-extractor-cambi-and-ssim-promotion`
   was rewritten to drop the contradiction with the cambi_cuda SIGSEGV
-  fixes that landed in PR #866 + PR #870.
+  fixes that landed in lusoris/vmaf#866 + lusoris/vmaf#870.
 
 
 - **CHANGELOG.md drift sweep — 2026-05-08
@@ -13187,8 +13187,8 @@ all candidates for silent score corruption under the 13.2 toolchain.
   `float_ssim_cuda` v1 contract) instead of the CPU residual pass.
   Per-clip wall time on CUDA workers improves by roughly the CPU
   SSIM cost. `cambi` was originally also planned for promotion;
-  the `cambi_cuda` SIGSEGV that blocked promotion (Issue #857) has
-  since been fixed (PR #866 + PR #870, 2026-05-16), but the K150K
+  the `cambi_cuda` SIGSEGV that blocked promotion (Issue lusoris/vmaf#857) has
+  since been fixed (lusoris/vmaf#866 + lusoris/vmaf#870, 2026-05-16), but the K150K
   script intentionally still routes `cambi` through the CPU
   residual pass — a follow-up will re-evaluate promotion against a
   rebuilt CUDA binary.
@@ -15631,9 +15631,9 @@ upstream wording matters for rebase parity.
   heap-buffer-overflow row from Open to Recently closed (PR #357 /
   commit `05ba29a6` landed the guard fix on 2026-05-04); removed the
   duplicate Y4M-OOB row + orphaned `|---|---|---|---|---|` separator
-  in the Open section; removed the duplicate `#239` Vulkan-fence
+  in the Open section; removed the duplicate `lusoris/vmaf#239` Vulkan-fence
   serialisation row from Open (entry already present in Recently
-  closed under PR #241); cleared seven duplicate `(draft, ...)` rows
+  closed under lusoris/vmaf#241); cleared seven duplicate `(draft, ...)` rows
   in Recently closed whose merged-commit twins lived directly below
   them. Bumped header date to 2026-05-05. No semantic state changes —
   every closed bug stayed closed; every open bug stayed open.
@@ -15709,10 +15709,11 @@ upstream wording matters for rebase parity.
 
 - **docs(state):** Cross-reference `docs/state.md` against `VMAFx/vmafx`
   GitHub Issues. The repo carries **0 issues** (only PRs); the historical
-  bug-tracker numbers cited in `state.md` (`#239`, `#857`, plus the
-  resolving PR refs `#241`, `#310`, `#870`) live on the archived
+  bug-tracker identities cited in `state.md` (`lusoris/vmaf#239`,
+  `lusoris/vmaf#857`, plus the resolving PR refs `lusoris/vmaf#241`,
+  `lusoris/vmaf#310`, `lusoris/vmaf#870`) live on the archived
   `lusoris/vmaf` repo and collide with unrelated PR numbers on
-  `VMAFx/vmafx`. Qualified every bare cite as `lusoris/vmaf#NNN` so future
+  `VMAFx/vmafx`. Qualified every bare cite with its archived repository so future
   maintainers don't follow ambiguous numbers to a different PR on the
   active repo. No issues were closed and no rows added — repo state was
   already aligned; this PR is documentation hygiene only.
@@ -15743,10 +15744,10 @@ upstream wording matters for rebase parity.
 
 
 - `docs/state.md` refresh 2026-05-03. Bumped header date
-  (2026-04-29 → 2026-05-03). Closed Issue #239 (FFmpeg
+  (2026-04-29 → 2026-05-03). Closed Issue lusoris/vmaf#239 (FFmpeg
   `libvmaf_vulkan` filter wall-clock serialisation) by moving the
-  Open-bugs row to "Recently closed" with PR #241 / commit
-  `e266bf8e` and ADR-0251 (renumbered from 0235 in PR #310 dedup
+  Open-bugs row to "Recently closed" with lusoris/vmaf#241 / commit
+  `e266bf8e` and ADR-0251 (renumbered from 0235 in lusoris/vmaf#310 dedup
   sweep) — the `v2 ≤ 0.7 × v1` measurement gate flipped ADR-0251
   to Accepted. Added a new Open-bugs row for the
   `y4m_convert_411_422jpeg` heap-buffer-overflow surfaced by the
@@ -20181,7 +20182,8 @@ no score floor was applied.
 - **Every `adr/NNNN-slug.md` link under `docs/` now resolves, and a gate keeps it
   that way.** An ADR link carries the decision's identity twice, as a number and
   as a slug, and either half can rot alone: 98 were broken, 35 because an ADR
-  collision sweep (PR #310, PR #752) renumbered the file while the slug stayed
+  collision sweep (lusoris/vmaf#310, lusoris/vmaf#752) renumbered the file while
+  the slug stayed
   right, and 63 because the ADR was renamed while the number stayed right. Each is
   repaired from whichever half still identifies it — slug first, which also
   rewrites the `[ADR-NNNN]` text, since a renumbered citation is wrong in both
@@ -20578,6 +20580,13 @@ invalid ROI pooled score exits 65 without writing a report.
   advertising the removed Vulkan backend as an implicit GPU capability.
 
 
+- **Issue-reference provenance:** restore explicit archived `lusoris/vmaf`
+  ownership across 48 proven Vulkan, CUDA CAMBI, ADR-sweep, BVI-DVC, sync-report,
+  source-invariant, and generated-changelog contexts. The context-scoped gate
+  rejects bare and wrong active-repository forms while preserving proven active
+  `VMAFx/vmafx` references.
+
+
 - Restore the complete `vmaf-tune report --format both` bundle: JSON, HTML,
   and Markdown are emitted together again. The regression test now invokes the
   production writer instead of duplicating its intended dispatch logic.
@@ -20935,7 +20944,7 @@ step 40/663 introduced by PR #907.
 `integer_cambi_cuda.c::submit_fex_cuda` called `vmaf_cambi_preprocessing(dist_pic, ...)`
 directly on the CUDA picture. The CUDA picture's `data[0]` is a device pointer; reading
 it on the host caused a segfault (SIGSEGV, exit code 139) on every `--feature cambi_cuda`
-invocation. Fixes [Issue #857](https://github.com/VMAFx/vmafx/issues/857).
+invocation. Fixes Issue lusoris/vmaf#857 in lusoris/vmaf#870.
 
 **Root cause:** `vmaf_cambi_preprocessing` internally calls
 `decimate_generic_uint8_and_convert_to_10b` which dereferences `pic->data[0]` row-by-row
@@ -20954,7 +20963,7 @@ resolution); the performance penalty is accepted in v1 (Option B — a GPU-nativ
 for the decimate/upcast — is deferred as a future optimisation).
 
 
-### cambi_cuda: fix SIGSEGV on every input (Issue #857)
+### cambi_cuda: fix SIGSEGV on every input (Issue lusoris/vmaf#857; fixed by lusoris/vmaf#866)
 
 `cambi_cuda` segfaulted on every invocation regardless of resolution, bit
 depth, or EOTF setting. The root cause was in the three kernel dispatch
@@ -20982,7 +20991,7 @@ All other CUDA extractors (`adm_cuda`, `vif_cuda`, `motion_cuda`, etc.)
 were unaffected because they pass `VmafPicture` structs (by-value via the
 kernel struct-copy semantics) rather than flat device buffers.
 
-Fixes: Issue #857
+Fixes: Issue lusoris/vmaf#857 in lusoris/vmaf#866
 
 
 - **The CAMBI GPU twins copied their device buffers one row at a time, which cost

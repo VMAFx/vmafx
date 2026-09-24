@@ -3,9 +3,9 @@
 
 **Date:** 2026-05-03
 **Branch / Commit:** `chore/profile-hotpath-2026-05-03` @ `981659a3`
-(master tip after PRs #310–#321: CUDA drain-batch #312,
-ssimulacra2 host XYB SIMD #314, Vulkan submit-opt-batch #319,
-psnr_hvs async+pinned #320)
+(master tip after lusoris/vmaf#310 through lusoris/vmaf#321: CUDA drain-batch
+lusoris/vmaf#312, ssimulacra2 host XYB SIMD lusoris/vmaf#314, Vulkan
+submit-opt-batch lusoris/vmaf#319, psnr_hvs async+pinned lusoris/vmaf#320)
 
 **Build:** release + `-g -fno-omit-frame-pointer`, CPU-only
 (`-Denable_cuda=false -Denable_sycl=false -Db_ndebug=true`)

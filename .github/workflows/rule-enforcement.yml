@@ -776,6 +776,13 @@ jobs:
           bash scripts/ci/check-state-md-rows.sh
           bash scripts/ci/tests/test-check-state-md-rows.sh
 
+      - name: Historical issue-reference provenance
+        # BUG-048 Section E: the active fork reused old lusoris/vmaf numbers.
+        # Both the live check and semantic mutation suite stay network-free.
+        run: |
+          python3 -B scripts/ci/check-issue-reference-provenance.py
+          python3 -B -m unittest scripts/ci/tests/test_issue_reference_provenance.py
+
       - name: Required check names have one reporter each (ADR-1259)
         # The aggregator keeps one check run per name, so two jobs sharing a
         # required name can mask each other's failure (`Windows MSVC+CUDA` was

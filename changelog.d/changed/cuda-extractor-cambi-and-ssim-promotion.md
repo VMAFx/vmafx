@@ -3,8 +3,8 @@
   `float_ssim_cuda` v1 contract) instead of the CPU residual pass.
   Per-clip wall time on CUDA workers improves by roughly the CPU
   SSIM cost. `cambi` was originally also planned for promotion;
-  the `cambi_cuda` SIGSEGV that blocked promotion (Issue #857) has
-  since been fixed (PR #866 + PR #870, 2026-05-16), but the K150K
+  the `cambi_cuda` SIGSEGV that blocked promotion (Issue lusoris/vmaf#857) has
+  since been fixed (lusoris/vmaf#866 + lusoris/vmaf#870, 2026-05-16), but the K150K
   script intentionally still routes `cambi` through the CPU
   residual pass — a follow-up will re-evaluate promotion against a
   rebuilt CUDA binary.

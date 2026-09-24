@@ -9,11 +9,12 @@
 
 ## What was investigated
 
-A full CPU perf profile was collected on master tip `981659a3` (post-
-sprint merge: PRs #310–#321) to re-baseline the performance landscape
-after a sprint that delivered CUDA fence batching (#312), ssimulacra2
-host XYB SIMD (#314), Vulkan submit-opt-batch (#319), and psnr_hvs
-async+pinned (#320).
+A full CPU perf profile was collected on master tip `981659a3` (after
+lusoris/vmaf#310 through lusoris/vmaf#321) to re-baseline the performance
+landscape after a sprint that delivered CUDA fence batching
+(lusoris/vmaf#312), ssimulacra2 host XYB SIMD (lusoris/vmaf#314), Vulkan
+submit-opt-batch (lusoris/vmaf#319), and psnr_hvs
+async+pinned (lusoris/vmaf#320).
 
 **Method:** `perf record -F 999 -g --call-graph dwarf` across 10 × 48
 frames of the Netflix `src01_576x324` pair, with `vmaf_bench` and

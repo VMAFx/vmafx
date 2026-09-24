@@ -309,7 +309,7 @@ ninja -C build-cuda
     -p 420 -b 8 --backend cuda --feature cambi_cuda
 ```
 
-**Implementation note (PR #870):** `submit_fex_cuda` downloads the distorted
+**Implementation note (lusoris/vmaf#870):** `submit_fex_cuda` downloads the distorted
 picture from device memory to a transient host copy before passing it to
 `vmaf_cambi_preprocessing`. This is required because the host-side preprocessing
 path (`decimate_generic_uint8_and_convert_to_10b`) dereferences `pic->data[0]`

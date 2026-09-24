@@ -145,7 +145,7 @@ and audit schema.
 
 ### Encode-grid corpora (Netflix + BVI-DVC) → FR-regressor JSONL
 
-Use `ai/scripts/merge_corpora.py` (PR #310).
+Use `ai/scripts/merge_corpora.py` (lusoris/vmaf#407; ADR-0310).
 This utility operates on the vmaf-tune Phase A `CORPUS_ROW_KEYS` schema
 and deduplicates by `(src_sha256, encoder, preset, crf)`:
 
