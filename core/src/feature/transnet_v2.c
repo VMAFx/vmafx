@@ -51,7 +51,6 @@
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 #include <errno.h>
-#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -66,6 +65,7 @@
 #include "log.h"
 #include "mem.h"
 #include "opt.h"
+#include "transnet_v2_score.h"
 
 #include "dnn/tiny_extractor_template.h"
 
@@ -95,18 +95,6 @@ typedef struct TransNetV2State {
     /* Output logits buffer [1, 100]. */
     float *output_logits;
 } TransNetV2State;
-
-/* Sigmoid in double precision — clamped against ±large args to avoid
- * exp() overflow on a poorly-trained placeholder graph that may produce
- * extreme logits. */
-static double safe_sigmoid(double x)
-{
-    if (x >= 30.0)
-        return 1.0;
-    if (x <= -30.0)
-        return 0.0;
-    return 1.0 / (1.0 + exp(-x));
-}
 
 /* Bilinear-ish nearest-neighbour resize from the input luma plane to a
  * TRANSNET_V2_HEIGHT x TRANSNET_V2_WIDTH grid, broadcasting the result
@@ -328,8 +316,15 @@ static int transnet_v2_extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
      * (per-shot CRF predictor T6-3b, ffmpeg shot-cut filter) bind to
      * these two feature names. */
     const double logit = (double)s->output_logits[TRANSNET_V2_WINDOW - 1u];
-    const double prob = safe_sigmoid(logit);
-    const double flag = prob >= TRANSNET_V2_BOUNDARY_THRESHOLD ? 1.0 : 0.0;
+    double prob;
+    double flag;
+    rc = vmaf_transnet_v2_scores(logit, TRANSNET_V2_BOUNDARY_THRESHOLD, &prob, &flag);
+    if (rc < 0) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "transnet_v2: non-finite logit at frame %u (logit=%g), failing frame\n", index,
+                 logit);
+        return rc;
+    }
 
     rc = vmaf_feature_collector_append(feature_collector, "shot_boundary_probability", prob, index);
     if (rc < 0)

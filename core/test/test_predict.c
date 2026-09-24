@@ -17,12 +17,37 @@
  */
 
 #include <stdint.h>
+#include <string.h>
 
 #include "feature/feature_collector.h"
+#include "log.h"
 #include "metadata_handler.h"
 #include "test.h"
 #include "predict.h"
+
+#if defined(__cplusplus)
+#define PREDICT_TEST_NULLPTR nullptr
+#else
+#define PREDICT_TEST_NULLPTR ((void *)0)
+#endif
+
+typedef struct PredictLogCapture {
+    enum VmafLogLevel level;
+    const char *stage;
+    unsigned count;
+    unsigned index;
+    double value;
+} PredictLogCapture;
+
+static PredictLogCapture predict_log_capture;
+
+static void test_predict_nonfinite_log(enum VmafLogLevel level, const char *stage, unsigned index,
+                                       double value);
+
+#define VMAF_PREDICT_TEST_NONFINITE_LOG(level, stage, index, value)                                \
+    test_predict_nonfinite_log((level), (stage), (index), (value))
 #include "predict.c"
+#undef VMAF_PREDICT_TEST_NONFINITE_LOG
 
 #include <libvmaf/model.h>
 #include <math.h>
@@ -31,6 +56,44 @@ typedef struct {
     VmafDictionary **metadata;
     int flags;
 } MetaStruct;
+
+static void test_predict_nonfinite_log(enum VmafLogLevel level, const char *stage, unsigned index,
+                                       double value)
+{
+    predict_log_capture.level = level;
+    predict_log_capture.stage = stage;
+    predict_log_capture.count++;
+    predict_log_capture.index = index;
+    predict_log_capture.value = value;
+}
+
+static int append_features_at_index(VmafFeatureCollector *feature_collector, const VmafModel *model,
+                                    unsigned index, double first_score)
+{
+    for (unsigned i = 0; i < model->n_features; ++i) {
+        const double score = i == 0u ? first_score : 60.0;
+        const int err =
+            vmaf_feature_collector_append(feature_collector, model->feature[i].name, score, index);
+        if (err)
+            return err;
+    }
+    return 0;
+}
+
+static char *check_predict_nonfinite_contract(double score, int prediction_err, int published_err)
+{
+    mu_assert("non-finite prediction fails with EINVAL", prediction_err == -EINVAL);
+    mu_assert("failed prediction leaves caller output unchanged", score == 42.0);
+    mu_assert("non-finite prediction emits one warning",
+              predict_log_capture.count == 1u &&
+                  predict_log_capture.level == VMAF_LOG_LEVEL_WARNING);
+    mu_assert("diagnostic names the failing stage",
+              strcmp(predict_log_capture.stage, "model score") == 0);
+    mu_assert("diagnostic names the frame", predict_log_capture.index == 37u);
+    mu_assert("diagnostic names the value", isnan(predict_log_capture.value));
+    mu_assert("failed prediction is not published", published_err != 0);
+    return PREDICT_TEST_NULLPTR;
+}
 
 /* Append the same score for every model feature, which is what drives both the
  * prediction path and the registered metadata callback. */
@@ -69,6 +132,33 @@ static char *test_predict_score_at_index(void)
     vmaf_model_destroy(model);
     vmaf_feature_collector_destroy(feature_collector);
     return NULL;
+}
+
+static char *test_predict_nonfinite_logs_once_without_publication(void)
+{
+    VmafFeatureCollector *feature_collector;
+    int err = vmaf_feature_collector_init(&feature_collector);
+    mu_assert("collector initialises", err == 0);
+
+    VmafModel *model;
+    VmafModelConfig cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT};
+    err = vmaf_model_load(&model, &cfg, "vmaf_v0.6.1");
+    mu_assert("model loads", err == 0);
+    err = append_features_at_index(feature_collector, model, 37u, NAN);
+    mu_assert("non-finite production fixture appends", err == 0);
+
+    memset(&predict_log_capture, 0, sizeof(predict_log_capture));
+    double score = 42.0;
+    const int prediction_err =
+        vmaf_predict_score_at_index(model, feature_collector, 37u, &score, true, false, 0);
+    double published = 0.0;
+    const int published_err =
+        vmaf_feature_collector_get_score(feature_collector, model->name, &published, 37u);
+    mu_assert_msg(check_predict_nonfinite_contract(score, prediction_err, published_err));
+
+    vmaf_model_destroy(model);
+    vmaf_feature_collector_destroy(feature_collector);
+    return PREDICT_TEST_NULLPTR;
 }
 
 static void set_meta(void *data, VmafMetadata *metadata)
@@ -388,13 +478,39 @@ static char *test_guided_feature_sentinel_semantics(void)
     return NULL;
 }
 
+/* A failed upstream computation must not become the mapping's initial 0.0.
+ * Every ordered comparison against NaN is false, so without an explicit
+ * finite-input guard no segment writes `y` and the function reports success
+ * with the plausible zero score it assigned before the loop (Issue #1526). */
+/* NOLINTBEGIN(modernize-use-nullptr): retain portable C NULL spelling per ADR-1138. */
+static char *test_piecewise_linear_mapping_rejects_nonfinite_input(void)
+{
+    VmafPoint knots[] = {{.x = 0.0, .y = 0.0}, {.x = 100.0, .y = 100.0}};
+    double y = 42.0;
+
+    int err = piecewise_linear_mapping(NAN, knots, 2u, &y);
+
+    mu_assert("NaN input must return -EINVAL instead of publishing 0.0", err == -EINVAL);
+    mu_assert("a rejected NaN must not overwrite the caller's score", y == 42.0);
+
+    err = piecewise_linear_mapping(INFINITY, knots, 2u, &y);
+    mu_assert("infinite input must return -EINVAL instead of publishing 0.0", err == -EINVAL);
+    mu_assert("a rejected infinity must not overwrite the caller's score", y == 42.0);
+    return NULL;
+}
+/* NOLINTEND(modernize-use-nullptr) */
+
 char *run_tests(void)
 {
     mu_run_test(test_predict_score_at_index);
+    mu_run_test(test_predict_nonfinite_logs_once_without_publication);
     mu_run_test(test_find_linear_function_parameters);
     mu_run_test(test_piecewise_linear_mapping);
     mu_run_test(test_piecewise_linear_mapping_returns_neg_einval);
     mu_run_test(test_guided_feature_sentinel_semantics);
+    mu_run_test(test_piecewise_linear_mapping_rejects_nonfinite_input);
     mu_run_test(test_propagate_metadata);
     return NULL;
 }
+
+#undef PREDICT_TEST_NULLPTR

@@ -36,6 +36,7 @@
 #include <string.h>
 
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_score.h"
 #include "feature/ssimulacra2_simd_common.h"
 #include "ssimulacra2_avx512.h"
 
@@ -98,8 +99,9 @@ static inline void edge_diff_accum_d(edge_diff_acc_t *acc, double a1, double am1
     const double ed1 = fabs(a1 - am1);
     const double ed2 = fabs(a2 - am2);
     const double d = (1.0 + ed2) / (1.0 + ed1) - 1.0;
-    const double art = d > 0.0 ? d : 0.0;
-    const double det = d < 0.0 ? -d : 0.0;
+    double art;
+    double det;
+    vmaf_ss2_split_edge_difference(d, &art, &det);
     acc->artifact += art;
     acc->artifact_quartic += quartic_d(art);
     acc->detail += det;

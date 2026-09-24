@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <math.h>
 #include <string.h>
 #include <stddef.h>
 
@@ -26,6 +27,7 @@
 #include "feature_name.h"
 #include "log.h"
 #include "mem.h"
+#include "nonfinite_score.h"
 
 #include "vif.h"
 #include "vif_options.h"
@@ -34,7 +36,6 @@
 
 /* Default minimum value allowed for the feature */
 #define DEFAULT_VIF_MIN_VAL (0.0)
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
 
 /* Number of float-plane-sized scratch buffers required by compute_vif. */
 #define VIF_SCRATCH_BUF_CNT 10
@@ -185,6 +186,76 @@ static const VmafOption options[] = {
     },
     {0}};
 
+/* Release everything alloc_buffers() may have taken. Safe on a partial
+ * allocation: every pointer is NULL until its own aligned_malloc returns, so
+ * this doubles as the unwind path and as close()'s worker. */
+static void free_buffers(VifState *s)
+{
+    if (s->ref)
+        aligned_free(s->ref);
+    if (s->dist)
+        aligned_free(s->dist);
+    if (s->ref_scaled)
+        aligned_free(s->ref_scaled);
+    if (s->dist_scaled)
+        aligned_free(s->dist_scaled);
+    if (s->vif_buf)
+        aligned_free(s->vif_buf);
+    vmaf_dictionary_free(&s->feature_name_dict);
+}
+
+/* Take every buffer init() needs, or none of them.
+ *
+ * This was a ladder of `goto fail` into a single unwind label. HISS-01 forbids
+ * the jump, and the fork's touched-file rule (ADR-0141) makes it this change's
+ * problem. Splitting the ladder out is the shape the rest of the tree already
+ * uses: the caller unwinds by calling free_buffers(), which is idempotent on a
+ * partial allocation. Allocation order and sizes are unchanged. */
+static int alloc_buffers(VmafFeatureExtractor *fex, VifState *s, unsigned h)
+{
+    s->ref = aligned_malloc(s->float_stride * h, 32);
+    if (!s->ref)
+        return -ENOMEM;
+    s->dist = aligned_malloc(s->float_stride * h, 32);
+    if (!s->dist)
+        return -ENOMEM;
+    s->ref_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
+    if (!s->ref_scaled)
+        return -ENOMEM;
+    s->dist_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
+    if (!s->dist_scaled)
+        return -ENOMEM;
+
+    /*
+     * Allocate VIF scratch buffer once.  compute_vif carves 10 equal-sized
+     * sub-planes out of this contiguous block.  The geometry is fixed after
+     * init, so a single aligned_malloc here replaces an aligned_malloc +
+     * aligned_free on every frame — eliminating ~79 MB/frame of allocator
+     * traffic at 1080p.  See ADR-0452.
+     */
+    const size_t vif_plane_sz = s->scaled_float_stride * s->scaled_h;
+    s->vif_buf = aligned_malloc(vif_plane_sz * VIF_SCRATCH_BUF_CNT, MAX_ALIGN);
+    if (!s->vif_buf)
+        return -ENOMEM;
+
+    /*
+     * ADR-0500 Win #3: pre-compute Gaussian filters for all 4 scales so that
+     * compute_vif() can skip vif_get_filter() (which calls expf) on every frame.
+     * The kernelscale is immutable after init, so this is always correct.
+     */
+    for (int sc = 0; sc < 4; ++sc) {
+        s->filter_width_cache[sc] = vif_get_filter_size(sc, (float)s->vif_kernelscale);
+        vif_get_filter(s->filter_cache[sc], sc, (float)s->vif_kernelscale);
+    }
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return -ENOMEM;
+
+    return 0;
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -235,61 +306,32 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     }
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
     s->scaled_float_stride = ALIGN_CEIL(s->scaled_w * sizeof(float));
-    s->ref = aligned_malloc(s->float_stride * h, 32);
-    if (!s->ref)
-        goto fail;
-    s->dist = aligned_malloc(s->float_stride * h, 32);
-    if (!s->dist)
-        goto fail;
-    s->ref_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
-    if (!s->ref_scaled)
-        goto fail;
-    s->dist_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
-    if (!s->dist_scaled)
-        goto fail;
 
-    /*
-     * Allocate VIF scratch buffer once.  compute_vif carves 10 equal-sized
-     * sub-planes out of this contiguous block.  The geometry is fixed after
-     * init, so a single aligned_malloc here replaces an aligned_malloc +
-     * aligned_free on every frame — eliminating ~79 MB/frame of allocator
-     * traffic at 1080p.  See ADR-0452.
-     */
-    const size_t vif_plane_sz = s->scaled_float_stride * s->scaled_h;
-    s->vif_buf = aligned_malloc(vif_plane_sz * VIF_SCRATCH_BUF_CNT, MAX_ALIGN);
-    if (!s->vif_buf)
-        goto fail;
-
-    /*
-     * ADR-0500 Win #3: pre-compute Gaussian filters for all 4 scales so that
-     * compute_vif() can skip vif_get_filter() (which calls expf) on every frame.
-     * The kernelscale is immutable after init, so this is always correct.
-     */
-    for (int sc = 0; sc < 4; ++sc) {
-        s->filter_width_cache[sc] = vif_get_filter_size(sc, (float)s->vif_kernelscale);
-        vif_get_filter(s->filter_cache[sc], sc, (float)s->vif_kernelscale);
+    const int alloc_err = alloc_buffers(fex, s, h);
+    if (alloc_err) {
+        free_buffers(s);
+        return alloc_err;
     }
 
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        goto fail;
-
     return 0;
+}
 
-fail:
-    if (s->ref)
-        aligned_free(s->ref);
-    if (s->dist)
-        aligned_free(s->dist);
-    if (s->ref_scaled)
-        aligned_free(s->ref_scaled);
-    if (s->dist_scaled)
-        aligned_free(s->dist_scaled);
-    if (s->vif_buf)
-        aligned_free(s->vif_buf);
-    vmaf_dictionary_free(&s->feature_name_dict);
-    return -ENOMEM;
+static int emit_vif_scores(VifState *s, VmafFeatureCollector *feature_collector, unsigned index,
+                           double score, double score_num, double score_den, const double scores[8])
+{
+    VmafVifScoreSet output = {
+        .score = score,
+        .score_num = score_num,
+        .score_den = score_den,
+        .minimum = {s->vif_scale1_min_val, s->vif_scale2_min_val, s->vif_scale3_min_val},
+        .use_minimums = true,
+        .skip_scale0 = s->vif_skip_scale0,
+        .debug = s->debug,
+    };
+    for (size_t i = 0u; i < 8u; ++i)
+        output.scale[i] = scores[i];
+    return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "float_vif", &output,
+                                VMAF_VIF_FLOAT_NAMES, index);
 }
 
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -327,88 +369,15 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     if (err)
         return err;
 
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale0_score", 0.0f, index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_feature_vif_scale0_score",
-                                                       scores[0] / scores[1], index);
-    }
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale1_score",
-        MAX(scores[2] / scores[3], s->vif_scale1_min_val), index);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale2_score",
-        MAX(scores[4] / scores[5], s->vif_scale2_min_val), index);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale3_score",
-        MAX(scores[6] / scores[7], s->vif_scale3_min_val), index);
-
-    if (!s->debug)
-        return err;
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "vif",
-                                                   score, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_num", score_num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_den", score_den, index);
-
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num_scale0", 0.0f, index);
-
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_den_scale0", -1.0f, index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num_scale0", scores[0], index);
-
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_den_scale0", scores[1], index);
-    }
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_num_scale1", scores[2], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_den_scale1", scores[3], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_num_scale2", scores[4], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_den_scale2", scores[5], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_num_scale3", scores[6], index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "vif_den_scale3", scores[7], index);
-
-    return err;
+    return emit_vif_scores(s, feature_collector, index, score, score_num, score_den, scores);
 }
 
 static int close(VmafFeatureExtractor *fex)
 {
     VifState *s = fex->priv;
-    if (s->ref)
-        aligned_free(s->ref);
-    if (s->dist)
-        aligned_free(s->dist);
-    if (s->ref_scaled)
-        aligned_free(s->ref_scaled);
-    if (s->dist_scaled)
-        aligned_free(s->dist_scaled);
-    if (s->vif_buf)
-        aligned_free(s->vif_buf);
-    vmaf_dictionary_free(&s->feature_name_dict);
+    /* Byte-identical to the unwind init() uses, so it is the same function
+     * (HISS-19) rather than a second copy that can drift from it. */
+    free_buffers(s);
     return 0;
 }
 

@@ -209,12 +209,18 @@ kernel void float_ssim_vert_combine(
         if (lcs_flags & 1u) {
             const float lnum = 2.0f * mu_r * mu_d + c1;
             const float lden = mu_r * mu_r + mu_d * mu_d + c1;
-            my_l = (lden > 0.0f) ? (lnum / lden) : 1.0f;
+            if (!isfinite(lnum) || !isfinite(lden))
+                my_l = lnum / lden;
+            else
+                my_l = lden > 0.0f ? lnum / lden : 1.0f;
 
             const float cnum = 2.0f * sqrt(var_r < 0.0f ? 0.0f : var_r) *
                                       sqrt(var_d < 0.0f ? 0.0f : var_d) + c2;
             const float cden = var_r + var_d + c2;
-            my_c = (cden > 0.0f) ? (cnum / cden) : 1.0f;
+            if (!isfinite(cnum) || !isfinite(cden))
+                my_c = cnum / cden;
+            else
+                my_c = cden > 0.0f ? cnum / cden : 1.0f;
 
             /* Structure: cov_rd / (sigma_r * sigma_d + c2/2).
              * Equivalent form used in iqa/ssim_simd: S = (2*cov_rd+C2)/((C*D_den). */
@@ -222,7 +228,10 @@ kernel void float_ssim_vert_combine(
             const float sd = sqrt(var_d < 0.0f ? 0.0f : var_d);
             const float snum = cov_rd + c2 * 0.5f;
             const float sden = sr * sd + c2 * 0.5f;
-            my_s = (sden > 0.0f) ? (snum / sden) : 1.0f;
+            if (!isfinite(snum) || !isfinite(sden))
+                my_s = snum / sden;
+            else
+                my_s = sden > 0.0f ? snum / sden : 1.0f;
         }
     }
 

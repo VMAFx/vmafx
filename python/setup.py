@@ -65,10 +65,13 @@ class LazyExtensions(list):
             )
             # python/compat/ contains a stub config.h that disables SIMD
             # dispatch (the SIMD .c files are not compiled into this extension).
+            # The directly included core sources use both private headers under
+            # core/src and public libvmaf headers under core/include.
             self._extensions[0].include_dirs = [
                 numpy.get_include(),
                 "compat",
                 "../core/src",
+                "../core/include",
             ]
             # aligned_malloc / aligned_free moved from core/src/mem.c to
             # core/src/mem.cpp when the C++23 twins were wired in (#1133).
@@ -77,6 +80,11 @@ class LazyExtensions(list):
             # language="c++" only selects the C++ driver for the link step —
             # the Cython-generated .c is still compiled as C by extension.
             self._extensions[0].sources.append(os.path.join("..", "core", "src", "mem.cpp"))
+            # The .pyx also text-includes adm.c. Its fail-closed score helpers
+            # call vmaf_log(), so the extension must carry the implementation;
+            # otherwise the wheel links but import fails with an undefined
+            # vmaf_log symbol (first exposed by the hosted ARM64 lane).
+            self._extensions[0].sources.append(os.path.join("..", "core", "src", "log.c"))
             self._extensions[0].language = "c++"
 
         return self._extensions

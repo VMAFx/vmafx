@@ -24,6 +24,8 @@
 #include <stdbool.h>
 
 #include "mem.h"
+#include "adm_score.h"
+#include "nonfinite_score.h"
 #include "adm_options.h"
 #include "adm_tools.h"
 #include "offset.h"
@@ -72,8 +74,6 @@ static int adm_dwt2_dispatch(const float *src, const adm_dwt_band_t_s *dst, int 
 
 #define adm_dwt2 adm_dwt2_dispatch
 
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-
 static char *init_dwt_band(adm_dwt_band_t *band, char *data_top, size_t buf_sz_one)
 {
     band->band_a = (float *)(void *)data_top;
@@ -120,7 +120,8 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
                 double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
                 int adm_bypass_cm, double adm_p_norm, double *score_aim, double adm_f1s0,
                 double adm_f1s1, double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1,
-                double adm_f2s2, double adm_f2s3, int adm_skip_aim_scale, bool adm_skip_scale0)
+                double adm_f2s2, double adm_f2s3, int adm_skip_aim_scale, bool adm_skip_scale0,
+                unsigned index)
 {
     /* ADM_OPT_SINGLE_PRECISION branch removed: the symbol was never defined
      * anywhere in the build system, making the 1e-2 threshold permanently
@@ -365,24 +366,15 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
         scores[2 * scale + 1] = den_scale;
     }
 
-    num = num < numden_limit ? 0 : num;
-    den = den < numden_limit ? 0 : den;
-
-    if (den == 0.0) {
-        /* Flat/black frame: no distortion energy — both scores are perfect.
-         * *score_aim MUST be initialised here; the caller reads it
-         * unconditionally and the else-branch would be skipped.           */
-        *score = 1.0f;
-        *score_aim = 1.0f;
-    } else {
-        /* Normalize AIM score by the DLM denominator; clip to [0, 1]. */
-        *score_aim = MIN(aim_num / aim_den, 1.0f);
-        *score = num / den;
+    ret = vmaf_adm_floor_pair_named("float_adm", index, num, den, numden_limit, &num, &den);
+    if (!ret) {
+        ret = vmaf_adm_finalize_scores_named("float_adm", index, num, den, aim_num, aim_den, score,
+                                             score_aim);
     }
-    *score_num = num;
-    *score_den = den;
-
-    ret = 0;
+    if (!ret) {
+        *score_num = num;
+        *score_den = den;
+    }
 
 fail:
     aligned_free(data_buf);

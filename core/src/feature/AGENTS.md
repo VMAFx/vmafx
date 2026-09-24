@@ -144,9 +144,32 @@ feature/
   - Keep `feature_extractor.cpp` free of any `ansnr` registration symbols.
   - Keep dispatch registries and feature lists free of `ansnr` / `float_ansnr`.
 
+- **Cross-backend non-finite publication semantics (ADR-1302)**:
+  `nonfinite_score.h` is the shared validate-before-first-write seam for VIF,
+  ADM, SSIM and MS-SSIM host code. CPU, CUDA, HIP, SYCL and Metal twins must
+  validate every enabled output before a clamp, fallback, dB conversion or
+  collector append. Do not re-inline ordered comparisons in one backend: NaN
+  takes the fallback arm and becomes a plausible score. All four VIF ratios are
+  finite-checked before scale 0 is written, including integer and debug paths;
+  only scales 1-3 then apply their configured minimum. Validate ADM reductions
+  before the precision floor, and validate every MS-SSIM L/C/S atom even when
+  `enable_lcs=false`: otherwise a comparison or `pow(NaN, 0)` can erase the
+  failure. Keep every registered host on the seams checked by
+  `test_nonfinite_collector_wiring.py`. Preserve ADR-1221's sole intentional
+  non-finite output: finite perfect SSIM/MS-SSIM with dB enabled and clipping
+  disabled reports positive infinity; invalid raw inputs and ceilings still
+  fail the frame.
+
 - `ssimulacra2.c` is fork-local (not upstream). It embeds several
   constant tables that must stay in lock-step with libjxl even across
   rebase:
+  - **Non-finite score semantics (ADR-1302)** are also lock-step across scalar,
+    AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and Metal host code. Edge
+    differences go through `ssimulacra2_score.h` before accumulation and every
+    polynomial pool goes through its finalizer; each extractor rejects a
+    non-finite result before collector publication. Do not restore inline
+    ordered comparisons: `NaN > 0` and `NaN < 0` are both false, which erases
+    the edge failure, and the old final `else` mapped NaN to perfect `100.0`.
   - **Opsin absorbance matrix** (`kM00`…`kM22`) and bias `kB` — see
     libjxl `lib/jxl/opsin_params.h`.
   - **`MakePositiveXYB` offsets** — `B=(B-Y)+0.55`, `X*=14`, `X+=0.42`,

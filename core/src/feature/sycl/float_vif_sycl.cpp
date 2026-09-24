@@ -30,6 +30,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "vif_tools.h"
 #include "log.h"
 #include "picture.h"
@@ -933,58 +934,24 @@ static void sum_vif_partials(const FloatVifStateSycl &state, double *scores)
     }
 }
 
-static int append_vif_scale_scores(const FloatVifStateSycl &state, const double *scores,
-                                   unsigned index, VmafFeatureCollector *collector)
+static int emit_vif_scores(const FloatVifStateSycl &state, const double scores[8], unsigned index,
+                           VmafFeatureCollector *collector)
 {
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(
-        collector, state.feature_name_dict, "VMAF_feature_vif_scale0_score",
-        state.vif_skip_scale0 ? 0.0 : scores[0] / scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
-                                                   "VMAF_feature_vif_scale1_score",
-                                                   scores[2] / scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
-                                                   "VMAF_feature_vif_scale2_score",
-                                                   scores[4] / scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
-                                                   "VMAF_feature_vif_scale3_score",
-                                                   scores[6] / scores[7], index);
-    return err;
-}
-
-} // namespace
-
-namespace
-{
-
-static int append_vif_debug_scores(const FloatVifStateSycl &state, const double *scores,
-                                   unsigned index, VmafFeatureCollector *collector)
-{
-    const double numerator =
-        (state.vif_skip_scale0 ? 0.0 : scores[0]) + scores[2] + scores[4] + scores[6];
-    const double denominator =
-        (state.vif_skip_scale0 ? 0.0 : scores[1]) + scores[3] + scores[5] + scores[7];
-    const double score = denominator == 0.0 ? 1.0 : numerator / denominator;
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict, "vif", score,
-                                                   index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict, "vif_num",
-                                                   numerator, index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict, "vif_den",
-                                                   denominator, index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
-                                                   "vif_num_scale0",
-                                                   state.vif_skip_scale0 ? 0.0 : scores[0], index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
-                                                   "vif_den_scale0",
-                                                   state.vif_skip_scale0 ? -1.0 : scores[1], index);
-    const char *const names[6] = {"vif_num_scale1", "vif_den_scale1", "vif_num_scale2",
-                                  "vif_den_scale2", "vif_num_scale3", "vif_den_scale3"};
-    for (int output = 0; output < 6; ++output) {
-        err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
-                                                       names[output], scores[output + 2], index);
+    VmafVifScoreSet output = {
+        .skip_scale0 = state.vif_skip_scale0,
+        .debug = state.debug,
+    };
+    const size_t start = state.vif_skip_scale0 ? 2u : 0u;
+    for (size_t i = 0u; i < 8u; ++i) {
+        output.scale[i] = scores[i];
+        if (i >= start) {
+            output.score_num += i % 2u == 0u ? scores[i] : 0.0;
+            output.score_den += i % 2u != 0u ? scores[i] : 0.0;
+        }
     }
-    return err;
+    output.score = output.score_den > 0.0 ? output.score_num / output.score_den : NAN;
+    return vmaf_vif_emit_scores(collector, state.feature_name_dict, "float_vif_sycl", &output,
+                                VMAF_VIF_FLOAT_NAMES, index);
 }
 
 } // namespace
@@ -1003,11 +970,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     queue->wait();
     double scores[8];
     sum_vif_partials(state, scores);
-    int err = append_vif_scale_scores(state, scores, index, feature_collector);
-    if (state.debug && err == 0) {
-        err |= append_vif_debug_scores(state, scores, index, feature_collector);
-    }
-    return err;
+    return emit_vif_scores(state, scores, index, feature_collector);
 }
 
 } // namespace

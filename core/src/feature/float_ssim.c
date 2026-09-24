@@ -24,8 +24,10 @@
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
+#include "log.h"
 
 #include "mem.h"
+#include "nonfinite_score.h"
 #include "ssim.h"
 #include "picture_copy.h"
 #include "iqa/ssim_simd.h"
@@ -150,17 +152,6 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-
-static double convert_to_db(double score, double max_db)
-{
-    /* score >= 1.0 makes log10(1-score) undefined (log10 of zero or negative)
-     * yielding -Inf / NaN.  Return max_db directly for perfect similarity.  */
-    if (score >= 1.0)
-        return max_db;
-    return MIN(-10. * log10(1.0 - score), max_db);
-}
-
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
@@ -183,16 +174,28 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     if (err)
         return err;
 
-    if (s->enable_db)
-        score = convert_to_db(score, s->max_db);
-
-    err = vmaf_feature_collector_append(feature_collector, "float_ssim", score, index);
-    if (s->enable_lcs) {
-        err |= vmaf_feature_collector_append(feature_collector, "float_ssim_l", l_score, index);
-        err |= vmaf_feature_collector_append(feature_collector, "float_ssim_c", c_score, index);
-        err |= vmaf_feature_collector_append(feature_collector, "float_ssim_s", s_score, index);
+    const VmafNamedScore atoms[] = {
+        {"float_ssim_l", l_score},
+        {"float_ssim_c", c_score},
+        {"float_ssim_s", s_score},
+    };
+    /* NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL for MSVC /std:clatest (ADR-1138). */
+    VmafDictionary *const feature_name_dict = NULL;
+    if (!s->enable_lcs) {
+        err = vmaf_feature_validate_finite_scores_named("float_ssim", atoms, 3u, index);
+        if (!err) {
+            err = vmaf_ssim_emit_score(feature_collector, feature_name_dict, "float_ssim", score,
+                                       s->enable_db, s->max_db, index);
+        }
+    } else {
+        err = vmaf_ssim_emit_scores(feature_collector, feature_name_dict, "float_ssim", score,
+                                    s->enable_db, s->max_db, atoms, 3u, index);
     }
-
+    if (err == -EINVAL) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_ssim: non-finite score at frame %u (score=%g l=%g c=%g s=%g)\n", index,
+                 score, l_score, c_score, s_score);
+    }
     return err;
 }
 

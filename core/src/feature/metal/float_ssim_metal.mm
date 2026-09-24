@@ -52,6 +52,7 @@ extern "C" {
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "log.h"
 #include "libvmaf/picture.h"
 
@@ -142,12 +143,6 @@ static int ssim_metal_compute_scale(unsigned w, unsigned h, int override_val)
     if (override_val > 0) { return override_val; }
     int scaled = (int)((float)(w < h ? w : h) / 256.0f + 0.5f);
     return (scaled < 1) ? 1 : scaled;
-}
-
-static double ssim_to_db(double ssim, double max_db)
-{
-    const double db = -10.0 * log10(1.0 - ssim);
-    return (db < max_db) ? db : max_db;
 }
 
 static int build_pipelines(FloatSsimStateMetal *s, id<MTLDevice> device)
@@ -423,16 +418,14 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         }
     }
     const double n_valid = (double)s->w_h * (double)s->h_v;
-    double ssim = (n_valid > 0.0) ? (ssim_sum / n_valid) : 1.0;
+    double ssim = 0.0;
+    int err = vmaf_feature_finite_ratio_named("float_ssim_metal", "float_ssim", ssim_sum,
+                                              n_valid, index, &ssim);
+    if (err)
+        return err;
 
-    if (s->enable_db) {
-        ssim = ssim_to_db(ssim, s->max_db);
-    }
-
-    int err = vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "float_ssim", ssim, index);
-    if (err != 0) { return err; }
-
+    VmafNamedScore atoms[3];
+    size_t atom_count = 0u;
     if (s->enable_lcs && s->lcs_buf != NULL) {
         const float *lp = (const float *)[(__bridge id<MTLBuffer>)s->lcs_buf contents];
         if (lp != NULL) {
@@ -442,19 +435,33 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                 c_sum  += (double)lp[1 * s->partials_count + i];
                 ss_sum += (double)lp[2 * s->partials_count + i];
             }
-            const double l_score = (n_valid > 0.0) ? (l_sum  / n_valid) : 1.0;
-            const double c_score = (n_valid > 0.0) ? (c_sum  / n_valid) : 1.0;
-            const double s_score = (n_valid > 0.0) ? (ss_sum / n_valid) : 1.0;
-            err  = vmaf_feature_collector_append_with_dict(
-                feature_collector, s->feature_name_dict, "float_ssim_l", l_score, index);
-            err |= vmaf_feature_collector_append_with_dict(
-                feature_collector, s->feature_name_dict, "float_ssim_c", c_score, index);
-            err |= vmaf_feature_collector_append_with_dict(
-                feature_collector, s->feature_name_dict, "float_ssim_s", s_score, index);
+            double l_score = 0.0;
+            double c_score = 0.0;
+            double s_score = 0.0;
+            err = vmaf_feature_finite_ratio_named("float_ssim_metal", "float_ssim_l", l_sum,
+                                                  n_valid, index, &l_score);
+            err |= vmaf_feature_finite_ratio_named("float_ssim_metal", "float_ssim_c", c_sum,
+                                                   n_valid, index, &c_score);
+            err |= vmaf_feature_finite_ratio_named("float_ssim_metal", "float_ssim_s", ss_sum,
+                                                   n_valid, index, &s_score);
+            if (err)
+                return err;
+            atoms[0] = VmafNamedScore{"float_ssim_l", l_score};
+            atoms[1] = VmafNamedScore{"float_ssim_c", c_score};
+            atoms[2] = VmafNamedScore{"float_ssim_s", s_score};
+            atom_count = 3u;
         }
     }
-
-    return err;
+    if (s->enable_lcs && atom_count != 3u) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_ssim_metal: missing L/C/S result at frame %u "
+                 "(atom_count=%zu value=%g)\n",
+                 index, atom_count, ssim);
+        return -EINVAL;
+    }
+    return vmaf_ssim_emit_scores_named(feature_collector, s->feature_name_dict,
+                                       "float_ssim_metal", "float_ssim", ssim, s->enable_db,
+                                       s->max_db, atoms, atom_count, index);
 }
 
 static int close_fex_metal(VmafFeatureExtractor *fex)

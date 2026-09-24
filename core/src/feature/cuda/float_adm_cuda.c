@@ -30,6 +30,8 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/adm_score.h"
+#include "feature/nonfinite_score.h"
 
 #include "cuda/float_adm_cuda.h"
 #include "cuda/kernel_template.h"
@@ -1024,7 +1026,8 @@ static void fadm_pool_scales(const FloatAdmStateCuda *s, const FloatAdmBandTotal
  * are carried out clamped, which is the value the debug features have
  * always reported.
  */
-static void fadm_final_scores(const FloatAdmStateCuda *s, const FloatAdmPooled *o, FloatAdmFinal *f)
+static int fadm_final_scores(const FloatAdmStateCuda *s, const FloatAdmPooled *o, FloatAdmFinal *f,
+                             unsigned index)
 {
     f->score_num = o->score_num;
     f->score_den = o->score_den;
@@ -1032,70 +1035,52 @@ static void fadm_final_scores(const FloatAdmStateCuda *s, const FloatAdmPooled *
     const int w = (int)s->scale_w[0];
     const int h = (int)s->scale_h[0];
     const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
-    if (f->score_num < numden_limit)
-        f->score_num = 0.0;
-    if (f->score_den < numden_limit)
-        f->score_den = 0.0;
-    f->score = (f->score_den == 0.0) ? 1.0 : f->score_num / f->score_den;
+    int err = vmaf_adm_floor_pair_named("float_adm_cuda", index, f->score_num, f->score_den,
+                                        numden_limit, &f->score_num, &f->score_den);
+    if (err)
+        return err;
+    err = vmaf_adm_finalize_scores_named("float_adm_cuda", index, f->score_num, f->score_den,
+                                         o->aim_num, o->aim_den, &f->score, &f->aim);
+    if (err)
+        return err;
 
-    /* ADR-0574: AIM score and ADM3 score. */
-    f->aim = (o->aim_den == 0.0) ? 1.0 : fmin(o->aim_num / o->aim_den, 1.0);
-    if (s->adm_adm3_apply_hm) {
-        const double hm_denom = f->score + f->aim;
-        f->adm3 = (hm_denom > 0.0) ? (2.0 * f->score * f->aim / hm_denom) : 0.0;
-    } else {
-        f->adm3 = f->score * s->adm_dlm_weight + (1.0 - f->aim) * (1.0 - s->adm_dlm_weight);
-    }
-    if (f->adm3 < s->adm_min_val)
-        f->adm3 = s->adm_min_val;
+    return vmaf_adm3_score_named("float_adm_cuda", index, f->score, f->aim, s->adm_adm3_apply_hm,
+                                 s->adm_dlm_weight, s->adm_min_val, &f->adm3);
 }
 
-/* fadm_append_scores - hand every feature to the collector.
- *
- * HISS-04: lifted verbatim out of collect_fex_cuda; the features are
- * appended in the same order and the same `err |=` accumulation decides the
- * returned status.
- */
+/* Validate the complete score family before its first collector write. */
 static int fadm_append_scores(VmafFeatureCollector *fc, const FloatAdmStateCuda *s,
                               const FloatAdmPooled *o, const FloatAdmFinal *f, unsigned index)
 {
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm2_score", f->score, index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm_scale0_score",
-                                                   o->scores[0] / o->scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm_scale1_score",
-                                                   o->scores[2] / o->scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm_scale2_score",
-                                                   o->scores[4] / o->scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm_scale3_score",
-                                                   o->scores[6] / o->scores[7], index);
-    /* ADR-0574: emit AIM and ADM3 sub-feature scores. */
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_aim_score", f->aim, index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm3_score", f->adm3, index);
+    double scale_scores[FADM_NUM_SCALES];
+    int err = vmaf_adm_scale_ratios_named("float_adm_cuda", index, o->scores, FADM_NUM_SCALES,
+                                          scale_scores);
+    if (err)
+        return err;
 
-    if (s->debug && !err) {
-        err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm", f->score,
-                                                       index);
-        err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_num",
-                                                       f->score_num, index);
-        err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_den",
-                                                       f->score_den, index);
-        const char *names[8] = {"adm_num_scale0", "adm_den_scale0", "adm_num_scale1",
-                                "adm_den_scale1", "adm_num_scale2", "adm_den_scale2",
-                                "adm_num_scale3", "adm_den_scale3"};
-        for (int i = 0; i < 8 && !err; i++) {
-            err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, names[i],
-                                                           o->scores[i], index);
-        }
+    VmafNamedScore values[18] = {
+        {"VMAF_feature_adm2_score", f->score},
+        {"VMAF_feature_adm_scale0_score", scale_scores[0]},
+        {"VMAF_feature_adm_scale1_score", scale_scores[1]},
+        {"VMAF_feature_adm_scale2_score", scale_scores[2]},
+        {"VMAF_feature_adm_scale3_score", scale_scores[3]},
+        {"VMAF_feature_aim_score", f->aim},
+        {"VMAF_feature_adm3_score", f->adm3},
+    };
+    size_t value_count = 7u;
+    if (s->debug) {
+        static const char *const debug_names[8] = {
+            "adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1",
+            "adm_num_scale2", "adm_den_scale2", "adm_num_scale3", "adm_den_scale3",
+        };
+        values[value_count++] = (VmafNamedScore){"adm", f->score};
+        values[value_count++] = (VmafNamedScore){"adm_num", f->score_num};
+        values[value_count++] = (VmafNamedScore){"adm_den", f->score_den};
+        for (size_t i = 0u; i < 8u; ++i)
+            values[value_count++] = (VmafNamedScore){debug_names[i], o->scores[i]};
     }
-    return err;
+    return vmaf_feature_emit_finite_scores(fc, s->feature_name_dict, "float_adm_cuda", values,
+                                           value_count, index);
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
@@ -1139,7 +1124,9 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
     fadm_pool_scales(s, &totals, &pooled);
 
     FloatAdmFinal fin = {0};
-    fadm_final_scores(s, &pooled, &fin);
+    int err = fadm_final_scores(s, &pooled, &fin, index);
+    if (err)
+        return err;
 
     return fadm_append_scores(fc, s, &pooled, &fin, index);
 }

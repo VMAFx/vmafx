@@ -23,6 +23,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "vif_tools.h"
 #include "log.h"
 
@@ -557,40 +558,16 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         scores[2 * i + 1] = d;
     }
 
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale0_score",
-                                                   scores[0] / scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale1_score",
-                                                   scores[2] / scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale2_score",
-                                                   scores[4] / scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale3_score",
-                                                   scores[6] / scores[7], index);
-
-    if (s->debug && !err) {
-        double score_num = scores[0] + scores[2] + scores[4] + scores[6];
-        double score_den = scores[1] + scores[3] + scores[5] + scores[7];
-        double score = score_den == 0.0 ? 1.0 : score_num / score_den;
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif", score, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num", score_num, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_den", score_den, index);
-        const char *names[8] = {"vif_num_scale0", "vif_den_scale0", "vif_num_scale1",
-                                "vif_den_scale1", "vif_num_scale2", "vif_den_scale2",
-                                "vif_num_scale3", "vif_den_scale3"};
-        for (int i = 0; i < 8; i++) {
-            err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                           names[i], scores[i], index);
-        }
-    }
-
-    return err;
+    VmafVifScoreSet output = {
+        .score_num = scores[0] + scores[2] + scores[4] + scores[6],
+        .score_den = scores[1] + scores[3] + scores[5] + scores[7],
+        .debug = s->debug,
+    };
+    for (size_t i = 0u; i < 8u; ++i)
+        output.scale[i] = scores[i];
+    output.score = output.score_den > 0.0 ? output.score_num / output.score_den : NAN;
+    return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "float_vif_cuda", &output,
+                                VMAF_VIF_FLOAT_NAMES, index);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)

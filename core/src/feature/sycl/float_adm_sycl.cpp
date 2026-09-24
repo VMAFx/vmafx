@@ -30,6 +30,8 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/adm_score.h"
+#include "feature/nonfinite_score.h"
 #include "log.h"
 #include "picture.h"
 #include "sycl/common.h"
@@ -1237,57 +1239,49 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
     const int w = (int)s->scale_w[0];
     const int h = (int)s->scale_h[0];
     const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
-    if (score_num < numden_limit)
-        score_num = 0.0;
-    if (score_den < numden_limit)
-        score_den = 0.0;
-    const double score = (score_den == 0.0) ? 1.0 : score_num / score_den;
+    double score = 0.0;
+    double score_aim = 0.0;
+    int err = vmaf_adm_floor_pair_named("float_adm_sycl", index, score_num, score_den, numden_limit,
+                                        &score_num, &score_den);
+    if (err)
+        return err;
+    err = vmaf_adm_finalize_scores_named("float_adm_sycl", index, score_num, score_den, aim_num,
+                                         aim_den, &score, &score_aim);
+    if (err)
+        return err;
+    double score_adm3 = 0.0;
+    err = vmaf_adm3_score_named("float_adm_sycl", index, score, score_aim, s->adm_adm3_apply_hm,
+                                s->adm_dlm_weight, s->adm_min_val, &score_adm3);
+    if (err)
+        return err;
+    double scale_scores[FADM_NUM_SCALES];
+    err =
+        vmaf_adm_scale_ratios_named("float_adm_sycl", index, scores, FADM_NUM_SCALES, scale_scores);
+    if (err)
+        return err;
 
-    /* ADR-0574: AIM score and ADM3 score. */
-    const double score_aim = (aim_den == 0.0) ? 1.0 : std::fmin(aim_num / aim_den, 1.0);
-    double score_adm3;
-    if (s->adm_adm3_apply_hm) {
-        const double hm_denom = score + score_aim;
-        score_adm3 = (hm_denom > 0.0) ? (2.0 * score * score_aim / hm_denom) : 0.0;
-    } else {
-        score_adm3 = score * s->adm_dlm_weight + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
+    VmafNamedScore values[18] = {
+        {.name = "VMAF_feature_adm2_score", .value = score},
+        {.name = "VMAF_feature_adm_scale0_score", .value = scale_scores[0]},
+        {.name = "VMAF_feature_adm_scale1_score", .value = scale_scores[1]},
+        {.name = "VMAF_feature_adm_scale2_score", .value = scale_scores[2]},
+        {.name = "VMAF_feature_adm_scale3_score", .value = scale_scores[3]},
+        {.name = "VMAF_feature_aim_score", .value = score_aim},
+        {.name = "VMAF_feature_adm3_score", .value = score_adm3},
+    };
+    size_t value_count = 7u;
+    if (s->debug) {
+        static const char *const debug_names[8] = {
+            "adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1",
+            "adm_num_scale2", "adm_den_scale2", "adm_num_scale3", "adm_den_scale3"};
+        values[value_count++] = VmafNamedScore{.name = "adm", .value = score};
+        values[value_count++] = VmafNamedScore{.name = "adm_num", .value = score_num};
+        values[value_count++] = VmafNamedScore{.name = "adm_den", .value = score_den};
+        for (size_t i = 0u; i < 8u; ++i)
+            values[value_count++] = VmafNamedScore{.name = debug_names[i], .value = scores[i]};
     }
-    if (score_adm3 < s->adm_min_val)
-        score_adm3 = s->adm_min_val;
-
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm2_score", score, index);
-    err |= vmaf_feature_collector_append_with_dict(
-        fc, s->feature_name_dict, "VMAF_feature_adm_scale0_score", scores[0] / scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        fc, s->feature_name_dict, "VMAF_feature_adm_scale1_score", scores[2] / scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        fc, s->feature_name_dict, "VMAF_feature_adm_scale2_score", scores[4] / scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        fc, s->feature_name_dict, "VMAF_feature_adm_scale3_score", scores[6] / scores[7], index);
-    /* ADR-0574: emit AIM and ADM3 sub-feature scores. */
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_aim_score", score_aim, index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm3_score", score_adm3, index);
-
-    if (s->debug && !err) {
-        err |=
-            vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm", score, index);
-        err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_num",
-                                                       score_num, index);
-        err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_den",
-                                                       score_den, index);
-        const char *const names[8] = {"adm_num_scale0", "adm_den_scale0", "adm_num_scale1",
-                                      "adm_den_scale1", "adm_num_scale2", "adm_den_scale2",
-                                      "adm_num_scale3", "adm_den_scale3"};
-        for (int i = 0; i < 8 && !err; i++) {
-            err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, names[i],
-                                                           scores[i], index);
-        }
-    }
-    return err;
+    return vmaf_feature_emit_finite_scores(fc, s->feature_name_dict, "float_adm_sycl", values,
+                                           value_count, index);
 }
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).

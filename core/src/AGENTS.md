@@ -401,6 +401,19 @@ there were cut at statement boundaries only. Never split one arithmetic
 expression across a helper, and never reorder an accumulation: FMA contraction
 and re-association both move scores (ADR-1253).
 
+`predict.c::piecewise_linear_mapping` rejects non-finite input before writing
+its `0.0` initialization (ADR-1302). Every ordered segment comparison is false
+for NaN, so moving that initialization back above the guard converts a failed
+model computation into a successful zero prediction. The production path also
+routes the post-denormalization, polynomial and piecewise results through
+`predict_validate_finite`; it emits one warning naming the frame and value and
+returns before collector publication. The regressions require the caller-owned
+output to remain unchanged on `-EINVAL`, no model score in the collector, and
+exactly one diagnostic rather than one warning per mapping segment. The
+`VMAF_PREDICT_TEST_NONFINITE_LOG` definition is a direct-source-inclusion test
+seam only; normal builds leave it undefined and must retain the human-readable
+`vmaf_log` warning.
+
 Two `interop/pelorus_interop.c` invariants that the split introduced, both
 pinned by the ADR-1142 clang-tidy ratchet (the file's allowance is 7):
 

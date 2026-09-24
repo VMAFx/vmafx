@@ -99,6 +99,8 @@ Conventions:
 | [2094](2094-codeql-svm-lifecycle-and-loop-alerts.md) | CodeQL SVM solver lifecycle and parser loop alerts | Active | [ADR-0889](../adr/0889-libsvm-vendored-audit.md), [ADR-1039](../adr/1039-vendored-svm-realloc-oom-safety.md) |
 | [2096](2096-codeql-unused-static-alerts-2026-09-24.md) | CodeQL unused-static-function identity audit for repeated test compilations | Active | [ADR-1142](../adr/1142-whole-codebase-standards.md) |
 | [2097](2097-codeql-equality-on-floats-2026-09-24.md) | Resolving live CodeQL cpp/equality-on-floats alerts | Active | [ADR-1308](../adr/1308-codeql-float-equality-contracts.md) |
+| [2098](2098-vif-avx512-large-parameter-codeql.md) | Resolution of CodeQL AVX-512 large-parameter alerts | Active | — (private ABI cleanup) |
+| [2099](2099-nonfinite-score-laundering-2026-09-23.md) | Non-finite score laundering in the metric engine | Active | [ADR-1302](../adr/1302-nonfinite-scores-fail-the-frame.md) |
 
 | [0053](0053-post-merge-cpu-profile-2026-05-03.md) | Post-merge CPU profile 2026-05-03 — perf top-10 after PRs #310–#321; surfaces 3 new opt targets (convolve widen, SSIM double reduction, VIF gather elimination) | Active | — |
 | [0081](0081-fr-regressor-v2-ensemble-real-corpus-methodology.md) | Real-corpus retrain methodology for the `fr_regressor_v2` deep ensemble — corpus-size sufficiency (9 ref + 70 dis @ `.workingdir2/netflix/`), 9-fold LOSO sizing inherited from the deterministic ADR-0291 baseline, seed-diversity hyperparameters, and the `Seeking_25fps` weak-fold diagnostic for HOLD-on-spread cases. | Active | [ADR-0309](../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md) |

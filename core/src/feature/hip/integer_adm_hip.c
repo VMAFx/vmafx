@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include "adm_csf_fixed_point.h"
+#include "adm_score.h"
 #include "barten_csf_tools.h"
 #include "common.h"
 #include "dict.h"
@@ -39,6 +40,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "integer_adm.h"
+#include "nonfinite_score.h"
 #include "libvmaf/picture.h"
 
 #include "hip/integer_adm_hip.h"
@@ -340,11 +342,6 @@ typedef struct write_score_parameters_adm_hip {
     unsigned index, h, w;
 } write_score_parameters_adm_hip;
 
-typedef struct AdmHipNamedScore {
-    const char *name;
-    double value;
-} AdmHipNamedScore;
-
 /* Per-scale numerator and denominator into scores[2 * scale] and
  * scores[2 * scale + 1], and their sums over the scales that count. */
 static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, double scores[8],
@@ -384,19 +381,11 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, d
     }
 }
 
-/* Append each score in order; returns the OR of the collector statuses. */
-static int adm_hip_append_scores(VmafFeatureCollector *feature_collector, VmafDictionary *dict,
-                                 const AdmHipNamedScore *list, size_t count, unsigned index)
-{
-    int err = 0;
-    for (size_t i = 0; i < count; ++i) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, list[i].name,
-                                                       list[i].value, index);
-    }
-    return err;
-}
-
-static void write_scores(const write_score_parameters_adm_hip *params)
+/* AIM / adm3 are intentionally absent: this twin has no second CM pass with
+ * decouple_a / decouple_r swapped. Omitting both names routes them to CPU via
+ * ADR-0530; fabricating them here would be wrong. See
+ * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05. */
+static int write_scores(const write_score_parameters_adm_hip *params)
 {
     const AdmStateHip *s = params->s;
     double scores[8];
@@ -409,51 +398,49 @@ static void write_scores(const write_score_parameters_adm_hip *params)
      * scales with the FULL-FRAME area, not the scale-3 area the per-scale
      * loop ends on. */
     const double numden_limit = 1e-10 * ((double)params->w * params->h) / (1920.0 * 1080.0);
-    num = num < numden_limit ? 0 : num;
-    den = den < numden_limit ? 0 : den;
+    int err = vmaf_adm_floor_pair_named("integer_adm_hip", params->index, num, den, numden_limit,
+                                        &num, &den);
+    if (err)
+        return err;
 
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
      * applies MAX(..., adm_min_val) to the adm3 expression alone). */
-    const double score = (den == 0.0) ? 1.0 : num / den;
-
-    /* AIM / adm3 are NOT emitted by this twin: the AIM contrast measure needs
-     * a second device CM pass with the decouple_a / decouple_r roles swapped
-     * (the CUDA twin's ADR-0746 kernels), which the HIP kernel set does not
-     * have. Leaving both features out of `provided_features` routes them to
-     * the CPU twin through the ADR-0530 name-based fallback, which produces
-     * the correct value under the correct feature-name key. Emitting them
-     * here from a hard-coded aim_num would fabricate a score. Tracked as
-     * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md. */
-
-    const AdmHipNamedScore main_scores[] = {
-        {"VMAF_integer_feature_adm2_score", score},
-        {"integer_adm_scale0", scores[0] / scores[1]},
-        {"integer_adm_scale1", scores[2] / scores[3]},
-        {"integer_adm_scale2", scores[4] / scores[5]},
-        {"integer_adm_scale3", scores[6] / scores[7]},
-    };
-    int err = adm_hip_append_scores(params->feature_collector, s->feature_name_dict, main_scores,
-                                    sizeof(main_scores) / sizeof(main_scores[0]), params->index);
-
-    if (s->debug) {
-        const AdmHipNamedScore debug_scores[] = {
-            {"integer_adm", score},
-            {"integer_adm_num", num},
-            {"integer_adm_den", den},
-            {"integer_adm_num_scale0", scores[0]},
-            {"integer_adm_den_scale0", scores[1]},
-            {"integer_adm_num_scale1", scores[2]},
-            {"integer_adm_den_scale1", scores[3]},
-            {"integer_adm_num_scale2", scores[4]},
-            {"integer_adm_den_scale2", scores[5]},
-            {"integer_adm_num_scale3", scores[6]},
-            {"integer_adm_den_scale3", scores[7]},
-        };
-        err |= adm_hip_append_scores(params->feature_collector, s->feature_name_dict, debug_scores,
-                                     sizeof(debug_scores) / sizeof(debug_scores[0]), params->index);
+    const double aggregate_pair[2] = {num, den};
+    double score = 0.0;
+    err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm_hip: undefined or non-finite aggregate at frame %u "
+                 "(num=%g den=%g)\n",
+                 params->index, num, den);
+        return err;
     }
-    (void)err; /* accumulated collector status intentionally discarded; void writer API */
+
+    double scale_scores[4];
+    err = vmaf_adm_scale_ratios_named("integer_adm_hip", params->index, scores, 4u, scale_scores);
+    if (err)
+        return err;
+    VmafNamedScore values[16] = {
+        {"VMAF_integer_feature_adm2_score", score}, {"integer_adm_scale0", scale_scores[0]},
+        {"integer_adm_scale1", scale_scores[1]},    {"integer_adm_scale2", scale_scores[2]},
+        {"integer_adm_scale3", scale_scores[3]},
+    };
+    size_t value_count = 5u;
+    if (s->debug) {
+        static const char *const debug_names[8] = {
+            "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
+            "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
+            "integer_adm_num_scale3", "integer_adm_den_scale3",
+        };
+        values[value_count++] = (VmafNamedScore){"integer_adm", score};
+        values[value_count++] = (VmafNamedScore){"integer_adm_num", num};
+        values[value_count++] = (VmafNamedScore){"integer_adm_den", den};
+        for (size_t i = 0u; i < 8u; ++i)
+            values[value_count++] = (VmafNamedScore){debug_names[i], scores[i]};
+    }
+    return vmaf_feature_emit_finite_scores(params->feature_collector, s->feature_name_dict,
+                                           "integer_adm_hip", values, value_count, params->index);
 }
 
 #endif /* HAVE_HIPCC */
@@ -1685,8 +1672,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         .w = s->submit_w,
         .h = s->submit_h,
     };
-    write_scores(&params);
-    return 0;
+    return write_scores(&params);
 #endif
 }
 

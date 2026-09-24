@@ -26,6 +26,7 @@
 
 #include "adm_angle_flag.h"
 #include "adm_csf_fixed_point.h"
+#include "adm_score.h"
 #include "barten_csf_tools.h"
 #include "compat_builtin.h"
 #include "cpu.h"
@@ -35,6 +36,7 @@
 #include "feature_name.h"
 #include "integer_adm.h"
 #include "log.h"
+#include "nonfinite_score.h"
 
 #if ARCH_X86
 #include "x86/adm_avx2.h"
@@ -1870,29 +1872,32 @@ static size_t adm_src_stride(const VmafPicture *pic, unsigned bpc)
 
 /* Clamp the summed numerator / denominator to the area-scaled precision
  * floor and form the DLM and AIM scores. */
-static void adm_result_finalise(AdmResult *res, double num, double den, double aim_num,
-                                double numden_limit)
+static int adm_result_finalise(AdmResult *res, double num, double den, double aim_num,
+                               double numden_limit, unsigned index)
 {
-    num = num < numden_limit ? 0 : num;
-    den = den < numden_limit ? 0 : den;
+    int err = vmaf_adm_floor_pair_named("integer_adm", index, num, den, numden_limit, &num, &den);
+    if (err)
+        return err;
 
-    if (den == 0.0) {
-        /* Flat/black frame: no distortion energy — both scores are perfect.
-         * score_aim MUST be initialised here; the caller reads it
-         * unconditionally and the else-branch would be skipped.           */
-        res->score = 1.0f;
-        res->score_aim = 1.0f;
-    } else {
-        /* Normalize AIM score by the DLM denominator. */
-        res->score_aim = aim_num / den;
-        res->score = num / den;
+    const double pairs[4] = {num, den, aim_num, den};
+    double ratios[2];
+    err = vmaf_adm_scale_ratios(pairs, 2u, ratios);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm: undefined or non-finite aggregate at frame %u "
+                 "(num=%g den=%g aim_num=%g)\n",
+                 index, num, den, aim_num);
+        return err;
     }
+    res->score = ratios[0];
+    res->score_aim = ratios[1];
     res->score_num = num;
     res->score_den = den;
+    return 0;
 }
 
-static void integer_compute_adm(const AdmState *s, const VmafPicture *ref_pic,
-                                const VmafPicture *dis_pic, AdmResult *res)
+static int integer_compute_adm(const AdmState *s, const VmafPicture *ref_pic,
+                               const VmafPicture *dis_pic, AdmResult *res, unsigned index)
 {
     const AdmBuffer *buf = &s->buf;
     int w = ref_pic->w[0];
@@ -1938,7 +1943,7 @@ static void integer_compute_adm(const AdmState *s, const VmafPicture *ref_pic,
         res->scores[2 * scale + 1] = sc.den;
     }
 
-    adm_result_finalise(res, num, den, aim_num, numden_limit);
+    return adm_result_finalise(res, num, den, aim_num, numden_limit, index);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2195,33 +2200,34 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return err;
 }
 
-static const char *const scale_feature_names[4] = {"integer_adm_scale0", "integer_adm_scale1",
-                                                   "integer_adm_scale2", "integer_adm_scale3"};
-
-static const char *const debug_scale_feature_names[8] = {
-    "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
-    "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
-    "integer_adm_num_scale3", "integer_adm_den_scale3"};
-
-/* `debug=true` extras: the raw score plus the per-scale numerators and
- * denominators. */
-static int extract_debug_features(const AdmState *s, VmafFeatureCollector *feature_collector,
-                                  const AdmResult *r, unsigned index)
+static int emit_adm_scores(const AdmState *s, VmafFeatureCollector *feature_collector,
+                           const AdmResult *result, double score_adm3, const double scale_scores[4],
+                           unsigned index)
 {
-    int err = 0;
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm", r->score, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_num", r->score_num, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_adm_den", r->score_den, index);
-    for (size_t k = 0; k < 8; ++k) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       debug_scale_feature_names[k], r->scores[k],
-                                                       index);
+    VmafNamedScore values[18] = {
+        {"VMAF_integer_feature_adm2_score", result->score},
+        {"VMAF_integer_feature_aim_score", result->score_aim},
+        {"VMAF_integer_feature_adm3_score", score_adm3},
+        {"integer_adm_scale0", scale_scores[0]},
+        {"integer_adm_scale1", scale_scores[1]},
+        {"integer_adm_scale2", scale_scores[2]},
+        {"integer_adm_scale3", scale_scores[3]},
+    };
+    size_t value_count = 7u;
+    if (s->debug) {
+        static const char *const debug_names[8] = {
+            "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
+            "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
+            "integer_adm_num_scale3", "integer_adm_den_scale3",
+        };
+        values[value_count++] = (VmafNamedScore){"integer_adm", result->score};
+        values[value_count++] = (VmafNamedScore){"integer_adm_num", result->score_num};
+        values[value_count++] = (VmafNamedScore){"integer_adm_den", result->score_den};
+        for (size_t i = 0u; i < 8u; ++i)
+            values[value_count++] = (VmafNamedScore){debug_names[i], result->scores[i]};
     }
-    return err;
+    return vmaf_feature_emit_finite_scores(feature_collector, s->feature_name_dict, "integer_adm",
+                                           values, value_count, index);
 }
 
 /* `ref_pic` / `dist_pic` are only read here, but the prototype is
@@ -2257,28 +2263,33 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     }
 
     AdmResult r;
-    integer_compute_adm(s, ref_pic, dist_pic, &r);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm2_score", r.score, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_aim_score", r.score_aim,
-                                                   index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm3_score",
-        MAX(r.score * s->adm_dlm_weight + (1 - r.score_aim) * (1 - s->adm_dlm_weight),
-            s->adm_min_val),
-        index);
-    for (size_t k = 0; k < 4; ++k) {
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, scale_feature_names[k],
-            r.scores[2 * k] / r.scores[2 * k + 1], index);
-    }
-
-    if (!s->debug) {
+    err = integer_compute_adm(s, ref_pic, dist_pic, &r, index);
+    if (err)
         return err;
+
+    /* NaN/Inf guard: every relational operator is false for NaN, so the MAX()
+     * below would take its `adm_min_val` arm and publish the floor -- a finite,
+     * plausible number -- in place of a non-measurement. `adm_dlm_weight` and
+     * `adm_min_val` are both bounded [0, 1] by the option table, so the blend is
+     * non-finite exactly when one of these two atoms is. Guard at runtime in
+     * both builds and fail the frame (mirrors the y_funque_plus.c finite-atom
+     * guard; the float_adm.c twin carries the same check). */
+    if (!isfinite(r.score) || !isfinite(r.score_aim)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm: non-finite score at frame %u (score=%g score_aim=%g)\n", index,
+                 r.score, r.score_aim);
+        return -EINVAL;
     }
-    return err | extract_debug_features(s, feature_collector, &r, index);
+    double score_adm3 = 0.0;
+    err = vmaf_adm3_score_named("integer_adm", index, r.score, r.score_aim, 0, s->adm_dlm_weight,
+                                s->adm_min_val, &score_adm3);
+    if (err)
+        return err;
+    double scale_scores[4];
+    err = vmaf_adm_scale_ratios_named("integer_adm", index, r.scores, 4u, scale_scores);
+    if (err)
+        return err;
+    return emit_adm_scores(s, feature_collector, &r, score_adm3, scale_scores, index);
 }
 
 static int close(VmafFeatureExtractor *fex)

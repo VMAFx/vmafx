@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 import tomllib
@@ -21,6 +22,7 @@ import vmaf
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = REPO_ROOT / "python" / "pyproject.toml"
+SETUP_PY = REPO_ROOT / "python" / "setup.py"
 PACKAGE_PYPROJECTS = (
     REPO_ROOT / "ai" / "pyproject.toml",
     REPO_ROOT / "dev-llm" / "pyproject.toml",
@@ -75,6 +77,53 @@ def _build_requirement(name: str) -> Requirement:
         if requirement.name.lower() == name:
             return requirement
     raise AssertionError(f"{PYPROJECT} declares no {name!r} build requirement: {build_requires}")
+
+
+def test_cython_extension_include_dirs_cover_private_and_public_core_headers():
+    """The direct-source ADM extension must resolve libvmaf's public headers."""
+    setup_tree = ast.parse(SETUP_PY.read_text(encoding="utf-8"))
+    include_dirs: set[str] = set()
+    for node in ast.walk(setup_tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.List):
+            continue
+        if not any(
+            isinstance(target, ast.Attribute) and target.attr == "include_dirs"
+            for target in node.targets
+        ):
+            continue
+        include_dirs.update(
+            element.value
+            for element in node.value.elts
+            if isinstance(element, ast.Constant) and isinstance(element.value, str)
+        )
+
+    assert {"../core/src", "../core/include"} <= include_dirs, (
+        "the adm_dwt2 Cython extension directly includes core/src/feature/adm.c; "
+        "its include_dirs must cover both private core/src and public core/include headers"
+    )
+
+
+def test_cython_extension_links_the_nonfinite_logger_implementation():
+    """The text-included ADM source must not leave ``vmaf_log`` unresolved."""
+    setup_tree = ast.parse(SETUP_PY.read_text(encoding="utf-8"))
+    appended_source_parts = {
+        tuple(
+            part.value
+            for part in node.args[0].args
+            if isinstance(part, ast.Constant) and isinstance(part.value, str)
+        )
+        for node in ast.walk(setup_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "append"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Call)
+    }
+
+    assert ("..", "core", "src", "log.c") in appended_source_parts, (
+        "adm.c now uses nonfinite_score.h logging helpers; the Cython extension "
+        "must link core/src/log.c or its shared object imports with undefined symbol vmaf_log"
+    )
 
 
 def test_setup_metadata_version_matches_package_marker():
@@ -148,7 +197,6 @@ def test_all_python_packages_use_pep639_license_expression():
     """Every published Python package exposes the repository SPDX license."""
     for pyproject in PACKAGE_PYPROJECTS:
         project = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]
-        assert project.get("license") == "BSD-2-Clause-Patent", (
-            f"{pyproject} must use the PEP 639 SPDX string form; "
-            f"found {project.get('license')!r}"
-        )
+        assert (
+            project.get("license") == "BSD-2-Clause-Patent"
+        ), f"{pyproject} must use the PEP 639 SPDX string form; found {project.get('license')!r}"

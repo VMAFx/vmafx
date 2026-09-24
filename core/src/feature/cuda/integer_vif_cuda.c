@@ -29,6 +29,7 @@
 #include "feature_name.h"
 #include "log.h"
 #include "mem.h"
+#include "feature/nonfinite_score.h"
 
 #include "picture.h"
 #include "cuda/integer_vif_cuda.h"
@@ -634,91 +635,6 @@ static void vif_reduce_accums(const vif_accums *accum, VifScore *vif)
     }
 }
 
-/* vif_append_debug_scale_pairs - the per-scale num/den rows for scales 1-3.
- *
- * HISS-04: lifted verbatim out of write_scores; same order, same names.
- */
-static int vif_append_debug_scale_pairs(VmafFeatureCollector *feature_collector, VifStateCuda *s,
-                                        const VifScore *vif, unsigned index)
-{
-    int err = 0;
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_num_scale1", vif->scale[1].num, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_den_scale1", vif->scale[1].den, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_num_scale2", vif->scale[2].num, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_den_scale2", vif->scale[2].den, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_num_scale3", vif->scale[3].num, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_den_scale3", vif->scale[3].den, index);
-
-    return err;
-}
-
-/* vif_append_debug_scores - the debug-only rows.
- *
- * HISS-04: lifted verbatim out of write_scores. The totals keep their whole
- * expressions and the rows are appended in the same order; the caller folds
- * the returned status into its own with the same bitwise OR.
- */
-static int vif_append_debug_scores(VmafFeatureCollector *feature_collector, VifStateCuda *s,
-                                   const VifScore *vif, unsigned index)
-{
-    const double score_num =
-        s->vif_skip_scale0 ?
-            (double)vif->scale[1].num + (double)vif->scale[2].num + (double)vif->scale[3].num :
-            (double)vif->scale[0].num + (double)vif->scale[1].num + (double)vif->scale[2].num +
-                (double)vif->scale[3].num;
-
-    const double score_den =
-        s->vif_skip_scale0 ?
-            (double)vif->scale[1].den + (double)vif->scale[2].den + (double)vif->scale[3].den :
-            (double)vif->scale[0].den + (double)vif->scale[1].den + (double)vif->scale[2].den +
-                (double)vif->scale[3].den;
-
-    const double score = score_den == 0.0 ? 1.0f : score_num / score_den;
-
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif", score, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_num", score_num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_den", score_den, index);
-
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_num_scale0", 0.0, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_den_scale0", -1.0, index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_num_scale0", vif->scale[0].num,
-                                                       index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_den_scale0", vif->scale[0].den,
-                                                       index);
-    }
-
-    return err | vif_append_debug_scale_pairs(feature_collector, s, vif, index);
-}
-
 static int write_scores(write_score_parameters_vif *data)
 {
     VmafFeatureCollector *feature_collector = data->feature_collector;
@@ -727,37 +643,23 @@ static int write_scores(write_score_parameters_vif *data)
 
     VifScore vif;
     vif_reduce_accums((const vif_accums *)data->s->buf.accum_host, &vif);
-    int err = 0;
-
-    /* When vif_skip_scale0 is set, emit 0.0 for the finest scale (parity
-     * with integer_vif.c CPU path, lines 698-706 and 747-761). The GPU
-     * still computes scale 0 but we discard its contribution here. */
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_vif_scale0_score", 0.0,
-                                                       index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_vif_scale0_score",
-                                                       vif.scale[0].num / vif.scale[0].den, index);
+    VmafVifScoreSet output = {
+        .single_precision_ratio = true,
+        .skip_scale0 = s->vif_skip_scale0,
+        .debug = s->debug,
+    };
+    const unsigned scale_start = s->vif_skip_scale0 ? 1u : 0u;
+    for (unsigned scale = 0u; scale < 4u; ++scale) {
+        output.scale[scale * 2u] = vif.scale[scale].num;
+        output.scale[scale * 2u + 1u] = vif.scale[scale].den;
+        if (scale >= scale_start) {
+            output.score_num += vif.scale[scale].num;
+            output.score_den += vif.scale[scale].den;
+        }
     }
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale1_score",
-                                                   vif.scale[1].num / vif.scale[1].den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale2_score",
-                                                   vif.scale[2].num / vif.scale[2].den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale3_score",
-                                                   vif.scale[3].num / vif.scale[3].den, index);
-
-    if (!s->debug)
-        return err;
-
-    return err | vif_append_debug_scores(feature_collector, s, &vif, index);
+    output.score = output.score_den > 0.0 ? output.score_num / output.score_den : NAN;
+    return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "integer_vif_cuda",
+                                &output, VMAF_VIF_INTEGER_NAMES, index);
 }
 
 /* vif_dispatch_filter - pick the filter1d variant this scale needs.

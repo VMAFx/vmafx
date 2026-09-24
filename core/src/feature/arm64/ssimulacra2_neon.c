@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_score.h"
 #include "ssimulacra2_neon.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -335,8 +336,9 @@ void ssimulacra2_edge_diff_map_neon(const float *img1, const float *mu1, const f
                 double ed1 = fabs((double)a1f[k] - (double)am1f[k]);
                 double ed2 = fabs((double)a2f[k] - (double)am2f[k]);
                 double d = (1.0 + ed2) / (1.0 + ed1) - 1.0;
-                double art = d > 0.0 ? d : 0.0;
-                double det = d < 0.0 ? -d : 0.0;
+                double art;
+                double det;
+                vmaf_ss2_split_edge_difference(d, &art, &det);
                 s0 += art;
                 s1 += quartic_d(art);
                 s2 += det;
@@ -347,8 +349,9 @@ void ssimulacra2_edge_diff_map_neon(const float *img1, const float *mu1, const f
             double ed1 = fabs((double)r1[i] - (double)rm1[i]);
             double ed2 = fabs((double)r2[i] - (double)rm2[i]);
             double d = (1.0 + ed2) / (1.0 + ed1) - 1.0;
-            double art = d > 0.0 ? d : 0.0;
-            double det = d < 0.0 ? -d : 0.0;
+            double art;
+            double det;
+            vmaf_ss2_split_edge_difference(d, &art, &det);
             s0 += art;
             s1 += quartic_d(art);
             s2 += det;

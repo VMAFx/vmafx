@@ -53,6 +53,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "cuda/ssim_cuda.h"
 #include "cuda/kernel_template.h"
 #include "log.h"
@@ -348,13 +349,9 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         total_ssim += ssim_partials[i];
         total_wgt += wgt_partials[i];
     }
-    if (total_wgt == 0LL)
-        return -EINVAL;
-
-    const double score = total_ssim / (double)total_wgt;
-
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "ssim",
-                                                   score, index);
+    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                            "integer_ssim_cuda", "ssim", total_ssim,
+                                            (double)total_wgt, 0, 0.0, index);
 }
 
 /* issim_free_plane - release one int64 device plane, keeping the first error.

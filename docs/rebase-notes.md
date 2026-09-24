@@ -52933,3 +52933,44 @@ comparison probe in `test_print_number_precision` with a semantic assertion that
 the formatted string output from `cJSON_CreateNumber(DBL_TRUE_MIN)` matches either
 valid representation (`"0"` under DAZ or `"4.94065645841247e-324"` under IEEE-754),
 eliminating CodeQL alert 1216 while preserving full precision coverage across compilers.
+## fix/nonfinite-emit-guards — non-finite scores fail the frame (2026-09-23)
+
+Netflix-mirror files `float_vif.c`, `integer_adm.c`, `float_ssim.c`,
+`float_ms_ssim.c`, `adm.c`, `float_adm.c` and `predict.c` now reject a
+non-finite score before any `MIN`, `MAX`, dB conversion, ratio or default value
+can turn it into a finite result. Preserve the finiteness check ahead of the
+comparison on rebase; moving it after publication restores Issue #1526.
+
+The new `adm_score.h` seam is load-bearing: its outputs are written only after
+ADM/AIM and per-scale ratios or the ADM3 blend are finite, while a finite
+flat-frame `0/0` ratio remains a perfect `1.0`; nonzero-over-zero still fails.
+Keep the raw ADM aggregate check before its precision floor: moving it after
+the ordered comparison lets negative infinity become zero.
+`piecewise_linear_mapping` likewise checks before assigning its old `0.0`
+default. The production prediction path keeps `predict_validate_finite` after
+denormalization and after the polynomial and piecewise stages so it warns once
+with the frame and value before collector publication; do not move that check
+into the per-segment loop.
+
+The new `nonfinite_score.h` seam is also load-bearing. CPU, CUDA, HIP, SYCL and
+Metal VIF, ADM, SSIM and MS-SSIM hosts validate all enabled values before their
+first collector write; keep backend twins routed through the shared ratio,
+SSIM-conversion and finite-set emitters. All four VIF ratios must be finite
+before scale 0 is published; scale 0 remains unclamped, while scales 1-3 then
+apply their configured minimum. This includes integer VIF and enabled debug
+atoms. Preserve validation of every raw MS-SSIM L/C/S atom even when it is not
+emitted; a zero exponent can otherwise hide NaN. Preserve ADR-1221's deliberate
+exception: finite perfect SSIM/MS-SSIM in unclipped dB mode reports positive
+infinity; NaN raw scores, invalid ceilings and non-finite conversions still
+fail.
+
+SSIMULACRA2 is fork-local, but its host calculation is duplicated across every
+backend. `ssimulacra2_score.h` owns the edge sign split and final polynomial
+mapping for scalar, AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and Metal. Do
+not re-inline one backend's old ordered comparisons: both are false for NaN and
+the old final `else` returned the perfect `100.0`.
+
+The helper extractions reduce the generated HISS baseline from 276 to 267
+infractions. Preserve the downward `.standards-baseline.json` ratchet and the
+matching managed count in `README.md`; regenerate with the pinned `praetorctl`
+instead of restoring stale line fingerprints during a rebase.
