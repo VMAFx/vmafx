@@ -149,14 +149,17 @@ _probe_with_retry() {
   return 0
 }
 
+readonly SYCL_GPU_RECORD_PATTERN='^\[(level_zero|opencl):gpu(:[^]]*)?\]'
+readonly HIP_GPU_RECORD_PATTERN='^[[:space:]]*(Name:[[:space:]]+gfx[0-9]+|Device Type:[[:space:]]+GPU)[[:space:]]*$'
+
 {
   echo "[dev-mcp-entrypoint] GPU backend visibility probe (ADR-0540):"
   if command -v sycl-ls >/dev/null 2>&1; then
-    _probe_with_retry "SYCL level_zero:gpu" "sycl-ls" "level_zero.*gpu" \
+    _probe_with_retry "SYCL GPU" "sycl-ls" "${SYCL_GPU_RECORD_PATTERN}" \
       "Check /dev/dri/renderD<N> passthrough, seccomp=unconfined, and host kernel <-> NEO ABI compat."
   fi
   if command -v rocminfo >/dev/null 2>&1; then
-    _probe_with_retry "HIP HSA agent" "rocminfo" "Agent.*GPU|gfx[0-9]+" \
+    _probe_with_retry "HIP HSA GPU agent" "rocminfo" "${HIP_GPU_RECORD_PATTERN}" \
       "Check /dev/kfd passthrough, seccomp=unconfined, and host kernel <-> ROCm KFD ioctl ABI compat."
   fi
 } | tee -a "${LOG_FILE}"

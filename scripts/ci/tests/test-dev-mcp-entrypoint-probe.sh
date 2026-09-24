@@ -63,11 +63,25 @@ cat >"${WORKDIR}/bin/fake-gpu-ls" <<'EOF'
 #!/usr/bin/env bash
 echo "[level_zero:gpu][level_zero:0] Intel(R) Arc(TM) Graphics"
 EOF
+cat >"${WORKDIR}/bin/fake-sycl-opencl-gpu" <<'EOF'
+#!/usr/bin/env bash
+echo "[opencl:gpu][opencl:1] Intel(R) Arc(TM) Graphics"
+EOF
+cat >"${WORKDIR}/bin/fake-hip-device-type" <<'EOF'
+#!/usr/bin/env bash
+echo "  Device Type:             GPU"
+EOF
+cat >"${WORKDIR}/bin/fake-probe-diagnostic" <<'EOF'
+#!/usr/bin/env bash
+echo "failed to initialise gfx1036; Device Type: GPU unavailable"
+EOF
 cat >"${WORKDIR}/bin/fake-silent" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
-chmod +x "${WORKDIR}/bin/fake-gpu-ls" "${WORKDIR}/bin/fake-silent"
+chmod +x "${WORKDIR}/bin/fake-gpu-ls" "${WORKDIR}/bin/fake-sycl-opencl-gpu" \
+  "${WORKDIR}/bin/fake-hip-device-type" "${WORKDIR}/bin/fake-probe-diagnostic" \
+  "${WORKDIR}/bin/fake-silent"
 PATH="${WORKDIR}/bin:${PATH}"
 
 pass=0
@@ -89,7 +103,48 @@ else
   ko "plain program name was not detected: ${out}"
 fi
 
-# --- Cases 2-4: shell syntax in the probe value is never interpreted. -------
+# --- Case 2: production patterns accept real GPU records only. -------------
+# Read the regex literals from the real call sites so these cases exercise the
+# patterns that ship rather than test-owned copies. The SYCL runtime can expose
+# Arc through OpenCL without a Level Zero line; rocminfo can expose a GPU via
+# its Device Type record without printing a gfx marketing name first.
+extract_pattern() {
+  local variable="$1"
+  sed -nE "s/^readonly ${variable}='(.*)'$/\\1/p" "${ENTRYPOINT}"
+}
+
+sycl_pattern="$(extract_pattern SYCL_GPU_RECORD_PATTERN)"
+hip_pattern="$(extract_pattern HIP_GPU_RECORD_PATTERN)"
+if [[ -n "${sycl_pattern}" && -n "${hip_pattern}" ]]; then
+  ok "production SYCL and HIP patterns were extracted"
+else
+  ko "could not extract production patterns: sycl='${sycl_pattern}' hip='${hip_pattern}'"
+fi
+
+out="$(_probe_with_retry "SYCL gpu" "fake-sycl-opencl-gpu" "${sycl_pattern}" "advice")"
+if grep -q 'SYCL gpu detected (attempt 1)' <<<"${out}"; then
+  ok "OpenCL-only SYCL GPU output is detected"
+else
+  ko "OpenCL-only SYCL GPU output was missed: ${out}"
+fi
+
+out="$(_probe_with_retry "HIP HSA gpu agent" "fake-hip-device-type" "${hip_pattern}" "advice")"
+if grep -q 'HIP HSA gpu agent detected (attempt 1)' <<<"${out}"; then
+  ok "rocminfo Device Type GPU output is detected"
+else
+  ko "rocminfo Device Type GPU output was missed: ${out}"
+fi
+
+: >"${SLEEPS}"
+out="$(_probe_with_retry "HIP HSA gpu agent" "fake-probe-diagnostic" "${hip_pattern}" "advice")"
+attempts="$(wc -l <"${SLEEPS}")"
+if [[ "${attempts}" -eq 10 ]] && grep -q 'NOT detected after 10 attempts' <<<"${out}"; then
+  ok "diagnostic text containing a GPU token is not a device record"
+else
+  ko "diagnostic text produced a false HIP detection: ${out}"
+fi
+
+# --- Cases 3-5: shell syntax in the probe value is never interpreted. -------
 # Each value would create its marker under `eval`. As argv[0] it is merely a
 # program that does not exist, so the probe reports a miss and carries on.
 hostile() {
@@ -116,7 +171,7 @@ hostile "command substitution" \
 hostile "backtick substitution" \
   "\`touch ${WORKDIR}/pwn-backtick\`" "${WORKDIR}/pwn-backtick"
 
-# --- Case 5: a real miss retries ten times, warns, and returns 0. -----------
+# --- Case 6: a real miss retries ten times, warns, and returns 0. -----------
 rc=0
 : >"${SLEEPS}"
 out="$(_probe_with_retry "HIP HSA agent" "fake-silent" "Agent.*GPU" "check /dev/kfd")" || rc=$?
@@ -127,7 +182,7 @@ else
   ko "miss path: rc=${rc} attempts=${attempts} output=${out}"
 fi
 
-# --- Case 6: no `eval` anywhere in the entrypoint. --------------------------
+# --- Case 7: no `eval` anywhere in the entrypoint. --------------------------
 # Comments may mention it; a command may not. `[^#]*` cannot cross a `#`, so a
 # comment line never matches.
 if grep -nE '^[[:space:]]*[^#]*\beval\b' "${ENTRYPOINT}"; then

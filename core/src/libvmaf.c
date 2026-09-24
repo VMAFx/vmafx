@@ -3625,7 +3625,10 @@ const char *vmaf_version(void)
  * permission bits up front. Returns -errno of the failing call. */
 static int output_file_open(const char *output_path, FILE **outfile)
 {
-    const int outfd = vmaf_open_utf8(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int outfd;
+    outfd = vmaf_open_utf8(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (outfd < 0 && errno == EINTR)
+        outfd = vmaf_open_utf8(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (outfd < 0) {
         /* Capture errno immediately — it is clobbered by fprintf(3). */
         const int open_errno = errno;

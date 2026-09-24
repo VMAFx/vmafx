@@ -198,8 +198,10 @@ video` returns a different GID (for example, Arch Linux uses `985`/`986`).
 The `dev-mcp-up.sh` wrapper builds (if needed) then starts:
 
 1. `vmaf-dev-mcp` — primary container; runs `vmaf-mcp` via `docker exec -i`
-   stdio when requested. The service healthcheck is `vmaf --version`, not a
-   socket check.
+   stdio when requested. The service healthcheck verifies `vmaf --version`
+   and, when `/dev/nvidia0` is exposed, requires a successful `nvidia-smi`
+   driver query. It is not a socket check. A 45-second start period covers
+   CUDA driver cold-start before dependent services are admitted.
 2. `vmaf-smoke-probe-cron` — waits for the primary to be healthy, then probes
    every 15 minutes.
 
@@ -470,10 +472,13 @@ transient-error retries, and checksum or Debian-package validation failures
 remove the invalid output before the build stops.
 
 `dev-mcp-entrypoint.sh` emits a runtime visibility probe on container
-start (ADR-0543): `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP
-HSA agent NOT detected` means the host kernel has revved past the pinned
-userspace ABI — bump the ARG and rebuild rather than working around the
-fallback (CLAUDE.md §12 r15 sub-rule 4). The latest NEO release tag is at
+start (ADR-0543): `WARN: SYCL GPU NOT detected` or `WARN: HIP HSA GPU agent
+NOT detected` means the host kernel has revved past the pinned userspace ABI
+— bump the ARG and rebuild rather than working around the fallback
+(CLAUDE.md §12 r15 sub-rule 4). SYCL detection accepts anchored Level Zero
+and OpenCL GPU records; HIP detection accepts anchored `Name: gfx...` or
+`Device Type: GPU` records, never diagnostic prose that merely mentions a
+GPU token. The latest NEO release tag is at
 `https://github.com/intel/compute-runtime/releases/latest`; ROCm releases are
 listed at `https://rocm.docs.amd.com/en/latest/about/release-notes.html` and
 the images at `https://hub.docker.com/r/rocm/dev-ubuntu-24.04/tags`. Do not

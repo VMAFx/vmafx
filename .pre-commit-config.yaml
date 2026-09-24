@@ -631,10 +631,18 @@ repos:
         stages: [pre-commit, pre-push]
 
       - id: test-dev-mcp-entrypoint-probe
-        name: dev-mcp entrypoint probes run argv, never eval
+        name: dev-mcp entrypoint probes match device records without eval
         entry: bash scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh
         language: system
         files: '^(dev/scripts/dev-mcp-entrypoint\.sh|scripts/ci/tests/test-dev-mcp-entrypoint-probe\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-dev-mcp-healthcheck
+        name: dev-mcp healthcheck waits for conditional NVIDIA readiness
+        entry: bash dev/scripts/test-dev-mcp-healthcheck.sh
+        language: system
+        files: '^(dev/docker-compose\.yml|dev/scripts/(dev-mcp-healthcheck|test-dev-mcp-healthcheck)\.sh|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

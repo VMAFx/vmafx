@@ -541,6 +541,19 @@ needs a SYCL device but no CUDA device and skips cleanly when SYCL
 initialization is unavailable. Keep it in the `slow`, `gpu`, and `sycl`
 suites.
 
+## Output-file `EINTR` fault control (Research-2084)
+
+`test_output_open_eintr.c` is a Linux static-link control for
+`core/src/libvmaf.c::output_file_open()`. The project defines large-file
+support, so the production `open(2)` reference reaches the linker as
+`open64`; the test must wrap that actual symbol and inject `EINTR` exactly
+once for its target path. Its Meson target is restricted to a non-shared,
+non-LTO Linux build because whole-program optimization or a shared-library
+boundary defeats GNU ld `--wrap`. Preserve the assertions that the write
+succeeds and exactly two target opens occurred. A passing write with zero
+wrapped calls is not evidence. See
+[Research-2084](../../docs/research/2084-dev-mcp-resilience-restoration.md).
+
 ## Observation-only SVM test cleanup (Research-2049)
 
 `test_svm_parser.c` keeps nine malformed-model fixtures and their
