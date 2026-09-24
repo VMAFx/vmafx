@@ -96,6 +96,7 @@ Conventions:
 | [2073](2073-ffmpeg-n9-0-2-stable-refresh.md) | FFmpeg n9.0.2 stable refresh | Active | [ADR-1240](../adr/1240-ffmpeg-release-patch-lifecycle.md) |
 | [2079](2079-sycl-clang-tidy-required-gate-verification.md) | SYCL clang-tidy required-gate live verification and fail-closed contract hardening | Active | [ADR-1297](../adr/1297-ci-gate-every-reporting-check.md), [ADR-0623](../adr/0623-scaffold-audit-p2-half-finished.md) |
 | [2080](2080-hip-float-motion-lifecycle-flush.md) | HIP float-motion force-zero ownership and option-aware flush idempotency | Active | — (BUG048 A5 restoration) |
+| [2080](2080-codeql-python-alerts-triage-2026-09-24.md) | CodeQL Python alerts triage and exception semantics | Active | — |
 | [2082](2082-sycl-upload-host-lifetime.md) | SYCL upload host-buffer lifetime | Active | BUG-040, [ADR-0214](../adr/0214-gpu-parity-ci-gate.md) |
 | [2083](2083-dev-mcp-smoke-probe-contract-restoration.md) | dev-MCP smoke-probe contract restoration | Active | BUG-048 A13; no ADR (bug fix) |
 | [2085](2085-strict-tool-json-restoration.md) | Restore strict JSON boundaries for external-bench and vmaf-roi-score | Active | — (BUG048 A9 restoration) |

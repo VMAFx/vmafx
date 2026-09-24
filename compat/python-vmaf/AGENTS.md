@@ -118,7 +118,15 @@ python/vmaf/
   processes use the explicit `spawn` context, one readiness semaphore per
   child, and bounded readiness waits. A child that exits before signaling must
   surface its role, exit code, and available traceback; never restore an unconditional
-  `sem.acquire()` after the five-second warning. The classic 5PL curve in
+  `sem.acquire()` after the five-second warning. FIFO error channel delivery failure
+  closes the pipe and attaches diagnostic context through `_safe_add_exception_note`,
+  which bypasses a potentially overridden `add_note` method and suppresses secondary
+  note-storage failures, including `BaseException`-derived control-flow failures
+  (`_run_fifo_worker`);
+  `_fifo_worker_failure` treats EOF on the error channel as
+  immediate failure rather than returning `None`. `RegressorMixin._get_scatter_arrays`
+  uses elementwise identity comparison `is None` rather than `== None` for None and
+  NaN cleanup. The classic 5PL curve in
   `core/train_test_model.py` keeps `b1` as the sigmoid amplitude and uses
   `scipy.special.expit`; additive `b1` is redundant with `b5` and a raw
   exponential overflows.

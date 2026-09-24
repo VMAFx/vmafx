@@ -6,6 +6,7 @@ import time
 import unittest
 import warnings
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import vmaf.core.executor as executor_module
 from vmaf.core.asset import Asset
@@ -127,6 +128,24 @@ def _run_fifo_timeout_helper(sender):
         sender.close()
 
 
+def _early_exit_fifo_target(asset, fifo_mode, open_sem=None):
+    # Close inherited pipe descriptors to trigger EOF on parent error_receiver,
+    # then pause briefly so parent observes EOF while process is still alive.
+    fd_dir = "/proc/self/fd"
+    try:
+        for entry in os.listdir(fd_dir):
+            try:
+                fd = int(entry)
+                if fd > 2 and "pipe:" in os.readlink(f"{fd_dir}/{entry}"):
+                    os.close(fd)
+            except OSError:
+                pass
+    except OSError:
+        pass
+    time.sleep(0.4)
+    os._exit(42)
+
+
 class ExecutorTest(unittest.TestCase):
 
     def test_parallel_run_serializes_duplicate_assets_and_preserves_order(self):
@@ -212,6 +231,222 @@ class ExecutorTest(unittest.TestCase):
                 parent.terminate()
             parent.join(5)
             receiver.close()
+
+    @unittest.skipUnless(
+        os.name == "posix",
+        "raw descriptor invalidation requires POSIX file descriptors",
+    )
+    def test_fifo_worker_red_cap_invalidated_descriptor_preserves_target_exception(self):
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        fd = sender.fileno()
+        os.close(fd)
+
+        def target(asset, fifo_mode, open_sem=None):
+            raise ValueError("primary target failure under invalidated descriptor")
+
+        try:
+            with self.assertRaises(ValueError) as cm:
+                executor_module._run_fifo_worker(target, None, None, sender)
+
+            self.assertEqual(
+                str(cm.exception), "primary target failure under invalidated descriptor"
+            )
+            if hasattr(cm.exception, "__notes__"):
+                self.assertTrue(
+                    any(
+                        "FIFO error channel delivery failed" in note
+                        for note in cm.exception.__notes__
+                    )
+                )
+        finally:
+            receiver.close()
+
+    def test_fifo_worker_red_cap_closed_pipe_preserves_target_exception(self):
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        sender.close()
+
+        def target(asset, fifo_mode, open_sem=None):
+            raise ValueError("primary target failure under closed handle")
+
+        try:
+            with self.assertRaises(ValueError) as cm:
+                executor_module._run_fifo_worker(target, None, None, sender)
+
+            self.assertEqual(str(cm.exception), "primary target failure under closed handle")
+            if hasattr(cm.exception, "__notes__"):
+                self.assertTrue(
+                    any(
+                        "FIFO error channel delivery failed" in note
+                        for note in cm.exception.__notes__
+                    )
+                )
+        finally:
+            receiver.close()
+
+    def test_fifo_worker_red_cap_broken_pipe_preserves_target_exception(self):
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        receiver.close()
+
+        def target(asset, fifo_mode, open_sem=None):
+            raise ValueError("primary target failure under broken pipe")
+
+        with self.assertRaises(ValueError) as cm:
+            executor_module._run_fifo_worker(target, None, None, sender)
+
+        self.assertEqual(str(cm.exception), "primary target failure under broken pipe")
+        if hasattr(cm.exception, "__notes__"):
+            self.assertTrue(
+                any("FIFO error channel delivery failed" in note for note in cm.exception.__notes__)
+            )
+
+    def test_fifo_worker_overridden_add_note_preserves_target_exception(self):
+        class NoteFailure(ValueError):
+            def add_note(self, note):
+                raise RuntimeError("secondary add_note failure")
+
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        receiver.close()
+
+        def target(asset, fifo_mode, open_sem=None):
+            raise NoteFailure("primary target failure")
+
+        with self.assertRaises(NoteFailure) as cm:
+            executor_module._run_fifo_worker(target, None, None, sender)
+
+        self.assertEqual(str(cm.exception), "primary target failure")
+        if hasattr(BaseException, "add_note"):
+            self.assertTrue(
+                any("FIFO error channel delivery failed" in note for note in cm.exception.__notes__)
+            )
+        else:
+            self.assertFalse(hasattr(cm.exception, "__notes__"))
+
+    def test_fifo_worker_note_storage_failure_preserves_target_exception(self):
+        class NoteStorageFailure(ValueError):
+            def __setattr__(self, name, value):
+                if name == "__notes__":
+                    raise RuntimeError("secondary note storage failure")
+                return super().__setattr__(name, value)
+
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        receiver.close()
+
+        def target(asset, fifo_mode, open_sem=None):
+            raise NoteStorageFailure("primary target failure")
+
+        with self.assertRaises(NoteStorageFailure) as cm:
+            executor_module._run_fifo_worker(target, None, None, sender)
+
+        self.assertEqual(str(cm.exception), "primary target failure")
+        self.assertFalse(hasattr(cm.exception, "__notes__"))
+
+    def test_fifo_worker_baseexception_note_storage_failure_preserves_target_exception(self):
+        class NoteStorageFailure(ValueError):
+            def __setattr__(self, name, value):
+                if name == "__notes__":
+                    raise KeyboardInterrupt("secondary note storage interruption")
+                return super().__setattr__(name, value)
+
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        receiver.close()
+
+        def target(asset, fifo_mode, open_sem=None):
+            raise NoteStorageFailure("primary target failure")
+
+        with self.assertRaises(NoteStorageFailure) as cm:
+            executor_module._run_fifo_worker(target, None, None, sender)
+
+        self.assertEqual(str(cm.exception), "primary target failure")
+        self.assertFalse(hasattr(cm.exception, "__notes__"))
+
+    @unittest.skipUnless(
+        os.path.isdir("/proc/self/fd"),
+        "real descriptor-close regression requires Linux /proc/self/fd",
+    )
+    def test_fifo_worker_failure_immediate_eof_real_child_state_transition(self):
+        label, process, ready_sem, error_receiver = executor_module._start_fifo_worker(
+            _early_exit_fifo_target, None, "test-early-exit"
+        )
+        try:
+            self.assertTrue(
+                error_receiver.poll(5.0),
+                "error_receiver did not signal readiness after child exit",
+            )
+            # Before calling _fifo_worker_failure, process.exitcode must initially be None
+            # because waitpid has not yet harvested the child status.
+            self.assertIsNone(process.exitcode)
+
+            error = executor_module._fifo_worker_failure(
+                (label, process, ready_sem, error_receiver)
+            )
+            self.assertIsInstance(error, RuntimeError)
+            self.assertIn("test-early-exit", str(error))
+            self.assertIn("exit code 42", str(error))
+            self.assertIn("unavailable from child error channel (EOF)", str(error))
+            self.assertNotIn("OSError", str(error))
+            self.assertEqual(process.exitcode, 42)
+        finally:
+            error_receiver.close()
+            if process.is_alive():
+                process.terminate()
+                process.join(1.0)
+
+    def test_fifo_worker_failure_eof_faithful_state_transition(self):
+        class FaithfulProcess:
+            def __init__(self, exit_code=7):
+                self.exitcode = None
+                self._exit_code = exit_code
+                self.join_called = False
+
+            def join(self, timeout=None):
+                self.join_called = True
+                self.exitcode = self._exit_code
+
+        process = FaithfulProcess(exit_code=7)
+        receiver = MagicMock()
+        receiver.poll.return_value = True
+        receiver.recv.side_effect = EOFError()
+
+        self.assertIsNone(process.exitcode)
+        error = executor_module._fifo_worker_failure(("eof-stage", process, None, receiver))
+        self.assertIsInstance(error, RuntimeError)
+        self.assertTrue(process.join_called)
+        self.assertEqual(process.exitcode, 7)
+        self.assertIn("exit code 7", str(error))
+        self.assertIn("unavailable from child error channel (EOF)", str(error))
+        self.assertNotIn("OSError", str(error))
+
+    def test_fifo_worker_failure_oserror_faithful_state_transition(self):
+        class FaithfulProcess:
+            def __init__(self, exit_code=9):
+                self.exitcode = None
+                self._exit_code = exit_code
+                self.join_called = False
+
+            def join(self, timeout=None):
+                self.join_called = True
+                self.exitcode = self._exit_code
+
+        process = FaithfulProcess(exit_code=9)
+        receiver = MagicMock()
+        receiver.poll.return_value = True
+        receiver.recv.side_effect = OSError("bad channel descriptor")
+
+        self.assertIsNone(process.exitcode)
+        error = executor_module._fifo_worker_failure(("oserror-stage", process, None, receiver))
+        self.assertIsInstance(error, RuntimeError)
+        self.assertTrue(process.join_called)
+        self.assertEqual(process.exitcode, 9)
+        self.assertIn("exit code 9", str(error))
+        self.assertIn("unavailable from child error channel (OSError", str(error))
+        self.assertIn("bad channel descriptor", str(error))
+        self.assertNotIn("(EOF)", str(error))
 
     def _check_default_and_reference_types(self):
         asset = Asset(

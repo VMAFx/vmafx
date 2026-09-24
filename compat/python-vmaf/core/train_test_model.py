@@ -306,9 +306,18 @@ class RegressorMixin(object):
             ys_label_stddev[np.isnan(ys_label_stddev)] = 0
         except TypeError:
             # np.isnan raises TypeError on object-dtype arrays containing
-            # Python None; fall back to elementwise None comparison.
-            # (CodeQL py/catch-base-exception)
-            ys_label_stddev[ys_label_stddev == None] = 0  # noqa: E711
+            # Python None; fall back to elementwise identity check for None.
+            none_mask = np.array([x is None for x in ys_label_stddev.flat], dtype=bool).reshape(
+                ys_label_stddev.shape
+            )
+            ys_label_stddev[none_mask] = 0
+            try:
+                float_arr = ys_label_stddev.astype(float)
+                float_arr[np.isnan(float_arr)] = 0
+                ys_label_stddev = float_arr
+            except (TypeError, ValueError):
+                # Non-numeric elements could not be converted to float; keep original array.
+                pass
         assert len(ys_label_stddev) == len(ys_label)
         return ys_label, ys_label_pred, ys_label_stddev
 

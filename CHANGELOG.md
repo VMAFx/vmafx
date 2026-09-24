@@ -21733,6 +21733,12 @@ Bit-exactness is preserved: this is a pure calling-convention change with no ari
 impact, confirmed by the 88/88 fast-suite gate including the Netflix CPU golden assertions.
 
 
+- Resolved CodeQL Python alerts 1275, 1276, and 1239 on origin/master by
+  implementing active error channel exception diagnostics in `_run_fifo_worker`,
+  immediate EOF error channel failure handling in `_fifo_worker_failure`, and
+  elementwise identity comparisons for None in `_get_scatter_arrays`.
+
+
 - **CodeQL quality-alert cleanup (code-scanning backlog)**. After triaging the
   full master code-scanning backlog against `origin/master` (124 alerts → 109
   resolved: most were verified false-positives or intentional patterns —

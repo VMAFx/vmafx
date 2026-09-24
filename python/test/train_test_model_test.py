@@ -11,6 +11,7 @@ from vmaf.core.train_test_model import (
     LibsvmNusvrTrainTestModel,
     Logistic5PLRegressionTrainTestModel,
     MomentRandomForestTrainTestModel,
+    RegressorMixin,
     SklearnExtraTreesTrainTestModel,
     SklearnLinearRegressionTrainTestModel,
     SklearnRandomForestTrainTestModel,
@@ -640,6 +641,87 @@ class TrainTestModelTestJson(MyTestCase):
         # loaded model generates slight numerical difference
         result = loaded_model.evaluate(xs, ys)
         self.assertAlmostEqual(result["RMSE"], 0.62263139871631323, places=4)
+
+
+class StrictNoEqualityToNone:
+    """Sentinel class that raises an error if compared to None with the == operator.
+
+    Used to verify that _get_scatter_arrays uses identity checks (is None) rather
+    than equality checks (== None) on array elements.
+    """
+
+    def __eq__(self, other):
+        if other is None:
+            raise AssertionError("StrictNoEqualityToNone: == operator used on None; use 'is None'")
+        return super().__eq__(other)
+
+
+class GetScatterArraysTest(unittest.TestCase):
+
+    def test_get_scatter_arrays_handles_none_and_nan(self):
+        stats = {
+            "ys_label": [1.0, 2.0, 3.0, 4.0],
+            "ys_label_pred": [1.1, 1.9, 3.2, 3.8],
+            "ys_label_stddev": [0.5, None, np.nan, 0.25],
+        }
+        ys, pred, stddev = RegressorMixin._get_scatter_arrays(stats, assume_unit_stddev=False)
+        self.assertEqual(len(stddev), 4)
+        np.testing.assert_allclose(stddev, [0.5, 0.0, 0.0, 0.25])
+        self.assertEqual(stddev.dtype, float)
+
+    def test_get_scatter_arrays_uses_identity_comparison_not_equality_to_none(self):
+        obj = StrictNoEqualityToNone()
+        stats = {
+            "ys_label": [1.0, 2.0],
+            "ys_label_pred": [1.0, 2.0],
+            "ys_label_stddev": [obj, None],
+        }
+        ys, pred, stddev = RegressorMixin._get_scatter_arrays(stats, assume_unit_stddev=False)
+        self.assertEqual(len(stddev), 2)
+        self.assertEqual(stddev[1], 0)
+
+    def test_get_scatter_arrays_all_none(self):
+        stats = {
+            "ys_label": [1.0, 2.0],
+            "ys_label_pred": [1.0, 2.0],
+            "ys_label_stddev": [None, None],
+        }
+        ys, pred, stddev = RegressorMixin._get_scatter_arrays(stats, assume_unit_stddev=False)
+        self.assertEqual(len(stddev), 2)
+        np.testing.assert_allclose(stddev, [0.0, 0.0])
+
+    def test_get_scatter_arrays_all_nan(self):
+        stats = {
+            "ys_label": [1.0, 2.0],
+            "ys_label_pred": [1.0, 2.0],
+            "ys_label_stddev": [np.nan, np.nan],
+        }
+        ys, pred, stddev = RegressorMixin._get_scatter_arrays(stats, assume_unit_stddev=False)
+        self.assertEqual(len(stddev), 2)
+        np.testing.assert_allclose(stddev, [0.0, 0.0])
+
+    def test_get_scatter_arrays_missing_stddev_handling(self):
+        from vmaf.core.train_test_model import MissingLabelStddevError
+
+        stats = {
+            "ys_label": [1.0, 2.0],
+            "ys_label_pred": [1.0, 2.0],
+        }
+        # With assume_unit_stddev=True, generates unit stddev
+        ys, pred, stddev = RegressorMixin._get_scatter_arrays(stats, assume_unit_stddev=True)
+        np.testing.assert_allclose(stddev, [1.0, 1.0])
+
+        # With assume_unit_stddev=False, raises MissingLabelStddevError
+        with self.assertRaises(MissingLabelStddevError):
+            RegressorMixin._get_scatter_arrays(stats, assume_unit_stddev=False)
+
+    def test_get_scatter_arrays_length_mismatch_raises(self):
+        stats = {
+            "ys_label": [1.0, 2.0],
+            "ys_label_pred": [1.0],
+        }
+        with self.assertRaises(AssertionError):
+            RegressorMixin._get_scatter_arrays(stats, assume_unit_stddev=True)
 
 
 if __name__ == "__main__":

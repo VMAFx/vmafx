@@ -551,6 +551,24 @@ it does not perform the promotion.
    gate structure must select every lane, not rely on the selector being edited.
    Re-run `test_ci_impact.py`, the Rust workflow contract, `actionlint`, and
    `check-aggregator-names.sh` after resolving conflicts in this block.
+## fix/codeql-python-alerts-rc1 — active exception semantics and identity comparison for CodeQL Python alerts (2026-09-24)
+
+1. **`compat/python-vmaf/core/executor.py` maintains active exception diagnostics for FIFO workers.**
+   `_run_fifo_worker` catches `(BrokenPipeError, EOFError, OSError)` during traceback transmission,
+   safely bounds channel cleanup via `_safe_close_channel` in `finally`, and uses `_safe_add_exception_note` to attach pipe
+   failure diagnostics without calling a custom exception override or allowing note-storage failure to replace the target exception,
+   and guarantees secondary close or send failures never displace the primary target exception. `_fifo_worker_failure` treats EOF and OS-level
+   read failures on the diagnostic pipe as immediate failures with synthesized child traceback context (distinguishing `EOFError` from `OSError`),
+   ensuring dead child processes trigger `RuntimeError` rather than delaying on `None`.
+2. **`compat/python-vmaf/core/train_test_model.py` uses elementwise identity comparison `is None`.**
+   In `RegressorMixin._get_scatter_arrays`, `ys_label_stddev` masks `None` using `[x is None for x in ys_label_stddev.flat]`,
+   zeroes those entries, converts the array to float, and zeroes remaining `NaN`s. Future upstream rebases
+   must not restore `ys_label_stddev == None` or `# noqa: E711`.
+3. **`compat/python-vmaf/tools/misc.py` and `tools/scanf.py` preserve explanatory comments and robust error handling.**
+   `check_scanf_match` retains fallback from sscanf `FormatError` / `IncompleteCaptureError` to `fnmatch`,
+   and `isFileLike` safely returns `False` when `seek()` raises `(IOError, OSError, ValueError)`.
+4. **Verification**: `PYTHONPATH=python:compat pytest python/test/executor_test.py python/test/train_test_model_test.py python/test/python_harness_scanf_locale_bugs_test.py`
+   and CodeQL query evaluation against `EmptyExcept.ql` and `EqualsNone.ql`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
