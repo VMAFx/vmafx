@@ -19796,6 +19796,10 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   `model.h`, `libvmaf_priv.h`, and `feature/cambi_internal.h`). All white-box
   unit tests and Netflix golden assertions are preserved without exposing private
   APIs publicly or suppressing CodeQL findings.
+- Restored direct YUV400P luma-only allocation and explicit CLI precision/SYCL
+  device parsing coverage lost in a silent revert. Registration invariants now
+  point at the current comprehensive Metal and HIP audit tests instead of
+  duplicating obsolete runtime-smoke cases.
 
 
 - `local_explainer_test`: recalibrate `test_run_vmaf_runner_local_explainer_with_bootstrap_model`
