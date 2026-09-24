@@ -3760,27 +3760,6 @@ def _build_compare_report_data(
     )
 
 
-def _write_compare_profile_files(args: argparse.Namespace, data: Any, output: Path) -> list[Path]:
-    """Write requested profile artifacts and return their paths."""
-    from .report import render_html, render_markdown
-
-    output.parent.mkdir(parents=True, exist_ok=True)
-    outputs: list[Path] = []
-    if args.format == "both" or getattr(args, "json_sidecar", False):
-        json_path = output.with_suffix(".json")
-        json_path.write_text(json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
-        outputs.append(json_path)
-    if args.format in ("html", "both"):
-        html_path = output if args.format == "html" else output.with_suffix(".html")
-        html_path.write_text(render_html(data), encoding="utf-8")
-        outputs.append(html_path)
-    if args.format in ("markdown", "both"):
-        markdown_path = output if args.format == "markdown" else output.with_suffix(".md")
-        markdown_path.write_text(render_markdown(data), encoding="utf-8")
-        outputs.append(markdown_path)
-    return outputs
-
-
 def _write_compare_profile_report(
     args: argparse.Namespace,
     *,
@@ -3788,12 +3767,19 @@ def _write_compare_profile_report(
     sweep_report: Any | None = None,
 ) -> list[Path]:
     """Render compare results through the profile-card renderer."""
-    from .report import render_html
+    from .report import render_html, write_report_outputs
 
     data = _build_compare_report_data(args, comparison_report, sweep_report)
     output = getattr(args, "output", None)
     if output is not None:
-        return _write_compare_profile_files(args, data, Path(output))
+        return list(
+            write_report_outputs(
+                data,
+                output=Path(output),
+                format_name=args.format,
+                json_sidecar=bool(getattr(args, "json_sidecar", False)),
+            )
+        )
     if getattr(args, "json_sidecar", False):
         raise ValueError("--json-sidecar requires --output PATH")
     if args.format != "html":
@@ -5432,69 +5418,9 @@ def _build_profile_report_data(
     )
 
 
-def _write_profile_report_outputs(args: argparse.Namespace, data: Any) -> list[Path]:
-    """Write requested report artifacts."""
-    from .report import render_html, render_markdown
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    outputs: list[Path] = []
-    if args.format == "both" or getattr(args, "json_sidecar", False):
-        json_path = args.output.with_suffix(".json")
-        json_path.write_text(json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
-        outputs.append(json_path)
-    if args.format in ("html", "both"):
-        html_path = args.output if args.format == "html" else args.output.with_suffix(".html")
-        html_path.write_text(render_html(data), encoding="utf-8")
-        outputs.append(html_path)
-    if args.format in ("markdown", "both"):
-        markdown_path = args.output if args.format == "markdown" else args.output.with_suffix(".md")
-        markdown_path.write_text(
-            render_markdown(data, assets_dir=args.assets_dir), encoding="utf-8"
-        )
-        outputs.append(markdown_path)
-    return outputs
-
-
-def _profile_report_status(
-    outputs: list[Path],
-    codec_rows: tuple[Any, ...],
-    sweep_points: tuple[Any, ...],
-    ladder_samples: tuple[Any, ...],
-    ladder_rungs: tuple[Any, ...],
-    shots: tuple[Any, ...],
-) -> dict[str, Any]:
-    """Aggregate row status without treating unavailable encoders as regressions."""
-    unavailable_prefixes = (
-        "encoder unavailable",
-        "hardware encoder not available",
-    )
-    aggregate = list(codec_rows) + list(sweep_points)
-    failures = [row for row in aggregate if not row.ok]
-    unavailable = [row for row in failures if row.error.startswith(unavailable_prefixes)]
-    real_failures = [row for row in failures if not row.error.startswith(unavailable_prefixes)]
-    any_ok = any(row.ok for row in aggregate) if aggregate else True
-    return {
-        "ok": bool(any_ok and not real_failures),
-        "degraded": bool(unavailable),
-        "outputs": [str(path) for path in outputs],
-        "codec_rows": len(codec_rows),
-        "codec_rows_ok": sum(1 for row in codec_rows if row.ok),
-        "codec_rows_failed": sum(1 for row in codec_rows if not row.ok),
-        "codec_rows_unavailable": sum(
-            1 for row in codec_rows if not row.ok and row.error.startswith(unavailable_prefixes)
-        ),
-        "sweep_points": len(sweep_points),
-        "sweep_points_ok": sum(1 for row in sweep_points if row.ok),
-        "sweep_points_failed": sum(1 for row in sweep_points if not row.ok),
-        "ladder_samples": len(ladder_samples),
-        "ladder_rungs": len(ladder_rungs),
-        "shots": len(shots),
-    }
-
-
 def _run_report(args: argparse.Namespace) -> int:
     """Render a vmaf-tune profile card from JSON inputs."""
-    from .report import probe_source
+    from .report import build_report_status, probe_source, write_report_outputs
 
     source = probe_source(args.src)
     codec_rows: tuple[Any, ...] = ()
@@ -5523,10 +5449,16 @@ def _run_report(args: argparse.Namespace) -> int:
         ladder_rungs,
         shots,
     )
-    outputs = _write_profile_report_outputs(args, data)
-    status = _profile_report_status(
-        outputs, codec_rows, sweep_points, ladder_samples, ladder_rungs, shots
+    outputs = list(
+        write_report_outputs(
+            data,
+            output=args.output,
+            format_name=args.format,
+            json_sidecar=bool(getattr(args, "json_sidecar", False)),
+            assets_dir=args.assets_dir,
+        )
     )
+    status = build_report_status(data, outputs=outputs)
     sys.stdout.write(json.dumps(status) + "\n")
     return 0
 
