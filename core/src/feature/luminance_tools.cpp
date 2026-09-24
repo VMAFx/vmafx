@@ -74,7 +74,7 @@ constexpr double kBt1886Lb = 0.01;
         *head = (1 << bitdepth) - 1;
         break;
     default:
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown pixel range received");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown pixel range received\n");
         return -EINVAL;
     }
     return 0;
@@ -118,7 +118,7 @@ extern "C" int vmaf_luminance_init_eotf(VmafEOTF *eotf, const char *eotf_str)
     } else if (name == "pq") {
         *eotf = vmaf_luminance_pq_eotf;
     } else {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown EOTF received");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown EOTF received\n");
         return -EINVAL;
     }
     return 0;

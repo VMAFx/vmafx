@@ -239,7 +239,7 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
                 const int *precomputed_filter_widths)
 {
     if (!precomputed_filters && !vif_validate_kernelscale(vif_kernelscale)) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid vif_kernelscale: %f", vif_kernelscale);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid vif_kernelscale: %f\n", vif_kernelscale);
         return 1;
     }
     VifWorkspace work = {0};

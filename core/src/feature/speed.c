@@ -1123,7 +1123,7 @@ static int speed_init_dimensions(SpeedDimensions *dim, int w, int h, double spee
     // frame buffer (heap-buffer-overflow). The SYCL twin already guards this in
     // speed_internal_init_dimensions(); the callers below now check this return.
     if (dim->truncated_height == 0 || dim->truncated_width == 0) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0\n");
         return -EINVAL;
     }
 
@@ -1208,7 +1208,7 @@ static int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
 
     // Check that the kernelscale is valid
     if (!vif_validate_kernelscale(opt->speed_kernelscale)) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid speed_kernelscale");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid speed_kernelscale\n");
         return -EINVAL;
     }
 

@@ -40,6 +40,15 @@ test('test_sycl_kernel_source_contract',
     timeout : 30,
 )
 
+# BUG-048: these diagnostics were standardized once, then silently restored
+# from stale source. Keep their line framing and severity prefix stable.
+test('test_vmaf_log_callsite_format',
+    import('python').find_installation(),
+    args : files('test_vmaf_log_callsite_format.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048 A6 / Research-2081: Linux has no Metal compiler or device, so pin
 # float_moment's exact uint64 workgroup reduction and host lo/hi reconstruction
 # as a source contract on every platform. The live parity test below remains

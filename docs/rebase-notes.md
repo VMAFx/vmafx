@@ -183,6 +183,15 @@ every vendor allocation. Preserve the removal notice in `templates/NOTES.txt`,
 `templates/_helpers.tpl`, and the two Kubernetes operator guides when resolving
 conflicts with chart history. No runtime template expression or public API is
 changed.
+## fix/bug048-vmaf-log — diagnostics are one record with one severity prefix (2026-09-24)
+
+- Preserve the trailing `\n` on the guarded diagnostics in
+  `feature/luminance_tools.cpp`, `feature/speed.c`, and `feature/vif.c`.
+- Preserve CUDA initialization message bodies without a leading `Error:`;
+  `vmaf_log(VMAF_LOG_LEVEL_ERROR, ...)` already renders the severity.
+- Run `python3 core/test/test_vmaf_log_callsite_format.py` after an upstream
+  sync that touches those files. The guard covers every call site restored from
+  `9d57a93bf`, plus the second CUDA-init failure path introduced later.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
