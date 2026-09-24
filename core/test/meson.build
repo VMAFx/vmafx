@@ -57,6 +57,15 @@ test('test_bootstrap_name_contract',
     suite : ['fast'],
 )
 
+# Public GPU headers carry lifecycle/ownership semantics that the compiler
+# cannot check. Keep the Doxygen contract executable so a stale merge cannot
+# silently reduce it to parameter names again.
+test('test_gpu_public_header_docs',
+    import('python').find_installation(),
+    args : files('test_gpu_public_header_docs.py'),
+    suite : ['fast'],
+)
+
 # ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
 # ELF only (nm -D); skips with 77 when nm or c++filt is missing. Not in coverage
 # builds: libgcov links into the instrumented .so and exports its own globals

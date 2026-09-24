@@ -19801,6 +19801,13 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   [research digest 2031](docs/research/2031-codeql-float-widening-multiplication.md).
 
 
+- Restored the CUDA public-header ownership and call-order documentation lost
+  in a silent revert, including the single-pointer state-free convention, and
+  made the SYCL picture-preallocation enum's stable values and allocator
+  mapping explicit. A fast semantic regression now prevents another
+  comment-only rewind.
+
+
 - Restored direct YUV400P luma-only allocation and explicit CLI precision/SYCL
   device parsing coverage lost in a silent revert. Registration invariants now
   point at the current comprehensive Metal and HIP audit tests instead of

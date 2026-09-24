@@ -64,10 +64,12 @@ typedef struct VmafCudaConfiguration {
  * Initialize VmafCudaState.
  * VmafCudaState can optionally be configured with VmafCudaConfiguration.
  *
- * @param cu_state The CUDA state to open.
- *
- * @param cfg      Optional configuration parameters.
- *
+ * @param[out] cu_state Receives the allocated CUDA state on success. The caller
+ *                      owns this allocation and must release it with
+ *                      `vmaf_cuda_state_free()` after `vmaf_close()` if the
+ *                      state was imported into a VmafContext.
+ * @param[in] cfg        Optional configuration parameters. A zero-initialised
+ *                       value asks libvmaf to create a CUDA context.
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
@@ -84,7 +86,12 @@ VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfigura
  * `vmaf_cuda_state_free()` first would leave `vmaf_close()` with a
  * dangling state.
  *
- * @param cu_state CUDA state to free. Safe to pass NULL.
+ * **Single-pointer convention.** Unlike the HIP, Metal, and SYCL state-free
+ * functions, this function accepts a plain pointer rather than a pointer to
+ * the caller's handle. It does not clear or NULL the caller's variable; set
+ * that variable to NULL after a successful call before reusing it.
+ *
+ * @param cu_state CUDA state to free. Safe to pass NULL (a no-op).
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
@@ -96,14 +103,20 @@ VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
 /**
  * Import VmafCudaState for use during CUDA feature extraction.
  *
- * @param vmaf VMAF context allocated with `vmaf_init()`.
+ * The import copies the state by value into the VmafContext; ownership of the
+ * original allocation is not transferred. The caller must retain that
+ * allocation and release it with `vmaf_cuda_state_free()` after
+ * `vmaf_close()` tears down the imported copy.
  *
- * @param cu_state CUDA state allocated with `vmaf_cuda_state_init()`.
+ * @param vmaf     VMAF context allocated with `vmaf_init()`.
+ * @param cu_state Caller-owned CUDA state allocated with
+ *                 `vmaf_cuda_state_init()`.
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Call before vmaf_use_features_from_model()
- *               and vmaf_read_pictures() on the same context.
+ * @thread-safety Not thread-safe. Call before `vmaf_use_features_from_model()`
+ *               and before the first `vmaf_read_pictures()` on the same
+ *               context.
  */
 VMAF_EXPORT int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
 

@@ -257,9 +257,9 @@ the count, or `-EIO` on a SYCL exception. Used by `vmaf_bench --list-devices`
 
 ```c
 enum VmafSyclPicturePreallocationMethod {
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE,
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_DEVICE,
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_HOST,
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE = 0,
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_DEVICE = 1,
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_HOST = 2,
 };
 
 typedef struct VmafSyclPictureConfiguration {
@@ -273,6 +273,9 @@ int vmaf_sycl_picture_fetch(VmafContext *ctx, VmafPicture *pic);
 
 `vmaf_sycl_preallocate_pictures` now honors the enum and creates a 2-deep
 SYCL picture pool when `DEVICE` or `HOST` is selected:
+
+These numeric values are stable and append-only; serialized configuration and
+FFI bindings may rely on them.
 
 | Method | Backing | Use case |
 | --- | --- | --- |
