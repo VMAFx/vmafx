@@ -18,12 +18,13 @@ static inline int vmaf_transnet_v2_scores(double logit, double threshold, double
         return -EINVAL;
 
     double prob;
-    if (logit >= 30.0)
+    if (logit >= 30.0) {
         prob = 1.0;
-    else if (logit <= -30.0)
+    } else if (logit <= -30.0) {
         prob = 0.0;
-    else
+    } else {
         prob = 1.0 / (1.0 + exp(-logit));
+    }
 
     if (!isfinite(prob))
         return -EINVAL;

@@ -113,8 +113,8 @@ finding baseline, with no new debt.
 
 ## Post-rebase hosted falsification
 
-The first hosted run on the rebased exact head found two compile contracts that
-the Linux-only review could not prove:
+The first hosted run on the rebased exact head found three contracts that the
+local review had not proved under the hosted matrix:
 
 - both macOS Metal lanes rejected `float_ms_ssim_metal.mm` because the shared
   emitter call referenced `s->enable_db` and `s->max_db`, while the Metal state
@@ -122,12 +122,17 @@ the Linux-only review could not prove:
 - multiple Linux/macOS build-matrix lanes rejected the compatibility Cython
   extension after `adm.c` began including `nonfinite_score.h`: the extension's
   direct-source build searched `core/src` but not `core/include`, so the
-  transitive public `libvmaf/model.h` include was unreachable.
+  transitive public `libvmaf/model.h` include was unreachable;
+- the whole-tree Clang 22 tidy ratchet rejected the new
+  `transnet_v2_score.h` helper because its three-way probability clamp omitted
+  braces required by `readability-braces-around-statements`.
 
 The Metal call now supplies the existing surface's fixed linear-score settings,
 `false, INFINITY`, and a static wiring regression locks that contract down on
 non-Apple hosts. The Python extension now includes both `../core/src` and
 `../core/include`; an AST regression checks the build definition, and a real
 Python 3.14 editable-wheel build completes successfully with the corrected
-path. These are build-only corrections: neither expands the Metal option
-surface nor changes finite metric results.
+path. The TransNet helper now braces all three branches, with the hosted tidy
+artifact providing the exact three-diagnostic reproducer. These are build and
+style-only corrections: they neither expand the Metal option surface nor
+change finite metric results.
