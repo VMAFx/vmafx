@@ -162,37 +162,42 @@ typedef struct BrisqueAggd {
     double right_sq; /* rightstd^2 */
 } BrisqueAggd;
 
-/* One numerical procedure — the AGGD moment fit, matching the NIQE twin. Its
- * intermediate sums feed a snapshot-gated score, so splitting it would change
- * the order they combine in. ADR-0141 §2. */
-/* NOLINTNEXTLINE(readability-function-size) */
-static inline BrisqueAggd brisque_fit_aggd(const double *x, size_t n, const double *aggd_table)
-{
-    assert(x != NULL && aggd_table != NULL && n > 0);
-    double left_sq_sum = 0.0;
-    double right_sq_sum = 0.0;
-    size_t left_cnt = 0;
-    size_t right_cnt = 0;
-    double abs_sum = 0.0;
-    double sq_sum = 0.0;
+typedef struct {
+    double left_sq_sum;
+    double right_sq_sum;
+    size_t left_cnt;
+    size_t right_cnt;
+    double abs_sum;
+    double sq_sum;
+} BrisqueAggdSums;
 
+static inline BrisqueAggdSums brisque_aggd_accumulate(const double *x, size_t n)
+{
+    BrisqueAggdSums s = {0};
     for (size_t i = 0; i < n; i++) {
         const double v = x[i];
-        sq_sum += v * v;
-        abs_sum += fabs(v);
+        s.sq_sum += v * v;
+        s.abs_sum += fabs(v);
         if (v < 0.0) {
-            left_sq_sum += v * v;
-            left_cnt++;
+            s.left_sq_sum += v * v;
+            s.left_cnt++;
         } else if (v > 0.0) {
-            right_sq_sum += v * v;
-            right_cnt++;
+            s.right_sq_sum += v * v;
+            s.right_cnt++;
         }
         /* v == 0.0: excluded from both (MATLAB strict <0 / >0). */
     }
+    return s;
+}
 
-    const double leftstd = (left_cnt > 0) ? sqrt(left_sq_sum / (double)left_cnt) : 0.0;
-    const double rightstd = (right_cnt > 0) ? sqrt(right_sq_sum / (double)right_cnt) : 0.0;
-    const double mean_sq = sq_sum / (double)n;
+static inline BrisqueAggd brisque_fit_aggd(const double *x, size_t n, const double *aggd_table)
+{
+    assert(x != NULL && aggd_table != NULL && n > 0);
+    const BrisqueAggdSums s = brisque_aggd_accumulate(x, n);
+
+    const double leftstd = (s.left_cnt > 0) ? sqrt(s.left_sq_sum / (double)s.left_cnt) : 0.0;
+    const double rightstd = (s.right_cnt > 0) ? sqrt(s.right_sq_sum / (double)s.right_cnt) : 0.0;
+    const double mean_sq = s.sq_sum / (double)n;
 
     BrisqueAggd out;
     out.left_sq = leftstd * leftstd;
@@ -210,7 +215,7 @@ static inline BrisqueAggd brisque_fit_aggd(const double *x, size_t n, const doub
     }
 
     const double gammahat = leftstd / rightstd;
-    const double mean_abs = abs_sum / (double)n;
+    const double mean_abs = s.abs_sum / (double)n;
     const double rhat = (mean_abs * mean_abs) / mean_sq;
     const double gh2 = gammahat * gammahat;
     const double gh3 = gh2 * gammahat;
@@ -363,8 +368,9 @@ static inline void brisque_resize_coeffs(int in_len, int out_len, int *idx, doub
 /* ------------------------------------------------------------------ */
 static inline double brisque_range_scale(double feat, double lo, double hi)
 {
-    assert(hi != lo);
-    return -1.0 + 2.0 / (hi - lo) * (feat - lo);
+    const double span = hi - lo;
+    assert(span != 0.0 && isfinite(span));
+    return -1.0 + 2.0 / span * (feat - lo);
 }
 
 #endif /* VMAF_FEATURE_BRISQUE_MATH_H_ */

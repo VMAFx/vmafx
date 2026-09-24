@@ -38,6 +38,7 @@
  */
 
 #include <cerrno>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -133,6 +134,19 @@ void append_option_names(char *buf, size_t buf_sz, const VmafOption *opts,
     return dst;
 }
 
+[[nodiscard]] inline bool option_double_equals(double a, double b) noexcept
+{
+    if (std::isnan(a) || std::isnan(b))
+        return false;
+    if (a == 0.0 && b == 0.0)
+        return true;
+    uint64_t ab = 0;
+    uint64_t bb = 0;
+    memcpy(&ab, &a, sizeof(ab));
+    memcpy(&bb, &b, sizeof(bb));
+    return ab == bb;
+}
+
 [[nodiscard]] int option_is_default(const VmafOption *opt, const void *data) noexcept
 {
     if (!opt)
@@ -146,7 +160,8 @@ void append_option_names(char *buf, size_t buf_sz, const VmafOption *opts,
     case VMAF_OPT_TYPE_INT:
         return static_cast<int>(opt->default_val.i == *(static_cast<const int *>(data)));
     case VMAF_OPT_TYPE_DOUBLE:
-        return static_cast<int>(opt->default_val.d == *(static_cast<const double *>(data)));
+        return static_cast<int>(
+            option_double_equals(opt->default_val.d, *(static_cast<const double *>(data))));
     case VMAF_OPT_TYPE_STRING:
         return static_cast<int>(
             !strcmp(opt->default_val.s, *(static_cast<const char *const *>(data))));

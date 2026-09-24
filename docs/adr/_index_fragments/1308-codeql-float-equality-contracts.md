@@ -1,0 +1,1 @@
+| [ADR-1308](1308-codeql-float-equality-contracts.md) | Resolves all six live GitHub CodeQL cpp/equality-on-floats alerts via contract-preserving comparisons (bit identity, signed zero, constant difference, span checks) without suppressions, query evasion, or tolerance weakening. | Proposed | codeql, security, floating-point, quality |

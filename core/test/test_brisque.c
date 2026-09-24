@@ -212,6 +212,10 @@ static char *test_brisque_range_scale(void)
     mu_assert("range_scale(max) != +1", close_abs(brisque_range_scale(hi, lo, hi), 1.0, 1e-12));
     mu_assert("range_scale(mid) != 0",
               close_abs(brisque_range_scale((lo + hi) / 2.0, lo, hi), 0.0, 1e-12));
+    mu_assert("range_scale negative slope min",
+              close_abs(brisque_range_scale(10.0, 10.0, 0.0), -1.0, 1e-12));
+    mu_assert("range_scale small span mid",
+              close_abs(brisque_range_scale(1.0005, 1.0, 1.001), 0.0, 1e-12));
     return NULL;
 }
 

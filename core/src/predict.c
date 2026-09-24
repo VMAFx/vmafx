@@ -19,6 +19,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -276,6 +277,19 @@ static int scan_match_feature(const VmafModel *model, const struct svm_node *nod
     return err ? -EINVAL : 0;
 }
 
+static inline bool float_values_equal(double a, double b)
+{
+    if (isnan(a) || isnan(b))
+        return false;
+    if (a == 0.0 && b == 0.0)
+        return true;
+    uint64_t a_bits = 0;
+    uint64_t b_bits = 0;
+    memcpy(&a_bits, &a, sizeof(a_bits));
+    memcpy(&b_bits, &b, sizeof(b_bits));
+    return a_bits == b_bits;
+}
+
 /* One step of the feature scan. Returns a negative errno on error, 1 when the
  * guided feature does not carry the sentinel (no correction is needed and the
  * caller returns 0 with `node` untouched), and 0 to keep scanning. */
@@ -295,11 +309,13 @@ static int scan_feature(const VmafModel *model, const struct svm_node *node, uns
         if (err)
             return err;
         /* Exact sentinel comparison: caller always passes value_to_be_corrected=0.0
-         * (see vmaf_predict_score_at_index). A normalised feature that is exactly
-         * zero is the only case that needs chroma correction; any other value
-         * exits early. An epsilon band here would incorrectly correct near-zero
-         * but non-zero features and change scores. */
-        if (st->guided_score != st->sentinel) /* sentinel, not computed equality */
+        * (see vmaf_predict_score_at_index). A normalised feature that is exactly
+        * zero is the only case that needs chroma correction; any other value
+        * exits early. An epsilon band here would incorrectly correct near-zero
+         * but non-zero features and change scores. Float equality is tested via
+         * IEEE-754 bit-pattern identity with signed-zero equivalence; NaN is never
+         * equal to any value, including NaN. */
+        if (!float_values_equal(st->guided_score, st->sentinel))
             return 1;
         st->guided_idx = i;
     }
