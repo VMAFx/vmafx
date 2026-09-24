@@ -20536,6 +20536,11 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   60-second startup window (BUG-090).
 
 
+Restored RFC-8259 strict report output for `external-bench --out-json` and
+`vmaf-roi-score`: non-finite aggregate values serialize as `null`, while an
+invalid ROI pooled score exits 65 without writing a report.
+
+
 - Restored the shared import bootstrap, argument-parser construction, and
   replay-argv handling across twelve tiny-AI evaluation, quantization, and
   export scripts after a later training-scaffold merge silently reverted them.

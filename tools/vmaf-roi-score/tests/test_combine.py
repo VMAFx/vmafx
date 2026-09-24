@@ -392,3 +392,27 @@ def test_cli_saliency_model_materialises_mask(monkeypatch, tmp_path: Path):
     assert payload["vmaf_masked"] == 95.0
     assert payload["vmaf_roi"] == 91.25
     assert payload["saliency_model"] == str(fake_model)
+
+
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), float("-inf")])
+def test_cli_rejects_nonfinite_vmaf_score(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    score: float,
+) -> None:
+    """A non-finite libvmaf score exits 65 without writing invalid JSON."""
+    ref, dis = _write_smoke_yuv_pair(tmp_path)
+    out = tmp_path / "result.json"
+
+    def _fake_run(cmd, capture_output=False, text=False, check=False):
+        distorted = Path(cmd[cmd.index("--distorted") + 1])
+        return _write_pooled_vmaf_json(cmd, score if distorted == dis else 95.0)
+
+    monkeypatch.setattr("vmafroiscore.score.subprocess.run", _fake_run)
+
+    rc = main(_roi_argv(ref, dis, out, "--synthetic-mask", "0.5"))
+
+    assert rc == 65
+    assert "invalid pooled score" in capsys.readouterr().err
+    assert not out.exists()

@@ -97,6 +97,7 @@ Conventions:
 | [2079](2079-sycl-clang-tidy-required-gate-verification.md) | SYCL clang-tidy required-gate live verification and fail-closed contract hardening | Active | [ADR-1297](../adr/1297-ci-gate-every-reporting-check.md), [ADR-0623](../adr/0623-scaffold-audit-p2-half-finished.md) |
 | [2080](2080-hip-float-motion-lifecycle-flush.md) | HIP float-motion force-zero ownership and option-aware flush idempotency | Active | — (BUG048 A5 restoration) |
 | [2082](2082-sycl-upload-host-lifetime.md) | SYCL upload host-buffer lifetime | Active | BUG-040, [ADR-0214](../adr/0214-gpu-parity-ci-gate.md) |
+| [2085](2085-strict-tool-json-restoration.md) | Restore strict JSON boundaries for external-bench and vmaf-roi-score | Active | — (BUG048 A9 restoration) |
 | [2094](2094-codeql-svm-lifecycle-and-loop-alerts.md) | CodeQL SVM solver lifecycle and parser loop alerts | Active | [ADR-0889](../adr/0889-libsvm-vendored-audit.md), [ADR-1039](../adr/1039-vendored-svm-realloc-oom-safety.md) |
 | [2096](2096-codeql-unused-static-alerts-2026-09-24.md) | CodeQL unused-static-function identity audit for repeated test compilations | Active | [ADR-1142](../adr/1142-whole-codebase-standards.md) |
 | [2097](2097-codeql-equality-on-floats-2026-09-24.md) | Resolving live CodeQL cpp/equality-on-floats alerts | Active | [ADR-1308](../adr/1308-codeql-float-equality-contracts.md) |

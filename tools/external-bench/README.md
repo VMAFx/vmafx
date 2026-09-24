@@ -128,6 +128,11 @@ python3 tools/external-bench/compare.py \
 python3 tools/external-bench/compare.py --out-json /tmp/bench.json
 ```
 
+`--out-json` always writes RFC-8259 strict JSON. If a competitor has no
+successful rows, its in-memory and text-table means remain `nan`, while the
+corresponding JSON fields are `null`. Any other non-finite aggregate float is
+also written as `null`; bare `NaN` and `Infinity` tokens are never emitted.
+
 Sample output:
 
 ```text

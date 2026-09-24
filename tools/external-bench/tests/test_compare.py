@@ -338,6 +338,35 @@ def test_render_table_includes_all_competitors() -> None:
     assert "0.9100" in table
 
 
+def test_render_json_maps_nonfinite_float_fields_to_null() -> None:
+    aggregate = compare.CompetitorAggregate(
+        competitor="x264-pvmaf",
+        n_clips=0,
+        plcc_mean=float("nan"),
+        srocc_mean=float("inf"),
+        rmse_mean=float("-inf"),
+        runtime_total_ms=float("inf"),
+        params=0,
+        gflops=float("-inf"),
+    )
+
+    raw = compare.render_json([aggregate])
+    payload = json.loads(raw, parse_constant=lambda token: pytest.fail(f"non-finite {token}"))
+
+    assert payload == [
+        {
+            "competitor": "x264-pvmaf",
+            "n_clips": 0,
+            "plcc_mean": None,
+            "srocc_mean": None,
+            "rmse_mean": None,
+            "runtime_total_ms": None,
+            "params": 0,
+            "gflops": None,
+        }
+    ]
+
+
 def test_main_emits_table_with_stubbed_wrappers(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -379,6 +408,52 @@ def test_main_emits_table_with_stubbed_wrappers(
     assert {a["competitor"] for a in agg_data} == set(compare.WRAPPERS.keys())
     for a in agg_data:
         assert a["n_clips"] == FIXTURE_DIS_COUNT
+
+
+def test_main_out_json_is_strict_when_all_wrapper_rows_fail(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing optional runners stay visible without emitting bare NaN."""
+    src = tmp_path / "netflix" / "src01_576x324_24fps" / "ref"
+    src.mkdir(parents=True)
+    (src / "ref.yuv").write_bytes(b"\x00" * 16)
+    dis = tmp_path / "netflix" / "src01_576x324_24fps" / "dis"
+    dis.mkdir(parents=True)
+    (dis / "dis_a.yuv").write_bytes(b"\x00" * 16)
+
+    def failing_runner(cmd, *_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=EXPECTED_FAILED_RC,
+            stdout="",
+            stderr="missing external binary",
+        )
+
+    monkeypatch.setattr(compare.subprocess, "run", failing_runner)
+
+    out_json = tmp_path / "agg.json"
+    rc = compare.main(
+        [
+            "--bvi-dvc-root",
+            str(tmp_path / "does-not-exist"),
+            "--netflix-public-root",
+            str(tmp_path / "netflix"),
+            "--out-json",
+            str(out_json),
+        ]
+    )
+
+    assert rc == 0
+    raw = out_json.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    data = json.loads(raw, parse_constant=lambda token: pytest.fail(f"non-finite {token}"))
+    assert {a["competitor"] for a in data} == set(compare.WRAPPERS)
+    for aggregate in data:
+        assert aggregate["n_clips"] == 0
+        assert aggregate["plcc_mean"] is None
+        assert aggregate["srocc_mean"] is None
+        assert aggregate["rmse_mean"] is None
 
 
 def test_main_errors_clearly_when_corpus_missing(
