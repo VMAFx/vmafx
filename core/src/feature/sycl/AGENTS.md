@@ -49,6 +49,21 @@ under [`../../meson.build`](../../meson.build) adds
   - ADM gain limiting uses int64 Q31 (`gain_limit_to_q31` +
     `launch_decouple_csf<false>` in `integer_adm_sycl.cpp`).
   - VIF gain limiting uses fp32 `sycl::fmin`.
+- **Kernel identities and output captures have an explicit boundary**
+  ([Research-2090](../../../../docs/research/2090-sycl-silent-revert-residuals-2026-09-24.md)).
+  `speed_chroma_sycl.cpp` and `speed_temporal_sycl.cpp` use role-prefixed
+  `launch_{chroma,temporal}_{indterm,score}` names. Their anonymous kernel
+  lambdas otherwise receive identical generated names across translation
+  units, allowing the linker to pair one launcher's host capture layout with
+  the other launcher's device image. Never collapse the role prefixes.
+  `float_psnr_sycl.cpp` and `integer_psnr_sycl.cpp` capture their output
+  pointers through `FpsnrOutput` and `PsnrKernelArgs`; do not flatten those
+  structs back into raw lambda captures. `integer_moment_sycl.cpp` is the
+  remaining scalar-argument shape and aliases `d_sums` to `e_sums` before the
+  submit lambda. Keep the alias and use it for all four atomics. The source
+  contract in `core/test/test_sycl_kernel_source_contract.py` plants the fp64,
+  cross-TU kernel-name, and raw-capture regressions and must stay wired into
+  the fast suite.
 - **Wholly-new fork files use dual Netflix + Lusoris/Claude
   copyright header** per [ADR-0025](../../../../docs/adr/0025-copyright-handling-dual-notice.md).
   Most TUs here fork-original SYCL ports of

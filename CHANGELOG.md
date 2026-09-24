@@ -29145,6 +29145,13 @@ preallocation so it no longer describes the live
   advisory.
 
 
+Give the SpEED chroma and temporal SYCL kernels distinct linker identities so
+Intel Arc runs no longer pair a host capture layout with the other twin's
+device image, restore the explicit moment-kernel output capture lost by an
+unrelated change, and guard both contracts alongside the fp64-free device
+regions.
+
+
 
 - **The SYCL backend could not score a single frame.** `--frame_cnt 1` exited
   255 with "problem generating pooled VMAF score" and wrote no JSON at all;

@@ -30,6 +30,15 @@ test('test_strict_fp_compiler_args',
     timeout : 90,
 )
 
+# ADR-0220 and Research-2090: source-level guard for fp64-free SpEED
+# device regions, unique cross-TU kernel names, and explicit output captures.
+test('test_sycl_kernel_source_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_kernel_source_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
 # ELF only (nm -D); skips with 77 when nm or c++filt is missing. Not in coverage
 # builds: libgcov links into the instrumented .so and exports its own globals

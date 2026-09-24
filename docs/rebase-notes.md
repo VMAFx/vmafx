@@ -52663,3 +52663,27 @@ to an exception.
 - Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
   tests/test_coverage_round4.py::test_auth_413_on_large_body`.
 - Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.
+
+## fix/bug048-sycl-residuals — fp32 SpEED and explicit output captures (2026-09-24)
+
+The affected SYCL extractors are fork-local, so there is no upstream
+Netflix/vmaf hunk to adopt. Preserve two implementation contracts when
+resolving a stale branch:
+
+- the device-kernel regions before `SpeedChromaSyclState` and
+  `SpeedTemporalSyclState` contain no `double`; the chroma path's compensated
+  two-float covariance is the current successor to the original fp32 patch;
+- the twins retain role-prefixed `launch_{chroma,temporal}_{indterm,score}`
+  names. The generic names generated identical unnamed-kernel symbols across
+  the two translation units, so final linking paired one host capture layout
+  with the other device image and produced NaN entropy on an Intel Arc A380;
+- float PSNR and integer PSNR retain their `FpsnrOutput` / `PsnrKernelArgs`
+  capture structs, while integer moment aliases `d_sums` to `e_sums` before
+  submitting the kernel and uses the alias for all four atomics.
+
+`python3 core/test/test_sycl_kernel_source_contract.py -v` is the portable
+red-cap: its planted mutations prove the old fp64, ambiguous-kernel-name, and
+raw-pointer forms fail. `test_sycl_speed_singular_parity` is the device red-cap
+and passes on the Arc at the unchanged `1e-4` tolerance. No public surface,
+FFmpeg patch, score snapshot, or Netflix golden assertion changes.
+See [Research-2090](research/2090-sycl-silent-revert-residuals-2026-09-24.md).
