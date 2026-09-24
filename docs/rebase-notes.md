@@ -269,6 +269,58 @@ it does not perform the promotion.
    and asserting `i < sv_buffer.size()` eliminates loop variable mutation inside
    the body and prevents out-of-bounds reads. Function length must stay <= 60 LOC
    to comply with HISS-04 (currently 59 LOC).
+## fix/sycl-a380-snapshots-bug040 — production SYCL DMA host-buffer race fixed (2026-09-24)
+
+1. **Both `core/src/libvmaf.c` picture-ownership paths must wait for the final SYCL upload.**
+   The picture pool (`tools/vmaf.cpp`, 3 slots for 1-thread default) recycles `dist` to the reader
+   thread immediately after `vmaf_picture_unref`. With `copy_queue.memcpy` DMA still running on the
+   host buffer, the reader's `fread` overwrites bytes in-flight — corrupting the bottom half of 4K
+   `dist` planes with next-frame data. `read_pictures_frame_cleanup` covers the serial path.
+   `threaded_read_pictures_batch` waits after enqueue while the caller's original counted refs are
+   still live, then releases them on both success and enqueue-error paths; waiting later in
+   `read_pictures_frame_cleanup_after_batch` is unsafe because the worker may already have dropped
+   its copies. Both paths wait for `last_upload_event` (the final dist-plane DMA) before the caller
+   can refill a pooled picture. In a combined CUDA+SYCL build, the serial wait must precede CUDA's
+   host-cleanup early return. Do not drop or move either call during a rebase; the event does not
+   touch `combined_queue`, so it does not serialize GPU compute.
+   `core/test/test_sycl_cuda_serial_upload_lifetime.c` compiles only with both backends enabled and
+   poisons released 4K host storage at `n_threads=0` and `n_threads=1` to pin both orderings.
+2. **`testdata/test_sycl_4k_repeat_determinism.py` is the production stability harness.**
+   It defaults to 20 serial and 20 `--threads 1` 4K SYCL runs and asserts every frame, pooled,
+   aggregate, and backend value is identical after removing only measured `fps`. `VMAF_BIN` binds
+   to its adjacent Meson `build/src` library; `VMAF_LIB_DIR` is the explicit override for another
+   layout. It uses `pytest.mark.skipif` when 4K YUV fixtures are absent, so it is always safe to
+   collect. Do not weaken the full-report comparison without rerunning the Arc A380 evidence.
+3. **The nondeterminism was not in graph-replay or the compute queue.**
+   `VMAF_SYCL_NO_GRAPH=1` showed identical drift; the corruption was in host memory before any
+   compute submitted. Do not re-introduce event dependencies between `combined_queue` operations
+   to "fix" determinism — the root cause was a buffer lifetime issue, not a command-queue ordering.
+   The full investigation and rejected alternatives are recorded in
+   [Research-2082](research/2082-sycl-upload-host-lifetime.md).
+
+## fix/sycl-a380-snapshots-bug040 — CPU and A380 SYCL snapshots regenerated together (2026-09-23)
+
+1. **`testdata/scores_cpu_{720,1080,4k}.json` and `testdata/scores_sycl_a380_*.json` moved together on purpose.**
+   Only `ref/dis_576x324_48f.yuv` and `ref/dis_640x480_48f.yuv` are committed in the repository;
+   the 720p, 1080p, and 4k fixtures are gitignored and derived by `testdata/generate.sh` from the
+   authoritative Big Buck Bunny 4K MP4 source (`bbb_sunflower_2160p_30fps_normal.mp4`).
+   Because FFmpeg n9.0.1 (x264) encodes the distorted clips with slightly different bitstreams
+   than the historical April 2026 encoder, deriving fresh fixtures naturally shifted the CPU
+   scores at 720p, 1080p, and 4k by ~6-8 points. Both CPU and SYCL snapshots were regenerated from
+   the exact same newly-derived fixtures in the same pass. Do not "restore" the old CPU 720/1080/4k
+   snapshots during a rebase or merge conflict; doing so breaks cross-backend parity against the
+   regenerated SYCL snapshots.
+2. **`testdata/run_sycl_scores.py` requires `--backend sycl` and device pinning.**
+   The script previously selected the backend negatively with `--no_cuda`, which stopped selecting
+   SYCL once HIP was added. It now explicitly passes `--backend sycl`. It also configures
+   `ONEAPI_DEVICE_SELECTOR=level_zero:gpu` to select an Intel Level Zero GPU. The regenerated
+   576p and 4K snapshots were independently reproduced with byte-identical numeric payloads after
+   dropping the measured `fps` and build-derived `version` fields. The diagnostic
+   `VMAF_SYCL_CHECKSUM` path was disabled, so the results do not depend on its blocking checksum
+   copy or hide a production queue race.
+3. **Committed 576x324 and 640x480 fixture files remain bit-identical.**
+   `testdata/ref_576x324_48f.yuv`, `dis_576x324_48f.yuv`, `ref_640x480_48f.yuv`, and
+   `dis_640x480_48f.yuv` were not regenerated and match master bit-for-bit.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

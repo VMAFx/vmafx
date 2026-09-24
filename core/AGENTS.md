@@ -570,16 +570,14 @@ corrected methodology.
 absent** (measured 2026-09-06 on `cd52f2670`). Two invariants bench run must
 hold onto:
 
-- **`--threads N` aborts every GPU backend.** `--gpumask=0` or
-  `--sycl_device=0` combined with any `--threads` value emits one
-  `feature "VMAF_integer_feature_motion2_score" cannot be overwritten at index N`
-  pair per frame, then `context could not be synchronized` /
-  `problem flushing context`, exits 234 with no output file. Without
-  `--threads` both backends succeed, are bit-stable over 10 runs (CUDA
-  76.667830, SYCL 76.667746 on Netflix 576x324 pair). `bench_all.sh`
-  hard-codes `--threads 1`, so its GPU rows fail by construction until
-  `T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06` closes — never silence that by
-  deleting flag.
+- **Keep `--threads 1` in GPU bench rows.** PR #1343 / ADR-1197 closed
+  `T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06`; CUDA and SYCL now match their
+  serial paths with a worker pool. The flag is still load-bearing because it
+  exercises `read_pictures_frame_cleanup_after_batch`. For SYCL, that helper
+  is reached only after `threaded_read_pictures_batch` has waited on
+  `last_upload_event` while retaining the caller's original picture refs;
+  waiting in the helper itself is too late if the worker already dropped its
+  copies (BUG-040). Never drop the flag to make a bench row green.
 - **Never discard binary's stderr in bench harness.** `bench_all.sh` used
   to send it to `/dev/null`, relabel any non-zero exit as "backend likely
   unavailable"; that turned hard abort into row that looked like missing
@@ -749,8 +747,13 @@ not as fixed constants.
   device-only path must never be dereferenced. `read_pictures_frame_cleanup`
   covers every non-batched exit. `read_pictures_frame_cleanup_after_batch`
   is device-only release after `threaded_read_pictures_batch` already unref'd
-  host pictures (PR #838). Only `#ifdef HAVE_CUDA` left inside
-  `vmaf_read_pictures` guards `read_pictures_frame_translate` call.
+  host pictures (PR #838); `threaded_read_pictures_batch` must wait for the
+  final SYCL upload while its original host-picture refs still protect the
+  storage, before either enqueue-error or success cleanup can unref them
+  (BUG-040). The serial cleanup must retain the same wait before its host
+  unrefs and before CUDA's host-cleanup early return in a combined CUDA+SYCL
+  build. Only `#ifdef HAVE_CUDA` left
+  inside `vmaf_read_pictures` guards `read_pictures_frame_translate` call.
   Helper exists only in CUDA builds (CPU no-op stub would leave
   provably-dead error branch that cppcheck flags). Never re-inline further
   backend blocks into `vmaf_read_pictures`; add branches to matching

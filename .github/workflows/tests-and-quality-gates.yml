@@ -100,6 +100,14 @@ jobs:
             -Denable_float=true -Denable_avx512=true --buildtype=release
           meson compile -C build
 
+      - name: Run SYCL score harness regressions
+        if: steps.impact.outputs.golden_harness == 'true'
+        run: |
+          python3 -m pytest \
+            testdata/test_run_sycl_scores.py \
+            testdata/test_sycl_4k_repeat_determinism.py \
+            -v --tb=short
+
       - name: Restore Netflix vmaf_resource fixtures
         id: fixtures
         # Restore-only; the save is split out below and gated on success().

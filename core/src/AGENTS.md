@@ -461,6 +461,33 @@ these two paths must stay consistent.
 `VMAF_FEATURE_EXTRACTOR_PREV_REF` block in `threaded_extract_batch_func`
 must preserve both unref-before-memset and zero-f->prev_ref.
 
+### SYCL shared uploads finish before either picture cleanup returns (BUG-040)
+
+`vmaf_sycl_shared_frame_upload()` reads the caller's host-backed reference and
+distorted pictures asynchronously on the in-order `copy_queue`. Its saved
+`last_upload_event` is the final distorted-plane copy, so waiting on that one
+event also orders every earlier reference and distorted copy without draining
+the independent compute queue.
+
+Both ownership exits in `libvmaf.c` must preserve that wait:
+
+- `read_pictures_frame_cleanup()` waits before its direct picture unrefs.
+- `threaded_read_pictures_batch()` waits after enqueue while the caller's
+  original counted references are still live, then unrefs those references.
+  The worker may finish and drop its own copies before the wait, so moving the
+  barrier to `read_pictures_frame_cleanup_after_batch()` is too late: the
+  release callback can already have poisoned or recycled the host storage.
+
+Do not replace either event wait with a global queue/device wait, and do not
+remove the threaded wait because one timing sample happened to let DMA finish
+before the worker. In a combined CUDA+SYCL build, the wait must remain before
+CUDA's host-cleanup early return. `core/test/test_sycl_cuda_serial_upload_lifetime.c`
+pins that compile combination through the public API with `n_threads=0` and
+`n_threads=1`; the 4K release callback poisons host storage as soon as its final
+reference drops and PSNR proves DMA already consumed the original pixels.
+`testdata/test_sycl_4k_repeat_determinism.py` then covers 20 serial and 20
+`--threads 1` runs against the full normalized score report.
+
 ### framesync producer-error paths must call vmaf_framesync_abort (ADR-1092)
 
 `retrieve_filled_data` waits in `pthread_cond_wait` until matching
