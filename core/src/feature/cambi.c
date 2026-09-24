@@ -139,7 +139,6 @@ static void calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, fl
                                const uint16_t *tvi_for_diff, uint16_t vlt_luma,
                                const int *diff_weights, const int *all_diffs, int width,
                                int height);
-
 static void calculate_c_values_default(VmafPicture *pic, const VmafPicture *mask_pic,
                                        float *c_values, uint16_t *histograms, uint16_t window_size,
                                        const uint16_t num_diffs, const uint16_t *tvi_for_diff,
@@ -379,14 +378,14 @@ static FORCE_INLINE void adjust_window_size(uint16_t *window_size, unsigned inpu
 }
 
 static int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_consider,
-                               int **diff_weights, int **all_diffs)
+                               int **diffs_weights, int **all_diffs)
 {
     *diffs_to_consider = aligned_malloc(ALIGN_CEIL(sizeof(uint16_t)) * num_diffs, 16);
     if (!(*diffs_to_consider))
         return -ENOMEM;
 
-    *diff_weights = aligned_malloc(ALIGN_CEIL(sizeof(int)) * num_diffs, 32);
-    if (!(*diff_weights)) {
+    *diffs_weights = aligned_malloc(ALIGN_CEIL(sizeof(int)) * num_diffs, 32);
+    if (!(*diffs_weights)) {
         aligned_free(*diffs_to_consider);
         *diffs_to_consider = CAMBI_NULL_POINTER;
         return -ENOMEM;
@@ -396,14 +395,14 @@ static int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_con
     if (!(*all_diffs)) {
         aligned_free(*diffs_to_consider);
         *diffs_to_consider = CAMBI_NULL_POINTER;
-        aligned_free(*diff_weights);
-        *diff_weights = CAMBI_NULL_POINTER;
+        aligned_free(*diffs_weights);
+        *diffs_weights = CAMBI_NULL_POINTER;
         return -ENOMEM;
     }
 
     for (int d = 0; d < num_diffs; d++) {
         (*diffs_to_consider)[d] = d + 1;
-        (*diff_weights)[d] = g_contrast_weights[d];
+        (*diffs_weights)[d] = g_contrast_weights[d];
     }
 
     for (int d = -num_diffs; d <= num_diffs; d++)
