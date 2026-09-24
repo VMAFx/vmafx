@@ -322,7 +322,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 738,
+  "total_warnings": 720,
   "total_nolint_uncited": 0,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -412,7 +412,6 @@
     "core/src/mem.h": 1,
     "core/src/metadata.h": 4,
     "core/src/metadata_handler.h": 3,
-    "core/src/model.c": 8,
     "core/src/model.h": 7,
     "core/src/opt.h": 4,
     "core/src/output.h": 1,
@@ -442,7 +441,6 @@
     "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_locale_handling.c": 21,
     "core/test/test_log.c": 4,
-    "core/test/test_luminance_tools.cpp": 10,
     "core/test/test_pelorus_interop.c": 9,
     "core/test/test_pic_preallocation.c": 9,
     "core/test/test_predict.c": 13,
@@ -1238,6 +1236,28 @@
         }
       },
       "previous_baseline_sha256": "c4cf5607045ad865fc4abecd87bb27f468dfc1ff786c34835c2036667d4d62f2"
+    },
+    {
+      "sources": [
+        "core/src/model.c",
+        "core/test/test_luminance_tools.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/model.c": {
+          "warnings": [
+            8,
+            0
+          ]
+        },
+        "core/test/test_luminance_tools.cpp": {
+          "warnings": [
+            10,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "76f5058d64e6c72d8c60c55d9a93f38d5dcd36e3a0884389d78766bb58c82174"
     }
   ]
 }

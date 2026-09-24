@@ -37,6 +37,12 @@ typedef struct VmafBuiltInModel {
     const int *data_len;
 } VmafBuiltInModel;
 
+#ifdef _MSC_VER
+#define MODEL_NULL_POINTER NULL
+#else
+#define MODEL_NULL_POINTER nullptr
+#endif
+
 #if VMAF_BUILT_IN_MODELS
 #if VMAF_FLOAT_FEATURES
 extern const char src_vmaf_float_v0_6_1neg_json[];
@@ -168,7 +174,7 @@ static const VmafBuiltInModel built_in_models[] = {
         .data_len = &src_vmaf_v1_0_16_hfr_1d5h_2160_json_len,
     },
 #endif
-    {0}};
+    {MODEL_NULL_POINTER, MODEL_NULL_POINTER, MODEL_NULL_POINTER}};
 
 #define BUILT_IN_MODEL_CNT (((sizeof(built_in_models)) / (sizeof(built_in_models[0]))) - 1)
 
@@ -180,7 +186,7 @@ unsigned vmaf_built_in_model_count_for_test(void)
 const char *vmaf_built_in_model_version_for_test(const void *built_in_model)
 {
     if (!built_in_model)
-        return NULL;
+        return MODEL_NULL_POINTER;
     const VmafBuiltInModel *model = built_in_model;
     return model->version;
 }
@@ -193,7 +199,7 @@ int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version
     if (!version)
         return -EINVAL;
 
-    const VmafBuiltInModel *built_in_model = NULL;
+    const VmafBuiltInModel *built_in_model = MODEL_NULL_POINTER;
 
     for (unsigned i = 0; i < BUILT_IN_MODEL_CNT; i++) {
         if (!strcmp(version, built_in_models[i].version)) {
@@ -218,7 +224,7 @@ char *vmaf_model_generate_name(VmafModelConfig *cfg)
 
     char *name = malloc(name_sz);
     if (!name)
-        return NULL;
+        return MODEL_NULL_POINTER;
 
     const char *src = cfg->name ? cfg->name : default_name;
     memcpy(name, src, name_sz);
@@ -414,7 +420,7 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
         if (err) {
             /* Match the historical contract: a failed first append leaves the
              * caller's handle NULL rather than dangling. */
-            *model_collection = NULL;
+            *model_collection = MODEL_NULL_POINTER;
             return err;
         }
         *model_collection = mc;
@@ -458,7 +464,7 @@ int vmaf_model_collection_load(VmafModel **model, VmafModelCollection **model_co
     if (!version)
         return -EINVAL;
 
-    const VmafBuiltInModel *built_in_model = NULL;
+    const VmafBuiltInModel *built_in_model = MODEL_NULL_POINTER;
 
     for (unsigned i = 0; i < BUILT_IN_MODEL_CNT; i++) {
         if (!strcmp(version, built_in_models[i].version)) {
@@ -507,7 +513,7 @@ int vmaf_model_collection_feature_overload(VmafModel *model, VmafModelCollection
 
     int err = 0;
     for (unsigned i = 0; i < mc->cnt; i++) {
-        VmafFeatureDictionary *d = NULL;
+        VmafFeatureDictionary *d = MODEL_NULL_POINTER;
         /* Netflix/vmaf#1242: the copy's return value used to be discarded and
          * the partially-built copy leaked on failure, while the function could
          * still report success from the lead-model call below.  Free the
@@ -531,10 +537,10 @@ int vmaf_model_collection_feature_overload(VmafModel *model, VmafModelCollection
 const void *vmaf_model_version_next(const void *prev, const char **version)
 {
     if (BUILT_IN_MODEL_CNT == 0)
-        return NULL;
+        return MODEL_NULL_POINTER;
 
     const VmafBuiltInModel *prev_model = prev;
-    const VmafBuiltInModel *out_model = NULL;
+    const VmafBuiltInModel *out_model = MODEL_NULL_POINTER;
 
     if (!prev_model) {
         out_model = &built_in_models[0];

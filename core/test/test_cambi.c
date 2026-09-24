@@ -522,54 +522,54 @@ static char *check_c_values_8x8(const float *combined_c_values_8x8)
 
 static char *test_calculate_c_values()
 {
-    VmafPicture input;
-    VmafPicture mask;
+    VmafPicture input = {0};
+    VmafPicture mask = {0};
+    VmafPicture input_8x8 = {0};
+    VmafPicture mask_8x8 = {0};
     float combined_c_values[16];
     const float expected_values[16] = {0.6666667, 2.0,  0.0, 0.0, 2.4, 3.4285715, 2.4, 0.0,
                                        2.6666667, 3.75, 3.0, 0.0, 2.0, 2.4,       2.0, 0.0};
-    unsigned width = 4;
-    unsigned height = 4;
     const uint16_t tvi_for_diff[4] = {178, 305, 432, 559};
     uint16_t vlt_luma = 0;
     uint16_t window_size = 3;
     const uint16_t num_diffs = 4;
-    uint16_t histograms[4 * 1032];
 
     uint16_t *diffs_to_consider = CAMBI_TEST_NULL_POINTER;
     int *diff_weights = CAMBI_TEST_NULL_POINTER;
     int *all_diffs = CAMBI_TEST_NULL_POINTER;
-    int err = 0;
-
-    vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider, &diff_weights, &all_diffs);
-    err |= get_sample_image(&input, 0);
-    mu_assert("test_calculate_c_values alloc #1 error", !err);
-    err |= get_sample_image(&mask, 8);
-    mu_assert("test_calculate_c_values alloc #2 error", !err);
-
-    vmaf_cambi_test_calculate_c_values(&input, &mask, combined_c_values, histograms, window_size,
-                                       num_diffs, tvi_for_diff, vlt_luma, diff_weights, all_diffs,
-                                       width, height);
-
-    {
-        char *error = check_c_values_4x4(combined_c_values, expected_values);
-        if (error)
-            return error;
+    char *error = CAMBI_TEST_NULL_POINTER;
+    int err = vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider, &diff_weights,
+                                                  &all_diffs);
+    if (err) {
+        error = "test_calculate_c_values contrast-array allocation error";
+    } else if (get_sample_image(&input, 0)) {
+        error = "test_calculate_c_values alloc #1 error";
+    } else if (get_sample_image(&mask, 8)) {
+        error = "test_calculate_c_values alloc #2 error";
+    } else {
+        const unsigned width = 4;
+        const unsigned height = 4;
+        uint16_t histograms[4 * 1032];
+        vmaf_cambi_test_calculate_c_values(&input, &mask, combined_c_values, histograms,
+                                           window_size, num_diffs, tvi_for_diff, vlt_luma,
+                                           diff_weights, all_diffs, width, height);
+        error = check_c_values_4x4(combined_c_values, expected_values);
     }
 
-    VmafPicture input_8x8;
-    VmafPicture mask_8x8;
-    float combined_c_values_8x8[64];
-    err |= get_sample_image_8x8(&input_8x8, 0);
-    mu_assert("test_calculate_c_values alloc #3 error", !err);
-    err |= get_sample_image_8x8(&mask_8x8, 1);
-    mu_assert("test_calculate_c_values alloc #4 error", !err);
-    window_size = 9;
-    uint16_t histograms_8x8[8 * 1032];
-    vmaf_cambi_test_calculate_c_values(&input_8x8, &mask_8x8, combined_c_values_8x8, histograms_8x8,
-                                       window_size, num_diffs, tvi_for_diff, vlt_luma, diff_weights,
-                                       all_diffs, 8, 8);
+    if (!error && get_sample_image_8x8(&input_8x8, 0)) {
+        error = "test_calculate_c_values alloc #3 error";
+    } else if (!error && get_sample_image_8x8(&mask_8x8, 1)) {
+        error = "test_calculate_c_values alloc #4 error";
+    } else if (!error) {
+        float combined_c_values_8x8[64];
+        uint16_t histograms_8x8[8 * 1032];
+        window_size = 9;
+        vmaf_cambi_test_calculate_c_values(&input_8x8, &mask_8x8, combined_c_values_8x8,
+                                           histograms_8x8, window_size, num_diffs, tvi_for_diff,
+                                           vlt_luma, diff_weights, all_diffs, 8, 8);
+        error = check_c_values_8x8(combined_c_values_8x8);
+    }
 
-    char *error = check_c_values_8x8(combined_c_values_8x8);
     vmaf_picture_unref(&input);
     vmaf_picture_unref(&mask);
     vmaf_picture_unref(&input_8x8);
@@ -910,25 +910,30 @@ static char *check_contrast_arrays_four(void)
     const int expected_all_diffs_4[9] = {-4, -3, -2, -1, 0, 1, 2, 3, 4};
 
     int num_diffs = (1 << max_log_diff);
-    vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider, &diffs_weights, &all_diffs);
+    int err = vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider, &diffs_weights,
+                                                  &all_diffs);
+    char *error = CAMBI_TEST_NULL_POINTER;
+    if (err)
+        error = "set_contrast_arrays max_log_diff 2 allocation error";
 
-    for (int i = 0; i < num_diffs; i++) {
-        mu_assert("set_contrast_arrays max_log_diff 2, error at diffs_to_consider",
-                  expected_diffs_to_consider_4[i] == diffs_to_consider[i]);
-        mu_assert("set_contrast_arrays max_log_diff 2, error at diffs_weights",
-                  expected_diffs_weights_4[i] == diffs_weights[i]);
+    for (int i = 0; !error && i < num_diffs; i++) {
+        if (expected_diffs_to_consider_4[i] != diffs_to_consider[i]) {
+            error = "set_contrast_arrays max_log_diff 2, error at diffs_to_consider";
+        } else if (expected_diffs_weights_4[i] != diffs_weights[i]) {
+            error = "set_contrast_arrays max_log_diff 2, error at diffs_weights";
+        }
     }
 
-    for (int i = 0; i < 2 * num_diffs + 1; i++) {
-        mu_assert("set_contrast_arrays max_log_diff 2, error at all_diffs",
-                  expected_all_diffs_4[i] == all_diffs[i]);
+    for (int i = 0; !error && i < 2 * num_diffs + 1; i++) {
+        if (expected_all_diffs_4[i] != all_diffs[i])
+            error = "set_contrast_arrays max_log_diff 2, error at all_diffs";
     }
 
     aligned_free(diffs_to_consider);
     aligned_free(diffs_weights);
     aligned_free(all_diffs);
 
-    return CAMBI_TEST_NULL_POINTER;
+    return error;
 }
 
 static char *test_set_contrast_arrays()
@@ -948,25 +953,30 @@ static char *test_set_contrast_arrays()
                                           1,  2,  3,  4,  5,  6,  7,  8};
 
     num_diffs = (1 << max_log_diff);
-    vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider, &diffs_weights, &all_diffs);
+    int err = vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider, &diffs_weights,
+                                                  &all_diffs);
+    char *array_error = CAMBI_TEST_NULL_POINTER;
+    if (err)
+        array_error = "set_contrast_arrays max_log_diff 3 allocation error";
 
-    for (int i = 0; i < num_diffs; i++) {
-        mu_assert("set_contrast_arrays max_log_diff 3, error at diffs_to_consider",
-                  expected_diffs_to_consider_8[i] == diffs_to_consider[i]);
-        mu_assert("set_contrast_arrays max_log_diff 3, error at diffs_weights",
-                  expected_diffs_weights_8[i] == diffs_weights[i]);
+    for (int i = 0; !array_error && i < num_diffs; i++) {
+        if (expected_diffs_to_consider_8[i] != diffs_to_consider[i]) {
+            array_error = "set_contrast_arrays max_log_diff 3, error at diffs_to_consider";
+        } else if (expected_diffs_weights_8[i] != diffs_weights[i]) {
+            array_error = "set_contrast_arrays max_log_diff 3, error at diffs_weights";
+        }
     }
 
-    for (int i = 0; i < 2 * num_diffs + 1; i++) {
-        mu_assert("set_contrast_arrays max_log_diff 3, error at all_diffs",
-                  expected_all_diffs_8[i] == all_diffs[i]);
+    for (int i = 0; !array_error && i < 2 * num_diffs + 1; i++) {
+        if (expected_all_diffs_8[i] != all_diffs[i])
+            array_error = "set_contrast_arrays max_log_diff 3, error at all_diffs";
     }
 
     aligned_free(diffs_to_consider);
     aligned_free(diffs_weights);
     aligned_free(all_diffs);
 
-    return CAMBI_TEST_NULL_POINTER;
+    return array_error;
 }
 
 static char *test_tvi_hard_threshold_condition()
@@ -1193,16 +1203,21 @@ static char *check_c_values_avx2_parity(VmafPicture *input, const VmafPicture *m
      * Closes T-CAMBI-AVX2-CI-SIGILL. */
 static char *test_calculate_c_values_scalar_avx2_parity()
 {
-    VmafPicture input_scalar;
-    VmafPicture input_avx2;
-    VmafPicture mask_scalar;
-    VmafPicture mask_avx2;
-    int err = 0;
-    err |= get_sample_image_8x8(&input_scalar, 0);
-    err |= get_sample_image_8x8(&input_avx2, 0);
-    err |= get_sample_image_8x8(&mask_scalar, 1);
-    err |= get_sample_image_8x8(&mask_avx2, 1);
-    mu_assert("parity test alloc error", !err);
+    VmafPicture input_scalar = {0};
+    VmafPicture input_avx2 = {0};
+    VmafPicture mask_scalar = {0};
+    VmafPicture mask_avx2 = {0};
+    char *msg = CAMBI_TEST_NULL_POINTER;
+    const int err = get_sample_image_8x8(&input_scalar, 0);
+    if (err) {
+        msg = "parity test scalar input allocation error";
+    } else if (get_sample_image_8x8(&input_avx2, 0)) {
+        msg = "parity test avx2 input allocation error";
+    } else if (get_sample_image_8x8(&mask_scalar, 1)) {
+        msg = "parity test scalar mask allocation error";
+    } else if (get_sample_image_8x8(&mask_avx2, 1)) {
+        msg = "parity test avx2 mask allocation error";
+    }
 
     float c_scalar[64];
     memset(c_scalar, 0, sizeof(c_scalar));
@@ -1219,18 +1234,20 @@ static char *test_calculate_c_values_scalar_avx2_parity()
     uint16_t *diffs_to_consider = CAMBI_TEST_NULL_POINTER;
     int *diff_weights = CAMBI_TEST_NULL_POINTER;
     int *all_diffs = CAMBI_TEST_NULL_POINTER;
-    vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider, &diff_weights, &all_diffs);
-
-    vmaf_cambi_test_calculate_c_values(&input_scalar, &mask_scalar, c_scalar, histograms_s,
-                                       window_size, num_diffs, tvi_for_diff, vlt_luma, diff_weights,
-                                       all_diffs, 8, 8);
+    if (!msg && vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider, &diff_weights,
+                                                    &all_diffs)) {
+        msg = "parity test contrast-array allocation error";
+    } else if (!msg) {
+        vmaf_cambi_test_calculate_c_values(&input_scalar, &mask_scalar, c_scalar, histograms_s,
+                                           window_size, num_diffs, tvi_for_diff, vlt_luma,
+                                           diff_weights, all_diffs, 8, 8);
+    }
 
 #if ARCH_X86
-    char *msg =
-        check_c_values_avx2_parity(&input_avx2, &mask_avx2, c_scalar, window_size, num_diffs,
-                                   tvi_for_diff, vlt_luma, diff_weights, all_diffs);
-#else
-    char *msg = CAMBI_TEST_NULL_POINTER;
+    if (!msg) {
+        msg = check_c_values_avx2_parity(&input_avx2, &mask_avx2, c_scalar, window_size, num_diffs,
+                                         tvi_for_diff, vlt_luma, diff_weights, all_diffs);
+    }
 #endif
 
     vmaf_picture_unref(&input_scalar);

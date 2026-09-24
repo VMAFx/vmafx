@@ -58,6 +58,7 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
 - Circular trampoline calls are eliminated (`calculate_c_values_default` invokes `calculate_c_values` directly).
 - Unprefixed declarations, test-only macros (`DEFAULT_CAMBI_TVI`, `NUM_SCALES`), and test-only enums are removed from `cambi_internal.h` and kept private to the respective test translation units.
 - Removed `#include "feature/cambi.c"` from both `test_cambi.c` and `test_cambi_stage_simd.c`, linking them against `libvmaf`.
+- Every allocation-returning test seam is checked before use, and each test gathers its result before releasing pictures and contrast arrays; failure paths no longer bypass cleanup through `mu_assert`.
 - All numerical operation orderings, bounded-search tests, and SIMD stage coverage are preserved; all 25 `test_cambi` tests and 14 `test_cambi_stage_simd` tests pass bit-exact.
 
 ## Alternatives considered
@@ -83,3 +84,4 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
 - **Dynamic-symbol gate**: `meson test -C build check_exported_symbols` passed; no internal test seam entered the public ABI.
 - **Netflix golden assertions**: `pytest python/test/` executed 283 tests: 271 passed, 12 skipped, 0 failures. No golden scores moved.
 - **CodeQL non-header scan**: Confirmed zero non-header includes in all seven alerted test files.
+- **Touched-file tidy ratchet**: generated CPU baseline tightened from 739 to 720 warnings; `model.c` (8 to 0) and `test_luminance_tools.cpp` (11 to 0) are lint-clean.
