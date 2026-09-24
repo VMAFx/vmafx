@@ -164,6 +164,21 @@ when conversion happens.
   change to weight application math must span all motion-family GPU
   twins in same PR.
 
+## Registration coverage invariant
+
+Every new Metal `VmafFeatureExtractor` added to
+`core/src/feature/feature_extractor.cpp`'s `feature_extractor_list[]` must add
+its basename to `core/test/test_metal_kernel_coverage_audit.c`'s
+`g_metal_kernel_basenames[]` and update `EXPECTED_KERNEL_COUNT` in the same
+PR. Motion-class extractors must also appear in
+`core/test/test_metal_kernel_registration.c`'s `kTemporal[]` table so the
+`VMAF_FEATURE_EXTRACTOR_TEMPORAL` scheduling flag is pinned. The runtime-focused
+`test_metal_smoke.c` is not the authoritative registration inventory.
+
+The dedicated registration and 17-kernel audit tests supersede the older
+per-extractor smoke functions removed by a stale squash; do not duplicate those
+lookups back into the runtime test. See Research-2091.
+
 ## Per-feature option-table sync invariant
 
 - **GPU twins must mirror CPU option table for model-configured

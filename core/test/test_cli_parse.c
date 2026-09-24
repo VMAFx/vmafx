@@ -301,6 +301,20 @@ static char *test_metal_device_explicit()
     return NULL;
 }
 
+static char *test_sycl_device_explicit(void)
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--sycl_device", "3"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --sycl_device 3 must select device 3", settings.sycl_device == 3);
+    mu_assert("cli_parse: --sycl_device must not disable SYCL", !settings.no_sycl);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    return NULL;
+}
+
 static char *test_no_hip_no_metal_flags()
 {
     char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--no_hip", "--no_metal"};
@@ -367,6 +381,64 @@ static char *test_backend_cuda_preserves_explicit_gpumask()
     return NULL;
 }
 
+static char *test_precision_max(void)
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--precision=max"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --precision=max must select maximum precision", settings.precision_max);
+    mu_assert("cli_parse: --precision=max must not select legacy precision",
+              !settings.precision_legacy);
+    mu_assert("cli_parse: --precision=max must leave numeric precision unset",
+              settings.precision_n == -1);
+    mu_assert("cli_parse: --precision=max must use %.17g",
+              strcmp(settings.precision_fmt, "%.17g") == 0);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    return NULL;
+}
+
+static char *test_precision_legacy(void)
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--precision=legacy"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --precision=legacy must select legacy precision",
+              settings.precision_legacy);
+    mu_assert("cli_parse: --precision=legacy must not select maximum precision",
+              !settings.precision_max);
+    mu_assert("cli_parse: --precision=legacy must leave numeric precision unset",
+              settings.precision_n == -1);
+    mu_assert("cli_parse: --precision=legacy must use %.6f",
+              strcmp(settings.precision_fmt, "%.6f") == 0);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    return NULL;
+}
+
+static char *test_precision_numeric(void)
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--precision=6"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("cli_parse: --precision=6 must store numeric precision 6", settings.precision_n == 6);
+    mu_assert("cli_parse: --precision=6 must not select maximum precision",
+              !settings.precision_max);
+    mu_assert("cli_parse: --precision=6 must not select legacy precision",
+              !settings.precision_legacy);
+    mu_assert("cli_parse: --precision=6 must use %.6g",
+              strcmp(settings.precision_fmt, "%.6g") == 0);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    return NULL;
+}
+
 static char *run_aom_ctc_tests(void)
 {
     mu_run_test(test_aom_ctc_v1_0);
@@ -395,10 +467,19 @@ static char *run_backend_selection_tests(void)
 
 static char *run_backend_device_tests(void)
 {
+    mu_run_test(test_sycl_device_explicit);
     mu_run_test(test_hip_device_explicit);
     mu_run_test(test_metal_device_explicit);
     mu_run_test(test_no_hip_no_metal_flags);
     mu_run_test(test_cpumask_short_opt);
+    return NULL;
+}
+
+static char *run_precision_tests(void)
+{
+    mu_run_test(test_precision_max);
+    mu_run_test(test_precision_legacy);
+    mu_run_test(test_precision_numeric);
     return NULL;
 }
 
@@ -775,6 +856,9 @@ char *run_tests()
     if (result)
         return result;
     result = run_backend_tests();
+    if (result)
+        return result;
+    result = run_precision_tests();
     if (result)
         return result;
     result = run_no_reference_tests();

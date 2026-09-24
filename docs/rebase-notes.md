@@ -1,6 +1,30 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-test-restorations — preserve picture, CLI, and registration seams (2026-09-24)
+
+`core/test/test_picture.c` directly pins the public YUV400P allocation
+contract at both 1920x1080 and odd 577x323 dimensions: the luma plane is
+allocated with the requested geometry, while both chroma pointers are `NULL`
+and both chroma geometries are zero. Consumer tests that happen to allocate a
+monochrome picture are not a substitute for this seam.
+
+`core/test/test_cli_parse.c` keeps direct cases for `--precision=max`,
+`--precision=legacy`, `--precision=6`, and `--sycl_device 3`. Preserve those
+explicit-option tests separately from the `vmafx` default and
+`--netflix-compat` override cases.
+
+Metal registration is already covered more deeply than the historical smoke
+functions: `test_metal_kernel_coverage_audit.c` checks all 17 registered
+kernels, while `test_metal_kernel_registration.c` pins the relevant lookup and
+temporal-flag contracts. Do not reintroduce duplicate per-extractor functions
+into `test_metal_smoke.c`. New Metal and HIP registrations must instead follow
+the `Registration coverage invariant` sections in their backend `AGENTS.md`
+files.
+
+No FFmpeg patch update is required: production code, public declarations,
+Meson options, and Netflix golden assertions are unchanged.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve
