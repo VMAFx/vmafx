@@ -12,7 +12,7 @@
 // `vmaf_use_features_from_model` causes libvmaf to store the raw `VmafModel*`
 // pointer inside the context's feature-collector linked list and uses it later
 // during prediction (see `vmaf_feature_collector_mount_model` in
-// `core/src/feature/feature_collector.c`).  If the Rust `Model` wrapper were
+// `core/src/feature/feature_collector.cpp`).  If the Rust `Model` wrapper were
 // dropped while the context is still alive, every subsequent libvmaf call that
 // dereferences the stored pointer would be a use-after-free.
 //

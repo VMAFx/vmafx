@@ -16,48 +16,38 @@
  *
  */
 
-/* Standard C headers are safe without wrapping.
- * Use the C++ equivalents (<cerrno>, <cassert>, ...) per
- * clang-tidy modernize-deprecated-headers. <stdbool.h> is dropped:
- * in C++, `bool` / `true` / `false` are language keywords. <pthread.h>
- * has no C++ equivalent and stays as-is. */
 #include <cerrno>
-#include <cassert>
+#include <cstdint>
 #include <pthread.h>
-#include <cstdarg>
 #include <cstdlib>
 #include <cstring>
 
-/* Headers that already carry their own extern "C" guards — include freely. */
-#include "dict.h"             /* has #ifdef __cplusplus extern "C" */
-#include "metadata_handler.h" /* has #ifdef __cplusplus extern "C" */
+#include "dict.h"
+#include "metadata_handler.h"
 
-/* Headers without extern "C" guards — wrap explicitly. */
 extern "C" {
 #include "feature_collector.h"
 #include "feature_collector_internal.h"
 #include "feature_name.h"
 #include "libvmaf/libvmaf.h"
+#include "libvmaf/vmaf_assert.h"
 #include "log.h"
 #include "predict.h"
-} /* extern "C" for non-guarded C headers */
-
-/* All function definitions use C linkage. */
-extern "C" {
+}
 
 int aggregate_vector_init(AggregateVector *aggregate_vector)
 {
     if (!aggregate_vector)
         return -EINVAL;
     memset(aggregate_vector, 0, sizeof(*aggregate_vector));
-    const unsigned initial_capacity = 8;
-    const size_t metric_vector_sz = sizeof(aggregate_vector->metric[0]) * initial_capacity;
+    const size_t metric_vector_sz =
+        sizeof(aggregate_vector->metric[0]) * FEATURE_VECTOR_INITIAL_CAPACITY;
     aggregate_vector->metric =
         static_cast<decltype(aggregate_vector->metric)>(malloc(metric_vector_sz));
     if (!aggregate_vector->metric)
         return -ENOMEM;
     memset(aggregate_vector->metric, 0, metric_vector_sz);
-    aggregate_vector->capacity = initial_capacity;
+    aggregate_vector->capacity = FEATURE_VECTOR_INITIAL_CAPACITY;
 
     return 0;
 }
@@ -86,7 +76,9 @@ int aggregate_vector_append(AggregateVector *aggregate_vector, const char *featu
 
     const unsigned cnt = aggregate_vector->cnt;
     if (cnt >= aggregate_vector->capacity) {
-        assert(aggregate_vector->capacity > 0);
+        VMAF_ASSERT_DEBUG(aggregate_vector->capacity > 0);
+        if (aggregate_vector->capacity == 0)
+            return -EINVAL;
         const size_t initial_size =
             sizeof(aggregate_vector->metric[0]) * aggregate_vector->capacity;
         void *metric = realloc(aggregate_vector->metric, initial_size * 2);
@@ -100,7 +92,7 @@ int aggregate_vector_append(AggregateVector *aggregate_vector, const char *featu
     const size_t feature_name_sz = strnlen(feature_name, 2048);
     char *f = static_cast<char *>(malloc(feature_name_sz + 1));
     if (!f)
-        return -ENOMEM; /* was -EINVAL; malloc-failure must surface as ENOMEM */
+        return -ENOMEM; /* was -EINVAL; allocation failure must surface as ENOMEM */
     memcpy(f, feature_name, feature_name_sz);
     f[feature_name_sz] = '\0';
 
@@ -123,6 +115,24 @@ void aggregate_vector_destroy(AggregateVector *aggregate_vector)
     free(aggregate_vector->metric);
 }
 
+/* Caller holds the collector lock. Returns the stored aggregate for
+ * `feature_name`, or NULL when no aggregate of that name was set. */
+namespace
+{
+
+const double *aggregate_vector_find(const AggregateVector *aggregate_vector,
+                                    const char *feature_name)
+{
+    for (unsigned i = 0; i < aggregate_vector->cnt; i++) {
+        const char *f = aggregate_vector->metric[i].name;
+        if (!strcmp(f, feature_name))
+            return &(aggregate_vector->metric[i].value);
+    }
+    return nullptr;
+}
+
+} // namespace
+
 int vmaf_feature_collector_set_aggregate(VmafFeatureCollector *feature_collector,
                                          const char *feature_name, double score)
 {
@@ -136,7 +146,8 @@ int vmaf_feature_collector_set_aggregate(VmafFeatureCollector *feature_collector
         pthread_mutex_unlock(&(feature_collector->lock));
         return -ENODEV;
     }
-    int err = aggregate_vector_append(&feature_collector->aggregate_vector, feature_name, score);
+    const int err =
+        aggregate_vector_append(&feature_collector->aggregate_vector, feature_name, score);
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
 }
@@ -156,28 +167,37 @@ int vmaf_feature_collector_get_aggregate(VmafFeatureCollector *feature_collector
         pthread_mutex_unlock(&(feature_collector->lock));
         return -ENODEV;
     }
-    int err = 0;
 
-    double *s = nullptr;
-    for (unsigned i = 0; i < feature_collector->aggregate_vector.cnt; i++) {
-        const char *f = feature_collector->aggregate_vector.metric[i].name;
-        if (!strcmp(f, feature_name)) {
-            s = &(feature_collector->aggregate_vector.metric[i].value);
-            break;
-        }
-    }
+    const double *s = aggregate_vector_find(&feature_collector->aggregate_vector, feature_name);
+    const int err = s ? 0 : -EINVAL;
+    if (s)
+        *score = *s;
 
-    if (!s) {
-        err = -EINVAL;
-        goto unlock;
-    };
-
-    *score = *s;
-
-unlock:
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
 }
+
+/* Single unwind path for feature_vector_init(). The struct is zeroed straight
+ * after allocation, so a member belonging to a stage that was never reached is
+ * NULL and free() on it is a no-op. The release order (name, then the struct)
+ * is exactly the order the former `free_name:` -> `free_fv:` label chain used,
+ * and every error exit runs the same chain from its own entry point. */
+namespace
+{
+
+int feature_vector_init_unwind(FeatureVector **const feature_vector, FeatureVector *fv)
+{
+    if (fv) {
+        free(fv->name);
+        free(fv);
+    }
+    /* NULL the caller's handle so it cannot be dereferenced after a failed
+     * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
+    *feature_vector = nullptr;
+    return -ENOMEM;
+}
+
+} // namespace
 
 int feature_vector_init(FeatureVector **const feature_vector, const char *name)
 {
@@ -186,31 +206,21 @@ int feature_vector_init(FeatureVector **const feature_vector, const char *name)
     if (!name)
         return -EINVAL;
 
-    const size_t name_sz = strlen(name);
     FeatureVector *const fv = *feature_vector = static_cast<FeatureVector *>(malloc(sizeof(*fv)));
     if (!fv)
-        goto fail;
+        return feature_vector_init_unwind(feature_vector, fv);
     memset(fv, 0, sizeof(*fv));
+    const size_t name_sz = strlen(name);
     fv->name = static_cast<char *>(malloc(name_sz + 1));
     if (!fv->name)
-        goto free_fv;
+        return feature_vector_init_unwind(feature_vector, fv);
     memcpy(fv->name, name, name_sz + 1);
-    fv->capacity = 8;
+    fv->capacity = FEATURE_VECTOR_INITIAL_CAPACITY;
     fv->score = static_cast<decltype(fv->score)>(malloc(sizeof(fv->score[0]) * fv->capacity));
     if (!fv->score)
-        goto free_name;
+        return feature_vector_init_unwind(feature_vector, fv);
     memset(fv->score, 0, sizeof(fv->score[0]) * fv->capacity);
     return 0;
-
-free_name:
-    free(fv->name);
-free_fv:
-    free(fv);
-fail:
-    /* NULL the caller's handle so it cannot be dereferenced after a failed
-     * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
-    *feature_vector = nullptr;
-    return -ENOMEM;
 }
 
 void feature_vector_destroy(FeatureVector *feature_vector)
@@ -236,15 +246,15 @@ int feature_vector_append(FeatureVector *feature_vector, unsigned index, double 
         return -EINVAL;
 
     while (index >= feature_vector->capacity) {
-        assert(feature_vector->capacity > 0);
+        VMAF_ASSERT_DEBUG(feature_vector->capacity > 0);
         /* Doubling stays within `unsigned` because FEATURE_VECTOR_MAX_INDEX is
          * far below UINT_MAX/2; the loop is guaranteed to terminate. */
         const size_t initial_size = sizeof(feature_vector->score[0]) * feature_vector->capacity;
-        void *score_buf = realloc(feature_vector->score, initial_size * 2);
-        if (!score_buf)
+        void *new_buf = realloc(feature_vector->score, initial_size * 2);
+        if (!new_buf)
             return -ENOMEM;
-        memset(static_cast<char *>(score_buf) + initial_size, 0, initial_size);
-        feature_vector->score = static_cast<decltype(feature_vector->score)>(score_buf);
+        memset(static_cast<char *>(new_buf) + initial_size, 0, initial_size);
+        feature_vector->score = static_cast<decltype(feature_vector->score)>(new_buf);
         feature_vector->capacity *= 2;
     }
 
@@ -260,61 +270,108 @@ int feature_vector_append(FeatureVector *feature_vector, unsigned index, double 
     return 0;
 }
 
-int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
+/* Caller holds the collector lock. Reads the score stored at `index`.
+ *
+ * Netflix#755 / ADR-0154: distinguish "feature index is genuinely invalid"
+ * (-EINVAL) from "feature is valid but not yet written" (-EAGAIN). Several
+ * extractors (integer_motion motion2/motion3, five-frame-window variants)
+ * write their score for frame N retroactively when frame N+1 or N+2 is
+ * extracted — and on flush for the tail. A caller interleaving
+ * vmaf_read_pictures(i) with vmaf_score_pooled(i, i) would otherwise hit a
+ * false-fatal error; -EAGAIN tells the caller the request will succeed later
+ * (after more reads or after flush) rather than signalling programmer error. */
+namespace
 {
-    if (!feature_collector)
+
+int feature_vector_read(const FeatureVector *feature_vector, unsigned index, double *score)
+{
+    if (index >= feature_vector->capacity)
         return -EINVAL;
-    int err = 0;
-
-    /* All locals that appear after a goto must be declared before the first
-     * goto that could jump over them (C++ cross-initialisation rule). */
-    size_t fv_sz;
-    VmafFeatureCollector *const fc = *feature_collector =
-        static_cast<VmafFeatureCollector *>(malloc(sizeof(*fc)));
-    if (!fc)
-        goto fail;
-    memset(fc, 0, sizeof(*fc));
-    fc->capacity = 8;
-    fv_sz = sizeof(FeatureVector *) * fc->capacity;
-    fc->feature_vector = static_cast<FeatureVector **>(malloc(fv_sz));
-    if (!fc->feature_vector)
-        goto free_fc;
-    memset(static_cast<void *>(fc->feature_vector), 0, fv_sz);
-    err = aggregate_vector_init(&fc->aggregate_vector);
-    if (err)
-        goto free_feature_vector;
-    err = pthread_mutex_init(&(fc->lock), nullptr);
-    if (err)
-        goto free_aggregate_vector;
-    err = vmaf_metadata_init(&(fc->metadata));
-    if (err)
-        goto free_mutex;
+    if (!feature_vector->score[index].written)
+        return -EAGAIN;
+    *score = feature_vector->score[index].value;
     return 0;
+}
 
-free_mutex:
-    pthread_mutex_destroy(&(fc->lock));
-free_aggregate_vector:
-    aggregate_vector_destroy(&(fc->aggregate_vector));
-free_feature_vector:
-    free(static_cast<void *>(fc->feature_vector));
-free_fc:
-    free(fc);
-    *feature_collector =
-        nullptr; /* prevent dangling pointer — mirrors feature_collector.c:265 pattern */
-fail:
+} // namespace
+
+/* Construction stages of vmaf_feature_collector_init(), in acquisition order.
+ * The unwind helper below releases every stage at or below the one named,
+ * highest first, which reproduces the former
+ * `free_mutex:` -> `free_aggregate_vector:` -> `free_feature_vector:` ->
+ * `free_fc:` -> `fail:` label chain one release at a time and in the same
+ * order, whichever entry point an error takes. */
+namespace
+{
+
+enum FeatureCollectorStage : std::uint8_t {
+    FC_STAGE_NOTHING = 0,
+    FC_STAGE_STRUCT = 1,
+    FC_STAGE_FEATURE_VECTOR = 2,
+    FC_STAGE_AGGREGATE_VECTOR = 3,
+    FC_STAGE_MUTEX = 4,
+};
+
+int feature_collector_init_unwind(VmafFeatureCollector **const feature_collector,
+                                  VmafFeatureCollector *fc, FeatureCollectorStage stage)
+{
+    if (stage >= FC_STAGE_MUTEX)
+        (void)pthread_mutex_destroy(&(fc->lock));
+    if (stage >= FC_STAGE_AGGREGATE_VECTOR)
+        aggregate_vector_destroy(&(fc->aggregate_vector));
+    if (stage >= FC_STAGE_FEATURE_VECTOR)
+        free(static_cast<void *>(fc->feature_vector));
+    if (stage >= FC_STAGE_STRUCT)
+        free(fc);
     /* NULL the caller's handle so it cannot be dereferenced after a failed
      * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
     *feature_collector = nullptr;
     return -ENOMEM;
 }
 
-int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
+} // namespace
+
+int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
 {
     if (!feature_collector)
         return -EINVAL;
-    if (!model)
-        return -EINVAL;
+    int err = 0;
 
+    VmafFeatureCollector *const fc = *feature_collector =
+        static_cast<VmafFeatureCollector *>(malloc(sizeof(*fc)));
+    if (!fc)
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_NOTHING);
+    memset(fc, 0, sizeof(*fc));
+    fc->capacity = FEATURE_VECTOR_INITIAL_CAPACITY;
+    const size_t fv_sz = sizeof(FeatureVector *) * fc->capacity;
+    fc->feature_vector = static_cast<FeatureVector **>(malloc(fv_sz));
+    if (!fc->feature_vector)
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_STRUCT);
+    memset(static_cast<void *>(fc->feature_vector), 0, fv_sz);
+    err = aggregate_vector_init(&fc->aggregate_vector);
+    if (err)
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_FEATURE_VECTOR);
+    err = pthread_mutex_init(&(fc->lock), nullptr);
+    if (err)
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_AGGREGATE_VECTOR);
+    err = vmaf_metadata_init(&(fc->metadata));
+    if (err)
+        return feature_collector_init_unwind(feature_collector, fc, FC_STAGE_MUTEX);
+    return 0;
+}
+
+/* Round-5 race fix (findings #2 and #5): mount_model, unmount_model, and the
+ * destroy path all mutate/traverse feature_collector->models.  Factor the
+ * actual list manipulation into lock-free helpers and add lock acquire/release
+ * in every public entry point.  destroy() already holds the lock, so it calls
+ * the _unlocked variant directly. */
+
+namespace
+{
+
+int feature_collector_mount_model_unlocked(VmafFeatureCollector *feature_collector,
+                                           VmafModel *model)
+{
     auto *m = static_cast<VmafPredictModel *>(malloc(sizeof(VmafPredictModel)));
     if (!m)
         return -ENOMEM;
@@ -334,13 +391,14 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
     return 0;
 }
 
-int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
-{
-    if (!feature_collector)
-        return -EINVAL;
-    if (!model)
-        return -EINVAL;
+} // namespace
 
+namespace
+{
+
+int feature_collector_unmount_model_unlocked(VmafFeatureCollector *feature_collector,
+                                             const VmafModel *model)
+{
     VmafPredictModel *head = feature_collector->models;
     VmafPredictModel *prev = nullptr;
 
@@ -361,6 +419,46 @@ int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector
     return -ENOENT;
 }
 
+} // namespace
+
+int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
+{
+    if (!feature_collector)
+        return -EINVAL;
+    if (!model)
+        return -EINVAL;
+
+    pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
+    const int err = feature_collector_mount_model_unlocked(feature_collector, model);
+    pthread_mutex_unlock(&(feature_collector->lock));
+    return err;
+}
+
+/* `model` is only compared by address here, but the public C declaration in
+ * feature_collector.h fixes the parameter type. Keep that ABI-compatible
+ * signature rather than making this definition locally const-qualified. */
+/* cppcheck-suppress constParameterPointer ; public C declaration fixes the signature */
+int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
+{
+    if (!feature_collector)
+        return -EINVAL;
+    if (!model)
+        return -EINVAL;
+
+    pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
+    const int err = feature_collector_unmount_model_unlocked(feature_collector, model);
+    pthread_mutex_unlock(&(feature_collector->lock));
+    return err;
+}
+
 int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_collector,
                                              VmafMetadataConfiguration metadata_cfg)
 {
@@ -371,16 +469,21 @@ int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_colle
     if (!metadata_cfg.callback)
         return -EINVAL;
 
+    /* Round-5 race fix (finding #8): metadata->head list is read concurrently
+     * by feature_collector_dispatch_metadata inside vmaf_feature_collector_append
+     * (which holds the lock).  Hold the lock here so the append is not
+     * interleaved with an in-progress traversal. */
+    pthread_mutex_lock(&(feature_collector->lock));
     VmafCallbackList *metadata = feature_collector->metadata;
-    int err = vmaf_metadata_append(metadata, metadata_cfg);
-    if (err)
-        return err;
-
-    return 0;
+    const int err = vmaf_metadata_append(metadata, metadata_cfg);
+    pthread_mutex_unlock(&(feature_collector->lock));
+    return err;
 }
 
-[[nodiscard]] static FeatureVector *find_feature_vector(VmafFeatureCollector *fc,
-                                                        const char *feature_name) noexcept
+namespace
+{
+
+FeatureVector *find_feature_vector(VmafFeatureCollector *fc, const char *feature_name)
 {
     FeatureVector *feature_vector = nullptr;
     for (unsigned i = 0; i < fc->cnt; i++) {
@@ -392,6 +495,8 @@ int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_colle
     }
     return feature_vector;
 }
+
+} // namespace
 
 FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *fc, const char *feature_name)
 {
@@ -408,12 +513,16 @@ FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *fc, const char 
     return fv;
 }
 
-[[nodiscard]] static int
-feature_collector_grow_capacity(VmafFeatureCollector *feature_collector) noexcept
+namespace
+{
+
+int feature_collector_grow_capacity(VmafFeatureCollector *feature_collector)
 {
     if (feature_collector->cnt + 1 <= feature_collector->capacity)
         return 0;
-    assert(feature_collector->capacity > 0);
+    VMAF_ASSERT_DEBUG(feature_collector->capacity > 0);
+    if (feature_collector->capacity == 0)
+        return -EINVAL;
     const size_t entry_sz = sizeof(FeatureVector *);
     const size_t old_bytes = entry_sz * feature_collector->capacity;
     FeatureVector **fv = static_cast<FeatureVector **>(
@@ -426,9 +535,13 @@ feature_collector_grow_capacity(VmafFeatureCollector *feature_collector) noexcep
     return 0;
 }
 
-[[nodiscard]] static int feature_collector_ensure_vector(VmafFeatureCollector *feature_collector,
-                                                         const char *feature_name,
-                                                         FeatureVector **out) noexcept
+} // namespace
+
+namespace
+{
+
+int feature_collector_ensure_vector(VmafFeatureCollector *feature_collector,
+                                    const char *feature_name, FeatureVector **out)
 {
     FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
     if (feature_vector) {
@@ -449,15 +562,43 @@ feature_collector_grow_capacity(VmafFeatureCollector *feature_collector) noexcep
     return 0;
 }
 
-static void feature_collector_run_model_predict(VmafFeatureCollector *feature_collector,
-                                                unsigned picture_index, double *score)
+} // namespace
+
+/* Maximum number of mounted models supported in one predict pass.
+ * Stack-allocated snapshot avoids heap allocation on the hot path and
+ * eliminates the dangling-pointer race that arises when iterating a
+ * linked list across lock-drop/re-acquire cycles (iter10 TSan finding). */
+#define FEATURE_COLLECTOR_MAX_MODELS 32u
+
+namespace
 {
-    VmafPredictModel *model_iter = feature_collector->models;
-    while (model_iter) {
-        VmafModel *model = model_iter->model;
+
+void feature_collector_run_model_predict(VmafFeatureCollector *feature_collector,
+                                         unsigned picture_index, double *score)
+{
+    /* iter10 TSan race fix: snapshot the entire model list into a local
+     * stack array while the lock is held, then release the lock and
+     * iterate the snapshot.  Snapshotting only ->next (round-5 fix) is
+     * insufficient: a concurrent unmount_model may free the node that the
+     * pre-snapshotted next pointer resolves to before the next iteration
+     * re-acquires the lock.  Snapshotting the full VmafModel* list avoids
+     * all such dangling references; VmafModel lifetime is caller-managed
+     * and outlives the predict pass. */
+    VmafModel *model_snapshot[FEATURE_COLLECTOR_MAX_MODELS];
+    unsigned model_count = 0u;
+
+    const VmafPredictModel *node = feature_collector->models;
+    while (node && model_count < FEATURE_COLLECTOR_MAX_MODELS) {
+        model_snapshot[model_count++] = node->model;
+        node = node->next;
+    }
+    /* Lock is dropped here; the snapshot is independent of the list. */
+
+    for (unsigned i = 0u; i < model_count; i++) {
+        VmafModel *model = model_snapshot[i];
 
         pthread_mutex_unlock(&(feature_collector->lock));
-        int res =
+        const int res =
             vmaf_feature_collector_get_score(feature_collector, model->name, score, picture_index);
         pthread_mutex_lock(&(feature_collector->lock));
 
@@ -467,24 +608,29 @@ static void feature_collector_run_model_predict(VmafFeatureCollector *feature_co
                                               true, static_cast<VmafModelFlags>(0));
             pthread_mutex_lock(&(feature_collector->lock));
         }
-        model_iter = model_iter->next;
     }
 }
 
-static void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_collector,
-                                                const char *feature_name, unsigned picture_index,
-                                                double score)
+} // namespace
+
+namespace
 {
-    VmafCallbackItem *metadata_iter =
+
+void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_collector,
+                                         const char *feature_name, unsigned picture_index,
+                                         double score)
+{
+    const VmafCallbackItem *metadata_iter =
         feature_collector->metadata ? feature_collector->metadata->head : nullptr;
     while (metadata_iter) {
         // Check current feature name is the same as the metadata feature name
         if (!strcmp(metadata_iter->metadata_cfg.feature_name, feature_name)) {
             // Call the callback function with the metadata feature name
-            VmafMetadata data;
-            data.feature_name = metadata_iter->metadata_cfg.feature_name;
-            data.picture_index = picture_index;
-            data.score = score;
+            VmafMetadata data = {
+                .feature_name = metadata_iter->metadata_cfg.feature_name,
+                .picture_index = picture_index,
+                .score = score,
+            };
             metadata_iter->metadata_cfg.callback(metadata_iter->metadata_cfg.data, &data);
         } else {
             // If metadata feature name is not the same as the current feature feature_name
@@ -494,6 +640,8 @@ static void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_co
         metadata_iter = metadata_iter->next;
     }
 }
+
+} // namespace
 
 int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const char *feature_name,
                                   double score, unsigned picture_index)
@@ -508,23 +656,17 @@ int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const
         pthread_mutex_unlock(&(feature_collector->lock));
         return -ENODEV;
     }
-    int err = 0;
 
     if (!feature_collector->timer.begin)
         feature_collector->timer.begin = clock();
 
     FeatureVector *feature_vector = nullptr;
-    err = feature_collector_ensure_vector(feature_collector, feature_name, &feature_vector);
-    if (err)
-        goto unlock;
+    int err = feature_collector_ensure_vector(feature_collector, feature_name, &feature_vector);
+    if (!err)
+        err = feature_vector_append(feature_vector, picture_index, score);
+    if (!err)
+        feature_collector_dispatch_metadata(feature_collector, feature_name, picture_index, score);
 
-    err = feature_vector_append(feature_vector, picture_index, score);
-    if (err)
-        goto unlock;
-
-    feature_collector_dispatch_metadata(feature_collector, feature_name, picture_index, score);
-
-unlock:
     feature_collector->timer.end = clock();
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
@@ -538,7 +680,7 @@ int vmaf_feature_collector_append_with_dict(VmafFeatureCollector *fc, VmafDictio
     if (!dict)
         return -EINVAL;
 
-    VmafDictionaryEntry *entry = vmaf_dictionary_get(&dict, feature_name, 0);
+    const VmafDictionaryEntry *entry = vmaf_dictionary_get(&dict, feature_name, 0);
     const char *fn = entry ? entry->val : feature_name;
     return vmaf_feature_collector_append(fc, fn, score, index);
 }
@@ -558,33 +700,10 @@ int vmaf_feature_collector_get_score(VmafFeatureCollector *feature_collector,
         pthread_mutex_unlock(&(feature_collector->lock));
         return -ENODEV;
     }
-    int err = 0;
 
-    FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
+    const FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
+    const int err = feature_vector ? feature_vector_read(feature_vector, index, score) : -EINVAL;
 
-    if (!feature_vector || index >= feature_vector->capacity) {
-        err = -EINVAL;
-        goto unlock;
-    }
-
-    /* Netflix#755 / ADR-0154: distinguish "feature index is genuinely
-     * invalid" (-EINVAL above) from "feature is valid but not yet
-     * written" (-EAGAIN here). Several extractors (integer_motion
-     * motion2/motion3, five-frame-window variants) write their score
-     * for frame N retroactively when frame N+1 or N+2 is extracted —
-     * and on flush for the tail. A caller interleaving
-     * vmaf_read_pictures(i) with vmaf_score_pooled(i, i) then hits a
-     * false-fatal error; -EAGAIN tells the caller the request will
-     * succeed later (after more reads or after flush) rather than
-     * signalling programmer error. */
-    if (!feature_vector->score[index].written) {
-        err = -EAGAIN;
-        goto unlock;
-    }
-
-    *score = feature_vector->score[index].value;
-
-unlock:
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
 }
@@ -599,22 +718,19 @@ void vmaf_feature_collector_destroy(VmafFeatureCollector *feature_collector)
     for (unsigned i = 0; i < feature_collector->cnt; i++) {
         feature_vector_destroy(feature_collector->feature_vector[i]);
     }
+    /* Lock is already held; use the unlocked variant to avoid self-deadlock. */
     while (feature_collector->models) {
-        vmaf_feature_collector_unmount_model(feature_collector, feature_collector->models->model);
+        (void)feature_collector_unmount_model_unlocked(feature_collector,
+                                                       feature_collector->models->model);
     }
     vmaf_metadata_destroy(feature_collector->metadata);
     free(static_cast<void *>(feature_collector->feature_vector));
-    /* Set destroyed flag under the lock before releasing it.  Any thread
-     * already blocked on pthread_mutex_lock will acquire the mutex, see
-     * destroyed == true, release immediately, and return -ENODEV — preventing
-     * it from operating on a half-freed struct.  This closes the
-     * mutex-destroy-after-unlock race: pthread_mutex_destroy is not called
-     * until after the unlock, but by then no new critical-section body can
-     * run because the destroyed guard redirects all lockers. */
+    /* Signal all threads blocked on the lock that the collector is dead.
+     * Any thread that acquires the lock after this point will see
+     * destroyed == true and return -ENODEV, preventing use-after-free
+     * on the mutex itself (pthread_mutex_destroy immediately follows). */
     feature_collector->destroyed = true;
     pthread_mutex_unlock(&(feature_collector->lock));
     pthread_mutex_destroy(&(feature_collector->lock));
     free(feature_collector);
 }
-
-} /* extern "C" */

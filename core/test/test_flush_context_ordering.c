@@ -45,10 +45,7 @@
 #include "test.h"
 
 /* White-box include: pulls in the static flush_context* helpers and the full
- * VmafContext definition. Mirrors the established pattern in
- * test_feature_collector.c. */
-// NOLINTNEXTLINE(bugprone-suspicious-include): white-box test, see above (ADR-0141 / ADR-0278).
-#include "feature_collector.c"
+ * VmafContext definition. */
 // NOLINTNEXTLINE(bugprone-suspicious-include): static flush_context* and the private VmafContext (ADR-0141 / ADR-0278).
 #include "libvmaf.c"
 

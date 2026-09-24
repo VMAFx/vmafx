@@ -23,8 +23,8 @@
  *   - `git mv metadata_handler.c metadata_handler.cpp` preserves blame.
  *   - The public C API in metadata_handler.h is unchanged; all three
  *     functions retain their original C signatures and are declared
- *     `extern "C"` in the header, so every C caller (feature_collector.c)
- *     links without modification.
+ *     `extern "C"` in the header, so C callers and the C-linkage definitions
+ *     in feature_collector.cpp link without modification.
  *   - `std::unique_ptr<VmafCallbackList>` RAII-manages the list head,
  *     replacing the manual `free(metadata)` tail-call in
  *     `vmaf_metadata_destroy` with guaranteed cleanup on any exit path.

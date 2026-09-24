@@ -13,7 +13,7 @@ registration:
 ```text
 feature/
   feature_extractor.cpp/.h   # the registry + lifecycle contract (init/extract/flush/close)
-  feature_collector.c/.h     # per-frame score aggregator
+  feature_collector.cpp/.h   # per-frame score aggregator
   vif.c / adm.c / …          # scalar CPU reference implementations
   integer_*.c                # integer-math reference implementations
   feature_lpips.c            # DNN-backed extractor (opens vmaf_dnn_session_*)
@@ -258,7 +258,7 @@ feature/
   into cross-ISA aliases (fork's SIMD policy rules out
   Highway / simde / xsimd — see user memory
   `feedback_simd_dx_scope.md`).
-- **`feature_collector.c` mount/unmount traversal**: fork rewrites
+- **`feature_collector.cpp` mount/unmount traversal**: fork rewrites
   `vmaf_feature_collector_mount_model` and `unmount_model` to walk
   local cursor instead of advancing pointer-to-head — upstream
   [Netflix#1406](https://github.com/Netflix/vmaf/pull/1406) is still
@@ -273,6 +273,15 @@ feature/
   would trip clang-tidy `readability-function-size` (JPL-P10 rule 4).
   See [ADR-0132](../../../docs/adr/0132-port-netflix-1406-feature-collector-model-list.md)
   and [rebase-notes 0031](../../../docs/rebase-notes.md).
+- **`feature_collector.cpp` is the only implementation authority.** Commit
+  `5d070b0b4` accidentally recreated a C implementation after the C++ migration,
+  leaving production and tests on different bodies. Do not add
+  `feature_collector.c` or point any build target at one. Preserve the mutex
+  coverage, full mounted-model snapshot, unlocked destroy traversal, unwind
+  helpers, and `-EAGAIN` read contract together in the C++ TU. The fast
+  `test_feature_collector_source_authority` gate fails if the twin or a stale
+  build reference returns. See
+  [Research-2079](../../../docs/research/2079-feature-collector-source-authority-2026-09-24.md).
 - **Generalised AVX convolve scanline helpers** (fork-local,
   ADR-0143): four `convolution_f32_avx_s_1d_*_scanline`
   helpers in [`common/convolution_avx.c`](common/convolution_avx.c)

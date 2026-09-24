@@ -322,7 +322,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 739,
+  "total_warnings": 726,
   "total_nolint_uncited": 0,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -362,7 +362,6 @@
     "core/src/feature/common/blur_array.c": 6,
     "core/src/feature/common/convolution_internal.h": 8,
     "core/src/feature/feature_characteristics.h": 3,
-    "core/src/feature/feature_collector.cpp": 13,
     "core/src/feature/feature_collector.h": 4,
     "core/src/feature/feature_name.h": 1,
     "core/src/feature/float_adm.c": 4,
@@ -1223,6 +1222,21 @@
         }
       },
       "previous_baseline_sha256": "8b22b2cdd9c34bece507a15a9c8af7803ea8b46e45472e9b0052698ce1c0b27a"
+    },
+    {
+      "sources": [
+        "core/src/feature/feature_collector.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/feature_collector.cpp": {
+          "warnings": [
+            13,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c4cf5607045ad865fc4abecd87bb27f468dfc1ff786c34835c2036667d4d62f2"
     }
   ]
 }

@@ -52663,3 +52663,17 @@ to an exception.
 - Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
   tests/test_coverage_round4.py::test_auth_413_on_large_body`.
 - Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.
+
+## fix/bug048-feature-collector-duplicate — one collector source (2026-09-24)
+
+`core/src/feature/feature_collector.cpp` is the sole implementation authority.
+Do not restore `feature_collector.c` when resolving an upstream or branch
+conflict. The C++ TU intentionally retains the later C-side mutex coverage for
+model mount/unmount and metadata registration, the complete mounted-model
+pointer snapshot used across lock drops, the unlocked destroy traversal, the
+HISS-01 unwind helpers, and the `-EAGAIN` not-yet-written contract. The public C
+ABI is unchanged through `feature_collector.h`.
+
+`test_feature_collector_source_authority` is the mechanical guard. The deeper
+reasoning and the exact-master compile/object evidence are in
+[Research-2079](research/2079-feature-collector-source-authority-2026-09-24.md).
