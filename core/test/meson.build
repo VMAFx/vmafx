@@ -231,6 +231,23 @@ test_public_api_score = executable('test_public_api_score',
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
 )
 
+# Linux static-link fault control for output_file_open(). The project's
+# large-file flags redirect open(2) to open64(2), so GNU ld wraps that symbol
+# and injects EINTR once for the target path.
+# LTO can resolve the call before the linker sees it, so build this control
+# only in the configuration where --wrap is authoritative.
+if host_machine.system() == 'linux' and get_option('default_library') != 'shared' \
+        and not get_option('b_lto')
+    test_output_open_eintr = executable('test_output_open_eintr',
+        ['test.c', 'test_output_open_eintr.c'],
+        include_directories : [libvmaf_inc, test_inc],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        link_args : ['-Wl,--wrap=open64'],
+        dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_output_open_eintr', test_output_open_eintr, suite : ['fast'])
+endif
+
 test_thread_pool = executable('test_thread_pool',
     ['test.c', 'test_thread_pool.c', '../src/thread_pool.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

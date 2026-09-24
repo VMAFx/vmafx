@@ -1,6 +1,31 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-dev-mcp-resilience — preserve runtime-record and retry controls (2026-09-24)
+
+The dev-MCP files are fork-local, but `core/src/libvmaf.c` follows upstream
+Netflix and is conflict-prone. Preserve these three controls through any
+reconciliation:
+
+- `dev-mcp-entrypoint.sh` matches complete runtime records. SYCL accepts a
+  leading bracketed `level_zero:gpu` or `opencl:gpu` record; HIP accepts a full
+  `Name: gfx...` or `Device Type: GPU` line. A loose token search reintroduces
+  both missed devices and diagnostic false positives. Run
+  `scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh` after conflicts.
+- `dev-mcp-healthcheck.sh` is still a stdio-compatible CLI check. It adds a
+  driver query only when `/dev/nvidia0` exists; do not replace it with a Unix
+  socket check or an unconditional NVIDIA dependency. Keep Compose's 45-second
+  start period and run `dev/scripts/test-dev-mcp-healthcheck.sh`.
+- `output_file_open()` retries `_open()` / `open()` exactly once only when the
+  first failure is `EINTR`. The Linux control wraps `open64`, selected by this
+  project's large-file flags, in a static non-LTO test target. If those flags
+  change, inspect the library's undefined symbol before changing the wrapper;
+  the test must continue proving that fault injection actually fired and that
+  exactly two calls occurred.
+
+No public C surface, FFmpeg patch, output schema, or Netflix golden assertion
+changes. Research and alternatives: [Research-2084](research/2084-dev-mcp-resilience-restoration.md).
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

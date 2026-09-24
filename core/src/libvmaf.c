@@ -3600,10 +3600,15 @@ const char *vmaf_version(void)
  * permission bits up front. Returns -errno of the failing call. */
 static int output_file_open(const char *output_path, FILE **outfile)
 {
+    int outfd;
 #ifdef _WIN32
-    const int outfd = _open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    outfd = _open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (outfd < 0 && errno == EINTR)
+        outfd = _open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 #else
-    const int outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (outfd < 0 && errno == EINTR)
+        outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 #endif
     if (outfd < 0) {
         /* Capture errno immediately — it is clobbered by fprintf(3). */

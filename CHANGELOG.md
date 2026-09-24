@@ -22863,6 +22863,12 @@ on developer hosts) is never included in the image layers even when
 root `.dockerignore`). Closes the overlay2 accumulation regression.
 
 
+- Restore dev-MCP GPU visibility and startup resilience lost during the
+  repository-layout reconciliation: probes now match anchored SYCL/HIP device
+  records, the Compose healthcheck waits for a responsive NVIDIA driver when
+  one is exposed, and libvmaf retries an output-file open once after `EINTR`.
+
+
 - `dev/Containerfile`: add Intel GPU compute-runtime (`intel-opencl-icd`,
   `libze-intel-gpu1`) from Intel's GPU apt repo so the Level Zero loader can
   probe the Arc GPU ICD inside the container. Without these packages

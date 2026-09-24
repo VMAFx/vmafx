@@ -220,13 +220,13 @@ services:
 
     healthcheck:
       # The entrypoint exposes MCP over stdio (`docker exec -i ... vmaf-mcp`)
-      # rather than a persistent UDS listener, so health must check the CLI
-      # that the probe service actually depends on.
-      test: ["CMD", "vmaf", "--version"]
+      # rather than a persistent UDS listener. The helper checks the CLI and,
+      # when NVIDIA is exposed, waits until the driver answers a real query.
+      test: ["CMD", "/build/vmaf/dev/scripts/dev-mcp-healthcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 20s
+      start_period: 45s
 
   # -------------------------------------------------------------------------
   # smoke-probe-cron — periodic backend + MCP probe
