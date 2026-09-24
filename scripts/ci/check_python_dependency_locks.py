@@ -23,7 +23,7 @@ import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 try:
     import yaml
@@ -1120,17 +1120,59 @@ def _check_precheckout_command_tokens(tokens: list[str], root: Path | None = Non
     return findings
 
 
-def _is_checkout_step(step: dict[str, Any]) -> bool:
-    uses = str(step.get("uses", "")).strip()
-    if not uses:
+CHECKOUT_USES_RE = re.compile(r"^actions/checkout@[0-9a-fA-F]{40}$")
+ACCEPTED_LOCAL_REPOSITORIES = {
+    "${{ github.repository }}",
+    "${{github.repository}}",
+    "vmafx/vmafx",
+}
+
+
+def _is_valid_checkout_uses(uses_val: Any) -> bool:
+    if not isinstance(uses_val, str):
         return False
-    action_name = uses.split("@", 1)[0].strip()
-    if not action_name.endswith("actions/checkout"):
+    clean = uses_val.split("#", 1)[0].strip().strip("\"'")
+    return bool(CHECKOUT_USES_RE.fullmatch(clean))
+
+
+def _is_valid_checkout_repo(repo_val: Any) -> bool:
+    if repo_val is None:
+        return True
+    clean = str(repo_val).strip().strip("\"'")
+    if not clean:
+        return True
+    return clean.lower() in ACCEPTED_LOCAL_REPOSITORIES
+
+
+def _is_root_checkout_path(path_val: Any) -> bool:
+    if path_val is None:
+        return True
+    clean = str(path_val).strip().strip("\"'").rstrip("/")
+    return clean in {"", "."}
+
+
+def _is_truthy(val: Any) -> bool:
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return val != 0
+    if isinstance(val, str):
+        return val.strip().lower() not in {"false", "0", "no", ""}
+    return bool(val)
+
+
+def _is_checkout_step(step: dict[str, Any]) -> bool:
+    if not _is_valid_checkout_uses(step.get("uses")):
+        return False
+    if step.get("if") is not None and bool(str(step.get("if")).strip()):
+        return False
+    if _is_truthy(step.get("continue-on-error")):
         return False
     with_dict = step.get("with")
     if isinstance(with_dict, dict):
-        repo = str(with_dict.get("repository", "")).strip()
-        if repo and repo not in {"${{ github.repository }}", "VMAFx/vmafx"}:
+        if not _is_valid_checkout_repo(with_dict.get("repository")):
+            return False
+        if not _is_root_checkout_path(with_dict.get("path")):
             return False
     return True
 
@@ -1148,39 +1190,117 @@ def _step_consumes_repo_resources(step: dict[str, Any], root: Path | None = None
     return findings
 
 
-def _update_fallback_step(line: str, step: dict[str, Any]) -> None:
-    m_uses = re.match(r"^\s*uses:\s*(.+)$", line)
-    if m_uses:
-        step["uses"] = m_uses.group(1).split("#")[0].strip()
+def _parse_step_scalar(prop: str, val: str, step: dict[str, Any]) -> None:
+    clean = val.split("#", 1)[0].strip().strip("\"'")
+    if prop in {"uses", "if", "continue-on-error"}:
+        step[prop] = clean
+
+
+def _start_step_block(prop: str, val: str, indent: int, step: dict[str, Any]) -> tuple[str, int]:
+    clean = val.split("#", 1)[0].strip()
+    if prop == "with":
+        step.setdefault("with", {})
+        return "with", indent
+    if prop == "run":
+        if clean.startswith(">"):
+            step["run"] = ""
+            return "run_folded", indent
+        if clean.startswith("|"):
+            step["run"] = ""
+            return "run_literal", indent
+        step["run"] = clean.strip("\"'")
+        return "run_folded", indent
+    return "", 0
+
+
+def _parse_step_entry(
+    raw_line: str,
+    indent: int,
+    step: dict[str, Any],
+) -> tuple[str, int]:
+    m = re.match(r"^\s*([a-zA-Z0-9_-]+):\s*(.*)$", raw_line)
+    if not m:
+        return "", 0
+    prop, val = m.group(1), m.group(2)
+    if prop in {"uses", "if", "continue-on-error"}:
+        _parse_step_scalar(prop, val, step)
+        return "", 0
+    if prop in {"with", "run"}:
+        return _start_step_block(prop, val, indent, step)
+    return "", 0
+
+
+def _append_run_content(content: str, folded: bool, step: dict[str, Any]) -> None:
+    if not content:
+        step["run"] = step.get("run", "") + "\n"
         return
-    m_run = re.match(r"^\s*run:\s*(.+)$", line)
-    if m_run:
-        step["run"] = step.get("run", "") + "\n" + m_run.group(1)
-    elif re.match(r"^\s{8,}\S", line) and "run" in step:
-        step["run"] = step["run"] + "\n" + line.strip()
+    cur = step.get("run", "")
+    sep = " " if folded and cur and not cur.endswith("\n") else "\n"
+    step["run"] = f"{cur}{sep}{content}" if cur else content
+
+
+def _append_step_block_line(line: str, mode: str, step: dict[str, Any]) -> None:
+    content = line.strip()
+    if mode == "with":
+        m = re.match(r"^([a-zA-Z0-9_-]+):\s*(.*)$", content)
+        if m:
+            val = m.group(2).split("#", 1)[0].strip().strip("\"'")
+            step.setdefault("with", {})[m.group(1)] = val
+    elif mode in {"run_folded", "run_literal"}:
+        _append_run_content(content, mode == "run_folded", step)
+
+
+def _start_fallback_step(
+    raw_step: str, spaces: int, job_steps: list[dict[str, Any]]
+) -> tuple[dict[str, Any], str, int]:
+    step: dict[str, Any] = {}
+    job_steps.append(step)
+    rest = raw_step.strip()
+    mode, indent = _parse_step_entry(rest, spaces, step) if rest else ("", 0)
+    return step, mode, indent
+
+
+def _handle_fallback_step_line(
+    line: str,
+    cur_job: str | None,
+    jobs: dict[str, list[dict[str, Any]]],
+    cur_step: dict[str, Any] | None,
+    mode: str,
+    indent: int,
+) -> tuple[dict[str, Any] | None, str, int]:
+    spaces = len(line) - len(line.lstrip(" "))
+    if mode and cur_step is not None:
+        if not line.strip() or spaces > indent:
+            _append_step_block_line(line, mode, cur_step)
+            return cur_step, mode, indent
+        mode, indent = "", 0
+    m_step = re.match(r"^\s*-\s+(.*)$", line)
+    if m_step and cur_job is not None:
+        return _start_fallback_step(m_step.group(1), spaces, jobs[cur_job])
+    if cur_step is not None:
+        new_mode, new_indent = _parse_step_entry(line, spaces, cur_step)
+        return cur_step, new_mode, new_indent
+    return None, "", 0
 
 
 def _parse_workflow_jobs_fallback(text: str) -> dict[str, list[dict[str, Any]]]:
     jobs: dict[str, list[dict[str, Any]]] = {}
-    current_job: str | None = None
+    cur_job: str | None = None
     in_steps = False
-    current_step: dict[str, Any] | None = None
-
+    cur_step: dict[str, Any] | None = None
+    mode, indent = "", 0
     for line in text.splitlines():
-        match_job = re.match(r"^  ([a-zA-Z0-9_-]+):\s*$", line)
-        if match_job:
-            current_job = match_job.group(1)
-            jobs[current_job] = []
-            in_steps = False
-            current_step = None
-        elif current_job is not None and re.match(r"^    steps:\s*$", line):
+        m_job = re.match(r"^  ([a-zA-Z0-9_-]+):\s*$", line)
+        if m_job:
+            cur_job = m_job.group(1)
+            jobs[cur_job] = []
+            in_steps, cur_step, mode, indent = False, None, "", 0
+        elif cur_job is not None and re.match(r"^    steps:\s*$", line):
             in_steps = True
-        elif in_steps and re.match(r"^      - ", line):
-            current_step = {}
-            jobs[current_job].append(current_step)
-            _update_fallback_step(line[8:], current_step)
-        elif in_steps and current_step is not None:
-            _update_fallback_step(line, current_step)
+        elif in_steps:
+            cur_step, mode, indent = _handle_fallback_step_line(
+                line, cur_job, jobs, cur_step, mode, indent
+            )
     return jobs
 
 
@@ -1189,7 +1309,7 @@ def _load_workflow_jobs(text: str) -> dict[str, Any]:
         try:
             data = yaml.safe_load(text)
             if isinstance(data, dict) and isinstance(data.get("jobs"), dict):
-                return data["jobs"]
+                return cast(dict[str, Any], data["jobs"])
         except Exception:
             pass
     return _parse_workflow_jobs_fallback(text)

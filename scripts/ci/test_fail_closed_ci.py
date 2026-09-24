@@ -9,6 +9,7 @@ import importlib.util
 import re
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
@@ -138,12 +139,20 @@ class FailClosedCIContract(unittest.TestCase):
         checker = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
         spec.loader.exec_module(checker)  # type: ignore[union-attr]
         for workflow in sorted(WORKFLOWS.glob("*.yml")):
-            findings = checker.scan_workflow_checkout_ordering(
-                workflow, workflow.read_text(encoding="utf-8"), root=ROOT
-            )
+            text = workflow.read_text(encoding="utf-8")
+            findings = checker.scan_workflow_checkout_ordering(workflow, text, root=ROOT)
             self.assertEqual(
                 findings, [], f"{workflow.name} consumes repo resources before actions/checkout"
             )
+            with mock.patch.object(checker, "yaml", None):
+                fallback_findings = checker.scan_workflow_checkout_ordering(
+                    workflow, text, root=ROOT
+                )
+                self.assertEqual(
+                    fallback_findings,
+                    [],
+                    f"{workflow.name} consumes repo resources before actions/checkout (fallback)",
+                )
 
 
 if __name__ == "__main__":

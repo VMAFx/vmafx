@@ -1166,6 +1166,227 @@ jobs:
             self.assertEqual(len(findings), 1)
             self.assertIn("consumes repo-local helper file", findings[0])
 
+    def _scan_both_modes(self, path: Path, text: str) -> tuple[list[str], list[str]]:
+        pyyaml_findings = self.checker.scan_workflow_checkout_ordering(path, text, root=ROOT)
+        with mock.patch.object(self.checker, "yaml", None):
+            fallback_findings = self.checker.scan_workflow_checkout_ordering(path, text, root=ROOT)
+        return pyyaml_findings, fallback_findings
+
+    def test_spoofed_or_unpinned_checkout_rejected_both_modes(self) -> None:
+        template = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {uses}
+      - name: Load config
+        run: scripts/ci/load-build-config.sh
+"""
+        invalid_uses = [
+            "spoofed/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "actions/checkout-spoof@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "evil-actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "actions/checkout@v4",
+            "actions/checkout@3d3c42",
+            "actions/checkout@master",
+        ]
+        for uses in invalid_uses:
+            text = template.format(uses=uses)
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), text
+            )
+            self.assertEqual(len(pyyaml_res), 1, f"PyYAML accepted invalid uses: {uses}")
+            self.assertEqual(len(fallback_res), 1, f"Fallback accepted invalid uses: {uses}")
+            self.assertIn("consumes repo-local helper file", pyyaml_res[0])
+            self.assertIn("consumes repo-local helper file", fallback_res[0])
+
+        valid_text = template.format(
+            uses="actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        )
+        pyyaml_res, fallback_res = self._scan_both_modes(
+            Path(".github/workflows/test.yml"), valid_text
+        )
+        self.assertEqual(pyyaml_res, [])
+        self.assertEqual(fallback_res, [])
+
+    def test_foreign_repository_checkout_rejected_both_modes(self) -> None:
+        template = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: {repo}
+      - name: Load config
+        run: scripts/ci/load-build-config.sh
+"""
+        foreign_repos = ["foreign/repo", "VMAFx/pelorus", "Netflix/vmaf", "evil/checkout"]
+        for repo in foreign_repos:
+            text = template.format(repo=repo)
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), text
+            )
+            self.assertEqual(len(pyyaml_res), 1, f"PyYAML accepted foreign repo: {repo}")
+            self.assertEqual(len(fallback_res), 1, f"Fallback accepted foreign repo: {repo}")
+            self.assertIn("consumes repo-local helper file", pyyaml_res[0])
+            self.assertIn("consumes repo-local helper file", fallback_res[0])
+
+        for local_repo in ["${{ github.repository }}", "VMAFx/vmafx", "vmafx/vmafx"]:
+            valid_text = template.format(repo=local_repo)
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), valid_text
+            )
+            self.assertEqual(pyyaml_res, [], f"PyYAML rejected local repo: {local_repo}")
+            self.assertEqual(fallback_res, [], f"Fallback rejected local repo: {local_repo}")
+
+    def test_conditional_checkout_rejected_both_modes(self) -> None:
+        template = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: {cond}
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
+"""
+        conditions = [
+            "github.event_name == 'push'",
+            "always()",
+            "true",
+            "success()",
+            "${{ github.event_name == 'pull_request' }}",
+        ]
+        for cond in conditions:
+            text = template.format(cond=cond)
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), text
+            )
+            self.assertEqual(len(pyyaml_res), 1, f"PyYAML accepted conditional checkout: {cond}")
+            self.assertEqual(
+                len(fallback_res), 1, f"Fallback accepted conditional checkout: {cond}"
+            )
+            self.assertIn("consumes repo-local requirements file", pyyaml_res[0])
+            self.assertIn("consumes repo-local requirements file", fallback_res[0])
+
+    def test_continue_on_error_checkout_rejected_both_modes(self) -> None:
+        template = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        continue-on-error: {coe}
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
+"""
+        truthy_values = ["true", "True", "yes", "1", "${{ matrix.experimental }}"]
+        for coe in truthy_values:
+            text = template.format(coe=coe)
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), text
+            )
+            self.assertEqual(
+                len(pyyaml_res), 1, f"PyYAML accepted continue-on-error checkout: {coe}"
+            )
+            self.assertEqual(
+                len(fallback_res), 1, f"Fallback accepted continue-on-error checkout: {coe}"
+            )
+            self.assertIn("consumes repo-local requirements file", pyyaml_res[0])
+            self.assertIn("consumes repo-local requirements file", fallback_res[0])
+
+        valid_text = template.format(coe="false")
+        pyyaml_res, fallback_res = self._scan_both_modes(
+            Path(".github/workflows/test.yml"), valid_text
+        )
+        self.assertEqual(pyyaml_res, [])
+        self.assertEqual(fallback_res, [])
+
+    def test_subdirectory_path_checkout_rejected_both_modes(self) -> None:
+        template = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: {path}
+      - name: Install
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
+"""
+        subdirs = ["sub/directory", ".ci/pelorus", "nested", "./sub"]
+        for path in subdirs:
+            text = template.format(path=path)
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), text
+            )
+            self.assertEqual(len(pyyaml_res), 1, f"PyYAML accepted subdirectory path: {path}")
+            self.assertEqual(len(fallback_res), 1, f"Fallback accepted subdirectory path: {path}")
+            self.assertIn("consumes repo-local requirements file", pyyaml_res[0])
+            self.assertIn("consumes repo-local requirements file", fallback_res[0])
+
+        for root_path in [".", "./", '""']:
+            valid_text = template.format(path=root_path)
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), valid_text
+            )
+            self.assertEqual(pyyaml_res, [], f"PyYAML rejected root path: {root_path}")
+            self.assertEqual(fallback_res, [], f"Fallback rejected root path: {root_path}")
+
+    def test_folded_yaml_run_split_flags_detected_both_modes(self) -> None:
+        text_folded = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install
+        run: >
+          python -m pip install --require-hashes -r
+          requirements/locks/build.txt
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+"""
+        text_folded_chomp = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install
+        run: >-
+          python -m pip install
+          --require-hashes
+          -r
+          requirements/locks/build.txt
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+"""
+        for text in [text_folded, text_folded_chomp]:
+            pyyaml_res, fallback_res = self._scan_both_modes(
+                Path(".github/workflows/test.yml"), text
+            )
+            self.assertEqual(len(pyyaml_res), 1)
+            self.assertEqual(len(fallback_res), 1)
+            self.assertIn(
+                "consumes repo-local requirements file 'requirements/locks/build.txt'",
+                pyyaml_res[0],
+            )
+            self.assertIn(
+                "consumes repo-local requirements file 'requirements/locks/build.txt'",
+                fallback_res[0],
+            )
+
+    def test_repository_workflows_enforced_in_fallback_mode(self) -> None:
+        workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+        self.assertGreaterEqual(len(workflows), 30)
+        with mock.patch.object(self.checker, "yaml", None):
+            for workflow in workflows:
+                text = workflow.read_text(encoding="utf-8")
+                findings = self.checker.scan_workflow_checkout_ordering(workflow, text, root=ROOT)
+                self.assertEqual(
+                    findings,
+                    [],
+                    f"Fallback parser reported false-positive on {workflow.name}: {findings}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
