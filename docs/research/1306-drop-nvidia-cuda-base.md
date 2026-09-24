@@ -129,7 +129,7 @@ docker run --rm --gpus device=0 \
   --reference /data/ref_576x324_48f.yuv \
   --distorted /data/dis_576x324_48f.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
-  --backend cuda --model version=vmaf_v0.6.1 \
+  --backend cuda --model path=/usr/local/share/vmafx/model/vmaf_v0.6.1.json \
   --output /dev/stdout --json --quiet
 ```
 
