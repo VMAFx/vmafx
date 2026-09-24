@@ -48,8 +48,9 @@ def _safe_add_exception_note(exc, note):
         return
     try:
         add_note(exc, note)
-    except Exception:
-        # Diagnostic enrichment is secondary and must not replace the target failure.
+    except BaseException:
+        # Diagnostic enrichment is secondary and must not replace the target failure,
+        # even when note storage raises a control-flow exception.
         return
 
 

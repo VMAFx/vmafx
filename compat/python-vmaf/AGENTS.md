@@ -121,7 +121,8 @@ python/vmaf/
   `sem.acquire()` after the five-second warning. FIFO error channel delivery failure
   closes the pipe and attaches diagnostic context through `_safe_add_exception_note`,
   which bypasses a potentially overridden `add_note` method and suppresses secondary
-  note-storage failures (`_run_fifo_worker`);
+  note-storage failures, including `BaseException`-derived control-flow failures
+  (`_run_fifo_worker`);
   `_fifo_worker_failure` treats EOF on the error channel as
   immediate failure rather than returning `None`. `RegressorMixin._get_scatter_arrays`
   uses elementwise identity comparison `is None` rather than `== None` for None and

@@ -345,6 +345,26 @@ class ExecutorTest(unittest.TestCase):
         self.assertEqual(str(cm.exception), "primary target failure")
         self.assertFalse(hasattr(cm.exception, "__notes__"))
 
+    def test_fifo_worker_baseexception_note_storage_failure_preserves_target_exception(self):
+        class NoteStorageFailure(ValueError):
+            def __setattr__(self, name, value):
+                if name == "__notes__":
+                    raise KeyboardInterrupt("secondary note storage interruption")
+                return super().__setattr__(name, value)
+
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        receiver.close()
+
+        def target(asset, fifo_mode, open_sem=None):
+            raise NoteStorageFailure("primary target failure")
+
+        with self.assertRaises(NoteStorageFailure) as cm:
+            executor_module._run_fifo_worker(target, None, None, sender)
+
+        self.assertEqual(str(cm.exception), "primary target failure")
+        self.assertFalse(hasattr(cm.exception, "__notes__"))
+
     @unittest.skipUnless(
         os.path.isdir("/proc/self/fd"),
         "real descriptor-close regression requires Linux /proc/self/fd",
