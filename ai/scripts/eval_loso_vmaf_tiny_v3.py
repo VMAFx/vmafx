@@ -18,19 +18,27 @@ statistics so the v3 → v2 PLCC delta can be cited directly in the ADR
 
 from __future__ import annotations
 
-import argparse
 import sys
 import time
+from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from ai.scripts.train_vmaf_tiny_v3 import CANONICAL_6, _train  # noqa: E402
+
+# isort: split
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 
 def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
@@ -55,8 +63,8 @@ def _eval_fold(
     return _metrics(pred, y_val)
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
+def _parse_args(raw_argv: list[str]) -> Namespace:
+    ap = make_argument_parser()
     ap.add_argument(
         "--parquet",
         type=Path,
@@ -73,17 +81,27 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args()
+    return ap.parse_args(raw_argv)
 
-    import pandas as pd
 
-    df = pd.read_parquet(args.parquet)
-    if "source" not in df.columns:
-        print("error: parquet missing 'source' column", file=sys.stderr)
-        return 2
+def _aggregate_metrics(
+    plccs: list[float], sroccs: list[float], rmses: list[float]
+) -> dict[str, float]:
+    return {
+        "mean_plcc": float(np.mean(plccs)),
+        "mean_srocc": float(np.mean(sroccs)),
+        "mean_rmse": float(np.mean(rmses)),
+        "std_plcc": float(np.std(plccs, ddof=1)),
+        "std_srocc": float(np.std(sroccs, ddof=1)),
+        "std_rmse": float(np.std(rmses, ddof=1)),
+    }
+
+
+def _run_loso(
+    df: Any, args: Namespace
+) -> tuple[list[str], dict[str, dict[str, float]], dict[str, float]]:
     sources = sorted(df["source"].unique().tolist())
     print(f"[loso-v3] sources={sources} total_rows={len(df)}", flush=True)
-
     fold_metrics: dict[str, dict[str, float]] = {}
     plccs, sroccs, rmses = [], [], []
     t_start = time.monotonic()
@@ -94,12 +112,10 @@ def main() -> int:
         y_tr = df.loc[train_mask, "vmaf"].to_numpy(dtype=np.float64)
         x_va = df.loc[val_mask, list(CANONICAL_6)].to_numpy(dtype=np.float64)
         y_va = df.loc[val_mask, "vmaf"].to_numpy(dtype=np.float64)
-
         mean = x_tr.mean(axis=0)
         std = x_tr.std(axis=0, ddof=0)
         std = np.where(std < 1e-8, 1.0, std)
         x_tr_std = (x_tr - mean) / std
-
         print(
             f"[loso-v3] fold={held_out}  train_rows={len(x_tr)}  val_rows={len(x_va)}",
             flush=True,
@@ -124,15 +140,7 @@ def main() -> int:
             f"({time.monotonic() - t0:.1f}s)",
             flush=True,
         )
-
-    aggregate = {
-        "mean_plcc": float(np.mean(plccs)),
-        "mean_srocc": float(np.mean(sroccs)),
-        "mean_rmse": float(np.mean(rmses)),
-        "std_plcc": float(np.std(plccs, ddof=1)),
-        "std_srocc": float(np.std(sroccs, ddof=1)),
-        "std_rmse": float(np.std(rmses, ddof=1)),
-    }
+    aggregate = _aggregate_metrics(plccs, sroccs, rmses)
     print(
         f"[loso-v3] === aggregate over {len(plccs)} folds ===\n"
         f"[loso-v3]  mean PLCC={aggregate['mean_plcc']:.4f} ± {aggregate['std_plcc']:.4f}\n"
@@ -141,6 +149,18 @@ def main() -> int:
         f"[loso-v3] total wall {time.monotonic() - t_start:.1f}s",
         flush=True,
     )
+    return sources, fold_metrics, aggregate
+
+
+def _run(args: Namespace, raw_argv: list[str]) -> int:
+
+    import pandas as pd
+
+    df = pd.read_parquet(args.parquet)
+    if "source" not in df.columns:
+        print("error: parquet missing 'source' column", file=sys.stderr)
+        return 2
+    sources, fold_metrics, aggregate = _run_loso(df, args)
 
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
@@ -158,7 +178,7 @@ def main() -> int:
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
+            argv=raw_argv,
             args=args,
             inputs={"parquet": args.parquet},
             outputs={"report_target": str(args.out_json)},
@@ -167,6 +187,11 @@ def main() -> int:
     write_manifest_json(args.out_json, report)
     print(f"[loso-v3] wrote {args.out_json}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    return _run(_parse_args(raw_argv), raw_argv)
 
 
 if __name__ == "__main__":

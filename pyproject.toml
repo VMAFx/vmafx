@@ -197,11 +197,12 @@ module = "vmaf.*"
 ignore_errors = true   # upstream library — not our type stubs to maintain
 
 [[tool.mypy.overrides]]
-# Suppress "Source file found twice" errors for the ai.src.vmaf_train.* namespace.
-# This fires when a script imports vmaf_train.X (resolved via mypy_path → ai/src/)
-# and mypy also sees the same file in the ai.src namespace via the legacy ai/ scan.
-# The ai.src namespace is never used at runtime; only vmaf_train.* is.
+# Do not traverse the legacy ai.src alias. Ignoring its errors happens too late:
+# mypy rejects a file discovered as both ai.src.vmaf_train.X and vmaf_train.X
+# before per-module diagnostics exist. The canonical vmaf_train.* modules are
+# checked in the dedicated ai/src invocation with --explicit-package-bases.
 module = ["ai.src.*", "ai.src.vmaf_train.*"]
+follow_imports = "skip"
 ignore_errors = true
 
 [[tool.mypy.overrides]]

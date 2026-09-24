@@ -373,11 +373,32 @@ it does not perform the promotion.
    package group silently restores the publication bottleneck this branch removes.
    `CUDA_APT_LOCK_RELEASE` must remain outside Renovate ownership so every release bump
    fails until the exact toolkit, nvcc, and cudart versions have been reviewed live.
+## fix/mypy-prepush-config-baseline-rc1 — baseline evaluates branch checker config (2026-09-24)
+
+1. **`scripts/git-hooks/pre-push-mypy.py` evaluates baseline mypy under branch checker configuration.**
+   When resolving rebase conflicts or updating pre-push hooks, preserve the configuration synchronization
+   logic in `baseline_fingerprints()` and the scope widening in `selected_paths()`. The disposable baseline
+   worktree checked out at the merge base must receive copies of the branch's checker configuration files
+   (`pyproject.toml`, `mypy.ini`, `.mypy.ini`, `setup.cfg`) before executing the baseline checker. This
+   ensures that configuration adjustments (such as `python_version` raises or strictness increases) do not
+   attribute pre-existing debt in merge-base code as new errors introduced by the branch.
+2. **Merge-base source files must remain preserved.**
+   The baseline worktree must not copy branch `.py` files into the baseline worktree. Only checker configuration
+   files are copied, while source code remains checked out at `base`.
+3. **Resolve `ai/src` through one module identity.**
+   Preserve `follow_imports = "skip"` on the legacy `ai.src.*` mypy override. The canonical
+   `vmaf_train.*` tree is checked by the dedicated `ai/src` invocation with
+   `--explicit-package-bases`; traversing both names in the widened configuration-change run makes
+   mypy abort with `Source file found twice` before any finding comparison.
+4. **Fail-closed behavior is required.**
+   If configuration parsing fails, mypy exits outside its ordinary 0/1 statuses, or exit 1 carries no
+   parseable finding, the hook raises a `RuntimeError` and terminates with exit code 2. A blocker remains
+   fatal even after partial findings, and one module-identity run's exit 1 must not mask a later blocker.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
 1. **`scripts/ci/silent-revert-allowlist.json` describes the *difference* between
-   this branch and `master`, not a permanent policy.** Both entries exist only
+   this branch and `master`, not a permanent policy.** Each entry exists only
    because master still carries the state being superseded: the retired numbered
    workspace root that `c2a3c7e0f` wrote in place of `.corpus/` (ADR-1277), and the
    by-value HIP ADM kernels that `92ea978a4` left after silently reverting ADR-0759.
@@ -488,10 +509,14 @@ touched and is unusable on any branch that is behind. It must keep resolving
 the **live** target tip rather than `github.event.pull_request.base.sha`, since
 the defect class is master moving after the branch was cut.
 
-Do not add an in-tree suppression path — no annotation, allowlist or per-path
-exclusion. The only opt-out is a declaration in the PR itself (`revert:` title,
-`reverts: #N`, `intentional revert: <reason>`), and the unedited
-`intentional revert: REASON` placeholder must keep failing. Keep the
+ADR-1291 supersedes this section's original no-allowlist rule with two narrow
+declaration mechanisms. A one-off whole-PR revert uses a `revert:` title,
+`reverts: #N`, or `intentional revert: <reason>`; the unedited
+`intentional revert: REASON` placeholder must keep failing. An accepted ADR
+may instead declare a live reversal in `silent-revert-allowlist.json`, but only
+with detector, exact path, exact full commit for `reverse-hunk`, and an evidence
+regex that matches every line. That file is an expiring declaration of one
+known reversal, never a bare path or source-tree exclusion. Keep the
 fail-closed exits (unresolvable ref, no merge base, conflicting merge, git
 below 2.38) — a case the gate cannot analyse must never print "clean".
 
@@ -503,7 +528,7 @@ committed three markers into `core/src/feature/cuda/integer_vif_cuda.c` and the
 PR that deleted them reset the file to its pre-marker blob.
 
 Regression command: `python3 scripts/ci/tests/test_check_silent_revert.py`
-(12 tests; `test_real_history_replay` needs `31a51afb2` and `92ea978a4` in the
+(22 tests; `test_real_history_replay` needs `31a51afb2` and `92ea978a4` in the
 clone and skips otherwise). See ADR-1284.
 ## fix/bug-gpu-lint — GPU NOLINT citations and the SYCL tidy database (2026-09-22)
 
@@ -53123,3 +53148,33 @@ raw-pointer forms fail. `test_sycl_speed_singular_parity` is the device red-cap
 and passes on the Arc at the unchanged `1e-4` tolerance. No public surface,
 FFmpeg patch, score snapshot, or Netflix golden assertion changes.
 See [Research-2090](research/2090-sycl-silent-revert-residuals-2026-09-24.md).
+## fix/bug048-ai-cli-helpers — restore shared AI CLI setup (2026-09-24)
+
+Twelve fork-local scripts were migrated to ADR-0680/0681 in `d02922fc2` and
+`cc4ea5014`, then silently returned to their older bodies in `d170ef86a`.
+Preserve the current versions' shared setup through rebases:
+
+- bootstrap with `ai/scripts/_script_bootstrap.py`, never a local
+  `sys.path.insert` block;
+- use `make_argument_parser` and `collect_cli_argv`, and pass the normalized
+  vector to both parsing and run provenance;
+- pass `include_repo_root=True` when the script imports `ai.*`; and
+- keep `ai/tests/test_ai_cli_helper_restoration.py` covering the exact twelve
+  restored files with AST assertions that are insensitive to formatting.
+
+No rebase impact outside fork-authored tiny-AI scripts. No alternatives:
+only-one-way restoration of accepted ADR-0680/0681 behavior. The smoke command
+is `python -m pytest ai/tests/test_ai_cli_helper_restoration.py
+ai/tests/test_eval_report_run_provenance.py
+ai/tests/test_legacy_eval_report_run_provenance.py ai/tests/test_qat_smoke.py
+ai/tests/test_ptq_scripts.py ai/tests/test_measure_quant_drop_per_ep.py
+ai/tests/test_dnn_exporter_run_provenance.py
+ai/tests/test_ptq_cli_contracts.py -q`.
+
+The ADR-1291 `reverse-hunk` declaration for full commit
+`d170ef86affc8e29bf3d486f36018e129230ae97` is deliberately limited to
+`ai/scripts/measure_quant_drop.py`, `ai/scripts/ptq_dynamic.py`, and
+`ai/scripts/ptq_static.py`. Retain it only while rebasing this restoration onto
+a target that still contains the reverted state. Never widen its paths,
+commit, or evidence regex. Once the restoration is on `master` and the finding
+disappears, remove the entry rather than carrying a dormant suppression.

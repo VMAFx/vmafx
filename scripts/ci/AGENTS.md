@@ -743,7 +743,7 @@ Derive additions from what Renovate edits (`gh pr list --author
 app/renovate` and diff the file lists), not from what looks like manifest —
 see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../docs/research/1152-dependency-classifier-surface-audit.md).
 
-## check-silent-revert.py invariants (ADR-1284)
+## check-silent-revert.py invariants (ADR-1284 / ADR-1291)
 
 Gate reports what merge removes from target that branch never set out to touch.
 Four load-bearing properties. Drop one, gate becomes decoration.
@@ -769,14 +769,21 @@ Four load-bearing properties. Drop one, gate becomes decoration.
    resolve cleanly, git without `merge-tree --write-tree`: all exit non-zero.
    Never print `clean` for case gate could not analyse.
 
-Only opt-out is declaration in PR: `revert:` title, `reverts: #N`,
-`intentional revert: <reason>`. No in-tree suppression. `GENERATED_PREFIXES`
-covers rendered files only; never widen to source trees.
+There are two declaration mechanisms. A one-off deliberate revert declares the
+whole PR with a `revert:` title, `reverts: #N`, or
+`intentional revert: <reason>`. An accepted ADR that requires restoring work
+the target once lost uses `silent-revert-allowlist.json`, constrained by
+detector, exact path, exact full commit for `reverse-hunk`, and a regex that
+matches every evidence line. The latter is an expiring declaration, not a path
+suppression: remove it when the finding disappears. Never add a bare path or
+source-tree exclusion, and never loosen an entry to make a new finding match.
+`GENERATED_PREFIXES`
+covers rendered files only; never widen it to source trees.
 `is_evidence()` drops conflict markers — `0c494cca0` committed three into
 `core/src/feature/cuda/integer_vif_cuda.c`, and PR deleting them reset file to
 pre-marker blob.
 
-Regression: `python3 scripts/ci/tests/test_check_silent_revert.py` (12 tests).
+Regression: `python3 scripts/ci/tests/test_check_silent_revert.py` (22 tests).
 
 ## check-aggregator-names.sh invariants
 

@@ -38,16 +38,23 @@ multi-seed sweep produces confidence intervals, not new shipped models.
 
 from __future__ import annotations
 
-import argparse
 import sys
 import time
+from argparse import Namespace
 from pathlib import Path
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -252,8 +259,8 @@ def _aggregate(per_seed: dict[int, dict[str, dict[str, float]]]) -> dict:
     }
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+def _parse_args(raw_argv: list[str]) -> Namespace:
+    ap = make_argument_parser(description=__doc__)
     ap.add_argument(
         "--arch",
         choices=sorted(_BUILDERS.keys()),
@@ -282,29 +289,27 @@ def main() -> int:
         default="",
         help="Free-form label for the output JSON (e.g. 'netflix-loso', 'konvid-5fold').",
     )
-    args = ap.parse_args()
+    return ap.parse_args(raw_argv)
 
-    import pandas as pd
 
-    df = pd.read_parquet(args.parquet)
+def _input_error(df) -> str | None:  # type: ignore[no-untyped-def]
     if "source" not in df.columns:
-        print("error: parquet missing 'source' column", file=sys.stderr)
-        return 2
+        return "parquet missing 'source' column"
     missing = [c for c in CANONICAL_6 if c not in df.columns]
     if missing:
-        print(f"error: parquet missing feature columns: {missing}", file=sys.stderr)
-        return 2
+        return f"parquet missing feature columns: {missing}"
     if "vmaf" not in df.columns:
-        print("error: parquet missing 'vmaf' target column", file=sys.stderr)
-        return 2
+        return "parquet missing 'vmaf' target column"
+    return None
 
+
+def _evaluate(df, args: Namespace) -> tuple[list[str], dict, dict]:  # type: ignore[no-untyped-def]
     sources = sorted(df["source"].unique().tolist())
     print(
         f"[ms-{args.arch}] parquet={args.parquet} rows={len(df)} "
         f"sources={sources} seeds={args.seeds}",
         flush=True,
     )
-
     per_seed: dict[int, dict[str, dict[str, float]]] = {}
     t_start = time.monotonic()
     for seed in args.seeds:
@@ -318,7 +323,6 @@ def main() -> int:
             batch_size=args.batch_size,
             lr=args.lr,
         )
-
     agg = _aggregate(per_seed)
     print(
         f"[ms-{args.arch}] === overall across {len(args.seeds)} seeds ===\n"
@@ -331,7 +335,16 @@ def main() -> int:
         f"[ms-{args.arch}] total wall {time.monotonic() - t_start:.1f}s",
         flush=True,
     )
+    return sources, per_seed, agg
 
+
+def _write_report(
+    args: Namespace,
+    raw_argv: list[str],
+    sources: list[str],
+    per_seed: dict,
+    agg: dict,
+) -> None:
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     report = {
@@ -349,7 +362,7 @@ def main() -> int:
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
+            argv=raw_argv,
             args=args,
             inputs={"parquet": args.parquet},
             outputs={"report_target": str(args.out_json)},
@@ -357,7 +370,24 @@ def main() -> int:
     }
     write_manifest_json(args.out_json, report)
     print(f"[ms-{args.arch}] wrote {args.out_json}")
+
+
+def _run(args: Namespace, raw_argv: list[str]) -> int:
+    import pandas as pd
+
+    df = pd.read_parquet(args.parquet)
+    error = _input_error(df)
+    if error is not None:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    sources, per_seed, agg = _evaluate(df, args)
+    _write_report(args, raw_argv, sources, per_seed, agg)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    return _run(_parse_args(raw_argv), raw_argv)
 
 
 if __name__ == "__main__":

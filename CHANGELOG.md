@@ -20536,6 +20536,12 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   60-second startup window (BUG-090).
 
 
+- Restored the shared import bootstrap, argument-parser construction, and
+  replay-argv handling across twelve tiny-AI evaluation, quantization, and
+  export scripts after a later training-scaffold merge silently reverted them.
+  Direct file and module invocation now follow the same CLI contract.
+
+
 - Restored the HIP float-motion force-zero close callback and made its
   option-derived tail flush idempotent, preventing a feature-name dictionary
   leak and repeated-flush failure.
@@ -27336,6 +27342,9 @@ Fix 23 pre-existing test failures across three packages.
   exposition Content-Type is preserved; added
   `test_metrics_full_content_type_header_preserved` to pin the
   wire-level invariant.
+
+
+- `scripts/git-hooks/pre-push-mypy.py` now evaluates baseline type checking under the branch's checker configuration. Previously, the disposable baseline worktree evaluated files under the merge-base configuration, causing changes to `[tool.mypy]` in `pyproject.toml` or standalone mypy config files to attribute all newly unmasked baseline findings to the branch as introduced errors. The hook now copies branch checker configuration into the baseline worktree, expands evaluation across tracked Python files under `ai/` and `scripts/` when configuration changes, unlinks deleted config files, preserves merge-base source files, and fails closed on unparseable configuration or mypy's blocking exit status even when partial findings were printed. The legacy `ai.src.*` compatibility namespace is no longer traversed alongside canonical `vmaf_train.*`, preventing the widened run from loading `ai/src` files under two module identities.
 
 
 - Fix pre-push mypy scope after rebases: recheck every branch-owned Python
