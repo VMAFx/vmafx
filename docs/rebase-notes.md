@@ -35,6 +35,7 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+
 ## fix/codeql-vif-large-parameter-alerts — VIF AVX-512 internal helper pointer convention (2026-09-24)
 
 1. **`core/src/feature/x86/vif_avx512.c` internal stage helpers take `const *`.**
@@ -44,16 +45,17 @@ these Meson blocks.
    vector structs (`VifPair512`, `VifTaps8`, `VifEnergy512`) by `const *` rather than
    by value. Under System V AMD64 and Windows x64 ABIs, objects > 64 bytes cannot
    be passed in vector registers; passing them by value forces stack copies and
-   triggers CodeQL `cpp/large-parameter` alerts 1108–1112. Under `-O3`, inlining folds
-   pointer dereferences without stack spills or instruction count changes.
+   triggers CodeQL `cpp/large-parameter` alerts 1108–1112. Under GCC 16.2.1
+   `-O3`, the complete hot `.text` section is byte-for-byte identical to an
+   independently built `origin/master` object.
    Do not revert these internal parameters to pass-by-value on rebase.
 2. **Public ABI in `core/src/feature/x86/vif_avx512.h` is unchanged.**
    None of the modified helper functions are declared in headers or exported from
    the static library.
 3. **Parity test harness in `core/test/test_integer_vif_avx512_stages.c` includes a red check.**
-   `test_integer_vif_avx512_stages_red_check` verifies baseline bit-exactness and
-   proves the harness detects 1-bit input and intermediate plane perturbations.
-   Preserve both tests on rebase.
+   Its `test_integer_vif_avx512_stages_red_check` case verifies baseline
+   bit-exactness and proves the harness detects 1-bit input and intermediate
+   plane perturbations. Preserve both cases on rebase.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

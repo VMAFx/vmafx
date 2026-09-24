@@ -1,6 +1,6 @@
-# Research-2078: Resolution of CodeQL AVX-512 large-parameter alerts
+# Research-2098: Resolution of CodeQL AVX-512 large-parameter alerts
 
-Date: 2026-09-24. Base: `ef97f72c8f9e157dafa2063bcdf289a2a4592251`.
+Date: 2026-09-24. Base: `4e6916d16ac57647105d14a47a6680117d6b5738`.
 Scope: `core/src/feature/x86/vif_avx512.c` and
 `core/test/test_integer_vif_avx512_stages.c`.
 
@@ -44,6 +44,18 @@ conventions apply. Passing them by `const *` passes a single 8-byte pointer in
 a general-purpose register (`%rdi`, `%rsi`, `%rdx`, `%rcx`, etc.), eliminating
 caller stack allocation and copy overhead without changing semantics.
 
+### Pointer preconditions, aliasing, and lifetime
+
+The pointer conversion does not introduce a new externally observable
+precondition. Every helper is private, forced-inline, and called only with the
+address of a live automatic object in its caller. No pointer is stored,
+returned, or used after that object's lifetime. Every aggregate input is
+`const`, including the intentional same-object calls
+`vif_vertical_energy8(&acc.ref, &r, &r, ...)` and
+`vif_vertical_energy8(&acc.dis, &d, &d, ...)`; those aliases are read-only and
+therefore safe. All enumerated call sites pass `&object`, so no null path exists
+inside the private contract and no hot-path null branch is required.
+
 ## Implementation
 
 Internal static forced-inline helpers in `core/src/feature/x86/vif_avx512.c` were
@@ -85,29 +97,30 @@ Because the internal helpers are marked `FORCE_INLINE` (`static inline`
 `__attribute__((always_inline))`), GCC `-O3` folds pointer dereferences
 directly during SSA optimization.
 
-Measurement conditions: GCC 16, x86-64, System V ABI, `-O3`. Disassembly of
-`core/build/src/libx86_avx512.a.p/feature_x86_vif_avx512.c.o`:
+Measurement conditions: GCC 16.2.1, x86-64, System V ABI, `-O3`, with
+`origin/master` and this branch built independently under matching Meson
+options. In
+`build/src/libx86_avx512.a.p/feature_x86_vif_avx512.c.o`:
 
-- Master baseline: 4,323 lines of disassembly.
-- Pointer-converted: 4,323 lines of disassembly.
-- Binary diff (GCC 16 x86-64 SysV ABI -O3): The emitted machine instructions
-  for `vif_subsample_rd_8_avx512`, `vif_subsample_rd_16_avx512`,
-  `vif_statistic_8_avx512`, and `vif_statistic_16_avx512` are
-  **byte-for-byte identical**, differing only in the immediate constants
-  passed to `__assert_fail` (reflecting shifted line numbers in C source).
-- Instruction count (GCC 16 x86-64 SysV ABI -O3): `vif_statistic_8_avx512`
-  (955 instructions, 22 `%rsp` refs), `vif_statistic_16_avx512` (1062
-  instructions, 21 `%rsp` refs) are unchanged.
+- The complete hot `.text` section is byte-for-byte identical: both files are
+  `0x4f04` bytes and have SHA-256
+  `80b48e27e202ca98c3a124351740fdecba1e19df53adeebbcd237889fe44374c`.
+- Every public AVX-512 symbol retains the same address and size.
+- `.text.unlikely` has the same instructions and relocations except for six
+  `__assert_fail` line-number immediates, each shifted by six source lines.
 
-Win64 stack correctness is proven independently:
-
-- `python3 scripts/ci/check-win64-stack-alignment.py` reports 0 violations.
+The structural stack-alignment scanner also reports zero findings on the
+host-built SysV object. That is useful regression evidence, but it is not a
+Win64 proof: no MinGW cross compiler is installed locally, and the scanner's
+definitive target is the MinGW-built object from the hosted Windows job. Hosted
+Win64 acceptance therefore remains pending.
 
 ## Focused Test Harness & Bit-Exactness
 
 `core/test/test_integer_vif_avx512_stages.c` was enhanced with:
 
-1. `test_integer_vif_avx512_stages_red_check`:
+1. The `test_integer_vif_avx512_stages_red_check` case inside the
+   `test_integer_vif_avx512_stages` executable:
    - Asserts baseline bit-exactness across scalar, AVX2, and AVX-512.
    - Proves red-capability by introducing a 1-bit perturbation in reference
      input pixels and asserting that the harness detects the discrepancy.
@@ -123,21 +136,38 @@ Win64 stack correctness is proven independently:
 
 ### Verification Results
 
-- `test_integer_vif_avx512_stages`: pass (0.18s).
-- `test_integer_vif_avx512_stages_red_check`: pass.
-- AddressSanitizer + UndefinedBehaviorSanitizer (`build-san`): clean pass across
+- Focused VIF set: 5/5 pass, including
+  `test_integer_vif_avx512_stages` and its red-check case.
+- Configured CPU fast suite: 147 pass, 0 failures.
+- Fresh CodeQL replay: CodeQL CLI 2.27.0, C++ query pack 1.8.3, and
+  `Critical/LargeParameter.ql` over a fresh focused extraction of
+  `vif_avx512.c`. The branch CSV has **0 rows**; the same exact query against
+  the master-derived baseline database has the five rows matching alerts
+  1108–1112.
+- AddressSanitizer + UndefinedBehaviorSanitizer (`build-san`): 5/5 clean across
   `test_integer_vif_avx512_stages`, `test_integer_vif_log2`,
   `test_vif_skip_scale0`, `test_vif_simd`, and `test_integer_vif_avx2_stages`.
-- Netflix golden test suite: CI gates only (local fixtures unavailable).
+- Netflix CPU golden gate: 271 passed, 12 skipped, 0 failed. No Netflix golden
+  assertion or fixture is changed. The hosted Windows build remains the
+  post-push Win64 acceptance check.
 - Format & lint:
-  - `make format-check`: pass.
-  - `clang-tidy` on modified C files: clean (0 warnings).
-  - `cppcheck --inline-suppr`: clean (0 warnings).
+  - Clang-format dry-run on both changed C files: pass.
+  - Clang-tidy 22.1.8 with all diagnostics promoted to errors: no touched-file
+    warning. The report contains two inherited-header diagnostics outside the
+    changed files (`core/src/cpu.h` and `core/src/x86/cpu.h`).
+  - Cppcheck 2.22.0 with the required CI POSIX/public-entrypoint models,
+    exhaustive checking, and a file-filter-specific `unusedFunction`
+    suppression: no source or test finding. The ordinary changed-files
+    preflight also passes without that suppression.
+  - Changelog/ADR fragment checks and Markdown lint: pass.
+  - `make verify-all`: governance audit, context compilation, HISS coverage,
+    and deduplication all pass; 276 active violations remain within the 276
+    baseline and all touched files are clean.
 
 ## Decision Matrix — no alternatives: only-one-way fix
 
-CodeQL `cpp/large-parameter` fires on any aggregate parameter exceeding 16 bytes
-(or a size heuristic). The only compliant fix that preserves the `FORCE_INLINE`
+CodeQL `cpp/large-parameter` fires on an aggregate parameter exceeding 64 bytes.
+The only compliant fix that preserves the `FORCE_INLINE`
 inlining contract is to pass large aggregates via `const *`. Every alternative
 was evaluated:
 
@@ -154,8 +184,8 @@ was evaluated:
 To reproduce the original CodeQL alert state (before fix):
 
 ```sh
-git show origin/master -- core/src/feature/x86/vif_avx512.c \
-  | grep -n "vif_vertical_mean8\|vif_vertical_energy8\|vif_vertical_energy16\|vif_vertical_store8"
+git show origin/master:core/src/feature/x86/vif_avx512.c \
+  | rg -n "vif_vertical_mean8|vif_vertical_energy8|vif_vertical_energy16|vif_vertical_store8"
 # Shows pass-by-value signatures for VifPair512/VifTaps8 aggregates
 ```
 
@@ -165,7 +195,7 @@ To verify the fix and confirm instruction equivalence:
 # Build master and branch objects, diff disassembly:
 ninja -C build src/libx86_avx512.a.p/feature_x86_vif_avx512.c.o
 objdump -d build/src/libx86_avx512.a.p/feature_x86_vif_avx512.c.o \
-  | grep -A0 'vif_statistic_8_avx512\|vif_statistic_16_avx512' | wc -l
+  | rg 'vif_statistic_(8|16)_avx512'
 # (GCC 16 x86-64 SysV ABI -O3 only; other toolchains not measured)
 
 # Win64 stack check:
@@ -175,6 +205,5 @@ python3 scripts/ci/check-win64-stack-alignment.py \
 
 # Focused VIF tests:
 meson test -C build test_integer_vif_avx512_stages \
-                    test_integer_vif_avx512_stages_red_check \
                     test_vif_simd test_vif_skip_scale0
 ```
