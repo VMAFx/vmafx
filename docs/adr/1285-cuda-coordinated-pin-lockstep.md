@@ -9,14 +9,16 @@
 > **Amendment (2026-09-24, [ADR-1306](1306-drop-nvidia-cuda-base.md))**:
 > Dropping the `nvidia/cuda` base images eliminates the 6 `image` sites from the
 > coordinated pin inventory (`build-config.env` plus the four Dockerfile ARG mirrors).
-> The coordinated pin is reduced from 10 sites (post ADR-1300) to 4 sites across 3 files:
-> `CUDA_VERSION` in `build-config.env`, `CUDA_APT_PACKAGE` in `build-config.env` and
-> `dev/Containerfile`, and the published OCI description label in
-> `docker/Dockerfile.production-gpu`. `scripts/ci/check-cuda-pin-lockstep.py` retired the
-> `image` shape and its residual sweep catches any re-introduced `nvidia/cuda` image tag.
+> The coordinated pin is reduced from 10 sites (post ADR-1300) to 7 sites across 2 files:
+> `CUDA_VERSION`, `CUDA_APT_PACKAGE`, the release-review latch, and the three exact
+> toolkit/nvcc/cudart versions in `build-config.env`, plus the published OCI description
+> label in `docker/Dockerfile.production-gpu`. `dev/Containerfile` consumes those values
+> through the shared installer's full mode. `scripts/ci/check-cuda-pin-lockstep.py` retired
+> the `image` shape and its residual sweep catches any re-introduced `nvidia/cuda` image tag.
 > The old Docker-backed Renovate group is therefore retired too. `CUDA_VERSION` is now
 > owned by `custom.nvidia-cuda-redist`, which reads NVIDIA's official redist HTML index;
-> the lockstep gate derives the apt-package and description-label spellings. The custom
+> the lockstep gate derives the apt-package and description-label spellings, while the
+> exact package metadata remains deliberately human-reviewed and fail-closed. The custom
 > feed has no timestamps, so its narrowly matched package rule is timestamp-optional,
 > manual-review, and non-automerge.
 

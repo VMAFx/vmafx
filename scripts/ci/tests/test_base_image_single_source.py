@@ -156,6 +156,28 @@ class BaseImageGate(unittest.TestCase):
         self.run_command([GIT, "add", "--", "docker/dev/alpine.Dockerfile"], check=True)
         self.check(BASE.format(pin=self.pin), 0)
 
+    def test_cuda_dev_dockerfile_is_the_only_owned_dev_matrix_file(self) -> None:
+        config = (self.repo / "build-config.env").read_text(encoding="utf-8")
+        cuda_pin = next(
+            line.split('"')[1] for line in config.splitlines() if line.startswith("CUDA_BUILDER=")
+        )
+        name = "docker/dev/ubuntu-26.04-cuda.Dockerfile"
+        drifted = 'ARG CUDA_BUILDER="ubuntu:26.04@sha256:' + "0" * 64 + '"\nFROM ${CUDA_BUILDER}\n'
+        output = self.check(drifted, 1, name)
+        self.assertIn(name, output)
+        self.check(drifted, 0, name, write=True)
+        self.assertIn(cuda_pin, (self.repo / name).read_text(encoding="utf-8"))
+
+    def test_cuda_bases_must_equal_dev_base_including_digest(self) -> None:
+        config_path = self.repo / "build-config.env"
+        config = config_path.read_text(encoding="utf-8")
+        current = next(line for line in config.splitlines() if line.startswith('CUDA_RUNTIME="'))
+        replacement = current[:-2] + ("0" if current[-2] != "0" else "1") + '"'
+        config_path.write_text(config.replace(current, replacement, 1), encoding="utf-8")
+        self.run_command([GIT, "add", "--", "build-config.env"], check=True)
+        output = self.check(BASE.format(pin=self.pin), 1)
+        self.assertIn("CUDA_RUNTIME must equal DEV_BASE", output)
+
 
 if __name__ == "__main__":
     unittest.main()

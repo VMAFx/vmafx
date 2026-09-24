@@ -13,10 +13,10 @@ unnoticed.
 
 The *coverage* assertions run against the real tree and ``renovate.json``:
 every site the gate finds must be owned by something -- a Renovate custom
-manager that will rewrite it, or the gate's own ``--write``. A CUDA version
-site added outside both is a failure here, which is the whole point: #1487 was
-a Renovate pull request that moved two of sixteen sites because nothing
-connected the other fourteen to it.
+manager, the gate's own ``--write``, or the fail-closed exact-metadata latch.
+A CUDA version site added outside those owners is a failure here, which is the
+whole point: #1487 was a Renovate pull request that moved two of sixteen sites
+because nothing connected the other fourteen to it.
 """
 
 from __future__ import annotations
@@ -37,9 +37,6 @@ from typing import Any, ClassVar
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
 GATE = "scripts/ci/check-cuda-pin-lockstep.py"
-# The apt spelling also appears in the comment above the RUN, and a comment is
-# prose, not a pin. Anchor fixtures on the install line itself.
-APT_INSTALL = "--no-install-recommends \\\n    cuda-toolkit-13-4"
 
 SPEC = importlib.util.spec_from_file_location("cuda_pin_lockstep", ROOT / GATE)
 assert SPEC is not None and SPEC.loader is not None
@@ -53,6 +50,12 @@ SPEC.loader.exec_module(MODULE)
 GATE_OWNED_KINDS = {
     "apt": "cuda-toolkit-NN-N wants dashes and no patch component",
     "label": "prose inside an OCI description label, not a dependency reference",
+}
+MANUAL_METADATA_KINDS = {
+    "apt-lock-release": "binds exact package metadata to the reviewed CUDA release",
+    "apt-toolkit-version": "exact NVIDIA toolkit Debian package version",
+    "apt-nvcc-version": "exact NVIDIA nvcc component Debian package version",
+    "apt-cudart-version": "exact NVIDIA cudart component Debian package version",
 }
 # Spellings a Renovate custom manager rewrites in place.
 #
@@ -140,9 +143,12 @@ class CudaPinCoverage(unittest.TestCase):
         cls.sites = MODULE.find_sites(ROOT)
 
     def test_the_tree_has_sites_to_protect(self) -> None:
-        self.assertEqual(len(self.sites), 4, "expected exactly 4 CUDA pin sites")
+        self.assertEqual(len(self.sites), 7, "expected exactly 7 CUDA pin sites")
         kinds = {site.kind for site in self.sites}
-        self.assertEqual(kinds, RENOVATE_OWNED_KINDS | set(GATE_OWNED_KINDS))
+        self.assertEqual(
+            kinds,
+            RENOVATE_OWNED_KINDS | set(GATE_OWNED_KINDS) | set(MANUAL_METADATA_KINDS),
+        )
 
     def test_every_site_is_owned_by_renovate_or_by_the_gate(self) -> None:
         cuda, _ = managers(self.config)
@@ -153,6 +159,14 @@ class CudaPinCoverage(unittest.TestCase):
                         site.kind,
                         MODULE.DERIVED_KINDS,
                         "a gate-owned spelling must be one --write can derive",
+                    )
+                    continue
+                if site.kind in MANUAL_METADATA_KINDS:
+                    self.assertIn(site.kind, MODULE.EXACT_METADATA_KINDS)
+                    self.assertNotIn(
+                        site.kind,
+                        MODULE.DERIVED_KINDS,
+                        "live NVIDIA package metadata must never be guessed by --write",
                     )
                     continue
                 self.assertIn(site.kind, RENOVATE_OWNED_KINDS)
@@ -317,6 +331,36 @@ class CudaPinCoverage(unittest.TestCase):
         self.assertIs(rule["automerge"], False)
         self.assertNotIn("groupName", rule, "the deleted CUDA group must not be recreated")
 
+    def test_renovate_moves_only_release_and_leaves_exact_metadata_latch(self) -> None:
+        """A bot bump must stop until a human refreshes NVIDIA package metadata."""
+        cuda, _ = managers(self.config)
+        config_lines = (ROOT / "build-config.env").read_text(encoding="utf-8").splitlines()
+        release_line = next(line for line in config_lines if line.startswith("CUDA_VERSION="))
+        self.assertTrue(covers(cuda, "build-config.env", release_line))
+        for name in (
+            "CUDA_APT_LOCK_RELEASE",
+            "CUDA_APT_TOOLKIT_VERSION",
+            "CUDA_APT_NVCC_VERSION",
+            "CUDA_APT_CUDART_VERSION",
+        ):
+            line = next(line for line in config_lines if line.startswith(f"{name}="))
+            with self.subTest(name=name):
+                self.assertFalse(covers(cuda, "build-config.env", line))
+
+    def test_installer_contract_suite_is_wired_to_required_precommit_ci(self) -> None:
+        precommit = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+        match = re.search(
+            r"(?ms)^\s+- id: test-install-cuda-toolkit\n(?P<body>.*?)(?=^\s+- id:|\Z)",
+            precommit,
+        )
+        self.assertIsNotNone(match, "installer regression suite needs its own pre-commit hook")
+        assert match is not None
+        body = match.group("body")
+        self.assertIn("test_install_cuda_toolkit.py", body)
+        self.assertIn(r"install-cuda-toolkit\.sh", body)
+        workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text(encoding="utf-8")
+        self.assertIn("pre-commit run --show-diff-on-failure --color=always --all-files", workflow)
+
     def test_every_matchstring_hits_a_real_line_in_the_tree(self) -> None:
         """A manager whose regex matches nothing is wiring that does nothing."""
         cuda, _ = managers(self.config)
@@ -387,14 +431,38 @@ class CudaPinGate(unittest.TestCase):
     def test_the_fixture_starts_in_lockstep(self) -> None:
         result = self.gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("4 sites", result.stdout)
+        self.assertIn("7 sites", result.stdout)
 
     def test_each_spelling_is_caught_when_it_drifts(self) -> None:
         cases = (
             (
-                "dev/Containerfile",
-                APT_INSTALL,
-                APT_INSTALL.replace("13-4", "13-5"),
+                "build-config.env",
+                'CUDA_APT_LOCK_RELEASE="13.4.2"',
+                'CUDA_APT_LOCK_RELEASE="13.4.1"',
+                "apt-lock-release",
+            ),
+            (
+                "build-config.env",
+                'CUDA_APT_TOOLKIT_VERSION="13.4.2-1"',
+                'CUDA_APT_TOOLKIT_VERSION="13.4.1-1"',
+                "apt-toolkit-version",
+            ),
+            (
+                "build-config.env",
+                'CUDA_APT_NVCC_VERSION="13.4.92-1"',
+                'CUDA_APT_NVCC_VERSION="13.5.1-1"',
+                "apt-nvcc-version",
+            ),
+            (
+                "build-config.env",
+                'CUDA_APT_CUDART_VERSION="13.4.92-1"',
+                'CUDA_APT_CUDART_VERSION="12.9.1-1"',
+                "apt-cudart-version",
+            ),
+            (
+                "build-config.env",
+                'CUDA_APT_PACKAGE="cuda-toolkit-13-4"',
+                'CUDA_APT_PACKAGE="cuda-toolkit-13-5"',
                 "apt",
             ),
             (
@@ -402,12 +470,6 @@ class CudaPinGate(unittest.TestCase):
                 "production CUDA 13.4.2 runtime",
                 "production CUDA 13.5.0 runtime",
                 "label",
-            ),
-            (
-                "build-config.env",
-                'CUDA_APT_PACKAGE="cuda-toolkit-13-4"',
-                'CUDA_APT_PACKAGE="cuda-toolkit-13-5"',
-                "apt",
             ),
         )
         for path, old, new, kind in cases:
@@ -418,6 +480,14 @@ class CudaPinGate(unittest.TestCase):
                 self.assertEqual(result.returncode, 1, result.stdout)
                 self.assertIn(f"{kind} pin reads", result.stderr)
                 self.assertIn(path, result.stderr)
+
+    def test_renovate_release_bump_fails_until_exact_metadata_is_refreshed(self) -> None:
+        self.edit("build-config.env", 'CUDA_VERSION="13.4.2"', 'CUDA_VERSION="13.5.0"')
+        result = self.gate()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("apt-lock-release pin reads", result.stderr)
+        self.assertIn("apt-toolkit-version pin reads", result.stderr)
+        self.assertIn("CUDA_APT_LOCK_RELEASE", result.stderr)
 
     def test_reintroduced_nvidia_cuda_image_is_unrecognised_and_fails(self) -> None:
         """An nvidia/cuda image reference is no longer a valid pin shape (ADR-1306)."""
@@ -432,7 +502,7 @@ class CudaPinGate(unittest.TestCase):
         self.assertIn("docker/Dockerfile.node", result.stderr)
 
     def test_a_site_in_an_unknown_spelling_fails(self) -> None:
-        """A fifth copy in a shape nobody taught the gate is still drift."""
+        """An eighth copy in a shape nobody taught the gate is still drift."""
         workflow = self.repo / ".github/workflows/newlane.yml"
         workflow.write_text(
             "name: New lane\njobs:\n  build:\n    env:\n"
@@ -446,7 +516,11 @@ class CudaPinGate(unittest.TestCase):
         self.assertIn("newlane.yml", result.stderr)
 
     def test_write_repairs_the_derived_spellings_only(self) -> None:
-        self.edit("dev/Containerfile", APT_INSTALL, APT_INSTALL.replace("13-4", "12-1"))
+        self.edit(
+            "build-config.env",
+            'CUDA_APT_PACKAGE="cuda-toolkit-13-4"',
+            'CUDA_APT_PACKAGE="cuda-toolkit-12-1"',
+        )
         self.edit(
             "docker/Dockerfile.production-gpu",
             "production CUDA 13.4.2 runtime",
@@ -455,7 +529,10 @@ class CudaPinGate(unittest.TestCase):
         result = self.gate("--write")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # The two derived spellings are repaired ...
-        self.assertIn("cuda-toolkit-13-4", (self.repo / "dev/Containerfile").read_text())
+        config = (self.repo / "build-config.env").read_text(encoding="utf-8")
+        self.assertIn('CUDA_APT_PACKAGE="cuda-toolkit-13-4"', config)
+        self.assertIn('CUDA_APT_NVCC_VERSION="13.4.92-1"', config)
+        self.assertIn('CUDA_APT_CUDART_VERSION="13.4.92-1"', config)
         self.assertIn(
             "CUDA 13.4.2 runtime",
             (self.repo / "docker/Dockerfile.production-gpu").read_text(),

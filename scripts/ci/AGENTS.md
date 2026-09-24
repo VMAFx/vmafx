@@ -145,19 +145,33 @@ instruction case, flags and continuations covered by fixture tests.
 Shared FROM arguments need global, single-line default named by
 `build-config.env`; shell gate owns default drift/repair. Local image
 exceptions bind exact consumer and value, never broad unpinned-tag rule.
+The sole `docker/dev/` file in this ownership set is
+`docker/dev/ubuntu-26.04-cuda.Dockerfile`; its CUDA builder mirror is generated
+from `build-config.env`, while the Alpine, Arch, and Fedora matrix files remain
+independent. `CUDA_BUILDER` and `CUDA_RUNTIME` must equal `DEV_BASE` exactly,
+including the digest, not merely share its Ubuntu tag.
 `tests/test_base_image_single_source.py` exercises actual gate in scratch
 repositories, wired through `test-base-image-single-source` in
 `.pre-commit-config.yaml`.
 
 ### CUDA coordinated pin (ADR-1285)
 
-One CUDA release = four literals, three spellings, three files. Authority =
-`build-config.env` `CUDA_VERSION`. `check-cuda-pin-lockstep.py` checks all of
-them, `--write` derives the apt-package and OCI-description spellings, and a
-residual sweep fails on any CUDA release literal in an unrecognised spelling.
+One CUDA release = seven literals across two files. Authority =
+`build-config.env` `CUDA_VERSION`; that file also records the apt package
+series, a release-review latch, and exact toolkit/nvcc/cudart Debian versions.
+`check-cuda-pin-lockstep.py` checks all seven, `--write` derives only the apt
+series and OCI-description spellings, and a residual sweep fails on any CUDA
+release literal in an unrecognised spelling.
 Never narrow the sweep to silence a new site: teach the gate its shape and
 owner in the same change, or the site drifts. `--write` must never touch
-`CUDA_VERSION`, the authority. Renovate resolves that value through
+`CUDA_VERSION` or the exact apt metadata. Component build numbers are not a
+function of the marketing release; refresh them from NVIDIA's live redist
+manifest and Ubuntu Packages index. `CUDA_APT_LOCK_RELEASE` deliberately stays
+outside Renovate ownership, so a bot bump fails until that review happens.
+The shared installer must keep exact `package=version` apt operands, subsequent
+`dpkg-query` validation, and all three builder/runtime/full modes. Its fake-host
+contract suite has the dedicated `test-install-cuda-toolkit` pre-commit hook,
+which the required Pre-Commit workflow runs. Renovate resolves `CUDA_VERSION` through
 `custom.nvidia-cuda-redist`: the official HTML index plus an exact
 `redistrib_X.Y.Z.json` extractor. Never restore the old `nvidia/cuda` package
 group. The custom feed has no timestamps, so its narrowly matched rule stays

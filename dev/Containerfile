@@ -8,8 +8,8 @@
 #   Stage 1 (build-deps)  — base tools: meson, ninja, nasm, gcc-13, clang-19,
 #                           python3.14, pkg-config, git, curl, ca-certificates
 #   Stage 2 (gpu-sdks)    — GPU SDK layer on top of Stage 1:
-#                           CUDA latest (`cuda-toolkit` meta-package, currently
-#                           13.x; tracks host driver), Intel oneAPI latest,
+#                           exact CUDA toolkit release from build-config.env,
+#                           Intel oneAPI latest,
 #                           ROCm latest (HIP toolchain;
 #                           build-only on NVIDIA host)
 #   Stage 3 (libvmaf)     — source build of libvmaf with all backends enabled
@@ -250,10 +250,13 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # ---------- CUDA 13.4 (ADR-1306) -------------------------------------------
 # Ubuntu 26.04 (Resolute) + glibc 2.43 context (ADR-0603, ADR-1306):
 #
-#   - The NVIDIA ubuntu2604 apt repo carries the cuda-keyring and the
-#     cuda-toolkit-13-4 packages directly.
+#   - The NVIDIA ubuntu2604 apt repo carries the cuda-keyring and the exact
+#     cuda-toolkit-13-4 / nvcc / cudart package versions recorded in
+#     build-config.env.
 #
-#   - We pin to `cuda-toolkit-13-4` matching CUDA_APT_PACKAGE in build-config.env.
+#   - The shared installer's `full` mode constrains the toolkit meta-package,
+#     nvcc, and both cudart packages with apt `package=version` operands, then
+#     verifies the installed dpkg versions. A CUDA series name alone is not a pin.
 #     Ubuntu 26.04 ships glibc 2.43, whose `bits/mathcalls.h` declares
 #     `rsqrt(double)` with `noexcept(true)`. CUDA 13.2+ resolved the
 #     re-declaration mismatch under NVCC.
@@ -264,25 +267,18 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #     the noexcept annotation, eliminating the conflict even if a future
 #     CUDA patch version accidentally re-introduces the mismatch.
 #
-# Note: The NVIDIA Container Toolkit must be installed on the *host*
-# for GPU passthrough. See docs/development/dev-mcp.md §Prerequisites.
-RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb \
-        -o /tmp/cuda-keyring.deb \
-    && dpkg -i /tmp/cuda-keyring.deb \
-    && rm /tmp/cuda-keyring.deb
-
-# `cuda-toolkit-13-4` pulls in nvcc 13.4 + headers + the user-mode
-# library stubs. Do NOT install `libcuda1` (the runtime driver) — that
-# comes from the host via nvidia-container-runtime at run-time;
-# installing it here would shadow the host driver.
+# Note: The NVIDIA Container Toolkit must be installed on the *host* for GPU
+# passthrough. The full mode never installs `libcuda1`; the driver comes from
+# nvidia-container-runtime at run time. See docs/development/dev-mcp.md.
+COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    cuda-toolkit-13-4
+    /tmp/install-cuda-toolkit.sh --mode=full /tmp \
+    && rm -f /tmp/install-cuda-toolkit.sh /tmp/build-config.env
 
-# CUDA_HOME is the symlink the meta-package maintains pointing at the
-# latest installed major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).
+# CUDA_HOME is the symlink the shared installer validates and repoints at this
+# exact major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64

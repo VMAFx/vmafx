@@ -33,6 +33,11 @@ def _config_value(name: str) -> str:
 
 
 APT_PACKAGE = _config_value("CUDA_APT_PACKAGE")
+CUDA_VERSION = _config_value("CUDA_VERSION")
+LOCK_RELEASE = _config_value("CUDA_APT_LOCK_RELEASE")
+TOOLKIT_VERSION = _config_value("CUDA_APT_TOOLKIT_VERSION")
+NVCC_VERSION = _config_value("CUDA_APT_NVCC_VERSION")
+CUDART_VERSION = _config_value("CUDA_APT_CUDART_VERSION")
 SERIES = APT_PACKAGE.removeprefix("cuda-toolkit-")
 DOTTED = SERIES.replace("-", ".")
 MAJOR = SERIES.split("-", maxsplit=1)[0]
@@ -48,6 +53,7 @@ class FakeHost:
         uid: int = 0,
         has_sudo: bool = True,
         curl_exit: int = 0,
+        installed_versions: dict[str, str] | None = None,
     ) -> None:
         self.root = root
         self.bin = root / "bin"
@@ -63,8 +69,23 @@ class FakeHost:
             "id",
             f'if [ "${{1:-}}" = "-u" ]; then echo "{uid}"; else echo testuser; fi',
         )
+        versions = {
+            APT_PACKAGE: TOOLKIT_VERSION,
+            f"cuda-nvcc-{SERIES}": NVCC_VERSION,
+            f"cuda-cudart-dev-{SERIES}": CUDART_VERSION,
+            f"cuda-cudart-{SERIES}": CUDART_VERSION,
+        }
+        versions.update(installed_versions or {})
+
         self._command("apt-get", "exit 0")
         self._command("dpkg", "exit 0")
+        query_cases = "\n".join(
+            f'  {package}) printf "%s" "{version}" ;;' for package, version in versions.items()
+        )
+        self._command(
+            "dpkg-query",
+            'package="${@: -1}"\ncase "$package" in\n' f"{query_cases}\n" "  *) exit 1 ;;\nesac",
+        )
         self._command("curl", f"exit {curl_exit}")
         self._command("ln", "exit 0")
         self._command("mktemp", 'exec /usr/bin/mktemp "$@"')
@@ -104,6 +125,7 @@ class FakeHost:
         *args: str,
         config: Path = BUILD_CONFIG,
         env_updates: dict[str, str] | None = None,
+        append_config: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.update(
@@ -116,8 +138,11 @@ class FakeHost:
         )
         if env_updates:
             env.update(env_updates)
+        command = ["/bin/bash", str(SCRIPT), *args]
+        if append_config:
+            command.append(str(config))
         return subprocess.run(  # noqa: S603 -- fixed script; test-owned arguments
-            ["/bin/bash", str(SCRIPT), *args, str(config)],
+            command,
             capture_output=True,
             check=False,
             env=env,
@@ -167,16 +192,21 @@ class InstallCudaToolkitTest(unittest.TestCase):
         result = host.run("--builder")
         self.assertEqual(result.returncode, 0, result.stderr)
         install = host.apt_install_calls()
-        self.assertIn(f"cuda-nvcc-{SERIES}", install)
-        self.assertIn(f"cuda-cudart-dev-{SERIES}", install)
-        self.assertIsNone(re.search(rf"\bcuda-cudart-{re.escape(SERIES)}\b(?!-dev)", install))
+        self.assertIn(f"cuda-nvcc-{SERIES}={NVCC_VERSION}", install)
+        self.assertIn(f"cuda-cudart-dev-{SERIES}={CUDART_VERSION}", install)
+        self.assertIn(f"cuda-cudart-{SERIES}={CUDART_VERSION}", install)
+        self.assertNotIn(APT_PACKAGE, install)
+        self.assertIn(
+            f"ln -sfn {host.prefix}/cuda-{DOTTED} {host.prefix}/cuda",
+            host.calls(),
+        )
 
     def test_runtime_installs_only_runtime_and_creates_both_links(self) -> None:
         host = FakeHost(self.tempdir)
         result = host.run("--runtime")
         self.assertEqual(result.returncode, 0, result.stderr)
         install = host.apt_install_calls()
-        self.assertIn(f"cuda-cudart-{SERIES}", install)
+        self.assertIn(f"cuda-cudart-{SERIES}={CUDART_VERSION}", install)
         self.assertNotIn("cuda-nvcc", install)
         ln_calls = [call for call in host.calls() if call.startswith("ln ")]
         self.assertIn(
@@ -186,15 +216,64 @@ class InstallCudaToolkitTest(unittest.TestCase):
             ln_calls,
         )
         self.assertIn(
-            f"ln -sf {host.prefix}/cuda-{DOTTED} {host.prefix}/cuda",
+            f"ln -sfn {host.prefix}/cuda-{DOTTED} {host.prefix}/cuda",
             ln_calls,
         )
+
+    def test_runtime_replaces_a_stale_cuda_current_symlink(self) -> None:
+        host = FakeHost(self.tempdir)
+        (host.prefix / "cuda").symlink_to(host.prefix / "cuda-12.9")
+        result = host.run("--runtime")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            f"ln -sfn {host.prefix}/cuda-{DOTTED} {host.prefix}/cuda",
+            host.calls(),
+        )
+
+    def test_runtime_refuses_to_replace_a_real_cuda_directory(self) -> None:
+        host = FakeHost(self.tempdir)
+        (host.prefix / "cuda").mkdir()
+        result = host.run("--runtime")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("exists but is not a symlink", result.stderr)
+        self.assertFalse(any(call.startswith("ln -sfn ") for call in host.calls()))
+
+    def test_full_mode_pins_toolkit_and_core_components(self) -> None:
+        host = FakeHost(self.tempdir)
+        result = host.run("--mode=full")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        install = host.apt_install_calls()
+        self.assertIn(f"{APT_PACKAGE}={TOOLKIT_VERSION}", install)
+        self.assertIn(f"cuda-nvcc-{SERIES}={NVCC_VERSION}", install)
+        self.assertIn(f"cuda-cudart-dev-{SERIES}={CUDART_VERSION}", install)
+        self.assertIn(f"cuda-cudart-{SERIES}={CUDART_VERSION}", install)
+        self.assertNotIn("libcuda1", install)
+
+    def test_installed_version_mismatch_fails_closed(self) -> None:
+        package = f"cuda-nvcc-{SERIES}"
+        host = FakeHost(
+            self.tempdir,
+            installed_versions={package: "13.4.999-1"},
+        )
+        result = host.run("--builder")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(package, result.stderr)
+        self.assertIn(NVCC_VERSION, result.stderr)
+        self.assertIn("13.4.999-1", result.stderr)
 
     def test_invalid_mode_exits_2_before_installing(self) -> None:
         host = FakeHost(self.tempdir)
         result = host.run("--mode=frobulate")
         self.assertEqual(result.returncode, 2)
         self.assertIn("unknown mode", result.stderr)
+        self.assertFalse(any(call.startswith("apt-get ") for call in host.calls()))
+
+    def test_missing_mode_value_exits_2_with_clear_error(self) -> None:
+        host = FakeHost(self.tempdir)
+        result = host.run("--mode", append_config=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--mode requires a value", result.stderr)
+        self.assertNotIn("unbound variable", result.stderr)
         self.assertFalse(any(call.startswith("apt-get ") for call in host.calls()))
 
     def test_unknown_flag_exits_2_before_installing(self) -> None:
@@ -206,7 +285,14 @@ class InstallCudaToolkitTest(unittest.TestCase):
 
     def test_missing_cuda_apt_package_fails_closed(self) -> None:
         config = self.tempdir / "missing-package.env"
-        config.write_text('CUDA_VERSION="13.4.2"\n', encoding="utf-8")
+        config.write_text(
+            f'CUDA_VERSION="{CUDA_VERSION}"\n'
+            f'CUDA_APT_LOCK_RELEASE="{LOCK_RELEASE}"\n'
+            f'CUDA_APT_TOOLKIT_VERSION="{TOOLKIT_VERSION}"\n'
+            f'CUDA_APT_NVCC_VERSION="{NVCC_VERSION}"\n'
+            f'CUDA_APT_CUDART_VERSION="{CUDART_VERSION}"\n',
+            encoding="utf-8",
+        )
         host = FakeHost(self.tempdir / "host")
         result = host.run("--builder", config=config)
         self.assertEqual(result.returncode, 2)
@@ -215,13 +301,35 @@ class InstallCudaToolkitTest(unittest.TestCase):
     def test_malformed_cuda_apt_package_fails_closed(self) -> None:
         config = self.tempdir / "malformed-package.env"
         config.write_text(
-            'CUDA_VERSION="13.4.2"\nCUDA_APT_PACKAGE="cuda-compiler-13-4"\n',
+            f'CUDA_VERSION="{CUDA_VERSION}"\n'
+            f'CUDA_APT_LOCK_RELEASE="{LOCK_RELEASE}"\n'
+            'CUDA_APT_PACKAGE="cuda-compiler-13-4"\n'
+            f'CUDA_APT_TOOLKIT_VERSION="{TOOLKIT_VERSION}"\n'
+            f'CUDA_APT_NVCC_VERSION="{NVCC_VERSION}"\n'
+            f'CUDA_APT_CUDART_VERSION="{CUDART_VERSION}"\n',
             encoding="utf-8",
         )
         host = FakeHost(self.tempdir / "host")
         result = host.run("--builder", config=config)
         self.assertEqual(result.returncode, 2)
         self.assertIn("not of the form cuda-toolkit-<major>-<minor>", result.stderr)
+
+    def test_release_lock_mismatch_fails_before_repository_access(self) -> None:
+        config = self.tempdir / "stale-lock.env"
+        config.write_text(
+            f'CUDA_VERSION="{CUDA_VERSION}"\n'
+            f'CUDA_APT_LOCK_RELEASE="13.4.1"\n'
+            f'CUDA_APT_PACKAGE="{APT_PACKAGE}"\n'
+            f'CUDA_APT_TOOLKIT_VERSION="{TOOLKIT_VERSION}"\n'
+            f'CUDA_APT_NVCC_VERSION="{NVCC_VERSION}"\n'
+            f'CUDA_APT_CUDART_VERSION="{CUDART_VERSION}"\n',
+            encoding="utf-8",
+        )
+        host = FakeHost(self.tempdir / "host")
+        result = host.run("--builder", config=config)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("CUDA_APT_LOCK_RELEASE", result.stderr)
+        self.assertFalse(any(call.startswith("curl ") for call in host.calls()))
 
     def test_missing_os_release_fixture_fails_closed(self) -> None:
         host = FakeHost(self.tempdir)

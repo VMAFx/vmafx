@@ -237,7 +237,7 @@ repos:
         always_run: true
 
       - id: check-cuda-pin-lockstep
-        name: CUDA release is one pin in sixteen places
+        name: CUDA release and exact apt metadata stay locked across seven sites
         entry: scripts/ci/check-cuda-pin-lockstep.py
         language: script
         pass_filenames: false
@@ -248,6 +248,13 @@ repos:
         entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
         language: system
         files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|libvmaf-build-matrix)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version)_single_source\.py))$'
+        pass_filenames: false
+
+      - id: test-install-cuda-toolkit
+        name: Exact CUDA apt installer contract
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_install_cuda_toolkit.py
+        language: system
+        files: '^(\.pre-commit-config\.yaml|build-config\.env|Dockerfile|dev/Containerfile|docker/(Dockerfile\.(node|production-gpu)|dev/ubuntu-26\.04-cuda\.Dockerfile)|\.github/workflows/(build|libvmaf-build-matrix|lint-and-format)\.yml|scripts/ci/(install-cuda-toolkit\.sh|tests/test_install_cuda_toolkit\.py))$'
         pass_filenames: false
 
       - id: test-dev-container-build-secret

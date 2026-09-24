@@ -42,17 +42,28 @@ these Meson blocks.
    CUDA point releases (like 13.4.2) lag or are skipped entirely, whereas NVIDIA's official apt
    repository publishes day 1 (ADR-1306).
 2. **`scripts/ci/check-base-image-single-source.sh` rule 3 expects `ubuntu:${DEV_UBUNTU}@` for both CUDA keys.**
-   Reverting rule 3 or the ARG default lines in `Dockerfile`, `docker/Dockerfile.production-gpu`,
-   `docker/Dockerfile.node`, or `docker/dev/ubuntu-26.04-cuda.Dockerfile` will fail `make base-images-sync`.
+   It additionally requires `CUDA_BUILDER` and `CUDA_RUNTIME` to equal `DEV_BASE`
+   byte-for-byte, including the digest, and owns the narrow
+   `docker/dev/ubuntu-26.04-cuda.Dockerfile` mirror. Reverting those rules or the ARG
+   default lines in `Dockerfile`, `docker/Dockerfile.production-gpu`,
+   `docker/Dockerfile.node`, or the CUDA compatibility Dockerfile will fail
+   `make base-images-sync`.
 3. **`scripts/ci/check-cuda-pin-lockstep.py` retired the `image` shape.**
-   The coordinated pin now tracks 4 sites across 3 files (`build-config.env`, `dev/Containerfile`,
-   `docker/Dockerfile.production-gpu`). The residual regex catches any re-introduced `nvidia/cuda` image tags.
-4. **`scripts/ci/install-cuda-toolkit.sh` supports `--mode=builder` and `--mode=runtime`.**
-   Containers invoke it directly as root without `sudo`. Host/CI runners invoke it using `sudo`.
+   The coordinated pin now tracks 7 sites across 2 files (`build-config.env` and
+   `docker/Dockerfile.production-gpu`). The residual regex catches any re-introduced
+   `nvidia/cuda` image tags. Only the apt series and runtime label are mechanically
+   derived; do not make `--write` guess NVIDIA component build numbers.
+4. **`scripts/ci/install-cuda-toolkit.sh` supports `--mode=builder`, `--mode=runtime`, and `--mode=full`.**
+   Every core apt operand is an exact `package=version` from the live NVIDIA metadata,
+   and every installed version is checked with `dpkg-query`. Containers invoke it
+   directly as root without `sudo`; host/CI runners invoke it using `sudo`.
+   `dev/Containerfile` must keep using shared `--mode=full`, not a second floating apt recipe.
 5. **Renovate owns `CUDA_VERSION` through `custom.nvidia-cuda-redist`, not Docker tags.**
    Keep the HTML datasource, exact `redistrib_X.Y.Z.json` extraction, and scoped
    timestamp-optional/manual-review rule together. Reintroducing the old `nvidia/cuda`
    package group silently restores the publication bottleneck this branch removes.
+   `CUDA_APT_LOCK_RELEASE` must remain outside Renovate ownership so every release bump
+   fails until the exact toolkit, nvcc, and cudart versions have been reviewed live.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

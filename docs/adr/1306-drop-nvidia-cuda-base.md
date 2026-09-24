@@ -24,15 +24,18 @@ We replace all `nvidia/cuda` base images with digest-pinned Ubuntu 26.04 (`ubunt
 1. **Unified Base Image**:
    In `build-config.env`, `CUDA_BUILDER` and `CUDA_RUNTIME` are set to the identical digest-pinned Ubuntu 26.04 base as `DEV_BASE`:
    `ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78`.
-   `scripts/ci/check-base-image-single-source.sh` rule 3 is updated to require `ubuntu:${DEV_UBUNTU}@` for both keys.
+   `scripts/ci/check-base-image-single-source.sh` requires both keys to equal `DEV_BASE` byte-for-byte, including the digest. The narrow `docker/dev/ubuntu-26.04-cuda.Dockerfile` compatibility image joins the generated base-image inventory; the unrelated Alpine, Arch, and Fedora compatibility images remain independent.
 
 2. **Hardened Shared Installer (`scripts/ci/install-cuda-toolkit.sh`)**:
    The existing CI installer script is generalized and hardened to support:
    - Root container environments where `sudo` is absent, detecting `id -u` and omitting `sudo` when executing as root.
    - Non-root CI/host environments where `sudo` is used for privilege escalation.
    - Distinct installation modes:
-     - `--mode=builder`: installs `cuda-nvcc-${series}` and `cuda-cudart-dev-${series}` (compiler + dev headers).
-     - `--mode=runtime`: installs `cuda-cudart-${series}` (minimal runtime shared libraries).
+     - `--mode=builder`: installs exact `cuda-nvcc-${series}`, `cuda-cudart-dev-${series}`, and `cuda-cudart-${series}` versions (compiler + dev headers + runtime).
+     - `--mode=runtime`: installs the exact `cuda-cudart-${series}` version (minimal runtime shared libraries).
+     - `--mode=full`: installs the exact `cuda-toolkit-${series}` meta-package plus the exact compiler and cudart components needed by the all-backend dev container.
+   - Every apt operand uses `package=version`, and every installed package is checked afterward with `dpkg-query`; resolving a different candidate is a hard failure.
+   - `CUDA_APT_LOCK_RELEASE`, `CUDA_APT_TOOLKIT_VERSION`, `CUDA_APT_NVCC_VERSION`, and `CUDA_APT_CUDART_VERSION` record the live NVIDIA package mapping in `build-config.env`. The lock deliberately goes stale when Renovate changes `CUDA_VERSION`, forcing manual metadata review before the bump can pass.
    - Automated prerequisite detection (`curl`, `ca-certificates`).
    - Idempotent `/usr/local/cuda` symlink creation pointing to `/usr/local/cuda-${dotted}`.
 
@@ -41,18 +44,19 @@ We replace all `nvidia/cuda` base images with digest-pinned Ubuntu 26.04 (`ubunt
    - `docker/Dockerfile.production-gpu`: `builder-cuda13` executes `--mode=builder`; `final-cuda13` builds `FROM ${CUDA_RUNTIME}` and executes `--mode=runtime`.
    - `docker/Dockerfile.node`: `cuda-runtime-libs` builds `FROM ${CUDA_RUNTIME}` and executes `--mode=runtime`, providing `/usr/local/cuda/lib64/libcudart.so*` to the node stage.
    - `docker/dev/ubuntu-26.04-cuda.Dockerfile`: builds `FROM ${CUDA_BUILDER}` and executes `--mode=builder`.
-   - `dev/Containerfile`: updates keyring URL to `ubuntu2604` repository directly.
+   - `dev/Containerfile`: executes the same shared installer in `--mode=full`; it no longer carries a second keyring/bootstrap or a floating `cuda-toolkit-${series}` apt command.
 
 4. **Coordinated Pin Reduction**:
-   `scripts/ci/check-cuda-pin-lockstep.py` retires the `image` shape from `SITE_SHAPES`. The coordinated pin is reduced from 10 sites to 4 sites across 3 files:
+   `scripts/ci/check-cuda-pin-lockstep.py` retires the `image` shape from `SITE_SHAPES`. The coordinated pin is reduced from 10 sites to 7 sites across 2 files:
    - `build-config.env`: `CUDA_VERSION="13.4.2"`
    - `build-config.env`: `CUDA_APT_PACKAGE="cuda-toolkit-13-4"`
-   - `dev/Containerfile`: `cuda-toolkit-13-4`
+   - `build-config.env`: `CUDA_APT_LOCK_RELEASE="13.4.2"`
+   - `build-config.env`: exact toolkit, nvcc, and cudart Debian versions
    - `docker/Dockerfile.production-gpu`: `"VMAFX production CUDA 13.4.2 runtime"`
    The residual regex `RESIDUAL_RE` sweeps for any unrecognized CUDA release literal and catches any re-introduced `nvidia/cuda:*` image tags.
 
 5. **Renovate Release Ownership**:
-   The old `nvidia/cuda` Docker datasource and `CUDA release (coordinated pin)` group are removed rather than retained as a hidden OCI dependency. A `custom.nvidia-cuda-redist` HTML datasource reads NVIDIA's official redist index, and the CUDA regex manager accepts only `redistrib_X.Y.Z.json` links through `extractVersionTemplate`. The index exposes no release timestamps, so one datasource-scoped package rule sets `minimumReleaseAgeBehaviour` to `timestamp-optional`; CUDA updates remain manual-review and never automerge. The lockstep gate derives the two spellings Renovate cannot rewrite.
+   The old `nvidia/cuda` Docker datasource and `CUDA release (coordinated pin)` group are removed rather than retained as a hidden OCI dependency. A `custom.nvidia-cuda-redist` HTML datasource reads NVIDIA's official redist index, and the CUDA regex manager accepts only `redistrib_X.Y.Z.json` links through `extractVersionTemplate`. The index exposes no release timestamps, so one datasource-scoped package rule sets `minimumReleaseAgeBehaviour` to `timestamp-optional`; CUDA updates remain manual-review and never automerge. Renovate owns only `CUDA_VERSION`; the gate derives the apt series and runtime label, while the exact metadata lock remains human-reviewed authority.
 
 ## Alternatives considered
 
@@ -67,11 +71,13 @@ We replace all `nvidia/cuda` base images with digest-pinned Ubuntu 26.04 (`ubunt
 - **Positive**:
   - Bumping CUDA versions is completely unblocked from third-party OCI image publication.
   - CUDA builders and runtimes share the exact same Ubuntu 26.04 base OS, glibc, and package ecosystem as the rest of the repository.
+  - CUDA apt installs are exact package locks rather than floating `13-4` series selections, and installed versions are independently verified.
   - Six fragile image tag and digest mirrors are eliminated from `check-cuda-pin-lockstep.py`.
   - Renovate discovers CUDA from the same official redist publication channel that exists before vendor OCI images, so automated discovery no longer reintroduces the original bottleneck.
   - Minimal runtime container size: `final-cuda13` installs only `cuda-cudart-13-4` without unnecessary build tools.
 - **Negative**:
   - Container build stages without BuildKit cache mounts download apt metadata from NVIDIA on first build.
+  - Each CUDA release bump requires checking NVIDIA's live redist manifest and Ubuntu package index to refresh component versions; those versions cannot be derived safely from the marketing release.
 - **Neutral / follow-ups**:
   - Amends ADR-1231 and ADR-1285.
   - Windows CI continues using `install-cuda-toolkit.ps1`.

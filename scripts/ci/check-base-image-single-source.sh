@@ -54,12 +54,15 @@ bad() {
 # shellcheck disable=SC1090
 . "./$config"
 
-# Dockerfiles in scope. docker/dev/ is deliberately excluded: those files pin
-# alpine / arch / fedora on purpose to prove the build survives distros the
-# release track does not use, so unifying their bases would defeat them.
+# Dockerfiles in scope. The Alpine / Arch / Fedora compatibility files under
+# docker/dev/ stay deliberately independent. The Ubuntu CUDA file is the narrow
+# exception: it mirrors CUDA_BUILDER and therefore belongs to the shared owner.
 mapfile -t files < <(
-  git ls-files 'Dockerfile*' 'docker/Dockerfile*' 'dev/Containerfile*' |
-    grep -v '^docker/dev/' | sort || true
+  {
+    git ls-files 'Dockerfile*' 'docker/Dockerfile*' 'dev/Containerfile*' |
+      grep -v '^docker/dev/' || true
+    git ls-files 'docker/dev/ubuntu-26.04-cuda.Dockerfile'
+  } | sort -u
 )
 if [ "${#files[@]}" -eq 0 ]; then
   bad "no Dockerfiles found in scope; the glob or the layout changed"
@@ -139,6 +142,16 @@ expect_in CUDA_BUILDER "ubuntu:${DEV_UBUNTU}@" "DEV_UBUNTU=$DEV_UBUNTU"
 expect_in CUDA_RUNTIME "ubuntu:${DEV_UBUNTU}@" "DEV_UBUNTU=$DEV_UBUNTU"
 expect_in ROCM_BUILDER ":${ROCM_VERSION}" "ROCM_VERSION=$ROCM_VERSION"
 expect_in ROCM_RUNTIME ":${ROCM_VERSION}" "ROCM_VERSION=$ROCM_VERSION"
+
+expect_equal() {
+  local key="$1" authority="$2" value="${!1:-}" expected="${!2:-}"
+  [ "$value" = "$expected" ] && return 0
+  bad "$key must equal $authority exactly, including its digest"
+  note "         $key=$value"
+  note "         $authority=$expected"
+}
+expect_equal CUDA_BUILDER DEV_BASE
+expect_equal CUDA_RUNTIME DEV_BASE
 
 # No release image may sit on a distro the release track has moved off.
 #

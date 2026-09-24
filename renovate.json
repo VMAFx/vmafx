@@ -299,7 +299,7 @@
       ]
     },
     {
-      "description": "Let the base-image custom manager own the wired Dockerfiles. Renovate's dockerfile manager also understands `ARG X=image` + `FROM $X`, so without this both managers would update the same pin and could land the Dockerfile and build-config.env halves in separate PRs -- which is exactly the drift ADR-1231 exists to stop. docker/dev/*.Dockerfile is deliberately NOT listed: those pin Alpine / Arch / Fedora on purpose and stay with the built-in manager.",
+      "description": "Let the base-image custom manager own the wired Dockerfiles. Renovate's dockerfile manager also understands `ARG X=image` + `FROM $X`, so without this both managers would update the same pin and could land the Dockerfile and build-config.env halves in separate PRs -- which is exactly the drift ADR-1231 exists to stop. The Ubuntu CUDA compatibility file is the sole docker/dev exception; Alpine / Arch / Fedora remain independent under the built-in manager.",
       "matchManagers": [
         "dockerfile"
       ],
@@ -311,7 +311,8 @@
         "docker/Dockerfile.node",
         "docker/Dockerfile.operator",
         "docker/Dockerfile.production",
-        "docker/Dockerfile.production-gpu"
+        "docker/Dockerfile.production-gpu",
+        "docker/dev/ubuntu-26.04-cuda.Dockerfile"
       ],
       "enabled": false
     }
@@ -456,7 +457,8 @@
         "/^docker/Dockerfile\\.node$/",
         "/^docker/Dockerfile\\.operator$/",
         "/^docker/Dockerfile\\.production$/",
-        "/^docker/Dockerfile\\.production-gpu$/"
+        "/^docker/Dockerfile\\.production-gpu$/",
+        "/^docker/dev/ubuntu-26\\.04-cuda\\.Dockerfile$/"
       ],
       "matchStrings": [
         "(?:ARG\\s+)?[A-Z][A-Z0-9_]*=\"(?<depName>[^\"\\s:@]+):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
@@ -465,7 +467,7 @@
     },
     {
       "customType": "regex",
-      "description": "CUDA release literal in build-config.env (CUDA_VERSION). Resolves against the NVIDIA official redist HTML index (custom.nvidia-cuda-redist) so bumping CUDA is never gated by OCI image publication lag. extractVersionTemplate strips the redistrib_ prefix and .json suffix, accepting only redistrib_X.Y.Z.json links and rejecting directory links or other href values. See ADR-1285 and ADR-1306.",
+      "description": "CUDA release literal in build-config.env (CUDA_VERSION). Resolves against the NVIDIA official redist HTML index (custom.nvidia-cuda-redist) so bumping CUDA is never gated by OCI image publication lag. extractVersionTemplate strips the redistrib_ prefix and .json suffix, accepting only redistrib_X.Y.Z.json links and rejecting directory links or other href values. Exact toolkit, nvcc, and cudart Debian versions are deliberately outside this manager: CUDA_APT_LOCK_RELEASE keeps the bot PR red until a maintainer verifies those mappings against NVIDIA's live package metadata. See ADR-1285 and ADR-1306.",
       "managerFilePatterns": [
         "/^build-config\\.env$/"
       ],

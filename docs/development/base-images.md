@@ -110,28 +110,41 @@ CUDA is the one knob whose value is coordinated across configuration and Dockerf
 Following ADR-1300 and ADR-1306, the fork dropped `Jimver/cuda-toolkit` and all
 `nvidia/cuda` base images. CUDA builders and runtimes build `FROM` digest-pinned
 Ubuntu 26.04 (`CUDA_BUILDER` and `CUDA_RUNTIME` in `build-config.env`) and install
-the version-locked toolkit via `scripts/ci/install-cuda-toolkit.sh` (`--mode=builder`
-or `--mode=runtime`). This decouples CUDA release bumps from upstream NVIDIA OCI
-image publication latency.
+the version-locked toolkit via `scripts/ci/install-cuda-toolkit.sh`
+(`--mode=builder`, `--mode=runtime`, or `--mode=full`). The two CUDA bases must
+equal `DEV_BASE` exactly, including its digest; the same owner also writes the
+narrow `docker/dev/ubuntu-26.04-cuda.Dockerfile` mirror. This decouples CUDA
+release bumps from upstream NVIDIA OCI image publication latency.
 
-One release is named in four places across three files, in three spellings:
+One release is named in seven places across two files:
 
 | Spelling | Where | Owner |
 | --- | --- | --- |
 | `CUDA_VERSION="13.4.2"` | `build-config.env` | Renovate |
-| `cuda-toolkit-13-4` | `CUDA_APT_PACKAGE` in `build-config.env` + `dev/Containerfile` | `make cuda-pin-sync` |
+| `cuda-toolkit-13-4` | `CUDA_APT_PACKAGE` in `build-config.env` | `make cuda-pin-sync` |
+| `CUDA_APT_LOCK_RELEASE="13.4.2"` | `build-config.env` | manual live-metadata review |
+| `CUDA_APT_TOOLKIT_VERSION="13.4.2-1"` | `build-config.env` | manual live-metadata review |
+| `CUDA_APT_NVCC_VERSION="13.4.92-1"` | `build-config.env` | manual live-metadata review |
+| `CUDA_APT_CUDART_VERSION="13.4.92-1"` | `build-config.env` | manual live-metadata review |
 | `"VMAFX production CUDA 13.4.2 runtime"` | the OCI description label on the CUDA runtime image | `make cuda-pin-sync` |
 
-`scripts/ci/check-cuda-pin-lockstep.py` checks all four against
-`CUDA_VERSION` on every commit, and fails on a CUDA release literal in any
-spelling it does not recognise (including any reintroduced `nvidia/cuda` image tags),
-so an untracked copy cannot appear quietly.
+`scripts/ci/check-cuda-pin-lockstep.py` inventories all seven on every commit,
+checks the release-valued sites against `CUDA_VERSION`, requires the component
+versions to remain in its major/minor series, and fails on a CUDA release literal
+in any spelling it does not recognise (including any reintroduced `nvidia/cuda`
+image tag), so an untracked copy cannot appear quietly. The component build numbers are not
+derivable from the marketing release: NVIDIA shipped different nvcc and cudart
+builds within 13.4. The installer therefore uses exact `package=version` apt
+operands and verifies every installed version with `dpkg-query`.
 
 To move the release:
 
 ```bash
 # 1. edit CUDA_VERSION in build-config.env
 make cuda-pin-sync                                     # derives CUDA_APT_PACKAGE and runtime label
+# 2. verify NVIDIA's redist manifest and ubuntu2604 Packages index, then update
+#    CUDA_APT_LOCK_RELEASE and the three exact *_VERSION values
+# 3. synchronize the Dockerfile mirrors
 make base-images-sync                                  # ensures Dockerfiles match build-config.env
 ```
 
@@ -139,7 +152,9 @@ Renovate discovers new CUDA releases from NVIDIA's official redist HTML index th
 `custom.nvidia-cuda-redist`, not from the retired `nvidia/cuda` image tags, and proposes
 bumping `CUDA_VERSION` directly. Only `redistrib_X.Y.Z.json` links are accepted. The
 index has no release timestamps, so the datasource-specific rule is timestamp-optional
-but stays manual-review and non-automerge. `make cuda-pin-sync` derives the rest. See
+but stays manual-review and non-automerge. `make cuda-pin-sync` derives the mechanical
+spellings. Changing only `CUDA_VERSION` intentionally leaves `CUDA_APT_LOCK_RELEASE` stale,
+so the bot PR stays red until the exact metadata review is complete. See
 [ADR-1285](../adr/1285-cuda-coordinated-pin-lockstep.md),
 [ADR-1300](../adr/1300-cuda-install-from-nvidia-apt.md), and
 [ADR-1306](../adr/1306-drop-nvidia-cuda-base.md).

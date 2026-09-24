@@ -12,7 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/cuda/bin:$PATH \
-    LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64 \
     # Experimental nvcc feature flags — see ADR D27 rationale. These are
     # stable in the mainline compiler, but gated behind --expt flags because
     # NVIDIA reserves the right to tighten the relaxed rules later.
