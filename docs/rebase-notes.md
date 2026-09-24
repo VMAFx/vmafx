@@ -74,9 +74,10 @@ these Meson blocks.
    The script previously selected the backend negatively with `--no_cuda`, which stopped selecting
    SYCL once HIP was added. It now explicitly passes `--backend sycl`. It also configures
    `ONEAPI_DEVICE_SELECTOR=level_zero:gpu` to select an Intel Level Zero GPU. The regenerated
-   576p and 4K snapshots were independently reproduced byte-for-byte (excluding the measured
-   `fps` field) with the diagnostic `VMAF_SYCL_CHECKSUM` path disabled, so the results do not
-   depend on its blocking checksum copy or hide a production queue race.
+   576p and 4K snapshots were independently reproduced with byte-identical numeric payloads after
+   dropping the measured `fps` and build-derived `version` fields. The diagnostic
+   `VMAF_SYCL_CHECKSUM` path was disabled, so the results do not depend on its blocking checksum
+   copy or hide a production queue race.
 3. **Committed 576x324 and 640x480 fixture files remain bit-identical.**
    `testdata/ref_576x324_48f.yuv`, `dis_576x324_48f.yuv`, `ref_640x480_48f.yuv`, and
    `dis_640x480_48f.yuv` were not regenerated and match master bit-for-bit.

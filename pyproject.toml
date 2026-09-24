@@ -147,7 +147,13 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["python/test", "ai/tests", "compat/vmaf/tests"]
+testpaths = [
+  "python/test",
+  "ai/tests",
+  "compat/vmaf/tests",
+  "testdata/test_run_sycl_scores.py",
+  "testdata/test_sycl_4k_repeat_determinism.py",
+]
 addopts = "-ra --strict-markers"
 filterwarnings = ["error"]
 # ai/src/ is the aiutils package root; add it so tests can ``import aiutils``

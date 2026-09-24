@@ -23,6 +23,12 @@ from testdata.run_sycl_scores import build_vmaf_cmd, prepare_sycl_env
 TESTDATA_DIR = Path(__file__).resolve().parent
 REF_4K = TESTDATA_DIR / "ref_3840x2160_48f.yuv"
 DIS_4K = TESTDATA_DIR / "dis_3840x2160_48f.yuv"
+REGRESSION_OVERRIDE_ENV_VARS = (
+    "VMAF_SYCL_CHECKSUM",
+    "VMAF_SYCL_DISPATCH",
+    "VMAF_SYCL_USE_GRAPH",
+    "VMAF_SYCL_NO_GRAPH",
+)
 
 
 def normalize_score_report(report: dict) -> dict:
@@ -49,6 +55,8 @@ def run_sycl_4k_once(iteration: int, tmp_path: Path, threads: int | None) -> dic
         cmd.extend(["--threads", str(threads)])
 
     env = prepare_sycl_env(vmaf_bin)
+    for name in REGRESSION_OVERRIDE_ENV_VARS:
+        env.pop(name, None)
 
     result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     assert result.returncode == 0, f"vmaf failed (exit {result.returncode}): {result.stderr[:500]}"
@@ -56,6 +64,38 @@ def run_sycl_4k_once(iteration: int, tmp_path: Path, threads: int | None) -> dic
 
     with open(out_json, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def test_run_sycl_4k_once_removes_diagnostic_and_dispatch_overrides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep the regression on the production graph path despite caller overrides."""
+    override_names = (
+        "VMAF_SYCL_CHECKSUM",
+        "VMAF_SYCL_DISPATCH",
+        "VMAF_SYCL_USE_GRAPH",
+        "VMAF_SYCL_NO_GRAPH",
+    )
+    for name in override_names:
+        monkeypatch.setenv(name, "forced-by-caller")
+
+    captured_env: dict[str, str] = {}
+
+    def fake_run(
+        cmd: list[str], *, capture_output: bool, text: bool, env: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        del capture_output, text
+        captured_env.update(env)
+        output_path = Path(cmd[cmd.index("-o") + 1])
+        output_path.write_text('{"version": "test"}', encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    report = run_sycl_4k_once(0, tmp_path, threads=None)
+
+    assert report == {"version": "test"}
+    assert all(name not in captured_env for name in override_names)
 
 
 @pytest.mark.skipif(
