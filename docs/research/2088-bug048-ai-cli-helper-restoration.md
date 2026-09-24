@@ -1,4 +1,4 @@
-# Research 2088: BUG-048 AI CLI Helper Restoration
+# Research-2088: BUG-048 AI CLI Helper Restoration
 
 ## Question
 
