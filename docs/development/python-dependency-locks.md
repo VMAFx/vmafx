@@ -18,11 +18,13 @@ version of `uv` (`0.12.18`).
 
 Each install command may name the lock's repository output or one of its explicit
 `install_aliases`. Aliases exist only for reviewed paths created by container
-copies or platform scripts. Each alias is bound to an explicit consumer path and
-context, preventing unrelated workflows from consuming alias paths. The checker
-rejects traversal, Windows drive paths, unsupported absolutes, and unreferenced aliases.
-The checker compares the complete normalized path and enforces consumer binding; it
-never trusts a matching basename or suffix.
+copies or platform scripts. Each alias is bound to an explicit repo-relative
+consumer path and context, preventing unrelated workflows from consuming alias
+paths. Consumer identity is exact after separator normalization: a nested
+`evil/scripts/setup/ubuntu.sh` path does not inherit the alias authority assigned
+to `scripts/setup/ubuntu.sh`. The checker rejects traversal, Windows drive paths,
+unsupported absolutes, and unreferenced aliases. It never trusts a matching
+basename or suffix.
 
 ### Architecture
 
@@ -103,6 +105,11 @@ To support pure sdists (e.g. `mkdocs-minify-plugin` dependencies) securely:
   `session.install(...)` calls in `noxfile.py` must reference a manifest-owned
   lock exactly. Dynamic Nox arguments and unmanifested requirement paths fail
   closed.
+- **Workflow checkout-order scanner**: repo-local requirements, packages, helper
+  scripts, and local actions must follow an unconditional root checkout pinned to
+  a full commit SHA. When PyYAML is unavailable, the fallback accepts its audited
+  block-style subset and explicitly rejects inline/flow-style `jobs` or `steps`
+  instead of treating an unparsed workflow as empty.
 - **CI Impact Planner**: Changes to `requirements/` trigger the `python` CI lane
   in `.github/ci-impact.json`.
 - **Bot PR Exemption**: Automated Renovate and Dependabot PRs updating `requirements/`

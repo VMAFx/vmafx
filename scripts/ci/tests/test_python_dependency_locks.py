@@ -346,6 +346,23 @@ class InstallCommandTests(unittest.TestCase):
         )
         self.assertEqual(self.findings(text_docker, "mcp-server/vmaf-mcp/Dockerfile"), [])
 
+    def test_consumer_alias_requires_exact_repo_relative_path(self) -> None:
+        text = (
+            "python3 -m pip install --user --require-hashes "
+            '-r "$REPO_ROOT/requirements/locks/build.txt"\n'
+        )
+        self.assertEqual(self.findings(text, "scripts/setup/ubuntu.sh"), [])
+        lookalikes = (
+            "evil/scripts/setup/ubuntu.sh",
+            "ubuntu.sh",
+            "/tmp/evil/scripts/setup/ubuntu.sh",  # noqa: S108
+        )
+        for consumer in lookalikes:
+            with self.subTest(consumer=consumer):
+                findings = self.findings(text, consumer)
+                self.assertEqual(len(findings), 1)
+                self.assertIn("pip install must use", findings[0])
+
     def test_nox_unrelated_plugin_install_is_not_flagged(self) -> None:
         text = 'plugin.install("pytest")\n'
         self.assertEqual(self.findings(text, "noxfile.py"), [])
@@ -1239,6 +1256,109 @@ jobs:
             )
             self.assertEqual(len(findings), 1)
             self.assertIn("consumes repo-local helper file", findings[0])
+
+    def test_fallback_parser_fails_closed_on_flow_style_steps(self) -> None:
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps: [{run: scripts/ci/load-build-config.sh}, {uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1}]
+"""
+        pyyaml_findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(pyyaml_findings), 1)
+        self.assertIn("consumes repo-local helper file", pyyaml_findings[0])
+        with mock.patch.object(self.checker, "yaml", None):
+            with self.assertRaisesRegex(self.checker.ContractError, "unsupported flow-style steps"):
+                self.checker.scan_workflow_checkout_ordering(
+                    Path(".github/workflows/test.yml"), text, root=ROOT
+                )
+
+    def test_fallback_parser_fails_closed_on_flow_style_jobs(self) -> None:
+        text = """
+jobs: {test: {runs-on: ubuntu-latest, steps: [{run: scripts/ci/load-build-config.sh}, {uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1}]}}
+"""
+        pyyaml_findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(pyyaml_findings), 1)
+        self.assertIn("consumes repo-local helper file", pyyaml_findings[0])
+        with mock.patch.object(self.checker, "yaml", None):
+            with self.assertRaisesRegex(self.checker.ContractError, "unsupported flow-style jobs"):
+                self.checker.scan_workflow_checkout_ordering(
+                    Path(".github/workflows/test.yml"), text, root=ROOT
+                )
+
+    def test_fallback_parser_fails_closed_on_flow_style_step_mapping(self) -> None:
+        text = """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - {run: scripts/ci/load-build-config.sh}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+"""
+        pyyaml_findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(pyyaml_findings), 1)
+        with mock.patch.object(self.checker, "yaml", None):
+            with self.assertRaisesRegex(self.checker.ContractError, "flow-style step mapping"):
+                self.checker.scan_workflow_checkout_ordering(
+                    Path(".github/workflows/test.yml"), text, root=ROOT
+                )
+
+    def test_fallback_parser_fails_closed_on_inline_job_mapping(self) -> None:
+        text = """
+jobs:
+  safe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+  test: {runs-on: ubuntu-latest, steps: [{run: scripts/ci/load-build-config.sh}]}
+"""
+        pyyaml_findings = self.checker.scan_workflow_checkout_ordering(
+            Path(".github/workflows/test.yml"), text, root=ROOT
+        )
+        self.assertEqual(len(pyyaml_findings), 1)
+        with mock.patch.object(self.checker, "yaml", None):
+            with self.assertRaisesRegex(self.checker.ContractError, "inline job mapping"):
+                self.checker.scan_workflow_checkout_ordering(
+                    Path(".github/workflows/test.yml"), text, root=ROOT
+                )
+
+    def test_fallback_parser_fails_closed_on_inline_checkout_with(self) -> None:
+        templates = (
+            """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {repository: evil/repository}
+      - run: scripts/ci/load-build-config.sh
+""",
+            """
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - with: {repository: evil/repository}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: scripts/ci/load-build-config.sh
+""",
+        )
+        for text in templates:
+            pyyaml_findings = self.checker.scan_workflow_checkout_ordering(
+                Path(".github/workflows/test.yml"), text, root=ROOT
+            )
+            self.assertEqual(len(pyyaml_findings), 1)
+            with mock.patch.object(self.checker, "yaml", None):
+                with self.assertRaisesRegex(self.checker.ContractError, "flow-style checkout with"):
+                    self.checker.scan_workflow_checkout_ordering(
+                        Path(".github/workflows/test.yml"), text, root=ROOT
+                    )
 
     def _scan_both_modes(self, path: Path, text: str) -> tuple[list[str], list[str]]:
         pyyaml_findings = self.checker.scan_workflow_checkout_ordering(path, text, root=ROOT)

@@ -663,15 +663,11 @@ def get_manifest_lock_targets(root: Path | None = None) -> set[str]:
 
 
 def _matches_consumer(bound_consumers: list[str], consumer_str: str) -> bool:
-    for b in bound_consumers:
-        norm_b = _normalize_install_target(b)
-        if (
-            norm_b == consumer_str
-            or consumer_str.endswith(f"/{norm_b}")
-            or norm_b.endswith(f"/{consumer_str}")
-        ):
-            return True
-    return False
+    normalized_consumer = _normalize_install_target(consumer_str)
+    return any(
+        _normalize_install_target(bound_consumer) == normalized_consumer
+        for bound_consumer in bound_consumers
+    )
 
 
 def _extract_bound_consumers(alias_spec: dict[str, Any]) -> list[str]:
@@ -1177,6 +1173,8 @@ def _is_truthy(val: Any) -> bool:
 def _is_checkout_step(step: dict[str, Any]) -> bool:
     if not _is_valid_checkout_uses(step.get("uses")):
         return False
+    if "_vmafx_fallback_inline_with" in step:
+        raise ContractError("fallback parser: unsupported flow-style checkout with mapping")
     if step.get("if") is not None and bool(str(step.get("if")).strip()):
         return False
     if _is_truthy(step.get("continue-on-error")):
@@ -1223,7 +1221,10 @@ def _step_consumes_repo_resources(step: dict[str, Any], root: Path | None = None
 
 
 def _parse_step_scalar(prop: str, val: str, step: dict[str, Any]) -> None:
-    clean = val.split("#", 1)[0].strip().strip("\"'")
+    raw = val.split("#", 1)[0].strip()
+    if raw.startswith(("[", "{", "*", "&", "!")):
+        raise ContractError(f"fallback parser: unsupported flow-style {prop} value")
+    clean = raw.strip("\"'")
     if prop in {"uses", "if", "continue-on-error"}:
         step[prop] = clean
 
@@ -1231,9 +1232,14 @@ def _parse_step_scalar(prop: str, val: str, step: dict[str, Any]) -> None:
 def _start_step_block(prop: str, val: str, indent: int, step: dict[str, Any]) -> tuple[str, int]:
     clean = val.split("#", 1)[0].strip()
     if prop == "with":
+        if clean:
+            step["_vmafx_fallback_inline_with"] = clean
+            return "", 0
         step.setdefault("with", {})
         return "with", indent
     if prop == "run":
+        if clean.startswith(("[", "{", "*", "&", "!")):
+            raise ContractError("fallback parser: unsupported flow-style run value")
         if clean.startswith(">"):
             step["run"] = ""
             return "run_folded", indent
@@ -1288,6 +1294,10 @@ def _start_fallback_step(
     step: dict[str, Any] = {}
     job_steps.append(step)
     rest = raw_step.strip()
+    if rest.startswith(("[", "{", "*", "&", "!", "<<:")):
+        raise ContractError("fallback parser: unsupported flow-style step mapping")
+    if rest and re.match(r"^[a-zA-Z0-9_-]+\s*:", rest) is None:
+        raise ContractError("fallback parser: unsupported workflow step structure")
     mode, indent = _parse_step_entry(rest, spaces, step) if rest else ("", 0)
     return step, mode, indent
 
@@ -1306,7 +1316,7 @@ def _handle_fallback_step_line(
             _append_step_block_line(line, mode, cur_step)
             return cur_step, mode, indent
         mode, indent = "", 0
-    m_step = re.match(r"^\s*-\s+(.*)$", line)
+    m_step = re.match(r"^\s*-\s*(.*)$", line)
     if m_step and cur_job is not None:
         return _start_fallback_step(m_step.group(1), spaces, jobs[cur_job])
     if cur_step is not None:
@@ -1315,24 +1325,50 @@ def _handle_fallback_step_line(
     return None, "", 0
 
 
+def _fallback_mapping_value(line: str, key_pattern: str) -> str | None:
+    match = re.match(rf"^{key_pattern}\s*:\s*(.*)$", line)
+    if match is None:
+        return None
+    return match.group(1).split("#", 1)[0].strip()
+
+
 def _parse_workflow_jobs_fallback(text: str) -> dict[str, list[dict[str, Any]]]:
     jobs: dict[str, list[dict[str, Any]]] = {}
     cur_job: str | None = None
+    in_jobs = False
     in_steps = False
     cur_step: dict[str, Any] | None = None
     mode, indent = "", 0
     for line in text.splitlines():
-        m_job = re.match(r"^  ([a-zA-Z0-9_-]+):\s*$", line)
-        if m_job:
+        jobs_value = _fallback_mapping_value(line, "jobs")
+        if jobs_value is not None:
+            if jobs_value:
+                raise ContractError("fallback parser: unsupported flow-style jobs mapping")
+            in_jobs = True
+            continue
+        if in_jobs and line and not line.startswith((" ", "#")):
+            in_jobs = False
+        if not in_jobs:
+            continue
+        m_job = re.match(r"^  ([a-zA-Z0-9_-]+)\s*:\s*(.*)$", line)
+        if m_job and not m_job.group(2).split("#", 1)[0].strip():
             cur_job = m_job.group(1)
             jobs[cur_job] = []
             in_steps, cur_step, mode, indent = False, None, "", 0
-        elif cur_job is not None and re.match(r"^    steps:\s*$", line):
+        elif m_job:
+            raise ContractError("fallback parser: unsupported inline job mapping")
+        elif cur_job is not None and _fallback_mapping_value(line, r"    steps") is not None:
+            if _fallback_mapping_value(line, r"    steps"):
+                raise ContractError("fallback parser: unsupported flow-style steps sequence")
             in_steps = True
+        elif in_steps and re.match(r"^    \S", line):
+            in_steps, cur_step, mode, indent = False, None, "", 0
         elif in_steps:
             cur_step, mode, indent = _handle_fallback_step_line(
                 line, cur_job, jobs, cur_step, mode, indent
             )
+    if not jobs:
+        raise ContractError("fallback parser: workflow jobs mapping missing or unsupported")
     return jobs
 
 
