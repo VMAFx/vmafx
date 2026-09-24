@@ -8,10 +8,11 @@
 ## Question
 
 Whether the `cpp/unused-static-function` findings in `core/src/pdjson.c`,
-`core/src/thread_pool.c`, and `core/test/test_fex_ctx_vector.cpp` identify dead
-implementation code, and how to close them without deleting live behavior,
-changing public ABI, suppressing the CodeQL unused-static findings, or weakening
-the tests that compile implementation sources under special configurations.
+`core/src/picture.c`, `core/src/thread_pool.c`, and
+`core/test/test_fex_ctx_vector.cpp` identify dead implementation code, and how
+to close them without deleting live behavior, changing public ABI, suppressing
+the CodeQL unused-static findings, or weakening tests that compile
+implementation sources under special configurations.
 
 ## Sources
 
@@ -22,8 +23,8 @@ the tests that compile implementation sources under special configurations.
   workflow.
 - [CodeQL query help: Unused static function](https://codeql.github.com/codeql-query-help/cpp/cpp-unused-static-function/).
 - [CodeQL query source](https://github.com/github/codeql/blob/main/cpp/ql/src/Best%20Practices/Unused%20Entities/UnusedStaticFunctions.ql).
-- `core/test/meson.build`, `core/src/pdjson.c`, `core/src/thread_pool.c`, and the
-  owning tests.
+- `core/test/meson.build`, `core/src/pdjson.c`, `core/src/picture.c`,
+  `core/src/thread_pool.c`, and the owning tests.
 
 ## Findings
 
@@ -100,6 +101,29 @@ Default builds no longer emit dead test code, while the non-LTO harness still
 builds and exercises the helper. No unrelated predicate test was added merely
 to satisfy the scanner.
 
+### `picture.c`
+
+Standards review found that a fresh full-database extraction produces two query
+rows in `core/src/picture.c`: `picture_compute_geometry` (line 137) and
+`pool_release_picture` (line 105).
+
+Inspection of the compile commands revealed a translation-unit identity split:
+most copies of `picture.c` (in `libvmaf` and the 50 coverage test targets) link
+as one identity under `vmaf_cflags_common` (`-fvisibility=hidden -DVMAF_BUILDING_LIBVMAF`).
+However, `test_picture`, `test_picture_v2`, and `test_picture_pool_error_paths`
+compiled direct source copies without those flags, creating a second translation-unit
+identity. When CodeQL coalesced the external function `vmaf_picture_alloc`, the single
+coalesced function body attached to the ordinary library identity where calls reached
+its static helpers. The second uncoalesced identity's static helpers
+(`picture_compute_geometry` and `pool_release_picture`) were left with 0 callers.
+
+`test_picture`, `test_picture_v2`, and `test_picture_pool_error_paths` now share
+one uniquely-owned test-local static library, `test_picture_impl`, for
+`picture.c`, `mem.cpp`, and `ref.cpp`. The error-path target still compiles
+`picture_pool.c` directly, preserving the ADR-0960 seam that exposes its
+internal pool entry points. The sibling C++ error-path target was not part of
+the orphan identity and remains unchanged.
+
 ## Alternatives considered
 
 | Approach | Result | Decision |
@@ -111,6 +135,7 @@ to satisfy the scanner.
 | Rename production symbols or change public headers | Unnecessary ABI churn for a test-build problem | Rejected |
 | Alias every public API in each intentional copy | Closes CodeQL, but manufactures unused external APIs for cppcheck | Rejected |
 | Remove redundant copies and uniquely name intentional private helpers | Preserves behavior, the public API, and an unambiguous helper graph for both analyzers | **Chosen** |
+| Share `test_picture_impl` with all three orphan targets | Gives the helpers one called identity while preserving direct `picture_pool.c` error-path access | **Chosen** |
 
 ## Verification evidence
 
@@ -122,13 +147,30 @@ CodeQL CLI 2.27.0; codeql/cpp-queries 1.8.3
 master: 4e6916d16ac57647105d14a47a6680117d6b5738
 ```
 
-A fresh branch database was then extracted from a clean 1,544-target CPU build
-configured with `-Denable_cuda=false -Denable_sycl=false`. Replaying the same
-query produced **zero results in all selected paths**: `pdjson.c`,
-`thread_pool.c`, `test_fex_ctx_vector.cpp`, and
-`test_thread_pool_backpressure.c`. The five remaining repository-wide query rows
-were outside this alert lane: the pre-existing `dump_c_values` row and a volatile
-duplicate-identity group in `predict.c`. This is deliberately not reported as a
+A fresh branch database was then extracted from a clean CPU build configured
+with `-Denable_cuda=false -Denable_sycl=false`. Before the picture correction,
+the exact query returned **six repository-wide rows**: two in `picture.c`, three
+in `predict.c`, and one in `cambi.c`. This corrected the earlier five-row claim,
+which had counted raw BQRS entities rather than interpreted CSV findings.
+
+The official CodeQL CSV output (`codeql database analyze --format=csv`) was
+parsed and validated fail-closed with `scripts/ci/check-codeql-unused-static.py`.
+The `codeql-unused-static-schema-contract` pre-commit hook exercises its
+positive, target-violation, raw-BQRS, and malformed-schema fixtures in CI.
+The six-row pre-correction inventory was:
+
+1. `core/src/picture.c:137`: `picture_compute_geometry` (orphan test identity; fixed here)
+2. `core/src/picture.c:105`: `pool_release_picture` (orphan test identity; fixed here)
+3. `core/src/predict.c:309`: `post_process_feature_from_another` (volatile duplicate-identity group)
+4. `core/src/predict.c:282`: `scan_feature` (volatile duplicate-identity group)
+5. `core/src/predict.c:262`: `scan_match_feature` (volatile duplicate-identity group)
+6. `core/src/feature/cambi.c:1512`: `dump_c_values` (pre-existing debug helper)
+
+After all three orphan targets were consolidated, the same interpreted query
+returned **four repository-wide rows**: the three `predict.c` rows and the one
+`cambi.c` row above. It returned zero rows in every selected lane path:
+`picture.c`, `pdjson.c`, `thread_pool.c`, `test_fex_ctx_vector.cpp`, and
+`test_thread_pool_backpressure.c`. This is deliberately not reported as a
 repository-wide zero.
 
 Focused runtime verification after the identity repair:
@@ -139,6 +181,10 @@ test_pdjson_stack_increment_zero         PASS
 test_pdjson_stack_increment_oversized    PASS
 test_thread_pool_backpressure             PASS
 test_fex_ctx_vector                       PASS
+test_picture                              PASS
+test_picture_v2                           PASS
+test_picture_pool_error_paths             PASS
+test_picture_pool_cpp_error_paths         PASS
 ```
 
 The complete CPU build then passed all 160 Meson tests. The non-LTO vector
@@ -165,8 +211,9 @@ post-merge receipt.
 
 - Whether GitHub deduplicates every entity-level result back to the same 25 open
   alert records can only be confirmed by the fresh hosted default-branch run.
-- The unrelated `predict.c` duplicate-identity group belongs to a separate audit;
-  it is recorded here so this lane does not overclaim a repository-wide zero.
+- The unrelated `predict.c` duplicate-identity group and `cambi.c` debug helper
+  belong to separate audits; they are recorded here so this lane does not
+  overclaim a repository-wide zero.
 
 ## Related
 

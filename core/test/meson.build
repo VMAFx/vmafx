@@ -143,18 +143,24 @@ test_context = executable('test_context',
     dependencies:[stdatomic_dependency, pthread_dependency, gpu_all_deps],
 )
 
-test_picture = executable('test_picture',
-    ['test.c', 'test_picture.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
+test_picture_lib = static_library('test_picture_impl',
+    ['../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
+)
+
+test_picture = executable('test_picture',
+    ['test.c', 'test_picture.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
 
 # ADR-0928 cycle N+1: picture_v2 unit tests
 test_picture_v2 = executable('test_picture_v2',
-    ['test.c', 'test_picture_v2.c',
-     '../src/picture.c', '../src/picture_v2.c',
-     '../src/mem.cpp', '../src/ref.cpp'],
+    ['test.c', 'test_picture_v2.c', '../src/picture_v2.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
 
@@ -2694,8 +2700,9 @@ test('test_thread_safety_batch', test_thread_safety_batch, suite : ['fast'])
 # the high-level vmaf_preallocate_pictures API.
 test_picture_pool_error_paths = executable('test_picture_pool_error_paths',
     ['test.c', 'test_picture_pool_error_paths.c',
-     '../src/picture_pool.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
+     '../src/picture_pool.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
     dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
 )
 test('test_picture_pool_error_paths', test_picture_pool_error_paths, suite : ['fast'])

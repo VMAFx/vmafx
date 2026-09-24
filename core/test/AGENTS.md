@@ -631,6 +631,11 @@ score-level tolerance detects it
 Do not add uncalled library implementation sources directly to test executables in
 `core/test/meson.build`. `test_picture*` must not compile `thread_pool.c`, and
 `test_predict` / `test_model*` must not compile redundant `pdjson.c` copies.
+`test_picture`, `test_picture_v2`, and `test_picture_pool_error_paths` link the
+test-local static library `test_picture_impl` rather than compiling duplicate
+private copies of `picture.c`, `mem.cpp`, and `ref.cpp`. The error-path target
+still compiles `picture_pool.c` directly; preserve that ADR-0960 seam while
+keeping the shared picture implementation identity.
 
 When a test must compile an implementation source under a special configuration,
 its repeated definitions need unambiguous test-local identities. The pdjson
