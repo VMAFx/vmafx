@@ -458,16 +458,103 @@ def _pip_install_tokens(command: str) -> Iterable[list[str]]:
         yield ["pip", "install", *normalized_tail]
 
 
-def _is_local_source(value: str) -> bool:
-    if "://" in value or value.startswith(("git+", "hg+", "svn+", "bzr+")):
+def _is_container_recipe(relative: Path | str) -> bool:
+    rel = Path(relative)
+    name = rel.name.lower()
+    suffix = rel.suffix.lower()
+    if suffix in {".md", ".rst", ".txt", ".json", ".yaml", ".yml", ".toml", ".html", ".xml"}:
         return False
-    return (
-        value.startswith((".", "/", "~"))
-        or "/" in value
-        or "\\" in value
-        or value.endswith((".whl", ".tar.gz", ".tgz", ".tar.bz2", ".zip"))
-        or Path(value).exists()
-    )
+    if name in {"dockerfile", "containerfile"}:
+        return True
+    if name.startswith(("dockerfile.", "containerfile.")):
+        return True
+    if suffix in {".dockerfile", ".containerfile"}:
+        return True
+    return False
+
+
+def _resolve_search_root(root: Path | None = None) -> Path:
+    if root is not None:
+        return root
+    default_root = Path(__file__).resolve().parents[2]
+    if (default_root / MANIFEST_PATH).exists():
+        return default_root
+    if (Path.cwd() / MANIFEST_PATH).exists():
+        return Path.cwd()
+    return default_root
+
+
+def _is_local_source(  # noqa: PLR0911, PLR0912
+    value: str,
+    root: Path | None = None,
+    consumer_path: Path | None = None,
+) -> bool:
+    if not value or not isinstance(value, str):
+        return False
+
+    clean_val = re.sub(r"\[[^\]]*\]$", "", value.strip("\"'"))
+    if not clean_val:
+        return False
+
+    if "://" in clean_val or clean_val.startswith(
+        ("git+", "hg+", "svn+", "bzr+", "git@", "ssh@", "http:", "https:", "ftp:")
+    ):
+        return False
+
+    if re.search(r"^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:", clean_val):
+        return False
+
+    if clean_val.startswith(("\\\\", "//")):
+        return False
+
+    search_root = _resolve_search_root(root)
+
+    norm_val = clean_val.replace("\\", "/")
+
+    if ".." in norm_val.split("/"):
+        try:
+            base_dir = (search_root / consumer_path).parent if consumer_path else search_root
+            resolved = (base_dir / clean_val).resolve()
+            search_root_resolved = search_root.resolve()
+            if not str(resolved).startswith(str(search_root_resolved)):
+                return False
+        except (ValueError, OSError):
+            return False
+
+    if any(
+        norm_val.lower().endswith(ext) for ext in (".whl", ".tar.gz", ".tgz", ".tar.bz2", ".zip")
+    ):
+        return True
+
+    if norm_val.startswith(SUPPORTED_ABSOLUTE_PREFIXES) or norm_val.startswith(
+        ("/opt/", "/wheels/")
+    ):
+        for pfx in ("/build/vmaf/", "/vmaf/"):
+            if norm_val.startswith(pfx):
+                sub = norm_val[len(pfx) :]
+                if (search_root / sub).exists():
+                    return True
+        if consumer_path and _is_container_recipe(consumer_path):
+            return True
+        if norm_val.startswith(("/build/", "/tmp/")):  # noqa: S108
+            return True
+
+    try:
+        cand_root = search_root / clean_val
+        if cand_root.exists():
+            return True
+    except (ValueError, OSError):
+        pass
+
+    if consumer_path:
+        try:
+            cand_consumer = (search_root / consumer_path).parent / clean_val
+            if cand_consumer.exists():
+                return True
+        except (ValueError, OSError):
+            pass
+
+    return False
 
 
 def _package_arguments(tokens: list[str]) -> list[str]:
@@ -526,10 +613,13 @@ def _has_editable_flags(lowered: list[str]) -> bool:
 def get_manifest_lock_targets(root: Path | None = None) -> set[str]:
     search_root = root
     if search_root is None:
-        if (Path.cwd() / MANIFEST_PATH).exists():
+        default_root = Path(__file__).resolve().parents[2]
+        if (default_root / MANIFEST_PATH).exists():
+            search_root = default_root
+        elif (Path.cwd() / MANIFEST_PATH).exists():
             search_root = Path.cwd()
         else:
-            search_root = Path(__file__).resolve().parents[2]
+            search_root = default_root
     try:
         manifest = load_manifest(search_root)
     except ContractError:
@@ -583,10 +673,13 @@ def get_manifest_lock_targets_for_consumer(
     search_root = root
     if manifest is None:
         if search_root is None:
-            if (Path.cwd() / MANIFEST_PATH).exists():
+            default_root = Path(__file__).resolve().parents[2]
+            if (default_root / MANIFEST_PATH).exists():
+                search_root = default_root
+            elif (Path.cwd() / MANIFEST_PATH).exists():
                 search_root = Path.cwd()
             else:
-                search_root = Path(__file__).resolve().parents[2]
+                search_root = default_root
         try:
             manifest = load_manifest(search_root)
         except ContractError:
@@ -640,20 +733,36 @@ def _is_secure_hash_install(
     return all(_is_valid_lock_target(t, valid_lock_outputs) for t in req_targets)
 
 
-def _extract_editable_target(tokens: list[str], lowered: list[str]) -> str | None:
-    editable_index = next(
-        (index for index, token in enumerate(lowered) if token in {"-e", "--editable"}),
-        None,
-    )
-    if editable_index is not None and editable_index + 1 < len(tokens):
-        return tokens[editable_index + 1]
-    for token in tokens:
-        if token.lower().startswith(("--editable=", "-e=")):
-            return token.split("=", 1)[1]
-    return None
+def _extract_editable_targets(tokens: list[str]) -> list[str]:
+    targets: list[str] = []
+    skip_next = False
+    for idx, token in enumerate(tokens[2:], 2):
+        if skip_next:
+            skip_next = False
+            continue
+        lowered = token.lower()
+        if lowered in {"-e", "--editable"}:
+            if idx + 1 < len(tokens) and not tokens[idx + 1].startswith("-"):
+                targets.append(tokens[idx + 1])
+                skip_next = True
+            else:
+                targets.append("")
+        elif lowered.startswith(("-e=", "--editable=")):
+            targets.append(token.split("=", 1)[1])
+    return targets
 
 
-def _is_secure_install(tokens: list[str], valid_lock_outputs: set[str] | None = None) -> bool:
+def _extract_editable_target(tokens: list[str], lowered: list[str] | None = None) -> str | None:
+    targets = _extract_editable_targets(tokens)
+    return targets[0] if targets else None
+
+
+def _is_secure_install(  # noqa: PLR0911
+    tokens: list[str],
+    valid_lock_outputs: set[str] | None = None,
+    root: Path | None = None,
+    consumer_path: Path | None = None,
+) -> bool:
     lowered = [token.lower() for token in tokens]
     if _is_secure_hash_install(tokens, lowered, valid_lock_outputs):
         return True
@@ -664,13 +773,17 @@ def _is_secure_install(tokens: list[str], valid_lock_outputs: set[str] | None = 
     no_deps = "--no-deps" in lowered
     no_build_isolation = "--no-build-isolation" in lowered
 
-    editable_target = _extract_editable_target(tokens, lowered)
-    if editable_target is not None:
-        return (
-            no_deps
-            and no_build_isolation
-            and _is_local_source(editable_target)
-            and not _package_arguments(tokens)
+    editable_targets = _extract_editable_targets(tokens)
+    if editable_targets:
+        if (
+            not no_deps
+            or not no_build_isolation
+            or _package_arguments(tokens)
+            or any(t == "" for t in editable_targets)
+        ):
+            return False
+        return all(
+            _is_local_source(t, root=root, consumer_path=consumer_path) for t in editable_targets
         )
 
     if _has_editable_flags(lowered):
@@ -680,8 +793,14 @@ def _is_secure_install(tokens: list[str], valid_lock_outputs: set[str] | None = 
     if not package_tokens or not no_deps:
         return False
 
-    is_whl = all(t.lower().endswith(".whl") and _is_local_source(t) for t in package_tokens)
-    return is_whl or (no_build_isolation and all(_is_local_source(t) for t in package_tokens))
+    is_whl = all(
+        t.lower().endswith(".whl") and _is_local_source(t, root=root, consumer_path=consumer_path)
+        for t in package_tokens
+    )
+    return is_whl or (
+        no_build_isolation
+        and all(_is_local_source(t, root=root, consumer_path=consumer_path) for t in package_tokens)
+    )
 
 
 def _extract_constant_strings(args: list[ast.expr]) -> list[str] | None:
@@ -883,17 +1002,31 @@ def _nox_install_tokens(text: str) -> Iterable[tuple[int, list[str] | None]]:
 
 
 def scan_install_commands(
-    path: Path, text: str, valid_lock_outputs: set[str] | None = None
+    path: Path,
+    text: str,
+    valid_lock_outputs: set[str] | None = None,
+    root: Path | None = None,
 ) -> list[str]:
     """Return unsafe executable pip-install commands in one supported surface."""
+    search_root = root
+    if search_root is None:
+        default_root = Path(__file__).resolve().parents[2]
+        if (default_root / MANIFEST_PATH).exists():
+            search_root = default_root
+        elif (Path.cwd() / MANIFEST_PATH).exists():
+            search_root = Path.cwd()
+        else:
+            search_root = default_root
 
     if valid_lock_outputs is None:
-        valid_lock_outputs = get_manifest_lock_targets_for_consumer(path)
+        valid_lock_outputs = get_manifest_lock_targets_for_consumer(path, root=search_root)
 
     findings: list[str] = []
     if path.name.lower() == "noxfile.py":
         for line, tokens in _nox_install_tokens(text):
-            if tokens is not None and _is_secure_install(tokens, valid_lock_outputs):
+            if tokens is not None and _is_secure_install(
+                tokens, valid_lock_outputs, root=search_root, consumer_path=path
+            ):
                 continue
             findings.append(
                 f"{path}:{line}: nox session.install must use literal arguments and the "
@@ -905,7 +1038,7 @@ def scan_install_commands(
         if not stripped or stripped.startswith("#"):
             continue
         for tokens in _pip_install_tokens(command):
-            if _is_secure_install(tokens, valid_lock_outputs):
+            if _is_secure_install(tokens, valid_lock_outputs, root=search_root, consumer_path=path):
                 continue
             findings.append(
                 f"{path}:{line}: pip install must use --require-hashes with a lock file, "
@@ -937,7 +1070,10 @@ def tracked_consumer_paths(root: Path) -> list[Path]:
                 rel = path.relative_to(root)
             except ValueError:
                 continue
-            if any(part.startswith(".") for part in rel.parts):
+            if any(
+                part.startswith(".") and part not in {".github", ".devcontainer"}
+                for part in rel.parts
+            ):
                 continue
             if path.is_file():
                 raw_paths.append(rel)
@@ -948,8 +1084,11 @@ def tracked_consumer_paths(root: Path) -> list[Path]:
         name = relative.name.lower()
         supported = (
             relative.suffix.lower() in {".sh", ".ps1"}
-            or (parts[:2] == (".github", "workflows") and relative.suffix in {".yml", ".yaml"})
-            or name.startswith(("dockerfile", "containerfile"))
+            or (
+                parts[:2] == (".github", "workflows")
+                and relative.suffix.lower() in {".yml", ".yaml"}
+            )
+            or _is_container_recipe(relative)
             or name in {"makefile", "gnumakefile", "noxfile.py"}
         )
         fixture = "tests" in parts or name.startswith(("test-", "test_"))
@@ -1101,7 +1240,7 @@ def check(root: Path) -> int:
                 problems.append(f"{relative}: {error}")
                 continue
             consumer_targets = get_manifest_lock_targets_for_consumer(relative, manifest, root)
-            problems.extend(scan_install_commands(relative, text, consumer_targets))
+            problems.extend(scan_install_commands(relative, text, consumer_targets, root=root))
     except (ContractError, subprocess.CalledProcessError) as error:
         problems = [str(error)]
 
