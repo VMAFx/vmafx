@@ -451,20 +451,21 @@ the independent compute queue.
 Both ownership exits in `libvmaf.c` must preserve that wait:
 
 - `read_pictures_frame_cleanup()` waits before its direct picture unrefs.
-- `read_pictures_frame_cleanup_after_batch()` waits before returning from the
-  `--threads` path; the worker may already have dropped the final counted host
-  references, but the caller cannot refill a pooled picture until this helper
-  returns.
+- `threaded_read_pictures_batch()` waits after enqueue while the caller's
+  original counted references are still live, then unrefs those references.
+  The worker may finish and drop its own copies before the wait, so moving the
+  barrier to `read_pictures_frame_cleanup_after_batch()` is too late: the
+  release callback can already have poisoned or recycled the host storage.
 
 Do not replace either event wait with a global queue/device wait, and do not
 remove the threaded wait because one timing sample happened to let DMA finish
 before the worker. In a combined CUDA+SYCL build, the wait must remain before
 CUDA's host-cleanup early return. `core/test/test_sycl_cuda_serial_upload_lifetime.c`
-pins that compile combination through the public serial API; the 4K release
-callback poisons host storage as soon as cleanup returns and PSNR proves DMA
-already consumed the original pixels. `testdata/test_sycl_4k_repeat_determinism.py`
-then covers 20 serial and 20 `--threads 1` runs against the full normalized
-score report.
+pins that compile combination through the public API with `n_threads=0` and
+`n_threads=1`; the 4K release callback poisons host storage as soon as its final
+reference drops and PSNR proves DMA already consumed the original pixels.
+`testdata/test_sycl_4k_repeat_determinism.py` then covers 20 serial and 20
+`--threads 1` runs against the full normalized score report.
 
 ### framesync producer-error paths must call vmaf_framesync_abort (ADR-1092)
 

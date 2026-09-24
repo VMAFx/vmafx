@@ -3091,9 +3091,11 @@ test('test_sycl', test_sycl, suite : ['fast', 'gpu', 'sycl'])
 test('test_sycl_pic_preallocation', test_sycl_pic_preallocation, suite : ['fast', 'gpu', 'sycl'])
 
 # BUG-040: this compile combination used CUDA's host-picture cleanup early
-# return, bypassing the SYCL upload wait on the serial path. The public-API
-# regression poisons each released 4K host picture and proves psnr_sycl saw the
-# pre-release pixels. A SYCL device is required at runtime; no CUDA device is.
+# return, bypassing the SYCL upload wait on the serial path. The worker path
+# can independently drop its counted references before the caller returns.
+# The public-API regressions poison each released 4K host picture in both
+# modes and prove psnr_sycl saw the pre-release pixels. A SYCL device is
+# required at runtime; no CUDA device is.
 if get_option('enable_cuda')
 test_sycl_cuda_serial_upload_lifetime = executable('test_sycl_cuda_serial_upload_lifetime',
     ['test.c', 'test_sycl_cuda_serial_upload_lifetime.c'],

@@ -37,18 +37,20 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 these Meson blocks.
 ## fix/sycl-a380-snapshots-bug040 — production SYCL DMA host-buffer race fixed (2026-09-24)
 
-1. **Both `core/src/libvmaf.c` picture-cleanup paths must wait for the final SYCL upload.**
+1. **Both `core/src/libvmaf.c` picture-ownership paths must wait for the final SYCL upload.**
    The picture pool (`tools/vmaf.cpp`, 3 slots for 1-thread default) recycles `dist` to the reader
    thread immediately after `vmaf_picture_unref`. With `copy_queue.memcpy` DMA still running on the
    host buffer, the reader's `fread` overwrites bytes in-flight — corrupting the bottom half of 4K
-   `dist` planes with next-frame data. `read_pictures_frame_cleanup` covers the serial path;
-   `read_pictures_frame_cleanup_after_batch` covers `--threads`, after the worker inherited and may
-   have released the final counted host references. Both wait for `last_upload_event` (the final
-   dist-plane DMA) under `#ifdef HAVE_SYCL` before the caller can refill a pooled picture. In a
-   combined CUDA+SYCL build, the serial wait must precede CUDA's host-cleanup early return. Do not
-   drop or move either call during a rebase; the event does not touch `combined_queue`, so it does
-   not serialize GPU compute. `core/test/test_sycl_cuda_serial_upload_lifetime.c` compiles only
-   with both backends enabled and poisons released 4K host storage to pin this exact ordering.
+   `dist` planes with next-frame data. `read_pictures_frame_cleanup` covers the serial path.
+   `threaded_read_pictures_batch` waits after enqueue while the caller's original counted refs are
+   still live, then releases them on both success and enqueue-error paths; waiting later in
+   `read_pictures_frame_cleanup_after_batch` is unsafe because the worker may already have dropped
+   its copies. Both paths wait for `last_upload_event` (the final dist-plane DMA) before the caller
+   can refill a pooled picture. In a combined CUDA+SYCL build, the serial wait must precede CUDA's
+   host-cleanup early return. Do not drop or move either call during a rebase; the event does not
+   touch `combined_queue`, so it does not serialize GPU compute.
+   `core/test/test_sycl_cuda_serial_upload_lifetime.c` compiles only with both backends enabled and
+   poisons released 4K host storage at `n_threads=0` and `n_threads=1` to pin both orderings.
 2. **`testdata/test_sycl_4k_repeat_determinism.py` is the production stability harness.**
    It defaults to 20 serial and 20 `--threads 1` 4K SYCL runs and asserts every frame, pooled,
    aggregate, and backend value is identical after removing only measured `fps`. `VMAF_BIN` binds

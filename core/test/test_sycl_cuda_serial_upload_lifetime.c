@@ -8,15 +8,17 @@
 /*
  * BUG-040 regression: in a build that contains both CUDA and SYCL,
  * vmaf_read_pictures() must finish the asynchronous SYCL host upload before
- * its serial cleanup releases the caller's pictures.
+ * either its serial cleanup or its worker thread releases the caller's
+ * pictures.
  *
- * The test drives the public serial ingestion path with the real psnr_sycl
- * extractor. Each distorted picture has a release callback that overwrites
- * its 4K luma plane immediately before returning the buffer to libvmaf's
- * pool. With the required wait-before-release ordering, the device already
- * owns the original all-zero plane and every identical-input PSNR is capped
- * at 60 dB. If CUDA's host-cleanup branch returns before the SYCL wait, the
- * poison races the DMA and at least one frame scores below the cap.
+ * The test drives the public serial and one-worker ingestion paths with the
+ * real psnr_sycl extractor. Each distorted picture has a release callback
+ * that overwrites its 4K luma plane immediately before returning the buffer
+ * to libvmaf's pool. With the required wait-before-release ordering, the
+ * device already owns the original all-zero plane and every identical-input
+ * PSNR is capped at 60 dB. If either CUDA's host-cleanup branch or the worker
+ * drops the final host reference before the SYCL wait, the poison races the
+ * DMA and at least one frame scores below the cap.
  */
 
 #include <errno.h>
@@ -113,7 +115,7 @@ static int collect_scores(VmafContext *vmaf, double scores[N_FRAMES])
     return err;
 }
 
-static int run_serial_lifetime_probe(double scores[N_FRAMES], unsigned *release_count)
+static int run_lifetime_probe(unsigned n_threads, double scores[N_FRAMES], unsigned *release_count)
 {
     VmafSyclState *sycl_state = NULL;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
@@ -121,7 +123,7 @@ static int run_serial_lifetime_probe(double scores[N_FRAMES], unsigned *release_
     if (err != 0 || sycl_state == NULL)
         return -ENODEV;
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = 0u};
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_threads = n_threads};
     VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, cfg);
     if (!err)
@@ -148,7 +150,7 @@ static char *test_serial_cleanup_waits_before_host_release()
 {
     double scores[N_FRAMES] = {0.0};
     unsigned release_count = 0u;
-    const int err = run_serial_lifetime_probe(scores, &release_count);
+    const int err = run_lifetime_probe(0u, scores, &release_count);
     if (err == -ENODEV) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
         mu_skipped = 1;
@@ -169,9 +171,35 @@ static char *test_serial_cleanup_waits_before_host_release()
     return NULL;
 }
 
+static char *test_threaded_cleanup_waits_before_host_release()
+{
+    double scores[N_FRAMES] = {0.0};
+    unsigned release_count = 0u;
+    const int err = run_lifetime_probe(1u, scores, &release_count);
+    if (err == -ENODEV) {
+        (void)fprintf(stderr, "[skip: no SYCL device] ");
+        mu_skipped = 1;
+        return NULL;
+    }
+    mu_assert("CUDA+SYCL threaded lifetime probe failed", err == 0);
+    mu_assert("every distorted picture must be released", release_count == N_FRAMES);
+
+    unsigned corrupted = 0u;
+    for (unsigned i = 0u; i < N_FRAMES; i++) {
+        if (fabs(scores[i] - EXPECTED_IDENTICAL_PSNR) > 1e-12) {
+            (void)fprintf(stderr, "\nframe %u: expected %.1f dB, got %.17g", i,
+                          EXPECTED_IDENTICAL_PSNR, scores[i]);
+            corrupted++;
+        }
+    }
+    mu_assert("worker released host picture before its SYCL upload completed", corrupted == 0u);
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_serial_cleanup_waits_before_host_release);
+    mu_run_test(test_threaded_cleanup_waits_before_host_release);
     return NULL;
 }
 

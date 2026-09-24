@@ -574,9 +574,10 @@ hold onto:
   `T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06`; CUDA and SYCL now match their
   serial paths with a worker pool. The flag is still load-bearing because it
   exercises `read_pictures_frame_cleanup_after_batch`. For SYCL, that helper
-  must wait on `last_upload_event` before returning picture-pool storage to the
-  reader, just as `read_pictures_frame_cleanup` does on the serial path
-  (BUG-040). Never drop the flag to make a bench row green.
+  is reached only after `threaded_read_pictures_batch` has waited on
+  `last_upload_event` while retaining the caller's original picture refs;
+  waiting in the helper itself is too late if the worker already dropped its
+  copies (BUG-040). Never drop the flag to make a bench row green.
 - **Never discard binary's stderr in bench harness.** `bench_all.sh` used
   to send it to `/dev/null`, relabel any non-zero exit as "backend likely
   unavailable"; that turned hard abort into row that looked like missing
@@ -746,10 +747,12 @@ not as fixed constants.
   device-only path must never be dereferenced. `read_pictures_frame_cleanup`
   covers every non-batched exit. `read_pictures_frame_cleanup_after_batch`
   is device-only release after `threaded_read_pictures_batch` already unref'd
-  host pictures (PR #838), but it still waits for the final SYCL upload event
-  before the caller can reuse those pictures (BUG-040). The serial cleanup
-  must retain the same wait before its host unrefs and before CUDA's host-cleanup
-  early return in a combined CUDA+SYCL build. Only `#ifdef HAVE_CUDA` left
+  host pictures (PR #838); `threaded_read_pictures_batch` must wait for the
+  final SYCL upload while its original host-picture refs still protect the
+  storage, before either enqueue-error or success cleanup can unref them
+  (BUG-040). The serial cleanup must retain the same wait before its host
+  unrefs and before CUDA's host-cleanup early return in a combined CUDA+SYCL
+  build. Only `#ifdef HAVE_CUDA` left
   inside `vmaf_read_pictures` guards `read_pictures_frame_translate` call.
   Helper exists only in CUDA builds (CPU no-op stub would leave
   provably-dead error branch that cppcheck flags). Never re-inline further

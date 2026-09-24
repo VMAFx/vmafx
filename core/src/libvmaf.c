@@ -1994,6 +1994,21 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
     return atomic_load(&f->err);
 }
 
+/* Keep caller-owned host storage alive until SYCL's asynchronous shared-frame
+ * upload has consumed it.  In a threaded call the worker may release its
+ * counted references immediately, so the caller's original references must
+ * not be dropped until this barrier returns. */
+static int read_pictures_wait_sycl_upload(VmafContext *vmaf)
+{
+#ifdef HAVE_SYCL
+    if (vmaf->sycl.state)
+        return vmaf_sycl_wait_last_upload(vmaf->sycl.state);
+#else
+    (void)vmaf;
+#endif
+    return 0;
+}
+
 static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
                                         unsigned index)
 {
@@ -2033,9 +2048,14 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
         .err = 0,
     };
 
-    const int err = vmaf_thread_pool_enqueue(vmaf->thread_pool, threaded_extract_batch_func, &data,
-                                             sizeof(data));
-    if (err) {
+    const int enqueue_err = vmaf_thread_pool_enqueue(vmaf->thread_pool, threaded_extract_batch_func,
+                                                     &data, sizeof(data));
+
+    /* The caller's ref/dist still hold counted references here even if the
+     * worker has already finished and released its copies.  Wait now, before
+     * either the success or enqueue-error path can drop those final owners. */
+    const int upload_err = read_pictures_wait_sycl_upload(vmaf);
+    if (enqueue_err) {
         (void)vmaf_picture_unref(&pic_a);
         (void)vmaf_picture_unref(&pic_b);
         if (prev_ref.ref)
@@ -2043,10 +2063,10 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
         /* done=true means the caller skips its cleanup: unref, so we own ref/dist
          * here too (success path unrefs below). Else each failed enqueue leaks a
          * pool slot and the next pool_fetch deadlocks once the pool drains. */
-        return err | vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
+        return enqueue_err | upload_err | vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
     }
 
-    return vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
+    return upload_err | vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
 }
 
 static int validate_pic_params(VmafContext *vmaf, const VmafPicture *ref, const VmafPicture *dist)
@@ -2944,13 +2964,10 @@ static void read_pictures_frame_select_host(ReadPicturesFrame *fr)
  * drains. */
 static int read_pictures_frame_cleanup(VmafContext *vmaf, ReadPicturesFrame *fr, int err)
 {
-#ifdef HAVE_SYCL
     /* The CUDA host-cleanup branch below returns early in a combined
      * CUDA+SYCL build. Drain SYCL's final host upload before any branch can
      * release the caller's picture storage back to its pool. */
-    if (vmaf->sycl.state)
-        err |= vmaf_sycl_wait_last_upload(vmaf->sycl.state);
-#endif
+    err |= read_pictures_wait_sycl_upload(vmaf);
 #ifdef HAVE_CUDA
     if (fr->hw_flags & HW_FLAG_HOST) {
         return err | read_pictures_cuda_cleanup(vmaf, &fr->ref_host, &fr->ref_device,
@@ -2964,24 +2981,16 @@ static int read_pictures_frame_cleanup(VmafContext *vmaf, ReadPicturesFrame *fr,
     return err;
 }
 
-/* Cleanup after threaded_read_pictures_batch took ownership of (and
- * released) the host pictures. CUDA: only the device translations are left,
+/* Cleanup after threaded_read_pictures_batch waited for the SYCL upload and
+ * released the host pictures. CUDA: only the device translations are left,
  * and only when they are fresh ring-buffer allocations (HW_FLAG_HOST set);
- * on the device-only path ref_device is a struct copy of the caller's
- * picture whose lifetime the caller owns. Running the full
- * read_pictures_frame_cleanup here would double-unref the host pictures and
- * corrupt the pool free-list (PR #838 regression). */
+ * on the device-only path ref_device is a struct copy of the caller's picture
+ * whose lifetime the caller owns. Running the full read_pictures_frame_cleanup
+ * here would double-unref the host pictures and corrupt the pool free-list
+ * (PR #838 regression). */
 static int read_pictures_frame_cleanup_after_batch(VmafContext *vmaf, ReadPicturesFrame *fr,
                                                    int err)
 {
-#ifdef HAVE_SYCL
-    /* threaded_read_pictures_batch() transfers the caller's picture refs to a
-     * worker before releasing them.  The worker may drop the final ref as soon
-     * as its CPU extractors finish, so keep the pool from handing that host
-     * storage back to the reader until the shared-frame DMA has consumed it. */
-    if (vmaf->sycl.state)
-        err |= vmaf_sycl_wait_last_upload(vmaf->sycl.state);
-#endif
 #ifdef HAVE_CUDA
     if (fr->hw_flags & HW_FLAG_HOST)
         err |= read_pictures_cuda_cleanup_device_only(vmaf, &fr->ref_device, &fr->dist_device);
@@ -3014,7 +3023,7 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
 #ifdef HAVE_CUDA
     err = read_pictures_frame_translate(vmaf, &fr);
     if (err)
-        return err;
+        return err | read_pictures_wait_sycl_upload(vmaf);
 #endif
 
     err = read_pictures_extractor_loop(vmaf, &fr, index);

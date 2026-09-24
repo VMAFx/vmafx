@@ -518,18 +518,19 @@ cases, group them into named driver functions (see
   poll readiness endpoints with timeout, rather than using fixed
   `sleep()` calls.
 
-## Combined CUDA+SYCL serial-upload lifetime (BUG-040)
+## Combined CUDA+SYCL upload lifetime (BUG-040)
 
 `test_sycl_cuda_serial_upload_lifetime.c` is registered only when both
 `enable_cuda` and `enable_sycl` are true. That compile combination is
 load-bearing: CUDA's host-picture cleanup has an early return which must not
-bypass the SYCL upload wait. The test uses the public serial
-`vmaf_read_pictures()` path with `psnr_sycl`; a private release callback poisons
-each 4K distorted plane immediately when cleanup releases it. Identical input
-must remain at the 8-bit 60 dB cap for all 48 frames, proving the upload
-finished before the callback. It needs a SYCL device but no CUDA device and
-skips cleanly when SYCL initialization is unavailable. Keep it in the `slow`,
-`gpu`, and `sycl` suites.
+bypass the SYCL upload wait. The test uses the public `vmaf_read_pictures()`
+path with `psnr_sycl` at both `n_threads=0` and `n_threads=1`; a private release
+callback poisons each 4K distorted plane immediately when its final reference
+drops. Identical input must remain at the 8-bit 60 dB cap for all 48 frames,
+proving the upload finished before the callback on both ownership paths. It
+needs a SYCL device but no CUDA device and skips cleanly when SYCL
+initialization is unavailable. Keep it in the `slow`, `gpu`, and `sycl`
+suites.
 
 ## Observation-only SVM test cleanup (Research-2049)
 
