@@ -192,6 +192,21 @@ changed.
 - Run `python3 core/test/test_vmaf_log_callsite_format.py` after an upstream
   sync that touches those files. The guard covers every call site restored from
   `9d57a93bf`, plus the second CUDA-init failure path introduced later.
+## fix/bug048-sycl-usm-init-unwind — failed SYCL init owns its unwind (2026-09-24)
+
+The framework does not call `close` after an extractor `init` returns an error.
+Preserve the local `close_fex_sycl(fex)` (or `close_fex_issim_sycl`) call on
+every post-allocation, post-dictionary, and post-graph-registration failure in
+the twelve touched feature TUs. Do not resolve a conflict by restoring the
+historical bare returns from `5d070b0b4`, or by moving cleanup into the generic
+framework: four sibling TUs already self-unwind and would then be double-closed.
+
+The executable contract is `core/test/test_sycl_init_unwind.cpp`. It is a
+device-free GNU-ld interposer and is intentionally registered only on Linux,
+static-library builds with `b_lto=false`; LTO resolves the calls before
+`--wrap` can see them. Re-run `test_sycl_init_unwind` after any sync touching
+these init/close pairs. Research and the exact historical boundary are in
+`docs/research/2101-bug048-sycl-init-unwind-restoration-2026-09-24.md`.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

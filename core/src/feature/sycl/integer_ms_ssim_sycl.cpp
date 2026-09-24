@@ -569,6 +569,8 @@ static bool ms_ssim_allocations_complete(const MsSsimStateSycl *s)
 namespace
 {
 
+static int close_fex_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -589,11 +591,13 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     allocate_ms_ssim_buffers(s);
     if (!ms_ssim_allocations_complete(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ms_ssim_sycl: USM allocation failed\n");
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
 
@@ -623,7 +627,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * after submit returns, so collect has no VmafPicture to read from. The
      * per-plane pyramids therefore all live until collect consumes them. */
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
-        MsSsimPlaneGeometry &geometry = s->geom[plane];
+        const MsSsimPlaneGeometry &geometry = s->geom[plane];
         const ptrdiff_t stride = (ptrdiff_t)((size_t)geometry.width * sizeof(float));
         picture_copy(geometry.h_ref, stride, ref_pic, 0, ref_pic->bpc, (int)plane);
         picture_copy(geometry.h_cmp, stride, dist_pic, 0, dist_pic->bpc, (int)plane);
@@ -831,8 +835,7 @@ static void free_ms_ssim_pyramid(MsSsimStateSycl *s)
      * allocate, and an init that failed part-way through plane 2 still leaves
      * plane 0 and 1 live. free_ms_ssim_pointer null-checks, so the unused tail
      * of a luma-only run costs nothing. */
-    for (unsigned plane = 0; plane < MS_SSIM_MAX_PLANES; plane++) {
-        MsSsimPlaneGeometry &geometry = s->geom[plane];
+    for (MsSsimPlaneGeometry &geometry : s->geom) {
         free_ms_ssim_pointer(s->sycl_state, geometry.h_ref);
         free_ms_ssim_pointer(s->sycl_state, geometry.h_cmp);
         for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {

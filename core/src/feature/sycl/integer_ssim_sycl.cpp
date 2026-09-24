@@ -466,6 +466,8 @@ static bool float_ssim_allocations_complete(const SsimStateSycl *s)
 namespace
 {
 
+static int close_fex_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned width, unsigned height)
 {
@@ -483,11 +485,13 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     allocate_float_ssim(s);
     if (!float_ssim_allocations_complete(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssim_sycl: USM allocation failed\n");
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
     s->has_pending = false;
@@ -1057,6 +1061,8 @@ static bool integer_ssim_allocations_complete(const IssimStateSycl *s)
 namespace
 {
 
+static int close_fex_issim_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                                unsigned bpc, unsigned width, unsigned height)
 {
@@ -1074,11 +1080,13 @@ static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat p
     allocate_integer_ssim(s, integer_buffer_sizes(s));
     if (!integer_ssim_allocations_complete(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_sycl: USM allocation failed\n");
+        (void)close_fex_issim_sycl(fex);
         return -ENOMEM;
     }
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
+        (void)close_fex_issim_sycl(fex);
         return -ENOMEM;
     }
     s->has_pending = false;

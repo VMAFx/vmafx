@@ -771,6 +771,8 @@ static bool allocate_vif_partials(FloatVifStateSycl &state)
 namespace
 {
 
+static int close_fex_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned width, unsigned height)
 {
@@ -781,11 +783,16 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return configure_error;
     }
     if (!allocate_vif_planes(state) || !allocate_vif_partials(state)) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
     state.feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, &state);
-    return state.feature_name_dict == nullptr ? -ENOMEM : 0;
+    if (!state.feature_name_dict) {
+        (void)close_fex_sycl(fex);
+        return -ENOMEM;
+    }
+    return 0;
 }
 
 } // namespace
