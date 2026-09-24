@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD024 MD060 -->
-# Research-1297: SYCL Clang-Tidy Required Gate Verification and Hardening
+# Research-2079: SYCL Clang-Tidy Required Gate Verification and Hardening
 
 - **Status**: Active
 - **Workstream**: ADR-1297, ADR-0623
