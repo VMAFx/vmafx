@@ -44027,6 +44027,28 @@ meson test -C build --suite=fast
 
 ## perf/chug-sidecar-bit-depth-key-f6b (2026-05-17)
 
+**Files touched**: `ai/scripts/extract_k150k_features.py`
+
+**What changed**: Added `"chug_bit_depth"` to the `keep` allowlist in
+`_load_jsonl_metadata`. Without this field, `_geometry_from_sidecar` always
+returned the default `yuv420p` pix_fmt even for 10-bit CHUG clips (F6-B /
+Research-0135). Corrected module and `_process_clip` docstrings that overstated
+the ffprobe-skip extent.
+
+**Rebase impact**: no rebase impact. `ai/scripts/extract_k150k_features.py` is
+fork-local; there is no upstream-Netflix equivalent.
+
+**Smoke-test after rebase**:
+
+```bash
+python -m pytest ai/tests/test_extract_k150k_features.py -v
+# Expected: all pass
+```
+
+---
+
+## feat/hip-psnr-enable-chroma (2026-05-16)
+
 **File**: `core/src/feature/hip/integer_psnr_hip.c`
 
 No rebase impact: the change is additive (new option + plane-loop). If
