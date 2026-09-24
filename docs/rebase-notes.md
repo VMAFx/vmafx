@@ -49,6 +49,74 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/codeql-unused-static-alerts — preserve test-local source identities (2026-09-24)
+
+1. **Do not restore redundant implementation sources.** `test_picture*` does not
+   compile `thread_pool.c`; `test_predict` and `test_model*` do not compile
+   `pdjson.c`. Those targets either do not use the implementation or already link
+   its owning library/object.
+
+2. **Keep intentional direct copies uniquely identifiable.** Each pdjson copy is
+   built as a target-local static library whose private helpers have unique
+   names; its public `json_*` API remains unchanged. Each pdjson executable also
+   keeps a target-local `run_tests` alias. `test_thread_pool_backpressure`
+   retains aliases for the four `vmaf_thread_pool_*` entry points around the
+   deliberate `thread_pool.c` inclusion. This prevents CodeQL from coalescing a
+   repeated helper while orphaning one link-target-specific call graph, without
+   manufacturing unused public APIs for cppcheck. The aliases are test-only and
+   must not enter installed headers or the production ABI.
+
+3. **Keep configuration-only helpers configuration-owned.**
+   `vector_unchanged` is defined and used only under `FEX_VECTOR_ALLOC_TEST`.
+   Do not restore `[[maybe_unused]]` or add unrelated default-build assertions to
+   make it appear reachable. Preserve the non-LTO allocation-failure tests that
+   exercise its actual contract.
+
+4. **Consolidate orphan picture test identities.** `test_picture`,
+   `test_picture_v2`, and `test_picture_pool_error_paths` share the
+   `test_picture_impl` test-local static library for `picture.c`, `mem.cpp`, and
+   `ref.cpp`. The error-path test still compiles `picture_pool.c` directly, so
+   its ADR-0960 access to internal pool entry points is preserved.
+
+Research-2096 contains the exact-query evidence. Re-run the complete CodeQL
+database extraction after rebases that alter these target source lists or aliases;
+ordinary runtime tests cannot detect a repeated-compilation identity regression.
+The historical reviewed receipt is
+`.workingdir/evidence/codeql-unused-static-2026-09-24/unused-static-final.csv`;
+because that ignored evidence path is not present in a clean checkout, it is not
+an acceptance input. From a clean repository root, the following commands create
+a fresh CodeQL 2.27.0 database, run `codeql/cpp-queries` 1.8.3, and validate
+results fail-closed against the official 9-column CodeQL CSV schema using
+`scripts/ci/check-codeql-unused-static.py`. The validator confirms 0 selected rows
+remain in the lane target paths, including `core/src/picture.c`. The
+pre-correction inventory has six repository-wide rows (two in `picture.c`, three
+in `predict.c`, and one in `cambi.c`); the corrected replay has four (the
+`predict.c` and `cambi.c` rows). `CODEQL_BIN` may override the documented local
+installation path. The temporary directory is retained and printed for
+inspection.
+
+```bash
+set -euo pipefail
+codeql_bin="${CODEQL_BIN:-$HOME/.cache/codeql-2.27.0/codeql}"
+codeql_run="$(mktemp -d /tmp/vmafx-codeql-unused-static-replay.XXXXXX)"
+codeql_spec='codeql/cpp-queries@1.8.3:Best Practices/Unused Entities/UnusedStaticFunctions.ql'
+cat >"$codeql_run/build.sh" <<'BUILD_SH'
+#!/bin/sh
+set -eu
+build_dir="${1:?missing CodeQL build directory}"
+meson setup "$build_dir" core -Denable_cuda=false -Denable_sycl=false
+meson compile -C "$build_dir"
+BUILD_SH
+"$codeql_bin" version | rg -q 'release 2\.27\.0\.'
+"$codeql_bin" database create "$codeql_run/db" \
+  --language=cpp --source-root=. --threads=4 \
+  --command="/bin/sh $codeql_run/build.sh $codeql_run/build"
+"$codeql_bin" database analyze --rerun --format=csv \
+  --output="$codeql_run/unused-static.csv" \
+  "$codeql_run/db" "$codeql_spec"
+python3 scripts/ci/check-codeql-unused-static.py "$codeql_run/unused-static.csv"
+printf 'CodeQL replay artifacts: %s\n' "$codeql_run"
+```
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

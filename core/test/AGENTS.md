@@ -625,3 +625,34 @@ does not reach any emitted ADM score: the CPU divides the accumulator by
 `2^(52 - shift_cub - shift_inner_accum)` and casts to `float`. No
 score-level tolerance detects it
 (T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19).
+
+## Test target source identity contracts (ADR-1142, Research-2096)
+
+Do not add uncalled library implementation sources directly to test executables in
+`core/test/meson.build`. `test_picture*` must not compile `thread_pool.c`, and
+`test_predict` / `test_model*` must not compile redundant `pdjson.c` copies.
+`test_picture`, `test_picture_v2`, and `test_picture_pool_error_paths` link the
+test-local static library `test_picture_impl` rather than compiling duplicate
+private copies of `picture.c`, `mem.cpp`, and `ref.cpp`. The error-path target
+still compiles `picture_pool.c` directly; preserve that ADR-0960 seam while
+keeping the shared picture implementation identity.
+
+When a test must compile an implementation source under a special configuration,
+its repeated definitions need unambiguous test-local identities. The pdjson
+default, zero-increment, and oversized-increment copies are separate static
+libraries. Their private helpers receive target-unique names while the public
+`json_*` API stays unchanged; each executable separately renames `run_tests` so
+its test body retains a distinct root. The backpressure test renames the four
+`vmaf_thread_pool_*` entry points around its intentional `thread_pool.c`
+inclusion. Keep definitions and test calls under the same aliases; never export
+the aliases from production headers or replace them with scanner suppressions.
+
+Configuration-only helpers must be emitted only in the configuration that uses
+them. In particular, `vector_unchanged` stays inside `FEX_VECTOR_ALLOC_TEST`; do
+not restore `[[maybe_unused]]` or add an unrelated unconditional test merely to
+manufacture analyzer reachability. The two specialized pdjson growth tests remain
+separate binaries and retain their focused invalid-increment assertions.
+
+CodeQL closure is proved by replaying `UnusedStaticFunctions.ql` against a fresh
+full-build database and then confirmed by a hosted default-branch run. Runtime
+coverage alone cannot prove this repeated-compilation identity contract.

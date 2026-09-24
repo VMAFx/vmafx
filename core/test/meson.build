@@ -143,18 +143,24 @@ test_context = executable('test_context',
     dependencies:[stdatomic_dependency, pthread_dependency, gpu_all_deps],
 )
 
-test_picture = executable('test_picture',
-    ['test.c', 'test_picture.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp', '../src/thread_pool.c'],
+test_picture_lib = static_library('test_picture_impl',
+    ['../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
+)
+
+test_picture = executable('test_picture',
+    ['test.c', 'test_picture.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
 
 # ADR-0928 cycle N+1: picture_v2 unit tests
 test_picture_v2 = executable('test_picture_v2',
-    ['test.c', 'test_picture_v2.c',
-     '../src/picture.c', '../src/picture_v2.c',
-     '../src/mem.cpp', '../src/ref.cpp', '../src/thread_pool.c'],
+    ['test.c', 'test_picture_v2.c', '../src/picture_v2.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
 
@@ -257,17 +263,83 @@ if has_cond_timedwait
   )
 endif
 
+# `pdjson.c` is also part of libvmaf. Give each separately compiled test copy a
+# distinct internal symbol set: CodeQL otherwise coalesces same-location static
+# helpers across link targets and can orphan one copy from the public roots.
+# Keep the public json_* names intact so the test still exercises the production
+# API and whole-program analyzers see one truthful external symbol graph.
+pdjson_static_symbols = [
+    'json_begin_error',
+    'push',
+    'pop',
+    'buffer_peek',
+    'buffer_get',
+    'stream_get',
+    'stream_peek',
+    'init',
+    'is_match',
+    'pushchar',
+    'init_string',
+    'encode_utf8',
+    'hexchar',
+    'read_unicode_cp',
+    'read_unicode',
+    'read_escaped',
+    'char_needs_escaping',
+    'utf8_seq_length',
+    'is_legal_utf8',
+    'read_utf8',
+    'read_string',
+    'is_digit',
+    'read_digits',
+    'read_fraction',
+    'read_exponent',
+    'read_number',
+    'next_nonspace',
+    'read_value',
+    'read_array_item',
+    'read_member_name',
+    'read_object_item',
+    'finish_document',
+    'user_get',
+    'user_peek',
+]
+
+pdjson_default_impl_args = []
+foreach symbol : pdjson_static_symbols
+    pdjson_default_impl_args += ['-D' + symbol + '=vmafx_test_pdjson_default_' + symbol]
+endforeach
+pdjson_default_impl = static_library('test_pdjson_impl',
+    '../src/pdjson.c',
+    include_directories : include_directories('../src'),
+    c_args : pdjson_default_impl_args,
+)
+
 test_pdjson = executable('test_pdjson',
-    ['test.c', 'test_pdjson.c', '../src/pdjson.c'],
+    ['test.c', 'test_pdjson.c'],
     include_directories : [test_inc, include_directories('../src')],
+    link_with : pdjson_default_impl,
+    c_args : ['-Drun_tests=vmafx_test_pdjson_default_run_tests'],
 )
 
 foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
     increment_test_name = 'test_pdjson_stack_increment_' + increment_case[0]
+    increment_impl_args = ['-DPDJSON_STACK_INC=' + increment_case[1]]
+    foreach symbol : pdjson_static_symbols
+        increment_impl_args += [
+            '-D' + symbol + '=vmafx_test_pdjson_' + increment_case[0] + '_' + symbol,
+        ]
+    endforeach
+    increment_impl = static_library(increment_test_name + '_impl',
+        '../src/pdjson.c',
+        include_directories : include_directories('../src'),
+        c_args : increment_impl_args,
+    )
     increment_test = executable(increment_test_name,
-        ['test.c', 'test_pdjson_stack_increment.c', '../src/pdjson.c'],
+        ['test.c', 'test_pdjson_stack_increment.c'],
         include_directories : [test_inc, include_directories('../src')],
-        c_args : ['-DPDJSON_STACK_INC=' + increment_case[1]],
+        link_with : increment_impl,
+        c_args : ['-Drun_tests=vmafx_test_pdjson_' + increment_case[0] + '_run_tests'],
     )
     test(increment_test_name, increment_test, suite : ['fast'])
 endforeach
@@ -285,7 +357,7 @@ test_cjson = executable('test_cjson',
 test('test_cjson', test_cjson, suite : ['fast'])
 
 test_model = executable('test_model',
-    ['test.c', 'test_model.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
+    ['test.c', 'test_model.c', '../src/dict.cpp', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
@@ -301,7 +373,7 @@ test_model = executable('test_model',
 # that touches it. Mirrors test_model's sources/objects because it drives the
 # same vmaf_read_json_model_from_buffer entry point.
 test_model_libsvm_dup_key = executable('test_model_libsvm_dup_key',
-    ['test.c', 'test_model_libsvm_dup_key.c', '../src/dict.cpp', '../src/pdjson.c',
+    ['test.c', 'test_model_libsvm_dup_key.c', '../src/dict.cpp',
      json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
@@ -314,7 +386,7 @@ test_model_libsvm_dup_key = executable('test_model_libsvm_dup_key',
 # Netflix/vmaf#1242 regression: VmafFeatureDictionary ownership contract on
 # vmaf_model_feature_overload / vmaf_model_collection_feature_overload.
 test_model_feature_overload_ownership = executable('test_model_feature_overload_ownership',
-    ['test.c', 'test_model_feature_overload_ownership.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
+    ['test.c', 'test_model_feature_overload_ownership.c', '../src/dict.cpp', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
@@ -366,7 +438,7 @@ test_model_collection_api = executable('test_model_collection_api',
 test_predict = executable('test_predict',
     ['test.c', 'test_predict.c', '../src/dict.cpp', '../src/metadata_handler.cpp',
      '../src/feature/feature_collector.cpp', '../src/feature/alias.c', '../src/model.c',
-     '../src/pdjson.c', json_model_c_sources, '../src/feature/feature_name.cpp', '../src/feature/feature_extractor.cpp',],    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+     json_model_c_sources, '../src/feature/feature_name.cpp', '../src/feature/feature_extractor.cpp',],    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
@@ -2650,8 +2722,9 @@ test('test_thread_safety_batch', test_thread_safety_batch, suite : ['fast'])
 # the high-level vmaf_preallocate_pictures API.
 test_picture_pool_error_paths = executable('test_picture_pool_error_paths',
     ['test.c', 'test_picture_pool_error_paths.c',
-     '../src/picture_pool.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
+     '../src/picture_pool.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
     dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
 )
 test('test_picture_pool_error_paths', test_picture_pool_error_paths, suite : ['fast'])
