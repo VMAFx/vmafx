@@ -31020,7 +31020,10 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   expansions and Nox AST installs are brought under contract checking,
   requirement paths must exactly match manifest-owned outputs or aliases,
   package-specific Nox development locks replace editable extra resolution,
-  and SLSA builder tag requirements are preserved.
+  SLSA builder tag requirements are preserved, installer tooling (`pip`)
+  is excluded from bootstrap build locks, Dependency Review truthfully
+  permits dual-licensed `pkg:pypi/text-unidecode` package-wide, and
+  root `Dockerfile` isolates Python installs into a dedicated virtual environment.
 
 
 - **libvmaf symbol visibility** — `libvmaf.so.3` no longer exports 207 internal

@@ -217,6 +217,15 @@ new AsyncFunction('github','context','core','process','Date','setTimeout',input.
             # The other event's failed scope cannot create a cross-event deadlock.
             self.assertEqual(self.aggregate(event, "success", inactive="cancelled"), [])
 
+    def test_dependency_review_allows_text_unidecode_package_wide(self) -> None:
+        security_scans = (WORKFLOWS / "security-scans.yml").read_text(encoding="utf-8")
+        review_block = security_scans.split("dependency-review:", 1)[1]
+        self.assertIn("deny-licenses: GPL-3.0, AGPL-3.0", review_block)
+        # Ensure allow-dependencies-licenses uses exact package-wide purl (no version)
+        self.assertIn("allow-dependencies-licenses: pkg:pypi/text-unidecode", review_block)
+        # Must not include version in purl since GitHub Dependency Review ignores version in purl matching
+        self.assertNotIn("pkg:pypi/text-unidecode@", review_block)
+
 
 if __name__ == "__main__":
     unittest.main()

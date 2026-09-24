@@ -1016,6 +1016,27 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertFalse(self.checker._is_local_source("https://evil.com/pkg", root=ROOT))
         self.assertFalse(self.checker._is_local_source("git@github.com:evil/pkg.git", root=ROOT))
 
+    def test_build_lock_input_excludes_installer_tooling(self) -> None:
+        build_in = (ROOT / "requirements/locks/build.in").read_text(encoding="utf-8")
+        build_txt = (ROOT / "requirements/locks/build.txt").read_text(encoding="utf-8")
+        # Build lanes bootstrap meson and ninja; pip is installer tooling and must not be pinned
+        # in the build lock to avoid conflicting with Debian/runner-managed pip packages.
+        self.assertNotIn("pip==", build_in)
+        self.assertNotIn("pip==", build_txt)
+        self.assertIn("meson==", build_in)
+        self.assertIn("ninja==", build_in)
+        self.assertIn("meson==", build_txt)
+        self.assertIn("ninja==", build_txt)
+
+    def test_root_dockerfile_isolates_python_in_virtualenv(self) -> None:
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("python3 -m venv /opt/vmaf-venv", dockerfile)
+        self.assertIn("/opt/vmaf-venv/bin/pip install", dockerfile)
+        self.assertNotIn("--break-system-packages", dockerfile)
+        # Ensure scan_install_commands detects no violations in Dockerfile
+        findings = self.checker.scan_install_commands(Path("Dockerfile"), dockerfile, root=ROOT)
+        self.assertEqual(findings, [])
+
     def test_repository_contract_is_current(self) -> None:
         result = subprocess.run(  # noqa: S603
             [sys.executable, str(CHECKER), "--root", str(ROOT), "check"],

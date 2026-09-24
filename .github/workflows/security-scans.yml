@@ -310,3 +310,10 @@ jobs:
         with:
           fail-on-severity: high
           deny-licenses: GPL-3.0, AGPL-3.0
+          # python-slugify depends on text-unidecode, which is dual-licensed under
+          # Artistic-1.0-Perl OR GPL-1.0-only OR GPL-2.0-or-later. VMAFx consumes
+          # text-unidecode under Artistic-1.0-Perl, but the action's SPDX evaluator
+          # flags GPL-2.0-or-later against deny-licenses: GPL-3.0. Dependency Review
+          # PURL matching compares package identity package-wide (ignoring versions);
+          # allow pkg:pypi/text-unidecode truthfully using explicit package-wide syntax.
+          allow-dependencies-licenses: pkg:pypi/text-unidecode
