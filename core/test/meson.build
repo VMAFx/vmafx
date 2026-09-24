@@ -30,6 +30,15 @@ test('test_strict_fp_compiler_args',
     timeout : 90,
 )
 
+# BUG-048: these diagnostics were standardized once, then silently restored
+# from stale source. Keep their line framing and severity prefix stable.
+test('test_vmaf_log_callsite_format',
+    import('python').find_installation(),
+    args : files('test_vmaf_log_callsite_format.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
 # ELF only (nm -D); skips with 77 when nm or c++filt is missing. Not in coverage
 # builds: libgcov links into the instrumented .so and exports its own globals

@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-vmaf-log — diagnostics are one record with one severity prefix (2026-09-24)
+
+- Preserve the trailing `\n` on the guarded diagnostics in
+  `feature/luminance_tools.cpp`, `feature/speed.c`, and `feature/vif.c`.
+- Preserve CUDA initialization message bodies without a leading `Error:`;
+  `vmaf_log(VMAF_LOG_LEVEL_ERROR, ...)` already renders the severity.
+- Run `python3 core/test/test_vmaf_log_callsite_format.py` after an upstream
+  sync that touches those files. The guard covers every call site restored from
+  `9d57a93bf`, plus the second CUDA-init failure path introduced later.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

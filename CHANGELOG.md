@@ -30230,10 +30230,10 @@ score-suppression wiring.
   `core/test/test_context.c`.
 
 
-Standardize `vmaf_log()` call sites: add missing trailing `\n` in
-`luminance_tools.c` (2), `speed.c` (2), and `vif.c` (1); remove
-redundant `"Error: "` prefix from two `cuda/common.c` messages (the
-log level tag already conveys severity).
+Restore standardized `vmaf_log()` call sites after a silent revert: add missing
+trailing `\n` in `luminance_tools.cpp` (2), `speed.c` (2), and `vif.c` (1);
+remove the redundant `"Error: "` prefix from all three CUDA initialization
+messages in `cuda/common.c` (the log level tag already conveys severity).
 
 
 `VMAF_MCP_ALLOW` now uses `filepath.SplitList` (OS path-list separator) instead

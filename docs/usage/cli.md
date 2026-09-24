@@ -477,6 +477,13 @@ workflow.
 | `--no_prediction` | `-n` | Skip final model prediction; extract features only. Useful for feeding raw features into a custom pool. |
 | `--version` | `-v` | Print `libvmaf` version + git SHA and exit. |
 
+The CUDA-initialization, luminance, SpEED, and VIF diagnostics guarded by this
+fork are complete, newline-terminated stderr records. The logger supplies the
+`libvmaf ERROR` level prefix, so those message bodies do not repeat `Error:`.
+Log consumers should match the level token and message body rather than relying
+on the old duplicate `libvmaf ERROR Error:` spelling from CUDA initialization
+failures.
+
 ## Windows console output
 
 The interactive progress line (frame counter, spinner, FPS) is written to

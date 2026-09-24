@@ -311,6 +311,13 @@ declared in [`log.h`](log.h). C++ TUs include header inside an
 `extern "C" { }` block — see `core/src/sycl/common.cpp` and
 `core/src/sycl/dispatch_strategy.cpp` for pattern.
 
+**BUG-048 format regression lock:** the diagnostics guarded by
+`core/test/test_vmaf_log_callsite_format.py` are one complete record per call.
+Keep their trailing `\n`; keep the CUDA initialization message bodies free of
+`Error:` because `VMAF_LOG_LEVEL_ERROR` already renders that severity. This
+includes the original `9d57a93bf` sites and the later second CUDA-init failure
+path.
+
 Exceptions — direct stream writes are correct in these cases:
 
 - `core/src/log.{c,cpp}` — log implementation itself.

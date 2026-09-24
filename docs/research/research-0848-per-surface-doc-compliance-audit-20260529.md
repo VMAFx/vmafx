@@ -86,6 +86,10 @@ log-format note in `docs/backends/cuda/overview.md` should note the removed
 `"Error: "` prefix.
 **Severity**: Low (log prefix change only; no behavioral change).
 
+**Resolved by BUG-048 restoration**: the exact call-site formatting is restored,
+`docs/usage/cli.md` now documents the record and severity-prefix contract, and
+`core/test/test_vmaf_log_callsite_format.py` prevents another source rewind.
+
 ### GAP-2: PR #47 — Vulkan drop left stale docs
 
 **PR**: `e9d265657` `feat(core)!: drop Vulkan backend (BREAKING, ADR-0726)`
