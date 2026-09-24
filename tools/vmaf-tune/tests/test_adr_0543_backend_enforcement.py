@@ -38,12 +38,39 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 
+def _binary_supports_backend_flag(path: Path) -> bool:
+    """Return True iff the binary advertises ``--backend`` in its help output.
+
+    The ADR-0543 tests exercise ``--backend NAME`` hard-fail behaviour
+    that was added to the fork's libvmaf CLI.  The upstream system
+    binary shipped at ``/usr/local/bin/vmaf`` (or equivalent) predates
+    that flag; invoking it with ``--backend`` exits 255 ("unrecognised
+    option") rather than the expected 100, causing spurious failures.
+    We therefore skip any binary whose help output does not include the
+    ``--backend`` token.
+    """
+    try:
+        result = subprocess.run(
+            [str(path), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return "--backend" in (result.stdout + result.stderr)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def _resolve_vmaf_binary() -> Path | None:
     """Locate a built libvmaf CLI binary for the integration test.
 
     Lookup order mirrors V5-1 (``test_bbb_e2e_v5_bug_cluster.py``):
     ``$VMAF_BIN_FOR_TESTS`` env override, ``shutil.which("vmaf")``,
     then walk-up to ``build/tools/vmaf`` under the nearest repo root.
+
+    Binaries that do not advertise ``--backend`` in their help text are
+    skipped — they are pre-ADR-0543 system installs that would return
+    255 instead of the expected 100 for explicit-backend failures.
     """
     env = os.environ.get("VMAF_BIN_FOR_TESTS")
     if env:
@@ -52,12 +79,16 @@ def _resolve_vmaf_binary() -> Path | None:
             return env_path
     which = shutil.which("vmaf")
     if which:
-        return Path(which)
+        which_path = Path(which)
+        if _binary_supports_backend_flag(which_path):
+            return which_path
     for parent in [_HERE, *_HERE.parents]:
-        if (parent / "meson.build").is_file() and (parent / "libvmaf").is_dir():
-            candidate = parent / "build" / "tools" / "vmaf"
-            if candidate.is_file() and os.access(candidate, os.X_OK):
-                return candidate
+        if (parent / "meson.build").is_file() or (parent / "core" / "meson.build").is_file():
+            for rel in [Path("build/tools/vmaf"), Path("core/build/tools/vmaf")]:
+                candidate = parent / rel
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    if _binary_supports_backend_flag(candidate):
+                        return candidate
             break
     return None
 
@@ -249,10 +280,15 @@ def test_adr_0543_per_feature_pinned_to_inactive_backend_fails(tmp_path: Path) -
 
 def _vmaf_c_source() -> str:
     for parent in [_HERE, *_HERE.parents]:
-        candidate = parent / "libvmaf" / "tools" / "vmaf.c"
-        if candidate.is_file():
-            return candidate.read_text()
-    pytest.skip("core/tools/vmaf.c not found in any ancestor")
+        for rel in [
+            Path("core/tools/vmaf.cpp"),
+            Path("core/tools/vmaf.c"),
+            Path("libvmaf/tools/vmaf.c"),
+        ]:
+            candidate = parent / rel
+            if candidate.is_file():
+                return candidate.read_text()
+    pytest.skip("core/tools/vmaf.cpp not found in any ancestor")
     return ""  # unreachable; satisfies type checker
 
 
@@ -287,3 +323,52 @@ def test_adr_0543_error_json_helper_wired_into_every_backend() -> None:
     assert (
         "feature pinned to inactive backend" in src
     ), "ADR-0543 contract: per-feature backend gate message missing"
+
+
+# ---------------------------------------------------------------------------
+# Binary capability probe unit tests (ADR-0543 test hardening, BUG-048 A12)
+# ---------------------------------------------------------------------------
+
+
+def test_binary_supports_backend_flag_accepts_backend(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "fake_vmaf"
+    fake_bin.write_text("#!/bin/sh\necho 'Supported options: --backend $name'\n")
+    fake_bin.chmod(0o755)
+    assert _binary_supports_backend_flag(fake_bin) is True
+
+
+def test_binary_supports_backend_flag_rejects_legacy(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "legacy_vmaf"
+    fake_bin.write_text("#!/bin/sh\necho 'vmaf: unrecognized option --help'\nexit 255\n")
+    fake_bin.chmod(0o755)
+    assert _binary_supports_backend_flag(fake_bin) is False
+
+
+def test_binary_supports_backend_flag_handles_nonexistent_or_error(
+    tmp_path: Path,
+) -> None:
+    assert _binary_supports_backend_flag(tmp_path / "nonexistent") is False
+
+
+def test_resolve_vmaf_binary_skips_legacy_system_binary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_bin = tmp_path / "vmaf"
+    fake_bin.write_text("#!/bin/sh\necho 'vmaf: legacy binary without backend'\n")
+    fake_bin.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.delenv("VMAF_BIN_FOR_TESTS", raising=False)
+    res = _resolve_vmaf_binary()
+    assert res != fake_bin
+
+
+def test_resolve_vmaf_binary_accepts_valid_backend_binary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_bin = tmp_path / "vmaf"
+    fake_bin.write_text("#!/bin/sh\necho '--backend options available'\n")
+    fake_bin.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.delenv("VMAF_BIN_FOR_TESTS", raising=False)
+    res = _resolve_vmaf_binary()
+    assert res == fake_bin

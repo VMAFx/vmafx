@@ -52663,3 +52663,20 @@ to an exception.
 - Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
   tests/test_coverage_round4.py::test_auth_413_on_large_body`.
 - Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.
+
+## fix/bug048-test-hardening — restore BUG-048 item A12 test hardening and pythonpath (2026-09-24)
+
+No rebase impact: test configuration, test helpers, and test files only; no upstream-shared paths or public C library headers touched.
+
+Commit `384d97d03` clobbered commit `993c0ef81` (#1559). This restoration recovers what current authority still requires while documenting what is now moot:
+1. `mcp-server/vmaf-mcp/pyproject.toml`: restore `pythonpath = ["src"]` under `[tool.pytest.ini_options]` so `vmaf_mcp` is discoverable during test collection without requiring an editable pip install, eliminating `ModuleNotFoundError: No module named 'vmaf_mcp'`.
+2. `tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py`: restore `_binary_supports_backend_flag()` helper and wire it into `_resolve_vmaf_binary()` so pre-fork system binaries (e.g. `/usr/local/bin/vmaf`) that lack `--backend` are skipped rather than causing spurious test failures (exit 255 != 100); update source path check to inspect `core/tools/vmaf.cpp`. Add dedicated unit tests for flag probing and resolver filtering.
+3. PyTorch 2.10 deprecation filters: documented as MOOT. The deprecation warning from `torch.onnx.export` was fixed at the root cause by PR #1518 (`T-TINYAI-TORCH-214-WARNINGS-2026-09-22`) by migrating export calls to `dynamic_shapes = ({0: "batch"},)` with the modern TorchDynamo exporter. Under the repo's strict `filterwarnings = ["error"]` policy, re-introducing blanket suppression filters or legacy `dynamo=False` would be an anti-pattern.
+
+- Research digest: no new architectural design required; restoration of tested behaviors and reconciliation with PR #1518 zero-warning policy.
+- Decision matrix: straightforward restoration of lost test infrastructure; PyTorch filter suppression rejected in favor of the already-landed root-cause fix (`dynamic_shapes`).
+- AGENTS.md invariant note: no rebase-sensitive invariants impacted. Netflix golden assertions preserved untouched.
+- Reproducers:
+  - Without pythonpath: `pytest -c /dev/null -o testpaths=tests mcp-server/vmaf-mcp` fails with `ModuleNotFoundError: No module named 'vmaf_mcp'`.
+  - Without binary flag check: `pytest tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py -k test_adr_0543_per_feature_pinned_to_inactive_backend_fails` fails on systems with upstream `/usr/local/bin/vmaf` (exit 255 != 100).
+- Changelog: `changelog.d/fixed/restore-bug048-a12-test-hardening.md`.
