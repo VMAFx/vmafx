@@ -440,6 +440,27 @@ these two paths must stay consistent.
 `VMAF_FEATURE_EXTRACTOR_PREV_REF` block in `threaded_extract_batch_func`
 must preserve both unref-before-memset and zero-f->prev_ref.
 
+### SYCL shared uploads finish before either picture cleanup returns (BUG-040)
+
+`vmaf_sycl_shared_frame_upload()` reads the caller's host-backed reference and
+distorted pictures asynchronously on the in-order `copy_queue`. Its saved
+`last_upload_event` is the final distorted-plane copy, so waiting on that one
+event also orders every earlier reference and distorted copy without draining
+the independent compute queue.
+
+Both ownership exits in `libvmaf.c` must preserve that wait:
+
+- `read_pictures_frame_cleanup()` waits before its direct picture unrefs.
+- `read_pictures_frame_cleanup_after_batch()` waits before returning from the
+  `--threads` path; the worker may already have dropped the final counted host
+  references, but the caller cannot refill a pooled picture until this helper
+  returns.
+
+Do not replace either event wait with a global queue/device wait, and do not
+remove the threaded wait because one timing sample happened to let DMA finish
+before the worker. `testdata/test_sycl_4k_repeat_determinism.py` covers 20
+serial and 20 `--threads 1` runs against the full normalized score report.
+
 ### framesync producer-error paths must call vmaf_framesync_abort (ADR-1092)
 
 `retrieve_filled_data` waits in `pthread_cond_wait` until matching

@@ -66,13 +66,37 @@ def build_vmaf_cmd(
     return cmd
 
 
-def prepare_sycl_env() -> dict[str, str]:
-    """Construct environment for running SYCL vmaf CLI on Intel Arc."""
+def _vmaf_library_dir(vmaf_bin: str | Path) -> Path | None:
+    """Resolve the library directory that belongs to the selected CLI."""
+    if override := os.environ.get("VMAF_LIB_DIR"):
+        return Path(override).expanduser().resolve()
+
+    binary = Path(vmaf_bin).expanduser()
+    if binary.is_absolute() or binary.parent != Path("."):
+        binary = binary.resolve()
+        build_lib = binary.parent.parent / "src"
+        if build_lib.is_dir() and any(build_lib.glob("libvmaf.*")):
+            return build_lib
+        if binary == Path("/usr/local/bin/vmaf"):
+            return Path("/usr/local/lib")
+    return None
+
+
+def prepare_vmaf_env(vmaf_bin: str | Path) -> dict[str, str]:
+    """Bind a vmaf CLI invocation to its matching libvmaf when discoverable."""
     env = os.environ.copy()
-    existing_ld = env.get("LD_LIBRARY_PATH", "")
-    env["LD_LIBRARY_PATH"] = (
-        f"/usr/local/lib:{existing_ld}".rstrip(":") if existing_ld else "/usr/local/lib"
-    )
+    if library_dir := _vmaf_library_dir(vmaf_bin):
+        library = str(library_dir)
+        existing = [part for part in env.get("LD_LIBRARY_PATH", "").split(":") if part]
+        env["LD_LIBRARY_PATH"] = ":".join(
+            [library, *(part for part in existing if part != library)]
+        )
+    return env
+
+
+def prepare_sycl_env(vmaf_bin: str | Path) -> dict[str, str]:
+    """Construct an exact-artifact environment for SYCL vmaf on Intel Arc."""
+    env = prepare_vmaf_env(vmaf_bin)
     if "ONEAPI_DEVICE_SELECTOR" not in env:
         env["ONEAPI_DEVICE_SELECTOR"] = "level_zero:gpu"
     return env
@@ -113,7 +137,7 @@ def run_single_resolution(
     print("  " + " ".join(cmd))
 
     t0 = time.time()
-    env = prepare_sycl_env()
+    env = prepare_sycl_env(vmaf_bin)
     result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.time() - t0
 

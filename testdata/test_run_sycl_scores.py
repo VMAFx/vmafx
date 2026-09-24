@@ -100,18 +100,54 @@ def test_compare_vs_cpu_computes_max_delta(tmp_path: Path) -> None:
     assert pytest.approx(max_diff, rel=1e-5) == 0.0003
 
 
-def test_prepare_sycl_env_pins_device_and_ld_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prepare_sycl_env_pins_device_and_installed_lib_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("ONEAPI_DEVICE_SELECTOR", raising=False)
     monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/intel/lib")
 
-    env = run_sycl_scores.prepare_sycl_env()
+    env = run_sycl_scores.prepare_sycl_env("/usr/local/bin/vmaf")
     assert env["ONEAPI_DEVICE_SELECTOR"] == "level_zero:gpu"
-    assert "/usr/local/lib" in env["LD_LIBRARY_PATH"]
-    assert "/opt/intel/lib" in env["LD_LIBRARY_PATH"]
+    assert env["LD_LIBRARY_PATH"].split(":") == ["/usr/local/lib", "/opt/intel/lib"]
+
+
+def test_prepare_sycl_env_uses_exact_build_library_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    build_dir = tmp_path / "build"
+    binary = build_dir / "tools" / "vmaf"
+    library = build_dir / "src" / "libvmaf.so.3"
+    binary.parent.mkdir(parents=True)
+    library.parent.mkdir(parents=True)
+    binary.touch()
+    library.touch()
+    monkeypatch.delenv("VMAF_LIB_DIR", raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/local/lib:/opt/intel/lib")
+
+    env = run_sycl_scores.prepare_sycl_env(binary)
+
+    assert env["LD_LIBRARY_PATH"].split(":") == [
+        str(library.parent),
+        "/usr/local/lib",
+        "/opt/intel/lib",
+    ]
+
+
+def test_prepare_sycl_env_explicit_library_override_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    exact_lib = tmp_path / "exact-lib"
+    exact_lib.mkdir()
+    monkeypatch.setenv("VMAF_LIB_DIR", str(exact_lib))
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/local/lib")
+
+    env = run_sycl_scores.prepare_sycl_env("/arbitrary/bin/vmaf")
+
+    assert env["LD_LIBRARY_PATH"].split(":") == [str(exact_lib), "/usr/local/lib"]
 
 
 def test_prepare_sycl_env_preserves_existing_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONEAPI_DEVICE_SELECTOR", "level_zero:0")
 
-    env = run_sycl_scores.prepare_sycl_env()
+    env = run_sycl_scores.prepare_sycl_env("vmaf")
     assert env["ONEAPI_DEVICE_SELECTOR"] == "level_zero:0"

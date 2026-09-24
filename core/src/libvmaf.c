@@ -2971,6 +2971,14 @@ static int read_pictures_frame_cleanup(VmafContext *vmaf, ReadPicturesFrame *fr,
 static int read_pictures_frame_cleanup_after_batch(VmafContext *vmaf, ReadPicturesFrame *fr,
                                                    int err)
 {
+#ifdef HAVE_SYCL
+    /* threaded_read_pictures_batch() transfers the caller's picture refs to a
+     * worker before releasing them.  The worker may drop the final ref as soon
+     * as its CPU extractors finish, so keep the pool from handing that host
+     * storage back to the reader until the shared-frame DMA has consumed it. */
+    if (vmaf->sycl.state)
+        err |= vmaf_sycl_wait_last_upload(vmaf->sycl.state);
+#endif
 #ifdef HAVE_CUDA
     if (fr->hw_flags & HW_FLAG_HOST)
         err |= read_pictures_cuda_cleanup_device_only(vmaf, &fr->ref_device, &fr->dist_device);

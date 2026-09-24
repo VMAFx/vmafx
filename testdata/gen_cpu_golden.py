@@ -8,6 +8,11 @@ Usage: python3 gen_cpu_golden.py
 
 import subprocess, json, os, time
 
+if __package__:
+    from .run_sycl_scores import prepare_vmaf_env
+else:
+    from run_sycl_scores import prepare_vmaf_env
+
 basedir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(basedir)
 
@@ -57,11 +62,7 @@ for dims, tag in resolutions:
     ]
 
     t0 = time.time()
-    env = os.environ.copy()
-    existing_ld = env.get("LD_LIBRARY_PATH", "")
-    env["LD_LIBRARY_PATH"] = (
-        f"/usr/local/lib:{existing_ld}".rstrip(":") if existing_ld else "/usr/local/lib"
-    )
+    env = prepare_vmaf_env(vmaf_bin)
     result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.time() - t0
 
