@@ -250,6 +250,25 @@ class TestOnlineTrainerIngest:
             trainer.ingest(features, 60.0)
         assert trainer.status()["total_pushed"] == 5
 
+    def test_ingest_restores_pending_after_trainer_value_error(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A trainer shape mismatch must not discard the batch that exposed it."""
+        batch_size = 2
+        trainer = self._trainer(tmp_path, batch_size=batch_size)
+        features = [1.0] * N_FEATURES
+
+        def reject_mismatched_batch(_batch: object) -> float:
+            raise ValueError("prediction/target count mismatch")
+
+        monkeypatch.setattr(trainer, "_train_on_batch", reject_mismatched_batch)
+        trainer.ingest(features, 10.0)
+
+        with pytest.raises(ValueError, match="count mismatch"):
+            trainer.ingest(features, 20.0)
+
+        assert len(trainer._pending) == batch_size
+
     def test_ingest_returns_checkpoint_path_when_condition_met(
         self, tmp_path: pathlib.Path
     ) -> None:

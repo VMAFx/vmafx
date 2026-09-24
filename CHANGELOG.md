@@ -31436,12 +31436,13 @@ See `docs/server/auth.md` for the full configuration guide.
   to its destination; it never used PID-suffixed temporary files.
 - Make the unauthenticated sidecar Unix socket owner-only (`0o600`) for the
   shipped same-UID contract, and protect its pathname with a lifetime claim,
-  no-follow/type checks, active/stale probing, device/inode validation, and
-  identity-checked cleanup (ADR-1309).
+  no-follow/type checks, bounded non-blocking active/stale probing,
+  device/inode validation, and identity-checked cleanup (ADR-1309). A live
+  listener with a full accept queue now fails closed instead of blocking startup.
 - Exercise all 26 decorator regressions through Nox and the hosted Linux, macOS,
   and Windows build matrix (including the real `msvcrt` backend), with the hosted
   pytest dependency exact-pinned to 9.1.1; extend the
-  POSIX socket suite to 19 adversarial lifecycle and permission cases. Local
+  POSIX socket suite to 20 adversarial lifecycle and permission cases. Local
   Semgrep text and SARIF scans report zero findings for all four alerts; hosted
   closure remains pending the post-merge Code Scanning run.
 - Correct the sidecar operator guide to the executable state: there is no current
@@ -31451,8 +31452,9 @@ See `docs/server/auth.md` for the full configuration guide.
   directory alongside the socket.
 - Make the newly required sidecar suite warning-clean on PyTorch 2.14: preserve
   batch-size-one training without MSE broadcasting, reject prediction/target
-  count mismatches, export a genuinely dynamic ONNX batch axis, and fail socket
-  lifecycle tests on server-thread exceptions.
+  count mismatches without discarding pending samples, export a genuinely
+  dynamic ONNX batch axis, and fail socket lifecycle tests on server-thread
+  exceptions.
 
 
 - **Semgrep OSS warnings — 19/19 triaged (Research-0090)** — three real

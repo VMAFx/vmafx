@@ -29,7 +29,7 @@ re-runs of the same session skip the install step.
 
 | Session | Target | Notes |
 |---|---|---|
-| `ai` | `ai/tests/` | Tiny-AI training scripts. Heavy: pulls `torch`, `lightning`. |
+| `ai` | `ai/tests/`, `ai/sidecar/tests/` | Tiny-AI training scripts and online-training sidecar. Heavy: pulls `torch`, `lightning`. |
 | `mcp` | `mcp-server/vmaf-mcp/tests/` | MCP JSON-RPC server. |
 | `vmaf_tune` | `tools/vmaf-tune/tests/` | Encode-tuning harness. |
 | `dev_llm` | `dev-llm/tests/` | Local-LLM helper (Ollama-backed). |
@@ -44,7 +44,7 @@ re-runs of the same session skip the install step.
 
 ```bash
 nox -l                          # list every session with its docstring
-nox -s ai                       # run ai/tests/ in an isolated venv
+nox -s ai                       # run ai/tests/ and ai/sidecar/tests/ in an isolated venv
 nox -s mcp vmaf_tune            # run multiple suites in sequence
 nox -s compat_decorator         # run the compatibility decorator regressions
 nox -s python_harness           # invoke the legacy python/ tox harness

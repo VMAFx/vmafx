@@ -42,9 +42,12 @@ where a live socket may return `ECONNREFUSED`.
    and verify through `fstat`/`lstat` that the descriptor and pathname identify
    the same regular file.
 3. Inspect the socket pathname with `lstat`. Refuse symlinks and all non-socket
-   objects without modifying them. Refuse a connectable socket as active.
-4. Treat only `ECONNREFUSED` as a stale candidate. Re-read the object and unlink
-   it only if it is still a socket with the same device/inode identity.
+   objects without modifying them. Probe a socket in non-blocking mode so a
+   live listener with a full accept queue cannot block startup indefinitely.
+4. Treat only `ECONNREFUSED` as a stale candidate. Treat `EAGAIN`,
+   `EINPROGRESS`, timeouts, and every other pending/unverified result as active
+   (`EADDRINUSE`). Re-read a stale candidate and unlink it only if it is still a
+   socket with the same device/inode identity.
 5. Record the bound socket's device/inode identity, apply `0o600` without
    following symlinks, verify identity before listen, and unlink during cleanup
    only if the current pathname is still that owned socket.
@@ -70,6 +73,8 @@ Parent-directory permissions therefore remain part of the security boundary.
   - Alert 946 is eliminated at source with no Semgrep suppression.
   - A second cooperating server cannot detach a live or bound-but-not-listening
     endpoint.
+  - A full live listener backlog is refused within a bounded probe instead of
+    blocking server startup.
   - Symlinks, ordinary files, and replacement sockets/files are preserved.
 - **Negative**:
   - Different-UID peers cannot connect until an explicit group-sharing feature

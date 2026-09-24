@@ -55,9 +55,11 @@ these Meson blocks.
    group access or a Semgrep suppression. A future group-shared mode needs an
    explicit configuration surface, chart wiring, threat model, and end-to-end tests.
    Preserve the adjacent owner-only lifetime claim; no-follow `lstat` checks;
-   active-socket refusal; unchanged device/inode validation before stale removal;
-   bound identity verification before listen; and owned-identity-only cleanup.
-   Symlinks, ordinary files, active listeners, and replacement objects must survive.
+   non-blocking socket probes where only `ECONNREFUSED` proves staleness;
+   `EADDRINUSE` refusal for a full accept queue or any pending/unverified result;
+   unchanged device/inode validation before stale removal; bound identity
+   verification before listen; and owned-identity-only cleanup. Symlinks,
+   ordinary files, active listeners, and replacement objects must survive.
    Keep the `_ConnectionRegistry` accept-before-spawn and prompt `close_all()`
    shutdown invariants. The POSIX socket regressions run through the AI suite; all
    26 decorator regressions run through `compat_decorator` Nox and the hosted
@@ -77,9 +79,10 @@ these Meson blocks.
    equal-length flattened predictions and targets (including batch size one),
    explicit count-mismatch rejection, and the opset-17 tuple-argument
    `dynamic_shapes=({0: "batch"},)` export. Do not restore `squeeze(-1)` plus
-   broadcasting or the legacy `dynamic_axes` exporter argument. Socket lifecycle
-   regressions signal readiness only after the real `listen()` succeeds and surface
-   every server-thread exception to the parent test.
+   broadcasting or the legacy `dynamic_axes` exporter argument. A failed
+   `RuntimeError` or `ValueError` training step must restore the pending batch.
+   Socket lifecycle regressions signal readiness only after the real `listen()`
+   succeeds and surface every server-thread exception to the parent test.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

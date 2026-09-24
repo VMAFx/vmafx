@@ -37,6 +37,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 _F = TypeVar("_F", bound=Callable[..., Any])
+_SOCKET_PROBE_BOUND_S = 0.5
 # The pre-push checker deliberately runs with --no-site-packages (ADR-1261)
 # to keep the local gate hermetic and independent of local virtualenv state.
 # Without installed third-party stubs, pytest.fixture is inferred as untyped Any,
@@ -159,9 +160,8 @@ def _published_server(
 ) -> Generator[None, None, None]:
     """Run a server whose readiness signal follows a successful listen()."""
     publication_complete = threading.Event()
-    real_socket = socket.socket
 
-    class PublicationSocket(real_socket):
+    class PublicationSocket(socket.socket):
         def listen(self, backlog: int = 0) -> None:
             super().listen(backlog)
             if self.getsockname() == socket_path:
@@ -362,6 +362,47 @@ class TestSocketPermissionsAndOwnership:
             assert (current.st_dev, current.st_ino) == (owner.st_dev, owner.st_ino)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
                 client.connect(sock_path)
+
+    def test_full_listener_backlog_is_refused_without_blocking(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """A full raw accept queue is active/unverified, never a blocking stale probe."""
+        socket_path = str(tmp_path / "full-backlog.sock")
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        queued_client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        finished = threading.Event()
+        probe_errors: list[BaseException] = []
+
+        listener.bind(socket_path)
+        listener.listen(0)
+        queued_client.connect(socket_path)
+        owner = os.lstat(socket_path)
+
+        def probe_path() -> None:
+            try:
+                ot_mod._prepare_socket_path(socket_path)
+            except BaseException as exc:  # surfaced in the parent assertion below
+                probe_errors.append(exc)
+            finally:
+                finished.set()
+
+        probe_thread = threading.Thread(target=probe_path, daemon=True)
+        probe_thread.start()
+        try:
+            assert finished.wait(
+                timeout=_SOCKET_PROBE_BOUND_S
+            ), "socket-path probe blocked on a full Unix listener backlog"
+        finally:
+            queued_client.close()
+            listener.close()
+            probe_thread.join(timeout=1.0)
+
+        assert not probe_thread.is_alive()
+        assert len(probe_errors) == 1
+        assert isinstance(probe_errors[0], OSError)
+        assert probe_errors[0].errno == errno.EADDRINUSE
+        current = os.lstat(socket_path)
+        assert (current.st_dev, current.st_ino) == (owner.st_dev, owner.st_ino)
 
     def test_second_server_refuses_endpoint_during_bind_listen_window(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

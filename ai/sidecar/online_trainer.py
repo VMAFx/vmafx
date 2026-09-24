@@ -246,8 +246,9 @@ class OnlineTrainer:
         # Step outside the lock — PyTorch backward pass is not reentrant anyway.
         try:
             loss = self._train_on_batch(batch)
-        except RuntimeError:
-            # The gradient step failed (CUDA OOM, shape mismatch, ...). Restore
+        except (RuntimeError, ValueError):
+            # The gradient step failed (CUDA OOM, prediction/target mismatch,
+            # ...). Restore
             # the just-cleared pending samples — prepended so any samples a
             # concurrent ingest appended in the meantime are preserved — so they
             # are retried on the next ingest rather than silently dropped, then
@@ -424,19 +425,30 @@ def _prepare_socket_path(socket_path: str) -> None:
         )
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+        # A blocking AF_UNIX connect can wait indefinitely when a live listener's
+        # accept queue is full.  Probe once in non-blocking mode: only an explicit
+        # ECONNREFUSED proves a stale candidate; every pending or resource-pressure
+        # result is an active/unverified endpoint and must fail closed.
+        probe.setblocking(False)
         try:
-            probe.connect(socket_path)
+            probe_result = probe.connect_ex(socket_path)
         except FileNotFoundError:
             return
-        except ConnectionRefusedError:
-            pass
         except OSError as exc:
             raise OSError(
                 errno.EADDRINUSE,
                 f"refusing to replace unverified socket endpoint: {socket_path}",
             ) from exc
-        else:
+        if probe_result == 0:
             raise OSError(errno.EADDRINUSE, f"socket endpoint is already active: {socket_path}")
+        if probe_result == errno.ENOENT:
+            return
+        if probe_result != errno.ECONNREFUSED:
+            raise OSError(
+                errno.EADDRINUSE,
+                "refusing to replace active or unverified socket endpoint "
+                f"({os.strerror(probe_result)}): {socket_path}",
+            )
 
     try:
         current = os.lstat(socket_path)

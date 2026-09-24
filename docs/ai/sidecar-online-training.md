@@ -112,6 +112,10 @@ The socket path (`VMAFX_SIDECAR_SOCKET`) defaults to `/tmp/vmafx-sidecar.sock`
 for compatibility with the Go client. For standalone or future production use,
 set the same override in both processes and place it below an owner-only runtime
 directory; socket mode alone does not secure a writable parent directory.
+When an endpoint already exists, startup probes it in non-blocking mode and
+treats only explicit `ECONNREFUSED` as stale. Queue pressure (`EAGAIN`), a
+pending connection, a timeout, or any other unverified result fails closed as
+`EADDRINUSE`; a live listener with a full accept queue is never unlinked.
 Similarly, `VMAFX_SIDECAR_CHECKPOINT_DIR` defaults to `/mnt/vmafx-models/online`
 for container deployments with persistent volume mounts; standalone invocations
 must set `VMAFX_SIDECAR_CHECKPOINT_DIR` to a writable path to avoid startup

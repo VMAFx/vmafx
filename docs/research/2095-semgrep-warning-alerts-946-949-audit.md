@@ -23,15 +23,17 @@ All four Python Semgrep findings are removed at source.
    remains. [ADR-1309](../adr/1309-socket-path-ownership-and-owner-only-mode.md)
    supersedes ADR-1222 for this alert.
 3. **Lifecycle audit**: `run_server()` no longer blindly unlinks its configured
-   path. A lifetime claim lock, no-follow type checks, active/stale probing,
-   device/inode validation, and identity-checked cleanup prevent cooperating
-   servers and replacement paths from being deleted.
+   path. A lifetime claim lock, no-follow type checks, bounded non-blocking
+   active/stale probing, device/inode validation, and identity-checked cleanup
+   prevent cooperating servers and replacement paths from being deleted or a
+   full live accept queue from blocking startup.
 4. **Required-suite correction**: wiring `ai/sidecar/tests` into the required AI
    lane exposed a batch-size-one MSE broadcast warning and the legacy ONNX
    `dynamic_axes` warning under PyTorch 2.14. Predictions and targets are now
-   equal-length vectors with an explicit mismatch error, and the opset-17
-   exporter uses tuple arguments plus `dynamic_shapes`. The complete suite is
-   warning-clean rather than merely its alert-focused subset.
+   equal-length vectors with an explicit mismatch error, failed steps restore
+   their pending samples, and the opset-17 exporter uses tuple arguments plus
+   `dynamic_shapes`. The complete suite is warning-clean rather than merely its
+   alert-focused subset.
 
 The previous version of this digest incorrectly said the base cache writer used
 PID-suffixed temporary files. Exact-base inspection shows it wrote JSON directly
@@ -116,9 +118,11 @@ The corrected lifecycle is:
    hold a non-blocking exclusive `flock` for the complete server lifetime.
 2. Inspect `socket_path` using `lstat()`. Reject symlinks and every non-socket
    type without modifying them.
-3. Refuse a connectable socket as active. Treat only `ECONNREFUSED` as a stale
-   candidate, then `lstat()` again and unlink only if type, device, and inode
-   are unchanged.
+3. Probe the socket once in non-blocking mode. Refuse a connectable socket as
+   active; treat `EAGAIN`, `EINPROGRESS`, timeouts, and every other
+   pending/unverified result as `EADDRINUSE`. Treat only `ECONNREFUSED` as a
+   stale candidate, then `lstat()` again and unlink only if type, device, and
+   inode are unchanged.
 4. After `bind()`, record the published socket's device/inode identity, apply
    `0o600` without following symlinks, and verify identity again before listen.
 5. On shutdown, unlink only when the current pathname is still a socket with
@@ -137,6 +141,7 @@ The socket regression suite exercises:
 
 - exact `0o600` mode and owner identity;
 - a live second server and the bind-before-listen startup window;
+- bounded refusal of a raw live listener whose accept queue is full;
 - stale-socket recovery with a changed inode;
 - symlink and ordinary-file refusal with contents preserved;
 - a rebound live socket and a regular-file replacement surviving shutdown;
@@ -151,8 +156,8 @@ The socket regression suite exercises:
 | Target / Check | Expected result |
 |---|---|
 | `compat/vmaf/tests/test_decorator_extended.py` | 26 passed, including spawn-process cases |
-| `ai/sidecar/tests/test_socket_permissions.py` | 19 passed on POSIX; namespace-dependent cross-UID case may skip with an explicit reason |
-| `ai/sidecar/tests/` | 93 passed on Python 3.14.7 / PyTorch 2.14.0 with warnings promoted to errors |
+| `ai/sidecar/tests/test_socket_permissions.py` | 20 passed on POSIX; namespace-dependent cross-UID case may skip with an explicit reason |
+| `ai/sidecar/tests/` | 94 passed, 1 namespace-dependent skip on Python 3.14.7 / PyTorch 2.14.0 with warnings promoted to errors |
 | Semgrep `p/python` on both source files | 0 text findings and 0 SARIF results |
 | Nox | `compat_decorator` executes all 26 decorator tests |
 | Hosted CI | Linux/macOS plus real Windows execution in `build.yml` |

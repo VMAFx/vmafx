@@ -20,8 +20,11 @@ Implements vmafx-node online training sidecar (ADR-0781).
    receives tuple arguments and `dynamic_shapes=({0: "batch"},)`; restoring
    legacy `dynamic_axes` emits a warning under the required dynamo exporter.
    Training flattens predictions and targets to equal-length vectors, rejects
-   a count mismatch, and must keep batch-size-one steps warning-free. Run the
-   complete `ai/sidecar/tests` suite with warnings promoted to errors.
+   a count mismatch, and must keep batch-size-one steps warning-free.
+   `OnlineTrainer.ingest()` restores its cleared pending samples after both
+   `RuntimeError` and `ValueError` training failures so a mismatch cannot drop
+   the batch that exposed it. Run the complete `ai/sidecar/tests` suite with
+   warnings promoted to errors.
 
 4. **Replay buffer capacity default** — 10 000 samples = ADR-0781 design point.
    The executable source (`_REPLAY_BUFFER_CAPACITY`), focused tests, and the
@@ -42,12 +45,15 @@ Implements vmafx-node online training sidecar (ADR-0781).
    different-UID pod. A future group-shared mode requires an explicit setting,
    working chart wiring, threat-model documentation, and end-to-end coverage.
    Hold the adjacent owner-only `.lock` claim for the entire server lifetime;
-   inspect paths with `lstat`/no-follow checks; remove a stale socket only after
-   type plus device/inode identity remains unchanged; record the socket identity
-   after bind; and remove it at shutdown only if that exact socket is still
-   published. Symlinks, ordinary files, active listeners, and replacement
-   sockets/files are never removed. Alert 946 is eliminated at source; hosted
-   closure still depends on the post-merge Code Scanning run.
+   inspect paths with `lstat`/no-follow checks; probe existing sockets in
+   non-blocking mode; and treat only explicit `ECONNREFUSED` as stale.
+   `EAGAIN`, `EINPROGRESS`, timeouts, and every other pending/unverified result
+   mean `EADDRINUSE`, including a live listener with a full accept queue. Remove
+   a stale socket only after type plus device/inode identity remains unchanged;
+   record the socket identity after bind; and remove it at shutdown only if that
+   exact socket is still published. Symlinks, ordinary files, active listeners,
+   and replacement sockets/files are never removed. Alert 946 is eliminated at
+   source; hosted closure still depends on the post-merge Code Scanning run.
 
 7. **Connection registry lifecycle** — Initialize `threads`,
    `registry = _ConnectionRegistry()`, `old_sigterm`, and `old_sigint` before
