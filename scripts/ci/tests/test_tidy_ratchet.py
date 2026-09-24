@@ -387,5 +387,58 @@ class Arm64LaneFlags(unittest.TestCase):
         self.assertTrue((ROOT / "scripts/ci/tidy-baseline-arm64.json").is_file())
 
 
+class SyclMotionAddUvParityTidyContract(unittest.TestCase):
+    """The SYCL tidy lane measures test_sycl_motion_add_uv_parity.c at zero baseline.
+
+    Under readability-function-size (BranchThreshold 15), repeated mu_assert
+    ladders counted as branches and tripped the ratchet on run_sycl_pass_add_uv
+    and run_sycl_pass_y_only (T-SYCL-RATCHET-TEST-BRANCH-COUNT-2026-09-22).
+    This contract proves:
+      1. test_sycl_motion_add_uv_parity.c is in measured_sources with 0 baseline debt.
+      2. Any diagnostic on that file (including the old 2-warning shape) is rejected
+         as a regression.
+      3. test_sycl_motion3_parity.c is also measured in the SYCL lane.
+    """
+
+    def setUp(self) -> None:
+        self.baseline_path = ROOT / "scripts/ci/tidy-baseline-sycl.json"
+        self.data = json.loads(self.baseline_path.read_text(encoding="utf-8"))
+        self.baseline = ratchet.Measurement.from_json(self.data)
+        self.target_source = "core/test/test_sycl_motion_add_uv_parity.c"
+
+    def test_sycl_baseline_measures_source_with_zero_allowance(self) -> None:
+        self.assertIn(self.target_source, self.data["measured_sources"])
+        self.assertNotIn(self.target_source, self.data.get("warnings", {}))
+        self.assertNotIn(self.target_source, self.data.get("nolint_uncited", {}))
+        self.assertEqual(self.baseline.warnings.get(self.target_source, 0), 0)
+
+    def test_old_unrefactored_warning_shape_fails_ratchet_contract(self) -> None:
+        """The old shape produced 2 readability-function-size warnings (0 -> 2 (+2))."""
+        old_output = "\n".join(
+            [
+                f"{self.target_source}:169:14: warning: function 'run_sycl_pass_add_uv' exceeds recommended size/complexity thresholds [readability-function-size]",
+                f"{self.target_source}:218:14: warning: function 'run_sycl_pass_y_only' exceeds recommended size/complexity thresholds [readability-function-size]",
+            ]
+        )
+        diags, failed = ratchet.parse_diagnostics(old_output, ROOT, ROOT)
+        self.assertFalse(failed)
+        self.assertEqual(len(diags), 2)
+
+        measured = ratchet.Measurement(lane="sycl", tus=self.baseline.tus)
+        for path, _line, _col, _check in diags:
+            measured.warnings[path] = measured.warnings.get(path, 0) + 1
+
+        regressions, _slack = ratchet.compare(self.baseline, measured)
+        target_regressions = [r for r in regressions if r.path == self.target_source]
+        self.assertEqual(len(target_regressions), 1)
+        self.assertEqual(target_regressions[0].baseline, 0)
+        self.assertEqual(target_regressions[0].measured, 2)
+        self.assertEqual(target_regressions[0].change, 2)
+
+    def test_motion3_checkerboard_also_measured_in_sycl_lane(self) -> None:
+        """core/test/test_sycl_motion3_parity.c is in measured_sources."""
+        self.assertIn("core/test/test_sycl_motion3_parity.c", self.data["measured_sources"])
+
+
 if __name__ == "__main__":
     unittest.main()

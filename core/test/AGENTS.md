@@ -39,6 +39,7 @@ and teardown.
 - more than 7 tests -> `MU_TEST(fn)` rows + `mu_run_table()` from [mu_table.h](mu_table.h). 0 branches at any length.
 - assertion-heavy test -> `check_*` helpers, called as `char *msg = check_x(...); if (msg) return msg;` = 1 branch.
 - `mu_assert_msg(check_x(...))` from [test.h](test.h) is same propagation in one line. Use it; do not re-declare local copy.
+- SYCL parity test pipelines -> split linear setup, frame-feed loop, and score collection into cohesive phase helpers (`setup_*`, `feed_*_frames`, `collect_*_scores`) returning `mu_message_t` and propagated via `mu_assert_msg()`. Preserves verbatim assertion strings and numeric checks without exceeding BranchThreshold 15 (T-SYCL-RATCHET-TEST-BRANCH-COUNT-2026-09-22).
 
 **Block length** (HISS-04, `praetorctl audit`, 60-line hard cap):
 
