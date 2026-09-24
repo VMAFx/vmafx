@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD022 MD032 MD060 -->
-# Research-2078: Resolution of CodeQL cpp/include-non-header alerts
+# Research-2093: Resolution of CodeQL cpp/include-non-header alerts
 
 ## Scope and alert background
 
@@ -21,7 +21,7 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
 
 ### 1. Alert 908 (`test_luminance_tools.cpp`)
 
-- `range_foot_head` and `normalize_range` were given `extern "C"` linkage and declared in internal header `core/src/feature/luminance_tools.h`.
+- `range_foot_head` and `normalize_range` retain anonymous-namespace linkage. Narrow `vmaf_luminance_test_range_foot_head` and `vmaf_luminance_test_normalize_range` trampolines are declared in internal header `core/src/feature/luminance_tools.h`.
 - `test_luminance_tools.cpp` includes `feature/luminance_tools.h` and links against `libvmaf` via `core/test/meson.build`.
 - All 7 unit tests pass without source inclusion.
 
@@ -34,8 +34,8 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
 
 ### 3. Alert 955 (`test_model.c`)
 
-- `typedef struct VmafBuiltInModel` and function `unsigned vmaf_built_in_model_count(void)` were declared in internal header `core/src/model.h` and implemented in `core/src/model.c`.
-- `BUILT_IN_MODEL_CNT` in `model.h` delegates to `vmaf_built_in_model_count()` for external consumers while retaining constant-expression evaluation inside `model.c`.
+- `VmafBuiltInModel` remains private to `core/src/model.c`. Narrow count and iterator-version accessors (`vmaf_built_in_model_count_for_test` and `vmaf_built_in_model_version_for_test`) are declared in internal header `core/src/model.h`.
+- `BUILT_IN_MODEL_CNT` remains a file-local compile-time expression used only by `model.c`.
 - `test_model.c` includes internal `model.h` and links against `libvmaf.get_static_lib()`.
 - All 62 unit tests pass.
 
@@ -52,13 +52,13 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
 
 ### 5. Alerts 1218 & 1241 (`test_cambi_stage_simd.c` and `test_cambi.c`)
 
-- `core/src/feature/cambi_internal.h` was established previously to share CAMBI routines with GPU twins (CUDA/HIP).
-- Expanded `cambi_internal.h` to declare:
-  - Scalar processing stages (`decimate_row_scalar`, `anti_dithering_filter_row_scalar`, `filter_mode_row_scalar`, `compute_dp_row_scalar`, etc.)
-  - Numerical helpers (`spatial_pooling`, `quick_select`, `average_topk_elements`, `get_pixels_in_window`, `weight_scores_per_scale`, `adjust_window_size`, `get_tvi_for_diff`, `tvi_condition`, `set_contrast_arrays`, `tvi_hard_threshold_condition`, `get_vlt_luma`)
-  - Stage callback typedefs and `enum CambiTVIBisectFlag`
-- Removed `#include "feature/cambi.c"` from both `test_cambi.c` and `test_cambi_stage_simd.c`, linking them with `libvmaf`.
-- All 25 `test_cambi` tests and 14 `test_cambi_stage_simd` tests pass.
+- Implementation helpers in `core/src/feature/cambi.c` retain their original `static` and `static FORCE_INLINE` linkage.
+- Existing GPU-facing `vmaf_cambi_*` trampoline declarations in `core/src/feature/cambi_internal.h` remain intact; `test_cambi.c` and `test_cambi_stage_simd.c` reuse existing prefixed wrappers (`vmaf_cambi_decimate`, `vmaf_cambi_filter_mode`, `vmaf_cambi_spatial_pooling`, `vmaf_cambi_weight_scores_per_scale`, `vmaf_cambi_get_pixels_in_window`) where signatures match.
+- Narrowly prefixed internal test trampolines (`vmaf_cambi_test_*`) in `cambi.c` and declared in `cambi_internal.h` provide white-box test access for the remaining static helpers and stage functions (`vmaf_cambi_test_anti_dithering_filter`, `vmaf_cambi_test_get_tvi_for_diff`, `vmaf_cambi_test_quick_select`, `vmaf_cambi_test_calculate_c_values`, etc.).
+- Circular trampoline calls are eliminated (`calculate_c_values_default` invokes `calculate_c_values` directly).
+- Unprefixed declarations, test-only macros (`DEFAULT_CAMBI_TVI`, `NUM_SCALES`), and test-only enums are removed from `cambi_internal.h` and kept private to the respective test translation units.
+- Removed `#include "feature/cambi.c"` from both `test_cambi.c` and `test_cambi_stage_simd.c`, linking them against `libvmaf`.
+- All numerical operation orderings, bounded-search tests, and SIMD stage coverage are preserved; all 25 `test_cambi` tests and 14 `test_cambi_stage_simd` tests pass bit-exact.
 
 ## Alternatives considered
 
@@ -79,6 +79,7 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
   - `test_cambi`: 25/25 passed
   - `test_cambi_stage_simd`: 14/14 passed
   - Total: 118/118 tests passed.
-- **Fast test suite**: `meson test -C build --suite=fast` ran 144 tests, 144 passed (0 failures).
+- **Fast test suite**: `meson test -C build --suite=fast` ran 145 tests, 145 passed (0 failures).
+- **Dynamic-symbol gate**: `meson test -C build check_exported_symbols` passed; no internal test seam entered the public ABI.
 - **Netflix golden assertions**: `pytest python/test/` executed 283 tests: 271 passed, 12 skipped, 0 failures. No golden scores moved.
 - **CodeQL non-header scan**: Confirmed zero non-header includes in all seven alerted test files.

@@ -62,13 +62,13 @@ static mu_message_t test_range_foot_head()
     int foot;
     int head;
 
-    int err = range_foot_head(8, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
+    int err = vmaf_luminance_test_range_foot_head(8, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
     mu_assert("limited 8b range computation must succeed", err == 0);
     mu_assert("wrong 'limited' 8b range computation", (foot == 16 && head == 235));
-    err = range_foot_head(8, VMAF_PIXEL_RANGE_FULL, &foot, &head);
+    err = vmaf_luminance_test_range_foot_head(8, VMAF_PIXEL_RANGE_FULL, &foot, &head);
     mu_assert("full 8b range computation must succeed", err == 0);
     mu_assert("wrong 'full' 8b range computation", (foot == 0 && head == 255));
-    err = range_foot_head(10, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
+    err = vmaf_luminance_test_range_foot_head(10, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
     mu_assert("limited 10b range computation must succeed", err == 0);
     mu_assert("wrong 'limited' 10b range computation", (foot == 64 && head == 940));
 
@@ -111,18 +111,18 @@ static mu_message_t test_normalize_range()
     VmafLumaRange range_10b_limited;
     vmaf_luminance_init_luma_range(&range_10b_limited, 10, VMAF_PIXEL_RANGE_LIMITED);
 
-    double n = normalize_range(0, range_8b_full);
+    double n = vmaf_luminance_test_normalize_range(0, range_8b_full);
     mu_assert("wrong 'full' 8b normalize range", almost_equal(n, 0.0));
-    n = normalize_range(128, range_8b_limited);
+    n = vmaf_luminance_test_normalize_range(128, range_8b_limited);
     mu_assert("wrong 'limited' 8b normalize range", almost_equal(n, 0.5114155251141552));
-    n = normalize_range(255, range_8b_limited);
+    n = vmaf_luminance_test_normalize_range(255, range_8b_limited);
     mu_assert("wrong 'limited' 8b normalize range", almost_equal(n, 1.0));
 
-    n = normalize_range(65, range_10b_limited);
+    n = vmaf_luminance_test_normalize_range(65, range_10b_limited);
     mu_assert("wrong 'limited' 10b normalize range", almost_equal(n, 0.001141552511415525));
-    n = normalize_range(512, range_10b_limited);
+    n = vmaf_luminance_test_normalize_range(512, range_10b_limited);
     mu_assert("wrong 'limited' 10b normalize range", almost_equal(n, 0.5114155251141552));
-    n = normalize_range(939, range_10b_limited);
+    n = vmaf_luminance_test_normalize_range(939, range_10b_limited);
     mu_assert("wrong 'limited' 10b normalize range", almost_equal(n, 0.9988584474885844));
 
     return nullptr;
@@ -164,7 +164,7 @@ static mu_message_t test_range_foot_head_invalid()
     /* An integer the enum cannot legitimately hold. range_foot_head takes an
      * int precisely so this stays well-defined — see the note on its
      * definition; casting to the enum here would itself be UB. */
-    int err = range_foot_head(8, 0x7F, &foot, &head);
+    int err = vmaf_luminance_test_range_foot_head(8, 0x7F, &foot, &head);
     mu_assert("range_foot_head(unknown) must return -EINVAL", err == -EINVAL);
 
     return nullptr;

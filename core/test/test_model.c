@@ -1140,13 +1140,12 @@ static char *test_version_next(void)
     const char *version = NULL;
     unsigned count = 0;
     while ((next = vmaf_model_version_next(next, &version)) != NULL) {
-        const VmafBuiltInModel *m = next;
         mu_assert("vmaf_model_version_next must hand out the stored version pointer",
-                  m->version == version);
+                  vmaf_built_in_model_version_for_test(next) == version);
         count++;
     }
     mu_assert("vmaf_model_version_next must iterate every built-in model exactly once",
-              count == BUILT_IN_MODEL_CNT);
+              count == vmaf_built_in_model_count_for_test());
     return NULL;
 }
 

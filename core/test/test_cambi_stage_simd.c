@@ -11,12 +11,12 @@
  *  The spatial-mask dp / mask rows have their own test
  *  (test_cambi_spatial_mask_simd).
  *
- *  The reference is the shipped scalar code: this TU includes cambi.c, the way
- *  test_cambi.c does, so it calls the same static functions the extractor
- *  falls back to and cannot drift from them the way a private copy can
- *  (ADR-1207). The CPU-flag mask is cleared first, so the one scalar stage that
- *  dispatches internally (anti_dithering_filter) takes its scalar body. SIMD
- *  kernels are called directly, gated on CPUID.
+ *  The reference is the shipped scalar code reached through the narrow
+ *  vmaf_cambi_test_* internal trampolines, so the test links the production
+ *  object instead of including an executable source file or maintaining a
+ *  private copy (ADR-1207). The CPU-flag mask is cleared first, so the one
+ *  scalar stage that dispatches internally (anti_dithering_filter) takes its
+ *  scalar body. SIMD kernels are called directly, gated on CPUID.
  *
  *  Every kernel is integer-only except the c-value multiply, which is a single
  *  int-to-float conversion times a LUT entry with no fused add, so SIMD and
@@ -66,6 +66,18 @@
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe. ADR-1138. */
 
+#define DEFAULT_CAMBI_TVI (0.019)
+
+typedef void (*VmafDecimate)(VmafPicture *image, unsigned width, unsigned height);
+typedef void (*VmafFilterMode)(const VmafPicture *image, int width, int height, uint16_t *buffer);
+typedef void (*VmafDerivativeCalculator)(const uint16_t *image_data, uint16_t *derivative_buffer,
+                                         int width, int height, int row, int stride);
+typedef void (*VmafCalcCValues)(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+                                uint16_t *histograms, uint16_t window_size,
+                                const uint16_t num_diffs, const uint16_t *tvi_for_diff,
+                                uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
+                                int width, int height);
+
 /* A frame-level c-values driver under test. */
 typedef struct {
     const char *name;
@@ -90,14 +102,14 @@ typedef struct {
 
 static const StageKernels g_scalar = {
     "scalar",
-    decimate,
-    anti_dithering_filter,
-    filter_mode,
-    get_derivative_data_for_row,
-    increment_range,
-    decrement_range,
-    calculate_c_values_row,
-    {{"calculate_c_values", calculate_c_values}},
+    vmaf_cambi_decimate,
+    vmaf_cambi_test_anti_dithering_filter,
+    vmaf_cambi_filter_mode,
+    vmaf_cambi_test_get_derivative_data_for_row,
+    vmaf_cambi_test_increment_range,
+    vmaf_cambi_test_decrement_range,
+    vmaf_cambi_test_calculate_c_values_row,
+    {{"calculate_c_values", vmaf_cambi_test_calculate_c_values}},
 };
 
 /* Sentinel elements after every compared region. */
@@ -419,11 +431,12 @@ static int config_init(CValuesConfig *c, int max_log_contrast, const char *eotf_
     if (max_log_contrast < 0 || max_log_contrast > 5)
         return -EINVAL;
     const uint16_t num_diffs = (uint16_t)(1u << (unsigned)max_log_contrast);
-    if (num_diffs == 0u || num_diffs > sizeof(c->tvi_for_diff) / sizeof(c->tvi_for_diff[0]))
+    if (num_diffs > sizeof(c->tvi_for_diff) / sizeof(c->tvi_for_diff[0]))
         return -EINVAL;
     c->num_diffs = num_diffs;
-    int err =
-        set_contrast_arrays(num_diffs, &c->diffs_to_consider, &c->diff_weights, &c->all_diffs);
+    uint16_t last_tvi_for_diff = 0;
+    int err = vmaf_cambi_test_set_contrast_arrays(num_diffs, &c->diffs_to_consider,
+                                                  &c->diff_weights, &c->all_diffs);
     if (err)
         return err;
     VmafLumaRange luma_range;
@@ -433,14 +446,16 @@ static int config_init(CValuesConfig *c, int max_log_contrast, const char *eotf_
     if (err)
         return err;
     for (int d = 0; d < num_diffs; d++) {
-        c->tvi_for_diff[d] = (uint16_t)(get_tvi_for_diff(c->diffs_to_consider[d], DEFAULT_CAMBI_TVI,
-                                                         10, luma_range, eotf) +
-                                        num_diffs);
+        c->tvi_for_diff[d] =
+            (uint16_t)(vmaf_cambi_test_get_tvi_for_diff(c->diffs_to_consider[d], DEFAULT_CAMBI_TVI,
+                                                        10, luma_range, eotf) +
+                       num_diffs);
+        last_tvi_for_diff = c->tvi_for_diff[d];
     }
-    c->vlt_luma = (uint16_t)get_vlt_luma(vis_lum_threshold, luma_range, eotf);
+    c->vlt_luma = (uint16_t)vmaf_cambi_test_get_vlt_luma(vis_lum_threshold, luma_range, eotf);
     const int v_lo = (int)c->vlt_luma - 3 * (int)num_diffs + 1;
     c->v_band_base = v_lo > 0 ? (uint16_t)v_lo : 0;
-    c->v_band_size = (uint16_t)(c->tvi_for_diff[num_diffs - 1] + 1 - c->v_band_base);
+    c->v_band_size = (uint16_t)(last_tvi_for_diff + 1 - c->v_band_base);
     return 0;
 }
 

@@ -117,6 +117,29 @@ typedef struct CambiBuffers {
     uint16_t v_band_size;
 } CambiBuffers;
 
+typedef void (*VmafDerivativeCalculator)(const uint16_t *image_data, uint16_t *derivative_buffer,
+                                         int width, int height, int row, int stride);
+typedef void (*VmafFilterMode)(const VmafPicture *image, int width, int height, uint16_t *buffer);
+typedef void (*VmafDecimate)(VmafPicture *image, unsigned width, unsigned height);
+typedef void (*VmafCalcCValues)(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+                                uint16_t *histograms, uint16_t window_size,
+                                const uint16_t num_diffs, const uint16_t *tvi_for_diff,
+                                uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
+                                int width, int height);
+typedef void (*VmafComputeDpRow)(uint32_t *dp_curr, const uint32_t *dp_prev, const uint16_t *deriv,
+                                 int width, int pad_size, bool deriv_valid);
+typedef void (*VmafComputeMaskRow)(uint16_t *mask_row, const uint32_t *dp_bottom,
+                                   const uint32_t *dp_top, int width, int pad_size,
+                                   uint32_t mask_index);
+
+static void filter_mode(const VmafPicture *image, int width, int height, uint16_t *buffer);
+static void decimate(VmafPicture *image, unsigned width, unsigned height);
+static void calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+                               uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
+                               const uint16_t *tvi_for_diff, uint16_t vlt_luma,
+                               const int *diff_weights, const int *all_diffs, int width,
+                               int height);
+
 static void calculate_c_values_default(VmafPicture *pic, const VmafPicture *mask_pic,
                                        float *c_values, uint16_t *histograms, uint16_t window_size,
                                        const uint16_t num_diffs, const uint16_t *tvi_for_diff,
@@ -246,6 +269,12 @@ static const VmafOption options[] = {
 
 #undef CAMBI_OPTION
 
+enum CambiTVIBisectFlag {
+    CAMBI_TVI_BISECT_TOO_SMALL,
+    CAMBI_TVI_BISECT_CORRECT,
+    CAMBI_TVI_BISECT_TOO_BIG
+};
+
 static FORCE_INLINE int clip(int value, int low, int high)
 {
     return value < low ? low : (value > high ? high : value);
@@ -258,8 +287,8 @@ static FORCE_INLINE void swap_floats(float *left, float *right)
     *right = temporary;
 }
 
-bool tvi_condition(int sample, int diff, double tvi_threshold, VmafLumaRange luma_range,
-                   VmafEOTF eotf)
+static bool tvi_condition(int sample, int diff, double tvi_threshold, VmafLumaRange luma_range,
+                          VmafEOTF eotf)
 {
     double mean_luminance = vmaf_luminance_get_luminance(sample, luma_range, eotf);
     double diff_luminance = vmaf_luminance_get_luminance(sample + diff, luma_range, eotf);
@@ -267,8 +296,9 @@ bool tvi_condition(int sample, int diff, double tvi_threshold, VmafLumaRange lum
     return (delta_luminance > tvi_threshold * mean_luminance);
 }
 
-enum CambiTVIBisectFlag tvi_hard_threshold_condition(int sample, int diff, double tvi_threshold,
-                                                     VmafLumaRange luma_range, VmafEOTF eotf)
+static enum CambiTVIBisectFlag tvi_hard_threshold_condition(int sample, int diff,
+                                                            double tvi_threshold,
+                                                            VmafLumaRange luma_range, VmafEOTF eotf)
 {
     bool condition;
     condition = tvi_condition(sample, diff, tvi_threshold, luma_range, eotf);
@@ -282,8 +312,8 @@ enum CambiTVIBisectFlag tvi_hard_threshold_condition(int sample, int diff, doubl
     return CAMBI_TVI_BISECT_CORRECT;
 }
 
-int get_tvi_for_diff(int diff, double tvi_threshold, int bitdepth, VmafLumaRange luma_range,
-                     VmafEOTF eotf)
+static int get_tvi_for_diff(int diff, double tvi_threshold, int bitdepth, VmafLumaRange luma_range,
+                            VmafEOTF eotf)
 {
     enum CambiTVIBisectFlag tvi_bisect;
     const int max_val = (1 << bitdepth) - 1;
@@ -321,7 +351,8 @@ int get_tvi_for_diff(int diff, double tvi_threshold, int bitdepth, VmafLumaRange
     return foot;
 }
 
-int get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange luma_range, VmafEOTF eotf)
+static int get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange luma_range,
+                        VmafEOTF eotf)
 {
     // find the smallest luma value above the visibility_luminance_threshold
 
@@ -335,8 +366,8 @@ int get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange luma_range
     return UINT16_MAX;
 }
 
-void adjust_window_size(uint16_t *window_size, unsigned input_width, unsigned input_height,
-                        bool cambi_high_res_speedup)
+static FORCE_INLINE void adjust_window_size(uint16_t *window_size, unsigned input_width,
+                                            unsigned input_height, bool cambi_high_res_speedup)
 {
     // Adjustment weight: (input_width + input_height) / (CAMBI_4K_WIDTH + CAMBI_4K_HEIGHT)
     (*window_size) = (((*window_size) * (input_width + input_height)) / CAMBI_WINDOW_DIVISOR) >> 4;
@@ -347,15 +378,15 @@ void adjust_window_size(uint16_t *window_size, unsigned input_width, unsigned in
     *window_size |= 1;
 }
 
-int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_consider, int **diffs_weights,
-                        int **all_diffs)
+static int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_consider,
+                               int **diff_weights, int **all_diffs)
 {
     *diffs_to_consider = aligned_malloc(ALIGN_CEIL(sizeof(uint16_t)) * num_diffs, 16);
     if (!(*diffs_to_consider))
         return -ENOMEM;
 
-    *diffs_weights = aligned_malloc(ALIGN_CEIL(sizeof(int)) * num_diffs, 32);
-    if (!(*diffs_weights)) {
+    *diff_weights = aligned_malloc(ALIGN_CEIL(sizeof(int)) * num_diffs, 32);
+    if (!(*diff_weights)) {
         aligned_free(*diffs_to_consider);
         *diffs_to_consider = CAMBI_NULL_POINTER;
         return -ENOMEM;
@@ -365,14 +396,14 @@ int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_consider, 
     if (!(*all_diffs)) {
         aligned_free(*diffs_to_consider);
         *diffs_to_consider = CAMBI_NULL_POINTER;
-        aligned_free(*diffs_weights);
-        *diffs_weights = CAMBI_NULL_POINTER;
+        aligned_free(*diff_weights);
+        *diff_weights = CAMBI_NULL_POINTER;
         return -ENOMEM;
     }
 
     for (int d = 0; d < num_diffs; d++) {
         (*diffs_to_consider)[d] = d + 1;
-        (*diffs_weights)[d] = g_contrast_weights[d];
+        (*diff_weights)[d] = g_contrast_weights[d];
     }
 
     for (int d = -num_diffs; d <= num_diffs; d++)
@@ -381,22 +412,22 @@ int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_consider, 
     return 0;
 }
 
-void increment_range(uint16_t *arr, int left, int right)
+static void increment_range(uint16_t *arr, int left, int right)
 {
     for (int i = left; i < right; i++) {
         arr[i]++;
     }
 }
 
-void decrement_range(uint16_t *arr, int left, int right)
+static void decrement_range(uint16_t *arr, int left, int right)
 {
     for (int i = left; i < right; i++) {
         arr[i]--;
     }
 }
 
-void get_derivative_data_for_row(const uint16_t *image_data, uint16_t *derivative_buffer, int width,
-                                 int height, int row, int stride)
+static void get_derivative_data_for_row(const uint16_t *image_data, uint16_t *derivative_buffer,
+                                        int width, int height, int row, int stride)
 {
     for (int col = 0; col < width; col++) {
         bool horizontal_derivative = (col == width - 1 || image_data[row * stride + col] ==
@@ -751,8 +782,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 /* Preprocessing functions */
 
 // For bitdepths <= 8.
-void decimate_generic_uint8_and_convert_to_10b(const VmafPicture *pic, VmafPicture *out_pic,
-                                               unsigned out_w, unsigned out_h)
+static void decimate_generic_uint8_and_convert_to_10b(const VmafPicture *pic, VmafPicture *out_pic,
+                                                      unsigned out_w, unsigned out_h)
 {
     const uint8_t *data = pic->data[0];
     uint16_t *out_data = out_pic->data[0];
@@ -793,8 +824,8 @@ void decimate_generic_uint8_and_convert_to_10b(const VmafPicture *pic, VmafPictu
 }
 
 // For the special case of bitdepth 9, which doesn't fit into uint8_t but has to be upscaled to 10b.
-void decimate_generic_9b_and_convert_to_10b(const VmafPicture *pic, VmafPicture *out_pic,
-                                            unsigned out_w, unsigned out_h)
+static void decimate_generic_9b_and_convert_to_10b(const VmafPicture *pic, VmafPicture *out_pic,
+                                                   unsigned out_w, unsigned out_h)
 {
     const uint16_t *data = pic->data[0];
     uint16_t *out_data = out_pic->data[0];
@@ -850,8 +881,8 @@ static void decimate_same_size_16b(const uint16_t *data, uint16_t *out_data, ptr
 }
 
 // For bitdepths >= 10.
-void decimate_generic_uint16_and_convert_to_10b(const VmafPicture *pic, VmafPicture *out_pic,
-                                                unsigned out_w, unsigned out_h)
+static void decimate_generic_uint16_and_convert_to_10b(const VmafPicture *pic, VmafPicture *out_pic,
+                                                       unsigned out_w, unsigned out_h)
 {
     const uint16_t *data = pic->data[0];
     uint16_t *out_data = out_pic->data[0];
@@ -890,7 +921,7 @@ void decimate_generic_uint16_and_convert_to_10b(const VmafPicture *pic, VmafPict
     }
 }
 
-void anti_dithering_filter(VmafPicture *pic, unsigned width, unsigned height)
+static void anti_dithering_filter(VmafPicture *pic, unsigned width, unsigned height)
 {
 #if ARCH_X86
     unsigned flags = vmaf_get_cpu_flags();
@@ -1010,7 +1041,7 @@ static int cambi_preprocessing(const VmafPicture *image, VmafPicture *preprocess
 }
 
 /* Banding detection functions */
-void decimate(VmafPicture *image, unsigned width, unsigned height)
+static void decimate(VmafPicture *image, unsigned width, unsigned height)
 {
     uint16_t *data = image->data[0];
     ptrdiff_t stride = image->stride[0] >> 1;
@@ -1039,7 +1070,7 @@ static inline uint16_t mode3(uint16_t a, uint16_t b, uint16_t c)
     return min3(a, b, c);
 }
 
-void filter_mode(const VmafPicture *image, int width, int height, uint16_t *buffer)
+static void filter_mode(const VmafPicture *image, int width, int height, uint16_t *buffer)
 {
     uint16_t *data = image->data[0];
     ptrdiff_t stride = image->stride[0] >> 1;
@@ -1076,7 +1107,8 @@ static FORCE_INLINE uint16_t ceil_log2(uint32_t num)
     return shift;
 }
 
-uint16_t get_mask_index(unsigned input_width, unsigned input_height, uint16_t filter_size)
+static FORCE_INLINE uint16_t get_mask_index(unsigned input_width, unsigned input_height,
+                                            uint16_t filter_size)
 {
     uint32_t shifted_wh = (input_width >> 6) * (input_height >> 6);
     return (filter_size * filter_size + 3 * (ceil_log2(shifted_wh) - 11) - 1) >> 1;
@@ -1131,12 +1163,12 @@ void compute_mask_row(uint16_t *mask_row, const uint32_t *dp_bottom, const uint3
     }
 }
 
-void get_spatial_mask_for_index(const VmafPicture *image, VmafPicture *mask, uint32_t *dp,
-                                uint16_t *derivative_buffer, uint16_t mask_index,
-                                uint16_t filter_size, int width, int height,
-                                VmafDerivativeCalculator derivative_callback,
-                                VmafComputeDpRow compute_dp_row_callback,
-                                VmafComputeMaskRow compute_mask_row_callback)
+static void get_spatial_mask_for_index(const VmafPicture *image, VmafPicture *mask, uint32_t *dp,
+                                       uint16_t *derivative_buffer, uint16_t mask_index,
+                                       uint16_t filter_size, int width, int height,
+                                       VmafDerivativeCalculator derivative_callback,
+                                       VmafComputeDpRow compute_dp_row_callback,
+                                       VmafComputeMaskRow compute_mask_row_callback)
 {
     uint16_t pad_size = filter_size >> 1;
     const uint16_t *image_data = image->data[0];
@@ -1198,10 +1230,10 @@ static void get_spatial_mask(const VmafPicture *image, VmafPicture *mask, uint32
                                compute_mask_row_callback);
 }
 
-float c_value_pixel(const uint16_t *histograms, uint16_t value, const int *diff_weights,
-                    const int *diffs, uint16_t num_diffs, const uint16_t *tvi_thresholds,
-                    uint16_t vlt_luma, uint16_t v_band_offset_val, uint16_t v_band_size,
-                    int histogram_col, int histogram_width)
+static float c_value_pixel(const uint16_t *histograms, uint16_t value, const int *diff_weights,
+                           const int *diffs, uint16_t num_diffs, const uint16_t *tvi_thresholds,
+                           uint16_t vlt_luma, uint16_t v_band_offset_val, uint16_t v_band_size,
+                           int histogram_col, int histogram_width)
 {
     int compact_v_signed = (int)value - (int)v_band_offset_val;
     if ((unsigned)compact_v_signed >= v_band_size)
@@ -1249,11 +1281,12 @@ float c_value_pixel(const uint16_t *histograms, uint16_t value, const int *diff_
 // the count of values in the useful band. Compiler emits ~1 sub + 1 cmp per
 // pixel with no second branch, which costs less when the skip rarely fires.
 
-void calculate_c_values_row(float *c_values, const uint16_t *histograms, const uint16_t *image,
-                            const uint16_t *mask, int row, int width, ptrdiff_t stride,
-                            const uint16_t num_diffs, const uint16_t *tvi_for_diff,
-                            uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
-                            const float *reciprocals)
+static void calculate_c_values_row(float *c_values, const uint16_t *histograms,
+                                   const uint16_t *image, const uint16_t *mask, int row, int width,
+                                   ptrdiff_t stride, const uint16_t num_diffs,
+                                   const uint16_t *tvi_for_diff, uint16_t vlt_luma,
+                                   const int *diff_weights, const int *all_diffs,
+                                   const float *reciprocals)
 {
     (void)reciprocals;
     int v_lo_signed = (int)vlt_luma - 3 * (int)num_diffs + 1;
@@ -1375,10 +1408,10 @@ static void c_values_bottom_edge(float *c_values, uint16_t *histograms, const ui
     }
 }
 
-void calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
-                        uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
-                        const uint16_t *tvi_for_diff, uint16_t vlt_luma, const int *diff_weights,
-                        const int *all_diffs, int width, int height)
+static void calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, float *c_values,
+                               uint16_t *histograms, uint16_t window_size, const uint16_t num_diffs,
+                               const uint16_t *tvi_for_diff, uint16_t vlt_luma,
+                               const int *diff_weights, const int *all_diffs, int width, int height)
 {
     uint16_t pad_size = window_size >> 1;
 
@@ -1405,7 +1438,7 @@ void calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic, float *c_
                          v_band_size);
 }
 
-double average_topk_elements(const float *arr, int topk_elements)
+static double average_topk_elements(const float *arr, int topk_elements)
 {
     double sum = 0;
     for (int i = 0; i < topk_elements; i++)
@@ -1432,7 +1465,7 @@ static void quick_select_partition(float *arr, int *i, int *j, float pivot)
     }
 }
 
-void quick_select(float *arr, int n, int k)
+static void quick_select(float *arr, int n, int k)
 {
     if (n == k)
         return;
@@ -1452,7 +1485,7 @@ void quick_select(float *arr, int n, int k)
     }
 }
 
-double spatial_pooling(float *c_values, double topk, unsigned width, unsigned height)
+static double spatial_pooling(float *c_values, double topk, unsigned width, unsigned height)
 {
     int num_elements = height * width;
     int topk_num_elements = clip(topk * num_elements, 1, num_elements);
@@ -1460,14 +1493,15 @@ double spatial_pooling(float *c_values, double topk, unsigned width, unsigned he
     return average_topk_elements(c_values, topk_num_elements);
 }
 
-uint16_t get_pixels_in_window(uint16_t window_length)
+static FORCE_INLINE uint16_t get_pixels_in_window(uint16_t window_length)
 {
     uint16_t odd_length = 2 * (window_length >> 1) + 1;
     return odd_length * odd_length;
 }
 
 // Inner product weighting scores for each scale
-double weight_scores_per_scale(const double *scores_per_scale, uint16_t normalization)
+static FORCE_INLINE double weight_scores_per_scale(const double *scores_per_scale,
+                                                   uint16_t normalization)
 {
     double score = 0.0;
     for (unsigned scale = 0; scale < NUM_SCALES; scale++)
@@ -1754,9 +1788,8 @@ static void calculate_c_values_default(VmafPicture *pic, const VmafPicture *mask
                                        uint16_t vlt_luma, const int *diff_weights,
                                        const int *all_diffs, int width, int height)
 {
-    vmaf_cambi_calculate_c_values(pic, mask_pic, c_values, histograms, window_size, num_diffs,
-                                  tvi_for_diff, vlt_luma, diff_weights, all_diffs, width, height,
-                                  increment_range, decrement_range);
+    calculate_c_values(pic, mask_pic, c_values, histograms, window_size, num_diffs, tvi_for_diff,
+                       vlt_luma, diff_weights, all_diffs, width, height);
 }
 
 /* ADR-0205: shared CPU/GPU helper; see 2043-cambi-production-lint-2026-09-08.md. */
@@ -1843,6 +1876,151 @@ int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider
         *v_band_size = (uint16_t)size_signed;
 
     return 0;
+}
+
+/* ----- internal test trampolines (narrowly exposed for in-tree unit tests) ----- */
+
+void vmaf_cambi_test_anti_dithering_filter(VmafPicture *pic, unsigned width, unsigned height)
+{
+    anti_dithering_filter(pic, width, height);
+}
+
+void vmaf_cambi_test_decimate_generic_uint8_and_convert_to_10b(const VmafPicture *pic,
+                                                               VmafPicture *out_pic, unsigned width,
+                                                               unsigned height)
+{
+    decimate_generic_uint8_and_convert_to_10b(pic, out_pic, width, height);
+}
+
+void vmaf_cambi_test_decimate_generic_9b_and_convert_to_10b(const VmafPicture *pic,
+                                                            VmafPicture *out_pic, unsigned width,
+                                                            unsigned height)
+{
+    decimate_generic_9b_and_convert_to_10b(pic, out_pic, width, height);
+}
+
+void vmaf_cambi_test_decimate_generic_uint16_and_convert_to_10b(const VmafPicture *pic,
+                                                                VmafPicture *out_pic,
+                                                                unsigned width, unsigned height)
+{
+    decimate_generic_uint16_and_convert_to_10b(pic, out_pic, width, height);
+}
+
+uint16_t vmaf_cambi_test_get_mask_index(unsigned input_width, unsigned input_height,
+                                        uint16_t filter_size)
+{
+    return get_mask_index(input_width, input_height, filter_size);
+}
+
+void vmaf_cambi_test_get_spatial_mask_for_index(
+    const VmafPicture *image, VmafPicture *mask, uint32_t *dp, uint16_t *derivative_buffer,
+    uint16_t mask_index, uint16_t filter_size, int width, int height,
+    VmafCambiDerivativeCalculator derivative_callback,
+    void (*compute_dp_row_callback)(uint32_t *dp_curr, const uint32_t *dp_prev,
+                                    const uint16_t *deriv, int width, int pad_size,
+                                    bool deriv_valid),
+    void (*compute_mask_row_callback)(uint16_t *mask_row, const uint32_t *dp_bottom,
+                                      const uint32_t *dp_top, int width, int pad_size,
+                                      uint32_t mask_index))
+{
+    get_spatial_mask_for_index(image, mask, dp, derivative_buffer, mask_index, filter_size, width,
+                               height, (VmafDerivativeCalculator)derivative_callback,
+                               (VmafComputeDpRow)compute_dp_row_callback,
+                               (VmafComputeMaskRow)compute_mask_row_callback);
+}
+
+void vmaf_cambi_test_calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic,
+                                        float *c_values, uint16_t *histograms, uint16_t window_size,
+                                        const uint16_t num_diffs, const uint16_t *tvi_for_diff,
+                                        uint16_t vlt_luma, const int *diff_weights,
+                                        const int *all_diffs, int width, int height)
+{
+    calculate_c_values(pic, mask_pic, c_values, histograms, window_size, num_diffs, tvi_for_diff,
+                       vlt_luma, diff_weights, all_diffs, width, height);
+}
+
+float vmaf_cambi_test_c_value_pixel(const uint16_t *histograms, uint16_t value,
+                                    const int *diff_weights, const int *diffs, uint16_t num_diffs,
+                                    const uint16_t *tvi_thresholds, uint16_t vlt_luma,
+                                    uint16_t v_band_offset_val, uint16_t v_band_size,
+                                    int histogram_col, int histogram_width)
+{
+    return c_value_pixel(histograms, value, diff_weights, diffs, num_diffs, tvi_thresholds,
+                         vlt_luma, v_band_offset_val, v_band_size, histogram_col, histogram_width);
+}
+
+void vmaf_cambi_test_calculate_c_values_row(float *c_values, const uint16_t *histograms,
+                                            const uint16_t *image, const uint16_t *mask, int row,
+                                            int width, ptrdiff_t stride, const uint16_t num_diffs,
+                                            const uint16_t *tvi_for_diff, uint16_t vlt_luma,
+                                            const int *diff_weights, const int *all_diffs,
+                                            const float *reciprocals)
+{
+    calculate_c_values_row(c_values, histograms, image, mask, row, width, stride, num_diffs,
+                           tvi_for_diff, vlt_luma, diff_weights, all_diffs, reciprocals);
+}
+
+void vmaf_cambi_test_increment_range(uint16_t *arr, int left, int right)
+{
+    increment_range(arr, left, right);
+}
+
+void vmaf_cambi_test_decrement_range(uint16_t *arr, int left, int right)
+{
+    decrement_range(arr, left, right);
+}
+
+void vmaf_cambi_test_get_derivative_data_for_row(const uint16_t *image_data,
+                                                 uint16_t *derivative_buffer, int width, int height,
+                                                 int row, int stride)
+{
+    get_derivative_data_for_row(image_data, derivative_buffer, width, height, row, stride);
+}
+
+void vmaf_cambi_test_quick_select(float *arr, int n, int k)
+{
+    quick_select(arr, n, k);
+}
+
+double vmaf_cambi_test_average_topk_elements(const float *arr, int topk_elements)
+{
+    return average_topk_elements(arr, topk_elements);
+}
+
+void vmaf_cambi_test_adjust_window_size(uint16_t *window_size, unsigned input_width,
+                                        unsigned input_height, bool cambi_high_res_speedup)
+{
+    adjust_window_size(window_size, input_width, input_height, cambi_high_res_speedup);
+}
+
+int vmaf_cambi_test_get_tvi_for_diff(int diff, double tvi_threshold, int bitdepth,
+                                     VmafLumaRange luma_range, VmafEOTF eotf)
+{
+    return get_tvi_for_diff(diff, tvi_threshold, bitdepth, luma_range, eotf);
+}
+
+bool vmaf_cambi_test_tvi_condition(int sample, int diff, double tvi_threshold,
+                                   VmafLumaRange luma_range, VmafEOTF eotf)
+{
+    return tvi_condition(sample, diff, tvi_threshold, luma_range, eotf);
+}
+
+int vmaf_cambi_test_set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_consider,
+                                        int **diff_weights, int **all_diffs)
+{
+    return set_contrast_arrays(num_diffs, diffs_to_consider, diff_weights, all_diffs);
+}
+
+int vmaf_cambi_test_tvi_hard_threshold_condition(int sample, int diff, double tvi_threshold,
+                                                 VmafLumaRange luma_range, VmafEOTF eotf)
+{
+    return (int)tvi_hard_threshold_condition(sample, diff, tvi_threshold, luma_range, eotf);
+}
+
+int vmaf_cambi_test_get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange luma_range,
+                                 VmafEOTF eotf)
+{
+    return get_vlt_luma(visibility_luminance_threshold, luma_range, eotf);
 }
 
 #undef CAMBI_NULL_POINTER

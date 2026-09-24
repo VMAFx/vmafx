@@ -18,6 +18,10 @@
 
 #include "feature/feature_collector.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct VmafContext VmafContext;
 
 /*
@@ -35,5 +39,9 @@ bool vmaf_context_is_flushed(const VmafContext *vmaf);
 bool vmaf_context_has_thread_pool(const VmafContext *vmaf);
 int vmaf_context_flush_threaded_for_test(VmafContext *vmaf);
 int vmaf_context_flush_for_test(VmafContext *vmaf);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LIBVMAF_PRIV_H */

@@ -31,6 +31,12 @@
 #include "read_json_model.h"
 #include "svm.h"
 
+typedef struct VmafBuiltInModel {
+    const char *version;
+    const char *data;
+    const int *data_len;
+} VmafBuiltInModel;
+
 #if VMAF_BUILT_IN_MODELS
 #if VMAF_FLOAT_FEATURES
 extern const char src_vmaf_float_v0_6_1neg_json[];
@@ -164,12 +170,19 @@ static const VmafBuiltInModel built_in_models[] = {
 #endif
     {0}};
 
-#undef BUILT_IN_MODEL_CNT
 #define BUILT_IN_MODEL_CNT (((sizeof(built_in_models)) / (sizeof(built_in_models[0]))) - 1)
 
-unsigned vmaf_built_in_model_count(void)
+unsigned vmaf_built_in_model_count_for_test(void)
 {
     return BUILT_IN_MODEL_CNT;
+}
+
+const char *vmaf_built_in_model_version_for_test(const void *built_in_model)
+{
+    if (!built_in_model)
+        return NULL;
+    const VmafBuiltInModel *model = built_in_model;
+    return model->version;
 }
 
 int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version)
@@ -245,7 +258,7 @@ int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
     int err = 0;
 
     for (unsigned i = 0; i < model->n_features; i++) {
-        VmafFeatureExtractor *fex =
+        const VmafFeatureExtractor *fex =
             vmaf_get_feature_extractor_by_feature_name(model->feature[i].name, 0);
         if (!fex)
             continue;

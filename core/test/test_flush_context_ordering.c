@@ -28,14 +28,15 @@
  *
  * Why this is load-bearing on a CPU-only build
  * --------------------------------------------
- * The white-box test below includes libvmaf.c directly so it can call the static
- * flush_context_threaded() and observe vmaf->flushed. The structural invariant —
- * "the inner threaded flush must NOT set vmaf->flushed; only flush_context()
- * does, and only after all backends ran" — is independent of which GPU backends
- * are compiled in. Pre-fix, flush_context_threaded() set vmaf->flushed = true
- * and the FIRST assertion below fails. Post-fix it leaves it false and
- * flush_context() flips it. Toggling the fix flips this test red/green without
- * any CUDA or SYCL toolchain.
+ * The white-box test below links libvmaf and reaches the two static flush paths
+ * through narrow accessors in libvmaf_priv.h; companion accessors observe the
+ * opaque context state. The structural invariant — "the inner threaded flush
+ * must NOT set vmaf->flushed; only flush_context() does, and only after all
+ * backends ran" — is independent of which GPU backends are compiled in.
+ * Pre-fix, flush_context_threaded() set vmaf->flushed = true and the FIRST
+ * assertion below fails. Post-fix it leaves it false and flush_context() flips
+ * it. Toggling the fix flips this test red/green without any CUDA or SYCL
+ * toolchain.
  */
 
 #include <math.h>
@@ -117,12 +118,13 @@ static char *prep_threaded_context(VmafContext **out)
 /*
  * test_threaded_flush_does_not_set_flushed
  * ----------------------------------------
- * Calls the static flush_context_threaded() DIRECTLY on a fresh threaded
- * context and asserts it succeeds but does NOT flip vmaf->flushed. This is the
- * core R2-10 invariant: the inner CPU flush must not mark the context terminally
- * flushed, otherwise a subsequent CUDA-flush error in flush_context() would skip
- * flush_context_sycl() with no retry path (vmaf->flushed already true). Pre-fix,
- * flush_context_threaded() set the flag itself and the second mu_assert fails.
+ * Calls the internal accessor that delegates directly to
+ * flush_context_threaded() on a fresh threaded context and asserts it succeeds
+ * but does NOT flip vmaf->flushed. This is the core R2-10 invariant: the inner
+ * CPU flush must not mark the context terminally flushed, otherwise a subsequent
+ * CUDA-flush error in flush_context() would skip flush_context_sycl() with no
+ * retry path (vmaf->flushed already true). Pre-fix, flush_context_threaded() set
+ * the flag itself and the second mu_assert fails.
  *
  * A separate context is used for the flush_context() check below because calling
  * flush_context_threaded() and then flush_context() on the SAME context would

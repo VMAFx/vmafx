@@ -322,7 +322,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 739,
+  "total_warnings": 738,
   "total_nolint_uncited": 0,
   "warnings": {
     "build/src/brisque_live.model.c": 2,
@@ -442,7 +442,7 @@
     "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_locale_handling.c": 21,
     "core/test/test_log.c": 4,
-    "core/test/test_luminance_tools.cpp": 11,
+    "core/test/test_luminance_tools.cpp": 10,
     "core/test/test_pelorus_interop.c": 9,
     "core/test/test_pic_preallocation.c": 9,
     "core/test/test_predict.c": 13,
@@ -1223,6 +1223,21 @@
         }
       },
       "previous_baseline_sha256": "8b22b2cdd9c34bece507a15a9c8af7803ea8b46e45472e9b0052698ce1c0b27a"
+    },
+    {
+      "sources": [
+        "core/test/test_luminance_tools.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_luminance_tools.cpp": {
+          "warnings": [
+            11,
+            10
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c4cf5607045ad865fc4abecd87bb27f468dfc1ff786c34835c2036667d4d62f2"
     }
   ]
 }

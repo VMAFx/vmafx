@@ -36,17 +36,9 @@ enum VmafModelType {
     VMAF_MODEL_RESIDUE_BOOTSTRAP_SVM_NUSVR,
 };
 
-typedef struct VmafBuiltInModel {
-    const char *version;
-    const char *data;
-    const int *data_len;
-} VmafBuiltInModel;
-
-unsigned vmaf_built_in_model_count(void);
-
-#ifndef BUILT_IN_MODEL_CNT
-#define BUILT_IN_MODEL_CNT (vmaf_built_in_model_count())
-#endif
+/* Narrow test accessors for the opaque built-in-model iterator. */
+unsigned vmaf_built_in_model_count_for_test(void);
+const char *vmaf_built_in_model_version_for_test(const void *built_in_model);
 
 enum VmafModelNormalizationType {
     VMAF_MODEL_NORMALIZATION_TYPE_UNKNOWN = 0,
