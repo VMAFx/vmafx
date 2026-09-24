@@ -14,6 +14,11 @@
 > `dev/Containerfile`, and the published OCI description label in
 > `docker/Dockerfile.production-gpu`. `scripts/ci/check-cuda-pin-lockstep.py` retired the
 > `image` shape and its residual sweep catches any re-introduced `nvidia/cuda` image tag.
+> The old Docker-backed Renovate group is therefore retired too. `CUDA_VERSION` is now
+> owned by `custom.nvidia-cuda-redist`, which reads NVIDIA's official redist HTML index;
+> the lockstep gate derives the apt-package and description-label spellings. The custom
+> feed has no timestamps, so its narrowly matched package rule is timestamp-optional,
+> manual-review, and non-automerge.
 
 ## Context
 

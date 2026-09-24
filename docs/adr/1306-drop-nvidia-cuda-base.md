@@ -51,6 +51,9 @@ We replace all `nvidia/cuda` base images with digest-pinned Ubuntu 26.04 (`ubunt
    - `docker/Dockerfile.production-gpu`: `"VMAFX production CUDA 13.4.2 runtime"`
    The residual regex `RESIDUAL_RE` sweeps for any unrecognized CUDA release literal and catches any re-introduced `nvidia/cuda:*` image tags.
 
+5. **Renovate Release Ownership**:
+   The old `nvidia/cuda` Docker datasource and `CUDA release (coordinated pin)` group are removed rather than retained as a hidden OCI dependency. A `custom.nvidia-cuda-redist` HTML datasource reads NVIDIA's official redist index, and the CUDA regex manager accepts only `redistrib_X.Y.Z.json` links through `extractVersionTemplate`. The index exposes no release timestamps, so one datasource-scoped package rule sets `minimumReleaseAgeBehaviour` to `timestamp-optional`; CUDA updates remain manual-review and never automerge. The lockstep gate derives the two spellings Renovate cannot rewrite.
+
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
@@ -65,6 +68,7 @@ We replace all `nvidia/cuda` base images with digest-pinned Ubuntu 26.04 (`ubunt
   - Bumping CUDA versions is completely unblocked from third-party OCI image publication.
   - CUDA builders and runtimes share the exact same Ubuntu 26.04 base OS, glibc, and package ecosystem as the rest of the repository.
   - Six fragile image tag and digest mirrors are eliminated from `check-cuda-pin-lockstep.py`.
+  - Renovate discovers CUDA from the same official redist publication channel that exists before vendor OCI images, so automated discovery no longer reintroduces the original bottleneck.
   - Minimal runtime container size: `final-cuda13` installs only `cuda-cudart-13-4` without unnecessary build tools.
 - **Negative**:
   - Container build stages without BuildKit cache mounts download apt metadata from NVIDIA on first build.

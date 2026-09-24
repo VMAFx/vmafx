@@ -49,6 +49,10 @@ these Meson blocks.
    `docker/Dockerfile.production-gpu`). The residual regex catches any re-introduced `nvidia/cuda` image tags.
 4. **`scripts/ci/install-cuda-toolkit.sh` supports `--mode=builder` and `--mode=runtime`.**
    Containers invoke it directly as root without `sudo`. Host/CI runners invoke it using `sudo`.
+5. **Renovate owns `CUDA_VERSION` through `custom.nvidia-cuda-redist`, not Docker tags.**
+   Keep the HTML datasource, exact `redistrib_X.Y.Z.json` extraction, and scoped
+   timestamp-optional/manual-review rule together. Reintroducing the old `nvidia/cuda`
+   package group silently restores the publication bottleneck this branch removes.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

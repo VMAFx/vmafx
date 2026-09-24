@@ -109,11 +109,26 @@ if [ "$(id -u)" -ne 0 ]; then
   fi
 fi
 
+# These two overrides are test seams for the fake-PATH contract tests. Production
+# callers leave them unset, which preserves the ordinary host paths exactly.
+os_release_file="${VMAFX_CUDA_OS_RELEASE_FILE:-/etc/os-release}"
+cuda_prefix="${VMAFX_CUDA_PREFIX:-/usr/local}"
+cuda_prefix="${cuda_prefix%/}"
+
+if [ ! -f "$os_release_file" ]; then
+  echo "::error::install-cuda-toolkit: OS release file not found: $os_release_file" >&2
+  exit 2
+fi
+if [ -z "$cuda_prefix" ] || [ "${cuda_prefix#/}" = "$cuda_prefix" ]; then
+  echo "::error::install-cuda-toolkit: VMAFX_CUDA_PREFIX must be an absolute non-root path" >&2
+  exit 2
+fi
+
 # ubuntu 26.04 -> ubuntu2604. NVIDIA publishes one repository per distro
 # release; a runner image bump that outruns NVIDIA's must fail loudly here
 # rather than silently install nothing.
-# shellcheck disable=SC1091  # provided by the runner image
-. /etc/os-release
+# shellcheck disable=SC1090  # production default is /etc/os-release; tests inject a fixture
+. "$os_release_file"
 distro="${ID}${VERSION_ID//./}"
 base="https://developer.download.nvidia.com/compute/cuda/repos/${distro}/x86_64"
 
@@ -135,7 +150,8 @@ curl -fsSL -o "$tmp/cuda-keyring.deb" "${base}/cuda-keyring_1.1-1_all.deb"
 $SUDO dpkg -i "$tmp/cuda-keyring.deb"
 $SUDO apt-get update -qq
 
-cuda_home="/usr/local/cuda-${dotted}"
+cuda_home="${cuda_prefix}/cuda-${dotted}"
+cuda_current="${cuda_prefix}/cuda"
 
 case "$mode" in
   builder)
@@ -167,7 +183,7 @@ case "$mode" in
       "cuda-cudart-${series}"
 
     # Verify runtime library layout.
-    if [ ! -e "${cuda_home}/lib64/libcudart.so.${major}" ] && [ ! -e "/usr/local/cuda/lib64/libcudart.so.${major}" ]; then
+    if [ ! -e "${cuda_home}/lib64/libcudart.so.${major}" ] && [ ! -e "${cuda_current}/lib64/libcudart.so.${major}" ]; then
       echo "::error::install-cuda-toolkit: expected libcudart under ${cuda_home}/lib64 after installing" \
         "cuda-cudart-${series}; the package layout changed" >&2
       exit 1
@@ -178,8 +194,8 @@ case "$mode" in
       $SUDO ln -sf "libcudart.so.${major}" "${cuda_home}/targets/x86_64-linux/lib/libcudart.so"
     fi
 
-    if [ ! -e /usr/local/cuda ]; then
-      $SUDO ln -sf "${cuda_home}" /usr/local/cuda
+    if [ ! -e "$cuda_current" ]; then
+      $SUDO ln -sf "${cuda_home}" "$cuda_current"
     fi
 
     if [ -n "${GITHUB_ENV:-}" ]; then

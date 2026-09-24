@@ -69,3 +69,15 @@ The remaining coordinated pin inventory consists of 4 sites across 3 files:
 4. `docker/Dockerfile.production-gpu`: `"VMAFX production CUDA 13.4.2 runtime"` (label)
 
 `scripts/ci/check-cuda-pin-lockstep.py` retired the `image` shape from `SITE_SHAPES`. Any re-introduction of an `nvidia/cuda` image tag is caught by `RESIDUAL_RE` as an unrecognized pin, failing closed.
+
+## 5. Renovate must follow the release channel, not the retired image channel
+
+Removing the Dockerfiles' vendor images was insufficient while Renovate still resolved `CUDA_VERSION` through `nvidia/cuda` tags: discovery would remain blocked on the channel this change removes. The corrected manager uses a `custom.nvidia-cuda-redist` datasource over NVIDIA's official redist directory index. Renovate's HTML datasource turns each hyperlink into a raw release; `extractVersionTemplate` accepts only `redistrib_X.Y.Z.json` and converts it to `X.Y.Z`. Directory links, schema-v2 manifests, signatures, bare versions, and Docker tags do not match.
+
+The HTML conversion does not produce `releaseTimestamp`. The repository's global `minimumReleaseAge: 3 days` defaults to requiring one, which would leave every valid CUDA update pending permanently. A rule matched only to `custom.nvidia-cuda-redist` / `nvidia-cuda-redist` sets `minimumReleaseAgeBehaviour: timestamp-optional`; it keeps `automerge: false` and the `manual-review` label. This is not a new CUDA group: the obsolete `CUDA release (coordinated pin)` group and all `nvidia/cuda` package matches are deleted.
+
+Validation used the project-pinned Renovate 44.111.4 container. `renovate-config-validator --strict --no-global renovate.json` passed, and a local lookup contacted `developer.download.nvidia.com` once and resolved `currentVersion` and `fixedVersion` to `13.4.2` for `custom.nvidia-cuda-redist`. The committed representative-HTML test selects `13.4.2` while rejecting unrelated links.
+
+## 6. Installer tests cannot mutate the host
+
+The installer exposes two test-only path seams: `VMAFX_CUDA_OS_RELEASE_FILE` and `VMAFX_CUDA_PREFIX`. Production callers leave both unset, preserving `/etc/os-release` and `/usr/local`. The contract suite points both into a fresh temporary directory and executes with a fake `PATH` containing no system executables. It proves root and sudo modes, builder/runtime package separation, both runtime symlinks, malformed configuration, missing repositories, and invalid arguments without invoking real `apt-get`, `curl`, `sudo`, or writing below `/usr/local`.

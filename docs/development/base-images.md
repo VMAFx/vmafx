@@ -135,8 +135,11 @@ make cuda-pin-sync                                     # derives CUDA_APT_PACKAG
 make base-images-sync                                  # ensures Dockerfiles match build-config.env
 ```
 
-Renovate discovers new CUDA releases and proposes bumping `CUDA_VERSION` directly.
-`make cuda-pin-sync` derives the rest. See
+Renovate discovers new CUDA releases from NVIDIA's official redist HTML index through
+`custom.nvidia-cuda-redist`, not from the retired `nvidia/cuda` image tags, and proposes
+bumping `CUDA_VERSION` directly. Only `redistrib_X.Y.Z.json` links are accepted. The
+index has no release timestamps, so the datasource-specific rule is timestamp-optional
+but stays manual-review and non-automerge. `make cuda-pin-sync` derives the rest. See
 [ADR-1285](../adr/1285-cuda-coordinated-pin-lockstep.md),
 [ADR-1300](../adr/1300-cuda-install-from-nvidia-apt.md), and
 [ADR-1306](../adr/1306-drop-nvidia-cuda-base.md).

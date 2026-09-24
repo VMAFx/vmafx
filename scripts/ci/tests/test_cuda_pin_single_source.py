@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Hold the CUDA coordinated pin together: one release, one group, one gate.
+"""Hold the CUDA coordinated pin together: one release, one owner, one gate.
 
 Two things are asserted here, and they are different things.
 
@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -91,14 +92,14 @@ def managers(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     cuda = [
         manager
         for manager in config["customManagers"]
-        if manager.get("depNameTemplate") == "nvidia/cuda"
+        if manager.get("datasourceTemplate") == "custom.nvidia-cuda-redist"
     ]
     base = [
         manager
         for manager in config["customManagers"]
         if manager["datasourceTemplate"] == "docker" and "depNameTemplate" not in manager
     ]
-    assert len(cuda) == 1, "expected exactly one nvidia/cuda custom manager"
+    assert len(cuda) == 1, "expected exactly one custom.nvidia-cuda-redist CUDA manager"
     assert len(base) == 1, "expected exactly one base-image custom manager"
     return cuda[0], base[0]
 
@@ -110,6 +111,21 @@ def covers(manager: dict[str, Any], path: str, line: str) -> bool:
     # Renovate matches against whole file content; the matchStrings that anchor
     # on a line start are given one here, so a line-oriented check is faithful.
     return any(re.search(to_python(match), "\n" + line) for match in manager["matchStrings"])
+
+
+class HrefCollector(HTMLParser):
+    """Model Renovate custom datasource's documented HTML-to-release conversion."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        href = dict(attrs).get("href")
+        if href is not None:
+            self.hrefs.append(href)
 
 
 class CudaPinCoverage(unittest.TestCase):
@@ -150,38 +166,156 @@ class CudaPinCoverage(unittest.TestCase):
     def test_a_new_site_outside_the_manager_is_not_silently_owned(self) -> None:
         """The coverage check must actually reject something."""
         cuda, _ = managers(self.config)
+        # The manager only selects build-config.env; nothing else matches.
         self.assertFalse(covers(cuda, "tools/newlane/setup.sh", "  cuda: '13.4.1'"))
         self.assertFalse(covers(cuda, "build-config.env", 'CUDA_SERIES="13.4"'))
+        # The OCI docker-tag form is no longer a recognised matchString.
+        self.assertFalse(
+            covers(
+                cuda,
+                "build-config.env",
+                'CUDA_BUILDER="nvidia/cuda:13.4.2-devel-ubuntu26.04"',
+            )
+        )
 
-    def test_the_group_rule_names_every_renovate_owned_site(self) -> None:
+    def test_cuda_manager_uses_redist_datasource_not_docker(self) -> None:
+        """CUDA_VERSION must be resolved against the NVIDIA redist HTML index (ADR-1306).
+
+        The old manager resolved nvidia/cuda Docker tags and was gated on OCI image
+        publication; the new one resolves custom.nvidia-cuda-redist, which is backed
+        by the NVIDIA apt/redist HTML index that lists redistrib_X.Y.Z.json files.
+        CUDA 13.4.2 exists in the redist index but has no nvidia/cuda OCI image.
+        """
+        cuda, _ = managers(self.config)
+        self.assertEqual(cuda["datasourceTemplate"], "custom.nvidia-cuda-redist")
+        self.assertEqual(cuda["depNameTemplate"], "nvidia-cuda-redist")
+
+    def test_no_docker_cuda_manager_exists(self) -> None:
+        """nvidia/cuda Docker-tag manager must be absent (ADR-1306).
+
+        Re-introducing it would re-gate CUDA bumps on OCI image publication.
+        """
+        docker_cuda = [
+            m
+            for m in self.config["customManagers"]
+            if m.get("depNameTemplate") == "nvidia/cuda" and m.get("datasourceTemplate") == "docker"
+        ]
+        self.assertEqual(
+            docker_cuda,
+            [],
+            "Found a nvidia/cuda Docker custom manager; ADR-1306 forbids re-introduction",
+        )
+        stale_rules = [
+            rule
+            for rule in self.config["packageRules"]
+            if "nvidia/cuda" in rule.get("matchPackageNames", [])
+            or rule.get("groupName") == "CUDA release (coordinated pin)"
+        ]
+        self.assertEqual(stale_rules, [], "the obsolete Docker CUDA group must stay deleted")
+
+    def test_cuda_manager_extractversion_accepts_redist_links_only(self) -> None:
+        """extractVersionTemplate must accept redistrib_X.Y.Z.json and reject everything else.
+
+        The NVIDIA redist HTML index returns all <a href> values; the manager uses
+        extractVersionTemplate to filter to redistrib_X.Y.Z.json entries only,
+        leaving a clean semver stream for comparison against CUDA_VERSION.
+        Unrelated directory links (cuda_nvcc/, ../), bare versions, or docker tags
+        must not produce a version.
+        """
+        cuda, _ = managers(self.config)
+        extract_tpl = cuda.get("extractVersionTemplate")
+        self.assertIsNotNone(
+            extract_tpl,
+            "extractVersionTemplate is required on the CUDA manager",
+        )
+        pattern = re.compile(to_python(extract_tpl))  # type: ignore[arg-type]
+        # Positive: redistrib_X.Y.Z.json
+        for good in (
+            "redistrib_13.4.2.json",
+            "redistrib_13.3.1.json",
+            "redistrib_13.0.0.json",
+        ):
+            with self.subTest(href=good):
+                m = pattern.search(good)
+                self.assertIsNotNone(m, f"{good!r} must match extractVersionTemplate")
+                assert m is not None
+                self.assertRegex(m.group("version"), r"^\d+\.\d+\.\d+$")
+        # Negative: directory links, bare text, docker tags, other filenames
+        for bad in (
+            "cuda_nvcc/",
+            "../",
+            "redistrib_v2_13.4.2.json",
+            "13.4.2",
+            "redistrib_13.4.json",  # only 2-part — must not match
+            "nvidia/cuda:13.4.2-devel-ubuntu26.04",
+            "other_file.json",
+        ):
+            with self.subTest(href=bad):
+                self.assertIsNone(
+                    pattern.search(bad),
+                    f"{bad!r} must not match extractVersionTemplate",
+                )
+
+    def test_representative_html_selects_13_4_2_and_rejects_noise(self) -> None:
+        """Exercise the HTML href conversion and configured extractVersion together."""
+        document = """
+        <html><body>
+          <a href='..'>..</a>
+          <a href='cuda_nvcc/'>cuda_nvcc/</a>
+          <a href='redistrib_13.3.1.json'>redistrib_13.3.1.json</a>
+          <a href='redistrib_13.4.1.json'>redistrib_13.4.1.json</a>
+          <a href='redistrib_13.4.2.json'>redistrib_13.4.2.json</a>
+          <a href='redistrib_13.5.0.json.asc'>signature</a>
+          <a href='redistrib_v2_13.5.0.json'>schema v2</a>
+        </body></html>
+        """
+        parser = HrefCollector()
+        parser.feed(document)
+        cuda, _ = managers(self.config)
+        pattern = re.compile(to_python(cuda["extractVersionTemplate"]))
+        versions = [
+            match.group("version")
+            for raw_version in parser.hrefs
+            if (match := pattern.fullmatch(raw_version)) is not None
+        ]
+        self.assertEqual(versions, ["13.3.1", "13.4.1", "13.4.2"])
+        latest = max(versions, key=lambda version: tuple(map(int, version.split("."))))
+        self.assertEqual(latest, "13.4.2")
+
+    def test_custom_datasource_uses_nvidia_redist_html_index(self) -> None:
+        """customDatasources must define nvidia-cuda-redist backed by the NVIDIA official index.
+
+        The official NVIDIA redist HTML index at
+        https://developer.download.nvidia.com/compute/cuda/redist/
+        lists redistrib_X.Y.Z.json files. It listed redistrib_13.4.2.json before
+        any nvidia/cuda:13.4.2-* OCI image existed on Docker Hub.
+        """
+        ds = self.config.get("customDatasources", {})
+        self.assertIn("nvidia-cuda-redist", ds, "customDatasources must define nvidia-cuda-redist")
+        entry = ds["nvidia-cuda-redist"]
+        self.assertEqual(entry["format"], "html")
+        url = entry["defaultRegistryUrlTemplate"]
+        self.assertIn("developer.download.nvidia.com", url)
+        self.assertIn("cuda/redist", url)
+        self.assertNotIn(
+            "transformTemplates",
+            entry,
+            "Renovate already converts HTML hrefs to releases; filtering belongs to extractVersion",
+        )
+
+    def test_redist_rule_handles_missing_timestamps_without_automerge(self) -> None:
+        """The HTML datasource has no timestamps, so the global age gate needs an exception."""
         rules = [
             rule
             for rule in self.config["packageRules"]
-            if rule.get("groupName") == "CUDA release (coordinated pin)"
+            if rule.get("matchDatasources") == ["custom.nvidia-cuda-redist"]
         ]
-        self.assertEqual(len(rules), 1, "the CUDA group rule is missing or duplicated")
+        self.assertEqual(len(rules), 1)
         rule = rules[0]
-        cuda, base = managers(self.config)
-        self.assertEqual(rule["matchPackageNames"], [cuda["depNameTemplate"]])
-        self.assertIs(rule["automerge"], False, "a coordinated pin is not auto-mergeable")
-        # The image pins resolve under the same package name, which is what puts
-        # both managers' deps into one branch.
-        self.assertIn("nvidia/cuda", (ROOT / "build-config.env").read_text(encoding="utf-8"))
-        self.assertEqual(base["datasourceTemplate"], "docker")
-        # Digest refreshes stay in the Docker digests batch: no coordination needed.
-        self.assertNotIn("digest", rule["matchUpdateTypes"])
-        self.assertNotIn("pin", rule["matchUpdateTypes"])
-
-    def test_the_manager_extracts_a_version_nvidia_actually_publishes(self) -> None:
-        """A bare `13.4.1` matches no nvidia/cuda tag; extractVersion is load-bearing."""
-        cuda, _ = managers(self.config)
-        pattern = re.compile(to_python(cuda["extractVersionTemplate"]))
-        match = pattern.search("13.4.0-devel-ubuntu26.04")
-        self.assertIsNotNone(match)
-        assert match is not None
-        self.assertEqual(match.group("version"), "13.4.0")
-        self.assertIsNone(pattern.search("13.4.0-runtime-ubuntu26.04"))
-        self.assertIsNone(pattern.search("latest"))
+        self.assertEqual(rule["matchPackageNames"], ["nvidia-cuda-redist"])
+        self.assertEqual(rule["minimumReleaseAgeBehaviour"], "timestamp-optional")
+        self.assertIs(rule["automerge"], False)
+        self.assertNotIn("groupName", rule, "the deleted CUDA group must not be recreated")
 
     def test_every_matchstring_hits_a_real_line_in_the_tree(self) -> None:
         """A manager whose regex matches nothing is wiring that does nothing."""

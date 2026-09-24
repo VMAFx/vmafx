@@ -25,6 +25,8 @@ CUDA base images (ADR-1306): `CUDA_BUILDER` and `CUDA_RUNTIME` are digest-pinned
 Ubuntu 26.04 (`ubuntu:26.04@sha256:...`); never re-introduce `nvidia/cuda` base
 images. Toolkit compiler and runtime packages install via
 `scripts/ci/install-cuda-toolkit.sh` (`--mode=builder` or `--mode=runtime`).
+Renovate discovers `CUDA_VERSION` through the official NVIDIA redist HTML index
+(`custom.nvidia-cuda-redist`), never through `nvidia/cuda` Docker tags.
 
 See [docs/development/base-images.md](../docs/development/base-images.md).
 

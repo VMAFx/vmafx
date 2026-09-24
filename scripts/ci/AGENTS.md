@@ -151,19 +151,18 @@ repositories, wired through `test-base-image-single-source` in
 
 ### CUDA coordinated pin (ADR-1285)
 
-One CUDA release = sixteen literals, seven spellings, seven files. Authority =
+One CUDA release = four literals, three spellings, three files. Authority =
 `build-config.env` `CUDA_VERSION`. `check-cuda-pin-lockstep.py` checks all of
-them, `--write` derives the five Renovate cannot express (`$cudaMajorMinor`,
-both `cuda-toolkit-NN-N` apt names, the OCI description label), and a residual
-sweep fails on any CUDA release literal in an unrecognised spelling. Never
-narrow the sweep to silence a new site: teach the gate its shape and add the
-file to `renovate.json`'s CUDA manager in the same change, or the site drifts.
-`--write` must never touch `CUDA_VERSION` (authority) or an image pin (digest
-is not derivable). Renovate side: custom manager resolving the plain `x.y.z`
-literals as `nvidia/cuda`, `extractVersion` stripping the flavour suffix
-because no bare tag exists, and the `CUDA release (coordinated pin)` rule
-scoped to major/minor/patch so digest refreshes stay in `Docker digests`.
-Fixture: `tests/test_cuda_pin_single_source.py`, run by the
+them, `--write` derives the apt-package and OCI-description spellings, and a
+residual sweep fails on any CUDA release literal in an unrecognised spelling.
+Never narrow the sweep to silence a new site: teach the gate its shape and
+owner in the same change, or the site drifts. `--write` must never touch
+`CUDA_VERSION`, the authority. Renovate resolves that value through
+`custom.nvidia-cuda-redist`: the official HTML index plus an exact
+`redistrib_X.Y.Z.json` extractor. Never restore the old `nvidia/cuda` package
+group. The custom feed has no timestamps, so its narrowly matched rule stays
+timestamp-optional, manual-review, and non-automerge. Fixture:
+`tests/test_cuda_pin_single_source.py`, run by the
 `test-base-image-single-source` hook.
 
 ### Level Zero version consumption (ADR-1231)
