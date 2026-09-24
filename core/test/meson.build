@@ -50,6 +50,13 @@ test('test_metal_float_moment_contract',
     suite : ['fast'],
 )
 
+# ADR-0480: both bootstrap score paths consume the shared suffix owner.
+test('test_bootstrap_name_contract',
+    import('python').find_installation(),
+    args : files('test_bootstrap_name_contract.py'),
+    suite : ['fast'],
+)
+
 # ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
 # ELF only (nm -D); skips with 77 when nm or c++filt is missing. Not in coverage
 # builds: libgcov links into the instrumented .so and exports its own globals

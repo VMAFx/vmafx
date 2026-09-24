@@ -20507,6 +20507,11 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   Identified by c-reviewer agent audit 2026-05-30 (MEDIUM severity).
 
 
+Restore ADR-0480's single owner for bootstrap collection-score names. Both
+pooled and per-index score paths again consume `bootstrap_names.h`, with a fast
+source-contract test preventing the shared header from becoming orphaned.
+
+
 - **Achieved 100% REUSE 3.3 specification compliance tree-wide across all 9,140 files in REUSE scope (BUG-003).**
   Baseline measurement on current master showed 6,806 files lacking copyright and 7,251 files lacking licensing
   information, 14 invalid SPDX expressions in prose across 13 files, and 1 unused license (`LicenseRef-Apache-2.0-u2netp`).

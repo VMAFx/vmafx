@@ -415,6 +415,15 @@ Any line returned is a violation — add the appropriate `suite:` before
 merging. Keep this check with every upstream sync because upstream does not
 carry the fork's suite classification contract.
 
+## Bootstrap score-name source contract (ADR-0480)
+
+`test_bootstrap_name_contract.py` is intentionally a source-level test. Public
+score tests cannot detect whether `libvmaf.c` and `predict.c` have copied the
+same suffix literals away from `bootstrap_names.h`; both implementations can
+remain behaviorally identical until a later edit changes only one. Keep the
+test in the `fast` suite and require both consumers to include the header, use
+all four shared symbols, and contain none of the four literal definitions.
+
 ## Pixel-format edge coverage invariant (ADR-0912)
 
 `test_pixel_format_edge_coverage.c` is canonical home for

@@ -48,6 +48,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "libvmaf/perceptual_weight.h"
 #include "libvmaf/picture.h"
 
+#include "bootstrap_names.h"
 #include "cpu.h"
 #include "dnn/dnn_ctx.h"
 #include "dnn/tensor_io.h"
@@ -3566,30 +3567,29 @@ int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *m
 
     score->type = VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP;
 
-    const char *suffix_lo = "_ci_p95_lo";
-    const char *suffix_hi = "_ci_p95_hi";
-    const char *suffix_bagging = "_bagging";
-    const char *suffix_stddev = "_stddev";
-    const size_t name_sz = strlen(model_collection->name) + strlen(suffix_lo) + 1;
+    /* ADR-0480: share suffix ownership and buffer sizing with predict.c.
+     * The callee differs here, so merging the loops would add callback
+     * indirection without removing meaningful complexity. */
+    const size_t name_sz = BOOTSTRAP_NAME_BUF_SZ(model_collection->name);
     /* Heap-allocated for MSVC portability (no VLAs). The buffer is short-lived
      * and freed before return. */
     char *name = (char *)calloc(1u, name_sz);
     if (!name)
         return -ENOMEM;
 
-    (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix_bagging);
+    (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_BAGGING);
     err |= vmaf_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.bagging_score,
                                      index_low, index_high);
 
-    (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix_stddev);
+    (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_STDDEV);
     err |= vmaf_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.stddev, index_low,
                                      index_high);
 
-    (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix_lo);
+    (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_LO);
     err |= vmaf_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.ci.p95.lo,
                                      index_low, index_high);
 
-    (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix_hi);
+    (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_HI);
     err |= vmaf_feature_score_pooled(vmaf, name, pool_method, &score->bootstrap.ci.p95.hi,
                                      index_low, index_high);
 

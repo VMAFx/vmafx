@@ -132,6 +132,16 @@ Companion regressions in `ai/tests/test_feature_correlation.py` cover
 string/metadata columns, unavailable and constant numeric columns including a
 retained-row constant, non-finite feature/target rows and thresholds, missing
 scikit-learn, the one-feature case, and an empty usable schema.
+## fix/bug048-bootstrap-name-owner — keep ADR-0480's shared suffix owner (2026-09-24)
+
+`core/src/bootstrap_names.h` is the sole owner of bootstrap collection-score
+suffixes and buffer sizing. Both `core/src/libvmaf.c` and `core/src/predict.c`
+must include it and use all four suffix symbols; do not resolve a layout-sync
+conflict by restoring local literals. The loops intentionally remain separate
+because one pools collector values and the other appends per-index scores.
+Run `python3 core/test/test_bootstrap_name_contract.py` after either consumer
+changes. No public API or numerical behavior changes (ADR-0480,
+Research-0480).
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
