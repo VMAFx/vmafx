@@ -2075,6 +2075,28 @@ test_gpu_picture_pool_partial_init = executable('test_gpu_picture_pool_partial_i
 test('test_gpu_picture_pool_partial_init', test_gpu_picture_pool_partial_init,
     suite : ['fast'])
 
+# Issue #1455 regression: vmaf_gpu_picture_pool_init must return -ENOMEM
+# and clear *pool to NULL when pool struct allocation fails.
+# Recompiles gpu_picture_pool.cpp with force-included allocator interposer.
+gpu_pool_interposer_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
+
+gpu_pool_alloc_interpose_header = meson.current_source_dir() / 'test_gpu_picture_pool_alloc_interpose.h'
+gpu_pool_alloc_interpose_args = cc.get_argument_syntax() == 'msvc' \
+    ? ['/FI' + gpu_pool_alloc_interpose_header] \
+    : ['-include', gpu_pool_alloc_interpose_header]
+
+test_gpu_picture_pool_alloc_failure = executable('test_gpu_picture_pool_alloc_failure',
+    ['test.c', 'test_gpu_picture_pool_alloc_failure.c', '../src/gpu_picture_pool.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : gpu_pool_alloc_interpose_args,
+    cpp_args : gpu_pool_alloc_interpose_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    override_options : gpu_pool_interposer_lto_override,
+)
+test('test_gpu_picture_pool_alloc_failure', test_gpu_picture_pool_alloc_failure,
+    suite : ['fast'])
+
 if get_option('enable_cuda')
 test_gpu_picture_pool = executable('test_gpu_picture_pool',
     ['test.c', 'test_gpu_picture_pool.c', '../src/gpu_picture_pool.cpp', '../src/cuda/picture_cuda.c'],

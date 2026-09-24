@@ -24232,6 +24232,12 @@ is addressed.
   three backends.
 
 
+- Fixed `vmaf_gpu_picture_pool_init`: return `-ENOMEM` when allocation of the
+  `VmafGpuPicturePool` struct fails, preserving the `*pool = NULL` contract.
+  Previously returned 0 (`err` was initialized to 0), causing callers to treat
+  failed pool allocation as success with a null handle (#1455).
+
+
 **gpu_picture_pool.cpp: clear `*pool` to `nullptr` on all failure paths in `vmaf_gpu_picture_pool_init`.**
 The C++ translation of the GPU picture pool init function omitted the `*pool = nullptr`
 assignment at the `free_p` label (reached when the pic-array `malloc` fails or

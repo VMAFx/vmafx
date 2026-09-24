@@ -76,8 +76,8 @@ int alloc_pictures(VmafGpuPicturePool *p)
  * `goto free_p` entry relied on. */
 void gpu_pool_destruct(VmafGpuPicturePool *p, VmafGpuPicturePool **pool)
 {
-    std::free(p->pic);
-    std::free(p);
+    free(p->pic);
+    free(p);
     *pool = nullptr;
 }
 
@@ -100,21 +100,15 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
      * on every failure path so the caller can treat a non-zero return as
      * "pool not constructed" — prevents UAF via vmaf_gpu_picture_pool_close()
      * on a freed pointer (Netflix#UAF-001 / ADR-0239). */
-    VmafGpuPicturePool *const p = *pool =
-        static_cast<VmafGpuPicturePool *>(std::malloc(sizeof(*p)));
+    VmafGpuPicturePool *const p = *pool = static_cast<VmafGpuPicturePool *>(malloc(sizeof(*p)));
     if (!p) {
         *pool = nullptr;
-        /* Preserved verbatim from the `goto fail` this replaced: that jump
-         * skipped every assignment to `err`, so this path returns 0 even
-         * though no pool was constructed.  Left as-is because this change is
-         * a structural refactor; the defect is reported separately rather
-         * than silently altered here. */
-        return err;
+        return -ENOMEM;
     }
     std::memset(p, 0, sizeof(*p));
     p->cfg = cfg;
 
-    p->pic = static_cast<VmafPicture *>(std::malloc(sizeof(VmafPicture) * p->cfg.pic_cnt));
+    p->pic = static_cast<VmafPicture *>(malloc(sizeof(VmafPicture) * p->cfg.pic_cnt));
     if (!p->pic) {
         gpu_pool_destruct(p, pool);
         return -ENOMEM;
@@ -161,8 +155,8 @@ int vmaf_gpu_picture_pool_close(VmafGpuPicturePool *pool)
     err |= pthread_mutex_unlock(&pool->busy);
     err |= pthread_mutex_destroy(&pool->busy);
 
-    std::free(pool->pic);
-    std::free(pool);
+    free(pool->pic);
+    free(pool);
     return err;
 }
 
