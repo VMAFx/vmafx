@@ -159,3 +159,65 @@ class TestProcessRunnerLocaleForcing:
             # via the mocked tests. This guards the wiring at least
             # surfaces a deterministic error.
             assert excinfo.value is not None
+
+
+# ---------------------------------------------------------------------------
+# Bug 3 — scanf.py isFileLike exception safety & misc.py check_scanf_match
+# ---------------------------------------------------------------------------
+
+
+class TestIsFileLike:
+    """isFileLike must return True for seekable files and False for non-files
+    or objects whose seek raises IOError, OSError, or ValueError, without raising."""
+
+    def test_file_like_bytesio_returns_true(self):
+        import io
+
+        buf = io.BytesIO(b"hello")
+        assert scanf.isFileLike(buf) is True
+
+    def test_non_file_objects_return_false(self):
+        assert scanf.isFileLike("string") is False
+        assert scanf.isFileLike(123) is False
+        assert scanf.isFileLike(None) is False
+        assert scanf.isFileLike([]) is False
+
+    def test_closed_file_or_failing_seek_returns_false_safely(self):
+        class FailingSeekFile:
+            def read(self):
+                return b""
+
+            def seek(self, offset, whence=0):
+                raise OSError("unseekable stream")
+
+        class ValueErrorSeekFile:
+            def read(self):
+                return b""
+
+            def seek(self, offset, whence=0):
+                raise ValueError("I/O operation on closed file")
+
+        assert scanf.isFileLike(FailingSeekFile()) is False
+        assert scanf.isFileLike(ValueErrorSeekFile()) is False
+
+
+class TestCheckScanfMatchFallback:
+    """check_scanf_match must parse scanf templates and fall back to fnmatch
+    when sscanf raises FormatError or IncompleteCaptureError."""
+
+    def test_scanf_matching_template(self):
+        from vmaf.tools.misc import check_scanf_match
+
+        assert check_scanf_match("frame00000001.yuv", "frame%08d.yuv") is True
+
+    def test_fnmatch_fallback_on_incomplete_or_wildcard(self):
+        from vmaf.tools.misc import check_scanf_match
+
+        # Asterisk wildcard triggers sscanf mismatch and falls back to fnmatch
+        assert check_scanf_match("frame00000001.yuv", "frame*.yuv") is True
+
+    def test_non_matching_returns_false(self):
+        from vmaf.tools.misc import check_scanf_match
+
+        assert check_scanf_match("frame00000001.yuv", "other%08d.yuv") is False
+        assert check_scanf_match("frame00000001.yuv", "*.png") is False

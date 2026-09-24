@@ -1,0 +1,95 @@
+<!-- markdownlint-disable MD013 -->
+
+# 2080 — CodeQL Python Alerts Triage and Exception Semantics
+
+**Date**: 2026-09-24
+**Scope**: Open CodeQL Python alerts on `origin/master`: alert 1275 (`py/empty-except`), alert 1276 (`py/empty-except`), and alert 1239 (`py/test-equals-none`).
+**Status**: Resolved with active exception semantics and identity comparisons.
+
+---
+
+## 1. Problem Statement & Live Alert Inventory
+
+A live scan of open CodeQL Python alerts on `origin/master` (`gh api /repos/VMAFx/vmafx/code-scanning/alerts?tool_name=CodeQL&state=open`) revealed five alerts:
+
+1. **Alert 1275**: `py/empty-except` at `compat/python-vmaf/core/executor.py:42` — `'except' clause does nothing but pass and there is no explanatory comment.`
+2. **Alert 1276**: `py/empty-except` at `compat/python-vmaf/core/executor.py:73` — `'except' clause does nothing but pass and there is no explanatory comment.`
+3. **Alert 1239**: `py/test-equals-none` at `compat/python-vmaf/core/train_test_model.py:311` — `Testing for None should use the 'is' operator.`
+4. **Alerts 1237 / 917**: `py/cyclic-import` in `mcp-server/vmaf-mcp/` — tracked and resolved independently on branch `fix/mcp-cyclic-imports` (ADR-1304).
+
+Alerts 1275 and 1276 were introduced in commit `ef97f72c8` ("bound FIFO producer startup waits (#1531)"), while alert 1239 was pre-existing and temporarily skipped during prior passes due to perceived NumPy array limitations.
+
+---
+
+## 2. Root Cause Analysis & Intended Semantics
+
+### 2.1 Alert 1275 — `_run_fifo_worker` (`compat/python-vmaf/core/executor.py`)
+
+In `_run_fifo_worker`, a child process runs `target(asset, True, open_sem=ready_sem)`. When `target` raises an application exception:
+
+- The child attempts to transmit the formatted traceback back to the parent via an IPC pipe `error_sender.send(traceback.format_exc())`.
+- If the parent process has already closed its end of the pipe (e.g. parent timed out or another worker failed), `error_sender.send()` raises `BrokenPipeError`, `EOFError`, or `OSError`.
+- The prior code caught `(BrokenPipeError, EOFError, OSError)` with an empty `pass` before re-raising the primary exception.
+- **Intended Semantics**: The primary application failure must propagate and terminate the process with exit code 1; it must never be swallowed or replaced by a secondary `BrokenPipeError`. However, merely passing discards the IPC delivery failure and leaks pipe descriptors. The resolved code closes `error_sender` immediately upon IPC failure and attaches diagnostic context (`exc.add_note(...)`) to the primary exception on supported runtimes.
+
+### 2.2 Alert 1276 — `_fifo_worker_failure` (`compat/python-vmaf/core/executor.py`)
+
+In `_fifo_worker_failure`, the parent polls `error_receiver.poll()`:
+
+- In Python multiprocessing, `poll()` returns `True` both when data is available and when the pipe reaches EOF (write-end closed).
+- When the child process terminates abruptly without sending an error payload, `error_receiver.recv()` raises `EOFError`.
+- The prior code caught `EOFError` with `pass`, leaving `child_traceback = None`. If the child's `process.exitcode` had not yet been harvested by `waitpid`, `_fifo_worker_failure` evaluated `child_traceback is None and process.exitcode is None` to `True` and returned `None`. This falsely indicated the worker was still healthy and running, delaying failure detection.
+- **Intended Semantics**: Channel EOF without an error payload means the child process closed its write end without signaling readiness. It is a definite worker failure. The resolved code populates `child_traceback` with `"<unavailable from child error channel (EOF); inspect the inherited child stderr>"`, which immediately triggers `process.join()` and raises `RuntimeError` rather than delaying.
+
+### 2.3 Alert 1239 — `_get_scatter_arrays` (`compat/python-vmaf/core/train_test_model.py`)
+
+In `RegressorMixin._get_scatter_arrays`, `stats["ys_label_stddev"]` may contain Python `None` values (e.g. uncalibrated or missing stimulus standard deviations).
+
+- `np.array(stats["ys_label_stddev"])` creates an array with `dtype=object`.
+- `np.isnan(ys_label_stddev)` raises `TypeError` because `ufunc 'isnan'` does not support object arrays containing `None`.
+- The prior code fell back to `ys_label_stddev[ys_label_stddev == None] = 0 # noqa: E711`. CodeQL flagged `== None` under rule `py/test-equals-none`.
+- **Intended Semantics**: The comparison must use the identity operator `is None` rather than equality `== None`. The resolved code constructs a boolean mask using `[x is None for x in ys_label_stddev.flat].reshape(...)`, zeroes those elements, converts the array to float, and zeroes any floating-point `NaN` values. This completely eliminates `== None`, removes `# noqa: E711`, and preserves exact numerical behavior.
+
+---
+
+## 3. Auditing Nearby Occurrences
+
+An AST search across `compat/python-vmaf/` audited all `except ...: pass` occurrences:
+
+- `compat/python-vmaf/config.py:67`: `except OSError:` during temp file removal already carried an explanatory comment and was clean.
+- `compat/python-vmaf/core/nn_train_test_model.py:177, 190`: `except KeyError:` on initial dataset creation already carried explanatory comments and was clean.
+- `compat/python-vmaf/tools/misc.py:459`: `except (FormatError, IncompleteCaptureError):` in `check_scanf_match` fell through to `fnmatch`; documented with an explicit explanatory comment.
+- `compat/python-vmaf/tools/scanf.py:310`: `except (IOError, OSError, ValueError):` in `isFileLike` fell through to `return False`; documented with an explicit explanatory comment.
+
+---
+
+## 4. Alternatives Considered & Decision Matrix
+
+| Option / Surface | Pros | Cons | Decision |
+| :--- | :--- | :--- | :--- |
+| **Alert 1275** (`_run_fifo_worker`): Swallow IPC failure with `pass` | Zero lines added | Discards IPC delivery context, leaks open descriptor | Rejected |
+| **Alert 1275**: Replace target exception with `BrokenPipeError` | Surfaces IPC error | Masks original application error that caused the exit | Rejected |
+| **Alert 1275**: Close descriptor and attach `add_note` diagnostics (chosen) | Preserves primary exception, releases pipe descriptor, adds channel diagnostic | None | **Adopted** |
+| **Alert 1276** (`_fifo_worker_failure`): Ignore EOF with `pass` | Low-complexity | Delays child exit detection until process exit reap | Rejected |
+| **Alert 1276**: Synthesize child traceback on EOF/error channel (chosen) | Immediate failure propagation, prevents supervisor stalls, descriptive error | None | **Adopted** |
+| **Alert 1239** (`_get_scatter_arrays`): Keep `== None` with `# noqa: E711` | Minimal diff | Violates CodeQL rule, calls `__eq__` on unknown objects | Rejected |
+| **Alert 1239**: Identity mask `x is None` + NaN zeroing (chosen) | Conforms to Python semantics, handles mixed None/NaN, eliminates `# noqa` | None | **Adopted** |
+
+---
+
+## 5. Verification and Governance
+
+- **Focused Unit Tests**:
+  - `python/test/executor_test.py`: Added `test_fifo_worker_broken_pipe_preserves_target_exception`, `test_fifo_worker_failure_on_eof_channel`, `test_fifo_worker_failure_on_oserror_channel`, and `test_fifo_worker_broken_pipe_handles_eof_and_oserror_send_failures`.
+  - `python/test/train_test_model_test.py`: Added `GetScatterArraysTest` with `StrictNoEqualityToNone` sentinel (verifying `== None` is never invoked), mixed None/NaN zeroing, all-None, all-NaN, and error cases.
+  - `python/test/python_harness_scanf_locale_bugs_test.py`: Added `TestIsFileLike` (verifying `(IOError, OSError, ValueError)` safe returns) and `TestCheckScanfMatchFallback`.
+- **CodeQL Evaluation**:
+  - Evaluated against a freshly generated database (`/tmp/test-py-db`) using CodeQL 2.27.0 with `codeql/python-queries/1.8.10/Exceptions/EmptyExcept.ql` and `Expressions/EqualsNone.ql`.
+  - Result: **0 alerts** in `compat/python-vmaf/` (alerts 1275, 1276, and 1239 completely resolved).
+- **Linters**:
+  - `ruff check`: PASS (zero findings).
+  - `black --check`: PASS (zero changes required).
+- **HISS-21 Governance**:
+  - `praetorctl audit`: PASS (zero touched-file findings; 276/276 baseline).
+  - `praetorctl compile-context --verify`: PASS (all targets in sync).
+  - `scripts/ci/check-state-md-rows.sh`: PASS.

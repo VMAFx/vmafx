@@ -6,6 +6,7 @@ import time
 import unittest
 import warnings
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import vmaf.core.executor as executor_module
 from vmaf.core.asset import Asset
@@ -212,6 +213,75 @@ class ExecutorTest(unittest.TestCase):
                 parent.terminate()
             parent.join(5)
             receiver.close()
+
+    def test_fifo_worker_broken_pipe_preserves_target_exception(self):
+        def target(asset, fifo_mode, open_sem=None):
+            raise ValueError("primary target failure")
+
+        sender = MagicMock()
+        sender.send.side_effect = BrokenPipeError("broken pipe to parent")
+
+        with self.assertRaises(ValueError) as cm:
+            executor_module._run_fifo_worker(target, None, None, sender)
+
+        self.assertEqual(str(cm.exception), "primary target failure")
+        self.assertTrue(sender.close.called)
+        if hasattr(cm.exception, "__notes__"):
+            self.assertTrue(
+                any("FIFO error channel delivery failed" in note for note in cm.exception.__notes__)
+            )
+
+    def test_fifo_worker_failure_on_eof_channel(self):
+        receiver = MagicMock()
+        receiver.poll.return_value = True
+        receiver.recv.side_effect = EOFError()
+
+        process = MagicMock()
+        process.exitcode = 1
+
+        error = executor_module._fifo_worker_failure(("mock-stage", process, None, receiver))
+        self.assertIsInstance(error, RuntimeError)
+        self.assertIn("mock-stage", str(error))
+        self.assertIn("exit code 1", str(error))
+        self.assertIn("unavailable from child error channel (EOF)", str(error))
+        self.assertTrue(process.join.called)
+
+    def test_fifo_worker_failure_on_oserror_channel(self):
+        receiver = MagicMock()
+        receiver.poll.return_value = True
+        receiver.recv.side_effect = OSError("bad channel state")
+
+        process = MagicMock()
+        process.exitcode = 1
+
+        error = executor_module._fifo_worker_failure(("mock-stage-oserr", process, None, receiver))
+        self.assertIsInstance(error, RuntimeError)
+        self.assertIn("mock-stage-oserr", str(error))
+        self.assertIn("exit code 1", str(error))
+        self.assertIn("unavailable from child error channel (EOF)", str(error))
+        self.assertTrue(process.join.called)
+
+    def test_fifo_worker_broken_pipe_handles_eof_and_oserror_send_failures(self):
+        for exc_class in (EOFError, OSError):
+
+            def target(asset, fifo_mode, open_sem=None):
+                raise RuntimeError("primary runtime failure")
+
+            sender = MagicMock()
+            sender.send.side_effect = exc_class("delivery failed")
+
+            with self.assertRaises(RuntimeError) as cm:
+                executor_module._run_fifo_worker(target, None, None, sender)
+
+            self.assertEqual(str(cm.exception), "primary runtime failure")
+            self.assertTrue(sender.close.called)
+            if hasattr(cm.exception, "__notes__"):
+                self.assertTrue(
+                    any(
+                        "FIFO error channel delivery failed" in note
+                        for note in cm.exception.__notes__
+                    )
+                )
 
     def _check_default_and_reference_types(self):
         asset = Asset(

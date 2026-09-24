@@ -36,11 +36,17 @@ _FIFO_PROCESS_JOIN_SECONDS = 1.0
 def _run_fifo_worker(target, asset, ready_sem, error_sender):
     try:
         target(asset, True, open_sem=ready_sem)
-    except Exception:
+    except Exception as exc:
         try:
             error_sender.send(traceback.format_exc())
-        except (BrokenPipeError, EOFError, OSError):
-            pass
+        except (BrokenPipeError, EOFError, OSError) as send_err:
+            error_sender.close()
+            # The parent closed or abandoned the error pipe (e.g. parent timeout
+            # or another worker failed). Attach the pipe communication error to
+            # the target exception so diagnostic context is preserved without
+            # replacing the primary failure.
+            if hasattr(exc, "add_note"):
+                exc.add_note(f"FIFO error channel delivery failed: {send_err}")
         raise
     finally:
         error_sender.close()
@@ -70,8 +76,12 @@ def _fifo_worker_failure(worker):
     if error_receiver.poll():
         try:
             child_traceback = error_receiver.recv()
-        except EOFError:
-            pass
+        except (EOFError, OSError):
+            # Error channel reached EOF without an error payload (e.g. child
+            # terminated abruptly before sending or during exit).
+            child_traceback = (
+                "<unavailable from child error channel (EOF); inspect the inherited child stderr>"
+            )
     if child_traceback is None and process.exitcode is None:
         return None
     process.join(timeout=_FIFO_PROCESS_JOIN_SECONDS)

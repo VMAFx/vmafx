@@ -35,6 +35,23 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/codeql-python-alerts-rc1 — active exception semantics and identity comparison for CodeQL Python alerts (2026-09-24)
+
+1. **`compat/python-vmaf/core/executor.py` maintains active exception diagnostics for FIFO workers.**
+   `_run_fifo_worker` catches `(BrokenPipeError, EOFError, OSError)` during traceback transmission,
+   immediately closes `error_sender`, attaches pipe failure diagnostics via `exc.add_note(...)` if available,
+   and re-raises the primary exception without swallowing. `_fifo_worker_failure` treats EOF and OS-level
+   read failures on the diagnostic pipe as immediate failures with synthesized child traceback context,
+   ensuring dead child processes trigger `RuntimeError` rather than delaying on `None`.
+2. **`compat/python-vmaf/core/train_test_model.py` uses elementwise identity comparison `is None`.**
+   In `RegressorMixin._get_scatter_arrays`, `ys_label_stddev` masks `None` using `[x is None for x in ys_label_stddev.flat]`,
+   zeroes those entries, converts the array to float, and zeroes remaining `NaN`s. Future upstream rebases
+   must not restore `ys_label_stddev == None` or `# noqa: E711`.
+3. **`compat/python-vmaf/tools/misc.py` and `tools/scanf.py` preserve explanatory comments and robust error handling.**
+   `check_scanf_match` retains fallback from sscanf `FormatError` / `IncompleteCaptureError` to `fnmatch`,
+   and `isFileLike` safely returns `False` when `seek()` raises `(IOError, OSError, ValueError)`.
+4. **Verification**: `PYTHONPATH=python:compat pytest python/test/executor_test.py python/test/train_test_model_test.py python/test/python_harness_scanf_locale_bugs_test.py`
+   and CodeQL query evaluation against `EmptyExcept.ql` and `EqualsNone.ql`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

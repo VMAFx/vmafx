@@ -94,6 +94,7 @@ Conventions:
 | [2041](2041-thread-pool-backpressure.md) | Thread-pool backpressure and shutdown lifetime | Active | [ADR-1243](../adr/1243-tidy-scoped-baseline-tightening.md) |
 | [2072](2072-pelorus-interop-v022-sync-2026-09-20.md) | Pelorus v0.2.2 interop parser safety sync | Active | [ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md) |
 | [2073](2073-ffmpeg-n9-0-2-stable-refresh.md) | FFmpeg n9.0.2 stable refresh | Active | [ADR-1240](../adr/1240-ffmpeg-release-patch-lifecycle.md) |
+| [2080](2080-codeql-python-alerts-triage-2026-09-24.md) | CodeQL Python alerts triage and exception semantics | Active | — |
 
 | [0053](0053-post-merge-cpu-profile-2026-05-03.md) | Post-merge CPU profile 2026-05-03 — perf top-10 after PRs #310–#321; surfaces 3 new opt targets (convolve widen, SSIM double reduction, VIF gather elimination) | Active | — |
 | [0081](0081-fr-regressor-v2-ensemble-real-corpus-methodology.md) | Real-corpus retrain methodology for the `fr_regressor_v2` deep ensemble — corpus-size sufficiency (9 ref + 70 dis @ `.workingdir2/netflix/`), 9-fold LOSO sizing inherited from the deterministic ADR-0291 baseline, seed-diversity hyperparameters, and the `Seeking_25fps` weak-fold diagnostic for HOLD-on-spread cases. | Active | [ADR-0309](../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md) |
