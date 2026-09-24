@@ -19,7 +19,11 @@
 #ifndef VMAF_LUMINANCE_TOOLS_H_
 #define VMAF_LUMINANCE_TOOLS_H_
 
+#ifdef __cplusplus
+#include <climits>
+#else
 #include <limits.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {

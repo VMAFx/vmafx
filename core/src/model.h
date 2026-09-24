@@ -19,9 +19,13 @@
 #ifndef VMAF_SRC_MODEL_H_
 #define VMAF_SRC_MODEL_H_
 
+#ifdef __cplusplus
+#include <climits>
+#else
 #include <limits.h>
-#include <pthread.h>
 #include <stdbool.h>
+#endif
+#include <pthread.h>
 
 #include "dict.h"
 #include "libvmaf/model.h"

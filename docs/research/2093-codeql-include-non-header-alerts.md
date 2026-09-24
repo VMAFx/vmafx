@@ -59,7 +59,12 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
 - Unprefixed declarations, test-only macros (`DEFAULT_CAMBI_TVI`, `NUM_SCALES`), and test-only enums are removed from `cambi_internal.h` and kept private to the respective test translation units.
 - Removed `#include "feature/cambi.c"` from both `test_cambi.c` and `test_cambi_stage_simd.c`, linking them against `libvmaf`.
 - Every allocation-returning link seam is checked before use. The anti-dithering, decimation, filter-mode, spatial-mask, and generic-decimation tests gather their first failure before releasing each successfully owned picture exactly once; c-values configuration releases contrast arrays when luminance initialization fails.
-- The three touched internal headers are strict clang-tidy clean in both C and C++ consumers. C++ uses aliases while C retains typedef spelling, and internal enum width is explicitly pinned to its existing unsigned-int ABI with reserved maximum sentinels rather than shrinking layouts.
+- All four touched dual-use internal headers (`cambi_internal.h`,
+  `luminance_tools.h`, `model.h`, and `libvmaf_priv.h`) are strict clang-tidy
+  clean when each header is analyzed directly in both C23 and C++26 modes.
+  C++ selects the standard C++ headers and alias spelling while C retains its
+  compatibility headers and typedef spelling. A build-only C/C++ smoke target
+  pins the internal enum widths to their existing unsigned-int ABI.
 - All numerical operation orderings, bounded-search tests, and SIMD stage coverage are preserved; all 25 `test_cambi` tests and 14 `test_cambi_stage_simd` tests pass bit-exact.
 
 ## Alternatives considered
@@ -81,8 +86,23 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
   - `test_cambi`: 25/25 passed
   - `test_cambi_stage_simd`: 14/14 passed
   - Total: 118/118 tests passed.
-- **Fast test suite**: `meson test -C build --suite=fast` ran 147 tests, 147 passed (0 failures).
+- **Fast test suite**: the CPU-only GCC 15 build (`enable_cuda=false`,
+  `enable_sycl=false`, `b_lto=false`) ran 147 tests with
+  `meson test -C build --suite=fast`; 147 passed (0 failures).
 - **Dynamic-symbol gate**: `meson test -C build check_exported_symbols` passed; no internal test seam entered the public ABI.
-- **Netflix golden assertions**: `pytest python/test/` executed 283 tests: 271 passed, 12 skipped, 0 failures. No golden scores moved.
+- **Netflix golden assertions**: the exact `make test-netflix-golden` five-file
+  gate (`quality_runner_test.py`, `feature_extractor_test.py`,
+  `vmafexec_test.py`, `vmafexec_feature_extractor_test.py`, and
+  `result_test.py`) executed 283 tests: 271 passed, 12 skipped, 0 failures. No
+  golden scores moved.
 - **CodeQL non-header scan**: Confirmed zero non-header includes in all seven alerted test files.
-- **Touched-file tidy ratchet**: generated CPU baseline tightened from 739 to 686 warnings. The earlier seam cleanup removed 19 findings (`model.c`, 8 to 0; `test_luminance_tools.cpp`, 11 to 0), this corrective pass removed all 13 findings from `cambi_internal.h` (3 to 0), `luminance_tools.h` (3 to 0), and `model.h` (7 to 0), and the current generator normalized 21 stale exact-Pelorus-mirror findings out of the baseline as required by ADR-1113.
+- **CAMBI implementation prefix**: the 71,030-byte prefix through the existing
+  `vmaf_fex_cambi` descriptor is byte-identical to the merge base (SHA-256
+  `debb1c46961b82cfce380a7a9c8757aa95cf4166a790166f5aaa94f372d30c00`).
+- **Strict tidy evidence**: the exact GCC 15 / clang-tidy 22 CPU ratchet reports
+  686 observed warnings against a 686-warning baseline, zero new diagnostics,
+  zero compile failures, and zero uncited suppressions. Direct primary-header
+  analysis reports zero diagnostics in C23 and C++26 for each of the four
+  dual-use headers; this direct check found C++-mode compatibility-header and
+  typedef diagnostics that ordinary consuming translation units could not
+  expose after the unity includes were removed.

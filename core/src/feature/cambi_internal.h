@@ -28,9 +28,18 @@
 #ifndef LIBVMAF_FEATURE_CAMBI_INTERNAL_H_
 #define LIBVMAF_FEATURE_CAMBI_INTERNAL_H_
 
+#ifdef __cplusplus
+#include <cstddef>
+#include <cstdint>
+
+using std::ptrdiff_t;
+using std::uint16_t;
+using std::uint32_t;
+#else
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#endif
 
 #include "libvmaf/picture.h"
 #include "luminance_tools.h"

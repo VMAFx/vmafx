@@ -139,6 +139,11 @@ and teardown.
   threshold, and duplicate plus descending quick-select inputs. They pin
   termination bounds and partition ordering directly; an end-to-end score alone
   cannot distinguish a hang from a numerically wrong search result.
+- **Internal C/C++ header boundary smoke**: the build-only
+  `internal_header_language_abi_smoke` target compiles `cambi_internal.h`,
+  `luminance_tools.h`, `model.h`, and `libvmaf_priv.h` as direct C and C++
+  consumers. Keep both translation units and their enum-width assertions when
+  changing the CodeQL link seams; unity includes formerly hid this boundary.
 - **GPU tests must skip gracefully when no device present.** Any
   test calling `vmaf_cuda_state_init`, `vmaf_hip_state_init`, or
   equivalent GPU-init helpers must check return value before

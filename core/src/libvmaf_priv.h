@@ -14,15 +14,19 @@
 #ifndef LIBVMAF_PRIV_H
 #define LIBVMAF_PRIV_H
 
+#ifndef __cplusplus
 #include <stdbool.h>
+#endif
 
 #include "feature/feature_collector.h"
 
 #ifdef __cplusplus
-extern "C" {
-#endif
+using VmafContext = struct VmafContext;
 
+extern "C" {
+#else
 typedef struct VmafContext VmafContext;
+#endif
 
 /*
  * Return the feature collector owned by @vmaf, or NULL when @vmaf is NULL.
