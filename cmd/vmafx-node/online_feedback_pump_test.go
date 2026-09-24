@@ -16,6 +16,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -141,12 +142,12 @@ func TestFeedbackClient_RetryQueuedAckIsAccepted(t *testing.T) {
 		))
 	}()
 
-	accepted, err := fc.sendOne(client, bufio.NewReader(client), msg)
+	disposition, err := fc.sendOne(client, bufio.NewReader(client), msg)
 	if err != nil {
 		t.Fatalf("sendOne returned error for admitted retry-queued sample: %v", err)
 	}
-	if !accepted {
-		t.Fatal("sendOne rejected admitted retry-queued sample")
+	if disposition != feedbackSendAccepted {
+		t.Fatalf("sendOne disposition = %d, want accepted", disposition)
 	}
 }
 
@@ -295,6 +296,50 @@ func TestFeedbackClient_RetryableRejectionSurvivesFullQueueAcrossReconnect(t *te
 	}
 	if got := fc.Dropped(); got != 0 {
 		t.Fatalf("Dropped() = %d, want 0; an in-flight retry must not compete for a queue slot", got)
+	}
+}
+
+// TestFeedbackClient_PermanentEncodeFailureDoesNotStarveQueue verifies that a
+// locally unencodable message is terminal: it is counted as dropped, does not
+// force a reconnect, and cannot prevent the next valid message from draining.
+func TestFeedbackClient_PermanentEncodeFailureDoesNotStarveQueue(t *testing.T) {
+	tests := []struct {
+		name  string
+		value float32
+	}{
+		{name: "nan", value: float32(math.NaN())},
+		{name: "positive-infinity", value: float32(math.Inf(1))},
+		{name: "negative-infinity", value: float32(math.Inf(-1))},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sockPath, ready, stopFn := startEchoSidecar(t, 1)
+			defer stopFn()
+			<-ready
+			t.Setenv(feedbackSocketEnv, sockPath)
+
+			fc := NewFeedbackClient(nil)
+			defer fc.Close()
+			if !fc.Send(&FeedbackMessage{JobID: "poison", TrueScore: tt.value}) {
+				t.Fatal("poison message was not enqueued")
+			}
+			if !fc.Send(&FeedbackMessage{JobID: "valid", TrueScore: 75.0}) {
+				t.Fatal("valid message was not enqueued")
+			}
+			fc.Start()
+
+			deadline := time.Now().Add(time.Second)
+			for fc.Delivered() != 1 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if got := fc.Delivered(); got != 1 {
+				t.Fatalf("Delivered() = %d, want 1; poison message starved valid feedback", got)
+			}
+			if got := fc.Dropped(); got != 1 {
+				t.Fatalf("Dropped() = %d, want 1 terminal local encode failure", got)
+			}
+		})
 	}
 }
 

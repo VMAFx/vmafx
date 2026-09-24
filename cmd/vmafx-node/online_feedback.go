@@ -88,6 +88,18 @@ type feedbackAck struct {
 	TrainingError string  `json:"training_error,omitempty"`
 }
 
+// feedbackSendDisposition tells pump whether the current message is complete
+// or must remain pending across a replacement connection.
+type feedbackSendDisposition uint8
+
+const (
+	feedbackSendInvalid feedbackSendDisposition = iota
+	feedbackSendAccepted
+	feedbackSendRejected
+	feedbackSendDropped
+	feedbackSendRetry
+)
+
 // FeedbackClient is a non-blocking Unix-socket client for the online
 // training sidecar.  It is safe for concurrent use by multiple goroutines.
 //
@@ -202,8 +214,8 @@ func (fc *FeedbackClient) Send(msg *FeedbackMessage) bool {
 	}
 }
 
-// Dropped returns the total number of messages dropped due to queue overflow
-// or a disconnected sidecar that is not recovering fast enough.
+// Dropped returns the total number of messages rejected at queue admission or
+// discarded because they could not be encoded for transport.
 func (fc *FeedbackClient) Dropped() int64 { return fc.dropped.Load() }
 
 // Delivered returns the total number of messages successfully sent to the sidecar.
@@ -281,9 +293,9 @@ func (fc *FeedbackClient) dial(ctx context.Context) (net.Conn, error) {
 // retryable rejection so drainLoop can preserve it across reconnects without
 // competing with concurrent producers for a queue slot.
 //
-// A non-nil error means the connection must be replaced. A nil error means ctx
-// was cancelled; any returned pending message is intentionally discarded by
-// the Close contract, which does not flush in-flight or queued feedback.
+// A returned pending message means the connection must be replaced. A nil
+// pending message and nil error mean ctx was cancelled; queued feedback is
+// intentionally discarded by the Close contract.
 //
 // Cancellation is the loop's exit condition and is stated twice on purpose: ctx.Err()
 // ends the loop between messages, and the ctx.Done() arm of the select ends it while the
@@ -304,44 +316,64 @@ func (fc *FeedbackClient) pump(
 			}
 		}
 
-		accepted, err := fc.sendOne(conn, reader, msg)
-		if err != nil {
+		disposition, err := fc.sendOne(conn, reader, msg)
+		switch disposition {
+		case feedbackSendRetry:
+			if err == nil {
+				err = fmt.Errorf("retry disposition without cause")
+			}
 			return msg, fmt.Errorf("send: %w", err)
+		case feedbackSendDropped:
+			fc.dropped.Add(1)
+			if err != nil {
+				fc.log.Warn("sidecar feedback message cannot be encoded — message dropped",
+					slog.String("job_id", msg.JobID),
+					slog.String("err", err.Error()))
+			} else {
+				fc.log.Warn("sidecar feedback message dropped without a specific cause",
+					slog.String("job_id", msg.JobID))
+			}
+		case feedbackSendAccepted:
+			fc.delivered.Add(1)
+		case feedbackSendRejected:
+			// The sidecar answered terminally; preserve the existing accounting
+			// contract by counting neither a delivery nor a local drop.
+		default:
+			return msg, fmt.Errorf("send: invalid disposition %d", disposition)
 		}
 		pending = nil
-		if accepted {
-			fc.delivered.Add(1)
-		}
 	}
 	return pending, nil
 }
 
-// sendOne serialises msg as JSON, writes it to conn, and reads the ACK.
+// sendOne serialises msg as JSON, writes it to conn, and reads the ACK. Only a
+// retry disposition keeps msg pending; a dropped disposition is a permanent
+// local failure, while accepted and rejected dispositions are terminal.
 func (fc *FeedbackClient) sendOne(
 	conn net.Conn,
 	reader *bufio.Reader,
 	msg *FeedbackMessage,
-) (bool, error) {
+) (feedbackSendDisposition, error) {
 	payload, err := json.Marshal(msg)
 	if err != nil {
-		return false, fmt.Errorf("marshal: %w", err)
+		return feedbackSendDropped, fmt.Errorf("marshal: %w", err)
 	}
 	payload = append(payload, '\n')
 
 	if err := conn.SetWriteDeadline(time.Now().Add(feedbackWriteTimeout)); err != nil {
-		return false, fmt.Errorf("set write deadline: %w", err)
+		return feedbackSendRetry, fmt.Errorf("set write deadline: %w", err)
 	}
 	if _, err := conn.Write(payload); err != nil {
-		return false, fmt.Errorf("write: %w", err)
+		return feedbackSendRetry, fmt.Errorf("write: %w", err)
 	}
 
 	// Read ACK (optional — sidecar always sends one per message).
 	if err := conn.SetReadDeadline(time.Now().Add(feedbackWriteTimeout)); err != nil {
-		return false, fmt.Errorf("set read deadline: %w", err)
+		return feedbackSendRetry, fmt.Errorf("set read deadline: %w", err)
 	}
 	line, err := reader.ReadBytes('\n')
 	if err != nil {
-		return false, fmt.Errorf("read ack: %w", err)
+		return feedbackSendRetry, fmt.Errorf("read ack: %w", err)
 	}
 
 	var ack feedbackAck
@@ -350,16 +382,16 @@ func (fc *FeedbackClient) sendOne(
 		fc.log.Debug("sidecar ACK parse error",
 			slog.String("raw", string(line)),
 			slog.String("err", jsonErr.Error()))
-		return false, nil
+		return feedbackSendRejected, nil
 	}
 	if !ack.OK {
 		fc.log.Warn("sidecar rejected message",
 			slog.String("job_id", msg.JobID),
 			slog.String("error", ack.Error))
 		if ack.Retryable {
-			return false, fmt.Errorf("sidecar retryable rejection: %s", ack.Error)
+			return feedbackSendRetry, fmt.Errorf("sidecar retryable rejection: %s", ack.Error)
 		}
-		return false, nil
+		return feedbackSendRejected, nil
 	} else if ack.RetryQueued {
 		fc.log.Warn("sidecar accepted message with training retry queued",
 			slog.String("job_id", msg.JobID),
@@ -370,5 +402,5 @@ func (fc *FeedbackClient) sendOne(
 			slog.String("path", ack.Checkpoint),
 			slog.Int64("step", ack.Step))
 	}
-	return true, nil
+	return feedbackSendAccepted, nil
 }

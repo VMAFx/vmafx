@@ -81,7 +81,10 @@ The standalone Python sidecar implements:
    that in-flight sample locally and retries it ahead of the bounded queue after
    reconnecting, so a concurrent producer cannot consume its queue slot. It does
    not increment the delivered counter until the retry succeeds; the admitted
-   `ok: true`, `retry_queued: true` case still counts as delivered.
+   `ok: true`, `retry_queued: true` case still counts as delivered. A permanent
+   local JSON encoding failure is counted as dropped and skipped on the same
+   connection; only transport ambiguity and explicit retryable ACKs retain an
+   in-flight sample.
 
 The Go transport (`cmd/vmafx-node/online_feedback.go`) separately implements a
 non-blocking `FeedbackClient.Send()` queue with a 1000-entry capacity and a

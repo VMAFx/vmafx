@@ -122,7 +122,10 @@ that unaccepted in-flight sample locally, reconnects, and retries it before
 reading the bounded queue. It therefore cannot be lost when a concurrent sender
 refills the queue, and `delivered` does not increment until the retry succeeds.
 Malformed or otherwise non-retryable input does not carry `retryable: true`.
-This distinction prevents both silent loss and duplicate feedback.
+This distinction prevents both silent loss and duplicate feedback. A local JSON
+encoding failure (for example a non-finite feature or score) is instead
+permanent: the client increments `Dropped()`, keeps the connection open, and
+continues draining so that invalid feedback cannot starve later valid samples.
 
 ---
 
@@ -204,7 +207,7 @@ does not deploy, drive, or observe this trainer.
 
 | Counter | Description |
 |---|---|
-| `Dropped()` | Messages rejected because the in-memory queue was full. |
+| `Dropped()` | Messages rejected because the in-memory queue was full, plus permanent local JSON encoding failures. A non-retryable sidecar rejection is terminal but is not a local drop. |
 | `Delivered()` | Messages acknowledged by the Python server. |
 
 The node logs both values when it stops the drainer. They are not registered as

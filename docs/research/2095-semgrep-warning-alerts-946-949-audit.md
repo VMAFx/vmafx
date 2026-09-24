@@ -42,7 +42,11 @@ All four Python Semgrep findings are removed at source.
    `ok: false`, `retryable: true`; the Go client retains an in-flight rejection
    across reconnects, ahead of its bounded queue, without counting delivery.
    Concurrent queue refill therefore cannot lose the retry, and repeated
-   failures neither lose nor duplicate feedback.
+   failures neither lose nor duplicate feedback. Its send result now explicitly
+   distinguishes retryable transport/ACK failures from permanent local encoding
+   failures. NaN and both infinities increment the drop counter and are skipped
+   on the same connection, so they cannot poison the drainer or starve valid
+   feedback behind them.
    The opset-17 exporter uses tuple arguments plus `dynamic_shapes`. The
    complete suite is warning-clean rather than merely its alert-focused subset.
 
@@ -169,6 +173,7 @@ The socket regression suite exercises:
 | `compat/vmaf/tests/test_decorator_extended.py` | 26 passed, including spawn-process cases |
 | `ai/sidecar/tests/test_socket_permissions.py` | 20 passed on POSIX; namespace-dependent cross-UID case may skip with an explicit reason |
 | `ai/sidecar/tests/` | 104 passed, 1 namespace-dependent skip on Python 3.14.7 / PyTorch 2.14.0 with warnings promoted to errors |
+| Go feedback poison-message regression | NaN, +Inf, and -Inf each count one drop; the following valid message is delivered on the same connection |
 | Semgrep `p/python` on both source files | 0 text findings and 0 SARIF results |
 | Nox | `compat_decorator` executes all 26 decorator tests |
 | Hosted CI | Linux/macOS plus real Windows execution in `build.yml` |

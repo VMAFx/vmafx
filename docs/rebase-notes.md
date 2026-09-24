@@ -96,7 +96,11 @@ these Meson blocks.
    the latter in flight across reconnects and retry it ahead of the bounded
    queue without incrementing `delivered`, while preserving the former as an
    accepted delivery. Never put this retry back into a queue slot that a
-   concurrent producer can refill.
+   concurrent producer can refill. Preserve the explicit Go send disposition:
+   only transport ambiguity and `retryable: true` retain an in-flight sample;
+   permanent local JSON encoding failures increment `dropped`, remain on the
+   current connection, and cannot starve later valid samples. Non-retryable
+   sidecar rejection remains terminal without changing either counter.
    Socket lifecycle regressions signal readiness only after the real `listen()`
    succeeds and surface every server-thread exception to the parent test.
 
