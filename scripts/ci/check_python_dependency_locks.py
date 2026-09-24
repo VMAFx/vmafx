@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import importlib
 import json
 import os
 import re
@@ -26,9 +27,9 @@ from pathlib import Path
 from typing import Any, cast
 
 try:
-    import yaml
+    yaml: Any = importlib.import_module("yaml")
 except ImportError:
-    yaml = None  # type: ignore[assignment]
+    yaml = None
 
 MANIFEST_PATH = Path("requirements/locks/manifest.json")
 HASH_RE = re.compile(r"--hash=sha256:[0-9a-f]{64}(?:\s|$)")
