@@ -26,6 +26,13 @@ wrapper-output schema, and [`README.md`](README.md) for operator usage.
   keys fine; renaming or removing keys requires
   updating `compare.aggregate()` and every test in `tests/test_compare.py`
   in same PR.
+- **`--out-json` is RFC-8259 strict.** Empty competitor aggregates keep
+  `nan` in memory and in the text table, but every non-finite float maps to
+  JSON `null` at the final write boundary and `json.dumps` uses
+  `allow_nan=False`. Preserve
+  `test_main_out_json_is_strict_when_all_wrapper_rows_fail` and
+  `test_render_json_maps_nonfinite_float_fields_to_null`; raw `json.dumps`
+  silently reintroduces the BUG048/A9 regression.
 - **`summary.competitor` = registry key, not display label.** Wrapper
   payloads MUST use exact key from `compare.WRAPPERS` (`fork-fr-regressor`,
   `fork-nr-metric`, `x264-pvmaf`, `dover-mobile`). Version/model detail

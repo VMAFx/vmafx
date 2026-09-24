@@ -28,6 +28,11 @@ Pure Python; no libvmaf C-side changes. See
 - JSON output schema pinned by `ROI_RESULT_KEYS`. Adding fields =
   forward-compatible (consumers ignore unknown keys); removing or
   renaming requires schema bump.
+- Final JSON is RFC-8259 strict. `blend_scores()` rejects non-finite pooled
+  inputs; the CLI maps that `ValueError` to exit 65, writes no result file,
+  and `_emit()` retains `allow_nan=False` as defence in depth. Preserve
+  `test_cli_rejects_nonfinite_vmaf_score`; an uncaught exception or a bare
+  `NaN`/`Infinity` token is the BUG048/A9 regression.
 
 ## Things that are deferred (do not silently implement)
 

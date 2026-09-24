@@ -23,6 +23,7 @@ from .score import ScoreRequest, ScoreResult, run_score
 # Exit status for a saliency-mask materialisation failure. Distinct from any
 # `vmaf` binary exit status so a wrapper can tell the two apart.
 _MASK_FAILURE_EXIT = 64
+_INVALID_SCORE_EXIT = 65
 
 
 def _add_source_args(parser: argparse.ArgumentParser) -> None:
@@ -258,7 +259,7 @@ def _build_payload(
 
 def _emit(ns: argparse.Namespace, payload: dict[str, object]) -> None:
     """Write the record to `--output`, or to stdout when it is unset."""
-    text = json.dumps(payload, indent=2)
+    text = json.dumps(payload, indent=2, allow_nan=False)
     if ns.output is None:
         sys.stdout.write(text + "\n")
     else:
@@ -292,7 +293,11 @@ def main(argv: list[str] | None = None) -> int:
     if masked.exit_status != 0:
         return _report_run_failure("saliency-masked", masked)
 
-    roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
+    try:
+        roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
+    except ValueError as exc:
+        sys.stderr.write(f"vmaf-roi-score: invalid pooled score: {exc}\n")
+        return _INVALID_SCORE_EXIT
     _emit(ns, _build_payload(ns, full, masked, roi))
     return 0
 

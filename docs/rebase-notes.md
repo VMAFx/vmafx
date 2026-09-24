@@ -16,6 +16,22 @@ fail before binding when neither an injected nor canonical adapter exists.  Re-r
 `tests/test_import_graph.py` after resolving any conflict that touches these
 three modules; it walks function-local imports as well as module-level imports,
 matching the dependency edges CodeQL reports.
+## fix/bug048-strict-json — strict tool report boundaries (2026-09-24)
+
+Preserve both halves of BUG048/A9 when resolving changes around the tool
+entry points. `tools/external-bench/compare.py --out-json` keeps missing values
+as `nan` for aggregation and the text table, but `render_json()` maps every
+non-finite aggregate float to JSON `null` and calls `json.dumps` with
+`allow_nan=False`. `vmaf-roi-score` keeps the finite check in
+`blend_scores()`, maps its `ValueError` to exit 65 without writing a report,
+and retains `allow_nan=False` in `_emit()`.
+
+Commit `384d97d03` once replaced both files wholesale and removed these
+boundaries while their docs and Research-0722 survived. Run the two package
+suites, especially the all-wrapper-failure and three non-finite ROI cases,
+after any conflict involving these paths. No public libvmaf or FFmpeg patch
+surface is involved.
+
 ## fix/msvc-strict-fp-flags — compiler-native no-contraction flags (2026-09-23)
 
 `vmaf_fp_model_args` and `vmaf_strict_fp_args` in `core/src/meson.build` are a
