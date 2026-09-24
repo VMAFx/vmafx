@@ -15,9 +15,8 @@
  *  /workspace/python/test/resource, or a $VMAF_MCP_ALLOW entry.
  *
  *  White-box strategy: `validate_path()` is `static`, so this test
- *  #include's the compilation unit directly (the established pattern — see
- *  test_feature_collector.c which #include's feature_collector.c). The
- *  public entry point `vmaf_mcp_compute_vmaf` is macro-renamed before the
+ *  #include's the compilation unit directly. The public entry point
+ *  `vmaf_mcp_compute_vmaf` is macro-renamed before the
  *  include so it does not clash with the copy already linked from libvmaf
  *  when enable_mcp=true.
  *
@@ -39,8 +38,7 @@
 /* Dodge the duplicate-symbol clash with libvmaf's own copy of the public
  * entry point (present when the library is built with enable_mcp=true). */
 #define vmaf_mcp_compute_vmaf vmaf_mcp_compute_vmaf__allowlist_test_dup
-/* White-box include of the CU under test to reach the static validate_path();
- * established pattern, see test_feature_collector.c. */
+/* White-box include of the CU under test to reach the static validate_path(). */
 /* NOLINTNEXTLINE(bugprone-suspicious-include) — white-box test, see above (ADR-0141 / ADR-0278). */
 #include "mcp/compute_vmaf.c"
 #undef vmaf_mcp_compute_vmaf

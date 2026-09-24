@@ -23433,6 +23433,11 @@ proposed follow-up.
   libraries and fail to link with `file format not recognized`.
 
 
+- Restore `feature_collector.cpp` as the single production and test implementation,
+  preserving the mutex, TSan, lifetime, and error-contract fixes that had existed
+  only in the resurrected C twin.
+
+
 - **`feature_extractor.c` — 3 cleanup-path leaks + 1 double-free
   (no-op-today but intent-incorrect).** Identified by c-reviewer
   agent audit 2026-05-30:

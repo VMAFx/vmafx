@@ -37,7 +37,7 @@ Pure Python; no libvmaf C-side changes. See
 ## Things that are deferred (do not silently implement)
 
 - True per-pixel saliency-weighted pooling (Option A). Requires
-  modifying libvmaf's `feature_collector.c`, much heavier ADR process
+  modifying libvmaf's `feature_collector.cpp`, much heavier ADR process
   — keep out of this Option C tool.
 
 ## When editing this directory

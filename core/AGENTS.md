@@ -779,9 +779,9 @@ not as fixed constants.
   `include/libvmaf/libvmaf.h` is frozen), `read_pictures_validate_and_prep`
   (`vmaf_sycl_shared_frame_upload()` takes mutable pictures on SYCL
   build cppcheck never analyses) and `vmaf_feature_collector_unmount_model`
-  (prototype shared with C++ twin `feature/feature_collector.cpp`, which
-  `test_predict` compiles). Drop marker only when its cited constraint is
-  gone. `vmaf_feature_collector_get()` (`libvmaf_priv.h`) takes
+  (the public C declaration fixes the mutable model-pointer signature in
+  `feature/feature_collector.cpp`). Drop marker only when its cited constraint
+  is gone. `vmaf_feature_collector_get()` (`libvmaf_priv.h`) takes
   `const VmafContext *` — keep declaration and definition in step.
 - **PREV_REF references are released only through `fex_release_prev_ref()`**
   and every CPU-pool skip decision goes through `batch_extractor_skip()` /
@@ -791,8 +791,8 @@ not as fixed constants.
 - **`vmaf_ctx_subsystems_init` owns init/teardown chain** for framesync →
   feature collector → extractor vector → thread pools; new subsystem gets
   new label in that function, not in `vmaf_init`.
-- **C translation units keep `NULL`** (ADR-1138): `libvmaf.c`, `predict.c`
-  and `feature/feature_collector.c` carry file-scoped
+- **C translation units keep `NULL`** (ADR-1138): `libvmaf.c` and `predict.c`
+  carry file-scoped
   `NOLINTBEGIN/END(modernize-use-nullptr)` bracket. Never rewrite `NULL` to
   `nullptr` in C sources (MSVC `/std:clatest` does not document it; upstream
   parity), keep `NOLINTEND` line at end of file when appending code.

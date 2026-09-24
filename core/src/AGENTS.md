@@ -141,8 +141,8 @@ locale has been restored/freed; that = macOS-only SIGSEGV shape for
 
 `core/src/metadata_handler.cpp` (previously `metadata_handler.c`) = first
 C++20 internal implementation TU. `metadata_handler.h` carries `extern "C"`
-guards that allow `feature_collector.c` (plain C file) to include header
-and call three functions without link-name-mangling mismatch.
+guards that preserve C linkage for C and C++ callers, including
+`feature_collector.cpp`, without link-name-mangling mismatch.
 
 Never:
 

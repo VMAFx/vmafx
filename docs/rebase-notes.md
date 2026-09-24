@@ -53482,3 +53482,16 @@ Commit `384d97d03` clobbered commit `993c0ef81` (#1559). This restoration recove
   - Without pythonpath: `pytest -c /dev/null -o testpaths=tests mcp-server/vmaf-mcp` fails with `ModuleNotFoundError: No module named 'vmaf_mcp'`.
   - Without binary flag check: `pytest tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py -k test_adr_0543_per_feature_pinned_to_inactive_backend_fails` fails on systems with upstream `/usr/local/bin/vmaf` (exit 255 != 100).
 - Changelog: `changelog.d/fixed/restore-bug048-a12-test-hardening.md`.
+## fix/bug048-feature-collector-duplicate — one collector source (2026-09-24)
+
+`core/src/feature/feature_collector.cpp` is the sole implementation authority.
+Do not restore `feature_collector.c` when resolving an upstream or branch
+conflict. The C++ TU intentionally retains the later C-side mutex coverage for
+model mount/unmount and metadata registration, the complete mounted-model
+pointer snapshot used across lock drops, the unlocked destroy traversal, the
+HISS-01 unwind helpers, and the `-EAGAIN` not-yet-written contract. The public C
+ABI is unchanged through `feature_collector.h`.
+
+`test_feature_collector_source_authority` is the mechanical guard. The deeper
+reasoning and the exact-master compile/object evidence are in
+[Research-2100](research/2100-feature-collector-source-authority-2026-09-24.md).

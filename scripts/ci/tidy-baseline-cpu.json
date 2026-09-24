@@ -304,7 +304,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 653,
+  "total_warnings": 637,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -325,7 +325,6 @@
     "core/src/feature/common/blur_array.c": 6,
     "core/src/feature/common/convolution_internal.h": 8,
     "core/src/feature/feature_characteristics.h": 3,
-    "core/src/feature/feature_collector.cpp": 16,
     "core/src/feature/feature_collector.h": 4,
     "core/src/feature/feature_name.h": 1,
     "core/src/feature/float_adm.c": 4,
@@ -409,5 +408,22 @@
     "core/tools/cli_parse.h": 4,
     "core/tools/vidinput.h": 12
   },
-  "nolint_uncited": {}
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/feature_collector.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/feature_collector.cpp": {
+          "warnings": [
+            16,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e76e9b9d928ebd7fa2e6173a1df8432012e51bcfbb69c6f81a09e2b288b774f1"
+    }
+  ]
 }

@@ -4474,6 +4474,15 @@ test('test_log', test_log, suite : ['fast'])
 test('test_picture', test_picture, suite : ['fast'])
 test('test_picture_v2', test_picture_v2, suite : ['fast'])
 test('test_feature_collector', test_feature_collector, suite : ['fast'])
+
+# BUG-048 section E: the collector has one C++ implementation authority.  This
+# source/build-graph red-cap prevents the memory-safety C twin from being
+# resurrected beside the C++ TU again.
+test('test_feature_collector_source_authority',
+    import('python').find_installation(),
+    args : files('test_feature_collector_source_authority.py'),
+    suite : ['fast'],
+)
 test('test_flush_context_ordering', test_flush_context_ordering, suite : ['fast'])
 test('test_output', test_output, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
@@ -4666,9 +4675,8 @@ test('test_adm_csf_tools_coverage', test_adm_csf_tools_coverage, suite : ['fast'
 # feature_collector.cpp is compiled directly into this test so the
 # non-static internal helpers (aggregate_vector_*, feature_vector_*)
 # declared in feature_collector_internal.h are resolvable at link time.
-# libvmaf includes only feature_collector.c (static helpers); the
-# duplicate-free compilation here is safe — see test_predict for the
-# same pattern.
+# The archive member is not extracted when these direct definitions already
+# satisfy the collector references — see test_predict for the same pattern.
 test_feature_collector_coverage = executable('test_feature_collector_coverage',
     ['test.c', 'test_feature_collector_coverage.c',
      '../src/feature/feature_collector.cpp'],
