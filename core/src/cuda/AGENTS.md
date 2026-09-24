@@ -273,11 +273,20 @@ cuda/
   T-UPSTREAM-1305-CUDA-DRAIN-BATCH-THREAD-GLOBAL-2026-09-03, pinned
   by `core/test/test_cuda_drain_batch.c`).
 
+- **ADR-0982 error-path unwinds and partial-init cleanup (BUG-048 Sec A3)**:
+  - In `picture_cuda.c`: `vmaf_cuda_picture_alloc` zeroes `priv` struct immediately upon allocation (`memset(priv, 0, sizeof(*priv))`). On plane allocation failure (`device_pic_alloc_planes` non-zero), `device_pic_unwind` is invoked with `DEV_PIC_UNWIND_DATA` so that prior successfully allocated device planes are freed (`cuMemFree(pic->data[i])`) and pointers zeroed (`pic->data[i] = NULL`), rather than `DEV_PIC_UNWIND_FINISHED` which skipped plane unwinding.
+  - In `common.c`: in `vmaf_cuda_release()`, failure paths on `cuStreamDestroy`, `cuCtxPopCurrent`, and `cuDevicePrimaryCtxRelease` route via `fail_release_funcs` to ensure `cuda_free_functions(&f)` is invoked and `cu_state` is zeroed on error instead of leaking dynamically loaded driver function handles.
+  - In `drain_batch.c`: in `drain_stream_ensure()`, if `cuCtxPopCurrent` fails after `cuStreamCreateWithPriority`, execution branches to `fail_after_stream` to destroy `g_drain_batch.drain_str` before returning `-ENOTRECOVERABLE`.
+  - Guarded by deterministic mock-driver unit test `core/test/test_cuda_runtime_unwind.c`.
+  - On rebase: maintain these unwinds and never bypass `DEV_PIC_UNWIND_DATA` on plane allocation failures or drop `cuda_free_functions` on `vmaf_cuda_release` error paths.
+
 ## Governing ADRs
 
 - [ADR-0022](../../../docs/adr/0022-inference-runtime-onnx.md) — CUDA execution provider mapping.
 - [ADR-0027](../../../docs/adr/0027-non-conservative-image-pins.md) — CUDA 13.2 + experimental flags.
 - [ADR-0131](../../../docs/adr/0131-port-netflix-1382-cumemfree.md) —
+- [ADR-0982](../../../docs/adr/0982-gpu-runtime-bug-audit-round-26.md) —
+  GPU runtime bug audit — round 26 (init/teardown leak sweep).
   `vmaf_cuda_picture_free` synchronous free.
 - [ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md) —
   `float_adm_cuda` requires `--fmad=false` on its fatbin to

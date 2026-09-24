@@ -226,6 +226,35 @@ it does not perform the promotion.
    without relaxing global tidy configuration or adding baseline debt. Macro locals in
    `VIF_VERT_MADD5` use compliant non-reserved identifiers (`t0lo`–`t4hi`). Do not extract
    helper functions or remove the suppression on rebase.
+## fix/silent-revert-restorations-1 — restore ADR-0982 GPU partial-init leak unwinds (BUG-048 Sec A3) (2026-09-23)
+
+1. **ADR-0982 partial-init unwinds and error handling restored in CUDA and SYCL runtimes.**
+   PR #503 (`fbde2f91e`) originally implemented ADR-0982 to fix resource leaks on error
+   paths in GPU runtime initialization and teardown, but squash merge PR #504 (`a12373faa`)
+   silently reverted these changes. This branch restores the missing unwinds:
+   - `core/src/cuda/picture_cuda.c`: `vmaf_cuda_picture_alloc()` zeroes `priv` struct immediately
+     upon allocation (`memset(priv, 0, sizeof(*priv))`) to ensure NULL sentinels for unwinds.
+     On plane allocation failure (`device_pic_alloc_planes() != 0`), `device_pic_unwind()` is
+     called with `DEV_PIC_UNWIND_DATA` so that prior successfully allocated device planes are freed
+     (`cuMemFree(pic->data[i])`) and their pointers set to NULL, preventing plane memory leaks.
+   - `core/src/cuda/common.c`: in `vmaf_cuda_release()`, failure paths for `cuStreamDestroy`,
+     `cuCtxPopCurrent`, and `cuDevicePrimaryCtxRelease` route via `fail_release_funcs` so that
+     `cuda_free_functions(&f)` is executed and `cu_state` zeroed, rather than leaking the dlopen'd
+     driver table on release errors.
+   - `core/src/cuda/drain_batch.c`: in `drain_stream_ensure()`, if `cuCtxPopCurrent` fails after
+     stream creation, `fail_after_stream` is taken to destroy `g_drain_batch.drain_str` with
+     `cuStreamDestroy` before returning `-ENOTRECOVERABLE`.
+   - `core/src/sycl/common.cpp`: in `vmaf_sycl_graph_register()`, `state->combined_queue` is
+     allocated before incrementing `state->num_graph_extractors` so a queue allocation failure
+     does not leave a half-registered extractor entry.
+2. **Guarded by deterministic mock-driver regression test.**
+   `core/test/test_cuda_runtime_unwind.c` compiles against a simulated in-memory `CudaFunctions`
+   table and verifies that plane allocation failures unwind all previously allocated planes
+   without hardware GPU requirements, running in the default fast test suite.
+3. **Rebase resolution:**
+   Upstream Netflix does not carry these unwinds. When syncing with upstream or resolving
+   conflicts in `picture_cuda.c` or `common.c`, keep fork's `DEV_PIC_UNWIND_DATA` stage on plane
+   allocation failures and the `fail_release_funcs` table cleanup in `vmaf_cuda_release()`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

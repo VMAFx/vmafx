@@ -2201,6 +2201,20 @@ test('test_gpu_picture_pool', test_gpu_picture_pool, suite : ['fast', 'gpu'])
 test('test_cuda_pic_preallocation', test_cuda_pic_preallocation, suite : ['fast', 'gpu'])
 test('test_cuda_drain_batch', test_cuda_drain_batch, suite : ['fast'])
 
+# Error-path unwinds of the CUDA runtime (ADR-0982, restored after #504:
+# docs/state.md T-GPU-ADR0982-REVERTED-BY-504-2026-09-18). Drives
+# picture_cuda.c / common.c / drain_batch.c through a table of fake driver
+# entry points, so it needs the nv-codec headers but no driver or device and
+# is deliberately NOT in the 'gpu' suite. No --wrap, so it also runs under LTO.
+test_cuda_runtime_unwind = executable('test_cuda_runtime_unwind',
+    ['test.c', 'test_cuda_runtime_unwind.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_runtime_unwind', test_cuda_runtime_unwind, suite : ['fast'])
+
 # The flush drain loop must terminate (T-CUDA-SINGLE-FRAME-HANG-2026-09-05).
 # Stub-driven, so it needs no CUDA device and no nvcc.
 test_cuda_single_frame_flush = executable('test_cuda_single_frame_flush',
