@@ -79,7 +79,7 @@ their natural scoring seams:
 | `nonfinite_score.h` | Float and integer VIF ratios/debug atoms, SSIM reductions/dB conversion, hidden MS-SSIM L/C/S atoms, and multi-value collector emission validate the complete score set before the first write; CPU, CUDA, HIP, SYCL and Metal hosts use the same ordering and failure contract. The ADR-1221 unclipped perfect-score infinity is the sole intentional non-finite output. |
 | `ssimulacra2_score.h` | Edge-difference splitting preserves non-finite evidence and the final polynomial never maps it to `100.0`; scalar, SIMD, CUDA, HIP, SYCL and Metal hosts use the same helper. |
 | `transnet_v2_score.h` | Logit-to-probability/flag conversion validates before writing either output. |
-| `predict.c::piecewise_linear_mapping` | Rejects a non-finite input before assigning the old `0.0` default. |
+| `predict.c::predict_validate_finite` and `piecewise_linear_mapping` | Reject raw, polynomial and piecewise non-finite predictions before the old `0.0` default or collector publication; the production diagnostic names the frame and value exactly once. |
 
 All helpers publish output atomically: on `-EINVAL`, caller-owned output values
 remain unchanged. This gives the regression tests a deterministic injection

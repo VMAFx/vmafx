@@ -31,7 +31,12 @@ Three tests were first run against bug-preserving helper extractions:
 Each test failed before the finite guard and passes after it. They also cover
 infinities, unchanged caller outputs on failure, finite ratios and thresholds,
 ADM's legitimate flat-frame result, SSIMULACRA2's finite sign split, and the
-zero-logit TransNet threshold.
+zero-logit TransNet threshold. The aggregate-prediction regression also drives
+`vmaf_predict_score_at_index` with a non-finite feature and intercepts its
+direct-source-inclusion diagnostic seam, proving exactly one diagnostic carries
+the stage, frame and value before the path leaves the caller output unchanged
+and publishes no model score. Normal builds take the adjacent `vmaf_log` branch
+with the human-readable warning format.
 
 ## Backend scope
 
@@ -103,5 +108,5 @@ also checks its host and shader sources for the removed perfect-score fallbacks.
 The backend-twin edits are the same mechanical helper substitution in files
 that carry historical HISS debt. The local governance gate was therefore run
 with `PRAETOR_TOUCHED_DEBT_DELTA_REASON` set to that exact parity rationale;
-the stricter debt-delta audit passes at 268 active findings against the 276
+the stricter debt-delta audit passes at 267 active findings against the 276
 finding baseline, with no new debt.

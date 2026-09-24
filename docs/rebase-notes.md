@@ -52678,7 +52678,10 @@ flat-frame `0/0` ratio remains a perfect `1.0`; nonzero-over-zero still fails.
 Keep the raw ADM aggregate check before its precision floor: moving it after
 the ordered comparison lets negative infinity become zero.
 `piecewise_linear_mapping` likewise checks before assigning its old `0.0`
-default.
+default. The production prediction path keeps `predict_validate_finite` after
+denormalization and after the polynomial and piecewise stages so it warns once
+with the frame and value before collector publication; do not move that check
+into the per-segment loop.
 
 The new `nonfinite_score.h` seam is also load-bearing. CPU, CUDA, HIP, SYCL and
 Metal VIF, ADM, SSIM and MS-SSIM hosts validate all enabled values before their
@@ -52698,7 +52701,7 @@ mapping for scalar, AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and Metal. Do
 not re-inline one backend's old ordered comparisons: both are false for NaN and
 the old final `else` returned the perfect `100.0`.
 
-The helper extractions reduce the generated HISS baseline from 276 to 268
+The helper extractions reduce the generated HISS baseline from 276 to 267
 infractions. Preserve the downward `.standards-baseline.json` ratchet and the
 matching managed count in `README.md`; regenerate with the pinned `praetorctl`
 instead of restoring stale line fingerprints during a rebase.

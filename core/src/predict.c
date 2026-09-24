@@ -178,6 +178,19 @@ static int piecewise_linear_mapping(double x, VmafPoint *knots, unsigned n_knots
     return 0;
 }
 
+static int predict_validate_finite(double value, unsigned index, const char *stage)
+{
+    if (isfinite(value))
+        return 0;
+#ifdef VMAF_PREDICT_TEST_NONFINITE_LOG
+    VMAF_PREDICT_TEST_NONFINITE_LOG(VMAF_LOG_LEVEL_WARNING, stage, index, value);
+#else
+    vmaf_log(VMAF_LOG_LEVEL_WARNING,
+             "predict: non-finite %s at frame %u (value=%g), failing frame\n", stage, index, value);
+#endif
+    return -EINVAL;
+}
+
 /*  Reproducing the logic in quality_runner.VmafQualityRunner.transform_score().
     Transform final quality score in the following optional steps (in this
     order):
@@ -189,7 +202,8 @@ static int piecewise_linear_mapping(double x, VmafPoint *knots, unsigned n_knots
     3) rectification, supporting 'out_lte_in' (output is less than or equal
     to input) and 'out_gte_in' (output is greater than or equal to input).
  */
-static int transform(const VmafModel *model, double *y_in, enum VmafModelFlags flags)
+static int transform(const VmafModel *model, double *y_in, enum VmafModelFlags flags,
+                     unsigned index)
 {
     if (!model->score_transform.enabled)
         return 0;
@@ -214,14 +228,21 @@ static int transform(const VmafModel *model, double *y_in, enum VmafModelFlags f
         y_out = y_stage;
     }
 
+    int err = predict_validate_finite(y_out, index, "score transform");
+    if (err)
+        return err;
+
     // piecewise-linear mapping
     y_stage = y_out;
     if (model->score_transform.knots.enabled) {
         /* Propagate error rather than silently overwriting y_in with 0 (the
          * out-param defaults to 0.0 on the early-error path inside
          * piecewise_linear_mapping).  Adversarial audit 2026-05-31. */
-        const int err = piecewise_linear_mapping(y_stage, model->score_transform.knots.list,
-                                                 model->score_transform.knots.n_knots, &y_out);
+        err = piecewise_linear_mapping(y_stage, model->score_transform.knots.list,
+                                       model->score_transform.knots.n_knots, &y_out);
+        if (err)
+            return err;
+        err = predict_validate_finite(y_out, index, "piecewise score");
         if (err)
             return err;
     }
@@ -558,7 +579,11 @@ int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_
     if (err)
         return err;
 
-    err = transform(model, &prediction, flags);
+    err = predict_validate_finite(prediction, index, "model score");
+    if (err)
+        return err;
+
+    err = transform(model, &prediction, flags, index);
     if (err)
         return err;
 
@@ -639,9 +664,9 @@ static void bootstrap_compute_statistics(const VmafModelCollection *model_collec
 /* Apply the model's score transform, then its clip, to one value. Propagates
  * the first failure (a malformed piecewise-linear knot list) instead of
  * discarding it. CERT ERR33-C / Power-of-10 rule 7. */
-static int transform_and_clip(const VmafModel *model, double *value)
+static int transform_and_clip(const VmafModel *model, double *value, unsigned index)
 {
-    const int err = transform(model, value, 0);
+    const int err = transform(model, value, 0, index);
     if (err)
         return err;
     clip(model, value, 0);
@@ -652,17 +677,18 @@ static int transform_and_clip(const VmafModel *model, double *value)
  * finite-difference probes in the original upstream order; the first
  * failure short-circuits the rest. */
 static int bootstrap_transform_and_clip(const VmafModel *model, VmafModelCollectionScore *score,
-                                        double *score_plus_delta, double *score_minus_delta)
+                                        double *score_plus_delta, double *score_minus_delta,
+                                        unsigned index)
 {
-    int err = transform_and_clip(model, &score->bootstrap.bagging_score);
+    int err = transform_and_clip(model, &score->bootstrap.bagging_score, index);
     if (!err)
-        err = transform_and_clip(model, &score->bootstrap.ci.p95.lo);
+        err = transform_and_clip(model, &score->bootstrap.ci.p95.lo, index);
     if (!err)
-        err = transform_and_clip(model, &score->bootstrap.ci.p95.hi);
+        err = transform_and_clip(model, &score->bootstrap.ci.p95.hi, index);
     if (!err)
-        err = transform_and_clip(model, score_plus_delta);
+        err = transform_and_clip(model, score_plus_delta, index);
     if (!err)
-        err = transform_and_clip(model, score_minus_delta);
+        err = transform_and_clip(model, score_minus_delta, index);
     return err;
 }
 
@@ -727,7 +753,8 @@ static int vmaf_bootstrap_predict_score_at_index(VmafModelCollection *model_coll
                                      &score_minus_delta);
 
         const VmafModel *model = model_collection->model[0];
-        err = bootstrap_transform_and_clip(model, score, &score_plus_delta, &score_minus_delta);
+        err = bootstrap_transform_and_clip(model, score, &score_plus_delta, &score_minus_delta,
+                                           index);
         if (!err) {
             const double delta = 0.01;
             const double slope = (score_plus_delta - score_minus_delta) / (2.0 * delta);

@@ -14,5 +14,5 @@
   SSIM/MS-SSIM remains unchanged. See ADR-1302.
 - The Netflix golden gate is unchanged at `271 passed, 12 skipped`, and the
   touched clang-tidy warning allowances are unchanged. The generated HISS
-  baseline tightens from 276 to 268 after the helper extractions remove eight
+  baseline tightens from 276 to 267 after the helper extractions remove nine
   infractions; no Netflix golden assertion changes.

@@ -136,9 +136,11 @@ static char *test_vif_production_emitter_rejects_atomically(void)
     VmafFeatureCollector *feature_collector = NULL;
     mu_assert("collector initialises", vmaf_feature_collector_init(&feature_collector) == 0);
 
-    const double scores[8] = {1.0, 1.0, NAN, 1.0, 1.0, 1.0, 1.0, 1.0};
-    const int err =
-        vmaf_vif_emit_scale_scores(feature_collector, NULL, "test_vif", scores, 0, NULL, 11u);
+    const VmafVifScoreSet scores = {
+        .scale = {1.0, 1.0, NAN, 1.0, 1.0, 1.0, 1.0, 1.0},
+    };
+    const int err = vmaf_vif_emit_scores(feature_collector, NULL, "test_vif", &scores,
+                                         VMAF_VIF_FLOAT_NAMES, 11u);
     mu_assert("non-finite VIF scale fails with EINVAL", err == -EINVAL);
 
     double published = 0.0;
@@ -154,9 +156,11 @@ static char *test_vif_scale_zero_rejects_without_publication(void)
     VmafFeatureCollector *feature_collector = NULL;
     mu_assert("collector initialises", vmaf_feature_collector_init(&feature_collector) == 0);
 
-    const double scores[8] = {NAN, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
-    const int err =
-        vmaf_vif_emit_scale_scores(feature_collector, NULL, "test_vif", scores, 0, NULL, 12u);
+    const VmafVifScoreSet scores = {
+        .scale = {NAN, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+    };
+    const int err = vmaf_vif_emit_scores(feature_collector, NULL, "test_vif", &scores,
+                                         VMAF_VIF_FLOAT_NAMES, 12u);
     mu_assert("non-finite VIF scale zero fails with EINVAL", err == -EINVAL);
 
     double published = 0.0;
