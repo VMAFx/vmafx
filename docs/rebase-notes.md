@@ -52684,3 +52684,25 @@ to an exception.
 - Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
   tests/test_coverage_round4.py::test_auth_413_on_large_body`.
 - Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.
+
+## fix/bug048-ai-cli-helpers — restore shared AI CLI setup (2026-09-24)
+
+Twelve fork-local scripts were migrated to ADR-0680/0681 in `d02922fc2` and
+`cc4ea5014`, then silently returned to their older bodies in `d170ef86a`.
+Preserve the current versions' shared setup through rebases:
+
+- bootstrap with `ai/scripts/_script_bootstrap.py`, never a local
+  `sys.path.insert` block;
+- use `make_argument_parser` and `collect_cli_argv`, and pass the normalized
+  vector to both parsing and run provenance;
+- pass `include_repo_root=True` when the script imports `ai.*`; and
+- keep `ai/tests/test_ai_cli_helper_restoration.py` covering the exact twelve
+  restored files with AST assertions that are insensitive to formatting.
+
+No rebase impact outside fork-authored tiny-AI scripts. No alternatives:
+only-one-way restoration of accepted ADR-0680/0681 behavior. The smoke command
+is `python -m pytest ai/tests/test_ai_cli_helper_restoration.py
+ai/tests/test_eval_report_run_provenance.py
+ai/tests/test_legacy_eval_report_run_provenance.py ai/tests/test_qat_smoke.py
+ai/tests/test_ptq_scripts.py ai/tests/test_measure_quant_drop_per_ep.py
+ai/tests/test_dnn_exporter_run_provenance.py -q`.

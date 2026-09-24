@@ -21,22 +21,29 @@ canonical Netflix-corpus comparison documented in ADR-0203.
 
 from __future__ import annotations
 
-import argparse
 import os
 import sys
 import time
+from argparse import Namespace
 from pathlib import Path
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 # Reuse the existing helpers — same constants, same load_session
 # external-data workaround, same per-clip cache loader.
 from ai.scripts.eval_loso_mlp_small import CLIPS, _eval, _load_clip, _load_session  # noqa: E402
+
+# isort: split
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 ARCHS = ("mlp_small", "mlp_medium", "linear")
 
@@ -114,13 +121,13 @@ def _markdown(report: dict) -> str:
                 lines.append(f"| {clip} | — | — | — | — |")
                 continue
             lines.append(
-                f"| {clip} | {m['n']} | " f"{m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |"
+                f"| {clip} | {m['n']} | {m['plcc']:.4f} | {m['srocc']:.4f} | {m['rmse']:.3f} |"
             )
     return "\n".join(lines) + "\n"
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
+def _parse_args(raw_argv: list[str]) -> Namespace:
+    ap = make_argument_parser()
     ap.add_argument(
         "--data-root",
         type=Path,
@@ -147,8 +154,10 @@ def main() -> int:
         type=Path,
         default=REPO_ROOT / "runs" / "loso_eval",
     )
-    args = ap.parse_args()
+    return ap.parse_args(raw_argv)
 
+
+def _run(args: Namespace, raw_argv: list[str]) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     if not args.data_root.is_dir():
         print(f"error: data-root not found: {args.data_root}", file=sys.stderr)
@@ -170,7 +179,7 @@ def main() -> int:
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=sys.argv,
+            argv=raw_argv,
             args=args,
             inputs={
                 "data_root": args.data_root,
@@ -190,6 +199,11 @@ def main() -> int:
         f.write(_markdown(report))
     print(f"[eval] wrote {md_out}", flush=True)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    return _run(_parse_args(raw_argv), raw_argv)
 
 
 if __name__ == "__main__":

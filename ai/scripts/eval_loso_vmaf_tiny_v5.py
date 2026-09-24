@@ -20,20 +20,26 @@ digest.
 
 from __future__ import annotations
 
-import argparse
-import sys
 import time
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train  # noqa: E402
+
+# isort: split
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 
 def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
@@ -137,8 +143,8 @@ def _validate_and_stamp_teacher(df: Any, name: str, assume_teacher: str | None) 
     return teacher
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser()
+def _parse_args(raw_argv: list[str]) -> Namespace:
+    ap = make_argument_parser()
     ap.add_argument(
         "--parquet-base", type=Path, required=True, help="4-corpus parquet (NF+KV+BVI A+B+C+D)."
     )
@@ -155,8 +161,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(argv)
+    return ap.parse_args(raw_argv)
 
+
+def _load_inputs(args: Namespace) -> tuple[Any, Any, str]:
     import pandas as pd
 
     base = pd.read_parquet(args.parquet_base)
@@ -184,10 +192,14 @@ def main(argv: list[str] | None = None) -> int:
     combined = pd.concat([base, extra], ignore_index=True, sort=False)
 
     print(
-        f"[loso-v5] base_rows={len(base)} extra_rows={len(extra)} "
-        f"combined_rows={len(combined)}",
+        f"[loso-v5] base_rows={len(base)} extra_rows={len(extra)} combined_rows={len(combined)}",
         flush=True,
     )
+    return base, combined, teacher_base
+
+
+def _run(args: Namespace, raw_argv: list[str]) -> int:
+    base, combined, teacher_base = _load_inputs(args)
 
     t0 = time.monotonic()
     print("\n=== v2 baseline (mlp_small on 4-corpus) ===", flush=True)
@@ -223,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
+            argv=raw_argv,
             args=args,
             inputs={
                 "parquet_base": args.parquet_base,
@@ -235,6 +247,11 @@ def main(argv: list[str] | None = None) -> int:
     write_manifest_json(args.out_json, report)
     print(f"[loso-v5] wrote {args.out_json}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    return _run(_parse_args(raw_argv), raw_argv)
 
 
 if __name__ == "__main__":  # pragma: no cover

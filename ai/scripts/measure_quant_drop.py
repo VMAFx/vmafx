@@ -27,17 +27,22 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
@@ -178,9 +183,8 @@ def _gate_pair(fp32: Path, int8: Path, budget: float, model_id: str) -> dict[str
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    parser = argparse.ArgumentParser(description=__doc__)
+def _parse_args(raw_argv: list[str]) -> Namespace:
+    parser = make_argument_parser(description=__doc__)
     parser.add_argument("onnx", nargs="?", type=Path, help="Path to fp32 ONNX (default: --all)")
     parser.add_argument(
         "--all", action="store_true", help="Iterate every quantised model in the registry"
@@ -222,7 +226,75 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional JSON gate report with ADR-0661 run provenance.",
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv)
+
+
+def _write_gate_report(
+    args: Namespace,
+    raw_argv: list[str],
+    results: list[dict[str, Any]],
+    ok: bool,
+    inputs: dict[str, object],
+) -> None:
+    if args.out_json is None:
+        return
+    write_manifest_json(
+        args.out_json,
+        {
+            "gate_pass": ok,
+            "models": results,
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs=inputs,
+                outputs={"report": args.out_json},
+            ),
+        },
+    )
+
+
+def _run_pair(args: Namespace, raw_argv: list[str]) -> int:
+    fp32 = args.fp32.resolve()
+    int8 = args.int8.resolve()
+    stem = fp32.name[: -len(".onnx")] if fp32.name.endswith(".onnx") else fp32.name
+    model_id = args.model_id or stem
+    result = _gate_pair(fp32, int8, float(args.budget), model_id)
+    _write_gate_report(args, raw_argv, [result], bool(result["ok"]), {"fp32": fp32, "int8": int8})
+    return 0 if result["ok"] else 1
+
+
+def _run_all(args: Namespace, raw_argv: list[str], reg: dict[str, Any]) -> int:
+    results = [_gate_one(model) for model in reg["models"]]
+    ok = all(bool(result["ok"]) for result in results)
+    _write_gate_report(args, raw_argv, results, ok, {"registry": REGISTRY})
+    return 0 if ok else 1
+
+
+def _run_registry_target(args: Namespace, raw_argv: list[str], reg: dict[str, Any]) -> int:
+    try:
+        target = str(args.onnx.resolve().relative_to(REPO_ROOT / "model" / "tiny"))
+    except ValueError:
+        print(f"input must live under {REPO_ROOT / 'model' / 'tiny'}: {args.onnx}", file=sys.stderr)
+        return 2
+    for model in reg["models"]:
+        if model["onnx"] != target:
+            continue
+        result = _gate_one(model)
+        _write_gate_report(
+            args,
+            raw_argv,
+            [result],
+            bool(result["ok"]),
+            {"registry": REGISTRY, "model": args.onnx.resolve()},
+        )
+        return 0 if result["ok"] else 1
+    print(f"no registry entry for {target}", file=sys.stderr)
+    return 2
+
+
+def _run(args: Namespace, raw_argv: list[str]) -> int:
 
     if (args.fp32 is None) != (args.int8 is None):
         print("--fp32 and --int8 must be given together", file=sys.stderr)
@@ -234,28 +306,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
-        fp32 = args.fp32.resolve()
-        int8 = args.int8.resolve()
-        stem = fp32.name[: -len(".onnx")] if fp32.name.endswith(".onnx") else fp32.name
-        model_id = args.model_id or stem
-        result = _gate_pair(fp32, int8, float(args.budget), model_id)
-        if args.out_json is not None:
-            write_manifest_json(
-                args.out_json,
-                {
-                    "gate_pass": bool(result["ok"]),
-                    "models": [result],
-                    "run_provenance": build_run_provenance(
-                        entrypoint=SCRIPT_PATH,
-                        repo_root=REPO_ROOT,
-                        argv=raw_argv,
-                        args=args,
-                        inputs={"fp32": fp32, "int8": int8},
-                        outputs={"report": args.out_json},
-                    ),
-                },
-            )
-        return 0 if result["ok"] else 1
+        return _run_pair(args, raw_argv)
 
     try:
         reg = _load_registry()
@@ -264,53 +315,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.all or args.onnx is None:
-        results = [_gate_one(m) for m in reg["models"]]
-        ok = all(bool(result["ok"]) for result in results)
-        if args.out_json is not None:
-            write_manifest_json(
-                args.out_json,
-                {
-                    "gate_pass": ok,
-                    "models": results,
-                    "run_provenance": build_run_provenance(
-                        entrypoint=SCRIPT_PATH,
-                        repo_root=REPO_ROOT,
-                        argv=raw_argv,
-                        args=args,
-                        inputs={"registry": REGISTRY},
-                        outputs={"report": args.out_json},
-                    ),
-                },
-            )
-        return 0 if ok else 1
+        return _run_all(args, raw_argv, reg)
+    return _run_registry_target(args, raw_argv, reg)
 
-    try:
-        target = str(args.onnx.resolve().relative_to(REPO_ROOT / "model" / "tiny"))
-    except ValueError:
-        print(f"input must live under {REPO_ROOT / 'model' / 'tiny'}: {args.onnx}", file=sys.stderr)
-        return 2
-    for m in reg["models"]:
-        if m["onnx"] == target:
-            result = _gate_one(m)
-            if args.out_json is not None:
-                write_manifest_json(
-                    args.out_json,
-                    {
-                        "gate_pass": bool(result["ok"]),
-                        "models": [result],
-                        "run_provenance": build_run_provenance(
-                            entrypoint=SCRIPT_PATH,
-                            repo_root=REPO_ROOT,
-                            argv=raw_argv,
-                            args=args,
-                            inputs={"registry": REGISTRY, "model": args.onnx.resolve()},
-                            outputs={"report": args.out_json},
-                        ),
-                    },
-                )
-            return 0 if result["ok"] else 1
-    print(f"no registry entry for {target}", file=sys.stderr)
-    return 2
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    return _run(_parse_args(raw_argv), raw_argv)
 
 
 if __name__ == "__main__":
