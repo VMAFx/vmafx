@@ -383,10 +383,9 @@ contract; `core/test/test_picture_pool_error_paths.c`,
 `test_picture_pool_cpp_error_paths.c` and `test_gpu_picture_pool_partial_init.c`
 pin it.
 
-`vmaf_gpu_picture_pool_init` keeps one behaviour verbatim from its old ladder:
-on `malloc` failure it returns 0 with `*pool == nullptr`, because the old
-`goto fail` skipped every `err` assignment. Latent defect, preserved on purpose
-by a structural-only change. Fix it in its own commit with a regression test.
+`vmaf_gpu_picture_pool_init` returns `-ENOMEM` on `malloc` failure with `*pool == nullptr`.
+Never return success (`0`) or leave `*pool` un-cleared on pool struct or picture array
+allocation failure. Pinned by `core/test/test_gpu_picture_pool_alloc_failure.c` (#1455).
 
 `predict.c` and `interop/pelorus_interop.c` hold scoring arithmetic. Helpers
 there were cut at statement boundaries only. Never split one arithmetic

@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/gpu-picture-pool-alloc-error — handle pool allocation failure with -ENOMEM (2026-09-24)
+
+When `malloc(sizeof(*p))` fails in `vmaf_gpu_picture_pool_init` (`core/src/gpu_picture_pool.cpp`),
+the function previously returned `err` (initialized to 0) while setting `*pool = nullptr`.
+This incorrectly signaled success to callers with a null pool handle. The path now returns
+`-ENOMEM` directly while preserving `*pool = nullptr`.
+
+Preserve the standard `malloc`/`free` calls in `gpu_picture_pool.cpp` and the force-included
+allocator interposer in `core/test/test_gpu_picture_pool_alloc_interpose.h`. Do not resolve
+rebase conflicts by switching `malloc` back to `std::malloc`, as this breaks preprocessor
+interposition in the deterministic regression test target `test_gpu_picture_pool_alloc_failure`
+without brittle production-only hooks. Re-run `test_gpu_picture_pool_alloc_failure`
+(`suite: fast`) after resolving any rebase conflicts touching `core/src/gpu_picture_pool.cpp`.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve
