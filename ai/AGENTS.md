@@ -786,9 +786,10 @@ scripts:
   staging file would corrupt it without error.
 - **ffprobe skipped when sidecar has geometry (Research-0135 Win 2).**
   `_geometry_from_sidecar(meta)` reads `chug_width_manifest`,
-  `chug_height_manifest`, `chug_framerate_manifest`, and optionally
-  `chug_bit_depth` from CHUG JSONL sidecar row. Sidecar metadata already
-  loaded in `jsonl_meta` for enrichment; no extra I/O needed. Any required
+  `chug_height_manifest`, `chug_framerate_manifest`, and
+  `chug_bit_depth` from CHUG JSONL sidecar row. Sidecar metadata is
+  loaded in `_load_jsonl_metadata`, which must include `chug_bit_depth` in its
+  `keep` allowlist so 10-bit clips decode as `yuv420p10le`. Any required
   field absent (K150K-A clips, incomplete rows) -> function returns `None`
   and `_probe_geometry(mp4)` called as fallback. Do not remove fallback —
   K150K-A clips have no sidecar.
