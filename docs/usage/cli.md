@@ -57,6 +57,31 @@ no `--xml|--json|--csv|--sub` is passed: XML.
 If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied
 the input is treated as raw YUV and **all four** become mandatory.
 
+### Windows UTF-8 paths
+
+On Windows, VMAFx-owned file operations interpret path strings as UTF-8 and
+convert them to UTF-16 before calling the wide Windows runtime APIs. This
+covers reference and distorted inputs, `--output`, JSON and ONNX model paths,
+CAMBI heatmap directories, and the paths used by the companion tools. Names
+containing accented characters or CJK characters therefore reach the exact
+requested file rather than an ANSI-code-page approximation. POSIX path handling
+is unchanged.
+
+Two boundaries remain:
+
+- The `vmaf` and `vmafx` executables still enter through `main(int, char **)`.
+  The Windows C runtime must therefore deliver UTF-8 argument bytes; a shell or
+  process code page that converts the command line to another narrow encoding
+  can corrupt a non-ASCII path before VMAFx receives it. The libvmaf C API is
+  unaffected when its caller supplies UTF-8 directly.
+- Internal conversions accept paths shorter than 4096 UTF-8 bytes. Longer or
+  malformed UTF-8 paths fail instead of being truncated.
+
+The vendored Pelorus CSV parser is a documented exception until its upstream
+source adopts the same contract. See
+[ADR-1182](../adr/1182-windows-utf8-path-contract.md) for the exact migrated
+surfaces and follow-ups.
+
 ## Option-string grammar
 
 `--model` and `--feature` both take a **colon-delimited list of `key=value`
