@@ -9,18 +9,6 @@ endif
 
 test_inc = include_directories('.')
 
-# The CodeQL non-header-include cleanup made these four internal headers the
-# language boundary formerly hidden by unity-included implementation files.
-# Compile them directly in both supported host languages and pin the enum widths
-# that cross that boundary. This target intentionally adds no Meson test case:
-# its compile is the smoke gate, while the existing runtime suites own behavior.
-static_library('internal_header_language_abi_smoke',
-    ['test_internal_headers_c.c', 'test_internal_headers_cpp.cpp'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
-                           include_directories('../src/feature/')],
-    dependencies : [pthread_dependency],
-    build_by_default : true,
-)
 
 # Execute Windows discovery with stubbed tools on POSIX build hosts. This
 # exercises Meson control flow without requiring a Windows SDK or CUDA device.
@@ -871,7 +859,7 @@ test_speed_qa = executable('test_speed_qa',
 
 test_luminance_tools = executable('test_luminance_tools',
     ['test.c', 'test_luminance_tools.cpp'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../src/feature/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
 )

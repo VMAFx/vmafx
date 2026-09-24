@@ -63,8 +63,10 @@ Rather than suppressing findings via comments (`// NOLINT`, `// codeql[...]`) or
   `luminance_tools.h`, `model.h`, and `libvmaf_priv.h`) are strict clang-tidy
   clean when each header is analyzed directly in both C23 and C++26 modes.
   C++ selects the standard C++ headers and alias spelling while C retains its
-  compatibility headers and typedef spelling. A build-only C/C++ smoke target
-  pins the internal enum widths to their existing unsigned-int ABI.
+  compatibility headers and typedef spelling. The existing test translation
+  units `test_flush_context_ordering.c` (C) and `test_luminance_tools.cpp` (C++)
+  pin the internal enum widths and ABI layouts across the language boundary
+  without expanding the authoritative 313-TU CPU tidy inventory.
 - All numerical operation orderings, bounded-search tests, and SIMD stage coverage are preserved; all 25 `test_cambi` tests and 14 `test_cambi_stage_simd` tests pass bit-exact.
 
 ## Alternatives considered

@@ -47,7 +47,21 @@
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
+#include "feature/cambi_internal.h"
+#include "feature/luminance_tools.h"
 #include "libvmaf_priv.h"
+#include "model.h"
+
+_Static_assert(sizeof(enum VmafPixelRange) == sizeof(unsigned int),
+               "VmafPixelRange must retain its unsigned-int ABI width");
+_Static_assert(sizeof(enum VmafModelType) == sizeof(unsigned int),
+               "VmafModelType must retain its unsigned-int ABI width");
+_Static_assert(sizeof(enum VmafModelNormalizationType) == sizeof(unsigned int),
+               "VmafModelNormalizationType must retain its unsigned-int ABI width");
+_Static_assert(sizeof(VmafCambiHostBuffers) == sizeof(struct VmafCambiHostBuffers),
+               "the C CAMBI host-buffer typedef must name its struct");
+_Static_assert(sizeof(VmafLumaRange) == sizeof(struct VmafLumaRange),
+               "the C luminance-range typedef must name its struct");
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's

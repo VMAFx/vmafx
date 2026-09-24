@@ -17,9 +17,19 @@
  */
 
 #include <cerrno>
+#include <type_traits>
 
 #include "test.h"
+#include "feature/cambi_internal.h"
 #include "feature/luminance_tools.h"
+#include "libvmaf_priv.h"
+#include "model.h"
+
+static_assert(std::is_same_v<std::underlying_type_t<VmafPixelRange>, unsigned int>);
+static_assert(std::is_same_v<std::underlying_type_t<VmafModelType>, unsigned int>);
+static_assert(std::is_same_v<std::underlying_type_t<VmafModelNormalizationType>, unsigned int>);
+static_assert(std::is_same_v<VmafCambiRangeUpdater, void (*)(std::uint16_t *, int, int)>);
+static_assert(std::is_same_v<VmafContext, struct VmafContext>);
 
 #define EPS 0.00001
 
