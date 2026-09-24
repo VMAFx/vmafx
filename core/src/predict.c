@@ -309,11 +309,12 @@ static int scan_feature(const VmafModel *model, const struct svm_node *node, uns
         if (err)
             return err;
         /* Exact sentinel comparison: caller always passes value_to_be_corrected=0.0
-         * (see vmaf_predict_score_at_index). A normalised feature that is exactly
-         * zero is the only case that needs chroma correction; any other value
-         * exits early. An epsilon band here would incorrectly correct near-zero
+        * (see vmaf_predict_score_at_index). A normalised feature that is exactly
+        * zero is the only case that needs chroma correction; any other value
+        * exits early. An epsilon band here would incorrectly correct near-zero
          * but non-zero features and change scores. Float equality is tested via
-         * IEEE-754 bit-pattern identity after checking for NaN and signed zeros. */
+         * IEEE-754 bit-pattern identity with signed-zero equivalence; NaN is never
+         * equal to any value, including NaN. */
         if (!float_values_equal(st->guided_score, st->sentinel))
             return 1;
         st->guided_idx = i;

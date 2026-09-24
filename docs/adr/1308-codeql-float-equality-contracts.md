@@ -22,8 +22,9 @@ exact comparisons dangerous. On `origin/master`, six live alerts were active:
    before dividing by `hi - lo` during BRISQUE feature normalization.
 5. **Alert 1221 (`core/src/mcp/3rdparty/cJSON/cJSON.c:615`)**: compared `d == (double)item->valueint`
    in `print_number` to determine whether a number should be serialized as an integer.
-6. **Alert 1244 (`core/test/test_cambi.c:1142`)**: compared `s0 == s1` across ROI and
-   full-frame CAMBI spatial mask buffers to enforce bitwise kernel equivalence.
+6. **Alert 1244 (`core/test/test_cambi.c:1142`)**: in `check_c_values_avx2_parity`,
+   compared `c_scalar[i] == c_avx2[i]` to enforce bit-exact SIMD parity between
+   AVX2 and scalar `calculate_c_values` kernels.
 
 Resolving these alerts required satisfying strict repository invariants:
 
@@ -40,27 +41,28 @@ Implement the exact semantic contract for each site:
 
 1. **Feature Name Double Option Equality (`feature_name.cpp:149`)**:
    Implement internal helper `option_double_equals`:
-   - Checks `isnan(a) && isnan(b)` as equal (allowing consistent dictionary key matching
-     even for NaN option values).
-   - Treats signed zero `+0.0 == -0.0` as equal.
-   - For all other values, evaluates exact 64-bit bit identity via `memcpy` to `uint64_t`.
+   - Evaluates NaN as never equal (returns false for NaN operands, preserving IEEE-754 semantics).
+   - Treats signed zeros `+0.0 == -0.0` as equal.
+   - Treats same infinities as equal via identical bit representation.
+   - For finite values, evaluates exact 64-bit bit identity via `memcpy` to `uint64_t`.
    This avoids CodeQL's float equality rule while guaranteeing precise option matching.
 
 2. **Predict Guided Feature Sentinel Detection (`predict.c:302`)**:
    Implement static helper `float_values_equal`:
-   - Evaluates `isnan(a) && isnan(b)` as equal.
+   - Evaluates NaN as never equal (returns false for NaN operands, preserving IEEE-754 semantics).
    - Treats `+0.0 == -0.0` as equal.
+   - Treats same infinities as equal via identical bit representation.
    - For finite values, compares exact IEEE-754 bit representations via `uint64_t`.
    The check in `vmaf_predict_score_at_index` becomes `!float_values_equal(st->guided_score, st->sentinel)`.
 
 3. **SVM API Label Comparisons (`test_svm_api.c:368`, line 504)**:
    SVM class labels represent discrete integer identifiers (`+1.0`, `-1.0`, `0.0`).
-   Implement `svm_labels_equal(a, b)` using constant zero difference `a - b == 0.0`
-   with finiteness validation. CodeQL exempts constant float comparisons (`== 0.0`),
-   and the test correctly validates discrete label assignments.
+   Implement `svm_labels_equal(a, b)` using 64-bit IEEE bit identity via `memcpy`
+   with signed-zero equivalence (`+0.0 == -0.0`) and same-infinity behavior,
+   rejecting NaN (never equal). It does not use `a - b == 0.0` or finiteness checks.
 
 4. **BRISQUE Normalization Span Assertion (`brisque_math.h:366`)**:
-   Replace `assert(hi != lo)` with:
+   In `brisque_range_scale`, replace `assert(hi != lo)` with:
 
    ```c
    const double span = hi - lo;
@@ -78,10 +80,11 @@ Implement the exact semantic contract for each site:
    This preserves upstream cJSON behavior and the host compiler's floating-point model
    (e.g., DAZ on Intel icx vs subnormal preservation on GCC/Clang) while satisfying CodeQL.
 
-6. **CAMBI Spatial Mask Bit-Identity Assertion (`test_cambi.c:1142`)**:
-   Implement `float_bits_equal(float a, float b)` comparing exact `uint32_t` bit patterns
-   via `memcpy`. This directly expresses the requirement that ROI extraction and full-frame
-   filtering produce identical bitwise results without float equality operations.
+6. **CAMBI AVX2 Parity Bit-Identity Assertion (`test_cambi.c:1142`)**:
+   In `check_c_values_avx2_parity`, implement `float_bits_equal(float a, float b)`
+   comparing exact `uint32_t` bit patterns via `memcpy` for `c_scalar[i]` vs `c_avx2[i]`.
+   This directly expresses the requirement that AVX2 and scalar `calculate_c_values`
+   paths produce identical bitwise results without float equality operations.
 
 ## Alternatives considered
 
@@ -97,7 +100,7 @@ Implement the exact semantic contract for each site:
 - **Positive**:
   - All six live CodeQL `cpp/equality-on-floats` alerts are eliminated on fresh scanner runs.
   - Zero suppression comments or scanner-specific exclusions added.
-  - Bit-exactness and golden Netflix test results remain 100% green (271/271 passed).
+  - Bit-exactness and golden Netflix test results remain 100% green (271 passed, 12 skipped, 0 failed under literal `make test-netflix-golden` with CPU-forced environment).
   - All unit tests and `fast` suite (145/145) pass cleanly.
   - HISS-04 compliance achieved on all touched files.
 - **Negative**:

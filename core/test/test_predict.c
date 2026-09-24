@@ -361,7 +361,7 @@ static char *test_guided_feature_sentinel_semantics(void)
 {
     /* Sentinel contract: chroma correction occurs only when the guided feature
      * equals the sentinel value (0.0). Any non-zero value, NaN, or Inf must
-     * compare not-equal to the sentinel. */
+     * compare not-equal to the sentinel; NaN is never equal even to NaN. */
     mu_assert("0.0 matches sentinel 0.0", float_values_equal(0.0, 0.0));
     mu_assert("-0.0 matches sentinel 0.0", float_values_equal(-0.0, 0.0));
     mu_assert("0.0 matches sentinel -0.0", float_values_equal(0.0, -0.0));

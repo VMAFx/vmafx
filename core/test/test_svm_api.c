@@ -598,8 +598,9 @@ static char *run_check_param_kernel_svm_tests(void)
 static char *test_svm_labels_equal_semantics(void)
 {
     /* Label contract: SVM classification labels are exact integers stored as
-     * doubles. Exact bit-pattern identity verifies equality without floating
-     * comparison alerts, while respecting signed zero and rejecting NaN. */
+     * doubles. Bit identity with signed-zero equivalence and same-infinity
+     * behavior verifies equality without floating comparison alerts, while
+     * rejecting NaN (never equal). */
     mu_assert("+1.0 matches +1.0", svm_labels_equal(1.0, 1.0));
     mu_assert("-1.0 matches -1.0", svm_labels_equal(-1.0, -1.0));
     mu_assert("0.0 matches 0.0", svm_labels_equal(0.0, 0.0));

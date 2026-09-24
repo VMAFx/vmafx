@@ -58,10 +58,11 @@
 
 #include "cJSON.h"
 
-/* VMAFx fork delta against upstream cJSON 1.7.19 (ADR-0683, ADR-1061, ADR-1142): the unbounded
+/* VMAFx fork delta against upstream cJSON 1.7.19 (ADR-0683, ADR-1061, ADR-1142, ADR-1308): the unbounded
  * string functions the fork bans are replaced by bounded snprintf/memcpy, cJSON_GetArraySize
- * saturates at INT_MAX, and the jump-based and over-long functions are split into helpers without
- * changing behaviour. A re-vendor must re-apply this delta; see AGENTS.md next to this file. */
+ * saturates at INT_MAX, print_number evaluates d - (double)item->valueint == 0.0, and the jump-based
+ * and over-long functions are split into helpers without changing behaviour. A re-vendor must
+ * re-apply this delta; see AGENTS.md next to this file. */
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C

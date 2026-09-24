@@ -9,19 +9,24 @@ causes without scanner suppression or tolerance loosening.
 
 1. **`core/src/feature/feature_name.cpp` (`option_double_equals`)**:
    Option deduplication requires consistent matching of float/double values.
-   Do not resolve conflicts by reverting to `val == opt_val`. NaN must match NaN
-   for consistent dictionary key normalization; signed zeros `+0.0 == -0.0`
-   compare equal; other finite values compare via 64-bit representation identity.
+   Do not resolve conflicts by reverting to `val == opt_val`. NaN is never equal
+   (even to NaN), preserving IEEE-754 semantics; signed zeros `+0.0 == -0.0`
+   compare equal; same infinities compare equal; other finite values compare via
+   64-bit representation bit identity.
 2. **`core/src/predict.c` (`float_values_equal`)**:
    `vmaf_predict_score_at_index` tests whether `guided_score` differs from the
    sentinel value. Do not revert to `st->guided_score != st->sentinel`. The helper
-   properly recognizes NaN sentinels, signed zeros, and exact bit identity.
+   properly recognizes that NaN is never equal (sentinel check exits early for NaN),
+   signed zeros `+0.0 == -0.0` compare equal, same infinities compare equal, and
+   finite values compare via exact 64-bit bit identity.
 3. **`core/test/test_svm_api.c` (`svm_labels_equal`)**:
-   SVM labels are discrete integers stored in double. The comparison `a - b == 0.0`
-   is accepted by CodeQL as a constant comparison while verifying finiteness.
+   SVM labels are discrete integers stored in double. `svm_labels_equal` uses 64-bit
+   bit identity with signed-zero equivalence (`+0.0 == -0.0`) and same-infinity behavior,
+   rejecting NaN (never equal). It does not rely on `a - b == 0.0` or finiteness checks.
 4. **`core/src/feature/brisque_math.h` (`span != 0.0 && isfinite(span)`)**:
-   `normalize_feature_value` asserts that the normalization interval `[lo, hi]`
-   is non-degenerate and finite. Do not revert to `assert(hi != lo)`. In addition,
+   In `brisque_range_scale`, asserts that the normalization interval `[lo, hi]`
+   is non-degenerate and finite (`span != 0.0 && isfinite(span)`). Do not revert
+   to `assert(hi != lo)`. In addition,
    `brisque_fit_aggd` was split into `brisque_aggd_accumulate` to satisfy HISS-04
    (maximum 60 LOC per function in touched files); keep the helper static and intact.
 5. **`core/src/mcp/3rdparty/cJSON/cJSON.c` (`d - (double)item->valueint == 0.0`)**:
@@ -29,8 +34,9 @@ causes without scanner suppression or tolerance loosening.
    (e.g., DAZ under Intel icx `-fp-model=fast` vs subnormals on GCC/Clang) while
    using a difference-from-zero expression CodeQL accepts.
 6. **`core/test/test_cambi.c` (`float_bits_equal`)**:
-   Full-frame vs ROI-extracted spatial-mask comparisons assert bit-for-bit identical
-   IEEE single-precision results across stages. Do not revert to `s0 == s1`.
+   In `check_c_values_avx2_parity`, compares `c_scalar[i]` and `c_avx2[i]` using
+   `float_bits_equal` to assert bit-for-bit identical IEEE single-precision results
+   between AVX2 SIMD and scalar kernel paths. Do not revert to `c_scalar[i] == c_avx2[i]`.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

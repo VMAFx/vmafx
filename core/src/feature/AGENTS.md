@@ -1764,12 +1764,12 @@ accumulation loops intact and statements unsplit.
 
 CodeQL flags direct float equality (`==` / `!=`). In this subtree:
 
-- In `feature_name.cpp`, `option_double_equals` compares double options: NaN
-  equals NaN, signed zeros `+0.0 == -0.0` are equal, and finite values compare
-  via 64-bit IEEE representation.
-- In `brisque_math.h`, `normalize_feature_value` asserts
-  `span != 0.0 && isfinite(span)` on `span = hi - lo` instead of raw
-  `hi != lo`.
+- In `feature_name.cpp`, `option_double_equals` compares double options: NaN is
+  never equal (even to NaN), signed zeros `+0.0 == -0.0` are equal, same
+  infinities are equal, and finite values compare via 64-bit IEEE representation.
+- In `brisque_math.h`, `brisque_range_scale` asserts
+   `span != 0.0 && isfinite(span)` on `span = hi - lo` instead of raw
+   `hi != lo`.
 
 Do not revert these helpers or assertions to raw `==` or `!=`.
 
