@@ -1022,3 +1022,4 @@
 1303-backlog-checklist-tracker-schema
 1304-mcp-http-runtime-isolation
 1307-sha256-memoization-cache-invalidation
+1309-socket-path-ownership-and-owner-only-mode

@@ -1423,6 +1423,7 @@ nav:
         - "ADR-1303: backlog-checklist-tracker-schema": adr/1303-backlog-checklist-tracker-schema.md
         - "ADR-1304: mcp-http-runtime-isolation": adr/1304-mcp-http-runtime-isolation.md
         - "ADR-1307: sha256-memoization-cache-invalidation": adr/1307-sha256-memoization-cache-invalidation.md
+        - "ADR-1309: socket-path-ownership-and-owner-only-mode": adr/1309-socket-path-ownership-and-owner-only-mode.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1983,6 +1984,7 @@ nav:
         - "ub": adr/by-tag/ub.md
         - "ubsan": adr/by-tag/ubsan.md
         - "ugc": adr/by-tag/ugc.md
+        - "unix-socket": adr/by-tag/unix-socket.md
         - "upstream-blocked": adr/by-tag/upstream-blocked.md
         - "upstream-divergence": adr/by-tag/upstream-divergence.md
         - "upstream-mirror": adr/by-tag/upstream-mirror.md

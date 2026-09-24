@@ -19,14 +19,16 @@
 #       {"ok": false, "error": "message"}
 #
 # The Unix socket path defaults to /tmp/vmafx-sidecar.sock and is
-# overridden by VMAFX_SIDECAR_SOCKET.  The vmafx-node and sidecar share a
-# single emptyDir volume at /tmp (see deploy/helm/vmafx/templates/).
+# overridden by VMAFX_SIDECAR_SOCKET.  The current Helm chart does not wire
+# this helper into the node pod; a standalone integrator must arrange a
+# same-UID peer and a private parent directory before starting the server.
 #
 # ADR-0781: sidecar online training — SGD + EMA + replay buffer.
 
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import json
 import logging
@@ -34,13 +36,20 @@ import os
 import pathlib
 import signal
 import socket
+import stat
 import sys
 import threading
 import time
-from typing import Any
+from typing import Any, Generator
 
 from .replay_buffer import ReplayBuffer, Sample
 from .sgd_ema import SGDEMAConfig, SGDEMATrainer
+
+_fcntl: Any
+try:
+    import fcntl as _fcntl
+except ImportError:
+    _fcntl = None
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +110,7 @@ def _load_base_model(path: str, n_features: int) -> Any:
         if path.endswith(".onnx"):
             # Load ONNX via onnx2torch (optional dep) or the fallback MLP.
             try:
-                import onnx2torch  # type: ignore[import]
+                import onnx2torch  # type: ignore[import-not-found]
 
                 model = onnx2torch.convert(path)
                 logger.info("Loaded base ONNX model via onnx2torch from %r", path)
@@ -345,6 +354,119 @@ class OnlineTrainer:
 # ---------------------------------------------------------------------------
 
 
+@contextlib.contextmanager
+def _socket_path_claim(socket_path: str) -> Generator[None, None, None]:
+    """Hold a non-blocking process claim across pathname inspection and serving."""
+    if _fcntl is None:
+        yield
+        return
+
+    lock_path = f"{socket_path}.lock"
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        lock_fd = os.open(lock_path, flags, 0o600)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise FileExistsError(
+                errno.EEXIST,
+                f"refusing symlink socket claim path: {lock_path}",
+                lock_path,
+            ) from exc
+        raise
+
+    locked = False
+    try:
+        fd_stat = os.fstat(lock_fd)
+        path_stat = os.lstat(lock_path)
+        if not stat.S_ISREG(path_stat.st_mode) or (path_stat.st_dev, path_stat.st_ino) != (
+            fd_stat.st_dev,
+            fd_stat.st_ino,
+        ):
+            raise FileExistsError(
+                errno.EEXIST,
+                f"refusing non-regular socket claim path: {lock_path}",
+                lock_path,
+            )
+        os.fchmod(lock_fd, 0o600)
+        try:
+            _fcntl.flock(lock_fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            locked = True
+        except OSError as exc:
+            if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                raise
+            raise OSError(
+                errno.EADDRINUSE,
+                f"socket endpoint is already claimed: {socket_path}",
+                socket_path,
+            ) from exc
+        yield
+    finally:
+        if locked:
+            with contextlib.suppress(OSError):
+                _fcntl.flock(lock_fd, _fcntl.LOCK_UN)
+        os.close(lock_fd)
+
+
+def _prepare_socket_path(socket_path: str) -> None:
+    """Remove one unchanged, non-listening Unix socket left by a prior process."""
+    try:
+        candidate = os.lstat(socket_path)
+    except FileNotFoundError:
+        return
+
+    if not stat.S_ISSOCK(candidate.st_mode):
+        raise FileExistsError(
+            errno.EEXIST,
+            f"refusing to replace non-socket path: {socket_path}",
+            socket_path,
+        )
+
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+        try:
+            probe.connect(socket_path)
+        except FileNotFoundError:
+            return
+        except ConnectionRefusedError:
+            pass
+        except OSError as exc:
+            raise OSError(
+                errno.EADDRINUSE,
+                f"refusing to replace unverified socket endpoint: {socket_path}",
+            ) from exc
+        else:
+            raise OSError(errno.EADDRINUSE, f"socket endpoint is already active: {socket_path}")
+
+    try:
+        current = os.lstat(socket_path)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISSOCK(current.st_mode) or (current.st_dev, current.st_ino) != (
+        candidate.st_dev,
+        candidate.st_ino,
+    ):
+        raise OSError(errno.EADDRINUSE, f"socket endpoint changed during probe: {socket_path}")
+    os.unlink(socket_path)
+
+
+def _socket_path_identity(socket_path: str) -> tuple[int, int] | None:
+    """Return the device/inode pair for a pathname socket without following links."""
+    try:
+        path_stat = os.lstat(socket_path)
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISSOCK(path_stat.st_mode):
+        return None
+    return path_stat.st_dev, path_stat.st_ino
+
+
+def _unlink_socket_if_owned(socket_path: str, owned_identity: tuple[int, int] | None) -> None:
+    """Best-effort cleanup that never removes a path with a different identity."""
+    if owned_identity is None or _socket_path_identity(socket_path) != owned_identity:
+        return
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(socket_path)
+
+
 class _ConnectionRegistry:
     """Thread-safe registry for active client connections.
 
@@ -404,7 +526,7 @@ def _handle_connection(
     disconnects or sends malformed data.
     """
     try:
-        addr = conn.getpeername() if conn.type != socket.AF_UNIX else "<unix>"
+        addr = conn.getpeername() if conn.family != socket.AF_UNIX else "<unix>"
     except OSError:
         addr = "<closed>"
     logger.debug("Connection from %s", addr)
@@ -441,7 +563,7 @@ def _handle_connection(
     logger.debug("Connection from %s closed", addr)
 
 
-def run_server(
+def _run_server_with_claim(
     socket_path: str = _SOCKET_PATH,
     trainer: OnlineTrainer | None = None,
     n_features: int = 80,
@@ -452,7 +574,8 @@ def run_server(
     Parameters
     ----------
     socket_path:
-        Path for the Unix domain socket.  The file is unlinked on clean shutdown.
+        Path for the Unix domain socket. The file is unlinked on shutdown only
+        while it still has the device/inode identity created by this server.
     trainer:
         ``OnlineTrainer`` instance.  Constructed with defaults when None.
     n_features:
@@ -472,22 +595,31 @@ def run_server(
             ),
         )
 
-    # Remove stale socket from a previous run.
-    with contextlib.suppress(FileNotFoundError):
-        os.unlink(socket_path)
+    _prepare_socket_path(socket_path)
 
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     threads: list[threading.Thread] = []
     registry = _ConnectionRegistry()
     old_sigterm: Any = None
     old_sigint: Any = None
+    owned_socket_identity: tuple[int, int] | None = None
 
     try:
         srv.bind(socket_path)
-        # Mode 0o660 grants user+group read/write with 0 world permissions;
-        # required for Unix-domain socket IPC with the Go node peer running in the same group.
-        # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
-        os.chmod(socket_path, 0o660)
+        owned_socket_identity = _socket_path_identity(socket_path)
+        if owned_socket_identity is None:
+            raise OSError(
+                errno.EADDRINUSE,
+                f"bound socket path was replaced before publication: {socket_path}",
+            )
+        # The shipped deployment runs both peers under one UID. Keep the
+        # unauthenticated local endpoint owner-only by default.
+        os.chmod(socket_path, 0o600, follow_symlinks=False)
+        if _socket_path_identity(socket_path) != owned_socket_identity:
+            raise OSError(
+                errno.EADDRINUSE,
+                f"bound socket path changed during publication: {socket_path}",
+            )
         srv.listen(16)
         srv.settimeout(1.0)  # allows the signal check below to fire promptly
 
@@ -546,9 +678,19 @@ def run_server(
             remaining = max(0.0, deadline - time.monotonic())
             t.join(timeout=remaining)
         srv.close()
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(socket_path)
+        _unlink_socket_if_owned(socket_path, owned_socket_identity)
         logger.info("vmafx-sidecar stopped")
+
+
+def run_server(
+    socket_path: str = _SOCKET_PATH,
+    trainer: OnlineTrainer | None = None,
+    n_features: int = 80,
+    stop_event: threading.Event | None = None,
+) -> None:
+    """Start one safely claimed Unix-socket server until signal or stop event."""
+    with _socket_path_claim(socket_path):
+        _run_server_with_claim(socket_path, trainer, n_features, stop_event)
 
 
 # ---------------------------------------------------------------------------

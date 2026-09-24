@@ -14,36 +14,28 @@ non-ONNX surface.
 
 ---
 
-## Quick start
+## Deployment status
 
-Enable the sidecar in your Helm values:
+The Python server and Go feedback client exist, but the current Helm chart does
+**not** deploy them together. `templates/sidecar-trainer.yaml` defines a named
+helper whose recorded consumer (`node-deployment.yaml`) no longer exists;
+`templates/node.yaml` does not include the helper; and `values.schema.json`
+rejects `sidecar.*` values. There is therefore no supported Helm quick start in
+this release. Treat the architecture below as an implemented component awaiting
+deployment wiring, not as a description of the current chart.
 
-```yaml
-sidecar:
-  trainer:
-    enabled: true
-    image:
-      repository: ghcr.io/vmafx/vmafx-sidecar
-      tag: latest
-    baseModelPath: /mnt/vmafx-models/base/fr_regressor_v3.onnx
-    checkpointDir: /mnt/vmafx-models/online
-    nFeatures: 80
-    resources:
-      requests:
-        cpu: "0.5"
-        memory: "512Mi"
-      limits:
-        cpu: "2"
-        memory: "1Gi"
+For isolated development, start the server directly after arranging a private
+socket directory and a same-UID client:
 
-persistence:
-  models:
-    enabled: true
-    mountPath: /mnt/vmafx-models
+```bash
+VMAFX_SIDECAR_SOCKET=/run/user/$(id -u)/vmafx-sidecar.sock \
+  python -m ai.sidecar.online_trainer
 ```
 
-The sidecar container starts alongside `vmafx-node` in the same pod, binds
-`/tmp/vmafx-sidecar.sock`, and begins accepting training pairs immediately.
+The socket is an unauthenticated local endpoint created as `0o600`. A future
+cross-UID/group-shared deployment must add an explicit configuration contract,
+chart wiring, and end-to-end security tests; changing the mode alone is not a
+supported deployment mechanism.
 
 ---
 
@@ -66,10 +58,11 @@ scorer.Score(ref, dis)   ──→  ReplayBuffer (10 000 cap)
   ↓ next restart: node loads new ONNX checkpoint
 ```
 
-**Why Unix socket?**  The `vmafx-node` and `vmafx-sidecar` containers share
-an `emptyDir` volume mounted at `/tmp`.  Unix domain sockets over a shared
-volume have lower per-message overhead than TCP loopback for the expected
-message rate (< 100 pairs/s) and avoid an extra container port declaration.
+**Why Unix socket?**  The intended topology places `vmafx-node` and
+`vmafx-sidecar` in one pod with a private shared directory. Unix domain sockets
+have lower per-message overhead than TCP loopback for the expected message rate
+(< 100 pairs/s) and avoid an extra container port. That intended pod wiring is
+not present in the current chart.
 
 **Why SGD + EMA?**  Standard SGD is lower overhead per step than Adam for
 the tiny two-layer regression heads used here.  The EMA shadow
@@ -85,24 +78,21 @@ features/sample) retains ~200 hours of a 50-encode/hour workload.
 
 ## Configuration reference
 
-All settings are Helm values under `sidecar.trainer.*` and are passed to
-the sidecar container as environment variables.
+The executable currently accepts environment variables directly. These are not
+wired to supported Helm values in the current chart.
 
-| Helm key | Env var | Default | Description |
-|---|---|---|---|
-| `enabled` | — | `false` | Enable the sidecar container. |
-| `image.repository` | — | — | Sidecar container image. |
-| `image.tag` | — | chart AppVersion | Image tag. |
-| `baseModelPath` | `VMAFX_BASE_MODEL_PATH` | `/mnt/vmafx-models/base/model.onnx` | ONNX or PyTorch state-dict to fine-tune. |
-| `checkpointDir` | `VMAFX_SIDECAR_CHECKPOINT_DIR` | `/mnt/vmafx-models/online` | Directory for versioned ONNX checkpoint output. |
-| `replayBufferSize` | `VMAFX_SIDECAR_REPLAY_CAPACITY` | `10000` | Replay buffer capacity (samples). |
-| `batchSize` | `VMAFX_SIDECAR_BATCH_SIZE` | `32` | Mini-batch size per gradient step. |
-| `replayMixRatio` | `VMAFX_SIDECAR_REPLAY_MIX` | `0.5` | Fraction of each batch drawn from replay buffer. |
-| `learningRate` | `VMAFX_SIDECAR_LR` | `0.0001` | SGD/Adam learning rate. |
-| `emaDecay` | `VMAFX_SIDECAR_EMA_DECAY` | `0.999` | EMA decay beta. |
-| `checkpointIntervalSeconds` | `VMAFX_SIDECAR_CKPT_INTERVAL_S` | `600` | Minimum seconds between checkpoints. |
-| `minSamplesPerCheckpoint` | `VMAFX_SIDECAR_MIN_SAMPLES_CKPT` | `1000` | Minimum new samples before checkpoint. |
-| `nFeatures` | `VMAFX_SIDECAR_N_FEATURES` | `80` | Feature vector dimension from vmafx-node. |
+| Env var | Default | Description |
+|---|---|---|
+| `VMAFX_BASE_MODEL_PATH` | empty | ONNX or PyTorch state-dict to fine-tune. |
+| `VMAFX_SIDECAR_CHECKPOINT_DIR` | `/mnt/vmafx-models/online` | Directory for versioned ONNX checkpoint output. |
+| `VMAFX_SIDECAR_REPLAY_CAPACITY` | `10000` | Replay buffer capacity (samples). |
+| `VMAFX_SIDECAR_BATCH_SIZE` | `32` | Mini-batch size per gradient step. |
+| `VMAFX_SIDECAR_REPLAY_MIX` | `0.5` | Fraction of each batch drawn from replay buffer. |
+| `VMAFX_SIDECAR_LR` | `0.0001` | SGD/Adam learning rate. |
+| `VMAFX_SIDECAR_EMA_DECAY` | `0.999` | EMA decay beta. |
+| `VMAFX_SIDECAR_CKPT_INTERVAL_S` | `600` | Minimum seconds between checkpoints. |
+| `VMAFX_SIDECAR_MIN_SAMPLES_CKPT` | `1000` | Minimum new samples before checkpoint. |
+| `VMAFX_SIDECAR_N_FEATURES` | `80` | Feature vector dimension from vmafx-node. |
 
 The socket path (`VMAFX_SIDECAR_SOCKET`) defaults to `/tmp/vmafx-sidecar.sock`
 and should not be changed unless the volume mount path also changes.
@@ -128,19 +118,19 @@ Research-0733 §3.4).
 
 ---
 
-## Kubernetes sidecar lifecycle (k8s 1.29+)
+## Intended Kubernetes sidecar lifecycle (not currently wired)
 
-On clusters running Kubernetes 1.29 or later the sidecar container is
-declared with `restartPolicy: Always` (native sidecar KEP-753 semantics).
-This means:
+The orphaned Helm helper describes `restartPolicy: Always` (native sidecar
+KEP-753 semantics) for Kubernetes 1.29 or later. If a future chart actually
+includes and schemas that helper, the intended behavior is:
 
 - The sidecar starts before the main `vmafx-node` container.
 - The pod's `Ready` condition waits for the sidecar's readiness probe to
   pass (Unix socket bound).
 - If the sidecar crashes it is restarted without restarting `vmafx-node`.
 
-On older clusters (`restartPolicy: Always` is ignored) the sidecar behaves
-as a regular container; a crash restarts the whole pod.
+No current chart render produces this container, so these lifecycle guarantees
+must not be assumed by operators today.
 
 ---
 

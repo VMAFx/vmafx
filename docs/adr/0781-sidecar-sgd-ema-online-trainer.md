@@ -70,6 +70,14 @@ The Helm sidecar container spec is rendered by
 `vmafx.sidecarContainer` named template and is gated by
 `.Values.sidecar.trainer.enabled` (default `false`).
 
+**Implementation-status correction (2026-09-24):** the helper exists, but the
+current `templates/node.yaml` does not include it, its recorded
+`node-deployment.yaml` consumer no longer exists, and `values.schema.json`
+rejects `sidecar.*`. The chart therefore does not currently render or support
+this sidecar topology. [ADR-1309](1309-socket-path-ownership-and-owner-only-mode.md)
+records the resulting same-UID, owner-only socket contract until real deployment
+wiring is designed.
+
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
@@ -118,6 +126,7 @@ The Helm sidecar container spec is rendered by
 - [ADR-0394](0394-local-sidecar-training.md) — local sidecar for vmaf-tune predictor (separate surface)
 - [ADR-0249](0249-fr-regressor-v1.md) — ONNX export opset constraints
 - [ADR-0042](0042-tinyai-docs-required-per-pr.md) — tiny-AI per-PR docs rule
+- [ADR-1309](1309-socket-path-ownership-and-owner-only-mode.md) — current owner-only socket and pathname-lifecycle contract
 - Tarvainen & Valpola (2017) "Mean teachers are better role models" — EMA decay `beta=0.999`
 - Source: `req` — user direction to implement sidecar online training per Research-0733
   (Python sidecar, SGD + EMA + replay buffer, Phase 4b distributed platform piece).

@@ -15,6 +15,7 @@ Usage::
     pip install nox
     nox -l                          # list every defined session
     nox -s ai                       # run the ai/ pytest suite
+    nox -s compat_decorator         # run compat memoization regressions
     nox -s mcp vmaf_tune            # run multiple suites in sequence
     nox -s python_harness           # run the legacy python/ tox harness
     nox -s all                      # every fork-local Python package
@@ -53,6 +54,18 @@ def ai_tests(session: nox.Session) -> None:
     session.install("-e", "./ai")
     session.install("pytest")
     session.run("pytest", "ai/tests/", "ai/sidecar/tests/", "-v", *session.posargs)
+
+
+@nox.session(name="compat_decorator")
+def compat_decorator_tests(session: nox.Session) -> None:
+    """Run SHA-256 memoization and cross-process cache regressions."""
+    session.install("pytest")
+    session.run(
+        "pytest",
+        "compat/vmaf/tests/test_decorator_extended.py",
+        "-v",
+        *session.posargs,
+    )
 
 
 @nox.session(name="mcp")
@@ -126,7 +139,15 @@ def all_tests(session: nox.Session) -> None:
     Skips ``python_harness`` because that session needs the C build
     artifacts and is exercised separately by ``make test-netflix-golden``.
     """
-    for name in ("ai", "mcp", "vmaf_tune", "dev_llm", "roi_score", "ensemble_kit"):
+    for name in (
+        "ai",
+        "compat_decorator",
+        "mcp",
+        "vmaf_tune",
+        "dev_llm",
+        "roi_score",
+        "ensemble_kit",
+    ):
         session.notify(name)
 
 

@@ -46,23 +46,22 @@ these Meson blocks.
    serialized via `threading.RLock()`, cross-process cache updates in `persist_to_file`
    are synchronized via re-entrant `_file_lock` (`fcntl.flock` on POSIX,
    `msvcrt.locking` on Windows) and disk cache merge, including recursive entries,
-   and atomic writes use unique temporary files via `tempfile.mkstemp`.
-   Do not revert to SHA-1 or reintroduce PID-based temp files during upstream merges.
-2. **`ai/sidecar/online_trainer.py` Unix domain socket mode `0o660` is mandatory.**
-   Semgrep alert 946 flags `os.chmod(socket_path, 0o660)`. Mode `0o660` is required
-   for same-group Go peer IPC in Kubernetes pods (connecting requires `stat.S_IWGRP`);
-   Semgrep's suggested fix `0o644` strips group write and breaks IPC, while leaking
-   world read. Do not weaken or change `0o660` during rebases. An inline `# nosemgrep`
-   directive is maintained per ADR-1222; in SARIF, the finding remains present with
-   in-source suppression awaiting maintainer dismissal (False Positive / Won't Fix).
-   Server lifecycle invariants: initialize `threads`, `registry = _ConnectionRegistry()`,
-   `old_sigterm`, and `old_sigint` before `bind()`. Register accepted sockets in
-   `registry` via `register_if_active(conn, stop_event)` prior to worker thread spawn to
-   prevent accept/registration races, and shut down active client connections via
-   `registry.close_all()` on server exit to ensure prompt shutdown (< 1.5s).
-   Peer security is verified via Linux user namespaces with subordinate ID mappings
-   asserting `SO_PEERCRED`. Sidecar tests are wired across root `pyproject.toml`,
-   `ai/pyproject.toml`, `noxfile.py`, and CI.
+   and atomic writes use unique temporary files via `tempfile.mkstemp`. The reviewed
+   base wrote JSON directly to the destination; it never used PID-based temp files.
+   Do not revert to SHA-1 or introduce non-unique temporary names during upstream merges.
+2. **`ai/sidecar/online_trainer.py` uses owner-only mode `0o600` and owns paths by
+   identity (ADR-1309).** The old `0o660` rationale relied on a cross-UID/same-GID
+   Helm topology that the current chart does not wire. Do not restore unconditional
+   group access or a Semgrep suppression. A future group-shared mode needs an
+   explicit configuration surface, chart wiring, threat model, and end-to-end tests.
+   Preserve the adjacent owner-only lifetime claim; no-follow `lstat` checks;
+   active-socket refusal; unchanged device/inode validation before stale removal;
+   bound identity verification before listen; and owned-identity-only cleanup.
+   Symlinks, ordinary files, active listeners, and replacement objects must survive.
+   Keep the `_ConnectionRegistry` accept-before-spawn and prompt `close_all()`
+   shutdown invariants. The POSIX socket regressions run through the AI suite; all
+   26 decorator regressions run through `compat_decorator` Nox and the hosted
+   Linux/macOS/real-Windows matrix.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
@@ -2208,7 +2207,11 @@ no rebase impact: fork-local fixes and cleanups.
 - `core/src/feature/mkdirp.cpp`: converted `for` loop modifying loop variable to idiomatic `while`.
 - `core/src/pdjson.c`: removed redundant lower bound `0xC2 <= u` in `utf8_seq_length` (simplified to `u <= 0xDF`).
 - `compat/python-vmaf/tools/decorator.py`: added `usedforsecurity=False` to 3 SHA-1 memoization keys.
-- `ai/sidecar/online_trainer.py`: preserved server bind and documented 0o660 UNIX domain socket mode for group-peer IPC with `# nosemgrep`.
+- `ai/sidecar/online_trainer.py`: this historical branch preserved `0o660` and a
+  `# nosemgrep` rationale. Do **not** preserve that disposition in a current
+  rebase: ADR-1309 supersedes it with owner-only `0o600`, no suppression, and
+  an identity-checked pathname lifecycle after the claimed group-peer Helm
+  topology was found not to be wired.
 - `mcp-server/vmaf-mcp`: removed unused import in `test_smoke_e2e.py` and converted `server.py` HTTP branch import to dynamic `importlib` to break static circular import.
 - `go.mod`, `go.sum`: upgraded `golang.org/x/crypto` to `v0.56.0`.
 

@@ -4,30 +4,28 @@
 # ai/sidecar/tests/test_socket_permissions.py — unit tests for Unix domain socket
 # file ownership, permissions, and group sharing semantics in online_trainer.py.
 #
-# Verifies mode 0o660 requirements, zero world access, user/group read-write access,
-# ownership attributes, and proves why Semgrep alert 946 is an intentional group-shared
-# IPC artifact rather than an over-permissive defect.
+# Verifies owner-only socket permissions, ownership attributes, safe stale-socket
+# recovery, and pathname ownership across adversarial lifecycle transitions.
 #
 # ADR-0781: sidecar online training — SGD + EMA + replay buffer.
 
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import os
 import pathlib
-import queue
 import shutil
 import socket
 import stat
-import struct
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import unittest.mock as mock
-from typing import Generator, NamedTuple
+from typing import Any, Generator, NamedTuple
 
 import pytest
 
@@ -35,7 +33,7 @@ from ai.sidecar import online_trainer as ot_mod
 
 pytestmark = pytest.mark.skipif(
     os.name != "posix",
-    reason="Unix socket permissions and peer credentials require POSIX",
+    reason="Unix socket filesystem permissions require POSIX",
 )
 
 
@@ -76,8 +74,10 @@ def _peer_command(script: str) -> tuple[list[str], int, int, bool]:
 
     if not sys.platform.startswith("linux"):
         pytest.skip("different-UID replay requires root or Linux user namespaces")
-    required = {name: shutil.which(name) for name in ("unshare", "newuidmap", "newgidmap")}
-    if not all(required.values()):
+    unshare = shutil.which("unshare")
+    newuidmap = shutil.which("newuidmap")
+    newgidmap = shutil.which("newgidmap")
+    if unshare is None or newuidmap is None or newgidmap is None:
         pytest.skip("different-UID replay requires unshare, newuidmap, and newgidmap")
 
     import pwd
@@ -89,7 +89,7 @@ def _peer_command(script: str) -> tuple[list[str], int, int, bool]:
         pytest.skip(f"no subordinate UID/GID range is assigned to {username}")
     base_python = getattr(sys, "_base_executable", sys.executable)
     command = [
-        required["unshare"],
+        unshare,
         "--user",
         "--map-users",
         f"0:{server_uid}:1",
@@ -140,7 +140,7 @@ def _finish_peer(peer: _PeerProcess) -> str:
 
 
 class TestSocketPermissionsAndOwnership:
-    """Red-capable regression tests for Unix domain socket file mode and ownership."""
+    """Regression tests for Unix socket permissions and pathname ownership."""
 
     @contextlib.contextmanager
     def _running_server(self, sock_path: str) -> Generator[threading.Thread, None, None]:
@@ -199,21 +199,20 @@ class TestSocketPermissionsAndOwnership:
             thread.join(timeout=3.0)
             assert not thread.is_alive(), "Server thread failed to terminate cleanly"
 
-    def test_server_socket_mode_exact_0o660(self, tmp_path: pathlib.Path) -> None:
-        """The Unix domain socket must have permission mode exactly 0o660 (rw-rw----)."""
+    def test_server_socket_mode_exact_0o600(self, tmp_path: pathlib.Path) -> None:
+        """The Unix domain socket defaults to owner-only mode 0o600."""
         sock_path = str(tmp_path / "vmafx-sidecar.sock")
         with self._running_server(sock_path):
             st = os.stat(sock_path)
             assert stat.S_ISSOCK(st.st_mode), "Path must be a Unix domain socket"
             mode = stat.S_IMODE(st.st_mode)
-            # Red-capable assertion: fails if mode is 0o644, 0o600, 0o666, 0o755, etc.
-            assert mode == 0o660, f"Expected socket mode 0o660, got {oct(mode)}"
+            assert mode == 0o600, f"Expected socket mode 0o600, got {oct(mode)}"
 
         # Socket must be cleaned up on server exit
         assert not os.path.exists(sock_path)
 
     def test_server_socket_permissions_bits_breakdown(self, tmp_path: pathlib.Path) -> None:
-        """Verify explicit user rw, group rw, and zero other/world permission bits."""
+        """Verify owner read/write and zero group/world permission bits."""
         sock_path = str(tmp_path / "vmafx-sidecar.sock")
         with self._running_server(sock_path):
             st = os.stat(sock_path)
@@ -224,11 +223,7 @@ class TestSocketPermissionsAndOwnership:
                 mode & 0o700
             ) == 0o600, f"User bits must be rw- (0o600), got {oct(mode & 0o700)}"
 
-            # Group permissions: must have read and write (0o060), no execute
-            # Required for Go node peer in the same group to connect and send samples.
-            assert (
-                mode & 0o070
-            ) == 0o060, f"Group bits must be rw- (0o060), got {oct(mode & 0o070)}"
+            assert (mode & 0o070) == 0, f"Group bits must be --- (0o000), got {oct(mode)}"
 
             # World / Other permissions: MUST be strictly 0 (---)
             # No world access is permitted; prevents unauthorized local users.
@@ -247,57 +242,226 @@ class TestSocketPermissionsAndOwnership:
             assert st.st_uid == os.geteuid(), "Socket UID must match process EUID"
             assert st.st_gid == os.getegid(), "Socket GID must match process EGID"
 
-    def test_red_capable_mode_regression_guards(self) -> None:
-        """Theoretical and mathematical verification of mode boundary invariants.
-
-        Proves why alternative permissions (0o644, 0o600, 0o666) fail security
-        or operational requirements.
-        """
-        # Semgrep recommendation (0o644):
-        # Lacks S_IWGRP (group write), which prevents the same-group peer from connecting
-        mode_644 = 0o644
-        assert not (mode_644 & stat.S_IWGRP), "0o644 lacks group write, breaking Go peer IPC"
-        assert mode_644 & stat.S_IROTH, "0o644 permits world read, leaking presence to all users"
-
-        # Overly restrictive user-only mode (0o600):
-        # Lacks all group permissions, preventing multi-container pod IPC across UIDs
-        mode_600 = 0o600
-        assert not (
-            mode_600 & (stat.S_IRGRP | stat.S_IWGRP)
-        ), "0o600 denies group access completely"
-
-        # Over-permissive world mode (0o666 / 0o777):
-        # Grants world access, violating least-privilege security policy
-        mode_666 = 0o666
-        assert (mode_666 & 0o007) != 0, "0o666 allows world read/write"
-
-        # Production mode (0o660):
-        # Exactly satisfies group IPC write + zero world exposure
-        prod_mode = 0o660
-        assert (prod_mode & stat.S_IRUSR) and (prod_mode & stat.S_IWUSR)
-        assert (prod_mode & stat.S_IRGRP) and (prod_mode & stat.S_IWGRP)
-        assert (prod_mode & 0o007) == 0
-
     def test_socket_recreation_cleans_stale_socket_with_wrong_permissions(
         self, tmp_path: pathlib.Path
     ) -> None:
         """A pre-existing stale socket with different permissions must be cleanly replaced."""
         sock_path = str(tmp_path / "stale.sock")
-        # Pre-create a stale socket file with wrong mode (0o600)
+        # Pre-create a stale socket file with overly broad permissions.
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stale_srv:
             stale_srv.bind(sock_path)
-            os.chmod(sock_path, 0o600)
+            os.chmod(sock_path, 0o666)
 
         assert os.path.exists(sock_path)
-        assert stat.S_IMODE(os.stat(sock_path).st_mode) == 0o600
+        assert stat.S_IMODE(os.stat(sock_path).st_mode) == 0o666
 
-        # Run server over the same path; it must unlink stale and set 0o660
+        stale_identity = os.lstat(sock_path)
         with self._running_server(sock_path):
             st = os.stat(sock_path)
-            assert stat.S_IMODE(st.st_mode) == 0o660
+            assert stat.S_IMODE(st.st_mode) == 0o600
+            assert (st.st_dev, st.st_ino) != (stale_identity.st_dev, stale_identity.st_ino)
 
-    def test_ipc_connection_succeeds_under_0o660(self, tmp_path: pathlib.Path) -> None:
-        """Connecting client can send messages and receive ACK over 0o660 socket."""
+    def test_server_refuses_regular_file_without_removing_it(self, tmp_path: pathlib.Path) -> None:
+        """A configured socket path must never authorize deletion of an ordinary file."""
+        socket_path = tmp_path / "ordinary-file.sock"
+        socket_path.write_text("keep me", encoding="utf-8")
+        stopped = threading.Event()
+        stopped.set()
+
+        with pytest.raises(FileExistsError) as exc_info:
+            ot_mod.run_server(
+                socket_path=str(socket_path),
+                trainer=mock.MagicMock(),
+                stop_event=stopped,
+            )
+
+        assert exc_info.value.errno == errno.EEXIST
+        assert socket_path.read_text(encoding="utf-8") == "keep me"
+
+    def test_second_server_refuses_live_socket_without_disrupting_owner(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """A contender must not unlink or replace a live server endpoint."""
+        sock_path = str(tmp_path / "live.sock")
+        with self._running_server(sock_path):
+            owner = os.lstat(sock_path)
+            already_stopped = threading.Event()
+            already_stopped.set()
+
+            with pytest.raises(OSError) as exc_info:
+                ot_mod.run_server(
+                    socket_path=sock_path,
+                    trainer=mock.MagicMock(),
+                    stop_event=already_stopped,
+                )
+
+            assert exc_info.value.errno == errno.EADDRINUSE
+            current = os.lstat(sock_path)
+            assert (current.st_dev, current.st_ino) == (owner.st_dev, owner.st_ino)
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.connect(sock_path)
+
+    def test_second_server_refuses_endpoint_during_bind_listen_window(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A bound-but-not-listening owner must not be mistaken for a stale socket."""
+        socket_path = str(tmp_path / "starting.sock")
+        owner_bound = threading.Event()
+        allow_listen = threading.Event()
+
+        class PausedFirstListener(socket.socket):
+            def listen(self, backlog: int = 0) -> None:
+                if self.getsockname() == socket_path and not owner_bound.is_set():
+                    owner_bound.set()
+                    assert allow_listen.wait(timeout=3.0)
+                super().listen(backlog)
+
+        monkeypatch.setattr("ai.sidecar.online_trainer.socket.socket", PausedFirstListener)
+        owner_stop = threading.Event()
+        owner_errors: list[BaseException] = []
+
+        def run_owner() -> None:
+            try:
+                ot_mod.run_server(
+                    socket_path=socket_path,
+                    trainer=mock.MagicMock(),
+                    stop_event=owner_stop,
+                )
+            except BaseException as exc:  # surfaced in the parent assertion below
+                owner_errors.append(exc)
+
+        owner_thread = threading.Thread(target=run_owner, daemon=True)
+        owner_thread.start()
+        assert owner_bound.wait(timeout=3.0)
+        owner = os.lstat(socket_path)
+
+        contender_stop = threading.Event()
+        contender_stop.set()
+        try:
+            with pytest.raises(OSError) as exc_info:
+                ot_mod.run_server(
+                    socket_path=socket_path,
+                    trainer=mock.MagicMock(),
+                    stop_event=contender_stop,
+                )
+            assert exc_info.value.errno == errno.EADDRINUSE
+            current = os.lstat(socket_path)
+            assert (current.st_dev, current.st_ino) == (owner.st_dev, owner.st_ino)
+        finally:
+            allow_listen.set()
+            owner_stop.set()
+            owner_thread.join(timeout=3.0)
+
+        assert not owner_thread.is_alive()
+        assert owner_errors == []
+
+    def test_server_refuses_symlink_without_touching_link_or_target(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """Startup must inspect the pathname itself and never follow or remove a symlink."""
+        target = tmp_path / "target.txt"
+        target.write_text("sentinel", encoding="utf-8")
+        socket_path = tmp_path / "sidecar.sock"
+        socket_path.symlink_to(target)
+
+        stopped = threading.Event()
+        stopped.set()
+        with pytest.raises(FileExistsError) as exc_info:
+            ot_mod.run_server(
+                socket_path=str(socket_path),
+                trainer=mock.MagicMock(),
+                stop_event=stopped,
+            )
+
+        assert exc_info.value.errno == errno.EEXIST
+        assert socket_path.is_symlink()
+        assert socket_path.readlink() == target
+        assert target.read_text(encoding="utf-8") == "sentinel"
+
+    def test_shutdown_preserves_socket_rebound_at_owned_path(self, tmp_path: pathlib.Path) -> None:
+        """Cleanup must not unlink a replacement socket published after startup."""
+        socket_path = str(tmp_path / "rebound.sock")
+        stop_event = threading.Event()
+        server_thread = threading.Thread(
+            target=ot_mod.run_server,
+            kwargs={
+                "socket_path": socket_path,
+                "trainer": mock.MagicMock(),
+                "stop_event": stop_event,
+            },
+            daemon=True,
+        )
+        server_thread.start()
+
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            try:
+                owner = os.lstat(socket_path)
+                if stat.S_ISSOCK(owner.st_mode):
+                    break
+            except FileNotFoundError:
+                pass
+            time.sleep(0.01)
+        else:
+            pytest.fail("original server did not publish its socket")
+
+        os.unlink(socket_path)
+        replacement = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            replacement.bind(socket_path)
+            replacement.listen(1)
+            rebound = os.lstat(socket_path)
+            assert (rebound.st_dev, rebound.st_ino) != (owner.st_dev, owner.st_ino)
+
+            stop_event.set()
+            server_thread.join(timeout=2.0)
+            assert not server_thread.is_alive()
+
+            current = os.lstat(socket_path)
+            assert (current.st_dev, current.st_ino) == (rebound.st_dev, rebound.st_ino)
+        finally:
+            stop_event.set()
+            server_thread.join(timeout=2.0)
+            replacement.close()
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(socket_path)
+
+    def test_shutdown_preserves_regular_file_replacing_owned_socket(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """Cleanup must not remove a non-socket replacement at the configured path."""
+        socket_path = str(tmp_path / "replacement-file.sock")
+        stop_event = threading.Event()
+        server_thread = threading.Thread(
+            target=ot_mod.run_server,
+            kwargs={
+                "socket_path": socket_path,
+                "trainer": mock.MagicMock(),
+                "stop_event": stop_event,
+            },
+            daemon=True,
+        )
+        server_thread.start()
+
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            with contextlib.suppress(FileNotFoundError):
+                if stat.S_ISSOCK(os.lstat(socket_path).st_mode):
+                    break
+            time.sleep(0.01)
+        else:
+            pytest.fail("server did not publish its socket")
+
+        os.unlink(socket_path)
+        pathlib.Path(socket_path).write_text("replacement", encoding="utf-8")
+        stop_event.set()
+        server_thread.join(timeout=2.0)
+
+        assert not server_thread.is_alive()
+        assert pathlib.Path(socket_path).read_text(encoding="utf-8") == "replacement"
+
+    def test_owner_ipc_connection_succeeds_under_0o600(self, tmp_path: pathlib.Path) -> None:
+        """The same-UID client exchanges messages over the owner-only endpoint."""
         sock_path = str(tmp_path / "ipc_test.sock")
         with self._running_server(sock_path):
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
@@ -400,7 +564,7 @@ class TestSocketPermissionsAndOwnership:
         """Races between accept, handler thread registration, and shutdown must never leak connections or hang.
 
         If thread scheduling delays worker thread startup in _handle_connection, the accepted
-        socket is already registered in active_conns by run_server under conns_lock, ensuring
+        socket is already registered atomically in _ConnectionRegistry by run_server, ensuring
         deterministic and prompt shutdown (< 1.5s) without thread join timeouts.
         """
         sock_path = str(tmp_path / "race_test.sock")
@@ -409,7 +573,7 @@ class TestSocketPermissionsAndOwnership:
 
         orig_handle = ot_mod._handle_connection
 
-        def delayed_handle(*args, **kwargs):
+        def delayed_handle(*args: Any, **kwargs: Any) -> Any:
             # Inject simulated thread scheduling latency before connection loop
             time.sleep(0.15)
             return orig_handle(*args, **kwargs)
@@ -515,55 +679,11 @@ class TestSocketPermissionsAndOwnership:
         finally:
             shutil.rmtree(td, ignore_errors=True)
 
-    @pytest.mark.skipif(
-        not hasattr(socket, "SO_PEERCRED"),
-        reason="kernel peer-credential assertions require Linux SO_PEERCRED",
-    )
-    def test_production_server_accepts_different_uid_same_gid_peer(
-        self, monkeypatch: pytest.MonkeyPatch, shared_ipc_dir: pathlib.Path
+    def test_owner_only_server_rejects_different_uid_same_gid_peer(
+        self, shared_ipc_dir: pathlib.Path
     ) -> None:
-        """Exercise production IPC and assert the kernel-observed peer credentials."""
+        """The shipped endpoint does not grant access based on group membership."""
         sock_path = str(shared_ipc_dir / "different_uid.sock")
-        credentials: queue.Queue[tuple[int, int, int]] = queue.Queue()
-        original_handler = ot_mod._handle_connection
-
-        def capture_credentials(conn, trainer, registry=None):
-            raw = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
-            credentials.put(struct.unpack("3i", raw))
-            return original_handler(conn, trainer, registry)
-
-        monkeypatch.setattr(ot_mod, "_handle_connection", capture_credentials)
-        child_code = f"""
-import json, socket
-s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.connect({sock_path!r})
-msg = {{"job_id": "different-uid", "features": [0.2] * 8, "true_score": 90.0}}
-s.sendall((json.dumps(msg) + "\\n").encode())
-print(s.recv(4096).decode().strip())
-s.close()
-"""
-        with self._running_server(sock_path):
-            peer = _spawn_peer(child_code)
-            output = _finish_peer(peer)
-
-        observed = [credentials.get_nowait() for _ in range(credentials.qsize())]
-        assert any(uid == peer.uid and gid == peer.gid for _, uid, gid in observed)
-        assert peer.uid != os.geteuid()
-        assert peer.gid == os.getegid()
-        ack = json.loads(output)
-        assert ack["ok"] is True
-        assert ack["job_id"] == "different-uid"
-
-    @pytest.mark.parametrize("bad_mode", (0o644, 0o600))
-    def test_same_group_different_uid_peer_requires_group_write(
-        self, shared_ipc_dir: pathlib.Path, bad_mode: int
-    ) -> None:
-        """A real same-GID peer cannot connect without the socket's group-write bit."""
-        sock_path = str(shared_ipc_dir / f"bad_{bad_mode:o}.sock")
-        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        server.bind(sock_path)
-        os.chmod(sock_path, bad_mode)
-        server.listen(1)
         child_code = f"""
 import socket
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -575,13 +695,13 @@ except PermissionError:
 finally:
     s.close()
 """
-        try:
-            output = _finish_peer(_spawn_peer(child_code))
-            assert output.strip() == "expected-eacces"
-        finally:
-            server.close()
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(sock_path)
+        with self._running_server(sock_path):
+            peer = _spawn_peer(child_code)
+            output = _finish_peer(peer)
+
+        assert peer.uid != os.geteuid()
+        assert peer.gid == os.getegid()
+        assert output.strip() == "expected-eacces"
 
 
 class TestConnectionRegistry:

@@ -39,9 +39,9 @@ An architectural audit of `compat/python-vmaf/tools/decorator.py` established:
    `compat/python-vmaf/core/asset.py` / `executor.py`) do not use `decorator.py`.
 5. Core scoring routines, C library computations, and Netflix golden assertions
    in `python/test/` are completely independent of `decorator.py`.
-6. Concurrency bugs existed in `decorator.py`: PID-based temporary files
-   (`f"{file_path}.tmp.{os.getpid()}"`) collided across worker threads within
-   the same process, and uncoordinated multi-process file writes clobbered entries.
+6. Concurrency bugs existed in `decorator.py`: `persist_to_file` wrote JSON
+   directly to the destination with `open(file_name, "wt")`, so interruption
+   could expose a partial file and uncoordinated processes could clobber entries.
 
 ## Decision
 
@@ -56,8 +56,7 @@ An architectural audit of `compat/python-vmaf/tools/decorator.py` established:
    This eliminates alerts 947–949 from SARIF (0 findings).
 3. **Explicit Partial Supersession of ADR-1222**: ADR-1222's disposition classifying
    alerts 947–949 as keep-open / "Correct as written" is superseded. Alert 946
-   (`0o660` socket permissions) remains under ADR-1222 disposition awaiting
-   maintainer dismissal.
+   is governed separately by [ADR-1309](1309-socket-path-ownership-and-owner-only-mode.md).
 4. **Concurrency and Cross-Process Safety**:
 
    - Atomic replacement: `_write_json_cache_atomic` creates unique temporary files
@@ -81,7 +80,7 @@ An architectural audit of `compat/python-vmaf/tools/decorator.py` established:
 | **Dual hashing (check SHA-256, fall back to SHA-1)** | Seamless upgrade transition | Requires ongoing execution of SHA-1, triggering Semgrep alerts on fresh code | Unacceptable under whole-codebase security standards. |
 | **Third-party locking libraries (`filelock`, `portalocker`)** | Pre-packaged cross-platform file locking | Introduces new external dependencies into upstream-compat tooling; fails offline/distroless builds | Rejected in favor of standard-library `fcntl` and `msvcrt` implementations. |
 | **Standard non-reentrant `threading.Lock`** | Simpler lock structure | Deadlocks immediately when memoized functions recurse (e.g. Fibonacci dynamic programming) | Incompatible with common memoization recursion patterns. |
-| **PID-based temporary files (`target.tmp.<pid>`)** | Avoids external temp directories | Multiple threads within the same process share identical PID, causing concurrent file collisions and `FileNotFoundError` | Broken under multi-threading; replaced by unique `tempfile.mkstemp`. |
+| **PID-based temporary files (`target.tmp.<pid>`)** | Would avoid partial destination writes without a new dependency | Multiple threads within one process share a PID, so this hypothetical design would collide | Rejected during design; the base implementation wrote the destination directly and never used PID temp files. |
 
 ## Consequences
 
@@ -98,5 +97,6 @@ An architectural audit of `compat/python-vmaf/tools/decorator.py` established:
 
 - [ADR-1222: In-code suppressions do not close code-scanning alerts; scope the scan instead](1222-code-scanning-alert-triage-and-scope.md)
 - [Research-2095: Semgrep Warning Alerts 946–949 Audit and Resolution](../research/2095-semgrep-warning-alerts-946-949-audit.md)
+- [ADR-1309: Owner-only sidecar socket with identity-checked lifecycle](1309-socket-path-ownership-and-owner-only-mode.md)
 - [ADR-1278: Bounded process execution and safe parallelism](1278-python-safe-parallel-execution.md)
 - Source: `req` — "well we have a lot of warnings lol as well..."
