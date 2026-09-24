@@ -35,6 +35,25 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/sycl-a380-snapshots-bug040 — production SYCL DMA host-buffer race fixed (2026-09-24)
+
+1. **`core/src/libvmaf.c:read_pictures_frame_cleanup` must call `vmaf_sycl_wait_last_upload` before `vmaf_picture_unref`.**
+   The picture pool (`tools/vmaf.cpp`, 3 slots for 1-thread default) recycles `dist` to the reader
+   thread immediately after `vmaf_picture_unref`. With `copy_queue.memcpy` DMA still running on the
+   host buffer, the reader's `fread` overwrites bytes in-flight — corrupting the bottom half of 4K
+   `dist` planes with next-frame data. The fix waits for `last_upload_event` (the final dist-plane
+   DMA) under `#ifdef HAVE_SYCL` before returning the buffer to the pool. Do not drop or move this
+   call during a rebase; the event does not touch `combined_queue` so it does not serialize GPU
+   compute, only the host-side page flush.
+2. **`testdata/test_sycl_4k_repeat_determinism.py` is the production stability harness.**
+   It asserts 20 consecutive 4K SYCL runs are bit-exact (tolerance ≤ 1e-6 on pooled VMAF and
+   integer_adm2). It uses `pytest.mark.skipif` when 4K YUV fixtures are absent, so it is always
+   safe to collect. Do not remove or weaken the tolerance without rerunning the Arc A380 evidence.
+3. **The nondeterminism was not in graph-replay or the compute queue.**
+   `VMAF_SYCL_NO_GRAPH=1` showed identical drift; the corruption was in host memory before any
+   compute submitted. Do not re-introduce event dependencies between `combined_queue` operations
+   to "fix" determinism — the root cause was a buffer lifetime issue, not a command-queue ordering.
+
 ## fix/sycl-a380-snapshots-bug040 — CPU and A380 SYCL snapshots regenerated together (2026-09-23)
 
 1. **`testdata/scores_cpu_{720,1080,4k}.json` and `testdata/scores_sycl_a380_*.json` moved together on purpose.**

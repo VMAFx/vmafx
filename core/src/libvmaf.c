@@ -2952,6 +2952,10 @@ static int read_pictures_frame_cleanup(VmafContext *vmaf, ReadPicturesFrame *fr,
 #else
     (void)vmaf;
 #endif
+#ifdef HAVE_SYCL
+    if (vmaf->sycl.state)
+        err |= vmaf_sycl_wait_last_upload(vmaf->sycl.state);
+#endif
     err |= vmaf_picture_unref(fr->ref);
     err |= vmaf_picture_unref(fr->dist);
     return err;
