@@ -43,7 +43,6 @@ Usage::
 from __future__ import annotations
 
 import abc
-import argparse
 import json
 import os
 import shutil
@@ -51,15 +50,20 @@ import sys
 import tempfile
 import time
 import traceback
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
-if str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
@@ -175,8 +179,7 @@ class _OrtRunner(_Runner):
         wanted = providers[0]
         if wanted not in used or used[0] != wanted:
             raise RuntimeError(
-                f"requested EP {wanted!r} not engaged for {model_path.name}; "
-                f"providers used: {used}"
+                f"requested EP {wanted!r} not engaged for {model_path.name}; providers used: {used}"
             )
 
     def infer(self, x):
@@ -390,8 +393,8 @@ def _registry_targets(reg: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+def _parse_args(raw_argv: list[str]) -> Namespace:
+    parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "--eps",
         nargs="+",
@@ -444,7 +447,93 @@ def main() -> int:
         action="store_true",
         help="Exit non-zero if any (model, EP) drop exceeds its budget.",
     )
-    args = parser.parse_args()
+    return parser.parse_args(raw_argv)
+
+
+def _append_registry_models(report: dict[str, Any], reg: dict[str, Any], args: Namespace) -> None:
+    for model in _registry_targets(reg):
+        fp32 = REPO_ROOT / "model" / "tiny" / model["onnx"]
+        int8 = fp32.with_name(fp32.stem + ".int8.onnx")
+        if not fp32.is_file() or not int8.is_file():
+            print(f"[skip] {model['id']} — missing fp32 or int8 sibling", file=sys.stderr)
+            continue
+        budget = float(model.get("quant_accuracy_budget_plcc", 0.01))
+        row = _run_model(model["id"], fp32, int8, args.eps, budget, args.openvino_device)
+        row["source"] = "registry"
+        report["models"].append(row)
+
+
+def _append_extra_models(report: dict[str, Any], args: Namespace, work_dir: Path) -> None:
+    for rel in args.extra_fp32:
+        fp32 = REPO_ROOT / "model" / "tiny" / rel
+        if not fp32.is_file():
+            print(f"[skip] extra fp32 not found: {fp32}", file=sys.stderr)
+            continue
+        try:
+            int8 = _dynamic_quantise(fp32, work_dir)
+        except Exception as exc:
+            print(f"[skip] failed to dynamic-quantise {rel}: {exc}", file=sys.stderr)
+            continue
+        row = _run_model(
+            fp32.stem,
+            fp32,
+            int8,
+            args.eps,
+            args.extra_budget,
+            args.openvino_device,
+        )
+        row["source"] = "extra_fp32_dynamic_ptq"
+        report["models"].append(row)
+
+
+def _write_outputs(report: dict[str, Any], args: Namespace, raw_argv: list[str]) -> None:
+    json_out = args.out / "results.json"
+    md_out = args.out / "results.md"
+    report["run_provenance"] = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={
+            "registry": REGISTRY,
+            "extra_fp32": [REPO_ROOT / "model" / "tiny" / rel for rel in args.extra_fp32],
+        },
+        outputs={"json_report": json_out, "markdown_report": md_out},
+    )
+    _write_json(report, json_out)
+    _write_markdown(report, md_out)
+    print(f"[ok] wrote {json_out}")
+    print(f"[ok] wrote {md_out}")
+
+
+def _gate_result(report: dict[str, Any]) -> int:
+    failed = [
+        (model["model_id"], ep)
+        for model in report["models"]
+        for ep, result in model["per_ep"].items()
+        if not result.get("pass", False)
+    ]
+    for model_id, ep in failed:
+        print(f"[FAIL] {model_id} on {ep}", file=sys.stderr)
+    return 1 if failed else 0
+
+
+def _run(args: Namespace, raw_argv: list[str], reg: dict[str, Any], work_dir: Path) -> int:
+    report: dict[str, Any] = {
+        "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "hw": args.hw,
+        "eps": args.eps,
+        "n_samples": N_SAMPLES,
+        "seed": SEED,
+        "models": [],
+    }
+    _append_registry_models(report, reg, args)
+    _append_extra_models(report, args, work_dir)
+    _write_outputs(report, args, raw_argv)
+    return _gate_result(report) if args.gate else 0
+
+
+def _execute(args: Namespace, raw_argv: list[str]) -> int:
 
     try:
         reg = json.loads(REGISTRY.read_text())
@@ -454,90 +543,14 @@ def main() -> int:
 
     work_dir = Path(tempfile.mkdtemp(prefix="quant_eps_"))
     try:
-        report: dict[str, Any] = {
-            "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "hw": args.hw,
-            "eps": args.eps,
-            "n_samples": N_SAMPLES,
-            "seed": SEED,
-            "models": [],
-        }
-
-        # 1. Registry-shipped quantised models.
-        for m in _registry_targets(reg):
-            fp32 = REPO_ROOT / "model" / "tiny" / m["onnx"]
-            int8 = fp32.with_name(fp32.stem + ".int8.onnx")
-            if not fp32.is_file() or not int8.is_file():
-                print(
-                    f"[skip] {m['id']} — missing fp32 or int8 sibling",
-                    file=sys.stderr,
-                )
-                continue
-            budget = float(m.get("quant_accuracy_budget_plcc", 0.01))
-            row = _run_model(m["id"], fp32, int8, args.eps, budget, args.openvino_device)
-            row["source"] = "registry"
-            report["models"].append(row)
-
-        # 2. Extra fp32-only baselines (dynamic PTQ on the fly).
-        for rel in args.extra_fp32:
-            fp32 = REPO_ROOT / "model" / "tiny" / rel
-            if not fp32.is_file():
-                print(f"[skip] extra fp32 not found: {fp32}", file=sys.stderr)
-                continue
-            try:
-                int8 = _dynamic_quantise(fp32, work_dir)
-            except Exception as exc:
-                print(
-                    f"[skip] failed to dynamic-quantise {rel}: {exc}",
-                    file=sys.stderr,
-                )
-                continue
-            row = _run_model(
-                fp32.stem,
-                fp32,
-                int8,
-                args.eps,
-                args.extra_budget,
-                args.openvino_device,
-            )
-            row["source"] = "extra_fp32_dynamic_ptq"
-            report["models"].append(row)
-
-        json_out = args.out / "results.json"
-        md_out = args.out / "results.md"
-        report["run_provenance"] = build_run_provenance(
-            entrypoint=SCRIPT_PATH,
-            repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
-            args=args,
-            inputs={
-                "registry": REGISTRY,
-                "extra_fp32": [REPO_ROOT / "model" / "tiny" / rel for rel in args.extra_fp32],
-            },
-            outputs={
-                "json_report": json_out,
-                "markdown_report": md_out,
-            },
-        )
-        _write_json(report, json_out)
-        _write_markdown(report, md_out)
-        print(f"[ok] wrote {json_out}")
-        print(f"[ok] wrote {md_out}")
-
-        if args.gate:
-            failed = [
-                (m["model_id"], ep)
-                for m in report["models"]
-                for ep, r in m["per_ep"].items()
-                if not r.get("pass", False)
-            ]
-            if failed:
-                for mid, ep in failed:
-                    print(f"[FAIL] {mid} on {ep}", file=sys.stderr)
-                return 1
-        return 0
+        return _run(args, raw_argv, reg, work_dir)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    return _execute(_parse_args(raw_argv), raw_argv)
 
 
 if __name__ == "__main__":

@@ -31,17 +31,22 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
 import os
 import sys
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
 
@@ -67,9 +72,8 @@ def _save_inlined_for_quant(src: Path, dst: Path) -> None:
     onnx.save(proto, str(dst), save_as_external_data=False)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    parser = argparse.ArgumentParser(description=__doc__)
+def _parse_args(raw_argv: list[str]) -> Namespace:
+    parser = make_argument_parser(description=__doc__)
     parser.add_argument("onnx", type=Path, help="Path to fp32 ONNX file")
     parser.add_argument(
         "--output",
@@ -89,7 +93,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional JSON report with size stats and ADR-0661 run provenance.",
     )
-    args = parser.parse_args(raw_argv)
+    return parser.parse_args(raw_argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
 
     try:
         from onnxruntime.quantization import QuantType, quantize_dynamic

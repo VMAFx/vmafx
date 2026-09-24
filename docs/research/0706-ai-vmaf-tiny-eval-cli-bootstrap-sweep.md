@@ -35,7 +35,9 @@ Move the eval harnesses to the accepted helper pattern:
 - write `run_provenance["argv"]` from the normalized replay argv.
 
 The direct-script bootstrap keeps both invocation shapes working:
-`python ai/scripts/foo.py ...` and `from ai.scripts import foo`.
+`python ai/scripts/foo.py ...` and `from ai.scripts import foo`. Scripts that
+import `ai.scripts.*` or `ai.train.*` pass `include_repo_root=True`; the
+bootstrap's default adds `ai/src`, not the repository root.
 
 ## Reproducer / Smoke
 
@@ -49,3 +51,12 @@ The direct-script bootstrap keeps both invocation shapes working:
 
 This is a behavior-preserving CLI/provenance hygiene sweep. It does not run a
 new LOSO job, retrain any model, or update shipped ONNX artefacts.
+
+## 2026-09-24 restoration note
+
+Commit `d170ef86a` silently restored the pre-sweep bodies while leaving this
+digest, ADR-0680/0681, the AGENTS invariant, and the changelog fragments in
+place. BUG-048 restores the six current scripts and adds an AST regression that
+checks the helper calls semantically instead of matching formatted source text.
+Direct `--help` probes exposed and corrected the missing `include_repo_root`
+flag on the five scripts that import the repository package.
