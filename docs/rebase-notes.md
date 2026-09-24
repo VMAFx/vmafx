@@ -1,6 +1,28 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-doxygen-contracts — preserve GPU public-header semantics (2026-09-24)
+
+`core/include/libvmaf/libvmaf_cuda.h` must continue to document the live
+by-value import model: init returns a caller-owned allocation, import copies
+it without transferring ownership, `vmaf_close()` precedes the
+single-pointer `vmaf_cuda_state_free()`, and that free cannot NULL the
+caller's handle. Do not restore PR #712's old "borrows the state pointer"
+sentence; `core/src/libvmaf.c` copies `*cu_state` into the context.
+
+`VmafSyclPicturePreallocationMethod` keeps explicit, append-only values
+`NONE=0`, `DEVICE=1`, and `HOST=2`. Their implementation mapping remains
+no-pool/`vmaf_picture_alloc`, `sycl::malloc_device`, and
+`sycl::malloc_host`, respectively. Run
+`python3 -B core/test/test_gpu_public_header_docs.py` after resolving a
+conflict in either header.
+
+No FFmpeg patch update is required: no declaration, signature, enumerator
+value, or integration behavior changed. The public header, human API guide,
+test, research, changelog, state evidence, and this rebase note are
+fork-local documentation/test changes; Netflix golden assertions are
+untouched.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

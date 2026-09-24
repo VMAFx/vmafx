@@ -19768,6 +19768,13 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   [research digest 2031](docs/research/2031-codeql-float-widening-multiplication.md).
 
 
+- Restored the CUDA public-header ownership and call-order documentation lost
+  in a silent revert, including the single-pointer state-free convention, and
+  made the SYCL picture-preallocation enum's stable values and allocator
+  mapping explicit. A fast semantic regression now prevents another
+  comment-only rewind.
+
+
 - `local_explainer_test`: recalibrate `test_run_vmaf_runner_local_explainer_with_bootstrap_model`
   assertion to the post-NEON-fix value (`75.40974...`) and relax to `places=3`
   per ADR-0418 macOS-libm pattern; fixes macOS arm64 CI failure introduced by PR #834

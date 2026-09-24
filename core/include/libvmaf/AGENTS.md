@@ -97,6 +97,15 @@ only currently-extracted shared internal helper.
   `NONE / HOST / DEVICE` (no `HOST_PINNED` — VMA `AUTO_PREFER_HOST` not
   pinned in CUDA sense). New backends follow SYCL/Vulkan 3-method shape;
   do not introduce fourth method without ADR.
+- **GPU public-header lifecycle prose is an executable contract**: keep
+  `libvmaf_cuda.h` explicit that init returns a caller-owned allocation,
+  import copies it by value without transferring ownership, close precedes
+  the single-pointer `vmaf_cuda_state_free`, and that free does not NULL the
+  caller's handle. Keep `VmafSyclPicturePreallocationMethod` values explicit
+  and stable (`NONE=0`, `DEVICE=1`, `HOST=2`) with their actual allocator
+  mapping (`vmaf_picture_alloc`, `sycl::malloc_device`,
+  `sycl::malloc_host`). `core/test/test_gpu_public_header_docs.py` guards
+  these semantics against another silent comment-only revert.
 - **`picture.h` v1 is frozen for the v2 deprecation window**
   ([ADR-0928](../../../docs/adr/0928-vmaf-picture-v2-explicit-backend-state.md)).
   Do not add fields to `VmafPicture` v1 — additive growth lands on

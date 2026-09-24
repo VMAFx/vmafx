@@ -75,12 +75,24 @@ VMAF_EXPORT int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigu
 VMAF_EXPORT int vmaf_sycl_import_state(VmafContext *vmaf, VmafSyclState *sycl_state);
 
 /**
- * Picture pre-allocation method.
+ * @enum VmafSyclPicturePreallocationMethod
+ * @brief Storage tier used by `vmaf_sycl_preallocate_pictures()`.
+ *
+ * The method controls where each picture pool's sample buffers live:
+ *
+ * - `NONE` (0) creates no pool. `vmaf_sycl_picture_fetch()` falls back to a
+ *   host-backed picture allocated by `vmaf_picture_alloc()`.
+ * - `DEVICE` (1) allocates GPU-resident USM with `sycl::malloc_device`.
+ *   The host cannot dereference these buffers directly.
+ * - `HOST` (2) allocates CPU-visible USM with `sycl::malloc_host` for callers
+ *   that fill pooled pictures on the host.
+ *
+ * Enumerator values are stable and append-only across libvmaf releases.
  */
 enum VmafSyclPicturePreallocationMethod {
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE = 0,
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_DEVICE,
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_HOST,
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE = 0,   /**< No pool; use host allocation. */
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_DEVICE = 1, /**< Device USM allocation. */
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_HOST = 2,   /**< Host USM allocation. */
 };
 
 /**
