@@ -290,10 +290,12 @@ columns in `skipped_non_numeric_columns`, `skipped_all_nan_columns`, and
 
 All-null numeric features are common in partially populated aggregate tables.
 They are removed before complete-case filtering so one unavailable metric does
-not erase every row. Remaining per-row missing values still use complete-case
-filtering across the selected features and target. A table with no usable
-numeric feature, or no complete feature/target row, fails with a direct
-diagnostic instead of passing an empty array into NumPy or scikit-learn.
+not erase every row. Remaining per-row missing or non-finite values use
+complete-case filtering across the selected features and target: `NaN`,
+positive infinity, and negative infinity are all excluded before NumPy or
+scikit-learn sees the matrix. A table with no usable numeric feature, or no
+finite complete feature/target row, fails with a direct diagnostic instead of
+passing an empty array into NumPy or scikit-learn.
 Constant numeric columns are also excluded before analysis: their Pearson
 correlation is undefined, NumPy warns under the required warnings-as-errors
 policy, and a zero-importance tie must not promote them into `consensus_topk`.
@@ -301,6 +303,9 @@ The analyzer repeats this check after complete-case filtering because removing
 rows for a sibling feature can turn a globally varying column into a constant.
 If optional scikit-learn analysis is unavailable, its method maps and top-K
 lists are empty rather than carrying non-standard JSON `NaN` placeholders.
+`--redundancy-threshold` rejects non-finite spellings at argument parsing, and
+the assembled report is validated with strict RFC-8259 number semantics before
+the atomic manifest write.
 `ai/scripts/phase3_subset_sweep.py --out` also records `run_provenance` next to
 the subset result keys, including the source parquet, subset list, seed policy,
 standardization flag, and report path used for Phase-3 model-selection sweeps.

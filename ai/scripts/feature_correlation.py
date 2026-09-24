@@ -17,6 +17,7 @@ Output goes to a JSON report + a text summary printed to stdout.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -148,13 +149,21 @@ def _select_feature_columns(
 def _complete_case_features(
     df: Any, feature_cols: list[str], target: str
 ) -> tuple[Any, list[str], list[str]]:
-    """Drop incomplete rows and remove features constant on retained rows."""
+    """Drop non-finite rows and remove features constant on retained rows."""
     usable = list(feature_cols)
     skipped_constant: list[str] = []
     while usable:
-        df_clean = df.dropna(subset=[*usable, target])
+        columns = [*usable, target]
+        complete = df.dropna(subset=columns)
+        try:
+            finite = np.isfinite(complete[columns].to_numpy(dtype=np.float64)).all(axis=1)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("target and feature columns must contain numeric values") from exc
+        df_clean = complete.loc[finite]
         if df_clean.empty:
-            raise ValueError("no complete rows remain after dropping feature/target NaN values")
+            raise ValueError(
+                "no complete rows remain after dropping non-finite feature/target values"
+            )
         constant = [column for column in usable if df_clean[column].nunique() <= 1]
         if not constant:
             return df_clean, usable, skipped_constant
@@ -162,6 +171,14 @@ def _complete_case_features(
         constant_set = set(constant)
         usable = [column for column in usable if column not in constant_set]
     raise ValueError("no usable numeric feature columns remain after complete-case filtering")
+
+
+def _finite_float(raw_value: str) -> float:
+    """Parse one finite CLI float or raise an argparse-native error."""
+    value = float(raw_value)
+    if not np.isfinite(value):
+        raise argparse.ArgumentTypeError("must be a finite number")
+    return value
 
 
 def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
@@ -176,7 +193,7 @@ def _parse_args(raw_argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument(
         "--redundancy-threshold",
-        type=float,
+        type=_finite_float,
         default=0.95,
         help="|Pearson r| above which pairs are flagged as redundant.",
     )
@@ -207,7 +224,7 @@ def _prepare_analysis_input(parquet: Path, target: str) -> _AnalysisInput:
         print(f"[corr] skipped all-NaN numeric columns: {skipped_all_nan}")
     if skipped_constant:
         print(f"[corr] skipped constant numeric columns: {skipped_constant}")
-    print(f"[corr] dropped NaN rows: {len(df) - len(df_clean)}; clean rows={len(df_clean)}")
+    print(f"[corr] dropped non-finite rows: {len(df) - len(df_clean)}; clean rows={len(df_clean)}")
     return _AnalysisInput(
         x=df_clean[feat_cols].to_numpy(dtype=np.float64),
         y=df_clean[target].to_numpy(dtype=np.float64),
@@ -282,12 +299,21 @@ def _build_report(
     }
 
 
+def _write_strict_report(path: Path, report: dict[str, Any]) -> None:
+    """Atomically write a report only when RFC-8259 serialization is possible."""
+    try:
+        json.dumps(report, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("feature-correlation report contains a non-JSON value") from exc
+    write_manifest_json(path, report)
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
     args = _parse_args(raw_argv)
     data = _prepare_analysis_input(args.parquet, args.target)
     analysis = _analyze(data, args.redundancy_threshold, args.top_k)
-    write_manifest_json(args.out, _build_report(args, raw_argv, data, analysis))
+    _write_strict_report(args.out, _build_report(args, raw_argv, data, analysis))
     print(f"[corr] wrote {args.out}")
     return 0
 

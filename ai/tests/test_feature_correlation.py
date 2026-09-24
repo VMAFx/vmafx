@@ -23,12 +23,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 # pylint: disable=wrong-import-position
 from feature_correlation import (
+    _parse_args,
     _pearson_matrix,
     _redundant_pairs,
     _select_feature_columns,
     _top_k_consensus,
+    _write_strict_report,
 )
-from feature_correlation import main as corr_main
+from feature_correlation import (
+    main as corr_main,
+)
+
+ARGPARSE_ERROR_CODE = 2
 
 
 def _reject_nonfinite_json(token: str) -> None:
@@ -270,6 +276,66 @@ def test_corr_main_without_sklearn_writes_strict_json(tmp_path, monkeypatch):
     assert payload["importances"] == {"mi": {}, "lasso": {}, "rf": {}}
     assert payload["per_method_topk"] == {"mi": [], "lasso": [], "rf": []}
     assert payload["consensus_topk"] == []
+
+
+@pytest.mark.parametrize("threshold", ["nan", "inf", "-inf"])
+def test_parse_args_rejects_nonfinite_redundancy_threshold(threshold):
+    """The report threshold must never carry a JSON non-finite constant."""
+    with pytest.raises(SystemExit) as exc_info:
+        _parse_args(
+            [
+                "--parquet",
+                "input.parquet",
+                "--out",
+                "report.json",
+                "--redundancy-threshold",
+                threshold,
+            ]
+        )
+
+    assert exc_info.value.code == ARGPARSE_ERROR_CODE
+
+
+def test_corr_main_filters_nonfinite_rows_and_writes_strict_json(tmp_path, monkeypatch, capsys):
+    """Infinity is incomplete input, not a publishable correlation value."""
+    parquet = tmp_path / "nonfinite.parquet"
+    parquet.touch()
+    out = tmp_path / "report.json"
+    frame = pd.DataFrame(
+        {
+            "feat_a": [1.0, 2.0, np.inf, 4.0, -np.inf, 6.0],
+            "feat_b": [2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
+            "vmaf": [60.0, 61.0, 62.0, np.inf, 64.0, 65.0],
+        }
+    )
+    real_import = builtins.__import__
+
+    def import_without_sklearn(name, *args, **kwargs):
+        if name == "sklearn" or name.startswith("sklearn."):
+            raise ImportError("sklearn deliberately unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_parquet", lambda _path: frame)
+    monkeypatch.setattr(builtins, "__import__", import_without_sklearn)
+
+    assert corr_main(["--parquet", str(parquet), "--out", str(out)]) == 0
+    assert "[corr] dropped non-finite rows: 3; clean rows=3" in capsys.readouterr().out
+    payload = json.loads(out.read_text(), parse_constant=_reject_nonfinite_json)
+    assert payload["n_rows_clean"] == 3
+    assert payload["feature_cols"] == ["feat_a", "feat_b"]
+    assert payload["importances"] == {"mi": {}, "lasso": {}, "rf": {}}
+    assert all(np.isfinite(value) for row in payload["pearson"].values() for value in row.values())
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_strict_report_refuses_nonfinite_payload(tmp_path, value):
+    """The atomic writer must not publish Python-only JSON constants."""
+    out = tmp_path / "report.json"
+
+    with pytest.raises(ValueError, match="report contains a non-JSON value"):
+        _write_strict_report(out, {"nested": {"value": value}})
+
+    assert not out.exists()
 
 
 def test_corr_main_rejects_table_without_usable_numeric_features(tmp_path, monkeypatch):

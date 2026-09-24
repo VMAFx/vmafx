@@ -289,6 +289,12 @@ that they belong in a consensus top-K set. Constancy is checked again on the
 complete-case rows because missing values in a sibling feature can erase all
 remaining variance. Missing optional scikit-learn methods emit empty result
 maps and top-K lists, preserving strict RFC JSON instead of serializing `NaN`.
+The complete-case boundary treats `NaN`, positive infinity, and negative
+infinity in either a selected feature or the target as unavailable rows.
+Non-finite `--redundancy-threshold` values are rejected by the parser, and the
+finished report is checked with `allow_nan=False` before its atomic write, so a
+future analysis regression fails closed rather than publishing `NaN` or
+`Infinity` tokens.
 
 ## References
 

@@ -14,10 +14,15 @@ skipped sets are logged and recorded in the JSON report; this prevents NumPy's
 undefined-correlation warning and prevents a constant feature entering
 `consensus_topk` through a zero-score tie. An unavailable optional scikit-learn
 method emits an empty result map instead of a non-standard JSON `NaN` value.
+Selected feature and target rows must also be finite: `NaN` and both infinities
+are removed before Pearson or optional scikit-learn analysis. The CLI rejects
+non-finite `--redundancy-threshold` values, and the complete report is validated
+with `allow_nan=False` before the existing atomic manifest write. Preserve this
+fail-closed boundary when rebasing shared CLI or provenance helpers.
 Companion regressions in `ai/tests/test_feature_correlation.py` cover
 string/metadata columns, unavailable and constant numeric columns including a
-retained-row constant, missing scikit-learn, the one-feature case, and an empty
-usable schema.
+retained-row constant, non-finite feature/target rows and thresholds, missing
+scikit-learn, the one-feature case, and an empty usable schema.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
