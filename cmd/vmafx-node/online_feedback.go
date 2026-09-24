@@ -9,6 +9,7 @@
 //
 //	→ {"job_id": "...", "features": [...], "true_score": 42.7}
 //	← {"ok": true, "step": 1234, "trained": false}
+//	← {"ok": true, "trained": false, "retry_queued": true, "training_error": "..."}
 //	← {"ok": false, "error": "message"}
 //
 // The client is intentionally fire-and-forget from the scoring path:
@@ -76,12 +77,14 @@ type FeedbackMessage struct {
 
 // feedbackAck is the JSON envelope received from the sidecar.
 type feedbackAck struct {
-	OK         bool    `json:"ok"`
-	Step       int64   `json:"step"`
-	Trained    bool    `json:"trained"`
-	Loss       float64 `json:"loss,omitempty"`
-	Checkpoint string  `json:"checkpoint,omitempty"`
-	Error      string  `json:"error,omitempty"`
+	OK            bool    `json:"ok"`
+	Step          int64   `json:"step"`
+	Trained       bool    `json:"trained"`
+	Loss          float64 `json:"loss,omitempty"`
+	Checkpoint    string  `json:"checkpoint,omitempty"`
+	Error         string  `json:"error,omitempty"`
+	RetryQueued   bool    `json:"retry_queued,omitempty"`
+	TrainingError string  `json:"training_error,omitempty"`
 }
 
 // FeedbackClient is a non-blocking Unix-socket client for the online
@@ -339,6 +342,11 @@ func (fc *FeedbackClient) sendOne(
 		fc.log.Warn("sidecar rejected message",
 			slog.String("job_id", msg.JobID),
 			slog.String("error", ack.Error))
+	} else if ack.RetryQueued {
+		fc.log.Warn("sidecar accepted message with training retry queued",
+			slog.String("job_id", msg.JobID),
+			slog.String("error", ack.TrainingError),
+			slog.Int64("step", ack.Step))
 	} else if ack.Checkpoint != "" {
 		fc.log.Info("sidecar checkpoint exported",
 			slog.String("path", ack.Checkpoint),

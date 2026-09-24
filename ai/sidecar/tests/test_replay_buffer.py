@@ -58,13 +58,13 @@ class TestReplayBufferBasic:
         buf = ReplayBuffer(capacity=10)
         assert buf.sample(5) == []
 
-    def test_sample_with_replacement_capped_at_len(self):
+    def test_sample_with_replacement_fills_requested_count(self):
         buf = ReplayBuffer(capacity=10)
         buf.push([1.0], 1.0)
         buf.push([2.0], 2.0)
         result = buf.sample(100)
-        # sample() caps at len when n > len and no explicit replacement
-        assert len(result) == 2
+        assert len(result) == 100
+        assert {sample.true_score for sample in result} <= {1.0, 2.0}
 
     def test_sample_deterministic_with_seeded_rng(self):
         buf = ReplayBuffer(capacity=20)

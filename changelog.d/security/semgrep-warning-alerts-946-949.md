@@ -20,6 +20,11 @@
   directory alongside the socket.
 - Make the newly required sidecar suite warning-clean on PyTorch 2.14: preserve
   batch-size-one training without MSE broadcasting, reject prediction/target
-  count mismatches, retry the oldest failed pending window without discarding
-  samples received concurrently, export a genuinely dynamic ONNX batch axis,
-  and fail socket lifecycle tests on server-thread exceptions.
+  count mismatches, serialize each reserve-to-commit training lifecycle, consume
+  only the pending samples used by a replay-mixed batch, fill cold replay shares
+  with replacement, retry the oldest failed window without discarding concurrent
+  samples, and bound pending work with explicit backpressure. Admission-aware
+  ACKs prevent a retained failed-step sample from being duplicated by caller
+  retry while leaving capacity-rejected samples explicitly retryable. Export a
+  genuinely dynamic ONNX batch axis and fail socket lifecycle tests on
+  server-thread exceptions.

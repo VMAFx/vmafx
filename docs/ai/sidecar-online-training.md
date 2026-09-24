@@ -88,10 +88,34 @@ other content types. The 10 000-sample ring buffer represents about 3.2 MB of
 raw 80-float payload before Python object and container overhead, and retains
 about 200 hours of a hypothetical 50-sample/hour input stream.
 
-Each gradient step reserves the oldest batch-sized window of newly received
-samples. If training raises a runtime or shape error, that window returns to the
-front of the pending queue for the next attempt; samples received concurrently
-remain behind it and are not discarded when the retry succeeds.
+For a configured batch size `B` and replay fraction `R`, each gradient step
+reserves exactly the oldest `B - floor(B * R)` pending samples; replay fills the
+remaining slots, sampling with replacement when the available replay history is
+smaller than that share. Only those reserved new samples are consumed, so a 50%
+replay mix with batch size 4 trains pending samples 1 and 2 before samples 3 and 4.
+The reserve, train, and restore-or-commit lifecycle has one owner. Concurrent
+ingests can enqueue behind that owner, but cannot start a second step.
+
+The admitted pending backlog (queued plus in-flight new samples) is capped by
+`VMAFX_SIDECAR_PENDING_CAPACITY`. When it is full during a step, another ingest
+fails explicitly with `pending training queue is full ...; retry later` before
+its sample enters either queue. When the queue is full and idle after a failed
+step, the next ingest retries the oldest window first and admits its new sample
+only if that retry succeeds. A `RuntimeError` or `ValueError` restores the
+reserved samples to the front, preserving FIFO retry order without silent loss.
+`OnlineTrainer.status()` exposes `pending_size`, `pending_capacity`, and
+`training_active` to embedding callers; the standalone process still does not
+provide an HTTP status endpoint.
+
+ACKs distinguish admission from training success. If the call's sample was
+already admitted before a step failed, the sidecar logs the failure and returns
+`{"ok": true, "trained": false, "retry_queued": true,
+"training_error": "..."}`. The sample is already in the restored FIFO window;
+the caller must not submit it again. The Go `FeedbackClient` counts that ACK as
+delivered and logs the deferred training error. If capacity prevented admission,
+a failed oldest-window retry returns `{"ok": false, "error": "..."}` and the
+caller may retry that unaccepted sample. This distinction prevents both silent
+loss and duplicate feedback.
 
 ---
 
@@ -105,8 +129,9 @@ wired to supported Helm values in the current chart.
 | `VMAFX_BASE_MODEL_PATH` | empty | Python trainer seed model. A PyTorch state dict matching the fallback two-layer MLP is loaded directly; ONNX loading needs the optional `onnx2torch` module. A missing, inaccessible, or unsupported model falls back to a new two-layer MLP. |
 | `VMAFX_SIDECAR_CHECKPOINT_DIR` | `/mnt/vmafx-models/online` | Directory for versioned ONNX checkpoint output. |
 | `VMAFX_SIDECAR_REPLAY_CAPACITY` | `10000` | Replay buffer capacity (samples). |
+| `VMAFX_SIDECAR_PENDING_CAPACITY` | `10000` | Maximum admitted new samples not yet committed by a successful step, counting queued and in-flight samples. Must fit one batch's new-sample portion. |
 | `VMAFX_SIDECAR_BATCH_SIZE` | `32` | Mini-batch size per gradient step. |
-| `VMAFX_SIDECAR_REPLAY_MIX` | `0.5` | Fraction of each batch drawn from replay buffer. |
+| `VMAFX_SIDECAR_REPLAY_MIX` | `0.5` | Fraction of each batch drawn from replay buffer, in `[0.0, 1.0)`. |
 | `VMAFX_SIDECAR_LR` | `0.0001` | SGD learning rate used by the executable. |
 | `VMAFX_SIDECAR_EMA_DECAY` | `0.999` | EMA decay beta. |
 | `VMAFX_SIDECAR_CKPT_INTERVAL_S` | `600` | Minimum seconds between checkpoints. |

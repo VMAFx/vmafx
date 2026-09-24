@@ -63,6 +63,7 @@ _SOCKET_PATH = os.environ.get("VMAFX_SIDECAR_SOCKET", "/tmp/vmafx-sidecar.sock")
 _BASE_MODEL_PATH = os.environ.get("VMAFX_BASE_MODEL_PATH", "")
 _CHECKPOINT_DIR = os.environ.get("VMAFX_SIDECAR_CHECKPOINT_DIR", "/mnt/vmafx-models/online")
 _REPLAY_BUFFER_CAPACITY = int(os.environ.get("VMAFX_SIDECAR_REPLAY_CAPACITY", "10000"))
+_PENDING_CAPACITY = int(os.environ.get("VMAFX_SIDECAR_PENDING_CAPACITY", "10000"))
 _BATCH_SIZE = int(os.environ.get("VMAFX_SIDECAR_BATCH_SIZE", "32"))
 _REPLAY_MIX_RATIO = float(os.environ.get("VMAFX_SIDECAR_REPLAY_MIX", "0.5"))
 _LR = float(os.environ.get("VMAFX_SIDECAR_LR", "0.0001"))
@@ -173,10 +174,13 @@ class OnlineTrainer:
         Directory where versioned ONNX checkpoints are written.
     buffer_capacity:
         Replay buffer capacity (default 10 000 per ADR-0781).
+    pending_capacity:
+        Maximum admitted samples not yet committed by a successful step. Must
+        fit the new-sample portion of one batch.
     batch_size:
         Mini-batch size for each gradient step.
     replay_mix_ratio:
-        Fraction of each batch drawn from the replay buffer (0.0–1.0).
+        Fraction of each batch drawn from the replay buffer (``[0.0, 1.0)``).
     config:
         SGDEMAConfig instance; defaults are used when None.
     """
@@ -187,15 +191,26 @@ class OnlineTrainer:
         base_model_path: str = "",
         checkpoint_dir: str = _CHECKPOINT_DIR,
         buffer_capacity: int = _REPLAY_BUFFER_CAPACITY,
+        pending_capacity: int = _PENDING_CAPACITY,
         batch_size: int = _BATCH_SIZE,
         replay_mix_ratio: float = _REPLAY_MIX_RATIO,
         config: SGDEMAConfig | None = None,
     ) -> None:
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if not 0.0 <= replay_mix_ratio < 1.0:
+            raise ValueError("replay_mix_ratio must be in [0.0, 1.0)")
         self._n_features = n_features
         self._checkpoint_dir = pathlib.Path(checkpoint_dir)
         self._checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self._batch_size = batch_size
-        self._replay_mix_ratio = replay_mix_ratio
+        self._replay_samples_per_batch = int(batch_size * replay_mix_ratio)
+        self._new_samples_per_batch = batch_size - self._replay_samples_per_batch
+        if pending_capacity < self._new_samples_per_batch:
+            raise ValueError(
+                "pending_capacity must fit one batch's new-sample window "
+                f"({self._new_samples_per_batch})"
+            )
+        self._pending_capacity = pending_capacity
 
         self._buffer = ReplayBuffer(capacity=buffer_capacity)
         model = _load_base_model(base_model_path, n_features)
@@ -203,6 +218,8 @@ class OnlineTrainer:
 
         self._pending: list[Sample] = []  # samples received but not yet trained on
         self._lock = threading.Lock()
+        self._training_active = False
+        self._inflight_new_samples = 0
         # Separate lock guards the should_checkpoint() gate + counter increment +
         # filename choice + export so concurrent connection threads cannot race
         # the version number or export two checkpoints under the same name.
@@ -212,8 +229,16 @@ class OnlineTrainer:
     def ingest(self, features: list[float], true_score: float) -> dict[str, Any]:
         """Accept one (features, true_score) pair from the socket handler.
 
-        When the pending queue reaches ``_batch_size``, reserves its oldest
-        batch-sized window and triggers one gradient step. Returns an ACK status.
+        Once enough new samples exist to fill the non-replay portion of a
+        batch, reserve the oldest such window and trigger one serialized
+        gradient step. Concurrent callers may enqueue behind the active window
+        up to ``_pending_capacity``; calls beyond that bound receive explicit
+        backpressure and must retry their sample. Returns an ACK status.
+
+        A trainer failure restores its FIFO window. If this call's sample was
+        already admitted, the result acknowledges it with ``retry_queued`` so
+        the caller does not submit a duplicate. If capacity deferred admission,
+        the failure propagates and the caller must retry the unaccepted sample.
 
         Raises ``ValueError`` for a wrong-length feature vector or a
         non-numeric ``true_score``; the socket handler converts that into a
@@ -230,37 +255,28 @@ class OnlineTrainer:
         score = float(true_score)
         sample = Sample(tuple(float(f) for f in features), score)
 
-        with self._lock:
-            self._pending.append(sample)
-            self._buffer.push(sample.features, score)
+        prepared = self._prepare_ingest(sample)
+        if prepared is None:
+            return {"ok": True, "step": self._trainer.step_count, "trained": False}
+        reserved, batch, sample_deferred = prepared
 
-            if len(self._pending) < self._batch_size:
-                return {"ok": True, "step": self._trainer.step_count, "trained": False}
-
-            # Reserve only the oldest batch-sized window. Samples appended by a
-            # concurrent ingest while this step runs remain queued behind it.
-            reserved = self._pending[: self._batch_size]
-            del self._pending[: self._batch_size]
-            batch = self._build_batch(reserved)
-
-        # Step outside the lock — PyTorch backward pass is not reentrant anyway.
+        # Step outside the queue lock. _training_active serializes the complete
+        # reserve -> train -> restore/commit lifecycle while concurrent calls
+        # enqueue behind the reserved FIFO window.
         try:
             loss = self._train_on_batch(batch)
-        except (RuntimeError, ValueError):
+        except (RuntimeError, ValueError) as exc:
             # The gradient step failed (CUDA OOM, prediction/target mismatch,
-            # ...). Restore the reserved samples at the front so the next ingest
-            # retries them before any later samples. Concurrent arrivals remain
-            # queued behind the restored window rather than being cleared as
-            # collateral. Then propagate so the socket handler reports the
-            # failure in the ACK.
-            with self._lock:
-                self._pending[:0] = reserved
-            raise
+            # ...). Restore its FIFO window before releasing the training owner.
+            self._finish_training(restore=reserved)
+            if sample_deferred:
+                raise
+            return self._accepted_failure_result(exc)
 
         # Check checkpoint condition and export atomically under the checkpoint
         # lock — otherwise two connection threads can both pass should_checkpoint()
         # and collide on the same model_vNNNNNN.onnx version (R3-7).
-        ckpt_path = self._maybe_export_checkpoint()
+        ckpt_path = self._commit_training_step(sample if sample_deferred else None)
 
         return {
             "ok": True,
@@ -271,8 +287,11 @@ class OnlineTrainer:
         }
 
     def status(self) -> dict[str, Any]:
-        """Return a status snapshot for the /status endpoint."""
+        """Return a status snapshot to embedding callers and tests."""
         buf_stats = self._buffer.stats
+        with self._lock:
+            pending_size = len(self._pending) + self._inflight_new_samples
+            training_active = self._training_active
         return {
             "step_count": self._trainer.step_count,
             "buffer_size": buf_stats["current_size"],
@@ -281,6 +300,9 @@ class OnlineTrainer:
             "total_evicted": buf_stats["total_evicted"],
             "checkpoint_counter": self._checkpoint_counter,
             "n_features": self._n_features,
+            "pending_size": pending_size,
+            "pending_capacity": self._pending_capacity,
+            "training_active": training_active,
         }
 
     # ------------------------------------------------------------------
@@ -289,11 +311,69 @@ class OnlineTrainer:
 
     def _build_batch(self, reserved: list[Sample]) -> list[Sample]:
         """Combine a reserved pending window with a replay draw."""
-        n_replay = int(self._batch_size * self._replay_mix_ratio)
-        n_new = self._batch_size - n_replay
-        new_samples = reserved[-n_new:] if reserved else []
-        replay_samples = self._buffer.sample(n_replay)
-        return new_samples + replay_samples
+        replay_samples = self._buffer.sample(self._replay_samples_per_batch)
+        return reserved + replay_samples
+
+    def _accepted_failure_result(self, exc: Exception) -> dict[str, Any]:
+        """Acknowledge an admitted sample whose training window remains queued."""
+        logger.warning("Training step deferred; admitted samples remain queued: %s", exc)
+        return {
+            "ok": True,
+            "step": self._trainer.step_count,
+            "trained": False,
+            "retry_queued": True,
+            "training_error": str(exc),
+        }
+
+    def _prepare_ingest(self, sample: Sample) -> tuple[list[Sample], list[Sample], bool] | None:
+        """Admit a sample or use its call to drain a capacity-bound backlog."""
+        with self._lock:
+            sample_deferred = self._backlog_size_locked() >= self._pending_capacity
+            if sample_deferred:
+                if self._training_active:
+                    raise RuntimeError(
+                        f"pending training queue is full ({self._pending_capacity} samples); "
+                        "retry later"
+                    )
+            else:
+                self._pending.append(sample)
+                self._buffer.push(sample.features, sample.true_score)
+
+            if self._training_active or len(self._pending) < self._new_samples_per_batch:
+                return None
+
+            reserved = self._pending[: self._new_samples_per_batch]
+            batch = self._build_batch(reserved)
+            del self._pending[: self._new_samples_per_batch]
+            self._training_active = True
+            self._inflight_new_samples = len(reserved)
+            return reserved, batch, sample_deferred
+
+    def _backlog_size_locked(self) -> int:
+        """Return admitted, uncommitted samples while ``_lock`` is held."""
+        return len(self._pending) + self._inflight_new_samples
+
+    def _finish_training(
+        self,
+        restore: list[Sample] | None = None,
+        admit: Sample | None = None,
+    ) -> None:
+        """Release the training owner, restoring or admitting as requested."""
+        with self._lock:
+            if restore is not None:
+                self._pending[:0] = restore
+            self._inflight_new_samples = 0
+            if admit is not None:
+                self._pending.append(admit)
+                self._buffer.push(admit.features, admit.true_score)
+            self._training_active = False
+
+    def _commit_training_step(self, admit: Sample | None = None) -> str | None:
+        """Export if due, then release the single training owner."""
+        try:
+            return self._maybe_export_checkpoint()
+        finally:
+            self._finish_training(admit=admit)
 
     def _train_on_batch(self, batch: list[Sample]) -> float:
         """Convert batch to tensors and call trainer.step()."""
@@ -561,10 +641,10 @@ def _handle_connection(
                     ack = json.dumps(result) + "\n"
                     conn.sendall(ack.encode())
                 except (KeyError, json.JSONDecodeError, TypeError, ValueError, RuntimeError) as exc:
-                    # ValueError: malformed message (bad feature length / non-numeric
-                    # score) or a ragged training batch. RuntimeError: shape-mismatched
-                    # torch step. One bad message must return a structured error, not
-                    # kill the per-connection daemon thread (R3-3).
+                    # Already-admitted trainer failures return normally with
+                    # retry_queued. Exceptions reaching here are malformed input or
+                    # failures for a sample that was not admitted, so ok:false is
+                    # retry-safe and must not kill the connection thread (R3-3).
                     err = json.dumps({"ok": False, "error": str(exc)}) + "\n"
                     conn.sendall(err.encode())
     except OSError as exc:

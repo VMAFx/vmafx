@@ -101,6 +101,22 @@ func TestFeedbackClient_DeliveryCountIncremented(t *testing.T) {
 	}
 }
 
+// TestFeedbackAckRetryQueuedFields pins the Python sidecar's admission-aware
+// failure ACK so the Go client cannot silently drift from the wire contract.
+func TestFeedbackAckRetryQueuedFields(t *testing.T) {
+	var ack feedbackAck
+	err := json.Unmarshal(
+		[]byte(`{"ok":true,"trained":false,"retry_queued":true,"training_error":"oom"}`),
+		&ack,
+	)
+	if err != nil {
+		t.Fatalf("unmarshal retry-queued ACK: %v", err)
+	}
+	if !ack.OK || ack.Trained || !ack.RetryQueued || ack.TrainingError != "oom" {
+		t.Fatalf("retry-queued ACK decoded incorrectly: %+v", ack)
+	}
+}
+
 // TestFeedbackClient_Send_EnqueuesAndReturnsTrue verifies that Send returns
 // true when the queue has capacity. Send works before Start() — the queue is
 // live immediately.

@@ -58,7 +58,11 @@ into fx graph.
    revert to ctx-bound constructor spawning at construction time -> leaked
    goroutine past `Close`, bound drainer to caller lifetime fx does not own.
    Newline-delimited JSON wire protocol, bounded ring-buffer drop semantics
-   unchanged.
+   unchanged. Admission-aware trainer failures use `ok: true`,
+   `retry_queued: true`, and `training_error`: the sidecar retained the sample,
+   so the Go client counts it delivered and logs the deferred training error
+   without resubmitting. `ok: false` remains reserved for samples the sidecar
+   did not admit. Keep `feedbackAck` synchronized with the Python response.
 
 5. **Encoder probe is NON-FATAL and runs in OnStart** (`providers.go`,
    ADR-0717): `provideEncoderInventory` returns shared `*probe.Inventory`

@@ -21,17 +21,31 @@ Implements vmafx-node online training sidecar (ADR-0781).
    legacy `dynamic_axes` emits a warning under the required dynamo exporter.
    Training flattens predictions and targets to equal-length vectors, rejects
    a count mismatch, and must keep batch-size-one steps warning-free.
-   `OnlineTrainer.ingest()` reserves only the oldest batch-sized pending window
-   for each step. After either a `RuntimeError` or `ValueError`, it restores that
-   window at the front so the batch that exposed the failure is retried before
-   later concurrent arrivals; those arrivals must remain queued, not be cleared
-   as collateral. Run the complete `ai/sidecar/tests` suite with warnings
-   promoted to errors.
+   `OnlineTrainer.ingest()` derives the new-sample window as
+   `batch_size - floor(batch_size * replay_mix_ratio)` and reserves exactly that
+   many oldest pending samples; replay fills the rest without consuming later
+   pending samples. Replay sampling uses replacement, so cold history or a
+   replay capacity below the replay share still yields the configured batch
+   size. One owner holds the complete reserve -> train ->
+   restore/commit lifecycle, so a second complete window cannot train ahead of
+   a failed first window. After either a `RuntimeError` or `ValueError`, the
+   reserved window returns to the front before the owner is released. Concurrent
+   arrivals remain queued behind it, bounded by `VMAFX_SIDECAR_PENDING_CAPACITY`
+   (queued plus in-flight samples). A full queue rejects concurrent arrivals
+   before replay admission; an idle full queue retries its oldest window and
+   admits the triggering sample only after that step succeeds. A failed step
+   whose triggering sample was already admitted returns `ok: true`,
+   `trained: false`, and `retry_queued: true`; callers must not resubmit it. A
+   capacity-deferred sample remains unaccepted when that retry fails, so the
+   exception / `ok: false` ACK tells the caller to retry. Run the complete
+   `ai/sidecar/tests` suite with warnings promoted to errors.
 
-4. **Replay buffer capacity default** — 10 000 samples = ADR-0781 design point.
-   The executable source (`_REPLAY_BUFFER_CAPACITY`), focused tests, and the
-   environment-variable table in `docs/ai/sidecar-online-training.md` are the
-   current contract and move together. The orphaned Helm helper mentions
+4. **Replay and pending capacity defaults** — both are 10 000 samples. The
+   executable source (`_REPLAY_BUFFER_CAPACITY`, `_PENDING_CAPACITY`), focused
+   tests, and the environment-variable table in
+   `docs/ai/sidecar-online-training.md` are the current contract and move
+   together. The pending capacity must fit one batch's new-sample window. The
+   orphaned Helm helper mentions
    `sidecar.trainer.replayBufferSize`, but the chart neither schemas nor consumes
    that value; do not describe it as a supported Helm setting.
 
