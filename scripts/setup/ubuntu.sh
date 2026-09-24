@@ -6,6 +6,9 @@
 # Installs the build toolchain, Python dev deps, and (optionally) CUDA / oneAPI.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+
 ENABLE_CUDA="${ENABLE_CUDA:-false}"
 ENABLE_SYCL="${ENABLE_SYCL:-false}"
 INSTALL_LINTERS="${INSTALL_LINTERS:-true}"
@@ -27,7 +30,8 @@ $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends 
 # meson from PyPI, not apt: Ubuntu 24.04 ships meson 1.3.2, which predates
 # `c23` in c_std (added in 1.4.0); core/meson.build declares >= 1.4.0 since
 # ADR-0692. User-site keeps this sudo-free; ~/.local/bin is on PATH on CI.
-python3 -m pip install --user --upgrade meson
+python3 -m pip install --user --require-hashes \
+  -r "$REPO_ROOT/requirements/locks/build.txt"
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
   $SUDO apt-get install -y --no-install-recommends shellcheck
@@ -43,8 +47,8 @@ if [[ "$INSTALL_LINTERS" == "true" ]]; then
   fi
   # Python linters in user-site (no sudo pip). isort was retired in ADR-1126;
   # ruff's `I` ruleset is the only import sorter now.
-  python3 -m pip install --user --upgrade \
-    pre-commit ruff black mypy semgrep
+  python3 -m pip install --user --require-hashes \
+    -r "$REPO_ROOT/requirements/locks/dev-linters.txt"
 fi
 
 if [[ "$ENABLE_CUDA" == "true" ]]; then

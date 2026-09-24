@@ -151,9 +151,7 @@ jobs:
           python-version: '3.14.7'
 
       - name: Install meson and ninja
-        run: |
-          python -m pip install --upgrade pip
-          pip install meson ninja==1.13.0
+        run: python -m pip install --require-hashes -r requirements/locks/build.txt
 
       # ── Linux base deps ──────────────────────────────────────────────
       - name: Install base deps (Linux)
@@ -478,14 +476,14 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu') && !matrix.sycl
         run: |
           mkdir -p ~/.ccache && sudo chown -R "$(whoami)" ~/.ccache
-          pip install tox
+          pip install --require-hashes -r requirements/locks/tox.txt
           tox -c python
 
       - name: Run tox tests (macOS)
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p ~/.ccache && sudo chown -R "$(whoami)" ~/.ccache
-          pip install tox
+          pip install --require-hashes -r requirements/locks/tox.txt
           PATH="$(brew --prefix)/opt/llvm/bin:$PATH" \
           CC="$(brew --prefix)/opt/llvm/bin/clang" \
           CXX="$(brew --prefix)/opt/llvm/bin/clang++" \

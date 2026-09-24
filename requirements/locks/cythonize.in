@@ -1,0 +1,5 @@
+# C extension build bootstrap for cythonize
+setuptools==84.0.0
+packaging==26.3
+Cython==3.2.4
+numpy==2.5.3

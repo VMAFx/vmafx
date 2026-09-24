@@ -27,6 +27,8 @@
   "minimumReleaseAge": "3 days",
   "ignorePaths": [
     "python/requirements.txt",
+    "requirements/locks/*.txt",
+    "**/*-lock.txt",
     "subprojects/**",
     "python/test/resource/**",
     "build_artifacts/**",
@@ -34,6 +36,14 @@
     "ai/**/runs/**",
     ".devcontainer/**"
   ],
+  "pip_requirements": {
+    "fileMatch": [
+      "(^|/)requirements.*\\.txt$",
+      "(^|/)requirements.*\\.in$",
+      "^requirements/locks/.*\\.in$",
+      "^docs/requirements\\.txt$"
+    ]
+  },
   "packageRules": [
     {
       "description": "slsa-github-generator MUST be referenced by an exact @vX.Y.Z tag, never a digest: its README states the generators 'MUST be referenced by tag in order for the slsa-verifier to be able to verify the ref of the trusted builder' (hash-pinned reusable workflows are unsupported, slsa-verifier#12). ADR-1128's Release Script Contract enforces the tag form, so a digest-pin PR (#1183) can never pass it. Keep tag updates, forbid digest pinning.",

@@ -447,6 +447,58 @@ it does not perform the promotion.
    If configuration parsing fails, mypy exits outside its ordinary 0/1 statuses, or exit 1 carries no
    parseable finding, the hook raises a `RuntimeError` and terminates with exit code 2. A blocker remains
    fatal even after partial findings, and one module-identity run's exit 1 must not mask a later blocker.
+## fix/scorecard-pins-best-practices — hash-locked Python installs and OpenSSF hardening (2026-09-23)
+
+1. **`requirements/locks/manifest.json` is the sole compiler authority for Python locks.**
+   All lock files under `requirements/locks/`, `docs/`, `python/`, `ai/`, `mcp-server/`,
+   `dev/`, `dev-llm/`, and `tools/` carry input digests and generator version metadata (`uv 0.12.18`).
+   Do not edit lock files by hand or resolve rebase conflicts by taking one side's hashes;
+   run `make python-locks-write` to regenerate them from the merged inputs.
+2. **`--require-hashes` is enforced repository-wide.**
+   Every executable pip install in `.github/workflows/`, `Dockerfile*`, `scripts/setup/`,
+   `Makefile`, and literal `session.install(...)` calls in `noxfile.py` must specify
+   `--require-hashes -r <lockfile>`, or `--no-deps` for local editables/wheels.
+   Requirement targets are exact manifest outputs or explicit `install_aliases`;
+   never restore basename/suffix matching. `scripts/ci/check_python_dependency_locks.py
+   check` enforces this in `make lint` and pre-commit.
+3. **PEP 517 build-isolation dependencies for pure sdist packages.**
+   `docs/requirements.txt` pins `setuptools>=77.0.1` and `wheel>=0.45.1` so they are
+   hashed into `docs/requirements-lock.txt`. Workflows invoking this lockfile pass
+   `--no-build-isolation` to prevent pip from attempting unhashed PyPI downloads.
+4. **`dev-linters.txt` targets Python 3.12 portability.**
+   `dev-linters.in` is compiled with `--python-version 3.12` to ensure universal markers
+   include dependencies required on Python 3.12 workstations (e.g. `tomli`).
+5. **SLSA GitHub generator must remain tag-pinned.**
+   `slsa-framework/slsa-github-generator` requires semantic `@vX.Y.Z` tags for its trusted
+   builder verification (slsa-verifier#12; ADR-1128). Never convert its refs to commit SHAs.
+6. **Nox uses manifest-owned locks and package-compatible interpreters.**
+   Bootstrap Nox from `requirements/locks/nox.txt`; each package session owns a
+   dedicated development lock. Preserve Python 3.12 on `roi_score` and
+   `ensemble_kit`, whose package metadata excludes Python 3.14.
+7. **Installer tooling (`pip`) excluded from bootstrap build locks.**
+   `requirements/locks/build.in` and `build.txt` pin build dependencies (`meson`, `ninja`)
+   only. `pip` is installer tooling provided by runners/operating systems; pinning `pip`
+   inside `build.txt` caused uninstallation failures on Debian/Ubuntu systems with packaged
+   pip distributions lacking `RECORD` metadata.
+8. **Truthful package-wide license review for `text-unidecode`.**
+   `actions/dependency-review-action` evaluates SPDX license expressions under
+   `deny-licenses: GPL-3.0, AGPL-3.0`. `python-slugify` brings in `text-unidecode`,
+   licensed as `Artistic-1.0-Perl OR GPL-1.0-only OR GPL-2.0-or-later`, which VMAFx
+   consumes under `Artistic-1.0-Perl`. GitHub Dependency Review compares PURLs
+   package-wide ignoring versions; `allow-dependencies-licenses: pkg:pypi/text-unidecode`
+   truthfully allows the package using exact package-wide purl syntax.
+9. **Root `Dockerfile` isolates Python tooling in `/opt/vmaf-venv`.**
+   Prevents packaging conflicts (such as Debian's pre-installed `python3-packaging`) when
+   installing hash-locked dependencies into the container image, eliminating the need for
+   `--break-system-packages`.
+10. **Fail-closed authority edges are cross-platform and parser-independent.**
+    Preserve the classifier's explicit allowlist: generic `*.in` and `manifest.json`
+    basenames outside the owned requirements subtree are not dependency-only. The
+    workflow fallback accepts simple quoted block keys and must report the same
+    pre-checkout helper ordering failure as PyYAML. Nox annotated or literal
+    `getattr(session, "install")` aliases remain scanned. Manifest output, input,
+    and alias-consumer paths must be local and repo-relative under POSIX and
+    Windows semantics.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

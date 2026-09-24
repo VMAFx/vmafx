@@ -86,14 +86,14 @@ distclean: clean
 $(VENV_PIP):
 	@echo "Setting up the virtual environment..."
 	$(PYTHON_INTERPRETER) -m venv $(VENV) || { echo "Failed to create virtual environment"; exit 1; }
-	$(VENV_PIP) install --upgrade pip || { echo "Failed to upgrade pip"; exit 1; }
+	$(VENV_PIP) install --require-hashes -r requirements/locks/build.txt || { echo "Failed to bootstrap virtual environment"; exit 1; }
 	@echo "Virtual environment setup complete."
 
 $(MESON): $(VENV_PIP)
-	$(VENV_PIP) install meson || { echo "Failed to install meson"; exit 1; }
+	$(VENV_PIP) install --require-hashes -r requirements/locks/build.txt || { echo "Failed to install meson"; exit 1; }
 
 $(NINJA): $(VENV_PIP)
-	$(VENV_PIP) install ninja || { echo "Failed to install ninja"; exit 1; }
+	$(VENV_PIP) install --require-hashes -r requirements/locks/build.txt || { echo "Failed to install ninja"; exit 1; }
 
 # Provision the lint / format toolchain into the project venv. Versions are
 # kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
@@ -103,8 +103,7 @@ BLACK_VERSION := 26.5.1
 
 .PHONY: lint-tools
 lint-tools: $(VENV_PIP)
-	$(VENV_PIP) install --quiet \
-	    'ruff==$(RUFF_VERSION)' 'black==$(BLACK_VERSION)' mypy
+	$(VENV_PIP) install --quiet --require-hashes -r requirements/locks/dev-linters.txt
 	@echo "lint tools installed into $(VENV_PIP:%/pip=%)"
 	@command -v shfmt >/dev/null || { \
 	   echo "note: shfmt is not a Python package and was not installed."; \
@@ -112,12 +111,9 @@ lint-tools: $(VENV_PIP)
 	@command -v shellcheck >/dev/null || \
 	   echo "note: shellcheck not found — install it via your package manager."
 
-# setuptools>=77.0.1 matches the floor python/pyproject.toml declares: the
-# PEP 639 SPDX license expression there is unreadable to older setuptools,
-# and `cythonize` below runs setup.py against this venv directly, with no
-# PEP 517 isolation to fetch a newer backend on its own.
+# Cythonize build dependencies are hash-locked in requirements/locks/cythonize.txt.
 cythonize-deps: $(VENV_PIP)
-	$(VENV_PIP) install 'setuptools>=77.0.1' 'packaging>=24.2' cython numpy || { echo "Failed to install dependencies"; exit 1; }
+	$(VENV_PIP) install --require-hashes -r requirements/locks/cythonize.txt || { echo "Failed to install dependencies"; exit 1; }
 
 # ============================================================================
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
@@ -125,6 +121,7 @@ cythonize-deps: $(VENV_PIP)
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
 	base-images-sync cuda-pin-sync python-deps-sync \
+	python-locks-check python-locks-write \
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
@@ -132,7 +129,7 @@ cythonize-deps: $(VENV_PIP)
         silent-revert-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
-lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check lint-reuse
+lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check lint-reuse python-locks-check
 	@echo "=== all lints passed ==="
 
 # REUSE 3.3 compliance check (BUG-003). Ensures 100% license and copyright coverage.
@@ -146,6 +143,11 @@ lint-reuse:
 	    exit 1; \
 	fi
 
+python-locks-check:
+	@python3 scripts/ci/check_python_dependency_locks.py check
+
+python-locks-write:
+	@python3 scripts/ci/check_python_dependency_locks.py write
 
 # Go security scan (gosec). Skips generated files by default; surfaces every
 # G* finding outside the gen/ tree. Source of truth for the gate added by
@@ -294,9 +296,9 @@ preflight:
 
 lint-py:
 	@scripts/ci/check-python-requirements-single-source.sh
-	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
+	$(call require-tool,ruff,make lint-tools)
 	ruff check python/ ai/ scripts/
-	$(call require-tool,black,pip install black==$(BLACK_VERSION))
+	$(call require-tool,black,make lint-tools)
 	black --check python/ ai/ scripts/
 # mypy is advisory (leading `-`): it currently reports ~295 module-resolution
 # errors ("duplicate module", "adding __init__.py somewhere") that stop it
@@ -368,9 +370,9 @@ format-check:
 	   $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
 	      | grep -v '^subprojects/' | grep -v '^core/test/data/' \
 	      | python3 scripts/ci/pelorus_mirror.py filter)
-	$(call require-tool,black,pip install black==$(BLACK_VERSION))
+	$(call require-tool,black,make lint-tools)
 	black --check python/ ai/ scripts/
-	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
+	$(call require-tool,ruff,make lint-tools)
 	ruff check --select I python/ ai/ scripts/
 	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
 	shfmt -d -i 2 -ci $$(git ls-files '*.sh')

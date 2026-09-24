@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
@@ -127,6 +129,30 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("|| true", executable_body(real))
         inline = "        run: pytest || true  # keep going\n"
         self.assertIn("|| true", executable_body(inline))
+
+    def test_workflows_require_checkout_before_consuming_repo_resources(self) -> None:
+        """Every workflow consuming repo requirements or helpers must run actions/checkout first."""
+        checker_path = ROOT / "scripts" / "ci" / "check_python_dependency_locks.py"
+        spec = importlib.util.spec_from_file_location("check_python_dependency_locks", checker_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)  # type: ignore[union-attr]
+        checker = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        spec.loader.exec_module(checker)  # type: ignore[union-attr]
+        for workflow in sorted(WORKFLOWS.glob("*.yml")):
+            text = workflow.read_text(encoding="utf-8")
+            findings = checker.scan_workflow_checkout_ordering(workflow, text, root=ROOT)
+            self.assertEqual(
+                findings, [], f"{workflow.name} consumes repo resources before actions/checkout"
+            )
+            with mock.patch.object(checker, "yaml", None):
+                fallback_findings = checker.scan_workflow_checkout_ordering(
+                    workflow, text, root=ROOT
+                )
+                self.assertEqual(
+                    fallback_findings,
+                    [],
+                    f"{workflow.name} consumes repo resources before actions/checkout (fallback)",
+                )
 
 
 if __name__ == "__main__":

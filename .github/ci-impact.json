@@ -43,6 +43,7 @@
     "pkg/",
     "proto/",
     "python/",
+    "requirements/",
     "resource/",
     "scripts/",
     "test/",
@@ -91,6 +92,7 @@
     "OSSMETADATA",
     "PRE_MIGRATION_EPIC.md",
     "README.md",
+    "REUSE.toml",
     "SECURITY.md",
     "SUPPORT.md",
     "buf.gen.yaml",
@@ -147,6 +149,7 @@
     ".windsurfrules",
     "Makefile",
     "PRE_MIGRATION_EPIC.md",
+    "REUSE.toml",
     "scripts/ci/*",
     "scripts/ci/**",
     "build-aux/*",
@@ -192,7 +195,9 @@
         "scripts/*.py",
         "scripts/**/*.py",
         "pyproject.toml",
-        "noxfile.py"
+        "noxfile.py",
+        "requirements/*",
+        "requirements/**"
       ]
     },
     "ai": {

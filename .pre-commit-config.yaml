@@ -257,6 +257,20 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-python-dependency-locks
+        name: Check hash-locked Python dependencies and secure pip installs
+        entry: python3 scripts/ci/check_python_dependency_locks.py check
+        language: system
+        files: '^(Makefile|noxfile\.py|requirements/.*|docs/requirements.*|python/requirements.*|ai/requirements.*|mcp-server/.*requirements.*|dev/requirements.*|dev-llm/.*requirements.*|tools/.*requirements.*|\.github/workflows/.*|scripts/setup/.*|Dockerfile.*|dev/Containerfile|docker/.*|scripts/ci/check_python_dependency_locks\.py)$'
+        pass_filenames: false
+
+      - id: test-python-dependency-locks
+        name: Unit tests for Python dependency lock checker
+        entry: python3 -m unittest scripts/ci/tests/test_python_dependency_locks.py
+        language: system
+        files: '^scripts/ci/(check_python_dependency_locks\.py|tests/test_python_dependency_locks\.py)$'
+        pass_filenames: false
+
       - id: test-base-image-single-source
         name: Base image and toolchain single-source tests
         entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'

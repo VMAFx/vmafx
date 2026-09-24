@@ -166,7 +166,8 @@ jobs:
           sudo apt-get install -y ninja-build nasm
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r ../requirements/locks/build.txt
           meson setup build -Denable_cuda=false -Denable_sycl=false
           meson compile -C build
       - uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
@@ -309,3 +310,10 @@ jobs:
         with:
           fail-on-severity: high
           deny-licenses: GPL-3.0, AGPL-3.0
+          # python-slugify depends on text-unidecode, which is dual-licensed under
+          # Artistic-1.0-Perl OR GPL-1.0-only OR GPL-2.0-or-later. VMAFx consumes
+          # text-unidecode under Artistic-1.0-Perl, but the action's SPDX evaluator
+          # flags GPL-2.0-or-later against deny-licenses: GPL-3.0. Dependency Review
+          # PURL matching compares package identity package-wide (ignoring versions);
+          # allow pkg:pypi/text-unidecode truthfully using explicit package-wide syntax.
+          allow-dependencies-licenses: pkg:pypi/text-unidecode

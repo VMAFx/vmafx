@@ -91,7 +91,9 @@ jobs:
           python-version: "3.14.7"
       - name: Install MkDocs Material
         if: steps.impact.outputs.docs == 'true'
-        run: pip install -r docs/requirements.txt
+        run: |
+          pip install --require-hashes -r requirements/locks/package-build.txt
+          pip install --no-build-isolation --require-hashes -r docs/requirements-lock.txt
       - name: Check generated documentation freshness
         if: steps.impact.outputs.docs == 'true'
         run: make docs-fragments-check

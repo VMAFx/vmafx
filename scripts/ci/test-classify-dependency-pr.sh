@@ -375,6 +375,32 @@ DIFF
 expect_exit "unrelated env file is NOT exempt" 1 "renovate[bot]" \
   "renovate/base-images" "${work}/case28_other_env.diff"
 
+cat >"${work}/case29_requirements_lock.diff" <<'DIFF'
+requirements/locks/build.in
+requirements/locks/build.txt
+requirements/locks/manifest.json
+DIFF
+expect_exit "requirements locks and manifests are exempt for bot" 0 "renovate[bot]" \
+  "renovate/python-deps" "${work}/case29_requirements_lock.diff"
+
+cat >"${work}/case30_non_dependency_in.diff" <<'DIFF'
+core/include/libvmaf/version.h.in
+DIFF
+expect_exit "non-dependency .in template is NOT exempt" 1 "renovate[bot]" \
+  "renovate/lookalike-input" "${work}/case30_non_dependency_in.diff"
+
+cat >"${work}/case31_named_requirements_in.diff" <<'DIFF'
+python/requirements-test.in
+DIFF
+expect_exit "named requirements input remains exempt" 0 "renovate[bot]" \
+  "renovate/python-test-input" "${work}/case31_named_requirements_in.diff"
+
+cat >"${work}/case32_non_dependency_manifest.diff" <<'DIFF'
+core/manifest.json
+DIFF
+expect_exit "non-dependency manifest.json is NOT exempt" 1 "renovate[bot]" \
+  "renovate/lookalike-manifest" "${work}/case32_non_dependency_manifest.diff"
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 

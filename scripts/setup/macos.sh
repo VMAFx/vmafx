@@ -6,6 +6,9 @@
 # SYCL is possible via Intel oneAPI on Intel Macs only — not supported on M1/M2/M3.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+
 ENABLE_SYCL="${ENABLE_SYCL:-false}"
 INSTALL_LINTERS="${INSTALL_LINTERS:-true}"
 
@@ -30,8 +33,8 @@ echo "Add to PATH:  export PATH=$CLANG_BIN:\$PATH"
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
   brew install shellcheck shfmt
-  python3 -m pip install --user --upgrade \
-    pre-commit ruff black isort mypy semgrep
+  python3 -m pip install --user --require-hashes \
+    -r "$REPO_ROOT/requirements/locks/dev-linters.txt"
 fi
 
 if [[ "$ENABLE_SYCL" == "true" ]]; then

@@ -39,8 +39,9 @@ jobs:
 
       - name: Install ai/ + onnxruntime
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ai
+          python -m pip install --require-hashes -r requirements/locks/package-build.txt
+          python -m pip install --require-hashes -r ai/requirements-runtime-lock.txt
+          python -m pip install --no-deps --no-build-isolation -e ai
 
       - name: Verify committed cache regenerates (logical content)
         id: cache_check

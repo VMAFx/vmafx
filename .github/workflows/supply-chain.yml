@@ -269,6 +269,10 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with: { name: release-artifacts, path: artifacts/ }
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
@@ -293,7 +297,9 @@ jobs:
           mkdir -p sbom mcp-sbom-root/distributions
           python -m pip install --disable-pip-version-check --no-compile \
             --ignore-installed --only-binary=:all: --target mcp-sbom-root \
-            "${wheels[0]}"
+            --require-hashes -r mcp-server/vmaf-mcp/requirements-runtime-lock.txt
+          python -m pip install --disable-pip-version-check --no-compile \
+            --ignore-installed --no-deps --target mcp-sbom-root mcp-dist/vmaf_mcp-*.whl
           cp -- "${wheels[0]}" "${sdists[0]}" mcp-sbom-root/distributions/
       - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
         env:
@@ -505,14 +511,16 @@ jobs:
         with:
           python-version: "3.14.7"
       - name: Install build deps
-        run: python -m pip install --disable-pip-version-check build==1.6.0
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes \
+          -r requirements/locks/package-build.txt
       - name: Build wheel + sdist
         working-directory: mcp-server/vmaf-mcp
         run: |
           SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           export SOURCE_DATE_EPOCH
           export PYTHONHASHSEED=0
-          python -m build --wheel --sdist --outdir ../../mcp-dist
+          python -m build --no-isolation --wheel --sdist --outdir ../../mcp-dist
       - name: Compute SHA256 hashes (SLSA input)
         id: hash
         env:

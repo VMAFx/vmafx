@@ -93,11 +93,18 @@ ENV PATH="/venv/bin:${PATH}"
 
 COPY mcp-server/vmaf-mcp /build/vmaf-mcp
 COPY tools/vmaf-tune      /build/vmaf-tune
+COPY requirements/locks/package-build.txt /build/requirements/package-build.txt
 
-# Install server deps; eval extras pull in onnxruntime for tiny-AI scoring
-RUN pip install --no-cache-dir \
-        '/build/vmaf-mcp[eval,http]' \
-        /build/vmaf-tune
+# Build the two local projects without an isolated resolver, then install only
+# hash-locked external dependencies plus the locally built wheels.
+RUN pip install --no-cache-dir --require-hashes \
+        -r /build/requirements/package-build.txt \
+    && mkdir -p /wheels \
+    && python -m build --no-isolation --wheel --outdir /wheels /build/vmaf-mcp \
+    && python -m build --no-isolation --wheel --outdir /wheels /build/vmaf-tune \
+    && pip install --no-cache-dir --require-hashes \
+        -r /build/vmaf-mcp/requirements-production-lock.txt \
+    && pip install --no-cache-dir --no-deps /wheels/*.whl
 
 # ---------------------------------------------------------------------------
 # Stage 3 — runtime-base: CLI runtime layer (no shell, distroless)
