@@ -12,6 +12,10 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#if defined(_WIN32) && !defined(__MINGW32__)
+typedef unsigned int mode_t;
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
