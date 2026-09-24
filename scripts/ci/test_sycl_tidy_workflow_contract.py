@@ -6,8 +6,9 @@
 Validates:
 1. .github/workflows/lint-and-format.yml declares job `clang-tidy-sycl` with name
    `Tidy SYCL`, marked `# required-aggregator`, without `continue-on-error` or
-   any normalized constant-false job guard, covering all SYCL headers (.h, .hpp)
-   and sources (.cpp) alongside tests, and failing closed on any tidy diagnostic.
+   any deviation from its active ready-PR job guard, covering all SYCL headers
+   (.h, .hpp) and sources (.cpp) alongside tests, and failing closed on any tidy
+   diagnostic.
 2. .github/workflows/required-aggregator.yml registers exact check name `Tidy SYCL`
    in both `required` and `strictMustReport` (and not any advisory variant).
 3. The real Node.js aggregator execution fails closed when `Tidy SYCL` reports
@@ -31,6 +32,9 @@ from scripts.ci.required_aggregator_harness import run_required_aggregator  # no
 
 SYCL_CHECK_NAME = "Tidy SYCL"
 SYCL_JOB_ID = "clang-tidy-sycl"
+ACTIVE_JOB_CONDITION = (
+    "github.event_name != 'pull_request' || github.event.pull_request.draft == false"
+)
 
 EXPECTED_FILE_PATTERNS = (
     "core/src/sycl/*.cpp",
@@ -50,19 +54,6 @@ EVENT_SELECTION_ANCHORS = (
     ("push", '"$before"..HEAD'),
     ("dispatch", "files=$(git ls-files"),
 )
-
-CONSTANT_FALSE_EXPRESSIONS = {
-    "false",
-    "null",
-    "0",
-    "-0",
-    "0.0",
-    "-0.0",
-    "''",
-    '""',
-    "!true",
-    "!1",
-}
 
 
 def extract_job_block(workflow_text: str, job_id: str) -> str:
@@ -99,14 +90,22 @@ def _strip_balanced_outer_parentheses(expression: str) -> str:
     return value
 
 
-def is_constant_false_condition(raw_condition: str) -> bool:
-    """Recognize GitHub Actions literal-false job guards after normalizing wrappers."""
+def normalize_job_condition(raw_condition: str) -> str:
+    """Normalize harmless wrappers around one pinned GitHub Actions condition."""
     expression = raw_condition.split(" #", 1)[0].strip()
     if expression.startswith("${{") and expression.endswith("}}"):
         expression = expression[3:-2].strip()
     expression = _strip_balanced_outer_parentheses(expression)
-    compact = re.sub(r"\s+", "", expression).casefold()
-    return compact in CONSTANT_FALSE_EXPRESSIONS
+
+    normalized: list[str] = []
+    quoted = False
+    for character in expression:
+        if character == "'":
+            quoted = not quoted
+            normalized.append(character)
+        elif quoted or not character.isspace():
+            normalized.append(character)
+    return "".join(normalized)
 
 
 def extract_file_selection(job_block: str, branch_name: str, anchor: str) -> str:
@@ -157,11 +156,19 @@ def validate_sycl_workflow_structure(workflow_text: str) -> None:
         if stripped.startswith("continue-on-error:"):
             raise AssertionError(f"Job '{SYCL_JOB_ID}' must not contain continue-on-error: {line}")
 
-    job_if_match = re.search(r"^    if:\s*(.+?)\s*$", job_block, re.MULTILINE)
-    if job_if_match is not None and is_constant_false_condition(job_if_match.group(1)):
+    job_if_matches = re.findall(r"^    if:\s*(.+?)\s*$", job_block, re.MULTILINE)
+    if len(job_if_matches) != 1:
         raise AssertionError(
-            f"Job '{SYCL_JOB_ID}' must not use a constant-false job guard: "
-            f"{job_if_match.group(1)}"
+            f"Job '{SYCL_JOB_ID}' must declare exactly one active job guard, "
+            f"found {len(job_if_matches)}"
+        )
+
+    declared_condition = normalize_job_condition(job_if_matches[0])
+    expected_condition = normalize_job_condition(ACTIVE_JOB_CONDITION)
+    if declared_condition != expected_condition:
+        raise AssertionError(
+            f"Job '{SYCL_JOB_ID}' must use the exact active job guard: "
+            f"{ACTIVE_JOB_CONDITION}; found: {job_if_matches[0]}"
         )
 
     # Every event path owns a separate git command. Validate each independently
@@ -284,7 +291,67 @@ class SyclTidyWorkflowContractTest(unittest.TestCase):
                 mutated = workflow_text.replace(job_block, mutated_job, 1)
                 with self.assertRaises(AssertionError) as ctx:
                     validate_sycl_workflow_structure(mutated)
-                self.assertIn("constant-false", str(ctx.exception))
+                self.assertIn("exact active job guard", str(ctx.exception))
+
+    def test_mutation_historical_compound_false_job_guards_fail_contract(self) -> None:
+        workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
+        job_block = extract_job_block(workflow_text, SYCL_JOB_ID)
+        active_expression = (
+            "github.event_name != 'pull_request' || " "github.event.pull_request.draft == false"
+        )
+        active_guard = f"    if: {active_expression}\n"
+        # ADR-0623 records the first form verbatim. The remaining cases pin
+        # equivalent false conjunctions on both sides and under Actions wrappers.
+        false_conjunct_guards = (
+            f"({active_expression}) && (false)",
+            f"((({active_expression}))) && (((false)))",
+            f"(false) && ({active_expression})",
+            f"${{{{ ({active_expression}) && false }}}}",
+            f"${{{{ false && ({active_expression}) }}}}",
+        )
+
+        for false_guard in false_conjunct_guards:
+            with self.subTest(condition=false_guard):
+                mutated_job = job_block.replace(
+                    active_guard,
+                    f"    if: {false_guard}\n",
+                    1,
+                )
+                self.assertNotEqual(job_block, mutated_job)
+                mutated = workflow_text.replace(job_block, mutated_job, 1)
+                with self.assertRaises(AssertionError):
+                    validate_sycl_workflow_structure(mutated)
+
+    def test_equivalent_active_job_guard_wrappers_preserve_contract(self) -> None:
+        workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
+        job_block = extract_job_block(workflow_text, SYCL_JOB_ID)
+        active_guard = f"    if: {ACTIVE_JOB_CONDITION}\n"
+        equivalent_guards = (
+            f"(({ACTIVE_JOB_CONDITION}))",
+            f"${{{{ {ACTIVE_JOB_CONDITION} }}}}",
+            f"${{{{ (({ACTIVE_JOB_CONDITION})) }}}} # ready PRs and non-PR events",
+        )
+
+        for equivalent_guard in equivalent_guards:
+            with self.subTest(condition=equivalent_guard):
+                mutated_job = job_block.replace(
+                    active_guard,
+                    f"    if: {equivalent_guard}\n",
+                    1,
+                )
+                self.assertNotEqual(job_block, mutated_job)
+                validate_sycl_workflow_structure(workflow_text.replace(job_block, mutated_job, 1))
+
+    def test_mutation_whitespace_inside_event_literal_fails_contract(self) -> None:
+        workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
+        job_block = extract_job_block(workflow_text, SYCL_JOB_ID)
+        active_guard = f"    if: {ACTIVE_JOB_CONDITION}\n"
+        changed_literal = ACTIVE_JOB_CONDITION.replace("pull_request", "pull_ request", 1)
+        mutated_job = job_block.replace(active_guard, f"    if: {changed_literal}\n", 1)
+        self.assertNotEqual(job_block, mutated_job)
+
+        with self.assertRaises(AssertionError):
+            validate_sycl_workflow_structure(workflow_text.replace(job_block, mutated_job, 1))
 
     def test_mutation_advisory_name_fails_contract(self) -> None:
         workflow_text = (WORKFLOWS_DIR / "lint-and-format.yml").read_text(encoding="utf-8")
