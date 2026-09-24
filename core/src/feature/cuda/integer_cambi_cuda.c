@@ -787,7 +787,7 @@ static int dispatch_mask(CambiStateCuda *s, CudaFunctions *cu_f, CUstream stream
 {
     const unsigned grid_x = (w + CAMBI_CUDA_BLOCK_X - 1u) / CAMBI_CUDA_BLOCK_X;
     const unsigned grid_y = (h + CAMBI_CUDA_BLOCK_Y - 1u) / CAMBI_CUDA_BLOCK_Y;
-    /* Bug fix (Issue #857): cuLaunchKernel params[i] must point to the VALUE
+    /* Bug fix (Issue lusoris/vmaf#857): cuLaunchKernel params[i] must point to the VALUE
      * to pass, not to the VmafCudaBuffer struct. Pass &buf->data (address of the
      * CUdeviceptr field) so the driver reads the device pointer, not buf->size. */
     void *params[] = {&s->d_image->data, &s->d_mask->data, &w, &h, &stride_words, &mask_index};
@@ -805,7 +805,7 @@ static int dispatch_decimate(CambiStateCuda *s, CudaFunctions *cu_f, CUstream st
 {
     const unsigned grid_x = (out_w + CAMBI_CUDA_BLOCK_X - 1u) / CAMBI_CUDA_BLOCK_X;
     const unsigned grid_y = (out_h + CAMBI_CUDA_BLOCK_Y - 1u) / CAMBI_CUDA_BLOCK_Y;
-    /* Bug fix (Issue #857): pass device pointer addresses, not struct addresses. */
+    /* Bug fix (Issue lusoris/vmaf#857): pass device pointer addresses, not struct addresses. */
     void *params[] = {&src->data, &dst->data, &out_w, &out_h, &src_stride_words, &dst_stride_words};
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_decimate, grid_x, grid_y, 1u, CAMBI_CUDA_BLOCK_X,
                                            CAMBI_CUDA_BLOCK_Y, 1u, 0u, stream, params, NULL));
@@ -821,7 +821,7 @@ static int dispatch_filter_mode(CambiStateCuda *s, CudaFunctions *cu_f, CUstream
 {
     const unsigned grid_x = (w + CAMBI_CUDA_BLOCK_X - 1u) / CAMBI_CUDA_BLOCK_X;
     const unsigned grid_y = (h + CAMBI_CUDA_BLOCK_Y - 1u) / CAMBI_CUDA_BLOCK_Y;
-    /* Bug fix (Issue #857): pass device pointer addresses, not struct addresses. */
+    /* Bug fix (Issue lusoris/vmaf#857): pass device pointer addresses, not struct addresses. */
     void *params[] = {&in->data, &out->data, &w, &h, &stride_words, &axis};
     CHECK_CUDA_RETURN(cu_f,
                       cuLaunchKernel(s->func_filter_mode, grid_x, grid_y, 1u, CAMBI_CUDA_BLOCK_X,
@@ -1275,7 +1275,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     /* Step 0: download dist_pic GPU→host so vmaf_cambi_preprocessing (host
      * code) can read it.  Pictures delivered to a CUDA extractor's submit()
      * have device pointers in data[]; dereferencing them on the host causes
-     * a segfault (Issue #857).  Other CUDA extractors avoid this because
+     * a segfault (Issue lusoris/vmaf#857).  Other CUDA extractors avoid this because
      * they keep all preprocessing on the GPU; CAMBI is unique in needing a
      * host-side decimate-and-10b-upcast before its GPU pipeline. */
     VmafPicture dist_host;

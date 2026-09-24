@@ -249,7 +249,8 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   residual. `places=4` gate load-bearing; do not loosen it.
 
 - **`cuLaunchKernel` `kernelParams[]` must point to device-pointer
-  VALUE, not to `VmafCudaBuffer` struct** (Issue #857 / fix PR).
+  VALUE, not to `VmafCudaBuffer` struct** (Issue lusoris/vmaf#857 /
+  lusoris/vmaf#866).
   Dispatch helpers in `integer_cambi_cuda.c` (`dispatch_mask`,
   `dispatch_decimate`, `dispatch_filter_mode`) pass `&buf->data`
   (address of `CUdeviceptr` field) to `cuLaunchKernel`. Passing
@@ -285,7 +286,8 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   `vmaf_cuda_picture_get_stream`) before passing picture to any
   host-side function dereferencing `data[]`. CAMBI extractor
   (`integer_cambi_cuda.c::submit_fex_cuda`) = canonical example
-  of this pattern (Issue #857 fix). All other CUDA extractors here
+  of this pattern (Issue lusoris/vmaf#857, fixed by lusoris/vmaf#870).
+  All other CUDA extractors here
   currently keep preprocessing on GPU, not affected,
   but rule applies to any future extractor mixing GPU input
   pictures with host-side preprocessing.

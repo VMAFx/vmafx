@@ -1,4 +1,4 @@
-### cambi_cuda: fix SIGSEGV on every input (Issue #857)
+### cambi_cuda: fix SIGSEGV on every input (Issue lusoris/vmaf#857; fixed by lusoris/vmaf#866)
 
 `cambi_cuda` segfaulted on every invocation regardless of resolution, bit
 depth, or EOTF setting. The root cause was in the three kernel dispatch
@@ -26,4 +26,4 @@ All other CUDA extractors (`adm_cuda`, `vif_cuda`, `motion_cuda`, etc.)
 were unaffected because they pass `VmafPicture` structs (by-value via the
 kernel struct-copy semantics) rather than flat device buffers.
 
-Fixes: Issue #857
+Fixes: Issue lusoris/vmaf#857 in lusoris/vmaf#866

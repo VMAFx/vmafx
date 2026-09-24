@@ -183,6 +183,25 @@ every vendor allocation. Preserve the removal notice in `templates/NOTES.txt`,
 `templates/_helpers.tpl`, and the two Kubernetes operator guides when resolving
 conflicts with chart history. No runtime template expression or public API is
 changed.
+## fix/bug048-issue-reference-provenance — archived tracker identities (2026-09-24)
+
+The active tracker reused `VMAFx/vmafx#239`, `VMAFx/vmafx#241`,
+`VMAFx/vmafx#310`, `VMAFx/vmafx#857`, `VMAFx/vmafx#866`, and
+`VMAFx/vmafx#870` for pull requests unrelated to historical records carried by
+this tree. Preserve the explicit `lusoris/vmaf` spelling in every protected
+Vulkan async-fence, CUDA CAMBI, ADR-sweep, BVI-DVC, profile, sync-report,
+source-invariant, changelog-fragment, and generated-changelog context. A
+conflict resolution that restores a bare or active-repository form silently
+points readers at a newer object.
+
+`scripts/ci/check-issue-reference-provenance.py` is intentionally narrower
+than a generic Markdown link checker: it matches proven historical contexts by
+stable prose anchor and requires their archived repository namespace. Keep the
+checker, `scripts/ci/tests/test_issue_reference_provenance.py`, the always-run
+pre-commit hook, and the Rule Enforcement self-test together. Do not widen it
+to reject normal bare references to the active fork or `Netflix/vmaf` upstream
+references. See
+[Research-2089](research/2089-archived-issue-reference-provenance.md).
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

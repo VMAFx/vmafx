@@ -1,8 +1,8 @@
 - `docs/state.md` refresh 2026-05-03. Bumped header date
-  (2026-04-29 → 2026-05-03). Closed Issue #239 (FFmpeg
+  (2026-04-29 → 2026-05-03). Closed Issue lusoris/vmaf#239 (FFmpeg
   `libvmaf_vulkan` filter wall-clock serialisation) by moving the
-  Open-bugs row to "Recently closed" with PR #241 / commit
-  `e266bf8e` and ADR-0251 (renumbered from 0235 in PR #310 dedup
+  Open-bugs row to "Recently closed" with lusoris/vmaf#241 / commit
+  `e266bf8e` and ADR-0251 (renumbered from 0235 in lusoris/vmaf#310 dedup
   sweep) — the `v2 ≤ 0.7 × v1` measurement gate flipped ADR-0251
   to Accepted. Added a new Open-bugs row for the
   `y4m_convert_411_422jpeg` heap-buffer-overflow surfaced by the

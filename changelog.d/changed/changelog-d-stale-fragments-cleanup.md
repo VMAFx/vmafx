@@ -14,4 +14,4 @@
   the 3 large blobs are still inlined in git pending the
   `tiny-blobs-v1` Release upload). `cuda-extractor-cambi-and-ssim-promotion`
   was rewritten to drop the contradiction with the cambi_cuda SIGSEGV
-  fixes that landed in PR #866 + PR #870.
+  fixes that landed in lusoris/vmaf#866 + lusoris/vmaf#870.
