@@ -31,17 +31,18 @@
 #include "read_json_model.h"
 #include "svm.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
+ * upstream-mirror file whose Netflix source spells the null pointer constant
+ * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 typedef struct VmafBuiltInModel {
     const char *version;
     const char *data;
     const int *data_len;
 } VmafBuiltInModel;
-
-#ifdef _MSC_VER
-#define MODEL_NULL_POINTER NULL
-#else
-#define MODEL_NULL_POINTER nullptr
-#endif
 
 #if VMAF_BUILT_IN_MODELS
 #if VMAF_FLOAT_FEATURES
@@ -174,7 +175,7 @@ static const VmafBuiltInModel built_in_models[] = {
         .data_len = &src_vmaf_v1_0_16_hfr_1d5h_2160_json_len,
     },
 #endif
-    {MODEL_NULL_POINTER, MODEL_NULL_POINTER, MODEL_NULL_POINTER}};
+    {0}};
 
 #define BUILT_IN_MODEL_CNT (((sizeof(built_in_models)) / (sizeof(built_in_models[0]))) - 1)
 
@@ -186,7 +187,7 @@ unsigned vmaf_built_in_model_count_for_test(void)
 const char *vmaf_built_in_model_version_for_test(const void *built_in_model)
 {
     if (!built_in_model)
-        return MODEL_NULL_POINTER;
+        return NULL;
     const VmafBuiltInModel *model = built_in_model;
     return model->version;
 }
@@ -199,7 +200,7 @@ int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version
     if (!version)
         return -EINVAL;
 
-    const VmafBuiltInModel *built_in_model = MODEL_NULL_POINTER;
+    const VmafBuiltInModel *built_in_model = NULL;
 
     for (unsigned i = 0; i < BUILT_IN_MODEL_CNT; i++) {
         if (!strcmp(version, built_in_models[i].version)) {
@@ -224,7 +225,7 @@ char *vmaf_model_generate_name(VmafModelConfig *cfg)
 
     char *name = malloc(name_sz);
     if (!name)
-        return MODEL_NULL_POINTER;
+        return NULL;
 
     const char *src = cfg->name ? cfg->name : default_name;
     memcpy(name, src, name_sz);
@@ -347,7 +348,6 @@ unsigned vmaf_model_feature_count(const VmafModel *model)
 const char *vmaf_model_feature_name(const VmafModel *model, unsigned index)
 {
     if (!model || index >= model->n_features) {
-        /* NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr). */
         return NULL;
     }
     return model->feature[index].name;
@@ -420,7 +420,7 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
         if (err) {
             /* Match the historical contract: a failed first append leaves the
              * caller's handle NULL rather than dangling. */
-            *model_collection = MODEL_NULL_POINTER;
+            *model_collection = NULL;
             return err;
         }
         *model_collection = mc;
@@ -464,7 +464,7 @@ int vmaf_model_collection_load(VmafModel **model, VmafModelCollection **model_co
     if (!version)
         return -EINVAL;
 
-    const VmafBuiltInModel *built_in_model = MODEL_NULL_POINTER;
+    const VmafBuiltInModel *built_in_model = NULL;
 
     for (unsigned i = 0; i < BUILT_IN_MODEL_CNT; i++) {
         if (!strcmp(version, built_in_models[i].version)) {
@@ -513,7 +513,7 @@ int vmaf_model_collection_feature_overload(VmafModel *model, VmafModelCollection
 
     int err = 0;
     for (unsigned i = 0; i < mc->cnt; i++) {
-        VmafFeatureDictionary *d = MODEL_NULL_POINTER;
+        VmafFeatureDictionary *d = NULL;
         /* Netflix/vmaf#1242: the copy's return value used to be discarded and
          * the partially-built copy leaked on failure, while the function could
          * still report success from the lead-model call below.  Free the
@@ -537,10 +537,10 @@ int vmaf_model_collection_feature_overload(VmafModel *model, VmafModelCollection
 const void *vmaf_model_version_next(const void *prev, const char **version)
 {
     if (BUILT_IN_MODEL_CNT == 0)
-        return MODEL_NULL_POINTER;
+        return NULL;
 
     const VmafBuiltInModel *prev_model = prev;
-    const VmafBuiltInModel *out_model = MODEL_NULL_POINTER;
+    const VmafBuiltInModel *out_model = NULL;
 
     if (!prev_model) {
         out_model = &built_in_models[0];
@@ -559,3 +559,5 @@ const char *vmaf_default_model_version(void)
 {
     return VMAF_DEFAULT_MODEL_VERSION;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

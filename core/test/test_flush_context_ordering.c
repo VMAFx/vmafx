@@ -114,28 +114,23 @@ static char *prep_threaded_context(VmafContext **out)
     for (unsigned i = 0; !message && i < NUM_FRAMES; i++) {
         VmafPicture ref = {0};
         VmafPicture dist = {0};
-        bool have_ref = false;
-        bool have_dist = false;
 
         err = alloc_frame(&ref, i);
-        have_ref = !err;
         if (err) {
             message = "alloc_frame(ref) failed";
-        } else {
-            err = alloc_frame(&dist, i + 1u);
-            have_dist = !err;
-            if (err) {
-                message = "alloc_frame(dist) failed";
-            } else {
-                err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-                if (err)
-                    message = "vmaf_read_pictures failed";
-            }
+            break;
         }
-        if (have_ref)
-            (void)vmaf_picture_unref(&ref);
-        if (have_dist)
-            (void)vmaf_picture_unref(&dist);
+        err = alloc_frame(&dist, i + 1u);
+        if (err) {
+            const int unref_err = vmaf_picture_unref(&ref);
+            message = unref_err ? "vmaf_picture_unref failed" : "alloc_frame(dist) failed";
+            break;
+        }
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err) {
+            message = "vmaf_read_pictures failed";
+            break;
+        }
     }
 
     if (!message && vmaf_context_is_flushed(vmaf))
@@ -206,26 +201,21 @@ static char *test_central_flush_sets_flushed(void)
 static char *feed_serial_frames(VmafContext *vmaf, unsigned n)
 {
     for (unsigned i = 0; i < n; i++) {
-        char *message = NULL;
         VmafPicture ref = {0};
         VmafPicture dist = {0};
         int err = alloc_frame(&ref, i);
+        if (err)
+            return "serial: alloc_frame(ref) failed";
+        err = alloc_frame(&dist, i + 1u);
         if (err) {
-            message = "serial: alloc_frame(ref) failed";
-        } else {
-            err = alloc_frame(&dist, i + 1u);
-            if (err) {
-                message = "serial: alloc_frame(dist) failed";
-            } else {
-                err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-                if (err)
-                    message = "serial: vmaf_read_pictures failed";
-            }
+            const int unref_err = vmaf_picture_unref(&ref);
+            if (unref_err)
+                return "serial: vmaf_picture_unref failed";
+            return "serial: alloc_frame(dist) failed";
         }
-        (void)vmaf_picture_unref(&ref);
-        (void)vmaf_picture_unref(&dist);
-        if (message)
-            return message;
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err)
+            return "serial: vmaf_read_pictures failed";
     }
     return NULL;
 }

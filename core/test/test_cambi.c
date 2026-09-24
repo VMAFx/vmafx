@@ -520,60 +520,102 @@ static char *check_c_values_8x8(const float *combined_c_values_8x8)
     return CAMBI_TEST_NULL_POINTER;
 }
 
+static char *unref_picture_if_allocated(VmafPicture *pic, bool allocated, char *error,
+                                        char *unref_fail_msg)
+{
+    if (!allocated) {
+        return error;
+    }
+    const int err = vmaf_picture_unref(pic);
+    if (err && !error) {
+        return unref_fail_msg;
+    }
+    return error;
+}
+
+static char *calculate_c_values_8x8_phase(const uint16_t *tvi_for_diff, uint16_t vlt_luma,
+                                          const int *diff_weights, const int *all_diffs)
+{
+    VmafPicture input_8x8 = {0};
+    VmafPicture mask_8x8 = {0};
+    bool have_input_8x8 = false;
+    bool have_mask_8x8 = false;
+    char *error = CAMBI_TEST_NULL_POINTER;
+    const uint16_t num_diffs = 4;
+
+    if (get_sample_image_8x8(&input_8x8, 0)) {
+        error = "test_calculate_c_values alloc #3 error";
+    } else {
+        have_input_8x8 = true;
+        if (get_sample_image_8x8(&mask_8x8, 1)) {
+            error = "test_calculate_c_values alloc #4 error";
+        } else {
+            have_mask_8x8 = true;
+            float combined_c_values_8x8[64];
+            uint16_t histograms_8x8[8 * 1032];
+            const uint16_t window_size = 9;
+            vmaf_cambi_test_calculate_c_values(&input_8x8, &mask_8x8, combined_c_values_8x8,
+                                               histograms_8x8, window_size, num_diffs, tvi_for_diff,
+                                               vlt_luma, diff_weights, all_diffs, 8, 8);
+            error = check_c_values_8x8(combined_c_values_8x8);
+        }
+    }
+
+    error = unref_picture_if_allocated(&mask_8x8, have_mask_8x8, error,
+                                       "test_calculate_c_values unref mask_8x8 failed");
+    error = unref_picture_if_allocated(&input_8x8, have_input_8x8, error,
+                                       "test_calculate_c_values unref input_8x8 failed");
+    return error;
+}
+
 static char *test_calculate_c_values()
 {
     VmafPicture input = {0};
     VmafPicture mask = {0};
-    VmafPicture input_8x8 = {0};
-    VmafPicture mask_8x8 = {0};
+    bool have_input = false;
+    bool have_mask = false;
     float combined_c_values[16];
     const float expected_values[16] = {0.6666667, 2.0,  0.0, 0.0, 2.4, 3.4285715, 2.4, 0.0,
                                        2.6666667, 3.75, 3.0, 0.0, 2.0, 2.4,       2.0, 0.0};
     const uint16_t tvi_for_diff[4] = {178, 305, 432, 559};
-    uint16_t vlt_luma = 0;
-    uint16_t window_size = 3;
+    const uint16_t vlt_luma = 0;
+    const uint16_t window_size = 3;
     const uint16_t num_diffs = 4;
 
     uint16_t *diffs_to_consider = CAMBI_TEST_NULL_POINTER;
     int *diff_weights = CAMBI_TEST_NULL_POINTER;
     int *all_diffs = CAMBI_TEST_NULL_POINTER;
     char *error = CAMBI_TEST_NULL_POINTER;
-    int err = vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider, &diff_weights,
-                                                  &all_diffs);
+    const int err = vmaf_cambi_test_set_contrast_arrays(num_diffs, &diffs_to_consider,
+                                                        &diff_weights, &all_diffs);
     if (err) {
         error = "test_calculate_c_values contrast-array allocation error";
     } else if (get_sample_image(&input, 0)) {
         error = "test_calculate_c_values alloc #1 error";
-    } else if (get_sample_image(&mask, 8)) {
-        error = "test_calculate_c_values alloc #2 error";
     } else {
-        const unsigned width = 4;
-        const unsigned height = 4;
-        uint16_t histograms[4 * 1032];
-        vmaf_cambi_test_calculate_c_values(&input, &mask, combined_c_values, histograms,
-                                           window_size, num_diffs, tvi_for_diff, vlt_luma,
-                                           diff_weights, all_diffs, width, height);
-        error = check_c_values_4x4(combined_c_values, expected_values);
+        have_input = true;
+        if (get_sample_image(&mask, 8)) {
+            error = "test_calculate_c_values alloc #2 error";
+        } else {
+            have_mask = true;
+            const unsigned width = 4;
+            const unsigned height = 4;
+            uint16_t histograms[4 * 1032];
+            vmaf_cambi_test_calculate_c_values(&input, &mask, combined_c_values, histograms,
+                                               window_size, num_diffs, tvi_for_diff, vlt_luma,
+                                               diff_weights, all_diffs, width, height);
+            error = check_c_values_4x4(combined_c_values, expected_values);
+        }
     }
 
-    if (!error && get_sample_image_8x8(&input_8x8, 0)) {
-        error = "test_calculate_c_values alloc #3 error";
-    } else if (!error && get_sample_image_8x8(&mask_8x8, 1)) {
-        error = "test_calculate_c_values alloc #4 error";
-    } else if (!error) {
-        float combined_c_values_8x8[64];
-        uint16_t histograms_8x8[8 * 1032];
-        window_size = 9;
-        vmaf_cambi_test_calculate_c_values(&input_8x8, &mask_8x8, combined_c_values_8x8,
-                                           histograms_8x8, window_size, num_diffs, tvi_for_diff,
-                                           vlt_luma, diff_weights, all_diffs, 8, 8);
-        error = check_c_values_8x8(combined_c_values_8x8);
+    if (!error) {
+        error = calculate_c_values_8x8_phase(tvi_for_diff, vlt_luma, diff_weights, all_diffs);
     }
 
-    vmaf_picture_unref(&input);
-    vmaf_picture_unref(&mask);
-    vmaf_picture_unref(&input_8x8);
-    vmaf_picture_unref(&mask_8x8);
+    error = unref_picture_if_allocated(&mask, have_mask, error,
+                                       "test_calculate_c_values unref mask failed");
+    error = unref_picture_if_allocated(&input, have_input, error,
+                                       "test_calculate_c_values unref input failed");
 
     aligned_free(diffs_to_consider);
     aligned_free(diff_weights);
@@ -1201,23 +1243,59 @@ static char *check_c_values_avx2_parity(VmafPicture *input, const VmafPicture *m
      * (see `cambi.c::init()`); reuse the in-tree portable gate here rather
      * than `__builtin_cpu_supports("avx2")` (MSVC has no such builtin).
      * Closes T-CAMBI-AVX2-CI-SIGILL. */
+typedef struct ParityPictures {
+    VmafPicture input_scalar;
+    VmafPicture input_avx2;
+    VmafPicture mask_scalar;
+    VmafPicture mask_avx2;
+    bool have_input_scalar;
+    bool have_input_avx2;
+    bool have_mask_scalar;
+    bool have_mask_avx2;
+} ParityPictures;
+
+static char *alloc_parity_pictures(ParityPictures *pics)
+{
+    if (get_sample_image_8x8(&pics->input_scalar, 0)) {
+        return "parity test scalar input allocation error";
+    }
+    pics->have_input_scalar = true;
+
+    if (get_sample_image_8x8(&pics->input_avx2, 0)) {
+        return "parity test avx2 input allocation error";
+    }
+    pics->have_input_avx2 = true;
+
+    if (get_sample_image_8x8(&pics->mask_scalar, 1)) {
+        return "parity test scalar mask allocation error";
+    }
+    pics->have_mask_scalar = true;
+
+    if (get_sample_image_8x8(&pics->mask_avx2, 1)) {
+        return "parity test avx2 mask allocation error";
+    }
+    pics->have_mask_avx2 = true;
+
+    return CAMBI_TEST_NULL_POINTER;
+}
+
+static char *cleanup_parity_pictures(ParityPictures *pics, char *msg)
+{
+    msg = unref_picture_if_allocated(&pics->mask_avx2, pics->have_mask_avx2, msg,
+                                     "parity test unref avx2 mask failed");
+    msg = unref_picture_if_allocated(&pics->mask_scalar, pics->have_mask_scalar, msg,
+                                     "parity test unref scalar mask failed");
+    msg = unref_picture_if_allocated(&pics->input_avx2, pics->have_input_avx2, msg,
+                                     "parity test unref avx2 input failed");
+    msg = unref_picture_if_allocated(&pics->input_scalar, pics->have_input_scalar, msg,
+                                     "parity test unref scalar input failed");
+    return msg;
+}
+
 static char *test_calculate_c_values_scalar_avx2_parity()
 {
-    VmafPicture input_scalar = {0};
-    VmafPicture input_avx2 = {0};
-    VmafPicture mask_scalar = {0};
-    VmafPicture mask_avx2 = {0};
-    char *msg = CAMBI_TEST_NULL_POINTER;
-    const int err = get_sample_image_8x8(&input_scalar, 0);
-    if (err) {
-        msg = "parity test scalar input allocation error";
-    } else if (get_sample_image_8x8(&input_avx2, 0)) {
-        msg = "parity test avx2 input allocation error";
-    } else if (get_sample_image_8x8(&mask_scalar, 1)) {
-        msg = "parity test scalar mask allocation error";
-    } else if (get_sample_image_8x8(&mask_avx2, 1)) {
-        msg = "parity test avx2 mask allocation error";
-    }
+    ParityPictures pics = {0};
+    char *msg = alloc_parity_pictures(&pics);
 
     float c_scalar[64];
     memset(c_scalar, 0, sizeof(c_scalar));
@@ -1238,22 +1316,20 @@ static char *test_calculate_c_values_scalar_avx2_parity()
                                                     &all_diffs)) {
         msg = "parity test contrast-array allocation error";
     } else if (!msg) {
-        vmaf_cambi_test_calculate_c_values(&input_scalar, &mask_scalar, c_scalar, histograms_s,
-                                           window_size, num_diffs, tvi_for_diff, vlt_luma,
-                                           diff_weights, all_diffs, 8, 8);
+        vmaf_cambi_test_calculate_c_values(&pics.input_scalar, &pics.mask_scalar, c_scalar,
+                                           histograms_s, window_size, num_diffs, tvi_for_diff,
+                                           vlt_luma, diff_weights, all_diffs, 8, 8);
     }
 
 #if ARCH_X86
     if (!msg) {
-        msg = check_c_values_avx2_parity(&input_avx2, &mask_avx2, c_scalar, window_size, num_diffs,
-                                         tvi_for_diff, vlt_luma, diff_weights, all_diffs);
+        msg =
+            check_c_values_avx2_parity(&pics.input_avx2, &pics.mask_avx2, c_scalar, window_size,
+                                       num_diffs, tvi_for_diff, vlt_luma, diff_weights, all_diffs);
     }
 #endif
 
-    vmaf_picture_unref(&input_scalar);
-    vmaf_picture_unref(&input_avx2);
-    vmaf_picture_unref(&mask_scalar);
-    vmaf_picture_unref(&mask_avx2);
+    msg = cleanup_parity_pictures(&pics, msg);
     aligned_free(diffs_to_consider);
     aligned_free(diff_weights);
     aligned_free(all_diffs);

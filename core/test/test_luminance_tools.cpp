@@ -60,6 +60,11 @@ static mu_message_t test_pq_eotf()
     return nullptr;
 }
 
+} // namespace
+
+namespace
+{
+
 static mu_message_t test_range_foot_head()
 {
     int foot;
@@ -77,6 +82,28 @@ static mu_message_t test_range_foot_head()
 
     return nullptr;
 }
+
+/* Coverage push: range_foot_head must reject unknown VmafPixelRange
+ * enum values with -EINVAL.  Exercises the default branch that was
+ * silently dead before. */
+static mu_message_t test_range_foot_head_invalid()
+{
+    int foot = 0xDEAD;
+    int head = 0xBEEF;
+
+    /* An integer the enum cannot legitimately hold. range_foot_head takes an
+     * int precisely so this stays well-defined — see the note on its
+     * definition; casting to the enum here would itself be UB. */
+    const int err = vmaf_luminance_test_range_foot_head(8, 0x7F, &foot, &head);
+    mu_assert("range_foot_head(unknown) must return -EINVAL", err == -EINVAL);
+
+    return nullptr;
+}
+
+} // namespace
+
+namespace
+{
 
 static mu_message_t test_get_luminance()
 {
@@ -131,6 +158,11 @@ static mu_message_t test_normalize_range()
     return nullptr;
 }
 
+} // namespace
+
+namespace
+{
+
 /* Coverage push: vmaf_luminance_init_eotf accepts "bt1886" and "pq"
  * literally and otherwise returns -EINVAL.  The function was reachable
  * only via the float_ssim public path before; this drives it directly. */
@@ -152,23 +184,6 @@ static mu_message_t test_init_eotf_dispatch()
     err = vmaf_luminance_init_eotf(&eotf, "hlg-nonexistent");
     mu_assert("init_eotf(unknown) must return -EINVAL", err == -EINVAL);
     mu_assert("init_eotf(unknown) must not write the out param", eotf == nullptr);
-
-    return nullptr;
-}
-
-/* Coverage push: range_foot_head must reject unknown VmafPixelRange
- * enum values with -EINVAL.  Exercises the default branch that was
- * silently dead before. */
-static mu_message_t test_range_foot_head_invalid()
-{
-    int foot = 0xDEAD;
-    int head = 0xBEEF;
-
-    /* An integer the enum cannot legitimately hold. range_foot_head takes an
-     * int precisely so this stays well-defined — see the note on its
-     * definition; casting to the enum here would itself be UB. */
-    const int err = vmaf_luminance_test_range_foot_head(8, 0x7F, &foot, &head);
-    mu_assert("range_foot_head(unknown) must return -EINVAL", err == -EINVAL);
 
     return nullptr;
 }
