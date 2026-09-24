@@ -133,4 +133,17 @@ docker run --rm --gpus device=0 \
   --output /dev/stdout --json --quiet
 ```
 
-At review time GPU 0 was occupied by an unrelated Ollama workload, so this device-bearing smoke was deliberately not run or claimed. It is the sole remaining hardware evidence for closing the state row; no source or policy check is deferred with it.
+The device-bearing smoke completed on 2026-09-24 after all `agy` processes had
+exited and GPU 0 reported 0% utilisation for three consecutive 15-second
+samples. The unrelated Ollama model remained resident and was not stopped,
+signalled, or restarted. Image
+`vmafx:cuda-eae2a22018c6cd3aa3024cc5c7937ce4f02d53f3` had image ID
+`sha256:330dfd62533b3c18ab4fbd999b84aecd535d04a2bf97a3ed12d309ede3d7fea7`
+and its `org.opencontainers.image.revision` label read back the exact source
+revision `eae2a22018c6cd3aa3024cc5c7937ce4f02d53f3`. The command above exited 0,
+processed all 48 frames at 2844.11 fps, and reported pooled VMAF 94.323010
+(minimum 93.129023, maximum 100.000000, harmonic mean 94.284562). The verbatim
+JSON has SHA-256
+`10a779ae3c2344d778787885389f6b0e3b23ddfccc7365ec7ce1ce3a6e17d53a`;
+the ignored local receipt and JSON are retained under
+`.workingdir/evidence/1525-drop-nvidia-cuda-base/2026-09-24-eae2a220/`.
