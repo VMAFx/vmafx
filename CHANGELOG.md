@@ -10533,14 +10533,11 @@ See [ADR-0726](../docs/adr/0726-drop-vulkan-backend.md).
   gains a previously missing direct-invocation path setup.
 
 
-- `.zed/{settings,tasks,debug}.json` refreshed against live Zed 1.3.6
-  docs: agent model split (`inline_assistant_model` / `commit_message_model`
-  / `thread_summary_model` / `subagent_model`), regex `tool_permissions`,
-  `agent_servers` ACP registry pin (claude-acp / codex-acp / gemini),
-  `edit_predictions.disabled_globs` for vendor / golden / corpus paths,
-  container-first tasks (vmaf-dev-mcp), Python pytest debugger configs.
-  Audit + decision matrix in `docs/research/0729-zed-config-1-3-6-refresh.md`;
-  refreshed plan at `docs/development/zed-migration-plan-2026-05-22.md`.
+- Historical: Zed 1.3.6 configuration explored agent-model splitting, ACP
+  registry entries, edit-prediction exclusions, container tasks, and debugger
+  scenarios. Its project-level agent settings and several commands are no
+  longer current; BUG-048 supersedes the live configuration with the verified
+  Zed 1.18.1 project-only contract while preserving this entry as history.
 
 
 **C++23 Wave 7 — activate `cpu.cpp` (drop orphan `cpu.c`)**
@@ -20464,6 +20461,11 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   parent now reports the producer role, exit code, and available traceback,
   retains the five-second slow-start warning, and fails after a bounded
   60-second startup window (BUG-090).
+
+
+- Restore the useful Zed project workflows silently replaced by an unrelated
+  change, update them for Zed 1.18.1 and current VMAFx entrypoints, and add a
+  regression that rejects ignored agent settings and stale commands.
 
 
 Harden three AI training-pipeline data-integrity paths surfaced by the

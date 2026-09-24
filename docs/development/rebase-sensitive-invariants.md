@@ -20,6 +20,14 @@ linked AGENTS.md before resolving conflicts.
   repository-root build instructions in `docs/getting-started/index.md` and
   include Meson's `core/` source directory when showing a configure command.
 
+- **Zed project settings are project-scoped**: `.zed/settings.json` is parsed
+  as Zed's `ProjectSettingsContent`, so it must not regain `agent`,
+  `agent_servers`, provider/model pins, or permission policy. Preserve the
+  current `docker exec -i vmaf-dev-mcp vmafx-mcp` context-server entry, the
+  three `Standards:` tasks, and the contract in
+  `scripts/ci/tests/test_zed_project_config.py`. The scoped mechanics live in
+  [`.zed/AGENTS.md`](../../.zed/AGENTS.md).
+
 - **GPU long-tail terminus reached** — every registered feature
   extractor has at least one GPU twin (lpips remains ORT-delegated
   per [ADR-0022](../adr/0022-inference-runtime-onnx.md)).

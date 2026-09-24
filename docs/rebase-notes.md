@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-zed-restoration — current Zed project contract (2026-09-24)
+
+No upstream Netflix/vmaf code is touched. Preserve the selective Zed 1.18.1
+restoration if `.zed/` or developer documentation conflicts: project settings
+exclude `agent`, `agent_servers`, provider/model pins, and permission policy;
+the MCP entrypoint is `docker exec -i vmaf-dev-mcp vmafx-mcp`; the three
+`Standards:` tasks remain mandatory. Run
+`python3 -m pytest -q scripts/ci/tests/test_zed_project_config.py` after any
+resolution. Do not copy the archived 1.3.6 configuration back into live files.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

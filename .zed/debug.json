@@ -5,13 +5,20 @@
     "request": "launch",
     "program": "$ZED_WORKTREE_ROOT/build/tools/vmaf",
     "args": [
-      "-r", "$ZED_WORKTREE_ROOT/python/test/resource/yuv/src01_hrc00_576x324.yuv",
-      "-d", "$ZED_WORKTREE_ROOT/python/test/resource/yuv/src01_hrc01_576x324.yuv",
-      "--width", "576",
-      "--height", "324",
-      "-p", "420",
-      "-b", "8",
-      "-m", "version=vmaf_v0.6.1",
+      "-r",
+      "$ZED_WORKTREE_ROOT/python/test/resource/yuv/src01_hrc00_576x324.yuv",
+      "-d",
+      "$ZED_WORKTREE_ROOT/python/test/resource/yuv/src01_hrc01_576x324.yuv",
+      "--width",
+      "576",
+      "--height",
+      "324",
+      "-p",
+      "420",
+      "-b",
+      "8",
+      "-m",
+      "version=vmaf_v0.6.1",
       "--precision=17",
       "-q"
     ],
@@ -30,5 +37,66 @@
     "program": "$ZED_WORKTREE_ROOT/build/test/test_feature",
     "args": [],
     "cwd": "$ZED_WORKTREE_ROOT/build"
+  },
+  {
+    "adapter": "CodeLLDB",
+    "label": "Debug: test_feature (ASan/UBSan build)",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build-san/test/test_feature",
+    "args": [],
+    "cwd": "$ZED_WORKTREE_ROOT/build-san",
+    "env": {
+      "ASAN_OPTIONS": "detect_leaks=1:abort_on_error=1",
+      "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+    }
+  },
+  {
+    "adapter": "Debugpy",
+    "label": "Debug: pytest current file",
+    "request": "launch",
+    "module": "pytest",
+    "args": ["$ZED_FILE", "-v"],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "adapter": "Delve",
+    "label": "Debug: vmafx-mcp (stdio)",
+    "request": "launch",
+    "mode": "debug",
+    "program": "./cmd/vmafx-mcp",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "adapter": "Debugpy",
+    "label": "Debug: vmaf-tune compare",
+    "request": "launch",
+    "module": "vmaftune.cli",
+    "args": [
+      "compare",
+      "--src",
+      "$ZED_WORKTREE_ROOT/testdata/ref_576x324_48f.yuv",
+      "--width",
+      "576",
+      "--height",
+      "324",
+      "--pix-fmt",
+      "yuv420p",
+      "--framerate",
+      "24",
+      "--duration",
+      "2",
+      "--encoders",
+      "libx264,libx265",
+      "--target-vmafs",
+      "94",
+      "--score-backend",
+      "cpu",
+      "--max-iterations",
+      "2"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": {
+      "PYTHONPATH": "$ZED_WORKTREE_ROOT/tools/vmaf-tune/src"
+    }
   }
 ]

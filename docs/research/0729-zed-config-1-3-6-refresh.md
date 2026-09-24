@@ -1,6 +1,12 @@
 <!-- markdownlint-disable MD060 -->
 # Research-0729 — Zed 1.3.6 config refresh + agent_servers wiring
 
+> **Historical evidence, not current configuration guidance.** BUG-048 found
+> that Zed 1.18.1 parses `.zed/settings.json` through a project-only schema
+> which excludes `agent` and `agent_servers`, and that several commands below
+> no longer exist. Use the [current IDE setup guide](../development/ide-setup.md)
+> and [BUG-048 audit](bug048-zed-1-18-restoration-2026-09-24.md).
+
 ## Problem
 
 The repo's `.zed/` config and the
@@ -104,7 +110,8 @@ project-local snippets path), container-task block, and a
 limit hits and we want to fan out work to other ACP agents.
 
 The 2026-05-19 plan stays in tree as a dated snapshot (cited in
-audit-trail terms). The 2026-05-22 doc is the current reference.
+audit-trail terms). The 2026-05-22 doc was authoritative at the time; it is now
+archived.
 
 ## Alternatives considered
 
