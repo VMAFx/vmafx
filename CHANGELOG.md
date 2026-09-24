@@ -20461,7 +20461,7 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   Identified by c-reviewer agent audit 2026-05-30 (MEDIUM severity).
 
 
-- **Achieved 100% REUSE 3.3 specification compliance tree-wide across all 9,139 files in REUSE scope (BUG-003).**
+- **Achieved 100% REUSE 3.3 specification compliance tree-wide across all 9,140 files in REUSE scope (BUG-003).**
   Baseline measurement on current master showed 6,806 files lacking copyright and 7,251 files lacking licensing
   information, 14 invalid SPDX expressions in prose across 13 files, and 1 unused license (`LicenseRef-Apache-2.0-u2netp`).
   Resolved cleanly without churn or noisy per-file headers:
@@ -20479,6 +20479,8 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   - Added fail-closed regression gates and tests: `reuse-lint` and `test-reuse-compliance` hooks in `.pre-commit-config.yaml`,
     a `lint-reuse` target in `Makefile` wired into `make lint`, dedicated unit tests in `scripts/ci/tests/test_reuse_compliance.py`,
     and CI verification with pre-commit 4.6.2 and REUSE 6.2.0 pinned in `.github/workflows/lint-and-format.yml`.
+  - Documented the rename-aware contributor/upstream audit and exact FFmpeg n9.0.2 source-unit classification in
+    `docs/research/bug-003-reuse-provenance-audit-2026-09-24.md`; a green coverage-only lint is explicitly not provenance proof.
 
 
 - Fixed FIFO-mode Python executors hanging until the CI job timeout when a
