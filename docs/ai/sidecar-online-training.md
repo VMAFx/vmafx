@@ -88,6 +88,11 @@ other content types. The 10 000-sample ring buffer represents about 3.2 MB of
 raw 80-float payload before Python object and container overhead, and retains
 about 200 hours of a hypothetical 50-sample/hour input stream.
 
+Each gradient step reserves the oldest batch-sized window of newly received
+samples. If training raises a runtime or shape error, that window returns to the
+front of the pending queue for the next attempt; samples received concurrently
+remain behind it and are not discarded when the retry succeeds.
+
 ---
 
 ## Configuration reference

@@ -31452,9 +31452,9 @@ See `docs/server/auth.md` for the full configuration guide.
   directory alongside the socket.
 - Make the newly required sidecar suite warning-clean on PyTorch 2.14: preserve
   batch-size-one training without MSE broadcasting, reject prediction/target
-  count mismatches without discarding pending samples, export a genuinely
-  dynamic ONNX batch axis, and fail socket lifecycle tests on server-thread
-  exceptions.
+  count mismatches, retry the oldest failed pending window without discarding
+  samples received concurrently, export a genuinely dynamic ONNX batch axis,
+  and fail socket lifecycle tests on server-thread exceptions.
 
 
 - **Semgrep OSS warnings — 19/19 triaged (Research-0090)** — three real

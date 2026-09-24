@@ -28,6 +28,7 @@ from ai.sidecar.online_trainer import (  # noqa: E402
     _load_base_model,
     _write_sha256_sidecar,
 )
+from ai.sidecar.replay_buffer import Sample  # noqa: E402
 from ai.sidecar.sgd_ema import SGDEMAConfig  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -268,6 +269,69 @@ class TestOnlineTrainerIngest:
             trainer.ingest(features, 20.0)
 
         assert len(trainer._pending) == batch_size
+
+    def test_failed_batch_retries_before_concurrent_samples(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A restored batch stays ahead of samples ingested during its failed step."""
+        trainer = OnlineTrainer(
+            n_features=N_FEATURES,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            batch_size=2,
+            replay_mix_ratio=0.0,
+            config=_fast_config(),
+        )
+        failed_step_started = threading.Event()
+        release_failed_step = threading.Event()
+        attempted_scores: list[list[float]] = []
+        thread_errors: list[BaseException] = []
+
+        def train_with_first_step_failure(batch: list[Sample]) -> float:
+            scores = [sample.true_score for sample in batch]
+            attempted_scores.append(scores)
+            if len(attempted_scores) == 1:
+                failed_step_started.set()
+                release_failed_step.wait(timeout=3.0)
+                raise ValueError("prediction/target count mismatch")
+            return 0.0
+
+        monkeypatch.setattr(trainer, "_train_on_batch", train_with_first_step_failure)
+        monkeypatch.setattr(trainer, "_maybe_export_checkpoint", lambda: None)
+
+        trainer.ingest([1.0] * N_FEATURES, 1.0)
+
+        def finish_first_batch() -> None:
+            try:
+                trainer.ingest([2.0] * N_FEATURES, 2.0)
+            except BaseException as exc:  # surfaced in the parent assertions below
+                thread_errors.append(exc)
+
+        failing_thread = threading.Thread(target=finish_first_batch, daemon=True)
+        failing_thread.start()
+        assert failed_step_started.wait(timeout=3.0)
+
+        # This arrives while the first batch is outside the queue and training.
+        assert trainer.ingest([3.0] * N_FEATURES, 3.0)["trained"] is False
+        release_failed_step.set()
+        failing_thread.join(timeout=3.0)
+
+        assert not failing_thread.is_alive()
+        assert len(thread_errors) == 1
+        assert isinstance(thread_errors[0], ValueError)
+
+        # The next ingest retries [1, 2], leaving [3, 4] queued. Subsequent
+        # ingests prove that neither the concurrent sample nor its successors
+        # were cleared as collateral when the restored batch succeeded.
+        trainer.ingest([4.0] * N_FEATURES, 4.0)
+        trainer.ingest([5.0] * N_FEATURES, 5.0)
+        trainer.ingest([6.0] * N_FEATURES, 6.0)
+
+        assert attempted_scores == [
+            [1.0, 2.0],
+            [1.0, 2.0],
+            [3.0, 4.0],
+            [5.0, 6.0],
+        ]
 
     def test_ingest_returns_checkpoint_path_when_condition_met(
         self, tmp_path: pathlib.Path

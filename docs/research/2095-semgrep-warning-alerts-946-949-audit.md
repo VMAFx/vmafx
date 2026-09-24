@@ -30,10 +30,11 @@ All four Python Semgrep findings are removed at source.
 4. **Required-suite correction**: wiring `ai/sidecar/tests` into the required AI
    lane exposed a batch-size-one MSE broadcast warning and the legacy ONNX
    `dynamic_axes` warning under PyTorch 2.14. Predictions and targets are now
-   equal-length vectors with an explicit mismatch error, failed steps restore
-   their pending samples, and the opset-17 exporter uses tuple arguments plus
-   `dynamic_shapes`. The complete suite is warning-clean rather than merely its
-   alert-focused subset.
+   equal-length vectors with an explicit mismatch error. Each step now reserves
+   the oldest batch-sized pending window; a failed step restores that window
+   ahead of concurrent arrivals without clearing them on retry. The opset-17
+   exporter uses tuple arguments plus `dynamic_shapes`. The complete suite is
+   warning-clean rather than merely its alert-focused subset.
 
 The previous version of this digest incorrectly said the base cache writer used
 PID-suffixed temporary files. Exact-base inspection shows it wrote JSON directly

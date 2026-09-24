@@ -79,8 +79,10 @@ these Meson blocks.
    equal-length flattened predictions and targets (including batch size one),
    explicit count-mismatch rejection, and the opset-17 tuple-argument
    `dynamic_shapes=({0: "batch"},)` export. Do not restore `squeeze(-1)` plus
-   broadcasting or the legacy `dynamic_axes` exporter argument. A failed
-   `RuntimeError` or `ValueError` training step must restore the pending batch.
+   broadcasting or the legacy `dynamic_axes` exporter argument. Each step must
+   reserve only the oldest batch-sized pending window. A failed `RuntimeError`
+   or `ValueError` step restores that window at the front; concurrent arrivals
+   remain queued behind it and cannot be cleared by its eventual retry.
    Socket lifecycle regressions signal readiness only after the real `listen()`
    succeeds and surface every server-thread exception to the parent test.
 

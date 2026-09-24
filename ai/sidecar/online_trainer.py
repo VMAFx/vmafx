@@ -212,9 +212,8 @@ class OnlineTrainer:
     def ingest(self, features: list[float], true_score: float) -> dict[str, Any]:
         """Accept one (features, true_score) pair from the socket handler.
 
-        Accumulates into the pending queue.  When the queue reaches
-        ``_batch_size``, triggers one gradient step and flushes the queue.
-        Returns a status dict for the JSON ACK response.
+        When the pending queue reaches ``_batch_size``, reserves its oldest
+        batch-sized window and triggers one gradient step. Returns an ACK status.
 
         Raises ``ValueError`` for a wrong-length feature vector or a
         non-numeric ``true_score``; the socket handler converts that into a
@@ -238,23 +237,24 @@ class OnlineTrainer:
             if len(self._pending) < self._batch_size:
                 return {"ok": True, "step": self._trainer.step_count, "trained": False}
 
-            # Build mixed batch: new samples + replay samples.
-            batch = self._build_batch()
-            cleared = list(self._pending)  # snapshot for restore-on-failure
-            self._pending.clear()
+            # Reserve only the oldest batch-sized window. Samples appended by a
+            # concurrent ingest while this step runs remain queued behind it.
+            reserved = self._pending[: self._batch_size]
+            del self._pending[: self._batch_size]
+            batch = self._build_batch(reserved)
 
         # Step outside the lock — PyTorch backward pass is not reentrant anyway.
         try:
             loss = self._train_on_batch(batch)
         except (RuntimeError, ValueError):
             # The gradient step failed (CUDA OOM, prediction/target mismatch,
-            # ...). Restore
-            # the just-cleared pending samples — prepended so any samples a
-            # concurrent ingest appended in the meantime are preserved — so they
-            # are retried on the next ingest rather than silently dropped, then
-            # propagate so the socket handler reports the failure in the ACK.
+            # ...). Restore the reserved samples at the front so the next ingest
+            # retries them before any later samples. Concurrent arrivals remain
+            # queued behind the restored window rather than being cleared as
+            # collateral. Then propagate so the socket handler reports the
+            # failure in the ACK.
             with self._lock:
-                self._pending[:0] = cleared
+                self._pending[:0] = reserved
             raise
 
         # Check checkpoint condition and export atomically under the checkpoint
@@ -287,11 +287,11 @@ class OnlineTrainer:
     # Internals
     # ------------------------------------------------------------------
 
-    def _build_batch(self) -> list[Sample]:
-        """Combine pending samples with a replay draw."""
+    def _build_batch(self, reserved: list[Sample]) -> list[Sample]:
+        """Combine a reserved pending window with a replay draw."""
         n_replay = int(self._batch_size * self._replay_mix_ratio)
         n_new = self._batch_size - n_replay
-        new_samples = self._pending[-n_new:] if self._pending else []
+        new_samples = reserved[-n_new:] if reserved else []
         replay_samples = self._buffer.sample(n_replay)
         return new_samples + replay_samples
 

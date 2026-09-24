@@ -21,10 +21,12 @@ Implements vmafx-node online training sidecar (ADR-0781).
    legacy `dynamic_axes` emits a warning under the required dynamo exporter.
    Training flattens predictions and targets to equal-length vectors, rejects
    a count mismatch, and must keep batch-size-one steps warning-free.
-   `OnlineTrainer.ingest()` restores its cleared pending samples after both
-   `RuntimeError` and `ValueError` training failures so a mismatch cannot drop
-   the batch that exposed it. Run the complete `ai/sidecar/tests` suite with
-   warnings promoted to errors.
+   `OnlineTrainer.ingest()` reserves only the oldest batch-sized pending window
+   for each step. After either a `RuntimeError` or `ValueError`, it restores that
+   window at the front so the batch that exposed the failure is retried before
+   later concurrent arrivals; those arrivals must remain queued, not be cleared
+   as collateral. Run the complete `ai/sidecar/tests` suite with warnings
+   promoted to errors.
 
 4. **Replay buffer capacity default** — 10 000 samples = ADR-0781 design point.
    The executable source (`_REPLAY_BUFFER_CAPACITY`), focused tests, and the
