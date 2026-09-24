@@ -39,7 +39,7 @@
 #include "libvmaf/picture.h"
 #include "picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr,modernize-redundant-void-arg): this is a
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
  * C23 translation unit, but the required MSVC C lane does not provide the C
  * nullptr spelling clang-tidy proposes. Keep the portable C API form under
  * ADR-1138. */
@@ -415,4 +415,4 @@ char *run_tests(void)
     mu_run_test(test_float_motion_hip_force_zero_keeps_close);
     return NULL;
 }
-/* NOLINTEND(modernize-use-nullptr,modernize-redundant-void-arg) */
+/* NOLINTEND(modernize-use-nullptr) */

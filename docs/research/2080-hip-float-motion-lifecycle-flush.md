@@ -93,6 +93,6 @@ Broader post-fix verification on the same tree:
 - scoped exhaustive Cppcheck: no actionable findings; scoped HIP clang-tidy:
   zero file-attributed findings in both touched C translation units (the six
   reported findings are pre-existing include-header debt). The test TU keeps
-  its portable C `NULL` and `(void)` spellings inside the repository-standard
-  ADR-1138 file bracket; its function-size and branch-count debt was removed by
+  its portable C `NULL` spellings inside the repository-standard ADR-1138 file
+  bracket; its function-size and branch-count debt was removed by
   refactoring rather than suppressed.
