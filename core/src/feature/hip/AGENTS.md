@@ -309,7 +309,7 @@ not hold. If a rebase or a squash-merge of a stale branch reintroduces
 `AdmBufferHip buf` in any of the four signatures, that is the same
 regression — re-apply the pointer form, do not "fix" this note.
 
-**Host side.** `AdmStateHip` carries `void *buf_dev`, a device-resident
+**Host side.** `AdmStateHip` carries `AdmBufferHip *buf_dev`, a device-resident
 copy of `buf`:
 
 1. `adm_hip_upload_buf()` allocates it with `hipMalloc` and uploads
@@ -319,11 +319,18 @@ copy of `buf`:
 2. Each of the four launch helpers passes `&s->buf_dev` — the address
    of the pointer variable, so the kernel argument is the 8-byte device
    address — as `args[0]`.
-3. `close_fex_hip()` frees it, and so does every init failure path:
-   `adm_hip_free_buf_dev()` is called first there, because `buf_dev` is
-   the last allocation init makes and the release order is the exact
-   reverse of the acquisition order. Do not reintroduce a
-   `fail_buf_dev:` label — the zero-`goto` rule is what removed it.
+3. A failed upload frees its unpublished local allocation. After a successful
+   upload, the feature-name-dictionary failure releases `buf_dev`, luma,
+   buffers, modules and stream in exact reverse acquisition order; normal
+   close frees `buf_dev` between modules and its backing buffers. Do not
+   reintroduce a `fail_buf_dev:` label — the zero-`goto` rule removed it.
+
+`core/test/test_hip_adm_buffer_pointer_contract.py` binds all four device
+signatures to their host `args[0]`, the upload ordering and copy direction,
+the buffer-free reduce control, and both teardown paths. Its mutation red caps
+must fail before changing this contract. `test_hip_adm_init_unwind` separately
+executes the dictionary failure against a stub HIP runtime and protects the
+full BUG-092 release set and `-ENOMEM` result.
 
 One upload serves every launch **only because nothing writes `s->buf`
 after init**: it is written by the allocation and slicing blocks in
