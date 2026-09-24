@@ -25,7 +25,7 @@ import tempfile
 import threading
 import time
 import unittest.mock as mock
-from typing import Any, Generator, NamedTuple
+from typing import Any, Callable, Generator, NamedTuple, TypeVar, cast
 
 import pytest
 
@@ -35,6 +35,14 @@ pytestmark = pytest.mark.skipif(
     os.name != "posix",
     reason="Unix socket filesystem permissions require POSIX",
 )
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+# The pre-push checker deliberately runs with --no-site-packages (ADR-1261)
+# to keep the local gate hermetic and independent of local virtualenv state.
+# Without installed third-party stubs, pytest.fixture is inferred as untyped Any,
+# which triggers [untyped-decorator] under strict mypy. Typing the decorator
+# alias avoids untyped-decorator without relying on an environment-dependent ignore.
+_pytest_fixture: Callable[[_F], _F] = cast(Any, pytest.fixture)
 
 
 class _PeerProcess(NamedTuple):
@@ -79,6 +87,7 @@ def _peer_command(script: str) -> tuple[list[str], int, int, bool]:
     newgidmap = shutil.which("newgidmap")
     if unshare is None or newuidmap is None or newgidmap is None:
         pytest.skip("different-UID replay requires unshare, newuidmap, and newgidmap")
+    assert unshare is not None
 
     import pwd
 
@@ -87,8 +96,13 @@ def _peer_command(script: str) -> tuple[list[str], int, int, bool]:
     subgid = _subid_start(pathlib.Path("/etc/subgid"), username)
     if subuid is None or subgid is None:
         pytest.skip(f"no subordinate UID/GID range is assigned to {username}")
-    base_python = getattr(sys, "_base_executable", sys.executable)
-    command = [
+    assert subuid is not None
+
+    base_executable = getattr(sys, "_base_executable", None)
+    base_python: str = (
+        base_executable if isinstance(base_executable, str) and base_executable else sys.executable
+    )
+    command: list[str] = [
         unshare,
         "--user",
         "--map-users",
@@ -669,7 +683,7 @@ class TestSocketPermissionsAndOwnership:
         server_thread.join(timeout=2.0)
         assert not server_thread.is_alive()
 
-    @pytest.fixture
+    @_pytest_fixture
     def shared_ipc_dir(self) -> Generator[pathlib.Path, None, None]:
         """Provide a group-accessible directory in /tmp for cross-UID/same-GID IPC testing."""
         td = tempfile.mkdtemp(prefix="vmafx_ipc_", dir="/tmp")
