@@ -150,10 +150,10 @@ jobs:
         with:
           python-version: '3.14.7'
 
-      - name: Install meson and ninja
+      - name: Install build and test tools
         run: |
           python -m pip install --upgrade pip
-          pip install meson ninja==1.13.0 pytest
+          pip install meson ninja==1.13.0 pytest==9.1.1
 
       # Windows checkouts can materialise the tracked compat/vmaf symlink as
       # a plain text file. A directory junction keeps the public import path

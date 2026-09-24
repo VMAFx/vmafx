@@ -19,9 +19,11 @@ Implements vmafx-node online training sidecar (ADR-0781).
    and all downstream `onnxruntime-go` consumers.
 
 4. **Replay buffer capacity default** — 10 000 samples = ADR-0781 design point.
-   Change requires updating ADR, Helm default
-   (`sidecar.trainer.replayBufferSize`), and docs table in
-   `docs/ai/sidecar-online-training.md`.
+   The executable source (`_REPLAY_BUFFER_CAPACITY`), focused tests, and the
+   environment-variable table in `docs/ai/sidecar-online-training.md` are the
+   current contract and move together. The orphaned Helm helper mentions
+   `sidecar.trainer.replayBufferSize`, but the chart neither schemas nor consumes
+   that value; do not describe it as a supported Helm setting.
 
 5. **No NFL golden-data path** — package has no connection to Netflix
    golden-data test fixtures or `python/test/` assertion values. Changes here

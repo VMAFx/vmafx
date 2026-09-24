@@ -62,6 +62,12 @@ these Meson blocks.
    shutdown invariants. The POSIX socket regressions run through the AI suite; all
    26 decorator regressions run through `compat_decorator` Nox and the hosted
    Linux/macOS/real-Windows matrix.
+3. **The hosted decorator lane exact-pins `pytest==9.1.1`.** This branch predates
+   the hash-locked Python dependency infrastructure being developed separately,
+   so it must remain independently executable rather than reference a lock file
+   absent from its base. When rebasing after that infrastructure lands, reconcile
+   this direct pin with the manifest-owned lock selected for `build.yml`; do not
+   restore an unversioned `pip install pytest`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

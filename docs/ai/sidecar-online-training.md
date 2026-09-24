@@ -1,11 +1,14 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Sidecar Online Training
 
-The VMAFX sidecar trainer continuously fine-tunes a tiny-AI ONNX model
-while `vmafx-node` processes encoding jobs.  Every scored job contributes
-a `(features, true_score)` training pair that is shipped to a co-located
-Python sidecar container over a Unix socket.  No round-trip to a training
-cluster is required; checkpoints are available within minutes.
+The repository contains two building blocks for online training: a Go
+`FeedbackClient` that can send `(features, true_score)` messages over a Unix
+socket, and a Python server that can train an SGD + EMA model from those
+messages. They are not an end-to-end product surface today. No production
+scoring or executor path calls `FeedbackClient.Send`, the Helm chart does not
+deploy the Python server, and `vmafx-node` does not consume the checkpoints it
+exports. Consequently, the shipped deployment does not continuously fine-tune
+its scoring model.
 
 This surface is part of the VMAFX Phase 4b distributed platform
 (ADR-0781, ADR-0709).  It is separate from the on-host bias-correction
@@ -28,11 +31,15 @@ For isolated development, start the server directly after arranging a private
 socket directory and a same-UID client:
 
 ```bash
-VMAFX_SIDECAR_SOCKET=/run/user/$(id -u)/vmafx-sidecar.sock \
+runtime_dir="$(mktemp -d)"
+chmod 700 "$runtime_dir"
+VMAFX_SIDECAR_SOCKET="$runtime_dir/vmafx-sidecar.sock" \
   python -m ai.sidecar.online_trainer
 ```
 
-The socket is an unauthenticated local endpoint created as `0o600`. A future
+The server creates the unauthenticated socket and its adjacent lifetime-claim
+file as `0o600`; it does not create or validate the parent directory. The
+operator therefore owns the parent-directory security boundary. A future
 cross-UID/group-shared deployment must add an explicit configuration contract,
 chart wiring, and end-to-end security tests; changing the mode alone is not a
 supported deployment mechanism.
@@ -42,27 +49,24 @@ supported deployment mechanism.
 ## Architecture
 
 ```text
-vmafx-node (Go)               vmafx-sidecar (Python)
-─────────────────             ──────────────────────────
-scorer.Score(ref, dis)   ──→  ReplayBuffer (10 000 cap)
-  │ FeedbackClient.Send()         │
-  │ (non-blocking, 1000-entry     │ batch (32 samples, 50% replay)
-  │  ring buffer)                 ↓
-  │                          SGDEMATrainer.step()
-  │                              │ EMA update (β=0.999)
-  │                              │
-  │                        every 10 min + 1000 new samples:
-  │                          export_onnx() → /mnt/vmafx-models/online/
-  │                          write SHA-256 sidecar
-  │
-  ↓ next restart: node loads new ONNX checkpoint
+producer integration            Go transport              Python trainer
+────────────────────            ────────────              ──────────────
+not implemented today    X  FeedbackClient.Send()  ──→  ReplayBuffer (10 000)
+                               non-blocking queue              │
+                               (1 000 entries)                 │ batch (32,
+                                                               │ 50% replay)
+                                                               ↓
+                                                          SGDEMATrainer.step()
+                                                               │ EMA update
+                                                               ↓
+                                                          periodic ONNX export
+                                                          + SHA-256 file
 ```
 
-**Why Unix socket?**  The intended topology places `vmafx-node` and
-`vmafx-sidecar` in one pod with a private shared directory. Unix domain sockets
-have lower per-message overhead than TCP loopback for the expected message rate
-(< 100 pairs/s) and avoid an extra container port. That intended pod wiring is
-not present in the current chart.
+**Why Unix socket?** The implemented Go and Python transports use a local Unix
+socket. A complete deployment would need to give both same-UID processes the
+same private directory and identical `VMAFX_SIDECAR_SOCKET` values. No current
+chart render provides that shared mount or the Python process.
 
 **Why SGD + EMA?**  Standard SGD is lower overhead per step than Adam for
 the tiny two-layer regression heads used here.  The EMA shadow
@@ -71,8 +75,9 @@ short-content bursts (ADR-0781 §Decision; Mean Teacher paper, 2017).
 
 **Why a replay buffer?**  Without replay, a sudden wave of narrow-content
 jobs (e.g., one hour of HDR animation) overwrites the model's knowledge of
-other content types.  The 10 000-sample ring buffer (≈ 3.2 MB at 80 float32
-features/sample) retains ~200 hours of a 50-encode/hour workload.
+other content types. The 10 000-sample ring buffer represents about 3.2 MB of
+raw 80-float payload before Python object and container overhead, and retains
+about 200 hours of a hypothetical 50-sample/hour input stream.
 
 ---
 
@@ -83,19 +88,21 @@ wired to supported Helm values in the current chart.
 
 | Env var | Default | Description |
 |---|---|---|
-| `VMAFX_BASE_MODEL_PATH` | empty | ONNX or PyTorch state-dict to fine-tune. |
+| `VMAFX_BASE_MODEL_PATH` | empty | Python trainer seed model. A PyTorch state dict matching the fallback two-layer MLP is loaded directly; ONNX loading needs the optional `onnx2torch` module. A missing, inaccessible, or unsupported model falls back to a new two-layer MLP. |
 | `VMAFX_SIDECAR_CHECKPOINT_DIR` | `/mnt/vmafx-models/online` | Directory for versioned ONNX checkpoint output. |
 | `VMAFX_SIDECAR_REPLAY_CAPACITY` | `10000` | Replay buffer capacity (samples). |
 | `VMAFX_SIDECAR_BATCH_SIZE` | `32` | Mini-batch size per gradient step. |
 | `VMAFX_SIDECAR_REPLAY_MIX` | `0.5` | Fraction of each batch drawn from replay buffer. |
-| `VMAFX_SIDECAR_LR` | `0.0001` | SGD/Adam learning rate. |
+| `VMAFX_SIDECAR_LR` | `0.0001` | SGD learning rate used by the executable. |
 | `VMAFX_SIDECAR_EMA_DECAY` | `0.999` | EMA decay beta. |
 | `VMAFX_SIDECAR_CKPT_INTERVAL_S` | `600` | Minimum seconds between checkpoints. |
 | `VMAFX_SIDECAR_MIN_SAMPLES_CKPT` | `1000` | Minimum new samples before checkpoint. |
 | `VMAFX_SIDECAR_N_FEATURES` | `80` | Feature vector dimension from vmafx-node. |
 
 The socket path (`VMAFX_SIDECAR_SOCKET`) defaults to `/tmp/vmafx-sidecar.sock`
-and should not be changed unless the volume mount path also changes.
+for compatibility with the Go client. For standalone or future production use,
+set the same override in both processes and place it below an owner-only runtime
+directory; socket mode alone does not secure a writable parent directory.
 
 ---
 
@@ -111,59 +118,57 @@ Each checkpoint export writes two files atomically:
 The ONNX file uses opset 17 (matching ADR-0249 and the rest of the tiny-AI
 export stack).  Input shape: `(batch, n_features)`.  Output shape: `(batch, 1)`.
 
-On next `vmafx-node` restart, set `VMAFX_BASE_MODEL_PATH` (or the Helm
-`baseModelPath` value) to the new checkpoint path to pick it up.  Automated
-live hot-reload is a follow-up (requires the `VmafxModelTraining` CRD,
-Research-0733 §3.4).
+No current `vmafx-node` path discovers or loads these files. The
+`VMAFX_BASE_MODEL_PATH` variable belongs to the Python trainer: setting it for a
+later trainer process seeds that trainer from the checkpoint when the required
+loader is available. Promoting an exported checkpoint into a scoring model is
+an external, manual integration step today.
 
 ---
 
-## Intended Kubernetes sidecar lifecycle (not currently wired)
+## Kubernetes status (not currently wired)
 
-The orphaned Helm helper describes `restartPolicy: Always` (native sidecar
-KEP-753 semantics) for Kubernetes 1.29 or later. If a future chart actually
-includes and schemas that helper, the intended behavior is:
+The orphaned `sidecar-trainer.yaml` helper contains proposed container,
+environment, volume, probe, and restart fields, but no workload includes it and
+the values schema exposes no corresponding configuration. It is not a rendered
+or validated deployment contract.
 
-- The sidecar starts before the main `vmafx-node` container.
-- The pod's `Ready` condition waits for the sidecar's readiness probe to
-  pass (Unix socket bound).
-- If the sidecar crashes it is restarted without restarting `vmafx-node`.
-
-No current chart render produces this container, so these lifecycle guarantees
-must not be assumed by operators today.
+The `VmafxModelTraining` CRD and an operator-side status mapper also exist, but
+the mapper polls an HTTP `/status` service that this Python server does not
+provide, and the chart creates no trainer Service. Creating the CR therefore
+does not deploy, drive, or observe this trainer.
 
 ---
 
 ## Go-side metrics
 
-`FeedbackClient` exposes two counters available via the node's Prometheus
-metrics endpoint (when instrumented):
+`FeedbackClient` exposes two in-memory counters through Go methods:
 
 | Counter | Description |
 |---|---|
-| `vmafx_training_feedback_dropped_total` | Messages dropped due to queue overflow or sidecar unavailability. |
-| `vmafx_training_feedback_delivered_total` | Messages successfully delivered to the sidecar. |
+| `Dropped()` | Messages rejected because the in-memory queue was full. |
+| `Delivered()` | Messages acknowledged by the Python server. |
 
-A non-zero `dropped` counter means the sidecar is behind the scoring rate.
-Increase `resources.limits.cpu` for the sidecar or reduce `batchSize`.
+The node logs both values when it stops the drainer. They are not registered as
+Prometheus metrics, and with no production caller of `Send` they remain zero in
+the shipped scoring flow.
 
 ---
 
 ## Limitations (v1)
 
-- **No live hot-reload**: the node loads the new checkpoint only on restart.
-  The `VmafxModelTraining` CRD + controller (atomic session swap via
-  `atomic.Pointer`) is the follow-up.
-- **CPU training only by default**: CUDA training available via
-  `VMAFX_SIDECAR_CUDA=1` but requires the node pod to have excess GPU budget.
+- **No automatic feedback producer**: the client and server transports exist,
+  but scoring and executor code do not call `FeedbackClient.Send`.
+- **No checkpoint consumption**: the node neither verifies nor loads trainer
+  output, on restart or at runtime.
+- **CPU-only trainer**: the implementation creates CPU tensors and has no
+  `VMAFX_SIDECAR_CUDA` setting or other device-selection surface.
 - **Single base model per sidecar**: per-tenant adapter heads (LoRA) are
   deferred to v2.
-- **No stability gate, and no quarantine**: every checkpoint the sidecar
-  commits is immediately eligible for pickup. Nothing scores it against a
-  fixture set, nothing tags it, and nothing withholds it — a checkpoint that
-  regresses quality is picked up exactly like one that improves it. Recovery is
-  manual: pin the node to a known-good version or stop the training session.
-  See [Checkpoint quarantine](#checkpoint-quarantine-not-implemented) below for
+- **No stability gate, and no quarantine**: nothing scores an exported
+  checkpoint against a fixture set or tags it as stable. Any external consumer
+  must validate and promote it explicitly. See
+  [Checkpoint quarantine](#checkpoint-quarantine-not-implemented) below for
   what is and is not in the tree.
 
 ---
@@ -187,10 +192,10 @@ carries a `spec.versionPolicy` field with three values — `latest`,
 
 | §3.4 element | State |
 | --- | --- |
-| Atomic checkpoint write (temp file + `os.replace`) | Implemented — `SgdEmaTrainer.export_onnx` exports to a `mkstemp` `.tmp.onnx` and renames; the `.sha256` file is written the same way. |
+| Atomic checkpoint write (temp file + `os.replace`) | Implemented — `SGDEMATrainer.export_onnx` exports to a `mkstemp` `.tmp.onnx` and renames; the `.sha256` file is written the same way. |
 | `model.onnx.sha256` digest sidecar written | Implemented — `_write_sha256_sidecar` in [`ai/sidecar/online_trainer.py`](../../ai/sidecar/online_trainer.py). |
 | Digest **verified by the node before load** | **Not written** — no SHA-256 check exists anywhere in `cmd/vmafx-node/`. The file is produced but nothing consumes it. |
-| `status.modelVersion` propagated to the CR | Implemented — [`api/vmafx/v1/vmafxmodeltraining_types.go`](../../api/vmafx/v1/vmafxmodeltraining_types.go), applied in `vmafxmodeltraining_controller.go`. |
+| `status.modelVersion` propagated to the CR | Type and mapping code exist, but are disconnected: the controller expects an HTTP trainer service that the Python server and chart do not provide. |
 | `spec.versionPolicy` field | **Absent** from the CRD — no `latest` / `latest-stable` / `pinned:` selection exists. |
 | Fixture set for the stability gate | **Does not exist.** |
 | PLCC comparison job in the controller | **Not written.** |
@@ -198,10 +203,9 @@ carries a `spec.versionPolicy` field with three values — `latest`,
 | `stability_plcc_delta` knob | **Not a field anywhere.** |
 | Automatic rollback on `vmaf_score_pooled` failure rate | **Not written**; the `rollback_threshold` in §3.4 is a proposal. |
 
-**Consequence for operators.** Treat every committed checkpoint as unvetted.
-If quality regression matters for a deployment, gate it outside the sidecar —
-score the checkpoint yourself before pointing nodes at it, and keep the
-previous version reachable so you can pin back to it.
+**Consequence for operators.** Treat every exported checkpoint as an unvetted
+standalone artefact. Gate it outside the sidecar before adapting it for any
+scoring consumer, and keep the previous scoring model reachable for rollback.
 [ADR-0781](../adr/0781-sidecar-sgd-ema-online-trainer.md) §Limitations records
 the same deferral from the design side.
 
