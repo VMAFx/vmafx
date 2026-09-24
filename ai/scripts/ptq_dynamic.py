@@ -43,8 +43,8 @@ except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH: Path = _SCRIPT_PATHS.script_path
-REPO_ROOT: Path = _SCRIPT_PATHS.repo_root
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import write_run_manifest  # noqa: E402

@@ -137,6 +137,18 @@
       "paths": [
         "changelog.d/fixed/hip-adm-buffer-by-pointer-reapplied.md"
       ]
+    },
+    {
+      "adr": "ADR-0680, ADR-0681",
+      "kind": "reverse-hunk",
+      "undoes": "d170ef86affc8e29bf3d486f36018e129230ae97",
+      "evidence": "(?:argparse\\.ArgumentParser\\(description=__doc__\\)|raw_argv = list\\(sys\\.argv\\[1:\\] if argv is None else argv\\)|sys\\.path\\.insert\\(0, str\\(REPO_ROOT / \"ai\" / \"src\"\\)\\)|REPO_ROOT = SCRIPT_PATH\\.parents\\[2\\]|SCRIPT_PATH = Path\\(__file__\\)\\.resolve\\(\\)|if str\\(REPO_ROOT / \"ai\" / \"src\"\\) not in sys\\.path|import argparse|bootstrap_ai_script|make_argument_parser|collect_cli_argv|_SCRIPT_PATHS|except ModuleNotFoundError:|from aiutils\\.cli_helpers)",
+      "reason": "d170ef86a (#1531) replaced the shared ADR-0680 and ADR-0681 CLI helpers and bootstrap pattern in these three scripts with hand-written argparse and sys.path boilerplate. Restoring make_argument_parser, collect_cli_argv, and bootstrap_ai_script in PR 1553 implements accepted ADR-0680 and ADR-0681 per ADR-1291. Across all three files, every line this finding rests on carries either the old hand-written CLI/bootstrap shape from d170ef86 or the restored ADR-0680/0681 shared helper pattern, and nothing else of d170ef86 is touched.",
+      "paths": [
+        "ai/scripts/measure_quant_drop.py",
+        "ai/scripts/ptq_dynamic.py",
+        "ai/scripts/ptq_static.py"
+      ]
     }
   ]
 }
