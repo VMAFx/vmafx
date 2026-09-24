@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-feature-correlation — filter non-numeric columns in feature correlation (2026-09-24)
+
+No upstream impact: `ai/` is fork-only (`ai/scripts/feature_correlation.py`).
+Restores BUG-048 item A11 (originally commit `5fc73913b`, clobbered in `384d97d03`).
+Parquets containing string/metadata columns (e.g. `codec`, `chug_orientation`)
+are filtered through `select_dtypes(include='number')` before `to_numpy(dtype=np.float64)`,
+logging any skipped non-numeric columns to stdout.
+Companion regression test `test_corr_main_skips_non_numeric_columns` in
+`ai/tests/test_feature_correlation.py` covers string and metadata columns.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

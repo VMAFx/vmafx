@@ -132,11 +132,16 @@ def main(argv: list[str] | None = None) -> int:
 
     df = pd.read_parquet(args.parquet)
     drop_cols = {"source", "dis_basename", "frame_index", "key", args.target}
-    feat_cols = [c for c in df.columns if c not in drop_cols]
+    candidate_cols = [c for c in df.columns if c not in drop_cols]
+    numeric = df[candidate_cols].select_dtypes(include="number").columns
+    feat_cols = list(numeric)
+    skipped = sorted(set(candidate_cols) - set(feat_cols))
     print(
         f"[corr] parquet={args.parquet} rows={len(df)} features={len(feat_cols)} "
         f"target={args.target}"
     )
+    if skipped:
+        print(f"[corr] skipped non-numeric columns: {skipped}")
 
     df_clean = df.dropna(subset=[*feat_cols, args.target])
     print(f"[corr] dropped NaN rows: {len(df) - len(df_clean)}; clean rows={len(df_clean)}")
