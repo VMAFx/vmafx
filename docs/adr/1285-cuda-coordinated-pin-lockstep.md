@@ -1,10 +1,19 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1285: CUDA is a coordinated pin — group it in Renovate, gate the rest
 
-- **Status**: Accepted
+- **Status**: Accepted (amended by [ADR-1300](1300-cuda-install-from-nvidia-apt.md) and [ADR-1306](1306-drop-nvidia-cuda-base.md))
 - **Date**: 2026-09-21
 - **Deciders**: Lusoris
 - **Tags**: `ci`, `build`, `cuda`, `renovate`, `fork-local`
+
+> **Amendment (2026-09-24, [ADR-1306](1306-drop-nvidia-cuda-base.md))**:
+> Dropping the `nvidia/cuda` base images eliminates the 6 `image` sites from the
+> coordinated pin inventory (`build-config.env` plus the four Dockerfile ARG mirrors).
+> The coordinated pin is reduced from 10 sites (post ADR-1300) to 4 sites across 3 files:
+> `CUDA_VERSION` in `build-config.env`, `CUDA_APT_PACKAGE` in `build-config.env` and
+> `dev/Containerfile`, and the published OCI description label in
+> `docker/Dockerfile.production-gpu`. `scripts/ci/check-cuda-pin-lockstep.py` retired the
+> `image` shape and its residual sweep catches any re-introduced `nvidia/cuda` image tag.
 
 ## Context
 

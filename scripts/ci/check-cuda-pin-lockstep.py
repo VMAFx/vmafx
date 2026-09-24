@@ -5,44 +5,38 @@ Copyright 2026 Lusoris
 SPDX-License-Identifier: EUPL-1.2
 
 CUDA is not an image tag; it is a coordinated pin. One release is named in
-ten places across six files, in four different spellings:
+four places across three files, in three different spellings:
 
-  * ``CUDA_VERSION="13.4.1"`` in ``build-config.env`` -- the authority.
-  * ``nvidia/cuda:13.4.1-...`` in ``build-config.env`` and the four Dockerfiles
-    that mirror those pins as ARG defaults.
+  * ``CUDA_VERSION="13.4.2"`` in ``build-config.env`` -- the authority.
   * ``cuda-toolkit-13-4`` -- the apt package name, in ``CUDA_APT_PACKAGE`` and
     literally in ``dev/Containerfile``.
-  * ``"VMAFX production CUDA 13.4.1 runtime"`` -- the published OCI description
+  * ``"VMAFX production CUDA 13.4.2 runtime"`` -- the published OCI description
     label on the CUDA runtime image. The residual sweep below is what found
     this one; it was in no inventory of the pin.
 
-It was sixteen places in seven spellings until ADR-1300. The CI legs stopped
-spelling the release at all: the Linux legs call
+It was sixteen places in seven spellings until ADR-1300 and ADR-1306. The CI legs
+stopped spelling the release at all: the Linux legs call
 ``scripts/ci/install-cuda-toolkit.sh`` and the Windows legs
 ``scripts/ci/install-cuda-toolkit.ps1``, and both read ``build-config.env`` at
 run time instead of repeating the version, the series and the
-``CUDA_PATH_V<major>_<minor>`` name in each workflow. A site that reads the
-authority is not a site that can drift from it.
+``CUDA_PATH_V<major>_<minor>`` name in each workflow. ADR-1306 dropped the
+``nvidia/cuda`` base images in favor of digest-pinned Ubuntu 26.04 with explicit
+toolkit installation via ``scripts/ci/install-cuda-toolkit.sh``, retiring six
+image sites from the coordinated pin. A site that reads the authority is not a
+site that can drift from it.
 
-``check-base-image-single-source.sh`` rule 3 knew only the image spelling: it
-compares ``CUDA_BUILDER`` and ``CUDA_RUNTIME`` against ``CUDA_VERSION`` and
-stops there. A Renovate pull request that moves the image tags alone is
-therefore rejected by that rule and can never go green by itself (#1487), while
-the four spellings no rule knew about could drift with nothing complaining.
-``CUDA_APT_PACKAGE`` had no consumer and no drift check of any kind, which
-``build-config.env`` itself forbids: "Add central knobs only with real
-consumers or executable drift checks."
+``check-base-image-single-source.sh`` enforces that ``CUDA_BUILDER`` and
+``CUDA_RUNTIME`` match ``DEV_UBUNTU``. A Renovate pull request or bump must
+keep the single-source authority and derived spellings in lockstep.
+``CUDA_APT_PACKAGE`` is held in step by this gate.
 
-This gate closes both halves. Every site is discovered by shape, every site is
+This gate closes all sides. Every site is discovered by shape, every site is
 compared against ``CUDA_VERSION``, and a residual sweep fails on any *other*
 CUDA release literal in scope, so a site added in a new spelling or a new file
-is a build failure rather than a silent seventeenth copy. The sweep earned its
-place on the first run: it found the OCI description label, which appeared in
-no inventory of the pin, including the bug report that prompted this gate.
+is a build failure rather than a silent copy.
 
-``--write`` rewrites the five derived spellings from ``CUDA_VERSION``. It
-deliberately does not touch ``CUDA_VERSION`` (it is the authority) or the image
-pins (their digests cannot be derived; Renovate owns them).
+``--write`` rewrites the two derived spellings from ``CUDA_VERSION``. It
+deliberately does not touch ``CUDA_VERSION`` (it is the authority).
 
 Usage: check-cuda-pin-lockstep.py [--write]
 Exit: 0 clean, 1 drift or an unrecognised site, 2 the config is missing.
@@ -78,7 +72,7 @@ IMAGE_RE = re.compile(r"nvidia/cuda:(?P<value>[0-9]+\.[0-9]+\.[0-9]+)-")
 APT_RE = re.compile(r"cuda-toolkit-(?P<value>[0-9]+-[0-9]+)")
 LABEL_RE = re.compile(r"(?m)^\s*LABEL\s+[^\n]*\bCUDA (?P<value>[0-9]+\.[0-9]+\.[0-9]+)\b")
 
-# Four spellings used to live here and no longer have a single site in the
+# Five spellings used to live here and no longer have a single site in the
 # tree, so they are gone: a shape that matches nothing looks wired and does
 # nothing, which is the failure this gate exists to prevent.
 #
@@ -89,14 +83,17 @@ LABEL_RE = re.compile(r"(?m)^\s*LABEL\s+[^\n]*\bCUDA (?P<value>[0-9]+\.[0-9]+\.[
 #   envvar     `CUDA_PATH_V13_4`        which reads CUDA_VERSION at run time
 #                                       and derives the series and the
 #                                       CUDA_PATH_V<major>_<minor> name from it.
+#   image      `nvidia/cuda:...`     -- dropped in ADR-1306; CUDA builders
+#                                       and runtimes build FROM digest-pinned
+#                                       Ubuntu 26.04 and install the toolkit
+#                                       via scripts/ci/install-cuda-toolkit.sh.
 #
 # Deleting a shape does not un-gate the spelling. RESIDUAL_RE below sweeps every
 # scoped file for any CUDA release literal a shape did not claim, so
-# re-introducing `$cudaVersion = '13.4.1'` in a workflow fails as an
+# re-introducing `$cudaVersion = '13.4.1'` or `nvidia/cuda:13.4.1-...` fails as an
 # unrecognised pin rather than passing silently.
 SITE_SHAPES = (
     ("config", CONFIG_RE),
-    ("image", IMAGE_RE),
     ("apt", APT_RE),
     ("label", LABEL_RE),
 )
@@ -105,11 +102,12 @@ SITE_SHAPES = (
 # and carries no digest.
 DERIVED_KINDS = frozenset({"apt", "label"})
 
-# The residual sweep. A CUDA release has a two-digit major (10.x through 13.x),
-# which separates it from the action's own `v0.2.36` and from `cuda-keyring_1.1-1`.
+# The residual sweep. A CUDA release has a two-digit major (10.x through 15.x),
+# which separates it from the action's own `v0.2.36`, from `cuda-keyring_1.1-1`,
+# and from Ubuntu LTS releases (20.04, 22.04, 24.04, 26.04).
 # The lookarounds keep `ubuntu26.04` and `ubuntu2404` out: a release literal is
 # never glued to a word character.
-RESIDUAL_RE = re.compile(r"(?<![\w.])(?P<value>[0-9]{2}\.[0-9]+(?:\.[0-9]+)?)(?![\w.])")
+RESIDUAL_RE = re.compile(r"(?<![\w.])(?P<value>1[0-5]\.[0-9]+(?:\.[0-9]+)?)(?![\w.])")
 
 
 @dataclass(frozen=True)

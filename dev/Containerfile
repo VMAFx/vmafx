@@ -247,25 +247,16 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Use pipefail so piped curl/gpg commands fail fast on any segment failure
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# ---------- CUDA 13.3 -------------------------------------------------------
-# Ubuntu 26.04 (Resolute) + glibc 2.43 context (ADR-0603):
+# ---------- CUDA 13.4 (ADR-1306) -------------------------------------------
+# Ubuntu 26.04 (Resolute) + glibc 2.43 context (ADR-0603, ADR-1306):
 #
-#   - The NVIDIA ubuntu2604 apt repo exists and carries the cuda-keyring
-#     and driver packages, but does NOT yet contain the full
-#     `cuda-toolkit` meta-package (only `cuda-compat-13-3` and driver
-#     debs are confirmed present).  We therefore use the
-#     ubuntu2404 repo for the toolkit packages — NVIDIA publishes the
-#     same .deb files cross-distro and they install correctly on Ubuntu
-#     26.04 (glibc 2.43 is backward-compatible with packages built for
-#     glibc 2.35/2.39).
+#   - The NVIDIA ubuntu2604 apt repo carries the cuda-keyring and the
+#     cuda-toolkit-13-4 packages directly.
 #
-#   - We pin to `cuda-toolkit-13-3` (13.3.0) instead of the
-#     unversioned `cuda-toolkit` meta-package.  Reason: Ubuntu 26.04
-#     ships glibc 2.43, whose `bits/mathcalls.h` declares
-#     `rsqrt(double)` with `noexcept(true)`.  CUDA 13.0 and 13.1's
-#     `crt/math_functions.h` redeclared the same symbol WITHOUT the
-#     noexcept spec, producing a C2059/C2143/C2085 cascade under NVCC.
-#     CUDA 13.2 fixed that; 13.3 retains the fix.
+#   - We pin to `cuda-toolkit-13-4` matching CUDA_APT_PACKAGE in build-config.env.
+#     Ubuntu 26.04 ships glibc 2.43, whose `bits/mathcalls.h` declares
+#     `rsqrt(double)` with `noexcept(true)`. CUDA 13.2+ resolved the
+#     re-declaration mismatch under NVCC.
 #
 #   - Fix B (belt-and-suspenders): `-D__MATH_NO_INLINES` is also added
 #     to the nvcc flags in `core/src/meson.build`.  That flag tells
@@ -275,12 +266,12 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #
 # Note: The NVIDIA Container Toolkit must be installed on the *host*
 # for GPU passthrough. See docs/development/dev-mcp.md §Prerequisites.
-RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
+RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb \
         -o /tmp/cuda-keyring.deb \
     && dpkg -i /tmp/cuda-keyring.deb \
     && rm /tmp/cuda-keyring.deb
 
-# `cuda-toolkit-13-3` pulls in nvcc 13.3 + headers + the user-mode
+# `cuda-toolkit-13-4` pulls in nvcc 13.4 + headers + the user-mode
 # library stubs. Do NOT install `libcuda1` (the runtime driver) — that
 # comes from the host via nvidia-container-runtime at run-time;
 # installing it here would shadow the host driver.

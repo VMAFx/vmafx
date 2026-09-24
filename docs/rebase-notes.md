@@ -35,6 +35,20 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
+## fix/drop-nvidia-cuda-base — dropping nvidia/cuda base images in favor of Ubuntu 26.04 + apt (2026-09-24)
+
+1. **`build-config.env` sets `CUDA_BUILDER` and `CUDA_RUNTIME` to `ubuntu:26.04@sha256:...`.**
+   Do not revert them to `nvidia/cuda:...` images during a rebase. Upstream OCI images for
+   CUDA point releases (like 13.4.2) lag or are skipped entirely, whereas NVIDIA's official apt
+   repository publishes day 1 (ADR-1306).
+2. **`scripts/ci/check-base-image-single-source.sh` rule 3 expects `ubuntu:${DEV_UBUNTU}@` for both CUDA keys.**
+   Reverting rule 3 or the ARG default lines in `Dockerfile`, `docker/Dockerfile.production-gpu`,
+   `docker/Dockerfile.node`, or `docker/dev/ubuntu-26.04-cuda.Dockerfile` will fail `make base-images-sync`.
+3. **`scripts/ci/check-cuda-pin-lockstep.py` retired the `image` shape.**
+   The coordinated pin now tracks 4 sites across 3 files (`build-config.env`, `dev/Containerfile`,
+   `docker/Dockerfile.production-gpu`). The residual regex catches any re-introduced `nvidia/cuda` image tags.
+4. **`scripts/ci/install-cuda-toolkit.sh` supports `--mode=builder` and `--mode=runtime`.**
+   Containers invoke it directly as root without `sudo`. Host/CI runners invoke it using `sudo`.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

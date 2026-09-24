@@ -2,10 +2,19 @@
 
 # ADR-1231: Container bases and toolchain versions come from one config file
 
-- **Status**: Accepted
+- **Status**: Accepted (amended by [ADR-1306](1306-drop-nvidia-cuda-base.md))
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: build, ci, docs, security
+
+> **Amendment (2026-09-24, [ADR-1306](1306-drop-nvidia-cuda-base.md))**:
+> The `nvidia/cuda` vendor base images (`CUDA_BUILDER` and `CUDA_RUNTIME`) were
+> dropped in favor of digest-pinned Ubuntu 26.04 (`ubuntu:26.04@sha256:...`) matching
+> `DEV_BASE` / `DEV_UBUNTU`, with explicit, version-locked toolkit installation
+> via `scripts/ci/install-cuda-toolkit.sh`. This decouples CUDA compiler and runtime
+> updates from upstream NVIDIA OCI image publication lag. Rule 3 of
+> `scripts/ci/check-base-image-single-source.sh` now enforces that `CUDA_BUILDER`
+> and `CUDA_RUNTIME` carry `ubuntu:${DEV_UBUNTU}@`.
 
 ## Context
 

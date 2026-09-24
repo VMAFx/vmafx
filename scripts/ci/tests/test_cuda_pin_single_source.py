@@ -56,11 +56,10 @@ GATE_OWNED_KINDS = {
 # Spellings a Renovate custom manager rewrites in place.
 #
 # "action", "installer", "series" and "envvar" are absent because no site in
-# the tree spells the release those ways any more (ADR-1300). No action
-# installs CUDA, and neither CI leg repeats the version: both call
-# scripts/ci/install-cuda-toolkit.{sh,ps1}, which read build-config.env at run
-# time and derive the series and the CUDA_PATH_V<major>_<minor> name from it.
-RENOVATE_OWNED_KINDS = {"config", "image"}
+# the tree spells the release those ways any more (ADR-1300). "image" is absent
+# because nvidia/cuda base images were dropped in ADR-1306 in favor of digest-pinned
+# Ubuntu 26.04 with explicit apt install via scripts/ci/install-cuda-toolkit.sh.
+RENOVATE_OWNED_KINDS = {"config"}
 
 
 def read_config() -> dict[str, Any]:
@@ -125,12 +124,12 @@ class CudaPinCoverage(unittest.TestCase):
         cls.sites = MODULE.find_sites(ROOT)
 
     def test_the_tree_has_sites_to_protect(self) -> None:
-        self.assertGreaterEqual(len(self.sites), 10, "the site scanner found almost nothing")
+        self.assertEqual(len(self.sites), 4, "expected exactly 4 CUDA pin sites")
         kinds = {site.kind for site in self.sites}
         self.assertEqual(kinds, RENOVATE_OWNED_KINDS | set(GATE_OWNED_KINDS))
 
     def test_every_site_is_owned_by_renovate_or_by_the_gate(self) -> None:
-        cuda, base = managers(self.config)
+        cuda, _ = managers(self.config)
         for site in self.sites:
             with self.subTest(site=f"{site.where} {site.kind}"):
                 if site.kind in GATE_OWNED_KINDS:
@@ -141,7 +140,7 @@ class CudaPinCoverage(unittest.TestCase):
                     )
                     continue
                 self.assertIn(site.kind, RENOVATE_OWNED_KINDS)
-                owner = base if site.kind == "image" else cuda
+                owner = cuda
                 self.assertTrue(
                     covers(owner, site.path, site.text),
                     f"no Renovate manager rewrites {site.where}: it would be left "
@@ -254,7 +253,7 @@ class CudaPinGate(unittest.TestCase):
     def test_the_fixture_starts_in_lockstep(self) -> None:
         result = self.gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("10 sites", result.stdout)
+        self.assertIn("4 sites", result.stdout)
 
     def test_each_spelling_is_caught_when_it_drifts(self) -> None:
         cases = (
@@ -266,15 +265,15 @@ class CudaPinGate(unittest.TestCase):
             ),
             (
                 "docker/Dockerfile.production-gpu",
-                "production CUDA 13.4.1 runtime",
+                "production CUDA 13.4.2 runtime",
                 "production CUDA 13.5.0 runtime",
                 "label",
             ),
             (
-                "docker/Dockerfile.node",
-                "nvidia/cuda:13.4.1-runtime",
-                "nvidia/cuda:13.5.0-runtime",
-                "image",
+                "build-config.env",
+                'CUDA_APT_PACKAGE="cuda-toolkit-13-4"',
+                'CUDA_APT_PACKAGE="cuda-toolkit-13-5"',
+                "apt",
             ),
         )
         for path, old, new, kind in cases:
@@ -286,12 +285,24 @@ class CudaPinGate(unittest.TestCase):
                 self.assertIn(f"{kind} pin reads", result.stderr)
                 self.assertIn(path, result.stderr)
 
+    def test_reintroduced_nvidia_cuda_image_is_unrecognised_and_fails(self) -> None:
+        """An nvidia/cuda image reference is no longer a valid pin shape (ADR-1306)."""
+        self.edit(
+            "docker/Dockerfile.node",
+            'ARG CUDA_RUNTIME="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"',
+            'ARG CUDA_RUNTIME="nvidia/cuda:13.4.2-runtime-ubuntu26.04@sha256:1725dba28b39fd0c3c35665c98284b603bef7b30e8f7990a98d4c3cbb905016a"',
+        )
+        result = self.gate()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("a spelling this gate does not know", result.stderr)
+        self.assertIn("docker/Dockerfile.node", result.stderr)
+
     def test_a_site_in_an_unknown_spelling_fails(self) -> None:
-        """A seventeenth copy in a shape nobody taught the gate is still drift."""
+        """A fifth copy in a shape nobody taught the gate is still drift."""
         workflow = self.repo / ".github/workflows/newlane.yml"
         workflow.write_text(
             "name: New lane\njobs:\n  build:\n    env:\n"
-            "      CUDA_TOOLKIT_RELEASE: 13.4.1  # cuda\n",
+            "      CUDA_TOOLKIT_RELEASE: 13.4.2  # cuda\n",
             encoding="utf-8",
         )
         self.git("add", "--", ".github/workflows/newlane.yml")
@@ -304,21 +315,17 @@ class CudaPinGate(unittest.TestCase):
         self.edit("dev/Containerfile", APT_INSTALL, APT_INSTALL.replace("13-4", "12-1"))
         self.edit(
             "docker/Dockerfile.production-gpu",
-            "production CUDA 13.4.1 runtime",
+            "production CUDA 13.4.2 runtime",
             "production CUDA 12.1.0 runtime",
         )
-        self.edit("docker/Dockerfile.node", "nvidia/cuda:13.4.1-runtime", "nvidia/cuda:12.1.0-x")
         result = self.gate("--write")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # The two derived spellings are repaired ...
         self.assertIn("cuda-toolkit-13-4", (self.repo / "dev/Containerfile").read_text())
         self.assertIn(
-            "CUDA 13.4.1 runtime",
+            "CUDA 13.4.2 runtime",
             (self.repo / "docker/Dockerfile.production-gpu").read_text(),
         )
-        # ... and the image pin is not, because its digest cannot be derived.
-        self.assertIn("12.1.0", (self.repo / "docker/Dockerfile.node").read_text())
-        self.assertIn("image pin reads '12.1.0'", result.stderr)
 
     def test_a_comment_naming_an_old_release_is_not_a_pin(self) -> None:
         """Prose about CUDA 12.4 in a comment must not fail the gate."""
@@ -334,7 +341,7 @@ class CudaPinGate(unittest.TestCase):
     def test_a_missing_authority_is_a_configuration_error_not_drift(self) -> None:
         config = self.repo / "build-config.env"
         config.write_text(
-            config.read_text(encoding="utf-8").replace('CUDA_VERSION="13.4.1"', ""),
+            config.read_text(encoding="utf-8").replace('CUDA_VERSION="13.4.2"', ""),
             encoding="utf-8",
         )
         self.git("add", "--", "build-config.env")

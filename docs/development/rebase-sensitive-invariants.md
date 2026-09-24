@@ -114,7 +114,7 @@ linked AGENTS.md before resolving conflicts.
 
 - **dev-MCP Docker container**
   ([ADR-0451](../adr/0451-local-dev-mcp-container.md)):
-  `dev/Containerfile` pins `cuda-toolkit-13-3`, the unversioned
+  `dev/Containerfile` pins `cuda-toolkit-13-4` (ADR-1306), the unversioned
   `intel-basekit` meta-package (Intel does not publish a
   `intel-basekit-2025.3` apt package), and the digest-pinned
   `rocm/dev-ubuntu-26.04:10.0.0-full` image in the `rocm-src` stage

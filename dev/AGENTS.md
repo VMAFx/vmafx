@@ -35,7 +35,8 @@ creation step, exit code 13.
 
 ### CUDA package names
 
-- Use `cuda-toolkit` (current unversioned meta-package).
+- Pin `cuda-toolkit-<series>` (currently `cuda-toolkit-13-4` matching
+  `CUDA_APT_PACKAGE` in `build-config.env`, ADR-1285 / ADR-1306).
 - Do NOT install `libcuda1` (runtime driver) — must come from
   `nvidia-container-runtime` at run-time; baking it in shadows host
   driver.

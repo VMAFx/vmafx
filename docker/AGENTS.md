@@ -21,6 +21,11 @@ whose default mirrors root-level `build-config.env`; edit that file, run
 `COPY --from=cuda-runtime-libs …`. BuildKit prunes unused stages, so extra
 stage = free. Four pins hidden this way were most out-of-date images in repo.
 
+CUDA base images (ADR-1306): `CUDA_BUILDER` and `CUDA_RUNTIME` are digest-pinned
+Ubuntu 26.04 (`ubuntu:26.04@sha256:...`); never re-introduce `nvidia/cuda` base
+images. Toolkit compiler and runtime packages install via
+`scripts/ci/install-cuda-toolkit.sh` (`--mode=builder` or `--mode=runtime`).
+
 See [docs/development/base-images.md](../docs/development/base-images.md).
 
 ## FFmpeg stable-release mirror
