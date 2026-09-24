@@ -597,19 +597,33 @@ static char *run_check_param_kernel_svm_tests(void)
 
 static char *test_svm_labels_equal_semantics(void)
 {
+    typedef struct {
+        char *message;
+        double lhs;
+        double rhs;
+        int expected;
+    } EqualityCase;
+
     /* Label contract: SVM classification labels are exact integers stored as
      * doubles. Bit identity with signed-zero equivalence and same-infinity
      * behavior verifies equality without floating comparison alerts, while
      * rejecting NaN (never equal). */
-    mu_assert("+1.0 matches +1.0", svm_labels_equal(1.0, 1.0));
-    mu_assert("-1.0 matches -1.0", svm_labels_equal(-1.0, -1.0));
-    mu_assert("0.0 matches 0.0", svm_labels_equal(0.0, 0.0));
-    mu_assert("+0.0 matches -0.0", svm_labels_equal(0.0, -0.0));
-    mu_assert("+1.0 does not match -1.0", !svm_labels_equal(1.0, -1.0));
-    mu_assert("+1.0 does not match 1.0000000000000002", !svm_labels_equal(1.0, 1.0000000000000002));
-    mu_assert("NAN does not match NAN", !svm_labels_equal(NAN, NAN));
-    mu_assert("NAN does not match 1.0", !svm_labels_equal(NAN, 1.0));
-    mu_assert("INFINITY matches INFINITY", svm_labels_equal(INFINITY, INFINITY));
+    const EqualityCase cases[] = {
+        {"+1.0 matches +1.0", 1.0, 1.0, 1},
+        {"-1.0 matches -1.0", -1.0, -1.0, 1},
+        {"0.0 matches 0.0", 0.0, 0.0, 1},
+        {"+0.0 matches -0.0", 0.0, -0.0, 1},
+        {"+1.0 does not match -1.0", 1.0, -1.0, 0},
+        {"+1.0 does not match 1.0000000000000002", 1.0, 1.0000000000000002, 0},
+        {"NAN does not match NAN", NAN, NAN, 0},
+        {"NAN does not match 1.0", NAN, 1.0, 0},
+        {"INFINITY matches INFINITY", INFINITY, INFINITY, 1},
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const int actual = svm_labels_equal(cases[i].lhs, cases[i].rhs);
+        mu_assert(cases[i].message, actual == cases[i].expected);
+    }
     return NULL;
 }
 

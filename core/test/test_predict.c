@@ -359,18 +359,32 @@ static char *test_piecewise_linear_mapping_returns_neg_einval(void)
 
 static char *test_guided_feature_sentinel_semantics(void)
 {
+    typedef struct {
+        char *message;
+        double lhs;
+        double rhs;
+        bool expected;
+    } EqualityCase;
+
     /* Sentinel contract: chroma correction occurs only when the guided feature
      * equals the sentinel value (0.0). Any non-zero value, NaN, or Inf must
      * compare not-equal to the sentinel; NaN is never equal even to NaN. */
-    mu_assert("0.0 matches sentinel 0.0", float_values_equal(0.0, 0.0));
-    mu_assert("-0.0 matches sentinel 0.0", float_values_equal(-0.0, 0.0));
-    mu_assert("0.0 matches sentinel -0.0", float_values_equal(0.0, -0.0));
-    mu_assert("1e-12 does not match sentinel 0.0", !float_values_equal(1e-12, 0.0));
-    mu_assert("NAN does not match sentinel 0.0", !float_values_equal(NAN, 0.0));
-    mu_assert("NAN does not match NAN", !float_values_equal(NAN, NAN));
-    mu_assert("INFINITY does not match sentinel 0.0", !float_values_equal(INFINITY, 0.0));
-    mu_assert("INFINITY matches INFINITY", float_values_equal(INFINITY, INFINITY));
-    return NULL;
+    const EqualityCase cases[] = {
+        {"0.0 matches sentinel 0.0", 0.0, 0.0, true},
+        {"-0.0 matches sentinel 0.0", -0.0, 0.0, true},
+        {"0.0 matches sentinel -0.0", 0.0, -0.0, true},
+        {"1e-12 does not match sentinel 0.0", 1e-12, 0.0, false},
+        {"NAN does not match sentinel 0.0", NAN, 0.0, false},
+        {"NAN does not match NAN", NAN, NAN, false},
+        {"INFINITY does not match sentinel 0.0", INFINITY, 0.0, false},
+        {"INFINITY matches INFINITY", INFINITY, INFINITY, true},
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const bool actual = float_values_equal(cases[i].lhs, cases[i].rhs);
+        mu_assert(cases[i].message, actual == cases[i].expected);
+    }
+    return nullptr;
 }
 
 char *run_tests(void)
