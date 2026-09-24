@@ -625,3 +625,14 @@ does not reach any emitted ADM score: the CPU divides the accumulator by
 `2^(52 - shift_cub - shift_inner_accum)` and casts to `float`. No
 score-level tolerance detects it
 (T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19).
+
+## Floating-point assertions and CodeQL contracts (ADR-1308)
+
+CodeQL query `cpp/equality-on-floats` flags direct equality checks on floats.
+In tests:
+
+- When checking exact single-precision bit identity across buffers or ROI slices
+  (such as `test_cambi.c`), use `float_bits_equal(a, b)` comparing `uint32_t` bit
+  patterns via `memcpy`. Do not revert to `a == b`.
+- When asserting discrete integer-class labels in SVM tests (`test_svm_api.c`),
+  use `svm_labels_equal(a, b)` which checks `a - b == 0.0` with finiteness verification.

@@ -1422,6 +1422,7 @@ nav:
         - "ADR-1301: speed-nonfinite-score-fails-frame": adr/1301-speed-nonfinite-score-fails-frame.md
         - "ADR-1303: backlog-checklist-tracker-schema": adr/1303-backlog-checklist-tracker-schema.md
         - "ADR-1304: mcp-http-runtime-isolation": adr/1304-mcp-http-runtime-isolation.md
+        - "ADR-1308: codeql-float-equality-contracts": adr/1308-codeql-float-equality-contracts.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1632,6 +1633,7 @@ nav:
         - "float": adr/by-tag/float.md
         - "float_adm": adr/by-tag/float_adm.md
         - "float_moment": adr/by-tag/float_moment.md
+        - "floating-point": adr/by-tag/floating-point.md
         - "fork-internal": adr/by-tag/fork-internal.md
         - "fork-local": adr/by-tag/fork-local.md
         - "fork-policy": adr/by-tag/fork-policy.md

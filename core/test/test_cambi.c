@@ -29,6 +29,15 @@
 
 #define EPS 0.00001
 
+static inline int float_bits_equal(float a, float b)
+{
+    uint32_t a_bits = 0;
+    uint32_t b_bits = 0;
+    memcpy(&a_bits, &a, sizeof(a_bits));
+    memcpy(&b_bits, &b, sizeof(b_bits));
+    return a_bits == b_bits;
+}
+
 /* Test support function */
 static int almost_equal(double a, double b)
 {
@@ -1139,7 +1148,7 @@ static char *check_c_values_avx2_parity(VmafPicture *input, const VmafPicture *m
         /* Intentional bit-exact compare: AVX2 and scalar paths must produce
          * identical float results per the CAMBI parity contract. */
         mu_assert("scalar vs avx2 calculate_c_values parity (bit-exact)",
-                  c_scalar[i] == c_avx2[i]); /* bit-exact SIMD parity assertion */
+                  float_bits_equal(c_scalar[i], c_avx2[i]));
     }
     return CAMBI_TEST_NULL_POINTER;
 }
@@ -1240,6 +1249,18 @@ static char *run_cambi_windows_and_visibility(void)
     return CAMBI_TEST_NULL_POINTER;
 }
 
+static char *test_cambi_float_bits_equal_semantics(void)
+{
+    /* Bit-exact float parity contract: SIMD outputs must match scalar outputs
+     * bit-for-bit. float_bits_equal distinguishes 1-ULP differences and signed
+     * zero bit representations. */
+    mu_assert("identical 1.0f matches", float_bits_equal(1.0f, 1.0f));
+    mu_assert("identical 0.0f matches", float_bits_equal(0.0f, 0.0f));
+    mu_assert("+0.0f vs -0.0f has different bit pattern", !float_bits_equal(0.0f, -0.0f));
+    mu_assert("1-ULP difference does not match", !float_bits_equal(1.0f, 1.0000001f));
+    return CAMBI_TEST_NULL_POINTER;
+}
+
 static char *run_cambi_thresholds_rows_and_parity(void)
 {
     mu_run_test(test_tvi_hard_threshold_condition);
@@ -1247,6 +1268,7 @@ static char *run_cambi_thresholds_rows_and_parity(void)
     mu_run_test(test_compute_dp_row);
     mu_run_test(test_compute_mask_row);
     mu_run_test(test_calculate_c_values_scalar_avx2_parity);
+    mu_run_test(test_cambi_float_bits_equal_semantics);
     return CAMBI_TEST_NULL_POINTER;
 }
 

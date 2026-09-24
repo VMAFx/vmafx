@@ -357,12 +357,29 @@ static char *test_piecewise_linear_mapping_returns_neg_einval(void)
     return NULL;
 }
 
+static char *test_guided_feature_sentinel_semantics(void)
+{
+    /* Sentinel contract: chroma correction occurs only when the guided feature
+     * equals the sentinel value (0.0). Any non-zero value, NaN, or Inf must
+     * compare not-equal to the sentinel. */
+    mu_assert("0.0 matches sentinel 0.0", float_values_equal(0.0, 0.0));
+    mu_assert("-0.0 matches sentinel 0.0", float_values_equal(-0.0, 0.0));
+    mu_assert("0.0 matches sentinel -0.0", float_values_equal(0.0, -0.0));
+    mu_assert("1e-12 does not match sentinel 0.0", !float_values_equal(1e-12, 0.0));
+    mu_assert("NAN does not match sentinel 0.0", !float_values_equal(NAN, 0.0));
+    mu_assert("NAN does not match NAN", !float_values_equal(NAN, NAN));
+    mu_assert("INFINITY does not match sentinel 0.0", !float_values_equal(INFINITY, 0.0));
+    mu_assert("INFINITY matches INFINITY", float_values_equal(INFINITY, INFINITY));
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_predict_score_at_index);
     mu_run_test(test_find_linear_function_parameters);
     mu_run_test(test_piecewise_linear_mapping);
     mu_run_test(test_piecewise_linear_mapping_returns_neg_einval);
+    mu_run_test(test_guided_feature_sentinel_semantics);
     mu_run_test(test_propagate_metadata);
     return NULL;
 }

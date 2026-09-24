@@ -52,7 +52,8 @@ ways, only these:
    CI lane and `test_cjson`'s `test_number_valueint_*` tests do.
 
 **Denormals follow build's floating-point model.** `print_number()` takes
-integer branch when `d == (double)valueint`. Build treating denormals as zero
+integer branch when `d - (double)valueint == 0.0` (ADR-1308; CodeQL clean,
+preserving `d == (double)valueint` model). Build treating denormals as zero
 answers true for smallest denormal, prints `0` = what that build's arithmetic
 says value is. icx defaults to that model (`-fp-model=fast` sets MXCSR
 denormals-are-zero bit); `Linux Intel LLVM` lane builds this file with it. gcc

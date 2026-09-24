@@ -1753,11 +1753,25 @@ but `t = a * b;` in caller plus `t + c` in helper does not, and that is 1 ULP
 that ssimulacra2 pooling amplifies into visible score delta (ADR-1205).
 Reductions keep their order: move whole accumulation loop, never partial sums.
 
-Functions carrying ADR-0141 §2 bit-exactness carve-outs stay unsplit —
-`compute_adm`, `adm_dwt2_s`, `calc_ssim`, `brisque_fit_aggd`,
-`niqe_extract_aggd`, `create_recursive_gaussian`, `picture_to_linear_rgb`.
-Their paired SIMD ports match them line for line; splitting one forces
-matching splits in four SIMD files and breaks scalar-diff audit story.
+Functions carrying ADR-0141 §2 bit-exactness carve-outs with paired SIMD ports
+stay unsplit — `compute_adm`, `adm_dwt2_s`, `calc_ssim`, `niqe_extract_aggd`,
+`create_recursive_gaussian`, `picture_to_linear_rgb`. For `brisque_fit_aggd` in
+`brisque_math.h` (pure scalar, no SIMD twins), the inner loop was extracted to
+`static brisque_aggd_accumulate` to satisfy HISS-04 (60 LOC max), keeping both
+accumulation loops intact and statements unsplit.
+
+## Floating-point equality contracts (ADR-1308)
+
+CodeQL flags direct float equality (`==` / `!=`). In this subtree:
+
+- In `feature_name.cpp`, `option_double_equals` compares double options: NaN
+  equals NaN, signed zeros `+0.0 == -0.0` are equal, and finite values compare
+  via 64-bit IEEE representation.
+- In `brisque_math.h`, `normalize_feature_value` asserts
+  `span != 0.0 && isfinite(span)` on `span = hi - lo` instead of raw
+  `hi != lo`.
+
+Do not revert these helpers or assertions to raw `==` or `!=`.
 
 ## Integer ADM's 16-bit vertical DWT sums in int64
 
