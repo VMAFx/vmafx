@@ -166,6 +166,13 @@ when conversion happens.
 
 ## Per-feature option-table sync invariant
 
+- **`float_ms_ssim_metal` still exposes only `enable_lcs`.** ADR-0490 and
+  ADR-1221 leave `enable_db` / `clip_db` as a separate user-surface gap. Until
+  that gap is implemented with its own documentation and parity coverage, the
+  shared `vmaf_ms_ssim_emit_scores()` call must pass `false, INFINITY`; do not
+  copy `s->enable_db, s->max_db` from CUDA / HIP / SYCL into a state that does
+  not own those fields. `test_nonfinite_collector_wiring.py` locks this
+  compile-sensitive contract down on hosts without an Apple SDK.
 - **GPU twins must mirror CPU option table for model-configured
   features.** Model (such as default model `vmaf_v1.0.16_3d0h`) may
   provide feature options. `vmaf_use_features_from_model` then checks

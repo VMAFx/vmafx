@@ -497,7 +497,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
 
     return vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict,
                                     "float_ms_ssim_metal", "float_ms_ssim", msssim,
-                                    s->enable_db, s->max_db, l_means, c_means, s_means,
+                                    false, INFINITY, l_means, c_means, s_means,
                                     MS_SSIM_SCALES, s->enable_lcs, index);
 }
 

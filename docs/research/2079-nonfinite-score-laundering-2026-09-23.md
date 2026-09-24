@@ -110,3 +110,24 @@ that carry historical HISS debt. The local governance gate was therefore run
 with `PRAETOR_TOUCHED_DEBT_DELTA_REASON` set to that exact parity rationale;
 the stricter debt-delta audit passes at 267 active findings against the 276
 finding baseline, with no new debt.
+
+## Post-rebase hosted falsification
+
+The first hosted run on the rebased exact head found two compile contracts that
+the Linux-only review could not prove:
+
+- both macOS Metal lanes rejected `float_ms_ssim_metal.mm` because the shared
+  emitter call referenced `s->enable_db` and `s->max_db`, while the Metal state
+  intentionally exposes only `enable_lcs` per ADR-0490 and ADR-1221;
+- multiple Linux/macOS build-matrix lanes rejected the compatibility Cython
+  extension after `adm.c` began including `nonfinite_score.h`: the extension's
+  direct-source build searched `core/src` but not `core/include`, so the
+  transitive public `libvmaf/model.h` include was unreachable.
+
+The Metal call now supplies the existing surface's fixed linear-score settings,
+`false, INFINITY`, and a static wiring regression locks that contract down on
+non-Apple hosts. The Python extension now includes both `../core/src` and
+`../core/include`; an AST regression checks the build definition, and a real
+Python 3.14 editable-wheel build completes successfully with the corrected
+path. These are build-only corrections: neither expands the Metal option
+surface nor changes finite metric results.

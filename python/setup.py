@@ -65,10 +65,13 @@ class LazyExtensions(list):
             )
             # python/compat/ contains a stub config.h that disables SIMD
             # dispatch (the SIMD .c files are not compiled into this extension).
+            # The directly included core sources use both private headers under
+            # core/src and public libvmaf headers under core/include.
             self._extensions[0].include_dirs = [
                 numpy.get_include(),
                 "compat",
                 "../core/src",
+                "../core/include",
             ]
             # aligned_malloc / aligned_free moved from core/src/mem.c to
             # core/src/mem.cpp when the C++23 twins were wired in (#1133).

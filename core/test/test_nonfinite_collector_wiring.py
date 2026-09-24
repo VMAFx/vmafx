@@ -87,6 +87,12 @@ FORBIDDEN = {
 
 METAL_LCS_GUARDS = ("!isfinite(lnum)", "!isfinite(cnum)", "!isfinite(snum)")
 
+METAL_MS_SSIM_FIXED_DB_CALL = (
+    "vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict, "
+    '"float_ms_ssim_metal", "float_ms_ssim", msssim, false, INFINITY, '
+    "l_means, c_means, s_means, MS_SSIM_SCALES, s->enable_lcs, index)"
+)
+
 
 def find_missing_required_symbols() -> list[str]:
     missing: list[str] = []
@@ -128,12 +134,24 @@ def find_missing_metal_guards() -> list[str]:
     return missing
 
 
+def find_metal_ms_ssim_db_wiring_drift() -> list[str]:
+    source = (ROOT / "metal/float_ms_ssim_metal.mm").read_text(encoding="utf-8")
+    compact_source = " ".join(source.split())
+    if METAL_MS_SSIM_FIXED_DB_CALL not in compact_source:
+        return [
+            "metal/float_ms_ssim_metal.mm: the shared emitter must preserve the "
+            "ADR-0490/ADR-1221 fixed linear-score contract (false, INFINITY)"
+        ]
+    return []
+
+
 def main() -> None:
     missing = [
         *find_missing_required_symbols(),
         *find_retained_fallbacks(),
         *find_incomplete_vif_emitters(),
         *find_missing_metal_guards(),
+        *find_metal_ms_ssim_db_wiring_drift(),
     ]
     if missing:
         raise SystemExit("\n".join(missing))
