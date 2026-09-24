@@ -27,6 +27,10 @@ compatibility functions:
 
 - `FILE *vmaf_fopen_utf8(const char *path, const char *mode);`
 - `int vmaf_open_utf8(const char *path, int flags, int mode);`
+- `char *vmaf_fullpath_utf8(const char *path, char *resolved, size_t resolved_size);`
+- `int vmaf_path_info_utf8(const char *path, VmafPathInfo *info);`
+- `int vmaf_mkdir_utf8(const char *path, mode_t mode);`
+- `int vmaf_remove_utf8(const char *path);`
 
 Implementation details:
 
@@ -34,17 +38,21 @@ Implementation details:
    `MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ...)`. Invalid UTF-8 sequences immediately map to
    `errno = EILSEQ` and return `NULL` (or `-1`). Buffers are strictly bounded by `UTF8_PATH_MAX` (4096)
    and `UTF8_MODE_MAX` (32) conforming to NASA/JPL Power of 10 Rule 2. Files are opened using `_wfopen`
-   and `_wopen`.
-2. **POSIX**: `vmaf_fopen_utf8` and `vmaf_open_utf8` pass through directly to standard `fopen(3)` and
-   `open(2)` without intermediate copies.
-3. **Internal and Tool Adoption**: All narrow `fopen`, `_open`, and `open` calls across `core/src/libvmaf.c`
-   and the fork-added call sites (`core/tools/vmaf.cpp`, `core/src/read_json_model.{c,cpp}`,
-   `core/tools/vmaf_per_shot.c`, `core/tools/vmaf_roi.c`, `core/tools/vmaf_bench.c`, `core/tools/vmaf_vpl.c`,
-   and `core/src/dnn/model_loader.c`) are replaced with their `vmaf_*_utf8` counterparts.
-   `core/src/interop/pelorus_qp_report_csv.c` is intentionally preserved untouched per ADR-1113
-   (verbatim Pelorus mirror invariant).
-4. **FFmpeg Filter**: Patch `0005` passes `log_path` raw to `libvmaf`; with libvmaf establishing a universal
-   UTF-8 path contract, no patch change is needed for log file writing.
+   and `_wopen`; canonicalization, metadata, and directory creation use `_wfullpath`, `_wstat64`, and
+   `_wmkdir` respectively. Test cleanup uses `_wremove` so a passing test cannot leave the Unicode file behind.
+2. **POSIX**: The compatibility functions delegate to standard `fopen(3)`, `open(2)`, `realpath(3)`,
+   `stat(2)`, `mkdir(2)`, and `remove(3)` without changing path bytes.
+3. **Internal and Tool Adoption**: VMAFx-owned path operations in `core/src/libvmaf.c`,
+   `core/src/read_json_model.{c,cpp}`, `core/src/dnn/model_loader.c`, `core/src/feature/cambi.c`,
+   `core/src/feature/mkdirp.cpp`, and tools (`vmaf.cpp`, `vmaf_bench.c`, `vmaf_per_shot.c`,
+   `vmaf_roi.c`, `vmaf_vpl.c`) route through the UTF-8 compatibility layer. This includes the
+   canonicalization and metadata gates that precede a DNN model open and CAMBI's documented
+   `heatmaps_path` directory/file creation.
+   `core/src/interop/pelorus_qp_report_csv.c` remains untouched per ADR-1113's verbatim Pelorus
+   mirror invariant. Its public `pel_x265_csv_parse()` path is therefore an explicit exception until
+   the fix originates in `VMAFx/pelorus` and is re-vendored; the original 12-site state item stays open.
+4. **FFmpeg Filter**: Patch `0005` passes `log_path` raw to libvmaf's output writer. That writer now owns the
+   UTF-8 conversion, so no patch change is needed for log file writing.
 5. **Scope Boundary**: CLI `wmain`/argv conversion in `core/tools/vmaf.cpp` is out of scope for this library-level
    contract and tracked as a follow-up state item.
 
@@ -52,15 +60,19 @@ Implementation details:
 
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
-| **Option A (Chosen)**: Centralized compatibility layer (`compat/path_utf8.{h,c}`) providing `vmaf_fopen_utf8` and `vmaf_open_utf8` | Single source of truth; strictly bounded buffers (Po10); transparent pass-through on POSIX; zero ABI disruption | Requires routing file open calls through helper functions | Cleanest design, satisfies Netflix#1568, and adheres to JPL coding standards |
+| **Option A (Chosen)**: Centralized compatibility layer (`compat/path_utf8.{h,c}`) for opening, canonicalizing, inspecting, creating, and removing paths | Single source of truth; strictly bounded buffers (Po10); transparent pass-through on POSIX; zero ABI disruption | Requires routing each filesystem operation through the matching helper | Cleanest design, satisfies Netflix#1568 for VMAFx-owned surfaces, and adheres to JPL coding standards |
 | **Option B**: Inline `#ifdef _WIN32` with `MultiByteToWideChar` at every call site | Avoids helper function declarations | Massive code duplication across 17+ call sites; high risk of buffer overflow or inconsistent errno mapping | Violates DRY and JPL Power of 10 maintainability |
 | **Option C**: Change public libvmaf API to accept `wchar_t *` on Windows | Native Windows API type | Breaks public C API compatibility; breaks Go bindings, FFmpeg filter, and portable cross-platform callers | Unacceptable breaking change to C API |
 
 ## Consequences
 
-- **Positive**: Complete support for non-ASCII UTF-8 file paths on Windows across model loading, video reading, sidecar emission, benchmark datasets, and JSON/XML output logs.
+- **Positive**: Non-ASCII UTF-8 paths work on Windows across VMAFx-owned model loading, video reading,
+  CAMBI heatmaps, sidecar emission, benchmark datasets, and JSON/XML output logs.
 - **Negative**: Negligible CPU conversion overhead on Windows when opening files.
-- **Neutral / follow-ups**: Documented in `docs/api/index.md`; verified by `core/test/test_path_utf8.c`; follow-up row for Windows CLI `wmain` Unicode argv handling.
+- **Neutral / follow-ups**: Documented in `docs/api/index.md`; verified at the helper layer and through
+  the output-writer, DNN-loader, and CAMBI production seams. Windows CLI `wmain` Unicode argv handling
+  remains a separate state item. The Pelorus CSV exception remains on the original state item until an
+  upstream Pelorus change can be re-vendored without violating ADR-1113.
 
 ## References
 

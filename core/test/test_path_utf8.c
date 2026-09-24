@@ -42,8 +42,14 @@ static int get_temp_directory(char *out, size_t out_sz)
     assert(out_sz > 0);
 
 #ifdef _WIN32
-    DWORD n = GetTempPathA((DWORD)out_sz, out);
-    if (n == 0 || n >= out_sz) {
+    wchar_t wdir[1024];
+    const DWORD n = GetTempPathW((DWORD)(sizeof(wdir) / sizeof(wdir[0])), wdir);
+    if (n == 0 || n >= sizeof(wdir) / sizeof(wdir[0])) {
+        return -1;
+    }
+    const int converted =
+        WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wdir, -1, out, (int)out_sz, NULL, NULL);
+    if (converted == 0) {
         return -1;
     }
     size_t len = strlen(out);
@@ -63,6 +69,103 @@ static int get_temp_directory(char *out, size_t out_sz)
     }
     return 0;
 #endif
+}
+
+static int remove_directory_utf8(const char *path)
+{
+#ifdef _WIN32
+    wchar_t wpath[2048];
+    const int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wpath, 2048);
+    if (converted == 0)
+        return -1;
+    return RemoveDirectoryW(wpath) ? 0 : -1;
+#else
+    return rmdir(path);
+#endif
+}
+
+static unsigned long test_process_id(void)
+{
+#ifdef _WIN32
+    return (unsigned long)GetCurrentProcessId();
+#else
+    return (unsigned long)getpid();
+#endif
+}
+
+typedef struct Utf8PathFixture {
+    char directory[2048];
+    char file[2048];
+} Utf8PathFixture;
+
+static int prepare_utf8_path_fixture(Utf8PathFixture *fixture)
+{
+    char tmpdir[1024];
+    if (get_temp_directory(tmpdir, sizeof(tmpdir)) != 0)
+        return -1;
+
+    int length = snprintf(fixture->directory, sizeof(fixture->directory),
+                          "%s/vmaf_dir_\xC3\xA9\xE6\x97\xA5_%lu", tmpdir, test_process_id());
+    if (length <= 0 || (size_t)length >= sizeof(fixture->directory))
+        return -1;
+
+    (void)remove_directory_utf8(fixture->directory);
+    if (vmaf_mkdir_utf8(fixture->directory, 0700) != 0)
+        return -1;
+
+    length = snprintf(fixture->file, sizeof(fixture->file), "%s/path_info.bin", fixture->directory);
+    if (length <= 0 || (size_t)length >= sizeof(fixture->file)) {
+        (void)remove_directory_utf8(fixture->directory);
+        return -1;
+    }
+    return 0;
+}
+
+static int write_utf8_probe_file(const char *path)
+{
+    FILE *const file = vmaf_fopen_utf8(path, "wb");
+    if (!file)
+        return -1;
+
+    const char byte = 'x';
+    const size_t written = fwrite(&byte, 1u, 1u, file);
+    const int close_rc = fclose(file);
+    return written == 1u && close_rc == 0 ? 0 : -1;
+}
+
+static int remove_utf8_path_fixture(const Utf8PathFixture *fixture)
+{
+    const int remove_rc = vmaf_remove_utf8(fixture->file);
+    const int rmdir_rc = remove_directory_utf8(fixture->directory);
+    return remove_rc == 0 && rmdir_rc == 0 ? 0 : -1;
+}
+
+static char *check_utf8_directory_operations(const Utf8PathFixture *fixture)
+{
+    VmafPathInfo info;
+    const int rc = vmaf_path_info_utf8(fixture->directory, &info);
+    mu_assert("vmaf_path_info_utf8 failed for directory", rc == 0);
+    mu_assert("UTF-8 directory was not classified as a directory", info.is_directory != 0);
+    mu_assert("UTF-8 directory was classified as a regular file", info.is_regular == 0);
+    return NULL;
+}
+
+static char *check_utf8_file_operations(const Utf8PathFixture *fixture)
+{
+    const int write_rc = write_utf8_probe_file(fixture->file);
+    mu_assert("failed to create file inside UTF-8 directory", write_rc == 0);
+
+    VmafPathInfo info;
+    const int info_rc = vmaf_path_info_utf8(fixture->file, &info);
+    mu_assert("vmaf_path_info_utf8 failed for regular file", info_rc == 0);
+    mu_assert("UTF-8 child was not classified as a regular file", info.is_regular != 0);
+    mu_assert("UTF-8 child size mismatch", info.size == 1u);
+
+    char resolved[4096];
+    const char *const resolved_ret = vmaf_fullpath_utf8(fixture->file, resolved, sizeof(resolved));
+    mu_assert("vmaf_fullpath_utf8 failed", resolved_ret == resolved);
+    mu_assert("vmaf_fullpath_utf8 returned an empty path", resolved[0] != '\0');
+    return NULL;
 }
 
 /* NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278). */
@@ -105,10 +208,11 @@ static char *test_fopen_utf8_roundtrip(void)
     memset(read_buf, 0, sizeof(read_buf));
     size_t read_bytes = fread(read_buf, 1, sizeof(read_buf) - 1, fin);
     close_rc = fclose(fin);
-    (void)remove(filepath);
+    const int remove_rc = vmaf_remove_utf8(filepath);
 
     mu_assert("fread failed to read payload", read_bytes == payload_len);
     mu_assert("fclose read handle failed", close_rc == 0);
+    mu_assert("vmaf_remove_utf8 failed after fopen round-trip", remove_rc == 0);
     mu_assert("read payload does not match written payload",
               memcmp(read_buf, payload, payload_len) == 0);
 
@@ -153,12 +257,32 @@ static char *test_open_utf8_roundtrip(void)
     memset(read_buf, 0, sizeof(read_buf));
     long n_read = READ_FD(rfd, read_buf, sizeof(read_buf) - 1);
     int close_r = CLOSE_FD(rfd);
-    (void)remove(filepath);
+    const int remove_rc = vmaf_remove_utf8(filepath);
 
     mu_assert("read failed", n_read == (long)payload_len);
     mu_assert("close read fd failed", close_r == 0);
+    mu_assert("vmaf_remove_utf8 failed after open round-trip", remove_rc == 0);
     mu_assert("read payload mismatch", memcmp(read_buf, payload, payload_len) == 0);
 
+    return NULL;
+}
+
+/* Canonicalization, metadata, and directory creation must use the same UTF-8
+ * contract as the openers. This catches partial Windows fixes where _wfopen
+ * succeeds but _fullpath/stat/_mkdir still receive UTF-8 through the ANSI CRT. */
+static char *test_utf8_path_operations(void)
+{
+    Utf8PathFixture fixture;
+    const int fixture_rc = prepare_utf8_path_fixture(&fixture);
+    mu_assert("failed to create UTF-8 path fixture", fixture_rc == 0);
+
+    char *failure = check_utf8_directory_operations(&fixture);
+    if (!failure)
+        failure = check_utf8_file_operations(&fixture);
+    const int cleanup_rc = remove_utf8_path_fixture(&fixture);
+    if (failure)
+        return failure;
+    mu_assert("UTF-8 path fixture cleanup failed", cleanup_rc == 0);
     return NULL;
 }
 
@@ -167,12 +291,12 @@ static char *test_utf8_error_paths(void)
 {
     /* NULL path returns NULL / -1 with errno == EINVAL */
     errno = 0;
-    FILE *f1 = vmaf_fopen_utf8(NULL, "rb");
+    const FILE *const f1 = vmaf_fopen_utf8(NULL, "rb");
     mu_assert("vmaf_fopen_utf8 with NULL path must return NULL", f1 == NULL);
     mu_assert("vmaf_fopen_utf8 with NULL path must set errno=EINVAL", errno == EINVAL);
 
     errno = 0;
-    FILE *f2 = vmaf_fopen_utf8("some_path.txt", NULL);
+    const FILE *const f2 = vmaf_fopen_utf8("some_path.txt", NULL);
     mu_assert("vmaf_fopen_utf8 with NULL mode must return NULL", f2 == NULL);
     mu_assert("vmaf_fopen_utf8 with NULL mode must set errno=EINVAL", errno == EINVAL);
 
@@ -181,9 +305,26 @@ static char *test_utf8_error_paths(void)
     mu_assert("vmaf_open_utf8 with NULL path must return -1", fd1 == -1);
     mu_assert("vmaf_open_utf8 with NULL path must set errno=EINVAL", errno == EINVAL);
 
+    VmafPathInfo info;
+    errno = 0;
+    int info_rc = vmaf_path_info_utf8(NULL, &info);
+    mu_assert("vmaf_path_info_utf8 with NULL path must fail", info_rc == -1);
+    mu_assert("vmaf_path_info_utf8 with NULL path must set errno=EINVAL", errno == EINVAL);
+
+    errno = 0;
+    int mkdir_rc = vmaf_mkdir_utf8(NULL, 0700);
+    mu_assert("vmaf_mkdir_utf8 with NULL path must fail", mkdir_rc == -1);
+    mu_assert("vmaf_mkdir_utf8 with NULL path must set errno=EINVAL", errno == EINVAL);
+
+    errno = 0;
+    int remove_rc = vmaf_remove_utf8(NULL);
+    mu_assert("vmaf_remove_utf8 with NULL path must fail", remove_rc == -1);
+    mu_assert("vmaf_remove_utf8 with NULL path must set errno=EINVAL", errno == EINVAL);
+
     /* Nonexistent file returns ENOENT */
     errno = 0;
-    FILE *f3 = vmaf_fopen_utf8("/path/that/definitely/does/not/exist/vmaf_12345.xyz", "rb");
+    const FILE *const f3 =
+        vmaf_fopen_utf8("/path/that/definitely/does/not/exist/vmaf_12345.xyz", "rb");
     mu_assert("vmaf_fopen_utf8 nonexistent path must return NULL", f3 == NULL);
     mu_assert("vmaf_fopen_utf8 nonexistent path errno must be set", errno == ENOENT);
 
@@ -212,6 +353,7 @@ char *run_tests(void)
 {
     mu_run_test(test_fopen_utf8_roundtrip);
     mu_run_test(test_open_utf8_roundtrip);
+    mu_run_test(test_utf8_path_operations);
     mu_run_test(test_utf8_error_paths);
     return NULL;
 }

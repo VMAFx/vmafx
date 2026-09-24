@@ -128,9 +128,9 @@ static int yuv_pair_open(YuvPair *yp, unsigned w, unsigned h)
     (void)snprintf(ref_path, sizeof(ref_path), "%s/ref_%ux%u.yuv", get_data_dir(), w, h);
     (void)snprintf(dis_path, sizeof(dis_path), "%s/dis_%ux%u.yuv", get_data_dir(), w, h);
 
-    /* Canonicalize to a real, existing path before opening. realpath(3)
-     * (POSIX) / _fullpath (Windows) collapses ".." and symlinks; if the
-     * resolved path doesn't exist it returns NULL and we abort the open.
+    /* Canonicalize to an absolute path before opening. The internal UTF-8
+     * wrapper uses realpath(3) on POSIX and _wfullpath on Windows; the open
+     * below remains the authoritative existence check on Windows.
      * The data-dir input is trusted-by-design (this is a developer
      * benchmark binary, never invoked over a network surface — see file
      * header) but CodeQL's cpp/path-injection still flags getenv() flowing
@@ -138,13 +138,8 @@ static int yuv_pair_open(YuvPair *yp, unsigned w, unsigned h)
      * changing semantics for the legitimate use case. */
     char ref_resolved[PATH_MAX];
     char dis_resolved[PATH_MAX];
-#ifdef _WIN32
-    const char *ref_can = _fullpath(ref_resolved, ref_path, PATH_MAX);
-    const char *dis_can = _fullpath(dis_resolved, dis_path, PATH_MAX);
-#else
-    const char *ref_can = realpath(ref_path, ref_resolved);
-    const char *dis_can = realpath(dis_path, dis_resolved);
-#endif
+    const char *ref_can = vmaf_fullpath_utf8(ref_path, ref_resolved, sizeof(ref_resolved));
+    const char *dis_can = vmaf_fullpath_utf8(dis_path, dis_resolved, sizeof(dis_resolved));
     yp->ref_fp = ref_can ? vmaf_fopen_utf8(ref_can, "rb") : NULL;
     yp->dis_fp = dis_can ? vmaf_fopen_utf8(dis_can, "rb") : NULL;
     if (!yp->ref_fp || !yp->dis_fp) {

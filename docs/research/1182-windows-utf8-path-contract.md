@@ -8,8 +8,9 @@ UTF-8 characters (e.g. accented Latin characters, CJK glyphs, special symbols). 
 C runtime `fopen` and `_open` on Windows interpreting narrow `const char *` paths according to the system ANSI code
 page (ACP) rather than UTF-8. On POSIX systems, paths are transparent byte strings, making UTF-8 work naturally.
 
-This research establishes the cross-platform contract that all file path parameters passed to `libvmaf` functions
-and CLI tools are UTF-8 encoded on all platforms, implemented via an internal compatibility shim.
+This research establishes the cross-platform contract that VMAFx-owned file path parameters passed to `libvmaf`
+functions and CLI tools are UTF-8 encoded on all platforms, implemented via an internal compatibility shim.
+The vendored Pelorus parser is recorded as an explicit residual rather than silently included in that claim.
 
 ## Problem Analysis
 
@@ -37,23 +38,32 @@ An audit across `core/src/` and `core/tools/` identified all path open sites:
 6. `core/tools/vmaf_per_shot.c` — reference video reading and per-shot plan file output.
 7. `core/tools/vmaf_roi.c` — reference video reading and ROI sidecar emission.
 8. `core/tools/vmaf_vpl.c` — elementary stream input file reading.
+9. `core/src/feature/cambi.c` + `core/src/feature/mkdirp.cpp` — documented CAMBI heatmap directory and files.
+
+The DNN path has more than an opener: `_fullpath` and `stat` ran before `_wfopen`, so merely widening the final
+open still rejected a non-ASCII ONNX path. The benchmark had the same narrow `_fullpath` preflight. A complete
+fix therefore also needs UTF-8-aware canonicalization, metadata, directory creation, and test cleanup.
 
 *Note on Pelorus Interop*: `core/src/interop/pelorus_qp_report_csv.c` also opens CSV files, but per ADR-1113
 it is a verbatim mirror of `VMAFx/pelorus` governed by `scripts/sync-pelorus-interop.sh` and tracked in
-`scripts/ci/pelorus-mirror-paths.txt`. It must remain untouched in this repository.
+`scripts/ci/pelorus-mirror-paths.txt`. It must remain untouched in this repository. Because the pinned Pelorus
+source still calls narrow `fopen`, `pel_x265_csv_parse()` is not yet covered by the contract and the original
+12-site backlog row cannot close. The fix must land in `VMAFx/pelorus` first and then be re-vendored.
 
 ### 3. Symbol Visibility and Architecture
 
 Under ADR-0379 and `check_exported_symbols.py`, `libvmaf.so` strictly enforces default hidden symbol visibility.
 Any symbol exported from `libvmaf.so` must be declared with `VMAF_EXPORT` in a public header under `core/include/`.
-Exposing `vmaf_fopen_utf8` and `vmaf_open_utf8` in the public ABI would expand the public library surface.
+Exposing the UTF-8 compatibility helpers in the public ABI would expand the public library surface.
 Instead:
 
 - The compatibility shims live in `core/src/compat/path_utf8.{h,c}` with internal visibility.
 - `libvmaf` compiles `path_utf8.c` via `dnn_sources`.
 - CLI tools (`vmaf`, `vmafx`, `vmaf-perShot`, `vmaf_roi`, `vmaf_bench`, `vmaf_vpl`) and standalone test harnesses
   compile `../src/compat/path_utf8.c` directly.
-- Unit tests verify both POSIX pass-through and Windows wide conversion.
+- Unit tests verify both POSIX pass-through and Windows wide conversion. Production-seam tests separately call
+  `vmaf_write_output()`, `vmaf_dnn_validate_onnx()`, `vmaf_dnn_sidecar_load()`, and CAMBI `open_heatmaps()` with
+  exact non-ASCII filenames so reverting only the real call-site wiring cannot leave helper-only tests green.
 
 ### 4. Safety and JPL Coding Standards
 
@@ -67,7 +77,9 @@ The shim conforms to NASA JPL Power of 10 rules:
 
 1. **Linux Native**: Meson fast suite unit tests (`test_path_utf8`) test round-trip writing and reading of files with
    accented and CJK characters (`é`, `日`), NULL argument validation, and nonexistent path handling.
-2. **Windows Cross-Compilation**: `zig cc -target x86_64-windows` compiles `path_utf8.c` and `test_path_utf8.c` with
-   `-Wall -Wextra -Werror`.
+2. **Windows Cross-Compilation**: `zig cc -target x86_64-windows-gnu` compiles the path helper test and DNN loader
+   test with `-Wall -Wextra -Werror` (the DNN harness suppresses its pre-existing Windows-only unused static helpers).
 3. **Windows Win32 Execution**: The cross-compiled binary runs under Wine, exercising `MultiByteToWideChar`, `_wfopen`,
-   `_wopen`, `GetFileAttributesW`, and `EILSEQ` error translation on invalid UTF-8 sequences.
+   `_wopen`, `_wfullpath`, `_wstat64`, `_wmkdir`, `_wremove`, `GetFileAttributesW`, and `EILSEQ` error translation.
+4. **Production Seams**: Native and Zig-cross-compiled Win64 Meson tests execute under Wine for public output
+   writing, DNN model/sidecar loading, and CAMBI heatmap creation as well as the compatibility-helper unit test.

@@ -30,6 +30,7 @@
 
 #include "cambi_internal.h"
 #include "common/macros.h"
+#include "compat/path_utf8.h"
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -658,9 +659,9 @@ static int open_heatmaps(CambiState *s)
             return -ENAMETOOLONG;
 
 #ifdef _WIN32
-        int hfd = _open(path, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
+        int hfd = vmaf_open_utf8(path, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
 #else
-        int hfd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        int hfd = vmaf_open_utf8(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 #endif
         if (hfd < 0) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: could not open heatmaps_path: %s\n", path);

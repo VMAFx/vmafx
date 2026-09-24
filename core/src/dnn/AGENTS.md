@@ -136,8 +136,11 @@ Runtime directly.
   but lower-bounds per-context memory; never shrink it
   below 6 (canonical-6).
 - **Oversized sidecars are rejected before stdio reads.**
-  `vmaf_dnn_sidecar_load()` performs `stat()` size check before
-  `fopen()` / `fseek()` / `ftell()`. Keep that metadata-only guard:
+  `vmaf_dnn_sidecar_load()` performs a `vmaf_path_info_utf8()` size check before
+  `vmaf_fopen_utf8()` / `fseek()` / `ftell()`. The model and jail paths likewise
+  use `vmaf_fullpath_utf8()` before UTF-8-aware metadata/open operations. Keep
+  those preflight operations on the same Windows UTF-8 contract (ADR-1182) and
+  keep the exact-name Win64 regression in `test_model_loader.c`. Keep the metadata-only guard:
   oversized-sidecar regression expects `-EFBIG` without entering
   normal JSON read path.
 - **Pre-seeded "unknown" codec one-hot** in

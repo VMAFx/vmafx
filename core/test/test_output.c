@@ -35,6 +35,7 @@
  */
 
 #include <math.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,7 +64,7 @@
 /* Portable temp-file-path helper. Produces a path to a freshly created (and
  * already closed) zero-byte file suitable for handing to writer APIs that
  * fopen() the path themselves. POSIX uses mkstemp() against $TMPDIR (falling
- * back to /tmp). Windows uses GetTempPathA + GetTempFileNameA — these honour
+ * back to /tmp). Windows uses GetTempPathW + GetTempFileNameW — these honour
  * %TMP%/%TEMP%/%USERPROFILE% and work on MSYS2 + MSVC CI runners where the
  * POSIX /tmp template fails. Returns 0 on success, -1 on failure. */
 static int make_temp_path(const char *prefix, char *out_buf, size_t out_buf_sz)
@@ -71,18 +72,20 @@ static int make_temp_path(const char *prefix, char *out_buf, size_t out_buf_sz)
     if (!prefix || !out_buf || out_buf_sz == 0)
         return -1;
 #ifdef _WIN32
-    char dir[MAX_PATH];
-    DWORD n = GetTempPathA((DWORD)sizeof(dir), dir);
-    if (n == 0 || n > sizeof(dir))
+    wchar_t dir[MAX_PATH];
+    const DWORD n = GetTempPathW(MAX_PATH, dir);
+    if (n == 0 || n >= MAX_PATH)
         return -1;
-    /* GetTempFileNameA's prefix arg only uses the first 3 chars; pass as-is. */
-    char path[MAX_PATH];
-    if (GetTempFileNameA(dir, prefix, 0, path) == 0)
+    (void)prefix;
+    wchar_t path[MAX_PATH];
+    if (GetTempFileNameW(dir, L"vmf", 0, path) == 0)
         return -1;
-    size_t plen = strlen(path);
-    if (plen + 1 > out_buf_sz)
+    if (out_buf_sz > INT_MAX)
         return -1;
-    memcpy(out_buf, path, plen + 1);
+    const int converted = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, out_buf,
+                                              (int)out_buf_sz, NULL, NULL);
+    if (converted == 0)
+        return -1;
     return 0;
 #else
 #ifdef P_tmpdir
@@ -590,12 +593,33 @@ static char *test_json_empty_collector(void)
  * 64 KiB (tests never produce files that large). */
 static char *slurp_path(const char *path)
 {
+#ifdef _WIN32
+    wchar_t wpath[4096];
+    const int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wpath, 4096);
+    if (converted == 0)
+        return NULL;
+    FILE *f = _wfopen(wpath, L"rb");
+#else
     FILE *f = fopen(path, "r");
+#endif
     if (!f)
         return NULL;
     char *out = slurp(f);
     (void)fclose(f);
     return out;
+}
+
+static int remove_path(const char *path)
+{
+#ifdef _WIN32
+    wchar_t wpath[4096];
+    const int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wpath, 4096);
+    if (converted == 0)
+        return -1;
+    return _wremove(wpath);
+#else
+    return remove(path);
+#endif
 }
 
 static char *test_vmaf_version(void)
@@ -640,7 +664,7 @@ static char *test_write_output_json_path(void)
     mu_assert("vmaf_write_output(JSON) returned non-zero", !err);
 
     char *out = slurp_path(tmp);
-    (void)remove(tmp);
+    (void)remove_path(tmp);
     if (!out) {
         (void)vmaf_close(vmaf);
         return "slurp_path failed after vmaf_write_output";
@@ -650,6 +674,39 @@ static char *test_write_output_json_path(void)
     free(out);
     (void)vmaf_close(vmaf);
     return msg;
+}
+
+/* Public production seam for Netflix#1568: the exact UTF-8 filename passed to
+ * vmaf_write_output() must exist on disk. This fails if libvmaf's dispatcher
+ * regresses to the Windows ANSI fopen() API even while helper-unit tests pass. */
+static char *test_write_output_utf8_path(void)
+{
+    VmafContext *vmaf = NULL;
+    int err = seed_normal(&vmaf);
+    mu_assert("seed_normal failed", !err);
+
+    char path[512];
+#ifdef _WIN32
+    const unsigned long process_id = (unsigned long)GetCurrentProcessId();
+#else
+    const unsigned long process_id = (unsigned long)getpid();
+#endif
+    const int path_len =
+        snprintf(path, sizeof(path), "vmaf_output_\xC3\xA9\xE6\x97\xA5_%lu.json", process_id);
+    mu_assert("UTF-8 output path overflow", path_len > 0 && (size_t)path_len < sizeof(path));
+    (void)remove_path(path);
+
+    err = vmaf_write_output(vmaf, path, VMAF_OUTPUT_FORMAT_JSON);
+    char *out = err == 0 ? slurp_path(path) : NULL;
+    const int remove_rc = remove_path(path);
+    (void)vmaf_close(vmaf);
+
+    mu_assert("vmaf_write_output rejected a UTF-8 path", err == 0);
+    mu_assert("UTF-8 output did not exist at the exact requested filename", out != NULL);
+    mu_assert("UTF-8 output was not JSON", strstr(out, "\"frames\":") != NULL);
+    mu_assert("UTF-8 output cleanup failed", remove_rc == 0);
+    free(out);
+    return NULL;
 }
 
 static char *check_write_output_format(const char *out)
@@ -679,7 +736,7 @@ static char *test_write_output_with_format_custom(void)
     mu_assert("vmaf_write_output_with_format(JSON,%.3f) returned non-zero", !err);
 
     char *out = slurp_path(tmp);
-    (void)remove(tmp);
+    (void)remove_path(tmp);
     if (!out) {
         (void)vmaf_close(vmaf);
         return "slurp_path failed after vmaf_write_output_with_format";
@@ -734,7 +791,7 @@ static char *test_write_output_pic_cnt_zero_json(VmafContext *vmaf)
     int err = vmaf_write_output(vmaf, tmp, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(JSON,pic_cnt=0) returned non-zero", !err);
     char *out = slurp_path(tmp);
-    (void)remove(tmp);
+    (void)remove_path(tmp);
     if (!out)
         return "slurp failed for JSON pic_cnt=0";
     char *msg = check_pic_cnt_zero_json(out);
@@ -757,7 +814,7 @@ static char *test_write_output_pic_cnt_zero_xml(VmafContext *vmaf)
     int err = vmaf_write_output(vmaf, tmp, VMAF_OUTPUT_FORMAT_XML);
     mu_assert("vmaf_write_output(XML,pic_cnt=0) returned non-zero", !err);
     char *out = slurp_path(tmp);
-    (void)remove(tmp);
+    (void)remove_path(tmp);
     if (!out)
         return "slurp failed for XML pic_cnt=0";
     char *msg = check_pic_cnt_zero_xml(out);
@@ -785,7 +842,7 @@ static char *test_write_output_pic_cnt_zero(void)
 
     /* NULL-argument guards: vmaf NULL must not reach open() or
      * feature_collector dereference (ADR-0602). */
-    char dummy_path[] = "/tmp/vmaf_null_guard_test";
+    const char dummy_path[] = "/tmp/vmaf_null_guard_test";
     err = vmaf_write_output(NULL, dummy_path, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(NULL vmaf) must fail", err);
 
@@ -814,6 +871,7 @@ static char *run_output_tests_part2(void)
     mu_run_test(test_json_empty_collector);
     mu_run_test(test_vmaf_version);
     mu_run_test(test_write_output_json_path);
+    mu_run_test(test_write_output_utf8_path);
     mu_run_test(test_write_output_with_format_custom);
     mu_run_test(test_write_output_pic_cnt_zero);
     return NULL;

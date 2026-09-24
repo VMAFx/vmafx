@@ -14,7 +14,6 @@
 #include <sys/stat.h>
 
 #ifdef _WIN32
-#include <stdlib.h> /* _fullpath */
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
@@ -41,18 +40,6 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-/* Portable realpath wrapper: POSIX realpath() on Linux/macOS, _fullpath()
- * on MinGW/Windows. Both resolve symlinks and canonicalise the path in
- * place, returning NULL on failure. */
-static char *resolve_path(const char *path, char *resolved)
-{
-#ifdef _WIN32
-    return _fullpath(resolved, path, PATH_MAX);
-#else
-    return realpath(path, resolved);
-#endif
-}
-
 /* Optional chroot-style path jail: when VMAF_TINY_MODEL_DIR is set in the
  * environment, the caller-supplied (already resolved) model path must sit
  * under the jail directory after both are canonicalised. Returns 0 when
@@ -69,13 +56,13 @@ static int enforce_tiny_model_jail(const char *resolved_model, const char *jail_
         return 0;
 
     char jail_resolved[PATH_MAX];
-    if (resolve_path(jail_dir, jail_resolved) == NULL)
+    if (vmaf_fullpath_utf8(jail_dir, jail_resolved, sizeof(jail_resolved)) == NULL)
         return -EACCES;
 
-    struct stat jst;
-    if (stat(jail_resolved, &jst) != 0)
+    VmafPathInfo jail_info;
+    if (vmaf_path_info_utf8(jail_resolved, &jail_info) != 0)
         return -EACCES;
-    if (!S_ISDIR(jst.st_mode))
+    if (!jail_info.is_directory)
         return -EACCES;
 
     const size_t jlen = strlen(jail_resolved);
@@ -87,8 +74,18 @@ static int enforce_tiny_model_jail(const char *resolved_model, const char *jail_
     char jail_prefix[PATH_MAX];
     size_t plen = jlen;
     memcpy(jail_prefix, jail_resolved, jlen);
-    if (jail_prefix[plen - 1u] != '/') {
+#ifdef _WIN32
+    const bool has_trailing_separator =
+        jail_prefix[plen - 1u] == '/' || jail_prefix[plen - 1u] == '\\';
+#else
+    const bool has_trailing_separator = jail_prefix[plen - 1u] == '/';
+#endif
+    if (!has_trailing_separator) {
+#ifdef _WIN32
+        jail_prefix[plen++] = '\\';
+#else
         jail_prefix[plen++] = '/';
+#endif
     }
     jail_prefix[plen] = '\0';
 
@@ -400,11 +397,11 @@ static int sidecar_json_path(const char *onnx_path, char *out, size_t out_sz)
  * caller. Returns 0 on success, or a negative errno. */
 static int slurp_sidecar_json(const char *sidecar, char **out_buf)
 {
-    struct stat st;
-    if (stat(sidecar, &st) == 0) {
-        if (!S_ISREG(st.st_mode))
+    VmafPathInfo info;
+    if (vmaf_path_info_utf8(sidecar, &info) == 0) {
+        if (!info.is_regular)
             return -EINVAL;
-        if ((size_t)st.st_size > DNN_SIDECAR_JSON_MAX)
+        if (info.size > DNN_SIDECAR_JSON_MAX)
             return -EFBIG;
     }
 
@@ -902,14 +899,14 @@ void vmaf_dnn_sidecar_free(VmafModelSidecar *s)
  * on success, or a negative errno on failure. */
 static int stat_regular(const char *path, size_t max_bytes, size_t *out_size)
 {
-    struct stat st;
-    if (stat(path, &st) != 0)
+    VmafPathInfo info;
+    if (vmaf_path_info_utf8(path, &info) != 0)
         return -errno;
-    if (!S_ISREG(st.st_mode))
+    if (!info.is_regular)
         return -ENOENT;
-    if ((size_t)st.st_size > max_bytes)
+    if (info.size > max_bytes)
         return -E2BIG;
-    *out_size = (size_t)st.st_size;
+    *out_size = (size_t)info.size;
     return 0;
 }
 
@@ -943,12 +940,11 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
         max_bytes = VMAF_DNN_DEFAULT_MAX_BYTES;
     assert(max_bytes > 0u);
 
-    /* Resolve symlinks and normalise the path before any stat / open. An
-     * adversarial --tiny-model value could point at a symlink to a non-
-     * regular file; resolve_path() dereferences the symlink so the
-     * subsequent S_ISREG check reflects the actual target. */
+    /* Canonicalise the path before any metadata check or open. POSIX realpath
+     * dereferences symlinks; Windows _wfullpath preserves the existing lexical
+     * normalization contract while avoiding any ANSI-code-page conversion. */
     char resolved[PATH_MAX];
-    if (resolve_path(path, resolved) == NULL)
+    if (vmaf_fullpath_utf8(path, resolved, sizeof(resolved)) == NULL)
         return -errno;
     assert(resolved[0] != '\0');
 

@@ -751,7 +751,8 @@ test_transnet_v2 = executable('test_transnet_v2',
 )
 
 test_cambi = executable('test_cambi',
-    ['test.c', 'test_cambi.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
+    ['test.c', 'test_cambi.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp',
+     '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
@@ -4461,12 +4462,13 @@ test('test_feature_collector_coverage', test_feature_collector_coverage, suite :
 # cambi.c's `heatmaps_path` sidecar, which no unit test exercises.  This
 # binary drives the public `mkdirp` symbol directly with NULL guard,
 # single-level mkdir, EEXIST idempotence, and double-slash normalization.
-# Compiles `mkdirp.c` into the binary directly — the file is part of
+# Compiles `mkdirp.cpp` and its UTF-8 path dependency into the binary directly.
+# The file is part of
 # libvmaf_feature_static_lib so linking against libvmaf would also work,
 # but a TU-local compile keeps the test self-contained and avoids
 # coupling to libvmaf's link graph.
 test_mkdirp = executable('test_mkdirp',
-    ['test.c', 'test_mkdirp.c', '../src/feature/mkdirp.cpp'],
+    ['test.c', 'test_mkdirp.c', '../src/feature/mkdirp.cpp', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )

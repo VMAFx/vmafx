@@ -134,7 +134,7 @@ directly.
 
 ## Path encoding contract
 
-All filesystem path parameters accepted by public API entry points
+All filesystem path parameters accepted by VMAFx-owned public API entry points
 (`vmaf_write_output`, `vmaf_write_output_with_format`,
 `vmaf_model_load_from_path`, `vmaf_model_collection_load_from_path`, and model
 reader helpers) are defined as UTF-8 encoded strings across all platforms:
@@ -149,6 +149,11 @@ reader helpers) are defined as UTF-8 encoded strings across all platforms:
   regardless of the active Windows system or process ANSI code page
   (`GetACP()`). If an invalid UTF-8 sequence is passed on Windows, the call
   fails with `errno = EILSEQ` (or `-EINVAL`).
+
+The vendored Pelorus entry point `pel_x265_csv_parse()` is a temporary exception:
+its pinned upstream source still uses the Windows narrow CRT. It remains
+tracked in `docs/state.md` and must be fixed in `VMAFx/pelorus` before being
+re-vendored under the ADR-1113 mirror invariant.
 
 See [ADR-1182](../adr/1182-windows-utf8-path-contract.md) for background and
 architectural rationale.

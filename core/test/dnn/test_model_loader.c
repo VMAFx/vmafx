@@ -28,6 +28,7 @@
 #include "mu_table.h"
 #include "test.h"
 
+#include "compat/path_utf8.h"
 #include "dnn/model_loader.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -68,6 +69,88 @@ static char *test_validate_null_path(void)
 {
     const int err = vmaf_dnn_validate_onnx(NULL, 0);
     mu_assert("NULL path → -EINVAL", err == -EINVAL);
+    return NULL;
+}
+
+static unsigned long test_process_id(void)
+{
+#ifdef _WIN32
+    return (unsigned long)GetCurrentProcessId();
+#else
+    return (unsigned long)getpid();
+#endif
+}
+
+static int write_utf8_test_file(const char *path, const char *contents)
+{
+    FILE *file = vmaf_fopen_utf8(path, "wb");
+    if (!file)
+        return -1;
+
+    int write_rc = 0;
+    if (contents && fputs(contents, file) < 0)
+        write_rc = -1;
+    if (fclose(file) != 0)
+        write_rc = -1;
+    return write_rc;
+}
+
+/* Production loader regression: a file created through the wide opener must
+ * survive canonicalization, metadata validation, and the second wide open.
+ * The pre-fix Windows path returned -ENOENT at its narrow stat() seam. */
+static char *test_validate_utf8_model_path(void)
+{
+    char path[512];
+    const int path_len =
+        snprintf(path, sizeof(path), "vmaf_dnn_\xC3\xA9\xE6\x97\xA5_%lu.onnx", test_process_id());
+    mu_assert("UTF-8 model path overflow", path_len > 0 && (size_t)path_len < sizeof(path));
+
+    static const unsigned char ALLOWED_ONNX[] = {0x3A, 0x08, 0x0A, 0x06, 0x22,
+                                                 0x04, 'C',  'o',  'n',  'v'};
+    FILE *file = vmaf_fopen_utf8(path, "wb");
+    mu_assert("UTF-8 model creation failed", file != NULL);
+    const size_t written = fwrite(ALLOWED_ONNX, 1u, sizeof(ALLOWED_ONNX), file);
+    const int close_rc = fclose(file);
+
+    const int err = vmaf_dnn_validate_onnx(path, 0);
+    const int remove_rc = vmaf_remove_utf8(path);
+    mu_assert("UTF-8 model write was incomplete", written == sizeof(ALLOWED_ONNX));
+    mu_assert("UTF-8 model close failed", close_rc == 0);
+    mu_assert("UTF-8 model did not pass the production loader", err == 0);
+    mu_assert("UTF-8 model cleanup failed", remove_rc == 0);
+    return NULL;
+}
+
+/* The sidecar preflight stat must also use the wide path contract; otherwise
+ * its type and size checks are silently skipped before the wide fopen. */
+static char *test_sidecar_utf8_model_path(void)
+{
+    char onnx[512];
+    char sidecar[512];
+    int path_len = snprintf(onnx, sizeof(onnx), "vmaf_sidecar_\xC3\xA9\xE6\x97\xA5_%lu.onnx",
+                            test_process_id());
+    mu_assert("UTF-8 ONNX path overflow", path_len > 0 && (size_t)path_len < sizeof(onnx));
+    path_len = snprintf(sidecar, sizeof(sidecar), "vmaf_sidecar_\xC3\xA9\xE6\x97\xA5_%lu.json",
+                        test_process_id());
+    mu_assert("UTF-8 sidecar path overflow", path_len > 0 && (size_t)path_len < sizeof(sidecar));
+
+    const int model_write_rc = write_utf8_test_file(onnx, NULL);
+    mu_assert("UTF-8 ONNX creation failed", model_write_rc == 0);
+    const int sidecar_write_rc =
+        write_utf8_test_file(sidecar, "{\"name\":\"utf8\",\"kind\":\"fr\","
+                                      "\"input_name\":\"features\",\"output_name\":\"score\"}\n");
+    mu_assert("UTF-8 sidecar creation failed", sidecar_write_rc == 0);
+
+    VmafModelSidecar meta;
+    const int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    if (err == 0)
+        vmaf_dnn_sidecar_free(&meta);
+    const int sidecar_remove_rc = vmaf_remove_utf8(sidecar);
+    const int model_remove_rc = vmaf_remove_utf8(onnx);
+
+    mu_assert("UTF-8 sidecar did not pass the production loader", err == 0);
+    mu_assert("UTF-8 sidecar cleanup failed", sidecar_remove_rc == 0);
+    mu_assert("UTF-8 ONNX cleanup failed", model_remove_rc == 0);
     return NULL;
 }
 
@@ -688,7 +771,8 @@ static char *test_sidecar_oversized_path(void)
     /* Path of length > sizeof(sidecar) - 6 → -ENAMETOOLONG (line 178).
      * sizeof(sidecar) is 4096; we need a path > 4090 chars. */
     char *huge = (char *)malloc(4100u);
-    mu_assert("alloc failed", huge != NULL);
+    if (!huge)
+        return "alloc failed";
     memset(huge, 'a', 4096u);
     huge[4096] = '\0';
     VmafModelSidecar meta;
@@ -1887,7 +1971,7 @@ static char *test_codec_block_fill_bad_len(void)
  * mu_run_test() calls exactly. */
 static const MuTest CORE_TESTS[] = {
     MU_TEST(test_sniff_by_extension),          MU_TEST(test_size_cap),
-    MU_TEST(test_validate_null_path),
+    MU_TEST(test_validate_null_path),          MU_TEST(test_validate_utf8_model_path),
 #ifndef _WIN32
     MU_TEST(test_validate_zero_byte),          MU_TEST(test_validate_allowed_onnx),
     MU_TEST(test_validate_disallowed_onnx),    MU_TEST(test_validate_symlink_to_dir),
@@ -1900,6 +1984,7 @@ static const MuTest CORE_TESTS[] = {
 
 static const MuTest SIDECAR_TESTS[] = {
     MU_TEST(test_sidecar_parses),
+    MU_TEST(test_sidecar_utf8_model_path),
     MU_TEST(test_sidecar_rejects_null_args),
     MU_TEST(test_sidecar_free_null_is_noop),
     MU_TEST(test_sidecar_missing_returns_enoent),
