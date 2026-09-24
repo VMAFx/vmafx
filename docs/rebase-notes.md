@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-report-both-sidecar — restore the complete report bundle (2026-09-24)
+
+No upstream rebase impact: `tools/vmaf-tune/` is fork-only. Preserve the
+contract that `compare --format both` and `report --format both` each emit
+`.json`, `.html`, and `.md`, in that order. The report regression was hidden
+because its test copied the intended dispatch logic instead of calling the
+production writer; keep the regression bound to
+`_write_profile_report_outputs`. No ADR or research digest is needed for this
+one-way restoration of the already documented behavior from `f833440bf`.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

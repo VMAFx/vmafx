@@ -1488,7 +1488,7 @@ def _add_report_output_args(report: argparse.ArgumentParser) -> None:
         "--format",
         default="html",
         choices=("html", "markdown", "both"),
-        help="report format (default html; `both` emits .html + .md next to --output)",
+        help="report format (default html; `both` emits .json + .html + .md next to --output)",
     )
     report.add_argument(
         "--output",
@@ -5438,7 +5438,7 @@ def _write_profile_report_outputs(args: argparse.Namespace, data: Any) -> list[P
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
-    if getattr(args, "json_sidecar", False):
+    if args.format == "both" or getattr(args, "json_sidecar", False):
         json_path = args.output.with_suffix(".json")
         json_path.write_text(json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
         outputs.append(json_path)

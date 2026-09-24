@@ -20466,6 +20466,11 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   60-second startup window (BUG-090).
 
 
+- Restore the complete `vmaf-tune report --format both` bundle: JSON, HTML,
+  and Markdown are emitted together again. The regression test now invokes the
+  production writer instead of duplicating its intended dispatch logic.
+
+
 Harden three AI training-pipeline data-integrity paths surfaced by the
 2026-06-27 bug-hunt sweep (cluster T-BUGHUNT-AI-2026-06-27):
 

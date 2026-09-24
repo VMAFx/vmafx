@@ -147,35 +147,6 @@ def test_compare_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _stub_report_inputs(monkeypatch, tmp_path: Path) -> None:
-    """Stub the two ``_run_report`` seams that would otherwise touch disk.
-
-    ``_compare_source_info`` normally shells out to ffprobe and
-    ``_build_report_data`` normally loads the JSON sidecars; both are
-    replaced with canned values so the test exercises only the
-    format-dispatch logic.
-    """
-    import vmaftune.cli as _cli
-
-    def _fake_source_info(args: Any) -> SourceInfo:
-        return SourceInfo(
-            path=str(getattr(args, "compare_json", tmp_path / "fake.mp4")),
-            width=1280,
-            height=720,
-            fps=30.0,
-            duration_s=5.0,
-            frame_count=150,
-            codec="h264",
-            size_bytes=500_000,
-        )
-
-    def _fake_build_report_data(args: Any) -> ReportData:
-        return _sample_report_data()
-
-    monkeypatch.setattr(_cli, "_compare_source_info", _fake_source_info)
-    monkeypatch.setattr(_cli, "_build_report_data", _fake_build_report_data, raising=False)
-
-
 def _report_args(out_base: Path) -> SimpleNamespace:
     """``report --format both`` arguments, every optional sidecar unset."""
     return SimpleNamespace(
@@ -191,51 +162,26 @@ def _report_args(out_base: Path) -> SimpleNamespace:
         ladder_json=None,
         per_shot_json=None,
         src=None,
+        json_sidecar=False,
     )
 
 
-def _write_report_outputs(args: SimpleNamespace, data: ReportData) -> list[Path]:
-    """Mirror of ``_run_report``'s format dispatch — the logic Bug N-1 broke.
-
-    Kept as a copy of the write logic rather than calling ``_run_report``,
-    which validates the input JSON sidecars this test deliberately omits.
-    """
-    from vmaftune.report import render_html, render_markdown
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    outputs: list[Path] = []
-    if args.format == "both":
-        json_path = (
-            args.output if args.output.suffix == ".json" else args.output.with_suffix(".json")
-        )
-        json_path.write_text(json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
-        outputs.append(json_path)
-    if args.format in ("html", "both"):
-        html_path = args.output if args.format == "html" else args.output.with_suffix(".html")
-        html_path.write_text(render_html(data), encoding="utf-8")
-        outputs.append(html_path)
-    if args.format in ("markdown", "both"):
-        md_path = args.output if args.format == "markdown" else args.output.with_suffix(".md")
-        md_path.write_text(render_markdown(data, assets_dir=args.assets_dir), encoding="utf-8")
-        outputs.append(md_path)
-    return outputs
-
-
-def test_report_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
+def test_report_format_both_writes_json(tmp_path: Path) -> None:
     """``vmaf-tune report --format both`` must write a .json file alongside .html and .md.
 
     Regression for the same silent JSON-drop bug in the ``_run_report`` code path.
     """
-    _stub_report_inputs(monkeypatch, tmp_path)
+    import vmaftune.cli as _cli
 
     out_base = tmp_path / "my_report.out"
     args = _report_args(out_base)
-    _write_report_outputs(args, _sample_report_data())
+    outputs = _cli._write_profile_report_outputs(args, _sample_report_data())
 
     json_path = out_base.with_suffix(".json")
     html_path = out_base.with_suffix(".html")
     md_path = out_base.with_suffix(".md")
 
+    assert outputs == [json_path, html_path, md_path]
     assert json_path.exists(), f"report: JSON file was not written: {json_path}"
     assert html_path.exists(), f"report: HTML file was not written: {html_path}"
     assert md_path.exists(), f"report: Markdown file was not written: {md_path}"

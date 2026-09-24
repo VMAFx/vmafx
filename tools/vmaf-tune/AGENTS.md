@@ -1172,6 +1172,13 @@ conversion scripts for those local corpora.
   one recommendation and construct FFmpeg argv. HTML escaping of
   raw JSON `<pre>` is part of contract because reader unescapes it
   before `json.loads`.
+- **Profile-card `--format both` means all three artifacts.** Both
+  `compare` and `report` must emit machine-readable `.json` before the
+  `.html` and `.md` renders, and return those paths in that order.
+  `--json-sidecar` adds JSON to a single-format HTML or Markdown run;
+  it is not required for `both`. Regression tests must call the
+  production writer or CLI entry point rather than copy its dispatch
+  logic into a test helper.
 - **`corpus.iter_rows` marks container sources for ffmpeg
   auto-detect (ADR-0505, Bug #V5-2).**
   `EncodeRequest.source_is_container` is derived from
