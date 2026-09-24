@@ -59,7 +59,11 @@ accumulated several load-bearing modifications on top.
   with single-rounded `_mm256_cvtps_pd(_mm256_mul_ps(...))`
   / `vcvt_f64_f32(vmul_f32(...))` chains. **No FMA, no pre-widen
   of kernel taps.** Changing scalar pattern requires matching all
-  three SIMD variants.
+  three SIMD variants. The vertical-pass expression carries a narrow
+  `codeql[cpp/integer-multiplication-cast-to-long]` suppression backed by
+  Research-2031's executable SSIM/MS-SSIM/PU21 domain proof in
+  `core/test/test_iqa_convolve.c`; keep the directive immediately before
+  that exact expression, and never broaden it to the query or file.
 
 - **TU-static rename `_calc_scale` → `iqa_calc_scale`** (fork-local,
   ADR-0148). Keep non-reserved spelling on rebase.
