@@ -125,4 +125,4 @@ point without changing Netflix golden fixtures or assertions.
 - `core/src/feature/brisque.c` and `core/src/feature/y_funque_plus.c` — the
   convention this follows.
 - Issue #1526 — the twelve-site inventory and closure target.
-- [Non-finite score laundering research digest](../research/nonfinite-score-laundering-2026-09-23.md).
+- [Non-finite score laundering research digest](../research/2079-nonfinite-score-laundering-2026-09-23.md).

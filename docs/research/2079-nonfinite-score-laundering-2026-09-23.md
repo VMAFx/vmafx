@@ -1,4 +1,4 @@
-# Non-finite score laundering in the metric engine
+# Research-2079: Non-finite score laundering in the metric engine
 
 ## Finding
 
@@ -97,7 +97,7 @@ The release gate remains `make test-netflix-golden`; a passing unit test is not
 a substitute for the unchanged golden scores.
 
 On the completed worktree, the focused seven-test command passes 7/7, the full
-Meson fast suite passes 149/149, and the five-file Netflix Python gate reports
+Meson fast suite passes 150/150, and the five-file Netflix Python gate reports
 `271 passed, 12 skipped`. No Netflix-authored assertion or expected value is
 changed. Release builds with CUDA 13.4/NVCC, ROCm 7.2/HIPCC (`gfx1100`), and
 oneAPI 2026.0/SYCL (SPIR-V JIT) also compile the shared SSIMULACRA2 guard and
