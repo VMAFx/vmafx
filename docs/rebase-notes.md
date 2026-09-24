@@ -39,9 +39,9 @@ these Meson blocks.
 
 1. **`compat/python-vmaf/core/executor.py` maintains active exception diagnostics for FIFO workers.**
    `_run_fifo_worker` catches `(BrokenPipeError, EOFError, OSError)` during traceback transmission,
-   immediately closes `error_sender`, attaches pipe failure diagnostics via `exc.add_note(...)` if available,
-   and re-raises the primary exception without swallowing. `_fifo_worker_failure` treats EOF and OS-level
-   read failures on the diagnostic pipe as immediate failures with synthesized child traceback context,
+   safely bounds channel cleanup via `_safe_close_channel` in `finally`, attaches pipe failure diagnostics via `exc.add_note(...)` if available,
+   and guarantees secondary close or send failures never displace the primary target exception. `_fifo_worker_failure` treats EOF and OS-level
+   read failures on the diagnostic pipe as immediate failures with synthesized child traceback context (distinguishing `EOFError` from `OSError`),
    ensuring dead child processes trigger `RuntimeError` rather than delaying on `None`.
 2. **`compat/python-vmaf/core/train_test_model.py` uses elementwise identity comparison `is None`.**
    In `RegressorMixin._get_scatter_arrays`, `ys_label_stddev` masks `None` using `[x is None for x in ys_label_stddev.flat]`,

@@ -33,6 +33,15 @@ _FIFO_OPEN_MAX_POLLS = int(_FIFO_OPEN_TIMEOUT_SECONDS / _FIFO_OPEN_POLL_SECONDS)
 _FIFO_PROCESS_JOIN_SECONDS = 1.0
 
 
+def _safe_close_channel(channel):
+    try:
+        channel.close()
+    except (BrokenPipeError, EOFError, OSError):
+        # Guarantee diagnostic-channel close failures never replace
+        # the primary target exception while keeping resources bounded.
+        pass
+
+
 def _run_fifo_worker(target, asset, ready_sem, error_sender):
     try:
         target(asset, True, open_sem=ready_sem)
@@ -40,7 +49,6 @@ def _run_fifo_worker(target, asset, ready_sem, error_sender):
         try:
             error_sender.send(traceback.format_exc())
         except (BrokenPipeError, EOFError, OSError) as send_err:
-            error_sender.close()
             # The parent closed or abandoned the error pipe (e.g. parent timeout
             # or another worker failed). Attach the pipe communication error to
             # the target exception so diagnostic context is preserved without
@@ -49,7 +57,7 @@ def _run_fifo_worker(target, asset, ready_sem, error_sender):
                 exc.add_note(f"FIFO error channel delivery failed: {send_err}")
         raise
     finally:
-        error_sender.close()
+        _safe_close_channel(error_sender)
 
 
 def _start_fifo_worker(target, asset, label):
@@ -76,12 +84,16 @@ def _fifo_worker_failure(worker):
     if error_receiver.poll():
         try:
             child_traceback = error_receiver.recv()
-        except (EOFError, OSError):
+        except EOFError:
             # Error channel reached EOF without an error payload (e.g. child
             # terminated abruptly before sending or during exit).
             child_traceback = (
                 "<unavailable from child error channel (EOF); inspect the inherited child stderr>"
             )
+        except OSError as err:
+            # Error channel failed with an OS-level communication error.
+            diagnostic = f"OSError: {err}" if str(err) else "OSError"
+            child_traceback = f"<unavailable from child error channel ({diagnostic}); inspect the inherited child stderr>"
     if child_traceback is None and process.exitcode is None:
         return None
     process.join(timeout=_FIFO_PROCESS_JOIN_SECONDS)
