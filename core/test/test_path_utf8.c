@@ -52,23 +52,22 @@ static int get_temp_directory(char *out, size_t out_sz)
     if (converted == 0) {
         return -1;
     }
+#else
+#ifdef P_tmpdir
+    const char *tmp = P_tmpdir;
+#else
+    const char *tmp = "/tmp";
+#endif
+    int n = snprintf(out, out_sz, "%s", tmp);
+    if (n < 0 || (size_t)n >= out_sz) {
+        return -1;
+    }
+#endif
     size_t len = strlen(out);
     if (len > 0 && (out[len - 1] == '/' || out[len - 1] == '\\')) {
         out[len - 1] = '\0';
     }
     return 0;
-#else
-    /* NOLINTNEXTLINE(concurrency-mt-unsafe): single-threaded test setup (ADR-0141 / ADR-0278). */
-    const char *tmp = getenv("TMPDIR");
-    if (!tmp || tmp[0] == '\0') {
-        tmp = "/tmp";
-    }
-    int n = snprintf(out, out_sz, "%s", tmp);
-    if (n < 0 || (size_t)n >= out_sz) {
-        return -1;
-    }
-    return 0;
-#endif
 }
 
 static int remove_directory_utf8(const char *path)
