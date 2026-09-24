@@ -47,6 +47,7 @@ extern "C" {
 #include "feature_collector.h"
 #include "feature_name.h"
 #include "libvmaf/picture.h"
+#include "feature/nonfinite_score.h"
 
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
@@ -494,22 +495,36 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
                   pow(fabs(s_means[i]), (double)g_gammas[i]);
     }
 
-    int err = vmaf_feature_collector_append_with_dict(
+    static const char *const l_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
+        "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
+    };
+    static const char *const c_names[MS_SSIM_SCALES] = {
+        "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
+        "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
+    };
+    static const char *const s_names_arr[MS_SSIM_SCALES] = {
+        "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
+        "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
+    };
+    VmafNamedScore values[1u + 3u * MS_SSIM_SCALES] = {{"float_ms_ssim", msssim}};
+    size_t value_count = 1u;
+    if (s->enable_lcs) {
+        for (int i = 0; i < MS_SSIM_SCALES; ++i) {
+            values[value_count++] = VmafNamedScore{l_names[i], l_means[i]};
+            values[value_count++] = VmafNamedScore{c_names[i], c_means[i]};
+            values[value_count++] = VmafNamedScore{s_names_arr[i], s_means[i]};
+        }
+    }
+    int err = vmaf_feature_validate_finite_scores_named("float_ms_ssim_metal", values,
+                                                         value_count, index);
+    if (err)
+        return err;
+
+    err = vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "float_ms_ssim", msssim, index);
 
     if (s->enable_lcs) {
-        static const char *const l_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
-            "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
-        };
-        static const char *const c_names[MS_SSIM_SCALES] = {
-            "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
-            "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
-        };
-        static const char *const s_names_arr[MS_SSIM_SCALES] = {
-            "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
-            "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
-        };
         for (int i = 0; i < MS_SSIM_SCALES; ++i) {
             err |= vmaf_feature_collector_append(feature_collector, l_names[i],
                                                  l_means[i], index);

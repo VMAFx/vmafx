@@ -1148,7 +1148,8 @@ test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
     ['test.c', 'test_adm_nonfinite_score.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
-    dependencies : [math_lib],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
 )
 test('test_adm_nonfinite_score', test_adm_nonfinite_score, suite : ['fast'])
 

@@ -120,11 +120,13 @@ feature-name key. Tracked as
 
 ## Non-finite result handling
 
-An extractor result is a measurement only when it is finite. If VIF, ADM,
-SSIM, MS-SSIM, SSIMULACRA2, TransNet V2, or the final VMAF piecewise mapping
-produces `NaN` or infinity, libvmaf fails that frame with `-EINVAL` instead of
-substituting a configured minimum, maximum, threshold result, or zero. The log
-callback names the extractor and frame where that information is available.
+A failed extractor computation is never converted into a plausible metric. If
+VIF, ADM, SSIM, MS-SSIM, SSIMULACRA2, TransNet V2, or the final VMAF piecewise
+mapping produces `NaN` or an unexpected infinity, libvmaf fails that frame with
+`-EINVAL` instead of substituting a configured minimum, maximum, threshold
+result, or zero. CPU, CUDA, HIP, SYCL and Metal host paths validate the complete
+enabled score set before their first collector write. The log callback names
+the extractor, frame, and offending value where those are available.
 
 This matters because those substitutions can look legitimate: an invalid
 SSIMULACRA2 result used to appear as the perfect `100.0`, an invalid SSIM as
@@ -134,9 +136,19 @@ a runtime error and does not present the fabricated value in its report; C API
 callers should handle the existing negative-errno contract described in
 [API error semantics](../api/index.md#error-semantics).
 
-Finite results, including the defined flat-frame ADM result and scores that
-legitimately reach a configured clamp, are unchanged. SSIMULACRA2 applies the
-same rule on scalar, SIMD, CUDA, HIP, SYCL and Metal backends.
+Finite results, including ADM's defined perfect aggregate flat-frame result and
+scores that legitimately reach a configured clamp, are unchanged. A finite
+ADM per-scale `0/0` now has that same explicit `1.0` definition instead of
+publishing NaN. All four VIF ratios must be finite before any scale is
+published; scale 0 remains unclamped, while scales 1-3 then apply their
+configured minimum. SSIMULACRA2 applies the same rule on scalar, SIMD, CUDA,
+HIP, SYCL and Metal backends.
+
+One existing output representation is intentionally non-finite: with dB output
+enabled and `clip_db=false`, a finite perfect SSIM or MS-SSIM raw score reports
+positive infinity. This is the documented ADR-1221 contract, not a failed raw
+computation. Set `clip_db=true` to cap it at `max_db`; NaN raw scores and invalid
+dB ceilings still fail the frame.
 
 ## Per-feature GPU dispatch hints (T7-26 / ADR-0181)
 

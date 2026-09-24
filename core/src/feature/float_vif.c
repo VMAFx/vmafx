@@ -27,6 +27,7 @@
 #include "feature_name.h"
 #include "log.h"
 #include "mem.h"
+#include "nonfinite_score.h"
 
 #include "vif.h"
 #include "vif_options.h"
@@ -35,7 +36,6 @@
 
 /* Default minimum value allowed for the feature */
 #define DEFAULT_VIF_MIN_VAL (0.0)
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
 
 /* Number of float-plane-sized scratch buffers required by compute_vif. */
 #define VIF_SCRATCH_BUF_CNT 10
@@ -321,30 +321,13 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 static int append_scale_scores(VifState *s, VmafFeatureCollector *feature_collector, unsigned index,
                                const double *scores)
 {
-    int err = 0;
-
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale0_score", 0.0f, index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_feature_vif_scale0_score",
-                                                       scores[0] / scores[1], index);
-    }
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale1_score",
-        MAX(scores[2] / scores[3], s->vif_scale1_min_val), index);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale2_score",
-        MAX(scores[4] / scores[5], s->vif_scale2_min_val), index);
-
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale3_score",
-        MAX(scores[6] / scores[7], s->vif_scale3_min_val), index);
-
-    return err;
+    const double minimums[3] = {
+        s->vif_scale1_min_val,
+        s->vif_scale2_min_val,
+        s->vif_scale3_min_val,
+    };
+    return vmaf_vif_emit_scale_scores(feature_collector, s->feature_name_dict, "float_vif", scores,
+                                      s->vif_skip_scale0, minimums, index);
 }
 
 /* The debug-only num/den breakdown. Also lifted for HISS-04: it is two thirds
@@ -434,7 +417,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     if (err)
         return err;
 
-    /* NaN/Inf guard: the MAX() emits below are bare comparisons, and every
+    /* NaN/Inf guard: the minimum-value emits below are comparisons, and every
      * comparison against NaN is false -- a non-finite ratio would silently take
      * the min_val arm and be published as a finite, plausible score (0.0 by
      * default, the *worst* VIF value) that no caller can tell apart from a real
@@ -442,18 +425,11 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
      * vif_sigma_nsq is driven to 0.0 (the option's declared minimum).  Guard at
      * runtime in both builds and fail the frame instead of masking it (mirrors
      * the brisque.c and y_funque_plus.c finite-score guards).  Scale 0 is left
-     * alone: it has no MAX(), so a non-finite ratio there surfaces as-is. */
-    if (!isfinite(scores[2] / scores[3]) || !isfinite(scores[4] / scores[5]) ||
-        !isfinite(scores[6] / scores[7])) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "float_vif: non-finite scale score at frame %u "
-                 "(scale1=%g/%g scale2=%g/%g scale3=%g/%g)\n",
-                 index, scores[2], scores[3], scores[4], scores[5], scores[6], scores[7]);
-        return -EINVAL;
-    }
-    err |= append_scale_scores(s, feature_collector, index, scores);
+     * alone: it has no minimum-value clamp, so a non-finite ratio there
+     * deliberately surfaces as-is. */
+    err = append_scale_scores(s, feature_collector, index, scores);
 
-    if (!s->debug)
+    if (err || !s->debug)
         return err;
 
     return append_debug_features(s, feature_collector, index, score, score_num, score_den, scores);

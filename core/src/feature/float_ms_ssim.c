@@ -30,6 +30,7 @@
 
 #include "mem.h"
 #include "ms_ssim.h"
+#include "nonfinite_score.h"
 #include "picture_copy.h"
 #include "iqa/ssim_simd.h"
 #include "iqa/ssim_tools.h"
@@ -211,17 +212,6 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-
-static double convert_to_db(double score, double max_db)
-{
-    /* score >= 1.0 makes log10(1-score) undefined (log10 of zero or negative)
-     * yielding -Inf / NaN.  Return max_db directly for perfect similarity.  */
-    if (score >= 1.0)
-        return max_db;
-    return MIN(-10. * log10(1.0 - score), max_db);
-}
-
 static bool plane_scores_are_finite(double score, const double *l_scores, const double *c_scores,
                                     const double *s_scores)
 {
@@ -313,12 +303,6 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         if (err)
             return err;
 
-        /* NaN/Inf guard: convert_to_db() below bounds the score with a
-         * comparison, and every comparison against NaN is false -- the NaN
-         * falls out of MIN() as max_db, the *best* dB score there is. Guard
-         * the raw score before the conversion, so the linear path that
-         * appends it unbounded is covered too (mirrors the brisque.c and
-         * y_funque_plus.c guards; SpEED has its own family-scoped helper). */
         if (!plane_scores_are_finite(plane_scores[p], l_scores[p], c_scores[p],
                                      structure_scores[p])) {
             vmaf_log(VMAF_LOG_LEVEL_WARNING,
@@ -327,13 +311,19 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                      ms_ssim_feature_names[p], index, plane_scores[p]);
             return -EINVAL;
         }
-        if (s->enable_db)
-            plane_scores[p] = convert_to_db(plane_scores[p], s->max_db);
+    }
+
+    for (unsigned p = 0; p < n_planes; ++p) {
+        double prepared_score = 0.0;
+        err = vmaf_ssim_prepare_score_named(ms_ssim_feature_names[p], plane_scores[p], s->enable_db,
+                                            s->max_db, index, &prepared_score);
+        if (err)
+            return err;
     }
 
     for (unsigned p = 0; p < n_planes; p++) {
-        err = vmaf_feature_collector_append(feature_collector, ms_ssim_feature_names[p],
-                                            plane_scores[p], index);
+        err = vmaf_ssim_emit_score(feature_collector, NULL, ms_ssim_feature_names[p],
+                                   plane_scores[p], s->enable_db, s->max_db, index);
         if (p == 0 && s->enable_lcs) {
             err |= ms_ssim_append_lcs_scores(feature_collector, l_scores[p], c_scores[p],
                                              structure_scores[p], index);

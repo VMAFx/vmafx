@@ -39,6 +39,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "log.h"
 #include "picture.h"
 #include "../picture_copy.h"
@@ -401,23 +402,6 @@ static const VmafOption options_ms_ssim_sycl[] = {
     },
     {.name = nullptr},
 };
-
-} // namespace
-
-namespace
-{
-
-/* Mirrors float_ms_ssim.c::convert_to_db exactly. ADR-1221. */
-static double ms_ssim_convert_to_db(double score, double max_db)
-{
-    /* score >= 1.0 makes log10(1-score) undefined (log10 of zero or negative)
-     * yielding -Inf / NaN.  Return max_db directly for perfect similarity.  */
-    if (score >= 1.0) {
-        return max_db;
-    }
-    const double db = -10. * std::log10(1.0 - score);
-    return db < max_db ? db : max_db;
-}
 
 } // namespace
 
@@ -790,28 +774,46 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         "float_ms_ssim_cr",
     };
 
-    int err = 0;
+    double plane_scores[MS_SSIM_MAX_PLANES] = {0.0};
+    double plane_l[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
+    double plane_c[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
+    double plane_s[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
-        double l_means[MS_SSIM_SCALES] = {0};
-        double c_means[MS_SSIM_SCALES] = {0};
-        double s_means[MS_SSIM_SCALES] = {0};
         /* Planes run sequentially for the same reason the scales do: the
          * horizontal intermediates and the partials are one shared workspace,
          * and compute_scale_lcs waits on its readback before returning. */
         for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
-            compute_scale_lcs(s, q, plane, scale, l_means[scale], c_means[scale], s_means[scale]);
+            compute_scale_lcs(s, q, plane, scale, plane_l[plane][scale], plane_c[plane][scale],
+                              plane_s[plane][scale]);
+            if (!std::isfinite(plane_l[plane][scale]) || !std::isfinite(plane_c[plane][scale]) ||
+                !std::isfinite(plane_s[plane][scale])) {
+                return -EINVAL;
+            }
         }
-        double score = combine_ms_ssim(l_means, c_means, s_means);
-        if (s->enable_db) {
-            score = ms_ssim_convert_to_db(score, s->max_db);
-        }
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       plane_feature_names[plane], score, index);
+        plane_scores[plane] = combine_ms_ssim(plane_l[plane], plane_c[plane], plane_s[plane]);
+        if (!std::isfinite(plane_scores[plane]))
+            return -EINVAL;
+    }
+
+    for (unsigned plane = 0; plane < s->n_planes; ++plane) {
+        double prepared_score = 0.0;
+        int const prepare_err =
+            vmaf_ssim_prepare_score_named(plane_feature_names[plane], plane_scores[plane],
+                                          s->enable_db, s->max_db, index, &prepared_score);
+        if (prepare_err)
+            return prepare_err;
+    }
+
+    int err = 0;
+    for (unsigned plane = 0; plane < s->n_planes && !err; plane++) {
+        err = vmaf_ssim_emit_score(feature_collector, s->feature_name_dict,
+                                   plane_feature_names[plane], plane_scores[plane], s->enable_db,
+                                   s->max_db, index);
         /* The l/c/s per-scale breakdown is luma-only, as on the CPU twin:
          * float_ms_ssim.c guards it with `p == 0`. */
-        if (plane == 0U && s->enable_lcs) {
-            err |= append_lcs_scores(feature_collector, l_means, c_means, s_means, index);
-        }
+        if (plane == 0U && s->enable_lcs && !err)
+            err = append_lcs_scores(feature_collector, plane_l[plane], plane_c[plane],
+                                    plane_s[plane], index);
     }
     return err;
 }

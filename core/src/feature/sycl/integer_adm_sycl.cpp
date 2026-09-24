@@ -49,8 +49,10 @@
 #include "config.h"
 #include "feature/adm_angle_flag.h"
 #include "feature/adm_csf_fixed_point.h"
+#include "feature/adm_score.h"
 #include "feature/barten_csf_tools.h"
 #include "feature/integer_adm.h"
+#include "feature/nonfinite_score.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
@@ -1786,6 +1788,7 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     // Combined graph wait (idempotent per frame — first extractor wins)
     vmaf_sycl_graph_wait(state);
+    s->has_pending = false;
 
     // Read back accumulators
     int64_t cm_results[ADM_NUM_SCALES][ADM_NUM_BANDS];
@@ -1843,7 +1846,16 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
      * applies MAX(..., adm_min_val) to the adm3 expression alone). */
-    double const score = (den == 0.0) ? 1.0 : num / den;
+    const double aggregate_pair[2] = {num, den};
+    double score = 0.0;
+    int err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm_sycl: undefined or non-finite aggregate at frame %u "
+                 "(num=%g den=%g)\n",
+                 index, num, den);
+        return err;
+    }
 
     /* AIM / adm3 are NOT emitted by this twin: the AIM contrast measure needs
      * a second device CM pass with the decouple_a / decouple_r roles swapped
@@ -1854,46 +1866,42 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
      * here from a hard-coded aim_num would fabricate a score. Tracked as
      * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md. */
 
-    // Write primary feature
-    {
-        int const err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm2_score", score,
-            index);
-        if (err)
-            return err;
-    }
-
-    // Per-scale features
+    static const char *const scale_names[ADM_NUM_SCALES] = {
+        "integer_adm_scale0", "integer_adm_scale1", "integer_adm_scale2", "integer_adm_scale3"};
+    double scale_pairs[ADM_NUM_SCALES * 2];
     for (int i = 0; i < ADM_NUM_SCALES; i++) {
-        char name[64];
-        (void)std::snprintf(name, sizeof(name), "integer_adm_scale%d", i);
-        double const scale_score = (scores_den[i] == 0.0) ? 1.0 : scores_num[i] / scores_den[i];
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                scale_score, index);
+        scale_pairs[i * 2] = scores_num[i];
+        scale_pairs[i * 2 + 1] = scores_den[i];
     }
+    double scale_scores[ADM_NUM_SCALES];
+    err = vmaf_adm_scale_ratios_named("integer_adm_sycl", index, scale_pairs, ADM_NUM_SCALES,
+                                      scale_scores);
+    if (err)
+        return err;
 
-    // Debug features
+    VmafNamedScore values[16] = {
+        {"VMAF_integer_feature_adm2_score", score}, {scale_names[0], scale_scores[0]},
+        {scale_names[1], scale_scores[1]},          {scale_names[2], scale_scores[2]},
+        {scale_names[3], scale_scores[3]},
+    };
+    size_t value_count = 5u;
     if (s->debug) {
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm", score, index);
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_num", num, index);
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_den", den, index);
-
-        for (int i = 0; i < ADM_NUM_SCALES; i++) {
-            char name[64];
-            (void)std::snprintf(name, sizeof(name), "integer_adm_num_scale%d", i);
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    scores_num[i], index);
-            (void)std::snprintf(name, sizeof(name), "integer_adm_den_scale%d", i);
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    scores_den[i], index);
+        static const char *const num_names[ADM_NUM_SCALES] = {
+            "integer_adm_num_scale0", "integer_adm_num_scale1", "integer_adm_num_scale2",
+            "integer_adm_num_scale3"};
+        static const char *const den_names[ADM_NUM_SCALES] = {
+            "integer_adm_den_scale0", "integer_adm_den_scale1", "integer_adm_den_scale2",
+            "integer_adm_den_scale3"};
+        values[value_count++] = VmafNamedScore{"integer_adm", score};
+        values[value_count++] = VmafNamedScore{"integer_adm_num", num};
+        values[value_count++] = VmafNamedScore{"integer_adm_den", den};
+        for (int i = 0; i < ADM_NUM_SCALES; ++i) {
+            values[value_count++] = VmafNamedScore{num_names[i], scores_num[i]};
+            values[value_count++] = VmafNamedScore{den_names[i], scores_den[i]};
         }
     }
-
-    s->has_pending = false;
-    return 0;
+    return vmaf_feature_emit_finite_scores(feature_collector, s->feature_name_dict,
+                                           "integer_adm_sycl", values, value_count, index);
 }
 
 int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,

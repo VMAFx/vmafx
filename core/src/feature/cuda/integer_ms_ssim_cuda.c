@@ -63,6 +63,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "cuda/drain_batch.h"
 #include "cuda/integer_ms_ssim_cuda.h"
 #include "cuda/kernel_template.h"
@@ -193,17 +194,6 @@ static const VmafOption options[] = {
 };
 
 static int close_fex_cuda(VmafFeatureExtractor *fex);
-
-/* Mirrors float_ms_ssim.c::convert_to_db exactly. ADR-1221. */
-static double ms_ssim_convert_to_db(double score, double max_db)
-{
-    /* score >= 1.0 makes log10(1-score) undefined (log10 of zero or negative)
-     * yielding -Inf / NaN.  Return max_db directly for perfect similarity.  */
-    if (score >= 1.0)
-        return max_db;
-    const double db = -10. * log10(1.0 - score);
-    return db < max_db ? db : max_db;
-}
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
@@ -556,19 +546,14 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
     double msssim = 1.0;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        if (!isfinite(l_means[i]) || !isfinite(c_means[i]) || !isfinite(s_means[i]))
+            return -EINVAL;
         msssim *= pow(l_means[i], (double)g_alphas[i]) * pow(c_means[i], (double)g_betas[i]) *
                   pow(fabs(s_means[i]), (double)g_gammas[i]);
     }
 
-    /* dB conversion — mirrors CPU float_ms_ssim.c behaviour exactly. */
-    double score = msssim;
-    if (s->enable_db)
-        score = ms_ssim_convert_to_db(score, s->max_db);
-
-    /* Append the (possibly dB-converted) score, not the raw msssim.
-     * Mirrors CPU float_ms_ssim.c:extract() which converts before appending. */
-    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "float_ms_ssim", score, index);
+    int err = vmaf_ssim_emit_score(feature_collector, s->feature_name_dict, "float_ms_ssim", msssim,
+                                   s->enable_db, s->max_db, index);
     if (s->enable_lcs) {
         static const char *const l_names[MS_SSIM_SCALES] = {
             "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",

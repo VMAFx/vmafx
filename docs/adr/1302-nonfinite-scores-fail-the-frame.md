@@ -55,6 +55,12 @@ Extend the existing convention — `brisque.c`, `y_funque_plus.c` and now
 `isfinite` **before** the comparison that would launder the value, warn naming
 the extractor, the frame and the value, and return `-EINVAL`.
 
+This convention rejects a failed *input or computation*. It does not remove
+the established SSIM/MS-SSIM output sentinel from ADR-1221: when dB output is
+enabled, clipping is explicitly disabled, and a finite raw score is at least
+`1.0`, the reported score remains positive infinity. A NaN raw score, an
+invalid ceiling, or a non-finite dB conversion still fails before publication.
+
 The guard goes before the *first* append of the frame, not beside each clamp,
 so a frame fails atomically rather than leaving some features published and
 others missing. MS-SSIM therefore computes and validates every enabled plane
@@ -65,7 +71,8 @@ their natural scoring seams:
 
 | Seam | Contract |
 | --- | --- |
-| `adm_score.h` | ADM/AIM ratios and both ADM3 formulas validate every operand and computed result, write output only on success, and preserve the legitimate finite flat-frame `1.0` result. |
+| `adm_score.h` | ADM/AIM and per-scale ratios plus both ADM3 formulas validate every operand and computed result, write output only on success, handle the ADM and AIM denominators independently, and define the legitimate finite flat-frame `0/0` ratio as `1.0`. |
+| `nonfinite_score.h` | VIF ratios, SSIM dB conversion and multi-value collector emission validate the complete score set before the first write; CPU, CUDA, HIP, SYCL and Metal hosts use the same ordering and failure contract. The ADR-1221 unclipped perfect-score infinity is the sole intentional non-finite output. |
 | `ssimulacra2_score.h` | Edge-difference splitting preserves non-finite evidence and the final polynomial never maps it to `100.0`; scalar, SIMD, CUDA, HIP, SYCL and Metal hosts use the same helper. |
 | `transnet_v2_score.h` | Logit-to-probability/flag conversion validates before writing either output. |
 | `predict.c::piecewise_linear_mapping` | Rejects a non-finite input before assigning the old `0.0` default. |
@@ -90,7 +97,11 @@ point without changing Netflix golden fixtures or assertions.
   reports failure instead of a perfect, worst-case or otherwise plausible
   measurement.
 - **Positive**: the finiteness convention is shared by the CPU, SIMD and GPU
-  SSIMULACRA2 hosts, rather than drifting by backend.
+  hosts for VIF, ADM, SSIM, MS-SSIM and SSIMULACRA2, rather than drifting by
+  backend.
+- **Neutral for SSIM semantics**: a finite perfect SSIM/MS-SSIM raw score still
+  reports positive infinity when the caller explicitly selects unclipped dB
+  output, as specified by ADR-1221.
 - **Neutral for scores**: verified, not assumed. The Netflix golden gate is
   `271 passed, 12 skipped` both before and after.
 - **Negative**: a frame that previously produced a wrong-but-finite score now
@@ -105,6 +116,8 @@ point without changing Netflix golden fixtures or assertions.
   filed rather than fixed.
 - [ADR-1301](1301-speed-nonfinite-score-fails-frame.md) — the same defect in
   SpEED, and the shared helper it introduced.
+- [ADR-1221](1221-gpu-ms-ssim-db-ceiling.md) — the intentional unclipped
+  perfect-score positive-infinity representation.
 - `core/src/feature/brisque.c` and `core/src/feature/y_funque_plus.c` — the
   convention this follows.
 - Issue #1526 — the twelve-site inventory and closure target.

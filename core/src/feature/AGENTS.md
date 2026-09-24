@@ -144,6 +144,17 @@ feature/
   - Keep `feature_extractor.cpp` free of any `ansnr` registration symbols.
   - Keep dispatch registries and feature lists free of `ansnr` / `float_ansnr`.
 
+- **Cross-backend non-finite publication semantics (ADR-1302)**:
+  `nonfinite_score.h` is the shared validate-before-first-write seam for VIF,
+  ADM, SSIM and MS-SSIM host code. CPU, CUDA, HIP, SYCL and Metal twins must
+  validate every enabled output before a clamp, fallback, dB conversion or
+  collector append. Do not re-inline ordered comparisons in one backend: NaN
+  takes the fallback arm and becomes a plausible score. All four VIF ratios are
+  finite-checked before scale 0 is written; only scales 1-3 then apply their
+  configured minimum. Preserve ADR-1221's sole intentional non-finite output:
+  finite perfect SSIM/MS-SSIM with dB enabled and clipping disabled reports
+  positive infinity; invalid raw inputs and ceilings still fail the frame.
+
 - `ssimulacra2.c` is fork-local (not upstream). It embeds several
   constant tables that must stay in lock-step with libjxl even across
   rebase:

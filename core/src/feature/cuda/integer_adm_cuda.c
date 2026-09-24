@@ -33,7 +33,9 @@
  * enum ADM_CSF_MODE are pulled in transitively via cuda/integer_adm_cuda.h →
  * feature/integer_adm.h. No separate adm_options.h include is needed here. */
 #include "feature/adm_csf_fixed_point.h"
+#include "feature/adm_score.h"
 #include "feature/barten_csf_tools.h"
+#include "feature/nonfinite_score.h"
 #include "drain_batch.h"
 #include "picture_cuda.h"
 
@@ -1033,64 +1035,40 @@ static double adm_aim_num(const AdmStateCuda *s, unsigned w, unsigned h)
     return aim_num;
 }
 
-/* Append the features every frame emits. Returns the OR of the collector
- * results. */
-static int append_adm_scores(VmafFeatureCollector *feature_collector, const AdmStateCuda *s,
-                             unsigned index, const double frame_scores[3], const AdmDlmTerms *t)
+static int emit_adm_scores(const write_score_parameters_adm *params, const AdmDlmTerms *terms,
+                           double score, double score_aim, double score_adm3,
+                           const double scale_scores[4])
 {
-    static const char *const scale_names[4] = {"integer_adm_scale0", "integer_adm_scale1",
-                                               "integer_adm_scale2", "integer_adm_scale3"};
-    VmafDictionary *dict = s->feature_name_dict;
-
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, dict, "VMAF_integer_feature_adm2_score", frame_scores[0], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, dict, "VMAF_integer_feature_aim_score", frame_scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, dict, "VMAF_integer_feature_adm3_score", frame_scores[2], index);
-    for (unsigned scale = 0; scale < 4; ++scale) {
-        const size_t num_idx = (size_t)scale * 2;
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, scale_names[scale],
-                                                       t->scores[num_idx] / t->scores[num_idx + 1],
-                                                       index);
-    }
-    return err;
-}
-
-/* Append the features only the `debug` option emits. Returns the OR of the
- * collector results. */
-static int append_adm_debug_scores(VmafFeatureCollector *feature_collector, const AdmStateCuda *s,
-                                   unsigned index, double score, const AdmDlmTerms *t)
-{
-    static const char *const num_names[4] = {"integer_adm_num_scale0", "integer_adm_num_scale1",
-                                             "integer_adm_num_scale2", "integer_adm_num_scale3"};
-    static const char *const den_names[4] = {"integer_adm_den_scale0", "integer_adm_den_scale1",
-                                             "integer_adm_den_scale2", "integer_adm_den_scale3"};
-    VmafDictionary *dict = s->feature_name_dict;
-
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, "integer_adm", score,
-                                                   index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, "integer_adm_num",
-                                                   t->num, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, "integer_adm_den",
-                                                   t->den, index);
-    for (unsigned scale = 0; scale < 4; ++scale) {
-        const size_t num_idx = (size_t)scale * 2;
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, num_names[scale],
-                                                       t->scores[num_idx], index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, den_names[scale],
-                                                       t->scores[num_idx + 1], index);
-    }
-    return err;
-}
-
-static void write_scores(write_score_parameters_adm *params)
-{
-    VmafFeatureCollector *feature_collector = params->feature_collector;
     const AdmStateCuda *s = params->s;
-    unsigned index = params->index;
+    VmafNamedScore values[18] = {
+        {"VMAF_integer_feature_adm2_score", score},
+        {"VMAF_integer_feature_aim_score", score_aim},
+        {"VMAF_integer_feature_adm3_score", score_adm3},
+        {"integer_adm_scale0", scale_scores[0]},
+        {"integer_adm_scale1", scale_scores[1]},
+        {"integer_adm_scale2", scale_scores[2]},
+        {"integer_adm_scale3", scale_scores[3]},
+    };
+    size_t value_count = 7u;
+    if (s->debug) {
+        static const char *const debug_names[8] = {
+            "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
+            "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
+            "integer_adm_num_scale3", "integer_adm_den_scale3",
+        };
+        values[value_count++] = (VmafNamedScore){"integer_adm", score};
+        values[value_count++] = (VmafNamedScore){"integer_adm_num", terms->num};
+        values[value_count++] = (VmafNamedScore){"integer_adm_den", terms->den};
+        for (size_t i = 0u; i < 8u; ++i)
+            values[value_count++] = (VmafNamedScore){debug_names[i], terms->scores[i]};
+    }
+    return vmaf_feature_emit_finite_scores(params->feature_collector, s->feature_name_dict,
+                                           "integer_adm_cuda", values, value_count, params->index);
+}
+
+static int write_scores(write_score_parameters_adm *params)
+{
+    const AdmStateCuda *s = params->s;
 
     AdmDlmTerms t;
     adm_dlm_terms(s, params->w, params->h, &t);
@@ -1103,12 +1081,6 @@ static void write_scores(write_score_parameters_adm *params)
     t.num = t.num < numden_limit ? 0 : t.num;
     t.den = t.den < numden_limit ? 0 : t.den;
 
-    double score;
-    if (t.den == 0.0) {
-        score = 1.0f;
-    } else {
-        score = t.num / t.den;
-    }
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
      * applies MAX(..., adm_min_val) to the adm3 expression alone). The
@@ -1120,18 +1092,31 @@ static void write_scores(write_score_parameters_adm *params)
     if (!s->adm_skip_aim) {
         aim_num = adm_aim_num(s, params->w, params->h);
     }
-    const double score_aim = (t.den == 0.0) ? 1.0 : (aim_num / t.den);
-    double score_adm3 = (score * s->adm_dlm_weight) + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
-    if (score_adm3 < s->adm_min_val) {
-        score_adm3 = s->adm_min_val;
+    const double aggregate_pairs[4] = {t.num, t.den, aim_num, t.den};
+    double aggregate_ratios[2];
+    int err = vmaf_adm_scale_ratios(aggregate_pairs, 2u, aggregate_ratios);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm_cuda: undefined or non-finite aggregate at frame %u "
+                 "(num=%g den=%g aim_num=%g)\n",
+                 params->index, t.num, t.den, aim_num);
+        return err;
     }
+    const double score = aggregate_ratios[0];
+    const double score_aim = aggregate_ratios[1];
 
-    const double frame_scores[3] = {score, score_aim, score_adm3};
-    int err = append_adm_scores(feature_collector, s, index, frame_scores, &t);
-    if (s->debug) {
-        err |= append_adm_debug_scores(feature_collector, s, index, score, &t);
-    }
-    (void)err; // accumulated collector status intentionally discarded; void writer API
+    double score_adm3 = 0.0;
+    err = vmaf_adm3_score_named("integer_adm_cuda", params->index, score, score_aim, 0,
+                                s->adm_dlm_weight, s->adm_min_val, &score_adm3);
+    if (err)
+        return err;
+    double scale_scores[4];
+    err =
+        vmaf_adm_scale_ratios_named("integer_adm_cuda", params->index, t.scores, 4u, scale_scores);
+    if (err)
+        return err;
+
+    return emit_adm_scores(params, &t, score, score_aim, score_adm3, scale_scores);
 }
 
 /* Fixed-point kernel parameters of one frame. Also caches the float CSF
@@ -1891,8 +1876,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         .w = s->submit_w,
         .h = s->submit_h,
     };
-    write_scores(&params);
-    return 0;
+    return write_scores(&params);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)

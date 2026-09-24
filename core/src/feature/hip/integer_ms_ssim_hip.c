@@ -50,6 +50,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "libvmaf/picture.h"
 #include "log.h"
 #include "picture_copy.h"
@@ -726,17 +727,6 @@ static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, hipStream_t str, int i)
 /* init / close                                                        */
 /* ------------------------------------------------------------------ */
 
-/* Mirrors float_ms_ssim.c::convert_to_db exactly. ADR-1221. */
-static double ms_ssim_convert_to_db(double score, double max_db)
-{
-    /* score >= 1.0 makes log10(1-score) undefined (log10 of zero or negative)
-     * yielding -Inf / NaN.  Return max_db directly for perfect similarity.  */
-    if (score >= 1.0)
-        return max_db;
-    const double db = -10. * log10(1.0 - score);
-    return db < max_db ? db : max_db;
-}
-
 /* ------------------------------------------------------------------ */
 /* init_fex_hip failure unwind — one helper per former label, each     */
 /* tail-calling the label it used to fall into (HISS-01).              */
@@ -1031,17 +1021,14 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 
     double msssim = 1.0;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        if (!isfinite(l_means[i]) || !isfinite(c_means[i]) || !isfinite(s_means[i]))
+            return -EINVAL;
         msssim *= pow(l_means[i], (double)g_alphas[i]) * pow(c_means[i], (double)g_betas[i]) *
                   pow(fabs(s_means[i]), (double)g_gammas[i]);
     }
 
-    /* dB conversion — mirrors CPU float_ms_ssim.c exactly. */
-    double score = msssim;
-    if (s->enable_db)
-        score = ms_ssim_convert_to_db(score, s->max_db);
-
-    err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                  "float_ms_ssim", score, index);
+    err = vmaf_ssim_emit_score(feature_collector, s->feature_name_dict, "float_ms_ssim", msssim,
+                               s->enable_db, s->max_db, index);
     if (s->enable_lcs)
         err |= ms_ssim_hip_emit_lcs(feature_collector, index, l_means, c_means, s_means);
     return err;

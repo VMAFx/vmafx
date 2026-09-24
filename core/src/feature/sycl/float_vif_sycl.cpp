@@ -30,6 +30,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "vif_tools.h"
 #include "log.h"
 #include "picture.h"
@@ -936,20 +937,8 @@ static void sum_vif_partials(const FloatVifStateSycl &state, double *scores)
 static int append_vif_scale_scores(const FloatVifStateSycl &state, const double *scores,
                                    unsigned index, VmafFeatureCollector *collector)
 {
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(
-        collector, state.feature_name_dict, "VMAF_feature_vif_scale0_score",
-        state.vif_skip_scale0 ? 0.0 : scores[0] / scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
-                                                   "VMAF_feature_vif_scale1_score",
-                                                   scores[2] / scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
-                                                   "VMAF_feature_vif_scale2_score",
-                                                   scores[4] / scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(collector, state.feature_name_dict,
-                                                   "VMAF_feature_vif_scale3_score",
-                                                   scores[6] / scores[7], index);
-    return err;
+    return vmaf_vif_emit_scale_scores(collector, state.feature_name_dict, "float_vif_sycl", scores,
+                                      state.vif_skip_scale0, nullptr, index);
 }
 
 } // namespace

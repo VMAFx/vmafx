@@ -63,6 +63,7 @@ extern "C" {
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "log.h"
 #include "vif_tools.h"
 #include "libvmaf/picture.h"
@@ -521,22 +522,11 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         scores[2 * i + 1] = d;
     }
 
-    int err = 0;
     /* vif_skip_scale0: emit 0.0 for scale-0 (host-side suppression),
      * mirroring float_vif.c / float_vif_sycl.cpp. */
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale0_score",
-        s->vif_skip_scale0 ? 0.0 : scores[0] / scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale1_score",
-                                                   scores[2] / scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale2_score",
-                                                   scores[4] / scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale3_score",
-                                                   scores[6] / scores[7], index);
-
+    int err = vmaf_vif_emit_scale_scores(feature_collector, s->feature_name_dict,
+                                         "float_vif_metal", scores, s->vif_skip_scale0, NULL,
+                                         index);
     if (s->debug && !err) {
         const double score_num =
             (s->vif_skip_scale0 ? 0.0 : scores[0]) + scores[2] + scores[4] + scores[6];

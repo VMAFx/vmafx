@@ -52,6 +52,7 @@ extern "C" {
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "log.h"
 #include "libvmaf/picture.h"
 
@@ -114,12 +115,6 @@ static const VmafOption options[] = {
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
 /* ------------------------------------------------------------------ */
-
-static double ssim_to_db(double ssim, double max_db)
-{
-    const double db = -10.0 * log10(1.0 - ssim);
-    return (db < max_db) ? db : max_db;
-}
 
 static int build_pipelines(IntegerSsimStateMetal *s, id<MTLDevice> device)
 {
@@ -350,12 +345,8 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     }
     double ssim = (ssimw_sum > 0.0) ? (ssim_sum / ssimw_sum) : 1.0;
 
-    if (s->enable_db) {
-        ssim = ssim_to_db(ssim, s->max_db);
-    }
-
-    return vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "ssim", ssim, index);
+    return vmaf_ssim_emit_score(feature_collector, s->feature_name_dict, "ssim", ssim,
+                                s->enable_db, s->max_db, index);
 }
 
 static int close_fex_metal(VmafFeatureExtractor *fex)

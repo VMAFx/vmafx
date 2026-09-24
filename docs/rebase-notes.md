@@ -52673,9 +52673,19 @@ can turn it into a finite result. Preserve the finiteness check ahead of the
 comparison on rebase; moving it after publication restores Issue #1526.
 
 The new `adm_score.h` seam is load-bearing: its outputs are written only after
-both ADM/AIM ratios or the ADM3 blend are finite, while the finite `den == 0`
-flat-frame case remains a perfect `1.0`. `piecewise_linear_mapping` likewise
-checks before assigning its old `0.0` default.
+ADM/AIM and per-scale ratios or the ADM3 blend are finite, while a finite
+flat-frame `0/0` ratio remains a perfect `1.0`; nonzero-over-zero still fails.
+`piecewise_linear_mapping` likewise checks before assigning its old `0.0`
+default.
+
+The new `nonfinite_score.h` seam is also load-bearing. CPU, CUDA, HIP, SYCL and
+Metal VIF, ADM, SSIM and MS-SSIM hosts validate all enabled values before their
+first collector write; keep backend twins routed through the shared ratio,
+SSIM-conversion and finite-set emitters. All four VIF ratios must be finite
+before scale 0 is published; scale 0 remains unclamped, while scales 1-3 then
+apply their configured minimum. Preserve ADR-1221's deliberate exception:
+finite perfect SSIM/MS-SSIM in unclipped dB mode reports positive infinity;
+NaN raw scores, invalid ceilings and non-finite conversions still fail.
 
 SSIMULACRA2 is fork-local, but its host calculation is duplicated across every
 backend. `ssimulacra2_score.h` owns the edge sign split and final polynomial

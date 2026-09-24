@@ -38,6 +38,8 @@
 
 #include "dict.h"
 #include "feature/adm_options.h"
+#include "feature/adm_score.h"
+#include "feature/nonfinite_score.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
@@ -763,25 +765,6 @@ static void fadm_hip_pool_scale(const FloatAdmStateHip *s, const FadmTotals *t, 
     p->aim_num += aim_num_scale;
 }
 
-/* Debug-mode outputs: the aggregate adm and every per-scale num / den. */
-static int fadm_hip_emit_debug(FloatAdmStateHip *s, VmafFeatureCollector *fc, const FadmPooled *p,
-                               double score, unsigned index)
-{
-    int err =
-        vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm", score, index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_num",
-                                                   p->score_num, index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, "adm_den",
-                                                   p->score_den, index);
-    const char *names[8] = {"adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1",
-                            "adm_num_scale2", "adm_den_scale2", "adm_num_scale3", "adm_den_scale3"};
-    for (int i = 0; i < 8 && !err; i++) {
-        err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, names[i],
-                                                       p->scores[i], index);
-    }
-    return err;
-}
-
 /* adm2, the per-scale scores, AIM and ADM3 (ADR-0574) from the pooled sums. */
 static int fadm_hip_emit(FloatAdmStateHip *s, VmafFeatureCollector *fc, FadmPooled *p,
                          unsigned index)
@@ -793,37 +776,46 @@ static int fadm_hip_emit(FloatAdmStateHip *s, VmafFeatureCollector *fc, FadmPool
         p->score_num = 0.0;
     if (p->score_den < numden_limit)
         p->score_den = 0.0;
-    const double score = (p->score_den == 0.0) ? 1.0 : p->score_num / p->score_den;
+    double score = 0.0;
+    double score_aim = 0.0;
+    int err = vmaf_adm_finalize_scores_named("float_adm_hip", index, p->score_num, p->score_den,
+                                             p->aim_num, p->aim_den, &score, &score_aim);
+    if (err)
+        return err;
+    double score_adm3 = 0.0;
+    err = vmaf_adm3_score_named("float_adm_hip", index, score, score_aim, s->adm_adm3_apply_hm,
+                                s->adm_dlm_weight, s->adm_min_val, &score_adm3);
+    if (err)
+        return err;
+    double scale_scores[FADM_NUM_SCALES];
+    err = vmaf_adm_scale_ratios_named("float_adm_hip", index, p->scores, FADM_NUM_SCALES,
+                                      scale_scores);
+    if (err)
+        return err;
 
-    const double score_aim = (p->aim_den == 0.0) ? 1.0 : fmin(p->aim_num / p->aim_den, 1.0);
-    double score_adm3;
-    if (s->adm_adm3_apply_hm) {
-        const double hm_denom = score + score_aim;
-        score_adm3 = (hm_denom > 0.0) ? (2.0 * score * score_aim / hm_denom) : 0.0;
-    } else {
-        score_adm3 = score * s->adm_dlm_weight + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
-    }
-    if (score_adm3 < s->adm_min_val)
-        score_adm3 = s->adm_min_val;
-
-    int err = vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                      "VMAF_feature_adm2_score", score, index);
-    const char *scale_names[FADM_NUM_SCALES] = {
+    static const char *const scale_names[FADM_NUM_SCALES] = {
         "VMAF_feature_adm_scale0_score", "VMAF_feature_adm_scale1_score",
         "VMAF_feature_adm_scale2_score", "VMAF_feature_adm_scale3_score"};
-    for (size_t scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        const size_t num_idx = scale * 2u;
-        err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict, scale_names[scale],
-                                                       p->scores[num_idx] / p->scores[num_idx + 1u],
-                                                       index);
+    VmafNamedScore values[18] = {
+        {"VMAF_feature_adm2_score", score},      {scale_names[0], scale_scores[0]},
+        {scale_names[1], scale_scores[1]},       {scale_names[2], scale_scores[2]},
+        {scale_names[3], scale_scores[3]},       {"VMAF_feature_aim_score", score_aim},
+        {"VMAF_feature_adm3_score", score_adm3},
+    };
+    size_t value_count = 7u;
+    if (s->debug) {
+        static const char *const debug_names[8] = {
+            "adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1",
+            "adm_num_scale2", "adm_den_scale2", "adm_num_scale3", "adm_den_scale3",
+        };
+        values[value_count++] = (VmafNamedScore){"adm", score};
+        values[value_count++] = (VmafNamedScore){"adm_num", p->score_num};
+        values[value_count++] = (VmafNamedScore){"adm_den", p->score_den};
+        for (size_t i = 0u; i < 8u; ++i)
+            values[value_count++] = (VmafNamedScore){debug_names[i], p->scores[i]};
     }
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_aim_score", score_aim, index);
-    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
-                                                   "VMAF_feature_adm3_score", score_adm3, index);
-    if (s->debug && !err)
-        err |= fadm_hip_emit_debug(s, fc, p, score, index);
-    return err;
+    return vmaf_feature_emit_finite_scores(fc, s->feature_name_dict, "float_adm_hip", values,
+                                           value_count, index);
 }
 #endif /* HAVE_HIPCC */
 

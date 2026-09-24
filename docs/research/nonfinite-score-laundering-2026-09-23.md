@@ -35,23 +35,40 @@ zero-logit TransNet threshold.
 
 ## Backend scope
 
-SSIMULACRA2 duplicated its host-side edge split and polynomial pool across the
-scalar reference, AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and Metal hosts.
-Only fixing the scalar file would leave backend-dependent failure semantics.
-`ssimulacra2_score.h` is therefore the single implementation for both
+VIF, ADM, SSIM and MS-SSIM duplicate their host-side publication and conversion
+logic across CPU, CUDA, HIP, SYCL and Metal. The registered twins now validate
+raw operands and every enabled output before a clamp, fallback, dB conversion
+or first collector write. `nonfinite_score.h` owns the common finite-ratio,
+SSIM conversion and validate-before-publish operations; `adm_score.h` owns the
+ADM-family ratios and blend. This closes the same laundering defect on a
+selected GPU backend instead of fixing only the CPU reference.
+
+SSIMULACRA2 likewise duplicated its host-side edge split and polynomial pool
+across the scalar reference, AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and
+Metal hosts. `ssimulacra2_score.h` is the single implementation for both
 operations; each extractor still performs its own named frame log and returns
 `-EINVAL` before collector publication.
 
 ADM's helper validates raw operands, denominators and computed results before
-writing either output. The `den == 0` flat-frame branch remains exactly `1.0`
-for both ADM and AIM, but it no longer overrides a non-finite operand. The ADM3
+writing either output. The finite `0/0` flat-frame ratio is defined as `1.0`
+for ADM, AIM and per-scale scores, while nonzero-over-zero and non-finite
+operands fail. ADM and AIM denominators are evaluated independently, so a flat
+ADM aggregate does not overwrite a finite AIM ratio or vice versa. The ADM3
 helper retains the defined all-zero harmonic mean while rejecting a non-finite
 blend before `adm_min_val` can hide it.
 
 MS-SSIM previously appended the luma plane before it knew whether an enabled
 chroma plane was valid. Its extraction now computes and validates all enabled
 planes and all L/C/S atoms first, then appends them, preserving the fail-frame
-atomicity stated by ADR-1302.
+atomicity stated by ADR-1302. VIF similarly validates all four ratios before
+publishing scale 0; scale 0 remains unclamped, while scales 1-3 then apply their
+configured minimum.
+
+SSIM/MS-SSIM retain one explicit exception from ADR-1221: finite raw scores at
+or above `1.0` report positive infinity when dB output is enabled and clipping
+is disabled. The shared converter tests that case directly while rejecting NaN
+raw scores, invalid ceilings, and non-finite conversions. This distinguishes a
+documented output sentinel from the failed computations Issue #1526 targets.
 
 ## Reproduce
 

@@ -44,6 +44,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "vif_tools.h"
 #include "libvmaf/picture.h"
 #include "log.h"
@@ -618,18 +619,8 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 
     /* vif_skip_scale0: emit 0.0 for scale-0 and exclude from aggregate,
      * mirroring float_vif.c collect path (host-side suppression only). */
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_vif_scale0_score",
-        s->vif_skip_scale0 ? 0.0 : scores[0] / scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale1_score",
-                                                   scores[2] / scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale2_score",
-                                                   scores[4] / scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale3_score",
-                                                   scores[6] / scores[7], index);
+    err = vmaf_vif_emit_scale_scores(feature_collector, s->feature_name_dict, "float_vif_hip",
+                                     scores, s->vif_skip_scale0, NULL, index);
 
     if (s->debug && !err)
         err |= fvif_hip_emit_debug(s, feature_collector, scores, index);

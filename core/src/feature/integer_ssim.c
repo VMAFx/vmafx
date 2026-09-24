@@ -33,6 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
+#include "nonfinite_score.h"
 #include "integer_ssim.h"
 #include "opt.h"
 
@@ -403,10 +404,6 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     return 0;
 }
 
-#ifndef MIN
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-#endif
-
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
@@ -419,13 +416,8 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         calc_ssim(ref_pic->data[0], ref_pic->stride[0], dist_pic->data[0], dist_pic->stride[0], 1.0,
                   ref_pic->bpc, ref_pic->w[0], ref_pic->h[0], s->accum8, s->accum16);
 
-    if (s->enable_db)
-        score = MIN(-10. * log10(1. - score), s->max_db);
-
-    int err = vmaf_feature_collector_append(feature_collector, "ssim", score, index);
-    if (err)
-        return err;
-    return 0;
+    return vmaf_ssim_emit_score(feature_collector, NULL, "ssim", score, s->enable_db, s->max_db,
+                                index);
 }
 
 static int close(VmafFeatureExtractor *fex)

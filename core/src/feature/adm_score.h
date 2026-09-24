@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stddef.h>
 
 static inline int vmaf_adm_finalize_scores(double num, double den, double aim_num, double aim_den,
                                            double *score, double *score_aim)
@@ -17,17 +18,11 @@ static inline int vmaf_adm_finalize_scores(double num, double den, double aim_nu
     if (!isfinite(num) || !isfinite(den) || !isfinite(aim_num) || !isfinite(aim_den))
         return -EINVAL;
 
-    if (den == 0.0) {
-        *score = 1.0;
-        *score_aim = 1.0;
-        return 0;
-    }
-
-    if (aim_den == 0.0)
+    if ((den == 0.0 && num != 0.0) || (aim_den == 0.0 && aim_num != 0.0))
         return -EINVAL;
 
-    const double final_score = num / den;
-    const double aim_ratio = aim_num / aim_den;
+    const double final_score = den == 0.0 ? 1.0 : num / den;
+    const double aim_ratio = aim_den == 0.0 ? 1.0 : aim_num / aim_den;
     if (!isfinite(final_score) || !isfinite(aim_ratio))
         return -EINVAL;
 
@@ -58,6 +53,33 @@ static inline int vmaf_adm3_score(double score, double score_aim, int apply_harm
         return -EINVAL;
 
     *adm3 = raw_score > min_value ? raw_score : min_value;
+    return 0;
+}
+
+static inline int vmaf_adm_scale_ratios(const double *scores, size_t scale_count, double *ratios)
+{
+    if (!scores || !ratios || scale_count == 0u)
+        return -EINVAL;
+
+    for (size_t scale = 0; scale < scale_count; ++scale) {
+        const double num = scores[scale * 2u];
+        const double den = scores[scale * 2u + 1u];
+        if (!isfinite(num) || !isfinite(den))
+            return -EINVAL;
+        if (den == 0.0) {
+            if (num != 0.0)
+                return -EINVAL;
+            continue;
+        }
+        const double ratio = num / den;
+        if (!isfinite(ratio))
+            return -EINVAL;
+    }
+    for (size_t scale = 0; scale < scale_count; ++scale) {
+        const double num = scores[scale * 2u];
+        const double den = scores[scale * 2u + 1u];
+        ratios[scale] = den == 0.0 ? 1.0 : num / den;
+    }
     return 0;
 }
 
