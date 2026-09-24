@@ -106,6 +106,14 @@ should use `aiutils.run_manifest.write_run_manifest()` so the repeated
 between scripts. The Claude workflow for adding or auditing those sidecars is
 `.claude/skills/ai-run-manifest/SKILL.md`.
 
+AI JSON file and report-style stdout boundaries use
+`aiutils.run_manifest.write_manifest_json()` and
+`dumps_manifest_json()`, respectively. Both accept object- or list-shaped
+payloads and serialize non-finite diagnostics (`NaN`, positive infinity, and
+negative infinity) as JSON `null`; the file form also retains the shared
+atomic-write guarantee. This keeps empty or failed evaluation results readable
+by strict RFC-8259 consumers without changing their in-memory float semantics.
+
 Operator-facing AI scripts should also use the small CLI helper layer in
 `aiutils.cli_helpers` when they fit the shared shape. `make_argument_parser()`
 keeps parser formatting consistent, `collect_cli_argv()` preserves the raw

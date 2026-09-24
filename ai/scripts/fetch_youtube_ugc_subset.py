@@ -85,10 +85,7 @@ def _download(url: str, dest: Path) -> None:
     # nosec B310: scheme restricted to https above; URL built from the
     # GCS_OBJ_URL module constant plus a bucket-object name.
     with urllib.request.urlopen(url) as r, tmp.open("wb") as f:  # nosec B310
-        while True:
-            chunk = r.read(1 << 20)
-            if not chunk:
-                break
+        for chunk in iter(lambda: r.read(1 << 20), b""):
             f.write(chunk)
     tmp.rename(dest)
 
@@ -202,8 +199,7 @@ def main() -> int:
             entry[_suffix_for_name(fname)] = str(dest)
         manifest[stem] = entry
 
-    args.manifest.parent.mkdir(parents=True, exist_ok=True)
-    args.manifest.write_text(json.dumps(manifest, indent=2) + "\n")
+    write_manifest_json(args.manifest, manifest)
     _write_run_manifest(args=args, ranked=ranked, total_bytes=total_bytes)
     print(
         f"[ugc-fetch] wrote {args.manifest} ({len(manifest)} stems); "

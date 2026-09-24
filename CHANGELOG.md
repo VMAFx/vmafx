@@ -20552,6 +20552,12 @@ invalid ROI pooled score exits 65 without writing a report.
   leak and repeated-flush failure.
 
 
+Restored strict RFC-8259 serialization across AI manifests, evaluation reports,
+legacy corpus caches, and stdout summaries, plus `vmaf-tune` conformal,
+auto-plan, and ladder artifacts. Non-finite diagnostics now become `null` while
+file artifacts retain atomic writes.
+
+
 Harden three AI training-pipeline data-integrity paths surfaced by the
 2026-06-27 bug-hunt sweep (cluster T-BUGHUNT-AI-2026-06-27):
 

@@ -53194,3 +53194,29 @@ The ADR-1291 `reverse-hunk` declaration for full commit
 a target that still contains the reverted state. Never widen its paths,
 commit, or evidence regex. Once the restoration is on `master` and the finding
 disappears, remove the entry rather than carrying a dormant suppression.
+## BUG-048 A10 strict JSON emitters (2026-09-24)
+
+The AI and `vmaf-tune` strict-JSON contracts are fork-local and must survive
+repository-layout or stale-branch conflict resolution. Preserve these coupled
+invariants:
+
+- `aiutils.run_manifest.dumps_manifest_json()` and
+  `write_manifest_json()` accept any JSON-like root, recursively map all
+  non-finite floats to `null`, and serialize with `allow_nan=False`;
+- `write_manifest_json()` remains layered on `write_text_atomic()` so strict
+  serialization does not regress the newer crash-safe write guarantee;
+- AI evaluation reports, legacy corpus/cache manifests, and report-style
+  stdout emitters use the shared strict helpers rather than bare
+  `json.dumps()` / `json.dump()`; and
+- `vmaftune.conformal`, `vmaftune.auto`, and `vmaftune.ladder` route artifact
+  output through `jsonio.dumps_strict()`.
+
+Taking the repository-layout side of a conflict reopens the exact clobber:
+producer commits `d8eaf643c`, `cce8274bc`, `48a7c3e1d`, and `f04bf0e78` were
+all present, but `384d97d03` / `fedce9889` replaced the live blobs. The
+red-cap tests inject `NaN`, positive infinity, and negative infinity and parse
+with a rejecting `parse_constant` hook. See
+[Research-2086](research/2086-bug048-strict-json-emitter-restoration.md).
+
+No FFmpeg patch impact: this changes fork-local Python serialization only and
+does not touch libvmaf public headers, C API, CLI options, or Meson surfaces.
