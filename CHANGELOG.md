@@ -20466,6 +20466,10 @@ Research-0733 Phase 2 follow-up flagged by PR #87.
   60-second startup window (BUG-090).
 
 
+- Stop Helm install notes, helper comments, and Kubernetes operator guides from
+  advertising the removed Vulkan backend as an implicit GPU capability.
+
+
 Harden three AI training-pipeline data-integrity paths surfaced by the
 2026-06-27 bug-hunt sweep (cluster T-BUGHUNT-AI-2026-06-27):
 

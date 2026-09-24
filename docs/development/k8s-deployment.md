@@ -65,9 +65,10 @@ The chart automatically sets the `VMAFX_BACKEND` environment variable inside
 the container based on `gpu.vendor`, so the VMAFX runtime picks the correct
 backend without further configuration.
 
-**Vulkan note:** Vulkan is not a separate Kubernetes resource. It runs through
-whichever GPU device-plugin is allocated. See
-[GPU scheduling guide](gpu-scheduling.md#vulkan-and-kubernetes).
+The Vulkan backend was removed in
+[ADR-0726](../adr/0726-drop-vulkan-backend.md). Supported backends are `cuda`,
+`hip`, `sycl`, and `cpu`; see the
+[GPU scheduling guide](gpu-scheduling.md#backend-selection).
 
 ## Workload types
 

@@ -121,6 +121,14 @@ Never add label to existing Deployment/StatefulSet `spec.selector` in
 patch release: those fields are immutable for installed workloads. Pod
 template label plus consumer selectors provides upgrade-safe routing isolation.
 
+## Active GPU backends
+
+The chart maps NVIDIA, AMD, and Intel device-plugin resources to CUDA, HIP, and
+SYCL respectively. Vulkan was removed by ADR-0726 and must not be described as
+an implicit backend, fallback, or capability of an allocated GPU. Preserve the
+removal notice in `templates/NOTES.txt`, `_helpers.tpl`, and the Kubernetes GPU
+scheduling documentation when rebasing older chart work.
+
 ## References
 
 - [ADR-0699](../../../docs/adr/0699-vmafx-helm-chart-k8s.md) — original chart ADR
@@ -132,3 +140,4 @@ template label plus consumer selectors provides upgrade-safe routing isolation.
 - [ADR-1094](../../../docs/adr/1094-helm-rolling-update-correctness.md) — rolling-update strategy, probe fix, PDB default, grace period
 - [ADR-1119](../../../docs/adr/1119-golusoris-go-framework-adoption.md) — env-only fx migration
 - [ADR-1129](../../../docs/adr/1129-release-container-runtime-alignment.md) — release image/runtime alignment
+- [ADR-0726](../../../docs/adr/0726-drop-vulkan-backend.md) — Vulkan backend removal

@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bug048-helm-vulkan-docs — keep removed Vulkan out of live chart guidance (2026-09-24)
+
+The Helm chart maps NVIDIA, AMD, and Intel device-plugin resources only to the
+active CUDA, HIP, and SYCL backends. ADR-0726 removed Vulkan; an older chart
+change reintroduced prose claiming it remained available implicitly through
+every vendor allocation. Preserve the removal notice in `templates/NOTES.txt`,
+`templates/_helpers.tpl`, and the two Kubernetes operator guides when resolving
+conflicts with chart history. No runtime template expression or public API is
+changed.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve
