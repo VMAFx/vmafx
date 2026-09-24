@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -29,6 +30,55 @@ PLANNER = REPO_ROOT / "scripts" / "ci" / "plan-ci-impact.py"
 CONFIG = REPO_ROOT / ".github" / "ci-impact.json"
 REQUIRED_AGGREGATOR = REPO_ROOT / ".github" / "workflows" / "required-aggregator.yml"
 GIT = shutil.which("git") or "/usr/bin/git"
+
+REQUIRED_CONSUMER_CONTRACTS = {
+    "build.yml": (
+        "c_core",
+        ("build-work",),
+        (
+            ("linux-intel-llvm-gate", "Linux Intel LLVM", "build-work"),
+            ("macos-clang-metal-gate", "macOS Clang+Metal", "build-work"),
+            ("windows-msvc-cuda-full-gate", "Windows MSVC+CUDA (full)", "build-work"),
+        ),
+    ),
+    "dev-container-build.yml": (
+        "dev_container",
+        ("dev-container-build-work",),
+        (("dev-container-build", "Dev Container Build", "dev-container-build-work"),),
+    ),
+    "docker-image.yml": (
+        "docker_image",
+        ("docker-work",),
+        (("docker", "Docker Image Build", "docker-work"),),
+    ),
+    "doxygen-public-api.yml": (
+        "doxygen",
+        ("doxygen-work",),
+        (("doxygen", "Doxygen Public API", "doxygen-work"),),
+    ),
+    "ffmpeg-integration.yml": (
+        "c_core",
+        ("ffmpeg-work", "ffmpeg-sycl-work"),
+        (
+            ("ffmpeg-ubuntu-gate", "FFmpeg Ubuntu gcc", "ffmpeg-work"),
+            ("ffmpeg-macos-gate", "FFmpeg macOS clang", "ffmpeg-work"),
+            ("ffmpeg-sycl-gate", "FFmpeg SYCL", "ffmpeg-sycl-work"),
+        ),
+    ),
+    "helm-chart.yml": (
+        "helm",
+        ("helm-chart-work",),
+        (("helm-chart", "helm lint + template", "helm-chart-work"),),
+    ),
+    "rust-ci.yml": (
+        "rust",
+        ("rust-vmafx-sys-work", "cargo-deny-work"),
+        (
+            ("vmafx-sys-gate", "vmafx-sys CI", "rust-vmafx-sys-work"),
+            ("cargo-deny-gate", "cargo-deny", "cargo-deny-work"),
+        ),
+    ),
+}
 
 
 class ImpactPlan(Protocol):
@@ -119,7 +169,14 @@ class ConfigContract(unittest.TestCase):
             ".fleet/settings.json",
             ".gemini/settings.json",
             ".github/ci-impact.json",
+            ".github/workflows/build.yml",
+            ".github/workflows/dev-container-build.yml",
+            ".github/workflows/docker-image.yml",
+            ".github/workflows/doxygen-public-api.yml",
+            ".github/workflows/ffmpeg-integration.yml",
+            ".github/workflows/helm-chart.yml",
             ".github/workflows/required-aggregator.yml",
+            ".github/workflows/rust-ci.yml",
             ".github/workflows/scorecard-policy.yml",
             ".pre-commit-config.yaml",
             ".gosec.json",
@@ -164,8 +221,39 @@ class RoutingContract(unittest.TestCase):
         self.assertEqual(plan.mode, "impact")
         self.assertTrue(plan.selectors["c_core"])
         self.assertTrue(plan.selectors["rust"])
+        self.assertTrue(plan.selectors["doxygen"])
         self.assertFalse(plan.selectors["go"])
         self.assertFalse(plan.selectors["docs"])
+
+    def test_required_consumer_workflows_have_exact_impact_routes(self) -> None:
+        cases = {
+            "Dockerfile": {"docker_image"},
+            "python/requirements.txt": {"docker_image", "dev_container"},
+            "dev/Containerfile": {"dev_container"},
+            "core/doc/Doxyfile.public-api": {"doxygen"},
+            "deploy/helm/vmafx/Chart.yaml": {"helm"},
+        }
+        for path, selected in cases.items():
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "impact")
+                for selector in selected:
+                    self.assertTrue(plan.selectors[selector], selector)
+
+    def test_required_consumer_workflow_edits_force_full_plan(self) -> None:
+        for path in (
+            ".github/workflows/build.yml",
+            ".github/workflows/dev-container-build.yml",
+            ".github/workflows/docker-image.yml",
+            ".github/workflows/doxygen-public-api.yml",
+            ".github/workflows/ffmpeg-integration.yml",
+            ".github/workflows/helm-chart.yml",
+            ".github/workflows/rust-ci.yml",
+        ):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertEqual(plan.mode, "full")
+                self.assertTrue(all(plan.selectors.values()))
 
     def test_model_json_change_runs_goldens(self) -> None:
         plan = _plan_for(["model/vmaf_v0.6.1.json"])
@@ -403,6 +491,16 @@ class GitIntegration(unittest.TestCase):
 
 
 class WorkflowContract(unittest.TestCase):
+    @staticmethod
+    def _job_block(workflow_text: str, job_id: str) -> str:
+        match = re.search(
+            rf"(?ms)^  {re.escape(job_id)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            workflow_text,
+        )
+        if match is None:
+            raise AssertionError(f"missing job {job_id}")
+        return match.group(1)
+
     def test_required_contexts_workflows_have_no_path_filters(self) -> None:
         """Every workflow hosting an aggregator-required check must always start;
         routing happens inside the job via the planner, never via `paths:`."""
@@ -420,9 +518,54 @@ class WorkflowContract(unittest.TestCase):
         self.assertTrue(hosting)
         for wf in hosting:
             head = wf.read_text(encoding="utf-8").split("\njobs:", 1)[0]
-            self.assertNotRegex(
-                head, r"^\s+paths(-ignore)?:", f"{wf.name} still uses a workflow-level path filter"
-            )
+            with self.subTest(workflow=wf.name):
+                self.assertNotRegex(
+                    head,
+                    r"(?m)^\s+paths(-ignore)?:",
+                    f"{wf.name} still uses a workflow-level path filter",
+                )
+
+    def _assert_consumer_contract(
+        self,
+        filename: str,
+        selector: str,
+        work_jobs: tuple[str, ...],
+        gates: tuple[tuple[str, str, str], ...],
+    ) -> set[str]:
+        workflow_root = REPO_ROOT / ".github" / "workflows"
+        text = (workflow_root / filename).read_text(encoding="utf-8")
+        trigger = text.split("\njobs:", 1)[0]
+        impact = self._job_block(text, "impact")
+        with self.subTest(workflow=filename, job="impact"):
+            self.assertRegex(trigger, r"(?m)^  push:\s*$")
+            self.assertRegex(trigger, r"(?m)^  pull_request:\s*$")
+            self.assertIn(f"selected: ${{{{ steps.impact.outputs.{selector} }}}}", impact)
+            self.assertIn("fetch-depth: 0", impact)
+            self.assertIn("scripts/ci/plan-ci-impact.py", impact)
+        for work_job in work_jobs:
+            block = self._job_block(text, work_job)
+            with self.subTest(workflow=filename, job=work_job):
+                self.assertIn("needs: impact", block)
+                self.assertIn("needs.impact.outputs.selected == 'true'", block)
+        for gate_job, check_name, work_job in gates:
+            block = self._job_block(text, gate_job)
+            with self.subTest(workflow=filename, job=gate_job):
+                self.assertIn(f"needs: [impact, {work_job}]", block)
+                self.assertIn("if: always()", block)
+                self.assertIn(f"name: {check_name}", block)
+                self.assertIn('if [ "$PLAN_RESULT" != success ]', block)
+                self.assertIn("true:success|false:skipped", block)
+        return {check_name for _, check_name, _ in gates}
+
+    def test_required_consumers_use_fail_closed_planner_work_gate_contract(self) -> None:
+        expected_strict = set()
+        for filename, contract in REQUIRED_CONSUMER_CONTRACTS.items():
+            expected_strict.update(self._assert_consumer_contract(filename, *contract))
+        aggregator = REQUIRED_AGGREGATOR.read_text(encoding="utf-8")
+        match = re.search(r"const strictMustReport = \[(.*?)\];", aggregator, re.DOTALL)
+        self.assertIsNotNone(match)
+        strict_names = set(re.findall(r"'([^']+)'", match.group(1) if match else ""))
+        self.assertLessEqual(expected_strict, strict_names)
 
 
 if __name__ == "__main__":

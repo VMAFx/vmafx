@@ -131,6 +131,13 @@
     ".github/workflows/libvmaf-build-matrix.yml",
     ".github/workflows/sanitizers.yml",
     ".github/workflows/docs.yml",
+    ".github/workflows/build.yml",
+    ".github/workflows/dev-container-build.yml",
+    ".github/workflows/docker-image.yml",
+    ".github/workflows/doxygen-public-api.yml",
+    ".github/workflows/ffmpeg-integration.yml",
+    ".github/workflows/helm-chart.yml",
+    ".github/workflows/rust-ci.yml",
     ".gosec.json",
     ".helix/*",
     ".helix/**",
@@ -277,6 +284,44 @@
         "deploy/**",
         ".devcontainer/*",
         ".devcontainer/**"
+      ]
+    },
+    "docker_image": {
+      "inherits": [
+        "c_core"
+      ],
+      "patterns": [
+        "Dockerfile",
+        ".dockerignore",
+        "python/requirements.txt",
+        "python/pyproject.toml"
+      ]
+    },
+    "dev_container": {
+      "inherits": [
+        "c_core",
+        "python",
+        "ai",
+        "go",
+        "shell"
+      ],
+      "patterns": [
+        ".dockerignore",
+        "dev/*",
+        "dev/**"
+      ]
+    },
+    "doxygen": {
+      "patterns": [
+        "core/include/libvmaf/*",
+        "core/include/libvmaf/**",
+        "core/doc/Doxyfile.public-api"
+      ]
+    },
+    "helm": {
+      "patterns": [
+        "deploy/helm/*",
+        "deploy/helm/**"
       ]
     },
     "golden_harness": {

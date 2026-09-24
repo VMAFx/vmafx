@@ -1,11 +1,12 @@
 name: CI
 
-# ADR-1140 — required contexts now ALWAYS start and route their own work through
-# scripts/ci/plan-ci-impact.py; the absent-means-pass rule below is only a backstop.
+# ADR-1140 / BUG-098 — converted required consumer workflows always start and
+# route work through scripts/ci/plan-ci-impact.py. Their exact-name gates are
+# strictMustReport; absent-means-pass remains for contexts not yet under that contract.
 # ADR-0313 — Permanent fix for the doc/Python-only-PR vs C-build-required-checks
 # structural deadlock. This single workflow runs on every PR (no path filter)
-# and verifies that each named required check on the head SHA reported either
-# success, skipped (path-filter short-circuit), or neutral. It becomes the
+# and verifies that each named required check on the head SHA reported an
+# accepted result (with stricter success-only handling for strictMustReport). It becomes the
 # single required-status-check that branch protection enforces; the individual
 # build/lint workflows can keep their path filters.
 
@@ -198,10 +199,9 @@ jobs:
               'No Conflict Markers',
               'Tiny-Model Registry Validate',
               'Tidy SYCL',
-              // Consumer and artifact contracts. These are path-filtered, so
-              // the ADR-0313 absent-means-skip rule applies and the gate is
-              // only as strong as the `paths:` lists in those workflows.
-              // Auditing those lists is tracked separately in docs/state.md.
+              // Consumer and artifact contracts. BUG-098 removed their
+              // workflow-level path filters: impact planners now skip only
+              // expensive work, while exact-name gates always report.
               'FFmpeg Ubuntu gcc',
               'FFmpeg macOS clang',
               'FFmpeg SYCL',
@@ -262,15 +262,29 @@ jobs:
               // never registers — without this list, a vanished platform
               // would read as a pass.
               // Deliberately NOT here: `Sanitizers ASan+UBSan`, whose `if:`
-              // excludes `push` so it never reports on a master push, and
-              // every path-filtered addition, whose absence IS a legitimate
-              // ADR-0313 outcome.
+              // excludes `push` so it never reports on a master push.
               'Coverage Gate',
               'MCP Smoke',
               'Markdown Lint',
               'No Conflict Markers',
               'Tiny-Model Registry Validate',
               'Windows ARM64 MSVC',
+              // BUG-098 — these workflows now start for every pull request
+              // and master push. The planner may skip their expensive work,
+              // but an exact-name gate still reports. Absence therefore means
+              // broken workflow registration, never "not applicable".
+              'Linux Intel LLVM',
+              'macOS Clang+Metal',
+              'Windows MSVC+CUDA (full)',
+              'FFmpeg Ubuntu gcc',
+              'FFmpeg macOS clang',
+              'FFmpeg SYCL',
+              'Docker Image Build',
+              'Dev Container Build',
+              'vmafx-sys CI',
+              'cargo-deny',
+              'helm lint + template',
+              'Doxygen Public API',
             ];
 
             // ADR-1151 — absent-means-pass (below) is correct ADR-0313

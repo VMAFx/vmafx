@@ -35,13 +35,24 @@ clang-cl needs `/clang:-ffp-contract=off`. Windows nvcc must forward
 `/fp:precise` to cl.exe instead of `-ffp-contract=off`. The executable contract is
 `core/test/test_strict_fp_compiler_args.py`; run it after any rebase touching
 these Meson blocks.
-## fix/rust-ci-path-filters — Rust CI triggers on libvmaf public C headers (2026-09-23)
+## fix/rust-ci-path-filters — required workflows always emit gates (2026-09-24)
 
-1. **`.github/workflows/rust-ci.yml` and `.github/ci-impact.json` include `core/include/libvmaf/**`.**
-   `vmafx-sys` generates FFI bindings directly from `core/include/libvmaf/libvmaf.h` using `bindgen`.
-   Earlier path filters only matched Rust files, `Cargo.*`, and `deny.toml`, which silently bypassed
-   `vmafx-sys CI` on public C API changes (T-PATH-FILTERS-WEAKEN-NEW-GATES-2026-09-22).
-   Do not narrow these path filters during rebase.
+1. **Do not restore workflow-level `paths:` or `paths-ignore:` to a workflow that
+   hosts an aggregator-required context.** `build.yml`, `dev-container-build.yml`,
+   `docker-image.yml`, `doxygen-public-api.yml`, `ffmpeg-integration.yml`,
+   `helm-chart.yml`, and `rust-ci.yml` must always start. Their `impact` jobs select
+   distinctly named heavy `work` jobs; `if: always()` gate jobs alone own the exact
+   required context names and fail closed on planner/work disagreement (BUG-098).
+   Keep those twelve names in `strictMustReport`; absence is no longer an accepted
+   path-skip outcome.
+2. **Keep public libvmaf headers in `selectors.rust.patterns`.** `vmafx-sys`
+   generates FFI bindings from `core/include/libvmaf/libvmaf.h` using `bindgen`, so
+   `core/include/libvmaf/**` must select Rust work even though trigger-level filters
+   no longer exist.
+3. **Keep each of these workflow files in `full_patterns`.** A change to routing or
+   gate structure must select every lane, not rely on the selector being edited.
+   Re-run `test_ci_impact.py`, the Rust workflow contract, `actionlint`, and
+   `check-aggregator-names.sh` after resolving conflicts in this block.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 

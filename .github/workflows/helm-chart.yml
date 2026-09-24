@@ -8,13 +8,11 @@ name: Helm Chart
 # catches a broken chart on the PR that breaks it. This is.
 on:
   push:
-    paths:
-      - "deploy/helm/**"
-      - ".github/workflows/helm-chart.yml"
+    branches: [master]
   pull_request:
-    paths:
-      - "deploy/helm/**"
-      - ".github/workflows/helm-chart.yml"
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 concurrency:
   group: helm-chart-${{ github.workflow }}-${{ github.ref }}
@@ -31,9 +29,30 @@ env:
   HELM_SHA256: "c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3"
 
 jobs:
-  helm-chart:
-    # required-aggregator
-    name: helm lint + template
+  impact:
+    name: Plan Helm impact
+    runs-on: ubuntu-26.04
+    outputs:
+      selected: ${{ steps.impact.outputs.helm }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+  helm-chart-work:
+    needs: impact
+    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    name: helm lint + template work
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -143,6 +162,7 @@ jobs:
               if container[probe]["httpGet"]["port"] != "healthz":
                   raise SystemExit(f"{probe} no longer targets the healthz port")
           PY
+
           done
 
           helm template vmafx deploy/helm/vmafx \
@@ -174,3 +194,25 @@ jobs:
                       f"release image drifted: {container['image']!r} != {expected_image!r}"
                   )
           PY
+
+  helm-chart:
+    needs: [impact, helm-chart-work]
+    if: always()
+    # required-aggregator
+    name: helm lint + template
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected Helm work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.helm-chart-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid Helm gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac

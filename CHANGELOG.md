@@ -27736,6 +27736,12 @@ the draft.
   the claim. ADR-1297.
 
 
+- Fixed twelve required checks across seven workflows that could silently disappear
+  behind incomplete trigger path filters. The workflows now always start, route
+  expensive work through the shared impact planner, and always emit exact-name
+  fail-closed gates; the regression guard now correctly detects nested YAML filters.
+
+
 - Research digest first-line headers normalized to `# Research-NNNN: <title>`
   format across all 210 digests in `docs/research/`. 57 files had variant
   formats (`Research digest NNNN —`, `Research NNNN:`, bare topic headings
@@ -28069,10 +28075,6 @@ with `@abc.abstractmethod` on `infer`, so missing implementations raise
   `/usr/local/lib`, so the multiarch path previously broke linking
   with `unable to find library -lvmaf` even after a successful build
   + install.
-
-
-- Fixed Rust CI workflow path filters to include `core/include/libvmaf/**`, ensuring
-  `vmafx-sys CI` triggers whenever public C library headers bound by bindgen change.
 
 
 Fix Rust pilot clippy strictness — ptr_as_ptr, cast_lossless, borrow_as_ptr, use_self, missing_const_for_fn, missing_errors_doc in vmafx-sys/safe, vmafx, and vmafx-tad.

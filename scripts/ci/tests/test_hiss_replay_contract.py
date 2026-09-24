@@ -32,6 +32,25 @@ ADR_1297_STRICT_CONTEXTS = {
     "Windows ARM64 MSVC",
 }
 
+# BUG-098 replaced trigger-level path filters on these required consumer
+# workflows with unconditional planner -> work -> gate jobs. They now report on
+# every pull request and master push, so absence is a registration failure, not
+# an ADR-0313 not-applicable result.
+BUG_098_STRICT_CONTEXTS = {
+    "Linux Intel LLVM",
+    "macOS Clang+Metal",
+    "Windows MSVC+CUDA (full)",
+    "FFmpeg Ubuntu gcc",
+    "FFmpeg macOS clang",
+    "FFmpeg SYCL",
+    "Docker Image Build",
+    "Dev Container Build",
+    "vmafx-sys CI",
+    "cargo-deny",
+    "helm lint + template",
+    "Doxygen Public API",
+}
+
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
@@ -76,7 +95,10 @@ class HissReplayContractTests(unittest.TestCase):
         aggregator = read(".github/workflows/required-aggregator.yml")
         required = javascript_array(aggregator, "required")
         strict = javascript_array(aggregator, "strictMustReport")
-        self.assertEqual(strict, STRICT_CONTEXTS | ADR_1297_STRICT_CONTEXTS)
+        self.assertEqual(
+            strict,
+            STRICT_CONTEXTS | ADR_1297_STRICT_CONTEXTS | BUG_098_STRICT_CONTEXTS,
+        )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)
         self.assertIn("if (strictMustReport.includes(name))", aggregator)

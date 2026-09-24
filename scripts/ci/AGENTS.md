@@ -550,6 +550,14 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
 - `tests/test_ci_impact.py` (stdlib `unittest`) pins map ↔ tree contract and
   no-path-filter invariant on required-context workflows. Run it after
   adding top-level directory or required check.
+- **Required contexts use planner -> work -> gate, never trigger filters
+  (BUG-098).** The workflow always starts. An unconditional `impact` job exports
+  one selector; distinctly named heavy `... work` jobs consume it; and an
+  `if: always()` gate alone owns each exact required context name. The gate may
+  accept only `true:success` or `false:skipped` and must fail when planning fails.
+  Keep the `(?m)` multiline anchor in the no-path-filter regression: omitting it
+  makes the assertion inspect only the beginning of the YAML and silently miss
+  every nested `paths:` key.
 
 ## tidy-ratchet.py invariants (ADR-1142)
 

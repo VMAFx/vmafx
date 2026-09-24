@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-2-Clause-Patent
-"""Contract tests for .github/workflows/rust-ci.yml trigger paths.
+"""Contract tests for Rust CI impact routing and required check emission.
 
-Verifies that rust-ci.yml triggers on changes to public libvmaf C headers
-under core/include/libvmaf/**, which are bound by bindings/rust/vmafx-sys
-via bindgen.
+The workflow must start for every pull request so its required contexts cannot
+disappear.  The shared impact planner decides whether the expensive Rust work
+runs; public libvmaf headers remain an input because bindgen consumes them.
 """
 
 from __future__ import annotations
@@ -22,28 +22,43 @@ CONFIG = REPO_ROOT / ".github" / "ci-impact.json"
 
 
 class RustCIWorkflowContractTest(unittest.TestCase):
-    """Ensure rust-ci workflow path filters cover public C library headers."""
+    """Ensure Rust work is routed in-job and its required checks always report."""
 
-    def test_rust_ci_paths_include_libvmaf_headers(self) -> None:
+    def test_rust_ci_has_no_workflow_path_filters(self) -> None:
         self.assertTrue(RUST_CI_WORKFLOW.exists(), f"missing {RUST_CI_WORKFLOW}")
         raw = RUST_CI_WORKFLOW.read_text(encoding="utf-8")
         parsed = yaml.safe_load(raw)
 
         on = parsed.get("on") or parsed.get(True) or {}
-        push_paths = on.get("push", {}).get("paths", [])
-        pr_paths = on.get("pull_request", {}).get("paths", [])
+        for event_name in ("push", "pull_request"):
+            event = on.get(event_name, {})
+            with self.subTest(event=event_name):
+                self.assertNotIn("paths", event)
+                self.assertNotIn("paths-ignore", event)
 
-        expected_pattern = "core/include/libvmaf/**"
-        self.assertIn(
-            expected_pattern,
-            push_paths,
-            f"{expected_pattern} missing from on.push.paths in {RUST_CI_WORKFLOW.name}",
-        )
-        self.assertIn(
-            expected_pattern,
-            pr_paths,
-            f"{expected_pattern} missing from on.pull_request.paths in {RUST_CI_WORKFLOW.name}",
-        )
+    def test_rust_ci_uses_fail_closed_planner_work_gate_contract(self) -> None:
+        parsed = yaml.safe_load(RUST_CI_WORKFLOW.read_text(encoding="utf-8"))
+        jobs = parsed["jobs"]
+        self.assertEqual(jobs["impact"]["outputs"]["selected"], "${{ steps.impact.outputs.rust }}")
+
+        for work_job in ("rust-vmafx-sys-work", "cargo-deny-work"):
+            with self.subTest(work_job=work_job):
+                self.assertEqual(jobs[work_job]["needs"], "impact")
+                self.assertIn("needs.impact.outputs.selected == 'true'", jobs[work_job]["if"])
+
+        gates = {
+            "vmafx-sys-gate": ("vmafx-sys CI", "rust-vmafx-sys-work"),
+            "cargo-deny-gate": ("cargo-deny", "cargo-deny-work"),
+        }
+        for gate_job, (check_name, work_job) in gates.items():
+            with self.subTest(gate_job=gate_job):
+                gate = jobs[gate_job]
+                self.assertEqual(gate["name"], check_name)
+                self.assertEqual(gate["needs"], ["impact", work_job])
+                self.assertEqual(gate["if"], "always()")
+                script = gate["steps"][0]["run"]
+                self.assertIn('if [ "$PLAN_RESULT" != success ]', script)
+                self.assertIn("true:success|false:skipped", script)
 
     def test_ci_impact_json_rust_selector_includes_libvmaf_headers(self) -> None:
         self.assertTrue(CONFIG.exists(), f"missing {CONFIG}")
