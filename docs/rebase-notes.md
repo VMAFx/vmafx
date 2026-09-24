@@ -52694,7 +52694,7 @@ Invariants preserved:
 - AGENTS.md invariant note: documented phase helper pattern for linear test
   pipelines in `core/test/AGENTS.md`.
 - Reproducer:
-  `python3 scripts/ci/tidy-ratchet.py --build-dir /tmp/build-sycl --only core/test/test_sycl_motion_add_uv_parity.c,core/test/test_sycl_motion3_parity.c --lane sycl --baseline scripts/ci/tidy-baseline-sycl.json`
+  `python3 scripts/ci/tidy-ratchet.py --build-dir /tmp/build-sycl --only core/test/test_sycl_motion_add_uv_parity.c --only core/test/test_sycl_motion3_parity.c --lane sycl --baseline scripts/ci/tidy-baseline-sycl.json`
   and running compiled tests on SYCL device:
   `/tmp/build-sycl/test/test_sycl_motion_add_uv_parity`
   `/tmp/build-sycl/test/test_sycl_motion3_parity`.
