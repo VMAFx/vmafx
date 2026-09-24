@@ -30,10 +30,12 @@
 
 #include "hip_parity_skip.h"
 
+#include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
+#include "picture.h"
 
 #ifndef FIXTURE_W
 #define FIXTURE_W 256u
@@ -128,17 +130,6 @@ static char *run_hip_float_motion(double *score, int *skipped)
     err = feed_two_frames(vmaf);
     if (err == -ENOSYS)
         return hip_parity_skip(vmaf, &hip_state, skipped, " on feed");
-    if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
     mu_assert("HIP: feed_two_frames failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     if (err == -ENOSYS)
@@ -154,11 +145,164 @@ static char *run_hip_float_motion(double *score, int *skipped)
 
 static char *test_float_motion_hip_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion_hip");
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion_hip");
     mu_assert("float_motion_hip extractor must be registered", fex != NULL);
     mu_assert("float_motion_hip name matches", !strcmp(fex->name, "float_motion_hip"));
     return NULL;
 }
+
+/* NOLINTBEGIN(modernize-use-nullptr,modernize-redundant-void-arg): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+static int hip_device_available(void)
+{
+    VmafHipState *state = NULL;
+    const VmafHipConfiguration cfg = {.device_index = -1};
+    const int err = vmaf_hip_state_init(&state, cfg);
+    const int available = err == 0 && state != NULL;
+    vmaf_hip_state_free(&state);
+    return available;
+}
+
+static int create_float_motion_hip_context(VmafFeatureExtractorContext **ctx,
+                                           VmafFeatureExtractor **registered_fex, int force_zero)
+{
+    *registered_fex = vmaf_get_feature_extractor_by_name("float_motion_hip");
+    if (*registered_fex == NULL)
+        return -ENOENT;
+
+    VmafDictionary *opts = NULL;
+    int err = force_zero ? vmaf_dictionary_set(&opts, "motion_force_zero", "true", 0) :
+                           vmaf_dictionary_set(&opts, "motion_fps_weight", "1.5", 0);
+    if (err) {
+        (void)vmaf_dictionary_free(&opts);
+        return err;
+    }
+
+    err = vmaf_feature_extractor_context_create(ctx, *registered_fex, opts);
+    if (err) {
+        (void)vmaf_dictionary_free(&opts);
+        return err;
+    }
+    return vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W,
+                                               FIXTURE_H);
+}
+
+static int merge_cleanup_error(int result, int cleanup_result)
+{
+    return result != 0 ? result : cleanup_result;
+}
+
+static int cleanup_float_motion_context(VmafFeatureExtractorContext *ctx, int result)
+{
+    if (ctx == NULL)
+        return result;
+    if (ctx->is_initialized) {
+        result = merge_cleanup_error(result, vmaf_feature_extractor_context_close(ctx));
+    }
+    return merge_cleanup_error(result, vmaf_feature_extractor_context_destroy(ctx));
+}
+
+static int probe_force_zero_close(int *kept_close)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureExtractor *registered_fex = NULL;
+    int err = create_float_motion_hip_context(&ctx, &registered_fex, 1);
+    if (err == 0) {
+        *kept_close = ctx->fex->close != NULL;
+        if (!*kept_close)
+            ctx->fex->close = registered_fex->close;
+    }
+    return cleanup_float_motion_context(ctx, err);
+}
+
+static char *test_float_motion_hip_force_zero_keeps_close(void)
+{
+    if (!hip_device_available()) {
+        (void)fprintf(stderr, "[skip: no HIP device] ");
+        return NULL;
+    }
+
+    int kept_close = 0;
+    const int err = probe_force_zero_close(&kept_close);
+    mu_assert("HIP force-zero context lifecycle failed", err == 0);
+    mu_assert("HIP force-zero init must retain a dictionary-owning close callback", kept_close);
+    return NULL;
+}
+
+static int submit_and_collect(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                              VmafPicture *pic, unsigned index)
+{
+    int err = vmaf_feature_extractor_context_submit(ctx, pic, NULL, pic, NULL, index);
+    if (err)
+        return err;
+    return vmaf_feature_extractor_context_collect(ctx, index, fc);
+}
+
+static int cleanup_flush_probe(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                               VmafPicture pics[2], int result)
+{
+    for (unsigned i = 0u; i < 2u; i++) {
+        if (pics[i].ref != NULL)
+            result = merge_cleanup_error(result, vmaf_picture_unref(&pics[i]));
+    }
+    result = cleanup_float_motion_context(ctx, result);
+    if (fc != NULL)
+        vmaf_feature_collector_destroy(fc);
+    vmaf_picture_pool_flush();
+    return result;
+}
+
+static int probe_flush_idempotency(int *first_flush, int *second_flush, int *skipped)
+{
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureExtractor *registered_fex = NULL;
+    int err = create_float_motion_hip_context(&ctx, &registered_fex, 0);
+    VmafFeatureCollector *fc = NULL;
+    VmafPicture pics[2] = {0};
+    if (err == 0)
+        err = vmaf_feature_collector_init(&fc);
+    if (err == 0)
+        err = fill_pic(&pics[0], 0u);
+    if (err == 0)
+        err = fill_pic(&pics[1], 1u);
+    if (err == 0)
+        err = submit_and_collect(ctx, fc, &pics[0], 0u);
+    if (err == -ENOSYS) {
+        *skipped = 1;
+        err = 0;
+    }
+    if (err == 0 && !*skipped)
+        err = submit_and_collect(ctx, fc, &pics[1], 1u);
+    if (err == 0 && !*skipped) {
+        *first_flush = ctx->fex->flush(ctx->fex, fc);
+        *second_flush = ctx->fex->flush(ctx->fex, fc);
+    }
+    return cleanup_flush_probe(ctx, fc, pics, err);
+}
+
+static char *test_float_motion_hip_flush_is_idempotent(void)
+{
+    if (!hip_device_available()) {
+        (void)fprintf(stderr, "[skip: no HIP device] ");
+        return NULL;
+    }
+
+    int first_flush = 0;
+    int second_flush = 0;
+    int skipped = 0;
+    const int err = probe_flush_idempotency(&first_flush, &second_flush, &skipped);
+    if (skipped) {
+        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS on direct submit] ");
+        return NULL;
+    }
+    mu_assert("HIP float-motion context lifecycle failed", err == 0);
+    mu_assert("HIP float-motion first tail flush must finish", first_flush == 1);
+    mu_assert("HIP float-motion repeated tail flush must be idempotent", second_flush == 1);
+    return NULL;
+}
+/* NOLINTEND(modernize-use-nullptr,modernize-redundant-void-arg) */
 
 static char *test_float_motion_cpu_hip_parity(void)
 {
@@ -188,5 +332,7 @@ char *run_tests(void)
 {
     mu_run_test(test_float_motion_hip_registered);
     mu_run_test(test_float_motion_cpu_hip_parity);
+    mu_run_test(test_float_motion_hip_flush_is_idempotent);
+    mu_run_test(test_float_motion_hip_force_zero_keeps_close);
     return NULL;
 }

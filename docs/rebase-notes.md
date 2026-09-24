@@ -52663,3 +52663,17 @@ to an exception.
 - Reproducer: `cd mcp-server/vmaf-mcp && .venv/bin/python -m pytest -q
   tests/test_coverage_round4.py::test_auth_413_on_large_body`.
 - Changelog: `changelog.d/fixed/mcp-aiohttp-large-body-stream.md`.
+
+## fix/bug048-float-motion-hip-lifecycle — force-zero ownership and flush idempotency (2026-09-24)
+
+No Netflix upstream counterpart exists: `core/src/feature/hip/float_motion_hip.c`
+and its HIP parity test are fork-local. Preserve two coupled invariants when a
+fork branch or backend twin is reconciled: the force-zero clone retains a close
+callback that frees `feature_name_dict`, and the tail-flush duplicate probe
+uses the dictionary-resolved feature name rather than the base-name literal.
+The latter matters whenever a feature parameter changes the collector key.
+
+Re-test on a HIP device with `meson test -C <hip-build>
+test_hip_float_motion_parity --print-errorlogs`. This changes no public C
+surface, Meson option, FFmpeg integration patch, or Netflix golden assertion.
+See [Research-2080](research/2080-hip-float-motion-lifecycle-flush.md).
