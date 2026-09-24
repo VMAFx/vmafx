@@ -61,29 +61,60 @@ these Meson blocks.
 Research-2096 contains the exact-query evidence. Re-run the complete CodeQL
 database extraction after rebases that alter these target source lists or aliases;
 ordinary runtime tests cannot detect a repeated-compilation identity regression.
-The current receipt is
-`.workingdir/evidence/codeql-unused-static-2026-09-24/unused-static-final.csv`.
-From the repository root, the following commands reproduce its CodeQL 2.27.0,
-`codeql/cpp-queries` 1.8.3 extraction and query. `CODEQL_BIN` may override the
-documented local installation path; no repository wrapper exists for this scan.
+The historical reviewed receipt is
+`.workingdir/evidence/codeql-unused-static-2026-09-24/unused-static-final.csv`;
+because that ignored evidence path is not present in a clean checkout, it is not
+an acceptance input. From a clean repository root, the following commands create
+a fresh CodeQL 2.27.0 database, run `codeql/cpp-queries` 1.8.3, and fail if the
+interpreted output contains any selected target-path row. `CODEQL_BIN` may
+override the documented local installation path; no repository wrapper exists
+for this scan. The temporary directory is retained and printed for inspection.
 
 ```bash
 set -euo pipefail
-mkdir -p .workingdir/cache
 codeql_bin="${CODEQL_BIN:-$HOME/.cache/codeql-2.27.0/codeql}"
-codeql_run="$(mktemp -d .workingdir/cache/codeql-unused-static-replay.XXXXXX)"
+codeql_run="$(mktemp -d /tmp/vmafx-codeql-unused-static-replay.XXXXXX)"
 codeql_spec='codeql/cpp-queries@1.8.3:Best Practices/Unused Entities/UnusedStaticFunctions.ql'
+cat >"$codeql_run/build.sh" <<'BUILD_SH'
+#!/bin/sh
+set -eu
+build_dir="${1:?missing CodeQL build directory}"
+meson setup "$build_dir" core -Denable_cuda=false -Denable_sycl=false
+meson compile -C "$build_dir"
+BUILD_SH
 "$codeql_bin" version | rg -q 'release 2\.27\.0\.'
-codeql_query="$("$codeql_bin" resolve queries --format=text -- "$codeql_spec")"
 "$codeql_bin" database create "$codeql_run/db" \
   --language=cpp --source-root=. --threads=4 \
-  --command="meson setup $codeql_run/build core -Denable_cuda=false -Denable_sycl=false && meson compile -C $codeql_run/build"
-"$codeql_bin" query run --database="$codeql_run/db" \
-  --output="$codeql_run/unused-static.bqrs" "$codeql_query"
-"$codeql_bin" bqrs decode --format=csv \
-  --output="$codeql_run/unused-static.csv" "$codeql_run/unused-static.bqrs"
-cmp -s "$codeql_run/unused-static.csv" \
-  .workingdir/evidence/codeql-unused-static-2026-09-24/unused-static-final.csv
+  --command="/bin/sh $codeql_run/build.sh $codeql_run/build"
+"$codeql_bin" database analyze --rerun --format=csv \
+  --output="$codeql_run/unused-static.csv" \
+  "$codeql_run/db" "$codeql_spec"
+python3 - "$codeql_run/unused-static.csv" <<'PY'
+import csv
+from pathlib import Path
+import sys
+
+target_paths = {
+    "core/src/pdjson.c",
+    "core/src/thread_pool.c",
+    "core/test/test_fex_ctx_vector.cpp",
+    "core/test/test_thread_pool_backpressure.c",
+}
+with Path(sys.argv[1]).open(encoding="utf-8", newline="") as stream:
+    rows = list(csv.reader(stream))
+selected_rows = [
+    row
+    for row in rows
+    if len(row) >= 5
+    and row[4].replace("\\", "/").lstrip("/") in target_paths
+]
+if selected_rows:
+    for row in selected_rows:
+        print(f"{row[4]}: {row[3]}", file=sys.stderr)
+    raise SystemExit("FAIL: selected unused-static rows remain")
+print(f"PASS: 0 selected rows ({len(rows)} repository-wide row(s))")
+PY
+printf 'CodeQL replay artifacts: %s\n' "$codeql_run"
 ```
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
