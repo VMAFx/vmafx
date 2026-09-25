@@ -86,6 +86,16 @@ test('test_gpu_float_ssim_auto_scale_contract',
     timeout : 30,
 )
 
+# Integer ADM's fixed-point viewing-geometry floor is backend-independent and
+# must run before CSF normalization or any GPU resource work. Keep that ordering
+# device-free so Linux CI covers Metal as well as CUDA, HIP, and SYCL.
+test('test_adm_viewing_geometry_contract',
+    import('python').find_installation(),
+    args : files('test_adm_viewing_geometry_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048: these diagnostics were standardized once, then silently restored
 # from stale source. Keep their line framing and severity prefix stable.
 test('test_vmaf_log_callsite_format',
@@ -1263,11 +1273,9 @@ test_adm_coverage = executable('test_adm_coverage',
     ] + wave8_opt_only_objects
 )
 
-# ADR-1191 — integer-ADM CSF fixed-point representability guard: the
-# configurations init() must reject (adm_csf_mode=1 at the default
-# adm_csf_scale; a blend mode at an untabulated viewing geometry) and the
-# ones it must keep accepting (default, mode 1 with the fork's small scale
-# coefficients, modes 2 and 3 at 1080@3H).
+# ADR-1325 — integer-ADM CSF fixed-point normalisation: full-scale
+# adm_csf_mode=1 must produce finite, non-degenerate scores; invalid blend-table
+# geometry must still fail; default and already-representable configurations stay accepted.
 test_adm_csf_representable = executable('test_adm_csf_representable',
     ['test.c', 'test_adm_csf_representable.c', '../src/mem.cpp', '../src/picture.c',
      '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',

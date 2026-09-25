@@ -433,7 +433,7 @@ only.
 | `adm_enhn_gain_limit`    | `egl`  | double | `1.2`     | `1.0–1.2`   | Cap enhancement-gain ratio                                                                                                                                |
 | `adm_norm_view_dist`     | `nvd`  | double | `3.0`     | `0.75–24.0` | Normalised viewing distance (distance ÷ display height)                                                                                                   |
 | `adm_ref_display_height` | `rdh`  | int    | `1080`    | `1–4320`    | Reference display height in pixels (for viewing-distance scaling)                                                                                         |
-| `adm_csf_mode`           | `csf`  | int    | `0`       | `0–3`       | Contrast-sensitivity-function model: `0` Watson97 (upstream-canonical), `1` Barten, `2` Barten/Watson blend, `3` Barten/Watson blend (MAE-fitted). The default model `vmaf_v1.0.16_3d0h` requests `2`. On the fixed-point `adm` extractor some combinations of this option with `adm_csf_scale` / `adm_norm_view_dist` / `adm_ref_display_height` are **rejected** — see [Fixed-point CSF limits](#fixed-point-csf-limits) below. |
+| `adm_csf_mode`           | `csf`  | int    | `0`       | `0–3`       | Contrast-sensitivity-function model: `0` Watson97 (upstream-canonical), `1` Barten, `2` Barten/Watson blend, `3` Barten/Watson blend (MAE-fitted). The default model `vmaf_v1.0.16_3d0h` requests `2`. Fixed-point `adm` normalizes finite over-range weights without changing the three bands' ratios; unsupported blend-table viewing geometry still returns `-EINVAL` — see [Fixed-point CSF limits](#fixed-point-csf-limits). |
 | `adm_csf_scale`          | `scf`  | double | `1.0`     | `0–50`      | H/V-axis CSF sensitivity scale. **Only `adm_csf_mode=1` (Barten) reads it** — it is the `adm_csf_scale` argument of `barten_csf()`. Ignored by modes 0, 2 and 3, on every backend including the CPU. `1.0` = upstream-canonical |
 | `adm_csf_diag_scale`     | `scfd` | double | `1.0`     | `0–50`      | Diagonal-axis CSF sensitivity scale; same `adm_csf_mode=1`-only applicability as `adm_csf_scale`                                                          |
 | `adm_noise_weight`       | `nw`   | double | `0.03125` | `0–1500`    | Weight in `(area × noise_weight)^(1/3)` noise-floor term in `adm_cm` / `adm_csf_den`; default `1/32 ≈ 0.03125` = upstream-canonical noise-floor divisor   |
@@ -444,13 +444,14 @@ only.
 | `adm_min_val`            | `min`  | double | `0.0`     | `0.0–1.0`   | Floor value: fused ADM scores below this threshold are clipped up to it                                                                                   |
 | `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | p-norm exponent for the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Honoured on every backend: CPU `adm` / `float_adm`, the x86 AVX2 / AVX-512 `adm` paths, the CUDA / SYCL / HIP / Metal `integer_adm` twins, and — since [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md) — the CUDA / SYCL / HIP / Metal `float_adm` twins, which previously hardcoded `p = 3` in their kernels and applied the option to the AIM exponent alone. Applies to the numerator only: the CPU denominator (`adm_den_scale_finalise`) is a fixed cube root, and every twin mirrors that. |
 
-Every GPU `float_adm` twin currently implements `adm_csf_mode=0` only, and
-Metal `integer_adm` has the same restriction. For model-driven scoring,
-libvmaf detects a valid nonzero mode before device initialization and routes
-that feature to the CPU reference; unrelated features remain on the GPU.
-Explicitly naming one of those restricted GPU extractors retains its direct
-`-EINVAL` contract. The CPU option range is unchanged. See
-[ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md).
+Every GPU `float_adm` twin currently implements `adm_csf_mode=0` only. For
+model-driven scoring, libvmaf detects a valid nonzero mode before device
+initialization and routes that feature to the CPU reference; unrelated
+features remain on the GPU. Explicitly naming one of those restricted float
+extractors retains its direct `-EINVAL` contract. Fixed-point `adm` implements
+modes 0–3 on CPU, CUDA, SYCL, HIP, and Metal. See
+[ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md) and
+[ADR-1325](../adr/1325-integer-adm-barten-fixed-point-normalization.md).
 
 ##### Small frames
 
@@ -494,39 +495,46 @@ than 1e-6, toward the CPU.
 The fixed-point `adm` extractor stores each scale's CSF weight as an integer:
 `uint16_t` at scale 0 (horizontal/vertical bands scaled by 2^21, the diagonal
 band by 2^23) and `uint32_t` at scales 1-3 (scaled by 2^32). Those budgets
-were sized for the Watson97 weights, which are around `1e-2`. Since
-[ADR-1191](../adr/1191-adm-csf-fixed-point-representability-guard.md) the
-extractor **checks the configured weights against that storage and returns
-`-EINVAL`** when they do not fit, instead of wrapping them and emitting wrong
-scores. The error names the scale, the band and the offending weight:
+were sized for Watson97 weights near `1e-2`. Full-scale Barten weights are
+about 1.21 at scale 0 and 26.98 at scale 3, so direct narrowing used to wrap
+and publish NaN or near-zero scores. ADR-1191 first made that failure explicit;
+[ADR-1325](../adr/1325-integer-adm-barten-fixed-point-normalization.md) makes
+finite weights computable instead.
 
-```text
-libvmaf ERROR integer_adm: adm_csf_mode=1 at adm_norm_view_dist=3,
-adm_ref_display_height=1080 yields a scale-0 band-0 CSF weight of 2.5386e+06,
-which the fixed-point pipeline cannot represent (needs 0 <= w < 65536).
-Use the float ADM extractor, or lower adm_csf_scale / adm_csf_diag_scale.
-```
+For each scale, `adm` chooses the smallest non-negative power-of-two exponent
+`k` that puts all three fixed-point bands inside their arithmetic budget:
 
-Two configurations are affected:
+- scale 0 is kept strictly below 2^16;
+- scales 1–3 are kept strictly below 2^30, leaving two headroom bits for the
+  signed filtering and cube accumulation.
 
-- **`adm_csf_mode=1` (Barten) with a large `adm_csf_scale`.** At the default
-  `adm_csf_scale=1.0` the Barten weights are 1.21 at scale 0 and 26.98 at
-  scale 3 -- 38x to 155x past the storage ceiling. Barten *is* usable on the
-  fixed-point path with small scale coefficients: `adm_csf_scale=0.002893`
-  together with `adm_csf_diag_scale=0.001586` (the coefficients the fork's own
-  regression suite uses) keeps every weight in range and is accepted.
-- **`adm_csf_mode=2` / `=3` at a viewing geometry the blend tables do not
-  carry.** The blended CSF is tabulated for `adm_ref_display_height` in
-  {480, 720, 1080, 2160} at `adm_norm_view_dist` 3.0 or 5.0 (plus 2160 at
-  1.5H). Any other pair -- `adm_ref_display_height=1200`, say -- has no
-  tabulated weight and is now rejected rather than silently converted from a
-  negative sentinel.
+All three bands use the same `k`, so their horizontal, vertical, and diagonal
+CSF ratios do not change. Contrast masking cubes the normalized values; its
+host finalizer restores `3k`, while the denominator continues to use the
+original floating-point factors. Configurations with `k=0` retain their old
+fixed-point values and SIMD path. A normalized CPU configuration keeps SIMD
+DWT, decoupling, and denominator work but uses scalar weighted-CSF and
+contrast-masking stages until the later performance phase.
 
-The **float** extractor (`--feature float_adm`) has no fixed-point storage and
-accepts every `adm_csf_mode` at every scale, so it is the way to run the
-Barten CSF at full scale. The CUDA, HIP and SYCL `integer_adm` twins apply the
-identical bounds, so a configuration accepted on one backend is accepted on
-all of them.
+Negative or non-finite factors remain errors. In particular, modes 2 and 3
+use lookup tables for specific viewing geometries; an unsupported pair such
+as `adm_ref_display_height=1200` at the default viewing distance returns a
+negative sentinel and is rejected with `-EINVAL` rather than converted to an
+unsigned weight.
+
+Independently of the selected CSF mode, the fixed-point pipeline requires
+`adm_norm_view_dist × adm_ref_display_height >= 3240` (the default 1080p
+display viewed at 3H). Lower angular-frequency geometry is rejected with
+`-EINVAL` before score computation; GPU backends reject it before normalization
+or device allocation. For example, mode 1 rejects 1080p at 0.75H, and mode 2
+rejects its otherwise-tabulated 720p-at-3H geometry. CPU, CUDA, SYCL, HIP, and
+Metal enforce the same floor.
+
+The CPU, CUDA, SYCL, HIP, and Metal integer extractors share this conversion
+contract. The float extractor has no fixed-point storage and remains the
+numerical reference. On the canonical 576x324 pair, full-scale mode 1 emits
+finite `adm2`, `aim`, `adm3`, and all four scale scores; the largest pooled
+absolute difference from `float_adm` is `2.7e-5`.
 
 The CPU `adm` / `float_adm` extractors expose the full option table above,
 and the CUDA / SYCL / HIP `integer_adm` twins now mirror it entry-for-entry —

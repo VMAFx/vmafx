@@ -53,6 +53,9 @@
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
 
+typedef struct VmafFeatureExtractor VmafFeatureExtractor;
+VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name);
+
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
@@ -89,6 +92,60 @@ static const char *const ADM_FEATURES_APN[] = {
     "integer_adm_scale1" APN_SUFFIX, "integer_adm_scale2" APN_SUFFIX,
     "integer_adm_scale3" APN_SUFFIX,
 };
+
+#define BARTEN_SUFFIX "_csf_1"
+static const char *const ADM_FEATURES_BARTEN[] = {
+    "integer_adm2" BARTEN_SUFFIX,       "integer_adm_scale0" BARTEN_SUFFIX,
+    "integer_adm_scale1" BARTEN_SUFFIX, "integer_adm_scale2" BARTEN_SUFFIX,
+    "integer_adm_scale3" BARTEN_SUFFIX,
+};
+
+#define BLEND_SUFFIX "_csf_2"
+static const char *const ADM_FEATURES_BLEND[] = {
+    "integer_adm2" BLEND_SUFFIX,       "integer_adm_scale0" BLEND_SUFFIX,
+    "integer_adm_scale1" BLEND_SUFFIX, "integer_adm_scale2" BLEND_SUFFIX,
+    "integer_adm_scale3" BLEND_SUFFIX,
+};
+
+#define BLEND_MAE_SUFFIX "_csf_3"
+static const char *const ADM_FEATURES_BLEND_MAE[] = {
+    "integer_adm2" BLEND_MAE_SUFFIX,       "integer_adm_scale0" BLEND_MAE_SUFFIX,
+    "integer_adm_scale1" BLEND_MAE_SUFFIX, "integer_adm_scale2" BLEND_MAE_SUFFIX,
+    "integer_adm_scale3" BLEND_MAE_SUFFIX,
+};
+
+static const char *const CSF_MODE_VALUES[4] = {"0", "1", "2", "3"};
+
+typedef struct RunResources {
+    VmafContext *vmaf;
+    VmafMetalState *mstate;
+    VmafFeatureDictionary *opts;
+} RunResources;
+
+static int release_run_resources(RunResources *resources)
+{
+    int err = 0;
+    if (resources->opts)
+        err |= vmaf_feature_dictionary_free(&resources->opts);
+    if (resources->vmaf) {
+        err |= vmaf_close(resources->vmaf);
+        resources->vmaf = NULL;
+    }
+    if (resources->mstate)
+        vmaf_metal_state_free(&resources->mstate);
+    return err;
+}
+
+static int use_feature_options(VmafContext *vmaf, const char *feature_name,
+                               VmafFeatureDictionary **opts)
+{
+    if (!vmaf || !feature_name || !vmaf_get_feature_extractor_by_name(feature_name))
+        return -EINVAL;
+
+    VmafFeatureDictionary *owned_opts = *opts;
+    *opts = NULL;
+    return vmaf_use_feature(vmaf, feature_name, owned_opts);
+}
 
 static int fill_ref(VmafPicture *pic, unsigned frame_idx)
 {
@@ -146,8 +203,10 @@ static char *feed_all_frames(VmafContext *vmaf)
         if (err)
             return "fill_ref failed";
         err = fill_dist(&dist, i);
-        if (err)
+        if (err) {
+            (void)vmaf_picture_unref(&ref);
             return "fill_dist failed";
+        }
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
         if (err)
             return "vmaf_read_pictures failed";
@@ -177,85 +236,177 @@ static char *open_metal_context(VmafContext **vmaf, VmafMetalState *mstate)
     return NULL;
 }
 
-static char *run_cpu(double *out_scores, const char *const *keys, int use_apn)
+static int set_csf_options(VmafFeatureDictionary **opts, unsigned mode, const char *nvd,
+                           const char *rdh)
 {
-    int err = 0;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
+    if (mode >= 4u || vmaf_feature_dictionary_set(opts, "adm_csf_mode", CSF_MODE_VALUES[mode]))
+        return -EINVAL;
+    if (nvd && vmaf_feature_dictionary_set(opts, "adm_norm_view_dist", nvd))
+        return -EINVAL;
+    if (rdh && vmaf_feature_dictionary_set(opts, "adm_ref_display_height", rdh))
+        return -EINVAL;
+    return 0;
+}
 
-    VmafFeatureDictionary *opts = NULL;
-    if (use_apn) {
-        err = vmaf_feature_dictionary_set(&opts, "adm_p_norm", APN_VALUE);
-        mu_assert("CPU: dictionary_set(adm_p_norm) failed", !err);
+static int set_run_options(VmafFeatureDictionary **opts, int use_apn, unsigned csf_mode)
+{
+    if (use_apn)
+        return vmaf_feature_dictionary_set(opts, "adm_p_norm", APN_VALUE);
+    if (csf_mode)
+        return set_csf_options(opts, csf_mode, NULL, NULL);
+    return 0;
+}
+
+static char *run_cpu(double *out_scores, const char *const *keys, int use_apn, unsigned csf_mode)
+{
+    RunResources resources = {0};
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(&resources.vmaf, cfg);
+    if (err) {
+        (void)release_run_resources(&resources);
+        return "CPU: vmaf_init failed";
     }
 
-    err = vmaf_use_feature(vmaf, "adm", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("CPU: vmaf_use_feature(adm) failed", !err);
+    err = set_run_options(&resources.opts, use_apn, csf_mode);
+    if (err) {
+        (void)release_run_resources(&resources);
+        return "CPU: setting ADM options failed";
+    }
 
-    char *feed_err = feed_all_frames(vmaf);
-    if (feed_err)
+    err = use_feature_options(resources.vmaf, "adm", &resources.opts);
+    if (err) {
+        (void)release_run_resources(&resources);
+        return "CPU: vmaf_use_feature(adm) failed";
+    }
+
+    char *feed_err = feed_all_frames(resources.vmaf);
+    if (feed_err) {
+        (void)release_run_resources(&resources);
         return feed_err;
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
+    }
+    err = vmaf_read_pictures(resources.vmaf, NULL, NULL, 0);
+    if (err) {
+        (void)release_run_resources(&resources);
+        return "CPU: vmaf_read_pictures(EOS) failed";
+    }
 
-    char *score_err = read_adm_scores(vmaf, keys, out_scores);
-    if (score_err)
+    char *score_err = read_adm_scores(resources.vmaf, keys, out_scores);
+    if (score_err) {
+        (void)release_run_resources(&resources);
         return score_err;
+    }
 
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
+    err = release_run_resources(&resources);
+    if (err)
+        return "CPU: vmaf_close failed";
     return NULL;
 }
 
-static char *run_metal(double *out_scores, int *skipped, const char *const *keys, int use_apn)
+static char *run_metal(double *out_scores, int *skipped, const char *const *keys, int use_apn,
+                       unsigned csf_mode)
 {
+    RunResources resources = {0};
     *skipped = 0;
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++)
         out_scores[m] = NAN;
 
-    int err = 0;
-    VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
-    VmafMetalState *mstate = NULL;
-    err = vmaf_metal_state_init(&mstate, mcfg);
-    if (err != 0 || mstate == NULL) {
+    const VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
+    int err = vmaf_metal_state_init(&resources.mstate, mcfg);
+    if (err != 0 || resources.mstate == NULL) {
         (void)fprintf(stderr, "[skip: no Metal device] ");
+        (void)release_run_resources(&resources);
+        mu_skipped = 1;
         *skipped = 1;
         return NULL;
     }
 
-    VmafContext *vmaf = NULL;
-    char *open_err = open_metal_context(&vmaf, mstate);
-    if (open_err)
+    char *open_err = open_metal_context(&resources.vmaf, resources.mstate);
+    if (open_err) {
+        (void)release_run_resources(&resources);
         return open_err;
-
-    VmafFeatureDictionary *opts = NULL;
-    if (use_apn) {
-        err = vmaf_feature_dictionary_set(&opts, "adm_p_norm", APN_VALUE);
-        mu_assert("Metal: dictionary_set(adm_p_norm) failed", !err);
     }
 
-    err = vmaf_use_feature(vmaf, "integer_adm_metal", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("Metal: vmaf_use_feature(integer_adm_metal) failed", !err);
+    err = set_run_options(&resources.opts, use_apn, csf_mode);
+    if (err) {
+        (void)release_run_resources(&resources);
+        return "Metal: setting ADM options failed";
+    }
 
-    char *feed_err = feed_all_frames(vmaf);
-    if (feed_err)
+    err = use_feature_options(resources.vmaf, "integer_adm_metal", &resources.opts);
+    if (err) {
+        (void)release_run_resources(&resources);
+        return "Metal: vmaf_use_feature(integer_adm_metal) failed";
+    }
+
+    char *feed_err = feed_all_frames(resources.vmaf);
+    if (feed_err) {
+        (void)release_run_resources(&resources);
         return feed_err;
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("Metal: vmaf_read_pictures(EOS) failed", !err);
+    }
+    err = vmaf_read_pictures(resources.vmaf, NULL, NULL, 0);
+    if (err) {
+        (void)release_run_resources(&resources);
+        return "Metal: vmaf_read_pictures(EOS) failed";
+    }
 
-    char *score_err = read_adm_scores(vmaf, keys, out_scores);
-    if (score_err)
+    char *score_err = read_adm_scores(resources.vmaf, keys, out_scores);
+    if (score_err) {
+        (void)release_run_resources(&resources);
         return score_err;
+    }
 
-    err = vmaf_close(vmaf);
-    mu_assert("Metal: vmaf_close failed", !err);
-    vmaf_metal_state_free(&mstate);
+    err = release_run_resources(&resources);
+    if (err)
+        return "Metal: vmaf_close failed";
+    return NULL;
+}
+
+static char *check_partial_run_options_release_resources(void)
+{
+    RunResources resources = {0};
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(&resources.vmaf, cfg);
+    if (err) {
+        (void)release_run_resources(&resources);
+        return "failure cleanup test: vmaf_init failed";
+    }
+    err = vmaf_feature_dictionary_set(&resources.opts, "adm_p_norm", APN_VALUE);
+    if (err) {
+        (void)release_run_resources(&resources);
+        return "failure cleanup test: dictionary seed failed";
+    }
+    err = use_feature_options(resources.vmaf, "missing_adm_test_extractor", &resources.opts);
+    if (err != -EINVAL) {
+        (void)release_run_resources(&resources);
+        return "unknown extractor did not return -EINVAL";
+    }
+    if (!resources.opts) {
+        (void)release_run_resources(&resources);
+        return "unknown extractor consumed caller-owned options";
+    }
+    err = set_run_options(&resources.opts, 0, 4u);
+    if (!err) {
+        (void)release_run_resources(&resources);
+        return "invalid CSF mode was accepted";
+    }
+    err = release_run_resources(&resources);
+    if (err)
+        return "failure cleanup test: resource release failed";
+    mu_assert("failure cleanup left the option dictionary live", resources.opts == NULL);
+    mu_assert("failure cleanup left the VMAF context live", resources.vmaf == NULL);
+    mu_assert("failure cleanup unexpectedly created Metal state", resources.mstate == NULL);
+    mu_assert("failure cleanup is not idempotent", release_run_resources(&resources) == 0);
+    return NULL;
+}
+
+static char *test_invalid_run_options_release_resources(void)
+{
+    mu_assert_msg(check_partial_run_options_release_resources());
+    double scores[NUM_ADM_FEATURES] = {0};
+    char *msg = run_cpu(scores, ADM_FEATURES, 0, 4u);
+    mu_assert("invalid CSF mode must fail option setup", msg != NULL);
+    mu_assert("invalid CSF mode returned the wrong failure",
+              strcmp(msg, "CPU: setting ADM options failed") == 0);
     return NULL;
 }
 
@@ -265,10 +416,10 @@ static char *test_integer_adm_cpu_metal_parity(void)
     double metal_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu(cpu_scores, ADM_FEATURES, 0);
+    char *msg = run_cpu(cpu_scores, ADM_FEATURES, 0, 0);
     if (msg)
         return msg;
-    msg = run_metal(metal_scores, &skipped, ADM_FEATURES, 0);
+    msg = run_metal(metal_scores, &skipped, ADM_FEATURES, 0, 0);
     if (msg)
         return msg;
     if (skipped)
@@ -305,10 +456,10 @@ static char *test_integer_adm_p_norm_reaches_kernel(void)
     double metal_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu(cpu_scores, ADM_FEATURES_APN, 1);
+    char *msg = run_cpu(cpu_scores, ADM_FEATURES_APN, 1, 0);
     if (msg)
         return msg;
-    msg = run_metal(metal_scores, &skipped, ADM_FEATURES_APN, 1);
+    msg = run_metal(metal_scores, &skipped, ADM_FEATURES_APN, 1, 0);
     if (msg)
         return msg;
     if (skipped)
@@ -331,10 +482,129 @@ static char *test_integer_adm_p_norm_reaches_kernel(void)
     return NULL;
 }
 
+static char *check_integer_adm_csf_mode_parity(unsigned mode, const char *const *keys)
+{
+    double cpu_scores[NUM_ADM_FEATURES] = {0};
+    double metal_scores[NUM_ADM_FEATURES] = {0};
+    int skipped = 0;
+
+    char *msg = run_cpu(cpu_scores, keys, 0, mode);
+    if (msg)
+        return msg;
+    msg = run_metal(metal_scores, &skipped, keys, 0, mode);
+    if (msg || skipped)
+        return msg;
+
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; ++m) {
+        const double delta = fabs(cpu_scores[m] - metal_scores[m]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\ninteger_adm CSF mode %u parity FAIL %s: cpu=%.8f metal=%.8f "
+                          "delta=%.2e tol=%.2e\n",
+                          mode, keys[m], cpu_scores[m], metal_scores[m], delta, PARITY_TOL);
+        }
+        mu_assert("integer_adm CSF mode drifts from the CPU reference", delta <= PARITY_TOL);
+    }
+    return NULL;
+}
+
+static char *test_integer_adm_barten_mode_parity(void)
+{
+    return check_integer_adm_csf_mode_parity(1u, ADM_FEATURES_BARTEN);
+}
+
+static char *test_integer_adm_blend_modes_parity(void)
+{
+    char *msg = check_integer_adm_csf_mode_parity(2u, ADM_FEATURES_BLEND);
+    if (msg)
+        return msg;
+    return check_integer_adm_csf_mode_parity(3u, ADM_FEATURES_BLEND_MAE);
+}
+
+static char *submit_metal_geometry_case(VmafContext *vmaf, int *status)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = fill_ref(&ref, 0u);
+    if (err)
+        return "Metal geometry rejection: reference allocation failed";
+    err = fill_dist(&dist, 0u);
+    if (err) {
+        (void)vmaf_picture_unref(&ref);
+        return "Metal geometry rejection: distorted allocation failed";
+    }
+    *status = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    return NULL;
+}
+
+static char *metal_geometry_status(unsigned mode, const char *nvd, const char *rdh, int *status,
+                                   int *skipped)
+{
+    RunResources resources = {0};
+    *status = 0;
+    *skipped = 0;
+    const VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
+    if (vmaf_metal_state_init(&resources.mstate, mcfg) != 0 || resources.mstate == NULL) {
+        (void)fprintf(stderr, "[skip: no Metal device] ");
+        (void)release_run_resources(&resources);
+        mu_skipped = 1;
+        *skipped = 1;
+        return NULL;
+    }
+
+    char *msg = open_metal_context(&resources.vmaf, resources.mstate);
+    if (!msg) {
+        if (set_csf_options(&resources.opts, mode, nvd, rdh)) {
+            msg = "Metal geometry rejection: setting CSF options failed";
+        } else {
+            const int err =
+                use_feature_options(resources.vmaf, "integer_adm_metal", &resources.opts);
+            if (err) {
+                msg = "Metal geometry rejection: vmaf_use_feature failed";
+            } else {
+                msg = submit_metal_geometry_case(resources.vmaf, status);
+            }
+        }
+    }
+    const int cleanup_err = release_run_resources(&resources);
+    if (!msg && cleanup_err)
+        msg = "Metal geometry rejection: resource release failed";
+    return msg;
+}
+
+static char *test_integer_adm_rejects_invalid_viewing_geometry(void)
+{
+    static const struct {
+        unsigned mode;
+        const char *nvd;
+        const char *rdh;
+    } cases[] = {
+        {1u, "0.75", "1080"},
+        {2u, "3.0", "720"},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        int status = 0;
+        int skipped = 0;
+        char *msg =
+            metal_geometry_status(cases[i].mode, cases[i].nvd, cases[i].rdh, &status, &skipped);
+        if (msg || skipped)
+            return msg;
+        if (status != -EINVAL) {
+            (void)fprintf(stderr, "\n  adm_csf_mode=%u returned %d\n", cases[i].mode, status);
+            return "Metal integer ADM must reject viewing geometry below 1080p at 3H";
+        }
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
+    mu_run_test(test_invalid_run_options_release_resources);
     mu_run_test(test_integer_adm_cpu_metal_parity);
     mu_run_test(test_integer_adm_p_norm_reaches_kernel);
+    mu_run_test(test_integer_adm_barten_mode_parity);
+    mu_run_test(test_integer_adm_blend_modes_parity);
+    mu_run_test(test_integer_adm_rejects_invalid_viewing_geometry);
     return NULL;
 }
 

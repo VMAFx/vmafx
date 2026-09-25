@@ -72,8 +72,8 @@
  *   - The fixed-point decouple, get_best15_from32 (__clz emulation via MSL
  *     clz()), and per-band shift tables are load-bearing for places=4 parity;
  *     they replicate the CUDA inline helpers exactly.
- *   - csf_mode 0 (Watson-97) only — the CPU default; other modes rejected in
- *     the .mm init (matches the CUDA twin which only ships mode 0).
+ *   - CSF mode selection and per-scale power-of-two normalisation happen in
+ *     the .mm host wrapper; all modes use these same integer kernels.
  */
 
 #include <metal_stdlib>

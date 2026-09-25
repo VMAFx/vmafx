@@ -20,8 +20,9 @@ DEFAULT_ONLY_OPTIONS = (
     ("sycl/float_adm_sycl.cpp", "adm_csf_mode"),
     ("hip/float_adm_hip.c", "adm_csf_mode"),
     ("metal/float_adm_metal.mm", "adm_csf_mode"),
-    ("metal/integer_adm_metal.mm", "adm_csf_mode"),
 )
+
+FULL_RANGE_OPTIONS = (("metal/integer_adm_metal.mm", "adm_csf_mode"),)
 
 
 def option_initializer(source: str, option: str) -> str:
@@ -53,6 +54,14 @@ class GpuOptionValueCapabilityContractTest(unittest.TestCase):
                 initializer = option_initializer(source, option)
                 self.assertIn("VMAF_OPT_FLAG_FEATURE_PARAM", initializer)
                 self.assertIn("VMAF_OPT_FLAG_DEFAULT_ONLY", initializer)
+
+    def test_implemented_gpu_options_are_not_marked_default_only(self) -> None:
+        for relative_path, option in FULL_RANGE_OPTIONS:
+            with self.subTest(path=relative_path, option=option):
+                source = (FEATURE_ROOT / relative_path).read_text(encoding="utf-8")
+                initializer = option_initializer(source, option)
+                self.assertIn("VMAF_OPT_FLAG_FEATURE_PARAM", initializer)
+                self.assertNotIn("VMAF_OPT_FLAG_DEFAULT_ONLY", initializer)
 
 
 if __name__ == "__main__":

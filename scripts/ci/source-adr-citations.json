@@ -6603,10 +6603,7 @@
     },
     "1183": {
       "sites": {
-        "core/src/feature/cuda/integer_adm_cuda.c": 1,
-        "core/src/feature/hip/integer_adm_hip.c": 1,
         "core/src/feature/metal/integer_adm_metal.mm": 1,
-        "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
         "core/src/libvmaf.c": 1,
         "core/test/meson.build": 1,
         "core/test/test_cuda_float_adm_parity.c": 2,
@@ -6653,11 +6650,7 @@
     "1191": {
       "sites": {
         "core/src/feature/adm_csf_fixed_point.h": 1,
-        "core/src/feature/cuda/integer_adm_cuda.c": 2,
-        "core/src/feature/hip/integer_adm_hip.c": 2,
-        "core/src/feature/integer_adm.c": 6,
-        "core/src/feature/sycl/integer_adm_sycl.cpp": 2,
-        "core/test/meson.build": 1,
+        "core/src/feature/integer_adm.c": 2,
         "core/test/test_adm_csf_representable.c": 3
       },
       "target": "1191-adm-csf-fixed-point-representability-guard.md"
@@ -7483,6 +7476,15 @@
         "core/src/libvmaf.c": 1
       },
       "target": "1324-gpu-float-ssim-auto-scale-fallback.md"
+    },
+    "1325": {
+      "sites": {
+        "core/src/feature/adm_csf_fixed_point.h": 1,
+        "core/src/feature/integer_adm.c": 2,
+        "core/test/meson.build": 1,
+        "core/test/test_adm_csf_representable.c": 1
+      },
+      "target": "1325-integer-adm-barten-fixed-point-normalization.md"
     }
   },
   "retired": {

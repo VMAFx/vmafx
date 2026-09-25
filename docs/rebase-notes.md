@@ -59,6 +59,31 @@ context-owned backend state and invalidate cached CUDA residency flags.
 - Changelog: `changelog.d/fixed/gpu-float-ssim-auto-scale-fallback.md`.
 - FFmpeg impact: none; no public C header, exported API, CLI flag or Meson
   option changed.
+## agent/fix-barten-mode1-9e1b — normalize integer ADM Barten weights (2026-09-25)
+
+Integer ADM uses one shared power-of-two normalization exponent per DWT scale
+when CSF weights exceed the original fixed-point arithmetic budget. Preserve
+the strict 2^16 scale-0 and 2^30 scale-1..3 limits, apply the same exponent to
+all three bands, and restore `3k` in every CPU/CUDA/SYCL/HIP/Metal
+contrast-masking finalizer. The denominator must continue to use the original
+floating-point CSF factors. Already-representable `k=0` configurations retain
+their existing values and CPU SIMD dispatch; normalized CPU configurations use
+the scalar weighted-CSF/CM stages while keeping unrelated SIMD stages.
+
+Metal integer ADM now implements CSF modes 0..3. Do not restore its former
+`VMAF_OPT_FLAG_DEFAULT_ONLY` bit or mode-0 init rejection. The four GPU
+`float_adm` twins remain mode-0-only.
+
+- Research digest: [Research-2109](research/2109-integer-adm-barten-fixed-point-normalization.md).
+- Decision matrix: [ADR-1325](adr/1325-integer-adm-barten-fixed-point-normalization.md#alternatives-considered).
+- AGENTS.md invariant: `core/src/feature/AGENTS.md`, “Integer ADM Barten
+  weights use one exponent per scale”.
+- Reproducer / smoke: `meson test -C BUILD test_adm_csf_representable`; then
+  run each built `test_{cuda,sycl,hip}_adm_tiny_frames` parity executable on
+  its own idle device.
+- Changelog: `changelog.d/fixed/integer-adm-barten-fixed-point-normalization.md`.
+- FFmpeg impact: none; no public header, C API, CLI flag, Meson option, or
+  FFmpeg patch changed.
 
 ## agent/fix-doxygen-public-api-warnings-6ba5 — drive public C API Doxygen warnings to zero and fail closed (2026-09-25)
 
@@ -103,9 +128,11 @@ require success whenever that lane's switch is true.
 
 `VmafOption` distinguishes canonical schema from an extractor's narrower
 implementation capability with `VMAF_OPT_FLAG_DEFAULT_ONLY`. Preserve that bit
-on the nine entries enumerated by
+on the entries enumerated by
 `core/test/test_gpu_option_value_capability_contract.py` until the corresponding
-kernel implements the option's non-default values. Do not narrow or remove the
+kernel implements the option's non-default values. ADR-1325 implemented modes
+0..3 for Metal integer ADM and therefore removed that entry; the remaining
+eight restrictions are still authoritative. Do not narrow or remove the
 CPU-mirrored name, alias, default, range, or `FEATURE_PARAM` bit: those fields
 remain collector-key authority.
 

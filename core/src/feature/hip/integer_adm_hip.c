@@ -83,6 +83,7 @@ typedef struct AdmStateHip {
     double adm_p_norm;
     float rfactor[12];
     uint32_t i_rfactor[12];
+    uint32_t csf_normalization_shift[4];
     unsigned submit_w, submit_h; /* stored by submit for collect */
 
 #ifdef HAVE_HIPCC
@@ -182,34 +183,11 @@ static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
     return f;
 }
 
-static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
-                                   int adm_ref_display_height, int adm_csf_mode,
-                                   uint16_t i_rfactor[3])
-{
-    if (fabs(adm_norm_view_dist * adm_ref_display_height -
-             DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
-        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
-        i_rfactor[0] = 36453;
-        i_rfactor[1] = 36453;
-        i_rfactor[2] = 49417;
-    } else {
-        const double pow2_21 = pow(2, 21);
-        const double pow2_23 = pow(2, 23);
-        i_rfactor[0] = (uint16_t)(rfactor1[0] * pow2_21);
-        i_rfactor[1] = (uint16_t)(rfactor1[1] * pow2_21);
-        i_rfactor[2] = (uint16_t)(rfactor1[2] * pow2_23);
-    }
-}
-
 /**
- * Refuse a CSF configuration whose fixed-point weights would wrap
- * (ADR-1191). Mirrors `adm_csf_config_check()` in
- * core/src/feature/integer_adm.c so the CPU reference and this twin accept
- * exactly the same set of configurations -- the bounds in
- * adm_csf_fixed_point.h are the CPU pipeline's, deliberately applied here
- * too, because a twin that accepted a configuration the CPU rejects would
- * break the option / feature-name parity contract (ADR-1183). Returns 0 or
- * -EINVAL.
+ * Validate a CSF configuration before claiming device resources. Mirrors
+ * `adm_csf_config_check()` in core/src/feature/integer_adm.c so the CPU and
+ * this twin reject the same invalid table output. Finite over-range weights
+ * are assigned the shared per-scale normalisation exponent later.
  */
 static int adm_csf_config_check(const AdmStateHip *s)
 {
@@ -227,14 +205,13 @@ static int adm_csf_config_check(const AdmStateHip *s)
     return 0;
 }
 
-/* CSF weight per scale and band (rfactor) and its fixed-point form
- * (i_rfactor): adm_csf_rfactor_scale0() for scale 0, rfactor * 2^32 for
- * scales 1-3. */
+/* CSF weight per scale and band plus its fixed-point form and shared
+ * normalisation exponent. */
 static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_height,
                              int adm_csf_mode, double adm_csf_scale, double adm_csf_diag_scale,
-                             float rfactor[12], uint32_t i_rfactor[12])
+                             float rfactor[12], uint32_t i_rfactor[12],
+                             uint32_t normalization_shift[4])
 {
-    const double pow2_32 = pow(2, 32);
     for (unsigned scale = 0; scale < 4; ++scale) {
         const size_t band0 = (size_t)scale * 3u;
         const AdmCsfFactors f =
@@ -243,17 +220,15 @@ static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_heig
         rfactor[band0] = f.factor1;
         rfactor[band0 + 1] = f.factor1;
         rfactor[band0 + 2] = f.factor2;
-        if (scale == 0) {
-            uint16_t i_rf[3];
-            adm_csf_rfactor_scale0(rfactor, adm_norm_view_dist, adm_ref_display_height,
-                                   adm_csf_mode, i_rf);
-            i_rfactor[0] = i_rf[0];
-            i_rfactor[1] = i_rf[1];
-            i_rfactor[2] = i_rf[2];
-        } else {
-            i_rfactor[band0] = (uint32_t)(rfactor[band0] * pow2_32);
-            i_rfactor[band0 + 1] = (uint32_t)(rfactor[band0 + 1] * pow2_32);
-            i_rfactor[band0 + 2] = (uint32_t)(rfactor[band0 + 2] * pow2_32);
+        double fixed[3];
+        normalization_shift[scale] = 0u;
+        const int err = adm_csf_fixed_scale((int)scale, &rfactor[band0], adm_norm_view_dist,
+                                            adm_ref_display_height, adm_csf_mode, fixed,
+                                            &normalization_shift[scale]);
+        if (!err) {
+            i_rfactor[band0] = (uint32_t)fixed[0];
+            i_rfactor[band0 + 1] = (uint32_t)fixed[1];
+            i_rfactor[band0 + 2] = (uint32_t)fixed[2];
         }
     }
 }
@@ -266,8 +241,9 @@ static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_heig
 /* Score computation helpers (host-side, same as CUDA twin)            */
 /* ------------------------------------------------------------------ */
 
-static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_weight,
-                            double p_norm, float *result)
+static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale,
+                            uint32_t normalization_shift, float noise_weight, double p_norm,
+                            float *result)
 {
     int left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int top = (int)(h * ADM_BORDER_FACTOR - 0.5);
@@ -280,11 +256,13 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
                                     (uint32_t)ceil(log2((double)w) - 4.0),
                                     (uint32_t)ceil(log2((double)w) - 3.0)};
     int constant_offset[3] = {52, 52, 57};
+    const int restored_bits = 3 * (int)normalization_shift;
 
     uint32_t shift_cub = (uint32_t)ceil(log2((double)w));
-    float final_shift[3] = {powf(2.0f, (float)(45 - (int)shift_cub - (int)shift_inner_accum)),
-                            powf(2.0f, (float)(39 - (int)shift_cub - (int)shift_inner_accum)),
-                            powf(2.0f, (float)(36 - (int)shift_cub - (int)shift_inner_accum))};
+    float final_shift[3] = {
+        powf(2.0f, (float)(45 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
+        powf(2.0f, (float)(39 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
+        powf(2.0f, (float)(36 - restored_bits - (int)shift_cub - (int)shift_inner_accum))};
     float powf_add =
         powf((float)((bottom - top) * (right - left)) * noise_weight, (float)p_norm_exp);
 
@@ -292,8 +270,9 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
     *result = 0;
     for (int i = 0; i < 3; ++i) {
         if (scale == 0) {
-            f_accum = (float)(accum[i] / pow(2.0, (double)(constant_offset[i] - (int)shift_xcub[i] -
-                                                           (int)shift_inner_accum)));
+            f_accum =
+                (float)(accum[i] / pow(2.0, (double)(constant_offset[i] - restored_bits -
+                                                     (int)shift_xcub[i] - (int)shift_inner_accum)));
         } else {
             f_accum = (float)((double)accum[i] / (double)final_shift[scale - 1]);
         }
@@ -359,7 +338,8 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, d
         w = (w + 1) / 2;
         h = (h + 1) / 2;
 
-        conclude_adm_cm(&adm_cm[band0], (int)h, (int)w, (int)scale, (float)s->adm_noise_weight,
+        conclude_adm_cm(&adm_cm[band0], (int)h, (int)w, (int)scale,
+                        s->csf_normalization_shift[scale], (float)s->adm_noise_weight,
                         s->adm_p_norm, &num_scale);
         conclude_adm_csf_den(&adm_csf[band0], (int)h, (int)w, (int)scale, &den_scale,
                              &s->rfactor[band0], (float)s->adm_noise_weight);
@@ -1045,8 +1025,8 @@ static void adm_hip_fixed_params(const AdmStateHip *s, int w, int h, double adm_
     p->adm_norm_view_dist = adm_norm_view_dist;
     p->adm_enhn_gain_limit = adm_enhn_gain_limit;
 
-    adm_hip_rfactors(adm_norm_view_dist, adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
-                     s->adm_csf_diag_scale, p->rfactor, p->i_rfactor);
+    memcpy(p->rfactor, s->rfactor, sizeof(p->rfactor));
+    memcpy(p->i_rfactor, s->i_rfactor, sizeof(p->i_rfactor));
 }
 
 /* ADR-1211: stage the host-resident luma planes onto the device.
@@ -1183,8 +1163,6 @@ static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPic
     AdmFixedParametersHip p;
     adm_hip_fixed_params(s, w, h, adm_enhn_gain_limit, adm_norm_view_dist, adm_ref_display_height,
                          &p);
-    memcpy(s->rfactor, p.rfactor, sizeof(p.rfactor));
-
     /* Zero result accumulator */
     hipError_t hip_err = hipMemsetAsync(buf->tmp_res, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str);
     if (hip_err != hipSuccess)
@@ -1576,15 +1554,9 @@ static int adm_hip_validate(const AdmStateHip *s, unsigned w, unsigned h)
         return size_err;
     }
 
-    if (s->adm_norm_view_dist * s->adm_ref_display_height <
-        DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
-        return -EINVAL;
-    }
-
-    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
-     * represent before any device resource is claimed, so an unsupported
-     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
-     * Same accept/reject set as the CPU reference. */
+    /* Reject invalid CSF table output before any device resource is claimed.
+     * Finite over-range weights are normalised with the CPU's shared
+     * per-scale exponent in adm_hip_rfactors(). */
     return adm_csf_config_check(s);
 }
 
@@ -1602,7 +1574,8 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     }
 
     adm_hip_rfactors(s->adm_norm_view_dist, s->adm_ref_display_height, s->adm_csf_mode,
-                     s->adm_csf_scale, s->adm_csf_diag_scale, s->rfactor, s->i_rfactor);
+                     s->adm_csf_scale, s->adm_csf_diag_scale, s->rfactor, s->i_rfactor,
+                     s->csf_normalization_shift);
 
 #ifndef HAVE_HIPCC
     (void)w;

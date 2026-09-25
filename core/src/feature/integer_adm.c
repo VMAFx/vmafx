@@ -74,10 +74,11 @@ typedef struct AdmState {
     double adm_p_norm;
     int adm_ref_display_height;
     int adm_csf_mode;
-    /* ADR-1191: 0, or -EINVAL when the configured CSF weights do not fit the
-     * fixed-point pipeline. Evaluated once in init(), enforced in extract()
-     * beside the pre-existing viewing-geometry guard. */
+    /* 0, or -EINVAL when the configured CSF weights are invalid. Evaluated
+     * once in init(), enforced in extract() beside the viewing-geometry
+     * guard. Finite over-range weights use a shared per-scale exponent. */
     int csf_config_err;
+    bool csf_requires_normalization;
     void (*dwt2_8)(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
                    int src_stride, int dst_stride);
     void (*dwt2_16)(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
@@ -316,46 +317,81 @@ static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
  * adm_ref_display_height 1080 under ADM_CSF_MODE_WATSON97 the constants are
  * the upstream-tabulated { 36453, 36453, 49417 }.
  *
- * The narrowing conversion is unchecked here on purpose: `init()` has already
- * refused every configuration whose weights do not fit (ADR-1191), so by the
- * time a kernel runs the products are known to be in range.
+ * All three bands share one power-of-two normalisation exponent. The caller
+ * restores three times that exponent after the contrast-masking cube.
  */
-static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
-                                   int adm_ref_display_height, int adm_csf_mode,
-                                   uint16_t i_rfactor[3])
+static uint32_t adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
+                                       int adm_ref_display_height, int adm_csf_mode,
+                                       uint16_t i_rfactor[3])
 {
     double fixed[3];
-    adm_csf_scale0_fixed(rfactor1, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode, fixed);
+    uint32_t normalization_shift = 0u;
+    const int err = adm_csf_fixed_scale(0, rfactor1, adm_norm_view_dist, adm_ref_display_height,
+                                        adm_csf_mode, fixed, &normalization_shift);
+    if (err) {
+        i_rfactor[0] = 0u;
+        i_rfactor[1] = 0u;
+        i_rfactor[2] = 0u;
+        return 0u;
+    }
     for (unsigned band = 0; band < 3; ++band) {
         i_rfactor[band] = (uint16_t)fixed[band];
     }
+    return normalization_shift;
+}
+
+static uint32_t adm_csf_rfactor_s123(int scale, const float rfactor1[3], double adm_norm_view_dist,
+                                     int adm_ref_display_height, int adm_csf_mode,
+                                     uint32_t i_rfactor[3])
+{
+    double fixed[3];
+    uint32_t normalization_shift = 0u;
+    const int err = adm_csf_fixed_scale(scale, rfactor1, adm_norm_view_dist, adm_ref_display_height,
+                                        adm_csf_mode, fixed, &normalization_shift);
+    if (err) {
+        i_rfactor[0] = 0u;
+        i_rfactor[1] = 0u;
+        i_rfactor[2] = 0u;
+        return 0u;
+    }
+    for (unsigned band = 0; band < 3; ++band) {
+        i_rfactor[band] = (uint32_t)fixed[band];
+    }
+    return normalization_shift;
 }
 
 /**
- * Refuse a CSF configuration whose fixed-point weights would wrap.
+ * Validate and size the fixed-point representation for a CSF configuration.
  *
  * `adm_csf_mode` 1 (Barten) at the default `adm_csf_scale` produces weights
- * around 1.2 at scale 0 and 27 at scale 3, which overflow the `uint16_t` /
- * `uint32_t` fixed-point storage by two orders of magnitude; the blended-CSF
+ * around 1.2 at scale 0 and 27 at scale 3, which exceed the original
+ * fixed-point budgets by two orders of magnitude and therefore require a
+ * shared per-scale exponent. The blended-CSF
  * tables return `-EINVAL` as a float for viewing geometries they do not
  * tabulate, which is worse still (a negative-to-unsigned conversion is UB).
- * Both used to produce silently wrong scores. Returns 0 or -EINVAL; the
- * per-scale helper logs which band and scale failed.
+ * Both used to produce silently wrong scores. Finite non-negative weights are
+ * normalised; invalid table output returns -EINVAL and the helper logs the
+ * offending band and scale.
  *
- * See ADR-1191 and docs/metrics/adm.md.
+ * See ADR-1191, ADR-1325, and docs/metrics/features.md.
  */
-static int adm_csf_config_check(const AdmState *s)
+static int adm_csf_config_check(AdmState *s)
 {
+    s->csf_requires_normalization = false;
     for (int scale = 0; scale < 4; ++scale) {
         const AdmCsfFactors f =
             adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
                             s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
         const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
-        const int err = adm_csf_check_scale(scale, rfactor1, s->adm_norm_view_dist,
-                                            s->adm_ref_display_height, s->adm_csf_mode);
+        double fixed[3];
+        uint32_t normalization_shift;
+        const int err =
+            adm_csf_fixed_scale(scale, rfactor1, s->adm_norm_view_dist, s->adm_ref_display_height,
+                                s->adm_csf_mode, fixed, &normalization_shift);
         if (err) {
             return err;
         }
+        s->csf_requires_normalization |= normalization_shift > 0u;
     }
     return 0;
 }
@@ -713,8 +749,8 @@ static void adm_csf(AdmBuffer *buf, int w, int h, int stride, double adm_norm_vi
                                             adm_csf_mode, adm_csf_scale, adm_csf_diag_scale);
     const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
     uint16_t i_rfactor[3];
-    adm_csf_rfactor_scale0(rfactor1, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
-                           i_rfactor);
+    (void)adm_csf_rfactor_scale0(rfactor1, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
+                                 i_rfactor);
 
     /**
      * Shifts pending from previous stage is 6
@@ -796,13 +832,9 @@ static void i4_adm_csf(AdmBuffer *buf, int scale, int w, int h, int stride,
                                             adm_csf_mode, adm_csf_scale, adm_csf_diag_scale);
     const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
 
-    /* i_rfactor in fixed-point. The narrowing conversion is unchecked
-     * because `init()` has already rejected every configuration whose
-     * weights exceed ADM_CSF_S123_LIMIT (ADR-1191). */
-    const double pow2_32 = pow(2, ADM_CSF_S123_EXP);
-    const uint32_t i_rfactor[3] = {(uint32_t)(rfactor1[0] * pow2_32),
-                                   (uint32_t)(rfactor1[1] * pow2_32),
-                                   (uint32_t)(rfactor1[2] * pow2_32)};
+    uint32_t i_rfactor[3];
+    (void)adm_csf_rfactor_s123(scale, rfactor1, adm_norm_view_dist, adm_ref_display_height,
+                               adm_csf_mode, i_rfactor);
 
     const uint32_t FIX_ONE_BY_30 = 143165577;
     int32_t add_bef_shift_dst[3];
@@ -1126,6 +1158,7 @@ typedef struct AdmCmCtx {
     int w;
     int h;
     uint16_t i_rfactor[3];
+    uint32_t normalization_shift;
     AdmCmBand band[3];
     uint32_t shift_inner_accum;
     uint32_t add_shift_inner_accum;
@@ -1154,8 +1187,8 @@ static void adm_cm_ctx_init(AdmCmCtx *c, AdmBuffer *buf, int w, int h, int src_s
     const AdmCsfFactors f = adm_csf_factors(0, adm_norm_view_dist, adm_ref_display_height,
                                             adm_csf_mode, adm_csf_scale, adm_csf_diag_scale);
     const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
-    adm_csf_rfactor_scale0(rfactor1, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
-                           c->i_rfactor);
+    c->normalization_shift = adm_csf_rfactor_scale0(
+        rfactor1, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode, c->i_rfactor);
 
     /**
      * max value of xh_sq and xv_sq is 1301381973 and that of xd_sq is 1195806729
@@ -1217,6 +1250,14 @@ static void adm_cm_row(const AdmCmCtx *c, int i, bool left_edge, bool right_edge
     }
 }
 
+static float adm_cm_restore_accum(int64_t accum, int base_exp, uint32_t normalization_shift,
+                                  uint32_t shift_cub, uint32_t shift_inner_accum)
+{
+    const int divisor_exp =
+        base_exp - 3 * (int)normalization_shift - (int)shift_cub - (int)shift_inner_accum;
+    return (float)(accum / pow(2, divisor_exp));
+}
+
 static float adm_cm(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride,
                     double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                     double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
@@ -1265,12 +1306,12 @@ static float adm_cm(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
      * => after cubing (6+23)*3=87 after squaring shifted by 30
      * hence pending is 57-shift's done based on width and height
      */
-    const float f_accum_h =
-        (float)(accum[0] / pow(2, (52 - c.band[0].shift_cub - c.shift_inner_accum)));
-    const float f_accum_v =
-        (float)(accum[1] / pow(2, (52 - c.band[1].shift_cub - c.shift_inner_accum)));
-    const float f_accum_d =
-        (float)(accum[2] / pow(2, (57 - c.band[2].shift_cub - c.shift_inner_accum)));
+    const float f_accum_h = adm_cm_restore_accum(accum[0], 52, c.normalization_shift,
+                                                 c.band[0].shift_cub, c.shift_inner_accum);
+    const float f_accum_v = adm_cm_restore_accum(accum[1], 52, c.normalization_shift,
+                                                 c.band[1].shift_cub, c.shift_inner_accum);
+    const float f_accum_d = adm_cm_restore_accum(accum[2], 57, c.normalization_shift,
+                                                 c.band[2].shift_cub, c.shift_inner_accum);
 
     const float p_norm_exp = 1.0f / (float)adm_p_norm;
     const int area = (b.bottom - b.top) * (b.right - b.left);
@@ -1291,6 +1332,7 @@ typedef struct I4AdmCmCtx {
     int w;
     int h;
     uint32_t rfactor[3];
+    uint32_t normalization_shift;
     int32_t add_bef_shift_dst;
     int32_t add_bef_shift_flt;
     uint32_t shift_dst;
@@ -1322,9 +1364,8 @@ static void i4_adm_cm_ctx_init(I4AdmCmCtx *c, AdmBuffer *buf, int w, int h, int 
     const AdmCsfFactors f = adm_csf_factors(scale, adm_norm_view_dist, adm_ref_display_height,
                                             adm_csf_mode, adm_csf_scale, adm_csf_diag_scale);
     const float rfactor1[3] = {f.factor1, f.factor1, f.factor2};
-    c->rfactor[0] = (uint32_t)(rfactor1[0] * pow(2, 32));
-    c->rfactor[1] = (uint32_t)(rfactor1[1] * pow(2, 32));
-    c->rfactor[2] = (uint32_t)(rfactor1[2] * pow(2, 32));
+    c->normalization_shift = adm_csf_rfactor_s123(scale, rfactor1, adm_norm_view_dist,
+                                                  adm_ref_display_height, adm_csf_mode, c->rfactor);
 
     /* Netflix#955 / ADR-0155: second occurrence of the same overflow —
      * see i4_adm_round_terms. Preserved for Netflix-golden bit-exactness. */
@@ -1424,9 +1465,11 @@ static float i4_adm_cm(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
      * Converted to floating-point for calculating the final scores
      * Final shifts is calculated from 3*(shifts_from_previous_stage(i.e src comes from dwt)+32)-total_shifts_done_in_this_function
      */
-    const float final_shift[3] = {pow(2, (45 - c.band.shift_cub - c.shift_inner_accum)),
-                                  pow(2, (39 - c.band.shift_cub - c.shift_inner_accum)),
-                                  pow(2, (36 - c.band.shift_cub - c.shift_inner_accum))};
+    const int restored_bits = 3 * (int)c.normalization_shift;
+    const float final_shift[3] = {
+        pow(2, (45 - restored_bits - (int)c.band.shift_cub - (int)c.shift_inner_accum)),
+        pow(2, (39 - restored_bits - (int)c.band.shift_cub - (int)c.shift_inner_accum)),
+        pow(2, (36 - restored_bits - (int)c.band.shift_cub - (int)c.shift_inner_accum))};
     const float f_accum_h = (float)(accum[0] / final_shift[scale - 1]);
     const float f_accum_v = (float)(accum[1] / final_shift[scale - 1]);
     const float f_accum_d = (float)(accum[2] / final_shift[scale - 1]);
@@ -2044,12 +2087,14 @@ static void init_dispatch_simd(AdmState *s, unsigned w)
         s->dwt2_16 = adm_dwt2_16_avx2;
         s->adm_decouple = adm_decouple_avx2;
         s->adm_decouple_s123 = adm_decouple_s123_avx2;
-        s->adm_csf = adm_csf_avx2;
-        s->i4_adm_csf = i4_adm_csf_avx2;
+        if (!s->csf_requires_normalization) {
+            s->adm_csf = adm_csf_avx2;
+            s->i4_adm_csf = i4_adm_csf_avx2;
+            s->adm_cm = adm_cm_avx2;
+            s->i4_adm_cm = i4_adm_cm_avx2;
+        }
         s->adm_csf_den_scale = adm_csf_den_scale_avx2;
         s->adm_csf_den_s123 = adm_csf_den_s123_avx2;
-        s->adm_cm = adm_cm_avx2;
-        s->i4_adm_cm = i4_adm_cm_avx2;
         s->adm_dwt2_s123_combined = adm_dwt2_s123_combined_avx2;
     }
 #if HAVE_AVX512
@@ -2058,12 +2103,14 @@ static void init_dispatch_simd(AdmState *s, unsigned w)
         s->dwt2_16 = adm_dwt2_16_avx512;
         s->adm_decouple = adm_decouple_avx512;
         s->adm_decouple_s123 = adm_decouple_s123_avx512;
-        s->adm_csf = adm_csf_avx512;
-        s->i4_adm_csf = i4_adm_csf_avx512;
+        if (!s->csf_requires_normalization) {
+            s->adm_csf = adm_csf_avx512;
+            s->i4_adm_csf = i4_adm_csf_avx512;
+            s->adm_cm = adm_cm_avx512;
+            s->i4_adm_cm = i4_adm_cm_avx512;
+        }
         s->adm_csf_den_scale = adm_csf_den_scale_avx512;
         s->adm_csf_den_s123 = adm_csf_den_s123_avx512;
-        s->adm_cm = adm_cm_avx512;
-        s->i4_adm_cm = i4_adm_cm_avx512;
         s->adm_dwt2_s123_combined = adm_dwt2_s123_combined_avx512;
     }
 #endif
@@ -2175,10 +2222,11 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return size_err;
     }
 
-    /* ADR-1191: evaluate once here whether the configured CSF weights fit
-     * the fixed-point pipeline; extract() turns a failure into -EINVAL. The
-     * verdict is cached because adm_csf_factors() runs pow()/log10() per
-     * scale and the answer cannot change after option parsing. */
+    /* ADR-1191 / ADR-1325: validate the configured CSF weights and determine
+     * whether any scale needs the shared normalisation exponent. extract()
+     * turns invalid table output into -EINVAL. The result is cached because
+     * adm_csf_factors() runs pow()/log10() per scale and cannot change after
+     * option parsing. */
     s->csf_config_err = adm_csf_config_check(s);
 
     init_dispatch_scalar(s);
@@ -2246,18 +2294,17 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     (void)ref_pic_90;
     (void)dist_pic_90;
 
-    // current implementation is limited by the 16-bit data pipeline, thus
-    // cannot handle an angular frequency smaller than 1080p * 3H
-    if (s->adm_norm_view_dist * s->adm_ref_display_height <
-        DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
-        return -EINVAL;
-    }
+    /* The 16-bit pipeline cannot handle an angular frequency below 1080p at
+     * 3H. Keep the reference check shared with every integer-ADM GPU twin. */
+    const int geometry_err =
+        adm_viewing_geometry_check(s->adm_norm_view_dist, s->adm_ref_display_height);
+    if (geometry_err)
+        return geometry_err;
 
-    /* ADR-1191: the same pipeline limit expressed on the CSF weights
-     * themselves, which the viewing-geometry test above does not cover --
-     * adm_csf_mode 1 overflows at the stock geometry, and the blended-CSF
-     * tables return a negative sentinel for geometries they do not carry.
-     * init() logged the offending band; this only propagates the verdict. */
+    /* The viewing-geometry test above does not catch invalid negative table
+     * sentinels from the blended CSFs. init() logged the offending band; this
+     * only propagates the verdict. Finite over-range weights were assigned a
+     * shared per-scale normalisation exponent instead. */
     if (s->csf_config_err) {
         return s->csf_config_err;
     }

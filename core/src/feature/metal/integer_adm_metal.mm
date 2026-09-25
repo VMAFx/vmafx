@@ -32,10 +32,9 @@
  *  names, same order) — the parity test and any model JSON depend on it.
  *  Feature names use the VMAF_integer_feature_* / integer_adm_* prefixes.
  *
- *  Parity: places=4 (1e-4) vs the CPU `adm` at default options (ADR-0214
- *  cross-backend gate; the same bound the CUDA integer twin holds). csf_mode
- *  0 (Watson-97, the CPU default) only; other modes return -EINVAL at init,
- *  matching the CUDA twin which only ships mode 0.
+ *  Parity: places=4 (1e-4) vs the CPU `adm` (ADR-0214 cross-backend gate;
+ *  the same bound the CUDA integer twin holds). CSF modes 0..3 share the
+ *  CPU's factor selection and fixed-point normalisation contract.
  *
  *  Metallib resolution: embedded __TEXT,__metallib blob, same pattern as
  *  every other Metal feature extractor.
@@ -63,8 +62,10 @@ extern "C" {
 
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
+#include "../adm_csf_fixed_point.h"
 #include "../adm_options.h"
 #include "../adm_score.h"
+#include "../barten_csf_tools.h"
 #include "../nonfinite_score.h"
 }
 
@@ -199,6 +200,8 @@ typedef struct IntegerAdmStateMetal {
     unsigned wg_count[IADM_NUM_SCALES];
 
     uint32_t i_rfactor[IADM_NUM_SCALES * 3];
+    uint32_t csf_normalization_shift[IADM_NUM_SCALES];
+    float rfactor[IADM_NUM_SCALES * 3];
 
     /* Options — same defaults as integer_adm.c. */
     bool debug;
@@ -283,13 +286,13 @@ static const VmafOption options[] = {
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_csf_mode",
      .alias = "csf",
-     .help = "contrast sensitivity function (mode 0 / Watson-97 only on Metal)",
+     .help = "contrast sensitivity function",
      .offset = offsetof(IntegerAdmStateMetal, adm_csf_mode),
      .type = VMAF_OPT_TYPE_INT,
      .default_val = {.i = DEFAULT_ADM_CSF_MODE},
      .min = 0,
      .max = 3,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_noise_weight",
      .alias = "nw",
      .help = "noise weight",
@@ -363,38 +366,53 @@ static void compute_per_scale_dims(IntegerAdmStateMetal *s)
     s->buf_stride = (s->scale_half_w[0] + 3u) & ~3u;
 }
 
-/* Compute the per-scale fixed-point i_rfactor[12] EXACTLY as
- * integer_adm_cuda.c (default-view-distance fast path + Q21/Q23/Q32). */
-static void compute_i_rfactor(IntegerAdmStateMetal *s)
+static void iadm_csf_factors(const IntegerAdmStateMetal *s, int scale, float factors[3])
 {
-    const double pow2_32 = (double)(1ULL << 32);
-    const double pow2_21 = (double)(1ULL << 21);
-    const double pow2_23 = (double)(1ULL << 23);
-    for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
-        const float f1 = iadm_dwt_quant_step(&iadm_dwt_threshold[0], scale, 1, s->adm_norm_view_dist,
+    if (s->adm_csf_mode == 1) {
+        factors[0] = barten_csf(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                                DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_scale);
+        factors[2] = barten_csf(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                                DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_diag_scale);
+    } else if (s->adm_csf_mode == 2) {
+        factors[0] = barten_watson_blend_csf(scale, 0, s->adm_norm_view_dist,
                                              s->adm_ref_display_height);
-        const float f2 = iadm_dwt_quant_step(&iadm_dwt_threshold[0], scale, 2, s->adm_norm_view_dist,
+        factors[2] = barten_watson_blend_csf(scale, 1, s->adm_norm_view_dist,
                                              s->adm_ref_display_height);
-        const float rf1 = (float)s->adm_csf_scale / f1;
-        const float rf2 = (float)s->adm_csf_diag_scale / f2;
-        if (scale == 0) {
-            if (fabs(s->adm_norm_view_dist * (double)s->adm_ref_display_height -
-                     (double)DEFAULT_ADM_NORM_VIEW_DIST * (double)DEFAULT_ADM_REF_DISPLAY_HEIGHT) <
-                1.0e-8) {
-                s->i_rfactor[scale * 3 + 0] = 36453u;
-                s->i_rfactor[scale * 3 + 1] = 36453u;
-                s->i_rfactor[scale * 3 + 2] = 49417u;
-            } else {
-                s->i_rfactor[scale * 3 + 0] = (uint32_t)(rf1 * pow2_21);
-                s->i_rfactor[scale * 3 + 1] = (uint32_t)(rf1 * pow2_21);
-                s->i_rfactor[scale * 3 + 2] = (uint32_t)(rf2 * pow2_23);
-            }
-        } else {
-            s->i_rfactor[scale * 3 + 0] = (uint32_t)(rf1 * pow2_32);
-            s->i_rfactor[scale * 3 + 1] = (uint32_t)(rf1 * pow2_32);
-            s->i_rfactor[scale * 3 + 2] = (uint32_t)(rf2 * pow2_32);
-        }
+    } else if (s->adm_csf_mode == 3) {
+        factors[0] = barten_watson_blend_csf_mae(scale, 0, s->adm_norm_view_dist,
+                                                 s->adm_ref_display_height);
+        factors[2] = barten_watson_blend_csf_mae(scale, 1, s->adm_norm_view_dist,
+                                                 s->adm_ref_display_height);
+    } else {
+        const float q1 = iadm_dwt_quant_step(&iadm_dwt_threshold[0], scale, 1,
+                                             s->adm_norm_view_dist, s->adm_ref_display_height);
+        const float q2 = iadm_dwt_quant_step(&iadm_dwt_threshold[0], scale, 2,
+                                             s->adm_norm_view_dist, s->adm_ref_display_height);
+        factors[0] = 1.0f / q1;
+        factors[2] = 1.0f / q2;
     }
+    factors[1] = factors[0];
+}
+
+/* Compute the per-scale fixed-point i_rfactor[12] with the same shared
+ * exponent as the CPU, CUDA, HIP, and SYCL twins. */
+static int compute_i_rfactor(IntegerAdmStateMetal *s)
+{
+    for (int scale = 0; scale < IADM_NUM_SCALES; ++scale) {
+        const size_t band0 = (size_t)scale * 3u;
+        iadm_csf_factors(s, scale, &s->rfactor[band0]);
+        double fixed[3];
+        const int err = adm_csf_fixed_scale(
+            scale, &s->rfactor[band0], s->adm_norm_view_dist, s->adm_ref_display_height,
+            s->adm_csf_mode, fixed, &s->csf_normalization_shift[scale]);
+        if (err != 0) {
+            return err;
+        }
+        s->i_rfactor[band0] = (uint32_t)fixed[0];
+        s->i_rfactor[band0 + 1] = (uint32_t)fixed[1];
+        s->i_rfactor[band0 + 2] = (uint32_t)fixed[2];
+    }
+    return 0;
 }
 
 static int build_pipelines(IntegerAdmStateMetal *s, id<MTLDevice> device)
@@ -487,16 +505,15 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     (void)pix_fmt;
     IntegerAdmStateMetal *s = (IntegerAdmStateMetal *)fex->priv;
 
-    /* Watson-97 (mode 0) only — matches the CUDA integer twin. */
-    if (s->adm_csf_mode != 0) { return -EINVAL; }
-    /* CPU integer_adm guards w>=17, h>=17. */
-    if (w < 17u || h < 17u) { return -EINVAL; }
+    const int size_err = adm_frame_size_check("integer_adm_metal", w, h);
+    if (size_err != 0) { return size_err; }
 
     s->width = w;
     s->height = h;
     s->bpc = bpc;
     compute_per_scale_dims(s);
-    compute_i_rfactor(s);
+    const int csf_err = compute_i_rfactor(s);
+    if (csf_err != 0) { return csf_err; }
 
     int err = vmaf_metal_context_new(&s->ctx, 0);
     if (err != 0) { return err; }
@@ -936,7 +953,7 @@ static void read_band_row_totals(IntegerAdmStateMetal *s, int scale, int64_t csf
 }
 
 static float conclude_adm_cm(const int64_t accum[3], int h, int w, int scale,
-                             float noise_weight, double p_norm)
+                             uint32_t normalization_shift, float noise_weight, double p_norm)
 {
     int left = (int)((double)w * IADM_BORDER_FACTOR - 0.5);
     int top = (int)((double)h * IADM_BORDER_FACTOR - 0.5);
@@ -948,11 +965,13 @@ static float conclude_adm_cm(const int64_t accum[3], int h, int w, int scale,
                                     (uint32_t)ceil(log2((double)w) - 4),
                                     (uint32_t)ceil(log2((double)w) - 3)};
     const int constant_offset[3] = {52, 52, 57};
+    const int restored_bits = 3 * (int)normalization_shift;
 
     uint32_t shift_cub = (uint32_t)ceil(log2((double)w));
-    float final_shift[3] = {powf(2.0f, (float)(45 - (int)shift_cub - (int)shift_inner_accum)),
-                            powf(2.0f, (float)(39 - (int)shift_cub - (int)shift_inner_accum)),
-                            powf(2.0f, (float)(36 - (int)shift_cub - (int)shift_inner_accum))};
+    float final_shift[3] = {
+        powf(2.0f, (float)(45 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
+        powf(2.0f, (float)(39 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
+        powf(2.0f, (float)(36 - restored_bits - (int)shift_cub - (int)shift_inner_accum))};
     /* The CPU parameterises the NUMERATOR p-norm by adm_p_norm
      * (integer_adm.c::adm_num_scale takes p_norm_exp = 1/adm_p_norm) and leaves
      * only the DENOMINATOR at a hardcoded cube root
@@ -971,8 +990,8 @@ static float conclude_adm_cm(const int64_t accum[3], int h, int w, int scale,
         float f_accum;
         if (scale == 0) {
             f_accum = (float)((double)accum[i] /
-                              pow(2.0, (double)(constant_offset[i] - (int)shift_xcub[i] -
-                                                (int)shift_inner_accum)));
+                              pow(2.0, (double)(constant_offset[i] - restored_bits -
+                                                (int)shift_xcub[i] - (int)shift_inner_accum)));
         } else {
             f_accum = (float)((double)accum[i] / (double)final_shift[scale - 1]);
         }
@@ -982,18 +1001,12 @@ static float conclude_adm_cm(const int64_t accum[3], int h, int w, int scale,
 }
 
 static float conclude_adm_csf_den(const int64_t accum[3], int h, int w, int scale,
-                                  float norm_view_dist, float ref_display_height, float csf_scale,
-                                  float csf_diag_scale, float noise_weight)
+                                  const float rfactor[3], float noise_weight)
 {
     const int left = (int)((double)w * IADM_BORDER_FACTOR - 0.5);
     const int top = (int)((double)h * IADM_BORDER_FACTOR - 0.5);
     const int right = w - left;
     const int bottom = h - top;
-    const float factor1 =
-        iadm_dwt_quant_step(&iadm_dwt_threshold[0], scale, 1, norm_view_dist, (int)ref_display_height);
-    const float factor2 =
-        iadm_dwt_quant_step(&iadm_dwt_threshold[0], scale, 2, norm_view_dist, (int)ref_display_height);
-    const float rfactor[3] = {csf_scale / factor1, csf_scale / factor1, csf_diag_scale / factor2};
     const uint32_t accum_convert_float[4] = {18, 32, 27, 23};
 
     int32_t shift_accum;
@@ -1042,16 +1055,18 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index, VmafFeat
             num_scale = 0.0f;
             den_scale = 1e-10f;
         } else {
-            num_scale = conclude_adm_cm(cm_tot, hh, hw, scale, (float)s->adm_noise_weight,
-                                        s->adm_p_norm);
-            den_scale =
-                conclude_adm_csf_den(csf_tot, hh, hw, scale, (float)s->adm_norm_view_dist,
-                                     (float)s->adm_ref_display_height, (float)s->adm_csf_scale,
-                                     (float)s->adm_csf_diag_scale, (float)s->adm_noise_weight);
+            num_scale = conclude_adm_cm(cm_tot, hh, hw, scale,
+                                        s->csf_normalization_shift[scale],
+                                        (float)s->adm_noise_weight, s->adm_p_norm);
+            den_scale = conclude_adm_csf_den(csf_tot, hh, hw, scale,
+                                             &s->rfactor[(size_t)scale * 3u],
+                                             (float)s->adm_noise_weight);
         }
 
         if (!s->adm_skip_aim) {
-            aim_num_scale = conclude_adm_cm(aim_tot, hh, hw, scale, 0.0f, s->adm_p_norm);
+            aim_num_scale = conclude_adm_cm(aim_tot, hh, hw, scale,
+                                            s->csf_normalization_shift[scale], 0.0f,
+                                            s->adm_p_norm);
         }
 
         num += num_scale;
