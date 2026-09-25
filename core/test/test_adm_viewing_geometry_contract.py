@@ -10,12 +10,16 @@ import unittest
 from pathlib import Path
 
 FEATURE_ROOT = Path(__file__).resolve().parents[1] / "src" / "feature"
+TEST_ROOT = Path(__file__).resolve().parent
 
 
 def function_body(source: str, name: str) -> str:
     """Return the balanced body of one named function."""
     start = -1
-    definition = rf"(?m)^[ \t]*(?:static[ \t]+)?(?:inline[ \t]+)?int[^;\n]*\b{re.escape(name)}\s*\("
+    definition = (
+        rf"(?m)^[ \t]*(?:static[ \t]+)?(?:inline[ \t]+)?"
+        rf"(?:int|void|char[ \t]*\*)[^;\n]*\b{re.escape(name)}\s*\("
+    )
     for match in re.finditer(definition, source):
         candidate = source.find("{", match.end())
         declaration = source.find(";", match.end())
@@ -78,9 +82,9 @@ class AdmViewingGeometryContractTest(unittest.TestCase):
             ),
             (
                 "hip/integer_adm_hip.c",
-                "adm_hip_validate",
-                "adm_csf_config_check(",
-                (),
+                "init_fex_hip",
+                "adm_hip_validate(",
+                ("adm_hip_rfactors(", "adm_hip_init_device("),
             ),
             (
                 "sycl/integer_adm_sycl.cpp",
@@ -107,6 +111,49 @@ class AdmViewingGeometryContractTest(unittest.TestCase):
                         guard,
                         f"{operation} must follow the viewing-geometry guard",
                     )
+
+    def test_metal_parity_harness_releases_each_resource_once(self) -> None:
+        source = (TEST_ROOT / "test_metal_integer_adm_parity.c").read_text(encoding="utf-8")
+        cleanup = function_body(source, "release_run_resources")
+        self.assertEqual(cleanup.count("vmaf_feature_dictionary_free(&resources->opts)"), 1)
+        self.assertEqual(cleanup.count("vmaf_close(resources->vmaf)"), 1)
+        self.assertEqual(cleanup.count("vmaf_metal_state_free(&resources->mstate)"), 1)
+
+        registration_helper = function_body(source, "use_feature_options")
+        registry_guard = registration_helper.find("vmaf_get_feature_extractor_by_name(")
+        handoff = registration_helper.find("*opts = NULL")
+        registration = registration_helper.find("vmaf_use_feature(")
+        self.assertGreaterEqual(registry_guard, 0)
+        self.assertGreater(handoff, registry_guard)
+        self.assertGreater(registration, handoff)
+
+        for function in ("run_cpu", "run_metal"):
+            with self.subTest(function=function):
+                body = function_body(source, function)
+                configure = body.find("set_run_options(")
+                registration = body.find("use_feature_options(")
+                failure_cleanup = body.find("release_run_resources(&resources)", configure)
+                self.assertGreaterEqual(configure, 0)
+                self.assertGreater(registration, configure)
+                self.assertGreater(failure_cleanup, configure)
+                self.assertLess(failure_cleanup, registration)
+                self.assertEqual(
+                    body[configure:registration].count("release_run_resources(&resources)"),
+                    1,
+                )
+                self.assertNotIn("vmaf_feature_dictionary_free", body[registration:])
+
+    def test_metal_unavailable_paths_mark_the_process_skipped(self) -> None:
+        source = (TEST_ROOT / "test_metal_integer_adm_parity.c").read_text(encoding="utf-8")
+        for function in ("run_metal", "metal_geometry_status"):
+            with self.subTest(function=function):
+                body = function_body(source, function)
+                init = body.find("vmaf_metal_state_init(")
+                skipped = body.find("mu_skipped = 1", init)
+                unavailable_return = body.find("return NULL", init)
+                self.assertGreaterEqual(init, 0)
+                self.assertGreater(skipped, init)
+                self.assertGreater(unavailable_return, skipped)
 
 
 if __name__ == "__main__":
