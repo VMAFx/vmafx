@@ -11,6 +11,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 METAL_MS_SSIM = REPO_ROOT / "core/src/feature/metal/float_ms_ssim_metal.mm"
+METAL_MS_SSIM_KERNEL = REPO_ROOT / "core/src/feature/metal/float_ms_ssim.metal"
 CPU_MS_SSIM = REPO_ROOT / "core/src/feature/float_ms_ssim.c"
 SYCL_MS_SSIM = REPO_ROOT / "core/src/feature/sycl/integer_ms_ssim_sycl.cpp"
 CUDA_MS_SSIM = REPO_ROOT / "core/src/feature/cuda/integer_ms_ssim_cuda.c"
@@ -20,6 +21,12 @@ METAL_PARITY_TEST = REPO_ROOT / "core/test/test_metal_float_ms_ssim_parity.c"
 OPTION_SEMANTICS = REPO_ROOT / "core/src/feature/metal/float_ms_ssim_option_semantics.h"
 OPTION_SEMANTICS_TEST = REPO_ROOT / "core/test/test_metal_ms_ssim_option_semantics.c"
 MESON_TESTS = REPO_ROOT / "core/test/meson.build"
+METAL_AGENTS = REPO_ROOT / "core/src/feature/metal/AGENTS.md"
+METRICS_DOC = REPO_ROOT / "docs/metrics/ms-ssim.md"
+RESEARCH_DOC = REPO_ROOT / "docs/research/2110-metal-ms-ssim-option-parity-2026-09-25.md"
+CHANGELOG_FRAGMENT = (
+    REPO_ROOT / "changelog.d/added/T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07.md"
+)
 
 
 def function_body(source: str, signature: str) -> str:
@@ -37,13 +44,14 @@ def function_body(source: str, signature: str) -> str:
     raise AssertionError(f"unterminated function: {signature}")
 
 
-def metal_wiring_problems(metal_source: str, parity_source: str) -> list[str]:
-    """Validate that production and hardware parity tests use the owned seams."""
+def production_wiring_problems(metal_source: str) -> list[str]:
+    """Validate that the Metal host uses each executable semantic seam."""
     problems: list[str] = []
     required_wiring = (
         '#include "float_ms_ssim_option_semantics.h"',
         "vmaf_metal_ms_ssim_active_planes(s->enable_chroma, pix_fmt)",
         "vmaf_metal_ms_ssim_plane_dimensions(pix_fmt, 1u, w, h, &chroma_w, &chroma_h)",
+        "vmaf_metal_ms_ssim_min_luma_dimensions(",
         "vmaf_metal_ms_ssim_max_db(s->clip_db, bpc, w, h)",
     )
     for required in required_wiring:
@@ -56,7 +64,21 @@ def metal_wiring_problems(metal_source: str, parity_source: str) -> list[str]:
         problems.append("Metal reducer does not validate every L/C/S atom")
     elif reducer.index(finite_guard) > reducer.index("pow("):
         problems.append("Metal reducer validates L/C/S atoms only after pow")
+    elif "atoms, 3u" not in reducer:
+        problems.append("Metal reducer validates fewer than the three L/C/S atoms")
 
+    validator = function_body(metal_source, "static int validate_dimensions")
+    if "if (s->n_planes > 1u)" not in validator:
+        problems.append("Metal validator gates chroma dimensions on the raw option")
+    elif validator.index("s->n_planes =") > validator.index("if (s->n_planes > 1u)"):
+        problems.append("Metal validator checks active planes before resolving pixel format")
+
+    return problems
+
+
+def option_ownership_problems(parity_source: str) -> list[str]:
+    """Validate independent option construction and consumption ownership."""
+    problems: list[str] = []
     for signature in (
         "static char *setup_cpu_float_ms_ssim",
         "static char *setup_metal_float_ms_ssim",
@@ -66,8 +88,12 @@ def metal_wiring_problems(metal_source: str, parity_source: str) -> list[str]:
             problems.append(f"{signature} does not construct fresh options")
         if "vmaf_use_feature" not in setup:
             problems.append(f"{signature} does not pass options to its consumer")
-        if "*opts = NULL;" not in setup:
+        elif "*opts = NULL;" not in setup:
             problems.append(f"{signature} does not relinquish consumed options")
+        elif setup.index("*opts = NULL;") < setup.index("vmaf_use_feature"):
+            problems.append(f"{signature} relinquishes options before consumption")
+        if "vmaf_feature_dictionary_free" in setup:
+            problems.append(f"{signature} frees options after consumption")
 
     for signature in (
         "static char *run_cpu_float_ms_ssim_opts",
@@ -77,6 +103,11 @@ def metal_wiring_problems(metal_source: str, parity_source: str) -> list[str]:
         if "VmafFeatureDictionary" in runner_header:
             problems.append(f"{signature} accepts a caller-owned dictionary")
     return problems
+
+
+def metal_wiring_problems(metal_source: str, parity_source: str) -> list[str]:
+    """Return all production and parity ownership contract violations."""
+    return production_wiring_problems(metal_source) + option_ownership_problems(parity_source)
 
 
 def option_initializer(source: str, option: str) -> str:
@@ -104,6 +135,7 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.metal_src = METAL_MS_SSIM.read_text(encoding="utf-8")
+        cls.metal_kernel_src = METAL_MS_SSIM_KERNEL.read_text(encoding="utf-8")
         cls.cpu_src = CPU_MS_SSIM.read_text(encoding="utf-8")
         cls.sycl_src = SYCL_MS_SSIM.read_text(encoding="utf-8")
         cls.cuda_src = CUDA_MS_SSIM.read_text(encoding="utf-8")
@@ -113,9 +145,23 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
         cls.semantics_src = OPTION_SEMANTICS.read_text(encoding="utf-8")
         cls.semantics_test_src = OPTION_SEMANTICS_TEST.read_text(encoding="utf-8")
         cls.meson_src = MESON_TESTS.read_text(encoding="utf-8")
+        cls.exact_boundary_docs = {
+            path: path.read_text(encoding="utf-8")
+            for path in (METAL_AGENTS, METRICS_DOC, RESEARCH_DOC, CHANGELOG_FRAGMENT)
+        }
 
     def test_production_and_parity_wiring(self) -> None:
         self.assertEqual(metal_wiring_problems(self.metal_src, self.parity_test_src), [])
+
+    def test_kernel_cites_its_actual_port_decision(self) -> None:
+        header = "\n".join(self.metal_kernel_src.splitlines()[:12])
+        self.assertIn("T8-2b / " + "ADR-" + "0490", header)
+        self.assertNotIn("ADR-" + "0488", header)
+
+    def test_operator_docs_name_the_exact_ceil_subsampled_boundary(self) -> None:
+        for path, text in self.exact_boundary_docs.items():
+            with self.subTest(path=path.relative_to(REPO_ROOT)):
+                self.assertIn("351x351", text)
 
     def test_metal_options_match_cpu_and_gpu_siblings(self) -> None:
         expected_options = ("enable_lcs", "enable_db", "clip_db", "enable_chroma")
@@ -165,13 +211,14 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
         self.assertIn("vmaf_metal_ms_ssim_plane_dimensions", self.semantics_src)
         self.assertIn("clipped == 105.0", self.semantics_test_src)
         self.assertIn("width == 176u && height == 177u", self.semantics_test_src)
+        self.assertIn("width == 351u && height == 351u", self.semantics_test_src)
         self.assertIn("test_metal_ms_ssim_option_semantics = executable", self.meson_src)
 
     def test_chroma_min_dim_check_enforces_176(self) -> None:
         # 5 scales with 11x11 filter require minimum dimension 176:
         # scale 0: >= 176, scale 1: >= 88, scale 2: >= 44, scale 3: >= 22, scale 4: >= 11
-        # For YUV420P, chroma is halved in both dimensions, so pic width/height must be >= 352
-        # (chroma >= 176). If chroma < 176, it must return -EINVAL.
+        # YUV420P uses ceil-halving, so 351x351 is the exact luma minimum that
+        # yields 176x176 chroma. If either chroma axis is < 176, init rejects it.
         self.assertIn("check_chroma_min_dim", self.metal_src)
         self.assertIn(
             "min_dim = (unsigned)MS_SSIM_GAUSSIAN_LEN << (MS_SSIM_SCALES - 1u)", self.metal_src
@@ -213,6 +260,24 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
         mutated_setup = cpu_setup.replace("make_options(options, opts)", "0", 1)
         mutated = self.parity_test_src.replace(cpu_setup, mutated_setup, 1)
         self.assertTrue(metal_wiring_problems(self.metal_src, mutated))
+
+    def test_mutation_post_consumption_double_free_is_rejected(self) -> None:
+        cpu_setup = function_body(self.parity_test_src, "static char *setup_cpu_float_ms_ssim")
+        mutated_setup = cpu_setup.replace(
+            "*opts = NULL;",
+            "(void)vmaf_feature_dictionary_free(opts);\n    *opts = NULL;",
+            1,
+        )
+        mutated = self.parity_test_src.replace(cpu_setup, mutated_setup, 1)
+        self.assertTrue(metal_wiring_problems(self.metal_src, mutated))
+
+    def test_mutation_yuv400_uses_raw_chroma_option_is_rejected(self) -> None:
+        mutated = self.metal_src.replace("if (s->n_planes > 1u)", "if (s->enable_chroma)", 1)
+        self.assertTrue(metal_wiring_problems(mutated, self.parity_test_src))
+
+    def test_mutation_partial_atom_validation_is_rejected(self) -> None:
+        mutated = self.metal_src.replace("atoms, 3u", "atoms, 1u", 1)
+        self.assertTrue(metal_wiring_problems(mutated, self.parity_test_src))
 
     def test_nasa_rule4_function_loc_limit(self) -> None:
         # Every function in float_ms_ssim_metal.mm must satisfy LOC <= 60

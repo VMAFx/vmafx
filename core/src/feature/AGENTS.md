@@ -1391,8 +1391,10 @@ after port-upstream of any of these files.
   `float_ms_ssim.c` has `bool enable_chroma` field in `MsSsimState`
   and per-plane loop in `extract()` emitting `float_ms_ssim_cb` /
   `float_ms_ssim_cr`. default is `false` (luma-only, backward-
-  compatible). SYCL and Metal compute all three planes; HIP accepts the
-  option but remains explicitly luma-only; CUDA does not expose it. If
+  compatible). Chroma dimensions use ceil subsampling, so the exact 4:2:0
+  luma floor for a 176x176 chroma pyramid is 351x351. SYCL and Metal compute
+  all three planes; HIP accepts the option but remains explicitly luma-only;
+  CUDA does not expose it. If
   upstream Netflix adds any option to `float_ms_ssim.c`, mirror it to all
   GPU twins in same PR per twin-parity invariant.
 - **Upstream ports**: `feature/motion` options from `b949cebf`

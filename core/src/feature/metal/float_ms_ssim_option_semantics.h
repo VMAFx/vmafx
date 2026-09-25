@@ -24,10 +24,23 @@ static inline void vmaf_metal_ms_ssim_plane_dimensions(enum VmafPixelFormat pix_
                                                        unsigned *plane_width,
                                                        unsigned *plane_height)
 {
-    const unsigned ss_hor = pix_fmt != VMAF_PIX_FMT_YUV444P ? 1u : 0u;
+    const unsigned ss_hor =
+        pix_fmt == VMAF_PIX_FMT_YUV420P || pix_fmt == VMAF_PIX_FMT_YUV422P ? 1u : 0u;
     const unsigned ss_ver = pix_fmt == VMAF_PIX_FMT_YUV420P ? 1u : 0u;
     *plane_width = plane == 0u ? width : (width + ss_hor) >> ss_hor;
     *plane_height = plane == 0u ? height : (height + ss_ver) >> ss_ver;
+}
+
+static inline void vmaf_metal_ms_ssim_min_luma_dimensions(enum VmafPixelFormat pix_fmt,
+                                                          unsigned plane_minimum,
+                                                          unsigned *minimum_width,
+                                                          unsigned *minimum_height)
+{
+    const unsigned ss_hor =
+        pix_fmt == VMAF_PIX_FMT_YUV420P || pix_fmt == VMAF_PIX_FMT_YUV422P ? 1u : 0u;
+    const unsigned ss_ver = pix_fmt == VMAF_PIX_FMT_YUV420P ? 1u : 0u;
+    *minimum_width = (plane_minimum << ss_hor) - ss_hor;
+    *minimum_height = (plane_minimum << ss_ver) - ss_ver;
 }
 
 static inline double vmaf_metal_ms_ssim_max_db(bool clip_db, unsigned bpc, unsigned width,

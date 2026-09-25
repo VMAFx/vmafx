@@ -3108,7 +3108,6 @@
     "0488": {
       "sites": {
         "core/src/dnn/model_loader.c": 4,
-        "core/src/feature/metal/float_ms_ssim.metal": 1,
         "core/src/gpu_dispatch_env.cpp": 4,
         "core/src/gpu_dispatch_env.h": 1,
         "core/src/mcp/compute_vmaf.c": 2
@@ -3118,6 +3117,7 @@
     "0490": {
       "sites": {
         "core/src/feature/feature_extractor.cpp": 1,
+        "core/src/feature/metal/float_ms_ssim.metal": 1,
         "core/src/feature/metal/float_ms_ssim_metal.mm": 3,
         "core/src/metal/meson.build": 1,
         "core/test/test_nonfinite_collector_wiring.py": 1

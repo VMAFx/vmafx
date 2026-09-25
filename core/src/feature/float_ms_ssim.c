@@ -125,8 +125,8 @@ static void ms_ssim_init_simd_dispatch(void)
 
 /* The pyramid minimum applies to every plane that will actually be walked, and
  * with enable_chroma that includes the subsampled ones. init()'s own check
- * sees only luma, so a 4:2:0 input between min_dim and 2*min_dim passes it and
- * then fails mid-run on exactly the "scale below 1x1!" print that check exists
+ * sees only luma, so a 4:2:0 input from min_dim through 2 * min_dim - 2 passes it
+ * and then fails mid-run on exactly the "scale below 1x1!" print that check exists
  * to prevent -- upstream ms_ssim.c writes that to stdout and returns 1, which
  * surfaces as a bare "problem with feature extractor" and no output file at
  * all. Reproduced on this repository's own primary fixture: 576x324 4:2:0 has
@@ -153,7 +153,7 @@ static int check_chroma_min_dim(const VmafFeatureExtractor *fex, enum VmafPixelF
              "requires at least %ux%u. Use at least %ux%u luma for this pixel "
              "format, or leave enable_chroma off to score luma only.\n",
              fex->name, w, h, chroma_w, chroma_h, SCALES, GAUSSIAN_LEN, min_dim, min_dim,
-             min_dim << ss_hor, min_dim << ss_ver);
+             (min_dim << ss_hor) - ss_hor, (min_dim << ss_ver) - ss_ver);
     return -EINVAL;
 }
 
