@@ -51,6 +51,18 @@ DISTORTED_WORDS = {
 REQUIRED_INPUT_COUNT = 2
 MIN_GRAPH_LABELS = 2
 REQUIRED_WORKFLOW_JOBS = ("check", "refresh")
+DOCUMENTED_IMAGE_BASENAMES = {"vmaf", "ffmpeg_vmaf"}
+CONTAINER_RUNTIMES = {"docker", "docker.exe", "podman", "podman.exe"}
+SUPPORTED_CONTAINER_FLAGS = {"--rm"}
+SUPPORTED_CONTAINER_VALUE_OPTIONS = {
+    "-v",
+    "--volume",
+    "--gpus",
+    "-e",
+    "--env",
+    "--entrypoint",
+    "--name",
+}
 
 
 @dataclass(frozen=True)
@@ -204,6 +216,77 @@ def logical_shell_commands(text: str) -> list[str]:
     return commands
 
 
+def image_basename(image: str) -> str:
+    no_digest = image.split("@", maxsplit=1)[0]
+    final_segment = no_digest.rsplit("/", maxsplit=1)[-1]
+    return final_segment.split(":", maxsplit=1)[0]
+
+
+def _validate_container_command(
+    image_token: str, entrypoint: str | None, forwarded_argv: list[str]
+) -> tuple[list[str] | None, str | None]:
+    basename = image_basename(image_token)
+    is_documented = basename in DOCUMENTED_IMAGE_BASENAMES
+    has_ffmpeg_entrypoint = entrypoint is not None and Path(entrypoint).name in {
+        "ffmpeg",
+        "ffmpeg.exe",
+    }
+
+    if is_documented:
+        if entrypoint is not None and not has_ffmpeg_entrypoint:
+            return None, f"unsupported container entrypoint '{entrypoint}'; expected ffmpeg"
+    elif not has_ffmpeg_entrypoint:
+        return None, None
+
+    if not forwarded_argv:
+        return None, "container command has no forwarded arguments"
+    return forwarded_argv, None
+
+
+def _parse_container_option(tokens: list[str], index: int) -> tuple[int, str | None, str | None]:
+    token = tokens[index]
+    if token in SUPPORTED_CONTAINER_FLAGS:
+        return index + 1, None, None
+
+    name, has_equal, value = token.partition("=")
+    if name not in SUPPORTED_CONTAINER_VALUE_OPTIONS:
+        return index, None, f"unrecognized or malformed container option '{token}'"
+
+    if has_equal:
+        if not value:
+            return index, None, f"container option '{name}' requires an argument"
+        opt_val = value
+        next_idx = index + 1
+    else:
+        if index + 1 >= len(tokens) or tokens[index + 1].startswith("-"):
+            return index, None, f"container option '{name}' requires an argument"
+        opt_val = tokens[index + 1]
+        next_idx = index + 2
+
+    entrypoint = opt_val if name == "--entrypoint" else None
+    return next_idx, entrypoint, None
+
+
+def parse_container_run(tokens: list[str]) -> tuple[list[str] | None, str | None]:
+    """Parse documented docker/podman run commands."""
+
+    index = 0
+    entrypoint: str | None = None
+    while index < len(tokens):
+        token = tokens[index]
+        if not token.startswith("-"):
+            return _validate_container_command(token, entrypoint, tokens[index + 1 :])
+
+        next_index, option_entrypoint, error = _parse_container_option(tokens, index)
+        if error:
+            return None, error
+        if option_entrypoint:
+            entrypoint = option_entrypoint
+        index = next_index
+
+    return None, "container command missing image"
+
+
 def ffmpeg_arguments(command: str) -> tuple[list[str] | None, str | None]:
     """Return the FFmpeg-facing argv or a parse error for a candidate command."""
 
@@ -215,11 +298,15 @@ def ffmpeg_arguments(command: str) -> tuple[list[str] | None, str | None]:
         return None, f"cannot parse shell command containing a VMAF filter: {error}"
 
     for index, argument in enumerate(tokens):
-        if Path(argument).name in {"ffmpeg", "ffmpeg.exe"}:
-            return tokens[index + 1 :], None
-    # The documented GPU container uses ffmpeg_vmaf as its FFmpeg entrypoint.
+        if Path(argument).name in CONTAINER_RUNTIMES:
+            if index + 1 < len(tokens) and tokens[index + 1] == "run":
+                container_args, error = parse_container_run(tokens[index + 2 :])
+                if error or container_args is not None:
+                    return container_args, error
+                return None, None
+
     for index, argument in enumerate(tokens):
-        if argument == "ffmpeg_vmaf":
+        if Path(argument).name in {"ffmpeg", "ffmpeg.exe"}:
             return tokens[index + 1 :], None
     return None, None
 

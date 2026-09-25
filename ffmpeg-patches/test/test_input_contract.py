@@ -102,6 +102,37 @@ ffmpeg -i reference.mp4 -i distorted.mp4 \\
 """,
             encoding="utf-8",
         )
+        (self.root / "docs/usage/docker.md").write_text(
+            """# Docker Fixtures
+
+```bash
+docker run --rm -v $(pwd):/files vmaf \\
+    -i /files/distorted.y4m \\
+    -i /files/reference.y4m \\
+    -lavfi libvmaf \\
+    -f null -
+```
+
+```bash
+docker run --gpus all --rm -v $(pwd):/files vmaf \\
+    -i /files/distorted.y4m \\
+    -i /files/reference.y4m \\
+    -lavfi "[0:v][1:v]libvmaf_cuda" \\
+    -f null -
+```
+
+```bash
+docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
+    -v $(pwd):/files ffmpeg_vmaf \\
+    -hwaccel cuda -hwaccel_output_format cuda \\
+    -i /files/Beauty_3840x2160_120fps_420_8bit_HEVC_RAW.hevc \\
+    -hwaccel cuda -hwaccel_output_format cuda -i /files/dist.mp4 \\
+    -filter_complex "[0:v]scale_cuda=format=yuv420p[ref];[1:v]scale_cuda=format=yuv420p[dist];[dist][ref]libvmaf_cuda" \\
+    -f null -
+```
+""",
+            encoding="utf-8",
+        )
 
     def run_checker(self, root: Path | None = None) -> subprocess.CompletedProcess[str]:
         bash = shutil.which("bash")
@@ -263,6 +294,183 @@ ffmpeg -i reference.mp4 -i distorted.mp4 \\
     def test_lint_wiring_removal_fails(self) -> None:
         self.mutate("Makefile", "lint-sh: ffmpeg-input-contract", "lint-sh:")
         self.assert_fails_with("lint-sh must depend on ffmpeg-input-contract")
+
+    def test_docker_run_positive_passes(self) -> None:
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_plain_docker_vmaf_reversal_fails(self) -> None:
+        self.mutate(
+            "docs/usage/docker.md",
+            "-i /files/distorted.y4m \\\n    -i /files/reference.y4m \\\n    -lavfi libvmaf",
+            "-i /files/reference.y4m \\\n    -i /files/distorted.y4m \\\n    -lavfi libvmaf",
+        )
+        self.assert_fails_with("reversed VMAF pads")
+
+    def test_cuda_docker_vmaf_reversal_fails(self) -> None:
+        self.mutate(
+            "docs/usage/docker.md",
+            '-i /files/distorted.y4m \\\n    -i /files/reference.y4m \\\n    -lavfi "[0:v][1:v]libvmaf_cuda"',
+            '-i /files/reference.y4m \\\n    -i /files/distorted.y4m \\\n    -lavfi "[0:v][1:v]libvmaf_cuda"',
+        )
+        self.assert_fails_with("reversed VMAF pads")
+
+    def test_ffmpeg_vmaf_named_graph_reversal_fails(self) -> None:
+        self.mutate(
+            "docs/usage/docker.md",
+            "[dist][ref]libvmaf_cuda",
+            "[ref][dist]libvmaf_cuda",
+        )
+        self.assert_fails_with("reversed VMAF pads")
+
+    def test_docker_run_ambiguity_fails(self) -> None:
+        self.mutate("docs/usage/docker.md", "distorted.y4m", "video1.y4m", 1)
+        self.mutate("docs/usage/docker.md", "reference.y4m", "video2.y4m", 1)
+        self.assert_fails_with("ambiguous VMAF input roles")
+
+    def test_podman_reversal_fails(self) -> None:
+        (self.root / "docs/usage/docker.md").write_text(
+            """# Podman Reversal
+
+```bash
+podman run --rm -v $(pwd):/files vmaf \\
+    -i /files/reference.y4m \\
+    -i /files/distorted.y4m \\
+    -lavfi libvmaf \\
+    -f null -
+```
+""",
+            encoding="utf-8",
+        )
+        self.assert_fails_with("reversed VMAF pads")
+
+    def test_registry_port_qualified_image(self) -> None:
+        (self.root / "docs/usage/docker.md").write_text(
+            """# Registry Port Qualified
+
+```bash
+docker run --rm localhost:5000/vmaf:latest \\
+    -i /files/distorted.y4m \\
+    -i /files/reference.y4m \\
+    -lavfi libvmaf \\
+    -f null -
+```
+""",
+            encoding="utf-8",
+        )
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        self.mutate(
+            "docs/usage/docker.md",
+            "-i /files/distorted.y4m \\\n    -i /files/reference.y4m",
+            "-i /files/reference.y4m \\\n    -i /files/distorted.y4m",
+        )
+        self.assert_fails_with("reversed VMAF pads")
+
+    def test_name_vmaf_with_arbitrary_image_ignored(self) -> None:
+        (self.root / "docs/usage/docker.md").write_text(
+            """# Arbitrary image with --name vmaf
+
+```bash
+docker run --rm --name vmaf ubuntu:22.04 \\
+    -i /files/reference.y4m \\
+    -i /files/distorted.y4m \\
+    -lavfi libvmaf \\
+    -f null -
+```
+""",
+            encoding="utf-8",
+        )
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_explicit_ffmpeg_on_arbitrary_image(self) -> None:
+        (self.root / "docs/usage/docker.md").write_text(
+            """# Explicit entrypoint on arbitrary image
+
+```bash
+docker run --rm --entrypoint ffmpeg ubuntu:22.04 \\
+    -i /files/distorted.y4m \\
+    -i /files/reference.y4m \\
+    -lavfi libvmaf \\
+    -f null -
+```
+""",
+            encoding="utf-8",
+        )
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        self.mutate(
+            "docs/usage/docker.md",
+            "-i /files/distorted.y4m \\\n    -i /files/reference.y4m",
+            "-i /files/reference.y4m \\\n    -i /files/distorted.y4m",
+        )
+        self.assert_fails_with("reversed VMAF pads")
+
+    def test_non_ffmpeg_entrypoint_override_rejected(self) -> None:
+        (self.root / "docs/usage/docker.md").write_text(
+            """# Non-FFmpeg entrypoint override
+
+```bash
+docker run --rm --entrypoint /bin/sh vmaf \\
+    -i /files/distorted.y4m \\
+    -i /files/reference.y4m \\
+    -lavfi libvmaf \\
+    -f null -
+```
+""",
+            encoding="utf-8",
+        )
+        self.assert_fails_with("unsupported container entrypoint '/bin/sh'; expected ffmpeg")
+
+    def test_unknown_container_option_error(self) -> None:
+        (self.root / "docs/usage/docker.md").write_text(
+            """# Unknown container option
+
+```bash
+docker run --rm --unsupported-flag vmaf \\
+    -i /files/distorted.y4m \\
+    -i /files/reference.y4m \\
+    -lavfi libvmaf \\
+    -f null -
+```
+""",
+            encoding="utf-8",
+        )
+        self.assert_fails_with("unrecognized or malformed container option '--unsupported-flag'")
+
+    def test_missing_option_arguments_error(self) -> None:
+        (self.root / "docs/usage/docker.md").write_text(
+            """# Missing container option value
+
+```bash
+docker run --rm --gpus= vmaf \\
+    -i /files/distorted.y4m \\
+    -i /files/reference.y4m \\
+    -lavfi libvmaf \\
+    -f null -
+```
+""",
+            encoding="utf-8",
+        )
+        self.assert_fails_with("container option '--gpus' requires an argument")
+
+        self.mutate("docs/usage/docker.md", "--gpus=", "--name=")
+        self.assert_fails_with("container option '--name' requires an argument")
+
+        (self.root / "docs/usage/docker.md").write_text(
+            """# Missing container option value at end
+
+```bash
+docker run --rm -v \\
+    -lavfi libvmaf
+```
+""",
+            encoding="utf-8",
+        )
+        self.assert_fails_with("container option '-v' requires an argument")
 
 
 WRONG_MARKER = "<!-- vmafx-ffmpeg-input-order: intentionally-wrong -->"
