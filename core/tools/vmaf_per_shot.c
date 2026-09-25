@@ -170,9 +170,11 @@ static int per_shot_parse_uint(const char *s, unsigned long min, unsigned long m
 {
     if (s == NULL || *s == '\0' || out == NULL)
         return -EINVAL;
-    const char *p = s;
-    while (isspace((unsigned char)*p))
-        p++;
+    const size_t input_len = strlen(s);
+    size_t prefix_len = 0U;
+    while (prefix_len < input_len && isspace((unsigned char)s[prefix_len]))
+        prefix_len++;
+    const char *p = s + prefix_len;
     if (*p == '-' || *p == '\0')
         return -EINVAL;
     char *end = NULL;

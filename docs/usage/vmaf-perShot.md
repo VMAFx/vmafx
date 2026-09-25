@@ -172,13 +172,11 @@ content, matching the fork's raw-YUV CLI convention.
 - Scan stops at `s->max_frames` if `-F / --frames <N>` (or aliases
   `--frame_cnt` / `--max-frames`) is provided, terminating cleanly with
   exit code 0 and emitting the plan for the scanned prefix. If omitted or
-  set to `0` (unbounded), the scan runs until EOF or until reaching
-  `UINT32_MAX` (4294967295) frames, where it reports
-  `vmaf-perShot: input exceeds the 4294967295-frame scan limit` (`EFBIG`).
-  Under [ADR-1318](../adr/1318-pershot-frames-ceiling.md), the reader probes for
-  one additional frame at the built-in boundary and checks that read before
-  indexing it. An input of exactly `UINT32_MAX` frames is accepted when EOF is
-  reached, fixing the off-by-one check from
+  set to `0` (unbounded), the scan accepts up to exactly `UINT32_MAX`
+  (4294967295) frames. At that boundary the reader probes once more: EOF accepts
+  the exact-boundary input, while one additional complete frame reports
+  `vmaf-perShot: input exceeds the 4294967295-frame scan limit` (`EFBIG`)
+  before indexing or recording it. This fixes the off-by-one check from
   [ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md) and closing
   `T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21` in [state.md](../state.md).
   For endless sources (such as a FIFO with a live writer or `/dev/zero`),
