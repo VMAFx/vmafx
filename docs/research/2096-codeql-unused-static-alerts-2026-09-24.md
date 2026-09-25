@@ -3,13 +3,13 @@
 
 - **Status**: Active
 - **Workstream**: [ADR-1142](../adr/1142-whole-codebase-standards.md), CodeQL alert closure
-- **Last updated**: 2026-09-24
+- **Last updated**: 2026-09-25
 
 ## Question
 
 Whether the `cpp/unused-static-function` findings in `core/src/pdjson.c`,
-`core/src/picture.c`, `core/src/thread_pool.c`, and
-`core/test/test_fex_ctx_vector.cpp` identify dead implementation code, and how
+`core/src/picture.c`, `core/src/thread_pool.c`, `core/src/predict.c`,
+`core/src/feature/cambi.c`, and `core/test/test_fex_ctx_vector.cpp` identify dead implementation code, and how
 to close them without deleting live behavior, changing public ABI, suppressing
 the CodeQL unused-static findings, or weakening tests that compile
 implementation sources under special configurations.
@@ -24,7 +24,8 @@ implementation sources under special configurations.
 - [CodeQL query help: Unused static function](https://codeql.github.com/codeql-query-help/cpp/cpp-unused-static-function/).
 - [CodeQL query source](https://github.com/github/codeql/blob/main/cpp/ql/src/Best%20Practices/Unused%20Entities/UnusedStaticFunctions.ql).
 - `core/test/meson.build`, `core/src/pdjson.c`, `core/src/picture.c`,
-  `core/src/thread_pool.c`, and the owning tests.
+  `core/src/thread_pool.c`, `core/src/predict.c`,
+  `core/src/feature/cambi.c`, and the owning tests.
 
 ## Findings
 
@@ -124,6 +125,50 @@ one uniquely-owned test-local static library, `test_picture_impl`, for
 internal pool entry points. The sibling C++ error-path target was not part of
 the orphan identity and remains unchanged.
 
+### Exact-base predictor follow-up
+
+A fresh database from exact base
+`71c3c155717f4496c3c572e479d5202984e9c3b5` corrected the prior four-row
+remainder. The official interpreted CSV contained five rows from two predictor
+identity seams:
+
+1. `post_process_feature_from_another`
+2. `scan_feature`
+3. `scan_match_feature`
+4. `predict_validate_finite`
+5. `test_predict_nonfinite_log`
+
+A diagnostic CodeQL table query showed two definitions at the same source
+location for both `post_process_feature_from_another` and
+`predict_validate_finite`. The exact-base compile database contained 54
+`predict.c` commands: the library, 52 private-source test targets with common
+production flags, and `test_feature_collector` without those flags. Removing
+only the collector copy did not close the three scan rows: a second fresh
+database still reported them. The remaining 52 test copies were enough for
+CodeQL to coalesce external predictor roots while retaining an orphan private
+scan graph. Separately, `test_predict.c`'s textual implementation include
+created the orphan `predict_validate_finite` identity, whose test-only log
+callback was reachable only from that root. These are the same
+coalesced-external-root / duplicated-static-graph failure mode as the earlier
+test targets, not dead production behavior.
+
+The same exact-base database contained one `cambi_score` definition and one
+call to `dump_c_values`; the official query emitted no CAMBI row. The previously
+recorded CAMBI remainder was stale by this base and required no source change.
+
+The predictor test now shares only the pure linear, piecewise, and bitwise
+equality helpers through `predict_internal.h`. Their expression text and
+evaluation order moved unchanged as `static inline` definitions. End-to-end
+tests link the production predictor instead of unity-including it, and the
+non-finite test runs the real `vmaf_log` path. A source-authority test prevents
+the implementation include from returning; a subprocess-level contract checks
+that the production warning names the stage and frame and appears exactly once.
+`test_feature_collector` never scores a model, so its redundant predictor copy
+was removed. Like the wider private-source test graph, the target now links
+`predict_c_dependency`: `predict_c_lib` is the single compile authority, and
+libvmaf extracts the same object. The CPU compile database consequently
+contains one `predict.c` command instead of 54.
+
 ## Alternatives considered
 
 | Approach | Result | Decision |
@@ -136,6 +181,14 @@ the orphan identity and remains unchanged.
 | Alias every public API in each intentional copy | Closes CodeQL, but manufactures unused external APIs for cppcheck | Rejected |
 | Remove redundant copies and uniquely name intentional private helpers | Preserves behavior, the public API, and an unambiguous helper graph for both analyzers | **Chosen** |
 | Share `test_picture_impl` with all three orphan targets | Gives the helpers one called identity while preserving direct `picture_pool.c` error-path access | **Chosen** |
+| Delete the predictor scan helpers | Breaks live chroma-from-luma correction | Rejected |
+| Mark duplicate predictor helpers `used` / `unused` | Suppresses the query without repairing the duplicate identity | Rejected |
+| Keep the unity include and add unrelated calls | Manufactures reachability and still tests a private copy instead of production logging | Rejected |
+| Share pure helpers through an internal header and link the production predictor | Preserves exact arithmetic, removes the duplicate implementation identity, and exercises the shipped diagnostic | **Chosen** |
+| Remove only the collector target's direct predictor copy | Closes one redundant compile but leaves 52 test copies and the scan findings | Rejected |
+| Inline or export the three reported scan helpers | Alters good implementation structure only to change query reachability | Rejected |
+| Keep compiling `predict.c` in every private-source target | Repeats a production TU 53 extra times and leaves ambiguous static identities | Rejected |
+| Compile `predict.c` once as an internal static library and link every consumer | Preserves C linkage and runtime behavior while giving analyzers and builds one implementation identity | **Chosen** |
 
 ## Verification evidence
 
@@ -172,6 +225,30 @@ returned **four repository-wide rows**: the three `predict.c` rows and the one
 `picture.c`, `pdjson.c`, `thread_pool.c`, `test_fex_ctx_vector.cpp`, and
 `test_thread_pool_backpressure.c`. This is deliberately not reported as a
 repository-wide zero.
+
+The 2026-09-25 exact-base replay superseded that volatile remainder: it returned
+five predictor rows: three from the repeated private-source build graph and two
+from the newer non-finite unity-test seam. It emitted no CAMBI row. This
+inventory was captured before changing either test boundary; the
+source-authority and production-log contracts both failed against the old
+unity include.
+
+The first staged replay removed the unity include and the collector-only copy.
+It closed `predict_validate_finite` and `test_predict_nonfinite_log`, but still
+returned the three scan rows. That falsified the narrow collector attribution
+and led to the compile-database audit: 53 remaining `predict.c` commands (one
+library plus 52 tests). Consolidating those commands, rather than changing the
+live scan helpers, is the final repair.
+
+The final clean replay compiled the complete CPU graph in 1,559 steps with one
+`predict.c` command. CodeQL CLI 2.27.0 evaluated the official
+`codeql/cpp-queries` 1.8.3 `UnusedStaticFunctions.ql` against that newly
+extracted database and produced a zero-byte CSV: **zero repository-wide rows**.
+No CAMBI source changed. The four predictor/collector authority tests passed
+4/4 in the extracted build; the equivalent final Meson graph passed 180/181
+tests with one expected skip and no failures. A no-LTO CPU clang-tidy replay
+measured the touched predictor test at 13 warnings, so the generated CPU
+ratchet was tightened from 14 to 13 with the scoped writer.
 
 Focused runtime verification after the identity repair:
 
@@ -211,9 +288,8 @@ post-merge receipt.
 
 - Whether GitHub deduplicates every entity-level result back to the same 25 open
   alert records can only be confirmed by the fresh hosted default-branch run.
-- The unrelated `predict.c` duplicate-identity group and `cambi.c` debug helper
-  belong to separate audits; they are recorded here so this lane does not
-  overclaim a repository-wide zero.
+- Hosted closure still depends on a fresh default-branch analysis after merge;
+  local exact-query evidence cannot update GitHub's alert records.
 
 ## Related
 
