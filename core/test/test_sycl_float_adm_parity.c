@@ -115,6 +115,9 @@ static const char *const kAdmFeaturesApn[NUM_ADM_FEATURES] = {
 static const char *const kAdmFeaturesScf[NUM_ADM_FEATURES] = {
     "adm2_scf_2", "adm_scale0_scf_2", "adm_scale1_scf_2", "adm_scale2_scf_2", "adm_scale3_scf_2",
 };
+static const char *const kAdmFeaturesBcm[NUM_ADM_FEATURES] = {
+    "adm2_bcm_1", "adm_scale0_bcm_1", "adm_scale1_bcm_1", "adm_scale2_bcm_1", "adm_scale3_bcm_1",
+};
 
 /* Build the option dictionary for a variant, or leave it NULL for defaults. */
 static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const char *val)
@@ -292,12 +295,42 @@ static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
     return NULL;
 }
 
+/* ADR-1220 — adm_bypass_cm drops the contrast-masking threshold in both DLM and
+ * AIM CM kernels. Verify that setting adm_bypass_cm=1 changes the score and
+ * matches the CPU reference within tolerance. */
+static char *test_float_adm_bypass_cm_reaches_kernel(void)
+{
+    double cpu_scores[NUM_ADM_FEATURES] = {0};
+    double sycl_scores[NUM_ADM_FEATURES] = {0};
+    char *msg = run_cpu("adm_bypass_cm", "1", kAdmFeaturesBcm, cpu_scores);
+    if (msg)
+        return msg;
+    msg = run_sycl("adm_bypass_cm", "1", kAdmFeaturesBcm, sycl_scores);
+    if (msg)
+        return msg;
+    if (isnan(sycl_scores[0]))
+        return NULL;
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
+        const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\nfloat_adm bcm=1 parity FAIL: %s cpu=%.8f sycl=%.8f delta=%.2e "
+                          "tol=%.2e\n",
+                          kAdmFeaturesBcm[m], cpu_scores[m], sycl_scores[m], delta, PARITY_TOL);
+        }
+        mu_assert("float_adm with adm_bypass_cm=1 drifts from the CPU reference",
+                  delta <= PARITY_TOL);
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_sycl_registered);
     mu_run_test(test_float_adm_cpu_sycl_parity);
     mu_run_test(test_float_adm_p_norm_reaches_kernel);
     mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
+    mu_run_test(test_float_adm_bypass_cm_reaches_kernel);
     return NULL;
 }
 

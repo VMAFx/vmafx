@@ -677,9 +677,11 @@ Invariants:
   and `args[]` arrays for **both** `func_csf_cm` and `func_aim_cm`
   change together.
 
-This twin does not declare `adm_bypass_cm`, rejects it; deliberate,
-adding it tracked in `docs/state.md`. Guarded by
-`test_hip_float_adm_parity.c::test_float_adm_p_norm_reaches_kernel`.
+`adm_bypass_cm` (`bcm`) declared and passed via `FadmScaleGeom.bypass_cm`
+and kernel `args[]` into `float_adm_csf_cm` and `float_adm_aim_cm`,
+bypassing 3x3 contrast-masking threshold when non-zero (CPU/CUDA/Metal
+parity, ADR-1220). Guarded by
+`test_hip_float_adm_parity.c::test_float_adm_bypass_cm_reaches_kernel`.
 
 ## MS-SSIM clip_db is a dB ceiling (ADR-1221)
 

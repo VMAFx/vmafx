@@ -98,9 +98,8 @@ and the SYCL one had not followed it.
 
 The grep test above, run across the other feature families, still flags:
 
-- `adm_bypass_cm` is not declared at all by the SYCL and HIP `float_adm` twins,
-  so they reject it where CPU, CUDA and Metal accept it. That is a loud failure
-  rather than a wrong answer, so it is a feature gap rather than a defect —
-  tracked in `docs/state.md`.
+- `adm_bypass_cm` was originally not declared by the SYCL and HIP `float_adm` twins;
+  closed by `T-GAP-FLOAT-ADM-BYPASS-CM-SYCL-HIP-2026-09-07` with kernel contrast-masking
+  bypass and parity tests on both backends per ADR-1220.
 - Every `VMAF_OPT_TYPE_BOOL` feature param is half-covered by definition: a
   default-options test only ever exercises one of its two values.

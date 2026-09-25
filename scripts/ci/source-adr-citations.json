@@ -6923,11 +6923,11 @@
         "core/src/feature/metal/float_adm.metal": 4,
         "core/src/feature/metal/float_adm_metal.mm": 4,
         "core/src/feature/metal/integer_adm_metal.mm": 1,
-        "core/src/feature/sycl/float_adm_sycl.cpp": 2,
+        "core/src/feature/sycl/float_adm_sycl.cpp": 3,
         "core/test/test_cuda_float_adm_parity.c": 2,
-        "core/test/test_hip_float_adm_parity.c": 2,
+        "core/test/test_hip_float_adm_parity.c": 3,
         "core/test/test_metal_integer_adm_parity.c": 1,
-        "core/test/test_sycl_float_adm_parity.c": 2
+        "core/test/test_sycl_float_adm_parity.c": 3
       },
       "target": "1220-gpu-float-adm-options-reach-kernels.md"
     },
