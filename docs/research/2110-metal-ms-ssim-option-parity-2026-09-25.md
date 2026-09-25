@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# Research-2109: Metal float_ms_ssim option and score parity — 2026-09-25
+# Research-2110: Metal float_ms_ssim option and score parity — 2026-09-25
 
 **Status:** Complete
 
