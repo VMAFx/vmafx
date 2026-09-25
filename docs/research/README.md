@@ -117,6 +117,7 @@ Conventions:
 | [2106](2106-cuda-hip-kernel-header-dependency-tracking.md) | CUDA and HIP device target header dependency tracking | Complete | [ADR-1320](../adr/1320-cuda-hip-kernel-header-dependency-tracking.md) |
 | [2108](2108-metal-float-motion-lifecycle-flush.md) | Metal float-motion force-zero ownership, debug gating, and flush idempotency | Complete | — (BUG048 A5 restoration) |
 | [2110](2110-metal-ms-ssim-option-parity-2026-09-25.md) | Metal float_ms_ssim option and score parity | Complete | [ADR-1221](../adr/1221-gpu-ms-ssim-db-ceiling.md) |
+| [2111](2111-adm-cm-row-rounding-observability.md) | Integer ADM contrast-masking row-rounding observability | Complete | [ADR-1167](../adr/1167-adm-cm-row-level-rounding.md) |
 
 | [0053](0053-post-merge-cpu-profile-2026-05-03.md) | Post-merge CPU profile 2026-05-03 — perf top-10 after lusoris/vmaf#310 through lusoris/vmaf#321; surfaces 3 new opt targets (convolve widen, SSIM double reduction, VIF gather elimination) | Active | — |
 | [0081](0081-fr-regressor-v2-ensemble-real-corpus-methodology.md) | Real-corpus retrain methodology for the `fr_regressor_v2` deep ensemble — corpus-size sufficiency (9 ref + 70 dis @ `.workingdir2/netflix/`), 9-fold LOSO sizing inherited from the deterministic ADR-0291 baseline, seed-diversity hyperparameters, and the `Seeking_25fps` weak-fold diagnostic for HOLD-on-spread cases. | Active | [ADR-0309](../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md) |

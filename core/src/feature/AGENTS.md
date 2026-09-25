@@ -531,19 +531,31 @@ feature/
   zeroing does not make upstream's bound safe. Guarded by
   `test_integer_adm_tiny_frames`, which the ASan lane aborts on the old bound.
 
-- **`integer_adm` GPU row-level rounding invariant** (fork-local, ADR-1167):
-  In integer ADM contrast masking kernels (`cuda/integer_adm/adm_cm.cu` and
-  `hip/integer_adm/adm_cm.hip`), inner accumulation rounding shift
+- **`integer_adm` row-level rounding invariant** (fork-local, ADR-1167):
+  In integer ADM contrast masking, the scalar CPU reference, AVX2/AVX-512 CPU
+  paths, and the CUDA, HIP, SYCL and Metal twins all apply the inner
+  accumulation rounding shift
   `(row_total + add_shift_inner_accum) >> shift_inner_accum` must NEVER be
-  distributed across warp reduction or per-thread reduction. Bitwise right-shift
-  with rounding bias is non-linear and non-distributive over addition.
-  kernel must accumulate all columns of row in 64-bit precision across
-  entire width `[start_col, end_col)` before applying shift once per row.
+  distributed across a pixel, lane, warp, subgroup or threadgroup reduction.
+  Bitwise right-shift with rounding bias is non-linear and non-distributive
+  over addition. Every implementation must accumulate all columns of a row in
+  64-bit precision across the entire width `[start_col, end_col)` before
+  applying the shift once per row. Scalar CPU, CUDA and HIP use the private
+  `adm_cm_round_row_total()` seam; AVX2/AVX-512 and SYCL keep equivalent inline
+  expressions to avoid behavior-only refactors in their inherited functions;
+  Metal uses an MSL-local twin.
+  The helper's rounding term stays signed: CUDA i4 passes ADR-0155's negative
+  `INT32_MIN` term, which must never be cast through `uint32_t`.
   Kernel launch grids must use `gridDim.x = 1` to ensure single-block/warp
   row traversal. Furthermore, border row selection at `i == 0 && top <= 0`
   must use explicit absolute indices `{row_top, row_bot, col_l, col_r}` and
   evaluate `csf_a` at row 0 center (`i * src_stride + j`), never walking running
-  pointer offsets. See [ADR-1167](../../../docs/adr/1167-adm-cm-row-level-rounding.md).
+  pointer offsets. Score parity cannot observe one-unit placement errors after
+  float conversion; preserve `test_adm_cm_row_rounding` and
+  `test_adm_cm_row_rounding_contract` as the raw-value and all-backend guards,
+  including all 72 AVX2/AVX-512 band-fold sites.
+  See [ADR-1167](../../../docs/adr/1167-adm-cm-row-level-rounding.md) and
+  [Research-2111](../../../docs/research/2111-adm-cm-row-rounding-observability.md).
 
 - **`integer_adm.c` / `adm_tools.c` are restructured upstream-mirror
   files** (ADR-1141, 2026-09-02): every kernel expression is verbatim

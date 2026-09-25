@@ -701,7 +701,17 @@ fail. Rounding placement inside a row (per pixel, per warp, per row)
 does not reach any emitted ADM score: the CPU divides the accumulator by
 `2^(52 - shift_cub - shift_inner_accum)` and casts to `float`. No
 score-level tolerance detects it
-(T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19).
+(T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19). Preserve the paired
+device-free guards: `test_adm_cm_row_rounding.c` exercises the private raw
+`int64_t` row-fold seam with a worked value that separates correct row
+rounding (`2`) from per-partition rounding (`4`), truncation (`0`) and a
+  post-shift increment (`3`); `test_adm_cm_row_rounding_contract.py` binds that
+  seam after the complete reduction in the scalar CPU reference, all 72
+  AVX2/AVX-512 band-fold sites, and every CUDA, HIP, SYCL and Metal call shape,
+  then proves its own sensitivity with source mutations. The raw seam also
+  guards ADR-0155's negative CUDA i4 rounding term against unsigned
+  reinterpretation. A new backend shape must be added to that contract in the
+  same change.
 
 ## Test target source identity contracts (ADR-1142, Research-2096)
 

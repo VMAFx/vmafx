@@ -21,6 +21,28 @@ absolute tolerance. Production SYCL source is unchanged.
 - Changelog: `changelog.d/fixed/sycl-motion-add-uv-fixed-oracle.md`.
 - FFmpeg impact: none; no public C header, CLI flag, Meson option, or patch
   surface changed.
+## agent/adm-cm-rounding-observable — preserve raw row-fold observability (2026-09-25)
+
+Integer-ADM contrast masking must apply `shift_inner_accum` exactly once after
+the complete row reduction in the scalar CPU reference, AVX2/AVX-512, CUDA,
+HIP, SYCL and Metal. Preserve the private `adm_cm_round_row_total()` seam, all
+72 inline x86 SIMD band folds, the equivalent inline SYCL fold, the MSL-local
+twin, the ten scalar/GPU call shapes, and the CUDA/HIP embedded-kernel header
+dependencies when resolving upstream reduction changes. Preserve the seam's
+signed rounding argument because CUDA i4 passes ADR-0155's negative term.
+Score parity is not evidence for this invariant because the later float
+conversion erases one-unit placement errors.
+
+- Research digest: [Research-2111](research/2111-adm-cm-row-rounding-observability.md).
+- Decision matrix: existing [ADR-1167](adr/1167-adm-cm-row-level-rounding.md);
+  no new decision was required.
+- AGENTS.md invariant: `core/src/feature/AGENTS.md`, “integer_adm row-level
+  rounding invariant”, plus the HIP exception and `core/test/AGENTS.md` guard.
+- Reproducer / smoke: `python3 core/test/test_adm_cm_row_rounding_contract.py`
+  and `meson test -C BUILD test_adm_cm_row_rounding`.
+- Changelog: `changelog.d/fixed/adm-cm-row-rounding-observability.md`.
+- FFmpeg impact: none; no public header, exported API, CLI flag or Meson option
+  changed.
 
 ## audit/rc1-flake-survey-df0b — keep scheduled CI aligned with required lanes (2026-09-25)
 

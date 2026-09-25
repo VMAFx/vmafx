@@ -683,10 +683,12 @@
     "0155": {
       "sites": {
         ".github/workflows/upstream-netflix-955-watcher.yml": 1,
+        "core/src/feature/adm_cm_accumulator.h": 1,
         "core/src/feature/cuda/integer_adm/adm_cm.cu": 1,
         "core/src/feature/hip/integer_adm/adm_cm.hip": 1,
         "core/src/feature/integer_adm.c": 3,
-        "core/src/feature/sycl/integer_adm_sycl.cpp": 1
+        "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
+        "core/test/test_adm_cm_row_rounding.c": 1
       },
       "target": "0155-adm-i4-rounding-deferred-netflix-955.md"
     },
@@ -6132,6 +6134,7 @@
         "core/test/hip_parity_skip.h": 1,
         "core/test/mu_table.h": 1,
         "core/test/test_adm_angle_flag.c": 1,
+        "core/test/test_adm_cm_row_rounding.c": 1,
         "core/test/test_adm_coverage.c": 1,
         "core/test/test_adm_csf_representable.c": 1,
         "core/test/test_adm_csf_tools_coverage.c": 1,
@@ -6488,7 +6491,7 @@
     "1167": {
       "sites": {
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
-        "core/test/meson.build": 4,
+        "core/test/meson.build": 5,
         "core/test/test_adm_small_border.c": 1,
         "core/test/test_adm_wide_rounding.c": 1
       },

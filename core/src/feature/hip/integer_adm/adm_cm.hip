@@ -58,6 +58,7 @@
 #include <cstdint>
 #include <hip/hip_runtime.h>
 
+#include "adm_cm_accumulator.h"
 #include "hip/integer_adm_hip.h"
 #include "common.h"
 
@@ -375,7 +376,8 @@ s0_cm_block_reduce(const int64_t (&accum_row)[rows_per_thread], int y, int end_r
         }
         if (threadIdx.x == 0 && (y + row) < end_row) {
             const int64_t row_total = s_row[threadIdx.y][0];
-            const int64_t shifted = (row_total + add_shift_inner_accum) >> shift_inner_accum;
+            const int64_t shifted =
+                adm_cm_round_row_total(row_total, add_shift_inner_accum, shift_inner_accum);
             atomicAdd((uint64_cu *)accum_band, (uint64_cu)shifted);
         }
     }
@@ -483,7 +485,8 @@ adm_cm_reduce_line_kernel_body(int h, int w, int scale, int buffer_h, int buffer
     if (threadIdx.x == 0) {
         const uint32_t shift_inner_accum = (uint32_t)ceilf(log2f((float)h));
         const uint32_t add_shift_inner_accum = 1u << (shift_inner_accum - 1);
-        const int64_t shifted = (s_row[0] + add_shift_inner_accum) >> shift_inner_accum;
+        const int64_t shifted =
+            adm_cm_round_row_total(s_row[0], add_shift_inner_accum, shift_inner_accum);
         atomicAdd((uint64_cu *)&accum[band], (uint64_cu)shifted);
     }
 }
