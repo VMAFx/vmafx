@@ -1,21 +1,17 @@
-- **Three source citations pointed at ADR numbers that do not exist.**
-  Under rule 12 an inline `ADR-NNNN` citation *is* the justification for
-  a NOLINT or a non-obvious invariant, so one that resolves to nothing
-  sends the reader nowhere — and one that resolves to an unrelated ADR
-  is worse, because it looks authoritative. An audit of all 533 ADR
-  numbers cited from source found 11 with no `docs/adr/NNNN-*.md`.
-  Three are corrected, each confirmed by both the citing context and the
-  target ADR's own title and body:
-  `ADR-0900` → `ADR-0913` (changelog splice contract),
-  `ADR-0553` → `ADR-0564` (real integer_ssim GPU kernels),
-  `ADR-0204` → `ADR-0206` (ssimulacra2 CUDA + SYCL twins — its cited
-  siblings ADR-0192 and ADR-0201 both exist, so only this number was
-  wrong).
-  The rest are deliberately left, because they are not all the same
-  thing: `ADR-0722` is *correctly* cited — ADR-0725's own title records
-  that it supersedes it, so the file is retired by design. `ADR-0557`
-  and `ADR-0558` are numbers ADR-0559 records as claimed by parallel
-  agents for CUDA and HIP `speed_*` twins that never landed — dangling
-  plan, not typo. `ADR-0049`, `ADR-0322`, `ADR-0572` and `ADR-1214`
-  have no confident target; a plausible-looking renumber would make the
-  audit trail worse, not better.
+- **Source ADR citations now retain exact decision provenance.** The completed
+  audit corrects five additional proven number drifts: ADR-0049 to ADR-0415
+  (CAMBI SYCL), ADR-0322 to ADR-0326 (`vmaf-tune` Phase B), ADR-0572 to
+  ADR-0574 (CUDA float-ADM AIM slots), ADR-0715 to ADR-0714 (operator
+  skeleton), and ADR-0814 to ADR-0786 (operator Stage-2 reconcilers).
+  ADR-1214 now exists and needs no rewrite. False “CPU-only” SpEED comments
+  now name the shipped ADR-0567/0964/0965 GPU twins.
+
+  `scripts/ci/check-source-adr-citations.py` and its committed registry bind
+  every selected implementation/build citation to the exact ADR filename and
+  exact source-site counts. The always-run gate rejects missing numbers,
+  filename reallocation, source-site drift, reused retired numbers, and escaped
+  synthetic fixtures. ADR-0557/0558, ADR-0722, and ADR-0864 remain reserved,
+  evidence-backed historical identities instead of being falsely repointed.
+  Disposable fixture Git now strips inherited repository variables and caller
+  configuration, preventing a pre-commit alternate index from being replaced
+  by fixture paths.

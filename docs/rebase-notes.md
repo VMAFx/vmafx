@@ -46,6 +46,29 @@ The fix addresses this at both the caller and runner levels:
 
 Do not resolve rebase conflicts by stripping `$(CURDIR)` or removing `resolve_clang_tidy()`,
 as this will re-introduce the `safe_subprocess` validation error during `make tidy-ratchet LANE=sycl`.
+## fix/source-adr-citation-provenance — preserve exact decision identities (ADR-1311) (2026-09-25)
+
+Plain `ADR-NNNN` references in implementation and build/control files are bound
+by `scripts/ci/source-adr-citations.json` to the exact ADR filename and exact
+source path/counts audited in Research-1311. Preserve the registry, the
+always-run pre-commit hook, and `scripts/ci/tests/test_check_source_adr_citations.py`
+together. After resolving a conflict that adds, removes, or renumbers a source
+citation, audit the context and run `python3 scripts/ci/check-source-adr-citations.py
+--write`; review the registry diff before accepting it. Never resolve drift by
+repointing a missing number at a plausible current ADR.
+
+ADR-0557/0558 (abandoned split SpEED plans), ADR-0722 (superseded logging
+attempt), and ADR-0864 (unfiled Markdown-lint cleanup) are reserved historical
+identities. Do not allocate those numbers or collapse them into their related
+live ADRs. Synthetic ADR-0099/9997/9998/9999 uses remain exact fixture-only
+exceptions. `mkdocs.yml`, Markdown, changelog prose, patches, and model/binary
+data are deliberately out of scope; broadening the scanner to those prose
+surfaces recreates false positives.
+
+The unit fixture's Git and checker subprocesses must continue to discard all
+inherited `GIT_*` variables, disable caller system/global configuration, hooks,
+and signing. A commit hook supplies an alternate index; letting a disposable
+fixture inherit it can replace the real staged index with fixture paths.
 
 ## fix/gpu-picture-pool-alloc-error — handle pool allocation failure with -ENOMEM (2026-09-24)
 

@@ -188,7 +188,7 @@ def _default_predicate(codec: str, src: Path, target_vmaf: float) -> RecommendRe
     well-formed row so callers see a clean report instead of a crash;
     the error string names the bisect entry-point so the next person
     who reads it has a one-step fix. The "Phase B pending" wording
-    used to live here pre-ADR-0322 — the bisect itself ships in this
+    used to live here pre-ADR-0326 — the bisect itself ships in this
     PR, but compare's default predicate stays a pointer because the
     geometry-binding rule ("geometry is fixed before the predicate
     is built") would otherwise force compare to grow new arguments

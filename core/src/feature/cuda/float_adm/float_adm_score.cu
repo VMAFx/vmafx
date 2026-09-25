@@ -28,7 +28,7 @@
  *    [0..2]  csf_den per band   (adm2 denominator accumulator)
  *    [3..5]  cm_num per band    (adm2 CM numerator accumulator)
  *    [6..8]  aim_cm per band    (AIM CM numerator, noise_weight=0)
- *                               — ADR-0572
+ *                               — ADR-0574
  */
 
 #include "common.h"
@@ -36,6 +36,7 @@
 
 #define FADM_BX 16
 #define FADM_BY 16
+#define FADM_WG_SIZE (FADM_BX * FADM_BY)
 #define FADM_NUM_BANDS 3
 /* ADR-0574: slots 0..5 = adm2 csf+cm per band; slots 6..8 = aim_cm per band. */
 #define FADM_ACCUM_SLOTS 9
@@ -362,6 +363,124 @@ __device__ static __forceinline__ float fadm_pnorm_term(float x, float p_norm)
     return (p_norm == 3.0f) ? (x * x * x) : powf(x, p_norm);
 }
 
+typedef struct FadmDecoupleSample {
+    float r;
+    float distorted;
+} FadmDecoupleSample;
+
+/* Shared closed form for stage 3 and 3b. Keep every multiplication and
+ * parenthesis in the same order as the original kernels. */
+__device__ static __forceinline__ FadmDecoupleSample
+fadm_decouple_sample(const float *ref_band, const float *dis_band, unsigned band_idx, int row,
+                     int col, int buf_stride, int half_h, float gain_limit)
+{
+    const float oh = fadm_read_band_at(ref_band, 1, row, col, buf_stride, half_h);
+    const float ov = fadm_read_band_at(ref_band, 2, row, col, buf_stride, half_h);
+    const float od = fadm_read_band_at(ref_band, 3, row, col, buf_stride, half_h);
+    const float th = fadm_read_band_at(dis_band, 1, row, col, buf_stride, half_h);
+    const float tv = fadm_read_band_at(dis_band, 2, row, col, buf_stride, half_h);
+    const float td = fadm_read_band_at(dis_band, 3, row, col, buf_stride, half_h);
+
+    const float ot_dp = (oh * th) + (ov * tv);
+    const float o_mag = (oh * oh) + (ov * ov);
+    const float t_mag = (th * th) + (tv * tv);
+    const float lhs = ot_dp * ot_dp;
+    const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
+    const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
+
+    const float oarr[3] = {oh, ov, od};
+    const float tarr[3] = {th, tv, td};
+    float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
+    k = fmaxf(0.0f, fminf(k, 1.0f));
+    float r_val = k * oarr[band_idx];
+    if (angle_flag && r_val > 0.0f)
+        r_val = fminf(r_val * gain_limit, tarr[band_idx]);
+    else if (angle_flag && r_val < 0.0f)
+        r_val = fmaxf(r_val * gain_limit, tarr[band_idx]);
+
+    return {r_val, tarr[band_idx]};
+}
+
+/* adm_bypass_cm skips the complete threshold in both ADM and AIM paths; those
+ * are the two kernel application points governed by ADR-1220. */
+__device__ static __forceinline__ float fadm_cm_threshold(const float *csf_a_buf,
+                                                          const float *csf_f_buf, int row, int col,
+                                                          int half_w, int half_h, int buf_stride,
+                                                          int bypass_cm)
+{
+    float threshold = 0.0f;
+    if (bypass_cm != 0)
+        return threshold;
+#pragma unroll
+    for (int band = 0; band < FADM_NUM_BANDS; band++) {
+#pragma unroll
+        for (int dy = -1; dy <= 1; dy++) {
+#pragma unroll
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0)
+                    continue;
+                threshold += fadm_read_csf_f_at(csf_f_buf, band, row + dy, col + dx, half_w, half_h,
+                                                buf_stride);
+            }
+        }
+    }
+    const float own_h = fadm_read_csf_a_at(csf_a_buf, 0, row, col, half_w, half_h, buf_stride);
+    const float own_v = fadm_read_csf_a_at(csf_a_buf, 1, row, col, half_w, half_h, buf_stride);
+    const float own_d = fadm_read_csf_a_at(csf_a_buf, 2, row, col, half_w, half_h, buf_stride);
+    threshold += FADM_ONE_BY_15 * fabsf(own_h);
+    threshold += FADM_ONE_BY_15 * fabsf(own_v);
+    threshold += FADM_ONE_BY_15 * fabsf(own_d);
+    return threshold;
+}
+
+__device__ static __forceinline__ void fadm_store_csf_cm(float local_csf_sum, float local_cm_sum,
+                                                         float *shared_csf, float *shared_cm,
+                                                         float *accum_out, unsigned lid,
+                                                         unsigned wg_id, unsigned band_idx)
+{
+    const float warp_csf = fadm_warp_reduce(local_csf_sum);
+    const float warp_cm = fadm_warp_reduce(local_cm_sum);
+    const unsigned lane = lid % 32u;
+    const unsigned warp_id = lid / 32u;
+    if (lane == 0u) {
+        shared_csf[warp_id] = warp_csf;
+        shared_cm[warp_id] = warp_cm;
+    }
+    __syncthreads();
+    if (lid == 0u) {
+        float total_csf = 0.0f;
+        float total_cm = 0.0f;
+#pragma unroll
+        for (unsigned i = 0u; i < FADM_WG_SIZE / 32u; i++) {
+            total_csf += shared_csf[i];
+            total_cm += shared_cm[i];
+        }
+        const unsigned slot_base = wg_id * FADM_ACCUM_SLOTS;
+        accum_out[slot_base + band_idx] = total_csf;
+        accum_out[slot_base + 3u + band_idx] = total_cm;
+    }
+}
+
+__device__ static __forceinline__ void fadm_store_aim(float local_aim_cm, float *shared_aim,
+                                                      float *accum_out, unsigned lid,
+                                                      unsigned wg_id, unsigned band_idx)
+{
+    const float warp_aim = fadm_warp_reduce(local_aim_cm);
+    const unsigned lane = lid % 32u;
+    const unsigned warp_id = lid / 32u;
+    if (lane == 0u)
+        shared_aim[warp_id] = warp_aim;
+    __syncthreads();
+    if (lid == 0u) {
+        float total_aim = 0.0f;
+#pragma unroll
+        for (unsigned i = 0u; i < FADM_WG_SIZE / 32u; i++)
+            total_aim += shared_aim[i];
+        const unsigned slot_base = wg_id * FADM_ACCUM_SLOTS;
+        accum_out[slot_base + 6u + band_idx] = total_aim;
+    }
+}
+
 __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, const float *csf_a,
                                  const float *csf_f, float *accum_out, int half_w, int half_h,
                                  int buf_stride, int active_left, int active_top, int active_right,
@@ -386,107 +505,33 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
     const float rfactor_band = (band_idx == 0u) ? rfactor_h :
                                (band_idx == 1u) ? rfactor_v :
                                                   rfactor_d;
-    const unsigned WG_SIZE = FADM_BX * FADM_BY;
 
     float local_csf_sum = 0.0f;
     float local_cm_sum = 0.0f;
 
-    for (int col = active_left + (int)lid; col < active_right; col += (int)WG_SIZE) {
+    for (int col = active_left + (int)lid; col < active_right; col += FADM_WG_SIZE) {
         /* CSF denominator: (|rfactor * ref_band|)^3 from raw bands. */
         const float src_ref =
             fadm_read_band_at(ref_band, (int)band_idx + 1, row, col, buf_stride, half_h);
         const float csf_o = fabsf(rfactor_band * src_ref);
         local_csf_sum += fadm_pnorm_term(csf_o, p_norm);
 
-        /* Re-derive decoupled-r value inline (cheaper than reading
-         * csf_a back and reconstructing — see Vulkan kernel for the
-         * same closed form). Order of multiplications matches the
-         * decouple stage's parenthesisation. */
-        const float oh = fadm_read_band_at(ref_band, 1, row, col, buf_stride, half_h);
-        const float ov = fadm_read_band_at(ref_band, 2, row, col, buf_stride, half_h);
-        const float od = fadm_read_band_at(ref_band, 3, row, col, buf_stride, half_h);
-        const float th = fadm_read_band_at(dis_band, 1, row, col, buf_stride, half_h);
-        const float tv = fadm_read_band_at(dis_band, 2, row, col, buf_stride, half_h);
-        const float td = fadm_read_band_at(dis_band, 3, row, col, buf_stride, half_h);
-        (void)od;
-        (void)td;
+        const FadmDecoupleSample sample = fadm_decouple_sample(ref_band, dis_band, band_idx, row,
+                                                               col, buf_stride, half_h, gain_limit);
+        const float threshold =
+            fadm_cm_threshold(csf_a, csf_f, row, col, half_w, half_h, buf_stride, bypass_cm);
 
-        const float ot_dp = (oh * th) + (ov * tv);
-        const float o_mag = (oh * oh) + (ov * ov);
-        const float t_mag = (th * th) + (tv * tv);
-        const float lhs = ot_dp * ot_dp;
-        const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
-        const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
-
-        float oarr[3] = {oh, ov, od};
-        float tarr[3] = {th, tv, td};
-        float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
-        k = fmaxf(0.0f, fminf(k, 1.0f));
-        float r_val = k * oarr[band_idx];
-        if (angle_flag && r_val > 0.0f)
-            r_val = fminf(r_val * gain_limit, tarr[band_idx]);
-        else if (angle_flag && r_val < 0.0f)
-            r_val = fmaxf(r_val * gain_limit, tarr[band_idx]);
-
-        /* CM threshold sums csf_f over all 3 bands' 8-neighbours +
-         * (1/15)·|csf_a centre| for each of the 3 bands — matches the
-         * CPU `ADM_CM_THRESH_S_I_J` macro's 3-band aggregate. */
-        float thr = 0.0f;
-        /* adm_bypass_cm skips the masking threshold entirely, exactly as
-         * adm_tools.c::adm_cm_accum_px_s does. ADR-1220. */
-        if (bypass_cm == 0) {
-#pragma unroll
-            for (int b = 0; b < FADM_NUM_BANDS; b++) {
-#pragma unroll
-                for (int dy = -1; dy <= 1; dy++) {
-#pragma unroll
-                    for (int dx = -1; dx <= 1; dx++) {
-                        if (dx == 0 && dy == 0)
-                            continue;
-                        thr += fadm_read_csf_f_at(csf_f, b, row + dy, col + dx, half_w, half_h,
-                                                  buf_stride);
-                    }
-                }
-            }
-            const float own_h = fadm_read_csf_a_at(csf_a, 0, row, col, half_w, half_h, buf_stride);
-            const float own_v = fadm_read_csf_a_at(csf_a, 1, row, col, half_w, half_h, buf_stride);
-            const float own_d = fadm_read_csf_a_at(csf_a, 2, row, col, half_w, half_h, buf_stride);
-            thr += FADM_ONE_BY_15 * fabsf(own_h);
-            thr += FADM_ONE_BY_15 * fabsf(own_v);
-            thr += FADM_ONE_BY_15 * fabsf(own_d);
-        }
-
-        const float x_val = rfactor_band * r_val;
-        float xa = fabsf(x_val) - thr;
+        const float x_val = rfactor_band * sample.r;
+        float xa = fabsf(x_val) - threshold;
         if (xa < 0.0f)
             xa = 0.0f;
         local_cm_sum += fadm_pnorm_term(xa, p_norm);
     }
 
-    /* Warp + cross-warp reduction. */
-    __shared__ float s_csf[WG_SIZE / 32];
-    __shared__ float s_cm[WG_SIZE / 32];
-    const float wn_csf = fadm_warp_reduce(local_csf_sum);
-    const float wn_cm = fadm_warp_reduce(local_cm_sum);
-    const unsigned lane = lid % 32u;
-    const unsigned warp_id = lid / 32u;
-    if (lane == 0u) {
-        s_csf[warp_id] = wn_csf;
-        s_cm[warp_id] = wn_cm;
-    }
-    __syncthreads();
-    if (lid == 0u) {
-        float total_csf = 0.0f;
-        float total_cm = 0.0f;
-#pragma unroll
-        for (unsigned i = 0u; i < WG_SIZE / 32u; i++) {
-            total_csf += s_csf[i];
-            total_cm += s_cm[i];
-        }
-        const unsigned slot_base = wg_id * FADM_ACCUM_SLOTS;
-        accum_out[slot_base + band_idx] = total_csf;
-        accum_out[slot_base + 3u + band_idx] = total_cm;
-    }
+    __shared__ float shared_csf[FADM_WG_SIZE / 32];
+    __shared__ float shared_cm[FADM_WG_SIZE / 32];
+    fadm_store_csf_cm(local_csf_sum, local_cm_sum, shared_csf, shared_cm, accum_out, lid, wg_id,
+                      band_idx);
 }
 
 /* ------------------------------------------------------------------
@@ -589,96 +634,30 @@ __global__ void float_adm_aim_cm(const float *ref_band, const float *dis_band,
     const float rfactor_band = (band_idx == 0u) ? rfactor_h :
                                (band_idx == 1u) ? rfactor_v :
                                                   rfactor_d;
-    const unsigned WG_SIZE = FADM_BX * FADM_BY;
 
     float local_aim_cm = 0.0f;
 
-    for (int col = active_left + (int)lid; col < active_right; col += (int)WG_SIZE) {
-        /* Re-derive both decouple_r and decouple_a per pixel. */
-        const float oh = fadm_read_band_at(ref_band, 1, row, col, buf_stride, half_h);
-        const float ov = fadm_read_band_at(ref_band, 2, row, col, buf_stride, half_h);
-        const float od = fadm_read_band_at(ref_band, 3, row, col, buf_stride, half_h);
-        const float th = fadm_read_band_at(dis_band, 1, row, col, buf_stride, half_h);
-        const float tv = fadm_read_band_at(dis_band, 2, row, col, buf_stride, half_h);
-        const float td = fadm_read_band_at(dis_band, 3, row, col, buf_stride, half_h);
-        (void)od;
-        (void)td;
-
-        const float ot_dp = (oh * th) + (ov * tv);
-        const float o_mag = (oh * oh) + (ov * ov);
-        const float t_mag = (th * th) + (tv * tv);
-        const float lhs = ot_dp * ot_dp;
-        const float rhs = FADM_COS_1DEG_SQ * (o_mag * t_mag);
-        const bool angle_flag = (ot_dp >= 0.0f) && (lhs >= rhs);
-
-        float oarr[3] = {oh, ov, od};
-        float tarr[3] = {th, tv, td};
-        float k = tarr[band_idx] / (oarr[band_idx] + FADM_EPS);
-        k = fmaxf(0.0f, fminf(k, 1.0f));
-        float r_val = k * oarr[band_idx];
-        if (angle_flag && r_val > 0.0f)
-            r_val = fminf(r_val * gain_limit, tarr[band_idx]);
-        else if (angle_flag && r_val < 0.0f)
-            r_val = fmaxf(r_val * gain_limit, tarr[band_idx]);
+    for (int col = active_left + (int)lid; col < active_right; col += FADM_WG_SIZE) {
+        const FadmDecoupleSample sample = fadm_decouple_sample(ref_band, dis_band, band_idx, row,
+                                                               col, buf_stride, half_h, gain_limit);
         /* decouple_a[band] = t - r (the anomaly component). */
-        const float a_val = tarr[band_idx] - r_val;
+        const float a_val = sample.distorted - sample.r;
 
-        /* AIM CM threshold: cross-band aggregate using aim csf buffers
-         * (derived from decouple_r) — identical structure to stage 3. */
-        float thr = 0.0f;
-        /* adm_bypass_cm applies to the AIM CM too: adm.c passes it to both
-         * adm_cm() calls. ADR-1220. */
-        if (bypass_cm == 0) {
-#pragma unroll
-            for (int b = 0; b < FADM_NUM_BANDS; b++) {
-#pragma unroll
-                for (int dy = -1; dy <= 1; dy++) {
-#pragma unroll
-                    for (int dx = -1; dx <= 1; dx++) {
-                        if (dx == 0 && dy == 0)
-                            continue;
-                        thr += fadm_read_csf_f_at(csf_f_aim, b, row + dy, col + dx, half_w, half_h,
-                                                  buf_stride);
-                    }
-                }
-            }
-            const float own_h =
-                fadm_read_csf_a_at(csf_a_aim, 0, row, col, half_w, half_h, buf_stride);
-            const float own_v =
-                fadm_read_csf_a_at(csf_a_aim, 1, row, col, half_w, half_h, buf_stride);
-            const float own_d =
-                fadm_read_csf_a_at(csf_a_aim, 2, row, col, half_w, half_h, buf_stride);
-            thr += FADM_ONE_BY_15 * fabsf(own_h);
-            thr += FADM_ONE_BY_15 * fabsf(own_v);
-            thr += FADM_ONE_BY_15 * fabsf(own_d);
-        }
+        /* The shared helper is the AIM-side ADR-1220 bypass application point. */
+        const float threshold = fadm_cm_threshold(csf_a_aim, csf_f_aim, row, col, half_w, half_h,
+                                                  buf_stride, bypass_cm);
 
         /* CM: (|rfactor * a_val| - thr)_+^3; noise_weight=0 so no
          * noise constant — mirrors `adm_cm_s` with noise_weight=0. */
         const float x_val = rfactor_band * a_val;
-        float xa = fabsf(x_val) - thr;
+        float xa = fabsf(x_val) - threshold;
         if (xa < 0.0f)
             xa = 0.0f;
         local_aim_cm += fadm_pnorm_term(xa, p_norm);
     }
 
-    /* Warp + cross-warp reduction — same pattern as stage 3. */
-    __shared__ float s_aim[WG_SIZE / 32];
-    const float wn_aim = fadm_warp_reduce(local_aim_cm);
-    const unsigned lane = lid % 32u;
-    const unsigned warp_id = lid / 32u;
-    if (lane == 0u)
-        s_aim[warp_id] = wn_aim;
-    __syncthreads();
-    if (lid == 0u) {
-        float total_aim = 0.0f;
-#pragma unroll
-        for (unsigned i = 0u; i < WG_SIZE / 32u; i++)
-            total_aim += s_aim[i];
-        /* AIM CM lands in slots 6..8 of the per-WG accumulator. */
-        const unsigned slot_base = wg_id * FADM_ACCUM_SLOTS;
-        accum_out[slot_base + 6u + band_idx] = total_aim;
-    }
+    __shared__ float shared_aim[FADM_WG_SIZE / 32];
+    fadm_store_aim(local_aim_cm, shared_aim, accum_out, lid, wg_id, band_idx);
 }
 
 } /* extern "C" */

@@ -35,7 +35,7 @@
 #   VMAFX_OPERATOR_LEADER_ELECTION Enable leader election ("true"/"false", default "false")
 #   VMAFX_LOG_LEVEL               slog level string (default "info")
 #
-# ADR-0814 (operator reconciler scope), ADR-0715 (operator skeleton),
+# ADR-0786 (operator reconciler scope), ADR-0714 (operator skeleton),
 # ADR-0698 (distroless policy), ADR-0815 (this Dockerfile).
 # ADR-1129 (release container runtime alignment).
 # See docs/backends/operator.md for operator runbook.
