@@ -75,6 +75,7 @@ struct FloatAdmStateSycl {
     double adm_csf_diag_scale;
     double adm_noise_weight;
     /* ADR-0574: AIM / ADM3 options. */
+    int adm_bypass_cm;
     int adm_adm3_apply_hm;
     double adm_p_norm;
     double adm_dlm_weight;
@@ -506,6 +507,7 @@ struct FadmCmParams {
     float rfactor_d;
     float gain_limit;
     float p_norm;
+    int bypass_cm;
 };
 
 struct FadmCsfCmTerms {
@@ -577,6 +579,10 @@ static inline float fadm_read_csf_a(const FadmCmParams &p, int band, int y, int 
 
 static inline float fadm_cm_threshold(const FadmCmParams &p, int row, int col)
 {
+    /* adm_bypass_cm skips the masking threshold entirely, exactly as
+     * adm_tools.c::adm_cm_accum_px_s does. ADR-1220. */
+    if (p.bypass_cm != 0)
+        return 0.0f;
     float threshold = 0.0f;
     for (int band = 0; band < FADM_NUM_BANDS; band++) {
         for (int dy = -1; dy <= 1; dy++) {
@@ -722,7 +728,7 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
                                  unsigned half_w, unsigned half_h, unsigned buf_stride,
                                  int active_left, int active_top, int active_right,
                                  int active_bottom, float rfactor_h, float rfactor_v,
-                                 float rfactor_d, float gain_limit, float p_norm)
+                                 float rfactor_d, float gain_limit, float p_norm, int bypass_cm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -747,7 +753,8 @@ static sycl::event launch_aim_cm(sycl::queue &q, const float *ref_band, const fl
                                  .rfactor_v = rfactor_v,
                                  .rfactor_d = rfactor_d,
                                  .gain_limit = gain_limit,
-                                 .p_norm = p_norm};
+                                 .p_norm = p_norm,
+                                 .bypass_cm = bypass_cm};
 
     return q.submit([&](sycl::handler &cgh) {
         sycl::local_accessor<float, 1> const subgroup_aim(sycl::range<1>(workgroup_size / 32), cgh);
@@ -766,7 +773,7 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                                  unsigned half_w, unsigned half_h, unsigned buf_stride,
                                  int active_left, int active_top, int active_right,
                                  int active_bottom, float rfactor_h, float rfactor_v,
-                                 float rfactor_d, float gain_limit, float p_norm)
+                                 float rfactor_d, float gain_limit, float p_norm, int bypass_cm)
 {
     const int active_h = active_bottom - active_top;
     const int active_w = active_right - active_left;
@@ -791,7 +798,8 @@ static sycl::event launch_csf_cm(sycl::queue &q, const float *ref_band, const fl
                                  .rfactor_v = rfactor_v,
                                  .rfactor_d = rfactor_d,
                                  .gain_limit = gain_limit,
-                                 .p_norm = p_norm};
+                                 .p_norm = p_norm,
+                                 .bypass_cm = bypass_cm};
 
     return q.submit([&](sycl::handler &cgh) {
         sycl::local_accessor<float, 1> const subgroup_csf(sycl::range<1>(workgroup_size / 32), cgh);
@@ -1004,7 +1012,7 @@ static void fadm_launch_scale(sycl::queue &q, FloatAdmStateSycl *s, int scale, u
                   s->d_accum[scale], half_width, half_height, s->buf_stride, bounds.left,
                   bounds.top, bounds.right, bounds.bottom, s->rfactor[scale * 3 + 0],
                   s->rfactor[scale * 3 + 1], s->rfactor[scale * 3 + 2],
-                  (float)s->adm_enhn_gain_limit, (float)s->adm_p_norm);
+                  (float)s->adm_enhn_gain_limit, (float)s->adm_p_norm, s->adm_bypass_cm);
     /* Stage 2b: CSF on decouple_r (ADR-0574). */
     launch_csf_r(q, s->d_ref_band[scale], s->d_dis_band[scale], s->d_csf_a_aim, s->d_csf_f_aim,
                  half_width, half_height, s->buf_stride, s->rfactor[scale * 3 + 0],
@@ -1015,7 +1023,7 @@ static void fadm_launch_scale(sycl::queue &q, FloatAdmStateSycl *s, int scale, u
                   s->d_accum[scale], half_width, half_height, s->buf_stride, bounds.left,
                   bounds.top, bounds.right, bounds.bottom, s->rfactor[scale * 3 + 0],
                   s->rfactor[scale * 3 + 1], s->rfactor[scale * 3 + 2],
-                  (float)s->adm_enhn_gain_limit, (float)s->adm_p_norm);
+                  (float)s->adm_enhn_gain_limit, (float)s->adm_p_norm, s->adm_bypass_cm);
 }
 
 static void fadm_download_accumulators(sycl::queue &q, const FloatAdmStateSycl *s)
@@ -1227,6 +1235,15 @@ static const VmafOption options_float_adm_sycl[] = {
      .max = 100.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     /* ADR-0574: AIM / ADM3 options — mirrors CUDA twin. */
+    {.name = "adm_bypass_cm",
+     .help = "bypass contrast masking (CM)",
+     .alias = "bcm",
+     .offset = offsetof(FloatAdmStateSycl, adm_bypass_cm),
+     .type = VMAF_OPT_TYPE_INT,
+     .default_val = {.i = 0},
+     .min = 0,
+     .max = 1,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_adm3_apply_hm",
      .help = "apply harmonic mean for adm3 score (false = linear blend)",
      .alias = "aah",

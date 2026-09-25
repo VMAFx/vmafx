@@ -54042,3 +54042,12 @@ The `float_vif_cuda` feature extractor correctly parses and plumbs `vif_skip_sca
 - Reproducer / smoke: `meson test -C build-cuda test_cuda_float_vif_parity`.
 - Changelog: `changelog.d/fixed/float-vif-cuda-skip-scale0.md`.
 - FFmpeg impact: none.
+
+## agent/float-adm-bypass-cm-gap — SYCL and HIP float-ADM adm_bypass_cm parity (2026-09-25)
+
+Closes `T-GAP-FLOAT-ADM-BYPASS-CM-SYCL-HIP-2026-09-07`. SYCL (`float_adm_sycl.cpp`) and HIP (`float_adm_hip.c`, `float_adm_score.hip`) `float_adm` twins now expose `adm_bypass_cm` (alias `bcm`, int 0..1, default 0) in their option tables and pass `bypass_cm` down into their respective contrast masking kernels, achieving full parity with CPU, CUDA, and Metal per ADR-1220.
+When `bypass_cm != 0`, the 3x3 contrast-masking threshold calculation in both DLM and AIM CM kernels is bypassed (returning 0.0f).
+Preserved invariants:
+- SYCL device code remains strictly fp64-free (float32-only).
+- Tests `test_sycl_float_adm_parity` (`_large`) and `test_hip_float_adm_parity` (`_large`) assert `adm_bypass_cm=1` parity within `1e-4` against CPU `float_adm`.
+- Netflix golden assertions untouched.

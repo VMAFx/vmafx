@@ -87,6 +87,7 @@ typedef struct FloatAdmStateHip {
     double adm_csf_diag_scale;
     double adm_noise_weight;
     /* ADR-0574: AIM / ADM3 options. */
+    int adm_bypass_cm;
     int adm_adm3_apply_hm;
     double adm_p_norm;
     double adm_dlm_weight;
@@ -172,6 +173,10 @@ static const VmafOption options[] = {
      .default_val.d = DEFAULT_ADM_NOISE_WEIGHT, .min = 0.0, .max = 100.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     /* ADR-0574: AIM / ADM3 options — mirrors CUDA twin. */
+    {.name = "adm_bypass_cm", .alias = "bcm",
+     .help = "bypass CM computation (0 = normal, 1 = bypass)",
+     .offset = offsetof(FloatAdmStateHip, adm_bypass_cm), .type = VMAF_OPT_TYPE_INT,
+     .default_val.i = 0, .min = 0, .max = 1, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "adm_adm3_apply_hm", .alias = "aah",
      .help = "apply harmonic mean for adm3 score (false = linear blend)",
      .offset = offsetof(FloatAdmStateHip, adm_adm3_apply_hm), .type = VMAF_OPT_TYPE_BOOL,
@@ -312,6 +317,7 @@ typedef struct FadmScaleGeom {
     float rfd;
     float gain_limit;
     float pnorm;
+    int bypass_cm;
     float *ref_band;
     float *dis_band;
 } FadmScaleGeom;
@@ -333,6 +339,7 @@ static void fadm_hip_scale_geom(const FloatAdmStateHip *s, int scale, FadmScaleG
     /* adm_p_norm is a VMAF_OPT_FLAG_FEATURE_PARAM the twin advertises; until
      * ADR-1220 the kernels hardcoded p = 3 and it moved only the AIM exponent. */
     g->pnorm = (float)s->adm_p_norm;
+    g->bypass_cm = s->adm_bypass_cm;
     g->ref_band = (float *)s->ref_band[scale];
     g->dis_band = (float *)s->dis_band[scale];
 }
@@ -427,7 +434,7 @@ static int fadm_launch_cm(FloatAdmStateHip *s, hipFunction_t func, FadmScaleGeom
                     (void *)&g->half_h,     (void *)&g->buf_stride, (void *)&g->left,
                     (void *)&g->top,        (void *)&g->right,      (void *)&g->bottom,
                     (void *)&g->rfh,        (void *)&g->rfv,        (void *)&g->rfd,
-                    (void *)&g->gain_limit, (void *)&g->pnorm};
+                    (void *)&g->gain_limit, (void *)&g->pnorm,      (void *)&g->bypass_cm};
     return fadm_hip_rc(
         hipModuleLaunchKernel(func, gx, 1u, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr, args, NULL));
 }
