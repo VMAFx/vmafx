@@ -130,7 +130,7 @@ cythonize-deps: $(VENV_PIP)
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
-        coverage coverage-html coverage-check assertion-density pr-check \
+        coverage coverage-html coverage-check assertion-density pr-check ffmpeg-input-contract \
         silent-revert-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
@@ -313,7 +313,11 @@ lint-py:
 	@command -v mypy >/dev/null || { echo "note: mypy not installed, skipping advisory check"; exit 0; }
 	-mypy ai/scripts/ ai/tests/ ai/train/ ai/lpips_export.py scripts/
 
-lint-sh:
+ffmpeg-input-contract:
+	bash ffmpeg-patches/test/check-input-contract.sh
+	python3 -m unittest discover -s ffmpeg-patches/test -p 'test_input_contract.py' -v
+
+lint-sh: ffmpeg-input-contract
 	$(call require-tool,shellcheck,your package manager, e.g. pacman -S shellcheck)
 	shellcheck $$(git ls-files '*.sh')
 	@scripts/ci/check-default-model-single-source.sh

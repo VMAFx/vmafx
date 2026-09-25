@@ -116,13 +116,14 @@ want to evaluate its quality at the reference resolution, use FFmpeg with the
 For example, to upscale the distorted video to 1080p:
 
 ```bash
-ffmpeg -i ref.mpg -i main.mpg \
+ffmpeg -i main.mpg -i ref.mpg \
   -filter_complex "[0:v]scale=1920x1080:flags=bicubic[main];[main][1:v]libvmaf" \
   -f null -
 ```
 
-This scales the first input video (`0:v`) to 1080p and forwards it to VMAF
-(`libvmaf`) as `main`, to be compared against the second input `1:v`. See the
+This scales the first input video (`0:v`, distorted) to 1080p and forwards it
+to VMAF (`libvmaf`) as `main` (pad 0), to be compared against the second input
+`1:v` (reference, pad 1). See the
 [FFmpeg documentation](../usage/ffmpeg.md) for more.
 
 ### Q: Why does the included SSIM tool produce different numbers than other SSIM implementations?

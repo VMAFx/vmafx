@@ -54189,12 +54189,26 @@ minimum.
   tuning, training, or Netflix golden assertion changes.
 ## agent/fix-ffmpeg-input-order-3139 — restore exact AV_LOG_INFO and docs for libvmaf input convention (2026-09-25)
 
-The `libvmaf` FFmpeg filter takes `[0:v]` = distorted (main) and `[1:v]` = reference, which is the OPPOSITE of every other VMAF surface. Passing inputs in the natural ref-first order silently inflated the VMAF score.
-This restores the exact `AV_LOG_INFO` warning about the `libvmaf` input-order convention in `ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch` to prevent silent score inflation. It also aligns all `ffmpeg -i` examples across docs to use `dis` then `ref`, and adds a contract test `ffmpeg-patches/test/check-input-contract.sh`.
+The FFmpeg `libvmaf`, `libvmaf_*`, and `libvmaf_tune` filters take distorted
+(main) on pad 0 and reference on pad 1, opposite the Python runner and
+standalone `vmaf` CLI. Passing reference on pad 0 changes the direction of the
+comparison and silently inflated the measured Netflix-pair score from
+`76.667830` to `83.782079`.
 
-- Research digest: no digest needed: trivial.
+This restores the exact executable `AV_LOG_INFO` reminder in
+`ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch`, corrects every
+current user-facing two-input VMAF filter command found under `docs/` (including
+direct numeric pads, hardware options, and named filter graphs), and installs a
+fail-closed checker plus mutation suite. The Make target is called by
+`lint-sh`, pre-commit/pre-push, and both FFmpeg patch-stack workflow jobs. The
+checker intentionally excludes historical ADR, research, state, and rebase
+records; one narrowly marked wrong example remains in the operator guide to
+show the hazard.
+
+- Research digest: `docs/research/0730-ffmpeg-libvmaf-smoke-20260527.md`.
 - Decision matrix: no alternatives: only-one-way fix.
 - AGENTS.md invariant: no rebase-sensitive invariants.
-- Reproducer / smoke: `./ffmpeg-patches/test/check-input-contract.sh`.
+- Reproducer / smoke: `make ffmpeg-input-contract`.
 - Changelog: `changelog.d/fixed/ffmpeg-input-order-contract.md`.
-- FFmpeg impact: modifies 0001 patch, `scripts/ci/ffmpeg_patch_stack.py --refresh` applies successfully.
+- FFmpeg impact: patch 0001 retains the reminder; verify the complete ordered
+  series with `python3 scripts/ci/ffmpeg_patch_stack.py --check`.

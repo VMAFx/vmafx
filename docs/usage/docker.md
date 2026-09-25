@@ -65,7 +65,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \
     -hwaccel cuda -hwaccel_output_format cuda \
     -i /files/Beauty_3840x2160_120fps_420_8bit_HEVC_RAW.hevc \
     -hwaccel cuda -hwaccel_output_format cuda -i /files/dist.mp4 \
-    -filter_complex "[0:v]scale_cuda=format=yuv420p[ref];[1:v]scale_cuda=format=yuv420p[dist];[ref][dist]libvmaf_cuda" \
+    -filter_complex "[0:v]scale_cuda=format=yuv420p[ref];[1:v]scale_cuda=format=yuv420p[dist];[dist][ref]libvmaf_cuda" \
     -f null -
 ```
 

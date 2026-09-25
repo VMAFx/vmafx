@@ -713,6 +713,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: ffmpeg-input-contract
+        name: FFmpeg VMAF input-order contract and red-cap tests
+        entry: make ffmpeg-input-contract
+        language: system
+        files: '^(docs/|ffmpeg-patches/|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: ffmpeg-patches-apply-check
         name: FFmpeg patch stack on the configured release
         entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir/cache/ffmpeg-patch-stack/hooks

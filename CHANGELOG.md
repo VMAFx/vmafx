@@ -23664,7 +23664,10 @@ always returned so feature availability was never affected.
   comparison failures; cover both cases in the hook regression suite.
 
 
-- **ffmpeg:** Restored the exact `AV_LOG_INFO` warning about the `libvmaf` input-order convention in `ffmpeg-patches/0001` to prevent silent score inflation, and aligned all `ffmpeg -i` examples across docs to use `dis` then `ref`. Added a contract test to prevent drift.
+- **ffmpeg:** Restored the exact `AV_LOG_INFO` warning that VMAF filter pad 0
+  is distorted and pad 1 is reference, corrected the user-facing commands that
+  violated that semantic order, and added a fail-closed Markdown contract with
+  mutation tests in Make, pre-commit, and both FFmpeg patch-stack CI jobs.
 
 
 - ffmpeg: document the `libvmaf` filter input-ordering convention
