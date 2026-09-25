@@ -294,9 +294,9 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   (ADR-1220) — see canonical note in
   [`../cuda/AGENTS.md`](../cuda/AGENTS.md). `launch_csf_cm` and
   `launch_aim_cm` capture `adm_p_norm`; host pooling uses
-  `1.0f / adm_p_norm` for root and noise constant. This twin
-  does not declare `adm_bypass_cm`, rejects it — deliberate,
-  adding it = feature, tracked in `docs/state.md`.
+  `1.0f / adm_p_norm` for root and noise constant. `adm_bypass_cm`
+  (`bcm`) captured into `FadmCmParams.bypass_cm`; `fadm_cm_threshold`
+  returns 0.0f when non-zero (CPU/CUDA/Metal parity, ADR-1220).
 
 - **VAAPI / dmabuf zero-copy import** — FFmpeg `libvmaf_sycl`
   filter (`ffmpeg-patches/0005-*.patch`) consumes
