@@ -53770,3 +53770,19 @@ Invariants preserved:
   `/tmp/build-sycl/test/test_sycl_motion_add_uv_parity`
   `/tmp/build-sycl/test/test_sycl_motion3_parity`.
 - Changelog: `changelog.d/fixed/sycl-motion-parity-branch-count.md`.
+
+## agent/pre-rc1-next-edbf — Windows CLI Unicode argv closure (2026-09-25)
+
+The Windows `vmaf` and `vmafx` entry point is deliberately `wmain`; both
+targets convert each UTF-16 argument to strict UTF-8 before invoking the
+platform-neutral parser. Preserve `-municode` for GNU-style Windows links and
+do not move conversion after `cli_parse()`: doing either restores the active
+ANSI-code-page corruption that ADR-1182's internal wide-path helpers cannot
+repair. POSIX retains its original narrow `main` unchanged.
+
+The red-cap is `core/tools/test/test_vmaf_windows_utf8_argv.cpp`. It launches
+the built CLI with `CreateProcessW`, uses accented+CJK reference, distorted,
+and output filenames, and verifies the exact output path. No public header,
+C API, CLI option, Netflix golden assertion, or FFmpeg patch surface changes.
+Research and alternatives are recorded in the 2026-09-25 follow-up section of
+[Research-1182](research/1182-windows-utf8-path-contract.md).

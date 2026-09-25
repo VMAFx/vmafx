@@ -330,6 +330,22 @@ help, version and parse errors, which skips automatic destructors but runs
 static destructors. `CliRunGuard` is created immediately after successful
 parsing and owns all ordinary-return cleanup.
 
+## Windows CLI arguments are strict UTF-8 (ADR-1182 follow-up)
+
+The Windows `vmaf` and `vmafx` targets enter through `wmain`, convert every
+UTF-16 token with `WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, ...)`,
+and only then call the parser shared with POSIX `main`. Keep the conversion
+before `cli_parse()`: reference, distorted, output, and model paths must reach
+the existing UTF-8 path layer before any option handler can copy them. Invalid
+UTF-16 must fail closed, not use replacement characters.
+
+GNU-style Windows linkers need `-municode` on both CLI targets so CRT startup
+selects `wmain`; MSVC-style linkers infer the entry point. Do not apply that
+flag to unrelated tools with narrow `main`. The Windows-only
+`test_vmaf_windows_utf8_argv` regression launches the built binary through
+`CreateProcessW` and checks the exact accented+CJK output path. POSIX entry and
+argument bytes remain unchanged.
+
 ## `parse_unsigned` rejects negatives on purpose (ADR-1209)
 
 `parse_unsigned` refuses leading `'-'` before calling `strtoul`, because

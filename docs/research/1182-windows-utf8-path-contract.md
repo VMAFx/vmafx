@@ -83,3 +83,30 @@ The shim conforms to NASA JPL Power of 10 rules:
    `_wopen`, `_wfullpath`, `_wstat64`, `_wmkdir`, `_wremove`, `GetFileAttributesW`, and `EILSEQ` error translation.
 4. **Production Seams**: Native and Zig-cross-compiled Win64 Meson tests execute under Wine for public output
    writing, DNN model/sidecar loading, and CAMBI heatmap creation as well as the compatibility-helper unit test.
+
+## 6. CLI Unicode Argument Follow-up (2026-09-25)
+
+The library contract alone did not protect a path supplied to the Windows CLI. The binaries still entered through
+`main(int, char **)`, so the C runtime could encode the Unicode command line through an active ANSI code page before
+`vmaf.cpp` received it. A `CreateProcessW` reproducer passed `référence_日本.yuv` and `déformé_日本.yuv` to the exact
+base binary; its narrow `main` received a path ending in `référence_??.yuv`, failed to open the input, and exited 255.
+
+The follow-up uses the platform's `wmain(int, wchar_t **)` entry point, which Microsoft documents as supplying wide
+arguments, then converts every token with a two-pass `WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, ...)` call.
+The size probe determines the exact allocation and the strict flag rejects invalid UTF-16 instead of substituting a
+replacement character. See Microsoft's [`wmain` documentation](https://learn.microsoft.com/en-us/cpp/c-language/using-wmain?view=msvc-170)
+and [`WideCharToMultiByte` reference](https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-widechartomultibyte).
+GNU-style Windows links select `wmainCRTStartup` with `-municode`; MSVC-style links infer the wide entry point. The
+existing parser and execution path remain shared with the unchanged POSIX `main`.
+
+| Option | Benefit | Rejected cost |
+| --- | --- | --- |
+| `wmain` plus strict UTF-8 conversion (chosen) | Uses the CRT's authoritative Unicode argv parsing; one bounded conversion before existing parsing | Windows-only entry shim and GNU-linker startup flag |
+| Keep narrow `main` | No source change | Leaves correctness dependent on the process ANSI code page |
+| Reparse `GetCommandLineW` with `CommandLineToArgvW` | Also starts from Unicode | Duplicates argv parsing and adds a Shell32 allocation/link dependency |
+| Rely on an active-code-page manifest | Keeps `main` | Process-global behavior and runner/toolchain support remain external to the executable |
+
+The same Windows-only Meson regression now creates exact wide input/output paths, launches `vmaf.exe` with
+`CreateProcessW`, and verifies that the requested Unicode output exists and is non-empty. Under the Zig Win64/Wine
+cross build it fails on the base commit and passes after the entry-point conversion. This is an implementation bug
+fix completing ADR-1182's already-accepted UTF-8 contract, not a new architecture decision; no new ADR is needed.
