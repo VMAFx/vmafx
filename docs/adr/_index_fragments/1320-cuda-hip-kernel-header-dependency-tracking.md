@@ -1,0 +1,1 @@
+| [ADR-1320](1320-cuda-hip-kernel-header-dependency-tracking.md) | Track shared header dependencies for CUDA fatbin and HIP HSACO device targets using explicit Meson depend_files and compiler depfiles. | Accepted | build, cuda, hip, gpu, dependencies |

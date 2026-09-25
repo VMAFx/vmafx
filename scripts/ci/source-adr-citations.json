@@ -7451,6 +7451,15 @@
       },
       "target": "1319-fail-closed-self-hosted-gpu-admission.md"
     },
+    "1320": {
+      "sites": {
+        "core/src/meson.build": 2,
+        "core/test/meson.build": 1,
+        "core/test/test_device_target_header_dependencies.py": 2,
+        "scripts/ci/tests/test_device_target_header_dependencies.py": 1
+      },
+      "target": "1320-cuda-hip-kernel-header-dependency-tracking.md"
+    },
     "1321": {
       "sites": {
         ".github/workflows/fuzz.yml": 1

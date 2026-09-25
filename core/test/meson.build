@@ -85,6 +85,16 @@ test('test_vmaf_log_callsite_format',
     timeout : 30,
 )
 
+# ADR-1320 / T-CUDA-FATBIN-NO-HEADER-DEP-2026-09-05: verify durable dependency
+# tracking for CUDA fatbin and HIP HSACO device targets without GPU execution.
+test('test_device_target_header_dependencies',
+    import('python').find_installation(),
+    args : files('test_device_target_header_dependencies.py'),
+    env : {'VMAFX_DEVICE_DEP_BUILD_DIR': meson.project_build_root()},
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048 B2 / ADR-0759: keep the four large HIP ADM compute kernels on the
 # device-resident AdmBufferHip pointer contract, including host launch wiring,
 # one-time upload, and the BUG-092-compatible failure/close lifecycle.

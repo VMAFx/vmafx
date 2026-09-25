@@ -22646,6 +22646,13 @@ Affected extractors: `float_adm`, `float_ansnr`, `float_motion`,
 `integer_vif`.
 
 
+- Track shared header dependencies for CUDA fatbin and HIP HSACO device targets
+  using complete repo-local include-closure `depend_files`, the generated CUDA
+  config header, and compiler depfiles, ensuring header-only changes trigger
+  incremental Ninja rebuilds across all 44 device targets. The device-free
+  contract is backend-aware and remains green in CPU-only build directories.
+
+
 - CUDA feature-extractor init / submit error paths: free already-acquired
   resources instead of leaking them on partial-init or per-frame failure
   (RC independent-audit findings).
