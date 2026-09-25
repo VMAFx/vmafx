@@ -20,8 +20,8 @@ directly:
 
 ```bash
 docker run --rm -v $(pwd):/files vmaf \
-    -i /files/reference.y4m \
     -i /files/distorted.y4m \
+    -i /files/reference.y4m \
     -lavfi libvmaf \
     -f null -
 ```
@@ -35,8 +35,8 @@ the box:
 
 ```bash
 docker run --gpus all --rm -v $(pwd):/files vmaf \
-    -i /files/reference.y4m \
     -i /files/distorted.y4m \
+    -i /files/reference.y4m \
     -lavfi "[0:v][1:v]libvmaf_cuda" \
     -f null -
 ```
