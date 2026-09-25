@@ -57,9 +57,11 @@ What that means when a model requests `enable_chroma`:
 ### Minimum resolution with chroma
 
 The 5-level 11-tap pyramid needs every scored plane to be at least 176x176, and
-with `enable_chroma` that includes the subsampled ones. For 4:2:0 that means
-352x352 luma, not 176x176. The CPU, SYCL, and Metal twins refuse a smaller
-input at init and name the chroma size they measured; before ADR-1299 the CPU
+with `enable_chroma` that includes the subsampled ones. Plane allocation uses
+ceil subsampling, so for 4:2:0 the exact luma minimum is 351x351 (352x352 is
+the next even-sized input), not 176x176. The CPU, SYCL, and Metal twins refuse
+an input whose scored plane is smaller at init and name the chroma size they
+measured; before ADR-1299 the CPU
 twin checked luma only and a 4:2:0 input in between died mid-run with
 `error: scale below 1x1!` on stdout and no output file — including on this
 repository's own 576x324 Netflix fixture, whose chroma is 288x162.

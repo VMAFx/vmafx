@@ -5320,13 +5320,16 @@ and `docs/api/perceptual-weight.md`.
   reaching full parity with the CPU reference and shipped GPU twins. When `enable_chroma`
   is set, Metal computes `float_ms_ssim_cb` and `float_ms_ssim_cr` across 3 planes on the GPU
   and advertises them in `provided_features` and `core/src/metal/dispatch_strategy.c`.
-  Subsampled chroma requires at least 176x176 dimensions (352x352 luma for YUV420P),
-  enforced at init. When `enable_db` and `clip_db` are set, scores are clipped at the
+  Subsampled chroma requires at least 176x176 dimensions (351x351 luma for YUV420P
+  because plane allocation uses ceil subsampling; 352x352 is the next even input),
+  enforced at init; YUV400P remains luma-only even when chroma is requested.
+  When `enable_db` and `clip_db` are set, scores are clipped at the
   frame geometry `max_db` ceiling (`ceil(10 * log10(peak² / mse))`). Device-free
   executable option-semantics and mutation contract tests run without a Metal
   device, while updated Apple-Silicon parity tests verify the complete path.
   Each runner now owns a fresh option dictionary, and every L/C/S atom is
-  rejected before weighted combination if it is non-finite.
+  rejected before weighted combination if it is non-finite. Mutation controls
+  reject both option reuse and a post-consumption double free.
 
 
 - **`vmaf-tune compare` — codec-comparison mode (research-0061
@@ -26760,8 +26763,9 @@ Two host-side correctness fixes in `core/src/feature/vulkan/motion_vulkan.c`:
 
 - **`float_ms_ssim=enable_chroma=true` no longer dies mid-run on small 4:2:0
   input.** The pyramid minimum was checked against luma only, so a 4:2:0 input
-  between 176x176 and 352x352 passed init and then failed inside upstream
-  `ms_ssim.c`, which prints `error: scale below 1x1!` to stdout and returns 1 —
+  with either luma axis from 176 through 350 passed init and then failed
+  inside upstream `ms_ssim.c`, which prints `error: scale below 1x1!` to stdout
+  and returns 1 —
   surfacing as a bare "problem with feature extractor" and no output file at all.
   This fired on the repository's own 576x324 Netflix fixture, whose chroma is
   288x162. Both the CPU and SYCL twins now check every scored plane and refuse at

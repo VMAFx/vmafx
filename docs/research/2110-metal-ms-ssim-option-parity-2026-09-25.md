@@ -3,8 +3,8 @@
 
 **Status:** Complete
 
-**Authority inspected:** signed candidate `b234f771a` plus the exact correction
-delta on `agent/fix-metal-ms-ssim-review`.
+**Authority inspected:** signed candidates `b234f771a` and `d966c1feba`, plus
+the exact correction delta on `agent/fix-metal-ms-ssim-review`.
 
 **Scope:** Metal `float_ms_ssim` option parsing (`enable_db`, `clip_db`,
 `enable_chroma`, `enable_lcs`), geometry-derived `max_db` ceiling, 3-plane
@@ -49,7 +49,12 @@ ADR-1334 records this extension rather than rewriting that history.
 
 3. **Chroma Dimension Validation**:
    - The 5-level 11-tap pyramid requires every dimension to be >= 11 * 2^4 = 176.
-   - `check_chroma_min_dim` enforces that subsampled chroma planes (e.g. 4:2:0 halved horizontally and vertically) are >= 176x176. For YUV420P, luma must be >= 352x352. If smaller, returns `-EINVAL` with an informative error log.
+   - `check_chroma_min_dim` enforces that subsampled chroma planes are at
+     least 176x176. Plane allocation uses ceil subsampling, so the exact
+     YUV420P luma minimum is 351x351; 352x352 is merely the next even-sized
+     input. If a scored plane is smaller, init returns `-EINVAL` with an
+     informative error log. YUV400P resolves to one active plane and bypasses
+     the chroma check even when the option was requested.
 
 4. **dB conversion and `max_db` ceiling (ADR-1334 extending ADR-1221)**:
    - When `clip_db` is enabled: `max_db = ceil(10. * log10(peak * peak / mse))` where `peak = (1 << bpc) - 1` and `mse = 0.5 / (w * h)`.
@@ -76,6 +81,10 @@ ADR-1334 records this extension rather than rewriting that history.
      independently call `make_options()`. Each relinquishes the dictionary
      immediately after `vmaf_use_feature()` and cleans up all still-owned state
      on failure.
+   - The contract rejects both sharing a consumed dictionary and explicitly
+     freeing it after consumption. The double-free mutant runs before the
+     local pointer is cleared, so it exercises the dangling owner rather than
+     becoming a harmless `free(NULL)`.
 
 ## Verification & Test Matrix
 
@@ -87,9 +96,11 @@ ADR-1334 records this extension rather than rewriting that history.
     odd dimensions from truncation.
   - `core/test/test_metal_ms_ssim_options_contract.py` checks option metadata,
     helper wiring, dispatch names, ownership, atom-validation ordering, and
-    NASA Rule 4 limits. Its mutations remove the atom guard, replace the dB
-    ceiling with infinity, force one plane, and remove fresh dictionary
-    construction; every mutation is rejected.
+    NASA Rule 4 limits. Its mutations remove the atom guard, reduce its count
+    from all three L/C/S atoms to one, replace the dB ceiling with infinity,
+    force one plane, restore the raw `enable_chroma` gate, remove fresh
+    dictionary construction, and free a consumed dictionary; every mutation
+    is rejected.
   - `core/test/test_nonfinite_collector_wiring.py`: updated with `metal/float_ms_ssim_metal.mm` in `REQUIRED["vmaf_ssim_prepare_score_named"]` and option-aware `METAL_MS_SSIM_OPTIONS_DB_CALL`.
 - **Metal Parity Suite**:
   - `core/test/test_metal_float_ms_ssim_parity.c`: upgraded fixture to 512x384 (chroma 256x192 >= 176). Added `test_metal_float_ms_ssim_clip_db_ceiling` and `test_metal_float_ms_ssim_parity_chroma`. Skips honestly off Apple hardware (`[skip: no Metal device]`).

@@ -191,7 +191,10 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   (mirrors ms_ssim_vulkan PR #957 / ADR-0453 pattern). `enable_chroma`
   option (default `false`) clamps `n_planes` to 1 in `init_fex_sycl` when
   set to `false`, to 3 otherwise (except YUV400P which always forces 1).
-  v1 kernel reads plane 0 only; `n_planes > 1` reserved for v2. On rebase:
+  Chroma geometry uses the picture allocator's ceil subsampling, so a
+  176x176 chroma minimum maps to an exact 351x351 4:2:0 luma minimum;
+  the init error suggestion uses that exact inverse. v1 kernel reads plane 0
+  only; `n_planes > 1` reserved for v2. On rebase:
   keep default `false` and clamp logic aligned with Vulkan and CUDA
   MS-SSIM twins; all three backends must agree on default and dispatch.
 

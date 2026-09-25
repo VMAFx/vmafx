@@ -32,6 +32,10 @@ source-level mutation controls bind the Objective-C++ host to those tested
 seams. The Apple parity test remains the device gate and constructs a fresh
 option dictionary inside each CPU or Metal runner. Every plane's L/C/S atoms
 are validated before the weighted product and before any collector append.
+Active-plane resolution precedes chroma validation, so a YUV400P request stays
+luma-only instead of validating a synthetic half-width plane. Because picture
+allocation ceil-subsamples chroma, the exact YUV420P luma floor is 351x351,
+not the conservative next-even 352x352.
 
 ## Alternatives considered
 
@@ -49,7 +53,8 @@ are validated before the weighted product and before any collector append.
   non-finite.
 - **Positive**: device-free executable tests distinguish the correct 105 dB
   ceiling at 512x384 from both the former unbounded path and a geometry-free
-  formula, and distinguish ceil-subsampled chroma geometry from truncation.
+  formula, distinguish ceil-subsampled chroma geometry from truncation, and
+  bind the YUV400P one-plane and exact 351x351 boundary contracts.
 - **Negative**: the Metal host carries per-plane pyramid and partial buffers
   when chroma is enabled, increasing memory and dispatch work for that opt-in
   mode.

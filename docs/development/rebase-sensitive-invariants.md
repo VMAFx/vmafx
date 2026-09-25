@@ -98,7 +98,9 @@ linked AGENTS.md before resolving conflicts.
   `float_ms_ssim_metal` exposes `enable_db`, `clip_db`, `enable_chroma`, and `enable_lcs`
   matching CPU/SYCL/HIP twins. It emits `float_ms_ssim`, `float_ms_ssim_cb`, and
   `float_ms_ssim_cr` on the GPU, enforces the >= 176 minimum plane dimension at init,
-  and wires `s->enable_db, s->max_db` into `vmaf_ms_ssim_emit_scores` /
+  resolves YUV400P to one plane before chroma validation, and uses the exact
+  ceil-subsampled 351x351 YUV420P luma boundary. It wires
+  `s->enable_db, s->max_db` into `vmaf_ms_ssim_emit_scores` /
   `vmaf_ssim_emit_score_named`. Device-free contracts in
   `core/test/test_metal_ms_ssim_option_semantics`,
   `core/test/test_metal_ms_ssim_options_contract.py`, and

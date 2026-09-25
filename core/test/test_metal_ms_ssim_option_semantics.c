@@ -45,11 +45,37 @@ static char *test_subsampled_plane_geometry(void)
     vmaf_metal_ms_ssim_plane_dimensions(VMAF_PIX_FMT_YUV420P, 1u, 351u, 353u, &width, &height);
     mu_assert("4:2:0 chroma must use ceil-halved dimensions", width == 176u && height == 177u);
 
+    vmaf_metal_ms_ssim_plane_dimensions(VMAF_PIX_FMT_YUV420P, 1u, 350u, 350u, &width, &height);
+    mu_assert("350x350 4:2:0 must remain below the chroma minimum",
+              width == 175u && height == 175u);
+
     vmaf_metal_ms_ssim_plane_dimensions(VMAF_PIX_FMT_YUV422P, 2u, 351u, 177u, &width, &height);
     mu_assert("4:2:2 chroma must halve width only", width == 176u && height == 177u);
 
     vmaf_metal_ms_ssim_plane_dimensions(VMAF_PIX_FMT_YUV444P, 2u, 176u, 177u, &width, &height);
     mu_assert("4:4:4 chroma must preserve both dimensions", width == 176u && height == 177u);
+
+    vmaf_metal_ms_ssim_plane_dimensions(VMAF_PIX_FMT_YUV400P, 1u, 176u, 177u, &width, &height);
+    mu_assert("4:0:0 must never synthesize a subsampled plane", width == 176u && height == 177u);
+    return NULL;
+}
+
+static char *test_exact_minimum_luma_geometry(void)
+{
+    unsigned width = 0u;
+    unsigned height = 0u;
+    vmaf_metal_ms_ssim_min_luma_dimensions(VMAF_PIX_FMT_YUV420P, 176u, &width, &height);
+    mu_assert("4:2:0 minimum luma must account for ceil subsampling",
+              width == 351u && height == 351u);
+
+    vmaf_metal_ms_ssim_min_luma_dimensions(VMAF_PIX_FMT_YUV422P, 176u, &width, &height);
+    mu_assert("4:2:2 minimum luma must ceil-subsample width only", width == 351u && height == 176u);
+
+    vmaf_metal_ms_ssim_min_luma_dimensions(VMAF_PIX_FMT_YUV444P, 176u, &width, &height);
+    mu_assert("4:4:4 minimum luma must equal the plane minimum", width == 176u && height == 176u);
+
+    vmaf_metal_ms_ssim_min_luma_dimensions(VMAF_PIX_FMT_YUV400P, 176u, &width, &height);
+    mu_assert("4:0:0 luma minimum must not be doubled", width == 176u && height == 176u);
     return NULL;
 }
 
@@ -58,6 +84,7 @@ char *run_tests(void)
     mu_run_test(test_max_db_ceiling_semantics);
     mu_run_test(test_enable_chroma_plane_count);
     mu_run_test(test_subsampled_plane_geometry);
+    mu_run_test(test_exact_minimum_luma_geometry);
     return NULL;
 }
 

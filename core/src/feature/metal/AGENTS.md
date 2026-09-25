@@ -207,9 +207,11 @@ lookups back into the runtime test. See Research-2091.
   framework-free `float_ms_ssim_option_semantics.h` owns active-plane count,
   ceil-subsampled plane geometry, and the dB ceiling so the exact production
   semantics execute on hosts without Metal.
-  Subsampled chroma requires at least 176x176 dimensions (352x352 luma for YUV420P),
-  enforced at init. Every L/C/S atom on every active plane is validated before
-  the weighted product; `pow(NaN, 0)` must never erase a failed reduction.
+  Subsampled chroma requires at least 176x176 dimensions (351x351 luma for
+  YUV420P because allocation uses ceil subsampling), enforced at init. YUV400P
+  resolves to one active plane before that chroma check. Every L/C/S atom on
+  every active plane is validated before the weighted product;
+  `pow(NaN, 0)` must never erase a failed reduction.
   `test_metal_ms_ssim_option_semantics`, `test_metal_ms_ssim_options_contract.py`,
   and `test_nonfinite_collector_wiring.py` lock this contract down device-free.
 - **GPU twins must mirror CPU option table for model-configured

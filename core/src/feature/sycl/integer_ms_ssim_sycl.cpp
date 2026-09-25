@@ -422,8 +422,8 @@ static int configure_ms_ssim(MsSsimStateSycl *s, enum VmafPixelFormat format, un
     }
     /* Chroma is walked by the same 5-level pyramid, so it must clear the same
      * minimum. Mirrors the check float_ms_ssim.c makes; without it a 4:2:0
-     * input between min_dimension and 2*min_dimension passes the luma test and
-     * then produces a degenerate chroma pyramid. Plane sizing follows
+     * input from min_dimension through 2 * min_dimension - 2 passes the luma test
+     * and then produces a degenerate chroma pyramid. Plane sizing follows
      * vmaf_picture_alloc (picture.c:146-149). */
     const unsigned ss_hor = format != VMAF_PIX_FMT_YUV444P ? 1u : 0u;
     const unsigned ss_ver = format == VMAF_PIX_FMT_YUV420P ? 1u : 0u;
@@ -437,8 +437,8 @@ static int configure_ms_ssim(MsSsimStateSycl *s, enum VmafPixelFormat format, un
                      " pyramid requires at least %ux%u. Use at least %ux%u luma for this"
                      " pixel format, or leave enable_chroma off to score luma only.\n",
                      width, height, chroma_w, chroma_h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN,
-                     min_dimension, min_dimension, min_dimension << ss_hor,
-                     min_dimension << ss_ver);
+                     min_dimension, min_dimension, (min_dimension << ss_hor) - ss_hor,
+                     (min_dimension << ss_ver) - ss_ver);
             return -EINVAL;
         }
     }

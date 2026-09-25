@@ -291,14 +291,16 @@ static int check_chroma_min_dim(const VmafFeatureExtractor *fex, enum VmafPixelF
         return 0;
     }
 
+    unsigned minimum_width = 0u;
+    unsigned minimum_height = 0u;
+    vmaf_metal_ms_ssim_min_luma_dimensions(pix_fmt, min_dim, &minimum_width, &minimum_height);
     vmaf_log(VMAF_LOG_LEVEL_ERROR,
              "%s: enable_chroma needs every plane to clear the pyramid minimum, "
              "but %ux%u luma gives %ux%u chroma and the %d-level %d-tap pyramid "
              "requires at least %ux%u. Use at least %ux%u luma for this pixel "
              "format, or leave enable_chroma off to score luma only.\n",
              fex->name, w, h, chroma_w, chroma_h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN,
-             min_dim, min_dim, pix_fmt == VMAF_PIX_FMT_YUV444P ? min_dim : min_dim << 1u,
-             pix_fmt == VMAF_PIX_FMT_YUV420P ? min_dim << 1u : min_dim);
+             min_dim, min_dim, minimum_width, minimum_height);
     return -EINVAL;
 }
 
@@ -337,7 +339,7 @@ static int validate_dimensions(VmafFeatureExtractor *fex, FloatMsSsimStateMetal 
         return -EINVAL;
     }
 
-    if (s->enable_chroma) {
+    if (s->n_planes > 1u) {
         const int chroma_err = check_chroma_min_dim(fex, pix_fmt, w, h, min_dim);
         if (chroma_err) { return chroma_err; }
     }

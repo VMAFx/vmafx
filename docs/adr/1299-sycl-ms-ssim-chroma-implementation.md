@@ -32,11 +32,12 @@ said so.
 
 Two further facts surfaced while closing this:
 
-1. **The CPU reference was broken for chroma below 352x352 luma.** `init()` in
-   `float_ms_ssim.c` checked the 5-level pyramid minimum against luma only, so a
-   4:2:0 input between `min_dim` and `2 * min_dim` passed and then died mid-run
-   inside upstream `ms_ssim.c`, which prints `error: scale below 1x1!` to stdout
-   and returns 1. Reproduced on this repository's own primary Netflix fixture:
+1. **The CPU reference was broken below the exact 351x351 4:2:0 luma floor.**
+   `init()` in `float_ms_ssim.c` checked the 5-level pyramid minimum against
+   luma only, so a 4:2:0 input from `min_dim` through `2 * min_dim - 2` passed
+   and then died mid-run inside upstream `ms_ssim.c`, which prints
+   `error: scale below 1x1!` to stdout and returns 1. Reproduced on this
+   repository's own primary Netflix fixture:
    `--width 576 --height 324 --pixel_format 420 --feature
    float_ms_ssim=enable_chroma=true` emitted that line, logged a bare "problem
    with feature extractor", and wrote no output file at all. 576x324 gives
@@ -90,8 +91,9 @@ Implement it.
   identical to the CPU to all six emitted digits across three frames, with GPU
   time rising 15.32 ms to 18.57 ms per frame-pair as the extra planes are
   dispatched.
-- **Positive**: chroma MS-SSIM no longer dies mid-run on sub-352x352 4:2:0
-  input on either twin; it is refused at init with the resolution it needs.
+- **Positive**: chroma MS-SSIM no longer dies mid-run when either 4:2:0 luma
+  axis is from 176 through 350 pixels; such input is refused at init with the
+  resolution it needs.
 - **Negative**: three planes cost roughly 21% more GPU time when enabled.
   Default is unchanged (`enable_chroma=false`).
 - **Negative**: `n_dispatches_per_frame` on `VmafFeatureCharacteristics` is a

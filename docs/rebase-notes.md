@@ -54154,6 +54154,10 @@ ADR-1334. Preserve its framework-free option-semantics helper, three-plane
 validation of every L/C/S atom before the weighted product. The Apple parity
 test creates one option dictionary per `vmaf_use_feature()` consumer; sharing
 one between CPU and Metal is a use-after-free because the API consumes it.
+YUV400P resolves to one active plane before chroma validation. Ceil subsampling
+makes 351x351 the exact YUV420P luma minimum for 176x176 chroma; do not replace
+that boundary or its runtime suggestion with floor division or a claimed 352
+minimum.
 
 - Research: [Research-2110](research/2110-metal-ms-ssim-option-parity-2026-09-25.md).
 - Reproducer: `meson test -C build --no-rebuild test_metal_ms_ssim_option_semantics test_metal_ms_ssim_options_contract`.
