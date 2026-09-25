@@ -12,6 +12,7 @@ if get_option('enable_cuda')
          suite : ['slow', 'gpu'],
          depends : [vmaf],
          workdir : meson.project_build_root(),
+         is_parallel : false,
          timeout : 10)
 endif
 
@@ -30,6 +31,7 @@ foreach gpu_backend : ['cuda', 'sycl']
                  'MESON_BUILD_ROOT=' + meson.project_build_root(),
                  'MESON_SOURCE_ROOT=' + meson.project_source_root(),
              ],
+             is_parallel : false,
              timeout : 300)
     endif
 endforeach

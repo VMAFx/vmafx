@@ -24561,6 +24561,12 @@ already carried the null-clear; this aligns the C++ implementation. Caught by
   init-OOM resource leaks on the CUDA / HIP error paths.
 
 
+- **GPU tests no longer exhaust a shared accelerator by running concurrently.**
+  Every Meson test in the `gpu` suite now uses exclusive scheduling, and an
+  introspection and source-registry contracts reject future configured or
+  dormant GPU registrations that omit it.
+
+
 Replace hardcoded `/home/kilian/dev/libvmaf_vulkan/…` absolute paths in
 `testdata/test_all_backends.sh`, `testdata/bench_quick.py`,
 `testdata/compare_combined.py`, and `ai/tests/test_e2e_frame_to_score.py`

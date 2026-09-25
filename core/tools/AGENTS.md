@@ -378,3 +378,14 @@ warning, keeps report, exits 0. Scoring common prefix of shorter clip is
 supported use. Do not fold two cases together.
 
 `core/tools/test/test_vmaf_read_error_exit.sh` pins all four cases, `fast` suite.
+
+## GPU-tagged tool tests run exclusively
+
+Every test under `core/tools/test/` carrying the Meson `gpu` suite tag must
+also set `is_parallel : false`. These shell-driven CLI tests consume the same
+physical accelerator as the kernel tests under `core/test/`; leaving either
+`test_vmaf_cuda_gpumask` or a `test_vmaf_<backend>_threads` registration
+parallel defeats the shared-device scheduling contract. The global
+`check_gpu_test_serialization` test reads Meson introspection across the whole
+project, so keep these registrations visible to it and do not replace the
+suite tag with a local-only convention.
