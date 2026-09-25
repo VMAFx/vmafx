@@ -374,7 +374,7 @@ until master fixed.
 | `check-dispatch-registry.sh` | `.pre-commit-config.yaml` (`check-dispatch-registry` hook), `tests-and-quality-gates.yml` (`Pre-Commit` job) | Cross-references backend symbols `vmaf_fex_*_<backend>` in `core/src/feature/<backend>/` against `feature_extractor_list[]` in `core/src/feature/feature_extractor.cpp`. Fails if any backend symbol is omitted from the registration array. Test suite: `scripts/ci/tests/test-check-dispatch-registry.sh`. |
 | `classify-dependency-pr.sh` | `rule-enforcement.yml` — `deep-dive-checklist` and `doc-substance-check` jobs ([ADR-1152](../../docs/adr/1152-dependency-pr-gate-exemption.md)) | Reads `$PR_AUTHOR`, `$HEAD_REF`, `$BASE_SHA`, `$HEAD_SHA` from workflow env. The exemption is author-AND-path-gated and must never be widened to a path glob alone. Bot identity requires `renovate[bot]` / `dependabot[bot]` (or `app/renovate` / `app/dependabot`), or a `renovate/*` / `dependabot/*` branch, AND all changed paths must be in the explicit manifest/lockfile allowlist. Only `requirements/*` has subtree authority for generic `.in` and `manifest.json` files; never restore basename-wide `*.in` or `manifest.json` exemptions (`core/include/libvmaf/version.h.in` is the negative fixture). Bot PRs touching source code must still satisfy both documentation gates. Test suite: `scripts/ci/test-classify-dependency-pr.sh`. |
 | `test-classify-dependency-pr.sh` | (local-only fixture driver, not invoked by CI) | Run before pushing changes to `classify-dependency-pr.sh`; exercises dependency-only and mixed source diffs, named `requirements*.in` inputs versus unrelated `.in` templates, non-bot authors, and real PR fixtures (#1206, #1207, #1212, #1214). |
-| `check-runner-available.sh` | `sycl-parity.yml` (`runner-available` job, step `Check runner availability`) | Reads the lane switch `$RUNNER_ENABLED` (= `vars.SYCL_ARC_RUNNER_ENABLED`). Disabled: exit 0, `available=false`, no API call. Enabled: queries `GET repos/<repo>/actions/runners` with `$GH_TOKEN` (`secrets.SYCL_RUNNER_PROBE_TOKEN`) and requires an ONLINE runner labelled `sycl-arc`; API error, no such runner, or all offline = exit 1 with `::error::`. Never maps an API error to "unregistered". Test suite: `scripts/ci/tests/test-runner-available.sh`. |
+| `check-runner-available.sh` | `sycl-parity.yml` (`runner-available`) and `tests-and-quality-gates.yml` (`gpu-full-runner-available`) | Reads `$RUNNER_ENABLED`; disabled means exit 0, `available=false`, no API call. Enabled means query `GET repos/<repo>/actions/runners` with the existing read-only `$GH_TOKEN` and require one ONLINE runner carrying every case-insensitive label in `$RUNNER_LABELS`. A custom-label-only match is insufficient: missing `linux` / `x64` can still make `runs-on` unroutable. API error, no complete match, or all complete matches offline = exit 1 with `::error::`. Never maps an API error to "unregistered". Tests: `scripts/ci/tests/test-runner-available.sh` and `scripts/ci/test_self_hosted_runner_workflow_contract.py`. |
 
 ## `check-vcs-version-not-bare-sha.sh` invariants
 
@@ -909,6 +909,23 @@ under `.github/workflows/sycl-parity.yml`. Following invariants load-bearing:
 6. **Render node resolved, not hard-coded**: `dev/docker-compose.runner.yml` takes
    `ARC_RENDER_NODE` from `dev/scripts/arc-render-node.sh` (exactly one vendor-`0x8086` render node).
    Do not replace with bare `renderD<N>`; numbers change after PCI re-enumeration.
+
+## Self-hosted hardware admission invariants (ADR-1319)
+
+`sycl-arc` and `gpu-full` are different capability contracts. The Arc-only
+container never satisfies CUDA/HIP or combined-coverage claims. Preserve these
+couplings together:
+
+1. `sycl-parity.yml` is the sole hardware `float_ssim` parity owner and probes
+   `self-hosted linux x64 sycl-arc` before dispatch.
+2. `tests-and-quality-gates.yml` has exactly one `gpu-full` consumer,
+   `Coverage GPU`; its hosted probe checks `self-hosted linux gpu-full` before
+   dispatch. Do not restore the retired duplicate SYCL job.
+3. The required aggregator permits absent/skipped hardware checks only while
+   their own switch is disabled. With a switch true, only `success` passes.
+4. Keep `scripts/ci/test_self_hosted_runner_workflow_contract.py` wired into
+   Rule Enforcement. It executes the real embedded aggregator JavaScript as
+   well as checking workflow ownership and admission edges.
 
 ## FFmpeg patch lifecycle (ADR-1240)
 

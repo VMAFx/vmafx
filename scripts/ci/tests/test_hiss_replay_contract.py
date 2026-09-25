@@ -64,6 +64,9 @@ BUG_098_STRICT_CONTEXTS = {
 }
 
 BUG_098_GATE_DEPENDENCIES = {
+    # ADR-1319: self-hosted checks register only after hosted admission probes.
+    "Coverage GPU": ["Probe GPU Full Runner"],
+    "SYCL Parity (Arc A380)": ["Probe SYCL Runner"],
     "Linux Intel LLVM": [
         "Plan build impact",
         "Linux Intel LLVM work",

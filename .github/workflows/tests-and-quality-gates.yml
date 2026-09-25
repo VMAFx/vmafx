@@ -965,10 +965,39 @@ jobs:
           fi
           [[ "$PYTEST_OUTCOME" == "success" ]]
 
+  # ===== GPU coverage admission (hosted) =====
+  # ADR-1319: the operator switch is not dispatch authority. Check the live
+  # runner inventory on hosted compute first so a stale true variable cannot
+  # leave a job queued forever on an impossible label set.
+  gpu-full-runner-available:
+    name: Probe GPU Full Runner
+    runs-on: ubuntu-26.04
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    timeout-minutes: 5
+    outputs:
+      available: ${{ steps.probe.outputs.available }}
+      registered: ${{ steps.probe.outputs.registered }}
+      enabled: ${{ steps.probe.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Check gpu-full runner availability
+        id: probe
+        env:
+          # Existing read-only repository runner token; no new secret or
+          # external runner mutation is required by this repository fix.
+          GH_TOKEN: ${{ secrets.SYCL_RUNNER_PROBE_TOKEN || github.token }}
+          RUNNER_ENABLED: ${{ vars.GPU_COVERAGE_ENABLED }}
+          RUNNER_LABELS: "self-hosted linux gpu-full"
+          RUNNER_DISPLAY_NAME: "Coverage GPU"
+          RUNNER_SWITCH_NAME: "GPU_COVERAGE_ENABLED"
+          RUNNER_RUNBOOK: "docs/development/self-hosted-runner.md"
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash scripts/ci/check-runner-available.sh
+
   # ===== GPU coverage (self-hosted) =====
-  # Exercises fork-added CUDA / SYCL / HIP kernels, GPU runtime glue, and
+  # Exercises fork-added CUDA / SYCL kernels, GPU runtime glue, and
   # AVX-512 SIMD paths that ubuntu-latest can't touch. Runs on a self-hosted
-  # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL + AMD iGPU +
+  # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL +
   # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
   #
   # The two-week stability window closed on 2026-06-02. Keep this required;
@@ -977,10 +1006,9 @@ jobs:
   coverage-gpu:
     # required-aggregator
     name: Coverage GPU
+    needs: [gpu-full-runner-available]
+    if: needs.gpu-full-runner-available.outputs.available == 'true'
     runs-on: [self-hosted, linux, gpu-full]
-    # ADR-0331: also gate on draft PR status. Self-hosted runners are
-    # scarce — drafts must not contend for them.
-    if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1085,47 +1113,6 @@ jobs:
             core/build-coverage-gpu/coverage.json
             core/build-coverage-gpu/coverage.txt
           retention-days: 14
-
-  # ===== SYCL float_ssim parity gate (Arc DG2-G10 calibrated) =====
-  # Runs test_sycl_float_ssim_parity on the self-hosted SYCL runner.
-  # Requires the dg2-g10 calibration entry in gpu_ulp_calibration.yaml
-  # (places=3 / 5e-4 tolerance) to be present — see ADR-0234 and
-  # Research-0985 §3. Promoted to the required-status list once the
-  # calibration entry landed; the Required Checks Aggregator treats
-  # "not reported" (no GPU runner available) as path-filter-skip/OK,
-  # so the required gate degrades gracefully when the Arc runner is
-  # offline.
-  sycl-float-ssim-parity:
-    # required-aggregator
-    name: SYCL float_ssim Parity
-    runs-on: [self-hosted, linux, gpu-full]
-    if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: recursive
-      - name: Build SYCL (float enabled)
-        working-directory: core
-        env:
-          CC: icx
-          CXX: icpx
-        run: |
-          bash -e -o pipefail -c '
-            source /opt/intel/oneapi/setvars.sh
-            meson setup build-sycl-parity --buildtype=release \
-              -Denable_cuda=false -Denable_sycl=true \
-              -Denable_float=true
-            ninja -C build-sycl-parity test_sycl_float_ssim_parity
-          '
-      - name: Run test_sycl_float_ssim_parity
-        working-directory: core
-        run: |
-          bash -e -o pipefail -c '
-            source /opt/intel/oneapi/setvars.sh
-            meson test -C build-sycl-parity test_sycl_float_ssim_parity \
-              --print-errorlogs
-          '
 
   # ===== Power of 10 rule 5 — assertion density =====
   # Every fork-added (non-trivial) function must contain ≥1 assert().

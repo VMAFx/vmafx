@@ -795,9 +795,12 @@ jobs:
       - name: HISS replay evidence remains fail-closed (ADR-1274)
         run: python3 -B scripts/ci/tests/test_hiss_replay_contract.py
 
-      - name: Test the self-hosted SYCL runner probe
-        # ADR-1177. Hermetic unit suite for check-runner-available.sh.
-        run: bash scripts/ci/tests/test-runner-available.sh
+      - name: Test self-hosted runner admission
+        # ADR-1177 / ADR-1319. Hermetic probe cases plus real workflow and
+        # required-aggregator contracts for the distinct hardware lanes.
+        run: |
+          bash scripts/ci/tests/test-runner-available.sh
+          python3 -B scripts/ci/test_self_hosted_runner_workflow_contract.py
 
       - name: Test the self-hosted SYCL runner supervisor
         # ADR-1177. Hermetic unit suite for runner-supervisor.sh with stubbed gh and docker.

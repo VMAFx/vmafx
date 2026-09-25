@@ -1437,7 +1437,6 @@
     },
     "0234": {
       "sites": {
-        ".github/workflows/tests-and-quality-gates.yml": 1,
         "ai/scripts/collect_gpu_calibration_data.py": 2,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/cross_backend_parity_gate.py": 5,
@@ -2360,7 +2359,7 @@
         ".github/workflows/rule-enforcement.yml": 1,
         ".github/workflows/security-scans.yml": 1,
         ".github/workflows/sycl-parity.yml": 1,
-        ".github/workflows/tests-and-quality-gates.yml": 2,
+        ".github/workflows/tests-and-quality-gates.yml": 1,
         "ai/scripts/train_fr_regressor_v2.py": 4,
         "tools/vmaf-tune/tests/test_corpus.py": 1,
         "tools/vmaf-tune/tests/test_corpus_schema_v3.py": 1,
@@ -6578,7 +6577,7 @@
         "dev/scripts/arc-render-node.sh": 1,
         "dev/scripts/runner-entrypoint.sh": 1,
         "dev/scripts/runner-supervisor.sh": 1,
-        "scripts/ci/check-runner-available.sh": 2,
+        "scripts/ci/check-runner-available.sh": 1,
         "scripts/ci/tests/test-runner-available.sh": 1
       },
       "target": "1177-sycl-arc-self-hosted-runner.md"
@@ -7417,6 +7416,18 @@
         ".github/workflows/security-scans.yml": 1
       },
       "target": "1314-semgrep-registry-advisory-artifact.md"
+    },
+    "1319": {
+      "sites": {
+        ".github/workflows/required-aggregator.yml": 3,
+        ".github/workflows/rule-enforcement.yml": 1,
+        ".github/workflows/sycl-parity.yml": 1,
+        ".github/workflows/tests-and-quality-gates.yml": 1,
+        "scripts/ci/check-runner-available.sh": 1,
+        "scripts/ci/tests/test-runner-available.sh": 1,
+        "scripts/ci/tests/test_hiss_replay_contract.py": 1
+      },
+      "target": "1319-fail-closed-self-hosted-gpu-admission.md"
     }
   },
   "retired": {

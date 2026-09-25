@@ -591,13 +591,12 @@ is enforced at the host, not just honored by convention.
 - **Required status check (1):** `Required Checks Aggregator`. Branch protection
   names exactly this one context; every other gate is enforced *through* it.
   The aggregator's own `required` array
-  (`.github/workflows/required-aggregator.yml`) is the real inventory — **40
-  entries**, of which each run checks 39 (only the Scorecard gate for its own
-  event applies):
-  - **Builds (7):** Ubuntu gcc+DNN, Ubuntu clang+DNN,
+  (`.github/workflows/required-aggregator.yml`) is the real inventory; do not
+  copy its count into branch-protection settings. The inventory is grouped as
+  follows:
+  - **Builds:** Ubuntu gcc+DNN, Ubuntu clang+DNN,
     Windows MinGW64, Windows MSVC+CUDA, Windows MSVC+SYCL,
-    Ubuntu HIP, SYCL float_ssim Parity. All but the last are
-    `libvmaf-build-matrix.yml` lanes; no `build.yml` row is required
+    and Ubuntu HIP. These are `libvmaf-build-matrix.yml` lanes
     ([ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md)). The `build.yml`
     Windows row is named `Windows MSVC+CUDA (full)` so that it cannot
     stand in for the required lane.
@@ -607,10 +606,12 @@ is enforced at the host, not just honored by convention.
   - **Supply chain / docs (6):** Dependency Review, Gitleaks, Docs,
     ShellCheck + shfmt, Scorecard PR Gate (pull requests), Scorecard Master
     Gate (master pushes).
-  - **Tests (9):** Netflix CPU Golden, Sanitizers ×3 (Sanitizers (address),
+  - **Tests:** Netflix CPU Golden, Sanitizers ×3 (Sanitizers (address),
     Sanitizers (thread), Sanitizers (undefined)), Assertion Density, Twin Drift,
-    Tiny AI, go vet + go test, SYCL Parity (Arc A380) (enforced only while the
-    `SYCL_ARC_RUNNER_ENABLED` variable is `true`).
+    Tiny AI, go vet + go test, `Coverage GPU`, and `SYCL Parity (Arc A380)`.
+    The last two are enforced only while their distinct
+    `GPU_COVERAGE_ENABLED` / `SYCL_ARC_RUNNER_ENABLED` variables are `true`;
+    hosted probes prevent dispatch to missing label sets (ADR-1319).
   - **FFmpeg (1):** FFmpeg Patch Stack.
   - **Governance (1):** Standards & Invariant Verification Gate
     ([ADR-1249](../adr/1249-praetor-governance-adoption.md)).

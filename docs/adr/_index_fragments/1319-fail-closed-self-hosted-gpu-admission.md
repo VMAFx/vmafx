@@ -1,0 +1,1 @@
+| [ADR-1319](1319-fail-closed-self-hosted-gpu-admission.md) | Admit each self-hosted GPU job only after a hosted live probe matches its complete runner-label set, and require success while the lane is enabled. | Accepted | ci, gpu, security, self-hosted-runner, fork-local |

@@ -19741,6 +19741,13 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   `--write` derives all five from `CUDA_VERSION`. See ADR-1285.
 
 
+- **Self-hosted GPU admission**: `Coverage GPU` now runs only after a hosted
+  probe confirms an online runner with its complete label set; enabled but
+  unavailable hardware fails the required aggregator instead of waiting
+  forever. The obsolete duplicate SYCL parity job is retired without treating
+  the Arc-only runner as CUDA/HIP-capable.
+
+
 - **`python/pyproject.toml` now declares the setuptools floor its own
   metadata requires, so building the `vmaf` Python package no longer
   depends on the ambient setuptools being recent enough.** Since

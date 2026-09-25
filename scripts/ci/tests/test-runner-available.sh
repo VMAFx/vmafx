@@ -4,7 +4,7 @@
 #
 # scripts/ci/tests/test-runner-available.sh — Test suite for check-runner-available.sh
 #
-# Pins the ADR-1177 probe contract:
+# Pins the ADR-1177 / ADR-1319 probe contract:
 #   1. Lane disabled (RUNNER_ENABLED unset / not "true"): exit 0, available=false,
 #      regardless of the runner list (no API call is made).
 #   2. Lane enabled, runner registered and online: exit 0, available=true.
@@ -12,6 +12,7 @@
 #   4. Lane enabled, no runner with the label (only other runners): exit 1 (loud).
 #   5. Lane enabled, empty runner list: exit 1 (loud).
 #   6. Lane enabled, runner list unreadable (API/token failure): exit 1 (loud).
+#   7. Every label in a multi-label runs-on set must match case-insensitively.
 #
 # Exit 0 on all pass, 1 on failure.
 
@@ -129,6 +130,30 @@ JSON_OFFLINE='{
   ]
 }'
 
+JSON_PARTIAL_LABELS='{
+  "total_count": 1,
+  "runners": [
+    {
+      "id": 4,
+      "name": "partial-arc",
+      "status": "online",
+      "labels": [{"name": "self-hosted"}, {"name": "sycl-arc"}]
+    }
+  ]
+}'
+
+JSON_GPU_FULL='{
+  "total_count": 1,
+  "runners": [
+    {
+      "id": 5,
+      "name": "multi-vendor-gpu",
+      "status": "online",
+      "labels": [{"name": "self-hosted"}, {"name": "Linux"}, {"name": "gpu-full"}]
+    }
+  ]
+}'
+
 # 1. Lane disabled — always a clean skip, whatever the runner list says.
 run_case "disabled_unset" "" "$JSON_ONLINE" 0 "false" "false"
 run_case "disabled_false" "false" "$JSON_ONLINE" 0 "false" "false"
@@ -152,6 +177,13 @@ run_case "enabled_api_failure" "true" "" 1 "false" "false" \
 
 # 7. Lane enabled, malformed payload — loud, never silently "unregistered".
 run_case "enabled_malformed_json" "true" "not json" 1 "false" "false"
+
+# 8. Every label in the job's runs-on set must be present. Matching is
+# case-insensitive, as GitHub's default Linux/X64 labels are commonly title-cased.
+run_case "enabled_partial_label_set" "true" "$JSON_PARTIAL_LABELS" 1 "false" "false" \
+  "RUNNER_LABELS=self-hosted linux x64 sycl-arc"
+run_case "enabled_full_label_set" "true" "$JSON_GPU_FULL" 0 "true" "true" \
+  "RUNNER_LABELS=self-hosted linux gpu-full"
 
 echo "Results: ${pass} passed, ${fail} failed"
 [[ "$fail" -eq 0 ]]
