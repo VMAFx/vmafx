@@ -3109,7 +3109,6 @@
       "sites": {
         "core/src/dnn/model_loader.c": 4,
         "core/src/feature/metal/float_ms_ssim.metal": 1,
-        "core/src/feature/metal/float_ms_ssim_metal.mm": 1,
         "core/src/gpu_dispatch_env.cpp": 4,
         "core/src/gpu_dispatch_env.h": 1,
         "core/src/mcp/compute_vmaf.c": 2
@@ -3119,7 +3118,7 @@
     "0490": {
       "sites": {
         "core/src/feature/feature_extractor.cpp": 1,
-        "core/src/feature/metal/float_ms_ssim_metal.mm": 2,
+        "core/src/feature/metal/float_ms_ssim_metal.mm": 3,
         "core/src/metal/meson.build": 1,
         "core/test/test_nonfinite_collector_wiring.py": 1
       },
@@ -6232,6 +6231,7 @@
         "core/test/test_metal_kernel_coverage_audit.c": 1,
         "core/test/test_metal_kernel_registration.c": 1,
         "core/test/test_metal_motion_v2_parity.c": 1,
+        "core/test/test_metal_ms_ssim_option_semantics.c": 1,
         "core/test/test_metal_smoke.c": 1,
         "core/test/test_metal_ssimulacra2_parity.c": 1,
         "core/test/test_mkdirp.c": 1,
@@ -6932,12 +6932,8 @@
         "core/src/feature/cuda/integer_ms_ssim_cuda.c": 2,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 2,
         "core/src/feature/metal/float_ms_ssim_metal.mm": 1,
-        "core/test/meson.build": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 2,
         "core/test/test_hip_ms_ssim_parity.c": 3,
-        "core/test/test_metal_float_ms_ssim_parity.c": 1,
-        "core/test/test_metal_ms_ssim_options_contract.py": 1,
-        "core/test/test_nonfinite_collector_wiring.py": 1,
         "core/test/test_sycl_ms_ssim_parity.c": 3
       },
       "target": "1221-gpu-ms-ssim-db-ceiling.md"
@@ -7498,6 +7494,17 @@
         "core/test/test_sycl_motion_add_uv_parity.c": 1
       },
       "target": "1326-sycl-motion-uv-fixed-oracle.md"
+    },
+    "1334": {
+      "sites": {
+        "core/src/feature/metal/float_ms_ssim_metal.mm": 2,
+        "core/src/feature/metal/float_ms_ssim_option_semantics.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_metal_float_ms_ssim_parity.c": 1,
+        "core/test/test_metal_ms_ssim_option_semantics.c": 1,
+        "core/test/test_nonfinite_collector_wiring.py": 1
+      },
+      "target": "1334-metal-ms-ssim-option-parity.md"
     }
   },
   "retired": {

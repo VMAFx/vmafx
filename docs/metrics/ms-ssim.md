@@ -30,7 +30,8 @@ What that means when a model requests `enable_chroma`:
   storage, dispatched through the Metal compute pipeline. The twin advertises
   `float_ms_ssim_cb` and `float_ms_ssim_cr` in `provided_features` and the
   `g_metal_features` dispatch table, serving chroma on the GPU. It also exposes
-  `enable_db` and `clip_db` adhering to the ADR-1221 `max_db` ceiling.
+  `enable_db` and `clip_db`, extending the ADR-1221 `max_db` rule under
+  [ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md).
 - **SYCL** computes it. Each plane gets its own geometry, staging buffer and
   pyramid, and the planes run sequentially through the shared reduction
   workspace the way the five scales already do. The twin advertises
@@ -57,7 +58,7 @@ What that means when a model requests `enable_chroma`:
 
 The 5-level 11-tap pyramid needs every scored plane to be at least 176x176, and
 with `enable_chroma` that includes the subsampled ones. For 4:2:0 that means
-352x352 luma, not 176x176. Both the CPU and the SYCL twin now refuse a smaller
+352x352 luma, not 176x176. The CPU, SYCL, and Metal twins refuse a smaller
 input at init and name the chroma size they measured; before ADR-1299 the CPU
 twin checked luma only and a 4:2:0 input in between died mid-run with
 `error: scale below 1x1!` on stdout and no output file — including on this
@@ -111,8 +112,9 @@ rejected with an error at init time (Netflix#1414 / ADR-0153).
   > `clip_db` did not clip. Fixed per
   > [ADR-1221](../adr/1221-gpu-ms-ssim-db-ceiling.md). **Re-measure any GPU
   > MS-SSIM dB score taken with `clip_db` set.** The Metal twin has been brought
-  > to full parity, implementing `enable_db`, `clip_db` with `max_db` ceiling,
-  > and `enable_chroma`.
+  > to full parity by [ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md),
+  > implementing `enable_db`, `clip_db` with `max_db` ceiling, and
+  > `enable_chroma`.
 
 ### How to run
 

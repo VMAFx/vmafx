@@ -1,0 +1,1 @@
+| [ADR-1334](1334-metal-ms-ssim-option-parity.md) | Extend CPU MS-SSIM dB and chroma option semantics to Metal with device-free executable regressions and fail-closed atom validation. | Accepted | metal, ms-ssim, correctness, option-parity, testing |

@@ -1387,14 +1387,14 @@ after port-upstream of any of these files.
   [ADR-0161](../../../docs/adr/0161-ssimulacra2-simd-bitexact.md)
   / [ADR-0162](../../../docs/adr/0162-ssimulacra2-iir-blur-simd.md)
   / [ADR-0163](../../../docs/adr/0163-ssimulacra2-ptlr-simd.md).
-- **`float_ms_ssim` `enable_chroma` (ADR-0583, PR opened 2026-05-16)**:
+- **`float_ms_ssim` `enable_chroma` (ADR-0583, ADR-1334)**:
   `float_ms_ssim.c` has `bool enable_chroma` field in `MsSsimState`
   and per-plane loop in `extract()` emitting `float_ms_ssim_cb` /
   `float_ms_ssim_cr`. default is `false` (luma-only, backward-
-  compatible). GPU twins (`_cuda`, `_sycl`, `_vulkan`) do not yet carry
-  this option — they are planned follow-up. If upstream Netflix adds
-  any option to `float_ms_ssim.c`, mirror it to all GPU twins in
-  same PR per twin-parity invariant.
+  compatible). SYCL and Metal compute all three planes; HIP accepts the
+  option but remains explicitly luma-only; CUDA does not expose it. If
+  upstream Netflix adds any option to `float_ms_ssim.c`, mirror it to all
+  GPU twins in same PR per twin-parity invariant.
 - **Upstream ports**: `feature/motion` options from `b949cebf`
   (T-NEW-1) MERGED via PR #197 (2026-04-29). `feature/speed`
   port from `d3647c73` (`speed_chroma` + `speed_temporal`) is

@@ -8,7 +8,7 @@
 /*
  * Metal kernel coverage round 3 — float_ms_ssim CPU vs. Metal parity
  * (T8-2a; ADR-0589 metal-ssim-lcs-db-parity; ADR-0214 cross-backend gate;
- *  ADR-1221 gpu-ms-ssim-db-ceiling; T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07).
+ *  ADR-1334 Metal option parity; T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07).
  *
  * `float_ms_ssim_metal` emits the aggregate `float_ms_ssim` score: a 5-scale
  * MS-SSIM pyramid combining luminance, contrast, and structure across the
@@ -40,6 +40,7 @@
  *   - core/test/test_metal_float_ssim_parity.c (sibling, single-scale SSIM)
  *   - docs/adr/0589-metal-ssim-lcs-db-parity.md
  *   - docs/adr/1221-gpu-ms-ssim-db-ceiling.md
+ *   - docs/adr/1334-metal-ms-ssim-option-parity.md
  */
 
 #include <errno.h>
@@ -69,6 +70,12 @@
 
 /* MS-SSIM inherits the SSIM-family 1e-3 bound from ADR-0589. */
 #define PARITY_TOL 1e-3
+
+typedef struct MsSsimTestOptions {
+    bool enable_db;
+    bool clip_db;
+    bool enable_chroma;
+} MsSsimTestOptions;
 
 static int fill_fixture(VmafPicture *pic, unsigned variant)
 {
@@ -116,8 +123,10 @@ static char *feed_fixture_pair_variant(VmafContext *vmaf, unsigned ref_variant,
     if (err)
         return "fill_fixture(ref) failed";
     err = fill_fixture(&dist, dist_variant);
-    if (err)
+    if (err) {
+        vmaf_picture_unref(&ref);
         return "fill_fixture(dist) failed";
+    }
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
     if (err)
         return "vmaf_read_pictures failed";
@@ -127,37 +136,97 @@ static char *feed_fixture_pair_variant(VmafContext *vmaf, unsigned ref_variant,
     return NULL;
 }
 
-static char *run_cpu_float_ms_ssim_opts(VmafFeatureDictionary *opts, bool identical, double *out_y,
-                                        double *out_cb, double *out_cr)
+static int make_options(const MsSsimTestOptions *options, VmafFeatureDictionary **opts)
 {
+    int err = 0;
+    if (options && options->enable_db)
+        err = vmaf_feature_dictionary_set(opts, "enable_db", "true");
+    if (!err && options && options->clip_db)
+        err = vmaf_feature_dictionary_set(opts, "clip_db", "true");
+    if (!err && options && options->enable_chroma)
+        err = vmaf_feature_dictionary_set(opts, "enable_chroma", "true");
+    if (err)
+        (void)vmaf_feature_dictionary_free(opts);
+    return err;
+}
+
+static char *setup_cpu_float_ms_ssim(const MsSsimTestOptions *options, VmafContext **vmaf,
+                                     VmafFeatureDictionary **opts)
+{
+    int err = make_options(options, opts);
+    if (err)
+        return "CPU: option construction failed";
+
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_ms_ssim", opts);
-    mu_assert("CPU: vmaf_use_feature(float_ms_ssim) failed", !err);
+    err = vmaf_init(vmaf, cfg);
+    if (err)
+        return "CPU: vmaf_init failed";
+    err = vmaf_use_feature(*vmaf, "float_ms_ssim", *opts);
+    *opts = NULL; /* The valid call consumes options on every return path. */
+    return err ? "CPU: vmaf_use_feature(float_ms_ssim) failed" : NULL;
+}
 
-    char *feed_err = feed_fixture_pair_variant(vmaf, 0u, identical ? 0u : 1u);
-    if (feed_err)
-        return feed_err;
+static char *setup_metal_float_ms_ssim(VmafMetalState *mstate, const MsSsimTestOptions *options,
+                                       VmafContext **vmaf, VmafFeatureDictionary **opts)
+{
+    int err = make_options(options, opts);
+    if (err)
+        return "Metal: option construction failed";
 
-    err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", out_y, 0u);
-    mu_assert("CPU: float_ms_ssim read failed", !err);
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    err = vmaf_init(vmaf, cfg);
+    if (err)
+        return "Metal: vmaf_init failed";
+    err = vmaf_metal_import_state(*vmaf, mstate);
+    if (err)
+        return "Metal: vmaf_metal_import_state failed";
+    err = vmaf_use_feature(*vmaf, "float_ms_ssim_metal", *opts);
+    *opts = NULL; /* The valid call consumes options on every return path. */
+    return err ? "Metal: vmaf_use_feature(float_ms_ssim_metal) failed" : NULL;
+}
+
+static char *collect_float_ms_ssim_scores(VmafContext *vmaf, bool metal, double *out_y,
+                                          double *out_cb, double *out_cr)
+{
+    int err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", out_y, 0u);
+    if (err)
+        return metal ? "Metal: float_ms_ssim read failed" : "CPU: float_ms_ssim read failed";
     if (out_cb) {
         err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cb", out_cb, 0u);
-        mu_assert("CPU: float_ms_ssim_cb read failed", !err);
+        if (err)
+            return metal ? "Metal: float_ms_ssim_cb read failed" :
+                           "CPU: float_ms_ssim_cb read failed";
     }
     if (out_cr) {
         err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cr", out_cr, 0u);
-        mu_assert("CPU: float_ms_ssim_cr read failed", !err);
+        if (err)
+            return metal ? "Metal: float_ms_ssim_cr read failed" :
+                           "CPU: float_ms_ssim_cr read failed";
     }
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_metal_float_ms_ssim_opts(VmafFeatureDictionary *opts, bool identical,
+static char *run_cpu_float_ms_ssim_opts(const MsSsimTestOptions *options, bool identical,
+                                        double *out_y, double *out_cb, double *out_cr)
+{
+    VmafFeatureDictionary *opts = NULL;
+    VmafContext *vmaf = NULL;
+    char *result = setup_cpu_float_ms_ssim(options, &vmaf, &opts);
+    if (!result) {
+        result = feed_fixture_pair_variant(vmaf, 0u, identical ? 0u : 1u);
+    }
+    if (!result) {
+        result = collect_float_ms_ssim_scores(vmaf, false, out_y, out_cb, out_cr);
+    }
+
+    if (opts)
+        (void)vmaf_feature_dictionary_free(&opts);
+    if (vmaf && vmaf_close(vmaf) != 0 && !result)
+        result = "CPU: vmaf_close failed";
+    return result;
+}
+
+static char *run_metal_float_ms_ssim_opts(const MsSsimTestOptions *options, bool identical,
                                           double *out_y, double *out_cb, double *out_cr)
 {
     *out_y = NAN;
@@ -171,37 +240,27 @@ static char *run_metal_float_ms_ssim_opts(VmafFeatureDictionary *opts, bool iden
     int err = vmaf_metal_state_init(&mstate, mcfg);
     if (err != 0 || mstate == NULL) {
         (void)fprintf(stderr, "[skip: no Metal device] ");
+        if (mstate)
+            vmaf_metal_state_free(&mstate);
         return NULL;
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafFeatureDictionary *opts = NULL;
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("Metal: vmaf_init failed", !err);
-    err = vmaf_metal_import_state(vmaf, mstate);
-    mu_assert("Metal: vmaf_metal_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_ms_ssim_metal", opts);
-    mu_assert("Metal: vmaf_use_feature(float_ms_ssim_metal) failed", !err);
-
-    char *feed_err = feed_fixture_pair_variant(vmaf, 0u, identical ? 0u : 1u);
-    if (feed_err)
-        return feed_err;
-
-    err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", out_y, 0u);
-    mu_assert("Metal: float_ms_ssim read failed", !err);
-    if (out_cb) {
-        err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cb", out_cb, 0u);
-        mu_assert("Metal: float_ms_ssim_cb read failed", !err);
+    char *result = setup_metal_float_ms_ssim(mstate, options, &vmaf, &opts);
+    if (!result) {
+        result = feed_fixture_pair_variant(vmaf, 0u, identical ? 0u : 1u);
     }
-    if (out_cr) {
-        err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cr", out_cr, 0u);
-        mu_assert("Metal: float_ms_ssim_cr read failed", !err);
+    if (!result) {
+        result = collect_float_ms_ssim_scores(vmaf, true, out_y, out_cb, out_cr);
     }
 
-    err = vmaf_close(vmaf);
-    mu_assert("Metal: vmaf_close failed", !err);
+    if (vmaf && vmaf_close(vmaf) != 0 && !result)
+        result = "Metal: vmaf_close failed";
+    if (opts)
+        (void)vmaf_feature_dictionary_free(&opts);
     vmaf_metal_state_free(&mstate);
-    return NULL;
+    return result;
 }
 
 static char *test_float_ms_ssim_cpu_metal_parity(void)
@@ -230,22 +289,15 @@ static char *test_float_ms_ssim_cpu_metal_parity(void)
 
 static char *test_metal_float_ms_ssim_clip_db_ceiling(void)
 {
-    VmafFeatureDictionary *opts = NULL;
-    int err = vmaf_feature_dictionary_set(&opts, "enable_db", "true");
-    mu_assert("vmaf_feature_dictionary_set(enable_db) failed", !err);
-    err = vmaf_feature_dictionary_set(&opts, "clip_db", "true");
-    mu_assert("vmaf_feature_dictionary_set(clip_db) failed", !err);
+    const MsSsimTestOptions options = {.enable_db = true, .clip_db = true};
 
     double cpu_score = 0.0;
     double metal_score = NAN;
 
-    char *msg = run_cpu_float_ms_ssim_opts(opts, true, &cpu_score, NULL, NULL);
-    if (msg) {
-        (void)vmaf_feature_dictionary_free(&opts);
+    char *msg = run_cpu_float_ms_ssim_opts(&options, true, &cpu_score, NULL, NULL);
+    if (msg)
         return msg;
-    }
-    msg = run_metal_float_ms_ssim_opts(opts, true, &metal_score, NULL, NULL);
-    (void)vmaf_feature_dictionary_free(&opts);
+    msg = run_metal_float_ms_ssim_opts(&options, true, &metal_score, NULL, NULL);
     if (msg)
         return msg;
     if (isnan(metal_score))
@@ -262,20 +314,15 @@ static char *test_metal_float_ms_ssim_clip_db_ceiling(void)
 
 static char *test_metal_float_ms_ssim_parity_chroma(void)
 {
-    VmafFeatureDictionary *opts = NULL;
-    int err = vmaf_feature_dictionary_set(&opts, "enable_chroma", "true");
-    mu_assert("vmaf_feature_dictionary_set(enable_chroma) failed", !err);
+    const MsSsimTestOptions options = {.enable_chroma = true};
 
     double cpu_y = 0.0, cpu_cb = 0.0, cpu_cr = 0.0;
     double metal_y = NAN, metal_cb = NAN, metal_cr = NAN;
 
-    char *msg = run_cpu_float_ms_ssim_opts(opts, false, &cpu_y, &cpu_cb, &cpu_cr);
-    if (msg) {
-        (void)vmaf_feature_dictionary_free(&opts);
+    char *msg = run_cpu_float_ms_ssim_opts(&options, false, &cpu_y, &cpu_cb, &cpu_cr);
+    if (msg)
         return msg;
-    }
-    msg = run_metal_float_ms_ssim_opts(opts, false, &metal_y, &metal_cb, &metal_cr);
-    (void)vmaf_feature_dictionary_free(&opts);
+    msg = run_metal_float_ms_ssim_opts(&options, false, &metal_y, &metal_cb, &metal_cr);
     if (msg)
         return msg;
     if (isnan(metal_y))
