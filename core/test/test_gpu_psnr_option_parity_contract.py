@@ -92,7 +92,9 @@ class GpuPsnrOptionParityContractTest(unittest.TestCase):
             with self.subTest(file=rel_path):
                 source = (FEATURE_ROOT / rel_path).read_text(encoding="utf-8")
                 self.assertIn("n_planes", source, f"{rel_path} must track n_planes in state")
-                self.assertIn("enable_chroma", source, f"{rel_path} must reference enable_chroma in state")
+                self.assertIn(
+                    "enable_chroma", source, f"{rel_path} must reference enable_chroma in state"
+                )
                 self.assertTrue(
                     "VMAF_PIX_FMT_YUV400P" in source,
                     f"{rel_path} must handle YUV400 monochrome format",
