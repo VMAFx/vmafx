@@ -2234,7 +2234,7 @@
     },
     "0311": {
       "sites": {
-        ".github/workflows/fuzz.yml": 2,
+        ".github/workflows/fuzz.yml": 1,
         "core/test/fuzz/fuzz_cli_parse.c": 1,
         "core/test/fuzz/fuzz_yuv_input.c": 1,
         "core/test/fuzz/meson.build": 1,
@@ -7449,6 +7449,12 @@
         "scripts/ci/tests/test_hiss_replay_contract.py": 1
       },
       "target": "1319-fail-closed-self-hosted-gpu-admission.md"
+    },
+    "1321": {
+      "sites": {
+        ".github/workflows/fuzz.yml": 1
+      },
+      "target": "1321-pre-rc1-flake-survey-remediation.md"
     }
   },
   "retired": {
