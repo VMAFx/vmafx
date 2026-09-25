@@ -348,6 +348,81 @@ class RunClangTidy(unittest.TestCase):
             self.assertEqual(measured.compile_failures, [])
             self.assertEqual(measured.tus, 1)
 
+    def test_relative_wrapper_path_in_subdirectory_survives_safe_subprocess(self) -> None:
+        # Repository-relative wrapper (scripts/ci/clang-tidy-sycl.sh) has multiple
+        # path components; safe_subprocess rejects relative executables. tidy-ratchet
+        # must resolve it to an absolute path so version probing and per-TU execution pass.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "core").mkdir()
+            (root / "core" / "a.c").write_text("int a;\n", encoding="utf-8")
+            (root / "scripts" / "ci").mkdir(parents=True)
+            script = root / "scripts" / "ci" / "fake-clang-tidy.sh"
+            script.write_text(
+                '#!/bin/sh\nprintf "LLVM version 22.0.0\\n%s\\n" "$@"\n', encoding="utf-8"
+            )
+            script.chmod(0o755)
+            build = root / "build"
+            build.mkdir()
+            entries = [{"directory": str(build), "file": str(root / "core/a.c"), "command": "cc"}]
+            (build / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
+
+            measured = ratchet.measure("sycl", build, root, "scripts/ci/fake-clang-tidy.sh", [], 1)
+            self.assertEqual(measured.compile_failures, [])
+            self.assertEqual(measured.tus, 1)
+            self.assertEqual(measured.clang_tidy_version, "22.0.0")
+
+            report = root / "report.json"
+            baseline = root / "scripts" / "ci" / "tidy-baseline-sycl.json"
+            baseline.write_text(json.dumps(measured.to_json()), encoding="utf-8")
+            exit_code = ratchet.main(
+                [
+                    "--lane",
+                    "sycl",
+                    "--build-dir",
+                    str(build),
+                    "--repo-root",
+                    str(root),
+                    "--clang-tidy",
+                    "scripts/ci/fake-clang-tidy.sh",
+                    "--report",
+                    str(report),
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+
+class ResolveClangTidy(unittest.TestCase):
+    def test_bare_executable_is_preserved_or_resolved(self) -> None:
+        self.assertEqual(ratchet.resolve_clang_tidy("nonexistent-tool-xyz"), "nonexistent-tool-xyz")
+
+    def test_absolute_executable_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = Path(tmp) / "tool.sh"
+            tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            tool.chmod(0o755)
+            self.assertEqual(ratchet.resolve_clang_tidy(str(tool)), str(tool.resolve()))
+
+    def test_relative_path_resolves_against_repo_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts" / "ci").mkdir(parents=True)
+            tool = root / "scripts" / "ci" / "wrapper.sh"
+            tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            tool.chmod(0o755)
+            resolved = ratchet.resolve_clang_tidy("scripts/ci/wrapper.sh", root)
+            self.assertEqual(resolved, str(tool.resolve()))
+
+
+class SyclLaneFlags(unittest.TestCase):
+    def test_lane_wrapper_uses_curdir_absolute_path(self) -> None:
+        text = (ROOT / "Makefile").read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if line.startswith("TIDY_RATCHET_EXTRA_sycl"):
+                self.assertIn("$(CURDIR)/scripts/ci/clang-tidy-sycl.sh", line)
+                return
+        self.fail("Makefile defines no TIDY_RATCHET_EXTRA_sycl lane")
+
 
 class Arm64LaneFlags(unittest.TestCase):
     """The arm64 lane's cross flags are load-bearing (ADR-1283).

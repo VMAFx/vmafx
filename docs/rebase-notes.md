@@ -1,6 +1,28 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/fix-sycl-tidy-path-99d79a — resolve SYCL clang-tidy wrapper to absolute path for safe_subprocess (2026-09-25)
+
+When invoking `make tidy-ratchet LANE=sycl`, the lane passed `scripts/ci/clang-tidy-sycl.sh`
+as a relative executable path. Under ADR-1270, `scripts/lib/safe_subprocess.py` validates that
+all allowlisted executables are either bare commands (single path component resolved via `PATH`)
+or absolute paths (`candidate.is_absolute()`). Relative executable paths containing slashes
+are rejected with `CommandValidationError: allowlisted executable must be bare or absolute`.
+
+The fix addresses this at both the caller and runner levels:
+1. **`Makefile`**: `TIDY_RATCHET_EXTRA_sycl` defines `--clang-tidy $(CURDIR)/scripts/ci/clang-tidy-sycl.sh`,
+   anchoring the wrapper path to the active worktree root so that Make invocations from
+   arbitrary directories (`make -C <dir>`) produce an absolute path.
+2. **`scripts/ci/tidy-ratchet.py`**: Added `resolve_clang_tidy(binary, repo_root)` (HISS-04
+   compliant, <= 60 LOC) to convert multi-component relative binary paths to absolute paths
+   relative to `Path.cwd()` (or repository root), while leaving bare binary names unchanged
+   for standard PATH lookup. Both `clang_tidy_version()` and `run_one()` use `resolve_clang_tidy()`.
+3. **`scripts/ci/tests/test_tidy_ratchet.py`**: Added regression tests (`test_relative_wrapper_path_in_subdirectory_survives_safe_subprocess`,
+   `ResolveClangTidy`, `SyclLaneFlags`) verifying safe execution across subdirectories.
+
+Do not resolve rebase conflicts by stripping `$(CURDIR)` or removing `resolve_clang_tidy()`,
+as this will re-introduce the `safe_subprocess` validation error during `make tidy-ratchet LANE=sycl`.
+
 ## fix/gpu-picture-pool-alloc-error — handle pool allocation failure with -ENOMEM (2026-09-24)
 
 When `malloc(sizeof(*p))` fails in `vmaf_gpu_picture_pool_init` (`core/src/gpu_picture_pool.cpp`),

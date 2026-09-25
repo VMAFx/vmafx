@@ -234,7 +234,7 @@ TIDY_RATCHET_EXTRA_cpu :=
 TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
 TIDY_RATCHET_EXTRA_hip := --extra-arg=-x --extra-arg=hip \
 	--extra-arg=-D__HIP_PLATFORM_AMD__=1 --extra-arg=-I/opt/rocm/include
-TIDY_RATCHET_EXTRA_sycl := --clang-tidy scripts/ci/clang-tidy-sycl.sh
+TIDY_RATCHET_EXTRA_sycl := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-sycl.sh
 TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
 	--extra-arg=--sysroot=$(AARCH64_SYSROOT)
 

@@ -26,7 +26,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import sys
 import tempfile
 from collections.abc import Iterable, Iterator
@@ -294,18 +293,42 @@ def cc_version(build_dir: Path) -> str:
         return ""
 
 
-def clang_tidy_version(binary: str) -> str:
+def resolve_clang_tidy(binary: str, repo_root: Path | None = None) -> str:
+    """Resolve *binary* to a bare executable name or an absolute path.
+
+    A bare name (single path component) is preserved for PATH lookup.
+    A path with directory components is resolved to an absolute path against
+    the current working directory or *repo_root*, satisfying
+    safe_subprocess's bare-or-absolute contract and surviving directory
+    switches.
+    """
+    candidate = Path(binary).expanduser()
+    if candidate.is_absolute():
+        return str(candidate.resolve())
+    if "/" in binary or "\\" in binary or len(candidate.parts) > 1:
+        if candidate.is_file():
+            return str(candidate.resolve())
+        if repo_root is not None and (repo_root / candidate).is_file():
+            return str((repo_root / candidate).resolve())
+        if repo_root is not None:
+            return str((repo_root / candidate).resolve())
+        return str(candidate.resolve())
+    return binary
+
+
+def clang_tidy_version(binary: str, repo_root: Path | None = None) -> str:
     """Return the LLVM version string of *binary*, or "" when unavailable."""
+    resolved = resolve_clang_tidy(binary, repo_root)
     try:
         out = run_command(
-            [binary, "--version"],
-            allowed_executables=(binary,),
+            [resolved, "--version"],
+            allowed_executables=(resolved,),
             capture_output=True,
             text=True,
             check=False,
             timeout_seconds=30,
         ).stdout
-    except OSError:
+    except (OSError, ValueError):
         return ""
     match = re.search(r"LLVM version (\S+)", out)
     return match.group(1) if match else ""
@@ -323,8 +346,7 @@ def run_one(
     # A repository-relative --clang-tidy (the sycl wrapper) must survive the cwd
     # switch into the build directory below; resolve it once, leave bare names
     # to PATH lookup.
-    if "/" in binary and Path(binary).exists():
-        binary = str(Path(binary).resolve())
+    binary = resolve_clang_tidy(binary)
     # Each value of our --extra-arg is a compiler flag for clang-tidy to forward
     # (that is what its help text promises), so it has to reach clang-tidy
     # wrapped as --extra-arg=<flag>. Passing the values bare handed clang-tidy
@@ -368,6 +390,7 @@ def measure(
     only: Iterable[str] = (),
 ) -> Measurement:
     """Run clang-tidy over every TU of *build_dir* and count NOLINTs."""
+    binary = resolve_clang_tidy(binary, repo_root)
     units = load_compile_commands(build_dir, repo_root)
     wanted = {Path(p).resolve() for p in only}
     if wanted:
@@ -381,7 +404,7 @@ def measure(
         raise ValueError("compile database selected no translation units")
     result = Measurement(lane=lane, tus=len(units))
     result.sources = sorted(source.relative_to(repo_root).as_posix() for source, _ in units)
-    result.clang_tidy_version = clang_tidy_version(binary)
+    result.clang_tidy_version = clang_tidy_version(binary, repo_root)
     result.cc_version = cc_version(build_dir)
     diags: set[tuple[str, int, int, str]] = set()
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
@@ -745,7 +768,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     try:
         baseline_before = prepare_output(args, baseline_path)
-        binary = shutil.which(args.clang_tidy) or args.clang_tidy
+        binary = resolve_clang_tidy(args.clang_tidy, repo_root)
         measured = measure(
             args.lane,
             args.build_dir.resolve(),

@@ -29634,6 +29634,12 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
   warning flags to make analyzer output quieter.
 
 
+- Fixed required-gate failure in `make tidy-ratchet LANE=sycl` where `scripts/ci/clang-tidy-sycl.sh`
+  was passed as a relative executable and rejected by `safe_subprocess.py`'s bare-or-absolute contract.
+  `Makefile` now anchors the wrapper path to `$(CURDIR)`, and `tidy-ratchet.py` resolves relative
+  `--clang-tidy` paths against the repository root and working directory.
+
+
 - **sycl:** Fix crashes and prediction errors when running default model `vmaf_v1.0.16_3d0h`
   on Intel Arc GPUs. Fix uninitialized bounds and histogram buffer allocation in
   `integer_cambi_sycl.cpp`, eliminate `double` accumulators and accessors in
