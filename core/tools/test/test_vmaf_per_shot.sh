@@ -218,28 +218,27 @@ if [ "${FIFO_FRAMES}" -ne 5 ]; then
 fi
 
 # 12. Invalid --frames arguments fail.
-if "${BIN}" --reference "${SRC}" --width 576 --height 324 \
-  --pixel_format 420 --bitdepth 8 \
-  --output "${WORK}/out.csv" \
-  --frames -1 2>/dev/null; then
-  echo "test_vmaf_per_shot: expected failure on negative --frames" >&2
-  exit 1
-fi
-
-if "${BIN}" --reference "${SRC}" --width 576 --height 324 \
-  --pixel_format 420 --bitdepth 8 \
-  --output "${WORK}/out.csv" \
-  --frames -18446744073709551615 2>/dev/null; then
-  echo "test_vmaf_per_shot: expected failure on large negative --frames" >&2
-  exit 1
-fi
-
-if "${BIN}" --reference "${SRC}" --width 576 --height 324 \
-  --pixel_format 420 --bitdepth 8 \
-  --output "${WORK}/out.csv" \
-  --frames not_a_number 2>/dev/null; then
-  echo "test_vmaf_per_shot: expected failure on non-numeric --frames" >&2
-  exit 1
-fi
+CARRIAGE_RETURN=$(printf '\r')
+LINE_FEED=$(printf '\n_')
+LINE_FEED=${LINE_FEED%_}
+for INVALID_FRAMES in \
+  "-1" \
+  "-18446744073709551615" \
+  "-4294967295" \
+  "${CARRIAGE_RETURN}-18446744073709551615" \
+  "${LINE_FEED}-18446744073709551615" \
+  "${CARRIAGE_RETURN}-4294967295" \
+  "${CARRIAGE_RETURN}-1" \
+  "   " \
+  "4294967296" \
+  "not_a_number"; do
+  if "${BIN}" --reference "${SRC}" --width 576 --height 324 \
+    --pixel_format 420 --bitdepth 8 \
+    --output "${WORK}/out.csv" \
+    --frames "${INVALID_FRAMES}" 2>/dev/null; then
+    echo "test_vmaf_per_shot: expected failure on invalid --frames: ${INVALID_FRAMES}" >&2
+    exit 1
+  fi
+done
 
 echo "test_vmaf_per_shot: PASS (${ROWS} shot rows)"

@@ -32,6 +32,7 @@
 #endif
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <stdbool.h>
@@ -170,14 +171,14 @@ static int per_shot_parse_uint(const char *s, unsigned long min, unsigned long m
     if (s == NULL || *s == '\0' || out == NULL)
         return -EINVAL;
     const char *p = s;
-    while (*p == ' ' || *p == '\t')
+    while (isspace((unsigned char)*p))
         p++;
-    if (*p == '-')
+    if (*p == '-' || *p == '\0')
         return -EINVAL;
     char *end = NULL;
     errno = 0;
-    unsigned long v = strtoul(s, &end, 10);
-    if (errno != 0 || end == NULL || *end != '\0')
+    unsigned long v = strtoul(p, &end, 10);
+    if (errno != 0 || end == NULL || end == p || *end != '\0')
         return -EINVAL;
     if (v < min || v > max)
         return -EINVAL;
