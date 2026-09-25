@@ -139,7 +139,7 @@ syntax but accepts an additional `sycl_device=<n>` option. See
 Score a pair with the default model plus PSNR + CIEDE attached:
 
 ```bash
-ffmpeg -i ref.y4m -i dis.y4m \
+ffmpeg -i dis.y4m -i ref.y4m \
   -lavfi "[0:v][1:v]libvmaf=feature='name=psnr|name=ciede':log_fmt=json:log_path=/dev/stdout" \
   -f null -
 ```
@@ -147,7 +147,7 @@ ffmpeg -i ref.y4m -i dis.y4m \
 Score against two models in one pass (both appear in the report):
 
 ```bash
-ffmpeg -i ref.y4m -i dis.y4m \
+ffmpeg -i dis.y4m -i ref.y4m \
   -lavfi "[0:v][1:v]libvmaf=model='version=vmaf_v0.6.1|version=vmaf_v0.6.1neg':log_fmt=json:log_path=/dev/stdout" \
   -f null -
 ```
@@ -222,7 +222,7 @@ patch `0004` is retained as a no-op shim per ADR-0860.)
 **CPU (default — no hwaccel, no GPU build needed):**
 
 ```bash
-ffmpeg -i reference.mp4 -i distorted.mp4 \
+ffmpeg -i distorted.mp4 -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
@@ -243,7 +243,7 @@ selector on the regular `libvmaf` filter — runs CUDA feature kernels
 without the CUDA hwaccel decode round-trip):**
 
 ```bash
-ffmpeg -i reference.mp4 -i distorted.mp4 \
+ffmpeg -i distorted.mp4 -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf=cuda=1:log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
@@ -262,7 +262,7 @@ fork-added `sycl_device=N` selector on the regular `libvmaf` filter,
 fed by software-decoded frames):**
 
 ```bash
-ffmpeg -i reference.mp4 -i distorted.mp4 \
+ffmpeg -i distorted.mp4 -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf=sycl_device=0:log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```

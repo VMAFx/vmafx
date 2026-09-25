@@ -189,7 +189,7 @@ A new 2-input video filter that runs alongside a 1-pass encode and
 emits a recommended CRF for the next pass:
 
 ```bash
-ffmpeg -i input.mp4 -i reference.mp4 \
+ffmpeg -i reference.mp4 -i input.mp4 \
     -lavfi "[0:v][1:v]libvmaf_tune=recommend_target_vmaf=92:recommend_crf_min=18:recommend_crf_max=40" \
     -f null -
 ```

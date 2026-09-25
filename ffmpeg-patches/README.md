@@ -103,7 +103,7 @@ already reachable through upstream FFmpeg's stock `libvmaf` filter via
 its `feature` option. No patch needed:
 
 ```bash
-ffmpeg -i ref.mp4 -i dist.mp4 \
+ffmpeg -i dist.mp4 -i ref.mp4 \
   -lavfi "[0:v][1:v]libvmaf=feature='name=ssimulacra2'" \
   -f null -
 ```

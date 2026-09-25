@@ -54187,3 +54187,14 @@ minimum.
 - Apple device gate: `meson test -C build-metal --no-rebuild test_metal_float_ms_ssim_parity`.
 - No public C ABI, CLI, FFmpeg patch, model, snapshot, dependency, benchmark,
   tuning, training, or Netflix golden assertion changes.
+## agent/fix-ffmpeg-input-order-3139 — restore exact AV_LOG_INFO and docs for libvmaf input convention (2026-09-25)
+
+The `libvmaf` FFmpeg filter takes `[0:v]` = distorted (main) and `[1:v]` = reference, which is the OPPOSITE of every other VMAF surface. Passing inputs in the natural ref-first order silently inflated the VMAF score.
+This restores the exact `AV_LOG_INFO` warning about the `libvmaf` input-order convention in `ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch` to prevent silent score inflation. It also aligns all `ffmpeg -i` examples across docs to use `dis` then `ref`, and adds a contract test `ffmpeg-patches/test/check-input-contract.sh`.
+
+- Research digest: no digest needed: trivial.
+- Decision matrix: no alternatives: only-one-way fix.
+- AGENTS.md invariant: no rebase-sensitive invariants.
+- Reproducer / smoke: `./ffmpeg-patches/test/check-input-contract.sh`.
+- Changelog: `changelog.d/fixed/ffmpeg-input-order-contract.md`.
+- FFmpeg impact: modifies 0001 patch, `scripts/ci/ffmpeg_patch_stack.py --refresh` applies successfully.

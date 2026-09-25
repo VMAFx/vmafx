@@ -23664,6 +23664,9 @@ always returned so feature availability was never affected.
   comparison failures; cover both cases in the hook regression suite.
 
 
+- **ffmpeg:** Restored the exact `AV_LOG_INFO` warning about the `libvmaf` input-order convention in `ffmpeg-patches/0001` to prevent silent score inflation, and aligned all `ffmpeg -i` examples across docs to use `dis` then `ref`. Added a contract test to prevent drift.
+
+
 - ffmpeg: document the `libvmaf` filter input-ordering convention
   (`[0:v]` = distorted / main, `[1:v]` = reference — the OPPOSITE
   of the Python runner and `vmaf` CLI which take `(ref, dis)`).
