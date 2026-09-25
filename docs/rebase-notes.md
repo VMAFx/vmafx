@@ -54127,3 +54127,15 @@ Preserved invariants:
 - SYCL device code remains strictly fp64-free (float32-only).
 - Tests `test_sycl_float_adm_parity` (`_large`) and `test_hip_float_adm_parity` (`_large`) assert `adm_bypass_cm=1` parity within `1e-4` against CPU `float_adm`.
 - Netflix golden assertions untouched.
+
+## agent/fix-ai-script-hygiene-3139 — current script environments (2026-09-25)
+
+`testdata/bench_all.sh` derives its default repository root from its own
+tracked location and honours `VMAF_ROOT` as the explicit override. Do not
+restore a developer-specific checkout fallback when resolving benchmark
+harness conflicts.
+
+`ai/scripts/collect_gpu_calibration_data.py` and its manifest fixtures name
+only the live CUDA/SYCL backend set after ADR-0726 removed Vulkan. The bounded
+contract in `ai/tests/test_legacy_extractor_manifests.py` guards both
+conditions. No benchmark or training run is part of this correction.
