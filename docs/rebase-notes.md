@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## audit/rc1-flake-survey-df0b — keep scheduled CI aligned with required lanes (2026-09-25)
+
+The scheduled whole-tree CPU ratchet must retain the required PR lane's GCC 15,
+clang-tidy 22, `-Db_lto=false`, and explicit analyzer path. The standalone and
+sanitizer fuzz workflows both compile full libvmaf with Clang 22 and ASan; keep
+their 30-minute job budgets aligned when resolving workflow conflicts.
+
+- Research digest: [Research-2107](research/2107-pre-rc1-scheduled-ci-flake-triage-2026-09-25.md).
+- Decision matrix: [ADR-1321](adr/1321-pre-rc1-flake-survey-remediation.md#alternatives-considered).
+- AGENTS.md invariant: existing `.github/AGENTS.md` clang-tidy repository rule
+  and `scripts/ci/AGENTS.md` configured-native-lint rules; no new invariant.
+- Reproducer / smoke: `python3 -B scripts/ci/test_fail_closed_ci.py`.
+- Changelog: `changelog.d/fixed/rc1-nightly-clang-tidy-fuzz-timeout.md`.
+- FFmpeg impact: none; no public C header, CLI flag, Meson option, or patch
+  surface changed.
+
 ## agent/fix-doxygen-public-api-warnings-6ba5 — drive public C API Doxygen warnings to zero and fail closed (2026-09-25)
 
 Public C headers in `core/include/libvmaf/*.h` are now strictly warning-free under

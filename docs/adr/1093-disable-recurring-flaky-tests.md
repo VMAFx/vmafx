@@ -1,10 +1,16 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1093: Disable two recurring-failure tests via should_fail while root cause is under investigation
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1099](1099-sycl-fsycl-link-propagation.md) and PR #840 (commit cf3ff8a8c)
 - **Date**: 2026-06-07
 - **Deciders**: Lusoris
 - **Tags**: ci, testing, flaky, picture-pool, sycl, fork-local
+
+> **Post-Resolution Note (2026-09-25)**: Both underlying root causes were subsequently resolved, and their temporary `should_fail: true` annotations were removed:
+>
+> 1. `test_sycl_motion_add_uv_parity` SIGSEGV was resolved by [ADR-1099](1099-sycl-fsycl-link-propagation.md) (`-fsycl` in `sycl_dependency.link_args` and feature-name aliasing);
+> 2. `test_pic_preallocation` was resolved by PR #840 (commit `cf3ff8a8c`, fixing missing `-DHAVE_CUDA` in `picture_pool_cpp23_lib` struct layout ODR mismatch).
+> Both tests now run and pass unconditionally in `core/test/meson.build`.
 
 ## Context
 

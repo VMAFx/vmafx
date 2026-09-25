@@ -944,7 +944,7 @@ public authority; documentation never links into either local root.
 | [ADR-1089](1089-dnn-onnx-domain-bypass.md) | Block non-standard ONNX operator domains in the DNN wire scanner | Accepted | `security`, `ai`, `dnn`, `fork-local` |
 | [ADR-1090](1090-cuda-stream-event-leak-fix.md) | Fix CUDA stream and event leaks on init error paths | Accepted | `cuda`, `security`, `testing` |
 | [ADR-1092](1092-framesync-producer-death-deadlock.md) | framesync producer-death deadlock — abort flag + shutdown broadcast | Accepted | `core`, `threading`, `correctness`, `sanitizer`, `fork-local` |
-| [ADR-1093](1093-disable-recurring-flaky-tests.md) | Disable two recurring-failure tests via should_fail while root cause is under investigation | Accepted | ci, testing, flaky, picture-pool, sycl, fork-local |
+| [ADR-1093](1093-disable-recurring-flaky-tests.md) | Disable two recurring-failure tests via should_fail while root cause is under investigation | Superseded | ci, testing, flaky, picture-pool, sycl, fork-local |
 | [ADR-1094](1094-helm-rolling-update-correctness.md) | Helm chart rolling-update correctness — node strategy, PDB default, probe fix, grace period | Accepted | `helm`, `kubernetes`, `deploy`, `fork-local` |
 | [ADR-1095](1095-otel-grpc-trace-context.md) | Fix OTel trace context propagation across gRPC boundaries | Accepted |  |
 | [ADR-1096](1096-doxygen-private-headers.md) | Doxygen @brief/@param coverage for core internal headers | Accepted | `docs`, `maintainability` |
@@ -1126,4 +1126,5 @@ public authority; documentation never links into either local root.
 | [ADR-1314](1314-semgrep-registry-advisory-artifact.md) | Keep repository-owned Semgrep rules in the required Code Scanning context while retaining moving registry-pack SARIF only as a 14-day advisory workflow artifact. | Accepted | ci, security, policy, supply-chain |
 | [ADR-1315](1315-doxygen-public-api-fail-closed.md) | Drive public C API Doxygen warnings to zero, exclude vendored pelorus mirror, fail closed with WARN_AS_ERROR and warning ceiling 0, and guard with fast-suite tests. | Accepted | docs, ci, api, public-surface, doxygen |
 | [ADR-1319](1319-fail-closed-self-hosted-gpu-admission.md) | Admit each self-hosted GPU job only after a hosted live probe matches its complete runner-label set, and require success while the lane is enabled. | Accepted | ci, gpu, security, self-hosted-runner, fork-local |
+| [ADR-1321](1321-pre-rc1-flake-survey-remediation.md) | Pre-RC1 CI flake remediation and contract alignment | Accepted | ci, testing, flaky, clang-tidy, fuzzing, fork-local |
 | [ADR-1247](1247-scorecard-exact-head-gates.md) | Bind Scorecard gates to their measured source and scope | Accepted | ci, security, supply-chain |

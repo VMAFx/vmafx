@@ -132,6 +132,27 @@ class FailClosedCIContract(unittest.TestCase):
         upload = workflow.split("name: nightly-benchmark-results", maxsplit=1)[0]
         self.assertRegex(upload, r"(?m)^        if: always\(\)\s*$")
 
+    def test_nightly_clang_tidy_configuration_and_toolchain(self) -> None:
+        workflow = (WORKFLOWS / "nightly.yml").read_text(encoding="utf-8")
+        tidy_job = workflow_job(workflow, "clang-tidy-full")
+        self.assertIn("ppa:ubuntu-toolchain-r/test", tidy_job)
+        self.assertIn("https://apt.llvm.org/llvm.sh", tidy_job)
+        self.assertIn("sudo /tmp/llvm.sh 22", tidy_job)
+        self.assertIn("sudo apt-get install -y clang-tidy-22", tidy_job)
+        self.assertIn("--require-hashes", tidy_job)
+        self.assertIn("CC=gcc-15 CXX=g++-15", tidy_job)
+        self.assertIn("-Db_lto=false", tidy_job)
+        self.assertIn("--clang-tidy /usr/bin/clang-tidy-22", tidy_job)
+
+    def test_fuzz_workflows_have_adequate_timeout_budget(self) -> None:
+        fuzz_wf = (WORKFLOWS / "fuzz.yml").read_text(encoding="utf-8")
+        fuzz_job = workflow_job(fuzz_wf, "fuzz")
+        self.assertRegex(fuzz_job, r"(?m)^    timeout-minutes: 30\s*$")
+
+        sanitizers_wf = (WORKFLOWS / "sanitizers.yml").read_text(encoding="utf-8")
+        sanitizer_fuzz_job = workflow_job(sanitizers_wf, "fuzz-nightly")
+        self.assertRegex(sanitizer_fuzz_job, r"(?m)^    timeout-minutes: 30\s*$")
+
     def test_semgrep_advisory_preserves_failure_outcome(self) -> None:
         workflow = (WORKFLOWS / "security-scans.yml").read_text(encoding="utf-8")
         registry = workflow_step(workflow, "Run semgrep (registry rule packs — advisory)")
