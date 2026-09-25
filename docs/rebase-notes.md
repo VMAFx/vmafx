@@ -51150,8 +51150,9 @@ this work, because these three twins are now defined as *mirrors* of it:
    device layouts without triggering fatbin/HSACO rebuilds. Filed as
    `T-CUDA-FATBIN-NO-HEADER-DEP-2026-09-05` in `docs/state.md` and **resolved by
    ADR-1320**. `core/src/meson.build` now binds explicit `depend_files` lists
-   (`cuda_kernel_shared_headers`, `hip_kernel_shared_headers`) covering all shared
-   kernel headers across all 22 CUDA fatbin targets and 22 HIP HSACO targets,
+   (`cuda_kernel_shared_headers`, `hip_kernel_shared_headers`) covering the
+   complete repo-local quoted include closure across all 22 CUDA fatbin targets
+   and 22 HIP HSACO targets (plus generated `config_h_target` for CUDA),
    alongside compiler depfiles (`-MD -MF @DEPFILE@` on POSIX nvcc and `-Xclang
    -dependency-file -Xclang @DEPFILE@` on hipcc; depfile omitted on Windows MSVC).
    Header edits now reliably trigger incremental Ninja rebuilds without manual

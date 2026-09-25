@@ -47,8 +47,9 @@ cuda/
   ([ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
   [Research-2106](../../../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
   All CUDA fatbin custom targets (`cu_ptx_target_*`) in `core/src/meson.build`
-  must bind `depend_files: cuda_kernel_shared_headers` covering every shared kernel
-  header, combined with compiler depfiles (`cu_depfile = host_machine.system() == 'windows' ? '' : '@0@.fatbin.d'.format(name)`
+  must bind `depend_files: cuda_kernel_shared_headers` covering the complete
+  repo-local quoted include closure plus `config_h_target`, combined with compiler
+  depfiles (`cu_depfile = host_machine.system() == 'windows' ? '' : '@0@.fatbin.d'.format(name)`
   and `nvcc_dep_flags = host_machine.system() == 'windows' ? [] : ['-MD', '-MF', '@DEPFILE@']`).
   Editing structs in shared headers (e.g. `integer_adm_cuda.h`, `vif_cuda.h`, `moment_cuda.h`)
   must reliably trigger incremental fatbin rebuilds in Ninja without manual `touch`

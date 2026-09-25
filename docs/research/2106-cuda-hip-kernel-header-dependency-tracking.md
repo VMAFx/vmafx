@@ -48,8 +48,8 @@ We audited the behavior of `nvcc` (CUDA 13.4) and `hipcc` (ROCm 7.2):
      Makefile depfile. If Meson unconditionally passes `depfile: ...` when
      `nvcc_dep_flags` is empty, Ninja emits a rule expecting a `.d` file that is
      never created.
-   - Therefore, on Windows `cu_depfile` must evaluate to `''` (which Meson cleanly
-     omits from the Ninja build statement), while POSIX uses `@0@.fatbin.d`.
+   - Therefore, on Windows `cu_depfile` evaluates to `''`, selecting Meson's
+     non-depfile custom-command rule, while POSIX uses `@0@.fatbin.d`.
 
 2. **AMD `hipcc`**:
    - Under `--genco`, `hipcc` acts as an `amdclang++` driver script that ignores
@@ -87,6 +87,13 @@ We declared `cuda_kernel_shared_headers` and `hip_kernel_shared_headers` encompa
   `float_vif_cuda.h`, `ssimulacra2_cuda.h`, `float_adm_cuda.h`,
   `integer_cambi_cuda.h`, `speed_chroma_cuda.h`, `speed_temporal_cuda.h`,
   `adm_angle_flag.h`, and their HIP counterparts.
+- The complete repo-local quoted include closure used by those device sources,
+  including host/device bridge headers such as `feature_collector.h`,
+  `integer_adm.h`, `integer_motion.h`, `integer_vif.h`, `picture.h`, and the
+  installed `libvmaf` headers they transitively include.
+- CUDA's generated `config_h_target`, which is essential on the Windows path
+  where compiler depfiles are disabled. HIP's clang frontend depfile tracks the
+  generated header dynamically.
 
 Every target wires `depend_files` pointing to its backend's shared header set.
 
@@ -100,10 +107,13 @@ Every target wires `depend_files` pointing to its backend's shared header set.
 2. **GREEN test**: Demonstrates that with `depend_files` and `depfile`, touching the
    header triggers an incremental rebuild.
 3. **Static Meson verification**: Confirms all 44 device targets in `core/src/meson.build`
-   declare `depend_files` and conditional `depfile` logic, and verifies all listed
-   headers exist on disk.
-4. **Live Ninja manifest verification**: Checks `build/build.ninja` to verify that
-   all 22 `.fatbin` and 22 `.hsaco` rules carry the header dependencies.
+   declare `depend_files` and conditional `depfile` logic, verifies all listed
+   headers exist, and computes both backends' repo-local include closure so a
+   newly included header cannot silently escape the explicit fallback.
+4. **Live Ninja manifest verification**: Checks the exact Meson-provided build
+   directory and verifies the configured target families (22 `.fatbin`, 22
+   `.hsaco`, or either one alone). CPU-only builds skip this live probe instead
+   of treating the intentional absence of device targets as a failure.
 5. **Live incremental rebuild dry-run**: Tests that touching `integer_adm_cuda.h` or
-   `integer_adm_hip.h` triggers rebuild planning in Ninja without running kernels
-   on a GPU.
+   `integer_adm_hip.h` triggers rebuild planning for each configured backend in
+   Ninja without running kernels on a GPU.

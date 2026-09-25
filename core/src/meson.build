@@ -333,6 +333,7 @@ if is_hipcc_enabled and is_hip_enabled
     # provides declarative dependency tracking across all platforms.
     hip_kernel_shared_headers = files(
         'hip/common.h',
+        'feature/integer_adm.h',
         'feature/hip/integer_adm_hip.h',
         'feature/hip/integer_adm/adm_decouple_inline.hip',
         'feature/hip/integer_vif_hip.h',
@@ -354,6 +355,7 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/speed_chroma_hip.h',
         'feature/hip/speed_temporal_hip.h',
         'feature/adm_angle_flag.h',
+        'mem.h',
     )
     foreach name, src : hip_kernel_sources
         per_kernel_flags = hip_cu_extra_flags.get(name, [])
@@ -1436,12 +1438,23 @@ if is_cuda_enabled
     # on Windows, where nvcc preprocesses through cl.exe; that lane builds
     # from clean.
     # ADR-1320: Explicit shared header dependencies for CUDA device kernels.
-    # Combined with compiler depfiles (-MD -MF) on POSIX and fallback explicit
-    # tracking on Windows, this guarantees that editing any shared kernel header
-    # triggers an incremental Ninja rebuild of the affected fatbins.
+    # Combined with compiler depfiles (-MD -MF) on POSIX and complete explicit
+    # repo-local include-closure tracking on Windows, this guarantees that
+    # editing a shared kernel header rebuilds the affected fatbins.
     cuda_kernel_shared_headers = files(
+        '../include/libvmaf/libvmaf_cuda.h',
+        '../include/libvmaf/model.h',
+        '../include/libvmaf/picture.h',
+        'arm/cpu.h',
+        'cpu.h',
         'cuda/common.h',
         'cuda/cuda_helper.cuh',
+        'dict.h',
+        'feature/compat_builtin.h',
+        'feature/feature_collector.h',
+        'feature/integer_adm.h',
+        'feature/integer_motion.h',
+        'feature/integer_vif.h',
         'feature/cuda/integer_adm_cuda.h',
         'feature/cuda/integer_adm/adm_decouple_inline.cuh',
         'feature/cuda/integer_vif_cuda.h',
@@ -1464,7 +1477,14 @@ if is_cuda_enabled
         'feature/cuda/speed_chroma_cuda.h',
         'feature/cuda/speed_temporal_cuda.h',
         'feature/adm_angle_flag.h',
+        'mem.h',
+        'metadata.h',
+        'metadata_handler.h',
+        'model.h',
+        'picture.h',
+        'x86/cpu.h',
     )
+    cuda_kernel_shared_headers += [config_h_target]
     nvcc_dep_flags = host_machine.system() == 'windows' ? [] : [
         '-MD', '-MF', '@DEPFILE@', '-MT', '@OUTPUT@']
     ptx_files = {}

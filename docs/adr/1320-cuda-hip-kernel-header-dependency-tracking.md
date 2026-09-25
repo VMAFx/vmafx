@@ -47,12 +47,14 @@ fatbin and 22 HIP HSACO targets in `core/src/meson.build`:
 
 1. **Declarative shared dependency sets (`depend_files`)**:
    We define `cuda_kernel_shared_headers` and `hip_kernel_shared_headers` using
-   Meson's `files()` function, encompassing all shared headers and per-feature
-   device headers (such as `cuda/common.h`, `cuda/cuda_helper.cuh`,
+   Meson's `files()` function, encompassing the complete repo-local quoted
+   include closure plus per-feature device headers (such as `cuda/common.h`, `cuda/cuda_helper.cuh`,
    `feature/cuda/integer_adm_cuda.h`, `hip/common.h`,
    `feature/hip/integer_adm_hip.h`, `feature/adm_angle_flag.h`). Every
    `cu_ptx_target_*` and `hip_hsaco_*` custom target specifies
-   `depend_files` pointing to its respective shared header list.
+   `depend_files` pointing to its respective shared header list. CUDA also
+   binds the generated `config_h_target`, because Windows deliberately has no
+   compiler depfile fallback.
 2. **Compiler depfile flags for dynamic transitive tracking**:
    - For CUDA on POSIX hosts, `nvcc` passes `-MD -MF @DEPFILE@ -MT @OUTPUT@` with
      `depfile: cu_depfile`.
@@ -67,9 +69,11 @@ fatbin and 22 HIP HSACO targets in `core/src/meson.build`:
    `scripts/ci/tests/test_device_target_header_dependencies.py`). It reproduces
    the RED failure mode (demonstrating that untracked targets fail to rebuild on
    header updates), confirms the GREEN fix (incremental rebuild triggered via
-   `depend_files` and `depfile`), statically asserts that all 44 device targets in
-   `core/src/meson.build` declare these dependencies, and validates live Ninja
-   manifest rules without executing kernels on a GPU.
+   `depend_files` and `depfile`), computes both backends' repo-local include
+   closure, and validates live Ninja manifest rules for whichever device backend
+   the active build configured. Meson passes that build directory explicitly;
+   CPU-only builds skip only the two live-manifest probes while retaining all
+   static and synthetic contracts. No kernel executes on a GPU.
 
 ## Alternatives considered
 
@@ -91,9 +95,8 @@ fatbin and 22 HIP HSACO targets in `core/src/meson.build`:
 - **Positive**: Deterministic regression contracts run in CI fast suites without
   requiring GPU hardware or kernel execution.
 - **Negative / Neutral**: Touching a shared header such as `integer_adm_cuda.h`
-  triggers recompilation of the device targets that list the shared header set.
-  Compilation time for 22 targets is brief (< 5s) and occurs only when device
-  headers are modified.
+  triggers recompilation of all device targets that list the shared header set,
+  trading some incremental-build precision for fail-closed ABI safety.
 
 ## References
 

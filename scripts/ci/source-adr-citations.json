@@ -7420,7 +7420,7 @@
       "sites": {
         "core/src/meson.build": 2,
         "core/test/meson.build": 1,
-        "core/test/test_device_target_header_dependencies.py": 1,
+        "core/test/test_device_target_header_dependencies.py": 2,
         "scripts/ci/tests/test_device_target_header_dependencies.py": 1
       },
       "target": "1320-cuda-hip-kernel-header-dependency-tracking.md"

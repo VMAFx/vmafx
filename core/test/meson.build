@@ -64,6 +64,7 @@ test('test_vmaf_log_callsite_format',
 test('test_device_target_header_dependencies',
     import('python').find_installation(),
     args : files('test_device_target_header_dependencies.py'),
+    env : {'VMAFX_DEVICE_DEP_BUILD_DIR': meson.project_build_root()},
     suite : ['fast'],
     timeout : 30,
 )

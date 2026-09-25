@@ -111,8 +111,9 @@ ADR-0372 (batch-1, this PR).
   ([ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
   [Research-2106](../../../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
   All HIP HSACO custom targets (`hip_hsaco_*`) in `core/src/meson.build`
-  must bind `depend_files: hip_kernel_shared_headers` covering every shared kernel
-  header, combined with compiler depfiles (`depfile: name + '.hsaco.d'` and
+  must bind `depend_files: hip_kernel_shared_headers` covering the complete
+  repo-local quoted include closure, combined with compiler depfiles
+  (`depfile: name + '.hsaco.d'` and
   passing `-Xclang -dependency-file -Xclang @DEPFILE@ -Xclang -MT -Xclang @OUTPUT@`
   to hipcc).
   Editing structs in shared headers (e.g. `integer_adm_cuda.h`, `vif_cuda.h`, `moment_cuda.h`)

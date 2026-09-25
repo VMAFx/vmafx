@@ -85,9 +85,10 @@ core/
   All CUDA fatbin (`cu_ptx_target_*`) and HIP HSACO (`hip_hsaco_*`) custom
   targets in `core/src/meson.build` must bind explicit header dependency lists
   (`depend_files: cuda_kernel_shared_headers` and `depend_files: hip_kernel_shared_headers`)
-  covering every shared kernel header, combined with compiler depfiles
+  covering the complete repo-local quoted include closure, combined with compiler depfiles
   (`-MD -MF @DEPFILE@` on POSIX nvcc and `-Xclang -dependency-file -Xclang @DEPFILE@`
-  on hipcc; depfile omitted on Windows MSVC). Changes to shared kernel headers
+  on hipcc; depfile omitted on Windows MSVC). CUDA's list also binds the generated
+  `config_h_target`. Changes to shared kernel headers
   (e.g., `integer_adm_cuda.h`, `vif_cuda.h`) must reliably trigger incremental
   device binary rebuilds without manual `touch` workarounds. Rebase must preserve
   these dependency declarations.
