@@ -1,6 +1,25 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/tiny-ai-doc-contracts — close docs/ai runtime-contract gaps for #1242 (2026-09-25)
+
+Documents runtime contracts and verified implementation status for three
+unresolved non-training gaps in `docs/ai/` under issue #1242: sidecar checkpoint quarantine
+(unimplemented in node controller/CRD, atomic export and .sha256 sidecar implemented
+in Python), transnet_v2 sliding-window ring buffer contract in extractor-template.md
+(aligned with core/src/feature/transnet_v2.c), and inference cross-device parity bounds
+in inference.md (identified as workstation-measured bounds rather than CI-gated runs).
+Adds contract test suites in ai/tests/test_tiny_ai_doc_contracts.py and
+ai/sidecar/tests/test_quickstart_contract.py.
+
+- Research digest: [Research-2110](research/2110-issue-1242-tiny-ai-doc-contracts-audit.md).
+- Decision matrix: [ADR-0405](adr/0405-openvino-npu-ep-wiring.md) and [ADR-0781](adr/0781-sidecar-sgd-ema-online-trainer.md).
+- AGENTS.md invariant: `ai/AGENTS.md` and root `AGENTS.md`.
+- Reproducer / smoke: `pytest ai/tests/test_tiny_ai_doc_contracts.py ai/sidecar/tests/test_quickstart_contract.py`.
+- Changelog: `changelog.d/added/tiny-ai-doc-contracts-tests-1242.md`.
+- FFmpeg impact: none; no public C header, CLI flag, Meson option, or patch
+  surface changed.
+
 ## audit/rc1-flake-survey-df0b — keep scheduled CI aligned with required lanes (2026-09-25)
 
 The scheduled whole-tree CPU ratchet must retain the required PR lane's GCC 15,

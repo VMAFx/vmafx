@@ -214,7 +214,7 @@ The large-N row used to read "planned `feature_transnet_v2.c`". The extractor
 shipped — as [`core/src/feature/transnet_v2.c`](../../core/src/feature/transnet_v2.c),
 not `feature_transnet_v2.c` — and is registered in
 [`core/src/meson.build`](../../core/src/meson.build) and documented in
-[`docs/metrics/features.md`](../../docs/metrics/features.md#transnetv2--transnet-v2-shot-boundary-detector-tiny-ai-nr--single-input).
+[`docs/metrics/features.md`](../metrics/features.md#transnet_v2--transnet-v2-shot-boundary-detector-tiny-ai-nr--single-input).
 What it actually does, for anyone copying the recipe:
 
 - **Window**: a 100-slot ring buffer of 27x48 luma thumbnails. The input

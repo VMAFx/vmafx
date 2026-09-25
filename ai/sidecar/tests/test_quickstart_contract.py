@@ -72,6 +72,15 @@ class TestQuickstartDocumentationContract:
                 ), "Standalone invocation snippet lacks VMAFX_SIDECAR_CHECKPOINT_DIR override"
                 assert "trap " in block, "Standalone invocation snippet lacks cleanup trap"
 
+    def test_checkpoint_quarantine_documented_as_unimplemented(self) -> None:
+        doc_text = self._doc_path().read_text(encoding="utf-8")
+        assert "## Checkpoint quarantine (not implemented)" in doc_text
+        assert "Research-0733 §3.4" in doc_text
+        assert "stability_plcc_delta" in doc_text
+        assert "spec.versionPolicy" in doc_text
+        assert "Fixture set for the stability gate" in doc_text
+        assert "unstable" in doc_text
+
 
 class TestCheckpointDirectoryContract:
     """Functional tests verifying checkpoint directory configuration and failure modes."""

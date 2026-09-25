@@ -108,6 +108,7 @@
     "0042": {
       "sites": {
         ".codex/agents/doc-reviewer.toml": 1,
+        "ai/tests/test_tiny_ai_doc_contracts.py": 1,
         "scripts/ci/tests/test_check_adr_links.py": 12,
         "scripts/ci/tests/test_check_source_adr_citations.py": 8,
         "tools/vmaf-tune/src/vmaftune/predictor_train.py": 2
@@ -121,6 +122,7 @@
         ".codex/agents/doc-reviewer.toml": 2,
         ".codex/hooks/docs-drift-warn.sh": 3,
         ".github/workflows/rule-enforcement.yml": 3,
+        "ai/tests/test_tiny_ai_doc_contracts.py": 1,
         "scripts/ci/tests/test_check_adr_links.py": 1,
         "scripts/docs/tests/test_generators.py": 2
       },
@@ -4621,6 +4623,7 @@
         "ai/sidecar/tests/test_replay_buffer.py": 1,
         "ai/sidecar/tests/test_sgd_ema.py": 1,
         "ai/sidecar/tests/test_socket_permissions.py": 1,
+        "ai/tests/test_tiny_ai_doc_contracts.py": 1,
         "cmd/vmafx-node/main.go": 1,
         "cmd/vmafx-node/online_feedback.go": 1,
         "cmd/vmafx-node/online_feedback_pump_test.go": 1,
@@ -7445,6 +7448,7 @@
         ".github/workflows/rule-enforcement.yml": 1,
         ".github/workflows/sycl-parity.yml": 1,
         ".github/workflows/tests-and-quality-gates.yml": 1,
+        "ai/tests/test_tiny_ai_doc_contracts.py": 1,
         "scripts/ci/check-runner-available.sh": 1,
         "scripts/ci/tests/test-runner-available.sh": 1,
         "scripts/ci/tests/test_hiss_replay_contract.py": 1
