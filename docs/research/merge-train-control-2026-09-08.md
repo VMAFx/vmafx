@@ -32,3 +32,27 @@ Duplicated draft-only filters cannot protect ready/rebase/operator paths.
 GitHub branch protection cannot protect a local worktree and may not exist on a
 stacked branch. Full VMAFx local gates remain required before merge; this control
 test suite neither substitutes for those gates nor establishes RC1 readiness.
+
+## Runtime migration verification, 2026-09-25
+
+The local merge-train runtime migration was independently verified and closed on
+2026-09-25:
+
+- Installed runtime adapters in `/home/kilian/dev/vmafx/vmafx/.claude/mergetrain`
+  (`train.sh`, `rebase-clean.sh`, `watchdog.sh`, `merge_train_operator.py`) are
+  hash-bound to committed gateway
+  `a7a58dd8f39576dc2b0a86fb5af518003496b147261dc5294706cbce976f39c7`
+  (commit `9bae48c2c214d189a8df5602ac38c94f3997f234`, blob
+  `4ca44da40edfc03fc500174a193b293ca8cfdc3e`), matching `releases/a7a58dd8.../merge_train_guard.py`.
+- The live installation is backed by `migration-xghk30zh` (`plan.json`,
+  `receipt.json`, hash `94720ca125fc500e3d844ae927ed25e06532ee6c36608895d7172a40f121ac5b`)
+  and the initial `migration-6wtg48lv`.
+- Legacy unrestricted VMAFx actors are absent. Any active process with a
+  matching name (`PID 3790561 /usr/bin/bash ./train.sh`) belongs to its actual
+  external working directory (`/home/kilian/dev/scratch/k8s-worktrees/.mergetrain`).
+- Held PRs, non-master bases, and worktree ownership fail closed across all actions;
+  release PR #1213 is excluded; and required checks and exact-head validation
+  receipts fail closed.
+- The 26-test disposable regression suite
+  (`python3 -m unittest discover -s scripts/dev/tests -p 'test_*merge_train_guard.py'`)
+  passes completely.

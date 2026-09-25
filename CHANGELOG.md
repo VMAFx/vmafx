@@ -26224,6 +26224,13 @@ so that MCP output is Netflix-compatible without explicit precision argument (AD
   CERT INT30-C.
 
 
+- Close `T-MERGE-TRAIN-CONTROL-2026-09-08` runtime migration: verify installed
+  wrappers are hash-bound to committed gateway and backed by receipts, legacy
+  actors absent, foreign train processes isolated to external cwd, fail-closed
+  holds, worktree ownership, and exact-head validation receipts, with all 26
+  disposable regressions passing, and update operator documentation paths.
+
+
 - Guard local merge-train promotion, rebase, and merge actions against stacked
   bases, holds, release PRs, and active source owners. Rebase failures retain
   evidence and prevent promotion; merges require executed full local gate

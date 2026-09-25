@@ -16,6 +16,27 @@ their 30-minute job budgets aligned when resolving workflow conflicts.
 - Changelog: `changelog.d/fixed/rc1-nightly-clang-tidy-fuzz-timeout.md`.
 - FFmpeg impact: none; no public C header, CLI flag, Meson option, or patch
   surface changed.
+## agent/merge-train-runtime-closure-df0b — close merge-train runtime migration (2026-09-25)
+
+Closes `T-MERGE-TRAIN-CONTROL-2026-09-08` after verifying the local merge-train
+runtime migration under ADR-1244. Live runtime adapters in
+`/home/kilian/dev/vmafx/vmafx/.claude/mergetrain` (`train.sh`, `rebase-clean.sh`,
+`watchdog.sh`, `merge_train_operator.py`) are hash-bound to committed gateway
+`a7a58dd8f39576dc2b0a86fb5af518003496b147261dc5294706cbce976f39c7` (blob
+`4ca44da40edfc03fc500174a193b293ca8cfdc3e`), backed by immutable receipt
+`migration-xghk30zh`. Legacy unrestricted actors remain absent; foreign train
+processes belong to their actual external cwd; held and non-master PRs fail
+closed; worktree and branch ownership are protected; release PR #1213 is
+excluded; required checks and exact-head validation receipts fail closed; and all
+26 disposable Git/Make regression tests pass. Corrects stale operator documentation
+paths in `docs/development/merge-train.md`.
+
+- Research digest: [Merge-train control investigation](research/merge-train-control-2026-09-08.md).
+- Decision matrix: [ADR-1244](adr/1244-merge-train-ownership-and-validation.md#alternatives-considered).
+- AGENTS.md invariant: `scripts/dev/AGENTS.md`, "Developer control scripts".
+- Reproducer / smoke: `python3 -m unittest discover -s scripts/dev/tests -p 'test_*merge_train_guard.py'`.
+- Changelog: `changelog.d/fixed/merge-train-control-closure.md`.
+- FFmpeg impact: none; no C/C++ or library surface touched.
 
 ## agent/fix-doxygen-public-api-warnings-6ba5 — drive public C API Doxygen warnings to zero and fail closed (2026-09-25)
 

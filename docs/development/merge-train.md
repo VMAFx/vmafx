@@ -22,7 +22,7 @@ Create `policy.json` with the current owners, for example:
 {
   "schema": 1,
   "protected_branches": ["build/base-image-single-source", "build/version-single-source-tree"],
-  "protected_worktrees": ["/home/kilian/dev/vmaf/.claude/worktrees/agent-rc1-ffmpeg"]
+  "protected_worktrees": ["/home/kilian/dev/vmafx/vmafx/.claude/worktrees/agent-rc1-ffmpeg"]
 }
 ```
 
@@ -33,9 +33,9 @@ a replacement for the live inventory.
 
 ```bash
 python3 scripts/dev/merge_train_guard.py inspect 1421 \
-  --repo-root /home/kilian/dev/vmaf --state-dir /home/kilian/dev/vmaf/.claude/mergetrain
+  --repo-root /home/kilian/dev/vmafx/vmafx --state-dir /home/kilian/dev/vmafx/vmafx/.claude/mergetrain
 python3 scripts/dev/merge_train_guard.py cycle \
-  --repo-root /home/kilian/dev/vmaf --state-dir /home/kilian/dev/vmaf/.claude/mergetrain
+  --repo-root /home/kilian/dev/vmafx/vmafx --state-dir /home/kilian/dev/vmafx/vmafx/.claude/mergetrain
 ```
 
 `inspect` checks one candidate; `cycle` reports the open queue. Both are read-only
@@ -74,7 +74,7 @@ state directory shared with the guarded operator:
 
 ```bash
 python3 scripts/dev/merge_train_guard.py validate 1422 \
-  --repo-root /home/kilian/dev/vmaf --state-dir /home/kilian/dev/vmaf/.claude/mergetrain \
+  --repo-root /home/kilian/dev/vmafx/vmafx --state-dir /home/kilian/dev/vmafx/vmafx/.claude/mergetrain \
   --checkout /path/to/explicit-validation-checkout --apply
 ```
 
@@ -129,10 +129,10 @@ existing file hashes, preserved holds, and merged protected-owner policy:
 
 ```bash
 python3 scripts/dev/install_merge_train_guard.py \
-  --repo-root /home/kilian/dev/vmaf --state-dir /home/kilian/dev/vmaf/.claude/mergetrain \
+  --repo-root /home/kilian/dev/vmafx/vmafx --state-dir /home/kilian/dev/vmafx/vmafx/.claude/mergetrain \
   --protect-branch build/base-image-single-source \
   --protect-branch build/version-single-source-tree \
-  --protect-worktree /home/kilian/dev/vmaf/.claude/worktrees/agent-rc1-ffmpeg
+  --protect-worktree /home/kilian/dev/vmafx/vmafx/.claude/worktrees/agent-rc1-ffmpeg
 ```
 
 After reviewing the JSON plan, repeat the same command with
