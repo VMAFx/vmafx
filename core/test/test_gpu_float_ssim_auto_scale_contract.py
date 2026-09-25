@@ -13,11 +13,25 @@ CORE_ROOT = Path(__file__).resolve().parents[1]
 FEATURE_ROOT = CORE_ROOT / "src" / "feature"
 
 BACKENDS = (
-    ("cuda/integer_ssim_cuda.c", "check_context_cuda", "compute_scale"),
-    ("sycl/integer_ssim_sycl.cpp", "check_context_sycl", "compute_scale"),
-    ("hip/float_ssim_hip.c", "check_context_hip", "ssim_hip_compute_scale"),
-    ("metal/float_ssim_metal.mm", "check_context_metal", "ssim_metal_compute_scale"),
+    ("cuda/integer_ssim_cuda.c", "check_context_cuda", "compute_scale", "scale_override"),
+    ("sycl/integer_ssim_sycl.cpp", "check_context_sycl", "compute_scale", "scale_override"),
+    ("hip/float_ssim_hip.c", "check_context_hip", "ssim_hip_compute_scale", "scale_override"),
+    ("metal/float_ssim_metal.mm", "check_context_metal", "ssim_metal_compute_scale", "scale"),
 )
+
+
+def function_body(source: str, signature: str) -> str:
+    """Return one brace-balanced function body from backend source."""
+    body_start = source.index("{", source.index(signature))
+    depth = 0
+    for offset in range(body_start, len(source)):
+        if source[offset] == "{":
+            depth += 1
+        elif source[offset] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[body_start : offset + 1]
+    raise AssertionError(f"unterminated function body for {signature}")
 
 
 def auto_scale(width: int, height: int, override: int = 0) -> int:
@@ -35,12 +49,19 @@ class GpuFloatSsimAutoScaleContractTest(unittest.TestCase):
         self.assertEqual(auto_scale(960, 540), 2)
         self.assertEqual(auto_scale(960, 540, 1), 1)
 
-    def test_every_gpu_twin_declares_the_same_context_fallback(self) -> None:
-        for relative_path, callback, scale_helper in BACKENDS:
+    def test_every_gpu_twin_enforces_the_same_context_fallback(self) -> None:
+        for relative_path, callback, scale_helper, scale_member in BACKENDS:
             with self.subTest(path=relative_path):
                 source = (FEATURE_ROOT / relative_path).read_text(encoding="utf-8")
-                self.assertIn(f"static int {callback}(", source)
-                self.assertIn(scale_helper, source[source.index(f"static int {callback}(") :])
+                signature = f"static int {callback}("
+                body = function_body(source, signature)
+                returns = re.findall(r"\breturn\s+[^;]+;", body)
+                self.assertEqual(len(returns), 1)
+                self.assertRegex(
+                    returns[0],
+                    rf"\breturn\s+{re.escape(scale_helper)}\s*\(\s*w\s*,\s*h\s*,"
+                    rf"\s*s->{scale_member}\s*\)\s*==\s*1\s*\?\s*0\s*:\s*-ENOTSUP\s*;",
+                )
                 self.assertRegex(source, rf"\.context_check\s*=\s*{re.escape(callback)}")
                 self.assertRegex(source, r'\.context_fallback_name\s*=\s*"float_ssim"')
 
