@@ -10,6 +10,25 @@ upstream Netflix/vmaf has no equivalent tree, so rebase risk =
 
 ## Rebase-sensitive surfaces
 
+### Source ADR citation provenance (ADR-1311)
+
+`check-source-adr-citations.py` owns plain `ADR-NNNN` references in tracked
+implementation and build/control files. Preserve the explicit source-suffix /
+basename scope, the exact live `number -> filename -> path/count` bindings,
+the hand-governed retirement records, the exact-path fixture exemptions, the
+always-run pre-commit hook, and the positive/negative/boundary test suite
+together. `--write` may update only live bindings and must refuse unknown
+missing numbers; never auto-invent a retirement, broaden a fixture exemption,
+or accept a reused retired number. Markdown links remain the separate
+`check-adr-links.py` contract. `mkdocs.yml` is prose navigation, not source,
+and stays outside this gate so its full ADR index cannot masquerade as 1,000+
+implementation citations.
+Disposable test repositories must strip every inherited `GIT_*` variable,
+disable caller system/global configuration, hooks, and signing for both direct
+Git calls and checker subprocesses. The regression poisons `GIT_INDEX_FILE`,
+`GIT_DIR`, `GIT_WORK_TREE`, and `GIT_PREFIX` and byte-checks the caller index
+and repository configuration; do not weaken it to a clean-shell-only test.
+
 ### REUSE coverage and provenance (BUG-003 / ADR-1250)
 
 `reuse lint` proves metadata coverage and syntax, not ownership or licence

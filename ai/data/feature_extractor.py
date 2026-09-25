@@ -45,9 +45,10 @@ DEFAULT_VMAF_BINARY = Path("core") / "build-cpu" / "tools" / "vmaf"
 # extended by ADR-0559 to include SpEED chroma/temporal features).
 # Excludes lpips (DNN-based, expensive) and float_moment (image
 # statistics, not quality-relevant). The 26 features below cover the
-# bit-exact CPU + AVX2 + AVX-512 + NEON + (mostly) CUDA / SYCL / Vulkan
-# extractors registered in core/src/feature/.  The 4 speed_* features
-# are CPU-only until GPU twins land (ADR-0557, ADR-0558).
+# bit-exact CPU + AVX2 + AVX-512 + NEON extractors registered in
+# core/src/feature/. The SpEED family also has CUDA, HIP, and SYCL twins
+# (ADR-0567, wired by ADR-0964/0965); this module intentionally defaults
+# to the CPU build named above.
 FULL_FEATURES: tuple[str, ...] = (
     # ADM (5 features) — `adm2` is the detail-loss aggregate; the
     # bare `adm` is not emitted as a separate JSON metric by the
@@ -82,11 +83,11 @@ FULL_FEATURES: tuple[str, ...] = (
     "ciede2000",
     "psnr_hvs",
     "ssimulacra2",
-    # SpEED chroma/temporal (4 features) — CPU-only extractors from
+    # SpEED chroma/temporal (4 features) — CPU extractors from
     # core/src/feature/speed.c (Netflix speed_ported branch, ported to
     # fork per ADR-0559).  Required by the anticipated Netflix HDR VMAF model.
-    # GPU twins are tracked in ADR-0557 (CUDA) and ADR-0558 (HIP); until
-    # those land these features are always extracted on the CPU residual pass.
+    # CUDA/HIP/SYCL twins ship under ADR-0567 and ADR-0964/0965, while the
+    # default `core/build-cpu` binary keeps this extraction path on CPU.
     "speed_temporal",
     "speed_chroma_u",
     "speed_chroma_v",
@@ -155,8 +156,8 @@ _METRIC_TO_EXTRACTOR: dict[str, str] = {
     "psnr_hvs_cb": "psnr_hvs",
     "psnr_hvs_cr": "psnr_hvs",
     "ssimulacra2": "ssimulacra2",
-    # SpEED chroma/temporal — CPU-only (ADR-0559; GPU twins in ADR-0557/0558).
-    # Short alias names registered in core/src/feature/alias.c.
+    # SpEED chroma/temporal aliases (ADR-0559). CUDA/HIP/SYCL twins ship under
+    # ADR-0567 and ADR-0964/0965; short names live in core/src/feature/alias.c.
     "speed_temporal": "speed_temporal",
     "speed_chroma_u": "speed_chroma",
     "speed_chroma_v": "speed_chroma",

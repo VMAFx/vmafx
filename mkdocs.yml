@@ -1430,6 +1430,7 @@ nav:
         - "ADR-1307: sha256-memoization-cache-invalidation": adr/1307-sha256-memoization-cache-invalidation.md
         - "ADR-1308: codeql-float-equality-contracts": adr/1308-codeql-float-equality-contracts.md
         - "ADR-1309: socket-path-ownership-and-owner-only-mode": adr/1309-socket-path-ownership-and-owner-only-mode.md
+        - "ADR-1311: source-adr-citation-provenance": adr/1311-source-adr-citation-provenance.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1601,6 +1602,7 @@ nav:
         - "docker": adr/by-tag/docker.md
         - "docs-policy": adr/by-tag/docs-policy.md
         - "docs": adr/by-tag/docs.md
+        - "documentation": adr/by-tag/documentation.md
         - "durability": adr/by-tag/durability.md
         - "dx": adr/by-tag/dx.md
         - "ebpf": adr/by-tag/ebpf.md
@@ -1944,6 +1946,7 @@ nav:
         - "slsa": adr/by-tag/slsa.md
         - "smem": adr/by-tag/smem.md
         - "smoke": adr/by-tag/smoke.md
+        - "source-code": adr/by-tag/source-code.md
         - "spec-correctness": adr/by-tag/spec-correctness.md
         - "speed": adr/by-tag/speed.md
         - "sqlite": adr/by-tag/sqlite.md

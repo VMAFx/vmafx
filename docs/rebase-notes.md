@@ -1,6 +1,30 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/source-adr-citation-provenance — preserve exact decision identities (ADR-1311) (2026-09-25)
+
+Plain `ADR-NNNN` references in implementation and build/control files are bound
+by `scripts/ci/source-adr-citations.json` to the exact ADR filename and exact
+source path/counts audited in Research-1311. Preserve the registry, the
+always-run pre-commit hook, and `scripts/ci/tests/test_check_source_adr_citations.py`
+together. After resolving a conflict that adds, removes, or renumbers a source
+citation, audit the context and run `python3 scripts/ci/check-source-adr-citations.py
+--write`; review the registry diff before accepting it. Never resolve drift by
+repointing a missing number at a plausible current ADR.
+
+ADR-0557/0558 (abandoned split SpEED plans), ADR-0722 (superseded logging
+attempt), and ADR-0864 (unfiled Markdown-lint cleanup) are reserved historical
+identities. Do not allocate those numbers or collapse them into their related
+live ADRs. Synthetic ADR-0099/9997/9998/9999 uses remain exact fixture-only
+exceptions. `mkdocs.yml`, Markdown, changelog prose, patches, and model/binary
+data are deliberately out of scope; broadening the scanner to those prose
+surfaces recreates false positives.
+
+The unit fixture's Git and checker subprocesses must continue to discard all
+inherited `GIT_*` variables, disable caller system/global configuration, hooks,
+and signing. A commit hook supplies an alternate index; letting a disposable
+fixture inherit it can replace the real staged index with fixture paths.
+
 ## fix/gpu-picture-pool-alloc-error — handle pool allocation failure with -ENOMEM (2026-09-24)
 
 When `malloc(sizeof(*p))` fails in `vmaf_gpu_picture_pool_init` (`core/src/gpu_picture_pool.cpp`),
