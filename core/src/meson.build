@@ -2229,9 +2229,24 @@ read_json_model_cpp23_lib = static_library(
     dependencies : [pthread_dependency],
 )
 
+# predict.c is consumed by libvmaf and by the private-source test binaries.
+# Compile it once so every consumer links the same implementation identity;
+# compiling it independently in each executable creates orphan static call
+# graphs in whole-build CodeQL extraction and needlessly repeats the TU.
+predict_c_lib = static_library(
+    'predict_c',
+    src_dir + 'predict.c',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [pthread_dependency],
+    pic : true,
+    install : false,
+)
+
+predict_c_dependency = declare_dependency(link_with : predict_c_lib)
+
 libvmaf_sources = [
     src_dir + 'libvmaf.c',
-    src_dir + 'predict.c',
     src_dir + 'model.c',
     src_dir + 'picture.c',
     src_dir + 'picture_v2.c', # ADR-0928 cycle N+1: v2 allocator / converter implementation
@@ -2337,6 +2352,9 @@ libvmaf = library(
         # ADR-0761: C++23 Wave 8 isolated static libs.
         opt_cpp23_lib.extract_all_objects(recursive: true),
         read_json_model_cpp23_lib.extract_all_objects(recursive: true),
+        # One predictor implementation identity shared with private-source
+        # test binaries; see Research-2096.
+        predict_c_lib.extract_all_objects(recursive: true),
     ],
     version : vmaf_soname_version,
     soversion : vmaf_soversion,
