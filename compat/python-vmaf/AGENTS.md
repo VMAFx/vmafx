@@ -43,6 +43,11 @@ python/vmaf/
   matching CLI (Netflix-compat golden gate). See
   [ADR-0119](../../docs/adr/0119-cli-precision-default-revert.md)
   (supersedes [ADR-0006](../../docs/adr/0006-cli-precision-17g-default.md)).
+- **Build directory and binary path overrides ([ADR-1317](../../docs/adr/1317-golden-gate-build-isolation.md))**:
+  `__init__.py` respects `VMAF_BUILD_DIR` from the environment (defaulting
+  to `core/build`) to locate `tools/vmaf`. `config.py` provides `VMAF_PATH`
+  and `VMAFEXEC_PATH` overrides. Used by `make test-netflix-golden` to isolate
+  the gate to `core/build-golden`.
 
 ## Rebase invariants
 

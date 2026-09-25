@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/fix-golden-gate-build-dir-6ba5 — isolate Netflix golden gate build profile to prevent ICX FP drift (2026-09-25)
+
+`make test-netflix-golden` now uses an isolated CPU-only build profile in `GOLDEN_BUILD_DIR ?= core/build-golden`, compiled via `scripts/ci/setup-golden-build.sh` enforcing an explicitly supported compiler (`gcc` or `clang`). `compat/python-vmaf/__init__.py` and `config.py` read `VMAF_BUILD_DIR` from the environment to decouple the test harness from `core/build`. When resolving rebase conflicts in `Makefile` or `compat/python-vmaf/__init__.py`, preserve `GOLDEN_BUILD_DIR`, target `build-golden`, and `VMAF_BUILD_DIR` injection in `test-netflix-golden`.
+
+- Research digest: [Research-1317](research/1317-golden-gate-build-isolation.md).
+- Decision matrix: [ADR-1317](adr/1317-golden-gate-build-isolation.md#alternatives-considered).
+- AGENTS.md invariant: `AGENTS.md` §8 and `compat/python-vmaf/AGENTS.md`, "Isolated build profile (ADR-1317)".
+- Reproducer / smoke: `make test-netflix-golden` and `pytest python/test/golden_gate_isolation_test.py scripts/ci/tests/test_golden_gate_makefile_contract.py`.
+- Changelog: `changelog.d/fixed/golden-gate-icx-drift-build-isolation.md`.
+- FFmpeg impact: none; no public C API, headers, or CLI flags changed.
+
 ## agent/fix-gpu-option-aliases-hiss-984823 — preserve CPU collector-key aliases (2026-09-25)
 
 CUDA, SYCL, and HIP option tables now use the same `force_0`, `ks`, and

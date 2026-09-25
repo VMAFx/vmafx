@@ -1433,6 +1433,7 @@ nav:
         - "ADR-1310: mypy-ci-fail-closed": adr/1310-mypy-ci-fail-closed.md
         - "ADR-1311: source-adr-citation-provenance": adr/1311-source-adr-citation-provenance.md
         - "ADR-1312: gpu-option-alias-parity": adr/1312-gpu-option-alias-parity.md
+        - "ADR-1317: golden-gate-build-isolation": adr/1317-golden-gate-build-isolation.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1500,6 +1501,7 @@ nav:
         - "bug-fix": adr/by-tag/bug-fix.md
         - "bug": adr/by-tag/bug.md
         - "bugfix": adr/by-tag/bugfix.md
+        - "build-system": adr/by-tag/build-system.md
         - "build": adr/by-tag/build.md
         - "bvi-dvc": adr/by-tag/bvi-dvc.md
         - "c++": adr/by-tag/c++.md
@@ -1545,6 +1547,7 @@ nav:
         - "compare": adr/by-tag/compare.md
         - "compat": adr/by-tag/compat.md
         - "compatibility": adr/by-tag/compatibility.md
+        - "compiler": adr/by-tag/compiler.md
         - "compliance": adr/by-tag/compliance.md
         - "concurrency": adr/by-tag/concurrency.md
         - "configs": adr/by-tag/configs.md

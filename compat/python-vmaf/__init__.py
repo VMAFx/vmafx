@@ -141,20 +141,20 @@ class ExternalProgram(object):
 
     try:
         from . import externals
-
-        external_vmaf_feature = config.VmafExternalConfig.vmaf_path()
-        external_vmafexec = config.VmafExternalConfig.vmafexec_path()
     except ImportError:
-        external_vmaf_feature = None
-        external_vmafexec = None
+        pass
 
+    external_vmaf_feature = config.VmafExternalConfig.vmaf_path()
+    external_vmafexec = config.VmafExternalConfig.vmafexec_path()
+
+    build_dir = os.environ.get("VMAF_BUILD_DIR", os.path.join("core", "build"))
     vmaf_feature = (
-        project_path(os.path.join("core", "build", "tools", "vmaf_feature"))
+        project_path(os.path.join(build_dir, "tools", "vmaf_feature"))
         if external_vmaf_feature is None
         else external_vmaf_feature
     )
     vmafexec = (
-        project_path(os.path.join("core", "build", "tools", "vmaf"))
+        project_path(os.path.join(build_dir, "tools", "vmaf"))
         if external_vmafexec is None
         else external_vmafexec
     )

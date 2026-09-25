@@ -7409,6 +7409,12 @@
         "scripts/ci/check-source-adr-citations.py": 1
       },
       "target": "1311-source-adr-citation-provenance.md"
+    },
+    "1317": {
+      "sites": {
+        "scripts/ci/setup-golden-build.sh": 1
+      },
+      "target": "1317-golden-gate-build-isolation.md"
     }
   },
   "retired": {

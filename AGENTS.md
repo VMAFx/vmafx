@@ -238,6 +238,7 @@ Three Netflix-authored CPU reference test pairs = numerical-correctness ground t
 - YUV files: `python/test/resource/yuv/`.
 - Golden-score assertions: hardcoded `assertAlmostEqual(...)` calls in `python/test/` (`quality_runner_test.py`, `vmafexec_test.py`, `vmafexec_feature_extractor_test.py`, `feature_extractor_test.py`, `result_test.py`).
 - **Never modified by any PR.** Run in CI as required status check.
+- **Isolated build profile ([ADR-1317](docs/adr/1317-golden-gate-build-isolation.md))**: `make test-netflix-golden` uses dedicated `GOLDEN_BUILD_DIR ?= core/build-golden` compiled via `scripts/ci/setup-golden-build.sh` enforcing `gcc` or `clang` and passes `VMAF_BUILD_DIR` to Python tests. This isolates the gate from developer builds configured with oneAPI ICX, which exhibit floating-point contraction drift on float-motion and float-VIF convolutions.
 - Fork-added tests: separate files + directories.
 
 ## 9. Snapshot regeneration

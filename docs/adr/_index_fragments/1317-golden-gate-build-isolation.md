@@ -1,0 +1,1 @@
+| [ADR-1317](1317-golden-gate-build-isolation.md) | Isolates the Netflix golden gate build profile to a dedicated CPU directory with gcc or clang to prevent ICX floating-point contraction drift. | Accepted | ci, golden-gate, compiler, build-system, reproducibility |
