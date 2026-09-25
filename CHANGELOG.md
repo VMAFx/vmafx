@@ -29645,6 +29645,9 @@ Fix the CI scoping defect in `.github/workflows/lint-and-format.yml`:
   bounded phases while preserving full-precision default and fused scores.
 
 
+- Replaced the fixture-calibrated SYCL `motion_add_uv` float-vs-fixed tolerance with a fixed-point scalar oracle and registered the 960x540 parity variant under a derived resolution-independent roundoff bound.
+
+
 - `core/test/test_sycl_motion_add_uv_parity.c` +
   `core/test/test_sycl_motion3_parity.c`: resolve open ratchet defect
   `T-SYCL-RATCHET-TEST-BRANCH-COUNT-2026-09-22`.

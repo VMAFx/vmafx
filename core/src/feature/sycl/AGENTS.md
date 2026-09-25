@@ -117,8 +117,12 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `launch_blur_sad_fused` kernels for U and V, each writing to
   `d_blur_u/v[cur]`, accumulating into `d_sad_u` / `d_sad_v`.
   `collect_fex_sycl` sums Y + U + V contributions, each normalized by
-  respective plane area (`chroma_w × chroma_h` for UV in YUV420P),
-  matching `float_motion(motion_add_uv=true)` CPU parity at places=4.
+  respective plane area (`chroma_w × chroma_h` for UV in YUV420P). The
+  numerical gate is the scalar fixed-point oracle in
+  `test_sycl_motion_add_uv_parity.c` (ADR-1326), including its required
+  960x540 variant. `float_motion(motion_add_uv=true)` has the same semantic
+  option but different coefficients and float reduction order, so it is not
+  the kernel's numerical oracle.
   CUDA, Vulkan, HIP, and Metal twins expose option but return
   `-ENOTSUP` with `WARNING` until their kernel ports land. On rebase:
   if upstream Netflix adds `motion_add_uv` to `integer_motion.c`, verify
@@ -357,11 +361,12 @@ DPC++ toolchain with `icpx` on PATH.
 
 ## Per-kernel parity-test invariant (rounds 1–3)
 
-Every SYCL feature kernel here has CPU twin and
-`core/test/test_sycl_<kernel>_parity.c` gate at ADR-0214 places=4
-(1e-4) tolerance. Coverage matrix below tracks which SYCL kernel
-maps to which CPU twin and which parity test. **On rebase**: if
-SYCL kernel renamed or new one added, parity test name +
+Every SYCL feature kernel here has a scalar reference and
+`core/test/test_sycl_<kernel>_parity.c` gate. Most use ADR-0214 places=4
+(1e-4) tolerance; `motion_add_uv` uses ADR-1326's exact fixed-point oracle
+because its CPU float semantic twin has different arithmetic. Coverage matrix
+below tracks which SYCL kernel maps to which CPU twin and which parity test.
+**On rebase**: if SYCL kernel renamed or new one added, parity test name +
 ADR-0884 / ADR-0946 backlog must update in same PR.
 
 | SYCL TU | CPU TU | Parity test | ADR |
@@ -432,13 +437,14 @@ tables come from shared `vmaf_cambi_init_tvi_and_vlt()` in `cambi.c`
 
 ## Per-kernel parity-test invariant (ADR-0214 + ADR-0868 + ADR-0884)
 
-**Every shipping SYCL kernel here must have CPU-vs-SYCL parity test
+**Every shipping SYCL kernel here must have a scalar-vs-SYCL parity test
 under [`core/test/`](../../../test/), wired into
 [`core/test/meson.build`](../../../test/meson.build) with suite
-`['fast', 'gpu']`.** Parity test asserts headline score
-matches CPU scalar reference within ADR-0214 places=4 (`1e-4`)
-tolerance. Skips cleanly when no SYCL device visible — mirrors
-`[skip: no SYCL device]` pattern in
+`['fast', 'gpu']`.** A parity test normally asserts the headline score
+matches its CPU scalar reference within ADR-0214 places=4 (`1e-4`);
+`motion_add_uv` instead matches an arithmetic-identical fixed-point oracle
+within ADR-1326's derived host-double bound. Tests skip cleanly when no SYCL
+device visible — mirrors `[skip: no SYCL device]` pattern in
 [`test_sycl_motion3_parity.c`](../../../test/test_sycl_motion3_parity.c).
 
 Coverage matrix:

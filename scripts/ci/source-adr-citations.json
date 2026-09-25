@@ -589,7 +589,6 @@
         "core/test/test_sycl_float_vif_parity.c": 2,
         "core/test/test_sycl_init_unwind.cpp": 1,
         "core/test/test_sycl_motion3_parity.c": 4,
-        "core/test/test_sycl_motion_add_uv_parity.c": 2,
         "core/test/test_sycl_motion_v2_parity.c": 2,
         "core/test/test_sycl_ms_ssim_parity.c": 2,
         "core/test/test_sycl_psnr_parity.c": 2,
@@ -1328,7 +1327,6 @@
         "core/test/test_sycl_adm_parity.c": 1,
         "core/test/test_sycl_cambi_parity.c": 3,
         "core/test/test_sycl_motion3_parity.c": 2,
-        "core/test/test_sycl_motion_add_uv_parity.c": 2,
         "core/test/test_sycl_ms_ssim_parity.c": 1,
         "core/test/test_sycl_speed_singular_parity.c": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 3,
@@ -1894,7 +1892,6 @@
         "core/test/test_sycl_float_ssim_parity.c": 1,
         "core/test/test_sycl_float_vif_parity.c": 2,
         "core/test/test_sycl_motion3_parity.c": 4,
-        "core/test/test_sycl_motion_add_uv_parity.c": 1,
         "core/test/test_sycl_motion_v2_parity.c": 2,
         "core/test/test_sycl_ms_ssim_parity.c": 2,
         "core/test/test_sycl_psnr_parity.c": 2,
@@ -7487,6 +7484,13 @@
         "core/test/test_adm_csf_representable.c": 1
       },
       "target": "1325-integer-adm-barten-fixed-point-normalization.md"
+    },
+    "1326": {
+      "sites": {
+        "core/test/meson.build": 2,
+        "core/test/test_sycl_motion_add_uv_parity.c": 1
+      },
+      "target": "1326-sycl-motion-uv-fixed-oracle.md"
     }
   },
   "retired": {

@@ -122,6 +122,17 @@ class PublicHeaderDoxygenContractTest(unittest.TestCase):
                 f"{header.name} contains invalid @thread command; use '@note Thread safety:' instead",
             )
 
+    def test_no_unresolved_scope_links_in_public_headers(self) -> None:
+        """Doxygen parses .py::IDENTIFIER as an unresolved C++ explicit link request."""
+        for header in self.headers:
+            content = header.read_text(encoding="utf-8")
+            matches = re.findall(r"\.py::[A-Za-z0-9_]+", content)
+            self.assertEqual(
+                matches,
+                [],
+                f"{header.name} contains .py:: explicit link syntax that breaks Doxygen resolution",
+            )
+
     def test_doxyfile_contract(self) -> None:
         """ADR-1315: Doxyfile.public-api must fail closed with WARN_AS_ERROR = YES and exclude pelorus mirror."""
         content = self.doxyfile.read_text(encoding="utf-8")
