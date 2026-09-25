@@ -7498,6 +7498,13 @@
         "core/test/test_sycl_motion_add_uv_parity.c": 1
       },
       "target": "1326-sycl-motion-uv-fixed-oracle.md"
+    },
+    "1337": {
+      "sites": {
+        "core/src/meson.build": 1,
+        "core/test/check_exported_symbols.py": 1
+      },
+      "target": "1337-cpp-placement-new-visibility.md"
     }
   },
   "retired": {
