@@ -78,6 +78,13 @@ static constexpr double MOTION_SYCL_DEFAULT_MAX_VAL = 10000.0;
 
 // 5-tap Gaussian filter: {3571, 16004, 26386, 16004, 3571}, sum = 65536
 static constexpr int32_t blur_filter[5] = {3571, 16004, 26386, 16004, 3571};
+static constexpr int MOTION_WG_X = 32;
+static constexpr int MOTION_WG_Y = 8;
+static constexpr int MOTION_HALF_FW = 2;
+static constexpr int MOTION_TILE_H = MOTION_WG_Y + 2 * MOTION_HALF_FW;
+static constexpr int MOTION_TILE_W = MOTION_WG_X + 2 * MOTION_HALF_FW;
+static constexpr int MOTION_WG_SIZE = MOTION_WG_X * MOTION_WG_Y;
+static constexpr int MOTION_MAX_SUBGROUPS = 32;
 
 /* ------------------------------------------------------------------ */
 /* Extractor private state                                             */
@@ -257,6 +264,111 @@ static inline int dev_mirror_motion(int idx, int sup)
     return idx;
 }
 
+static inline int32_t motion_read_sample(const void *input, int y, int x, unsigned width,
+                                         unsigned bpc)
+{
+    if (bpc <= 8) {
+        return static_cast<const uint8_t *>(input)[y * width + x];
+    } else {
+        return static_cast<const uint16_t *>(input)[y * width + x];
+    }
+}
+
+static inline void motion_load_tile(sycl::nd_item<2> item, const void *input, unsigned width,
+                                    unsigned height, unsigned bpc,
+                                    const sycl::local_accessor<int32_t, 2> &tile)
+{
+    unsigned const lid = item.get_local_linear_id();
+    int const tile_origin_y = (int)(item.get_group(0) * MOTION_WG_Y) - MOTION_HALF_FW;
+    int const tile_origin_x = (int)(item.get_group(1) * MOTION_WG_X) - MOTION_HALF_FW;
+    constexpr unsigned tile_elems = MOTION_TILE_H * MOTION_TILE_W;
+    bool const interior_wg = (tile_origin_y >= 0) &&
+                             (tile_origin_y + MOTION_TILE_H <= (int)height) &&
+                             (tile_origin_x >= 0) && (tile_origin_x + MOTION_TILE_W <= (int)width);
+
+    if (interior_wg) {
+        for (unsigned i = lid; i < tile_elems; i += MOTION_WG_SIZE) {
+            unsigned const tr = i / MOTION_TILE_W;
+            unsigned const tc = i % MOTION_TILE_W;
+            int const py = tile_origin_y + (int)tr;
+            int const px = tile_origin_x + (int)tc;
+            tile[tr][tc] = motion_read_sample(input, py, px, width, bpc);
+        }
+    } else {
+        for (unsigned i = lid; i < tile_elems; i += MOTION_WG_SIZE) {
+            unsigned const tr = i / MOTION_TILE_W;
+            unsigned const tc = i % MOTION_TILE_W;
+            int const py = dev_mirror_motion(tile_origin_y + (int)tr, (int)height);
+            int const px = dev_mirror_motion(tile_origin_x + (int)tc, (int)width);
+            tile[tr][tc] = motion_read_sample(input, py, px, width, bpc);
+        }
+    }
+}
+
+static inline int64_t motion_blur_pixel(sycl::nd_item<2> item, bool valid, bool compute_sad,
+                                        unsigned width,
+                                        const sycl::local_accessor<int32_t, 2> &tile,
+                                        int32_t *blur_out, const int32_t *prev_blur, unsigned bpc)
+{
+    if (!valid)
+        return 0;
+
+    unsigned const lx = item.get_local_id(1);
+    unsigned const ly = item.get_local_id(0);
+    int32_t const round1 = 1 << (bpc - 1);
+    int32_t vtmp[5];
+
+#pragma unroll
+    for (int hx = 0; hx < 5; hx++) {
+        unsigned const tcol = lx + (unsigned)hx;
+        int32_t const vsum = blur_filter[0] * (tile[ly + 0][tcol] + tile[ly + 4][tcol]) +
+                             blur_filter[1] * (tile[ly + 1][tcol] + tile[ly + 3][tcol]) +
+                             blur_filter[2] * tile[ly + 2][tcol];
+        vtmp[hx] = (vsum + round1) >> bpc;
+    }
+
+    int64_t const hsum = (int64_t)blur_filter[0] * (vtmp[0] + vtmp[4]) +
+                         (int64_t)blur_filter[1] * (vtmp[1] + vtmp[3]) +
+                         (int64_t)blur_filter[2] * vtmp[2];
+    int32_t const blurred = (int32_t)((hsum + 32768) >> 16);
+    int const gx = item.get_global_id(1);
+    int const gy = item.get_global_id(0);
+    blur_out[gy * width + gx] = blurred;
+    if (!compute_sad)
+        return 0;
+
+    int32_t const prev = prev_blur[gy * width + gx];
+    int32_t const diff = blurred - prev;
+    return (diff < 0) ? -(int64_t)diff : (int64_t)diff;
+}
+
+static inline void motion_reduce_sad(sycl::nd_item<2> item, int64_t abs_diff, bool compute_sad,
+                                     const sycl::local_accessor<int64_t, 1> &lmem,
+                                     int64_t *sad_accum)
+{
+    if (!compute_sad)
+        return;
+
+    sycl::sub_group const sg = item.get_sub_group();
+    int64_t const sg_sum = sycl::reduce_over_group(sg, abs_diff, sycl::plus<int64_t>{});
+    uint32_t const sg_id = sg.get_group_linear_id();
+    uint32_t const sg_lid = sg.get_local_linear_id();
+    uint32_t const n_subgroups = sg.get_group_linear_range();
+    if (sg_lid == 0)
+        lmem[sg_id] = sg_sum;
+
+    item.barrier(sycl::access::fence_space::local_space);
+    if (item.get_local_linear_id() == 0) {
+        int64_t total = 0;
+        for (uint32_t subgroup = 0; subgroup < n_subgroups; subgroup++)
+            total += lmem[subgroup];
+
+        sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                         sycl::access::address_space::global_space> const ref(*sad_accum);
+        ref.fetch_add(total);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* SYCL Kernel: Fused 2D Gaussian Blur + SAD (single dispatch)        */
 /*                                                                     */
@@ -267,7 +379,6 @@ static inline int dev_mirror_motion(int idx, int sup)
 /* This matches the V→H ordering for exact bit-identical results.      */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int32_t *blur_out,
                                          const int32_t *prev_blur, int64_t *sad_accum,
                                          unsigned width, unsigned height, unsigned bpc,
@@ -279,135 +390,26 @@ static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int3
     auto e_sad = compute_sad;
     auto p_in = input;
 
-    constexpr int WG_X = 32;
-    constexpr int WG_Y = 8;
-    constexpr int HALF_FW = 2;
-    // 2D tile with 2-pixel halo on every edge for the 5-tap filter
-    constexpr int TILE_H = WG_Y + 2 * HALF_FW; // 12
-    constexpr int TILE_W = WG_X + 2 * HALF_FW; // 36
-    constexpr int WG_SIZE = WG_X * WG_Y;       // 256
-
-    sycl::range<2> global((size_t)((height + WG_Y - 1) / WG_Y) * WG_Y,
-                          (size_t)((width + WG_X - 1) / WG_X) * WG_X);
-    sycl::range<2> local(WG_Y, WG_X);
+    sycl::range<2> global((size_t)((height + MOTION_WG_Y - 1) / MOTION_WG_Y) * MOTION_WG_Y,
+                          (size_t)((width + MOTION_WG_X - 1) / MOTION_WG_X) * MOTION_WG_X);
+    sycl::range<2> local(MOTION_WG_Y, MOTION_WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<int32_t, 2> const s_tile(sycl::range<2>(TILE_H, TILE_W), cgh);
-        constexpr int MAX_SUBGROUPS = 32;
-        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>(MAX_SUBGROUPS), cgh);
+        sycl::local_accessor<int32_t, 2> const s_tile(sycl::range<2>(MOTION_TILE_H, MOTION_TILE_W),
+                                                      cgh);
+        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>(MOTION_MAX_SUBGROUPS), cgh);
 
-        cgh.parallel_for(
-            sycl::nd_range<2>(global, local),
-            [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                const int gx = item.get_global_id(1);
-                const int gy = item.get_global_id(0);
-                const unsigned lid = item.get_local_linear_id();
-                const unsigned lx = item.get_local_id(1);
-                const unsigned ly = item.get_local_id(0);
-                const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
-
-                // --- Phase 1: Cooperative 2D tile load ---
-                int const tile_origin_y = (int)(item.get_group(0) * WG_Y) - HALF_FW;
-                int const tile_origin_x = (int)(item.get_group(1) * WG_X) - HALF_FW;
-
-                constexpr unsigned tile_elems = TILE_H * TILE_W; // 432
-
-                auto read_global = [&](int y, int x) -> int32_t {
-                    if (e_bpc <= 8) {
-                        return static_cast<const uint8_t *>(p_in)[y * e_w + x];
-                    } else {
-                        return static_cast<const uint16_t *>(p_in)[y * e_w + x];
-                    }
-                };
-
-                bool const interior_wg =
-                    (tile_origin_y >= 0) && (tile_origin_y + TILE_H <= (int)e_h) &&
-                    (tile_origin_x >= 0) && (tile_origin_x + TILE_W <= (int)e_w);
-
-                if (interior_wg) {
-                    for (unsigned i = lid; i < tile_elems; i += WG_SIZE) {
-                        unsigned const tr = i / TILE_W;
-                        unsigned const tc = i % TILE_W;
-                        int const py = tile_origin_y + (int)tr;
-                        int const px = tile_origin_x + (int)tc;
-                        s_tile[tr][tc] = read_global(py, px);
-                    }
-                } else {
-                    for (unsigned i = lid; i < tile_elems; i += WG_SIZE) {
-                        unsigned const tr = i / TILE_W;
-                        unsigned const tc = i % TILE_W;
-                        int const py = dev_mirror_motion(tile_origin_y + (int)tr, (int)e_h);
-                        int const px = dev_mirror_motion(tile_origin_x + (int)tc, (int)e_w);
-                        s_tile[tr][tc] = read_global(py, px);
-                    }
-                }
-
-                item.barrier(sycl::access::fence_space::local_space);
-
-                // --- Phase 2: Separable 2D blur (V→H in registers) ---
-                int64_t abs_diff = 0;
-
-                if (valid) {
-                    // Step A: vertical filter at 5 horizontal positions
-                    //   vtmp[hx] = vert_filter(tile[ly..ly+4][lx+hx])
-                    // int32 arithmetic safe for bpc <= 12:
-                    //   max vsum = 65535 × 65536 = 4.2B fits in uint32
-                    int32_t const round1 = 1 << (e_bpc - 1);
-                    int32_t vtmp[5];
-
-#pragma unroll
-                    for (int hx = 0; hx < 5; hx++) {
-                        unsigned const tcol = lx + (unsigned)hx;
-                        int32_t const vsum =
-                            blur_filter[0] * (s_tile[ly + 0][tcol] + s_tile[ly + 4][tcol]) +
-                            blur_filter[1] * (s_tile[ly + 1][tcol] + s_tile[ly + 3][tcol]) +
-                            blur_filter[2] * s_tile[ly + 2][tcol];
-                        vtmp[hx] = (vsum + round1) >> e_bpc;
-                    }
-
-                    // Step B: horizontal filter on vertically-filtered values
-                    int64_t const hsum = (int64_t)blur_filter[0] * (vtmp[0] + vtmp[4]) +
-                                         (int64_t)blur_filter[1] * (vtmp[1] + vtmp[3]) +
-                                         (int64_t)blur_filter[2] * vtmp[2];
-                    int32_t const blurred = (int32_t)((hsum + 32768) >> 16);
-
-                    blur_out[gy * e_w + gx] = blurred;
-
-                    // SAD with previous frame
-                    if (e_sad) {
-                        int32_t const prev = prev_blur[gy * e_w + gx];
-                        int32_t const diff = blurred - prev;
-                        abs_diff = (diff < 0) ? -(int64_t)diff : (int64_t)diff;
-                    }
-                }
-
-                // --- Phase 3: Subgroup reduction for SAD ---
-                if (e_sad) {
-                    sycl::sub_group const sg = item.get_sub_group();
-                    int64_t const sg_sum =
-                        sycl::reduce_over_group(sg, abs_diff, sycl::plus<int64_t>{});
-
-                    const uint32_t sg_id = sg.get_group_linear_id();
-                    const uint32_t sg_lid = sg.get_local_linear_id();
-                    const uint32_t n_subgroups = sg.get_group_linear_range();
-
-                    if (sg_lid == 0)
-                        lmem[sg_id] = sg_sum;
-
-                    item.barrier(sycl::access::fence_space::local_space);
-
-                    if (lid == 0) {
-                        int64_t total = 0;
-                        for (uint32_t s = 0; s < n_subgroups; s++)
-                            total += lmem[s];
-
-                        sycl::atomic_ref<
-                            int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                            sycl::access::address_space::global_space> const ref(*sad_accum);
-                        ref.fetch_add(total);
-                    }
-                }
-            });
+        cgh.parallel_for(sycl::nd_range<2>(global, local),
+                         [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
+                             const int gx = item.get_global_id(1);
+                             const int gy = item.get_global_id(0);
+                             const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
+                             motion_load_tile(item, p_in, e_w, e_h, e_bpc, s_tile);
+                             item.barrier(sycl::access::fence_space::local_space);
+                             int64_t const abs_diff = motion_blur_pixel(
+                                 item, valid, e_sad, e_w, s_tile, blur_out, prev_blur, e_bpc);
+                             motion_reduce_sad(item, abs_diff, e_sad, lmem, sad_accum);
+                         });
     });
 }
 
@@ -422,28 +424,14 @@ static void motion_post_graph(void *queue_ptr, void *priv);
 static void config_motion_slot(void *priv, int slot);
 static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+static int motion_validate_init(const MotionStateSycl *s, unsigned w, unsigned h)
 {
-    auto *s = static_cast<MotionStateSycl *>(fex->priv);
-
-    /* Reject the 5-frame window mode explicitly. CPU mode keeps a
-     * 5-deep blur ring + computes a second SAD pair (i-2 ↔ i-4); the
-     * GPU port today still uses the 2-deep ping-pong. Failing loud
-     * with -ENOTSUP keeps callers off a silent-wrong-answer path.
-     * See ADR-0219. */
     if (s->motion_five_frame_window) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "motion_sycl: motion_five_frame_window=true is not yet supported on SYCL "
                  "(T3-15(c) deferred). Use the CPU extractor `motion` instead.\n");
         return -ENOTSUP;
     }
-
-    /* The 5-tap SYCL kernel uses reflect-101 mirror padding on device;
-     * dev_mirror_motion() returns 2*sup - idx - 2, which is negative when
-     * sup < 3.  Refuse smaller frames up front.
-     * Minimum: filter_width/2 + 1 = 3. */
     if (h < 3u || w < 3u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "motion_sycl: frame %ux%u is below the 5-tap filter minimum 3x3; "
@@ -451,7 +439,11 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                  w, h);
         return -EINVAL;
     }
+    return 0;
+}
 
+static void motion_reset_state(MotionStateSycl *s, unsigned w, unsigned h, unsigned bpc)
+{
     s->width = w;
     s->height = h;
     s->bpc = bpc;
@@ -460,43 +452,25 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->prev_motion3_blended = 0.0;
     s->has_pending = false;
     s->cur_blur = 0;
+}
 
-    if (!fex->sycl_state) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: no SYCL state\n");
-        return -EINVAL;
-    }
-
-    VmafSyclState *state = fex->sycl_state;
-
-    // Initialize shared frame buffers (idempotent, first extractor wins)
-    int const err = vmaf_sycl_shared_frame_init(state, w, h, bpc);
-    if (err)
-        return err;
-
+static int motion_alloc_luma(VmafSyclState *state, MotionStateSycl *s, unsigned w, unsigned h)
+{
     size_t const buf_size = (size_t)w * h * sizeof(int32_t);
-
-    // Two blur buffers for ping-pong (Y plane)
     s->d_blur[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, buf_size));
     s->d_blur[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, buf_size));
-
-    // Vertical intermediate
     s->d_blur_tmp = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, buf_size));
-
-    // Y-plane SAD accumulator
     s->d_sad_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
     s->h_sad_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
-
     if (!s->d_blur[0] || !s->d_blur[1] || !s->d_blur_tmp || !s->d_sad_accum || !s->h_sad_accum) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: device memory allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
+    return 0;
+}
 
-    // UV plane support — ADR-0989.
-    // YUV420P: chroma planes are ceil(W/2) × ceil(H/2).  The kernel
-    // reuses `launch_blur_sad_fused` — bpc-agnostic, only width/height
-    // differ.  Raw UV input is uploaded H2D in submit_fex_sycl before
-    // the graph fires; d_ref_u/v[slot] are captured in the graph.
+static void motion_reset_chroma(MotionStateSycl *s)
+{
     s->d_ref_u[0] = nullptr;
     s->d_ref_u[1] = nullptr;
     s->d_ref_v[0] = nullptr;
@@ -511,53 +485,87 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->h_sad_v = nullptr;
     s->chroma_w = 0;
     s->chroma_h = 0;
+}
 
-    if (s->motion_add_uv) {
-        if (pix_fmt == VMAF_PIX_FMT_YUV400P || pix_fmt == VMAF_PIX_FMT_UNKNOWN) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "motion_sycl: motion_add_uv=true requires a YUV format with chroma "
-                     "planes (got %d)\n",
-                     (int)pix_fmt);
-            close_fex_sycl(fex);
-            return -EINVAL;
-        }
-        // Ceiling division — matches integer_psnr_sycl.cpp chroma geometry
-        // (PR #878 Vulkan twin fix, AGENTS.md).
-        unsigned const cw = (w + 1U) >> 1U;
-        unsigned const ch = (h + 1U) >> 1U;
-        s->chroma_w = cw;
-        s->chroma_h = ch;
+static int motion_configure_chroma(MotionStateSycl *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                                   unsigned h)
+{
+    if (!s->motion_add_uv)
+        return 0;
+    if (pix_fmt == VMAF_PIX_FMT_YUV400P || pix_fmt == VMAF_PIX_FMT_UNKNOWN) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "motion_sycl: motion_add_uv=true requires a YUV format with chroma "
+                 "planes (got %d)\n",
+                 (int)pix_fmt);
+        return -EINVAL;
+    }
+    s->chroma_w = (w + 1U) >> 1U;
+    s->chroma_h = (h + 1U) >> 1U;
+    return 0;
+}
 
-        // Bytes per raw pixel: 1 byte (8-bpc) or 2 bytes (10/12/16-bpc)
-        size_t const bpp = (bpc <= 8) ? 1U : 2U;
-        size_t const uv_raw_size = (size_t)cw * ch * bpp;
-        size_t const uv_blur_size = (size_t)cw * ch * sizeof(int32_t);
+static int motion_alloc_chroma(VmafSyclState *state, MotionStateSycl *s, unsigned bpc)
+{
+    if (!s->motion_add_uv)
+        return 0;
 
-        // Raw UV input ping-pong (void* to be bpc-agnostic; cast in kernel)
-        s->d_ref_u[0] = vmaf_sycl_malloc_device(state, uv_raw_size);
-        s->d_ref_u[1] = vmaf_sycl_malloc_device(state, uv_raw_size);
-        s->d_ref_v[0] = vmaf_sycl_malloc_device(state, uv_raw_size);
-        s->d_ref_v[1] = vmaf_sycl_malloc_device(state, uv_raw_size);
+    size_t const bpp = (bpc <= 8) ? 1U : 2U;
+    size_t const uv_raw_size = (size_t)s->chroma_w * s->chroma_h * bpp;
+    size_t const uv_blur_size = (size_t)s->chroma_w * s->chroma_h * sizeof(int32_t);
+    s->d_ref_u[0] = vmaf_sycl_malloc_device(state, uv_raw_size);
+    s->d_ref_u[1] = vmaf_sycl_malloc_device(state, uv_raw_size);
+    s->d_ref_v[0] = vmaf_sycl_malloc_device(state, uv_raw_size);
+    s->d_ref_v[1] = vmaf_sycl_malloc_device(state, uv_raw_size);
+    s->d_blur_u[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
+    s->d_blur_u[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
+    s->d_blur_v[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
+    s->d_blur_v[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
+    s->d_sad_u = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
+    s->h_sad_u = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
+    s->d_sad_v = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
+    s->h_sad_v = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
+    if (!s->d_ref_u[0] || !s->d_ref_u[1] || !s->d_ref_v[0] || !s->d_ref_v[1] || !s->d_blur_u[0] ||
+        !s->d_blur_u[1] || !s->d_blur_v[0] || !s->d_blur_v[1] || !s->d_sad_u || !s->h_sad_u ||
+        !s->d_sad_v || !s->h_sad_v) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: UV device memory allocation failed\n");
+        return -ENOMEM;
+    }
+    return 0;
+}
 
-        // Blurred UV ping-pong
-        s->d_blur_u[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
-        s->d_blur_u[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
-        s->d_blur_v[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
-        s->d_blur_v[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
+static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    auto *s = static_cast<MotionStateSycl *>(fex->priv);
+    int err = motion_validate_init(s, w, h);
+    if (err)
+        return err;
+    motion_reset_state(s, w, h, bpc);
 
-        // UV SAD accumulators
-        s->d_sad_u = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
-        s->h_sad_u = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
-        s->d_sad_v = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
-        s->h_sad_v = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
+    if (!fex->sycl_state) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: no SYCL state\n");
+        return -EINVAL;
+    }
 
-        if (!s->d_ref_u[0] || !s->d_ref_u[1] || !s->d_ref_v[0] || !s->d_ref_v[1] ||
-            !s->d_blur_u[0] || !s->d_blur_u[1] || !s->d_blur_v[0] || !s->d_blur_v[1] ||
-            !s->d_sad_u || !s->h_sad_u || !s->d_sad_v || !s->h_sad_v) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: UV device memory allocation failed\n");
-            close_fex_sycl(fex);
-            return -ENOMEM;
-        }
+    VmafSyclState *state = fex->sycl_state;
+
+    err = vmaf_sycl_shared_frame_init(state, w, h, bpc);
+    if (err)
+        return err;
+
+    err = motion_alloc_luma(state, s, w, h);
+    if (err) {
+        close_fex_sycl(fex);
+        return err;
+    }
+
+    motion_reset_chroma(s);
+    err = motion_configure_chroma(s, pix_fmt, w, h);
+    if (!err)
+        err = motion_alloc_chroma(state, s, bpc);
+    if (err) {
+        close_fex_sycl(fex);
+        return err;
     }
 
     s->feature_name_dict =
@@ -571,11 +579,11 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->sycl_state = state;
 
     // Register with combined command graph
-    int const err2 = vmaf_sycl_graph_register(state, enqueue_motion_work, motion_pre_graph,
-                                              motion_post_graph, config_motion_slot, s, "MOTION");
-    if (err2) {
+    err = vmaf_sycl_graph_register(state, enqueue_motion_work, motion_pre_graph, motion_post_graph,
+                                   config_motion_slot, s, "MOTION");
+    if (err) {
         close_fex_sycl(fex);
-        return err2;
+        return err;
     }
 
     return 0;
@@ -701,7 +709,43 @@ static void config_motion_slot(void *priv, int slot)
 /* Submit / Collect                                                    */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+static int motion_upload_chroma(VmafSyclState *state, MotionStateSycl *s,
+                                const VmafPicture *ref_pic)
+{
+    if (!s->motion_add_uv || ref_pic == nullptr)
+        return 0;
+
+    int const cur = s->cur_blur;
+    size_t const bpp = (s->bpc <= 8) ? 1U : 2U;
+    size_t const row_bytes = s->chroma_w * bpp;
+    size_t const uv_raw_bytes = (size_t)s->chroma_w * s->chroma_h * bpp;
+    const uint8_t *u_src = static_cast<const uint8_t *>(ref_pic->data[1]);
+    const uint8_t *v_src = static_cast<const uint8_t *>(ref_pic->data[2]);
+    uint8_t *u_dst = static_cast<uint8_t *>(s->d_ref_u[cur]);
+    uint8_t *v_dst = static_cast<uint8_t *>(s->d_ref_v[cur]);
+
+    if (std::cmp_equal(ref_pic->stride[1], row_bytes)) {
+        int const eu = vmaf_sycl_memcpy_h2d_async(state, u_dst, u_src, uv_raw_bytes);
+        int const ev = vmaf_sycl_memcpy_h2d_async(state, v_dst, v_src, uv_raw_bytes);
+        if (eu || ev)
+            return eu ? eu : ev;
+    } else {
+        for (unsigned row = 0; row < s->chroma_h; row++) {
+            int const eu = vmaf_sycl_memcpy_h2d_async(state, u_dst + row * row_bytes,
+                                                      u_src + row * ref_pic->stride[1], row_bytes);
+            int const ev = vmaf_sycl_memcpy_h2d_async(state, v_dst + row * row_bytes,
+                                                      v_src + row * ref_pic->stride[2], row_bytes);
+            if (eu || ev)
+                return eu ? eu : ev;
+        }
+    }
+
+    /* UV uploads use the primary queue while graph submission barriers the
+     * copy queue. Drain the primary queue before the graph reads these buffers
+     * (ADR-1034). */
+    return vmaf_sycl_queue_wait(state);
+}
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -711,55 +755,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     auto *s = static_cast<MotionStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
-
-    // Upload UV planes H2D before the graph fires so that enqueue_motion_work
-    // reads the current frame's U/V data from d_ref_u[cur_blur] / d_ref_v[cur_blur].
-    // ADR-0989: the graph captures these device pointers by value (one
-    // capture per slot via config_fn), so the H2D must happen before
-    // vmaf_sycl_graph_submit() launches the recorded graph.
-    if (s->motion_add_uv && ref_pic != nullptr) {
-        int const cur = s->cur_blur;
-        size_t const bpp = (s->bpc <= 8) ? 1U : 2U;
-        size_t const uv_raw_bytes = (size_t)s->chroma_w * s->chroma_h * bpp;
-
-        // ref_pic->data[1] / data[2] point to U / V luma-adjacent planes;
-        // stride[1] / stride[2] are in bytes.  We copy row-by-row to device
-        // (contiguous) because the host stride may be padded.
-        const uint8_t *u_src = static_cast<const uint8_t *>(ref_pic->data[1]);
-        const uint8_t *v_src = static_cast<const uint8_t *>(ref_pic->data[2]);
-        uint8_t *u_dst = static_cast<uint8_t *>(s->d_ref_u[cur]);
-        uint8_t *v_dst = static_cast<uint8_t *>(s->d_ref_v[cur]);
-
-        if (std::cmp_equal(ref_pic->stride[1], (s->chroma_w * bpp))) {
-            // Contiguous — single H2D copy
-            int const eu = vmaf_sycl_memcpy_h2d_async(state, u_dst, u_src, uv_raw_bytes);
-            int const ev = vmaf_sycl_memcpy_h2d_async(state, v_dst, v_src, uv_raw_bytes);
-            if (eu || ev)
-                return eu ? eu : ev;
-        } else {
-            // Strided — copy one row at a time
-            size_t const row_bytes = s->chroma_w * bpp;
-            for (unsigned row = 0; row < s->chroma_h; row++) {
-                int const eu = vmaf_sycl_memcpy_h2d_async(
-                    state, u_dst + row * row_bytes, u_src + row * ref_pic->stride[1], row_bytes);
-                int const ev = vmaf_sycl_memcpy_h2d_async(
-                    state, v_dst + row * row_bytes, v_src + row * ref_pic->stride[2], row_bytes);
-                if (eu || ev)
-                    return eu ? eu : ev;
-            }
-        }
-
-        // Flush the primary queue before graph_submit.
-        // vmaf_sycl_memcpy_h2d_async() submits to state->queue (primary queue),
-        // but vmaf_sycl_graph_submit() only barriers combined_queue on
-        // last_upload_event from copy_queue.  Without this wait the UV H2D
-        // transfers may still be in-flight on the primary queue when the compute
-        // graph launches on combined_queue — producing wrong UV motion scores.
-        // Bug: r6-sycl (integer_motion UV queue sync gap).
-        int const ewait = vmaf_sycl_queue_wait(state);
-        if (ewait)
-            return ewait;
-    }
+    int const upload_err = motion_upload_chroma(state, s, ref_pic);
+    if (upload_err)
+        return upload_err;
 
     // Combined graph submit (idempotent per frame — first extractor wins)
     int const err = vmaf_sycl_graph_submit(state);
@@ -772,7 +770,74 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+static double motion_score_from_sad(const MotionStateSycl *s)
+{
+    double motion_score = 0.0;
+    if (s->frame_index > 0) {
+        int64_t const sad_y = *s->h_sad_accum;
+        motion_score = (double)sad_y / 256.0 / ((double)s->width * s->height);
+        if (s->motion_add_uv) {
+            int64_t const sad_u = *s->h_sad_u;
+            int64_t const sad_v = *s->h_sad_v;
+            double const uv_area = (double)s->chroma_w * s->chroma_h;
+            motion_score += (double)sad_u / 256.0 / uv_area;
+            motion_score += (double)sad_v / 256.0 / uv_area;
+        }
+    }
+    return motion_score;
+}
+
+static int motion_collect_first(const MotionStateSycl *s, unsigned index,
+                                VmafFeatureCollector *feature_collector)
+{
+    int err = vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", 0.0, index);
+    if (s->debug) {
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       "VMAF_integer_feature_motion_score", 0.0,
+                                                       index);
+    }
+    return err;
+}
+
+static int motion_collect_second(MotionStateSycl *s, double motion_score, unsigned index,
+                                 VmafFeatureCollector *feature_collector)
+{
+    double const score_clipped = MIN(motion_score * s->motion_fps_weight, s->motion_max_val);
+    double const motion3_score = motion3_postprocess_sycl(s, score_clipped);
+    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "VMAF_integer_feature_motion3_score",
+                                                      motion3_score, index - 1);
+    if (s->debug) {
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       "VMAF_integer_feature_motion_score",
+                                                       score_clipped, index);
+    }
+    return err;
+}
+
+static int motion_collect_later(MotionStateSycl *s, double motion_score, unsigned index,
+                                VmafFeatureCollector *feature_collector)
+{
+    double const motion2 =
+        (motion_score < s->prev_motion_score) ? motion_score : s->prev_motion_score;
+    double const motion2_clipped = MIN(motion2 * s->motion_fps_weight, s->motion_max_val);
+    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "VMAF_integer_feature_motion2_score",
+                                                      motion2_clipped, index - 1);
+    double const motion3_score = motion3_postprocess_sycl(s, motion2_clipped);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_integer_feature_motion3_score",
+                                                   motion3_score, index - 1);
+    if (s->debug) {
+        double const score_clipped = MIN(motion_score * s->motion_fps_weight, s->motion_max_val);
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       "VMAF_integer_feature_motion_score",
+                                                       score_clipped, index);
+    }
+    return err;
+}
+
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
@@ -782,82 +847,14 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     // Combined graph wait (idempotent per frame — first extractor wins)
     vmaf_sycl_graph_wait(state);
 
-    double motion_score = 0.0;
-
-    if (s->frame_index > 0) {
-        int64_t const sad_y = *s->h_sad_accum;
-        motion_score = (double)sad_y / 256.0 / ((double)s->width * s->height);
-
-        // ADR-0989: add U and V plane contributions (normalized per plane)
-        if (s->motion_add_uv) {
-            int64_t const sad_u = *s->h_sad_u;
-            int64_t const sad_v = *s->h_sad_v;
-            double const uv_area = (double)s->chroma_w * s->chroma_h;
-            motion_score += (double)sad_u / 256.0 / uv_area;
-            motion_score += (double)sad_v / 256.0 / uv_area;
-        }
-    }
-
-    int err = 0;
-
-    // Match CPU motion algorithm: motion2_score[i] is written at step i+1
-    // using min(motion(i-1→i), motion(i→i+1)).
-    //
-    // frame_index 0 (first collect):
-    //   Write motion2[index] = 0.0 (no prior frame)
-    //
-    // frame_index 1 (second collect):
-    //   Only one motion score available, can't compute min yet.
-    //   Just store it; don't write motion2 yet.
-    //   CPU also skips: if (index == 1) return 0;
-    //
-    // frame_index >= 2:
-    //   Write motion2[index-1] = min(prev_motion, current_motion)
-    //   This is the delayed-by-one pattern from CPU.
-
+    double const motion_score = motion_score_from_sad(s);
+    int err;
     if (s->frame_index == 0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_motion2_score", 0.0,
-                                                       index);
-        if (s->debug) {
-            err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                           "VMAF_integer_feature_motion_score", 0.0,
-                                                           index);
-        }
+        err = motion_collect_first(s, index, feature_collector);
     } else if (s->frame_index == 1) {
-        // Match CPU integer_motion.c lines 510-530: at the second
-        // frame, back-fill motion3_score for index 0 using the
-        // current motion (no min(prev, cur) yet — there is no prev).
-        double const score_clipped = MIN(motion_score * s->motion_fps_weight, s->motion_max_val);
-        double const motion3_score = motion3_postprocess_sycl(s, score_clipped);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_motion3_score",
-                                                       motion3_score, index - 1);
-        if (s->debug) {
-            err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                           "VMAF_integer_feature_motion_score",
-                                                           score_clipped, index);
-        }
-        // Don't write motion2 yet (CPU returns early at index 1)
+        err = motion_collect_second(s, motion_score, index, feature_collector);
     } else {
-        // frame_index >= 2: write motion2 + motion3 at index-1
-        double const motion2 =
-            (motion_score < s->prev_motion_score) ? motion_score : s->prev_motion_score;
-        double const motion2_clipped = MIN(motion2 * s->motion_fps_weight, s->motion_max_val);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_motion2_score",
-                                                       motion2_clipped, index - 1);
-        double const motion3_score = motion3_postprocess_sycl(s, motion2_clipped);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_motion3_score",
-                                                       motion3_score, index - 1);
-        if (s->debug) {
-            double const score_clipped =
-                MIN(motion_score * s->motion_fps_weight, s->motion_max_val);
-            err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                           "VMAF_integer_feature_motion_score",
-                                                           score_clipped, index);
-        }
+        err = motion_collect_later(s, motion_score, index, feature_collector);
     }
 
     // Advance state
@@ -928,7 +925,48 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     return (ret < 0) ? ret : !ret; // 1 = done, negative = error
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+static void motion_free_luma(VmafSyclState *state, MotionStateSycl *s)
+{
+    if (s->d_blur[0])
+        vmaf_sycl_free(state, s->d_blur[0]);
+    if (s->d_blur[1])
+        vmaf_sycl_free(state, s->d_blur[1]);
+    if (s->d_blur_tmp)
+        vmaf_sycl_free(state, s->d_blur_tmp);
+    if (s->d_sad_accum)
+        vmaf_sycl_free(state, s->d_sad_accum);
+    if (s->h_sad_accum)
+        vmaf_sycl_free(state, s->h_sad_accum);
+}
+
+static void motion_free_chroma(VmafSyclState *state, MotionStateSycl *s)
+{
+    if (s->d_ref_u[0])
+        vmaf_sycl_free(state, s->d_ref_u[0]);
+    if (s->d_ref_u[1])
+        vmaf_sycl_free(state, s->d_ref_u[1]);
+    if (s->d_ref_v[0])
+        vmaf_sycl_free(state, s->d_ref_v[0]);
+    if (s->d_ref_v[1])
+        vmaf_sycl_free(state, s->d_ref_v[1]);
+    if (s->d_blur_u[0])
+        vmaf_sycl_free(state, s->d_blur_u[0]);
+    if (s->d_blur_u[1])
+        vmaf_sycl_free(state, s->d_blur_u[1]);
+    if (s->d_blur_v[0])
+        vmaf_sycl_free(state, s->d_blur_v[0]);
+    if (s->d_blur_v[1])
+        vmaf_sycl_free(state, s->d_blur_v[1]);
+    if (s->d_sad_u)
+        vmaf_sycl_free(state, s->d_sad_u);
+    if (s->h_sad_u)
+        vmaf_sycl_free(state, s->h_sad_u);
+    if (s->d_sad_v)
+        vmaf_sycl_free(state, s->d_sad_v);
+    if (s->h_sad_v)
+        vmaf_sycl_free(state, s->h_sad_v);
+}
+
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<MotionStateSycl *>(fex->priv);
@@ -945,43 +983,8 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
          * before destroying any recorded exec-graphs (Level Zero
          * command-list release races against in-flight GPU work). */
         (void)vmaf_sycl_graph_unregister(state, s);
-
-        if (s->d_blur[0])
-            vmaf_sycl_free(state, s->d_blur[0]);
-        if (s->d_blur[1])
-            vmaf_sycl_free(state, s->d_blur[1]);
-        if (s->d_blur_tmp)
-            vmaf_sycl_free(state, s->d_blur_tmp);
-        if (s->d_sad_accum)
-            vmaf_sycl_free(state, s->d_sad_accum);
-        if (s->h_sad_accum)
-            vmaf_sycl_free(state, s->h_sad_accum);
-
-        // UV plane resources — ADR-0989
-        if (s->d_ref_u[0])
-            vmaf_sycl_free(state, s->d_ref_u[0]);
-        if (s->d_ref_u[1])
-            vmaf_sycl_free(state, s->d_ref_u[1]);
-        if (s->d_ref_v[0])
-            vmaf_sycl_free(state, s->d_ref_v[0]);
-        if (s->d_ref_v[1])
-            vmaf_sycl_free(state, s->d_ref_v[1]);
-        if (s->d_blur_u[0])
-            vmaf_sycl_free(state, s->d_blur_u[0]);
-        if (s->d_blur_u[1])
-            vmaf_sycl_free(state, s->d_blur_u[1]);
-        if (s->d_blur_v[0])
-            vmaf_sycl_free(state, s->d_blur_v[0]);
-        if (s->d_blur_v[1])
-            vmaf_sycl_free(state, s->d_blur_v[1]);
-        if (s->d_sad_u)
-            vmaf_sycl_free(state, s->d_sad_u);
-        if (s->h_sad_u)
-            vmaf_sycl_free(state, s->h_sad_u);
-        if (s->d_sad_v)
-            vmaf_sycl_free(state, s->d_sad_v);
-        if (s->h_sad_v)
-            vmaf_sycl_free(state, s->h_sad_v);
+        motion_free_luma(state, s);
+        motion_free_chroma(state, s);
     }
 
     if (s->feature_name_dict)
