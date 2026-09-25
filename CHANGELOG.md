@@ -31352,6 +31352,12 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   checked with `|| exit /b 1`. `test_output` was also added to that list.
 
 
+- **Windows CLI Unicode paths**: `vmaf` and `vmafx` now receive the Unicode
+  command line through `wmain` and convert arguments to strict UTF-8 before
+  parsing, so accented and CJK input, output, and model paths no longer depend
+  on the active ANSI code page.
+
+
 - Fix Windows CUDA configuration when `vswhere` cannot find MSVC but `cl.exe`
   is on `PATH`: NVCC and MSVC include discovery now share the resolved compiler
   path. Add a Meson configure regression for discovery, fallback and missing tools.

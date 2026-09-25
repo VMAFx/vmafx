@@ -68,3 +68,17 @@ test('test_vmaf_read_error_exit', test_vmaf_read_error_exit,
          'MESON_BUILD_ROOT=' + meson.project_build_root(),
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
+
+# T-WINDOWS-CLI-UTF8-ARGV-2026-09-24 — CreateProcessW supplies an exact
+# Unicode command line so this does not depend on the launching shell's code
+# page. The child must preserve those paths through the CLI's argv boundary.
+if host_machine.system() == 'windows'
+    test_vmaf_windows_utf8_argv = executable(
+        'test_vmaf_windows_utf8_argv',
+        'test_vmaf_windows_utf8_argv.cpp',
+    )
+    test('test_vmaf_windows_utf8_argv', test_vmaf_windows_utf8_argv,
+         suite : ['fast'],
+         depends : [vmaf],
+         timeout : 60)
+endif

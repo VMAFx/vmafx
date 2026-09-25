@@ -15,6 +15,12 @@ endif
 vmaf_tool_deps = [stdatomic_dependency, cuda_dependency, getopt_dependency]
 vmaf_tool_cflags = [vmaf_cflags_common, compat_cflags]
 vmaf_tool_link_args = []
+vmaf_cli_link_args = vmaf_tool_link_args
+if host_machine.system() == 'windows' and cxx.get_argument_syntax() != 'msvc'
+    # GNU-style Windows CRT startup selects narrow main unless -municode asks
+    # for wmainCRTStartup. MSVC-syntax linkers infer wmain directly.
+    vmaf_cli_link_args += ['-municode']
+endif
 if get_option('enable_cuda')
     vmaf_tool_cflags += ['-DHAVE_CUDA=1']
 endif
@@ -61,7 +67,7 @@ vmaf = executable(
     dependencies: vmaf_tool_deps,
     c_args : vmaf_tool_cflags,
     cpp_args : vmaf_tool_cflags,
-    link_args : vmaf_tool_link_args,
+    link_args : vmaf_cli_link_args,
     link_with : vmaf_tool_link_target,
     install : true,
 )
@@ -78,7 +84,7 @@ if host_machine.system() == 'windows'
         dependencies: vmaf_tool_deps,
         c_args : vmaf_tool_cflags,
         cpp_args : vmaf_tool_cflags,
-        link_args : vmaf_tool_link_args,
+        link_args : vmaf_cli_link_args,
         link_with : vmaf_tool_link_target,
         install : true,
     )

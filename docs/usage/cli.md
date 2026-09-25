@@ -67,20 +67,20 @@ containing accented characters or CJK characters therefore reach the exact
 requested file rather than an ANSI-code-page approximation. POSIX path handling
 is unchanged.
 
-Two boundaries remain:
+The `vmaf` and `vmafx` executables enter through `wmain` on Windows and convert
+every UTF-16 argument to strict UTF-8 before the shared CLI parser runs. This
+keeps exact non-ASCII input, output, and model paths independent of the active
+ANSI code page. An argument containing an invalid UTF-16 sequence fails before
+scoring instead of being replaced or misdirected. POSIX argument handling is
+unchanged.
 
-- The `vmaf` and `vmafx` executables still enter through `main(int, char **)`.
-  The Windows C runtime must therefore deliver UTF-8 argument bytes; a shell or
-  process code page that converts the command line to another narrow encoding
-  can corrupt a non-ASCII path before VMAFx receives it. The libvmaf C API is
-  unaffected when its caller supplies UTF-8 directly.
-- Internal conversions accept paths shorter than 4096 UTF-8 bytes. Longer or
-  malformed UTF-8 paths fail instead of being truncated.
+Internal conversions accept paths shorter than 4096 UTF-8 bytes. Longer or
+malformed UTF-8 paths fail instead of being truncated.
 
 The vendored Pelorus CSV parser is a documented exception until its upstream
 source adopts the same contract. See
 [ADR-1182](../adr/1182-windows-utf8-path-contract.md) for the exact migrated
-surfaces and follow-ups.
+surfaces and the original library/CLI scope split.
 
 ## Option-string grammar
 
