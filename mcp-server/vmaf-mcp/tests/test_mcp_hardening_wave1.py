@@ -172,7 +172,7 @@ def _fresh_http_metrics() -> Any:
     to ``_build_metrics`` with the same name would raise
     ``ValueError: Duplicated timeseries``.  We suffix with a per-call counter
     to keep tests independent."""
-    global _HTTP_TEST_COUNTER  # noqa: PLW0603  # module-level test counter
+    global _HTTP_TEST_COUNTER  # module-level test counter
     _HTTP_TEST_COUNTER += 1
     suffix = f"h{_HTTP_TEST_COUNTER}"
     import prometheus_client as pc
@@ -212,6 +212,7 @@ async def test_handle_score_null_width_returns_400(_no_auth_env, monkeypatch, tm
     pytest.importorskip("aiohttp")
     pytest.importorskip("prometheus_client")
     from aiohttp.test_utils import TestClient, TestServer
+
     from vmaf_mcp import http_transport as ht
 
     metrics = _fresh_http_metrics()
@@ -248,6 +249,7 @@ async def test_handle_score_string_height_returns_400(_no_auth_env, monkeypatch,
     pytest.importorskip("aiohttp")
     pytest.importorskip("prometheus_client")
     from aiohttp.test_utils import TestClient, TestServer
+
     from vmaf_mcp import http_transport as ht
 
     metrics = _fresh_http_metrics()
@@ -344,25 +346,27 @@ async def test_call_tool_describe_worst_frames_n_at_max_32_accepted(monkeypatch,
 
     # The subsequent _run_vmaf_score call will fail (no real vmaf binary), but
     # the validation guard must NOT raise a ValueError for n=32.
-    with patch.object(
-        srv,
-        "_run_vmaf_score",
-        new=AsyncMock(side_effect=RuntimeError("vmaf binary not found (test stub)")),
+    with (
+        patch.object(
+            srv,
+            "_run_vmaf_score",
+            new=AsyncMock(side_effect=RuntimeError("vmaf binary not found (test stub)")),
+        ),
+        pytest.raises(RuntimeError, match="vmaf binary not found"),
     ):
-        with pytest.raises(RuntimeError, match="vmaf binary not found"):
-            await srv._call_tool_dispatch(
-                "describe_worst_frames",
-                {
-                    "ref": str(ref),
-                    "dis": str(dis),
-                    "width": 4,
-                    "height": 4,
-                    "pixfmt": "420",
-                    "bitdepth": 8,
-                    "n": 32,
-                },
-                progress_token=None,
-            )
+        await srv._call_tool_dispatch(
+            "describe_worst_frames",
+            {
+                "ref": str(ref),
+                "dis": str(dis),
+                "width": 4,
+                "height": 4,
+                "pixfmt": "420",
+                "bitdepth": 8,
+                "n": 32,
+            },
+            progress_token=None,
+        )
 
 
 # ---------------------------------------------------------------------------

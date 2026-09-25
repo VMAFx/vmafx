@@ -20669,10 +20669,10 @@ invalid ROI pooled score exits 65 without writing a report.
   backend set after Vulkan's removal.
 - Reject malformed calibration scorer JSON before attempting to pair frame
   metrics, while keeping the touched collector and tests strict-mypy clean.
-- Preserve the `vmaf` CLI's explicit `backend_used` receipt for MCP auto
-  scoring and return `unknown` when no valid receipt exists, instead of
-  guessing a backend from a mutable metrics-key count. Reject non-object score
-  JSON before annotating the MCP response.
+- Preserve the `vmaf` CLI's explicit `backend_used` receipt in both Python and
+  Go MCP auto scoring, and return `unknown` when no valid receipt exists,
+  instead of guessing a backend from a mutable metrics-key count. Reject
+  non-object score JSON before annotating the MCP response.
 
 
 Restored strict RFC-8259 serialization across AI manifests, evaluation reports,

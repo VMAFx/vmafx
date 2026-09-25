@@ -28,6 +28,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -161,10 +162,11 @@ def test_bug1_auto_without_valid_cli_receipt_is_unknown(
         assert result["backend_used"] == "unknown"
 
 
-def test_score_payload_rejects_top_level_non_object(tmp_path: Path) -> None:
+@pytest.mark.parametrize("raw_json", ("[]", "null", '"score"', "42", "true"))
+def test_score_payload_rejects_top_level_non_object(tmp_path: Path, raw_json: str) -> None:
     """Valid JSON with the wrong top-level shape fails with a bounded error."""
     output = tmp_path / "score.json"
-    output.write_text("[]", encoding="utf-8")
+    output.write_text(raw_json, encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="not a JSON object"):
         srv._score_payload(_make_score_request(), output, "json")

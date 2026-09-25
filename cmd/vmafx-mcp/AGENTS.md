@@ -256,3 +256,12 @@ Key facts:
     reachable with its declared contract silently switched off, and the parity
     tests would not notice because they only compare the tools that *are*
     registered. `cmd/vmafx-mcp/tool_schema_test.go` pins that outcome.
+
+20. **Auto-dispatch backend identity comes from the CLI receipt, never metric
+    counts.** `decodeVmafOutput` accepts only a concrete top-level
+    `backend_used` value (`cpu`, `cuda`, `sycl`, `hip`, or `metal`) when the
+    request used `auto`; missing, generic `gpu`, `auto`, non-string, and unknown
+    receipts become `unknown`. Metric-key counts are run observations and move
+    as extractors change. Keep non-object JSON rejection before response
+    annotation. Explicit subprocess requests still echo the requested backend;
+    the direct-cgo path remains separate and keeps `cpu (direct cgo)`.

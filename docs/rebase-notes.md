@@ -54238,10 +54238,11 @@ conditions. Preserve `load_frames()` validation of the top-level object,
 `frames` array, and object-shaped frame entries. No hardware benchmark or
 training run is part of this correction.
 
-The Python MCP auto-dispatch response must preserve the concrete top-level
-`backend_used` receipt written by the fork's `vmaf` CLI. Do not restore
-metric-count backend guessing: CPU/CUDA/SYCL counts move as extractors change.
-When a legacy or external binary provides no valid receipt, return `unknown`
-rather than inventing an identity. Keep the top-level JSON-object guard before
-annotating a score response. The red caps use dated CPU 15 / CUDA 14 / SYCL 24
-payloads only to prove identity is independent of count.
+The Python and Go MCP auto-dispatch responses must preserve the concrete
+top-level `backend_used` receipt written by the fork's `vmaf` CLI. Do not
+restore metric-count backend guessing: CPU/CUDA/SYCL counts move as extractors
+change. When a legacy or external binary provides no valid receipt, return
+`unknown` rather than inventing an identity. Keep each top-level JSON-object
+guard before annotating a score response. The red caps use dated CPU 15 / CUDA
+14 / SYCL 24 payloads only to prove identity is independent of count. The Go
+direct-cgo path is separate and retains its explicit `cpu (direct cgo)` receipt.
