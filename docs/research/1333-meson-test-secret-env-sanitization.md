@@ -45,11 +45,14 @@ values. The repository's Make targets, CI workflows, preflight path, setup guida
 scaffold, and Zed task now enter Meson through this boundary.
 
 The static contract inventories every supported wrapper call and scans executable entry-point
-scopes for direct `meson test`, `ninja ... test`, and `meson compile ... test` forms. Mutation
-coverage replaces every inventoried call, one at a time, and proves each bypass is rejected. A
-new raw entry-point fixture is rejected as well. A separate assertion compiles the checked-in
-pre-commit path filter and proves that every scanned entry-point source, every Meson declaration,
-and representative future files trigger the contract.
+scopes for direct `meson test`, `ninja ... test`, and `meson compile ... test` forms. It
+recursively includes nested `Makefile` paths, joins backslash continuations, and checks each
+separator-delimited command after removing only the wrapper-path token. Mutation coverage replaces
+every inventoried call, one at a time, and proves each bypass is rejected. Adversarial fixtures
+also reject a wrapper followed by `; meson test`, a backslash-split raw Meson command, and an
+unsafe nested Makefile. A separate assertion compiles the checked-in pre-commit path filter and
+proves that every scanned entry-point source, every Meson declaration, and representative future
+files trigger the contract.
 
 This boundary cannot intercept an arbitrary command typed outside repository wrappers. Direct
 raw Meson or Ninja test-target invocation remains an explicit unsupported bypass and is stated in
@@ -109,14 +112,16 @@ temporary directory from this synthetic environment; no caller log or credential
 
 ## Verification evidence
 
-`python3 -m unittest core.test.test_meson_secret_env_sanitization` exercises sixteen cases:
+`python3 -m unittest core.test.test_meson_secret_env_sanitization` exercises nineteen cases:
 
 - exact wrapper/Meson credential-inventory agreement;
 - deletion without credential-value reads;
 - live supported-entry-point inventory and direct-call scan;
 - pre-commit trigger coverage for every scanned source and Meson declaration scope;
 - per-call mutation rejection across every supported entry point;
-- rejection of a newly added raw entry point;
+- rejection of a newly added raw entry point, a raw sibling after the wrapper, and a
+  backslash-split raw invocation;
+- recursive nested-Makefile inventory aligned with the pre-commit path filter;
 - the live tree's single-setup/twelve-unset contract;
 - mutation rejection for an alternate setup;
 - mutation rejection for explicit reintroduction of each of the twelve names;

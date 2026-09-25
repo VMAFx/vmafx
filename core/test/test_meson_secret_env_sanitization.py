@@ -56,7 +56,7 @@ SAFE_HOST_ENV_VARS = (
 )
 
 ENTRYPOINT_GLOBS = (
-    "Makefile",
+    "**/Makefile",
     "*.py",
     "*.sh",
     "**/tox.ini",
@@ -126,13 +126,75 @@ def _is_active_entrypoint_line(line: str) -> bool:
     return bool(line.strip()) and not line.lstrip().startswith("#")
 
 
+def _logical_entrypoint_lines(content: str) -> list[tuple[int, str]]:
+    """Join shell continuations while retaining the first physical line number."""
+    logical_lines: list[tuple[int, str]] = []
+    pending = ""
+    start_line = 1
+    for line_number, line in enumerate(content.splitlines(), 1):
+        if not pending:
+            start_line = line_number
+        if line.endswith("\\"):
+            pending += f"{line[:-1]} "
+            continue
+        logical_lines.append((start_line, f"{pending}{line}"))
+        pending = ""
+    if pending:
+        logical_lines.append((start_line, pending))
+    return logical_lines
+
+
+def _split_entrypoint_commands(line: str) -> list[str]:
+    """Split shell-style command separators without splitting quoted text."""
+    commands: list[str] = []
+    command_start = 0
+    quote = ""
+    escaped = False
+    index = 0
+    while index < len(line):
+        character = line[index]
+        if escaped:
+            escaped = False
+        elif character == "\\":
+            escaped = True
+        elif quote:
+            if character == quote:
+                quote = ""
+        elif character in "'\"":
+            quote = character
+        elif character in ";&|":
+            command = line[command_start:index].strip()
+            if command:
+                commands.append(command)
+            while index + 1 < len(line) and line[index + 1] in ";&|":
+                index += 1
+            command_start = index + 1
+        index += 1
+    command = line[command_start:].strip()
+    if command:
+        commands.append(command)
+    return commands
+
+
+def _entrypoint_commands(content: str) -> list[tuple[int, str]]:
+    """Return active logical commands with source line numbers."""
+    return [
+        (line_number, command)
+        for line_number, line in _logical_entrypoint_lines(content)
+        if _is_active_entrypoint_line(line)
+        for command in _split_entrypoint_commands(line)
+    ]
+
+
 def _read_entrypoint_sources() -> dict[Path, str]:
     sources: dict[Path, str] = {}
     for pattern in ENTRYPOINT_GLOBS:
         for absolute_path in ROOT.glob(pattern):
             if absolute_path.is_file():
                 relative_path = absolute_path.relative_to(ROOT)
-                if "tests" in relative_path.parts or relative_path.name.startswith("test_"):
+                if relative_path.name != "Makefile" and (
+                    "tests" in relative_path.parts or relative_path.name.startswith("test_")
+                ):
                     continue
                 sources[relative_path] = absolute_path.read_text(encoding="utf-8")
     return sources
@@ -140,10 +202,11 @@ def _read_entrypoint_sources() -> dict[Path, str]:
 
 def _raw_entrypoint_errors(path: Path, content: str) -> list[str]:
     errors: list[str] = []
-    for line_number, line in enumerate(content.splitlines(), 1):
-        if not _is_active_entrypoint_line(line) or RUNNER_SCRIPT_BASENAME in line:
-            continue
-        if RAW_MESON_TEST.search(line) or RAW_NINJA_TEST.search(line):
+    for line_number, command in _entrypoint_commands(content):
+        command_without_runner = RUNNER_PATH.sub(" ", command)
+        if RAW_MESON_TEST.search(command_without_runner) or RAW_NINJA_TEST.search(
+            command_without_runner
+        ):
             errors.append(f"raw Meson test entry point at {path}:{line_number}")
     return errors
 
@@ -155,9 +218,10 @@ def _entrypoint_contract_errors(sources: dict[Path, str]) -> list[str]:
     for path, content in sources.items():
         if path == MESON_TEST_RUNNER.relative_to(ROOT):
             continue
-        active_lines = [line for line in content.splitlines() if _is_active_entrypoint_line(line)]
         runner_paths = tuple(
-            match.group("path") for line in active_lines for match in RUNNER_PATH.finditer(line)
+            match.group("path")
+            for _, command in _entrypoint_commands(content)
+            for match in RUNNER_PATH.finditer(command)
         )
         if runner_paths:
             actual_calls[path] = runner_paths
@@ -289,9 +353,7 @@ def _probe_child_source() -> str:
 def _sanitizing_setup() -> str:
     unset_lines = "\n".join(f"e.unset('{name}')" for name in SECRET_ENV_VARS)
     return (
-        "e = environment()\n"
-        f"{unset_lines}\n"
-        "add_test_setup('default', env : e, is_default : true)\n"
+        f"e = environment()\n{unset_lines}\nadd_test_setup('default', env : e, is_default : true)\n"
     )
 
 
@@ -452,6 +514,26 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
                 self.assertTrue(
                     any("raw Meson test entry point" in error for error in errors), errors
                 )
+
+    def test_entrypoint_contract_rejects_raw_command_after_runner(self) -> None:
+        content = "python3 scripts/ci/run_meson_test.py -- -C build; meson test -C build\n"
+        errors = _raw_entrypoint_errors(Path("scripts/unsafe.sh"), content)
+        self.assertTrue(any("raw Meson test entry point" in error for error in errors), errors)
+
+    def test_entrypoint_contract_rejects_backslash_split_raw_meson(self) -> None:
+        content = "meson \\" + "\n    test -C build\n"
+        errors = _raw_entrypoint_errors(Path("package/Makefile"), content)
+        self.assertTrue(any("raw Meson test entry point" in error for error in errors), errors)
+
+    def test_entrypoint_inventory_recurses_into_nested_makefiles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            nested_makefile = tmppath / "package" / "tests" / "Makefile"
+            nested_makefile.parent.mkdir(parents=True)
+            nested_makefile.write_text("meson test -C build\n", encoding="utf-8")
+            with mock.patch(f"{__name__}.ROOT", tmppath):
+                sources = _read_entrypoint_sources()
+        self.assertIn(Path("package/tests/Makefile"), sources)
 
     def test_static_meson_contract_sanitizes_every_declared_test(self) -> None:
         """Current production declarations have one non-bypassable default setup."""

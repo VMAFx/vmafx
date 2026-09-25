@@ -16,9 +16,12 @@ upstream Netflix/vmaf has no equivalent tree, so rebase risk =
 Meson; membership and deletion may not read, retain, or print values. Keep every supported
 Make, CI, preflight, bisection, setup-guidance, and Zed test entry point on this wrapper.
 `core/test/test_meson_secret_env_sanitization.py` owns the exact caller inventory, mutation
-coverage for each call, direct Meson/Ninja bypass scan, and disposable both-log RED/GREEN
-proof. Preserve that contract with the wrapper and `core/meson.build` default setup. Direct
-raw external Meson/Ninja test-target commands remain outside the bounded guarantee.
+coverage for each call, recursive nested-Makefile discovery, logical-command Meson/Ninja bypass
+scan, and disposable both-log RED/GREEN proof. The scanner must join backslash continuations and
+evaluate every separator-delimited command; a wrapper token may exempt only that command, never
+a sibling raw test command. Preserve that contract with the wrapper and `core/meson.build`
+default setup. Direct raw external Meson/Ninja test-target commands remain outside the bounded
+guarantee.
 
 ### Source ADR citation provenance (ADR-1311)
 

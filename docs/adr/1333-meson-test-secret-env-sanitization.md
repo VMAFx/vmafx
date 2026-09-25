@@ -56,11 +56,13 @@ source-contract boundaries:
    forbidden credential name. This prevents tracked alternate setups and explicit per-test
    restoration from silently bypassing the default. It also inventories every wrapper call
    in the Makefile, CI workflows, preflight and setup scripts, bisection scaffold, and Zed
-   task. It scans those executable entry-point scopes for raw `meson test`, `ninja ... test`,
-   and `meson compile ... test` bypasses. Mutation tests replace each inventoried wrapper call
-   in turn and require the contract to fail. The pre-commit hook's path filter covers every
-   scanned source scope and every Meson declaration, including representative future files,
-   so adding a bypass in a newly tracked supported entry point runs the contract.
+   task. It recursively inventories nested `Makefile` paths and scans logical commands for raw
+   `meson test`, `ninja ... test`, and `meson compile ... test` bypasses, including commands
+   split by backslash continuations or placed beside the wrapper after a shell separator. Mutation
+   tests replace each inventoried wrapper call in turn and require the contract to fail. The
+   pre-commit hook's path filter covers every scanned source scope and every Meson declaration,
+   including representative future files, so adding a bypass in a newly tracked supported entry
+   point runs the contract.
 4. **Minimal synthetic regression environment**: subprocess probes copy only the small
    platform-runtime allowlist `PATH`, `PATHEXT`, `SYSTEMROOT`, `SystemRoot`, `WINDIR`, and
    `COMSPEC` when present. Home, temporary-directory, locale, user, ordinary-control, and
