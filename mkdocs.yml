@@ -1437,6 +1437,7 @@ nav:
         - "ADR-1315: doxygen-public-api-fail-closed": adr/1315-doxygen-public-api-fail-closed.md
         - "ADR-1316: gpu-option-value-capability-fallback": adr/1316-gpu-option-value-capability-fallback.md
         - "ADR-1319: fail-closed-self-hosted-gpu-admission": adr/1319-fail-closed-self-hosted-gpu-admission.md
+        - "ADR-1324: gpu-float-ssim-auto-scale-fallback": adr/1324-gpu-float-ssim-auto-scale-fallback.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

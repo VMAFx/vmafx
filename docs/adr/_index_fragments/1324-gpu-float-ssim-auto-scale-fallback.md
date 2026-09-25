@@ -1,0 +1,1 @@
+| [ADR-1324](1324-gpu-float-ssim-auto-scale-fallback.md) | Resolves dimension-dependent GPU float-SSIM auto-scale capability before backend initialization and falls model-selected contexts back to CPU. | Accepted | gpu, feature-options, dispatch, correctness, testing |

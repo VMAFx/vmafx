@@ -76,6 +76,16 @@ test('test_gpu_option_value_capability_contract',
     timeout : 30,
 )
 
+# A default scale=0 is only executable by the GPU float-SSIM twins while the
+# CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
+# and all four backend declarations without requiring an accelerator.
+test('test_gpu_float_ssim_auto_scale_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_float_ssim_auto_scale_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048: these diagnostics were standardized once, then silently restored
 # from stale source. Keep their line framing and severity prefix stable.
 test('test_vmaf_log_callsite_format',

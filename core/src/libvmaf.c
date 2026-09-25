@@ -1632,6 +1632,79 @@ static int fex_ctx_create_owned_options(VmafFeatureExtractorContext **ctx,
     return err;
 }
 
+static int create_context_fallback(VmafContext *vmaf, const VmafFeatureExtractorContext *ctx,
+                                   VmafFeatureExtractorContext **replacement)
+{
+    VmafFeatureExtractor *fallback =
+        vmaf_get_feature_extractor_by_name(ctx->fex->context_fallback_name);
+    if (!fallback)
+        return -EINVAL;
+
+    VmafDictionary *options = NULL;
+    int err = 0;
+    if (ctx->opts_dict) {
+        err = fex_options_copy(ctx->opts_dict, &options);
+        if (err)
+            return err;
+    }
+
+    err = fex_ctx_create_owned_options(replacement, fallback, options);
+    if (err)
+        return err;
+    fex_ctx_bind_backends(*replacement, vmaf);
+    return 0;
+}
+
+/* ADR-1324: replace a model-selected extractor that cannot execute the first frame's
+ * dimensions with its declared CPU twin. Direct vmaf_use_feature() contexts
+ * never set allow_context_fallback and retain their backend init errors. */
+static int resolve_context_fallback(VmafContext *vmaf, VmafFeatureExtractorContext **ctx_slot)
+{
+    VmafFeatureExtractorContext *ctx = *ctx_slot;
+    if (!ctx->allow_context_fallback || ctx->is_initialized || !ctx->fex->context_check)
+        return 0;
+
+    const int check_err =
+        ctx->fex->context_check(ctx->fex, vmaf->pic_params.pix_fmt, vmaf->pic_params.bpc,
+                                vmaf->pic_params.w, vmaf->pic_params.h);
+    if (!check_err)
+        return 0;
+    if (check_err != -ENOTSUP)
+        return check_err;
+    if (!ctx->fex->context_fallback_name)
+        return -EINVAL;
+
+    VmafFeatureExtractorContext *replacement = NULL;
+    int err = create_context_fallback(vmaf, ctx, &replacement);
+    if (err)
+        return err;
+
+    vmaf_log(VMAF_LOG_LEVEL_INFO,
+             "feature extractor '%s' cannot honour %ux%u; computing '%s' on the CPU\n",
+             ctx->fex->name, vmaf->pic_params.w, vmaf->pic_params.h, replacement->fex->name);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    if (err) {
+        (void)vmaf_feature_extractor_context_destroy(replacement);
+        return err;
+    }
+    *ctx_slot = replacement;
+#ifdef HAVE_CUDA
+    vmaf->rfe_hw_flags_dirty = true;
+#endif
+    return 0;
+}
+
+static int resolve_context_fallbacks(VmafContext *vmaf)
+{
+    RegisteredFeatureExtractors *rfe = &vmaf->registered_feature_extractors;
+    for (unsigned i = 0; i < rfe->cnt; i++) {
+        const int err = resolve_context_fallback(vmaf, &rfe->fex_ctx[i]);
+        if (err)
+            return err;
+    }
+    return 0;
+}
+
 int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDictionary *opts_dict)
 {
     if (!vmaf)
@@ -1789,6 +1862,7 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
         err = fex_ctx_create_owned_options(&fex_ctx, fex, d);
         if (err)
             return err;
+        fex_ctx->allow_context_fallback = true;
         fex_ctx_bind_backends(fex_ctx, vmaf);
         err = feature_extractor_vector_append(rfe, fex_ctx, 0);
         if (err) {
@@ -3019,11 +3093,14 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
     int err = read_pictures_validate_and_prep(vmaf, ref, dist, index);
     if (err)
         return err;
+    ReadPicturesFrame fr = {.ref = ref, .dist = dist};
+    err = resolve_context_fallbacks(vmaf);
+    if (err)
+        return read_pictures_frame_cleanup(vmaf, &fr, err);
     /* Increment only after successful validation so a retry on transient
      * -ENOMEM does not double-count the frame and corrupt FPS / end-index. */
     vmaf->pic_cnt++;
 
-    ReadPicturesFrame fr = {.ref = ref, .dist = dist};
 #ifdef HAVE_CUDA
     err = read_pictures_frame_translate(vmaf, &fr);
     if (err)

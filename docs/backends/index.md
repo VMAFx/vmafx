@@ -152,12 +152,22 @@ the decimation boundary and is not a multiple of the kernel block width. When
 adding a parity test, add it to the large-fixture list in
 `core/test/meson.build` too.
 
-Note also that `float_ssim_cuda` is a v1 **scale=1-only** extractor: it rejects
-any resolution whose auto-detected decimation factor is not 1 — i.e.
-`min(w, h) >= 384`, which includes every common broadcast resolution — with
-`-EINVAL`. The CPU `float_ssim` has no such limit and decimates instead, so
-pinning `scale=1` on the GPU while leaving the CPU on `auto` compares two
-different quantities rather than two backends.
+All four GPU `float_ssim` twins remain v1 **scale=1-only** extractors. For
+automatic model dispatch through the host-picture API, libvmaf now evaluates
+the first picture before backend initialization: auto-scale `1` stays on the
+selected CUDA, SYCL, HIP or Metal twin, while a resolved value above `1`
+replaces only that context with CPU `float_ssim` and preserves its options
+([ADR-1324](../adr/1324-gpu-float-ssim-auto-scale-fallback.md)). This makes
+common broadcast dimensions complete without pretending the GPU implements
+decimation.
+
+Explicitly naming `float_ssim_{cuda,sycl,hip,metal}` retains the direct
+capability contract: auto at `min(w, h) >= 384` returns `-EINVAL`, and
+`scale=1` opts into full-resolution GPU SSIM. Pinning `scale=1` on the GPU
+while leaving the CPU on `auto` still compares different quantities rather
+than two backends. The SYCL device-buffer-only `vmaf_read_pictures_sycl()`
+path cannot run a CPU extractor and therefore also retains its scale-1-only
+contract until SYCL decimation is implemented.
 
 ## Related
 

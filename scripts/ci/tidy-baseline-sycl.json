@@ -353,7 +353,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 951,
+  "total_warnings": 947,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -461,7 +461,7 @@
     "core/test/test_context.c": 14,
     "core/test/test_cpu.c": 2,
     "core/test/test_dict.cpp": 33,
-    "core/test/test_feature_collector.c": 16,
+    "core/test/test_feature_collector.c": 12,
     "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_integer_cambi_sycl.c": 2,
     "core/test/test_locale_handling.c": 21,
@@ -484,5 +484,22 @@
     "core/tools/vmaf_bench.c": 2,
     "core/tools/vmaf_vpl.c": 21
   },
-  "nolint_uncited": {}
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/test/test_feature_collector.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_feature_collector.c": {
+          "warnings": [
+            16,
+            12
+          ]
+        }
+      },
+      "previous_baseline_sha256": "549c20477399077134b404c4a9c64d39886ed3e7cc3a031a2d0aa28245bc3aaa"
+    }
+  ]
 }

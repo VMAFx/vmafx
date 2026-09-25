@@ -37,8 +37,9 @@
  *  is undefined and `init()` returns -ENOSYS — same scaffold contract as
  *  the pre-runtime posture (registered, runtime not ready).
  *
- *  v1: scale=1 only — same constraint as ssim_vulkan / ssim_cuda. The
- *  auto-detect path rejects scale>1 with -EINVAL at init.
+ *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
+ *  back to CPU before init when auto resolves above 1; direct requests keep
+ *  the -EINVAL capability error.
  */
 
 #include <errno.h>
@@ -155,7 +156,8 @@ static const VmafOption options[] = {
     {
         .name = "scale",
         .help = "decimation scale factor (0=auto, 1=no downscaling). "
-                "v1: GPU path requires scale=1; auto-detect rejects scale>1 with -EINVAL.",
+                "v1: direct GPU use requires scale=1; model dispatch falls back to CPU "
+                "when auto resolves above 1.",
         .offset = offsetof(SsimStateHip, scale_override),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = 0,
@@ -185,6 +187,16 @@ static int ssim_hip_compute_scale(unsigned w, unsigned h, int override_val)
         return override_val;
     int scaled = ssim_hip_round_to_int((float)ssim_hip_min_int((int)w, (int)h) / 256.0f);
     return scaled < 1 ? 1 : scaled;
+}
+
+/* ADR-1324: dimensions are unavailable to the earlier option-value gate. */
+static int check_context_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                             unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    const SsimStateHip *s = fex->priv;
+    return ssim_hip_compute_scale(w, h, s->scale_override) == 1 ? 0 : -ENOTSUP;
 }
 
 /* Extracted to keep init_fex_hip under the 60-line readability-function-size
@@ -584,6 +596,8 @@ VmafFeatureExtractor vmaf_fex_float_ssim_hip = {
             .min_useful_frame_area = 1920U * 1080U,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
+    .context_check = check_context_hip,
+    .context_fallback_name = "float_ssim",
 };
 
 /* NOLINTEND(modernize-use-nullptr) */

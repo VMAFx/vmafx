@@ -18,8 +18,9 @@
  *  Mirrors the psnr_cuda submit/collect scaffolding and the
  *  ciede_cuda per-block-partials precision pattern.
  *
- *  v1: scale=1 only — same constraint as ssim_vulkan. Auto-
- *  decimation is rejected at init with -EINVAL.
+ *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
+ *  back to CPU before init when auto resolves above 1; direct requests keep
+ *  the -EINVAL capability error.
  *
  *  enable_chroma: mirrors CPU integer_ssim.c PR #939 option.
  *  Default false (luma-only). When true, n_planes follows pix_fmt
@@ -122,11 +123,22 @@ static int compute_scale(unsigned w, unsigned h, int override)
     return scaled < 1 ? 1 : scaled;
 }
 
+/* ADR-1324: dimensions are unavailable to the earlier option-value gate. */
+static int check_context_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                              unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    const SsimStateCuda *s = fex->priv;
+    return compute_scale(w, h, s->scale_override) == 1 ? 0 : -ENOTSUP;
+}
+
 static const VmafOption options[] = {
     {
         .name = "scale",
         .help = "decimation scale factor (0=auto, 1=no downscaling). "
-                "v1: GPU path requires scale=1; auto-detect rejects scale>1 with -EINVAL.",
+                "v1: direct GPU use requires scale=1; model dispatch falls back to CPU "
+                "when auto resolves above 1.",
         .offset = offsetof(SsimStateCuda, scale_override),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = 0,
@@ -505,6 +517,8 @@ VmafFeatureExtractor vmaf_fex_float_ssim_cuda = {
             .min_useful_frame_area = 1920U * 1080U,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
+    .context_check = check_context_cuda,
+    .context_fallback_name = "float_ssim",
 };
 
 /* NOLINTEND(modernize-use-nullptr) */

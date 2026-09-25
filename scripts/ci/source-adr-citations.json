@@ -7443,6 +7443,17 @@
         "scripts/ci/tests/test_hiss_replay_contract.py": 1
       },
       "target": "1319-fail-closed-self-hosted-gpu-admission.md"
+    },
+    "1324": {
+      "sites": {
+        "core/src/feature/cuda/integer_ssim_cuda.c": 2,
+        "core/src/feature/feature_extractor.h": 2,
+        "core/src/feature/hip/float_ssim_hip.c": 2,
+        "core/src/feature/metal/float_ssim_metal.mm": 2,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
+        "core/src/libvmaf.c": 1
+      },
+      "target": "1324-gpu-float-ssim-auto-scale-fallback.md"
     }
   },
   "retired": {

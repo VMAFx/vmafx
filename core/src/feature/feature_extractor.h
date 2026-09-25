@@ -176,6 +176,17 @@ typedef struct VmafFeatureExtractor {
      */
     VmafFeatureCharacteristics chars;
 
+    /**
+     * Optional first-frame capability check. The callback runs after options
+     * have been parsed but before backend initialization, when actual picture
+     * dimensions are known. Return -ENOTSUP to request the named CPU fallback
+     * for a model-selected context; direct extractor selection ignores this
+     * hook and retains the backend init error contract (ADR-1324).
+     */
+    int (*context_check)(struct VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                         unsigned bpc, unsigned w, unsigned h);
+    const char *context_fallback_name;
+
 } VmafFeatureExtractor;
 
 #ifdef __cplusplus
@@ -231,8 +242,9 @@ typedef struct VmafFeatureExtractorContext {
     bool is_initialized, is_closed;
     VmafDictionary *opts_dict;
     VmafFeatureExtractor *fex;
-    bool gpu_pending;           ///< Has pending GPU submit awaiting collect
-    unsigned gpu_pending_index; ///< Frame index of pending GPU work
+    bool allow_context_fallback; ///< Model dispatch may replace an unsupported GPU twin (ADR-1324)
+    bool gpu_pending;            ///< Has pending GPU submit awaiting collect
+    unsigned gpu_pending_index;  ///< Frame index of pending GPU work
 } VmafFeatureExtractorContext;
 
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,

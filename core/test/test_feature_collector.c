@@ -122,6 +122,94 @@ static char *test_model_option_invalid_stays_parser_owned(void)
                   !strcmp(result.selected_name, "mock_float_vif_gpu"));
     return NULL;
 }
+
+typedef struct {
+    int scale;
+} MockContextScaleState;
+
+static int mock_context_scale_check(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                                    unsigned bpc, unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    const MockContextScaleState *s = fex->priv;
+    const int scale = s->scale > 0 ? s->scale : (int)((float)(w < h ? w : h) / 256.0f + 0.5f);
+    return (scale < 2) ? 0 : -ENOTSUP;
+}
+
+static const VmafOption mock_context_scale_options[] = {
+    {.name = "scale",
+     .type = VMAF_OPT_TYPE_INT,
+     .default_val.i = 0,
+     .min = 0,
+     .max = 10,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {0},
+};
+
+static bool context_fallback_case_matches(unsigned w, unsigned h, const char *scale,
+                                          bool allow_fallback, bool expect_cpu)
+{
+    VmafContext *vmaf = NULL;
+    if (vmaf_init(&vmaf, (VmafConfiguration){0}))
+        return false;
+
+    VmafDictionary *options = NULL;
+    int err = vmaf_dictionary_set(&options, "scale", scale, 0);
+    VmafFeatureExtractor mock_gpu = {
+        .name = "mock_float_ssim_gpu",
+        .options = mock_context_scale_options,
+        .priv_size = sizeof(MockContextScaleState),
+        .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
+        .context_check = mock_context_scale_check,
+        .context_fallback_name = "float_ssim",
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    if (!err)
+        err = vmaf_feature_extractor_context_create(&ctx, &mock_gpu, options);
+    if (err) {
+        (void)vmaf_dictionary_free(&options);
+        (void)vmaf_close(vmaf);
+        return false;
+    }
+
+    ctx->allow_context_fallback = allow_fallback;
+    err = feature_extractor_vector_append(&vmaf->registered_feature_extractors, ctx, 0);
+    if (err) {
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        (void)vmaf_close(vmaf);
+        return false;
+    }
+    vmaf->pic_params.w = w;
+    vmaf->pic_params.h = h;
+    vmaf->pic_params.bpc = 8;
+    vmaf->pic_params.pix_fmt = VMAF_PIX_FMT_YUV420P;
+    err = resolve_context_fallbacks(vmaf);
+
+    ctx = vmaf->registered_feature_extractors.fex_ctx[0];
+    const bool used_cpu = !strcmp(ctx->fex->name, "float_ssim");
+    const VmafDictionaryEntry *scale_entry = vmaf_dictionary_get(&ctx->opts_dict, "scale", 0);
+    const bool option_preserved = scale_entry && !strcmp(scale_entry->val, scale);
+    err |= vmaf_close(vmaf);
+    return !err && used_cpu == expect_cpu && option_preserved;
+}
+
+static char *test_context_fallback_threshold_and_direct_contract(void)
+{
+    mu_assert("320x240 auto-scale must stay on the selected GPU twin",
+              context_fallback_case_matches(320, 240, "0", true, false));
+    mu_assert("383x383 auto-scale must stay on the selected GPU twin",
+              context_fallback_case_matches(383, 383, "0", true, false));
+    mu_assert("384x384 auto-scale must fall back to CPU float_ssim",
+              context_fallback_case_matches(384, 384, "0", true, true));
+    mu_assert("960x540 auto-scale must fall back to CPU float_ssim",
+              context_fallback_case_matches(960, 540, "0", true, true));
+    mu_assert("explicit scale=1 must stay on the selected GPU twin",
+              context_fallback_case_matches(960, 540, "1", true, false));
+    mu_assert("direct extractor selection must retain its backend contract",
+              context_fallback_case_matches(960, 540, "0", false, false));
+    return NULL;
+}
 /* NOLINTEND(modernize-use-nullptr) */
 
 static int load_three_test_models(VmafModel *models[3], const char *const names[3])
@@ -361,6 +449,7 @@ static char *run_model_option_capability_tests(void)
     mu_run_test(test_model_option_maximum_falls_back);
     mu_run_test(test_model_option_default_preserves_gpu);
     mu_run_test(test_model_option_invalid_stays_parser_owned);
+    mu_run_test(test_context_fallback_threshold_and_direct_contract);
     return NULL; /* NOLINT(modernize-use-nullptr) -- ADR-1138: MSVC C23 portability. */
 }
 
