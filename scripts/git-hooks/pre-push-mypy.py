@@ -17,22 +17,22 @@ Three properties this wrapper owes its callers, all learned from failures:
   be pushed at all. Those files get their own run with
   `--explicit-package-bases`, which names them from the `mypy_path` base alone,
   matching the module name they have at runtime.
-* The findings a branch inherits are not its bug. `mypy ai/ scripts/` in CI is
-  advisory by design (`|| echo "mypy advisory only on first run"` in
-  `.github/workflows/lint-and-format.yml`) because the stub coverage of numpy,
-  pandas and torch is uneven, and how much of it a checkout sees depends on
-  which of those packages happen to be installed. A blocking local hook that
-  reported every inherited finding failed on files the branch never touched. So
-  the same files are checked at the branch's merge base and only findings that
-  are not there too are reported. Line numbers are left out of the comparison,
-  because an edit above a finding shifts it without changing it.
+* The findings a branch inherits are not its bug. The former raw
+  `mypy ai/ scripts/` CI run was advisory because the stub coverage of NumPy,
+  pandas, and PyTorch is uneven, and how much of it a checkout sees depends on
+  which packages happen to be installed. A blocking gate that reported every
+  inherited finding would fail on files the branch never touched. The same
+  files are therefore checked at the selected merge base and only findings
+  absent there are reported. Line numbers are left out of the comparison,
+  because an edit above a finding shifts it without changing it. Required CI
+  invokes this same gate and propagates its result.
 * Installed third-party stubs are not a stable part of the repository's type
   contract. Their presence and supported Python syntax vary by checkout; for
   example, a newer NumPy stub can use syntax newer than this repository's
   configured mypy target and make the checker exit before reporting a source
   finding. Runs therefore exclude site packages and suppress only the missing
   imports that exclusion creates. Repository and standard-library types remain
-  checked, while hosted CI retains the advisory dependency-rich run.
+  checked under the same hash-locked toolchain locally and in hosted CI.
 """
 
 from __future__ import annotations
@@ -61,6 +61,7 @@ PACKAGE_BASE_PREFIX = "ai/src/"
 BASELINE_DIR_PREFIX = "vmafx-mypy-baseline-"
 ISOLATION_ARGS = ("--no-site-packages", "--disable-error-code=import-not-found")
 CONFIG_FILES = ("pyproject.toml", "mypy.ini", ".mypy.ini", "setup.cfg")
+BASE_REF_ENV = "VMAFX_MYPY_BASE_REF"
 
 
 def git(*args: str) -> str:
@@ -315,14 +316,20 @@ def main() -> int:
         root = Path(git("rev-parse", "--show-toplevel").strip()).resolve()
         head = git("rev-parse", "--verify", "HEAD^{commit}").strip()
         outgoing_head(head)
-        base = git("merge-base", "origin/master", head).strip()
+        base_ref = os.environ.get(BASE_REF_ENV, "origin/master").strip()
+        if not base_ref:
+            raise RuntimeError(f"{BASE_REF_ENV} must name a commit when set")
+        base_tip = git(
+            "rev-parse", "--verify", "--end-of-options", f"{base_ref}^{{commit}}"
+        ).strip()
+        base = git("merge-base", base_tip, head).strip()
         selected = selected_paths(base, head, root)
         verify_paths(selected, root)
         executable = shutil.which("mypy")
         if executable is None:
             raise RuntimeError("mypy is required; install the local type-checking toolchain")
         if not selected:
-            print("mypy: no ai/scripts Python files differ from the branch's master merge base")
+            print("mypy: no ai/scripts Python files differ from the selected merge base")
             return 0
         status, output = run_mypy(executable, selected, root)
         current = checked_fingerprints(status, output, "head")

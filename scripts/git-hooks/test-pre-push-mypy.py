@@ -389,6 +389,33 @@ class MypyScope(unittest.TestCase):
         self.assertIn("no ai/scripts Python files", result.stdout)
         self.assertFalse(self.receipt.exists())
 
+    def test_explicit_ci_base_preserves_push_delta_inheritance(self) -> None:
+        """Hosted push checks may compare with event.before without changing local defaults."""
+        self.write("scripts/owned.py", 'inherited: int = "debt"  # BAD\n')
+        self.commit("push range starts with inherited finding")
+        push_base = self.git("rev-parse", "HEAD")
+        self.write(
+            "scripts/owned.py",
+            'inherited: int = "debt"  # BAD\nclean: int = 1\n',
+        )
+        self.commit("push range keeps finding and adds clean line")
+
+        default_result = self.run_hook()
+        self.assertEqual(
+            default_result.returncode, 1, default_result.stdout + default_result.stderr
+        )
+
+        self.environment["VMAFX_MYPY_BASE_REF"] = push_base
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 inherited from the merge base, not reported", result.stdout)
+
+    def test_invalid_explicit_ci_base_fails_closed(self) -> None:
+        self.environment["VMAFX_MYPY_BASE_REF"] = "missing-ci-base"
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("mypy scope check failed", result.stderr)
+
     def test_inherited_finding_is_not_the_branch_bug(self) -> None:
         """Editing a file that already had a finding must not fail the push."""
         self.write("scripts/debt.py", 'unchanged: int = "debt"  # BAD\nadded: int = 1\n')

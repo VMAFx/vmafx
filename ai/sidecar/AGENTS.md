@@ -41,7 +41,9 @@ Implements vmafx-node online training sidecar (ADR-0781).
    capacity-deferred sample remains unaccepted when that retry fails, so the
    `ok: false`, `retryable: true` ACK makes the Go client requeue it without
    incrementing `delivered`. Run the complete `ai/sidecar/tests` suite with
-   warnings promoted to errors.
+   warnings promoted to errors. Parameterized tests use the typed
+   `_parametrize()` adapter so pytest's untyped marker does not erase their
+   signatures under the required merge-base mypy gate.
 
 4. **Replay and pending capacity defaults** — both are 10 000 samples. The
    executable source (`_REPLAY_BUFFER_CAPACITY`, `_PENDING_CAPACITY`), focused

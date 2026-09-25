@@ -1,0 +1,1 @@
+- Make the required Python Lint job reuse the hash-locked merge-base mypy gate, check the exact master push range, and propagate new type errors instead of converting every mypy failure into success.

@@ -729,9 +729,9 @@ jobs:
     # T7-CI-DEDUP — mypy-only. Ruff/Black already run in the
     # `pre-commit` job above (over `--all-files`), so duplicating them
     # here just doubled the maintenance surface (two pip-pin sources of
-    # truth) without catching anything new. mypy stays because no
-    # pre-commit hook runs it; advisory exit because numpy/torch stubs
-    # are gappy on first run.
+    # truth) without catching anything new. Mypy uses the same merge-base
+    # delta gate as pre-push: branch-owned findings block while inherited
+    # debt stays visible without making unrelated changes unmergeable.
     # Job display name kept verbatim so branch-protection's required-
     # status-checks list doesn't need an admin update in lockstep with
     # this dedup. Body is mypy-only per T7-CI-DEDUP; the rename to
@@ -744,13 +744,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          # The mypy delta gate compares HEAD with origin/master and checks
+          # the same files at their merge base in a disposable worktree.
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14.7"
-      - name: Install
+      - name: Install mypy checker
         run: pip install --require-hashes -r requirements/locks/mypy.txt
-      - run: mypy ai/ scripts/ || echo "mypy advisory only on first run"
+      - name: Run merge-base mypy gate
+        env:
+          # Pull requests compare with the fetched target branch. A master
+          # push compares with the exact pre-push tip so post-merge CI still
+          # checks the Python paths that landed instead of selecting nothing.
+          VMAFX_MYPY_BASE_REF: ${{ github.event_name == 'push' && github.event.before || 'origin/master' }}
+        run: python3 scripts/git-hooks/pre-push-mypy.py
 
   registry-validate:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false

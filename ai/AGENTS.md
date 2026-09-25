@@ -377,6 +377,16 @@ model card:
 
 **Rebase-sensitive invariants:**
 
+- **Strict helper annotations are part of the CI boundary (ADR-1310).**
+  `_synthesize_smoke_corpus()` returns exactly three `np.ndarray` values and
+  `_load_ensemble_shapes()` uses parameterized manifest/session containers;
+  keep those return contracts explicit when refactoring the evaluator. Test
+  callbacks added under `ai/tests/` also need typed variadic parameters, and
+  parameterized tests must retain their signatures through a typed marker
+  adapter. The required merge-base mypy gate treats a new bare `dict`/`list`,
+  untyped helper return, untyped decorator, or untyped injected callback as a
+  branch finding.
+
 - **Per-member ONNX I/O contract = v2 two-input shape**: inputs
   `features [N, 6]` (canonical-6, StandardScaler-normalised by
   manifest's `feature_mean` / `feature_std`) + `codec_onehot
