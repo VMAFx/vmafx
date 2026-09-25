@@ -53620,3 +53620,38 @@ ABI is unchanged through `feature_collector.h`.
 `test_feature_collector_source_authority` is the mechanical guard. The deeper
 reasoning and the exact-master compile/object evidence are in
 [Research-2100](research/2100-feature-collector-source-authority-2026-09-24.md).
+## agent/sycl-parity-branch-count — SYCL motion parity test branch budget (T-SYCL-RATCHET-TEST-BRANCH-COUNT-2026-09-22, 2026-09-24)
+
+No rebase impact on production code: changes are strictly test-only in
+`core/test/test_sycl_motion_add_uv_parity.c` and
+`core/test/test_sycl_motion3_parity.c`, along with a contract test in
+`scripts/ci/tests/test_tidy_ratchet.py` and test invariant docs in
+`core/test/AGENTS.md`.
+
+Invariants preserved:
+- Verbatim assertion messages: every `mu_assert` message string is preserved
+  byte-for-byte across all phase helpers.
+- Test execution semantics: exact order of feature setup, frame feeding, EOS
+  handling, score extraction, and context cleanup is preserved.
+- Branch budget: clang-tidy's `readability-function-size` BranchThreshold of 15
+  is strictly respected; each helper and caller stays at <= 12 branches (and
+  <= 9 branches in `test_sycl_motion_add_uv_parity.c`).
+- Line budget: all functions remain under the 60-line HISS-04 cap.
+- Zero baseline debt: `scripts/ci/tidy-baseline-sycl.json` zero baseline is
+  unmodified; 0 warnings generated.
+
+- Research digest: trivial rationale per ADR-0108 / ADR-0141: bounded test-harness
+  refactoring using existing `mu_assert_msg` phase helper idiom; no algorithmic,
+  mathematical, kernel, or production API changes.
+- Decision matrix: helper-based phase decomposition vs ADR-0141 NOLINT suppression
+  citations: phase decomposition chosen because it cures the root cause without
+  suppressions or baseline expansion, keeping the test clean under whole-codebase
+  standards (ADR-1142).
+- AGENTS.md invariant note: documented phase helper pattern for linear test
+  pipelines in `core/test/AGENTS.md`.
+- Reproducer:
+  `python3 scripts/ci/tidy-ratchet.py --build-dir /tmp/build-sycl --only core/test/test_sycl_motion_add_uv_parity.c --only core/test/test_sycl_motion3_parity.c --lane sycl --baseline scripts/ci/tidy-baseline-sycl.json`
+  and running compiled tests on SYCL device:
+  `/tmp/build-sycl/test/test_sycl_motion_add_uv_parity`
+  `/tmp/build-sycl/test/test_sycl_motion3_parity`.
+- Changelog: `changelog.d/fixed/sycl-motion-parity-branch-count.md`.
