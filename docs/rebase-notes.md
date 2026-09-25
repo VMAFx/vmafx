@@ -54145,3 +54145,18 @@ Preserved invariants:
 - SYCL device code remains strictly fp64-free (float32-only).
 - Tests `test_sycl_float_adm_parity` (`_large`) and `test_hip_float_adm_parity` (`_large`) assert `adm_bypass_cm=1` parity within `1e-4` against CPU `float_adm`.
 - Netflix golden assertions untouched.
+
+## agent/fix-metal-ms-ssim-review — Metal MS-SSIM option parity (2026-09-25)
+
+`float_ms_ssim_metal` exposes `enable_db`, `clip_db`, and `enable_chroma` under
+ADR-1334. Preserve its framework-free option-semantics helper, three-plane
+`provided_features`/dispatch entries, per-plane 176x176 pyramid minimum, and
+validation of every L/C/S atom before the weighted product. The Apple parity
+test creates one option dictionary per `vmaf_use_feature()` consumer; sharing
+one between CPU and Metal is a use-after-free because the API consumes it.
+
+- Research: [Research-2110](research/2110-metal-ms-ssim-option-parity-2026-09-25.md).
+- Reproducer: `meson test -C build --no-rebuild test_metal_ms_ssim_option_semantics test_metal_ms_ssim_options_contract`.
+- Apple device gate: `meson test -C build-metal --no-rebuild test_metal_float_ms_ssim_parity`.
+- No public C ABI, CLI, FFmpeg patch, model, snapshot, dependency, benchmark,
+  tuning, training, or Netflix golden assertion changes.

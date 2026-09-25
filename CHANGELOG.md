@@ -5314,7 +5314,7 @@ and `docs/api/perceptual-weight.md`.
   [`docs/development/automated-rule-enforcement.md`](../docs/development/automated-rule-enforcement.md).
 
 
-- **Metal `float_ms_ssim` option and score parity (T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07 / ADR-1221).**
+- **Metal `float_ms_ssim` option and score parity (T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07 / ADR-1334).**
   The Metal `float_ms_ssim` feature extractor (`core/src/feature/metal/float_ms_ssim_metal.mm`)
   now exposes `enable_db`, `clip_db`, and `enable_chroma` alongside `enable_lcs`,
   reaching full parity with the CPU reference and shipped GPU twins. When `enable_chroma`
@@ -5323,9 +5323,10 @@ and `docs/api/perceptual-weight.md`.
   Subsampled chroma requires at least 176x176 dimensions (352x352 luma for YUV420P),
   enforced at init. When `enable_db` and `clip_db` are set, scores are clipped at the
   frame geometry `max_db` ceiling (`ceil(10 * log10(peak² / mse))`). Device-free
-  contract tests (`core/test/test_metal_ms_ssim_options_contract.py`) and updated
-  Metal parity tests (`core/test/test_metal_float_ms_ssim_parity.c`) verify the options,
-  geometry ceiling, and chroma channels.
+  executable option-semantics and mutation contract tests run without a Metal
+  device, while updated Apple-Silicon parity tests verify the complete path.
+  Each runner now owns a fresh option dictionary, and every L/C/S atom is
+  rejected before weighted combination if it is non-finite.
 
 
 - **`vmaf-tune compare` — codec-comparison mode (research-0061

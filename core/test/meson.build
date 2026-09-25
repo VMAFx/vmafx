@@ -172,12 +172,21 @@ test('test_metal_float_motion_contract',
     suite : ['fast'],
 )
 
-# ADR-1221 / T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07: device-free contract
+# ADR-1334 / T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07: device-free contract
 # asserting Metal float_ms_ssim options (enable_db, clip_db, enable_chroma, enable_lcs),
 # max_db derivation, chroma min-dim checks, and shared score emitter wiring parity.
 test('test_metal_ms_ssim_options_contract',
     import('python').find_installation(),
     args : files('test_metal_ms_ssim_options_contract.py'),
+    suite : ['fast'],
+)
+
+test_metal_ms_ssim_option_semantics = executable('test_metal_ms_ssim_option_semantics',
+    ['test.c', 'test_metal_ms_ssim_option_semantics.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies : math_lib,
+)
+test('test_metal_ms_ssim_option_semantics', test_metal_ms_ssim_option_semantics,
     suite : ['fast'],
 )
 

@@ -121,7 +121,7 @@ when conversion happens.
 | `float_ssim.metal`                 | Done (T8-1j) | `float_ssim`, `float_ssim_l`, `float_ssim_c`, `float_ssim_s`           |
 | `float_ssim_metal.mm`              | Done (T8-1j) | host dispatch                                                           |
 | `float_ms_ssim.metal`              | Done (T8-2b) | `float_ms_ssim`, `float_ms_ssim_cb`, `float_ms_ssim_cr` — 5-scale pyramid, Wang weights |
-| `float_ms_ssim_metal.mm`           | Done (T8-2b) | host dispatch (ADR-0490, ADR-1221; enable_db, clip_db, enable_chroma)   |
+| `float_ms_ssim_metal.mm`           | Done (T8-2b) | host dispatch (ADR-0490, ADR-1334; enable_db, clip_db, enable_chroma)   |
 | `integer_ssim.metal`               | Done         | `ssim`                                                                  |
 | `integer_ssim_metal.mm`            | Done         | host dispatch                                                           |
 | `float_vif.metal`                  | Done         | `VMAF_feature_vif_scale0..3_score`, `vif`, `vif_num/den` (+ per-scale) |
@@ -196,17 +196,22 @@ lookups back into the runtime test. See Research-2091.
 
 ## Per-feature option-table sync invariant
 
-- **`float_ms_ssim_metal` exposes full option and score parity.** Following
-  ADR-1221 and the resolution of `T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07`,
+- **`float_ms_ssim_metal` exposes full option and score parity.** ADR-1334
+  extends ADR-1221 to resolve `T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07`:
   `float_ms_ssim_metal` exposes `enable_lcs`, `enable_db`, `clip_db`, and `enable_chroma`.
   Scores are emitted via the shared `vmaf_ms_ssim_emit_scores()` (for luma) and
   `vmaf_ssim_emit_score_named()` (for chroma planes `float_ms_ssim_cb` and
   `float_ms_ssim_cr`), passing `s->enable_db, s->max_db`. When `clip_db` is enabled,
   `s->max_db` is derived from the frame geometry via
-  `ceil(10. * log10(peak * peak / mse))` with `mse = 0.5 / (w * h)`.
+  `ceil(10. * log10(peak * peak / mse))` with `mse = 0.5 / (w * h)`. The
+  framework-free `float_ms_ssim_option_semantics.h` owns active-plane count,
+  ceil-subsampled plane geometry, and the dB ceiling so the exact production
+  semantics execute on hosts without Metal.
   Subsampled chroma requires at least 176x176 dimensions (352x352 luma for YUV420P),
-  enforced at init. `test_metal_ms_ssim_options_contract.py` and
-  `test_nonfinite_collector_wiring.py` lock this contract down device-free.
+  enforced at init. Every L/C/S atom on every active plane is validated before
+  the weighted product; `pow(NaN, 0)` must never erase a failed reduction.
+  `test_metal_ms_ssim_option_semantics`, `test_metal_ms_ssim_options_contract.py`,
+  and `test_nonfinite_collector_wiring.py` lock this contract down device-free.
 - **GPU twins must mirror CPU option table for model-configured
   features.** Model (such as default model `vmaf_v1.0.16_3d0h`) may
   provide feature options. `vmaf_use_features_from_model` then checks

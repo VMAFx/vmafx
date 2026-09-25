@@ -142,7 +142,7 @@ def find_metal_ms_ssim_db_wiring_drift() -> list[str]:
     if METAL_MS_SSIM_OPTIONS_DB_CALL not in compact_source:
         return [
             "metal/float_ms_ssim_metal.mm: the shared emitter must preserve the "
-            "ADR-0490 / ADR-1221 options-aware contract (s->enable_db, s->max_db)"
+            "ADR-0490 / ADR-1334 options-aware contract (s->enable_db, s->max_db)"
         ]
     return []
 

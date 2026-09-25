@@ -1043,3 +1043,4 @@
 1325-integer-adm-barten-fixed-point-normalization
 1322-metal-integer-psnr-enable-chroma-parity
 1326-sycl-motion-uv-fixed-oracle
+1334-metal-ms-ssim-option-parity

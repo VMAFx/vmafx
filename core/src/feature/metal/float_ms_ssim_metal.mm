@@ -4,7 +4,7 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause
  *
- *  float_ms_ssim feature extractor on the Metal backend (T8-2b / ADR-0488).
+ *  float_ms_ssim feature extractor on the Metal backend (T8-2b / ADR-0490 / ADR-1334).
  *  Port of `core/src/feature/float_ms_ssim.c` — same 5-scale pyramid,
  *  same Wang weights, same host accumulation logic, float-precision pixels.
  *
@@ -49,6 +49,7 @@ extern "C" {
 #include "log.h"
 #include "libvmaf/picture.h"
 #include "feature/nonfinite_score.h"
+#include "float_ms_ssim_option_semantics.h"
 
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
@@ -282,10 +283,9 @@ static int alloc_metal_buffers(FloatMsSsimStateMetal *s, id<MTLDevice> device)
 static int check_chroma_min_dim(const VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                                 unsigned w, unsigned h, unsigned min_dim)
 {
-    const unsigned ss_hor = pix_fmt != VMAF_PIX_FMT_YUV444P ? 1u : 0u;
-    const unsigned ss_ver = pix_fmt == VMAF_PIX_FMT_YUV420P ? 1u : 0u;
-    const unsigned chroma_w = (w + ss_hor) >> ss_hor;
-    const unsigned chroma_h = (h + ss_ver) >> ss_ver;
+    unsigned chroma_w = 0u;
+    unsigned chroma_h = 0u;
+    vmaf_metal_ms_ssim_plane_dimensions(pix_fmt, 1u, w, h, &chroma_w, &chroma_h);
 
     if (chroma_w >= min_dim && chroma_h >= min_dim) {
         return 0;
@@ -297,7 +297,8 @@ static int check_chroma_min_dim(const VmafFeatureExtractor *fex, enum VmafPixelF
              "requires at least %ux%u. Use at least %ux%u luma for this pixel "
              "format, or leave enable_chroma off to score luma only.\n",
              fex->name, w, h, chroma_w, chroma_h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN,
-             min_dim, min_dim, min_dim << ss_hor, min_dim << ss_ver);
+             min_dim, min_dim, pix_fmt == VMAF_PIX_FMT_YUV444P ? min_dim : min_dim << 1u,
+             pix_fmt == VMAF_PIX_FMT_YUV420P ? min_dim << 1u : min_dim);
     return -EINVAL;
 }
 
@@ -324,10 +325,7 @@ static void init_plane_geometry(MsSsimPlaneGeometryMetal *geom)
 static int validate_dimensions(VmafFeatureExtractor *fex, FloatMsSsimStateMetal *s,
                                enum VmafPixelFormat pix_fmt, unsigned w, unsigned h)
 {
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
-        s->enable_chroma = false;
-    }
-    s->n_planes = s->enable_chroma ? (unsigned)MS_SSIM_MAX_PLANES : 1u;
+    s->n_planes = vmaf_metal_ms_ssim_active_planes(s->enable_chroma, pix_fmt);
 
     /* ADR-0153 minimum resolution guard. */
     const unsigned min_dim = (unsigned)MS_SSIM_GAUSSIAN_LEN << (MS_SSIM_SCALES - 1u);
@@ -349,26 +347,18 @@ static int validate_dimensions(VmafFeatureExtractor *fex, FloatMsSsimStateMetal 
 static void init_state_geometry(FloatMsSsimStateMetal *s, enum VmafPixelFormat pix_fmt,
                                 unsigned bpc, unsigned w, unsigned h)
 {
-    /* ADR-1221 geometry-derived max_db ceiling. */
-    const unsigned peak = (1u << bpc) - 1u;
-    if (s->clip_db) {
-        const double mse = 0.5 / ((double)w * (double)h);
-        s->max_db = ceil(10. * log10((double)peak * (double)peak / mse));
-    } else {
-        s->max_db = INFINITY;
-    }
+    /* ADR-1334 extends ADR-1221's geometry-derived ceiling to Metal. */
+    s->max_db = vmaf_metal_ms_ssim_max_db(s->clip_db, bpc, w, h);
 
     s->width  = w;
     s->height = h;
     s->bpc    = bpc;
     s->scaler = (bpc <= 8u) ? 1.0f : ((bpc == 10u) ? 4.0f : ((bpc == 12u) ? 16.0f : 256.0f));
 
-    const unsigned ss_hor = pix_fmt != VMAF_PIX_FMT_YUV444P ? 1u : 0u;
-    const unsigned ss_ver = pix_fmt == VMAF_PIX_FMT_YUV420P ? 1u : 0u;
     for (unsigned p = 0; p < s->n_planes; ++p) {
         MsSsimPlaneGeometryMetal *geom = &s->geom[p];
-        geom->width  = (p == 0u) ? w : ((w + ss_hor) >> ss_hor);
-        geom->height = (p == 0u) ? h : ((h + ss_ver) >> ss_ver);
+        vmaf_metal_ms_ssim_plane_dimensions(pix_fmt, p, w, h, &geom->width,
+                                            &geom->height);
         init_plane_geometry(geom);
     }
 
@@ -604,7 +594,7 @@ static const char *const ms_ssim_feature_names[MS_SSIM_MAX_PLANES] = {
     "float_ms_ssim_cr",
 };
 
-static int reduce_plane_means(const FloatMsSsimStateMetal *s, unsigned plane,
+static int reduce_plane_means(const FloatMsSsimStateMetal *s, unsigned plane, unsigned index,
                               double *l_means, double *c_means, double *s_means,
                               double *out_msssim)
 {
@@ -627,6 +617,20 @@ static int reduce_plane_means(const FloatMsSsimStateMetal *s, unsigned plane,
         l_means[i] = (n > 0.0) ? (tl / n) : 0.0;
         c_means[i] = (n > 0.0) ? (tc / n) : 0.0;
         s_means[i] = (n > 0.0) ? (ts / n) : 0.0;
+
+        const VmafNamedScore atoms[] = {
+            {.name = "float_ms_ssim_l", .value = l_means[i]},
+            {.name = "float_ms_ssim_c", .value = c_means[i]},
+            {.name = "float_ms_ssim_s", .value = s_means[i]},
+        };
+        if (vmaf_feature_validate_finite_scores_named("float_ms_ssim_metal", atoms, 3u,
+                                                       index)) {
+            vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                     "float_ms_ssim_metal: invalid atom set at frame %u "
+                     "(plane=%u scale=%d)\n",
+                     index, plane, i);
+            return -EINVAL;
+        }
     }
 
     double msssim = 1.0;
@@ -650,7 +654,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     double s_means[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
 
     for (unsigned plane = 0; plane < s->n_planes; ++plane) {
-        int err = reduce_plane_means(s, plane, l_means[plane], c_means[plane],
+        int err = reduce_plane_means(s, plane, index, l_means[plane], c_means[plane],
                                      s_means[plane], &plane_scores[plane]);
         if (err) { return err; }
     }

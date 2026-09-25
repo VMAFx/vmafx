@@ -3,16 +3,39 @@
 
 **Status:** Complete
 
-**Authority inspected:** signed commit `71c3c1557` (agent/metal-ms-ssim-option-gap)
+**Authority inspected:** signed candidate `b234f771a` plus the exact correction
+delta on `agent/fix-metal-ms-ssim-review`.
 
-**Scope:** Metal `float_ms_ssim` option parsing (`enable_db`, `clip_db`, `enable_chroma`, `enable_lcs`), geometry-derived `max_db` ceiling, 3-plane chroma computation and emission (`float_ms_ssim_cb`, `float_ms_ssim_cr`), subsampled chroma min-dimension validation (>= 176), and fail-closed score emitter wiring under ADR-1221. Device-free contract tests and Apple Silicon parity test scaffolding. No benchmark, tuning, retraining, or Netflix golden assertion changes.
+**Scope:** Metal `float_ms_ssim` option parsing (`enable_db`, `clip_db`,
+`enable_chroma`, `enable_lcs`), geometry-derived `max_db` ceiling, 3-plane
+chroma computation and emission (`float_ms_ssim_cb`, `float_ms_ssim_cr`),
+subsampled chroma min-dimension validation (>= 176), fail-closed L/C/S atom
+handling, and option-dictionary ownership under ADR-1334. Device-free semantic
+execution and mutation contracts complement Apple-Silicon parity scaffolding.
+No benchmark, tuning, retraining, or Netflix golden assertion changes.
 
 ## Problem Statement
 
 Pre-RC1 audit gap `T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07` in `docs/state.md` noted:
-While CPU `float_ms_ssim.c`, SYCL `integer_ms_ssim_sycl.cpp`, CUDA `integer_ms_ssim_cuda.c`, and HIP `integer_ms_ssim_hip.c` expose `enable_db`, `clip_db`, and `enable_chroma`, the Metal twin `core/src/feature/metal/float_ms_ssim_metal.mm` only exposed `enable_lcs`. Any attempt to request dB-domain scoring or chroma planes on Metal failed during option parsing with `-EINVAL`. Furthermore, `collect_fex_metal` passed hardcoded `false, INFINITY` to `vmaf_ms_ssim_emit_scores()`.
+CPU `float_ms_ssim.c`, SYCL `integer_ms_ssim_sycl.cpp`, and HIP
+`integer_ms_ssim_hip.c` expose `enable_db`, `clip_db`, and `enable_chroma`;
+CUDA exposes the two dB controls. The Metal twin
+`core/src/feature/metal/float_ms_ssim_metal.mm` only exposed `enable_lcs`.
+Any attempt to request dB-domain scoring or chroma planes on Metal failed
+during option parsing with `-EINVAL`. Furthermore, `collect_fex_metal` passed
+hardcoded `false, INFINITY` to `vmaf_ms_ssim_emit_scores()`.
 
-## Parity Architecture & Implementation
+Review of the first candidate found two additional correctness defects. The
+Apple parity test passed the same `VmafFeatureDictionary` to CPU and Metal even
+though `vmaf_use_feature()` consumes it; that was a use-after-free followed by
+a double-free. The Metal reduction checked only the combined plane score. A
+non-finite L/C/S atom at a zero-weight scale can therefore disappear through
+`pow(NaN, 0) == 1`, publishing an apparently valid result.
+
+ADR-1221 covers CUDA, SYCL, and HIP and explicitly calls Metal a follow-up.
+ADR-1334 records this extension rather than rewriting that history.
+
+## Parity architecture and implementation
 
 1. **Option Registration**:
    `enable_db`, `clip_db`, and `enable_chroma` added as `VMAF_OPT_TYPE_BOOL` with default `false` in `options[]`.
@@ -28,9 +51,12 @@ While CPU `float_ms_ssim.c`, SYCL `integer_ms_ssim_sycl.cpp`, CUDA `integer_ms_s
    - The 5-level 11-tap pyramid requires every dimension to be >= 11 * 2^4 = 176.
    - `check_chroma_min_dim` enforces that subsampled chroma planes (e.g. 4:2:0 halved horizontally and vertically) are >= 176x176. For YUV420P, luma must be >= 352x352. If smaller, returns `-EINVAL` with an informative error log.
 
-4. **dB Conversion and `max_db` Ceiling (ADR-1221)**:
+4. **dB conversion and `max_db` ceiling (ADR-1334 extending ADR-1221)**:
    - When `clip_db` is enabled: `max_db = ceil(10. * log10(peak * peak / mse))` where `peak = (1 << bpc) - 1` and `mse = 0.5 / (w * h)`.
    - When `!clip_db`: `max_db = INFINITY`.
+   - The framework-free `float_ms_ssim_option_semantics.h` owns this formula
+     and active-plane/plane-geometry rules; production and a device-free C test
+     compile the same functions.
    - In `collect_fex_metal`, scores are validated with `vmaf_ssim_prepare_score_named(name, raw_score, s->enable_db, s->max_db, index, &score)`.
    - Scores emitted using `vmaf_ms_ssim_emit_scores` (plane 0) and `vmaf_ssim_emit_score_named` (planes 1 and 2), passing `s->enable_db, s->max_db`.
 
@@ -42,13 +68,31 @@ While CPU `float_ms_ssim.c`, SYCL `integer_ms_ssim_sycl.cpp`, CUDA `integer_ms_s
    - All helper functions decomposed so every function is <= 60 LOC and cyclomatic complexity <= 10.
    - Validated by unit test in `test_metal_ms_ssim_options_contract.py`.
 
+7. **Failure and ownership semantics**:
+   - `reduce_plane_means()` passes each scale's L/C/S triple through
+     `vmaf_feature_validate_finite_scores_named()` before the first `pow()`.
+     This applies to chroma and to `enable_lcs=false`.
+   - CPU and Metal parity runners accept an immutable option specification and
+     independently call `make_options()`. Each relinquishes the dictionary
+     immediately after `vmaf_use_feature()` and cleans up all still-owned state
+     on failure.
+
 ## Verification & Test Matrix
 
-- **Device-Free Contract Suite**:
-  - `core/test/test_metal_ms_ssim_options_contract.py`: 8 test methods checking option types, defaults, cross-twin parity, provided features, dispatch strategy, max_db formula across 8/10/12/16-bit depths, chroma min-dim logic, score emitter wiring, and NASA Rule 4 LOC bounds. Registered under `fast` test suite in `core/test/meson.build`.
+- **Device-free semantic and contract suite**:
+  - `core/test/test_metal_ms_ssim_option_semantics.c` executes the same helper
+    production uses. Its worked oracles distinguish the correct 105 dB ceiling
+    at 512x384 from a geometry-free or unbounded implementation, distinguish
+    3-plane chroma from luma-only behavior, and distinguish ceil subsampling at
+    odd dimensions from truncation.
+  - `core/test/test_metal_ms_ssim_options_contract.py` checks option metadata,
+    helper wiring, dispatch names, ownership, atom-validation ordering, and
+    NASA Rule 4 limits. Its mutations remove the atom guard, replace the dB
+    ceiling with infinity, force one plane, and remove fresh dictionary
+    construction; every mutation is rejected.
   - `core/test/test_nonfinite_collector_wiring.py`: updated with `metal/float_ms_ssim_metal.mm` in `REQUIRED["vmaf_ssim_prepare_score_named"]` and option-aware `METAL_MS_SSIM_OPTIONS_DB_CALL`.
 - **Metal Parity Suite**:
   - `core/test/test_metal_float_ms_ssim_parity.c`: upgraded fixture to 512x384 (chroma 256x192 >= 176). Added `test_metal_float_ms_ssim_clip_db_ceiling` and `test_metal_float_ms_ssim_parity_chroma`. Skips honestly off Apple hardware (`[skip: no Metal device]`).
-- **Repository Gates**:
-  - `meson test -C build --suite=fast`: 164 passing tests, 0 failed, 1 skipped.
-  - `scripts/ci/check-state-md-rows.sh`: 0 errors.
+- **Repository gates**: focused evidence is recorded by the correction commit;
+  Apple hardware remains unavailable, so the device parity test's skip is not
+  represented as a measured pass.

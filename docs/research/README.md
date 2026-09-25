@@ -117,7 +117,7 @@ Conventions:
 | [2106](2106-cuda-hip-kernel-header-dependency-tracking.md) | CUDA and HIP device target header dependency tracking | Complete | [ADR-1320](../adr/1320-cuda-hip-kernel-header-dependency-tracking.md) |
 | [2108](2108-gpu-float-ssim-auto-scale-fallback-2026-09-25.md) | GPU float-SSIM auto-scale fallback | Complete | [ADR-1324](../adr/1324-gpu-float-ssim-auto-scale-fallback.md) |
 | [2109](2109-integer-adm-barten-fixed-point-normalization.md) | Integer ADM Barten fixed-point normalization | Complete | [ADR-1325](../adr/1325-integer-adm-barten-fixed-point-normalization.md) |
-| [2110](2110-metal-ms-ssim-option-parity-2026-09-25.md) | Metal float_ms_ssim option and score parity | Complete | [ADR-1221](../adr/1221-gpu-ms-ssim-db-ceiling.md) |
+| [2110](2110-metal-ms-ssim-option-parity-2026-09-25.md) | Metal float_ms_ssim option and score parity | Complete | [ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md), [ADR-1221](../adr/1221-gpu-ms-ssim-db-ceiling.md) |
 | [2111](2111-adm-cm-row-rounding-observability.md) | Integer ADM contrast-masking row-rounding observability | Complete | [ADR-1167](../adr/1167-adm-cm-row-level-rounding.md) |
 | [2112](2112-sycl-motion-uv-fixed-oracle-2026-09-25.md) | SYCL motion-add-UV fixed-point oracle | Complete | [ADR-1326](../adr/1326-sycl-motion-uv-fixed-oracle.md) |
 | [2113](2113-metal-float-motion-lifecycle-flush.md) | Metal float-motion force-zero ownership, debug gating, and flush idempotency | Complete | — (BUG048 A5 restoration) |
