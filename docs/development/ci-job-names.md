@@ -133,7 +133,6 @@ job the PR renamed, every required check and every build lane.
 | `tests-and-quality-gates.yml` | `Sanitizers — ASan + UBSan + MSan (thread)` | `Sanitizers (thread)` | 19 | Yes |
 | `tests-and-quality-gates.yml` | `Sanitizers — ASan + UBSan + MSan (undefined)` | `Sanitizers (undefined)` | 22 | Yes |
 | `tests-and-quality-gates.yml` | `Tiny AI (DNN Suite + ai/ Pytests)` | `Tiny AI` | 7 | Yes |
-| `tests-and-quality-gates.yml` | `SYCL float_ssim Parity (Arc DG2-G10)` | `SYCL float_ssim Parity` | 23 | Yes |
 | `tests-and-quality-gates.yml` | `Assertion Density (Power of 10 §5)` | `Assertion Density` | 17 | Yes |
 | `tests-and-quality-gates.yml` | `Coverage Gate (Ramping to 70% / 85% Critical)` | `Coverage Gate` | 13 | No |
 | `tests-and-quality-gates.yml` | `Coverage Gate — GPU Backends (Advisory)` | `Coverage GPU` | 12 | Yes |

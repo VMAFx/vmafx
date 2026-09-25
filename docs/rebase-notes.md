@@ -21,6 +21,25 @@ and `doxygen core/doc/Doxyfile.public-api`.
 - Reproducer / smoke: `python3 -B core/test/test_gpu_public_header_docs.py` and `doxygen core/doc/Doxyfile.public-api`.
 - Changelog: `changelog.d/fixed/1315-doxygen-public-api-fail-closed.md`.
 - FFmpeg impact: none; no symbol was removed or renamed; ABI structs were not modified.
+## agent/fix-gpu-runner-label-a7f77d — fail-closed hardware admission (2026-09-25)
+
+`sycl-arc` and `gpu-full` are deliberately different runner capabilities.
+Preserve `sycl-parity.yml` as the sole hardware `float_ssim` owner; do not
+restore `SYCL float_ssim Parity` under `tests-and-quality-gates.yml` or relabel
+the isolated Arc runner as `gpu-full`. Every self-hosted job must remain behind
+a hosted probe of its complete `runs-on` label set, and the aggregator must
+require success whenever that lane's switch is true.
+
+- Research digest: [GPU runner admission](research/gpu-runner-admission-2026-09-25.md).
+- Decision matrix: [ADR-1319](adr/1319-fail-closed-self-hosted-gpu-admission.md#alternatives-considered).
+- AGENTS.md invariant: `scripts/ci/AGENTS.md`, “Self-hosted hardware admission
+  invariants (ADR-1319)”.
+- Reproducer / smoke:
+  `python3 -B scripts/ci/test_self_hosted_runner_workflow_contract.py` and
+  `bash scripts/ci/tests/test-runner-available.sh`.
+- Changelog: `changelog.d/fixed/1319-self-hosted-gpu-admission.md`.
+- FFmpeg impact: none; no public C header, CLI flag, Meson option, or
+  FFmpeg-patch surface changed.
 
 ## agent/fix-gpu-option-aliases-hiss-984823 — preserve CPU collector-key aliases (2026-09-25)
 

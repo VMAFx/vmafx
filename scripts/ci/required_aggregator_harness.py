@@ -9,6 +9,7 @@ import json
 import re
 import shutil
 import textwrap
+from collections.abc import Mapping
 from pathlib import Path
 
 from scripts.lib.safe_subprocess import run as run_command
@@ -44,7 +45,7 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
   github,
   context,
   core,
-  {env: {GITHUB_RUN_ID: '1'}},
+  {env: {GITHUB_RUN_ID: '1', ...(input.env || {})}},
   VirtualDate,
   callback => callback(),
 ).then(() => process.stdout.write(JSON.stringify(failures))).catch(error => {
@@ -68,7 +69,12 @@ def _required_names(script: str) -> list[str]:
     return re.findall(r"'([^']+)'", required_block.group(1))
 
 
-def run_required_aggregator(check_name: str, conclusion: str | None) -> list[str]:
+def run_required_aggregator(
+    check_name: str,
+    conclusion: str | None,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> list[str]:
     """Run the real Actions JavaScript with one selected check result or absence."""
     workflow_text = AGGREGATOR_PATH.read_text(encoding="utf-8")
     script = _embedded_script(workflow_text)
@@ -91,7 +97,7 @@ def run_required_aggregator(check_name: str, conclusion: str | None) -> list[str
     result = run_command(
         [node, "-e", _NODE_DRIVER],
         allowed_executables=(node,),
-        input_data=json.dumps({"script": script, "checks": checks}),
+        input_data=json.dumps({"script": script, "checks": checks, "env": dict(env or {})}),
         text=True,
         capture_output=True,
         check=True,

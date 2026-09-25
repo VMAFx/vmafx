@@ -1435,6 +1435,7 @@ nav:
         - "ADR-1312: gpu-option-alias-parity": adr/1312-gpu-option-alias-parity.md
         - "ADR-1314: semgrep-registry-advisory-artifact": adr/1314-semgrep-registry-advisory-artifact.md
         - "ADR-1315: doxygen-public-api-fail-closed": adr/1315-doxygen-public-api-fail-closed.md
+        - "ADR-1319: fail-closed-self-hosted-gpu-admission": adr/1319-fail-closed-self-hosted-gpu-admission.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1937,6 +1938,7 @@ nav:
         - "scripts": adr/by-tag/scripts.md
         - "second-opinion": adr/by-tag/second-opinion.md
         - "security": adr/by-tag/security.md
+        - "self-hosted-runner": adr/by-tag/self-hosted-runner.md
         - "semver": adr/by-tag/semver.md
         - "server": adr/by-tag/server.md
         - "shaders": adr/by-tag/shaders.md

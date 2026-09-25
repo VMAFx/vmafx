@@ -162,6 +162,16 @@ job is accepted as passing; while it is `true` the job must report
 probe token is rejected — fails the aggregator. Operator runbook:
 [ci-self-hosted-sycl.md](ci-self-hosted-sycl.md).
 
+`Coverage GPU` uses the same fail-closed shape under
+[ADR-1319](../adr/1319-fail-closed-self-hosted-gpu-admission.md), but remains a
+distinct `gpu-full` capability: a hosted job checks
+`GPU_COVERAGE_ENABLED` and the complete `self-hosted,linux,gpu-full` online
+label set before the hardware job can be dispatched. Disabled means
+absence/skip is permitted. Enabled means `Coverage GPU` must report success;
+probe failure, absence, skip or neutral blocks the aggregator. The Arc-only
+runner must not be relabelled to satisfy this CUDA + SYCL contract. Operator
+runbook: [self-hosted-runner.md](self-hosted-runner.md).
+
 ## Twin-drift gate
 
 `core/` carries same-directory `.c`/`.cpp` twin pairs left by the C++23

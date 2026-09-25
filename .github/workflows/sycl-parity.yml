@@ -1,8 +1,8 @@
 name: SYCL Parity
 
 # required-aggregator: SYCL Parity (Arc A380)
-# ADR-1177 — SYCL parity on the workstation's Intel Arc A380, executed by a
-# containerised, ephemeral, repository-level self-hosted runner
+# ADR-1177 / ADR-1319 — SYCL parity on the workstation's Intel Arc A380.
+# A containerised, ephemeral, repository-level self-hosted runner executes it
 # (dev/Containerfile.runner + dev/docker-compose.runner.yml; operator runbook
 # in docs/development/ci-self-hosted-sycl.md).
 #
@@ -10,9 +10,10 @@ name: SYCL Parity
 #   unset / not "true"  -> the probe reports available=false, the self-hosted
 #                          job is skipped, and the Required Checks Aggregator
 #                          accepts the skip (lane not provisioned).
-#   "true"              -> the probe must find an ONLINE runner labelled
-#                          `sycl-arc`; otherwise it fails loudly, the job is
-#                          skipped, and the aggregator rejects the skip.
+#   "true"              -> the probe must find an ONLINE runner with the full
+#                          `self-hosted,linux,x64,sycl-arc` label set; otherwise
+#                          it fails loudly, the job is skipped, and the
+#                          aggregator rejects the skip.
 # The probe needs the SYCL_RUNNER_PROBE_TOKEN secret (fine-grained PAT,
 # Administration: read) because GITHUB_TOKEN cannot list self-hosted runners.
 #
@@ -54,7 +55,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SYCL_RUNNER_PROBE_TOKEN || github.token }}
           RUNNER_ENABLED: ${{ vars.SYCL_ARC_RUNNER_ENABLED }}
-          RUNNER_LABEL: "sycl-arc"
+          RUNNER_LABELS: "self-hosted linux x64 sycl-arc"
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: bash scripts/ci/check-runner-available.sh
 

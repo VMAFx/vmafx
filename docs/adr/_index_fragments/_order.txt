@@ -1033,3 +1033,4 @@
 1312-gpu-option-alias-parity
 1314-semgrep-registry-advisory-artifact
 1315-doxygen-public-api-fail-closed
+1319-fail-closed-self-hosted-gpu-admission

@@ -417,20 +417,19 @@ scores:
 CI exercises CPU-only. **No CI job checks tiny-AI cross-device parity today**,
 so those two bounds are workstation measurements, not gated numbers.
 
-The self-hosted-runner half of the picture is partly built:
+The self-hosted-runner half of the picture is explicitly separate:
 
-- Two jobs in
-  [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml)
-  target `runs-on: [self-hosted, linux, gpu-full]` — `Coverage GPU (advisory)`
-  and `SYCL float_ssim Parity`. Setup is documented in
-  [`docs/development/self-hosted-runner.md`](../development/self-hosted-runner.md).
-- Both are additionally gated on the repository variable
-  `GPU_COVERAGE_ENABLED == 'true'`, and on the PR not being a draft (ADR-0331).
-- The variable is **not set** on `VMAFx/vmafx`, and the one registered runner
-  carries the labels `self-hosted, Linux, X64, sycl-arc` — not `gpu-full`. So
-  neither job can be scheduled even if the variable were flipped.
-- Neither job would cover this page's claim anyway: they build CUDA/SYCL
-  kernels and run the `float_ssim` parity test. Nothing runs a tiny-AI ONNX
+- [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) owns Arc-only
+  feature parity behind `SYCL_ARC_RUNNER_ENABLED` and the `sycl-arc` label.
+- [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml)
+  owns the combined CUDA + SYCL `Coverage GPU` job behind
+  `GPU_COVERAGE_ENABLED` and the `gpu-full` label. A hosted live-runner probe
+  prevents it from queuing on an impossible label set (ADR-1319).
+- As of 2026-09-25, the repository and organisation APIs return **zero**
+  registered runners and the repository has **zero** Actions variables. Both
+  hardware lanes are therefore disabled and neither is current hardware
+  evidence.
+- Neither lane covers this page's tiny-AI claim. Nothing runs the same ONNX
   model on two execution providers and diffs the scores.
 
 Until that changes, verify cross-device tiny-AI parity yourself before trusting

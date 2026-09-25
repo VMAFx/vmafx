@@ -1,16 +1,25 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Self-hosted GPU runner — enrollment guide
 
-A small set of CI jobs (`coverage-gpu` in
-[`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml),
-plus future SYCL / CUDA-specific suites) require a self-hosted runner
-that exposes both NVIDIA and Intel GPUs alongside an AVX-512-capable
-CPU. Hosted GitHub runners can't reach those code paths.
+A CI job (`coverage-gpu` in
+[`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml))
+requires a self-hosted runner that exposes both NVIDIA and Intel GPUs
+alongside an AVX-512-capable CPU. Hosted GitHub runners cannot reach those
+code paths. The Arc-only SYCL parity lane is a separate capability and has
+its own [operator guide](ci-self-hosted-sycl.md).
 
-The `coverage-gpu` job runs only when the repository variable
-`GPU_COVERAGE_ENABLED` is `true` and the PR is not a draft. Enroll a runner
-with the matching labels before enabling that variable; an enabled job
-waits for a matching runner. This guide describes that enrollment.
+The `coverage-gpu` job runs only after a hosted admission job sees both
+`GPU_COVERAGE_ENABLED=true` and an online runner carrying every label in its
+`runs-on` set. A missing, partial or offline match fails the hosted probe and
+skips self-hosted dispatch, so the hardware job cannot queue forever. While
+the switch is enabled, the required-check aggregator treats that skip as a
+failure. This is the [ADR-1319](../adr/1319-fail-closed-self-hosted-gpu-admission.md)
+contract.
+
+**Current state (2026-09-25):** the repository and organisation runner APIs
+both return zero runners, `GPU_COVERAGE_ENABLED` is absent, and the documented
+local runner service/environment/state paths are absent. This page is a
+provisioning runbook, not evidence that the hardware lane has run.
 
 Historical backlog reference: T7-3. The local `.workingdir/BACKLOG.md`
 notebook is not part of the published documentation; the linked workflow
@@ -24,7 +33,7 @@ The workflows match on a label triple. Match these exactly:
 |---|---|
 | `self-hosted` | GitHub default for any non-hosted runner. |
 | `linux` | OS family. Bare-metal Linux only — WSL2 and containers can't pass `cudaSetDevice` to the host driver reliably. |
-| `gpu-full` | The fork's "has all the GPUs we test against" tag — at minimum NVIDIA + Intel + AVX-512. Add additional fine-grained labels (`gpu-cuda`, `gpu-intel`, `avx512`) so future jobs can target a subset without re-tagging. |
+| `gpu-full` | The fork's combined CUDA + SYCL + AVX-512 tag — at minimum NVIDIA + Intel + AVX-512. It does not claim HIP coverage. Add fine-grained labels (`gpu-cuda`, `gpu-intel`, `avx512`) so future jobs can target a subset without re-tagging. |
 
 ## Hardware expectations
 
@@ -43,6 +52,9 @@ The runner needs to satisfy the union of all jobs that target it:
   Tests tagged `gpu` run exclusively because they share one accelerator.
 - **≥ 60 GB free disk** — coverage builds + nightly artifact retention
   rotate through ~30 GB.
+- **HIP is not part of this job.** An AMD device on the host does not make
+  `Coverage GPU` a HIP gate; HIP needs its own executable job and capability
+  label before CI can claim hardware coverage.
 
 A typical workstation that runs the fork's local dev loop already
 satisfies all of the above; the user's primary dev box has been
@@ -121,13 +133,14 @@ set. Trigger the `coverage-gpu` job once with `gh workflow run` to
 confirm end-to-end:
 
 ```bash
-gh variable set GPU_COVERAGE_ENABLED -b true
+gh variable set GPU_COVERAGE_ENABLED -b true -R VMAFx/vmafx
 gh workflow run tests-and-quality-gates.yml
 ```
 
-Once the job completes green twice in a row, the runner is considered
-stable; the workflow's `continue-on-error` flag can be flipped to
-required (separate ADR + PR).
+Enable the variable **last**. The hosted probe must first report a complete
+online `self-hosted,linux,gpu-full` match. The `Coverage GPU` check is already
+required while enabled; a failed probe produces a skipped hardware check that
+the aggregator rejects.
 
 ## Operational notes
 
@@ -143,6 +156,8 @@ required (separate ADR + PR).
   scoped to the `gpu-coverage` environment if and when one is added.
   Treat the host as security-sensitive — no third-party SSH keys, no
   shared user accounts, audit `~/.ssh/authorized_keys` quarterly.
+- **Fork pull requests**: the hosted probe excludes fork heads, so untrusted
+  fork code never reaches this self-hosted runner.
 - **Concurrency**: a single runner serialises GPU jobs. Inside a Meson test
   job, every test tagged `gpu` sets `is_parallel : false`; Meson drains running
   tests before each one and does not start another test until it finishes.
@@ -160,6 +175,8 @@ required (separate ADR + PR).
 ## Decommissioning
 
 ```bash
+# Disable admission before taking the runner offline.
+gh variable set GPU_COVERAGE_ENABLED -b false -R VMAFx/vmafx
 cd ~/actions-runner
 sudo ./svc.sh stop && sudo ./svc.sh uninstall
 ./config.sh remove --token "$(gh api -X POST \

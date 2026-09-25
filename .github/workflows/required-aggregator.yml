@@ -48,6 +48,8 @@ jobs:
         env:
           # ADR-1177 — operator switch for the Arc A380 self-hosted lane.
           SYCL_ARC_RUNNER_ENABLED: ${{ vars.SYCL_ARC_RUNNER_ENABLED }}
+          # ADR-1319 — distinct switch for the unprovisioned multi-vendor lane.
+          GPU_COVERAGE_ENABLED: ${{ vars.GPU_COVERAGE_ENABLED }}
         with:
           retries: 3
           script: |
@@ -92,7 +94,6 @@ jobs:
               'Twin Drift',
               'Tiny AI',
               'Ubuntu HIP',
-              'SYCL float_ssim Parity',
               'SYCL Parity (Arc A380)',
               // ADR-1151 — the process gates in rule-enforcement.yml were
               // reporting but not required, so a red Release Script Contract
@@ -300,7 +301,10 @@ jobs:
             // polling through that legitimate absence, plus a short propagation
             // window after the last dependency completes. Matrix gates depend on
             // the aggregate matrix result, so each maps every row in that matrix.
+            // ADR-1319 extends the same rule to hosted hardware-admission probes.
             const delayedStrictDependencies = {
+              "Coverage GPU": ["Probe GPU Full Runner"],
+              "SYCL Parity (Arc A380)": ["Probe SYCL Runner"],
               "Linux Intel LLVM": [
                 "Plan build impact",
                 "Linux Intel LLVM work",
@@ -493,16 +497,23 @@ jobs:
               await new Promise(r => setTimeout(r, 30000));
             }
 
-            // ADR-1177 — 'SYCL Parity (Arc A380)' runs on the workstation's
-            // Arc A380 self-hosted runner. The lane is switched by the repository
-            // variable SYCL_ARC_RUNNER_ENABLED (read below from env; the runner
-            // list itself is not queried here because GITHUB_TOKEN cannot list
-            // self-hosted runners). Disabled: absence or skip is accepted.
-            // Enabled: the job must report and succeed — the probe job in
-            // sycl-parity.yml fails loudly when the runner is missing/offline,
-            // which skips the parity job, and that skip is rejected here.
-            const syclArcEnabled = (process.env.SYCL_ARC_RUNNER_ENABLED || '').trim() === 'true';
-            core.info(`SYCL_ARC_RUNNER_ENABLED=${syclArcEnabled}`);
+            // ADR-1177 / ADR-1319 — hardware lanes are admitted by an explicit
+            // operator switch plus a hosted live-runner probe. Disabled means
+            // absence or skip is permitted. Enabled means the hardware job must
+            // report success; absence, skip, neutral or failure is blocking.
+            const hardwareLanes = {
+              'Coverage GPU': {
+                enabled: (process.env.GPU_COVERAGE_ENABLED || '').trim() === 'true',
+                switchName: 'GPU_COVERAGE_ENABLED',
+              },
+              'SYCL Parity (Arc A380)': {
+                enabled: (process.env.SYCL_ARC_RUNNER_ENABLED || '').trim() === 'true',
+                switchName: 'SYCL_ARC_RUNNER_ENABLED',
+              },
+            };
+            for (const [name, lane] of Object.entries(hardwareLanes)) {
+              core.info(`${lane.switchName}=${lane.enabled} (${name})`);
+            }
 
             const failed = [];
             const accepted = ['success', 'skipped', 'neutral'];
@@ -526,25 +537,26 @@ jobs:
                 }
                 continue;
               }
-              if (name === 'SYCL Parity (Arc A380)') {
-                if (syclArcEnabled) {
+              const hardwareLane = hardwareLanes[name];
+              if (hardwareLane) {
+                if (hardwareLane.enabled) {
                   if (!run) {
-                    failed.push(`${name}: SYCL_ARC_RUNNER_ENABLED=true but the job never reported on SHA ${sha}`);
+                    failed.push(`${name}: ${hardwareLane.switchName}=true but the job never reported on SHA ${sha}`);
                     continue;
                   }
                   if (run.conclusion === 'skipped') {
-                    failed.push(`${name}: SYCL_ARC_RUNNER_ENABLED=true but the job was skipped (runner probe failed — runner not registered or offline)`);
+                    failed.push(`${name}: ${hardwareLane.switchName}=true but the job was skipped (runner probe failed — runner not registered or offline)`);
                     continue;
                   }
-                  if (!['success', 'neutral'].includes(run.conclusion)) {
+                  if (run.conclusion !== 'success') {
                     failed.push(`${name}: ${run.conclusion ?? run.status}`);
                   } else {
-                    core.info(`OK (${run.conclusion}): ${name}`);
+                    core.info(`OK (hardware success): ${name}`);
                   }
                   continue;
                 }
                 if (!run || run.conclusion === 'skipped') {
-                  core.info(`OK (Arc A380 lane disabled, absence/skip permitted): ${name}`);
+                  core.info(`OK (${hardwareLane.switchName} disabled, absence/skip permitted): ${name}`);
                   continue;
                 }
               }
