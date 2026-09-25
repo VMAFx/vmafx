@@ -265,20 +265,27 @@ static const VmafOption options[] = {
  *
  * HISS-04: lifted verbatim out of free_cuda_buffers; same set, same order.
  */
-static void sc_free_device_and_pinned(SpeedChromaCudaState *s, CudaFunctions *cu_f)
+static int sc_free_device_and_pinned(SpeedChromaCudaState *s, CudaFunctions *cu_f)
 {
+    int rc = 0;
 #define FREE_DPTR(p)                                                                               \
     do {                                                                                           \
         if ((p)) {                                                                                 \
-            (void)cu_f->cuMemFree((p));                                                            \
-            (p) = 0;                                                                               \
+            const CUresult free_res = cu_f->cuMemFree((p));                                        \
+            if (free_res == CUDA_SUCCESS)                                                          \
+                (p) = 0;                                                                           \
+            else if (rc == 0)                                                                      \
+                rc = vmaf_cuda_result_to_errno((int)free_res);                                     \
         }                                                                                          \
     } while (0)
 #define FREE_HOST(p)                                                                               \
     do {                                                                                           \
         if ((p)) {                                                                                 \
-            (void)cu_f->cuMemFreeHost((p));                                                        \
-            (p) = NULL;                                                                            \
+            const CUresult free_res = cu_f->cuMemFreeHost((p));                                    \
+            if (free_res == CUDA_SUCCESS)                                                          \
+                (p) = NULL;                                                                        \
+            else if (rc == 0)                                                                      \
+                rc = vmaf_cuda_result_to_errno((int)free_res);                                     \
         }                                                                                          \
     } while (0)
 
@@ -305,6 +312,7 @@ static void sc_free_device_and_pinned(SpeedChromaCudaState *s, CudaFunctions *cu
 
 #undef FREE_DPTR
 #undef FREE_HOST
+    return rc;
 }
 
 /* sc_free_host_aligned - the aligned_alloc host scratch buffers.
@@ -355,10 +363,31 @@ static void sc_free_host_aligned(SpeedChromaCudaState *s)
     }
 }
 
-static void free_cuda_buffers(SpeedChromaCudaState *s, CudaFunctions *cu_f)
+static int free_cuda_buffers(SpeedChromaCudaState *s, VmafCudaState *cu_state)
 {
-    sc_free_device_and_pinned(s, cu_f);
+    if (!s)
+        return -EINVAL;
+    if (!cu_state || !cu_state->f || !cu_state->ctx) {
+        sc_free_host_aligned(s);
+        return -EINVAL;
+    }
+
+    CudaFunctions *const cu_f = cu_state->f;
+    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
+    if (push_res != CUDA_SUCCESS) {
+        sc_free_host_aligned(s);
+        return vmaf_cuda_result_to_errno((int)push_res);
+    }
+
+    int rc = sc_free_device_and_pinned(s, cu_f);
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        if (rc == 0)
+            rc = vmaf_cuda_result_to_errno((int)pop_res);
+    }
     sc_free_host_aligned(s);
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */
@@ -816,18 +845,15 @@ static int extract_channel(SpeedChromaCudaState *s, CudaFunctions *cu_f, VmafPic
  * drifting apart a second time. docs/state.md:
  * T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19.
  */
-static void release_cuda_module_and_stream(SpeedChromaCudaState *s, CudaFunctions *cu_f)
+static int release_cuda_module_and_stream(SpeedChromaCudaState *s, VmafCudaState *cu_state)
 {
-    if (!s || !cu_f)
-        return;
-    if (s->stream) {
-        (void)cu_f->cuStreamDestroy(s->stream);
-        s->stream = NULL;
-    }
-    if (s->module) {
-        (void)cu_f->cuModuleUnload(s->module);
-        s->module = NULL;
-    }
+    if (!s || !cu_state)
+        return -EINVAL;
+    int rc = vmaf_cuda_stream_destroy(cu_state, &s->stream, true);
+    const int module_rc = vmaf_cuda_module_unload(cu_state, &s->module);
+    if (rc == 0)
+        rc = module_rc;
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */
@@ -837,10 +863,10 @@ static void release_cuda_module_and_stream(SpeedChromaCudaState *s, CudaFunction
  * resources are released in the same order on every exit path, and the
  * value returned is the one the label returned.
  */
-static int speed_chroma_init_unwind(SpeedChromaCudaState *s, CudaFunctions *cu_f, int err)
+static int speed_chroma_init_unwind(SpeedChromaCudaState *s, VmafCudaState *cu_state, int err)
 {
-    release_cuda_module_and_stream(s, cu_f);
-    free_cuda_buffers(s, cu_f);
+    (void)release_cuda_module_and_stream(s, cu_state);
+    (void)free_cuda_buffers(s, cu_state);
     return err;
 }
 
@@ -887,11 +913,14 @@ static void sc_fill_options(SpeedChromaCudaState *s)
 /* sc_init_unwind_pop - the body the former `fail_pop` / `fail_after_pop`
  * labels shared, verbatim and in the same order.
  */
-static int sc_init_unwind_pop(SpeedChromaCudaState *s, CudaFunctions *cu_f, int cuda_err)
+static int sc_init_unwind_pop(SpeedChromaCudaState *s, VmafCudaState *cu_state, int cuda_err)
 {
-    (void)cu_f->cuCtxPopCurrent(NULL);
-    release_cuda_module_and_stream(s, cu_f);
-    free_cuda_buffers(s, cu_f);
+    CudaFunctions *const cu_f = cu_state->f;
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS)
+        (void)cu_f->cuCtxPopCurrent(NULL);
+    (void)release_cuda_module_and_stream(s, cu_state);
+    (void)free_cuda_buffers(s, cu_state);
     return cuda_err;
 }
 
@@ -976,17 +1005,17 @@ static int sc_init_cuda(VmafFeatureExtractor *fex, SpeedChromaCudaState *s, Cuda
 
     int err = sc_get_kernels(s, cu_f);
     if (err)
-        return sc_init_unwind_pop(s, cu_f, err);
+        return sc_init_unwind_pop(s, fex->cu_state, err);
 
     err = sc_alloc_buffers(s, cu_f, plane_alloc, indterm_bytes, cov_bytes, score_bytes);
     if (err)
-        return sc_init_unwind_pop(s, cu_f, err);
+        return sc_init_unwind_pop(s, fex->cu_state, err);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
     return 0;
 
 fail_after_pop:
-    return sc_init_unwind_pop(s, cu_f, _cuda_err);
+    return sc_init_unwind_pop(s, fex->cu_state, _cuda_err);
 fail:
     return _cuda_err;
 }
@@ -996,8 +1025,8 @@ fail:
  * HISS-04: lifted verbatim out of init_fex_cuda; the sizes, the order and the
  * single combined NULL check are unchanged.
  */
-static int sc_alloc_host_scratch(SpeedChromaCudaState *s, CudaFunctions *cu_f, size_t plane_alloc,
-                                 size_t cov_bytes, size_t indterm_bytes)
+static int sc_alloc_host_scratch(SpeedChromaCudaState *s, VmafCudaState *cu_state,
+                                 size_t plane_alloc, size_t cov_bytes, size_t indterm_bytes)
 {
     /* Allocate CPU-side buffers (aligned for SIMD). */
     s->h_plane_ref = (float *)aligned_malloc(plane_alloc, 32);
@@ -1016,7 +1045,7 @@ static int sc_alloc_host_scratch(SpeedChromaCudaState *s, CudaFunctions *cu_f, s
 
     if (!s->h_plane_ref || !s->h_plane_dis || !s->h_eigenvalues || !s->h_eig_scratch || !s->h_Q ||
         !s->h_R || !s->h_qr_scratch || !s->h_indterm_ref || !s->h_indterm_dis || !s->h_qt_scratch) {
-        return speed_chroma_init_unwind(s, cu_f, -ENOMEM);
+        return speed_chroma_init_unwind(s, cu_state, -ENOMEM);
     }
     return 0;
 }
@@ -1055,14 +1084,14 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
-    err = sc_alloc_host_scratch(s, cu_f, plane_alloc, cov_bytes, indterm_bytes);
+    err = sc_alloc_host_scratch(s, fex->cu_state, plane_alloc, cov_bytes, indterm_bytes);
     if (err)
         return err;
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
-        return speed_chroma_init_unwind(s, cu_f, -ENOMEM);
+        return speed_chroma_init_unwind(s, fex->cu_state, -ENOMEM);
 
     return 0;
 }
@@ -1119,7 +1148,6 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     SpeedChromaCudaState *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
-    int err = 0;
     int _cuda_err = 0;
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
@@ -1168,13 +1196,19 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     SpeedChromaCudaState *s = fex->priv;
     speed_internal_report_singular(&s->singular_tally, "speed_chroma_cuda");
+    int rc = 0;
     if (fex->cu_state && fex->cu_state->f) {
-        free_cuda_buffers(s, fex->cu_state->f);
-        release_cuda_module_and_stream(s, fex->cu_state->f);
+        rc = release_cuda_module_and_stream(s, fex->cu_state);
+        const int buffers_rc = free_cuda_buffers(s, fex->cu_state);
+        if (rc == 0)
+            rc = buffers_rc;
     }
-    if (s->feature_name_dict)
-        vmaf_dictionary_free(&s->feature_name_dict);
-    return 0;
+    if (s->feature_name_dict) {
+        const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
+        if (rc == 0)
+            rc = dict_rc;
+    }
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */

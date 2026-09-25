@@ -141,98 +141,52 @@ static const VmafOption options[] = {{
  * resources are released in the same order on every exit path, and the
  * value returned is the one the label returned.
  */
-static int vif_init_unwind(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFunctions *cu_f, int ret)
+static int vif_init_unwind(VmafFeatureExtractor *fex, VifStateCuda *s, int ret)
 {
     if (s->buf.data) {
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.data);
         free(s->buf.data);
+        s->buf.data = NULL;
     }
     if (s->buf.accum_data) {
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.accum_data);
         free(s->buf.accum_data);
+        s->buf.accum_data = NULL;
     }
     if (s->buf.accum_host) {
         ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->buf.accum_host);
+        s->buf.accum_host = NULL;
     }
-    (void)ret; // accumulated cleanup status intentionally discarded on error path
+    (void)vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
+    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->finished);
+    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->event);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->filter1d_module);
 
-    /* The context is already popped (cuCtxPopCurrent at the end of module
-     * setup) before any `free_ref` jump fires, so we must not route through
-     * the `fail` label (it would double-pop).  Tear down the module, events,
-     * and stream explicitly here, mirroring the `fail_after_module` ladder. */
-    (void)cu_f->cuModuleUnload(s->filter1d_module);
-    s->filter1d_module = NULL;
-    (void)cu_f->cuEventDestroy(s->finished);
-    s->finished = 0;
-    (void)cu_f->cuEventDestroy(s->event);
-    s->event = 0;
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
-
-    return -ENOMEM;
+    return (ret != 0) ? ret : -ENOMEM;
 }
 
-/* VifInitStage - how far init_fex_cuda's CUDA-context setup got before it
- * failed, i.e. which rung of the former `fail_after_*` label ladder the
- * unwind has to start at. */
-typedef enum VifInitStage {
-    VIF_INIT_POP_ONLY = 0,
-    VIF_INIT_AFTER_STREAM,
-    VIF_INIT_AFTER_EVENT,
-    VIF_INIT_AFTER_FINISHED,
-    VIF_INIT_AFTER_MODULE,
-} VifInitStage;
-
-/* vif_init_kernel_unwind - the former graduated fail_after_* ladder.
- *
- * HISS-01 / HISS-04: the ladder's statements are lifted verbatim and still
- * run in the same fall-through order, so every exit path releases the same
- * resources in the same sequence and returns the same errno.
- */
-static int vif_init_kernel_unwind(VifStateCuda *s, CudaFunctions *cu_f, VifInitStage stage,
+/* Release every context-owned handle created before kernel setup failed. */
+static int vif_init_kernel_unwind(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFunctions *cu_f,
                                   int cuda_err)
 {
-    if (stage >= VIF_INIT_AFTER_MODULE) {
-        /* cuModuleGetFunction failed — unload the module before releasing stream
-         * and events.  cuModuleUnload is safe even if no kernels were resolved. */
-        (void)cu_f->cuModuleUnload(s->filter1d_module);
-        s->filter1d_module = NULL;
-    }
-    if (stage >= VIF_INIT_AFTER_FINISHED) {
-        (void)cu_f->cuEventDestroy(s->finished);
-        s->finished = 0;
-    }
-    if (stage >= VIF_INIT_AFTER_EVENT) {
-        (void)cu_f->cuEventDestroy(s->event);
-        s->event = 0;
-    }
-    if (stage >= VIF_INIT_AFTER_STREAM) {
-        (void)cu_f->cuStreamDestroy(s->str);
-        s->str = 0;
-    }
     (void)cu_f->cuCtxPopCurrent(NULL);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->filter1d_module);
+    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->finished);
+    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->event);
+    (void)vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
     return cuda_err;
 }
 
-/* vif_create_stream_and_events - stream, the two events and the PTX module.
- *
- * `*stage` tracks which rung the unwind must start at, exactly matching the
- * label each CHECK_CUDA_GOTO used to jump to.
- */
-static int vif_create_stream_and_events(VifStateCuda *s, CudaFunctions *cu_f, VifInitStage *stage)
+/* vif_create_stream_and_events - stream, the two events and the PTX module. */
+static int vif_create_stream_and_events(VifStateCuda *s, CudaFunctions *cu_f)
 {
-    *stage = VIF_INIT_POP_ONLY;
     CHECK_CUDA_RETURN(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0));
     /* ADR-1090 — graduated stages so each earlier allocation is freed when a
      * later one fails; previously all paths only popped the context, leaking
      * the stream and any events already created. */
-    *stage = VIF_INIT_AFTER_STREAM;
     CHECK_CUDA_RETURN(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT));
-    *stage = VIF_INIT_AFTER_EVENT;
     CHECK_CUDA_RETURN(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT));
-    *stage = VIF_INIT_AFTER_FINISHED;
     CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->filter1d_module, filter1d_ptx));
-    *stage = VIF_INIT_AFTER_MODULE;
     return 0;
 }
 
@@ -285,16 +239,17 @@ static int vif_init_cuda_context(VmafFeatureExtractor *fex, VifStateCuda *s, Cud
 {
     CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
 
-    VifInitStage stage = VIF_INIT_POP_ONLY;
-    int err = vif_create_stream_and_events(s, cu_f, &stage);
+    int err = vif_create_stream_and_events(s, cu_f);
     if (err)
-        return vif_init_kernel_unwind(s, cu_f, stage, err);
+        return vif_init_kernel_unwind(fex, s, cu_f, err);
 
     err = vif_get_filter1d_functions(s, cu_f);
     if (err)
-        return vif_init_kernel_unwind(s, cu_f, VIF_INIT_AFTER_MODULE, err);
+        return vif_init_kernel_unwind(fex, s, cu_f, err);
 
-    CHECK_CUDA_RETURN(cu_f, cuCtxPopCurrent(NULL));
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS)
+        return vif_init_kernel_unwind(fex, s, cu_f, vmaf_cuda_result_to_errno((int)pop_res));
     return 0;
 }
 
@@ -310,13 +265,12 @@ static int vif_init_cuda_context(VmafFeatureExtractor *fex, VifStateCuda *s, Cud
  * changing the public libvmaf-CUDA contract. Per the touched-file
  * rule, upstream-parity exception (ADR-0141 §2 load-bearing invariant). */
 // NOLINTBEGIN(performance-no-int-to-ptr)
-static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFunctions *cu_f,
-                             unsigned h, size_t rd_size)
+static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, unsigned h, size_t rd_size)
 {
     CUdeviceptr data;
     int ret = vmaf_cuda_buffer_get_dptr(s->buf.data, &data);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
     s->buf.ref = data;
     data += rd_size;
@@ -356,7 +310,7 @@ static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFun
     CUdeviceptr data_accum;
     ret = vmaf_cuda_buffer_get_dptr(s->buf.accum_data, &data_accum);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
     s->buf.accum = (int64_t *)data_accum;
     return 0;
@@ -369,8 +323,8 @@ static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFun
  * the allocation order are unchanged, and each failure still unwinds through
  * vif_init_unwind().
  */
-static int vif_setup_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFunctions *cu_f,
-                             unsigned w, unsigned h, int tex_alignment, bool hbd)
+static int vif_setup_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, unsigned w, unsigned h,
+                             int tex_alignment, bool hbd)
 {
     s->buf.stride = tex_alignment * (((w * (1 << (int)hbd) + tex_alignment - 1) / tex_alignment));
     {
@@ -386,18 +340,18 @@ static int vif_setup_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFun
                            8 * (s->buf.stride_tmp * h); // intermediater buffers
     int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.data, data_sz);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
     ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.accum_data, sizeof(vif_accums) * 4);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
     ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->buf.accum_host,
                                       sizeof(vif_accums) * 4);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
-    return vif_carve_buffers(fex, s, cu_f, h, rd_size);
+    return vif_carve_buffers(fex, s, h, rd_size);
 }
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -433,18 +387,19 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     const bool hbd = bpc > 8;
 
     int tex_alignment;
-    CHECK_CUDA_RETURN(cu_f,
-                      cuDeviceGetAttribute(&tex_alignment, CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT,
-                                           fex->cu_state->dev));
+    const CUresult attr_res = cu_f->cuDeviceGetAttribute(
+        &tex_alignment, CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT, fex->cu_state->dev);
+    if (attr_res != CUDA_SUCCESS)
+        return vif_init_unwind(fex, s, vmaf_cuda_result_to_errno((int)attr_res));
 
-    int ret = vif_setup_buffers(fex, s, cu_f, w, h, tex_alignment, hbd);
+    int ret = vif_setup_buffers(fex, s, w, h, tex_alignment, hbd);
     if (ret)
         return ret;
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
     return 0;
 }
 
@@ -695,6 +650,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CudaFunctions *cu_f = fex->cu_state->f;
     (void)ref_pic_90;
     (void)dist_pic_90;
+    (void)index;
     /* n_planes is always 1: VIF is luma-only by design across every backend
      * (matches CPU integer_vif and upstream Netflix/vmaf — see ADR-0541).
      * The loop is retained for shape-parity with the CPU/HIP/SYCL twins. */
@@ -758,33 +714,31 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     VifStateCuda *s = fex->priv;
-    /* Close path continues unwinding on CUDA error. */
-    int _cuda_err = 0;
-    CHECK_CUDA_GOTO(fex->cu_state->f, cuStreamSynchronize(s->str), after_sync);
-after_sync:
-    CHECK_CUDA_GOTO(fex->cu_state->f, cuStreamDestroy(s->str), after_stream);
-after_stream:
-    CHECK_CUDA_GOTO(fex->cu_state->f, cuEventDestroy(s->event), after_ev1);
-after_ev1:
-    CHECK_CUDA_GOTO(fex->cu_state->f, cuEventDestroy(s->finished), after_ev2);
-after_ev2:;
-
-    int ret = _cuda_err;
+    int ret = vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
+    const int event_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->event);
+    if (ret == 0)
+        ret = event_rc;
+    const int finished_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->finished);
+    if (ret == 0)
+        ret = finished_rc;
     if (s->buf.data) {
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.data);
         free(s->buf.data);
+        s->buf.data = NULL;
     }
     if (s->buf.accum_data) {
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.accum_data);
         free(s->buf.accum_data);
+        s->buf.accum_data = NULL;
     }
     if (s->buf.accum_host) {
         ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->buf.accum_host);
+        s->buf.accum_host = NULL;
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const CudaFunctions *cu_f_close = fex->cu_state->f;
-    if (cu_f_close && s->filter1d_module)
-        (void)cu_f_close->cuModuleUnload(s->filter1d_module);
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->filter1d_module);
+    if (ret == 0)
+        ret = module_rc;
     return ret;
 }
 

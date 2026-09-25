@@ -155,6 +155,7 @@ static int issim_init_unwind(VmafFeatureExtractor *fex, IssimStateCuda *s, int s
         free(s->d_w);
     }
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     return ret;
 }
 
@@ -236,7 +237,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->func_vert, s->module, "integer_ssim_vert_combine"), fail_ctx);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_ctx);
-    ctx_pushed = 0;
 
     return issim_alloc_buffers(fex, s, w, h, bpc);
 
@@ -244,6 +244,7 @@ fail_ctx:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
 fail_lc:
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
@@ -397,9 +398,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         if (rc == 0)
             rc = e2;
     }
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (rc == 0)
+        rc = module_rc;
     return rc;
 }
 

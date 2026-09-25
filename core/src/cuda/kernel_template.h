@@ -132,12 +132,32 @@ typedef struct VmafCudaKernelReadback {
  *
  * Returns 0 on success or the negative errno mapped from CUresult
  * (see vmaf_cuda_result_to_errno). On failure the function rolls
- * back any partial state — `lc` ends up zeroed and the context is
- * popped.
+ * back any partial state. Handles destroyed successfully are cleared;
+ * a handle whose destroy call fails is retained for a later close retry.
  */
+/* NOLINTBEGIN(modernize-use-nullptr): C header. The fork builds C as C23,
+ * where clang-tidy proposes `nullptr`, but MSVC's documented /std:clatest
+ * feature set does not include it while the required Windows build compiles
+ * the CUDA host TUs with cl.exe. ADR-1138. */
+static inline void vmaf_cuda_kernel_lifecycle_init_unwind(VmafCudaKernelLifecycle *lc,
+                                                          CudaFunctions *cu_f, int ctx_pushed)
+{
+    if (lc->finished != NULL && cu_f->cuEventDestroy(lc->finished) == CUDA_SUCCESS)
+        lc->finished = NULL;
+    if (lc->submit != NULL && cu_f->cuEventDestroy(lc->submit) == CUDA_SUCCESS)
+        lc->submit = NULL;
+    if (lc->str != NULL && cu_f->cuStreamDestroy(lc->str) == CUDA_SUCCESS)
+        lc->str = NULL;
+    if (ctx_pushed != 0)
+        (void)cu_f->cuCtxPopCurrent(NULL);
+}
+
 static inline int vmaf_cuda_kernel_lifecycle_init(VmafCudaKernelLifecycle *lc,
                                                   VmafCudaState *cu_state)
 {
+    if (lc == NULL || cu_state == NULL || cu_state->f == NULL || cu_state->ctx == NULL)
+        return -EINVAL;
+
     CudaFunctions *cu_f = cu_state->f;
     int _cuda_err = 0;
     int ctx_pushed = 0;
@@ -147,18 +167,11 @@ static inline int vmaf_cuda_kernel_lifecycle_init(VmafCudaKernelLifecycle *lc,
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&lc->str, CU_STREAM_NON_BLOCKING, 0), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&lc->submit, CU_EVENT_DEFAULT), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&lc->finished, CU_EVENT_DEFAULT), fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
     return 0;
 
 fail:
-    if (ctx_pushed) {
-        (void)cu_f->cuCtxPopCurrent(NULL);
-    }
-fail_after_pop:
-    /* Best-effort: any of the three handles that did create cleanly
-     * are leaked deliberately — the caller will hit the same failure
-     * on the next init() and the process is in an unrecoverable CUDA
-     * state anyway. */
+    vmaf_cuda_kernel_lifecycle_init_unwind(lc, cu_f, ctx_pushed);
     return _cuda_err;
 }
 
@@ -211,6 +224,7 @@ static inline int vmaf_cuda_kernel_submit_pre_launch(VmafCudaKernelLifecycle *lc
                                                      CUstream picture_stream,
                                                      CUevent dist_ready_event)
 {
+    (void)lc;
     CudaFunctions *cu_f = cu_state->f;
     /* The zeroing MUST be issued on `picture_stream`, the same stream the
      * kernel launches on.
@@ -314,8 +328,19 @@ static inline int vmaf_cuda_kernel_submit_post_record(VmafCudaKernelLifecycle *l
 static inline int vmaf_cuda_kernel_lifecycle_close(VmafCudaKernelLifecycle *lc,
                                                    VmafCudaState *cu_state)
 {
+    if (lc == NULL || cu_state == NULL || cu_state->f == NULL || cu_state->ctx == NULL)
+        return -EINVAL;
+    if (lc->str == NULL && lc->submit == NULL && lc->finished == NULL) {
+        lc->drained = false;
+        return 0;
+    }
+
     CudaFunctions *cu_f = cu_state->f;
     int rc = 0;
+    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
+    if (push_res != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push_res);
+
     if (lc->str != NULL) {
         const CUresult sync_res = cu_f->cuStreamSynchronize(lc->str);
         if (sync_res != CUDA_SUCCESS && rc == 0) {
@@ -325,25 +350,34 @@ static inline int vmaf_cuda_kernel_lifecycle_close(VmafCudaKernelLifecycle *lc,
         if (destroy_res != CUDA_SUCCESS && rc == 0) {
             rc = vmaf_cuda_result_to_errno((int)destroy_res);
         }
-        lc->str = NULL;
+        if (destroy_res == CUDA_SUCCESS)
+            lc->str = NULL;
     }
     if (lc->submit != NULL) {
         const CUresult e = cu_f->cuEventDestroy(lc->submit);
         if (e != CUDA_SUCCESS && rc == 0) {
             rc = vmaf_cuda_result_to_errno((int)e);
         }
-        lc->submit = NULL;
+        if (e == CUDA_SUCCESS)
+            lc->submit = NULL;
     }
     if (lc->finished != NULL) {
         const CUresult e = cu_f->cuEventDestroy(lc->finished);
         if (e != CUDA_SUCCESS && rc == 0) {
             rc = vmaf_cuda_result_to_errno((int)e);
         }
-        lc->finished = NULL;
+        if (e == CUDA_SUCCESS)
+            lc->finished = NULL;
+    }
+    lc->drained = false;
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        if (rc == 0)
+            rc = vmaf_cuda_result_to_errno((int)pop_res);
     }
     return rc;
 }
-
 /*
  * Free the readback pair. Mirrors vmaf_cuda_kernel_readback_alloc's
  * leave-partial-state-on-failure contract: this routine is safe to
@@ -380,6 +414,7 @@ static inline int vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *rb,
     rb->bytes = 0;
     return rc;
 }
+/* NOLINTEND(modernize-use-nullptr) */
 
 #ifdef __cplusplus
 } /* extern "C" */

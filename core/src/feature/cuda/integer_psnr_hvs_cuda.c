@@ -135,25 +135,9 @@ static const VmafOption options[] = {
 
 static int close_fex_cuda(VmafFeatureExtractor *fex);
 
-static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned w, unsigned h)
+static int psnr_hvs_configure_planes(PsnrHvsStateCuda *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                                     unsigned h)
 {
-    PsnrHvsStateCuda *s = fex->priv;
-
-    if (bpc > 12) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_cuda: invalid bitdepth (%u); bpc must be <= 12\n",
-                 bpc);
-        return -EINVAL;
-    }
-    if (w < (unsigned)PSNR_HVS_BLOCK || h < (unsigned)PSNR_HVS_BLOCK) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_cuda: input %ux%u smaller than 8×8 block\n", w, h);
-        return -EINVAL;
-    }
-
-    s->bpc = bpc;
-    const int32_t samplemax = (1 << bpc) - 1;
-    s->samplemax_sq = samplemax * samplemax;
-
     s->width[0] = w;
     s->height[0] = h;
     if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
@@ -202,7 +186,30 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->num_blocks_y[p] = (s->height[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1;
         s->num_blocks[p] = s->num_blocks_x[p] * s->num_blocks_y[p];
     }
+    return 0;
+}
 
+static int psnr_hvs_configure_geometry(PsnrHvsStateCuda *s, enum VmafPixelFormat pix_fmt,
+                                       unsigned bpc, unsigned w, unsigned h)
+{
+    if (bpc > 12) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_cuda: invalid bitdepth (%u); bpc must be <= 12\n",
+                 bpc);
+        return -EINVAL;
+    }
+    if (w < (unsigned)PSNR_HVS_BLOCK || h < (unsigned)PSNR_HVS_BLOCK) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_cuda: input %ux%u smaller than 8×8 block\n", w, h);
+        return -EINVAL;
+    }
+
+    s->bpc = bpc;
+    const int32_t samplemax = (1 << bpc) - 1;
+    s->samplemax_sq = samplemax * samplemax;
+    return psnr_hvs_configure_planes(s, pix_fmt, w, h);
+}
+
+static int psnr_hvs_load_cuda(VmafFeatureExtractor *fex, PsnrHvsStateCuda *s)
+{
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
         return err;
@@ -222,8 +229,17 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, psnr_hvs_score_ptx), fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_psnr_hvs, s->module, "psnr_hvs"), fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
+    return 0;
 
+fail:
+    if (ctx_pushed)
+        (void)cu_f->cuCtxPopCurrent(NULL);
+    return _cuda_err;
+}
+
+static int psnr_hvs_alloc_buffers(VmafFeatureExtractor *fex, PsnrHvsStateCuda *s)
+{
     const unsigned bpc_bytes = (s->bpc <= 8 ? 1u : 2u);
     int ret = 0;
     for (unsigned p = 0; p < s->n_planes; p++) {
@@ -241,6 +257,24 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_ref[p], uint_bytes);
         ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_dist[p], uint_bytes);
     }
+    return ret;
+}
+
+static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                         unsigned w, unsigned h)
+{
+    PsnrHvsStateCuda *s = fex->priv;
+    int err = psnr_hvs_configure_geometry(s, pix_fmt, bpc, w, h);
+    if (err)
+        return err;
+
+    err = psnr_hvs_load_cuda(fex, s);
+    if (err) {
+        (void)close_fex_cuda(fex);
+        return err;
+    }
+
+    const int ret = psnr_hvs_alloc_buffers(fex, s);
     if (ret) {
         (void)close_fex_cuda(fex);
         return -ENOMEM;
@@ -253,13 +287,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return -ENOMEM;
     }
     return 0;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    (void)close_fex_cuda(fex);
-    return _cuda_err;
 }
 
 /* T-GPU-OPT-2/3: picture_copy-style upload split into three steps.
@@ -491,27 +518,17 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     PsnrHvsStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
     int ret = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
 
     /* T-GPU-OPT-2: tear down dedicated upload stream + event.
      * Drain first so any in-flight H2D completes before the pinned
      * staging it sources is freed below. */
-    if (s->upload_str != NULL) {
-        const CUresult sync_res = cu_f->cuStreamSynchronize(s->upload_str);
-        if (sync_res != CUDA_SUCCESS && ret == 0)
-            ret = vmaf_cuda_result_to_errno((int)sync_res);
-        const CUresult destroy_res = cu_f->cuStreamDestroy(s->upload_str);
-        if (destroy_res != CUDA_SUCCESS && ret == 0)
-            ret = vmaf_cuda_result_to_errno((int)destroy_res);
-        s->upload_str = NULL;
-    }
-    if (s->upload_done != NULL) {
-        const CUresult e = cu_f->cuEventDestroy(s->upload_done);
-        if (e != CUDA_SUCCESS && ret == 0)
-            ret = vmaf_cuda_result_to_errno((int)e);
-        s->upload_done = NULL;
-    }
+    const int upload_stream_rc = vmaf_cuda_stream_destroy(fex->cu_state, &s->upload_str, true);
+    if (ret == 0)
+        ret = upload_stream_rc;
+    const int upload_event_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->upload_done);
+    if (ret == 0)
+        ret = upload_event_rc;
 
     for (unsigned p = 0; p < s->n_planes; p++) {
         if (s->d_ref[p]) {
@@ -539,10 +556,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
             (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->h_uint_dist[p]);
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    if (cu_f && s->module) {
-        (void)cu_f->cuModuleUnload(s->module);
-        s->module = NULL;
-    }
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (ret == 0)
+        ret = module_rc;
     return ret;
 }
 

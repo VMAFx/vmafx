@@ -1,0 +1,1 @@
+| [ADR-1336](1336-cuda-context-owned-resource-teardown.md) | Tear down feature-owned CUDA modules, streams, and events with their owning context current and make partial initialization rollback retryable. | Accepted | cuda, correctness, lifecycle, testing |

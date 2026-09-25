@@ -354,6 +354,8 @@ static int float_adm_init_unwind(VmafFeatureExtractor *fex, FloatAdmStateCuda *s
             (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->accum_host[scale]);
     }
     (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return -ENOMEM;
 }
 
@@ -411,13 +413,13 @@ static int float_adm_load_kernels(VmafFeatureExtractor *fex, FloatAdmStateCuda *
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_csf_r, s->module, "float_adm_csf_r"), fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_aim_cm, s->module, "float_adm_aim_cm"),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
     return 0;
 
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
@@ -1187,9 +1189,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
             ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->accum_host[scale]);
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (ret == 0)
+        ret = module_rc;
     return ret;
 }
 

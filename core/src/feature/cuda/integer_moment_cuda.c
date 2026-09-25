@@ -89,6 +89,8 @@ static int moment_init_unwind(VmafFeatureExtractor *fex, MomentStateCuda *s, int
 {
     (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
     (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return err;
 }
 
@@ -116,7 +118,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_moment_kernel_16bpc"), fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
     s->bpc = bpc;
 
@@ -136,7 +138,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
@@ -234,9 +236,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
     if (rc == 0)
         rc = dict_rc;
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (rc == 0)
+        rc = module_rc;
     return rc;
 }
 

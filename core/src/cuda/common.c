@@ -349,6 +349,98 @@ fail:
     return _cuda_err;
 }
 
+int vmaf_cuda_module_unload(VmafCudaState *cu_state, CUmodule *module)
+{
+    if (is_cudastate_empty(cu_state) || cu_state->f == NULL || module == NULL)
+        return -EINVAL;
+    if (*module == NULL)
+        return 0;
+
+    CudaFunctions *const cu_f = cu_state->f;
+    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
+    if (push_res != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push_res);
+
+    int rc = 0;
+    const CUresult unload_res = cu_f->cuModuleUnload(*module);
+    if (unload_res == CUDA_SUCCESS) {
+        *module = NULL;
+    } else {
+        rc = vmaf_cuda_result_to_errno((int)unload_res);
+    }
+
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        if (rc == 0)
+            rc = vmaf_cuda_result_to_errno((int)pop_res);
+    }
+    return rc;
+}
+
+int vmaf_cuda_stream_destroy(VmafCudaState *cu_state, CUstream *stream, bool synchronize)
+{
+    if (is_cudastate_empty(cu_state) || cu_state->f == NULL || stream == NULL)
+        return -EINVAL;
+    if (*stream == NULL)
+        return 0;
+
+    CudaFunctions *const cu_f = cu_state->f;
+    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
+    if (push_res != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push_res);
+
+    int rc = 0;
+    if (synchronize) {
+        const CUresult sync_res = cu_f->cuStreamSynchronize(*stream);
+        if (sync_res != CUDA_SUCCESS)
+            rc = vmaf_cuda_result_to_errno((int)sync_res);
+    }
+    const CUresult destroy_res = cu_f->cuStreamDestroy(*stream);
+    if (destroy_res == CUDA_SUCCESS) {
+        *stream = NULL;
+    } else if (rc == 0) {
+        rc = vmaf_cuda_result_to_errno((int)destroy_res);
+    }
+
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        if (rc == 0)
+            rc = vmaf_cuda_result_to_errno((int)pop_res);
+    }
+    return rc;
+}
+
+int vmaf_cuda_event_destroy(VmafCudaState *cu_state, CUevent *event)
+{
+    if (is_cudastate_empty(cu_state) || cu_state->f == NULL || event == NULL)
+        return -EINVAL;
+    if (*event == NULL)
+        return 0;
+
+    CudaFunctions *const cu_f = cu_state->f;
+    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
+    if (push_res != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push_res);
+
+    int rc = 0;
+    const CUresult destroy_res = cu_f->cuEventDestroy(*event);
+    if (destroy_res == CUDA_SUCCESS) {
+        *event = NULL;
+    } else {
+        rc = vmaf_cuda_result_to_errno((int)destroy_res);
+    }
+
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        if (rc == 0)
+            rc = vmaf_cuda_result_to_errno((int)pop_res);
+    }
+    return rc;
+}
+
 int vmaf_cuda_release(VmafCudaState *cu_state)
 {
     if (is_cudastate_empty(cu_state))
