@@ -55,7 +55,7 @@ extern "C" {
  *
  * @return 0 on success, or -EINVAL when @vmaf is NULL.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled);
 
@@ -73,7 +73,7 @@ VMAF_EXPORT int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enable
  * @return 0 on success, -EINVAL when @vmaf is NULL or @strength is negative
  *         or not finite.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_set_perceptual_weight_strength(VmafContext *vmaf, double strength);
 
@@ -111,7 +111,7 @@ VMAF_EXPORT int vmaf_set_perceptual_weight_strength(VmafContext *vmaf, double st
  *         -EINVAL when @vmaf or @p blob is NULL,
  *         -ENOMEM on allocation failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_set_perceptual_sidedata(VmafContext *vmaf, const uint8_t *blob, size_t len,
                                              unsigned pic_index);

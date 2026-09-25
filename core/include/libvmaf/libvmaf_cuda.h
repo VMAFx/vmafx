@@ -44,17 +44,13 @@ typedef struct VmafCudaState VmafCudaState;
 
 /**
  * @struct VmafCudaConfiguration
- * @brief  Configuration for @ref vmaf_cuda_state_init.
+ * @brief  Configuration for `vmaf_cuda_state_init`.
  *
  * Lets the caller hand in a pre-existing `CUcontext` (e.g. one already created
  * by the host application's CUDA driver setup, or one shared with NVENC /
  * NVDEC). Safe to zero-initialise — when @p cu_ctx is NULL libvmaf creates a
- * fresh context on the current CUDA device.
- *
- * @field cu_ctx Optional caller-owned `CUcontext` (cast to `void *` so this
- *               header stays free of `<cuda.h>`). NULL → libvmaf creates a
- *               new context. When non-NULL the caller retains ownership; the
- *               context must outlive the VmafCudaState.
+ * fresh context on the current CUDA device. When non-NULL the caller retains
+ * ownership; the context must outlive the VmafCudaState.
  */
 typedef struct VmafCudaConfiguration {
     void *cu_ctx; /**< Optional CUcontext (cast from `CUcontext`); NULL → create one. */
@@ -73,7 +69,7 @@ typedef struct VmafCudaConfiguration {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Allocate one VmafCudaState per driver thread.
+ * @note Thread safety: Not thread-safe. Allocate one VmafCudaState per driver thread.
  */
 VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg);
 
@@ -95,7 +91,7 @@ VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfigura
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Call after vmaf_close() on every
+ * @note Thread safety: Not thread-safe. Call after vmaf_close() on every
  *               context that imported this state.
  */
 VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
@@ -114,7 +110,7 @@ VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Call before `vmaf_use_features_from_model()`
+ * @note Thread safety: Not thread-safe. Call before `vmaf_use_features_from_model()`
  *               and before the first `vmaf_read_pictures()` on the same
  *               context.
  */
@@ -150,29 +146,25 @@ enum VmafCudaPicturePreallocationMethod {
 
 /**
  * @struct VmafCudaPictureConfiguration
- * @brief  Picture-pool configuration for @ref vmaf_cuda_preallocate_pictures.
+ * @brief  Picture-pool configuration for `vmaf_cuda_preallocate_pictures`.
  *
- * CUDA equivalent of @ref VmafPictureConfiguration — adds the storage-tier
+ * CUDA equivalent of `VmafPictureConfiguration` — adds the storage-tier
  * selector so the caller controls whether the pool lives on the device or in
  * (pinned) host memory.
  *
- * @field pic_params           Per-picture geometry shared by every pool slot.
- * @field pic_params.w         Luma width in samples.
- * @field pic_params.h         Luma height in samples.
- * @field pic_params.bpc       Bits per component (8, 10, 12, or 16).
- * @field pic_params.pix_fmt   Planar pixel format (see @ref VmafPixelFormat).
- * @field pic_prealloc_method  Storage tier — see
- *                             @ref VmafCudaPicturePreallocationMethod.
+ * Per-picture geometry (`pic_params`) is shared by every pool slot:
+ * luma width, luma height, bits per component, and planar pixel format.
+ * Storage tier is selected by `pic_prealloc_method` (see
+ * `VmafCudaPicturePreallocationMethod`).
  */
 typedef struct VmafCudaPictureConfiguration {
-    /** Per-picture shape (width/height/bpc/pixel-format). */
     struct {
-        unsigned w, h;                /**< Per-plane width / height. */
+        unsigned w;                   /**< Per-plane width in samples. */
+        unsigned h;                   /**< Per-plane height in samples. */
         unsigned bpc;                 /**< Bits per component. */
         enum VmafPixelFormat pix_fmt; /**< Pixel format. */
-    } pic_params;
-    /** Selector for how each VmafPicture's data buffers are placed. */
-    enum VmafCudaPicturePreallocationMethod pic_prealloc_method;
+    } pic_params;                     /**< Per-picture shape (width/height/bpc/pixel-format). */
+    enum VmafCudaPicturePreallocationMethod pic_prealloc_method; /**< Storage tier selector. */
 } VmafCudaPictureConfiguration;
 
 /**
@@ -186,7 +178,7 @@ typedef struct VmafCudaPictureConfiguration {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Call before vmaf_read_pictures() on the
+ * @note Thread safety: Not thread-safe. Call before vmaf_read_pictures() on the
  *               same context.
  */
 VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictureConfiguration cfg);
@@ -203,7 +195,7 @@ VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictur
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per driver thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
 VMAF_EXPORT int vmaf_cuda_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 

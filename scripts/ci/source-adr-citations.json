@@ -5199,7 +5199,8 @@
     },
     "0953": {
       "sites": {
-        ".github/workflows/doxygen-public-api.yml": 1
+        ".github/workflows/doxygen-public-api.yml": 1,
+        "core/test/test_gpu_public_header_docs.py": 1
       },
       "target": "0953-doxygen-public-api-clean.md"
     },
@@ -7417,6 +7418,12 @@
         ".github/workflows/security-scans.yml": 1
       },
       "target": "1314-semgrep-registry-advisory-artifact.md"
+    },
+    "1315": {
+      "sites": {
+        "core/test/test_gpu_public_header_docs.py": 5
+      },
+      "target": "1315-doxygen-public-api-fail-closed.md"
     }
   },
   "retired": {
