@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD013 -->
 
-# Research-2080: CodeQL Python alerts triage and exception semantics
+# Research-2116: CodeQL Python alerts triage and exception semantics
 
 - **Status**: Active
 - **Workstream**: CodeQL Python alert triage (alerts 1275, 1276, 1239)

@@ -7498,6 +7498,12 @@
         "core/test/test_sycl_motion_add_uv_parity.c": 1
       },
       "target": "1326-sycl-motion-uv-fixed-oracle.md"
+    },
+    "1335": {
+      "sites": {
+        ".github/workflows/rule-enforcement.yml": 1
+      },
+      "target": "1335-research-digest-identity-ratchet.md"
     }
   },
   "retired": {

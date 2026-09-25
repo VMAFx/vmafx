@@ -1,4 +1,4 @@
-# Research-2080: HIP float-motion lifecycle and flush regression — 2026-09-24
+# Research-2115: HIP float-motion lifecycle and flush regression — 2026-09-24
 
 ## Finding
 

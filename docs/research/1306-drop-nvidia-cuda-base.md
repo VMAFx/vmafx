@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 -->
-# Research: dropping nvidia/cuda base images in favor of version-locked apt installs
+# Research-1306: dropping nvidia/cuda base images in favor of version-locked apt installs
 
 **Date**: 2026-09-24
 **Question**: Can VMAFx drop all `nvidia/cuda` base image dependencies and replace them with digest-pinned Ubuntu 26.04 plus explicit NVIDIA apt package installation, completely unblocking CUDA bumps from upstream OCI image release lag?
