@@ -86,6 +86,17 @@ test('test_gpu_float_ssim_auto_scale_contract',
     timeout : 30,
 )
 
+# ADR-1167 / T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19: every
+# backend must feed a complete row to the raw accumulator fold before the
+# score's float conversion. Source-level mutation controls keep device-free
+# coverage for AVX2/AVX-512, CUDA, HIP, SYCL and Metal call-site topology.
+test('test_adm_cm_row_rounding_contract',
+    import('python').find_installation(),
+    args : files('test_adm_cm_row_rounding_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048: these diagnostics were standardized once, then silently restored
 # from stale source. Keep their line framing and severity prefix stable.
 test('test_vmaf_log_callsite_format',
@@ -1904,6 +1915,16 @@ test_integer_adm_tiny_frames = executable('test_integer_adm_tiny_frames',
     dependencies : [pthread_dependency, math_lib],
 )
 test('test_integer_adm_tiny_frames', test_integer_adm_tiny_frames,
+    suite : ['fast'])
+
+# T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19: score-level parity
+# loses one-unit rounding-placement errors at the float conversion. Exercise
+# the internal row-fold seam on raw int64 accumulators instead.
+test_adm_cm_row_rounding = executable('test_adm_cm_row_rounding',
+    ['test.c', 'test_adm_cm_row_rounding.c'],
+    include_directories : [test_inc, include_directories('../src')],
+)
+test('test_adm_cm_row_rounding', test_adm_cm_row_rounding,
     suite : ['fast'])
 
 # T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18: integer ADM SIMD dispatch

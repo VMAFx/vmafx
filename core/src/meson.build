@@ -334,6 +334,7 @@ if is_hipcc_enabled and is_hip_enabled
     hip_kernel_shared_headers = files(
         'hip/common.h',
         'feature/integer_adm.h',
+        'feature/adm_cm_accumulator.h',
         'feature/hip/integer_adm_hip.h',
         'feature/hip/integer_adm/adm_decouple_inline.hip',
         'feature/hip/integer_vif_hip.h',
@@ -1453,6 +1454,7 @@ if is_cuda_enabled
         'feature/compat_builtin.h',
         'feature/feature_collector.h',
         'feature/integer_adm.h',
+        'feature/adm_cm_accumulator.h',
         'feature/integer_motion.h',
         'feature/integer_vif.h',
         'feature/cuda/integer_adm_cuda.h',

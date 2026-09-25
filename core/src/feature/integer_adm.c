@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "adm_angle_flag.h"
+#include "adm_cm_accumulator.h"
 #include "adm_csf_fixed_point.h"
 #include "adm_score.h"
 #include "barten_csf_tools.h"
@@ -1104,7 +1105,7 @@ static inline void adm_cm_fold(int64_t inner[3], int64_t accum[3], uint32_t add_
                                uint32_t shift_inner_accum)
 {
     for (int k = 0; k < 3; ++k) {
-        accum[k] += (inner[k] + add_shift_inner_accum) >> shift_inner_accum;
+        accum[k] += adm_cm_round_row_total(inner[k], add_shift_inner_accum, shift_inner_accum);
         inner[k] = 0;
     }
 }

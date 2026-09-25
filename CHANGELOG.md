@@ -19930,6 +19930,15 @@ integer reformulation of it. CPU scores are unchanged (the compiled
   Supersedes ADR-0539 with ADR-1167. Added regression parity tests `test_cuda_adm_small_border` and `test_cuda_adm_wide_rounding` (and HIP twins).
 
 
+- **Integer-ADM contrast-masking row rounding is now guarded before score
+  conversion can hide placement errors.** A private raw-accumulator seam plus
+  an all-backend source contract pins the once-per-complete-row shift across
+  the scalar CPU reference, AVX2/AVX-512, and the CUDA, HIP, SYCL and Metal
+  twins. Device-free fast tests distinguish correct row rounding from
+  per-partition rounding, truncation and a post-shift increment across every
+  reduction path. Production arithmetic and public interfaces are unchanged.
+
+
 - **The AVX2 and AVX-512 integer ADM paths now match the scalar path on
   high-contrast content.** Part of scale 0's masking threshold is computed in
   16 bits and wraps on very large values in the scalar path, as it does in

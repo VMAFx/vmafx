@@ -248,8 +248,15 @@ wide** on every GCN / CDNA / RDNA target we ship to (gfx906 / gfx90a
 gfx11, falls back to CAS loop on older GCN — HIP runtime handles
 arch selection.
 
-Precedents: `integer_vif/vif_statistics.hip` (ADR-0537),
-`integer_adm/adm_csf_den.hip` + `integer_adm/adm_cm.hip` (ADR-0539).
+Precedents: `integer_vif/vif_statistics.hip` (ADR-0537) and
+`integer_adm/adm_csf_den.hip` (ADR-0539).
+
+**Integer ADM contrast masking is the explicit exception** (ADR-1167): its
+rounding shift is non-distributive, so `integer_adm/adm_cm.hip` must first
+reduce the complete row and call `adm_cm_round_row_total()` exactly once.
+Per-thread or per-wave rounding followed by `atomicAdd` changes the raw
+accumulator even when the later float score hides it. The device-free
+`test_adm_cm_row_rounding_contract.py` pins both HIP reduction shapes.
 
 ## ADM `_hsaco` weak-stub slots have been removed (ADR-0539)
 
