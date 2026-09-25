@@ -2280,6 +2280,16 @@ sits under, so that resolution fails too. The status cell is the column a header
 the last non-empty cell, and only the word that *opens* it is read; the repair is to move the row,
 never to rewrite the status to match where the rebase left it.
 
+## fix/state-md-move-tombstone — reject contradictory move bookkeeping (2026-09-25)
+
+No rebase impact: the row-hygiene script, fixture, documentation, and
+`docs/state.md` are fork-local. Preserve the fourth gate alongside the existing
+duplicate and status checks: a `moved to Recently closed` tombstone under Open
+bugs may not coexist with a table row carrying the same id in that section.
+During a state conflict, keep the tombstone plus the authoritative row under
+Recently closed; never retain the stale Open row merely because it has no
+parseable Status cell.
+
 ## fix/sycl-motion2-checkerboard-drift — clip integer_motion2 score to motion_max_val (2026-09-05)
 
 no rebase impact: fork-local SYCL feature extractor and tests.

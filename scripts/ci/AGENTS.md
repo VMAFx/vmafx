@@ -929,7 +929,7 @@ tidy-ratchet-write LANE=<cuda|hip|sycl>`, advisory.
 
 ## check-state-md-rows.sh — the status token belongs to the section (ADR-0165)
 
-Three independent checks, all of them widened only after a narrower version
+Four independent checks, all of them widened only after a narrower version
 reported a dirty file as clean. Do not narrow any of them.
 
 1. Duplicate bug id. Matches four id shapes (`**T-ID**`, `T-ID`, `**T7-16**`,
@@ -942,10 +942,20 @@ reported a dirty file as clean. Do not narrow any of them.
    heading the row sits under whenever the token OPENING that cell is a status
    word: `closed` / `fixed` / `resolved` / `done` only under
    `## Recently closed`, `open` only under `## Open bugs`.
+4. Open row against move tombstone. A comment under `## Open bugs` that says an
+   id "moved to Recently closed" is an explicit closed-state claim; the same id
+   may not still have a table row in that section, even when the row has no
+   parseable Status cell.
 
 Check 3 exists because checks 1 and 2 only see a *duplicate*. A resolved row
 left under `## Open bugs` with no second copy is invisible to both, and reads
 as an open bug forever; 24 of 62 rows were in that state on 2026-09-21.
+
+Check 4 covers the remaining no-Status shape. The 2026-09-08 PTQ bookkeeping
+change claimed a row had moved and left its tombstone immediately below the
+unchanged Open row; the first three checks all reported clean. Preserve the
+fixture that rejects that exact contradiction. A tombstone plus the row under
+`## Recently closed` is the valid moved state and must continue to pass.
 
 Invariants for check 3:
 
