@@ -310,6 +310,9 @@ static int motion_init_unwind(VmafFeatureExtractor *fex, MotionStateCuda *s, int
         s->sad_host = NULL;
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
+    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->event);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     (void)ret; // accumulated cleanup status intentionally discarded on error path
 
     return -ENOMEM;
@@ -371,36 +374,26 @@ static int motion_init_cuda_context(VmafFeatureExtractor *fex, MotionStateCuda *
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    /* ADR-1090 — graduated labels so earlier allocations are freed when a
-     * later step fails; previously all paths jumped to `fail` which only
-     * popped the context, leaking the stream and event. */
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail_after_stream);
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, motion_score_ptx), fail_after_event);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, motion_score_ptx), fail);
 
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_motion_score_kernel_16bpc"),
-        fail_after_module);
+        fail);
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "calculate_motion_score_kernel_8bpc"),
-        fail_after_module);
+        fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
     return 0;
 
-fail_after_module:
-    (void)cu_f->cuModuleUnload(s->module);
-    s->module = NULL;
-fail_after_event:
-    (void)cu_f->cuEventDestroy(s->event);
-    s->event = 0;
-fail_after_stream:
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->event);
+    (void)vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
     return _cuda_err;
 }
 
@@ -446,14 +439,12 @@ static int motion_alloc_buffers(VmafFeatureExtractor *fex, MotionStateCuda *s, u
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
+    (void)pix_fmt;
+    (void)bpc;
     MotionStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
 
     int err = motion_check_unsupported(s, w, h);
-    if (err)
-        return err;
-
-    err = motion_init_cuda_context(fex, s, cu_f);
     if (err)
         return err;
 
@@ -465,6 +456,10 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         fex->close = NULL;
         return 0;
     }
+
+    err = motion_init_cuda_context(fex, s, cu_f);
+    if (err)
+        return err;
 
     s->calculate_motion_score = calculate_motion_score;
 
@@ -841,19 +836,10 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     MotionStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
-    /* Close path must continue unwinding every allocation even when a
-     * CUDA call fails — bailing on the first error would leak buffers.
-     * Each CHECK is independent and we OR the errnos into ret. */
-    int _cuda_err = 0;
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->str), after_stream_sync);
-after_stream_sync:
-    CHECK_CUDA_GOTO(cu_f, cuStreamDestroy(s->str), after_stream_destroy);
-after_stream_destroy:
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->event), after_event1_destroy);
-after_event1_destroy:;
-
-    int ret = _cuda_err;
+    int ret = vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
+    const int event_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->event);
+    if (ret == 0)
+        ret = event_rc;
 
     if (s->blur[0]) {
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[0]);
@@ -877,8 +863,9 @@ after_event1_destroy:;
         s->sad_host = NULL;
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (ret == 0)
+        ret = module_rc;
 
     return ret;
 }

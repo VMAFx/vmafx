@@ -142,6 +142,7 @@ static int float_motion_init_unwind(VmafFeatureExtractor *fex, FloatMotionStateC
     }
     (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
     (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return ret;
 }
@@ -222,6 +223,15 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->prev_motion_score = 0.0;
     s->cur_blur = 0;
 
+    if (s->motion_force_zero) {
+        fex->extract = extract_force_zero;
+        fex->submit = NULL;
+        fex->collect = NULL;
+        fex->flush = NULL;
+        fex->close = NULL;
+        return 0;
+    }
+
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
         return err;
@@ -236,23 +246,14 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "float_motion_kernel_16bpc"), fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-
-    if (s->motion_force_zero) {
-        fex->extract = extract_force_zero;
-        fex->submit = NULL;
-        fex->collect = NULL;
-        fex->flush = NULL;
-        fex->close = NULL;
-        return 0;
-    }
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
     return float_motion_alloc_buffers(fex, s, w, h, bpc);
 
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
@@ -448,9 +449,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     }
     ret |= vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (ret == 0)
+        ret = module_rc;
     return ret;
 }
 

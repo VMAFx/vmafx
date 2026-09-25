@@ -1484,21 +1484,19 @@ static int adm_cuda_load_modules(CudaFunctions *cu_f, AdmStateCuda *s)
 }
 
 /* Unload every loaded ADM module (a NULL handle was never loaded). */
-static void adm_cuda_unload_modules(CudaFunctions *cu_f, AdmStateCuda *s)
+static int adm_cuda_unload_modules(VmafCudaState *cu_state, AdmStateCuda *s)
 {
-    if (s->adm_cm_module) {
-        (void)cu_f->cuModuleUnload(s->adm_cm_module);
-    }
-    if (s->adm_csf_den_module) {
-        (void)cu_f->cuModuleUnload(s->adm_csf_den_module);
-    }
-    if (s->adm_csf_module) {
-        (void)cu_f->cuModuleUnload(s->adm_csf_module);
-    }
-    if (s->adm_dwt_module) {
-        (void)cu_f->cuModuleUnload(s->adm_dwt_module);
-    }
-    s->adm_cm_module = s->adm_csf_den_module = s->adm_csf_module = s->adm_dwt_module = NULL;
+    int rc = vmaf_cuda_module_unload(cu_state, &s->adm_cm_module);
+    const int csf_den_rc = vmaf_cuda_module_unload(cu_state, &s->adm_csf_den_module);
+    if (rc == 0)
+        rc = csf_den_rc;
+    const int csf_rc = vmaf_cuda_module_unload(cu_state, &s->adm_csf_module);
+    if (rc == 0)
+        rc = csf_rc;
+    const int dwt_rc = vmaf_cuda_module_unload(cu_state, &s->adm_dwt_module);
+    if (rc == 0)
+        rc = dwt_rc;
+    return rc;
 }
 
 // Get DWT kernel function pointers check adm_dwt2.cu for __global__ templated kernels
@@ -1581,31 +1579,27 @@ static int adm_cuda_load_kernels(CudaFunctions *cu_f, AdmStateCuda *s)
 
 /* Destroy the fex stream and events. A handle is 0 until its create call
  * succeeds, so only what was created is destroyed. */
-static void adm_cuda_destroy_stream_events(CudaFunctions *cu_f, AdmStateCuda *s)
+static int adm_cuda_destroy_stream_events(VmafCudaState *cu_state, AdmStateCuda *s)
 {
-    if (s->dis_event) {
-        (void)cu_f->cuEventDestroy(s->dis_event);
-        s->dis_event = 0;
-    }
-    if (s->ref_event) {
-        (void)cu_f->cuEventDestroy(s->ref_event);
-        s->ref_event = 0;
-    }
-    if (s->finished) {
-        (void)cu_f->cuEventDestroy(s->finished);
-        s->finished = 0;
-    }
-    if (s->str) {
-        (void)cu_f->cuStreamDestroy(s->str);
-        s->str = 0;
-    }
+    int rc = vmaf_cuda_event_destroy(cu_state, &s->dis_event);
+    const int ref_rc = vmaf_cuda_event_destroy(cu_state, &s->ref_event);
+    if (rc == 0)
+        rc = ref_rc;
+    const int finished_rc = vmaf_cuda_event_destroy(cu_state, &s->finished);
+    if (rc == 0)
+        rc = finished_rc;
+    const int stream_rc = vmaf_cuda_stream_destroy(cu_state, &s->str, true);
+    if (rc == 0)
+        rc = stream_rc;
+    return rc;
 }
 
 /* Create the fex stream and events and load the kernels, with the fex context
  * already pushed. On failure everything created here is released again
  * (ADR-1090). */
-static int adm_cuda_init_device_locked(CudaFunctions *cu_f, AdmStateCuda *s)
+static int adm_cuda_init_device_locked(VmafCudaState *cu_state, AdmStateCuda *s)
 {
+    CudaFunctions *const cu_f = cu_state->f;
     int _cuda_err = 0;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
@@ -1617,9 +1611,9 @@ static int adm_cuda_init_device_locked(CudaFunctions *cu_f, AdmStateCuda *s)
         return 0;
     }
     /* Unload whatever modules loaded before the failing call. */
-    adm_cuda_unload_modules(cu_f, s);
+    (void)adm_cuda_unload_modules(cu_state, s);
 fail:
-    adm_cuda_destroy_stream_events(cu_f, s);
+    (void)adm_cuda_destroy_stream_events(cu_state, s);
     return _cuda_err;
 }
 
@@ -1627,13 +1621,8 @@ fail:
  * framework never calls close() after a failed init(). */
 static void adm_cuda_release_device(VmafFeatureExtractor *fex, AdmStateCuda *s)
 {
-    CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f->cuCtxPushCurrent(fex->cu_state->ctx) != CUDA_SUCCESS) {
-        return;
-    }
-    adm_cuda_unload_modules(cu_f, s);
-    adm_cuda_destroy_stream_events(cu_f, s);
-    (void)cu_f->cuCtxPopCurrent(NULL);
+    (void)adm_cuda_unload_modules(fex->cu_state, s);
+    (void)adm_cuda_destroy_stream_events(fex->cu_state, s);
 }
 
 /* Everything init needs from the device: stream, events, kernels and the SM
@@ -1643,7 +1632,7 @@ static int adm_cuda_init_device(VmafFeatureExtractor *fex, AdmStateCuda *s)
     CudaFunctions *cu_f = fex->cu_state->f;
     CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
 
-    const int err = adm_cuda_init_device_locked(cu_f, s);
+    const int err = adm_cuda_init_device_locked(fex->cu_state, s);
     if (err) {
         (void)cu_f->cuCtxPopCurrent(NULL);
         return err;
@@ -1658,7 +1647,12 @@ static int adm_cuda_init_device(VmafFeatureExtractor *fex, AdmStateCuda *s)
         s->sm_count = 0;
     }
 
-    CHECK_CUDA_RETURN(cu_f, cuCtxPopCurrent(NULL));
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        adm_cuda_release_device(fex, s);
+        return vmaf_cuda_result_to_errno((int)pop_res);
+    }
     return 0;
 }
 
@@ -1855,30 +1849,14 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     AdmStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
-    /* Close path continues even on CUDA errors so every allocated
-     * buffer gets freed. Individual CHECK_CUDA_GOTO steps skip forward
-     * to the next handle without bailing. */
-    int _cuda_err = 0;
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->str), after_sync);
-after_sync:
-    CHECK_CUDA_GOTO(cu_f, cuStreamDestroy(s->str), after_stream);
-after_stream:
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->finished), after_ev1);
-after_ev1:
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->ref_event), after_ev2);
-after_ev2:
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->dis_event), after_ev3);
-after_ev3:;
-
-    int ret = _cuda_err;
+    int ret = adm_cuda_destroy_stream_events(fex->cu_state, s);
 
     ret |= adm_cuda_free_buffers(fex->cu_state, &s->buf);
 
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    if (cu_f) {
-        adm_cuda_unload_modules(cu_f, s);
-    }
+    const int module_rc = adm_cuda_unload_modules(fex->cu_state, s);
+    if (ret == 0)
+        ret = module_rc;
     return ret;
 }
 

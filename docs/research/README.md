@@ -124,6 +124,7 @@ Conventions:
 | [2114](2114-research-digest-ratchet-authority.md) | Trusted merge-base authority for research-digest identity debt | Complete | [ADR-1335](../adr/1335-research-digest-identity-ratchet.md) |
 | [2115](2115-hip-float-motion-lifecycle-flush.md) | HIP float-motion force-zero ownership and option-aware flush idempotency | Active | — (BUG048 A5 restoration) |
 | [2116](2116-codeql-python-alerts-triage-2026-09-24.md) | CodeQL Python alerts triage and exception semantics | Active | — |
+| [2117](2117-cuda-context-owned-resource-teardown.md) | CUDA context-owned resource teardown | Complete | [ADR-1336](../adr/1336-cuda-context-owned-resource-teardown.md) |
 | [2118](2118-bug048-script-environment-drift-2026-09-25.md) | BUG-048 script environment drift | Complete | — (BUG-048 restoration) |
 | [2119](2119-gcc16-placement-new-symbol-visibility.md) | GCC 16 C++ placement new/delete symbol visibility | Complete | [ADR-1337](../adr/1337-cpp-placement-new-visibility.md) |
 

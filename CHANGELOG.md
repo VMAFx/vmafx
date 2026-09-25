@@ -22631,6 +22631,9 @@ used consistently for `s->adm_csf_module`, `s->adm_csf_den_module`, and
   base build across the existing CUDA ADM regression executables.
 
 
+- Tear down CUDA feature modules, streams, and events with their owning context current, and unwind partially initialized lifecycle resources without discarding retryable handles.
+
+
 - **CUDA `dispatch_strategy.c` `getenv()` thread-safety (round-5 clang-tidy
   `concurrency-mt-unsafe` sweep).** `vmaf_cuda_select_strategy()` called
   `getenv("VMAF_CUDA_DISPATCH")` on every invocation, which is not MT-safe per

@@ -256,18 +256,18 @@ cuda/
 
 ## Lifecycle invariants
 
-- **`cuModuleLoadData` requires paired `cuModuleUnload` in
-  `close()`** — modules carry GPU-resident backing storage (~200-500
-  KB per module on consumer GPUs), survives `cuStreamDestroy` and
-  (for primary contexts) `cuCtxDestroy`.
-  `compute-sanitizer --tool memcheck` does **not** report module leaks (tool tracks
-  `cuMem*Alloc` only) — why leak in `ssimulacra2_cuda` survived
-  initial review. Adding `cuModuleLoadData` call -> add guarded
-  `cuModuleUnload` in matching `close_fex_cuda` after
-  `cuStreamSynchronize`, before `cuStreamDestroy`. Reference fix:
-  [ADR-0356](../../../docs/adr/0356-ssimulacra2-cuda-leaks-perf.md)
-  (`ssimulacra2_cuda` had two unloaded modules — `module_blur` +
-  `module_mul`).
+- **Feature resources are destroyed with their owning context current
+  ([ADR-1336](../../../docs/adr/1336-cuda-context-owned-resource-teardown.md)).**
+  Modules, streams, and events owned by an extractor must use
+  `vmaf_cuda_module_unload`, `vmaf_cuda_stream_destroy`, and
+  `vmaf_cuda_event_destroy`; feature close/unwind code must not call the raw
+  driver destroy functions. The helpers push `VmafCudaState::ctx`, preserve the
+  first error, restore the caller's previous context, and clear a handle only
+  after confirmed destruction. `vmaf_cuda_kernel_lifecycle_init` must unwind
+  every successfully created earlier handle if a later step fails. The
+  device-free `test_cuda_runtime_unwind` and complete owner inventory in
+  `test_cuda_module_lifecycle_contract.py` guard this rule. Adding a
+  `cuModuleLoadData` owner requires updating that inventory in the same PR.
 - **Drain batch belongs to one engine at a time.** `drain_batch.c`'s
   `g_drain_batch` thread-local (ADR-0242), but two `VmafContext`s can
   run on one OS thread, so it carries owning `VmafCudaState`:

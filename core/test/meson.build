@@ -153,6 +153,16 @@ test('test_device_target_header_dependencies',
     timeout : 30,
 )
 
+# ADR-1336: CUDA modules belong to the context that loaded them. Keep the
+# complete load-owner inventory device-free and reject raw unload calls that
+# depend on whichever unrelated context happens to be current at close time.
+test('test_cuda_module_lifecycle_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_module_lifecycle_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048 B2 / ADR-0759: keep the four large HIP ADM compute kernels on the
 # device-resident AdmBufferHip pointer contract, including host launch wiring,
 # one-time upload, and the BUG-092-compatible failure/close lifecycle.

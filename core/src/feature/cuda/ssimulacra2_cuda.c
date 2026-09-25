@@ -655,47 +655,33 @@ static int ss2c_load_kernels(VmafFeatureExtractor *fex, Ssimu2StateCuda *s, Cuda
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    /* ADR-1090 — all module/function failures redirect to fail_after_stream
-     * so the stream is destroyed before we return; previously `fail` only
-     * popped the context, leaking s->str and any loaded modules. */
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_blur, ssimulacra2_blur_ptx),
-                    fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_mul, ssimulacra2_mul_ptx), fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_blur_h, s->module_blur, "ssimulacra2_blur_h"),
-                    fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v"),
-                    fail_after_stream);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_blur, ssimulacra2_blur_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_mul, ssimulacra2_mul_ptx), fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->func_blur_h, s->module_blur, "ssimulacra2_blur_h"), fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v"), fail);
     /* ADR-0456: fused 3-channel H + transpose + fused 3-channel V. */
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_blur_h3, s->module_blur, "ssimulacra2_blur_h3"),
-                    fail_after_stream);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->func_blur_h3, s->module_blur, "ssimulacra2_blur_h3"), fail);
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->func_transpose, s->module_blur, "ssimulacra2_transpose"),
-        fail_after_stream);
+        fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_blur_v3_transposed, s->module_blur,
                                         "ssimulacra2_blur_v3_transposed"),
-                    fail_after_stream);
+                    fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_mul3, s->module_mul, "ssimulacra2_mul3"),
-                    fail_after_stream);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
     return 0;
 
-fail_after_stream:
-    /* Unload any modules already loaded before destroying the stream. */
-    if (s->module_mul)
-        (void)cu_f->cuModuleUnload(s->module_mul);
-    if (s->module_blur)
-        (void)cu_f->cuModuleUnload(s->module_blur);
-    s->module_mul = s->module_blur = NULL;
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
+    (void)vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module_mul);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module_blur);
     return _cuda_err;
 }
 
@@ -1245,7 +1231,6 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     }
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), out);
-    ctx_pushed = 0;
 
     const double score = ss2c_pool_score(avg_ssim, avg_ed, completed);
     return ss2c_append_score(feature_collector, index, score);
@@ -1259,22 +1244,16 @@ out:
  *
  * HISS-04: lifted verbatim out of close_fex_cuda.
  */
-static void ss2c_close_stream_and_modules(Ssimu2StateCuda *s, CudaFunctions *cu_f)
+static int ss2c_close_stream_and_modules(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
 {
-    (void)cu_f->cuStreamSynchronize(s->str);
-    /* Unload the two PTX modules loaded by `init_fex_cuda` —
-     * `cuModuleLoadData` allocates ~200-500 KB of GPU-resident
-     * module backing store per module, none of which is reclaimed
-     * by `cuStreamDestroy` or `cuCtxDestroy` on a primary context.
-     * Skipping these calls leaks the modules every `vmaf_close()`
-     * cycle (caught by `compute-sanitizer --tool memcheck` on a
-     * 100-iteration init/extract/close loop). Guarded by null
-     * checks so partial-init failure paths are still safe. */
-    if (s->module_blur)
-        (void)cu_f->cuModuleUnload(s->module_blur);
-    if (s->module_mul)
-        (void)cu_f->cuModuleUnload(s->module_mul);
-    (void)cu_f->cuStreamDestroy(s->str);
+    int rc = vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
+    const int blur_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module_blur);
+    if (rc == 0)
+        rc = blur_rc;
+    const int mul_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module_mul);
+    if (rc == 0)
+        rc = mul_rc;
+    return rc;
 }
 
 /* ss2c_free_device_buffers - the twelve device allocations.
@@ -1289,6 +1268,7 @@ static int ss2c_free_device_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *
         if (s->b) {                                                                                \
             ret |= vmaf_cuda_buffer_free(fex->cu_state, s->b);                                     \
             free(s->b);                                                                            \
+            s->b = NULL;                                                                           \
         }                                                                                          \
     } while (0)
     SS2C_FREE_DEV(d_ref_lin);
@@ -1352,13 +1332,13 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     Ssimu2StateCuda *s = fex->priv;
     if (!s)
         return 0;
-    CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
-
-    if (cu_f && s->str)
-        ss2c_close_stream_and_modules(s, cu_f);
-
-    int ret = ss2c_free_device_buffers(fex, s);
-    ret |= ss2c_free_host_buffers(fex, s);
+    int ret = ss2c_close_stream_and_modules(fex, s);
+    const int device_rc = ss2c_free_device_buffers(fex, s);
+    if (ret == 0)
+        ret = device_rc;
+    const int host_rc = ss2c_free_host_buffers(fex, s);
+    if (ret == 0)
+        ret = host_rc;
     return ret;
 }
 

@@ -54301,3 +54301,21 @@ and its local `AGENTS.md` rule together on conflict resolution. The global
 `scripts/ci/check-dispatch-registry.sh` gate covers extractor-symbol
 registration; it does not replace the HIP/Metal allowlist review and runtime
 assertions described by those backend guides.
+
+## ADR-1336 — CUDA resources are destroyed in their owning context (2026-09-25)
+
+Every feature-owned `CUmodule`, custom `CUstream`, and `CUevent` is released
+through the owner-context helpers in `core/src/cuda/common.c`; raw destroy calls
+must not return to `core/src/feature/cuda/*.c`. Preserve the exact 19-file,
+23-handle module inventory in
+`core/test/test_cuda_module_lifecycle_contract.py`, including ADM's four
+modules and SSIMULACRA2's two. New `cuModuleLoadData` owners must add their
+state handle, helper-based close and init-unwind, and inventory entry together.
+
+`vmaf_cuda_kernel_lifecycle_init()` rolls back every earlier successful create
+when a later create or final context pop fails. Close paths preserve the first
+error, continue the remaining destroys, clear only successfully destroyed
+handles, and restore a foreign caller context. Rebase conflicts must keep that
+ownership behavior even if upstream changes extractor cleanup structure. Run
+`meson test -C build-cuda-unwind test_cuda_runtime_unwind
+test_cuda_module_lifecycle_contract --print-errorlogs` after resolution.

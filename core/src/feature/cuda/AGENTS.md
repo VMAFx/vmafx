@@ -95,15 +95,19 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
 
 ## Rebase-sensitive invariants
 
-- **Every successfully loaded CUDA module has an owned handle and an unload
-  path.** Any extractor that calls `cuModuleLoadData` must retain the resulting
-  `CUmodule` in its state and call `cuModuleUnload` on every matching close or
-  init-unwind path after pending device work is synchronized. Guard partially
-  initialized handles; do not rely on context destruction to reclaim modules
-  in a process that repeatedly creates and closes VMAF contexts. Preserve the
-  multi-module array teardown in `integer_adm_cuda.c`. Commit `62b2103a9`
-  established this rule across the CUDA extractors; a rebase that keeps the load
-  but loses the unload leaks GPU-resident module backing store per cycle.
+- **Every successfully loaded CUDA module has an owned handle and context-owned
+  unload path ([ADR-1336](../../../../docs/adr/1336-cuda-context-owned-resource-teardown.md)).**
+  Any extractor that calls `cuModuleLoadData` must retain the resulting
+  `CUmodule` in its state and call `vmaf_cuda_module_unload` on every matching
+  close or init-unwind path after pending device work is synchronized. Custom
+  streams and events use `vmaf_cuda_stream_destroy` and
+  `vmaf_cuda_event_destroy` for the same reason: raw driver teardown acts on
+  the current context, which may be absent or belong to another caller at
+  close. Guard partially initialized handles, clear them only after confirmed
+  destruction, preserve the first teardown error, and continue best-effort
+  cleanup. Preserve the four-module teardown in `integer_adm_cuda.c` and the
+  two-module teardown in `ssimulacra2_cuda.c`. The complete inventory in
+  `test_cuda_module_lifecycle_contract.py` must change with every new owner.
 
 - **GPU SpEED means/cov must match CPU GLOBAL covariance, and ref/dis
   must use SEPARATE eigenvalue bases** (PR #1029,

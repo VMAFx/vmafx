@@ -657,7 +657,7 @@
     },
     "0153": {
       "sites": {
-        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 3,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 2,
         "core/src/feature/float_ms_ssim.c": 1,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 2,
         "core/src/feature/metal/float_ms_ssim.metal": 2,
@@ -1728,7 +1728,7 @@
     },
     "0271": {
       "sites": {
-        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 6,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 3,
         "core/src/hip/meson.build": 1
       },
       "target": "0271-cuda-drain-batch-ms-ssim.md"
@@ -1785,6 +1785,7 @@
         "core/src/feature/arm64/ssimulacra2_host_neon.c": 1,
         "core/src/feature/brisque.c": 1,
         "core/src/feature/ciede.c": 4,
+        "core/src/feature/cuda/float_vif_cuda.c": 1,
         "core/src/feature/cuda/integer_adm_cuda.c": 1,
         "core/src/feature/cuda/ssim_cuda.c": 1,
         "core/src/feature/cuda/ssimulacra2_cuda.c": 3,
@@ -5410,7 +5411,7 @@
     "0990": {
       "sites": {
         "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu": 1,
-        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 7,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 3,
         "core/src/feature/hip/integer_ms_ssim/ms_ssim_score.hip": 2,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 2
       },
@@ -5707,9 +5708,7 @@
       "sites": {
         "core/src/cuda/picture_cuda.c": 3,
         "core/src/feature/cuda/integer_adm_cuda.c": 1,
-        "core/src/feature/cuda/integer_motion_cuda.c": 1,
-        "core/src/feature/cuda/integer_vif_cuda.c": 1,
-        "core/src/feature/cuda/ssimulacra2_cuda.c": 1
+        "core/src/feature/cuda/integer_vif_cuda.c": 1
       },
       "target": "1090-cuda-stream-event-leak-fix.md"
     },
@@ -6025,6 +6024,7 @@
         "core/src/cuda/common.c": 1,
         "core/src/cuda/dispatch_strategy.c": 1,
         "core/src/cuda/drain_batch.c": 1,
+        "core/src/cuda/kernel_template.h": 1,
         "core/src/cuda/picture_cuda.c": 1,
         "core/src/dnn/dnn_api.c": 1,
         "core/src/dnn/dnn_attach_api.c": 1,
@@ -6927,7 +6927,7 @@
     },
     "1221": {
       "sites": {
-        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 2,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 1,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 2,
         "core/src/feature/metal/float_ms_ssim_metal.mm": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 2,
@@ -7518,6 +7518,12 @@
         ".github/workflows/rule-enforcement.yml": 1
       },
       "target": "1335-research-digest-identity-ratchet.md"
+    },
+    "1336": {
+      "sites": {
+        "core/test/meson.build": 1
+      },
+      "target": "1336-cuda-context-owned-resource-teardown.md"
     },
     "1337": {
       "sites": {

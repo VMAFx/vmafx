@@ -177,6 +177,8 @@ static int float_vif_init_unwind(VmafFeatureExtractor *fex, FloatVifStateCuda *s
             (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->den_host[i]);
     }
     (void)vmaf_dictionary_free(&s->feature_name_dict);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return -ENOMEM;
 }
 
@@ -281,14 +283,14 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_decimate, s->module, "float_vif_decimate"),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
     return float_vif_alloc_buffers(fex, s, w, h, bpc);
 
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
@@ -629,9 +631,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
             ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->den_host[i]);
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (ret == 0)
+        ret = module_rc;
     return ret;
 }
 
@@ -652,6 +654,7 @@ static const char *provided_features[] = {"VMAF_feature_vif_scale0_score",
                                           "vif_den_scale3",
                                           NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_vif_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_vif_cuda = {
     .name = "float_vif_cuda",
     .init = init_fex_cuda,

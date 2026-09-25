@@ -510,6 +510,7 @@ static int cambi_init_unwind(VmafFeatureExtractor *fex, CambiStateCuda *s, int e
     if (s->feature_name_dict)
         (void)vmaf_dictionary_free(&s->feature_name_dict);
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     return (err != 0) ? err : -ENOMEM;
 }
 
@@ -591,14 +592,13 @@ static int cambi_load_kernels(VmafFeatureExtractor *fex, CambiStateCuda *s, Cuda
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->func_filter_mode, s->module, "cambi_filter_mode_kernel"),
         fail_cuda);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-    ctx_pushed = 0;
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_cuda);
     return 0;
 
 fail_cuda:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
+    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
     return _cuda_err;
 }
@@ -1293,7 +1293,6 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         return cambi_submit_unwind(&u, ctx_pushed, err, _cuda_err);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-    ctx_pushed = 0;
     return 0;
 
 fail_cuda:
@@ -1323,32 +1322,6 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 /* ------------------------------------------------------------------ */
 /* close_fex_cuda */
 /* ------------------------------------------------------------------ */
-/* cambi_unload_module - push the fex context, unload the PTX module, pop.
- *
- * HISS-01: lifted out of close_fex_cuda so the former `goto unload_done`
- * (which only skipped the failure block) becomes an ordinary return. The
- * CHECK_CUDA_GOTO error labels are unchanged, so the pop still runs exactly
- * when the push succeeded and the same _cuda_err reaches the caller.
- */
-static int cambi_unload_module(VmafFeatureExtractor *fex, CambiStateCuda *s,
-                               const CudaFunctions *cu_f)
-{
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_unload);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(cu_f, cuModuleUnload(s->module), fail_unload);
-    s->module = NULL;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop_unload);
-    return 0;
-
-fail_unload:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop_unload:
-    return _cuda_err;
-}
-
 /* cambi_close_device_buffers - release the device buffers and the two
  * readback staging areas.
  *
@@ -1417,12 +1390,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         if (e && rc == 0)
             rc = e;
     }
-    const CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
-    if (cu_f && fex->cu_state && fex->cu_state->ctx && s->module) {
-        const int unload_err = cambi_unload_module(fex, s, cu_f);
-        if (unload_err && rc == 0)
-            rc = unload_err;
-    }
+    const int unload_err = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (unload_err && rc == 0)
+        rc = unload_err;
     return rc;
 }
 

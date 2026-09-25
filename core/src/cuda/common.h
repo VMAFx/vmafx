@@ -91,6 +91,43 @@ int vmaf_cuda_sync(VmafCudaState *cu_state);
 int vmaf_cuda_release(VmafCudaState *cu_state);
 
 /**
+ * Unloads a CUDA module with its owning context current.
+ *
+ * The CUDA driver unloads a module from the current context, not from a
+ * context encoded in the module handle. This helper therefore pushes
+ * `cu_state->ctx`, unloads the module, and restores the caller's previous
+ * current context. A handle is cleared only after the driver confirms that
+ * the unload succeeded, so callers can retry failed teardown.
+ *
+ * @param cu_state Initialized owner of the module's CUDA context.
+ * @param module Pointer to the module handle. A NULL handle is a no-op.
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ */
+int vmaf_cuda_module_unload(VmafCudaState *cu_state, CUmodule *module);
+
+/**
+ * Synchronizes and destroys a CUDA stream with its owning context current.
+ *
+ * @param cu_state Initialized owner of the stream's CUDA context.
+ * @param stream Pointer to the stream handle. A NULL handle is a no-op.
+ * @param synchronize Whether to drain the stream before destruction.
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ */
+int vmaf_cuda_stream_destroy(VmafCudaState *cu_state, CUstream *stream, bool synchronize);
+
+/**
+ * Destroys a CUDA event with its owning context current.
+ *
+ * @param cu_state Initialized owner of the event's CUDA context.
+ * @param event Pointer to the event handle. A NULL handle is a no-op.
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ */
+int vmaf_cuda_event_destroy(VmafCudaState *cu_state, CUevent *event);
+
+/**
  * Allocates a 1D buffer on the GPU.
  *
  * @param cu_state  Initialized VmafCudaState object.
