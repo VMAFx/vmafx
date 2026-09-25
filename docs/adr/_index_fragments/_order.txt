@@ -1031,3 +1031,4 @@
 1310-mypy-ci-fail-closed
 1311-source-adr-citation-provenance
 1312-gpu-option-alias-parity
+1315-doxygen-public-api-fail-closed

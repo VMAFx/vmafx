@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/fix-doxygen-public-api-warnings-6ba5 — drive public C API Doxygen warnings to zero and fail closed (2026-09-25)
+
+Public C headers in `core/include/libvmaf/*.h` are now strictly warning-free under
+`core/doc/Doxyfile.public-api` (`WARN_AS_ERROR = YES`) and CI workflow
+`.github/workflows/doxygen-public-api.yml` (`DOXYGEN_WARNING_CEILING: "0"`).
+Multi-variable declarations (`unsigned w, h;`) in public structs must remain split
+into separate lines with individual doc comments so Doxygen attaches docs to all
+members. Unrecognized `@field` tags must not be reintroduced (use inline `/**< ... */`).
+Standardized `@note Thread safety:` replaces invalid `@thread-safety` annotations.
+The vendored `pelorus/` mirror remains excluded from the public C API documentation scope.
+When rebasing or resolving conflicts in public headers, ensure complete per-member
+documentation and verify with `python3 -B core/test/test_gpu_public_header_docs.py`
+and `doxygen core/doc/Doxyfile.public-api`.
+
+- Research digest: [Research digest](research/doxygen-public-api-fail-closed-2026-09-25.md).
+- Decision matrix: [ADR-1315](adr/1315-doxygen-public-api-fail-closed.md#alternatives-considered).
+- AGENTS.md invariant: `core/include/libvmaf/AGENTS.md`, "Doxygen-clean public API".
+- Reproducer / smoke: `python3 -B core/test/test_gpu_public_header_docs.py` and `doxygen core/doc/Doxyfile.public-api`.
+- Changelog: `changelog.d/fixed/1315-doxygen-public-api-fail-closed.md`.
+- FFmpeg impact: none; no symbol was removed or renamed; ABI structs were not modified.
+
 ## agent/fix-gpu-option-aliases-hiss-984823 — preserve CPU collector-key aliases (2026-09-25)
 
 CUDA, SYCL, and HIP option tables now use the same `force_0`, `ks`, and

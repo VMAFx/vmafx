@@ -90,5 +90,77 @@ class GpuPublicHeaderDocsTest(unittest.TestCase):
         )
 
 
+class PublicHeaderDoxygenContractTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.repo_root = Path(__file__).resolve().parents[2]
+        self.headers = [
+            p for p in INCLUDE_DIR.glob("*.h")
+            if "pelorus" not in p.parts
+        ]
+        self.doxyfile = self.repo_root / "core" / "doc" / "Doxyfile.public-api"
+        self.workflow = self.repo_root / ".github" / "workflows" / "doxygen-public-api.yml"
+
+    def test_no_field_tags_in_public_headers(self) -> None:
+        """ADR-0953 / ADR-1315: @field is not a Doxygen command; use /**< ... */."""
+        for header in self.headers:
+            content = header.read_text(encoding="utf-8")
+            matches = re.findall(r"@field\b", content)
+            self.assertEqual(
+                matches,
+                [],
+                f"{header.name} contains deprecated @field tags; use inline /**< ... */ instead",
+            )
+
+    def test_no_unknown_thread_command_in_public_headers(self) -> None:
+        """ADR-1315: @thread-safety parses as @thread with -safety; use @note Thread safety:."""
+        for header in self.headers:
+            content = header.read_text(encoding="utf-8")
+            matches = re.findall(r"@thread(?:-safety)?\b", content)
+            self.assertEqual(
+                matches,
+                [],
+                f"{header.name} contains invalid @thread command; use '@note Thread safety:' instead",
+            )
+
+    def test_doxyfile_contract(self) -> None:
+        """ADR-1315: Doxyfile.public-api must fail closed with WARN_AS_ERROR = YES and exclude pelorus mirror."""
+        content = self.doxyfile.read_text(encoding="utf-8")
+        self.assertRegex(content, r"WARN_AS_ERROR\s*=\s*YES")
+        self.assertRegex(content, re.compile(r"EXCLUDE_PATTERNS\s*=.*?\*/pelorus/\*", re.DOTALL))
+
+    def test_workflow_ceiling_zero(self) -> None:
+        """ADR-1315: doxygen-public-api.yml warning ceiling must be 0."""
+        content = self.workflow.read_text(encoding="utf-8")
+        self.assertIn('DOXYGEN_WARNING_CEILING: "0"', content)
+
+    def test_doxygen_execution_zero_warnings(self) -> None:
+        """ADR-1315: running Doxygen against Doxyfile.public-api must produce zero warnings."""
+        import shutil
+        import subprocess
+        import tempfile
+
+        if not shutil.which("doxygen"):
+            self.skipTest("doxygen binary not found on PATH")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_doxyfile = Path(tmpdir) / "Doxyfile"
+            warn_log = Path(tmpdir) / "warnings.log"
+            content = self.doxyfile.read_text(encoding="utf-8")
+            content += f"\nOUTPUT_DIRECTORY = {tmpdir}\n"
+            content += f"WARN_LOGFILE = {warn_log}\n"
+            tmp_doxyfile.write_text(content, encoding="utf-8")
+
+            proc = subprocess.run(
+                ["doxygen", str(tmp_doxyfile)],
+                cwd=str(self.repo_root),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(proc.returncode, 0, f"doxygen failed: {proc.stderr}\n{proc.stdout}")
+            if warn_log.exists():
+                warnings = warn_log.read_text(encoding="utf-8").strip()
+                self.assertEqual(warnings, "", f"doxygen produced warnings:\n{warnings}")
+
+
 if __name__ == "__main__":
     unittest.main()

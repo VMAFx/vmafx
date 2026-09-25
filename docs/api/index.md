@@ -771,10 +771,12 @@ open build/doxygen-public-api/html/index.html             # browse
 ```
 
 The `doxygen-public-api` GitHub Actions workflow runs the same command
-on every PR that touches `core/include/libvmaf/` or the Doxyfile and
-publishes the rendered HTML + the warning log as build artifacts.
-The build is warning-clean — see
-[ADR-0953](../adr/0953-doxygen-public-api-clean.md).
+on every PR that touches `core/include/libvmaf/` or the Doxyfile, gates
+the merge via `required-aggregator.yml` with `DOXYGEN_WARNING_CEILING: "0"`,
+and publishes the rendered HTML + the warning log as build artifacts.
+The build is strictly warning-clean and fails closed with
+`WARN_AS_ERROR = YES` — see [ADR-0953](../adr/0953-doxygen-public-api-clean.md)
+and [ADR-1315](../adr/1315-doxygen-public-api-fail-closed.md).
 
 ## Related
 

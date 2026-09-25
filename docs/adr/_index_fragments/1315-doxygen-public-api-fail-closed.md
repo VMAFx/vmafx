@@ -1,0 +1,1 @@
+| [ADR-1315](1315-doxygen-public-api-fail-closed.md) | Drive public C API Doxygen warnings to zero, exclude vendored pelorus mirror, fail closed with WARN_AS_ERROR and warning ceiling 0, and guard with fast-suite tests. | Accepted | docs, ci, api, public-surface, doxygen |

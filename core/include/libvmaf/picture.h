@@ -119,7 +119,7 @@ typedef struct VmafPicture {
  *         arguments (NULL pointer, unknown format, zero dimensions),
  *         `-ENOMEM` on allocation failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -145,7 +145,7 @@ VMAF_EXPORT int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fm
  *
  * @return 0 on success, or a negative errno code on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */

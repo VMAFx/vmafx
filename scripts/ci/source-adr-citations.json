@@ -5199,7 +5199,8 @@
     },
     "0953": {
       "sites": {
-        ".github/workflows/doxygen-public-api.yml": 1
+        ".github/workflows/doxygen-public-api.yml": 1,
+        "core/test/test_gpu_public_header_docs.py": 1
       },
       "target": "0953-doxygen-public-api-clean.md"
     },
@@ -7409,6 +7410,12 @@
         "scripts/ci/check-source-adr-citations.py": 1
       },
       "target": "1311-source-adr-citation-provenance.md"
+    },
+    "1315": {
+      "sites": {
+        "core/test/test_gpu_public_header_docs.py": 5
+      },
+      "target": "1315-doxygen-public-api-fail-closed.md"
     }
   },
   "retired": {

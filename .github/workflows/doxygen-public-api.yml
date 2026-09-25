@@ -6,14 +6,9 @@
 # rendered API or audit the warning count without re-running locally, and fails
 # when the warning count exceeds the committed ceiling.
 #
-# WARN_AS_ERROR in core/doc/Doxyfile.public-api is still OFF. ADR-0953 planned
-# to flip it the moment this workflow joined required-aggregator.yml, on the
-# basis that the public headers were warning-clean (95 -> 0). They are not any
-# more: run 35739609579 measured 228 warning-log lines. Flipping the flag in
-# the same change would have made this gate red on arrival and blocked every
-# PR that touches core/include/libvmaf/**. The ceiling step below is the
-# intermediate ratchet — the count cannot grow — and the flip happens in the
-# PR that drives it back to zero. See ADR-1297 "Consequences".
+# WARN_AS_ERROR in core/doc/Doxyfile.public-api is flipped to YES (fail-closed)
+# after driving all public-API documentation warnings to 0.
+# DOXYGEN_WARNING_CEILING is locked at 0. See ADR-0953 and ADR-1297.
 
 name: doxygen-public-api
 
@@ -80,7 +75,7 @@ jobs:
         # count on the run that introduced this step (35739609579), and it only
         # ever moves down. Lower it in the same PR that removes warnings.
         env:
-          DOXYGEN_WARNING_CEILING: "228"
+          DOXYGEN_WARNING_CEILING: "0"
         run: |
           warnings=$(wc -l < build/doxygen-public-api/warnings.log || echo 0)
           echo "doxygen warning count: ${warnings} (ceiling ${DOXYGEN_WARNING_CEILING})"

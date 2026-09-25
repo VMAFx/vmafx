@@ -114,14 +114,22 @@ only currently-extracted shared internal helper.
   `picture_v2.h` implemented and linked as of cycle N+1
   (`core/src/picture_v2.c`); all 5 entry points live in libvmaf.so.
 - **Doxygen-clean public API**
-  ([ADR-0953](../../../docs/adr/0953-doxygen-public-api-clean.md)):
+  ([ADR-0953](../../../docs/adr/0953-doxygen-public-api-clean.md),
+  [ADR-1315](../../../docs/adr/1315-doxygen-public-api-fail-closed.md)):
   every header in directory must produce **zero warnings** via
-  `doxygen core/doc/Doxyfile.public-api`. CI workflow
-  `.github/workflows/doxygen-public-api.yml` builds doxygen tree on PR
-  touching directory; publishes warning log as build artifact. Patterns to
-  avoid (trigger warnings, closed in audit):
-  - **`@field name desc` for struct members** not doxygen command — use
+  `doxygen core/doc/Doxyfile.public-api`. The build fails closed with
+  `WARN_AS_ERROR = YES` and CI workflow
+  `.github/workflows/doxygen-public-api.yml` enforces
+  `DOXYGEN_WARNING_CEILING: "0"`.
+  The vendored Pelorus interop mirror (`core/include/libvmaf/pelorus/`,
+  ADR-1113) is excluded from public C API Doxygen scope because it is a
+  byte-identical upstream mirror not installed as public libvmaf headers.
+  Patterns to avoid (trigger warnings, enforced by
+  `core/test/test_gpu_public_header_docs.py`):
+  - **`@field name desc` for struct members** is not a doxygen command — use
     per-member inline `/**< desc */`.
+  - **`@thread-safety`** parses as unknown command `@thread` with parameter
+    `-safety` — use standard `@note Thread safety: ...`.
   - **`@ref function_name` from a struct doc-block** does not resolve
     cross-symbol — use backtick literals (`vmaf_picture_alloc`) instead.
   - **Functions without `@param` per parameter** or **without `@return`**
@@ -129,6 +137,8 @@ only currently-extracted shared internal helper.
   - **Multi-name declarations** (`unsigned w[3], h[3];`) attach inline doc
     to 1 symbol only — split into 1 declaration per line so each symbol
     carries own doc.
+  - **Anonymous nested struct instances** require a doc comment on the
+    variable instance itself (e.g. `} pic_params; /**< ... */`).
 
 ## `enum VmafBackend` / `vmaf_context_get_backend` rebase invariant
 

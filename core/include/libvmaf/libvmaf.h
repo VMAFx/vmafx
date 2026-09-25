@@ -257,7 +257,7 @@ typedef struct VmafContext VmafContext;
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
 
@@ -274,7 +274,7 @@ VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model);
 
@@ -290,7 +290,7 @@ VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
                                                         VmafModelCollection *model_collection);
@@ -319,7 +319,7 @@ VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_use_feature(VmafContext *vmaf, const char *feature_name,
                                  VmafFeatureDictionary *opts_dict);
@@ -341,7 +341,7 @@ VMAF_EXPORT int vmaf_use_feature(VmafContext *vmaf, const char *feature_name,
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
                                           unsigned index);
@@ -367,7 +367,7 @@ VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
                                    unsigned index);
@@ -386,7 +386,7 @@ VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPict
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score,
                                     unsigned index);
@@ -405,7 +405,7 @@ VMAF_EXPORT int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double 
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
                                                      VmafModelCollection *model_collection,
@@ -426,7 +426,7 @@ VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name,
                                             double *score, unsigned index);
@@ -449,7 +449,7 @@ VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext *vmaf, const char *featu
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
                                   enum VmafPoolingMethod pool_method, double *score,
@@ -473,7 +473,7 @@ VMAF_EXPORT int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_score_pooled_model_collection(VmafContext *vmaf,
                                                    VmafModelCollection *model_collection,
@@ -499,7 +499,7 @@ VMAF_EXPORT int vmaf_score_pooled_model_collection(VmafContext *vmaf,
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
                                           enum VmafPoolingMethod pool_method, double *score,
@@ -507,37 +507,30 @@ VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature
 
 /**
  * @struct VmafPictureConfiguration
- * @brief  Picture-pool configuration for @ref vmaf_preallocate_pictures.
+ * @brief  Picture-pool configuration for `vmaf_preallocate_pictures`.
  *
- * Pre-allocates a fixed-size pool of @ref VmafPicture buffers so that the
+ * Pre-allocates a fixed-size pool of `VmafPicture` buffers so that the
  * per-frame hot path avoids `malloc` / `free`. Required when
- * @ref VmafConfiguration::n_threads > 1: every concurrent decode thread holds
+ * `VmafConfiguration::n_threads` > 1: every concurrent decode thread holds
  * one picture from the pool, so @p pic_cnt should be at least `n_threads * 2`
  * (one for ref, one for dis) to avoid stalls.
  *
  * Safe to zero-initialise. @p pic_cnt == 0 disables preallocation; the caller
- * is then responsible for its own @ref vmaf_picture_alloc / unref cycle.
+ * is then responsible for its own `vmaf_picture_alloc` / unref cycle.
  *
- * @field pic_params         Per-picture geometry shared by every pool slot:
- *                           luma width, luma height, bits per component, and
- *                           planar pixel format. All slots are allocated to
- *                           the same dimensions; mixing resolutions in one
- *                           session requires a fresh @ref vmaf_init.
- * @field pic_params.w       Luma width in samples.
- * @field pic_params.h       Luma height in samples.
- * @field pic_params.bpc     Bits per component (8, 10, 12, or 16).
- * @field pic_params.pix_fmt Planar pixel format (see @ref VmafPixelFormat).
- * @field pic_cnt            Number of pool slots to allocate. 0 disables the
- *                           pool entirely.
+ * Per-picture geometry (`pic_params`) is shared by every pool slot:
+ * luma width, luma height, bits per component, and planar pixel format.
+ * All slots are allocated to the same dimensions; mixing resolutions in one
+ * session requires a fresh `vmaf_init`.
  */
 typedef struct VmafPictureConfiguration {
-    /** Per-picture shape (width/height/bpc/pixel-format). */
     struct {
-        unsigned w, h;                /**< Per-plane width / height. */
+        unsigned w;                   /**< Luma width in samples. */
+        unsigned h;                   /**< Luma height in samples. */
         unsigned bpc;                 /**< Bits per component. */
         enum VmafPixelFormat pix_fmt; /**< Pixel format. */
-    } pic_params;
-    unsigned pic_cnt; /**< Pool size — count of pre-allocated pictures. */
+    } pic_params;                     /**< Per-picture shape (width/height/bpc/pixel-format). */
+    unsigned pic_cnt;                 /**< Pool size — count of pre-allocated pictures. */
 } VmafPictureConfiguration;
 
 /**
@@ -552,7 +545,7 @@ typedef struct VmafPictureConfiguration {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_preallocate_pictures(VmafContext *vmaf, VmafPictureConfiguration cfg);
 
@@ -568,7 +561,7 @@ VMAF_EXPORT int vmaf_preallocate_pictures(VmafContext *vmaf, VmafPictureConfigur
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 
@@ -594,7 +587,7 @@ VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_close(VmafContext *vmaf);
 
@@ -611,7 +604,7 @@ VMAF_EXPORT int vmaf_close(VmafContext *vmaf);
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
                                   enum VmafOutputFormat fmt);
@@ -639,7 +632,7 @@ VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
                                               enum VmafOutputFormat fmt, const char *score_format);
@@ -665,7 +658,7 @@ VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *ou
  * @return NUL-terminated string owned by the library. Valid for the
  *         lifetime of the process; do not free.
  *
- * @thread-safety Safe to call from any thread.
+ * @note Thread safety: Safe to call from any thread.
  */
 VMAF_EXPORT const char *vmaf_version(void);
 
