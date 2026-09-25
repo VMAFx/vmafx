@@ -14024,6 +14024,12 @@ See `docs/research/0755-hip-backend-audit-20260529.md`.
 - **changed/hip**: Consolidate 8 identical `rc_to_errno` helpers across HIP feature extractors into a single shared `vmaf_hip_rc_to_errno()` in `core/src/hip/common.h`. Drops ~80 LOC of duplicated translation logic; all 8 callers (adm/vif/motion/psnr/ssim/ansnr/moment/ciede HIP extractors) now route through the canonical implementation. Pure deduplication, no functional change.
 
 
+- Reconcile the stale Open HIP scaffold-test record with its existing
+  ADR-1264 closure. The historical first-stage PR #1425 provenance remains in
+  the authoritative Recently closed row, which now names PR #1506 and verified
+  integration commit `11a47f39b1`; no runtime or test behavior changed.
+
+
 - Refactored the Python feature-extractor, asset, executor, quality-runner, local-explanation,
   model-training, BD-rate, VMAFx CLI, reader, bootstrap-model, MCP, cross-backend parity, and
   Git-isolation regression harnesses into bounded helpers so every touched function satisfies HISS
