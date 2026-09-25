@@ -5,11 +5,6 @@
       "output": "requirements/locks/build.txt",
       "install_aliases": [
         {
-          "alias": "../requirements/locks/build.txt",
-          "consumer": ".github/workflows/security-scans.yml",
-          "context": "core"
-        },
-        {
           "alias": "$REPO_ROOT/requirements/locks/build.txt",
           "consumer": "scripts/setup/ubuntu.sh",
           "context": "scripts/setup"

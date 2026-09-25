@@ -257,6 +257,22 @@ the MCP entrypoint is `docker exec -i vmaf-dev-mcp vmafx-mcp`; the three
 `Standards:` tasks remain mandatory. Run
 `python3 -m pytest -q scripts/ci/tests/test_zed_project_config.py` after any
 resolution. Do not copy the archived 1.3.6 configuration back into live files.
+## fix/codeql-misc-c-alerts-rc1 — CodeQL misc C/C++ alert fixes (2026-09-24)
+
+1. **`core/src/feature/iqa/convolve.c` widen-after-multiply bit-exact invariant (ADR-0138).**
+   Multiplication is kept in single-precision float (`const float prod = img[...] * k->kernel_h[...];`) and explicitly cast to `(double)` before accumulation (`sum += (double)prod;`).
+   - Do **NOT** pre-widen operands (e.g. `sum += (double)a * b;`): this evaluates the multiply in `double` and violates the [ADR-0138](adr/0138-iqa-convolve-avx2-bitexact-double.md) bit-exactness contract, desynchronizing the scalar reference from the AVX2 (`_mm256_mul_ps`), AVX-512, and NEON (`vmul_f32`) SIMD twins (verified via `test_iqa_convolve`).
+   - Do **NOT** revert to direct `sum += a * b;`: this creates compiler-generated widening conversions flagged by CodeQL's `IntMultToLong.ql` (Alert 1005). See [Research-2031](research/2031-codeql-float-widening-multiplication.md).
+2. **`core/src/feature/moment.c` second-moment reduction contract (ADR-0179 / ADR-0987).**
+   Squaring is evaluated in single-precision float (`const float term = pic_ * pic_;`) and explicitly cast to `(double)` before accumulation (`cum += (double)term;`).
+   - Unlike `convolve.c`, `moment.c` is governed by [ADR-0179](adr/0179-float-moment-simd.md) and [ADR-0987](adr/0987-avx512-float-moment.md) under a **tolerance-bounded non-byte-exact reduction contract** (`MOMENT_REL_TOL = 1e-7`) rather than bit-exactness.
+   - Do **NOT** pre-widen operands to double or revert to implicit widening (`cum += pic_ * pic_;`), which restores the source pattern behind historically dismissed CodeQL Alert 707 (`cpp/integer-multiplication-cast-to-long`).
+3. **`core/src/pdjson.h` `enum json_type` sequential numbering.**
+   All enumerators (`JSON_NONE = 0` through `JSON_NULL = 11`) are explicitly assigned. This satisfies CodeQL `cpp/irregular-enum-init` (AV Rule 145 / Alert 1064) while strictly preserving the public ABI. Verified by `core/test/test_pdjson.c::test_enum_json_type_abi_contract`.
+4. **`core/tools/cli_parse.cpp` `usage()` discrete overloads.**
+   Discrete template overloads for 1, 2, and 3 arguments prevent empty parameter pack instantiations for `Rest &&...rest`, closing CodeQL `cpp/unused-local-variable` and `cpp/unused-static-variable` (Alerts 1002/1003). Covered by adversarial exit tests in `core/test/test_cli_parse_long_only_args.c`.
+5. **`.github/workflows/security-scans.yml` Meson configure outside extraction.**
+   Meson configure runs before `github/codeql-action/init` with the build directory in `${{ runner.temp }}/build`. Running configure before extraction prevents Meson compiler probe files (`testfile.c`) from polluting the CodeQL database (current hosted probe alert 1279, historical 1278 / pre-merge 1232–1235); keeping the build tree outside `$GITHUB_WORKSPACE` prevents generated artifacts from being indexed as project source.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

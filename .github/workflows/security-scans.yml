@@ -152,6 +152,22 @@ jobs:
           MODE: ${{ steps.impact.outputs.mode }}
           REASON: ${{ steps.impact.outputs.reason }}
         run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — CodeQL (C/C++) satisfied without running (ADR-1140)"
+      - name: Configure C/C++ build (outside extraction)
+        if: steps.impact.outputs.c_core == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build nasm
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r requirements/locks/build.txt
+          # Configure Meson before codeql-action/init with build-root outside the
+          # source tree (${{ runner.temp }}/build). Running configure outside
+          # CodeQL extraction prevents compiler probe snippets (e.g.
+          # meson-private/.../testfile.c) from being extracted into the CodeQL DB;
+          # placing the build-root outside $GITHUB_WORKSPACE ensures generated
+          # build artifacts are not classified as project source (ADR-1222, Alert 1279 / historical 1278).
+          meson setup "${{ runner.temp }}/build" core -Denable_cuda=false -Denable_sycl=false
       - uses: github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
         if: steps.impact.outputs.c_core == 'true'
         with:
@@ -160,16 +176,8 @@ jobs:
           config-file: ./.github/codeql-config.yml
       - name: Build
         if: steps.impact.outputs.c_core == 'true'
-        working-directory: core
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build nasm
-          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
-          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet --require-hashes \
-            -r ../requirements/locks/build.txt
-          meson setup build -Denable_cuda=false -Denable_sycl=false
-          meson compile -C build
+          meson compile -C "${{ runner.temp }}/build"
       - uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
         if: steps.impact.outputs.c_core == 'true'
         with:

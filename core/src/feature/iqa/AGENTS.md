@@ -53,13 +53,16 @@ accumulated several load-bearing modifications on top.
   matching rewrite in same PR.**
 
 - **`convolve.c::iqa_convolve` taps = widen-then-add** (ADR-0138):
-  `sum += img[i] * k[j]` where multiply = `float * float`, running
-  sum = `double`. AVX2 / AVX-512 / NEON twins in
+  `const float prod = img[i] * k[j]; sum += (double)prod;` where multiply =
+  `float * float` (single-rounded intermediate) and running sum = `double`
+  (explicitly widened). AVX2 / AVX-512 / NEON twins in
   `../x86/convolve_*.c` and `../arm64/convolve_neon.c` mirror this
   with single-rounded `_mm256_cvtps_pd(_mm256_mul_ps(...))`
   / `vcvt_f64_f32(vmul_f32(...))` chains. **No FMA, no pre-widen
-  of kernel taps.** Changing scalar pattern requires matching all
-  three SIMD variants.
+  of kernel taps.** The intermediate `prod` and explicit `(double)` cast
+  satisfy CodeQL `cpp/integer-multiplication-cast-to-long` (Alert 1005 /
+  Research-2031) while preserving exact single-rounding bit parity with SIMD.
+  Changing scalar pattern requires matching all three SIMD variants.
 
 - **TU-static rename `_calc_scale` → `iqa_calc_scale`** (fork-local,
   ADR-0148). Keep non-reserved spelling on rebase.

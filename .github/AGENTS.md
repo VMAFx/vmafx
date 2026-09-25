@@ -349,6 +349,22 @@ other's CodeQL coverage. Preserve `cancel-in-progress: true` so superseded
 runs of same event/ref still collapse, keep
 `scripts/ci/test_security_workflow_contract.py` in always-on Rules gate.
 
+### Meson configure precedes CodeQL extraction (ADR-1222 / Alert 1279)
+
+In [`security-scans.yml`](workflows/security-scans.yml), the `codeql-cpp` job
+must execute `meson setup` before `github/codeql-action/init`, and must place
+the build directory outside the repository checkout in `${{ runner.temp }}/build`.
+The configure step installs Meson and Ninja through the repository's
+hash-locked `requirements/locks/build.txt`; keep that root-relative lock path
+when moving the step out of `core/`.
+Running configure outside extraction prevents Meson compiler probe test snippets
+(such as `testfile.c`) from being ingested into the CodeQL extraction database
+(closing current hosted probe alert 1279, historical alert 1278, and pre-merge
+alerts 1232–1235). Placing the build root in `${{ runner.temp }}/build` ensures
+generated build artifacts are not indexed as repository source. **On rebase or
+workflow sync:** do not move `meson setup` after `codeql-action/init` or
+configure within `$GITHUB_WORKSPACE`.
+
 ## Sanitizer matrix test-set scope (ADR-0347)
 
 `sanitizers` job in

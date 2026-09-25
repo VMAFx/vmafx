@@ -1,12 +1,16 @@
 <!-- markdownlint-disable MD013 -->
 
-# 2031 — `cpp/integer-multiplication-cast-to-long` on the float convolve and PSNR paths
+# Research-2031 — `cpp/integer-multiplication-cast-to-long` on convolve, moment, and PSNR
 
 **Date**: 2026-09-06
-**Scope**: CodeQL alerts 1005 (`core/src/feature/iqa/convolve.c:155`) and
-1009 (`core/src/feature/psnr.c:43`), both `high`, both open on `master`.
-**Outcome**: 1009 fixed; 1005 analysed and **deliberately not fixed** — the
-float multiply it flags is load-bearing under [ADR-0138](../adr/0138-iqa-convolve-avx2-bitexact-double.md).
+**Scope**: CodeQL Alert 1005 (`core/src/feature/iqa/convolve.c:155`) remains
+open on `master`; Alert 1009 (`core/src/feature/psnr.c:43`) is fixed. The
+2026-09-24 follow-up also covers dismissed false-positive Alert 707
+(`core/src/feature/moment.c:61`).
+**Outcome**: 1009 fixed (2026-09-06); the query patterns behind 1005 and 707
+were removed (2026-09-24) via a single-rounded float product intermediate and
+explicit double cast, preserving ADR-0138 bit-exactness for convolve and the
+ADR-0179/ADR-0987 tolerance-bounded reduction contract for moment.
 
 ## What the rule actually says here
 
@@ -41,7 +45,7 @@ Measured: all three Netflix golden pairs are bit-identical before and after at
 `--precision=max` (0 differing keys across every metric), and
 `meson test --suite=fast` is unchanged.
 
-## Alert 1005 — `convolve.c:155`, not fixed
+## Alert 1005 — `convolve.c:155`, initially not fixed on 2026-09-06
 
 The same one-character change to `iqa_convolve`'s four accumulation sites
 (lines 134, 155, 200, 295) **breaks the build's own bit-exactness test**:
@@ -83,15 +87,46 @@ cost of halving the lanes per multiply. That is a numerics change to the
 metric, not a security fix, and it is not justified by an overflow that the
 input domain forbids.
 
-**Recorded as reported-not-fixed**, matching how the `py/cyclic-import` pair was
+**Recorded as reported-not-fixed initially (2026-09-06)**, matching how the `py/cyclic-import` pair was
 handled in [2028](2028-code-scanning-audit-2026-09-03.md). Per the standing
 project rule, agents analyse and fix; the maintainer decides dismissals — this
-alert is left open in the UI deliberately, with this digest as its rationale.
+alert was left open in the UI deliberately, with this digest as its rationale.
 
-## Reproducing the convolve result
+## Resolution (2026-09-24) — explicit widening after single-rounded float product
+
+CodeQL's query `cpp/integer-multiplication-cast-to-long` (`IntMultToLong.ql`) triggers when:
+
+```ql
+me.getConversion().isCompilerGenerated()
+```
+
+The query flags expressions where a multiplication is performed in a narrower type and then *implicitly* widened by the compiler to match a wider context (such as a `double` accumulator).
+
+The previous attempt changed the expression in `convolve.c` to `sum += (double)a * b;`, which performed the multiplication itself in double precision. That altered IEEE-754 single-rounding parity, breaking the bit-exactness contract with the AVX2 (`_mm256_mul_ps`), AVX-512, and NEON (`vmul_f32`) SIMD kernels governed by [ADR-0138](../adr/0138-iqa-convolve-avx2-bitexact-double.md).
+
+Instead, the multiplication and widening in `convolve.c` are decoupled:
+
+```c
+const float prod = img[img_offset + u] * k->kernel_h[k_offset];
+sum += (double)prod;
+```
+
+1. `img[...] * k->kernel_h[...]` is assigned to a `const float prod`. The product is evaluated in single-precision float, matching SIMD vector-float multiplication exactly.
+2. `(double)prod` explicitly widens the single-rounded product to `double` before accumulation into `sum`, matching SIMD widen-after-multiply (`_mm256_cvtps_pd` / `vcvt_f64_f32`).
+3. Because the cast is explicit, `me.getConversion().isCompilerGenerated()` evaluates to `false`, removing the match reported as CodeQL Alert 1005.
+4. All 13/13 test cases in `test_iqa_convolve` pass bit-identically against scalar and SIMD under the ADR-0138 bit-exact contract.
+
+For `moment.c:61`, the calculation is governed by [ADR-0179](../adr/0179-float-moment-simd.md) (AVX2/NEON) and [ADR-0987](../adr/0987-avx512-float-moment.md) (AVX-512). Unlike `convolve.c`, `float_moment` operates under a **tolerance-bounded non-byte-exact reduction contract** (`MOMENT_REL_TOL = 1e-7`), rather than strict bit-exactness. Decoupling the float square into an intermediate and casting explicitly to `(double)` before accumulation removes the source pattern behind historically dismissed Alert 707 without compiler-generated widening conversions while preserving single-precision evaluation of the square term:
+
+```c
+const float term = pic_ * pic_;
+cum += (double)term;
+```
+
+## Reproducing the historical convolve failure (pre-widening operands)
 
 ```bash
-# in a worktree at origin/master
+# in a worktree at origin/master showing why pre-widening operands failed:
 sed -i 's/sum += img\[img_offset + u\] \* k->kernel_h\[k_offset\];/sum += (double)img[img_offset + u] * k->kernel_h[k_offset];/' \
     core/src/feature/iqa/convolve.c   # and the three sibling sites
 meson setup build -Denable_cuda=false -Denable_sycl=false && ninja -C build
