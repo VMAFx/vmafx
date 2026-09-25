@@ -140,6 +140,26 @@ green with it.
 - Reproducer / smoke: `make test-netflix-golden` and `pytest python/test/golden_gate_isolation_test.py scripts/ci/tests/test_golden_gate_makefile_contract.py`.
 - Changelog: `changelog.d/fixed/golden-gate-icx-drift-build-isolation.md`.
 - FFmpeg impact: none; no public C API, headers, or CLI flags changed.
+## agent/fix-pershot-input-ceiling-139c — operator frame ceiling for vmaf-perShot (ADR-1318) (2026-09-25)
+
+`vmaf-perShot` now provides `-F, --frames <N>` (with aliases `--frame_cnt` and
+`--max-frames`) defaulting to `0U` (unbounded compatibility contract). Bounded
+scans on FIFOs, streams, and `/dev/zero` now terminate promptly and cleanly with
+exit code 0 instead of reading ~4.29e9 frames or appearing hung. The scan loop
+tracks `frame_idx` in `uint64_t` and probes one additional read at the built-in
+boundary before indexing it, resolving the ADR-1287 `UINT32_MAX` off-by-one
+check so an input of exactly `UINT32_MAX` complete frames is accepted when EOF
+is reached. `core/tools/vmaf_per_shot_input.c` deliberately consumes luma and
+chroma exactly: a seek beyond regular-file EOF is not evidence that a raw frame
+exists, and `ferror` must never be collapsed into clean EOF. Preserve the
+reduced-boundary test target when resolving Meson conflicts.
+
+- Research digest: [Research-1318](research/1318-pershot-endless-input-ceiling-2026-09-25.md).
+- Decision matrix: [ADR-1318](adr/1318-pershot-frames-ceiling.md#alternatives-considered).
+- AGENTS.md invariant: `core/tools/AGENTS.md`, "Scan stops at `VMAF_PER_SHOT_MAX_FRAMES` or `--frames` ceiling".
+- Reproducer / smoke: `meson test -C core/build test_vmaf_per_shot`.
+- Changelog: `changelog.d/fixed/pershot-endless-input-ceiling.md`.
+- FFmpeg impact: none; no public libvmaf header, C API, or scoring behavior changed.
 
 ## agent/fix-gpu-option-aliases-hiss-984823 — preserve CPU collector-key aliases (2026-09-25)
 

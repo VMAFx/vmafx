@@ -40,12 +40,22 @@ endforeach
 test_vmaf_per_shot = find_program('test_vmaf_per_shot.sh')
 test('test_vmaf_per_shot', test_vmaf_per_shot,
      suite : ['slow'],
-     depends : [vmaf_per_shot],
+     depends : [vmaf_per_shot, vmaf_per_shot_boundary_test],
      workdir : meson.project_build_root(),
      env: [
          'MESON_BUILD_ROOT=' + meson.project_build_root(),
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
+
+# Reader-level fail-closed coverage includes an actual stdio error after one
+# complete frame; the public CLI test above covers complete and partial frames.
+test_vmaf_per_shot_input = executable(
+    'test_vmaf_per_shot_input',
+    ['../../test/test.c', 'test_vmaf_per_shot_input.c', '../vmaf_per_shot_input.c'],
+    include_directories : [include_directories('../../test'), include_directories('..')],
+    c_args : vmaf_per_shot_cflags,
+)
+test('test_vmaf_per_shot_input', test_vmaf_per_shot_input, suite : ['fast'])
 
 # T6-2b / ADR-0247 — vmaf-roi accepts high-bit-depth planar YUV by
 # downscaling luma to the existing 8-bit saliency-model contract.

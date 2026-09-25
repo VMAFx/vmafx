@@ -1437,6 +1437,7 @@ nav:
         - "ADR-1315: doxygen-public-api-fail-closed": adr/1315-doxygen-public-api-fail-closed.md
         - "ADR-1316: gpu-option-value-capability-fallback": adr/1316-gpu-option-value-capability-fallback.md
         - "ADR-1317: golden-gate-build-isolation": adr/1317-golden-gate-build-isolation.md
+        - "ADR-1318: pershot-frames-ceiling": adr/1318-pershot-frames-ceiling.md
         - "ADR-1319: fail-closed-self-hosted-gpu-admission": adr/1319-fail-closed-self-hosted-gpu-admission.md
         - "ADR-1320: cuda-hip-kernel-header-dependency-tracking": adr/1320-cuda-hip-kernel-header-dependency-tracking.md
         - "ADR-1321: pre-rc1-flake-survey-remediation": adr/1321-pre-rc1-flake-survey-remediation.md

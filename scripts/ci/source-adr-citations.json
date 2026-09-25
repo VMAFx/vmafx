@@ -6320,6 +6320,7 @@
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/test_y_funque_plus.c": 1,
+        "core/tools/test/test_vmaf_per_shot_input.c": 1,
         "core/tools/vmaf_bench.c": 1,
         "core/tools/vmaf_per_shot.c": 1,
         "core/tools/vmaf_roi.c": 2,
@@ -7438,6 +7439,12 @@
         "scripts/ci/setup-golden-build.sh": 1
       },
       "target": "1317-golden-gate-build-isolation.md"
+    },
+    "1318": {
+      "sites": {
+        "core/tools/vmaf_per_shot.c": 1
+      },
+      "target": "1318-pershot-frames-ceiling.md"
     },
     "1319": {
       "sites": {
