@@ -11,6 +11,21 @@ BIN=./tools/vmaf-perShot
 WORK="${MESON_BUILD_ROOT:-.}/test_vmaf_per_shot.scratch"
 mkdir -p "${WORK}"
 
+# Keep bounded-input regressions portable across POSIX hosts. GNU `timeout`
+# is not available on stock macOS, while Python is already required below.
+run_with_timeout() {
+  python3 - "$@" <<'PY'
+import subprocess
+import sys
+
+try:
+    result = subprocess.run(sys.argv[1:], check=False, timeout=5)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+sys.exit(result.returncode)
+PY
+}
+
 # Locate the small test fixture shipped under <repo>/testdata/. The
 # `vmaf` repo nests `libvmaf/` one directory below the testdata root.
 ROOT="${MESON_SOURCE_ROOT:-${PWD}/..}"
@@ -176,7 +191,7 @@ done
 
 # 10. Bounded read on /dev/zero must terminate promptly and produce requested frames.
 DEV_ZERO_CSV="${WORK}/plan_dev_zero.csv"
-timeout 5s "${BIN}" \
+run_with_timeout "${BIN}" \
   --reference /dev/zero \
   --width 16 --height 16 \
   --pixel_format 420 --bitdepth 8 \
@@ -196,7 +211,7 @@ mkfifo "${FIFO_TEST}"
 yes 2>/dev/null | tr -d '\n' >"${FIFO_TEST}" 2>/dev/null &
 FIFO_WRITER_PID=$!
 FIFO_CSV="${WORK}/plan_fifo.csv"
-if ! timeout 5s "${BIN}" \
+if ! run_with_timeout "${BIN}" \
   --reference "${FIFO_TEST}" \
   --width 16 --height 16 \
   --pixel_format 420 --bitdepth 8 \

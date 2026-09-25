@@ -7,9 +7,9 @@
 `--max-frames`) defaulting to `0U` (unbounded compatibility contract). Bounded
 scans on FIFOs, streams, and `/dev/zero` now terminate promptly and cleanly with
 exit code 0 instead of reading ~4.29e9 frames or appearing hung. The scan loop
-tracks `frame_idx` in `uint64_t` and evaluates frame existence before reading,
-resolving the ADR-1287 `UINT32_MAX` off-by-one check so an input of exactly
-`UINT32_MAX` frames is accepted when EOF is reached.
+tracks `frame_idx` in `uint64_t` and probes one additional read at the built-in
+boundary before indexing it, resolving the ADR-1287 `UINT32_MAX` off-by-one
+check so an input of exactly `UINT32_MAX` frames is accepted when EOF is reached.
 
 - Research digest: [Research-1318](research/1318-pershot-endless-input-ceiling-2026-09-25.md).
 - Decision matrix: [ADR-1318](adr/1318-pershot-frames-ceiling.md#alternatives-considered).

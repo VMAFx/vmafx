@@ -175,9 +175,10 @@ content, matching the fork's raw-YUV CLI convention.
   set to `0` (unbounded), the scan runs until EOF or until reaching
   `UINT32_MAX` (4294967295) frames, where it reports
   `vmaf-perShot: input exceeds the 4294967295-frame scan limit` (`EFBIG`).
-  Under [ADR-1318](../adr/1318-pershot-frames-ceiling.md), the bound evaluates
-  frame existence before reading/indexing, accepting an input of exactly
-  `UINT32_MAX` frames when EOF is reached, fixing the off-by-one check from
+  Under [ADR-1318](../adr/1318-pershot-frames-ceiling.md), the reader probes for
+  one additional frame at the built-in boundary and checks that read before
+  indexing it. An input of exactly `UINT32_MAX` frames is accepted when EOF is
+  reached, fixing the off-by-one check from
   [ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md) and closing
   `T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21` in [state.md](../state.md).
   For endless sources (such as a FIFO with a live writer or `/dev/zero`),

@@ -163,10 +163,11 @@ tools/
     ([ADR-1318](../../docs/adr/1318-pershot-frames-ceiling.md)). The default
     is `0U` (unbounded), preserving full scans on finite files up to
     `VMAF_PER_SHOT_MAX_FRAMES` (`UINT32_MAX`), where exhaustion reports `-EFBIG`.
-    Never restore a bare `for (;;)`. The bound evaluates frame existence before
-    reading/indexing: an input of exactly `UINT32_MAX` frames is accepted when
-    EOF is reached, reporting `-EFBIG` only if input strictly exceeds `UINT32_MAX`
-    frames, resolving the off-by-one check from
+    Never restore a bare `for (;;)`. At the built-in boundary, the reader probes
+    for one additional frame and checks that read before indexing it: an input of
+    exactly `UINT32_MAX` frames is accepted when EOF is reached, reporting
+    `-EFBIG` only if input strictly exceeds `UINT32_MAX` frames, resolving the
+    off-by-one check from
     [ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md).
   - **Chroma skip uses `fseeko` / `_fseeki64`** (rebase-sensitive).
     `per_shot_read_luma` skips chroma bytes via `fseeko` (POSIX) or
