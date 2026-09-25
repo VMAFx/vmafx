@@ -7511,6 +7511,13 @@
         ".github/workflows/rule-enforcement.yml": 1
       },
       "target": "1335-research-digest-identity-ratchet.md"
+    },
+    "1337": {
+      "sites": {
+        "core/src/meson.build": 1,
+        "core/test/check_exported_symbols.py": 1
+      },
+      "target": "1337-cpp-placement-new-visibility.md"
     }
   },
   "retired": {

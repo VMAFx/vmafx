@@ -587,3 +587,15 @@ Doxygen block in same commit. Dangling `@param` for deleted argument
 or missing `@param` for new one = docs regression. Run
 `doxygen Doxyfile 2>&1 | grep warning` to check — zero new warnings =
 bar.
+
+## C++ placement new and delete visibility invariant (ADR-1337)
+
+`core/src/meson.build` defines `vmaf_cppflags_common` including `-fvisibility-inlines-hidden` alongside `-fvisibility=hidden`. In GCC 16 C++26 mode, standard library placement new and delete (`_ZnwmPv`, `_ZdlPvS_`) are inline functions in `<new>` (`_GLIBCXX_PLACEMENT_CONSTEXPR`) that inherit default visibility from libstdc++ headers unless `-fvisibility-inlines-hidden` is applied (`-fvisibility=hidden` alone leaves inline functions visible).
+
+**Load-bearing cross-platform compiler behavior**:
+- **GCC & Clang (Linux ELF, Apple Clang Darwin Mach-O, MinGW PE/COFF)**: `-fvisibility-inlines-hidden` is supported across GCC (including GCC 16) and Clang (including Clang 22). It enforces hidden visibility on inline C++ standard library symbols, preventing `_ZnwmPv` and `_ZdlPvS_` from leaking into the dynamic export table of `libvmaf.so` / `libvmaf.dylib`.
+- **MSVC & clang-cl (`cxx.get_argument_syntax() == 'msvc'`)**: Windows MSVC toolchains govern exported symbols via explicit `__declspec(dllexport)` rather than ELF/Mach-O visibility flags. Meson's `cxx.get_supported_arguments(...)` evaluates compiler support and cleanly drops `-fvisibility-inlines-hidden`, avoiding invalid option warnings or build breaks while maintaining hidden visibility across ELF and Mach-O targets.
+
+**Symbol gate & red cap**: `core/test/check_exported_symbols.py` runs on Linux shared builds. The checker forbids globally allowlisting or suppressing C++ new/delete leaks. Instead, an explicit red-cap check asserts `_ZnwmPv` and `_ZdlPvS_` are never exported, failing closed on leak regressions.
+
+**Invariant for rebases and follow-up branches**: all C++ targets in `core/src/` must inherit `vmaf_cppflags_common` with `-fvisibility-inlines-hidden` preserved. No impact on public C API headers (`core/include/libvmaf/`), Netflix golden assertions, models, tuning, or score paths.
