@@ -4,7 +4,7 @@
 
 # check-state-md-rows.sh — docs/state.md row hygiene (ADR-0165).
 #
-# Every bug id may appear as a table row exactly once. Two ways this breaks:
+# Every bug id may appear as a table row exactly once. Three ways this breaks:
 #
 #   1. A PR moves a row from "## Open bugs" to "## Recently closed" and a later
 #      rebase resolves the conflict by keeping BOTH sides — the stale
@@ -14,8 +14,13 @@
 #      T-SPEED-GPU-REGISTRY-ORPHAN, T-SIMD-BIT-EXACT-ROUND2,
 #      T-SIMD-ICX-FP-CONTRACT).
 #   2. The same keep-both resolution duplicates a row inside one section.
+#   3. A bookkeeping move adds an explicit "moved to Recently closed"
+#      tombstone but leaves the corresponding row under "## Open bugs". A row
+#      without a Status cell then contradicts the tombstone while evading the
+#      status-token check below.
 #
-# Both are invisible to a reviewer reading a diff hunk, so they are gated here.
+# All three are invisible to a reviewer reading a diff hunk, so they are gated
+# here.
 #
 # The id is matched as the token that OPENS the first cell, not as the whole
 # cell. Rows come in two shapes, `| **T-ID** | ...` and the far more common
@@ -84,8 +89,9 @@
 # them.
 #
 # Usage: check-state-md-rows.sh [PATH]   (default: docs/state.md)
-# Exit:  0 clean; 1 a duplicate id, a repeated row, or a row whose status
-#        disagrees with its section; 2 the file is missing.
+# Exit:  0 clean; 1 a duplicate id, a repeated row, an Open row contradicted by
+#        a moved-to-closed tombstone, or a row whose status disagrees with its
+#        section; 2 the file is missing.
 set -euo pipefail
 
 file="${1:-docs/state.md}"
@@ -202,10 +208,29 @@ report="$(awk '
       sub(/^\| \*{0,2}/, "", id)
       idcount[id]++
       idlines[id] = idlines[id] " " NR
+      if (sec == "Open bugs") {
+        openidcount[id]++
+        openidlines[id] = openidlines[id] " " NR
+      }
       ids++
     }
     next
   }
+
+  # A move tombstone is an explicit closed-state claim even when the table row
+  # itself has no Status cell. Record only tombstones inside Open bugs: there a
+  # surviving row with the same id is self-contradictory. The ordinary closed
+  # section may legitimately mention the move in prose.
+  sec == "Open bugs" && /^<!--[[:space:]]*/ {
+    line = $0
+    if (match(line, /(T-[A-Z0-9._-]+|T[0-9]+-[0-9]+|Netflix(\/vmaf)?#[0-9]+)[[:space:]]+moved to [Rr]ecently [Cc]losed/)) {
+      tomb = substr(line, RSTART, RLENGTH)
+      sub(/[[:space:]]+moved to [Rr]ecently [Cc]losed.*/, "", tomb)
+      tombcount[tomb]++
+      tomblines[tomb] = tomblines[tomb] " " NR
+    }
+  }
+
   # A non-table line ends the table: the next `|---|` separator belongs to a
   # different header, and `prevline` must not still point at a data row from
   # the table above -- deleting that row\047s status would silently unjudge it.
@@ -217,6 +242,11 @@ report="$(awk '
       if (idcount[id] > 1) { printf "ID\t%s\t%s\n", id, idlines[id]; bad = 1 }
     for (row in rowcount)
       if (rowcount[row] > 1) { printf "ROW\t%s\t%s\n", substr(row, 1, 100), rowlines[row]; bad = 1 }
+    for (id in tombcount)
+      if (openidcount[id] > 0) {
+        printf "MOVED\t%s\t%s\t%s\n", id, openidlines[id], tomblines[id]
+        bad = 1
+      }
 
     # A status token claims one of the two gated sections. Anything else --
     # `deferred`, `watching`, a verification date, a branch name, prose -- makes
@@ -257,17 +287,20 @@ report="$(awk '
   }
 ' "$file")"
 
-dupes="$(printf '%s\n' "$report" | grep -E '^(ID|ROW)' || true)"
+dupes="$(printf '%s\n' "$report" | grep -E '^(ID|ROW|MOVED)' || true)"
 
 if [[ -n "$dupes" ]]; then
-  echo "::error title=state.md duplicate rows::each bug id and each row must appear exactly once" >&2
-  while IFS=$'\t' read -r kind what where; do
+  echo "::error title=state.md contradictory rows::bug rows must be unique and agree with move tombstones" >&2
+  while IFS=$'\t' read -r kind what where tombwhere; do
     [[ -z "$kind" ]] && continue
     if [[ "$kind" == "ID" ]]; then
       echo "  id '$what' appears on lines:$where" >&2
-    else
+    elif [[ "$kind" == "ROW" ]]; then
       echo "  row repeated verbatim on lines:$where" >&2
       echo "    ${what}..." >&2
+    else
+      echo "  id '$what' remains under Open bugs on lines:$where" >&2
+      echo "    but a moved-to-Recently-closed tombstone appears on lines:$tombwhere" >&2
     fi
   done <<<"$dupes"
   echo "" >&2
@@ -312,5 +345,5 @@ fi
 
 count="$(printf '%s\n' "$report" | awk -F'\t' '$1=="COUNT"{print $2}')"
 checked="$(printf '%s\n' "$report" | awk -F'\t' '$1=="COUNT"{print $3}')"
-echo "check-state-md-rows: OK ($count id-bearing rows, no duplicate ids or rows;" \
+echo "check-state-md-rows: OK ($count id-bearing rows, no duplicate or tombstone-conflicting rows;" \
   "$checked status-bearing rows, each in the section its status claims)"

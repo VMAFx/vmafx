@@ -491,6 +491,14 @@ ungated. The other — an unrecognised status cell — is uncovered, and is the
 likelier of the two, since it takes a single row edit rather than a heading
 rename.
 
+An explicit move tombstone closes that last common no-status case. If a comment
+under `## Open bugs` says an id "moved to Recently closed", the same id may not
+still have a table row in Open bugs. This is checked independently of table
+status columns: a bookkeeping change once added the PTQ row's tombstone while
+leaving the stale Open row directly above it, and all status-token checks
+reported clean. The valid result is the tombstone in Open bugs plus the single
+authoritative row under `## Recently closed`.
+
 ## Bug-status hygiene gate (ADR-0165 / ADR-0334)
 
 Per [CLAUDE.md §12 rule 13](../../CLAUDE.md) and
