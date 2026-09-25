@@ -11860,10 +11860,10 @@ than per-PR. Future PRs add entries individually.
   the table but not break parsing.
 - **On upstream sync**: zero interaction. Pure docs.
 - **Re-test on rebase**: `bash testdata/bench_all.sh` (after a fresh
-  fork build) — confirms the bench script still drives all four
-  backends and that the per-row metrics-key counts (CPU=15, CUDA=12,
-  SYCL/Vulkan=34) still distinguish them. If they collapse to one
-  count, the new upstream broke a backend dispatcher silently.
+  fork build) — confirms the bench script drives every live backend and
+  records each row's emitted metrics-key count. A GPU count collapsing to
+  CPU is a fallback warning to corroborate with pool and throughput; never
+  compare against fixed expected counts.
 
 ### 0050 — `float_adm_cuda` + `float_adm_sycl` extractors (ADR-0202)
 
@@ -16030,8 +16030,9 @@ inline.*
      or `c.use_gpumask`; Vulkan only when `c.vulkan_device >= 0`. Any
      change to those gates that drops one of the per-row flags will
      re-introduce the silent CPU fallback. Verify after a rebase by
-     inspecting JSON `frames[0].metrics` key counts (CPU 14-15,
-     CUDA 11-12, Vulkan ~34) — see
+     recording each live row's JSON `frames[0].metrics` key count. Treat a
+     GPU count equal to CPU as a fallback warning, never as a fixed expected
+     backend count — see
      [`libvmaf/AGENTS.md`](../libvmaf/AGENTS.md) §"Backend-engagement
      foot-guns".
   2. **`gpumask` semantics are inverted from intuition.** `gpumask=0`
@@ -16044,11 +16045,11 @@ inline.*
 - **Re-test on rebase**:
 
   ```bash
-  bash testdata/bench_all.sh    # smoke
-  # Verify each row's JSON keys match the expected per-backend count:
+  VMAF_BENCH_OUTDIR=testdata/bbb/results bash testdata/bench_all.sh
+  # Record actual live-backend counts and compare within this run:
   jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_cpu.json
   jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_cuda.json
-  jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_vulkan.json
+  jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_sycl.json
   ```
 
 ### 0063 — Tiny-AI LOSO eval harness for `mlp_small`
@@ -22501,10 +22502,10 @@ than per-PR. Future PRs add entries individually.
   the table but not break parsing.
 - **On upstream sync**: zero interaction. Pure docs.
 - **Re-test on rebase**: `bash testdata/bench_all.sh` (after a fresh
-  fork build) — confirms the bench script still drives all four
-  backends and that the per-row metrics-key counts (CPU=15, CUDA=12,
-  SYCL/Vulkan=34) still distinguish them. If they collapse to one
-  count, the new upstream broke a backend dispatcher silently.
+  fork build) — confirms the bench script drives every live backend and
+  records each row's emitted metrics-key count. A GPU count collapsing to
+  CPU is a fallback warning to corroborate with pool and throughput; never
+  compare against fixed expected counts.
 
 ### 0050 — `float_adm_cuda` + `float_adm_sycl` extractors (ADR-0202)
 
@@ -26645,8 +26646,9 @@ inline.*
      or `c.use_gpumask`; Vulkan only when `c.vulkan_device >= 0`. Any
      change to those gates that drops one of the per-row flags will
      re-introduce the silent CPU fallback. Verify after a rebase by
-     inspecting JSON `frames[0].metrics` key counts (CPU 14-15,
-     CUDA 11-12, Vulkan ~34) — see
+     recording each live row's JSON `frames[0].metrics` key count. Treat a
+     GPU count equal to CPU as a fallback warning, never as a fixed expected
+     backend count — see
      [`libvmaf/AGENTS.md`](../libvmaf/AGENTS.md) §"Backend-engagement
      foot-guns".
   2. **`gpumask` semantics are inverted from intuition.** `gpumask=0`
@@ -26659,11 +26661,11 @@ inline.*
 - **Re-test on rebase**:
 
   ```bash
-  bash testdata/bench_all.sh    # smoke
-  # Verify each row's JSON keys match the expected per-backend count:
+  VMAF_BENCH_OUTDIR=testdata/bbb/results bash testdata/bench_all.sh
+  # Record actual live-backend counts and compare within this run:
   jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_cpu.json
   jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_cuda.json
-  jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_vulkan.json
+  jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_sycl.json
   ```
 
 ### 0063 — Tiny-AI LOSO eval harness for `mlp_small`
@@ -32947,10 +32949,10 @@ than per-PR. Future PRs add entries individually.
   the table but not break parsing.
 - **On upstream sync**: zero interaction. Pure docs.
 - **Re-test on rebase**: `bash testdata/bench_all.sh` (after a fresh
-  fork build) — confirms the bench script still drives all four
-  backends and that the per-row metrics-key counts (CPU=15, CUDA=12,
-  SYCL/Vulkan=34) still distinguish them. If they collapse to one
-  count, the new upstream broke a backend dispatcher silently.
+  fork build) — confirms the bench script drives every live backend and
+  records each row's emitted metrics-key count. A GPU count collapsing to
+  CPU is a fallback warning to corroborate with pool and throughput; never
+  compare against fixed expected counts.
 
 ### 0050 — `float_adm_cuda` + `float_adm_sycl` extractors (ADR-0202)
 
@@ -37091,8 +37093,9 @@ inline.*
      or `c.use_gpumask`; Vulkan only when `c.vulkan_device >= 0`. Any
      change to those gates that drops one of the per-row flags will
      re-introduce the silent CPU fallback. Verify after a rebase by
-     inspecting JSON `frames[0].metrics` key counts (CPU 14-15,
-     CUDA 11-12, Vulkan ~34) — see
+     recording each live row's JSON `frames[0].metrics` key count. Treat a
+     GPU count equal to CPU as a fallback warning, never as a fixed expected
+     backend count — see
      [`libvmaf/AGENTS.md`](../libvmaf/AGENTS.md) §"Backend-engagement
      foot-guns".
   2. **`gpumask` semantics are inverted from intuition.** `gpumask=0`
@@ -37105,11 +37108,11 @@ inline.*
 - **Re-test on rebase**:
 
   ```bash
-  bash testdata/bench_all.sh    # smoke
-  # Verify each row's JSON keys match the expected per-backend count:
+  VMAF_BENCH_OUTDIR=testdata/bbb/results bash testdata/bench_all.sh
+  # Record actual live-backend counts and compare within this run:
   jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_cpu.json
   jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_cuda.json
-  jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_vulkan.json
+  jq '.frames[0].metrics | keys | length' testdata/bbb/results/t1_sycl.json
   ```
 
 ### 0063 — Tiny-AI LOSO eval harness for `mlp_small`
@@ -54222,8 +54225,9 @@ restore a developer-specific checkout fallback when resolving benchmark
 harness conflicts. The harness covers CPU, CUDA, and SYCL only; do not restore
 retired backend rows, flags, or operator-facing claims in either the script or
 the linked `core/AGENTS.md` invocation table. Keep the harness header aligned
-with the 1080p checkerboard pair used by Test 2 and keep both engagement
-comments on the current CPU 14-15 / CUDA 11-12 / SYCL ~34 metrics-key shape.
+with the 1080p checkerboard pair used by Test 2. Record each run's emitted
+metrics-key counts and warn when a GPU count collapses to CPU, but never freeze
+backend-specific counts as permanent expectations; they move with extractors.
 Regenerate `scripts/ci/source-adr-citations.json` when those source comments
 change; the removed ADR-0726 references no longer own a harness site.
 
@@ -54233,3 +54237,11 @@ contract in `ai/tests/test_legacy_extractor_manifests.py` guards both
 conditions. Preserve `load_frames()` validation of the top-level object,
 `frames` array, and object-shaped frame entries. No hardware benchmark or
 training run is part of this correction.
+
+The Python MCP auto-dispatch response must preserve the concrete top-level
+`backend_used` receipt written by the fork's `vmaf` CLI. Do not restore
+metric-count backend guessing: CPU/CUDA/SYCL counts move as extractors change.
+When a legacy or external binary provides no valid receipt, return `unknown`
+rather than inventing an identity. Keep the top-level JSON-object guard before
+annotating a score response. The red caps use dated CPU 15 / CUDA 14 / SYCL 24
+payloads only to prove identity is independent of count.

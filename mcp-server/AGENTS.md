@@ -114,6 +114,14 @@ references, bypasses `|| true`.
   fork subprocess per call. Regression switching probe source back to
   `--version` re-introduces silent "CUDA-not-available" false-negative
   class.
+- **Auto-dispatch backend identity comes from the CLI receipt, never metric
+  counts.** The fork's `vmaf` CLI writes a top-level `backend_used` field in
+  JSON. `_infer_backend_from_payload` accepts only the concrete backend names
+  from that field and returns `unknown` when an older or external binary omits
+  it or emits an invalid value. Metric-key counts vary as extractors evolve and
+  must remain diagnostic observations, not dispatch identities. The red caps
+  cover the dated CPU 15 / CUDA 14 / SYCL 24 observations without making those
+  counts constants.
 - **Default allowlist includes `/workspace/python/test/resource`
   alongside host-relative `<repo>/python/test/resource`** (ADR-0509,
   Bug B). Container at [`dev/Containerfile`](../dev/Containerfile)
