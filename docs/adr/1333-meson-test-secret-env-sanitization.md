@@ -58,11 +58,16 @@ source-contract boundaries:
    in the Makefile, CI workflows, preflight and setup scripts, bisection scaffold, and Zed
    task. It recursively inventories GNU Make's `GNUmakefile`, `makefile`, and `Makefile` names,
    plus POSIX and Windows script entry points. Workflow and action `run` values are normalized
-   from inline, literal, and folded YAML scalar forms before the scanner checks logical commands.
-   Raw `meson test`, `ninja ... test`, and `meson compile ... test` bypasses remain forbidden when
-   an executable is quoted, path-qualified, or spelled with a Windows `.exe` suffix, split by the
-   platform's continuation marker, or placed beside the wrapper after a shell separator. Mutation
-   tests replace each inventoried wrapper call in turn and require the contract to fail. The
+   from inline, literal, folded, and plain multiline YAML scalar forms with plain or quoted keys
+   (`run:`, `'run':`, `"run":`) before the scanner checks logical commands. Python entry points
+   are parsed with bracket- and quote-aware implicit line continuation to govern list- and
+   tuple-based command constructions. Raw `meson test`, `ninja ... test`, and `meson compile ... test`
+   bypasses remain forbidden when an executable is quoted, path-qualified, or spelled with a Windows
+   `.exe` suffix, split by explicit or implicit continuation, or placed beside the wrapper after
+   a shell separator. Mutation tests replace each inventoried wrapper call in turn and require the
+   contract to fail. Synthetic test probes enforce a bounded, load-tolerant subprocess deadline
+   (`PROBE_SUBPROCESS_TIMEOUT_SECONDS`, 120 s default, aligned with `SUBPROCESS_TIMEOUT_S`) to
+   prevent false-positive flakes on busy runners while continuing to catch hangs. The
    pre-commit hook's path filter covers every scanned source scope and every Meson declaration,
    including representative future files, so adding a bypass in a newly tracked supported entry
    point runs the contract.
@@ -70,7 +75,9 @@ source-contract boundaries:
    platform-runtime allowlist `PATH`, `PATHEXT`, `SYSTEMROOT`, `SystemRoot`, `WINDIR`, and
    `COMSPEC` when present. Home, temporary-directory, locale, user, ordinary-control, and
    credential values are synthetic and private to each temporary directory. The tests never
-   enumerate or copy the caller's remaining environment.
+   enumerate or copy the caller's remaining environment. Subprocess probe execution runs with
+   a bounded 120-second timeout that avoids load-sensitive timeout failures during compiler
+   discovery and test execution under heavy machine contention.
 5. **Red-capable runtime proof**: hermetic Meson projects demonstrate that raw Meson records
    the synthetic parent keys in `testlog.txt` even when the default setup protects the child
    and JSON log. The GREEN probe starts through the repository wrapper and requires all twelve

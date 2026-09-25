@@ -93,7 +93,9 @@ ENTRYPOINT_GLOBS = (
 
 MAKEFILE_NAMES = frozenset(("Makefile", "GNUmakefile", "makefile"))
 WORKFLOW_YAML_PREFIXES = ((".github", "workflows"), (".github", "actions"))
-YAML_RUN_KEY = re.compile(r"^(?P<indent>\s*)(?P<sequence_item>-\s+)?run\s*:\s*(?P<value>.*)$")
+YAML_RUN_KEY = re.compile(
+    r"^(?P<indent>\s*)(?P<sequence_item>-\s+)?(?:run|'run'|\"run\")\s*:\s*(?P<value>.*)$"
+)
 YAML_BLOCK_SCALAR = re.compile(r"^(?P<style>[>|])(?:[1-9][+-]?|[+-][1-9]?)?(?:\s+#.*)?$")
 
 EXPECTED_RUNNER_PATHS = {
@@ -123,7 +125,7 @@ RAW_MESON_TEST = re.compile(
     r"\bmeson\b[^\n#)]*\)\s*['\"]?\s+test\b|"
     r"\bmeson\s+compile\b[^\n#]*\s+test(?=\s|$|[;&>|'\"])|"
     r"\$\(MESON(?:_EXEC)?\)[^\n#]*\s+test(?=\s|$|[;&>|'\"])|"
-    r"['\"]meson['\"]\s*,\s*['\"]test['\"]|"
+    r"['\"]meson['\"]\s*,\s*(?:['\"]compile['\"][^\n#]*|['\"]-C['\"][^\n#]*|)['\"]test['\"]|"
     r"['\"]?(?:\$\{?MESON(?:_EXEC)?\}?|\$env:MESON(?:_EXEC)?|%MESON(?:_EXEC)?%)"
     r"['\"]?\s+test\b)",
     re.IGNORECASE,
@@ -146,6 +148,7 @@ UNQUOTED_TEST_TOOL = re.compile(
     r"(?P<tool>meson|ninja)(?:\.exe)?(?=\s|$|[;&>|'\"])",
     re.IGNORECASE,
 )
+_MIN_QUOTED_SCALAR_LEN = 2
 
 
 class _NoValueReadsEnvironment(dict[str, str]):
@@ -227,6 +230,74 @@ def _fold_yaml_block(lines: list[str]) -> str:
     return folded
 
 
+def _strip_yaml_quotes(value: str) -> str:
+    """Strip enclosing single or double quotes from a YAML scalar value."""
+    stripped = value.strip()
+    if len(stripped) >= _MIN_QUOTED_SCALAR_LEN and (
+        (stripped.startswith('"') and stripped.endswith('"'))
+        or (stripped.startswith("'") and stripped.endswith("'"))
+    ):
+        return stripped[1:-1]
+    return stripped
+
+
+def _extract_yaml_indented_lines(
+    lines: list[str], start_index: int, key_indent: int
+) -> tuple[list[str], int]:
+    """Collect consecutive continuation lines indented deeper than key_indent."""
+    collected: list[str] = []
+    index = start_index
+    while index < len(lines):
+        line = lines[index]
+        indentation = len(line) - len(line.lstrip())
+        if line.strip() and indentation <= key_indent:
+            break
+        collected.append(line)
+        index += 1
+    return collected, index
+
+
+def _normalize_yaml_block_lines(raw_lines: list[str], key_indent: int) -> list[str]:
+    """Strip base indentation common to YAML multiline scalar lines."""
+    content_indents = [len(line) - len(line.lstrip()) for line in raw_lines if line.strip()]
+    content_indent = min(content_indents, default=key_indent + 1)
+    return [line[content_indent:] if line.strip() else "" for line in raw_lines]
+
+
+def _parse_yaml_block_scalar(
+    lines: list[str], start_index: int, key_indent: int, style: str
+) -> tuple[str, int]:
+    """Parse a YAML block literal (|) or folded (>) scalar."""
+    block_lines, next_index = _extract_yaml_indented_lines(lines, start_index, key_indent)
+    normalized = _normalize_yaml_block_lines(block_lines, key_indent)
+    scalar = _fold_yaml_block(normalized) if style == ">" else "\n".join(normalized)
+    return scalar, next_index
+
+
+def _parse_yaml_plain_or_quoted_scalar(
+    lines: list[str], start_index: int, key_indent: int, initial_value: str
+) -> tuple[str, int]:
+    """Parse single-line, plain multiline, or quoted multiline YAML scalars."""
+    cont_lines, next_index = _extract_yaml_indented_lines(lines, start_index, key_indent)
+    while cont_lines and not cont_lines[-1].strip():
+        cont_lines.pop()
+
+    if not cont_lines:
+        clean_val = initial_value
+        if not (clean_val.startswith(('"', "'")) and clean_val.endswith(('"', "'"))):
+            clean_val = clean_val.split("#", 1)[0].strip()
+        return _strip_yaml_quotes(clean_val), next_index
+
+    normalized = _normalize_yaml_block_lines(cont_lines, key_indent)
+    all_lines = (
+        normalized
+        if not initial_value or initial_value.startswith("#")
+        else [initial_value, *normalized]
+    )
+    joined = _strip_yaml_quotes("\n".join(all_lines).strip())
+    return _fold_yaml_block(joined.splitlines()), next_index
+
+
 def _workflow_run_scalars(content: str) -> list[tuple[int, str]]:
     """Extract normalized GitHub workflow/action ``run`` scalar values."""
     lines = content.splitlines()
@@ -237,33 +308,19 @@ def _workflow_run_scalars(content: str) -> list[tuple[int, str]]:
         if match is None:
             index += 1
             continue
-        value = match.group("value").strip()
-        block = YAML_BLOCK_SCALAR.fullmatch(value)
-        if block is None:
-            scalars.append((index + 1, value))
-            index += 1
-            continue
 
         key_indent = len(match.group("indent")) + len(match.group("sequence_item") or "")
-        block_lines: list[str] = []
-        index += 1
-        while index < len(lines):
-            line = lines[index]
-            indentation = len(line) - len(line.lstrip())
-            if line.strip() and indentation <= key_indent:
-                break
-            block_lines.append(line)
-            index += 1
+        start_line = index + 1
+        value = match.group("value").strip()
+        block = YAML_BLOCK_SCALAR.fullmatch(value)
+        if block is not None:
+            scalar, index = _parse_yaml_block_scalar(
+                lines, index + 1, key_indent, block.group("style")
+            )
+        else:
+            scalar, index = _parse_yaml_plain_or_quoted_scalar(lines, index + 1, key_indent, value)
+        scalars.append((start_line, scalar))
 
-        content_indents = [len(line) - len(line.lstrip()) for line in block_lines if line.strip()]
-        content_indent = min(content_indents, default=key_indent + 1)
-        normalized_lines = [line[content_indent:] if line.strip() else "" for line in block_lines]
-        scalar = (
-            _fold_yaml_block(normalized_lines)
-            if block.group("style") == ">"
-            else "\n".join(normalized_lines)
-        )
-        scalars.append((index - len(block_lines), scalar))
     return scalars
 
 
@@ -273,22 +330,89 @@ def _is_workflow_yaml(path: Path) -> bool:
     )
 
 
+def _scan_python_line_brackets(line: str, in_quote: str, bracket_stack: list[str]) -> str:
+    """Track string literals and bracket nesting across a single Python line."""
+    index = 0
+    escaped = False
+    while index < len(line):
+        ch = line[index]
+        if in_quote:
+            if in_quote in ('"""', "'''"):
+                if line[index : index + 3] == in_quote and not escaped:
+                    in_quote = ""
+                    index += 2
+            elif ch == "\\":
+                escaped = not escaped
+            elif ch == in_quote and not escaped:
+                in_quote = ""
+            else:
+                escaped = False
+        elif line[index : index + 3] in ('"""', "'''"):
+            in_quote = line[index : index + 3]
+            index += 2
+        elif ch in ('"', "'"):
+            in_quote = ch
+        elif ch == "#":
+            break
+        elif ch in "([{":
+            bracket_stack.append(ch)
+        elif ch in ")]}" and bracket_stack:
+            bracket_stack.pop()
+        index += 1
+    return in_quote
+
+
+def _logical_python_lines(content: str) -> list[tuple[int, str]]:
+    """Join Python explicit and implicit line continuations (parentheses, brackets, braces)."""
+    logical_lines: list[tuple[int, str]] = []
+    pending = ""
+    start_line = 1
+    bracket_stack: list[str] = []
+    in_quote = ""
+
+    for line_number, line in enumerate(content.splitlines(), 1):
+        if not pending:
+            start_line = line_number
+
+        in_quote = _scan_python_line_brackets(line, in_quote, bracket_stack)
+
+        stripped = line.rstrip()
+        if stripped.endswith("\\"):
+            pending += f"{stripped[:-1]} "
+        elif bracket_stack or in_quote:
+            pending += f"{line} "
+        else:
+            logical_lines.append((start_line, f"{pending}{line}"))
+            pending = ""
+
+    if pending:
+        logical_lines.append((start_line, pending))
+    return logical_lines
+
+
 def _entrypoint_commands(path: Path, content: str) -> list[tuple[int, str]]:
     """Return active logical commands with source line numbers."""
     if _is_workflow_yaml(path):
         source_blocks = _workflow_run_scalars(content)
         continuation_markers = ("\\", "`", "^")
+        logical_lines = [
+            (block_line + line_number - 1, line)
+            for block_line, block_content in source_blocks
+            for line_number, line in _logical_entrypoint_lines(block_content, continuation_markers)
+        ]
+    elif path.suffix == ".py":
+        logical_lines = _logical_python_lines(content)
     else:
-        source_blocks = [(1, content)]
         continuation_markers = (
             ("`",)
             if path.suffix == ".ps1"
             else (("^",) if path.suffix in {".cmd", ".bat"} else ("\\",))
         )
+        logical_lines = _logical_entrypoint_lines(content, continuation_markers)
+
     return [
-        (block_line + line_number - 1, command)
-        for block_line, block_content in source_blocks
-        for line_number, line in _logical_entrypoint_lines(block_content, continuation_markers)
+        (line_number, command)
+        for line_number, line in logical_lines
         if _is_active_entrypoint_line(line)
         for command in _split_entrypoint_commands(line)
     ]
@@ -367,6 +491,16 @@ def _precommit_contract_pattern() -> re.Pattern[str]:
     return re.compile(files.group("pattern"))
 
 
+# ADR-1333: Bounded deadline for Meson setup and test probe subprocesses.
+# Replaces a fixed 30 s limit that is load-sensitive on heavily contested machines
+# during compiler discovery and meson test execution. Aligns with SUBPROCESS_TIMEOUT_S (120 s)
+# across CI contracts and DEFAULT_TIMEOUT_SECONDS in safe_subprocess.py. Catches hangs while
+# preventing false-positive flakes under heavy CPU/IO contention.
+PROBE_SUBPROCESS_TIMEOUT_SECONDS: float = float(
+    os.environ.get("VMAFX_MESON_TEST_TIMEOUT_SECONDS", "120.0")
+)
+
+
 def _run_cmd(cmd: list[str], cwd: Path, env: dict[str, str]) -> TextCommandResult:
     """Run one allowlisted command with bounded output and wall time."""
     return run_command(
@@ -376,7 +510,7 @@ def _run_cmd(cmd: list[str], cwd: Path, env: dict[str, str]) -> TextCommandResul
         env=env,
         capture_output=True,
         text=True,
-        timeout_seconds=30,
+        timeout_seconds=PROBE_SUBPROCESS_TIMEOUT_SECONDS,
     )
 
 
@@ -660,6 +794,17 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
         contents = (
             "steps:\n  - run: >-\n      meson\n      test -C build\n",
             "steps:\n  - run: |\n      meson \\\n        test -C build\n",
+            "steps:\n  - run:\n      meson\n      test -C build\n",
+            "steps:\n  - run: meson\n      test -C build\n",
+            "steps:\n  - 'run': >-\n      meson\n      test -C build\n",
+            "steps:\n  - 'run': |\n      meson \\\n        test -C build\n",
+            "steps:\n  - 'run':\n      meson\n      test -C build\n",
+            "steps:\n  - 'run': meson\n      test -C build\n",
+            'steps:\n  - "run": >-\n      meson\n      test -C build\n',
+            'steps:\n  - "run":\n      meson\n      test -C build\n',
+            'steps:\n  - run: "meson\n      test -C build"\n',
+            "steps:\n  - 'run': 'meson\n      test -C build'\n",
+            "steps:\n  - 'run':\n      ninja -C build\n      test\n",
         )
         for content in contents:
             with self.subTest(content=content):
@@ -687,6 +832,77 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
         sources = _read_entrypoint_sources()
         sources[Path(".github/workflows/nightly.yml")] = content
         self.assertEqual(_entrypoint_contract_errors(sources), [])
+
+    def test_entrypoint_contract_discovers_and_governs_workflow_multiline_runner(self) -> None:
+        templates = (
+            "steps:\n  - run: >-\n      python3 scripts/ci/run_meson_test.py --\n      -C build --print-errorlogs\n    shell: meson test\n",
+            "steps:\n  - run: |\n      python3 scripts/ci/run_meson_test.py -- -C build\n",
+            "steps:\n  - run:\n      python3 scripts/ci/run_meson_test.py --\n      -C build\n",
+            "steps:\n  - 'run': >-\n      python3 scripts/ci/run_meson_test.py --\n      -C build\n",
+            "steps:\n  - 'run':\n      python3 scripts/ci/run_meson_test.py --\n      -C build\n",
+            'steps:\n  - "run":\n      python3 scripts/ci/run_meson_test.py --\n      -C build\n',
+        )
+        for content in templates:
+            with self.subTest(content=content):
+                sources = _read_entrypoint_sources()
+                sources[Path(".github/workflows/nightly.yml")] = content
+                self.assertEqual(_entrypoint_contract_errors(sources), [])
+                mutated = content.replace("python3 scripts/ci/run_meson_test.py --", "meson test")
+                sources[Path(".github/workflows/nightly.yml")] = mutated
+                errors = _entrypoint_contract_errors(sources)
+                self.assertTrue(
+                    any("raw Meson test entry point" in error for error in errors), errors
+                )
+
+    def test_entrypoint_contract_rejects_python_implicit_continuation_raw_meson(self) -> None:
+        unsafe_python_snippets = (
+            'cmd = [\n    "meson",\n    "test",\n    "-C",\n    "build",\n]\n',
+            'cmd = (\n    "meson",\n    "test",\n    "-C",\n    "build",\n)\n',
+            'subprocess.run([\n    "meson",\n    "test",\n    "-C",\n    "build",\n])\n',
+            'cmd = [\n    "ninja",\n    "-C",\n    "build",\n    "test",\n]\n',
+            'cmd = [\n    "meson",\n    "compile",\n    "-C",\n    "build",\n    "test",\n]\n',
+            # Unclosed bracket at EOF fails closed rather than silently bypassing.
+            'cmd = [\n    "meson",\n    "test",\n',
+        )
+        for snippet in unsafe_python_snippets:
+            with self.subTest(snippet=snippet):
+                path = Path("scripts/ci/unsafe.py")
+                errors = _raw_entrypoint_errors(path, snippet)
+                self.assertTrue(
+                    any("raw Meson test entry point" in error for error in errors), errors
+                )
+                sources = _read_entrypoint_sources()
+                sources[path] = snippet
+                errors = _entrypoint_contract_errors(sources)
+                self.assertTrue(
+                    any("raw Meson test entry point" in error for error in errors), errors
+                )
+
+    def test_entrypoint_contract_accepts_python_implicit_continuation_runner(self) -> None:
+        snippet = (
+            "cmd = [\n"
+            '    "python3",\n'
+            '    "scripts/ci/run_meson_test.py",\n'
+            '    "--",\n'
+            '    "-C",\n'
+            '    "build",\n'
+            "]\n"
+        )
+        path = Path("scripts/ci/runner.py")
+        errors = _raw_entrypoint_errors(path, snippet)
+        self.assertEqual(errors, [])
+        commands = _entrypoint_commands(path, snippet)
+        self.assertTrue(
+            any(RUNNER_PATH.search(cmd) for _, cmd in commands),
+            commands,
+        )
+
+    def test_probe_subprocess_timeout_is_bounded_and_load_tolerant(self) -> None:
+        self.assertGreaterEqual(
+            PROBE_SUBPROCESS_TIMEOUT_SECONDS,
+            60.0,
+            "probe subprocess timeout must tolerate loaded compilation/test deadlines",
+        )
 
     def test_entrypoint_contract_rejects_powershell_split_raw_meson(self) -> None:
         content = "meson `\n  test -C build\n"

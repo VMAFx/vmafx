@@ -7496,7 +7496,7 @@
       "sites": {
         "core/meson.build": 1,
         "core/test/meson.build": 1,
-        "core/test/test_meson_secret_env_sanitization.py": 1,
+        "core/test/test_meson_secret_env_sanitization.py": 2,
         "scripts/ci/run_meson_test.py": 2
       },
       "target": "1333-meson-test-secret-env-sanitization.md"

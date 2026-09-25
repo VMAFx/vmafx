@@ -31663,7 +31663,9 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`) before Meson can record its
   parent environment in `testlog.txt`. The default test setup remains a second defense for
   child environments and `testlog.json`. Fail-closed contracts reject raw supported-entry
-  point bypasses, alternate test setups, and explicit per-test credential reintroduction.
+  point bypasses across shell, multiline YAML (plain and quoted keys), and Python implicit
+  list/tuple continuations, alternate test setups, and explicit per-test credential
+  reintroduction. Subprocess probes enforce a bounded, load-tolerant 120-second deadline.
   Disposable RED/GREEN probes cover both log formats using synthetic values only. Direct raw
   Meson or Ninja test-target commands remain a documented unsupported bypass.
 

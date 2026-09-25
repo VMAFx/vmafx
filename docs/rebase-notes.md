@@ -13,10 +13,12 @@ setup-guidance, and Zed caller so those entry points delete sensitive GitHub cre
 before Meson starts. `core/meson.build` retains the same denylist in the sole default test
 setup for the child and JSON-log boundary. Meson can select an alternate setup and applies
 per-test environments after the setup; the regression contract therefore inventories all
-supported callers, rejects direct test-target bypasses, requires the default to remain the
+supported callers, rejects direct test-target bypasses across shell, multiline YAML (plain and
+quoted keys), and Python implicit list/tuple continuations, requires the default to remain the
 only `add_test_setup` under `core/`, and rejects explicit forbidden-name reintroduction. Its
-subprocess probes never copy arbitrary host variables and inspect only disposable synthetic
-logs. Raw external Meson/Ninja commands remain an explicit unsupported bypass.
+subprocess probes enforce a bounded, load-tolerant 120-second deadline, never copy arbitrary host
+variables, and inspect only disposable synthetic logs. Raw external Meson/Ninja commands remain
+an explicit unsupported bypass.
 
 - Research digest: [Research-1333](research/1333-meson-test-secret-env-sanitization.md).
 - Decision matrix: [ADR-1333](adr/1333-meson-test-secret-env-sanitization.md#alternatives-considered).

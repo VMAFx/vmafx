@@ -48,16 +48,18 @@ The static contract inventories every supported wrapper call and scans executabl
 scopes for direct `meson test`, `ninja ... test`, and `meson compile ... test` forms. It
 recursively includes all three GNU Make names (`GNUmakefile`, `makefile`, and `Makefile`) and
 POSIX/Windows script types. GitHub workflow/action `run` values are extracted and normalized from
-inline, literal, and folded YAML scalars before shell segmentation, rather than scanning physical
-YAML lines that do not represent the executed command. Executable normalization covers quoted and
-path-qualified Meson/Ninja names plus Windows `.exe` spellings. Logical-line handling joins shell,
-PowerShell, and batch continuations and checks each separator-delimited command after removing only
-the wrapper-path token. Mutation coverage replaces every inventoried call, one at a time, and
-proves each bypass is rejected. Adversarial fixtures also reject a wrapper followed by
-`; meson test`, multiline workflow bypasses, path-qualified executables, and unsafe alternate
-Makefile names or Windows scripts. A separate assertion compiles the checked-in pre-commit path
-filter and proves that every scanned entry-point source, every Meson declaration, and
-representative future files trigger the contract.
+inline, literal, folded, and plain multiline YAML scalars with plain or quoted keys (`run:`,
+`'run':`, `"run":`) before shell segmentation, rather than scanning physical YAML lines that do
+not represent the executed command. Python entry points are parsed with bracket- and quote-aware
+implicit line continuation to govern multi-line list/tuple command constructions. Executable
+normalization covers quoted and path-qualified Meson/Ninja names plus Windows `.exe` spellings.
+Logical-line handling joins shell, PowerShell, and batch continuations and checks each
+separator-delimited command after removing only the wrapper-path token. Mutation coverage replaces
+every inventoried call, one at a time, and proves each bypass is rejected. Adversarial fixtures
+also reject a wrapper followed by `; meson test`, multiline workflow bypasses, Python implicit
+continuations, path-qualified executables, and unsafe alternate Makefile names or Windows scripts.
+A separate assertion compiles the checked-in pre-commit path filter and proves that every scanned
+entry-point source, every Meson declaration, and representative future files trigger the contract.
 
 This boundary cannot intercept an arbitrary command typed outside repository wrappers. Direct
 raw Meson or Ninja test-target invocation remains an explicit unsupported bypass and is stated in
@@ -96,7 +98,9 @@ test: it can capture unrelated credentials before Meson starts. The replacement 
 platform-runtime names when present. It supplies temp-local `HOME`, `TMPDIR`, `TEMP`, and `TMP`,
 deterministic locale and user values, one ordinary control variable, and synthetic values for the
 twelve credential names. A regression poisons an unrelated synthetic credential and proves it is
-not copied.
+not copied. Subprocess probes run with a bounded 120-second timeout (`PROBE_SUBPROCESS_TIMEOUT_SECONDS`,
+aligned with `safe_subprocess.DEFAULT_TIMEOUT_SECONDS`) that avoids false-positive flakes under heavy
+machine contention while remaining bounded against hangs.
 
 The child probe only asks whether keys are present. It never indexes a credential key, reads a
 credential value, prints the environment, or emits a value in a failure message. A mapping
@@ -117,7 +121,7 @@ temporary directory from this synthetic environment; no caller log or credential
 
 ## Verification evidence
 
-`python3 -m unittest core.test.test_meson_secret_env_sanitization` exercises twenty-four cases:
+`python3 -m unittest core.test.test_meson_secret_env_sanitization` exercises twenty-eight cases:
 
 - exact wrapper/Meson credential-inventory agreement;
 - deletion without credential-value reads;
@@ -127,7 +131,11 @@ temporary directory from this synthetic environment; no caller log or credential
 - rejection of newly added raw entry points, including quoted, path-qualified, and Windows
   executable spellings;
 - rejection of a raw sibling after the wrapper and shell, PowerShell, and batch continuations;
-- folded-workflow rejection plus folded-wrapper acceptance and inventory;
+- folded, literal, and plain multiline workflow scalar rejection across plain and quoted keys,
+  plus multiline runner discovery, governance, and mutation rejection;
+- Python implicit list/tuple continuation rejection for raw Meson/Ninja invocations, runner
+  acceptance, and fail-closed syntax error behavior;
+- bounded, load-tolerant probe subprocess timeout verification;
 - recursive alternate-Makefile and Windows-script inventory aligned with the pre-commit filter;
 - the live tree's single-setup/twelve-unset contract;
 - mutation rejection for an alternate setup;
