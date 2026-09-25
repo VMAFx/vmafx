@@ -95,6 +95,13 @@ when conversion happens.
   conversion uses correct names; `.c` file removed from
   `metal_sources` on merge.
 
+- **`integer_psnr_metal` option parity (ADR-1322 / BUG-048)**:
+  `integer_psnr_metal.mm` must declare `enable_chroma` (default `true`)
+  and `uncapped` (default `false`) in its `options[]` table. `init_fex_metal`
+  must clamp `n_planes` to 1 when `!enable_chroma` or `pix_fmt == VMAF_PIX_FMT_YUV400P`.
+  `submit_fex_metal` and `collect_fex_metal` must loop over `s->n_planes`.
+  Guarded by device-free contract test `test_gpu_psnr_option_parity_contract.py`.
+
 ## Kernel files
 
 | File                               | Status      | Feature(s)                                                              |

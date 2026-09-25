@@ -1441,6 +1441,7 @@ nav:
         - "ADR-1319: fail-closed-self-hosted-gpu-admission": adr/1319-fail-closed-self-hosted-gpu-admission.md
         - "ADR-1320: cuda-hip-kernel-header-dependency-tracking": adr/1320-cuda-hip-kernel-header-dependency-tracking.md
         - "ADR-1321: pre-rc1-flake-survey-remediation": adr/1321-pre-rc1-flake-survey-remediation.md
+        - "ADR-1322: metal-integer-psnr-enable-chroma-parity": adr/1322-metal-integer-psnr-enable-chroma-parity.md
         - "ADR-1324: gpu-float-ssim-auto-scale-fallback": adr/1324-gpu-float-ssim-auto-scale-fallback.md
         - "ADR-1325: integer-adm-barten-fixed-point-normalization": adr/1325-integer-adm-barten-fixed-point-normalization.md
       - "By tag":
@@ -1507,6 +1508,7 @@ nav:
         - "breaking": adr/by-tag/breaking.md
         - "bristol": adr/by-tag/bristol.md
         - "browser": adr/by-tag/browser.md
+        - "bug-048": adr/by-tag/bug-048.md
         - "bug-fix": adr/by-tag/bug-fix.md
         - "bug": adr/by-tag/bug.md
         - "bugfix": adr/by-tag/bugfix.md

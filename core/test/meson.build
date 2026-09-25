@@ -96,6 +96,14 @@ test('test_adm_viewing_geometry_contract',
     timeout : 30,
 )
 
+# BUG-048 / ADR-0453: PSNR options parity across CPU, CUDA, SYCL, HIP, and Metal.
+test('test_gpu_psnr_option_parity_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_psnr_option_parity_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048: these diagnostics were standardized once, then silently restored
 # from stale source. Keep their line framing and severity prefix stable.
 test('test_vmaf_log_callsite_format',

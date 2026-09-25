@@ -1041,3 +1041,4 @@
 1324-gpu-float-ssim-auto-scale-fallback
 1318-pershot-frames-ceiling
 1325-integer-adm-barten-fixed-point-normalization
+1322-metal-integer-psnr-enable-chroma-parity

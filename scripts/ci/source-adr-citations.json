@@ -2994,8 +2994,10 @@
         "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
         "core/src/feature/cuda/integer_ssim_cuda.c": 1,
         "core/src/feature/hip/integer_psnr_hip.c": 3,
+        "core/src/feature/metal/integer_psnr_metal.mm": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 2,
-        "core/src/feature/sycl/integer_psnr_sycl.cpp": 1
+        "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
+        "core/test/meson.build": 1
       },
       "target": "0453-psnr-enable-chroma-gpu-parity.md"
     },
