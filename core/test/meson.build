@@ -66,6 +66,16 @@ test('test_gpu_option_alias_contract',
     timeout : 30,
 )
 
+# Model dispatch must distinguish a mirrored option schema from the values a
+# GPU implementation can execute. Keep every default-only site inventoried
+# without requiring a GPU compiler or device on the test host.
+test('test_gpu_option_value_capability_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_option_value_capability_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048: these diagnostics were standardized once, then silently restored
 # from stale source. Keep their line framing and severity prefix stable.
 test('test_vmaf_log_callsite_format',

@@ -136,7 +136,7 @@ static const VmafOption options[] = {
         .default_val.d = 1.0,
         .min = 0.1,
         .max = 4.0,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY,
     },
     {
         .name = "vif_sigma_nsq",

@@ -6162,6 +6162,7 @@
         "core/test/test_delta_e_itp.c": 1,
         "core/test/test_dists.c": 1,
         "core/test/test_fastdvdnet_pre.c": 1,
+        "core/test/test_feature_collector.c": 2,
         "core/test/test_feature_collector_coverage.c": 1,
         "core/test/test_feature_extractor.c": 1,
         "core/test/test_feature_isa_invariance.c": 1,
@@ -7423,6 +7424,13 @@
         "core/test/test_gpu_public_header_docs.py": 5
       },
       "target": "1315-doxygen-public-api-fail-closed.md"
+    },
+    "1316": {
+      "sites": {
+        "core/src/libvmaf.c": 1,
+        "core/src/opt.h": 1
+      },
+      "target": "1316-gpu-option-value-capability-fallback.md"
     },
     "1319": {
       "sites": {

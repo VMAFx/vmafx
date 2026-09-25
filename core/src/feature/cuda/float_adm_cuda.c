@@ -167,7 +167,7 @@ static const VmafOption options[] = {
      .default_val.i = 0,
      .min = 0,
      .max = 9,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
     {.name = "adm_csf_scale",
      .alias = "scf",
      .help = "CSF band-scale multiplier for h/v bands (default 1.0 = no scaling)",

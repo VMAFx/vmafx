@@ -31,10 +31,16 @@ option (see Options table below); it is a documented no-op.
 Option aliases are part of the published collector key. Equivalent GPU twin
 options use the CPU spellings (`ks`, `ssclz`, and `egl`) so backend selection
 does not rename a feature ([ADR-1312](../adr/1312-gpu-option-alias-parity.md)).
-This is separate from device capability: all four GPU `float_vif` twins
-currently reject a non-default `vif_kernelscale` after selection, an open
-fallback defect tracked in `docs/state.md`; CUDA `float_vif` does not declare
-`vif_skip_scale0`, so ADR-1183 safely dispatches that configuration to CPU.
+This is separate from device capability. The GPU `float_vif` kernels currently
+implement `vif_kernelscale=1.0` only. When a model requests another valid
+value, libvmaf automatically selects the CPU `float_vif` extractor for that
+feature before GPU initialization; unrelated model features remain on their
+selected backends. Explicitly naming a GPU extractor with a non-default kernel
+scale still returns `-EINVAL`, because that form requests the specific
+extractor rather than automatic model dispatch. CUDA `float_vif` does not
+declare `vif_skip_scale0`, so ADR-1183 likewise dispatches that configuration
+to CPU. See
+[ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md).
 
 ## `integer_vif` extractor
 

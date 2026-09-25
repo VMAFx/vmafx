@@ -1,0 +1,1 @@
+| [ADR-1316](1316-gpu-option-value-capability-fallback.md) | Marks extractor options whose mirrored schema exceeds the current backend implementation, so model-driven GPU selection falls back to the CPU for valid non-default values. | Accepted | gpu, feature-options, compatibility, testing |

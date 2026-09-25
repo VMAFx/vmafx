@@ -38,6 +38,16 @@ enum VmafOptionType {
 enum VmafOptionFlag {
     /** Option controls a feature-extractor parameter (exposed via the dict API). */
     VMAF_OPT_FLAG_FEATURE_PARAM = 1 << 0,
+    /**
+     * This extractor implements only the option's declared default value
+     * (ADR-1316).
+     *
+     * GPU twins retain the CPU option's name, alias, range and feature-param
+     * bit so derived collector keys stay identical. Model-driven dispatch
+     * uses this capability bit to select the CPU twin for valid non-default
+     * values before the GPU extractor reaches its init-time rejection.
+     */
+    VMAF_OPT_FLAG_DEFAULT_ONLY = 1 << 1,
 };
 
 /**

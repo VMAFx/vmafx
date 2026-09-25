@@ -1034,3 +1034,4 @@
 1314-semgrep-registry-advisory-artifact
 1315-doxygen-public-api-fail-closed
 1319-fail-closed-self-hosted-gpu-admission
+1316-gpu-option-value-capability-fallback

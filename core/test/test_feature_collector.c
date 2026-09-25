@@ -49,6 +49,81 @@ static char *test_model_mount_with_use_features()
     return NULL;
 }
 
+/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: this C translation unit
+ * stays portable to MSVC /std:clatest, which does not provide C23 nullptr. */
+static const VmafOption model_value_capability_options[] = {
+    {.name = "vif_kernelscale",
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 1.0,
+     .min = 0.1,
+     .max = 4.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {0},
+};
+
+typedef struct {
+    bool setup_ok;
+    bool selected_mock;
+    const char *selected_name;
+} ModelCapabilitySelection;
+
+static ModelCapabilitySelection select_for_model_option(const char *value)
+{
+    VmafFeatureExtractor mock_gpu = {
+        .name = "mock_float_vif_gpu",
+        .options = model_value_capability_options,
+        .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
+    };
+    VmafModelFeature feature = {.name = "VMAF_feature_vif_scale0_score"};
+    ModelCapabilitySelection result = {0};
+    if (vmaf_dictionary_set(&feature.opts_dict, "vif_kernelscale", value, 0))
+        return result;
+
+    result.setup_ok = true;
+    VmafFeatureExtractor *selected = fex_honouring_model_options(&mock_gpu, &feature);
+    result.selected_mock = selected == &mock_gpu;
+    result.selected_name = selected ? selected->name : NULL;
+    (void)vmaf_dictionary_free(&feature.opts_dict);
+    return result;
+}
+
+static char *test_model_option_minimum_falls_back(void)
+{
+    const ModelCapabilitySelection result = select_for_model_option("0.1");
+    mu_assert("valid minimum must select CPU float_vif",
+              result.setup_ok && !result.selected_mock && result.selected_name &&
+                  !strcmp(result.selected_name, "float_vif"));
+    return NULL;
+}
+
+static char *test_model_option_maximum_falls_back(void)
+{
+    const ModelCapabilitySelection result = select_for_model_option("4.0");
+    mu_assert("valid maximum must select CPU float_vif",
+              result.setup_ok && !result.selected_mock && result.selected_name &&
+                  !strcmp(result.selected_name, "float_vif"));
+    return NULL;
+}
+
+static char *test_model_option_default_preserves_gpu(void)
+{
+    const ModelCapabilitySelection result = select_for_model_option("1.0");
+    mu_assert("declared default must preserve selected GPU twin",
+              result.setup_ok && result.selected_mock && result.selected_name &&
+                  !strcmp(result.selected_name, "mock_float_vif_gpu"));
+    return NULL;
+}
+
+static char *test_model_option_invalid_stays_parser_owned(void)
+{
+    const ModelCapabilitySelection result = select_for_model_option("invalid");
+    mu_assert("malformed value must remain on selected GPU for parser rejection",
+              result.setup_ok && result.selected_mock && result.selected_name &&
+                  !strcmp(result.selected_name, "mock_float_vif_gpu"));
+    return NULL;
+}
+/* NOLINTEND(modernize-use-nullptr) */
+
 static int load_three_test_models(VmafModel *models[3], const char *const names[3])
 {
     for (unsigned k = 0; k < 3; k++) {
@@ -280,6 +355,15 @@ static char *test_feature_collector_init_append_get_and_destroy()
     return NULL;
 }
 
+static char *run_model_option_capability_tests(void)
+{
+    mu_run_test(test_model_option_minimum_falls_back);
+    mu_run_test(test_model_option_maximum_falls_back);
+    mu_run_test(test_model_option_default_preserves_gpu);
+    mu_run_test(test_model_option_invalid_stays_parser_owned);
+    return NULL; /* NOLINT(modernize-use-nullptr) -- ADR-1138: MSVC C23 portability. */
+}
+
 char *run_tests()
 {
     mu_run_test(test_feature_vector_init_append_and_destroy);
@@ -289,5 +373,5 @@ char *run_tests()
     mu_run_test(test_model_mount);
     mu_run_test(test_model_unmount);
     mu_run_test(test_model_mount_with_use_features);
-    return NULL;
+    return run_model_option_capability_tests();
 }
