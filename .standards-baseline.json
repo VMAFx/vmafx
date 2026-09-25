@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-09-24T20:39:44Z",
+  "generated_at": "2026-09-25T00:00:32Z",
   "repository": "",
   "commit_sha": "",
-  "total_infractions": 264,
+  "total_infractions": 229,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -28,21 +28,6 @@
       "symbol": "main",
       "message": "Function 'main' (89 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/bvi_dvc_to_corpus_jsonl.py:155:HISS-04"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "ai/scripts/bvi_dvc_to_full_features.py",
-      "line_number": 471,
-      "message": "Legacy unbounded while True loop in Python",
-      "fingerprint": "ai/scripts/bvi_dvc_to_full_features.py:471:HISS-02"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/bvi_dvc_to_full_features.py",
-      "line_number": 713,
-      "symbol": "main",
-      "message": "Function 'main' (160 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/bvi_dvc_to_full_features.py:713:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -78,62 +63,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "ai/scripts/eval_loso_3arch.py",
-      "line_number": 122,
-      "symbol": "main",
-      "message": "Function 'main' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/eval_loso_3arch.py:122:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/eval_loso_mlp_small.py",
-      "line_number": 108,
-      "symbol": "main",
-      "message": "Function 'main' (171 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/eval_loso_mlp_small.py:108:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/eval_loso_vmaf_tiny_v3.py",
-      "line_number": 58,
-      "symbol": "main",
-      "message": "Function 'main' (112 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/eval_loso_vmaf_tiny_v3.py:58:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/eval_loso_vmaf_tiny_v4.py",
-      "line_number": 59,
-      "symbol": "main",
-      "message": "Function 'main' (112 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/eval_loso_vmaf_tiny_v4.py:59:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/eval_loso_vmaf_tiny_v5.py",
-      "line_number": 140,
-      "symbol": "main",
-      "message": "Function 'main' (98 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/eval_loso_vmaf_tiny_v5.py:140:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/eval_multiseed_v3_v4.py",
-      "line_number": 255,
-      "symbol": "main",
-      "message": "Function 'main' (106 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/eval_multiseed_v3_v4.py:255:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/eval_probabilistic_proxy.py",
-      "line_number": 245,
-      "symbol": "main",
-      "message": "Function 'main' (105 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/eval_probabilistic_proxy.py:245:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "ai/scripts/export_ensemble_v2_seeds.py",
       "line_number": 261,
       "symbol": "main",
@@ -147,14 +76,6 @@
       "symbol": "main",
       "message": "Function 'main' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/export_fastdvdnet_pre.py:366:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/export_tiny_models.py",
-      "line_number": 131,
-      "symbol": "main",
-      "message": "Function 'main' (117 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/export_tiny_models.py:131:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -198,14 +119,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "ai/scripts/extract_full_features.py",
-      "line_number": 160,
-      "symbol": "main",
-      "message": "Function 'main' (140 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/extract_full_features.py:160:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "ai/scripts/extract_konvid_frames.py",
       "line_number": 162,
       "symbol": "main",
@@ -221,42 +134,11 @@
       "fingerprint": "ai/scripts/extract_ugc_features.py:299:HISS-04"
     },
     {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/feature_correlation.py",
-      "line_number": 111,
-      "symbol": "main",
-      "message": "Function 'main' (86 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/feature_correlation.py:111:HISS-04"
-    },
-    {
       "rule_id": "HISS-02",
       "file_path": "ai/scripts/fetch_konvid_1k.py",
       "line_number": 100,
       "message": "Legacy unbounded while True loop in Python",
       "fingerprint": "ai/scripts/fetch_konvid_1k.py:100:HISS-02"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "ai/scripts/fetch_youtube_ugc_subset.py",
-      "line_number": 88,
-      "message": "Legacy unbounded while True loop in Python",
-      "fingerprint": "ai/scripts/fetch_youtube_ugc_subset.py:88:HISS-02"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/konvid_to_full_features.py",
-      "line_number": 394,
-      "symbol": "main",
-      "message": "Function 'main' (168 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/konvid_to_full_features.py:394:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/konvid_to_vmaf_pairs.py",
-      "line_number": 273,
-      "symbol": "main",
-      "message": "Function 'main' (167 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/konvid_to_vmaf_pairs.py:273:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -276,51 +158,11 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "ai/scripts/measure_quant_drop.py",
-      "line_number": 181,
-      "symbol": "main",
-      "message": "Function 'main' (133 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/measure_quant_drop.py:181:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/measure_quant_drop_per_ep.py",
-      "line_number": 393,
-      "symbol": "main",
-      "message": "Function 'main' (148 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/measure_quant_drop_per_ep.py:393:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "ai/scripts/phase3_subset_sweep.py",
       "line_number": 258,
       "symbol": "main",
       "message": "Function 'main' (135 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/phase3_subset_sweep.py:258:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/ptq_dynamic.py",
-      "line_number": 70,
-      "symbol": "main",
-      "message": "Function 'main' (75 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/ptq_dynamic.py:70:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/ptq_static.py",
-      "line_number": 42,
-      "symbol": "main",
-      "message": "Function 'main' (102 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/ptq_static.py:42:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/qat_train.py",
-      "line_number": 335,
-      "symbol": "main",
-      "message": "Function 'main' (74 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/qat_train.py:335:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -559,14 +401,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_extract_full_features_cache_alignment.py",
-      "line_number": 57,
-      "symbol": "test_stale_short_cache_is_not_silently_truncated",
-      "message": "Function 'test_stale_short_cache_is_not_silently_truncated' (70 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_extract_full_features_cache_alignment.py:57:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "ai/tests/test_extract_k150k_consistency.py",
       "line_number": 84,
       "symbol": "test_consistency_check_raises_on_done_parquet_mismatch",
@@ -580,14 +414,6 @@
       "symbol": "_synthetic_rows",
       "message": "Function '_synthetic_rows' (315 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/tests/test_knob_sweep_analysis.py:42:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/tests/test_konvid_full_features.py",
-      "line_number": 86,
-      "symbol": "test_main_writes_full_and_folded_parquets",
-      "message": "Function 'test_main_writes_full_and_folded_parquets' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/tests/test_konvid_full_features.py:86:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -1014,97 +840,6 @@
       "fingerprint": "core/src/feature/cuda/integer_vif/filter1d.cu:621:HISS-04"
     },
     {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 172,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:172:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 192,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:192:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 196,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:196:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 201,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:201:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 275,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:275:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 281,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:281:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 285,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:285:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 288,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:288:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 291,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:291:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 519,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:519:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 523,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:523:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 567,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:567:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/feature_collector.cpp",
-      "line_number": 582,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/feature_collector.cpp:582:HISS-01"
-    },
-    {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/feature_extractor.cpp",
       "line_number": 497,
@@ -1391,26 +1126,26 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/float_adm_sycl.cpp",
-      "line_number": 949,
+      "line_number": 951,
       "symbol": "init_fex_sycl",
-      "message": "Function 'init_fex_sycl' (101 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/float_adm_sycl.cpp:949:HISS-04"
+      "message": "Function 'init_fex_sycl' (107 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
+      "fingerprint": "core/src/feature/sycl/float_adm_sycl.cpp:951:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/float_adm_sycl.cpp",
-      "line_number": 1054,
+      "line_number": 1062,
       "symbol": "submit_fex_sycl",
       "message": "Function 'submit_fex_sycl' (115 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/float_adm_sycl.cpp:1054:HISS-04"
+      "fingerprint": "core/src/feature/sycl/float_adm_sycl.cpp:1062:HISS-04"
     },
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/float_adm_sycl.cpp",
-      "line_number": 1172,
+      "line_number": 1180,
       "symbol": "collect_fex_sycl",
       "message": "Function 'collect_fex_sycl' (114 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/float_adm_sycl.cpp:1172:HISS-04"
+      "fingerprint": "core/src/feature/sycl/float_adm_sycl.cpp:1180:HISS-04"
     },
     {
       "rule_id": "HISS-04",
@@ -1527,10 +1262,10 @@
     {
       "rule_id": "HISS-04",
       "file_path": "core/src/feature/sycl/ssimulacra2_sycl.cpp",
-      "line_number": 794,
+      "line_number": 798,
       "symbol": "extract_fex_sycl",
       "message": "Function 'extract_fex_sycl' (87 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:794:HISS-04"
+      "fingerprint": "core/src/feature/sycl/ssimulacra2_sycl.cpp:798:HISS-04"
     },
     {
       "rule_id": "HISS-04",

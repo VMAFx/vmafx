@@ -111,6 +111,13 @@ recorded an empty backend while still reporting the lane as clean.
 `test_tidy_ratchet_sycl_compdb.py` pins that wiring. The GPU lanes also need
 their build dir configured `-Db_lto=false` and placed outside the repository;
 see the variable block in the `Makefile`.
+`make tidy-ratchet LANE=sycl` sets `TIDY_RATCHET_EXTRA_sycl := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-sycl.sh`,
+anchoring the wrapper to the worktree root. Under ADR-1270, `safe_subprocess.py`
+requires allowlisted executables to be bare binary names or absolute paths;
+relative paths with slashes fail validation. In addition, `tidy-ratchet.py`'s
+`resolve_clang_tidy()` resolves multi-component relative binary paths to absolute
+paths before measurement and execution. Preserve both the `$(CURDIR)` anchoring
+in `Makefile` and `resolve_clang_tidy()` in `tidy-ratchet.py`.
 
 In CI, the `clang-tidy-sycl` job (`Tidy SYCL`) in `lint-and-format.yml` has been
 a required, non-advisory merge gate since `6475fa9ea` (ADR-1297). It belongs to
