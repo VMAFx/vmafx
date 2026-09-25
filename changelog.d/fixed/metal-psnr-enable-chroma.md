@@ -1,0 +1,1 @@
+- Restore `enable_chroma` option parity on `integer_psnr_metal` (default `true`), allowing `--feature integer_psnr_metal=enable_chroma=false` to execute luma-only and preventing invalid 3-plane dispatches and out-of-bounds reads on monochrome `YUV400P` sources (BUG-048, ADR-1322).

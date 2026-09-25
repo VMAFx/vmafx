@@ -37,6 +37,7 @@
 #include "test.h"
 
 #include "config.h"
+#include "dict.h"
 #include "feature/feature_extractor.h"
 
 #if HAVE_METAL
@@ -99,11 +100,47 @@ static char *test_metal_unknown_extractor_returns_null(void)
     return NULL;
 }
 
+/* BUG-048: integer_psnr_metal must declare enable_chroma and uncapped options. */
+static char *test_metal_integer_psnr_options(void)
+{
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_psnr_metal");
+    mu_assert("integer_psnr_metal extractor must be registered", fex != NULL);
+
+    VmafDictionary *opts = NULL;
+    int err = vmaf_dictionary_set(&opts, "enable_chroma", "false", 0);
+    err |= vmaf_dictionary_set(&opts, "uncapped", "true", 0);
+    mu_assert("vmaf_dictionary_set failed", err == 0);
+
+    const char *missing = NULL;
+    bool ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
+    (void)vmaf_dictionary_free(&opts);
+    mu_assert("integer_psnr_metal must support enable_chroma and uncapped", ok && missing == NULL);
+    return NULL;
+}
+
+static char *test_metal_integer_psnr_rejects_cpu_only_options(void)
+{
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_psnr_metal");
+    mu_assert("integer_psnr_metal extractor must be registered", fex != NULL);
+
+    VmafDictionary *opts = NULL;
+    int err = vmaf_dictionary_set(&opts, "min_sse", "0.5", 0);
+    mu_assert("vmaf_dictionary_set failed", err == 0);
+
+    const char *missing = NULL;
+    bool ok = vmaf_feature_extractor_supports_options(fex, opts, &missing);
+    (void)vmaf_dictionary_free(&opts);
+    mu_assert("integer_psnr_metal must reject min_sse", !ok && missing != NULL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_metal_extractors_all_registered);
     mu_run_test(test_metal_temporal_flag_present);
     mu_run_test(test_metal_unknown_extractor_returns_null);
+    mu_run_test(test_metal_integer_psnr_options);
+    mu_run_test(test_metal_integer_psnr_rejects_cpu_only_options);
     return NULL;
 }
 

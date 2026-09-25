@@ -1129,4 +1129,5 @@ public authority; documentation never links into either local root.
 | [ADR-1316](1316-gpu-option-value-capability-fallback.md) | Marks extractor options whose mirrored schema exceeds the current backend implementation, so model-driven GPU selection falls back to the CPU for valid non-default values. | Accepted | gpu, feature-options, compatibility, testing |
 | [ADR-1317](1317-golden-gate-build-isolation.md) | Isolates the Netflix golden gate build profile to a dedicated CPU directory with gcc or clang to prevent ICX floating-point contraction drift. | Accepted | ci, golden-gate, compiler, build-system, reproducibility |
 | [ADR-1321](1321-pre-rc1-flake-survey-remediation.md) | Pre-RC1 CI flake remediation and contract alignment | Accepted | ci, testing, flaky, clang-tidy, fuzzing, fork-local |
+| [ADR-1322](1322-metal-integer-psnr-enable-chroma-parity.md) | Restore enable_chroma option parity on integer_psnr_metal | Accepted | metal, psnr, option-parity, chroma, fork-local, bug-048 |
 | [ADR-1247](1247-scorecard-exact-head-gates.md) | Bind Scorecard gates to their measured source and scope | Accepted | ci, security, supply-chain |

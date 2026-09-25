@@ -44977,7 +44977,7 @@ ninja -C build src/liblibvmaf.a.p/libvmaf_src_libvmaf.c.o
 PR #1067 (bootstrap name-builder refactor) merged a stale base that
 pre-dated four option additions and overwrote them:
 
-- `integer_psnr_metal.mm`: lost `enable_chroma` field + option entry + `n_planes` guard (PR #986)
+- `integer_psnr_metal.mm`: lost `enable_chroma` field + option entry + `n_planes` guard (PR #986; restored in BUG-048 / ADR-1322 and pinned by `test_gpu_psnr_option_parity_contract.py`)
 - `float_psnr_metal.mm`: lost `enable_chroma` + per-plane dispatch loop + `n_planes` (PR #978)
 - `psnr_vulkan.c`: ceiling division reverted to floor division for chroma geometry (PR #878)
 - `vif_vulkan.c`: lost `vif_skip_scale0` field + option entry + score-suppression guards (PR #1057)
