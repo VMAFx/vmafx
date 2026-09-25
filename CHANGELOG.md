@@ -20192,6 +20192,9 @@ no score floor was applied.
   [ADR-1197](docs/adr/1197-gpu-threaded-flush-ownership.md).
 
 
+Build: Fixed C++26 standard library placement new and delete symbols (`_ZnwmPv`, `_ZdlPvS_`) leaking into the libvmaf public ABI on GCC 16 (ADR-1337).
+
+
 - **The ADR allocator no longer shallows a full clone.** `scripts/adr/next-free.sh` passed `--depth=1` and `--depth=50` to `git fetch` unconditionally. On a developer's complete clone that *converts* it to a shallow one: `.git/shallow` appears, `git merge-base` stops resolving, and every `git rebase` in the repository and all of its worktrees (which share one `.git`) reports the entire tree as conflicting. Because the allocator runs on every ADR claim, a busy session re-corrupted the clone several times an hour and produced phantom 100-file rebase conflicts. The depth flags are now applied only when the checkout is already shallow, so CI keeps the smaller fetch and local clones stay complete. Covered by `scripts/adr/tests/test-next-free-shallow-safe.sh`.
 
 

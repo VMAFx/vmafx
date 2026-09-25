@@ -54212,3 +54212,5 @@ show the hazard.
 - Changelog: `changelog.d/fixed/ffmpeg-input-order-contract.md`.
 - FFmpeg impact: patch 0001 retains the reminder; verify the complete ordered
   series with `python3 scripts/ci/ffmpeg_patch_stack.py --check`.
+## C++ placement new and delete symbols (ADR-1337)
+- Any future upstream C++ targets must continue inheriting `vmaf_cppflags_common` to ensure `-fvisibility-inlines-hidden` is applied, preventing `_ZnwmPv` and `_ZdlPvS_` from leaking into the public ABI.
