@@ -1,6 +1,30 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/reconcile-hip-scaffold-state-8763 — reconcile duplicate HIP scaffold state (2026-09-25)
+
+No rebase impact: this is a documentation-only state-ledger correction. The
+former Open item `T-HIP-SCAFFOLD-TESTS-FAIL-2026-09-16` and the Recently closed
+item `T-HIP-SCAFFOLD-ENOSYS-MASKED-2026-09-19` described the same four remaining
+default-scaffold failures after PR #1425. PR #1506's verified integration commit
+`11a47f39b1` carries the signed `a5a9ec69e` fix and is an ancestor of the current
+collector. The Open duplicate is removed and its provenance is retained in the
+closed row.
+
+- Research digest: no digest needed; this is a trivial reconciliation against
+  existing ADR-1264, exact Git history, current source, and executable tests.
+- Decision matrix: no alternatives; retaining contradictory Open and closed
+  records is invalid, while deleting the provenance would lose the first-stage
+  PR #1425 history, so the older identifier is folded into the authoritative
+  closed record.
+- AGENTS.md invariant note: no new rebase-sensitive invariant. The existing
+  ADR-1264 HIP scaffold and test invariants are unchanged.
+- Reproducer / smoke:
+  `meson test -C build-hip-scaffold --print-errorlogs --num-processes 1 test_hip_float_vif_parity test_hip_psnr_hvs_parity test_hip_psnr_hvs_parity_large test_hip_speed_singular_parity`.
+- Changelog: `changelog.d/changed/hip-scaffold-state-ledger-reconciliation.md`.
+- ADR: no ADR needed; no architecture, policy, runtime behavior, or scope
+  decision changed.
+
 ## agent/fix-sycl-tidy-path-99d79a — resolve SYCL clang-tidy wrapper to absolute path for safe_subprocess (2026-09-25)
 
 When invoking `make tidy-ratchet LANE=sycl`, the lane passed `scripts/ci/clang-tidy-sycl.sh`
