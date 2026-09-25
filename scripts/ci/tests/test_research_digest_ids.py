@@ -15,6 +15,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 CHECKER_PATH = ROOT / "scripts/ci/check-research-digest-ids.py"
@@ -63,7 +64,7 @@ class ResearchDigestIdTests(unittest.TestCase):
         result = CHECKER._git(self.root, "-c", "commit.gpgsign=false", *args, check=False)
         if result.returncode != 0:
             self.fail(f"git {' '.join(args)} failed: {result.stderr.decode('utf-8')}")
-        return result.stdout.decode("utf-8").strip()
+        return str(result.stdout.decode("utf-8").strip())
 
     def _init_git(self) -> None:
         self._git("init", "-b", "master")
@@ -102,8 +103,39 @@ class ResearchDigestIdTests(unittest.TestCase):
         self.assertIn(marker, config)
         block = config.split(marker, maxsplit=1)[1].split("\n      - id: ", maxsplit=1)[0]
         match = re.search(r"^\s+files: '([^']+)'$", block, flags=re.MULTILINE)
-        self.assertIsNotNone(match, f"{hook_id} has no files selector")
+        if match is None:
+            raise AssertionError(f"{hook_id} has no files selector")
         return re.compile(match.group(1))
+
+    def _workflow_job_for_step(self, config: str, step_name: str) -> tuple[str, str]:
+        lines = config.splitlines(keepends=True)
+        job_headers = [
+            (index, match.group(1))
+            for index, line in enumerate(lines)
+            if (match := re.fullmatch(r"  ([A-Za-z0-9_-]+):\n?", line)) is not None
+        ]
+        matches: list[tuple[str, str]] = []
+        marker = f"      - name: {step_name}\n"
+        for position, (start, job_name) in enumerate(job_headers):
+            end = job_headers[position + 1][0] if position + 1 < len(job_headers) else len(lines)
+            block = "".join(lines[start:end])
+            if marker in block:
+                matches.append((job_name, block))
+        if len(matches) != 1:
+            raise AssertionError(
+                f"expected one workflow job containing {step_name!r}, found {len(matches)}"
+            )
+        return matches[0]
+
+    def _workflow_steps(self, job_block: str) -> list[str]:
+        lines = job_block.splitlines(keepends=True)
+        starts = [index for index, line in enumerate(lines) if line.startswith("      - ")]
+        return [
+            "".join(
+                lines[start : starts[position + 1] if position + 1 < len(starts) else len(lines)]
+            )
+            for position, start in enumerate(starts)
+        ]
 
     def test_clean_unique_digests_pass(self) -> None:
         self._digest("1000-alpha.md")
@@ -271,6 +303,82 @@ class ResearchDigestIdTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("full 40-character commit", output)
 
+    def test_bootstrap_rejects_non_ancestor_commit(self) -> None:
+        self._init_git()
+        self._digest("1000-alpha.md")
+        trusted = self._commit("current history")
+        tree = self._git("rev-parse", f"{trusted}^{{tree}}")
+        unrelated = self._git("commit-tree", tree, "-m", "unrelated root")
+
+        result, output = self._run_main("--bootstrap-from-ref", unrelated)
+
+        self.assertEqual(result, 1)
+        self.assertIn("bootstrap authority must be an ancestor of HEAD", output)
+
+    def test_bootstrap_rejects_checker_or_baseline_in_authority_snapshot(self) -> None:
+        self._init_git()
+        self._digest("1000-alpha.md")
+        self._commit("pre-ratchet tree")
+        checker_marker = self.root / "scripts/ci/check-research-digest-ids.py"
+        checker_marker.parent.mkdir(parents=True, exist_ok=True)
+        checker_marker.write_text("# trusted checker marker\n", encoding="utf-8")
+        checker_revision = self._commit("checker present")
+
+        result, output = self._run_main("--bootstrap-from-ref", checker_revision)
+        self.assertEqual(result, 1)
+        self.assertIn("canonical trusted baseline is missing", output)
+        self.assertFalse(self.baseline.exists())
+
+        self._write_payload_direct()
+        baseline_revision = self._commit("baseline present")
+        self.baseline.unlink()
+
+        result, output = self._run_main("--bootstrap-from-ref", baseline_revision)
+        self.assertEqual(result, 1)
+        self.assertIn("predating the ratchet", output)
+        self.assertFalse(self.baseline.exists())
+
+    def test_bootstrap_writes_the_single_validated_snapshot(self) -> None:
+        self._digest("1000-alpha.md")
+        validated = CHECKER._baseline_payload(self.root)
+        changed = json.loads(json.dumps(validated))
+        changed["legacy_heading_exceptions"] = {
+            "docs/research/1000-alpha.md": "# Changed after validation"
+        }
+        authority = CHECKER.DebtAuthority(
+            payload=validated,
+            revision="f" * 40,
+            source="tree",
+        )
+
+        with mock.patch.object(
+            CHECKER,
+            "_baseline_payload",
+            side_effect=(validated, changed),
+        ) as scan:
+            CHECKER.bootstrap_baseline(self.root, self.baseline, authority)
+
+        self.assertEqual(scan.call_count, 1)
+        self.assertEqual(CHECKER.load_baseline(self.baseline), validated)
+
+    def test_bootstrap_exclusive_create_preserves_racing_output(self) -> None:
+        self._digest("1000-alpha.md")
+        payload = CHECKER._baseline_payload(self.root)
+        authority = CHECKER.DebtAuthority(
+            payload=payload,
+            revision="f" * 40,
+            source="tree",
+        )
+        self.baseline.parent.mkdir(parents=True, exist_ok=True)
+        existing = b"created by another bootstrap\n"
+        self.baseline.write_bytes(existing)
+
+        with mock.patch.object(Path, "exists", return_value=False):
+            with self.assertRaisesRegex(CHECKER.GateError, "refuses to overwrite"):
+                CHECKER.bootstrap_baseline(self.root, self.baseline, authority)
+
+        self.assertEqual(self.baseline.read_bytes(), existing)
+
     def test_bootstrap_cannot_absorb_debt_added_after_trusted_ref(self) -> None:
         self._init_git()
         self._digest("1000-alpha.md")
@@ -304,6 +412,15 @@ class ResearchDigestIdTests(unittest.TestCase):
         self.assertIn('--trusted-ref "${VMAFX_RESEARCH_BASE_REF}"', workflow)
         self.assertNotIn("--bootstrap-from-ref", workflow)
         self.assertNotIn("--bootstrap-from-ref", precommit)
+
+        _, gate_job = self._workflow_job_for_step(workflow, "Research digest identifier ratchet")
+        checkout_steps = [
+            step
+            for step in self._workflow_steps(gate_job)
+            if step.lstrip().startswith("- uses: actions/checkout@")
+        ]
+        self.assertEqual(len(checkout_steps), 1, "gate job must have exactly one checkout")
+        self.assertRegex(checkout_steps[0], r"(?m)^          fetch-depth: 0$")
 
         expected_triggers = {
             ".github/AGENTS.md",
