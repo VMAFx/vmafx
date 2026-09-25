@@ -1436,6 +1436,7 @@ nav:
         - "ADR-1314: semgrep-registry-advisory-artifact": adr/1314-semgrep-registry-advisory-artifact.md
         - "ADR-1315: doxygen-public-api-fail-closed": adr/1315-doxygen-public-api-fail-closed.md
         - "ADR-1316: gpu-option-value-capability-fallback": adr/1316-gpu-option-value-capability-fallback.md
+        - "ADR-1317: golden-gate-build-isolation": adr/1317-golden-gate-build-isolation.md
         - "ADR-1319: fail-closed-self-hosted-gpu-admission": adr/1319-fail-closed-self-hosted-gpu-admission.md
       - "By tag":
         - Overview: adr/by-tag/index.md
@@ -1504,6 +1505,7 @@ nav:
         - "bug-fix": adr/by-tag/bug-fix.md
         - "bug": adr/by-tag/bug.md
         - "bugfix": adr/by-tag/bugfix.md
+        - "build-system": adr/by-tag/build-system.md
         - "build": adr/by-tag/build.md
         - "bvi-dvc": adr/by-tag/bvi-dvc.md
         - "c++": adr/by-tag/c++.md
@@ -1549,6 +1551,7 @@ nav:
         - "compare": adr/by-tag/compare.md
         - "compat": adr/by-tag/compat.md
         - "compatibility": adr/by-tag/compatibility.md
+        - "compiler": adr/by-tag/compiler.md
         - "compliance": adr/by-tag/compliance.md
         - "concurrency": adr/by-tag/concurrency.md
         - "configs": adr/by-tag/configs.md

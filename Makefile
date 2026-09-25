@@ -46,9 +46,11 @@ ENABLE_CUDA := -Denable_cuda=true -Denable_nvcc=$(ENABLE_NVCC)
 LIBVMAF_DIR := core
 BUILD_DIR := $(LIBVMAF_DIR)/build
 DEBUG_DIR := $(LIBVMAF_DIR)/debug
+GOLDEN_BUILD_DIR ?= $(LIBVMAF_DIR)/build-golden
 
 .PHONY: default all debug build install cythonize clean distclean cythonize-deps \
-    go-build go-test go-ort-runner rust-build rust-test setup-envtest setup-envtest-env
+    go-build go-test go-ort-runner rust-build rust-test setup-envtest setup-envtest-env \
+    build-golden
 
 default: build
 
@@ -59,6 +61,9 @@ $(BUILD_DIR): $(MESON) $(NINJA)
 
 $(DEBUG_DIR): $(MESON) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) $(DEBUG_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_DEBUG) $(ENABLE_FLOAT) $(ENABLE_CUDA)
+
+build-golden: $(MESON) $(NINJA)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" bash scripts/ci/setup-golden-build.sh $(GOLDEN_BUILD_DIR) $(LIBVMAF_DIR) $(NINJA)
 
 cythonize: cythonize-deps
 	pushd python && "$(VENV_PYTHON)" setup.py build_ext --build-lib . && popd || exit 1
@@ -76,7 +81,7 @@ install: $(BUILD_DIR) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) install
 
 clean:
-	rm -rf $(BUILD_DIR) $(DEBUG_DIR)
+	rm -rf $(BUILD_DIR) $(DEBUG_DIR) $(GOLDEN_BUILD_DIR)
 	rm -f compat/python-vmaf/core/adm_dwt2_cy.c*
 
 distclean: clean
@@ -396,9 +401,9 @@ sbom:
 # Netflix CPU golden-data gate (D24) — the 3 test pairs that MUST pass.
 # Runs the Python tests whose hardcoded CPU scores are the source of truth
 # for VMAF numerical correctness.
-test-netflix-golden: build
+test-netflix-golden: build-golden
 	@echo "=== Netflix CPU golden-data gate (D24) ==="
-	CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu PYTHONPATH=$(CURDIR)/python python3 -m pytest \
+	CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu VMAF_BUILD_DIR="$(CURDIR)/$(GOLDEN_BUILD_DIR)" PYTHONPATH=$(CURDIR)/python python3 -m pytest \
 	    python/test/quality_runner_test.py \
 	    python/test/feature_extractor_test.py \
 	    python/test/vmafexec_test.py \

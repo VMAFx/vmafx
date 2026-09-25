@@ -71,6 +71,16 @@ green with it.
 - Changelog: `changelog.d/fixed/gpu-option-value-capability-fallback.md`.
 - FFmpeg impact: none; no public header, C API, CLI flag, or Meson option
   changed.
+## agent/fix-golden-gate-build-dir-6ba5 — isolate Netflix golden gate build profile to prevent ICX FP drift (2026-09-25)
+
+`make test-netflix-golden` now uses an isolated CPU-only build profile in `GOLDEN_BUILD_DIR ?= core/build-golden`, compiled via `scripts/ci/setup-golden-build.sh` enforcing an explicitly supported compiler (`gcc` or `clang`). `compat/python-vmaf/__init__.py` and `config.py` read `VMAF_BUILD_DIR` from the environment to decouple the test harness from `core/build`. When resolving rebase conflicts in `Makefile` or `compat/python-vmaf/__init__.py`, preserve `GOLDEN_BUILD_DIR`, target `build-golden`, and `VMAF_BUILD_DIR` injection in `test-netflix-golden`.
+
+- Research digest: [Research-1317](research/1317-golden-gate-build-isolation.md).
+- Decision matrix: [ADR-1317](adr/1317-golden-gate-build-isolation.md#alternatives-considered).
+- AGENTS.md invariant: `AGENTS.md` §8 and `compat/python-vmaf/AGENTS.md`, "Isolated build profile (ADR-1317)".
+- Reproducer / smoke: `make test-netflix-golden` and `pytest python/test/golden_gate_isolation_test.py scripts/ci/tests/test_golden_gate_makefile_contract.py`.
+- Changelog: `changelog.d/fixed/golden-gate-icx-drift-build-isolation.md`.
+- FFmpeg impact: none; no public C API, headers, or CLI flags changed.
 
 ## agent/fix-gpu-option-aliases-hiss-984823 — preserve CPU collector-key aliases (2026-09-25)
 

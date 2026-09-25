@@ -7432,6 +7432,12 @@
       },
       "target": "1316-gpu-option-value-capability-fallback.md"
     },
+    "1317": {
+      "sites": {
+        "scripts/ci/setup-golden-build.sh": 1
+      },
+      "target": "1317-golden-gate-build-isolation.md"
+    },
     "1319": {
       "sites": {
         ".github/workflows/required-aggregator.yml": 3,

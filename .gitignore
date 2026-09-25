@@ -22,6 +22,8 @@ target/
 .venv*
 __pycache__/
 build/
+build-golden/
+core/build-golden/
 dist/
 vmaf_output.xml
 compile_commands.json
