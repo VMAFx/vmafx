@@ -97,10 +97,10 @@ ADR-1334 records this extension rather than rewriting that history.
   - `core/test/test_metal_ms_ssim_options_contract.py` checks option metadata,
     helper wiring, dispatch names, ownership, atom-validation ordering, and
     NASA Rule 4 limits. Its mutations remove the atom guard, reduce its count
-    from all three L/C/S atoms to one, replace the dB ceiling with infinity,
-    force one plane, restore the raw `enable_chroma` gate, remove fresh
-    dictionary construction, and free a consumed dictionary; every mutation
-    is rejected.
+    from all three L/C/S atoms to one, substitute or remove each individual
+    L/C/S name/value mapping, replace the dB ceiling with infinity, force one
+    plane, restore the raw `enable_chroma` gate, remove fresh dictionary
+    construction, and free a consumed dictionary; every mutation is rejected.
   - `core/test/test_nonfinite_collector_wiring.py`: updated with `metal/float_ms_ssim_metal.mm` in `REQUIRED["vmaf_ssim_prepare_score_named"]` and option-aware `METAL_MS_SSIM_OPTIONS_DB_CALL`.
 - **Metal Parity Suite**:
   - `core/test/test_metal_float_ms_ssim_parity.c`: upgraded fixture to 512x384 (chroma 256x192 >= 176). Added `test_metal_float_ms_ssim_clip_db_ceiling` and `test_metal_float_ms_ssim_parity_chroma`. Skips honestly off Apple hardware (`[skip: no Metal device]`).
