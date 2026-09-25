@@ -339,7 +339,10 @@ Legacy extractor/cache utilities now use the standalone sidecar helper as
 well: `build_bisect_cache.py --manifest-out` records cache mode, check status,
 target-column candidates, default feature columns, and generated artifact
 counts; `collect_gpu_calibration_data.py` defaults to
-`<output>.manifest.json` and records selected features/backends/devices;
+`<output>.manifest.json` and records selected features/backends/devices. Its
+default backend is CUDA and its default architecture label is
+`cuda:default`; use `--backends sycl --arch-id <stable-device-id>` together
+when collecting from SYCL hardware;
 `extract_ugc_features.py` defaults to `<out-parquet>.manifest.json` and
 records manifest/pair/fail/source counts; and `extract_konvid_frames.py`
 defaults to `ai/data/konvid_frames_manifest.json` and records frame-pair

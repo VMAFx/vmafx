@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -34,10 +35,9 @@ def test_collect_gpu_calibration_manifest(tmp_path: Path) -> None:
         height=16,
         pixel_format="420",
         bitdepth=8,
-        arch_id="vulkan:lavapipe",
+        arch_id="cuda:smoke",
         cuda_device=0,
         sycl_device=0,
-        vulkan_device=0,
         smoke=True,
         output=tmp_path / "calibration.parquet",
         manifest_out=report,
@@ -48,16 +48,41 @@ def test_collect_gpu_calibration_manifest(tmp_path: Path) -> None:
         args=args,
         raw_argv=["--smoke"],
         features=["vif"],
-        backends=["vulkan"],
+        backends=["cuda"],
         frame_limit=100,
         row_count=4,
     )
 
     payload = json.loads(report.read_text(encoding="utf-8"))
     assert payload["schema"] == "gpu-calibration-data-manifest-v1"
-    assert payload["selection"] == {"backends": ["vulkan"], "features": ["vif"], "frame_limit": 100}
+    assert payload["selection"] == {"backends": ["cuda"], "features": ["vif"], "frame_limit": 100}
     assert payload["row_count"] == 4
     assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+
+
+def test_collect_gpu_calibration_help_names_current_default_backend(capsys) -> None:
+    mod = _load_script("collect_gpu_calibration_data")
+
+    try:
+        mod.parse_args(["--help"])
+    except SystemExit as exc:
+        assert exc.code == 0
+    else:  # pragma: no cover - argparse help always exits
+        raise AssertionError("--help must exit through argparse")
+
+    help_text = capsys.readouterr().out
+    assert "lavapipe" not in help_text.lower()
+    assert "default: cuda only" in help_text
+
+
+def test_benchmark_harness_has_no_retired_checkout_fallback() -> None:
+    script = REPO_ROOT / "testdata" / "bench_all.sh"
+    source = script.read_text(encoding="utf-8")
+
+    assert "/home/kilian/dev/vmaf" not in source
+    assert 'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"' in source
+    assert 'REPO_ROOT="${VMAF_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"' in source
+    subprocess.run(["bash", "-n", str(script)], check=True)
 
 
 def test_extract_ugc_manifest(tmp_path: Path) -> None:

@@ -54214,3 +54214,14 @@ show the hazard.
   series with `python3 scripts/ci/ffmpeg_patch_stack.py --check`.
 ## C++ placement new and delete symbols (ADR-1337)
 - Any future upstream C++ targets must continue inheriting `vmaf_cppflags_common` to ensure `-fvisibility-inlines-hidden` is applied, preventing `_ZnwmPv` and `_ZdlPvS_` from leaking into the public ABI.
+## agent/fix-ai-script-hygiene-3139 — current script environments (2026-09-25)
+
+`testdata/bench_all.sh` derives its default repository root from its own
+tracked location and honours `VMAF_ROOT` as the explicit override. Do not
+restore a developer-specific checkout fallback when resolving benchmark
+harness conflicts.
+
+`ai/scripts/collect_gpu_calibration_data.py` and its manifest fixtures name
+only the live CUDA/SYCL backend set after ADR-0726 removed Vulkan. The bounded
+contract in `ai/tests/test_legacy_extractor_manifests.py` guards both
+conditions. No benchmark or training run is part of this correction.

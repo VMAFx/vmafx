@@ -20657,6 +20657,13 @@ invalid ROI pooled score exits 65 without writing a report.
   production writer instead of duplicating its intended dispatch logic.
 
 
+- Remove the retired `/home/kilian/dev/vmaf` fallback from the benchmark
+  harness and make it resolve the checkout from its own location when
+  `VMAF_ROOT` is unset.
+- Keep GPU calibration help and manifest fixtures on the live CUDA/SYCL
+  backend set after Vulkan's removal.
+
+
 Restored strict RFC-8259 serialization across AI manifests, evaluation reports,
 legacy corpus caches, and stdout summaries, plus `vmaf-tune` conformal,
 auto-plan, and ladder artifacts. Non-finite diagnostics now become `null` while

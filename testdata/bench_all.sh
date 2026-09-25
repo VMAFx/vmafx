@@ -39,7 +39,12 @@ for cand in "${ONEAPI_CANDIDATES[@]}"; do
   fi
 done
 
-cd "${VMAF_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo /home/kilian/dev/vmaf)}" || exit 1
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${VMAF_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"
+if ! cd -- "$REPO_ROOT"; then
+  echo "ERROR: repository root is not accessible: $REPO_ROOT" >&2
+  exit 2
+fi
 
 # Honour $VMAF_BIN if set (e.g. for an out-of-tree build); otherwise default
 # to the in-tree fork build at core/build/tools/vmaf. Earlier revisions
