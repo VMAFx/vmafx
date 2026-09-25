@@ -165,6 +165,19 @@ feature/
   table to hide a backend capability gap. Extend
   `test_gpu_option_value_capability_contract.py` when adding or removing such
   a restriction.
+  **ADR-1324 adds the dimension-dependent counterpart for GPU `float_ssim`:**
+  all four twins keep the CPU-authored `scale=0` auto option, declare a
+  `context_check` plus `float_ssim` CPU fallback, and use their existing scale
+  helper as the sole threshold authority. Model-selected host-picture
+  contexts whose resolved scale exceeds `1` are replaced after validation and
+  backend preparation but before extractor initialization/submission and CUDA
+  picture translation. SYCL shared staging may already be populated at that
+  point. Directly named GPU extractors and
+  the device-buffer-only SYCL entry point keep their scale-1-only errors. Do
+  not mark `scale` default-only, narrow its range, or retry arbitrary init
+  failures on CPU. Extend
+  `test_gpu_float_ssim_auto_scale_contract.py` whenever this capability
+  changes.
 - **ANSNR / float_ansnr feature extractor removal (ADR-0865)**:
   `ansnr` and `float_ansnr` (CPU scalar, AVX2, AVX-512, NEON, CUDA, HIP, SYCL,
   Metal) were sunset and completely removed from library. ANSNR is legacy

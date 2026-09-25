@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1414,
+  "total_warnings": 1409,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -402,7 +402,7 @@
     "core/src/feature/cuda/integer_ms_ssim_cuda.c": 6,
     "core/src/feature/cuda/integer_psnr_cuda.c": 2,
     "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 3,
-    "core/src/feature/cuda/integer_ssim_cuda.c": 3,
+    "core/src/feature/cuda/integer_ssim_cuda.c": 2,
     "core/src/feature/cuda/integer_vif_cuda.c": 14,
     "core/src/feature/cuda/speed_chroma_cuda.c": 13,
     "core/src/feature/cuda/speed_temporal_cuda.c": 10,
@@ -513,7 +513,7 @@
     "core/test/test_cuda_ssim_parity.c": 16,
     "core/test/test_cuda_ssimulacra2_parity.c": 20,
     "core/test/test_dict.cpp": 33,
-    "core/test/test_feature_collector.c": 16,
+    "core/test/test_feature_collector.c": 12,
     "core/test/test_gpu_picture_pool.c": 5,
     "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_locale_handling.c": 21,
@@ -555,6 +555,36 @@
         }
       },
       "previous_baseline_sha256": "7e9e80a5ddee65238789a7b2987fe0073e2ef42bcb0e4405d4e90c3fcc8a59a7"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_ssim_cuda.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_ssim_cuda.c": {
+          "warnings": [
+            3,
+            2
+          ]
+        }
+      },
+      "previous_baseline_sha256": "a933274def0e47d5d89a731387305ef1320f3a7c583a6fa79a18527f0e9a6ea6"
+    },
+    {
+      "sources": [
+        "core/test/test_feature_collector.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_feature_collector.c": {
+          "warnings": [
+            16,
+            12
+          ]
+        }
+      },
+      "previous_baseline_sha256": "fe4277ff23e4907f4eb47f50fdc6102f200647bc06bb867b9e40bbdb09ef582d"
     }
   ]
 }

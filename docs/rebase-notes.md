@@ -37,6 +37,28 @@ paths in `docs/development/merge-train.md`.
 - Reproducer / smoke: `python3 -m unittest discover -s scripts/dev/tests -p 'test_*merge_train_guard.py'`.
 - Changelog: `changelog.d/fixed/merge-train-control-closure.md`.
 - FFmpeg impact: none; no C/C++ or library surface touched.
+## fix/gpu-float-ssim-auto-scale-1e6f — dimension-aware model fallback (2026-09-25)
+
+CUDA, SYCL, HIP and Metal `float_ssim` remain scale-1-only GPU kernels, but a
+model-selected host-picture context must no longer fail at common dimensions
+when `scale=0` resolves above `1`. Preserve each descriptor's `context_check`
+and `context_fallback_name = "float_ssim"`, the model-only
+`allow_context_fallback` marker, and the resolver call after picture validation
+but before CUDA translation or extractor initialization. Only `-ENOTSUP`
+requests fallback; parser errors and directly named GPU extractors retain their
+existing errors. A replacement must clone the option dictionary, rebind
+context-owned backend state and invalidate cached CUDA residency flags.
+
+- Research digest: [Research-2108](research/2108-gpu-float-ssim-auto-scale-fallback-2026-09-25.md).
+- Decision matrix: [ADR-1324](adr/1324-gpu-float-ssim-auto-scale-fallback.md#alternatives-considered).
+- AGENTS.md invariant: `core/src/feature/AGENTS.md`, “Model options gate GPU
+  twin selection”.
+- Reproducer / smoke:
+  `python3 core/test/test_gpu_float_ssim_auto_scale_contract.py` and
+  `meson test -C BUILD test_feature_collector`.
+- Changelog: `changelog.d/fixed/gpu-float-ssim-auto-scale-fallback.md`.
+- FFmpeg impact: none; no public C header, exported API, CLI flag or Meson
+  option changed.
 
 ## agent/fix-doxygen-public-api-warnings-6ba5 — drive public C API Doxygen warnings to zero and fail closed (2026-09-25)
 

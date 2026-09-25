@@ -29,7 +29,8 @@
  *    enable_lcs  — emit float_ssim_l, float_ssim_c, float_ssim_s sub-scores.
  *    enable_db   — convert SSIM to dB: score = -10*log10(1 - ssim).
  *    clip_db     — clamp dB output to a finite maximum derived from frame size.
- *    scale       — v1 supports scale=1 only; auto-detect rejects scale>1.
+ *    scale       — v1 supports scale=1 only; ADR-1324 gives model-selected
+ *                  host-picture contexts a CPU fallback above scale 1.
  *
  *  Feature name: float_ssim.
  */
@@ -124,7 +125,8 @@ static const VmafOption options[] = {
     {
         .name        = "scale",
         .help        = "decimation scale factor (0=auto, 1=no downscaling). "
-                       "v1: Metal path supports scale=1 only.",
+                       "v1: direct Metal use requires scale=1; model dispatch falls back "
+                       "to CPU when auto resolves above 1.",
         .offset      = offsetof(FloatSsimStateMetal, scale),
         .type        = VMAF_OPT_TYPE_INT,
         .default_val = {.i = 0},
@@ -143,6 +145,16 @@ static int ssim_metal_compute_scale(unsigned w, unsigned h, int override_val)
     if (override_val > 0) { return override_val; }
     int scaled = (int)((float)(w < h ? w : h) / 256.0f + 0.5f);
     return (scaled < 1) ? 1 : scaled;
+}
+
+/* ADR-1324: dimensions are unavailable to the earlier option-value gate. */
+static int check_context_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                               unsigned bpc, unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    const auto *s = static_cast<const FloatSsimStateMetal *>(fex->priv);
+    return ssim_metal_compute_scale(w, h, s->scale) == 1 ? 0 : -ENOTSUP;
 }
 
 static int build_pipelines(FloatSsimStateMetal *s, id<MTLDevice> device)
@@ -508,5 +520,7 @@ VmafFeatureExtractor vmaf_fex_float_ssim_metal = {
         .min_useful_frame_area  = 1920U * 1080U,
         .dispatch_hint          = VMAF_FEATURE_DISPATCH_AUTO,
     },
+    .context_check         = check_context_metal,
+    .context_fallback_name = "float_ssim",
 };
 } /* extern "C" */
