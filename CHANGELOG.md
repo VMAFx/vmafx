@@ -28211,6 +28211,12 @@ the draft.
   every Checks API page, and the regression guard now detects nested YAML filters.
 
 
+- Remove stale 0033/0034 research-digest twins that a collector merge
+  resurrected after their historical rename to 0432/0433, restore all five
+  authoritative links, and add a required generated-baseline ratchet that
+  rejects new numeric-ID collisions and filename/H1 drift.
+
+
 - Research digest first-line headers normalized to `# Research-NNNN: <title>`
   format across all 210 digests in `docs/research/`. 57 files had variant
   formats (`Research digest NNNN —`, `Research NNNN:`, bare topic headings

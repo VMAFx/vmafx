@@ -451,6 +451,20 @@ repos:
         pass_filenames: false
         files: '^scripts/ci/(check-adr-links\.py|tests/test_check_adr_links\.py)$'
 
+      - id: check-research-digest-ids
+        name: Research digest IDs and H1 headings retain unique authority
+        entry: python3 -B scripts/ci/check-research-digest-ids.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: test-research-digest-ids
+        name: Research digest ID ratchet rejects collision and H1 drift
+        entry: python3 -B scripts/ci/tests/test_research_digest_ids.py
+        language: system
+        pass_filenames: false
+        files: '^(\.github/workflows/rule-enforcement\.yml|\.pre-commit-config\.yaml|scripts/ci/(check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
+
       - id: check-source-adr-citations
         name: Source ADR citations retain exact decision provenance
         entry: python3 -B scripts/ci/check-source-adr-citations.py

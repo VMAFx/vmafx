@@ -767,6 +767,15 @@ jobs:
           bash scripts/ci/check-local-data-contract.sh
           bash scripts/ci/tests/test-check-local-data-contract.sh
 
+      - name: Research digest identifier ratchet
+        # A keep-both merge resurrected two digests already renumbered by
+        # 5ac5b4167. Keep the live scan and planted collision/H1 mutations
+        # together so another duplicate cannot resolve as valid Markdown.
+        run: |
+          set -euo pipefail
+          python3 -B scripts/ci/check-research-digest-ids.py
+          python3 -B scripts/ci/tests/test_research_digest_ids.py
+
       - name: state.md row hygiene (ADR-0165)
         # A keep-both rebase resolution can leave a bug id in both "## Open
         # bugs" and "## Recently closed", so a fixed bug reads as open forever
