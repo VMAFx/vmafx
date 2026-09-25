@@ -19,7 +19,7 @@ hip/
                         #   the one way a host VmafPicture plane reaches the
                         #   device (waits for the copy; see ../feature/hip/AGENTS.md)
   hip_handle.h          # uintptr_t <-> hipStream_t / hipEvent_t, via a union
-  dispatch_strategy.{c,h} # Feature-name → kernel routing — stub
+  dispatch_strategy.{c,h} # Feature/extractor-name → active-kernel routing
   kernel_template.{h,c} # per-feature HIP kernel scaffolding (T7-10 / ADR-0241)
   stubs.c               # -ENOSYS fallbacks for the public libvmaf_hip.h
                         #   entry points when HAVE_HIP is OFF. Wired in
@@ -106,6 +106,17 @@ ADR-0372 (batch-1, this PR).
   mirror. See "Rebase-sensitive invariants" below.
 
 ## Rebase-sensitive invariants
+
+- **The HIP dispatch allowlist uses exact public names.** Under
+  `HAVE_HIPCC`, `g_hip_features[]` must contain each active HIP extractor's
+  `.name` and every `provided_features[]` key that callers may route through
+  `vmaf_hip_dispatch_supports()`. Keep the terminating `NULL` and the
+  fail-closed `direct` / `none` / `disable` environment override semantics.
+  Adding an extractor to `feature_extractor_list[]` without adding its exact
+  dispatch names silently falls back to CPU. The repository's
+  `check-dispatch-registry.sh` guards global symbol registration only; review
+  the extractor's `provided_features[]` and extend the relevant HIP runtime
+  test when changing this table. Commit `53c8ef155` established this coupling.
 
 - **HIP HSACO kernel header dependency tracking**
   ([ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);

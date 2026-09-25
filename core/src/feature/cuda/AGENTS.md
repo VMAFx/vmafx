@@ -95,6 +95,16 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
 
 ## Rebase-sensitive invariants
 
+- **Every successfully loaded CUDA module has an owned handle and an unload
+  path.** Any extractor that calls `cuModuleLoadData` must retain the resulting
+  `CUmodule` in its state and call `cuModuleUnload` on every matching close or
+  init-unwind path after pending device work is synchronized. Guard partially
+  initialized handles; do not rely on context destruction to reclaim modules
+  in a process that repeatedly creates and closes VMAF contexts. Preserve the
+  multi-module array teardown in `integer_adm_cuda.c`. Commit `62b2103a9`
+  established this rule across the CUDA extractors; a rebase that keeps the load
+  but loses the unload leaks GPU-resident module backing store per cycle.
+
 - **GPU SpEED means/cov must match CPU GLOBAL covariance, and ref/dis
   must use SEPARATE eigenvalue bases** (PR #1029,
   `research-1120-gpu-speed-covariance-eigenbasis-correctness`). In
