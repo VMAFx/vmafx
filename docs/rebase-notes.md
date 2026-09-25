@@ -226,6 +226,15 @@ pre-commit hook, and the Rule Enforcement self-test together. Do not widen it
 to reject normal bare references to the active fork or `Netflix/vmaf` upstream
 references. See
 [Research-2089](research/2089-archived-issue-reference-provenance.md).
+## fix/bug048-zed-restoration — current Zed project contract (2026-09-24)
+
+No upstream Netflix/vmaf code is touched. Preserve the selective Zed 1.18.1
+restoration if `.zed/` or developer documentation conflicts: project settings
+exclude `agent`, `agent_servers`, provider/model pins, and permission policy;
+the MCP entrypoint is `docker exec -i vmaf-dev-mcp vmafx-mcp`; the three
+`Standards:` tasks remain mandatory. Run
+`python3 -m pytest -q scripts/ci/tests/test_zed_project_config.py` after any
+resolution. Do not copy the archived 1.3.6 configuration back into live files.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

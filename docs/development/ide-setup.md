@@ -1,12 +1,10 @@
-<!-- markdownlint-disable MD025 MD060 -->
-# IDE setup (VS Code + clangd)
-
+<!-- markdownlint-disable MD013 MD060 -->
 # IDE setup (VS Code + Zed + clangd)
 
 `.vscode/settings.json` ships with clangd as the C/C++ language
 server (Microsoft IntelliSense is explicitly disabled). clangd
-reads compile flags from `${workspaceFolder}/build/compile_commands.json`
-which **meson generates automatically** during `meson setup`.
+reads compile flags from `${workspaceFolder}/build/compile_commands.json`,
+which Meson generates during `meson setup`.
 
 ## Make sure `build/` covers every backend you touch
 
@@ -16,197 +14,193 @@ has no include paths for CUDA / SYCL headers and lights up every
 `VmafCudaBuffer` / `sycl::queue` symbol as "undeclared identifier".
 
 > **Vulkan removed (ADR-0726):** The `enable_vulkan` option no longer exists.
-> Do not pass `-Denable_vulkan=enabled`; meson will reject it as an unknown
-> option. The `volk.h` / `vk_mem_alloc.h` / `VkInstance` / `VkDevice`
-> warnings in old `build/` directories are resolved by reconfiguring without
-> that flag.
+> Do not pass `-Denable_vulkan=enabled`; Meson will reject it as an unknown
+> option. Warnings about `volk.h`, `vk_mem_alloc.h`, `VkInstance`, or
+> `VkDevice` mean that the build directory predates the removal and should be
+> reconfigured.
 
-Fix: configure the IDE build with every backend you have a
-toolchain for:
+Configure the IDE build with every backend for which the host has a toolchain:
 
 ```bash
-# CUDA + SYCL (full GPU IDE build):
+# CUDA + SYCL (full GPU IDE build)
 source /opt/intel/oneapi/setvars.sh
-CC=icx CXX=icpx meson setup build \
+CC=icx CXX=icpx meson setup build core \
     -Denable_cuda=true -Denable_sycl=true \
     -Denable_float=true
 ```
 
-Then **restart clangd** in VS Code (Ctrl+Shift+P → "Restart
-Language Server") so it re-reads `compile_commands.json`.
+Then restart clangd so it re-reads `compile_commands.json`.
 
-## If you need separate build dirs for backend-specific testing
+## If you need separate backend build directories
 
-Don't lose the IDE build to an enable-only-one-backend
-reconfigure. Use named per-backend dirs alongside the IDE one:
+Do not turn the IDE build into an enable-only-one-backend directory. Use named
+build directories alongside it:
 
 ```bash
-# IDE (everything enabled):
-meson setup build  -D…all-backends-on…
+# CUDA-only test build
+meson setup build-cuda-test core \
+    -Denable_cuda=true -Denable_sycl=false -Denable_float=true
 
-# CUDA-only test build:
-meson setup build-cuda-test -Denable_cuda=true -Denable_float=true
-
-# SYCL-only test build (icx/icpx required):
-meson setup build-sycl-test -Denable_sycl=true -Denable_float=true
+# SYCL-only test build (icx/icpx required)
+CC=icx CXX=icpx meson setup build-sycl-test core \
+    -Denable_cuda=false -Denable_sycl=true -Denable_float=true
 ```
 
-The cross-backend gate scripts under `scripts/ci/` accept any
-of these via `--vmaf-binary`.
+The cross-backend gate scripts under `scripts/ci/` accept a selected binary
+through `--vmaf-binary`.
 
 ## Symptoms of a misconfigured `build/`
 
-- `unknown type name 'VmafCudaBuffer'` / `VmafCudaState'` on
-  files under `core/src/feature/cuda/`.
-- `'sycl/sycl.hpp' file not found` on files under
-  `core/src/feature/sycl/`.
-- `Included header errno.h is not used directly` warnings (a
-  consequence of the indexer giving up after the first error).
+- `unknown type name 'VmafCudaBuffer'` / `VmafCudaState` under
+  `core/src/feature/cuda/`;
+- `'sycl/sycl.hpp' file not found` under `core/src/feature/sycl/`; or
+- a cascade of include-cleanliness warnings after clangd's first fatal error.
 
-If you see these and clangd is otherwise working, the cause is
-99% of the time that `build/` was set up without the relevant
-backend.
-
----
+If clangd otherwise works, regenerate the compilation database with the
+backend enabled before changing source includes.
 
 ## Zed editor
 
-Zed is supported alongside VS Code. Both editors coexist — `.vscode/` and
-`.zed/` are both committed and neither interferes with the other.
+The checked-in contract targets **Zed 1.18.1**
+(`bebe92f469834a287f5a57ed78e8d51a918b8ada`). It was verified against that
+exact upstream source revision and the current official Zed documentation on
+2026-09-24. `.zed/` and `.vscode/` coexist; neither editor needs the other's
+configuration.
 
-### Minimum Zed version
+### Project settings versus user settings
 
-**Zed 1.2.6 or later** (released 2026-05-15).
-Source: <https://zed.dev/releases>, retrieved 2026-05-19.
+Zed parses `.zed/settings.json` with its restricted project-settings schema.
+The repository therefore keeps only settings that can actually be applied to
+this worktree:
 
-Install:
+- clangd reads `build/compile_commands.json` and uses the repository's own
+  `.clang-tidy` policy;
+- CUDA, HIP, Metal, and Objective-C++ suffixes map to C++, while Meson files
+  map to the Meson language;
+- edit predictions are disabled for models, corpora, golden fixtures,
+  `.workingdir/`, build output, and binary dataset formats;
+- file scanning preserves Zed's inherited defaults through the `"..."`
+  entry and additionally skips large build, model, and corpus artefacts; and
+- the `vmafx-mcp` context server starts the current Go MCP binary inside the
+  dev container.
 
-```bash
-curl -f https://zed.dev/install.sh | sh
-```
+Project settings cannot install ACP agents or set native-agent permissions.
+`agent`, `agent_servers`, UI preferences, telemetry, and extension installation
+belong in the developer's user settings. Keeping them out of the repository is
+also a trust boundary: cloning a project must not silently choose a provider,
+model, or permission policy for a developer.
 
-### Project config that ships with this repo
+Zed opens new worktrees in Restricted Mode. Trust the worktree only after
+reviewing `.zed/settings.json`; until then Zed deliberately will not launch the
+project's language or MCP servers.
 
-`.zed/settings.json` provides out-of-the-box:
+### Extensions
 
-- **clangd LSP** pointing at `build/compile_commands.json` with the same
-  flags as `.vscode/settings.json` (`--compile-commands-dir=build`,
-  `--background-index`, `--clang-tidy`, etc.).
-- **Pyright + ruff LSPs** for Python with format-on-save via ruff.
-- **shfmt** as the shell-script formatter (format-on-save).
-- **MCP server** (`vmaf-mcp`) registered under `context_servers` with
-  `source: "custom"` (required by Zed — see §MCP below).
-- **Claude Agent** via ACP — Zed auto-installs `@zed-industries/claude-agent-acp`
-  on first use; no manual configuration needed.
-  Source: <https://zed.dev/docs/ai/external-agents>, retrieved 2026-05-19.
-- **File-type associations**: `.cu`/`.cuh`/`.hip`/`.metal` → C++;
-  `.comp`/`.vert`/`.frag`/`.glsl` → GLSL.
-- **Telemetry disabled** (`diagnostics: false`, `metrics: false`).
+Install the Meson extension for the `Meson` file association. C, C++, Go,
+Python, CodeLLDB, Debugpy, and Delve support are built into Zed or installed on
+first use. The repository does not use `auto_install_extensions`: Zed reads
+that key from user settings only.
 
-`.zed/tasks.json` mirrors all `Makefile` targets and key `meson` invocations:
+### External agents (ACP)
 
-| Task label | Command |
-|---|---|
-| Build (CPU only) | `meson setup build … && ninja -C build` |
-| Build (all backends) | `meson setup build -Denable_cuda=true -Denable_sycl=true && ninja -C build` |
-| Run fast tests | `meson test -C build --suite=fast` |
-| Netflix golden | `make test-netflix-golden` |
-| Format all | `make format` |
-| Lint all | `make lint` |
-| Open dev-mcp shell | `docker exec -it vmaf-dev-mcp bash` |
-| MCP smoke test | `cd mcp-server/vmaf-mcp && python -m pytest tests/test_smoke_e2e.py -v` |
-
-`.zed/debug.json` provides CodeLLDB-based debug configurations for the vmaf
-CLI and C unit tests. Zed also auto-loads `.vscode/launch.json` as a fallback
-when `.zed/debug.json` is present; `.zed/debug.json` takes precedence.
-Source: <https://zed.dev/docs/debugger>, retrieved 2026-05-19.
-
-### Required Zed extensions
-
-Open the extension panel (Ctrl+Shift+X) and install:
-
-| Extension | Purpose |
-|---|---|
-| **clangd** | C/C++ language server (may be auto-detected) |
-| **ShellCheck** | Shell script linting via shellcheck LSP |
-| **CodeLLDB** (debugger) | C/C++ DAP debugger adapter; required for `.zed/debug.json` |
-| **GLSL** (community) | Syntax highlighting for `.comp`/`.vert`/`.frag` Vulkan shaders |
-| CUDA (community, optional) | CUDA-specific syntax highlighting for `.cu`/`.cuh`; otherwise C++ highlighting is used as a stopgap |
-| Meson (community, optional) | Meson build file syntax; not yet in the marketplace as of 2026-05-19 — map `.build`/`meson.build` files manually if available |
-
-Extension IDs verified against the Zed marketplace 2026-05-19:
-
-- `zed-industries/clangd` (bundled with Zed, auto-enabled for C/C++)
-- `zed-industries/shellcheck` (from Zed extensions registry)
-- CodeLLDB: install from Zed debugger extension panel
-
-### Recommended global settings (`~/.config/zed/settings.json`)
+Open `zed: acp registry` and install whichever external agents you use. The
+current registry IDs for the team's three common clients are `claude-acp`,
+`codex-acp`, and `gemini`. If a developer prefers a declarative user-level
+manifest, this is the supported shape in `~/.config/zed/settings.json`:
 
 ```json
 {
-  "base_keymap": "VSCode",
-  "vim_mode": false
+  "agent_servers": {
+    "claude-acp": { "type": "registry" },
+    "codex-acp": { "type": "registry" },
+    "gemini": { "type": "registry" }
+  }
 }
 ```
 
-Source: <https://zed.dev/docs/migrate/vs-code>, retrieved 2026-05-19.
+Do not add provider model IDs here. External ACP agents own their authentication,
+subscription, model selection, and native permission policy. Zed's
+`agent.tool_permissions` applies to the native Zed Agent and is user-global;
+it is not a project-level substitute for an external agent's write mode.
 
-### Claude Agent (ACP) and memory continuity
+### Dev container and MCP
 
-Switching from VS Code to Zed does **not** affect Claude Code CLI memory or
-context. Claude Code stores its per-project memory at
-`~/.claude/projects/<path>/memory/` (and cross-session auto-memory at the same
-location). This memory persists across editors because it is tied to the Claude
-Code CLI process, not to any editor extension. When Claude Agent runs inside
-Zed via ACP, it is the same `claude` CLI process reading the same memory files.
+For vmaf, vmaf-tune, AI, and MCP work, build the exact-source image first and
+then start the service from Zed's task picker:
 
-Skills (`.claude/skills/`), hooks (`.claude/hooks/`), and all ADR/plan state
-under `.workingdir/` are equally unaffected — they are filesystem artifacts
-read by the CLI, not by the editor.
-Source: <https://zed.dev/docs/ai/external-agents>, retrieved 2026-05-19 (ACP
-architecture: Zed forwards project root and env to the CLI process).
+1. `Dev container: build exact source`
+2. `Dev container: start`
+3. `MCP: probe running container`
 
-### MCP server (`vmaf-mcp`)
-
-The vmaf-mcp server uses **stdio transport** and works natively with Zed's
-`context_servers` key (no Unix domain socket bridge needed).
-Source: <https://zed.dev/docs/ai/mcp>, retrieved 2026-05-19.
-
-First-time setup:
+The context-server process is equivalent to:
 
 ```bash
-pip install -e mcp-server/vmaf-mcp
+docker exec -i vmaf-dev-mcp vmafx-mcp
 ```
 
-Then build the vmaf binary so `VMAF_BIN=build/tools/vmaf` resolves:
+The server is the Go binary from `cmd/vmafx-mcp` (ADR-1229). The old Python
+`vmaf-mcp` command is retained only as a compatibility surface and is not the
+IDE default. Current Zed custom MCP entries use `command` plus `args`; the old
+`source: "custom"` field is not part of the 1.18.1 shape.
 
-```bash
-meson setup build -Denable_cuda=false -Denable_sycl=false && ninja -C build
-```
+### Checked-in tasks
 
-Zed starts the server automatically on first agent thread creation. In a
-Claude Agent thread, type `@vmaf-mcp` to verify the tools are listed.
+`.zed/tasks.json` keeps the three governance tasks introduced by the HISS
+adoption and adds current, executable workflows:
 
-**Important**: the `source: "custom"` key in `context_servers` is **mandatory**.
-Without it, Zed silently ignores the entry.
-Source: <https://markaicode.com/mcp-zed-editor-setup/>, retrieved 2026-05-19.
-
-Zed supports MCP **Tools and Prompts** only; MCP Resources are not yet
-implemented in Zed. This is not a blocker since vmaf-mcp only exposes Tools.
-
-### Known gaps vs VS Code (as of Zed 1.2.6, 2026-05-19)
-
-| Feature | Status |
+| Task | Purpose |
 |---|---|
-| Meson problem matcher | Not available — meson errors appear in the terminal pane but are not parsed into the diagnostics panel |
-| Nsight profiler UI (`nvidia.nsight-vscode-edition`) | No Zed equivalent — use `ncu` from the integrated terminal |
-| oneAPI environment configurator | No Zed equivalent — source `setvars.sh` in shell profile; tasks inherit the env |
-| GitHub PR UI (`github.vscode-pull-request-github`) | No Zed extension — use `gh` CLI from the terminal |
-| `launch.json` GDB adapter | Zed's DAP prefers CodeLLDB; `.zed/debug.json` provides CodeLLDB configs |
-| MCP Resources | Not supported in Zed; vmaf-mcp does not expose Resources so no impact |
+| `Standards: Verify All` | Run the aggregate local governance gate. |
+| `Standards: Audit` | Run the standards audit. |
+| `Standards: Compile Context` | Verify generated standards context. |
+| `Dev container: build exact source` | Build with the source-revision guard. |
+| `Dev container: start` | Start only the primary `dev-mcp` service. |
+| `Dev container: CPU fast gate` | Build in writable `/probes/zed-build-cpu` and run the fast suite. |
+| `MCP: probe running container` | Exercise the running container and write its normal probe receipt. |
+| `vmaf-tune: compare CPU smoke` | Run the current `vmaf-tune compare --src ...` CLI in the container. |
+| `Netflix golden`, `Format check`, `Lint all` | Invoke canonical Make targets. |
+| `pytest: current file` | Run the active Python test through the selected environment. |
+| `ADR: claim selected slug` | Reserve an ADR number through the atomic allocator. |
 
-VS Code and Zed coexist indefinitely — `.vscode/` is unchanged and fully
-functional. The parallel-period strategy from the migration plan (see
-`docs/development/zed-migration-plan-2026-05-19.md`) recommends running both
-editors for approximately two weeks to validate workflows before switching
-fully.
+The container mounts `/workspace` read-only, so the fast-gate task writes its
+build directory under `/probes`; a task that tries to create `/workspace/build`
+will fail by design.
+
+### Checked-in debug scenarios
+
+`.zed/debug.json` provides:
+
+- CodeLLDB launch and attach scenarios for the `vmaf` CLI;
+- CodeLLDB scenarios for `test_feature` in normal and ASan/UBSan builds;
+- Debugpy for the active pytest file and the current `vmaftune.cli` module; and
+- Delve for the Go `cmd/vmafx-mcp` server.
+
+Zed only falls back to `.vscode/launch.json` when no `.zed/debug.json`
+configurations exist, so the checked-in Zed list must remain complete enough
+for the advertised workflows.
+
+### Regression check
+
+Run the focused contract after editing any `.zed/` file or this guide:
+
+```bash
+python3 -m pytest -q scripts/ci/tests/test_zed_project_config.py
+```
+
+The test rejects project-ignored `agent` / `agent_servers` keys, the retired
+numbered workspace root, the deprecated Python MCP entrypoint, deleted helper
+paths, the pre-package `vmaf-tune` module path, and loss of the governance
+tasks.
+
+### Authoritative Zed references
+
+- [Project settings parser at the verified 1.18.1 commit](https://github.com/zed-industries/zed/blob/bebe92f469834a287f5a57ed78e8d51a918b8ada/crates/settings_content/src/project.rs)
+- [Settings-store project parser at the verified commit](https://github.com/zed-industries/zed/blob/bebe92f469834a287f5a57ed78e8d51a918b8ada/crates/settings/src/settings_store.rs)
+- [External agents](https://zed.dev/docs/ai/external-agents)
+- [Model Context Protocol](https://zed.dev/docs/ai/mcp)
+- [Edit predictions](https://zed.dev/docs/ai/edit-prediction)
+- [Tasks](https://zed.dev/docs/tasks)
+- [Debugger](https://zed.dev/docs/debugger)
+
+The older dated migration documents remain historical evidence only. Do not
+copy their version-specific snippets into current configuration.
