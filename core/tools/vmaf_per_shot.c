@@ -71,19 +71,15 @@
  * that ran past this would wrap the numbering and silently corrupt the shot
  * table; the scan reports -EFBIG instead. The bound doubles as the scan's
  * static termination guarantee (Power of 10 rule 2) on an input that never
- * reports EOF (a FIFO kept open by a writer, /dev/zero), which the former
- * `for (;;)` had no defence against. It is not a hang timeout: reaching it
- * still means reading UINT32_MAX frames, so such an input still has to be
- * interrupted by the operator. See ADR-1287 and docs/state.md
- * (T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21).
+ * reports EOF (a FIFO kept open by a writer, /dev/zero). For practical
+ * operator escapes, -F / --frames sets an explicit frame ceiling, defaulting
+ * to 0 (all / unbounded up to this limit). See ADR-1287, ADR-1318, and
+ * docs/state.md (T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21).
  *
- * The ceiling is tested after the loop rather than before the next read, so
- * the scan is conservative by exactly one frame: an input of UINT32_MAX
- * frames is rejected although every one of them was numbered without
- * wrapping, and the largest input the scan accepts is UINT32_MAX - 1
- * frames. At 576x324 that boundary is on the order of a petabyte of input,
- * so it is documented rather than worked around; do not relax the guard
- * past the counter width to recover the last frame. */
+ * per_shot_scan_loop() tracks frame_idx in uint64_t and tests whether a frame
+ * exists at or beyond this bound before indexing it. An input of up to
+ * UINT32_MAX frames is accepted without wrapping when EOF is reached at that
+ * boundary, reporting -EFBIG only if input strictly exceeds UINT32_MAX frames. */
 #define VMAF_PER_SHOT_MAX_FRAMES UINT32_MAX
 
 /* Output format selector. */
@@ -117,6 +113,7 @@ struct vmaf_per_shot_settings {
     int crf_max;
     double diff_threshold;
     enum vmaf_per_shot_format format;
+    uint32_t max_frames;
 };
 
 /* clang-format off */
@@ -132,6 +129,9 @@ static const struct option per_shot_long_opts[] = {
     {"crf-max",         required_argument, NULL, 'M'},
     {"diff-threshold",  required_argument, NULL, 'd'},
     {"format",          required_argument, NULL, 'f'},
+    {"frames",          required_argument, NULL, 'F'},
+    {"frame_cnt",       required_argument, NULL, 'F'},
+    {"max-frames",      required_argument, NULL, 'F'},
     {"help",            no_argument,       NULL, 'H'},
     {NULL, 0, NULL, 0},
 };
@@ -139,24 +139,26 @@ static const struct option per_shot_long_opts[] = {
 
 static void per_shot_print_usage(FILE *stream)
 {
-    (void)fprintf(stream, "Usage: vmaf-perShot --reference REF.yuv --width W --height H "
-                          "--pixel_format 420|422|444 --bitdepth 8 --output PLAN [options]\n"
-                          "\n"
-                          "Required:\n"
-                          "  -r, --reference PATH       reference YUV file\n"
-                          "  -w, --width    N           frame width in pixels\n"
-                          "  -h, --height   N           frame height in pixels\n"
-                          "  -p, --pixel_format 420|422|444  planar YUV subsampling\n"
-                          "  -b, --bitdepth 8|10|12|16  planar YUV bit depth\n"
-                          "  -o, --output   PATH        per-shot plan output\n"
-                          "\n"
-                          "Optional:\n"
-                          "  -t, --target-vmaf X        target VMAF score [default 90]\n"
-                          "  -m, --crf-min N            minimum CRF clamp [default 18]\n"
-                          "  -M, --crf-max N            maximum CRF clamp [default 35]\n"
-                          "  -d, --diff-threshold X     shot-detector frame-diff cutoff\n"
-                          "  -f, --format csv|json      output format [default csv]\n"
-                          "  -H, --help                 print this message\n");
+    (void)fprintf(stream,
+                  "Usage: vmaf-perShot --reference REF.yuv --width W --height H "
+                  "--pixel_format 420|422|444 --bitdepth 8 --output PLAN [options]\n"
+                  "\n"
+                  "Required:\n"
+                  "  -r, --reference PATH       reference YUV file\n"
+                  "  -w, --width    N           frame width in pixels\n"
+                  "  -h, --height   N           frame height in pixels\n"
+                  "  -p, --pixel_format 420|422|444  planar YUV subsampling\n"
+                  "  -b, --bitdepth 8|10|12|16  planar YUV bit depth\n"
+                  "  -o, --output   PATH        per-shot plan output\n"
+                  "\n"
+                  "Optional:\n"
+                  "  -t, --target-vmaf X        target VMAF score [default 90]\n"
+                  "  -m, --crf-min N            minimum CRF clamp [default 18]\n"
+                  "  -M, --crf-max N            maximum CRF clamp [default 35]\n"
+                  "  -d, --diff-threshold X     shot-detector frame-diff cutoff\n"
+                  "  -f, --format csv|json      output format [default csv]\n"
+                  "  -F, --frames   N           maximum frames to scan (0 = all) [default 0]\n"
+                  "  -H, --help                 print this message\n");
 }
 
 /* Parse an unsigned integer with strict bounds. Bans atoi (banned by
@@ -254,14 +256,10 @@ static int per_shot_apply_opt(int c, const char *optarg_, struct vmaf_per_shot_s
         s->reference = optarg_;
         return 0;
     case 'w':
-        if (per_shot_parse_uint(optarg_, 16U, 65535U, &uv) != 0)
-            return -EINVAL;
-        s->width = (unsigned)uv;
-        return 0;
     case 'h':
         if (per_shot_parse_uint(optarg_, 16U, 65535U, &uv) != 0)
             return -EINVAL;
-        s->height = (unsigned)uv;
+        *(c == 'w' ? &s->width : &s->height) = (unsigned)uv;
         return 0;
     case 'p':
         return per_shot_parse_pixfmt(optarg_, &s->chroma_subsampling);
@@ -281,14 +279,10 @@ static int per_shot_apply_opt(int c, const char *optarg_, struct vmaf_per_shot_s
         s->target_vmaf = dv;
         return 0;
     case 'm':
-        if (per_shot_parse_int(optarg_, 0L, 63L, &iv) != 0)
-            return -EINVAL;
-        s->crf_min = (int)iv;
-        return 0;
     case 'M':
         if (per_shot_parse_int(optarg_, 0L, 63L, &iv) != 0)
             return -EINVAL;
-        s->crf_max = (int)iv;
+        *(c == 'm' ? &s->crf_min : &s->crf_max) = (int)iv;
         return 0;
     case 'd':
         if (per_shot_parse_double(optarg_, 0.0, 255.0, &dv) != 0)
@@ -297,6 +291,11 @@ static int per_shot_apply_opt(int c, const char *optarg_, struct vmaf_per_shot_s
         return 0;
     case 'f':
         return per_shot_parse_format(optarg_, &s->format);
+    case 'F':
+        if (per_shot_parse_uint(optarg_, 0U, VMAF_PER_SHOT_MAX_FRAMES, &uv) != 0)
+            return -EINVAL;
+        s->max_frames = (uint32_t)uv;
+        return 0;
     default:
         return -EINVAL;
     }
@@ -326,6 +325,7 @@ static void per_shot_settings_defaults(struct vmaf_per_shot_settings *s)
     s->crf_max = 35;
     s->diff_threshold = VMAF_PER_SHOT_DEFAULT_DIFF_THRESHOLD;
     s->format = VMAF_PER_SHOT_FMT_CSV;
+    s->max_frames = 0U;
 }
 
 static int per_shot_parse_args(int argc, char **argv, struct vmaf_per_shot_settings *s)
@@ -338,7 +338,7 @@ static int per_shot_parse_args(int argc, char **argv, struct vmaf_per_shot_setti
      * baseline applies in libvmaf/tools/cli_parse.c — every C CLI
      * uses it, and the binary is single-threaded by construction. */
     // NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0141 / ADR-0278: CLI single-threaded option parsing via getopt_long
-    while ((c = getopt_long(argc, argv, "r:w:h:p:b:o:t:m:M:d:f:H", per_shot_long_opts, &idx)) !=
+    while ((c = getopt_long(argc, argv, "r:w:h:p:b:o:t:m:M:d:f:F:H", per_shot_long_opts, &idx)) !=
            -1) {
         if (c == 'H') {
             per_shot_print_usage(stdout);
@@ -733,7 +733,7 @@ struct per_shot_scan_ctx {
     size_t pixels;
     size_t luma_bytes;
     size_t chroma_bytes;
-    uint32_t frame_idx;
+    uint64_t frame_idx;
     bool have_prev;
 };
 
@@ -743,12 +743,20 @@ struct per_shot_scan_ctx {
 static int per_shot_scan_loop(const struct vmaf_per_shot_settings *s, struct per_shot_scan_ctx *ctx,
                               struct vmaf_per_shot_record *shots, uint32_t *shot_count)
 {
-    while (ctx->frame_idx < VMAF_PER_SHOT_MAX_FRAMES) {
+    const uint64_t ceiling = (s->max_frames > 0U) ? (uint64_t)s->max_frames :
+                                                    ((uint64_t)VMAF_PER_SHOT_MAX_FRAMES + 1ULL);
+
+    while (ctx->frame_idx < ceiling) {
         int r = per_shot_read_luma(ctx->fin, ctx->cur, ctx->luma_bytes, ctx->chroma_bytes);
         if (r == 0)
             break;
         if (r < 0)
             return -EIO;
+        if (ctx->frame_idx >= VMAF_PER_SHOT_MAX_FRAMES) {
+            (void)fprintf(stderr, "vmaf-perShot: input exceeds the %" PRIu32 "-frame scan limit\n",
+                          (uint32_t)VMAF_PER_SHOT_MAX_FRAMES);
+            return -EFBIG;
+        }
         double complexity = 0.0;
         double motion = 0.0;
         per_shot_compute_frame_signals(ctx->cur, ctx->have_prev ? ctx->prev : NULL, ctx->pixels,
@@ -758,10 +766,10 @@ static int per_shot_scan_loop(const struct vmaf_per_shot_settings *s, struct per
         const double mean_abs_diff_8bit = motion * 255.0;
         const bool is_cut =
             ctx->have_prev && per_shot_is_cut(mean_abs_diff_8bit, s->diff_threshold);
-        if (per_shot_record_frame(shots, shot_count, ctx->frame_idx, complexity, motion, is_cut) !=
-            0) {
+        if (per_shot_record_frame(shots, shot_count, (uint32_t)ctx->frame_idx, complexity, motion,
+                                  is_cut) != 0) {
             (void)fprintf(stderr,
-                          "vmaf-perShot: shot table overflow at frame %" PRIu32 " (max %u)\n",
+                          "vmaf-perShot: shot table overflow at frame %" PRIu64 " (max %u)\n",
                           ctx->frame_idx, VMAF_PER_SHOT_MAX_SHOTS);
             return -ENOSPC;
         }
@@ -770,12 +778,7 @@ static int per_shot_scan_loop(const struct vmaf_per_shot_settings *s, struct per
         ctx->prev = ctx->cur;
         ctx->cur = tmp;
         ctx->have_prev = true;
-        ctx->frame_idx += 1U;
-    }
-    if (ctx->frame_idx >= VMAF_PER_SHOT_MAX_FRAMES) {
-        (void)fprintf(stderr, "vmaf-perShot: input exceeds the %" PRIu32 "-frame scan limit\n",
-                      (uint32_t)VMAF_PER_SHOT_MAX_FRAMES);
-        return -EFBIG;
+        ctx->frame_idx += 1ULL;
     }
     return 0;
 }
@@ -808,13 +811,13 @@ static int per_shot_scan(const struct vmaf_per_shot_settings *s, struct vmaf_per
         ctx.luma_bytes;
     ctx.cur = malloc(ctx.luma_bytes);
     ctx.prev = malloc(ctx.luma_bytes);
-    ctx.frame_idx = 0U;
+    ctx.frame_idx = 0ULL;
     ctx.have_prev = false;
     if (ctx.cur == NULL || ctx.prev == NULL) {
         rc = -ENOMEM;
     } else {
         rc = per_shot_scan_loop(s, &ctx, shots, shot_count);
-        if (rc == 0 && ctx.frame_idx == 0U) {
+        if (rc == 0 && ctx.frame_idx == 0ULL) {
             (void)fprintf(stderr, "vmaf-perShot: no frames read from %s\n", s->reference);
             rc = -EINVAL;
         }

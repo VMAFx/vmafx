@@ -1,6 +1,23 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/fix-pershot-input-ceiling-139c — operator frame ceiling for vmaf-perShot (ADR-1318) (2026-09-25)
+
+`vmaf-perShot` now provides `-F, --frames <N>` (with aliases `--frame_cnt` and
+`--max-frames`) defaulting to `0U` (unbounded compatibility contract). Bounded
+scans on FIFOs, streams, and `/dev/zero` now terminate promptly and cleanly with
+exit code 0 instead of reading ~4.29e9 frames or appearing hung. The scan loop
+tracks `frame_idx` in `uint64_t` and evaluates frame existence before reading,
+resolving the ADR-1287 `UINT32_MAX` off-by-one check so an input of exactly
+`UINT32_MAX` frames is accepted when EOF is reached.
+
+- Research digest: [Research-1318](research/1318-pershot-endless-input-ceiling-2026-09-25.md).
+- Decision matrix: [ADR-1318](adr/1318-pershot-frames-ceiling.md#alternatives-considered).
+- AGENTS.md invariant: `core/tools/AGENTS.md`, "Scan stops at `VMAF_PER_SHOT_MAX_FRAMES` or `--frames` ceiling".
+- Reproducer / smoke: `meson test -C core/build test_vmaf_per_shot`.
+- Changelog: `changelog.d/fixed/pershot-endless-input-ceiling.md`.
+- FFmpeg impact: none; no public libvmaf header, C API, or scoring behavior changed.
+
 ## agent/fix-gpu-option-aliases-hiss-984823 — preserve CPU collector-key aliases (2026-09-25)
 
 CUDA, SYCL, and HIP option tables now use the same `force_0`, `ks`, and

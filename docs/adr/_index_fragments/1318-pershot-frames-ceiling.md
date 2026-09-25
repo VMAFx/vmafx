@@ -1,0 +1,1 @@
+| [ADR-1318](1318-pershot-frames-ceiling.md) | Bounded vmaf-perShot scan loop with operator frame ceiling (`-F, --frames`) defaulting to 0 (unbounded), providing an operator escape hatch for endless inputs and fixing the `UINT32_MAX` off-by-one boundary check. | Accepted | tools, cli, reliability, compatibility |

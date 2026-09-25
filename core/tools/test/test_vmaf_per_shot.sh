@@ -128,4 +128,110 @@ if "${BIN}" --typo-option 2>/dev/null; then
   exit 1
 fi
 
+# 7. --frames N bounds finite input.
+PLAN_FRAMES_CSV="${WORK}/plan_frames_10.csv"
+"${BIN}" \
+  --reference "${SRC}" \
+  --width 576 --height 324 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${PLAN_FRAMES_CSV}" \
+  --frames 10
+
+FRAMES_TOTAL=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${PLAN_FRAMES_CSV}")
+if [ "${FRAMES_TOTAL}" -ne 10 ]; then
+  echo "test_vmaf_per_shot: expected 10 frames total with --frames 10, got ${FRAMES_TOTAL}" >&2
+  exit 1
+fi
+
+# 8. --frames 0 preserves full scan (unbounded compatibility contract).
+PLAN_UNBOUNDED_CSV="${WORK}/plan_unbounded.csv"
+"${BIN}" \
+  --reference "${SRC}" \
+  --width 576 --height 324 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${PLAN_UNBOUNDED_CSV}" \
+  --frames 0
+
+UNBOUNDED_TOTAL=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${PLAN_UNBOUNDED_CSV}")
+if [ "${UNBOUNDED_TOTAL}" -ne 48 ]; then
+  echo "test_vmaf_per_shot: expected 48 frames total with --frames 0, got ${UNBOUNDED_TOTAL}" >&2
+  exit 1
+fi
+
+# 9. Flag aliases: -F, --frame_cnt, --max-frames behave identically.
+for ALIAS_FLAG in "-F" "--frame_cnt" "--max-frames"; do
+  ALIAS_CSV="${WORK}/plan_alias.csv"
+  "${BIN}" \
+    --reference "${SRC}" \
+    --width 576 --height 324 \
+    --pixel_format 420 --bitdepth 8 \
+    --output "${ALIAS_CSV}" \
+    ${ALIAS_FLAG} 10
+  ALIAS_TOTAL=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${ALIAS_CSV}")
+  if [ "${ALIAS_TOTAL}" -ne 10 ]; then
+    echo "test_vmaf_per_shot: alias ${ALIAS_FLAG} expected 10 frames, got ${ALIAS_TOTAL}" >&2
+    exit 1
+  fi
+done
+
+# 10. Bounded read on /dev/zero must terminate promptly and produce requested frames.
+DEV_ZERO_CSV="${WORK}/plan_dev_zero.csv"
+timeout 5s "${BIN}" \
+  --reference /dev/zero \
+  --width 16 --height 16 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${DEV_ZERO_CSV}" \
+  --frames 6
+
+DEV_ZERO_FRAMES=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${DEV_ZERO_CSV}")
+if [ "${DEV_ZERO_FRAMES}" -ne 6 ]; then
+  echo "test_vmaf_per_shot: expected 6 frames from /dev/zero, got ${DEV_ZERO_FRAMES}" >&2
+  exit 1
+fi
+
+# 11. Bounded read on endless FIFO must terminate cleanly and promptly (cannot hang).
+FIFO_TEST="${WORK}/endless_fifo.yuv"
+rm -f "${FIFO_TEST}"
+mkfifo "${FIFO_TEST}"
+yes 2>/dev/null | tr -d '\n' >"${FIFO_TEST}" 2>/dev/null &
+FIFO_WRITER_PID=$!
+FIFO_CSV="${WORK}/plan_fifo.csv"
+if ! timeout 5s "${BIN}" \
+  --reference "${FIFO_TEST}" \
+  --width 16 --height 16 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${FIFO_CSV}" \
+  --frames 5; then
+  echo "test_vmaf_per_shot: FIFO test timed out or failed" >&2
+  kill -9 "${FIFO_WRITER_PID}" 2>/dev/null || true
+  rm -f "${FIFO_TEST}"
+  exit 1
+fi
+kill -9 "${FIFO_WRITER_PID}" 2>/dev/null || true
+wait "${FIFO_WRITER_PID}" 2>/dev/null || true
+rm -f "${FIFO_TEST}"
+
+FIFO_FRAMES=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${FIFO_CSV}")
+if [ "${FIFO_FRAMES}" -ne 5 ]; then
+  echo "test_vmaf_per_shot: expected 5 frames from endless FIFO, got ${FIFO_FRAMES}" >&2
+  exit 1
+fi
+
+# 12. Invalid --frames arguments fail.
+if "${BIN}" --reference "${SRC}" --width 576 --height 324 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${WORK}/out.csv" \
+  --frames -1 2>/dev/null; then
+  echo "test_vmaf_per_shot: expected failure on negative --frames" >&2
+  exit 1
+fi
+
+if "${BIN}" --reference "${SRC}" --width 576 --height 324 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${WORK}/out.csv" \
+  --frames not_a_number 2>/dev/null; then
+  echo "test_vmaf_per_shot: expected failure on non-numeric --frames" >&2
+  exit 1
+fi
+
 echo "test_vmaf_per_shot: PASS (${ROWS} shot rows)"

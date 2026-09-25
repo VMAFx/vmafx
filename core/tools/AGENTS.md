@@ -155,25 +155,19 @@ tools/
     silently succeed. `per_shot_long_opts` table maps `--help` to
     `'H'`; `per_shot_parse_args` handles `'H'` for help and `'?'` for
     error path. Never change short-option value.
-  - **Scan stops at `VMAF_PER_SHOT_MAX_FRAMES`.** `per_shot_scan_loop`
-    counts frames in a `uint32_t` and `per_shot_record_frame` stores that
-    index, so an endless input (FIFO with live writer, `/dev/zero`) used to
-    spin forever and would wrap numbering past `UINT32_MAX`. Loop now
-    reports `-EFBIG` at bound. Never restore bare `for (;;)`. The bound is
-    the counter width, not a timeout — do not shrink it to make an endless
-    input fail faster, because any smaller value can truncate real content
-    ([ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md)).
-    The ceiling is tested *after* the loop, so the scan is conservative by
-    exactly one frame: an input of `UINT32_MAX` frames is rejected even
-    though every frame was numbered without wrapping, and the largest
-    accepted input is `UINT32_MAX - 1` frames. That is deliberate and
-    unreachable (about a petabyte at 576x324); do not relax the guard past
-    the counter width to recover it.
-    The ceiling is tested *after* the loop, so the scan is conservative by
-    exactly one frame: an input of `UINT32_MAX` frames is reported `-EFBIG`
-    even though every frame was numbered without wrapping. That is
-    deliberate and unreachable (about a petabyte at 576x324); do not
-    "fix" it by relaxing the guard past the counter width.
+  - **Scan stops at `VMAF_PER_SHOT_MAX_FRAMES` or `--frames` ceiling.** `per_shot_scan_loop`
+    tracks frames in a `uint64_t` and `per_shot_record_frame` stores that
+    index. An explicit operator ceiling `-F, --frames <N>` (with aliases
+    `--frame_cnt` and `--max-frames`) bounds scans on FIFOs, streams, or
+    synthetic inputs, exiting cleanly with code 0 on reaching N frames
+    ([ADR-1318](../../docs/adr/1318-pershot-frames-ceiling.md)). The default
+    is `0U` (unbounded), preserving full scans on finite files up to
+    `VMAF_PER_SHOT_MAX_FRAMES` (`UINT32_MAX`), where exhaustion reports `-EFBIG`.
+    Never restore a bare `for (;;)`. The bound evaluates frame existence before
+    reading/indexing: an input of exactly `UINT32_MAX` frames is accepted when
+    EOF is reached, reporting `-EFBIG` only if input strictly exceeds `UINT32_MAX`
+    frames, resolving the off-by-one check from
+    [ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md).
   - **Chroma skip uses `fseeko` / `_fseeki64`** (rebase-sensitive).
     `per_shot_read_luma` skips chroma bytes via `fseeko` (POSIX) or
     `_fseeki64` (WIN32). Never revert to `fseek((long)...)` —

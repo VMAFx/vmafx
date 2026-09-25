@@ -63,6 +63,7 @@ vmaf-perShot \
 | `-M / --crf-max`      | `35`    | Upper CRF clamp.                                   |
 | `-d / --diff-threshold` | `12.0` | Shot-detector cutoff (8-bit mean-abs-delta units). |
 | `-f / --format`       | `csv`   | `csv` or `json`.                                   |
+| `-F / --frames`       | `0`     | Maximum frames to scan (0 = all). Aliases: `--frame_cnt`, `--max-frames`. |
 | `--help`              | -       | Print usage and exit `0`.                          |
 
 ## Output format — CSV
@@ -168,23 +169,20 @@ content, matching the fork's raw-YUV CLI convention.
   break expected).
 - Shot table capped at 4096 entries (covers ≈3-hour content at
   one cut every 2 s); overflow surfaces as `ENOSPC`.
-- Scan stops when the frame counter reaches `UINT32_MAX` and reports
-  `vmaf-perShot: input exceeds the 4294967295-frame scan limit`
-  (`EFBIG`). The bound is the width of the `uint32_t` frame index the
-  shot records store, so the numbering can never wrap. Precisely: the
-  scan succeeds for an input of up to 4294967294 frames and reports
-  `EFBIG` for one of 4294967295 frames or more — one frame short of the
-  counter's range, because the ceiling is tested after the last frame it
-  would have numbered rather than before the next read. That
-  conservatism is unreachable in practice: 4.29e9 frames at 576x324 is
-  on the order of a petabyte of input. It is **not** a hang timeout: an
-  input stream that never reaches end of file — a FIFO held open by a
-  writer, or `/dev/zero` — still reads about 4.29e9 frames before the
-  diagnostic appears, so the run still has to be interrupted by the
-  operator. Tracked as
-  `T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21` in
-  [state.md](../state.md); the choice of bound is
-  [ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md).
+- Scan stops at `s->max_frames` if `-F / --frames <N>` (or aliases
+  `--frame_cnt` / `--max-frames`) is provided, terminating cleanly with
+  exit code 0 and emitting the plan for the scanned prefix. If omitted or
+  set to `0` (unbounded), the scan runs until EOF or until reaching
+  `UINT32_MAX` (4294967295) frames, where it reports
+  `vmaf-perShot: input exceeds the 4294967295-frame scan limit` (`EFBIG`).
+  Under [ADR-1318](../adr/1318-pershot-frames-ceiling.md), the bound evaluates
+  frame existence before reading/indexing, accepting an input of exactly
+  `UINT32_MAX` frames when EOF is reached, fixing the off-by-one check from
+  [ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md) and closing
+  `T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21` in [state.md](../state.md).
+  For endless sources (such as a FIFO with a live writer or `/dev/zero`),
+  operators can now supply `--frames <N>` to guarantee bounded execution
+  without hanging.
 
 ## Related
 

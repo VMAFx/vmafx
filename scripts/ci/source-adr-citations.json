@@ -7415,6 +7415,12 @@
         ".github/workflows/security-scans.yml": 1
       },
       "target": "1314-semgrep-registry-advisory-artifact.md"
+    },
+    "1318": {
+      "sites": {
+        "core/tools/vmaf_per_shot.c": 1
+      },
+      "target": "1318-pershot-frames-ceiling.md"
     }
   },
   "retired": {
