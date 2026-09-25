@@ -10,6 +10,20 @@ upstream Netflix/vmaf has no equivalent tree, so rebase risk =
 
 ## Rebase-sensitive surfaces
 
+### Research-digest identifier ratchet
+
+`check-research-digest-ids.py` scans every `docs/research/NNNN-*.md`
+digest except the `0000` template. New digests must have a unique numeric
+prefix and a first H1 beginning `# Research-NNNN`, with the same number as
+the filename. The generated `research-digest-id-baseline.json` records exact
+pre-existing collision sets and exact non-canonical H1 text; those entries are
+debt, not exceptions to copy. Any added, removed, or renamed collision member,
+or any heading drift, must fail both pre-commit and required CI until the
+underlying files are corrected or a reviewer deliberately runs
+`python3 -B scripts/ci/check-research-digest-ids.py --write`. Preserve the live
+gate, deterministic baseline writer, planted red-cap tests, pre-commit hook,
+and Rule Enforcement invocation together.
+
 ### Source ADR citation provenance (ADR-1311)
 
 `check-source-adr-citations.py` owns plain `ADR-NNNN` references in tracked

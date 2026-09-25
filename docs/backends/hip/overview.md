@@ -343,7 +343,7 @@ Each returns `-ENOSYS` at `init()`. Tracked in
 - [ADR-0533](../../adr/0533-hip-all-extractors-registration-sweep.md) —
   full HIP-extractor registration sweep (six more TUs wired into
   `hip_sources` + `feature_extractor_list[]`).
-- [Research-0033](../../research/0033-hip-applicability.md) —
+- [Research-0432](../../research/0432-hip-applicability.md) —
   AMD market-share + ROCm Linux maturity survey.
 
 ## ADR-0537: integer_vif_hip kernel fix (2026-05-18)

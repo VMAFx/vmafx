@@ -1,6 +1,31 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/fix-research-0033-0034-3139 — ratchet research identifier drift (2026-09-25)
+
+Commit `5ac5b4167` renamed the HIP-applicability and CI-pipeline-audit
+digests from 0033/0034 to 0432/0433, but a later collector merge restored the
+old files and their old links alongside the renamed copies. Preserve only the
+0432/0433 files and targets. Preserve `check-research-digest-ids.py`, its
+generated exact-debt baseline, planted red-cap tests, always-run pre-commit
+hook, and required Rule Enforcement invocation together. Baseline entries are
+inherited debt, not reusable exemptions; new collisions or H1 drift fail.
+
+- Research digest: no digest needed; this is an exact one-way restoration of
+  the historical rename, and broader normalization debt is tracked separately
+  in `docs/state.md`.
+- Decision matrix: no ADR or alternatives; retaining both byte-identical
+  content copies under competing IDs is invalid, while restoring 0432/0433 is
+  already the repository's recorded decision.
+- AGENTS.md invariant: `scripts/ci/AGENTS.md`, “Research-digest identifier
+  ratchet”, plus `docs/research/AGENTS.md` header-normalization guidance.
+- Reproducer / smoke: `python3 -B scripts/ci/check-research-digest-ids.py` and
+  `python3 -B scripts/ci/tests/test_research_digest_ids.py`.
+- Changelog: `changelog.d/fixed/research-digest-0033-0034-resurrection.md`.
+- FFmpeg/public-surface impact: none; no public C header, CLI flag, Meson
+  option, score, model, snapshot, FFmpeg patch, benchmark, tuning, or
+  retraining surface changed.
+
 ## agent/sycl-motion-uv-tolerance — fixed-point oracle for SYCL motion-add-UV (2026-09-25)
 
 `test_sycl_motion_add_uv_parity` must compare `motion_sycl` with the scalar
