@@ -583,7 +583,6 @@ size unless flags are right.**
 | CPU only | `--no_cuda --no_sycl` |
 | CUDA | `--gpumask=0 --no_sycl` |
 | SYCL | `--sycl_device=0 --no_cuda` |
-| Vulkan | `--vulkan_device=N` (no `--no_cuda`/`--no_sycl` interaction) |
 
 Verify CUDA engaged by inspecting JSON `frames[0].metrics`
 key set: CPU emits 14–15 keys (`integer_aim`, `integer_motion3`,

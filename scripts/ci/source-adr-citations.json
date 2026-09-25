@@ -4416,7 +4416,6 @@
         "pkg/corpus/backend_test.go": 1,
         "pkg/corpus/score.go": 1,
         "pkg/scorecli/scorecli.go": 1,
-        "testdata/bench_all.sh": 4,
         "tools/vmaf-tune/src/vmaftune/cli.py": 1,
         "tools/vmaf-tune/src/vmaftune/score.py": 1,
         "tools/vmaf-tune/src/vmaftune/score_backend.py": 1,

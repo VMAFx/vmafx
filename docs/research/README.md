@@ -123,6 +123,7 @@ Conventions:
 | [2114](2114-research-digest-ratchet-authority.md) | Trusted merge-base authority for research-digest identity debt | Complete | [ADR-1335](../adr/1335-research-digest-identity-ratchet.md) |
 | [2115](2115-hip-float-motion-lifecycle-flush.md) | HIP float-motion force-zero ownership and option-aware flush idempotency | Active | — (BUG048 A5 restoration) |
 | [2116](2116-codeql-python-alerts-triage-2026-09-24.md) | CodeQL Python alerts triage and exception semantics | Active | — |
+| [2118](2118-bug048-script-environment-drift-2026-09-25.md) | BUG-048 script environment drift | Complete | — (BUG-048 restoration) |
 | [2119](2119-gcc16-placement-new-symbol-visibility.md) | GCC 16 C++ placement new/delete symbol visibility | Complete | [ADR-1337](../adr/1337-cpp-placement-new-visibility.md) |
 
 | [0053](0053-post-merge-cpu-profile-2026-05-03.md) | Post-merge CPU profile 2026-05-03 — perf top-10 after lusoris/vmaf#310 through lusoris/vmaf#321; surfaces 3 new opt targets (convolve widen, SSIM double reduction, VIF gather elimination) | Active | — |

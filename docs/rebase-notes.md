@@ -54219,9 +54219,17 @@ show the hazard.
 `testdata/bench_all.sh` derives its default repository root from its own
 tracked location and honours `VMAF_ROOT` as the explicit override. Do not
 restore a developer-specific checkout fallback when resolving benchmark
-harness conflicts.
+harness conflicts. The harness covers CPU, CUDA, and SYCL only; do not restore
+retired backend rows, flags, or operator-facing claims in either the script or
+the linked `core/AGENTS.md` invocation table. Keep the harness header aligned
+with the 1080p checkerboard pair used by Test 2 and keep both engagement
+comments on the current CPU 14-15 / CUDA 11-12 / SYCL ~34 metrics-key shape.
+Regenerate `scripts/ci/source-adr-citations.json` when those source comments
+change; the removed ADR-0726 references no longer own a harness site.
 
 `ai/scripts/collect_gpu_calibration_data.py` and its manifest fixtures name
 only the live CUDA/SYCL backend set after ADR-0726 removed Vulkan. The bounded
 contract in `ai/tests/test_legacy_extractor_manifests.py` guards both
-conditions. No benchmark or training run is part of this correction.
+conditions. Preserve `load_frames()` validation of the top-level object,
+`frames` array, and object-shaped frame entries. No hardware benchmark or
+training run is part of this correction.

@@ -7,15 +7,20 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "ai" / "scripts"
+EXPECTED_BENCHMARK_CALLS = 9
 
 
-def _load_script(name: str):
+def _load_script(name: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, SCRIPTS_DIR / f"{name}.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -60,7 +65,9 @@ def test_collect_gpu_calibration_manifest(tmp_path: Path) -> None:
     assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
 
 
-def test_collect_gpu_calibration_help_names_current_default_backend(capsys) -> None:
+def test_collect_gpu_calibration_help_names_current_default_backend(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     mod = _load_script("collect_gpu_calibration_data")
 
     try:
@@ -75,14 +82,85 @@ def test_collect_gpu_calibration_help_names_current_default_backend(capsys) -> N
     assert "default: cuda only" in help_text
 
 
-def test_benchmark_harness_has_no_retired_checkout_fallback() -> None:
+@pytest.mark.parametrize("payload", ({}, {"frames": {}}, {"frames": [1]}))
+def test_collect_gpu_calibration_rejects_malformed_frames(
+    tmp_path: Path,
+    payload: object,
+) -> None:
+    mod = _load_script("collect_gpu_calibration_data")
+    report = tmp_path / "malformed.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"expected|every frame"):
+        mod.load_frames(report)
+
+
+def test_benchmark_harness_uses_current_portable_contract() -> None:
     script = REPO_ROOT / "testdata" / "bench_all.sh"
     source = script.read_text(encoding="utf-8")
+    backend_guidance = (REPO_ROOT / "core" / "AGENTS.md").read_text(encoding="utf-8")
 
     assert "/home/kilian/dev/vmaf" not in source
+    assert "vulkan" not in source.lower()
+    assert "1080p_5f" not in source
+    assert "CPU 14-15, CUDA 11-12, SYCL ~34" in source
+    assert "| Vulkan |" not in backend_guidance
     assert 'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"' in source
     assert 'REPO_ROOT="${VMAF_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"' in source
     subprocess.run(["bash", "-n", str(script)], check=True)
+
+
+def test_benchmark_harness_resolves_root_from_script_path(tmp_path: Path) -> None:
+    script = REPO_ROOT / "testdata" / "bench_all.sh"
+    fake_vmaf = tmp_path / "fake-vmaf"
+    invocation_log = tmp_path / "invocations.txt"
+    oneapi_stub = tmp_path / "setvars.sh"
+    output_dir = tmp_path / "output"
+    fake_vmaf.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+output = Path(args[args.index("--output") + 1])
+payload = {
+    "frames": [{"metrics": {"vmaf": 80.0}}],
+    "pooled_metrics": {"vmaf": {"mean": 80.0}},
+}
+output.write_text(json.dumps(payload), encoding="utf-8")
+with Path(os.environ["FAKE_BENCH_LOG"]).open("a", encoding="utf-8") as log:
+    log.write(f"{Path.cwd()}\\n")
+""",
+        encoding="utf-8",
+    )
+    fake_vmaf.chmod(0o755)
+    oneapi_stub.write_text(":\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env.pop("VMAF_ROOT", None)
+    env.update(
+        {
+            "FAKE_BENCH_LOG": str(invocation_log),
+            "VMAF_BENCH_OUTDIR": str(output_dir),
+            "VMAF_BIN": str(fake_vmaf),
+            "VMAF_ONEAPI_SETVARS": str(oneapi_stub),
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+    invocation_roots = invocation_log.read_text(encoding="utf-8").splitlines()
+    assert invocation_roots == [str(REPO_ROOT)] * EXPECTED_BENCHMARK_CALLS
 
 
 def test_extract_ugc_manifest(tmp_path: Path) -> None:

@@ -39,6 +39,7 @@ import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
@@ -187,9 +188,15 @@ def run_one(cmd: list[str]) -> tuple[int, str]:
     return 0, ""
 
 
-def load_frames(path: Path) -> list[dict]:
+def load_frames(path: Path) -> list[dict[str, Any]]:
     with path.open() as f:
-        return json.load(f)["frames"]
+        payload: Any = json.load(f)
+    if not isinstance(payload, dict) or not isinstance(payload.get("frames"), list):
+        raise ValueError(f"{path}: expected an object containing a frames array")
+    frames = payload["frames"]
+    if not all(isinstance(frame, dict) for frame in frames):
+        raise ValueError(f"{path}: every frame must be an object")
+    return [cast(dict[str, Any], frame) for frame in frames]
 
 
 def collect_for_cell(
