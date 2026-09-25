@@ -154,29 +154,8 @@
       "adr": "ADR-0848",
       "kind": "reverse-hunk",
       "undoes": "5d070b0b4338da84a7c6d2169e0bfa782436d3cb",
-      "evidence": "vmaf_log\\(VMAF_LOG_LEVEL_ERROR,",
-      "reason": "d6fa8ea45 (BUG-048) restored standard libvmaf log call-site formatting without duplicate severity prefixes (removing 'Error: ' from VMAF_LOG_LEVEL_ERROR messages in cuda/common.c) and ensured complete newline-terminated records in speed.c, pinned by core/test/test_vmaf_log_callsite_format.py and core/src/AGENTS.md.",
-      "paths": [
-        "core/src/cuda/common.c",
-        "core/src/feature/speed.c"
-      ]
-    },
-    {
-      "adr": "ADR-0726",
-      "kind": "reverse-hunk",
-      "undoes": "5d070b0b4338da84a7c6d2169e0bfa782436d3cb",
-      "evidence": "(?:Vulkan|backend|gpu-scheduling\\.md)",
-      "reason": "4b9c040a5 removed stale documentation claiming the removed Vulkan backend was implicitly available on GPU allocations, aligning Helm chart helper comments with ADR-0726 as documented in deploy/helm/vmafx/AGENTS.md.",
-      "paths": [
-        "deploy/helm/vmafx/templates/_helpers.tpl"
-      ]
-    },
-    {
-      "adr": "ADR-0982",
-      "kind": "reverse-hunk",
-      "undoes": "a12373faa03a4d57bc153cc24207292e272628c2",
-      "evidence": "(?:CHECK_CUDA_GOTO|fail_|CudaFunctions|cuda_free_functions|memset|if \\(f\\)|\\*)",
-      "reason": "2daf4c749 (BUG-048 Sec A3) restored ADR-0982 error unwinds in cuda/common.c (releasing the driver function table f via fail_release_funcs rather than bypassing it via fail_after_pop), which was silently reverted by a12373faa (PR #504).",
+      "evidence": "^\\s*vmaf_log\\(VMAF_LOG_LEVEL_ERROR, \"(?:Error: )?(?:device_id %d is out of range|failed to initialize CUDA)\\\\n\"(?:, device_id)?\\);$",
+      "reason": "ADR-0848 (and BUG-048) standardizes stderr diagnostic records across the codebase to not duplicate severity prefixes already provided by vmaf_log(VMAF_LOG_LEVEL_ERROR, ...). 5d070b0b4 (#515) had added 'Error: ' prefixes to device_id and CUDA initialization failure logs; removing them restores the standardized call-site format documented in docs/usage/cli.md and docs/rebase-notes.md, and verified by core/test/test_vmaf_log_callsite_format.py.",
       "paths": [
         "core/src/cuda/common.c"
       ]
@@ -185,18 +164,58 @@
       "adr": "ADR-0982",
       "kind": "reverse-hunk",
       "undoes": "a12373faa03a4d57bc153cc24207292e272628c2",
-      "evidence": "(?:combined_queue|compute_queue|-ENOMEM|if \\(!q\\)|\\/\\/)",
-      "reason": "2daf4c749 (BUG-048 Sec A3) restored ADR-0982 queue initialization order in sycl/common.cpp (creating the combined queue before registering the extractor), which was silently reverted by a12373faa (PR #504).",
+      "evidence": "(?:CHECK_CUDA_GOTO|fail_after_pop|fail_release_funcs|CudaFunctions|cuda_free_functions|memset|if \\(f\\)|\\*|/\\*)",
+      "reason": "Restores ADR-0982 CUDA runtime partial-initialization and release error unwinding (BUG-048 Sec A3). a12373faa (#504) accidentally reverted fbde2f91e (#503) by routing vmaf_cuda_release failures to fail_after_pop, leaking the dlopen'd CudaFunctions driver table. Routing through fail_release_funcs and clearing cu_state restores the leak fix. Verified by core/test/test_cuda_runtime_unwind.c.",
+      "paths": [
+        "core/src/cuda/common.c"
+      ]
+    },
+    {
+      "adr": "ADR-0848",
+      "kind": "reverse-hunk",
+      "undoes": "5d070b0b4338da84a7c6d2169e0bfa782436d3cb",
+      "evidence": "^\\s*vmaf_log\\(VMAF_LOG_LEVEL_ERROR, \"(?:SpEED: image too small, operating width or height is 0|invalid speed_kernelscale)(?:\\\\n)?\"\\);$",
+      "reason": "ADR-0848 standardizes diagnostic records into complete newline-terminated stderr lines. 5d070b0b4 (#515) omitted trailing newlines on the SpEED image-dimension and kernelscale error logs; adding '\\n' ensures logs do not concatenate with subsequent stderr output. Documented in docs/usage/cli.md and docs/rebase-notes.md, and verified by core/test/test_vmaf_log_callsite_format.py.",
+      "paths": [
+        "core/src/feature/speed.c"
+      ]
+    },
+    {
+      "adr": "ADR-0982",
+      "kind": "reverse-hunk",
+      "undoes": "a12373faa03a4d57bc153cc24207292e272628c2",
+      "evidence": "(?:combined[ _]queue|vmaf_sycl_create_compute_queue|return -ENOMEM|if \\(!q\\)|Round-26 audit \\(ADR-0982\\)|graph_submit|num_graph_extractors|extractor entry|lazy-queue-create)",
+      "reason": "Restores ADR-0982 SYCL graph extractor registration ordering (BUG-048 Sec A3). a12373faa (#504) accidentally reverted fbde2f91e (#503) by moving combined_queue allocation after num_graph_extractors++, leaving state corrupted if queue creation failed. Allocating the combined queue before incrementing the extractor count restores safety against null-dereference crashes on submit.",
       "paths": [
         "core/src/sycl/common.cpp"
       ]
     },
     {
-      "adr": "ADR-0719, ADR-0988",
+      "adr": "ADR-0379",
+      "kind": "reverse-hunk",
+      "undoes": "11a47f39b1873a31a95c9563a46a78d6f9fc4661",
+      "evidence": "(?:vector_unchanged|FEX_VECTOR_ALLOC_TEST|unsigned count, unsigned capacity|#ifdef|\\[\\[maybe_unused\\]\\])",
+      "reason": "Research-2096 and PR #1556 resolve CodeQL Alert 1230 (cpp/unused-static-function) in default LTO builds by placing vector_unchanged under the FEX_VECTOR_ALLOC_TEST configuration guard that matches its callers, superseding 11a47f39b's [[maybe_unused]] attribute. As recorded in docs/rebase-notes.md, configuration-only helpers stay configuration-owned.",
+      "paths": [
+        "core/test/test_fex_ctx_vector.cpp"
+      ]
+    },
+    {
+      "adr": "ADR-0726",
+      "kind": "reverse-hunk",
+      "undoes": "5d070b0b4338da84a7c6d2169e0bfa782436d3cb",
+      "evidence": "(?:amd\\.com/gpu|gpu\\.intel\\.com/i915|nvidia\\.com/gpu|Vulkan|gpu-scheduling\\.md)",
+      "reason": "ADR-0726 removed the Vulkan backend from VMAFx. 5d070b0b4 accidentally reintroduced comments claiming Vulkan ran through GPU device plugins. Commit 4b9c040a5 removes the stale Vulkan wording from the Helm chart templates and guides, preserving active backends (CUDA, HIP, SYCL, CPU) as recorded in deploy/helm/vmafx/AGENTS.md and docs/rebase-notes.md.",
+      "paths": [
+        "deploy/helm/vmafx/templates/_helpers.tpl"
+      ]
+    },
+    {
+      "adr": "ADR-0988",
       "kind": "reverse-hunk",
       "undoes": "fedce98892cdff0599d5cb49630f1b632e2f03a0",
-      "evidence": "(?:dumps_strict|json)",
-      "reason": "60a82bb9f restored strict RFC-8259 JSON serialization (dumps_strict from vmaftune.jsonio, rejecting NaN and Infinity) in ladder.py per ADR-0719 and ADR-0988, undoing standard json.dumps from fedce9889.",
+      "evidence": "^\\s*(?:return (?:dumps_strict\\(payload\\)|json\\.dumps\\(payload, indent=2, sort_keys=True\\)) \\+ \"\\\\n\"|from \\.jsonio import dumps_strict|import json)$",
+      "reason": "ADR-0988 mandates routing strict RFC-8259 JSON serialization through vmaftune.jsonio.dumps_strict across all vmaf-tune emitter modules to prevent non-finite float tokens (NaN, Inf) from breaking parsers. fedce9889 had introduced a bare json.dumps in ladder.py; restoring dumps_strict fulfills ADR-0988 and is verified by test_emit_json_replaces_all_nonfinite_quality_values.",
       "paths": [
         "tools/vmaf-tune/src/vmaftune/ladder.py"
       ]
