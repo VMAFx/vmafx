@@ -54275,3 +54275,29 @@ change. When a legacy or external binary provides no valid receipt, return
 guard before annotating a score response. The red caps use dated CPU 15 / CUDA
 14 / SYCL 24 payloads only to prove identity is independent of count. The Go
 direct-cgo path is separate and retains its explicit `cpu (direct cgo)` receipt.
+## ADR-0482 — `vmaf_pre` device-string parity (2026-09-25 restoration)
+
+`ffmpeg-patches/0002-add-vmaf_pre-filter.patch` maps all twelve current
+`VmafDnnDevice` values from `core/include/libvmaf/dnn.h` in `parse_device()`
+and lists the same strings in the filter option help. Whenever the enum gains
+a device value, update both this parser/help pair and the corresponding
+`tiny_device` mapping in patch `0001` in the same PR. Unknown strings remain a
+hard `AVERROR(EINVAL)`; there is no auto-detection fallback for a misspelled or
+unmapped explicit device.
+
+The patch files are cumulative. Verify this contract by replaying
+`ffmpeg-patches/series.txt` with `git am --3way` against the release pinned by
+`build-config.env` (currently `n9.0.2`), never by applying patch `0002` alone.
+Patch `0002` depends on source state introduced by earlier entries in that
+ordered series. This restoration changes documentation only; the twelve-entry
+implementation from commit `4db777126` remains present.
+
+## BUG-048 backend invariant guidance restoration (2026-09-25)
+
+The backend-local guidance again records two surviving contracts: CUDA module
+loads own matching unloads on close/unwind, and HIP/Metal dispatch allowlists
+use exact extractor and provided-feature strings. Preserve the implementation
+and its local `AGENTS.md` rule together on conflict resolution. The global
+`scripts/ci/check-dispatch-registry.sh` gate covers extractor-symbol
+registration; it does not replace the HIP/Metal allowlist review and runtime
+assertions described by those backend guides.
