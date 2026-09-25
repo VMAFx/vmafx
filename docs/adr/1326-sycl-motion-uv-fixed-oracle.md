@@ -76,6 +76,6 @@ Register the existing 960x540 build variant in
 
 - [ADR-0989](0989-sycl-motion-add-uv.md) — SYCL implementation and semantic option contract.
 - [ADR-1206](1206-gpu-parity-large-fixture-variants.md) — large-fixture parity variants and the former exclusion.
-- [Research-2109](../research/2109-sycl-motion-uv-fixed-oracle-2026-09-25.md) — derivation, reproduction, red cap, and hardware evidence.
+- [Research-2112](../research/2112-sycl-motion-uv-fixed-oracle-2026-09-25.md) — derivation, reproduction, red cap, and hardware evidence.
 - `T-SYCL-MOTION-ADD-UV-TOLERANCE-RESOLUTION-2026-09-06` in `docs/state.md`.
 - Source: `req` — “we fix everything until we cant find anything anymore for now”.

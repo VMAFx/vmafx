@@ -164,7 +164,7 @@ test('test_metal_float_moment_contract',
     suite : ['fast'],
 )
 
-# BUG-048 / Research-2108: Metal float_motion lifecycle correctness, force-zero,
+# BUG-048 / Research-2113: Metal float_motion lifecycle correctness, force-zero,
 # debug-controlled emission, and flush idempotency source contract.
 test('test_metal_float_motion_contract',
     import('python').find_installation(),

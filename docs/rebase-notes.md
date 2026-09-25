@@ -11,7 +11,7 @@ the oracle. Both the 256x144 and registered 960x540 variants are required; a
 rebase must not restore the former large-fixture exclusion or an empirical
 absolute tolerance. Production SYCL source is unchanged.
 
-- Research digest: [Research-2109](research/2109-sycl-motion-uv-fixed-oracle-2026-09-25.md).
+- Research digest: [Research-2112](research/2112-sycl-motion-uv-fixed-oracle-2026-09-25.md).
 - Decision matrix: [ADR-1326](adr/1326-sycl-motion-uv-fixed-oracle.md#alternatives-considered).
 - AGENTS.md invariant: `core/test/AGENTS.md`, “SYCL motion-add-UV fixed-point
   oracle”; and `core/src/feature/sycl/AGENTS.md`, “motion_add_uv fixed-point

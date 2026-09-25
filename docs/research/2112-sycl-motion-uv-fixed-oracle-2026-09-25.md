@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# Research-2109: SYCL motion-add-UV fixed-point oracle — 2026-09-25
+# Research-2112: SYCL motion-add-UV fixed-point oracle — 2026-09-25
 
 **Status:** Complete
 

@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 -->
-# Research-2108: Metal float-motion lifecycle, debug gating, and flush regression — 2026-09-25
+# Research-2113: Metal float-motion lifecycle, debug gating, and flush regression — 2026-09-25
 
 ## Finding
 
