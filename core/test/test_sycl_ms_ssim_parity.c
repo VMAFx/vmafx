@@ -51,10 +51,10 @@
  * = 11 << 4 = 176. We use 256x192 — both dimensions ≥ 176 and the
  * 256/192 ratio still resembles a typical 16:9 content shape. */
 #ifndef FIXTURE_W
-#define FIXTURE_W 256u
+#define FIXTURE_W 512u
 #endif
 #ifndef FIXTURE_H
-#define FIXTURE_H 192u
+#define FIXTURE_H 384u
 #endif
 #define FIXTURE_BPC 8u
 /* MS-SSIM has more variance across the 5-scale exponent stack than
@@ -77,7 +77,15 @@ static int fill_pic(VmafPicture *pic, unsigned salt)
     for (unsigned p = 1; p < 3; p++) {
         uint8_t *plane = (uint8_t *)pic->data[p];
         for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
+            for (unsigned col = 0; col < pic->w[p]; col++) {
+                if (p == 1) {
+                    plane[row * pic->stride[p] + col] =
+                        (uint8_t)((row * 3u + col * 5u + salt * 7u) & 0xFFu);
+                } else {
+                    plane[row * pic->stride[p] + col] =
+                        (uint8_t)((row * 7u + col * 11u + salt * 13u) & 0xFFu);
+                }
+            }
         }
     }
     return 0;
@@ -97,7 +105,11 @@ static int feed_frame(VmafContext *vmaf, bool identical)
         vmaf_picture_unref(&ref);
         return err;
     }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    int err2 = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    if (err2) {
+        fprintf(stderr, "vmaf_read_pictures returned %d\n", err2);
+    }
+    return err2;
 }
 
 /* ADR-1221 — `enable_db` / `clip_db` opt into the dB-domain score with a
@@ -259,6 +271,11 @@ static char *test_ms_ssim_cpu_sycl_parity_chroma(void)
     double delta = fabs(cpu_score - sycl_score);
     double delta_cb = fabs(cpu_cb - sycl_cb);
     double delta_cr = fabs(cpu_cr - sycl_cr);
+
+    mu_assert("Cb score must be distinguishable from 1.0 (perfect)", fabs(sycl_cb - 1.0) > 0.01);
+    mu_assert("Cr score must be distinguishable from 1.0 (perfect)", fabs(sycl_cr - 1.0) > 0.01);
+    mu_assert("Y and Cb scores must differ", fabs(sycl_score - sycl_cb) > 0.01);
+    mu_assert("Cb and Cr scores must differ", fabs(sycl_cb - sycl_cr) > 0.01);
 
     mu_assert("float_ms_ssim delta exceeds tolerance", delta <= PARITY_TOL);
     mu_assert("float_ms_ssim_cb delta exceeds tolerance", delta_cb <= PARITY_TOL);
