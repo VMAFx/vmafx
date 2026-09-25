@@ -68,15 +68,12 @@ comparing two different metrics.
   workstation cannot verify Metal at all, and shipping test registrations that
   have never been run is how a lane goes red for reasons nobody has looked at.
   They remain a follow-up.
-- **Neutral / follow-ups**: `test_sycl_motion_add_uv_parity` is excluded from
-  the SYCL list on purpose. It does not compare two implementations of the same
-  arithmetic — the CPU side is `float_motion` and the SYCL side is the
-  fixed-point `motion_sycl` — so its 2e-4 tolerance is a fixed-point-vs-float
-  budget calibrated for one fixture, not a bit-exactness bound. At 960x540 it
-  lands at 2.30e-04, 15% over a budget never derived for that resolution.
-  Registering a large variant would assert something the test was never
-  designed to assert; deriving a second tolerance for that regime is tracked
-  separately.
+- **Resolved follow-up (ADR-1326)**: `test_sycl_motion_add_uv_parity` was
+  originally excluded because it compared CPU float arithmetic with the SYCL
+  fixed-point path under a fixture-calibrated 2e-4 budget. ADR-1326 replaces
+  that comparison with an arithmetic-identical scalar fixed-point oracle and a
+  derived `2*gamma_5` host-roundoff bound. The 960x540 variant is now
+  registered under the same resolution-independent contract.
 
 ## References
 
