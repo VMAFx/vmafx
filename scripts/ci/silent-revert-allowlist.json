@@ -149,6 +149,57 @@
         "ai/scripts/ptq_dynamic.py",
         "ai/scripts/ptq_static.py"
       ]
+    },
+    {
+      "adr": "ADR-0848",
+      "kind": "reverse-hunk",
+      "undoes": "5d070b0b4338da84a7c6d2169e0bfa782436d3cb",
+      "evidence": "vmaf_log\\(VMAF_LOG_LEVEL_ERROR,",
+      "reason": "d6fa8ea45 (BUG-048) restored standard libvmaf log call-site formatting without duplicate severity prefixes (removing 'Error: ' from VMAF_LOG_LEVEL_ERROR messages in cuda/common.c) and ensured complete newline-terminated records in speed.c, pinned by core/test/test_vmaf_log_callsite_format.py and core/src/AGENTS.md.",
+      "paths": [
+        "core/src/cuda/common.c",
+        "core/src/feature/speed.c"
+      ]
+    },
+    {
+      "adr": "ADR-0726",
+      "kind": "reverse-hunk",
+      "undoes": "5d070b0b4338da84a7c6d2169e0bfa782436d3cb",
+      "evidence": "(?:Vulkan|backend|gpu-scheduling\\.md)",
+      "reason": "4b9c040a5 removed stale documentation claiming the removed Vulkan backend was implicitly available on GPU allocations, aligning Helm chart helper comments with ADR-0726 as documented in deploy/helm/vmafx/AGENTS.md.",
+      "paths": [
+        "deploy/helm/vmafx/templates/_helpers.tpl"
+      ]
+    },
+    {
+      "adr": "ADR-0982",
+      "kind": "reverse-hunk",
+      "undoes": "a12373faa03a4d57bc153cc24207292e272628c2",
+      "evidence": "(?:CHECK_CUDA_GOTO|fail_|CudaFunctions|cuda_free_functions|memset|if \\(f\\)|\\*)",
+      "reason": "2daf4c749 (BUG-048 Sec A3) restored ADR-0982 error unwinds in cuda/common.c (releasing the driver function table f via fail_release_funcs rather than bypassing it via fail_after_pop), which was silently reverted by a12373faa (PR #504).",
+      "paths": [
+        "core/src/cuda/common.c"
+      ]
+    },
+    {
+      "adr": "ADR-0982",
+      "kind": "reverse-hunk",
+      "undoes": "a12373faa03a4d57bc153cc24207292e272628c2",
+      "evidence": "(?:combined_queue|compute_queue|-ENOMEM|if \\(!q\\)|\\/\\/)",
+      "reason": "2daf4c749 (BUG-048 Sec A3) restored ADR-0982 queue initialization order in sycl/common.cpp (creating the combined queue before registering the extractor), which was silently reverted by a12373faa (PR #504).",
+      "paths": [
+        "core/src/sycl/common.cpp"
+      ]
+    },
+    {
+      "adr": "ADR-0719, ADR-0988",
+      "kind": "reverse-hunk",
+      "undoes": "fedce98892cdff0599d5cb49630f1b632e2f03a0",
+      "evidence": "(?:dumps_strict|json)",
+      "reason": "60a82bb9f restored strict RFC-8259 JSON serialization (dumps_strict from vmaftune.jsonio, rejecting NaN and Infinity) in ladder.py per ADR-0719 and ADR-0988, undoing standard json.dumps from fedce9889.",
+      "paths": [
+        "tools/vmaf-tune/src/vmaftune/ladder.py"
+      ]
     }
   ]
 }
