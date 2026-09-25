@@ -150,6 +150,7 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 testpaths = [
   "python/test",
   "ai/tests",
+  "ai/sidecar/tests",
   "compat/vmaf/tests",
   "testdata/test_run_sycl_scores.py",
   "testdata/test_sycl_4k_repeat_determinism.py",
@@ -162,6 +163,7 @@ filterwarnings = ["error"]
 # python/ exposes the ``vmaf`` shim package (compat/vmaf → compat/python-vmaf).
 pythonpath = ["ai/src", "ai/scripts", "python"]
 markers = [
+  "main: upstream Python harness tests (applied by python/test/conftest.py)",
   "netflix_golden: the 3 Netflix CPU golden test pairs (D24) — must always pass",
   "slow: tests that take more than 30s",
   "gpu: requires a GPU backend (CUDA/SYCL)",

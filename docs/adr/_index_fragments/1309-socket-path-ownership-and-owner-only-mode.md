@@ -1,0 +1,1 @@
+| [ADR-1309](1309-socket-path-ownership-and-owner-only-mode.md) | Make the sidecar Unix socket owner-only (`0o600`) for the shipped same-UID topology and protect stale recovery/cleanup with a process claim plus device/inode identity checks; supersedes ADR-1222 for Alert 946. | Accepted | ai, security, sidecar, unix-socket, concurrency |

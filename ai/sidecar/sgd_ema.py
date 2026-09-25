@@ -118,7 +118,13 @@ class SGDEMATrainer:
     # Public API
     # ------------------------------------------------------------------
 
-    def step(self, features: "torch.Tensor", targets: "torch.Tensor") -> float:
+    def step(
+        self,
+        features: "torch.Tensor",
+        targets: "torch.Tensor",
+        *,
+        new_sample_count: int | None = None,
+    ) -> float:
         """Perform one gradient step on a batch.
 
         Parameters
@@ -128,6 +134,10 @@ class SGDEMATrainer:
         targets:
             Float tensor of shape ``(batch,)`` or ``(batch, 1)`` with the
             ground-truth VMAF scores.
+        new_sample_count:
+            Number of rows newly admitted since the previous step. Replay rows
+            do not advance the checkpoint sample gate. Defaults to the complete
+            batch size for direct callers that do not mix replay data.
 
         Returns
         -------
@@ -136,12 +146,28 @@ class SGDEMATrainer:
         """
         import torch
 
+        batch_size = int(features.shape[0])
+        if new_sample_count is None:
+            new_sample_count = batch_size
+        if not 0 <= new_sample_count <= batch_size:
+            raise ValueError(
+                "new_sample_count must be between zero and the batch size "
+                f"({batch_size}), got {new_sample_count}"
+            )
+
         with self._lock:
             self._model.train()
             self._opt.zero_grad()
 
             preds = self._model(features)
-            loss = self._loss_fn(preds.squeeze(-1), targets.float().squeeze(-1))
+            pred_values = preds.reshape(-1)
+            target_values = targets.float().reshape(-1)
+            if pred_values.shape != target_values.shape:
+                raise ValueError(
+                    "prediction/target shape mismatch: "
+                    f"{tuple(preds.shape)} vs {tuple(targets.shape)}"
+                )
+            loss = self._loss_fn(pred_values, target_values)
             loss.backward()
 
             # Gradient clipping — protects against outlier feature vectors.
@@ -162,8 +188,7 @@ class SGDEMATrainer:
                 ):
                     p_ema.data.mul_(beta).add_(p_live.data, alpha=1.0 - beta)
 
-            batch_size = features.shape[0]
-            self._samples_since_ckpt += batch_size
+            self._samples_since_ckpt += new_sample_count
 
         return float(loss.item())
 
@@ -203,12 +228,12 @@ class SGDEMATrainer:
                 os.close(tmp_fd)
                 torch.onnx.export(
                     self._ema_model,
-                    dummy,
+                    (dummy,),
                     tmp_path,
                     opset_version=opset,
                     input_names=["features"],
                     output_names=["score"],
-                    dynamic_axes={"features": {0: "batch"}},
+                    dynamic_shapes=({0: "batch"},),
                     do_constant_folding=True,
                 )
                 os.replace(tmp_path, path)

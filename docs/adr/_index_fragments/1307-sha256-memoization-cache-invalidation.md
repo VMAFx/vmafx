@@ -1,0 +1,1 @@
+| [ADR-1307](1307-sha256-memoization-cache-invalidation.md) | Upgrade memoization cache keys in `decorator.py` from SHA-1 to SHA-256 with clean cold cache invalidation, unique atomic temp files, and re-entrant cross-process file locks, genuinely eliminating Semgrep alerts 947–949 at source; partially supersedes ADR-1222. | Accepted | python, security, concurrency, compatibility |

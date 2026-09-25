@@ -79,18 +79,19 @@ class ReplayBuffer:
     # ------------------------------------------------------------------
 
     def sample(self, n: int, rng: "random.Random | None" = None) -> list[Sample]:
-        """Draw *n* samples (with replacement when n > len(buffer)).
+        """Draw *n* samples, without replacement when enough history exists.
 
-        When *n* exceeds the current buffer size all available samples
-        are returned (no replacement).  Pass a seeded ``random.Random``
-        for deterministic unit-tests.
+        Sampling uses replacement only when *n* exceeds the buffer length, so a
+        non-empty buffer always returns exactly *n* samples. Pass a seeded
+        ``random.Random`` for deterministic unit tests.
         """
         r = rng or _random_mod
         with self._lock:
             snapshot = list(self._buf)
         if not snapshot:
             return []
-        n = min(n, len(snapshot))
+        if n <= len(snapshot):
+            return r.sample(snapshot, k=n)
         return r.choices(snapshot, k=n)
 
     def as_list(self) -> list[Sample]:

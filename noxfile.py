@@ -15,6 +15,7 @@ Usage::
     python3 -m pip install --require-hashes -r requirements/locks/nox.txt
     nox -l                          # list every defined session
     nox -s ai                       # run the ai/ pytest suite
+    nox -s compat_decorator         # run compat memoization regressions
     nox -s mcp vmaf_tune            # run multiple suites in sequence
     nox -s python_harness           # run the legacy python/ tox harness
     nox -s all                      # every fork-local Python package
@@ -48,13 +49,25 @@ nox.options.reuse_existing_virtualenvs = True
 
 @nox.session(name="ai", python="3.14")
 def ai_tests(session: nox.Session) -> None:
-    """Run the ``ai/`` package pytest suite (tiny-AI training scripts)."""
+    """Run the ``ai/`` package pytest suite (tiny-AI training scripts and sidecar)."""
     session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
     session.install(
         "--no-build-isolation", "--require-hashes", "-r", "ai/requirements-dev-lock.txt"
     )
     session.install("--no-deps", "--no-build-isolation", "-e", "./ai")
-    session.run("pytest", "ai/tests/", "-v", *session.posargs)
+    session.run("pytest", "ai/tests/", "ai/sidecar/tests/", "-v", *session.posargs)
+
+
+@nox.session(name="compat_decorator", python="3.14")
+def compat_decorator_tests(session: nox.Session) -> None:
+    """Run SHA-256 memoization and cross-process cache regressions."""
+    session.install("--require-hashes", "-r", "requirements/locks/pytest-timeout.txt")
+    session.run(
+        "pytest",
+        "compat/vmaf/tests/test_decorator_extended.py",
+        "-v",
+        *session.posargs,
+    )
 
 
 @nox.session(name="mcp", python="3.14")
@@ -159,7 +172,15 @@ def all_tests(session: nox.Session) -> None:
     Skips ``python_harness`` because that session needs the C build
     artifacts and is exercised separately by ``make test-netflix-golden``.
     """
-    for name in ("ai", "mcp", "vmaf_tune", "dev_llm", "roi_score", "ensemble_kit"):
+    for name in (
+        "ai",
+        "compat_decorator",
+        "mcp",
+        "vmaf_tune",
+        "dev_llm",
+        "roi_score",
+        "ensemble_kit",
+    ):
         session.notify(name)
 
 

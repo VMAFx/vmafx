@@ -28,6 +28,7 @@ from ai.sidecar.online_trainer import (  # noqa: E402
     _load_base_model,
     _write_sha256_sidecar,
 )
+from ai.sidecar.replay_buffer import Sample  # noqa: E402
 from ai.sidecar.sgd_ema import SGDEMAConfig  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -204,6 +205,7 @@ class TestOnlineTrainerIngest:
             n_features=N_FEATURES,
             checkpoint_dir=str(tmp_path / "ckpts"),
             batch_size=batch_size,
+            replay_mix_ratio=0.0,
             config=_fast_config(),
         )
 
@@ -249,6 +251,231 @@ class TestOnlineTrainerIngest:
         for _ in range(5):
             trainer.ingest(features, 60.0)
         assert trainer.status()["total_pushed"] == 5
+
+    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+    def test_ingest_acknowledges_admitted_sample_after_trainer_failure(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        error_type: type[Exception],
+    ) -> None:
+        """A retained failed batch is accepted once, so callers do not duplicate it."""
+        batch_size = 2
+        trainer = self._trainer(tmp_path, batch_size=batch_size)
+        features = [1.0] * N_FEATURES
+
+        def reject_mismatched_batch(_batch: object, _new_sample_count: int) -> float:
+            raise error_type("trainer failure")
+
+        monkeypatch.setattr(trainer, "_train_on_batch", reject_mismatched_batch)
+        trainer.ingest(features, 10.0)
+
+        result = trainer.ingest(features, 20.0)
+
+        assert result["ok"] is True
+        assert result["trained"] is False
+        assert result["retry_queued"] is True
+        assert result["training_error"] == "trainer failure"
+        assert [sample.true_score for sample in trainer._pending] == [10.0, 20.0]
+        assert trainer.status()["total_pushed"] == batch_size
+
+    def test_failed_batch_retries_before_concurrent_samples(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A restored batch stays ahead of samples ingested during its failed step."""
+        trainer = OnlineTrainer(
+            n_features=N_FEATURES,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            batch_size=2,
+            replay_mix_ratio=0.0,
+            pending_capacity=4,
+            config=_fast_config(),
+        )
+        failed_step_started = threading.Event()
+        release_failed_step = threading.Event()
+        attempted_scores: list[list[float]] = []
+        thread_results: list[dict[str, object]] = []
+        thread_errors: list[BaseException] = []
+
+        def train_with_first_step_failure(batch: list[Sample], _new_sample_count: int) -> float:
+            scores = [sample.true_score for sample in batch]
+            attempted_scores.append(scores)
+            if len(attempted_scores) == 1:
+                failed_step_started.set()
+                release_failed_step.wait(timeout=3.0)
+                raise ValueError("prediction/target count mismatch")
+            return 0.0
+
+        monkeypatch.setattr(trainer, "_train_on_batch", train_with_first_step_failure)
+        monkeypatch.setattr(trainer, "_maybe_export_checkpoint", lambda: None)
+
+        trainer.ingest([1.0] * N_FEATURES, 1.0)
+
+        def finish_first_batch() -> None:
+            try:
+                thread_results.append(trainer.ingest([2.0] * N_FEATURES, 2.0))
+            except BaseException as exc:  # surfaced in the parent assertions below
+                thread_errors.append(exc)
+
+        failing_thread = threading.Thread(target=finish_first_batch, daemon=True)
+        failing_thread.start()
+        assert failed_step_started.wait(timeout=3.0)
+
+        # A second complete batch arrives while the first is still training.
+        # Both calls may enqueue, but neither may start another training step.
+        assert trainer.ingest([3.0] * N_FEATURES, 3.0)["trained"] is False
+        assert trainer.ingest([4.0] * N_FEATURES, 4.0)["trained"] is False
+        assert attempted_scores == [[1.0, 2.0]]
+        with pytest.raises(RuntimeError, match="pending training queue is full"):
+            trainer.ingest([5.0] * N_FEATURES, 5.0)
+        assert trainer.status()["pending_size"] == 4
+        assert trainer.status()["total_pushed"] == 4
+        release_failed_step.set()
+        failing_thread.join(timeout=3.0)
+
+        assert not failing_thread.is_alive()
+        assert thread_errors == []
+        assert len(thread_results) == 1
+        assert thread_results[0]["ok"] is True
+        assert thread_results[0]["retry_queued"] is True
+
+        # Retrying the capacity-rejected sample first retries [1, 2], then the
+        # next ingest trains the already-full [3, 4] batch.
+        trainer.ingest([5.0] * N_FEATURES, 5.0)
+        trainer.ingest([6.0] * N_FEATURES, 6.0)
+
+        assert attempted_scores == [
+            [1.0, 2.0],
+            [1.0, 2.0],
+            [3.0, 4.0],
+        ]
+
+    def test_replay_mix_consumes_only_new_samples_in_the_batch(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A 50% replay batch consumes its two oldest new samples, not four."""
+        trainer = OnlineTrainer(
+            n_features=N_FEATURES,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            batch_size=4,
+            replay_mix_ratio=0.5,
+            config=_fast_config(),
+        )
+        replay = [
+            Sample((90.0,) * N_FEATURES, 90.0),
+            Sample((91.0,) * N_FEATURES, 91.0),
+        ]
+        attempted_scores: list[list[float]] = []
+
+        def fixed_replay_draw(count: int) -> list[Sample]:
+            assert count == 2
+            return replay
+
+        def record_batch(batch: list[Sample], new_sample_count: int) -> float:
+            assert new_sample_count == 2
+            attempted_scores.append([sample.true_score for sample in batch])
+            return 0.0
+
+        monkeypatch.setattr(trainer._buffer, "sample", fixed_replay_draw)
+        monkeypatch.setattr(trainer, "_train_on_batch", record_batch)
+        monkeypatch.setattr(trainer, "_maybe_export_checkpoint", lambda: None)
+
+        assert trainer.ingest([1.0] * N_FEATURES, 1.0)["trained"] is False
+        assert trainer.ingest([2.0] * N_FEATURES, 2.0)["trained"] is True
+        assert trainer.ingest([3.0] * N_FEATURES, 3.0)["trained"] is False
+        assert trainer.ingest([4.0] * N_FEATURES, 4.0)["trained"] is True
+
+        assert attempted_scores == [
+            [1.0, 2.0, 90.0, 91.0],
+            [3.0, 4.0, 90.0, 91.0],
+        ]
+
+    @pytest.mark.parametrize(
+        ("replay_mix_ratio", "buffer_capacity", "expected_new_sample_count"),
+        [(0.75, 10_000, 1), (0.5, 1, 2)],
+    )
+    def test_replay_mix_fills_batch_when_history_is_smaller_than_replay_share(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        replay_mix_ratio: float,
+        buffer_capacity: int,
+        expected_new_sample_count: int,
+    ) -> None:
+        """Cold or capacity-limited replay still supplies a full batch."""
+        trainer = OnlineTrainer(
+            n_features=N_FEATURES,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            buffer_capacity=buffer_capacity,
+            batch_size=4,
+            replay_mix_ratio=replay_mix_ratio,
+            config=_fast_config(),
+        )
+        attempted_scores: list[list[float]] = []
+
+        def record_batch(batch: list[Sample], new_sample_count: int) -> float:
+            assert new_sample_count == expected_new_sample_count
+            attempted_scores.append([sample.true_score for sample in batch])
+            return 0.0
+
+        monkeypatch.setattr(trainer, "_train_on_batch", record_batch)
+        monkeypatch.setattr(trainer, "_maybe_export_checkpoint", lambda: None)
+
+        result = None
+        for score in range(1, expected_new_sample_count + 1):
+            result = trainer.ingest([float(score)] * N_FEATURES, float(score))
+
+        assert result is not None
+        assert result["trained"] is True
+        assert len(attempted_scores) == 1
+        assert len(attempted_scores[0]) == 4
+        assert attempted_scores[0][:expected_new_sample_count] == [
+            float(score) for score in range(1, expected_new_sample_count + 1)
+        ]
+
+    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+    def test_persistent_failures_bound_the_pending_backlog_without_duplicates(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        error_type: type[Exception],
+    ) -> None:
+        """Admitted failures ACK once; rejected retries never duplicate the backlog."""
+        trainer = OnlineTrainer(
+            n_features=N_FEATURES,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            batch_size=2,
+            replay_mix_ratio=0.0,
+            pending_capacity=4,
+            config=_fast_config(),
+        )
+        attempted_scores: list[list[float]] = []
+
+        def reject_batch(batch: list[Sample], _new_sample_count: int) -> float:
+            attempted_scores.append([sample.true_score for sample in batch])
+            raise error_type("persistent trainer failure")
+
+        monkeypatch.setattr(trainer, "_train_on_batch", reject_batch)
+
+        assert trainer.ingest([1.0] * N_FEATURES, 1.0)["trained"] is False
+        for score in range(2, 5):
+            result = trainer.ingest([float(score)] * N_FEATURES, float(score))
+            assert result["retry_queued"] is True
+            assert trainer.status()["pending_size"] <= 4
+
+        # Score 5 was never admitted. Repeating that rejected call must not
+        # append it to pending or replay while the oldest [1, 2] keeps failing.
+        for _ in range(4):
+            with pytest.raises(error_type, match="persistent trainer failure"):
+                trainer.ingest([5.0] * N_FEATURES, 5.0)
+            assert trainer.status()["pending_size"] <= 4
+
+        status = trainer.status()
+        assert status["pending_size"] == 4
+        assert status["pending_capacity"] == 4
+        assert status["total_pushed"] == 4
+        assert attempted_scores == [[1.0, 2.0]] * 7
+        assert [sample.true_score for sample in trainer._pending] == [1.0, 2.0, 3.0, 4.0]
 
     def test_ingest_returns_checkpoint_path_when_condition_met(
         self, tmp_path: pathlib.Path
@@ -389,6 +616,61 @@ class TestHandleConnection:
         assert ack.get("job_id") == "my-unique-job"
         client_sock.close()
 
+    def test_admitted_trainer_failure_returns_retry_queued_ack(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A retained sample is ACKed, so a client does not submit it twice."""
+        trainer = OnlineTrainer(
+            n_features=N_FEATURES,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            batch_size=2,
+            replay_mix_ratio=0.0,
+            pending_capacity=2,
+            config=_fast_config(),
+        )
+
+        def reject_batch(_batch: object, _new_sample_count: int) -> float:
+            raise ValueError("persistent trainer failure")
+
+        monkeypatch.setattr(trainer, "_train_on_batch", reject_batch)
+        client_sock, server_sock = self._socketpair()
+        self._run_server_thread(server_sock, trainer)
+
+        first = {
+            "job_id": "job-1",
+            "features": [1.0] * N_FEATURES,
+            "true_score": 1.0,
+        }
+        second = {
+            "job_id": "job-2",
+            "features": [2.0] * N_FEATURES,
+            "true_score": 2.0,
+        }
+        assert _send_recv(client_sock, first)["ok"] is True
+        ack = _send_recv(client_sock, second)
+
+        assert ack["ok"] is True
+        assert ack["trained"] is False
+        assert ack["retry_queued"] is True
+        assert ack["training_error"] == "persistent trainer failure"
+        assert ack["job_id"] == "job-2"
+        assert [sample.true_score for sample in trainer._pending] == [1.0, 2.0]
+
+        rejected = _send_recv(
+            client_sock,
+            {
+                "job_id": "job-3",
+                "features": [3.0] * N_FEATURES,
+                "true_score": 3.0,
+            },
+        )
+        assert rejected["ok"] is False
+        assert rejected["retryable"] is True
+        assert rejected["error"] == "persistent trainer failure"
+        assert [sample.true_score for sample in trainer._pending] == [1.0, 2.0]
+        assert trainer.status()["total_pushed"] == 2
+        client_sock.close()
+
     def test_missing_features_key_returns_ok_false(self, tmp_path: pathlib.Path) -> None:
         trainer = _make_trainer(tmp_path)
         client_sock, server_sock = self._socketpair()
@@ -398,6 +680,7 @@ class TestHandleConnection:
         ack = _send_recv(client_sock, payload)
         assert ack["ok"] is False
         assert "error" in ack
+        assert "retryable" not in ack
         client_sock.close()
 
     def test_malformed_json_returns_ok_false(self, tmp_path: pathlib.Path) -> None:
@@ -414,6 +697,7 @@ class TestHandleConnection:
             buf += chunk
         ack = json.loads(buf.split(b"\n", 1)[0])
         assert ack["ok"] is False
+        assert "retryable" not in ack
         client_sock.close()
 
     def test_empty_line_is_silently_skipped(self, tmp_path: pathlib.Path) -> None:

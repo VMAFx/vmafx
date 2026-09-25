@@ -653,6 +653,74 @@ it does not perform the promotion.
    and `isFileLike` safely returns `False` when `seek()` raises `(IOError, OSError, ValueError)`.
 4. **Verification**: `PYTHONPATH=python:compat pytest python/test/executor_test.py python/test/train_test_model_test.py python/test/python_harness_scanf_locale_bugs_test.py`
    and CodeQL query evaluation against `EmptyExcept.ql` and `EqualsNone.ql`.
+## fix/semgrep-python-warning-alerts — Semgrep SHA-1 upgrade and socket permission invariant (2026-09-23)
+
+1. **`compat/python-vmaf/tools/decorator.py` memoization keys strictly use SHA-256.**
+   The upgrade from `hashlib.sha1` to `hashlib.sha256(..., usedforsecurity=False)`
+   is governed by ADR-1307 (partially superseding ADR-1222 for its SHA-1 keep-open disposition)
+   and clears Semgrep alerts 947, 948, and 949 at source (0 findings in SARIF). Ephemeral
+   runtime and per-process memoization caches accept clean cold invalidation on upgrade;
+   no legacy SHA-1 fallback or `# nosemgrep` suppression is retained. Concurrency is
+   serialized via `threading.RLock()`, cross-process cache updates in `persist_to_file`
+   are synchronized via re-entrant `_file_lock` (`fcntl.flock` on POSIX,
+   `msvcrt.locking` on Windows) and disk cache merge, including recursive entries,
+   and atomic writes use unique temporary files via `tempfile.mkstemp`. The reviewed
+   base wrote JSON directly to the destination; it never used PID-based temp files.
+   Do not revert to SHA-1 or introduce non-unique temporary names during upstream merges.
+2. **`ai/sidecar/online_trainer.py` uses owner-only mode `0o600` and owns paths by
+   identity (ADR-1309).** The old `0o660` rationale relied on a cross-UID/same-GID
+   Helm topology that the current chart does not wire. Do not restore unconditional
+   group access or a Semgrep suppression. A future group-shared mode needs an
+   explicit configuration surface, chart wiring, threat model, and end-to-end tests.
+   Preserve the adjacent owner-only lifetime claim; no-follow `lstat` checks;
+   non-blocking socket probes where only `ECONNREFUSED` proves staleness;
+   `EADDRINUSE` refusal for a full accept queue or any pending/unverified result;
+   unchanged device/inode validation before stale removal; bound identity
+   verification before listen; and owned-identity-only cleanup. Symlinks,
+   ordinary files, active listeners, and replacement objects must survive.
+   Keep the `_ConnectionRegistry` accept-before-spawn and prompt `close_all()`
+   shutdown invariants. The POSIX socket regressions run through the AI suite; all
+   26 decorator regressions run through `compat_decorator` Nox and the hosted
+   Linux/macOS/real-Windows matrix.
+3. **The hosted decorator lane exact-pins `pytest==9.1.1`.** This branch predates
+   the hash-locked Python dependency infrastructure being developed separately,
+   so it must remain independently executable rather than reference a lock file
+   absent from its base. When rebasing after that infrastructure lands, reconcile
+   this direct pin with the manifest-owned lock selected for `build.yml`; do not
+   restore an unversioned `pip install pytest`.
+4. **Standalone `ai/sidecar/online_trainer.py` invocations require `VMAFX_SIDECAR_CHECKPOINT_DIR`.**
+   The production default `/mnt/vmafx-models/online` assumes a container volume mount.
+   Standalone quick-starts and doc contracts must explicitly configure a writable
+   checkpoint directory alongside `VMAFX_SIDECAR_SOCKET` to avoid failing closed with
+   `PermissionError` on root-owned `/mnt`.
+5. **The required sidecar suite is warning-clean on PyTorch 2.14.** Preserve
+   equal-length flattened predictions and targets (including batch size one),
+   explicit count-mismatch rejection, and the opset-17 tuple-argument
+   `dynamic_shapes=({0: "batch"},)` export. Do not restore `squeeze(-1)` plus
+   broadcasting or the legacy `dynamic_axes` exporter argument. Derive the
+   new-sample window from batch size and replay mix, reserve only that oldest
+   window, sample replay without replacement when history is sufficient and with
+   replacement only when history is smaller, and keep one training owner through
+   restore or commit. Only the reserved new-row count advances the checkpoint
+   gate; replay rows never do. A failed `RuntimeError`
+   or `ValueError` step restores that window at the front;
+   concurrent arrivals remain queued behind it, cannot train ahead, and cannot
+   be cleared by its eventual retry. Keep the admitted backlog bounded with
+   explicit retry backpressure; do not admit a capacity-rejected sample to the
+   replay buffer. Preserve admission-aware ACKs: an admitted sample restored
+   after a failed step is `ok: true` / `retry_queued: true` and must not be
+   resubmitted, while a capacity-deferred sample remains `ok: false` with
+   `retryable: true` if the oldest-window step fails. The Go client must retain
+   the latter in flight across reconnects and retry it ahead of the bounded
+   queue without incrementing `delivered`, while preserving the former as an
+   accepted delivery. Never put this retry back into a queue slot that a
+   concurrent producer can refill. Preserve the explicit Go send disposition:
+   only transport ambiguity and `retryable: true` retain an in-flight sample;
+   permanent local JSON encoding failures increment `dropped`, remain on the
+   current connection, and cannot starve later valid samples. Non-retryable
+   sidecar rejection remains terminal without changing either counter.
+   Socket lifecycle regressions signal readiness only after the real `listen()`
+   succeeds and surface every server-thread exception to the parent test.
 
 ## integration/zero-warning-hiss21 — the silent-revert allowlist is a live, expiring file (2026-09-22)
 
@@ -2802,7 +2870,11 @@ no rebase impact: fork-local fixes and cleanups.
 - `core/src/feature/mkdirp.cpp`: converted `for` loop modifying loop variable to idiomatic `while`.
 - `core/src/pdjson.c`: removed redundant lower bound `0xC2 <= u` in `utf8_seq_length` (simplified to `u <= 0xDF`).
 - `compat/python-vmaf/tools/decorator.py`: added `usedforsecurity=False` to 3 SHA-1 memoization keys.
-- `ai/sidecar/online_trainer.py`: preserved server bind and documented 0o660 UNIX domain socket mode for group-peer IPC with `# nosemgrep`.
+- `ai/sidecar/online_trainer.py`: this historical branch preserved `0o660` and a
+  `# nosemgrep` rationale. Do **not** preserve that disposition in a current
+  rebase: ADR-1309 supersedes it with owner-only `0o600`, no suppression, and
+  an identity-checked pathname lifecycle after the claimed group-peer Helm
+  topology was found not to be wired.
 - `mcp-server/vmaf-mcp`: removed unused import in `test_smoke_e2e.py` and converted `server.py` HTTP branch import to dynamic `importlib` to break static circular import.
 - `go.mod`, `go.sum`: upgraded `golang.org/x/crypto` to `v0.56.0`.
 

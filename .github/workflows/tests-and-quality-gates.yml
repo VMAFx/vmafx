@@ -475,7 +475,7 @@ jobs:
       - name: Run ai/ pytests
         if: steps.impact.outputs.tiny_ai == 'true'
         run: |
-          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ -v --timeout=60 --timeout-method=signal
+          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ ai/sidecar/tests/ -v --timeout=60 --timeout-method=signal
 
       # ADR-0174 / T5-3b: enforce that every quantised model in the
       # registry stays inside its per-model PLCC drop budget. Skips

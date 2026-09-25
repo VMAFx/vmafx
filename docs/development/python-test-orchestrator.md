@@ -1,17 +1,18 @@
 <!-- markdownlint-disable MD060 -->
 # Python test orchestrator (nox)
 
-The fork ships eight Python distributions, each with its own
-`pyproject.toml`, `tests/` directory, and `requires-python` range. To
-avoid copy-pasting per-package venv recipes out of CI YAML, the repo
-has a top-level [`noxfile.py`](../../noxfile.py) that exposes every
-suite as a named session.
+The fork ships multiple Python distributions plus compatibility regression
+suites with different setup needs. To avoid memorising each recipe, the repo
+has a top-level [`noxfile.py`](../../noxfile.py) that exposes each suite as a
+named session.
 
 Nox is a **local-developer affordance**, not a CI gate. CI continues to
 run each package's pytest through its own `python3 -m venv ... && pip
 install -e .[dev] && pytest tests/` recipe in
-`.github/workflows/tests-and-quality-gates.yml`. The decision record is
-[ADR-0914](../adr/0914-unified-python-test-orchestrator.md).
+`.github/workflows/tests-and-quality-gates.yml`; the compatibility decorator
+suite also runs on every OS in [build.yml](../../.github/workflows/build.yml)
+to exercise the native POSIX and Windows lock implementations. The decision
+record is [ADR-0914](../adr/0914-unified-python-test-orchestrator.md).
 
 ## Install
 
@@ -35,12 +36,13 @@ because their package metadata excludes Python 3.14.
 
 | Session | Target | Notes |
 |---|---|---|
-| `ai` | `ai/tests/` | Tiny-AI training scripts. Heavy: pulls `torch`, `lightning`. |
+| `ai` | `ai/tests/`, `ai/sidecar/tests/` | Tiny-AI training scripts and online-training sidecar. Heavy: pulls `torch`, `lightning`. |
 | `mcp` | `mcp-server/vmaf-mcp/tests/` | MCP JSON-RPC server. |
 | `vmaf_tune` | `tools/vmaf-tune/tests/` | Encode-tuning harness. |
 | `dev_llm` | `dev-llm/tests/` | Local-LLM helper (Ollama-backed). |
 | `roi_score` | `tools/vmaf-roi-score/tests/` | Saliency-aware ROI tooling; Python 3.12. |
 | `ensemble_kit` | `tools/ensemble-training-kit/tests/` | ONNX ensemble training; Python 3.12. |
+| `compat_decorator` | `compat/vmaf/tests/test_decorator_extended.py` | SHA-256 memoization, recursion, thread/spawn concurrency, and native file locking. |
 | `python_harness` | `python/tox.ini` | Delegates to legacy tox (Cython + golden-data). |
 | `all` | every per-package suite | Excludes `python_harness` (needs C build). |
 | `lint` | `python/`, `ai/`, `scripts/` | Ruff + Black, check-only. |
@@ -49,8 +51,9 @@ because their package metadata excludes Python 3.14.
 
 ```bash
 nox -l                          # list every session with its docstring
-nox -s ai                       # run ai/tests/ in an isolated venv
+nox -s ai                       # run ai/tests/ and ai/sidecar/tests/ in an isolated venv
 nox -s mcp vmaf_tune            # run multiple suites in sequence
+nox -s compat_decorator         # run the compatibility decorator regressions
 nox -s python_harness           # invoke the legacy python/ tox harness
 nox -s all                      # every fork-local Python package
 nox -s lint                     # check-only Ruff + Black

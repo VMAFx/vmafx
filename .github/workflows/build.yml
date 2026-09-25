@@ -163,8 +163,28 @@ jobs:
         with:
           python-version: '3.14.7'
 
-      - name: Install meson and ninja
-        run: python -m pip install --require-hashes -r requirements/locks/build.txt
+      - name: Install build and test tools
+        run: |
+          python -m pip install --require-hashes -r requirements/locks/build.txt
+          python -m pip install --require-hashes -r requirements/locks/pytest-timeout.txt
+
+      # Windows checkouts can materialise the tracked compat/vmaf symlink as
+      # a plain text file. A directory junction keeps the public import path
+      # and spawn-process test module identity identical on every hosted OS.
+      - name: Prepare compat link (Windows)
+        if: matrix.windows
+        shell: pwsh
+        run: |
+          $link = Get-Item -LiteralPath "compat/vmaf" -Force -ErrorAction SilentlyContinue
+          if ($null -eq $link -or -not $link.PSIsContainer) {
+            if ($null -ne $link) {
+              Remove-Item -LiteralPath "compat/vmaf" -Force
+            }
+            New-Item -ItemType Junction -Path "compat/vmaf" -Target (Resolve-Path "compat/python-vmaf")
+          }
+
+      - name: Run decorator regressions
+        run: python -m pytest compat/vmaf/tests/test_decorator_extended.py -v
 
       # ── Linux base deps ──────────────────────────────────────────────
       - name: Install base deps (Linux)
