@@ -289,7 +289,7 @@ static const VmafOption options[] = {
      .default_val = {.i = DEFAULT_ADM_CSF_MODE},
      .min = 0,
      .max = 3,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
     {.name = "adm_noise_weight",
      .alias = "nw",
      .help = "noise weight",

@@ -112,6 +112,7 @@ Conventions:
 | [2102](2102-sycl-tidy-wrapper-safe-subprocess-path.md) | SYCL clang-tidy wrapper executable resolution for safe_subprocess | Active | [ADR-1142](../adr/1142-whole-codebase-standards.md), [ADR-1270](../adr/1270-bounded-process-execution.md) |
 | [2103](2103-mypy-ci-fail-closed-2026-09-25.md) | Required Python Lint fail-closed merge-base gate restoration | Complete | [ADR-1310](../adr/1310-mypy-ci-fail-closed.md) |
 | [2104](2104-gpu-option-alias-parity-2026-09-25.md) | GPU twin option aliases and collector-key compatibility | Complete | [ADR-1312](../adr/1312-gpu-option-alias-parity.md) |
+| [2105](2105-gpu-option-value-capability-fallback-2026-09-25.md) | GPU option-value capability inventory and model-dispatch fallback | Complete | [ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md) |
 
 | [0053](0053-post-merge-cpu-profile-2026-05-03.md) | Post-merge CPU profile 2026-05-03 — perf top-10 after lusoris/vmaf#310 through lusoris/vmaf#321; surfaces 3 new opt targets (convolve widen, SSIM double reduction, VIF gather elimination) | Active | — |
 | [0081](0081-fr-regressor-v2-ensemble-real-corpus-methodology.md) | Real-corpus retrain methodology for the `fr_regressor_v2` deep ensemble — corpus-size sufficiency (9 ref + 70 dis @ `.workingdir2/netflix/`), 9-fold LOSO sizing inherited from the deterministic ADR-0291 baseline, seed-diversity hyperparameters, and the `Seeking_25fps` weak-fold diagnostic for HOLD-on-spread cases. | Active | [ADR-0309](../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md) |

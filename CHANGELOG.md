@@ -24497,6 +24497,14 @@ is addressed.
   audited alias sites.
 
 
+- Fall back to the CPU reference before GPU initialization when a model uses a
+  valid non-default option value that the selected GPU twin does not yet
+  implement. This covers `float_vif.vif_kernelscale`, every GPU
+  `float_adm.adm_csf_mode`, and Metal `integer_adm.adm_csf_mode` while keeping
+  CPU/GPU collector keys identical. Context creation also releases extractor
+  private state when rejecting options on an optionless extractor.
+
+
 - **CUDA VIF zero-denominator guard** (`integer_vif_cuda.c`): on
   degenerate frames (solid-colour input where all pixels fall below
   `SIGMA_NSQ`) the per-scale VIF denominator is zero; CUDA was returning

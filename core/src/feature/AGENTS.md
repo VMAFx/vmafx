@@ -156,6 +156,15 @@ feature/
   `feature_extractor.cpp` rejects any unknown dictionary keys with
   `-EINVAL`. On rebase, do not bypass this validation or revert to silent
   option omission.
+  **ADR-1316 extends that gate to option values:** a twin that mirrors the CPU
+  table for collector-key parity, whose CPU twin can execute the full range,
+  but implements only the default marks that entry
+  `VMAF_OPT_FLAG_DEFAULT_ONLY`. Model-driven dispatch then chooses the CPU
+  twin for a valid non-default value before device initialization. Keep the
+  CPU name, alias, declared range and `FEATURE_PARAM` bit; never narrow the
+  table to hide a backend capability gap. Extend
+  `test_gpu_option_value_capability_contract.py` when adding or removing such
+  a restriction.
 - **ANSNR / float_ansnr feature extractor removal (ADR-0865)**:
   `ansnr` and `float_ansnr` (CPU scalar, AVX2, AVX-512, NEON, CUDA, HIP, SYCL,
   Metal) were sunset and completely removed from library. ANSNR is legacy
@@ -1606,6 +1615,9 @@ Two rules follow, and they are not same rule:
    bit. Anything that diverges (different alias, different default,
    missing flag) silently changes key. `core/src/feature/integer_adm.c` is
    reference for `adm` family.
+   An extractor-local capability bit such as `VMAF_OPT_FLAG_DEFAULT_ONLY`
+   may differ; it describes what the twin can execute without changing the
+   CPU-authoritative collector-key schema.
 2. **Never declared-and-ignored.** Option that changes value twin
    emits must change it. FEATURE_PARAM option whose arithmetic
    only feeds feature twin does **not** emit is one legitimate

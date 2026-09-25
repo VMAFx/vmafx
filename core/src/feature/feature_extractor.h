@@ -206,6 +206,23 @@ bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
                                              const VmafDictionary *opts_dict,
                                              const char **missing_key);
 
+/**
+ * @brief Check option names and extractor-specific value capabilities.
+ *
+ * Invalid values remain the normal option parser's responsibility. This
+ * helper reports only valid values that a declared default-only option cannot
+ * execute, allowing model-driven GPU selection to fall back to the CPU twin.
+ *
+ * @param fex             Feature extractor descriptor.
+ * @param opts_dict       Dictionary of options to validate (may be NULL).
+ * @param unsupported_key If non-NULL, receives the first unknown option or
+ *                        valid value that the extractor cannot execute.
+ * @return true when every named option can be executed by @p fex.
+ */
+bool vmaf_feature_extractor_honours_options(const VmafFeatureExtractor *fex,
+                                            const VmafDictionary *opts_dict,
+                                            const char **unsupported_key);
+
 enum VmafFeatureExtractorContextFlags {
     VMAF_FEATURE_EXTRACTOR_CONTEXT_DO_NOT_OVERWRITE = 1 << 0,
 };

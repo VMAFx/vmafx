@@ -1722,11 +1722,13 @@ static unsigned compute_fex_flags(const VmafContext *vmaf)
  * feature (ADR-1183).
  *
  * A GPU twin whose option table lacks one of the model's keys would silently
- * drop it and emit a differently-named feature, so the model's prediction would
- * read from a vector that never gets written. When that happens, fall back to
- * the CPU twin for this one feature and say so at INFO level; the rest of the
- * model keeps running on the device. Returns NULL when no extractor provides
- * the feature at all (the caller turns that into -EINVAL). */
+ * drop it and emit a differently-named feature. A twin may also mirror the CPU
+ * table for collector-key parity while implementing only the default value
+ * (ADR-1316).
+ * In either case, fall back to the CPU twin for this one feature before GPU
+ * initialization and say so at INFO level; the rest of the model keeps running
+ * on the device. Returns NULL when no extractor provides the feature at all
+ * (the caller turns that into -EINVAL). */
 static VmafFeatureExtractor *fex_honouring_model_options(VmafFeatureExtractor *fex,
                                                          const VmafModelFeature *feature)
 {
@@ -1736,13 +1738,13 @@ static VmafFeatureExtractor *fex_honouring_model_options(VmafFeatureExtractor *f
     if (!(fex->flags & gpu_mask) || !feature->opts_dict)
         return fex;
 
-    const char *missing_key = NULL;
-    if (vmaf_feature_extractor_supports_options(fex, feature->opts_dict, &missing_key))
+    const char *unsupported_key = NULL;
+    if (vmaf_feature_extractor_honours_options(fex, feature->opts_dict, &unsupported_key))
         return fex;
 
     vmaf_log(VMAF_LOG_LEVEL_INFO,
-             "feature '%s': %s extractor lacks option '%s', computing it on the CPU\n",
-             feature->name, fex->name, missing_key);
+             "feature '%s': %s extractor cannot honour option '%s', computing it on the CPU\n",
+             feature->name, fex->name, unsupported_key);
 
     VmafFeatureExtractor *cpu_fex = vmaf_get_feature_extractor_by_feature_name(feature->name, 0);
     if (!cpu_fex) {

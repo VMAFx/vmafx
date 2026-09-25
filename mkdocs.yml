@@ -1433,6 +1433,7 @@ nav:
         - "ADR-1310: mypy-ci-fail-closed": adr/1310-mypy-ci-fail-closed.md
         - "ADR-1311: source-adr-citation-provenance": adr/1311-source-adr-citation-provenance.md
         - "ADR-1312: gpu-option-alias-parity": adr/1312-gpu-option-alias-parity.md
+        - "ADR-1316: gpu-option-value-capability-fallback": adr/1316-gpu-option-value-capability-fallback.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

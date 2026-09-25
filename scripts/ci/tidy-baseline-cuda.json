@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1418,
+  "total_warnings": 1414,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -389,10 +389,10 @@
     "core/src/feature/cambi_internal.h": 3,
     "core/src/feature/common/blur_array.c": 6,
     "core/src/feature/common/convolution_internal.h": 8,
-    "core/src/feature/cuda/float_adm_cuda.c": 5,
+    "core/src/feature/cuda/float_adm_cuda.c": 3,
     "core/src/feature/cuda/float_motion_cuda.c": 5,
     "core/src/feature/cuda/float_psnr_cuda.c": 6,
-    "core/src/feature/cuda/float_vif_cuda.c": 5,
+    "core/src/feature/cuda/float_vif_cuda.c": 3,
     "core/src/feature/cuda/integer_adm_cuda.c": 46,
     "core/src/feature/cuda/integer_cambi_cuda.c": 12,
     "core/src/feature/cuda/integer_ciede_cuda.c": 2,
@@ -532,5 +532,29 @@
     "core/tools/vidinput.h": 12,
     "core/tools/vmaf.cpp": 1
   },
-  "nolint_uncited": {}
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/cuda/float_adm_cuda.c",
+        "core/src/feature/cuda/float_vif_cuda.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/float_adm_cuda.c": {
+          "warnings": [
+            5,
+            3
+          ]
+        },
+        "core/src/feature/cuda/float_vif_cuda.c": {
+          "warnings": [
+            5,
+            3
+          ]
+        }
+      },
+      "previous_baseline_sha256": "7e9e80a5ddee65238789a7b2987fe0073e2ef42bcb0e4405d4e90c3fcc8a59a7"
+    }
+  ]
 }

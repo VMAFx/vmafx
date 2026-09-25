@@ -16,6 +16,7 @@
  *
  */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -574,6 +575,132 @@ static char *test_supports_options_null_extractor(void)
     return NULL;
 }
 
+typedef struct {
+    bool enabled;
+    int mode;
+    int unrestricted;
+    double scale;
+} DefaultOnlyOptionState;
+
+static const VmafOption default_only_options[] = {
+    {.name = "enabled",
+     .alias = "e",
+     .offset = offsetof(DefaultOnlyOptionState, enabled),
+     .type = VMAF_OPT_TYPE_BOOL,
+     .default_val.b = false,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {.name = "mode",
+     .alias = "m",
+     .offset = offsetof(DefaultOnlyOptionState, mode),
+     .type = VMAF_OPT_TYPE_INT,
+     .default_val.i = 0,
+     .min = 0,
+     .max = 3,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {.name = "scale",
+     .alias = "s",
+     .offset = offsetof(DefaultOnlyOptionState, scale),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 1.0,
+     .min = 0.1,
+     .max = 4.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {.name = "unrestricted",
+     .offset = offsetof(DefaultOnlyOptionState, unrestricted),
+     .type = VMAF_OPT_TYPE_INT,
+     .default_val.i = 0,
+     .min = 0,
+     .max = 3,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {0},
+};
+
+typedef struct {
+    bool setup_ok;
+    bool honours;
+    bool key_matches;
+} CapabilityResult;
+
+static CapabilityResult check_option_capability(const char *key, const char *value)
+{
+    const VmafFeatureExtractor fex = {
+        .name = "mock_default_only_gpu",
+        .options = default_only_options,
+    };
+    VmafDictionary *opts = NULL;
+    CapabilityResult result = {0};
+    if (vmaf_dictionary_set(&opts, key, value, 0))
+        return result;
+
+    const char *unsupported = NULL;
+    result.setup_ok = true;
+    result.honours = vmaf_feature_extractor_honours_options(&fex, opts, &unsupported);
+    result.key_matches = unsupported && !strcmp(unsupported, key);
+    (void)vmaf_dictionary_free(&opts);
+    return result;
+}
+
+static char *test_honours_default_only_defaults(void)
+{
+    const CapabilityResult bool_default = check_option_capability("e", "false");
+    const CapabilityResult int_default = check_option_capability("mode", "0");
+    const CapabilityResult double_default = check_option_capability("s", "1.0");
+    mu_assert("default-only bool default must be honoured",
+              bool_default.setup_ok && bool_default.honours && !bool_default.key_matches);
+    mu_assert("default-only int default must be honoured",
+              int_default.setup_ok && int_default.honours && !int_default.key_matches);
+    mu_assert("default-only double default must be honoured",
+              double_default.setup_ok && double_default.honours && !double_default.key_matches);
+    return NULL;
+}
+
+static char *test_honours_default_only_boundaries(void)
+{
+    const CapabilityResult bool_nondefault = check_option_capability("enabled", "true");
+    const CapabilityResult int_max = check_option_capability("m", "3");
+    const CapabilityResult double_min = check_option_capability("scale", "0.1");
+    const CapabilityResult double_max = check_option_capability("s", "4.0");
+    mu_assert("valid bool non-default must require fallback",
+              bool_nondefault.setup_ok && !bool_nondefault.honours && bool_nondefault.key_matches);
+    mu_assert("valid int maximum must require fallback",
+              int_max.setup_ok && !int_max.honours && int_max.key_matches);
+    mu_assert("valid double minimum must require fallback",
+              double_min.setup_ok && !double_min.honours && double_min.key_matches);
+    mu_assert("valid double maximum must require fallback",
+              double_max.setup_ok && !double_max.honours && double_max.key_matches);
+    return NULL;
+}
+
+static char *test_honours_invalid_values_remain_parser_owned(void)
+{
+    const CapabilityResult bad_int = check_option_capability("mode", "4");
+    const CapabilityResult bad_double = check_option_capability("scale", "nan");
+    const CapabilityResult bad_bool = check_option_capability("enabled", "1");
+    mu_assert("out-of-range int must remain parser-owned",
+              bad_int.setup_ok && bad_int.honours && !bad_int.key_matches);
+    mu_assert("non-finite double must remain parser-owned",
+              bad_double.setup_ok && bad_double.honours && !bad_double.key_matches);
+    mu_assert("malformed bool must remain parser-owned",
+              bad_bool.setup_ok && bad_bool.honours && !bad_bool.key_matches);
+    return NULL;
+}
+
+static char *test_honours_unknown_option_reports_key(void)
+{
+    const CapabilityResult result = check_option_capability("unknown_option", "1");
+    mu_assert("unknown option must be rejected",
+              result.setup_ok && !result.honours && result.key_matches);
+    return NULL;
+}
+
+static char *test_honours_unrestricted_nondefault(void)
+{
+    const CapabilityResult result = check_option_capability("unrestricted", "3");
+    mu_assert("ordinary non-default option must stay GPU-eligible",
+              result.setup_ok && result.honours && !result.key_matches);
+    return NULL;
+}
+
 /* The context constructor rejects an unknown option outright and resets the
  * caller's handle, so a caller that ignores the status cannot go on to use a
  * stale pointer. */
@@ -589,6 +716,16 @@ static char *test_feature_extractor_unknown_option_rejected(void)
     VmafFeatureExtractorContext *ctx = (VmafFeatureExtractorContext *)0x1234;
     err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
     mu_assert("context_create with unknown option must return -EINVAL", err == -EINVAL);
+    mu_assert("context handle must be reset to NULL on failure", ctx == NULL);
+
+    /* NIQE has private state but no options. LeakSanitizer makes this call
+     * red if the rejection path drops that owned allocation. */
+    const VmafFeatureExtractor *fex_priv = vmaf_get_feature_extractor_by_name("niqe");
+    mu_assert("niqe extractor missing", fex_priv != NULL);
+    ctx = (VmafFeatureExtractorContext *)0x1234;
+    err = vmaf_feature_extractor_context_create(&ctx, fex_priv, opts);
+    mu_assert("context_create with unknown option on priv extractor must return -EINVAL",
+              err == -EINVAL);
     mu_assert("context handle must be reset to NULL on failure", ctx == NULL);
 
     (void)vmaf_dictionary_free(&opts);
@@ -637,6 +774,16 @@ static char *run_option_tests(void)
     return NULL;
 }
 
+static char *run_option_capability_tests(void)
+{
+    mu_run_test(test_honours_default_only_defaults);
+    mu_run_test(test_honours_default_only_boundaries);
+    mu_run_test(test_honours_invalid_values_remain_parser_owned);
+    mu_run_test(test_honours_unknown_option_reports_key);
+    mu_run_test(test_honours_unrestricted_nondefault);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     char *result = run_registry_tests();
@@ -645,7 +792,10 @@ char *run_tests(void)
     result = run_context_tests();
     if (result)
         return result;
-    return run_option_tests();
+    result = run_option_tests();
+    if (result)
+        return result;
+    return run_option_capability_tests();
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

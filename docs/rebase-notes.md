@@ -1,6 +1,38 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/gpu-option-value-capability-d5df — value-aware model fallback (2026-09-25)
+
+`VmafOption` distinguishes canonical schema from an extractor's narrower
+implementation capability with `VMAF_OPT_FLAG_DEFAULT_ONLY`. Preserve that bit
+on the nine entries enumerated by
+`core/test/test_gpu_option_value_capability_contract.py` until the corresponding
+kernel implements the option's non-default values. Do not narrow or remove the
+CPU-mirrored name, alias, default, range, or `FEATURE_PARAM` bit: those fields
+remain collector-key authority.
+
+`vmaf_use_features_from_model()` must call the value-aware helper before
+creating a GPU context. A valid non-default value falls back to the CPU for
+that feature; a valid default stays on device; malformed values remain the
+normal parser's error; explicitly selected GPU extractors retain their direct
+`-EINVAL`. No public C surface or FFmpeg patch changes.
+
+The structured context-create failure helper owns the cloned extractor's
+private allocation. Preserve its unconditional private-state free: the NIQE
+unknown-option regression is LeakSanitizer-red without it (264 bytes) and
+green with it.
+
+- Research digest: [Research-2105](research/2105-gpu-option-value-capability-fallback-2026-09-25.md).
+- Decision matrix: [ADR-1316](adr/1316-gpu-option-value-capability-fallback.md#alternatives-considered).
+- AGENTS.md invariant: `core/src/feature/AGENTS.md`, “Model options gate GPU
+  twin selection”.
+- Reproducer / smoke:
+  `python3 core/test/test_gpu_option_value_capability_contract.py` and
+  `meson test -C BUILD test_feature_extractor test_feature_collector`.
+- Changelog: `changelog.d/fixed/gpu-option-value-capability-fallback.md`.
+- FFmpeg impact: none; no public header, C API, CLI flag, or Meson option
+  changed.
+
 ## agent/fix-gpu-option-aliases-hiss-984823 — preserve CPU collector-key aliases (2026-09-25)
 
 CUDA, SYCL, and HIP option tables now use the same `force_0`, `ks`, and

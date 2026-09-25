@@ -444,6 +444,14 @@ only.
 | `adm_min_val`            | `min`  | double | `0.0`     | `0.0–1.0`   | Floor value: fused ADM scores below this threshold are clipped up to it                                                                                   |
 | `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | p-norm exponent for the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Honoured on every backend: CPU `adm` / `float_adm`, the x86 AVX2 / AVX-512 `adm` paths, the CUDA / SYCL / HIP / Metal `integer_adm` twins, and — since [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md) — the CUDA / SYCL / HIP / Metal `float_adm` twins, which previously hardcoded `p = 3` in their kernels and applied the option to the AIM exponent alone. Applies to the numerator only: the CPU denominator (`adm_den_scale_finalise`) is a fixed cube root, and every twin mirrors that. |
 
+Every GPU `float_adm` twin currently implements `adm_csf_mode=0` only, and
+Metal `integer_adm` has the same restriction. For model-driven scoring,
+libvmaf detects a valid nonzero mode before device initialization and routes
+that feature to the CPU reference; unrelated features remain on the GPU.
+Explicitly naming one of those restricted GPU extractors retains its direct
+`-EINVAL` contract. The CPU option range is unchanged. See
+[ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md).
+
 ##### Small frames
 
 The fixed-point `adm` extractor needs at least 17x17 pixels, on every
