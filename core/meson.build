@@ -121,7 +121,7 @@ subdir('doc')
 subdir('test')
 
 # MATLAB MEX lint stubs and compilation target (ADR-1322)
-# Allows the 10 vendored MEX translation units under compat/python-vmaf/matlab/
+# Allows the 12 vendored MEX translation units under compat/python-vmaf/matlab/
 # to enter the native compilation database and whole-tree clang-tidy ratchet.
 matlab_mex_sources = files(
     '../compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c',

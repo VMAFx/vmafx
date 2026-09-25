@@ -26,8 +26,8 @@ Row `T-TIDY-RATCHET-GPU-LANES-UNREPRODUCIBLE-2026-09-22` identified two reproduc
 2. **Recipe Hook Ordering**:
    Preserve the strict ordering required by `scripts/ci/tests/test_tidy_ratchet_sycl_compdb.py`:
    `check-tidy-build-dir` < `write-compile-commands` < `TIDY_RATCHET_COMPDB_<LANE>` < `tidy-ratchet.py`.
-3. **Re-record HIP Baseline**:
-   Re-record `scripts/ci/tidy-baseline-hip.json` from the documented and validated `-Db_lto=false` out-of-repo configuration (`/tmp/tidy-hip`), ensuring clean zero-delta comparison on developer workstations and CI runners.
+3. **Reconcile Baseline Measurements**:
+   Re-record `scripts/ci/tidy-baseline-hip.json` from the documented and validated `-Db_lto=false` out-of-repo configuration (`/tmp/tidy-hip`), ensuring clean zero-delta comparison on developer workstations and CI runners (360 TUs, 1310 warnings, reconciling the addition of 12 MEX translation units from ADR-1322 to the prior 348 TUs / 1253 warnings baseline). Update `scripts/ci/tidy-baseline-cuda.json` (391 TUs, 1897 warnings) to incorporate the 12 MEX units under the verified out-of-repo configuration. CPU baselines are rebuilt strictly from clean CPU-only CI compilation configurations (312 TUs, 867 warnings).
 
 ## Alternatives considered
 
@@ -41,6 +41,6 @@ Row `T-TIDY-RATCHET-GPU-LANES-UNREPRODUCIBLE-2026-09-22` identified two reproduc
 
 - **Positive:** GPU ratchet lanes (`cuda`, `hip`, `sycl`) fail early with clear, actionable diagnostics if misconfigured.
 - **Positive:** generated files from in-tree builds cannot silently pollute the measured GPU TU sets.
-- **Positive:** `scripts/ci/tidy-baseline-hip.json` is aligned with the documented reproducible configuration.
+- **Positive:** `scripts/ci/tidy-baseline-hip.json`, `scripts/ci/tidy-baseline-cuda.json`, and `scripts/ci/tidy-baseline-cpu.json` are aligned with the documented reproducible configurations and exact measured counts.
 - **Negative:** developers must specify an out-of-repo build directory when invoking GPU tidy targets.
 - **Neutral:** CPU and ARM64 lanes now identically require -Db_lto=false to prevent LTO parsing errors.

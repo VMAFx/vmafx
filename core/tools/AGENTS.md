@@ -196,10 +196,6 @@ tools/
     release branch (or vice versa) leaks or double-frees; this is what
     replaced the `clang-analyzer-deadcode.DeadStores` NOLINT that used to sit
     on `have_dis_pic`.
-  - **Measured under SYCL clang-tidy ratchet baseline.** `vmaf_vpl.c` is
-    tracked in `scripts/ci/tidy-baseline-sycl.json` with an exact allowance
-    of 12 warnings (reduced from 21 following HISS-21 function size splits
-    and modernization).
 - [ADR-0104](../../docs/adr/0104-picture-pool-always-on.md) — picture
   pool is always compiled in and sized for live-picture set; this
   is what makes `--frame_skip_*` unref invariant load-bearing.

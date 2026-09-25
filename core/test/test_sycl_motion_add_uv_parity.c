@@ -125,7 +125,7 @@ static char *run_cpu_float_motion_uv(double *out_score)
     err = vmaf_use_feature(vmaf, "float_motion", opts);
     /* On success ownership transfers to vmaf — do not free. On failure free it. */
     if (err)
-        () vmaf_feature_dictionary_free(&opts);
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
@@ -183,7 +183,7 @@ static char *setup_sycl_pass_add_uv(VmafSyclState *sycl_state, VmafContext **out
     err = vmaf_use_feature(vmaf, "motion_sycl", opts);
     /* On success ownership transfers to vmaf — do not free. On failure free it. */
     if (err)
-        () vmaf_feature_dictionary_free(&opts);
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("SYCL+UV: vmaf_use_feature failed", !err);
 
     *out_vmaf = vmaf;
@@ -294,7 +294,7 @@ static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     const int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
     if (err != 0 || sycl_state == NULL) {
-        () fprintf(stderr, "[skip: no SYCL device] ");
+        (void)fprintf(stderr, "[skip: no SYCL device] ");
         return NULL;
     }
 
@@ -309,7 +309,7 @@ static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
 /* ------------------------------------------------------------------ */
 /* Test 1: UV contribution is non-zero                                 */
 /* ------------------------------------------------------------------ */
-static char *test_motion_add_uv_increases_score()
+static char *test_motion_add_uv_increases_score(void)
 {
     double sycl_uv = NAN;
     double sycl_y = NAN;
@@ -322,10 +322,10 @@ static char *test_motion_add_uv_increases_score()
         return NULL; /* no SYCL device — skip */
 
     if (sycl_uv <= sycl_y) {
-        () fprintf(stderr,
-                   "\nmotion_add_uv FAIL: UV score (%.8f) <= Y-only score (%.8f); "
-                   "UV contribution should be positive\n",
-                   sycl_uv, sycl_y);
+        (void)fprintf(stderr,
+                      "\nmotion_add_uv FAIL: UV score (%.8f) <= Y-only score (%.8f); "
+                      "UV contribution should be positive\n",
+                      sycl_uv, sycl_y);
     }
     mu_assert("motion_add_uv score should exceed Y-only score (UV contribution must be > 0)",
               sycl_uv > sycl_y);
@@ -335,7 +335,7 @@ static char *test_motion_add_uv_increases_score()
 /* ------------------------------------------------------------------ */
 /* Test 2: SYCL motion_add_uv matches CPU float_motion motion_add_uv  */
 /* ------------------------------------------------------------------ */
-static char *test_motion_add_uv_cpu_sycl_parity()
+static char *test_motion_add_uv_cpu_sycl_parity(void)
 {
     double cpu_score = 0.0;
     double sycl_score = NAN;
@@ -354,7 +354,7 @@ static char *test_motion_add_uv_cpu_sycl_parity()
 
     double const delta = fabs(cpu_score - sycl_score);
     if (delta > PARITY_TOL) {
-        () fprintf(
+        (void)fprintf(
             stderr,
             "\nmotion_add_uv parity FAIL: cpu(float_motion)=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
             cpu_score, sycl_score, delta, PARITY_TOL);
@@ -364,7 +364,7 @@ static char *test_motion_add_uv_cpu_sycl_parity()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_motion_add_uv_increases_score);
     mu_run_test(test_motion_add_uv_cpu_sycl_parity);

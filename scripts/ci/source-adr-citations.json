@@ -6389,7 +6389,6 @@
         "core/test/test_hip_adm_init_unwind.c": 1,
         "core/test/test_model.c": 1,
         "core/test/test_model_registration_ownership.cpp": 1,
-        "core/test/test_output_open_eintr.c": 1,
         "core/test/test_picture.c": 2,
         "core/test/test_registration_partial_copy.cpp": 1,
         "core/test/test_spinner.cpp": 1,
