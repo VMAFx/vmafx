@@ -16,6 +16,7 @@ import pathlib
 import socket
 import threading
 import time
+from typing import Any, Callable, TypeVar, cast
 
 import pytest
 
@@ -36,6 +37,12 @@ from ai.sidecar.sgd_ema import SGDEMAConfig  # noqa: E402
 # ---------------------------------------------------------------------------
 
 N_FEATURES = 8  # small for fast CPU runs
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _parametrize(*args: Any, **kwargs: Any) -> Callable[[F], F]:
+    """Retain each test signature across pytest's untyped marker boundary."""
+    return cast(Callable[[F], F], pytest.mark.parametrize(*args, **kwargs))
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +259,7 @@ class TestOnlineTrainerIngest:
             trainer.ingest(features, 60.0)
         assert trainer.status()["total_pushed"] == 5
 
-    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+    @_parametrize("error_type", [RuntimeError, ValueError])
     def test_ingest_acknowledges_admitted_sample_after_trainer_failure(
         self,
         tmp_path: pathlib.Path,
@@ -390,7 +397,7 @@ class TestOnlineTrainerIngest:
             [3.0, 4.0, 90.0, 91.0],
         ]
 
-    @pytest.mark.parametrize(
+    @_parametrize(
         ("replay_mix_ratio", "buffer_capacity", "expected_new_sample_count"),
         [(0.75, 10_000, 1), (0.5, 1, 2)],
     )
@@ -433,7 +440,7 @@ class TestOnlineTrainerIngest:
             float(score) for score in range(1, expected_new_sample_count + 1)
         ]
 
-    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+    @_parametrize("error_type", [RuntimeError, ValueError])
     def test_persistent_failures_bound_the_pending_backlog_without_duplicates(
         self,
         tmp_path: pathlib.Path,

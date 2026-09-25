@@ -1,0 +1,1 @@
+| [ADR-1310](1310-mypy-ci-fail-closed.md) | Makes the required Python Lint job reuse the hash-locked merge-base mypy gate, including exact push-range selection, canonical `ai/src` module identity, and unmasked exit status. | Proposed | ci, python, tooling, testing |

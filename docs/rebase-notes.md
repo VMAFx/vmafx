@@ -572,6 +572,26 @@ it does not perform the promotion.
    If configuration parsing fails, mypy exits outside its ordinary 0/1 statuses, or exit 1 carries no
    parseable finding, the hook raises a `RuntimeError` and terminates with exit code 2. A blocker remains
    fatal even after partial findings, and one module-identity run's exit 1 must not mask a later blocker.
+## agent/fix-ci-mypy-no-files-rc1 — required mypy gate is fail closed (2026-09-25)
+
+1. **Hosted and local mypy share one gate implementation.**
+   Preserve the `Python Lint` workflow call to `scripts/git-hooks/pre-push-mypy.py`; do not restore a raw
+   `mypy ai/ scripts/` directory scan or an advisory shell tail. The workflow must continue to install
+   `requirements/locks/mypy.txt` with `--require-hashes` and fetch full history so both trees are available.
+2. **Event-specific merge-base authority is intentional.**
+   Pull requests retain the hook's `origin/master` default. Master pushes pass the exact
+   `github.event.before` commit through `VMAFX_MYPY_BASE_REF`, so the required post-merge run checks what
+   landed instead of comparing `master` with itself. The hook validates an explicit value with
+   `git rev-parse --verify --end-of-options <ref>^{commit}` before computing the merge base and fails closed
+   when it cannot resolve the ref.
+3. **Preserve the existing checker semantics.**
+   Keep the baseline-configuration synchronization, finding fingerprints, `--no-site-packages` isolation,
+   tracked-file scope, and the dedicated `ai/src/` invocation with `--explicit-package-bases`. ADR-1310
+   changes only CI's base selection and status propagation; it does not redefine the pre-push delta policy.
+4. **Typed test decorators are part of the checked surface.**
+   In checker-only environments, pytest's marker factory is untyped. Preserve the typed `_parametrize()`
+   adapter in `ai/sidecar/tests/test_online_trainer.py`; replacing it with direct
+   `pytest.mark.parametrize` erases the decorated test signature and fails the required gate.
 ## fix/scorecard-pins-best-practices — hash-locked Python installs and OpenSSF hardening (2026-09-23)
 
 1. **`requirements/locks/manifest.json` is the sole compiler authority for Python locks.**

@@ -326,14 +326,20 @@ Two invariants:
 - Same files re-checked at merge base in disposable worktree; only new
   fingerprints fail. Fingerprint = path + error code + message, no line number
   (edit above a finding shifts it, does not change it). Worktree removed in
-  `finally` (ADR-0332 drift guard). CI `mypy` = advisory
-  (`|| echo` in `Python Lint`), inherited findings vary with installed
-  numpy / pandas / torch stubs.
+  `finally` (ADR-0332 drift guard). Required `Python Lint` invokes this same
+  runner and propagates its status (ADR-1310); do not restore a raw directory
+  scan or advisory shell tail.
 - Blocking runs keep site packages out with `--no-site-packages` and suppress
   only the resulting `import-not-found` diagnostics. This makes the result
   independent of the active environment's PEP 561 packages; resolved local and
-  standard-library types remain checked. Keep the dependency-rich hosted run
-  advisory until its type-check environment is pinned.
+  standard-library types remain checked. Hosted CI installs the hash-locked
+  mypy toolchain and intentionally does not install the training stack.
+
+The local default base remains `origin/master`. Hosted pull requests use that
+same authority; hosted master pushes set `VMAFX_MYPY_BASE_REF` to the event's
+exact previous commit so the post-merge job checks the pushed range. Resolve an
+explicit base through `rev-parse --verify --end-of-options` before merge-base
+selection; an empty or invalid override must fail closed.
 
 Mypy exit 0 is clean and exit 1 is ordinary findings. Every other status is a
 blocking analysis error and fails closed with hook exit 2 even when mypy emitted

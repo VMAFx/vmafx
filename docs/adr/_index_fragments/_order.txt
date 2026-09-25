@@ -1028,3 +1028,4 @@
 1305-hash-locked-python-installs
 1307-sha256-memoization-cache-invalidation
 1309-socket-path-ownership-and-owner-only-mode
+1310-mypy-ci-fail-closed

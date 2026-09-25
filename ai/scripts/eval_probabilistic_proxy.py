@@ -224,7 +224,7 @@ def _synthesize_smoke_corpus(
     n_rows: int = 100,
     num_codecs: int = 6,
     seed: int = 4321,
-):  # type: ignore[no-untyped-def]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Match the trainer smoke distribution but with a different seed
     so we evaluate on out-of-training rows."""
     rng = np.random.default_rng(seed)
@@ -266,7 +266,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def _load_ensemble_shapes(
     args: argparse.Namespace,
-) -> tuple[dict, list, np.ndarray, np.ndarray, float | None, int] | None:
+) -> tuple[dict[str, Any], list[Any], np.ndarray, np.ndarray, float | None, int] | None:
     """Load the ensemble and return its manifest, sessions, and live shapes."""
 
     if not args.manifest.is_file():
