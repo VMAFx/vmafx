@@ -402,6 +402,17 @@ carry `suite:` argument.** `fast` suite is documented pre-push gate
 contain every test that completes in under 2 seconds under normal
 CPU load.
 
+**Every test carrying the `gpu` suite tag MUST also set
+`is_parallel : false`.** GPU-suite tests share the physical accelerator and
+its finite queue/memory resources. Meson defines `is_parallel : false` as an
+exclusive test: it waits for all running tests before starting it and starts no
+other test until it completes. `check_gpu_test_serialization.py` enforces this
+contract from Meson's public `intro-tests.json` metadata for every configured
+backend. `test_gpu_serialization_contract.py` also scans the source registry so
+a dormant backend (notably Metal on Linux) cannot evade the configured-metadata
+check. Keep both guards registered outside the `gpu` suite so they can inspect
+the complete test set without making themselves accelerator tests.
+
 Tag assignments:
 
 | Suite tag(s)          | Criteria                                                  |
@@ -421,7 +432,17 @@ grep "^test(" core/test/meson.build | grep -v "suite :"
 
 Any line returned is a violation — add the appropriate `suite:` before
 merging. Keep this check with every upstream sync because upstream does not
-carry the fork's suite classification contract.
+carry the fork's suite classification contract. Then run both the
+source-registry and configured-metadata guards:
+
+```bash
+meson test -C build --no-rebuild \
+  test_gpu_serialization_contract check_gpu_test_serialization
+```
+
+Together they catch new `gpu` registrations that omitted the exclusive
+scheduling flag, including dormant backend and combined-backend suite lists
+such as `['slow', 'gpu', 'sycl']`.
 
 ## Bootstrap score-name source contract (ADR-0480)
 

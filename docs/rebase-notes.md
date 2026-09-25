@@ -53788,3 +53788,20 @@ Invariants preserved:
   `/tmp/build-sycl/test/test_sycl_motion_add_uv_parity`
   `/tmp/build-sycl/test/test_sycl_motion3_parity`.
 - Changelog: `changelog.d/fixed/sycl-motion-parity-branch-count.md`.
+## fix/gpu-test-serialization — shared-device Meson tests stay exclusive (2026-09-23)
+
+`core/test/meson.build` marks every test in the `gpu` suite with Meson's
+`is_parallel : false` scheduling flag. Meson gives that flag global exclusive
+semantics: it drains already-running tests before starting the GPU test and
+starts no other test until the GPU test completes. This is intentional because
+all backend tests configured on a runner share the same finite accelerator
+queues and memory; do not replace it with longer timeouts or a caller-side
+`-j1` workaround.
+
+An upstream port or conflict resolution that adds or rewrites a GPU test must
+preserve both its `gpu` suite tag and `is_parallel : false`. Reconfigure each
+affected backend and run `meson test -C <build-dir> --no-rebuild
+test_gpu_serialization_contract check_gpu_test_serialization`; the source guard
+covers dormant backend registrations, while the checker reads Meson's public
+`meson-info/intro-tests.json` metadata and fails with every non-exclusive GPU
+registration.

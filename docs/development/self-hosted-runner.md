@@ -39,8 +39,8 @@ The runner needs to satisfy the union of all jobs that target it:
 - **AVX-512-capable CPU** (Ice Lake or newer / Zen 4 or newer) — the
   AVX-512 SIMD code paths. `lscpu | grep avx512f` should return a hit.
 - **≥ 16 GB RAM** — coverage + multi-backend builds peak around 8 GB
-  resident; doubling that gives headroom for the parallel meson test
-  runs.
+  resident; doubling that gives headroom for parallel CPU test processes.
+  Tests tagged `gpu` run exclusively because they share one accelerator.
 - **≥ 60 GB free disk** — coverage builds + nightly artifact retention
   rotate through ~30 GB.
 
@@ -143,7 +143,16 @@ required (separate ADR + PR).
   scoped to the `gpu-coverage` environment if and when one is added.
   Treat the host as security-sensitive — no third-party SSH keys, no
   shared user accounts, audit `~/.ssh/authorized_keys` quarterly.
-- **Concurrency**: a single runner serialises GPU jobs. Adding a
+- **Concurrency**: a single runner serialises GPU jobs. Inside a Meson test
+  job, every test tagged `gpu` sets `is_parallel : false`; Meson drains running
+  tests before each one and does not start another test until it finishes.
+  Keep the normal parallel Meson invocation — `-j1` and inflated timeouts hide
+  accelerator contention instead of enforcing the shared-device contract.
+  Verify both the source registry and configured metadata with
+  `meson test -C build --no-rebuild test_gpu_serialization_contract
+  check_gpu_test_serialization`. The source guard covers dormant backends that
+  cannot be configured on the current host; the metadata guard checks Meson's
+  effective scheduling flags. Adding a
   second runner with the same label set (e.g. a remote Intel-only or
   NVIDIA-only host) lets `coverage-gpu` parallelise with whatever
   fine-grained-label job comes next without label collisions.
