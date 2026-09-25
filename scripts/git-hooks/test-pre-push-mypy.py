@@ -383,6 +383,30 @@ class MypyModuleIdentity(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_sidecar_tests_have_no_untyped_decorators(self) -> None:
+        """Pytest decorators under --no-site-packages must be typed aliases (ADR-1261)."""
+        assert MYPY is not None
+        result = run_command(
+            [
+                MYPY,
+                *MYPY_ISOLATION_ARGS,
+                "ai/sidecar/tests/test_online_trainer.py",
+                "ai/sidecar/tests/test_socket_permissions.py",
+            ],
+            allowed_executables=(MYPY,),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=60,
+        )
+        # Inherited baseline debt exists, but no untyped-decorator errors may be present.
+        self.assertNotIn(
+            "untyped-decorator",
+            result.stdout + result.stderr,
+            f"Found untyped decorator findings under hermetic mypy:\n{result.stdout}\n{result.stderr}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

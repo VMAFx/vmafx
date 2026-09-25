@@ -16,8 +16,17 @@ import pathlib
 import socket
 import threading
 import time
+from typing import Any, Callable, TypeVar, cast
 
 import pytest
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+# The pre-push checker deliberately runs with --no-site-packages (ADR-1261)
+# to keep the local gate hermetic and independent of local virtualenv state.
+# Without installed third-party stubs, pytest.mark.parametrize is inferred as untyped Any,
+# which triggers [untyped-decorator] under strict mypy. Typing the decorator
+# alias avoids untyped-decorator without relying on an environment-dependent ignore.
+_pytest_parametrize: Callable[..., Callable[[_F], _F]] = cast(Any, pytest.mark.parametrize)
 
 torch = pytest.importorskip("torch", reason="PyTorch not installed — skipping OnlineTrainer tests")
 
@@ -252,7 +261,7 @@ class TestOnlineTrainerIngest:
             trainer.ingest(features, 60.0)
         assert trainer.status()["total_pushed"] == 5
 
-    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+    @_pytest_parametrize("error_type", [RuntimeError, ValueError])
     def test_ingest_acknowledges_admitted_sample_after_trainer_failure(
         self,
         tmp_path: pathlib.Path,
@@ -390,7 +399,7 @@ class TestOnlineTrainerIngest:
             [3.0, 4.0, 90.0, 91.0],
         ]
 
-    @pytest.mark.parametrize(
+    @_pytest_parametrize(
         ("replay_mix_ratio", "buffer_capacity", "expected_new_sample_count"),
         [(0.75, 10_000, 1), (0.5, 1, 2)],
     )
@@ -433,7 +442,7 @@ class TestOnlineTrainerIngest:
             float(score) for score in range(1, expected_new_sample_count + 1)
         ]
 
-    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+    @_pytest_parametrize("error_type", [RuntimeError, ValueError])
     def test_persistent_failures_bound_the_pending_backlog_without_duplicates(
         self,
         tmp_path: pathlib.Path,
