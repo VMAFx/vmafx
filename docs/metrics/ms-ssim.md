@@ -22,9 +22,15 @@ user-visible. Read from the twins' own `options[]` tables:
 | `float_ms_ssim_cuda` | yes | yes | yes | **no** |
 | `float_ms_ssim_sycl` | yes | yes | yes | yes — computed on the GPU (3 planes) |
 | `integer_ms_ssim_hip` | yes | yes | yes | yes — **accepted but a no-op** |
+| `float_ms_ssim_metal` | yes | yes | yes | yes — computed on the GPU (3 planes) |
 
 What that means when a model requests `enable_chroma`:
 
+- **Metal** computes it. Each plane gets its own geometry and pyramid/partials
+  storage, dispatched through the Metal compute pipeline. The twin advertises
+  `float_ms_ssim_cb` and `float_ms_ssim_cr` in `provided_features` and the
+  `g_metal_features` dispatch table, serving chroma on the GPU. It also exposes
+  `enable_db` and `clip_db` adhering to the ADR-1221 `max_db` ceiling.
 - **SYCL** computes it. Each plane gets its own geometry, staging buffer and
   pyramid, and the planes run sequentially through the shared reduction
   workspace the way the five scales already do. The twin advertises
@@ -104,8 +110,9 @@ rejected with an error at init time (Netflix#1414 / ADR-0153).
   > `+Inf`, and every high-similarity pair returned an uncapped dB value, so
   > `clip_db` did not clip. Fixed per
   > [ADR-1221](../adr/1221-gpu-ms-ssim-db-ceiling.md). **Re-measure any GPU
-  > MS-SSIM dB score taken with `clip_db` set.** The Metal twin exposes neither
-  > `enable_db` nor `clip_db` and is unaffected.
+  > MS-SSIM dB score taken with `clip_db` set.** The Metal twin has been brought
+  > to full parity, implementing `enable_db`, `clip_db` with `max_db` ceiling,
+  > and `enable_chroma`.
 
 ### How to run
 
