@@ -62,21 +62,39 @@ typedef struct FloatMotionStateMetal {
     unsigned frame_w;
     unsigned frame_h;
     unsigned bpc;
+    bool debug;
+    bool motion_force_zero;
 
     VmafDictionary *feature_name_dict;
 } FloatMotionStateMetal;
 
 static const VmafOption options[] = {
     {
-        .name    = "motion_fps_weight",
-        .alias   = "mfw",
-        .help    = "fps-aware multiplicative weight/correction",
-        .offset  = offsetof(FloatMotionStateMetal, motion_fps_weight),
-        .type    = VMAF_OPT_TYPE_DOUBLE,
+        .name        = "debug",
+        .help        = "debug mode: enable additional output",
+        .offset      = offsetof(FloatMotionStateMetal, debug),
+        .type        = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = true},
+    },
+    {
+        .name        = "motion_force_zero",
+        .alias       = "force_0",
+        .help        = "force motion score to zero",
+        .offset      = offsetof(FloatMotionStateMetal, motion_force_zero),
+        .type        = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+        .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name        = "motion_fps_weight",
+        .alias       = "mfw",
+        .help        = "fps-aware multiplicative weight/correction",
+        .offset      = offsetof(FloatMotionStateMetal, motion_fps_weight),
+        .type        = VMAF_OPT_TYPE_DOUBLE,
         .default_val = {.d = 1.0},
-        .min     = 0.0,
-        .max     = 5.0,
-        .flags   = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .min         = 0.0,
+        .max         = 5.0,
+        .flags       = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {0},
 };
@@ -109,6 +127,126 @@ static int build_pipelines(FloatMotionStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
+static int fm_metal_release_device(FloatMotionStateMetal *s)
+{
+    int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+
+    if (s->pso_16bpc) {
+        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;
+        s->pso_16bpc = NULL;
+    }
+    if (s->pso_8bpc) {
+        (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;
+        s->pso_8bpc = NULL;
+    }
+    if (s->cur_blur_buf) {
+        (void)(__bridge_transfer id<MTLBuffer>)s->cur_blur_buf;
+        s->cur_blur_buf = NULL;
+    }
+    if (s->prev_blur_buf) {
+        (void)(__bridge_transfer id<MTLBuffer>)s->prev_blur_buf;
+        s->prev_blur_buf = NULL;
+    }
+
+    int err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
+    if (err != 0 && rc == 0) {
+        rc = err;
+    }
+    if (s->ctx) {
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = NULL;
+    }
+    return rc;
+}
+
+static int fm_metal_release(FloatMotionStateMetal *s)
+{
+    int rc = fm_metal_release_device(s);
+    if (s->feature_name_dict != NULL) {
+        int err = vmaf_dictionary_free(&s->feature_name_dict);
+        if (err != 0 && rc == 0) {
+            rc = err;
+        }
+    }
+    return rc;
+}
+
+static int close_fex_metal(VmafFeatureExtractor *fex)
+{
+    FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
+    return fm_metal_release(s);
+}
+
+static int extract_force_zero_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+                                    VmafPicture *ref_pic_90, VmafPicture *dist_pic,
+                                    VmafPicture *dist_pic_90, unsigned index,
+                                    VmafFeatureCollector *feature_collector)
+{
+    (void)ref_pic;
+    (void)ref_pic_90;
+    (void)dist_pic;
+    (void)dist_pic_90;
+    FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
+
+    int err = vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict,
+        "VMAF_feature_motion2_score", 0.0, index);
+    if (s->debug && err == 0) {
+        err = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict,
+            "VMAF_feature_motion_score", 0.0, index);
+    }
+    return err;
+}
+
+static int init_force_zero_metal(VmafFeatureExtractor *fex, FloatMotionStateMetal *s)
+{
+    fex->extract = extract_force_zero_metal;
+    fex->submit = NULL;
+    fex->collect = NULL;
+    fex->flush = NULL;
+    fex->close = close_fex_metal;
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features,
+                                                      fex->options, s);
+    if (s->feature_name_dict == NULL) {
+        return -ENOMEM;
+    }
+    return 0;
+}
+
+static int fm_metal_init_device(VmafFeatureExtractor *fex, FloatMotionStateMetal *s,
+                                unsigned w, unsigned h)
+{
+    const size_t grid_w = (w + 15) / 16;
+    const size_t grid_h = (h + 15) / 16;
+    s->partials_count   = grid_w * grid_h;
+    int err = vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx,
+                                             s->partials_count * sizeof(float));
+    if (err != 0) { return err; }
+
+    void *dh = vmaf_metal_context_device_handle(s->ctx);
+    if (dh == NULL) { return -ENODEV; }
+    id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
+
+    id<MTLBuffer> prev = [device newBufferWithLength:s->blur_buf_size
+                                             options:MTLResourceStorageModeShared];
+    id<MTLBuffer> cur  = [device newBufferWithLength:s->blur_buf_size
+                                             options:MTLResourceStorageModeShared];
+    if (prev == nil || cur == nil) { return -ENOMEM; }
+    s->prev_blur_buf = (__bridge_retained void *)prev;
+    s->cur_blur_buf  = (__bridge_retained void *)cur;
+
+    err = build_pipelines(s, device);
+    if (err != 0) { return err; }
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features,
+                                                      fex->options, s);
+    if (s->feature_name_dict == NULL) { return -ENOMEM; }
+    return 0;
+}
+
 static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
@@ -136,64 +274,28 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         return -EINVAL;
     }
 
-    s->frame_w          = w;
-    s->frame_h          = h;
-    s->bpc              = bpc;
-    s->frame_index      = 0;
+    s->frame_w           = w;
+    s->frame_h           = h;
+    s->bpc               = bpc;
+    s->frame_index       = 0;
     s->prev_motion_score = 0.0;
-    s->blur_buf_size    = (size_t)w * h * sizeof(float);
+    s->blur_buf_size     = (size_t)w * h * sizeof(float);
 
     int err = vmaf_metal_context_new(&s->ctx, 0);
-    if (err != 0) { return err; }
-
-    err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) { goto fail_ctx; }
-
-    {
-        const size_t grid_w = (w + 15) / 16;
-        const size_t grid_h = (h + 15) / 16;
-        s->partials_count   = grid_w * grid_h;
-        err = vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx,
-                                             s->partials_count * sizeof(float));
+    if (err == 0) {
+        err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
     }
-    if (err != 0) { goto fail_lc; }
-
-    {
-        void *dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == NULL) { err = -ENODEV; goto fail_rb; }
-        id<MTLDevice> device = (__bridge id<MTLDevice>)dh;
-
-        id<MTLBuffer> prev = [device newBufferWithLength:s->blur_buf_size
-                                                 options:MTLResourceStorageModeShared];
-        id<MTLBuffer> cur  = [device newBufferWithLength:s->blur_buf_size
-                                                 options:MTLResourceStorageModeShared];
-        if (prev == nil || cur == nil) { err = -ENOMEM; goto fail_rb; }
-        s->prev_blur_buf = (__bridge_retained void *)prev;
-        s->cur_blur_buf  = (__bridge_retained void *)cur;
-
-        err = build_pipelines(s, device);
+    if (err == 0 && s->motion_force_zero) {
+        err = init_force_zero_metal(fex, s);
+        (void)fm_metal_release_device(s);
+        return err;
     }
-    if (err != 0) { goto fail_blurs; }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features,
-                                                      fex->options, s);
-    if (s->feature_name_dict == NULL) { err = -ENOMEM; goto fail_pso; }
-    return 0;
-
-fail_pso:
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = NULL; }
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = NULL; }
-fail_blurs:
-    if (s->cur_blur_buf)  { (void)(__bridge_transfer id<MTLBuffer>)s->cur_blur_buf;  s->cur_blur_buf  = NULL; }
-    if (s->prev_blur_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->prev_blur_buf; s->prev_blur_buf = NULL; }
-fail_rb:
-    (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
-fail_lc:
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_ctx:
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = NULL;
+    if (err == 0) {
+        err = fm_metal_init_device(fex, s, w, h);
+    }
+    if (err != 0) {
+        (void)fm_metal_release(s);
+    }
     return err;
 }
 
@@ -292,10 +394,13 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         motion_score = (n_pix > 0.0) ? (sad_sum / n_pix) : 0.0;
     }
 
-    int err = vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict,
-        "VMAF_feature_motion_score", motion_score, index);
-    if (err != 0) { return err; }
+    int err = 0;
+    if (s->debug) {
+        err = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict,
+            "VMAF_feature_motion_score", motion_score, index);
+        if (err != 0) { return err; }
+    }
 
     if (index == 0) {
         /* First frame: no previous, emit motion2 = 0 at index 0. Mirrors
@@ -328,31 +433,27 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
 static int flush_fex_metal(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
-    if (s->frame_index >= 1) {
-        /* Tail emission: apply fps weight; identity when motion_fps_weight = 1.0. */
-        (void)vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict,
-            "VMAF_feature_motion2_score",
-            s->prev_motion_score * s->motion_fps_weight, s->frame_index);
+    if (s->frame_index == 0u) {
+        return 1;
+    }
+
+    static const char feature_name[] = "VMAF_feature_motion2_score";
+    const VmafDictionaryEntry *entry = vmaf_dictionary_get(&s->feature_name_dict, feature_name, 0);
+    const char *resolved_name = entry ? entry->val : feature_name;
+    double existing = 0.0;
+    if (vmaf_feature_collector_get_score(feature_collector, resolved_name, &existing, s->frame_index) == 0) {
+        return 1;
+    }
+
+    /* Tail emission: apply fps weight; identity when motion_fps_weight = 1.0.
+     * The probe above makes repeated flush idempotent. */
+    int err = vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, feature_name,
+        s->prev_motion_score * s->motion_fps_weight, s->frame_index);
+    if (err != 0) {
+        return err;
     }
     return 1;
-}
-
-static int close_fex_metal(VmafFeatureExtractor *fex)
-{
-    FloatMotionStateMetal *s = (FloatMotionStateMetal *)fex->priv;
-    int rc = vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-
-    if (s->pso_16bpc)    { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc;   s->pso_16bpc    = NULL; }
-    if (s->pso_8bpc)     { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;    s->pso_8bpc     = NULL; }
-    if (s->cur_blur_buf) { (void)(__bridge_transfer id<MTLBuffer>)s->cur_blur_buf;              s->cur_blur_buf  = NULL; }
-    if (s->prev_blur_buf){ (void)(__bridge_transfer id<MTLBuffer>)s->prev_blur_buf;             s->prev_blur_buf = NULL; }
-
-    int err = vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
-    if (err != 0 && rc == 0) { rc = err; }
-    if (s->feature_name_dict) { (void)vmaf_dictionary_free(&s->feature_name_dict); }
-    if (s->ctx) { vmaf_metal_context_destroy(s->ctx); s->ctx = NULL; }
-    return rc;
 }
 
 static const char *provided_features[] = {

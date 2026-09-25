@@ -21,6 +21,7 @@ EXPECTED_ALIASES = (
     ("cuda/float_motion_cuda.c", "motion_force_zero", "force_0"),
     ("sycl/float_motion_sycl.cpp", "motion_force_zero", "force_0"),
     ("hip/float_motion_hip.c", "motion_force_zero", "force_0"),
+    ("metal/float_motion_metal.mm", "motion_force_zero", "force_0"),
     ("cuda/integer_motion_cuda.c", "motion_force_zero", "force_0"),
     ("sycl/integer_motion_sycl.cpp", "motion_force_zero", "force_0"),
     ("hip/integer_motion_hip.c", "motion_force_zero", "force_0"),

@@ -143,6 +143,14 @@ test('test_metal_float_moment_contract',
     suite : ['fast'],
 )
 
+# BUG-048 / Research-2108: Metal float_motion lifecycle correctness, force-zero,
+# debug-controlled emission, and flush idempotency source contract.
+test('test_metal_float_motion_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_motion_contract.py'),
+    suite : ['fast'],
+)
+
 # ADR-0480: both bootstrap score paths consume the shared suffix owner.
 test('test_bootstrap_name_contract',
     import('python').find_installation(),
