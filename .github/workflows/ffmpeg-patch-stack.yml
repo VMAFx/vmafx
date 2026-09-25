@@ -31,6 +31,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Enforce FFmpeg input contract
+        run: make ffmpeg-input-contract
+
       - name: Test patch automation contracts
         run: python3 -m unittest discover -s scripts/ci -p 'test_ffmpeg_patch*.py' -v
 
@@ -80,6 +83,9 @@ jobs:
           ref: master
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Enforce FFmpeg input contract
+        run: make ffmpeg-input-contract
 
       - name: Test patch automation contracts
         run: python3 -m unittest discover -s scripts/ci -p 'test_ffmpeg_patch*.py' -v

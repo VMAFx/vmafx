@@ -121,8 +121,8 @@ ffmpeg \
   -init_hw_device vaapi=va0@drm0 \
   -init_hw_device qsv=qsv_ref@va0 \
   -init_hw_device qsv=qsv_dis@va0 \
+  -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv -i dis.mkv \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_ref -c:v hevc_qsv -i ref.mkv \
-  -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv  -i dis.mkv \
   -lavfi '[0:v][1:v]libvmaf_sycl=log_fmt=csv:log_path=out.csv' \
   -frames:v 500 -f null -
 ```

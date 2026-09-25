@@ -78,9 +78,9 @@ The synthetic training pairs are produced inside `export_tiny_models.py`:
 
 ```bash
 ffmpeg \
-  -i ref.yuv -i dist.yuv \
-  -filter_complex '[1:v]vmaf_pre=model_path=model/tiny/learned_filter_v1.onnx[d];
-                   [0:v][d]libvmaf' \
+  -i dist.yuv -i ref.yuv \
+  -filter_complex '[0:v]vmaf_pre=model_path=model/tiny/learned_filter_v1.onnx[d];
+                   [d][1:v]libvmaf' \
   -f null -
 ```
 
