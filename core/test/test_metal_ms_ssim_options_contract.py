@@ -67,6 +67,28 @@ def production_wiring_problems(metal_source: str) -> list[str]:
     elif "atoms, 3u" not in reducer:
         problems.append("Metal reducer validates fewer than the three L/C/S atoms")
 
+    atom_array = re.search(
+        r"const VmafNamedScore atoms\[\]\s*=\s*\{(?P<body>.*?)\};",
+        reducer,
+        flags=re.DOTALL,
+    )
+    atom_mappings: list[tuple[str, str]] = []
+    if atom_array:
+        atom_mappings = [
+            (name, value.strip())
+            for name, value in re.findall(
+                r'\{\s*\.name\s*=\s*"([^"]+)"\s*,\s*\.value\s*=\s*([^}]+)\}',
+                atom_array.group("body"),
+            )
+        ]
+    expected_atom_mappings = [
+        ("float_ms_ssim_l", "l_means[i]"),
+        ("float_ms_ssim_c", "c_means[i]"),
+        ("float_ms_ssim_s", "s_means[i]"),
+    ]
+    if atom_mappings != expected_atom_mappings:
+        problems.append("Metal reducer does not bind exact L/C/S names to their mean values")
+
     validator = function_body(metal_source, "static int validate_dimensions")
     if "if (s->n_planes > 1u)" not in validator:
         problems.append("Metal validator gates chroma dimensions on the raw option")
@@ -278,6 +300,39 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
     def test_mutation_partial_atom_validation_is_rejected(self) -> None:
         mutated = self.metal_src.replace("atoms, 3u", "atoms, 1u", 1)
         self.assertTrue(metal_wiring_problems(mutated, self.parity_test_src))
+
+    def test_mutation_each_atom_value_substitution_is_rejected(self) -> None:
+        substitutions = (
+            ("L", ".value = l_means[i]", ".value = c_means[i]"),
+            ("C", ".value = c_means[i]", ".value = s_means[i]"),
+            ("S", ".value = s_means[i]", ".value = l_means[i]"),
+        )
+        for atom, original, replacement in substitutions:
+            with self.subTest(atom=atom):
+                mutated = self.metal_src.replace(original, replacement, 1)
+                self.assertTrue(metal_wiring_problems(mutated, self.parity_test_src))
+
+    def test_mutation_each_atom_name_substitution_is_rejected(self) -> None:
+        substitutions = (
+            ("L", '"float_ms_ssim_l"', '"float_ms_ssim_c"'),
+            ("C", '"float_ms_ssim_c"', '"float_ms_ssim_s"'),
+            ("S", '"float_ms_ssim_s"', '"float_ms_ssim_l"'),
+        )
+        for atom, original, replacement in substitutions:
+            with self.subTest(atom=atom):
+                mutated = self.metal_src.replace(original, replacement, 1)
+                self.assertTrue(metal_wiring_problems(mutated, self.parity_test_src))
+
+    def test_mutation_each_atom_removal_is_rejected(self) -> None:
+        atoms = (
+            ("L", '{.name = "float_ms_ssim_l", .value = l_means[i]},'),
+            ("C", '{.name = "float_ms_ssim_c", .value = c_means[i]},'),
+            ("S", '{.name = "float_ms_ssim_s", .value = s_means[i]},'),
+        )
+        for atom, initializer in atoms:
+            with self.subTest(atom=atom):
+                mutated = self.metal_src.replace(initializer, "", 1)
+                self.assertTrue(metal_wiring_problems(mutated, self.parity_test_src))
 
     def test_nasa_rule4_function_loc_limit(self) -> None:
         # Every function in float_ms_ssim_metal.mm must satisfy LOC <= 60
