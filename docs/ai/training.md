@@ -342,7 +342,9 @@ counts; `collect_gpu_calibration_data.py` defaults to
 `<output>.manifest.json` and records selected features/backends/devices. Its
 default backend is CUDA and its default architecture label is
 `cuda:default`; use `--backends sycl --arch-id <stable-device-id>` together
-when collecting from SYCL hardware;
+when collecting from SYCL hardware. Scorer output must be a JSON object with a
+`frames` array containing frame objects; malformed output is rejected before
+metric pairing;
 `extract_ugc_features.py` defaults to `<out-parquet>.manifest.json` and
 records manifest/pair/fail/source counts; and `extract_konvid_frames.py`
 defaults to `ai/data/konvid_frames_manifest.json` and records frame-pair

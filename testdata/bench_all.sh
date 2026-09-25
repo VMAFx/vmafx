@@ -5,8 +5,8 @@
 # shellcheck disable=SC1091  # setvars.sh is Intel-provided, not part of the repo
 #
 # Per-backend bench across the three canonical fixture sizes
-# (576×324, 1080p_5f, 4K BBB 200f). For each fixture we engage CPU,
-# CUDA, SYCL, and Vulkan with the **correct** flag set per backend
+# (576×324 src01, 1080p checkerboard, and 4K BBB 200f). For each fixture
+# we engage CPU, CUDA, and SYCL with the **correct** flag set per backend
 # (see core/AGENTS.md §"Backend-engagement foot-guns").
 #
 # Earlier revisions of this script used `--no_cuda --no_sycl` for CPU
@@ -75,9 +75,9 @@ if [[ ! -x "$VMAF" ]]; then
 fi
 
 # `flags` is intentionally space-split into separate argv entries.
-# ADR-0513: run() guards vmaf exit codes with || true so that backends
-# that are unavailable (Vulkan without an ICD, HIP on a CUDA-only host)
-# do not abort the whole harness under `set -euo pipefail`.
+# ADR-0513: run() guards vmaf exit codes with || true so that an unavailable
+# CUDA or SYCL device/runtime does not abort the whole harness under
+# `set -euo pipefail`.
 run() {
   local name="$1" ref="$2" dis="$3" w="$4" h="$5" bd="$6" flags="$7"
   local out="$OUTDIR/${name}.json"
@@ -127,13 +127,12 @@ backends = [
     (f"{tag}_cpu", "CPU"),
     (f"{tag}_cuda", "CUDA"),
     (f"{tag}_sycl", "SYCL"),
-    # Vulkan backend removed per ADR-0726; no _vulkan row produced.
 ]
 # Per-backend output key counts diverge — CPU emits 14-15 keys
-# (incl. integer_aim / integer_motion3 / integer_adm3); CUDA / SYCL
-# emit ~12. A matching key count between two backends is one signal
-# that they ran the same code path — useful when verifying that flags
-# actually engaged the intended backend.
+# (incl. integer_aim / integer_motion3 / integer_adm3), CUDA emits
+# 11-12, and SYCL emits about 34 with its intermediate values. A matching
+# key count between two backends is one signal that they ran the same code
+# path — useful when verifying that flags actually engaged the intended backend.
 cpu_scores = None
 for key, name in backends:
     try:
@@ -171,24 +170,19 @@ PYEOF
 #   CUDA:   --gpumask=0 --no_sycl
 #   SYCL:   --sycl_device=0 --no_cuda
 #
-# `--no_vulkan` was dropped from all three sets: ADR-0726 removed the Vulkan
-# backend and current CLI builds reject the flag as unrecognized.
-#
 # Verifying engagement after a run: the JSON's `frames[0].metrics`
-# key set differs per backend (CPU 14-15, CUDA 11-12, SYCL ~15,
-# Vulkan ~34). Same key-count + same pool across two rows is a
+# key set differs per backend (CPU 14-15, CUDA 11-12, SYCL ~34).
+# Same key-count + same pool across two rows is a
 # strong signal that both ran the same code path.
 FLAGS_CPU="--no_cuda --no_sycl"
 FLAGS_CUDA="--gpumask=0 --no_sycl"
 FLAGS_SYCL="--sycl_device=0 --no_cuda"
-# FLAGS_VULKAN removed per ADR-0726
 
 run_test() {
   local tag="$1" ref="$2" dis="$3" w="$4" h="$5" bd="$6"
   run "${tag}_cpu" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_CPU"
   run "${tag}_cuda" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_CUDA"
   run "${tag}_sycl" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_SYCL"
-  # Vulkan backend removed per ADR-0726; run_test no longer invokes it.
 }
 
 echo "========================================="
