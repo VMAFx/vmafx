@@ -49,6 +49,16 @@ test('test_vmaf_log_callsite_format',
     timeout : 30,
 )
 
+# BUG-048 B2 / ADR-0759: keep the four large HIP ADM compute kernels on the
+# device-resident AdmBufferHip pointer contract, including host launch wiring,
+# one-time upload, and the BUG-092-compatible failure/close lifecycle.
+test('test_hip_adm_buffer_pointer_contract',
+    import('python').find_installation(),
+    args : files('test_hip_adm_buffer_pointer_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048 A6 / Research-2081: Linux has no Metal compiler or device, so pin
 # float_moment's exact uint64 workgroup reduction and host lo/hi reconstruction
 # as a source contract on every platform. The live parity test below remains
@@ -3847,7 +3857,7 @@ test('test_hip_adm_parity', test_hip_adm_parity,
 #
 # integer_adm_hip.c is compiled straight into this target rather than linked
 # from libvmaf, and test_hip_adm_init_unwind.c defines every symbol the TU
-# references: the ~17 hip* entry points, the four HSACO blobs, and four
+# references: the ~17 hip* entry points, the four HSACO blobs, and five
 # libvmaf helpers. `vmaf_feature_name_dict_from_provided_features` is the
 # injection point and returns NULL, which drives the one init path that used
 # to release every resource and then report success (hipSuccess through the

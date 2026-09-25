@@ -20580,6 +20580,14 @@ invalid ROI pooled score exits 65 without writing a report.
   advertising the removed Vulkan backend as an implicit GPU capability.
 
 
+- HIP integer ADM now has a fast regression contract tying ADR-0759's four
+  device-resident `AdmBufferHip` kernel parameters to their host launch,
+  one-time upload and BUG-092 teardown lifecycle. This prevents a stale branch
+  from silently restoring the 328-byte by-value kernel argument again. The
+  device-free init-unwind harness also follows the current collector append
+  seam, so it continues to execute its allocation-leak and error-result checks.
+
+
 - **Issue-reference provenance:** restore explicit archived `lusoris/vmaf`
   ownership across 48 proven Vulkan, CUDA CAMBI, ADR-sweep, BVI-DVC, sync-report,
   source-invariant, and generated-changelog contexts. The context-scoped gate

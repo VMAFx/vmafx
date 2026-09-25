@@ -175,3 +175,46 @@ claim is now measured rather than argued.
 Not verified on this host: an end-to-end `vmaf --backend hip` score run. The
 workstation was heavily loaded by sibling agents and a full `enable_hipcc`
 build was not run; the kernel-level differential above is the evidence.
+
+## 2026-09-25 — collector reconciliation and executable contract
+
+The current collector head already contains the production form through
+`7e20ab78d` (#1507), including BUG-092's newer straight-line partial-init
+cleanup. Reapplying the older standalone patch would therefore duplicate the
+device allocation and restore obsolete `adm_hip_unwind_*` helper names. This
+follow-up deliberately makes no production-source change.
+
+The missing protection is now executable in
+`core/test/test_hip_adm_buffer_pointer_contract.py`. The fast, device-free gate
+checks the four pointer kernel signatures, the four `&s->buf_dev` launch
+arrays, the buffer-free reduce kernel, allocation/copy/publication ordering,
+and the current dictionary-failure and close release order. Seven mutation tests
+red-cap by-value parameters, stale host launch wiring, the wrong copy direction,
+cleanup moved outside either failure branch, missing BUG-092 cleanup, and an
+unnecessary reduce-kernel buffer; a formatting variant rejects whitespace-only
+false alarms.
+As a historical control, the validator reports sixteen contract failures on
+the exact stale collector `92ea978a4`; it reports none on the current source.
+
+ROCm 7.2.53211 rebuilt the HIP targets for the host's idle `gfx1036`. The four
+ADM parity/border/tiny-frame/wide-rounding executables, the large parity variant,
+the source contract and the device-free lifecycle test passed 7/7 serially; the
+border and wide-rounding probes reported zero CPU/HIP delta for every printed feature, so
+the GPU cases executed rather than taking their no-device skip. The BUG-092
+harness initially failed to link because the collector's current score writer
+also references `vmaf_feature_collector_append`; adding that no-op symbol to
+the already isolated stub set restored the test and its injected dictionary
+failure released every allocation while returning `-ENOMEM`.
+
+Fresh `gfx1036` code-object metadata confirms the decided layout still ships:
+
+| kernel | kernarg bytes |
+| :--- | ---: |
+| `adm_csf_kernel_1_4` | 536 |
+| `i4_adm_csf_kernel_1_4` | 536 |
+| `i4_adm_cm_line_kernel` | 584 |
+| `adm_cm_line_kernel_8` | 648 |
+| `adm_cm_reduce_line_kernel_4` | 296 |
+
+No benchmark or retraining run was started; this verification is correctness
+and lifecycle work only.

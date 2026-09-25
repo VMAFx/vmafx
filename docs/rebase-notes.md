@@ -53138,16 +53138,19 @@ docker-datasource manager without a `depNameTemplate`, and the CUDA one carries
 Fork-local; no upstream Netflix surface. The four HIP integer ADM `__global__`
 kernels that read `AdmBufferHip` take
 `const AdmBufferHip *__restrict__ buf_ptr`, and `AdmStateHip` owns a device copy
-(`buf_dev`) uploaded once at the end of `init_fex_hip()`, passed as `args[0]` by
-address, and freed in `close_fex_hip()` and on the init failure path.
+(`buf_dev`) uploaded once near the end of `adm_hip_init_device()`, passed as
+`args[0]` by address, and freed in `close_fex_hip()` or during failed init.
 
-That failure path is expressed as the tail-calling `adm_hip_unwind_*` helper
-chain, not as `goto` labels: the HISS-01 zero-`goto` refactor of this file and
-the ADR-0759 re-application were developed in parallel and reconciled when they
-met. `adm_hip_unwind_buf_dev()` is the `buf_dev` tier and releases first, since
-`buf_dev` is the last thing init allocates. A resolution that reintroduces a
-`fail_buf_dev:` label restores the by-pointer change at the cost of the
-zero-`goto` invariant; keep both.
+The current collector does **not** carry the old tail-calling
+`adm_hip_unwind_*` chain. PR #1507 reconciled ADR-0759 with BUG-092 as
+straight-line paired acquire/release helpers: a failed upload frees its local
+allocation before publishing `s->buf_dev`; the later dictionary failure calls
+`adm_hip_free_buf_dev`, `adm_hip_free_luma`, `adm_hip_free_buffers`,
+`adm_hip_unload_modules`, then `adm_hip_destroy_stream`, and returns `-ENOMEM`.
+Normal close releases modules, `buf_dev`, luma and backing buffers after stream
+close. A resolution that resurrects either `adm_hip_unwind_*` or a
+`fail_buf_dev:` label is stale; preserve the straight-line BUG-092 release set
+and order.
 
 This has already been lost once: ADR-0759 landed it in `31a51afb2` (#101) and
 `92ea978a4` (#102), a squash of a branch cut from an older base, put the
@@ -53166,6 +53169,13 @@ stated in `core/src/feature/hip/AGENTS.md`.
 
 `AdmFixedParametersHip` (248 bytes) is deliberately still by value — ADR-0759's
 deferred follow-up. Do not "finish the job" on a rebase without an ADR.
+
+Run `python3 core/test/test_hip_adm_buffer_pointer_contract.py` after every
+conflict touching these three sources. The test binds the four kernel
+signatures to the four `&s->buf_dev` launch arrays, the one-time HtoD upload,
+the buffer-free reduce kernel, and both teardown paths. It fails against the
+known stale collector `92ea978a4`, so passing it is evidence rather than a
+documentation-only grep.
 
 ## `python/vmaf/__init__.py` — resolve the compat shim by file location (ADR-1292)
 
