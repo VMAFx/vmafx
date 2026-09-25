@@ -7189,7 +7189,8 @@
     },
     "1261": {
       "sites": {
-        "ai/sidecar/tests/test_socket_permissions.py": 1
+        "ai/sidecar/tests/test_socket_permissions.py": 1,
+        "scripts/git-hooks/test-pre-push-mypy.py": 1
       },
       "target": "1261-mypy-pre-push-delta-gate.md"
     },
