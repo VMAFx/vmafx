@@ -90,6 +90,13 @@ static const char *const ADM_FEATURES_APN[] = {
     "integer_adm_scale3" APN_SUFFIX,
 };
 
+#define BARTEN_SUFFIX "_csf_1"
+static const char *const ADM_FEATURES_BARTEN[] = {
+    "integer_adm2" BARTEN_SUFFIX,       "integer_adm_scale0" BARTEN_SUFFIX,
+    "integer_adm_scale1" BARTEN_SUFFIX, "integer_adm_scale2" BARTEN_SUFFIX,
+    "integer_adm_scale3" BARTEN_SUFFIX,
+};
+
 static int fill_ref(VmafPicture *pic, unsigned frame_idx)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
@@ -177,7 +184,7 @@ static char *open_metal_context(VmafContext **vmaf, VmafMetalState *mstate)
     return NULL;
 }
 
-static char *run_cpu(double *out_scores, const char *const *keys, int use_apn)
+static char *run_cpu(double *out_scores, const char *const *keys, int use_apn, int use_barten)
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -189,6 +196,9 @@ static char *run_cpu(double *out_scores, const char *const *keys, int use_apn)
     if (use_apn) {
         err = vmaf_feature_dictionary_set(&opts, "adm_p_norm", APN_VALUE);
         mu_assert("CPU: dictionary_set(adm_p_norm) failed", !err);
+    } else if (use_barten) {
+        err = vmaf_feature_dictionary_set(&opts, "adm_csf_mode", "1");
+        mu_assert("CPU: dictionary_set(adm_csf_mode) failed", !err);
     }
 
     err = vmaf_use_feature(vmaf, "adm", opts);
@@ -211,7 +221,8 @@ static char *run_cpu(double *out_scores, const char *const *keys, int use_apn)
     return NULL;
 }
 
-static char *run_metal(double *out_scores, int *skipped, const char *const *keys, int use_apn)
+static char *run_metal(double *out_scores, int *skipped, const char *const *keys, int use_apn,
+                       int use_barten)
 {
     *skipped = 0;
     for (unsigned m = 0; m < NUM_ADM_FEATURES; m++)
@@ -236,6 +247,9 @@ static char *run_metal(double *out_scores, int *skipped, const char *const *keys
     if (use_apn) {
         err = vmaf_feature_dictionary_set(&opts, "adm_p_norm", APN_VALUE);
         mu_assert("Metal: dictionary_set(adm_p_norm) failed", !err);
+    } else if (use_barten) {
+        err = vmaf_feature_dictionary_set(&opts, "adm_csf_mode", "1");
+        mu_assert("Metal: dictionary_set(adm_csf_mode) failed", !err);
     }
 
     err = vmaf_use_feature(vmaf, "integer_adm_metal", opts);
@@ -265,10 +279,10 @@ static char *test_integer_adm_cpu_metal_parity(void)
     double metal_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu(cpu_scores, ADM_FEATURES, 0);
+    char *msg = run_cpu(cpu_scores, ADM_FEATURES, 0, 0);
     if (msg)
         return msg;
-    msg = run_metal(metal_scores, &skipped, ADM_FEATURES, 0);
+    msg = run_metal(metal_scores, &skipped, ADM_FEATURES, 0, 0);
     if (msg)
         return msg;
     if (skipped)
@@ -305,10 +319,10 @@ static char *test_integer_adm_p_norm_reaches_kernel(void)
     double metal_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
-    char *msg = run_cpu(cpu_scores, ADM_FEATURES_APN, 1);
+    char *msg = run_cpu(cpu_scores, ADM_FEATURES_APN, 1, 0);
     if (msg)
         return msg;
-    msg = run_metal(metal_scores, &skipped, ADM_FEATURES_APN, 1);
+    msg = run_metal(metal_scores, &skipped, ADM_FEATURES_APN, 1, 0);
     if (msg)
         return msg;
     if (skipped)
@@ -331,10 +345,38 @@ static char *test_integer_adm_p_norm_reaches_kernel(void)
     return NULL;
 }
 
+static char *test_integer_adm_barten_mode_parity(void)
+{
+    double cpu_scores[NUM_ADM_FEATURES] = {0};
+    double metal_scores[NUM_ADM_FEATURES] = {0};
+    int skipped = 0;
+
+    char *msg = run_cpu(cpu_scores, ADM_FEATURES_BARTEN, 0, 1);
+    if (msg)
+        return msg;
+    msg = run_metal(metal_scores, &skipped, ADM_FEATURES_BARTEN, 0, 1);
+    if (msg || skipped)
+        return msg;
+
+    for (unsigned m = 0; m < NUM_ADM_FEATURES; ++m) {
+        const double delta = fabs(cpu_scores[m] - metal_scores[m]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\ninteger_adm Barten parity FAIL %s: cpu=%.8f metal=%.8f "
+                          "delta=%.2e tol=%.2e\n",
+                          ADM_FEATURES_BARTEN[m], cpu_scores[m], metal_scores[m], delta,
+                          PARITY_TOL);
+        }
+        mu_assert("integer_adm Barten mode drifts from the CPU reference", delta <= PARITY_TOL);
+    }
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_integer_adm_cpu_metal_parity);
     mu_run_test(test_integer_adm_p_norm_reaches_kernel);
+    mu_run_test(test_integer_adm_barten_mode_parity);
     return NULL;
 }
 

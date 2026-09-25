@@ -11,7 +11,8 @@
  *      horizontal / vertical bands scaled by 2^21 and the diagonal band
  *      by 2^23;
  *    - scales 1..3 (32-bit pipeline): `uint32_t i_rfactor[3]`, all three
- *      bands scaled by 2^32.
+ *      bands scaled by 2^32. The later signed multiply/cube stages require
+ *      two headroom bits, so their usable arithmetic budget is 2^30.
  *
  *  Those budgets were sized for the Watson97 CSF, whose weights sit around
  *  1e-2. The fork-added `adm_csf_mode` option (integer_adm.h) also exposes
@@ -21,9 +22,12 @@
  *  The narrowing conversions in the extractors silently wrapped, and the
  *  resulting scores were nonsense rather than an error.
  *
- *  This header centralises the bounds so every integer-ADM backend (scalar,
- *  SIMD, CUDA, HIP, SYCL) rejects the same set of configurations up front.
- *  See ADR-1191 and
+ *  This header centralises the bounds and the shared power-of-two
+ *  normalisation used by every integer-ADM backend.  A single shift is used
+ *  for all three bands of one scale, preserving their relative CSF weights;
+ *  the contrast-masking reduction restores the removed exponent after its
+ *  cube.  Invalid negative / non-finite table results are still rejected.
+ *  See ADR-1191, ADR-1325, and
  *  docs/state.md :: T-UPSTREAM-1494-ADM-CSF-MODE-IRFACTOR-OVERFLOW-2026-09-03.
  *
  *  The frame-size bound and the rounding constant of the pipeline's right
@@ -47,11 +51,13 @@
 #define ADM_CSF_SCALE0_D_EXP (23)
 #define ADM_CSF_S123_EXP (32)
 
-/* Exclusive upper bounds of the corresponding storage types. A converted
- * weight equal to the bound already wraps, so the comparisons below are
- * strict. */
-#define ADM_CSF_SCALE0_LIMIT (65536.0)    /* 2^16, uint16_t i_rfactor  */
-#define ADM_CSF_S123_LIMIT (4294967296.0) /* 2^32, uint32_t i_rfactor  */
+/* Exclusive upper bounds of the corresponding fixed-point arithmetic. A
+ * converted weight equal to the bound is outside the budget, so comparisons
+ * are strict. Scale 0 is storage-limited; scales 1..3 keep two bits below
+ * uint32_t's ceiling because their signed CSF/CM arithmetic and cube
+ * accumulation need that headroom. */
+#define ADM_CSF_SCALE0_LIMIT (65536.0)    /* 2^16, uint16_t i_rfactor */
+#define ADM_CSF_S123_LIMIT (1073741824.0) /* 2^30, signed headroom */
 
 /**
  * True when the scale-0 weights come from the upstream-tabulated constants
@@ -98,30 +104,37 @@ static inline void adm_csf_scale0_fixed(const float rfactor1[3], double adm_norm
 }
 
 /**
- * True when `value` survives the narrowing conversion into a fixed-point
- * weight of `limit` (exclusive). Negative inputs are rejected as well: the
+ * True when `value` is a valid input to the fixed-point normaliser. Negative
+ * inputs are rejected: the
  * blended-CSF tables in barten_csf_tools.h return `-EINVAL` as a float when
  * asked for an (adm_norm_view_dist, adm_ref_display_height) pair they do not
  * tabulate, and converting a negative float to an unsigned integer type is
  * undefined behaviour (C17 6.3.1.4p1).
  */
-static inline bool adm_csf_fixed_in_range(double value, double limit)
+static inline bool adm_csf_fixed_valid(double value)
 {
-    return value >= 0.0 && value < limit;
+    return isfinite(value) && value >= 0.0;
 }
 
 /**
- * Range-check the CSF weights of one DWT scale against the storage the
- * integer pipeline uses for it. Returns 0 when the scale is representable
- * and -EINVAL (after logging which band overflowed) otherwise.
+ * Convert the CSF weights of one DWT scale to the fixed-point representation
+ * used by the integer pipeline. When a weight would exceed its arithmetic
+ * budget, divide every band on the scale by the same power of two until all
+ * fit.
+ * `normalization_shift` records that exponent for the contrast-masking cube
+ * finalisation, which restores `3 * normalization_shift` bits.
+ *
+ * Returns 0 for every finite non-negative configuration.  Negative and
+ * non-finite values are rejected with -EINVAL; in particular, the blended-CSF
+ * lookup uses -EINVAL encoded as a float for unsupported display geometry.
  *
  * `scale` is 0 for the 16-bit pipeline and 1..3 for the 32-bit pipeline;
  * `rfactor1` is { factor1, factor1, factor2 }.
  */
-static inline int adm_csf_check_scale(int scale, const float rfactor1[3], double adm_norm_view_dist,
-                                      int adm_ref_display_height, int adm_csf_mode)
+static inline int adm_csf_fixed_scale(int scale, const float rfactor1[3], double adm_norm_view_dist,
+                                      int adm_ref_display_height, int adm_csf_mode, double fixed[3],
+                                      uint32_t *normalization_shift)
 {
-    double fixed[3];
     double limit;
 
     if (scale == 0) {
@@ -136,19 +149,35 @@ static inline int adm_csf_check_scale(int scale, const float rfactor1[3], double
     }
 
     for (int band = 0; band < 3; ++band) {
-        if (!adm_csf_fixed_in_range(fixed[band], limit)) {
+        if (!adm_csf_fixed_valid(fixed[band])) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
                      "integer_adm: adm_csf_mode=%d at adm_norm_view_dist=%g, "
-                     "adm_ref_display_height=%d yields a scale-%d band-%d CSF weight of %g, "
-                     "which the fixed-point pipeline cannot represent (needs 0 <= w < %g). "
-                     "Use the float ADM extractor, or lower adm_csf_scale / "
-                     "adm_csf_diag_scale.\n",
+                     "adm_ref_display_height=%d yields an invalid scale-%d band-%d "
+                     "CSF weight of %g (expected a finite non-negative value).\n",
                      adm_csf_mode, adm_norm_view_dist, adm_ref_display_height, scale, band,
-                     fixed[band], limit);
+                     fixed[band]);
             return -EINVAL;
         }
     }
+
+    *normalization_shift = 0u;
+    while (fixed[0] >= limit || fixed[1] >= limit || fixed[2] >= limit) {
+        fixed[0] *= 0.5;
+        fixed[1] *= 0.5;
+        fixed[2] *= 0.5;
+        ++*normalization_shift;
+    }
     return 0;
+}
+
+/* Validation-only wrapper used during extractor initialisation. */
+static inline int adm_csf_check_scale(int scale, const float rfactor1[3], double adm_norm_view_dist,
+                                      int adm_ref_display_height, int adm_csf_mode)
+{
+    double fixed[3];
+    uint32_t normalization_shift;
+    return adm_csf_fixed_scale(scale, rfactor1, adm_norm_view_dist, adm_ref_display_height,
+                               adm_csf_mode, fixed, &normalization_shift);
 }
 
 /* Smallest frame dimension the integer-ADM pipeline accepts. Each DWT scale

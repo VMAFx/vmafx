@@ -1243,11 +1243,9 @@ test_adm_coverage = executable('test_adm_coverage',
     ] + wave8_opt_only_objects
 )
 
-# ADR-1191 — integer-ADM CSF fixed-point representability guard: the
-# configurations init() must reject (adm_csf_mode=1 at the default
-# adm_csf_scale; a blend mode at an untabulated viewing geometry) and the
-# ones it must keep accepting (default, mode 1 with the fork's small scale
-# coefficients, modes 2 and 3 at 1080@3H).
+# ADR-1325 — integer-ADM CSF fixed-point normalisation: full-scale
+# adm_csf_mode=1 must produce finite, non-degenerate scores; invalid blend-table
+# geometry must still fail; default and already-representable configurations stay accepted.
 test_adm_csf_representable = executable('test_adm_csf_representable',
     ['test.c', 'test_adm_csf_representable.c', '../src/mem.cpp', '../src/picture.c',
      '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',

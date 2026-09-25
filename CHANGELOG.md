@@ -25404,6 +25404,13 @@ The required standards gate now replays declared HISS enforcement fixtures on Li
   in this PR — already covered by in-flight PR #287.
 
 
+Fixed `adm_csf_mode=1` on fixed-point ADM by normalizing all three CSF bands
+with one power-of-two exponent per scale and restoring it after contrast
+masking. Full-scale Barten now produces finite CPU scores, and CUDA, SYCL, HIP,
+and Metal share the same representation contract; invalid blend-table geometry
+continues to fail closed.
+
+
 - **CUDA/SYCL/Vulkan `integer_adm` `adm_min_val` option** (`integer_adm_cuda.c`,
   `integer_adm_sycl.cpp`, `adm_vulkan.c`): the three GPU backends silently
   dropped the `adm_min_val` option, never applying the minimum score floor

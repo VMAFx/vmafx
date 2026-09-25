@@ -112,6 +112,11 @@ static const char *const SCORE_KEYS[] = {
 };
 #define NUM_KEYS (sizeof(SCORE_KEYS) / sizeof(SCORE_KEYS[0]))
 
+static const char *const BARTEN_SCORE_KEYS[] = {
+    "integer_adm_scale0_csf_1", "integer_adm_scale1_csf_1", "integer_adm_scale2_csf_1",
+    "integer_adm_scale3_csf_1", "integer_adm2_csf_1",
+};
+
 /* Luma sample at (row, col) of the reference (distorted == 0) or the
  * distorted picture. */
 typedef uint16_t (*SampleFn)(unsigned row, unsigned col, int distorted);
@@ -190,8 +195,8 @@ static int fill_picture(VmafPicture *pic, Geometry g, const Content *c, int dist
 
 /* Feed one frame of `g` and read every score. `*skipped` is set when the
  * backend reports its kernels were not built (-ENOSYS). */
-static char *score_frame(VmafContext *vmaf, Geometry g, const Content *c, double out[NUM_KEYS],
-                         int *skipped)
+static char *score_frame(VmafContext *vmaf, Geometry g, const Content *c,
+                         const char *const keys[NUM_KEYS], double out[NUM_KEYS], int *skipped)
 {
     VmafPicture ref;
     VmafPicture dist;
@@ -208,20 +213,32 @@ static char *score_frame(VmafContext *vmaf, Geometry g, const Content *c, double
     mu_assert("vmaf_read_pictures failed", !err);
     mu_assert("vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
     for (size_t k = 0; k < NUM_KEYS; k++) {
-        mu_assert("ADM score missing",
-                  !vmaf_feature_score_at_index(vmaf, SCORE_KEYS[k], &out[k], 0u));
+        mu_assert("ADM score missing", !vmaf_feature_score_at_index(vmaf, keys[k], &out[k], 0u));
     }
     return NULL;
 }
 
-static char *score_cpu_scalar(Geometry g, const Content *c, double out[NUM_KEYS])
+static VmafFeatureDictionary *barten_options(void)
+{
+    VmafFeatureDictionary *opts = NULL;
+    if (vmaf_feature_dictionary_set(&opts, "adm_csf_mode", "1")) {
+        (void)vmaf_feature_dictionary_free(&opts);
+        return NULL;
+    }
+    return opts;
+}
+
+static char *score_cpu_scalar(Geometry g, const Content *c, int barten, double out[NUM_KEYS])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = ~(uint64_t)0};
     VmafContext *vmaf = NULL;
     mu_assert("CPU: vmaf_init failed", !vmaf_init(&vmaf, cfg));
-    mu_assert("CPU: vmaf_use_feature(adm) failed", !vmaf_use_feature(vmaf, "adm", NULL));
+    VmafFeatureDictionary *opts = barten ? barten_options() : NULL;
+    mu_assert("CPU: Barten option allocation failed", !barten || opts != NULL);
+    mu_assert("CPU: vmaf_use_feature(adm) failed", !vmaf_use_feature(vmaf, "adm", opts));
     int skipped = 0;
-    char *msg = score_frame(vmaf, g, c, out, &skipped);
+    const char *const *keys = barten ? BARTEN_SCORE_KEYS : SCORE_KEYS;
+    char *msg = score_frame(vmaf, g, c, keys, out, &skipped);
     (void)vmaf_close(vmaf);
     return msg;
 }
@@ -312,7 +329,7 @@ static void gpu_free(GpuState **state)
 
 /* Score `g` on the GPU twin. `*skipped` is set when there is no device or the
  * kernels were not built. */
-static char *score_gpu(Geometry g, const Content *c, double out[NUM_KEYS], int *skipped)
+static char *score_gpu(Geometry g, const Content *c, int barten, double out[NUM_KEYS], int *skipped)
 {
     GpuState *state = NULL;
     if (gpu_open(&state) != 0 || state == NULL) {
@@ -326,10 +343,16 @@ static char *score_gpu(Geometry g, const Content *c, double out[NUM_KEYS], int *
         msg = "GPU: vmaf_init failed";
     } else if (gpu_import(vmaf, state)) {
         msg = "GPU: importing the device state failed";
-    } else if (vmaf_use_feature(vmaf, GPU_FEATURE, NULL)) {
-        msg = "GPU: vmaf_use_feature failed";
     } else {
-        msg = score_frame(vmaf, g, c, out, skipped);
+        VmafFeatureDictionary *opts = barten ? barten_options() : NULL;
+        if (barten && opts == NULL) {
+            msg = "GPU: Barten option allocation failed";
+        } else if (vmaf_use_feature(vmaf, GPU_FEATURE, opts)) {
+            msg = "GPU: vmaf_use_feature failed";
+        } else {
+            const char *const *keys = barten ? BARTEN_SCORE_KEYS : SCORE_KEYS;
+            msg = score_frame(vmaf, g, c, keys, out, skipped);
+        }
     }
     if (vmaf) {
         (void)vmaf_close(vmaf);
@@ -356,15 +379,15 @@ static const Content BRIGHT_16BIT = {
     "GPU integer ADM differs from scalar CPU by more than 1e-4 on bright 16-bit input",
 };
 
-static char *check_parity(Geometry g, const Content *c, int *skipped)
+static char *check_parity(Geometry g, const Content *c, int barten, int *skipped)
 {
     double cpu[NUM_KEYS];
     double gpu[NUM_KEYS];
-    char *msg = score_cpu_scalar(g, c, cpu);
+    char *msg = score_cpu_scalar(g, c, barten, cpu);
     if (msg) {
         return msg;
     }
-    msg = score_gpu(g, c, gpu, skipped);
+    msg = score_gpu(g, c, barten, gpu, skipped);
     if (msg || *skipped) {
         return msg;
     }
@@ -372,7 +395,7 @@ static char *check_parity(Geometry g, const Content *c, int *skipped)
         const double delta = fabs(cpu[k] - gpu[k]);
         if (!(delta <= PARITY_TOL)) {
             (void)fprintf(stderr, "\n  %ux%u %s: cpu=%.8f gpu=%.8f delta=%.2e\n", g.w, g.h,
-                          SCORE_KEYS[k], cpu[k], gpu[k], delta);
+                          barten ? BARTEN_SCORE_KEYS[k] : SCORE_KEYS[k], cpu[k], gpu[k], delta);
             return c->mismatch;
         }
     }
@@ -384,7 +407,7 @@ static char *check_parity_list(const Geometry *list, size_t count, const Content
 {
     for (size_t i = 0; i < count; i++) {
         int skipped = 0;
-        char *msg = check_parity(list[i], c, &skipped);
+        char *msg = check_parity(list[i], c, 0, &skipped);
         if (msg) {
             return msg;
         }
@@ -410,6 +433,17 @@ static char *test_gpu_adm_full_range_noise_parity(void)
 static char *test_gpu_adm_bright_16bit_parity(void)
 {
     return check_parity_list(NOISE, NUM_NOISE, &BRIGHT_16BIT);
+}
+
+static char *test_gpu_adm_barten_mode_parity(void)
+{
+    int skipped = 0;
+    char *msg = check_parity(NOISE[0], &FULL_RANGE_NOISE, 1, &skipped);
+    if (skipped) {
+        (void)fprintf(stderr, "[skip: no %s device or kernels] ", GPU_FEATURE);
+        mu_skipped = 1;
+    }
+    return msg;
 }
 
 /* init() with a zeroed private state. Only rejected sizes come through here:
@@ -444,10 +478,9 @@ static char *test_gpu_adm_rejects_below_min_dim(void)
 char *run_tests(void)
 {
     static const MuTest tests[] = {
-        MU_TEST(test_gpu_adm_rejects_below_min_dim),
-        MU_TEST(test_gpu_adm_tiny_frame_parity),
-        MU_TEST(test_gpu_adm_full_range_noise_parity),
-        MU_TEST(test_gpu_adm_bright_16bit_parity),
+        MU_TEST(test_gpu_adm_rejects_below_min_dim),   MU_TEST(test_gpu_adm_tiny_frame_parity),
+        MU_TEST(test_gpu_adm_full_range_noise_parity), MU_TEST(test_gpu_adm_bright_16bit_parity),
+        MU_TEST(test_gpu_adm_barten_mode_parity),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

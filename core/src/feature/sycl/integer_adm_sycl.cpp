@@ -133,6 +133,7 @@ struct AdmStateSycl {
     // rfactors: 3 bands x 4 scales = 12
     float rfactor[12];
     uint32_t i_rfactor[12];
+    uint32_t csf_normalization_shift[4];
 
     // DWT intermediate buffers
     int32_t *d_dwt_tmp_ref; // vertical DWT output for ref
@@ -346,33 +347,11 @@ AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist, int adm_ref_
     return f;
 }
 
-void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
-                            int adm_ref_display_height, int adm_csf_mode, uint32_t i_rfactor[3])
-{
-    if (std::fabs(adm_norm_view_dist * adm_ref_display_height -
-                  DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
-        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
-        i_rfactor[0] = 36453;
-        i_rfactor[1] = 36453;
-        i_rfactor[2] = 49417;
-    } else {
-        double const pow2_21 = std::pow(2.0, 21.0);
-        double const pow2_23 = std::pow(2.0, 23.0);
-        i_rfactor[0] = (uint32_t)(rfactor1[0] * pow2_21);
-        i_rfactor[1] = (uint32_t)(rfactor1[1] * pow2_21);
-        i_rfactor[2] = (uint32_t)(rfactor1[2] * pow2_23);
-    }
-}
-
 /**
- * Refuse a CSF configuration whose fixed-point weights would wrap
- * (ADR-1191). Mirrors `adm_csf_config_check()` in
- * core/src/feature/integer_adm.c so the CPU reference and this twin accept
- * exactly the same set of configurations -- the bounds in
- * adm_csf_fixed_point.h are the CPU pipeline's, deliberately applied here
- * too, because a twin that accepted a configuration the CPU rejects would
- * break the option / feature-name parity contract (ADR-1183). Returns 0 or
- * -EINVAL.
+ * Validate a CSF configuration before claiming device resources. Mirrors
+ * `adm_csf_config_check()` in core/src/feature/integer_adm.c so the CPU and
+ * this twin reject the same invalid table output. Finite over-range weights
+ * are assigned the shared per-scale normalisation exponent later.
  */
 int adm_csf_config_check(const AdmStateSycl *s)
 {
@@ -1395,16 +1374,17 @@ sycl::event launch_csf_den_cm_3band(
 /* CPU scoring functions                                               */
 /* ------------------------------------------------------------------ */
 
-void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_weight,
-                     double p_norm, double *result)
+void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, uint32_t normalization_shift,
+                     float noise_weight, double p_norm, double *result)
 {
     int const left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int const top = (int)(h * ADM_BORDER_FACTOR - 0.5);
     int const right = w - left;
     int const bottom = h - top;
 
-    const uint32_t shift_inner_accum = (uint32_t)std::ceil(std::log2(h));
+    const int shift_inner_accum = (int)std::ceil(std::log2(h));
     double const p_norm_exp = 1.0 / p_norm;
+    int const restored_bits = 3 * (int)normalization_shift;
 
     /* Promote powf_add to double to avoid fp32 precision loss on Arc A380
      * (no native fp64 device, but this function is host-side — no device impact). */
@@ -1420,18 +1400,19 @@ void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_
         double f_accum;
         if (scale == 0) {
             // CPU uses w (full band width) for shift_xcub, not active_w
-            const uint32_t shift_xcub[3] = {(uint32_t)(std::ceil(std::log2((double)w)) - 4),
-                                            (uint32_t)(std::ceil(std::log2((double)w)) - 4),
-                                            (uint32_t)(std::ceil(std::log2((double)w)) - 3)};
+            const int shift_xcub[3] = {(int)(std::ceil(std::log2((double)w)) - 4),
+                                       (int)(std::ceil(std::log2((double)w)) - 4),
+                                       (int)(std::ceil(std::log2((double)w)) - 3)};
             int const constant_offset[3] = {52, 52, 57};
-            f_accum =
-                accum[i] / std::pow(2.0, constant_offset[i] - shift_xcub[i] - shift_inner_accum);
+            f_accum = accum[i] / std::pow(2.0, constant_offset[i] - restored_bits - shift_xcub[i] -
+                                                   shift_inner_accum);
         } else {
             // CPU uses w (full band width) for shift_cub, not active_w
-            uint32_t const shift_cub = (uint32_t)std::ceil(std::log2((double)w));
-            double const final_shift[3] = {std::pow(2.0, 45.0 - shift_cub - shift_inner_accum),
-                                           std::pow(2.0, 39.0 - shift_cub - shift_inner_accum),
-                                           std::pow(2.0, 36.0 - shift_cub - shift_inner_accum)};
+            int const shift_cub = (int)std::ceil(std::log2((double)w));
+            double const final_shift[3] = {
+                std::pow(2.0, 45.0 - restored_bits - shift_cub - shift_inner_accum),
+                std::pow(2.0, 39.0 - restored_bits - shift_cub - shift_inner_accum),
+                std::pow(2.0, 36.0 - restored_bits - shift_cub - shift_inner_accum)};
             f_accum = (double)accum[i] / final_shift[scale - 1];
         }
         *result += std::pow(f_accum, p_norm_exp) + powf_add;
@@ -1507,10 +1488,9 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
         return -EINVAL;
     }
 
-    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
-     * represent before any device resource is claimed, so an unsupported
-     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
-     * Same accept/reject set as the CPU reference. */
+    /* Reject invalid CSF table output before any device resource is claimed.
+     * Finite over-range weights are normalised with the CPU's shared
+     * per-scale exponent below. */
     {
         const int csf_err = adm_csf_config_check(s);
         if (csf_err) {
@@ -1538,15 +1518,16 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
         s->rfactor[scale * 3 + 1] = f.factor1;
         s->rfactor[scale * 3 + 2] = f.factor2;
 
-        double const pow2_32 = std::pow(2.0, 32);
-
-        if (scale == 0) {
-            adm_csf_rfactor_scale0(&s->rfactor[0], s->adm_norm_view_dist, s->adm_ref_display_height,
-                                   s->adm_csf_mode, &s->i_rfactor[0]);
-        } else {
-            s->i_rfactor[scale * 3 + 0] = (uint32_t)(s->rfactor[scale * 3 + 0] * pow2_32);
-            s->i_rfactor[scale * 3 + 1] = (uint32_t)(s->rfactor[scale * 3 + 1] * pow2_32);
-            s->i_rfactor[scale * 3 + 2] = (uint32_t)(s->rfactor[scale * 3 + 2] * pow2_32);
+        size_t const band0 = (size_t)scale * 3;
+        double fixed[3];
+        s->csf_normalization_shift[scale] = 0u;
+        int const fixed_err = adm_csf_fixed_scale(
+            (int)scale, &s->rfactor[band0], s->adm_norm_view_dist, s->adm_ref_display_height,
+            s->adm_csf_mode, fixed, &s->csf_normalization_shift[scale]);
+        if (fixed_err == 0) {
+            s->i_rfactor[band0] = (uint32_t)fixed[0];
+            s->i_rfactor[band0 + 1] = (uint32_t)fixed[1];
+            s->i_rfactor[band0 + 2] = (uint32_t)fixed[2];
         }
     }
 
@@ -1813,7 +1794,8 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
          * Both conclude_* functions are host-side; no device-kernel impact. */
         double num_scale;
         double den_scale;
-        conclude_adm_cm(cm_results[scale], score_h, score_w, scale, (float)s->adm_noise_weight,
+        conclude_adm_cm(cm_results[scale], score_h, score_w, scale,
+                        s->csf_normalization_shift[scale], (float)s->adm_noise_weight,
                         s->adm_p_norm, &num_scale);
         conclude_adm_csf_den((uint64_t *)csf_den_results[scale], score_h, score_w, scale,
                              &den_scale, &s->rfactor[(size_t)scale * 3],
