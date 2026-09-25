@@ -1109,12 +1109,14 @@ class _ServerHttpScoringRuntime(HttpScoringRuntime):
 install_http_scoring_runtime(_ServerHttpScoringRuntime())
 
 
-def _infer_backend_from_payload(payload: dict[str, Any]) -> str:
+def _infer_backend_from_payload(payload: Any) -> str:
     """Read the CLI's backend receipt without guessing from metric counts.
 
     Current fork binaries emit ``backend_used`` in JSON. Older or external
     binaries may omit it; an absent or invalid receipt stays ``unknown``.
     """
+    if not isinstance(payload, dict):
+        return "unknown"
     backend_used = payload.get("backend_used")
     if isinstance(backend_used, str) and backend_used in _VALID_BACKEND_RECEIPTS:
         return backend_used

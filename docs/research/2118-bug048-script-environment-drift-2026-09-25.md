@@ -2,8 +2,8 @@
 
 ## Finding
 
-Two current scripts and one wrapper still encoded environments that no longer
-exist:
+Two current scripts and both MCP wrappers still encoded environments that no
+longer exist:
 
 - `testdata/bench_all.sh` fell back to the retired
   `/home/kilian/dev/vmaf` checkout when invoked outside a Git working
@@ -22,12 +22,13 @@ exist:
   backend and a deleted `vulkan_device` argument. Its untyped scorer-output
   loader also indexed `json.load()` directly, so malformed output failed later
   with incidental indexing/type errors instead of a bounded schema diagnostic.
-- The Python MCP wrapper repeated the stale-count assumption in
-  `_infer_backend_from_payload`: it called 12-or-fewer metric keys `gpu` and
+- The Python and Go MCP wrappers repeated the stale-count assumption in their
+  backend-inference helpers: they called 12-or-fewer metric keys `gpu` and
   larger payloads `cpu`. Current CUDA output can contain 14 keys, so a
   successful CUDA auto-dispatch could be relabelled as CPU even though the
   fork's CLI already writes an authoritative top-level `backend_used` receipt.
-  Valid top-level arrays also reached mapping mutation and failed incidentally.
+  Non-object JSON also reached incidental failures; Go's `null` case could
+  panic while annotating a nil map.
 
 ## Resolution
 
@@ -41,13 +42,14 @@ rather than permanent expectations. The calibration help and fixture now
 describe CUDA, while retaining SYCL as the other selectable backend.
 The frame loader validates the top-level object, the `frames` array, and each
 frame object before pairing metrics.
-For MCP auto scoring, the wrapper now accepts the concrete `backend_used`
-receipt emitted by the CLI and returns `unknown` when an older or external
-binary omits it or supplies an invalid value. It no longer classifies a backend
-by metric count. MCP score JSON must be a top-level object before the wrapper
-adds response metadata.
-The source-ADR citation registry was regenerated after the four obsolete
-ADR-0726 sites left the shell harness.
+For MCP auto scoring, both wrappers now accept the concrete `backend_used`
+receipt emitted by the CLI and return `unknown` when an older or external
+binary omits it or supplies an invalid value. Neither classifies a backend by
+metric count. MCP score JSON must be a top-level object before either wrapper
+adds response metadata. Go's direct-cgo path remains separate and keeps its
+explicit `cpu (direct cgo)` receipt.
+The source-ADR citation registry was regenerated after obsolete ADR-0726 sites
+left the shell harness and both count-heuristic implementations.
 
 The regression test rejects the retired absolute checkout, backend name, and
 fixed key-count contracts; requires script-relative root discovery; and
@@ -55,10 +57,11 @@ rejects lavapipe in the current CLI help. A hermetic fake `vmaf` invocation
 runs the harness from an unrelated working directory, proves all nine calls
 execute from the tracked repository root, and exercises the equal-count
 fallback warning. It performs no real scoring, benchmarking, or training.
-MCP red caps pair the dated CPU 15 / CUDA 14 / SYCL 24 observations with
-explicit CLI receipts, proving the receipt wins without freezing the counts;
-missing and invalid receipts resolve to `unknown`, and top-level non-object
-score JSON is rejected.
+Python and Go MCP red caps pair the dated CPU 15 / CUDA 14 / SYCL 24
+observations with explicit CLI receipts, proving the receipt wins without
+freezing the counts; missing and invalid receipts resolve to `unknown`, and
+top-level non-object score JSON is rejected. Go also proves an explicit backend
+request still wins and the direct-cgo receipt remains intact.
 
 ## Verification
 
@@ -70,6 +73,10 @@ mypy --config-file pyproject.toml \
 bash -n testdata/bench_all.sh
 shellcheck testdata/bench_all.sh
 nox -s mcp -- -k 'bug1_auto or infer_backend_from_payload or score_payload_rejects'
+CGO_LDFLAGS=-L"$PWD/core/build-cpu/src" \
+LD_LIBRARY_PATH="$PWD/core/build-cpu/src" \
+  go test ./cmd/vmafx-mcp -run \
+  '^(TestInferBackendFromPayload|TestDecodeVmafOutput.*|TestHandleVmafScore_RoutesToDirect)$'
 ```
 
 ## Alternatives considered
@@ -85,5 +92,6 @@ nox -s mcp -- -k 'bug1_auto or infer_backend_from_payload or score_payload_rejec
 No ADR is needed: this restores the existing portable-root and live-backend
 contracts without choosing a new architecture or policy. The existing MCP
 response field now consumes the CLI receipt that was already designed for this
-purpose; its schema is unchanged. No public C API, Netflix golden assertion,
-FFmpeg patch, benchmark result, model, or training output changes.
+purpose in both server implementations; its schema is unchanged. No public C
+API, Netflix golden assertion, FFmpeg patch, benchmark result, model, or
+training output changes.

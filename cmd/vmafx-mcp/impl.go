@@ -769,9 +769,13 @@ func decodeVmafOutput(
 			"backend_used":      backend,
 		}, nil
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(data, &payload); err != nil {
+	var decoded any
+	if err := json.Unmarshal(data, &decoded); err != nil {
 		return nil, fmt.Errorf("failed to parse vmaf output: %w", err)
+	}
+	payload, ok := decoded.(map[string]any)
+	if !ok {
+		return nil, errors.New("failed to parse vmaf output: expected top-level JSON object")
 	}
 	payload["backend_requested"] = backend
 	if backend != "auto" {
@@ -786,26 +790,19 @@ func decodeVmafOutput(
 	return payload, nil
 }
 
-// inferBackendFromPayload guesses the backend from the frame metrics count.
-// Mirrors the Python _infer_backend_from_payload for byte-parity:
-//   - 0 frames → cpu (safe default)
-//   - <= 12 metrics → gpu (generic GPU path; stripped metric set)
-//   - > 12 metrics → cpu  (standard CPU feature set)
-//
-// (ADR-0726 removed the Vulkan backend; the prior >=30→"vulkan" branch
-// emitted a value the Python side never produces — a parity violation.)
-func inferBackendFromPayload(payload map[string]any) string {
-	frames, _ := payload["frames"].([]any)
-	if len(frames) == 0 {
-		return "cpu"
+// inferBackendFromPayload reads the concrete receipt emitted by the vmaf CLI.
+// Metric counts evolve with extractor registration and cannot identify a
+// backend. Missing, generic, auto, non-string, non-object, and unknown receipts fail closed.
+func inferBackendFromPayload(payload any) string {
+	m, ok := payload.(map[string]any)
+	if !ok || m == nil {
+		return "unknown"
 	}
-	first, _ := frames[0].(map[string]any)
-	metrics, _ := first["metrics"].(map[string]any)
-	n := len(metrics)
-	if n <= 12 {
-		return "gpu"
+	backendUsed, ok := m["backend_used"].(string)
+	if !ok || backendUsed == "auto" || !validBackends[backendUsed] {
+		return "unknown"
 	}
-	return "cpu"
+	return backendUsed
 }
 
 // Model resolution hints — mirrors Python _MODEL_RES_HINTS.

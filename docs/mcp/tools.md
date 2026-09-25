@@ -53,12 +53,12 @@ guaranteed by the MCP response (ADR-0495):
 
 - `backend_requested` — verbatim echo of the caller's `backend` arg.
 - `backend_used` — what actually ran. For an explicit `backend` arg
-  this equals the requested value (the wrapper refuses to silently
-  fall back). For `backend="auto"`, the wrapper preserves the
+  this equals the requested value (both wrappers refuse to silently
+  fall back). For `backend="auto"`, the Python and Go wrappers preserve the
   `backend_used` receipt emitted by the fork's `vmaf` CLI (`"cpu"`,
   `"cuda"`, `"sycl"`, `"hip"`, or `"metal"`). Older or external
-  binaries that omit a valid receipt produce `"unknown"`; the wrapper
-  never guesses from the number of metric keys because that count changes
+  binaries that omit a valid receipt produce `"unknown"`; neither wrapper
+  guesses from the number of metric keys because that count changes
   as extractors evolve.
 
 When the local `vmaf` binary does not advertise the requested
