@@ -31,6 +31,27 @@ see [CI job display names](ci-job-names.md). For every build lane, whether it
 is required and which ADR owns it, see
 [ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md).
 
+## Python type-check gate
+
+`Python Lint` is a required, fail-closed check. It installs the reviewed
+`requirements/locks/mypy.txt` lock and runs the same merge-base gate as the
+local `mypy-local` pre-push hook:
+
+```bash
+python3 scripts/git-hooks/pre-push-mypy.py
+```
+
+The gate checks added, copied, modified, renamed, and type-changed tracked
+`*.py` paths under `ai/` and `scripts/`. It reports only findings absent from
+the selected merge base, but an analysis crash, missing tool/base/file, or
+unattributable nonzero status fails the job. `ai/src/` is checked separately
+with `--explicit-package-bases` so each module has one canonical identity.
+
+Pull requests compare with `origin/master`. A master push compares with the
+event's previous commit, so hosted post-merge validation covers the pushed
+range. See [ADR-1310](../adr/1310-mypy-ci-fail-closed.md) and the detailed
+[hook contract](pre-commit-hooks.md#python-push-scope).
+
 ## Draft pull requests defer heavy CI
 
 Per [ADR-0331](../adr/0331-skip-ci-on-draft-prs.md), every

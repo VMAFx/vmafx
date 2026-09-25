@@ -537,7 +537,7 @@ repos:
         name: Test and scan failures remain observable in CI
         entry: python3 -B scripts/ci/test_fail_closed_ci.py
         language: system
-        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|\.github/workflows/(nightly|required-aggregator|rule-enforcement|sanitizers|security-scans|tests-and-quality-gates)\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|\.github/workflows/(lint-and-format|nightly|required-aggregator|rule-enforcement|sanitizers|security-scans|tests-and-quality-gates)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

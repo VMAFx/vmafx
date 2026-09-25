@@ -50,6 +50,34 @@ def workflow_job(text: str, job_id: str) -> str:
     return match.group(0)
 
 
+def python_lint_job_problems(job: str) -> list[str]:
+    """Return fail-open defects in the required Python Lint job."""
+    problems: list[str] = []
+    if "fetch-depth: 0" not in job:
+        problems.append("Python Lint checkout must fetch merge-base history")
+    if "pip install --require-hashes -r requirements/locks/mypy.txt" not in job:
+        problems.append("Python Lint must install the hash-locked mypy toolchain")
+    try:
+        check = workflow_step(job, "Run merge-base mypy gate")
+    except AssertionError:
+        problems.append("Python Lint must invoke the merge-base mypy gate")
+        return problems
+    body = executable_body(check)
+    if (
+        "VMAFX_MYPY_BASE_REF:" not in check
+        or "github.event.before" not in check
+        or "origin/master" not in check
+    ):
+        problems.append("Python Lint must select a PR or push merge-base authority")
+    if "python3 scripts/git-hooks/pre-push-mypy.py" not in body:
+        problems.append("Python Lint must use the canonical merge-base mypy gate")
+    if "continue-on-error:" in check or re.search(r"(?m)^\s*run:.*\|\|", body):
+        problems.append("Python Lint must propagate the mypy gate status")
+    if re.search(r"\bmypy\s+(?:ai/|scripts/)", body):
+        problems.append("Python Lint must not bypass canonical module-identity splitting")
+    return problems
+
+
 class FailClosedCIContract(unittest.TestCase):
     def test_contract_is_wired_into_required_ci_and_local_hooks(self) -> None:
         rules = (WORKFLOWS / "rule-enforcement.yml").read_text(encoding="utf-8")
@@ -58,6 +86,10 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn(command, rules)
         self.assertIn("id: fail-closed-ci-contract", hooks)
         self.assertRegex(hooks, r"entry: python3(?: -B)? scripts/ci/test_fail_closed_ci\.py")
+        hook = hooks.split("      - id: fail-closed-ci-contract\n", maxsplit=1)[1].split(
+            "      - id:", maxsplit=1
+        )[0]
+        self.assertIn("lint-and-format", hook)
 
     def test_python_tox_warnings_and_coverage_fail_closed(self) -> None:
         tox = (ROOT / "python" / "tox.ini").read_text(encoding="utf-8")
@@ -105,6 +137,31 @@ class FailClosedCIContract(unittest.TestCase):
         registry = workflow_step(workflow, "Run semgrep (registry rule packs — advisory)")
         self.assertIn("continue-on-error: true", registry)
         self.assertNotIn("|| true", executable_body(registry))
+
+    def test_python_lint_uses_the_fail_closed_merge_base_gate(self) -> None:
+        workflow = (WORKFLOWS / "lint-and-format.yml").read_text(encoding="utf-8")
+        job = workflow_job(workflow, "python-lint")
+        self.assertEqual(python_lint_job_problems(job), [])
+
+    def test_python_lint_contract_detects_fail_open_mutations(self) -> None:
+        workflow = (WORKFLOWS / "lint-and-format.yml").read_text(encoding="utf-8")
+        job = workflow_job(workflow, "python-lint")
+        mutations = {
+            "shallow checkout": job.replace("fetch-depth: 0", "fetch-depth: 1", 1),
+            "unhashed checker": job.replace(" --require-hashes", "", 1),
+            "missing push base": job.replace("github.event.before", "github.sha", 1),
+            "advisory status": job.replace(
+                "python3 scripts/git-hooks/pre-push-mypy.py",
+                'python3 scripts/git-hooks/pre-push-mypy.py || echo "advisory"',
+                1,
+            ),
+            "raw directory scan": job.replace(
+                "python3 scripts/git-hooks/pre-push-mypy.py", "mypy ai/ scripts/", 1
+            ),
+        }
+        for name, mutated in mutations.items():
+            with self.subTest(name=name):
+                self.assertTrue(python_lint_job_problems(mutated))
 
     def test_sanitizer_enumeration_does_not_mask_producer_errors(self) -> None:
         expected_counts = {"tests-and-quality-gates.yml": 1, "sanitizers.yml": 2}

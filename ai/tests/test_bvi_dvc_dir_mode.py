@@ -23,6 +23,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -93,7 +94,7 @@ def test_process_clip_yuv_cache_uses_strict_json(
     source.write_bytes(b"fake")
     monkeypatch.setattr(mod, "_encode_dis_10bit_from_yuv", lambda *_args, **_kwargs: None)
 
-    def fake_run_vmaf(*args, **_kwargs) -> None:
+    def fake_run_vmaf(*args: Any, **_kwargs: Any) -> None:
         args[5].write_text(
             json.dumps(
                 {

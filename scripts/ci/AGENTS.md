@@ -281,6 +281,23 @@ Raise all three in one commit. Fixture:
 trigger file to the `test-base-image-single-source` hook's `files:` regex, which
 is what decides when the `test_*single_source.py` discovery runs.
 
+### Required Python Lint reuses the merge-base gate (ADR-1310)
+
+`.github/workflows/lint-and-format.yml` must install
+`requirements/locks/mypy.txt` with `--require-hashes`, fetch full history, and
+invoke `scripts/git-hooks/pre-push-mypy.py` without `continue-on-error` or a
+shell success tail. Pull requests use `origin/master`; master pushes pass
+`github.event.before` through `VMAFX_MYPY_BASE_REF` so the post-merge job does
+not compare HEAD with itself. The local hook's default stays `origin/master`.
+
+Keep `test_fail_closed_ci.py` wired to Rule Enforcement and to the
+`fail-closed-ci-contract` hook, with `lint-and-format.yml` in that hook's file
+trigger. Its mutation matrix rejects shallow history, unhashed checker install,
+missing push-base authority, advisory exit masking, and raw `mypy ai/ scripts/`
+directory discovery. Base-override behavior belongs in
+`scripts/git-hooks/test-pre-push-mypy.py`; do not duplicate selection or
+fingerprint logic in a CI-only script.
+
 ### Dev-container GitHub build secret (ADR-1271)
 
 `check-dev-container-build-secret.py` binds five surfaces: the optional
@@ -313,7 +330,7 @@ until master fixed.
 | `test_go_workflow_contract.py` | `rule-enforcement.yml` — `Verify Go required-check contract` | Uses the shared aggregator harness for Go pass/fail outcomes and guards ready-event coverage plus step-level `go_checks` routing. Keep it before authoring exemptions (ADR-1238). |
 | `test_sycl_tidy_workflow_contract.py` | `rule-enforcement.yml` — `Verify SYCL required clang-tidy contract`; `.pre-commit-config.yaml` — `test-sycl-tidy-workflow-contract` | Enforces that `Tidy SYCL` in `lint-and-format.yml` is a strict-must-report, non-advisory required gate (`# required-aggregator`, no `continue-on-error`, full `.h`/`.cpp`/`.hpp` SYCL source and test coverage in every event branch). Uses the shared aggregator harness to prove failure or absence blocks merge while success passes. |
 | `test_security_workflow_contract.py` | `rule-enforcement.yml` — `Verify Security Scans concurrency contract` | The Security Scans group must include workflow, event name, and ref. This keeps same-event cancellation while preventing a schedule on `refs/heads/master` from canceling a master-push CodeQL run (or vice versa). The same test pins C/C++ Meson configure before CodeQL initialization, compile after initialization, and an external `${{ runner.temp }}/build` root so generated compiler probes are never extracted as repository source. |
-| `test_fail_closed_ci.py` | `rule-enforcement.yml` — `Verify fail-closed CI contract`; `.pre-commit-config.yaml` — `fail-closed-ci-contract` | Protects real exit propagation for tox coverage, CPU coverage pytest, nightly benchmarks, advisory Semgrep, and sanitizer test discovery. Diagnostic continuation is valid only when a final `if: always()` step reasserts the recorded raw outcome. Keep both callers wired. |
+| `test_fail_closed_ci.py` | `rule-enforcement.yml` — `Verify fail-closed CI contract`; `.pre-commit-config.yaml` — `fail-closed-ci-contract` | Protects real exit propagation for tox coverage, CPU coverage pytest, nightly benchmarks, advisory Semgrep, sanitizer test discovery, and required Python Lint. The mypy contract also pins full history, its hash-locked install, exact push-base authority, and canonical merge-base runner. Diagnostic continuation is valid only when a final `if: always()` step reasserts the recorded raw outcome. Keep both callers wired. |
 | `tests/test-dedupe-gate.sh` | `standards-gate.yml` — `Reject duplicate implementation families`; `rule-enforcement.yml` — `Verify duplicate implementation gate`; `.pre-commit-config.yaml` — `dedupe-gate-contract`; `lefthook.yml`; `make verify-all` | The clone scan stays explicit in the required Standards job, both blocking local lefthook stages, and the aggregate local command. Its real-Make fixture proves a scanner failure makes `make verify-all` fail. `standardsctl audit` is not a substitute because it does not run the AST clone detector. |
 
 | `agent-eligibility-precheck.py` | (no workflow lane today; called manually from `.claude/workflows/*.md` per [ADR-0355](../../docs/adr/0355-symphony-agent-dispatch-infra.md)) | Loads `scripts/lib/backlog_tracker.py`; the two files move together. The exit-code contract (0 = eligible, 1 = block, 2 = bad CLI usage) and the `::error title=...::...` stderr format are **the** dispatcher contract. Missing rows, unreadable task files, and unavailable or failed GitHub queries block dispatch unless the operator selected the corresponding explicit `--skip-*` flag. Never change the contract without updating `.claude/workflows/_template.md` and `docs/development/agent-dispatch.md` in the same PR. |

@@ -97,21 +97,21 @@ Two consequences worth knowing:
 - A non-zero exit with nothing to attribute to a file is treated as mypy
   breaking, and blocks the push.
 
-The reason for the delta is that `mypy` in CI is advisory
-(`|| echo "mypy advisory only on first run"` in the `Python Lint` job) because
-numpy, pandas and torch stub coverage is uneven, so how many findings a
-checkout reports depends on which of those packages it has installed. A
-blocking local hook that reported all of them rejected findings that `master`
-produces on its own files.
+The delta keeps inherited debt from blocking unrelated changes. The required
+hosted `Python Lint` job and the local hook both run this same gate; neither
+uses a separate whole-tree exception list. Pull requests compare with the
+fetched `origin/master`, while a master push supplies the event's exact prior
+commit through `VMAFX_MYPY_BASE_REF`, so post-merge CI checks the Python paths
+that actually landed rather than comparing `HEAD` with itself.
 
-The blocking hook also passes `--no-site-packages` and
+Both blocking callers pass `--no-site-packages` and
 `--disable-error-code=import-not-found`. Its result therefore does not depend
 on arbitrary PEP 561 packages in the active environment. Selected repository
 sources, repository imports that resolve, and standard-library types are still
-checked. Missing-import diagnostics and dependency-provided type detail remain
-in the dependency-rich but advisory hosted run. This separation prevents a
-newer installed stub from crashing a check configured for the repository's
-older Python target before any attributable finding is emitted.
+checked. The hosted job installs the same hash-locked mypy toolchain from
+`requirements/locks/mypy.txt`; it does not install or run the training stack.
+This isolation prevents a newer ambient stub from changing the gate or crashing
+it before any attributable finding is emitted.
 
 Files under `ai/src/` are checked in a separate run with
 `--explicit-package-bases`. That directory is a `mypy_path` base, so without
@@ -122,6 +122,14 @@ Run the same check manually from the repository root:
 
 ```bash
 python3 scripts/git-hooks/pre-push-mypy.py
+```
+
+CI may select an explicit comparison authority without changing the local
+default:
+
+```bash
+VMAFX_MYPY_BASE_REF=<previous-commit> \
+  python3 scripts/git-hooks/pre-push-mypy.py
 ```
 
 The checked-out HEAD must match the outgoing commit supplied by pre-commit;
