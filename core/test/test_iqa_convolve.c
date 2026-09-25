@@ -24,6 +24,8 @@
  * The assertion is strict byte-equality via memcmp.
  */
 
+#include <float.h>
+#include <math.h>
 #include <stdint.h>
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -36,7 +38,12 @@
 #include <string.h>
 
 #include "config.h"
+#include "feature/ms_ssim_decimate.h"
+#include "feature/picture_copy.h"
+#include "feature/pu21_math.h"
 #include "feature/iqa/convolve.h"
+#include "feature/iqa/ssim_tools.h"
+#include "libvmaf/picture.h"
 #if ARCH_X86
 #include "feature/x86/convolve_avx2.h"
 #if HAVE_AVX512
@@ -69,6 +76,16 @@ static const float kernel_gauss11[11] = {0.001028f, 0.007599f, 0.036001f, 0.1093
 static const float kernel_box8[8] = {0.125f, 0.125f, 0.125f, 0.125f,
                                      0.125f, 0.125f, 0.125f, 0.125f};
 
+/* Production-domain bounds for CodeQL alert 1005. `picture_copy()` keeps
+ * supported integer samples below 2^8. Four signed MS-SSIM decimations each
+ * have induced L-infinity gain below 2, so the last pyramid level is below
+ * 2^12 and its squared/cross terms are below 2^24. PU21 stays below 2^10,
+ * making its squared/cross terms smaller still. Research-2031. */
+#define SSIM_SAMPLE_BOUND 0x1p8f
+#define MS_SSIM_LEVEL_BOUND 0x1p12f
+#define MS_SSIM_STATS_BOUND 0x1p24f
+#define PU21_SAMPLE_BOUND 0x1p10
+
 /* Deterministic pseudo-random fill — reproducible across runs. */
 static void fill_pattern(float *buf, size_t n, uint32_t seed)
 {
@@ -79,6 +96,140 @@ static void fill_pattern(float *buf, size_t n, uint32_t seed)
         state ^= state << 5;
         buf[i] = ((float)(int32_t)state) / (float)INT32_MAX;
     }
+}
+
+static int copy_max_sample(unsigned bpc, float *sample)
+{
+    VmafPicture pic = {0};
+    const int err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV400P, bpc, 1, 1);
+    if (err)
+        return err;
+
+    if (bpc == 8U) {
+        *(uint8_t *)pic.data[0] = UINT8_MAX;
+    } else {
+        *(uint16_t *)pic.data[0] = (uint16_t)((1U << bpc) - 1U);
+    }
+    picture_copy(sample, (ptrdiff_t)sizeof(*sample), &pic, 0, bpc, 0);
+    return vmaf_picture_unref(&pic);
+}
+
+static char *test_picture_copy_sample_bound(void)
+{
+    static const unsigned bpcs[] = {8U, 10U, 12U, 16U};
+    for (size_t i = 0; i < sizeof(bpcs) / sizeof(bpcs[0]); ++i) {
+        float sample = 0.0f;
+        mu_assert("picture_copy fixture failed", copy_max_sample(bpcs[i], &sample) == 0);
+        mu_assert("picture_copy sample must be finite", isfinite(sample));
+        mu_assert("picture_copy sample must be in [0, 2^8)",
+                  sample >= 0.0f && sample < SSIM_SAMPLE_BOUND);
+    }
+    return NULL;
+}
+
+/* Derive the production 9x9 decimator's effective interior impulse response
+ * through its real scalar implementation. Its L1 norm bounds L-infinity gain;
+ * the signed 9/7 coefficients overshoot unity, but remain strictly below 2. */
+static char *test_ms_ssim_decimate_gain_bound(void)
+{
+    enum { SRC_SIDE = 17, DST_SIDE = 9, HALF = 4 };
+    float src[SRC_SIDE * SRC_SIDE];
+    float dst[DST_SIDE * DST_SIDE];
+    double impulse_l1 = 0.0;
+    for (int y = HALF; y < SRC_SIDE - HALF; ++y) {
+        for (int x = HALF; x < SRC_SIDE - HALF; ++x) {
+            memset(src, 0, sizeof(src));
+            src[y * SRC_SIDE + x] = 1.0f;
+            int rw = 0;
+            int rh = 0;
+            mu_assert("ms_ssim_decimate_scalar failed",
+                      ms_ssim_decimate_scalar(src, SRC_SIDE, SRC_SIDE, dst, &rw, &rh) == 0);
+            mu_assert("ms_ssim_decimate_scalar geometry changed", rw == DST_SIDE && rh == DST_SIDE);
+            impulse_l1 += fabs((double)dst[HALF * DST_SIDE + HALF]);
+        }
+    }
+    mu_assert("signed MS-SSIM filter should have gain above unity", impulse_l1 > 1.0);
+    mu_assert("MS-SSIM decimator gain must stay below 2", impulse_l1 < 2.0);
+    return NULL;
+}
+
+static char *test_pu21_sample_bound(void)
+{
+    for (int variant = 0; variant < PU21_VARIANT_COUNT; ++variant) {
+        const double *p = pu21_params[variant];
+        mu_assert("PU21 coefficients must keep the rational term monotone",
+                  p[0] > 0.0 && p[1] > 0.0 && p[1] > p[0] * p[2] && p[2] >= 0.0);
+        mu_assert("PU21 exponents and scale must be positive",
+                  p[3] > 0.0 && p[4] > 0.0 && p[6] > 0.0);
+        const double endpoint = pu21_encode(PU21_L_MAX, p);
+        mu_assert("PU21 endpoint must be finite", isfinite(endpoint));
+        mu_assert("PU21 production samples must stay in [0, 2^10)",
+                  endpoint >= 0.0 && endpoint < PU21_SAMPLE_BOUND);
+    }
+    return NULL;
+}
+
+static int kernel_is_subunit(const float *kernel, size_t n)
+{
+    for (size_t i = 0; i < n; ++i) {
+        if (fabsf(kernel[i]) > 1.0f)
+            return 0;
+    }
+    return 1;
+}
+
+static int kernels_equal(const float *actual, const float *expected, size_t n)
+{
+    for (size_t i = 0; i < n; ++i) {
+        if (actual[i] != expected[i])
+            return 0;
+    }
+    return 1;
+}
+
+static char *test_convolve_kernel_bound(void)
+{
+    mu_assert("test Gaussian horizontal taps drifted from production",
+              kernels_equal(kernel_gauss11, g_gaussian_window_h,
+                            sizeof(kernel_gauss11) / sizeof(kernel_gauss11[0])));
+    mu_assert("test Gaussian vertical taps drifted from production",
+              kernels_equal(kernel_gauss11, g_gaussian_window_v,
+                            sizeof(kernel_gauss11) / sizeof(kernel_gauss11[0])));
+    mu_assert("test box horizontal taps drifted from production",
+              kernels_equal(kernel_box8, g_square_window_h,
+                            sizeof(kernel_box8) / sizeof(kernel_box8[0])));
+    mu_assert("test box vertical taps drifted from production",
+              kernels_equal(kernel_box8, g_square_window_v,
+                            sizeof(kernel_box8) / sizeof(kernel_box8[0])));
+    mu_assert(
+        "Gaussian taps must stay at or below unity",
+        kernel_is_subunit(kernel_gauss11, sizeof(kernel_gauss11) / sizeof(kernel_gauss11[0])));
+    mu_assert("box taps must stay at or below unity",
+              kernel_is_subunit(kernel_box8, sizeof(kernel_box8) / sizeof(kernel_box8[0])));
+    mu_assert("2D production taps must stay below unity",
+              fabsf(g_gaussian_window[5][5]) < 1.0f && fabsf(g_square_window[0][0]) < 1.0f);
+    return NULL;
+}
+
+static char *test_convolve_product_bound(void)
+{
+    mu_assert("four MS-SSIM gain bounds must map 2^8 to 2^12",
+              ldexpf(SSIM_SAMPLE_BOUND, SCALES - 1) == MS_SSIM_LEVEL_BOUND);
+    mu_assert("MS-SSIM squared/cross bound must be 2^24",
+              MS_SSIM_LEVEL_BOUND * MS_SSIM_LEVEL_BOUND == MS_SSIM_STATS_BOUND);
+    mu_assert("PU21 stats must fit inside the MS-SSIM stats bound",
+              PU21_SAMPLE_BOUND * PU21_SAMPLE_BOUND <= MS_SSIM_STATS_BOUND);
+
+    /* Even if every one of eleven horizontal products reached 2^24, the
+     * float cache remains below 2^28. The flagged vertical float multiply has
+     * a <=1 tap, leaving a 100-binary-exponent margin below FLT_MAX. */
+    const float flagged_product_bound = 0x1p28f;
+    mu_assert("eleven worst-case horizontal terms must fit below 2^28",
+              11.0 * (double)MS_SSIM_STATS_BOUND < (double)flagged_product_bound);
+    mu_assert("float format lacks the required exponent range", FLT_MAX_EXP > 28);
+    mu_assert("flagged product bound must be finite",
+              isfinite(flagged_product_bound) && flagged_product_bound < FLT_MAX);
+    return NULL;
 }
 
 #if ARCH_X86 || ARCH_AARCH64
@@ -220,6 +371,32 @@ static char *check_case(int w, int h, int kw, const float *kernel_h, const float
 }
 // NOLINTEND(clang-analyzer-unix.Malloc)
 
+/* Exercise the exact alert-1005 expression at the largest production-domain
+ * magnitude and require the supported implementation to stay finite and
+ * byte-identical across scalar/SIMD paths. The separate Gaussian fixtures are
+ * the red-capable detector for a pre-widening mutation. ADR-0138 / Research-2031. */
+static char *test_domain_ceiling_convolve(void)
+{
+    enum { SIDE = 12, KERNEL_SIDE = 11, DST_SIDE = 2 };
+    float src[SIDE * SIDE];
+    float dst_scalar[DST_SIDE * DST_SIDE];
+    const size_t src_n = (size_t)SIDE * (size_t)SIDE;
+    const size_t dst_n = (size_t)DST_SIDE * (size_t)DST_SIDE;
+    fill_pattern(src, src_n, 0x1005c0deU);
+    const float ceiling = nextafterf(MS_SSIM_STATS_BOUND, 0.0f);
+    for (size_t i = 0; i < sizeof(src) / sizeof(src[0]); ++i)
+        src[i] *= ceiling;
+
+    char *msg = run_scalar_reference(src, SIDE, SIDE, KERNEL_SIDE, kernel_gauss11, kernel_gauss11,
+                                     src_n, dst_scalar);
+    if (msg)
+        return msg;
+    for (size_t i = 0; i < sizeof(dst_scalar) / sizeof(dst_scalar[0]); ++i)
+        mu_assert("domain-ceiling convolve output must stay finite", isfinite(dst_scalar[i]));
+    return check_all_simd_variants(src, SIDE, SIDE, KERNEL_SIDE, kernel_gauss11, kernel_gauss11,
+                                   dst_scalar, dst_n);
+}
+
 /* Gaussian (11-tap, kw_even=0) cases. */
 static char *test_gauss_11x11(void)
 {
@@ -344,11 +521,26 @@ static char *run_box_tests(void)
     return NULL;
 }
 
+static char *run_domain_bound_tests(void)
+{
+    mu_run_test(test_picture_copy_sample_bound);
+    mu_run_test(test_ms_ssim_decimate_gain_bound);
+    mu_run_test(test_pu21_sample_bound);
+    mu_run_test(test_convolve_kernel_bound);
+    mu_run_test(test_convolve_product_bound);
+    return NULL;
+}
+
 char *run_tests(void)
 {
-    if (!detect_simd_support())
+    char *msg = run_domain_bound_tests();
+    if (msg)
+        return msg;
+    const int has_simd = detect_simd_support();
+    mu_run_test(test_domain_ceiling_convolve);
+    if (!has_simd)
         return NULL;
-    char *msg = run_gauss_tests();
+    msg = run_gauss_tests();
     if (msg)
         return msg;
     return run_box_tests();

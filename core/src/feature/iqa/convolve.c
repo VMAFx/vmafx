@@ -153,8 +153,10 @@ static void iqa_convolve_vertical_pass(const float *img_cache, int w, const stru
             const int kx = x + uc;
             const ptrdiff_t img_offset = (ptrdiff_t)ky * w + kx;
             for (int v = -vc; v <= vc - kh_even; ++v, ++k_offset) {
-                const float prod = img_cache[img_offset + (ptrdiff_t)v * w] * k->kernel_v[k_offset];
-                sum += (double)prod;
+                /* Production SSIM/MS-SSIM/PU21 product is bounded by 2^28;
+                 * pre-widening would violate scalar/SIMD bit identity. */
+                // codeql[cpp/integer-multiplication-cast-to-long] — ADR-0138 / Research-2031
+                sum += img_cache[img_offset + (ptrdiff_t)v * w] * k->kernel_v[k_offset];
             }
             dst[(ptrdiff_t)y * dst_w + x] = (float)(sum * scale);
         }

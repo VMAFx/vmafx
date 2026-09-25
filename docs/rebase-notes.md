@@ -51625,8 +51625,11 @@ Documentation only. One thing worth knowing:
    twins widen *after* multiplying to stay bit-identical
    ([ADR-0138](adr/0138-iqa-convolve-avx2-bitexact-double.md)), and
    `test_iqa_convolve` fails the moment the scalar side is widened. CodeQL
-   alert 1005 on that line is reported-not-fixed on purpose — see
-   [research digest 2031](research/2031-codeql-float-widening-multiplication.md).
+   alert 1005's exact vertical-pass expression carries a narrow source
+   suppression backed by executable SSIM/MS-SSIM/PU21 domain bounds (the
+   product is at most `2^28`). Preserve the standalone directive immediately
+   before that expression and the domain tests; never broaden the suppression.
+   See [research digest 2031](research/2031-codeql-float-widening-multiplication.md).
 
 ## ADR-1204 / ADR-1205 — ADM CM edge policy and the ssimulacra2 FMA contract
 
