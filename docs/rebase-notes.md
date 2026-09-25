@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/sycl-motion-uv-tolerance — fixed-point oracle for SYCL motion-add-UV (2026-09-25)
+
+`test_sycl_motion_add_uv_parity` must compare `motion_sycl` with the scalar
+fixed-point oracle, not with CPU `float_motion`. Preserve the five integer
+coefficients, reflect-101 mapping, vertical and horizontal rounding stages,
+exact per-plane SAD, YUV420 geometry, and normalized binary64 error bound in
+the oracle. Both the 256x144 and registered 960x540 variants are required; a
+rebase must not restore the former large-fixture exclusion or an empirical
+absolute tolerance. Production SYCL source is unchanged.
+
+- Research digest: [Research-2109](research/2109-sycl-motion-uv-fixed-oracle-2026-09-25.md).
+- Decision matrix: [ADR-1326](adr/1326-sycl-motion-uv-fixed-oracle.md#alternatives-considered).
+- AGENTS.md invariant: `core/test/AGENTS.md`, “SYCL motion-add-UV fixed-point
+  oracle”; and `core/src/feature/sycl/AGENTS.md`, “motion_add_uv fixed-point
+  parity”.
+- Reproducer / smoke:
+  `ONEAPI_DEVICE_SELECTOR=level_zero:gpu meson test -C build-sycl --no-rebuild --print-errorlogs test_sycl_motion_add_uv_parity test_sycl_motion_add_uv_parity_large`.
+- Changelog: `changelog.d/fixed/sycl-motion-add-uv-fixed-oracle.md`.
+- FFmpeg impact: none; no public C header, CLI flag, Meson option, or patch
+  surface changed.
+
 ## audit/rc1-flake-survey-df0b — keep scheduled CI aligned with required lanes (2026-09-25)
 
 The scheduled whole-tree CPU ratchet must retain the required PR lane's GCC 15,
@@ -2626,7 +2647,9 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   (line 896), matching CPU reference behavior when `motion_max_val` is set.
 - `core/test/test_sycl_motion3_parity.c`: fork-added test; added 1080p checkerboard test case verifying
   `integer_motion2_mmxv_18` and `integer_motion3_mmxv_18` clipping and CPU/SYCL parity.
-- `core/test/test_sycl_motion_add_uv_parity.c`: adjusted tolerance to 2e-4 for 3-plane fixed-point integer motion.
+- `core/test/test_sycl_motion_add_uv_parity.c`: historically adjusted the
+  tolerance to 2e-4 for 3-plane fixed-point integer motion; ADR-1326 later
+  replaced that empirical comparison with a fixed-point oracle.
 - `python/test/sycl_motion_parity_test.py`: fork-added Python parity tests for checkerboard and src01 pairs.
 
 ## fix/cambi-cuda-context — CUDA CAMBI context push/pop and model options twin selection gate (2026-09-05)
@@ -52463,14 +52486,13 @@ fork-local (ADR-0746). Conflict risk is against other fork branches touching
    floor does on odd widths.
 ## ADR-1206 (SYCL) — which parity tests get a large-fixture variant
 
-1. **`test_sycl_motion_add_uv_parity` is deliberately absent from
-   `sycl_parity_large_fixture_tests`.** It compares the CPU float
-   `float_motion` against the fixed-point `motion_sycl`, so its 2e-4 tolerance
-   is a quantisation budget calibrated for one fixture, not a bit-exactness
-   bound. At 960x540 it lands at 2.30e-04. Adding it to the list without first
-   deriving a resolution-aware tolerance turns the lane red for a reason the
-   test was never designed to detect
-   (`T-SYCL-MOTION-ADD-UV-TOLERANCE-RESOLUTION-2026-09-06`).
+1. **`test_sycl_motion_add_uv_parity` is registered in
+   `sycl_parity_large_fixture_tests`.** ADR-1326 replaced the CPU-float
+   comparison and empirical 2e-4 tolerance with an independent scalar oracle
+   for the fixed coefficients, reflect-101 borders, two rounding stages, exact
+   SAD and YUV420 normalization. Preserve both the 256x144 and 960x540
+   registrations and the derived binary64 roundoff bound; do not restore the
+   former exclusion.
 
 2. **HIP and Metal have no large-fixture variants yet, on purpose.** The
    `#ifndef FIXTURE_W` guards were deliberately *not* applied to their parity

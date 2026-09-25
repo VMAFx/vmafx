@@ -1444,6 +1444,7 @@ nav:
         - "ADR-1322: metal-integer-psnr-enable-chroma-parity": adr/1322-metal-integer-psnr-enable-chroma-parity.md
         - "ADR-1324: gpu-float-ssim-auto-scale-fallback": adr/1324-gpu-float-ssim-auto-scale-fallback.md
         - "ADR-1325: integer-adm-barten-fixed-point-normalization": adr/1325-integer-adm-barten-fixed-point-normalization.md
+        - "ADR-1326: sycl-motion-uv-fixed-oracle": adr/1326-sycl-motion-uv-fixed-oracle.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

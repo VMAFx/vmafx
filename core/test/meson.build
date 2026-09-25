@@ -3504,8 +3504,8 @@ test('test_sycl_motion3_parity', test_sycl_motion3_parity,
 
 # ADR-0989 — motion_add_uv SYCL parity test.
 # Asserts (1) UV contribution is positive (UV-enabled score > Y-only)
-# and (2) SYCL motion_sycl(motion_add_uv=true) matches CPU
-# float_motion(motion_add_uv=true) within places=4 (1e-4).
+# and (2) the SYCL Y-only and Y+U+V scores match a scalar fixed-point
+# oracle within a derived host-double roundoff bound (ADR-1326).
 # Skips cleanly when no SYCL device is visible.
 test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
     ['test.c', 'test_sycl_motion_add_uv_parity.c'],
@@ -3813,14 +3813,9 @@ test('test_sycl_cambi_parity', test_sycl_cambi_parity,
 # ADR-1204 / ADR-1205 lived in exactly that unreachable region. These variants
 # rebuild the same TUs against 960x540 (auto-scale 2, and 540 is not a multiple
 # of the 16/32-wide kernel blocks so tail bounds are exercised too).
-# `test_sycl_motion_add_uv_parity` is deliberately absent from the list below.
-# It does not compare two implementations of the same arithmetic: the CPU side
-# is `float_motion` and the SYCL side is the fixed-point `motion_sycl`, so its
-# 2e-4 tolerance is a fixed-point-vs-float budget calibrated for one fixture
-# rather than a bit-exactness bound. At 960x540 it lands at 2.30e-04 — 15% over
-# a budget that was never derived for that resolution. Registering a large
-# variant would assert something the test was never designed to assert; giving
-# it a second, separately derived tolerance is tracked as a follow-up.
+# `test_sycl_motion_add_uv_parity` uses a scalar fixed-point oracle rather than
+# the differently rounded CPU float extractor (ADR-1326), so the same tight
+# contract is valid at both fixture sizes.
 sycl_parity_large_fixture_tests = [
     'test_sycl_adm_parity',
     'test_sycl_cambi_parity',
@@ -3832,6 +3827,7 @@ sycl_parity_large_fixture_tests = [
     'test_sycl_float_ssim_parity',
     'test_sycl_float_vif_parity',
     'test_sycl_motion3_parity',
+    'test_sycl_motion_add_uv_parity',
     'test_sycl_motion_v2_parity',
     'test_sycl_ms_ssim_parity',
     'test_sycl_psnr_hvs_parity',

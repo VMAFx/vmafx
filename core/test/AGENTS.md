@@ -663,9 +663,12 @@ both documented in ADR-1206:
   Variant is kept so twin which stops refusing and starts returning
   scale=1 score fails loudly instead of silently comparing two
   metrics.
-- `test_sycl_motion_add_uv_parity` is not registered at all: it
-  compares float CPU against fixed-point SYCL, so its tolerance is
-  per-fixture budget rather than bit-exactness bound.
+- `test_sycl_motion_add_uv_parity` uses a scalar fixed-point oracle for
+  coefficients, both rounding stages, reflect-101 borders, integer SAD and
+  per-plane normalization (ADR-1326). Its error budget is only the derived
+  host-double `2*gamma_5` reconstruction bound, so both small and large
+  registrations are required. Do not restore `float_motion` as the numerical
+  oracle: it uses different coefficients and float reduction order.
 
 HIP and Metal are not registered yet — unverifiable on current
 workstation.
