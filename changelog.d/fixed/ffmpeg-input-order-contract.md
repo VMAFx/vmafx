@@ -1,0 +1,1 @@
+- **ffmpeg:** Restored the exact `AV_LOG_INFO` warning about the `libvmaf` input-order convention in `ffmpeg-patches/0001` to prevent silent score inflation, and aligned all `ffmpeg -i` examples across docs to use `dis` then `ref`. Added a contract test to prevent drift.

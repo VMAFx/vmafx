@@ -54127,3 +54127,15 @@ Preserved invariants:
 - SYCL device code remains strictly fp64-free (float32-only).
 - Tests `test_sycl_float_adm_parity` (`_large`) and `test_hip_float_adm_parity` (`_large`) assert `adm_bypass_cm=1` parity within `1e-4` against CPU `float_adm`.
 - Netflix golden assertions untouched.
+
+## agent/fix-ffmpeg-input-order-3139 — restore exact AV_LOG_INFO and docs for libvmaf input convention (2026-09-25)
+
+The `libvmaf` FFmpeg filter takes `[0:v]` = distorted (main) and `[1:v]` = reference, which is the OPPOSITE of every other VMAF surface. Passing inputs in the natural ref-first order silently inflated the VMAF score.
+This restores the exact `AV_LOG_INFO` warning about the `libvmaf` input-order convention in `ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch` to prevent silent score inflation. It also aligns all `ffmpeg -i` examples across docs to use `dis` then `ref`, and adds a contract test `ffmpeg-patches/test/check-input-contract.sh`.
+
+- Research digest: no digest needed: trivial.
+- Decision matrix: no alternatives: only-one-way fix.
+- AGENTS.md invariant: no rebase-sensitive invariants.
+- Reproducer / smoke: `./ffmpeg-patches/test/check-input-contract.sh`.
+- Changelog: `changelog.d/fixed/ffmpeg-input-order-contract.md`.
+- FFmpeg impact: modifies 0001 patch, `scripts/ci/ffmpeg_patch_stack.py --refresh` applies successfully.

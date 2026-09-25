@@ -84,7 +84,7 @@ index 051be41257c98139dc4f59c6089fefc1575526d8..992ccaf9860c356bce018d9c00499b12
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 324e1aa82e51c229be901693859e0f2f52a3abd4..baf35892fb865be020e529737a6d2c8f1e727866 100644
+index b6bcc3f39933728a8c19e8c737b6350952a8f1d5..cf447b93d182cd7f3b33e99c1697bcdd7df16a2d 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -45,6 +45,8 @@
@@ -200,7 +200,7 @@ index 324e1aa82e51c229be901693859e0f2f52a3abd4..baf35892fb865be020e529737a6d2c8f
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -801,6 +879,13 @@ clean_up:
+@@ -808,6 +886,13 @@ clean_up:
          s->vulkan_state = NULL;
      }
  #endif

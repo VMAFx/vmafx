@@ -116,7 +116,7 @@ want to evaluate its quality at the reference resolution, use FFmpeg with the
 For example, to upscale the distorted video to 1080p:
 
 ```bash
-ffmpeg -i main.mpg -i ref.mpg \
+ffmpeg -i ref.mpg -i main.mpg \
   -filter_complex "[0:v]scale=1920x1080:flags=bicubic[main];[main][1:v]libvmaf" \
   -f null -
 ```

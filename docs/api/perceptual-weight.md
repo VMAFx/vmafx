@@ -140,7 +140,7 @@ and drives this API per frame. The wiring ships as
 [`ffmpeg-patches/0017-libvmaf-read-pelorus-sidedata.patch`](../../ffmpeg-patches/0017-libvmaf-read-pelorus-sidedata.patch).
 
 ```text
-ffmpeg -i ref.mp4 -i dist.mp4 \
+ffmpeg -i dist.mp4 -i ref.mp4 \
   -lavfi "[0:v][1:v]libvmaf=perceptual_weight=1" -f null -
 ```
 

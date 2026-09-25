@@ -2,19 +2,25 @@ From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Fri, 24 Apr 2026 22:23:38 +0200
 Subject: [PATCH] libvmaf: add tiny_model / tiny_device / tiny_threads /
- tiny_fp16 options
+ tiny_fp16 options; log input-ordering convention at init
 
 tiny_device exposes all VmafDnnDevice enum values from dnn.h (v2):
 - Original 5: auto, cpu, cuda, openvino, rocm
 - PR #504 (CoreML EP): coreml, coreml-ane, coreml-gpu, coreml-cpu
 - PR #676 (OpenVINO NPU EP): openvino-npu
 - PR #677 (OpenVINO CPU/GPU EP variant): openvino-cpu, openvino-gpu
+
+Also emits an AV_LOG_INFO message at filter init that names the
+input-ordering convention: input 0 is the distorted (main) stream and
+input 1 is the reference.  This is the opposite of the Python runner
+and vmaf CLI (which take ref first), and passing inputs in the wrong
+order silently inflates the score with no other warning.
 ---
- libavfilter/vf_libvmaf.c | 60 ++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 60 insertions(+)
+ libavfilter/vf_libvmaf.c | 67 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 67 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3ab67d3dba590ce61a1968e00da82a9757a115b3..552743f4e3fa2cc94d36487b94e2272546862660 100644
+index 3ab67d3dba590ce61a1968e00da82a9757a115b3..bb8d925c3ec623c8b9da1406e4c754ad9abf7af1 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -27,6 +27,7 @@
@@ -47,7 +53,7 @@ index 3ab67d3dba590ce61a1968e00da82a9757a115b3..552743f4e3fa2cc94d36487b94e22725
      { NULL }
  };
  
-@@ -449,6 +458,57 @@ static av_cold int init(AVFilterContext *ctx)
+@@ -449,6 +458,64 @@ static av_cold int init(AVFilterContext *ctx)
      if (err)
          return err;
  
@@ -101,6 +107,13 @@ index 3ab67d3dba590ce61a1968e00da82a9757a115b3..552743f4e3fa2cc94d36487b94e22725
 +               s->tiny_device ? s->tiny_device : "auto",
 +               s->tiny_threads, s->tiny_fp16);
 +    }
++
++    /* Input-ordering reminder: input 0 = distorted (main), input 1 = reference.
++     * This is the opposite of the Python runner / vmaf CLI (ref first).
++     * Swapping the inputs silently inflates the score. */
++    av_log(ctx, AV_LOG_INFO,
++           "libvmaf: input[0]=distorted input[1]=reference "
++           "(opposite of Python runner / vmaf CLI order)\n");
 +
      s->fs.on_event = do_vmaf;
      return 0;

@@ -317,7 +317,7 @@ then:
 
 ```bash
 # C1 / C2 scoring through vf_libvmaf.
-ffmpeg -i ref.mp4 -i dis.mp4 \
+ffmpeg -i dis.mp4 -i ref.mp4 \
     -lavfi "[0:v][1:v]libvmaf=tiny_model=/models/vmaf_tiny_fr_v1.onnx:tiny_device=cuda" \
     -f null -
 
