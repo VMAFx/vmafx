@@ -281,9 +281,12 @@ def load_bootstrap_authority(root: Path, revision: str, baseline_path: Path) -> 
     if resolved.lower() != revision.lower():
         raise GateError("bootstrap authority did not resolve to the requested commit")
     head = _resolve_commit(root, "HEAD")
-    merge_base = _git(root, "merge-base", head, resolved).stdout.decode("ascii").strip()
-    if merge_base != resolved:
+    ancestry = _git(root, "merge-base", "--is-ancestor", resolved, head, check=False)
+    if ancestry.returncode == 1:
         raise GateError("bootstrap authority must be an ancestor of HEAD")
+    if ancestry.returncode != 0:
+        detail = ancestry.stderr.decode("utf-8", errors="replace").strip()
+        raise GateError(f"cannot verify bootstrap authority ancestry: {detail or 'unknown error'}")
     authority = _authority_at_revision(root, resolved, baseline_path)
     if authority.source != "tree":
         raise GateError("bootstrap is allowed only for a revision predating the ratchet")
@@ -358,6 +361,17 @@ def _write_payload(path: Path, payload: dict[str, Any]) -> None:
     path.write_bytes(_canonical_bytes(payload))
 
 
+def _write_payload_exclusive(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("xb") as stream:
+            stream.write(_canonical_bytes(payload))
+    except FileExistsError as exc:
+        raise GateError("bootstrap refuses to overwrite an existing baseline") from exc
+    except OSError as exc:
+        raise GateError(f"cannot create baseline {path}: {exc}") from exc
+
+
 def write_baseline(root: Path, baseline_path: Path, authority: DebtAuthority) -> None:
     """Write reduced debt only, anchored to a canonical trusted baseline."""
     if authority.source != "baseline":
@@ -374,12 +388,11 @@ def write_baseline(root: Path, baseline_path: Path, authority: DebtAuthority) ->
 
 def bootstrap_baseline(root: Path, baseline_path: Path, authority: DebtAuthority) -> None:
     """Create the first baseline from one immutable pre-ratchet tree."""
-    if baseline_path.exists():
-        raise GateError("bootstrap refuses to overwrite an existing baseline")
-    growth = _new_debt_errors(authority.payload, _baseline_payload(root))
+    payload = _baseline_payload(root)
+    growth = _new_debt_errors(authority.payload, payload)
     if growth:
         raise GateError(f"refusing initial baseline debt growth: {'; '.join(growth)}")
-    _write_payload(baseline_path, _baseline_payload(root))
+    _write_payload_exclusive(baseline_path, payload)
 
 
 def _resolve_baseline(root: Path, value: Path | None) -> Path:
