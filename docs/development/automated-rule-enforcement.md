@@ -341,10 +341,13 @@ OSS** page shows a stale configuration pinned to
 `.github/workflows/security.yml:semgrep` with a "workflow file no
 longer exists" warning. The workflow was renamed `security.yml →
 security-scans.yml` in PR #53 (ADR-0116, 2026-04-21 Title-Case
-sweep). The current workflow uploads SARIFs under
-`.github/workflows/security-scans.yml:semgrep` with categories
-`semgrep-local` + `semgrep-registry`, so security scanning works
-end-to-end — only the orphan tool registration lingers.
+sweep). The current workflow uploads the repository-owned `semgrep-local`
+SARIF under `.github/workflows/security-scans.yml:semgrep`, so the required
+`Semgrep OSS` check remains live. Per
+[ADR-1314](../adr/1314-semgrep-registry-advisory-artifact.md), the moving
+registry-pack result is retained for 14 days as the
+`semgrep-registry-sarif` workflow artifact instead of entering the required
+Code Scanning identity. Only the orphan tool registration lingers.
 
 There is **no public REST endpoint** to delete a code-scanning tool
 configuration (only individual analyses via

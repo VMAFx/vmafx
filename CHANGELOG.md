@@ -31929,6 +31929,9 @@ See `docs/server/auth.md` for the full configuration guide.
 - Enforce the documented Scorecard 8.5 floor with distinct exact-head PR file checks and same-run full master reports. Reject stale, incomplete and scanner-error results; expose zero scores and the explicitly unassessed no-release state. Correct conflicting historical policy and operator documentation.
 
 
+- Kept repository-owned Semgrep rules in the required Code Scanning gate while routing moving registry-pack SARIF to a 14-day advisory workflow artifact, preventing upstream rule changes from blocking merges without a VMAFx diff.
+
+
 - Resolve Semgrep Python alerts 946–949 at source: memoization decorators now use
   pure SHA-256 keys with cold invalidation, cross-process locking, merge-on-write,
   and unique `mkstemp` atomic replacements. The reviewed base wrote JSON directly

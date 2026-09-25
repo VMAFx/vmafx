@@ -106,6 +106,9 @@ claim the legs were advisory while nothing acted on the claim.
   advisory — it now only keeps a rate-limited registry *fetch* from failing the
   run. An upstream rule-pack update can therefore introduce alerts with no diff
   in this repository. Tracked as an open row in [`docs/state.md`](../state.md).
+  **Resolved by [ADR-1314](1314-semgrep-registry-advisory-artifact.md):** only
+  repository-owned local-rule SARIF now enters the required Code Scanning
+  identity; registry SARIF remains available as an advisory workflow artifact.
 - **Neutral / follow-ups**: `WARN_AS_ERROR` in `core/doc/Doxyfile.public-api`
   stays OFF. ADR-0953 planned to flip it the moment the workflow joined this
   array, on the basis that the public headers were warning-clean (95 → 0). They

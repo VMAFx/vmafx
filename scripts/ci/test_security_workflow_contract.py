@@ -58,6 +58,36 @@ class SecurityWorkflowContractTest(unittest.TestCase):
         self.assertNotIn("working-directory: core", job)
         self.assertNotIn("meson setup build", job)
 
+    def test_semgrep_registry_results_stay_advisory(self) -> None:
+        workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        job = self._job_block(workflow, "semgrep")
+
+        self.assertIn("--config=.semgrep.yml", job)
+        self.assertIn("category: semgrep-local", job)
+        self.assertIn("# required-aggregator: Semgrep OSS", job)
+
+        registry_step = job.split(
+            "- name: Run semgrep (registry rule packs — advisory)", maxsplit=1
+        )[1].split("- name:", maxsplit=1)[0]
+        self.assertIn("continue-on-error: true", registry_step)
+        self.assertIn("--output=semgrep-registry.sarif", registry_step)
+
+        self.assertNotIn("category: semgrep-registry", job)
+        self.assertNotIn("name: Upload registry-rules SARIF", job)
+        archive_step = job.split("- name: Archive registry-rules SARIF (advisory)", maxsplit=1)[
+            1
+        ].split("- name:", maxsplit=1)[0]
+        self.assertIn("hashFiles('semgrep-registry.sarif')", archive_step)
+        self.assertIn(
+            "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            archive_step,
+        )
+        self.assertIn("name: semgrep-registry-sarif", archive_step)
+        self.assertIn("path: semgrep-registry.sarif", archive_step)
+        self.assertIn("if-no-files-found: error", archive_step)
+        self.assertIn("retention-days: 14", archive_step)
+        self.assertNotIn("github/codeql-action/upload-sarif", archive_step)
+
 
 if __name__ == "__main__":
     unittest.main()

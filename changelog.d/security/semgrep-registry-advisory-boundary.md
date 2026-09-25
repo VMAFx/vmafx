@@ -1,0 +1,1 @@
+- Kept repository-owned Semgrep rules in the required Code Scanning gate while routing moving registry-pack SARIF to a 14-day advisory workflow artifact, preventing upstream rule changes from blocking merges without a VMAFx diff.

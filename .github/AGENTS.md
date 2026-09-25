@@ -91,6 +91,15 @@ collect diagnostics when a later `if: always()` step checks its raw
 non-blocking when an existing ADR says so, but its command must not append
 `|| true` and erase the failure outcome.
 
+### Semgrep SARIF authority split (ADR-1314)
+
+Only the repository-owned `.semgrep.yml` result may be uploaded to GitHub Code
+Scanning under the required `Semgrep OSS` identity. The moving
+`p/cwe-top-25`, `p/c`, and `p/python` registry packs are advisory discovery
+inputs: keep their scan `continue-on-error: true` and retain their SARIF as an
+ordinary workflow artifact. Never restore a `semgrep-registry` Code Scanning
+category without a superseding ADR that provides a reproducibly pinned policy.
+
 ### Opt-out syntax parser
 
 `deep-dive-checklist` job parses PR bodies for ADR-0108's

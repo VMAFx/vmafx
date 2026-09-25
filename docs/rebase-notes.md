@@ -1,6 +1,24 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/semgrep-registry-advisory-edbf — isolate moving registry packs from the merge gate (ADR-1314) (2026-09-25)
+
+`.github/workflows/security-scans.yml` has two deliberately different Semgrep
+authorities. Preserve the repository-owned `.semgrep.yml` upload through
+`github/codeql-action/upload-sarif`; it creates the required `Semgrep OSS`
+check. Preserve the unpinned registry-pack output as an ordinary
+`actions/upload-artifact` artifact; restoring `category: semgrep-registry`
+would again let an upstream pack update block every pull request without a
+VMAFx diff.
+
+- Research digest: `docs/research/1314-semgrep-registry-sarif-routing.md`.
+- Decision matrix: ADR-1314 compares accepting the shared gate, removing the
+  scan, a second Code Scanning configuration, and artifact-only retention.
+- AGENTS.md invariant: `.github/AGENTS.md` records the SARIF authority split.
+- Reproducer: `python3 -m unittest scripts.ci.test_security_workflow_contract
+  scripts.ci.test_fail_closed_ci`.
+- Changelog: `changelog.d/security/semgrep-registry-advisory-boundary.md`.
+
 ## agent/reconcile-hip-scaffold-state-8763 — reconcile duplicate HIP scaffold state (2026-09-25)
 
 No rebase impact: this is a documentation-only state-ledger correction. The

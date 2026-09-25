@@ -89,25 +89,20 @@ jobs:
         with:
           sarif_file: semgrep-local.sarif
           category: semgrep-local
-      - name: Upload registry-rules SARIF
+      - name: Archive registry-rules SARIF (advisory)
         if: always() && hashFiles('semgrep-registry.sarif') != ''
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          sarif_file: semgrep-registry.sarif
-          category: semgrep-registry
+          name: semgrep-registry-sarif
+          path: semgrep-registry.sarif
+          if-no-files-found: error
+          retention-days: 14
 
-  # ADR-1297 — `Semgrep OSS` is a code-scanning check created by the
-  # github-advanced-security app from the two SARIF uploads above, not by a
-  # job, which is why it needs a bare marker here (the `CodeQL` marker below
-  # is the same shape, and `CodeQL` is the precedent for gating this class).
-  # Consequence to be aware of: the check reports on alerts, not on the job,
-  # and both uploads carry the tool name "Semgrep OSS", so registry-pack
-  # findings now reach a blocking context even though the registry step above
-  # keeps `continue-on-error: true`. That flag's remaining job is to keep a
-  # rate-limited registry *fetch* from failing the run; it no longer means the
-  # findings are advisory. The residual risk — an upstream rule-pack update
-  # can introduce alerts with no diff in this repository — is recorded in
-  # docs/state.md.
+  # ADR-1297 requires the `Semgrep OSS` code-scanning check created by the
+  # github-advanced-security app. ADR-1314 limits that check to the repository-
+  # owned `semgrep-local` category above: unpinned registry packs remain useful
+  # advisory diagnostics, but their SARIF is a workflow artifact and never
+  # enters the blocking code-scanning context.
   # required-aggregator: Semgrep OSS
 
   # ADR-1297 — `gitleaks` (lowercase) is the code-scanning check the

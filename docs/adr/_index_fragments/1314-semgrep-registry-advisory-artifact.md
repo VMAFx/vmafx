@@ -1,0 +1,1 @@
+| [ADR-1314](1314-semgrep-registry-advisory-artifact.md) | Keep repository-owned Semgrep rules in the required Code Scanning context while retaining moving registry-pack SARIF only as a 14-day advisory workflow artifact. | Accepted | ci, security, policy, supply-chain |
