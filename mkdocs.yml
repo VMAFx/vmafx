@@ -1432,6 +1432,7 @@ nav:
         - "ADR-1309: socket-path-ownership-and-owner-only-mode": adr/1309-socket-path-ownership-and-owner-only-mode.md
         - "ADR-1310: mypy-ci-fail-closed": adr/1310-mypy-ci-fail-closed.md
         - "ADR-1311: source-adr-citation-provenance": adr/1311-source-adr-citation-provenance.md
+        - "ADR-1312: gpu-option-alias-parity": adr/1312-gpu-option-alias-parity.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1626,6 +1627,7 @@ nav:
         - "feature-extraction": adr/by-tag/feature-extraction.md
         - "feature-extractor": adr/by-tag/feature-extractor.md
         - "feature-extractors": adr/by-tag/feature-extractors.md
+        - "feature-options": adr/by-tag/feature-options.md
         - "feature-param": adr/by-tag/feature-param.md
         - "feature": adr/by-tag/feature.md
         - "features": adr/by-tag/features.md

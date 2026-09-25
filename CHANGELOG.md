@@ -24491,6 +24491,12 @@ is addressed.
   options. Host-side only — no GPU kernel change.
 
 
+- Align the remaining CUDA, SYCL, and HIP motion/VIF option aliases with their
+  CPU references so non-default feature parameters publish the same collector
+  keys on equivalent backends. A device-free fast contract guards all 18
+  audited alias sites.
+
+
 - **CUDA VIF zero-denominator guard** (`integer_vif_cuda.c`): on
   degenerate frames (solid-colour input where all pixels fall below
   `SIGMA_NSQ`) the per-scale VIF denominator is zero; CUDA was returning

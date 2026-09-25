@@ -223,7 +223,7 @@ Operates on the Y plane only.
 |------------------------|-------|--------|---------|------------|------------------------------------------------------------------------|
 | `debug`                | —     | bool   | `false` | —          | Emit `vif`, `vif_num`, `vif_den`, plus per-scale numerator/denominator |
 | `vif_enhn_gain_limit`  | `egl` | double | `1.4`   | `1.0–1.4`  | Cap enhancement-gain ratio so over-sharpened output cannot saturate    |
-| `vif_kernelscale`      | —     | double | `1.0`   | `0.1–4.0`  | Scale the Gaussian kernel std-dev — only `float_vif`                   |
+| `vif_kernelscale`      | `ks`  | double | `1.0`   | `0.1–4.0`  | Scale the Gaussian kernel std-dev — only `float_vif`                   |
 | `vif_skip_scale0`      | `ssclz` | bool | `false` | —          | Skip the finest scale: exclude it from the aggregate and report it as zero |
 
 `egl=1.0` disables the enhancement-gain path entirely (matches pre-v1.3
@@ -245,6 +245,9 @@ both:
 Because the option is a `FEATURE_PARAM`, setting it changes the published
 feature names: the alias `ssclz` is appended, so the scale-0 score is filed
 under `integer_vif_scale0_ssclz`. Read that key, not the default one.
+Where a GPU twin declares one of these options, its alias must match the CPU
+extractor so an equivalent configuration publishes the same key
+([ADR-1312](../adr/1312-gpu-option-alias-parity.md)).
 
 The CPU reference simply never computes scale 0. The GPU twins do compute all
 four scales and apply the skip when they publish, so the zeroing lives at the
@@ -295,6 +298,9 @@ only.
 | `motion_add_uv`       | —         | bool  | `false`     | (`float_motion` only) Sum the U and V plane SADs into the score in addition to the Y plane                        |
 | `motion_filter_size`  | —         | int   | `5`         | (`float_motion` only) Blur kernel size, `3` or `5`. `5` is the original Motion2 filter; `3` is a cheaper variant  |
 | `motion_max_val`      | —         | float | `+∞`        | (`float_motion` only) Upper clamp applied to the emitted `motion2_score` and `motion3_score`                      |
+
+`force_0` is the collector-key suffix on the CPU, CUDA, SYCL, and HIP
+motion twins; backend selection does not change the published key.
 
 The `motion_add_scale1`, `motion_add_uv`, `motion_filter_size`, and
 `motion_max_val` options were ported from upstream Netflix/vmaf

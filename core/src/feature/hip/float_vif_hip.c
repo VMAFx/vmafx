@@ -129,6 +129,7 @@ static const VmafOption options[] = {
     },
     {
         .name = "vif_kernelscale",
+        .alias = "ks",
         .help = "scaling factor for the gaussian kernel",
         .offset = offsetof(FloatVifStateHip, vif_kernelscale),
         .type = VMAF_OPT_TYPE_DOUBLE,

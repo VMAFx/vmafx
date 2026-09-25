@@ -117,6 +117,7 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_force_zero",
+        .alias = "force_0",
         .help = "forcing motion score to zero",
         .offset = offsetof(MotionStateCuda, motion_force_zero),
         .type = VMAF_OPT_TYPE_BOOL,

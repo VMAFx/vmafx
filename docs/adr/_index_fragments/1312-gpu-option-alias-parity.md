@@ -1,0 +1,1 @@
+| [ADR-1312](1312-gpu-option-alias-parity.md) | Makes the CPU option alias authoritative for equivalent GPU twin collector keys and guards all eighteen known sites in the device-free fast suite. | Accepted | gpu, feature-options, compatibility, testing |

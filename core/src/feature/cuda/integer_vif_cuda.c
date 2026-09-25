@@ -124,6 +124,7 @@ static const VmafOption options[] = {{
                                      },
                                      {
                                          .name = "vif_skip_scale0",
+                                         .alias = "ssclz",
                                          .help = "skip scale 0 (finest scale) VIF computation; "
                                                  "score0 is forced to 0.0 (parity with CPU option)",
                                          .offset = offsetof(VifStateCuda, vif_skip_scale0),

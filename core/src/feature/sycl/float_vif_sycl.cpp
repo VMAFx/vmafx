@@ -659,6 +659,7 @@ static const VmafOption options_float_vif_sycl[] = {
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "vif_kernelscale",
      .help = "kernel scale",
+     .alias = "ks",
      .offset = offsetof(FloatVifStateSycl, vif_kernelscale),
      .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val = {.d = 1.0},
