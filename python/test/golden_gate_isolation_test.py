@@ -75,6 +75,34 @@ class GoldenGateBuildDirIsolationTest(unittest.TestCase):
                 reloaded = importlib.reload(vmaf_module)
                 self.assertEqual(reloaded.ExternalProgram.vmafexec, direct_bin.name)
 
+    def test_vmafexec_path_nonexistent_does_not_silently_fallback(self):
+        """Non-existent VMAFEXEC_PATH must not silently fall back to build_dir."""
+        nonexistent = "/nonexistent/tools/vmaf"
+        env = dict(os.environ)
+        env["VMAF_BUILD_DIR"] = "core/build-golden"
+        env["VMAFEXEC_PATH"] = nonexistent
+        with mock.patch.dict(os.environ, env, clear=True):
+            vmaf_module = sys.modules.get("vmaf")
+            reloaded = importlib.reload(vmaf_module)
+            self.assertEqual(reloaded.ExternalProgram.vmafexec, nonexistent)
+            with self.assertRaises(AssertionError):
+                vmaf.required(reloaded.ExternalProgram.vmafexec)
+
+    def test_import_vmaf_does_not_pollute_stdout_when_externals_absent(self):
+        """Importing vmaf must not emit spurious ImportError prints to stdout."""
+        python_path = vmaf.project_path("python")
+        compat_path = vmaf.project_path(os.path.join("compat", "python-vmaf"))
+        env = dict(os.environ)
+        env["PYTHONPATH"] = f"{python_path}:{compat_path}"
+        res = subprocess.run(
+            [sys.executable, "-c", "import vmaf"],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.stdout, "", f"Expected empty stdout on import, got: {res.stdout!r}")
+
 
 class GoldenCompilerValidationTest(unittest.TestCase):
     """Test validation of compiler IDs for golden profile."""

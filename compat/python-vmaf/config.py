@@ -94,7 +94,7 @@ class VmafExternalConfig(object):
             if path and os.path.exists(path):
                 return path
         except ImportError:
-            print("ImportError")
+            pass
 
         return None
 
@@ -110,7 +110,7 @@ class VmafExternalConfig(object):
             attr = getattr(externals, name, None)
             return attr
         except ImportError:
-            print("ImportError")
+            pass
         return None
 
     @classmethod
@@ -183,7 +183,7 @@ class VmafExternalConfig(object):
         :return str: Path to external vmaf executable, if installed and configured via `externals` module
         """
         env_path = os.environ.get("VMAF_PATH")
-        if env_path and os.path.exists(env_path):
+        if env_path:
             return env_path
         return cls._path_from_external("VMAF_PATH")
 
@@ -193,7 +193,7 @@ class VmafExternalConfig(object):
         :return str: Path to external vmafexec executable, if installed and configured via `externals` module
         """
         env_path = os.environ.get("VMAFEXEC_PATH")
-        if env_path and os.path.exists(env_path):
+        if env_path:
             return env_path
         return cls._path_from_external("VMAFEXEC_PATH")
 
