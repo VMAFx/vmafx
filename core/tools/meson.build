@@ -105,12 +105,24 @@ endif
 
 vmaf_per_shot = executable(
     'vmaf-perShot',
-    ['vmaf_per_shot.c', '../src/compat/path_utf8.c'],
+    ['vmaf_per_shot.c', 'vmaf_per_shot_input.c', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_per_shot_deps,
     c_args : vmaf_per_shot_cflags,
     link_with : vmaf_per_shot_link_target,
     install : true,
+)
+
+# Compile the same public CLI with a tiny built-in ceiling so the exact-boundary
+# and one-more-frame contracts are executable in CI without a UINT32_MAX input.
+vmaf_per_shot_boundary_test = executable(
+    'vmaf-perShot-boundary-test',
+    ['vmaf_per_shot.c', 'vmaf_per_shot_input.c', '../src/compat/path_utf8.c'],
+    include_directories : [libvmaf_inc, vmaf_include],
+    dependencies: vmaf_per_shot_deps,
+    c_args : vmaf_per_shot_cflags + ['-DVMAF_PER_SHOT_MAX_FRAMES=3U'],
+    link_with : vmaf_per_shot_link_target,
+    build_by_default : false,
 )
 
 # vmaf-roi — T6-2b per-CTU QP offset sidecar (x265 / SVT-AV1 ROI).

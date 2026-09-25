@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "compat/path_utf8.h"
+#include "vmaf_per_shot_input.h"
 #include <string.h>
 #ifndef _WIN32
 #include <fcntl.h>
@@ -81,7 +82,9 @@
  * exists at or beyond this bound before indexing it. An input of up to
  * UINT32_MAX frames is accepted without wrapping when EOF is reached at that
  * boundary, reporting -EFBIG only if input strictly exceeds UINT32_MAX frames. */
+#ifndef VMAF_PER_SHOT_MAX_FRAMES
 #define VMAF_PER_SHOT_MAX_FRAMES UINT32_MAX
+#endif
 
 /* Output format selector. */
 enum vmaf_per_shot_format {
@@ -538,43 +541,6 @@ static size_t per_shot_yuv_frame_bytes(unsigned w, unsigned h, unsigned chroma_s
     return (bitdepth > 8U) ? (pix * 2U) : pix;
 }
 
-/* Read one full YUV420P frame's luma plane into `luma`. Skips chroma
- * by seeking past it. Returns 0 on EOF, 1 on success, -1 on partial
- * read (corrupt input). */
-static int per_shot_read_luma(FILE *fin, uint8_t *luma, size_t luma_bytes, size_t chroma_bytes)
-{
-    size_t got = fread(luma, 1U, luma_bytes, fin);
-    if (got == 0U)
-        return 0;
-    if (got != luma_bytes)
-        return -1;
-    if (chroma_bytes > 0U) {
-        /* Use fseeko / _fseeki64 so the offset is 64-bit on all platforms —
-         * the plain fseek (long) cast silently truncates on 32-bit targets
-         * for frames >2 GiB (e.g. 65535x65535 4:4:4 16-bit).  Pattern from
-         * vmaf_roi.c. Fall back to read-and-drop on unseekable streams. */
-#if defined(_WIN32)
-        int seek_rc = _fseeki64(fin, (long long)chroma_bytes, SEEK_CUR);
-#else
-        int seek_rc = fseeko(fin, (off_t)chroma_bytes, SEEK_CUR);
-#endif
-        if (seek_rc != 0) {
-            /* fall back to read-and-drop if seek isn't permitted
-             * (e.g. piped input) */
-            size_t remaining = chroma_bytes;
-            uint8_t scratch[4096];
-            while (remaining > 0U) {
-                size_t want = (remaining > sizeof(scratch)) ? sizeof(scratch) : remaining;
-                size_t r = fread(scratch, 1U, want, fin);
-                if (r == 0U)
-                    return -1;
-                remaining -= r;
-            }
-        }
-    }
-    return 1;
-}
-
 /* Finalise per-shot statistics: average the running sums, then run
  * the CRF predictor. */
 static void per_shot_finalise(struct vmaf_per_shot_record *shots, uint32_t shot_count,
@@ -755,11 +721,19 @@ static int per_shot_scan_loop(const struct vmaf_per_shot_settings *s, struct per
                                                     ((uint64_t)VMAF_PER_SHOT_MAX_FRAMES + 1ULL);
 
     while (ctx->frame_idx < ceiling) {
-        int r = per_shot_read_luma(ctx->fin, ctx->cur, ctx->luma_bytes, ctx->chroma_bytes);
-        if (r == 0)
+        int r = vmaf_per_shot_read_luma(ctx->fin, ctx->cur, ctx->luma_bytes, ctx->chroma_bytes);
+        if (r == VMAF_PER_SHOT_READ_EOF)
             break;
-        if (r < 0)
+        if (r == VMAF_PER_SHOT_READ_ERROR) {
+            (void)fprintf(stderr, "vmaf-perShot: read error at frame %" PRIu64 "\n",
+                          ctx->frame_idx);
             return -EIO;
+        }
+        if (r == VMAF_PER_SHOT_READ_PARTIAL) {
+            (void)fprintf(stderr, "vmaf-perShot: incomplete raw YUV frame at frame %" PRIu64 "\n",
+                          ctx->frame_idx);
+            return -EIO;
+        }
         if (ctx->frame_idx >= VMAF_PER_SHOT_MAX_FRAMES) {
             (void)fprintf(stderr, "vmaf-perShot: input exceeds the %" PRIu32 "-frame scan limit\n",
                           (uint32_t)VMAF_PER_SHOT_MAX_FRAMES);

@@ -154,10 +154,15 @@ vmaf --reference ref.y4m --distorted out.mp4 --output verify.json
 
 `vmaf-perShot` reads planar YUV directly with no demuxer. The shot
 detector and CRF prior use only the luma plane, but the scanner still
-counts and skips chroma bytes according to `--pixel_format` so frame
+consumes every chroma byte according to `--pixel_format` so frame
 iteration stays aligned for 4:2:0, 4:2:2, and 4:4:4 inputs. High-bit-
 depth inputs use little-endian 16-bit sample containers for 10/12/16-bit
 content, matching the fork's raw-YUV CLI convention.
+
+EOF is clean only before the first luma byte of a new frame. A trailing
+luma-only frame, partial chroma plane, or underlying read error exits non-zero
+with an `incomplete raw YUV frame` or `read error` diagnostic; no partial frame
+is included in the emitted plan.
 
 ## Limitations (v1)
 
@@ -173,8 +178,8 @@ content, matching the fork's raw-YUV CLI convention.
   `--frame_cnt` / `--max-frames`) is provided, terminating cleanly with
   exit code 0 and emitting the plan for the scanned prefix. If omitted or
   set to `0` (unbounded), the scan accepts up to exactly `UINT32_MAX`
-  (4294967295) frames. At that boundary the reader probes once more: EOF accepts
-  the exact-boundary input, while one additional complete frame reports
+  (4294967295) complete frames. At that boundary the reader probes once more:
+  EOF accepts the exact-boundary input, while one additional complete frame reports
   `vmaf-perShot: input exceeds the 4294967295-frame scan limit` (`EFBIG`)
   before indexing or recording it. This fixes the off-by-one check from
   [ADR-1287](../adr/1287-cli-tool-unbounded-loop-ceilings.md) and closing

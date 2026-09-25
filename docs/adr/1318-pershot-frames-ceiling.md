@@ -29,6 +29,13 @@ after the loop exited. Consequently, an input containing exactly `UINT32_MAX` fr
 rejected with `-EFBIG` even though all frames fit into `uint32_t` without wrapping, limiting
 the largest accepted input to `UINT32_MAX - 1` frames.
 
+Exact-head review also exposed a prerequisite for the boundary probe: the reader
+loaded luma and then sought over chroma. A regular-file seek beyond EOF succeeds,
+so a trailing luma-only or partial-chroma frame was counted as complete. In
+addition, `fread() == 0` was treated as EOF without checking `ferror()`, allowing
+an I/O fault after earlier frames to truncate the plan successfully. A safe
+ceiling must count complete raw frames and distinguish true EOF from read failure.
+
 Ticket `T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21` calls for resolving the endless-input
 hang with the smallest backward-compatible operator-visible bound while preserving ordinary
 finite inputs and eliminating the `uint32_t` off-by-one boundary error.
@@ -53,6 +60,13 @@ finite inputs and eliminating the `uint32_t` off-by-one boundary error.
      exactly `UINT32_MAX` frames.
    - If a frame is read beyond `VMAF_PER_SHOT_MAX_FRAMES`, `vmaf-perShot` emits
      `input exceeds the 4294967295-frame scan limit` to stderr and returns `-EFBIG`.
+5. **Complete-frame, fail-closed probe**:
+   Move raw input consumption into a private reader module. It reads luma and
+   chroma exactly, treats EOF as clean only before the first byte of a new luma
+   plane, and returns distinct results for a partial frame and `ferror()`. The
+   scan emits a diagnostic and fails with `-EIO` for either corrupt input or an
+   underlying read error. Chroma is consumed rather than sought over because a
+   successful seek does not prove that those bytes exist.
 
 ## Alternatives considered
 
@@ -62,15 +76,18 @@ finite inputs and eliminating the `uint32_t` off-by-one boundary error.
 | Wall-clock timeout on scan loop | Automatically aborts endless streams without user intervention | Makes scan success depend on system load, disk I/O, and CPU contention; turns long legitimate scans into flaky failures | Rejected by ADR-1287 and reaffirming rejection here |
 | Small default frame ceiling (e.g. 100 000 frames) | Prevents runaway execution by default | Silently truncates legitimate long-form video files and multi-hour content; breaks backward compatibility | Rejected by ADR-1287 |
 | Reject non-regular files (`stat` check for S_ISFIFO / S_ISCHR) | Prevents opening FIFOs and `/dev/zero` | Breaks legitimate video piping workflows (e.g., streaming from ffmpeg or decoder via pipe) | Unnecessarily restricts valid UNIX pipeline composition |
+| Seek over chroma after checking regular-file length | Avoids copying chroma on immutable regular files | Does not cover pipes; duplicates platform-specific size/offset handling; mutable files introduce a check/use race | Exact consumption gives one fail-closed contract for files and streams; optimise only after measurement in the later tuning phase |
 
 ## Consequences
 
 - **Positive**:
   - Operators and automated test harnesses can bound scans on FIFOs, `/dev/zero`, or test fixtures to a fixed frame count.
   - The off-by-one error is fixed: valid inputs of exactly `UINT32_MAX` frames are accepted without premature `-EFBIG` failure.
+  - Partial raw frames and read errors can no longer become successful prefix plans.
   - Full backward compatibility is preserved: default invocation scans all available frames.
 - **Negative**:
   - Unbounded reads on endless inputs still run indefinitely if the operator omits `--frames`. This is documented as the expected UNIX streaming contract.
+  - The luma-only algorithm now reads and discards chroma instead of seeking over it. Performance work is intentionally deferred to the post-correctness tuning phase.
 - **Neutral / follow-ups**:
   - Updates CLI documentation, `core/tools/AGENTS.md`, and closes `T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21` in `docs/state.md`.
 

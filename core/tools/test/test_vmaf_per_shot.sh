@@ -82,7 +82,7 @@ if ! grep -q '"shots"' "${PLAN_JSON}"; then
   exit 1
 fi
 
-# 4. Generated 4:2:2 and 4:4:4 fixtures exercise chroma skip sizing.
+# 4. Generated 4:2:2 and 4:4:4 fixtures exercise chroma-plane sizing.
 python3 - "${WORK}" <<'PY'
 from pathlib import Path
 import sys
@@ -99,6 +99,16 @@ def write_fixture(path: Path, chroma_samples: int) -> None:
 
 write_fixture(work / "two_frames_422.yuv", luma)
 write_fixture(work / "two_frames_444.yuv", luma * 2)
+
+frame_420 = bytes([32]) * luma + bytes([128]) * (luma // 2)
+next_luma = bytes([224]) * luma
+(work / "one_complete_420.yuv").write_bytes(frame_420)
+(work / "complete_then_luma_only_420.yuv").write_bytes(frame_420 + next_luma)
+(work / "complete_then_partial_chroma_420.yuv").write_bytes(
+    frame_420 + next_luma + bytes([64]) * ((luma // 2) - 1)
+)
+(work / "three_complete_420.yuv").write_bytes(frame_420 * 3)
+(work / "four_complete_420.yuv").write_bytes(frame_420 * 4)
 PY
 
 for PF in 422 444; do
@@ -114,7 +124,69 @@ for PF in 422 444; do
   fi
 done
 
-# 5. Invalid args fail with non-zero.
+# 5. Raw input must contain complete frames; luma alone or partial chroma is
+#    corruption, not a phantom final frame.
+COMPLETE_CSV="${WORK}/one_complete_420.csv"
+"${BIN}" \
+  --reference "${WORK}/one_complete_420.yuv" \
+  --width 16 --height 16 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${COMPLETE_CSV}"
+COMPLETE_FRAMES=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${COMPLETE_CSV}")
+if [ "${COMPLETE_FRAMES}" -ne 1 ]; then
+  echo "test_vmaf_per_shot: one complete frame expected 1 frame, got ${COMPLETE_FRAMES}" >&2
+  exit 1
+fi
+
+for TRUNCATED in complete_then_luma_only_420 complete_then_partial_chroma_420; do
+  ERROR_LOG="${WORK}/${TRUNCATED}.stderr"
+  if "${BIN}" \
+    --reference "${WORK}/${TRUNCATED}.yuv" \
+    --width 16 --height 16 \
+    --pixel_format 420 --bitdepth 8 \
+    --output "${WORK}/${TRUNCATED}.csv" 2>"${ERROR_LOG}"; then
+    echo "test_vmaf_per_shot: expected failure on ${TRUNCATED}" >&2
+    exit 1
+  fi
+  if ! grep -q "incomplete raw YUV frame at frame 1" "${ERROR_LOG}"; then
+    echo "test_vmaf_per_shot: missing incomplete-frame diagnostic for ${TRUNCATED}" >&2
+    cat "${ERROR_LOG}" >&2
+    exit 1
+  fi
+done
+
+# 6. A reduced compile-time ceiling makes both sides of the built-in boundary
+#    executable: exactly three complete frames pass; a fourth complete frame
+#    fails before its index can narrow to uint32_t.
+BOUNDARY_BIN=./tools/vmaf-perShot-boundary-test
+BOUNDARY_CSV="${WORK}/boundary_exact.csv"
+"${BOUNDARY_BIN}" \
+  --reference "${WORK}/three_complete_420.yuv" \
+  --width 16 --height 16 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${BOUNDARY_CSV}"
+BOUNDARY_FRAMES=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${BOUNDARY_CSV}")
+if [ "${BOUNDARY_FRAMES}" -ne 3 ]; then
+  echo "test_vmaf_per_shot: exact reduced boundary expected 3 frames, got ${BOUNDARY_FRAMES}" >&2
+  exit 1
+fi
+
+BOUNDARY_ERROR="${WORK}/boundary_exceeded.stderr"
+if "${BOUNDARY_BIN}" \
+  --reference "${WORK}/four_complete_420.yuv" \
+  --width 16 --height 16 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${WORK}/boundary_exceeded.csv" 2>"${BOUNDARY_ERROR}"; then
+  echo "test_vmaf_per_shot: expected fourth complete frame to exceed reduced boundary" >&2
+  exit 1
+fi
+if ! grep -q "input exceeds the 3-frame scan limit" "${BOUNDARY_ERROR}"; then
+  echo "test_vmaf_per_shot: missing reduced-boundary diagnostic" >&2
+  cat "${BOUNDARY_ERROR}" >&2
+  exit 1
+fi
+
+# 7. Invalid args fail with non-zero.
 if "${BIN}" --reference /tmp/nope --width 0 --height 0 \
   --pixel_format 420 --bitdepth 8 \
   --output /tmp/out 2>/dev/null; then
@@ -136,14 +208,14 @@ if "${BIN}" --reference "${WORK}/two_frames_422.yuv" --width 16 --height 16 \
   exit 1
 fi
 
-# 6. Unknown / unrecognised options must fail, not silently trigger --help.
+# 8. Unknown / unrecognised options must fail, not silently trigger --help.
 #    Before the fix, --typo-option returned 1 (success-with-help), masking typos.
 if "${BIN}" --typo-option 2>/dev/null; then
   echo "test_vmaf_per_shot: expected failure on unrecognised option --typo-option" >&2
   exit 1
 fi
 
-# 7. --frames N bounds finite input.
+# 9. --frames N bounds finite input.
 PLAN_FRAMES_CSV="${WORK}/plan_frames_10.csv"
 "${BIN}" \
   --reference "${SRC}" \
@@ -158,7 +230,7 @@ if [ "${FRAMES_TOTAL}" -ne 10 ]; then
   exit 1
 fi
 
-# 8. --frames 0 preserves full scan (unbounded compatibility contract).
+# 10. --frames 0 preserves full scan (unbounded compatibility contract).
 PLAN_UNBOUNDED_CSV="${WORK}/plan_unbounded.csv"
 "${BIN}" \
   --reference "${SRC}" \
@@ -173,7 +245,7 @@ if [ "${UNBOUNDED_TOTAL}" -ne 48 ]; then
   exit 1
 fi
 
-# 9. Flag aliases: -F, --frame_cnt, --max-frames behave identically.
+# 11. Flag aliases: -F, --frame_cnt, --max-frames behave identically.
 for ALIAS_FLAG in "-F" "--frame_cnt" "--max-frames"; do
   ALIAS_CSV="${WORK}/plan_alias.csv"
   "${BIN}" \
@@ -189,7 +261,7 @@ for ALIAS_FLAG in "-F" "--frame_cnt" "--max-frames"; do
   fi
 done
 
-# 10. Bounded read on /dev/zero must terminate promptly and produce requested frames.
+# 12. Bounded read on /dev/zero must terminate promptly and produce requested frames.
 DEV_ZERO_CSV="${WORK}/plan_dev_zero.csv"
 run_with_timeout "${BIN}" \
   --reference /dev/zero \
@@ -204,7 +276,7 @@ if [ "${DEV_ZERO_FRAMES}" -ne 6 ]; then
   exit 1
 fi
 
-# 11. Bounded read on endless FIFO must terminate cleanly and promptly (cannot hang).
+# 13. Bounded read on endless FIFO must terminate cleanly and promptly (cannot hang).
 FIFO_TEST="${WORK}/endless_fifo.yuv"
 rm -f "${FIFO_TEST}"
 mkfifo "${FIFO_TEST}"
@@ -232,7 +304,7 @@ if [ "${FIFO_FRAMES}" -ne 5 ]; then
   exit 1
 fi
 
-# 12. Invalid --frames arguments fail.
+# 14. Invalid --frames arguments fail.
 CARRIAGE_RETURN=$(printf '\r')
 LINE_FEED=$(printf '\n_')
 LINE_FEED=${LINE_FEED%_}

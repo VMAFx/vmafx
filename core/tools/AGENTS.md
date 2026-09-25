@@ -164,16 +164,17 @@ tools/
     is `0U` (unbounded), preserving full scans on finite files up to
     `VMAF_PER_SHOT_MAX_FRAMES` (`UINT32_MAX`), where exhaustion reports `-EFBIG`.
     Never restore a bare `for (;;)`. At the built-in boundary, the reader probes
-    for one additional frame and checks that read before indexing it: an input of
-    exactly `UINT32_MAX` frames is accepted when EOF is reached, reporting
-    `-EFBIG` only if input strictly exceeds `UINT32_MAX` frames, resolving the
-    off-by-one check from
+    for one additional *complete* frame and checks that read before indexing it:
+    an input of exactly `UINT32_MAX` frames is accepted when EOF is reached,
+    reporting `-EFBIG` only if input strictly exceeds `UINT32_MAX` complete
+    frames, resolving the off-by-one check from
     [ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md).
-  - **Chroma skip uses `fseeko` / `_fseeki64`** (rebase-sensitive).
-    `per_shot_read_luma` skips chroma bytes via `fseeko` (POSIX) or
-    `_fseeki64` (WIN32). Never revert to `fseek((long)...)` —
-    `long` cast silently truncates on 32-bit targets for frames
-    larger than 2 GiB, seeking to wrong position without error.
+  - **Raw-frame reads consume every luma and chroma byte** (rebase-sensitive).
+    `vmaf_per_shot_read_luma` treats EOF as clean only before the first luma
+    byte of a new frame. A short luma plane, short chroma planes, or `ferror`
+    fails closed. Never restore seek-based chroma skipping: ISO C permits a
+    regular file seek beyond EOF, so seek success does not prove that the raw
+    frame is complete and can create a phantom final frame.
 - `vmaf_vpl.c` — VPL decode -> SYCL pipeline (fork-local, not upstream).
   - **`vpl_decode_frame` retries under `VPL_DECODE_MAX_ATTEMPTS`.** The
     ceiling is *derived*: `VPL_SYNC_TIMEOUT_MS` / `VPL_DECODE_RETRY_US`, i.e.

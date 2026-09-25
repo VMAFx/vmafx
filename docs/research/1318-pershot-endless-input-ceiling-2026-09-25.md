@@ -39,6 +39,13 @@ hatch for endless streams:
    that it would default to an arbitrary small number that would silently truncate valid
    content.
 
+4. **Incomplete-frame and read-error conflation**: the boundary probe depended on
+   `per_shot_read_luma()`, which read luma and used `fseeko()` / `_fseeki64()` to skip
+   chroma. Seeking beyond EOF succeeds on regular files, so a complete frame followed by
+   only luma (or partial chroma) produced a phantom second frame. The same function mapped
+   `fread() == 0` directly to EOF without consulting `ferror()`, so an I/O error after a
+   valid prefix could silently produce a successful truncated plan.
+
 ## Options
 
 | Approach | Preserves finite streams | Bounded on FIFOs | Backward compatible | Decision |
@@ -47,6 +54,12 @@ hatch for endless streams:
 | Small default frame ceiling | Truncates long clips | Yes | No: breaks existing workflows | Rejected: silent data loss on long videos. |
 | Reject non-regular files (`S_ISFIFO`) | Yes | Partial (misses `/dev/zero`) | Breaks UNIX pipeline composition | Rejected: pipes from ffmpeg are legitimate. |
 | **Explicit `--frames` flag defaulting to 0 (unbounded)** | **Yes** | **Yes (when specified)** | **Yes (100% backward compatible)** | **Selected (ADR-1318).** |
+
+For frame completeness, exact luma-plus-chroma consumption was selected over
+seek-based skipping. A file-length precheck could retain seeking for immutable
+regular files, but it cannot provide the same contract for pipes and can race a
+mutable file. Correctness is established first; measured optimisation belongs to
+the later performance-tuning phase.
 
 ## Implementation
 
@@ -74,13 +87,23 @@ hatch for endless streams:
    exactly `UINT32_MAX` frames. Only if another frame actually exists is `-EFBIG` returned.
 
 4. **Deterministic Testing**:
-   Sections 7–12 added to `core/tools/test/test_vmaf_per_shot.sh`:
-   - Section 7: `--frames 10` on 48-frame fixture terminates at 10 frames.
-   - Section 8: `--frames 0` preserves full 48-frame scan.
-   - Section 9: Aliases `-F 10`, `--frame_cnt 10`, and `--max-frames 10` yield identical output.
-   - Section 10: Bounded read on `/dev/zero` with `--frames 6` terminates in milliseconds.
-   - Section 11: Bounded read on live endless FIFO terminates cleanly for 5 frames without hanging.
-   - Section 12: Negative and non-numeric `--frames` values fail during option parsing.
+   A test-only build sets `VMAF_PER_SHOT_MAX_FRAMES=3U`, making both sides of
+   the production boundary logic executable without constructing a
+   `UINT32_MAX`-frame input. The public CLI suite now covers one complete frame,
+   a trailing luma-only frame, partial chroma, exactly three complete frames,
+   and a fourth complete frame. `test_vmaf_per_shot_input` closes the backing
+   descriptor after one valid frame and proves the next stdio read is reported
+   as an error rather than EOF.
+
+5. **Operator-ceiling Testing**:
+   Sections 9–14 in `core/tools/test/test_vmaf_per_shot.sh` retain the original
+   operator-bound coverage:
+   - Section 9: `--frames 10` on the 48-frame fixture terminates at 10 frames.
+   - Section 10: `--frames 0` preserves the full 48-frame scan.
+   - Section 11: Aliases `-F 10`, `--frame_cnt 10`, and `--max-frames 10` yield identical output.
+   - Section 12: Bounded read on `/dev/zero` with `--frames 6` terminates in milliseconds.
+   - Section 13: Bounded read on a live endless FIFO terminates cleanly for 5 frames without hanging.
+   - Section 14: Negative and non-numeric `--frames` values fail during option parsing.
 
 ## Evidence
 
@@ -91,26 +114,38 @@ $ core/build/tools/vmaf-perShot --reference testdata/src.yuv --width 576 --heigh
     --pixel_format 420 --bitdepth 8 --output /tmp/plan.csv --frames 10
 vmaf-perShot: unrecognized option '--frames'
 Usage: vmaf-perShot ...
+
+$ meson test -C build-review --no-rebuild --print-errorlogs \
+    test_vmaf_per_shot_input test_vmaf_per_shot
+test_vmaf_per_shot_input FAIL: luma-only frame was not rejected
+test_vmaf_per_shot FAIL: expected failure on complete_then_luma_only_420
 ```
 
 ### Green Phase (post implementation)
 
 ```text
-$ meson test -C core/build test_vmaf_per_shot
-1/1 test_vmaf_per_shot OK   0.07s
+$ meson test -C build-review --no-rebuild test_vmaf_per_shot_input test_vmaf_per_shot
+1/2 test_vmaf_per_shot_input OK
+2/2 test_vmaf_per_shot       OK
 
-$ meson test -C core/build --suite=fast
-158/158 test OK   5.00s
+$ meson test -C build-review --suite=fast --print-errorlogs
+162/162 test OK
 ```
 
 ### Governance and Static Analysis
 
 ```text
-$ clang-format -n --Werror core/tools/vmaf_per_shot.c
+$ clang-format -n --Werror core/tools/vmaf_per_shot.c \
+    core/tools/vmaf_per_shot_input.c core/tools/vmaf_per_shot_input.h \
+    core/tools/test/test_vmaf_per_shot_input.c
 (zero warnings / violations)
 
-$ praetorctl audit
-[PASS] HISS invariant scan verified: 213 active violations within 229 baselined limit (10 touched files clean).
+$ clang-tidy -p build-review core/tools/vmaf_per_shot_input.c \
+    core/tools/test/test_vmaf_per_shot_input.c core/tools/vmaf_per_shot.c --quiet
+(zero warnings / violations)
+
+$ make verify-all
+[PASS] HISS invariant scan verified: 213 active violations within 229 baselined limit (all touched files clean).
 Audit Summary: configured governance gates passed for vmafx/vmafx.
 ```
 
