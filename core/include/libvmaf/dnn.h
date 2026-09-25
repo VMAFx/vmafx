@@ -122,7 +122,7 @@ VMAF_EXPORT int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path,
  * validated against the sidecar's `encoder_vocab`; unknown names return
  * `-ENOENT` (the "unknown" bucket is still written so callers can choose
  * to continue). Preset strings are looked up in a per-encoder ordinal
- * table that mirrors `ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL`;
+ * table that mirrors the `PRESET_ORDINAL` mapping in `ai/scripts/train_fr_regressor_v2.py`;
  * unknown presets fall back to ordinal 5 ("medium"-equivalent). The CRF
  * is clamped to [0, 63] before normalisation.
  *
