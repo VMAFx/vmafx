@@ -193,15 +193,17 @@ static char *collect_float_ms_ssim_scores(VmafContext *vmaf, bool metal, double 
         return metal ? "Metal: float_ms_ssim read failed" : "CPU: float_ms_ssim read failed";
     if (out_cb) {
         err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cb", out_cb, 0u);
-        if (err)
+        if (err) {
             return metal ? "Metal: float_ms_ssim_cb read failed" :
                            "CPU: float_ms_ssim_cb read failed";
+        }
     }
     if (out_cr) {
         err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cr", out_cr, 0u);
-        if (err)
+        if (err) {
             return metal ? "Metal: float_ms_ssim_cr read failed" :
                            "CPU: float_ms_ssim_cr read failed";
+        }
     }
     return NULL;
 }
@@ -316,8 +318,12 @@ static char *test_metal_float_ms_ssim_parity_chroma(void)
 {
     const MsSsimTestOptions options = {.enable_chroma = true};
 
-    double cpu_y = 0.0, cpu_cb = 0.0, cpu_cr = 0.0;
-    double metal_y = NAN, metal_cb = NAN, metal_cr = NAN;
+    double cpu_y = 0.0;
+    double cpu_cb = 0.0;
+    double cpu_cr = 0.0;
+    double metal_y = NAN;
+    double metal_cb = NAN;
+    double metal_cr = NAN;
 
     char *msg = run_cpu_float_ms_ssim_opts(&options, false, &cpu_y, &cpu_cb, &cpu_cr);
     if (msg)
