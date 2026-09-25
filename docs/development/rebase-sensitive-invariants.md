@@ -93,7 +93,14 @@ linked AGENTS.md before resolving conflicts.
   (T-NEW-1)**: PR #197 (`b949cebf`, MERGED 2026-04-29) ported
   Netflix's feature/motion several-options commit; PR #213 (open)
   ports `d3647c73` `feature/speed` extractors (`speed_chroma` +
-  `speed_temporal`).
+- **Metal `float_ms_ssim` option parity ([ADR-1221](../adr/1221-gpu-ms-ssim-db-ceiling.md))**:
+  `float_ms_ssim_metal` exposes `enable_db`, `clip_db`, `enable_chroma`, and `enable_lcs`
+  matching CPU/SYCL/HIP twins. It emits `float_ms_ssim`, `float_ms_ssim_cb`, and
+  `float_ms_ssim_cr` on the GPU, enforces the >= 176 minimum plane dimension at init,
+  and wires `s->enable_db, s->max_db` into `vmaf_ms_ssim_emit_scores` /
+  `vmaf_ssim_emit_score_named`. Device-free contracts in
+  `core/test/test_metal_ms_ssim_options_contract.py` and
+  `core/test/test_nonfinite_collector_wiring.py` protect this against regression.
 
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute

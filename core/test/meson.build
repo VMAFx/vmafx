@@ -125,6 +125,15 @@ test('test_metal_float_moment_contract',
     suite : ['fast'],
 )
 
+# ADR-1221 / T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07: device-free contract
+# asserting Metal float_ms_ssim options (enable_db, clip_db, enable_chroma, enable_lcs),
+# max_db derivation, chroma min-dim checks, and shared score emitter wiring parity.
+test('test_metal_ms_ssim_options_contract',
+    import('python').find_installation(),
+    args : files('test_metal_ms_ssim_options_contract.py'),
+    suite : ['fast'],
+)
+
 # ADR-0480: both bootstrap score paths consume the shared suffix owner.
 test('test_bootstrap_name_contract',
     import('python').find_installation(),

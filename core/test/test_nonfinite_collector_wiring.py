@@ -55,6 +55,7 @@ REQUIRED = {
     "vmaf_ssim_prepare_score_named": (
         "float_ms_ssim.c",
         "sycl/integer_ms_ssim_sycl.cpp",
+        "metal/float_ms_ssim_metal.mm",
     ),
 }
 
@@ -87,10 +88,11 @@ FORBIDDEN = {
 
 METAL_LCS_GUARDS = ("!isfinite(lnum)", "!isfinite(cnum)", "!isfinite(snum)")
 
-METAL_MS_SSIM_FIXED_DB_CALL = (
+METAL_MS_SSIM_OPTIONS_DB_CALL = (
     "vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict, "
-    '"float_ms_ssim_metal", "float_ms_ssim", msssim, false, INFINITY, '
-    "l_means, c_means, s_means, MS_SSIM_SCALES, s->enable_lcs, index)"
+    '"float_ms_ssim_metal", "float_ms_ssim", plane_scores[0], s->enable_db, '
+    "s->max_db, l_means[0], c_means[0], s_means[0], MS_SSIM_SCALES, "
+    "s->enable_lcs, index)"
 )
 
 
@@ -137,10 +139,10 @@ def find_missing_metal_guards() -> list[str]:
 def find_metal_ms_ssim_db_wiring_drift() -> list[str]:
     source = (ROOT / "metal/float_ms_ssim_metal.mm").read_text(encoding="utf-8")
     compact_source = " ".join(source.split())
-    if METAL_MS_SSIM_FIXED_DB_CALL not in compact_source:
+    if METAL_MS_SSIM_OPTIONS_DB_CALL not in compact_source:
         return [
             "metal/float_ms_ssim_metal.mm: the shared emitter must preserve the "
-            "ADR-0490/ADR-1221 fixed linear-score contract (false, INFINITY)"
+            "ADR-0490 / ADR-1221 options-aware contract (s->enable_db, s->max_db)"
         ]
     return []
 

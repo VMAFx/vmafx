@@ -6936,8 +6936,12 @@
       "sites": {
         "core/src/feature/cuda/integer_ms_ssim_cuda.c": 2,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 2,
+        "core/src/feature/metal/float_ms_ssim_metal.mm": 1,
+        "core/test/meson.build": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 2,
         "core/test/test_hip_ms_ssim_parity.c": 3,
+        "core/test/test_metal_float_ms_ssim_parity.c": 1,
+        "core/test/test_metal_ms_ssim_options_contract.py": 1,
         "core/test/test_nonfinite_collector_wiring.py": 1,
         "core/test/test_sycl_ms_ssim_parity.c": 3
       },
