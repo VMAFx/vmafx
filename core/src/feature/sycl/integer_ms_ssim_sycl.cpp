@@ -835,7 +835,8 @@ static void free_ms_ssim_pyramid(MsSsimStateSycl *s)
      * allocate, and an init that failed part-way through plane 2 still leaves
      * plane 0 and 1 live. free_ms_ssim_pointer null-checks, so the unused tail
      * of a luma-only run costs nothing. */
-    for (MsSsimPlaneGeometry &geometry : s->geom) {
+    for (unsigned plane = 0; plane < MS_SSIM_MAX_PLANES; plane++) {
+        MsSsimPlaneGeometry &geometry = s->geom[plane];
         free_ms_ssim_pointer(s->sycl_state, geometry.h_ref);
         free_ms_ssim_pointer(s->sycl_state, geometry.h_cmp);
         for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {

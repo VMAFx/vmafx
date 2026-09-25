@@ -30,6 +30,7 @@ def _sources() -> dict[str, str]:
         "float_psnr_sycl.cpp",
         "integer_psnr_sycl.cpp",
         "integer_moment_sycl.cpp",
+        "integer_ms_ssim_sycl.cpp",
     )
     return {name: (SYCL_ROOT / name).read_text(encoding="utf-8") for name in names}
 
@@ -63,6 +64,10 @@ def _contract_failures(sources: dict[str, str]) -> list[str]:
         failures.append("integer_moment_sycl.cpp: missing explicit e_sums capture alias")
     if moment.count("atomic64(e_sums[") != MOMENT_OUTPUT_COUNT or "atomic64(d_sums[" in moment:
         failures.append("integer_moment_sycl.cpp: kernel uses the raw d_sums parameter")
+
+    ms_ssim = sources.get("integer_ms_ssim_sycl.cpp", "")
+    if "for (unsigned plane = 0; plane < MS_SSIM_MAX_PLANES; plane++)" not in ms_ssim:
+        failures.append("integer_ms_ssim_sycl.cpp: free_ms_ssim_pyramid must use bounded MS_SSIM_MAX_PLANES plane loop")
     return failures
 
 
@@ -94,6 +99,16 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         )
         failures = _contract_failures(sources)
         self.assertTrue(any("ambiguous cross-TU" in item for item in failures))
+
+    def test_ms_ssim_pyramid_plane_loop_regression_is_detected(self) -> None:
+        sources = _sources()
+        sources["integer_ms_ssim_sycl.cpp"] = sources["integer_ms_ssim_sycl.cpp"].replace(
+            "for (unsigned plane = 0; plane < MS_SSIM_MAX_PLANES; plane++)",
+            "for (MsSsimPlaneGeometry &geometry : s->geom)",
+            1,
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("MS_SSIM_MAX_PLANES plane loop" in item for item in failures))
 
 
 if __name__ == "__main__":
