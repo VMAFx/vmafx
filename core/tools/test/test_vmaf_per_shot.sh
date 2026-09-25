@@ -229,6 +229,14 @@ fi
 if "${BIN}" --reference "${SRC}" --width 576 --height 324 \
   --pixel_format 420 --bitdepth 8 \
   --output "${WORK}/out.csv" \
+  --frames -18446744073709551615 2>/dev/null; then
+  echo "test_vmaf_per_shot: expected failure on large negative --frames" >&2
+  exit 1
+fi
+
+if "${BIN}" --reference "${SRC}" --width 576 --height 324 \
+  --pixel_format 420 --bitdepth 8 \
+  --output "${WORK}/out.csv" \
   --frames not_a_number 2>/dev/null; then
   echo "test_vmaf_per_shot: expected failure on non-numeric --frames" >&2
   exit 1
