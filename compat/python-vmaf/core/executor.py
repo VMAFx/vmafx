@@ -849,7 +849,7 @@ class Executor(TypeVersionEnabled):
         if src_fmt_cmd:
             ffmpeg_cmd += shlex.split(src_fmt_cmd)
         ffmpeg_cmd += ["-i", path]
-        ffmpeg_cmd += ["-an", "-vsync", "0"]
+        ffmpeg_cmd += ["-an", "-fps_mode", "passthrough"]
         ffmpeg_cmd += ["-pix_fmt", workfile_yuv_type]
         if vframes_cmd:
             ffmpeg_cmd += shlex.split(vframes_cmd)
