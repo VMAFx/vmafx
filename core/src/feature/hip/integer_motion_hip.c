@@ -135,7 +135,7 @@ typedef struct MotionStateHip {
 static const VmafOption options[] = {
     {.name = "debug", .help = "debug mode: enable additional output",
      .offset = offsetof(MotionStateHip, debug), .type = VMAF_OPT_TYPE_BOOL, .default_val.b = true},
-    {.name = "motion_force_zero", .help = "forcing motion score to zero",
+    {.name = "motion_force_zero", .alias = "force_0", .help = "forcing motion score to zero",
      .offset = offsetof(MotionStateHip, motion_force_zero), .type = VMAF_OPT_TYPE_BOOL,
      .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "motion_blend_factor", .alias = "mbf", .help = "blend motion score given an offset",

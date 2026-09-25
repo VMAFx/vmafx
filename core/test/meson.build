@@ -40,6 +40,16 @@ test('test_sycl_kernel_source_contract',
     timeout : 30,
 )
 
+# ADR-1183 / T-GPU-TWIN-OPTION-ALIAS-DRIFT: a non-default feature option
+# becomes part of the published collector key. Keep GPU spellings equal to the
+# CPU reference without requiring any GPU runtime on the test host.
+test('test_gpu_option_alias_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_option_alias_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048: these diagnostics were standardized once, then silently restored
 # from stale source. Keep their line framing and severity prefix stable.
 test('test_vmaf_log_callsite_format',

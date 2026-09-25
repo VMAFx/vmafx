@@ -28,6 +28,14 @@ the CPU `float_vif` on the macOS Apple-Silicon CI lane (`places=4`, ADR-0214).
 The CUDA twin (`vif_cuda`) additionally carries a vestigial `enable_chroma`
 option (see Options table below); it is a documented no-op.
 
+Option aliases are part of the published collector key. Equivalent GPU twin
+options use the CPU spellings (`ks`, `ssclz`, and `egl`) so backend selection
+does not rename a feature ([ADR-1312](../adr/1312-gpu-option-alias-parity.md)).
+This is separate from device capability: all four GPU `float_vif` twins
+currently reject a non-default `vif_kernelscale` after selection, an open
+fallback defect tracked in `docs/state.md`; CUDA `float_vif` does not declare
+`vif_skip_scale0`, so ADR-1183 safely dispatches that configuration to CPU.
+
 ## `integer_vif` extractor
 
 The extractor uses an integer fixed-point implementation of the VIF algorithm
