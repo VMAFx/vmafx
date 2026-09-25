@@ -7409,6 +7409,12 @@
         "scripts/ci/check-source-adr-citations.py": 1
       },
       "target": "1311-source-adr-citation-provenance.md"
+    },
+    "1314": {
+      "sites": {
+        ".github/workflows/security-scans.yml": 1
+      },
+      "target": "1314-semgrep-registry-advisory-artifact.md"
     }
   },
   "retired": {
