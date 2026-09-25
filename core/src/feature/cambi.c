@@ -44,7 +44,7 @@
 #ifdef _MSC_VER
 #define CAMBI_NULL_POINTER NULL
 #else
-#define CAMBI_NULL_POINTER nullptr
+#define CAMBI_NULL_POINTER NULL
 #endif
 
 #if ARCH_X86

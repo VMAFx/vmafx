@@ -254,6 +254,8 @@ TIDY_RATCHET_COMPDB_arm64 :=
 
 tidy-ratchet: $(NINJA)
 	$(call require-tool,clang-tidy,install clang-tools)
+	$(PYTHON_INTERPRETER) scripts/ci/check-tidy-build-dir.py \
+	    --lane $(LANE) --build-dir "$(TIDY_RATCHET_BUILD_DIR)"
 	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
 	    --build-dir "$(TIDY_RATCHET_BUILD_DIR)" --ninja "$(NINJA)"
 	$(TIDY_RATCHET_COMPDB_$(LANE))
@@ -262,6 +264,8 @@ tidy-ratchet: $(NINJA)
 
 tidy-ratchet-write: $(NINJA)
 	$(call require-tool,clang-tidy,install clang-tools)
+	$(PYTHON_INTERPRETER) scripts/ci/check-tidy-build-dir.py \
+	    --lane $(LANE) --build-dir "$(TIDY_RATCHET_BUILD_DIR)"
 	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
 	    --build-dir "$(TIDY_RATCHET_BUILD_DIR)" --ninja "$(NINJA)"
 	$(TIDY_RATCHET_COMPDB_$(LANE))

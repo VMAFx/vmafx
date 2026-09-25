@@ -1,0 +1,5 @@
+- Enforced reproducible GPU clang-tidy ratchet configuration by adding
+  `scripts/ci/check-tidy-build-dir.py` to `make tidy-ratchet` and `make tidy-ratchet-write`.
+  GPU lanes (`cuda`, `hip`, `sycl`) now fail closed if the build directory is in-repo or
+  configured without `-Db_lto=false`, preventing clang LTO flag rejection and generated header
+  pollution. Re-recorded `scripts/ci/tidy-baseline-hip.json` against the documented configuration (ADR-1323).

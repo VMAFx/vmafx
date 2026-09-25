@@ -24561,6 +24561,13 @@ already carried the null-clear; this aligns the C++ implementation. Caught by
   init-OOM resource leaks on the CUDA / HIP error paths.
 
 
+- Enforced reproducible GPU clang-tidy ratchet configuration by adding
+  `scripts/ci/check-tidy-build-dir.py` to `make tidy-ratchet` and `make tidy-ratchet-write`.
+  GPU lanes (`cuda`, `hip`, `sycl`) now fail closed if the build directory is in-repo or
+  configured without `-Db_lto=false`, preventing clang LTO flag rejection and generated header
+  pollution. Re-recorded `scripts/ci/tidy-baseline-hip.json` against the documented configuration (ADR-1323).
+
+
 Replace hardcoded `/home/kilian/dev/libvmaf_vulkan/…` absolute paths in
 `testdata/test_all_backends.sh`, `testdata/bench_quick.py`,
 `testdata/compare_combined.py`, and `ai/tests/test_e2e_frame_to_score.py`
@@ -25863,6 +25870,14 @@ Affected files: `float_moment_metal.mm`, `float_motion_metal.mm`,
   invoking `ldconfig`. The Ubuntu 26.04 CUDA base image (bumped in #876) does not include
   that arch-specific path in its default `ld.so.conf`, causing the installed vmaf binary
   to exit with a dynamic linker error (zero smoke-test stdout) in under 2 ms.
+
+
+- Provided repository-owned minimal `matrix.h` and `mex.h` lint stubs under
+  `compat/python-vmaf/matlab/include/` and added a `matlab_mex` compilation target in
+  `core/meson.build`, allowing the 12 vendored MATLAB MEX translation units to be
+  exported to `compile_commands.json` and measured in the whole-tree static analysis
+  ratchet. Removed the blanket MATLAB exclusion from CI linting, fixed dead stores in
+  `ical_std.c`, and recorded the measured 178 warnings in the CPU baseline (ADR-1322).
 
 
 - Fixed the MCP HTTP body-limit regression on Python 3.14 with aiohttp 3.14.3:
@@ -29710,6 +29725,11 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
   on the primary queue when compute kernels launched, producing wrong motion scores
   for UV planes. Fix: `vmaf_sycl_queue_wait(state)` flushes the primary queue
   after UV copies and before graph submission. (ADR-1034)
+
+
+- Remeasured `core/tools/vmaf_vpl.c` through the official SYCL lane and generator tooling,
+  updating `scripts/ci/tidy-baseline-sycl.json` to reflect the reduced warning count (21 -> 12)
+  following HISS-21 function size decomposition and nullptr modernization (ADR-1243).
 
 
 - **Tensor I/O regression tests:** Make input fixtures read-only and split

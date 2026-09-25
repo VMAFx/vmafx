@@ -157,9 +157,11 @@ variable runs `gen-sycl-compile-commands.py`, and for `cpu` / `cuda` / `hip` /
 Keep the hook in both targets and keep it ordered between the two: while it was
 missing the lane measured zero SYCL feature TUs, and `tidy-baseline-sycl.json`
 recorded an empty backend while still reporting the lane as clean.
-`test_tidy_ratchet_sycl_compdb.py` pins that wiring. The GPU lanes also need
-their build dir configured `-Db_lto=false` and placed outside the repository;
-see the variable block in the `Makefile`.
+`test_tidy_ratchet_sycl_compdb.py` pins that wiring. Under ADR-1323, `make tidy-ratchet`
+and `make tidy-ratchet-write` automatically enforce this via `check-tidy-build-dir.py`:
+GPU lanes (`cuda`, `hip`, `sycl`) require their build directory to be configured with
+`-Db_lto=false` and placed strictly outside the repository root. Violations fail closed
+prior to compilation database export or measurement.
 `make tidy-ratchet LANE=sycl` sets `TIDY_RATCHET_EXTRA_sycl := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-sycl.sh`,
 anchoring the wrapper to the worktree root. Under ADR-1270, `safe_subprocess.py`
 requires allowlisted executables to be bare binary names or absolute paths;

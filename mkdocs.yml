@@ -1434,6 +1434,8 @@ nav:
         - "ADR-1311: source-adr-citation-provenance": adr/1311-source-adr-citation-provenance.md
         - "ADR-1312: gpu-option-alias-parity": adr/1312-gpu-option-alias-parity.md
         - "ADR-1314: semgrep-registry-advisory-artifact": adr/1314-semgrep-registry-advisory-artifact.md
+        - "ADR-1322: matlab-mex-lint-stubs": adr/1322-matlab-mex-lint-stubs.md
+        - "ADR-1323: gpu-tidy-ratchet-reproducibility": adr/1323-gpu-tidy-ratchet-reproducibility.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1546,6 +1548,7 @@ nav:
         - "compare": adr/by-tag/compare.md
         - "compat": adr/by-tag/compat.md
         - "compatibility": adr/by-tag/compatibility.md
+        - "compdb": adr/by-tag/compdb.md
         - "compliance": adr/by-tag/compliance.md
         - "concurrency": adr/by-tag/concurrency.md
         - "configs": adr/by-tag/configs.md
@@ -1741,6 +1744,7 @@ nav:
         - "macos": adr/by-tag/macos.md
         - "maintainability": adr/by-tag/maintainability.md
         - "maintenance": adr/by-tag/maintenance.md
+        - "makefile": adr/by-tag/makefile.md
         - "manifests": adr/by-tag/manifests.md
         - "materializer": adr/by-tag/materializer.md
         - "matlab": adr/by-tag/matlab.md
@@ -1757,6 +1761,7 @@ nav:
         - "methodology": adr/by-tag/methodology.md
         - "metric": adr/by-tag/metric.md
         - "metrics": adr/by-tag/metrics.md
+        - "mex": adr/by-tag/mex.md
         - "migration": adr/by-tag/migration.md
         - "mingw": adr/by-tag/mingw.md
         - "mkdocs": adr/by-tag/mkdocs.md

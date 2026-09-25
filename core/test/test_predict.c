@@ -26,7 +26,7 @@
 #include "predict.h"
 
 #if defined(__cplusplus)
-#define PREDICT_TEST_NULLPTR nullptr
+#define PREDICT_TEST_NULLPTR NULL
 #else
 #define PREDICT_TEST_NULLPTR ((void *)0)
 #endif

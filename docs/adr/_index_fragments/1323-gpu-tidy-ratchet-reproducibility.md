@@ -1,0 +1,1 @@
+| [ADR-1323](1323-gpu-tidy-ratchet-reproducibility.md) | Enforce reproducible GPU tidy ratchet configurations fail-closed via out-of-repo build directories and b_lto=false. | Accepted | gpu, hip, sycl, cuda, clang-tidy, ratchet, makefile |

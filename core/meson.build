@@ -119,3 +119,39 @@ subdir('src')
 subdir('tools')
 subdir('doc')
 subdir('test')
+
+# MATLAB MEX lint stubs and compilation target (ADR-1322)
+# Allows the 10 vendored MEX translation units under compat/python-vmaf/matlab/
+# to enter the native compilation database and whole-tree clang-tidy ratchet.
+matlab_mex_sources = files(
+    '../compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c',
+    '../compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/convolve.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/corrDn.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/edges-orig.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/innerProd.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/histo.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/pointOp.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/range2.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/upConv.c',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX/wrap.c',
+)
+
+matlab_mex_inc = include_directories(
+    '../compat/python-vmaf/matlab/include',
+    '../compat/python-vmaf/matlab/strred/matlabPyrTools/MEX',
+)
+
+matlab_mex_c_args = []
+if cc.get_argument_syntax() != 'msvc'
+    matlab_mex_c_args += ['-std=gnu89', '-Wno-old-style-definition', '-Wno-implicit-int']
+endif
+
+matlab_mex_lib = static_library(
+    'matlab_mex',
+    matlab_mex_sources,
+    include_directories : matlab_mex_inc,
+    c_args : matlab_mex_c_args,
+    build_by_default : false,
+)

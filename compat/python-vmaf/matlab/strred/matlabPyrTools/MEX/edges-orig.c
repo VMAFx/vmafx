@@ -37,12 +37,19 @@ below.
 #include <math.h>
 #include <string.h>
 #include "convolve.h"
+#define FILTER REDUCE
 
 #define sgn(a) (((a) > 0) ? 1 : (((a) < 0) ? -1 : 0))
 #define clip(a, mn, mx) (((a) < (mn)) ? (mn) : (((a) >= (mx)) ? (mx - 1) : (a)))
 
-int reflect1(), reflect2(), repeat(), zero(), Extend(), nocompute();
-int ereflect(), predict();
+int reflect1(double *, int, int, int, int, double *, int);
+int reflect2(double *, int, int, int, int, double *, int);
+int repeat(double *, int, int, int, int, double *, int);
+int zero(double *, int, int, int, int, double *, int);
+int Extend(double *, int, int, int, int, double *, int);
+int nocompute(double *, int, int, int, int, double *, int);
+int ereflect(double *, int, int, int, int, double *, int);
+int predict(double *, int, int, int, int, double *, int);
 
 /* Lookup table matching a descriptive string to the edge-handling function */
 #if !THINK_C
@@ -138,10 +145,7 @@ f_or_e - equal to one of the two constants EXPAND or FILTER.
 nocompute() - Return zero for values where filter hangs over the edge.
 */
 
-int nocompute(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
-register int x_dim;
-int y_dim, x_pos, y_pos, f_or_e;
+int nocompute(double *filt, int x_dim, int y_dim, int x_pos, int y_pos, double *result, int f_or_e)
 {
     register int i;
     register int size = x_dim * y_dim;
@@ -158,10 +162,7 @@ int y_dim, x_pos, y_pos, f_or_e;
 /* --------------------------------------------------------------------
 zero() - Zero outside of image.  Discontinuous, but adds zero energy. */
 
-int zero(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
-register int x_dim;
-int y_dim, x_pos, y_pos, f_or_e;
+int zero(double *filt, int x_dim, int y_dim, int x_pos, int y_pos, double *result, int f_or_e)
 {
     register int y_filt, x_filt, y_res, x_res;
     int filt_sz = x_dim * y_dim;
@@ -185,10 +186,7 @@ repeat() - repeat edge pixel.  Continuous, but content is usually
 different from image.  
 */
 
-int repeat(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
-register int x_dim;
-int y_dim, x_pos, y_pos, f_or_e;
+int repeat(double *filt, int x_dim, int y_dim, int x_pos, int y_pos, double *result, int f_or_e)
 {
     register int y_filt, x_filt, y_res, x_res;
     int filt_sz = x_dim * y_dim;
@@ -212,10 +210,7 @@ then the next pixel, etc.  Continuous, attempting to maintain
 "similar" content, but discontinuous first derivative.
 */
 
-int reflect2(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
-register int x_dim;
-int y_dim, x_pos, y_pos, f_or_e;
+int reflect2(double *filt, int x_dim, int y_dim, int x_pos, int y_pos, double *result, int f_or_e)
 {
     register int y_filt, x_filt, y_edge, x_edge;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;
@@ -253,10 +248,7 @@ to do if you are subsampling by 2, since it maintains parity (even
 pixels positions remain even, odd ones remain odd). (note: procedure differs 
 depending on f_or_e parameter).  */
 
-int reflect1(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
-register int x_dim;
-int y_dim, x_pos, y_pos, f_or_e;
+int reflect1(double *filt, int x_dim, int y_dim, int x_pos, int y_pos, double *result, int f_or_e)
 {
     int filt_sz = x_dim * y_dim;
     register int x_start = 0, y_start = 0, x_stop = x_dim, y_stop = filt_sz;
@@ -319,10 +311,7 @@ value.  Maintains continuity in intensity AND first derivative (but
 not higher derivs).
 */
 
-int Extend(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
-register int x_dim;
-int y_dim, x_pos, y_pos, f_or_e;
+int Extend(double *filt, int x_dim, int y_dim, int x_pos, int y_pos, double *result, int f_or_e)
 {
     int filt_sz = x_dim * y_dim;
     register int x_start = 0, y_start = 0, x_stop = x_dim, y_stop = filt_sz;
@@ -377,10 +366,7 @@ by the reciprocal of the percentage of filter being used.  (i.e. if
 50% of the filter is hanging over the edge of the image, multiply the
 taps being used by 2).  */
 
-int predict(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
-register int x_dim;
-int y_dim, x_pos, y_pos, f_or_e;
+int predict(double *filt, int x_dim, int y_dim, int x_pos, int y_pos, double *result, int f_or_e)
 {
     register int y_filt, x_filt, y_res, x_res;
     register double taps_used = 0.0; /* int *** */
@@ -418,10 +404,7 @@ by root 2.  This maintains orthogonality of odd-length linear-phase
 QMF filters, but it is not useful for most applications, since it
 alters the DC level.  */
 
-int ereflect(filt, x_dim, y_dim, x_pos, y_pos, result, f_or_e)
-register double *filt, *result;
-register int x_dim;
-int y_dim, x_pos, y_pos, f_or_e;
+int ereflect(double *filt, int x_dim, int y_dim, int x_pos, int y_pos, double *result, int f_or_e)
 {
     register int y_filt, x_filt, y_edge, x_edge;
     register int x_base = (x_pos > 0) ? (x_dim - 1) : 0;

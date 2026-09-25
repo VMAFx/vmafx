@@ -43,7 +43,7 @@
 #ifdef _MSC_VER
 #define CAMBI_TEST_NULL_POINTER NULL
 #else
-#define CAMBI_TEST_NULL_POINTER nullptr
+#define CAMBI_TEST_NULL_POINTER NULL
 #endif
 
 enum CambiTVIBisectFlag {

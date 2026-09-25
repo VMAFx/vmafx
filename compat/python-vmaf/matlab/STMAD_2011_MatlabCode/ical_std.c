@@ -121,7 +121,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     /*---Inside mexFunction---*/
 
     /*Declarations*/
-    mxArray *xData, *yData;
+    const mxArray *xData, *yData;
+    mxArray *tmpArray;
     double *xVal, *yVal, *outStd, *outStdMod, *outMean;
     double *TMP;
     int rowLen, colLen;
@@ -132,13 +133,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     /*Get matrix x*/
     xVal = mxGetPr(xData);
-    rowLen = mxGetN(xData);
-    colLen = mxGetM(xData);
 
     /*Get matrix y*/
     yVal = mxGetPr(yData);
-    rowLen = mxGetN(yData);
-    colLen = mxGetM(yData);
+    rowLen = (int)mxGetN(yData);
+    colLen = (int)mxGetM(yData);
 
     /*Allocate memory and assign output pointer*/
     plhs[0] = mxCreateDoubleMatrix(colLen, rowLen, mxREAL); /*mxReal is our data-type*/
@@ -153,7 +152,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     plhs[2] = mxCreateDoubleMatrix(colLen, rowLen, mxREAL); /*mxReal is our data-type*/
     outMean = mxGetPr(plhs[2]);
 
-    TMP = mxGetPr(mxCreateDoubleMatrix(colLen, rowLen, mxREAL));
+    tmpArray = mxCreateDoubleMatrix(colLen, rowLen, mxREAL);
+    TMP = mxGetPr(tmpArray);
 
     block_mean_and_std(xVal, yVal, outStd, outMean, rowLen, colLen);
 
@@ -164,7 +164,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     block_min_filter(outStdMod, TMP, rowLen, colLen);
 
-    mxDestroyArray(TMP);
+    mxDestroyArray(tmpArray);
 
     return;
 }

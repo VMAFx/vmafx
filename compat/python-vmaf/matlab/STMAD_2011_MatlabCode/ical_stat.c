@@ -67,7 +67,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     /*---Inside mexFunction---*/
 
     /*Declarations*/
-    mxArray *xData;
+    const mxArray *xData;
     double *xVal, *outStd, *outSkw, *outKrt;
     double stdev, skw, krt;
     int i, j, iB, jB;
@@ -78,8 +78,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     /*Get matrix x*/
     xVal = mxGetPr(xData);
-    rowLen = mxGetN(xData);
-    colLen = mxGetM(xData);
+    rowLen = (int)mxGetN(xData);
+    colLen = (int)mxGetM(xData);
 
     /*Allocate memory and assign output pointer*/
     plhs[0] = mxCreateDoubleMatrix(colLen, rowLen, mxREAL); /*mxReal is our data-type*/

@@ -6389,6 +6389,7 @@
         "core/test/test_hip_adm_init_unwind.c": 1,
         "core/test/test_model.c": 1,
         "core/test/test_model_registration_ownership.cpp": 1,
+        "core/test/test_output_open_eintr.c": 1,
         "core/test/test_picture.c": 2,
         "core/test/test_registration_partial_copy.cpp": 1,
         "core/test/test_spinner.cpp": 1,
@@ -6544,7 +6545,8 @@
         ".github/workflows/lint-and-format.yml": 2,
         "Makefile": 1,
         "core/meson.build": 1,
-        "core/src/percentile.h": 1
+        "core/src/percentile.h": 1,
+        "scripts/ci/check-tidy-build-dir.py": 2
       },
       "target": "1172-bound-lto-link-parallelism.md"
     },
@@ -7415,6 +7417,21 @@
         ".github/workflows/security-scans.yml": 1
       },
       "target": "1314-semgrep-registry-advisory-artifact.md"
+    },
+    "1322": {
+      "sites": {
+        "compat/python-vmaf/matlab/include/matrix.h": 1,
+        "compat/python-vmaf/matlab/include/mex.h": 1,
+        "core/meson.build": 1
+      },
+      "target": "1322-matlab-mex-lint-stubs.md"
+    },
+    "1323": {
+      "sites": {
+        "scripts/ci/check-tidy-build-dir.py": 5,
+        "scripts/ci/tests/test_check_tidy_build_dir.py": 1
+      },
+      "target": "1323-gpu-tidy-ratchet-reproducibility.md"
     }
   },
   "retired": {

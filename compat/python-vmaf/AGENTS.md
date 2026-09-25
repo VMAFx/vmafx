@@ -177,12 +177,15 @@ python/vmaf/
   termination in the loop header; `readiter()` keeps its trailing
   `raise StopIteration` (a PEP 479 RuntimeError for callers) on purpose —
   changing that is a behaviour change, not a cleanup.
-- **The MATLAB MEX sources are refactored in place (ADR-0030 / ADR-0038).**
+- **The MATLAB MEX sources are refactored in place and measured (ADR-0030 / ADR-0038 / ADR-1313).**
   `matlab/strred/matlabPyrTools/MEX/` and `matlab/STMAD_2011_MatlabCode/`
   now carry `static` helpers instead of the long `INPROD` macro bodies and
   inline argument parsing. Every index expression, accumulation order and
   error string is unchanged; `edges[]` is filled with a bounded copy because
-  HISS-08 bans `strcpy()`. See `docs/rebase-notes.md`.
+  HISS-08 bans `strcpy()`. Minimal repository-owned `matrix.h` and `mex.h` lint
+  stubs in `matlab/include/` allow all 10 translation units to be compiled into
+  a native Meson target (`matlab_mex`), exported to `compile_commands.json`, and
+  measured in the CPU whole-tree ratchet baseline (ADR-1313). See `docs/rebase-notes.md`.
 - **Memoization cache key stability (SHA-256) (T-SEMGREP-WARNING-ALERTS-946-949-2026-09-23).**
   `tools/decorator.py` generates in-memory and on-disk cache keys in
   `@persist`, `@persist_to_file`, and `@persist_to_dir` using
@@ -211,3 +214,4 @@ python/vmaf/
 - [ADR-1236](../../docs/adr/1236-version-single-source-tree.md) — single-source package versions and unify Python dependencies.
 - [ADR-1278](../../docs/adr/1278-python-safe-parallel-execution.md) — fork-free process execution and reference 5PL fitting.
 - [ADR-1307](../../docs/adr/1307-sha256-memoization-cache-invalidation.md) — SHA-256 memoization cache key upgrade and clean cold invalidation.
+- [ADR-1313](../../docs/adr/1313-matlab-mex-lint-stubs.md) — repository-owned MATLAB MEX lint stubs and compilation targets.

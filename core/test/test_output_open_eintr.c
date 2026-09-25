@@ -37,6 +37,7 @@ int __wrap_open64(const char *path, int flags, ...)
     if (((unsigned)flags & (unsigned)O_CREAT) != 0U) {
         va_list args;
         va_start(args, flags);
+        /* NOLINTNEXTLINE(clang-analyzer-security.VAList) ADR-1142 */
         mode = va_arg(args, mode_t);
         va_end(args);
     }

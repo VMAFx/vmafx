@@ -1,0 +1,1 @@
+| [ADR-1322](1322-matlab-mex-lint-stubs.md) | Minimal repository-owned matrix.h and mex.h lint stubs and compilation target to measure vendored MATLAB MEX translation units in whole-tree static analysis. | Accepted | lint, matlab, mex, clang-tidy, compdb |

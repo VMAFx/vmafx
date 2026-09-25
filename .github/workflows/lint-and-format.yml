@@ -288,18 +288,6 @@ jobs:
           #     replay. `(^|/)testdata/` is already the tree-wide fixture
           #     exclusion in `.pre-commit-config.yaml`; this is the same rule
           #     applied to the changed-files tidy lane.
-          #   - compat/python-vmaf/matlab/ — upstream Netflix training-harness
-          #     MATLAB MEX sources. They include `mex.h` / `matrix.h` from the
-          #     proprietary MATLAB SDK, which does not exist on the runner, so
-          #     every one of them dies in the preprocessor
-          #     (`'mex.h' file not found`) and the diagnostics that follow are
-          #     artefacts of reading a `.c` file as C++ after the include
-          #     failed, not findings about the code. Same posture as the
-          #     CUDA/SYCL/HIP/eBPF families above, and the same exclusion these
-          #     files already carry in every hygiene hook in
-          #     `.pre-commit-config.yaml` (see the `check-copyright` entry).
-          #     The whole-tree ratchet does not measure them either — they have
-          #     no entry in `build/compile_commands.json`.
           #
           # One filter shared by every trigger path below, so adding a family
           # is a single edit.
@@ -326,8 +314,7 @@ jobs:
               -e '^core/test/fuzz/' \
               -e '^core/src/compat/win32/' \
               -e '^cmd/vmafx-node/bpf/' \
-              -e '^\.config/hiss/testdata/' \
-              -e '^compat/python-vmaf/matlab/' |
+              -e '^\.config/hiss/testdata/' |
               python3 scripts/ci/pelorus_mirror.py filter
           }
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
