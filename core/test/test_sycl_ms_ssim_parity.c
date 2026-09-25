@@ -112,7 +112,8 @@ static int ms_ssim_db_opts(VmafFeatureDictionary **opts)
 }
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
-static char *run_cpu_ms_ssim(bool db, bool identical, double *score)
+static char *run_cpu_ms_ssim(bool db, bool identical, bool chroma, double *score, double *score_cb,
+                             double *score_cr)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
@@ -122,6 +123,10 @@ static char *run_cpu_ms_ssim(bool db, bool identical, double *score)
     if (db) {
         err = ms_ssim_db_opts(&opts);
         mu_assert("CPU: ms_ssim_db_opts failed", !err);
+    }
+    if (chroma) {
+        err = vmaf_feature_dictionary_set(&opts, "enable_chroma", "true");
+        mu_assert("CPU: ms_ssim chroma opt failed", !err);
     }
     err = vmaf_use_feature(vmaf, "float_ms_ssim", opts);
     if (err)
@@ -133,15 +138,24 @@ static char *run_cpu_ms_ssim(bool db, bool identical, double *score)
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", score, 0u);
     mu_assert("CPU: float_ms_ssim score missing", !err);
+    if (chroma) {
+        err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cb", score_cb, 0u);
+        mu_assert("CPU: float_ms_ssim_cb score missing", !err);
+        err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cr", score_cr, 0u);
+        mu_assert("CPU: float_ms_ssim_cr score missing", !err);
+    }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
-static char *run_sycl_ms_ssim(bool db, bool identical, double *score)
+static char *run_sycl_ms_ssim(bool db, bool identical, bool chroma, double *score, double *score_cb,
+                              double *score_cr)
 {
     *score = NAN;
+    *score_cb = NAN;
+    *score_cr = NAN;
     VmafSyclState *sycl_state = NULL;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
@@ -160,6 +174,10 @@ static char *run_sycl_ms_ssim(bool db, bool identical, double *score)
         err = ms_ssim_db_opts(&opts);
         mu_assert("SYCL: ms_ssim_db_opts failed", !err);
     }
+    if (chroma) {
+        err = vmaf_feature_dictionary_set(&opts, "enable_chroma", "true");
+        mu_assert("SYCL: ms_ssim chroma opt failed", !err);
+    }
     err = vmaf_use_feature(vmaf, "float_ms_ssim_sycl", opts);
     if (err)
         (void)vmaf_feature_dictionary_free(&opts);
@@ -170,6 +188,12 @@ static char *run_sycl_ms_ssim(bool db, bool identical, double *score)
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
     err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim", score, 0u);
     mu_assert("SYCL: float_ms_ssim score missing", !err);
+    if (chroma) {
+        err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cb", score_cb, 0u);
+        mu_assert("SYCL: float_ms_ssim_cb score missing", !err);
+        err = vmaf_feature_score_at_index(vmaf, "float_ms_ssim_cr", score_cr, 0u);
+        mu_assert("SYCL: float_ms_ssim_cr score missing", !err);
+    }
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
@@ -188,10 +212,12 @@ static char *test_ms_ssim_cpu_sycl_parity(void)
 {
     double cpu_score = 0.0;
     double sycl_score = NAN;
-    char *msg = run_cpu_ms_ssim(false, false, &cpu_score);
+    double cpu_cb, cpu_cr;
+    char *msg = run_cpu_ms_ssim(false, false, false, &cpu_score, &cpu_cb, &cpu_cr);
     if (msg)
         return msg;
-    msg = run_sycl_ms_ssim(false, false, &sycl_score);
+    double sycl_cb, sycl_cr;
+    msg = run_sycl_ms_ssim(false, false, false, &sycl_score, &sycl_cb, &sycl_cr);
     if (msg)
         return msg;
     if (isnan(sycl_score))
@@ -215,15 +241,41 @@ static char *test_ms_ssim_cpu_sycl_parity(void)
  * +Inf on an identical reference/distorted pair — an ordinary thing to score.
  * The default-options test above cannot see it: with enable_db off, neither
  * path converts at all. */
+
+static char *test_ms_ssim_cpu_sycl_parity_chroma(void)
+{
+    double cpu_score = 0.0, cpu_cb = 0.0, cpu_cr = 0.0;
+    double sycl_score = NAN, sycl_cb = NAN, sycl_cr = NAN;
+
+    char *msg = run_cpu_ms_ssim(false, false, true, &cpu_score, &cpu_cb, &cpu_cr);
+    if (msg)
+        return msg;
+    msg = run_sycl_ms_ssim(false, false, true, &sycl_score, &sycl_cb, &sycl_cr);
+    if (msg)
+        return msg;
+    if (isnan(sycl_score))
+        return NULL;
+
+    double delta = fabs(cpu_score - sycl_score);
+    double delta_cb = fabs(cpu_cb - sycl_cb);
+    double delta_cr = fabs(cpu_cr - sycl_cr);
+
+    mu_assert("float_ms_ssim delta exceeds tolerance", delta <= PARITY_TOL);
+    mu_assert("float_ms_ssim_cb delta exceeds tolerance", delta_cb <= PARITY_TOL);
+    mu_assert("float_ms_ssim_cr delta exceeds tolerance", delta_cr <= PARITY_TOL);
+    return NULL;
+}
+
 static char *test_ms_ssim_clip_db_ceiling(void)
 {
     double cpu = 0.0;
     double gpu = NAN;
 
-    char *msg = run_cpu_ms_ssim(true, true, &cpu);
+    double dummy_cb, dummy_cr;
+    char *msg = run_cpu_ms_ssim(true, true, false, &cpu, &dummy_cb, &dummy_cr);
     if (msg)
         return msg;
-    msg = run_sycl_ms_ssim(true, true, &gpu);
+    msg = run_sycl_ms_ssim(true, true, false, &gpu, &dummy_cb, &dummy_cr);
     if (msg)
         return msg;
     if (isnan(gpu))
@@ -248,6 +300,7 @@ char *run_tests(void)
 {
     mu_run_test(test_ms_ssim_sycl_registered);
     mu_run_test(test_ms_ssim_cpu_sycl_parity);
+    mu_run_test(test_ms_ssim_cpu_sycl_parity_chroma);
     mu_run_test(test_ms_ssim_clip_db_ceiling);
     return NULL;
 }
