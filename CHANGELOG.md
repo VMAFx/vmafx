@@ -31658,12 +31658,11 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   configured a default test setup in `core/meson.build` using `environment().unset()`
   to purge secret-bearing GitHub credentials (`GITHUB_PERSONAL_ACCESS_TOKEN`,
   `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`,
-  `GH_PAT`, `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`) from test process
-  execution environments and `build/meson-logs/testlog.json`. Non-secret and ordinary
-  runtime environment variables (`PATH`, `HOME`, `GITHUB_ACTIONS`, `GITHUB_REPOSITORY`)
-  are preserved, preventing credential leakage in test runs, crash reports, and CI log
-  artifacts without weakening test coverage. Accompanied by a red-capable regression
-  contract in `core/test/test_meson_secret_env_sanitization.py`.
+  `GH_PAT`, `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`,
+  `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`) from the child environments
+  and `build/meson-logs/testlog.json` of every currently declared test. A fail-closed
+  contract rejects alternate test setups and explicit per-test credential reintroduction;
+  its hermetic probes use only an allowlisted platform environment plus synthetic values.
 
 
 - **libvmaf symbol visibility** — `libvmaf.so.3` no longer exports 207 internal

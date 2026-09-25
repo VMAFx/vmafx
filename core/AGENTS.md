@@ -88,11 +88,14 @@ core/
   (`add_test_setup('default', ..., is_default: true)`) using `environment().unset()`
   to purge sensitive GitHub credentials (`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`,
   `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`, `GH_PAT`,
-  `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`) from test child execution environments
-  and `build/meson-logs/testlog.json`. Non-secret and ordinary runtime environment
-  variables (`PATH`, `HOME`, `GITHUB_ACTIONS`, `GITHUB_REPOSITORY`) remain untouched.
-  Rebase must preserve this default test setup in `core/meson.build` and the
-  accompanying regression contract in `core/test/test_meson_secret_env_sanitization.py`.
+  `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`,
+  `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`) from the child environments
+  and `build/meson-logs/testlog.json` of every currently declared test. Meson applies
+  per-test environments after a selected setup and permits explicit alternate setups, so
+  the regression contract must continue to enumerate all `core/**/meson.build` files,
+  require this as the only `add_test_setup`, and reject explicit forbidden-name
+  reintroduction outside the twelve sanctioned unset calls. Rebase must preserve the
+  setup and `core/test/test_meson_secret_env_sanitization.py` together.
 - **CUDA fatbin & HIP HSACO header dependency tracking**
   ([ADR-1320](../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
   [Research-2106](../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):

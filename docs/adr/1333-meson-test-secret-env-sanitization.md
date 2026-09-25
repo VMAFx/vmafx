@@ -9,37 +9,26 @@
 
 ## Context
 
-During pre-RC1 supply-chain and credential audits, a security defect was identified
-in Meson test execution: the test runner (`mtest.py`) inherits `os.environ` from the host
-process by default and copies the entire environment dictionary (`result.env`) into
-`build/meson-logs/testlog.json` via `JsonLogfileBuilder.log()`.
+Meson's test runner inherits the host process environment and records the resulting
+environment in `build/meson-logs/testlog.json`. On workstations and CI runners, that
+environment can contain GitHub credentials. The risk covers ordinary GitHub API tokens as
+well as the Actions OIDC request bearer token and the Actions runtime access token.
 
-On developer workstations, automated testing environments, and CI runners, sensitive GitHub
-credential tokens such as `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`, and `GH_TOKEN` are
-routinely exported for API interaction, repository checkout, or self-hosted runner dispatch.
-When `meson test`, `ninja test`, or `make test` runs:
-
-1. The plaintext token values are inherited by all test child processes, exposing credentials
-   to child binaries, core dump analyzers, or crash handlers.
-2. Meson's `testlog.json` persists the complete environment mapping on disk in plaintext.
-3. If test failure logs or build artifact bundles are archived, uploaded to CI artifact
-   storage, or shared across developer machines, secret credentials risk exfiltration.
-
-The current tracked repository tree contains no token patterns, and build logs are ignored in
-`.gitignore`, but future test executions must be guaranteed not to inherit or persist
-secret-bearing credential variables.
+Meson 1.12.1's installed `mesonbuild/mtest.py` also establishes two important precedence
+rules. Selecting an alternate test setup replaces the default setup, and each test's `env`
+is applied after the selected setup. A default setup therefore protects the tests declared
+today, but an unguarded future alternate setup or per-test credential assignment could
+bypass it.
 
 ## Decision
 
-We implement repo-wide secret credential sanitization for all Meson tests using Meson's
-declarative test setup mechanism in `core/meson.build`:
+We protect the currently declared Meson tests at both the runtime and source-contract
+boundaries:
 
-1. **Default test setup with `environment().unset()`**:
-   Meson 1.4.0+ (the project's declared minimum `meson_version: '>= 1.4.0'`) supports
-   `EnvironmentVariables.unset()`. We configure a project-wide default test setup
-   via `add_test_setup('default', env : sanitized_test_env, is_default : true)`.
-2. **Explicit credential sanitization list**:
-   We explicitly unset all standard GitHub secret and token variables:
+1. **One default sanitizing setup**: `core/meson.build` declares the repository's only
+   `add_test_setup`, named `default`, with `is_default: true`. Its environment unsets these
+   twelve credential-bearing names:
+
    - `GITHUB_PERSONAL_ACCESS_TOKEN`
    - `GITHUB_TOKEN`
    - `GH_TOKEN`
@@ -50,50 +39,55 @@ declarative test setup mechanism in `core/meson.build`:
    - `GITHUB_AUTH_TOKEN`
    - `GITHUB_API_TOKEN`
    - `HOMEBREW_GITHUB_API_TOKEN`
-3. **Preservation of necessary and non-secret environment**:
-   We deliberately avoid broad deletion of arbitrary environment variables. Required runtime
-   variables (`PATH`, `HOME`, `USER`, `TMPDIR`, compiler flags) and non-secret GitHub metadata
-   variables (`GITHUB_ACTIONS`, `GITHUB_REPOSITORY`, `GITHUB_WORKSPACE`, `GITHUB_REF`,
-   `GITHUB_SHA`) remain untouched so that normal test discovery, execution, and CI status checks
-   function without degradation.
-4. **Red-capable regression contract**:
-   We register `core/test/test_meson_secret_env_sanitization.py` in the `fast` test suite.
-   The regression test provides:
-   - A RED proof demonstrating that vanilla Meson without the sanitizing test setup leaks
-     secret credentials into child environments and `testlog.json`.
-   - A GREEN proof demonstrating that the default test setup reliably purges all specified
-     token variables from both test child processes and `testlog.json` while preserving
-     ordinary required environment variables (`PATH`, custom test variables).
-   - In-suite assertion that live test execution under Meson contains zero forbidden credentials.
-   - Strict adherence to the security invariant: token values are never printed, read back,
-     hashed, or exposed in assertions or failure messages.
+   - `ACTIONS_ID_TOKEN_REQUEST_TOKEN`
+   - `ACTIONS_RUNTIME_TOKEN`
+
+2. **Fail-closed declaration contract**:
+   `core/test/test_meson_secret_env_sanitization.py` enumerates every production
+   `core/**/meson.build`. It requires exactly one `add_test_setup`, requires every listed
+   unset exactly once in the root file, and rejects any other explicit occurrence of a
+   forbidden credential name. This prevents tracked alternate setups and explicit per-test
+   restoration from silently bypassing the default.
+3. **Minimal synthetic regression environment**: subprocess probes copy only the small
+   platform-runtime allowlist `PATH`, `PATHEXT`, `SYSTEMROOT`, `SystemRoot`, `WINDIR`, and
+   `COMSPEC` when present. Home, temporary-directory, locale, user, ordinary-control, and
+   credential values are synthetic and private to each temporary directory. The tests never
+   enumerate or copy the caller's remaining environment.
+4. **Red-capable runtime proof**: hermetic Meson projects demonstrate the unmitigated child
+   and JSON-log leak, prove the sanitizing default removes all twelve names, and explicitly
+   demonstrate Meson's alternate-setup and per-test-environment precedence. The RED child
+   succeeds only when it sees a forbidden key, and checks membership without reading values.
+
+This is an explicit-name denylist, not a claim that arbitrary future credential names are
+automatically discovered. A new credential-bearing name must be added to the production
+unset list and the shared regression tuple together.
 
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
-| **Meson `add_test_setup` with `unset()` (chosen)** | Native to Meson 1.4.0+, applies universally to `meson test`, `ninja test`, and `make test`, zero process overhead, platform-neutral (Linux, macOS, Windows). | Requires test runs to use default setup or explicitly inherit it. | Cleanest and most durable repo-wide approach; operates directly at the Meson test harness layer where `testlog.json` is generated. |
-| Custom test wrapper script (`--wrapper`) | Can sanitize environment before launching each test binary. | Introduces process-fork overhead for every unit test; does not sanitize Meson's own `testlog.json` log construction; complicates debugging under `gdb`/`lldb`. | Rejected because `mtest.py` records `result.env` before the wrapper runs, leaving `testlog.json` vulnerable. |
-| CI-only environment stripping in YAML | Simple to implement in `.github/workflows/`. | Does not protect local developer runs, container sessions, or custom CI scripts; fragile to new workflow additions. | Rejected as insufficient; pre-RC1 security requires durable repository-level guarantees. |
-| Broad `os.environ.clear()` | Guarantees complete isolation. | Breaks required runtime dependencies (`PATH`, dynamic linker paths, temp directories, locale settings). | Rejected per requirement to avoid broad deletion of arbitrary environment. |
+| **Default setup plus fail-closed source contract (chosen)** | Protects child processes and Meson's JSON log; no per-test wrapper; detects the two known tracked bypass forms. | An explicit denylist needs maintenance; a caller that edits build metadata outside the reviewed tree is out of scope. | Smallest repository-owned control that covers every currently declared test and detects configuration drift. |
+| Default `add_test_setup` without a declaration contract | Native, fast, and platform-neutral. | An alternate setup or a per-test `env` can restore a key after sanitization. | The guarantee would be broader than Meson's precedence semantics support. |
+| Custom test wrapper (`--wrapper`) | Can sanitize the child process. | Meson constructs and logs `result.env` outside the wrapper; debugger invocation becomes more complex. | Does not protect `testlog.json`. |
+| CI-only stripping | Easy to add to one workflow. | Misses local, IDE, container, and future workflow entry points. | The defect is in the repository test boundary, not one workflow. |
+| Clear the whole environment | Removes unknown credentials too. | Breaks executable lookup, platform runtime, temporary paths, locales, and toolchains. | Excessive and incompatible with the test suite. |
 
 ## Consequences
 
-- **Positive**:
-  - Meson test child processes and `testlog.json` logs cannot inherit or persist any common
-    GitHub personal access tokens or secret credentials.
-  - Zero performance overhead: `unset()` removes dictionary keys in memory prior to process spawn.
-  - Works consistently across local developer workstations, containers, and all CI matrices.
-- **Negative**:
-  - The explicit credential-name list must be extended when GitHub-compatible tooling adds a new
-    token environment variable.
-- **Neutral / follow-ups**:
-  - Any future toolchain credential variables added to the project should be appended to the
-    `sanitized_test_env` block in `core/meson.build`.
+- The twelve listed credentials are absent from child environments and `testlog.json` for
+  every currently declared test using the sole default setup.
+- Tracked Meson changes that add another setup or explicitly spell a forbidden credential
+  anywhere outside its sanctioned unset fail the regression contract.
+- Ordinary host variables remain available to production tests; only the synthetic regression
+  harness is hermetic and allowlisted.
+- The denylist and its tests must be extended when another credential-bearing environment name
+  becomes relevant.
 
 ## References
 
-- Prompt requirement: Fix Meson test logs inheriting and persisting `GITHUB_PERSONAL_ACCESS_TOKEN`.
-- Pre-RC1 security bug tracking in `docs/state.md`.
+- req: "oh of course all bugs.md's in this local repo should of course be fully fixed"
+- [GitHub OIDC reference: `ACTIONS_ID_TOKEN_REQUEST_TOKEN` is a bearer token](https://docs.github.com/en/actions/reference/security/oidc)
+- [GitHub Actions runner source: runtime and OIDC token environment injection](https://github.com/actions/runner/blob/main/src/Runner.Worker/Handlers/NodeScriptActionHandler.cs)
+- Installed Meson 1.12.1 source: `mesonbuild/mtest.py`, `merge_setup_options()` and
+  `get_test_runner()`.
 - Regression contract: `core/test/test_meson_secret_env_sanitization.py`.
-- Meson documentation: `add_test_setup` and `environment.unset` (Meson 1.4.0+).

@@ -9,17 +9,19 @@ configures a default test setup (`add_test_setup('default', ..., is_default: tru
 using `environment().unset()` to purge sensitive GitHub credential variables
 (`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`,
 `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`, `GH_PAT`, `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`,
-`HOMEBREW_GITHUB_API_TOKEN`)
-from all test processes and logs. Required runtime environment (`PATH`, `HOME`,
-`GITHUB_ACTIONS`, `GITHUB_REPOSITORY`) is preserved. Rebase must preserve this
-test setup in `core/meson.build` and the regression contract in
-`core/test/test_meson_secret_env_sanitization.py`.
+`HOMEBREW_GITHUB_API_TOKEN`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`)
+from the child environments and logs of every currently declared test. Meson can select
+an alternate setup and applies per-test environments after the setup; the regression
+contract therefore requires this to remain the only `add_test_setup` under `core/` and
+rejects explicit forbidden-name reintroduction. Its subprocess probes never copy arbitrary
+host variables. Rebase must preserve the setup and contract together.
 
 - Research digest: [Research-1333](research/1333-meson-test-secret-env-sanitization.md).
 - Decision matrix: [ADR-1333](adr/1333-meson-test-secret-env-sanitization.md#alternatives-considered).
 - AGENTS.md invariant: `core/AGENTS.md` and `docs/development/rebase-sensitive-invariants.md`,
   "Meson test secret environment sanitization".
 - Reproducer / smoke:
+  `python3 -m unittest core.test.test_meson_secret_env_sanitization` and
   `meson test -C build test_meson_secret_env_sanitization`.
 - Changelog: `changelog.d/security/1333-meson-test-secret-env-sanitization.md`.
 - FFmpeg impact: none; no public C header, CLI flag, Meson option, or patch surface changed.

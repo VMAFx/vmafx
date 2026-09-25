@@ -1,95 +1,113 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Research-1333: Meson test environment secret credential sanitization
 
-## Scope
+- **Status**: Active
+- **Workstream**: [ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md)
+- **Last updated**: 2026-09-25
 
-This digest details the investigation, root-cause diagnosis, falsification of alternative
-hypotheses, and verification evidence for pre-RC1 security defect
-`T-MESON-TEST-SECRET-ENV-LEAK-2026-09-25`: Meson test executions inheriting and persisting
-plaintext secret environment variables (specifically `GITHUB_PERSONAL_ACCESS_TOKEN` and related
-GitHub token variables) in `build/meson-logs/testlog.json`.
+## Question
 
-## Root cause diagnosis
+How can the repository keep credential-bearing environment variables out of both Meson test
+children and `testlog.json`, while preserving the runtime environment tests need and detecting
+future tracked configuration that bypasses the sanitizer?
 
-Meson's test runner harness (`mesonbuild/mtest.py`) implements test execution via `SingleTestRunner`
-and test logging via `JsonLogfileBuilder`.
+## Sources
 
-1. **Environment inheritance**:
-   In `mtest.py` (`SingleTestRunner.get_test_runner()`), when no test setup is defined, Meson initializes
-   the test environment with `env = os.environ.copy()`. If any test-specific `env` is specified via
-   `test(..., env: ...)`, it is merged on top of `env`.
-2. **Log persistence**:
-   When tests complete, `JsonLogfileBuilder.log()` records test metadata into `meson-logs/testlog.json`.
-   The record explicitly includes `'env': result.env`, writing the entire key-value mapping of
-   environment variables passed to the child process in plaintext JSON format.
-3. **Credential exposure**:
-   In CI runners, automated scripts, and developer workstations, credentials such as
-   `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`, and `GH_TOKEN` are standard environment variables.
-   Every invocation of `meson test` or `ninja test` dumped these secrets to `testlog.json` and passed
-   them directly into every unit test child process.
+- Installed Meson 1.12.1 source at
+  `/usr/lib/python3.14/site-packages/mesonbuild/mtest.py`, especially
+  `merge_setup_options()` and `get_test_runner()`.
+- [GitHub OIDC reference](https://docs.github.com/en/actions/reference/security/oidc), which
+  classifies `ACTIONS_ID_TOKEN_REQUEST_TOKEN` as the bearer token used to request an OIDC token.
+- [GitHub Actions runner `NodeScriptActionHandler`](https://github.com/actions/runner/blob/main/src/Runner.Worker/Handlers/NodeScriptActionHandler.cs), which injects both
+  `ACTIONS_RUNTIME_TOKEN` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` from the runtime access token.
 
-## Falsification of alternative hypotheses
+## Findings
 
-1. **Hypothesis: A custom wrapper or project build target was injecting the token into test commands.**
-   - *Falsification*: An audit of all `meson.build` files (`core/meson.build`, `core/test/meson.build`,
-     `core/tools/test/meson.build`) confirmed no wrapper script or `add_test_setup` existed in the tree.
-     The inheritance is native upstream Meson behavior in `mesonbuild/mtest.py`.
-2. **Hypothesis: Meson has an upstream built-in secret scrubbing or exclusion mechanism.**
-   - *Falsification*: Inspection of the installed Meson 1.12.1 source code (`/usr/lib/python3.14/site-packages/mesonbuild/mtest.py`)
-     confirmed that Meson performs zero filtering or sanitization of environment keys or values prior to
-     logging or spawning child processes.
-3. **Hypothesis: Sanitizing via CI workflow YAML (`env: GITHUB_TOKEN: ""`) is sufficient.**
-   - *Falsification*: Local developer runs, Docker/dev-MCP container sessions, and custom test runners
-     would remain exposed. Furthermore, CI workflows often require `GITHUB_TOKEN` for checkout or runner
-     probes; stripping it globally breaks runner orchestration.
+### Meson inheritance and logging
 
-## Options and trade-offs
+Without a selected setup, `get_test_runner()` starts from `os.environ.copy()`. With a setup,
+`merge_setup_options()` applies the setup environment to that same host copy. Meson then applies
+the test-specific environment after the setup and passes the resulting dictionary to the child.
+The JSON logger persists that result as the test entry's `env` mapping.
 
-| Approach | Coverage | Log Protection | Child Process Protection | Debugger / Tool Impact | Decision |
-|---|---|---|---|---|---|
-| Per-test wrapper script (`--wrapper`) | Partial (only wrapped tests) | No (`mtest.py` writes `result.env` regardless) | Yes | Breaks direct debugger attachment (`gdb`) | Rejected: does not solve `testlog.json` leakage. |
-| Global shell wrapper in Makefile | Local `make test` only | No | Partial | Ineffective for IDE / raw `meson test` | Rejected: bypassable and non-durable. |
-| Broad `os.environ.clear()` | Complete | Yes | Yes | Breaks required runtime (`PATH`, `HOME`, compiler libs) | Rejected: weakens and breaks test suites. |
-| **Meson default `add_test_setup` with `unset()`** | **Repo-wide (`meson test`, `ninja test`, `make test`)** | **Yes (`result.env` stripped)** | **Yes (child never sees secrets)** | **Zero (native Meson feature, zero overhead)** | **Selected (ADR-1333).** |
+Consequently, a default `environment().unset()` removes a listed key from both the child and the
+JSON log, but only under that selected setup.
 
-## Implementation
+### Precedence boundary
 
-In `core/meson.build`:
+Two hermetic RED probes confirm the installed-source reading:
 
-```meson
-sanitized_test_env = environment()
-sanitized_test_env.unset('GITHUB_PERSONAL_ACCESS_TOKEN')
-sanitized_test_env.unset('GITHUB_TOKEN')
-sanitized_test_env.unset('GH_TOKEN')
-sanitized_test_env.unset('GH_ENTERPRISE_TOKEN')
-sanitized_test_env.unset('GITHUB_ENTERPRISE_TOKEN')
-sanitized_test_env.unset('GITHUB_PAT')
-sanitized_test_env.unset('GH_PAT')
-sanitized_test_env.unset('GITHUB_AUTH_TOKEN')
-sanitized_test_env.unset('GITHUB_API_TOKEN')
-sanitized_test_env.unset('HOMEBREW_GITHUB_API_TOKEN')
-add_test_setup('default',
-    env : sanitized_test_env,
-    is_default : true,
-)
-```
+1. A project with a sanitizing default and an empty `unsafe` setup exposes synthetic credential
+   keys when invoked with `meson test --setup=unsafe`.
+2. A test-specific `env` applied after the sanitizing setup can restore a synthetic
+   `GITHUB_TOKEN` key.
 
-Meson 1.4.0+ (the project floor) evaluates `EnvironmentVariables.unset()`, which removes the listed keys
-from `full_env` during test preparation (`merge_setup_options` in `mtest.py`).
+The production contract therefore enumerates all fourteen `core/**/meson.build` files, requires
+exactly one `add_test_setup` in `core/meson.build`, and rejects every explicit forbidden-name
+occurrence other than the twelve sanctioned unset calls. This makes the guarantee precise:
+every currently declared test is protected, and either tracked bypass pattern makes the contract
+fail.
+
+### Credential inventory
+
+The original ten-name list omitted two runner-issued access tokens:
+
+- `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, documented by GitHub as an OIDC-provider bearer token.
+- `ACTIONS_RUNTIME_TOKEN`, populated from the Actions runtime service connection by the runner.
+
+Both belong in the same denylist as the GitHub API and personal-access-token aliases. URL-only
+companions such as `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_RUNTIME_URL` are not credentials and
+remain available.
+
+### Regression-harness isolation
+
+Copying every host variable except known GitHub names is not a safe way to construct a security
+test: it can capture unrelated credentials before Meson starts. The replacement copies only six
+platform-runtime names when present. It supplies temp-local `HOME`, `TMPDIR`, `TEMP`, and `TMP`,
+deterministic locale and user values, one ordinary control variable, and synthetic values for the
+twelve credential names. A regression poisons an unrelated synthetic credential and proves it is
+not copied.
+
+The child probe only asks whether keys are present. It never indexes a credential key, reads a
+credential value, prints the environment, or emits a value in a failure message. Command
+diagnostics redact even the known synthetic probe string.
+
+## Alternatives explored
+
+| Approach | Child protection | JSON-log protection | Bypass handling | Result |
+|---|---|---|---|---|
+| Wrapper script | Yes | No | Per-test adoption required | Rejected. |
+| CI environment stripping | One CI entry point | One CI entry point | New entry points drift | Rejected. |
+| Default setup only | Yes | Yes | Alternate setup and per-test env remain | Insufficient alone. |
+| Clear the whole environment | Yes | Yes | Broad but disruptive | Rejected. |
+| **Default setup plus static declaration contract** | **Yes** | **Yes** | **Rejects tracked setup and explicit-name escape hatches** | **Selected.** |
 
 ## Verification evidence
 
-1. **Red-capable regression contract (`core/test/test_meson_secret_env_sanitization.py`)**:
-   - `test_reproduce_red_unsanitized_leaks_token`: Runs vanilla Meson without test setup under injected
-     synthetic credentials. Proves RED reproduction (`GITHUB_PERSONAL_ACCESS_TOKEN in logged_env == True`).
-   - `test_green_sanitized_setup_excludes_secrets_and_preserves_required_env`: Runs Meson with default
-     sanitizing setup. Proves GREEN resolution (all secret keys absent from child process and `testlog.json`;
-     `PATH` and `VMAFX_TEST_REQUIRED_VAR` preserved; exit code 0).
-   - `test_static_meson_build_sanitizes_credentials`: Asserts all 10 token variables are explicitly unset
-     and non-secret variables are retained.
-   - `test_live_process_environment_excludes_secrets`: Asserts that when executed under `meson test`, the test
-     process environment contains zero forbidden credential variables.
-2. **Value safety invariant**:
-   - The regression reads only logs created in its private temporary directory with synthetic values.
-     It never opens historical repository build logs, whose contents may include real credentials.
-     Assertions operate on key presence and never print or hash token values.
+`python3 -m unittest core.test.test_meson_secret_env_sanitization` exercises nine cases:
+
+- the live tree's single-setup/twelve-unset contract;
+- mutation rejection for an alternate setup;
+- mutation rejection for explicit reintroduction of each of the twelve names;
+- minimal allowlisted probe-environment construction;
+- live in-suite key absence;
+- an unmitigated child-and-log RED reproduction;
+- the sanitizing default GREEN proof;
+- alternate-setup precedence RED proof; and
+- per-test-environment precedence RED proof.
+
+Before the production list was repaired, that command failed specifically because
+`ACTIONS_ID_TOKEN_REQUEST_TOKEN` and `ACTIONS_RUNTIME_TOKEN` had no unset declarations. After the
+two declarations were added, all runnable cases passed; the live in-suite case correctly skips
+when invoked directly rather than by Meson.
+
+## Open questions
+
+- GitHub-compatible runners may introduce additional credential-bearing names. Any such name
+  requires source classification and a lockstep denylist/test update.
+
+## Related
+
+- [ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md)
+- `core/meson.build`
+- `core/test/test_meson_secret_env_sanitization.py`

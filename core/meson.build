@@ -135,6 +135,8 @@ sanitized_test_env.unset('GH_PAT')
 sanitized_test_env.unset('GITHUB_AUTH_TOKEN')
 sanitized_test_env.unset('GITHUB_API_TOKEN')
 sanitized_test_env.unset('HOMEBREW_GITHUB_API_TOKEN')
+sanitized_test_env.unset('ACTIONS_ID_TOKEN_REQUEST_TOKEN')
+sanitized_test_env.unset('ACTIONS_RUNTIME_TOKEN')
 add_test_setup('default',
     env : sanitized_test_env,
     is_default : true,
