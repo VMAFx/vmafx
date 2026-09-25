@@ -584,11 +584,10 @@ size unless flags are right.**
 | CUDA | `--gpumask=0 --no_sycl` |
 | SYCL | `--sycl_device=0 --no_cuda` |
 
-Verify CUDA engaged by inspecting JSON `frames[0].metrics`
-key set: CPU emits 14–15 keys (`integer_aim`, `integer_motion3`,
-`integer_adm3` are CPU-only); CUDA emits 11–12 keys (CPU-only
-extras absent). Same-key-count + identical pool across two backends =
-both ran same code path.
+Verify engagement by recording each run's JSON `frames[0].metrics`
+key count. Never encode permanent expected counts: the exposed feature set
+changes as extractors evolve. A GPU count collapsing to the CPU count is a
+fallback warning signal; corroborate it with pool, throughput, and stderr.
 
 Bench script `testdata/bench_all.sh` historically used wrong
 flag pattern (`--no_sycl` for "CUDA"). Numbers from runs older than
@@ -614,10 +613,10 @@ hold onto:
   device for months. Capture stderr, print exit code, let reader
   decide what it means.
 
-Key counts have moved since 2026-04 note above: on `cd52f2670` FFmpeg
-filter path emits 15 keys for CPU, 14 for CUDA and 24 for SYCL (35 before
-PR #1324). Use counts as "did backends run different code" signal,
-not as fixed constants.
+**Dated observation, not an invariant:** on 2026-09-06 at `cd52f2670`, the
+FFmpeg filter path emitted 15 keys for CPU, 14 for CUDA, and 24 for SYCL
+(35 before PR #1324). Use counts as a "did backends run different code"
+signal, never as fixed constants.
 
 - **Build-option combination validation** (fork-local, fixes 1b/1c/1d of audit-build-matrix-symbols-2026-05-16):
   `core/src/meson.build` validates dependent-option combinations, errors or warns when incompatible flags are set:

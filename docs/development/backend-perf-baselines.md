@@ -39,7 +39,7 @@ otherwise uninterpretable:
 | min/max spread reported alongside | a cell with 30 % spread is noise, not a measurement |
 | 1-minute load average sampled before and after every cell | a number without its load is not reproducible |
 | exactly one backend per run, via the exclusive `--backend` selector | `--no_cuda` / `--no_sycl` are *disable*-only flags and do not engage anything |
-| `frames[0].metrics` key count recorded per cell | a GPU row whose key count equals the CPU row's is a silent CPU fallback |
+| `frames[0].metrics` key count recorded per cell | equality with the CPU row is a fallback warning signal to corroborate with pool and throughput |
 
 That last row is the load-bearing one. See
 [`core/AGENTS.md` §"Backend-engagement foot-guns"](../../core/AGENTS.md).
@@ -126,7 +126,8 @@ spread.
 - `spread` — `(max - min) / median`. Treat anything above ~10 % as noise-dominated
   and re-run on a quieter machine before quoting it.
 - `pool` — pooled VMAF mean, a sanity signal only (see above).
-- `keys` — `frames[0].metrics` key count, the backend-engagement check.
+- `keys` — emitted `frames[0].metrics` key count, compared within this run;
+  it is never checked against a permanent expected value.
 - `load` — 1-minute load average at the end of the cell.
 
 Two rows are only comparable when their `load` values are comparable. A

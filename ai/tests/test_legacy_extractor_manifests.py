@@ -18,6 +18,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "ai" / "scripts"
 EXPECTED_BENCHMARK_CALLS = 9
+EXPECTED_FALLBACK_WARNINGS = 6
 
 
 def _load_script(name: str) -> ModuleType:
@@ -82,7 +83,7 @@ def test_collect_gpu_calibration_help_names_current_default_backend(
     assert "default: cuda only" in help_text
 
 
-@pytest.mark.parametrize("payload", ({}, {"frames": {}}, {"frames": [1]}))
+@pytest.mark.parametrize("payload", ({}, [], {"frames": {}}, {"frames": [1]}))
 def test_collect_gpu_calibration_rejects_malformed_frames(
     tmp_path: Path,
     payload: object,
@@ -99,11 +100,30 @@ def test_benchmark_harness_uses_current_portable_contract() -> None:
     script = REPO_ROOT / "testdata" / "bench_all.sh"
     source = script.read_text(encoding="utf-8")
     backend_guidance = (REPO_ROOT / "core" / "AGENTS.md").read_text(encoding="utf-8")
+    benchmark_docs = (REPO_ROOT / "docs" / "benchmarks.md").read_text(encoding="utf-8")
+    research = (
+        REPO_ROOT / "docs" / "research" / "2118-bug048-script-environment-drift-2026-09-25.md"
+    ).read_text(encoding="utf-8")
+    rebase_notes = (REPO_ROOT / "docs" / "rebase-notes.md").read_text(encoding="utf-8")
+    server_py = (
+        REPO_ROOT / "mcp-server" / "vmaf-mcp" / "src" / "vmaf_mcp" / "server.py"
+    ).read_text(encoding="utf-8")
+    backend_perf = (REPO_ROOT / "docs" / "development" / "backend-perf-baselines.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "/home/kilian/dev/vmaf" not in source
     assert "vulkan" not in source.lower()
     assert "1080p_5f" not in source
-    assert "CPU 14-15, CUDA 11-12, SYCL ~34" in source
+    assert "CPU 14-15, CUDA 11-12, SYCL ~34" not in source
+    assert "CPU emits 14–15 keys" not in backend_guidance
+    assert 'bench output ("CPU 15 keys, CUDA 12 keys, SYCL 34 keys")' not in benchmark_docs
+    assert "observed `~34` intermediates" not in research
+    assert "per-row metrics-key counts (CPU=15, CUDA=12" not in rebase_notes
+    assert "metrics` key counts (CPU 14-15" not in rebase_notes
+    assert "current CPU 14-15 / CUDA 11-12 / SYCL ~34" not in rebase_notes
+    assert "CPU 14-15, CUDA 11-12" not in server_py
+    assert "CPU 14-15" not in backend_perf
     assert "| Vulkan |" not in backend_guidance
     assert 'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"' in source
     assert 'REPO_ROOT="${VMAF_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"' in source
@@ -161,6 +181,7 @@ with Path(os.environ["FAKE_BENCH_LOG"]).open("a", encoding="utf-8") as log:
     assert result.returncode == 0, result.stderr
     invocation_roots = invocation_log.read_text(encoding="utf-8").splitlines()
     assert invocation_roots == [str(REPO_ROOT)] * EXPECTED_BENCHMARK_CALLS
+    assert result.stdout.count("FALLBACK-SUSPECT") == EXPECTED_FALLBACK_WARNINGS
 
 
 def test_extract_ugc_manifest(tmp_path: Path) -> None:

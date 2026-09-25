@@ -128,12 +128,12 @@ backends = [
     (f"{tag}_cuda", "CUDA"),
     (f"{tag}_sycl", "SYCL"),
 ]
-# Per-backend output key counts diverge — CPU emits 14-15 keys
-# (incl. integer_aim / integer_motion3 / integer_adm3), CUDA emits
-# 11-12, and SYCL emits about 34 with its intermediate values. A matching
-# key count between two backends is one signal that they ran the same code
-# path — useful when verifying that flags actually engaged the intended backend.
+# Record the emitted key count for every row instead of freezing an expected
+# value: feature exposure changes as extractors evolve. A GPU count collapsing
+# to the CPU count is a fallback warning signal to corroborate with pool and
+# throughput data.
 cpu_scores = None
+cpu_nkeys = None
 for key, name in backends:
     try:
         with open(f"{outdir}/{key}.json") as f:
@@ -143,6 +143,7 @@ for key, name in backends:
         nkeys = len(d["frames"][0]["metrics"])
         if cpu_scores is None:
             cpu_scores = scores
+            cpu_nkeys = nkeys
             print(f"  {name:8s}: {mean:.6f} (ref, {len(scores)} frames, {nkeys} keys)")
         else:
             diffs = [abs(c-g) for c,g in zip(cpu_scores, scores)]
@@ -150,7 +151,8 @@ for key, name in backends:
             avg = sum(diffs)/len(diffs)
             bad = [(i,d) for i,d in enumerate(diffs) if d > 0.01]
             st = "PASS" if mx < 0.01 else ("WARN" if mx < 0.1 else "FAIL")
-            print(f"  {name:8s}: {mean:.6f}  {st} keys={nkeys} max_diff={mx:.8f} avg_diff={avg:.8f}")
+            fallback = " FALLBACK-SUSPECT" if nkeys == cpu_nkeys else ""
+            print(f"  {name:8s}: {mean:.6f}  {st} keys={nkeys}{fallback} max_diff={mx:.8f} avg_diff={avg:.8f}")
             if bad:
                 for i, d in bad[:5]:
                     print(f"      frame {i}: cpu={cpu_scores[i]:.6f} gpu={scores[i]:.6f} diff={d:.6f}")
@@ -170,10 +172,9 @@ PYEOF
 #   CUDA:   --gpumask=0 --no_sycl
 #   SYCL:   --sycl_device=0 --no_cuda
 #
-# Verifying engagement after a run: the JSON's `frames[0].metrics`
-# key set differs per backend (CPU 14-15, CUDA 11-12, SYCL ~34).
-# Same key-count + same pool across two rows is a
-# strong signal that both ran the same code path.
+# Verify engagement from each run's emitted key count, pool, throughput, and
+# stderr. Counts are intentionally not fixed here; equal CPU/GPU counts trigger
+# a fallback warning in compare().
 FLAGS_CPU="--no_cuda --no_sycl"
 FLAGS_CUDA="--gpumask=0 --no_sycl"
 FLAGS_SYCL="--sycl_device=0 --no_cuda"

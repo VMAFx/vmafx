@@ -60,7 +60,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from mcp.server import Server
 from mcp.server.context import ServerRequestContext
@@ -522,6 +522,7 @@ _VALID_NFLX_CTC: set[str] = {"v1.0"}
 _VALID_PIXFMTS: set[str] = {"420", "422", "444"}
 _VALID_BITDEPTHS: set[int] = {8, 10, 12, 16}
 _VALID_BACKENDS: set[str] = {"auto", "cpu", "cuda", "sycl", "hip", "metal"}
+_VALID_BACKEND_RECEIPTS: set[str] = _VALID_BACKENDS - {"auto"}
 _VALID_OUTPUT_FMTS: set[str] = {"json", "xml", "csv", "sub"}
 
 
@@ -1002,9 +1003,13 @@ def _score_payload(req: ScoreRequest, output: Path, fmt: str) -> dict[str, Any]:
     # and CI runners, and a non-UTF-8 default decoder would crash on
     # legitimate accented filenames in the vmaf JSON payload).
     try:
-        payload: dict[str, Any] = json.loads(output.read_text(encoding="utf-8"))
+        payload_object: object = json.loads(output.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"vmaf output unreadable (disk-full or OOM kill?): {exc}") from exc
+    if not isinstance(payload_object, dict):
+        raise RuntimeError("vmaf output is not a JSON object")
+    payload = cast(dict[str, Any], payload_object)
+
     # Bug #1 (echo): tell the caller which backend actually ran, so
     # downstream parity tests can assert it instead of trusting the
     # request silently.
@@ -1105,24 +1110,15 @@ install_http_scoring_runtime(_ServerHttpScoringRuntime())
 
 
 def _infer_backend_from_payload(payload: dict[str, Any]) -> str:
-    """Best-effort backend identification from the vmaf JSON output.
+    """Read the CLI's backend receipt without guessing from metric counts.
 
-    libvmaf does not (yet) emit a ``backend`` field in its JSON, but the
-    per-backend feature-key counts diverge in well-known ways (see the
-    `bench_all.sh` `compare` table: CPU 14-15, CUDA 11-12).
-    When the count is ambiguous we return ``'cpu'`` — the conservative
-    default the CLI also picks when no GPU is wired up.
+    Current fork binaries emit ``backend_used`` in JSON. Older or external
+    binaries may omit it; an absent or invalid receipt stays ``unknown``.
     """
-    frames = payload.get("frames") or []
-    if not frames:
-        return "cpu"
-    metrics = frames[0].get("metrics") or {}
-    nkeys = len(metrics)
-    if nkeys <= 12:
-        # Could be CUDA or SYCL — without a backend marker we cannot
-        # disambiguate further. Return 'gpu' as a hint.
-        return "gpu"
-    return "cpu"
+    backend_used = payload.get("backend_used")
+    if isinstance(backend_used, str) and backend_used in _VALID_BACKEND_RECEIPTS:
+        return backend_used
+    return "unknown"
 
 
 def _list_models() -> list[dict[str, Any]]:

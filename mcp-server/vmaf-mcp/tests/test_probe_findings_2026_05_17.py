@@ -28,7 +28,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -118,23 +117,57 @@ def test_bug1_available_backend_passes_through(
     assert result["backend_used"] == "cuda"
 
 
-def test_bug1_auto_infers_backend_from_payload(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("backend_used", "metric_count"),
+    (("cpu", 15), ("cuda", 14), ("sycl", 24)),
+)
+def test_bug1_auto_uses_cli_backend_receipt_not_metric_count(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    backend_used: str,
+    metric_count: int,
 ) -> None:
-    """For `backend='auto'`, `backend_used` is inferred from the JSON
-    key-count signature documented in `bench_all.sh::compare`.
-    Post-ADR-0726 (Vulkan dropped 2026-05-28) the small-metrics-count
-    path maps to the generic 'gpu' label rather than 'vulkan'."""
-    _install_fake_vmaf(tmp_path, monkeypatch, advertised=("cuda",))
+    """Auto dispatch trusts the CLI receipt across current observed counts."""
+    _install_fake_vmaf(tmp_path, monkeypatch, advertised=("cuda", "sycl"))
     req = _make_score_request(backend="auto")
-    # GPU-style payload — first-frame metrics has 8 keys (<= 12).
-    small_metrics = {f"k{i}": 1.0 for i in range(8)}
+    metrics = {f"k{i}": 1.0 for i in range(metric_count)}
     result = _run_score_with_fake_proc(
         req,
-        payload={"frames": [{"metrics": small_metrics}], "pooled_metrics": {}},
+        payload={
+            "backend_used": backend_used,
+            "frames": [{"metrics": metrics}],
+            "pooled_metrics": {},
+        },
     )
     assert result["backend_requested"] == "auto"
-    assert result["backend_used"] == "gpu"
+    assert result["backend_used"] == backend_used
+
+
+def test_bug1_auto_without_valid_cli_receipt_is_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing or unrecognised receipt must not trigger count guessing."""
+    _install_fake_vmaf(tmp_path, monkeypatch, advertised=("cuda", "sycl"))
+    req = _make_score_request(backend="auto")
+
+    for receipt in (None, "gpu", "auto", 7):
+        payload: dict[str, object] = {
+            "frames": [{"metrics": {f"k{i}": 1.0 for i in range(14)}}],
+            "pooled_metrics": {},
+        }
+        if receipt is not None:
+            payload["backend_used"] = receipt
+        result = _run_score_with_fake_proc(req, payload=payload)
+        assert result["backend_used"] == "unknown"
+
+
+def test_score_payload_rejects_top_level_non_object(tmp_path: Path) -> None:
+    """Valid JSON with the wrong top-level shape fails with a bounded error."""
+    output = tmp_path / "score.json"
+    output.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="not a JSON object"):
+        srv._score_payload(_make_score_request(), output, "json")
 
 
 # ---------------------------------------------------------------------------
