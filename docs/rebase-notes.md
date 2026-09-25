@@ -24,16 +24,15 @@ Commit `5ac5b4167` renamed the HIP-applicability and CI-pipeline-audit
 digests from 0033/0034 to 0432/0433, but a later collector merge restored the
 old files and their old links alongside the renamed copies. Preserve only the
 0432/0433 files and targets. Preserve `check-research-digest-ids.py`, its
-generated exact-debt baseline, planted red-cap tests, always-run pre-commit
-hook, and required Rule Enforcement invocation together. Baseline entries are
-inherited debt, not reusable exemptions; new collisions or H1 drift fail.
+generated exact-debt baseline, planted red-cap tests, path-complete pre-commit
+hooks, and required Rule Enforcement invocation together. ADR-1335 binds the
+baseline to the trusted merge base: branch JSON must exactly match its tree and
+may only reduce trusted debt. Bootstrap remains an explicit one-time operator
+mode and never belongs in CI or hooks.
 
-- Research digest: no digest needed; this is an exact one-way restoration of
-  the historical rename, and broader normalization debt is tracked separately
-  in `docs/state.md`.
-- Decision matrix: no ADR or alternatives; retaining both byte-identical
-  content copies under competing IDs is invalid, while restoring 0432/0433 is
-  already the repository's recorded decision.
+- Research digest: [Research-2114](research/2114-research-digest-ratchet-authority.md)
+  records the laundering reproducer, trusted-base delta, and adversarial matrix.
+- Decision matrix: [ADR-1335](adr/1335-research-digest-identity-ratchet.md#alternatives-considered).
 - AGENTS.md invariant: `scripts/ci/AGENTS.md`, “Research-digest identifier
   ratchet”, plus `docs/research/AGENTS.md` header-normalization guidance.
 - Reproducer / smoke: `python3 -B scripts/ci/check-research-digest-ids.py` and
@@ -53883,7 +53882,7 @@ The latter matters whenever a feature parameter changes the collector key.
 Re-test on a HIP device with `meson test -C <hip-build>
 test_hip_float_motion_parity --print-errorlogs`. This changes no public C
 surface, Meson option, FFmpeg integration patch, or Netflix golden assertion.
-See [Research-2080](research/2080-hip-float-motion-lifecycle-flush.md).
+See [Research-2115](research/2115-hip-float-motion-lifecycle-flush.md).
 ## fix/codeql-cjson-warning-alert — test_cjson denormal runtime probe (2026-09-23)
 
 `core/test/test_cjson.c` is a fork-added test file that exercises vendored cJSON

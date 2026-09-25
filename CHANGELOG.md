@@ -344,7 +344,7 @@
   [`docs/backends/hip/overview.md`](docs/backends/hip/overview.md);
   [`docs/backends/index.md`](docs/backends/index.md) flipped from
   "planned" to "scaffold only". New
-  [`docs/research/0033-hip-applicability.md`](docs/research/0033-hip-applicability.md)
+  [`docs/research/0432-hip-applicability.md`](docs/research/0432-hip-applicability.md)
   digest covering AMD market share + ROCm 6.x Linux maturity.
   Mirrors the Vulkan T5-1 scaffold (ADR-0175); validates the
   abstraction-layer-clean-enough-to-reproduce gating condition for
@@ -28212,9 +28212,12 @@ the draft.
 
 
 - Remove stale 0033/0034 research-digest twins that a collector merge
-  resurrected after their historical rename to 0432/0433, restore all five
-  authoritative links, and add a required generated-baseline ratchet that
-  rejects new numeric-ID collisions and filename/H1 drift.
+  resurrected after their historical rename to 0432/0433, restore every
+  authoritative link, and add ADR-1335's trusted-merge-base ratchet. The gate
+  rejects baseline deletion or laundering, new numeric-ID collisions, and
+  filename/H1 drift while allowing reviewed legacy-debt reductions; the first
+  trusted comparison also repairs the train-era 2080 collision and malformed
+  Research-1306/1317 H1s.
 
 
 - Research digest first-line headers normalized to `# Research-NNNN: <title>`

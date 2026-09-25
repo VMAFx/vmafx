@@ -1044,3 +1044,4 @@
 1322-metal-integer-psnr-enable-chroma-parity
 1326-sycl-motion-uv-fixed-oracle
 1334-metal-ms-ssim-option-parity
+1335-research-digest-identity-ratchet

@@ -281,11 +281,6 @@
     "2040": [
       "docs/research/2040-code-scanning-cleanup-1243.md",
       "docs/research/2040-cuda-tile-additive-reduction-gap.md"
-    ],
-    "2080": [
-      "docs/research/2080-codeql-python-alerts-triage-2026-09-24.md",
-      "docs/research/2080-hip-float-motion-lifecycle-flush.md",
-      "docs/research/2080-rust-ci-path-filter-coverage.md"
     ]
   },
   "legacy_heading_exceptions": {
@@ -472,8 +467,6 @@
     "docs/research/1277-workingdir-contract-cleanup.md": "# Research 1277 \u2014 local workspace contract cleanup",
     "docs/research/1291-silent-revert-gate-false-positives.md": "# 1291 \u2014 What the silent-revert gate was actually reporting on the zero-warning train",
     "docs/research/1303-backlog-tracker-schema-migration-2026-09-23.md": "# Backlog tracker schema migration evidence \u2014 2026-09-23",
-    "docs/research/1306-drop-nvidia-cuda-base.md": "# Research: dropping nvidia/cuda base images in favor of version-locked apt installs",
-    "docs/research/1317-golden-gate-build-isolation.md": "# Research: Netflix Golden Gate Build Isolation and Compiler FP Contraction Drift",
     "docs/research/2026-06-30-sycl-qsv-zerocopy-two-bug-investigation.md": "# SYCL QSV Zero-Copy \u2014 Two-Bug Investigation (Phase 3 fix digest)",
     "docs/research/2026-07-01-vmaf-v1-models.md": "# VMAF v1 Models \u2014 Research Digest",
     "docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md": "# Research digest \u2014 c-rework-vif-motion: bit-exact rework of the scalar VIF and float-motion TUs (2026-09-02)",

@@ -1,0 +1,1 @@
+| [ADR-1335](1335-research-digest-identity-ratchet.md) | Bind research-digest legacy-debt changes to an immutable trusted merge base, with a bounded one-time bootstrap path. | Accepted | docs, ci, testing, correctness, ratchet, fork-local |

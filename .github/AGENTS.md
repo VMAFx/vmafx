@@ -91,6 +91,15 @@ collect diagnostics when a later `if: always()` step checks its raw
 non-blocking when an existing ADR says so, but its command must not append
 `|| true` and erase the failure outcome.
 
+### Research-digest baseline authority (ADR-1335)
+
+The blocking Rules workflow passes the pull request's exact `base.sha` to
+`check-research-digest-ids.py`. Preserve that binding and the full-history
+checkout: the checker resolves the merge base and rejects a branch baseline
+that grows collision or H1 debt beyond trusted authority. CI and hooks must
+never invoke `--bootstrap-from-ref`; that full-commit, pre-ratchet path is a
+bounded one-time operator action only.
+
 ### Semgrep SARIF authority split (ADR-1314)
 
 Only the repository-owned `.semgrep.yml` result may be uploaded to GitHub Code

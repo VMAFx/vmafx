@@ -769,11 +769,14 @@ jobs:
 
       - name: Research digest identifier ratchet
         # A keep-both merge resurrected two digests already renumbered by
-        # 5ac5b4167. Keep the live scan and planted collision/H1 mutations
-        # together so another duplicate cannot resolve as valid Markdown.
+        # 5ac5b4167. ADR-1335 binds the live scan to the PR base SHA so a
+        # rewritten branch baseline cannot bless a new collision or H1 drift.
+        env:
+          VMAFX_RESEARCH_BASE_REF: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          python3 -B scripts/ci/check-research-digest-ids.py
+          python3 -B scripts/ci/check-research-digest-ids.py \
+            --trusted-ref "${VMAFX_RESEARCH_BASE_REF}"
           python3 -B scripts/ci/tests/test_research_digest_ids.py
 
       - name: state.md row hygiene (ADR-0165)

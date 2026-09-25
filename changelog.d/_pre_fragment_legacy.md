@@ -338,7 +338,7 @@
   [`docs/backends/hip/overview.md`](docs/backends/hip/overview.md);
   [`docs/backends/index.md`](docs/backends/index.md) flipped from
   "planned" to "scaffold only". New
-  [`docs/research/0033-hip-applicability.md`](docs/research/0033-hip-applicability.md)
+  [`docs/research/0432-hip-applicability.md`](docs/research/0432-hip-applicability.md)
   digest covering AMD market share + ROCm 6.x Linux maturity.
   Mirrors the Vulkan T5-1 scaffold (ADR-0175); validates the
   abstraction-layer-clean-enough-to-reproduce gating condition for

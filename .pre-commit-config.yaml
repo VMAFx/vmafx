@@ -456,6 +456,7 @@ repos:
         entry: python3 -B scripts/ci/check-research-digest-ids.py
         language: system
         pass_filenames: false
+        files: '^(\.github/(AGENTS\.md|workflows/rule-enforcement\.yml)|\.pre-commit-config\.yaml|changelog\.d/_pre_fragment_legacy\.md|docs/(adr/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|adr/_index_fragments/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|backends/hip/overview\.md|research/.*\.md|usage/bd-rate\.md)|scripts/ci/(AGENTS\.md|check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
         always_run: true
 
       - id: test-research-digest-ids
@@ -463,7 +464,8 @@ repos:
         entry: python3 -B scripts/ci/tests/test_research_digest_ids.py
         language: system
         pass_filenames: false
-        files: '^(\.github/workflows/rule-enforcement\.yml|\.pre-commit-config\.yaml|scripts/ci/(check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
+        files: '^(\.github/(AGENTS\.md|workflows/rule-enforcement\.yml)|\.pre-commit-config\.yaml|changelog\.d/_pre_fragment_legacy\.md|docs/(adr/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|adr/_index_fragments/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|backends/hip/overview\.md|research/.*\.md|usage/bd-rate\.md)|scripts/ci/(AGENTS\.md|check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
+        always_run: true
 
       - id: check-source-adr-citations
         name: Source ADR citations retain exact decision provenance

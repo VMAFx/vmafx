@@ -1136,4 +1136,5 @@ public authority; documentation never links into either local root.
 | [ADR-1322](1322-metal-integer-psnr-enable-chroma-parity.md) | Restore enable_chroma option parity on integer_psnr_metal | Accepted | metal, psnr, option-parity, chroma, fork-local, bug-048 |
 | [ADR-1326](1326-sycl-motion-uv-fixed-oracle.md) | Replaces fixture-calibrated float-vs-fixed SYCL motion-add-UV parity with a resolution-independent fixed-point oracle and derived host-roundoff bound. | Accepted | sycl, motion, correctness, testing, numerics |
 | [ADR-1334](1334-metal-ms-ssim-option-parity.md) | Extend CPU MS-SSIM dB and chroma option semantics to Metal with device-free executable regressions and fail-closed atom validation. | Accepted | metal, ms-ssim, correctness, option-parity, testing |
+| [ADR-1335](1335-research-digest-identity-ratchet.md) | Bind research-digest legacy-debt changes to an immutable trusted merge base, with a bounded one-time bootstrap path. | Accepted | docs, ci, testing, correctness, ratchet, fork-local |
 | [ADR-1247](1247-scorecard-exact-head-gates.md) | Bind Scorecard gates to their measured source and scope | Accepted | ci, security, supply-chain |

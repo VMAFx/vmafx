@@ -96,8 +96,7 @@ Conventions:
 | [2072](2072-pelorus-interop-v022-sync-2026-09-20.md) | Pelorus v0.2.2 interop parser safety sync | Active | [ADR-1276](../adr/1276-pelorus-v022-parser-safety-repin.md) |
 | [2073](2073-ffmpeg-n9-0-2-stable-refresh.md) | FFmpeg n9.0.2 stable refresh | Active | [ADR-1240](../adr/1240-ffmpeg-release-patch-lifecycle.md) |
 | [2079](2079-sycl-clang-tidy-required-gate-verification.md) | SYCL clang-tidy required-gate live verification and fail-closed contract hardening | Active | [ADR-1297](../adr/1297-ci-gate-every-reporting-check.md), [ADR-0623](../adr/0623-scaffold-audit-p2-half-finished.md) |
-| [2080](2080-hip-float-motion-lifecycle-flush.md) | HIP float-motion force-zero ownership and option-aware flush idempotency | Active | — (BUG048 A5 restoration) |
-| [2080](2080-codeql-python-alerts-triage-2026-09-24.md) | CodeQL Python alerts triage and exception semantics | Active | — |
+| [2080](2080-rust-ci-path-filter-coverage.md) | Required-workflow path-filter closure | Completed | [ADR-1297](../adr/1297-ci-gate-every-reporting-check.md), [ADR-0313](../adr/0313-ci-required-checks-aggregator.md), [ADR-1140](../adr/1140-ci-impact-planner.md) |
 | [2082](2082-sycl-upload-host-lifetime.md) | SYCL upload host-buffer lifetime | Active | BUG-040, [ADR-0214](../adr/0214-gpu-parity-ci-gate.md) |
 | [2083](2083-dev-mcp-smoke-probe-contract-restoration.md) | dev-MCP smoke-probe contract restoration | Active | BUG-048 A13; no ADR (bug fix) |
 | [2085](2085-strict-tool-json-restoration.md) | Restore strict JSON boundaries for external-bench and vmaf-roi-score | Active | — (BUG048 A9 restoration) |
@@ -113,6 +112,9 @@ Conventions:
 | [2102](2102-sycl-tidy-wrapper-safe-subprocess-path.md) | SYCL clang-tidy wrapper executable resolution for safe_subprocess | Active | [ADR-1142](../adr/1142-whole-codebase-standards.md), [ADR-1270](../adr/1270-bounded-process-execution.md) |
 | [2103](2103-mypy-ci-fail-closed-2026-09-25.md) | Required Python Lint fail-closed merge-base gate restoration | Complete | [ADR-1310](../adr/1310-mypy-ci-fail-closed.md) |
 | [2104](2104-gpu-option-alias-parity-2026-09-25.md) | GPU twin option aliases and collector-key compatibility | Complete | [ADR-1312](../adr/1312-gpu-option-alias-parity.md) |
+| [2114](2114-research-digest-ratchet-authority.md) | Trusted merge-base authority for research-digest identity debt | Complete | [ADR-1335](../adr/1335-research-digest-identity-ratchet.md) |
+| [2115](2115-hip-float-motion-lifecycle-flush.md) | HIP float-motion force-zero ownership and option-aware flush idempotency | Active | — (BUG048 A5 restoration) |
+| [2116](2116-codeql-python-alerts-triage-2026-09-24.md) | CodeQL Python alerts triage and exception semantics | Active | — |
 | [2105](2105-gpu-option-value-capability-fallback-2026-09-25.md) | GPU option-value capability inventory and model-dispatch fallback | Complete | [ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md) |
 | [2106](2106-cuda-hip-kernel-header-dependency-tracking.md) | CUDA and HIP device target header dependency tracking | Complete | [ADR-1320](../adr/1320-cuda-hip-kernel-header-dependency-tracking.md) |
 | [2108](2108-gpu-float-ssim-auto-scale-fallback-2026-09-25.md) | GPU float-SSIM auto-scale fallback | Complete | [ADR-1324](../adr/1324-gpu-float-ssim-auto-scale-fallback.md) |
