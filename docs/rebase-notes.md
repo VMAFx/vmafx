@@ -54005,3 +54005,13 @@ test_gpu_serialization_contract check_gpu_test_serialization`; the source guard
 covers dormant backend registrations, while the checker reads Meson's public
 `meson-info/intro-tests.json` metadata and fails with every non-exclusive GPU
 registration.
+## agent/bug-ledger-float-vif-cuda — keep vif_skip_scale0 mapped in float_vif_cuda.c (2026-09-25)
+
+The `float_vif_cuda` feature extractor correctly parses and plumbs `vif_skip_scale0` to match the CPU twin (`float_vif`). If upstream adds other missing parameters, they must be ported to the CUDA twin to avoid runtime `init()` failures when models supply them.
+
+- Research digest: no digest needed: trivial.
+- Decision matrix: no alternatives: only-one-way fix.
+- AGENTS.md invariant: no rebase-sensitive invariants.
+- Reproducer / smoke: `meson test -C build-cuda test_cuda_float_vif_parity`.
+- Changelog: `changelog.d/fixed/float-vif-cuda-skip-scale0.md`.
+- FFmpeg impact: none.

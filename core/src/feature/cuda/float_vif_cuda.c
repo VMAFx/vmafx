@@ -45,6 +45,7 @@
 typedef struct FloatVifStateCuda {
     bool debug;
     double vif_enhn_gain_limit;
+    bool vif_skip_scale0;
     double vif_kernelscale;
     double vif_sigma_nsq;
 
@@ -85,6 +86,16 @@ static const VmafOption options[] = {
      .offset = offsetof(FloatVifStateCuda, debug),
      .type = VMAF_OPT_TYPE_BOOL,
      .default_val.b = false},
+    {
+        .name = "vif_skip_scale0",
+        .alias = "ssclz",
+        .help = "skip scale 0 (finest scale) VIF computation; "
+                "score0 is forced to 0.0 (parity with CPU option)",
+        .offset = offsetof(FloatVifStateCuda, vif_skip_scale0),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
     {.name = "vif_enhn_gain_limit",
      .alias = "egl",
      .help = "enhancement gain imposed on vif (>= 1.0)",
@@ -560,9 +571,18 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         scores[2 * i + 1] = d;
     }
 
+    const unsigned scale_start = s->vif_skip_scale0 ? 1u : 0u;
+    double score_num = 0.0;
+    double score_den = 0.0;
+    for (unsigned scale = scale_start; scale < 4u; ++scale) {
+        score_num += scores[scale * 2u];
+        score_den += scores[scale * 2u + 1u];
+    }
+
     VmafVifScoreSet output = {
-        .score_num = scores[0] + scores[2] + scores[4] + scores[6],
-        .score_den = scores[1] + scores[3] + scores[5] + scores[7],
+        .score_num = score_num,
+        .score_den = score_den,
+        .skip_scale0 = s->vif_skip_scale0,
         .debug = s->debug,
     };
     for (size_t i = 0u; i < 8u; ++i)
