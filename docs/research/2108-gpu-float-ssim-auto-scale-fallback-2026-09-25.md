@@ -50,7 +50,9 @@ known. At backend `init()`, dimensions are known but picture residency has
 already been chosen. The first host-picture read supplies the safe seam:
 `read_pictures_validate_and_prep()` has established format, bit depth and
 dimensions, while CUDA translation and every extractor initialization still
-lie ahead.
+lie ahead. In a SYCL host-path build that preparation has already uploaded the
+pair into shared staging buffers, but it has not initialized or submitted an
+extractor.
 
 An optional extractor `context_check` callback now runs at that seam only for
 model-selected contexts. `0` preserves the selected extractor; `-ENOTSUP`
@@ -75,8 +77,8 @@ implementation exists.
 
 `core/test/test_gpu_float_ssim_auto_scale_contract.py` was added before the
 implementation. It failed five contract groups on the collector because the
-framework callback, model-only eligibility bit, pre-translation resolver and
-four backend declarations did not exist.
+framework callback, model-only eligibility bit, first-frame resolver and four
+backend declarations did not exist.
 
 The white-box `test_feature_collector` regression executes the production
 replacement helper with a synthetic GPU descriptor and the real CPU

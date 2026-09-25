@@ -29,11 +29,14 @@ Add an internal, optional first-picture capability callback and a named CPU
 fallback to `VmafFeatureExtractor`. Contexts registered from a model are
 eligible for this fallback; contexts registered by explicitly naming an
 extractor are not. After the first host-picture pair establishes format, bit
-depth and dimensions, but before any backend translation or extractor
-initialization, libvmaf asks each eligible extractor whether that context is
-supported. An `-ENOTSUP` result replaces only that uninitialized context with
-the named CPU extractor, preserving a private copy of the same parsed option
-dictionary and invalidating cached CUDA residency requirements.
+depth and dimensions and backend preparation completes, but before extractor
+initialization or CUDA picture translation, libvmaf asks each eligible
+extractor whether that context is supported. An `-ENOTSUP` result replaces
+only that uninitialized context with the named CPU extractor, preserving a
+private copy of the same parsed option dictionary and invalidating cached CUDA
+residency requirements. The SYCL host path may already have uploaded the pair
+into its shared staging buffers during preparation; no extractor has been
+initialized or submitted at that point.
 
 The four GPU `float_ssim` twins use their existing scale helpers for this
 check and name `float_ssim` as the fallback. Any response other than

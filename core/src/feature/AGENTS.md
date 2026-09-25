@@ -169,8 +169,10 @@ feature/
   all four twins keep the CPU-authored `scale=0` auto option, declare a
   `context_check` plus `float_ssim` CPU fallback, and use their existing scale
   helper as the sole threshold authority. Model-selected host-picture
-  contexts whose resolved scale exceeds `1` are replaced before picture
-  translation and backend initialization. Directly named GPU extractors and
+  contexts whose resolved scale exceeds `1` are replaced after validation and
+  backend preparation but before extractor initialization/submission and CUDA
+  picture translation. SYCL shared staging may already be populated at that
+  point. Directly named GPU extractors and
   the device-buffer-only SYCL entry point keep their scale-1-only errors. Do
   not mark `scale` default-only, narrow its range, or retry arbitrary init
   failures on CPU. Extend
