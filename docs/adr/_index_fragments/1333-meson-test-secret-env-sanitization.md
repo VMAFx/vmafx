@@ -1,0 +1,1 @@
+| [ADR-1333](1333-meson-test-secret-env-sanitization.md) | Sanitizes secret-bearing GitHub credentials from Meson test processes and testlog.json via default test setup. | Accepted | security, build, test, meson, ci |

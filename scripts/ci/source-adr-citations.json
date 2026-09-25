@@ -7491,6 +7491,14 @@
         "core/test/test_sycl_motion_add_uv_parity.c": 1
       },
       "target": "1326-sycl-motion-uv-fixed-oracle.md"
+    },
+    "1333": {
+      "sites": {
+        "core/meson.build": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_meson_secret_env_sanitization.py": 1
+      },
+      "target": "1333-meson-test-secret-env-sanitization.md"
     }
   },
   "retired": {

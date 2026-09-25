@@ -116,6 +116,30 @@ endif
 
 subdir('include')
 subdir('src')
+
+# ADR-1333: Pre-RC1 security hardening — sanitize secret-bearing GitHub token
+# and credential variables from Meson test execution environments and testlog.json.
+# Meson test runners inherit the host process environment by default and persist
+# the full environment dictionary into build/meson-logs/testlog.json. Unsetting
+# these credential variables in the default test setup ensures neither test processes
+# nor test logs inherit or leak secret tokens, while leaving ordinary required
+# environment intact.
+sanitized_test_env = environment()
+sanitized_test_env.unset('GITHUB_PERSONAL_ACCESS_TOKEN')
+sanitized_test_env.unset('GITHUB_TOKEN')
+sanitized_test_env.unset('GH_TOKEN')
+sanitized_test_env.unset('GH_ENTERPRISE_TOKEN')
+sanitized_test_env.unset('GITHUB_ENTERPRISE_TOKEN')
+sanitized_test_env.unset('GITHUB_PAT')
+sanitized_test_env.unset('GH_PAT')
+sanitized_test_env.unset('GITHUB_AUTH_TOKEN')
+sanitized_test_env.unset('GITHUB_API_TOKEN')
+sanitized_test_env.unset('HOMEBREW_GITHUB_API_TOKEN')
+add_test_setup('default',
+    env : sanitized_test_env,
+    is_default : true,
+)
+
 subdir('tools')
 subdir('doc')
 subdir('test')

@@ -1,6 +1,29 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/meson-secret-env-sanitize — sanitize secret environment variables in Meson tests (2026-09-25)
+
+Meson test execution inherits host environment variables by default and writes the
+complete environment mapping to `build/meson-logs/testlog.json`. `core/meson.build`
+configures a default test setup (`add_test_setup('default', ..., is_default: true)`)
+using `environment().unset()` to purge sensitive GitHub credential variables
+(`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`,
+`GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`, `GH_PAT`, `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`,
+`HOMEBREW_GITHUB_API_TOKEN`)
+from all test processes and logs. Required runtime environment (`PATH`, `HOME`,
+`GITHUB_ACTIONS`, `GITHUB_REPOSITORY`) is preserved. Rebase must preserve this
+test setup in `core/meson.build` and the regression contract in
+`core/test/test_meson_secret_env_sanitization.py`.
+
+- Research digest: [Research-1333](research/1333-meson-test-secret-env-sanitization.md).
+- Decision matrix: [ADR-1333](adr/1333-meson-test-secret-env-sanitization.md#alternatives-considered).
+- AGENTS.md invariant: `core/AGENTS.md` and `docs/development/rebase-sensitive-invariants.md`,
+  "Meson test secret environment sanitization".
+- Reproducer / smoke:
+  `meson test -C build test_meson_secret_env_sanitization`.
+- Changelog: `changelog.d/security/1333-meson-test-secret-env-sanitization.md`.
+- FFmpeg impact: none; no public C header, CLI flag, Meson option, or patch surface changed.
+
 ## agent/sycl-motion-uv-tolerance — fixed-point oracle for SYCL motion-add-UV (2026-09-25)
 
 `test_sycl_motion_add_uv_parity` must compare `motion_sycl` with the scalar

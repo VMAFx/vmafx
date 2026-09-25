@@ -20,6 +20,15 @@ linked AGENTS.md before resolving conflicts.
   repository-root build instructions in `docs/getting-started/index.md` and
   include Meson's `core/` source directory when showing a configure command.
 
+- **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
+  `core/meson.build` configures a project-wide default test setup (`add_test_setup('default', ..., is_default: true)`)
+  using `environment().unset()` to purge sensitive GitHub credentials (`GITHUB_PERSONAL_ACCESS_TOKEN`,
+  `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`,
+  `GH_PAT`, `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`) from all test child execution environments and
+  `build/meson-logs/testlog.json`. Non-secret and ordinary runtime environment variables (`PATH`, `HOME`,
+  `GITHUB_ACTIONS`, `GITHUB_REPOSITORY`) remain untouched. Rebase must preserve this default test setup
+  and the regression contract in `core/test/test_meson_secret_env_sanitization.py`.
+
 - **Zed project settings are project-scoped**: `.zed/settings.json` is parsed
   as Zed's `ProjectSettingsContent`, so it must not regain `agent`,
   `agent_servers`, provider/model pins, or permission policy. Preserve the

@@ -76,9 +76,23 @@ core/
   Windows UTF-8 path contract and internal path shims.
 - [ADR-1320](../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md) —
   CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit depend_files and compiler depfiles.
+- [ADR-1333](../docs/adr/1333-meson-test-secret-env-sanitization.md) —
+  Meson test environment secret sanitization via default test setup.
 
 ## Rebase-sensitive invariants
 
+- **Meson test secret environment sanitization**
+  ([ADR-1333](../docs/adr/1333-meson-test-secret-env-sanitization.md);
+  [Research-1333](../docs/research/1333-meson-test-secret-env-sanitization.md)):
+  `core/meson.build` declares a project-wide default test setup
+  (`add_test_setup('default', ..., is_default: true)`) using `environment().unset()`
+  to purge sensitive GitHub credentials (`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`,
+  `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`, `GH_PAT`,
+  `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`) from test child execution environments
+  and `build/meson-logs/testlog.json`. Non-secret and ordinary runtime environment
+  variables (`PATH`, `HOME`, `GITHUB_ACTIONS`, `GITHUB_REPOSITORY`) remain untouched.
+  Rebase must preserve this default test setup in `core/meson.build` and the
+  accompanying regression contract in `core/test/test_meson_secret_env_sanitization.py`.
 - **CUDA fatbin & HIP HSACO header dependency tracking**
   ([ADR-1320](../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
   [Research-2106](../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):

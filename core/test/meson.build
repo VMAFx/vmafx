@@ -26,6 +26,15 @@ test('test_gpu_serialization_contract',
     suite : ['fast'],
 )
 
+# ADR-1333: Guard Meson test environment sanitization so secret-bearing GitHub
+# credential variables are excluded from test environments and testlog.json logs.
+test('test_meson_secret_env_sanitization',
+    import('python').find_installation(),
+    args : files('test_meson_secret_env_sanitization.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # Execute Windows discovery with stubbed tools on POSIX build hosts. This
 # exercises Meson control flow without requiring a Windows SDK or CUDA device.
 if build_machine.system() != 'windows'

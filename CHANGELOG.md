@@ -31654,6 +31654,18 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   output/input/consumer paths as repo-relative on POSIX and Windows.
 
 
+- **Meson test environment secret credential sanitization (ADR-1333)** —
+  configured a default test setup in `core/meson.build` using `environment().unset()`
+  to purge secret-bearing GitHub credentials (`GITHUB_PERSONAL_ACCESS_TOKEN`,
+  `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`,
+  `GH_PAT`, `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`) from test process
+  execution environments and `build/meson-logs/testlog.json`. Non-secret and ordinary
+  runtime environment variables (`PATH`, `HOME`, `GITHUB_ACTIONS`, `GITHUB_REPOSITORY`)
+  are preserved, preventing credential leakage in test runs, crash reports, and CI log
+  artifacts without weakening test coverage. Accompanied by a red-capable regression
+  contract in `core/test/test_meson_secret_env_sanitization.py`.
+
+
 - **libvmaf symbol visibility** — `libvmaf.so.3` no longer exports 207 internal
   symbols (libsvm C API `svm_predict`/`svm_train`/…, pdjson `json_open_buffer`/…,
   SIMD kernel functions, internal helpers `aligned_malloc`/`aligned_free`/…).
