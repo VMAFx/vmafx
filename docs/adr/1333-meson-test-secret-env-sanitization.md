@@ -56,9 +56,12 @@ source-contract boundaries:
    forbidden credential name. This prevents tracked alternate setups and explicit per-test
    restoration from silently bypassing the default. It also inventories every wrapper call
    in the Makefile, CI workflows, preflight and setup scripts, bisection scaffold, and Zed
-   task. It recursively inventories nested `Makefile` paths and scans logical commands for raw
-   `meson test`, `ninja ... test`, and `meson compile ... test` bypasses, including commands
-   split by backslash continuations or placed beside the wrapper after a shell separator. Mutation
+   task. It recursively inventories GNU Make's `GNUmakefile`, `makefile`, and `Makefile` names,
+   plus POSIX and Windows script entry points. Workflow and action `run` values are normalized
+   from inline, literal, and folded YAML scalar forms before the scanner checks logical commands.
+   Raw `meson test`, `ninja ... test`, and `meson compile ... test` bypasses remain forbidden when
+   an executable is quoted, path-qualified, or spelled with a Windows `.exe` suffix, split by the
+   platform's continuation marker, or placed beside the wrapper after a shell separator. Mutation
    tests replace each inventoried wrapper call in turn and require the contract to fail. The
    pre-commit hook's path filter covers every scanned source scope and every Meson declaration,
    including representative future files, so adding a bypass in a newly tracked supported entry

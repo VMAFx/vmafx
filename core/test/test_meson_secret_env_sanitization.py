@@ -57,8 +57,13 @@ SAFE_HOST_ENV_VARS = (
 
 ENTRYPOINT_GLOBS = (
     "**/Makefile",
+    "**/GNUmakefile",
+    "**/makefile",
     "*.py",
     "*.sh",
+    "*.ps1",
+    "*.cmd",
+    "*.bat",
     "**/tox.ini",
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
@@ -66,13 +71,30 @@ ENTRYPOINT_GLOBS = (
     ".github/actions/**/*.yaml",
     "scripts/**/*.sh",
     "scripts/**/*.py",
+    "scripts/**/*.ps1",
+    "scripts/**/*.cmd",
+    "scripts/**/*.bat",
     "dev/**/*.sh",
     "dev/**/*.py",
+    "dev/**/*.ps1",
+    "dev/**/*.cmd",
+    "dev/**/*.bat",
     "tools/**/*.sh",
     "tools/**/*.py",
+    "tools/**/*.ps1",
+    "tools/**/*.cmd",
+    "tools/**/*.bat",
     ".zed/tasks.json",
     ".claude/skills/**/*.sh",
+    ".claude/skills/**/*.ps1",
+    ".claude/skills/**/*.cmd",
+    ".claude/skills/**/*.bat",
 )
+
+MAKEFILE_NAMES = frozenset(("Makefile", "GNUmakefile", "makefile"))
+WORKFLOW_YAML_PREFIXES = ((".github", "workflows"), (".github", "actions"))
+YAML_RUN_KEY = re.compile(r"^(?P<indent>\s*)(?P<sequence_item>-\s+)?run\s*:\s*(?P<value>.*)$")
+YAML_BLOCK_SCALAR = re.compile(r"^(?P<style>[>|])(?:[1-9][+-]?|[+-][1-9]?)?(?:\s+#.*)?$")
 
 EXPECTED_RUNNER_PATHS = {
     Path("Makefile"): ("scripts/ci/run_meson_test.py",) * 4,
@@ -97,18 +119,32 @@ EXPECTED_RUNNER_PATHS = {
 RUNNER_SCRIPT_BASENAME = "run_meson_test.py"
 RUNNER_PATH = re.compile(r"(?P<path>(?:[A-Za-z0-9_.$(){}\\/:-]+[\\/])?run_meson_test\.py)")
 RAW_MESON_TEST = re.compile(
-    r"(?:\bmeson\s+test\b|"
+    r"(?:['\"]?\bmeson['\"]?\s+test\b|"
     r"\bmeson\b[^\n#)]*\)\s*['\"]?\s+test\b|"
     r"\bmeson\s+compile\b[^\n#]*\s+test(?=\s|$|[;&>|'\"])|"
     r"\$\(MESON(?:_EXEC)?\)[^\n#]*\s+test(?=\s|$|[;&>|'\"])|"
     r"['\"]meson['\"]\s*,\s*['\"]test['\"]|"
-    r"['\"]?\$\{?MESON(?:_EXEC)?\}?['\"]?\s+test\b)"
+    r"['\"]?(?:\$\{?MESON(?:_EXEC)?\}?|\$env:MESON(?:_EXEC)?|%MESON(?:_EXEC)?%)"
+    r"['\"]?\s+test\b)",
+    re.IGNORECASE,
 )
 RAW_NINJA_TEST = re.compile(
     r"(?:(?:\bninja\b|\$\(NINJA(?:_EXEC)?\))"
     r"[^\n#]*\s+test(?=\s|$|[;&>|'\"])|"
     r"['\"]ninja['\"]\s*,[^\n#]*['\"]test['\"]|"
-    r"['\"]?\$\{?NINJA(?:_EXEC)?\}?['\"]?[^\n#]*\s+test\b)"
+    r"['\"]?(?:\$\{?NINJA(?:_EXEC)?\}?|\$env:NINJA(?:_EXEC)?|%NINJA(?:_EXEC)?%)"
+    r"['\"]?[^\n#]*\s+test\b)",
+    re.IGNORECASE,
+)
+QUOTED_TEST_TOOL = re.compile(
+    r"(?P<quote>['\"])(?:[^'\"\r\n]*[\\/])?(?P<tool>meson|ninja)(?:\.exe)?(?P=quote)",
+    re.IGNORECASE,
+)
+UNQUOTED_TEST_TOOL = re.compile(
+    r"(?<![A-Za-z0-9_.$}{:%-])"
+    r"(?:(?:[A-Za-z]:)?(?:[^\s'\";&|(),\[\]]+[\\/])*)"
+    r"(?P<tool>meson|ninja)(?:\.exe)?(?=\s|$|[;&>|'\"])",
+    re.IGNORECASE,
 )
 
 
@@ -126,7 +162,9 @@ def _is_active_entrypoint_line(line: str) -> bool:
     return bool(line.strip()) and not line.lstrip().startswith("#")
 
 
-def _logical_entrypoint_lines(content: str) -> list[tuple[int, str]]:
+def _logical_entrypoint_lines(
+    content: str, continuation_markers: tuple[str, ...] = ("\\",)
+) -> list[tuple[int, str]]:
     """Join shell continuations while retaining the first physical line number."""
     logical_lines: list[tuple[int, str]] = []
     pending = ""
@@ -134,7 +172,7 @@ def _logical_entrypoint_lines(content: str) -> list[tuple[int, str]]:
     for line_number, line in enumerate(content.splitlines(), 1):
         if not pending:
             start_line = line_number
-        if line.endswith("\\"):
+        if line.endswith(continuation_markers):
             pending += f"{line[:-1]} "
             continue
         logical_lines.append((start_line, f"{pending}{line}"))
@@ -176,14 +214,93 @@ def _split_entrypoint_commands(line: str) -> list[str]:
     return commands
 
 
-def _entrypoint_commands(content: str) -> list[tuple[int, str]]:
+def _fold_yaml_block(lines: list[str]) -> str:
+    """Apply YAML's ordinary folded-scalar line-break rules."""
+    folded = ""
+    for index, line in enumerate(lines):
+        folded += line
+        if index == len(lines) - 1:
+            continue
+        following = lines[index + 1]
+        preserve_break = not line or not following or line[:1].isspace() or following[:1].isspace()
+        folded += "\n" if preserve_break else " "
+    return folded
+
+
+def _workflow_run_scalars(content: str) -> list[tuple[int, str]]:
+    """Extract normalized GitHub workflow/action ``run`` scalar values."""
+    lines = content.splitlines()
+    scalars: list[tuple[int, str]] = []
+    index = 0
+    while index < len(lines):
+        match = YAML_RUN_KEY.match(lines[index])
+        if match is None:
+            index += 1
+            continue
+        value = match.group("value").strip()
+        block = YAML_BLOCK_SCALAR.fullmatch(value)
+        if block is None:
+            scalars.append((index + 1, value))
+            index += 1
+            continue
+
+        key_indent = len(match.group("indent")) + len(match.group("sequence_item") or "")
+        block_lines: list[str] = []
+        index += 1
+        while index < len(lines):
+            line = lines[index]
+            indentation = len(line) - len(line.lstrip())
+            if line.strip() and indentation <= key_indent:
+                break
+            block_lines.append(line)
+            index += 1
+
+        content_indents = [len(line) - len(line.lstrip()) for line in block_lines if line.strip()]
+        content_indent = min(content_indents, default=key_indent + 1)
+        normalized_lines = [line[content_indent:] if line.strip() else "" for line in block_lines]
+        scalar = (
+            _fold_yaml_block(normalized_lines)
+            if block.group("style") == ">"
+            else "\n".join(normalized_lines)
+        )
+        scalars.append((index - len(block_lines), scalar))
+    return scalars
+
+
+def _is_workflow_yaml(path: Path) -> bool:
+    return path.suffix in {".yml", ".yaml"} and any(
+        path.parts[: len(prefix)] == prefix for prefix in WORKFLOW_YAML_PREFIXES
+    )
+
+
+def _entrypoint_commands(path: Path, content: str) -> list[tuple[int, str]]:
     """Return active logical commands with source line numbers."""
+    if _is_workflow_yaml(path):
+        source_blocks = _workflow_run_scalars(content)
+        continuation_markers = ("\\", "`", "^")
+    else:
+        source_blocks = [(1, content)]
+        continuation_markers = (
+            ("`",)
+            if path.suffix == ".ps1"
+            else (("^",) if path.suffix in {".cmd", ".bat"} else ("\\",))
+        )
     return [
-        (line_number, command)
-        for line_number, line in _logical_entrypoint_lines(content)
+        (block_line + line_number - 1, command)
+        for block_line, block_content in source_blocks
+        for line_number, line in _logical_entrypoint_lines(block_content, continuation_markers)
         if _is_active_entrypoint_line(line)
         for command in _split_entrypoint_commands(line)
     ]
+
+
+def _normalize_test_tool_executables(command: str) -> str:
+    """Normalize quoted, path-qualified, and Windows test-tool spellings."""
+    normalized = QUOTED_TEST_TOOL.sub(
+        lambda match: f"{match.group('quote')}{match.group('tool').lower()}{match.group('quote')}",
+        command,
+    )
+    return UNQUOTED_TEST_TOOL.sub(lambda match: match.group("tool").lower(), normalized)
 
 
 def _read_entrypoint_sources() -> dict[Path, str]:
@@ -192,7 +309,7 @@ def _read_entrypoint_sources() -> dict[Path, str]:
         for absolute_path in ROOT.glob(pattern):
             if absolute_path.is_file():
                 relative_path = absolute_path.relative_to(ROOT)
-                if relative_path.name != "Makefile" and (
+                if relative_path.name not in MAKEFILE_NAMES and (
                     "tests" in relative_path.parts or relative_path.name.startswith("test_")
                 ):
                     continue
@@ -202,11 +319,10 @@ def _read_entrypoint_sources() -> dict[Path, str]:
 
 def _raw_entrypoint_errors(path: Path, content: str) -> list[str]:
     errors: list[str] = []
-    for line_number, command in _entrypoint_commands(content):
+    for line_number, command in _entrypoint_commands(path, content):
         command_without_runner = RUNNER_PATH.sub(" ", command)
-        if RAW_MESON_TEST.search(command_without_runner) or RAW_NINJA_TEST.search(
-            command_without_runner
-        ):
+        normalized_command = _normalize_test_tool_executables(command_without_runner)
+        if RAW_MESON_TEST.search(normalized_command) or RAW_NINJA_TEST.search(normalized_command):
             errors.append(f"raw Meson test entry point at {path}:{line_number}")
     return errors
 
@@ -220,7 +336,7 @@ def _entrypoint_contract_errors(sources: dict[Path, str]) -> list[str]:
             continue
         runner_paths = tuple(
             match.group("path")
-            for _, command in _entrypoint_commands(content)
+            for _, command in _entrypoint_commands(path, content)
             for match in RUNNER_PATH.finditer(command)
         )
         if runner_paths:
@@ -468,7 +584,12 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
                 Path(".github/workflows/new-test.yml"),
                 Path(".claude/skills/new-test/run.sh"),
                 Path("package/Makefile"),
+                Path("package/GNUmakefile"),
+                Path("package/makefile"),
                 Path("package/tox.ini"),
+                Path("scripts/setup/new-test.ps1"),
+                Path("scripts/setup/new-test.cmd"),
+                Path("scripts/setup/new-test.bat"),
             }
         )
         for path in sorted(governed_paths):
@@ -505,6 +626,16 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
             "meson compile -C build test",
             'python3 -c \'run(["meson", "test", "-C", "build"])\'',
             '"$MESON" test -C build',
+            '"/usr/bin/meson" test -C build',
+            "'/opt/meson' test -C build",
+            "/usr/local/bin/meson test -C build",
+            "meson.exe test -C build",
+            "C:\\Tools\\meson.exe test -C build",
+            '"C:\\Program Files\\Meson\\meson.exe" test -C build',
+            "ninja.exe -C build test",
+            '"$env:MESON" test -C build',
+            "%MESON% test -C build",
+            "%NINJA% -C build test",
         )
         for unsafe_command in unsafe_commands:
             with self.subTest(unsafe_command=unsafe_command):
@@ -525,15 +656,73 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
         errors = _raw_entrypoint_errors(Path("package/Makefile"), content)
         self.assertTrue(any("raw Meson test entry point" in error for error in errors), errors)
 
-    def test_entrypoint_inventory_recurses_into_nested_makefiles(self) -> None:
+    def test_entrypoint_contract_rejects_multiline_workflow_raw_meson(self) -> None:
+        contents = (
+            "steps:\n  - run: >-\n      meson\n      test -C build\n",
+            "steps:\n  - run: |\n      meson \\\n        test -C build\n",
+        )
+        for content in contents:
+            with self.subTest(content=content):
+                path = Path(".github/workflows/unsafe.yml")
+                errors = _raw_entrypoint_errors(path, content)
+                self.assertTrue(
+                    any("raw Meson test entry point" in error for error in errors), errors
+                )
+                sources = _read_entrypoint_sources()
+                sources[path] = content
+                errors = _entrypoint_contract_errors(sources)
+                self.assertTrue(
+                    any("raw Meson test entry point" in error for error in errors), errors
+                )
+
+    def test_entrypoint_contract_accepts_folded_workflow_runner(self) -> None:
+        content = (
+            "steps:\n"
+            "  - run: >-\n"
+            "      python3 scripts/ci/run_meson_test.py --\n"
+            "      -C build --print-errorlogs\n"
+            # Sibling step metadata is not part of the folded run scalar.
+            "    shell: meson test\n"
+        )
+        sources = _read_entrypoint_sources()
+        sources[Path(".github/workflows/nightly.yml")] = content
+        self.assertEqual(_entrypoint_contract_errors(sources), [])
+
+    def test_entrypoint_contract_rejects_powershell_split_raw_meson(self) -> None:
+        content = "meson `\n  test -C build\n"
+        errors = _raw_entrypoint_errors(Path("scripts/setup/unsafe.ps1"), content)
+        self.assertTrue(any("raw Meson test entry point" in error for error in errors), errors)
+
+    def test_entrypoint_contract_rejects_batch_split_raw_meson(self) -> None:
+        content = "meson ^\n  test -C build\n"
+        errors = _raw_entrypoint_errors(Path("scripts/setup/unsafe.cmd"), content)
+        self.assertTrue(any("raw Meson test entry point" in error for error in errors), errors)
+
+    def test_entrypoint_inventory_recurses_into_all_makefile_names(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
-            nested_makefile = tmppath / "package" / "tests" / "Makefile"
-            nested_makefile.parent.mkdir(parents=True)
-            nested_makefile.write_text("meson test -C build\n", encoding="utf-8")
+            makefile_dir = tmppath / "package" / "tests"
+            makefile_dir.mkdir(parents=True)
+            for name in ("Makefile", "GNUmakefile", "makefile"):
+                (makefile_dir / name).write_text("meson test -C build\n", encoding="utf-8")
             with mock.patch(f"{__name__}.ROOT", tmppath):
                 sources = _read_entrypoint_sources()
-        self.assertIn(Path("package/tests/Makefile"), sources)
+        for name in ("Makefile", "GNUmakefile", "makefile"):
+            self.assertIn(Path("package/tests") / name, sources)
+
+    def test_entrypoint_inventory_includes_windows_scripts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            setup_dir = tmppath / "scripts" / "setup"
+            setup_dir.mkdir(parents=True)
+            for suffix in ("ps1", "cmd", "bat"):
+                (setup_dir / f"windows.{suffix}").write_text(
+                    "meson test -C build\n", encoding="utf-8"
+                )
+            with mock.patch(f"{__name__}.ROOT", tmppath):
+                sources = _read_entrypoint_sources()
+        for suffix in ("ps1", "cmd", "bat"):
+            self.assertIn(Path(f"scripts/setup/windows.{suffix}"), sources)
 
     def test_static_meson_contract_sanitizes_every_declared_test(self) -> None:
         """Current production declarations have one non-bypassable default setup."""

@@ -46,13 +46,18 @@ scaffold, and Zed task now enter Meson through this boundary.
 
 The static contract inventories every supported wrapper call and scans executable entry-point
 scopes for direct `meson test`, `ninja ... test`, and `meson compile ... test` forms. It
-recursively includes nested `Makefile` paths, joins backslash continuations, and checks each
-separator-delimited command after removing only the wrapper-path token. Mutation coverage replaces
-every inventoried call, one at a time, and proves each bypass is rejected. Adversarial fixtures
-also reject a wrapper followed by `; meson test`, a backslash-split raw Meson command, and an
-unsafe nested Makefile. A separate assertion compiles the checked-in pre-commit path filter and
-proves that every scanned entry-point source, every Meson declaration, and representative future
-files trigger the contract.
+recursively includes all three GNU Make names (`GNUmakefile`, `makefile`, and `Makefile`) and
+POSIX/Windows script types. GitHub workflow/action `run` values are extracted and normalized from
+inline, literal, and folded YAML scalars before shell segmentation, rather than scanning physical
+YAML lines that do not represent the executed command. Executable normalization covers quoted and
+path-qualified Meson/Ninja names plus Windows `.exe` spellings. Logical-line handling joins shell,
+PowerShell, and batch continuations and checks each separator-delimited command after removing only
+the wrapper-path token. Mutation coverage replaces every inventoried call, one at a time, and
+proves each bypass is rejected. Adversarial fixtures also reject a wrapper followed by
+`; meson test`, multiline workflow bypasses, path-qualified executables, and unsafe alternate
+Makefile names or Windows scripts. A separate assertion compiles the checked-in pre-commit path
+filter and proves that every scanned entry-point source, every Meson declaration, and
+representative future files trigger the contract.
 
 This boundary cannot intercept an arbitrary command typed outside repository wrappers. Direct
 raw Meson or Ninja test-target invocation remains an explicit unsupported bypass and is stated in
@@ -112,16 +117,18 @@ temporary directory from this synthetic environment; no caller log or credential
 
 ## Verification evidence
 
-`python3 -m unittest core.test.test_meson_secret_env_sanitization` exercises nineteen cases:
+`python3 -m unittest core.test.test_meson_secret_env_sanitization` exercises twenty-four cases:
 
 - exact wrapper/Meson credential-inventory agreement;
 - deletion without credential-value reads;
 - live supported-entry-point inventory and direct-call scan;
 - pre-commit trigger coverage for every scanned source and Meson declaration scope;
 - per-call mutation rejection across every supported entry point;
-- rejection of a newly added raw entry point, a raw sibling after the wrapper, and a
-  backslash-split raw invocation;
-- recursive nested-Makefile inventory aligned with the pre-commit path filter;
+- rejection of newly added raw entry points, including quoted, path-qualified, and Windows
+  executable spellings;
+- rejection of a raw sibling after the wrapper and shell, PowerShell, and batch continuations;
+- folded-workflow rejection plus folded-wrapper acceptance and inventory;
+- recursive alternate-Makefile and Windows-script inventory aligned with the pre-commit filter;
 - the live tree's single-setup/twelve-unset contract;
 - mutation rejection for an alternate setup;
 - mutation rejection for explicit reintroduction of each of the twelve names;
