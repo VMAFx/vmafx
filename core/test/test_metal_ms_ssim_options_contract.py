@@ -132,6 +132,22 @@ def metal_wiring_problems(metal_source: str, parity_source: str) -> list[str]:
     return production_wiring_problems(metal_source) + option_ownership_problems(parity_source)
 
 
+def option_semantics_oracle_problems(semantics_test_source: str) -> list[str]:
+    """Bind the exact dB-ceiling oracle without floating equality or tolerances."""
+    problems: list[str] = []
+    expected_assertion = "double_bits_equal(clipped, 105.0)"
+    if expected_assertion not in semantics_test_source:
+        problems.append("Metal dB-ceiling oracle does not require exact bit identity")
+    if re.search(r"\bclipped\s*(?:==|!=)|(?:==|!=)\s*clipped\b", semantics_test_source):
+        problems.append("Metal dB-ceiling oracle compares floating values directly")
+
+    helper = function_body(semantics_test_source, "static bool double_bits_equal")
+    for required in ("uint64_t lhs_bits", "uint64_t rhs_bits", "memcpy", "lhs_bits == rhs_bits"):
+        if required not in helper:
+            problems.append(f"Metal dB-ceiling bit oracle is missing: {required}")
+    return problems
+
+
 def option_initializer(source: str, option: str) -> str:
     """Return the balanced initializer containing one named option."""
     matches = list(re.finditer(rf'\.name\s*=\s*"{re.escape(option)}"', source))
@@ -231,10 +247,20 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
         self.assertIn("vmaf_metal_ms_ssim_max_db", self.semantics_src)
         self.assertIn("vmaf_metal_ms_ssim_active_planes", self.semantics_src)
         self.assertIn("vmaf_metal_ms_ssim_plane_dimensions", self.semantics_src)
-        self.assertIn("clipped == 105.0", self.semantics_test_src)
+        self.assertEqual(option_semantics_oracle_problems(self.semantics_test_src), [])
         self.assertIn("width == 176u && height == 177u", self.semantics_test_src)
         self.assertIn("width == 351u && height == 351u", self.semantics_test_src)
         self.assertIn("test_metal_ms_ssim_option_semantics = executable", self.meson_src)
+
+    def test_sycl_option_help_matches_live_semantics(self) -> None:
+        clip_db = option_initializer(self.sycl_src, "clip_db")
+        self.assertIn("geometry-derived ceiling", clip_db)
+        self.assertNotIn("clip linear", clip_db)
+
+        enable_chroma = option_initializer(self.sycl_src, "enable_chroma")
+        self.assertIn("dispatch for all active planes", enable_chroma)
+        self.assertNotIn("Vulkan", enable_chroma)
+        self.assertNotIn("v1 kernel", enable_chroma)
 
     def test_chroma_min_dim_check_enforces_176(self) -> None:
         # 5 scales with 11x11 filter require minimum dimension 176:
@@ -300,6 +326,12 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
     def test_mutation_partial_atom_validation_is_rejected(self) -> None:
         mutated = self.metal_src.replace("atoms, 3u", "atoms, 1u", 1)
         self.assertTrue(metal_wiring_problems(mutated, self.parity_test_src))
+
+    def test_mutation_float_equality_in_oracle_is_rejected(self) -> None:
+        mutated = self.semantics_test_src.replace(
+            "double_bits_equal(clipped, 105.0)", "clipped == 105.0", 1
+        )
+        self.assertTrue(option_semantics_oracle_problems(mutated))
 
     def test_mutation_each_atom_value_substitution_is_rejected(self) -> None:
         substitutions = (

@@ -387,15 +387,14 @@ static const VmafOption options_ms_ssim_sycl[] = {
     },
     {
         .name = "clip_db",
-        .help = "clip linear ms_ssim to [0, 1] before dB conversion",
+        .help = "cap dB-domain MS-SSIM at the geometry-derived ceiling",
         .offset = offsetof(MsSsimStateSycl, clip_db),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
     },
     {
         .name = "enable_chroma",
-        .help = "enable calculation for chroma channels (mirrors CPU PR #939 / "
-                "ms_ssim_vulkan PR #957; v1 kernel defers multi-plane dispatch to v2)",
+        .help = "enable MS-SSIM calculation and dispatch for all active planes (Y, Cb and Cr)",
         .offset = offsetof(MsSsimStateSycl, enable_chroma),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
