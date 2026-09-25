@@ -1825,13 +1825,6 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     s->submit_w = ref_pic->w[0];
     s->submit_h = ref_pic->h[0];
 
-    // current implementation is limited by the 16-bit data pipeline, thus
-    // cannot handle an angular frequency smaller than 1080p * 3H
-    if (s->adm_norm_view_dist * s->adm_ref_display_height <
-        DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
-        return -EINVAL;
-    }
-
     return integer_compute_adm_cuda(fex, s, ref_pic, dist_pic, &s->buf, s->adm_enhn_gain_limit,
                                     s->adm_norm_view_dist, s->adm_ref_display_height);
 }

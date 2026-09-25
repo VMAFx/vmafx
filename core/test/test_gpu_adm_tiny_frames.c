@@ -32,8 +32,9 @@
  * either way, so no score can show the overflow. What this case adds is the
  * 16-bit sample path itself, which no GPU ADM parity fixture exercised.
  *
- * The rejection test calls init() directly and needs no device: the size
- * check runs before any device resource is touched. The parity tests score
+ * The size-rejection test calls init() directly and needs no device. The
+ * viewing-geometry rejection uses a real backend state because it pins the
+ * public first-frame contract for CSF modes 1 and 2. The parity tests score
  * each geometry on the GPU twin and on the scalar CPU path, and skip when the
  * backend has no device.
  */
@@ -103,19 +104,18 @@ static const Geometry REJECTED[] = {
 };
 #define NUM_REJECTED (sizeof(REJECTED) / sizeof(REJECTED[0]))
 
-static const char *const SCORE_KEYS[] = {
-    "integer_adm_scale0",
-    "integer_adm_scale1",
-    "integer_adm_scale2",
-    "integer_adm_scale3",
-    "VMAF_integer_feature_adm2_score",
+#define NUM_KEYS (5u)
+static const char *const CSF_SCORE_KEYS[4][NUM_KEYS] = {
+    {"integer_adm_scale0", "integer_adm_scale1", "integer_adm_scale2", "integer_adm_scale3",
+     "VMAF_integer_feature_adm2_score"},
+    {"integer_adm_scale0_csf_1", "integer_adm_scale1_csf_1", "integer_adm_scale2_csf_1",
+     "integer_adm_scale3_csf_1", "integer_adm2_csf_1"},
+    {"integer_adm_scale0_csf_2", "integer_adm_scale1_csf_2", "integer_adm_scale2_csf_2",
+     "integer_adm_scale3_csf_2", "integer_adm2_csf_2"},
+    {"integer_adm_scale0_csf_3", "integer_adm_scale1_csf_3", "integer_adm_scale2_csf_3",
+     "integer_adm_scale3_csf_3", "integer_adm2_csf_3"},
 };
-#define NUM_KEYS (sizeof(SCORE_KEYS) / sizeof(SCORE_KEYS[0]))
-
-static const char *const BARTEN_SCORE_KEYS[] = {
-    "integer_adm_scale0_csf_1", "integer_adm_scale1_csf_1", "integer_adm_scale2_csf_1",
-    "integer_adm_scale3_csf_1", "integer_adm2_csf_1",
-};
+static const char *const CSF_MODE_VALUES[4] = {"0", "1", "2", "3"};
 
 /* Luma sample at (row, col) of the reference (distorted == 0) or the
  * distorted picture. */
@@ -218,27 +218,31 @@ static char *score_frame(VmafContext *vmaf, Geometry g, const Content *c,
     return NULL;
 }
 
-static VmafFeatureDictionary *barten_options(void)
+static VmafFeatureDictionary *csf_options(unsigned mode, const char *nvd, const char *rdh)
 {
+    if (mode >= 4u) {
+        return NULL;
+    }
     VmafFeatureDictionary *opts = NULL;
-    if (vmaf_feature_dictionary_set(&opts, "adm_csf_mode", "1")) {
+    if (vmaf_feature_dictionary_set(&opts, "adm_csf_mode", CSF_MODE_VALUES[mode]) ||
+        (nvd && vmaf_feature_dictionary_set(&opts, "adm_norm_view_dist", nvd)) ||
+        (rdh && vmaf_feature_dictionary_set(&opts, "adm_ref_display_height", rdh))) {
         (void)vmaf_feature_dictionary_free(&opts);
         return NULL;
     }
     return opts;
 }
 
-static char *score_cpu_scalar(Geometry g, const Content *c, int barten, double out[NUM_KEYS])
+static char *score_cpu_scalar(Geometry g, const Content *c, unsigned csf_mode, double out[NUM_KEYS])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .cpumask = ~(uint64_t)0};
     VmafContext *vmaf = NULL;
     mu_assert("CPU: vmaf_init failed", !vmaf_init(&vmaf, cfg));
-    VmafFeatureDictionary *opts = barten ? barten_options() : NULL;
-    mu_assert("CPU: Barten option allocation failed", !barten || opts != NULL);
+    VmafFeatureDictionary *opts = csf_mode ? csf_options(csf_mode, NULL, NULL) : NULL;
+    mu_assert("CPU: CSF option allocation failed", !csf_mode || opts != NULL);
     mu_assert("CPU: vmaf_use_feature(adm) failed", !vmaf_use_feature(vmaf, "adm", opts));
     int skipped = 0;
-    const char *const *keys = barten ? BARTEN_SCORE_KEYS : SCORE_KEYS;
-    char *msg = score_frame(vmaf, g, c, keys, out, &skipped);
+    char *msg = score_frame(vmaf, g, c, CSF_SCORE_KEYS[csf_mode], out, &skipped);
     (void)vmaf_close(vmaf);
     return msg;
 }
@@ -329,7 +333,8 @@ static void gpu_free(GpuState **state)
 
 /* Score `g` on the GPU twin. `*skipped` is set when there is no device or the
  * kernels were not built. */
-static char *score_gpu(Geometry g, const Content *c, int barten, double out[NUM_KEYS], int *skipped)
+static char *score_gpu(Geometry g, const Content *c, unsigned csf_mode, double out[NUM_KEYS],
+                       int *skipped)
 {
     GpuState *state = NULL;
     if (gpu_open(&state) != 0 || state == NULL) {
@@ -344,14 +349,13 @@ static char *score_gpu(Geometry g, const Content *c, int barten, double out[NUM_
     } else if (gpu_import(vmaf, state)) {
         msg = "GPU: importing the device state failed";
     } else {
-        VmafFeatureDictionary *opts = barten ? barten_options() : NULL;
-        if (barten && opts == NULL) {
-            msg = "GPU: Barten option allocation failed";
+        VmafFeatureDictionary *opts = csf_mode ? csf_options(csf_mode, NULL, NULL) : NULL;
+        if (csf_mode && opts == NULL) {
+            msg = "GPU: CSF option allocation failed";
         } else if (vmaf_use_feature(vmaf, GPU_FEATURE, opts)) {
             msg = "GPU: vmaf_use_feature failed";
         } else {
-            const char *const *keys = barten ? BARTEN_SCORE_KEYS : SCORE_KEYS;
-            msg = score_frame(vmaf, g, c, keys, out, skipped);
+            msg = score_frame(vmaf, g, c, CSF_SCORE_KEYS[csf_mode], out, skipped);
         }
     }
     if (vmaf) {
@@ -379,15 +383,15 @@ static const Content BRIGHT_16BIT = {
     "GPU integer ADM differs from scalar CPU by more than 1e-4 on bright 16-bit input",
 };
 
-static char *check_parity(Geometry g, const Content *c, int barten, int *skipped)
+static char *check_parity(Geometry g, const Content *c, unsigned csf_mode, int *skipped)
 {
     double cpu[NUM_KEYS];
     double gpu[NUM_KEYS];
-    char *msg = score_cpu_scalar(g, c, barten, cpu);
+    char *msg = score_cpu_scalar(g, c, csf_mode, cpu);
     if (msg) {
         return msg;
     }
-    msg = score_gpu(g, c, barten, gpu, skipped);
+    msg = score_gpu(g, c, csf_mode, gpu, skipped);
     if (msg || *skipped) {
         return msg;
     }
@@ -395,7 +399,7 @@ static char *check_parity(Geometry g, const Content *c, int barten, int *skipped
         const double delta = fabs(cpu[k] - gpu[k]);
         if (!(delta <= PARITY_TOL)) {
             (void)fprintf(stderr, "\n  %ux%u %s: cpu=%.8f gpu=%.8f delta=%.2e\n", g.w, g.h,
-                          barten ? BARTEN_SCORE_KEYS[k] : SCORE_KEYS[k], cpu[k], gpu[k], delta);
+                          CSF_SCORE_KEYS[csf_mode][k], cpu[k], gpu[k], delta);
             return c->mismatch;
         }
     }
@@ -435,15 +439,104 @@ static char *test_gpu_adm_bright_16bit_parity(void)
     return check_parity_list(NOISE, NUM_NOISE, &BRIGHT_16BIT);
 }
 
-static char *test_gpu_adm_barten_mode_parity(void)
+static char *test_gpu_adm_csf_modes_parity(void)
 {
-    int skipped = 0;
-    char *msg = check_parity(NOISE[0], &FULL_RANGE_NOISE, 1, &skipped);
-    if (skipped) {
-        (void)fprintf(stderr, "[skip: no %s device or kernels] ", GPU_FEATURE);
-        mu_skipped = 1;
+    for (unsigned mode = 0; mode < 4u; ++mode) {
+        int skipped = 0;
+        char *msg = check_parity(NOISE[0], &FULL_RANGE_NOISE, mode, &skipped);
+        if (msg) {
+            return msg;
+        }
+        if (skipped) {
+            (void)fprintf(stderr, "[skip: no %s device or kernels] ", GPU_FEATURE);
+            mu_skipped = 1;
+            return NULL;
+        }
     }
+    return NULL;
+}
+
+static char *submit_geometry_case(VmafContext *vmaf, int *status)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    const Geometry g = {96u, 64u};
+    int err = fill_picture(&ref, g, &FULL_RANGE_NOISE, 0);
+    if (err) {
+        return "GPU geometry rejection: reference allocation failed";
+    }
+    err = fill_picture(&dist, g, &FULL_RANGE_NOISE, 1);
+    if (err) {
+        (void)vmaf_picture_unref(&ref);
+        return "GPU geometry rejection: distorted allocation failed";
+    }
+    *status = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    return NULL;
+}
+
+static char *gpu_geometry_status(unsigned mode, const char *nvd, const char *rdh, int *status,
+                                 int *skipped)
+{
+    *status = 0;
+    *skipped = 0;
+    GpuState *state = NULL;
+    if (gpu_open(&state) != 0 || state == NULL) {
+        *skipped = 1;
+        return NULL;
+    }
+
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    char *msg = NULL;
+    if (vmaf_init(&vmaf, cfg)) {
+        msg = "GPU geometry rejection: vmaf_init failed";
+    } else if (gpu_import(vmaf, state)) {
+        msg = "GPU geometry rejection: importing the device state failed";
+    } else {
+        VmafFeatureDictionary *opts = csf_options(mode, nvd, rdh);
+        if (opts == NULL) {
+            msg = "GPU geometry rejection: option allocation failed";
+        } else if (vmaf_use_feature(vmaf, GPU_FEATURE, opts)) {
+            msg = "GPU geometry rejection: vmaf_use_feature failed";
+        } else {
+            msg = submit_geometry_case(vmaf, status);
+        }
+    }
+    if (vmaf) {
+        (void)vmaf_close(vmaf);
+    }
+    gpu_free(&state);
     return msg;
+}
+
+static char *test_gpu_adm_rejects_invalid_viewing_geometry(void)
+{
+    static const struct {
+        unsigned mode;
+        const char *nvd;
+        const char *rdh;
+    } cases[] = {
+        {1u, "0.75", "1080"},
+        {2u, "3.0", "720"},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        int status = 0;
+        int skipped = 0;
+        char *msg =
+            gpu_geometry_status(cases[i].mode, cases[i].nvd, cases[i].rdh, &status, &skipped);
+        if (msg || skipped) {
+            if (skipped) {
+                (void)fprintf(stderr, "[skip: no %s device] ", GPU_FEATURE);
+                mu_skipped = 1;
+            }
+            return msg;
+        }
+        if (status != -EINVAL) {
+            (void)fprintf(stderr, "\n  adm_csf_mode=%u returned %d\n", cases[i].mode, status);
+            return "GPU integer ADM must reject viewing geometry below 1080p at 3H";
+        }
+    }
+    return NULL;
 }
 
 /* init() with a zeroed private state. Only rejected sizes come through here:
@@ -478,9 +571,12 @@ static char *test_gpu_adm_rejects_below_min_dim(void)
 char *run_tests(void)
 {
     static const MuTest tests[] = {
-        MU_TEST(test_gpu_adm_rejects_below_min_dim),   MU_TEST(test_gpu_adm_tiny_frame_parity),
-        MU_TEST(test_gpu_adm_full_range_noise_parity), MU_TEST(test_gpu_adm_bright_16bit_parity),
-        MU_TEST(test_gpu_adm_barten_mode_parity),
+        MU_TEST(test_gpu_adm_rejects_below_min_dim),
+        MU_TEST(test_gpu_adm_rejects_invalid_viewing_geometry),
+        MU_TEST(test_gpu_adm_tiny_frame_parity),
+        MU_TEST(test_gpu_adm_full_range_noise_parity),
+        MU_TEST(test_gpu_adm_bright_16bit_parity),
+        MU_TEST(test_gpu_adm_csf_modes_parity),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

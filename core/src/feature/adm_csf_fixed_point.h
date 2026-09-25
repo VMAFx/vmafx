@@ -58,6 +58,25 @@
  * accumulation need that headroom. */
 #define ADM_CSF_SCALE0_LIMIT (65536.0)    /* 2^16, uint16_t i_rfactor */
 #define ADM_CSF_S123_LIMIT (1073741824.0) /* 2^30, signed headroom */
+#define ADM_MIN_VIEWING_GEOMETRY (3240.0) /* 1080p at 3H */
+
+/**
+ * Preserve the integer pipeline's minimum angular-frequency contract. The
+ * reference CPU extractor has always rejected viewing geometries below
+ * 1080p at 3H; every GPU twin must reject the same inputs before calculating
+ * fixed-point CSF factors or claiming device resources.
+ *
+ * Cast the integral height before multiplication so the comparison cannot
+ * overflow in integer arithmetic if the option range grows later. The
+ * relational expression intentionally matches the CPU reference's handling
+ * of non-finite doubles; the option parser owns those range checks.
+ */
+static inline int adm_viewing_geometry_check(double adm_norm_view_dist, int adm_ref_display_height)
+{
+    return adm_norm_view_dist * (double)adm_ref_display_height < ADM_MIN_VIEWING_GEOMETRY ?
+               -EINVAL :
+               0;
+}
 
 /**
  * True when the scale-0 weights come from the upstream-tabulated constants
@@ -124,9 +143,10 @@ static inline bool adm_csf_fixed_valid(double value)
  * `normalization_shift` records that exponent for the contrast-masking cube
  * finalisation, which restores `3 * normalization_shift` bits.
  *
- * Returns 0 for every finite non-negative configuration.  Negative and
- * non-finite values are rejected with -EINVAL; in particular, the blended-CSF
- * lookup uses -EINVAL encoded as a float for unsupported display geometry.
+ * Returns 0 when the viewing geometry meets the fixed-point floor and every
+ * generated weight is finite and non-negative. Geometry below the floor and
+ * invalid weights return -EINVAL; in particular, the blended-CSF lookup uses
+ * -EINVAL encoded as a float for unsupported display geometry.
  *
  * `scale` is 0 for the 16-bit pipeline and 1..3 for the 32-bit pipeline;
  * `rfactor1` is { factor1, factor1, factor2 }.
@@ -135,6 +155,11 @@ static inline int adm_csf_fixed_scale(int scale, const float rfactor1[3], double
                                       int adm_ref_display_height, int adm_csf_mode, double fixed[3],
                                       uint32_t *normalization_shift)
 {
+    const int geometry_err = adm_viewing_geometry_check(adm_norm_view_dist, adm_ref_display_height);
+    if (geometry_err) {
+        return geometry_err;
+    }
+
     double limit;
 
     if (scale == 0) {

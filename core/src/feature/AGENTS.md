@@ -1666,6 +1666,11 @@ when rebasing or changing any integer-ADM twin:
   may retain SIMD DWT, decoupling, and denominator stages;
 - reject negative or non-finite table output, including the blend tables'
   negative sentinel, instead of converting it to unsigned.
+- reject every viewing geometry where
+  `adm_norm_view_dist * adm_ref_display_height < 3240` through the shared
+  `adm_viewing_geometry_check()` helper; this floor is independent of CSF mode.
+  The CPU reference checks before computation; GPU twins check before
+  normalization or device work.
 
 `test_adm_csf_representable` pins finite, non-degenerate CPU mode-1 output;
 the CUDA, SYCL, HIP, and Metal parity fixtures pin their supported scores at

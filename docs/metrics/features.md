@@ -522,6 +522,14 @@ as `adm_ref_display_height=1200` at the default viewing distance returns a
 negative sentinel and is rejected with `-EINVAL` rather than converted to an
 unsigned weight.
 
+Independently of the selected CSF mode, the fixed-point pipeline requires
+`adm_norm_view_dist × adm_ref_display_height >= 3240` (the default 1080p
+display viewed at 3H). Lower angular-frequency geometry is rejected with
+`-EINVAL` before score computation; GPU backends reject it before normalization
+or device allocation. For example, mode 1 rejects 1080p at 0.75H, and mode 2
+rejects its otherwise-tabulated 720p-at-3H geometry. CPU, CUDA, SYCL, HIP, and
+Metal enforce the same floor.
+
 The CPU, CUDA, SYCL, HIP, and Metal integer extractors share this conversion
 contract. The float extractor has no fixed-point storage and remains the
 numerical reference. On the canonical 576x324 pair, full-scale mode 1 emits

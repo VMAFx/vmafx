@@ -35,7 +35,9 @@
  *    4. `adm_csf_mode=2` at a viewing geometry the blend table does not
  *       carry is rejected rather than converting -22.0f to an unsigned type;
  *    5. `adm_csf_mode=2` / `=3` at the tabulated default geometry still
- *       score (the default model `vmaf_v1.0.16_3d0h` requests mode 2).
+ *       score (the default model `vmaf_v1.0.16_3d0h` requests mode 2); and
+ *    6. modes 1 and 2 both reject viewing geometry below the fixed-point
+ *       pipeline's 1080p-at-3H angular-frequency floor.
  */
 
 #include <errno.h>
@@ -285,6 +287,25 @@ static char *test_adm_csf_mode_blend_default_geometry_accepted(void)
     return NULL;
 }
 
+static char *test_adm_csf_modes_reject_below_minimum_viewing_geometry(void)
+{
+    const AdmOpt barten[] = {{"adm_csf_mode", "1"}, {"adm_norm_view_dist", "0.75"}, {NULL, NULL}};
+    char *msg = NULL;
+    int err = adm_extract_status(barten, NULL, NULL, &msg);
+    mu_assert("mode-1 invalid-geometry harness failure", msg == NULL);
+    mu_assert("adm_csf_mode=1 below the viewing-geometry floor must return -EINVAL",
+              err == -EINVAL);
+
+    /* 720@3H is in the mode-2 lookup table, so this isolates the independent
+     * fixed-point pipeline floor instead of the table's negative sentinel. */
+    const AdmOpt blend[] = {{"adm_csf_mode", "2"}, {"adm_ref_display_height", "720"}, {NULL, NULL}};
+    err = adm_extract_status(blend, NULL, NULL, &msg);
+    mu_assert("mode-2 invalid-geometry harness failure", msg == NULL);
+    mu_assert("adm_csf_mode=2 below the viewing-geometry floor must return -EINVAL",
+              err == -EINVAL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_adm_default_config_still_scores);
@@ -293,6 +314,7 @@ char *run_tests(void)
     mu_run_test(test_adm_csf_mode_barten_small_scale_accepted);
     mu_run_test(test_adm_csf_mode_blend_untabulated_geometry_rejected);
     mu_run_test(test_adm_csf_mode_blend_default_geometry_accepted);
+    mu_run_test(test_adm_csf_modes_reject_below_minimum_viewing_geometry);
     return NULL;
 }
 

@@ -76,6 +76,16 @@ test('test_gpu_option_value_capability_contract',
     timeout : 30,
 )
 
+# Integer ADM's fixed-point viewing-geometry floor is backend-independent and
+# must run before CSF normalization or any GPU resource work. Keep that ordering
+# device-free so Linux CI covers Metal as well as CUDA, HIP, and SYCL.
+test('test_adm_viewing_geometry_contract',
+    import('python').find_installation(),
+    args : files('test_adm_viewing_geometry_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # BUG-048: these diagnostics were standardized once, then silently restored
 # from stale source. Keep their line framing and severity prefix stable.
 test('test_vmaf_log_callsite_format',

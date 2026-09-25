@@ -1554,11 +1554,6 @@ static int adm_hip_validate(const AdmStateHip *s, unsigned w, unsigned h)
         return size_err;
     }
 
-    if (s->adm_norm_view_dist * s->adm_ref_display_height <
-        DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
-        return -EINVAL;
-    }
-
     /* Reject invalid CSF table output before any device resource is claimed.
      * Finite over-range weights are normalised with the CPU's shared
      * per-scale exponent in adm_hip_rfactors(). */

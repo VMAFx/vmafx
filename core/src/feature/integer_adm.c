@@ -2294,12 +2294,12 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     (void)ref_pic_90;
     (void)dist_pic_90;
 
-    // current implementation is limited by the 16-bit data pipeline, thus
-    // cannot handle an angular frequency smaller than 1080p * 3H
-    if (s->adm_norm_view_dist * s->adm_ref_display_height <
-        DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
-        return -EINVAL;
-    }
+    /* The 16-bit pipeline cannot handle an angular frequency below 1080p at
+     * 3H. Keep the reference check shared with every integer-ADM GPU twin. */
+    const int geometry_err =
+        adm_viewing_geometry_check(s->adm_norm_view_dist, s->adm_ref_display_height);
+    if (geometry_err)
+        return geometry_err;
 
     /* The viewing-geometry test above does not catch invalid negative table
      * sentinels from the blended CSFs. init() logged the offending band; this
