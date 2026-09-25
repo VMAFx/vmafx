@@ -74,9 +74,23 @@ core/
   thread-local locale abstraction (`thread_locale.h`) for all numeric I/O.
 - [ADR-1182](../docs/adr/1182-windows-utf8-path-contract.md) —
   Windows UTF-8 path contract and internal path shims.
+- [ADR-1320](../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md) —
+  CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit depend_files and compiler depfiles.
 
 ## Rebase-sensitive invariants
 
+- **CUDA fatbin & HIP HSACO header dependency tracking**
+  ([ADR-1320](../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
+  [Research-2106](../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
+  All CUDA fatbin (`cu_ptx_target_*`) and HIP HSACO (`hip_hsaco_*`) custom
+  targets in `core/src/meson.build` must bind explicit header dependency lists
+  (`depend_files: cuda_kernel_shared_headers` and `depend_files: hip_kernel_shared_headers`)
+  covering every shared kernel header, combined with compiler depfiles
+  (`-MD -MF @DEPFILE@` on POSIX nvcc and `-Xclang -dependency-file -Xclang @DEPFILE@`
+  on hipcc; depfile omitted on Windows MSVC). Changes to shared kernel headers
+  (e.g., `integer_adm_cuda.h`, `vif_cuda.h`) must reliably trigger incremental
+  device binary rebuilds without manual `touch` workarounds. Rebase must preserve
+  these dependency declarations.
 - **Windows UTF-8 path contract and internal path shims**
   ([ADR-1182](../docs/adr/1182-windows-utf8-path-contract.md);
   [Research-1182](../docs/research/1182-windows-utf8-path-contract.md)):

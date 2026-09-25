@@ -51142,17 +51142,20 @@ this work, because these three twins are now defined as *mirrors* of it:
    `{36453, 36453, 49417}` scale-0 constants, or to the `nvd * rdh` canonical
    test must be replicated into all three copies.
 
-3. **`AdmFixedParametersCuda` / `AdmFixedParametersHip` are passed by value
-   into device kernels, and the fatbin does not rebuild on a header change.**
-   `core/src/meson.build`'s `cu_ptx_target_*` `custom_target` lists only the
-   `.cu` file as input — no `depfile`. Editing the struct in
-   `core/src/feature/cuda/integer_adm_cuda.h` therefore pairs a new host
-   layout with a stale device layout and produces wrong scores with **no build
-   error**. The two unused `float factor1[4]` / `float factor2[4]` members are
-   retained for exactly this reason and carry a comment saying so. Filed as
-   `T-CUDA-FATBIN-NO-HEADER-DEP-2026-09-05` in `docs/state.md`. After any edit
-   to those headers, `touch core/src/feature/cuda/integer_adm/*.cu
-   core/src/feature/hip/integer_adm/*.hip` before rebuilding.
+3. **`AdmFixedParametersCuda` / `AdmFixedParametersHip` header dependency
+   tracking (ADR-1320, Research-2106).**
+   Historically, `core/src/meson.build` declared device targets with only `input : _cu`
+   and no header dependencies, meaning editing structs in headers like
+   `core/src/feature/cuda/integer_adm_cuda.h` paired new host layouts with stale
+   device layouts without triggering fatbin/HSACO rebuilds. Filed as
+   `T-CUDA-FATBIN-NO-HEADER-DEP-2026-09-05` in `docs/state.md` and **resolved by
+   ADR-1320**. `core/src/meson.build` now binds explicit `depend_files` lists
+   (`cuda_kernel_shared_headers`, `hip_kernel_shared_headers`) covering all shared
+   kernel headers across all 22 CUDA fatbin targets and 22 HIP HSACO targets,
+   alongside compiler depfiles (`-MD -MF @DEPFILE@` on POSIX nvcc and `-Xclang
+   -dependency-file -Xclang @DEPFILE@` on hipcc; depfile omitted on Windows MSVC).
+   Header edits now reliably trigger incremental Ninja rebuilds without manual
+   `touch` workarounds.
 
 4. **`adm_min_val` floors `adm3` only.** `integer_adm.c::extract()` wraps only
    the adm3 expression in `MAX(..., s->adm_min_val)`; `adm2` is emitted raw.

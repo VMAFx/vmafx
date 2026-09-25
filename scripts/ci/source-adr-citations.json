@@ -7415,6 +7415,15 @@
         ".github/workflows/security-scans.yml": 1
       },
       "target": "1314-semgrep-registry-advisory-artifact.md"
+    },
+    "1320": {
+      "sites": {
+        "core/src/meson.build": 2,
+        "core/test/meson.build": 1,
+        "core/test/test_device_target_header_dependencies.py": 1,
+        "scripts/ci/tests/test_device_target_header_dependencies.py": 1
+      },
+      "target": "1320-cuda-hip-kernel-header-dependency-tracking.md"
     }
   },
   "retired": {

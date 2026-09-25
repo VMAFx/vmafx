@@ -328,6 +328,33 @@ if is_hipcc_enabled and is_hip_enabled
         'ssimulacra2_blur' : ['-ffp-contract=off'],
         'integer_ssim_score' : ['-ffp-contract=off'],
     }
+    # ADR-1320: Explicit shared header dependencies for HIP device kernels.
+    # While hipcc passes -Xclang -dependency-file on Linux, depend_files
+    # provides declarative dependency tracking across all platforms.
+    hip_kernel_shared_headers = files(
+        'hip/common.h',
+        'feature/hip/integer_adm_hip.h',
+        'feature/hip/integer_adm/adm_decouple_inline.hip',
+        'feature/hip/integer_vif_hip.h',
+        'feature/hip/integer_motion_hip.h',
+        'feature/hip/integer_motion_v2_hip.h',
+        'feature/hip/integer_psnr_hip.h',
+        'feature/hip/float_moment_hip.h',
+        'feature/hip/ciede_hip.h',
+        'feature/hip/float_ssim_hip.h',
+        'feature/hip/integer_ssim_hip.h',
+        'feature/hip/integer_ms_ssim_hip.h',
+        'feature/hip/integer_psnr_hvs_hip.h',
+        'feature/hip/float_psnr_hip.h',
+        'feature/hip/float_motion_hip.h',
+        'feature/hip/float_vif_hip.h',
+        'feature/hip/ssimulacra2_hip.h',
+        'feature/hip/float_adm_hip.h',
+        'feature/hip/integer_cambi_hip.h',
+        'feature/hip/speed_chroma_hip.h',
+        'feature/hip/speed_temporal_hip.h',
+        'feature/adm_angle_flag.h',
+    )
     foreach name, src : hip_kernel_sources
         per_kernel_flags = hip_cu_extra_flags.get(name, [])
         # hipcc ignores -MD/-MF under --genco; the device frontend writes the
@@ -337,6 +364,7 @@ if is_hipcc_enabled and is_hip_enabled
             output: name + '.hsaco',
             input: src,
             depfile: name + '.hsaco.d',
+            depend_files: hip_kernel_shared_headers,
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
                      hip_include_flags + per_kernel_flags +
                      ['-I', meson.current_source_dir(),
@@ -1407,16 +1435,48 @@ if is_cuda_enabled
     # instead of leaving a stale kernel that no longer matches the host. Not
     # on Windows, where nvcc preprocesses through cl.exe; that lane builds
     # from clean.
+    # ADR-1320: Explicit shared header dependencies for CUDA device kernels.
+    # Combined with compiler depfiles (-MD -MF) on POSIX and fallback explicit
+    # tracking on Windows, this guarantees that editing any shared kernel header
+    # triggers an incremental Ninja rebuild of the affected fatbins.
+    cuda_kernel_shared_headers = files(
+        'cuda/common.h',
+        'cuda/cuda_helper.cuh',
+        'feature/cuda/integer_adm_cuda.h',
+        'feature/cuda/integer_adm/adm_decouple_inline.cuh',
+        'feature/cuda/integer_vif_cuda.h',
+        'feature/cuda/integer_vif/vif_statistics.cuh',
+        'feature/cuda/integer_motion_cuda.h',
+        'feature/cuda/integer_motion_v2_cuda.h',
+        'feature/cuda/integer_psnr_cuda.h',
+        'feature/cuda/integer_moment_cuda.h',
+        'feature/cuda/integer_ciede_cuda.h',
+        'feature/cuda/integer_ssim_cuda.h',
+        'feature/cuda/ssim_cuda.h',
+        'feature/cuda/integer_ms_ssim_cuda.h',
+        'feature/cuda/integer_psnr_hvs_cuda.h',
+        'feature/cuda/float_psnr_cuda.h',
+        'feature/cuda/float_motion_cuda.h',
+        'feature/cuda/float_vif_cuda.h',
+        'feature/cuda/ssimulacra2_cuda.h',
+        'feature/cuda/float_adm_cuda.h',
+        'feature/cuda/integer_cambi_cuda.h',
+        'feature/cuda/speed_chroma_cuda.h',
+        'feature/cuda/speed_temporal_cuda.h',
+        'feature/adm_angle_flag.h',
+    )
     nvcc_dep_flags = host_machine.system() == 'windows' ? [] : [
         '-MD', '-MF', '@DEPFILE@', '-MT', '@OUTPUT@']
     ptx_files = {}
     foreach name, _cu : cuda_cu_sources
         per_kernel_flags = cuda_cu_extra_flags.get(name, [])
+        cu_depfile = host_machine.system() == 'windows' ? '' : '@0@.fatbin.d'.format(name)
         t = custom_target('cu_ptx_target_' + name,
             build_by_default: true,
             output : ['@0@.fatbin'.format(name)],
             input : _cu,
-            depfile : '@0@.fatbin.d'.format(name),
+            depfile : cu_depfile,
+            depend_files : cuda_kernel_shared_headers,
             command : [nvcc_exe,
                 gencode,
                 '@INPUT@',

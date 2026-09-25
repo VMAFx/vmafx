@@ -107,6 +107,18 @@ ADR-0372 (batch-1, this PR).
 
 ## Rebase-sensitive invariants
 
+- **HIP HSACO kernel header dependency tracking**
+  ([ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
+  [Research-2106](../../../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
+  All HIP HSACO custom targets (`hip_hsaco_*`) in `core/src/meson.build`
+  must bind `depend_files: hip_kernel_shared_headers` covering every shared kernel
+  header, combined with compiler depfiles (`depfile: name + '.hsaco.d'` and
+  passing `-Xclang -dependency-file -Xclang @DEPFILE@ -Xclang -MT -Xclang @OUTPUT@`
+  to hipcc).
+  Editing structs in shared headers (e.g. `integer_adm_cuda.h`, `vif_cuda.h`, `moment_cuda.h`)
+  must reliably trigger incremental HSACO rebuilds in Ninja without manual `touch`
+  workarounds. Do not remove `depend_files` or omit shared headers on rebase.
+
 - **`kernel_template.h` mirrors `cuda/kernel_template.h`** (fork-local,
   ADR-0241). Struct shapes (`VmafHipKernelLifecycle` ↔
   `VmafCudaKernelLifecycle`, `VmafHipKernelReadback` ↔
@@ -393,6 +405,9 @@ do not replace — scaffold invariants already documented above.
   scaffolds whose extractor names already register via canonical
   `ciede_hip.c` / `float_moment_hip.c` TUs — leave them out of
   `hip_sources` to avoid duplicate-symbol link error.
+- [ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md)
+  — CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit
+  depend_files and compiler depfiles.
 
 ## Build
 

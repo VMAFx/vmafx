@@ -43,6 +43,17 @@ cuda/
 
 ## Rebase-sensitive invariants
 
+- **CUDA fatbin kernel header dependency tracking**
+  ([ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
+  [Research-2106](../../../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
+  All CUDA fatbin custom targets (`cu_ptx_target_*`) in `core/src/meson.build`
+  must bind `depend_files: cuda_kernel_shared_headers` covering every shared kernel
+  header, combined with compiler depfiles (`cu_depfile = host_machine.system() == 'windows' ? '' : '@0@.fatbin.d'.format(name)`
+  and `nvcc_dep_flags = host_machine.system() == 'windows' ? [] : ['-MD', '-MF', '@DEPFILE@']`).
+  Editing structs in shared headers (e.g. `integer_adm_cuda.h`, `vif_cuda.h`, `moment_cuda.h`)
+  must reliably trigger incremental fatbin rebuilds in Ninja without manual `touch`
+  workarounds. Do not remove `depend_files` or omit shared headers on rebase.
+
 - **CUDA architecture floor = compute capability 8.0 (Ampere)**
   (ADR-1223) — gencode list in `core/src/meson.build` emits cubins
   for `sm_80` / `sm_86` / `sm_89` (plus `sm_90` / `sm_100` / `sm_120`
@@ -295,6 +306,8 @@ cuda/
   `core/src/meson.build`. **On rebase**: do not consolidate
   `float_adm_score` into global `cuda_flags` block; FMA-off
   scope intentionally one fatbin only.
+- [ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md) —
+  CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit depend_files and compiler depfiles.
 
 - **FFmpeg `libvmaf` filter — `cuda` selector consumer** (fork-local,
   ADR-0350): in-tree
