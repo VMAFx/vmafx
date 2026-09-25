@@ -180,7 +180,8 @@ wired into the `fast` suite:
 ```bash
 meson setup core/build-cpu core -Denable_cuda=false -Denable_sycl=false
 ninja -C core/build-cpu
-meson test -C core/build-cpu test_pelorus_interop   # all vectors, must pass
+python3 scripts/ci/run_meson_test.py -- \
+  -C core/build-cpu test_pelorus_interop   # all vectors, must pass
 ```
 
 ## Re-syncing the mirror

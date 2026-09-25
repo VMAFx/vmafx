@@ -84,7 +84,7 @@ instead of asserting one answer. Do not pin one spelling into test. Do not
 
    ```bash
    python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
-   meson test -C build test_cjson
+   python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build test_cjson
    python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
        --only core/src/mcp/3rdparty/cJSON/cJSON.c     # must report no warnings
    praetorctl audit                                   # the touched file must be clean

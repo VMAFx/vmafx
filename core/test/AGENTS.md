@@ -7,7 +7,7 @@ Orientation for agents working on C unit test suite. Parent:
 ## Scope
 
 C unit tests for libvmaf engine. Runs on every build via
-`meson test -C build`. Separate suite under
+`python3 scripts/ci/run_meson_test.py -- -C build`. Separate suite under
 [dnn/](dnn/) covers ONNX Runtime integration.
 
 ## Test style
@@ -30,7 +30,7 @@ char *run_tests(void)
 ```
 
 Each `test_*.c` compiles into own binary. `meson.build` registers them
-with `meson test`. No fixtures, no shared state — each test owns setup
+with the repository's Meson test runner. No fixtures, no shared state — each test owns setup
 and teardown.
 
 **Function size** (`readability-function-size`, 15-branch budget):
@@ -206,7 +206,7 @@ and teardown.
   [test_lpips.c](test_lpips.c) for `_putenv_s`-based shim for
   `setenv`/`unsetenv` — MinGW's mingw.org / MSYS2 headers do not
   expose those functions under `-std=c11 -pedantic`. CI MINGW build
-  will catch this but running `meson test` locally on Linux won't.
+  will catch this but running the native test suite locally on Linux won't.
 - **Never modify Netflix golden assertions**: those are Python-side, not
   here — see [../../python/test/](../../python/test/) and
   [ADR-0024](../../docs/adr/0024-netflix-golden-preserved.md).
@@ -328,8 +328,9 @@ Rules for those files:
   reinvent.
 - ADR-1138 `NULL` carve-out applies (MSVC `/std:clatest`, no `nullptr`).
 - Local check before push: `meson setup build/aarch64 core --cross-file
-  ~/.cache/vmafx-cross/aarch64-clang.ini`, `meson test -C build/aarch64
-  <test>` under qemu. MSVC itself: CI only.
+  ~/.cache/vmafx-cross/aarch64-clang.ini`, then
+  `python3 scripts/ci/run_meson_test.py -- -C build/aarch64 <test>` under qemu.
+  MSVC itself: CI only.
 
 ## Pelorus exact-source conformance fixture (ADR-1113, ADR-1276)
 
@@ -379,7 +380,7 @@ identical to that source.
   sanitizer matrix test-set scope. **Rebase-sensitive invariant**:
   sanitizer job in
   `.github/workflows/tests-and-quality-gates.yml` enumerates full
-  unit-test set via `meson test --list` and applies per-sanitizer
+  unit-test set via `meson introspect --tests` and applies per-sanitizer
   deselect regex (ASan / UBSan / TSan each have own list). When
   adding new `test()` call to [`meson.build`](meson.build), test
   inherits sanitizer coverage automatically. Do NOT add
@@ -398,7 +399,7 @@ identical to that source.
 
 **Every `test()` declaration in [`meson.build`](meson.build) MUST
 carry `suite:` argument.** `fast` suite is documented pre-push gate
-(`CLAUDE.md §3`; `meson test -C build --suite=fast`) and must
+(`CLAUDE.md §3`; `python3 scripts/ci/run_meson_test.py -- -C build --suite=fast`) and must
 contain every test that completes in under 2 seconds under normal
 CPU load.
 
@@ -436,7 +437,7 @@ carry the fork's suite classification contract. Then run both the
 source-registry and configured-metadata guards:
 
 ```bash
-meson test -C build --no-rebuild \
+python3 scripts/ci/run_meson_test.py -- -C build --no-rebuild \
   test_gpu_serialization_contract check_gpu_test_serialization
 ```
 
@@ -687,7 +688,7 @@ session to diagnose.
 
 `should_fail : true` in `meson.build` needs a reason that is true today.
 Meson counts an unexpected pass as a failure, so a stale marker breaks
-`meson test` on every machine with the device. When the cited defect is
+the native test suite on every machine with the device. When the cited defect is
 fixed, drop the marker in the same PR (ADR-1211 fixed the staging fault
 the three HIP ADM markers cited; the markers outlived it by two weeks).
 

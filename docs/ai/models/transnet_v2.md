@@ -177,7 +177,7 @@ The C-side registration + options-table contract + dual-feature
 surface is exercised by `core/test/test_transnet_v2.c`:
 
 ```bash
-meson test -C core/build test_transnet_v2
+python3 scripts/ci/run_meson_test.py -- -C core/build test_transnet_v2
 ```
 
 To smoke the full 100-frame round-trip via Python ORT:

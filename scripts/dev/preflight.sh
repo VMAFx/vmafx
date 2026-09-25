@@ -4,7 +4,7 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 #
-# The repository's documented local gate (`make lint`, `meson test`) builds with
+# The repository's documented local gate (`make lint`, `make test-fast`) builds with
 # ONE compiler. CI builds with several, and the difference is not academic: on
 # 2026-09-07 a single branch shipped three separate portability breaks that were
 # green locally and red in CI, each costing a full round-trip on a queue where
@@ -143,7 +143,8 @@ if want gcc; then
   if [ -f build/build.ninja ] || CC=gcc CXX=g++ meson setup build core \
     -Denable_cuda=false -Denable_sycl=false -Db_lto=false >/dev/null 2>&1; then
     if ninja -C build >/tmp/preflight-gcc.log 2>&1 &&
-      meson test -C build --suite=fast >>/tmp/preflight-gcc.log 2>&1; then
+      python3 scripts/ci/run_meson_test.py -- -C build --suite=fast \
+        >>/tmp/preflight-gcc.log 2>&1; then
       ok gcc
     else
       bad gcc
@@ -164,7 +165,8 @@ if want clang; then
   elif [ -d build-clang ] || CC=clang CXX=clang++ meson setup build-clang core \
     -Denable_cuda=false -Denable_sycl=false -Db_lto=false >/dev/null 2>&1; then
     if ninja -C build-clang >/tmp/preflight-clang.log 2>&1 &&
-      meson test -C build-clang --suite=fast >>/tmp/preflight-clang.log 2>&1; then
+      python3 scripts/ci/run_meson_test.py -- -C build-clang --suite=fast \
+        >>/tmp/preflight-clang.log 2>&1; then
       ok clang
     else
       bad clang
@@ -316,7 +318,8 @@ if want sanitizers; then
     -Denable_cuda=false -Denable_sycl=false -Db_lto=false \
     -Db_sanitize=address,undefined -Db_lundef=false >/dev/null 2>&1; then
     if ninja -C build-asan >/tmp/preflight-asan.log 2>&1 &&
-      meson test -C build-asan --suite=fast >>/tmp/preflight-asan.log 2>&1; then
+      python3 scripts/ci/run_meson_test.py -- -C build-asan --suite=fast \
+        >>/tmp/preflight-asan.log 2>&1; then
       ok sanitizers
     else
       bad sanitizers

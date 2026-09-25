@@ -109,8 +109,12 @@ Per frame, on the luma plane only (chroma ignored), all in double precision:
 
 ## Correctness test
 
-`core/test/test_y_funque_plus.c` (run via
-`meson test -C core/build-cpu test_y_funque_plus`) asserts:
+`core/test/test_y_funque_plus.c` asserts:
+
+```bash
+python3 scripts/ci/run_meson_test.py -- \
+  -C core/build-cpu test_y_funque_plus
+```
 
 - identical-input analytic oracles (`ms_ssim = 0`, `dlm = 1`, `mad = 0`) at
   8×8, odd 65×33, and the 100×100 crop path;

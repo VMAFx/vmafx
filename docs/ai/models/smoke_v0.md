@@ -9,7 +9,7 @@ tensor, opset 17) used to verify that the C-side DNN loader, the ONNX
 wire-format scanner, the op-allowlist gate, and the ORT execution path
 all function correctly without requiring any training corpus or real
 model weights. It is exercised in `core/test/` as part of the
-`meson test --suite=fast` gate.
+repository runner's `--suite=fast` gate.
 
 ## Checkpoint facts
 
@@ -50,7 +50,8 @@ pass is ORT load-and-run without error.
 
 ```bash
 # Verify via the C unit test suite:
-meson test -C build --suite=dnn test_dnn_session_api
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build --suite=dnn test_dnn_session_api
 
 # Or inspect the session inputs via Python:
 python3 -c "import onnxruntime as ort; sess = ort.InferenceSession('model/tiny/smoke_v0.onnx'); print('Loaded inputs:', [i.name for i in sess.get_inputs()])"

@@ -52,8 +52,8 @@ in the same function; no separate scalar loop at the call site is needed.
 - Adversarial: all-white src / all-black dst uniform rows.
 - Narrow row (width = 1): exercises the all-boundary scalar path.
 
-The test is in the `fast` + `simd` suite and runs as part of
-`meson test -C build --suite=fast`.
+The test is in the `fast` + `simd` suite and runs through the repository
+runner's `--suite=fast` selection.
 
 ## Performance
 

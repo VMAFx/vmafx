@@ -368,6 +368,7 @@ nav:
       - ADR workflow: development/adr-workflow.md
       - PR body sentinel guide: development/pr-body-sentinel-guide.md
       - Test fixtures: development/test-fixtures.md
+      - Credential-safe Meson tests: development/meson-test-runner.md
       - CI tmate debug: development/ci-tmate-debug.md
       - eBPF FUSE bypass: development/ebpf-fuse-bypass.md
       - Performance claims (May 2026): development/perf-claims-2026-05-10.md

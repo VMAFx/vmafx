@@ -25,7 +25,7 @@ ninja -C build
 
 | Option | Type | Default | Effect |
 | --- | --- | --- | --- |
-| `enable_tests` | bool | `true` | Build `core/test/` unit tests; `meson test -C build` needs this |
+| `enable_tests` | bool | `true` | Build `core/test/` unit tests; the credential-safe Meson runner needs this |
 | `enable_docs` | bool | `true` | Build the Doxygen C-API HTML under `build/core/doc/` |
 | `enable_tools` | bool | `true` | Build the `vmaf` and `vmaf_bench` CLI binaries |
 | `enable_asm` | bool | `true` | Compile any `*.asm` source files (nasm); disables all SIMD paths when `false` |
@@ -188,7 +188,8 @@ against the built `libvmaf.so` on Linux and fails on any export that is not a
 `vmaf_*` name declared in a public header:
 
 ```bash
-meson test -C build check_exported_symbols
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build check_exported_symbols
 python3 core/test/check_exported_symbols.py build/src/libvmaf.so.3.0.0 core/include
 ```
 

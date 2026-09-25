@@ -9,7 +9,7 @@ scripts/dev/preflight.sh --stage clang # just one stage
 scripts/dev/preflight.sh --list      # which CI context each stage mirrors
 ```
 
-Run it before you push. `make lint` and `meson test` build with **one**
+Run it before you push. `make lint` and `make test-fast` build with **one**
 compiler; CI builds with several, and the gap is where portability bugs live.
 
 ## Why it exists

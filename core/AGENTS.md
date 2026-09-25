@@ -77,25 +77,28 @@ core/
 - [ADR-1320](../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md) —
   CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit depend_files and compiler depfiles.
 - [ADR-1333](../docs/adr/1333-meson-test-secret-env-sanitization.md) —
-  Meson test environment secret sanitization via default test setup.
+  Meson parent-environment runner plus default test-setup sanitization.
 
 ## Rebase-sensitive invariants
 
 - **Meson test secret environment sanitization**
   ([ADR-1333](../docs/adr/1333-meson-test-secret-env-sanitization.md);
   [Research-1333](../docs/research/1333-meson-test-secret-env-sanitization.md)):
-  `core/meson.build` declares a project-wide default test setup
-  (`add_test_setup('default', ..., is_default: true)`) using `environment().unset()`
-  to purge sensitive GitHub credentials (`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`,
+  `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson
+  records its parent environment in `testlog.txt`; every supported Make, CI, preflight,
+  bisection, setup-guidance, and Zed entry point must use it. `core/meson.build` retains
+  the same denylist in a project-wide default test setup for
+  (`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`,
   `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`, `GH_PAT`,
   `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`,
-  `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`) from the child environments
-  and `build/meson-logs/testlog.json` of every currently declared test. Meson applies
+  `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`) at the child and JSON-log
+  boundary. Meson applies
   per-test environments after a selected setup and permits explicit alternate setups, so
-  the regression contract must continue to enumerate all `core/**/meson.build` files,
-  require this as the only `add_test_setup`, and reject explicit forbidden-name
-  reintroduction outside the twelve sanctioned unset calls. Rebase must preserve the
-  setup and `core/test/test_meson_secret_env_sanitization.py` together.
+  the regression contract must continue to inventory every supported caller, reject raw
+  test-target bypasses, enumerate all `core/**/meson.build` files, require this as the only
+  `add_test_setup`, and reject explicit forbidden-name reintroduction outside the twelve
+  sanctioned unset calls. Rebase must preserve the runner, callers, setup, and regression
+  together. Direct raw external Meson/Ninja commands remain outside the bounded guarantee.
 - **CUDA fatbin & HIP HSACO header dependency tracking**
   ([ADR-1320](../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
   [Research-2106](../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
@@ -550,7 +553,7 @@ Backend-specific orientation:
 ```bash
 meson setup build [-Denable_cuda=true|false] [-Denable_sycl=true|false] [-Denable_dnn=auto]
 ninja -C build
-meson test -C build
+python3 ../scripts/ci/run_meson_test.py -- -C build
 ```
 
 Shortcut: `/build-vmaf --backend=cpu|cuda|sycl|all`.
@@ -920,7 +923,7 @@ Two related invariants in same files:
   `speed_extract_score()`. Averaging in zeroed solution instead produces
   inflated score.
 
-GPU parity tests in `meson test --suite=fast` all run below 256-system
+GPU parity tests in the repository runner's `--suite=fast` selection all run below 256-system
 threshold, cannot catch either invariant. Check 4K agreement against CPU
 backend by hand. See `docs/rebase-notes.md` entry
 `fix/cuda-speed-chroma-4k-launch`.

@@ -164,8 +164,9 @@ the aggregator rejects.
   Keep the normal parallel Meson invocation — `-j1` and inflated timeouts hide
   accelerator contention instead of enforcing the shared-device contract.
   Verify both the source registry and configured metadata with
-  `meson test -C build --no-rebuild test_gpu_serialization_contract
-  check_gpu_test_serialization`. The source guard covers dormant backends that
+  `python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" --
+  -C build --no-rebuild test_gpu_serialization_contract check_gpu_test_serialization`.
+  The source guard covers dormant backends that
   cannot be configured on the current host; the metadata guard checks Meson's
   effective scheduling flags. Adding a
   second runner with the same label set (e.g. a remote Intel-only or

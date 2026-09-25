@@ -10,6 +10,16 @@ upstream Netflix/vmaf has no equivalent tree, so rebase risk =
 
 ## Rebase-sensitive surfaces
 
+### Meson parent-environment sanitization (ADR-1333)
+
+`run_meson_test.py` must delete the governed credential keys before replacing itself with
+Meson; membership and deletion may not read, retain, or print values. Keep every supported
+Make, CI, preflight, bisection, setup-guidance, and Zed test entry point on this wrapper.
+`core/test/test_meson_secret_env_sanitization.py` owns the exact caller inventory, mutation
+coverage for each call, direct Meson/Ninja bypass scan, and disposable both-log RED/GREEN
+proof. Preserve that contract with the wrapper and `core/meson.build` default setup. Direct
+raw external Meson/Ninja test-target commands remain outside the bounded guarantee.
+
 ### Source ADR citation provenance (ADR-1311)
 
 `check-source-adr-citations.py` owns plain `ADR-NNNN` references in tracked

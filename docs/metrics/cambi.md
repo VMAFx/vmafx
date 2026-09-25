@@ -262,7 +262,7 @@ vmaf ... --cpumask 1 -o scalar.json
 ```
 
 The JSON files differ only in `fps`. The tests behind this are in the `simd`
-suite (`meson test -C build --suite simd`): `test_cambi_stage_simd` compares
+suite (`python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build --suite simd`): `test_cambi_stage_simd` compares
 every per-stage kernel with the scalar stage, `test_cambi_spatial_mask_simd`
 the spatial-mask rows, `test_cambi_simd` the c-values row, and
 `test_cambi_dispatch_invariance` runs the whole extractor at each dispatch

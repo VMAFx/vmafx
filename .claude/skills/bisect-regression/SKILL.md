@@ -14,7 +14,7 @@ description: Run git bisect against a user-defined failure predicate (numeric di
 
 Predicates:
 
-- `test:<name>` = `meson test <name>` exit code.
+- `test:<name>` = repository-sanitized Meson test runner exit code.
 - `score-delta:<ref>,<dist>,<feature>,<tol>` = absolute score diff > tol
   between bad commit and good.
 - `perf-threshold:<feature>,<pct>` = throughput drop > pct%.

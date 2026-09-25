@@ -572,7 +572,7 @@ propagate. Two consequences for callers:
 Measured on a 3840x2160 pair after the fix: CPU 67.150063, CUDA 67.150063,
 SYCL 67.150065. The Netflix 576x324 pair is unchanged.
 
-Note that the GPU parity tests in `meson test --suite=fast` all run below the
+Note that the GPU parity tests in the repository runner's `--suite=fast` selection all run below the
 256-system threshold, so they cannot catch this class of defect. Check 4K
 agreement against the CPU backend by hand when changing these kernels.
 

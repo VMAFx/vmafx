@@ -38,7 +38,8 @@ before destroying the pool. Arbitrary enqueue/destroy races are unsupported.
 With an existing CPU Meson build:
 
 ```bash
-meson test -C build test_thread_pool test_thread_pool_backpressure --print-errorlogs
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build test_thread_pool test_thread_pool_backpressure --print-errorlogs
 ```
 
 The backpressure suite holds a worker until the producer demonstrably reaches

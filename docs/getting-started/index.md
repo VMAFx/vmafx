@@ -25,7 +25,7 @@ meson setup build core \
   -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
   -Denable_metal=disabled -Denable_dnn=disabled
 ninja -C build
-meson test -C build
+python3 scripts/ci/run_meson_test.py -- -C build
 ```
 
 The CLI is `build/tools/vmaf` (or `build/tools/vmaf.exe` on Windows).

@@ -76,7 +76,7 @@ predicate="${predicate}"
 case "\$predicate" in
   test:*)
     name="\${predicate#test:}"
-    meson test -C build "\$name" >/tmp/bisect-predicate.log 2>&1 \\
+    python3 scripts/ci/run_meson_test.py -- -C build "\$name" >/tmp/bisect-predicate.log 2>&1 \\
       && exit ${BISECT_GOOD} || exit ${BISECT_BAD}
     ;;
   netflix-golden)

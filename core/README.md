@@ -74,7 +74,7 @@ ninja -vC build
 Build and run tests with:
 
 ```text
-ninja -vC build test
+python3 ../scripts/ci/run_meson_test.py -- -C build --no-rebuild --print-errorlogs
 ```
 
 ## Install

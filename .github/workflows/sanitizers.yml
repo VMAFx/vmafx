@@ -178,7 +178,7 @@ jobs:
             exit 1
           fi
           # shellcheck disable=SC2086
-          meson test -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
 
   # ── TSan (master push only) ───────────────────────────────────────────
   # Thread-Sanitizer is expensive (~5–10× overhead) and catches
@@ -289,7 +289,7 @@ jobs:
             exit 1
           fi
           # shellcheck disable=SC2086
-          meson test -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
 
   # ── libFuzzer + ASan nightly ──────────────────────────────────────────
   # Runs the persistent fuzz corpus against all harnesses under

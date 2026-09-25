@@ -312,7 +312,8 @@ Run the existing CPU tests in a build configured with `-Denable_float=true`
 (the chroma/temporal registration test is float-gated):
 
 ```sh
-meson test -C build --print-errorlogs test_speed test_speed_qa
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build --print-errorlogs test_speed test_speed_qa
 ```
 
 The two executables retain five registered cases each. The temporal QA test

@@ -137,11 +137,15 @@ Build-time checksums asserted against the `.pkl`: `mu.sum() = 21.0218816411`,
 
 ## Correctness test
 
-`core/test/test_niqe.c` (run via `meson test -C core/build-cpu test_niqe`)
-asserts the gauss window, AGGD oracles, the bicubic resampler, the symmetric
+`core/test/test_niqe.c` asserts the gauss window, AGGD oracles, the bicubic
+resampler, the symmetric
 pseudo-inverse, and an end-to-end NIQE score against the fork Python-harness
 reference on frame 0 of `testdata/ref_576x324_48f.yuv`
 (`testdata/scores_cpu_niqe.json`) at places = 4.
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C core/build-cpu test_niqe
+```
 
 ## See also
 
