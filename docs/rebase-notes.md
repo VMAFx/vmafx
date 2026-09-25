@@ -595,8 +595,32 @@ these Meson blocks.
    `ref.cpp`. The error-path test still compiles `picture_pool.c` directly, so
    its ADR-0960 access to internal pool entry points is preserved.
 
+5. **Keep predictor tests out of the implementation translation unit.**
+   `test_predict.c` includes `predict_internal.h` for the exact-order pure
+   mapping/equality helpers and links the production predictor. Do not restore
+   `#include "predict.c"` or the `VMAF_PREDICT_TEST_NONFINITE_LOG` macro: that
+   unity include creates a second static graph that CodeQL reports as
+   unreachable and replaces the shipped warning with a private test callback.
+   Preserve both `test_predict_source_authority.py` and
+   `test_predict_nonfinite_log_output.py` when resolving test-build conflicts.
+
+6. **Keep one compiled predictor source authority.** `predict_c_lib` in
+   `core/src/meson.build` is the only target that compiles `predict.c`;
+   `libvmaf` extracts its object and private-source tests link it through
+   `predict_test_dependencies`. Do not restore `predict.c` to
+   `libvmaf_sources`, any test source list, or a shared test-source array. The
+   old graph compiled the TU 53 times and left an orphan static scan identity
+   in whole-build CodeQL extraction. `test_predict_source_authority.py` locks
+   both Meson boundaries.
+
+7. **Keep the collector-only test on the predictor source authority.**
+   `test_feature_collector` must retain `vmaf_cflags_common` and
+   `predict_test_dependencies`. Do not restore `../src/predict.c`: the linked
+   `predict_c_lib` archive satisfies the unity-included `libvmaf.c` references
+   without creating another predictor graph.
+
 Research-2096 contains the exact-query evidence. Re-run the complete CodeQL
-database extraction after rebases that alter these target source lists or aliases;
+database extraction after rebases that alter these target source lists or dependencies;
 ordinary runtime tests cannot detect a repeated-compilation identity regression.
 The historical reviewed receipt is
 `.workingdir/evidence/codeql-unused-static-2026-09-24/unused-static-final.csv`;
@@ -611,6 +635,14 @@ in `predict.c`, and one in `cambi.c`); the corrected replay has four (the
 `predict.c` and `cambi.c` rows). `CODEQL_BIN` may override the documented local
 installation path. The temporary directory is retained and printed for
 inspection.
+
+That four-row remainder is historical. A 2026-09-25 database from exact base
+`71c3c155717f4496c3c572e479d5202984e9c3b5` found five predictor rows created by
+the unity include and repeated private-source predictor builds, with no CAMBI
+row. Research-2096 records the entity/call-edge probe, single-authority repair,
+and follow-up closure evidence. The final clean 1,559-step extraction contains
+one predictor compile command, and the official 1.8.3 query returns zero
+repository-wide rows.
 
 ```bash
 set -euo pipefail

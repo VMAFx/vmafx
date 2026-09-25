@@ -711,6 +711,26 @@ private copies of `picture.c`, `mem.cpp`, and `ref.cpp`. The error-path target
 still compiles `picture_pool.c` directly; preserve that ADR-0960 seam while
 keeping the shared picture implementation identity.
 
+`test_predict.c` includes `predict_internal.h` for the pure mapping/equality
+helpers and links the production predictor; it must never text-include
+`predict.c`. A unity include creates a second set of static helpers whose calls
+can attach to CodeQL's coalesced production identity, orphaning the duplicate
+graph. `test_predict_source_authority.py` locks that build boundary, while
+`test_predict_nonfinite_log_output.py` runs the linked binary and verifies the
+real production warning is emitted exactly once.
+
+All private-source test binaries use `predict_test_dependencies`, which links
+the one `predict_c_lib` object compiled in `core/src/meson.build`; no test source
+list may compile `../src/predict.c`. Keep the source-authority test's global
+Meson assertions. The former per-target pattern produced 52 redundant test
+objects plus the library object and left CodeQL with an orphan scan graph.
+
+`test_feature_collector` text-includes `libvmaf.c` for private collector state,
+but it must not compile `predict.c`. Keep `vmaf_cflags_common` and
+`predict_test_dependencies` on the target: the linked source-authority archive
+satisfies the included file's predictor references without creating another
+implementation identity.
+
 When a test must compile an implementation source under a special configuration,
 its repeated definitions need unambiguous test-local identities. The pdjson
 default, zero-increment, and oversized-increment copies are separate static

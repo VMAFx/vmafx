@@ -423,9 +423,18 @@ routes the post-denormalization, polynomial and piecewise results through
 returns before collector publication. The regressions require the caller-owned
 output to remain unchanged on `-EINVAL`, no model score in the collector, and
 exactly one diagnostic rather than one warning per mapping segment. The
-`VMAF_PREDICT_TEST_NONFINITE_LOG` definition is a direct-source-inclusion test
-seam only; normal builds leave it undefined and must retain the human-readable
-`vmaf_log` warning.
+pure linear, piecewise, and bitwise-equality helpers live in
+`predict_internal.h` as `static inline` definitions shared by `predict.c` and
+`test_predict.c`; keep their expression text and evaluation order identical.
+The test links the production predictor for end-to-end scoring and checks its
+real `vmaf_log` output in `test_predict_nonfinite_log_output.py`. Never restore
+the old `#include "predict.c"` or `VMAF_PREDICT_TEST_NONFINITE_LOG` override:
+that created a second static call graph and hid the production diagnostic.
+Meson owns the production TU through `predict_c_lib`: `libvmaf` extracts that
+object and private-source test binaries link `predict_c_dependency`. Never put
+`predict.c` back in `libvmaf_sources` or a test source list. Whole-build CodeQL
+coalesces the repeated external definitions but retains an orphan copy of the
+private scan graph, and compiling the TU 53 times also wastes build capacity.
 
 Two `interop/pelorus_interop.c` invariants that the split introduced, both
 pinned by the ADR-1142 clang-tidy ratchet (the file's allowance is 7):
