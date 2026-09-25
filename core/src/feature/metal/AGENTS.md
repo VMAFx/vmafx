@@ -355,4 +355,4 @@ Metal float-ADM change as unverified until someone runs
   invariants on Apple Silicon, and skips cleanly on Linux/Windows.
 - `test_metal_float_motion_contract.py` enforces struct fields, option
   registrations, close callback retention, debug gating, and dictionary-resolved
-  flush idempotency at AST level. See [Research-2108](../../../../docs/research/2108-metal-float-motion-lifecycle-flush.md).
+  flush idempotency at AST level. See [Research-2113](../../../../docs/research/2113-metal-float-motion-lifecycle-flush.md).
