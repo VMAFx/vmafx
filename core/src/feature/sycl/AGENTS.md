@@ -188,22 +188,24 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   CUDA + HIP twins in same PR.
 
 - **`integer_ms_ssim_sycl.cpp` honours `enable_chroma` option parity**
-  (mirrors ms_ssim_vulkan PR #957 / ADR-0453 pattern). `enable_chroma`
+  (ADR-0526, ADR-0583). `enable_chroma`
   option (default `false`) clamps `n_planes` to 1 in `init_fex_sycl` when
   set to `false`, to 3 otherwise (except YUV400P which always forces 1).
   Chroma geometry uses the picture allocator's ceil subsampling, so a
   176x176 chroma minimum maps to an exact 351x351 4:2:0 luma minimum;
-  the init error suggestion uses that exact inverse. v1 kernel reads plane 0
-  only; `n_planes > 1` reserved for v2. On rebase:
-  keep default `false` and clamp logic aligned with Vulkan and CUDA
-  MS-SSIM twins; all three backends must agree on default and dispatch.
+  the init error suggestion uses that exact inverse. Submit, computation and
+  publication iterate every active plane, so `enable_chroma=true` dispatches
+  Y, Cb and Cr today. On rebase: keep the default, YUV400P clamp and
+  three-plane dispatch aligned with the CPU and Metal MS-SSIM extractors.
 
 - **`integer_ms_ssim_sycl.cpp` honours `enable_lcs`, `enable_db`,
   `clip_db` GPU option parity** (ADR-0243, ADR-1078). When
   `enable_lcs=true`, emits 15 extra metrics
   (`float_ms_ssim_{l,c,s}_scale{0..4}`). When `enable_db=true`,
   returns `-10*log10(1 - ms_ssim)` instead of raw linear score;
-  `clip_db` clamps linear value to `[0, 1]` before conversion.
+  `clip_db=true` derives the geometry-dependent `max_db` ceiling from frame
+  dimensions and bit depth, then caps the dB-domain output at that ceiling
+  (ADR-1221). It never clamps the linear score to `[0, 1]`.
   All three options default to `false` — output at default settings
   numerically identical to pre-ADR-1078 binary. Metric ordering
   and `places=4` cross-backend contract = part of public API

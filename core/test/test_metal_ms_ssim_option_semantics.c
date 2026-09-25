@@ -9,12 +9,23 @@
 
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 
 #include "test.h"
 
 #include "feature/metal/float_ms_ssim_option_semantics.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit; ADR-1138. */
+
+static bool double_bits_equal(double lhs, double rhs)
+{
+    uint64_t lhs_bits = 0u;
+    uint64_t rhs_bits = 0u;
+    (void)memcpy(&lhs_bits, &lhs, sizeof(lhs_bits));
+    (void)memcpy(&rhs_bits, &rhs, sizeof(rhs_bits));
+    return lhs_bits == rhs_bits;
+}
 
 static char *test_max_db_ceiling_semantics(void)
 {
@@ -23,7 +34,8 @@ static char *test_max_db_ceiling_semantics(void)
               isinf(unclipped) && unclipped > 0.0);
 
     const double clipped = vmaf_metal_ms_ssim_max_db(true, 8u, 512u, 384u);
-    mu_assert("512x384 8-bit clip_db ceiling must be the worked 105 dB value", clipped == 105.0);
+    mu_assert("512x384 8-bit clip_db ceiling must be the exact worked 105 dB value",
+              double_bits_equal(clipped, 105.0));
     return NULL;
 }
 
