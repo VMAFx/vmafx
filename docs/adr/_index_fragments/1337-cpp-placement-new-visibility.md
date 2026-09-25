@@ -1,0 +1,1 @@
+| [ADR-1337](1337-cpp-placement-new-visibility.md) | Update `vmaf_cppflags_common` to include `-fvisibility-inlines-hidden` and add a red-cap regression test for C++ placement new/delete symbols (`_ZnwmPv`, `_ZdlPvS_`) to prevent them from leaking into the public ABI on GCC 16. | Accepted | build, api, security, abi, fork-local |

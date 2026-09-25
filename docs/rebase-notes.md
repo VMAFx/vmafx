@@ -54127,3 +54127,5 @@ Preserved invariants:
 - SYCL device code remains strictly fp64-free (float32-only).
 - Tests `test_sycl_float_adm_parity` (`_large`) and `test_hip_float_adm_parity` (`_large`) assert `adm_bypass_cm=1` parity within `1e-4` against CPU `float_adm`.
 - Netflix golden assertions untouched.
+## C++ placement new and delete symbols (ADR-1337)
+- Any future upstream C++ targets must continue inheriting `vmaf_cppflags_common` to ensure `-fvisibility-inlines-hidden` is applied, preventing `_ZnwmPv` and `_ZdlPvS_` from leaking into the public ABI.

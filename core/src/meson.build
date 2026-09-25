@@ -1167,7 +1167,7 @@ endif
 # core/test/check_exported_symbols.py pins the result: libvmaf.so exports the
 # public vmaf_* API and, of C++ symbols, only libstdc++ template members, which
 # namespace std declares with default visibility.
-vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common)
+vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common + ['-fvisibility-inlines-hidden'])
 
 if is_cuda_enabled
     # Check for required CUDA headers
