@@ -1,6 +1,24 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## agent/fix-codex-hook-paths-3139 — keep Codex hooks worktree-relative (2026-09-25)
+
+All seven commands in `.codex/hooks.json` must retain the quoted,
+repository-local-Git-environment-clearing `$(env -u GIT_DIR -u GIT_WORK_TREE
+... git rev-parse --show-toplevel)/.codex/hooks/<script>.sh` form. Do not restore
+the retired `/home/kilian/dev/vmaf` path, substitute a new absolute checkout, or
+reduce the command to a launch-directory-relative path during a configuration
+regeneration. Keep the exact event/matcher matrix, script executable modes, and
+the `test-codex-hook-config` pre-commit/pre-push caller together.
+
+- Research digest: [Codex hook-path portability audit](research/codex-hook-path-portability-2026-09-25.md).
+- Decision matrix: no ADR needed; only-one-way broken-path correction.
+- AGENTS.md invariant: `scripts/ci/AGENTS.md`, “Codex repository-hook path contract”.
+- Reproducer / smoke: `python3 -B scripts/ci/tests/test_codex_hook_config.py`.
+- Changelog: `changelog.d/fixed/codex-hook-path-portability.md`.
+- FFmpeg impact: none; no public C header, CLI flag, Meson option, or patch
+  surface changed.
+
 ## agent/sycl-motion-uv-tolerance — fixed-point oracle for SYCL motion-add-UV (2026-09-25)
 
 `test_sycl_motion_add_uv_parity` must compare `motion_sycl` with the scalar

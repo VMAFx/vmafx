@@ -200,6 +200,14 @@ repos:
         # alongside the formatters. Bypass with `git commit --no-verify`
         # for legitimate main-checkout commits while an agent is active.
 
+      - id: test-codex-hook-config
+        name: Codex hooks resolve from the active repository worktree
+        entry: python3 -B scripts/ci/tests/test_codex_hook_config.py
+        language: system
+        files: '^(\.codex/hooks(\.json|/.*)|scripts/ci/(AGENTS\.md|tests/test_codex_hook_config\.py)|docs/development/agent-worktree-discipline\.md|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: merge-train-guard-contract
         name: Merge-train ownership and validation regressions
         entry: python3 -m unittest discover -s scripts/dev/tests -p test_*merge_train_guard.py

@@ -21937,6 +21937,11 @@ Research-2094).
   follow-up.
 
 
+- Fixed all seven repository-local Codex hooks silently targeting the retired
+  `/home/kilian/dev/vmaf` checkout. Hook commands now resolve the active Git
+  worktree, with a pre-commit contract guarding mappings and executable modes.
+
+
 - `vmaf-tune compare` rate-quality chart (multi-target sweeps, v2
   schema) now renders genuine per-codec R-Q curves from every probe
   the underlying target-VMAF bisect computed, instead of connecting
