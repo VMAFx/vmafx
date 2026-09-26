@@ -1793,5 +1793,59 @@ jobs:
                 )
 
 
+PYPROJECT = """[project]
+name = "vmafx-demo"
+version = "1.0.0"
+dependencies = ["numpy>=2.5.3"]
+
+[tool.demo]
+version = "7"
+"""
+
+
+class FingerprintTests(unittest.TestCase):
+    """ADR-1344: a release version bump must not make a lock stale."""
+
+    def setUp(self) -> None:
+        self.checker = load_checker()
+
+    def fingerprint(self, text: str, name: str = "ai/pyproject.toml") -> bytes:
+        return cast(bytes, self.checker.fingerprint_content(name, text.encode()))
+
+    def test_project_version_bump_keeps_the_fingerprint(self) -> None:
+        bumped = PYPROJECT.replace('version = "1.0.0"', 'version = "1.0.0-rc.1"')
+        self.assertEqual(self.fingerprint(PYPROJECT), self.fingerprint(bumped))
+
+    def test_dependency_change_changes_the_fingerprint(self) -> None:
+        changed = PYPROJECT.replace("numpy>=2.5.3", "numpy>=2.6.0")
+        self.assertNotEqual(self.fingerprint(PYPROJECT), self.fingerprint(changed))
+
+    def test_version_key_in_another_table_still_counts(self) -> None:
+        changed = PYPROJECT.replace('version = "7"', 'version = "8"')
+        self.assertNotEqual(self.fingerprint(PYPROJECT), self.fingerprint(changed))
+
+    def test_non_pyproject_inputs_are_hashed_verbatim(self) -> None:
+        text = 'version = "1.0.0"\nnumpy==2.5.3\n'
+        self.assertEqual(self.fingerprint(text, "requirements/locks/x.in"), text.encode())
+
+    def test_entry_digest_ignores_only_the_project_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "pkg").mkdir()
+            source = root / "pkg/pyproject.toml"
+            entry = {
+                "output": "pkg/lock.txt",
+                "inputs": ["pkg/pyproject.toml"],
+                "compile_args": ["pkg/pyproject.toml", "--generate-hashes"],
+            }
+            with mock.patch.object(self.checker, "validate_manifest_entry", return_value=[]):
+                source.write_text(PYPROJECT, encoding="utf-8")
+                before = self.checker.entry_digest(root, entry)
+                source.write_text(PYPROJECT.replace("1.0.0", "2.0.0"), encoding="utf-8")
+                self.assertEqual(before, self.checker.entry_digest(root, entry))
+                source.write_text(PYPROJECT.replace("numpy", "scipy"), encoding="utf-8")
+                self.assertNotEqual(before, self.checker.entry_digest(root, entry))
+
+
 if __name__ == "__main__":
     unittest.main()

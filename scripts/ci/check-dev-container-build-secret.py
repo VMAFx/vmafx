@@ -76,6 +76,18 @@ def validate_callers(workflow: str, docs: str, fetcher: str) -> list[str]:
     return errors
 
 
+def validate_publish(workflow: str) -> list[str]:
+    """The publish job builds the same NEO step, so it needs the same secret."""
+    errors: list[str] = []
+    if not re.search(
+        r"(?m)^\s+secrets: \|\n\s+github_token=\$\{\{ secrets\.GITHUB_TOKEN \}\}$", workflow
+    ):
+        errors.append("the dev-container publish build must pass github_token as a BuildKit secret")
+    if re.search(r"(?m)^\s+build-args:[^\n]*\n(?:\s+[^\n]*\n)*?\s+GITHUB_TOKEN=", workflow):
+        errors.append("token-valued Docker build arguments are forbidden")
+    return errors
+
+
 def validate_tree(root: Path = ROOT) -> list[str]:
     def read(path: str) -> str:
         return (root / path).read_text(encoding="utf-8")
@@ -89,6 +101,7 @@ def validate_tree(root: Path = ROOT) -> list[str]:
             read("dev/scripts/fetch-intel-neo.py"),
         )
     )
+    errors.extend(validate_publish(read(".github/workflows/dev-container-publish.yml")))
     return errors
 
 

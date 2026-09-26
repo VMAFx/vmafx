@@ -72,6 +72,10 @@ jobs:
             ghcr.io/vmafx/vmafx-dev-mcp:master
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # BuildKit secret for the NEO release lookup; without it the
+          # unauthenticated GitHub API rate limit fails the build.
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2

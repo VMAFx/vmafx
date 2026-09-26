@@ -313,7 +313,15 @@ repos:
         name: Dev-container GitHub token uses an optional BuildKit secret
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_dev_container_build_secret.py
         language: system
-        files: '^(\.github/workflows/dev-container-build\.yml|\.pre-commit-config\.yaml|dev/(Containerfile|docker-compose\.yml|scripts/fetch-intel-neo\.py)|docs/development/dev-mcp\.md|scripts/ci/(check-dev-container-build-secret\.py|tests/test_dev_container_build_secret\.py))$'
+        files: '^(\.github/workflows/dev-container-(build|publish)\.yml|\.pre-commit-config\.yaml|dev/(Containerfile|docker-compose\.yml|scripts/fetch-intel-neo\.py)|docs/development/dev-mcp\.md|scripts/ci/(check-dev-container-build-secret\.py|tests/test_dev_container_build_secret\.py))$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-dev-container-stage-inputs
+        name: Dev-container stages copy every repository file they read (ADR-1343)
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_dev_container_stage_inputs.py
+        language: system
+        files: '^(\.pre-commit-config\.yaml|dev/Containerfile|requirements/locks/.*|dev/requirements-python-env-lock\.txt|scripts/ci/(check-dev-container-stage-inputs\.py|check-container-image-references\.py|tests/test_dev_container_stage_inputs\.py))$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

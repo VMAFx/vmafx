@@ -1,0 +1,1 @@
+| [ADR-1343](1343-dev-container-stage-input-contract.md) | Statically check that every `dev/Containerfile` stage copies the repository files it reads, so stages CI never builds cannot reference uncopied lock files or missing sources. | Accepted | ci, build, dev-container, supply-chain |

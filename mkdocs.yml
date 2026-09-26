@@ -1456,6 +1456,8 @@ nav:
         - "ADR-1338: go-fix-clean-tree-gate": adr/1338-go-fix-clean-tree-gate.md
         - "ADR-1341: rc-correctness-benchmark-retrain-sequence": adr/1341-rc-correctness-benchmark-retrain-sequence.md
         - "ADR-1342: rc1-external-tester-report-bundle": adr/1342-rc1-external-tester-report-bundle.md
+        - "ADR-1343: dev-container-stage-input-contract": adr/1343-dev-container-stage-input-contract.md
+        - "ADR-1344: lock-fingerprint-ignores-project-version": adr/1344-lock-fingerprint-ignores-project-version.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

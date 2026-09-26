@@ -33,14 +33,29 @@ PACKAGE_PYPROJECTS = (
     REPO_ROOT / "tools" / "vmaf-tune" / "pyproject.toml",
 )
 
-# The first setuptools release that parses a PEP 639 SPDX license expression
-# (a bare string in `[project].license`). 77.0.0 was yanked, so 77.0.1 is the
-# first one a resolver will actually hand you.
-PEP639_SETUPTOOLS_FLOOR = "77.0.1"
+# The hash locks that install the build backend for `make cythonize` and the
+# CI `setup.py` runs. The declared floor must admit the setuptools they pin;
+# otherwise no locked environment could satisfy `[build-system].requires`.
+BUILD_BACKEND_LOCKS = (
+    REPO_ROOT / "requirements" / "locks" / "cythonize.txt",
+    REPO_ROOT / "requirements" / "locks" / "package-build.txt",
+)
 # The newest setuptools that predates PEP 639 support, plus the version Ubuntu
 # 24.04 ships in /usr/lib/python3/dist-packages. Both must be excluded by the
 # declared floor, or `setup.py` aborts before it can report a version.
 PRE_PEP639_SETUPTOOLS = ("76.1.0", "68.1.2")
+# Releases affected by PYSEC-2025-49 (fixed in 78.1.1) and PYSEC-2026-3447
+# (fixed in 83.0.0). The declared floor must exclude them as well.
+VULNERABLE_SETUPTOOLS = ("78.1.0", "82.9.0")
+
+
+def _locked_version(lock: Path, name: str) -> str:
+    """The exact version `lock` pins for `name`."""
+    prefix = f"{name}=="
+    for line in lock.read_text(encoding="utf-8").splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :].split()[0]
+    raise AssertionError(f"{lock} pins no {name}")
 
 
 def _setup_py_version() -> str:
@@ -180,16 +195,22 @@ def test_build_backend_floor_covers_the_license_metadata_form():
         return
 
     specifier = _build_requirement("setuptools").specifier
-    assert specifier.contains(PEP639_SETUPTOOLS_FLOOR), (
-        f"{PYPROJECT} ships a PEP 639 license expression but its setuptools "
-        f"requirement {str(specifier)!r} excludes {PEP639_SETUPTOOLS_FLOOR}, "
-        "the first release that can parse one"
-    )
+    for lock in BUILD_BACKEND_LOCKS:
+        pinned = _locked_version(lock, "setuptools")
+        assert specifier.contains(pinned), (
+            f"{PYPROJECT} setuptools requirement {str(specifier)!r} excludes {pinned}, "
+            f"the build backend {lock.relative_to(REPO_ROOT)} installs"
+        )
     for version in PRE_PEP639_SETUPTOOLS:
         assert not specifier.contains(version), (
             f"{PYPROJECT} ships a PEP 639 license expression but its setuptools "
             f"requirement {str(specifier)!r} still admits {version}, which "
             "cannot parse one -- setup.py would abort with a configuration error"
+        )
+    for version in VULNERABLE_SETUPTOOLS:
+        assert not specifier.contains(version), (
+            f"{PYPROJECT} setuptools requirement {str(specifier)!r} still admits "
+            f"{version}, a release with a known advisory"
         )
 
 

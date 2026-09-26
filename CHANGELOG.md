@@ -23073,6 +23073,16 @@ uses the kernel-template readback pair: `integer_psnr_cuda`, `integer_ssim_cuda`
   docs use the new `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` / `_LEADER_ELECTION` names.
 
 
+- **Dev container**: `dev/Containerfile` builds again. The `dev-mcp` stage
+  now copies `requirements/`, which its hash-locked Python install reads, and
+  the `Dev Container Publish` workflow passes the GitHub token as a BuildKit
+  secret, so the Intel NEO release lookup no longer fails on GitHub's
+  anonymous API rate limit.
+  A new pre-commit check, `scripts/ci/check-dev-container-stage-inputs.py`
+  (ADR-1343), fails when a container stage reads a lock file that no `COPY`
+  provides, covering the stage CI does not build.
+
+
 Replace fragile `/dev/dri/by-path` bind with whole `/dev/dri` directory bind in
 `dev/docker-compose.yml`. The former bind-mount referenced PCI-address-named
 symlinks (e.g. `pci-0000:01:00.0-card`) that change after any PCI
@@ -31884,6 +31894,13 @@ across the fork-local Python trees (`ai/`, `mcp-server/vmaf-mcp/`,
   numerical outputs.
 
 
+- **Controller authentication**: `vmafx-controller` now ignores JWKS signing
+  keys shorter than 2048 bits and rejects RSA public exponents that are even,
+  below 3 or out of range. Tokens signed with a skipped key are refused with
+  `401`; other keys in the same JWKS keep working. Previously any key Go
+  accepts, down to 1024 bits, could authenticate.
+
+
 **feat(controller/auth): multi-tenant JWT auth gateway (ADR-0794)**
 
 The vmafx-controller HTTP and gRPC endpoints are now protected by a
@@ -32200,6 +32217,14 @@ See `docs/server/auth.md` for the full configuration guide.
   + `p/python` (so the harness paths actually get coverage). The
   `--config=.semgrep.yml` local-rules lane is unchanged and continues to
   gate (`--error`).
+
+
+- **Build dependencies**: the Python package build now requires
+  `setuptools>=83.0.0` and `wheel>=0.46.2` (previously `>=77.0.1` and
+  unbounded), and the documentation requirements use the same floors. This
+  excludes releases affected by PYSEC-2025-49, PYSEC-2026-3447 (setuptools)
+  and PYSEC-2026-2047 (wheel). The hash-locked installs already used
+  setuptools 84.0.0 and wheel 0.48.0, so locked builds are unchanged.
 
 
 - **Shell-injection sweep round 2** — hardens two remaining shell-execution

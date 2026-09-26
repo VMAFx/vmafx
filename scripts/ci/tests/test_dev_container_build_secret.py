@@ -25,6 +25,7 @@ class BuildSecretContract(unittest.TestCase):
         self.workflow = (ROOT / ".github/workflows/dev-container-build.yml").read_text()
         self.docs = (ROOT / "docs/development/dev-mcp.md").read_text(encoding="utf-8")
         self.fetcher = (ROOT / "dev/scripts/fetch-intel-neo.py").read_text(encoding="utf-8")
+        self.publish = (ROOT / ".github/workflows/dev-container-publish.yml").read_text()
 
     def errors(
         self,
@@ -70,6 +71,19 @@ class BuildSecretContract(unittest.TestCase):
     def test_missing_raw_build_wiring_fails(self) -> None:
         text = self.workflow.replace("--secret id=github_token,env=GITHUB_TOKEN", "", 1)
         self.assertTrue(any("raw CI build" in error for error in self.errors(workflow=text)))
+
+    def test_current_publish_workflow_passes(self) -> None:
+        self.assertEqual(MODULE.validate_publish(self.publish), [])
+
+    def test_publish_without_build_secret_fails(self) -> None:
+        text = self.publish.replace("github_token=${{ secrets.GITHUB_TOKEN }}", "", 1)
+        self.assertTrue(any("publish build" in error for error in MODULE.validate_publish(text)))
+
+    def test_publish_token_build_arg_fails(self) -> None:
+        text = self.publish + (
+            "          build-args: |\n            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}\n"
+        )
+        self.assertTrue(any("build arguments" in error for error in MODULE.validate_publish(text)))
 
     def test_missing_anonymous_build_documentation_fails(self) -> None:
         text = self.docs.replace("env -u GITHUB_TOKEN docker build", "docker build", 1)

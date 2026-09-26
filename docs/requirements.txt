@@ -1,5 +1,5 @@
 mkdocs>=1.6.1,<2
 mkdocs-material>=9.7.7,<10
 mkdocs-minify-plugin>=0.8
-setuptools>=77.0.1
-wheel>=0.45.1
+setuptools>=83.0.0
+wheel>=0.46.2

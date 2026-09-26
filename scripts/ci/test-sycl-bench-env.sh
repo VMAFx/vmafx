@@ -68,7 +68,7 @@ export LD_LIBRARY_PATH=/safe/lib
 EOF
 chmod +x "$clean_root/setvars.sh"
 out1="$(ONEAPI_PREFIX="$clean_root" bash "$GATE" latest --quiet 2>/dev/null || true)"
-if echo "$out1" | grep -q 'export CMPLR_ROOT=/safe/root'; then
+if grep -q 'export CMPLR_ROOT=/safe/root' <<<"$out1"; then
   ok "clean prefix emits export lines"
 else
   ko "clean prefix did not emit expected export"
@@ -106,7 +106,7 @@ else
 fi
 # Containment must not come from the helper simply giving up: the hostile
 # prefix is a real directory, so its setvars.sh has to be sourced as data.
-if echo "$out2" | grep -q 'export CMPLR_ROOT=/contained'; then
+if grep -q 'export CMPLR_ROOT=/contained' <<<"$out2"; then
   ok "hostile ONEAPI_PREFIX || still used as a literal path"
 else
   ko "hostile ONEAPI_PREFIX || was not sourced as a literal path"
@@ -151,7 +151,7 @@ if [ -f "${WORKDIR}/pwn-quote-sub-marker" ]; then
 else
   ok "hostile ONEAPI_PREFIX '\$(…)' contained (no marker file)"
 fi
-if echo "$out3" | grep -q 'export CMPLR_ROOT=/contained3'; then
+if grep -q 'export CMPLR_ROOT=/contained3' <<<"$out3"; then
   ok "hostile ONEAPI_PREFIX '\$(…)' still used as a literal path"
 else
   ko "hostile ONEAPI_PREFIX '\$(…)' was not sourced as a literal path"

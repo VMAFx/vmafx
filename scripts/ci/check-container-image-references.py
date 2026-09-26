@@ -25,6 +25,13 @@ LOCAL_ARGUMENT = {("dev/Containerfile.runner", "BASE_IMAGE", "vmaf-dev-mcp:local
 
 def instructions(text: str) -> Iterator[tuple[int, str, list[str]]]:
     """Read relevant logical instructions, retaining their first line number."""
+    for start, command, arguments in logical_instructions(text):
+        if command in {"ARG", "FROM", "COPY"}:
+            yield start, command, shlex.split(arguments)
+
+
+def logical_instructions(text: str) -> Iterator[tuple[int, str, str]]:
+    """Yield every logical instruction with its first line and raw arguments."""
     pending = ""
     start = 0
     escape = "\\"
@@ -46,10 +53,7 @@ def instructions(text: str) -> Iterator[tuple[int, str, list[str]]]:
         pending = ""
         # split() also accepts tabs between the instruction and its arguments.
         command, *body = logical.split(maxsplit=1)
-        command = command.upper()
-        if command in {"ARG", "FROM", "COPY"}:
-            arguments = body[0] if body else ""
-            yield start, command, shlex.split(arguments)
+        yield start, command.upper(), body[0] if body else ""
     if pending:
         raise ValueError(f"line {start}: unterminated instruction continuation")
 
