@@ -104,6 +104,8 @@ BUG_098_GATE_DEPENDENCIES = {
     "Doxygen Public API": ["Plan Doxygen impact", "Doxygen Public API work"],
 }
 
+ADR_1342_STRICT_CONTEXTS = {"RC1 Tester Report"}
+
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
@@ -217,7 +219,10 @@ class HissReplayContractTests(unittest.TestCase):
         strict = javascript_array(aggregator, "strictMustReport")
         self.assertEqual(
             strict,
-            STRICT_CONTEXTS | ADR_1297_STRICT_CONTEXTS | BUG_098_STRICT_CONTEXTS,
+            STRICT_CONTEXTS
+            | ADR_1297_STRICT_CONTEXTS
+            | BUG_098_STRICT_CONTEXTS
+            | ADR_1342_STRICT_CONTEXTS,
         )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)

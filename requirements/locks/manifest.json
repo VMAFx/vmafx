@@ -189,6 +189,11 @@
       "compile_args": ["tools/vmaf-tune/pyproject.toml", "requirements/locks/package-build.in", "--extra", "dev", "--universal", "--python-version", "3.14", "--generate-hashes"]
     },
     {
+      "output": "tools/rc1-tester/requirements-dev-lock.txt",
+      "inputs": ["tools/rc1-tester/pyproject.toml", "requirements/locks/package-build.in"],
+      "compile_args": ["tools/rc1-tester/pyproject.toml", "requirements/locks/package-build.in", "--extra", "dev", "--universal", "--python-version", "3.14", "--generate-hashes"]
+    },
+    {
       "output": "dev-llm/requirements-dev-lock.txt",
       "inputs": ["dev-llm/pyproject.toml", "requirements/locks/package-build.in"],
       "compile_args": ["dev-llm/pyproject.toml", "requirements/locks/package-build.in", "--extra", "dev", "--universal", "--python-version", "3.14", "--generate-hashes"]

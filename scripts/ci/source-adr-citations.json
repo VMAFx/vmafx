@@ -1336,7 +1336,10 @@
         "python/test/sycl_motion_parity_test.py": 1,
         "scripts/ci/cross_backend_parity_gate.py": 2,
         "scripts/ci/gpu_ulp_calibration.yaml": 2,
-        "scripts/ci/test_cross_backend_parity_gate.py": 1
+        "scripts/ci/test_cross_backend_parity_gate.py": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/validate.py": 2,
+        "tools/rc1-tester/tests/test_bundle.py": 1
       },
       "target": "0214-gpu-parity-ci-gate.md"
     },
@@ -7550,6 +7553,16 @@
         "cmd/vmafx-tune/cmd/root.go": 1
       },
       "target": "1338-go-fix-clean-tree-gate.md"
+    },
+    "1342": {
+      "sites": {
+        ".github/workflows/required-aggregator.yml": 1,
+        ".github/workflows/tests-and-quality-gates.yml": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/validate.py": 1,
+        "tools/rc1-tester/tests/test_bundle.py": 1
+      },
+      "target": "1342-rc1-external-tester-report-bundle.md"
     }
   },
   "retired": {

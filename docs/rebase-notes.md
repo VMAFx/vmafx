@@ -669,6 +669,21 @@ Ordinary Renovate/version PRs remain mergeable under existing required gates.
 Their merge invalidates affected exact-head candidate evidence and triggers
 revalidation; it does not restore a blanket version freeze. The Netflix golden
 assertions remain untouched.
+## feat/rc1-tester-report-bundle — RC1 explicit-backend evidence bundle (2026-09-26)
+
+No upstream impact: `tools/rc1-tester/` and the linked usage documentation are
+fork-only. Preserve the fail-closed correctness invariant: every run includes a
+CPU reference and PASS requires four consecutive frames (through temporal frame
+3), finite model metrics, bounded/consistent VMAF, and `backend_used` exactly
+matching each explicit request. CPU must match the pinned snapshot and each
+accelerator must match that run's CPU result within `5e-5` per metric and frame;
+never restore version-only, exit-zero-only, finite-only, or `auto` success. Keep
+the pinned model/snapshot/fixtures hashed, preserve the bounded process-group/
+output contract, and keep status 100 as backend-unavailable evidence. Root
+`backend_used` is not per-feature dispatch proof. RC1 collects build/correctness
+reports, RC2 owns benchmark/tuning work, and RC3 owns real training. The
+collector must not invoke either later phase. No Netflix CPU golden assertion is
+modified. See ADR-1342.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

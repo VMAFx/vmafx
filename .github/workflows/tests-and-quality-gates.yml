@@ -488,6 +488,35 @@ jobs:
         run: |
           "${RUNNER_TEMP}/vmaf-train-venv/bin/python" ai/scripts/measure_quant_drop.py --all
 
+  # ===== RC1 external tester report package =====
+  rc1-tester-report:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1342: this shipped tester surface has no path-filtered or optional
+    # branch, so its regression lane must report to the required aggregator.
+    # required-aggregator
+    name: RC1 Tester Report
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.7"
+      - name: Install locked RC1 tester package
+        run: |
+          python -m pip install --require-hashes \
+            -r tools/rc1-tester/requirements-dev-lock.txt
+          python -m pip install --no-deps --no-build-isolation \
+            ./tools/rc1-tester
+      - name: Run RC1 tester regressions
+        run: python -m pytest tools/rc1-tester/tests/ -q
+      - name: Smoke installed tester launcher
+        run: |
+          python -c "from pathlib import Path; from vmaf_rc1_tester.probe import REPO_ROOT; assert REPO_ROOT == Path.cwd().resolve()"
+          vmaf-rc1-report list-tools >/dev/null
+
   # ===== MCP smoke gate (T7-MCP-SMOKE-CI / Research-0034 gap #3) =====
   # Builds libvmaf with the full MCP transport matrix (sse + uds + stdio)
   # and exercises both the embedded C-side scaffold smoke (core/test/

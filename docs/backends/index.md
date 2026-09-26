@@ -99,6 +99,9 @@ per-backend page below.
 
 ## Guides
 
+- [RC1 external tester guide](../usage/rc1-tester-guide.md) — bounded hardware
+  discovery, four-frame CPU-referenced correctness checks, and one shareable
+  report across CPU, CUDA, SYCL, HIP, and Metal
 - [x86 SIMD (AVX2 / AVX-512)](x86/avx512.md) — SIMD optimisation notes
 - [ARM NEON](arm/overview.md) — aarch64 backend + build / runtime /
   per-feature coverage

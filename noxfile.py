@@ -17,6 +17,7 @@ Usage::
     nox -s ai                       # run the ai/ pytest suite
     nox -s compat_decorator         # run compat memoization regressions
     nox -s mcp vmaf_tune            # run multiple suites in sequence
+    nox -s rc1_tester                # run the external tester report suite
     nox -s python_harness           # run the legacy python/ tox harness
     nox -s all                      # every fork-local Python package
     nox -s lint                     # ruff + black (check-only)
@@ -147,6 +148,19 @@ def ensemble_kit_tests(session: nox.Session) -> None:
     )
 
 
+@nox.session(name="rc1_tester", python="3.14")
+def rc1_tester_tests(session: nox.Session) -> None:
+    """Run the zero-runtime-dependency ``tools/rc1-tester/`` suite."""
+    session.install(
+        "--no-build-isolation",
+        "--require-hashes",
+        "-r",
+        "tools/rc1-tester/requirements-dev-lock.txt",
+    )
+    session.install("--no-deps", "--no-build-isolation", "-e", "./tools/rc1-tester")
+    session.run("pytest", "tools/rc1-tester/tests/", "-v", *session.posargs)
+
+
 @nox.session(name="python_harness", python="3.14")
 def python_harness_tests(session: nox.Session) -> None:
     """Delegate to the legacy ``python/tox.ini`` harness.
@@ -180,6 +194,7 @@ def all_tests(session: nox.Session) -> None:
         "dev_llm",
         "roi_score",
         "ensemble_kit",
+        "rc1_tester",
     ):
         session.notify(name)
 
@@ -193,6 +208,6 @@ def lint(session: nox.Session) -> None:
     happens to be on ``PATH``.
     """
     session.install("--require-hashes", "-r", "requirements/locks/dev-linters.txt")
-    targets = ["python/", "ai/", "scripts/"]
+    targets = ["python/", "ai/", "scripts/", "tools/rc1-tester/"]
     session.run("ruff", "check", *targets)
     session.run("black", "--check", *targets)

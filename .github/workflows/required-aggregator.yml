@@ -189,6 +189,7 @@ jobs:
               // that legitimately skips — gated and this one not.
               'Coverage Gate',
               'MCP Smoke',
+              'RC1 Tester Report',
               'Sanitizers ASan+UBSan',
               // Lint gates. ADR-0217 made `Tidy SYCL` advisory until one
               // green master run confirmed the wrapper; the last six Lint
@@ -267,6 +268,9 @@ jobs:
               // excludes `push` so it never reports on a master push.
               'Coverage Gate',
               'MCP Smoke',
+              // ADR-1342 — the shipped external tester package always runs;
+              // absence means its workflow registration failed.
+              'RC1 Tester Report',
               'Markdown Lint',
               'No Conflict Markers',
               'Tiny-Model Registry Validate',

@@ -7,8 +7,8 @@ has a top-level [`noxfile.py`](../../noxfile.py) that exposes each suite as a
 named session.
 
 Nox is a **local-developer affordance**, not a CI gate. CI continues to
-run each package's pytest through its own `python3 -m venv ... && pip
-install -e .[dev] && pytest tests/` recipe in
+run each package's pytest through its own manifest-owned hash lock, followed by
+a `--no-deps --no-build-isolation` local install and `pytest tests/`, in
 `.github/workflows/tests-and-quality-gates.yml`; the compatibility decorator
 suite also runs on every OS in [build.yml](../../.github/workflows/build.yml)
 to exercise the native POSIX and Windows lock implementations. The decision
@@ -43,9 +43,10 @@ because their package metadata excludes Python 3.14.
 | `roi_score` | `tools/vmaf-roi-score/tests/` | Saliency-aware ROI tooling; Python 3.12. |
 | `ensemble_kit` | `tools/ensemble-training-kit/tests/` | ONNX ensemble training; Python 3.12. |
 | `compat_decorator` | `compat/vmaf/tests/test_decorator_extended.py` | SHA-256 memoization, recursion, thread/spawn concurrency, and native file locking. |
+| `rc1_tester` | `tools/rc1-tester/tests/` | Dependency-free RC1 hardware/report collector. |
 | `python_harness` | `python/tox.ini` | Delegates to legacy tox (Cython + golden-data). |
 | `all` | every per-package suite | Excludes `python_harness` (needs C build). |
-| `lint` | `python/`, `ai/`, `scripts/` | Ruff + Black, check-only. |
+| `lint` | `python/`, `ai/`, `scripts/`, `tools/rc1-tester/` | Ruff + Black, check-only. |
 
 ## Usage
 
@@ -54,6 +55,7 @@ nox -l                          # list every session with its docstring
 nox -s ai                       # run ai/tests/ and ai/sidecar/tests/ in an isolated venv
 nox -s mcp vmaf_tune            # run multiple suites in sequence
 nox -s compat_decorator         # run the compatibility decorator regressions
+nox -s rc1_tester               # run RC1 collector regressions
 nox -s python_harness           # invoke the legacy python/ tox harness
 nox -s all                      # every fork-local Python package
 nox -s lint                     # check-only Ruff + Black
@@ -75,8 +77,9 @@ similar, add **both**:
    interpreter when the package's `requires-python` range excludes the Nox host.
 2. A new job (or matrix entry) in
    [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml)
-   that drives the same `pip install -e <path>[dev] && pytest <path>/tests/`
-   sequence — CI does not call nox.
+   that installs the same hash lock, installs the local package with
+   `--no-deps --no-build-isolation`, and runs `pytest <path>/tests/` — CI does
+   not call nox.
 
 The PR template's deep-dive deliverables checklist will catch a
 missing CI lane during review; nothing automatically catches a missing
