@@ -216,20 +216,25 @@ int vector_retry_close(VmafFeatureExtractor *)
     return vector_close_calls == 1 ? -EIO : 0;
 }
 
-mu_message_t test_close_failure_retains_vector_ownership()
+mu_message_t prepare_close_retry_vector(Vector &vector, VmafFeatureExtractor &fex)
 {
-    VmafFeatureExtractor fex{};
     fex.name = "vector_close_retry";
     fex.init = vector_retry_init;
     fex.close = vector_retry_close;
-    Vector vector;
     mu_assert("vector init failed", feature_extractor_vector_init(&vector.get()) == 0);
     auto ctx = make_context(&fex, nullptr, nullptr);
     mu_assert("context create failed", ctx);
     mu_assert("context init failed",
               vmaf_feature_extractor_context_init(ctx.get(), VMAF_PIX_FMT_YUV420P, 8, 64, 64) == 0);
     mu_assert("append failed", append_context(&vector.get(), std::move(ctx)) == 0);
+    return nullptr;
+}
 
+mu_message_t test_close_failure_retains_vector_ownership()
+{
+    VmafFeatureExtractor fex{};
+    Vector vector;
+    mu_assert_msg(prepare_close_retry_vector(vector, fex));
     vector_close_calls = 0;
     mu_assert("first close reports the transient error",
               feature_extractor_vector_close(&vector.get()) == -EIO);

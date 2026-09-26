@@ -168,7 +168,7 @@ int feature_extractor_vector_destroy(RegisteredFeatureExtractors *rfe)
     if (!rfe)
         return -EINVAL;
     for (unsigned i = 0; i < rfe->cnt; i++) {
-        VmafFeatureExtractorContext *ctx = rfe->fex_ctx[i];
+        const VmafFeatureExtractorContext *ctx = rfe->fex_ctx[i];
         if (ctx &&
             (ctx->close_required || (ctx->fex->close && ctx->is_initialized && !ctx->is_closed)))
             return -EBUSY;

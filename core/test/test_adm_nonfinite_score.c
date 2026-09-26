@@ -7,6 +7,7 @@
 
 #include "feature/adm_score.h"
 #include "feature/nonfinite_score.h"
+#include "mu_table.h"
 #include "test.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit; MSVC's documented
@@ -474,15 +475,17 @@ static char *test_ms_ssim_db_conversion_rejects_nonfinite_raw_score(void)
 
 static char *run_adm_tests(void)
 {
-    mu_run_test(test_undefined_aim_ratio_is_rejected_atomically);
-    mu_run_test(test_nonfinite_adm3_is_rejected_atomically);
-    mu_run_test(test_integer_adm_production_emitter_rejects_atomically);
-    mu_run_test(test_adm_nonfinite_reduction_is_rejected_before_floor);
-    mu_run_test(test_finite_scores_preserve_existing_results);
-    mu_run_test(test_flat_adm_scores_preserve_defined_results);
-    mu_run_test(test_adm_scale_ratios_define_flat_scale);
-    mu_run_test(test_production_emitter_rejects_without_publication);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_undefined_aim_ratio_is_rejected_atomically),
+        MU_TEST(test_nonfinite_adm3_is_rejected_atomically),
+        MU_TEST(test_integer_adm_production_emitter_rejects_atomically),
+        MU_TEST(test_adm_nonfinite_reduction_is_rejected_before_floor),
+        MU_TEST(test_finite_scores_preserve_existing_results),
+        MU_TEST(test_flat_adm_scores_preserve_defined_results),
+        MU_TEST(test_adm_scale_ratios_define_flat_scale),
+        MU_TEST(test_production_emitter_rejects_without_publication),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 static char *run_vif_tests(void)

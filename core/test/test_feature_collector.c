@@ -17,10 +17,17 @@
  */
 
 #include "test.h"
+#include "mu_table.h"
 #include "feature_collector_internal.h"
-#include "libvmaf.c"
+#include "libvmaf.c" // NOLINT(bugprone-suspicious-include): white-box seam (ADR-0141).
 #include <limits.h>
 #include <time.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr`. This
+ * test follows the cross-platform spelling of the surface it exercises.
+ * ADR-1138. */
 
 static unsigned close_retry_calls;
 
@@ -42,26 +49,32 @@ static int close_retry_once(VmafFeatureExtractor *fex)
     return close_retry_calls == 1 ? -EIO : 0;
 }
 
-static char *test_vmaf_close_retains_context_for_retry(void)
+static char *prepare_public_close_retry(VmafContext **vmaf, VmafFeatureExtractor *synth)
 {
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, (VmafConfiguration){0});
-    mu_assert("vmaf_init", err == 0 && vmaf != NULL);
-    VmafFeatureExtractor synth = {
+    int err = vmaf_init(vmaf, (VmafConfiguration){0});
+    mu_assert("vmaf_init", err == 0 && *vmaf != NULL);
+    *synth = (VmafFeatureExtractor){
         .name = "synth_public_close_retry",
         .init = close_retry_init,
         .close = close_retry_once,
     };
     VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
+    err = vmaf_feature_extractor_context_create(&ctx, synth, NULL);
     mu_assert("context_create", err == 0 && ctx != NULL);
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
     mu_assert("context_init", err == 0);
-    err = feature_extractor_vector_append(&vmaf->registered_feature_extractors, ctx, 0);
+    err = feature_extractor_vector_append(&(*vmaf)->registered_feature_extractors, ctx, 0);
     mu_assert("vector append", err == 0);
+    return NULL;
+}
 
+static char *test_vmaf_close_retains_context_for_retry(void)
+{
+    VmafContext *vmaf = NULL;
+    VmafFeatureExtractor synth = {0};
+    mu_assert_msg(prepare_public_close_retry(&vmaf, &synth));
     close_retry_calls = 0;
-    err = vmaf_close(vmaf);
+    int err = vmaf_close(vmaf);
     mu_assert("first vmaf_close returns the transient close error", err == -EIO);
     mu_assert("failed close retains the public context", vmaf->feature_collector != NULL);
     err = vmaf_close(vmaf);
@@ -227,8 +240,6 @@ static char *test_model_mount_with_use_features()
     return NULL;
 }
 
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: this C translation unit
- * stays portable to MSVC /std:clatest, which does not provide C23 nullptr. */
 static const VmafOption model_value_capability_options[] = {
     {.name = "vif_kernelscale",
      .type = VMAF_OPT_TYPE_DOUBLE,
@@ -388,7 +399,6 @@ static char *test_context_fallback_threshold_and_direct_contract(void)
               context_fallback_case_matches(960, 540, "0", false, false));
     return NULL;
 }
-/* NOLINTEND(modernize-use-nullptr) */
 
 static int load_three_test_models(VmafModel *models[3], const char *const names[3])
 {
@@ -464,34 +474,40 @@ static char *test_model_unmount()
     return NULL;
 }
 
-static char *test_aggregate_vector_init_append_and_destroy()
+static char *prepare_aggregate_vector(AggregateVector *aggregate_vector)
 {
     int err = 0;
 
-    AggregateVector aggregate_vector;
-    err = aggregate_vector_init(&aggregate_vector);
+    err = aggregate_vector_init(aggregate_vector);
     mu_assert("problem during aggregate_vector_init", !err);
     mu_assert("aggregate_vector is not initialized properly",
-              (aggregate_vector.cnt == 0) && (aggregate_vector.capacity == 8));
+              (aggregate_vector->cnt == 0) && (aggregate_vector->capacity == 8));
 
-    err = aggregate_vector_append(&aggregate_vector, "A", 1);
+    err = aggregate_vector_append(aggregate_vector, "A", 1);
     mu_assert("problem during aggregate_vector_append", !err);
     mu_assert(
         "name and value were incorrectly set",
-        (!strcmp("A", aggregate_vector.metric[0].name) && aggregate_vector.metric[0].value == 1));
+        (!strcmp("A", aggregate_vector->metric[0].name) && aggregate_vector->metric[0].value == 1));
 
-    err |= aggregate_vector_append(&aggregate_vector, "B", 2);
-    err |= aggregate_vector_append(&aggregate_vector, "C", 3);
-    err |= aggregate_vector_append(&aggregate_vector, "D", 4);
-    err |= aggregate_vector_append(&aggregate_vector, "E", 5);
-    err |= aggregate_vector_append(&aggregate_vector, "F", 6);
-    err |= aggregate_vector_append(&aggregate_vector, "G", 7);
-    err |= aggregate_vector_append(&aggregate_vector, "H", 8);
+    err |= aggregate_vector_append(aggregate_vector, "B", 2);
+    err |= aggregate_vector_append(aggregate_vector, "C", 3);
+    err |= aggregate_vector_append(aggregate_vector, "D", 4);
+    err |= aggregate_vector_append(aggregate_vector, "E", 5);
+    err |= aggregate_vector_append(aggregate_vector, "F", 6);
+    err |= aggregate_vector_append(aggregate_vector, "G", 7);
+    err |= aggregate_vector_append(aggregate_vector, "H", 8);
     mu_assert("problem during aggregate_vector_append", !err);
     mu_assert("aggregate_vector is not sized properly",
-              (aggregate_vector.cnt == 8) && (aggregate_vector.capacity == 8));
+              (aggregate_vector->cnt == 8) && (aggregate_vector->capacity == 8));
+    return NULL;
+}
 
-    err = aggregate_vector_append(&aggregate_vector, "I", 9);
+static char *test_aggregate_vector_init_append_and_destroy()
+{
+    AggregateVector aggregate_vector;
+    mu_assert_msg(prepare_aggregate_vector(&aggregate_vector));
+
+    int err = aggregate_vector_append(&aggregate_vector, "I", 9);
     mu_assert("problem during aggregate_vector_append", !err);
     mu_assert("aggregate_vector has not realloc'd properly",
               (aggregate_vector.cnt == 9) && (aggregate_vector.capacity == 16));
@@ -566,39 +582,45 @@ static char *test_feature_vector_append_rejects_huge_index()
     return NULL;
 }
 
-static char *test_feature_collector_init_append_get_and_destroy()
+static char *prepare_feature_collector(VmafFeatureCollector **feature_collector)
 {
-    int err;
-
-    VmafFeatureCollector *feature_collector;
-    err = vmaf_feature_collector_init(&feature_collector);
+    int err = vmaf_feature_collector_init(feature_collector);
     mu_assert("problem during vmaf_feature_collector_init", !err);
-    unsigned initial_capacity = feature_collector->capacity;
+    const unsigned initial_capacity = (*feature_collector)->capacity;
     mu_assert("this test assumes an initial capacity of 8", initial_capacity == 8);
-    err = vmaf_feature_collector_append(feature_collector, "feature0", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature1", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature2", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature3", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature4", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature5", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature6", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature7", 60., 1);
+    err = vmaf_feature_collector_append(*feature_collector, "feature0", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature1", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature2", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature3", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature4", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature5", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature6", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature7", 60., 1);
     mu_assert("problem during vmaf_feature_collector_append", !err);
     mu_assert("feature_collector->capacity should not have changed",
-              feature_collector->capacity == initial_capacity);
-    err = vmaf_feature_collector_append(feature_collector, "feature8", 60., 1);
+              (*feature_collector)->capacity == initial_capacity);
+    err = vmaf_feature_collector_append(*feature_collector, "feature8", 60., 1);
     mu_assert("problem during vmaf_feature_collector_append", !err);
     mu_assert("feature_collector->capacity did not double its allocation",
-              feature_collector->capacity == initial_capacity * 2);
+              (*feature_collector)->capacity == initial_capacity * 2);
+    return NULL;
+}
 
+static char *check_feature_collector_scores(VmafFeatureCollector *feature_collector)
+{
+    int err;
     double score;
     err = vmaf_feature_collector_get_score(feature_collector, "feature5", &score, 1);
     mu_assert("problem during vmaf_feature_collector_get_score", !err);
     mu_assert("vmaf_feature_collector_get_score did not get the expected score", score == 60.);
     err = vmaf_feature_collector_get_score(feature_collector, "feature5", &score, 2);
     mu_assert("vmaf_feature_collector_get_score did not fail with bad index", err);
+    return NULL;
+}
 
-    err = vmaf_feature_collector_set_aggregate(feature_collector, "aggregate0", 100.);
+static char *check_feature_collector_aggregates(VmafFeatureCollector *feature_collector)
+{
+    int err = vmaf_feature_collector_set_aggregate(feature_collector, "aggregate0", 100.);
     err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate1", 101.);
     err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate2", 102.);
     err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate3", 103.);
@@ -610,13 +632,22 @@ static char *test_feature_collector_init_append_get_and_destroy()
     err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate9", 109.);
     mu_assert("problem during vmaf_feature_collector_set_aggregate", !err);
 
+    double score;
     err = vmaf_feature_collector_get_aggregate(feature_collector, "aggregate5", &score);
     mu_assert("problem during vmaf_feature_collector_get_aggregate", !err);
     mu_assert("unexpected aggreggate_score", score == 105.);
     err = vmaf_feature_collector_get_aggregate(feature_collector, "aggregate9", &score);
     mu_assert("problem during vmaf_feature_collector_get_aggregate", !err);
     mu_assert("unexpected aggreggate_score", score == 109.);
+    return NULL;
+}
 
+static char *test_feature_collector_init_append_get_and_destroy()
+{
+    VmafFeatureCollector *feature_collector;
+    mu_assert_msg(prepare_feature_collector(&feature_collector));
+    mu_assert_msg(check_feature_collector_scores(feature_collector));
+    mu_assert_msg(check_feature_collector_aggregates(feature_collector));
     vmaf_feature_collector_destroy(feature_collector);
     return NULL;
 }
@@ -628,23 +659,30 @@ static char *run_model_option_capability_tests(void)
     mu_run_test(test_model_option_default_preserves_gpu);
     mu_run_test(test_model_option_invalid_stays_parser_owned);
     mu_run_test(test_context_fallback_threshold_and_direct_contract);
-    return NULL; /* NOLINT(modernize-use-nullptr) -- ADR-1138: MSVC C23 portability. */
+    return NULL;
 }
 
 char *run_tests()
 {
-    mu_run_test(test_vmaf_close_retains_context_for_retry);
-    mu_run_test(test_vmaf_close_retains_worker_private_context);
+    static const MuTest tests[] = {
+        MU_TEST(test_vmaf_close_retains_context_for_retry),
+        MU_TEST(test_vmaf_close_retains_worker_private_context),
 #ifdef HAVE_CUDA
-    mu_run_test(test_vmaf_close_commit_retry_is_idempotent);
-    mu_run_test(test_cuda_state_import_rejects_duplicate_owners);
+        MU_TEST(test_vmaf_close_commit_retry_is_idempotent),
+        MU_TEST(test_cuda_state_import_rejects_duplicate_owners),
 #endif
-    mu_run_test(test_feature_vector_init_append_and_destroy);
-    mu_run_test(test_feature_vector_append_rejects_huge_index);
-    mu_run_test(test_feature_collector_init_append_get_and_destroy);
-    mu_run_test(test_aggregate_vector_init_append_and_destroy);
-    mu_run_test(test_model_mount);
-    mu_run_test(test_model_unmount);
-    mu_run_test(test_model_mount_with_use_features);
+        MU_TEST(test_feature_vector_init_append_and_destroy),
+        MU_TEST(test_feature_vector_append_rejects_huge_index),
+        MU_TEST(test_feature_collector_init_append_get_and_destroy),
+        MU_TEST(test_aggregate_vector_init_append_and_destroy),
+        MU_TEST(test_model_mount),
+        MU_TEST(test_model_unmount),
+        MU_TEST(test_model_mount_with_use_features),
+    };
+    mu_message_t err = mu_run_table(tests, MU_TABLE_LEN(tests));
+    if (err)
+        return err;
     return run_model_option_capability_tests();
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

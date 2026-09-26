@@ -27,6 +27,7 @@
 #include "feature/feature_extractor.h"
 #include "feature/feature_collector.h"
 #include "fex_ctx_vector.h"
+#include "mu_table.h"
 #include "test.h"
 #include "picture.h"
 #include "libvmaf/picture.h"
@@ -934,6 +935,20 @@ static char *test_non_cuda_failed_init_keeps_legacy_close_scope(void)
     return NULL;
 }
 
+static char *prepare_released_pool(VmafFeatureExtractorContextPool **pool,
+                                   VmafFeatureExtractor *synth)
+{
+    int err = vmaf_fex_ctx_pool_create(pool, 1);
+    mu_assert("pool_create must succeed", err == 0 && *pool != NULL);
+    VmafFeatureExtractorContext *ctx = NULL;
+    err = vmaf_fex_ctx_pool_aquire(*pool, synth, NULL, &ctx);
+    mu_assert("pool acquire must succeed", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("pooled context init must succeed", err == 0);
+    mu_assert("pool release must succeed", vmaf_fex_ctx_pool_release(*pool, ctx) == 0);
+    return NULL;
+}
+
 static char *test_pool_close_failure_retains_ownership(void)
 {
     VmafFeatureExtractor synth = {
@@ -941,14 +956,7 @@ static char *test_pool_close_failure_retains_ownership(void)
         .close = close_fail_once,
     };
     VmafFeatureExtractorContextPool *pool = NULL;
-    int err = vmaf_fex_ctx_pool_create(&pool, 1);
-    mu_assert("pool_create must succeed", err == 0 && pool != NULL);
-    VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_fex_ctx_pool_aquire(pool, &synth, NULL, &ctx);
-    mu_assert("pool acquire must succeed", err == 0 && ctx != NULL);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
-    mu_assert("pooled context init must succeed", err == 0);
-    mu_assert("pool release must succeed", vmaf_fex_ctx_pool_release(pool, ctx) == 0);
+    mu_assert_msg(prepare_released_pool(&pool, &synth));
 
     g_close_call_count = 0;
     mu_assert("first pool close reports transient error", vmaf_fex_ctx_pool_close(pool) == -EIO);
@@ -973,7 +981,7 @@ static char *test_pool_close_failure_retains_ownership(void)
  * extract() must succeed and publish the zero-pinned sad score into the
  * feature collector at frame 0.
  * ------------------------------------------------------------------------- */
-static char *test_motion_force_zero_publishes_scores(void)
+static char *open_motion_force_zero_fixture(FexFixture *fixture)
 {
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion");
     mu_assert("motion extractor must be registered", fex != NULL);
@@ -982,54 +990,57 @@ static char *test_motion_force_zero_publishes_scores(void)
     int err = vmaf_dictionary_set(&opts, "motion_force_zero", "true", 0);
     mu_assert("dictionary_set force_zero", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
-    mu_assert("context_create with force_zero must succeed", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_create(&fixture->fex_ctx, fex, opts);
+    mu_assert("context_create with force_zero must succeed", err == 0 && fixture->fex_ctx != NULL);
 
-    VmafPicture ref;
-    VmafPicture dist;
-    err = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    err = vmaf_picture_alloc(&fixture->ref, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
     mu_assert("ref alloc", err == 0);
-    err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    err = vmaf_picture_alloc(&fixture->dist, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
     mu_assert("dist alloc", err == 0);
 
-    VmafFeatureCollector *vfc = NULL;
-    err = vmaf_feature_collector_init(&vfc);
+    err = vmaf_feature_collector_init(&fixture->vfc);
     mu_assert("collector init", err == 0);
+    return NULL;
+}
+
+static char *test_motion_force_zero_publishes_scores(void)
+{
+    FexFixture fixture = {0};
+    mu_assert_msg(open_motion_force_zero_fixture(&fixture));
 
     /* Frame 0: must succeed; extract() must not fail due to a NULL feature_name_dict.
      * Score values in the collector are verified by the full pipeline test suite. */
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, vfc);
+    int err = vmaf_feature_extractor_context_extract(fixture.fex_ctx, &fixture.ref, NULL,
+                                                     &fixture.dist, NULL, 0, fixture.vfc);
     mu_assert("extract frame 0 with force_zero must succeed", err == 0);
 
     /* Frame 1: same requirement, second frame verifies the force-zero path
      * repeats cleanly (first call stores prev_ref internally). */
-    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 1, vfc);
+    err = vmaf_feature_extractor_context_extract(fixture.fex_ctx, &fixture.ref, NULL, &fixture.dist,
+                                                 NULL, 1, fixture.vfc);
     mu_assert("extract frame 1 with force_zero must succeed", err == 0);
 
-    (void)vmaf_feature_extractor_context_close(ctx);
-    (void)vmaf_feature_extractor_context_destroy(ctx);
-    vmaf_feature_collector_destroy(vfc);
-    vmaf_picture_unref(&ref);
-    vmaf_picture_unref(&dist);
+    (void)fex_fixture_close(&fixture);
     return NULL;
 }
 
 static char *run_context_tests(void)
 {
-    mu_run_test(test_feature_extractor_context_pool);
-    mu_run_test(test_feature_extractor_flush);
-    mu_run_test(test_feature_extractor_initialization_options);
-    mu_run_test(test_feature_extractor_context_null_guards);
-    mu_run_test(test_fex_ctx_pool_null_guards);
-    /* Blocker regression tests — device-free, CPU paths only. */
-    mu_run_test(test_close_retry_lifecycle);
-    mu_run_test(test_destroy_refused_before_close);
-    mu_run_test(test_partial_init_requires_retryable_close);
-    mu_run_test(test_non_cuda_failed_init_keeps_legacy_close_scope);
-    mu_run_test(test_pool_close_failure_retains_ownership);
-    mu_run_test(test_motion_force_zero_publishes_scores);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_feature_extractor_context_pool),
+        MU_TEST(test_feature_extractor_flush),
+        MU_TEST(test_feature_extractor_initialization_options),
+        MU_TEST(test_feature_extractor_context_null_guards),
+        MU_TEST(test_fex_ctx_pool_null_guards),
+        /* Blocker regression tests — device-free, CPU paths only. */
+        MU_TEST(test_close_retry_lifecycle),
+        MU_TEST(test_destroy_refused_before_close),
+        MU_TEST(test_partial_init_requires_retryable_close),
+        MU_TEST(test_non_cuda_failed_init_keeps_legacy_close_scope),
+        MU_TEST(test_pool_close_failure_retains_ownership),
+        MU_TEST(test_motion_force_zero_publishes_scores),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 static char *run_option_tests(void)
