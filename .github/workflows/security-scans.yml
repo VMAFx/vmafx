@@ -319,4 +319,8 @@ jobs:
           # flags GPL-2.0-or-later against deny-licenses: GPL-3.0. Dependency Review
           # PURL matching compares package identity package-wide (ignoring versions);
           # allow pkg:pypi/text-unidecode truthfully using explicit package-wide syntax.
-          allow-dependencies-licenses: pkg:pypi/text-unidecode
+          # REUSE is a development-only compliance tool and pulls python-debian,
+          # whose GPL-2.0-or-later code is neither imported nor linked into any
+          # VMAFx artifact. ADR-1305 section 10 requires reviewed exceptions to
+          # use exact package-wide PURLs, matching the text-unidecode precedent.
+          allow-dependencies-licenses: pkg:pypi/text-unidecode, pkg:pypi/python-debian

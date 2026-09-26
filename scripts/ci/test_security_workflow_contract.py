@@ -88,6 +88,13 @@ class SecurityWorkflowContractTest(unittest.TestCase):
         self.assertIn("retention-days: 14", archive_step)
         self.assertNotIn("github/codeql-action/upload-sarif", archive_step)
 
+    def test_dependency_review_allows_only_reviewed_dual_use_tooling(self) -> None:
+        workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        job = self._job_block(workflow, "dependency-review")
+
+        self.assertIn("pkg:pypi/text-unidecode", job)
+        self.assertIn("pkg:pypi/python-debian", job)
+
 
 if __name__ == "__main__":
     unittest.main()

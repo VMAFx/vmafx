@@ -219,6 +219,27 @@
       "paths": [
         "tools/vmaf-tune/src/vmaftune/ladder.py"
       ]
+    },
+    {
+      "adr": "ADR-1336",
+      "kind": "reverse-hunk",
+      "undoes": "bd8a1055ef08dce39113539cb9f3d251333cbbdf",
+      "evidence": "(?:ADR-1090|CHECK_CUDA_GOTO|cu(?:EventDestroy|ModuleGetFunction|ModuleLoadData|ModuleUnload|StreamDestroy)|fail(?:_after_(?:event|module|stream))?(?:\\);|:)|if \\(s->module_(?:blur|mul)\\)|later step fails|popped the context|previously all paths jumped to `fail`|s->(?:event|module|str) =|s->module_mul = s->module_blur = NULL|so the stream is destroyed|Unload any modules)",
+      "reason": "ADR-1336 supersedes per-extractor graduated cleanup labels with context-owned, retry-safe teardown. The centralized lifetime helper preserves every stream, event and module cleanup obligation while making failed close operations retryable. core/test/test_cuda_module_lifecycle_contract.py and core/test/test_cuda_runtime_unwind.c bind that replacement contract.",
+      "paths": [
+        "core/src/feature/cuda/integer_motion_cuda.c",
+        "core/src/feature/cuda/ssimulacra2_cuda.c"
+      ]
+    },
+    {
+      "adr": "ADR-1335",
+      "kind": "reverse-hunk",
+      "undoes": "dce84d44208105d8a15310f5fd8ab13156e4e863",
+      "evidence": "Research-(?:0033|0432).*research/(?:0033|0432)-hip-applicability\\.md",
+      "reason": "ADR-1335 ratchets research identities to unique existing files. Research-0033 collided with another digest and the HIP applicability digest now lives at docs/research/0432-hip-applicability.md; removing the two stale links prevents the ADR from naming a missing document.",
+      "paths": [
+        "docs/adr/0212-hip-backend-scaffold.md"
+      ]
     }
   ]
 }

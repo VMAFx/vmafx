@@ -325,6 +325,7 @@ jobs:
               -e '^core/test/test_hip' \
               -e '^core/test/fuzz/' \
               -e '^core/src/compat/win32/' \
+              -e '^core/tools/test/test_vmaf_windows_utf8_argv\.cpp$' \
               -e '^cmd/vmafx-node/bpf/' \
               -e '^\.config/hiss/testdata/' \
               -e '^compat/python-vmaf/matlab/' |
@@ -447,14 +448,19 @@ jobs:
           # and the generated headers, so LTO buys nothing here. The SYCL tidy
           # lane below already configures with -Db_lto=false for its own
           # toolchain reason.
-          CC=gcc-15 CXX=g++-15 meson setup build core \
+          # Keep generated model/embed translation units outside the repository.
+          # The ratchet measures checked-in sources; generated build products have
+          # no stable source path or committed debt allowance.
+          TIDY_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"
+          CC=gcc-15 CXX=g++-15 meson setup "$TIDY_BUILD_DIR" core \
             -Denable_cuda=false -Denable_sycl=false -Db_lto=false
-          meson compile -C build
-          python3 scripts/ci/write-compile-commands.py --build-dir build
+          meson compile -C "$TIDY_BUILD_DIR"
+          python3 scripts/ci/write-compile-commands.py --build-dir "$TIDY_BUILD_DIR"
       - name: Ratchet — whole-tree clang-tidy vs committed baseline
         if: steps.impact.outputs.c_core == 'true'
         run: |
-          python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
+          python3 scripts/ci/tidy-ratchet.py --lane cpu \
+            --build-dir "$RUNNER_TEMP/vmafx-tidy-cpu" \
             --clang-tidy /usr/bin/clang-tidy-22 --jobs "$(nproc)" \
             --report tidy-ratchet-cpu.json
       - name: Upload measurement (commit it as the new baseline when the ratchet asks)
