@@ -443,7 +443,8 @@ identity tied to the GitHub Actions workflow that built the model.
 Run the existing internal and public-session tests with:
 
 ```sh
-meson test -C build --print-errorlogs test_ort_internals test_dnn_session_api
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build --print-errorlogs test_ort_internals test_dnn_session_api
 ```
 
 Use a build configured with `-Denable_dnn=enabled` and a discoverable ONNX

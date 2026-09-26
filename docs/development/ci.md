@@ -608,7 +608,7 @@ make verify-all     # HISS/context/evidence plus duplicate implementations
 make dedupe-check   # fast standalone AST clone scan
 make format-check   # clang-format + black + ruff, no writes
 make lint           # configured native + Python, shell, Markdown, Go and docs checks
-meson test -C build --suite=fast
+make test-fast
 bash scripts/ci/twin-drift-check.sh  # .c/.cpp twin drift + stale source refs (ADR-1135)
 pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 ```

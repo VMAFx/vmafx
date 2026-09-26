@@ -157,7 +157,7 @@ See the backend-specific guides:
 
 | Language | CI gate | Workflow file |
 |---|---|---|
-| C / C++23 | clang-tidy, cppcheck, meson test | `.github/workflows/lint-and-format.yml` |
+| C / C++23 | clang-tidy, cppcheck, credential-safe Meson test runner | `.github/workflows/lint-and-format.yml` |
 | Go | `go vet ./...` + `go test ./...` | `.github/workflows/go-ci.yml` |
 | Rust | `cargo check --all` + `cargo test --all` | `.github/workflows/rust-ci.yml` |
 | Python | ruff + mypy strict + pytest | `.github/workflows/python-ci.yml` |

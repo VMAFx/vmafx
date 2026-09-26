@@ -149,8 +149,8 @@ ninja -C build
 ## 3. Test
 
 ```text
-meson test -C build                     # unit tests
-meson test -C build --suite=fast        # fast subset
+python3 scripts/ci/run_meson_test.py -- -C build              # unit tests
+python3 scripts/ci/run_meson_test.py -- -C build --suite=fast # fast subset
 make test                               # full + ASan + UBSan
 make test-netflix-golden                # Netflix CPU golden-data gate (see §8)
 ```

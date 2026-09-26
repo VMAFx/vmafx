@@ -41,7 +41,9 @@ jobs:
         env:
           ASAN_OPTIONS: allocator_may_return_null=1
           TSAN_OPTIONS: allocator_may_return_null=1
-        run: meson test -C build-tsan --print-errorlogs --timeout-multiplier 3
+        run: >-
+          python3 scripts/ci/run_meson_test.py -- -C build-tsan
+          --print-errorlogs --timeout-multiplier 3
 
   clang-tidy-full:
     name: Full clang-tidy scan

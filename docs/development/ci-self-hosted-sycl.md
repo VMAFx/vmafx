@@ -70,7 +70,7 @@ reused across jobs on the same host — `down -v` wipes it.
   the custom label.
 - `SYCL Parity (Arc A380)` (self-hosted) checks that only the Arc is
   visible (`sycl-ls`), builds `-Denable_sycl=true -Denable_cuda=false
-  -Denable_float=true`, runs `meson test -C core/build --suite sycl`
+  -Denable_float=true`, runs `python3 scripts/ci/run_meson_test.py -- -C core/build --suite sycl`
   (23 tests), then `scripts/ci/cross_backend_parity_gate.py --backends cpu
   sycl --features float_ssim --gpu-id sycl:0x8086:0x56a5` against the
   [ADR-0234](../adr/0234-gpu-gen-ulp-calibration.md) table

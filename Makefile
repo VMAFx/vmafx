@@ -72,7 +72,9 @@ build: $(BUILD_DIR) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR)
 
 test: build $(NINJA)
-	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) test
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" "$(VENV_PYTHON)" scripts/ci/run_meson_test.py \
+	    --meson-executable "$(MESON_EXEC)" -- -C $(BUILD_DIR) \
+	    --no-rebuild --print-errorlogs
 
 debug: $(DEBUG_DIR) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(DEBUG_DIR)
@@ -426,10 +428,11 @@ test-sanitizers:
 	    -Db_sanitize=address,undefined \
 	    -Denable_cuda=false -Denable_sycl=false
 	ninja -C build-san
-	meson test -C build-san --print-errorlogs
+	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs
 
 test-fast: build
-	PATH="$(VIRTUAL_ENV_ABS):$$PATH" meson test -C $(BUILD_DIR) --suite=fast
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" "$(VENV_PYTHON)" scripts/ci/run_meson_test.py \
+	    --meson-executable "$(MESON_EXEC)" -- -C $(BUILD_DIR) --suite=fast
 
 # ============================================================================
 # Coverage gate (docs/principles.md §3 — ≥70% overall, ≥85% security-critical)
@@ -450,7 +453,8 @@ coverage:
 	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
 	    -Denable_cuda=false -Denable_sycl=false
 	ninja -C $(COVERAGE_DIR)
-	meson test -C $(COVERAGE_DIR) --print-errorlogs
+	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- \
+	    -C $(COVERAGE_DIR) --print-errorlogs
 	@echo "--- gathering coverage ---"
 	lcov --capture --directory $(COVERAGE_DIR) --output-file $(COVERAGE_DIR)/coverage.info \
 	     --ignore-errors mismatch,gcov,source --rc geninfo_unexecuted_blocks=1

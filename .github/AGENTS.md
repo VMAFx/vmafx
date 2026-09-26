@@ -11,6 +11,16 @@ broken `.c` file).
 
 ## Invariants a reviewer or sync must preserve
 
+### Meson parent-environment sanitization (ADR-1333)
+
+Every workflow step that runs a Meson test suite or Ninja's `test` target
+must invoke `scripts/ci/run_meson_test.py` instead. Linux steps that need
+`sudo` resolve both Python and Meson before elevation and pass Meson with
+`--meson-executable`; Windows uses the checked-in Python wrapper path.
+`core/test/test_meson_secret_env_sanitization.py` inventories each call and
+rejects a raw bypass. Preserve the wrapper boundary because Meson writes its
+parent environment to `testlog.txt` before applying the default setup.
+
 ### Single SemVer release fan-out (ADR-1127)
 
 `release-please.yml` owns one root package, creates draft GitHub release.
@@ -387,7 +397,7 @@ configure within `$GITHUB_WORKSPACE`.
 
 `sanitizers` job in
 [`workflows/tests-and-quality-gates.yml`](workflows/tests-and-quality-gates.yml)
-enumerates full C unit-test set via `meson test --list`, applies
+enumerates the full C unit-test set via `meson introspect --tests`, then applies
 per-sanitizer regex deselect:
 
 - `address` — excludes `test_model`, `test_predict`,
@@ -410,7 +420,7 @@ silently widen deselect list to "make CI pass" — per
 referencing underlying bug. Reverting `--suite=unit` would
 re-introduce zero-coverage gap (no `test()` call carries
 `suite: 'unit'` tag in `core/test/meson.build`); workflow
-must keep enumerating from `meson test --list`.
+must keep enumerating from `meson introspect --tests`.
 
 ## Windows CUDA setup path (ADR-0664)
 
@@ -448,7 +458,9 @@ Invariants:
   has `win32/arm64` for it. `pip install meson ninja`: ninja ships
   `win_arm64` wheel. No nasm step; x86-only probe in `core/src/meson.build`.
 - CPU only until CUDA 13.4 bump: 13.3.1 has no `windows-arm64` packages.
-- Test step = `meson test --suite fast --print-errorlogs`. Full suite =
+- Test step uses `scripts\ci\run_meson_test.py` with
+  `-C core\build --suite fast --print-errorlogs`.
+  Full suite =
   follow-up, own decision.
 
 ## Upstream-merge guidance

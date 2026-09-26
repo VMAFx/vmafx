@@ -199,9 +199,15 @@ filter radius. This is a memory-safety repair: each ISA retains its existing
 per-pixel arithmetic and final scalar region. No score option or tolerance
 changes are needed.
 
-Developers can run `meson test -C build test_convolution_horizontal` on an x86
-assembly-enabled build. The test checks normal, squared and cross-product
-filters; ASan/UBSan builds also detect invalid reads that leave final scores
-unchanged. Unsupported CPU ISAs are skipped, and disabled AVX-512 is omitted.
+Developers can run this on an x86 assembly-enabled build:
+
+```bash
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build test_convolution_horizontal
+```
+
+The test checks normal, squared and cross-product filters; ASan/UBSan builds
+also detect invalid reads that leave final scores unchanged. Unsupported CPU
+ISAs are skipped, and disabled AVX-512 is omitted.
 See the [boundary investigation](../research/convolution-horizontal-boundary-2026-09-08.md)
 for the exact validation scope and negative controls.

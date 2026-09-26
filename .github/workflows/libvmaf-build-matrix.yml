@@ -588,7 +588,7 @@ jobs:
 
       # DNN legs: run the dedicated dnn suite first so its logs are easy
       # to find if the build regresses ORT compatibility. The full test
-      # run below also exercises dnn via `ninja test`; this step exists
+      # run below also exercises dnn via the repository test runner; this step exists
       # for log isolation only.
       - name: Run meson dnn suite (DNN leg)
         if: ${{ (matrix.dnn) && steps.impact.outputs.c_core == 'true' }}
@@ -597,12 +597,18 @@ jobs:
         # user's $HOME so a bare `sudo meson` reports "command not found".
         # Sudo is needed because the preceding `sudo ninja install` step
         # left build artifacts owned by root.
-        run: sudo "$(which meson)" test -C core/build --suite=dnn --print-errorlogs
+        run: >-
+          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
+          --meson-executable "$(command -v meson)" --
+          -C core/build --suite=dnn --print-errorlogs
 
       # CPU-only: full test suite + tox.
       - name: Run tests
         if: ${{ (!matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
-        run: sudo ninja -vC core/build test
+        run: >-
+          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
+          --meson-executable "$(command -v meson)" -- -C core/build
+          --no-rebuild --print-errorlogs
 
       # ---------- SSH debug session (macOS × workflow_dispatch only) ----------
       # Fires ONLY when:
@@ -808,7 +814,9 @@ jobs:
         # meson-logs/testlog.txt, so cross-platform debugging (e.g.
         # MinGW64-specific locale assertions) does not require an
         # artifact round-trip.
-        run: meson test -C core/build --num-processes $(nproc) --print-errorlogs
+        run: >-
+          python3 scripts/ci/run_meson_test.py -- -C core/build
+          --num-processes $(nproc) --print-errorlogs
 
       - name: Show binary info and stage artifact
         id: stage
@@ -1156,7 +1164,9 @@ jobs:
       # output lands in the CI log instead of only in testlog.txt.
       - name: Run fast unit suite
         shell: cmd
-        run: meson test -C core\build --suite fast --print-errorlogs
+        run: >-
+          python scripts\ci\run_meson_test.py --
+          -C core\build --suite fast --print-errorlogs
 
       - name: Upload vmaf.exe artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

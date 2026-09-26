@@ -20,6 +20,20 @@ linked AGENTS.md before resolving conflicts.
   repository-root build instructions in `docs/getting-started/index.md` and
   include Meson's `core/` source directory when showing a configure command.
 
+- **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
+  `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
+  and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,
+  preflight, bisection, setup-guidance, and Zed entry point must remain on that wrapper.
+  `core/meson.build` retains a default test setup using `environment().unset()` for
+  (`GITHUB_PERSONAL_ACCESS_TOKEN`,
+  `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`,
+  `GH_PAT`, `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`,
+  `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`) at the child and JSON-log layer.
+  The regression contract rejects raw supported-entry-point bypasses, alternate setups, and
+  explicit forbidden-name reintroduction. Preserve the runner, callers, setup, and
+  `core/test/test_meson_secret_env_sanitization.py` together. Raw external Meson/Ninja test
+  commands are outside this bounded guarantee.
+
 - **Zed project settings are project-scoped**: `.zed/settings.json` is parsed
   as Zed's `ProjectSettingsContent`, so it must not regain `agent`,
   `agent_servers`, provider/model pins, or permission policy. Preserve the

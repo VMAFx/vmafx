@@ -360,7 +360,7 @@ jobs:
             exit 1
           fi
           # shellcheck disable=SC2086
-          meson test -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
 
   # ===== DNN / tiny-AI gate =====
   # Builds libvmaf with --enable_dnn (ONNX Runtime C API), runs the dnn
@@ -450,7 +450,7 @@ jobs:
       - name: Run meson dnn suite
         if: steps.impact.outputs.tiny_ai == 'true'
         working-directory: core
-        run: meson test -C build --suite=dnn --print-errorlogs
+        run: python3 ../scripts/ci/run_meson_test.py -- -C build --suite=dnn --print-errorlogs
       - name: Set up Python + install vmaf-train
         if: steps.impact.outputs.tiny_ai == 'true'
         # Both the venv and pip's staging area live under RUNNER_TEMP, not
@@ -505,7 +505,7 @@ jobs:
   #     -Denable_mcp=true -Denable_mcp_sse=true \
   #     -Denable_mcp_uds=true -Denable_mcp_stdio=true && \
   #   meson compile -C build-mcp && \
-  #   meson test -C build-mcp test_mcp_smoke --print-errorlogs
+  #   python3 ../scripts/ci/run_meson_test.py -- -C build-mcp test_mcp_smoke --print-errorlogs
   #   cd ../mcp-server/vmaf-mcp && \
   #   python3 -m venv ~/.cache/mcp-venv && \
   #   ~/.cache/mcp-venv/bin/pip install -e .[dev] && \
@@ -562,7 +562,9 @@ jobs:
         # The test is registered as `test_mcp_smoke` in core/test/
         # meson.build (no suite tag — it lands in the default suite).
         working-directory: core
-        run: meson test -C build-mcp test_mcp_smoke --print-errorlogs
+        run: >-
+          python3 ../scripts/ci/run_meson_test.py --
+          -C build-mcp test_mcp_smoke --print-errorlogs
 
       - name: Set up Python venv + install vmaf-mcp[dev]
         # The pyproject ships a `dev` extras group (pytest +
@@ -764,7 +766,9 @@ jobs:
       - name: Run meson unit suite (with gcov counters)
         if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
-        run: meson test -C build-coverage --print-errorlogs --num-processes 1
+        run: >-
+          python3 ../scripts/ci/run_meson_test.py -- -C build-coverage
+          --print-errorlogs --num-processes 1
       - name: Run full Python test suite (instrumented libvmaf.so + vmaf CLI)
         id: python_coverage_tests
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1041,7 +1045,9 @@ jobs:
         working-directory: core
         # See CPU coverage job for --num-processes 1 rationale: serialise
         # to keep multi-process .gcda merges race-free.
-        run: meson test -C build-coverage-gpu --print-errorlogs --num-processes 1
+        run: >-
+          python3 ../scripts/ci/run_meson_test.py -- -C build-coverage-gpu
+          --print-errorlogs --num-processes 1
       - name: Run Python suite on CUDA + SYCL backends
         env:
           PYTHONPATH: ${{ github.workspace }}/python

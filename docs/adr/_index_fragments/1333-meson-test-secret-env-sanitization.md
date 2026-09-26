@@ -1,0 +1,1 @@
+| [ADR-1333](1333-meson-test-secret-env-sanitization.md) | Removes twelve GitHub and Actions credential keys before Meson starts at every supported repository entry point, retains the child/JSON setup defense, and rejects caller or declaration bypasses. | Accepted | security, build, test, meson, ci |

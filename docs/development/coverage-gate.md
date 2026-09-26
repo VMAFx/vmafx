@@ -221,7 +221,8 @@ meson setup build-coverage --buildtype=debug \
   -Denable_float=true -Denable_avx512=true -Denable_dnn=enabled \
   -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic
 ninja -C build-coverage
-meson test -C build-coverage --print-errorlogs --num-processes 1
+python3 ../scripts/ci/run_meson_test.py -- \
+  -C build-coverage --print-errorlogs --num-processes 1
 ~/.local/bin/gcovr --root .. \
     --filter 'src/.*' \
     --exclude '.*/test/.*' \

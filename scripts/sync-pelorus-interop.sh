@@ -401,7 +401,7 @@ if [ "$mode" = "update" ]; then
   printf '\nre-vendor complete from pelorus@%s (ABI %s.%s).\n' \
     "$PELORUS_VENDOR_SHA" "${abi_major:-?}" "${abi_minor:-?}"
   printf 'Re-run without --update to confirm no drift, then rebuild + run\n'
-  printf '  meson test -C core/build-cpu test_pelorus_interop\n'
+  printf '  python3 scripts/ci/run_meson_test.py -- -C core/build-cpu test_pelorus_interop\n'
   exit 0
 fi
 

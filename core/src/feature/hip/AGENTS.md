@@ -814,7 +814,7 @@ Rebase-sensitive invariants:
   scores stay bit-identical; `integer_adm_hip.c`'s score writers
   (`adm_hip_scale_scores()`, `adm_hip_append_scores()`) carry the same
   constraint under #1507's names.
-  the HIP parity suite (`meson test -C <build> --suite hip`) before landing.
+  the HIP parity suite (`python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C <build> --suite hip`) before landing.
 - **The twins stay recognisable.** These files are deliberate twins of
   `../cuda/*.c`. The unwind helpers mirror the CUDA labels one-for-one and keep
   the label names in the helper names, so a future CUDA-side port can be read

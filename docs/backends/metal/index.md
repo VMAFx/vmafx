@@ -77,7 +77,8 @@ On macOS:
 ```bash
 meson setup build -Denable_metal=enabled
 ninja -C build
-meson test -C build test_metal_smoke
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build test_metal_smoke
 ```
 
 `-Denable_metal=auto` (the default) auto-resolves to enabled on
@@ -238,7 +239,8 @@ Reviewers verifying locally on a Mac:
 ```bash
 meson setup build -Denable_metal=enabled
 ninja -C build
-meson test -C build test_metal_smoke
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build test_metal_smoke
 ```
 
 ## References

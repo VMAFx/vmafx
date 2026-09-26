@@ -244,8 +244,12 @@ do not replace — scaffold invariants already documented above.
   calls (GCN/RDNA warp size = 64; HIP exposes no native uint64
   shuffle). If future ROCm release adds native uint64 shuffle
   primitives, kernel can be simplified, but cross-backend numeric
-  gate (`meson test -C build --suite=hip-parity`) must pass before
-  landing any change.
+  gate must pass before landing any change:
+
+  ```bash
+  python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+    -C build --suite=hip-parity
+  ```
 
 - **Merge-conflict risk with PR #612**:
   `vmaf_hip_kernel_submit_post_record` in `kernel_template.{h,c}`
@@ -417,7 +421,7 @@ do not replace — scaffold invariants already documented above.
 meson setup build -Denable_hip=true -Denable_hipcc=false \
     -Denable_cuda=false -Denable_sycl=false libvmaf
 ninja -C build
-meson test -C build
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build
 
 # Full HIP build with real kernels (requires ROCm 6+ and hipcc in PATH):
 meson setup build_full -Denable_hip=true -Denable_hipcc=true \

@@ -18,7 +18,7 @@ extractors, quality runners, models).
    [source-build guide](docs/getting-started/index.md#build-from-source-any-platform)
    (`meson setup build core ...`; the Meson source directory is `core/`).
 4. Build: `ninja -C build`
-5. Test: `meson test -C build`
+5. Test: `python3 scripts/ci/run_meson_test.py -- -C build`
 6. Format + lint before pushing: `make format && make lint`
 
 ## Core rules

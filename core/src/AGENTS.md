@@ -17,7 +17,7 @@ when rebasing Windows discovery block from Netflix PR #1472.
 - every C++ target linked into libvmaf passes `cpp_args : vmaf_cppflags_common` (`core/src/meson.build`). No per-target define lists.
 - missing -> no `-fvisibility=hidden` -> internal symbols exported from `libvmaf.so` (72 did, until 2026-09-18); also no `HAVE_CUDA` / `HAVE_SYCL` -> `VmafPicturePrivate` layout skew (PR #840).
 - `vmaf_cppflags_common` derived after last `vmaf_cflags_common +=`; new defines go before that line.
-- gate: `meson test -C build check_exported_symbols` (`core/test/check_exported_symbols.py`).
+- gate: `python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build check_exported_symbols` (`core/test/check_exported_symbols.py`).
 
 ## Mandatory safety invariants
 

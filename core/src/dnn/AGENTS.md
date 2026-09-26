@@ -461,7 +461,7 @@ until then, keep full command line.
 ## Testing
 
 ```bash
-meson test -C build --suite=dnn
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build --suite=dnn
 ```
 
 Unit tests live under [../../test/dnn/](../../test/dnn/). CI also runs

@@ -92,7 +92,9 @@ jobs:
             -Denable_float=true
           ninja -C core/build
       - name: Run SYCL unit and parity tests
-        run: meson test -C core/build --suite sycl --print-errorlogs
+        run: >-
+          python3 scripts/ci/run_meson_test.py --
+          -C core/build --suite sycl --print-errorlogs
       - name: Run cross-backend parity gate (calibrated features)
         run: |
           python3 scripts/ci/cross_backend_parity_gate.py \

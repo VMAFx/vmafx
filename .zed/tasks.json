@@ -61,7 +61,7 @@
       "vmaf-dev-mcp",
       "bash",
       "-lc",
-      "set -euo pipefail; if [[ -f /probes/zed-build-cpu/build.ninja ]]; then meson setup --reconfigure /probes/zed-build-cpu /workspace/core -Denable_cuda=false -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled -Db_lto=false; else meson setup /probes/zed-build-cpu /workspace/core -Denable_cuda=false -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled -Db_lto=false; fi; ninja -C /probes/zed-build-cpu; meson test -C /probes/zed-build-cpu --suite=fast --print-errorlogs"
+      "set -euo pipefail; if [[ -f /probes/zed-build-cpu/build.ninja ]]; then meson setup --reconfigure /probes/zed-build-cpu /workspace/core -Denable_cuda=false -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled -Db_lto=false; else meson setup /probes/zed-build-cpu /workspace/core -Denable_cuda=false -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled -Db_lto=false; fi; ninja -C /probes/zed-build-cpu; python3 /workspace/scripts/ci/run_meson_test.py -- -C /probes/zed-build-cpu --suite=fast --print-errorlogs"
     ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,

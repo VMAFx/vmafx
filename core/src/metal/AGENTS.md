@@ -220,7 +220,7 @@ metal/
 # On macOS:
 meson setup build -Denable_metal=enabled
 ninja -C build
-meson test -C build test_metal_smoke
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build test_metal_smoke
 
 # On Linux / Windows: -Denable_metal=auto resolves to disabled
 # (no Metal frameworks); -Denable_metal=enabled fails the meson

@@ -368,6 +368,7 @@ nav:
       - ADR workflow: development/adr-workflow.md
       - PR body sentinel guide: development/pr-body-sentinel-guide.md
       - Test fixtures: development/test-fixtures.md
+      - Credential-safe Meson tests: development/meson-test-runner.md
       - CI tmate debug: development/ci-tmate-debug.md
       - eBPF FUSE bypass: development/ebpf-fuse-bypass.md
       - Performance claims (May 2026): development/perf-claims-2026-05-10.md
@@ -1445,6 +1446,7 @@ nav:
         - "ADR-1324: gpu-float-ssim-auto-scale-fallback": adr/1324-gpu-float-ssim-auto-scale-fallback.md
         - "ADR-1325: integer-adm-barten-fixed-point-normalization": adr/1325-integer-adm-barten-fixed-point-normalization.md
         - "ADR-1326: sycl-motion-uv-fixed-oracle": adr/1326-sycl-motion-uv-fixed-oracle.md
+        - "ADR-1333: meson-test-secret-env-sanitization": adr/1333-meson-test-secret-env-sanitization.md
         - "ADR-1334: metal-ms-ssim-option-parity": adr/1334-metal-ms-ssim-option-parity.md
         - "ADR-1335: research-digest-identity-ratchet": adr/1335-research-digest-identity-ratchet.md
         - "ADR-1337: cpp-placement-new-visibility": adr/1337-cpp-placement-new-visibility.md

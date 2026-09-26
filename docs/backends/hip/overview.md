@@ -142,7 +142,7 @@ streams the image's `/opt/rocm` out of the registry without a 29 GB
 meson setup build -Denable_cuda=false -Denable_sycl=false \
                   -Denable_hip=true -Denable_hipcc=true
 ninja -C build
-meson test -C build
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build
 ```
 
 `enable_hipcc=false` (the default) compiles the HIP C host runtime but
@@ -570,8 +570,12 @@ cmp run1.json run2.json
 
 Identical files do not prove the scores are right: with several extractors in
 one process the old defect was deterministic. Compare against
-`--backend cpu --feature float_psnr` as well, or run
-`meson test -C build test_hip_upload_race`.
+`--backend cpu --feature float_psnr` as well, or run:
+
+```bash
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build test_hip_upload_race
+```
 
 ### Dispatch strategy predicates and environment overrides
 

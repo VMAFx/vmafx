@@ -25,7 +25,7 @@
 
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (the commit-msg hook enforces this).
 - [ ] `make format && make lint` is green locally.
-- [ ] Unit tests pass: `meson test -C build`.
+- [ ] Unit tests pass: `python3 scripts/ci/run_meson_test.py -- -C build`.
 - [ ] If I touched **any** SIMD/GPU code path, I ran `/cross-backend-diff` and the worst ULP is ≤ 2.
 - [ ] If I touched a feature extractor with SIMD/GPU twins, I either updated every twin or listed the gap under "Known follow-ups" below.
 - [ ] If I added a new `.c` / `.cpp` / `.cu` / `.h` / `.hpp`, it has the appropriate license header (see `CONTRIBUTING.md`).
@@ -85,7 +85,7 @@
 
 <!-- One concrete command exercising the changed path against a known input. Examples:
      `vmaf -r python/test/resource/yuv/src01_hrc00_576x324.yuv -d ... --feature=lpips`
-     `meson test -C build --suite=fast`
+     `python3 scripts/ci/run_meson_test.py -- -C build --suite=fast`
      `mkdocs build --strict`. -->
 
 ```bash

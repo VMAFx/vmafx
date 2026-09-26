@@ -24,7 +24,7 @@ description: Cherry-pick single upstream Netflix/vmaf commit onto fork's master,
    `feature/vulkan/shaders/*.comp`), report all sibling files to author
    so they propagate same change. Do NOT attempt automatic propagation —
    SIMD/GPU adaptations not string-substitutions.
-5. Run `/build-vmaf --backend=cpu` + `meson test -C build --suite=fast`.
+5. Run `/build-vmaf --backend=cpu` + `python3 scripts/ci/run_meson_test.py -- -C build --suite=fast`.
 6. Run `/cross-backend-diff` for affected feature (covers cpu / cuda / sycl /
    vulkan; mirrors T6-8 GPU-parity gate,
    [ADR-0214](../../../docs/adr/0214-gpu-parity-ci-gate.md)).

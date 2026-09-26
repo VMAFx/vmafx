@@ -46,7 +46,8 @@ perceptual quality. PLCC / SROCC / RMSE are not applicable.
 
 ```bash
 # Verify via the C unit test suite:
-meson test -C build --suite=dnn test_vmaf_use_tiny_model
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build --suite=dnn test_vmaf_use_tiny_model
 
 # Or inspect the symbolic dimension via Python:
 python3 -c 'import onnxruntime as ort; sess = ort.InferenceSession("model/tiny/smoke_v0_symbolic_batch.onnx"); print("Input shape:", sess.get_inputs()[0].shape)'

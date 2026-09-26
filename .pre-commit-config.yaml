@@ -223,6 +223,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: meson-test-secret-env-contract
+        name: Meson parent and test environment sanitization contract
+        entry: python3 -m unittest core.test.test_meson_secret_env_sanitization
+        language: system
+        files: '^(\.pre-commit-config\.yaml|(?:.*/)?(?:GNUmakefile|[Mm]akefile)|(?:.*/)?tox\.ini|[^/]+\.(?:py|sh|ps1|cmd|bat)|core/(?:.*/)?meson\.build|core/test/test_meson_secret_env_sanitization\.py|(?:scripts|dev|tools)/.*\.(?:py|sh|ps1|cmd|bat)|\.github/(?:workflows|actions)/.*\.ya?ml|\.zed/tasks\.json|\.claude/skills/.*\.(?:sh|ps1|cmd|bat))$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: check-dispatch-registry
         name: Check backend feature extractor dispatch registry wiring
         entry: scripts/ci/check-dispatch-registry.sh

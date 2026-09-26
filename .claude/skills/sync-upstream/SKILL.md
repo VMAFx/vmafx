@@ -128,8 +128,9 @@ regardless of content). Skill must detect topology before merge attempt.
       `core/tools/vmaf.cpp`.
     - Manual conflicts: STOP, surface with `file:line` context. Do NOT resolve.
 
-3. **On clean merge (step 2b only):** `/build-vmaf --backend=cpu`,
-   `meson test -C build`, `/cross-backend-diff` on normal Netflix pair.
+3. **On clean merge (step 2b only):** `/build-vmaf --backend=cpu`, the
+   repository runner against `-C build`, then `/cross-backend-diff` on the
+   normal Netflix pair.
 
 4. **If `--open-pr` (step 2b only):** `gh pr create` with title
    `chore(upstream): sync to upstream/master @ <sha>`, body including

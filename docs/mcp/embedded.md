@@ -52,7 +52,8 @@ meson setup build -Denable_mcp=true \
                   -Denable_mcp_uds=true \
                   -Denable_mcp_stdio=true
 ninja -C build
-meson test -C build  # includes test_mcp_smoke
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build  # includes test_mcp_smoke
 ```
 
 | Flag | Default | Purpose |

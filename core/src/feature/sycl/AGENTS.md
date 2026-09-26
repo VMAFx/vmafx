@@ -471,7 +471,7 @@ Coverage matrix:
 **Rebase-sensitive**: adding new SYCL kernel TU, same PR
 must add matching `test_sycl_<kernel>_parity.c` and meson
 wiring. `/cross-backend-diff` skill = dev-time tool only,
-does NOT run in CI on every PR; only in-tree `meson test` parity
+does NOT run in CI on every PR; only in-tree repository-runner parity
 tests catch per-kernel regressions automatically.
 
 ## motion3_v2 cross-twin invariant (ADR-1108)

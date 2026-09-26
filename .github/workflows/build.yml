@@ -450,19 +450,27 @@ jobs:
       # ── DNN suite ────────────────────────────────────────────────────
       - name: Run meson dnn suite (Linux)
         if: matrix.dnn && startsWith(matrix.os, 'ubuntu')
-        run: sudo "$(command -v meson)" test -C core/build --suite=dnn --print-errorlogs
+        run: >-
+          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
+          --meson-executable "$(command -v meson)" --
+          -C core/build --suite=dnn --print-errorlogs
 
       # ── Netflix golden + unit tests (Linux) ──────────────────────────
       # Native Meson tests; Python golden assertions run in the dedicated
       # CPU/GCC jobs described at the top of this workflow.
       - name: Run tests (Linux)
         if: startsWith(matrix.os, 'ubuntu')
-        run: sudo ninja -vC core/build test
+        run: >-
+          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
+          --meson-executable "$(command -v meson)" -- -C core/build
+          --no-rebuild --print-errorlogs
 
       # ── Tests (macOS) ────────────────────────────────────────────────
       - name: Run tests (macOS)
         if: matrix.os == 'macos-latest'
-        run: ninja -vC core/build test
+        run: >-
+          python3 scripts/ci/run_meson_test.py -- -C core/build
+          --no-rebuild --print-errorlogs
 
       # ── Python tox (Linux + macOS) ───────────────────────────────────
       - name: Restore Netflix vmaf_resource fixtures

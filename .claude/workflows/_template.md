@@ -59,7 +59,7 @@ required_deliverables:
 verification:
   netflix_golden: true                 # CPU-only golden gate (CLAUDE §8)
   cross_backend_places: 4              # required if SIMD/GPU touched (ADR-0138/0139)
-  meson_test: true                     # `meson test -C build --suite=fast`
+  meson_test: true                     # repository-sanitized fast Meson suite
 
 # Forbidden actions ------------------------------------------------
 

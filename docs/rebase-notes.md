@@ -41,6 +41,35 @@ mode and never belongs in CI or hooks.
 - FFmpeg/public-surface impact: none; no public C header, CLI flag, Meson
   option, score, model, snapshot, FFmpeg patch, benchmark, tuning, or
   retraining surface changed.
+## agent/meson-secret-env-sanitize — sanitize secret environment variables in Meson tests (2026-09-25)
+
+Meson test execution inherits host environment variables by default and writes the raw parent
+mapping to `build/meson-logs/testlog.txt` before applying test setups. Preserve
+`scripts/ci/run_meson_test.py` and every inventoried Make, workflow, preflight, bisection,
+setup-guidance, and Zed caller so those entry points delete sensitive GitHub credential keys
+(`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`,
+`GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`, `GH_PAT`, `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`,
+`HOMEBREW_GITHUB_API_TOKEN`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`)
+before Meson starts. `core/meson.build` retains the same denylist in the sole default test
+setup for the child and JSON-log boundary. Meson can select an alternate setup and applies
+per-test environments after the setup; the regression contract therefore inventories all
+supported callers, rejects direct test-target bypasses across shell, multiline YAML (plain and
+quoted keys), and Python implicit list/tuple continuations, requires the default to remain the
+only `add_test_setup` under `core/`, and rejects explicit forbidden-name reintroduction. Its
+subprocess probes default to a load-tolerant 120-second deadline; the optional override accepts
+only finite values from 60 through 300 seconds and fails closed otherwise. Probes never copy
+arbitrary host variables and inspect only disposable synthetic logs. Raw external Meson/Ninja
+commands remain an explicit unsupported bypass.
+
+- Research digest: [Research-1333](research/1333-meson-test-secret-env-sanitization.md).
+- Decision matrix: [ADR-1333](adr/1333-meson-test-secret-env-sanitization.md#alternatives-considered).
+- AGENTS.md invariant: `core/AGENTS.md` and `docs/development/rebase-sensitive-invariants.md`,
+  "Meson test secret environment sanitization".
+- Reproducer / smoke:
+  `python3 -m unittest core.test.test_meson_secret_env_sanitization` and
+  `python3 scripts/ci/run_meson_test.py -- -C build test_meson_secret_env_sanitization`.
+- Changelog: `changelog.d/security/1333-meson-test-secret-env-sanitization.md`.
+- FFmpeg impact: none; no public C header, CLI flag, Meson option, or patch surface changed.
 
 ## agent/sycl-motion-uv-tolerance — fixed-point oracle for SYCL motion-add-UV (2026-09-25)
 
