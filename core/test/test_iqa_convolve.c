@@ -178,10 +178,19 @@ static int kernel_is_subunit(const float *kernel, size_t n)
     return 1;
 }
 
+static int float_bits_equal(float actual, float expected)
+{
+    uint32_t actual_bits;
+    uint32_t expected_bits;
+    memcpy(&actual_bits, &actual, sizeof(actual_bits));
+    memcpy(&expected_bits, &expected, sizeof(expected_bits));
+    return actual_bits == expected_bits;
+}
+
 static int kernels_equal(const float *actual, const float *expected, size_t n)
 {
     for (size_t i = 0; i < n; ++i) {
-        if (actual[i] != expected[i])
+        if (!float_bits_equal(actual[i], expected[i]))
             return 0;
     }
     return 1;
