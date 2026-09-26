@@ -77,5 +77,6 @@ or from the presence of a workflow file.
   A score difference alone does not establish a security defect. Describe the
   affected input, behavior and impact so it can be routed appropriately.
 
-The [OpenSSF passing worksheet](docs/development/best-practices-assessment.md)
-separates published policy, recorded evidence and unanswered badge criteria.
+VMAFx holds the [OpenSSF Best Practices passing badge](https://www.bestpractices.dev/projects/14549).
+The [badge record](docs/development/best-practices-assessment.md) lists the
+submitted answer and its evidence for each criterion.
