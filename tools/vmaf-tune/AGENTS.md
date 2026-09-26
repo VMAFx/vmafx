@@ -537,7 +537,7 @@ for option-space digest.
   `corpus.iter_rows` (Phase A encode+score) with
   `recommend.pick_target_vmaf` (smallest CRF clearing target VMAF)
   over canonical sweep
-  `DEFAULT_SAMPLER_CRF_SWEEP = (18, 23, 28, 33, 38)` at codec
+  `DEFAULT_SAMPLER_CRF_SWEEP = (20, 25, 30, 35, 40)` at codec
   adapter's mid-range preset (`"medium"` for libx264 / libx265 /
   libsvtav1). 5-point sweep is load-bearing default; do not widen
   it without ADR-0307 follow-up — Phase E callers downstream size

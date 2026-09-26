@@ -7405,12 +7405,6 @@ annotations required to leave the touched files lint-clean.
   the macOS performance story.
 
 
-- **build**: add `make docs-build` (`mkdocs build --strict`) and `make docs-serve`
-  targets as local equivalents of the CI `docs.yml` required-check gate; closes
-  the "CI-only gate with no local equivalent" finding from the 2026-05-16 test
-  coverage audit.
-
-
 - **MCP scoring surface completeness (#1240)** exposes device selectors
   (`cpumask`, `gpumask`, `sycl_device`, `hip_device`, `metal_device`) and
   serialization format options (`output_fmt`: `json`, `xml`, `csv`, `sub`)
@@ -8564,11 +8558,6 @@ Wire `scripts/ci/validate-pr-body.sh` as a pre-push hook (`scripts/git-hooks/pre
   vocab; the live-encode loop works unchanged. Hardware
   availability: M1 Pro / Max / Ultra and later (Intel + T2 Macs do
   **not** have the ProRes hardware block).
-
-
-Wire `enable_mse`, `reduced_hbd_peak`, and `min_sse` options into `psnr_cuda` and
-`psnr_vulkan`. Previously these three CPU knobs were silently ignored on both GPU
-backends; GPU PSNR now honours them identically to `integer_psnr.c`.
 
 
 Add `enable_chroma` option (default `false`) to `psnr_hvs_cuda` feature
@@ -10219,22 +10208,6 @@ References: Research-0135, ADR-0445, PR #865.
 
 
 ### Changed
-
-- **perf(adm):** Split `adm_p_norm == 3.0` inner-loop branch into dedicated
-  fast-path functions (`adm_cm_s_p3`, `adm_csf_den_scale_s_p3`,
-  `adm_sum_cube_s_p3`) dispatched once in `compute_adm`. Eliminates 8+
-  per-pixel `if`/`powf` branches on the default code path; enables
-  auto-vectorisation of the cube accumulation loops. Bit-exact to the
-  generic path when `adm_p_norm == 3.0` (cbrtf == powf(x,1/3) for finite
-  non-negative x; accumulation order preserved). (ADR-0463)
-- **perf(vif):** Remove per-call `aligned_malloc` from the scalar fallback
-  paths of `vif_filter1d_s`, `vif_filter1d_sq_s`, and `vif_filter1d_xy_s`.
-  These functions already receive a correctly-sized `tmpbuf` from their
-  caller (`vif.c`); the scalar fallback now reuses it instead of
-  allocating a fresh buffer on every call. On ARM64 and non-AVX2 x86 this
-  eliminates 12 `aligned_malloc`/`aligned_free` pairs per frame per VIF
-  scale. No output change. (ADR-0463)
-
 
 - chore(feature): wire-or-delete dead Vulkan/Metal extractor source files
   (~3500 LOC removed). Wires `float_ms_ssim_metal.mm` + `float_ms_ssim.metal`
@@ -14759,15 +14732,6 @@ See Research-0431 and ADR-0431 for decision matrix and alternatives considered.
     `--flush-every` is kept as a hidden legacy alias.
 
 
-- `ai/scripts/extract_k150k_features.py`: auto-select `/dev/shm` as the
-  YUV scratch directory when `/dev/shm` is writable and has at least 20 GiB
-  free (Win 3 — Research-0135).  Eliminates NVMe I/O for the ~1.5 GiB
-  per-clip raw YUV intermediate, saving an estimated 5–15 s per clip on
-  NVMe-bound hosts.  Falls back to the OS temp directory when `/dev/shm` is
-  absent, unwritable, or has insufficient free space.  Pass `--scratch-dir`
-  to override auto-selection.
-
-
 - **perf(cuda): CUDA ADM decouple-inline — `__ldg()` read-only cache routing on active path (ADR-0773)** — Apply F3 fix to the live CSF / CM kernel path that executes every ADM frame dispatch:
   - `adm_csf.cu`: extract `const T *__restrict__` band pointers before the inner loops in `i4_adm_csf_kernel<>` (int32) and `adm_csf_kernel<>` (int16); replace all 6 indexed reads with `__ldg()`.
   - `adm_cm.cu`: same extraction in all six inline device helpers: `inline_i4_csf_a`, `inline_i4_decouple_r`, `inline_s0_csf_a`, `inline_s0_decouple_r`, `inline_i4_csf_r`, `inline_s0_csf_r`.
@@ -14965,17 +14929,6 @@ Mirrors the CUDA F3 fix (PR #93 / PR #96). ADR-0759.
 - **perf(simd): Add AVX2 SIMD path for integer SSIM horizontal moment accumulation** (`integer_ssim_avx2`). The 8bpc path processes 8 output pixels per AVX2 iteration; the 16bpc path processes 4. Bit-exact with the scalar reference (int64 accumulation, no float). Projected 4–6x hot-path speedup on AVX2 hosts. Runtime-dispatched; scalar hosts are unaffected. (ADR-0784)
 
 
-**MCP server: cache ORT `InferenceSession` instances across calls**
-
-`eval_model_on_split` and `compare_models` previously created a new
-`ort.InferenceSession` on every call, costing 20–200 ms per invocation
-even when the model file had not changed.  A module-level LRU cache (max
-4 sessions, keyed on `(resolved_path, mtime)`) now reuses sessions for
-the lifetime of the server process.  Cache invalidation is automatic when
-the model file is replaced on disk.  Repeated calls with the same model
-now incur only the inference cost, not the session-init overhead.
-
-
 - **perf(dnn)**: Cache `OrtMemoryInfo` in `VmafOrtSession` at open time; release at
   close. Removes one ORT allocation round-trip per frame in `vmaf_ort_infer` and
   `vmaf_ort_run` (perf audit F2-A / F3-A, 2026-05-16).
@@ -15045,17 +14998,6 @@ See ADR-0500.
   `objdump` confirms 56 → 0 ZMM stack-spill stores. Expected ~3–5% improvement on
   integer VIF throughput for 8-bit 1080p content. Bit-exactness preserved and
   verified by `test_vif_simd` + Netflix golden gate (132 assertions).
-
-
-**vmaf-tune cache index batching**
-
-vmaf-tune's `TuneCache` now defers `__index__.json` writes via a dirty-flag mechanism instead of writing on every cache `get` (hit) and `put` (miss). Index writes are now batched and flushed only at the end of a sweep via an explicit `flush()` call in `iter_rows`, or during LRU eviction.
-
-**Motivation:** On a 1000-cell cold sweep with no cache hits, the old behavior rewrote the 4 kB index file 1000 times (once per `put`). The new behavior writes once at the end, eliminating ~500 ms of redundant I/O.
-
-**Behavior change:** The cache index is kept in memory and marked dirty on every access. To prevent data loss on ungraceful exit, `iter_rows` now calls `cache.flush()` after all rows have been yielded. External code that directly instantiates `TuneCache` and performs puts should call `flush()` before exiting.
-
-**Related:** ADR-0298 (cache architecture), perf-audit-pipeline-2026-05-16 (win #4).
 
 
 Add disk-persistent `VkPipelineCache` to the Vulkan backend. The cache is
@@ -15359,6 +15301,15 @@ promoted to module scope as a side effect.
   longer blocked on a browser-only step. The App remains preferred and is still used when
   its secrets exist; the resolved token is masked either way. See
   [docs/development/release.md](docs/development/release.md) § Release-bot identity.
+
+
+- **Release notes**: removed entries for GPU feature options, performance
+  changes and tooling that stale-branch merges had dropped and that this
+  release does not contain. Scores are unaffected: a model that sets one of
+  those options runs the feature on the CPU, and an explicit GPU request with
+  the option fails with "unknown option". The missing work is tracked in
+  `docs/state.md` under RC2 (GPU option parity, performance) and RC3 (training
+  scripts).
 
 
 - `release-please.yml` no longer fails every push to `master` while the release-bot
@@ -17959,11 +17910,6 @@ serializing non-finite training diagnostics as `null` instead of `NaN` or
 Made `vmaf-roi-score` and `external-bench --out-json` reports strict JSON by
 rejecting non-finite ROI scores before output and serializing missing
 external-bench aggregate means as `null`.
-
-
-Routed tiny-model registry updates through a shared strict JSON helper so
-non-finite diagnostic values serialize as `null` instead of non-standard JSON
-tokens.
 
 
 AI report-style stdout JSON now uses the shared strict manifest serializer so
@@ -21138,13 +21084,6 @@ Fixes: Issue lusoris/vmaf#857 in lusoris/vmaf#866
   a single copy.
 
 
-- **CUDA / SYCL / Vulkan CAMBI**: restore `src_width` (alias `srcw`) and
-  `src_height` (alias `srch`) option-table entries and conditional-assign
-  init pattern that were lost when PR #1067 landed on top of PR #1068.
-  Passing `--feature cambi=src_width=N` to any GPU extractor now works
-  correctly instead of being silently dropped.
-
-
 ### Fixed: `cambi` absent from cross-backend parity gate
 
 `scripts/ci/cross_backend_parity_gate.py` listed 17 features in `FEATURE_METRICS` but
@@ -23831,15 +23770,6 @@ in T7-23; the per-extractor body text had not been updated to match the
 overview table).
 
 
-fix(hip): wire `motion_max_val` clip into `float_motion_hip` collect and flush paths
-
-`float_motion_hip` applied `motion_fps_weight` but never clipped the result
-against `motion_max_val`, causing the option to be silently ignored on the HIP
-backend. Clips `motion2` and the flush tail score to `motion_max_val` after
-applying `fps_weight`, matching the CPU `float_motion.c` behaviour at lines 514
-and 342. Identity at the default value of 10000.0.
-
-
 ### float_motion_vulkan: fix extract_force_zero debug flag and flush idempotency
 
 Two correctness gaps vs `float_motion_cuda.c` (and the Metal parity fix in
@@ -23861,14 +23791,6 @@ collector's "cannot be overwritten" warning and surface as a context
 synchronisation error on multi-frame sequences where flush ran after a
 delayed collect. Added `vmaf_feature_collector_get_score` probe before the
 append, matching `float_motion_cuda.c` lines 352-362.
-
-
-- `float_ssim_cuda`: wire `enable_db` and `clip_db` options (previously silently
-  dropped). Passing `--feature float_ssim_cuda:enable_db=true` now converts the
-  SSIM score to dB domain (-10·log₁₀(1−SSIM)), matching the CPU `float_ssim`
-  extractor. `clip_db=true` caps the dB value to the finite ceiling computed from
-  bit-depth and frame dimensions (same formula as `float_ssim.c:init`).
-  Source: non-CUDA GPU bug audit 2026-05-16, copy-paste parity audit 2026-05-16.
 
 
 **float_ssim Metal: restore `scale` option clobbered by PR #1067.**
@@ -24836,12 +24758,6 @@ See ADR-0792.
   `hipMemcpyHostToDevice`). Surfaced during the round-6 ROCm/HIP bench
   audit on `gfx1036` (post-PR-#710). Fix: two
   `hipMemcpyDeviceToDevice` → `hipMemcpyHostToDevice` corrections.
-
-
-Wire `enable_db` and `clip_db` options into `float_ssim_hip`. Previously
-passing `--feature float_ssim_hip:enable_db=true` was silently dropped,
-producing linear-domain SSIM instead of the requested dB output.
-Matches the parity fix already shipped for `float_ssim_cuda` (PR #969).
 
 
 - HIP backend: removed the weak `float_vif_score_hsaco` HSACO stub
@@ -27577,12 +27493,6 @@ matching `kh_shift_epi32` zero-clear.
   `scripts/ci/test-validate-pr-body.sh` (13 total).
 
 
-PR #1067 (bootstrap name-builder refactor) clobbered four GPU feature options:
-restore `enable_chroma` in `float_psnr_metal` and `integer_psnr_metal`;
-restore `vif_skip_scale0` in `vif_vulkan`; restore ceiling-division chroma
-geometry in `psnr_vulkan` (odd-dimension YUV420 parity with CPU and CUDA).
-
-
 Fix four errno defects identified in PR #125 code review:
 
 - `vmaf_write_output_with_format`: capture `errno` immediately after
@@ -27787,13 +27697,6 @@ matching `n_planes` clamp in `init()` on all three GPU backends; the
 default path is bit-for-bit unchanged. (ADR-0453 / Research-0136)
 
 
-- `integer_psnr_hip`: add missing `min_sse` option; when set, the PSNR
-  ceiling (`psnr_max_y`) is now computed from the SSE floor rather than
-  hardcoded to `(6*bpc)+12`, matching `integer_psnr.c` init lines 128-138.
-  Previously any `--feature 'psnr=min_sse=X'` on the HIP backend was
-  silently dropped, yielding wrong PSNR ceilings at non-default values.
-
-
 - **`psnr_hvs` no longer scores differently with and without NEON on aarch64.**
   The ADR-1207 ISA-invariance gate reported host-isa `14.191670308986598`
   against scalar `14.191669969203765`, a delta of **3.398e-07**, on the
@@ -27809,15 +27712,6 @@ default path is bit-for-bit unchanged. (ADR-0453 / Research-0136)
   both ways, the instruction streams are identical at 889 instructions with zero
   FMA. Reproduced and verified under `qemu-aarch64-static` with a clang cross
   build.
-
-
-- **SYCL PSNR `min_sse` option parity** (`integer_psnr_sycl.cpp`): the SYCL
-  PSNR extractor was missing the `min_sse` feature option present in the CPU
-  reference (`integer_psnr.c`). Without it, callers could not constrain the
-  minimum possible SSE, and the per-plane `psnr_max` cap was always the fixed
-  `(6*bpc)+12` formula regardless of any `min_sse` argument. Added the option
-  and the matching `ceil(10*log10(peak^2 / mse_floor))` init formula, matching
-  the CPU reference exactly.
 
 
 - `docs/development/publishing.md` described a CI pipeline that does not

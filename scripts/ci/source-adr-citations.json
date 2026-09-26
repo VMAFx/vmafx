@@ -2531,7 +2531,7 @@
     },
     "0347": {
       "sites": {
-        ".github/workflows/sanitizers.yml": 2,
+        ".github/workflows/sanitizers.yml": 3,
         ".github/workflows/tests-and-quality-gates.yml": 4
       },
       "target": "0347-sanitizer-matrix-test-scope.md"
@@ -3602,11 +3602,6 @@
     },
     "0541": {
       "sites": {
-        "core/src/feature/cuda/integer_vif_cuda.c": 5,
-        "core/test/meson.build": 1,
-        "core/test/test_cuda_float_vif_parity.c": 2,
-        "core/test/test_feature_extractor.c": 1,
-        "core/test/test_integer_vif_cpu_cuda_parity.c": 3,
         "dev/Containerfile": 10,
         "dev/docker-compose.runner.yml": 1,
         "dev/docker-compose.yml": 6,
@@ -3846,6 +3841,16 @@
         "core/test/test_metal_float_vif_parity.c": 1
       },
       "target": "0589-metal-ssim-lcs-db-parity.md"
+    },
+    "0597": {
+      "sites": {
+        "core/src/feature/cuda/integer_vif_cuda.c": 5,
+        "core/test/meson.build": 1,
+        "core/test/test_cuda_float_vif_parity.c": 2,
+        "core/test/test_feature_extractor.c": 1,
+        "core/test/test_integer_vif_cpu_cuda_parity.c": 3
+      },
+      "target": "0597-integer-vif-luma-only-clarification.md"
     },
     "0598": {
       "sites": {

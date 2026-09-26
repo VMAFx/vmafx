@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-0753: Runtime Resolution-Aware CUDA Kernel Variant Dispatch
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1143](1143-cuda-intel-backend-gaps.md)
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
 - **Tags**: `cuda`, `perf`, `build`

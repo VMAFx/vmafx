@@ -95,14 +95,14 @@ static const VmafOption options[] = {{
                                          /* Vestigial no-op retained for backward compatibility
                                           * with callers that pass `integer_vif:enable_chroma=…`
                                           * on the CLI or in a model JSON.  VIF is luma-only
-                                          * across every backend (CPU, CUDA, HIP, SYCL, Vulkan,
-                                          * Metal) and across upstream Netflix/vmaf — see
-                                          * ADR-0541.  Setting `enable_chroma=true` emits a
+                                          * across every backend (CPU, CUDA, HIP, SYCL, Metal)
+                                          * and across upstream Netflix/vmaf — see
+                                          * ADR-0597.  Setting `enable_chroma=true` emits a
                                           * one-shot warning during init() and otherwise has
                                           * no effect on the produced scores. */
                                          .name = "enable_chroma",
                                          .help =
-                                             "no-op (luma-only kernel; ADR-0541). retained for "
+                                             "no-op (luma-only kernel; ADR-0597). retained for "
                                              "backward-compat with callers that set the option; "
                                              "emits a one-shot warning when true",
                                          .offset = offsetof(VifStateCuda, enable_chroma),
@@ -377,12 +377,12 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
      * it on the CLI / in model JSONs do not see an option-not-recognised
      * error — and warn-on-true here surfaces the no-op behaviour instead of
      * silently producing luma-only output that contradicts the request.
-     * See ADR-0541. */
+     * See ADR-0597. */
     if (s->enable_chroma) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "integer_vif (CUDA): enable_chroma=true requested but VIF is "
                  "luma-only by design (matches CPU integer_vif and upstream "
-                 "Netflix/vmaf); option is a no-op. See ADR-0541.\n");
+                 "Netflix/vmaf); option is a no-op. See ADR-0597.\n");
         s->enable_chroma = false;
     }
     (void)pix_fmt; /* YUV400P needs no special case — luma-only path handles it. */
@@ -656,7 +656,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     (void)dist_pic_90;
     (void)index;
     /* n_planes is always 1: VIF is luma-only by design across every backend
-     * (matches CPU integer_vif and upstream Netflix/vmaf — see ADR-0541).
+     * (matches CPU integer_vif and upstream Netflix/vmaf — see ADR-0597).
      * The loop is retained for shape-parity with the CPU/HIP/SYCL twins. */
     for (unsigned plane = 0; plane < s->n_planes; ++plane) {
         int w = ref_pic->w[plane];

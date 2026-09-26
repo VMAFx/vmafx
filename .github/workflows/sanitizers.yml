@@ -166,12 +166,12 @@ jobs:
           # Exclude test_integer_motion_v2_coverage: triggers a SIGABRT under
           # ASan due to an intentional huge-allocation pattern in the motion
           # coverage path that the ASan allocator cannot satisfy.
-          # Exclude test_pic_preallocation: triggers a SIGABRT under ASan in
-          # addition to its pre-existing Linux exclusion; the test relies on
-          # allocation semantics that ASan's allocator intercepts fatally.
+          # test_pic_preallocation is NOT excluded: it passes under this exact
+          # configuration (debug, no LTO, address). The earlier SIGABRT belonged
+          # to the release+LTO AVX-512 bug in docs/development/known-upstream-bugs.md.
           TESTS=$(meson introspect build --tests \
                   | python3 -c 'import json,re,sys; excluded=re.compile(sys.argv[1]); [print("libvmaf:"+t["name"]) for t in json.load(sys.stdin) if excluded.search(t["name"]) is None]' \
-                    'test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$')
+                    'test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$')
           echo "test count: $(echo "$TESTS" | wc -l)"
           if [ -z "$TESTS" ]; then
             echo "::error::Test enumeration produced empty list" >&2
@@ -275,8 +275,8 @@ jobs:
           # T-GPU-POOL-UAF-OOM-TSAN-ABORT.
           # Exclude test_integer_motion_v2_coverage: intentional huge-allocation
           # pattern triggers SIGABRT under the TSan allocator.
-          # Exclude test_pic_preallocation: SIGABRT under TSan for the same
-          # intentional-huge-alloc reason as the ASan exclusion.
+          # Exclude test_pic_preallocation under TSan only (.github/AGENTS.md,
+          # ADR-0347); the ASan job runs it.
           # NOTE: test_thread_safety_batch is the TSan-eligible counterpart that
           # covers the same threaded_extract_batch_func code paths (ADR-1072/ADR-1073)
           # without vmaf_preallocate_pictures; it is NOT excluded and runs here.

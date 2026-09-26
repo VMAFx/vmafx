@@ -6,7 +6,7 @@
  */
 
 /*
- * ADR-0541 — integer_vif CPU vs. CUDA parity test.
+ * ADR-0597 — integer_vif CPU vs. CUDA parity test.
  *
  * The 2026-05-18 deep audit (finding 23) flagged
  * `core/src/feature/cuda/integer_vif_cuda.c:180` (`s->n_planes = 1`) as a
@@ -285,7 +285,7 @@ static char *test_vif_cpu_cuda_parity_4_2_0(void)
 
     /* Vestigial enable_chroma=true contract: must produce *identical* scores
      * to the default invocation (the kernel is luma-only; the option is a
-     * documented no-op — ADR-0541). */
+     * documented no-op — ADR-0597). */
     VmafFeatureDictionary *chroma_opts = NULL;
     int err = vmaf_feature_dictionary_set(&chroma_opts, "enable_chroma", "true");
     mu_assert("vmaf_feature_dictionary_set(enable_chroma) failed", !err);
@@ -302,7 +302,7 @@ static char *test_vif_cpu_cuda_parity_4_2_0(void)
                           "default=%.17g chroma=%.17g delta=%.2e\n",
                           k, cuda_default[k], cuda_chroma[k], delta);
         }
-        mu_assert("enable_chroma=true must be a bit-identical no-op (ADR-0541)", delta == 0.0);
+        mu_assert("enable_chroma=true must be a bit-identical no-op (ADR-0597)", delta == 0.0);
     }
 
     return NULL;
