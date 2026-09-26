@@ -43,15 +43,19 @@ if not os.path.isfile(_real_init):
 if _compat_dir not in sys.path:
     sys.path.insert(0, _compat_dir)
 
-_spec = importlib.util.spec_from_file_location(
-    __name__, _real_init, submodule_search_locations=[_real_pkg_dir]
-)
-if _spec is None or _spec.loader is None:
-    raise ImportError(f"vmaf compatibility shim: cannot build a spec for {_real_init}")
+_existing = sys.modules.get(__name__)
+if _existing is not None and getattr(_existing, "__file__", None) == _real_init:
+    _module = _existing
+else:
+    _spec = importlib.util.spec_from_file_location(
+        __name__, _real_init, submodule_search_locations=[_real_pkg_dir]
+    )
+    if _spec is None or _spec.loader is None:
+        raise ImportError(f"vmaf compatibility shim: cannot build a spec for {_real_init}")
 
-_module = importlib.util.module_from_spec(_spec)
-# Publish before executing so circular imports inside the real package see the
-# module being initialised, and so the import machinery picks this object up
-# instead of the shim it was loading.
-sys.modules[__name__] = _module
-_spec.loader.exec_module(_module)
+    _module = importlib.util.module_from_spec(_spec)
+    # Publish before executing so circular imports inside the real package see the
+    # module being initialised, and so the import machinery picks this object up
+    # instead of the shim it was loading.
+    sys.modules[__name__] = _module
+    _spec.loader.exec_module(_module)

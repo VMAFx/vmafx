@@ -244,12 +244,15 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
             captured.append(cmd)
             return 0
 
-        with mock.patch("vmaf.run_process", side_effect=fake_run):
-            with mock.patch(
-                "vmaf.required",
-                side_effect=lambda p: p or "/fake/vmaf",
-            ):
-                ExternalProgramCaller.call_vmafexec(**kwargs)
+        fake_req = lambda p: p or "/fake/vmaf"
+        epc_globals = ExternalProgramCaller.call_vmafexec.__globals__
+        with mock.patch.dict(epc_globals, {"run_process": fake_run, "required": fake_req}):
+            with mock.patch("vmaf.run_process", side_effect=fake_run):
+                with mock.patch(
+                    "vmaf.required",
+                    side_effect=fake_req,
+                ):
+                    ExternalProgramCaller.call_vmafexec(**kwargs)
         return captured[0]
 
     def _base_kwargs(self):
@@ -371,28 +374,36 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
 
     def test_backend_multi_features_options(self):
         captured = []
-        with mock.patch("vmaf.run_process", side_effect=lambda cmd, **_: captured.append(cmd)):
-            with mock.patch("vmaf.required", side_effect=lambda p: p or "/fake/vmaf"):
-                ExternalProgramCaller.call_vmafexec_multi_features(
-                    ["psnr"],
-                    "yuv420p",
-                    "ref.yuv",
-                    "dis.yuv",
-                    320,
-                    240,
-                    "out.xml",
-                    options={"backend": "sycl"},
-                )
+        fake_run = lambda cmd, **_: captured.append(cmd)
+        fake_req = lambda p: p or "/fake/vmaf"
+        epc_globals = ExternalProgramCaller.call_vmafexec_multi_features.__globals__
+        with mock.patch.dict(epc_globals, {"run_process": fake_run, "required": fake_req}):
+            with mock.patch("vmaf.run_process", side_effect=fake_run):
+                with mock.patch("vmaf.required", side_effect=fake_req):
+                    ExternalProgramCaller.call_vmafexec_multi_features(
+                        ["psnr"],
+                        "yuv420p",
+                        "ref.yuv",
+                        "dis.yuv",
+                        320,
+                        240,
+                        "out.xml",
+                        options={"backend": "sycl"},
+                    )
         self.assertIn("--backend sycl", captured[0])
 
     def test_backend_multi_features_env_var(self):
         captured = []
+        fake_run = lambda cmd, **_: captured.append(cmd)
+        fake_req = lambda p: p or "/fake/vmaf"
+        epc_globals = ExternalProgramCaller.call_vmafexec_multi_features.__globals__
         with mock.patch.dict(os.environ, {"VMAF_FORCE_BACKEND": "sycl"}):
-            with mock.patch("vmaf.run_process", side_effect=lambda cmd, **_: captured.append(cmd)):
-                with mock.patch("vmaf.required", side_effect=lambda p: p or "/fake/vmaf"):
-                    ExternalProgramCaller.call_vmafexec_multi_features(
-                        ["psnr"], "yuv420p", "ref.yuv", "dis.yuv", 320, 240, "out.xml"
-                    )
+            with mock.patch.dict(epc_globals, {"run_process": fake_run, "required": fake_req}):
+                with mock.patch("vmaf.run_process", side_effect=fake_run):
+                    with mock.patch("vmaf.required", side_effect=fake_req):
+                        ExternalProgramCaller.call_vmafexec_multi_features(
+                            ["psnr"], "yuv420p", "ref.yuv", "dis.yuv", 320, 240, "out.xml"
+                        )
         self.assertIn("--backend sycl", captured[0])
 
 

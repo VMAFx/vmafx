@@ -19,11 +19,11 @@
 #ifndef __VMAF_SRC_FEX_CTX_VECTOR_H__
 #define __VMAF_SRC_FEX_CTX_VECTOR_H__
 
+#include "feature/feature_extractor.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "feature/feature_extractor.h"
 
 /**
  * @brief Dynamic array of registered feature-extractor contexts.

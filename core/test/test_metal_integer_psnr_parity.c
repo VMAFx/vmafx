@@ -256,20 +256,20 @@ static char *test_integer_psnr_metal_enable_chroma_false(void)
         return NULL;
     }
 
-    VmafDictionary *opts = NULL;
-    err = vmaf_dictionary_set(&opts, "enable_chroma", "false", 0);
-    mu_assert("vmaf_dictionary_set(enable_chroma=false) failed", !err);
+    VmafFeatureDictionary *opts = NULL;
+    err = vmaf_feature_dictionary_set(&opts, "enable_chroma", "false");
+    mu_assert("vmaf_feature_dictionary_set(enable_chroma=false) failed", !err);
 
     VmafContext *vmaf = NULL;
     char *open_err = open_metal_context(&vmaf, mstate);
     if (open_err) {
-        (void)vmaf_dictionary_free(&opts);
+        (void)vmaf_feature_dictionary_free(&opts);
         vmaf_metal_state_free(&mstate);
         return open_err;
     }
 
     err = vmaf_use_feature(vmaf, "integer_psnr_metal", opts);
-    (void)vmaf_dictionary_free(&opts);
+    opts = NULL;
     mu_assert("Metal: vmaf_use_feature(integer_psnr_metal, enable_chroma=false) failed", !err);
 
     char *feed_err = feed_fixture_pair(vmaf);
