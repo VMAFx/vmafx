@@ -9,6 +9,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1] / "src" / "feature"
 
 REQUIRED = {
+    "vmaf_adm_finalize_scores_named": (
+        "adm.c",
+        "cuda/float_adm_cuda.c",
+        "hip/float_adm_hip.c",
+        "sycl/float_adm_sycl.cpp",
+        "metal/float_adm_metal.mm",
+    ),
+    "vmaf_adm3_score_named": (
+        "float_adm.c",
+        "integer_adm.c",
+        "cuda/float_adm_cuda.c",
+        "cuda/integer_adm_cuda.c",
+        "hip/float_adm_hip.c",
+        "sycl/float_adm_sycl.cpp",
+        "metal/float_adm_metal.mm",
+        "metal/integer_adm_metal.mm",
+    ),
     "vmaf_vif_emit_scores": (
         "float_vif.c",
         "integer_vif.c",
@@ -57,6 +74,21 @@ REQUIRED = {
         "sycl/integer_ms_ssim_sycl.cpp",
         "metal/float_ms_ssim_metal.mm",
     ),
+    "vmaf_ss2_finalize_score": (
+        "ssimulacra2.c",
+        "cuda/ssimulacra2_cuda.c",
+        "hip/ssimulacra2_hip.c",
+        "sycl/ssimulacra2_sycl.cpp",
+        "metal/ssimulacra2_metal.mm",
+    ),
+    "vmaf_ss2_score_is_finite": (
+        "ssimulacra2.c",
+        "cuda/ssimulacra2_cuda.c",
+        "hip/ssimulacra2_hip.c",
+        "sycl/ssimulacra2_sycl.cpp",
+        "metal/ssimulacra2_metal.mm",
+    ),
+    "vmaf_transnet_v2_scores": ("transnet_v2.c",),
 }
 
 SSIM_REQUIRED = {

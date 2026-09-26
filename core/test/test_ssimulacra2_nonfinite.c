@@ -22,6 +22,10 @@ static char *test_nonfinite_pool_input_is_not_perfect(void)
     mu_assert("NaN pool input must not become SSIMULACRA 2's perfect 100", !isfinite(nan_score));
     mu_assert("+Inf pool input must remain non-finite", !isfinite(pos_inf_score));
     mu_assert("-Inf pool input must remain non-finite", !isfinite(neg_inf_score));
+    mu_assert("vmaf_ss2_score_is_finite rejects NaN", !vmaf_ss2_score_is_finite(NAN));
+    mu_assert("vmaf_ss2_score_is_finite rejects +Inf", !vmaf_ss2_score_is_finite(INFINITY));
+    mu_assert("vmaf_ss2_score_is_finite rejects -Inf", !vmaf_ss2_score_is_finite(-INFINITY));
+    mu_assert("vmaf_ss2_score_is_finite accepts finite score", vmaf_ss2_score_is_finite(95.0));
     return NULL;
 }
 
