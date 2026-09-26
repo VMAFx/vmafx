@@ -304,7 +304,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 632,
+  "total_warnings": 620,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -393,7 +393,6 @@
     "core/test/test_context.c": 14,
     "core/test/test_cpu.c": 2,
     "core/test/test_dict.cpp": 31,
-    "core/test/test_feature_collector.c": 12,
     "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_locale_handling.c": 21,
     "core/test/test_log.c": 4,
@@ -454,6 +453,26 @@
         }
       },
       "previous_baseline_sha256": "57778564931d10279bdb2b70f61edd55a18e801f3a3c3e5a3daa3467c363a884"
+    },
+    {
+      "sources": [
+        "core/src/fex_ctx_vector.cpp",
+        "core/test/test_adm_nonfinite_score.c",
+        "core/test/test_feature_collector.c",
+        "core/test/test_feature_extractor.c",
+        "core/test/test_fex_ctx_vector.cpp",
+        "core/test/test_output_open_eintr.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_feature_collector.c": {
+          "warnings": [
+            12,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "8ccb7ff2a7a33a3e7329dc56447f190351fdb37bdcac1df01300375c33875b48"
     }
   ]
 }

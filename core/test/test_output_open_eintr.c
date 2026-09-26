@@ -36,9 +36,9 @@ int __wrap_open64(const char *path, int flags, ...)
     mode_t mode = 0;
     if (((unsigned)flags & (unsigned)O_CREAT) != 0U) {
         va_list args;
-        va_start(args, flags);
+        __builtin_va_start(args, flags);
         mode = va_arg(args, mode_t);
-        va_end(args);
+        __builtin_va_end(args);
     }
 
     if (eintr_path && strcmp(path, eintr_path) == 0) {
