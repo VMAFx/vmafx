@@ -1136,4 +1136,5 @@ public authority; documentation never links into either local root.
 | [ADR-1322](1322-metal-integer-psnr-enable-chroma-parity.md) | Restore enable_chroma option parity on integer_psnr_metal | Accepted | metal, psnr, option-parity, chroma, fork-local, bug-048 |
 | [ADR-1326](1326-sycl-motion-uv-fixed-oracle.md) | Replaces fixture-calibrated float-vs-fixed SYCL motion-add-UV parity with a resolution-independent fixed-point oracle and derived host-roundoff bound. | Accepted | sycl, motion, correctness, testing, numerics |
 | [ADR-1336](1336-cuda-context-owned-resource-teardown.md) | Tear down feature-owned CUDA modules, streams, and events with their owning context current and make partial initialization rollback retryable. | Accepted | cuda, correctness, lifecycle, testing |
+| [ADR-1338](1338-go-fix-clean-tree-gate.md) | Require a clean Go fix modernization gate | Accepted | ci, go, modernization |
 | [ADR-1247](1247-scorecard-exact-head-gates.md) | Bind Scorecard gates to their measured source and scope | Accepted | ci, security, supply-chain |

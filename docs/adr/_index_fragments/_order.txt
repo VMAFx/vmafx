@@ -1044,3 +1044,4 @@
 1322-metal-integer-psnr-enable-chroma-parity
 1326-sycl-motion-uv-fixed-oracle
 1336-cuda-context-owned-resource-teardown
+1338-go-fix-clean-tree-gate
