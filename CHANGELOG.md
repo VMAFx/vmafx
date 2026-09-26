@@ -15290,7 +15290,10 @@ and config paths are also updated in `docs/architecture/workspace.md`.
   untriaged ledger row remains and exact-head gates pass; it does not mix
   performance or training into RC1. Ordinary Renovate and version PRs may merge
   under their existing required checks, with affected candidate evidence rerun
-  after any merge. See
+  after any merge. The remaining ledger is exhaustively assigned to those
+  phases or an evidence-bound deferral; fresh candidate builds also close the
+  stale CUDA motion and Arc ADM parity rows without relaxing their tolerances.
+  See
   [ADR-1341](docs/adr/1341-rc-correctness-benchmark-retrain-sequence.md).
 
 
