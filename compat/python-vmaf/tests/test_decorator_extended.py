@@ -547,7 +547,7 @@ class TestCacheKeyStabilityAndCollision:
         requested_modes = []
         real_open = os.open
 
-        def tracked_open(path, flags, mode=0o777):
+        def tracked_open(path, flags, mode=0o600):
             requested_modes.append(mode)
             return real_open(path, flags, mode)
 

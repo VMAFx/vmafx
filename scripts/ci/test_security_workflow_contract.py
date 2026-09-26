@@ -13,6 +13,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SECURITY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "security-scans.yml"
 EXPECTED_GROUP = "group: security-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}"
 COLLIDING_GROUP = "group: security-${{ github.workflow }}-${{ github.ref }}"
+EXPECTED_DEPENDENCY_LICENSE_ALLOWLIST = {
+    "pkg:pypi/python-debian",
+    "pkg:pypi/text-unidecode",
+}
 
 
 class SecurityWorkflowContractTest(unittest.TestCase):
@@ -91,9 +95,15 @@ class SecurityWorkflowContractTest(unittest.TestCase):
     def test_dependency_review_allows_only_reviewed_dual_use_tooling(self) -> None:
         workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
         job = self._job_block(workflow, "dependency-review")
+        values = re.findall(
+            r"^\s+allow-dependencies-licenses:\s*(?P<value>[^#\n]+?)\s*$",
+            job,
+            re.MULTILINE,
+        )
 
-        self.assertIn("pkg:pypi/text-unidecode", job)
-        self.assertIn("pkg:pypi/python-debian", job)
+        self.assertEqual(len(values), 1)
+        actual = {purl.strip() for purl in values[0].split(",") if purl.strip()}
+        self.assertEqual(actual, EXPECTED_DEPENDENCY_LICENSE_ALLOWLIST)
 
 
 if __name__ == "__main__":

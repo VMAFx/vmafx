@@ -436,10 +436,17 @@ _ENTRYPOINT_SOURCES_CACHE: dict[Path, dict[Path, str]] = {}
 def _read_entrypoint_sources() -> dict[Path, str]:
     if ROOT not in _ENTRYPOINT_SOURCES_CACHE:
         sources: dict[Path, str] = {}
+        seen_makefiles: set[tuple[int, int]] = set()
         for pattern in ENTRYPOINT_GLOBS:
             for absolute_path in ROOT.glob(pattern):
                 if absolute_path.is_file():
                     relative_path = absolute_path.relative_to(ROOT)
+                    if relative_path.name in MAKEFILE_NAMES:
+                        stat = absolute_path.stat()
+                        identity = (stat.st_dev, stat.st_ino)
+                        if identity in seen_makefiles:
+                            continue
+                        seen_makefiles.add(identity)
                     if relative_path.name not in MAKEFILE_NAMES and (
                         "tests" in relative_path.parts or relative_path.name.startswith("test_")
                     ):
@@ -980,10 +987,40 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
             makefile_dir.mkdir(parents=True)
             for name in ("Makefile", "GNUmakefile", "makefile"):
                 (makefile_dir / name).write_text("meson test -C build\n", encoding="utf-8")
+            expected_paths: set[Path] = set()
+            seen_identities: set[tuple[int, int]] = set()
+            for name in ("Makefile", "GNUmakefile", "makefile"):
+                path = makefile_dir / name
+                stat = path.stat()
+                identity = (stat.st_dev, stat.st_ino)
+                if identity not in seen_identities:
+                    seen_identities.add(identity)
+                    expected_paths.add(path.relative_to(tmppath))
             with mock.patch(f"{__name__}.ROOT", tmppath):
                 sources = _read_entrypoint_sources()
-        for name in ("Makefile", "GNUmakefile", "makefile"):
-            self.assertIn(Path("package/tests") / name, sources)
+        observed_paths = {
+            path
+            for path in sources
+            if path.parent == Path("package/tests") and path.name in MAKEFILE_NAMES
+        }
+        self.assertEqual(observed_paths, expected_paths)
+
+    def test_entrypoint_inventory_deduplicates_case_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            makefile_dir = tmppath / "package"
+            makefile_dir.mkdir()
+            canonical = makefile_dir / "Makefile"
+            alias = makefile_dir / "makefile"
+            canonical.write_text("meson test -C build\n", encoding="utf-8")
+            try:
+                os.link(canonical, alias)
+            except OSError as exc:
+                self.skipTest(f"filesystem cannot create a Makefile hard-link alias: {exc}")
+            with mock.patch(f"{__name__}.ROOT", tmppath):
+                sources = _read_entrypoint_sources()
+        self.assertIn(Path("package/Makefile"), sources)
+        self.assertNotIn(Path("package/makefile"), sources)
 
     def test_entrypoint_inventory_includes_windows_scripts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

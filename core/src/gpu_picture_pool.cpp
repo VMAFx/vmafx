@@ -118,7 +118,7 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
 
     constexpr size_t slot_bytes = sizeof(VmafPicture) + sizeof(bool);
     constexpr size_t max_slot_count = SIZE_MAX / slot_bytes;
-    if constexpr (std::numeric_limits<unsigned>::max() > max_slot_count) {
+    if constexpr ((std::numeric_limits<unsigned>::max)() > max_slot_count) {
         if (p->cfg.pic_cnt > max_slot_count) {
             gpu_pool_destruct(p, pool);
             return -EOVERFLOW;
