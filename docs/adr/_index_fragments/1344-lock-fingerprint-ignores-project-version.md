@@ -1,0 +1,1 @@
+| [ADR-1344](1344-lock-fingerprint-ignores-project-version.md) | Leave the `[project].version` line out of the Python lock input fingerprint, so release-please version bumps no longer make hash locks stale. | Accepted | ci, release, dependencies, supply-chain |

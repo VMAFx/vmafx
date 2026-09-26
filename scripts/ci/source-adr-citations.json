@@ -7584,6 +7584,13 @@
         "scripts/ci/tests/test_dev_container_stage_inputs.py": 1
       },
       "target": "1343-dev-container-stage-input-contract.md"
+    },
+    "1344": {
+      "sites": {
+        "scripts/ci/check_python_dependency_locks.py": 1,
+        "scripts/ci/tests/test_python_dependency_locks.py": 1
+      },
+      "target": "1344-lock-fingerprint-ignores-project-version.md"
     }
   },
   "retired": {

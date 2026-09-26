@@ -78,6 +78,14 @@ CI Workflows & Dockerfiles                Local Workstation (make lint-tools, cy
    `uv` release. It compiles each lock target in a temporary directory, writes
    the SHA-256 fingerprint header, and verifies all locks.
 
+   The fingerprint (`# vmafx-input-sha256:`) covers the compile arguments and
+   every input file byte for byte, with one exception: in a `pyproject.toml`
+   input, the `version = ...` line of the `[project]` table is left out
+   ([ADR-1344](../adr/1344-lock-fingerprint-ignores-project-version.md)).
+   release-please rewrites that line on every release PR, and the project's
+   own version never changes what the resolver picks. A `version` key in any
+   other table, and every dependency change, still makes the lock stale.
+
 3. **Verify locally**:
 
    ```bash

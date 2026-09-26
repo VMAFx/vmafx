@@ -411,6 +411,32 @@ def load_manifest(root: Path) -> dict[str, Any]:
     return data
 
 
+_TABLE_HEADER = re.compile(r"^\[\[?\s*([^\[\]]+?)\s*\]\]?\s*(?:#.*)?$")
+_VERSION_KEY = re.compile(r"^version\s*=")
+
+
+def fingerprint_content(relative: str, content: bytes) -> bytes:
+    """Return a lock input's bytes as the fingerprint sees them (ADR-1344).
+
+    release-please rewrites ``[project].version`` in every released
+    ``pyproject.toml``. The project's own version never affects dependency
+    resolution, so that single line is left out; every other byte counts.
+    """
+    if not relative.endswith("pyproject.toml"):
+        return content
+    kept: list[str] = []
+    table = ""
+    for line in content.decode("utf-8").splitlines(keepends=True):
+        stripped = line.strip()
+        header = _TABLE_HEADER.match(stripped)
+        if header:
+            table = header.group(1)
+        elif table == "project" and _VERSION_KEY.match(stripped):
+            continue
+        kept.append(line)
+    return "".join(kept).encode("utf-8")
+
+
 def entry_digest(root: Path, entry: dict[str, Any]) -> str:
     problems = validate_manifest_entry(entry)
     if problems:
@@ -423,7 +449,7 @@ def entry_digest(root: Path, entry: dict[str, Any]) -> str:
     for relative in inputs:
         path = root / relative
         try:
-            content = path.read_bytes()
+            content = fingerprint_content(relative, path.read_bytes())
         except OSError as error:
             raise ContractError(f"{relative}: {error}") from error
         digest.update(relative.encode())
