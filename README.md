@@ -11,16 +11,16 @@
 
   *A fork of [Netflix/vmaf](https://github.com/Netflix/vmaf) that keeps the reference scores byte-for-byte*
 
-  [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
-  [![Builds](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
-  [![Lint](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
-  [![Security](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
-  [![FFmpeg](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
-  [![Go](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
-  [![Rust](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
+  [![Tests](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/tests-and-quality-gates.yml?branch=master&event=push&style=for-the-badge&label=Tests&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
+  [![Builds](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/libvmaf-build-matrix.yml?branch=master&event=push&style=for-the-badge&label=Builds&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
+  [![Lint](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/lint-and-format.yml?branch=master&event=push&style=for-the-badge&label=Lint&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
+  [![Security](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/security-scans.yml?branch=master&event=push&style=for-the-badge&label=Security&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
+  [![FFmpeg](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/ffmpeg-integration.yml?branch=master&event=push&style=for-the-badge&label=FFmpeg&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
+  [![Go](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/go-ci.yml?branch=master&event=push&style=for-the-badge&label=Go&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
+  [![Rust](https://img.shields.io/github/actions/workflow/status/VMAFx/vmafx/rust-ci.yml?branch=master&event=push&style=for-the-badge&label=Rust&logo=githubactions&logoColor=white)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
 
   [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/VMAFx/vmafx/badge?style=for-the-badge)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
-  [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14549/badge)](https://www.bestpractices.dev/projects/14549)
+  [![OpenSSF Best Practices](https://img.shields.io/cii/level/14549?style=for-the-badge&label=OpenSSF%20Best%20Practices)](https://www.bestpractices.dev/projects/14549)
   [![HISS-21](https://img.shields.io/badge/Standards-HISS--21-06B6D4?style=for-the-badge&logo=nasa)](AGENTS.md)
   [![Power of 10](https://img.shields.io/badge/NASA_JPL-Power_of_10-0B3D91?style=for-the-badge&logo=nasa)](docs/principles.md)
   [![Conventional Commits](https://img.shields.io/badge/Commits-Conventional-FE5196?style=for-the-badge&logo=conventionalcommits&logoColor=white)](CONTRIBUTING.md)
@@ -37,7 +37,7 @@
   [![Metal](https://img.shields.io/badge/Metal-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](docs/backends/metal/index.md)
   [![SIMD](https://img.shields.io/badge/SIMD-AVX2_·_AVX--512_·_NEON_·_SVE2-8B5CF6?style=for-the-badge)](docs/backends/index.md)
 
-  [![Tag](https://img.shields.io/github/v/tag/VMAFx/vmafx?style=for-the-badge&label=version&color=3b82f6)](https://github.com/VMAFx/vmafx/tags)
+  [![Release](https://img.shields.io/github/v/release/VMAFx/vmafx?include_prereleases&sort=semver&style=for-the-badge&label=release&color=3b82f6)](https://github.com/VMAFx/vmafx/releases)
   [![FFmpeg](https://img.shields.io/badge/FFmpeg-n9.0.2-007808?style=for-the-badge&logo=ffmpeg&logoColor=white)](docs/usage/ffmpeg.md)
   [![License](https://img.shields.io/badge/License-EUPL--1.2_·_BSD--2--Clause--Patent-blue.svg?style=for-the-badge)](docs/adr/1250-eupl-fork-relicense.md)
   [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/lusoris)

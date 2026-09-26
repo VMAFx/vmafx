@@ -15265,6 +15265,13 @@ and config paths are also updated in `docs/architecture/workspace.md`.
   [ADR-1341](docs/adr/1341-rc-correctness-benchmark-retrain-sequence.md).
 
 
+- The README badges now share one style: the seven CI badges and the OpenSSF
+  Best Practices badge use the same large shields.io style as the rest. The
+  version badge reads GitHub Releases, including release candidates, instead
+  of the repository's highest tag, which was an `archive/*` tag and never a
+  VMAFx release.
+
+
 - **README overhaul for clarity, accuracy, and first-time readers.** Restructures `README.md` to clearly explain what VMAFx is, why it differs from upstream Netflix/vmaf, how to build and score video, and links to deeper documentation. Corrects the broken logo path (`compat/python-vmaf/resource/images/vmaf_logo.jpg`), removes rotted static language/compiler badges and internal ADR citations, documents all 17 registered Metal kernels on Apple Silicon, highlights the five fork-added quality metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+), and adds links to the public roadmap and GitHub milestones.
 
 
