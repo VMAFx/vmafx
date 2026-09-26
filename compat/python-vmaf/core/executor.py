@@ -151,13 +151,22 @@ def _wait_for_fifo_workers(workers, logger, warning_message):
     started = monotonic()
     warned = False
     for _ in range(_FIFO_OPEN_MAX_POLLS):
-        pending = [worker for worker in pending if not worker[2].acquire(block=False)]
-        if not pending:
-            return
-        for worker in pending:
-            failure = _fifo_worker_failure(worker)
+        # Observe child exit before trying the readiness permit. A child releases
+        # its permit before it closes the error channel, so a worker that signals
+        # and returns at once (AssetExtractor opens no file) is seen as ready here;
+        # trying the permit first left a window in which that worker looked like
+        # a child that exited without signaling.
+        failures = [_fifo_worker_failure(worker) for worker in pending]
+        still_pending = []
+        for worker, failure in zip(pending, failures):
+            if worker[2].acquire(block=False):
+                continue
             if failure is not None:
                 raise failure
+            still_pending.append(worker)
+        pending = still_pending
+        if not pending:
+            return
         elapsed = monotonic() - started
         if elapsed >= _FIFO_OPEN_TIMEOUT_SECONDS:
             break

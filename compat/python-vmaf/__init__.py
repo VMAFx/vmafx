@@ -142,6 +142,9 @@ class ExternalProgram(object):
     try:
         from . import externals
     except ImportError:
+        # The externals module is an optional local override; VmafExternalConfig
+        # below resolves paths without it (environment overrides, then the
+        # in-tree build).
         pass
 
     external_vmaf_feature = config.VmafExternalConfig.vmaf_path()

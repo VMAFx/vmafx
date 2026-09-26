@@ -451,6 +451,54 @@ class ExecutorTest(unittest.TestCase):
         self.assertIn("bad channel descriptor", str(error))
         self.assertNotIn("(EOF)", str(error))
 
+    @staticmethod
+    def _exited_fifo_worker(signals_before_exit):
+        """A worker whose child has exited 0 and closed its error channel.
+
+        The parent learns of the exit only through the channel poll. When
+        `signals_before_exit` is set, the child released its readiness permit
+        just before closing the channel, i.e. after any permit check the parent
+        made before that poll: the interleaving AssetExtractor hit on macOS.
+        """
+
+        class ExitedProcess:
+            exitcode = None
+
+            def join(self, timeout=None):
+                self.exitcode = 0
+
+        class Permit:
+            available = False
+
+            def acquire(self, block=True, timeout=None):
+                taken, self.available = self.available, False
+                return taken
+
+        permit = Permit()
+
+        def child_closed_channel():
+            if signals_before_exit:
+                permit.available = True
+            return True
+
+        receiver = MagicMock()
+        receiver.poll.side_effect = child_closed_channel
+        receiver.recv.side_effect = EOFError()
+        return ("reference workfile", ExitedProcess(), permit, receiver)
+
+    def test_wait_for_fifo_workers_accepts_child_that_signaled_then_exited(self):
+        worker = self._exited_fifo_worker(signals_before_exit=True)
+        executor_module._wait_for_fifo_workers([worker], None, "unused warning")
+
+    def test_wait_for_fifo_workers_rejects_child_that_exited_without_signaling(self):
+        worker = self._exited_fifo_worker(signals_before_exit=False)
+        with self.assertRaises(RuntimeError) as cm:
+            executor_module._wait_for_fifo_workers([worker], None, "unused warning")
+        self.assertIn(
+            "reference workfile child exited before signaling readiness", str(cm.exception)
+        )
+        self.assertIn("exit code 0", str(cm.exception))
+
     def _check_default_and_reference_types(self):
         asset = Asset(
             dataset="test",
