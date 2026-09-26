@@ -29,13 +29,14 @@ Output is a single JSON document at ``--out`` (default
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Sequence
 
 import numpy as np
+
+from aiutils.run_manifest import write_manifest_json
 
 
 @dataclass
@@ -52,8 +53,7 @@ class EvalReport:
 
     def write(self, path: Path) -> Path:
         path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(asdict(self), indent=2))
+        write_manifest_json(path, asdict(self))
         return path
 
 

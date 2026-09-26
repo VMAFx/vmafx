@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Hold the CUDA coordinated pin together: one release, one group, one gate.
+"""Hold the CUDA coordinated pin together: one release, one owner, one gate.
 
 Two things are asserted here, and they are different things.
 
@@ -13,10 +13,10 @@ unnoticed.
 
 The *coverage* assertions run against the real tree and ``renovate.json``:
 every site the gate finds must be owned by something -- a Renovate custom
-manager that will rewrite it, or the gate's own ``--write``. A CUDA version
-site added outside both is a failure here, which is the whole point: #1487 was
-a Renovate pull request that moved two of sixteen sites because nothing
-connected the other fourteen to it.
+manager, the gate's own ``--write``, or the fail-closed exact-metadata latch.
+A CUDA version site added outside those owners is a failure here, which is the
+whole point: #1487 was a Renovate pull request that moved two of sixteen sites
+because nothing connected the other fourteen to it.
 """
 
 from __future__ import annotations
@@ -30,15 +30,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
 GATE = "scripts/ci/check-cuda-pin-lockstep.py"
-# The apt spelling also appears in the comment above the RUN, and a comment is
-# prose, not a pin. Anchor fixtures on the install line itself.
-APT_INSTALL = "--no-install-recommends \\\n    cuda-toolkit-13-4"
 
 SPEC = importlib.util.spec_from_file_location("cuda_pin_lockstep", ROOT / GATE)
 assert SPEC is not None and SPEC.loader is not None
@@ -53,14 +51,19 @@ GATE_OWNED_KINDS = {
     "apt": "cuda-toolkit-NN-N wants dashes and no patch component",
     "label": "prose inside an OCI description label, not a dependency reference",
 }
+MANUAL_METADATA_KINDS = {
+    "apt-lock-release": "binds exact package metadata to the reviewed CUDA release",
+    "apt-toolkit-version": "exact NVIDIA toolkit Debian package version",
+    "apt-nvcc-version": "exact NVIDIA nvcc component Debian package version",
+    "apt-cudart-version": "exact NVIDIA cudart component Debian package version",
+}
 # Spellings a Renovate custom manager rewrites in place.
 #
 # "action", "installer", "series" and "envvar" are absent because no site in
-# the tree spells the release those ways any more (ADR-1300). No action
-# installs CUDA, and neither CI leg repeats the version: both call
-# scripts/ci/install-cuda-toolkit.{sh,ps1}, which read build-config.env at run
-# time and derive the series and the CUDA_PATH_V<major>_<minor> name from it.
-RENOVATE_OWNED_KINDS = {"config", "image"}
+# the tree spells the release those ways any more (ADR-1300). "image" is absent
+# because nvidia/cuda base images were dropped in ADR-1306 in favor of digest-pinned
+# Ubuntu 26.04 with explicit apt install via scripts/ci/install-cuda-toolkit.sh.
+RENOVATE_OWNED_KINDS = {"config"}
 
 
 def read_config() -> dict[str, Any]:
@@ -92,14 +95,14 @@ def managers(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     cuda = [
         manager
         for manager in config["customManagers"]
-        if manager.get("depNameTemplate") == "nvidia/cuda"
+        if manager.get("datasourceTemplate") == "custom.nvidia-cuda-redist"
     ]
     base = [
         manager
         for manager in config["customManagers"]
         if manager["datasourceTemplate"] == "docker" and "depNameTemplate" not in manager
     ]
-    assert len(cuda) == 1, "expected exactly one nvidia/cuda custom manager"
+    assert len(cuda) == 1, "expected exactly one custom.nvidia-cuda-redist CUDA manager"
     assert len(base) == 1, "expected exactly one base-image custom manager"
     return cuda[0], base[0]
 
@@ -111,6 +114,21 @@ def covers(manager: dict[str, Any], path: str, line: str) -> bool:
     # Renovate matches against whole file content; the matchStrings that anchor
     # on a line start are given one here, so a line-oriented check is faithful.
     return any(re.search(to_python(match), "\n" + line) for match in manager["matchStrings"])
+
+
+class HrefCollector(HTMLParser):
+    """Model Renovate custom datasource's documented HTML-to-release conversion."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        href = dict(attrs).get("href")
+        if href is not None:
+            self.hrefs.append(href)
 
 
 class CudaPinCoverage(unittest.TestCase):
@@ -125,12 +143,15 @@ class CudaPinCoverage(unittest.TestCase):
         cls.sites = MODULE.find_sites(ROOT)
 
     def test_the_tree_has_sites_to_protect(self) -> None:
-        self.assertGreaterEqual(len(self.sites), 10, "the site scanner found almost nothing")
+        self.assertEqual(len(self.sites), 7, "expected exactly 7 CUDA pin sites")
         kinds = {site.kind for site in self.sites}
-        self.assertEqual(kinds, RENOVATE_OWNED_KINDS | set(GATE_OWNED_KINDS))
+        self.assertEqual(
+            kinds,
+            RENOVATE_OWNED_KINDS | set(GATE_OWNED_KINDS) | set(MANUAL_METADATA_KINDS),
+        )
 
     def test_every_site_is_owned_by_renovate_or_by_the_gate(self) -> None:
-        cuda, base = managers(self.config)
+        cuda, _ = managers(self.config)
         for site in self.sites:
             with self.subTest(site=f"{site.where} {site.kind}"):
                 if site.kind in GATE_OWNED_KINDS:
@@ -140,8 +161,16 @@ class CudaPinCoverage(unittest.TestCase):
                         "a gate-owned spelling must be one --write can derive",
                     )
                     continue
+                if site.kind in MANUAL_METADATA_KINDS:
+                    self.assertIn(site.kind, MODULE.EXACT_METADATA_KINDS)
+                    self.assertNotIn(
+                        site.kind,
+                        MODULE.DERIVED_KINDS,
+                        "live NVIDIA package metadata must never be guessed by --write",
+                    )
+                    continue
                 self.assertIn(site.kind, RENOVATE_OWNED_KINDS)
-                owner = base if site.kind == "image" else cuda
+                owner = cuda
                 self.assertTrue(
                     covers(owner, site.path, site.text),
                     f"no Renovate manager rewrites {site.where}: it would be left "
@@ -151,38 +180,186 @@ class CudaPinCoverage(unittest.TestCase):
     def test_a_new_site_outside_the_manager_is_not_silently_owned(self) -> None:
         """The coverage check must actually reject something."""
         cuda, _ = managers(self.config)
+        # The manager only selects build-config.env; nothing else matches.
         self.assertFalse(covers(cuda, "tools/newlane/setup.sh", "  cuda: '13.4.1'"))
         self.assertFalse(covers(cuda, "build-config.env", 'CUDA_SERIES="13.4"'))
+        # The OCI docker-tag form is no longer a recognised matchString.
+        self.assertFalse(
+            covers(
+                cuda,
+                "build-config.env",
+                'CUDA_BUILDER="nvidia/cuda:13.4.2-devel-ubuntu26.04"',
+            )
+        )
 
-    def test_the_group_rule_names_every_renovate_owned_site(self) -> None:
+    def test_cuda_manager_uses_redist_datasource_not_docker(self) -> None:
+        """CUDA_VERSION must be resolved against the NVIDIA redist HTML index (ADR-1306).
+
+        The old manager resolved nvidia/cuda Docker tags and was gated on OCI image
+        publication; the new one resolves custom.nvidia-cuda-redist, which is backed
+        by the NVIDIA apt/redist HTML index that lists redistrib_X.Y.Z.json files.
+        CUDA 13.4.2 exists in the redist index but has no nvidia/cuda OCI image.
+        """
+        cuda, _ = managers(self.config)
+        self.assertEqual(cuda["datasourceTemplate"], "custom.nvidia-cuda-redist")
+        self.assertEqual(cuda["depNameTemplate"], "nvidia-cuda-redist")
+
+    def test_no_docker_cuda_manager_exists(self) -> None:
+        """nvidia/cuda Docker-tag manager must be absent (ADR-1306).
+
+        Re-introducing it would re-gate CUDA bumps on OCI image publication.
+        """
+        docker_cuda = [
+            m
+            for m in self.config["customManagers"]
+            if m.get("depNameTemplate") == "nvidia/cuda" and m.get("datasourceTemplate") == "docker"
+        ]
+        self.assertEqual(
+            docker_cuda,
+            [],
+            "Found a nvidia/cuda Docker custom manager; ADR-1306 forbids re-introduction",
+        )
+        stale_rules = [
+            rule
+            for rule in self.config["packageRules"]
+            if "nvidia/cuda" in rule.get("matchPackageNames", [])
+            or rule.get("groupName") == "CUDA release (coordinated pin)"
+        ]
+        self.assertEqual(stale_rules, [], "the obsolete Docker CUDA group must stay deleted")
+
+    def test_cuda_manager_extractversion_accepts_redist_links_only(self) -> None:
+        """extractVersionTemplate must accept redistrib_X.Y.Z.json and reject everything else.
+
+        The NVIDIA redist HTML index returns all <a href> values; the manager uses
+        extractVersionTemplate to filter to redistrib_X.Y.Z.json entries only,
+        leaving a clean semver stream for comparison against CUDA_VERSION.
+        Unrelated directory links (cuda_nvcc/, ../), bare versions, or docker tags
+        must not produce a version.
+        """
+        cuda, _ = managers(self.config)
+        extract_tpl = cuda.get("extractVersionTemplate")
+        self.assertIsNotNone(
+            extract_tpl,
+            "extractVersionTemplate is required on the CUDA manager",
+        )
+        pattern = re.compile(to_python(extract_tpl))  # type: ignore[arg-type]
+        # Positive: redistrib_X.Y.Z.json
+        for good in (
+            "redistrib_13.4.2.json",
+            "redistrib_13.3.1.json",
+            "redistrib_13.0.0.json",
+        ):
+            with self.subTest(href=good):
+                m = pattern.search(good)
+                self.assertIsNotNone(m, f"{good!r} must match extractVersionTemplate")
+                assert m is not None
+                self.assertRegex(m.group("version"), r"^\d+\.\d+\.\d+$")
+        # Negative: directory links, bare text, docker tags, other filenames
+        for bad in (
+            "cuda_nvcc/",
+            "../",
+            "redistrib_v2_13.4.2.json",
+            "13.4.2",
+            "redistrib_13.4.json",  # only 2-part — must not match
+            "nvidia/cuda:13.4.2-devel-ubuntu26.04",
+            "other_file.json",
+        ):
+            with self.subTest(href=bad):
+                self.assertIsNone(
+                    pattern.search(bad),
+                    f"{bad!r} must not match extractVersionTemplate",
+                )
+
+    def test_representative_html_selects_13_4_2_and_rejects_noise(self) -> None:
+        """Exercise the HTML href conversion and configured extractVersion together."""
+        document = """
+        <html><body>
+          <a href='..'>..</a>
+          <a href='cuda_nvcc/'>cuda_nvcc/</a>
+          <a href='redistrib_13.3.1.json'>redistrib_13.3.1.json</a>
+          <a href='redistrib_13.4.1.json'>redistrib_13.4.1.json</a>
+          <a href='redistrib_13.4.2.json'>redistrib_13.4.2.json</a>
+          <a href='redistrib_13.5.0.json.asc'>signature</a>
+          <a href='redistrib_v2_13.5.0.json'>schema v2</a>
+        </body></html>
+        """
+        parser = HrefCollector()
+        parser.feed(document)
+        cuda, _ = managers(self.config)
+        pattern = re.compile(to_python(cuda["extractVersionTemplate"]))
+        versions = [
+            match.group("version")
+            for raw_version in parser.hrefs
+            if (match := pattern.fullmatch(raw_version)) is not None
+        ]
+        self.assertEqual(versions, ["13.3.1", "13.4.1", "13.4.2"])
+        latest = max(versions, key=lambda version: tuple(map(int, version.split("."))))
+        self.assertEqual(latest, "13.4.2")
+
+    def test_custom_datasource_uses_nvidia_redist_html_index(self) -> None:
+        """customDatasources must define nvidia-cuda-redist backed by the NVIDIA official index.
+
+        The official NVIDIA redist HTML index at
+        https://developer.download.nvidia.com/compute/cuda/redist/
+        lists redistrib_X.Y.Z.json files. It listed redistrib_13.4.2.json before
+        any nvidia/cuda:13.4.2-* OCI image existed on Docker Hub.
+        """
+        ds = self.config.get("customDatasources", {})
+        self.assertIn("nvidia-cuda-redist", ds, "customDatasources must define nvidia-cuda-redist")
+        entry = ds["nvidia-cuda-redist"]
+        self.assertEqual(entry["format"], "html")
+        url = entry["defaultRegistryUrlTemplate"]
+        self.assertIn("developer.download.nvidia.com", url)
+        self.assertIn("cuda/redist", url)
+        self.assertNotIn(
+            "transformTemplates",
+            entry,
+            "Renovate already converts HTML hrefs to releases; filtering belongs to extractVersion",
+        )
+
+    def test_redist_rule_handles_missing_timestamps_without_automerge(self) -> None:
+        """The HTML datasource has no timestamps, so the global age gate needs an exception."""
         rules = [
             rule
             for rule in self.config["packageRules"]
-            if rule.get("groupName") == "CUDA release (coordinated pin)"
+            if rule.get("matchDatasources") == ["custom.nvidia-cuda-redist"]
         ]
-        self.assertEqual(len(rules), 1, "the CUDA group rule is missing or duplicated")
+        self.assertEqual(len(rules), 1)
         rule = rules[0]
-        cuda, base = managers(self.config)
-        self.assertEqual(rule["matchPackageNames"], [cuda["depNameTemplate"]])
-        self.assertIs(rule["automerge"], False, "a coordinated pin is not auto-mergeable")
-        # The image pins resolve under the same package name, which is what puts
-        # both managers' deps into one branch.
-        self.assertIn("nvidia/cuda", (ROOT / "build-config.env").read_text(encoding="utf-8"))
-        self.assertEqual(base["datasourceTemplate"], "docker")
-        # Digest refreshes stay in the Docker digests batch: no coordination needed.
-        self.assertNotIn("digest", rule["matchUpdateTypes"])
-        self.assertNotIn("pin", rule["matchUpdateTypes"])
+        self.assertEqual(rule["matchPackageNames"], ["nvidia-cuda-redist"])
+        self.assertEqual(rule["minimumReleaseAgeBehaviour"], "timestamp-optional")
+        self.assertIs(rule["automerge"], False)
+        self.assertNotIn("groupName", rule, "the deleted CUDA group must not be recreated")
 
-    def test_the_manager_extracts_a_version_nvidia_actually_publishes(self) -> None:
-        """A bare `13.4.1` matches no nvidia/cuda tag; extractVersion is load-bearing."""
+    def test_renovate_moves_only_release_and_leaves_exact_metadata_latch(self) -> None:
+        """A bot bump must stop until a human refreshes NVIDIA package metadata."""
         cuda, _ = managers(self.config)
-        pattern = re.compile(to_python(cuda["extractVersionTemplate"]))
-        match = pattern.search("13.4.0-devel-ubuntu26.04")
-        self.assertIsNotNone(match)
+        config_lines = (ROOT / "build-config.env").read_text(encoding="utf-8").splitlines()
+        release_line = next(line for line in config_lines if line.startswith("CUDA_VERSION="))
+        self.assertTrue(covers(cuda, "build-config.env", release_line))
+        for name in (
+            "CUDA_APT_LOCK_RELEASE",
+            "CUDA_APT_TOOLKIT_VERSION",
+            "CUDA_APT_NVCC_VERSION",
+            "CUDA_APT_CUDART_VERSION",
+        ):
+            line = next(line for line in config_lines if line.startswith(f"{name}="))
+            with self.subTest(name=name):
+                self.assertFalse(covers(cuda, "build-config.env", line))
+
+    def test_installer_contract_suite_is_wired_to_required_precommit_ci(self) -> None:
+        precommit = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+        match = re.search(
+            r"(?ms)^\s+- id: test-install-cuda-toolkit\n(?P<body>.*?)(?=^\s+- id:|\Z)",
+            precommit,
+        )
+        self.assertIsNotNone(match, "installer regression suite needs its own pre-commit hook")
         assert match is not None
-        self.assertEqual(match.group("version"), "13.4.0")
-        self.assertIsNone(pattern.search("13.4.0-runtime-ubuntu26.04"))
-        self.assertIsNone(pattern.search("latest"))
+        body = match.group("body")
+        self.assertIn("test_install_cuda_toolkit.py", body)
+        self.assertIn(r"install-cuda-toolkit\.sh", body)
+        workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text(encoding="utf-8")
+        self.assertIn("pre-commit run --show-diff-on-failure --color=always --all-files", workflow)
 
     def test_every_matchstring_hits_a_real_line_in_the_tree(self) -> None:
         """A manager whose regex matches nothing is wiring that does nothing."""
@@ -254,27 +431,45 @@ class CudaPinGate(unittest.TestCase):
     def test_the_fixture_starts_in_lockstep(self) -> None:
         result = self.gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("10 sites", result.stdout)
+        self.assertIn("7 sites", result.stdout)
 
     def test_each_spelling_is_caught_when_it_drifts(self) -> None:
         cases = (
             (
-                "dev/Containerfile",
-                APT_INSTALL,
-                APT_INSTALL.replace("13-4", "13-5"),
+                "build-config.env",
+                'CUDA_APT_LOCK_RELEASE="13.4.2"',
+                'CUDA_APT_LOCK_RELEASE="13.4.1"',
+                "apt-lock-release",
+            ),
+            (
+                "build-config.env",
+                'CUDA_APT_TOOLKIT_VERSION="13.4.2-1"',
+                'CUDA_APT_TOOLKIT_VERSION="13.4.1-1"',
+                "apt-toolkit-version",
+            ),
+            (
+                "build-config.env",
+                'CUDA_APT_NVCC_VERSION="13.4.92-1"',
+                'CUDA_APT_NVCC_VERSION="13.5.1-1"',
+                "apt-nvcc-version",
+            ),
+            (
+                "build-config.env",
+                'CUDA_APT_CUDART_VERSION="13.4.92-1"',
+                'CUDA_APT_CUDART_VERSION="12.9.1-1"',
+                "apt-cudart-version",
+            ),
+            (
+                "build-config.env",
+                'CUDA_APT_PACKAGE="cuda-toolkit-13-4"',
+                'CUDA_APT_PACKAGE="cuda-toolkit-13-5"',
                 "apt",
             ),
             (
                 "docker/Dockerfile.production-gpu",
-                "production CUDA 13.4.1 runtime",
+                "production CUDA 13.4.2 runtime",
                 "production CUDA 13.5.0 runtime",
                 "label",
-            ),
-            (
-                "docker/Dockerfile.node",
-                "nvidia/cuda:13.4.1-runtime",
-                "nvidia/cuda:13.5.0-runtime",
-                "image",
             ),
         )
         for path, old, new, kind in cases:
@@ -286,12 +481,32 @@ class CudaPinGate(unittest.TestCase):
                 self.assertIn(f"{kind} pin reads", result.stderr)
                 self.assertIn(path, result.stderr)
 
+    def test_renovate_release_bump_fails_until_exact_metadata_is_refreshed(self) -> None:
+        self.edit("build-config.env", 'CUDA_VERSION="13.4.2"', 'CUDA_VERSION="13.5.0"')
+        result = self.gate()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("apt-lock-release pin reads", result.stderr)
+        self.assertIn("apt-toolkit-version pin reads", result.stderr)
+        self.assertIn("CUDA_APT_LOCK_RELEASE", result.stderr)
+
+    def test_reintroduced_nvidia_cuda_image_is_unrecognised_and_fails(self) -> None:
+        """An nvidia/cuda image reference is no longer a valid pin shape (ADR-1306)."""
+        self.edit(
+            "docker/Dockerfile.node",
+            'ARG CUDA_RUNTIME="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"',
+            'ARG CUDA_RUNTIME="nvidia/cuda:13.4.2-runtime-ubuntu26.04@sha256:1725dba28b39fd0c3c35665c98284b603bef7b30e8f7990a98d4c3cbb905016a"',
+        )
+        result = self.gate()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("a spelling this gate does not know", result.stderr)
+        self.assertIn("docker/Dockerfile.node", result.stderr)
+
     def test_a_site_in_an_unknown_spelling_fails(self) -> None:
-        """A seventeenth copy in a shape nobody taught the gate is still drift."""
+        """An eighth copy in a shape nobody taught the gate is still drift."""
         workflow = self.repo / ".github/workflows/newlane.yml"
         workflow.write_text(
             "name: New lane\njobs:\n  build:\n    env:\n"
-            "      CUDA_TOOLKIT_RELEASE: 13.4.1  # cuda\n",
+            "      CUDA_TOOLKIT_RELEASE: 13.4.2  # cuda\n",
             encoding="utf-8",
         )
         self.git("add", "--", ".github/workflows/newlane.yml")
@@ -301,24 +516,27 @@ class CudaPinGate(unittest.TestCase):
         self.assertIn("newlane.yml", result.stderr)
 
     def test_write_repairs_the_derived_spellings_only(self) -> None:
-        self.edit("dev/Containerfile", APT_INSTALL, APT_INSTALL.replace("13-4", "12-1"))
+        self.edit(
+            "build-config.env",
+            'CUDA_APT_PACKAGE="cuda-toolkit-13-4"',
+            'CUDA_APT_PACKAGE="cuda-toolkit-12-1"',
+        )
         self.edit(
             "docker/Dockerfile.production-gpu",
-            "production CUDA 13.4.1 runtime",
+            "production CUDA 13.4.2 runtime",
             "production CUDA 12.1.0 runtime",
         )
-        self.edit("docker/Dockerfile.node", "nvidia/cuda:13.4.1-runtime", "nvidia/cuda:12.1.0-x")
         result = self.gate("--write")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # The two derived spellings are repaired ...
-        self.assertIn("cuda-toolkit-13-4", (self.repo / "dev/Containerfile").read_text())
+        config = (self.repo / "build-config.env").read_text(encoding="utf-8")
+        self.assertIn('CUDA_APT_PACKAGE="cuda-toolkit-13-4"', config)
+        self.assertIn('CUDA_APT_NVCC_VERSION="13.4.92-1"', config)
+        self.assertIn('CUDA_APT_CUDART_VERSION="13.4.92-1"', config)
         self.assertIn(
-            "CUDA 13.4.1 runtime",
+            "CUDA 13.4.2 runtime",
             (self.repo / "docker/Dockerfile.production-gpu").read_text(),
         )
-        # ... and the image pin is not, because its digest cannot be derived.
-        self.assertIn("12.1.0", (self.repo / "docker/Dockerfile.node").read_text())
-        self.assertIn("image pin reads '12.1.0'", result.stderr)
 
     def test_a_comment_naming_an_old_release_is_not_a_pin(self) -> None:
         """Prose about CUDA 12.4 in a comment must not fail the gate."""
@@ -334,7 +552,7 @@ class CudaPinGate(unittest.TestCase):
     def test_a_missing_authority_is_a_configuration_error_not_drift(self) -> None:
         config = self.repo / "build-config.env"
         config.write_text(
-            config.read_text(encoding="utf-8").replace('CUDA_VERSION="13.4.1"', ""),
+            config.read_text(encoding="utf-8").replace('CUDA_VERSION="13.4.2"', ""),
             encoding="utf-8",
         )
         self.git("add", "--", "build-config.env")

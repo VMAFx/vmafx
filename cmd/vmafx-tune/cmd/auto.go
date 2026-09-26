@@ -127,7 +127,7 @@ func registerAutoFlags(cmd *cobra.Command, flags *autoFlags) {
 // tokens the way the Python comprehension does.
 func parseAllowCodecs(raw string) []string {
 	out := make([]string, 0, 4)
-	for _, token := range strings.Split(raw, ",") {
+	for token := range strings.SplitSeq(raw, ",") {
 		if trimmed := strings.TrimSpace(token); trimmed != "" {
 			out = append(out, trimmed)
 		}

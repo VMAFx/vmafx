@@ -11,9 +11,11 @@
   unaffected. The MIT alternative is withdrawn from 123 Go files under `pkg/`,
   `cmd/vmafx-tune` and `cmd/vmafx-node/bpf`; anyone who already received those
   files under MIT keeps that grant for those versions.
+  <!-- REUSE-IgnoreStart -->
   The change also repairs licence metadata that was simply wrong: 946 files
   declared `SPDX-License-Identifier: BSD-3-Clause-Plus-Patent`, which is not a real
   SPDX identifier, 223 stated their terms only in prose with no machine-readable
+  <!-- REUSE-IgnoreEnd -->
   tag, and 147 carried no notice at all. Which files moved was decided by
   provenance rather than by reading headers, and is reproducible:
   `scripts/dev/relicense_fork_files.py --check` re-derives every verdict and fails

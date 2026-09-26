@@ -41,6 +41,7 @@
 package prefilter
 
 import (
+	"maps"
 	"math"
 	"math/rand"
 	"sort"
@@ -133,9 +134,7 @@ func NewTPESampler(dims []Dimension, cfg TPEConfig, seed int64) *TPESampler {
 // Observe records a completed trial.
 func (s *TPESampler) Observe(params map[string]float64, objective float64) {
 	copied := make(map[string]float64, len(params))
-	for k, v := range params {
-		copied[k] = v
-	}
+	maps.Copy(copied, params)
 	s.obs = append(s.obs, observation{params: copied, objective: objective})
 }
 
@@ -195,13 +194,7 @@ func (s *TPESampler) split() (below, above []observation) {
 		return sorted[i].objective < sorted[j].objective
 	})
 	n := len(sorted)
-	nBelow := int(math.Ceil(s.cfg.Gamma * float64(n)))
-	if nBelow > 25 {
-		nBelow = 25
-	}
-	if nBelow < 1 {
-		nBelow = 1
-	}
+	nBelow := max(min(int(math.Ceil(s.cfg.Gamma*float64(n))), 25), 1)
 	if nBelow >= n {
 		nBelow = n - 1
 	}

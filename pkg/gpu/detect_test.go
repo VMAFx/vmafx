@@ -13,6 +13,7 @@
 package gpu
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -105,13 +106,7 @@ func TestDetect_NeverPanics(t *testing.T) {
 		t.Error("Detect() returned empty Vendor")
 	}
 	// Must include "cpu" in Backends.
-	hasCPU := false
-	for _, b := range cap.Backends {
-		if b == "cpu" {
-			hasCPU = true
-			break
-		}
-	}
+	hasCPU := slices.Contains(cap.Backends, "cpu")
 	if !hasCPU {
 		t.Errorf("Detect() returned Backends %v — must include 'cpu'", cap.Backends)
 	}

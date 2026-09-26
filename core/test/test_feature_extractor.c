@@ -16,15 +16,18 @@
  *
  */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #include "config.h"
 #include "dict.h"
 #include "feature/feature_extractor.h"
 #include "feature/feature_collector.h"
 #include "fex_ctx_vector.h"
+#include "mu_table.h"
 #include "test.h"
 #include "picture.h"
 #include "libvmaf/picture.h"
@@ -574,6 +577,132 @@ static char *test_supports_options_null_extractor(void)
     return NULL;
 }
 
+typedef struct {
+    bool enabled;
+    int mode;
+    int unrestricted;
+    double scale;
+} DefaultOnlyOptionState;
+
+static const VmafOption default_only_options[] = {
+    {.name = "enabled",
+     .alias = "e",
+     .offset = offsetof(DefaultOnlyOptionState, enabled),
+     .type = VMAF_OPT_TYPE_BOOL,
+     .default_val.b = false,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {.name = "mode",
+     .alias = "m",
+     .offset = offsetof(DefaultOnlyOptionState, mode),
+     .type = VMAF_OPT_TYPE_INT,
+     .default_val.i = 0,
+     .min = 0,
+     .max = 3,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {.name = "scale",
+     .alias = "s",
+     .offset = offsetof(DefaultOnlyOptionState, scale),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 1.0,
+     .min = 0.1,
+     .max = 4.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {.name = "unrestricted",
+     .offset = offsetof(DefaultOnlyOptionState, unrestricted),
+     .type = VMAF_OPT_TYPE_INT,
+     .default_val.i = 0,
+     .min = 0,
+     .max = 3,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {0},
+};
+
+typedef struct {
+    bool setup_ok;
+    bool honours;
+    bool key_matches;
+} CapabilityResult;
+
+static CapabilityResult check_option_capability(const char *key, const char *value)
+{
+    const VmafFeatureExtractor fex = {
+        .name = "mock_default_only_gpu",
+        .options = default_only_options,
+    };
+    VmafDictionary *opts = NULL;
+    CapabilityResult result = {0};
+    if (vmaf_dictionary_set(&opts, key, value, 0))
+        return result;
+
+    const char *unsupported = NULL;
+    result.setup_ok = true;
+    result.honours = vmaf_feature_extractor_honours_options(&fex, opts, &unsupported);
+    result.key_matches = unsupported && !strcmp(unsupported, key);
+    (void)vmaf_dictionary_free(&opts);
+    return result;
+}
+
+static char *test_honours_default_only_defaults(void)
+{
+    const CapabilityResult bool_default = check_option_capability("e", "false");
+    const CapabilityResult int_default = check_option_capability("mode", "0");
+    const CapabilityResult double_default = check_option_capability("s", "1.0");
+    mu_assert("default-only bool default must be honoured",
+              bool_default.setup_ok && bool_default.honours && !bool_default.key_matches);
+    mu_assert("default-only int default must be honoured",
+              int_default.setup_ok && int_default.honours && !int_default.key_matches);
+    mu_assert("default-only double default must be honoured",
+              double_default.setup_ok && double_default.honours && !double_default.key_matches);
+    return NULL;
+}
+
+static char *test_honours_default_only_boundaries(void)
+{
+    const CapabilityResult bool_nondefault = check_option_capability("enabled", "true");
+    const CapabilityResult int_max = check_option_capability("m", "3");
+    const CapabilityResult double_min = check_option_capability("scale", "0.1");
+    const CapabilityResult double_max = check_option_capability("s", "4.0");
+    mu_assert("valid bool non-default must require fallback",
+              bool_nondefault.setup_ok && !bool_nondefault.honours && bool_nondefault.key_matches);
+    mu_assert("valid int maximum must require fallback",
+              int_max.setup_ok && !int_max.honours && int_max.key_matches);
+    mu_assert("valid double minimum must require fallback",
+              double_min.setup_ok && !double_min.honours && double_min.key_matches);
+    mu_assert("valid double maximum must require fallback",
+              double_max.setup_ok && !double_max.honours && double_max.key_matches);
+    return NULL;
+}
+
+static char *test_honours_invalid_values_remain_parser_owned(void)
+{
+    const CapabilityResult bad_int = check_option_capability("mode", "4");
+    const CapabilityResult bad_double = check_option_capability("scale", "nan");
+    const CapabilityResult bad_bool = check_option_capability("enabled", "1");
+    mu_assert("out-of-range int must remain parser-owned",
+              bad_int.setup_ok && bad_int.honours && !bad_int.key_matches);
+    mu_assert("non-finite double must remain parser-owned",
+              bad_double.setup_ok && bad_double.honours && !bad_double.key_matches);
+    mu_assert("malformed bool must remain parser-owned",
+              bad_bool.setup_ok && bad_bool.honours && !bad_bool.key_matches);
+    return NULL;
+}
+
+static char *test_honours_unknown_option_reports_key(void)
+{
+    const CapabilityResult result = check_option_capability("unknown_option", "1");
+    mu_assert("unknown option must be rejected",
+              result.setup_ok && !result.honours && result.key_matches);
+    return NULL;
+}
+
+static char *test_honours_unrestricted_nondefault(void)
+{
+    const CapabilityResult result = check_option_capability("unrestricted", "3");
+    mu_assert("ordinary non-default option must stay GPU-eligible",
+              result.setup_ok && result.honours && !result.key_matches);
+    return NULL;
+}
+
 /* The context constructor rejects an unknown option outright and resets the
  * caller's handle, so a caller that ignores the status cannot go on to use a
  * stale pointer. */
@@ -589,6 +718,16 @@ static char *test_feature_extractor_unknown_option_rejected(void)
     VmafFeatureExtractorContext *ctx = (VmafFeatureExtractorContext *)0x1234;
     err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
     mu_assert("context_create with unknown option must return -EINVAL", err == -EINVAL);
+    mu_assert("context handle must be reset to NULL on failure", ctx == NULL);
+
+    /* NIQE has private state but no options. LeakSanitizer makes this call
+     * red if the rejection path drops that owned allocation. */
+    const VmafFeatureExtractor *fex_priv = vmaf_get_feature_extractor_by_name("niqe");
+    mu_assert("niqe extractor missing", fex_priv != NULL);
+    ctx = (VmafFeatureExtractorContext *)0x1234;
+    err = vmaf_feature_extractor_context_create(&ctx, fex_priv, opts);
+    mu_assert("context_create with unknown option on priv extractor must return -EINVAL",
+              err == -EINVAL);
     mu_assert("context handle must be reset to NULL on failure", ctx == NULL);
 
     (void)vmaf_dictionary_free(&opts);
@@ -615,14 +754,293 @@ static char *run_registry_tests(void)
     return NULL;
 }
 
+/* ---------------------------------------------------------------------------
+ * Close-retry lifecycle correctness contract.
+ *
+ * When the underlying close() callback returns an error, is_closed must stay
+ * false so the caller can retry.  A successful retry must then set is_closed
+ * and leave the context in the closed state.
+ *
+ * The test uses a synthetic extractor whose close() is instrumented to fail
+ * exactly once and then succeed.  It drives the public
+ * vmaf_feature_extractor_context_close() surface directly without touching any
+ * GPU device.
+ * ------------------------------------------------------------------------- */
+
+static int g_close_call_count = 0;
+static int close_fail_once(struct VmafFeatureExtractor *fex)
+{
+    (void)fex;
+    g_close_call_count++;
+    return (g_close_call_count == 1) ? -EIO : 0;
+}
+
+static char *test_close_retry_lifecycle(void)
+{
+    g_close_call_count = 0;
+    VmafFeatureExtractor synth = {
+        .name = "synth_close_fail_once",
+        .close = close_fail_once,
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
+    mu_assert("context_create must succeed", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("context_init must succeed", err == 0);
+
+    /* First close: callback fails; is_closed must stay false. */
+    err = vmaf_feature_extractor_context_close(ctx);
+    mu_assert("first close must propagate the error", err == -EIO);
+    mu_assert("is_closed must stay false after a failed close", !ctx->is_closed);
+
+    /* Second close (retry): callback succeeds; is_closed must be set now. */
+    err = vmaf_feature_extractor_context_close(ctx);
+    mu_assert("retry close must succeed", err == 0);
+    mu_assert("is_closed must be true after successful close", ctx->is_closed);
+
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("destroy must succeed", err == 0);
+    return NULL;
+}
+
+/* ---------------------------------------------------------------------------
+ * Fail-closed teardown contract: destroy must refuse while close is pending.
+ *
+ * vmaf_feature_extractor_context_destroy() must return -EBUSY when the fex
+ * has a close callback and is_closed is false.  This prevents free(priv)
+ * from releasing GPU handles that the close callback hasn't released yet.
+ *
+ * Device-free: uses only a synthetic extractor with a no-op close.
+ * -------------------------------------------------------------------------- */
+
+static int g_destroy_guard_closed = 0;
+static int close_set_flag(struct VmafFeatureExtractor *fex)
+{
+    (void)fex;
+    g_destroy_guard_closed = 1;
+    return 0;
+}
+
+static char *test_destroy_refused_before_close(void)
+{
+    g_destroy_guard_closed = 0;
+    VmafFeatureExtractor synth = {
+        .name = "synth_close_guard",
+        .close = close_set_flag,
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
+    mu_assert("context_create must succeed", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("context_init must succeed", err == 0);
+
+    /* Destroy before close: must be refused. */
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("destroy before close must return -EBUSY", err == -EBUSY);
+    mu_assert("close callback must NOT have been called by destroy", g_destroy_guard_closed == 0);
+
+    /* Now close then destroy: must succeed. */
+    err = vmaf_feature_extractor_context_close(ctx);
+    mu_assert("close must succeed", err == 0);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("destroy after successful close must succeed", err == 0);
+    return NULL;
+}
+
+typedef struct PartialInitState {
+    bool resource_live;
+    unsigned close_calls;
+} PartialInitState;
+
+static int partial_init_fails(struct VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                              unsigned bpc, unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    (void)w;
+    (void)h;
+    PartialInitState *state = fex->priv;
+    state->resource_live = true;
+    return -EIO;
+}
+
+static int partial_init_close(struct VmafFeatureExtractor *fex)
+{
+    PartialInitState *state = fex->priv;
+    state->close_calls++;
+    state->resource_live = false;
+    return 0;
+}
+
+static char *test_partial_init_requires_retryable_close(void)
+{
+    VmafFeatureExtractor synth = {
+        .name = "synth_partial_init",
+        .init = partial_init_fails,
+        .close = partial_init_close,
+        .priv_size = sizeof(PartialInitState),
+        .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
+    mu_assert("context_create must succeed", err == 0 && ctx != NULL);
+
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("partial init failure reaches caller", err == -EIO);
+    const PartialInitState *state = ctx->fex->priv;
+    mu_assert("failed init left a live resource", state->resource_live);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("destroy refuses a partial init pending close", err == -EBUSY);
+
+    err = vmaf_feature_extractor_context_close(ctx);
+    mu_assert("partial init close succeeds", err == 0);
+    state = ctx->fex->priv;
+    mu_assert("partial resource was released exactly once",
+              !state->resource_live && state->close_calls == 1);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("closed partial init can be destroyed", err == 0);
+    return NULL;
+}
+
+static unsigned non_cuda_partial_close_calls;
+
+static int non_cuda_partial_close(struct VmafFeatureExtractor *fex)
+{
+    (void)fex;
+    non_cuda_partial_close_calls++;
+    return 0;
+}
+
+static char *test_non_cuda_failed_init_keeps_legacy_close_scope(void)
+{
+    VmafFeatureExtractor synth = {
+        .name = "synth_non_cuda_partial_init",
+        .init = partial_init_fails,
+        .close = non_cuda_partial_close,
+        .priv_size = sizeof(PartialInitState),
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
+    mu_assert("context_create must succeed", err == 0 && ctx != NULL);
+    non_cuda_partial_close_calls = 0;
+
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("failed non-CUDA init reaches caller", err == -EIO);
+    mu_assert("non-CUDA failed init does not publish an unaudited close obligation",
+              !ctx->close_required);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("legacy non-CUDA failed-init context can be destroyed", err == 0);
+    mu_assert("destroy does not invoke the non-CUDA close callback",
+              non_cuda_partial_close_calls == 0);
+    return NULL;
+}
+
+static char *prepare_released_pool(VmafFeatureExtractorContextPool **pool,
+                                   VmafFeatureExtractor *synth)
+{
+    int err = vmaf_fex_ctx_pool_create(pool, 1);
+    mu_assert("pool_create must succeed", err == 0 && *pool != NULL);
+    VmafFeatureExtractorContext *ctx = NULL;
+    err = vmaf_fex_ctx_pool_aquire(*pool, synth, NULL, &ctx);
+    mu_assert("pool acquire must succeed", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("pooled context init must succeed", err == 0);
+    mu_assert("pool release must succeed", vmaf_fex_ctx_pool_release(*pool, ctx) == 0);
+    return NULL;
+}
+
+static char *test_pool_close_failure_retains_ownership(void)
+{
+    VmafFeatureExtractor synth = {
+        .name = "synth_pool_close_retry",
+        .close = close_fail_once,
+    };
+    VmafFeatureExtractorContextPool *pool = NULL;
+    mu_assert_msg(prepare_released_pool(&pool, &synth));
+
+    g_close_call_count = 0;
+    mu_assert("first pool close reports transient error", vmaf_fex_ctx_pool_close(pool) == -EIO);
+    mu_assert("pool destroy retains an unclosed context",
+              vmaf_fex_ctx_pool_destroy(pool) == -EBUSY);
+    mu_assert("pool close retry succeeds", vmaf_fex_ctx_pool_close(pool) == 0);
+    mu_assert("prepared pool commits", vmaf_fex_ctx_pool_destroy(pool) == 0);
+    return NULL;
+}
+
+/* ---------------------------------------------------------------------------
+ * Regression: motion force_zero dict must exist before collector publish.
+ *
+ * Regression guard for the CUDA extractors where extract_force_zero() is
+ * registered as the extract callback when motion_force_zero=true, but the
+ * feature_name_dict was NULL (dict populated only after GPU alloc block,
+ * skipped by the early return).  The dict is now built before the force-zero
+ * branch so the callback does not return -EINVAL.
+ *
+ * This test uses the CPU vmaf_fex_integer_motion extractor (device-free,
+ * same option contract) and exercises the force-zero code path end-to-end:
+ * extract() must succeed and publish the zero-pinned sad score into the
+ * feature collector at frame 0.
+ * ------------------------------------------------------------------------- */
+static char *open_motion_force_zero_fixture(FexFixture *fixture)
+{
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion");
+    mu_assert("motion extractor must be registered", fex != NULL);
+
+    VmafDictionary *opts = NULL;
+    int err = vmaf_dictionary_set(&opts, "motion_force_zero", "true", 0);
+    mu_assert("dictionary_set force_zero", err == 0);
+
+    err = vmaf_feature_extractor_context_create(&fixture->fex_ctx, fex, opts);
+    mu_assert("context_create with force_zero must succeed", err == 0 && fixture->fex_ctx != NULL);
+
+    err = vmaf_picture_alloc(&fixture->ref, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("ref alloc", err == 0);
+    err = vmaf_picture_alloc(&fixture->dist, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("dist alloc", err == 0);
+
+    err = vmaf_feature_collector_init(&fixture->vfc);
+    mu_assert("collector init", err == 0);
+    return NULL;
+}
+
+static char *test_motion_force_zero_publishes_scores(void)
+{
+    FexFixture fixture = {0};
+    mu_assert_msg(open_motion_force_zero_fixture(&fixture));
+
+    /* Frame 0: must succeed; extract() must not fail due to a NULL feature_name_dict.
+     * Score values in the collector are verified by the full pipeline test suite. */
+    int err = vmaf_feature_extractor_context_extract(fixture.fex_ctx, &fixture.ref, NULL,
+                                                     &fixture.dist, NULL, 0, fixture.vfc);
+    mu_assert("extract frame 0 with force_zero must succeed", err == 0);
+
+    /* Frame 1: same requirement, second frame verifies the force-zero path
+     * repeats cleanly (first call stores prev_ref internally). */
+    err = vmaf_feature_extractor_context_extract(fixture.fex_ctx, &fixture.ref, NULL, &fixture.dist,
+                                                 NULL, 1, fixture.vfc);
+    mu_assert("extract frame 1 with force_zero must succeed", err == 0);
+
+    (void)fex_fixture_close(&fixture);
+    return NULL;
+}
+
 static char *run_context_tests(void)
 {
-    mu_run_test(test_feature_extractor_context_pool);
-    mu_run_test(test_feature_extractor_flush);
-    mu_run_test(test_feature_extractor_initialization_options);
-    mu_run_test(test_feature_extractor_context_null_guards);
-    mu_run_test(test_fex_ctx_pool_null_guards);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_feature_extractor_context_pool),
+        MU_TEST(test_feature_extractor_flush),
+        MU_TEST(test_feature_extractor_initialization_options),
+        MU_TEST(test_feature_extractor_context_null_guards),
+        MU_TEST(test_fex_ctx_pool_null_guards),
+        /* Blocker regression tests — device-free, CPU paths only. */
+        MU_TEST(test_close_retry_lifecycle),
+        MU_TEST(test_destroy_refused_before_close),
+        MU_TEST(test_partial_init_requires_retryable_close),
+        MU_TEST(test_non_cuda_failed_init_keeps_legacy_close_scope),
+        MU_TEST(test_pool_close_failure_retains_ownership),
+        MU_TEST(test_motion_force_zero_publishes_scores),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 static char *run_option_tests(void)
@@ -637,6 +1055,16 @@ static char *run_option_tests(void)
     return NULL;
 }
 
+static char *run_option_capability_tests(void)
+{
+    mu_run_test(test_honours_default_only_defaults);
+    mu_run_test(test_honours_default_only_boundaries);
+    mu_run_test(test_honours_invalid_values_remain_parser_owned);
+    mu_run_test(test_honours_unknown_option_reports_key);
+    mu_run_test(test_honours_unrestricted_nondefault);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     char *result = run_registry_tests();
@@ -645,7 +1073,10 @@ char *run_tests(void)
     result = run_context_tests();
     if (result)
         return result;
-    return run_option_tests();
+    result = run_option_tests();
+    if (result)
+        return result;
+    return run_option_capability_tests();
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

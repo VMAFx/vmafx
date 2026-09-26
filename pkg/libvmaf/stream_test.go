@@ -32,7 +32,6 @@ func TestNewStreamScorer_ValidationErrors(t *testing.T) {
 		{"missing model", StreamConfig{Width: 1, Height: 1, PixFmt: PixFmtYUV420P, BitDepth: 8}},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			s, err := NewStreamScorer(tc.cfg)
 			if err == nil {
@@ -95,7 +94,7 @@ func pushAll(t *testing.T, s *StreamScorer, ref, dis string) int {
 		t.Fatalf("frame size %d does not divide ref length %d", fs, len(rb))
 	}
 	n := len(rb) / fs
-	for i := 0; i < n; i++ {
+	for i := range n {
 		lo, hi := i*fs, (i+1)*fs
 		if err := s.PushFrame(i, rb[lo:hi], db[lo:hi]); err != nil {
 			t.Fatalf("PushFrame %d: %v", i, err)
@@ -239,11 +238,62 @@ func TestStreamScorer_CloseIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStreamScorer: %v", err)
 	}
-	s.Close()
-	s.Close() // must not panic
+	if err := s.Close(); err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
 
 	buf := make([]byte, s.FrameSize())
 	if err := s.PushFrame(0, buf, buf); !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("expected ErrInvalidArgument after Close, got %v", err)
+	}
+}
+
+// TestStreamScorer_CloseFailureRetainsOwnersForRetry pins the fail-closed
+// lifetime contract: a context-close failure starts teardown, keeps the model
+// alive, rejects scoring calls, and permits Close to retry the same owner.
+func TestStreamScorer_CloseFailureRetainsOwnersForRetry(t *testing.T) {
+	closeErr := errors.New("injected vmaf_close failure")
+	closeCalls := 0
+	destroyCalls := 0
+	s := &StreamScorer{
+		frameSize: 1,
+		owner: cgoScoringOwner{
+			closeContext: func() error {
+				closeCalls++
+				if closeCalls == 1 {
+					return closeErr
+				}
+				return nil
+			},
+			destroyModel: func() { destroyCalls++ },
+		},
+	}
+
+	if err := s.Close(); !errors.Is(err, closeErr) {
+		t.Fatalf("first Close error = %v, want %v", err, closeErr)
+	}
+	if destroyCalls != 0 {
+		t.Fatalf("model destroyed after failed context close: calls=%d", destroyCalls)
+	}
+	if err := s.PushFrame(0, []byte{0}, []byte{0}); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("PushFrame during teardown error = %v, want ErrInvalidArgument", err)
+	}
+	if _, err := s.Finish(context.Background()); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("Finish during teardown error = %v, want ErrInvalidArgument", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("retry Close: %v", err)
+	}
+	if closeCalls != 2 || destroyCalls != 1 {
+		t.Fatalf("cleanup calls = close:%d destroy:%d, want 2/1", closeCalls, destroyCalls)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("idempotent Close: %v", err)
+	}
+	if closeCalls != 2 || destroyCalls != 1 {
+		t.Fatalf("idempotent cleanup repeated: close:%d destroy:%d", closeCalls, destroyCalls)
 	}
 }

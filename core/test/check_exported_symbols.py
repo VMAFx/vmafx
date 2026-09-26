@@ -144,6 +144,10 @@ def main() -> int:
     ]
     plain = demangled(candidates)
     leaked = [name for name in candidates if not runtime_owned(name, plain[name])]
+    # Red-cap regression check: ADR-1337 prevents C++ placement new/delete from leaking.
+    if "_ZnwmPv" in candidates or "_ZdlPvS_" in candidates:
+        print("Regression: C++ placement new/delete (_ZnwmPv / _ZdlPvS_) leaked into public ABI.")
+        return 1
     if leaked:
         print(f"{library.name} exports {len(leaked)} symbol(s) outside its public API:")
         for name in leaked:

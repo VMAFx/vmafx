@@ -13,7 +13,7 @@ registration:
 ```text
 feature/
   feature_extractor.cpp/.h   # the registry + lifecycle contract (init/extract/flush/close)
-  feature_collector.c/.h     # per-frame score aggregator
+  feature_collector.cpp/.h   # per-frame score aggregator
   vif.c / adm.c / …          # scalar CPU reference implementations
   integer_*.c                # integer-math reference implementations
   feature_lpips.c            # DNN-backed extractor (opens vmaf_dnn_session_*)
@@ -70,6 +70,24 @@ feature/
 
 ## Rebase-sensitive invariants
 
+- **`moment.c::compute_2nd_moment` reduction contract** (ADR-0179 / ADR-0987):
+  `const float term = pic_ * pic_; cum += (double)term;` where float squaring
+  is evaluated in single precision and explicitly cast to `double` before
+  accumulation into `cum`. Unlike `convolve.c`
+  ([ADR-0138](../../../docs/adr/0138-iqa-convolve-avx2-bitexact-double.md),
+  bit-exact), `moment.c` is governed by
+  [ADR-0179](../../../docs/adr/0179-float-moment-simd.md) (AVX2/NEON) and
+  [ADR-0987](../../../docs/adr/0987-avx512-float-moment.md) (AVX-512) under a
+  **tolerance-bounded non-byte-exact reduction contract**
+  (`MOMENT_REL_TOL = 1e-7`), verified by `test_moment_simd`. Decoupling the
+  float product into intermediate `term` and explicit `(double)` cast
+  removes the CodeQL `cpp/integer-multiplication-cast-to-long` source pattern
+  behind historically dismissed Alert 707 (
+  [Research-2031](../../../docs/research/2031-codeql-float-widening-multiplication.md))
+  by eliminating compiler-generated widening conversions. **On rebase:** do not
+  pre-widen operands (`(double)pic_ * pic_`) or revert to direct implicit
+  widening (`cum += pic_ * pic_`).
+
 - **CAMBI bounded searches and live private helpers** (ADR-0205 / ADR-1146):
   `cambi.c` is strict-clean: it contains no `NOLINT` or Cppcheck suppression.
   Preserve the 16-step TVI bisection, the `UINT16_MAX`-bounded VLT scan, and
@@ -81,6 +99,12 @@ feature/
   those calls with analyzer annotations. Keep the compact `CAMBI_OPTION`
   descriptors equivalent to the public option table. See
   [measured source and binary equivalence](../../../docs/research/2043-cambi-production-lint-2026-09-08.md).
+
+- **CAMBI heatmap paths are UTF-8 on Windows** (ADR-1182):
+  `mkdirp.cpp` must create each component through `vmaf_mkdir_utf8`, and
+  `cambi.c::open_heatmaps` must open every `.gray` file through
+  `vmaf_open_utf8`. Keep `test_open_heatmaps_utf8_path` as a production-seam
+  regression; a helper-only path test does not protect this call-site wiring.
 
 - **Floating-point VIF lint decomposition** (ADR-0141 / ADR-1142):
   `vif.c` keeps ten-plane aligned layout and original convolution,
@@ -132,6 +156,28 @@ feature/
   `feature_extractor.cpp` rejects any unknown dictionary keys with
   `-EINVAL`. On rebase, do not bypass this validation or revert to silent
   option omission.
+  **ADR-1316 extends that gate to option values:** a twin that mirrors the CPU
+  table for collector-key parity, whose CPU twin can execute the full range,
+  but implements only the default marks that entry
+  `VMAF_OPT_FLAG_DEFAULT_ONLY`. Model-driven dispatch then chooses the CPU
+  twin for a valid non-default value before device initialization. Keep the
+  CPU name, alias, declared range and `FEATURE_PARAM` bit; never narrow the
+  table to hide a backend capability gap. Extend
+  `test_gpu_option_value_capability_contract.py` when adding or removing such
+  a restriction.
+  **ADR-1324 adds the dimension-dependent counterpart for GPU `float_ssim`:**
+  all four twins keep the CPU-authored `scale=0` auto option, declare a
+  `context_check` plus `float_ssim` CPU fallback, and use their existing scale
+  helper as the sole threshold authority. Model-selected host-picture
+  contexts whose resolved scale exceeds `1` are replaced after validation and
+  backend preparation but before extractor initialization/submission and CUDA
+  picture translation. SYCL shared staging may already be populated at that
+  point. Directly named GPU extractors and
+  the device-buffer-only SYCL entry point keep their scale-1-only errors. Do
+  not mark `scale` default-only, narrow its range, or retry arbitrary init
+  failures on CPU. Extend
+  `test_gpu_float_ssim_auto_scale_contract.py` whenever this capability
+  changes.
 - **ANSNR / float_ansnr feature extractor removal (ADR-0865)**:
   `ansnr` and `float_ansnr` (CPU scalar, AVX2, AVX-512, NEON, CUDA, HIP, SYCL,
   Metal) were sunset and completely removed from library. ANSNR is legacy
@@ -144,9 +190,32 @@ feature/
   - Keep `feature_extractor.cpp` free of any `ansnr` registration symbols.
   - Keep dispatch registries and feature lists free of `ansnr` / `float_ansnr`.
 
+- **Cross-backend non-finite publication semantics (ADR-1302)**:
+  `nonfinite_score.h` is the shared validate-before-first-write seam for VIF,
+  ADM, SSIM and MS-SSIM host code. CPU, CUDA, HIP, SYCL and Metal twins must
+  validate every enabled output before a clamp, fallback, dB conversion or
+  collector append. Do not re-inline ordered comparisons in one backend: NaN
+  takes the fallback arm and becomes a plausible score. All four VIF ratios are
+  finite-checked before scale 0 is written, including integer and debug paths;
+  only scales 1-3 then apply their configured minimum. Validate ADM reductions
+  before the precision floor, and validate every MS-SSIM L/C/S atom even when
+  `enable_lcs=false`: otherwise a comparison or `pow(NaN, 0)` can erase the
+  failure. Keep every registered host on the seams checked by
+  `test_nonfinite_collector_wiring.py`. Preserve ADR-1221's sole intentional
+  non-finite output: finite perfect SSIM/MS-SSIM with dB enabled and clipping
+  disabled reports positive infinity; invalid raw inputs and ceilings still
+  fail the frame.
+
 - `ssimulacra2.c` is fork-local (not upstream). It embeds several
   constant tables that must stay in lock-step with libjxl even across
   rebase:
+  - **Non-finite score semantics (ADR-1302)** are also lock-step across scalar,
+    AVX2, AVX-512, NEON, SVE2, CUDA, HIP, SYCL and Metal host code. Edge
+    differences go through `ssimulacra2_score.h` before accumulation and every
+    polynomial pool goes through its finalizer; each extractor rejects a
+    non-finite result before collector publication. Do not restore inline
+    ordered comparisons: `NaN > 0` and `NaN < 0` are both false, which erases
+    the edge failure, and the old final `else` mapped NaN to perfect `100.0`.
   - **Opsin absorbance matrix** (`kM00`…`kM22`) and bias `kB` — see
     libjxl `lib/jxl/opsin_params.h`.
   - **`MakePositiveXYB` offsets** — `B=(B-Y)+0.55`, `X*=14`, `X+=0.42`,
@@ -258,7 +327,7 @@ feature/
   into cross-ISA aliases (fork's SIMD policy rules out
   Highway / simde / xsimd — see user memory
   `feedback_simd_dx_scope.md`).
-- **`feature_collector.c` mount/unmount traversal**: fork rewrites
+- **`feature_collector.cpp` mount/unmount traversal**: fork rewrites
   `vmaf_feature_collector_mount_model` and `unmount_model` to walk
   local cursor instead of advancing pointer-to-head — upstream
   [Netflix#1406](https://github.com/Netflix/vmaf/pull/1406) is still
@@ -273,6 +342,15 @@ feature/
   would trip clang-tidy `readability-function-size` (JPL-P10 rule 4).
   See [ADR-0132](../../../docs/adr/0132-port-netflix-1406-feature-collector-model-list.md)
   and [rebase-notes 0031](../../../docs/rebase-notes.md).
+- **`feature_collector.cpp` is the only implementation authority.** Commit
+  `5d070b0b4` accidentally recreated a C implementation after the C++ migration,
+  leaving production and tests on different bodies. Do not add
+  `feature_collector.c` or point any build target at one. Preserve the mutex
+  coverage, full mounted-model snapshot, unlocked destroy traversal, unwind
+  helpers, and `-EAGAIN` read contract together in the C++ TU. The fast
+  `test_feature_collector_source_authority` gate fails if the twin or a stale
+  build reference returns. See
+  [Research-2100](../../../docs/research/2100-feature-collector-source-authority-2026-09-24.md).
 - **Generalised AVX convolve scanline helpers** (fork-local,
   ADR-0143): four `convolution_f32_avx_s_1d_*_scanline`
   helpers in [`common/convolution_avx.c`](common/convolution_avx.c)
@@ -453,19 +531,31 @@ feature/
   zeroing does not make upstream's bound safe. Guarded by
   `test_integer_adm_tiny_frames`, which the ASan lane aborts on the old bound.
 
-- **`integer_adm` GPU row-level rounding invariant** (fork-local, ADR-1167):
-  In integer ADM contrast masking kernels (`cuda/integer_adm/adm_cm.cu` and
-  `hip/integer_adm/adm_cm.hip`), inner accumulation rounding shift
+- **`integer_adm` row-level rounding invariant** (fork-local, ADR-1167):
+  In integer ADM contrast masking, the scalar CPU reference, AVX2/AVX-512 CPU
+  paths, and the CUDA, HIP, SYCL and Metal twins all apply the inner
+  accumulation rounding shift
   `(row_total + add_shift_inner_accum) >> shift_inner_accum` must NEVER be
-  distributed across warp reduction or per-thread reduction. Bitwise right-shift
-  with rounding bias is non-linear and non-distributive over addition.
-  kernel must accumulate all columns of row in 64-bit precision across
-  entire width `[start_col, end_col)` before applying shift once per row.
+  distributed across a pixel, lane, warp, subgroup or threadgroup reduction.
+  Bitwise right-shift with rounding bias is non-linear and non-distributive
+  over addition. Every implementation must accumulate all columns of a row in
+  64-bit precision across the entire width `[start_col, end_col)` before
+  applying the shift once per row. Scalar CPU, CUDA and HIP use the private
+  `adm_cm_round_row_total()` seam; AVX2/AVX-512 and SYCL keep equivalent inline
+  expressions to avoid behavior-only refactors in their inherited functions;
+  Metal uses an MSL-local twin.
+  The helper's rounding term stays signed: CUDA i4 passes ADR-0155's negative
+  `INT32_MIN` term, which must never be cast through `uint32_t`.
   Kernel launch grids must use `gridDim.x = 1` to ensure single-block/warp
   row traversal. Furthermore, border row selection at `i == 0 && top <= 0`
   must use explicit absolute indices `{row_top, row_bot, col_l, col_r}` and
   evaluate `csf_a` at row 0 center (`i * src_stride + j`), never walking running
-  pointer offsets. See [ADR-1167](../../../docs/adr/1167-adm-cm-row-level-rounding.md).
+  pointer offsets. Score parity cannot observe one-unit placement errors after
+  float conversion; preserve `test_adm_cm_row_rounding` and
+  `test_adm_cm_row_rounding_contract` as the raw-value and all-backend guards,
+  including all 72 AVX2/AVX-512 band-fold sites.
+  See [ADR-1167](../../../docs/adr/1167-adm-cm-row-level-rounding.md) and
+  [Research-2111](../../../docs/research/2111-adm-cm-row-rounding-observability.md).
 
 - **`integer_adm.c` / `adm_tools.c` are restructured upstream-mirror
   files** (ADR-1141, 2026-09-02): every kernel expression is verbatim
@@ -1216,7 +1306,7 @@ after port-upstream of any of these files.
 - [ADR-0193](../../../docs/adr/0193-motion-v2-vulkan.md) —
   `motion_v2` Vulkan kernel. ADR-0662 corrects its mirror contract:
   `integer_motion_v2.c::mirror` uses reflect-101 (`2 * size - idx - 2`)
-  and CUDA / SYCL / Vulkan twins must keep that literal aligned
+  and CUDA / SYCL twins must keep that literal aligned
   with CPU reference.
 - [ADR-0205](../../../docs/adr/0205-cambi-gpu-feasibility.md) +
   [ADR-0210](../../../docs/adr/0210-cambi-vulkan-integration.md) —
@@ -1297,14 +1387,16 @@ after port-upstream of any of these files.
   [ADR-0161](../../../docs/adr/0161-ssimulacra2-simd-bitexact.md)
   / [ADR-0162](../../../docs/adr/0162-ssimulacra2-iir-blur-simd.md)
   / [ADR-0163](../../../docs/adr/0163-ssimulacra2-ptlr-simd.md).
-- **`float_ms_ssim` `enable_chroma` (ADR-0583, PR opened 2026-05-16)**:
+- **`float_ms_ssim` `enable_chroma` (ADR-0583, ADR-1334)**:
   `float_ms_ssim.c` has `bool enable_chroma` field in `MsSsimState`
   and per-plane loop in `extract()` emitting `float_ms_ssim_cb` /
   `float_ms_ssim_cr`. default is `false` (luma-only, backward-
-  compatible). GPU twins (`_cuda`, `_sycl`, `_vulkan`) do not yet carry
-  this option — they are planned follow-up. If upstream Netflix adds
-  any option to `float_ms_ssim.c`, mirror it to all GPU twins in
-  same PR per twin-parity invariant.
+  compatible). Chroma dimensions use ceil subsampling, so the exact 4:2:0
+  luma floor for a 176x176 chroma pyramid is 351x351. SYCL and Metal compute
+  all three planes; HIP accepts the option but remains explicitly luma-only;
+  CUDA does not expose it. If
+  upstream Netflix adds any option to `float_ms_ssim.c`, mirror it to all
+  GPU twins in same PR per twin-parity invariant.
 - **Upstream ports**: `feature/motion` options from `b949cebf`
   (T-NEW-1) MERGED via PR #197 (2026-04-29). `feature/speed`
   port from `d3647c73` (`speed_chroma` + `speed_temporal`) is
@@ -1550,6 +1642,9 @@ Two rules follow, and they are not same rule:
    bit. Anything that diverges (different alias, different default,
    missing flag) silently changes key. `core/src/feature/integer_adm.c` is
    reference for `adm` family.
+   An extractor-local capability bit such as `VMAF_OPT_FLAG_DEFAULT_ONLY`
+   may differ; it describes what the twin can execute without changing the
+   CPU-authoritative collector-key schema.
 2. **Never declared-and-ignored.** Option that changes value twin
    emits must change it. FEATURE_PARAM option whose arithmetic
    only feeds feature twin does **not** emit is one legitimate
@@ -1578,6 +1673,36 @@ unclamped. Netflix golden `adm_min_val=0.98` case pins
 (1920.0 * 1080.0)` uses picture dimensions, not scale-3 dimensions
 per-scale loop variables hold once loop has run. All three GPU twins had
 inherited post-loop values (256× too-small floor).
+
+## Integer ADM Barten weights use one exponent per scale (ADR-1325)
+
+`adm_csf_fixed_point.h` is the representation authority for fixed-point ADM
+CSF weights on CPU, CUDA, SYCL, HIP, and Metal. Preserve these coupled rules
+when rebasing or changing any integer-ADM twin:
+
+- choose one non-negative power-of-two exponent `k` for all three bands of a
+  DWT scale; independent band shifts change the metric;
+- keep normalized scale-0 weights strictly below 2^16 and scale-1..3 weights
+  strictly below 2^30, retaining two headroom bits for signed CSF/CM and cube
+  arithmetic;
+- restore `3k` in the host contrast-masking finalizer because the accumulated
+  signal is cubed, while the denominator continues to use the original float
+  CSF factors;
+- keep the `k=0` fixed-point values and AVX2/AVX-512 dispatch unchanged;
+  configurations needing normalization use scalar weighted-CSF/CM stages but
+  may retain SIMD DWT, decoupling, and denominator stages;
+- reject negative or non-finite table output, including the blend tables'
+  negative sentinel, instead of converting it to unsigned.
+- reject every viewing geometry where
+  `adm_norm_view_dist * adm_ref_display_height < 3240` through the shared
+  `adm_viewing_geometry_check()` helper; this floor is independent of CSF mode.
+  The CPU reference checks before computation; GPU twins check before
+  normalization or device work.
+
+`test_adm_csf_representable` pins finite, non-degenerate CPU mode-1 output;
+the CUDA, SYCL, HIP, and Metal parity fixtures pin their supported scores at
+places=4. Metal integer ADM implements modes 0..3 and therefore must not regain
+`VMAF_OPT_FLAG_DEFAULT_ONLY` on `adm_csf_mode`.
 
 ## ADM contrast-masking edge policy is asymmetric (ADR-1204)
 
@@ -1671,10 +1796,14 @@ quadruples; see
 it only after `init_fex_list_slot()` succeeds. Do not move initialized entry:
 `vmaf_fex_ctx_pool_aquire()` retains it while `pthread_cond_wait()` releases
 pool mutex, and release must signal same condition-variable address.
+The entry also owns a by-value snapshot of the registered
+`VmafFeatureExtractor`; never restore the caller-owned descriptor pointer.
+Callers may register stack descriptors, while CUDA/SYCL/frame-sync runtime
+pointers are refreshed under the pool lock before lazy context creation.
 Preserve pointer-table and context-array size checks, and free each options copy
 even if its first context allocation failed. Linux
 `test_fex_pool_growth` regression forces table relocation while another
-acquisition waits. See
+acquisition waits and mutates a caller descriptor after registration. See
 [pool-growth digest](../../../docs/research/fex-pool-growth-2026-09-08.md).
 
 ## High-bit-depth samples are normalised before accumulation (ADR-1212)
@@ -1709,7 +1838,7 @@ Concretely, when kernel promotes `float` inputs to `double`, do promotion
 floats; `(double)(a - b)` is not, and mixing two between vector body and
 its scalar tail makes result depend on vector width.
 
-## Twin option tables mirror the CPU's aliases and semantics (ADR-1214)
+## Twin option tables mirror the CPU's aliases and semantics (ADR-1214, ADR-1312)
 
 When a GPU twin copies an option from the CPU extractor, copy the `alias` and
 range too: ADR-1183 builds the emitted feature name from the alias and value of
@@ -1717,6 +1846,9 @@ every non-default option, so `cs` on the twin and `scf` on the CPU means two
 different keys for one feature. And copy the *semantics* from the branch the
 twin actually implements — `adm_csf_scale` is a Barten-mode argument, so in the
 Watson-only twins it must be a no-op exactly as it is on the CPU.
+`core/test/test_gpu_option_alias_contract.py` is the device-free inventory for
+the eighteen known motion, VIF, and ADM alias sites; extend it whenever an
+equivalent twin option is added.
 
 ## Error exits use unwind helpers, not label ladders (HISS-01, 2026-09-21)
 
@@ -1753,11 +1885,25 @@ but `t = a * b;` in caller plus `t + c` in helper does not, and that is 1 ULP
 that ssimulacra2 pooling amplifies into visible score delta (ADR-1205).
 Reductions keep their order: move whole accumulation loop, never partial sums.
 
-Functions carrying ADR-0141 §2 bit-exactness carve-outs stay unsplit —
-`compute_adm`, `adm_dwt2_s`, `calc_ssim`, `brisque_fit_aggd`,
-`niqe_extract_aggd`, `create_recursive_gaussian`, `picture_to_linear_rgb`.
-Their paired SIMD ports match them line for line; splitting one forces
-matching splits in four SIMD files and breaks scalar-diff audit story.
+Functions carrying ADR-0141 §2 bit-exactness carve-outs with paired SIMD ports
+stay unsplit — `compute_adm`, `adm_dwt2_s`, `calc_ssim`, `niqe_extract_aggd`,
+`create_recursive_gaussian`, `picture_to_linear_rgb`. For `brisque_fit_aggd` in
+`brisque_math.h` (pure scalar, no SIMD twins), the inner loop was extracted to
+`static brisque_aggd_accumulate` to satisfy HISS-04 (60 LOC max), keeping both
+accumulation loops intact and statements unsplit.
+
+## Floating-point equality contracts (ADR-1308)
+
+CodeQL flags direct float equality (`==` / `!=`). In this subtree:
+
+- In `feature_name.cpp`, `option_double_equals` compares double options: NaN is
+  never equal (even to NaN), signed zeros `+0.0 == -0.0` are equal, same
+  infinities are equal, and finite values compare via 64-bit IEEE representation.
+- In `brisque_math.h`, `brisque_range_scale` asserts
+   `span != 0.0 && isfinite(span)` on `span = hi - lo` instead of raw
+   `hi != lo`.
+
+Do not revert these helpers or assertions to raw `==` or `!=`.
 
 ## Integer ADM's 16-bit vertical DWT sums in int64
 

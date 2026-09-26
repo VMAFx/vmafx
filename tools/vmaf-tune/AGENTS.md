@@ -344,10 +344,11 @@ for option-space digest.
   weighted means stay `NaN` in memory for caller-side math, but
   serialize as `null` so strict JSONL consumers, report renderers,
   and FFmpeg profile readers never ingest JavaScript-only tokens.
-- **All compare / report / benchmark JSON output routes through
-  `vmaftune.jsonio.dumps_strict` (ADR-0988).** Do not add bare
-  `json.dumps` calls without NaN protection in `compare.py`,
-  `report.py`, or `benchmark.py` — import `dumps_strict` instead.
+- **All compare / report / benchmark / conformal / auto / ladder JSON output
+  routes through `vmaftune.jsonio.dumps_strict` (ADR-0988 and restored
+  BUG-048 contract).** Do not add bare `json.dumps` calls without NaN
+  protection in `compare.py`, `report.py`, `benchmark.py`, `conformal.py`,
+  `auto.py`, or `ladder.py` — import `dumps_strict` instead.
   Private `_nan_to_none` helpers in those modules were removed in
   ADR-0988; any reintroduction is rebase regression.
 - **Ladder uncertainty is post-hull / pre-knee.** `vmaf-tune ladder
@@ -1172,6 +1173,15 @@ conversion scripts for those local corpora.
   one recommendation and construct FFmpeg argv. HTML escaping of
   raw JSON `<pre>` is part of contract because reader unescapes it
   before `json.loads`.
+- **Profile-card `--format both` means all three artifacts.** Both
+  `compare` and `report` call
+  `report.write_report_outputs`; do not restore CLI-local writer copies.
+  The helper emits machine-readable `.json` before the `.html` and `.md`
+  renders, and returns those paths in that order.
+  `--json-sidecar` adds JSON to a single-format HTML or Markdown run;
+  it is not required for `both`. Regression tests must call the
+  production writer or CLI entry point rather than copy its dispatch
+  logic into a test helper.
 - **`corpus.iter_rows` marks container sources for ffmpeg
   auto-detect (ADR-0505, Bug #V5-2).**
   `EncodeRequest.source_is_container` is derived from

@@ -1,0 +1,340 @@
+version = 1
+
+[[annotations]]
+path = ["*", ".*", "*/**", ".*/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Lusoris"
+SPDX-License-Identifier = "EUPL-1.2"
+
+# These six files descend from Netflix/vmaf root files.  ADR-1250 requires
+# inherited work, and every fork contribution to it, to remain on the terms it
+# already carried rather than being swept into the fork-local EUPL default.
+[[annotations]]
+path = [
+    ".dockerignore",
+    ".gitattributes",
+    ".gitignore",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "README.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = ["2020 Netflix, Inc.", "2026 Lusoris"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+# FFmpeg patch files are derivative source contributions.  Patches 0001-0018
+# touch LGPL-2.1-or-later translation units; 0006 also carries Lawrence
+# Curtis's no-CLA contribution.  Patch 0019 spans both LGPL and GPL units, so
+# both terms apply to that file instead of the fork-local EUPL default.
+[[annotations]]
+path = [
+    "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch",
+    "ffmpeg-patches/0002-add-vmaf_pre-filter.patch",
+    "ffmpeg-patches/0003-libvmaf-wire-sycl-backend-selector.patch",
+    "ffmpeg-patches/0004-libvmaf-wire-vulkan-backend-selector.patch",
+    "ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch",
+    "ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch",
+    "ffmpeg-patches/0008-add-libvmaf_tune-filter.patch",
+    "ffmpeg-patches/0009-pass-autotune-cli-glue.patch",
+    "ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch",
+    "ffmpeg-patches/0011-libvmaf-wire-hip-backend-selector.patch",
+    "ffmpeg-patches/0012-libvmaf-wire-metal-backend-selector.patch",
+    "ffmpeg-patches/0013-libvmaf-add-libvmaf-metal-filter.patch",
+    "ffmpeg-patches/0014-libvmaf-expose-cpumask-and-gpumask-on-all-vmaf-filte.patch",
+    "ffmpeg-patches/0015-vmaf-tune-profile-cli-glue.patch",
+    "ffmpeg-patches/0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch",
+    "ffmpeg-patches/0017-libvmaf-read-pelorus-sidedata.patch",
+    "ffmpeg-patches/0018-libvmaf-map-percentile-pool-methods.patch",
+]
+precedence = "override"
+SPDX-FileCopyrightText = ["2000-2026 the FFmpeg developers", "2026 Lusoris"]
+SPDX-License-Identifier = "LGPL-2.1-or-later"
+
+[[annotations]]
+path = ["ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2000-2026 the FFmpeg developers",
+    "2026 Lawrence Curtis",
+    "2026 Lusoris",
+]
+SPDX-License-Identifier = "LGPL-2.1-or-later"
+
+[[annotations]]
+path = ["ffmpeg-patches/0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2000-2026 the FFmpeg developers", "2026 Lusoris"]
+SPDX-License-Identifier = "LGPL-2.1-or-later AND GPL-2.0-or-later"
+
+# The repository has no CLA or DCO.  These files were created or touched by
+# outside contributors while the fork was BSD-2-Clause-Patent; ADR-1250 says
+# they keep those terms.  Exact-path overrides prevent the tree-wide metadata
+# fallback from silently relicensing their contributions.
+[[annotations]]
+path = [
+    ".github/workflows/libvmaf-build-matrix.yml",
+    ".github/workflows/lint-and-format.yml",
+    "docs/adr/0137-thread-local-locale-for-numeric-io.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 Diego Nieto", "2026 Lusoris"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/adr/0150-port-netflix-1472-cuda-windows.md"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 birkdev", "2026 Lusoris"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["changelog.d/changed/python-test-mytestcase-migration.md"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 christosb", "2026 Lusoris"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = [
+    "changelog.d/added/0328-cambi-cluster-port.md",
+    "changelog.d/added/motion-v2-public-api-options.md",
+    "changelog.d/fixed/motion-v2-mirror-off-by-one.md",
+    "docs/adr/0328-cambi-cluster-port-skip-shared-header-rename.md",
+    "docs/adr/0337-motion-v2-public-api-options.md",
+    "docs/adr/_index_fragments/0337-motion-v2-public-api-options.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 Kyle Swanson", "2026 Lusoris"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = [
+    "changelog.d/fixed/1121-sycl-qsv-zerocopy-p010-normalization.md",
+    "docs/adr/1121-sycl-qsv-zerocopy-p010-normalization.md",
+    "docs/adr/1122-vmaf-v1-model-port.md",
+    "docs/adr/_index_fragments/1121-sycl-qsv-zerocopy-p010-normalization.md",
+    "docs/adr/_index_fragments/1122-vmaf-v1-model-port.md",
+    "docs/backends/sycl/overview.md",
+    "docs/research/2026-06-30-sycl-qsv-zerocopy-two-bug-investigation.md",
+    "docs/research/2026-07-01-vmaf-v1-models.md",
+    "docs/research/sycl-zero-copy-nan-diagnosis.md",
+    "docs/research/sycl-zero-copy-nan-evidence/host_checksums.csv",
+    "docs/research/sycl-zero-copy-nan-evidence/host_vmaf.csv",
+    "docs/research/sycl-zero-copy-nan-evidence/oracle_run.log",
+    "docs/research/sycl-zero-copy-nan-evidence/sycl_checksums.csv",
+    "docs/research/sycl-zero-copy-nan-evidence/sycl_run.log",
+    "docs/research/sycl-zero-copy-nan-evidence/sycl_vmaf.csv",
+    "docs/research/sycl-zero-copy-nan-evidence/sycl_vmaf_baseline.csv",
+]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 Dmitry Popovich", "2026 Lusoris"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/adr/_index_fragments/_order.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2026 Dmitry Popovich",
+    "2026 Kyle Swanson",
+    "2026 Lusoris",
+]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+# Generated and append-only ledgers retain contributed rows from several of
+# the same no-CLA authors.  Their generated/aggregate nature does not erase
+# the terms under which those rows arrived.
+[[annotations]]
+path = ["docs/adr/README.md"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2026 Diego Nieto",
+    "2026 Dmitry Popovich",
+    "2026 Kyle Swanson",
+    "2026 birkdev",
+    "2026 christosb",
+    "2026 Lusoris",
+]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/metrics/features.md"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2026 Christopher Degawa",
+    "2026 Kyle Swanson",
+    "2026 Lusoris",
+]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/rebase-notes.md"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2026 Christopher Degawa",
+    "2026 Diego Nieto",
+    "2026 Dmitry Popovich",
+    "2026 Kyle Swanson",
+    "2026 birkdev",
+    "2026 christosb",
+    "2026 Lusoris",
+]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/state.md"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 Dmitry Popovich", "2026 Kyle Swanson", "2026 Lusoris"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["changelog.d/_pre_fragment_legacy.md"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2026 Christopher Degawa",
+    "2026 Diego Nieto",
+    "2026 Kyle Swanson",
+    "2026 birkdev",
+    "2026 Lusoris",
+]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/adr/0398-mytestcase-migration-partial-port.md"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 christosb", "2026 Lusoris"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+# These paths are renamed or copied descendants of files still present in
+# Netflix/vmaf.  Repository moves do not turn inherited material into
+# fork-authored work, so ADR-1250 keeps the upstream BSD terms.
+[[annotations]]
+path = [
+    ".github/dependabot.yml.disabled",
+    ".github/workflows/docker-image.yml",
+    ".github/workflows/ffmpeg-integration.yml",
+    "docs/metrics/cambi.md",
+    "docs/metrics/confidence-interval.md",
+    "docs/metrics/ctc/aom.md",
+    "docs/metrics/ctc/nflx.md",
+    "docs/reference/references.md",
+    "docs/usage/external-resources.md",
+    "docs/usage/ffmpeg.md",
+    "docs/usage/matlab.md",
+    "docs/usage/python.md",
+    "scripts/run_unittests.sh",
+]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2016-2026 Netflix, Inc. and VMAF contributors",
+    "2026 Lusoris",
+]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/reference/papers/CAMBI_PCS2021.pdf"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2021 Pulkit Tandon",
+    "2021 Mariana Afonso",
+    "2021 Joel Sole",
+    "2021 Lukáš Krasula",
+]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/reference/presentations/VMAF_ICIP17.pdf"]
+precedence = "override"
+SPDX-FileCopyrightText = "2017 Zhi Li"
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/reference/presentations/VQEG_SAM_2018_023_VMAF_Variability.pdf"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2018 Zhi Li", "2018 Ioannis Katsavounidis"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/reference/presentations/VQEG_SAM_2018_025_VMAF_4K.pdf"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2018 Zhi Li",
+    "2018 Toinon Vigier",
+    "2018 Patrick Le Callet",
+]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["docs/reference/presentations/VQEG_SAM_2018_111_AnalysisToolsInVMAF.pdf"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2018 Zhi Li", "2018 Christos G. Bampis"]
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = [
+    "core/**",
+    "compat/python-vmaf/**",
+    "python/**",
+    "model/**",
+    "resource/**",
+    "Dockerfile*",
+    "Makefile",
+    "OSSMETADATA",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2016-2020 Netflix, Inc."
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["core/src/mcp/3rdparty/cJSON/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2009-2017 Dave Gamble and cJSON contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["core/src/feature/third_party/xiph/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2001-2012 Xiph.Org and contributors."
+SPDX-License-Identifier = "BSD-3-Clause"
+
+[[annotations]]
+path = ["core/src/feature/iqa/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2011, Tom Distler (http://tdistler.com)"
+SPDX-License-Identifier = "BSD-3-Clause"
+
+[[annotations]]
+path = ["core/src/x86/cpuid.asm"]
+precedence = "closest"
+SPDX-FileCopyrightText = ["2018, VideoLAN and dav1d authors", "2018, Two Orioles, LLC"]
+SPDX-License-Identifier = "BSD-2-Clause"
+
+[[annotations]]
+path = ["core/src/ext/x86/x86inc.asm"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2005-2020 x264 project"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = ["core/src/interop/pelorus*"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Lusoris"
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["model/tiny/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Lusoris"
+SPDX-License-Identifier = "BSD-2-Clause-Patent"
+
+[[annotations]]
+path = ["model/tiny/fastdvdnet_pre.*"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2020 Matias Tassano, Julie Delon, Thomas Veit"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+    "docs/ai/models/u2netp_mirror_card.md",
+    "docs/ai/u2netp-mirror.md",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Lusoris"
+SPDX-License-Identifier = "EUPL-1.2 AND LicenseRef-Apache-2.0-u2netp"

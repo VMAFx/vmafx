@@ -45,21 +45,26 @@ when conversion happens.
   entry (bumped `EXPECTED_KERNEL_COUNT`) in
   `test_metal_kernel_coverage_audit.c`.
 
-- **Per-WG float/uint partials — no atomics**: Apple MSL does not
+- **Per-WG partials — no atomics**: Apple MSL does not
   expose `atomic_ulong` (`atomic_fetch_add_explicit` for `ulong`
   silently compiles but fails on device — confirmed CI run
-  25685703780 / job 75408804495). All Metal kernels use
-  per-threadgroup `float`/`uint` partials array indexed by
-  `bid.y * grid_groups.x + bid.x`, reduced on host in `double`. Never
-  introduce `atomic_ulong` or `atomic_fetch_add_explicit` for 64-bit
-  types.
+  25685703780 / job 75408804495). Metal kernels use per-threadgroup
+  partials indexed by `bid.y * grid_groups.x + bid.x`, reduced on the
+  host. Never introduce `atomic_ulong` or
+  `atomic_fetch_add_explicit` for 64-bit types. Exact 64-bit reductions
+  use threadgroup `long` / `ulong` scratch followed by a serial lane-0
+  sum, as in `integer_vif.metal` and `float_moment.metal`.
 
-- **`simd_sum` reduction**: MSL `simd_sum()` = standard two-level
-  reduction primitive. All kernels use:
+- **`simd_sum` reduction is 32-bit only**: MSL `simd_sum()` is the
+  standard two-level reduction primitive for float / uint values. Those
+  kernels use:
   1. `simd_sum(per_thread_val)` → lane 0 of each SIMD group writes to
      `threadgroup float simd_partials[8]` array.
   2. Thread 0 (`lid == 0`) sums `simd_count` SIMD-group partials into
      global `partials[bid.y * grid_groups.x + bid.x]` slot.
+  Do not split a 64-bit addend into independent lo/hi `simd_sum(uint)`
+  calls: a carry out of the low half is then lost. `float_moment` and
+  `integer_vif` therefore use the exact serial lane-0 pattern above.
 
 - **8×16 threadgroup / 20×20 shared tile (radius-2 kernels)**:
   `integer_motion_v2`, `float_motion`, `integer_motion`, and
@@ -70,8 +75,11 @@ when conversion happens.
 
 - **Per-WG partials buffer**: each `.mm` allocates Shared-storage
   `MTLBuffer` sized `ceil(W/16) * ceil(H/16)` float (or uint)
-  elements, one per threadgroup. For `float_moment`, buffer holds 4
-  floats per threadgroup (interleaved ref1st/dis1st/ref2nd/dis2nd).
+  elements, one per threadgroup. `float_moment` is the exact-integer
+  exception: it has eight uint32 planes holding lo/hi pairs for the four
+  uint64 sums (ref1st/dis1st/ref2nd/dis2nd). The host reconstructs each
+  pair before applying the bit-depth scaler. Preserve this shape across
+  rebases; restoring four interleaved floats reopens BUG-048 A6.
 
 - **Bridge-retained PSO slots**: each `.mm` stores
   `MTLComputePipelineState` handles as `void *` under
@@ -86,6 +94,13 @@ when conversion happens.
   "float_moment_ref2nd", "float_moment_dis2nd", NULL}`. The `.mm`
   conversion uses correct names; `.c` file removed from
   `metal_sources` on merge.
+
+- **`integer_psnr_metal` option parity (ADR-1322 / BUG-048)**:
+  `integer_psnr_metal.mm` must declare `enable_chroma` (default `true`)
+  and `uncapped` (default `false`) in its `options[]` table. `init_fex_metal`
+  must clamp `n_planes` to 1 when `!enable_chroma` or `pix_fmt == VMAF_PIX_FMT_YUV400P`.
+  `submit_fex_metal` and `collect_fex_metal` must loop over `s->n_planes`.
+  Guarded by device-free contract test `test_gpu_psnr_option_parity_contract.py`.
 
 ## Kernel files
 
@@ -105,8 +120,8 @@ when conversion happens.
 | `integer_motion_metal.mm`          | Done (T8-1i) | host dispatch                                                           |
 | `float_ssim.metal`                 | Done (T8-1j) | `float_ssim`, `float_ssim_l`, `float_ssim_c`, `float_ssim_s`           |
 | `float_ssim_metal.mm`              | Done (T8-1j) | host dispatch                                                           |
-| `float_ms_ssim.metal`              | Done (T8-2b) | `float_ms_ssim` — 5-scale pyramid, Wang weights                         |
-| `float_ms_ssim_metal.mm`           | Done (T8-2b) | host dispatch (ADR-0490, wired in meson per ADR-0545)                   |
+| `float_ms_ssim.metal`              | Done (T8-2b) | `float_ms_ssim`, `float_ms_ssim_cb`, `float_ms_ssim_cr` — 5-scale pyramid, Wang weights |
+| `float_ms_ssim_metal.mm`           | Done (T8-2b) | host dispatch (ADR-0490, ADR-1334; enable_db, clip_db, enable_chroma)   |
 | `integer_ssim.metal`               | Done         | `ssim`                                                                  |
 | `integer_ssim_metal.mm`            | Done         | host dispatch                                                           |
 | `float_vif.metal`                  | Done         | `VMAF_feature_vif_scale0..3_score`, `vif`, `vif_num/den` (+ per-scale) |
@@ -164,8 +179,41 @@ when conversion happens.
   change to weight application math must span all motion-family GPU
   twins in same PR.
 
+## Registration coverage invariant
+
+Every new Metal `VmafFeatureExtractor` added to
+`core/src/feature/feature_extractor.cpp`'s `feature_extractor_list[]` must add
+its basename to `core/test/test_metal_kernel_coverage_audit.c`'s
+`g_metal_kernel_basenames[]` and update `EXPECTED_KERNEL_COUNT` in the same
+PR. Motion-class extractors must also appear in
+`core/test/test_metal_kernel_registration.c`'s `kTemporal[]` table so the
+`VMAF_FEATURE_EXTRACTOR_TEMPORAL` scheduling flag is pinned. The runtime-focused
+`test_metal_smoke.c` is not the authoritative registration inventory.
+
+The dedicated registration and 17-kernel audit tests supersede the older
+per-extractor smoke functions removed by a stale squash; do not duplicate those
+lookups back into the runtime test. See Research-2091.
+
 ## Per-feature option-table sync invariant
 
+- **`float_ms_ssim_metal` exposes full option and score parity.** ADR-1334
+  extends ADR-1221 to resolve `T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07`:
+  `float_ms_ssim_metal` exposes `enable_lcs`, `enable_db`, `clip_db`, and `enable_chroma`.
+  Scores are emitted via the shared `vmaf_ms_ssim_emit_scores()` (for luma) and
+  `vmaf_ssim_emit_score_named()` (for chroma planes `float_ms_ssim_cb` and
+  `float_ms_ssim_cr`), passing `s->enable_db, s->max_db`. When `clip_db` is enabled,
+  `s->max_db` is derived from the frame geometry via
+  `ceil(10. * log10(peak * peak / mse))` with `mse = 0.5 / (w * h)`. The
+  framework-free `float_ms_ssim_option_semantics.h` owns active-plane count,
+  ceil-subsampled plane geometry, and the dB ceiling so the exact production
+  semantics execute on hosts without Metal.
+  Subsampled chroma requires at least 176x176 dimensions (351x351 luma for
+  YUV420P because allocation uses ceil subsampling), enforced at init. YUV400P
+  resolves to one active plane before that chroma check. Every L/C/S atom on
+  every active plane is validated before the weighted product;
+  `pow(NaN, 0)` must never erase a failed reduction.
+  `test_metal_ms_ssim_option_semantics`, `test_metal_ms_ssim_options_contract.py`,
+  and `test_nonfinite_collector_wiring.py` lock this contract down device-free.
 - **GPU twins must mirror CPU option table for model-configured
   features.** Model (such as default model `vmaf_v1.0.16_3d0h`) may
   provide feature options. `vmaf_use_features_from_model` then checks
@@ -301,3 +349,21 @@ Metal float-ADM change as unverified until someone runs
   42456; the CPU forms it in int64 (`adm_dwt2_vpass16_tap4()`).
 - Unverified on Apple silicon (no hardware in the fleet); the change mirrors
   the CUDA and HIP twins, which are measured byte-identical.
+
+## float_motion force-zero ownership and flush idempotency (BUG048 A5)
+
+- `init_fex_metal()` releases the device lifecycle before returning from the
+  `motion_force_zero` path, but the cloned extractor still owns its
+  `feature_name_dict`. Keep `close_fex_metal` (or an equivalent dictionary-owning
+  callback) installed; restoring `fex->close = NULL` leaks the dictionary.
+- Before appending the tail `VMAF_feature_motion2_score`, `flush_fex_metal()`
+  resolves the actual score name through `feature_name_dict` and probes that
+  name at `s->frame_index`. A literal-name probe misses option-derived names such as
+  `motion_fps_weight=1.5` and makes a repeated flush fail.
+- `collect_fex_metal()` gates emission of `VMAF_feature_motion_score` behind
+  `if (s->debug)`.
+- `test_metal_float_motion_parity` exercises both lifecycle and flush idempotency
+  invariants on Apple Silicon, and skips cleanly on Linux/Windows.
+- `test_metal_float_motion_contract.py` enforces struct fields, option
+  registrations, close callback retention, debug gating, and dictionary-resolved
+  flush idempotency at AST level. See [Research-2113](../../../../docs/research/2113-metal-float-motion-lifecycle-flush.md).

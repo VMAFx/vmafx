@@ -478,39 +478,66 @@ static int cambi_cuda_init_tvi(CambiStateCuda *s)
 }
 
 /* ------------------------------------------------------------------ */
+static void cambi_preserve_error(int *rc, int err)
+{
+    if (!*rc)
+        *rc = err;
+}
+
+static int cambi_release_device_buffers(VmafFeatureExtractor *fex, CambiStateCuda *s, int rc)
+{
+    cambi_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_image));
+    cambi_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_mask));
+    cambi_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_tmp));
+    cambi_preserve_error(&rc, vmaf_cuda_kernel_readback_free(&s->rb_image, fex->cu_state));
+    cambi_preserve_error(&rc, vmaf_cuda_kernel_readback_free(&s->rb_mask, fex->cu_state));
+    return rc;
+}
+
+static void cambi_release_host_buffers(CambiStateCuda *s)
+{
+    free(s->buffers.c_values);
+    s->buffers.c_values = NULL;
+    free(s->buffers.c_values_histograms);
+    s->buffers.c_values_histograms = NULL;
+    free(s->buffers.mask_dp);
+    s->buffers.mask_dp = NULL;
+    free(s->buffers.filter_mode_buffer);
+    s->buffers.filter_mode_buffer = NULL;
+    free(s->buffers.derivative_buffer);
+    s->buffers.derivative_buffer = NULL;
+    free(s->buffers.diffs_to_consider);
+    s->buffers.diffs_to_consider = NULL;
+    free(s->buffers.diff_weights);
+    s->buffers.diff_weights = NULL;
+    free(s->buffers.all_diffs);
+    s->buffers.all_diffs = NULL;
+    free(s->buffers.tvi_for_diff);
+    s->buffers.tvi_for_diff = NULL;
+}
+
 /* cambi_init_unwind - the single teardown path for init_fex_cuda.
  *
- * HISS-01: this is the former `free_ref` label block, moved verbatim
- * and in the same statement order. Every early-exit site passes its
- * live `err`, so the code returned here is bit-identical to the
- * label's `(err != 0) ? err : -ENOMEM`.
+ * Drain the lifecycle before releasing anything queued work may reference.
+ * Every early-exit site retains its original error; allocation failures with
+ * no more specific status remain -ENOMEM.
  */
 static int cambi_init_unwind(VmafFeatureExtractor *fex, CambiStateCuda *s, int err)
 {
-    /* Best-effort teardown; close_fex_cuda handles null checks. */
-    (void)vmaf_picture_unref(&s->pics[0]);
-    (void)vmaf_picture_unref(&s->pics[1]);
-    if (s->d_image)
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_image);
-    if (s->d_mask)
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_mask);
-    if (s->d_tmp)
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->d_tmp);
-    (void)vmaf_cuda_kernel_readback_free(&s->rb_image, fex->cu_state);
-    (void)vmaf_cuda_kernel_readback_free(&s->rb_mask, fex->cu_state);
-    free(s->buffers.diffs_to_consider);
-    free(s->buffers.diff_weights);
-    free(s->buffers.all_diffs);
-    free(s->buffers.tvi_for_diff);
-    free(s->buffers.c_values);
-    free(s->buffers.c_values_histograms);
-    free(s->buffers.mask_dp);
-    free(s->buffers.filter_mode_buffer);
-    free(s->buffers.derivative_buffer);
-    if (s->feature_name_dict)
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return (err != 0) ? err : -ENOMEM;
+    const int primary_err = err ? err : -ENOMEM;
+    const int lifecycle_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (lifecycle_rc)
+        return primary_err;
+
+    int rc = cambi_release_device_buffers(fex, s, primary_err);
+    if (s->pics[0].ref)
+        cambi_preserve_error(&rc, vmaf_picture_unref(&s->pics[0]));
+    if (s->pics[1].ref)
+        cambi_preserve_error(&rc, vmaf_picture_unref(&s->pics[1]));
+    cambi_release_host_buffers(s);
+    cambi_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
+    cambi_preserve_error(&rc, vmaf_cuda_module_unload(fex->cu_state, &s->module));
+    return rc;
 }
 
 /* cambi_resolve_geometry - encoded geometry, high-res speedup and window.
@@ -570,9 +597,8 @@ static int cambi_resolve_geometry(CambiStateCuda *s, unsigned bpc, unsigned w, u
 
 /* cambi_load_kernels - module load plus the three kernel handles.
  *
- * HISS-04: lifted verbatim out of init_fex_cuda. CHECK_CUDA_GOTO and the two
- * labels it targets move with it, so the context is still popped exactly once
- * on every exit path and the lifecycle is closed in the same order.
+ * CHECK_CUDA_GOTO keeps the context-pop boundary local; failures then enter
+ * the shared phase-ordered init unwind with the original CUDA errno.
  */
 static int cambi_load_kernels(VmafFeatureExtractor *fex, CambiStateCuda *s, CudaFunctions *cu_f)
 {
@@ -591,16 +617,13 @@ static int cambi_load_kernels(VmafFeatureExtractor *fex, CambiStateCuda *s, Cuda
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->func_filter_mode, s->module, "cambi_filter_mode_kernel"),
         fail_cuda);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-    ctx_pushed = 0;
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_cuda);
     return 0;
 
 fail_cuda:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return cambi_init_unwind(fex, s, _cuda_err);
 }
 
 /* cambi_alloc_device - device buffers, pinned readbacks and the two host
@@ -748,12 +771,12 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int err = cambi_resolve_geometry(s, bpc, w, h);
     if (err)
-        return err;
+        return cambi_init_unwind(fex, s, err);
 
     /* CUDA lifecycle. */
     err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return cambi_init_unwind(fex, s, err);
 
     CudaFunctions *cu_f = fex->cu_state->f;
     err = cambi_load_kernels(fex, s, cu_f);
@@ -787,7 +810,7 @@ static int dispatch_mask(CambiStateCuda *s, CudaFunctions *cu_f, CUstream stream
 {
     const unsigned grid_x = (w + CAMBI_CUDA_BLOCK_X - 1u) / CAMBI_CUDA_BLOCK_X;
     const unsigned grid_y = (h + CAMBI_CUDA_BLOCK_Y - 1u) / CAMBI_CUDA_BLOCK_Y;
-    /* Bug fix (Issue #857): cuLaunchKernel params[i] must point to the VALUE
+    /* Bug fix (Issue lusoris/vmaf#857): cuLaunchKernel params[i] must point to the VALUE
      * to pass, not to the VmafCudaBuffer struct. Pass &buf->data (address of the
      * CUdeviceptr field) so the driver reads the device pointer, not buf->size. */
     void *params[] = {&s->d_image->data, &s->d_mask->data, &w, &h, &stride_words, &mask_index};
@@ -805,7 +828,7 @@ static int dispatch_decimate(CambiStateCuda *s, CudaFunctions *cu_f, CUstream st
 {
     const unsigned grid_x = (out_w + CAMBI_CUDA_BLOCK_X - 1u) / CAMBI_CUDA_BLOCK_X;
     const unsigned grid_y = (out_h + CAMBI_CUDA_BLOCK_Y - 1u) / CAMBI_CUDA_BLOCK_Y;
-    /* Bug fix (Issue #857): pass device pointer addresses, not struct addresses. */
+    /* Bug fix (Issue lusoris/vmaf#857): pass device pointer addresses, not struct addresses. */
     void *params[] = {&src->data, &dst->data, &out_w, &out_h, &src_stride_words, &dst_stride_words};
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_decimate, grid_x, grid_y, 1u, CAMBI_CUDA_BLOCK_X,
                                            CAMBI_CUDA_BLOCK_Y, 1u, 0u, stream, params, NULL));
@@ -821,7 +844,7 @@ static int dispatch_filter_mode(CambiStateCuda *s, CudaFunctions *cu_f, CUstream
 {
     const unsigned grid_x = (w + CAMBI_CUDA_BLOCK_X - 1u) / CAMBI_CUDA_BLOCK_X;
     const unsigned grid_y = (h + CAMBI_CUDA_BLOCK_Y - 1u) / CAMBI_CUDA_BLOCK_Y;
-    /* Bug fix (Issue #857): pass device pointer addresses, not struct addresses. */
+    /* Bug fix (Issue lusoris/vmaf#857): pass device pointer addresses, not struct addresses. */
     void *params[] = {&in->data, &out->data, &w, &h, &stride_words, &axis};
     CHECK_CUDA_RETURN(cu_f,
                       cuLaunchKernel(s->func_filter_mode, grid_x, grid_y, 1u, CAMBI_CUDA_BLOCK_X,
@@ -1275,7 +1298,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     /* Step 0: download dist_pic GPU→host so vmaf_cambi_preprocessing (host
      * code) can read it.  Pictures delivered to a CUDA extractor's submit()
      * have device pointers in data[]; dereferencing them on the host causes
-     * a segfault (Issue #857).  Other CUDA extractors avoid this because
+     * a segfault (Issue lusoris/vmaf#857).  Other CUDA extractors avoid this because
      * they keep all preprocessing on the GPU; CAMBI is unique in needing a
      * host-side decimate-and-10b-upcast before its GPU pipeline. */
     VmafPicture dist_host;
@@ -1293,7 +1316,6 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         return cambi_submit_unwind(&u, ctx_pushed, err, _cuda_err);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-    ctx_pushed = 0;
     return 0;
 
 fail_cuda:
@@ -1323,106 +1345,24 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 /* ------------------------------------------------------------------ */
 /* close_fex_cuda */
 /* ------------------------------------------------------------------ */
-/* cambi_unload_module - push the fex context, unload the PTX module, pop.
- *
- * HISS-01: lifted out of close_fex_cuda so the former `goto unload_done`
- * (which only skipped the failure block) becomes an ordinary return. The
- * CHECK_CUDA_GOTO error labels are unchanged, so the pop still runs exactly
- * when the push succeeded and the same _cuda_err reaches the caller.
- */
-static int cambi_unload_module(VmafFeatureExtractor *fex, CambiStateCuda *s,
-                               const CudaFunctions *cu_f)
-{
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_unload);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(cu_f, cuModuleUnload(s->module), fail_unload);
-    s->module = NULL;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop_unload);
-    return 0;
-
-fail_unload:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop_unload:
-    return _cuda_err;
-}
-
-/* cambi_close_device_buffers - release the device buffers and the two
- * readback staging areas.
- *
- * HISS-04: lifted verbatim out of close_fex_cuda. The same resources are
- * released in the same order and the first non-zero status still wins.
- */
-static int cambi_close_device_buffers(VmafFeatureExtractor *fex, CambiStateCuda *s, int rc)
-{
-    if (s->d_image) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_image);
-        if (e && rc == 0)
-            rc = e;
-        free(s->d_image);
-        s->d_image = NULL;
-    }
-    if (s->d_mask) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_mask);
-        if (e && rc == 0)
-            rc = e;
-        free(s->d_mask);
-        s->d_mask = NULL;
-    }
-    if (s->d_tmp) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->d_tmp);
-        if (e && rc == 0)
-            rc = e;
-        free(s->d_tmp);
-        s->d_tmp = NULL;
-    }
-
-    {
-        const int e = vmaf_cuda_kernel_readback_free(&s->rb_image, fex->cu_state);
-        if (e && rc == 0)
-            rc = e;
-    }
-    {
-        const int e = vmaf_cuda_kernel_readback_free(&s->rb_mask, fex->cu_state);
-        if (e && rc == 0)
-            rc = e;
-    }
-    return rc;
-}
-
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     CambiStateCuda *s = fex->priv;
     int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (rc)
+        return rc;
 
-    rc = cambi_close_device_buffers(fex, s, rc);
+    rc = cambi_release_device_buffers(fex, s, 0);
 
-    (void)vmaf_picture_unref(&s->pics[0]);
-    (void)vmaf_picture_unref(&s->pics[1]);
+    if (s->pics[0].ref)
+        cambi_preserve_error(&rc, vmaf_picture_unref(&s->pics[0]));
+    if (s->pics[1].ref)
+        cambi_preserve_error(&rc, vmaf_picture_unref(&s->pics[1]));
 
-    free(s->buffers.c_values);
-    free(s->buffers.c_values_histograms);
-    free(s->buffers.mask_dp);
-    free(s->buffers.filter_mode_buffer);
-    free(s->buffers.derivative_buffer);
-    free(s->buffers.diffs_to_consider);
-    free(s->buffers.diff_weights);
-    free(s->buffers.all_diffs);
-    free(s->buffers.tvi_for_diff);
+    cambi_release_host_buffers(s);
 
-    if (s->feature_name_dict) {
-        const int e = vmaf_dictionary_free(&s->feature_name_dict);
-        if (e && rc == 0)
-            rc = e;
-    }
-    const CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
-    if (cu_f && fex->cu_state && fex->cu_state->ctx && s->module) {
-        const int unload_err = cambi_unload_module(fex, s, cu_f);
-        if (unload_err && rc == 0)
-            rc = unload_err;
-    }
+    cambi_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
+    cambi_preserve_error(&rc, vmaf_cuda_module_unload(fex->cu_state, &s->module));
     return rc;
 }
 

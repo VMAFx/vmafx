@@ -346,7 +346,6 @@ print(json.dumps(argv))
 `, pyModuleDir)
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			// 1. Build Go argv
 			ex, err := parseScoreExtras(tc.args)

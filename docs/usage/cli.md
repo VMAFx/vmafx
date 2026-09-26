@@ -57,6 +57,31 @@ no `--xml|--json|--csv|--sub` is passed: XML.
 If any of `--width`, `--height`, `--pixel_format`, `--bitdepth` is supplied
 the input is treated as raw YUV and **all four** become mandatory.
 
+### Windows UTF-8 paths
+
+On Windows, VMAFx-owned file operations interpret path strings as UTF-8 and
+convert them to UTF-16 before calling the wide Windows runtime APIs. This
+covers reference and distorted inputs, `--output`, JSON and ONNX model paths,
+CAMBI heatmap directories, and the paths used by the companion tools. Names
+containing accented characters or CJK characters therefore reach the exact
+requested file rather than an ANSI-code-page approximation. POSIX path handling
+is unchanged.
+
+The `vmaf` and `vmafx` executables enter through `wmain` on Windows and convert
+every UTF-16 argument to strict UTF-8 before the shared CLI parser runs. This
+keeps exact non-ASCII input, output, and model paths independent of the active
+ANSI code page. An argument containing an invalid UTF-16 sequence fails before
+scoring instead of being replaced or misdirected. POSIX argument handling is
+unchanged.
+
+Internal conversions accept paths shorter than 4096 UTF-8 bytes. Longer or
+malformed UTF-8 paths fail instead of being truncated.
+
+The vendored Pelorus CSV parser is a documented exception until its upstream
+source adopts the same contract. See
+[ADR-1182](../adr/1182-windows-utf8-path-contract.md) for the exact migrated
+surfaces and the original library/CLI scope split.
+
 ## Option-string grammar
 
 `--model` and `--feature` both take a **colon-delimited list of `key=value`
@@ -477,6 +502,13 @@ workflow.
 | `--no_prediction` | `-n` | Skip final model prediction; extract features only. Useful for feeding raw features into a custom pool. |
 | `--version` | `-v` | Print `libvmaf` version + git SHA and exit. |
 
+The CUDA-initialization, luminance, SpEED, and VIF diagnostics guarded by this
+fork are complete, newline-terminated stderr records. The logger supplies the
+`libvmaf ERROR` level prefix, so those message bodies do not repeat `Error:`.
+Log consumers should match the level token and message body rather than relying
+on the old duplicate `libvmaf ERROR Error:` spelling from CUDA initialization
+failures.
+
 ## Windows console output
 
 The interactive progress line (frame counter, spinner, FPS) is written to
@@ -514,6 +546,15 @@ Reported upstream as [Netflix/vmaf#743](https://github.com/Netflix/vmaf/issues/7
 | 100 | Explicit `--backend <name>` requested but the backend failed to initialise (ADR-0543). |
 | 101 | No frames were decoded (empty or too-short input, or a `--frame_skip_*` value past end-of-stream). `vmaf` writes `no frames decoded ...` to stderr. |
 | 102 | An input stream failed to read (truncated file, unreadable media, I/O error). `vmaf` writes `problem while reading pictures` to stderr and writes **no** output file, so a partial score cannot be mistaken for a complete one (ADR-1262). |
+
+Context cleanup is also part of success. The CLI makes at most two immediate
+`vmaf_close()` attempts. If both fail, it prints
+`vmaf: context cleanup failed after 2 attempts (err=<n>); retaining dependent resources`
+and exits non-zero. Imported backend state and models deliberately remain alive
+until process exit instead of being freed beneath the retained context. The
+`vmaf_bench` and `vmaf_vpl` tools use the same two-attempt rule and emit the
+same diagnostic shape with their own command prefix. Embedders should follow
+the retry ownership contract documented in [the C API](../api/index.md#core-lifecycle-api).
 
 A reference or distorted stream that simply **ends earlier than its partner** is
 not an error. `vmaf` writes `"<path>" ended before "<path>".` to stderr, scores

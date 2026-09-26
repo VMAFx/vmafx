@@ -195,7 +195,8 @@ session required). To exercise the live ORT path against the shipped
 ONNX, enable DNN and run the suite:
 
 ```bash
-meson test -C build --suite=fast --print-errorlogs test_fastdvdnet_pre
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build --suite=fast --print-errorlogs test_fastdvdnet_pre
 ```
 
 ## References

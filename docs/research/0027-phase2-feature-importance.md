@@ -276,6 +276,26 @@ entrypoint, original argv, parsed target / threshold / top-K arguments, source
 parquet path, and output report path. Treat that block as the replay contract
 when comparing refreshed feature-correlation runs across corpora.
 
+Input selection follows the parquet-backed physical dtype. Non-numeric columns
+are excluded, while numerically encoded categories remain candidates. Numeric
+columns containing only missing values are recorded and excluded before the
+complete-case row filter; otherwise one unavailable metric would reduce a
+mixed aggregate table to zero rows. `feature_cols` retains source-schema order,
+and the report records all exclusion sets so two runs can distinguish schema
+drift from missing feature extraction. Zero-variance numeric columns are
+recorded in `skipped_constant_columns` and excluded before Pearson and feature
+ranking: their correlation is undefined, and a zero-score tie is not evidence
+that they belong in a consensus top-K set. Constancy is checked again on the
+complete-case rows because missing values in a sibling feature can erase all
+remaining variance. Missing optional scikit-learn methods emit empty result
+maps and top-K lists, preserving strict RFC JSON instead of serializing `NaN`.
+The complete-case boundary treats `NaN`, positive infinity, and negative
+infinity in either a selected feature or the target as unavailable rows.
+Non-finite `--redundancy-threshold` values are rejected by the parser, and the
+finished report is checked with `allow_nan=False` before its atomic write, so a
+future analysis regression fails closed rather than publishing `NaN` or
+`Infinity` tokens.
+
 ## References
 
 - **`req`** (user, 2026-04-29): *"and rebase #185"* + *"yeah write up"*

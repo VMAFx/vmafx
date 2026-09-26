@@ -22,7 +22,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -39,10 +38,8 @@ var _ = Describe("VmafxJob controller — branch coverage", func() {
 			Scheme: scheme,
 		}
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      "never-created-job",
-				Namespace: "default",
-			},
+			Name:      "never-created-job",
+			Namespace: "default",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RequeueAfter).To(BeZero())
@@ -51,10 +48,8 @@ var _ = Describe("VmafxJob controller — branch coverage", func() {
 
 	It("does not mutate a VmafxJob that is already in a terminal phase", func() {
 		job := &vmafxv1.VmafxJob{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-job-terminal",
-				Namespace: "default",
-			},
+			Name:      "test-job-terminal",
+			Namespace: "default",
 			Spec: vmafxv1.VmafxJobSpec{
 				Reference: "file:///ref.yuv",
 				Distorted: "file:///dis.yuv",

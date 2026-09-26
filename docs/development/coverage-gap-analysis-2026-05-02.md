@@ -261,7 +261,8 @@ meson setup build-coverage --buildtype=debug \
   -Denable_dnn=enabled \
   -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic
 ninja -C build-coverage
-meson test -C build-coverage --print-errorlogs --num-processes 1
+python3 ../scripts/ci/run_meson_test.py -- \
+  -C build-coverage --print-errorlogs --num-processes 1
 # Python suite step (requires PYTHONPATH + LD_LIBRARY_PATH set up; see workflow)
 gcovr --root .. --filter 'src/.*' --exclude '.*/test/.*' \
   --exclude '.*/tests/.*' --exclude '.*/subprojects/.*' \

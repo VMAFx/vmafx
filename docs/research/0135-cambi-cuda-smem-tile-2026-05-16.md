@@ -125,7 +125,8 @@ The 4 alternatives in the ADR decision matrix.  Additionally:
 ## Open questions
 
 - Actual measured speedup on RTX 4090 (cannot benchmark during the cambi_cuda
-  segfault window, Issue #857 — path will be exercisable once PR #870 lands).
+  segfault window, Issue lusoris/vmaf#857 — path will be exercisable once
+  lusoris/vmaf#870 lands).
   Estimated 25-40% from arithmetic; exact number via `ncu
   --section MemoryWorkloadAnalysis` once end-to-end run is possible.
 - Occupancy impact of 704 B extra smem: expected small (reduces blocks/SM from
@@ -142,5 +143,5 @@ The 4 alternatives in the ADR decision matrix.  Additionally:
 - [ADR-0464](../adr/0464-cambi-cuda-smem-tile.md) — this optimization.
 - [Research-0091](0091-cambi-cuda-integration.md) — CAMBI CUDA integration
   trade-offs (acknowledged the 49-read cost as a known debt).
-- Issue #857 — cambi_cuda segfault (blocks end-to-end validation).
-- PR #870 — host-preprocessing fix (prerequisite for end-to-end run).
+- Issue lusoris/vmaf#857 — cambi_cuda segfault (blocks end-to-end validation).
+- lusoris/vmaf#870 — host-preprocessing fix (prerequisite for end-to-end run).

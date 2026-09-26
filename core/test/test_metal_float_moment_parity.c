@@ -17,9 +17,8 @@
  *
  * This test runs the CPU `float_moment` extractor against `float_moment_metal`
  * over a single-frame YUV420P fixture and asserts that all four output keys
- * match the CPU twin within places=4 (1e-4). The kernel reduces float32
- * sums over workgroup partials; the residual is dominated by partial-sum
- * order, well below the 1e-4 bound.
+ * match the CPU twin within places=4 (1e-4). Meson builds this TU at both
+ * 8 bpc and 10 bpc because the lost integer reduction was invisible at 8 bpc.
  *
  * Skip behaviour: -ENODEV from `vmaf_metal_state_init` -> clean skip on
  * Linux / Windows / Intel Mac.
@@ -48,9 +47,15 @@
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
+#ifndef FIXTURE_W
 #define FIXTURE_W 256u
+#endif
+#ifndef FIXTURE_H
 #define FIXTURE_H 144u
+#endif
+#ifndef FIXTURE_BPC
 #define FIXTURE_BPC 8u
+#endif
 #define PARITY_TOL 1e-4
 
 static const char *kMomentKeys[4] = {
@@ -60,12 +65,41 @@ static const char *kMomentKeys[4] = {
     "float_moment_dis2nd",
 };
 
+static void put_luma(VmafPicture *pic, unsigned row, unsigned col, unsigned v8, unsigned low_seed)
+{
+#if FIXTURE_BPC > 8u
+    uint16_t *y = (uint16_t *)((uint8_t *)pic->data[0] + (size_t)row * pic->stride[0]);
+    const unsigned low_mask = (1u << (FIXTURE_BPC - 8u)) - 1u;
+    y[col] = (uint16_t)(((v8 & 0xFFu) << (FIXTURE_BPC - 8u)) | (low_seed & low_mask));
+#else
+    uint8_t *y = (uint8_t *)pic->data[0] + (size_t)row * pic->stride[0];
+    (void)low_seed;
+    y[col] = (uint8_t)(v8 & 0xFFu);
+#endif
+}
+
+static void fill_chroma_grey(VmafPicture *pic)
+{
+    for (unsigned p = 1; p < 3; p++) {
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            uint8_t *rowp = (uint8_t *)pic->data[p] + (size_t)row * pic->stride[p];
+#if FIXTURE_BPC > 8u
+            uint16_t *r16 = (uint16_t *)rowp;
+            for (unsigned col = 0; col < pic->w[p]; col++) {
+                r16[col] = (uint16_t)(1u << (FIXTURE_BPC - 1u));
+            }
+#else
+            memset(rowp, 128, pic->w[p]);
+#endif
+        }
+    }
+}
+
 static int fill_fixture(VmafPicture *pic, unsigned variant)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
             const int v = (int)((row + col) & 0xFFu);
@@ -75,15 +109,10 @@ static int fill_fixture(VmafPicture *pic, unsigned variant)
                 clamped = 0;
             if (clamped > 255)
                 clamped = 255;
-            y[row * pic->stride[0] + col] = (uint8_t)clamped;
+            put_luma(pic, row, col, (unsigned)clamped, row * 7u + col * 5u + variant);
         }
     }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
+    fill_chroma_grey(pic);
     return 0;
 }
 
@@ -190,8 +219,11 @@ static char *test_float_moment_cpu_metal_parity(void)
     for (unsigned i = 0; i < 4; i++) {
         const double delta = fabs(cpu_scores[i] - metal_scores[i]);
         if (delta > PARITY_TOL) {
-            (void)fprintf(stderr, "\n%s parity FAIL: cpu=%.8f metal=%.8f delta=%.2e tol=%.2e\n",
-                          kMomentKeys[i], cpu_scores[i], metal_scores[i], delta, PARITY_TOL);
+            (void)fprintf(stderr,
+                          "\n%s parity FAIL (bpc=%u): cpu=%.8f metal=%.8f delta=%.2e "
+                          "tol=%.2e\n",
+                          kMomentKeys[i], (unsigned)FIXTURE_BPC, cpu_scores[i], metal_scores[i],
+                          delta, PARITY_TOL);
         }
         mu_assert("float_moment CPU vs. Metal exceeds places=4 tolerance (1e-4)",
                   delta <= PARITY_TOL);

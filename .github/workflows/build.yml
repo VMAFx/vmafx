@@ -14,9 +14,9 @@
 #
 # The anti-masking rename (T-CI-MSVC-CUDA-SHARED-CHECK-NAME-2026-09-18) landed
 # without the gating that gave it a point: all three rows reported and none of
-# them blocked. ADR-1297 adds them to required-aggregator.yml. They are NOT in
-# that file's `strictMustReport` list, because the `paths-ignore` below lets a
-# doc-only pull request legitimately produce no run at all (ADR-0313).
+# them blocked. ADR-1297 adds them to required-aggregator.yml. The workflow now
+# always starts and emits the required contexts; the impact planner skips only
+# the expensive matrix work when no C-core input changed.
 #
 
 name: Build
@@ -27,11 +27,6 @@ on:
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'changelog.d/**'
-      - 'CHANGELOG.md'
   workflow_dispatch:
 
 permissions:
@@ -45,8 +40,29 @@ env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
-  build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+  impact:
+    name: Plan build impact
+    runs-on: ubuntu-26.04
+    outputs:
+      selected: ${{ steps.impact.outputs.c_core }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+  build-work:
+    needs: impact
+    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     strategy:
       fail-fast: false
       matrix:
@@ -57,9 +73,8 @@ jobs:
           # SYCL project-level linking requires one Intel LLVM compiler
           # identity; CUDA and HIP custom targets invoke their own tools.
           # ──────────────────────────────────────────────────────────────
-          # required-aggregator
           - os: ubuntu-26.04
-            name: Linux Intel LLVM
+            check_name: Linux Intel LLVM
             CC: icx
             CXX: icpx
             cuda: true
@@ -80,9 +95,8 @@ jobs:
           # Proves Apple Silicon builds. Metal scaffold always present on
           # macos-latest (Metal.framework guaranteed in system frameworks).
           # ──────────────────────────────────────────────────────────────
-          # required-aggregator
           - os: macos-latest
-            name: macOS Clang+Metal
+            check_name: macOS Clang+Metal
             CC: ccache clang
             CXX: ccache clang++
             metal: true
@@ -96,9 +110,8 @@ jobs:
           # Proves the Windows MSVC+NVCC path. Build-only (no GPU on
           # windows-2025 runner). CPU-only meson tests are run after build.
           # ──────────────────────────────────────────────────────────────
-          # required-aggregator
           - os: windows-2025
-            name: Windows MSVC+CUDA (full)
+            check_name: Windows MSVC+CUDA (full)
             cuda: true
             windows: true
             meson_extra: >-
@@ -107,7 +120,7 @@ jobs:
               -Denable_sycl=false
               -Denable_float=true
 
-    name: ${{ matrix.name }}
+    name: ${{ matrix.check_name }} work
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
 
@@ -150,10 +163,28 @@ jobs:
         with:
           python-version: '3.14.7'
 
-      - name: Install meson and ninja
+      - name: Install build and test tools
         run: |
-          python -m pip install --upgrade pip
-          pip install meson ninja==1.13.0
+          python -m pip install --require-hashes -r requirements/locks/build.txt
+          python -m pip install --require-hashes -r requirements/locks/pytest-timeout.txt
+
+      # Windows checkouts can materialise the tracked compat/vmaf symlink as
+      # a plain text file. A directory junction keeps the public import path
+      # and spawn-process test module identity identical on every hosted OS.
+      - name: Prepare compat link (Windows)
+        if: matrix.windows
+        shell: pwsh
+        run: |
+          $link = Get-Item -LiteralPath "compat/vmaf" -Force -ErrorAction SilentlyContinue
+          if ($null -eq $link -or -not $link.PSIsContainer) {
+            if ($null -ne $link) {
+              Remove-Item -LiteralPath "compat/vmaf" -Force
+            }
+            New-Item -ItemType Junction -Path "compat/vmaf" -Target (Resolve-Path "compat/python-vmaf")
+          }
+
+      - name: Run decorator regressions
+        run: python -m pytest compat/vmaf/tests/test_decorator_extended.py -v
 
       # ── Linux base deps ──────────────────────────────────────────────
       - name: Install base deps (Linux)
@@ -419,19 +450,27 @@ jobs:
       # ── DNN suite ────────────────────────────────────────────────────
       - name: Run meson dnn suite (Linux)
         if: matrix.dnn && startsWith(matrix.os, 'ubuntu')
-        run: sudo "$(command -v meson)" test -C core/build --suite=dnn --print-errorlogs
+        run: >-
+          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
+          --meson-executable "$(command -v meson)" --
+          -C core/build --suite=dnn --print-errorlogs
 
       # ── Netflix golden + unit tests (Linux) ──────────────────────────
       # Native Meson tests; Python golden assertions run in the dedicated
       # CPU/GCC jobs described at the top of this workflow.
       - name: Run tests (Linux)
         if: startsWith(matrix.os, 'ubuntu')
-        run: sudo ninja -vC core/build test
+        run: >-
+          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
+          --meson-executable "$(command -v meson)" -- -C core/build
+          --no-rebuild --print-errorlogs
 
       # ── Tests (macOS) ────────────────────────────────────────────────
       - name: Run tests (macOS)
         if: matrix.os == 'macos-latest'
-        run: ninja -vC core/build test
+        run: >-
+          python3 scripts/ci/run_meson_test.py -- -C core/build
+          --no-rebuild --print-errorlogs
 
       # ── Python tox (Linux + macOS) ───────────────────────────────────
       - name: Restore Netflix vmaf_resource fixtures
@@ -478,14 +517,14 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu') && !matrix.sycl
         run: |
           mkdir -p ~/.ccache && sudo chown -R "$(whoami)" ~/.ccache
-          pip install tox
+          pip install --require-hashes -r requirements/locks/tox.txt
           tox -c python
 
       - name: Run tox tests (macOS)
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p ~/.ccache && sudo chown -R "$(whoami)" ~/.ccache
-          pip install tox
+          pip install --require-hashes -r requirements/locks/tox.txt
           PATH="$(brew --prefix)/opt/llvm/bin:$PATH" \
           CC="$(brew --prefix)/opt/llvm/bin/clang" \
           CXX="$(brew --prefix)/opt/llvm/bin/clang++" \
@@ -538,7 +577,7 @@ jobs:
         if: "!matrix.windows"
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: ${{ matrix.name }}-vmaf
+          name: ${{ matrix.check_name }}-vmaf
           path: ./install/bin/vmaf
 
       - name: Upload vmaf.exe artifact (Windows)
@@ -548,3 +587,69 @@ jobs:
           name: windows-msvc-cuda-vmaf
           path: install/bin/vmaf.exe
           if-no-files-found: warn
+
+  linux-intel-llvm-gate:
+    needs: [impact, build-work]
+    if: always()
+    # required-aggregator
+    name: Linux Intel LLVM
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected Linux Intel LLVM work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.build-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid Linux Intel LLVM gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac
+
+  macos-clang-metal-gate:
+    needs: [impact, build-work]
+    if: always()
+    # required-aggregator
+    name: macOS Clang+Metal
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected macOS Clang+Metal work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.build-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid macOS Clang+Metal gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac
+
+  windows-msvc-cuda-full-gate:
+    needs: [impact, build-work]
+    if: always()
+    # required-aggregator
+    name: Windows MSVC+CUDA (full)
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected Windows MSVC+CUDA work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.build-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid Windows MSVC+CUDA gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac

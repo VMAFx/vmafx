@@ -36,6 +36,7 @@ BASE_FILES = {
     "docker/Dockerfile.operator",
     "docker/Dockerfile.production",
     "docker/Dockerfile.production-gpu",
+    "docker/dev/ubuntu-26.04-cuda.Dockerfile",
 }
 
 

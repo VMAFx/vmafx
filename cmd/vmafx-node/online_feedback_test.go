@@ -104,11 +104,9 @@ func TestFeedbackClient_CloseIdempotent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			fc.Close()
-		}()
+		})
 	}
 	wg.Wait()
 	// A trailing serial Close must also return without panic or hang.

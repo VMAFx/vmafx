@@ -30,6 +30,7 @@ package encoder
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 )
@@ -289,12 +290,7 @@ func GetAdapter(name string) (Adapter, error) {
 
 // HasPreset reports whether preset is in the adapter's vocabulary.
 func (a Adapter) HasPreset(preset string) bool {
-	for _, p := range a.Presets {
-		if p == preset {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(a.Presets, preset)
 }
 
 // DefaultPreset returns the adapter's canonical mid-range preset.

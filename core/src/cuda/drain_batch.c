@@ -140,8 +140,18 @@ static int drain_stream_ensure(VmafCudaState *cu_state)
     CHECK_CUDA_GOTO(cu_f,
                     cuStreamCreateWithPriority(&g_drain_batch.drain_str, CU_STREAM_NON_BLOCKING, 0),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_stream);
     return 0;
+fail_after_stream:
+    /* Round-26 audit (ADR-0982): cuCtxPopCurrent failure on the success path
+     * previously dropped to fail_after_pop, which only NULLed the
+     * stream pointer — destroy the stream we just created here so
+     * the drain channel does not leak. */
+    if (g_drain_batch.drain_str != NULL) {
+        (void)cu_f->cuStreamDestroy(g_drain_batch.drain_str);
+        g_drain_batch.drain_str = NULL;
+    }
+    /* fall through */
 fail:
     if (ctx_pushed) {
         const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
@@ -149,7 +159,6 @@ fail:
             _cuda_err = vmaf_cuda_result_to_errno((int)pop_res);
         }
     }
-fail_after_pop:
     g_drain_batch.drain_str = NULL;
     return _cuda_err;
 }
@@ -221,35 +230,25 @@ unsigned vmaf_cuda_drain_batch_pending(void)
     return g_drain_batch.n;
 }
 
-void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state)
+int vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state)
 {
-    /* Wipe the registrations before anything else: after this call the
-     * caller frees the engine state, so every registered CUevent and every
-     * ``bool *`` flag becomes dangling. A later context on the same thread
-     * must not see them (T-UPSTREAM-1305-CUDA-DRAIN-BATCH-THREAD-GLOBAL). */
-    if (g_drain_batch.owner == NULL || g_drain_batch.owner == cu_state) {
-        g_drain_batch.n = 0;
-        g_drain_batch.open = false;
-        g_drain_batch.owner = NULL;
+    /* ADR-1336: stream quiescence is the fallible phase; ownership commits below. */
+    if (g_drain_batch.owner != NULL && g_drain_batch.owner != cu_state)
+        return 0;
+    if (g_drain_batch.drain_str != NULL) {
+        if (cu_state == NULL)
+            return -EINVAL;
+        const int err = vmaf_cuda_stream_destroy(cu_state, &g_drain_batch.drain_str, true);
+        if (err)
+            return err;
     }
-    if (cu_state == NULL || g_drain_batch.drain_str == NULL) {
-        g_drain_batch.drain_str = NULL;
-        return;
-    }
-    CudaFunctions *cu_f = cu_state->f;
-    assert(cu_f != NULL);
-    int ctx_pushed = 0;
-    if (cu_f->cuCtxPushCurrent(cu_state->ctx) == CUDA_SUCCESS) {
-        ctx_pushed = 1;
-    }
-    (void)cu_f->cuStreamSynchronize(g_drain_batch.drain_str);
-    (void)cu_f->cuStreamDestroy(g_drain_batch.drain_str);
-    g_drain_batch.drain_str = NULL;
-    if (ctx_pushed) {
-        (void)cu_f->cuCtxPopCurrent(NULL);
-    }
-    /* Post-condition: drain stream is always cleared. */
-    assert(g_drain_batch.drain_str == NULL);
+
+    /* Only clear registrations after stream quiescence. Until then their
+     * events and drained flags remain owned by the still-live extractors. */
+    g_drain_batch.n = 0;
+    g_drain_batch.open = false;
+    g_drain_batch.owner = NULL;
+    return 0;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

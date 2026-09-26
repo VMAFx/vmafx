@@ -97,7 +97,7 @@ index 9bd3aa0163aa8ef1a95897dfab1b75246b132595..75e598b530bb0a60f3e94098e6c8d25e
  extern const FFFilter ff_vf_libvmaf_vulkan;
  extern const FFFilter ff_vf_libvmaf_tune;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index b6d77a7a9e74ec0937493f12668602271a494e0e..e8d018ed9e67cd8473248e16febcceee8a27d306 100644
+index 43c05be10e164301a11dee1ab8cfeedc8cbf36ee..a240dec42a9fcf44a398cac82e9d029e59eeb6c8 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -76,6 +76,12 @@
@@ -113,7 +113,7 @@ index b6d77a7a9e74ec0937493f12668602271a494e0e..e8d018ed9e67cd8473248e16febcceee
  typedef struct LIBVMAFContext {
      const AVClass *class;
      FFFrameSync fs;
-@@ -1836,3 +1842,265 @@ const FFFilter ff_vf_libvmaf_vulkan = {
+@@ -1843,3 +1849,265 @@ const FFFilter ff_vf_libvmaf_vulkan = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif

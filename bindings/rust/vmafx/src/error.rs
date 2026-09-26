@@ -7,7 +7,9 @@
 // module maps the common ones to dedicated `Error` variants so callers can
 // `match` on them ergonomically. Anything not in the curated set becomes
 // `Error::Libvmaf { code }`, preserving the raw signed integer so the caller
-// can inspect or log it. We deliberately do not promise a complete mapping:
+// can inspect or log it. `Context::close` additionally preserves an unexpected
+// positive status in that catch-all because only exactly zero means freed. We
+// deliberately do not promise a complete mapping:
 // libvmaf does not version its errno surface, so over-promising is worse
 // than catching the long tail under one variant.
 
@@ -32,10 +34,12 @@ pub enum Error {
     PermissionDenied,
     /// File or resource not found (`-ENOENT`).
     NotFound,
-    /// Catch-all for any negative libvmaf return value not mapped above.
-    /// The raw errno-style code is preserved for logging.
+    /// Catch-all for any libvmaf failure status not mapped above.
+    ///
+    /// The raw code is normally a negative errno.  An unexpected positive
+    /// `vmaf_close` status also lands here because close succeeds only at zero.
     Libvmaf {
-        /// The raw negative integer returned by the C function.
+        /// The raw integer returned by the C function.
         code: i32,
     },
     /// A Rust `&str` contained an interior NUL byte and could not be turned

@@ -239,7 +239,7 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
                 const int *precomputed_filter_widths)
 {
     if (!precomputed_filters && !vif_validate_kernelscale(vif_kernelscale)) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid vif_kernelscale: %f", vif_kernelscale);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid vif_kernelscale: %f\n", vif_kernelscale);
         return 1;
     }
     VifWorkspace work = {0};
@@ -273,7 +273,9 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
         *score_num += scores[(size_t)2 * scale];
         *score_den += scores[(size_t)2 * scale + 1];
     }
-    *score = *score_den == 0.0 ? 1.0f : (*score_num) / (*score_den);
+    /* Preserve invalid reduction evidence for the collector's fail-closed
+     * validation; VIF has no defined flat-frame 0/0 exception. */
+    *score = (*score_num) / (*score_den);
     aligned_free(work.data);
     return 0;
 }

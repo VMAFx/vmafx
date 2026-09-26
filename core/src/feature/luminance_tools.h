@@ -20,29 +20,48 @@
 #define VMAF_LUMINANCE_TOOLS_H_
 
 #ifdef __cplusplus
+#include <climits>
+#else
+#include <limits.h>
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
+#ifdef __cplusplus
+using VmafEOTF = double (*)(double V);
+#else
 typedef double (*VmafEOTF)(double V);
+#endif
 
 /*
  * Limited pixel range means that only values between 16 and 235 will be used in 8 bits
  * (rescale the bounds appropriately for other bitdepths).
  * Full pixel range means that values from 0 to 2^bitdepth - 1 will be used.
  */
+#ifdef __cplusplus
+enum VmafPixelRange : unsigned int {
+#else
 enum VmafPixelRange {
-    VMAF_PIXEL_RANGE_UNKNOWN,
-    VMAF_PIXEL_RANGE_LIMITED,
-    VMAF_PIXEL_RANGE_FULL,
+#endif
+    VMAF_PIXEL_RANGE_UNKNOWN = 0,
+    VMAF_PIXEL_RANGE_LIMITED = 1,
+    VMAF_PIXEL_RANGE_FULL = 2,
+    VMAF_PIXEL_RANGE_ABI_UINT_MAX = UINT_MAX,
 };
 
 /*
  * Contains the necessary information to normalize a luma value down to [0, 1].
  */
-typedef struct VmafLumaRange {
+struct VmafLumaRange {
     int foot;
     int head;
-} VmafLumaRange;
+};
+
+#ifndef __cplusplus
+typedef struct VmafLumaRange VmafLumaRange;
+#endif
 
 /*
  * Constructor for the LumaRange struct.
@@ -71,6 +90,19 @@ double vmaf_luminance_pq_eotf(double V);
  * to return a luminance value.
  */
 double vmaf_luminance_get_luminance(int sample, VmafLumaRange luma_range, VmafEOTF eotf);
+
+/* Narrow internal trampolines for unit-test access to file-local helpers. */
+#ifdef __cplusplus
+#define VMAF_NOEXCEPT noexcept
+#else
+#define VMAF_NOEXCEPT
+#endif
+
+int vmaf_luminance_test_range_foot_head(int bitdepth, int pix_range, int *foot,
+                                        int *head) VMAF_NOEXCEPT;
+double vmaf_luminance_test_normalize_range(int sample, VmafLumaRange range) VMAF_NOEXCEPT;
+
+#undef VMAF_NOEXCEPT
 
 #ifdef __cplusplus
 }

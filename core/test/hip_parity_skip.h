@@ -49,7 +49,7 @@ static inline mu_message_t hip_parity_skip(VmafContext *vmaf, VmafHipState **hip
     *skipped = 1;
     (void)vmaf_close(vmaf);
     vmaf_hip_state_free(hip_state);
-    return NULL;
+    return NULL; /* NOLINT(modernize-use-nullptr): portable C form, ADR-1138. */
 }
 
 #endif /* LIBVMAF_TEST_HIP_PARITY_SKIP_H_ */

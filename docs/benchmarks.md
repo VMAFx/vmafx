@@ -224,7 +224,7 @@ costs 1.6× the CPU time of `v0.6.1` on the 576×324 golden pair, and on CUDA it
 gives up the entire GPU speedup — 4K throughput falls from 167.16 fps to
 9.00 fps, well below the CPU's own 17.52 fps.**
 
-## Backend comparison (Netflix normal pair, 576×324, 48 frames)
+## Historical backend comparison (Netflix normal pair, 576×324, 48 frames)
 
 Source: `python/test/resource/yuv/src01_hrc00_576x324.yuv` vs `…hrc01…`.
 Model: `model/vmaf_v0.6.1.json`. Threads: 1. Precision: CLI default
@@ -239,12 +239,14 @@ deviation in parentheses. Commit `41301496` on `ryzen-4090-arc`.
 |`sycl` (Arc A380)|315 (±0.9)|152.3|`76.667767`|34|-6.1×10⁻⁵ pool; per-frame max diff 1.11×10⁻³|
 |~~`vulkan`~~ (removed ADR-0726)|(historical: 171 fps)|(historical: 280.6ms)|`76.667758`|34|historical reference only|
 
-**Key-count check.** Each backend emits a different `frames[0].metrics`
-key set (CPU=15 with `integer_aim`/`integer_motion3`/`integer_adm3`,
-CUDA=12, SYCL=34 with raw `_num`/`_den` intermediates). Identical
-key counts across two rows would indicate a silent-fallback to CPU; the
-counts above confirm each backend actually engaged. See
-[`AGENTS.md` §"Backend-engagement foot-guns"](../AGENTS.md).
+**Key-count check for this dated run.** At commit `41301496`, the emitted
+sets were CPU=15 (including `integer_aim`/`integer_motion3`/`integer_adm3`),
+CUDA=12, and SYCL=34 (including raw `_num`/`_den` intermediates). Those
+values document this run; they are not permanent backend contracts. On
+2026-09-06 at `cd52f2670`, the FFmpeg filter path instead emitted CPU=15,
+CUDA=14, and SYCL=24. The harness records actual counts and flags equality
+with CPU as a fallback signal to corroborate with pool and throughput. See
+[`core/AGENTS.md` §"Backend-engagement foot-guns"](../core/AGENTS.md).
 
 ## Backend comparison (1080p, 5 frames)
 
@@ -352,9 +354,9 @@ ffmpeg -y -i /tmp/bbb4k.mp4 -frames:v 200 -c:v libx264 -crf 35 -preset veryfast 
 # 3. Run the bench
 VMAF_BIN="$(pwd)/core/build/tools/vmaf" bash testdata/bench_all.sh
 
-# 4. Verify each backend engaged via per-row metrics-key counts in the
-#    bench output ("CPU 15 keys, CUDA 12 keys, SYCL 34 keys").
-#    Identical key counts across two rows = silent CPU fallback.
+# 4. Verify each backend engaged from the per-row emitted key count, pool,
+#    throughput, and stderr. A GPU count equal to CPU is a fallback warning;
+#    never compare against a frozen expected count.
 ```
 
 For SIMD breakdown / `--precision` overhead numbers, see the harness

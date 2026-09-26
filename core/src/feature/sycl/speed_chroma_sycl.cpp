@@ -179,8 +179,8 @@ static void launch_cov(sycl::queue &queue, const CovarianceArgs &args)
 namespace
 {
 
-static void launch_indterm(sycl::queue &q, const float *plane, float *indterm, uint32_t stride_px,
-                           uint32_t num_blocks_h, uint32_t num_blocks)
+static void launch_chroma_indterm(sycl::queue &q, const float *plane, float *indterm,
+                                  uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks)
 {
     const uint32_t total = SP_ELEMENTS * num_blocks;
     const size_t global = (size_t)((total + INDTERM_WG - 1u) / INDTERM_WG) * INDTERM_WG;
@@ -256,10 +256,11 @@ static void launch_solve(sycl::queue &queue, const float *matrix, float *rhs, ui
 namespace
 {
 
-static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const float *dis_eigenvalues,
-                         const float *ref_sol, const float *dis_sol, const float *ref_indterm,
-                         const float *dis_indterm, float *ref_ent, float *ref_var, float *dis_ent,
-                         float *dis_var, uint32_t num_blocks, float sigma_nn)
+static void launch_chroma_score(sycl::queue &q, const float *ref_eigenvalues,
+                                const float *dis_eigenvalues, const float *ref_sol,
+                                const float *dis_sol, const float *ref_indterm,
+                                const float *dis_indterm, float *ref_ent, float *ref_var,
+                                float *dis_ent, float *dis_var, uint32_t num_blocks, float sigma_nn)
 {
     const size_t global = (size_t)((num_blocks + SCORE_WG - 1u) / SCORE_WG) * SCORE_WG;
     const float log2e_2pi = sycl::log2(2.0f * std::numbers::pi_v<float> * std::numbers::e_v<float>);
@@ -469,7 +470,7 @@ static void compute_channel_statistics(SpeedChromaSyclState *s, sycl::queue &que
                        .stride = stride,
                        .width = (uint32_t)s->dim.submatrix_width,
                        .height = (uint32_t)s->dim.submatrix_height});
-    launch_indterm(queue, s->d_plane, device_indterm, stride, block_columns, blocks);
+    launch_chroma_indterm(queue, s->d_plane, device_indterm, stride, block_columns, blocks);
     queue.wait();
     const size_t matrix_bytes = (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float);
     const size_t indterm_bytes = (size_t)SP_ELEMENTS * blocks * sizeof(float);
@@ -624,9 +625,9 @@ static int score_aggregate(SpeedChromaSyclState *s, float *score_out)
 {
     sycl::queue &queue = *static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     const uint32_t blocks = (uint32_t)s->dim.num_blocks;
-    launch_score(queue, s->d_eigenvalues_ref, s->d_eigenvalues, s->d_sol_ref, s->d_sol_dis,
-                 s->d_indterm_ref, s->d_indterm_dis, s->d_ref_ent, s->d_ref_var, s->d_dis_ent,
-                 s->d_dis_var, blocks, (float)s->opt.speed_sigma_nn);
+    launch_chroma_score(queue, s->d_eigenvalues_ref, s->d_eigenvalues, s->d_sol_ref, s->d_sol_dis,
+                        s->d_indterm_ref, s->d_indterm_dis, s->d_ref_ent, s->d_ref_var,
+                        s->d_dis_ent, s->d_dis_var, blocks, (float)s->opt.speed_sigma_nn);
     const size_t bytes = (size_t)blocks * sizeof(float);
     queue.memcpy(s->h_ref_ent, s->d_ref_ent, bytes);
     queue.memcpy(s->h_ref_var, s->d_ref_var, bytes);

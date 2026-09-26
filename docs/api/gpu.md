@@ -5,8 +5,8 @@ Each GPU backend adds its own small API on top of the core
 `libvmaf.h` surface — a state object, picture preallocation helpers, and
 (SYCL / Metal) zero-copy import paths. This page is the reference for
 the four active backends (CUDA, SYCL, HIP, Metal); the Vulkan backend was
-removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md) — historical
-notes are preserved below in the [Vulkan](#vulkan) section. HIP still has
+removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md) and only a compact
+removal notice remains below. HIP still has
 three unported feature kernels, while Metal has a live Apple-Silicon runtime
 and first kernel batch.
 
@@ -22,9 +22,6 @@ Backend dispatch rules + runtime precedence:
   are absent and calls won't link.
 - The SYCL header is only useful in a build with `-Denable_sycl=true`
   (linking oneAPI / Level Zero). Same rule.
-- ~~The Vulkan header requires `-Denable_vulkan=enabled` (linking volk + the
-  compute-shader feature kernels).~~ **Vulkan was removed in ADR-0726.** The
-  header, source files, and `enable_vulkan` Meson option no longer exist.
 - The HIP header requires `-Denable_hip=true -Denable_hipcc=true` (linking
   ROCm). All feature kernels are real; 3 legacy stubs (`adm_hip`, `vif_hip`,
   `motion_hip`) return `-ENOSYS` (older `_init/_run/_destroy` API, not
@@ -56,7 +53,7 @@ Backend dispatch rules + runtime precedence:
     ...                                     write into .data[i]
     vmaf_read_pictures()
   vmaf_score_pooled()
-  vmaf_close()              /* destroys the by-value copy of CUDA state */
+  vmaf_close()              /* only 0 destroys the copy; nonzero must be retried */
   vmaf_cuda_state_free()    /* always required — frees the original allocation */
 ```
 
@@ -84,12 +81,16 @@ int vmaf_cuda_state_free(VmafCudaState *cu_state);
 
 `vmaf_cuda_import_state(vmaf, cu_state)` copies the `VmafCudaState`
 **by value** into the `VmafContext` — it does not transfer ownership of
-the original heap allocation. `vmaf_close(vmaf)` tears down the
-**embedded copy** (destroying the CUDA stream and, if libvmaf created
-the context, releasing the primary context). After `vmaf_close()`
-returns, the caller **must** call `vmaf_cuda_state_free(cu_state)` to
-release the original heap allocation. Skipping this call leaks the
-allocation. Do not import the same state into two contexts.
+the original heap allocation. A successful `vmaf_close(vmaf)` tears down the
+**embedded copy** (destroying the CUDA stream and, if libvmaf created the
+context, releasing the primary context). Any nonzero close result retains the
+`VmafContext` and any CUDA handle whose driver release failed. Keep the
+original `cu_state` and every other imported dependency alive and retry
+`vmaf_close(vmaf)`. Only after close returns 0 may the caller invoke
+`vmaf_cuda_state_free(cu_state)` to release the original heap allocation.
+Skipping that final call leaks the allocation. A state may be imported into
+exactly one context, and a context's live CUDA state cannot be overwritten;
+duplicate import returns `-EBUSY`.
 
 `vmaf_cuda_state_free(VmafCudaState *cu_state)` (added in
 [ADR-0157](../adr/0157-cuda-preallocation-leak-netflix-1300.md))
@@ -98,9 +99,10 @@ is a NULL-safe `free()` wrapper for the original pointer returned by
 already run `vmaf_cuda_release()` on the embedded copy (destroying the
 stream and context), so `vmaf_cuda_state_free()` only needs to `free()`
 the struct. It also serves as the escape hatch when the state was built
-via `vmaf_cuda_state_init()` but never imported (e.g. an early
-`vmaf_init()` failure), in which case it additionally tears down the
-stream and context before freeing.
+via `vmaf_cuda_state_init()` but never imported (e.g. an early setup failure),
+in which case it additionally tears down the stream and context before
+freeing. That teardown is retry-safe: a nonzero result retains the state and
+its live handles for another `vmaf_cuda_state_free()` call.
 
 ```c
 VmafCudaState *cuda = NULL;
@@ -114,18 +116,21 @@ if (some_unrelated_setup_failed()) {
 
 err = vmaf_cuda_import_state(ctx, cuda);
 /* ctx now holds a by-value copy of the state.
- * vmaf_close(ctx) destroys that copy (stream + context).
- * vmaf_cuda_state_free(cuda) must still be called afterwards to
+ * A successful vmaf_close(ctx) destroys that copy (stream + context).
+ * vmaf_cuda_state_free(cuda) must still be called after success to
  * release the original heap allocation from vmaf_cuda_state_init(). */
-vmaf_close(ctx);
-vmaf_cuda_state_free(cuda);  /* always required after import + vmaf_close */
+int close_err = vmaf_close(ctx);
+if (close_err != 0)
+    close_err = vmaf_close(ctx); /* retained teardown-only context */
+if (close_err == 0)
+    vmaf_cuda_state_free(cuda);  /* original allocation outlives close */
 ```
 
 The CUDA and SYCL lifetime models differ deliberately: CUDA state is
 copied by value into the context; the caller still owns the heap pointer.
-SYCL state is also always caller-freed after `vmaf_close()` (the queue is
+SYCL state is also always caller-freed after `vmaf_close()` returns 0 (the queue is
 queue-scoped and survives a scoring session boundary). Both require an
-explicit free after `vmaf_close()` — CUDA via `vmaf_cuda_state_free`,
+explicit free only after exact-zero close — CUDA via `vmaf_cuda_state_free`,
 SYCL via `vmaf_sycl_state_free`. Match the API to the lifetime model of
 the underlying runtime.
 
@@ -205,9 +210,16 @@ int main(void) {
     err = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &score, 0, UINT_MAX);
     printf("VMAF: %.17g\n", score);
 
-    vmaf_model_destroy(model);
-    vmaf_close(vmaf);         /* tears down the by-value copy of CUDA state */
-    vmaf_cuda_state_free(cuda); /* releases the original heap allocation */
+    int close_err = vmaf_close(vmaf);
+    if (close_err != 0)
+        close_err = vmaf_close(vmaf); /* retained teardown-only context */
+    if (close_err == 0) {
+        vmaf = NULL;
+        vmaf_cuda_state_free(cuda);
+        vmaf_model_destroy(model);
+    } else {
+        return 1; /* retain dependencies through fail-closed process exit */
+    }
     return 0;
 }
 ```
@@ -243,9 +255,10 @@ int  vmaf_sycl_list_devices(void);
 ```
 
 `vmaf_sycl_state_free` is unusual — SYCL state is *not* owned by the context
-after import. You must call it explicitly after `vmaf_close(ctx)`. This
-asymmetry exists because SYCL USM allocations are queue-scoped and the
-queue outlives one scoring session.
+after import. You must call it explicitly only after `vmaf_close(ctx)` returns
+0; any nonzero close retains the state dependency for retry. This asymmetry
+exists because SYCL USM allocations are queue-scoped and the queue outlives one
+scoring session.
 
 `vmaf_sycl_list_devices` enumerates `device_type::gpu` only (CPU / FPGA /
 accelerator devices are skipped) and prints one line per device with its
@@ -257,9 +270,9 @@ the count, or `-EIO` on a SYCL exception. Used by `vmaf_bench --list-devices`
 
 ```c
 enum VmafSyclPicturePreallocationMethod {
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE,
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_DEVICE,
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_HOST,
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE = 0,
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_DEVICE = 1,
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_HOST = 2,
 };
 
 typedef struct VmafSyclPictureConfiguration {
@@ -274,6 +287,9 @@ int vmaf_sycl_picture_fetch(VmafContext *ctx, VmafPicture *pic);
 `vmaf_sycl_preallocate_pictures` now honors the enum and creates a 2-deep
 SYCL picture pool when `DEVICE` or `HOST` is selected:
 
+These numeric values are stable and append-only; serialized configuration and
+FFI bindings may rely on them.
+
 | Method | Backing | Use case |
 | --- | --- | --- |
 | `VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE` | no pool; `vmaf_sycl_picture_fetch` falls back to `vmaf_picture_alloc()` | CPU-fed callers and test harnesses |
@@ -283,7 +299,9 @@ SYCL picture pool when `DEVICE` or `HOST` is selected:
 The caller owns each `VmafPicture` reference returned by
 `vmaf_sycl_picture_fetch()` and must release it with `vmaf_picture_unref()`
 after submitting it through `vmaf_read_pictures()`. The pool keeps its own
-references until `vmaf_close()` tears down the context.
+references until `vmaf_close()` returns 0 and tears down the context.
+If close returns nonzero, the context and its pool ownership remain retained
+for retry; only exact zero commits teardown.
 
 ### Zero-copy frame-buffer path
 
@@ -401,166 +419,12 @@ the enable/disable pair to gate which frame ranges get timed.
 - `vmaf_sycl_init_frame_buffers` is single-resolution. Changing `w`/`h`/`bpc`
   mid-stream requires `vmaf_close` + re-init.
 
-## Vulkan
+## Vulkan (removed)
 
-> **Status: REMOVED — [ADR-0726](../adr/0726-drop-vulkan-backend.md) (2026-05-28).**
-> The Vulkan backend, all source files (`core/src/vulkan/`,
-> `core/src/feature/vulkan/`), the public header (`libvmaf_vulkan.h`), and the
-> `enable_vulkan` Meson option were deleted. The CLI flags `--vulkan_device`,
-> `--no_vulkan`, and `--backend vulkan` are no longer accepted. The sections
-> below are preserved as a historical reference for what was implemented;
-> none of the entry points listed exist in current builds. For active GPU
-> backends see [CUDA](#cuda), [SYCL](#sycl), [HIP](#hip), and [Metal](#metal).
-
-Historical note: at the time of removal, the backend had reached T5-1c
-(full default-model coverage). The state-level API, all feature extractors,
-image-import zero-copy paths, and FFmpeg `AVVulkanDeviceContext` interop
-described below are **no longer present**. ADR references:
-[ADR-0127](../adr/0127-vulkan-compute-backend.md),
-[ADR-0175](../adr/0175-vulkan-backend-scaffold.md),
-[ADR-0186](../adr/0186-vulkan-image-import-impl.md),
-[ADR-0726](../adr/0726-drop-vulkan-backend.md).
-
-### Header
-
-`core/include/libvmaf/libvmaf_vulkan.h` — removed historical header;
-see [ADR-0726](../adr/0726-drop-vulkan-backend.md).
-
-### State
-
-```c
-typedef struct VmafVulkanState VmafVulkanState;
-
-typedef struct VmafVulkanConfiguration {
-    int device_index;                /* -1 = first device with compute queue */
-    int enable_validation;           /* non-zero: load VK_LAYER_KHRONOS_validation */
-    unsigned max_outstanding_frames; /* 0 = default (4); clamped to [1, 8] */
-} VmafVulkanConfiguration;
-
-int      vmaf_vulkan_available(void);
-int      vmaf_vulkan_state_init(VmafVulkanState **out, VmafVulkanConfiguration cfg);
-unsigned vmaf_vulkan_state_max_outstanding_frames(const VmafVulkanState *state);
-int      vmaf_vulkan_import_state(VmafContext *ctx, VmafVulkanState *state);
-void     vmaf_vulkan_state_free(VmafVulkanState **state);
-int      vmaf_vulkan_list_devices(void);
-```
-
-The lifetime model mirrors CUDA's: after
-`vmaf_vulkan_import_state(ctx, state)` the context owns the state
-and `vmaf_close(ctx)` frees it. The `_state_free()` helper exists
-for the pre-import escape hatch (caller built a state but never
-imported it — e.g. early `vmaf_init()` failure or a benchmark
-harness that constructs and tears down a state without scoring).
-
-`vmaf_vulkan_available()` returns `1` when libvmaf was built with
-`-Denable_vulkan=enabled` and `0` otherwise.
-
-### Lifecycle
-
-```text
-  vmaf_init()
-  vmaf_vulkan_state_init()         ← creates VkInstance + VkDevice + compute queue
-  vmaf_vulkan_import_state()       ← state ownership transfers to ctx
-  ...
-  vmaf_score_pooled()
-  vmaf_close()                     ← frees the imported state
-```
-
-For zero-copy interop with caller-owned VkInstance / VkDevice handles
-(typically from FFmpeg's `AVVulkanDeviceContext`), use
-`vmaf_vulkan_state_init_external` together with
-`vmaf_vulkan_import_image` / `vmaf_vulkan_wait_compute` /
-`vmaf_vulkan_read_imported_pictures`. See
-[ADR-0186](../adr/0186-vulkan-image-import-impl.md) and
-[`backends/vulkan/overview.md`](../backends/vulkan/overview.md).
-
-#### Async pending-fence pipelining (v2 — ADR-0251)
-
-`vmaf_vulkan_import_image` is **non-blocking** as of T7-29
-part 4. It records the GPU copy, submits to the compute
-queue, and returns immediately — the caller's decoder
-thread can run ahead while libvmaf's transfer queue drains
-in the background. Up to `max_outstanding_frames` (default
-`4`) frames may be in flight before the next
-`import_image` call back-pressures on the oldest fence.
-
-The drain happens automatically inside
-`vmaf_vulkan_state_build_pictures` (called by
-`vmaf_vulkan_read_imported_pictures`); callers who need an
-explicit drain — e.g. before reusing the imported VkImage
-on the decoder side — call `vmaf_vulkan_wait_compute()`,
-which now blocks on every outstanding fence in the ring.
-
-Memory cost: the staging arena scales with
-`max_outstanding_frames`. At the default depth and 1080p
-8-bit Y, the arena is roughly **16 MiB** of host-visible
-buffers per `VmafVulkanState`. Higher resolutions or
-multi-state setups should size accordingly.
-
-The ring depth is configurable via
-`VmafVulkanConfiguration.max_outstanding_frames` (0 selects
-the canonical default of 4; values are clamped to [1, 8]
-internally). The clamped value is observable via
-`vmaf_vulkan_state_max_outstanding_frames()`. ADR-0235
-follow-up #3, T7-29 part 4 (this knob currently affects only
-`vmaf_vulkan_state_init`; external-handles callers receive
-the default until a separate ABI bump extends
-`VmafVulkanExternalHandles`).
-
-#### Picture preallocation (ADR-0238)
-
-Mirrors the CUDA / SYCL preallocation surface:
-
-```c
-enum VmafVulkanPicturePreallocationMethod {
-    VMAF_VULKAN_PICTURE_PREALLOCATION_METHOD_NONE = 0,
-    VMAF_VULKAN_PICTURE_PREALLOCATION_METHOD_HOST,
-    VMAF_VULKAN_PICTURE_PREALLOCATION_METHOD_DEVICE,
-};
-
-typedef struct VmafVulkanPictureConfiguration {
-    struct {
-        unsigned w, h;
-        unsigned bpc;
-        enum VmafPixelFormat pix_fmt;
-    } pic_params;
-    enum VmafVulkanPicturePreallocationMethod pic_prealloc_method;
-} VmafVulkanPictureConfiguration;
-
-int vmaf_vulkan_preallocate_pictures(VmafContext *vmaf, VmafVulkanPictureConfiguration cfg);
-int vmaf_vulkan_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
-```
-
-`HOST` allocates pictures via the regular `vmaf_picture_alloc`;
-`DEVICE` backs each picture's luma plane with a host-visible Vulkan
-buffer (VMA `AUTO_PREFER_HOST`) — the persistent mapped pointer is
-exposed as `pic->data[0]`, so the caller writes once and the kernel
-descriptor sets read the same memory. Pool depth is fixed at the
-canonical `frames-in-flight = 2` (matches SYCL); pictures are
-dispensed round-robin via `vmaf_vulkan_picture_fetch`. Fetch falls
-back to a host-backed picture if the caller skipped
-`preallocate_pictures` entirely.
-
-### Limitations
-
-- Pool depth is currently compile-time `pic_cnt = 2` (matches SYCL).
-  Growing the depth is an additive
-  `VmafVulkanPictureConfiguration` field — gated on a real workload
-  needing more.
-- Pool currently allocates the Y plane only (matches SYCL). Chroma-aware
-  extractors that want preallocated U/V planes need a follow-up.
-- The ffmpeg `libvmaf` filter exposes `vulkan_device=N` (set to
-  `>= 0` to enable the Vulkan backend; see
-  [`docs/usage/ffmpeg.md`](../usage/ffmpeg.md)). Image-import
-  zero-copy through `AVVulkanDeviceContext` is wired by
-  `ffmpeg-patches/0004-libvmaf-wire-vulkan-backend-selector.patch`
-  on top of T7-29's `_state_init_external` API.
-- HIP / AMD-ROCm support: `libvmaf_hip.h` is shipping (T7-10 scaffold,
-  ADR-0212; runtime + all registered feature kernels real). 3 legacy stubs
-  (`adm_hip`/`vif_hip`/`motion_hip`) use an older `_init/_run/_destroy` API
-  and are not registered extractors. FFmpeg
-  integration is wired by `ffmpeg-patches/0011-libvmaf-wire-hip-backend-selector.patch`
-  (`--enable-libvmaf-hip` + `hip_device=N`, ADR-0380).
+Vulkan support, its public header, CLI options, feature kernels, and FFmpeg
+integration were removed by [ADR-0726](../adr/0726-drop-vulkan-backend.md).
+No Vulkan entry point exists in current builds; lingering Vulkan API examples
+are stale. Use [CUDA](#cuda), [SYCL](#sycl), [HIP](#hip), or [Metal](#metal).
 
 ## HIP
 
@@ -580,7 +444,7 @@ the header free of `<hip/hip_runtime.h>` — cast on the caller side.
 | --- | --- |
 | `vmaf_hip_available` | Returns 1 if libvmaf was built with `-Denable_hip=true`, 0 otherwise. Cheap to call; no HIP runtime is touched until `vmaf_hip_state_init()`. |
 | `vmaf_hip_state_init` | Allocates a `VmafHipState` pinned to a HIP device. `device_index = -1` selects the first compute-capable HIP device; 0+ selects a specific ordinal. Returns `-ENODEV` when no compatible device is found. |
-| `vmaf_hip_import_state` | Hands an allocated `VmafHipState` to a `VmafContext`. The caller retains ownership and must call `vmaf_hip_state_free` after `vmaf_close`. Returns `0` on success, `-EINVAL` when `ctx` or `state` is `NULL`, `-ENOSYS` when built without HIP. |
+| `vmaf_hip_import_state` | Hands an allocated `VmafHipState` to a `VmafContext`. The caller retains ownership and must call `vmaf_hip_state_free` only after `vmaf_close` returns 0. Returns `0` on success, `-EINVAL` when `ctx` or `state` is `NULL`, `-ENOSYS` when built without HIP. |
 | `vmaf_hip_state_free` | Releases a state allocated via `vmaf_hip_state_init`. Safe to pass `NULL` or a state that was never imported. Sets the pointer to `NULL` on return. |
 | `vmaf_hip_list_devices` | Enumerates compute-capable HIP devices visible to the runtime. Prints one line per device with its ordinal, name, and compute capability. Returns device count or `-ENOSYS` when built without HIP. |
 
@@ -605,10 +469,12 @@ int  vmaf_hip_list_devices(void);
 
 The HIP backend follows the same caller-owned-state model as SYCL: after
 `vmaf_hip_import_state(ctx, state)` the **caller still owns the state** and
-must call `vmaf_hip_state_free(&state)` after `vmaf_close(ctx)`. This differs
-from the CUDA model (where the context takes ownership post-import). The
-rationale mirrors SYCL: HIP state may outlive a single scoring session when
-the caller manages a multi-pass workflow against the same device.
+must call `vmaf_hip_state_free(&state)` only after `vmaf_close(ctx)` returns 0.
+Any nonzero close retains both the context and its borrowed state dependency.
+Unlike CUDA's by-value embedded copy, HIP keeps a borrowed pointer; in both
+cases the caller still frees the original state allocation after successful
+close. HIP state may outlive a single scoring session when the caller manages
+a multi-pass workflow against the same device.
 
 ### Typical call sequence
 
@@ -619,8 +485,8 @@ vmaf_hip_import_state(vmaf, state)   ← hands state to ctx; caller still owns i
 loop:
   vmaf_read_pictures(vmaf, &ref, &dist, i)
 vmaf_score_pooled(vmaf, ...)
-vmaf_close(vmaf)
-vmaf_hip_state_free(&state)          ← caller frees after vmaf_close
+vmaf_close(vmaf)                      ← retry on nonzero; only 0 invalidates
+vmaf_hip_state_free(&state)          ← caller frees only after exact 0
 ```
 
 ### Limitations and current feature coverage
@@ -660,7 +526,7 @@ silently falling back to CPU. The header is installed into the system prefix by
 | --- | --- |
 | `vmaf_metal_available` | Returns 1 if the library was built with Metal support; 0 otherwise. |
 | `vmaf_metal_state_init` | Allocates a `VmafMetalState`, selecting a device by index (-1 = system default). Returns `-ENODEV` on non-Apple-Family-7 hosts. |
-| `vmaf_metal_import_state` | Hands an allocated `VmafMetalState` to a `VmafContext` for use during feature extraction. The caller retains ownership and must call `vmaf_metal_state_free` after `vmaf_close`. |
+| `vmaf_metal_import_state` | Hands an allocated `VmafMetalState` to a `VmafContext` for use during feature extraction. The caller retains ownership and must call `vmaf_metal_state_free` only after `vmaf_close` returns 0. |
 | `vmaf_metal_state_free` | Releases a state allocated via `vmaf_metal_state_init` or `vmaf_metal_state_init_external`. Safe to pass `NULL`. |
 | `vmaf_metal_list_devices` | Enumerates Apple-Family-7+ Metal devices. Returns device count or `-ENOSYS` when built without Metal. |
 
@@ -675,8 +541,8 @@ loop:
   vmaf_metal_wait_compute(state)
   vmaf_metal_read_imported_pictures(vmaf, index)
 vmaf_score_pooled(vmaf, ...)
-vmaf_close(vmaf)
-vmaf_metal_state_free(&state)
+vmaf_close(vmaf)                       ← retry on nonzero; only 0 invalidates
+vmaf_metal_state_free(&state)         ← caller frees only after exact 0
 ```
 
 ### IOSurface zero-copy import (ADR-0423)
@@ -692,13 +558,12 @@ kernels read the frame without a host round-trip.
 | `vmaf_metal_state_init_external` | Allocates a `VmafMetalState` that adopts caller-supplied Metal handles instead of creating its own device/queue. Required when the IOSurface source and libvmaf compute must share the same `MTLDevice`. |
 | `vmaf_metal_picture_import` | Imports a single plane of an `IOSurfaceRef` (as `uintptr_t`) into the libvmaf Metal pipeline. The caller retains ownership; libvmaf locks the surface read-only and copies the plane into a shared-storage `VmafPicture`. |
 | `vmaf_metal_wait_compute` | Blocks until all Metal compute work on `state` has finished. Currently a synchronous no-op (v1 import path is a host-side memcpy); future async paths replace this with an `MTLSharedEvent` drain. |
-| `vmaf_metal_read_imported_pictures` | Triggers a libvmaf score read for the ref+dis IOSurfaces at `index`. Mirrors `vmaf_vulkan_read_imported_pictures`. |
+| `vmaf_metal_read_imported_pictures` | Triggers a libvmaf score read for the imported ref+dis IOSurfaces at `index`. |
 
 Metal currently targets Apple Silicon (Apple-Family-7, M1 and later) and ships
 runtime dispatch for 8 feature kernels. VIF, ADM, CIEDE, CAMBI, SSIMULACRA2,
-MS-SSIM, PSNR-HVS, and motion3 are tracked as follow-up kernels. Intel-Mac
-paths remain MoltenVK/Vulkan-oriented unless a future ADR adds a dedicated
-Metal runtime contract for those devices.
+MS-SSIM, PSNR-HVS, and motion3 are tracked as follow-up kernels. Intel Macs are
+unsupported unless a future ADR adds a dedicated runtime contract for them.
 
 ## Related
 
@@ -720,7 +585,9 @@ Metal runtime contract for those devices.
 ## Licensing of the GPU headers (ADR-1250)
 
 `libvmaf_sycl.h`, `libvmaf_cuda.h`, `libvmaf_hip.h` and `libvmaf_metal.h` are
+<!-- REUSE-IgnoreStart -->
 fork-authored and carry `SPDX-License-Identifier: EUPL-1.2`. Linking against
+<!-- REUSE-IgnoreEnd -->
 them is use of the library, not modification: the reciprocity applies when you
 redistribute a **modified** libvmaf. See
 [ADR-1250](../adr/1250-eupl-fork-relicense.md) and the

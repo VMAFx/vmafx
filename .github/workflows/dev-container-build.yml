@@ -6,24 +6,21 @@
 # Motivation (ADR-0819): previously there was no CI gate on dev/Containerfile;
 # regressions were only discovered at user runtime after the container fiasco
 # where path references went stale post-rename (libvmaf/ → core/).  This
-# workflow runs `docker build --target libvmaf-build` on every PR that touches
-# dev/Containerfile or dev/scripts/, fails fast on any build error, and
-# smoke-tests the resulting image by invoking `vmaf --version`
-# and the CPU-backend probe against the bundled test YUVs.
+# workflow always emits its required context. The shared impact planner runs
+# `docker build --target libvmaf-build` only when container inputs change,
+# fails fast on any build error, and smoke-tests the resulting image by invoking
+# `vmaf --version` and the CPU-backend probe against the bundled test YUVs.
 #
 # No image is pushed — this is a pure build-verification gate.
 
 name: Dev Container
 
 on:
+  push:
+    branches: [master]
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "dev/Containerfile"
-      - "dev/scripts/**"
-      - "dev/docker-compose.yml"
-      - ".github/workflows/dev-container-build.yml"
   workflow_dispatch:
 
 permissions:
@@ -34,16 +31,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  dev-container-build:
+  impact:
+    name: Plan dev-container impact
+    runs-on: ubuntu-26.04
+    outputs:
+      selected: ${{ steps.impact.outputs.dev_container }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan CI impact (ADR-1140)
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+  dev-container-build-work:
+    needs: impact
+    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     # ADR-1297 — required. Agent hard rule 12 makes this container the default
     # execution environment and ADR-1102 makes it canonical for published
     # artifacts; the image that every contributor and every release artifact
-    # comes out of must not be allowed to stop building silently. Path-filtered
-    # on dev/**, so absence elsewhere is an ADR-0313 path skip.
-    # required-aggregator
-    name: Dev Container Build
-    # Skip draft PRs — consistent with the other workflow gates.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # comes out of must not be allowed to stop building silently. The workflow
+    # always reports its gate; the planner selects this work for container inputs.
+    name: Dev Container Build work
     runs-on: ubuntu-latest
     # GPU SDK downloads (CUDA keyring, oneAPI, ROCm) + multi-stage build can
     # take up to 45 min on a cold runner; set a generous ceiling.
@@ -169,3 +185,25 @@ jobs:
       - name: Cleanup image
         if: always()
         run: docker rmi vmaf-dev-mcp-gate:${{ github.sha }} || true
+
+  dev-container-build:
+    needs: [impact, dev-container-build-work]
+    if: always()
+    # required-aggregator
+    name: Dev Container Build
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require selected dev-container work
+        env:
+          PLAN_RESULT: ${{ needs.impact.result }}
+          SELECTED: ${{ needs.impact.outputs.selected }}
+          WORK_RESULT: ${{ needs.dev-container-build-work.result }}
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::impact planning did not succeed ($PLAN_RESULT)"
+            exit 1
+          fi
+          case "$SELECTED:$WORK_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid dev-container gate state selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;
+          esac

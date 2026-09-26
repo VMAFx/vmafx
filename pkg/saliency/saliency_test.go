@@ -271,9 +271,9 @@ func TestPadToMultiple(t *testing.T) {
 			t.Fatalf("padded length = %d, want %d", len(got), 3*64*64)
 		}
 		// Original region carries the content...
-		for c := 0; c < 3; c++ {
-			for y := 0; y < srcH; y++ {
-				for x := 0; x < srcW; x++ {
+		for c := range 3 {
+			for y := range srcH {
+				for x := range srcW {
 					if got[c*64*64+y*64+x] != 1.0 {
 						t.Fatalf("content lost at (%d, %d, %d)", c, y, x)
 					}
@@ -551,8 +551,7 @@ func TestBuildAugment(t *testing.T) {
 				t.Fatalf("BuildAugment error = %v, wantErr %v", err, tc.wantErr)
 			}
 			if tc.wantErr {
-				var unsupported *saliency.UnsupportedEncoderError
-				if !errors.As(err, &unsupported) {
+				if _, ok := errors.AsType[*saliency.UnsupportedEncoderError](err); !ok {
 					t.Fatalf("error = %v, want an *UnsupportedEncoderError", err)
 				}
 				if !strings.Contains(err.Error(), "--saliency-fallback-plain") {
@@ -583,8 +582,8 @@ func TestBuildAugment(t *testing.T) {
 
 // firstLine returns s up to its first newline, for readable failures.
 func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
+	if before, _, ok := strings.Cut(s, "\n"); ok {
+		return before
 	}
 	return s
 }
@@ -731,8 +730,8 @@ func TestFrameCountAndReadFrame(t *testing.T) {
 	frameSize := saliency.FrameSizeBytes(w, h)
 	buf := make([]byte, frameSize*n)
 	// Give each frame a distinct luma so the reader's offset is verifiable.
-	for f := 0; f < n; f++ {
-		for i := 0; i < frameSize; i++ {
+	for f := range n {
+		for i := range frameSize {
 			buf[f*frameSize+i] = byte(10 * (f + 1))
 		}
 	}
@@ -748,7 +747,7 @@ func TestFrameCountAndReadFrame(t *testing.T) {
 		t.Errorf("FrameCount = %d, want %d", count, n)
 	}
 
-	for f := 0; f < n; f++ {
+	for f := range n {
 		frame, readErr := saliency.ReadFrame(path, f, w, h)
 		if readErr != nil {
 			t.Fatalf("ReadFrame(%d): %v", f, readErr)

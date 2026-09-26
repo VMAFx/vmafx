@@ -5,44 +5,44 @@ Copyright 2026 Lusoris
 SPDX-License-Identifier: EUPL-1.2
 
 CUDA is not an image tag; it is a coordinated pin. One release is named in
-ten places across six files, in four different spellings:
+seven sites across two files, including exact apt metadata:
 
-  * ``CUDA_VERSION="13.4.1"`` in ``build-config.env`` -- the authority.
-  * ``nvidia/cuda:13.4.1-...`` in ``build-config.env`` and the four Dockerfiles
-    that mirror those pins as ARG defaults.
-  * ``cuda-toolkit-13-4`` -- the apt package name, in ``CUDA_APT_PACKAGE`` and
-    literally in ``dev/Containerfile``.
-  * ``"VMAFX production CUDA 13.4.1 runtime"`` -- the published OCI description
+  * ``CUDA_VERSION="13.4.2"`` in ``build-config.env`` -- the authority.
+  * ``cuda-toolkit-13-4`` -- the apt package series in ``CUDA_APT_PACKAGE``.
+  * ``CUDA_APT_LOCK_RELEASE`` plus exact toolkit, nvcc, and cudart Debian
+    versions verified from NVIDIA's repository for this release.
+  * ``"VMAFX production CUDA 13.4.2 runtime"`` -- the published OCI description
     label on the CUDA runtime image. The residual sweep below is what found
     this one; it was in no inventory of the pin.
 
-It was sixteen places in seven spellings until ADR-1300. The CI legs stopped
-spelling the release at all: the Linux legs call
+It was sixteen places in seven spellings until ADR-1300 and ADR-1306. The CI legs
+stopped spelling the release at all: the Linux legs call
 ``scripts/ci/install-cuda-toolkit.sh`` and the Windows legs
 ``scripts/ci/install-cuda-toolkit.ps1``, and both read ``build-config.env`` at
 run time instead of repeating the version, the series and the
-``CUDA_PATH_V<major>_<minor>`` name in each workflow. A site that reads the
-authority is not a site that can drift from it.
+``CUDA_PATH_V<major>_<minor>`` name in each workflow. ADR-1306 dropped the
+``nvidia/cuda`` base images in favor of digest-pinned Ubuntu 26.04 with explicit
+toolkit installation via ``scripts/ci/install-cuda-toolkit.sh``, retiring six
+image sites from the coordinated pin. A site that reads the authority is not a
+site that can drift from it.
 
-``check-base-image-single-source.sh`` rule 3 knew only the image spelling: it
-compares ``CUDA_BUILDER`` and ``CUDA_RUNTIME`` against ``CUDA_VERSION`` and
-stops there. A Renovate pull request that moves the image tags alone is
-therefore rejected by that rule and can never go green by itself (#1487), while
-the four spellings no rule knew about could drift with nothing complaining.
-``CUDA_APT_PACKAGE`` had no consumer and no drift check of any kind, which
-``build-config.env`` itself forbids: "Add central knobs only with real
-consumers or executable drift checks."
+``check-base-image-single-source.sh`` enforces that ``CUDA_BUILDER`` and
+``CUDA_RUNTIME`` equal ``DEV_BASE`` including its digest. A Renovate pull request or bump must
+keep the single-source authority and derived spellings in lockstep.
+``CUDA_APT_PACKAGE`` is held in step by this gate. Renovate updates only
+``CUDA_VERSION``; ``CUDA_APT_LOCK_RELEASE`` deliberately remains stale until a
+maintainer verifies and records the new exact NVIDIA package versions. That
+makes an automated release bump fail closed instead of silently floating on a
+major/minor apt series.
 
-This gate closes both halves. Every site is discovered by shape, every site is
+This gate closes all sides. Every site is discovered by shape, every site is
 compared against ``CUDA_VERSION``, and a residual sweep fails on any *other*
 CUDA release literal in scope, so a site added in a new spelling or a new file
-is a build failure rather than a silent seventeenth copy. The sweep earned its
-place on the first run: it found the OCI description label, which appeared in
-no inventory of the pin, including the bug report that prompted this gate.
+is a build failure rather than a silent copy.
 
-``--write`` rewrites the five derived spellings from ``CUDA_VERSION``. It
-deliberately does not touch ``CUDA_VERSION`` (it is the authority) or the image
-pins (their digests cannot be derived; Renovate owns them).
+``--write`` rewrites the two mechanically derived spellings from
+``CUDA_VERSION``. It deliberately does not touch ``CUDA_VERSION`` or the exact
+apt metadata, which requires a live NVIDIA repository/manifest check.
 
 Usage: check-cuda-pin-lockstep.py [--write]
 Exit: 0 clean, 1 drift or an unrecognised site, 2 the config is missing.
@@ -76,9 +76,19 @@ SCOPE_PATTERNS = (
 CONFIG_RE = re.compile(r'(?m)^CUDA_VERSION="(?P<value>[0-9][0-9.]*)"')
 IMAGE_RE = re.compile(r"nvidia/cuda:(?P<value>[0-9]+\.[0-9]+\.[0-9]+)-")
 APT_RE = re.compile(r"cuda-toolkit-(?P<value>[0-9]+-[0-9]+)")
+APT_LOCK_RELEASE_RE = re.compile(r'(?m)^CUDA_APT_LOCK_RELEASE="(?P<value>[0-9]+\.[0-9]+\.[0-9]+)"')
+APT_TOOLKIT_VERSION_RE = re.compile(
+    r'(?m)^CUDA_APT_TOOLKIT_VERSION="(?P<value>[0-9]+\.[0-9]+\.[0-9]+-[0-9]+)"'
+)
+APT_NVCC_VERSION_RE = re.compile(
+    r'(?m)^CUDA_APT_NVCC_VERSION="(?P<value>[0-9]+\.[0-9]+\.[0-9]+-[0-9]+)"'
+)
+APT_CUDART_VERSION_RE = re.compile(
+    r'(?m)^CUDA_APT_CUDART_VERSION="(?P<value>[0-9]+\.[0-9]+\.[0-9]+-[0-9]+)"'
+)
 LABEL_RE = re.compile(r"(?m)^\s*LABEL\s+[^\n]*\bCUDA (?P<value>[0-9]+\.[0-9]+\.[0-9]+)\b")
 
-# Four spellings used to live here and no longer have a single site in the
+# Five spellings used to live here and no longer have a single site in the
 # tree, so they are gone: a shape that matches nothing looks wired and does
 # nothing, which is the failure this gate exists to prevent.
 #
@@ -89,15 +99,22 @@ LABEL_RE = re.compile(r"(?m)^\s*LABEL\s+[^\n]*\bCUDA (?P<value>[0-9]+\.[0-9]+\.[
 #   envvar     `CUDA_PATH_V13_4`        which reads CUDA_VERSION at run time
 #                                       and derives the series and the
 #                                       CUDA_PATH_V<major>_<minor> name from it.
+#   image      `nvidia/cuda:...`     -- dropped in ADR-1306; CUDA builders
+#                                       and runtimes build FROM digest-pinned
+#                                       Ubuntu 26.04 and install the toolkit
+#                                       via scripts/ci/install-cuda-toolkit.sh.
 #
 # Deleting a shape does not un-gate the spelling. RESIDUAL_RE below sweeps every
 # scoped file for any CUDA release literal a shape did not claim, so
-# re-introducing `$cudaVersion = '13.4.1'` in a workflow fails as an
+# re-introducing `$cudaVersion = '13.4.1'` or `nvidia/cuda:13.4.1-...` fails as an
 # unrecognised pin rather than passing silently.
 SITE_SHAPES = (
     ("config", CONFIG_RE),
-    ("image", IMAGE_RE),
     ("apt", APT_RE),
+    ("apt-lock-release", APT_LOCK_RELEASE_RE),
+    ("apt-toolkit-version", APT_TOOLKIT_VERSION_RE),
+    ("apt-nvcc-version", APT_NVCC_VERSION_RE),
+    ("apt-cudart-version", APT_CUDART_VERSION_RE),
     ("label", LABEL_RE),
 )
 
@@ -105,11 +122,26 @@ SITE_SHAPES = (
 # and carries no digest.
 DERIVED_KINDS = frozenset({"apt", "label"})
 
-# The residual sweep. A CUDA release has a two-digit major (10.x through 13.x),
-# which separates it from the action's own `v0.2.36` and from `cuda-keyring_1.1-1`.
+# These are explicit evidence captured from NVIDIA's live Packages index and
+# redistributable manifest. They are intentionally not rewritten by --write or
+# Renovate. The lock-release site makes a CUDA_VERSION bump fail until a human
+# refreshes this metadata; nvcc and cudart build numbers are not derivable from
+# the marketing release (13.4.1 used two different component versions).
+EXACT_METADATA_KINDS = frozenset(
+    {
+        "apt-lock-release",
+        "apt-toolkit-version",
+        "apt-nvcc-version",
+        "apt-cudart-version",
+    }
+)
+
+# The residual sweep. A CUDA release has a two-digit major (10.x through 15.x),
+# which separates it from the action's own `v0.2.36`, from `cuda-keyring_1.1-1`,
+# and from Ubuntu LTS releases (20.04, 22.04, 24.04, 26.04).
 # The lookarounds keep `ubuntu26.04` and `ubuntu2404` out: a release literal is
 # never glued to a word character.
-RESIDUAL_RE = re.compile(r"(?<![\w.])(?P<value>[0-9]{2}\.[0-9]+(?:\.[0-9]+)?)(?![\w.])")
+RESIDUAL_RE = re.compile(r"(?<![\w.])(?P<value>1[0-5]\.[0-9]+(?:\.[0-9]+)?)(?![\w.])")
 
 
 @dataclass(frozen=True)
@@ -232,16 +264,38 @@ def load_cuda_version(root: Path) -> str:
     return match.group("value")
 
 
-def expected_value(kind: str, version: str) -> str:
+def expected_value(kind: str, version: str) -> str | None:
     """What a site of this kind must read, given the authoritative version."""
     series = ".".join(version.split(".")[:2])
     if kind == "apt":
         return series.replace(".", "-")
+    if kind == "apt-toolkit-version":
+        return f"{version}-1"
+    if kind in {"apt-nvcc-version", "apt-cudart-version"}:
+        return None
     return version
 
 
+def matches_expected(site: Site, version: str) -> bool:
+    """Whether a site satisfies its exact or live-metadata-derived constraint."""
+    expected = expected_value(site.kind, version)
+    if expected is not None:
+        return site.value == expected
+    series = ".".join(version.split(".")[:2])
+    return re.fullmatch(rf"{re.escape(series)}\.[0-9]+-[0-9]+", site.value) is not None
+
+
+def expected_description(kind: str, version: str) -> str:
+    """Human-readable exact value or component-series constraint."""
+    expected = expected_value(kind, version)
+    if expected is not None:
+        return expected
+    series = ".".join(version.split(".")[:2])
+    return f"{series}.<component>-<revision> from live NVIDIA metadata"
+
+
 def drifted(sites: list[Site], version: str) -> list[Site]:
-    return [site for site in sites if site.value != expected_value(site.kind, version)]
+    return [site for site in sites if not matches_expected(site, version)]
 
 
 def rewrite(root: Path, sites: list[Site], version: str) -> list[str]:
@@ -257,6 +311,7 @@ def rewrite(root: Path, sites: list[Site], version: str) -> list[str]:
         # Right to left so an earlier edit cannot move a later column.
         for site in sorted(group, key=lambda s: (s.line, s.column), reverse=True):
             want = expected_value(site.kind, version)
+            assert want is not None
             line = lines[site.line - 1]
             start, end = site.column, site.column + len(site.value)
             lines[site.line - 1] = line[:start] + want + line[end:]
@@ -292,7 +347,7 @@ def main() -> int:
 
     problems: list[str] = []
     for site in drifted(sites, version):
-        want = expected_value(site.kind, version)
+        want = expected_description(site.kind, version)
         problems.append(
             f"{site.where} {site.kind} pin reads '{site.value}'; "
             f"CUDA_VERSION={version} requires '{want}'  |  {site.text}"
@@ -309,8 +364,8 @@ def main() -> int:
         print(
             "\nCUDA is a coordinated pin: every site moves in one commit.\n"
             "  Derived spellings:  scripts/ci/check-cuda-pin-lockstep.py --write\n"
-            "  Image pins:         edit CUDA_BUILDER / CUDA_RUNTIME, then\n"
-            "                      scripts/ci/check-base-image-single-source.sh --write\n"
+            "  Exact apt metadata: verify the NVIDIA redist manifest and Packages index,\n"
+            "                      then update CUDA_APT_LOCK_RELEASE and all three versions\n"
             "  A new spelling must be taught to this gate and to renovate.json's\n"
             "  CUDA manager in the same change (ADR-1285).",
             file=sys.stderr,

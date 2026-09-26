@@ -351,7 +351,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1234,
+  "total_warnings": 1209,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -460,14 +460,13 @@
     "core/test/test_context.c": 14,
     "core/test/test_cpu.c": 2,
     "core/test/test_dict.cpp": 33,
-    "core/test/test_feature_collector.c": 16,
+    "core/test/test_feature_collector.c": 12,
     "core/test/test_framesync.c": 8,
     "core/test/test_hip_adm_parity.c": 19,
     "core/test/test_hip_cambi_parity.c": 22,
     "core/test/test_hip_ciede_parity.c": 18,
     "core/test/test_hip_float_adm_parity.c": 30,
     "core/test/test_hip_float_moment_parity.c": 22,
-    "core/test/test_hip_float_motion_parity.c": 21,
     "core/test/test_hip_float_psnr_parity.c": 21,
     "core/test/test_hip_float_ssim_parity.c": 22,
     "core/test/test_hip_float_vif_parity.c": 22,
@@ -559,6 +558,53 @@
         }
       },
       "previous_baseline_sha256": "4320252172985b155c700cb9a8114c19c59f6e0e526a339d8640f8ba07658e24"
+    },
+    {
+      "sources": [
+        "core/src/feature/hip/float_motion_hip.c",
+        "core/test/test_hip_float_motion_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_hip_float_motion_parity.c": {
+          "warnings": [
+            21,
+            17
+          ]
+        }
+      },
+      "previous_baseline_sha256": "8e2b30f70af6eca22b246221e6419eff0ac5b8ddd25273b9ca369020d1ebb50a"
+    },
+    {
+      "sources": [
+        "core/src/feature/hip/float_motion_hip.c",
+        "core/test/test_hip_float_motion_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_hip_float_motion_parity.c": {
+          "warnings": [
+            17,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "2472a7d230275ced6f64532d17c09467cde69d0dd120a16bace02b8537b74006"
+    },
+    {
+      "sources": [
+        "core/test/test_feature_collector.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_feature_collector.c": {
+          "warnings": [
+            16,
+            12
+          ]
+        }
+      },
+      "previous_baseline_sha256": "8e5e5b107401d6ecd60122d1ba9cddf73ea7a2345864d32d0dfe673ce8b53ac1"
     }
   ]
 }

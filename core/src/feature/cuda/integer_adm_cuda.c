@@ -33,7 +33,9 @@
  * enum ADM_CSF_MODE are pulled in transitively via cuda/integer_adm_cuda.h →
  * feature/integer_adm.h. No separate adm_options.h include is needed here. */
 #include "feature/adm_csf_fixed_point.h"
+#include "feature/adm_score.h"
 #include "feature/barten_csf_tools.h"
+#include "feature/nonfinite_score.h"
 #include "drain_batch.h"
 #include "picture_cuda.h"
 
@@ -73,6 +75,7 @@ typedef struct AdmStateCuda {
     bool adm_skip_aim;     /* skip AIM CM computation when true (ADR-0746) */
     double adm_dlm_weight; /* DLM/AIM blend: 1=DLM-only, 0=AIM-only (ADR-0746) */
     float rfactor[12];
+    uint32_t csf_normalization_shift[4];
     unsigned submit_w, submit_h; // stored by submit for collect
     void (*dwt2_8)(const uint8_t *src, const cuda_adm_dwt_band_t *dst, void *tmp_buf,
                    AdmBufferCuda *buf, int w, int h, int src_stride, int dst_stride,
@@ -180,34 +183,11 @@ static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
     return f;
 }
 
-static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
-                                   int adm_ref_display_height, int adm_csf_mode,
-                                   uint16_t i_rfactor[3])
-{
-    if (fabs(adm_norm_view_dist * adm_ref_display_height -
-             DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
-        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
-        i_rfactor[0] = 36453;
-        i_rfactor[1] = 36453;
-        i_rfactor[2] = 49417;
-    } else {
-        const double pow2_21 = pow(2, 21);
-        const double pow2_23 = pow(2, 23);
-        i_rfactor[0] = (uint16_t)(rfactor1[0] * pow2_21);
-        i_rfactor[1] = (uint16_t)(rfactor1[1] * pow2_21);
-        i_rfactor[2] = (uint16_t)(rfactor1[2] * pow2_23);
-    }
-}
-
 /**
- * Refuse a CSF configuration whose fixed-point weights would wrap
- * (ADR-1191). Mirrors `adm_csf_config_check()` in
- * core/src/feature/integer_adm.c so the CPU reference and this twin accept
- * exactly the same set of configurations -- the bounds in
- * adm_csf_fixed_point.h are the CPU pipeline's, deliberately applied here
- * too, because a twin that accepted a configuration the CPU rejects would
- * break the option / feature-name parity contract (ADR-1183). Returns 0 or
- * -EINVAL.
+ * Validate a CSF configuration before claiming device resources. Mirrors
+ * `adm_csf_config_check()` in core/src/feature/integer_adm.c so the CPU and
+ * this twin reject the same invalid table output. Finite over-range weights
+ * are assigned the shared per-scale normalisation exponent later.
  */
 static int adm_csf_config_check(const AdmStateCuda *s)
 {
@@ -757,25 +737,27 @@ static int adm_cm_aim_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
     return 0;
 }
 
-static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_weight,
-                            double p_norm, float *result)
+static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale,
+                            uint32_t normalization_shift, float noise_weight, double p_norm,
+                            float *result)
 {
     int left = w * ADM_BORDER_FACTOR - 0.5;
     int top = h * ADM_BORDER_FACTOR - 0.5;
     int right = w - left;
     int bottom = h - top;
-    const uint32_t shift_inner_accum = (uint32_t)ceil(log2(h));
+    const int shift_inner_accum = (int)ceil(log2(h));
 
     // scale 0
-    const uint32_t shift_xcub[3] = {(uint32_t)ceil(log2(w) - 4), (uint32_t)ceil(log2(w) - 4),
-                                    (uint32_t)ceil(log2(w) - 3)};
+    const int shift_xcub[3] = {(int)ceil(log2(w) - 4), (int)ceil(log2(w) - 4),
+                               (int)ceil(log2(w) - 3)};
     const int constant_offset[3] = {52, 52, 57};
+    const int restored_bits = 3 * (int)normalization_shift;
 
     // scale 123
-    uint32_t shift_cub = (uint32_t)ceil(log2(w));
-    const float final_shift[3] = {powf(2, (45 - shift_cub - shift_inner_accum)),
-                                  powf(2, (39 - shift_cub - shift_inner_accum)),
-                                  powf(2, (36 - shift_cub - shift_inner_accum))};
+    const int shift_cub = (int)ceil(log2(w));
+    const float final_shift[3] = {powf(2, (45 - restored_bits - shift_cub - shift_inner_accum)),
+                                  powf(2, (39 - restored_bits - shift_cub - shift_inner_accum)),
+                                  powf(2, (36 - restored_bits - shift_cub - shift_inner_accum))};
     const float p_norm_exp = 1.0f / (float)p_norm;
     float powf_add = powf((float)((bottom - top) * (right - left)) * noise_weight, p_norm_exp);
 
@@ -783,8 +765,8 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
     *result = 0;
     for (int i = 0; i < 3; ++i) {
         if (scale == 0) {
-            f_accum = (float)(accum[i] /
-                              pow(2, (constant_offset[i] - shift_xcub[i] - shift_inner_accum)));
+            f_accum = (float)(accum[i] / pow(2, (constant_offset[i] - restored_bits -
+                                                 shift_xcub[i] - shift_inner_accum)));
         } else {
             f_accum = (float)(accum[i] / final_shift[scale - 1]);
         }
@@ -989,8 +971,8 @@ static void adm_dlm_terms(const AdmStateCuda *s, unsigned w, unsigned h, AdmDlmT
         w = (w + 1) / 2;
         h = (h + 1) / 2;
 
-        conclude_adm_cm(&adm_cm[slot], h, w, scale, (float)s->adm_noise_weight, s->adm_p_norm,
-                        &num_scale);
+        conclude_adm_cm(&adm_cm[slot], h, w, scale, s->csf_normalization_shift[scale],
+                        (float)s->adm_noise_weight, s->adm_p_norm, &num_scale);
         conclude_adm_csf_den(&adm_csf[slot], h, w, scale, &den_scale, &s->rfactor[slot],
                              (float)s->adm_noise_weight);
 
@@ -1024,7 +1006,8 @@ static double adm_aim_num(const AdmStateCuda *s, unsigned w, unsigned h)
         h = (h + 1) / 2;
         float aim_num_scale = 0.0f;
         conclude_adm_cm(&adm_aim_cm[(size_t)scale * 3], h, w, scale,
-                        0.0f /* noise_weight = 0 for AIM */, s->adm_p_norm, &aim_num_scale);
+                        s->csf_normalization_shift[scale], 0.0f /* noise_weight = 0 for AIM */,
+                        s->adm_p_norm, &aim_num_scale);
         if (scale == 0u && s->adm_skip_scale0) {
             continue;
         }
@@ -1033,64 +1016,40 @@ static double adm_aim_num(const AdmStateCuda *s, unsigned w, unsigned h)
     return aim_num;
 }
 
-/* Append the features every frame emits. Returns the OR of the collector
- * results. */
-static int append_adm_scores(VmafFeatureCollector *feature_collector, const AdmStateCuda *s,
-                             unsigned index, const double frame_scores[3], const AdmDlmTerms *t)
+static int emit_adm_scores(const write_score_parameters_adm *params, const AdmDlmTerms *terms,
+                           double score, double score_aim, double score_adm3,
+                           const double scale_scores[4])
 {
-    static const char *const scale_names[4] = {"integer_adm_scale0", "integer_adm_scale1",
-                                               "integer_adm_scale2", "integer_adm_scale3"};
-    VmafDictionary *dict = s->feature_name_dict;
-
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, dict, "VMAF_integer_feature_adm2_score", frame_scores[0], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, dict, "VMAF_integer_feature_aim_score", frame_scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(
-        feature_collector, dict, "VMAF_integer_feature_adm3_score", frame_scores[2], index);
-    for (unsigned scale = 0; scale < 4; ++scale) {
-        const size_t num_idx = (size_t)scale * 2;
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, scale_names[scale],
-                                                       t->scores[num_idx] / t->scores[num_idx + 1],
-                                                       index);
-    }
-    return err;
-}
-
-/* Append the features only the `debug` option emits. Returns the OR of the
- * collector results. */
-static int append_adm_debug_scores(VmafFeatureCollector *feature_collector, const AdmStateCuda *s,
-                                   unsigned index, double score, const AdmDlmTerms *t)
-{
-    static const char *const num_names[4] = {"integer_adm_num_scale0", "integer_adm_num_scale1",
-                                             "integer_adm_num_scale2", "integer_adm_num_scale3"};
-    static const char *const den_names[4] = {"integer_adm_den_scale0", "integer_adm_den_scale1",
-                                             "integer_adm_den_scale2", "integer_adm_den_scale3"};
-    VmafDictionary *dict = s->feature_name_dict;
-
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, "integer_adm", score,
-                                                   index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, "integer_adm_num",
-                                                   t->num, index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, "integer_adm_den",
-                                                   t->den, index);
-    for (unsigned scale = 0; scale < 4; ++scale) {
-        const size_t num_idx = (size_t)scale * 2;
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, num_names[scale],
-                                                       t->scores[num_idx], index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, den_names[scale],
-                                                       t->scores[num_idx + 1], index);
-    }
-    return err;
-}
-
-static void write_scores(write_score_parameters_adm *params)
-{
-    VmafFeatureCollector *feature_collector = params->feature_collector;
     const AdmStateCuda *s = params->s;
-    unsigned index = params->index;
+    VmafNamedScore values[18] = {
+        {"VMAF_integer_feature_adm2_score", score},
+        {"VMAF_integer_feature_aim_score", score_aim},
+        {"VMAF_integer_feature_adm3_score", score_adm3},
+        {"integer_adm_scale0", scale_scores[0]},
+        {"integer_adm_scale1", scale_scores[1]},
+        {"integer_adm_scale2", scale_scores[2]},
+        {"integer_adm_scale3", scale_scores[3]},
+    };
+    size_t value_count = 7u;
+    if (s->debug) {
+        static const char *const debug_names[8] = {
+            "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
+            "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
+            "integer_adm_num_scale3", "integer_adm_den_scale3",
+        };
+        values[value_count++] = (VmafNamedScore){"integer_adm", score};
+        values[value_count++] = (VmafNamedScore){"integer_adm_num", terms->num};
+        values[value_count++] = (VmafNamedScore){"integer_adm_den", terms->den};
+        for (size_t i = 0u; i < 8u; ++i)
+            values[value_count++] = (VmafNamedScore){debug_names[i], terms->scores[i]};
+    }
+    return vmaf_feature_emit_finite_scores(params->feature_collector, s->feature_name_dict,
+                                           "integer_adm_cuda", values, value_count, params->index);
+}
+
+static int write_scores(write_score_parameters_adm *params)
+{
+    const AdmStateCuda *s = params->s;
 
     AdmDlmTerms t;
     adm_dlm_terms(s, params->w, params->h, &t);
@@ -1100,15 +1059,11 @@ static void write_scores(write_score_parameters_adm *params)
      * terms were concluded at. */
     const double numden_limit = 1e-10 * ((double)params->w * params->h) / (1920.0 * 1080.0);
 
-    t.num = t.num < numden_limit ? 0 : t.num;
-    t.den = t.den < numden_limit ? 0 : t.den;
+    int err = vmaf_adm_floor_pair_named("integer_adm_cuda", params->index, t.num, t.den,
+                                        numden_limit, &t.num, &t.den);
+    if (err)
+        return err;
 
-    double score;
-    if (t.den == 0.0) {
-        score = 1.0f;
-    } else {
-        score = t.num / t.den;
-    }
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
      * applies MAX(..., adm_min_val) to the adm3 expression alone). The
@@ -1120,18 +1075,31 @@ static void write_scores(write_score_parameters_adm *params)
     if (!s->adm_skip_aim) {
         aim_num = adm_aim_num(s, params->w, params->h);
     }
-    const double score_aim = (t.den == 0.0) ? 1.0 : (aim_num / t.den);
-    double score_adm3 = (score * s->adm_dlm_weight) + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
-    if (score_adm3 < s->adm_min_val) {
-        score_adm3 = s->adm_min_val;
+    const double aggregate_pairs[4] = {t.num, t.den, aim_num, t.den};
+    double aggregate_ratios[2];
+    err = vmaf_adm_scale_ratios(aggregate_pairs, 2u, aggregate_ratios);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm_cuda: undefined or non-finite aggregate at frame %u "
+                 "(num=%g den=%g aim_num=%g)\n",
+                 params->index, t.num, t.den, aim_num);
+        return err;
     }
+    const double score = aggregate_ratios[0];
+    const double score_aim = aggregate_ratios[1];
 
-    const double frame_scores[3] = {score, score_aim, score_adm3};
-    int err = append_adm_scores(feature_collector, s, index, frame_scores, &t);
-    if (s->debug) {
-        err |= append_adm_debug_scores(feature_collector, s, index, score, &t);
-    }
-    (void)err; // accumulated collector status intentionally discarded; void writer API
+    double score_adm3 = 0.0;
+    err = vmaf_adm3_score_named("integer_adm_cuda", params->index, score, score_aim, 0,
+                                s->adm_dlm_weight, s->adm_min_val, &score_adm3);
+    if (err)
+        return err;
+    double scale_scores[4];
+    err =
+        vmaf_adm_scale_ratios_named("integer_adm_cuda", params->index, t.scores, 4u, scale_scores);
+    if (err)
+        return err;
+
+    return emit_adm_scores(params, &t, score, score_aim, score_adm3, scale_scores);
 }
 
 /* Fixed-point kernel parameters of one frame. Also caches the float CSF
@@ -1153,7 +1121,6 @@ static AdmFixedParametersCuda adm_fixed_parameters(AdmStateCuda *s, int w, int h
         .adm_enhn_gain_limit = adm_enhn_gain_limit,
     };
 
-    const double pow2_32 = pow(2, 32);
     for (unsigned scale = 0; scale < 4; ++scale) {
         const size_t slot = (size_t)scale * 3;
         const AdmCsfFactors f =
@@ -1162,18 +1129,17 @@ static AdmFixedParametersCuda adm_fixed_parameters(AdmStateCuda *s, int w, int h
         p.rfactor[slot] = f.factor1;
         p.rfactor[slot + 1] = f.factor1;
         p.rfactor[slot + 2] = f.factor2;
-        if (scale == 0) {
-            uint16_t i_rf[3];
-            adm_csf_rfactor_scale0(p.rfactor, adm_norm_view_dist, adm_ref_display_height,
-                                   s->adm_csf_mode, i_rf);
-            p.i_rfactor[0] = i_rf[0];
-            p.i_rfactor[1] = i_rf[1];
-            p.i_rfactor[2] = i_rf[2];
-        } else {
-            p.i_rfactor[slot] = (uint32_t)(p.rfactor[slot] * pow2_32);
-            p.i_rfactor[slot + 1] = (uint32_t)(p.rfactor[slot + 1] * pow2_32);
-            p.i_rfactor[slot + 2] = (uint32_t)(p.rfactor[slot + 2] * pow2_32);
+        double fixed[3];
+        uint32_t normalization_shift = 0u;
+        const int err = adm_csf_fixed_scale((int)scale, &p.rfactor[slot], adm_norm_view_dist,
+                                            adm_ref_display_height, s->adm_csf_mode, fixed,
+                                            &normalization_shift);
+        if (!err) {
+            p.i_rfactor[slot] = (uint32_t)fixed[0];
+            p.i_rfactor[slot + 1] = (uint32_t)fixed[1];
+            p.i_rfactor[slot + 2] = (uint32_t)fixed[2];
         }
+        s->csf_normalization_shift[scale] = normalization_shift;
     }
     memcpy(s->rfactor, p.rfactor, sizeof(p.rfactor));
     return p;
@@ -1518,21 +1484,19 @@ static int adm_cuda_load_modules(CudaFunctions *cu_f, AdmStateCuda *s)
 }
 
 /* Unload every loaded ADM module (a NULL handle was never loaded). */
-static void adm_cuda_unload_modules(CudaFunctions *cu_f, AdmStateCuda *s)
+static int adm_cuda_unload_modules(VmafCudaState *cu_state, AdmStateCuda *s)
 {
-    if (s->adm_cm_module) {
-        (void)cu_f->cuModuleUnload(s->adm_cm_module);
-    }
-    if (s->adm_csf_den_module) {
-        (void)cu_f->cuModuleUnload(s->adm_csf_den_module);
-    }
-    if (s->adm_csf_module) {
-        (void)cu_f->cuModuleUnload(s->adm_csf_module);
-    }
-    if (s->adm_dwt_module) {
-        (void)cu_f->cuModuleUnload(s->adm_dwt_module);
-    }
-    s->adm_cm_module = s->adm_csf_den_module = s->adm_csf_module = s->adm_dwt_module = NULL;
+    int rc = vmaf_cuda_module_unload(cu_state, &s->adm_cm_module);
+    const int csf_den_rc = vmaf_cuda_module_unload(cu_state, &s->adm_csf_den_module);
+    if (rc == 0)
+        rc = csf_den_rc;
+    const int csf_rc = vmaf_cuda_module_unload(cu_state, &s->adm_csf_module);
+    if (rc == 0)
+        rc = csf_rc;
+    const int dwt_rc = vmaf_cuda_module_unload(cu_state, &s->adm_dwt_module);
+    if (rc == 0)
+        rc = dwt_rc;
+    return rc;
 }
 
 // Get DWT kernel function pointers check adm_dwt2.cu for __global__ templated kernels
@@ -1615,31 +1579,36 @@ static int adm_cuda_load_kernels(CudaFunctions *cu_f, AdmStateCuda *s)
 
 /* Destroy the fex stream and events. A handle is 0 until its create call
  * succeeds, so only what was created is destroyed. */
-static void adm_cuda_destroy_stream_events(CudaFunctions *cu_f, AdmStateCuda *s)
+static int adm_cuda_destroy_stream_events(VmafCudaState *cu_state, AdmStateCuda *s)
 {
-    if (s->dis_event) {
-        (void)cu_f->cuEventDestroy(s->dis_event);
-        s->dis_event = 0;
-    }
-    if (s->ref_event) {
-        (void)cu_f->cuEventDestroy(s->ref_event);
-        s->ref_event = 0;
-    }
-    if (s->finished) {
-        (void)cu_f->cuEventDestroy(s->finished);
-        s->finished = 0;
-    }
-    if (s->str) {
-        (void)cu_f->cuStreamDestroy(s->str);
-        s->str = 0;
-    }
+    int rc = vmaf_cuda_stream_destroy(cu_state, &s->str, true);
+    if (rc)
+        return rc;
+
+    rc = vmaf_cuda_event_destroy(cu_state, &s->dis_event);
+    const int ref_rc = vmaf_cuda_event_destroy(cu_state, &s->ref_event);
+    if (!rc)
+        rc = ref_rc;
+    const int finished_rc = vmaf_cuda_event_destroy(cu_state, &s->finished);
+    if (!rc)
+        rc = finished_rc;
+    return rc;
+}
+
+static int adm_cuda_release_device(VmafCudaState *cu_state, AdmStateCuda *s)
+{
+    const int lifecycle_rc = adm_cuda_destroy_stream_events(cu_state, s);
+    if (lifecycle_rc)
+        return lifecycle_rc;
+    return adm_cuda_unload_modules(cu_state, s);
 }
 
 /* Create the fex stream and events and load the kernels, with the fex context
  * already pushed. On failure everything created here is released again
  * (ADR-1090). */
-static int adm_cuda_init_device_locked(CudaFunctions *cu_f, AdmStateCuda *s)
+static int adm_cuda_init_device_locked(VmafCudaState *cu_state, AdmStateCuda *s)
 {
+    CudaFunctions *const cu_f = cu_state->f;
     int _cuda_err = 0;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
@@ -1650,24 +1619,11 @@ static int adm_cuda_init_device_locked(CudaFunctions *cu_f, AdmStateCuda *s)
     if (!_cuda_err) {
         return 0;
     }
-    /* Unload whatever modules loaded before the failing call. */
-    adm_cuda_unload_modules(cu_f, s);
 fail:
-    adm_cuda_destroy_stream_events(cu_f, s);
-    return _cuda_err;
-}
-
-/* Undo adm_cuda_init_device(): used when a later init step fails, because the
- * framework never calls close() after a failed init(). */
-static void adm_cuda_release_device(VmafFeatureExtractor *fex, AdmStateCuda *s)
-{
-    CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f->cuCtxPushCurrent(fex->cu_state->ctx) != CUDA_SUCCESS) {
-        return;
+    {
+        const int release_rc = adm_cuda_release_device(cu_state, s);
+        return _cuda_err ? _cuda_err : release_rc;
     }
-    adm_cuda_unload_modules(cu_f, s);
-    adm_cuda_destroy_stream_events(cu_f, s);
-    (void)cu_f->cuCtxPopCurrent(NULL);
 }
 
 /* Everything init needs from the device: stream, events, kernels and the SM
@@ -1677,7 +1633,7 @@ static int adm_cuda_init_device(VmafFeatureExtractor *fex, AdmStateCuda *s)
     CudaFunctions *cu_f = fex->cu_state->f;
     CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
 
-    const int err = adm_cuda_init_device_locked(cu_f, s);
+    const int err = adm_cuda_init_device_locked(fex->cu_state, s);
     if (err) {
         (void)cu_f->cuCtxPopCurrent(NULL);
         return err;
@@ -1692,33 +1648,50 @@ static int adm_cuda_init_device(VmafFeatureExtractor *fex, AdmStateCuda *s)
         s->sm_count = 0;
     }
 
-    CHECK_CUDA_RETURN(cu_f, cuCtxPopCurrent(NULL));
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        (void)adm_cuda_release_device(fex->cu_state, s);
+        return vmaf_cuda_result_to_errno((int)pop_res);
+    }
     return 0;
 }
 
 /* Free a device buffer and its handle; a NULL buffer was never allocated. */
-static int adm_cuda_free_device_buffer(VmafCudaState *cu_state, VmafCudaBuffer *buf)
+static int adm_cuda_free_device_buffer(VmafCudaState *cu_state, VmafCudaBuffer **buf)
 {
-    if (!buf) {
-        return 0;
-    }
-    const int ret = vmaf_cuda_buffer_free(cu_state, buf);
-    free(buf);
-    return ret;
+    return vmaf_cuda_buffer_free_owned(cu_state, buf);
 }
 
-/* Free every buffer init allocated. Returns the OR of the free results. */
+static void adm_cuda_preserve_error(int *rc, int err)
+{
+    if (!*rc)
+        *rc = err;
+}
+
+/* Free every buffer init allocated while preserving the first error. */
 static int adm_cuda_free_buffers(VmafCudaState *cu_state, AdmBufferCuda *buf)
 {
-    int ret = 0;
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->data_buf);
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_ref);
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_dis);
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_res);
-    if (buf->results_host) {
-        ret |= vmaf_cuda_buffer_host_free(cu_state, buf->results_host);
-    }
-    return ret;
+    int rc = 0;
+    adm_cuda_preserve_error(&rc, adm_cuda_free_device_buffer(cu_state, &buf->data_buf));
+    adm_cuda_preserve_error(&rc, adm_cuda_free_device_buffer(cu_state, &buf->tmp_ref));
+    adm_cuda_preserve_error(&rc, adm_cuda_free_device_buffer(cu_state, &buf->tmp_dis));
+    adm_cuda_preserve_error(&rc, adm_cuda_free_device_buffer(cu_state, &buf->tmp_res));
+    adm_cuda_preserve_error(&rc, vmaf_cuda_buffer_host_free_owned(cu_state, &buf->results_host));
+    return rc;
+}
+
+static int adm_cuda_init_unwind(VmafFeatureExtractor *fex, AdmStateCuda *s, int err)
+{
+    const int lifecycle_rc = adm_cuda_destroy_stream_events(fex->cu_state, s);
+    if (lifecycle_rc)
+        return err ? err : lifecycle_rc;
+
+    int rc = err;
+    adm_cuda_preserve_error(&rc, adm_cuda_free_buffers(fex->cu_state, &s->buf));
+    adm_cuda_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
+    adm_cuda_preserve_error(&rc, adm_cuda_unload_modules(fex->cu_state, s));
+    return rc;
 }
 
 /* Allocate the device buffers and the pinned result buffer of a frame `h`
@@ -1784,8 +1757,7 @@ static int adm_cuda_carve_buffers(VmafCudaState *cu_state, AdmStateCuda *s, size
 }
 
 /* Allocate and lay out every buffer of a `w` x `h` frame and build the
- * feature-name dictionary. Any failure frees what was allocated and returns
- * -ENOMEM. */
+ * feature-name dictionary. The caller owns the phase-ordered unwind. */
 static int adm_cuda_init_buffers(VmafFeatureExtractor *fex, AdmStateCuda *s, unsigned w, unsigned h)
 {
     s->integer_stride = ALIGN_CEIL(w * sizeof(int32_t));
@@ -1805,11 +1777,7 @@ static int adm_cuda_init_buffers(VmafFeatureExtractor *fex, AdmStateCuda *s, uns
         }
     }
 
-    ret |= adm_cuda_free_buffers(fex->cu_state, &s->buf);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)ret; // accumulated cleanup status intentionally discarded on error path
-
-    return -ENOMEM;
+    return ret ? ret : -ENOMEM;
 }
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -1827,10 +1795,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return size_err;
     }
 
-    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
-     * represent before any device resource is claimed, so an unsupported
-     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
-     * Same accept/reject set as the CPU reference. */
+    /* Reject invalid CSF table output before any device resource is claimed.
+     * Finite over-range weights are normalised with the CPU's shared
+     * per-scale exponent in adm_fixed_parameters(). */
     const int csf_err = adm_csf_config_check(s);
     if (csf_err) {
         return csf_err;
@@ -1842,10 +1809,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
 
     const int buf_err = adm_cuda_init_buffers(fex, s, w, h);
-    if (buf_err) {
-        adm_cuda_release_device(fex, s);
-    }
-    return buf_err;
+    if (buf_err)
+        return adm_cuda_init_unwind(fex, s, buf_err);
+    return 0;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -1859,13 +1825,6 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     s->submit_w = ref_pic->w[0];
     s->submit_h = ref_pic->h[0];
-
-    // current implementation is limited by the 16-bit data pipeline, thus
-    // cannot handle an angular frequency smaller than 1080p * 3H
-    if (s->adm_norm_view_dist * s->adm_ref_display_height <
-        DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
-        return -EINVAL;
-    }
 
     return integer_compute_adm_cuda(fex, s, ref_pic, dist_pic, &s->buf, s->adm_enhn_gain_limit,
                                     s->adm_norm_view_dist, s->adm_ref_display_height);
@@ -1891,37 +1850,22 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         .w = s->submit_w,
         .h = s->submit_h,
     };
-    write_scores(&params);
-    return 0;
+    return write_scores(&params);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     AdmStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
-    /* Close path continues even on CUDA errors so every allocated
-     * buffer gets freed. Individual CHECK_CUDA_GOTO steps skip forward
-     * to the next handle without bailing. */
-    int _cuda_err = 0;
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->str), after_sync);
-after_sync:
-    CHECK_CUDA_GOTO(cu_f, cuStreamDestroy(s->str), after_stream);
-after_stream:
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->finished), after_ev1);
-after_ev1:
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->ref_event), after_ev2);
-after_ev2:
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->dis_event), after_ev3);
-after_ev3:;
+    int ret = adm_cuda_destroy_stream_events(fex->cu_state, s);
+    if (ret)
+        return ret;
 
-    int ret = _cuda_err;
+    ret = adm_cuda_free_buffers(fex->cu_state, &s->buf);
 
-    ret |= adm_cuda_free_buffers(fex->cu_state, &s->buf);
-
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    if (cu_f) {
-        adm_cuda_unload_modules(cu_f, s);
-    }
+    adm_cuda_preserve_error(&ret, vmaf_dictionary_free(&s->feature_name_dict));
+    const int module_rc = adm_cuda_unload_modules(fex->cu_state, s);
+    if (!ret)
+        ret = module_rc;
     return ret;
 }
 

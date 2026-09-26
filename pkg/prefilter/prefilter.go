@@ -349,7 +349,7 @@ func runSearch(
 		deadline = time.Now().Add(opts.TimeBudget)
 	}
 
-	for trial := 0; trial < nTrials; trial++ {
+	for trial := range nTrials {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			break
 		}

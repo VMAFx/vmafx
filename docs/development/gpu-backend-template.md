@@ -1,16 +1,16 @@
 # GPU Backend Public-API Template
 
-When adding a new GPU backend (Metal, DirectML, OpenCL, future
-ROCm-replacement, …), follow the shape the existing four backends
-(`libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_vulkan.h`, `libvmaf_hip.h`)
+When adding a new GPU backend (DirectML, OpenCL, a future
+ROCm replacement, …), follow the shape the existing four backends
+(`libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_hip.h`, `libvmaf_metal.h`)
 already share. This doc is the recipe — there is **no codegen**;
 the dedup-via-pattern lives here.
 
 > **Why no codegen?** A 2026-05-02 audit measured the four headers
 > at ~20 of ~200 lines truly shared (state lifecycle). The rest is
 > backend-specific feature surface (CUDA: preallocation; SYCL: DMABuf
-> / VA-surface / D3D11; Vulkan: VkImage zero-copy import + ring depth;
-> HIP: scaffold only). Codegenning 10 % of each file would add a
+> / VA-surface / D3D11; HIP: ROCm kernels; Metal: IOSurface import).
+> Codegenning 10 % of each file would add a
 > build-system Python dependency for too little return. ADR-0239
 > chose pattern-doc over codegen.
 
@@ -37,8 +37,8 @@ int vmaf_<backend>_state_init(Vmaf<Backend>State **out, Vmaf<Backend>Configurati
 
 /**
  * Hand the state to a VmafContext. The context borrows the state pointer
- * for its lifetime; the caller still owns the state and must free it
- * with vmaf_<backend>_state_free() after vmaf_close().
+ * through teardown; the caller still owns the state. Keep it alive across
+ * every nonzero vmaf_close() result and free it only after close returns 0.
  */
 int vmaf_<backend>_import_state(VmafContext *ctx, Vmaf<Backend>State *state);
 
@@ -48,7 +48,7 @@ int vmaf_<backend>_import_state(VmafContext *ctx, Vmaf<Backend>State *state);
  *
  * Two valid signatures exist across the existing four backends:
  *
- *     void vmaf_<backend>_state_free(Vmaf<Backend>State **state);   // Vulkan, HIP
+ *     void vmaf_<backend>_state_free(Vmaf<Backend>State **state);   // SYCL, HIP, Metal
  *     int  vmaf_<backend>_state_free(Vmaf<Backend>State *state);    // CUDA
  *
  * Pick the void/double-pointer form for new backends — it lets the
@@ -61,10 +61,10 @@ void vmaf_<backend>_state_free(Vmaf<Backend>State **state);
 
 ## Optional: device enumeration
 
-Backends whose device set is dynamic / runtime-detected (Vulkan, HIP,
-future Metal) ship a `_list_devices` helper that prints one line per
-device with ordinal + name + capability. Backends with fixed device
-selection (CUDA via index) skip this.
+Backends whose device set is dynamic / runtime-detected (SYCL, HIP,
+Metal) ship a `_list_devices` helper that prints one line per
+device with ordinal + name + capability. Backends without a public enumeration
+contract skip this.
 
 ```c
 /**
@@ -80,7 +80,7 @@ int vmaf_<backend>_list_devices(void);
 Backends conditionally compiled via a meson option ship an
 `_available()` query so callers can branch on backend presence
 without linking against the symbol table directly. Currently
-shipped by Vulkan and HIP.
+shipped by HIP and Metal.
 
 ```c
 /**
@@ -91,12 +91,12 @@ shipped by Vulkan and HIP.
 int vmaf_<backend>_available(void);
 ```
 
-## Optional: picture preallocation surface (CUDA / SYCL / Vulkan)
+## Optional: picture preallocation surface (CUDA / SYCL)
 
 When the backend wants callers to write directly into the buffers the
 kernel will read (avoiding a host → device staging copy), expose the
 preallocation pool. The shape mirrors the SYCL surface (the cleanest
-of the three; CUDA's `HOST_PINNED` is CUDA-allocator-specific and has
+of the two; CUDA's `HOST_PINNED` is CUDA-allocator-specific and has
 no analogue elsewhere — don't replicate it):
 
 ```c
@@ -121,7 +121,7 @@ int vmaf_<backend>_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
 ```
 
 The implementation MUST delegate to the backend-agnostic
-`VmafGpuPicturePool` (`core/src/gpu_picture_pool.{h,c}`) per
+`VmafGpuPicturePool` (`core/src/gpu_picture_pool.{h,cpp}`) per
 ADR-0239 — do not reimplement the round-robin / mutex / unwind
 shape. Each backend supplies the alloc / free / synchronize callbacks
 
@@ -130,7 +130,7 @@ shape. Each backend supplies the alloc / free / synchronize callbacks
 ## Optional: zero-copy hwaccel import paths
 
 Backends with a path for *adopting* externally-decoded GPU memory
-(SYCL DMABuf / VA-surface / D3D11; Vulkan VkImage) ship a separate
+(SYCL DMABuf / VA-surface / D3D11; Metal IOSurface) ship a separate
 import surface that varies enough per backend that no pattern is
 forced — design it backend-natively. Document the lifetime model
 (who owns the source handle, who owns the imported state, when it's
@@ -166,7 +166,7 @@ core/src/<backend>/
   <backend>_internal.h      # opaque struct layouts for kernel TUs
 ```
 
-The `gpu_picture_pool.{c,h}` round-robin is **shared** — every backend
+The `gpu_picture_pool.{cpp,h}` round-robin is **shared** — every backend
 that wants a preallocation pool delegates to it (ADR-0239).
 
 The feature kernel host glue — what every `<feature>_<backend>.c`
@@ -178,8 +178,6 @@ extraction in flight as PR4 of the GPU dedup sequence (T-GPU-DEDUP-3,
 
 - [ADR-0239](../adr/0239-gpu-picture-pool-dedup.md) — backend-agnostic
   GPU picture pool (PR2 of the dedup sequence).
-- [ADR-0238](../adr/0238-vulkan-picture-preallocation.md) — Vulkan
-  picture preallocation (the most recent shape adopter).
 - [ADR-0250](../adr/0250-tiny-ai-extractor-template.md) — tiny-AI
   extractor template (the model for "pattern-doc + shared helpers
   rather than codegen").

@@ -31,6 +31,7 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 from vmaftune.auto import (
     DEFAULT_TIGHT_INTERVAL_MAX_WIDTH,
     DEFAULT_WIDE_INTERVAL_MIN_WIDTH,
+    AutoPlan,
     ConfidenceDecision,
     ConfidenceThresholds,
     SourceMeta,
@@ -39,6 +40,14 @@ from vmaftune.auto import (
     load_confidence_thresholds,
     run_auto,
 )
+
+
+def _loads_strict(payload: str) -> object:
+    def reject_nonfinite(token: str) -> None:
+        raise AssertionError(f"non-finite JSON token: {token}")
+
+    return json.loads(payload, parse_constant=reject_nonfinite)
+
 
 # ---------------------------------------------------------------------------
 # ConfidenceThresholds invariants.
@@ -357,6 +366,18 @@ def test_run_auto_json_round_trip_includes_confidence_block() -> None:
     for cell in payload["cells"]:
         assert "confidence_decision" in cell
         assert "interval_width" in cell
+
+
+def test_emit_plan_json_replaces_all_nonfinite_values() -> None:
+    plan = AutoPlan(
+        cells=[{"nan": math.nan, "positive_inf": math.inf, "negative_inf": -math.inf}],
+        metadata={},
+    )
+
+    payload = _loads_strict(emit_plan_json(plan))
+
+    assert isinstance(payload, dict)
+    assert payload["cells"] == [{"nan": None, "negative_inf": None, "positive_inf": None}]
 
 
 def test_run_auto_missing_cell_interval_falls_back_to_recommend() -> None:

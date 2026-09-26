@@ -57,11 +57,17 @@ typedef struct IntegerPsnrStateMetal {
 
     uint32_t peak;
     double   psnr_max;
+    /* `enable_chroma` option: when false, only luma is dispatched.
+     * Default true mirrors CPU integer_psnr.c — see ADR-0453. */
+    bool     enable_chroma;
     /* `uncapped` option: mirrors CPU integer_psnr.c. When true, psnr_max
      * keeps only its `sse == 0` infinity-sentinel role and stops
      * truncating genuinely computed values. Default false keeps every
      * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
     bool     uncapped;
+    /* Number of active planes (1 for YUV400 or enable_chroma=false,
+     * 3 otherwise). */
+    unsigned n_planes;
     size_t   partials_count;   /* grid_w × grid_h (for Y plane) */
     unsigned frame_w;
     unsigned frame_h;
@@ -73,6 +79,13 @@ typedef struct IntegerPsnrStateMetal {
 static const char *const psnr_name[PSNR_NUM_PLANES] = {"psnr_y", "psnr_cb", "psnr_cr"};
 
 static const VmafOption options[] = {
+    {
+        .name = "enable_chroma",
+        .help = "enable calculation for chroma channels",
+        .offset = offsetof(IntegerPsnrStateMetal, enable_chroma),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = true,
+    },
     {
         .name = "uncapped",
         .help = "report the true PSNR instead of truncating at the psnr_max ceiling "
@@ -111,14 +124,44 @@ static int build_pipelines(IntegerPsnrStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
+static void psnr_metal_plane_geometry(IntegerPsnrStateMetal *s, enum VmafPixelFormat pix_fmt,
+                                      unsigned w, unsigned h)
+{
+    s->frame_w  = w;
+    s->frame_h  = h;
+    s->n_planes = (pix_fmt == VMAF_PIX_FMT_YUV400P || !s->enable_chroma) ? 1U : PSNR_NUM_PLANES;
+}
+
+static int alloc_readback_buffers(IntegerPsnrStateMetal *s, size_t par_size)
+{
+    for (unsigned p = 0; p < s->n_planes; ++p) {
+        int err = vmaf_metal_kernel_buffer_alloc(&s->rb_lo[p], s->ctx, par_size);
+        if (err != 0) {
+            for (unsigned q = 0; q < p; ++q) {
+                (void)vmaf_metal_kernel_buffer_free(&s->rb_lo[q], s->ctx);
+                (void)vmaf_metal_kernel_buffer_free(&s->rb_hi[q], s->ctx);
+            }
+            return err;
+        }
+        err = vmaf_metal_kernel_buffer_alloc(&s->rb_hi[p], s->ctx, par_size);
+        if (err != 0) {
+            (void)vmaf_metal_kernel_buffer_free(&s->rb_lo[p], s->ctx);
+            for (unsigned q = 0; q < p; ++q) {
+                (void)vmaf_metal_kernel_buffer_free(&s->rb_lo[q], s->ctx);
+                (void)vmaf_metal_kernel_buffer_free(&s->rb_hi[q], s->ctx);
+            }
+            return err;
+        }
+    }
+    return 0;
+}
+
 static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
-    (void)pix_fmt;
     IntegerPsnrStateMetal *s = (IntegerPsnrStateMetal *)fex->priv;
 
-    s->frame_w  = w;
-    s->frame_h  = h;
+    psnr_metal_plane_geometry(s, pix_fmt, w, h);
     s->bpc      = bpc;
     s->peak     = (1u << bpc) - 1u;
     s->psnr_max = (double)(6u * bpc) + 12.0;
@@ -134,25 +177,8 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         const size_t grid_h   = (h + 15) / 16;
         s->partials_count     = grid_w * grid_h;
         const size_t par_size = s->partials_count * sizeof(uint32_t);
-        for (int p = 0; p < PSNR_NUM_PLANES; ++p) {
-            err = vmaf_metal_kernel_buffer_alloc(&s->rb_lo[p], s->ctx, par_size);
-            if (err != 0) {
-                for (int q = 0; q < p; ++q) {
-                    (void)vmaf_metal_kernel_buffer_free(&s->rb_lo[q], s->ctx);
-                    (void)vmaf_metal_kernel_buffer_free(&s->rb_hi[q], s->ctx);
-                }
-                goto fail_lc;
-            }
-            err = vmaf_metal_kernel_buffer_alloc(&s->rb_hi[p], s->ctx, par_size);
-            if (err != 0) {
-                (void)vmaf_metal_kernel_buffer_free(&s->rb_lo[p], s->ctx);
-                for (int q = 0; q < p; ++q) {
-                    (void)vmaf_metal_kernel_buffer_free(&s->rb_lo[q], s->ctx);
-                    (void)vmaf_metal_kernel_buffer_free(&s->rb_hi[q], s->ctx);
-                }
-                goto fail_lc;
-            }
-        }
+        err = alloc_readback_buffers(s, par_size);
+        if (err != 0) { goto fail_lc; }
     }
 
     {
@@ -172,7 +198,7 @@ fail_pso:
     if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = NULL; }
     if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = NULL; }
 fail_rb:
-    for (int p = 0; p < PSNR_NUM_PLANES; ++p) {
+    for (unsigned p = 0; p < s->n_planes; ++p) {
         (void)vmaf_metal_kernel_buffer_free(&s->rb_lo[p], s->ctx);
         (void)vmaf_metal_kernel_buffer_free(&s->rb_hi[p], s->ctx);
     }
@@ -266,8 +292,8 @@ static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         ? (__bridge id<MTLComputePipelineState>)s->pso_8bpc
         : (__bridge id<MTLComputePipelineState>)s->pso_16bpc;
 
-    for (int p = 0; p < PSNR_NUM_PLANES; ++p) {
-        int err = dispatch_plane(s, device, queue, pso, ref_pic, dist_pic, p);
+    for (unsigned p = 0; p < s->n_planes; ++p) {
+        int err = dispatch_plane(s, device, queue, pso, ref_pic, dist_pic, (int)p);
         if (err != 0) { return err; }
     }
     return 0;
@@ -279,7 +305,7 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
     IntegerPsnrStateMetal *s = (IntegerPsnrStateMetal *)fex->priv;
     const double peak_sq = (double)s->peak * (double)s->peak;
 
-    for (int p = 0; p < PSNR_NUM_PLANES; ++p) {
+    for (unsigned p = 0; p < s->n_planes; ++p) {
         const uint32_t *lo_p = (const uint32_t *)s->rb_lo[p].host_view;
         const uint32_t *hi_p = (const uint32_t *)s->rb_hi[p].host_view;
         const unsigned pw = (p == 0) ? s->frame_w : (s->frame_w + 1) / 2;

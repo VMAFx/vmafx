@@ -116,6 +116,30 @@ endif
 
 subdir('include')
 subdir('src')
+
+# ADR-1333: defense in depth for test children and testlog.json. The repository
+# runner removes credential-bearing GitHub names from Meson's parent process before
+# Meson can persist that parent environment in testlog.txt. This default setup then
+# unsets the same names from each declared test's effective environment, which also
+# keeps them out of testlog.json while leaving ordinary required variables intact.
+sanitized_test_env = environment()
+sanitized_test_env.unset('GITHUB_PERSONAL_ACCESS_TOKEN')
+sanitized_test_env.unset('GITHUB_TOKEN')
+sanitized_test_env.unset('GH_TOKEN')
+sanitized_test_env.unset('GH_ENTERPRISE_TOKEN')
+sanitized_test_env.unset('GITHUB_ENTERPRISE_TOKEN')
+sanitized_test_env.unset('GITHUB_PAT')
+sanitized_test_env.unset('GH_PAT')
+sanitized_test_env.unset('GITHUB_AUTH_TOKEN')
+sanitized_test_env.unset('GITHUB_API_TOKEN')
+sanitized_test_env.unset('HOMEBREW_GITHUB_API_TOKEN')
+sanitized_test_env.unset('ACTIONS_ID_TOKEN_REQUEST_TOKEN')
+sanitized_test_env.unset('ACTIONS_RUNTIME_TOKEN')
+add_test_setup('default',
+    env : sanitized_test_env,
+    is_default : true,
+)
+
 subdir('tools')
 subdir('doc')
 subdir('test')

@@ -23,6 +23,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "vif_tools.h"
 #include "log.h"
 
@@ -44,6 +45,7 @@
 typedef struct FloatVifStateCuda {
     bool debug;
     double vif_enhn_gain_limit;
+    bool vif_skip_scale0;
     double vif_kernelscale;
     double vif_sigma_nsq;
 
@@ -78,38 +80,50 @@ typedef struct FloatVifStateCuda {
     VmafDictionary *feature_name_dict;
 } FloatVifStateCuda;
 
-static const VmafOption options[] = {{.name = "debug",
-                                      .help = "debug mode: enable additional output",
-                                      .offset = offsetof(FloatVifStateCuda, debug),
-                                      .type = VMAF_OPT_TYPE_BOOL,
-                                      .default_val.b = false},
-                                     {.name = "vif_enhn_gain_limit",
-                                      .alias = "egl",
-                                      .help = "enhancement gain imposed on vif (>= 1.0)",
-                                      .offset = offsetof(FloatVifStateCuda, vif_enhn_gain_limit),
-                                      .type = VMAF_OPT_TYPE_DOUBLE,
-                                      .default_val.d = 100.0,
-                                      .min = 1.0,
-                                      .max = 100.0,
-                                      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-                                     {.name = "vif_kernelscale",
-                                      .help = "scaling factor for the gaussian kernel",
-                                      .offset = offsetof(FloatVifStateCuda, vif_kernelscale),
-                                      .type = VMAF_OPT_TYPE_DOUBLE,
-                                      .default_val.d = 1.0,
-                                      .min = 0.1,
-                                      .max = 4.0,
-                                      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-                                     {.name = "vif_sigma_nsq",
-                                      .alias = "snsq",
-                                      .help = "neural noise variance",
-                                      .offset = offsetof(FloatVifStateCuda, vif_sigma_nsq),
-                                      .type = VMAF_OPT_TYPE_DOUBLE,
-                                      .default_val.d = 2.0,
-                                      .min = 0.0,
-                                      .max = 5.0,
-                                      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-                                     {0}};
+static const VmafOption options[] = {
+    {.name = "debug",
+     .help = "debug mode: enable additional output",
+     .offset = offsetof(FloatVifStateCuda, debug),
+     .type = VMAF_OPT_TYPE_BOOL,
+     .default_val.b = false},
+    {
+        .name = "vif_skip_scale0",
+        .alias = "ssclz",
+        .help = "skip scale 0 (finest scale) VIF computation; "
+                "score0 is forced to 0.0 (parity with CPU option)",
+        .offset = offsetof(FloatVifStateCuda, vif_skip_scale0),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {.name = "vif_enhn_gain_limit",
+     .alias = "egl",
+     .help = "enhancement gain imposed on vif (>= 1.0)",
+     .offset = offsetof(FloatVifStateCuda, vif_enhn_gain_limit),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 100.0,
+     .min = 1.0,
+     .max = 100.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "vif_kernelscale",
+     .alias = "ks",
+     .help = "scaling factor for the gaussian kernel",
+     .offset = offsetof(FloatVifStateCuda, vif_kernelscale),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 1.0,
+     .min = 0.1,
+     .max = 4.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {.name = "vif_sigma_nsq",
+     .alias = "snsq",
+     .help = "neural noise variance",
+     .offset = offsetof(FloatVifStateCuda, vif_sigma_nsq),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 2.0,
+     .min = 0.0,
+     .max = 5.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {0}};
 
 static void compute_per_scale_dims(FloatVifStateCuda *s)
 {
@@ -122,90 +136,97 @@ static void compute_per_scale_dims(FloatVifStateCuda *s)
 }
 
 /* ------------------------------------------------------------------ */
-/* float_vif_init_unwind - the single teardown path for init_fex_cuda.
- *
- * HISS-01: lifted verbatim from the former `free_buffers` label. The same
- * resources are released in the same order on every exit path, and the
- * value returned is the one the label returned.
- */
-static int float_vif_init_unwind(VmafFeatureExtractor *fex, FloatVifStateCuda *s)
+static void float_vif_preserve_error(int *rc, int err)
 {
-    if (s->ref_raw) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_raw);
-        free(s->ref_raw);
-    }
-    if (s->dis_raw) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_raw);
-        free(s->dis_raw);
-    }
+    if (!*rc)
+        *rc = err;
+}
+
+static int float_vif_release_buffers(VmafFeatureExtractor *fex, FloatVifStateCuda *s, int rc)
+{
+    float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_raw));
+    float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dis_raw));
     for (int i = 0; i < 2; i++) {
-        if (s->ref_buf[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_buf[i]);
-            free(s->ref_buf[i]);
-        }
-        if (s->dis_buf[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_buf[i]);
-            free(s->dis_buf[i]);
-        }
+        float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_buf[i]));
+        float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dis_buf[i]));
     }
     for (int i = 0; i < 4; i++) {
-        if (s->num_partials[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->num_partials[i]);
-            free(s->num_partials[i]);
-        }
-        if (s->den_partials[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->den_partials[i]);
-            free(s->den_partials[i]);
-        }
-        if (s->num_host[i])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->num_host[i]);
-        if (s->den_host[i])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->den_host[i]);
+        float_vif_preserve_error(&rc,
+                                 vmaf_cuda_buffer_free_owned(fex->cu_state, &s->num_partials[i]));
+        float_vif_preserve_error(&rc,
+                                 vmaf_cuda_buffer_free_owned(fex->cu_state, &s->den_partials[i]));
+        float_vif_preserve_error(
+            &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->num_host[i]));
+        float_vif_preserve_error(
+            &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->den_host[i]));
     }
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    return -ENOMEM;
+    return rc;
+}
+
+/* float_vif_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * Drain the lifecycle before releasing anything queued work may reference.
+ * The original init failure remains the first returned error.
+ */
+static int float_vif_init_unwind(VmafFeatureExtractor *fex, FloatVifStateCuda *s, int err)
+{
+    const int lifecycle_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (lifecycle_rc)
+        return err ? err : lifecycle_rc;
+
+    int rc = float_vif_release_buffers(fex, s, err);
+    float_vif_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
+    float_vif_preserve_error(&rc, vmaf_cuda_module_unload(fex->cu_state, &s->module));
+    return rc;
 }
 
 /* float_vif_alloc_buffers - raw planes, per-scale partials and the name dict.
  *
- * HISS-04: the allocation tail of init_fex_cuda, moved whole. The `ret |=`
- * accumulation, the per-scale loop bounds and the two unwind points keep their
- * original order, so each failure frees the same buffers and returns the same
- * code, and every wg_count / byte size is computed exactly as before.
+ * The per-scale loop bounds and byte sizes match the scoring path. Each
+ * allocation stops on its first failure and unwinds through the owned helpers.
  */
 static int float_vif_alloc_buffers(VmafFeatureExtractor *fex, FloatVifStateCuda *s, unsigned w,
                                    unsigned h, unsigned bpc)
 {
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t raw_bytes = (size_t)w * h * bpp;
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_raw, raw_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_raw, raw_bytes);
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_raw, raw_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_raw, raw_bytes);
     const size_t fbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(float);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[0], fbytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[0], fbytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[1], fbytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[1], fbytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[0], fbytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[0], fbytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[1], fbytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[1], fbytes);
     if (ret)
-        return float_vif_init_unwind(fex, s);
+        return float_vif_init_unwind(fex, s, ret);
 
     for (int i = 0; i < 4; i++) {
         const unsigned gx = (s->scale_w[i] + FVIF_BX - 1u) / FVIF_BX;
         const unsigned gy = (s->scale_h[i] + FVIF_BY - 1u) / FVIF_BY;
         s->wg_count[i] = gx * gy;
         const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->num_partials[i], pbytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->den_partials[i], pbytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->num_host[i], pbytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->den_host[i], pbytes);
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->num_partials[i], pbytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->den_partials[i], pbytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->num_host[i], pbytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->den_host[i], pbytes);
+        if (ret)
+            break;
     }
     if (ret)
-        return float_vif_init_unwind(fex, s);
+        return float_vif_init_unwind(fex, s, ret);
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
-        return float_vif_init_unwind(fex, s);
+        return float_vif_init_unwind(fex, s, -ENOMEM);
     return 0;
 }
 
@@ -256,7 +277,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return float_vif_init_unwind(fex, s, err);
 
     int _cuda_err = 0;
     int ctx_pushed = 0;
@@ -267,16 +288,14 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_decimate, s->module, "float_vif_decimate"),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
     return float_vif_alloc_buffers(fex, s, w, h, bpc);
 
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return float_vif_init_unwind(fex, s, _cuda_err);
 }
 
 /* FloatVifSubmit - the per-frame constants submit_fex_cuda's seven kernel
@@ -557,82 +576,37 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         scores[2 * i + 1] = d;
     }
 
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale0_score",
-                                                   scores[0] / scores[1], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale1_score",
-                                                   scores[2] / scores[3], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale2_score",
-                                                   scores[4] / scores[5], index);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_vif_scale3_score",
-                                                   scores[6] / scores[7], index);
-
-    if (s->debug && !err) {
-        double score_num = scores[0] + scores[2] + scores[4] + scores[6];
-        double score_den = scores[1] + scores[3] + scores[5] + scores[7];
-        double score = score_den == 0.0 ? 1.0 : score_num / score_den;
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif", score, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_num", score_num, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "vif_den", score_den, index);
-        const char *names[8] = {"vif_num_scale0", "vif_den_scale0", "vif_num_scale1",
-                                "vif_den_scale1", "vif_num_scale2", "vif_den_scale2",
-                                "vif_num_scale3", "vif_den_scale3"};
-        for (int i = 0; i < 8; i++) {
-            err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                           names[i], scores[i], index);
-        }
+    const unsigned scale_start = s->vif_skip_scale0 ? 1u : 0u;
+    double score_num = 0.0;
+    double score_den = 0.0;
+    for (unsigned scale = scale_start; scale < 4u; ++scale) {
+        score_num += scores[scale * 2u];
+        score_den += scores[scale * 2u + 1u];
     }
 
-    return err;
+    VmafVifScoreSet output = {
+        .score_num = score_num,
+        .score_den = score_den,
+        .skip_scale0 = s->vif_skip_scale0,
+        .debug = s->debug,
+    };
+    for (size_t i = 0u; i < 8u; ++i)
+        output.scale[i] = scores[i];
+    output.score = output.score_den > 0.0 ? output.score_num / output.score_den : NAN;
+    return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "float_vif_cuda", &output,
+                                VMAF_VIF_FLOAT_NAMES, index);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     FloatVifStateCuda *s = fex->priv;
     int ret = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    if (s->ref_raw) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->ref_raw);
-        free(s->ref_raw);
-    }
-    if (s->dis_raw) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->dis_raw);
-        free(s->dis_raw);
-    }
-    for (int i = 0; i < 2; i++) {
-        if (s->ref_buf[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->ref_buf[i]);
-            free(s->ref_buf[i]);
-        }
-        if (s->dis_buf[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->dis_buf[i]);
-            free(s->dis_buf[i]);
-        }
-    }
-    for (int i = 0; i < 4; i++) {
-        if (s->num_partials[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->num_partials[i]);
-            free(s->num_partials[i]);
-        }
-        if (s->den_partials[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->den_partials[i]);
-            free(s->den_partials[i]);
-        }
-        if (s->num_host[i])
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->num_host[i]);
-        if (s->den_host[i])
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->den_host[i]);
-    }
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    if (ret)
+        return ret;
+
+    ret = float_vif_release_buffers(fex, s, 0);
+    float_vif_preserve_error(&ret, vmaf_dictionary_free(&s->feature_name_dict));
+    float_vif_preserve_error(&ret, vmaf_cuda_module_unload(fex->cu_state, &s->module));
     return ret;
 }
 
@@ -653,6 +627,7 @@ static const char *provided_features[] = {"VMAF_feature_vif_scale0_score",
                                           "vif_den_scale3",
                                           NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_vif_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_vif_cuda = {
     .name = "float_vif_cuda",
     .init = init_fex_cuda,

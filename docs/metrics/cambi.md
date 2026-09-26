@@ -63,7 +63,7 @@ The CAMBI feature extractor also supports additional optional parameters as list
 - `enc_width` and `enc_height`: Encoding/processing resolution to compute the banding score, useful in cases where scaling was applied to the input prior to the computation of metrics
 - `src_width` and `src_height`: Encoding/processing resolution to compute the banding score on the reference image, only used if `full_ref=true`.
 - `cambi_high_res_speedup` to speed up by downsampling post spatial mask for resolutions >= 1080p. However, some loss of accuracy is expected in metric. Possible min resolutions for the speed-up = [1080, 1440, 3840, 0]. Default: 0 (not applied).
-- `heatmaps_path`: Set to a folder where the heatmaps for different scales will be stored as `.gray` files
+- `heatmaps_path`: Set to a folder where the heatmaps for different scales will be stored as `.gray` files. The path is UTF-8 on every platform, including Windows; non-ASCII parent and leaf directory names are supported.
 
 An example using the `enc_width` and `enc_height` options on the input video [`KristenAndSara_1280x720_8bit_processed.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/KristenAndSara_1280x720_8bit_processed.yuv) which has been encoded at 540p and later upscaled to 1280p (specifying the accurate encoding width and height as input allows CAMBI to more accurately assess the banding artifact):
 
@@ -262,7 +262,7 @@ vmaf ... --cpumask 1 -o scalar.json
 ```
 
 The JSON files differ only in `fps`. The tests behind this are in the `simd`
-suite (`meson test -C build --suite simd`): `test_cambi_stage_simd` compares
+suite (`python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build --suite simd`): `test_cambi_stage_simd` compares
 every per-stage kernel with the scalar stage, `test_cambi_spatial_mask_simd`
 the spatial-mask rows, `test_cambi_simd` the c-values row, and
 `test_cambi_dispatch_invariance` runs the whole extractor at each dispatch
@@ -309,7 +309,7 @@ ninja -C build-cuda
     -p 420 -b 8 --backend cuda --feature cambi_cuda
 ```
 
-**Implementation note (PR #870):** `submit_fex_cuda` downloads the distorted
+**Implementation note (lusoris/vmaf#870):** `submit_fex_cuda` downloads the distorted
 picture from device memory to a transient host copy before passing it to
 `vmaf_cambi_preprocessing`. This is required because the host-side preprocessing
 path (`decimate_generic_uint8_and_convert_to_10b`) dereferences `pic->data[0]`

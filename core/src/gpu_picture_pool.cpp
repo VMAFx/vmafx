@@ -23,8 +23,10 @@
  * shared between CUDA, SYCL, HIP, and Metal backends. */
 
 #include <cerrno>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <pthread.h>
 
 #include "picture.h"
@@ -40,14 +42,15 @@ struct VmafGpuPicturePool {
     unsigned curr_idx;
     pthread_mutex_t busy;
     VmafPicture *pic;
+    bool *released;
 };
 
 namespace
 {
 
-/* Allocate all pic_cnt slots; on failure roll back any slots that succeeded.
- * Returns 0 on full success, or the first non-zero error from
- * alloc_picture_callback with all partial allocations freed. */
+/* Allocate all pic_cnt slots; on failure attempt to roll back slots that
+ * succeeded. The allocator cannot publish a retryable owner until init
+ * completes, so a rollback callback failure remains best effort (ADR-1336). */
 int alloc_pictures(VmafGpuPicturePool *p)
 {
     unsigned alloc_cnt = 0;
@@ -76,9 +79,14 @@ int alloc_pictures(VmafGpuPicturePool *p)
  * `goto free_p` entry relied on. */
 void gpu_pool_destruct(VmafGpuPicturePool *p, VmafGpuPicturePool **pool)
 {
-    std::free(p->pic);
-    std::free(p);
+    free(p->pic);
+    free(p);
     *pool = nullptr;
+}
+
+int negative_errno(int err)
+{
+    return err > 0 ? -err : err;
 }
 
 } // namespace
@@ -100,25 +108,29 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
      * on every failure path so the caller can treat a non-zero return as
      * "pool not constructed" — prevents UAF via vmaf_gpu_picture_pool_close()
      * on a freed pointer (Netflix#UAF-001 / ADR-0239). */
-    VmafGpuPicturePool *const p = *pool =
-        static_cast<VmafGpuPicturePool *>(std::malloc(sizeof(*p)));
+    VmafGpuPicturePool *const p = *pool = static_cast<VmafGpuPicturePool *>(malloc(sizeof(*p)));
     if (!p) {
         *pool = nullptr;
-        /* Preserved verbatim from the `goto fail` this replaced: that jump
-         * skipped every assignment to `err`, so this path returns 0 even
-         * though no pool was constructed.  Left as-is because this change is
-         * a structural refactor; the defect is reported separately rather
-         * than silently altered here. */
-        return err;
+        return -ENOMEM;
     }
     std::memset(p, 0, sizeof(*p));
     p->cfg = cfg;
 
-    p->pic = static_cast<VmafPicture *>(std::malloc(sizeof(VmafPicture) * p->cfg.pic_cnt));
+    constexpr size_t slot_bytes = sizeof(VmafPicture) + sizeof(bool);
+    constexpr size_t max_slot_count = SIZE_MAX / slot_bytes;
+    if constexpr ((std::numeric_limits<unsigned>::max)() > max_slot_count) {
+        if (p->cfg.pic_cnt > max_slot_count) {
+            gpu_pool_destruct(p, pool);
+            return -EOVERFLOW;
+        }
+    }
+    p->pic = static_cast<VmafPicture *>(malloc(slot_bytes * p->cfg.pic_cnt));
     if (!p->pic) {
         gpu_pool_destruct(p, pool);
         return -ENOMEM;
     }
+    p->released = reinterpret_cast<bool *>(p->pic + p->cfg.pic_cnt);
+    memset(p->released, 0, sizeof(*p->released) * p->cfg.pic_cnt);
 
     err = pthread_mutex_init(&p->busy, nullptr);
     if (err) {
@@ -128,9 +140,9 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
 
     err = alloc_pictures(p);
     if (err) {
-        /* alloc_pictures already freed any successfully-allocated prior slots.
-         * Destroy the mutex before the pool teardown so we do not leak the
-         * mutex's kernel-side state. */
+        /* alloc_pictures attempted each successfully allocated prior slot.
+         * Construction rollback remains best effort because no retryable
+         * owner can be published. Destroy the unpublished mutex and metadata. */
         (void)pthread_mutex_destroy(&p->busy);
         gpu_pool_destruct(p, pool);
         return err;
@@ -146,10 +158,26 @@ int vmaf_gpu_picture_pool_close(VmafGpuPicturePool *pool)
 
     int err = pthread_mutex_lock(&pool->busy);
     if (err)
-        return err;
+        return negative_errno(err);
 
+    int first_free_err = 0;
     for (unsigned i = 0; i < pool->cfg.pic_cnt; i++) {
-        err |= pool->cfg.free_picture_callback(&pool->pic[i], pool->cfg.cookie);
+        if (pool->released[i])
+            continue;
+        const int free_err = pool->cfg.free_picture_callback(&pool->pic[i], pool->cfg.cookie);
+        if (!free_err) {
+            pool->released[i] = true;
+        } else if (!first_free_err) {
+            first_free_err = negative_errno(free_err);
+        }
+    }
+
+    /* ADR-1336: each callback owns its slot until it reports success. Keep the pool,
+     * slot array, and mutex alive when any slot remains so close can retry the
+     * failed callback without dereferencing freed ownership metadata. */
+    if (first_free_err) {
+        (void)pthread_mutex_unlock(&pool->busy);
+        return first_free_err;
     }
 
     /* Netflix#1300 — the original code never called
@@ -158,12 +186,16 @@ int vmaf_gpu_picture_pool_close(VmafGpuPicturePool *pool)
      * free(pool) ran, which POSIX classifies as undefined behaviour
      * (destroying a locked mutex). Unlock first, then destroy, then
      * free. */
-    err |= pthread_mutex_unlock(&pool->busy);
-    err |= pthread_mutex_destroy(&pool->busy);
+    err = pthread_mutex_unlock(&pool->busy);
+    if (err)
+        return negative_errno(err);
+    err = pthread_mutex_destroy(&pool->busy);
+    if (err)
+        return negative_errno(err);
 
-    std::free(pool->pic);
-    std::free(pool);
-    return err;
+    free(pool->pic);
+    free(pool);
+    return 0;
 }
 
 int vmaf_gpu_picture_pool_fetch(VmafGpuPicturePool *pool, VmafPicture *pic)
@@ -176,7 +208,7 @@ int vmaf_gpu_picture_pool_fetch(VmafGpuPicturePool *pool, VmafPicture *pic)
     int err = pthread_mutex_lock(&pool->busy);
     if (err)
         return err;
-    unsigned pic_idx = pool->curr_idx;
+    const unsigned pic_idx = pool->curr_idx;
     pool->curr_idx = (pool->curr_idx + 1) % pool->cfg.pic_cnt;
     err |= pthread_mutex_unlock(&pool->busy);
     if (err)

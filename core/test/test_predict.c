@@ -17,20 +17,48 @@
  */
 
 #include <stdint.h>
+#include <string.h>
 
 #include "feature/feature_collector.h"
 #include "metadata_handler.h"
-#include "test.h"
 #include "predict.h"
-#include "predict.c"
+#include "predict_internal.h"
+#include "test.h"
 
 #include <libvmaf/model.h>
 #include <math.h>
+
+#if defined(__cplusplus)
+#define PREDICT_TEST_NULLPTR nullptr
+#else
+#define PREDICT_TEST_NULLPTR ((void *)0)
+#endif
 
 typedef struct {
     VmafDictionary **metadata;
     int flags;
 } MetaStruct;
+
+static int append_features_at_index(VmafFeatureCollector *feature_collector, const VmafModel *model,
+                                    unsigned index, double first_score)
+{
+    for (unsigned i = 0; i < model->n_features; ++i) {
+        const double score = i == 0u ? first_score : 60.0;
+        const int err =
+            vmaf_feature_collector_append(feature_collector, model->feature[i].name, score, index);
+        if (err)
+            return err;
+    }
+    return 0;
+}
+
+static char *check_predict_nonfinite_contract(double score, int prediction_err, int published_err)
+{
+    mu_assert("non-finite prediction fails with EINVAL", prediction_err == -EINVAL);
+    mu_assert("failed prediction leaves caller output unchanged", score == 42.0);
+    mu_assert("failed prediction is not published", published_err != 0);
+    return PREDICT_TEST_NULLPTR;
+}
 
 /* Append the same score for every model feature, which is what drives both the
  * prediction path and the registered metadata callback. */
@@ -69,6 +97,32 @@ static char *test_predict_score_at_index(void)
     vmaf_model_destroy(model);
     vmaf_feature_collector_destroy(feature_collector);
     return NULL;
+}
+
+static char *test_predict_nonfinite_fails_without_publication(void)
+{
+    VmafFeatureCollector *feature_collector;
+    int err = vmaf_feature_collector_init(&feature_collector);
+    mu_assert("collector initialises", err == 0);
+
+    VmafModel *model;
+    VmafModelConfig cfg = {.name = "vmaf", .flags = VMAF_MODEL_FLAGS_DEFAULT};
+    err = vmaf_model_load(&model, &cfg, "vmaf_v0.6.1");
+    mu_assert("model loads", err == 0);
+    err = append_features_at_index(feature_collector, model, 37u, NAN);
+    mu_assert("non-finite production fixture appends", err == 0);
+
+    double score = 42.0;
+    const int prediction_err =
+        vmaf_predict_score_at_index(model, feature_collector, 37u, &score, true, false, 0);
+    double published = 0.0;
+    const int published_err =
+        vmaf_feature_collector_get_score(feature_collector, model->name, &published, 37u);
+    mu_assert_msg(check_predict_nonfinite_contract(score, prediction_err, published_err));
+
+    vmaf_model_destroy(model);
+    vmaf_feature_collector_destroy(feature_collector);
+    return PREDICT_TEST_NULLPTR;
 }
 
 static void set_meta(void *data, VmafMetadata *metadata)
@@ -357,12 +411,70 @@ static char *test_piecewise_linear_mapping_returns_neg_einval(void)
     return NULL;
 }
 
+static char *test_guided_feature_sentinel_semantics(void)
+{
+    typedef struct {
+        char *message;
+        double lhs;
+        double rhs;
+        bool expected;
+    } EqualityCase;
+
+    /* Sentinel contract: chroma correction occurs only when the guided feature
+     * equals the sentinel value (0.0). Any non-zero value, NaN, or Inf must
+     * compare not-equal to the sentinel; NaN is never equal even to NaN. */
+    const EqualityCase cases[] = {
+        {"0.0 matches sentinel 0.0", 0.0, 0.0, true},
+        {"-0.0 matches sentinel 0.0", -0.0, 0.0, true},
+        {"0.0 matches sentinel -0.0", 0.0, -0.0, true},
+        {"1e-12 does not match sentinel 0.0", 1e-12, 0.0, false},
+        {"NAN does not match sentinel 0.0", NAN, 0.0, false},
+        {"NAN does not match NAN", NAN, NAN, false},
+        {"INFINITY does not match sentinel 0.0", INFINITY, 0.0, false},
+        {"INFINITY matches INFINITY", INFINITY, INFINITY, true},
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const bool actual = float_values_equal(cases[i].lhs, cases[i].rhs);
+        mu_assert(cases[i].message, actual == cases[i].expected);
+    }
+    /* NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr). */
+    return NULL;
+}
+
+/* A failed upstream computation must not become the mapping's initial 0.0.
+ * Every ordered comparison against NaN is false, so without an explicit
+ * finite-input guard no segment writes `y` and the function reports success
+ * with the plausible zero score it assigned before the loop (Issue #1526). */
+/* NOLINTBEGIN(modernize-use-nullptr): retain portable C NULL spelling per ADR-1138. */
+static char *test_piecewise_linear_mapping_rejects_nonfinite_input(void)
+{
+    VmafPoint knots[] = {{.x = 0.0, .y = 0.0}, {.x = 100.0, .y = 100.0}};
+    double y = 42.0;
+
+    int err = piecewise_linear_mapping(NAN, knots, 2u, &y);
+
+    mu_assert("NaN input must return -EINVAL instead of publishing 0.0", err == -EINVAL);
+    mu_assert("a rejected NaN must not overwrite the caller's score", y == 42.0);
+
+    err = piecewise_linear_mapping(INFINITY, knots, 2u, &y);
+    mu_assert("infinite input must return -EINVAL instead of publishing 0.0", err == -EINVAL);
+    mu_assert("a rejected infinity must not overwrite the caller's score", y == 42.0);
+    return NULL;
+}
+/* NOLINTEND(modernize-use-nullptr) */
+
 char *run_tests(void)
 {
     mu_run_test(test_predict_score_at_index);
+    mu_run_test(test_predict_nonfinite_fails_without_publication);
     mu_run_test(test_find_linear_function_parameters);
     mu_run_test(test_piecewise_linear_mapping);
     mu_run_test(test_piecewise_linear_mapping_returns_neg_einval);
+    mu_run_test(test_guided_feature_sentinel_semantics);
+    mu_run_test(test_piecewise_linear_mapping_rejects_nonfinite_input);
     mu_run_test(test_propagate_metadata);
     return NULL;
 }
+
+#undef PREDICT_TEST_NULLPTR

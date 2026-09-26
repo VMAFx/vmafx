@@ -1041,12 +1041,8 @@ func errorResult(msg string) *mcp.CallToolResult {
 // vmaf_score / vmaf_score_encoded property maps without mutating either input.
 func mergeSchema(base, extra schemaObj) schemaObj {
 	out := make(schemaObj, len(base)+len(extra))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range extra {
-		out[k] = v
-	}
+	maps.Copy(out, base)
+	maps.Copy(out, extra)
 	return out
 }
 

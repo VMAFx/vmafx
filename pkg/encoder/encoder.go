@@ -195,12 +195,12 @@ func extractEncoderVersion(stderr string, codec string) string {
 	// ffmpeg emits lines like:
 	//   libx264 - core 164 r3094M 0bfe3e0 H.264/MPEG-4 AVC codec
 	// We look for a line containing the codec name.
-	for _, line := range strings.Split(stderr, "\n") {
+	for line := range strings.SplitSeq(stderr, "\n") {
 		if strings.Contains(line, codec) && strings.Contains(line, "core") {
 			trimmed := strings.TrimSpace(line)
 			// Drop leading whitespace / dash separators
-			if idx := strings.Index(trimmed, "-"); idx >= 0 {
-				return strings.TrimSpace(trimmed[idx+1:])
+			if _, after, ok := strings.Cut(trimmed, "-"); ok {
+				return strings.TrimSpace(after)
 			}
 			return trimmed
 		}

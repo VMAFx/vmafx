@@ -26,13 +26,12 @@
 #include <string>
 #include <string_view>
 
-#ifdef _WIN32
-#include <direct.h>
-#else
+#ifndef _WIN32
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
 
+#include "compat/path_utf8.h"
 #include "mkdirp.h"
 
 namespace
@@ -117,12 +116,7 @@ extern "C" int mkdirp(const char *path, mode_t mode)
             continue;
         /* Create the prefix [0, pos). */
         const std::string prefix = pathname.substr(0, pos);
-#ifdef _WIN32
-        (void)mode;
-        const int rc = _mkdir(prefix.c_str());
-#else
-        const int rc = mkdir(prefix.c_str(), mode);
-#endif
+        const int rc = vmaf_mkdir_utf8(prefix.c_str(), mode);
         if (rc != 0 && errno != EEXIST)
             return -1;
     }

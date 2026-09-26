@@ -33,12 +33,20 @@ Without an external barrier proving that registration, stop and join producers
 before destroying the pool. Arbitrary enqueue/destroy races are unsupported.
 `vmaf_close()` uses the normal serialized owner path and drains its pool first.
 
+Worker-private extractor state uses a two-phase shutdown. The configured
+`thread_data_prepare` callback closes each private extractor while the worker
+array still owns it. If any callback fails, `vmaf_thread_pool_destroy()` returns
+that error without stopping workers or freeing their data, so the caller can
+retry. Only after every prepare callback succeeds does the infallible
+`thread_data_free` commit phase destroy contexts and release the owner arrays.
+
 ## Regression checks
 
 With an existing CPU Meson build:
 
 ```bash
-meson test -C build test_thread_pool test_thread_pool_backpressure --print-errorlogs
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build test_thread_pool test_thread_pool_backpressure --print-errorlogs
 ```
 
 The backpressure suite holds a worker until the producer demonstrably reaches

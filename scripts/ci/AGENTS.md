@@ -10,6 +10,118 @@ upstream Netflix/vmaf has no equivalent tree, so rebase risk =
 
 ## Rebase-sensitive surfaces
 
+### Research-digest identifier ratchet
+
+`check-research-digest-ids.py` scans every `docs/research/NNNN-*.md`
+digest except the `0000` template. New digests must have a unique numeric
+prefix and a first H1 beginning `# Research-NNNN`, with the same number as
+the filename. The generated `research-digest-id-baseline.json` records exact
+pre-existing collision sets and exact non-canonical H1 text; those entries are
+debt, not exceptions to copy. ADR-1335 binds every audit to the trusted merge
+base: the branch baseline must exactly match its tree and may only reduce
+trusted debt. Ordinary `--write` requires a canonical baseline at that merge
+base. The separate `--bootstrap-from-ref` path accepts only a full immutable
+ancestor that predates checker and baseline, refuses overwrite and debt growth,
+and must never appear in CI or hook commands. Preserve the live trusted-ref
+gate, deterministic writer, planted deletion/rewrite/growth red caps, both
+local hooks, and Rule Enforcement invocation together.
+
+### Meson parent-environment sanitization (ADR-1333)
+
+`run_meson_test.py` must delete the governed credential keys before replacing itself with
+Meson; membership and deletion may not read, retain, or print values. Keep every supported
+Make, CI, preflight, bisection, setup-guidance, and Zed test entry point on this wrapper.
+`core/test/test_meson_secret_env_sanitization.py` owns the exact caller inventory, mutation
+coverage for each call, recursive discovery of `GNUmakefile`, `makefile`, and `Makefile`,
+POSIX/Windows entry-point discovery, logical-command Meson/Ninja bypass scan, and disposable
+both-log RED/GREEN proof. The scanner must normalize workflow/action `run` scalar values, quoted
+or path-qualified executables and `.exe` spellings; join shell, PowerShell, and batch
+continuations; and evaluate every separator-delimited command. A wrapper token may exempt only
+that command, never a sibling raw test command. Keep the pre-commit filter aligned with every
+scanned filename and script type. Preserve that contract with the wrapper and `core/meson.build`
+default setup. Direct raw external Meson/Ninja test-target commands remain outside the bounded
+guarantee.
+
+### Source ADR citation provenance (ADR-1311)
+
+`check-source-adr-citations.py` owns plain `ADR-NNNN` references in tracked
+implementation and build/control files. Preserve the explicit source-suffix /
+basename scope, the exact live `number -> filename -> path/count` bindings,
+the hand-governed retirement records, the exact-path fixture exemptions, the
+always-run pre-commit hook, and the positive/negative/boundary test suite
+together. `--write` may update only live bindings and must refuse unknown
+missing numbers; never auto-invent a retirement, broaden a fixture exemption,
+or accept a reused retired number. Markdown links remain the separate
+`check-adr-links.py` contract. `mkdocs.yml` is prose navigation, not source,
+and stays outside this gate so its full ADR index cannot masquerade as 1,000+
+implementation citations.
+Disposable test repositories must strip every inherited `GIT_*` variable,
+disable caller system/global configuration, hooks, and signing for both direct
+Git calls and checker subprocesses. The regression poisons `GIT_INDEX_FILE`,
+`GIT_DIR`, `GIT_WORK_TREE`, and `GIT_PREFIX` and byte-checks the caller index
+and repository configuration; do not weaken it to a clean-shell-only test.
+
+### REUSE coverage and provenance (BUG-003 / ADR-1250)
+
+`reuse lint` proves metadata coverage and syntax, not ownership or licence
+provenance. The root `REUSE.toml` EUPL-1.2 default applies only to work already
+classified as fork-authored. Preserve exact overrides for inherited and renamed
+Netflix files, ports and twins, no-CLA outside contributions (including
+append-only aggregates), third-party artefacts, and FFmpeg patches. A blanket
+EUPL-1.2 annotation can be 100% REUSE-compliant while falsely relicensing those
+files and is therefore forbidden.
+
+When an upstream sync, rename, outside contribution, aggregate edit, or FFmpeg
+patch changes one of those sets, update the mapping and
+`tests/test_reuse_compliance.py` together. Classify each FFmpeg patch against
+the exact configured upstream tag and every source unit it changes. Re-run the
+rename-aware history audit described in
+[`docs/research/bug-003-reuse-provenance-audit-2026-09-24.md`](../../docs/research/bug-003-reuse-provenance-audit-2026-09-24.md);
+zero missing metadata is necessary but not sufficient evidence.
+
+### Historical issue-reference provenance (BUG-048 Section E)
+
+`check-issue-reference-provenance.py` protects the small set of historical
+issue and pull-request contexts proven to belong to the retired
+`lusoris/vmaf` tracker. The active `VMAFx/vmafx` repository reused those
+numbers for unrelated pull requests, so restoring a bare issue number inside
+one of the protected contexts silently changes the cited object. Keep the
+checker, its unit suite, the always-run pre-commit hook, and the Rule
+Enforcement self-test wired together.
+
+The contracts are intentionally context-scoped: ordinary bare issue and PR
+references normally mean the active fork and must remain allowed, while the
+`Netflix/vmaf` tracker is a separate upstream namespace. Add a contract only
+after Git history proves the archived identity. Each contract uses a stable
+prose anchor and a logical Markdown block; do not replace that with line
+numbers, exact whitespace, a repository-wide bare-reference ban, or a network
+lookup. See
+[Research-2089](../../docs/research/2089-archived-issue-reference-provenance.md).
+
+### Zed project-configuration contract
+
+`tests/test_zed_project_config.py` is the fail-closed contract for the
+project-scoped Zed files. It must keep rejecting user-only `agent` and
+`agent_servers` roots, the retired numbered workspace root, `.venv/bin/`
+assumptions, deleted helper paths, the deprecated Python MCP entrypoint, and
+loss of the three standards-governance tasks. Update the test together with
+`.zed/` only when exact installed-version source proves a schema or executable
+change; a Zed JSON parse alone does not prove that project settings apply the
+keys.
+
+### Codex repository-hook path contract
+
+`.codex/hooks.json` must invoke every tracked hook through the active Git
+worktree root after clearing inherited repository-local Git variables. The
+command contract starts with `"$(env -u GIT_DIR -u GIT_WORK_TREE` and ends with
+`git rev-parse --show-toplevel)/.codex/hooks/<script>.sh"`.
+Never commit a user-home path, a former checkout path, or a path relative to the
+launch directory. Keep the exact seven event/matcher/script mappings, tracked
+`100755` modes, and `scripts/ci/tests/test_codex_hook_config.py` together. The
+`test-codex-hook-config` pre-commit/pre-push hook is the required local and CI
+caller; a JSON parse alone does not prove that the commands execute from a
+nested directory or a linked worktree.
+
 ### Local data-root separation (ADR-1277)
 
 `check-local-data-contract.sh` separates three authorities: private state and
@@ -93,6 +205,25 @@ recorded an empty backend while still reporting the lane as clean.
 `test_tidy_ratchet_sycl_compdb.py` pins that wiring. The GPU lanes also need
 their build dir configured `-Db_lto=false` and placed outside the repository;
 see the variable block in the `Makefile`.
+`make tidy-ratchet LANE=sycl` sets `TIDY_RATCHET_EXTRA_sycl := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-sycl.sh`,
+anchoring the wrapper to the worktree root. Under ADR-1270, `safe_subprocess.py`
+requires allowlisted executables to be bare binary names or absolute paths;
+relative paths with slashes fail validation. In addition, `tidy-ratchet.py`'s
+`resolve_clang_tidy()` resolves multi-component relative binary paths to absolute
+paths before measurement and execution. Preserve both the `$(CURDIR)` anchoring
+in `Makefile` and `resolve_clang_tidy()` in `tidy-ratchet.py`.
+
+In CI, the `clang-tidy-sycl` job (`Tidy SYCL`) in `lint-and-format.yml` has been
+a required, non-advisory merge gate since `6475fa9ea` (ADR-1297). It belongs to
+both `required` and `strictMustReport`: the detect step can skip work, but the
+job has no path filter and must always report. Each pull-request, push-fallback,
+normal-push, and dispatch command covers all changed SYCL sources, headers
+(`.cpp`, `.hpp`, `.h`), and tests independently. The coupling between
+`lint-and-format.yml`, `required-aggregator.yml`, and `rule-enforcement.yml` is
+pinned fail-closed by `test_sycl_tidy_workflow_contract.py` using the shared
+`required_aggregator_harness.py` driver. The exact strict-required set is also
+pinned by `tests/test_hiss_replay_contract.py`; update that replay contract when
+a reporting-always context legitimately joins or leaves `strictMustReport`.
 
 Real-Make fixtures create failing/recording pip sentinel before fake
 Meson and Ninja, satisfying recursive build dependency graph without tool
@@ -145,25 +276,38 @@ instruction case, flags and continuations covered by fixture tests.
 Shared FROM arguments need global, single-line default named by
 `build-config.env`; shell gate owns default drift/repair. Local image
 exceptions bind exact consumer and value, never broad unpinned-tag rule.
+The sole `docker/dev/` file in this ownership set is
+`docker/dev/ubuntu-26.04-cuda.Dockerfile`; its CUDA builder mirror is generated
+from `build-config.env`, while the Alpine, Arch, and Fedora matrix files remain
+independent. `CUDA_BUILDER` and `CUDA_RUNTIME` must equal `DEV_BASE` exactly,
+including the digest, not merely share its Ubuntu tag.
 `tests/test_base_image_single_source.py` exercises actual gate in scratch
 repositories, wired through `test-base-image-single-source` in
 `.pre-commit-config.yaml`.
 
 ### CUDA coordinated pin (ADR-1285)
 
-One CUDA release = sixteen literals, seven spellings, seven files. Authority =
-`build-config.env` `CUDA_VERSION`. `check-cuda-pin-lockstep.py` checks all of
-them, `--write` derives the five Renovate cannot express (`$cudaMajorMinor`,
-both `cuda-toolkit-NN-N` apt names, the OCI description label), and a residual
-sweep fails on any CUDA release literal in an unrecognised spelling. Never
-narrow the sweep to silence a new site: teach the gate its shape and add the
-file to `renovate.json`'s CUDA manager in the same change, or the site drifts.
-`--write` must never touch `CUDA_VERSION` (authority) or an image pin (digest
-is not derivable). Renovate side: custom manager resolving the plain `x.y.z`
-literals as `nvidia/cuda`, `extractVersion` stripping the flavour suffix
-because no bare tag exists, and the `CUDA release (coordinated pin)` rule
-scoped to major/minor/patch so digest refreshes stay in `Docker digests`.
-Fixture: `tests/test_cuda_pin_single_source.py`, run by the
+One CUDA release = seven literals across two files. Authority =
+`build-config.env` `CUDA_VERSION`; that file also records the apt package
+series, a release-review latch, and exact toolkit/nvcc/cudart Debian versions.
+`check-cuda-pin-lockstep.py` checks all seven, `--write` derives only the apt
+series and OCI-description spellings, and a residual sweep fails on any CUDA
+release literal in an unrecognised spelling.
+Never narrow the sweep to silence a new site: teach the gate its shape and
+owner in the same change, or the site drifts. `--write` must never touch
+`CUDA_VERSION` or the exact apt metadata. Component build numbers are not a
+function of the marketing release; refresh them from NVIDIA's live redist
+manifest and Ubuntu Packages index. `CUDA_APT_LOCK_RELEASE` deliberately stays
+outside Renovate ownership, so a bot bump fails until that review happens.
+The shared installer must keep exact `package=version` apt operands, subsequent
+`dpkg-query` validation, and all three builder/runtime/full modes. Its fake-host
+contract suite has the dedicated `test-install-cuda-toolkit` pre-commit hook,
+which the required Pre-Commit workflow runs. Renovate resolves `CUDA_VERSION` through
+`custom.nvidia-cuda-redist`: the official HTML index plus an exact
+`redistrib_X.Y.Z.json` extractor. Never restore the old `nvidia/cuda` package
+group. The custom feed has no timestamps, so its narrowly matched rule stays
+timestamp-optional, manual-review, and non-automerge. Fixture:
+`tests/test_cuda_pin_single_source.py`, run by the
 `test-base-image-single-source` hook.
 
 ### Level Zero version consumption (ADR-1231)
@@ -201,6 +345,23 @@ Raise all three in one commit. Fixture:
 trigger file to the `test-base-image-single-source` hook's `files:` regex, which
 is what decides when the `test_*single_source.py` discovery runs.
 
+### Required Python Lint reuses the merge-base gate (ADR-1310)
+
+`.github/workflows/lint-and-format.yml` must install
+`requirements/locks/mypy.txt` with `--require-hashes`, fetch full history, and
+invoke `scripts/git-hooks/pre-push-mypy.py` without `continue-on-error` or a
+shell success tail. Pull requests use `origin/master`; master pushes pass
+`github.event.before` through `VMAFX_MYPY_BASE_REF` so the post-merge job does
+not compare HEAD with itself. The local hook's default stays `origin/master`.
+
+Keep `test_fail_closed_ci.py` wired to Rule Enforcement and to the
+`fail-closed-ci-contract` hook, with `lint-and-format.yml` in that hook's file
+trigger. Its mutation matrix rejects shallow history, unhashed checker install,
+missing push-base authority, advisory exit masking, and raw `mypy ai/ scripts/`
+directory discovery. Base-override behavior belongs in
+`scripts/git-hooks/test-pre-push-mypy.py`; do not duplicate selection or
+fingerprint logic in a CI-only script.
+
 ### Dev-container GitHub build secret (ADR-1271)
 
 `check-dev-container-build-secret.py` binds five surfaces: the optional
@@ -229,9 +390,11 @@ until master fixed.
 | `gpu_ulp_calibration.yaml` | (data, not invoked directly by workflow) | The default path is hard-coded as `Path(__file__).parent / "gpu_ulp_calibration.yaml"` in `cross_backend_calibration.DEFAULT_CALIBRATION_PATH`. Renaming this file is a breaking change for the gate scripts and any caller that didn't pass `--calibration-table` explicitly. |
 | `test_calibration.py` | `tests-and-quality-gates.yml` — pytest collection (`pytest-tests` lane) | Discovered automatically by pytest; the test module name is part of the gate's contract. |
 | `test_e2e_runtime_contract.py` | `rule-enforcement.yml` and `e2e-k8s.yml` — `Verify E2E runtime contract` | The always-on PR gate and exact E2E lane enforce explicit CPU node + Go server targets, three-image transfer into kind, exact-local Helm pulls, and the real chart-backed scoring case. Keep it outside the E2E trigger gate as well as inside the image job. |
-| `test_go_workflow_contract.py` | `rule-enforcement.yml` — `Verify Go required-check contract` | Executes the embedded aggregator with Go pass/fail outcomes and guards ready-event coverage plus step-level `go_checks` routing. Keep it before authoring exemptions (ADR-1238). |
-| `test_security_workflow_contract.py` | `rule-enforcement.yml` — `Verify Security Scans concurrency contract` | The Security Scans group must include workflow, event name, and ref. This keeps same-event cancellation while preventing a schedule on `refs/heads/master` from canceling a master-push CodeQL run (or vice versa). |
-| `test_fail_closed_ci.py` | `rule-enforcement.yml` — `Verify fail-closed CI contract`; `.pre-commit-config.yaml` — `fail-closed-ci-contract` | Protects real exit propagation for tox coverage, CPU coverage pytest, nightly benchmarks, advisory Semgrep, and sanitizer test discovery. Diagnostic continuation is valid only when a final `if: always()` step reasserts the recorded raw outcome. Keep both callers wired. |
+| `required_aggregator_harness.py` | Shared by `test_go_workflow_contract.py` and `test_sycl_tidy_workflow_contract.py` | Owns the one Node.js driver for executing the embedded aggregator against synthetic check results. Keep both contract suites on this harness so polling-time simulation and result decoding cannot drift. |
+| `test_go_workflow_contract.py` | `rule-enforcement.yml` — `Verify Go required-check contract` | Uses the shared aggregator harness for Go pass/fail outcomes; guards ready-event coverage and step-level `go_checks` routing; pins the early, non-mutating `go fix -diff ./...` gate and matching Make targets. Keep it before authoring exemptions (ADRs 1238 and 1338). |
+| `test_sycl_tidy_workflow_contract.py` | `rule-enforcement.yml` — `Verify SYCL required clang-tidy contract`; `.pre-commit-config.yaml` — `test-sycl-tidy-workflow-contract` | Enforces that `Tidy SYCL` in `lint-and-format.yml` is a strict-must-report, non-advisory required gate (`# required-aggregator`, no `continue-on-error`, full `.h`/`.cpp`/`.hpp` SYCL source and test coverage in every event branch). Uses the shared aggregator harness to prove failure or absence blocks merge while success passes. |
+| `test_security_workflow_contract.py` | `rule-enforcement.yml` — `Verify Security Scans concurrency contract` | The Security Scans group must include workflow, event name, and ref. This keeps same-event cancellation while preventing a schedule on `refs/heads/master` from canceling a master-push CodeQL run (or vice versa). The same test pins C/C++ Meson configure before CodeQL initialization, compile after initialization, and an external `${{ runner.temp }}/build` root so generated compiler probes are never extracted as repository source. |
+| `test_fail_closed_ci.py` | `rule-enforcement.yml` — `Verify fail-closed CI contract`; `.pre-commit-config.yaml` — `fail-closed-ci-contract` | Protects real exit propagation for tox coverage, CPU coverage pytest, nightly benchmarks, advisory Semgrep, sanitizer test discovery, and required Python Lint. The mypy contract also pins full history, its hash-locked install, exact push-base authority, and canonical merge-base runner. Diagnostic continuation is valid only when a final `if: always()` step reasserts the recorded raw outcome. Keep both callers wired. |
 | `tests/test-dedupe-gate.sh` | `standards-gate.yml` — `Reject duplicate implementation families`; `rule-enforcement.yml` — `Verify duplicate implementation gate`; `.pre-commit-config.yaml` — `dedupe-gate-contract`; `lefthook.yml`; `make verify-all` | The clone scan stays explicit in the required Standards job, both blocking local lefthook stages, and the aggregate local command. Its real-Make fixture proves a scanner failure makes `make verify-all` fail. `standardsctl audit` is not a substitute because it does not run the AST clone detector. |
 
 | `agent-eligibility-precheck.py` | (no workflow lane today; called manually from `.claude/workflows/*.md` per [ADR-0355](../../docs/adr/0355-symphony-agent-dispatch-infra.md)) | Loads `scripts/lib/backlog_tracker.py`; the two files move together. The exit-code contract (0 = eligible, 1 = block, 2 = bad CLI usage) and the `::error title=...::...` stderr format are **the** dispatcher contract. Missing rows, unreadable task files, and unavailable or failed GitHub queries block dispatch unless the operator selected the corresponding explicit `--skip-*` flag. Never change the contract without updating `.claude/workflows/_template.md` and `docs/development/agent-dispatch.md` in the same PR. |
@@ -254,9 +417,9 @@ until master fixed.
 
 | `coverage-check.sh` | `tests-and-quality-gates.yml` — `Enforce coverage thresholds` step on both required `coverage` and `coverage-gpu` jobs | The CLI shape (`coverage-check.sh <gcovr-summary.json> <overall_min%> <critical_min%>`) and the in-script `PER_FILE_MIN` map are the gate definition. Every entry in `PER_FILE_MIN` must cite the ADR that justifies the lower bar ([ADR-0114](../../docs/adr/0114-coverage-gate-per-file-overrides.md)). Audit cadence + tighten/keep/remove rule codified in [ADR-0881](../../docs/adr/0881-coverage-overrides-audit-2026-05-30.md). Gcovr's emit-path format (currently `core/src/...` relative to repo root) is the join-key with `PER_FILE_MIN`; if a future gcovr upgrade changes that format, the override silently stops applying and the global 85 % gate kicks in — the per-line "min XX%" output is the canary. |
 | `check-dispatch-registry.sh` | `.pre-commit-config.yaml` (`check-dispatch-registry` hook), `tests-and-quality-gates.yml` (`Pre-Commit` job) | Cross-references backend symbols `vmaf_fex_*_<backend>` in `core/src/feature/<backend>/` against `feature_extractor_list[]` in `core/src/feature/feature_extractor.cpp`. Fails if any backend symbol is omitted from the registration array. Test suite: `scripts/ci/tests/test-check-dispatch-registry.sh`. |
-| `classify-dependency-pr.sh` | `rule-enforcement.yml` — `deep-dive-checklist` and `doc-substance-check` jobs ([ADR-1152](../../docs/adr/1152-dependency-pr-gate-exemption.md)) | Reads `$PR_AUTHOR`, `$HEAD_REF`, `$BASE_SHA`, `$HEAD_SHA` from workflow env. The exemption is author-AND-path-gated and must never be widened to a path glob alone. Bot identity requires `renovate[bot]` / `dependabot[bot]` (or `app/renovate` / `app/dependabot`), or a `renovate/*` / `dependabot/*` branch, AND all changed paths must be in the explicit manifest/lockfile allowlist. Bot PRs touching source code must still satisfy both documentation gates. Test suite: `scripts/ci/test-classify-dependency-pr.sh`. |
-| `test-classify-dependency-pr.sh` | (local-only fixture driver, not invoked by CI) | Run before pushing changes to `classify-dependency-pr.sh`; exercises the predicate space across dependency-only diffs, mixed source diffs, non-bot authors, and real PR fixtures (#1206, #1207, #1212, #1214). |
-| `check-runner-available.sh` | `sycl-parity.yml` (`runner-available` job, step `Check runner availability`) | Reads the lane switch `$RUNNER_ENABLED` (= `vars.SYCL_ARC_RUNNER_ENABLED`). Disabled: exit 0, `available=false`, no API call. Enabled: queries `GET repos/<repo>/actions/runners` with `$GH_TOKEN` (`secrets.SYCL_RUNNER_PROBE_TOKEN`) and requires an ONLINE runner labelled `sycl-arc`; API error, no such runner, or all offline = exit 1 with `::error::`. Never maps an API error to "unregistered". Test suite: `scripts/ci/tests/test-runner-available.sh`. |
+| `classify-dependency-pr.sh` | `rule-enforcement.yml` — `deep-dive-checklist` and `doc-substance-check` jobs ([ADR-1152](../../docs/adr/1152-dependency-pr-gate-exemption.md)) | Reads `$PR_AUTHOR`, `$HEAD_REF`, `$BASE_SHA`, `$HEAD_SHA` from workflow env. The exemption is author-AND-path-gated and must never be widened to a path glob alone. Bot identity requires `renovate[bot]` / `dependabot[bot]` (or `app/renovate` / `app/dependabot`), or a `renovate/*` / `dependabot/*` branch, AND all changed paths must be in the explicit manifest/lockfile allowlist. Only `requirements/*` has subtree authority for generic `.in` and `manifest.json` files; never restore basename-wide `*.in` or `manifest.json` exemptions (`core/include/libvmaf/version.h.in` is the negative fixture). Bot PRs touching source code must still satisfy both documentation gates. Test suite: `scripts/ci/test-classify-dependency-pr.sh`. |
+| `test-classify-dependency-pr.sh` | (local-only fixture driver, not invoked by CI) | Run before pushing changes to `classify-dependency-pr.sh`; exercises dependency-only and mixed source diffs, named `requirements*.in` inputs versus unrelated `.in` templates, non-bot authors, and real PR fixtures (#1206, #1207, #1212, #1214). |
+| `check-runner-available.sh` | `sycl-parity.yml` (`runner-available`) and `tests-and-quality-gates.yml` (`gpu-full-runner-available`) | Reads `$RUNNER_ENABLED`; disabled means exit 0, `available=false`, no API call. Enabled means query `GET repos/<repo>/actions/runners` with the existing read-only `$GH_TOKEN` and require one ONLINE runner carrying every case-insensitive label in `$RUNNER_LABELS`. A custom-label-only match is insufficient: missing `linux` / `x64` can still make `runs-on` unroutable. API error, no complete match, or all complete matches offline = exit 1 with `::error::`. Never maps an API error to "unregistered". Tests: `scripts/ci/tests/test-runner-available.sh` and `scripts/ci/test_self_hosted_runner_workflow_contract.py`. |
 
 ## `check-vcs-version-not-bare-sha.sh` invariants
 
@@ -550,6 +713,18 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
 - `tests/test_ci_impact.py` (stdlib `unittest`) pins map ↔ tree contract and
   no-path-filter invariant on required-context workflows. Run it after
   adding top-level directory or required check.
+- **Required contexts use planner -> work -> gate, never trigger filters
+  (BUG-098).** The workflow always starts. An unconditional `impact` job exports
+  one selector; distinctly named heavy `... work` jobs consume it; and an
+  `if: always()` gate alone owns each exact required context name. The gate may
+  accept only `true:success` or `false:skipped` and must fail when planning fails.
+  Keep the `(?m)` multiline anchor in the no-path-filter regression: omitting it
+  makes the assertion inspect only the beginning of the YAML and silently miss
+  every nested `paths:` key. GitHub does not create the gate check until its
+  `needs` chain completes, so the required aggregator must keep polling while a
+  mapped planner/work proxy is active and briefly after it completes. Preserve
+  the complete `delayedStrictDependencies` map and paginated check-run fetch;
+  `test_hiss_replay_contract.py` executes both failure modes.
 
 ## tidy-ratchet.py invariants (ADR-1142)
 
@@ -698,7 +873,7 @@ Derive additions from what Renovate edits (`gh pr list --author
 app/renovate` and diff the file lists), not from what looks like manifest —
 see [`docs/research/1152-dependency-classifier-surface-audit.md`](../../docs/research/1152-dependency-classifier-surface-audit.md).
 
-## check-silent-revert.py invariants (ADR-1284)
+## check-silent-revert.py invariants (ADR-1284 / ADR-1291)
 
 Gate reports what merge removes from target that branch never set out to touch.
 Four load-bearing properties. Drop one, gate becomes decoration.
@@ -724,14 +899,21 @@ Four load-bearing properties. Drop one, gate becomes decoration.
    resolve cleanly, git without `merge-tree --write-tree`: all exit non-zero.
    Never print `clean` for case gate could not analyse.
 
-Only opt-out is declaration in PR: `revert:` title, `reverts: #N`,
-`intentional revert: <reason>`. No in-tree suppression. `GENERATED_PREFIXES`
-covers rendered files only; never widen to source trees.
+There are two declaration mechanisms. A one-off deliberate revert declares the
+whole PR with a `revert:` title, `reverts: #N`, or
+`intentional revert: <reason>`. An accepted ADR that requires restoring work
+the target once lost uses `silent-revert-allowlist.json`, constrained by
+detector, exact path, exact full commit for `reverse-hunk`, and a regex that
+matches every evidence line. The latter is an expiring declaration, not a path
+suppression: remove it when the finding disappears. Never add a bare path or
+source-tree exclusion, and never loosen an entry to make a new finding match.
+`GENERATED_PREFIXES`
+covers rendered files only; never widen it to source trees.
 `is_evidence()` drops conflict markers — `0c494cca0` committed three into
 `core/src/feature/cuda/integer_vif_cuda.c`, and PR deleting them reset file to
 pre-marker blob.
 
-Regression: `python3 scripts/ci/tests/test_check_silent_revert.py` (12 tests).
+Regression: `python3 scripts/ci/tests/test_check_silent_revert.py` (22 tests).
 
 ## check-aggregator-names.sh invariants
 
@@ -772,6 +954,23 @@ under `.github/workflows/sycl-parity.yml`. Following invariants load-bearing:
 6. **Render node resolved, not hard-coded**: `dev/docker-compose.runner.yml` takes
    `ARC_RENDER_NODE` from `dev/scripts/arc-render-node.sh` (exactly one vendor-`0x8086` render node).
    Do not replace with bare `renderD<N>`; numbers change after PCI re-enumeration.
+
+## Self-hosted hardware admission invariants (ADR-1319)
+
+`sycl-arc` and `gpu-full` are different capability contracts. The Arc-only
+container never satisfies CUDA/HIP or combined-coverage claims. Preserve these
+couplings together:
+
+1. `sycl-parity.yml` is the sole hardware `float_ssim` parity owner and probes
+   `self-hosted linux x64 sycl-arc` before dispatch.
+2. `tests-and-quality-gates.yml` has exactly one `gpu-full` consumer,
+   `Coverage GPU`; its hosted probe checks `self-hosted linux gpu-full` before
+   dispatch. Do not restore the retired duplicate SYCL job.
+3. The required aggregator permits absent/skipped hardware checks only while
+   their own switch is disabled. With a switch true, only `success` passes.
+4. Keep `scripts/ci/test_self_hosted_runner_workflow_contract.py` wired into
+   Rule Enforcement. It executes the real embedded aggregator JavaScript as
+   well as checking workflow ownership and admission edges.
 
 ## FFmpeg patch lifecycle (ADR-1240)
 
@@ -835,7 +1034,7 @@ tidy-ratchet-write LANE=<cuda|hip|sycl>`, advisory.
 
 ## check-state-md-rows.sh — the status token belongs to the section (ADR-0165)
 
-Three independent checks, all of them widened only after a narrower version
+Four independent checks, all of them widened only after a narrower version
 reported a dirty file as clean. Do not narrow any of them.
 
 1. Duplicate bug id. Matches four id shapes (`**T-ID**`, `T-ID`, `**T7-16**`,
@@ -848,10 +1047,20 @@ reported a dirty file as clean. Do not narrow any of them.
    heading the row sits under whenever the token OPENING that cell is a status
    word: `closed` / `fixed` / `resolved` / `done` only under
    `## Recently closed`, `open` only under `## Open bugs`.
+4. Open row against move tombstone. A comment under `## Open bugs` that says an
+   id "moved to Recently closed" is an explicit closed-state claim; the same id
+   may not still have a table row in that section, even when the row has no
+   parseable Status cell.
 
 Check 3 exists because checks 1 and 2 only see a *duplicate*. A resolved row
 left under `## Open bugs` with no second copy is invisible to both, and reads
 as an open bug forever; 24 of 62 rows were in that state on 2026-09-21.
+
+Check 4 covers the remaining no-Status shape. The 2026-09-08 PTQ bookkeeping
+change claimed a row had moved and left its tombstone immediately below the
+unchanged Open row; the first three checks all reported clean. Preserve the
+fixture that rejects that exact contradiction. A tombstone plus the row under
+`## Recently closed` is the valid moved state and must continue to pass.
 
 Invariants for check 3:
 
@@ -889,3 +1098,21 @@ that line is itself a table row — `prev` and `prevline` both reset on a
 non-table line. A separator whose header was lost to a dropped rebase hunk
 otherwise retracts the status of the last data row above the blank line, which
 silently unjudges a real row.
+
+### Hash-locked Python dependency policy (ADR-1305)
+
+`check_python_dependency_locks.py` enforces cryptographic pinning and hermetic
+install policy across the repository:
+
+- All lock files are generated via `requirements/locks/manifest.json` using the reviewed `uv_version` (`0.12.18`).
+- Manifest outputs and inputs must be local repository-relative paths on both POSIX and Windows (rejecting directory traversal `..`, drive/UNC or POSIX absolute paths, remote URLs, and surrounding whitespace); inputs must not contain duplicates.
+- Manifest `compile_args` must not specify output overrides (`-o`, `--output-file`).
+- Every `*-lock.txt` and `requirements/locks/*.txt` in the tree must be registered in `manifest.json`.
+- A requirement target must exactly equal a manifest output or explicit `install_aliases` entry bound to the specific repo-relative consumer path and context. Consumer bindings themselves must be local repository-relative paths on both POSIX and Windows. Identity uses exact separator-normalized equality, so a nested suffix lookalike never inherits authority. Aliases reject directory traversals (`..`), Windows drive/UNC paths, duplicate JSON keys, and unreferenced/dead aliases fail closed. Basename and suffix matches are never authority.
+- Executable pip invocations are strictly parsed: global pre-subcommand flags (`--trusted-host`, etc.) are preserved, joined short forms (`-qrfoo`, `-rmalicious.txt`, `-cconstraints.txt`) are split and validated, and unhashed or secondary requirement/constraint flags fail closed.
+- Nox AST scanner restricts receiver authority to `@nox.session` parameters, tracks and rejects plain or annotated session/method aliases (`installer = session.install; installer(...)`, `alias: object = session`, `installer: object = session.install`) and literal `getattr(session, "install")` aliases, and inspects literal shell runner invocations (`session.run("sh", "-c", ...)`) fail-closed.
+- Nox development locks must be workstation-portable (compiled with `--universal`, no `--python-platform`), and every Nox session must pin an explicit Python version that agrees with its lock resolution.
+- Git discovery and consumer tracking fail closed with `ContractError` on any process or filesystem error.
+- Workflow steps that consume repo-local requirements locks, packages, helper scripts, or local actions must execute strictly after `actions/checkout` in that job; `check_python_dependency_locks.py` fail-closed scanner (`scan_workflow_checkout_ordering`) enforces this ordering across all workflows in `.github/workflows/*.yml`. The validator enforces fail-closed semantics across both PyYAML and fallback parsing paths: it accepts only the exact `actions/checkout` owner and action pinned to a full 40-character hex SHA (rejecting spoofed owners, altered action names, or unpinned refs); rejects foreign `with.repository` checkouts; rejects conditional (`if:`) and `continue-on-error` checkouts as insufficient; rejects checkouts with `with.path` targeting a subdirectory; preserves folded YAML run blocks (`>`) where flags such as `-r` and local paths split across physical lines; detects joined pip options (`-rrequirements/...`, `-eai`) and local source targets (`--no-build-isolation ai`); fails closed on malformed YAML when PyYAML is installed; and, without PyYAML, accepts simple quoted or unquoted block keys for `jobs`, job ids, and `steps` while rejecting unsupported inline/flow-style mappings rather than treating an unparsed workflow as empty.
+- `write` is the only network-accessing path; `check` is offline and run in pre-commit and `make lint`.
+- Regressions are pinned in `scripts/ci/tests/test_python_dependency_locks.py`.

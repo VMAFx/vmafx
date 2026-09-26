@@ -142,7 +142,7 @@ streams the image's `/opt/rocm` out of the registry without a 29 GB
 meson setup build -Denable_cuda=false -Denable_sycl=false \
                   -Denable_hip=true -Denable_hipcc=true
 ninja -C build
-meson test -C build
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build
 ```
 
 `enable_hipcc=false` (the default) compiles the HIP C host runtime but
@@ -343,7 +343,7 @@ Each returns `-ENOSYS` at `init()`. Tracked in
 - [ADR-0533](../../adr/0533-hip-all-extractors-registration-sweep.md) —
   full HIP-extractor registration sweep (six more TUs wired into
   `hip_sources` + `feature_extractor_list[]`).
-- [Research-0033](../../research/0033-hip-applicability.md) —
+- [Research-0432](../../research/0432-hip-applicability.md) —
   AMD market-share + ROCm Linux maturity survey.
 
 ## ADR-0537: integer_vif_hip kernel fix (2026-05-18)
@@ -570,8 +570,12 @@ cmp run1.json run2.json
 
 Identical files do not prove the scores are right: with several extractors in
 one process the old defect was deterministic. Compare against
-`--backend cpu --feature float_psnr` as well, or run
-`meson test -C build test_hip_upload_race`.
+`--backend cpu --feature float_psnr` as well, or run:
+
+```bash
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build test_hip_upload_race
+```
 
 ### Dispatch strategy predicates and environment overrides
 

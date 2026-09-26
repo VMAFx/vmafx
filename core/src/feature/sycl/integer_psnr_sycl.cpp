@@ -385,6 +385,8 @@ static int allocate_chroma(PsnrStateSycl *s)
 namespace
 {
 
+static int close_fex_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -409,16 +411,19 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
     const int alloc_err = allocate_sse(s);
     if (alloc_err) {
+        (void)close_fex_sycl(fex);
         return alloc_err;
     }
     const int chroma_err = allocate_chroma(s);
     if (chroma_err) {
+        (void)close_fex_sycl(fex);
         return chroma_err;
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
 
@@ -427,6 +432,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     int const err2 = vmaf_sycl_graph_register(s->sycl_state, enqueue_psnr_work, psnr_pre_graph,
                                               psnr_post_graph, config_psnr_slot, s, "PSNR");
     if (err2) {
+        (void)close_fex_sycl(fex);
         return err2;
     }
 

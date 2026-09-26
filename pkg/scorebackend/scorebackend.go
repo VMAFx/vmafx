@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 )
@@ -258,13 +259,7 @@ func Detect(ctx context.Context, opts Options) []string {
 //     silently downgrades.
 func Select(ctx context.Context, prefer string, opts Options) (string, error) {
 	if prefer != "auto" {
-		known := false
-		for _, b := range AllBackends() {
-			if b == prefer {
-				known = true
-				break
-			}
-		}
+		known := slices.Contains(AllBackends(), prefer)
 		if !known {
 			return "", fmt.Errorf("unknown backend %q; expected one of: auto, %s",
 				prefer, strings.Join(AllBackends(), ", "))
@@ -276,12 +271,7 @@ func Select(ctx context.Context, prefer string, opts Options) (string, error) {
 		available = Detect(ctx, opts)
 	}
 	has := func(name string) bool {
-		for _, a := range available {
-			if a == name {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(available, name)
 	}
 
 	if prefer == "auto" {

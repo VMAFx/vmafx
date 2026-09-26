@@ -83,8 +83,57 @@ def test_assign_folds_is_deterministic_and_balanced() -> None:
     assert counts == {"fold0": 4, "fold1": 4, "fold2": 4, "fold3": 4, "fold4": 4}
 
 
-def test_main_writes_full_and_folded_parquets(tmp_path: Path, monkeypatch) -> None:
+def test_process_clip_cache_uses_strict_json(tmp_path: Path, monkeypatch) -> None:
     mod = _load_module()
+    cache_dir = tmp_path / "cache"
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(mod, "_decode_yuv", lambda *_args, **_kwargs: (16, 16, "h264"))
+    monkeypatch.setattr(mod, "_encode_dis", lambda *_args, **_kwargs: None)
+
+    def fake_run_vmaf(*args, **_kwargs) -> None:
+        args[5].write_text(
+            json.dumps(
+                {
+                    "frames": [
+                        {
+                            "frameNum": 0,
+                            "metrics": {
+                                "vmaf": float("nan"),
+                                "adm2": float("inf"),
+                                "motion2": float("-inf"),
+                            },
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(mod, "_run_vmaf_full", fake_run_vmaf)
+    mod._process_clip(
+        "clip-a",
+        tmp_path / "source.mp4",
+        tmp_path / "vmaf",
+        "version=vmaf_v0.6.1",
+        "vmaf_v0.6.1",
+        35,
+        cache_dir,
+        scratch,
+        "h264",
+        False,
+    )
+
+    cache = mod._cache_path(cache_dir, "clip-a", 35, "vmaf_v0.6.1")
+    raw = cache.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    metrics = json.loads(raw)["frames"][0]["metrics"]
+    assert metrics == {"adm2": None, "motion2": None, "vmaf": None}
+
+
+def _setup_full_features_run(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """Plant a two-clip corpus and command-line arguments for ``main``."""
     root = tmp_path / "konvid-1k"
     videos = root / "KoNViD_1k_videos"
     videos.mkdir(parents=True)
@@ -121,6 +170,12 @@ def test_main_writes_full_and_folded_parquets(tmp_path: Path, monkeypatch) -> No
             "2",
         ],
     )
+    return out_plain, out_folds
+
+
+def test_main_writes_full_and_folded_parquets(tmp_path: Path, monkeypatch) -> None:
+    mod = _load_module()
+    out_plain, out_folds = _setup_full_features_run(tmp_path, monkeypatch)
 
     with patch("subprocess.run", side_effect=_mock_subprocess_run):
         rc = mod.main()

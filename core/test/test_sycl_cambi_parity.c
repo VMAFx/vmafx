@@ -12,7 +12,7 @@
  * cambi.c (CPU scalar / AVX2 / AVX-512 / NEON) and by
  * integer_cambi_sycl.cpp::vmaf_fex_cambi_sycl (SYCL GPU port of the
  * multi-scale banding detector: luminance masking, topk
- * accumulation, temporal integration).  ADR-0049 § "bit-for-bit" notes
+ * accumulation, temporal integration).  ADR-0415 § "bit-for-bit" notes
  * the SYCL kernel is designed to match the CPU integer path.
  *
  * Prior state: test_integer_cambi_sycl.c was a smoke test only (the

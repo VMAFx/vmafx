@@ -223,7 +223,8 @@ against an in-memory span recorder (`internal/oteltest`):
 go test ./internal/app/bootstrap/ ./cmd/vmafx-tune/cmd/ ./pkg/ai/ ./cmd/vmafx-operator/ \
   -run 'OTel|Span|ServiceIdentity|HTTPTracing'
 # cgo packages need libvmaf on the link path, as in go-ci.yml:
-CGO_LDFLAGS=-L$PWD/core/build-cpu/src LD_LIBRARY_PATH=$PWD/core/build-cpu/src \
+CGO_LDFLAGS="-L$PWD/core/build-cpu/src -lvmaf -lm" \
+  LD_LIBRARY_PATH=$PWD/core/build-cpu/src \
   go test ./cmd/vmafx-server/ ./cmd/vmafx-controller/ ./cmd/vmafx-node/ ./cmd/vmafx-mcp/ \
   -run 'OTelWired|EmitsServerSpan|EmitsLinkedSpans|ToolCallEmitsSpan'
 ```

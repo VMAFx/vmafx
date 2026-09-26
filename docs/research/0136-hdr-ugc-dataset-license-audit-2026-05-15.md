@@ -163,7 +163,7 @@ Despite the attractive technical specifications (10-bit, multi-resolution, 124 G
 VMAF evaluation baseline), BVI-AOM's license explicitly restricts use to "developing future
 video coding standards" and "training or performance evaluation of test models in JVET and
 Alliance for Open Media." This restriction is incompatible with general vmaf-tune model
-training. The BVI-DVC corpus from the same Bristol VI Lab group is already ingested (PR #310,
+training. The BVI-DVC corpus from the same Bristol VI Lab group is already ingested (lusoris/vmaf#407,
 ADR-0310) under a research license; BVI-AOM adds no HDR content (it is confirmed SDR 10-bit)
 and carries a narrower license. Do not ingest BVI-AOM for the vmaf-tune pipeline.
 

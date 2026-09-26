@@ -5,15 +5,19 @@ Architecture, security model and operator runbook for the containerised
 self-hosted GitHub Actions runner that executes the `SYCL Parity (Arc A380)`
 check on the maintainer's workstation. Governing ADR:
 [ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md). Sibling page for the
-older, never-provisioned `gpu-full` runner design:
+separate, currently unprovisioned `gpu-full` runner design:
 [self-hosted-runner.md](self-hosted-runner.md).
 
-Why it exists: until this lane runs, no CI job has ever executed a SYCL
-kernel. `SYCL float_ssim Parity (Arc DG2-G10)` in
-`tests-and-quality-gates.yml` is gated on `vars.GPU_COVERAGE_ENABLED` (unset)
-and a `gpu-full` runner that was never registered, so the divergent
-ssimulacra2 blur change (#865) merged unnoticed (`docs/state.md` row
-`T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03`).
+Why it exists: the older `SYCL float_ssim Parity` job coupled Intel-only
+parity to the multi-capability `gpu-full` label and never supplied live kernel
+evidence. ADR-1177 gave Arc parity a dedicated capability. ADR-1319 removes
+the obsolete duplicate, making this workflow the sole hardware
+`float_ssim`-parity owner.
+
+**Current state (2026-09-25):** repository and organisation APIs return zero
+registered runners, `SYCL_ARC_RUNNER_ENABLED` is absent, and the documented
+user service/environment/state paths are absent on the workstation. The lane
+therefore skips safely; no current master run proves this hardware contract.
 
 ---
 
@@ -61,10 +65,12 @@ reused across jobs on the same host — `down -v` wipes it.
 
 - `runner-available` (hosted, `ubuntu-26.04`) runs
   [`scripts/ci/check-runner-available.sh`](../../scripts/ci/check-runner-available.sh)
-  and gates the self-hosted job through `needs:`.
+  and gates the self-hosted job through `needs:`. It requires an online runner
+  carrying the complete `self-hosted,linux,x64,sycl-arc` label set, not just
+  the custom label.
 - `SYCL Parity (Arc A380)` (self-hosted) checks that only the Arc is
   visible (`sycl-ls`), builds `-Denable_sycl=true -Denable_cuda=false
-  -Denable_float=true`, runs `meson test -C core/build --suite sycl`
+  -Denable_float=true`, runs `python3 scripts/ci/run_meson_test.py -- -C core/build --suite sycl`
   (23 tests), then `scripts/ci/cross_backend_parity_gate.py --backends cpu
   sycl --features float_ssim --gpu-id sycl:0x8086:0x56a5` against the
   [ADR-0234](../adr/0234-gpu-gen-ulp-calibration.md) table
@@ -320,7 +326,7 @@ docker compose -f dev/docker-compose.runner.yml down -v            # also drops 
 | Probe: `no self-hosted runner with label 'sycl-arc' is registered` while enabled | container not running (supervisor paused, stopped, or waiting on token) | Step 3 supervisor setup, or resume (Step 5) |
 | `sycl-ls` shows no `level_zero:gpu` inside the container | wrong node (PCI re-enumeration), missing `seccomp=unconfined`, or a NEO/kernel ABI mismatch | Step 2; [ADR-0541](../adr/0541-dev-container-sycl-hip-runtime-fix.md) |
 | `config.sh` / checkout: `Permission denied` under `/actions-runner/_work` | scratch volume created by an older image with a root-owned mount point | `docker compose ... down -v`, rebuild (Step 1) |
-| job queued forever | a runner was registered without `x64` or `sycl-arc` | Step 6 remove, re-register |
+| hosted probe rejects a registered runner | it lacks one of `self-hosted`, `linux`, `x64`, `sycl-arc`, is offline, or the token cannot list it | Correct the registration or token; the self-hosted job is deliberately not dispatched |
 
 ---
 
@@ -335,7 +341,8 @@ docker compose -f dev/docker-compose.runner.yml down -v            # also drops 
 | `dev/scripts/runner-entrypoint.sh` | `config.sh --ephemeral --unattended` then `run.sh`; any other argv is exec'd (smoke tests) |
 | `dev/scripts/arc-render-node.sh` | resolves the single Intel render node from `/sys/class/drm` |
 | `scripts/ci/check-runner-available.sh` | hosted probe; tests in `scripts/ci/tests/test-runner-available.sh` |
-| `scripts/ci/tests/test-runner-available.sh` | unit suite for `check-runner-available.sh` |
+| `scripts/ci/tests/test-runner-available.sh` | unit suite for complete-label, online/offline and API-failure behavior |
+| `scripts/ci/test_self_hosted_runner_workflow_contract.py` | executable workflow/aggregator ownership and lane-switch contract |
 | `scripts/ci/tests/test-runner-supervisor.sh` | unit suite for `runner-supervisor.sh` with stubbed `gh` and `docker` |
 | `.github/workflows/sycl-parity.yml` | the two jobs |
 | `.github/actionlint.yaml` | declares the `sycl-arc` / `gpu-full` labels for actionlint |

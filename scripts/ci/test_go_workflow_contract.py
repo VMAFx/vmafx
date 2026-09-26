@@ -5,30 +5,52 @@
 
 from __future__ import annotations
 
-import json
-import re
-import shutil
 import sys
-import textwrap
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.lib.safe_subprocess import run as run_command
-
-# A hang detector, not a timing assertion: these subprocesses finish in tens of
-# milliseconds locally, but a loaded CI runner has blown a 10-second cap and the
-# TimeoutExpired then reads as a real test failure (bug ledger L-76). 120s still
-# catches a genuine hang long before the job's own timeout.
-SUBPROCESS_TIMEOUT_S = 120
+from scripts.ci.required_aggregator_harness import run_required_aggregator
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 GO_CHECK = "go vet + go test"
+LIBVMAF_GO = ROOT / "pkg" / "libvmaf" / "libvmaf.go"
+MAKEFILE = ROOT / "Makefile"
+SERVER_DOCKERFILE = ROOT / "Dockerfile.go-server"
+NODE_DOCKERFILE = ROOT / "docker" / "Dockerfile.node"
+CONTROLLER_DOCKERFILE = ROOT / "docker" / "Dockerfile.controller"
+DEV_CONTAINERFILE = ROOT / "dev" / "Containerfile"
 
 
 class GoWorkflowContract(unittest.TestCase):
+    def test_cgo_linking_selects_the_fork_explicitly(self) -> None:
+        wrapper = LIBVMAF_GO.read_text(encoding="utf-8")
+        workflow = (WORKFLOWS / "go-ci.yml").read_text(encoding="utf-8")
+        makefile = MAKEFILE.read_text(encoding="utf-8")
+
+        self.assertNotRegex(wrapper, r"(?m)^#cgo\s+LDFLAGS:")
+        self.assertIn(
+            "CGO_LDFLAGS: -L${{ github.workspace }}/core/build-cpu/src -lvmaf -lm",
+            workflow,
+        )
+        self.assertIn(
+            'CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm"',
+            makefile,
+        )
+
+        for container in (SERVER_DOCKERFILE, NODE_DOCKERFILE, DEV_CONTAINERFILE):
+            with self.subTest(container=container.name):
+                source = container.read_text(encoding="utf-8")
+                self.assertIn('CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm"', source)
+
+        controller = CONTROLLER_DOCKERFILE.read_text(encoding="utf-8")
+        self.assertIn(
+            'CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lvmaf -lm"',
+            controller,
+        )
+
     def test_ready_pr_and_master_runs_are_routed_inside_the_job(self) -> None:
         workflow = (WORKFLOWS / "go-ci.yml").read_text(encoding="utf-8")
         trigger = workflow.split("\nconcurrency:", 1)[0]
@@ -54,71 +76,59 @@ class GoWorkflowContract(unittest.TestCase):
             self.assertNotIn("continue-on-error", step)
         self.assertIn("if: steps.impact.outputs.go_checks != 'true'", workflow)
 
-    def _aggregate(self, go_conclusion: str | None) -> list[str]:
-        text = (WORKFLOWS / "required-aggregator.yml").read_text(encoding="utf-8")
-        script = textwrap.dedent(text.split("          script: |\n", 1)[1])
-        required_block = re.search(r"const required = \[(.*?)\];", script, re.DOTALL)
-        if required_block is None:
-            self.fail("required aggregator must declare its check list")
-        names = re.findall(r"'([^']+)'", required_block.group(1))
-        self.assertIn(GO_CHECK, names)
-        checks = [
-            {"name": name, "conclusion": go_conclusion if name == GO_CHECK else "success"}
-            for name in names
-            if name != GO_CHECK or go_conclusion is not None
-        ]
-        node = shutil.which("node")
-        if node is None:
-            self.fail("Node.js is needed to exercise the Actions JavaScript")
-        driver = r"""
-const fs = require('fs');
-const input = JSON.parse(fs.readFileSync(0, 'utf8'));
-const now = Date.now();
-let clock = now;
-class VirtualDate extends Date { static now() { clock += 180000; return clock; } }
-const checks = input.checks.map(c => ({...c, status: 'completed', started_at: new Date(now).toISOString()}));
-const failures = [];
-const github = {rest: {
-  actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}})},
-  checks: {listForRef: async () => ({data: {check_runs: checks}})},
-}};
-const context = {eventName: 'pull_request', repo: {owner: 'test', repo: 'test'},
-  payload: {pull_request: {head: {ref: 'fix/example', sha: 'abc'}}}};
-const core = {info: () => {}, setFailed: message => failures.push(message)};
-const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', input.script)(
-  github, context, core, {env: {GITHUB_RUN_ID: '1'}}, VirtualDate, callback => callback()
-).then(() => process.stdout.write(JSON.stringify(failures))).catch(error => {console.error(error); process.exitCode = 1;});
-"""
-        result = run_command(
-            [node, "-e", driver],
-            allowed_executables=(node,),
-            input_data=json.dumps({"script": script, "checks": checks}),
-            text=True,
-            capture_output=True,
-            check=True,
-            timeout_seconds=SUBPROCESS_TIMEOUT_S,
-        )
-        payload: object = json.loads(result.stdout)
-        if not isinstance(payload, list):
-            self.fail("aggregator driver must return a list of failure messages")
-        failures: list[str] = []
-        for message in payload:
-            if not isinstance(message, str):
-                self.fail("aggregator failure messages must be strings")
-            failures.append(message)
-        return failures
+    def test_go_fix_modernization_gate_is_pinned(self) -> None:
+        workflow = (WORKFLOWS / "go-ci.yml").read_text(encoding="utf-8")
+        makefile = MAKEFILE.read_text(encoding="utf-8")
+
+        # 1. Exact command plus fail-closed execution.  Match the named step and
+        # its complete run line so `echo ...` and `... || true` cannot satisfy
+        # this contract.
+        steps = workflow.split("\n      - ")[1:]
+        fix_steps = [s for s in steps if s.splitlines()[0] == "name: go fix (diff)"]
+        self.assertEqual(len(fix_steps), 1, "expected exactly one go fix -diff step")
+        fix_step = fix_steps[0]
+        self.assertIn("        run: go fix -diff ./...", fix_step.splitlines())
+
+        # 2. Impact condition and no error suppression.
+        self.assertIn("if: steps.impact.outputs.go_checks == 'true'", fix_step)
+        self.assertNotIn("continue-on-error", fix_step)
+
+        # 3. Ordering: after setup-go, before native dependency/build work, before vet/test
+        setup_idx = workflow.index("uses: actions/setup-go@")
+        fix_idx = workflow.index("go fix -diff ./...")
+        native_idx = workflow.index("Install meson + ninja for libvmaf build")
+        vet_idx = workflow.index("go vet ./...")
+        test_idx = workflow.index("go test ./...")
+
+        self.assertLess(setup_idx, fix_idx, "go fix must run after setup-go")
+        self.assertLess(fix_idx, native_idx, "go fix must run early, before native libvmaf build")
+        self.assertLess(native_idx, vet_idx, "native build must precede go vet")
+        self.assertLess(vet_idx, test_idx, "go vet must precede go test")
+
+        # 4. Make targets and exact commands
+        self.assertRegex(makefile, r"(?m)^\s*go-fix:")
+        self.assertRegex(makefile, r"(?m)^\s*go-fix-check:")
+        fix_recipe = makefile.split("\ngo-fix:\n", 1)[1].split("\n\n", 1)[0]
+        check_recipe = makefile.split("\ngo-fix-check:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("\tgo fix ./...", fix_recipe.splitlines())
+        self.assertIn("\tgo fix -diff ./...", check_recipe.splitlines())
+        self.assertNotIn("CGO_LDFLAGS", fix_recipe)
+        self.assertNotIn("CGO_LDFLAGS", check_recipe)
+        phony_section = makefile.split(".PHONY:", 1)[1].split("\n\n", 1)[0]
+        phony_targets = set(phony_section.replace("\\", " ").split())
+        self.assertIn("go-fix", phony_targets)
+        self.assertIn("go-fix-check", phony_targets)
 
     def test_failed_go_scan_blocks_otherwise_green_checks(self) -> None:
-        failures = self._aggregate("failure")
+        failures = run_required_aggregator(GO_CHECK, "failure")
         self.assertEqual(len(failures), 1)
         self.assertIn(GO_CHECK + ": failure", failures[0])
 
     def test_successful_go_checks_pass(self) -> None:
-        self.assertEqual(self._aggregate("success"), [])
+        self.assertEqual(run_required_aggregator(GO_CHECK, "success"), [])
 
     def test_unreported_check_keeps_existing_absence_semantics(self) -> None:
-        self.assertEqual(self._aggregate(None), [])
+        self.assertEqual(run_required_aggregator(GO_CHECK, None), [])
 
 
 if __name__ == "__main__":

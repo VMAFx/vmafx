@@ -37,6 +37,114 @@ def hook_config(identifier: str) -> str:
     return CONFIG.read_text().split(f"      - id: {identifier}\n", 1)[1].split("      - id:", 1)[0]
 
 
+def fake_checker_source() -> str:
+    """Return the deterministic mypy stand-in used by the Git fixtures."""
+    return (
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib, sys\n"
+        "args = [a for a in sys.argv[1:] if not a.startswith('--')]\n"
+        'pathlib.Path(os.environ["CHECKED_PATH"]).write_text(json.dumps(args))\n'
+        "with open(os.environ['CHECKED_CALLS'], 'a') as handle:\n"
+        "    handle.write(json.dumps(sys.argv[1:]) + chr(10))\n"
+        "strict = False\n"
+        "for cfg_name in ('mypy.ini', '.mypy.ini', 'pyproject.toml', 'setup.cfg'):\n"
+        "    cfg = pathlib.Path(cfg_name)\n"
+        "    if cfg.is_file():\n"
+        "        for line in cfg.read_text().splitlines():\n"
+        "            if line.strip() in ('strict = true', 'strict = True'):\n"
+        "                strict = True\n"
+        "                break\n"
+        "        break\n"
+        "found = 0\n"
+        "status = int(os.environ.get('CHECKER_STATUS', '0'))\n"
+        "if 'baseline' in os.getcwd():\n"
+        "    status = int(os.environ.get('BASELINE_CHECKER_STATUS', str(status)))\n"
+        "for name in args:\n"
+        "    text = pathlib.Path(name).read_text()\n"
+        "    if 'BLOCKER' in text:\n"
+        "        status = 2\n"
+        "    for number, line in enumerate(text.splitlines(), start=1):\n"
+        "        if 'BAD' in line or (strict and 'STRICT' in line):\n"
+        "            found += 1\n"
+        "            tag = 'BAD' if 'BAD' in line else 'STRICT'\n"
+        "            message = line.split(tag, 1)[1].strip(': ') or "
+        "('strict finding' if tag == 'STRICT' else 'planted finding')\n"
+        "            print(f'{name}:{number}: error: {message}  [assignment]')\n"
+        'print("CHECKED", *args)\n'
+        "raise SystemExit(status or (1 if found else 0))\n"
+    )
+
+
+def clean_fixture_environment(mypy: str) -> dict[str, str]:
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("GIT_", "PRE_COMMIT_"))
+    }
+    environment.update(
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL=os.devnull,
+        PATH=f"{Path(mypy).parent}{os.pathsep}{environment.get('PATH', '')}",
+    )
+    return environment
+
+
+def fixture_git(root: Path, environment: dict[str, str], *args: str) -> TextCommandResult:
+    return run_command(
+        [GIT, *args],
+        allowed_executables=(GIT,),
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=60,
+    )
+
+
+def fixture_write(root: Path, relative: str, content: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def run_dual_module_config_fixture(mypy: str) -> TextCommandResult:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory) / "repo"
+        root.mkdir()
+        environment = clean_fixture_environment(mypy)
+        fixture_git(root, environment, "init", "-q", "--initial-branch=master")
+        fixture_git(root, environment, "config", "user.name", "Fixture")
+        fixture_git(root, environment, "config", "user.email", "fixture@example.invalid")
+        fixture_write(
+            root,
+            "pyproject.toml",
+            '[tool.mypy]\nstrict = false\nmypy_path = "ai/src"\nexclude = ["ai/src/"]\n',
+        )
+        fixture_write(root, "ai/__init__.py", "")
+        fixture_write(root, "ai/tests/__init__.py", "")
+        fixture_write(root, "ai/src/vmaf_train/__init__.py", "value: int = 1\n")
+        fixture_write(root, "ai/tests/canonical.py", "from vmaf_train import value\n")
+        fixture_write(root, "ai/tests/legacy.py", "from ai.src.vmaf_train import value\n")
+        fixture_git(root, environment, "add", ".")
+        fixture_git(root, environment, "commit", "-qm", "base")
+        fixture_git(root, environment, "update-ref", "refs/remotes/origin/master", "HEAD")
+        fixture_git(root, environment, "switch", "-qc", "feature")
+        fixture_write(root, "pyproject.toml", (ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        fixture_git(root, environment, "add", "pyproject.toml")
+        fixture_git(root, environment, "commit", "-qm", "change mypy configuration")
+        return run_command(
+            [sys.executable, str(SCRIPT)],
+            allowed_executables=(sys.executable,),
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=300,
+        )
+
+
 class MypyScope(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -63,28 +171,10 @@ class MypyScope(unittest.TestCase):
         self.receipt = self.directory / "checked.json"
         self.calls = self.directory / "calls.jsonl"
         # A stand-in for mypy: it records its argument vector, and reports a
-        # finding for every file whose content carries the BAD marker. Findings
-        # therefore follow file content, so the same stand-in produces the
-        # branch's findings at HEAD and the inherited ones at the merge base.
-        self.checker.write_text(
-            f"#!{sys.executable}\n"
-            "import json, os, pathlib, sys\n"
-            "args = [a for a in sys.argv[1:] if not a.startswith('--')]\n"
-            'pathlib.Path(os.environ["CHECKED_PATH"]).write_text(json.dumps(args))\n'
-            "with open(os.environ['CHECKED_CALLS'], 'a') as handle:\n"
-            "    handle.write(json.dumps(sys.argv[1:]) + chr(10))\n"
-            "found = 0\n"
-            "for name in args:\n"
-            "    text = pathlib.Path(name).read_text()\n"
-            "    for number, line in enumerate(text.splitlines(), start=1):\n"
-            "        if 'BAD' in line:\n"
-            "            found += 1\n"
-            "            message = line.split('BAD', 1)[1].strip(': ') or 'planted finding'\n"
-            "            print(f'{name}:{number}: error: {message}  [assignment]')\n"
-            'print("CHECKED", *args)\n'
-            "status = int(os.environ.get('CHECKER_STATUS', '0'))\n"
-            "raise SystemExit(status or (1 if found else 0))\n"
-        )
+        # finding for every file whose content carries the BAD marker. If
+        # pyproject.toml declares strict = true, lines with STRICT are also
+        # reported as findings to exercise configuration changes.
+        self.checker.write_text(fake_checker_source())
         self.checker.chmod(0o700)
         self.environment["PATH"] = str(binary) + os.pathsep + self.environment["PATH"]
         self.environment["CHECKED_PATH"] = str(self.receipt)
@@ -274,6 +364,15 @@ class MypyScope(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("without reporting a finding", result.stderr)
 
+    def test_checker_blocker_with_a_finding_fails_closed(self) -> None:
+        """Mypy's blocker status is fatal even after it printed a source finding."""
+        self.write("scripts/owned.py", "planted: int = 1  # BAD\n")
+        self.commit("owned source with finding")
+        self.environment["CHECKER_STATUS"] = "2"
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("head mypy exited 2 with a blocking error", result.stderr)
+
     def test_missing_master_or_checker_fails_closed(self) -> None:
         self.git("update-ref", "-d", "refs/remotes/origin/master")
         self.assertEqual(self.run_hook().returncode, 2)
@@ -289,6 +388,33 @@ class MypyScope(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("no ai/scripts Python files", result.stdout)
         self.assertFalse(self.receipt.exists())
+
+    def test_explicit_ci_base_preserves_push_delta_inheritance(self) -> None:
+        """Hosted push checks may compare with event.before without changing local defaults."""
+        self.write("scripts/owned.py", 'inherited: int = "debt"  # BAD\n')
+        self.commit("push range starts with inherited finding")
+        push_base = self.git("rev-parse", "HEAD")
+        self.write(
+            "scripts/owned.py",
+            'inherited: int = "debt"  # BAD\nclean: int = 1\n',
+        )
+        self.commit("push range keeps finding and adds clean line")
+
+        default_result = self.run_hook()
+        self.assertEqual(
+            default_result.returncode, 1, default_result.stdout + default_result.stderr
+        )
+
+        self.environment["VMAFX_MYPY_BASE_REF"] = push_base
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 inherited from the merge base, not reported", result.stdout)
+
+    def test_invalid_explicit_ci_base_fails_closed(self) -> None:
+        self.environment["VMAFX_MYPY_BASE_REF"] = "missing-ci-base"
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("mypy scope check failed", result.stderr)
 
     def test_inherited_finding_is_not_the_branch_bug(self) -> None:
         """Editing a file that already had a finding must not fail the push."""
@@ -361,6 +487,165 @@ class MypyScope(unittest.TestCase):
         self.assertIn("pass_filenames: false", scope)
         self.assertNotIn("\n        files:", scope)
 
+    def test_branch_only_mypy_config_change_evaluates_baseline_under_branch_config(self) -> None:
+        """A branch-only [tool.mypy] change evaluates baseline under the branch's configuration."""
+        self.write("pyproject.toml", "[tool.mypy]\nstrict = false\n")
+        self.write("scripts/debt.py", "unchanged: int = 1  # STRICT\n")
+        self.commit("base with strict-only debt")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write("pyproject.toml", "[tool.mypy]\nstrict = true\n")
+        self.commit("branch only changes [tool.mypy] to strict")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 inherited from the merge base, not reported", result.stdout)
+        checked = json.loads(self.receipt.read_text())
+        self.assertIn("scripts/debt.py", checked)
+
+    def test_branch_only_mypy_config_reproduces_self_block_without_copied_config(self) -> None:
+        """Baseline evaluated under base config attributes existing findings to the branch (the self-block)."""
+        self.write("pyproject.toml", "[tool.mypy]\nstrict = false\n")
+        self.write("scripts/debt.py", "unchanged: int = 1  # STRICT\n")
+        self.commit("base with strict-only debt")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write("pyproject.toml", "[tool.mypy]\nstrict = true\n")
+        self.commit("branch only changes [tool.mypy] to strict")
+        # Run pre-push-mypy with copyfile patched out to reproduce the self-block
+        result = run_command(
+            [
+                sys.executable,
+                "-c",
+                "import unittest.mock as m, shutil, sys\n"
+                "import runpy\n"
+                "m.patch('shutil.copyfile', lambda s, d: None).start()\n"
+                f"runpy.run_path('{SCRIPT}', run_name='__main__')\n",
+            ],
+            allowed_executables=(sys.executable,),
+            cwd=self.root,
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=300,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("1 finding(s) this branch introduces:", result.stderr)
+        self.assertIn("scripts/debt.py", result.stderr)
+
+    def test_branch_mypy_config_change_preserves_merge_base_source_files(self) -> None:
+        """Branch config change applies to merge-base source files, not modified branch source files."""
+        self.write("pyproject.toml", "[tool.mypy]\nstrict = false\n")
+        self.write("scripts/api.py", "def value() -> int:\n    return 1\n")
+        self.write("scripts/debt.py", "unchanged: int = 1  # STRICT\n")
+        self.commit("base")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write("pyproject.toml", "[tool.mypy]\nstrict = true\n")
+        self.write("scripts/api.py", "def value() -> int:\n    return 2  # BAD\n")
+        self.commit("config change plus introduced source bug")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("scripts/api.py", result.stderr)
+        self.assertNotIn("scripts/debt.py", result.stderr)
+
+    def test_unrelated_pyproject_change_does_not_trigger_full_check(self) -> None:
+        """Non-mypy changes in pyproject.toml do not trigger full scoped re-check."""
+        self.write(
+            "pyproject.toml",
+            "[tool.mypy]\nstrict = false\n\n[tool.black]\nline-length = 88\n",
+        )
+        self.commit("base pyproject")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write(
+            "pyproject.toml",
+            "[tool.mypy]\nstrict = false\n\n[tool.black]\nline-length = 100\n",
+        )
+        self.commit("change black config only")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no ai/scripts Python files differ", result.stdout)
+        self.assertFalse(self.receipt.exists())
+
+    def test_mypy_config_fails_closed_on_invalid_toml(self) -> None:
+        """Malformed TOML in pyproject.toml fails closed."""
+        self.write("pyproject.toml", "[tool.mypy]\nstrict = false\n")
+        self.commit("base")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write("pyproject.toml", "[tool.mypy\ninvalid toml = =")
+        self.commit("malformed pyproject")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("pyproject.toml is not valid TOML", result.stderr)
+
+    def test_baseline_checker_failure_fails_closed(self) -> None:
+        """Mypy crashing in baseline worktree without findings fails closed."""
+        self.write("scripts/owned.py", "value: int = 1\n")
+        self.commit("base")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write("scripts/owned.py", "value: int = 2  # BAD\n")
+        self.commit("head")
+        self.environment["BASELINE_CHECKER_STATUS"] = "3"
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("baseline mypy exited 3 without reporting a finding", result.stderr)
+
+    def test_baseline_blocker_with_a_finding_fails_closed(self) -> None:
+        """A baseline blocker cannot become inherited debt merely because it printed a finding."""
+        self.write("scripts/owned.py", "value: int = 1  # BAD\n")
+        self.commit("base with finding")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write("scripts/owned.py", "value: int = 1  # BAD\nextra: int = 2\n")
+        self.commit("head preserves finding")
+        self.environment["BASELINE_CHECKER_STATUS"] = "2"
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("baseline mypy exited 2 with a blocking error", result.stderr)
+
+    def test_earlier_exit_1_does_not_mask_later_blocker_across_mypy_groups(self) -> None:
+        """An exit 1 from package-base pass does not mask exit 2 from plain pass."""
+        self.write("ai/src/aiutils/mod.py", "planted: int = 1  # BAD\n")
+        self.write("scripts/owned.py", "planted: int = 1  # BLOCKER\n")
+        self.commit("both mypy groups: based has finding, plain has blocker")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("head mypy exited 2 with a blocking error", result.stderr)
+        self.assertIn("ai/src/aiutils/mod.py", result.stderr)
+
+    def test_earlier_blocker_does_not_get_masked_by_later_exit_1_across_mypy_groups(self) -> None:
+        """An exit 2 from package-base pass is not overwritten by exit 1 from plain pass."""
+        self.write("ai/src/aiutils/mod.py", "planted: int = 1  # BLOCKER\n")
+        self.write("scripts/owned.py", "planted: int = 1  # BAD\n")
+        self.commit("both mypy groups: based has blocker, plain has finding")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("head mypy exited 2 with a blocking error", result.stderr)
+        self.assertIn("scripts/owned.py", result.stderr)
+
+    def test_baseline_earlier_exit_1_does_not_mask_later_blocker_across_mypy_groups(self) -> None:
+        """In baseline worktree, exit 1 from package-base pass does not mask exit 2 from plain pass."""
+        self.write("ai/src/aiutils/mod.py", "planted: int = 1  # BAD\n")
+        self.write("scripts/owned.py", "planted: int = 1  # BLOCKER\n")
+        self.commit("base with both groups: based has finding, plain has blocker")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write("ai/src/aiutils/mod.py", "planted: int = 1  # BAD\nhead: int = 1\n")
+        self.write("scripts/owned.py", "planted: int = 1  # BAD\n")
+        self.commit("head touches both with normal findings")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("baseline mypy exited 2 with a blocking error", result.stderr)
+        self.assertIn("ai/src/aiutils/mod.py", result.stderr)
+
+    def test_branch_deleted_mypy_config_unlinks_baseline_config(self) -> None:
+        """Deleting a mypy config file on branch unlinks it from the baseline worktree."""
+        self.write("pyproject.toml", "[tool.mypy]\nstrict = true\n")
+        self.write("mypy.ini", "[mypy]\nstrict = false\n")
+        self.write("scripts/debt.py", "unchanged: int = 1  # STRICT\n")
+        self.commit("base with mypy.ini overriding pyproject")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.git("rm", "mypy.ini")
+        self.commit("branch deletes mypy.ini")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 inherited from the merge base, not reported", result.stdout)
+
 
 @unittest.skipUnless(MYPY, "mypy is not installed")
 class MypyModuleIdentity(unittest.TestCase):
@@ -382,6 +667,37 @@ class MypyModuleIdentity(unittest.TestCase):
             timeout_seconds=60,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_config_change_resolves_ai_source_root_once(self) -> None:
+        """A full-scope config change must not load ai/src under two module names."""
+        assert MYPY is not None
+        result = run_dual_module_config_fixture(MYPY)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Source file found twice", result.stdout + result.stderr)
+
+    def test_sidecar_tests_have_no_untyped_decorators(self) -> None:
+        """Pytest decorators under --no-site-packages must be typed aliases (ADR-1261)."""
+        assert MYPY is not None
+        result = run_command(
+            [
+                MYPY,
+                *MYPY_ISOLATION_ARGS,
+                "ai/sidecar/tests/test_online_trainer.py",
+                "ai/sidecar/tests/test_socket_permissions.py",
+            ],
+            allowed_executables=(MYPY,),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=60,
+        )
+        # Inherited baseline debt exists, but no untyped-decorator errors may be present.
+        self.assertNotIn(
+            "untyped-decorator",
+            result.stdout + result.stderr,
+            f"Found untyped decorator findings under hermetic mypy:\n{result.stdout}\n{result.stderr}",
+        )
 
 
 if __name__ == "__main__":

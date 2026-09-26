@@ -17,7 +17,7 @@ when rebasing Windows discovery block from Netflix PR #1472.
 - every C++ target linked into libvmaf passes `cpp_args : vmaf_cppflags_common` (`core/src/meson.build`). No per-target define lists.
 - missing -> no `-fvisibility=hidden` -> internal symbols exported from `libvmaf.so` (72 did, until 2026-09-18); also no `HAVE_CUDA` / `HAVE_SYCL` -> `VmafPicturePrivate` layout skew (PR #840).
 - `vmaf_cppflags_common` derived after last `vmaf_cflags_common +=`; new defines go before that line.
-- gate: `meson test -C build check_exported_symbols` (`core/test/check_exported_symbols.py`).
+- gate: `python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build check_exported_symbols` (`core/test/check_exported_symbols.py`).
 
 ## Mandatory safety invariants
 
@@ -30,6 +30,12 @@ Preserve first-error diagnostic, streaming/peek/reset
 contract, UTF-8 validation and private getter const qualifiers. Dedicated
 `core/test/test_pdjson.c` suite covers these contracts. Never restore the old
 blanket NOLINT; only file-wide exception is ADR-1138's C `NULL` compatibility.
+`pdjson.h` explicitly assigns sequential integer values to all enumerators in
+`enum json_type` (`JSON_NONE = 0` .. `JSON_NULL = 11`), satisfying MISRA C++ /
+AV Rule 145 (CodeQL `cpp/irregular-enum-init`, Alert 1064) while preserving the
+public ABI. Dedicated `core/test/test_pdjson.c::test_enum_json_type_abi_contract`
+pins this contract. **Rebase-sensitive:** do not remove sequential assignments
+or alter enumerator order on upstream sync or rebase.
 
 Following invariants established during 2026-05-16 memory-safety
 audit (findings #7, #8, #10). Every PR that touches affected files — or
@@ -141,8 +147,8 @@ locale has been restored/freed; that = macOS-only SIGSEGV shape for
 
 `core/src/metadata_handler.cpp` (previously `metadata_handler.c`) = first
 C++20 internal implementation TU. `metadata_handler.h` carries `extern "C"`
-guards that allow `feature_collector.c` (plain C file) to include header
-and call three functions without link-name-mangling mismatch.
+guards that preserve C linkage for C and C++ callers, including
+`feature_collector.cpp`, without link-name-mangling mismatch.
 
 Never:
 
@@ -252,12 +258,12 @@ initialisers where cast already spells type. These match checks
 enabled by ADR-0915; deviating reintroduces warnings that touched-file
 rule (ADR-0141) requires discharging in same PR.
 
-### 10. Vendored libsvm — three fork patches must not regress on sync (ADR-0889)
+### 10. Vendored libsvm — four fork patches must not regress on sync (ADR-0889, Research-2094)
 
 `core/src/svm.cpp` + `core/src/svm.h` = verbatim vendored copy of
 upstream libsvm 3.24 (Chih-Chung Chang / Chih-Jen Lin), wrapped in
 file-level `NOLINTBEGIN` / `NOLINTEND` cordon so fork's
-touched-file lint-clean rule does not re-flow vendored body. Three
+touched-file lint-clean rule does not re-flow vendored body. Four
 fork-local patch families live inside that cordon and must survive any
 future upstream sync:
 
@@ -285,6 +291,15 @@ future upstream sync:
    `fast`). *Cite sanitizer-real-bug-fixes changelog and ADR-0889
    in any commit touching these guards.*
 
+4. **Solver RAII lifecycle and loop safety (Research-2094)** — `Solver`
+   and `Solver_NU` manage working heap arrays (`p`, `y`, `alpha`,
+   `alpha_status`, `active_set`, `G`, `G_bar`) via idempotent
+   `solve_cleanup()` invoked by `solve_finish()`, `~Solver()`, and entry
+   of `solve_setup()`. Deleted copy/assignment operations prevent shallow
+   copying and double-free. In `parse_support_vectors()`, support-vector
+   parsing replaces outer `for` loop counter mutation with bounded `while`
+   loop verifying sentinel termination. Eliminates CodeQL alerts 1222–1226.
+
 Additionally:
 
 - `model->free_sv = 1;` at end of `parse_support_vectors` is the
@@ -310,6 +325,13 @@ use `vmaf_log(VMAF_LOG_LEVEL_{ERROR,WARNING,INFO,DEBUG}, fmt, ...)`
 declared in [`log.h`](log.h). C++ TUs include header inside an
 `extern "C" { }` block — see `core/src/sycl/common.cpp` and
 `core/src/sycl/dispatch_strategy.cpp` for pattern.
+
+**BUG-048 format regression lock:** the diagnostics guarded by
+`core/test/test_vmaf_log_callsite_format.py` are one complete record per call.
+Keep their trailing `\n`; keep the CUDA initialization message bodies free of
+`Error:` because `VMAF_LOG_LEVEL_ERROR` already renders that severity. This
+includes the original `9d57a93bf` sites and the later second CUDA-init failure
+path.
 
 Exceptions — direct stream writes are correct in these cases:
 
@@ -383,15 +405,36 @@ contract; `core/test/test_picture_pool_error_paths.c`,
 `test_picture_pool_cpp_error_paths.c` and `test_gpu_picture_pool_partial_init.c`
 pin it.
 
-`vmaf_gpu_picture_pool_init` keeps one behaviour verbatim from its old ladder:
-on `malloc` failure it returns 0 with `*pool == nullptr`, because the old
-`goto fail` skipped every `err` assignment. Latent defect, preserved on purpose
-by a structural-only change. Fix it in its own commit with a regression test.
+`vmaf_gpu_picture_pool_init` returns `-ENOMEM` on `malloc` failure with `*pool == nullptr`.
+Never return success (`0`) or leave `*pool` un-cleared on pool struct or picture array
+allocation failure. Pinned by `core/test/test_gpu_picture_pool_alloc_failure.c` (#1455).
 
 `predict.c` and `interop/pelorus_interop.c` hold scoring arithmetic. Helpers
 there were cut at statement boundaries only. Never split one arithmetic
 expression across a helper, and never reorder an accumulation: FMA contraction
 and re-association both move scores (ADR-1253).
+
+`predict.c::piecewise_linear_mapping` rejects non-finite input before writing
+its `0.0` initialization (ADR-1302). Every ordered segment comparison is false
+for NaN, so moving that initialization back above the guard converts a failed
+model computation into a successful zero prediction. The production path also
+routes the post-denormalization, polynomial and piecewise results through
+`predict_validate_finite`; it emits one warning naming the frame and value and
+returns before collector publication. The regressions require the caller-owned
+output to remain unchanged on `-EINVAL`, no model score in the collector, and
+exactly one diagnostic rather than one warning per mapping segment. The
+pure linear, piecewise, and bitwise-equality helpers live in
+`predict_internal.h` as `static inline` definitions shared by `predict.c` and
+`test_predict.c`; keep their expression text and evaluation order identical.
+The test links the production predictor for end-to-end scoring and checks its
+real `vmaf_log` output in `test_predict_nonfinite_log_output.py`. Never restore
+the old `#include "predict.c"` or `VMAF_PREDICT_TEST_NONFINITE_LOG` override:
+that created a second static call graph and hid the production diagnostic.
+Meson owns the production TU through `predict_c_lib`: `libvmaf` extracts that
+object and private-source test binaries link `predict_c_dependency`. Never put
+`predict.c` back in `libvmaf_sources` or a test source list. Whole-build CodeQL
+coalesces the repeated external definitions but retains an orphan copy of the
+private scan graph, and compiling the TU 53 times also wastes build capacity.
 
 Two `interop/pelorus_interop.c` invariants that the split introduced, both
 pinned by the ADR-1142 clang-tidy ratchet (the file's allowance is 7):
@@ -439,6 +482,33 @@ these two paths must stay consistent.
 **Rebase-sensitive**: any branch that re-opens or modifies
 `VMAF_FEATURE_EXTRACTOR_PREV_REF` block in `threaded_extract_batch_func`
 must preserve both unref-before-memset and zero-f->prev_ref.
+
+### SYCL shared uploads finish before either picture cleanup returns (BUG-040)
+
+`vmaf_sycl_shared_frame_upload()` reads the caller's host-backed reference and
+distorted pictures asynchronously on the in-order `copy_queue`. Its saved
+`last_upload_event` is the final distorted-plane copy, so waiting on that one
+event also orders every earlier reference and distorted copy without draining
+the independent compute queue.
+
+Both ownership exits in `libvmaf.c` must preserve that wait:
+
+- `read_pictures_frame_cleanup()` waits before its direct picture unrefs.
+- `threaded_read_pictures_batch()` waits after enqueue while the caller's
+  original counted references are still live, then unrefs those references.
+  The worker may finish and drop its own copies before the wait, so moving the
+  barrier to `read_pictures_frame_cleanup_after_batch()` is too late: the
+  release callback can already have poisoned or recycled the host storage.
+
+Do not replace either event wait with a global queue/device wait, and do not
+remove the threaded wait because one timing sample happened to let DMA finish
+before the worker. In a combined CUDA+SYCL build, the wait must remain before
+CUDA's host-cleanup early return. `core/test/test_sycl_cuda_serial_upload_lifetime.c`
+pins that compile combination through the public API with `n_threads=0` and
+`n_threads=1`; the 4K release callback poisons host storage as soon as its final
+reference drops and PSNR proves DMA already consumed the original pixels.
+`testdata/test_sycl_4k_repeat_determinism.py` then covers 20 serial and 20
+`--threads 1` runs against the full normalized score report.
 
 ### framesync producer-error paths must call vmaf_framesync_abort (ADR-1092)
 
@@ -494,6 +564,16 @@ XML / JSON writers in `output.cpp` iterate `pool_report_order[]`, **not**
 `pooled_metrics` schema by accident; add method to that table only as
 deliberate, documented output change.
 
+### Bootstrap score names have one owner (ADR-0480)
+
+`bootstrap_names.h` owns the four collection-score suffixes and
+`BOOTSTRAP_NAME_BUF_SZ()`. Both `libvmaf.c`'s pooled-score path and
+`predict.c`'s per-index append path include that header and use its symbols.
+Do not restore translation-unit-local string literals: the two paths would
+again be able to publish different feature names. The loops stay separate
+because their callees and ownership contracts differ. The fast source-contract
+test is `core/test/test_bootstrap_name_contract.py`.
+
 ## Doxygen comment invariant (ADR-1096)
 
 Following `core/src/*.h` internal headers now carry Doxygen `@brief`,
@@ -507,3 +587,16 @@ Doxygen block in same commit. Dangling `@param` for deleted argument
 or missing `@param` for new one = docs regression. Run
 `doxygen Doxyfile 2>&1 | grep warning` to check — zero new warnings =
 bar.
+
+## C++ placement new and delete visibility invariant (ADR-1337)
+
+`core/src/meson.build` defines `vmaf_cppflags_common` including `-fvisibility-inlines-hidden` alongside `-fvisibility=hidden`. In GCC 16 C++26 mode, standard library placement new and delete (`_ZnwmPv`, `_ZdlPvS_`) are inline functions in `<new>` (`_GLIBCXX_PLACEMENT_CONSTEXPR`) that inherit default visibility from libstdc++ headers unless `-fvisibility-inlines-hidden` is applied (`-fvisibility=hidden` alone leaves inline functions visible).
+
+**Load-bearing cross-platform compiler behavior**:
+
+- **GCC & Clang (Linux ELF, Apple Clang Darwin Mach-O, MinGW PE/COFF)**: `-fvisibility-inlines-hidden` is supported across GCC (including GCC 16) and Clang (including Clang 22). It enforces hidden visibility on inline C++ standard library symbols, preventing `_ZnwmPv` and `_ZdlPvS_` from leaking into the dynamic export table of `libvmaf.so` / `libvmaf.dylib`.
+- **MSVC & clang-cl (`cxx.get_argument_syntax() == 'msvc'`)**: Windows MSVC toolchains govern exported symbols via explicit `__declspec(dllexport)` rather than ELF/Mach-O visibility flags. Meson's `cxx.get_supported_arguments(...)` evaluates compiler support and cleanly drops `-fvisibility-inlines-hidden`, avoiding invalid option warnings or build breaks while maintaining hidden visibility across ELF and Mach-O targets.
+
+**Symbol gate & red cap**: `core/test/check_exported_symbols.py` runs on Linux shared builds. The checker forbids globally allowlisting or suppressing C++ new/delete leaks. Instead, an explicit red-cap check asserts `_ZnwmPv` and `_ZdlPvS_` are never exported, failing closed on leak regressions.
+
+**Invariant for rebases and follow-up branches**: all C++ targets in `core/src/` must inherit `vmaf_cppflags_common` with `-fvisibility-inlines-hidden` preserved. No impact on public C API headers (`core/include/libvmaf/`), Netflix golden assertions, models, tuning, or score paths.

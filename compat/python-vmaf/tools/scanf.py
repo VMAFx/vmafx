@@ -307,7 +307,8 @@ def isFileLike(thing):
             thing.seek(1, 1)
             thing.seek(-1, 1)
             return True
-        except IOError:
+        except (IOError, OSError, ValueError):
+            # Not a seekable file-like object; fall through to return False.
             pass
     return False
 

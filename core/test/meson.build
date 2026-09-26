@@ -9,6 +9,32 @@ endif
 
 test_inc = include_directories('.')
 
+# Shared-device scheduling is part of Meson's public test metadata.  This check
+# reads the configured test registry and fails if any `gpu` suite member can run
+# concurrently with another test.
+test('check_gpu_test_serialization',
+    import('python').find_installation(),
+    args : [files('check_gpu_test_serialization.py'),
+            meson.global_build_root() / 'meson-info' / 'intro-tests.json',
+            meson.project_name() + ':gpu'],
+    suite : ['fast'],
+)
+
+test('test_gpu_serialization_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_serialization_contract.py'),
+    suite : ['fast'],
+)
+
+# ADR-1333: Guard Meson test environment sanitization so secret-bearing GitHub
+# credential variables are excluded from test environments and testlog.json logs.
+test('test_meson_secret_env_sanitization',
+    import('python').find_installation(),
+    args : files('test_meson_secret_env_sanitization.py'),
+    suite : ['fast'],
+    timeout : 120,
+)
+
 # Execute Windows discovery with stubbed tools on POSIX build hosts. This
 # exercises Meson control flow without requiring a Windows SDK or CUDA device.
 if build_machine.system() != 'windows'
@@ -28,6 +54,175 @@ test('test_strict_fp_compiler_args',
     args : files('test_strict_fp_compiler_args.py'),
     suite : ['fast'],
     timeout : 90,
+)
+
+# ADR-0220 and Research-2090: source-level guard for fp64-free SpEED
+# device regions, unique cross-TU kernel names, and explicit output captures.
+test('test_sycl_kernel_source_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_kernel_source_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1183 / T-GPU-TWIN-OPTION-ALIAS-DRIFT: a non-default feature option
+# becomes part of the published collector key. Keep GPU spellings equal to the
+# CPU reference without requiring any GPU runtime on the test host.
+test('test_gpu_option_alias_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_option_alias_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# Model dispatch must distinguish a mirrored option schema from the values a
+# GPU implementation can execute. Keep every default-only site inventoried
+# without requiring a GPU compiler or device on the test host.
+test('test_gpu_option_value_capability_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_option_value_capability_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# A default scale=0 is only executable by the GPU float-SSIM twins while the
+# CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
+# and all four backend declarations without requiring an accelerator.
+test('test_gpu_float_ssim_auto_scale_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_float_ssim_auto_scale_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# Integer ADM's fixed-point viewing-geometry floor is backend-independent and
+# must run before CSF normalization or any GPU resource work. Keep that ordering
+# device-free so Linux CI covers Metal as well as CUDA, HIP, and SYCL.
+test('test_adm_viewing_geometry_contract',
+    import('python').find_installation(),
+    args : files('test_adm_viewing_geometry_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# BUG-048 / ADR-0453: PSNR options parity across CPU, CUDA, SYCL, HIP, and Metal.
+test('test_gpu_psnr_option_parity_contract',
+    import('python').find_installation(),
+    args : files('test_gpu_psnr_option_parity_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1167 / T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19: every
+# backend must feed a complete row to the raw accumulator fold before the
+# score's float conversion. Source-level mutation controls keep device-free
+# coverage for AVX2/AVX-512, CUDA, HIP, SYCL and Metal call-site topology.
+test('test_adm_cm_row_rounding_contract',
+    import('python').find_installation(),
+    args : files('test_adm_cm_row_rounding_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# BUG-048: these diagnostics were standardized once, then silently restored
+# from stale source. Keep their line framing and severity prefix stable.
+test('test_vmaf_log_callsite_format',
+    import('python').find_installation(),
+    args : files('test_vmaf_log_callsite_format.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# CodeQL must see one predictor implementation identity. Text-including
+# predict.c into its test creates a second static call graph that the official
+# unused-function query correctly reports as unreachable.
+test('test_predict_source_authority',
+    import('python').find_installation(),
+    args : files('test_predict_source_authority.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1320 / T-CUDA-FATBIN-NO-HEADER-DEP-2026-09-05: verify durable dependency
+# tracking for CUDA fatbin and HIP HSACO device targets without GPU execution.
+test('test_device_target_header_dependencies',
+    import('python').find_installation(),
+    args : files('test_device_target_header_dependencies.py'),
+    env : {'VMAFX_DEVICE_DEP_BUILD_DIR': meson.project_build_root()},
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1336: CUDA modules belong to the context that loaded them. Keep the
+# complete load-owner inventory device-free and reject raw unload calls that
+# depend on whichever unrelated context happens to be current at close time.
+test('test_cuda_module_lifecycle_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_module_lifecycle_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# BUG-048 B2 / ADR-0759: keep the four large HIP ADM compute kernels on the
+# device-resident AdmBufferHip pointer contract, including host launch wiring,
+# one-time upload, and the BUG-092-compatible failure/close lifecycle.
+test('test_hip_adm_buffer_pointer_contract',
+    import('python').find_installation(),
+    args : files('test_hip_adm_buffer_pointer_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# BUG-048 A6 / Research-2081: Linux has no Metal compiler or device, so pin
+# float_moment's exact uint64 workgroup reduction and host lo/hi reconstruction
+# as a source contract on every platform. The live parity test below remains
+# the Apple-Silicon execution gate.
+test('test_metal_float_moment_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_moment_contract.py'),
+    suite : ['fast'],
+)
+
+# BUG-048 / Research-2113: Metal float_motion lifecycle correctness, force-zero,
+# debug-controlled emission, and flush idempotency source contract.
+test('test_metal_float_motion_contract',
+    import('python').find_installation(),
+    args : files('test_metal_float_motion_contract.py'),
+    suite : ['fast'],
+)
+
+# ADR-1334 / T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07: device-free contract
+# asserting Metal float_ms_ssim options (enable_db, clip_db, enable_chroma, enable_lcs),
+# max_db derivation, chroma min-dim checks, and shared score emitter wiring parity.
+test('test_metal_ms_ssim_options_contract',
+    import('python').find_installation(),
+    args : files('test_metal_ms_ssim_options_contract.py'),
+    suite : ['fast'],
+)
+
+test_metal_ms_ssim_option_semantics = executable('test_metal_ms_ssim_option_semantics',
+    ['test.c', 'test_metal_ms_ssim_option_semantics.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies : math_lib,
+)
+test('test_metal_ms_ssim_option_semantics', test_metal_ms_ssim_option_semantics,
+    suite : ['fast'],
+)
+
+# ADR-0480: both bootstrap score paths consume the shared suffix owner.
+test('test_bootstrap_name_contract',
+    import('python').find_installation(),
+    args : files('test_bootstrap_name_contract.py'),
+    suite : ['fast'],
+)
+
+# Public GPU headers carry lifecycle/ownership semantics that the compiler
+# cannot check. Keep the Doxygen contract executable so a stale merge cannot
+# silently reduce it to parameter names again.
+test('test_gpu_public_header_docs',
+    import('python').find_installation(),
+    args : files('test_gpu_public_header_docs.py'),
+    suite : ['fast'],
 )
 
 # ADR-0379: libvmaf.so exports its public vmaf_* API and nothing else of ours.
@@ -54,6 +249,11 @@ gpu_all_deps = [
   hip_deps,
   metal_deps,
 ]
+
+# Private-source tests historically compiled predict.c independently. Link the
+# single source-authority archive instead so CodeQL and runtime tests observe
+# the same static call graph as libvmaf.
+predict_test_dependencies = gpu_all_deps + [predict_c_dependency]
 
 libvmaf_public_link = get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf
 test_output_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
@@ -143,18 +343,24 @@ test_context = executable('test_context',
     dependencies:[stdatomic_dependency, pthread_dependency, gpu_all_deps],
 )
 
-test_picture = executable('test_picture',
-    ['test.c', 'test_picture.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp', '../src/thread_pool.c'],
+test_picture_lib = static_library('test_picture_impl',
+    ['../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
+)
+
+test_picture = executable('test_picture',
+    ['test.c', 'test_picture.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
 
 # ADR-0928 cycle N+1: picture_v2 unit tests
 test_picture_v2 = executable('test_picture_v2',
-    ['test.c', 'test_picture_v2.c',
-     '../src/picture.c', '../src/picture_v2.c',
-     '../src/mem.cpp', '../src/ref.cpp', '../src/thread_pool.c'],
+    ['test.c', 'test_picture_v2.c', '../src/picture_v2.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
 
@@ -165,30 +371,26 @@ test_propagate_metadata = executable('test_propagate_metadata',
 )
 
 test_feature_collector = executable('test_feature_collector',
-    ['test.c', 'test_feature_collector.c', '../src/predict.c',
-     '../src/metadata_handler.cpp', rev_target],
+    ['test.c', 'test_feature_collector.c', '../src/metadata_handler.cpp', rev_target],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
     # ADR-0708 Wave 1: log is now compiled in log_cpp23_lib; link rather than
     # direct-compile the source.
     link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
                  log_cpp23_lib],
-    dependencies: [pthread_dependency, gpu_all_deps],
+    c_args : vmaf_cflags_common,
+    dependencies: [pthread_dependency, predict_test_dependencies],
     objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
 )
 
 # Finding R2-10: flush_context terminal-flush ordering. White-box test that
-# includes libvmaf.c directly (same pattern as test_feature_collector) so it can
-# call the static flush_context_threaded() / flush_context() helpers and assert
-# the inner threaded flush no longer sets vmaf->flushed prematurely — the bug
+# calls internal test accessors in libvmaf_priv.h to assert the inner
+# threaded flush no longer sets vmaf->flushed prematurely — the bug
 # that let a CUDA-flush error skip flush_context_sycl with no retry possible.
 test_flush_context_ordering = executable('test_flush_context_ordering',
-    ['test.c', 'test_flush_context_ordering.c', '../src/predict.c',
-     '../src/metadata_handler.cpp', rev_target],
+    ['test.c', 'test_flush_context_ordering.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
-    link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-                 log_cpp23_lib],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [math_lib, pthread_dependency, gpu_all_deps],
-    objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
 )
 
 # Coverage follow-up to PR #313 (R3 from
@@ -231,6 +433,23 @@ test_public_api_score = executable('test_public_api_score',
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
 )
 
+# Linux static-link fault control for output_file_open(). The project's
+# large-file flags redirect open(2) to open64(2), so GNU ld wraps that symbol
+# and injects EINTR once for the target path.
+# LTO can resolve the call before the linker sees it, so build this control
+# only in the configuration where --wrap is authoritative.
+if host_machine.system() == 'linux' and get_option('default_library') != 'shared' \
+        and not get_option('b_lto')
+    test_output_open_eintr = executable('test_output_open_eintr',
+        ['test.c', 'test_output_open_eintr.c'],
+        include_directories : [libvmaf_inc, test_inc],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        link_args : ['-Wl,--wrap=open64'],
+        dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    )
+    test('test_output_open_eintr', test_output_open_eintr, suite : ['fast'])
+endif
+
 test_thread_pool = executable('test_thread_pool',
     ['test.c', 'test_thread_pool.c', '../src/thread_pool.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -257,17 +476,83 @@ if has_cond_timedwait
   )
 endif
 
+# `pdjson.c` is also part of libvmaf. Give each separately compiled test copy a
+# distinct internal symbol set: CodeQL otherwise coalesces same-location static
+# helpers across link targets and can orphan one copy from the public roots.
+# Keep the public json_* names intact so the test still exercises the production
+# API and whole-program analyzers see one truthful external symbol graph.
+pdjson_static_symbols = [
+    'json_begin_error',
+    'push',
+    'pop',
+    'buffer_peek',
+    'buffer_get',
+    'stream_get',
+    'stream_peek',
+    'init',
+    'is_match',
+    'pushchar',
+    'init_string',
+    'encode_utf8',
+    'hexchar',
+    'read_unicode_cp',
+    'read_unicode',
+    'read_escaped',
+    'char_needs_escaping',
+    'utf8_seq_length',
+    'is_legal_utf8',
+    'read_utf8',
+    'read_string',
+    'is_digit',
+    'read_digits',
+    'read_fraction',
+    'read_exponent',
+    'read_number',
+    'next_nonspace',
+    'read_value',
+    'read_array_item',
+    'read_member_name',
+    'read_object_item',
+    'finish_document',
+    'user_get',
+    'user_peek',
+]
+
+pdjson_default_impl_args = []
+foreach symbol : pdjson_static_symbols
+    pdjson_default_impl_args += ['-D' + symbol + '=vmafx_test_pdjson_default_' + symbol]
+endforeach
+pdjson_default_impl = static_library('test_pdjson_impl',
+    '../src/pdjson.c',
+    include_directories : include_directories('../src'),
+    c_args : pdjson_default_impl_args,
+)
+
 test_pdjson = executable('test_pdjson',
-    ['test.c', 'test_pdjson.c', '../src/pdjson.c'],
+    ['test.c', 'test_pdjson.c'],
     include_directories : [test_inc, include_directories('../src')],
+    link_with : pdjson_default_impl,
+    c_args : ['-Drun_tests=vmafx_test_pdjson_default_run_tests'],
 )
 
 foreach increment_case : [['zero', '0'], ['oversized', 'SIZE_MAX']]
     increment_test_name = 'test_pdjson_stack_increment_' + increment_case[0]
+    increment_impl_args = ['-DPDJSON_STACK_INC=' + increment_case[1]]
+    foreach symbol : pdjson_static_symbols
+        increment_impl_args += [
+            '-D' + symbol + '=vmafx_test_pdjson_' + increment_case[0] + '_' + symbol,
+        ]
+    endforeach
+    increment_impl = static_library(increment_test_name + '_impl',
+        '../src/pdjson.c',
+        include_directories : include_directories('../src'),
+        c_args : increment_impl_args,
+    )
     increment_test = executable(increment_test_name,
-        ['test.c', 'test_pdjson_stack_increment.c', '../src/pdjson.c'],
+        ['test.c', 'test_pdjson_stack_increment.c'],
         include_directories : [test_inc, include_directories('../src')],
-        c_args : ['-DPDJSON_STACK_INC=' + increment_case[1]],
+        link_with : increment_impl,
+        c_args : ['-Drun_tests=vmafx_test_pdjson_' + increment_case[0] + '_run_tests'],
     )
     test(increment_test_name, increment_test, suite : ['fast'])
 endforeach
@@ -285,7 +570,7 @@ test_cjson = executable('test_cjson',
 test('test_cjson', test_cjson, suite : ['fast'])
 
 test_model = executable('test_model',
-    ['test.c', 'test_model.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
+    ['test.c', 'test_model.c', '../src/dict.cpp', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
@@ -301,7 +586,7 @@ test_model = executable('test_model',
 # that touches it. Mirrors test_model's sources/objects because it drives the
 # same vmaf_read_json_model_from_buffer entry point.
 test_model_libsvm_dup_key = executable('test_model_libsvm_dup_key',
-    ['test.c', 'test_model_libsvm_dup_key.c', '../src/dict.cpp', '../src/pdjson.c',
+    ['test.c', 'test_model_libsvm_dup_key.c', '../src/dict.cpp',
      json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
@@ -314,7 +599,7 @@ test_model_libsvm_dup_key = executable('test_model_libsvm_dup_key',
 # Netflix/vmaf#1242 regression: VmafFeatureDictionary ownership contract on
 # vmaf_model_feature_overload / vmaf_model_collection_feature_overload.
 test_model_feature_overload_ownership = executable('test_model_feature_overload_ownership',
-    ['test.c', 'test_model_feature_overload_ownership.c', '../src/dict.cpp', '../src/pdjson.c', json_model_c_sources],
+    ['test.c', 'test_model_feature_overload_ownership.c', '../src/dict.cpp', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
@@ -366,7 +651,7 @@ test_model_collection_api = executable('test_model_collection_api',
 test_predict = executable('test_predict',
     ['test.c', 'test_predict.c', '../src/dict.cpp', '../src/metadata_handler.cpp',
      '../src/feature/feature_collector.cpp', '../src/feature/alias.c', '../src/model.c',
-     '../src/pdjson.c', json_model_c_sources, '../src/feature/feature_name.cpp', '../src/feature/feature_extractor.cpp',],    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+     json_model_c_sources, '../src/feature/feature_name.cpp', '../src/feature/feature_extractor.cpp',],    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
@@ -422,13 +707,13 @@ test_svm_parser = executable('test_svm_parser',
 test_iqa_helpers = executable('test_iqa_helpers',
     ['test.c', 'test_iqa_helpers.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       log_cpp23_test_objects,
@@ -448,13 +733,13 @@ test_feature_extractor = executable('test_feature_extractor',
     # so it must be listed explicitly; the T-CUDA-FEATURE-EXTRACTOR-DOUBLE-WRITE
     # regression test exercises feature_extractor_vector_append() directly.
     ['test.c', 'test_feature_extractor.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      '../src/fex_ctx_vector.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,
@@ -493,7 +778,7 @@ endif
 test_fex_ctx_vector = executable('test_fex_ctx_vector',
     # Compile private vector dependencies without interposing on a public-API test.
     ['test.c', 'test_fex_ctx_vector.cpp', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      '../src/fex_ctx_vector.cpp',
      dnn_sources],
@@ -501,7 +786,7 @@ test_fex_ctx_vector = executable('test_fex_ctx_vector',
     c_args : vmaf_cflags_common + dnn_defines,
     cpp_args : fex_vector_test_args,
     link_args : fex_vector_link_args,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,
@@ -534,7 +819,7 @@ if host_machine.system() == 'linux'
 if not get_option('b_lto')
     test_fex_pool_growth = executable('test_fex_pool_growth',
         ['test.c', 'test_fex_pool_growth.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-         '../src/dict.cpp', '../src/predict.c',
+         '../src/dict.cpp',
          '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
          dnn_sources],
         include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
@@ -542,7 +827,7 @@ if not get_option('b_lto')
                      '-Wl,--wrap=malloc', '-Wl,--wrap=calloc', '-Wl,--wrap=strdup', '-Wl,--wrap=pthread_cond_init',
                      '-Wl,--wrap=pthread_cond_destroy'],
         c_args : vmaf_cflags_common + dnn_defines,
-        dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+        dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                         dnn_deps],
         objects : [
           common_cuda_objects,
@@ -597,7 +882,8 @@ test_ref = executable('test_ref',
 )
 
 test_feature = executable('test_feature',
-    ['test.c', 'test_feature.cpp', '../src/feature/alias.c', '../src/dict.cpp'],
+    ['test.c', 'test_feature.cpp', '../src/feature/alias.c', '../src/dict.cpp',
+     '../src/feature/feature_name.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )
@@ -649,11 +935,11 @@ test_pelorus_interop = executable('test_pelorus_interop',
 # extractor list and pulls in opt.cpp for the VmafOption typedef.
 test_lpips = executable('test_lpips',
     ['test.c', 'test_lpips.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,
@@ -669,11 +955,11 @@ test_lpips = executable('test_lpips',
 # two-input extractor is discoverable without requiring an ORT session.
 test_dists = executable('test_dists',
     ['test.c', 'test_dists.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,
@@ -691,11 +977,11 @@ test_dists = executable('test_dists',
 # model/tiny/fastdvdnet_pre.onnx covers the live inference path.
 test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
     ['test.c', 'test_fastdvdnet_pre.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,
@@ -713,11 +999,11 @@ test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
 # gate against model/tiny/mobilesal.onnx.
 test_mobilesal = executable('test_mobilesal',
     ['test.c', 'test_mobilesal.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,
@@ -734,11 +1020,11 @@ test_mobilesal = executable('test_mobilesal',
 # model/tiny/transnet_v2.onnx covers the live inference path.
 test_transnet_v2 = executable('test_transnet_v2',
     ['test.c', 'test_transnet_v2.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,
@@ -751,8 +1037,8 @@ test_transnet_v2 = executable('test_transnet_v2',
 )
 
 test_cambi = executable('test_cambi',
-    ['test.c', 'test_cambi.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    ['test.c', 'test_cambi.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
 )
@@ -762,13 +1048,13 @@ if cambi_simd_test_archs.contains(host_machine.cpu_family())
 test_cambi_simd = executable('test_cambi_simd',
     ['test.c', 'test_cambi_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -781,11 +1067,10 @@ test_cambi_simd = executable('test_cambi_simd',
 
 # Every other CAMBI per-stage SIMD kernel (decimate, anti-dithering, mode
 # filter, derivative row, histogram range updates, c-values row and frame) on
-# AVX2, AVX-512 and NEON against the production scalar stages. The TU includes
-# cambi.c for those static references, so it links libvmaf like test_cambi.
+# AVX2, AVX-512 and NEON against the production scalar stages.
 test_cambi_stage_simd = executable('test_cambi_stage_simd',
-    ['test.c', 'test_cambi_stage_simd.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    ['test.c', 'test_cambi_stage_simd.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
 )
@@ -795,13 +1080,13 @@ test_cambi_stage_simd = executable('test_cambi_stage_simd',
 test_cambi_spatial_mask_simd = executable('test_cambi_spatial_mask_simd',
     ['test.c', 'test_cambi_spatial_mask_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -824,11 +1109,11 @@ endif
 if get_option('enable_float')
 test_speed = executable('test_speed',
     ['test.c', 'test_speed.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,
@@ -844,11 +1129,11 @@ endif
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.
 test_speed_qa = executable('test_speed_qa',
     ['test.c', 'test_speed_qa.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -862,7 +1147,7 @@ test_speed_qa = executable('test_speed_qa',
 
 test_luminance_tools = executable('test_luminance_tools',
     ['test.c', 'test_luminance_tools.cpp'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../src/feature/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
 )
@@ -942,12 +1227,12 @@ test_psnr = executable('test_psnr',
 # test_psnr.c does not exercise.  Same link-recipe as test_speed_qa.
 test_integer_psnr_coverage = executable('test_integer_psnr_coverage',
     ['test.c', 'test_integer_psnr_coverage.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -965,12 +1250,12 @@ test_integer_psnr_coverage = executable('test_integer_psnr_coverage',
 # test_integer_psnr_coverage (float_psnr pulls in picture_copy.c).
 test_psnr_uncapped = executable('test_psnr_uncapped',
     ['test.c', 'test_psnr_uncapped.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -986,12 +1271,12 @@ test_psnr_uncapped = executable('test_psnr_uncapped',
 # three-frame default + moving-average + five-frame-under-min branches.
 test_integer_motion_coverage = executable('test_integer_motion_coverage',
     ['test.c', 'test_integer_motion_coverage.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1008,12 +1293,12 @@ test_integer_motion_coverage = executable('test_integer_motion_coverage',
 # multi-frame extract+flush, moving-average, 10-bit pipeline.
 test_integer_motion_v2_coverage = executable('test_integer_motion_v2_coverage',
     ['test.c', 'test_integer_motion_v2_coverage.c', '../src/mem.cpp', '../src/picture.c',
-     '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',
+     '../src/ref.cpp', '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1029,12 +1314,12 @@ test_integer_motion_v2_coverage = executable('test_integer_motion_v2_coverage',
 # Uses the same link-recipe as test_integer_psnr_coverage.
 test_ssim_coverage = executable('test_ssim_coverage',
     ['test.c', 'test_ssim_coverage.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1050,12 +1335,12 @@ test_ssim_coverage = executable('test_ssim_coverage',
 # 10-bit HBD, and invalid norm_view_dist returning -EINVAL.
 test_adm_coverage = executable('test_adm_coverage',
     ['test.c', 'test_adm_coverage.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1067,19 +1352,17 @@ test_adm_coverage = executable('test_adm_coverage',
     ] + wave8_opt_only_objects
 )
 
-# ADR-1191 — integer-ADM CSF fixed-point representability guard: the
-# configurations init() must reject (adm_csf_mode=1 at the default
-# adm_csf_scale; a blend mode at an untabulated viewing geometry) and the
-# ones it must keep accepting (default, mode 1 with the fork's small scale
-# coefficients, modes 2 and 3 at 1080@3H).
+# ADR-1325 — integer-ADM CSF fixed-point normalisation: full-scale
+# adm_csf_mode=1 must produce finite, non-degenerate scores; invalid blend-table
+# geometry must still fail; default and already-representable configurations stay accepted.
 test_adm_csf_representable = executable('test_adm_csf_representable',
     ['test.c', 'test_adm_csf_representable.c', '../src/mem.cpp', '../src/picture.c',
-     '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',
+     '../src/ref.cpp', '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1095,12 +1378,12 @@ test_adm_csf_representable = executable('test_adm_csf_representable',
 # enable_chroma=false option, and 10-bit HBD path.
 test_psnr_hvs_coverage = executable('test_psnr_hvs_coverage',
     ['test.c', 'test_psnr_hvs_coverage.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1116,12 +1399,12 @@ test_psnr_hvs_coverage = executable('test_psnr_hvs_coverage',
 # inputs, 10-bit HBD, and YUV444P full-chroma input.
 test_ssimulacra2_coverage = executable('test_ssimulacra2_coverage',
     ['test.c', 'test_ssimulacra2_coverage.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1133,6 +1416,32 @@ test_ssimulacra2_coverage = executable('test_ssimulacra2_coverage',
     ] + wave8_opt_only_objects
 )
 
+# Issue #1526: the two ordered-comparison sites that used to turn a failed
+# SSIMULACRA 2 computation into a perfect score are pure and fast enough to
+# exercise without an image fixture.
+test_ssimulacra2_nonfinite = executable('test_ssimulacra2_nonfinite',
+    ['test.c', 'test_ssimulacra2_nonfinite.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib],
+)
+test('test_ssimulacra2_nonfinite', test_ssimulacra2_nonfinite, suite : ['fast'])
+
+test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
+    ['test.c', 'test_adm_nonfinite_score.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+)
+test('test_adm_nonfinite_score', test_adm_nonfinite_score, suite : ['fast'])
+
+test('test_nonfinite_collector_wiring',
+    import('python').find_installation(),
+    args : files('test_nonfinite_collector_wiring.py'),
+    suite : ['fast'],
+)
+
 # NIQE (no-reference, ADR-1112): niqe_math.h unit oracles + an end-to-end
 # score oracle driven through the public extractor-context API against frame 0
 # of the natural fixture testdata/ref_576x324_48f.yuv. NIQE_TESTDATA_DIR points
@@ -1141,13 +1450,13 @@ test_ssimulacra2_coverage = executable('test_ssimulacra2_coverage',
 # from test_ssimulacra2_coverage so the niqe extractor + collector are linked.
 test_niqe = executable('test_niqe',
     ['test.c', 'test_niqe.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines +
              ['-DNIQE_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"'],
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1170,13 +1479,13 @@ test_niqe = executable('test_niqe',
 # pattern as test_niqe.
 test_brisque = executable('test_brisque',
     ['test.c', 'test_brisque.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines +
              ['-DBRISQUE_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"'],
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1196,12 +1505,12 @@ test_brisque = executable('test_brisque',
 # test_ssimulacra2_coverage so the y_funque_plus extractor + collector link.
 test_y_funque_plus = executable('test_y_funque_plus',
     ['test.c', 'test_y_funque_plus.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
         common_cuda_objects,
@@ -1382,13 +1691,13 @@ if iqa_convolve_test_archs.contains(host_machine.cpu_family())
 test_iqa_convolve = executable('test_iqa_convolve',
     ['test.c', 'test_iqa_convolve.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1405,13 +1714,13 @@ if psnr_hvs_avx2_test_archs.contains(host_machine.cpu_family())
 test_psnr_hvs_avx2 = executable('test_psnr_hvs_avx2',
     ['test.c', 'test_psnr_hvs_avx2.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1428,13 +1737,13 @@ if vif_simd_test_archs.contains(host_machine.cpu_family())
 test_vif_simd = executable('test_vif_simd',
     ['test.c', 'test_vif_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1451,13 +1760,13 @@ if psnr_hvs_simd_test_archs.contains(host_machine.cpu_family())
 test_psnr_hvs_simd = executable('test_psnr_hvs_simd',
     ['test.c', 'test_psnr_hvs_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1474,13 +1783,13 @@ if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test_integer_adm_simd = executable('test_integer_adm_simd',
     ['test.c', 'test_integer_adm_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1494,13 +1803,13 @@ test_integer_adm_simd = executable('test_integer_adm_simd',
 test_adm_dwt2_x86 = executable('test_adm_dwt2_x86',
     ['test.c', 'test_adm_dwt2_x86.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1521,13 +1830,13 @@ if integer_ssim_simd_test_archs.contains(host_machine.cpu_family())
 test_integer_ssim_simd = executable('test_integer_ssim_simd',
     ['test.c', 'test_integer_ssim_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1544,13 +1853,13 @@ if ciede_simd_parity_test_archs.contains(host_machine.cpu_family())
 test_ciede_simd_parity = executable('test_ciede_simd_parity',
     ['test.c', 'test_ciede_simd_parity.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1567,13 +1876,13 @@ if motion_v2_simd_test_archs.contains(host_machine.cpu_family())
 test_motion_v2_simd = executable('test_motion_v2_simd',
     ['test.c', 'test_motion_v2_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1600,13 +1909,13 @@ if motion_avx512_parity_test_archs.contains(host_machine.cpu_family()) and is_av
 test_motion_avx512_parity = executable('test_motion_avx512_parity',
     ['test.c', 'test_motion_avx512_parity.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1684,6 +1993,16 @@ test_integer_adm_tiny_frames = executable('test_integer_adm_tiny_frames',
 test('test_integer_adm_tiny_frames', test_integer_adm_tiny_frames,
     suite : ['fast'])
 
+# T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19: score-level parity
+# loses one-unit rounding-placement errors at the float conversion. Exercise
+# the internal row-fold seam on raw int64 accumulators instead.
+test_adm_cm_row_rounding = executable('test_adm_cm_row_rounding',
+    ['test.c', 'test_adm_cm_row_rounding.c'],
+    include_directories : [test_inc, include_directories('../src')],
+)
+test('test_adm_cm_row_rounding', test_adm_cm_row_rounding,
+    suite : ['fast'])
+
 # T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18: integer ADM SIMD dispatch
 # against scalar on full-range noise.
 test_integer_adm_simd_noise = executable('test_integer_adm_simd_noise',
@@ -1709,13 +2028,13 @@ test('test_integer_adm_dwt16_range', test_integer_adm_dwt16_range,
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args + _ssimulacra2_test_x86_fma_args,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1732,13 +2051,13 @@ if psnr_hvs_neon_test_archs.contains(host_machine.cpu_family())
 test_psnr_hvs_neon = executable('test_psnr_hvs_neon',
     ['test.c', 'test_psnr_hvs_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1754,13 +2073,13 @@ test_psnr_hvs_neon = executable('test_psnr_hvs_neon',
 test_adm_dwt2_neon = executable('test_adm_dwt2_neon',
     ['test.c', 'test_adm_dwt2_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1777,13 +2096,13 @@ if psnr_hvs_neon_test_archs.contains(host_machine.cpu_family())
 test_vif_neon = executable('test_vif_neon',
     ['test.c', 'test_vif_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1797,13 +2116,13 @@ test_vif_neon = executable('test_vif_neon',
 test_ssim_neon = executable('test_ssim_neon',
     ['test.c', 'test_ssim_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1817,13 +2136,13 @@ test_ssim_neon = executable('test_ssim_neon',
 test_float_adm_neon = executable('test_float_adm_neon',
     ['test.c', 'test_float_adm_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1837,13 +2156,13 @@ test_float_adm_neon = executable('test_float_adm_neon',
 test_float_adm_dwt2_neon = executable('test_float_adm_dwt2_neon',
     ['test.c', 'test_float_adm_dwt2_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1857,13 +2176,13 @@ test_float_adm_dwt2_neon = executable('test_float_adm_dwt2_neon',
 test_motion_neon = executable('test_motion_neon',
     ['test.c', 'test_motion_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1877,13 +2196,13 @@ test_motion_neon = executable('test_motion_neon',
 test_motion_pipeline_neon = executable('test_motion_pipeline_neon',
     ['test.c', 'test_motion_pipeline_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1897,13 +2216,13 @@ test_motion_pipeline_neon = executable('test_motion_pipeline_neon',
 test_float_motion_neon = executable('test_float_motion_neon',
     ['test.c', 'test_float_motion_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1917,13 +2236,13 @@ test_float_motion_neon = executable('test_float_motion_neon',
 test_psnr_neon = executable('test_psnr_neon',
     ['test.c', 'test_psnr_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1937,13 +2256,13 @@ test_psnr_neon = executable('test_psnr_neon',
 test_ciede_neon = executable('test_ciede_neon',
     ['test.c', 'test_ciede_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1961,13 +2280,13 @@ if float_enabled and moment_simd_test_archs.contains(host_machine.cpu_family())
 test_moment_simd = executable('test_moment_simd',
     ['test.c', 'test_moment_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -1988,13 +2307,13 @@ if float_enabled and speed_simd_test_archs.contains(host_machine.cpu_family())
 test_speed_simd = executable('test_speed_simd',
     ['test.c', 'test_speed_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -2011,13 +2330,13 @@ if ms_ssim_decimate_test_archs.contains(host_machine.cpu_family())
 test_ms_ssim_decimate = executable('test_ms_ssim_decimate',
     ['test.c', 'test_ms_ssim_decimate.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -2075,6 +2394,28 @@ test_gpu_picture_pool_partial_init = executable('test_gpu_picture_pool_partial_i
 test('test_gpu_picture_pool_partial_init', test_gpu_picture_pool_partial_init,
     suite : ['fast'])
 
+# Issue #1455 regression: vmaf_gpu_picture_pool_init must return -ENOMEM
+# and clear *pool to NULL when pool struct allocation fails.
+# Recompiles gpu_picture_pool.cpp with force-included allocator interposer.
+gpu_pool_interposer_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
+
+gpu_pool_alloc_interpose_header = meson.current_source_dir() / 'test_gpu_picture_pool_alloc_interpose.h'
+gpu_pool_alloc_interpose_args = cc.get_argument_syntax() == 'msvc' \
+    ? ['/FI' + gpu_pool_alloc_interpose_header] \
+    : ['-include', gpu_pool_alloc_interpose_header]
+
+test_gpu_picture_pool_alloc_failure = executable('test_gpu_picture_pool_alloc_failure',
+    ['test.c', 'test_gpu_picture_pool_alloc_failure.c', '../src/gpu_picture_pool.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : gpu_pool_alloc_interpose_args,
+    cpp_args : gpu_pool_alloc_interpose_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    override_options : gpu_pool_interposer_lto_override,
+)
+test('test_gpu_picture_pool_alloc_failure', test_gpu_picture_pool_alloc_failure,
+    suite : ['fast'])
+
 if get_option('enable_cuda')
 test_gpu_picture_pool = executable('test_gpu_picture_pool',
     ['test.c', 'test_gpu_picture_pool.c', '../src/gpu_picture_pool.cpp', '../src/cuda/picture_cuda.c'],
@@ -2106,9 +2447,27 @@ test_cuda_drain_batch = executable('test_cuda_drain_batch',
     c_args: ['-DHAVE_CUDA=1']
 )
 
-test('test_gpu_picture_pool', test_gpu_picture_pool, suite : ['fast', 'gpu'])
-test('test_cuda_pic_preallocation', test_cuda_pic_preallocation, suite : ['fast', 'gpu'])
+test('test_gpu_picture_pool', test_gpu_picture_pool,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+test('test_cuda_pic_preallocation', test_cuda_pic_preallocation,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 test('test_cuda_drain_batch', test_cuda_drain_batch, suite : ['fast'])
+
+# Error-path unwinds of the CUDA runtime (ADR-0982, restored after #504:
+# docs/state.md T-GPU-ADR0982-REVERTED-BY-504-2026-09-18). Drives
+# picture_cuda.c / common.c / drain_batch.c through a table of fake driver
+# entry points, so it needs the nv-codec headers but no driver or device and
+# is deliberately NOT in the 'gpu' suite. No --wrap, so it also runs under LTO.
+test_cuda_runtime_unwind = executable('test_cuda_runtime_unwind',
+    ['test.c', 'test_cuda_runtime_unwind.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_runtime_unwind', test_cuda_runtime_unwind, suite : ['fast'])
 
 # The flush drain loop must terminate (T-CUDA-SINGLE-FRAME-HANG-2026-09-05).
 # Stub-driven, so it needs no CUDA device and no nvcc.
@@ -2150,7 +2509,9 @@ test_cuda_buffer_alloc_oom = executable('test_cuda_buffer_alloc_oom',
     dependencies: [pthread_dependency, cuda_dependency],
     c_args: ['-DHAVE_CUDA=1']
 )
-test('test_cuda_buffer_alloc_oom', test_cuda_buffer_alloc_oom, suite : ['fast', 'gpu'])
+test('test_cuda_buffer_alloc_oom', test_cuda_buffer_alloc_oom,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1223 — the compute-capability floor predicate. Pure function of
 # (major, minor), so it runs in the `fast` suite with no GPU: the architectures
@@ -2162,7 +2523,9 @@ test_cuda_arch_floor = executable('test_cuda_arch_floor',
     dependencies: [pthread_dependency, cuda_dependency],
     c_args: ['-DHAVE_CUDA=1']
 )
-test('test_cuda_arch_floor', test_cuda_arch_floor, suite : ['fast', 'gpu'])
+test('test_cuda_arch_floor', test_cuda_arch_floor,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # PR #850 — libvmaf.c CUDA-only NULL deref guard.
 # Before the fix, in CUDA-only mode (HW_FLAG_HOST not set) the
@@ -2178,7 +2541,8 @@ test_libvmaf_cuda_only_no_host = executable('test_libvmaf_cuda_only_no_host',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_libvmaf_cuda_only_no_host', test_libvmaf_cuda_only_no_host,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Netflix#1300 / ADR-0157 — preallocation-leak reducer. Runs N
 # init/preallocate/fetch/close cycles with FULL cleanup on each cycle
@@ -2193,7 +2557,9 @@ test_cuda_preallocation_leak = executable('test_cuda_preallocation_leak',
     dependencies: [pthread_dependency, cuda_dependency],
     c_args: ['-DHAVE_CUDA=1']
 )
-test('test_cuda_preallocation_leak', test_cuda_preallocation_leak, suite : ['fast', 'gpu'])
+test('test_cuda_preallocation_leak', test_cuda_preallocation_leak,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # CHUG audit gap-fill — motion3 CPU vs. CUDA parity (ADR-0214 gate).
 # The motion3 post-process (moving-average over blended motion2) is
@@ -2210,7 +2576,8 @@ test_cuda_motion3_parity = executable('test_cuda_motion3_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_motion3_parity', test_cuda_motion3_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0541 — integer_vif CPU vs. CUDA parity gate.  Pins the luma-only
 # design contract as a regression assertion so DEEP_AUDIT 2026-05-18
@@ -2226,7 +2593,8 @@ test_integer_vif_cpu_cuda_parity = executable('test_integer_vif_cpu_cuda_parity'
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0956 — CUDA kernel parity coverage round 4. Closes the last
 # three float-path CPU twins (`float_adm_cuda`, `float_motion_cuda`,
@@ -2243,7 +2611,8 @@ test_cuda_float_adm_parity = executable('test_cuda_float_adm_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_adm_parity', test_cuda_float_adm_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_motion_parity = executable('test_cuda_float_motion_parity',
     ['test.c', 'test_cuda_float_motion_parity.c'],
@@ -2253,7 +2622,8 @@ test_cuda_float_motion_parity = executable('test_cuda_float_motion_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_motion_parity', test_cuda_float_motion_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_ssim_parity = executable('test_cuda_float_ssim_parity',
     ['test.c', 'test_cuda_float_ssim_parity.c'],
@@ -2263,7 +2633,8 @@ test_cuda_float_ssim_parity = executable('test_cuda_float_ssim_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0956 — CUDA-only speed kernels. `speed_chroma_cuda` and
 # `speed_temporal_cuda` have no CPU twin emitting the same
@@ -2280,7 +2651,8 @@ test_cuda_speed_chroma_smoke = executable('test_cuda_speed_chroma_smoke',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_chroma_smoke', test_cuda_speed_chroma_smoke,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
     ['test.c', 'test_cuda_speed_temporal_smoke.c'],
@@ -2290,7 +2662,8 @@ test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0965 — speed_chroma + speed_temporal CPU vs. CUDA parity gates.
 # Pin the cross-backend tolerance (places=4) for the CUDA SpEED twins wired
@@ -2304,7 +2677,8 @@ test_cuda_speed_chroma_parity = executable('test_cuda_speed_chroma_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_chroma_parity', test_cuda_speed_chroma_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
     ['test.c', 'test_cuda_speed_temporal_parity.c'],
@@ -2314,7 +2688,8 @@ test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_speed_singular_parity = executable('test_cuda_speed_singular_parity',
     ['test.c', 'test_cuda_speed_singular_parity.c'],
@@ -2325,6 +2700,7 @@ test_cuda_speed_singular_parity = executable('test_cuda_speed_singular_parity',
 )
 test('test_cuda_speed_singular_parity', test_cuda_speed_singular_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 90)
 
 # ADR-0947 — CUDA kernel parity coverage, round 3. Closes the float-path
@@ -2341,7 +2717,8 @@ test_cuda_float_psnr_parity = executable('test_cuda_float_psnr_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_psnr_parity', test_cuda_float_psnr_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
     ['test.c', 'test_cuda_float_vif_parity.c'],
@@ -2351,7 +2728,8 @@ test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_vif_parity', test_cuda_float_vif_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_ms_ssim_parity = executable('test_cuda_float_ms_ssim_parity',
     ['test.c', 'test_cuda_float_ms_ssim_parity.c'],
@@ -2361,7 +2739,8 @@ test_cuda_float_ms_ssim_parity = executable('test_cuda_float_ms_ssim_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_ms_ssim_parity', test_cuda_float_ms_ssim_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
     ['test.c', 'test_cuda_float_moment_parity.c'],
@@ -2371,7 +2750,8 @@ test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
 # so a twin that accumulates the raw codeword instead of the bit-depth-normalised
@@ -2384,7 +2764,8 @@ test_cuda_float_moment_parity_10bit = executable('test_cuda_float_moment_parity_
     c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
 )
 test('test_cuda_float_moment_parity_10bit', test_cuda_float_moment_parity_10bit,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     ['test.c', 'test_cuda_ssimulacra2_parity.c'],
@@ -2394,7 +2775,8 @@ test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_ssimulacra2_parity', test_cuda_ssimulacra2_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — adm2/adm3 CPU vs. CUDA parity
 # (places=4). Round-1 (PR #351) covered psnr_cuda + ciede_cuda; ADM was
@@ -2408,7 +2790,8 @@ test_cuda_adm_parity = executable('test_cuda_adm_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_adm_parity', test_cuda_adm_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1167 — ADM small-frame border parity test (i == 0 && top <= 0 branch).
 test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
@@ -2419,7 +2802,8 @@ test_cuda_adm_small_border = executable('test_cuda_adm_small_border',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_adm_small_border', test_cuda_adm_small_border,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
 # wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
@@ -2431,7 +2815,8 @@ test_cuda_adm_tiny_frames = executable('test_cuda_adm_tiny_frames',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_adm_tiny_frames', test_cuda_adm_tiny_frames,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
 test_cuda_adm_wide_rounding = executable('test_cuda_adm_wide_rounding',
@@ -2442,7 +2827,8 @@ test_cuda_adm_wide_rounding = executable('test_cuda_adm_wide_rounding',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_adm_wide_rounding', test_cuda_adm_wide_rounding,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — motion_v2 CPU vs. CUDA parity
 # (places=4). Covers the SAD-weighted motion variant used by the
@@ -2456,7 +2842,8 @@ test_cuda_motion_v2_parity = executable('test_cuda_motion_v2_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_motion_v2_parity', test_cuda_motion_v2_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — cambi CPU vs. CUDA parity
 # (places=4). Fixture is 256x256 to satisfy CAMBI_MIN_WIDTH_HEIGHT=216.
@@ -2469,7 +2856,8 @@ test_cuda_cambi_parity = executable('test_cuda_cambi_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_cambi_parity', test_cuda_cambi_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — psnr_hvs CPU vs. CUDA parity
 # (places=4). Covers the HVS contrast-sensitivity-weighted DCT path
@@ -2482,7 +2870,8 @@ test_cuda_psnr_hvs_parity = executable('test_cuda_psnr_hvs_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_psnr_hvs_parity', test_cuda_psnr_hvs_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Round-2 GPU-kernel coverage gap-fill — integer_ssim CPU vs. CUDA
 # parity (places=4). Covers the 11x11 Gaussian-windowed SSIM kernel
@@ -2495,7 +2884,8 @@ test_cuda_ssim_parity = executable('test_cuda_ssim_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_ssim_parity', test_cuda_ssim_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — psnr CPU vs. CUDA parity (places=4).
 # Pre-existing CUDA tests covered motion3 + vif; psnr_cuda
@@ -2509,7 +2899,8 @@ test_cuda_psnr_parity = executable('test_cuda_psnr_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_psnr_parity', test_cuda_psnr_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1215 — the same TU at 10 bpc with non-flat chroma. The 16-bpc CUDA PSNR
 # kernel read data[0] for every plane, so high-bit-depth chroma PSNR was a luma
@@ -2522,7 +2913,8 @@ test_cuda_psnr_parity_10bit = executable('test_cuda_psnr_parity_10bit',
     c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
 )
 test('test_cuda_psnr_parity_10bit', test_cuda_psnr_parity_10bit,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — ciede2000 CPU vs. CUDA parity (places=4).
 # Covers integer_ciede_cuda.c + integer_ciede/ciede_score.cu, which had
@@ -2535,7 +2927,8 @@ test_cuda_ciede_parity = executable('test_cuda_ciede_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_ciede_parity', test_cuda_ciede_parity,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-1206 — large-fixture parity variants (resolution blind spot).
 #
@@ -2574,7 +2967,8 @@ foreach parity_test : cuda_parity_large_fixture_tests
         c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
     )
     test(parity_test + '_large', parity_large_exe,
-        suite : ['fast', 'gpu'])
+        suite : ['fast', 'gpu'],
+        is_parallel : false)
 endforeach
 
 endif
@@ -2628,8 +3022,9 @@ test('test_thread_safety_batch', test_thread_safety_batch, suite : ['fast'])
 # the high-level vmaf_preallocate_pictures API.
 test_picture_pool_error_paths = executable('test_picture_pool_error_paths',
     ['test.c', 'test_picture_pool_error_paths.c',
-     '../src/picture_pool.c', '../src/picture.c', '../src/mem.cpp', '../src/ref.cpp'],
+     '../src/picture_pool.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : test_picture_lib,
     dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
 )
 test('test_picture_pool_error_paths', test_picture_pool_error_paths, suite : ['fast'])
@@ -2672,6 +3067,16 @@ test_score_pooled_eagain = executable('test_score_pooled_eagain',
 )
 test('test_score_pooled_eagain', test_score_pooled_eagain, suite : ['fast'])
 
+# ADR-1182 — Windows UTF-8 path contract (Netflix#1568).
+test_path_utf8 = executable('test_path_utf8',
+    ['test.c', 'test_path_utf8.c', '../src/compat/path_utf8.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, thread_lib],
+)
+test('test_path_utf8', test_path_utf8, suite : ['fast'])
+
 # ADR-1118 — Pelorus perceptual spatial-pooling weighting. Golden-gate
 # isolation proof: pooling is bit-exact without side-data (and when only one of
 # the two opt-in conditions holds), and shifts in the expected direction once
@@ -2688,12 +3093,12 @@ test('test_perceptual_weight', test_perceptual_weight, suite : ['fast'])
 # ADR-0153 — float_ms_ssim init rejects <176x176 (Netflix#1414).
 test_float_ms_ssim_min_dim = executable('test_float_ms_ssim_min_dim',
     ['test.c', 'test_float_ms_ssim_min_dim.c', '../src/mem.cpp', '../src/picture.c',
-     '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',
+     '../src/ref.cpp', '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -2709,12 +3114,12 @@ test('test_float_ms_ssim_min_dim', test_float_ms_ssim_min_dim, suite : ['fast'])
 # the 4-level DWT2 pyramid requires at least 17 pixels in each dimension.
 test_integer_adm_min_dim = executable('test_integer_adm_min_dim',
     ['test.c', 'test_integer_adm_min_dim.c', '../src/mem.cpp', '../src/picture.c',
-     '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',
+     '../src/ref.cpp', '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -2730,12 +3135,12 @@ test('test_integer_adm_min_dim', test_integer_adm_min_dim, suite : ['fast'])
 # instead of reading out-of-bounds via the reflect-101 mirror-padding formula.
 test_motion_min_dim = executable('test_motion_min_dim',
     ['test.c', 'test_motion_min_dim.c', '../src/mem.cpp', '../src/picture.c',
-     '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',
+     '../src/ref.cpp', '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -2823,12 +3228,12 @@ endif
 # scratch-buffer allocation (PR fix/float-vif-min-dimension-guard).
 test_float_vif_min_dim = executable('test_float_vif_min_dim',
     ['test.c', 'test_float_vif_min_dim.c', '../src/mem.cpp', '../src/picture.c',
-     '../src/ref.cpp', '../src/dict.cpp', '../src/predict.c',
+     '../src/ref.cpp', '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
       common_cuda_objects,
       platform_specific_cpu_objects,
@@ -2847,7 +3252,7 @@ test('test_float_vif_min_dim', test_float_vif_min_dim, suite : ['fast'])
 # Each test uses the same link recipe as test_motion_min_dim / test_float_vif_min_dim.
 _float_fex_test_sources_common = [
     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-    '../src/dict.cpp', '../src/predict.c',
+    '../src/dict.cpp',
     '../src/metadata_handler.cpp', '../src/thread_locale.cpp',
     '../src/gpu_picture_pool.cpp',
 ]
@@ -2859,7 +3264,7 @@ test_float_ssim_coverage = executable('test_float_ssim_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
         common_cuda_objects,
         platform_specific_cpu_objects,
@@ -2876,7 +3281,7 @@ test_float_ms_ssim_coverage = executable('test_float_ms_ssim_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
         common_cuda_objects,
         platform_specific_cpu_objects,
@@ -2896,7 +3301,7 @@ test_float_psnr_coverage = executable('test_float_psnr_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
         common_cuda_objects,
         platform_specific_cpu_objects,
@@ -2913,7 +3318,7 @@ test_float_moment_coverage = executable('test_float_moment_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
         common_cuda_objects,
         platform_specific_cpu_objects,
@@ -2930,7 +3335,7 @@ test_float_vif_coverage = executable('test_float_vif_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
         common_cuda_objects,
         platform_specific_cpu_objects,
@@ -2949,7 +3354,7 @@ test_vif_lifecycle = executable('test_vif_lifecycle',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
         common_cuda_objects,
         platform_specific_cpu_objects,
@@ -2966,7 +3371,7 @@ test_float_adm_coverage = executable('test_float_adm_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
         common_cuda_objects,
         platform_specific_cpu_objects,
@@ -2983,7 +3388,7 @@ test_float_motion_coverage = executable('test_float_motion_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
+                    predict_test_dependencies, dnn_deps],
     objects : [
         common_cuda_objects,
         platform_specific_cpu_objects,
@@ -3087,8 +3492,59 @@ test_sycl_pic_preallocation = executable('test_sycl_pic_preallocation',
     c_args: ['-DHAVE_SYCL=1']
 )
 
-test('test_sycl', test_sycl, suite : ['fast', 'gpu', 'sycl'])
-test('test_sycl_pic_preallocation', test_sycl_pic_preallocation, suite : ['fast', 'gpu', 'sycl'])
+test('test_sycl', test_sycl,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+test('test_sycl_pic_preallocation', test_sycl_pic_preallocation,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
+# BUG-040: this compile combination used CUDA's host-picture cleanup early
+# return, bypassing the SYCL upload wait on the serial path. The worker path
+# can independently drop its counted references before the caller returns.
+# The public-API regressions poison each released 4K host picture in both
+# modes and prove psnr_sycl saw the pre-release pixels. A SYCL device is
+# required at runtime; no CUDA device is.
+if get_option('enable_cuda')
+test_sycl_cuda_serial_upload_lifetime = executable('test_sycl_cuda_serial_upload_lifetime',
+    ['test.c', 'test_sycl_cuda_serial_upload_lifetime.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : libvmaf_public_link,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    c_args : ['-DHAVE_CUDA=1', '-DHAVE_SYCL=1'],
+)
+test('test_sycl_cuda_serial_upload_lifetime', test_sycl_cuda_serial_upload_lifetime,
+    suite : ['slow', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 120)
+endif
+
+# BUG-048 section E — deterministic, device-free init-failure unwind gate.
+# GNU ld wrapping sees calls from libvmaf.a only with LTO disabled; this is the
+# same constraint as test_registration_partial_copy above.  The dedicated gate
+# replaces USM allocation, dictionary construction, and graph registration so
+# every partial-init path can be exercised on hosts without a SYCL device.
+if host_machine.system() == 'linux' and get_option('default_library') != 'shared' \
+        and not get_option('b_lto')
+    test_sycl_init_unwind = executable('test_sycl_init_unwind',
+        ['test.c', 'test_sycl_init_unwind.cpp'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies : [pthread_dependency, sycl_dependency, math_lib],
+        cpp_args : ['-DHAVE_SYCL=1'],
+        link_args : [
+            '-Wl,--wrap=vmaf_sycl_malloc_device',
+            '-Wl,--wrap=vmaf_sycl_malloc_host',
+            '-Wl,--wrap=vmaf_sycl_free',
+            '-Wl,--wrap=vmaf_feature_name_dict_from_provided_features',
+            '-Wl,--wrap=vmaf_dictionary_free',
+            '-Wl,--wrap=vmaf_sycl_shared_frame_init',
+            '-Wl,--wrap=vmaf_sycl_graph_register',
+            '-Wl,--wrap=vmaf_sycl_graph_unregister',
+        ],
+    )
+    test('test_sycl_init_unwind', test_sycl_init_unwind, suite : ['fast', 'sycl'])
+endif
 
 test_integer_cambi_sycl = executable('test_integer_cambi_sycl',
     ['test.c', 'test_integer_cambi_sycl.c'],
@@ -3097,7 +3553,9 @@ test_integer_cambi_sycl = executable('test_integer_cambi_sycl',
     dependencies: [pthread_dependency, sycl_dependency],
     c_args: ['-DHAVE_SYCL=1']
 )
-test('test_integer_cambi_sycl', test_integer_cambi_sycl, suite : ['fast', 'gpu', 'sycl'])
+test('test_integer_cambi_sycl', test_integer_cambi_sycl,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # T3-15(c) / ADR-0219 / ADR-0214 — motion3 CPU vs. SYCL parity gate.
 # The motion3 post-process (host-side moving-average over blended motion2)
@@ -3114,12 +3572,13 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0989 — motion_add_uv SYCL parity test.
 # Asserts (1) UV contribution is positive (UV-enabled score > Y-only)
-# and (2) SYCL motion_sycl(motion_add_uv=true) matches CPU
-# float_motion(motion_add_uv=true) within places=4 (1e-4).
+# and (2) the SYCL Y-only and Y+U+V scores match a scalar fixed-point
+# oracle within a derived host-double roundoff bound (ADR-1326).
 # Skips cleanly when no SYCL device is visible.
 test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
     ['test.c', 'test_sycl_motion_add_uv_parity.c'],
@@ -3137,7 +3596,8 @@ test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
 # queried as VMAF_integer_feature_motion2_score) was also corrected in the
 # test source.  should_fail removed — the test must now pass.
 test('test_sycl_motion_add_uv_parity', test_sycl_motion_add_uv_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0946 — SYCL kernel coverage round 3. Five new CPU vs. SYCL
 # parity gates filling the float-family + PSNR-HVS gaps left after
@@ -3153,7 +3613,8 @@ test_sycl_float_psnr_parity = executable('test_sycl_float_psnr_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_psnr_parity', test_sycl_float_psnr_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
     ['test.c', 'test_sycl_float_adm_parity.c'],
@@ -3163,7 +3624,8 @@ test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_adm_parity', test_sycl_float_adm_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_float_vif_parity = executable('test_sycl_float_vif_parity',
     ['test.c', 'test_sycl_float_vif_parity.c'],
@@ -3173,7 +3635,8 @@ test_sycl_float_vif_parity = executable('test_sycl_float_vif_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_vif_parity', test_sycl_float_vif_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_float_motion_parity = executable('test_sycl_float_motion_parity',
     ['test.c', 'test_sycl_float_motion_parity.c'],
@@ -3183,7 +3646,8 @@ test_sycl_float_motion_parity = executable('test_sycl_float_motion_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_motion_parity', test_sycl_float_motion_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
     ['test.c', 'test_sycl_psnr_hvs_parity.c'],
@@ -3193,7 +3657,8 @@ test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_psnr_hvs_parity', test_sycl_psnr_hvs_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0957 — SYCL kernel coverage round 4. Four new CPU vs. SYCL
 # parity gates closing the last uncovered SYCL extractors after
@@ -3210,7 +3675,8 @@ test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_moment_parity', test_sycl_float_moment_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
 # so a twin that accumulates the raw codeword instead of the bit-depth-normalised
@@ -3223,7 +3689,8 @@ test_sycl_float_moment_parity_10bit = executable('test_sycl_float_moment_parity_
     c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_BPC=10u']
 )
 test('test_sycl_float_moment_parity_10bit', test_sycl_float_moment_parity_10bit,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0884 — SYCL kernel coverage round 2.
 # Five additional CPU-vs-SYCL parity gates: adm, ciede, integer_ssim,
@@ -3242,7 +3709,8 @@ test_sycl_adm_parity = executable('test_sycl_adm_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_adm_parity', test_sycl_adm_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
 # wide (scale-0 cube shift 0) against scalar CPU, and rejection below 17x17.
@@ -3254,7 +3722,8 @@ test_sycl_adm_tiny_frames = executable('test_sycl_adm_tiny_frames',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     ['test.c', 'test_sycl_ciede_parity.c'],
@@ -3264,7 +3733,8 @@ test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ciede_parity', test_sycl_ciede_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     ['test.c', 'test_sycl_ssim_parity.c'],
@@ -3274,7 +3744,8 @@ test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ssim_parity', test_sycl_ssim_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_ms_ssim_parity = executable('test_sycl_ms_ssim_parity',
     ['test.c', 'test_sycl_ms_ssim_parity.c'],
@@ -3284,7 +3755,8 @@ test_sycl_ms_ssim_parity = executable('test_sycl_ms_ssim_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ms_ssim_parity', test_sycl_ms_ssim_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # float_ssim SYCL parity — Research-0985. Tolerance is places=3 (5e-04) to
 # accommodate the CPU/GPU formula difference (L×C×S vs combined) and Arc A380
@@ -3297,7 +3769,8 @@ test_sycl_float_ssim_parity = executable('test_sycl_float_ssim_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_float_ssim_parity', test_sycl_float_ssim_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
     ['test.c', 'test_sycl_motion_v2_parity.c'],
@@ -3307,7 +3780,8 @@ test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_motion_v2_parity', test_sycl_motion_v2_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — psnr CPU vs. SYCL parity (places=4).
 # Covers integer_psnr_sycl.cpp, which previously had no cross-backend
@@ -3321,7 +3795,8 @@ test_sycl_psnr_parity = executable('test_sycl_psnr_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_psnr_parity', test_sycl_psnr_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — VIF scale0 CPU vs. SYCL parity (places=3).
 # Covers integer_vif_sycl.cpp, the SYCL Gaussian filter + statistical
@@ -3335,7 +3810,8 @@ test_sycl_vif_parity = executable('test_sycl_vif_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_vif_parity', test_sycl_vif_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
 # Pin the cross-backend tolerance (places=4) for the SpEED-family GPU
@@ -3350,7 +3826,8 @@ test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
     ['test.c', 'test_sycl_speed_temporal_parity.c'],
@@ -3360,7 +3837,8 @@ test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 test_sycl_speed_singular_parity = executable('test_sycl_speed_singular_parity',
     ['test.c', 'test_sycl_speed_singular_parity.c'],
@@ -3371,6 +3849,7 @@ test_sycl_speed_singular_parity = executable('test_sycl_speed_singular_parity',
 )
 test('test_sycl_speed_singular_parity', test_sycl_speed_singular_parity,
     suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
     timeout : 90)
 
 test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
@@ -3381,7 +3860,8 @@ test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_ssimulacra2_parity', test_sycl_ssimulacra2_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-1001 — CAMBI CPU vs. SYCL parity (round 5). Fills the gap left by
 # test_integer_cambi_sycl.c which is explicitly a smoke test, not a
@@ -3395,7 +3875,8 @@ test_sycl_cambi_parity = executable('test_sycl_cambi_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_cambi_parity', test_sycl_cambi_parity,
-    suite : ['fast', 'gpu', 'sycl'])
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 # ADR-1206 — large-fixture parity variants (resolution blind spot).
 #
 # Same rationale as the CUDA family above: every parity test here pins one
@@ -3405,14 +3886,9 @@ test('test_sycl_cambi_parity', test_sycl_cambi_parity,
 # ADR-1204 / ADR-1205 lived in exactly that unreachable region. These variants
 # rebuild the same TUs against 960x540 (auto-scale 2, and 540 is not a multiple
 # of the 16/32-wide kernel blocks so tail bounds are exercised too).
-# `test_sycl_motion_add_uv_parity` is deliberately absent from the list below.
-# It does not compare two implementations of the same arithmetic: the CPU side
-# is `float_motion` and the SYCL side is the fixed-point `motion_sycl`, so its
-# 2e-4 tolerance is a fixed-point-vs-float budget calibrated for one fixture
-# rather than a bit-exactness bound. At 960x540 it lands at 2.30e-04 — 15% over
-# a budget that was never derived for that resolution. Registering a large
-# variant would assert something the test was never designed to assert; giving
-# it a second, separately derived tolerance is tracked as a follow-up.
+# `test_sycl_motion_add_uv_parity` uses a scalar fixed-point oracle rather than
+# the differently rounded CPU float extractor (ADR-1326), so the same tight
+# contract is valid at both fixture sizes.
 sycl_parity_large_fixture_tests = [
     'test_sycl_adm_parity',
     'test_sycl_cambi_parity',
@@ -3424,6 +3900,7 @@ sycl_parity_large_fixture_tests = [
     'test_sycl_float_ssim_parity',
     'test_sycl_float_vif_parity',
     'test_sycl_motion3_parity',
+    'test_sycl_motion_add_uv_parity',
     'test_sycl_motion_v2_parity',
     'test_sycl_ms_ssim_parity',
     'test_sycl_psnr_hvs_parity',
@@ -3443,7 +3920,8 @@ foreach parity_test : sycl_parity_large_fixture_tests
         c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_W=960u', '-DFIXTURE_H=540u']
     )
     test(parity_test + '_large', parity_large_exe,
-        suite : ['fast', 'gpu', 'sycl'])
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
 endforeach
 
 
@@ -3543,7 +4021,9 @@ test_hip_smoke = executable('test_hip_smoke',
     dependencies: [pthread_dependency, hip_deps],
     c_args: ['-DHAVE_HIP=1']
 )
-test('test_hip_smoke', test_hip_smoke, suite : ['fast', 'gpu'])
+test('test_hip_smoke', test_hip_smoke,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # T3-15(c) / ADR-0219 / ADR-0214 — motion3 CPU vs. HIP parity gate.
 # The motion3 post-process (host-side moving-average over blended motion2)
@@ -3560,6 +4040,7 @@ test_hip_motion3_parity = executable('test_hip_motion3_parity',
 )
 test('test_hip_motion3_parity', test_hip_motion3_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-1106 / ADR-0214 — motion_v2 CPU vs. HIP parity gate.
@@ -3575,6 +4056,7 @@ test_hip_motion_v2_parity = executable('test_hip_motion_v2_parity',
 )
 test('test_hip_motion_v2_parity', test_hip_motion_v2_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-0539 — integer ADM CPU vs. HIP parity gate (places=4).
@@ -3593,13 +4075,14 @@ test_hip_adm_parity = executable('test_hip_adm_parity',
 # tests below pass on a gfx1036 device.
 test('test_hip_adm_parity', test_hip_adm_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22 -- the HIP integer-ADM init failure path.
 #
 # integer_adm_hip.c is compiled straight into this target rather than linked
 # from libvmaf, and test_hip_adm_init_unwind.c defines every symbol the TU
-# references: the ~17 hip* entry points, the four HSACO blobs, and four
+# references: the ~17 hip* entry points, the four HSACO blobs, and five
 # libvmaf helpers. `vmaf_feature_name_dict_from_provided_features` is the
 # injection point and returns NULL, which drives the one init path that used
 # to release every resource and then report success (hipSuccess through the
@@ -3654,6 +4137,7 @@ test_hip_adm_small_border = executable('test_hip_adm_small_border',
 )
 test('test_hip_adm_small_border', test_hip_adm_small_border,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18 — integer ADM on frames 17 to 32 pixels
@@ -3667,6 +4151,7 @@ test_hip_adm_tiny_frames = executable('test_hip_adm_tiny_frames',
 )
 test('test_hip_adm_tiny_frames', test_hip_adm_tiny_frames,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-1167 — ADM wide-frame row-level rounding parity test (spans 60 warps).
@@ -3679,6 +4164,7 @@ test_hip_adm_wide_rounding = executable('test_hip_adm_wide_rounding',
 )
 test('test_hip_adm_wide_rounding', test_hip_adm_wide_rounding,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-0958 round-4 — HIP kernel parity gap-fill (2 extractors).
@@ -3706,6 +4192,7 @@ test_hip_ssimulacra2_parity = executable('test_hip_ssimulacra2_parity',
 )
 test('test_hip_ssimulacra2_parity', test_hip_ssimulacra2_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_ssim_parity = executable('test_hip_float_ssim_parity',
@@ -3717,6 +4204,7 @@ test_hip_float_ssim_parity = executable('test_hip_float_ssim_parity',
 )
 test('test_hip_float_ssim_parity', test_hip_float_ssim_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-0945 round-3 — HIP kernel parity gap-fill (4 extractors).
@@ -3738,6 +4226,7 @@ test_hip_cambi_parity = executable('test_hip_cambi_parity',
 )
 test('test_hip_cambi_parity', test_hip_cambi_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
@@ -3749,6 +4238,7 @@ test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
 )
 test('test_hip_float_adm_parity', test_hip_float_adm_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_motion_parity = executable('test_hip_float_motion_parity',
@@ -3760,6 +4250,7 @@ test_hip_float_motion_parity = executable('test_hip_float_motion_parity',
 )
 test('test_hip_float_motion_parity', test_hip_float_motion_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_psnr_parity = executable('test_hip_float_psnr_parity',
@@ -3771,6 +4262,7 @@ test_hip_float_psnr_parity = executable('test_hip_float_psnr_parity',
 )
 test('test_hip_float_psnr_parity', test_hip_float_psnr_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
@@ -3782,6 +4274,7 @@ test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
 )
 test('test_hip_float_vif_parity', test_hip_float_vif_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 # ADR-1212 — float_moment CPU vs. HIP parity, at 8 bpc and (via
 # -DFIXTURE_BPC=10u) at 10 bpc. The HIP twin had no cross-backend gate at all,
@@ -3796,6 +4289,7 @@ foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']]]
     )
     test('test_hip_float_moment_parity' + variant[0], hip_moment_exe,
         suite : ['fast', 'gpu'],
+        is_parallel : false,
         timeout : 60)
 endforeach
 
@@ -3816,6 +4310,7 @@ test_hip_ciede_parity = executable('test_hip_ciede_parity',
 )
 test('test_hip_ciede_parity', test_hip_ciede_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-1213 — the same TU at an odd luma width. `ciede_hip` sized its chroma
@@ -3831,6 +4326,7 @@ test_hip_ciede_parity_oddw = executable('test_hip_ciede_parity_oddw',
 )
 test('test_hip_ciede_parity_oddw', test_hip_ciede_parity_oddw,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_psnr_hvs_parity = executable('test_hip_psnr_hvs_parity',
@@ -3842,6 +4338,7 @@ test_hip_psnr_hvs_parity = executable('test_hip_psnr_hvs_parity',
 )
 test('test_hip_psnr_hvs_parity', test_hip_psnr_hvs_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_motion_parity = executable('test_hip_motion_parity',
@@ -3853,6 +4350,7 @@ test_hip_motion_parity = executable('test_hip_motion_parity',
 )
 test('test_hip_motion_parity', test_hip_motion_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-0564 — integer_ssim CPU vs. HIP parity, places=4 on every frame of an
@@ -3871,6 +4369,7 @@ foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']],
     )
     test('test_hip_ssim_parity' + variant[0], hip_ssim_exe,
         suite : ['fast', 'gpu'],
+        is_parallel : false,
         timeout : 60)
 endforeach
 
@@ -3887,6 +4386,7 @@ test_hip_upload_race = executable('test_hip_upload_race',
 )
 test('test_hip_upload_race', test_hip_upload_race,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 120)
 
 test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
@@ -3898,6 +4398,7 @@ test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
 )
 test('test_hip_ms_ssim_parity', test_hip_ms_ssim_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # GPU-kernel coverage gap-fill — psnr CPU vs. HIP parity (places=4).
@@ -3913,6 +4414,7 @@ test_hip_psnr_parity = executable('test_hip_psnr_parity',
 )
 test('test_hip_psnr_parity', test_hip_psnr_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # GPU-kernel coverage gap-fill — VIF scale0 CPU vs. HIP parity (places=3).
@@ -3928,6 +4430,7 @@ test_hip_vif_parity = executable('test_hip_vif_parity',
 )
 test('test_hip_vif_parity', test_hip_vif_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 # ADR-1004 round 5 — speed_chroma + speed_temporal HIP parity gates.
@@ -3949,6 +4452,7 @@ test_hip_speed_chroma_parity = executable('test_hip_speed_chroma_parity',
 )
 test('test_hip_speed_chroma_parity', test_hip_speed_chroma_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_speed_temporal_parity = executable('test_hip_speed_temporal_parity',
@@ -3960,6 +4464,7 @@ test_hip_speed_temporal_parity = executable('test_hip_speed_temporal_parity',
 )
 test('test_hip_speed_temporal_parity', test_hip_speed_temporal_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 60)
 
 test_hip_speed_singular_parity = executable('test_hip_speed_singular_parity',
@@ -3971,6 +4476,7 @@ test_hip_speed_singular_parity = executable('test_hip_speed_singular_parity',
 )
 test('test_hip_speed_singular_parity', test_hip_speed_singular_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     timeout : 90)
 # ADR-1206 — large-fixture parity variants (resolution blind spot).
 # Same rationale as the CUDA and SYCL families. Verified on a gfx1030 once
@@ -4005,6 +4511,7 @@ foreach parity_test : hip_parity_large_fixture_tests
     )
     test(parity_test + '_large', parity_large_exe,
         suite : ['fast', 'gpu'],
+        is_parallel : false,
         timeout : 60)
 endforeach
 
@@ -4024,7 +4531,9 @@ test_metal_smoke = executable('test_metal_smoke',
     dependencies: [pthread_dependency],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_smoke', test_metal_smoke, suite : ['fast', 'gpu'])
+test('test_metal_smoke', test_metal_smoke,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # ADR-0437 — install-gate: verify libvmaf_metal.h is reachable via the
 # installed include path and that vmaf_metal_import_state + the IOSurface
@@ -4039,7 +4548,9 @@ test_metal_install_header = executable('test_metal_install_header',
     dependencies: [pthread_dependency],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_install_header', test_metal_install_header, suite : ['fast', 'gpu'])
+test('test_metal_install_header', test_metal_install_header,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 endif
 
 # Metal kernel coverage round 3 — per-extractor parity tests for the four
@@ -4057,7 +4568,9 @@ test_metal_integer_motion_parity = executable('test_metal_integer_motion_parity'
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_motion_parity', test_metal_integer_motion_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_motion_parity', test_metal_integer_motion_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_motion_parity = executable('test_metal_float_motion_parity',
     ['test.c', 'test_metal_float_motion_parity.c'],
@@ -4066,7 +4579,9 @@ test_metal_float_motion_parity = executable('test_metal_float_motion_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_motion_parity', test_metal_float_motion_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_motion_parity', test_metal_float_motion_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
     ['test.c', 'test_metal_float_moment_parity.c'],
@@ -4075,7 +4590,23 @@ test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_moment_parity', test_metal_float_moment_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_moment_parity', test_metal_float_moment_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
+# ADR-1212 / BUG-048 A6: 8 bpc cannot expose either high-bit-depth scaling or
+# float-partial precision loss, so compile and execute the same live Metal
+# parity gate at 10 bpc on Apple Silicon.
+test_metal_float_moment_parity_10bit = executable('test_metal_float_moment_parity_10bit',
+    ['test.c', 'test_metal_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1', '-DFIXTURE_BPC=10u']
+)
+test('test_metal_float_moment_parity_10bit', test_metal_float_moment_parity_10bit,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
     ['test.c', 'test_metal_float_ms_ssim_parity.c'],
@@ -4084,7 +4615,9 @@ test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Metal kernel coverage round 2 — per-extractor parity tests (ADR-0421 /
 # ADR-0589 / ADR-0214). Extend PR #351's registration audit with real CPU
@@ -4102,6 +4635,7 @@ test_metal_motion_v2_parity = executable('test_metal_motion_v2_parity',
 )
 test('test_metal_motion_v2_parity', test_metal_motion_v2_parity,
     suite : ['fast', 'gpu'],
+    is_parallel : false,
     should_fail : false,
     protocol : 'exitcode',
     verbose : true,
@@ -4116,7 +4650,9 @@ test_metal_integer_ssim_parity = executable('test_metal_integer_ssim_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_ssim_parity', test_metal_integer_ssim_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_ssim_parity', test_metal_integer_ssim_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # float_vif_metal — 4-scale VIF pyramid (feature "float_vif"); CPU vs. Metal
 # parity, skips cleanly when no Metal device.
@@ -4127,7 +4663,9 @@ test_metal_float_vif_parity = executable('test_metal_float_vif_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_vif_parity', test_metal_float_vif_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_vif_parity', test_metal_float_vif_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # float_adm_metal — 4-scale DWT+CSF+CM (feature "float_adm"); CPU vs. Metal
 # parity, skips cleanly when no Metal device.
@@ -4138,7 +4676,9 @@ test_metal_float_adm_parity = executable('test_metal_float_adm_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_adm_parity', test_metal_float_adm_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_adm_parity', test_metal_float_adm_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # integer_vif_metal — 4-scale fixed-point VIF pyramid (feature "vif"); CPU vs.
 # Metal parity, skips cleanly when no Metal device.
@@ -4149,7 +4689,9 @@ test_metal_integer_vif_parity = executable('test_metal_integer_vif_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_vif_parity', test_metal_integer_vif_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_vif_parity', test_metal_integer_vif_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # integer_adm_metal — fixed-point 4-scale DWT+CSF+CM (feature "adm"); CPU vs.
 # Metal parity, skips cleanly when no Metal device.
@@ -4160,7 +4702,9 @@ test_metal_integer_adm_parity = executable('test_metal_integer_adm_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_adm_parity', test_metal_integer_adm_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_adm_parity', test_metal_integer_adm_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Standalone-metric Metal parity tests (ciede2000, psnr_hvs, cambi, ssimulacra2).
 foreach _m : ['integer_ciede', 'integer_psnr_hvs', 'integer_cambi', 'ssimulacra2']
@@ -4170,7 +4714,9 @@ foreach _m : ['integer_ciede', 'integer_psnr_hvs', 'integer_cambi', 'ssimulacra2
       link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
       dependencies: [pthread_dependency, math_lib],
       c_args: ['-DHAVE_METAL=1'])
-  test('test_metal_' + _m + '_parity', _exe, suite : ['fast', 'gpu'])
+  test('test_metal_' + _m + '_parity', _exe,
+      suite : ['fast', 'gpu'],
+      is_parallel : false)
 endforeach
 
 test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
@@ -4180,7 +4726,9 @@ test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_integer_psnr_parity', test_metal_integer_psnr_parity, suite : ['fast', 'gpu'])
+test('test_metal_integer_psnr_parity', test_metal_integer_psnr_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_psnr_parity = executable('test_metal_float_psnr_parity',
     ['test.c', 'test_metal_float_psnr_parity.c'],
@@ -4189,7 +4737,9 @@ test_metal_float_psnr_parity = executable('test_metal_float_psnr_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_psnr_parity', test_metal_float_psnr_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_psnr_parity', test_metal_float_psnr_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 test_metal_float_ssim_parity = executable('test_metal_float_ssim_parity',
     ['test.c', 'test_metal_float_ssim_parity.c'],
@@ -4198,7 +4748,9 @@ test_metal_float_ssim_parity = executable('test_metal_float_ssim_parity',
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_float_ssim_parity', test_metal_float_ssim_parity, suite : ['fast', 'gpu'])
+test('test_metal_float_ssim_parity', test_metal_float_ssim_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # Metal kernel coverage round 4 (closeout) — meta-audit regression guard
 # (ADR-0959). Enumerates the 8 .mm kernel basenames under
@@ -4215,7 +4767,9 @@ test_metal_kernel_coverage_audit = executable('test_metal_kernel_coverage_audit'
     dependencies: [pthread_dependency],
     c_args: ['-DHAVE_METAL=1']
 )
-test('test_metal_kernel_coverage_audit', test_metal_kernel_coverage_audit, suite : ['fast', 'gpu'])
+test('test_metal_kernel_coverage_audit', test_metal_kernel_coverage_audit,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 # GPU-kernel coverage gap-fill — extractor-registration audit for the
 # 8 Metal extractors (ADR-0361 T8-1c/d). Registration is compile-time
@@ -4230,7 +4784,8 @@ test_metal_kernel_registration = executable('test_metal_kernel_registration',
     c_args: ['-DHAVE_METAL=1']
 )
 test('test_metal_kernel_registration', test_metal_kernel_registration,
-    suite : ['fast', 'gpu'])
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
 
 endif
 
@@ -4240,6 +4795,15 @@ test('test_log', test_log, suite : ['fast'])
 test('test_picture', test_picture, suite : ['fast'])
 test('test_picture_v2', test_picture_v2, suite : ['fast'])
 test('test_feature_collector', test_feature_collector, suite : ['fast'])
+
+# BUG-048 section E: the collector has one C++ implementation authority.  This
+# source/build-graph red-cap prevents the memory-safety C twin from being
+# resurrected beside the C++ TU again.
+test('test_feature_collector_source_authority',
+    import('python').find_installation(),
+    args : files('test_feature_collector_source_authority.py'),
+    suite : ['fast'],
+)
 test('test_flush_context_ordering', test_flush_context_ordering, suite : ['fast'])
 test('test_output', test_output, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
@@ -4254,6 +4818,12 @@ test('test_model_feature_overload_ownership', test_model_feature_overload_owners
 test('test_model_registration_ownership', test_model_registration_ownership, suite : ['fast'])
 test('test_model_collection_api', test_model_collection_api, suite : ['fast'])
 test('test_predict', test_predict, suite : ['fast'])
+test('test_predict_nonfinite_log_output',
+    import('python').find_installation(),
+    args : [files('test_predict_nonfinite_log_output.py'), test_predict],
+    suite : ['fast'],
+    timeout : 30,
+)
 test('test_svm_api', test_svm_api, suite : ['fast'])
 test('test_svm_parser', test_svm_parser, suite : ['fast'])
 test('test_svm_multiclass', test_svm_multiclass, suite : ['fast'])
@@ -4432,9 +5002,8 @@ test('test_adm_csf_tools_coverage', test_adm_csf_tools_coverage, suite : ['fast'
 # feature_collector.cpp is compiled directly into this test so the
 # non-static internal helpers (aggregate_vector_*, feature_vector_*)
 # declared in feature_collector_internal.h are resolvable at link time.
-# libvmaf includes only feature_collector.c (static helpers); the
-# duplicate-free compilation here is safe — see test_predict for the
-# same pattern.
+# The archive member is not extracted when these direct definitions already
+# satisfy the collector references — see test_predict for the same pattern.
 test_feature_collector_coverage = executable('test_feature_collector_coverage',
     ['test.c', 'test_feature_collector_coverage.c',
      '../src/feature/feature_collector.cpp'],
@@ -4451,12 +5020,13 @@ test('test_feature_collector_coverage', test_feature_collector_coverage, suite :
 # cambi.c's `heatmaps_path` sidecar, which no unit test exercises.  This
 # binary drives the public `mkdirp` symbol directly with NULL guard,
 # single-level mkdir, EEXIST idempotence, and double-slash normalization.
-# Compiles `mkdirp.c` into the binary directly — the file is part of
+# Compiles `mkdirp.cpp` and its UTF-8 path dependency into the binary directly.
+# The file is part of
 # libvmaf_feature_static_lib so linking against libvmaf would also work,
 # but a TU-local compile keeps the test self-contained and avoids
 # coupling to libvmaf's link graph.
 test_mkdirp = executable('test_mkdirp',
-    ['test.c', 'test_mkdirp.c', '../src/feature/mkdirp.cpp'],
+    ['test.c', 'test_mkdirp.c', '../src/feature/mkdirp.cpp', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )
@@ -4469,12 +5039,12 @@ test_integer_vif_avx2_stages = executable('test_integer_vif_avx2_stages',
     # libvmaf/dnn.h references (session_open/run/close,
     # vmaf_tensor_from_rgb_imagenet) without linking against libvmaf.so.
     ['test.c', 'test_integer_vif_avx2_stages.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,
@@ -4506,12 +5076,12 @@ test_integer_vif_avx512_stages = executable('test_integer_vif_avx512_stages',
     # libvmaf/dnn.h references (session_open/run/close,
     # vmaf_tensor_from_rgb_imagenet) without linking against libvmaf.so.
     ['test.c', 'test_integer_vif_avx512_stages.c', '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
-     '../src/dict.cpp', '../src/predict.c',
+     '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
      dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
       common_cuda_objects,

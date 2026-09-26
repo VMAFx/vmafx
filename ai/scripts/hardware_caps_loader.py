@@ -55,6 +55,7 @@ _REPO_ROOT = _SCRIPT_PATHS.repo_root
 _DEFAULT_CSV = _REPO_ROOT / "ai" / "data" / "hardware_caps.csv"
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.run_manifest import dumps_manifest_json  # noqa: E402
 
 REQUIRED_COLUMNS: tuple[str, ...] = (
     "arch_name",
@@ -180,7 +181,7 @@ def _parse_row(raw: dict[str, str], *, source: str) -> HardwareCapRow:
     vendor = raw["vendor"].strip().lower()
     if vendor not in {"intel", "amd", "nvidia"}:
         raise HardwareCapsError(
-            f"{source}: arch={arch_name!r}: vendor must be intel|amd|nvidia, " f"got {vendor!r}"
+            f"{source}: arch={arch_name!r}: vendor must be intel|amd|nvidia, got {vendor!r}"
         )
     try:
         gen_year = int(raw["gen_year"])
@@ -243,14 +244,14 @@ def _parse_max_res(
             continue
         if "=" not in entry:
             raise HardwareCapsError(
-                f"{source}: arch={arch_name!r}: max_res entry {entry!r} " "must be codec=WxH"
+                f"{source}: arch={arch_name!r}: max_res entry {entry!r} must be codec=WxH"
             )
         codec, dims = entry.split("=", 1)
         codec = codec.strip().lower()
         match = re.fullmatch(r"(\d+)x(\d+)", dims.strip())
         if not match:
             raise HardwareCapsError(
-                f"{source}: arch={arch_name!r}: max_res dims {dims!r} " "must be WxH"
+                f"{source}: arch={arch_name!r}: max_res dims {dims!r} must be WxH"
             )
         out[codec] = (int(match.group(1)), int(match.group(2)))
     missing = [c for c in codecs if c not in out]
@@ -379,8 +380,6 @@ def row_as_dict(row: HardwareCapRow) -> dict[str, object]:
 
 def _main(argv: list[str] | None = None) -> int:  # pragma: no cover
     """Tiny CLI: print the loaded table as JSON for debugging."""
-    import json
-
     raw_argv = collect_cli_argv(argv)
     parser = make_argument_parser(
         prog="hardware_caps_loader.py",
@@ -405,15 +404,9 @@ def _main(argv: list[str] | None = None) -> int:  # pragma: no cover
     table = HardwareCapsTable.load(args.csv)
     if args.encoder:
         vec = cap_vector_for(table, encoder=args.encoder, encoder_arch_hint=args.arch)
-        print(json.dumps(vec, indent=2, sort_keys=True))
+        print(dumps_manifest_json(vec), end="")
         return 0
-    print(
-        json.dumps(
-            {"rows": [row_as_dict(r) for r in table.rows]},
-            indent=2,
-            sort_keys=True,
-        )
-    )
+    print(dumps_manifest_json({"rows": [row_as_dict(r) for r in table.rows]}), end="")
     return 0
 
 

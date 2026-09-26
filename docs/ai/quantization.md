@@ -399,6 +399,49 @@ pass, `1` drop over budget or a missing file, `2` bad invocation. The
 `--out-json` report keeps the same shape as a registry run, with
 `"quant_mode": "override"` on the single row.
 
+### Deterministic clip-level validation gate (`validate_quant_parity.py`)
+
+Synthetic random tensors (`measure_quant_drop.py`) test operator fidelity
+but exhibit lower sensitivity than real natural video features. To protect
+release quality across full clip sequences,
+`ai/scripts/validate_quant_parity.py` evaluates models on real feature clips
+(defaulting to `testdata/scores_cpu_576.json`, with `.parquet` and `.npz`
+support) against the strict Research-2029 §6 acceptance thresholds:
+
+- **Mean absolute delta**: $\le 0.10$ VMAF points (`--max-mean-delta`)
+- **Maximum single-frame delta**: $\le 0.50$ VMAF points (`--max-single-delta`)
+- **Pearson linear correlation (PLCC)**: $\ge 0.990$ (`--min-plcc`)
+
+```bash
+# Gate all shipped tabular FR models against default Research-2029 §6 thresholds:
+python ai/scripts/validate_quant_parity.py --all \
+    --out-json runs/quant_parity_gate.json
+
+# Gate a specific model or direct fp32/int8 pair:
+python ai/scripts/validate_quant_parity.py --model vmaf_tiny_v3
+python ai/scripts/validate_quant_parity.py \
+    --fp32 /tmp/model.onnx \
+    --int8 /tmp/model.int8.onnx \
+    --features ai/testdata/bisect/features.parquet \
+    --max-mean-delta 0.10 \
+    --max-single-delta 0.50 \
+    --min-plcc 0.990
+```
+
+Exit codes: `0` when all evaluated models pass all thresholds, `1` when any
+threshold is breached, `2` on invocation or file errors.
+
+> [!NOTE]
+> Shipped models on disk (`vmaf_tiny_v3`, `vmaf_tiny_v4`) are un-retrained
+> dynamic PTQ models. While they easily achieve high linear correlation
+> ($\text{PLCC} \ge 0.994$), dynamic activation quantization introduces a
+> modest absolute score shift ($\text{mean } |\Delta| \approx 0.31\text{--}0.56$,
+> $\text{max } |\Delta| \approx 0.54\text{--}0.97$). Running
+> `validate_quant_parity.py` with default thresholds therefore fails closed
+> as designed. Reaching $\le 0.10$ mean delta and $\le 0.50$ max delta requires
+> full QAT retraining against the `vmaf_v1.0.16_3d0h` teacher on the 152k-clip
+> training corpus (Epic #1246).
+
 ## Currently quantised models
 
 | Model id | Mode | Size shrink | Measured drop | Budget |

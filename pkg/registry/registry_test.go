@@ -202,7 +202,7 @@ func TestConcurrentWrites(t *testing.T) {
 	s := registry.New[int, int](func(v int) int { return v })
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(k int) {
 			defer wg.Done()

@@ -3,16 +3,11 @@
 //
 // pkg/libvmaf/libvmaf.go — Go wrapper around the libvmaf C ABI via cgo.
 //
-// Local-dev linking strategy (CPU-only build):
-//
-//	cgo LDFLAGS: -L${SRCDIR}/../../core/build-cpu/src -lvmaf
-//
-// Production / container linking strategy:
-//
-//	libvmaf.so is installed at /usr/local/lib.
-//	Set LD_LIBRARY_PATH=/usr/local/lib (or run ldconfig) before starting
-//	the binary.  The linker flag below covers both cases via -lvmaf:
-//	  CGO_LDFLAGS="-L/usr/local/lib -lvmaf" or LD_LIBRARY_PATH at run-time.
+// Linking is deliberately caller-selected.  This file does not provide a
+// fallback `-lvmaf`: a missing in-tree build must fail closed instead of
+// silently resolving an unrelated distro libvmaf.  The Make targets and CI
+// set CGO_LDFLAGS to core/build-cpu/src; container builds set it to the exact
+// staged fork library under /usr/local/lib (ADR-1125).
 //
 // The cgo compiler flag `-I${SRCDIR}/../../core/include` resolves the public
 // libvmaf header from the fork tree (core/include/libvmaf/libvmaf.h).
@@ -31,7 +26,6 @@ package libvmaf
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../core/include
-#cgo LDFLAGS: -L${SRCDIR}/../../core/build-cpu/src -lvmaf -lm
 
 #include <libvmaf/libvmaf.h>
 #include <stdlib.h>

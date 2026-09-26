@@ -154,6 +154,7 @@ nav:
       - Building on Windows: getting-started/building-on-windows.md
   - Usage:
       - CLI reference: usage/cli.md
+      - RC1 External Tester Guide: usage/rc1-tester-guide.md
       - vmaf_bench: usage/bench.md
       - '--precision': usage/precision.md
       - Python library: usage/python.md
@@ -190,6 +191,7 @@ nav:
           - Fast NR pre-scoring: usage/vmaf-tune-fast-nr.md
   - C API:
       - api/index.md
+      - Rust context close/retry: api/rust-context-close.md
       - DNN sessions: api/dnn.md
       - GPU (CUDA / SYCL): api/gpu.md
       - MCP C API: api/mcp.md
@@ -344,6 +346,7 @@ nav:
       - Best Practices assessment: development/best-practices-assessment.md
       - Repository security: development/repository-security.md
       - Dependency bot: development/dependency-bot.md
+      - Python dependency locks: development/python-dependency-locks.md
       - Project modernization audit: development/project-modernization-audit.md
       - Self-hosted runner: development/self-hosted-runner.md
       - Agent dispatch: development/agent-dispatch.md
@@ -367,6 +370,7 @@ nav:
       - ADR workflow: development/adr-workflow.md
       - PR body sentinel guide: development/pr-body-sentinel-guide.md
       - Test fixtures: development/test-fixtures.md
+      - Credential-safe Meson tests: development/meson-test-runner.md
       - CI tmate debug: development/ci-tmate-debug.md
       - eBPF FUSE bypass: development/ebpf-fuse-bypass.md
       - Performance claims (May 2026): development/perf-claims-2026-05-10.md
@@ -1311,6 +1315,7 @@ nav:
         - "ADR-1177: sycl-arc-self-hosted-runner": adr/1177-sycl-arc-self-hosted-runner.md
         - "ADR-1178: dev-container-image-publish": adr/1178-dev-container-image-publish.md
         - "ADR-1179: sycl-v1-model-crash-fix": adr/1179-sycl-v1-model-crash-fix.md
+        - "ADR-1182: windows-utf8-path-contract": adr/1182-windows-utf8-path-contract.md
         - "ADR-1183: model-options-gate-gpu-twin-selection": adr/1183-model-options-gate-gpu-twin-selection.md
         - "ADR-1184: mcp-grpc-bridge-go-only": adr/1184-mcp-grpc-bridge-go-only.md
         - "ADR-1185: backend-perf-baseline-methodology": adr/1185-backend-perf-baseline-methodology.md
@@ -1420,8 +1425,37 @@ nav:
       - "1300-1399 — Misc":
         - "ADR-1300: cuda-install-from-nvidia-apt": adr/1300-cuda-install-from-nvidia-apt.md
         - "ADR-1301: speed-nonfinite-score-fails-frame": adr/1301-speed-nonfinite-score-fails-frame.md
+        - "ADR-1302: nonfinite-scores-fail-the-frame": adr/1302-nonfinite-scores-fail-the-frame.md
         - "ADR-1303: backlog-checklist-tracker-schema": adr/1303-backlog-checklist-tracker-schema.md
         - "ADR-1304: mcp-http-runtime-isolation": adr/1304-mcp-http-runtime-isolation.md
+        - "ADR-1305: hash-locked-python-installs": adr/1305-hash-locked-python-installs.md
+        - "ADR-1306: drop-nvidia-cuda-base": adr/1306-drop-nvidia-cuda-base.md
+        - "ADR-1307: sha256-memoization-cache-invalidation": adr/1307-sha256-memoization-cache-invalidation.md
+        - "ADR-1308: codeql-float-equality-contracts": adr/1308-codeql-float-equality-contracts.md
+        - "ADR-1309: socket-path-ownership-and-owner-only-mode": adr/1309-socket-path-ownership-and-owner-only-mode.md
+        - "ADR-1310: mypy-ci-fail-closed": adr/1310-mypy-ci-fail-closed.md
+        - "ADR-1311: source-adr-citation-provenance": adr/1311-source-adr-citation-provenance.md
+        - "ADR-1312: gpu-option-alias-parity": adr/1312-gpu-option-alias-parity.md
+        - "ADR-1314: semgrep-registry-advisory-artifact": adr/1314-semgrep-registry-advisory-artifact.md
+        - "ADR-1315: doxygen-public-api-fail-closed": adr/1315-doxygen-public-api-fail-closed.md
+        - "ADR-1316: gpu-option-value-capability-fallback": adr/1316-gpu-option-value-capability-fallback.md
+        - "ADR-1317: golden-gate-build-isolation": adr/1317-golden-gate-build-isolation.md
+        - "ADR-1318: pershot-frames-ceiling": adr/1318-pershot-frames-ceiling.md
+        - "ADR-1319: fail-closed-self-hosted-gpu-admission": adr/1319-fail-closed-self-hosted-gpu-admission.md
+        - "ADR-1320: cuda-hip-kernel-header-dependency-tracking": adr/1320-cuda-hip-kernel-header-dependency-tracking.md
+        - "ADR-1321: pre-rc1-flake-survey-remediation": adr/1321-pre-rc1-flake-survey-remediation.md
+        - "ADR-1322: metal-integer-psnr-enable-chroma-parity": adr/1322-metal-integer-psnr-enable-chroma-parity.md
+        - "ADR-1324: gpu-float-ssim-auto-scale-fallback": adr/1324-gpu-float-ssim-auto-scale-fallback.md
+        - "ADR-1325: integer-adm-barten-fixed-point-normalization": adr/1325-integer-adm-barten-fixed-point-normalization.md
+        - "ADR-1326: sycl-motion-uv-fixed-oracle": adr/1326-sycl-motion-uv-fixed-oracle.md
+        - "ADR-1333: meson-test-secret-env-sanitization": adr/1333-meson-test-secret-env-sanitization.md
+        - "ADR-1334: metal-ms-ssim-option-parity": adr/1334-metal-ms-ssim-option-parity.md
+        - "ADR-1335: research-digest-identity-ratchet": adr/1335-research-digest-identity-ratchet.md
+        - "ADR-1336: cuda-context-owned-resource-teardown": adr/1336-cuda-context-owned-resource-teardown.md
+        - "ADR-1337: cpp-placement-new-visibility": adr/1337-cpp-placement-new-visibility.md
+        - "ADR-1338: go-fix-clean-tree-gate": adr/1338-go-fix-clean-tree-gate.md
+        - "ADR-1341: rc-correctness-benchmark-retrain-sequence": adr/1341-rc-correctness-benchmark-retrain-sequence.md
+        - "ADR-1342: rc1-external-tester-report-bundle": adr/1342-rc1-external-tester-report-bundle.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1469,6 +1503,7 @@ nav:
         - "avx2": adr/by-tag/avx2.md
         - "avx512": adr/by-tag/avx512.md
         - "backend": adr/by-tag/backend.md
+        - "backends": adr/by-tag/backends.md
         - "backlog": adr/by-tag/backlog.md
         - "batch-threading": adr/by-tag/batch-threading.md
         - "batch": adr/by-tag/batch.md
@@ -1486,9 +1521,11 @@ nav:
         - "breaking": adr/by-tag/breaking.md
         - "bristol": adr/by-tag/bristol.md
         - "browser": adr/by-tag/browser.md
+        - "bug-048": adr/by-tag/bug-048.md
         - "bug-fix": adr/by-tag/bug-fix.md
         - "bug": adr/by-tag/bug.md
         - "bugfix": adr/by-tag/bugfix.md
+        - "build-system": adr/by-tag/build-system.md
         - "build": adr/by-tag/build.md
         - "bvi-dvc": adr/by-tag/bvi-dvc.md
         - "c++": adr/by-tag/c++.md
@@ -1532,7 +1569,9 @@ nav:
         - "codeql": adr/by-tag/codeql.md
         - "colour": adr/by-tag/colour.md
         - "compare": adr/by-tag/compare.md
+        - "compat": adr/by-tag/compat.md
         - "compatibility": adr/by-tag/compatibility.md
+        - "compiler": adr/by-tag/compiler.md
         - "compliance": adr/by-tag/compliance.md
         - "concurrency": adr/by-tag/concurrency.md
         - "configs": adr/by-tag/configs.md
@@ -1592,6 +1631,8 @@ nav:
         - "docker": adr/by-tag/docker.md
         - "docs-policy": adr/by-tag/docs-policy.md
         - "docs": adr/by-tag/docs.md
+        - "documentation": adr/by-tag/documentation.md
+        - "doxygen": adr/by-tag/doxygen.md
         - "durability": adr/by-tag/durability.md
         - "dx": adr/by-tag/dx.md
         - "ebpf": adr/by-tag/ebpf.md
@@ -1614,6 +1655,7 @@ nav:
         - "feature-extraction": adr/by-tag/feature-extraction.md
         - "feature-extractor": adr/by-tag/feature-extractor.md
         - "feature-extractors": adr/by-tag/feature-extractors.md
+        - "feature-options": adr/by-tag/feature-options.md
         - "feature-param": adr/by-tag/feature-param.md
         - "feature": adr/by-tag/feature.md
         - "features": adr/by-tag/features.md
@@ -1632,6 +1674,7 @@ nav:
         - "float": adr/by-tag/float.md
         - "float_adm": adr/by-tag/float_adm.md
         - "float_moment": adr/by-tag/float_moment.md
+        - "floating-point": adr/by-tag/floating-point.md
         - "fork-internal": adr/by-tag/fork-internal.md
         - "fork-local": adr/by-tag/fork-local.md
         - "fork-policy": adr/by-tag/fork-policy.md
@@ -1869,6 +1912,7 @@ nav:
         - "rbac": adr/by-tag/rbac.md
         - "rc-blocking": adr/by-tag/rc-blocking.md
         - "rc": adr/by-tag/rc.md
+        - "rc1": adr/by-tag/rc1.md
         - "rclone": adr/by-tag/rclone.md
         - "readme": adr/by-tag/readme.md
         - "rebase-hygiene": adr/by-tag/rebase-hygiene.md
@@ -1919,6 +1963,7 @@ nav:
         - "scripts": adr/by-tag/scripts.md
         - "second-opinion": adr/by-tag/second-opinion.md
         - "security": adr/by-tag/security.md
+        - "self-hosted-runner": adr/by-tag/self-hosted-runner.md
         - "semver": adr/by-tag/semver.md
         - "server": adr/by-tag/server.md
         - "shaders": adr/by-tag/shaders.md
@@ -1934,6 +1979,7 @@ nav:
         - "slsa": adr/by-tag/slsa.md
         - "smem": adr/by-tag/smem.md
         - "smoke": adr/by-tag/smoke.md
+        - "source-code": adr/by-tag/source-code.md
         - "spec-correctness": adr/by-tag/spec-correctness.md
         - "speed": adr/by-tag/speed.md
         - "sqlite": adr/by-tag/sqlite.md
@@ -1982,12 +2028,14 @@ nav:
         - "ub": adr/by-tag/ub.md
         - "ubsan": adr/by-tag/ubsan.md
         - "ugc": adr/by-tag/ugc.md
+        - "unix-socket": adr/by-tag/unix-socket.md
         - "upstream-blocked": adr/by-tag/upstream-blocked.md
         - "upstream-divergence": adr/by-tag/upstream-divergence.md
         - "upstream-mirror": adr/by-tag/upstream-mirror.md
         - "upstream-port": adr/by-tag/upstream-port.md
         - "upstream-sync": adr/by-tag/upstream-sync.md
         - "upstream": adr/by-tag/upstream.md
+        - "utf8": adr/by-tag/utf8.md
         - "ux": adr/by-tag/ux.md
         - "v4": adr/by-tag/v4.md
         - "validation": adr/by-tag/validation.md

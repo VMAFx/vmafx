@@ -827,6 +827,19 @@ extern "C" int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnque
         return -ENOMEM;
     }
 
+    // Round-26 audit (ADR-0982): create the combined queue BEFORE
+    // pushing the extractor entry. Previously the order was reversed,
+    // so a lazy-queue-create failure left the state with a registered
+    // extractor (num_graph_extractors incremented) but no queue —
+    // every subsequent graph_submit asserted on
+    // num_graph_extractors > 0 and then dereferenced a null queue.
+    if (!state->combined_queue) {
+        auto *q = static_cast<sycl::queue *>(vmaf_sycl_create_compute_queue(state));
+        if (!q)
+            return -ENOMEM;
+        state->combined_queue = q;
+    }
+
     auto &ge = state->graph_extractors[state->num_graph_extractors++];
     ge.enqueue_fn = enqueue_fn;
     ge.pre_fn = pre_fn;
@@ -834,14 +847,6 @@ extern "C" int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnque
     ge.config_fn = config_fn;
     ge.priv = priv;
     ge.name = name ? name : "unknown";
-
-    // Create combined queue lazily (once, shared by all extractors)
-    if (!state->combined_queue) {
-        auto *q = static_cast<sycl::queue *>(vmaf_sycl_create_compute_queue(state));
-        if (!q)
-            return -ENOMEM;
-        state->combined_queue = q;
-    }
 
     return 0;
 }

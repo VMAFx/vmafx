@@ -19,6 +19,7 @@ import (
 	"errors"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -192,48 +193,135 @@ func TestResolutionMismatchWarning(t *testing.T) {
 
 func TestInferBackendFromPayload(t *testing.T) {
 	t.Parallel()
-	// Empty frames → cpu (safe default).
-	if got := inferBackendFromPayload(map[string]any{}); got != "cpu" {
-		t.Errorf("empty: got %q, want cpu", got)
+	tests := []struct {
+		name        string
+		receipt     any
+		withReceipt bool
+		metricCount int
+		payload     any
+		custom      bool
+		want        string
+	}{
+		{name: "observed cpu", receipt: "cpu", withReceipt: true, metricCount: 15, want: "cpu"},
+		{name: "observed cuda", receipt: "cuda", withReceipt: true, metricCount: 14, want: "cuda"},
+		{name: "observed sycl", receipt: "sycl", withReceipt: true, metricCount: 24, want: "sycl"},
+		{name: "hip", receipt: "hip", withReceipt: true, metricCount: 15, want: "hip"},
+		{name: "metal", receipt: "metal", withReceipt: true, metricCount: 14, want: "metal"},
+		{name: "missing", metricCount: 8, want: "unknown"},
+		{name: "auto", receipt: "auto", withReceipt: true, metricCount: 15, want: "unknown"},
+		{name: "generic gpu", receipt: "gpu", withReceipt: true, metricCount: 8, want: "unknown"},
+		{name: "non string", receipt: float64(7), withReceipt: true, metricCount: 14, want: "unknown"},
+		{name: "nil payload", custom: true, payload: nil, want: "unknown"},
+		{name: "array payload", custom: true, payload: []any{1, 2, 3}, want: "unknown"},
+		{name: "string payload", custom: true, payload: "score", want: "unknown"},
+		{name: "number payload", custom: true, payload: 42, want: "unknown"},
 	}
-	// >12 metrics → cpu (ADR-0726 removed the vulkan branch; matches Python).
-	metrics30 := map[string]any{}
-	for i := 0; i < 30; i++ {
-		metrics30[strFromInt(i)] = float64(i)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.custom {
+				if got := inferBackendFromPayload(tt.payload); got != tt.want {
+					t.Errorf("inferBackendFromPayload(): got %q, want %q", got, tt.want)
+				}
+				return
+			}
+			metrics := map[string]any{}
+			for i := 0; i < tt.metricCount; i++ {
+				metrics[strFromInt(i)] = float64(i)
+			}
+			payload := map[string]any{
+				"frames": []any{map[string]any{"metrics": metrics}},
+			}
+			if tt.withReceipt {
+				payload["backend_used"] = tt.receipt
+			}
+			if got := inferBackendFromPayload(payload); got != tt.want {
+				t.Errorf("inferBackendFromPayload(): got %q, want %q", got, tt.want)
+			}
+		})
 	}
-	highMetricPayload := map[string]any{
-		"frames": []any{
-			map[string]any{"metrics": metrics30},
-		},
+}
+
+func TestDecodeVmafOutputUsesReceiptOnlyForAuto(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		reqBackend  string
+		receipt     any
+		hasReceipt  bool
+		metricCount int
+		wantBackend string
+	}{
+		{name: "auto observed cpu 15", reqBackend: "auto", receipt: "cpu", hasReceipt: true, metricCount: 15, wantBackend: "cpu"},
+		{name: "auto observed cuda 14", reqBackend: "auto", receipt: "cuda", hasReceipt: true, metricCount: 14, wantBackend: "cuda"},
+		{name: "auto observed sycl 24", reqBackend: "auto", receipt: "sycl", hasReceipt: true, metricCount: 24, wantBackend: "sycl"},
+		{name: "auto missing receipt", reqBackend: "auto", hasReceipt: false, metricCount: 8, wantBackend: "unknown"},
+		{name: "auto generic gpu receipt", reqBackend: "auto", receipt: "gpu", hasReceipt: true, metricCount: 8, wantBackend: "unknown"},
+		{name: "auto auto receipt", reqBackend: "auto", receipt: "auto", hasReceipt: true, metricCount: 15, wantBackend: "unknown"},
+		{name: "auto non-string receipt", reqBackend: "auto", receipt: 7, hasReceipt: true, metricCount: 14, wantBackend: "unknown"},
+		{name: "explicit sycl preserves request", reqBackend: "sycl", receipt: "cuda", hasReceipt: true, metricCount: 14, wantBackend: "sycl"},
+		{name: "explicit cpu preserves request", reqBackend: "cpu", hasReceipt: false, metricCount: 8, wantBackend: "cpu"},
 	}
-	if got := inferBackendFromPayload(highMetricPayload); got != "cpu" {
-		t.Errorf("30 metrics: got %q, want cpu", got)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics := map[string]any{}
+			for i := 0; i < tc.metricCount; i++ {
+				metrics[strFromInt(i)] = float64(i)
+			}
+			payload := map[string]any{
+				"frames": []any{map[string]any{"metrics": metrics}},
+			}
+			if tc.hasReceipt {
+				payload["backend_used"] = tc.receipt
+			}
+			raw, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			outPath := filepath.Join(t.TempDir(), "score.json")
+			if err := os.WriteFile(outPath, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			decoded, err := decodeVmafOutput(outPath, tc.reqBackend, "unknown", 1920, 1080, scoreExtras{})
+			if err != nil {
+				t.Fatalf("decodeVmafOutput: %v", err)
+			}
+			if got := decoded["backend_used"]; got != tc.wantBackend {
+				t.Errorf("backend_used: got %v, want %v", got, tc.wantBackend)
+			}
+			if got := decoded["backend_requested"]; got != tc.reqBackend {
+				t.Errorf("backend_requested: got %v, want %v", got, tc.reqBackend)
+			}
+		})
 	}
-	// <=12 metrics → gpu.
-	metrics8 := map[string]any{}
-	for i := 0; i < 8; i++ {
-		metrics8[strFromInt(i)] = float64(i)
+}
+
+func TestDecodeVmafOutputRejectsNonObjectJSON(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "null", raw: "null"},
+		{name: "array", raw: "[]"},
+		{name: "string", raw: `"score"`},
+		{name: "number", raw: "42"},
+		{name: "bool", raw: "true"},
 	}
-	gpuPayload := map[string]any{
-		"frames": []any{
-			map[string]any{"metrics": metrics8},
-		},
-	}
-	if got := inferBackendFromPayload(gpuPayload); got != "gpu" {
-		t.Errorf("8 metrics: got %q, want gpu", got)
-	}
-	// Between 13 and 29 metrics → cpu.
-	metrics20 := map[string]any{}
-	for i := 0; i < 20; i++ {
-		metrics20[strFromInt(i)] = float64(i)
-	}
-	cpuPayload := map[string]any{
-		"frames": []any{
-			map[string]any{"metrics": metrics20},
-		},
-	}
-	if got := inferBackendFromPayload(cpuPayload); got != "cpu" {
-		t.Errorf("20 metrics: got %q, want cpu", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outPath := filepath.Join(t.TempDir(), "score.json")
+			if err := os.WriteFile(outPath, []byte(tt.raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := decodeVmafOutput(outPath, "auto", "unknown", 1920, 1080, scoreExtras{})
+			if err == nil || !strings.Contains(err.Error(), "top-level JSON object") {
+				t.Fatalf("decode error: got %v, want top-level JSON object", err)
+			}
+		})
 	}
 }
 
@@ -466,7 +554,6 @@ func TestScoreIsHealthy(t *testing.T) {
 		{"jsonNumberJunk", json.Number("not-a-number"), false},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := scoreIsHealthy(tc.score); got != tc.want {

@@ -86,8 +86,12 @@ jobs:
             python3-pip
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
-          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r requirements/locks/build.txt
+          python3 -m pip install --user --require-hashes \
+            -r requirements/locks/package-build.txt
+          python3 -m pip install --user --no-build-isolation --require-hashes \
+            -r python/requirements-test-lock.txt
 
       - name: Build (CPU, release)
         if: steps.impact.outputs.golden_harness == 'true'
@@ -99,6 +103,14 @@ jobs:
           meson setup build -Denable_cuda=false -Denable_sycl=false \
             -Denable_float=true -Denable_avx512=true --buildtype=release
           meson compile -C build
+
+      - name: Run SYCL score harness regressions
+        if: steps.impact.outputs.golden_harness == 'true'
+        run: |
+          python3 -m pytest \
+            testdata/test_run_sycl_scores.py \
+            testdata/test_sycl_4k_repeat_determinism.py \
+            -v --tb=short
 
       - name: Restore Netflix vmaf_resource fixtures
         id: fixtures
@@ -239,7 +251,8 @@ jobs:
           sudo apt-get install -y clang-tools-22 libclang-rt-22-dev lld-22
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r requirements/locks/build.txt
       - name: Build with ${{ matrix.sanitizer }} sanitizer
         if: steps.impact.outputs.c_core == 'true'
         # ADR-0347: under UBSan, suppress the `function` check via
@@ -347,7 +360,7 @@ jobs:
             exit 1
           fi
           # shellcheck disable=SC2086
-          meson test -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
 
   # ===== DNN / tiny-AI gate =====
   # Builds libvmaf with --enable_dnn (ONNX Runtime C API), runs the dnn
@@ -387,7 +400,8 @@ jobs:
             python3-pip python3-venv
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r requirements/locks/build.txt
       - name: Install ONNX Runtime (CPU)
         if: steps.impact.outputs.tiny_ai == 'true'
         env:
@@ -436,7 +450,7 @@ jobs:
       - name: Run meson dnn suite
         if: steps.impact.outputs.tiny_ai == 'true'
         working-directory: core
-        run: meson test -C build --suite=dnn --print-errorlogs
+        run: python3 ../scripts/ci/run_meson_test.py -- -C build --suite=dnn --print-errorlogs
       - name: Set up Python + install vmaf-train
         if: steps.impact.outputs.tiny_ai == 'true'
         # Both the venv and pip's staging area live under RUNNER_TEMP, not
@@ -454,15 +468,14 @@ jobs:
         run: |
           venv="${RUNNER_TEMP}/vmaf-train-venv"
           python3 -m venv "${venv}"
-          "${venv}/bin/pip" install --upgrade pip
-          # pytest is a test-time dep, not runtime, so install it explicitly
-          # rather than relying on ai/pyproject.toml extras.
-          "${venv}/bin/pip" install pytest pytest-timeout
-          "${venv}/bin/pip" install -e ai
+          "${venv}/bin/pip" install --require-hashes \
+            -r requirements/locks/package-build.txt
+          "${venv}/bin/pip" install --require-hashes -r ai/requirements-dev-lock.txt
+          "${venv}/bin/pip" install --no-deps --no-build-isolation -e ai
       - name: Run ai/ pytests
         if: steps.impact.outputs.tiny_ai == 'true'
         run: |
-          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ -v --timeout=60 --timeout-method=signal
+          "${RUNNER_TEMP}/vmaf-train-venv/bin/pytest" ai/tests/ ai/sidecar/tests/ -v --timeout=60 --timeout-method=signal
 
       # ADR-0174 / T5-3b: enforce that every quantised model in the
       # registry stays inside its per-model PLCC drop budget. Skips
@@ -473,8 +486,36 @@ jobs:
           # Same reason as the venv step above: pip stages wheels in $TMPDIR.
           TMPDIR: ${{ runner.temp }}
         run: |
-          "${RUNNER_TEMP}/vmaf-train-venv/bin/pip" install onnx onnxruntime numpy
           "${RUNNER_TEMP}/vmaf-train-venv/bin/python" ai/scripts/measure_quant_drop.py --all
+
+  # ===== RC1 external tester report package =====
+  rc1-tester-report:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1342: this shipped tester surface has no path-filtered or optional
+    # branch, so its regression lane must report to the required aggregator.
+    # required-aggregator
+    name: RC1 Tester Report
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.7"
+      - name: Install locked RC1 tester package
+        run: |
+          python -m pip install --require-hashes \
+            -r tools/rc1-tester/requirements-dev-lock.txt
+          python -m pip install --no-deps --no-build-isolation \
+            ./tools/rc1-tester
+      - name: Run RC1 tester regressions
+        run: python -m pytest tools/rc1-tester/tests/ -q
+      - name: Smoke installed tester launcher
+        run: |
+          python -c "from pathlib import Path; from vmaf_rc1_tester.probe import REPO_ROOT; assert REPO_ROOT == Path.cwd().resolve()"
+          vmaf-rc1-report list-tools >/dev/null
 
   # ===== MCP smoke gate (T7-MCP-SMOKE-CI / Research-0034 gap #3) =====
   # Builds libvmaf with the full MCP transport matrix (sse + uds + stdio)
@@ -493,7 +534,7 @@ jobs:
   #     -Denable_mcp=true -Denable_mcp_sse=true \
   #     -Denable_mcp_uds=true -Denable_mcp_stdio=true && \
   #   meson compile -C build-mcp && \
-  #   meson test -C build-mcp test_mcp_smoke --print-errorlogs
+  #   python3 ../scripts/ci/run_meson_test.py -- -C build-mcp test_mcp_smoke --print-errorlogs
   #   cd ../mcp-server/vmaf-mcp && \
   #   python3 -m venv ~/.cache/mcp-venv && \
   #   ~/.cache/mcp-venv/bin/pip install -e .[dev] && \
@@ -525,7 +566,8 @@ jobs:
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r requirements/locks/build.txt
 
       - name: Build libvmaf (full MCP transport matrix)
         # Mirrors the local-lint configuration documented in
@@ -549,7 +591,9 @@ jobs:
         # The test is registered as `test_mcp_smoke` in core/test/
         # meson.build (no suite tag — it lands in the default suite).
         working-directory: core
-        run: meson test -C build-mcp test_mcp_smoke --print-errorlogs
+        run: >-
+          python3 ../scripts/ci/run_meson_test.py --
+          -C build-mcp test_mcp_smoke --print-errorlogs
 
       - name: Set up Python venv + install vmaf-mcp[dev]
         # The pyproject ships a `dev` extras group (pytest +
@@ -563,9 +607,12 @@ jobs:
           # is redirected there too, because pip stages wheels in $TMPDIR.
           venv="${RUNNER_TEMP}/mcp-venv"
           python3 -m venv "${venv}"
-          "${venv}/bin/pip" install --upgrade pip
-          "${venv}/bin/pip" install -e mcp-server/vmaf-mcp[dev]
-          "${venv}/bin/pip" install pytest-timeout
+          "${venv}/bin/pip" install --require-hashes \
+            -r requirements/locks/package-build.txt
+          "${venv}/bin/pip" install --require-hashes \
+            -r mcp-server/vmaf-mcp/requirements-dev-lock.txt
+          "${venv}/bin/pip" install --no-deps --no-build-isolation \
+            -e mcp-server/vmaf-mcp
 
       - name: Run Python MCP server pytests
         # The MCP server's `_vmaf_binary()` defaults to
@@ -640,7 +687,8 @@ jobs:
             python3-pip
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r requirements/locks/build.txt
           # gcovr replaces lcov: it deduplicates .gcno files belonging to
           # the same source compiled into multiple targets (libvmaf.so +
           # each test_X.p/.._src_X.c.gcda), which lcov sums and yields
@@ -654,8 +702,10 @@ jobs:
           # ambient interpreter cannot run `python/setup.py` at all — which is
           # how setup_metadata_test.py failed the first time this lane ran the
           # whole Python suite to completion.
-          python3 -m pip install --user -r python/requirements.txt pytest \
-            'gcovr>=8.0' 'setuptools>=77.0.1' 'packaging>=24.2'
+          python3 -m pip install --user --require-hashes \
+            -r requirements/locks/package-build.txt
+          python3 -m pip install --user --no-build-isolation --require-hashes \
+            -r python/requirements-coverage-lock.txt
       # Cache the ORT GPU .tgz so we don't re-download ~150 MB from
       # github.com/microsoft/onnxruntime/releases on every Coverage Gate
       # run. Key is purely the ORT version pinned in the env block of the
@@ -745,7 +795,9 @@ jobs:
       - name: Run meson unit suite (with gcov counters)
         if: steps.impact.outputs.golden_harness == 'true'
         working-directory: core
-        run: meson test -C build-coverage --print-errorlogs --num-processes 1
+        run: >-
+          python3 ../scripts/ci/run_meson_test.py -- -C build-coverage
+          --print-errorlogs --num-processes 1
       - name: Run full Python test suite (instrumented libvmaf.so + vmaf CLI)
         id: python_coverage_tests
         if: steps.impact.outputs.golden_harness == 'true'
@@ -758,7 +810,8 @@ jobs:
           # CLI path. Symlink build-coverage → build so coverage runs find it.
           ln -sf build-coverage core/build
           export PATH="${{ github.workspace }}/core/build-coverage/tools:$PATH"
-          python3 -m pip install --user pytest-timeout
+          python3 -m pip install --user --require-hashes \
+            -r requirements/locks/pytest-timeout.txt
           # Wrap in `timeout` + --kill-after so stuck vmaf CLI subprocesses
           # from failing vmafexec tests can't zombie-hang the step past the
           # job budget. pytest-timeout per-test is the first line; the
@@ -945,10 +998,39 @@ jobs:
           fi
           [[ "$PYTEST_OUTCOME" == "success" ]]
 
+  # ===== GPU coverage admission (hosted) =====
+  # ADR-1319: the operator switch is not dispatch authority. Check the live
+  # runner inventory on hosted compute first so a stale true variable cannot
+  # leave a job queued forever on an impossible label set.
+  gpu-full-runner-available:
+    name: Probe GPU Full Runner
+    runs-on: ubuntu-26.04
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    timeout-minutes: 5
+    outputs:
+      available: ${{ steps.probe.outputs.available }}
+      registered: ${{ steps.probe.outputs.registered }}
+      enabled: ${{ steps.probe.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Check gpu-full runner availability
+        id: probe
+        env:
+          # Existing read-only repository runner token; no new secret or
+          # external runner mutation is required by this repository fix.
+          GH_TOKEN: ${{ secrets.SYCL_RUNNER_PROBE_TOKEN || github.token }}
+          RUNNER_ENABLED: ${{ vars.GPU_COVERAGE_ENABLED }}
+          RUNNER_LABELS: "self-hosted linux gpu-full"
+          RUNNER_DISPLAY_NAME: "Coverage GPU"
+          RUNNER_SWITCH_NAME: "GPU_COVERAGE_ENABLED"
+          RUNNER_RUNBOOK: "docs/development/self-hosted-runner.md"
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash scripts/ci/check-runner-available.sh
+
   # ===== GPU coverage (self-hosted) =====
-  # Exercises fork-added CUDA / SYCL / HIP kernels, GPU runtime glue, and
+  # Exercises fork-added CUDA / SYCL kernels, GPU runtime glue, and
   # AVX-512 SIMD paths that ubuntu-latest can't touch. Runs on a self-hosted
-  # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL + AMD iGPU +
+  # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL +
   # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
   #
   # The two-week stability window closed on 2026-06-02. Keep this required;
@@ -957,10 +1039,9 @@ jobs:
   coverage-gpu:
     # required-aggregator
     name: Coverage GPU
+    needs: [gpu-full-runner-available]
+    if: needs.gpu-full-runner-available.outputs.available == 'true'
     runs-on: [self-hosted, linux, gpu-full]
-    # ADR-0331: also gate on draft PR status. Self-hosted runners are
-    # scarce — drafts must not contend for them.
-    if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -993,7 +1074,9 @@ jobs:
         working-directory: core
         # See CPU coverage job for --num-processes 1 rationale: serialise
         # to keep multi-process .gcda merges race-free.
-        run: meson test -C build-coverage-gpu --print-errorlogs --num-processes 1
+        run: >-
+          python3 ../scripts/ci/run_meson_test.py -- -C build-coverage-gpu
+          --print-errorlogs --num-processes 1
       - name: Run Python suite on CUDA + SYCL backends
         env:
           PYTHONPATH: ${{ github.workspace }}/python
@@ -1007,8 +1090,10 @@ jobs:
           # ambient interpreter cannot run `python/setup.py` at all — which is
           # how setup_metadata_test.py failed the first time this lane ran the
           # whole Python suite to completion.
-          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout \
-            'setuptools>=77.0.1' 'packaging>=24.2'
+          python3 -m pip install --user --require-hashes \
+            -r requirements/locks/package-build.txt
+          python3 -m pip install --user --no-build-isolation --require-hashes \
+            -r python/requirements-coverage-lock.txt
           # Scope GPU test runs with VMAF_FORCE_BACKEND away from the Netflix golden assertions
           # (ADR-0024 / AGENTS.md §8) to avoid failing on ULP-relaxed GPU float differences.
           VMAF_FORCE_BACKEND=cuda python3 -m pytest python/test/ -v \
@@ -1034,7 +1119,8 @@ jobs:
         run: |
           # Same gcovr migration as CPU coverage job (see ADR-0110); same
           # suspicious-hits stderr filter as the CPU job (see ADR-0117).
-          python3 -m pip install --user 'gcovr>=8.0'
+          python3 -m pip install --user --require-hashes \
+            -r ../requirements/locks/gcovr.txt
           ~/.local/bin/gcovr --root .. \
               --filter 'src/.*' \
               --exclude '.*/test/.*' \
@@ -1062,47 +1148,6 @@ jobs:
             core/build-coverage-gpu/coverage.json
             core/build-coverage-gpu/coverage.txt
           retention-days: 14
-
-  # ===== SYCL float_ssim parity gate (Arc DG2-G10 calibrated) =====
-  # Runs test_sycl_float_ssim_parity on the self-hosted SYCL runner.
-  # Requires the dg2-g10 calibration entry in gpu_ulp_calibration.yaml
-  # (places=3 / 5e-4 tolerance) to be present — see ADR-0234 and
-  # Research-0985 §3. Promoted to the required-status list once the
-  # calibration entry landed; the Required Checks Aggregator treats
-  # "not reported" (no GPU runner available) as path-filter-skip/OK,
-  # so the required gate degrades gracefully when the Arc runner is
-  # offline.
-  sycl-float-ssim-parity:
-    # required-aggregator
-    name: SYCL float_ssim Parity
-    runs-on: [self-hosted, linux, gpu-full]
-    if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: recursive
-      - name: Build SYCL (float enabled)
-        working-directory: core
-        env:
-          CC: icx
-          CXX: icpx
-        run: |
-          bash -e -o pipefail -c '
-            source /opt/intel/oneapi/setvars.sh
-            meson setup build-sycl-parity --buildtype=release \
-              -Denable_cuda=false -Denable_sycl=true \
-              -Denable_float=true
-            ninja -C build-sycl-parity test_sycl_float_ssim_parity
-          '
-      - name: Run test_sycl_float_ssim_parity
-        working-directory: core
-        run: |
-          bash -e -o pipefail -c '
-            source /opt/intel/oneapi/setvars.sh
-            meson test -C build-sycl-parity test_sycl_float_ssim_parity \
-              --print-errorlogs
-          '
 
   # ===== Power of 10 rule 5 — assertion density =====
   # Every fork-added (non-trivial) function must contain ≥1 assert().

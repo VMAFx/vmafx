@@ -82,6 +82,8 @@ static const char *const g_metal_features[] = {
     /* float_ms_ssim_metal.mm */
     "float_ms_ssim_metal",
     "float_ms_ssim",
+    "float_ms_ssim_cb",
+    "float_ms_ssim_cr",
     /* integer_ssim_metal.mm */
     "integer_ssim_metal",
     "ssim",

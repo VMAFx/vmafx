@@ -28,7 +28,9 @@
  *  Host accumulates partials in `double`, divides by
  *  (W-10)·(H-10) and emits `float_ssim`.
  *
- *  v1: scale=1 only — same constraint as ssim_vulkan/cuda.
+ *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
+ *  back to CPU before init when auto resolves above 1; direct requests keep
+ *  the -EINVAL capability error.
  *  fp64-free (Intel Arc A380 lacks native fp64).
  */
 
@@ -44,6 +46,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "log.h"
 #include "picture.h"
 #include "../picture_copy.h"
@@ -359,13 +362,24 @@ static int compute_scale(unsigned w, unsigned h, int override_)
     return scaled < 1 ? 1 : scaled;
 }
 
+/* ADR-1324: dimensions are unavailable to the earlier option-value gate. */
+static int check_context_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                              unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    const auto *s = static_cast<const SsimStateSycl *>(fex->priv);
+    return compute_scale(w, h, s->scale_override) == 1 ? 0 : -ENOTSUP;
+}
+
 } // namespace
 
 static const VmafOption options_ssim_sycl[] = {
     {
         .name = "scale",
         .help = "decimation scale factor (0=auto, 1=no downscaling). "
-                "v1: GPU path requires scale=1; auto-detect rejects scale>1 with -EINVAL.",
+                "v1: direct GPU use requires scale=1; model dispatch falls back to CPU "
+                "when auto resolves above 1.",
         .offset = offsetof(SsimStateSycl, scale_override),
         .type = VMAF_OPT_TYPE_INT,
         .default_val = {.i = 0},
@@ -465,6 +479,8 @@ static bool float_ssim_allocations_complete(const SsimStateSycl *s)
 namespace
 {
 
+static int close_fex_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned width, unsigned height)
 {
@@ -482,11 +498,13 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     allocate_float_ssim(s);
     if (!float_ssim_allocations_complete(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssim_sycl: USM allocation failed\n");
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
     s->has_pending = false;
@@ -572,10 +590,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     for (unsigned i = 0; i < s->wg_count; i++)
         total += (double)s->h_partials[i];
     const double n_pixels = (double)s->w_final * (double)s->h_final;
-    const double score = total / n_pixels;
-
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "float_ssim", score, index);
+    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                            "float_ssim_sycl", "float_ssim", total, n_pixels, 0,
+                                            0.0, index);
 }
 
 } // namespace
@@ -640,6 +657,8 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_ssim_sycl = {
             .min_useful_frame_area = 1920U * 1080U,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
+    .context_check = check_context_sycl,
+    .context_fallback_name = "float_ssim",
 };
 
 /* ============================================================
@@ -1057,6 +1076,8 @@ static bool integer_ssim_allocations_complete(const IssimStateSycl *s)
 namespace
 {
 
+static int close_fex_issim_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                                unsigned bpc, unsigned width, unsigned height)
 {
@@ -1074,11 +1095,13 @@ static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat p
     allocate_integer_ssim(s, integer_buffer_sizes(s));
     if (!integer_ssim_allocations_complete(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_sycl: USM allocation failed\n");
+        (void)close_fex_issim_sycl(fex);
         return -ENOMEM;
     }
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
+        (void)close_fex_issim_sycl(fex);
         return -ENOMEM;
     }
     s->has_pending = false;
@@ -1187,12 +1210,9 @@ static int collect_fex_issim_sycl(VmafFeatureExtractor *fex, unsigned index,
         total_ssim += (double)s->h_partials[i];
         total_wgt += s->h_wgt[i];
     }
-    if (total_wgt == 0LL)
-        return -EINVAL;
-    const double score = total_ssim / (double)total_wgt;
-
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "ssim",
-                                                   score, index);
+    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                            "integer_ssim_sycl", "ssim", total_ssim,
+                                            (double)total_wgt, 0, 0.0, index);
 }
 
 } // namespace

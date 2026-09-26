@@ -41,6 +41,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "compat/path_utf8.h"
 #include <stdint.h>
 #include <time.h>
 #include <unistd.h>
@@ -54,9 +55,12 @@
 #include "libvmaf/picture.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
+#include "vmaf_close_retry.h"
 
 /* SYCL surface import: DMA-BUF/VA-API on Linux */
 #include "../src/sycl/dmabuf_import.h"
+
+#define VPL_PIPELINE_CLEANUP_FAILED INT_MIN
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -124,7 +128,7 @@ static void vpl_cleanup_gpu(VplDecoder *dec)
 {
     if (dec->va_display)
         vaTerminate(dec->va_display);
-    dec->va_display = NULL;
+    dec->va_display = nullptr;
     if (dec->drm_fd >= 0)
         (void)close(dec->drm_fd);
     dec->drm_fd = -1;
@@ -223,18 +227,18 @@ static int vpl_attach_input(VplDecoder *dec, const char *filename)
     }
 
     /* Open input file */
-    dec->fp = fopen(filename, "rb");
+    dec->fp = vmaf_fopen_utf8(filename, "rb");
     if (!dec->fp) {
         (void)fprintf(stderr, "Cannot open %s\n", filename);
         return -1;
     }
 
     /* Allocate bitstream buffer (2 MB) */
-    dec->bs_buf_size = 2 * 1024 * 1024;
+    dec->bs_buf_size = (size_t)2U * 1024U * 1024U;
     dec->bs_buf = (uint8_t *)malloc(dec->bs_buf_size);
     if (!dec->bs_buf) {
         (void)fclose(dec->fp);
-        dec->fp = NULL;
+        dec->fp = nullptr;
         return -1;
     }
 
@@ -356,7 +360,7 @@ static int vpl_publish_surface(VplDecoder *dec, mfxSyncPoint sync, mfxFrameSurfa
     }
 
     /* Extract VA surface handle */
-    mfxHDL resource = NULL;
+    mfxHDL resource = nullptr;
     mfxResourceType res_type = MFX_RESOURCE_VA_SURFACE;
     mfxStatus gnh_sts = out_surf->FrameInterface->GetNativeHandle(out_surf, &resource, &res_type);
 
@@ -400,10 +404,10 @@ static int vpl_decode_frame(VplDecoder *dec, VASurfaceID *out_surface,
                             mfxFrameSurface1 **out_held_surf)
 {
     mfxStatus sts;
-    mfxSyncPoint sync = NULL;
-    mfxFrameSurface1 *out_surf = NULL;
+    mfxSyncPoint sync = nullptr;
+    mfxFrameSurface1 *out_surf = nullptr;
 
-    *out_held_surf = NULL;
+    *out_held_surf = nullptr;
 
     for (unsigned attempt = 0; attempt < VPL_DECODE_MAX_ATTEMPTS; attempt++) {
         /* Refill bitstream if needed */
@@ -412,8 +416,8 @@ static int vpl_decode_frame(VplDecoder *dec, VASurfaceID *out_surface,
         }
 
         int passing_null = (dec->bs.DataLength == 0 && dec->eof);
-        sts = MFXVideoDECODE_DecodeFrameAsync(dec->session, passing_null ? NULL : &dec->bs,
-                                              NULL, /* internal allocation */
+        sts = MFXVideoDECODE_DecodeFrameAsync(dec->session, passing_null ? nullptr : &dec->bs,
+                                              nullptr, /* internal allocation */
                                               &out_surf, &sync);
 
         if (sts == MFX_ERR_NONE && sync) {
@@ -668,8 +672,8 @@ static int vpl_host_upload_fallback(VADisplay va_display, VASurfaceID ref_surf,
                                     VASurfaceID dis_surf, int w, int h, int bpc, VmafContext *vmaf,
                                     unsigned frame_idx)
 {
-    assert(va_display != NULL);
-    assert(vmaf != NULL);
+    assert(va_display != nullptr);
+    assert(vmaf != nullptr);
     assert(w > 0 && h > 0);
     assert(bpc == 8 || bpc == 10);
 
@@ -704,7 +708,7 @@ typedef struct {
  * text is malformed, negative or above INT_MAX. */
 static int vpl_parse_int_option(const char *text, int *out)
 {
-    char *end = NULL;
+    char *end = nullptr;
     const long v = strtol(text, &end, 10);
     if (end == text || *end != '\0' || v < 0 || v > INT_MAX) {
         return -1;
@@ -807,21 +811,31 @@ static int vpl_open_pair(VplDecoder *ref_dec, VplDecoder *dis_dec, const VplTool
 }
 
 /* SYCL state, VMAF context and model, released together by
- * vpl_pipeline_close() in the order the inline cleanup used. */
+ * vpl_pipeline_close(). The model and imported SYCL state must outlive every
+ * retryable vmaf_close() attempt. */
 typedef struct {
     VmafSyclState *sycl_state;
     VmafContext *vmaf;
     VmafModel *model;
 } VplPipeline;
 
-static void vpl_pipeline_close(VplPipeline *pipe)
+static int vpl_pipeline_close(VplPipeline *pipe)
 {
-    if (pipe->model)
+    const int close_err = vmaf_tool_close_context(&pipe->vmaf);
+    if (close_err) {
+        (void)fprintf(stderr,
+                      "vmaf_vpl: context cleanup failed after %u attempts (err=%d); "
+                      "retaining model and SYCL state\n",
+                      VMAF_TOOL_CLOSE_MAX_ATTEMPTS, close_err);
+        return close_err;
+    }
+    if (pipe->model) {
         vmaf_model_destroy(pipe->model);
-    if (pipe->vmaf)
-        vmaf_close(pipe->vmaf);
+        pipe->model = nullptr;
+    }
     if (pipe->sycl_state)
         vmaf_sycl_state_free(&pipe->sycl_state);
+    return 0;
 }
 
 /* Register SYCL feature extractors.
@@ -833,7 +847,7 @@ static void vpl_register_features(VmafContext *vmaf)
 {
     const char *features[] = {"vif_sycl", "adm_sycl", "motion_sycl"};
     for (int i = 0; i < 3; i++) {
-        const int err = vmaf_use_feature(vmaf, features[i], NULL);
+        const int err = vmaf_use_feature(vmaf, features[i], nullptr);
         if (err) {
             (void)fprintf(stderr, "vmaf_use_feature(%s) failed: %d\n", features[i], err);
         }
@@ -868,7 +882,7 @@ static void vpl_load_model(VplPipeline *pipe, const char *model_name)
 static int vpl_pipeline_open(VplPipeline *pipe, const VplToolOptions *opt, int w, int h, int bpc)
 {
     /* ---- Set up SYCL state ---- */
-    VmafSyclState *sycl_state = NULL;
+    VmafSyclState *sycl_state = nullptr;
     VmafSyclConfiguration sycl_cfg = {.device_index = opt->device_idx, .enable_profiling = 0};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
     if (err) {
@@ -878,7 +892,7 @@ static int vpl_pipeline_open(VplPipeline *pipe, const VplToolOptions *opt, int w
     pipe->sycl_state = sycl_state;
 
     /* ---- Set up VMAF context ---- */
-    VmafContext *vmaf = NULL;
+    VmafContext *vmaf = nullptr;
     VmafConfiguration vmaf_cfg = {
         .log_level = VMAF_LOG_LEVEL_INFO,
         .n_threads = 1,
@@ -888,16 +902,16 @@ static int vpl_pipeline_open(VplPipeline *pipe, const VplToolOptions *opt, int w
     err = vmaf_init(&vmaf, vmaf_cfg);
     if (err) {
         (void)fprintf(stderr, "vmaf_init failed: %d\n", err);
-        vpl_pipeline_close(pipe);
-        return -1;
+        const int cleanup_err = vpl_pipeline_close(pipe);
+        return cleanup_err ? VPL_PIPELINE_CLEANUP_FAILED : -1;
     }
     pipe->vmaf = vmaf;
 
     err = vmaf_sycl_import_state(pipe->vmaf, pipe->sycl_state);
     if (err) {
         (void)fprintf(stderr, "vmaf_sycl_import_state failed: %d\n", err);
-        vpl_pipeline_close(pipe);
-        return -1;
+        const int cleanup_err = vpl_pipeline_close(pipe);
+        return cleanup_err ? VPL_PIPELINE_CLEANUP_FAILED : -1;
     }
 
     vpl_register_features(pipe->vmaf);
@@ -907,8 +921,8 @@ static int vpl_pipeline_open(VplPipeline *pipe, const VplToolOptions *opt, int w
     err = vmaf_sycl_init_frame_buffers(pipe->vmaf, w, h, bpc);
     if (err) {
         (void)fprintf(stderr, "vmaf_sycl_init_frame_buffers failed: %d\n", err);
-        vpl_pipeline_close(pipe);
-        return -1;
+        const int cleanup_err = vpl_pipeline_close(pipe);
+        return cleanup_err ? VPL_PIPELINE_CLEANUP_FAILED : -1;
     }
 
     return 0;
@@ -1101,10 +1115,13 @@ int main(int argc, char *argv[])
 
     printf("Resolution: %dx%d @ %d-bit\n", w, h, bpc);
 
-    VplPipeline pipe = {0};
-    if (vpl_pipeline_open(&pipe, &opt, w, h, bpc) < 0) {
-        vpl_decoder_close(&dis_dec);
-        vpl_decoder_close(&ref_dec);
+    VplPipeline pipe = {.sycl_state = nullptr};
+    const int open_err = vpl_pipeline_open(&pipe, &opt, w, h, bpc);
+    if (open_err < 0) {
+        if (open_err != VPL_PIPELINE_CLEANUP_FAILED) {
+            vpl_decoder_close(&dis_dec);
+            vpl_decoder_close(&ref_dec);
+        }
         return 1;
     }
 
@@ -1121,9 +1138,11 @@ int main(int argc, char *argv[])
     vpl_print_results(&pipe, frame_idx, (t_end - t_start) / 1000.0);
 
     /* Cleanup */
-    vpl_pipeline_close(&pipe);
+    const int cleanup_err = vpl_pipeline_close(&pipe);
+    if (cleanup_err)
+        return EXIT_FAILURE;
     vpl_decoder_close(&dis_dec);
     vpl_decoder_close(&ref_dec);
 
-    return 0;
+    return EXIT_SUCCESS;
 }

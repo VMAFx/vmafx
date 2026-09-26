@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -798,8 +799,8 @@ const shotExtractTimeout = 60 * time.Minute
 // the Python's "no stderr".
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if trimmed := strings.TrimSpace(lines[i]); trimmed != "" {
+	for _, line := range slices.Backward(lines) {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			return trimmed
 		}
 	}

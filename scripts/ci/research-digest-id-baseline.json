@@ -1,0 +1,498 @@
+{
+  "legacy_collisions": {
+    "0046": [
+      "docs/research/0046-bristol-vi-lab-feasibility.md",
+      "docs/research/0046-vmaf-tiny-v3-mlp-medium-evaluation.md",
+      "docs/research/0046-vmaf-tune-saliency-roi.md"
+    ],
+    "0051": [
+      "docs/research/0051-speed-qa-feasibility.md",
+      "docs/research/0051-ssimulacra2-gpu-xyb-precision.md"
+    ],
+    "0053": [
+      "docs/research/0053-mobilesal-real-weights-blocker.md",
+      "docs/research/0053-ossf-scorecard-investigation.md",
+      "docs/research/0053-post-merge-cpu-profile-2026-05-03.md",
+      "docs/research/0053-vulkan-1-4-nvidia-fp-contraction-regression.md"
+    ],
+    "0055": [
+      "docs/research/0055-ciede-vulkan-nvidia-f32-f64-root-cause.md",
+      "docs/research/0055-u2netp-saliency-replacement-survey.md",
+      "docs/research/0055-vif-polynomial-log2-attempt.md"
+    ],
+    "0058": [
+      "docs/research/0058-canonical-6-permutation-importance.md",
+      "docs/research/0058-fr-regressor-v2-feasibility.md"
+    ],
+    "0061": [
+      "docs/research/0061-cuda-ms-ssim-drain-batch-profile.md",
+      "docs/research/0061-docs-only-ci-fast-track.md",
+      "docs/research/0061-vmaf-tune-capability-audit.md"
+    ],
+    "0062": [
+      "docs/research/0062-content-aware-fr-regressor-feasibility.md",
+      "docs/research/0062-saliency-student-from-scratch-on-duts.md"
+    ],
+    "0063": [
+      "docs/research/0063-encoder-knob-space-cq-vs-vbr-stratification.md",
+      "docs/research/0063-t7-5-nolint-sweep.md"
+    ],
+    "0064": [
+      "docs/research/0064-gpu-lane-nolint-audit.md",
+      "docs/research/0064-vmaf-tune-resolution-aware.md"
+    ],
+    "0067": [
+      "docs/research/0067-fr-regressor-v2-probabilistic.md",
+      "docs/research/0067-fr-regressor-v2-prod-loso.md",
+      "docs/research/0067-k150k-corpus-integration.md",
+      "docs/research/0067-ssimulacra2-cuda-leaks-perf.md",
+      "docs/research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md"
+    ],
+    "0086": [
+      "docs/research/0086-adr-proposed-status-sweep-2026-05-08.md",
+      "docs/research/0086-contributor-pack-web-data-expansion-2026-05-08.md",
+      "docs/research/0086-konvid-150k-corpus-feasibility.md",
+      "docs/research/0086-local-sidecar-feasibility.md",
+      "docs/research/0086-stale-marker-sweep-2026-05-08.md",
+      "docs/research/0086-state-md-audit-2026-05-08.md",
+      "docs/research/0086-sycl-toolchain-audit-2026-05-08.md",
+      "docs/research/0086-tiny-ai-sota-deep-dive-2026-05-08.md",
+      "docs/research/0086-u2netp-fork-mirror-license-compliance.md",
+      "docs/research/0086-usage-doc-coverage-audit-2026-05-08.md",
+      "docs/research/0086-video-saliency-feasibility-2026-05-08.md"
+    ],
+    "0087": [
+      "docs/research/0087-chatgpt-vision-and-claude-bias-audit.md",
+      "docs/research/0087-external-bench-competitor-survey-2026-05-08.md",
+      "docs/research/0087-vmaftune-codec-adapter-dispatcher-hp1.md"
+    ],
+    "0088": [
+      "docs/research/0088-docs-cleanup-punch-list.md",
+      "docs/research/0088-hardware-capability-priors-2026-05-08.md"
+    ],
+    "0089": [
+      "docs/research/0089-avx512-audit-sweep-2026-05-09.md",
+      "docs/research/0089-ci-cost-optimization-audit-2026-05-09.md",
+      "docs/research/0089-hdr-vmaf-model-search.md",
+      "docs/research/0089-libvmaf-wasm-feasibility-2026-05-09.md",
+      "docs/research/0089-mkdocs-strict-gate.md",
+      "docs/research/0089-moltenvk-feasibility-on-fork-shaders.md",
+      "docs/research/0089-multi-corpus-aggregation-feasibility.md",
+      "docs/research/0089-saliency-student-v2-resize-decoder.md",
+      "docs/research/0089-upstream-sync-coverage-2026-05-08.md",
+      "docs/research/0089-vmaf-tune-phase-f5-calibration-2026-05-09.md",
+      "docs/research/0089-vmaf-tune-prores-videotoolbox-adapter.md",
+      "docs/research/0089-vulkan-vif-fp-residual-bisect-2026-05-08.md"
+    ],
+    "0090": [
+      "docs/research/0090-agents-md-coverage-audit-2026-05-09.md",
+      "docs/research/0090-arxiv-techNote-prodflip-conformal-2026-05-09.md",
+      "docs/research/0090-konvid-mos-head-design.md",
+      "docs/research/0090-lsvq-corpus-feasibility.md",
+      "docs/research/0090-mcp-sse-transport-implementation.md",
+      "docs/research/0090-phase-a-promotion-audit-2026-05-08.md",
+      "docs/research/0090-pr-body-validator-prepush-hook.md",
+      "docs/research/0090-sanitizer-matrix-test-scope.md",
+      "docs/research/0090-semgrep-warnings-audit-2026-05-09.md",
+      "docs/research/0090-state-md-row-audit-2026-05-09.md",
+      "docs/research/0090-t3-15-gpu-coverage-long-tail-2026-05-09.md",
+      "docs/research/0090-upstream-skip-bucket-triage-2026-05-08.md",
+      "docs/research/0090-vmaf-tune-phase-b-bisect-feasibility.md",
+      "docs/research/0090-vulkan-vif-fp-residual-phase-3b-2026-05-09.md"
+    ],
+    "0091": [
+      "docs/research/0091-cambi-cuda-integration.md",
+      "docs/research/0091-cambi-gpu-port-planning-2026-05-09.md",
+      "docs/research/0091-partial-integration-audit-2026-05-08.md",
+      "docs/research/0091-psnr-hvs-avx512-bench-2026-05-09.md",
+      "docs/research/0091-symphony-spec-review.md",
+      "docs/research/0091-vulkan-gpu-reduction-perf-analysis.md",
+      "docs/research/0091-vulkan-readback-alloc-flag-perf-analysis.md",
+      "docs/research/0091-waterloo-ivc-4k-corpus-feasibility.md",
+      "docs/research/0091-youtube-ugc-corpus-feasibility.md"
+    ],
+    "0092": [
+      "docs/research/0092-motion-cuda-sub4k-perf-root-cause-2026-05-10.md",
+      "docs/research/0092-perf-bench-multi-backend-2026-05-10.md",
+      "docs/research/0092-round4-symbol-visibility-audit.md"
+    ],
+    "0094": [
+      "docs/research/0094-motion-v2-flush-dict-leak-round7.md",
+      "docs/research/0094-pypsnr-ast-eval-json-fix-2026-05-10.md"
+    ],
+    "0096": [
+      "docs/research/0096-fex-dedup-by-provided-feature-2026-05-10.md",
+      "docs/research/0096-k150k-gpu-driver-investigation-2026-05-10.md"
+    ],
+    "0097": [
+      "docs/research/0097-mcp-describe-worst-frames-tmpdir-leak-2026-05-10.md",
+      "docs/research/0097-thread-pool-pthread-create-unchecked-2026-05-10.md"
+    ],
+    "0101": [
+      "docs/research/0101-training-discovery-synthesis-2026-05-14.md",
+      "docs/research/0101-vmaf-tune-predictor-real-hardware-retrain-2026-05-14.md"
+    ],
+    "0106": [
+      "docs/research/0106-doc-stub-sweep-2026-05-14.md",
+      "docs/research/0106-vmaf-tune-corpus-benchmark.md"
+    ],
+    "0108": [
+      "docs/research/0108-konvid-150k-split-score-layout-2026-05-14.md",
+      "docs/research/0108-vmaf-roi-score-materialiser-2026-05-14.md",
+      "docs/research/0108-vulkan-vif-int64-subgroup-reduction-2026-05-14.md",
+      "docs/research/0108-y-funque-plus-atoms.md"
+    ],
+    "0109": [
+      "docs/research/0109-tiny-ai-real-weight-doc-limitations-2026-05-15.md",
+      "docs/research/0109-vmaf-tune-auto-winner-selection-2026-05-14.md",
+      "docs/research/0109-vmaf-tune-bisect-sample-clip-2026-05-14.md"
+    ],
+    "0110": [
+      "docs/research/0110-adm-avx2-clz-ubsan-2026-05-15.md",
+      "docs/research/0110-testdata-bench-perf-portability-2026-05-14.md"
+    ],
+    "0113": [
+      "docs/research/0113-fr-from-nr-cuda-feature-split-2026-05-15.md",
+      "docs/research/0113-tiny-model-dir-doc-closeout-2026-05-14.md"
+    ],
+    "0116": [
+      "docs/research/0116-float-adm-avx2-512-f2-f3-precision.md",
+      "docs/research/0116-vmaf-train-tune-cli-2026-05-14.md"
+    ],
+    "0126": [
+      "docs/research/0126-saliency-doc-status-2026-05-15.md",
+      "docs/research/0126-sycl-preallocation-api-doc-status-2026-05-15.md",
+      "docs/research/0126-vmaf-tune-hdr-dispatch-coverage-2026-05-15.md"
+    ],
+    "0135": [
+      "docs/research/0135-cambi-cuda-smem-tile-2026-05-16.md",
+      "docs/research/0135-chug-extraction-perf-2026-05-16.md",
+      "docs/research/0135-chug-vmaf-column-always-nan-2026-05-16.md",
+      "docs/research/0135-chug-vmaf-sdr-baseline-2026-05-16.md",
+      "docs/research/0135-dev-mcp-container-stage-3-fix-2026-05-16.md",
+      "docs/research/0135-dispatch-strategy-registry-audit-2026-05-15.md",
+      "docs/research/0135-ssimulacra2-cuda-perf-2026-05-16.md",
+      "docs/research/0135-sycl-cambi-ssim-ciede-perf-2026-05-16.md",
+      "docs/research/0135-vif-cpu-perf-workspace-hoist-2026-05-16.md",
+      "docs/research/0135-vif-cuda-smem-staging-2026-05-16.md",
+      "docs/research/0135-vulkan-dispatch-overhead-2026-05-15.md"
+    ],
+    "0136": [
+      "docs/research/0136-cambi-sycl-event-chain-sy1-2026-05-16.md",
+      "docs/research/0136-hdr-ugc-dataset-license-audit-2026-05-15.md",
+      "docs/research/0136-psnr-enable-chroma-cross-backend-2026-05-16.md"
+    ],
+    "0537": [
+      "docs/research/0537-hip-integer-vif-kernel-fix.md",
+      "docs/research/0537-premium-vmaf-target-defaults-and-bisect.md"
+    ],
+    "0612": [
+      "docs/research/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md",
+      "docs/research/0612-vmaf-neg-integration-research.md"
+    ],
+    "0664": [
+      "docs/research/0664-ai-fr-regressor-run-provenance.md",
+      "docs/research/0664-windows-cuda-toolkit-installer.md"
+    ],
+    "0685": [
+      "docs/research/0685-fast-nr-calibration-quality-guard.md",
+      "docs/research/0685-modernization-audit-contract-noise.md"
+    ],
+    "0688": [
+      "docs/research/0688-ai-derived-table-provenance.md",
+      "docs/research/0688-hip-raphael-igpu-divergence.md"
+    ],
+    "0699": [
+      "docs/research/0699-ai-run-manifest-helper.md",
+      "docs/research/0699-ci-draft-automerge-gate.md",
+      "docs/research/0699-vmafx-helm-chart-k8s-2026-05-28.md"
+    ],
+    "0706": [
+      "docs/research/0706-ai-vmaf-tiny-eval-cli-bootstrap-sweep.md",
+      "docs/research/0706-tiny-ai-netflix-training-prep-2026-05-22.md"
+    ],
+    "0707": [
+      "docs/research/0707-ai-quant-export-cli-bootstrap-sweep.md",
+      "docs/research/0707-rust-cbindgen-pilot-tad.md"
+    ],
+    "0715": [
+      "docs/research/0715-chug-hdr-held-out-test-validation-2026-05-27.md",
+      "docs/research/0715-vmaf-tune-jsonio-helper.md"
+    ],
+    "0730": [
+      "docs/research/0730-cross-backend-arc-parity-20260527.md",
+      "docs/research/0730-ffmpeg-libvmaf-smoke-20260527.md",
+      "docs/research/0730-tiny-ai-netflix-training-prep-2026-05-27.md"
+    ],
+    "0732": [
+      "docs/research/0732-netflix-pipeline-backlog-audit.md",
+      "docs/research/0732-vmafx-cpp23-internals-migration-plan.md"
+    ],
+    "0733": [
+      "docs/research/0733-feature-importance-audit-2026-05-28.md",
+      "docs/research/0733-hardware-backend-audit-2026-05-28.md",
+      "docs/research/0733-vmafx-ebpf-optimization-target.md",
+      "docs/research/0733-vmafx-sidecar-training-architecture.md"
+    ],
+    "0734": [
+      "docs/research/0734-cross-backend-baseline-with-sycl-20260528.md",
+      "docs/research/0734-cuda-13.3-fix-list-deep-audit.md",
+      "docs/research/0734-cuda-13.3-non-blog-findings.md",
+      "docs/research/0734-cuda-adm-ncu-hotpath.md",
+      "docs/research/0734-cuda-mul24-corruption-audit.md",
+      "docs/research/0734-cuda-vif-filter1d-ncu-hotpath-20260528.md",
+      "docs/research/0734-cudnn-version-audit-20260528.md",
+      "docs/research/0734-r610-driver-changelog-audit-2026-05-28.md",
+      "docs/research/0734-sycl-backend-audit-20260529.md"
+    ],
+    "0735": [
+      "docs/research/0735-ci-required-failures-round-3-2026-05-28.md",
+      "docs/research/0735-cuda-motion-ncu-hotpath.md"
+    ],
+    "0755": [
+      "docs/research/0755-cuda-pr91-576p-no-bounds-dispatch-validation-20260529.md",
+      "docs/research/0755-hip-backend-audit-20260529.md"
+    ],
+    "1101": [
+      "docs/research/1101-brisque-nr-metric.md",
+      "docs/research/1101-vendor-pelorus-interop-abi.md"
+    ],
+    "2026": [
+      "docs/research/2026-06-30-sycl-qsv-zerocopy-two-bug-investigation.md",
+      "docs/research/2026-07-01-vmaf-v1-models.md",
+      "docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md",
+      "docs/research/2026-09-05-gpu-cambi-parity-drift.md",
+      "docs/research/2026-09-05-sycl-v1-model-crash-digest.md",
+      "docs/research/2026-09-06-netflix-benchmark-rerun.md"
+    ],
+    "2030": [
+      "docs/research/2030-adm-angle-flag-fp64-free.md",
+      "docs/research/2030-ai-teacher-single-source.md",
+      "docs/research/2030-speed-matmul-and-cambi-cpu-hot-path.md"
+    ],
+    "2033": [
+      "docs/research/2033-identity-default-option-blind-spot.md",
+      "docs/research/2033-isa-invariance-as-a-gate.md"
+    ],
+    "2036": [
+      "docs/research/2036-benchmark-tuning-pass-cambi-speed-hip.md",
+      "docs/research/2036-cambi-twin-drift-and-vacuous-fixtures.md"
+    ],
+    "2040": [
+      "docs/research/2040-code-scanning-cleanup-1243.md",
+      "docs/research/2040-cuda-tile-additive-reduction-gap.md"
+    ]
+  },
+  "legacy_heading_exceptions": {
+    "docs/research/0014-psnr-hvs-neon.md": "# Research digest 0014 \u2014 `psnr_hvs` NEON sister port (T3-5-neon)",
+    "docs/research/0015-ssimulacra2-simd.md": "# Research digest 0015 \u2014 SSIMULACRA 2 SIMD ports (T3-1 + T3-2)",
+    "docs/research/0016-ssimulacra2-iir-blur-simd.md": "# Research digest 0016 \u2014 SSIMULACRA 2 IIR blur SIMD (T3-1 phase 2)",
+    "docs/research/0017-ssimulacra2-ptlr-simd.md": "# Research digest 0017 \u2014 SSIMULACRA 2 `picture_to_linear_rgb` SIMD (T3-1 phase 3)",
+    "docs/research/0018-ssimulacra2-snapshot-gate.md": "# Research digest 0018 \u2014 SSIMULACRA 2 snapshot-JSON regression gate (T3-3)",
+    "docs/research/0019-tiny-ai-netflix-training.md": "# Research Digest 0019 \u2014 Tiny-AI Training on the Netflix VMAF Corpus",
+    "docs/research/0020-cambi-gpu-strategies.md": "# Research digest 0020 \u2014 cambi GPU port strategies",
+    "docs/research/0021-tiny-ai-corpus-arch-survey.md": "# Research Digest 0021 \u2014 Corpus + Architecture Survey for the Next Tiny-AI Iteration",
+    "docs/research/0022-loso-mlp-small-results.md": "# Research Digest 0022 \u2014 LOSO results for `mlp_small` on the Netflix corpus",
+    "docs/research/0023-loso-3arch-results.md": "# Research Digest 0023 \u2014 3-arch LOSO results on the Netflix corpus",
+    "docs/research/0032-cambi-vulkan-integration.md": "# Research Digest 0032 \u2014 cambi Vulkan integration trade-offs",
+    "docs/research/0053-post-merge-cpu-profile-2026-05-03.md": "# Research Digest 0053 \u2014 Post-merge CPU profile, 2026-05-03",
+    "docs/research/0058-canonical-6-permutation-importance.md": "# Research 0058 \u2014 canonical-6 permutation importance for `vmaf_tiny_v2`",
+    "docs/research/0059-libfuzzer-scaffold-y4m.md": "# Research digest 0054 \u2014 libFuzzer scaffold for the Y4M parser",
+    "docs/research/0066-vmaf-tune-qsv-adapters.md": "# Research Digest 0054 \u2014 `vmaf-tune` Intel QSV codec adapters",
+    "docs/research/0087-chatgpt-vision-and-claude-bias-audit.md": "# ChatGPT vision + Claude-bias audit \u2014 VMAFx/vmafx fork",
+    "docs/research/0088-docs-cleanup-punch-list.md": "# Docs cleanup punch list (2026-05-08)",
+    "docs/research/0088-hardware-capability-priors-2026-05-08.md": "# Research digest 0088: hardware-capability priors for the FR-regressor corpus",
+    "docs/research/0089-ci-cost-optimization-audit-2026-05-09.md": "# CI cost-optimization audit (2026-05-09)",
+    "docs/research/0090-agents-md-coverage-audit-2026-05-09.md": "# AGENTS.md per-package coverage audit (2026-05-09)",
+    "docs/research/0090-t3-15-gpu-coverage-long-tail-2026-05-09.md": "# Research 0090 \u2014 T3-15 GPU coverage long-tail batch 4: actual gap re-audit + per-kernel ordering",
+    "docs/research/0091-cambi-cuda-integration.md": "# Research Digest 0091 \u2014 CAMBI CUDA integration trade-offs",
+    "docs/research/0091-cambi-gpu-port-planning-2026-05-09.md": "# Research digest 0091 \u2014 cambi \u00d7 {CUDA, SYCL, HIP} GPU port planning",
+    "docs/research/0091-psnr-hvs-avx512-bench-2026-05-09.md": "# `psnr_hvs` AVX-512 bench-first audit (2026-05-09)",
+    "docs/research/0091-vulkan-gpu-reduction-perf-analysis.md": "# Research digest 0091 \u2014 Vulkan per-WG accumulator readback bottleneck and two-level GPU reduction",
+    "docs/research/0092-perf-bench-multi-backend-2026-05-10.md": "# Research Digest 0092 \u2014 Multi-Backend Performance Benchmark",
+    "docs/research/0099-tiny-ai-netflix-training-update.md": "# Research Digest 0099 \u2014 Tiny-AI VMAF Training: 2024\u20132026 Distillation and ONNX Runtime Update",
+    "docs/research/0101-training-discovery-synthesis-2026-05-14.md": "# Training Discovery Synthesis \u2014 2026-05-14",
+    "docs/research/0101-vmaf-tune-predictor-real-hardware-retrain-2026-05-14.md": "# Research 0101: vmaf-tune Predictor Real Hardware Retrain (2026-05-14)",
+    "docs/research/0102-vmaf-tune-compare-bisect-cli-closure-2026-05-14.md": "# Research 0102: vmaf-tune compare bisect CLI closure",
+    "docs/research/0103-vmaf-tune-usage-doc-stub-label-sweep-2026-05-14.md": "# Research 0103 \u2014 `vmaf-tune` Usage-Doc Stub Label Sweep",
+    "docs/research/0104-vmaf-tune-fast-time-budget-scaffold-2026-05-14.md": "# Research 0104 \u2014 `vmaf-tune fast --time-budget-s` Scaffold Closure",
+    "docs/research/0105-vmaf-tune-per-shot-bisect-cli-closure-2026-05-14.md": "# Research 0105 \u2014 `vmaf-tune tune-per-shot` Bisect Closure",
+    "docs/research/0106-doc-stub-sweep-2026-05-14.md": "# Research 0106 \u2014 Public Doc Stub Sweep",
+    "docs/research/0107-vmaf-tune-x264-two-pass-2026-05-14.md": "# Research 0107: `vmaf-tune` x264 two-pass gap",
+    "docs/research/0108-konvid-150k-split-score-layout-2026-05-14.md": "# Research 0108 \u2014 KonViD-150k Split Score Layout",
+    "docs/research/0109-vmaf-tune-bisect-sample-clip-2026-05-14.md": "# Research 0109: `vmaf-tune` Bisect Sample-Clip Wiring",
+    "docs/research/0113-fr-from-nr-cuda-feature-split-2026-05-15.md": "# Research 0113: FR-from-NR CUDA Feature Split",
+    "docs/research/0119-roi-score-high-bit-depth-mask-2026-05-15.md": "# Research 0119: ROI-Score High-Bit-Depth Mask Materialisation",
+    "docs/research/0120-mcp-runtime-doc-status-2026-05-15.md": "# Research 0120: Runtime doc-status audit batch",
+    "docs/research/0121-mcp-compute-vmaf-high-bitdepth-2026-05-15.md": "# Research 0121: MCP `compute_vmaf` high-bit-depth input support",
+    "docs/research/0123-vmaf-roi-high-bitdepth-2026-05-15.md": "# Research 0123: `vmaf-roi` High-Bit-Depth Input",
+    "docs/research/0124-vmaf-pershot-422-444-2026-05-15.md": "# Research 0124: `vmaf-perShot` 4:2:2 / 4:4:4 Input",
+    "docs/research/0125-tiny-ai-rgb-high-bitdepth-2026-05-15.md": "# Research 0125: Tiny-AI RGB Extractors High-Bit-Depth Input",
+    "docs/research/0126-saliency-doc-status-2026-05-15.md": "# Research 0126: saliency docs status sweep",
+    "docs/research/0126-sycl-preallocation-api-doc-status-2026-05-15.md": "# Research 0126 \u2014 SYCL preallocation API doc status",
+    "docs/research/0127-tiny-ai-quantization-doc-status-2026-05-15.md": "# Research 0127: Tiny-AI quantisation doc status",
+    "docs/research/0128-dnn-api-ep-doc-status-2026-05-15.md": "# Research 0128: DNN API execution-provider doc status",
+    "docs/research/0129-ensemble-training-kit-doc-status-2026-05-15.md": "# Research 0129: ensemble training kit doc status",
+    "docs/research/0130-cuda-psnr-hvs-dct-parallel-2026-05-15.md": "# Research 0130: CUDA psnr_hvs DCT parallelisation",
+    "docs/research/0131-chug-hdr-audit-splits-2026-05-15.md": "# CHUG HDR Audit + Content Splits",
+    "docs/research/0132-chug-parquet-metadata-enrichment-2026-05-15.md": "# CHUG Parquet Metadata Enrichment",
+    "docs/research/0133-vmaf-tune-temporal-saliency-aggregation-2026-05-15.md": "# Research 0133: vmaf-tune temporal saliency aggregation",
+    "docs/research/0134-saliency-per-mb-eval-2026-05-15.md": "# Research 0134: saliency per-block evaluation",
+    "docs/research/0135-dispatch-strategy-registry-audit-2026-05-15.md": "# Research: Dispatch-Strategy Registry Audit \u2014 2026-05-15",
+    "docs/research/0135-ssimulacra2-cuda-perf-2026-05-16.md": "# Research Digest 0135: SSIMULACRA2 CUDA Blur Performance Optimisation",
+    "docs/research/0135-sycl-cambi-ssim-ciede-perf-2026-05-16.md": "# Research Digest 0135: SYCL CAMBI/SSIM/CIEDE GPU-Sync and SLM Performance Analysis",
+    "docs/research/0135-vif-cpu-perf-workspace-hoist-2026-05-16.md": "# Research Digest 0135 \u2014 VIF CPU Performance: Workspace Hoist + Fast Log2 Audit",
+    "docs/research/0135-vif-cuda-smem-staging-2026-05-16.md": "# Research 0135: VIF CUDA shared-memory staging (wins #1 and #4)",
+    "docs/research/0135-vulkan-dispatch-overhead-2026-05-15.md": "# Research Digest 0135 \u2014 Vulkan Dispatch Overhead Characterization",
+    "docs/research/0421-metal-kernel-batch-t8-1c-k.md": "# Metal kernel batch T8-1c through T8-1k \u2014 reduction strategy and numerical stability",
+    "docs/research/0518-tiny-model-loader-feature-rank.md": "# Research-0513: tiny-model loader and the rank-2 / external-data gap",
+    "docs/research/0522-tiny-codec-preset-crf-cli-flags.md": "# Research-0519: `--tiny-codec` / `--tiny-preset` / `--tiny-crf` CLI surface",
+    "docs/research/0534-compare-rate-quality-chart-from-bisect-samples.md": "# Research-0530: compare rate-quality chart from bisect samples",
+    "docs/research/0537-hip-integer-vif-kernel-fix.md": "# Research digest: HIP integer-VIF kernel fault analysis (ADR-0537)",
+    "docs/research/0541-dev-container-sycl-hip-runtime-fix.md": "# Research digest: dev-MCP container SYCL+HIP runtime UAPI pin (ADR-0541)",
+    "docs/research/0542-dev-container-full-gpu-plumbing.md": "# Research-0541: dev-mcp container full GPU plumbing \u2014 root cause and fix matrix",
+    "docs/research/0546-codec-adapter-two-pass-real.md": "# 0546 \u2014 Codec-adapter `two_pass_args` real implementations",
+    "docs/research/0548-vmaf-tune-full-file-and-no-bisect.md": "# Research digest 0548 \u2014 vmaf-tune ergonomics: container sources + CRF sweep mode",
+    "docs/research/0552-hip-vif-deterministic-reduce.md": "# Research digest: ADR-0552 \u2014 HIP VIF deterministic wavefront reduction",
+    "docs/research/0561-hip-gfx-targets-fallback-widening.md": "# Research digest: ADR-0561 \u2014 HIP gfx_targets fallback widening",
+    "docs/research/0563-hip-extractor-audit-verification.md": "# Research digest \u2014 HIP extractor audit (9 remaining scaffold claims) (ADR-0563)",
+    "docs/research/0564-integer-ssim-gpu-real-kernels.md": "# Research digest: Real integer_ssim GPU kernels (ADR-0564)",
+    "docs/research/0606-macos-vmaf-write-output-segv-deep-fix.md": "# Research digest: macOS SIGSEGV deep-fix in output.c writers (ADR-0606)",
+    "docs/research/0609-dynamic-optimizer-research.md": "# Research Digest 0609: Dynamic Optimizer (DO)",
+    "docs/research/0610-per-shot-abr-rendition-research.md": "# Research Digest 0610: Per-Shot ABR Rendition Selection",
+    "docs/research/0611-fast-nr-prescoring-research.md": "# Research Digest 0611: Fast NR Pre-Scoring",
+    "docs/research/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md": "# Research Digest 0607 \u2014 Tiny-AI Netflix corpus training: 2024\u20132026 literature refresh",
+    "docs/research/0612-vmaf-neg-integration-research.md": "# Research Digest 0612: VMAF NEG Integration",
+    "docs/research/0613-cross-shot-complexity-weighting-research.md": "# Research Digest 0613: Cross-Shot Complexity Weighting",
+    "docs/research/0614-content-aware-classifier-research.md": "# Research Digest 0614: Content-Aware Classifier",
+    "docs/research/0615-tiny-ai-netflix-training-2026-05-20.md": "# Research Digest 0615 \u2014 Tiny-AI Netflix corpus training: 2026-05-20 literature refresh",
+    "docs/research/0641-dev-container-encoder-probe-hardening.md": "# Research: Dev-container encoder probe hardening",
+    "docs/research/0642-ai-refresh-full-feature-defaults.md": "# Research: AI full-feature refresh defaults",
+    "docs/research/0644-vmaf-tune-codec-runtime-variants.md": "# Research: vmaf-tune codec runtime variants",
+    "docs/research/0646-dnn-attached-multi-output.md": "# Research Digest: Attached DNN Multi-Output Routing",
+    "docs/research/0648-mos-head-feature-jsonl-chug-id.md": "# Research 0648: CHUG HDR MOS Trainer Surface",
+    "docs/research/0649-chug-hdr-wide-mos-feature-schema.md": "# Research 0649: CHUG HDR Wide MOS Feature Schema",
+    "docs/research/0650-signal-mix-audit.md": "# Research Digest: Signal-Mix Audit",
+    "docs/research/0657-second-opinion-feature-materializer.md": "# Research Digest: Second-Opinion Feature Materializer",
+    "docs/research/0662-vulkan-motion-lavapipe-parity.md": "# Research 0662: Vulkan Motion Lavapipe Parity",
+    "docs/research/0673-feature-correlation-report-provenance.md": "# Research 0673 \u2014 Feature-correlation report provenance",
+    "docs/research/0674-phase3-subset-report-provenance.md": "# Research 0674 \u2014 Phase-3 subset-sweep report provenance",
+    "docs/research/0676-phase-f-calibration-provenance.md": "# Research 0676 \u2014 Phase F calibration provenance",
+    "docs/research/0677-nr-threshold-calibration-provenance.md": "# Research 0677 \u2014 NR threshold calibration provenance",
+    "docs/research/0678-ensemble-manifest-provenance.md": "# Research 0678 \u2014 Ensemble manifest provenance",
+    "docs/research/0679-dnn-exporter-manifest-provenance.md": "# Research 0679: DNN exporter manifest provenance",
+    "docs/research/0680-saliency-student-metrics-provenance.md": "# Research 0680: Saliency-student metrics provenance",
+    "docs/research/0681-vmaf-tiny-validator-report-provenance.md": "# Research 0681: tiny-VMAF validator report provenance",
+    "docs/research/0682-quantization-report-provenance.md": "# Research 0682: quantisation report provenance",
+    "docs/research/0683-ai-validation-report-provenance.md": "# Research 0683: AI validation report provenance",
+    "docs/research/0684-chug-extraction-report-provenance.md": "# Research 0684: CHUG extraction report provenance",
+    "docs/research/0685-fast-nr-calibration-quality-guard.md": "# Research 0685: Fast-NR calibration quality guard",
+    "docs/research/0686-tune-report-quick-takeaways.md": "# Research 0686: vmaf-tune report quick takeaways",
+    "docs/research/0687-vmaf-tune-score-backend-native-priority.md": "# Research Digest 0687 \u2014 vmaf-tune score backend native priority",
+    "docs/research/0688-ai-derived-table-provenance.md": "# Research Digest 0688 \u2014 AI derived table provenance",
+    "docs/research/0689-ai-corpus-jsonl-provenance.md": "# Research Digest 0689 \u2014 AI corpus JSONL provenance",
+    "docs/research/0690-ai-legacy-corpus-extraction-manifests.md": "# Research Digest 0690 \u2014 AI legacy corpus extraction manifests",
+    "docs/research/0699-ci-draft-automerge-gate.md": "# CI Draft Auto-Merge Gate",
+    "docs/research/0700-ai-cli-helper-pattern.md": "# Research 0700: AI CLI Helper Pattern",
+    "docs/research/0701-ai-script-bootstrap-helper.md": "# Research 0701: AI Script Bootstrap Helper",
+    "docs/research/0702-ai-materializer-bootstrap-sweep.md": "# Research 0702: AI Materializer Bootstrap Sweep",
+    "docs/research/0703-ai-materializer-cli-helper-sweep.md": "# Research 0703: AI Materializer CLI Helper Sweep",
+    "docs/research/0704-ai-corpus-adapter-cli-helper-sweep.md": "# Research 0704: AI Corpus Adapter CLI Helper Sweep",
+    "docs/research/0705-ai-vmaf-tiny-cli-bootstrap-sweep.md": "# Research 0705: VMAF Tiny Script Bootstrap Sweep",
+    "docs/research/0706-ai-vmaf-tiny-eval-cli-bootstrap-sweep.md": "# Research 0706: VMAF Tiny Eval Script Bootstrap Sweep",
+    "docs/research/0706-tiny-ai-netflix-training-prep-2026-05-22.md": "# Research Digest 0706 \u2014 Tiny-AI Netflix Training Prep: 2026-05-22 Literature Update",
+    "docs/research/0707-ai-quant-export-cli-bootstrap-sweep.md": "# Research 0707: AI Quant/Export Script Bootstrap Sweep",
+    "docs/research/0707-rust-cbindgen-pilot-tad.md": "# Research: Rust/cbindgen Integration for libvmaf Feature Extractors (ADR-0707)",
+    "docs/research/0708-ai-dataset-prep-cli-bootstrap-sweep.md": "# Research 0708: AI Dataset-Prep CLI Bootstrap Sweep",
+    "docs/research/0709-ai-model-export-validator-cli-bootstrap-sweep.md": "# Research 0709: AI Model Export/Validator CLI Bootstrap Sweep",
+    "docs/research/0710-ai-full-feature-cli-bootstrap-sweep.md": "# AI full-feature CLI bootstrap sweep",
+    "docs/research/0711-ai-eval-calibration-cli-bootstrap-sweep.md": "# AI evaluation and calibration CLI bootstrap sweep",
+    "docs/research/0712-ai-training-cli-bootstrap-sweep.md": "# Research 0712: AI Training CLI Bootstrap Sweep",
+    "docs/research/0713-ai-chug-cli-bootstrap-sweep.md": "# Research 0713: CHUG HDR CLI Bootstrap Sweep",
+    "docs/research/0715-chug-hdr-held-out-test-validation-2026-05-27.md": "# Research 0715: CHUG HDR MOS Head \u2014 Held-Out Test Partition Results (2026-05-27)",
+    "docs/research/0728-ai-train-konvid-aggregate-helpers.md": "# Research 0728: Train / Aggregate Scripts Bootstrap Sweep",
+    "docs/research/0730-ffmpeg-libvmaf-smoke-20260527.md": "# Research digest 0730: ffmpeg libvmaf filter end-to-end smoke test (2026-05-27)",
+    "docs/research/0730-tiny-ai-netflix-training-prep-2026-05-27.md": "# Research Digest 0730 \u2014 Tiny-AI Netflix Training Prep: 2026-05-27 Literature Update",
+    "docs/research/0732-netflix-pipeline-backlog-audit.md": "# Research Digest 0732: Netflix Pipeline Functions Backlog Audit",
+    "docs/research/0733-hardware-backend-audit-2026-05-28.md": "# Research 0733 \u2014 Hardware GPU backend audit and drop recommendation (2026-05-28)",
+    "docs/research/0734-cudnn-version-audit-20260528.md": "# Research digest 0734 \u2014 cuDNN version audit for ONNX Runtime / tiny-AI inference",
+    "docs/research/0734-r610-driver-changelog-audit-2026-05-28.md": "# Research Digest 0734: NVIDIA R610.43.02 Driver Changelog Audit",
+    "docs/research/0776-iwyu-audit-2026-05-30.md": "# IWYU (include-what-you-use) Audit \u2014 Fork-Added C/C++ Code",
+    "docs/research/0878-trivy-container-scan-baseline.md": "# Research digest \u2014 Trivy container scan baseline (2026-05-30)",
+    "docs/research/0881-coverage-overrides-audit-2026-05-30.md": "# Coverage-overrides audit \u2014 2026-05-30",
+    "docs/research/0889-libsvm-vendored-audit-2026-05-30.md": "# 0889 \u2014 Vendored libsvm 3.24 audit (2026-05-30)",
+    "docs/research/0893-pre-commit-audit-20260530.md": "# Research digest \u2014 Pre-commit config audit (2026-05-30)",
+    "docs/research/0905-gitignore-and-workflow-audit.md": "# Research 0905 \u2014 `.gitignore` + `.github/workflows/` staleness audit (2026-05-30)",
+    "docs/research/0907-perf-regression-gate-audit-20260530.md": "# Research 0907 \u2014 Perf regression gate audit (2026-05-30)",
+    "docs/research/0930-helm-networkpolicy-pss.md": "# Research digest \u2014 ADR-0930: Helm NetworkPolicy + Pod Security Standards baseline",
+    "docs/research/0935-go-errors-join-slog-audit.md": "# Research digest 0935 \u2014 Go `errors.Join` cleanup-path audit + `slog` key standardisation (2026-05-31)",
+    "docs/research/0946-sycl-kernel-coverage-round3-2026-05-31.md": "# Research digest \u2014 SYCL kernel coverage round 3 (ADR-0946, 2026-05-31)",
+    "docs/research/0951-github-actions-custom-audit.md": "# GitHub Actions custom-action + reusable-workflow audit \u2014 2026-05-31",
+    "docs/research/0952-vendored-libsvm-iqa-coverage-2026-05-31.md": "# Research digest \u2014 Vendored libsvm + IQA coverage uplift (ADR-0952)",
+    "docs/research/0957-sycl-kernel-coverage-round4-2026-05-31.md": "# Research digest \u2014 SYCL kernel coverage round 4 (ADR-0957, 2026-05-31)",
+    "docs/research/0958-hip-kernel-coverage-round4-2026-05-31.md": "# HIP kernel parity coverage \u2014 round 4 audit (2026-05-31)",
+    "docs/research/0959-metal-kernel-coverage-round4-closeout.md": "# Research digest \u2014 Metal kernel coverage round 4 (closeout)",
+    "docs/research/0960-gpu-runtime-error-path-leaks-2026-05-31.md": "# Research digest: GPU runtime error-path leak fixes (round-25 audit)",
+    "docs/research/0961-queue-pullwork-rollback-2026-05-31.md": "# Research digest: PullWork post-update rollback (round-25 audit B.1)",
+    "docs/research/0962-controller-streamjobs-reaper-fixes-2026-05-31.md": "# Research digest \u2014 Controller infrastructure fixes (ADR-0962)",
+    "docs/research/0963-ai-nan-propagation-guards-2026-05-31.md": "# Research: NaN Propagation Guards in ai/src/vmaf_train \u2014 Round-25 Audit",
+    "docs/research/0965-cuda-speed-tu-repair-2026-05-31.md": "# Research digest: CUDA SpEED TU repair (ADR-0965, 2026-05-31)",
+    "docs/research/0967-mcp-http-transport-security-2026-05-31.md": "# Research digest: MCP HTTP transport security hardening (ADR-0967, 2026-05-31)",
+    "docs/research/0968-ci-scripts-rebrand-tempfile-2026-05-31.md": "# Research digest \u2014 CI scripts Round 26 audit (D.1 + D.2)",
+    "docs/research/0969-helm-seccomp-node-image-2026-05-31.md": "# Research Digest \u2014 Helm Chart PSA B.1 + B.3 Fixes (ADR-0969)",
+    "docs/research/0970-test-gpu-picture-pool-cleanup-2026-05-31.md": "# Research digest: test_gpu_picture_pool.c Round 27 cleanup (D.3 + D.4)",
+    "docs/research/0971-test-unchecked-malloc-sweep-2026-05-31.md": "# Research digest: Test suite unchecked malloc sweep (Round 27 audit D.1)",
+    "docs/research/0983-python-surfaces-bug-audit-2026-05-31.md": "# Python-surfaces bug-audit research digest",
+    "docs/research/1058-helm-chart-security-hardening.md": "# Research digest: Helm chart security hardening (ADR-1058)",
+    "docs/research/1061-vendored-cjson-pdjson-depth-overflow.md": "# Research digest \u2014 ADR-1061: vendored pdjson/cJSON depth-limit and overflow fixes",
+    "docs/research/1099-sycl-fsycl-link-propagation.md": "# Research: SYCL `-fsycl` link-propagation and feature-name aliasing",
+    "docs/research/1101-brisque-nr-metric.md": "# Research digest 1101 \u2014 BRISQUE no-reference CPU extractor",
+    "docs/research/1117-mcp-tiny-ai-feature-coverage.md": "# Research digest: MCP tiny-AI / feature / CTC coverage (2026-06-14)",
+    "docs/research/1119-golusoris-go-framework-adoption.md": "# Research digest 1119 \u2014 Adopting the golusoris fx framework across vmafx Go",
+    "docs/research/1120-gpu-speed-covariance-eigenbasis-correctness-2026-06-20.md": "# GPU SpEED \u2014 covariance geometry + eigenvalue-basis correctness (2026-06-20)",
+    "docs/research/1138-c23-nullptr-msvc-upstream-parity.md": "# Research: `modernize-use-nullptr` on C23 translation units, and the c-rework-core lint pass",
+    "docs/research/1141-integer-adm-upstream-mirror-rework.md": "# Research digest: integer ADM upstream-mirror rework (ADR-1141)",
+    "docs/research/1151-release-please-audit-2026-09-02.md": "# VMAFx/vmafx \u2014 release-please / release-pipeline audit",
+    "docs/research/1152-dependency-classifier-surface-audit.md": "# Research digest 1152 \u2014 which paths do Renovate PRs actually touch?",
+    "docs/research/1166-upstream-issue-harvest-2026-09-03.md": "# Research 1166 \u2014 upstream Netflix/vmaf issue harvest, 2026-09-03",
+    "docs/research/1178-dev-container-image-publish.md": "# Research Digest: Dev Container Release Artifact Compilation and Runner Architecture",
+    "docs/research/1184-mcp-sidecar-and-grpc-bridge.md": "# Research digest: MCP sidecar-binary and gRPC control-plane bridge (2026-09-05)",
+    "docs/research/1185-backend-perf-baselines-2026-09-06.md": "# Research 1185 \u2014 refreshing the per-backend performance baselines (2026-09-06)",
+    "docs/research/1193-psnr-cap-truncation-2026-09-06.md": "# Research 1193 \u2014 the PSNR `psnr_max` ceiling truncates real scores",
+    "docs/research/1225-rocm-10-distribution-and-layout.md": "# Research: how ROCm 10 is distributed, and what it changed under `/opt/rocm`",
+    "docs/research/1231-base-image-single-source.md": "# Research digest \u2014 base-image single source, and what the oneAPI 2026 move actually requires",
+    "docs/research/1236-version-single-source-tree.md": "# Research Digest: Version Single-Source Tree & Python Dependency Unification",
+    "docs/research/1239-agent-cleanup-preservation.md": "# Agent cleanup preservation",
+    "docs/research/1246-cppcheck-public-entrypoints.md": "# Cppcheck public entrypoint model",
+    "docs/research/1277-workingdir-contract-cleanup.md": "# Research 1277 \u2014 local workspace contract cleanup",
+    "docs/research/1291-silent-revert-gate-false-positives.md": "# 1291 \u2014 What the silent-revert gate was actually reporting on the zero-warning train",
+    "docs/research/1303-backlog-tracker-schema-migration-2026-09-23.md": "# Backlog tracker schema migration evidence \u2014 2026-09-23",
+    "docs/research/2026-06-30-sycl-qsv-zerocopy-two-bug-investigation.md": "# SYCL QSV Zero-Copy \u2014 Two-Bug Investigation (Phase 3 fix digest)",
+    "docs/research/2026-07-01-vmaf-v1-models.md": "# VMAF v1 Models \u2014 Research Digest",
+    "docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md": "# Research digest \u2014 c-rework-vif-motion: bit-exact rework of the scalar VIF and float-motion TUs (2026-09-02)",
+    "docs/research/2026-09-05-gpu-cambi-parity-drift.md": "# Research digest \u2014 the shared CUDA/SYCL CAMBI parity drift (2026-09-05)",
+    "docs/research/2026-09-05-sycl-v1-model-crash-digest.md": "# Research: Intel Arc SYCL Default Model Crashes and Parity Fixes",
+    "docs/research/2026-09-06-netflix-benchmark-rerun.md": "# Research digest \u2014 Netflix benchmark re-run on `cd52f2670` (2026-09-06)",
+    "docs/research/2027-lint-carveout-inventory-2026-09-02.md": "# Lint / CI carve-out inventory (2026-09-02)",
+    "docs/research/2028-code-scanning-audit-2026-09-03.md": "# Code Scanning Alert Sweep & Security Dismissal Re-Audit (2026-09-03)",
+    "docs/research/2030-ai-teacher-single-source.md": "# Research digest: AI teacher single source, table provenance, and combiner refusal",
+    "docs/research/2030-speed-matmul-and-cambi-cpu-hot-path.md": "# Research digest 2030 \u2014 CPU hot path under the default model: SpEED `matrix_mul` and CAMBI",
+    "docs/research/2033-identity-default-option-blind-spot.md": "# 2033 \u2014 Options whose default is an arithmetic identity are untested by default-options parity tests",
+    "docs/research/2034-kernel-local-constants-shadowing-options.md": "# 2034 \u2014 Kernel-local constants that shadow an option name defeat both review and the type system",
+    "docs/research/2035-singular-covariance-fixture-design.md": "# 2035 \u2014 Designing a fixture that can actually observe a numerical-degeneracy bug",
+    "docs/research/2036-benchmark-tuning-pass-cambi-speed-hip.md": "# Research digest 2036 \u2014 Benchmark tuning pass: CAMBI AVX2 anti-dithering, SpEED SIMD QR, and HIP threaded pipeline",
+    "docs/research/2036-cambi-twin-drift-and-vacuous-fixtures.md": "# 2036 \u2014 Three CAMBI divergences behind one vacuous fixture",
+    "docs/research/2037-advertised-but-unimplemented-gpu-options.md": "# 2037 \u2014 Advertised-but-unimplemented options on the float-ADM GPU twins",
+    "docs/research/2038-clip-db-semantics-drift.md": "# 2038 \u2014 When a twin implements the right-sounding thing: `clip_db`",
+    "docs/research/2039-why-code-scanning-alerts-never-clear.md": "# 2039 \u2014 Why the code-scanning alerts never clear",
+    "docs/research/2040-code-scanning-cleanup-1243.md": "# 2040 \u2014 Code Scanning Alert Audit and Cleanup for Issue #1243",
+    "docs/research/2040-cuda-tile-additive-reduction-gap.md": "# Research: CUDA Tile C++ has no additive reduction, and VIF is made of them",
+    "docs/research/2042-adm-simd-native-lint-2026-09-08.md": "# Integer ADM SIMD native lint cleanup \u2014 2026-09-08",
+    "docs/research/2059-why-no-dependency-bump-can-merge.md": "# 2059 \u2014 Why no dependency bump can merge",
+    "docs/research/2060-the-matrix-found-what-one-lane-hid.md": "# 2060 \u2014 Three gates that only fail in combination",
+    "docs/research/2061-win64-cannot-realign-the-stack.md": "# 2061 \u2014 The address that was not an address",
+    "docs/research/2064-praetor-adoption-measurements.md": "# 2064 \u2014 Praetor adoption: measured behaviour and the two exclusions",
+    "docs/research/2066-windows-arm64-lane.md": "# 2066 \u2014 Windows on ARM64: what the runner offers, which toolchain, what broke"
+  },
+  "schema_version": 1
+}

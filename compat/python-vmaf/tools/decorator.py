@@ -4,10 +4,26 @@ from functools import partial
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
+import contextlib
 import hashlib
 import json
 import sys
+import tempfile
+import threading
 import warnings
+from typing import Any
+
+_fcntl: Any
+try:
+    import fcntl as _fcntl
+except ImportError:
+    _fcntl = None
+
+_msvcrt: Any
+try:
+    import msvcrt as _msvcrt
+except ImportError:
+    _msvcrt = None
 
 
 def deprecated(func):
@@ -32,6 +48,97 @@ def deprecated(func):
     return new_func
 
 
+_process_locks_guard = threading.Lock()
+_process_path_locks: dict[str, threading.RLock] = {}
+_thread_local = threading.local()
+
+
+def _lock_file_descriptor(fd: int) -> None:
+    """Acquire the platform-native exclusive lock for one lock-file byte."""
+    if _fcntl is not None:
+        _fcntl.flock(fd, _fcntl.LOCK_EX)
+        return
+    if _msvcrt is not None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        _msvcrt.locking(fd, _msvcrt.LK_LOCK, 1)
+        return
+    raise RuntimeError("cross-process cache locking is unsupported on this platform")
+
+
+def _unlock_file_descriptor(fd: int) -> None:
+    """Release the platform-native lock acquired by ``_lock_file_descriptor``."""
+    if _fcntl is not None:
+        _fcntl.flock(fd, _fcntl.LOCK_UN)
+    elif _msvcrt is not None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        _msvcrt.locking(fd, _msvcrt.LK_UNLCK, 1)
+
+
+@contextlib.contextmanager
+def _file_lock(lock_path: str):
+    """Re-entrant cross-process and cross-thread file lock."""
+    with _process_locks_guard:
+        abs_path = os.path.abspath(lock_path)
+        if abs_path not in _process_path_locks:
+            _process_path_locks[abs_path] = threading.RLock()
+        thread_lock = _process_path_locks[abs_path]
+
+    with thread_lock:
+        if not hasattr(_thread_local, "locks"):
+            _thread_local.locks = {}
+
+        held = _thread_local.locks.get(abs_path)
+        if held is not None:
+            held["count"] += 1
+            try:
+                yield
+            finally:
+                held["count"] -= 1
+            return
+
+        lock_dir = os.path.dirname(abs_path) or "."
+        os.makedirs(lock_dir, exist_ok=True)
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_BINARY", 0)
+        fd = os.open(abs_path, flags, 0o600)
+        try:
+            _lock_file_descriptor(fd)
+            _thread_local.locks[abs_path] = {"fd": fd, "count": 1}
+            try:
+                yield
+            finally:
+                _thread_local.locks.pop(abs_path, None)
+                with contextlib.suppress(OSError):
+                    _unlock_file_descriptor(fd)
+        finally:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+
+def _write_json_cache_atomic(file_path, data):
+    """Write JSON data to a unique temporary file in the same directory and atomically replace destination.
+
+    Provides atomic write guarantees for same-process threads and cross-process callers.
+    """
+    file_dir = os.path.dirname(file_path) or "."
+    os.makedirs(file_dir, exist_ok=True)
+    base_name = os.path.basename(file_path)
+    fd, temp_file = tempfile.mkstemp(
+        dir=file_dir,
+        prefix=f".{base_name}.",
+        suffix=".tmp",
+    )
+    try:
+        with open(fd, "wt", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        os.replace(temp_file, file_path)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.close(fd)
+        with contextlib.suppress(OSError):
+            os.unlink(temp_file)
+        raise
+
+
 def persist(original_func):
     """
     Cache returned value of function in a function. Useful when calling functions
@@ -40,17 +147,19 @@ def persist(original_func):
     """
 
     cache = {}
+    lock = threading.RLock()
 
     def new_func(*args):
-        # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
-        # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
-        # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-        h = hashlib.sha1(
-            (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
-        ).hexdigest()
-        if h not in cache:
-            cache[h] = original_func(*args)
-        return cache[h]
+        raw_key = (str(original_func.__name__) + str(args)).encode()
+        # SHA-256 used as a collision-resistant memoization cache key.
+        # usedforsecurity=False explicitly marks this non-security use for restricted/FIPS builds.
+        h = hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
+        with lock:
+            if h in cache:
+                return cache[h]
+            val = original_func(*args)
+            cache[h] = val
+            return val
 
     return new_func
 
@@ -99,34 +208,50 @@ class memoized(object):
 
 def persist_to_file(file_name):
     """
-    Cache (or persist) returned value of function in a json file .
+    Cache (or persist) returned value of function in a json file.
+    Serializes same-process concurrent read/modify/write operations
+    and guarantees cross-process atomic cache updates via file locking.
     """
 
     def decorator(original_func):
+        lock = threading.RLock()
+        lock_file = f"{file_name}.lock"
 
-        if not os.path.exists(file_name):
-            cache = {}
-        else:
+        cache = {}
+        if os.path.exists(file_name):
             try:
-                with open(file_name, "rt") as fh:
+                with open(file_name, "rt", encoding="utf-8") as fh:
                     cache = json.load(fh)
             except (IOError, ValueError):
                 sys.exit(1)
 
         def new_func(*args):
-            # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
-            # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            h = hashlib.sha1(
-                (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
-            ).hexdigest()
-            if h not in cache:
-                cache[h] = original_func(*args)
-                file_dir = os.path.dirname(file_name)
-                os.makedirs(file_dir, exist_ok=True)
-                with open(file_name, "wt") as fh:
-                    json.dump(cache, fh)
-            return cache[h]
+            raw_key = (str(original_func.__name__) + str(args)).encode()
+            # SHA-256 used as a collision-resistant memoization cache key.
+            # usedforsecurity=False explicitly marks this non-security use for restricted/FIPS builds.
+            h = hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
+
+            with lock:
+                if h in cache:
+                    return cache[h]
+
+            with lock, _file_lock(lock_file):
+                disk_cache = {}
+                if os.path.exists(file_name):
+                    try:
+                        with open(file_name, "rt", encoding="utf-8") as fh:
+                            disk_cache = json.load(fh)
+                    except (IOError, ValueError):
+                        disk_cache = {}
+                cache.update(disk_cache)
+
+                if h in cache:
+                    return cache[h]
+
+                val = original_func(*args)
+                cache[h] = val
+                _write_json_cache_atomic(file_name, cache)
+                return val
 
         return new_func
 
@@ -139,24 +264,33 @@ def persist_to_dir(dir_name):
     """
 
     def decorator(original_func):
+        lock = threading.RLock()
 
         def new_func(*args):
-            # SHA-1 used as a non-security memoization cache key (func name + repr(args)).
-            # usedforsecurity=False explicitly indicates non-cryptographic role (PEP 451 / FIPS compliance).
-            # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            h = hashlib.sha1(
-                (str(original_func.__name__) + str(args)).encode(), usedforsecurity=False
-            ).hexdigest()
+            raw_key = (str(original_func.__name__) + str(args)).encode()
+            # SHA-256 used as a collision-resistant memoization cache filename.
+            # usedforsecurity=False explicitly marks this non-security use for restricted/FIPS builds.
+            h = hashlib.sha256(raw_key, usedforsecurity=False).hexdigest()
             file_name = os.path.join(dir_name, h)
-            if not os.path.exists(file_name):
-                os.makedirs(dir_name, exist_ok=True)
+
+            if os.path.exists(file_name):
+                try:
+                    with open(file_name, "rt", encoding="utf-8") as fh:
+                        return json.load(fh)
+                except (IOError, ValueError):
+                    pass
+
+            with lock:
+                if os.path.exists(file_name):
+                    try:
+                        with open(file_name, "rt", encoding="utf-8") as fh:
+                            return json.load(fh)
+                    except (IOError, ValueError):
+                        pass
+
                 res = original_func(*args)
-                with open(file_name, "wt") as fh:
-                    json.dump(res, fh)
-            else:
-                with open(file_name, "rt") as fh:
-                    res = json.load(fh)
-            return res
+                _write_json_cache_atomic(file_name, res)
+                return res
 
         return new_func
 

@@ -1,0 +1,1 @@
+| [ADR-1306](1306-drop-nvidia-cuda-base.md) | Replace nvidia/cuda base images with digest-pinned Ubuntu 26.04 and exact NVIDIA apt installation via the shared builder/runtime/full installer, eliminating OCI publication lag and reducing the coordinated CUDA pin from 10 to 7 fail-closed sites across 2 files. | Accepted | docker, cuda, build, ci, dependencies, security |

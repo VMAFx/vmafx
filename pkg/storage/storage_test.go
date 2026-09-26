@@ -39,7 +39,6 @@ func TestIsLocal(t *testing.T) {
 		{"gcs://bucket/ref.yuv", false},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.uri, func(t *testing.T) {
 			t.Parallel()
 			got := IsLocal(tc.uri)
@@ -64,7 +63,6 @@ func TestSplitRemotePath(t *testing.T) {
 		{"local:/data/ref.yuv", "local:/data", "ref.yuv"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.remotePath, func(t *testing.T) {
 			t.Parallel()
 			root, asset := splitRemotePath(tc.remotePath)
@@ -91,7 +89,6 @@ func TestRcloneRemotePath(t *testing.T) {
 		{"myremote:bucket/ref.yuv", "myremote:bucket/ref.yuv"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.uri, func(t *testing.T) {
 			t.Parallel()
 			got, err := rcloneRemotePath(tc.uri)

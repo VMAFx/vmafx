@@ -81,15 +81,26 @@ static int moment_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis,
 /* ------------------------------------------------------------------ */
 /* moment_init_unwind - the single teardown path for init_fex_cuda.
  *
- * HISS-01: lifted verbatim from the former `free_ref` label. The same
- * resources are released in the same order on every exit path, and the
- * value returned is the one the label returned.
+ * Drain the lifecycle before releasing anything queued work may reference.
+ * The original init failure remains the first returned error.
  */
 static int moment_init_unwind(VmafFeatureExtractor *fex, MomentStateCuda *s, int err)
 {
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    return err;
+    const int lifecycle_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (lifecycle_rc)
+        return err ? err : lifecycle_rc;
+
+    int rc = err;
+    const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    if (!rc)
+        rc = rb_rc;
+    const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
+    if (!rc)
+        rc = dict_rc;
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (!rc)
+        rc = module_rc;
+    return rc;
 }
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -103,7 +114,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return moment_init_unwind(fex, s, err);
 
     int _cuda_err = 0;
     int ctx_pushed = 0;
@@ -116,7 +127,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_moment_kernel_16bpc"), fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
     s->bpc = bpc;
 
@@ -136,9 +147,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return moment_init_unwind(fex, s, _cuda_err);
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -228,15 +237,18 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     MomentStateCuda *s = fex->priv;
     int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    if (rc == 0)
+    if (rc)
+        return rc;
+
+    const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    if (!rc)
         rc = rb_rc;
-    int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
-    if (rc == 0)
+    const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
+    if (!rc)
         rc = dict_rc;
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (!rc)
+        rc = module_rc;
     return rc;
 }
 

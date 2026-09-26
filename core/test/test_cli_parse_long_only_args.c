@@ -239,6 +239,47 @@ static char *test_threads_negative_is_rejected()
     return NULL;
 }
 
+static char *test_aom_ctc_invalid_optarg_usage_error()
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--aom_ctc", "bogus_v99"};
+    const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
+    const int rc = run_parse_expect_usage_error(argc, argv, "bad aom_ctc version \"bogus_v99\"");
+    mu_assert("cli_parse: 1-arg usage() overload must emit formatted error and exit(1)", rc == 0);
+    return NULL;
+}
+
+static char *test_missing_reference_usage_error()
+{
+    char *argv[] = {"vmaf", "-d", "dis.y4m"};
+    const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
+    const int rc = run_parse_expect_usage_error(
+        argc, argv, "Reference .y4m or .yuv (-r/--reference) is required");
+    mu_assert("cli_parse: 0-arg usage() overload must emit plain error and exit(1)", rc == 0);
+    return NULL;
+}
+
+static char *test_bad_feature_option_usage_error()
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--feature", "psnr=bad"};
+    const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
+    const int rc = run_parse_expect_usage_error(
+        argc, argv, "Problem parsing feature \"psnr\", bad option string \"bad\".");
+    mu_assert("cli_parse: 2-arg usage() overload must emit formatted error and exit(1)", rc == 0);
+    return NULL;
+}
+
+static char *test_invalid_bitdepth_usage_error()
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "-m", "path=version=vmaf_v0.6.1",
+                    "-b",   "9"};
+    const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
+    const int rc = run_parse_expect_usage_error(
+        argc, argv,
+        "Invalid argument \"9\" for option -b/--bitdepth; should be a valid bitdepth (8/10/12/16)");
+    mu_assert("cli_parse: 3-arg usage() overload must emit formatted error and exit(1)", rc == 0);
+    return NULL;
+}
+
 char *run_tests()
 {
     static const MuTest tests[] = {
@@ -251,6 +292,10 @@ char *run_tests()
         MU_TEST(test_frame_skip_dist_negative_is_rejected),
         MU_TEST(test_frame_cnt_overflow_is_rejected),
         MU_TEST(test_threads_negative_is_rejected),
+        MU_TEST(test_aom_ctc_invalid_optarg_usage_error),
+        MU_TEST(test_missing_reference_usage_error),
+        MU_TEST(test_bad_feature_option_usage_error),
+        MU_TEST(test_invalid_bitdepth_usage_error),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

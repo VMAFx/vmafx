@@ -53,13 +53,19 @@ accumulated several load-bearing modifications on top.
   matching rewrite in same PR.**
 
 - **`convolve.c::iqa_convolve` taps = widen-then-add** (ADR-0138):
-  `sum += img[i] * k[j]` where multiply = `float * float`, running
-  sum = `double`. AVX2 / AVX-512 / NEON twins in
+  every product is evaluated as `float * float` before it is widened into the
+  `double` running sum. Most scalar sites spell that as `const float prod =
+  img[i] * k[j]; sum += (double)prod;`. AVX2 / AVX-512 / NEON twins in
   `../x86/convolve_*.c` and `../arm64/convolve_neon.c` mirror this
   with single-rounded `_mm256_cvtps_pd(_mm256_mul_ps(...))`
   / `vcvt_f64_f32(vmul_f32(...))` chains. **No FMA, no pre-widen
-  of kernel taps.** Changing scalar pattern requires matching all
-  three SIMD variants.
+  of kernel taps.** Changing the arithmetic requires matching all three SIMD
+  variants. The vertical-pass expression keeps the direct equivalent spelling
+  and carries a narrow
+  `codeql[cpp/integer-multiplication-cast-to-long]` suppression backed by
+  Research-2031's executable SSIM/MS-SSIM/PU21 domain proof in
+  `core/test/test_iqa_convolve.c`; keep the directive immediately before
+  that exact expression, and never broaden it to the query or file.
 
 - **TU-static rename `_calc_scale` → `iqa_calc_scale`** (fork-local,
   ADR-0148). Keep non-reserved spelling on rebase.

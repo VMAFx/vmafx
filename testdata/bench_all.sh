@@ -5,8 +5,8 @@
 # shellcheck disable=SC1091  # setvars.sh is Intel-provided, not part of the repo
 #
 # Per-backend bench across the three canonical fixture sizes
-# (576×324, 1080p_5f, 4K BBB 200f). For each fixture we engage CPU,
-# CUDA, SYCL, and Vulkan with the **correct** flag set per backend
+# (576×324 src01, 1080p checkerboard, and 4K BBB 200f). For each fixture
+# we engage CPU, CUDA, and SYCL with the **correct** flag set per backend
 # (see core/AGENTS.md §"Backend-engagement foot-guns").
 #
 # Earlier revisions of this script used `--no_cuda --no_sycl` for CPU
@@ -39,7 +39,12 @@ for cand in "${ONEAPI_CANDIDATES[@]}"; do
   fi
 done
 
-cd "${VMAF_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo /home/kilian/dev/vmaf)}" || exit 1
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${VMAF_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"
+if ! cd -- "$REPO_ROOT"; then
+  echo "ERROR: repository root is not accessible: $REPO_ROOT" >&2
+  exit 2
+fi
 
 # Honour $VMAF_BIN if set (e.g. for an out-of-tree build); otherwise default
 # to the in-tree fork build at core/build/tools/vmaf. Earlier revisions
@@ -70,9 +75,9 @@ if [[ ! -x "$VMAF" ]]; then
 fi
 
 # `flags` is intentionally space-split into separate argv entries.
-# ADR-0513: run() guards vmaf exit codes with || true so that backends
-# that are unavailable (Vulkan without an ICD, HIP on a CUDA-only host)
-# do not abort the whole harness under `set -euo pipefail`.
+# ADR-0513: run() guards vmaf exit codes with || true so that an unavailable
+# CUDA or SYCL device/runtime does not abort the whole harness under
+# `set -euo pipefail`.
 run() {
   local name="$1" ref="$2" dis="$3" w="$4" h="$5" bd="$6" flags="$7"
   local out="$OUTDIR/${name}.json"
@@ -122,14 +127,13 @@ backends = [
     (f"{tag}_cpu", "CPU"),
     (f"{tag}_cuda", "CUDA"),
     (f"{tag}_sycl", "SYCL"),
-    # Vulkan backend removed per ADR-0726; no _vulkan row produced.
 ]
-# Per-backend output key counts diverge — CPU emits 14-15 keys
-# (incl. integer_aim / integer_motion3 / integer_adm3); CUDA / SYCL
-# emit ~12. A matching key count between two backends is one signal
-# that they ran the same code path — useful when verifying that flags
-# actually engaged the intended backend.
+# Record the emitted key count for every row instead of freezing an expected
+# value: feature exposure changes as extractors evolve. A GPU count collapsing
+# to the CPU count is a fallback warning signal to corroborate with pool and
+# throughput data.
 cpu_scores = None
+cpu_nkeys = None
 for key, name in backends:
     try:
         with open(f"{outdir}/{key}.json") as f:
@@ -139,6 +143,7 @@ for key, name in backends:
         nkeys = len(d["frames"][0]["metrics"])
         if cpu_scores is None:
             cpu_scores = scores
+            cpu_nkeys = nkeys
             print(f"  {name:8s}: {mean:.6f} (ref, {len(scores)} frames, {nkeys} keys)")
         else:
             diffs = [abs(c-g) for c,g in zip(cpu_scores, scores)]
@@ -146,7 +151,8 @@ for key, name in backends:
             avg = sum(diffs)/len(diffs)
             bad = [(i,d) for i,d in enumerate(diffs) if d > 0.01]
             st = "PASS" if mx < 0.01 else ("WARN" if mx < 0.1 else "FAIL")
-            print(f"  {name:8s}: {mean:.6f}  {st} keys={nkeys} max_diff={mx:.8f} avg_diff={avg:.8f}")
+            fallback = " FALLBACK-SUSPECT" if nkeys == cpu_nkeys else ""
+            print(f"  {name:8s}: {mean:.6f}  {st} keys={nkeys}{fallback} max_diff={mx:.8f} avg_diff={avg:.8f}")
             if bad:
                 for i, d in bad[:5]:
                     print(f"      frame {i}: cpu={cpu_scores[i]:.6f} gpu={scores[i]:.6f} diff={d:.6f}")
@@ -166,24 +172,18 @@ PYEOF
 #   CUDA:   --gpumask=0 --no_sycl
 #   SYCL:   --sycl_device=0 --no_cuda
 #
-# `--no_vulkan` was dropped from all three sets: ADR-0726 removed the Vulkan
-# backend and current CLI builds reject the flag as unrecognized.
-#
-# Verifying engagement after a run: the JSON's `frames[0].metrics`
-# key set differs per backend (CPU 14-15, CUDA 11-12, SYCL ~15,
-# Vulkan ~34). Same key-count + same pool across two rows is a
-# strong signal that both ran the same code path.
+# Verify engagement from each run's emitted key count, pool, throughput, and
+# stderr. Counts are intentionally not fixed here; equal CPU/GPU counts trigger
+# a fallback warning in compare().
 FLAGS_CPU="--no_cuda --no_sycl"
 FLAGS_CUDA="--gpumask=0 --no_sycl"
 FLAGS_SYCL="--sycl_device=0 --no_cuda"
-# FLAGS_VULKAN removed per ADR-0726
 
 run_test() {
   local tag="$1" ref="$2" dis="$3" w="$4" h="$5" bd="$6"
   run "${tag}_cpu" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_CPU"
   run "${tag}_cuda" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_CUDA"
   run "${tag}_sycl" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_SYCL"
-  # Vulkan backend removed per ADR-0726; run_test no longer invokes it.
 }
 
 echo "========================================="

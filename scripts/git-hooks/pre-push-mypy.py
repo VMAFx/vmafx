@@ -17,32 +17,35 @@ Three properties this wrapper owes its callers, all learned from failures:
   be pushed at all. Those files get their own run with
   `--explicit-package-bases`, which names them from the `mypy_path` base alone,
   matching the module name they have at runtime.
-* The findings a branch inherits are not its bug. `mypy ai/ scripts/` in CI is
-  advisory by design (`|| echo "mypy advisory only on first run"` in
-  `.github/workflows/lint-and-format.yml`) because the stub coverage of numpy,
-  pandas and torch is uneven, and how much of it a checkout sees depends on
-  which of those packages happen to be installed. A blocking local hook that
-  reported every inherited finding failed on files the branch never touched. So
-  the same files are checked at the branch's merge base and only findings that
-  are not there too are reported. Line numbers are left out of the comparison,
-  because an edit above a finding shifts it without changing it.
+* The findings a branch inherits are not its bug. The former raw
+  `mypy ai/ scripts/` CI run was advisory because the stub coverage of NumPy,
+  pandas, and PyTorch is uneven, and how much of it a checkout sees depends on
+  which packages happen to be installed. A blocking gate that reported every
+  inherited finding would fail on files the branch never touched. The same
+  files are therefore checked at the selected merge base and only findings
+  absent there are reported. Line numbers are left out of the comparison,
+  because an edit above a finding shifts it without changing it. Required CI
+  invokes this same gate and propagates its result.
 * Installed third-party stubs are not a stable part of the repository's type
   contract. Their presence and supported Python syntax vary by checkout; for
   example, a newer NumPy stub can use syntax newer than this repository's
   configured mypy target and make the checker exit before reporting a source
   finding. Runs therefore exclude site packages and suppress only the missing
   imports that exclusion creates. Repository and standard-library types remain
-  checked, while hosted CI retains the advisory dependency-rich run.
+  checked under the same hash-locked toolchain locally and in hosted CI.
 """
 
 from __future__ import annotations
 
+import configparser
 import os
 import re
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+
+import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -57,6 +60,8 @@ FINDING_RE = re.compile(
 PACKAGE_BASE_PREFIX = "ai/src/"
 BASELINE_DIR_PREFIX = "vmafx-mypy-baseline-"
 ISOLATION_ARGS = ("--no-site-packages", "--disable-error-code=import-not-found")
+CONFIG_FILES = ("pyproject.toml", "mypy.ini", ".mypy.ini", "setup.cfg")
+BASE_REF_ENV = "VMAFX_MYPY_BASE_REF"
 
 
 def git(*args: str) -> str:
@@ -86,6 +91,17 @@ def fingerprints(output: str) -> set[str]:
     return found
 
 
+def checked_fingerprints(status: int, output: str, phase: str) -> set[str]:
+    """Accept only mypy's success and ordinary-finding exit statuses."""
+    found = fingerprints(output)
+    if status not in (0, 1):
+        detail = "without reporting a finding" if not found else "with a blocking error"
+        raise RuntimeError(f"{phase} mypy exited {status} {detail}:\n{output.strip()}")
+    if status == 1 and not found:
+        raise RuntimeError(f"{phase} mypy exited 1 without reporting a finding:\n{output.strip()}")
+    return found
+
+
 def run_mypy(executable: str, paths: list[str], cwd: Path) -> tuple[int, str]:
     """One mypy invocation per module-naming rule; see the module docstring."""
     based = [path for path in paths if path.startswith(PACKAGE_BASE_PREFIX)]
@@ -107,7 +123,11 @@ def run_mypy(executable: str, paths: list[str], cwd: Path) -> tuple[int, str]:
         )
         assert isinstance(completed.stdout, str)
         assert isinstance(completed.stderr, str)
-        status = status or completed.returncode
+        if status in (0, 1):
+            if completed.returncode in (0, 1):
+                status = max(status, completed.returncode)
+            else:
+                status = completed.returncode
         output += completed.stdout + completed.stderr
     return status, output
 
@@ -132,15 +152,18 @@ def baseline_fingerprints(executable: str, paths: list[str], root: Path, base: s
         # Copy the branch's type-check configuration over the baseline's before
         # measuring. The FILES stay at the merge base, which is what the gate is
         # comparing; only the rules are held constant.
-        for config in ("pyproject.toml", "mypy.ini", ".mypy.ini", "setup.cfg"):
+        for config in CONFIG_FILES:
             source = root / config
+            target = worktree / config
             if source.is_file():
-                shutil.copyfile(source, worktree / config)
+                shutil.copyfile(source, target)
+            elif target.is_file():
+                target.unlink()
         present = [path for path in paths if (worktree / path).is_file()]
         if not present:
             return set()
-        _, output = run_mypy(executable, present, worktree)
-        return fingerprints(output)
+        status, output = run_mypy(executable, present, worktree)
+        return checked_fingerprints(status, output, "baseline")
     finally:
         # --force: the checkout is untouched, but a failed mypy run must not
         # leave a registration behind for the ADR-0332 worktree-drift guard.
@@ -152,9 +175,98 @@ def baseline_fingerprints(executable: str, paths: list[str], root: Path, base: s
             print(f"mypy: could not remove the baseline worktree {worktree}", file=sys.stderr)
 
 
-def selected_paths(base: str, head: str) -> list[str]:
+def extract_mypy_toml(content: str | None) -> dict[str, object] | None:
+    if content is None:
+        return None
+    try:
+        data = tomllib.loads(content)
+    except Exception as exc:
+        raise RuntimeError(f"pyproject.toml is not valid TOML: {exc}") from exc
+    tool = data.get("tool")
+    if isinstance(tool, dict):
+        mypy = tool.get("mypy")
+        if isinstance(mypy, dict):
+            return mypy
+    return None
+
+
+def extract_mypy_cfg(content: str | None) -> str | None:
+    if content is None or "[mypy" not in content:
+        return None
+    parser = configparser.ConfigParser()
+    try:
+        parser.read_string(content)
+        sections = [s for s in parser.sections() if s == "mypy" or s.startswith("mypy-")]
+        return "\n".join(
+            f"[{s}]\n" + "\n".join(f"{k}={v}" for k, v in sorted(parser.items(s)))
+            for s in sorted(sections)
+        )
+    except Exception:
+        return content
+
+
+def mypy_config_changed(root: Path, base: str, head: str) -> bool:
+    diff = git(
+        "-C",
+        str(root),
+        "diff",
+        "--name-only",
+        "-z",
+        "--diff-filter=ACDMRT",
+        base,
+        head,
+        "--",
+        *CONFIG_FILES,
+    )
+    changed = [f for f in diff.split("\0") if f]
+    if not changed:
+        return False
+    for filename in ("mypy.ini", ".mypy.ini"):
+        if filename in changed:
+            return True
+    if "setup.cfg" in changed:
+        try:
+            base_cfg = git("-C", str(root), "show", f"{base}:setup.cfg")
+        except (CommandFailed, RuntimeError, OSError):
+            base_cfg = None
+        target = root / "setup.cfg"
+        head_cfg = target.read_text(encoding="utf-8") if target.is_file() else None
+        if extract_mypy_cfg(base_cfg) != extract_mypy_cfg(head_cfg):
+            return True
+    if "pyproject.toml" in changed:
+        try:
+            base_toml = git("-C", str(root), "show", f"{base}:pyproject.toml")
+        except (CommandFailed, RuntimeError, OSError):
+            base_toml = None
+        target = root / "pyproject.toml"
+        head_toml = target.read_text(encoding="utf-8") if target.is_file() else None
+        if extract_mypy_toml(base_toml) != extract_mypy_toml(head_toml):
+            return True
+    return False
+
+
+def selected_paths(base: str, head: str, root: Path | None = None) -> list[str]:
+    if root is None:
+        root = Path(git("rev-parse", "--show-toplevel").strip()).resolve()
+    if mypy_config_changed(root, base, head):
+        tracked = git("-C", str(root), "ls-files", "-z", "--", "ai/", "scripts/")
+        return sorted(
+            path
+            for path in tracked.split("\0")
+            if path.startswith(("ai/", "scripts/")) and path.endswith(".py")
+        )
     changed = git(
-        "diff", "--name-only", "-z", "--diff-filter=ACMRT", base, head, "--", "ai/", "scripts/"
+        "-C",
+        str(root),
+        "diff",
+        "--name-only",
+        "-z",
+        "--diff-filter=ACMRT",
+        base,
+        head,
+        "--",
+        "ai/",
+        "scripts/",
     )
     return sorted(
         path
@@ -204,25 +316,25 @@ def main() -> int:
         root = Path(git("rev-parse", "--show-toplevel").strip()).resolve()
         head = git("rev-parse", "--verify", "HEAD^{commit}").strip()
         outgoing_head(head)
-        base = git("merge-base", "origin/master", head).strip()
-        selected = selected_paths(base, head)
+        base_ref = os.environ.get(BASE_REF_ENV, "origin/master").strip()
+        if not base_ref:
+            raise RuntimeError(f"{BASE_REF_ENV} must name a commit when set")
+        base_tip = git(
+            "rev-parse", "--verify", "--end-of-options", f"{base_ref}^{{commit}}"
+        ).strip()
+        base = git("merge-base", base_tip, head).strip()
+        selected = selected_paths(base, head, root)
         verify_paths(selected, root)
         executable = shutil.which("mypy")
         if executable is None:
             raise RuntimeError("mypy is required; install the local type-checking toolchain")
         if not selected:
-            print("mypy: no ai/scripts Python files differ from the branch's master merge base")
+            print("mypy: no ai/scripts Python files differ from the selected merge base")
             return 0
         status, output = run_mypy(executable, selected, root)
-        current = fingerprints(output)
+        current = checked_fingerprints(status, output, "head")
         if not current:
-            # A non-zero status with nothing to attribute is mypy itself
-            # failing, not a clean run: fail closed rather than wave it through.
-            if status == 0:
-                return 0
-            raise RuntimeError(
-                f"mypy exited {status} without reporting a finding:\n{output.strip()}"
-            )
+            return 0
         inherited = baseline_fingerprints(executable, selected, root, base)
         return report(current - inherited, len(current & inherited))
     except (OSError, ValueError, RuntimeError, CommandFailed) as exc:

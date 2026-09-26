@@ -203,6 +203,50 @@ mu_message_t test_capacity_arithmetic()
     return nullptr;
 }
 
+unsigned vector_close_calls;
+
+int vector_retry_init(VmafFeatureExtractor *, enum VmafPixelFormat, unsigned, unsigned, unsigned)
+{
+    return 0;
+}
+
+int vector_retry_close(VmafFeatureExtractor *)
+{
+    vector_close_calls++;
+    return vector_close_calls == 1 ? -EIO : 0;
+}
+
+mu_message_t prepare_close_retry_vector(Vector &vector, VmafFeatureExtractor &fex)
+{
+    fex.name = "vector_close_retry";
+    fex.init = vector_retry_init;
+    fex.close = vector_retry_close;
+    mu_assert("vector init failed", feature_extractor_vector_init(&vector.get()) == 0);
+    auto ctx = make_context(&fex, nullptr, nullptr);
+    mu_assert("context create failed", ctx);
+    mu_assert("context init failed",
+              vmaf_feature_extractor_context_init(ctx.get(), VMAF_PIX_FMT_YUV420P, 8, 64, 64) == 0);
+    mu_assert("append failed", append_context(&vector.get(), std::move(ctx)) == 0);
+    return nullptr;
+}
+
+mu_message_t test_close_failure_retains_vector_ownership()
+{
+    VmafFeatureExtractor fex{};
+    Vector vector;
+    mu_assert_msg(prepare_close_retry_vector(vector, fex));
+    vector_close_calls = 0;
+    mu_assert("first close reports the transient error",
+              feature_extractor_vector_close(&vector.get()) == -EIO);
+    mu_assert("destroy retains a vector with an unclosed owner",
+              feature_extractor_vector_destroy(&vector.get()) == -EBUSY && vector.get().cnt == 1);
+    mu_assert("close retry succeeds", feature_extractor_vector_close(&vector.get()) == 0);
+    mu_assert("prepared vector commits", feature_extractor_vector_destroy(&vector.get()) == 0);
+    mu_assert("commit clears vector storage",
+              vector.get().fex_ctx == nullptr && vector.get().cnt == 0);
+    return nullptr;
+}
+
 } // namespace
 
 namespace
@@ -228,14 +272,14 @@ bool unused_slots_clear(const RegisteredFeatureExtractors *entries)
     return true;
 }
 
-// Only the FEX_VECTOR_ALLOC_TEST cases below call this, so without that macro it is
-// unused and gcc warns; the attribute says so instead of hiding the helper in the #ifdef.
-[[maybe_unused]] bool vector_unchanged(const RegisteredFeatureExtractors *entries,
-                                       const void *storage, unsigned count, unsigned capacity)
+#ifdef FEX_VECTOR_ALLOC_TEST
+bool vector_unchanged(const RegisteredFeatureExtractors *entries, const void *storage,
+                      unsigned count, unsigned capacity)
 {
     return entries->cnt == count && entries->capacity == capacity &&
            static_cast<const void *>(entries->fex_ctx) == storage;
 }
+#endif
 
 mu_message_t test_native_growth()
 {
@@ -347,6 +391,7 @@ mu_message_t run_legacy_and_growth_tests()
     mu_run_test(test_legacy_different_name);
     mu_run_test(test_capacity_arithmetic);
     mu_run_test(test_native_growth);
+    mu_run_test(test_close_failure_retains_vector_ownership);
     return nullptr;
 }
 

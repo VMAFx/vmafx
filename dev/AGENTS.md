@@ -35,12 +35,16 @@ creation step, exit code 13.
 
 ### CUDA package names
 
-- Use `cuda-toolkit` (current unversioned meta-package).
+- Use `scripts/ci/install-cuda-toolkit.sh --mode=full`; do not recreate an apt
+  bootstrap or install a bare `cuda-toolkit-<series>` here. `build-config.env`
+  owns `CUDA_APT_PACKAGE`, `CUDA_APT_LOCK_RELEASE`, and the exact toolkit,
+  nvcc, and cudart Debian versions (ADR-1285 / ADR-1306). The installer passes
+  `package=version` and verifies the installed dpkg values.
 - Do NOT install `libcuda1` (runtime driver) — must come from
   `nvidia-container-runtime` at run-time; baking it in shadows host
   driver.
 - Do NOT install `cuda-compiler` — legacy alias no longer existing in
-  NVIDIA CUDA channels; `cuda-toolkit` already provides `nvcc`.
+  NVIDIA CUDA channels; full mode installs the exact toolkit and nvcc packages.
 
 ### Intel oneAPI package name
 
@@ -107,9 +111,8 @@ silently falls back to CPU. Two hard pins live in
 
 CI / maintainer's host running newer kernel that breaks these pins
 -> `dev-mcp-entrypoint.sh` runtime-visibility probe (also ADR-0541)
-surfaces regression on container start as
-`WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP HSA agent NOT
-detected`. Bump relevant version owner, rebuild.
+surfaces regression on container start as `WARN: SYCL GPU NOT detected` or
+`WARN: HIP HSA GPU agent NOT detected`. Bump relevant version owner, rebuild.
 
 **The probe runs argv, never a shell string.** `_probe_with_retry` in
 `scripts/dev-mcp-entrypoint.sh` takes one program name and runs it as
@@ -121,7 +124,11 @@ injection. A probe that needs flags gets explicit argv handling in the
 function; do not reintroduce `eval` or `bash -c`. Keep the function at top
 level with the opening line `_probe_with_retry() {` —
 `scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh` (pre-commit hook
-`test-dev-mcp-entrypoint-probe`) extracts it by that line.
+`test-dev-mcp-entrypoint-probe`) extracts it by that line. Detection regexes
+are anchored to full runtime records: SYCL accepts only a leading
+`[level_zero:gpu...]` or `[opencl:gpu...]` record; HIP accepts only a full
+`Name: gfx...` or `Device Type: GPU` line. Do not loosen these to token
+searches that can turn an initialization diagnostic into a false success.
 
 ### SHELL / hadolint DL4006
 
@@ -334,10 +341,43 @@ would fail to compile:
 Entrypoint exposes MCP over stdio (`docker exec -i vmaf-dev-mcp
 vmafx-mcp` — Go binary, ADR-1229), doesn't create
 `/sockets/vmaf-mcp.sock` by default. Compose healthcheck must
-therefore remain CLI check (`vmaf --version`). Reverting to
-`test -S /sockets/vmaf-mcp.sock` leaves container permanently
-`unhealthy`, prevents `smoke-probe-cron` from starting even though
-runtime usable.
+therefore remain a CLI check, not `test -S /sockets/vmaf-mcp.sock`.
+`dev-mcp-healthcheck.sh` first runs `vmaf --version`; when
+`/dev/nvidia0` exists it also requires `nvidia-smi` to answer a driver query.
+Keep Compose's 45-second start period for CUDA cold-start. The hermetic
+`test-dev-mcp-healthcheck.sh` and its pre-commit hook pin all three branches.
+Reverting to a socket check leaves the container permanently `unhealthy` and
+prevents `smoke-probe-cron` from starting even though stdio is usable.
+
+### Smoke-probe contract (Research-2083)
+
+`dev/scripts/smoke-probe-loop.sh` is evidence-producing code, not a liveness
+ping. Preserve all of these constraints when the CLI, Go MCP server, or probe
+schema is rebased:
+
+1. Every CLI run uses the exclusive `--backend cpu|cuda|sycl|hip` selector,
+   writes `--json` to a real temporary file, and validates both
+   `pooled_metrics.vmaf.mean` and the matching `backend_used` receipt. Raw YUV
+   geometry is `--pixel_format 420 --bitdepth 8`; `yuv420p`, the retired
+   `--cuda` / `--sycl` / `--hip` switches, and `--no_prediction` are invalid
+   probe contracts.
+2. MCP probes execute the production `vmafx-mcp` Go binary over stdio, perform
+   `initialize` followed by `notifications/initialized`, and only then call
+   `list_extractors` or `vmaf_score`. The client keeps stdin open until the
+   response with request ID 2 arrives; EOF disconnects the Go SDK session and
+   can otherwise race the response. Do not restore the retired
+   `vmaf-mcp-server`, `list_features`, or `compute_vmaf` operations.
+3. The JSON keys `mcp_results.list_features` and
+   `mcp_results.compute_vmaf` remain stable for existing probe consumers even
+   though the underlying tool names changed. Error text is JSON-encoded, and
+   helper results use a non-whitespace delimiter so an empty score cannot
+   shift the duration and error fields.
+4. Keep `dev/scripts/test-smoke-probe-loop.sh` and the
+   `test-dev-mcp-smoke-probe` pre-commit hook coupled to changes in either
+   script. The MCP stub responds before EOF so the test also rejects the stdio
+   close-before-response race. It covers the healthy path, error strings
+   containing JSON metacharacters/control bytes, and a backend receipt
+   mismatch.
 
 ### Runtime dependency invariants (ADR-0541 / ADR-0568)
 
@@ -353,7 +393,7 @@ runtime usable.
 2. **NEO + ROCm userspace version-pinned to host kernel's UAPI
    (ADR-0541).** See "Userspace ↔ host-kernel UAPI version pins"
    above. `dev-mcp-entrypoint.sh` banner emits `WARN: SYCL
-   level_zero:gpu NOT detected` / `WARN: HIP HSA agent NOT detected`
+   GPU NOT detected` / `WARN: HIP HSA GPU agent NOT detected`
    line at container start when pin no longer matches host. Bump
    ARG, rebuild instead of working around it on host (CLAUDE.md §12
    r15 sub-rule 4).

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"slices"
 	"strings"
 )
 
@@ -97,13 +98,7 @@ func EncoderInventory(ctx context.Context, ffmpegBin string) (*Inventory, error)
 
 	// Also collect all other encoders the binary reports.
 	for name := range present {
-		found := false
-		for _, exp := range expectedSoftwareCodecs {
-			if exp == name {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(expectedSoftwareCodecs, name)
 		if !found {
 			available = append(available, name)
 		}
@@ -117,10 +112,5 @@ func EncoderInventory(ctx context.Context, ffmpegBin string) (*Inventory, error)
 
 // Has returns true if the named codec was found in the inventory.
 func (inv *Inventory) Has(codec string) bool {
-	for _, c := range inv.Available {
-		if c == codec {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(inv.Available, codec)
 }

@@ -23,6 +23,8 @@ extern "C" {
 
 #include "test.h"
 }
+#include <cerrno>
+
 #include "dict.h"
 #include "libvmaf/feature.h"
 
@@ -408,8 +410,35 @@ static mu_message_t test_isnumeric()
     mu_assert("problem during isnumeric", isnumeric("inf"));
     mu_assert("problem during isnumeric", isnumeric("-inf"));
 
-    return NULL;
+    return nullptr;
 }
+
+namespace
+{
+
+/* A full zero-capacity table must be refused, not doubled to zero and then
+ * appended past: the growth path's old assert() vanished under NDEBUG. */
+mu_message_t test_vmaf_dictionary_set_rejects_zero_capacity()
+{
+    VmafDictionary empty = {};
+    VmafDictionary *dict = &empty;
+    const int err = vmaf_dictionary_set(&dict, "key", "val", 0);
+    mu_assert("a zero-capacity dictionary must be rejected", err == -EINVAL);
+    mu_assert("a rejected set must leave the table untouched",
+              dict == &empty && !empty.entry && empty.cnt == 0 && empty.size == 0);
+    return nullptr;
+}
+
+/* The input-validation tests, split out of run_tests() so the runner stays
+ * inside the branch budget the repository applies to the whole tree. */
+mu_message_t run_validation_tests()
+{
+    mu_run_test(test_isnumeric);
+    mu_run_test(test_vmaf_dictionary_set_rejects_zero_capacity);
+    return nullptr;
+}
+
+} // namespace
 
 mu_message_t run_tests()
 {
@@ -419,6 +448,5 @@ mu_message_t run_tests()
     mu_run_test(test_vmaf_dictionary_normalize_numerical_val);
     mu_run_test(test_vmaf_feature_dictionary);
     mu_run_test(test_vmaf_dictionary_alphabetical_sort);
-    mu_run_test(test_isnumeric);
-    return NULL;
+    return run_validation_tests();
 }

@@ -1,0 +1,1 @@
+| [ADR-1311](1311-source-adr-citation-provenance.md) | Bind each tracked source `ADR-NNNN` citation to the exact decision filename and source-site counts, while preserving superseded, abandoned, and synthetic identities through explicit governed registry entries. | Accepted | ci, documentation, provenance, adr, source-code |

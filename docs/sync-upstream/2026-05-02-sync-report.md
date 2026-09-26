@@ -13,7 +13,7 @@
 - **Topology**: port-only (`git merge-base master upstream/master` returns empty — exit 1).
 - **Upstream remote**: `https://github.com/Netflix/vmaf.git` (branch `master`).
 - **Upstream tip**: `151a9822` 2026-05-02 *Merge pull request #1509 from Netflix/feature/routine-test-additions*.
-- **Fork tip**: `e266bf8e` 2026-05-02 *feat(vulkan): T7-29 part 4 — v2 async pending-fence ring (ADR-0235) (#241)*.
+- **Fork tip**: `e266bf8e` 2026-05-02 *feat(vulkan): T7-29 part 4 — v2 async pending-fence ring (ADR-0235) (lusoris/vmaf#241)*.
 - **Range scanned**: last 50 upstream commits (49 unique entries).
 - **Method**: extracted upstream-master commits with `git log upstream/master -50`,
   cross-referenced each upstream short-SHA against SHA mentions in fork commit

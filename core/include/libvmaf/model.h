@@ -137,7 +137,7 @@ typedef struct VmafModelConfig {
  *         `-EINVAL` when @p version does not match any built-in model
  *         (the loader also logs a warning), `-ENOMEM` on allocation failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -165,7 +165,7 @@ VMAF_EXPORT int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const c
  *         path does not exist, `-EINVAL` on a malformed JSON payload or a
  *         `.pkl` extension, `-ENOMEM` on allocation failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -209,7 +209,7 @@ VMAF_EXPORT int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cf
  * @return 0 on success, or a negative errno code on error: `-EINVAL` on NULL
  *         arguments, `-ENOMEM` on dictionary-merge allocation failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -227,11 +227,15 @@ VMAF_EXPORT int vmaf_model_feature_overload(VmafModel *model, const char *featur
  * invalidated. Do not invoke after the model has been handed to a
  * @ref VmafModelCollection — that collection takes ownership and will
  * destroy contained models when @ref vmaf_model_collection_destroy runs.
+ * If the model was registered with a VmafContext through
+ * @ref vmaf_use_features_from_model, that context borrows it through teardown.
+ * Destroy the model only after `vmaf_close()` returns exactly 0; every nonzero
+ * close result retains the dependency for retry.
  *
  * @param model Model handle from @ref vmaf_model_load or
  *              @ref vmaf_model_load_from_path. NULL is a no-op.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -246,7 +250,7 @@ VMAF_EXPORT void vmaf_model_destroy(VmafModel *model);
  *
  * @return Number of features required by @p model, or 0 if @p model is NULL.
  *
- * @thread-safety Safe to call from any thread with a valid @ref VmafModel.
+ * @note Thread safety: Safe to call from any thread with a valid @ref VmafModel.
  */
 VMAF_EXPORT unsigned vmaf_model_feature_count(const VmafModel *model);
 
@@ -263,7 +267,7 @@ VMAF_EXPORT unsigned vmaf_model_feature_count(const VmafModel *model);
  * @return NUL-terminated feature name string, or NULL if @p model is NULL or
  *         @p index >= @ref vmaf_model_feature_count.
  *
- * @thread-safety Safe to call from any thread with a valid @ref VmafModel.
+ * @note Thread safety: Safe to call from any thread with a valid @ref VmafModel.
  */
 VMAF_EXPORT const char *vmaf_model_feature_name(const VmafModel *model, unsigned index);
 
@@ -299,32 +303,22 @@ enum VmafModelCollectionScoreType {
 /**
  * @brief Aggregate prediction from a model collection.
  *
- * Populated by @ref vmaf_score_at_index_model_collection /
- * @ref vmaf_score_pooled_model_collection. Read fields based on @p type.
- *
- * @field type                Aggregation method discriminator (see
- *                            @ref VmafModelCollectionScoreType).
- * @field bootstrap.bagging_score  Mean of the N bootstrap sub-model
- *                                 predictions.
- * @field bootstrap.stddev    Standard deviation across the N predictions.
- * @field bootstrap.ci.p95.lo Lower bound of the 95% confidence interval.
- * @field bootstrap.ci.p95.hi Upper bound of the 95% confidence interval.
+ * Populated by `vmaf_score_at_index_model_collection` /
+ * `vmaf_score_pooled_model_collection`. Read fields based on @p type
+ * (see `VmafModelCollectionScoreType`).
  */
 typedef struct VmafModelCollectionScore {
     enum VmafModelCollectionScoreType type; /**< Discriminator for the score family. */
-    /** Bootstrap variant: bagging score + dispersion + 95% confidence
-     *  interval. Valid when @p type == VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP. */
     struct {
         double bagging_score; /**< Mean of the per-sub-model scores. */
         double stddev;        /**< Standard deviation across sub-models. */
-        /** Confidence-interval block. */
         struct {
-            /** 95% confidence interval [lo, hi]. */
             struct {
-                double lo, hi; /**< Lower / upper 95% CI bounds. */
-            } p95;
-        } ci;
-    } bootstrap;
+                double lo; /**< Lower bound of the 95% confidence interval. */
+                double hi; /**< Upper bound of the 95% confidence interval. */
+            } p95;         /**< 95% confidence interval [lo, hi]. */
+        } ci;              /**< Confidence-interval block. */
+    } bootstrap;           /**< Bootstrap variant: bagging score + dispersion + 95% CI. */
 } VmafModelCollectionScore;
 
 /**
@@ -349,7 +343,7 @@ typedef struct VmafModelCollectionScore {
  *         @p version does not match any built-in collection, `-ENOMEM` on
  *         allocation failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -377,7 +371,7 @@ VMAF_EXPORT int vmaf_model_collection_load(VmafModel **model,
  *         path does not exist, `-EINVAL` on a malformed payload or a `.pkl`
  *         extension, `-ENOMEM` on allocation failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -416,7 +410,7 @@ VMAF_EXPORT int vmaf_model_collection_load_from_path(VmafModel **model,
  * @return 0 on success, or a negative errno code on error: `-EINVAL` on NULL
  *         arguments, `-ENOMEM` on dictionary-copy failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -434,13 +428,17 @@ VMAF_EXPORT int vmaf_model_collection_feature_overload(VmafModel *model,
  *
  * After this call the lead-model pointer returned by the matching load call
  * is invalidated — do not pass it to @ref vmaf_model_destroy.
+ * If the collection was registered with a VmafContext through
+ * @ref vmaf_use_features_from_model_collection, that context borrows it through
+ * teardown. Destroy the collection only after `vmaf_close()` returns exactly
+ * 0; every nonzero close result retains the dependency for retry.
  *
  * @param model_collection Collection handle from
  *                         @ref vmaf_model_collection_load /
  *                         @ref vmaf_model_collection_load_from_path. NULL
  *                         is a no-op.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -459,7 +457,7 @@ VMAF_EXPORT void vmaf_model_collection_destroy(VmafModelCollection *model_collec
  *                May itself be NULL if the caller only needs the handle.
  * @return opaque handle to the next model, or NULL after the last model.
  *
- * @thread-safety Safe to call from any thread; the built-in model table is
+ * @note Thread safety: Safe to call from any thread; the built-in model table is
  *               read-only after library init.
  */
 VMAF_EXPORT const void *vmaf_model_version_next(const void *prev, const char **version);
@@ -477,7 +475,7 @@ VMAF_EXPORT const void *vmaf_model_version_next(const void *prev, const char **v
  * @return a NUL-terminated string owned by libvmaf; never NULL, never freed by
  *         the caller, valid for the lifetime of the process.
  *
- * @thread-safety Safe to call from any thread; returns a pointer to static
+ * @note Thread safety: Safe to call from any thread; returns a pointer to static
  *                read-only storage.
  */
 VMAF_EXPORT const char *vmaf_default_model_version(void);

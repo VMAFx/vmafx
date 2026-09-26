@@ -40,6 +40,13 @@ Rules for new script in `ai/scripts/` or module in
    `sys.path`. Direct `ai/scripts/*.py` entrypoints use
    `ai/scripts/_script_bootstrap.py` before importing package; do not move
    bootstrap into `aiutils` (too late to solve import).
+8. **Strict JSON boundaries:** Route durable AI JSON and report-style stdout
+   through `run_manifest.write_manifest_json()` or
+   `run_manifest.dumps_manifest_json()`. Both accept any JSON-like root,
+   recursively map `NaN` / positive infinity / negative infinity to `null`,
+   and serialize with `allow_nan=False`. The file writer must remain layered
+   on `write_text_atomic()`; do not restore bare `json.dumps()` or
+   `Path.write_text()` at these boundaries.
 
 ## Module inventory
 
@@ -51,5 +58,6 @@ Rules for new script in `ai/scripts/` or module in
   `detect_schema_version(path) -> int`,
   `apply_standard_column_order(df, *, labels=None, metadata=None) -> DataFrame`
   (ADR-0926; schema v2 = on-disk default)
-- `run_manifest.py` — deterministic `run_provenance` sidecar helpers
+- `run_manifest.py` — deterministic `run_provenance` sidecar helpers plus
+  strict string/file JSON emitters
 - `cli_helpers.py` — shared parser/raw-argv/batch-manifest argument helpers

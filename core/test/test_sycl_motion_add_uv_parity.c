@@ -6,7 +6,7 @@
  */
 
 /*
- * ADR-0989: motion_add_uv CPU vs. SYCL parity test.
+ * ADR-0989 / ADR-1326: motion_add_uv SYCL fixed-point parity test.
  *
  * Verifies two properties of the SYCL `motion_sycl` extractor when
  * `motion_add_uv=true` is set:
@@ -15,14 +15,14 @@
  *    (i.e., the UV contribution is non-zero when the test fixture has
  *    non-uniform chroma motion).
  *
- * 2. The SYCL score with motion_add_uv=true matches the CPU
- *    `float_motion` extractor's score to within ADR-0214 places=4
- *    (1e-4) tolerance — since float_motion is the canonical CPU
- *    implementation of motion_add_uv.
+ * 2. The SYCL Y-only and Y+U+V scores match a scalar oracle that reproduces
+ *    the fixed-point filter coefficients, per-pass rounding, reflect-101
+ *    border handling, integer SAD accumulation, and per-plane normalization.
  *
  * Note: the CPU `motion` extractor (integer path) does NOT have
- * motion_add_uv; the canonical CPU reference for UV blending is
- * `float_motion` with the same option set.
+ * motion_add_uv. `float_motion` supports the same semantic option, but it is
+ * not a numerical oracle for this fixed-point kernel: its float convolution
+ * coefficients and float SAD reduction have a different rounding contract.
  *
  * Feature-name aliasing: when motion_add_uv=true (non-default), the
  * feature-name system appends "_mau" (the option alias) to the base
@@ -40,6 +40,7 @@
  * "[skip: no SYCL device]" and passes cleanly.
  */
 
+#include <float.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -67,9 +68,13 @@
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 2u
 
-/* ADR-0214 cross-backend tolerance: 2e-4 accounts for 3-plane fixed-point
- * accumulation vs float_motion reference on a 49.18 aggregate score (~3 ppm). */
-#define PARITY_TOL 2e-4
+/* Fixed-point implementation constants from integer_motion_sycl.cpp. */
+#define FIXED_BLUR_RADIUS 2
+#define FIXED_BLUR_TAPS 5
+#define FIXED_BLUR_SCALE 256.0
+#define NORMALIZED_SCORE_ROUNDING_OPS 5.0
+
+static const int32_t fixed_blur_filter[FIXED_BLUR_TAPS] = {3571, 16004, 26386, 16004, 3571};
 
 /* Fill a YUV420P 8-bpc picture with a deterministic ramp on all three
  * planes.  Y, U, and V all vary with frame_idx so that consecutive
@@ -102,58 +107,88 @@ static int fill_yuv_fixture(VmafPicture *pic, unsigned frame_idx)
 }
 
 /* ------------------------------------------------------------------ */
-/* CPU reference path — float_motion extractor with motion_add_uv=true */
+/* Scalar fixed-point oracle — mirrors integer_motion_sycl.cpp.        */
 /* ------------------------------------------------------------------ */
-/* NOLINTNEXTLINE(readability-function-size): test harness — setup +
- * per-frame loop + teardown; splitting would obscure the single linear
- * pipeline under test.  ADR-0141 §2 load-bearing test invariant. */
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
-static char *run_cpu_float_motion_uv(double *out_score)
+static int oracle_mirror(int idx, unsigned extent)
 {
-    int err = 0;
+    if (idx < 0)
+        return -idx;
+    if ((unsigned)idx >= extent)
+        return (int)(2u * extent) - idx - 2;
+    return idx;
+}
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
+static uint8_t oracle_fixture_sample(unsigned plane, unsigned frame_idx, int row, int col,
+                                     unsigned width, unsigned height)
+{
+    const unsigned y = (unsigned)oracle_mirror(row, height);
+    const unsigned x = (unsigned)oracle_mirror(col, width);
+    if (plane == 0u)
+        return (uint8_t)((y + x + frame_idx * 13u) & 0xFFu);
+    return (uint8_t)((y * 2u + x + frame_idx * 7u + plane * 31u) & 0xFFu);
+}
 
-    /* Pass motion_add_uv=true to float_motion. */
-    VmafFeatureDictionary *opts = NULL;
-    err = vmaf_feature_dictionary_set(&opts, "motion_add_uv", "true");
-    mu_assert("CPU: vmaf_feature_dictionary_set(motion_add_uv) failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_motion", opts);
-    /* On success ownership transfers to vmaf — do not free. On failure free it. */
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("CPU: vmaf_use_feature(float_motion) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = fill_yuv_fixture(&ref, i);
-        mu_assert("CPU: fill_yuv_fixture(ref) failed", !err);
-        err = fill_yuv_fixture(&dist, i);
-        mu_assert("CPU: fill_yuv_fixture(dist) failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CPU: vmaf_read_pictures failed", !err);
+static int32_t oracle_blur_pixel(unsigned plane, unsigned frame_idx, unsigned y, unsigned x,
+                                 unsigned width, unsigned height)
+{
+    int32_t vertical[FIXED_BLUR_TAPS];
+    const int32_t vertical_round = 1 << (FIXTURE_BPC - 1u);
+    for (int hx = 0; hx < FIXED_BLUR_TAPS; hx++) {
+        int32_t sum = 0;
+        for (int hy = 0; hy < FIXED_BLUR_TAPS; hy++) {
+            const int row = (int)y + hy - FIXED_BLUR_RADIUS;
+            const int col = (int)x + hx - FIXED_BLUR_RADIUS;
+            sum += fixed_blur_filter[hy] *
+                   (int32_t)oracle_fixture_sample(plane, frame_idx, row, col, width, height);
+        }
+        vertical[hx] = (sum + vertical_round) >> FIXTURE_BPC;
     }
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: EOS failed", !err);
+    int64_t horizontal = 0;
+    for (int hx = 0; hx < FIXED_BLUR_TAPS; hx++)
+        horizontal += (int64_t)fixed_blur_filter[hx] * vertical[hx];
+    return (int32_t)((horizontal + (1 << 15)) >> 16);
+}
 
-    /* float_motion with motion_add_uv=true stores scores under the aliased
-     * name with the _mau suffix: motion2_mau.  The feature-name system
-     * aliases VMAF_feature_motion2_score → motion2 (not float_motion2) and
-     * then appends _mau for the non-default motion_add_uv bool option
-     * (alias "mau") — see alias.c and feature_name.c:vmaf_feature_name_from_opts_dict. */
-    err = vmaf_feature_score_at_index(vmaf, "motion2_mau", out_score, 1u);
-    mu_assert("CPU: vmaf_feature_score_at_index(motion2_mau, idx=1) failed", !err);
+static int64_t oracle_plane_sad(unsigned plane, unsigned width, unsigned height)
+{
+    int64_t sad = 0;
+    for (unsigned y = 0; y < height; y++) {
+        for (unsigned x = 0; x < width; x++) {
+            const int32_t first = oracle_blur_pixel(plane, 0u, y, x, width, height);
+            const int32_t second = oracle_blur_pixel(plane, 1u, y, x, width, height);
+            const int64_t diff = (int64_t)second - first;
+            sad += (diff < 0) ? -diff : diff;
+        }
+    }
+    return sad;
+}
 
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+static double oracle_normalize_sad(int64_t sad, unsigned width, unsigned height)
+{
+    return (double)sad / FIXED_BLUR_SCALE / ((double)width * height);
+}
+
+static void oracle_motion_scores(double *y_only, double *add_uv)
+{
+    const unsigned chroma_w = (FIXTURE_W + 1u) >> 1u;
+    const unsigned chroma_h = (FIXTURE_H + 1u) >> 1u;
+    *y_only =
+        oracle_normalize_sad(oracle_plane_sad(0u, FIXTURE_W, FIXTURE_H), FIXTURE_W, FIXTURE_H);
+    *add_uv = *y_only;
+    *add_uv += oracle_normalize_sad(oracle_plane_sad(1u, chroma_w, chroma_h), chroma_w, chroma_h);
+    *add_uv += oracle_normalize_sad(oracle_plane_sad(2u, chroma_w, chroma_h), chroma_w, chroma_h);
+}
+
+/* Each SAD is exactly representable for the admitted frame-size range. The
+ * power-of-two /256 scaling is exact; only three area divisions and two sums
+ * round. Comparing two independent evaluations doubles Higham's gamma_5. */
+static double oracle_score_roundoff_bound(double expected)
+{
+    const double unit_roundoff = DBL_EPSILON / 2.0;
+    const double gamma = (NORMALIZED_SCORE_ROUNDING_OPS * unit_roundoff) /
+                         (1.0 - NORMALIZED_SCORE_ROUNDING_OPS * unit_roundoff);
+    return 2.0 * gamma * fmax(1.0, fabs(expected));
 }
 
 /* ------------------------------------------------------------------ */
@@ -166,7 +201,7 @@ static char *run_cpu_float_motion_uv(double *out_score)
  * once and releases it after both passes, so the two passes share one state
  * lifetime exactly as they did when they were two blocks of one function.
  */
-static char *run_sycl_pass_add_uv(VmafSyclState *sycl_state, double *out_score)
+static char *setup_sycl_pass_add_uv(VmafSyclState *sycl_state, VmafContext **out_vmaf)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
@@ -186,10 +221,16 @@ static char *run_sycl_pass_add_uv(VmafSyclState *sycl_state, double *out_score)
         (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("SYCL+UV: vmaf_use_feature failed", !err);
 
+    *out_vmaf = vmaf;
+    return NULL;
+}
+
+static char *feed_sycl_pass_add_uv_frames(VmafContext *vmaf)
+{
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
         VmafPicture dist;
-        err = fill_yuv_fixture(&ref, i);
+        int err = fill_yuv_fixture(&ref, i);
         mu_assert("SYCL+UV: fill_yuv_fixture(ref) failed", !err);
         err = fill_yuv_fixture(&dist, i);
         mu_assert("SYCL+UV: fill_yuv_fixture(dist) failed", !err);
@@ -198,14 +239,22 @@ static char *run_sycl_pass_add_uv(VmafSyclState *sycl_state, double *out_score)
         mu_assert("SYCL+UV: vmaf_read_pictures failed", !err);
     }
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL+UV: EOS failed", !err);
+    return NULL;
+}
+
+static char *run_sycl_pass_add_uv(VmafSyclState *sycl_state, double *out_score)
+{
+    VmafContext *vmaf = NULL;
+    mu_assert_msg(setup_sycl_pass_add_uv(sycl_state, &vmaf));
+    mu_assert_msg(feed_sycl_pass_add_uv_frames(vmaf));
 
     /* motion_sycl with motion_add_uv=true stores scores under the aliased
      * name: integer_motion2_mau (VMAF_integer_feature_motion2_score aliased
      * to integer_motion2, with _mau appended for the non-default bool
      * option).  See feature_name.c:vmaf_feature_name_from_opts_dict. */
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mau", out_score, 1u);
+    int err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mau", out_score, 1u);
     mu_assert("SYCL+UV: vmaf_feature_score_at_index(integer_motion2_mau, idx=1) failed", !err);
 
     err = vmaf_close(vmaf);
@@ -215,7 +264,7 @@ static char *run_sycl_pass_add_uv(VmafSyclState *sycl_state, double *out_score)
 
 /* Pass 2: motion_sycl with default options — the Y-only baseline. Shares the
  * caller's `sycl_state` with pass 1. */
-static char *run_sycl_pass_y_only(VmafSyclState *sycl_state, double *out_score_y_only)
+static char *setup_sycl_pass_y_only(VmafSyclState *sycl_state, VmafContext **out_vmaf)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf2 = NULL;
@@ -228,10 +277,16 @@ static char *run_sycl_pass_y_only(VmafSyclState *sycl_state, double *out_score_y
     err = vmaf_use_feature(vmaf2, "motion_sycl", NULL);
     mu_assert("SYCL-Y: vmaf_use_feature failed", !err);
 
+    *out_vmaf = vmaf2;
+    return NULL;
+}
+
+static char *feed_sycl_pass_y_only_frames(VmafContext *vmaf2)
+{
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
         VmafPicture dist;
-        err = fill_yuv_fixture(&ref, i);
+        int err = fill_yuv_fixture(&ref, i);
         mu_assert("SYCL-Y: fill_yuv_fixture(ref) failed", !err);
         err = fill_yuv_fixture(&dist, i);
         mu_assert("SYCL-Y: fill_yuv_fixture(dist) failed", !err);
@@ -240,14 +295,22 @@ static char *run_sycl_pass_y_only(VmafSyclState *sycl_state, double *out_score_y
         mu_assert("SYCL-Y: vmaf_read_pictures failed", !err);
     }
 
-    err = vmaf_read_pictures(vmaf2, NULL, NULL, 0);
+    int err = vmaf_read_pictures(vmaf2, NULL, NULL, 0);
     mu_assert("SYCL-Y: EOS failed", !err);
+    return NULL;
+}
+
+static char *run_sycl_pass_y_only(VmafSyclState *sycl_state, double *out_score_y_only)
+{
+    VmafContext *vmaf2 = NULL;
+    mu_assert_msg(setup_sycl_pass_y_only(sycl_state, &vmaf2));
+    mu_assert_msg(feed_sycl_pass_y_only_frames(vmaf2));
 
     /* motion_sycl with default options (motion_add_uv=false) has no
      * non-default FEATURE_PARAM options, so the feature-name system uses
      * the raw name (no aliasing, no suffix). */
-    err = vmaf_feature_score_at_index(vmaf2, "VMAF_integer_feature_motion2_score", out_score_y_only,
-                                      1u);
+    int err = vmaf_feature_score_at_index(vmaf2, "VMAF_integer_feature_motion2_score",
+                                          out_score_y_only, 1u);
     mu_assert("SYCL-Y: vmaf_feature_score_at_index(motion2, idx=1) failed", !err);
 
     err = vmaf_close(vmaf2);
@@ -305,41 +368,45 @@ static char *test_motion_add_uv_increases_score(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Test 2: SYCL motion_add_uv matches CPU float_motion motion_add_uv  */
+/* Test 2: SYCL fixed-point scores match the scalar fixed-point oracle. */
 /* ------------------------------------------------------------------ */
-static char *test_motion_add_uv_cpu_sycl_parity(void)
+static char *test_motion_add_uv_fixed_oracle_parity(void)
 {
-    double cpu_score = 0.0;
     double sycl_score = NAN;
     double sycl_y = NAN;
-
-    char *msg = run_cpu_float_motion_uv(&cpu_score);
-    if (msg)
-        return msg;
-
-    msg = run_sycl_motion_uv(&sycl_score, &sycl_y);
+    char *msg = run_sycl_motion_uv(&sycl_score, &sycl_y);
     if (msg)
         return msg;
 
     if (isnan(sycl_score))
         return NULL; /* no SYCL device — skip */
 
-    double const delta = fabs(cpu_score - sycl_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(
-            stderr,
-            "\nmotion_add_uv parity FAIL: cpu(float_motion)=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-            cpu_score, sycl_score, delta, PARITY_TOL);
+    double oracle_y = 0.0;
+    double oracle_uv = 0.0;
+    oracle_motion_scores(&oracle_y, &oracle_uv);
+    const double y_delta = fabs(sycl_y - oracle_y);
+    const double uv_delta = fabs(sycl_score - oracle_uv);
+    const double y_bound = oracle_score_roundoff_bound(oracle_y);
+    const double uv_bound = oracle_score_roundoff_bound(oracle_uv);
+    if (y_delta > y_bound || uv_delta > uv_bound) {
+        (void)fprintf(stderr,
+                      "\nmotion_add_uv fixed-oracle FAIL: "
+                      "y(sycl=%.17g oracle=%.17g delta=%.3e bound=%.3e) "
+                      "uv(sycl=%.17g oracle=%.17g delta=%.3e bound=%.3e)\n",
+                      sycl_y, oracle_y, y_delta, y_bound, sycl_score, oracle_uv, uv_delta,
+                      uv_bound);
     }
-    mu_assert("motion_add_uv: CPU float_motion vs. SYCL delta exceeds places=4 (1e-4)",
-              delta <= PARITY_TOL);
+    mu_assert("motion_add_uv: SYCL Y-only score differs from fixed-point oracle",
+              y_delta <= y_bound);
+    mu_assert("motion_add_uv: SYCL Y+U+V score differs from fixed-point oracle",
+              uv_delta <= uv_bound);
     return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_motion_add_uv_increases_score);
-    mu_run_test(test_motion_add_uv_cpu_sycl_parity);
+    mu_run_test(test_motion_add_uv_fixed_oracle_parity);
     return NULL;
 }
 

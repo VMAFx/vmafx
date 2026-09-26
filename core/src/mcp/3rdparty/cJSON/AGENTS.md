@@ -50,9 +50,17 @@ ways, only these:
    UBSan reports upstream form (`float-cast-overflow` not in gcc's `undefined`
    group), so the gcc differential harness above could not see it; `Sanitizers`
    CI lane and `test_cjson`'s `test_number_valueint_*` tests do.
+6. **Compiler float model preserved without direct float equality**
+   ([ADR-1308](../../../../../docs/adr/1308-codeql-float-equality-contracts.md)).
+   `print_number()` evaluates `d - (double)item->valueint == 0.0` rather than
+   `d == (double)item->valueint`. This eliminates CodeQL `cpp/equality-on-floats`
+   alert 1221 while preserving compiler float-model semantics (including
+   Denormals-Are-Zero / DAZ under Intel icx `-fp-model=fast` vs subnormal
+   preservation on GCC/Clang).
 
 **Denormals follow build's floating-point model.** `print_number()` takes
-integer branch when `d == (double)valueint`. Build treating denormals as zero
+integer branch when `d - (double)valueint == 0.0` (ADR-1308; CodeQL clean,
+preserving `d == (double)valueint` model). Build treating denormals as zero
 answers true for smallest denormal, prints `0` = what that build's arithmetic
 says value is. icx defaults to that model (`-fp-model=fast` sets MXCSR
 denormals-are-zero bit); `Linux Intel LLVM` lane builds this file with it. gcc
@@ -76,7 +84,7 @@ instead of asserting one answer. Do not pin one spelling into test. Do not
 
    ```bash
    python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
-   meson test -C build test_cjson
+   python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build test_cjson
    python3 scripts/ci/tidy-ratchet.py --lane cpu --build-dir build \
        --only core/src/mcp/3rdparty/cJSON/cJSON.c     # must report no warnings
    praetorctl audit                                   # the touched file must be clean

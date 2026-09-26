@@ -255,8 +255,8 @@ static inline float entropy_sum(const float *values, float variance, float sigma
 namespace
 {
 
-static void launch_indterm(sycl::queue &q, const float *plane, float *indterm, uint32_t stride_px,
-                           uint32_t num_blocks_h, uint32_t num_blocks)
+static void launch_temporal_indterm(sycl::queue &q, const float *plane, float *indterm,
+                                    uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks)
 {
     const uint32_t total = SP_ELEMENTS * num_blocks;
     const size_t global =
@@ -332,10 +332,12 @@ namespace
  * dis covariance matrices, so the ref entropy uses ref_eigenvalues and the dis
  * entropy uses dis_eigenvalues — they are NOT shared. The previous single-
  * eigenvalue-array signature reused the dis eigenvalues for both entropies. */
-static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const float *dis_eigenvalues,
-                         const float *ref_sol, const float *dis_sol, const float *ref_indterm,
-                         const float *dis_indterm, float *ref_ent, float *ref_var, float *dis_ent,
-                         float *dis_var, uint32_t num_blocks, float sigma_nn)
+static void launch_temporal_score(sycl::queue &q, const float *ref_eigenvalues,
+                                  const float *dis_eigenvalues, const float *ref_sol,
+                                  const float *dis_sol, const float *ref_indterm,
+                                  const float *dis_indterm, float *ref_ent, float *ref_var,
+                                  float *dis_ent, float *dis_var, uint32_t num_blocks,
+                                  float sigma_nn)
 {
     const size_t global = ((static_cast<size_t>(num_blocks) + SCORE_WG - 1u) / SCORE_WG) * SCORE_WG;
     const float log2e_2pi = sycl::log2(2.0f * SP_PI * SP_E);
@@ -532,7 +534,7 @@ static void compute_channel_matrices(SpeedTemporalSyclState *s, float *host_plan
                  block_columns, blocks, matrix_width, matrix_height);
     launch_cov(queue, s->d_plane, s->d_means, {.values = s->d_cov_mat}, stride, block_columns,
                blocks, matrix_width, matrix_height);
-    launch_indterm(queue, s->d_plane, device_indterm, stride, block_columns, blocks);
+    launch_temporal_indterm(queue, s->d_plane, device_indterm, stride, block_columns, blocks);
     queue.wait();
     queue.memcpy(s->h_cov_mat, s->d_cov_mat, (size_t)SP_ELEMENTS * SP_ELEMENTS * sizeof(float));
     queue.memcpy(host_indterm, device_indterm, indterm_bytes);
@@ -603,9 +605,9 @@ static void score_aggregate_st(SpeedTemporalSyclState *s, float *score_out)
 
     /* The kernel reads d_eigenvalues_ref for the ref entropy and d_eigenvalues
      * (now holding the dis eigenvalues) for the dis entropy. */
-    launch_score(q, s->d_eigenvalues_ref, s->d_eigenvalues, s->d_sol_ref, s->d_sol_dis,
-                 s->d_indterm_ref, s->d_indterm_dis, s->d_ref_ent, s->d_ref_var, s->d_dis_ent,
-                 s->d_dis_var, num_blocks, sigma_nn);
+    launch_temporal_score(q, s->d_eigenvalues_ref, s->d_eigenvalues, s->d_sol_ref, s->d_sol_dis,
+                          s->d_indterm_ref, s->d_indterm_dis, s->d_ref_ent, s->d_ref_var,
+                          s->d_dis_ent, s->d_dis_var, num_blocks, sigma_nn);
 
     const size_t ab = (size_t)num_blocks * sizeof(float);
     q.memcpy(s->h_ref_ent, s->d_ref_ent, ab);

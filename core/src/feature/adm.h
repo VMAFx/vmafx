@@ -25,4 +25,5 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
                 double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
                 int adm_bypass_cm, double adm_p_norm, double *score_aim, double adm_f1s0,
                 double adm_f1s1, double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1,
-                double adm_f2s2, double adm_f2s3, int adm_skip_aim_scale, bool adm_skip_scale0);
+                double adm_f2s2, double adm_f2s3, int adm_skip_aim_scale, bool adm_skip_scale0,
+                unsigned index);

@@ -47,7 +47,7 @@ prior scan and are NOT upstream ports:
 - `7dbc5571` — chore(coverage): gap analysis — 2026-05-02 baseline + recommendations (#313)
 - `943589cb` — feat(cuda): T-GPU-OPT-1 fence batching at engine scope (#312)
 - `be897e44` — feat(ai): vmaf_tiny v3 + v4 multi-seed Netflix LOSO + KoNViD 5-fold eval (#311)
-- `af227b02` — docs(adr): dedup duplicate-NNNN ADRs (#310)
+- `af227b02` — docs(adr): dedup duplicate-NNNN ADRs (lusoris/vmaf#310)
 
 None of these are upstream ports; all are fork-local feature / housekeeping
 work. They do not change the unported upstream backlog.

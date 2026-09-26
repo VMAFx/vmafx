@@ -11,6 +11,16 @@ broken `.c` file).
 
 ## Invariants a reviewer or sync must preserve
 
+### Meson parent-environment sanitization (ADR-1333)
+
+Every workflow step that runs a Meson test suite or Ninja's `test` target
+must invoke `scripts/ci/run_meson_test.py` instead. Linux steps that need
+`sudo` resolve both Python and Meson before elevation and pass Meson with
+`--meson-executable`; Windows uses the checked-in Python wrapper path.
+`core/test/test_meson_secret_env_sanitization.py` inventories each call and
+rejects a raw bypass. Preserve the wrapper boundary because Meson writes its
+parent environment to `testlog.txt` before applying the default setup.
+
 ### Single SemVer release fan-out (ADR-1127)
 
 `release-please.yml` owns one root package, creates draft GitHub release.
@@ -91,6 +101,24 @@ collect diagnostics when a later `if: always()` step checks its raw
 non-blocking when an existing ADR says so, but its command must not append
 `|| true` and erase the failure outcome.
 
+### Research-digest baseline authority (ADR-1335)
+
+The blocking Rules workflow passes the pull request's exact `base.sha` to
+`check-research-digest-ids.py`. Preserve that binding and the full-history
+checkout: the checker resolves the merge base and rejects a branch baseline
+that grows collision or H1 debt beyond trusted authority. CI and hooks must
+never invoke `--bootstrap-from-ref`; that full-commit, pre-ratchet path is a
+bounded one-time operator action only.
+
+### Semgrep SARIF authority split (ADR-1314)
+
+Only the repository-owned `.semgrep.yml` result may be uploaded to GitHub Code
+Scanning under the required `Semgrep OSS` identity. The moving
+`p/cwe-top-25`, `p/c`, and `p/python` registry packs are advisory discovery
+inputs: keep their scan `continue-on-error: true` and retain their SARIF as an
+ordinary workflow artifact. Never restore a `semgrep-registry` Code Scanning
+category without a superseding ADR that provides a reproducibly pinned policy.
+
 ### Opt-out syntax parser
 
 `deep-dive-checklist` job parses PR bodies for ADR-0108's
@@ -148,6 +176,31 @@ check runs older than its current workflow run when selecting sibling
 outcomes; otherwise stale draft-era skipped check runs on same commit can
 mask real queued or failed ready-for-review checks.
 
+### Required contexts route work in-job (BUG-098)
+
+A workflow that hosts an aggregator-required context must not use
+workflow-level `paths:` or `paths-ignore:`. It starts on pull requests and
+master pushes, runs `scripts/ci/plan-ci-impact.py` in an unconditional
+`impact` job, gates expensive `... work` jobs on the selected output, and
+always emits an exact-name gate job. The gate accepts only
+`selected=true/work=success` or `selected=false/work=skipped`; planner failure,
+cancellation, and any other combination fail. Exact gate names belong in
+`strictMustReport` because absence is no longer a legitimate path skip.
+
+Keep heavy job names distinct from required gate names, including matrix
+fields: otherwise GitHub or the aggregator can select the wrong same-named
+check. `scripts/ci/tests/test_ci_impact.py`, `actionlint`, and
+`scripts/ci/check-aggregator-names.sh` pin this structure.
+
+GitHub creates a dependent gate's check run only after every `needs` job has
+completed. Keep `delayedStrictDependencies` in `required-aggregator.yml`
+aligned with every planner/work display name, including every row of a matrix
+whose aggregate result feeds a gate. The aggregator uses those checks as
+registration proxies and gives the gate a bounded propagation window; without
+that mapping its two-minute missing-check grace can fail while legitimate work
+is still running. The check-run query must remain paginated: the converted
+workflows can put a full run above the API's 100-item page size.
+
 ### Cppcheck POSIX model correction
 
 The required Cppcheck job derives `build/cppcheck-posix-vmafx.cfg` from the
@@ -169,7 +222,7 @@ moving branch or tag, duplicate the pin in workflow YAML, or tolerate a missing
 object: ABI-stable parser safety releases must be able to trigger a reviewed
 re-pin, and CI must prove source provenance rather than local-tree similarity.
 
-### Go validation (ADR-1238)
+### Go validation (ADRs 1238 and 1338)
 
 `go-ci.yml` reports `go vet + go test` as required. It starts on non-draft
 PRs including `ready_for_review`, master pushes, and manual dispatches,
@@ -177,7 +230,11 @@ then gates heavyweight steps on `go_checks` (`go` plus `c_core`). Preserve
 its explicit documentation-only no-work result, CPU/optional-backend
 settings, and CI-authority classification. Rules job runs
 `scripts/ci/test_go_workflow_contract.py` before authoring exemptions;
-this test executes aggregator script with failing Go outcomes.
+this test executes aggregator script with failing Go outcomes. The first
+selected source gate after `setup-go` is exactly `go fix -diff ./...`; keep it
+before native dependency installation/build, non-mutating, and under the same
+impact predicate. Local `go-fix` and `go-fix-check` Make targets must stay
+aligned with that command.
 
 ### CI job display names and aggregator parity
 
@@ -324,11 +381,27 @@ other's CodeQL coverage. Preserve `cancel-in-progress: true` so superseded
 runs of same event/ref still collapse, keep
 `scripts/ci/test_security_workflow_contract.py` in always-on Rules gate.
 
+### Meson configure precedes CodeQL extraction (ADR-1222 / Alert 1279)
+
+In [`security-scans.yml`](workflows/security-scans.yml), the `codeql-cpp` job
+must execute `meson setup` before `github/codeql-action/init`, and must place
+the build directory outside the repository checkout in `${{ runner.temp }}/build`.
+The configure step installs Meson and Ninja through the repository's
+hash-locked `requirements/locks/build.txt`; keep that root-relative lock path
+when moving the step out of `core/`.
+Running configure outside extraction prevents Meson compiler probe test snippets
+(such as `testfile.c`) from being ingested into the CodeQL extraction database
+(closing current hosted probe alert 1279, historical alert 1278, and pre-merge
+alerts 1232–1235). Placing the build root in `${{ runner.temp }}/build` ensures
+generated build artifacts are not indexed as repository source. **On rebase or
+workflow sync:** do not move `meson setup` after `codeql-action/init` or
+configure within `$GITHUB_WORKSPACE`.
+
 ## Sanitizer matrix test-set scope (ADR-0347)
 
 `sanitizers` job in
 [`workflows/tests-and-quality-gates.yml`](workflows/tests-and-quality-gates.yml)
-enumerates full C unit-test set via `meson test --list`, applies
+enumerates the full C unit-test set via `meson introspect --tests`, then applies
 per-sanitizer regex deselect:
 
 - `address` — excludes `test_model`, `test_predict`,
@@ -351,7 +424,7 @@ silently widen deselect list to "make CI pass" — per
 referencing underlying bug. Reverting `--suite=unit` would
 re-introduce zero-coverage gap (no `test()` call carries
 `suite: 'unit'` tag in `core/test/meson.build`); workflow
-must keep enumerating from `meson test --list`.
+must keep enumerating from `meson introspect --tests`.
 
 ## Windows CUDA setup path (ADR-0664)
 
@@ -389,7 +462,9 @@ Invariants:
   has `win32/arm64` for it. `pip install meson ninja`: ninja ships
   `win_arm64` wheel. No nasm step; x86-only probe in `core/src/meson.build`.
 - CPU only until CUDA 13.4 bump: 13.3.1 has no `windows-arm64` packages.
-- Test step = `meson test --suite fast --print-errorlogs`. Full suite =
+- Test step uses `scripts\ci\run_meson_test.py` with
+  `-C core\build --suite fast --print-errorlogs`.
+  Full suite =
   follow-up, own decision.
 
 ## Upstream-merge guidance

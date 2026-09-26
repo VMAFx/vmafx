@@ -316,23 +316,40 @@ void print_usage_options_part2(FILE *const out)
     usage_exit(reason != nullptr);
 }
 
-template <typename First, typename... Rest>
-[[noreturn]] void usage(const char *const app, const char *const reason, First &&first,
-                        Rest &&...rest)
+template <typename Arg>
+[[noreturn]] void usage(const char *const app, const char *const reason, Arg &&arg)
 {
     FILE *const out = reason ? stderr : stdout;
     if (reason) {
-        /* cppcheck-suppress wrongPrintfScanfArgNum ; `reason` is a runtime format
-         * string and the arguments arrive as a template parameter pack, so
-         * cppcheck cannot pair them: it resolves neither the conversion count in
-         * `reason` nor `sizeof...(Rest)`, and reports a fixed mismatch. Every
-         * call site in this file passes a string literal whose conversions match
-         * its arguments, and the compiler checks those at the call site. This
-         * overload exists precisely because it is only ever selected when at
-         * least one argument is present -- the zero-argument case is the
-         * non-template overload above, which uses fputs and never treats
-         * `reason` as a format string. */
-        (void)fprintf(stderr, reason, std::forward<First>(first), std::forward<Rest>(rest)...);
+        (void)fprintf(stderr, reason, std::forward<Arg>(arg));
+        (void)fprintf(stderr, "\n\n");
+    }
+    print_usage_options_part1(out, app);
+    print_usage_options_part2(out);
+    usage_exit(reason != nullptr);
+}
+
+template <typename Arg1, typename Arg2>
+[[noreturn]] void usage(const char *const app, const char *const reason, Arg1 &&arg1, Arg2 &&arg2)
+{
+    FILE *const out = reason ? stderr : stdout;
+    if (reason) {
+        (void)fprintf(stderr, reason, std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
+        (void)fprintf(stderr, "\n\n");
+    }
+    print_usage_options_part1(out, app);
+    print_usage_options_part2(out);
+    usage_exit(reason != nullptr);
+}
+
+template <typename Arg1, typename Arg2, typename Arg3>
+[[noreturn]] void usage(const char *const app, const char *const reason, Arg1 &&arg1, Arg2 &&arg2,
+                        Arg3 &&arg3)
+{
+    FILE *const out = reason ? stderr : stdout;
+    if (reason) {
+        (void)fprintf(stderr, reason, std::forward<Arg1>(arg1), std::forward<Arg2>(arg2),
+                      std::forward<Arg3>(arg3));
         (void)fprintf(stderr, "\n\n");
     }
     print_usage_options_part1(out, app);
@@ -1128,6 +1145,26 @@ void apply_backend_settings(const char *const app, CLISettings *const settings)
     }
 }
 
+static void validate_yuv_settings(const char *const app, const CLISettings *const settings)
+{
+    if (!settings->use_yuv) {
+        return;
+    }
+    if (settings->width == 0 && (settings->height || settings->pix_fmt || settings->bitdepth)) {
+        usage(app, "--width must be > 0");
+    }
+    if (settings->height == 0 && (settings->width || settings->pix_fmt || settings->bitdepth)) {
+        usage(app, "--height must be > 0");
+    }
+    if (!(settings->width && settings->height && settings->pix_fmt && settings->bitdepth)) {
+        usage(app, "The following options are required for .yuv input:\n"
+                   "  --width/-w\n"
+                   "  --height/-h\n"
+                   "  --pixel_format/-p\n"
+                   "  --bitdepth/-b\n");
+    }
+}
+
 void validate_cli_settings(const char *const app, CLISettings *const settings)
 {
     if (settings->no_reference) {
@@ -1141,22 +1178,7 @@ void validate_cli_settings(const char *const app, CLISettings *const settings)
     if (!settings->path_dist)
         usage(app, "Distorted .y4m or .yuv (-d/--distorted) is required");
 
-    if (settings->use_yuv && settings->width == 0 &&
-        (settings->height || settings->pix_fmt || settings->bitdepth)) {
-        usage(app, "--width must be > 0");
-    }
-    if (settings->use_yuv && settings->height == 0 &&
-        (settings->width || settings->pix_fmt || settings->bitdepth)) {
-        usage(app, "--height must be > 0");
-    }
-    if (settings->use_yuv &&
-        !(settings->width && settings->height && settings->pix_fmt && settings->bitdepth)) {
-        usage(app, "The following options are required for .yuv input:\n"
-                   "  --width/-w\n"
-                   "  --height/-h\n"
-                   "  --pixel_format/-p\n"
-                   "  --bitdepth/-b\n");
-    }
+    validate_yuv_settings(app, settings);
 
     if (settings->model_cnt == 0 && !settings->no_prediction) {
 #if VMAF_BUILT_IN_MODELS

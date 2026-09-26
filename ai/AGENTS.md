@@ -94,9 +94,30 @@ ai/
 - [ADR-0235](../docs/adr/0235-codec-aware-fr-regressor.md) — codec-aware FR regressor (`fr_regressor_v2`). `CODEC_VOCAB` in [`src/vmaf_train/codec.py`](src/vmaf_train/codec.py) is **closed and order-stable** — index of each codec = one-hot column index baked into trained ONNX. Adding codec appends to tuple, bumps `CODEC_VOCAB_VERSION`; reordering silently invalidates every shipped `fr_regressor_v2_*.onnx`. `FRRegressor(num_codecs=0)` must remain v1 single-input contract — flipping default would break every existing `model/tiny/fr_regressor_v1.onnx` consumer. Feature-dump scripts emit `codec` column tagged at call site (BVI-DVC: `"x264"`, Netflix Public: `"unknown"`); never silently default to codec that doesn't match what script encoded.
 - [ADR-0305](../docs/adr/0305-encoder-knob-space-pareto-analysis.md) — **knob-sweep corpus invariant.** 12,636-cell sweep at `runs/phase_a/full_grid/comprehensive.jsonl` (gitignored, locally generated) = source of truth for `tools/vmaf-tune/codec_adapters/*` recipe defaults. Pareto frontiers stratified per `(source, codec, rc_mode)` slice — never collapsed to global hull (companion [Research-0063](../docs/research/0063-encoder-knob-space-cq-vs-vbr-stratification.md) shows global-hull failure mode regresses NVENC h264/hevc by ~4 VMAF at cq=30). **Recipes regressing vs bare encoder at matched bitrate within same slice MUST NOT ship as adapter defaults.** Regression-detection check lives in `ai/scripts/analyze_knob_sweep.py` (`detect_recipe_regressions(...)`), exercised by `ai/tests/test_knob_sweep_analysis.py::test_recipe_regression_detection`; new codec adapter PRs cite per-(codec, rc_mode) hull row from `reports/summary.md` (or "no hull entry yet — bare default") in PR description. Methodology + scaffolded findings: [Research-0077](../docs/research/0077-encoder-knob-space-pareto-frontiers.md).
 - [ADR-0650](../docs/adr/0650-signal-mix-audit.md) — **signal-mix audit is advisory.** `ai/scripts/signal_mix_audit.py` reads already-extracted parquet/JSONL tables, renders coverage, redundancy, complementary-intersection, and blind-spot reports. Must remain side-effect free: no feature extraction, no checkpoint export, no corpus mutation, no CI gating by default. Adding new metric families or table columns -> update family regexes and `docs/ai/signal-mix-audit.md` together so reports keep naming missing HDR/panel, saliency/ROI, texture, NR/MOS, and codec-profile signals in human terms.
+- **Feature-correlation JSON is finite-only.**
+  `ai/scripts/feature_correlation.py` treats `NaN` and both infinities as
+  incomplete feature/target rows, rejects non-finite
+  `--redundancy-threshold` values during argument parsing, and validates the
+  complete report with `allow_nan=False` before its atomic manifest write.
+  Preserve the missing-scikit-learn empty-map contract and the repeated
+  constant-column check after complete-case filtering; neither `NaN` nor
+  `Infinity` is an RFC-8259 JSON value.
 - [ADR-0661](../docs/adr/0661-ai-run-manifest-provenance.md) — **AI sidecars carry shared run provenance.** Use `aiutils.run_manifest.write_run_manifest()` for new standalone training/export/fetch/extraction sidecars instead of inventing per-script argument/path JSON; use `build_run_provenance()` only when embedding provenance block into existing stable report schema. CHUG-facing MOS runs record `train_chug_hdr_mos_head.py` as user entrypoint and `train_konvid_mos_head.py` as `shared_trainer` because wrapper delegates into shared loop. Matching Claude workflow = `.claude/skills/ai-run-manifest/SKILL.md`.
 - [ADR-0680](../docs/adr/0680-ai-cli-helper-pattern.md) — **AI batch CLIs share parser boilerplate.** Use `aiutils.cli_helpers.make_argument_parser()` and `collect_cli_argv()` for new operator-facing scripts. Batch manifest runners must use `add_batch_manifest_arguments()` so manifest/report/fail-fast flags stay consistent while table-specific parser fields remain local to each runner.
 - [ADR-0681](../docs/adr/0681-ai-script-bootstrap-helper.md) — **Direct AI scripts share import bootstrap.** Use `ai/scripts/_script_bootstrap.py::bootstrap_ai_script(__file__)` before importing `aiutils`, sibling materializers, or optional `vmaf-tune` helpers from directly executable `ai/scripts/*.py` file. Do not add fresh ad hoc `sys.path.insert(...)` blocks unless helper lacks required import root and same PR extends its tests/docs.
+- **BUG-048 legacy CLI restoration.** The twelve eval/quant/export scripts listed in
+  `ai/tests/test_ai_cli_helper_restoration.py` stay on both ADR-0680 and
+  ADR-0681: no local `sys.path.insert`, direct `ArgumentParser`, or raw
+  `sys.argv` handling. A script importing the repository's `ai.*` package must
+  pass `include_repo_root=True` to `bootstrap_ai_script`; the default only adds
+  `ai/src` and cannot support a direct `python ai/scripts/foo.py` invocation.
+- **GPU calibration fixtures name live backends only.** Vulkan was removed by
+  ADR-0726. Keep `collect_gpu_calibration_data.py` help, its manifest fixtures,
+  and backend selections on the registered CUDA/SYCL set; do not revive
+  `vulkan_device`, `vulkan:lavapipe`, or `backends=["vulkan"]` as harmless test
+  data because those examples are copied into real calibration manifests.
+  Its score loader rejects a top-level non-object, a missing/non-list `frames`
+  member, and non-object frame entries before metric pairing.
 - [ADR-0668](../docs/adr/0668-ai-derived-table-provenance.md) — **Derived feature tables need replay manifests.** `extract_k150k_features.py`, `combine_full_feature_parquets.py`, `enrich_k150k_parquet_metadata.py`, `konvid_to_full_features.py`, and `bvi_dvc_to_full_features.py` write `<out>.manifest.json` by default using `aiutils.run_manifest`. Do not add new operator-facing refreshed parquet/table builders leaving no input/output/argv sidecar; anonymous local parquet files aren't acceptable training evidence.
 - [ADR-0669](../docs/adr/0669-ai-corpus-jsonl-provenance.md) — **Corpus JSONL merge outputs need replay manifests.** `aggregate_corpora.py` and `merge_corpora.py` write `<output>.manifest.json` by default with shared `run_provenance`, counters, and schema/dedup policy. Keep JSONL row schemas stable, put run-level evidence in sidecar.
 - [ADR-0670](../docs/adr/0670-ai-legacy-corpus-extraction-manifests.md) — **Legacy trainer-input builders need replay manifests.** `extract_full_features.py`, `konvid_to_vmaf_pairs.py`, and `bvi_dvc_to_corpus_jsonl.py` write sibling manifest sidecars by default. Do not add or revive corpus/extraction scripts creating local trainer-input parquet/JSONL without row/clip counters, input/output path evidence, and shared `run_provenance`. BVI-DVC JSONL rows must stay current with `vmaftune.CORPUS_ROW_KEYS`; missing HDR/shot/encoder-stat signals = explicit unavailable defaults, not omitted columns.
@@ -362,6 +383,16 @@ model card:
 [`docs/ai/models/fr_regressor_v2_probabilistic.md`](../docs/ai/models/fr_regressor_v2_probabilistic.md).
 
 **Rebase-sensitive invariants:**
+
+- **Strict helper annotations are part of the CI boundary (ADR-1310).**
+  `_synthesize_smoke_corpus()` returns exactly three `np.ndarray` values and
+  `_load_ensemble_shapes()` uses parameterized manifest/session containers;
+  keep those return contracts explicit when refactoring the evaluator. Test
+  callbacks added under `ai/tests/` also need typed variadic parameters, and
+  parameterized tests must retain their signatures through a typed marker
+  adapter. The required merge-base mypy gate treats a new bare `dict`/`list`,
+  untyped helper return, untyped decorator, or untyped injected callback as a
+  branch finding.
 
 - **Per-member ONNX I/O contract = v2 two-input shape**: inputs
   `features [N, 6]` (canonical-6, StandardScaler-normalised by
@@ -780,9 +811,10 @@ scripts:
   staging file would corrupt it without error.
 - **ffprobe skipped when sidecar has geometry (Research-0135 Win 2).**
   `_geometry_from_sidecar(meta)` reads `chug_width_manifest`,
-  `chug_height_manifest`, `chug_framerate_manifest`, and optionally
-  `chug_bit_depth` from CHUG JSONL sidecar row. Sidecar metadata already
-  loaded in `jsonl_meta` for enrichment; no extra I/O needed. Any required
+  `chug_height_manifest`, `chug_framerate_manifest`, and
+  `chug_bit_depth` from CHUG JSONL sidecar row. Sidecar metadata is
+  loaded in `_load_jsonl_metadata`, which must include `chug_bit_depth` in its
+  `keep` allowlist so 10-bit clips decode as `yuv420p10le`. Any required
   field absent (K150K-A clips, incomplete rows) -> function returns `None`
   and `_probe_geometry(mp4)` called as fallback. Do not remove fallback —
   K150K-A clips have no sidecar.

@@ -14,6 +14,7 @@ from aiutils.run_manifest import (
     build_run_manifest_payload,
     build_run_provenance,
     describe_path,
+    dumps_manifest_json,
     write_manifest_json,
     write_run_manifest,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "build_run_provenance",
     "collect_cli_argv",
     "describe_path",
+    "dumps_manifest_json",
     "iter_jsonl",
     "make_argument_parser",
     "now_iso_8601",

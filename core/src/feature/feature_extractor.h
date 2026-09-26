@@ -176,6 +176,17 @@ typedef struct VmafFeatureExtractor {
      */
     VmafFeatureCharacteristics chars;
 
+    /**
+     * Optional first-frame capability check. The callback runs after options
+     * have been parsed but before backend initialization, when actual picture
+     * dimensions are known. Return -ENOTSUP to request the named CPU fallback
+     * for a model-selected context; direct extractor selection ignores this
+     * hook and retains the backend init error contract (ADR-1324).
+     */
+    int (*context_check)(struct VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                         unsigned bpc, unsigned w, unsigned h);
+    const char *context_fallback_name;
+
 } VmafFeatureExtractor;
 
 #ifdef __cplusplus
@@ -206,16 +217,44 @@ bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
                                              const VmafDictionary *opts_dict,
                                              const char **missing_key);
 
+/**
+ * @brief Check option names and extractor-specific value capabilities.
+ *
+ * Invalid values remain the normal option parser's responsibility. This
+ * helper reports only valid values that a declared default-only option cannot
+ * execute, allowing model-driven GPU selection to fall back to the CPU twin.
+ *
+ * @param fex             Feature extractor descriptor.
+ * @param opts_dict       Dictionary of options to validate (may be NULL).
+ * @param unsupported_key If non-NULL, receives the first unknown option or
+ *                        valid value that the extractor cannot execute.
+ * @return true when every named option can be executed by @p fex.
+ */
+bool vmaf_feature_extractor_honours_options(const VmafFeatureExtractor *fex,
+                                            const VmafDictionary *opts_dict,
+                                            const char **unsupported_key);
+
 enum VmafFeatureExtractorContextFlags {
     VMAF_FEATURE_EXTRACTOR_CONTEXT_DO_NOT_OVERWRITE = 1 << 0,
 };
 
 typedef struct VmafFeatureExtractorContext {
     bool is_initialized, is_closed;
+    /**
+     * A close callback owns state created by an init attempt.
+     *
+     * Set before invoking a CUDA fex->init so a failed, partially-complete
+     * device initialization is still visible to teardown. Cleared only after
+     * close succeeds. This is intentionally distinct from is_initialized,
+     * which becomes true only after init completes successfully. Non-CUDA
+     * close callbacks retain their established successful-init-only contract.
+     */
+    bool close_required;
     VmafDictionary *opts_dict;
     VmafFeatureExtractor *fex;
-    bool gpu_pending;           ///< Has pending GPU submit awaiting collect
-    unsigned gpu_pending_index; ///< Frame index of pending GPU work
+    bool allow_context_fallback; ///< Model dispatch may replace an unsupported GPU twin (ADR-1324)
+    bool gpu_pending;            ///< Has pending GPU submit awaiting collect
+    unsigned gpu_pending_index;  ///< Frame index of pending GPU work
 } VmafFeatureExtractorContext;
 
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
@@ -264,13 +303,15 @@ int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx)
  * condition variable before publication. Keep cppcheck's official POSIX
  * library model enabled for the pthread fields; preserve uninitialized-use
  * checks. See docs/research/fex-pool-growth-2026-09-08.md. Entries remain at
- * fixed addresses until pool destruction, including across waits.
+ * fixed addresses until pool destruction, including across waits. Each entry
+ * owns a by-value descriptor snapshot; framework-managed runtime pointers are
+ * refreshed under the pool lock before lazy context creation.
  * Consumer TUs such as fex_ctx_vector.cpp cannot see the factory assignments;
  * their std::atomic members trigger constructor analysis of these four raw
  * fields. Suppress only that declaration warning, not uninitialized reads. */
 struct fex_list_entry {
     // cppcheck-suppress uninitMemberVarNoCtor
-    VmafFeatureExtractor *fex;
+    VmafFeatureExtractor fex;
     // cppcheck-suppress uninitMemberVarNoCtor
     VmafDictionary *opts_dict;
     struct {
@@ -304,6 +345,10 @@ int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
 int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
                             VmafFeatureCollector *feature_collector);
 
+/** Close every initialized or partially initialized context without freeing ownership. */
+int vmaf_fex_ctx_pool_close(VmafFeatureExtractorContextPool *pool);
+
+/** Destroy a pool only after vmaf_fex_ctx_pool_close() has succeeded. */
 int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool);
 
 #ifdef __cplusplus

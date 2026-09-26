@@ -326,25 +326,43 @@ Two invariants:
 - Same files re-checked at merge base in disposable worktree; only new
   fingerprints fail. Fingerprint = path + error code + message, no line number
   (edit above a finding shifts it, does not change it). Worktree removed in
-  `finally` (ADR-0332 drift guard). CI `mypy` = advisory
-  (`|| echo` in `Python Lint`), inherited findings vary with installed
-  numpy / pandas / torch stubs.
+  `finally` (ADR-0332 drift guard). Required `Python Lint` invokes this same
+  runner and propagates its status (ADR-1310); do not restore a raw directory
+  scan or advisory shell tail.
 - Blocking runs keep site packages out with `--no-site-packages` and suppress
   only the resulting `import-not-found` diagnostics. This makes the result
   independent of the active environment's PEP 561 packages; resolved local and
-  standard-library types remain checked. Keep the dependency-rich hosted run
-  advisory until its type-check environment is pinned.
+  standard-library types remain checked. Hosted CI installs the hash-locked
+  mypy toolchain and intentionally does not install the training stack.
 
-Non-zero exit with no attributable finding = mypy broke -> fail closed, exit 2.
-Do not restore raw exit-status propagation.
+The local default base remains `origin/master`. Hosted pull requests use that
+same authority; hosted master pushes set `VMAFX_MYPY_BASE_REF` to the event's
+exact previous commit so the post-merge job checks the pushed range. Resolve an
+explicit base through `rev-parse --verify --end-of-options` before merge-base
+selection; an empty or invalid override must fail closed.
+
+Mypy exit 0 is clean and exit 1 is ordinary findings. Every other status is a
+blocking analysis error and fails closed with hook exit 2 even when mypy emitted
+partial parseable findings; exit 1 with no attributable finding also fails
+closed. Do not restore raw exit-status propagation or let an earlier exit 1 mask
+a later blocking status from the second module-identity run.
 
 `python_version` is `3.14` and tracks `requires-python` (ADR-1282); do not lower
 it. Below 3.12 mypy cannot parse numpy's PEP 695 `type` statement and the
-`ai/src/` pass aborts before checking anything. The baseline worktree carries the
-*merge base's* `pyproject.toml`, so a branch that edits `[tool.mypy]` is compared
-against different settings and every newly visible finding reads as introduced
-(T-CI-MYPY-PREPUSH-BASELINE-USES-BASE-CONFIG-2026-09-21). Fix that by applying the
-branch's settings in the baseline worktree, never by lowering the pin.
+`ai/src/` pass aborts before checking anything. The delta gate synchronizes the
+branch's checker configuration files (`pyproject.toml`, `mypy.ini`, `.mypy.ini`,
+`setup.cfg`) into the disposable baseline worktree while preserving merge-base
+source files (T-CI-MYPY-PREPUSH-BASELINE-USES-BASE-CONFIG-2026-09-21). Changes to
+checker settings also widen file selection across tracked Python sources in `ai/`
+and `scripts/`. Do not evaluate baseline and head under differing checker settings,
+and never lower the pin.
+
+The widened run must resolve `ai/src` through its canonical `vmaf_train.*`
+identity exactly once. `pyproject.toml` keeps `follow_imports = "skip"` on the
+legacy, non-runtime `ai.src.*` compatibility namespace; `ignore_errors` alone is
+too late because mypy rejects duplicate module discovery before diagnostics are
+filtered. The dedicated `ai/src` run remains responsible for checking those
+sources with `--explicit-package-bases`.
 
 ### `run_unittests.sh` is upstream-mirror
 

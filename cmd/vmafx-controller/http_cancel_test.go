@@ -115,16 +115,14 @@ func TestScoreHandler_ClientDisconnectKillsSubprocess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	var sawErr atomic.Bool
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		resp, doErr := ts.Client().Do(req)
 		if doErr != nil {
 			sawErr.Store(true)
 			return
 		}
 		_ = resp.Body.Close()
-	}()
+	})
 
 	if err := waitForPidFile(pidFile, 5*time.Second); err != nil {
 		cancel()

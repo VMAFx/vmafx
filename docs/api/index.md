@@ -23,7 +23,7 @@ their own page:
 | [`dnn.h`](../../core/include/libvmaf/dnn.h) | `VmafDnnSession`, `VmafDnnConfig`, tiny-model attach | Tiny-AI (ONNX Runtime) surface. [Deep dive](dnn.md). |
 | [`libvmaf_cuda.h`](../../core/include/libvmaf/libvmaf_cuda.h) | `VmafCudaState`, CUDA picture prealloc | CUDA backend. Only usable in a build with `-Denable_cuda=true`. [Deep dive](gpu.md#cuda). |
 | [`libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h) | `VmafSyclState`, zero-copy frame buffers, dmabuf / VA / D3D11 import | SYCL backend. Only usable in a build with `-Denable_sycl=true`. [Deep dive](gpu.md#sycl). |
-| ~~`libvmaf_vulkan.h`~~ | ~~`VmafVulkanState`, queue / device lifecycle, zero-copy `VkImage` import~~ | **Removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md).** The header, source, and `enable_vulkan` Meson option no longer exist. Historical reference: [gpu.md#vulkan](gpu.md#vulkan). |
+| ~~`libvmaf_vulkan.h`~~ | ~~`VmafVulkanState`, queue / device lifecycle, zero-copy `VkImage` import~~ | **Removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md).** The header, source, and `enable_vulkan` Meson option no longer exist. Historical reference: [gpu.md#vulkan-removed](gpu.md#vulkan-removed). |
 | [`libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h) | `VmafHipState`, lifecycle, picture prealloc | AMD HIP/ROCm backend. Only usable in a build with `-Denable_hip=true`. [Deep dive](gpu.md#hip). |
 | [`libvmaf_metal.h`](../../core/include/libvmaf/libvmaf_metal.h) | `VmafMetalState`, lifecycle, IOSurface import | Apple Metal backend. Runtime, IOSurface import, and the first eight feature kernels are usable in a build with `-Denable_metal=auto/enabled` on Apple Silicon; unsupported hosts return `-ENODEV`. [Deep dive](gpu.md#metal). |
 | [`libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h) | `VmafMcpServer`, `VmafMcpConfig`, transport start/stop | Embedded MCP server. Only usable in a build with `-Denable_mcp=true`. [Deep dive](mcp.md). |
@@ -132,6 +132,32 @@ The CLI collapses every negative return to process-exit code 1 and prints a
 message — if you need fine-grained error discrimination, call the C API
 directly.
 
+## Path encoding contract
+
+All filesystem path parameters accepted by VMAFx-owned public API entry points
+(`vmaf_write_output`, `vmaf_write_output_with_format`,
+`vmaf_model_load_from_path`, `vmaf_model_collection_load_from_path`, and model
+reader helpers) are defined as UTF-8 encoded strings across all platforms:
+
+- **POSIX (Linux, macOS, BSD)**: Path strings are passed transparently to
+  standard POSIX APIs (`open`, `fopen`), which treat path strings as raw byte
+  sequences.
+- **Windows (`_WIN32`)**: Path strings are explicitly decoded as UTF-8 using
+  `MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ...)` and passed to wide
+  CRT/Win32 APIs (`_wopen`, `_wfopen`). This ensures non-ASCII paths (such as
+  Unicode accents, Cyrillic, CJK characters, and emojis) correctly resolve
+  regardless of the active Windows system or process ANSI code page
+  (`GetACP()`). If an invalid UTF-8 sequence is passed on Windows, the call
+  fails with `errno = EILSEQ` (or `-EINVAL`).
+
+The vendored Pelorus entry point `pel_x265_csv_parse()` is a temporary exception:
+its pinned upstream source still uses the Windows narrow CRT. It remains
+tracked in `docs/state.md` and must be fixed in `VMAFx/pelorus` before being
+re-vendored under the ADR-1113 mirror invariant.
+
+See [ADR-1182](../adr/1182-windows-utf8-path-contract.md) for background and
+architectural rationale.
+
 ## Lifecycle
 
 ```text
@@ -160,11 +186,15 @@ directly.
   │ vmaf_write_output[_with_format] │
   └────────┬────────────────────────┘
            │
-  ┌────────▼────────┐
-  │ vmaf_model_destroy()           │
-  │ vmaf_close()                   │
-  └─────────────────┘
+  ┌────────▼───────────────────────────────┐
+  │ vmaf_close() → retry on nonzero │
+  │ exact 0: model_destroy()        │
+  └───────────────────────────────┘
 ```
+
+Models and imported backend states are borrowed dependencies of the context.
+Keep them alive through every nonzero close result; destroy or free them only
+after `vmaf_close()` returns exactly 0.
 
 ## Core configuration — `VmafConfiguration`
 
@@ -221,7 +251,14 @@ typedef struct VmafConfiguration {
 | `vmaf_write_output_with_format(ctx, path, fmt, "%.17g")` | 0 / -errno | Write report with a caller-controlled printf format. Pass `NULL` for the `%.6f` default. Pass `"%.17g"` for IEEE-754 round-trip lossless. Format must take exactly one `double`. |
 | `vmaf_preallocate_pictures(ctx, cfg)` | 0 / -errno | Allocate a reusable picture pool (CPU path; for GPU see [gpu.md](gpu.md)). |
 | `vmaf_fetch_preallocated_picture(ctx, *pic)` | 0 / -errno | Pull a picture from the pool; return it via `vmaf_picture_unref()`. |
-| `vmaf_close(ctx)` | 0 / -errno | Free the context. After this the pointer is invalid. |
+| `vmaf_close(ctx)` | 0 / -errno | Free the context only on exact 0. Any nonzero result retains a teardown-only context that must be passed to `vmaf_close()` again. |
+
+`vmaf_close()` uses a prepare/commit teardown. It first closes registered,
+pooled, and worker-private extractor contexts without freeing their owners. If
+any close callback fails, it returns a negative errno and retains the `VmafContext`
+for retry. Do not call scoring APIs or release imported GPU states and model
+dependencies after any nonzero result. Retry `vmaf_close()`; set the pointer to
+`NULL` and release those dependencies only after it returns 0.
 
 ### `VmafPoolingMethod`
 
@@ -679,8 +716,15 @@ int main(int argc, char **argv)
     if (err == 0) printf("PSNR-Y (mean): %.17g\n", psnr_pooled);
 
 done:
+    if (vmaf) {
+        int close_err = vmaf_close(vmaf);
+        if (close_err != 0)
+            close_err = vmaf_close(vmaf); /* retained teardown-only context */
+        if (close_err != 0)
+            return 1; /* model and backend dependencies must remain alive */
+        vmaf = NULL;
+    }
     if (model) vmaf_model_destroy(model);
-    if (vmaf)  vmaf_close(vmaf);
     return err < 0 ? 1 : 0;
 }
 ```
@@ -745,13 +789,17 @@ open build/doxygen-public-api/html/index.html             # browse
 ```
 
 The `doxygen-public-api` GitHub Actions workflow runs the same command
-on every PR that touches `core/include/libvmaf/` or the Doxyfile and
-publishes the rendered HTML + the warning log as build artifacts.
-The build is warning-clean — see
-[ADR-0953](../adr/0953-doxygen-public-api-clean.md).
+on every PR that touches `core/include/libvmaf/` or the Doxyfile, gates
+the merge via `required-aggregator.yml` with `DOXYGEN_WARNING_CEILING: "0"`,
+and publishes the rendered HTML + the warning log as build artifacts.
+The build is strictly warning-clean and fails closed with
+`WARN_AS_ERROR = YES` — see [ADR-0953](../adr/0953-doxygen-public-api-clean.md)
+and [ADR-1315](../adr/1315-doxygen-public-api-fail-closed.md).
 
 ## Related
 
+- [rust-context-close.md](rust-context-close.md) — retry-safe context ownership
+  in the safe Rust wrappers
 - [gpu.md](gpu.md) — CUDA / SYCL additions to the lifecycle
 - [dnn.md](dnn.md) — tiny-AI session API
 - [../usage/cli.md](../usage/cli.md) — the `vmaf` CLI walkthrough mirrors this
@@ -762,3 +810,5 @@ The build is warning-clean — see
   [ADR-0006](../adr/0006-cli-precision-17g-default.md))
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — the doc-substance
   rule this page satisfies
+- [ADR-1182](../adr/1182-windows-utf8-path-contract.md) — Windows UTF-8 path
+  contract and internal wide path shims

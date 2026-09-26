@@ -47,6 +47,7 @@ pytest.importorskip("prometheus_client")
 
 import pytest_asyncio  # noqa: E402
 from aiohttp.test_utils import TestClient  # noqa: E402
+
 from vmaf_mcp import http_transport as ht  # noqa: E402
 
 # ---------------------------------------------------------------------------

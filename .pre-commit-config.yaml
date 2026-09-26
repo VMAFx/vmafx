@@ -171,6 +171,14 @@ repos:
 
   - repo: local
     hooks:
+      - id: rc1-tester-report-tests
+        name: RC1 tester report unit regressions
+        entry: python -m pytest -q tools/rc1-tester/tests
+        language: python
+        additional_dependencies: [pytest==9.1.1]
+        files: '^tools/rc1-tester/(src/|tests/|vmaf-rc1-report|pyproject\.toml|README\.md|AGENTS\.md)'
+        pass_filenames: false
+
       - id: no-conflict-markers
         name: No committed git conflict markers (belt-and-suspenders)
         # Belt-and-suspenders companion to the `check-merge-conflict` hook
@@ -200,6 +208,14 @@ repos:
         # alongside the formatters. Bypass with `git commit --no-verify`
         # for legitimate main-checkout commits while an agent is active.
 
+      - id: test-codex-hook-config
+        name: Codex hooks resolve from the active repository worktree
+        entry: python3 -B scripts/ci/tests/test_codex_hook_config.py
+        language: system
+        files: '^(\.codex/hooks(\.json|/.*)|scripts/ci/(AGENTS\.md|tests/test_codex_hook_config\.py)|docs/development/agent-worktree-discipline\.md|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: merge-train-guard-contract
         name: Merge-train ownership and validation regressions
         entry: python3 -m unittest discover -s scripts/dev/tests -p test_*merge_train_guard.py
@@ -212,6 +228,14 @@ repos:
         entry: python3 -m unittest scripts.lib.test_safe_subprocess scripts.lib.test_backlog_tracker scripts.ci.tests.test_agent_eligibility_precheck
         language: system
         files: '^(\.pre-commit-config\.yaml|scripts/(lib/((backlog_tracker|safe_subprocess|test_(backlog_tracker|safe_subprocess))\.py|testdata/current-backlog\.md)|ci/(agent-eligibility-precheck\.py|tests/test_agent_eligibility_precheck\.py)))$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: meson-test-secret-env-contract
+        name: Meson parent and test environment sanitization contract
+        entry: python3 -m unittest core.test.test_meson_secret_env_sanitization
+        language: system
+        files: '^(\.pre-commit-config\.yaml|(?:.*/)?(?:GNUmakefile|[Mm]akefile)|(?:.*/)?tox\.ini|[^/]+\.(?:py|sh|ps1|cmd|bat)|core/(?:.*/)?meson\.build|core/test/test_meson_secret_env_sanitization\.py|(?:scripts|dev|tools)/.*\.(?:py|sh|ps1|cmd|bat)|\.github/(?:workflows|actions)/.*\.ya?ml|\.zed/tasks\.json|\.claude/skills/.*\.(?:sh|ps1|cmd|bat))$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -229,6 +253,20 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: reuse-lint
+        name: REUSE 3.3 license and copyright compliance (BUG-003)
+        entry: reuse lint
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: test-reuse-compliance
+        name: REUSE compliance regression tests (BUG-003)
+        entry: python3 -m unittest scripts.ci.tests.test_reuse_compliance
+        language: system
+        files: '^(REUSE\.toml|scripts/ci/tests/test_reuse_compliance\.py|LICENSES/.*)$'
+        pass_filenames: false
+
       - id: check-base-image-single-source
         name: Container base images come from build-config.env
         entry: scripts/ci/check-base-image-single-source.sh
@@ -237,17 +275,38 @@ repos:
         always_run: true
 
       - id: check-cuda-pin-lockstep
-        name: CUDA release is one pin in sixteen places
+        name: CUDA release and exact apt metadata stay locked across seven sites
         entry: scripts/ci/check-cuda-pin-lockstep.py
         language: script
         pass_filenames: false
         always_run: true
+
+      - id: check-python-dependency-locks
+        name: Check hash-locked Python dependencies and secure pip installs
+        entry: python3 scripts/ci/check_python_dependency_locks.py check
+        language: system
+        files: '^(Makefile|noxfile\.py|requirements/.*|docs/requirements.*|python/requirements.*|ai/requirements.*|mcp-server/.*requirements.*|dev/requirements.*|dev-llm/.*requirements.*|tools/.*requirements.*|\.github/workflows/.*|scripts/setup/.*|Dockerfile.*|dev/Containerfile|docker/.*|scripts/ci/check_python_dependency_locks\.py)$'
+        pass_filenames: false
+
+      - id: test-python-dependency-locks
+        name: Unit tests for Python dependency lock checker
+        entry: python3 -m unittest scripts/ci/tests/test_python_dependency_locks.py
+        language: system
+        files: '^scripts/ci/(check_python_dependency_locks\.py|tests/test_python_dependency_locks\.py)$'
+        pass_filenames: false
 
       - id: test-base-image-single-source
         name: Base image and toolchain single-source tests
         entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_*single_source.py'
         language: system
         files: '^(Makefile|\.pre-commit-config\.yaml|build-config\.env|pyproject\.toml|dev/Containerfile|renovate\.json|Dockerfile|docker/Dockerfile\.[a-z-]+|\.github/workflows/(build|libvmaf-build-matrix)\.yml|scripts/ci/(check-base-image-single-source\.sh|check-container-image-references\.py|check-cuda-pin-lockstep\.py|check-workflow-versions\.py|tests/test_(base_image|cuda_pin|level_zero|formatter_pins|mypy_python_version)_single_source\.py))$'
+        pass_filenames: false
+
+      - id: test-install-cuda-toolkit
+        name: Exact CUDA apt installer contract
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_install_cuda_toolkit.py
+        language: system
+        files: '^(\.pre-commit-config\.yaml|build-config\.env|Dockerfile|dev/Containerfile|docker/(Dockerfile\.(node|production-gpu)|dev/ubuntu-26\.04-cuda\.Dockerfile)|\.github/workflows/(build|libvmaf-build-matrix|lint-and-format)\.yml|scripts/ci/(install-cuda-toolkit\.sh|tests/test_install_cuda_toolkit\.py))$'
         pass_filenames: false
 
       - id: test-dev-container-build-secret
@@ -354,6 +413,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-issue-reference-provenance
+        name: Historical issue references retain repository provenance
+        entry: python3 -B scripts/ci/check-issue-reference-provenance.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: check-aggregator-names
         name: Check required CI checks aggregator list matches workflows
         entry: scripts/ci/check-aggregator-names.sh
@@ -400,6 +466,36 @@ repos:
         language: system
         pass_filenames: false
         files: '^scripts/ci/(check-adr-links\.py|tests/test_check_adr_links\.py)$'
+
+      - id: check-research-digest-ids
+        name: Research digest IDs and H1 headings retain unique authority
+        entry: python3 -B scripts/ci/check-research-digest-ids.py
+        language: system
+        pass_filenames: false
+        files: '^(\.github/(AGENTS\.md|workflows/rule-enforcement\.yml)|\.pre-commit-config\.yaml|changelog\.d/_pre_fragment_legacy\.md|docs/(adr/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|adr/_index_fragments/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|backends/hip/overview\.md|research/.*\.md|usage/bd-rate\.md)|scripts/ci/(AGENTS\.md|check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
+        always_run: true
+
+      - id: test-research-digest-ids
+        name: Research digest ID ratchet rejects collision and H1 drift
+        entry: python3 -B scripts/ci/tests/test_research_digest_ids.py
+        language: system
+        pass_filenames: false
+        files: '^(\.github/(AGENTS\.md|workflows/rule-enforcement\.yml)|\.pre-commit-config\.yaml|changelog\.d/_pre_fragment_legacy\.md|docs/(adr/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|adr/_index_fragments/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|backends/hip/overview\.md|research/.*\.md|usage/bd-rate\.md)|scripts/ci/(AGENTS\.md|check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
+        always_run: true
+
+      - id: check-source-adr-citations
+        name: Source ADR citations retain exact decision provenance
+        entry: python3 -B scripts/ci/check-source-adr-citations.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: test-check-source-adr-citations
+        name: Source ADR citation gate keeps live, retired and fixture boundaries
+        entry: python3 -B scripts/ci/tests/test_check_source_adr_citations.py
+        language: system
+        pass_filenames: false
+        files: '^scripts/ci/(check-source-adr-citations\.py|source-adr-citations\.json|tests/test_check_source_adr_citations\.py)$'
 
       - id: check-adr-numbering
         name: ADR-0386 ADR number collision + heading consistency check
@@ -467,6 +563,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: codeql-unused-static-schema-contract
+        name: CodeQL unused-static CSV schema regressions
+        entry: python3 -B -m unittest discover -s scripts/ci/tests -p test_codeql_unused_static.py
+        language: system
+        files: '^(scripts/ci/(check-codeql-unused-static\.py|tests/test_codeql_unused_static\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: repository-security-contract
         name: Repository security policy failure controls
         entry: python3 -B scripts/dev/tests/test_repository_security.py
@@ -475,11 +579,19 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: test-sycl-tidy-workflow-contract
+        name: SYCL clang-tidy required non-advisory gate contract
+        entry: python3 -B scripts/ci/test_sycl_tidy_workflow_contract.py
+        language: system
+        files: '^(scripts/ci/(required_aggregator_harness|test_(go|sycl_tidy)_workflow_contract)\.py|\.github/workflows/(lint-and-format|required-aggregator|rule-enforcement)\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: fail-closed-ci-contract
         name: Test and scan failures remain observable in CI
         entry: python3 -B scripts/ci/test_fail_closed_ci.py
         language: system
-        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|\.github/workflows/(nightly|required-aggregator|rule-enforcement|sanitizers|security-scans|tests-and-quality-gates)\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|\.github/workflows/(lint-and-format|nightly|required-aggregator|rule-enforcement|sanitizers|security-scans|tests-and-quality-gates)\.yml|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -594,10 +706,34 @@ repos:
         stages: [pre-commit, pre-push]
 
       - id: test-dev-mcp-entrypoint-probe
-        name: dev-mcp entrypoint probes run argv, never eval
+        name: dev-mcp entrypoint probes match device records without eval
         entry: bash scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh
         language: system
         files: '^(dev/scripts/dev-mcp-entrypoint\.sh|scripts/ci/tests/test-dev-mcp-entrypoint-probe\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-dev-mcp-healthcheck
+        name: dev-mcp healthcheck waits for conditional NVIDIA readiness
+        entry: bash dev/scripts/test-dev-mcp-healthcheck.sh
+        language: system
+        files: '^(dev/docker-compose\.yml|dev/scripts/(dev-mcp-healthcheck|test-dev-mcp-healthcheck)\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-dev-mcp-smoke-probe
+        name: dev-mcp smoke probe follows current CLI and Go MCP contracts
+        entry: bash dev/scripts/test-smoke-probe-loop.sh
+        language: system
+        files: '^(dev/scripts/(smoke-probe-loop|test-smoke-probe-loop)\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: ffmpeg-input-contract
+        name: FFmpeg VMAF input-order contract and red-cap tests
+        entry: make ffmpeg-input-contract
+        language: system
+        files: '^(docs/|ffmpeg-patches/|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

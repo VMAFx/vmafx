@@ -29,9 +29,8 @@
  *   - The SONAME bump from libvmaf.so.3 → libvmaf.so.4 is scheduled
  *     for VMAFX v4.0.0 (cycle N+3), not this PR.
  *
- * See:
- *   - [ADR-0928](../../docs/adr/0928-vmaf-picture-v2-explicit-backend-state.md)
- *   - [docs/architecture/vmaf-picture-v2-migration.md](../../docs/architecture/vmaf-picture-v2-migration.md)
+ * See ADR-0928 (`docs/adr/0928-vmaf-picture-v2-explicit-backend-state.md`) and
+ * the migration guide (`docs/architecture/vmaf-picture-v2-migration.md`).
  */
 
 #ifndef LIBVMAF_PICTURE_V2_H_
@@ -89,16 +88,17 @@ typedef enum VmafBackendHandle {
  *   - `priv` is core-owned; consumers must never `free()` it.
  */
 typedef struct VmafPicture2 {
-    enum VmafPixelFormat pix_fmt;
-    unsigned bpc;
-    unsigned w[3], h[3];
-    ptrdiff_t stride[3];
-    void *data[3];
-    VmafRef *ref;
-    void *priv;
-    VmafBackendHandle backend;
-    uintptr_t backend_handle;
-    uintptr_t _reserved[4];
+    enum VmafPixelFormat pix_fmt; /**< Planar pixel format. */
+    unsigned bpc;                 /**< Bits per component (8, 10, 12, or 16). */
+    unsigned w[3];                /**< Per-plane width in samples. */
+    unsigned h[3];                /**< Per-plane height in samples. */
+    ptrdiff_t stride[3];          /**< Per-plane row stride in bytes. */
+    void *data[3];                /**< Per-plane sample data pointers. */
+    VmafRef *ref;                 /**< Atomic reference counter. */
+    void *priv;                   /**< Internal core-owned state. */
+    VmafBackendHandle backend;    /**< Owning backend discriminator. */
+    uintptr_t backend_handle;     /**< Non-owning backend stream or queue handle. */
+    uintptr_t _reserved[4];       /**< Reserved for future extension; zero-initialised. */
 } VmafPicture2;
 
 /**
@@ -124,7 +124,7 @@ typedef struct VmafPicture2 {
  *         `-EINVAL` for NULL pointer or unknown format.
  *         `-ENOMEM` on allocation failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
 VMAF_EXPORT int vmaf_picture2_alloc(VmafPicture2 *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
                                     unsigned w, unsigned h);
@@ -138,7 +138,7 @@ VMAF_EXPORT int vmaf_picture2_alloc(VmafPicture2 *pic, enum VmafPixelFormat pix_
  *
  * @return 0 on success, negative errno on failure.
  *
- * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
 VMAF_EXPORT int vmaf_picture2_unref(VmafPicture2 *pic);
 
@@ -158,7 +158,7 @@ VMAF_EXPORT int vmaf_picture2_unref(VmafPicture2 *pic);
  * @return 0 on success, negative errno on failure.
  *         `-EINVAL` on NULL arguments.
  *
- * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
 VMAF_EXPORT int vmaf_picture_v1_to_v2(const VmafPicture *src, VmafPicture2 *dst);
 
@@ -178,7 +178,7 @@ VMAF_EXPORT int vmaf_picture_v1_to_v2(const VmafPicture *src, VmafPicture2 *dst)
  * @return 0 on success, negative errno on failure.
  *         `-EINVAL` on NULL arguments.
  *
- * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
 VMAF_EXPORT int vmaf_picture_v2_to_v1(const VmafPicture2 *src, VmafPicture *dst);
 
@@ -194,7 +194,7 @@ VMAF_EXPORT int vmaf_picture_v2_to_v1(const VmafPicture2 *src, VmafPicture *dst)
  *
  * @return NUL-terminated static string. Never NULL. Do not free.
  *
- * @thread-safety Safe to call from any thread; reads only static data.
+ * @note Thread safety: Safe to call from any thread; reads only static data.
  */
 VMAF_EXPORT const char *vmaf_backend_handle_name(VmafBackendHandle backend);
 

@@ -20,6 +20,7 @@
  *  exercised by the CLI smoke gate, not by this unit test.
  */
 
+#include <math.h>
 #include <string.h>
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -31,6 +32,7 @@
 #include "tiny_ai_test_template.h"
 
 #include "feature/feature_extractor.h"
+#include "feature/transnet_v2_score.h"
 
 /* The registration tests set the model-path environment variable they
  * exercise; the binary is single-threaded (ADR-0141). */
@@ -72,11 +74,52 @@ static char *test_transnet_v2_provided_features_list_terminated(void)
     return NULL;
 }
 
+static char *test_transnet_v2_rejects_nonfinite_logit_atomically(void)
+{
+    double probability = 42.0;
+    double boundary = 43.0;
+
+    const int err = vmaf_transnet_v2_scores(NAN, 0.5, &probability, &boundary);
+
+    mu_assert("non-finite TransNet logit must fail", err != 0);
+    mu_assert("failed TransNet conversion must not modify outputs",
+              probability == 42.0 && boundary == 43.0);
+
+    const int inf_err = vmaf_transnet_v2_scores(INFINITY, 0.5, &probability, &boundary);
+    mu_assert("infinite TransNet logit must fail", inf_err != 0);
+    mu_assert("failed infinite TransNet conversion must not modify outputs",
+              probability == 42.0 && boundary == 43.0);
+    return NULL;
+}
+
+static char *test_transnet_v2_finite_score_contract(void)
+{
+    double probability = 0.0;
+    double boundary = 0.0;
+
+    int err = vmaf_transnet_v2_scores(0.0, 0.5, &probability, &boundary);
+    mu_assert("finite TransNet logit must succeed", err == 0);
+    mu_assert("zero logit remains the threshold boundary", probability == 0.5 && boundary == 1.0);
+
+    err = vmaf_transnet_v2_scores(-31.0, 0.5, &probability, &boundary);
+    mu_assert("clamped negative logit must succeed", err == 0);
+    mu_assert("negative clamp stays zero", probability == 0.0 && boundary == 0.0);
+    return NULL;
+}
+
+static char *test_transnet_v2_score_conversion_contract(void)
+{
+    mu_assert_msg(test_transnet_v2_rejects_nonfinite_logit_atomically());
+    mu_assert_msg(test_transnet_v2_finite_score_contract());
+    return NULL;
+}
+
 char *run_tests(void)
 {
     VMAF_TINY_AI_RUN_REGISTRATION_TESTS(transnet_v2);
     mu_run_test(test_transnet_v2_provides_binary_flag_feature);
     mu_run_test(test_transnet_v2_provided_features_list_terminated);
+    mu_run_test(test_transnet_v2_score_conversion_contract);
     return NULL;
 }
 

@@ -27,8 +27,8 @@ class BacklogTrackerTests(unittest.TestCase):
         self.assertIn("PR #1528 is pending", master.raw_row)
 
         self.assertEqual(self._item(tracker, "T-RC1-RELEASE-PIPELINE").status, "DONE")
-        self.assertEqual(self._item(tracker, "T-RC1-BENCH-TUNE").status, "BLOCKED")
-        self.assertEqual(self._item(tracker, "T-RC1-RETRAIN").status, "IN_FLIGHT")
+        self.assertEqual(self._item(tracker, "T-RC2-BENCH-TUNE").status, "BLOCKED")
+        self.assertEqual(self._item(tracker, "T-RC3-MODEL-RETRAIN").status, "BLOCKED")
         self.assertEqual(self._item(tracker, "T-POSTRC1-REUSE").status, "DEFERRED")
 
     def test_legacy_table_schema_remains_compatible(self) -> None:

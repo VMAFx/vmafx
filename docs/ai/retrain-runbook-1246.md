@@ -5,8 +5,13 @@ This runbook defines the end-to-end operational procedure for the one-shot
 retraining pass of the fork's tiny-AI models against the canonical
 `vmaf_v1.0.16_3d0h` teacher model (Epic [#1246](https://github.com/VMAFx/vmafx/issues/1246)).
 
-The retrain executes **once** when all preceding 1.0.0 epics are closed and
-preconditions are satisfied.
+The retrain executes **once** as RC3, after RC2 evidence is accepted and the
+remaining preconditions are satisfied. Under
+[ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md), this is
+an **RC3-only** operation: RC1 completes correctness and tester reporting, RC2
+completes benchmark/tuning evidence, and the real training run starts only
+after the accepted RC2 tree is clean and frozen. Do not start this run during
+RC1 or RC2.
 
 ---
 
@@ -14,6 +19,12 @@ preconditions are satisfied.
 
 All procedures in this runbook strictly enforce the binding maintainer decisions
 and architectural records:
+
+- **Release sequence (ADR-1341)**: this one-shot programme is the RC3 gate.
+  Accepted RC2 benchmark/tuning evidence, an exact-head green tree, and an
+  explicit maintainer go-ahead are preconditions. Any later code or version
+  merge invalidates the frozen-head evidence and must be reconciled before
+  training starts.
 
 - **Maintainer decision, 2026-09-04 (D1 — Student Features)**: Raw extraction collects
   the union feature pool (`FULL_FEATURES` + `adm3`, 26 raw features per ADR-1173).
@@ -559,10 +570,19 @@ The following thresholds are proposed for the 1.0.0 release pass:
 1. **Synthetic PLCC Drop (`measure_quant_drop.py`)**:
    - **Static PTQ**: PLCC drop $\le 0.002$ (tightened from 0.01; empirical smoke achieved 0.00046).
    - **QAT**: PLCC drop $\le 0.001$ (tightened from 0.01; empirical smoke achieved 0.00037).
-2. **Real Feature / Score Validation Gate**:
+2. **Real Feature / Score Validation Gate (`validate_quant_parity.py`)**:
    - Mean absolute VMAF score delta across held-out clips: $\le 0.10$ VMAF points.
    - Maximum single-frame absolute delta: $\le 0.50$ VMAF points.
    - Held-out feature set PLCC: $\ge 0.990$.
+
+   Execute the clip-level parity gate on validation feature data:
+
+   ```bash
+   docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/validate_quant_parity.py \
+     --all \
+     --features /workspace/testdata/scores_cpu_576.json \
+     --out-json /workspace/runs/quant_parity_report.json
+   ```
 
 ---
 

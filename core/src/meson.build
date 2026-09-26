@@ -328,6 +328,36 @@ if is_hipcc_enabled and is_hip_enabled
         'ssimulacra2_blur' : ['-ffp-contract=off'],
         'integer_ssim_score' : ['-ffp-contract=off'],
     }
+    # ADR-1320: Explicit shared header dependencies for HIP device kernels.
+    # While hipcc passes -Xclang -dependency-file on Linux, depend_files
+    # provides declarative dependency tracking across all platforms.
+    hip_kernel_shared_headers = files(
+        'hip/common.h',
+        'feature/integer_adm.h',
+        'feature/adm_cm_accumulator.h',
+        'feature/hip/integer_adm_hip.h',
+        'feature/hip/integer_adm/adm_decouple_inline.hip',
+        'feature/hip/integer_vif_hip.h',
+        'feature/hip/integer_motion_hip.h',
+        'feature/hip/integer_motion_v2_hip.h',
+        'feature/hip/integer_psnr_hip.h',
+        'feature/hip/float_moment_hip.h',
+        'feature/hip/ciede_hip.h',
+        'feature/hip/float_ssim_hip.h',
+        'feature/hip/integer_ssim_hip.h',
+        'feature/hip/integer_ms_ssim_hip.h',
+        'feature/hip/integer_psnr_hvs_hip.h',
+        'feature/hip/float_psnr_hip.h',
+        'feature/hip/float_motion_hip.h',
+        'feature/hip/float_vif_hip.h',
+        'feature/hip/ssimulacra2_hip.h',
+        'feature/hip/float_adm_hip.h',
+        'feature/hip/integer_cambi_hip.h',
+        'feature/hip/speed_chroma_hip.h',
+        'feature/hip/speed_temporal_hip.h',
+        'feature/adm_angle_flag.h',
+        'mem.h',
+    )
     foreach name, src : hip_kernel_sources
         per_kernel_flags = hip_cu_extra_flags.get(name, [])
         # hipcc ignores -MD/-MF under --genco; the device frontend writes the
@@ -337,6 +367,7 @@ if is_hipcc_enabled and is_hip_enabled
             output: name + '.hsaco',
             input: src,
             depfile: name + '.hsaco.d',
+            depend_files: hip_kernel_shared_headers,
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
                      hip_include_flags + per_kernel_flags +
                      ['-I', meson.current_source_dir(),
@@ -1136,7 +1167,8 @@ endif
 # core/test/check_exported_symbols.py pins the result: libvmaf.so exports the
 # public vmaf_* API and, of C++ symbols, only libstdc++ template members, which
 # namespace std declares with default visibility.
-vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common)
+# ADR-1337: hide inline C++ placement new/delete symbols with -fvisibility-inlines-hidden.
+vmaf_cppflags_common = cxx.get_supported_arguments(vmaf_cflags_common + ['-fvisibility-inlines-hidden'])
 
 if is_cuda_enabled
     # Check for required CUDA headers
@@ -1407,16 +1439,67 @@ if is_cuda_enabled
     # instead of leaving a stale kernel that no longer matches the host. Not
     # on Windows, where nvcc preprocesses through cl.exe; that lane builds
     # from clean.
+    # ADR-1320: Explicit shared header dependencies for CUDA device kernels.
+    # Combined with compiler depfiles (-MD -MF) on POSIX and complete explicit
+    # repo-local include-closure tracking on Windows, this guarantees that
+    # editing a shared kernel header rebuilds the affected fatbins.
+    cuda_kernel_shared_headers = files(
+        '../include/libvmaf/libvmaf_cuda.h',
+        '../include/libvmaf/model.h',
+        '../include/libvmaf/picture.h',
+        'arm/cpu.h',
+        'cpu.h',
+        'cuda/common.h',
+        'cuda/cuda_helper.cuh',
+        'dict.h',
+        'feature/compat_builtin.h',
+        'feature/feature_collector.h',
+        'feature/integer_adm.h',
+        'feature/adm_cm_accumulator.h',
+        'feature/integer_motion.h',
+        'feature/integer_vif.h',
+        'feature/cuda/integer_adm_cuda.h',
+        'feature/cuda/integer_adm/adm_decouple_inline.cuh',
+        'feature/cuda/integer_vif_cuda.h',
+        'feature/cuda/integer_vif/vif_statistics.cuh',
+        'feature/cuda/integer_motion_cuda.h',
+        'feature/cuda/integer_motion_v2_cuda.h',
+        'feature/cuda/integer_psnr_cuda.h',
+        'feature/cuda/integer_moment_cuda.h',
+        'feature/cuda/integer_ciede_cuda.h',
+        'feature/cuda/integer_ssim_cuda.h',
+        'feature/cuda/ssim_cuda.h',
+        'feature/cuda/integer_ms_ssim_cuda.h',
+        'feature/cuda/integer_psnr_hvs_cuda.h',
+        'feature/cuda/float_psnr_cuda.h',
+        'feature/cuda/float_motion_cuda.h',
+        'feature/cuda/float_vif_cuda.h',
+        'feature/cuda/ssimulacra2_cuda.h',
+        'feature/cuda/float_adm_cuda.h',
+        'feature/cuda/integer_cambi_cuda.h',
+        'feature/cuda/speed_chroma_cuda.h',
+        'feature/cuda/speed_temporal_cuda.h',
+        'feature/adm_angle_flag.h',
+        'mem.h',
+        'metadata.h',
+        'metadata_handler.h',
+        'model.h',
+        'picture.h',
+        'x86/cpu.h',
+    )
+    cuda_kernel_shared_headers += [config_h_target]
     nvcc_dep_flags = host_machine.system() == 'windows' ? [] : [
         '-MD', '-MF', '@DEPFILE@', '-MT', '@OUTPUT@']
     ptx_files = {}
     foreach name, _cu : cuda_cu_sources
         per_kernel_flags = cuda_cu_extra_flags.get(name, [])
+        cu_depfile = host_machine.system() == 'windows' ? '' : '@0@.fatbin.d'.format(name)
         t = custom_target('cu_ptx_target_' + name,
             build_by_default: true,
             output : ['@0@.fatbin'.format(name)],
             input : _cu,
-            depfile : '@0@.fatbin.d'.format(name),
+            depfile : cu_depfile,
+            depend_files : cuda_kernel_shared_headers,
             command : [nvcc_exe,
                 gencode,
                 '@INPUT@',
@@ -1771,7 +1854,7 @@ libvmaf_feature_sources = [
     feature_src_dir + 'feature_name.cpp',
     feature_src_dir + 'alias.c',
     feature_src_dir + 'integer_adm.c',
-    feature_src_dir + 'feature_collector.c',
+    feature_src_dir + 'feature_collector.cpp',
     feature_src_dir + 'integer_motion.c',
     feature_src_dir + 'integer_motion_v2.c',
     feature_src_dir + 'integer_vif.c',
@@ -2149,9 +2232,24 @@ read_json_model_cpp23_lib = static_library(
     dependencies : [pthread_dependency],
 )
 
+# predict.c is consumed by libvmaf and by the private-source test binaries.
+# Compile it once so every consumer links the same implementation identity;
+# compiling it independently in each executable creates orphan static call
+# graphs in whole-build CodeQL extraction and needlessly repeats the TU.
+predict_c_lib = static_library(
+    'predict_c',
+    src_dir + 'predict.c',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [pthread_dependency],
+    pic : true,
+    install : false,
+)
+
+predict_c_dependency = declare_dependency(link_with : predict_c_lib)
+
 libvmaf_sources = [
     src_dir + 'libvmaf.c',
-    src_dir + 'predict.c',
     src_dir + 'model.c',
     src_dir + 'picture.c',
     src_dir + 'picture_v2.c', # ADR-0928 cycle N+1: v2 allocator / converter implementation
@@ -2257,6 +2355,9 @@ libvmaf = library(
         # ADR-0761: C++23 Wave 8 isolated static libs.
         opt_cpp23_lib.extract_all_objects(recursive: true),
         read_json_model_cpp23_lib.extract_all_objects(recursive: true),
+        # One predictor implementation identity shared with private-source
+        # test binaries; see Research-2096.
+        predict_c_lib.extract_all_objects(recursive: true),
     ],
     version : vmaf_soname_version,
     soversion : vmaf_soversion,

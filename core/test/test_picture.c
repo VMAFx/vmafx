@@ -179,6 +179,34 @@ static char *test_picture_alloc_rejects_overflow_dimensions()
     return NULL;
 }
 
+static char *check_picture_alloc_yuv400p_luma_only(unsigned w, unsigned h)
+{
+    VmafPicture pic;
+    int err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV400P, 8, w, h);
+    mu_assert("vmaf_picture_alloc failed for YUV400P", !err);
+
+    const int luma_only = pic.data[0] != NULL && pic.w[0] == w && pic.h[0] == h;
+    const int no_chroma = pic.data[1] == NULL && pic.data[2] == NULL && pic.w[1] == 0 &&
+                          pic.w[2] == 0 && pic.h[1] == 0 && pic.h[2] == 0;
+
+    err = vmaf_picture_unref(&pic);
+    mu_assert("vmaf_picture_unref failed for YUV400P", !err);
+    mu_assert("YUV400P luma plane must match the requested geometry", luma_only);
+    mu_assert("YUV400P chroma planes must stay unallocated with zero geometry", no_chroma);
+    return NULL;
+}
+
+/* VMAF_PIX_FMT_YUV400P is luma-only for both ordinary and odd dimensions.
+ * Keep this at the public picture-allocation seam: extractor tests that happen
+ * to consume YUV400P do not pin the zeroed chroma geometry contract. */
+static char *test_picture_alloc_yuv400p_luma_only(void)
+{
+    char *msg = check_picture_alloc_yuv400p_luma_only(1920, 1080);
+    if (msg)
+        return msg;
+    return check_picture_alloc_yuv400p_luma_only(577, 323);
+}
+
 /*
  * Error-path coverage for vmaf_picture_ref and vmaf_picture_unref.
  *
@@ -255,6 +283,7 @@ char *run_tests()
     mu_run_test(test_picture_data_alignment);
     mu_run_test(run_chroma_ceiling_tests);
     mu_run_test(test_picture_alloc_rejects_overflow_dimensions);
+    mu_run_test(test_picture_alloc_yuv400p_luma_only);
     mu_run_test(test_picture_ref_null_error_paths);
     mu_run_test(test_picture_unref_null_error_paths);
     return NULL;

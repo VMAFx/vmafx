@@ -19,6 +19,7 @@
 #ifndef DEVICE_CODE
 #include "feature_collector.h"
 #endif
+#include "adm_cm_accumulator.h"
 #include "cuda/integer_adm_cuda.h"
 #include "common.h"
 #include "cuda_helper.cuh"
@@ -288,7 +289,8 @@ __device__ __forceinline__ void i4_cm_flush_row(int64_t thread_accum, bool row_i
         for (int w_idx = 0; w_idx < (blockDim.x / VMAF_CUDA_THREADS_PER_WARP); ++w_idx) {
             row_total += warp_sums[w_idx];
         }
-        atomicAdd_int64(band_accum, (row_total + p.add_shift_inner_accum) >> p.shift_inner_accum);
+        atomicAdd_int64(band_accum, adm_cm_round_row_total(row_total, p.add_shift_inner_accum,
+                                                           p.shift_inner_accum));
     }
 }
 
@@ -510,7 +512,8 @@ __device__ __forceinline__ void s0_cm_flush_rows(const int64_t (&accum_row)[rows
     for (int row = 0; row < rows_per_thread; ++row) {
         const int64_t row_total = warp_reduce(accum_row[row]);
         if (threadIdx.x == 0 && (y + row) < end_row) {
-            const int64_t shifted = (row_total + add_shift_inner_accum) >> shift_inner_accum;
+            const int64_t shifted =
+                adm_cm_round_row_total(row_total, add_shift_inner_accum, shift_inner_accum);
             atomicAdd_int64(band_accum, shifted);
         }
     }

@@ -132,12 +132,33 @@ typedef struct VmafCudaKernelReadback {
  *
  * Returns 0 on success or the negative errno mapped from CUresult
  * (see vmaf_cuda_result_to_errno). On failure the function rolls
- * back any partial state — `lc` ends up zeroed and the context is
- * popped.
+ * back any partial state. Handles destroyed successfully are cleared;
+ * a handle whose destroy call fails is retained for a later close retry.
  */
+/* NOLINTBEGIN(modernize-use-nullptr): C header. The fork builds C as C23,
+ * where clang-tidy proposes `nullptr`, but MSVC's documented /std:clatest
+ * feature set does not include it while the required Windows build compiles
+ * the CUDA host TUs with cl.exe. ADR-1138. */
+static inline void vmaf_cuda_kernel_lifecycle_init_unwind(VmafCudaKernelLifecycle *lc,
+                                                          VmafCudaState *cu_state, int ctx_pushed)
+{
+    /* No work can have been submitted before init returns, so all partially
+     * created handles are independent and can be released best-effort. Each
+     * helper retains a handle whose driver release fails for a later close
+     * retry while preserving the original init error at the call site. */
+    (void)vmaf_cuda_stream_destroy(cu_state, &lc->str, false);
+    (void)vmaf_cuda_event_destroy(cu_state, &lc->submit);
+    (void)vmaf_cuda_event_destroy(cu_state, &lc->finished);
+    if (ctx_pushed != 0)
+        (void)cu_state->f->cuCtxPopCurrent(NULL);
+}
+
 static inline int vmaf_cuda_kernel_lifecycle_init(VmafCudaKernelLifecycle *lc,
                                                   VmafCudaState *cu_state)
 {
+    if (lc == NULL || cu_state == NULL || cu_state->f == NULL || cu_state->ctx == NULL)
+        return -EINVAL;
+
     CudaFunctions *cu_f = cu_state->f;
     int _cuda_err = 0;
     int ctx_pushed = 0;
@@ -147,18 +168,11 @@ static inline int vmaf_cuda_kernel_lifecycle_init(VmafCudaKernelLifecycle *lc,
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&lc->str, CU_STREAM_NON_BLOCKING, 0), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&lc->submit, CU_EVENT_DEFAULT), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&lc->finished, CU_EVENT_DEFAULT), fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
     return 0;
 
 fail:
-    if (ctx_pushed) {
-        (void)cu_f->cuCtxPopCurrent(NULL);
-    }
-fail_after_pop:
-    /* Best-effort: any of the three handles that did create cleanly
-     * are leaked deliberately — the caller will hit the same failure
-     * on the next init() and the process is in an unrecoverable CUDA
-     * state anyway. */
+    vmaf_cuda_kernel_lifecycle_init_unwind(lc, cu_state, ctx_pushed);
     return _cuda_err;
 }
 
@@ -211,6 +225,7 @@ static inline int vmaf_cuda_kernel_submit_pre_launch(VmafCudaKernelLifecycle *lc
                                                      CUstream picture_stream,
                                                      CUevent dist_ready_event)
 {
+    (void)lc;
     CudaFunctions *cu_f = cu_state->f;
     /* The zeroing MUST be issued on `picture_stream`, the same stream the
      * kernel launches on.
@@ -302,11 +317,18 @@ static inline int vmaf_cuda_kernel_submit_post_record(VmafCudaKernelLifecycle *l
 }
 
 /*
- * close()-side teardown: drain + destroy stream, destroy events.
+ * close()-side teardown: drain + destroy stream, then destroy events.
  *
- * Returns the first negative errno encountered (or 0). On failure
- * later resources are still attempted — the close path tries to
- * release as much as it can rather than bailing on the first error.
+ * Phased: DRAIN STREAM FIRST. If sync or stream destroy fails, the stream
+ * is still live and events may be in-flight, so event destruction is
+ * skipped entirely. Only after quiescence (stream successfully destroyed)
+ * are events released. Module unloading is the caller's responsibility
+ * after lifecycle close returns (it depends on the context push, not
+ * the stream).
+ *
+ * Returns the first negative errno encountered (or 0). On stream-phase
+ * failure the returned error indicates the stream and events are still
+ * alive and retryable.
  *
  * Safe to call on a partially-initialised lifecycle (handles that
  * are NULL/0 are skipped).
@@ -314,72 +336,60 @@ static inline int vmaf_cuda_kernel_submit_post_record(VmafCudaKernelLifecycle *l
 static inline int vmaf_cuda_kernel_lifecycle_close(VmafCudaKernelLifecycle *lc,
                                                    VmafCudaState *cu_state)
 {
-    CudaFunctions *cu_f = cu_state->f;
-    int rc = 0;
-    if (lc->str != NULL) {
-        const CUresult sync_res = cu_f->cuStreamSynchronize(lc->str);
-        if (sync_res != CUDA_SUCCESS && rc == 0) {
-            rc = vmaf_cuda_result_to_errno((int)sync_res);
-        }
-        const CUresult destroy_res = cu_f->cuStreamDestroy(lc->str);
-        if (destroy_res != CUDA_SUCCESS && rc == 0) {
-            rc = vmaf_cuda_result_to_errno((int)destroy_res);
-        }
-        lc->str = NULL;
+    if (lc == NULL || cu_state == NULL || cu_state->f == NULL || cu_state->ctx == NULL)
+        return -EINVAL;
+    if (lc->str == NULL && lc->submit == NULL && lc->finished == NULL) {
+        lc->drained = false;
+        return 0;
     }
-    if (lc->submit != NULL) {
-        const CUresult e = cu_f->cuEventDestroy(lc->submit);
-        if (e != CUDA_SUCCESS && rc == 0) {
-            rc = vmaf_cuda_result_to_errno((int)e);
-        }
-        lc->submit = NULL;
+
+    /* Phase 1: drain and destroy the stream. */
+    int rc = vmaf_cuda_stream_destroy(cu_state, &lc->str, true);
+
+    /* Phase 2: destroy events only after stream quiescence.
+     * If the stream is still live, events may be in-flight; destroying
+     * them while the stream references them is undefined. */
+    if (lc->str == NULL) {
+        const int submit_err = vmaf_cuda_event_destroy(cu_state, &lc->submit);
+        if (submit_err != 0 && rc == 0)
+            rc = submit_err;
+        const int finished_err = vmaf_cuda_event_destroy(cu_state, &lc->finished);
+        if (finished_err != 0 && rc == 0)
+            rc = finished_err;
     }
-    if (lc->finished != NULL) {
-        const CUresult e = cu_f->cuEventDestroy(lc->finished);
-        if (e != CUDA_SUCCESS && rc == 0) {
-            rc = vmaf_cuda_result_to_errno((int)e);
-        }
-        lc->finished = NULL;
-    }
+
+    lc->drained = false;
     return rc;
 }
-
 /*
  * Free the readback pair. Mirrors vmaf_cuda_kernel_readback_alloc's
  * leave-partial-state-on-failure contract: this routine is safe to
  * call on a partially-allocated readback.
  *
  * Both the device accumulator and the pinned host buffer are released
- * here.  Previously the helper only NULLed rb->host_pinned without
- * calling vmaf_cuda_buffer_host_free, causing every caller to leak the
- * pinned allocation on close (PR #93 follow-up sweep, 2026-05-29).
+ * here.  The owned helpers null the caller's pointer only when the
+ * underlying driver free succeeds, so a failed free retains ownership
+ * for retry.  Uses first-error preservation.
  */
 static inline int vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *rb,
                                                  VmafCudaState *cu_state)
 {
     int rc = 0;
     if (rb->device != NULL) {
-        const int e = vmaf_cuda_buffer_free(cu_state, rb->device);
-        if (e != 0 && rc == 0) {
+        const int e = vmaf_cuda_buffer_free_owned(cu_state, &rb->device);
+        if (e != 0 && rc == 0)
             rc = e;
-        }
-        /* common.c follows the same free-the-handle-after pattern. */
-        free(rb->device);
-        rb->device = NULL;
     }
     if (rb->host_pinned != NULL) {
-        /* host_pinned is a cuMemHostAlloc allocation tracked by common.c's
-         * host-alloc table; release it through the matching helper so the
-         * table entry is removed and cuMemFreeHost is called. */
-        const int e = vmaf_cuda_buffer_host_free(cu_state, rb->host_pinned);
-        if (e != 0 && rc == 0) {
+        const int e = vmaf_cuda_buffer_host_free_owned(cu_state, &rb->host_pinned);
+        if (e != 0 && rc == 0)
             rc = e;
-        }
-        rb->host_pinned = NULL;
     }
-    rb->bytes = 0;
+    if (rb->device == NULL && rb->host_pinned == NULL)
+        rb->bytes = 0;
     return rc;
 }
+/* NOLINTEND(modernize-use-nullptr) */
 
 #ifdef __cplusplus
 } /* extern "C" */

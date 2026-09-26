@@ -42,6 +42,7 @@ Production reproducer (held-out Phase A parquet):
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import sys
@@ -60,7 +61,11 @@ SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import (  # noqa: E402
+    build_run_provenance,
+    dumps_manifest_json,
+    write_manifest_json,
+)
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -219,7 +224,7 @@ def _synthesize_smoke_corpus(
     n_rows: int = 100,
     num_codecs: int = 6,
     seed: int = 4321,
-):  # type: ignore[no-untyped-def]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Match the trainer smoke distribution but with a different seed
     so we evaluate on out-of-training rows."""
     rng = np.random.default_rng(seed)
@@ -242,21 +247,27 @@ def _synthesize_smoke_corpus(
     return features, codec_onehot, target
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Assemble the command-line parser."""
+    parser = make_argument_parser(
         prog="eval_probabilistic_proxy.py",
         description=__doc__,
     )
-    ap.add_argument(
+    parser.add_argument(
         "--manifest",
         type=Path,
         default=REPO_ROOT / "model" / "tiny" / "fr_regressor_v2_ensemble_v1.json",
     )
-    ap.add_argument("--parquet", type=Path, default=None)
-    ap.add_argument("--smoke", action="store_true")
-    ap.add_argument("--metrics-out", type=Path, default=None)
-    args = ap.parse_args(raw_argv)
+    parser.add_argument("--parquet", type=Path, default=None)
+    parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--metrics-out", type=Path, default=None)
+    return parser
+
+
+def _load_ensemble_shapes(
+    args: argparse.Namespace,
+) -> tuple[dict[str, Any], list[Any], np.ndarray, np.ndarray, float | None, int] | None:
+    """Load the ensemble and return its manifest, sessions, and live shapes."""
 
     if not args.manifest.is_file():
         print(f"error: manifest missing at {args.manifest}", file=sys.stderr)
@@ -264,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
             "hint: run train_fr_regressor_v2_ensemble.py --smoke first.",
             file=sys.stderr,
         )
-        return 2
+        return None
 
     manifest, sessions = _load_ensemble(args.manifest)
     feature_mean = np.asarray(manifest["feature_mean"], dtype=np.float32)
@@ -279,32 +290,53 @@ def main(argv: list[str] | None = None) -> int:
     codec_input = next((i for i in sessions[0].get_inputs() if i.name == "codec_onehot"), None)
     if codec_input is None:
         print("error: ONNX missing codec_onehot input", file=sys.stderr)
-        return 2
+        return None
     num_codecs = codec_input.shape[1]
+    return manifest, sessions, feature_mean, feature_std, conformal_q, num_codecs
 
+
+def _load_corpus(
+    args: argparse.Namespace, num_codecs: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Load evaluation arrays from parquet or synthesize the smoke corpus."""
     if args.smoke or args.parquet is None:
-        features, codec_onehot, target = _synthesize_smoke_corpus(num_codecs=num_codecs)
-    else:
-        if not args.parquet.is_file():
-            print(f"error: parquet missing at {args.parquet}", file=sys.stderr)
-            return 2
-        import pandas as pd
+        return _synthesize_smoke_corpus(num_codecs=num_codecs)
+    if not args.parquet.is_file():
+        print(f"error: parquet missing at {args.parquet}", file=sys.stderr)
+        return None
+    import pandas as pd
 
-        df = pd.read_parquet(args.parquet)
-        missing = [c for c in CANONICAL_6 if c not in df.columns]
-        if missing:
-            print(f"error: parquet missing canonical-6 columns: {missing}", file=sys.stderr)
-            return 2
-        if "vmaf" not in df.columns or "codec" not in df.columns:
-            print("error: parquet missing 'vmaf' or 'codec' column", file=sys.stderr)
-            return 2
+    df = pd.read_parquet(args.parquet)
+    missing = [column for column in CANONICAL_6 if column not in df.columns]
+    if missing:
+        print(f"error: parquet missing canonical-6 columns: {missing}", file=sys.stderr)
+        return None
+    if "vmaf" not in df.columns or "codec" not in df.columns:
+        print("error: parquet missing 'vmaf' or 'codec' column", file=sys.stderr)
+        return None
 
-        from vmaf_train.codec import codec_index
+    from vmaf_train.codec import codec_index
 
-        features = df[list(CANONICAL_6)].to_numpy(dtype=np.float32)
-        target = df["vmaf"].to_numpy(dtype=np.float32)
-        codec_idx = np.array([codec_index(c) for c in df["codec"].astype(str)], dtype=np.int64)
-        codec_onehot = np.eye(num_codecs, dtype=np.float32)[codec_idx]
+    features = df[list(CANONICAL_6)].to_numpy(dtype=np.float32)
+    target = df["vmaf"].to_numpy(dtype=np.float32)
+    codec_idx = np.array([codec_index(c) for c in df["codec"].astype(str)], dtype=np.int64)
+    codec_onehot = np.eye(num_codecs, dtype=np.float32)[codec_idx]
+    return features, codec_onehot, target
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_arg_parser().parse_args(raw_argv)
+
+    loaded = _load_ensemble_shapes(args)
+    if loaded is None:
+        return 2
+    _manifest, sessions, feature_mean, feature_std, conformal_q, num_codecs = loaded
+
+    corpus = _load_corpus(args, num_codecs)
+    if corpus is None:
+        return 2
+    features, codec_onehot, target = corpus
 
     features_norm = (
         (features - feature_mean) / np.where(feature_std < 1e-8, 1.0, feature_std)
@@ -336,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
 
-    print(json.dumps(report, indent=2))
+    print(dumps_manifest_json(report), end="")
 
     if args.metrics_out is not None:
         write_manifest_json(args.metrics_out, report)

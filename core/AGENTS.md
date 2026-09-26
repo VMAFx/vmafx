@@ -72,9 +72,60 @@ core/
 - [ADR-0025](../docs/adr/0025-copyright-handling-dual-notice.md) — dual-copyright policy.
 - [ADR-0137](../docs/adr/0137-thread-local-locale-for-numeric-io.md) —
   thread-local locale abstraction (`thread_locale.h`) for all numeric I/O.
+- [ADR-1182](../docs/adr/1182-windows-utf8-path-contract.md) —
+  Windows UTF-8 path contract and internal path shims.
+- [ADR-1320](../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md) —
+  CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit depend_files and compiler depfiles.
+- [ADR-1333](../docs/adr/1333-meson-test-secret-env-sanitization.md) —
+  Meson parent-environment runner plus default test-setup sanitization.
 
 ## Rebase-sensitive invariants
 
+- **Meson test secret environment sanitization**
+  ([ADR-1333](../docs/adr/1333-meson-test-secret-env-sanitization.md);
+  [Research-1333](../docs/research/1333-meson-test-secret-env-sanitization.md)):
+  `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson
+  records its parent environment in `testlog.txt`; every supported Make, CI, preflight,
+  bisection, setup-guidance, and Zed entry point must use it. `core/meson.build` retains
+  the same denylist in a project-wide default test setup for
+  (`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`,
+  `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`, `GH_PAT`,
+  `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`,
+  `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`) at the child and JSON-log
+  boundary. Meson applies
+  per-test environments after a selected setup and permits explicit alternate setups, so
+  the regression contract must continue to inventory every supported caller, reject raw
+  test-target bypasses, enumerate all `core/**/meson.build` files, require this as the only
+  `add_test_setup`, and reject explicit forbidden-name reintroduction outside the twelve
+  sanctioned unset calls. Rebase must preserve the runner, callers, setup, and regression
+  together. Direct raw external Meson/Ninja commands remain outside the bounded guarantee.
+- **CUDA fatbin & HIP HSACO header dependency tracking**
+  ([ADR-1320](../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
+  [Research-2106](../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
+  All CUDA fatbin (`cu_ptx_target_*`) and HIP HSACO (`hip_hsaco_*`) custom
+  targets in `core/src/meson.build` must bind explicit header dependency lists
+  (`depend_files: cuda_kernel_shared_headers` and `depend_files: hip_kernel_shared_headers`)
+  covering the complete repo-local quoted include closure, combined with compiler depfiles
+  (`-MD -MF @DEPFILE@` on POSIX nvcc and `-Xclang -dependency-file -Xclang @DEPFILE@`
+  on hipcc; depfile omitted on Windows MSVC). CUDA's list also binds the generated
+  `config_h_target`. Changes to shared kernel headers
+  (e.g., `integer_adm_cuda.h`, `vif_cuda.h`) must reliably trigger incremental
+  device binary rebuilds without manual `touch` workarounds. Rebase must preserve
+  these dependency declarations.
+- **Windows UTF-8 path contract and internal path shims**
+  ([ADR-1182](../docs/adr/1182-windows-utf8-path-contract.md);
+  [Research-1182](../docs/research/1182-windows-utf8-path-contract.md)):
+  `core/src/compat/path_utf8.{h,c}` implements the internal UTF-8 open,
+  canonicalization, metadata, mkdir, and remove shims. On Windows (`_WIN32`),
+  they decode UTF-8 paths to wide strings via `MultiByteToWideChar` and dispatch
+  to wide CRT APIs; on POSIX they preserve path bytes. `output_file_open` in
+  `core/src/libvmaf.c`, DNN canonicalization/stat gates, CAMBI heatmap directory
+  and file creation, and all fork tool/model openers must route through these
+  shims. The shims are internal and must NOT be exported from `libvmaf.so`
+  (no `VMAF_EXPORT`, preserving ADR-0379 ABI stability).
+  `core/src/interop/pelorus_qp_report_csv.c` must remain untouched to respect
+  the ADR-1113 Pelorus verbatim mirror invariant; its narrow path remains open
+  until changed in `VMAFx/pelorus` and re-vendored.
 - **`meson_version` is pinned to `>= 1.4.0`, not upstream's value**
   (fork-local, ADR-0692 / T-CI-MESON-C23-APT-2026-08-30):
   [`meson.build`](meson.build) sets Meson's built-in fallback list
@@ -194,6 +245,12 @@ core/
   — to iterate `workers[]` for `thread_data_free`; never collapse
   these two counters back into one during rebase or `destroy`
   path reacquires data race (C11 UB, TSan-detected). See
+  Worker-private extractor teardown has a fallible prepare callback:
+  `thread_data_prepare` closes every private context while workers and their
+  owner array remain alive. `vmaf_thread_pool_destroy` returns the first
+  prepare error without stopping or freeing the pool; `thread_data_free` is
+  commit-only and runs after a successful retry. Never move close calls back
+  into the void free callback.
   [Research-0097](../docs/research/0097-thread-pool-pthread-create-unchecked-2026-05-10.md).
   See [ADR-0147](../docs/adr/0147-thread-pool-job-pool.md) and
   [rebase-notes 0040](../docs/rebase-notes.md).
@@ -233,7 +290,7 @@ core/
   `data[0]` only, has no `enable_chroma` option; CUDA
   [`src/feature/cuda/integer_vif_cuda.c`](src/feature/cuda/integer_vif_cuda.c)
   hardcodes `s->n_planes = 1`, warn-on-trues `enable_chroma`; HIP,
-  SYCL, Vulkan, Metal twins all match. Upstream Netflix/vmaf is
+  SYCL, and Metal twins all match. Upstream Netflix/vmaf is
   same. VIF (Sheikh & Bovik, 2006) is defined on single luminance
   channel — multi-plane VIF has no MOS-correlation literature. Never
   "fix" `n_planes = 1` or "wire enable_chroma through" without
@@ -502,7 +559,7 @@ Backend-specific orientation:
 ```bash
 meson setup build [-Denable_cuda=true|false] [-Denable_sycl=true|false] [-Denable_dnn=auto]
 ninja -C build
-meson test -C build
+python3 ../scripts/ci/run_meson_test.py -- -C build
 ```
 
 Shortcut: `/build-vmaf --backend=cpu|cuda|sycl|all`.
@@ -552,13 +609,11 @@ size unless flags are right.**
 | CPU only | `--no_cuda --no_sycl` |
 | CUDA | `--gpumask=0 --no_sycl` |
 | SYCL | `--sycl_device=0 --no_cuda` |
-| Vulkan | `--vulkan_device=N` (no `--no_cuda`/`--no_sycl` interaction) |
 
-Verify CUDA engaged by inspecting JSON `frames[0].metrics`
-key set: CPU emits 14–15 keys (`integer_aim`, `integer_motion3`,
-`integer_adm3` are CPU-only); CUDA emits 11–12 keys (CPU-only
-extras absent). Same-key-count + identical pool across two backends =
-both ran same code path.
+Verify engagement by recording each run's JSON `frames[0].metrics`
+key count. Never encode permanent expected counts: the exposed feature set
+changes as extractors evolve. A GPU count collapsing to the CPU count is a
+fallback warning signal; corroborate it with pool, throughput, and stderr.
 
 Bench script `testdata/bench_all.sh` historically used wrong
 flag pattern (`--no_sycl` for "CUDA"). Numbers from runs older than
@@ -570,26 +625,24 @@ corrected methodology.
 absent** (measured 2026-09-06 on `cd52f2670`). Two invariants bench run must
 hold onto:
 
-- **`--threads N` aborts every GPU backend.** `--gpumask=0` or
-  `--sycl_device=0` combined with any `--threads` value emits one
-  `feature "VMAF_integer_feature_motion2_score" cannot be overwritten at index N`
-  pair per frame, then `context could not be synchronized` /
-  `problem flushing context`, exits 234 with no output file. Without
-  `--threads` both backends succeed, are bit-stable over 10 runs (CUDA
-  76.667830, SYCL 76.667746 on Netflix 576x324 pair). `bench_all.sh`
-  hard-codes `--threads 1`, so its GPU rows fail by construction until
-  `T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06` closes — never silence that by
-  deleting flag.
+- **Keep `--threads 1` in GPU bench rows.** PR #1343 / ADR-1197 closed
+  `T-GPU-CLI-THREADS-CTX-SYNC-2026-09-06`; CUDA and SYCL now match their
+  serial paths with a worker pool. The flag is still load-bearing because it
+  exercises `read_pictures_frame_cleanup_after_batch`. For SYCL, that helper
+  is reached only after `threaded_read_pictures_batch` has waited on
+  `last_upload_event` while retaining the caller's original picture refs;
+  waiting in the helper itself is too late if the worker already dropped its
+  copies (BUG-040). Never drop the flag to make a bench row green.
 - **Never discard binary's stderr in bench harness.** `bench_all.sh` used
   to send it to `/dev/null`, relabel any non-zero exit as "backend likely
   unavailable"; that turned hard abort into row that looked like missing
   device for months. Capture stderr, print exit code, let reader
   decide what it means.
 
-Key counts have moved since 2026-04 note above: on `cd52f2670` FFmpeg
-filter path emits 15 keys for CPU, 14 for CUDA and 24 for SYCL (35 before
-PR #1324). Use counts as "did backends run different code" signal,
-not as fixed constants.
+**Dated observation, not an invariant:** on 2026-09-06 at `cd52f2670`, the
+FFmpeg filter path emitted 15 keys for CPU, 14 for CUDA, and 24 for SYCL
+(35 before PR #1324). Use counts as a "did backends run different code"
+signal, never as fixed constants.
 
 - **Build-option combination validation** (fork-local, fixes 1b/1c/1d of audit-build-matrix-symbols-2026-05-16):
   `core/src/meson.build` validates dependent-option combinations, errors or warns when incompatible flags are set:
@@ -749,8 +802,13 @@ not as fixed constants.
   device-only path must never be dereferenced. `read_pictures_frame_cleanup`
   covers every non-batched exit. `read_pictures_frame_cleanup_after_batch`
   is device-only release after `threaded_read_pictures_batch` already unref'd
-  host pictures (PR #838). Only `#ifdef HAVE_CUDA` left inside
-  `vmaf_read_pictures` guards `read_pictures_frame_translate` call.
+  host pictures (PR #838); `threaded_read_pictures_batch` must wait for the
+  final SYCL upload while its original host-picture refs still protect the
+  storage, before either enqueue-error or success cleanup can unref them
+  (BUG-040). The serial cleanup must retain the same wait before its host
+  unrefs and before CUDA's host-cleanup early return in a combined CUDA+SYCL
+  build. Only `#ifdef HAVE_CUDA` left
+  inside `vmaf_read_pictures` guards `read_pictures_frame_translate` call.
   Helper exists only in CUDA builds (CPU no-op stub would leave
   provably-dead error branch that cppcheck flags). Never re-inline further
   backend blocks into `vmaf_read_pictures`; add branches to matching
@@ -760,9 +818,9 @@ not as fixed constants.
   `include/libvmaf/libvmaf.h` is frozen), `read_pictures_validate_and_prep`
   (`vmaf_sycl_shared_frame_upload()` takes mutable pictures on SYCL
   build cppcheck never analyses) and `vmaf_feature_collector_unmount_model`
-  (prototype shared with C++ twin `feature/feature_collector.cpp`, which
-  `test_predict` compiles). Drop marker only when its cited constraint is
-  gone. `vmaf_feature_collector_get()` (`libvmaf_priv.h`) takes
+  (the public C declaration fixes the mutable model-pointer signature in
+  `feature/feature_collector.cpp`). Drop marker only when its cited constraint
+  is gone. `vmaf_feature_collector_get()` (`libvmaf_priv.h`) takes
   `const VmafContext *` — keep declaration and definition in step.
 - **PREV_REF references are released only through `fex_release_prev_ref()`**
   and every CPU-pool skip decision goes through `batch_extractor_skip()` /
@@ -772,8 +830,8 @@ not as fixed constants.
 - **`vmaf_ctx_subsystems_init` owns init/teardown chain** for framesync →
   feature collector → extractor vector → thread pools; new subsystem gets
   new label in that function, not in `vmaf_init`.
-- **C translation units keep `NULL`** (ADR-1138): `libvmaf.c`, `predict.c`
-  and `feature/feature_collector.c` carry file-scoped
+- **C translation units keep `NULL`** (ADR-1138): `libvmaf.c` and `predict.c`
+  carry file-scoped
   `NOLINTBEGIN/END(modernize-use-nullptr)` bracket. Never rewrite `NULL` to
   `nullptr` in C sources (MSVC `/std:clatest` does not document it; upstream
   parity), keep `NOLINTEND` line at end of file when appending code.
@@ -869,7 +927,7 @@ Two related invariants in same files:
   `speed_extract_score()`. Averaging in zeroed solution instead produces
   inflated score.
 
-GPU parity tests in `meson test --suite=fast` all run below 256-system
+GPU parity tests in the repository runner's `--suite=fast` selection all run below 256-system
 threshold, cannot catch either invariant. Check 4K agreement against CPU
 backend by hand. See `docs/rebase-notes.md` entry
 `fix/cuda-speed-chroma-4k-launch`.

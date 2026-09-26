@@ -43,6 +43,11 @@ python/vmaf/
   matching CLI (Netflix-compat golden gate). See
   [ADR-0119](../../docs/adr/0119-cli-precision-default-revert.md)
   (supersedes [ADR-0006](../../docs/adr/0006-cli-precision-17g-default.md)).
+- **Build directory and binary path overrides ([ADR-1317](../../docs/adr/1317-golden-gate-build-isolation.md))**:
+  `__init__.py` respects `VMAF_BUILD_DIR` from the environment (defaulting
+  to `core/build`) to locate `tools/vmaf`. `config.py` provides `VMAF_PATH`
+  and `VMAFEXEC_PATH` overrides. Used by `make test-netflix-golden` to isolate
+  the gate to `core/build-golden`.
 
 ## Rebase invariants
 
@@ -118,7 +123,15 @@ python/vmaf/
   processes use the explicit `spawn` context, one readiness semaphore per
   child, and bounded readiness waits. A child that exits before signaling must
   surface its role, exit code, and available traceback; never restore an unconditional
-  `sem.acquire()` after the five-second warning. The classic 5PL curve in
+  `sem.acquire()` after the five-second warning. FIFO error channel delivery failure
+  closes the pipe and attaches diagnostic context through `_safe_add_exception_note`,
+  which bypasses a potentially overridden `add_note` method and suppresses secondary
+  note-storage failures, including `BaseException`-derived control-flow failures
+  (`_run_fifo_worker`);
+  `_fifo_worker_failure` treats EOF on the error channel as
+  immediate failure rather than returning `None`. `RegressorMixin._get_scatter_arrays`
+  uses elementwise identity comparison `is None` rather than `== None` for None and
+  NaN cleanup. The classic 5PL curve in
   `core/train_test_model.py` keeps `b1` as the sigmoid amplitude and uses
   `scipy.special.expit`; additive `b1` is redundant with `b5` and a raw
   exponential overflows.
@@ -175,6 +188,22 @@ python/vmaf/
   inline argument parsing. Every index expression, accumulation order and
   error string is unchanged; `edges[]` is filled with a bounded copy because
   HISS-08 bans `strcpy()`. See `docs/rebase-notes.md`.
+- **Memoization cache key stability (SHA-256) (T-SEMGREP-WARNING-ALERTS-946-949-2026-09-23).**
+  `tools/decorator.py` generates in-memory and on-disk cache keys in
+  `@persist`, `@persist_to_file`, and `@persist_to_dir` using
+  `hashlib.sha256(..., usedforsecurity=False)` per [ADR-1307](../../docs/adr/1307-sha256-memoization-cache-invalidation.md)
+  (partially superseding ADR-1222 for its SHA-1 keep-open disposition). Clean cold invalidation of legacy caches
+  was accepted as keys are runtime/ephemeral memoization only, completely decoupled
+  from durable pipeline models or Netflix golden assertions. Thread concurrency is
+  serialized via `threading.RLock()` (avoiding dynamic programming recursion deadlock),
+  cross-process cache updates in `persist_to_file` are synchronized via re-entrant
+  `_file_lock` (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows) and disk cache
+  reloading/merging (preventing multi-process and recursive cache clobbering), and atomic
+  file writing is guaranteed via `tempfile.mkstemp` (avoiding
+  PID collisions). Removing SHA-1 entirely yields 0 Semgrep findings in SARIF, resolving warning
+  alerts 947–949 at source. Regression tests in `compat/vmaf/tests/test_decorator_extended.py`
+  (26 tests passing) guard key length (64 hex characters), golden vectors, thread concurrency,
+  cross-process concurrent updates, cross-process cache hits, Windows lock dispatch, and cold invalidation.
 
 ## Governing ADRs
 
@@ -186,3 +215,4 @@ python/vmaf/
 - [ADR-0038](../../docs/adr/0038-purge-upstream-matlab-mex-binaries.md) — MEX binary purge.
 - [ADR-1236](../../docs/adr/1236-version-single-source-tree.md) — single-source package versions and unify Python dependencies.
 - [ADR-1278](../../docs/adr/1278-python-safe-parallel-execution.md) — fork-free process execution and reference 5PL fitting.
+- [ADR-1307](../../docs/adr/1307-sha256-memoization-cache-invalidation.md) — SHA-256 memoization cache key upgrade and clean cold invalidation.

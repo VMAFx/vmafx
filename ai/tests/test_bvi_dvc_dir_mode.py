@@ -23,6 +23,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -80,6 +81,59 @@ def bvi_dir(tmp_path: Path) -> Path:
     _write_fake_yuv(d / "ClipD_480x272_30fps_8bit_420.yuv", 480, 272, depth=8)
 
     return d
+
+
+def test_process_clip_yuv_cache_uses_strict_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = _load_module()
+    cache_dir = tmp_path / "cache"
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    source = tmp_path / "source.yuv"
+    source.write_bytes(b"fake")
+    monkeypatch.setattr(mod, "_encode_dis_10bit_from_yuv", lambda *_args, **_kwargs: None)
+
+    def fake_run_vmaf(*args: Any, **_kwargs: Any) -> None:
+        args[5].write_text(
+            json.dumps(
+                {
+                    "frames": [
+                        {
+                            "frameNum": 0,
+                            "metrics": {
+                                "vmaf": float("nan"),
+                                "adm2": float("inf"),
+                                "motion2": float("-inf"),
+                            },
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(mod, "_run_vmaf_full", fake_run_vmaf)
+    mod._process_clip_yuv(
+        "clip-a",
+        source,
+        16,
+        16,
+        24,
+        10,
+        tmp_path / "vmaf",
+        "version=vmaf_v0.6.1",
+        35,
+        cache_dir,
+        scratch,
+        "h264",
+    )
+
+    raw = (cache_dir / "clip-a.json").read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    metrics = json.loads(raw)["frames"][0]["metrics"]
+    assert metrics == {"adm2": None, "motion2": None, "vmaf": None}
 
 
 # ---------------------------------------------------------------------------

@@ -10,10 +10,7 @@ Targeted coverage gaps (against installed server.py / http_transport.py):
 server.py
 - ``_probe_backends`` — timeout / OSError fallback (cpu-only assumption).
 - ``_probe_backends`` — returns cached result on repeated call.
-- ``_infer_backend_from_payload`` — vulkan branch (nkeys >= 30).
-- ``_infer_backend_from_payload`` — gpu branch (nkeys <= 12).
-- ``_infer_backend_from_payload`` — cpu branch (12 < nkeys < 30).
-- ``_infer_backend_from_payload`` — empty frames fallback.
+- ``_infer_backend_from_payload`` — valid CLI receipts and fail-closed fallback.
 - ``_eval_model_on_split`` — features parquet missing 'mos' column.
 - ``_eval_model_on_split`` — missing feature columns error.
 - ``_eval_model_on_split`` — too-few-samples (< 2) error.
@@ -218,50 +215,32 @@ def test_probe_backends_returns_cached_on_second_call(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# _infer_backend_from_payload — all branches
+# _infer_backend_from_payload — explicit CLI receipt or fail-closed fallback
 # ---------------------------------------------------------------------------
 
 
-def test_infer_backend_from_payload_empty_frames():
-    """An empty frames list returns 'cpu'."""
-    assert srv._infer_backend_from_payload({"frames": []}) == "cpu"
-    assert srv._infer_backend_from_payload({}) == "cpu"
+@pytest.mark.parametrize("backend", ("cpu", "cuda", "sycl", "hip", "metal"))
+def test_infer_backend_from_payload_accepts_cli_receipt(backend: str) -> None:
+    assert srv._infer_backend_from_payload({"backend_used": backend}) == backend
 
 
-def test_infer_backend_from_payload_no_metrics():
-    """A frame with an empty metrics dict (0 keys <= 12) returns 'gpu'."""
-    payload = {"frames": [{"frameNum": 0, "metrics": {}}]}
-    result = srv._infer_backend_from_payload(payload)
-    assert result == "gpu"
-
-
-def test_infer_backend_from_payload_gpu_branch():
-    """10 metric keys (<=12) returns 'gpu'."""
-    metrics = {f"metric_{i}": 1.0 for i in range(10)}
-    payload = {"frames": [{"frameNum": 0, "metrics": metrics}]}
-    assert srv._infer_backend_from_payload(payload) == "gpu"
-
-
-def test_infer_backend_from_payload_cpu_branch():
-    """15 metric keys (13 <= nkeys < 30) returns 'cpu'."""
-    metrics = {f"metric_{i}": 1.0 for i in range(15)}
-    payload = {"frames": [{"frameNum": 0, "metrics": metrics}]}
-    assert srv._infer_backend_from_payload(payload) == "cpu"
-
-
-def test_infer_backend_from_payload_many_keys_returns_cpu():
-    """30+ metric keys defaults to 'cpu' — the Vulkan branch was removed with
-    ADR-0726; any key count above the GPU threshold now falls through to cpu."""
-    metrics = {f"metric_{i}": 1.0 for i in range(30)}
-    payload = {"frames": [{"frameNum": 0, "metrics": metrics}]}
-    assert srv._infer_backend_from_payload(payload) == "cpu"
-
-
-def test_infer_backend_from_payload_exactly_30_keys_returns_cpu():
-    """Exactly 30 metric keys returns 'cpu' (post-ADR-0726; Vulkan branch gone)."""
-    metrics = {f"m_{i}": 0.0 for i in range(30)}
-    payload = {"frames": [{"frameNum": 0, "metrics": metrics}]}
-    assert srv._infer_backend_from_payload(payload) == "cpu"
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {},
+        {"frames": []},
+        {"backend_used": "auto"},
+        {"backend_used": "gpu"},
+        {"backend_used": 1},
+        None,
+        [],
+        "score",
+    ),
+)
+def test_infer_backend_from_payload_without_valid_receipt_is_unknown(
+    payload: Any,
+) -> None:
+    assert srv._infer_backend_from_payload(payload) == "unknown"
 
 
 # ---------------------------------------------------------------------------

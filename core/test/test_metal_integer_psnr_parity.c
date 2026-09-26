@@ -245,9 +245,70 @@ static char *test_integer_psnr_cpu_metal_parity(void)
     return NULL;
 }
 
+/* Register integer_psnr_metal with enable_chroma=false. `vmaf` is an open
+ * context and the feature name is a registered literal, so none of the
+ * argument guards in vmaf_use_feature() can fire: it owns `opts` on every
+ * path it can take here, and the caller must not free it afterwards. */
+static int use_psnr_metal_without_chroma(VmafContext *vmaf)
+{
+    VmafFeatureDictionary *opts = NULL;
+    int err = vmaf_feature_dictionary_set(&opts, "enable_chroma", "false");
+    if (err) {
+        (void)vmaf_feature_dictionary_free(&opts);
+        return err;
+    }
+    return vmaf_use_feature(vmaf, "integer_psnr_metal", opts);
+}
+
+static char *test_integer_psnr_metal_enable_chroma_false(void)
+{
+    VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
+    VmafMetalState *mstate = NULL;
+    int err = vmaf_metal_state_init(&mstate, mcfg);
+    if (err != 0 || mstate == NULL) {
+        (void)fprintf(stderr, "[skip: no Metal device] ");
+        return NULL;
+    }
+
+    VmafContext *vmaf = NULL;
+    char *open_err = open_metal_context(&vmaf, mstate);
+    if (open_err) {
+        vmaf_metal_state_free(&mstate);
+        return open_err;
+    }
+
+    err = use_psnr_metal_without_chroma(vmaf);
+    mu_assert("Metal: vmaf_use_feature(integer_psnr_metal, enable_chroma=false) failed", !err);
+
+    char *feed_err = feed_fixture_pair(vmaf);
+    if (feed_err) {
+        (void)vmaf_close(vmaf);
+        vmaf_metal_state_free(&mstate);
+        return feed_err;
+    }
+
+    double psnr_y = NAN;
+    err = vmaf_feature_score_at_index(vmaf, "psnr_y", &psnr_y, 0u);
+    mu_assert("Metal: psnr_y read failed", !err);
+    mu_assert("Metal: psnr_y must be finite", !isnan(psnr_y));
+
+    double dummy = NAN;
+    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", &dummy, 0u);
+    mu_assert("Metal: psnr_cb must not be emitted when enable_chroma=false", err != 0);
+
+    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", &dummy, 0u);
+    mu_assert("Metal: psnr_cr must not be emitted when enable_chroma=false", err != 0);
+
+    err = vmaf_close(vmaf);
+    mu_assert("Metal: vmaf_close failed", !err);
+    vmaf_metal_state_free(&mstate);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_integer_psnr_cpu_metal_parity);
+    mu_run_test(test_integer_psnr_metal_enable_chroma_false);
     return NULL;
 }
 

@@ -79,6 +79,8 @@ if TYPE_CHECKING:
     from .hdr import HdrInfo
     from .predictor import ShotFeatures
 
+from .jsonio import dumps_strict
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -295,7 +297,9 @@ def _read_calibrated_recipes(path: Path) -> dict[str, object] | None:
     return raw_recipes
 
 
-def _merge_recipe_overrides(raw_recipes: dict[str, object]) -> dict[str, dict[str, object]]:
+def _merge_recipe_overrides(
+    raw_recipes: dict[str, object],
+) -> dict[str, dict[str, object]]:
     """Overlay calibrated values onto the placeholders.
 
     Unknown classes and non-dict entries are skipped. Within a class,
@@ -1620,7 +1624,7 @@ def emit_plan_json(plan: AutoPlan) -> str:
     are sorted so the output is reproducible across runs.
     """
     payload = {"cells": plan.cells, "metadata": plan.metadata}
-    return json.dumps(payload, indent=2, sort_keys=True)
+    return dumps_strict(payload)
 
 
 __all__ = [

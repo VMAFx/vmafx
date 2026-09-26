@@ -106,43 +106,58 @@ drift this file exists to prevent.
 
 ### CUDA: a coordinated pin, not an image tag
 
-CUDA is the one knob whose value is repeated outside the Dockerfiles. One
-release is named in sixteen places across seven files, in seven spellings:
+CUDA is the one knob whose value is coordinated across configuration and Dockerfiles.
+Following ADR-1300 and ADR-1306, the fork dropped `Jimver/cuda-toolkit` and all
+`nvidia/cuda` base images. CUDA builders and runtimes build `FROM` digest-pinned
+Ubuntu 26.04 (`CUDA_BUILDER` and `CUDA_RUNTIME` in `build-config.env`) and install
+the version-locked toolkit via `scripts/ci/install-cuda-toolkit.sh`
+(`--mode=builder`, `--mode=runtime`, or `--mode=full`). The two CUDA bases must
+equal `DEV_BASE` exactly, including its digest; the same owner also writes the
+narrow `docker/dev/ubuntu-26.04-cuda.Dockerfile` mirror. This decouples CUDA
+release bumps from upstream NVIDIA OCI image publication latency.
+
+One release is named in seven places across two files:
 
 | Spelling | Where | Owner |
 | --- | --- | --- |
-| `CUDA_VERSION="13.3.1"` | `build-config.env` | Renovate |
-| `nvidia/cuda:13.3.1-…@sha256:…` | `build-config.env` + four Dockerfile ARG mirrors | Renovate (base-image manager) |
-| `cuda: '13.3.1'` | the `Jimver/cuda-toolkit` input on both Linux legs | Renovate |
-| `$cudaVersion = '13.3.1'` | both Windows installer legs | Renovate |
-| `$cudaMajorMinor = '13.3'` | the same two legs | `make cuda-pin-sync` |
-| `cuda-toolkit-13-3` | `CUDA_APT_PACKAGE` + `dev/Containerfile` | `make cuda-pin-sync` |
-| `"VMAFX production CUDA 13.3.1 runtime"` | the OCI description label on the CUDA runtime image | `make cuda-pin-sync` |
+| `CUDA_VERSION="13.4.2"` | `build-config.env` | Renovate |
+| `cuda-toolkit-13-4` | `CUDA_APT_PACKAGE` in `build-config.env` | `make cuda-pin-sync` |
+| `CUDA_APT_LOCK_RELEASE="13.4.2"` | `build-config.env` | manual live-metadata review |
+| `CUDA_APT_TOOLKIT_VERSION="13.4.2-1"` | `build-config.env` | manual live-metadata review |
+| `CUDA_APT_NVCC_VERSION="13.4.92-1"` | `build-config.env` | manual live-metadata review |
+| `CUDA_APT_CUDART_VERSION="13.4.92-1"` | `build-config.env` | manual live-metadata review |
+| `"VMAFX production CUDA 13.4.2 runtime"` | the OCI description label on the CUDA runtime image | `make cuda-pin-sync` |
 
-`scripts/ci/check-cuda-pin-lockstep.py` checks all sixteen against
-`CUDA_VERSION` on every commit, and fails on a CUDA release literal in any
-spelling it does not recognise, so a seventeenth copy cannot appear quietly.
+`scripts/ci/check-cuda-pin-lockstep.py` inventories all seven on every commit,
+checks the release-valued sites against `CUDA_VERSION`, requires the component
+versions to remain in its major/minor series, and fails on a CUDA release literal
+in any spelling it does not recognise (including any reintroduced `nvidia/cuda`
+image tag), so an untracked copy cannot appear quietly. The component build numbers are not
+derivable from the marketing release: NVIDIA shipped different nvcc and cudart
+builds within 13.4. The installer therefore uses exact `package=version` apt
+operands and verifies every installed version with `dpkg-query`.
 
 To move the release:
 
 ```bash
-# 1. edit CUDA_VERSION and the two nvidia/cuda pins (tag AND digest) in build-config.env
-scripts/ci/check-base-image-single-source.sh --write   # or: make base-images-sync
-# 2. edit the Jimver inputs and $cudaVersion in the two workflows
-make cuda-pin-sync                                     # derives the rest
+# 1. edit CUDA_VERSION in build-config.env
+make cuda-pin-sync                                     # derives CUDA_APT_PACKAGE and runtime label
+# 2. verify NVIDIA's redist manifest and ubuntu2604 Packages index, then update
+#    CUDA_APT_LOCK_RELEASE and the three exact *_VERSION values
+# 3. synchronize the Dockerfile mirrors
+make base-images-sync                                  # ensures Dockerfiles match build-config.env
 ```
 
-Renovate proposes the first two steps by itself: every site it can rewrite is
-grouped as `CUDA release (coordinated pin)`, so a release arrives as one branch
-rather than as the tags-only pull request that could never go green. The last
-step is still a command, because the three derived spellings want less than the
-whole version and Renovate can only write the whole version. See
-[ADR-1285](../adr/1285-cuda-coordinated-pin-lockstep.md).
-
-Raising CUDA can also require raising `Jimver/cuda-toolkit`: the action ships
-its own installer index, and v0.2.36 tops out at 13.3.1. The action bump is not
-in the CUDA group — it is an action upgrade, not a release move — so raise it
-first when the group's target is newer than the action serves.
+Renovate discovers new CUDA releases from NVIDIA's official redist HTML index through
+`custom.nvidia-cuda-redist`, not from the retired `nvidia/cuda` image tags, and proposes
+bumping `CUDA_VERSION` directly. Only `redistrib_X.Y.Z.json` links are accepted. The
+index has no release timestamps, so the datasource-specific rule is timestamp-optional
+but stays manual-review and non-automerge. `make cuda-pin-sync` derives the mechanical
+spellings. Changing only `CUDA_VERSION` intentionally leaves `CUDA_APT_LOCK_RELEASE` stale,
+so the bot PR stays red until the exact metadata review is complete. See
+[ADR-1285](../adr/1285-cuda-coordinated-pin-lockstep.md),
+[ADR-1300](../adr/1300-cuda-install-from-nvidia-apt.md), and
+[ADR-1306](../adr/1306-drop-nvidia-cuda-base.md).
 
 ### Formatter versions
 

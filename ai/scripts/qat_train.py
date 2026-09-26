@@ -47,26 +47,26 @@ test exercises.
 
 from __future__ import annotations
 
-import argparse
 import sys
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-# Allow this script to run both as ``python ai/scripts/qat_train.py``
-# (where the ai/ package needs to be importable) and as
-# ``python -m ai.scripts.qat_train``.
-SCRIPT_PATH = Path(__file__).resolve()
-_REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-if str(_REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+_REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+def _parse_args(argv: list[str] | None = None) -> Namespace:
+    parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "--config",
         type=Path,
@@ -125,7 +125,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
-def _resolve_qat_config(cfg_doc: dict[str, Any], args: argparse.Namespace):
+def _resolve_qat_config(cfg_doc: dict[str, Any], args: Namespace):
     """Build a QatConfig from YAML + CLI overrides."""
     from ai.train.qat import QatConfig
 
@@ -171,7 +171,7 @@ def _build_model_factory(cfg_doc: dict[str, Any]):
     model_kind = cfg_doc.get("model")
     if model_kind not in MODEL_REGISTRY:
         raise SystemExit(
-            f"unknown model kind in config: {model_kind!r}; " f"valid: {sorted(MODEL_REGISTRY)}"
+            f"unknown model kind in config: {model_kind!r}; valid: {sorted(MODEL_REGISTRY)}"
         )
     model_cls = MODEL_REGISTRY[model_kind]
     model_args = cfg_doc.get("model_args", {}) or {}
@@ -332,8 +332,43 @@ def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
     return factory
 
 
+def _write_report(
+    args: Namespace,
+    raw_argv: list[str],
+    cfg_path: Path,
+    cfg_doc: dict[str, Any],
+    qat_cfg,  # type: ignore[no-untyped-def]
+    result,  # type: ignore[no-untyped-def]
+) -> None:
+    write_run_manifest(
+        args.report_out,
+        schema="qat-train-report-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=_REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"config": cfg_path},
+        outputs={
+            "fp32_model": result.fp32_onnx,
+            "int8_model": result.int8_onnx,
+            "report": args.report_out,
+        },
+        sections={
+            "mode": "qat",
+            "model": cfg_doc.get("model"),
+            "smoke": bool(qat_cfg.smoke),
+            "epochs_fp32": int(result.epochs_fp32),
+            "epochs_qat": int(result.epochs_qat),
+            "n_calibration": int(qat_cfg.n_calibration),
+            "n_params": int(result.n_params),
+            "fp32_onnx": str(result.fp32_onnx),
+            "int8_onnx": str(result.int8_onnx),
+        },
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = _parse_args(raw_argv)
 
     try:
@@ -380,31 +415,7 @@ def main(argv: list[str] | None = None) -> int:
         f"int8_onnx={result.int8_onnx} params={result.n_params}"
     )
     if args.report_out is not None:
-        write_run_manifest(
-            args.report_out,
-            schema="qat-train-report-v1",
-            entrypoint=SCRIPT_PATH,
-            repo_root=_REPO_ROOT,
-            argv=raw_argv,
-            args=args,
-            inputs={"config": cfg_path},
-            outputs={
-                "fp32_model": result.fp32_onnx,
-                "int8_model": result.int8_onnx,
-                "report": args.report_out,
-            },
-            sections={
-                "mode": "qat",
-                "model": cfg_doc.get("model"),
-                "smoke": bool(qat_cfg.smoke),
-                "epochs_fp32": int(result.epochs_fp32),
-                "epochs_qat": int(result.epochs_qat),
-                "n_calibration": int(qat_cfg.n_calibration),
-                "n_params": int(result.n_params),
-                "fp32_onnx": str(result.fp32_onnx),
-                "int8_onnx": str(result.int8_onnx),
-            },
-        )
+        _write_report(args, raw_argv, cfg_path, cfg_doc, qat_cfg, result)
     return 0
 
 

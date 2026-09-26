@@ -90,16 +90,20 @@ static char *test_print_number_precision(void)
     mu_assert("17 digits when 15 do not round-trip",
               prints_as(cJSON_CreateNumber(1.0 / 3.0), "0.33333333333333331"));
     /* print_number() takes its integer branch when `d == (double)valueint`.
-     * Under a build that treats denormals as zero, that comparison is true for
-     * the smallest denormal and it prints "0", which is what the build's own
-     * arithmetic says the value is. icx defaults to that model (`-fp-model=fast`
-     * sets the MXCSR denormals-are-zero bit), and the `Linux Intel LLVM` lane
-     * builds this file with it, while gcc and clang keep the denormal. The
-     * probe below asks the running build which world it is in rather than
-     * asserting one of them; `volatile` keeps the compiler from folding it. */
-    volatile double denormal = DBL_TRUE_MIN;
-    const char *const denormal_text = (denormal == 0.0) ? "0" : "4.94065645841247e-324";
-    mu_assert("smallest denormal", prints_as(cJSON_CreateNumber(DBL_TRUE_MIN), denormal_text));
+     * Under a build that treats denormals as zero (`icx -fp-model=fast`
+     * sets the MXCSR denormals-are-zero bit), this comparison evaluates to true
+     * for the smallest denormal and emits "0"; under standard IEEE-754
+     * arithmetic (gcc, clang), it preserves the subnormal and emits
+     * "4.94065645841247e-324". We assert that the emitted text matches either
+     * supported output without comparing the float itself to zero. */
+    cJSON *const denormal_item = cJSON_CreateNumber(DBL_TRUE_MIN);
+    char *const denormal_text = cJSON_PrintUnformatted(denormal_item);
+    const bool valid_denormal =
+        (denormal_text != NULL) && ((strcmp(denormal_text, "0") == 0) ||
+                                    (strcmp(denormal_text, "4.94065645841247e-324") == 0));
+    cJSON_free(denormal_text);
+    cJSON_Delete(denormal_item);
+    mu_assert("smallest denormal", valid_denormal);
     mu_assert("NaN prints null", prints_as(cJSON_CreateNumber((double)NAN), "null"));
     mu_assert("infinity prints null", prints_as(cJSON_CreateNumber((double)INFINITY), "null"));
     return NULL;

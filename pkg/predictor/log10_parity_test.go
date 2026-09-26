@@ -26,7 +26,7 @@ func TestAnalyticalCurveUsesPythonLog10(t *testing.T) {
 	// this test is vacuous and should be revisited rather than silently passing.
 	rng := rand.New(rand.NewSource(20260830))
 	divergent := 0
-	for i := 0; i < 20000; i++ {
+	for range 20000 {
 		b := 1.0 + rng.Float64()*49999.0
 		if math.Log10(b) != pymath.Log10(b) {
 			divergent++
@@ -38,7 +38,7 @@ func TestAnalyticalCurveUsesPythonLog10(t *testing.T) {
 
 	// The curve must track pymath on inputs where the two disagree.
 	p := New()
-	for i := 0; i < 5000; i++ {
+	for range 5000 {
 		b := 1.0 + rng.Float64()*49999.0
 		if math.Log10(b) == pymath.Log10(b) {
 			continue

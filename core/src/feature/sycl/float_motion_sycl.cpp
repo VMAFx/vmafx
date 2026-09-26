@@ -355,6 +355,8 @@ static int allocate_motion_buffers(FloatMotionStateSycl *s)
 namespace
 {
 
+static int close_fex_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -388,12 +390,14 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->sycl_state = fex->sycl_state;
     const int alloc_err = allocate_motion_buffers(s);
     if (alloc_err) {
+        (void)close_fex_sycl(fex);
         return alloc_err;
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
     return 0;

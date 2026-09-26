@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,8 @@ def normalise_manifest_value(value: Any) -> JsonValue:
     """Convert common Python CLI values to deterministic JSON values."""
     if isinstance(value, Path):
         return str(value)
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
     if isinstance(value, Mapping):
         return {
             str(key): normalise_manifest_value(item)
@@ -173,10 +176,16 @@ def write_run_manifest(
     )
 
 
-def write_manifest_json(path: Path, payload: Mapping[str, Any]) -> None:
+def dumps_manifest_json(payload: Any) -> str:
+    """Serialize deterministic strict JSON with a trailing newline."""
+    normalised = normalise_manifest_value(payload)
+    return json.dumps(normalised, indent=2, sort_keys=True, allow_nan=False) + "\n"
+
+
+def write_manifest_json(path: Path, payload: Any) -> None:
     """Write a deterministic JSON manifest atomically with a trailing newline.
 
     Uses :func:`aiutils.file_utils.write_text_atomic` so a crash during
     the write never leaves a partially-truncated manifest on disk.
     """
-    write_text_atomic(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    write_text_atomic(path, dumps_manifest_json(payload))

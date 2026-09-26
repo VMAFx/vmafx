@@ -1,17 +1,42 @@
 {
   "format_on_save": "on",
-  "buffer_font_size": 14,
   "tab_size": 4,
   "hard_tabs": false,
-  "preferred_line_length": 120,
+  "line_ending": "enforce_lf",
+  "ensure_final_newline_on_save": true,
+  "remove_trailing_whitespace_on_save": true,
+  "preferred_line_length": 100,
+  "show_wrap_guides": true,
+  "soft_wrap": "bounded",
+  "file_scan_exclusions": [
+    "...",
+    ".corpus",
+    ".venv",
+    "build",
+    "build-*",
+    "node_modules",
+    "subprojects",
+    "**/*.bin",
+    "**/*.onnx",
+    "**/*.onnx.data",
+    "**/*.parquet",
+    "**/*.pkl",
+    "**/*.yuv"
+  ],
+  "file_types": {
+    "C++": ["*.cu", "*.cuh", "*.hip", "*.metal", "*.mm"],
+    "Meson": ["meson.build", "meson_options.txt"]
+  },
   "languages": {
     "C": {
       "tab_size": 4,
-      "preferred_line_length": 100
+      "preferred_line_length": 100,
+      "formatter": "language_server"
     },
     "C++": {
       "tab_size": 4,
-      "preferred_line_length": 100
+      "preferred_line_length": 100,
+      "formatter": "language_server"
     },
     "Python": {
       "tab_size": 4
@@ -19,13 +44,61 @@
     "Go": {
       "hard_tabs": true,
       "tab_size": 4
+    },
+    "Shell Script": {
+      "tab_size": 2
+    },
+    "TOML": {
+      "tab_size": 2
+    },
+    "YAML": {
+      "tab_size": 2
+    },
+    "JSON": {
+      "tab_size": 2
+    },
+    "Markdown": {
+      "tab_size": 2,
+      "soft_wrap": "bounded"
     }
   },
   "lsp": {
     "clangd": {
       "binary": {
-        "path_lookup": true
+        "arguments": [
+          "--compile-commands-dir=build",
+          "--background-index",
+          "--clang-tidy",
+          "--header-insertion=never",
+          "--completion-style=detailed"
+        ]
       }
+    }
+  },
+  "edit_predictions": {
+    "disabled_globs": [
+      "build/**",
+      "build-*/**",
+      "subprojects/**",
+      "python/test/resource/**",
+      "compat/python-vmaf/resource/**",
+      "compat/python-vmaf/matlab/**",
+      ".workingdir/**",
+      ".corpus/**",
+      "model/**",
+      "testdata/**",
+      "**/*.bin",
+      "**/*.onnx",
+      "**/*.onnx.data",
+      "**/*.parquet",
+      "**/*.pkl",
+      "**/*.yuv"
+    ]
+  },
+  "context_servers": {
+    "vmafx-mcp": {
+      "command": "docker",
+      "args": ["exec", "-i", "vmaf-dev-mcp", "vmafx-mcp"]
     }
   }
 }

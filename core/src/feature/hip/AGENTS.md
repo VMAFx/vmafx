@@ -46,6 +46,18 @@ And from `core/src/feature/cuda/`:
 Do not re-add any of these files without first consulting ADR-0546 /
 ADR-1154.
 
+## Registration coverage invariant
+
+Every new HIP `VmafFeatureExtractor` added to
+`core/src/feature/feature_extractor.cpp`'s `feature_extractor_list[]` must have
+a `vmaf_get_feature_extractor_by_name()` assertion in
+`core/test/test_hip_smoke.c` and an entry in that file's `test_table[]` in the
+same PR. Motion-class extractors must additionally pin
+`VMAF_FEATURE_EXTRACTOR_TEMPORAL`. Raw kernel-stub helpers that expose only
+`vmaf_hip_<name>_init` / `_run` / `_destroy` without a
+`VmafFeatureExtractor` descriptor are exempt until promotion. See
+Research-2091.
+
 ## Memory copy direction enum discipline
 
 Every `hipMemcpy*` call's direction enum **must match actual memory
@@ -236,8 +248,15 @@ wide** on every GCN / CDNA / RDNA target we ship to (gfx906 / gfx90a
 gfx11, falls back to CAS loop on older GCN — HIP runtime handles
 arch selection.
 
-Precedents: `integer_vif/vif_statistics.hip` (ADR-0537),
-`integer_adm/adm_csf_den.hip` + `integer_adm/adm_cm.hip` (ADR-0539).
+Precedents: `integer_vif/vif_statistics.hip` (ADR-0537) and
+`integer_adm/adm_csf_den.hip` (ADR-0539).
+
+**Integer ADM contrast masking is the explicit exception** (ADR-1167): its
+rounding shift is non-distributive, so `integer_adm/adm_cm.hip` must first
+reduce the complete row and call `adm_cm_round_row_total()` exactly once.
+Per-thread or per-wave rounding followed by `atomicAdd` changes the raw
+accumulator even when the later float score hides it. The device-free
+`test_adm_cm_row_rounding_contract.py` pins both HIP reduction shapes.
 
 ## ADM `_hsaco` weak-stub slots have been removed (ADR-0539)
 
@@ -297,7 +316,7 @@ not hold. If a rebase or a squash-merge of a stale branch reintroduces
 `AdmBufferHip buf` in any of the four signatures, that is the same
 regression — re-apply the pointer form, do not "fix" this note.
 
-**Host side.** `AdmStateHip` carries `void *buf_dev`, a device-resident
+**Host side.** `AdmStateHip` carries `AdmBufferHip *buf_dev`, a device-resident
 copy of `buf`:
 
 1. `adm_hip_upload_buf()` allocates it with `hipMalloc` and uploads
@@ -307,11 +326,18 @@ copy of `buf`:
 2. Each of the four launch helpers passes `&s->buf_dev` — the address
    of the pointer variable, so the kernel argument is the 8-byte device
    address — as `args[0]`.
-3. `close_fex_hip()` frees it, and so does every init failure path:
-   `adm_hip_free_buf_dev()` is called first there, because `buf_dev` is
-   the last allocation init makes and the release order is the exact
-   reverse of the acquisition order. Do not reintroduce a
-   `fail_buf_dev:` label — the zero-`goto` rule is what removed it.
+3. A failed upload frees its unpublished local allocation. After a successful
+   upload, the feature-name-dictionary failure releases `buf_dev`, luma,
+   buffers, modules and stream in exact reverse acquisition order; normal
+   close frees `buf_dev` between modules and its backing buffers. Do not
+   reintroduce a `fail_buf_dev:` label — the zero-`goto` rule removed it.
+
+`core/test/test_hip_adm_buffer_pointer_contract.py` binds all four device
+signatures to their host `args[0]`, the upload ordering and copy direction,
+the buffer-free reduce control, and both teardown paths. Its mutation red caps
+must fail before changing this contract. `test_hip_adm_init_unwind` separately
+executes the dictionary failure against a stub HIP runtime and protects the
+full BUG-092 release set and `-ENOMEM` result.
 
 One upload serves every launch **only because nothing writes `s->buf`
 after init**: it is written by the allocation and slicing blocks in
@@ -345,10 +371,11 @@ further by-value large-struct kernel parameter without an ADR.
   take `const AdmBufferHip *__restrict__ buf_ptr`. By value, the 328-byte
   struct was copied into every launch's kernel arguments.
 - Host: `AdmStateHip::buf_dev` is a device copy of `s->buf`.
-  `adm_hip_upload_buf()` (`hipMalloc` + `hipMemcpy` HtoD) runs at the end of
+  `adm_hip_upload_buf()` (`hipMalloc` + `hipMemcpy` HtoD) runs near the end of
   `adm_hip_init_device()`, after `adm_hip_slice_bands()` and
-  `adm_hip_slice_results()`. `adm_hip_free_buf_dev()` frees it in
-  `close_fex_hip()` and on both init failure paths.
+  `adm_hip_slice_results()`. A failed copy frees its unpublished local
+  allocation; after publication, `adm_hip_free_buf_dev()` frees it on the later
+  dictionary failure and in `close_fex_hip()`.
 - Launch argument = `(void *)&s->buf_dev`, the address of the variable that
   holds the device pointer (ADR-0537 rule above).
 - Precondition: nothing writes `s->buf` between init and close, and no launch
@@ -657,9 +684,11 @@ Invariants:
   and `args[]` arrays for **both** `func_csf_cm` and `func_aim_cm`
   change together.
 
-This twin does not declare `adm_bypass_cm`, rejects it; deliberate,
-adding it tracked in `docs/state.md`. Guarded by
-`test_hip_float_adm_parity.c::test_float_adm_p_norm_reaches_kernel`.
+`adm_bypass_cm` (`bcm`) declared and passed via `FadmScaleGeom.bypass_cm`
+and kernel `args[]` into `float_adm_csf_cm` and `float_adm_aim_cm`,
+bypassing 3x3 contrast-masking threshold when non-zero (CPU/CUDA/Metal
+parity, ADR-1220). Guarded by
+`test_hip_float_adm_parity.c::test_float_adm_bypass_cm_reaches_kernel`.
 
 ## MS-SSIM clip_db is a dB ceiling (ADR-1221)
 
@@ -785,7 +814,7 @@ Rebase-sensitive invariants:
   scores stay bit-identical; `integer_adm_hip.c`'s score writers
   (`adm_hip_scale_scores()`, `adm_hip_append_scores()`) carry the same
   constraint under #1507's names.
-  the HIP parity suite (`meson test -C <build> --suite hip`) before landing.
+  the HIP parity suite (`python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C <build> --suite hip`) before landing.
 - **The twins stay recognisable.** These files are deliberate twins of
   `../cuda/*.c`. The unwind helpers mirror the CUDA labels one-for-one and keep
   the label names in the helper names, so a future CUDA-side port can be read
@@ -846,3 +875,17 @@ Rebase-sensitive invariants:
   identical; never narrow back to int32 for speed.
 - Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
   (parity only; device wrap hides the UB itself).
+
+## float_motion force-zero ownership and flush idempotency (BUG048 A5)
+
+- `init_fex_hip()` releases the device lifecycle before returning from the
+  `motion_force_zero` path, but the cloned extractor still owns its
+  `feature_name_dict`. Keep `close_fex_hip` (or an equivalent dictionary-owning
+  callback) installed; restoring `fex->close = NULL` leaks the dictionary.
+- Before appending the tail `VMAF_feature_motion2_score`, `flush_fex_hip()`
+  resolves the actual score name through `feature_name_dict` and probes that
+  name at `s->index`. A literal-name probe misses option-derived names such as
+  `motion_fps_weight=1.5` and makes a repeated flush fail.
+- `test_hip_float_motion_parity` exercises both invariants on a real HIP device.
+  Preserve its non-default feature parameter when rebasing this fork-local
+  extractor. See [Research-2115](../../../../docs/research/2115-hip-float-motion-lifecycle-flush.md).

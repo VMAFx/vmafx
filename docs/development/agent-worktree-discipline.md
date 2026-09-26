@@ -20,8 +20,8 @@ requires an explicit handoff before promotion, rebase, or merge.
 ## The drift pattern
 
 "Drift" is when an agent's process ends up running with `cwd` inside
-the main checkout (`/home/<user>/dev/vmaf/`) instead of its assigned
-worktree (`/home/<user>/dev/vmaf/.claude/worktrees/agent-<id>/`).
+the main checkout (`<repo-root>/`) instead of its assigned worktree
+(`<repo-root>/.claude/worktrees/agent-<id>/`).
 The agent then `git commit`s into the main checkout's HEAD, which is
 usually `master` or whatever branch the human user has checked out.
 Common consequences:
@@ -74,6 +74,37 @@ Agent-side rules of thumb:
   file there for inspection, use absolute paths and `Read`/`grep`
   rather than `cd`.
 
+### Repository-local Codex hooks
+
+Codex reads the tracked `.codex/hooks.json` file and executes the scripts under
+`.codex/hooks/`. Every command resolves the active checkout at execution time:
+
+```text
+"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR \
+  -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+  git rev-parse --show-toplevel)/.codex/hooks/<script>.sh"
+```
+
+Do not replace that form with a user-home path, a path copied from another
+checkout, or a launch-directory-relative `.codex/hooks/...` command. Agents may
+start below the repository root and linked worktrees have different absolute
+paths. Clearing Git's repository-local variables also keeps resolution correct
+when the command inherits another Git hook's environment. Each target script
+stays tracked with mode `100755`.
+
+Run the portable-path contract after changing either the configuration or a
+hook target:
+
+```bash
+python3 -B scripts/ci/tests/test_codex_hook_config.py
+```
+
+The test validates the exact event/matcher matrix, rejects duplicate or extra
+entries, checks executable Git modes, and runs the safe pre-tool hook from a
+nested repository directory with a deliberately misleading `GIT_WORK_TREE`.
+It deliberately does not execute the session-start
+hook, which may fetch the configured upstream remote.
+
 ## Layer 2 — host-side hard guard (ADR-0332)
 
 The script `scripts/ci/check-agent-worktree-drift.sh` runs as a
@@ -98,8 +129,8 @@ ERROR: agent-worktree-drift guard (ADR-0332) refused this commit.
 You are committing to the MAIN checkout while one or more isolated
 agent worktrees are active:
 
-  /home/user/dev/vmaf/.claude/worktrees/agent-deadbeef
-  /home/user/dev/vmaf/.claude/worktrees/agent-cafef00d
+  /home/user/dev/vmafx/vmafx/.claude/worktrees/agent-deadbeef
+  /home/user/dev/vmafx/vmafx/.claude/worktrees/agent-cafef00d
   ... (3 more)
 
 This is the drift pattern documented in

@@ -372,3 +372,47 @@ def test_duplicate_video_name_in_scores_aborts(monkeypatch, tmp_path: Path, caps
     assert "duplicate video_name" in err
     assert "clip-a.mp4" in err
     assert not out.exists()
+
+
+def test_geometry_from_sidecar_infers_10bit_pix_fmt(tmp_path: Path) -> None:
+    """chug_bit_depth=10 in sidecar must yield yuv420p10le, not yuv420p (BUG-048 Sec A4)."""
+    meta_jsonl = tmp_path / "chug.jsonl"
+    rows = [
+        {
+            "src": "c10.mp4",
+            "chug_width_manifest": 1920,
+            "chug_height_manifest": 1080,
+            "chug_framerate_manifest": "25/1",
+            "chug_bit_depth": 10,
+        },
+        {
+            "src": "c8.mp4",
+            "chug_width_manifest": 1280,
+            "chug_height_manifest": 720,
+            "chug_framerate_manifest": "30/1",
+            "chug_bit_depth": 8,
+        },
+        {
+            "src": "cnd.mp4",
+            "chug_width_manifest": 640,
+            "chug_height_manifest": 360,
+            "chug_framerate_manifest": "24/1",
+        },
+    ]
+    meta_jsonl.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    metadata = K150K._load_jsonl_metadata(meta_jsonl, split_seed="stable")
+    assert "chug_bit_depth" in metadata["c10.mp4"], "chug_bit_depth must be in sidecar keep-list"
+    assert metadata["c10.mp4"]["chug_bit_depth"] == 10
+
+    geom_10 = K150K._geometry_from_sidecar(metadata["c10.mp4"])
+    assert geom_10 is not None
+    assert geom_10[2] == "yuv420p10le", f"10-bit clip must decode as yuv420p10le; got {geom_10[2]}"
+
+    geom_8 = K150K._geometry_from_sidecar(metadata["c8.mp4"])
+    assert geom_8 is not None
+    assert geom_8[2] == "yuv420p", f"8-bit clip must decode as yuv420p; got {geom_8[2]}"
+
+    geom_nd = K150K._geometry_from_sidecar(metadata["cnd.mp4"])
+    assert geom_nd is not None
+    assert geom_nd[2] == "yuv420p", "Clip without bit depth must default to yuv420p"

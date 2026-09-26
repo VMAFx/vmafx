@@ -16,7 +16,7 @@ Row format reference. The current checklist schema puts a stable ID in a
 backtick span immediately after the checkbox::
 
     2. [ ] `T-RC1-MASTER-GREEN` **Master green** (#1236)
-    7. [ ] `T-RC1-BENCH-TUNE` **[BLOCKED]** **Bench and tune**
+    7. [ ] `T-RC2-BENCH-TUNE` **[BLOCKED]** **Bench and tune**
     1. [x] `T-RC1-RELEASE-PIPELINE` **Release pipeline correct**
 
 Checked items are ``DONE``. Unchecked items are ``OPEN`` unless the title

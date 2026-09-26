@@ -45,6 +45,37 @@ def test_correlation_metrics_empty_returns_nan() -> None:
     assert np.isnan(rmse)
 
 
+def test_eval_report_write_uses_strict_json(tmp_path: Path) -> None:
+    report = eval_mod.EvalReport(
+        n_samples=0,
+        plcc=float("nan"),
+        srocc=float("inf"),
+        krocc=float("-inf"),
+        rmse=float("nan"),
+        latency_ms_p50_per_clip=None,
+        latency_ms_p95_per_clip=None,
+        model="empty",
+        feature_dim=6,
+    )
+
+    out = report.write(tmp_path / "report.json")
+
+    raw = out.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    assert json.loads(raw) == {
+        "feature_dim": 6,
+        "krocc": None,
+        "latency_ms_p50_per_clip": None,
+        "latency_ms_p95_per_clip": None,
+        "model": "empty",
+        "n_samples": 0,
+        "plcc": None,
+        "rmse": None,
+        "srocc": None,
+    }
+
+
 def test_evaluate_with_explicit_predictions_writes_report(tmp_path: Path) -> None:
     rng = np.random.default_rng(0)
     features = rng.standard_normal((16, 6)).astype(np.float32)

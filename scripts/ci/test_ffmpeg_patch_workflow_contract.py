@@ -102,7 +102,7 @@ class FFmpegWorkflowContract(unittest.TestCase):
 
     def test_integration_loads_config_before_consumers(self) -> None:
         integration = INTEGRATION_WORKFLOW.read_text()
-        sycl = _job(integration, "ffmpeg-sycl")
+        sycl = _job(integration, "ffmpeg-sycl-work")
         self.assertLess(sycl.index("uses: actions/checkout@"), sycl.index("load-build-config.sh"))
         self.assertLess(sycl.index("load-build-config.sh"), sycl.index("Install Intel oneAPI"))
         self.assertNotIn(". ./build-config.env", sycl)
@@ -110,8 +110,8 @@ class FFmpegWorkflowContract(unittest.TestCase):
 
     def test_integration_and_smoke_builds_fail_on_diagnostics(self) -> None:
         integration = INTEGRATION_WORKFLOW.read_text(encoding="utf-8")
-        ordinary = _job(integration, "ffmpeg")
-        sycl = _job(integration, "ffmpeg-sycl")
+        ordinary = _job(integration, "ffmpeg-work")
+        sycl = _job(integration, "ffmpeg-sycl-work")
         smoke = SMOKE_SCRIPT.read_text(encoding="utf-8")
         warning_pattern = "grep -Ei '(^|[[:space:]])warning([[:space:]#:])'"
 

@@ -45,7 +45,9 @@
 #include "feature_extractor.h"
 #include "feature/common/fmaf_exact.h"
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_score.h"
 #include "feature/ssimulacra2_simd_common.h"
+#include "log.h"
 #include "mem.h"
 #include "opt.h"
 
@@ -873,8 +875,9 @@ static void edge_diff_map(const float *img1, const float *mu1, const float *img2
             double ed1 = fabs((double)r1[i] - (double)rm1[i]);
             double ed2 = fabs((double)r2[i] - (double)rm2[i]);
             double d1 = (1.0 + ed2) / (1.0 + ed1) - 1.0;
-            double art = d1 > 0.0 ? d1 : 0.0;
-            double det = d1 < 0.0 ? -d1 : 0.0;
+            double art;
+            double det;
+            vmaf_ss2_split_edge_difference(d1, &art, &det);
             s0 += art;
             s1 += quartic(art);
             s2 += det;
@@ -913,12 +916,7 @@ static double pool_score(double avg_ssim[6][6], double avg_ed[6][12], int num_sc
     ssim = ssim * 0.9562382616834844;
     ssim = 2.326765642916932 * ssim - 0.020884521182843837 * ssim * ssim +
            6.248496625763138e-05 * ssim * ssim * ssim;
-    if (ssim > 0.0) {
-        ssim = 100.0 - 10.0 * pow(ssim, 0.6276336467831387);
-    } else {
-        ssim = 100.0;
-    }
-    return ssim;
+    return vmaf_ss2_finalize_score(ssim);
 }
 
 /*
@@ -1069,6 +1067,17 @@ static void convert_picture_to_linear_rgb(const Ssimu2State *s, const VmafPictur
     }
 }
 
+static int append_score(VmafFeatureCollector *feature_collector, unsigned index, double score)
+{
+    if (!vmaf_ss2_score_is_finite(score)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "ssimulacra2: non-finite score at frame %u (score=%g), failing frame\n", index,
+                 score);
+        return -EINVAL;
+    }
+    return vmaf_feature_collector_append(feature_collector, "ssimulacra2", score, index);
+}
+
 static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index,
                    VmafFeatureCollector *feature_collector)
@@ -1131,7 +1140,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     }
 
     const double score = pool_score(avg_ssim, avg_ed, completed);
-    return vmaf_feature_collector_append(feature_collector, "ssimulacra2", score, index);
+    return append_score(feature_collector, index, score);
 }
 
 static int close(VmafFeatureExtractor *fex)

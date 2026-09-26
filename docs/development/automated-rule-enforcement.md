@@ -307,7 +307,7 @@ CI round-trip:
 | --- | --- | --- |
 | `assertion-density` | pre-push | NASA Power-of-10 §5 — every fork-added C function ≥20 lines has ≥1 `assert()`. Backed by `scripts/ci/assertion-density.sh`. |
 | `twin-drift-check` | pre-push | [ADR-1135](../adr/1135-ci-twin-drift-gate.md) — every `.c`/`.cpp` twin side is compiled by some build file (or allowlisted with a reason in `scripts/ci/twin-drift-allowlist.txt`); every source path a `meson.build` / `setup.py` / `*.pyx` names exists. Backed by `scripts/ci/twin-drift-check.sh`; same predicate as the required CI check. |
-| `mypy-local` | pre-push | `mypy` over the `ai/` and `scripts/` Python files the branch changed, failing only on findings absent at the merge base (ADR-1261). Files under `ai/src/` run with `--explicit-package-bases`. Requires `pip install mypy` (system tool, not in `pyproject.toml`). |
+| `mypy-local` | pre-push | `mypy` over the `ai/` and `scripts/` Python files the branch changed, failing only on findings absent at the merge base (ADR-1261). Files under `ai/src/` run with `--explicit-package-bases`. Required `Python Lint` CI uses the same runner and hash-locked checker (ADR-1310); locally, install the lock or otherwise provide the pinned `mypy`. |
 | `semgrep-local` | pre-commit | Project-local rules from `.semgrep.yml` (`--error` exit code on match). Standard rule packs (`p/cert-c-strict`, `p/cwe-top-25`) still run in CI only. |
 | `test-semgrep-vendored-scope` | pre-commit | Planted-defect recall for the hook above. `scripts/ci/tests/test_semgrep_vendored_scope.py` plants banned calls at the vendored paths in a throwaway copy of `.semgrep.yml` + `.semgrepignore` and fails if the explicit-file scan (this hook's form) or the whole-tree scan (the `Semgrep` CI job's form) misses them, or if the real vendored files contain any. Run it directly with `python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py`. |
 | `test-sycl-bench-env` | pre-commit, pre-push | `bash scripts/ci/test-sycl-bench-env.sh` — a hostile `$ONEAPI_PREFIX` must never execute inside `scripts/ci/sycl-bench-env.sh` and must still be sourced as a literal path. Hermetic, no oneAPI needed. |
@@ -341,10 +341,13 @@ OSS** page shows a stale configuration pinned to
 `.github/workflows/security.yml:semgrep` with a "workflow file no
 longer exists" warning. The workflow was renamed `security.yml →
 security-scans.yml` in PR #53 (ADR-0116, 2026-04-21 Title-Case
-sweep). The current workflow uploads SARIFs under
-`.github/workflows/security-scans.yml:semgrep` with categories
-`semgrep-local` + `semgrep-registry`, so security scanning works
-end-to-end — only the orphan tool registration lingers.
+sweep). The current workflow uploads the repository-owned `semgrep-local`
+SARIF under `.github/workflows/security-scans.yml:semgrep`, so the required
+`Semgrep OSS` check remains live. Per
+[ADR-1314](../adr/1314-semgrep-registry-advisory-artifact.md), the moving
+registry-pack result is retained for 14 days as the
+`semgrep-registry-sarif` workflow artifact instead of entering the required
+Code Scanning identity. Only the orphan tool registration lingers.
 
 There is **no public REST endpoint** to delete a code-scanning tool
 configuration (only individual analyses via

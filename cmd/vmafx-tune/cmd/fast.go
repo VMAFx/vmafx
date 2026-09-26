@@ -327,8 +327,7 @@ func buildFastPipeline(
 // Execute consults it so the Python 2 / 3 exit contract survives cobra's
 // blanket "any RunE error is exit 1".
 func fastExitCode(err error) (int, bool) {
-	var target *fastExitError
-	if errors.As(err, &target) {
+	if target, ok := errors.AsType[*fastExitError](err); ok {
 		return target.code, true
 	}
 	return 0, false

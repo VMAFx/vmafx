@@ -386,7 +386,6 @@ func TestScoreExtrasValidationRejectsBadEnums(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := parseScoreExtras(tc.args)
@@ -456,7 +455,6 @@ func TestVmafScoreRejectsInvalidCoreParams(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := handleVmafScore(context.Background(), tc.args)

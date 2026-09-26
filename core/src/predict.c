@@ -19,10 +19,12 @@
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "bootstrap_names.h"
 #include "dict.h"
 #include "feature/alias.h"
 #include "feature/feature_collector.h"
@@ -32,6 +34,7 @@
 #include "model.h"
 #include "percentile.h"
 #include "predict.h"
+#include "predict_internal.h"
 #include "svm.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -87,89 +90,13 @@ static int denormalize(const VmafModel *model, double *prediction)
     return 0;
 }
 
-static int find_linear_function_parameters(VmafPoint p1, VmafPoint p2, double *alpha, double *beta)
+static int predict_validate_finite(double value, unsigned index, const char *stage)
 {
-
-    if (!(p1.x <= p2.x && p1.y <= p2.y))
-        return -EINVAL; // first_point coordinates need to be smaller or equal to second_point coordinates
-
-    if (p2.x - p1.x == 0 || p2.y - p1.y == 0) {
-        if (!(p1.x == p2.x && p1.y == p2.y))
-            return -EINVAL; // first_point and second_point cannot lie on a horizontal or vertical line
-        *alpha = 1.0;       // both points are the same
-        *beta = 0.0;
-    } else if (p1.x == 0) {
-        *beta = p1.y;
-        *alpha = (p2.y - *beta) / p2.x;
-    } else {
-        *alpha = (p2.y - p1.y) / (p2.x - p1.x);
-        *beta = p1.y - (p1.x * (*alpha));
-    }
-
-    return 0;
-}
-
-static int piecewise_segment_apply(double x, VmafPoint *knots, unsigned idx, unsigned n_seg,
-                                   double *y)
-{
-    /* Errno values are positive; libvmaf's convention is to return their
-     * negation so callers can distinguish them from a successful 0.  Returning
-     * positive EINVAL here surfaced as a truthy error to local callers but
-     * inverted the sign on any caller that propagated `err` upward (e.g.
-     * vmaf_predict_score_at_index downstream).  Adversarial audit 2026-05-31,
-     * fix/core-lifecycle-memory-audit. */
-    if (!(knots[idx].x < knots[idx + 1].x && knots[idx].y <= knots[idx + 1].y))
-        return -EINVAL;
-
-    const bool cond0 = knots[idx].x <= x;
-    const bool cond1 = x <= knots[idx + 1].x;
-
-    if (knots[idx].y == knots[idx + 1].y) { // the segment is horizontal
-        if (cond0 && cond1)
-            *y = knots[idx].y;
-        if (idx == 0 && x < knots[idx].x)
-            *y = knots[idx].y;
-        if (idx == n_seg - 1 && x > knots[idx + 1].x)
-            *y = knots[idx].y;
+    if (isfinite(value))
         return 0;
-    }
-
-    double slope = 0.0;
-    double offset = 0.0;
-    /* Unreachable failure for a well-ordered, non-horizontal segment (the
-     * guard above already enforces x strictly increasing and y
-     * non-decreasing), but propagate it rather than silently mapping onto
-     * the zero line. CERT ERR33-C / Power-of-10 rule 7. */
-    const int err = find_linear_function_parameters(knots[idx], knots[idx + 1], &slope, &offset);
-    if (err)
-        return err;
-
-    if (cond0 && cond1)
-        *y = slope * x + offset;
-    if (idx == 0 && x < knots[idx].x)
-        *y = slope * x + offset;
-    if (idx == n_seg - 1 && x > knots[idx + 1].x)
-        *y = slope * x + offset;
-    return 0;
-}
-
-static int piecewise_linear_mapping(double x, VmafPoint *knots, unsigned n_knots, double *y)
-{
-    /* See piecewise_segment_apply: -EINVAL not +EINVAL. */
-    if (n_knots <= 1)
-        return -EINVAL;
-    unsigned n_seg = n_knots - 1;
-
-    *y = 0.0;
-
-    // construct the function
-    for (unsigned idx = 0; idx < n_seg; idx++) {
-        int err = piecewise_segment_apply(x, knots, idx, n_seg, y);
-        if (err)
-            return err;
-    }
-
-    return 0;
+    vmaf_log(VMAF_LOG_LEVEL_WARNING,
+             "predict: non-finite %s at frame %u (value=%g), failing frame\n", stage, index, value);
+    return -EINVAL;
 }
 
 /*  Reproducing the logic in quality_runner.VmafQualityRunner.transform_score().
@@ -183,7 +110,8 @@ static int piecewise_linear_mapping(double x, VmafPoint *knots, unsigned n_knots
     3) rectification, supporting 'out_lte_in' (output is less than or equal
     to input) and 'out_gte_in' (output is greater than or equal to input).
  */
-static int transform(const VmafModel *model, double *y_in, enum VmafModelFlags flags)
+static int transform(const VmafModel *model, double *y_in, enum VmafModelFlags flags,
+                     unsigned index)
 {
     if (!model->score_transform.enabled)
         return 0;
@@ -208,14 +136,21 @@ static int transform(const VmafModel *model, double *y_in, enum VmafModelFlags f
         y_out = y_stage;
     }
 
+    int err = predict_validate_finite(y_out, index, "score transform");
+    if (err)
+        return err;
+
     // piecewise-linear mapping
     y_stage = y_out;
     if (model->score_transform.knots.enabled) {
         /* Propagate error rather than silently overwriting y_in with 0 (the
          * out-param defaults to 0.0 on the early-error path inside
          * piecewise_linear_mapping).  Adversarial audit 2026-05-31. */
-        const int err = piecewise_linear_mapping(y_stage, model->score_transform.knots.list,
-                                                 model->score_transform.knots.n_knots, &y_out);
+        err = piecewise_linear_mapping(y_stage, model->score_transform.knots.list,
+                                       model->score_transform.knots.n_knots, &y_out);
+        if (err)
+            return err;
+        err = predict_validate_finite(y_out, index, "piecewise score");
         if (err)
             return err;
     }
@@ -295,11 +230,13 @@ static int scan_feature(const VmafModel *model, const struct svm_node *node, uns
         if (err)
             return err;
         /* Exact sentinel comparison: caller always passes value_to_be_corrected=0.0
-         * (see vmaf_predict_score_at_index). A normalised feature that is exactly
-         * zero is the only case that needs chroma correction; any other value
-         * exits early. An epsilon band here would incorrectly correct near-zero
-         * but non-zero features and change scores. */
-        if (st->guided_score != st->sentinel) /* sentinel, not computed equality */
+        * (see vmaf_predict_score_at_index). A normalised feature that is exactly
+        * zero is the only case that needs chroma correction; any other value
+        * exits early. An epsilon band here would incorrectly correct near-zero
+         * but non-zero features and change scores. Float equality is tested via
+         * IEEE-754 bit-pattern identity with signed-zero equivalence; NaN is never
+         * equal to any value, including NaN. */
+        if (!float_values_equal(st->guided_score, st->sentinel))
             return 1;
         st->guided_idx = i;
     }
@@ -552,7 +489,11 @@ int vmaf_predict_score_at_index(VmafModel *model, VmafFeatureCollector *feature_
     if (err)
         return err;
 
-    err = transform(model, &prediction, flags);
+    err = predict_validate_finite(prediction, index, "model score");
+    if (err)
+        return err;
+
+    err = transform(model, &prediction, flags, index);
     if (err)
         return err;
 
@@ -633,9 +574,9 @@ static void bootstrap_compute_statistics(const VmafModelCollection *model_collec
 /* Apply the model's score transform, then its clip, to one value. Propagates
  * the first failure (a malformed piecewise-linear knot list) instead of
  * discarding it. CERT ERR33-C / Power-of-10 rule 7. */
-static int transform_and_clip(const VmafModel *model, double *value)
+static int transform_and_clip(const VmafModel *model, double *value, unsigned index)
 {
-    const int err = transform(model, value, 0);
+    const int err = transform(model, value, 0, index);
     if (err)
         return err;
     clip(model, value, 0);
@@ -646,17 +587,18 @@ static int transform_and_clip(const VmafModel *model, double *value)
  * finite-difference probes in the original upstream order; the first
  * failure short-circuits the rest. */
 static int bootstrap_transform_and_clip(const VmafModel *model, VmafModelCollectionScore *score,
-                                        double *score_plus_delta, double *score_minus_delta)
+                                        double *score_plus_delta, double *score_minus_delta,
+                                        unsigned index)
 {
-    int err = transform_and_clip(model, &score->bootstrap.bagging_score);
+    int err = transform_and_clip(model, &score->bootstrap.bagging_score, index);
     if (!err)
-        err = transform_and_clip(model, &score->bootstrap.ci.p95.lo);
+        err = transform_and_clip(model, &score->bootstrap.ci.p95.lo, index);
     if (!err)
-        err = transform_and_clip(model, &score->bootstrap.ci.p95.hi);
+        err = transform_and_clip(model, &score->bootstrap.ci.p95.hi, index);
     if (!err)
-        err = transform_and_clip(model, score_plus_delta);
+        err = transform_and_clip(model, score_plus_delta, index);
     if (!err)
-        err = transform_and_clip(model, score_minus_delta);
+        err = transform_and_clip(model, score_minus_delta, index);
     return err;
 }
 
@@ -664,29 +606,26 @@ static int bootstrap_append_named_scores(const VmafModelCollection *model_collec
                                          VmafFeatureCollector *feature_collector, unsigned index,
                                          const VmafModelCollectionScore *score)
 {
-    const char *suffix_lo = "_ci_p95_lo";
-    const char *suffix_hi = "_ci_p95_hi";
-    const char *suffix_bagging = "_bagging";
-    const char *suffix_stddev = "_stddev";
-    const size_t name_sz = strlen(model_collection->name) + strlen(suffix_lo) + 1;
+    /* ADR-0480: share suffix ownership and buffer sizing with libvmaf.c. */
+    const size_t name_sz = BOOTSTRAP_NAME_BUF_SZ(model_collection->name);
     /* Heap-allocated for MSVC portability (no VLAs). */
     char *name = (char *)calloc(1u, name_sz);
     if (!name)
         return -ENOMEM;
 
     int err = 0;
-    (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix_bagging);
+    (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_BAGGING);
     err |= vmaf_feature_collector_append(feature_collector, name, score->bootstrap.bagging_score,
                                          index);
 
-    (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix_stddev);
+    (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_STDDEV);
     err |= vmaf_feature_collector_append(feature_collector, name, score->bootstrap.stddev, index);
 
-    (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix_lo);
+    (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_LO);
     err |=
         vmaf_feature_collector_append(feature_collector, name, score->bootstrap.ci.p95.lo, index);
 
-    (void)snprintf(name, name_sz, "%s%s", model_collection->name, suffix_hi);
+    (void)snprintf(name, name_sz, "%s%s", model_collection->name, BOOTSTRAP_SUFFIX_CI_HI);
     err |=
         vmaf_feature_collector_append(feature_collector, name, score->bootstrap.ci.p95.hi, index);
 
@@ -721,7 +660,8 @@ static int vmaf_bootstrap_predict_score_at_index(VmafModelCollection *model_coll
                                      &score_minus_delta);
 
         const VmafModel *model = model_collection->model[0];
-        err = bootstrap_transform_and_clip(model, score, &score_plus_delta, &score_minus_delta);
+        err = bootstrap_transform_and_clip(model, score, &score_plus_delta, &score_minus_delta,
+                                           index);
         if (!err) {
             const double delta = 0.01;
             const double slope = (score_plus_delta - score_minus_delta) / (2.0 * delta);

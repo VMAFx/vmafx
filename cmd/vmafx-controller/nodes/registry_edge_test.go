@@ -127,7 +127,7 @@ func TestConcurrentRegisterHeartbeat(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(workers)
 
-	for w := 0; w < workers; w++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
 			id, tok, err := r.Register("worker", nodes.Capability{Backends: []string{"cpu"}, Concurrency: cpuCnt})
@@ -135,7 +135,7 @@ func TestConcurrentRegisterHeartbeat(t *testing.T) {
 				t.Errorf("Register: %v", err)
 				return
 			}
-			for i := 0; i < opsPerW; i++ {
+			for range opsPerW {
 				if ok := r.Heartbeat(id, tok, jobsBurst); !ok {
 					t.Errorf("Heartbeat returned false for %q", id)
 					return

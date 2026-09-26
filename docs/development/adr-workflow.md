@@ -151,7 +151,7 @@ the slug — and either half can go stale on its own:
 | number | a collision sweep renumbered the file; the slug still names the right decision | from the slug, **and** the `[ADR-NNNN]` text |
 
 The second row is not hypothetical, and it is the larger half. `af227b026`
-(PR #310) and `fb14bc332` (PR #752) were ADR collision sweeps that renumbered
+(lusoris/vmaf#310) and `fb14bc332` (lusoris/vmaf#752) were ADR collision sweeps that renumbered
 duplicate-numbered ADRs — the second renamed 50 files, moving
 `0241-vmaf-tiny-v3-mlp-medium.md` to `0389-vmaf-tiny-v3-mlp-medium.md` and 27
 others into the 0388–0415 band. Each sweep moved the file and its index fragment

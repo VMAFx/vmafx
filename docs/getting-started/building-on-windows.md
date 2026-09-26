@@ -89,7 +89,7 @@ meson setup core core\build --buildtype release ^
   -Denable_cuda=false -Denable_sycl=false ^
   -Denable_float=true
 ninja -C core\build install
-meson test -C core\build --suite fast
+python scripts\ci\run_meson_test.py -- -C core\build --suite fast
 ```
 
 `/experimental:c11atomics` is required on every MSVC build: libvmaf uses C11

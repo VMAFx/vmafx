@@ -28,6 +28,20 @@ the CPU `float_vif` on the macOS Apple-Silicon CI lane (`places=4`, ADR-0214).
 The CUDA twin (`vif_cuda`) additionally carries a vestigial `enable_chroma`
 option (see Options table below); it is a documented no-op.
 
+Option aliases are part of the published collector key. Equivalent GPU twin
+options use the CPU spellings (`ks`, `ssclz`, and `egl`) so backend selection
+does not rename a feature ([ADR-1312](../adr/1312-gpu-option-alias-parity.md)).
+This is separate from device capability. The GPU `float_vif` kernels currently
+implement `vif_kernelscale=1.0` only. When a model requests another valid
+value, libvmaf automatically selects the CPU `float_vif` extractor for that
+feature before GPU initialization; unrelated model features remain on their
+selected backends. Explicitly naming a GPU extractor with a non-default kernel
+scale still returns `-EINVAL`, because that form requests the specific
+extractor rather than automatic model dispatch. CUDA `float_vif` does not
+declare `vif_skip_scale0`, so ADR-1183 likewise dispatches that configuration
+to CPU. See
+[ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md).
+
 ## `integer_vif` extractor
 
 The extractor uses an integer fixed-point implementation of the VIF algorithm
@@ -185,9 +199,15 @@ filter radius. This is a memory-safety repair: each ISA retains its existing
 per-pixel arithmetic and final scalar region. No score option or tolerance
 changes are needed.
 
-Developers can run `meson test -C build test_convolution_horizontal` on an x86
-assembly-enabled build. The test checks normal, squared and cross-product
-filters; ASan/UBSan builds also detect invalid reads that leave final scores
-unchanged. Unsupported CPU ISAs are skipped, and disabled AVX-512 is omitted.
+Developers can run this on an x86 assembly-enabled build:
+
+```bash
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build test_convolution_horizontal
+```
+
+The test checks normal, squared and cross-product filters; ASan/UBSan builds
+also detect invalid reads that leave final scores unchanged. Unsupported CPU
+ISAs are skipped, and disabled AVX-512 is omitted.
 See the [boundary investigation](../research/convolution-horizontal-boundary-2026-09-08.md)
 for the exact validation scope and negative controls.

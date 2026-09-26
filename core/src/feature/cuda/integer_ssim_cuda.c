@@ -18,8 +18,9 @@
  *  Mirrors the psnr_cuda submit/collect scaffolding and the
  *  ciede_cuda per-block-partials precision pattern.
  *
- *  v1: scale=1 only — same constraint as ssim_vulkan. Auto-
- *  decimation is rejected at init with -EINVAL.
+ *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
+ *  back to CPU before init when auto resolves above 1; direct requests keep
+ *  the -EINVAL capability error.
  *
  *  enable_chroma: mirrors CPU integer_ssim.c PR #939 option.
  *  Default false (luma-only). When true, n_planes follows pix_fmt
@@ -38,6 +39,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "cuda/integer_ssim_cuda.h"
 #include "cuda/kernel_template.h"
 #include "log.h"
@@ -121,11 +123,22 @@ static int compute_scale(unsigned w, unsigned h, int override)
     return scaled < 1 ? 1 : scaled;
 }
 
+/* ADR-1324: dimensions are unavailable to the earlier option-value gate. */
+static int check_context_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                              unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    const SsimStateCuda *s = fex->priv;
+    return compute_scale(w, h, s->scale_override) == 1 ? 0 : -ENOTSUP;
+}
+
 static const VmafOption options[] = {
     {
         .name = "scale",
         .help = "decimation scale factor (0=auto, 1=no downscaling). "
-                "v1: GPU path requires scale=1; auto-detect rejects scale>1 with -EINVAL.",
+                "v1: direct GPU use requires scale=1; model dispatch falls back to CPU "
+                "when auto resolves above 1.",
         .offset = offsetof(SsimStateCuda, scale_override),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = 0,
@@ -152,35 +165,36 @@ static const VmafOption options[] = {
  */
 static int integer_ssim_init_unwind(VmafFeatureExtractor *fex, SsimStateCuda *s, int ret)
 {
-    if (s->h_ref_mu) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_mu);
-        free(s->h_ref_mu);
-        s->h_ref_mu = NULL;
-    }
-    if (s->h_cmp_mu) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_mu);
-        free(s->h_cmp_mu);
-        s->h_cmp_mu = NULL;
-    }
-    if (s->h_ref_sq) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_sq);
-        free(s->h_ref_sq);
-        s->h_ref_sq = NULL;
-    }
-    if (s->h_cmp_sq) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_sq);
-        free(s->h_cmp_sq);
-        s->h_cmp_sq = NULL;
-    }
-    if (s->h_refcmp) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_refcmp);
-        free(s->h_refcmp);
-        s->h_refcmp = NULL;
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    int rc = ret;
+    const int phase_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (phase_rc)
+        return rc ? rc : phase_rc;
+
+    int e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->h_ref_mu);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->h_cmp_mu);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->h_ref_sq);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->h_cmp_sq);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->h_refcmp);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_dictionary_free(&s->feature_name_dict);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (e && !rc)
+        rc = e;
+    return rc;
 }
 
 /* integer_ssim_setup_geometry - plane geometry, SSIM constants, buffers.
@@ -189,8 +203,8 @@ static int integer_ssim_init_unwind(VmafFeatureExtractor *fex, SsimStateCuda *s,
  * The c1 / c2 stabiliser expressions are copied character for character and
  * stay inside a single statement each, so the compiler contracts them exactly
  * as it did inline - splitting `(K1 * L) * (K1 * L)` across a call boundary is
- * precisely what would change the score. The `ret |=` accumulation and the
- * three unwind points keep their original order.
+ * precisely what would change the score. Each allocation failure keeps its
+ * exact errno and enters the common unwind path.
  */
 static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda *s, unsigned w,
                                        unsigned h, unsigned bpc)
@@ -214,12 +228,19 @@ static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda 
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
     const size_t partials_bytes = (size_t)s->partials_capacity * sizeof(float);
 
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_mu, horiz_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_mu, horiz_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_sq, horiz_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_sq, horiz_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_refcmp, horiz_bytes);
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_mu, horiz_bytes);
+    if (ret)
+        return integer_ssim_init_unwind(fex, s, ret);
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_mu, horiz_bytes);
+    if (ret)
+        return integer_ssim_init_unwind(fex, s, ret);
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_sq, horiz_bytes);
+    if (ret)
+        return integer_ssim_init_unwind(fex, s, ret);
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_sq, horiz_bytes);
+    if (ret)
+        return integer_ssim_init_unwind(fex, s, ret);
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_refcmp, horiz_bytes);
     if (ret)
         return integer_ssim_init_unwind(fex, s, ret);
 
@@ -265,7 +286,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return integer_ssim_init_unwind(fex, s, err);
 
     CudaFunctions *cu_f = fex->cu_state->f;
     int _cuda_err = 0;
@@ -282,16 +303,14 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->func_vert, s->module, "calculate_ssim_vert_combine"), fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
     return integer_ssim_setup_geometry(fex, s, w, h, bpc);
 
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return integer_ssim_init_unwind(fex, s, _cuda_err);
 }
 
 /* integer_ssim_launch_vert - pass 2: vertical accumulation and SSIM combine.
@@ -432,58 +451,15 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     for (unsigned i = 0; i < s->partials_count; i++)
         total += (double)partials_host[i];
     const double n_pixels = (double)s->w_final * (double)s->h_final;
-    const double score = total / n_pixels;
-
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "float_ssim", score, index);
+    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                            "float_ssim_cuda", "float_ssim", total, n_pixels, 0,
+                                            0.0, index);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     SsimStateCuda *s = fex->priv;
-
-    int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-
-    if (s->h_ref_mu) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_mu);
-        free(s->h_ref_mu);
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->h_cmp_mu) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_mu);
-        free(s->h_cmp_mu);
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->h_ref_sq) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_sq);
-        free(s->h_ref_sq);
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->h_cmp_sq) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_sq);
-        free(s->h_cmp_sq);
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->h_refcmp) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->h_refcmp);
-        free(s->h_refcmp);
-        if (rc == 0)
-            rc = e;
-    }
-    const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    if (rc == 0)
-        rc = rb_rc;
-    const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
-    if (rc == 0)
-        rc = dict_rc;
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
-    return rc;
+    return integer_ssim_init_unwind(fex, s, 0);
 }
 
 static const char *provided_features[] = {"float_ssim", NULL};
@@ -505,6 +481,8 @@ VmafFeatureExtractor vmaf_fex_float_ssim_cuda = {
             .min_useful_frame_area = 1920U * 1080U,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
+    .context_check = check_context_cuda,
+    .context_fallback_name = "float_ssim",
 };
 
 /* NOLINTEND(modernize-use-nullptr) */

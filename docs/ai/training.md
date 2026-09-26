@@ -106,6 +106,14 @@ should use `aiutils.run_manifest.write_run_manifest()` so the repeated
 between scripts. The Claude workflow for adding or auditing those sidecars is
 `.claude/skills/ai-run-manifest/SKILL.md`.
 
+AI JSON file and report-style stdout boundaries use
+`aiutils.run_manifest.write_manifest_json()` and
+`dumps_manifest_json()`, respectively. Both accept object- or list-shaped
+payloads and serialize non-finite diagnostics (`NaN`, positive infinity, and
+negative infinity) as JSON `null`; the file form also retains the shared
+atomic-write guarantee. This keeps empty or failed evaluation results readable
+by strict RFC-8259 consumers without changing their in-memory float semantics.
+
 Operator-facing AI scripts should also use the small CLI helper layer in
 `aiutils.cli_helpers` when they fit the shared shape. `make_argument_parser()`
 keeps parser formatting consistent, `collect_cli_argv()` preserves the raw
@@ -280,7 +288,32 @@ Feature-analysis reports use the same convention where they produce durable
 JSON. `ai/scripts/feature_correlation.py --out` records the source parquet,
 target column, redundancy threshold, top-K setting, and report path alongside
 the Pearson / MI / LASSO / random-forest outputs, so signal-mix audits can be
-replayed from the report alone.
+replayed from the report alone. The analyzer treats a column as a feature only
+when its parquet-backed pandas dtype is numeric. Text, boolean, categorical,
+object, and decimal columns are skipped; a numerically encoded category is
+included because the physical dtype, not the column name, is authoritative.
+The report preserves input-schema order in `feature_cols` and records excluded
+columns in `skipped_non_numeric_columns`, `skipped_all_nan_columns`, and
+`skipped_constant_columns`.
+
+All-null numeric features are common in partially populated aggregate tables.
+They are removed before complete-case filtering so one unavailable metric does
+not erase every row. Remaining per-row missing or non-finite values use
+complete-case filtering across the selected features and target: `NaN`,
+positive infinity, and negative infinity are all excluded before NumPy or
+scikit-learn sees the matrix. A table with no usable numeric feature, or no
+finite complete feature/target row, fails with a direct diagnostic instead of
+passing an empty array into NumPy or scikit-learn.
+Constant numeric columns are also excluded before analysis: their Pearson
+correlation is undefined, NumPy warns under the required warnings-as-errors
+policy, and a zero-importance tie must not promote them into `consensus_topk`.
+The analyzer repeats this check after complete-case filtering because removing
+rows for a sibling feature can turn a globally varying column into a constant.
+If optional scikit-learn analysis is unavailable, its method maps and top-K
+lists are empty rather than carrying non-standard JSON `NaN` placeholders.
+`--redundancy-threshold` rejects non-finite spellings at argument parsing, and
+the assembled report is validated with strict RFC-8259 number semantics before
+the atomic manifest write.
 `ai/scripts/phase3_subset_sweep.py --out` also records `run_provenance` next to
 the subset result keys, including the source parquet, subset list, seed policy,
 standardization flag, and report path used for Phase-3 model-selection sweeps.
@@ -306,7 +339,12 @@ Legacy extractor/cache utilities now use the standalone sidecar helper as
 well: `build_bisect_cache.py --manifest-out` records cache mode, check status,
 target-column candidates, default feature columns, and generated artifact
 counts; `collect_gpu_calibration_data.py` defaults to
-`<output>.manifest.json` and records selected features/backends/devices;
+`<output>.manifest.json` and records selected features/backends/devices. Its
+default backend is CUDA and its default architecture label is
+`cuda:default`; use `--backends sycl --arch-id <stable-device-id>` together
+when collecting from SYCL hardware. Scorer output must be a JSON object with a
+`frames` array containing frame objects; malformed output is rejected before
+metric pairing;
 `extract_ugc_features.py` defaults to `<out-parquet>.manifest.json` and
 records manifest/pair/fail/source counts; and `extract_konvid_frames.py`
 defaults to `ai/data/konvid_frames_manifest.json` and records frame-pair

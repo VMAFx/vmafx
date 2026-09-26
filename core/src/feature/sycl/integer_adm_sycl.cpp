@@ -49,8 +49,10 @@
 #include "config.h"
 #include "feature/adm_angle_flag.h"
 #include "feature/adm_csf_fixed_point.h"
+#include "feature/adm_score.h"
 #include "feature/barten_csf_tools.h"
 #include "feature/integer_adm.h"
+#include "feature/nonfinite_score.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
@@ -131,6 +133,7 @@ struct AdmStateSycl {
     // rfactors: 3 bands x 4 scales = 12
     float rfactor[12];
     uint32_t i_rfactor[12];
+    uint32_t csf_normalization_shift[4];
 
     // DWT intermediate buffers
     int32_t *d_dwt_tmp_ref; // vertical DWT output for ref
@@ -344,33 +347,11 @@ AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist, int adm_ref_
     return f;
 }
 
-void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
-                            int adm_ref_display_height, int adm_csf_mode, uint32_t i_rfactor[3])
-{
-    if (std::fabs(adm_norm_view_dist * adm_ref_display_height -
-                  DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
-        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
-        i_rfactor[0] = 36453;
-        i_rfactor[1] = 36453;
-        i_rfactor[2] = 49417;
-    } else {
-        double const pow2_21 = std::pow(2.0, 21.0);
-        double const pow2_23 = std::pow(2.0, 23.0);
-        i_rfactor[0] = (uint32_t)(rfactor1[0] * pow2_21);
-        i_rfactor[1] = (uint32_t)(rfactor1[1] * pow2_21);
-        i_rfactor[2] = (uint32_t)(rfactor1[2] * pow2_23);
-    }
-}
-
 /**
- * Refuse a CSF configuration whose fixed-point weights would wrap
- * (ADR-1191). Mirrors `adm_csf_config_check()` in
- * core/src/feature/integer_adm.c so the CPU reference and this twin accept
- * exactly the same set of configurations -- the bounds in
- * adm_csf_fixed_point.h are the CPU pipeline's, deliberately applied here
- * too, because a twin that accepted a configuration the CPU rejects would
- * break the option / feature-name parity contract (ADR-1183). Returns 0 or
- * -EINVAL.
+ * Validate a CSF configuration before claiming device resources. Mirrors
+ * `adm_csf_config_check()` in core/src/feature/integer_adm.c so the CPU and
+ * this twin reject the same invalid table output. Finite over-range weights
+ * are assigned the shared per-scale normalisation exponent later.
  */
 int adm_csf_config_check(const AdmStateSycl *s)
 {
@@ -1393,16 +1374,17 @@ sycl::event launch_csf_den_cm_3band(
 /* CPU scoring functions                                               */
 /* ------------------------------------------------------------------ */
 
-void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_weight,
-                     double p_norm, double *result)
+void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, uint32_t normalization_shift,
+                     float noise_weight, double p_norm, double *result)
 {
     int const left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int const top = (int)(h * ADM_BORDER_FACTOR - 0.5);
     int const right = w - left;
     int const bottom = h - top;
 
-    const uint32_t shift_inner_accum = (uint32_t)std::ceil(std::log2(h));
+    const int shift_inner_accum = (int)std::ceil(std::log2(h));
     double const p_norm_exp = 1.0 / p_norm;
+    int const restored_bits = 3 * (int)normalization_shift;
 
     /* Promote powf_add to double to avoid fp32 precision loss on Arc A380
      * (no native fp64 device, but this function is host-side — no device impact). */
@@ -1418,18 +1400,19 @@ void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_
         double f_accum;
         if (scale == 0) {
             // CPU uses w (full band width) for shift_xcub, not active_w
-            const uint32_t shift_xcub[3] = {(uint32_t)(std::ceil(std::log2((double)w)) - 4),
-                                            (uint32_t)(std::ceil(std::log2((double)w)) - 4),
-                                            (uint32_t)(std::ceil(std::log2((double)w)) - 3)};
+            const int shift_xcub[3] = {(int)(std::ceil(std::log2((double)w)) - 4),
+                                       (int)(std::ceil(std::log2((double)w)) - 4),
+                                       (int)(std::ceil(std::log2((double)w)) - 3)};
             int const constant_offset[3] = {52, 52, 57};
-            f_accum =
-                accum[i] / std::pow(2.0, constant_offset[i] - shift_xcub[i] - shift_inner_accum);
+            f_accum = accum[i] / std::pow(2.0, constant_offset[i] - restored_bits - shift_xcub[i] -
+                                                   shift_inner_accum);
         } else {
             // CPU uses w (full band width) for shift_cub, not active_w
-            uint32_t const shift_cub = (uint32_t)std::ceil(std::log2((double)w));
-            double const final_shift[3] = {std::pow(2.0, 45.0 - shift_cub - shift_inner_accum),
-                                           std::pow(2.0, 39.0 - shift_cub - shift_inner_accum),
-                                           std::pow(2.0, 36.0 - shift_cub - shift_inner_accum)};
+            int const shift_cub = (int)std::ceil(std::log2((double)w));
+            double const final_shift[3] = {
+                std::pow(2.0, 45.0 - restored_bits - shift_cub - shift_inner_accum),
+                std::pow(2.0, 39.0 - restored_bits - shift_cub - shift_inner_accum),
+                std::pow(2.0, 36.0 - restored_bits - shift_cub - shift_inner_accum)};
             f_accum = (double)accum[i] / final_shift[scale - 1];
         }
         *result += std::pow(f_accum, p_norm_exp) + powf_add;
@@ -1505,10 +1488,9 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
         return -EINVAL;
     }
 
-    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
-     * represent before any device resource is claimed, so an unsupported
-     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
-     * Same accept/reject set as the CPU reference. */
+    /* Reject invalid CSF table output before any device resource is claimed.
+     * Finite over-range weights are normalised with the CPU's shared
+     * per-scale exponent below. */
     {
         const int csf_err = adm_csf_config_check(s);
         if (csf_err) {
@@ -1536,15 +1518,16 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
         s->rfactor[scale * 3 + 1] = f.factor1;
         s->rfactor[scale * 3 + 2] = f.factor2;
 
-        double const pow2_32 = std::pow(2.0, 32);
-
-        if (scale == 0) {
-            adm_csf_rfactor_scale0(&s->rfactor[0], s->adm_norm_view_dist, s->adm_ref_display_height,
-                                   s->adm_csf_mode, &s->i_rfactor[0]);
-        } else {
-            s->i_rfactor[scale * 3 + 0] = (uint32_t)(s->rfactor[scale * 3 + 0] * pow2_32);
-            s->i_rfactor[scale * 3 + 1] = (uint32_t)(s->rfactor[scale * 3 + 1] * pow2_32);
-            s->i_rfactor[scale * 3 + 2] = (uint32_t)(s->rfactor[scale * 3 + 2] * pow2_32);
+        size_t const band0 = (size_t)scale * 3;
+        double fixed[3];
+        s->csf_normalization_shift[scale] = 0u;
+        int const fixed_err = adm_csf_fixed_scale(
+            (int)scale, &s->rfactor[band0], s->adm_norm_view_dist, s->adm_ref_display_height,
+            s->adm_csf_mode, fixed, &s->csf_normalization_shift[scale]);
+        if (fixed_err == 0) {
+            s->i_rfactor[band0] = (uint32_t)fixed[0];
+            s->i_rfactor[band0 + 1] = (uint32_t)fixed[1];
+            s->i_rfactor[band0 + 2] = (uint32_t)fixed[2];
         }
     }
 
@@ -1786,6 +1769,7 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     // Combined graph wait (idempotent per frame — first extractor wins)
     vmaf_sycl_graph_wait(state);
+    s->has_pending = false;
 
     // Read back accumulators
     int64_t cm_results[ADM_NUM_SCALES][ADM_NUM_BANDS];
@@ -1810,7 +1794,8 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
          * Both conclude_* functions are host-side; no device-kernel impact. */
         double num_scale;
         double den_scale;
-        conclude_adm_cm(cm_results[scale], score_h, score_w, scale, (float)s->adm_noise_weight,
+        conclude_adm_cm(cm_results[scale], score_h, score_w, scale,
+                        s->csf_normalization_shift[scale], (float)s->adm_noise_weight,
                         s->adm_p_norm, &num_scale);
         conclude_adm_csf_den((uint64_t *)csf_den_results[scale], score_h, score_w, scale,
                              &den_scale, &s->rfactor[(size_t)scale * 3],
@@ -1835,15 +1820,24 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
      * the precision floor scales with the FULL-FRAME area, not the scale-3
      * area that `score_w` / `score_h` hold after the loop above. */
     double const numden_limit = 1e-10 * ((double)s->width * s->height) / (1920.0 * 1080.0);
-    if (num < numden_limit)
-        num = 0.0;
-    if (den < numden_limit)
-        den = 0.0;
+    int err =
+        vmaf_adm_floor_pair_named("integer_adm_sycl", index, num, den, numden_limit, &num, &den);
+    if (err)
+        return err;
 
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
      * applies MAX(..., adm_min_val) to the adm3 expression alone). */
-    double const score = (den == 0.0) ? 1.0 : num / den;
+    const double aggregate_pair[2] = {num, den};
+    double score = 0.0;
+    err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm_sycl: undefined or non-finite aggregate at frame %u "
+                 "(num=%g den=%g)\n",
+                 index, num, den);
+        return err;
+    }
 
     /* AIM / adm3 are NOT emitted by this twin: the AIM contrast measure needs
      * a second device CM pass with the decouple_a / decouple_r roles swapped
@@ -1854,46 +1848,45 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
      * here from a hard-coded aim_num would fabricate a score. Tracked as
      * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md. */
 
-    // Write primary feature
-    {
-        int const err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_integer_feature_adm2_score", score,
-            index);
-        if (err)
-            return err;
-    }
-
-    // Per-scale features
+    static const char *const scale_names[ADM_NUM_SCALES] = {
+        "integer_adm_scale0", "integer_adm_scale1", "integer_adm_scale2", "integer_adm_scale3"};
+    double scale_pairs[ADM_NUM_SCALES * 2];
     for (int i = 0; i < ADM_NUM_SCALES; i++) {
-        char name[64];
-        (void)std::snprintf(name, sizeof(name), "integer_adm_scale%d", i);
-        double const scale_score = (scores_den[i] == 0.0) ? 1.0 : scores_num[i] / scores_den[i];
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                scale_score, index);
+        const size_t offset = (size_t)i * 2u;
+        scale_pairs[offset] = scores_num[i];
+        scale_pairs[offset + 1u] = scores_den[i];
     }
+    double scale_scores[ADM_NUM_SCALES];
+    err = vmaf_adm_scale_ratios_named("integer_adm_sycl", index, scale_pairs, ADM_NUM_SCALES,
+                                      scale_scores);
+    if (err)
+        return err;
 
-    // Debug features
+    VmafNamedScore values[16] = {
+        {.name = "VMAF_integer_feature_adm2_score", .value = score},
+        {.name = scale_names[0], .value = scale_scores[0]},
+        {.name = scale_names[1], .value = scale_scores[1]},
+        {.name = scale_names[2], .value = scale_scores[2]},
+        {.name = scale_names[3], .value = scale_scores[3]},
+    };
+    size_t value_count = 5u;
     if (s->debug) {
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm", score, index);
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_num", num, index);
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_adm_den", den, index);
-
-        for (int i = 0; i < ADM_NUM_SCALES; i++) {
-            char name[64];
-            (void)std::snprintf(name, sizeof(name), "integer_adm_num_scale%d", i);
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    scores_num[i], index);
-            (void)std::snprintf(name, sizeof(name), "integer_adm_den_scale%d", i);
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    scores_den[i], index);
+        static const char *const num_names[ADM_NUM_SCALES] = {
+            "integer_adm_num_scale0", "integer_adm_num_scale1", "integer_adm_num_scale2",
+            "integer_adm_num_scale3"};
+        static const char *const den_names[ADM_NUM_SCALES] = {
+            "integer_adm_den_scale0", "integer_adm_den_scale1", "integer_adm_den_scale2",
+            "integer_adm_den_scale3"};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm", .value = score};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm_num", .value = num};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm_den", .value = den};
+        for (int i = 0; i < ADM_NUM_SCALES; ++i) {
+            values[value_count++] = VmafNamedScore{.name = num_names[i], .value = scores_num[i]};
+            values[value_count++] = VmafNamedScore{.name = den_names[i], .value = scores_den[i]};
         }
     }
-
-    s->has_pending = false;
-    return 0;
+    return vmaf_feature_emit_finite_scores(feature_collector, s->feature_name_dict,
+                                           "integer_adm_sycl", values, value_count, index);
 }
 
 int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,

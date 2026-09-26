@@ -12,6 +12,7 @@ if get_option('enable_cuda')
          suite : ['slow', 'gpu'],
          depends : [vmaf],
          workdir : meson.project_build_root(),
+         is_parallel : false,
          timeout : 10)
 endif
 
@@ -30,6 +31,7 @@ foreach gpu_backend : ['cuda', 'sycl']
                  'MESON_BUILD_ROOT=' + meson.project_build_root(),
                  'MESON_SOURCE_ROOT=' + meson.project_source_root(),
              ],
+             is_parallel : false,
              timeout : 300)
     endif
 endforeach
@@ -38,12 +40,37 @@ endforeach
 test_vmaf_per_shot = find_program('test_vmaf_per_shot.sh')
 test('test_vmaf_per_shot', test_vmaf_per_shot,
      suite : ['slow'],
-     depends : [vmaf_per_shot],
+     depends : [vmaf_per_shot, vmaf_per_shot_boundary_test],
      workdir : meson.project_build_root(),
      env: [
          'MESON_BUILD_ROOT=' + meson.project_build_root(),
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
+
+# Reader-level fail-closed coverage includes an actual stdio error after one
+# complete frame; the public CLI test above covers complete and partial frames.
+test_vmaf_per_shot_input = executable(
+    'test_vmaf_per_shot_input',
+    ['../../test/test.c', 'test_vmaf_per_shot_input.c', '../vmaf_per_shot_input.c'],
+    include_directories : [include_directories('../../test'), include_directories('..')],
+    c_args : vmaf_per_shot_cflags,
+)
+test('test_vmaf_per_shot_input', test_vmaf_per_shot_input, suite : ['fast'])
+
+# A failed vmaf_close() retains a teardown-only context. Tool callers retry
+# once, NULL the handle only after success, and otherwise retain every imported
+# backend dependency through process exit.
+test_vmaf_close_retry = executable(
+    'test_vmaf_close_retry',
+    ['../../test/test.c', 'test_vmaf_close_retry.c', '../vmaf_close_retry.c'],
+    include_directories : [
+        include_directories('../../test'),
+        include_directories('..'),
+        libvmaf_inc,
+    ],
+    c_args : vmaf_tool_cflags,
+)
+test('test_vmaf_close_retry', test_vmaf_close_retry, suite : ['fast'])
 
 # T6-2b / ADR-0247 — vmaf-roi accepts high-bit-depth planar YUV by
 # downscaling luma to the existing 8-bit saliency-model contract.
@@ -68,3 +95,17 @@ test('test_vmaf_read_error_exit', test_vmaf_read_error_exit,
          'MESON_BUILD_ROOT=' + meson.project_build_root(),
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
+
+# T-WINDOWS-CLI-UTF8-ARGV-2026-09-24 — CreateProcessW supplies an exact
+# Unicode command line so this does not depend on the launching shell's code
+# page. The child must preserve those paths through the CLI's argv boundary.
+if host_machine.system() == 'windows'
+    test_vmaf_windows_utf8_argv = executable(
+        'test_vmaf_windows_utf8_argv',
+        'test_vmaf_windows_utf8_argv.cpp',
+    )
+    test('test_vmaf_windows_utf8_argv', test_vmaf_windows_utf8_argv,
+         suite : ['fast'],
+         depends : [vmaf],
+         timeout : 60)
+endif

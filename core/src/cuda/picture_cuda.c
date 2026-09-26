@@ -375,8 +375,10 @@ static int device_pic_unwind(VmafPicture *pic, VmafPicturePrivate *priv, CudaFun
          * (cuCtxPopCurrent failed, or we came from the cuMemAllocPitch loop
          * with ctx_pushed==1). */
         for (int i = 0; i < 3; i++) {
-            if (pic->data[i])
+            if (pic->data[i]) {
                 (void)cu_f->cuMemFree((CUdeviceptr)pic->data[i]);
+                pic->data[i] = NULL;
+            }
         }
         /* Pop once here and clear ctx_pushed so the tail below does not pop
          * a second time. */
@@ -441,6 +443,11 @@ int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie)
     if (!priv)
         return -ENOMEM;
 
+    /* Zero the priv struct so partial-init unwind can use NULL/0 sentinels
+     * to skip handles that were never created. priv was just malloc'd
+     * (uninitialised memory). Round-26 audit (ADR-0982). */
+    memset(priv, 0, sizeof(*priv));
+
     int _cuda_err = 0;
     int ctx_pushed = 0;
     /* Bound before the first jump: the unwind helper below takes cu_f, and
@@ -459,7 +466,7 @@ int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie)
 
     _cuda_err = device_pic_alloc_planes(pic, cu_f);
     if (_cuda_err)
-        return device_pic_unwind(pic, priv, cu_f, DEV_PIC_UNWIND_FINISHED, ctx_pushed, _cuda_err);
+        return device_pic_unwind(pic, priv, cu_f, DEV_PIC_UNWIND_DATA, ctx_pushed, _cuda_err);
 
     /* ADR-1090 — cuCtxPopCurrent failure leaves the context on the stack;
      * fall through to fail_after_data which frees device memory while the
@@ -480,46 +487,71 @@ fail:
     return device_pic_unwind(pic, priv, cu_f, DEV_PIC_UNWIND_PRIV, ctx_pushed, _cuda_err);
 }
 
+static int device_picture_plane_free(VmafCudaState *cu_state, void **data)
+{
+    if (!cu_state || !cu_state->f || !data)
+        return -EINVAL;
+    if (!*data)
+        return 0;
+
+    CudaFunctions *cu_f = cu_state->f;
+    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
+    if (push_res != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push_res);
+
+    int err = 0;
+    const CUresult free_res = cu_f->cuMemFree((CUdeviceptr)*data);
+    if (free_res == CUDA_SUCCESS)
+        *data = NULL;
+    else
+        err = vmaf_cuda_result_to_errno((int)free_res);
+
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        if (!err)
+            err = vmaf_cuda_result_to_errno((int)pop_res);
+    }
+    return err;
+}
+
+static int device_picture_release_handles(VmafPicture *pic, VmafPicturePrivate *priv)
+{
+    /* ADR-1336: quiesce the stream before committing plane/event releases. */
+    VmafCudaState *cu_state = priv->cuda.state;
+    int err = vmaf_cuda_stream_destroy(cu_state, &priv->cuda.str, true);
+    if (err)
+        return err;
+    for (int i = 0; i < 3; i++) {
+        err = device_picture_plane_free(cu_state, &pic->data[i]);
+        if (err)
+            return err;
+    }
+    err = vmaf_cuda_event_destroy(cu_state, &priv->cuda.finished);
+    if (err)
+        return err;
+    return vmaf_cuda_event_destroy(cu_state, &priv->cuda.ready);
+}
+
 int vmaf_cuda_picture_free(VmafPicture *pic, void *cookie)
 {
+    (void)cookie;
     if (!pic)
         return -EINVAL;
-
-    long err = vmaf_ref_load(pic->ref);
-    if (!err)
+    if (!pic->priv)
+        return 0;
+    if (!pic->ref || !vmaf_ref_load(pic->ref))
         return -EINVAL;
 
     VmafPicturePrivate *priv = pic->priv;
-    VmafCudaCookie *cuda_cookie = cookie;
-    CudaFunctions *cu_f = cuda_cookie->state->f;
+    const int err = device_picture_release_handles(pic, priv);
+    if (err)
+        return err;
 
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(cuda_cookie->state->ctx), fail);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(priv->cuda.str), fail);
-
-    for (int i = 0; i < 3; i++) {
-        if (pic->data[i]) {
-            CHECK_CUDA_GOTO(cu_f, cuMemFree((CUdeviceptr)pic->data[i]), fail);
-        }
-    }
-
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(priv->cuda.finished), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(priv->cuda.ready), fail);
-    CHECK_CUDA_GOTO(cu_f, cuStreamDestroy(priv->cuda.str), fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-    vmaf_ref_close(pic->ref);
+    (void)vmaf_ref_close(pic->ref);
     free(priv);
     memset(pic, 0, sizeof(*pic));
-
     return 0;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    return _cuda_err;
 }
 
 int vmaf_cuda_picture_synchronize(VmafPicture *pic, void *cookie)

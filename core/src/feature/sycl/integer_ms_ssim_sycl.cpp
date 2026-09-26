@@ -39,6 +39,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "log.h"
 #include "picture.h"
 #include "../picture_copy.h"
@@ -386,38 +387,20 @@ static const VmafOption options_ms_ssim_sycl[] = {
     },
     {
         .name = "clip_db",
-        .help = "clip linear ms_ssim to [0, 1] before dB conversion",
+        .help = "cap dB-domain MS-SSIM at the geometry-derived ceiling",
         .offset = offsetof(MsSsimStateSycl, clip_db),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
     },
     {
         .name = "enable_chroma",
-        .help = "enable calculation for chroma channels (mirrors CPU PR #939 / "
-                "ms_ssim_vulkan PR #957; v1 kernel defers multi-plane dispatch to v2)",
+        .help = "enable MS-SSIM calculation and dispatch for all active planes (Y, Cb and Cr)",
         .offset = offsetof(MsSsimStateSycl, enable_chroma),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
     },
     {.name = nullptr},
 };
-
-} // namespace
-
-namespace
-{
-
-/* Mirrors float_ms_ssim.c::convert_to_db exactly. ADR-1221. */
-static double ms_ssim_convert_to_db(double score, double max_db)
-{
-    /* score >= 1.0 makes log10(1-score) undefined (log10 of zero or negative)
-     * yielding -Inf / NaN.  Return max_db directly for perfect similarity.  */
-    if (score >= 1.0) {
-        return max_db;
-    }
-    const double db = -10. * std::log10(1.0 - score);
-    return db < max_db ? db : max_db;
-}
 
 } // namespace
 
@@ -438,8 +421,8 @@ static int configure_ms_ssim(MsSsimStateSycl *s, enum VmafPixelFormat format, un
     }
     /* Chroma is walked by the same 5-level pyramid, so it must clear the same
      * minimum. Mirrors the check float_ms_ssim.c makes; without it a 4:2:0
-     * input between min_dimension and 2*min_dimension passes the luma test and
-     * then produces a degenerate chroma pyramid. Plane sizing follows
+     * input from min_dimension through 2 * min_dimension - 2 passes the luma test
+     * and then produces a degenerate chroma pyramid. Plane sizing follows
      * vmaf_picture_alloc (picture.c:146-149). */
     const unsigned ss_hor = format != VMAF_PIX_FMT_YUV444P ? 1u : 0u;
     const unsigned ss_ver = format == VMAF_PIX_FMT_YUV420P ? 1u : 0u;
@@ -453,8 +436,8 @@ static int configure_ms_ssim(MsSsimStateSycl *s, enum VmafPixelFormat format, un
                      " pyramid requires at least %ux%u. Use at least %ux%u luma for this"
                      " pixel format, or leave enable_chroma off to score luma only.\n",
                      width, height, chroma_w, chroma_h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN,
-                     min_dimension, min_dimension, min_dimension << ss_hor,
-                     min_dimension << ss_ver);
+                     min_dimension, min_dimension, (min_dimension << ss_hor) - ss_hor,
+                     (min_dimension << ss_ver) - ss_ver);
             return -EINVAL;
         }
     }
@@ -585,6 +568,8 @@ static bool ms_ssim_allocations_complete(const MsSsimStateSycl *s)
 namespace
 {
 
+static int close_fex_sycl(VmafFeatureExtractor *fex);
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -605,11 +590,13 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     allocate_ms_ssim_buffers(s);
     if (!ms_ssim_allocations_complete(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ms_ssim_sycl: USM allocation failed\n");
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
+        (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
 
@@ -639,7 +626,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * after submit returns, so collect has no VmafPicture to read from. The
      * per-plane pyramids therefore all live until collect consumes them. */
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
-        MsSsimPlaneGeometry &geometry = s->geom[plane];
+        const MsSsimPlaneGeometry &geometry = s->geom[plane];
         const ptrdiff_t stride = (ptrdiff_t)((size_t)geometry.width * sizeof(float));
         picture_copy(geometry.h_ref, stride, ref_pic, 0, ref_pic->bpc, (int)plane);
         picture_copy(geometry.h_cmp, stride, dist_pic, 0, dist_pic->bpc, (int)plane);
@@ -736,34 +723,38 @@ static double combine_ms_ssim(const double luminance[MS_SSIM_SCALES],
     return score;
 }
 
-static const char *const l_names[MS_SSIM_SCALES] = {
-    "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",
-    "float_ms_ssim_l_scale3", "float_ms_ssim_l_scale4",
-};
-static const char *const c_names[MS_SSIM_SCALES] = {
-    "float_ms_ssim_c_scale0", "float_ms_ssim_c_scale1", "float_ms_ssim_c_scale2",
-    "float_ms_ssim_c_scale3", "float_ms_ssim_c_scale4",
-};
-static const char *const s_names[MS_SSIM_SCALES] = {
-    "float_ms_ssim_s_scale0", "float_ms_ssim_s_scale1", "float_ms_ssim_s_scale2",
-    "float_ms_ssim_s_scale3", "float_ms_ssim_s_scale4",
-};
-
-} // namespace
-
-namespace
+static int compute_plane_scores(MsSsimStateSycl *s, sycl::queue &queue, unsigned index,
+                                double plane_scores[MS_SSIM_MAX_PLANES],
+                                double plane_l[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES],
+                                double plane_c[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES],
+                                double plane_s[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES])
 {
-
-static int append_lcs_scores(VmafFeatureCollector *collector, const double luminance[],
-                             const double contrast[], const double structure[], unsigned index)
-{
-    int err = 0;
-    for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
-        err |= vmaf_feature_collector_append(collector, l_names[scale], luminance[scale], index);
-        err |= vmaf_feature_collector_append(collector, c_names[scale], contrast[scale], index);
-        err |= vmaf_feature_collector_append(collector, s_names[scale], structure[scale], index);
+    for (unsigned plane = 0; plane < s->n_planes; ++plane) {
+        /* Planes run sequentially because their intermediates and partials use
+         * one shared workspace; compute_scale_lcs waits before returning. */
+        for (int scale = 0; scale < MS_SSIM_SCALES; ++scale) {
+            compute_scale_lcs(s, queue, plane, scale, plane_l[plane][scale], plane_c[plane][scale],
+                              plane_s[plane][scale]);
+            if (!std::isfinite(plane_l[plane][scale]) || !std::isfinite(plane_c[plane][scale]) ||
+                !std::isfinite(plane_s[plane][scale])) {
+                vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                         "float_ms_ssim_sycl: non-finite atom at frame %u "
+                         "(plane=%u scale=%d l=%g c=%g s=%g)\n",
+                         index, plane, scale, plane_l[plane][scale], plane_c[plane][scale],
+                         plane_s[plane][scale]);
+                return -EINVAL;
+            }
+        }
+        plane_scores[plane] = combine_ms_ssim(plane_l[plane], plane_c[plane], plane_s[plane]);
+        if (!std::isfinite(plane_scores[plane])) {
+            vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                     "float_ms_ssim_sycl: non-finite score at frame %u "
+                     "(plane=%u value=%g)\n",
+                     index, plane, plane_scores[plane]);
+            return -EINVAL;
+        }
     }
-    return err;
+    return 0;
 }
 
 } // namespace
@@ -790,27 +781,35 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         "float_ms_ssim_cr",
     };
 
-    int err = 0;
-    for (unsigned plane = 0; plane < s->n_planes; plane++) {
-        double l_means[MS_SSIM_SCALES] = {0};
-        double c_means[MS_SSIM_SCALES] = {0};
-        double s_means[MS_SSIM_SCALES] = {0};
-        /* Planes run sequentially for the same reason the scales do: the
-         * horizontal intermediates and the partials are one shared workspace,
-         * and compute_scale_lcs waits on its readback before returning. */
-        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
-            compute_scale_lcs(s, q, plane, scale, l_means[scale], c_means[scale], s_means[scale]);
-        }
-        double score = combine_ms_ssim(l_means, c_means, s_means);
-        if (s->enable_db) {
-            score = ms_ssim_convert_to_db(score, s->max_db);
-        }
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       plane_feature_names[plane], score, index);
-        /* The l/c/s per-scale breakdown is luma-only, as on the CPU twin:
-         * float_ms_ssim.c guards it with `p == 0`. */
-        if (plane == 0U && s->enable_lcs) {
-            err |= append_lcs_scores(feature_collector, l_means, c_means, s_means, index);
+    double plane_scores[MS_SSIM_MAX_PLANES] = {0.0};
+    double plane_l[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
+    double plane_c[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
+    double plane_s[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
+    int err = compute_plane_scores(s, q, index, plane_scores, plane_l, plane_c, plane_s);
+    if (err)
+        return err;
+
+    for (unsigned plane = 0; plane < s->n_planes; ++plane) {
+        double prepared_score = 0.0;
+        int const prepare_err =
+            vmaf_ssim_prepare_score_named(plane_feature_names[plane], plane_scores[plane],
+                                          s->enable_db, s->max_db, index, &prepared_score);
+        if (prepare_err)
+            return prepare_err;
+    }
+
+    err = 0;
+    for (unsigned plane = 0; plane < s->n_planes && !err; plane++) {
+        if (plane == 0U) {
+            err = vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict,
+                                           "float_ms_ssim_sycl", plane_feature_names[plane],
+                                           plane_scores[plane], s->enable_db, s->max_db,
+                                           plane_l[plane], plane_c[plane], plane_s[plane],
+                                           MS_SSIM_SCALES, s->enable_lcs, index);
+        } else {
+            err = vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict,
+                                             "float_ms_ssim_sycl", plane_feature_names[plane],
+                                             plane_scores[plane], s->enable_db, s->max_db, index);
         }
     }
     return err;

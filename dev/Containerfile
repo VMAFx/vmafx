@@ -8,8 +8,8 @@
 #   Stage 1 (build-deps)  — base tools: meson, ninja, nasm, gcc-13, clang-19,
 #                           python3.14, pkg-config, git, curl, ca-certificates
 #   Stage 2 (gpu-sdks)    — GPU SDK layer on top of Stage 1:
-#                           CUDA latest (`cuda-toolkit` meta-package, currently
-#                           13.x; tracks host driver), Intel oneAPI latest,
+#                           exact CUDA toolkit release from build-config.env,
+#                           Intel oneAPI latest,
 #                           ROCm latest (HIP toolchain;
 #                           build-only on NVIDIA host)
 #   Stage 3 (libvmaf)     — source build of libvmaf with all backends enabled
@@ -247,25 +247,19 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Use pipefail so piped curl/gpg commands fail fast on any segment failure
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# ---------- CUDA 13.3 -------------------------------------------------------
-# Ubuntu 26.04 (Resolute) + glibc 2.43 context (ADR-0603):
+# ---------- CUDA 13.4 (ADR-1306) -------------------------------------------
+# Ubuntu 26.04 (Resolute) + glibc 2.43 context (ADR-0603, ADR-1306):
 #
-#   - The NVIDIA ubuntu2604 apt repo exists and carries the cuda-keyring
-#     and driver packages, but does NOT yet contain the full
-#     `cuda-toolkit` meta-package (only `cuda-compat-13-3` and driver
-#     debs are confirmed present).  We therefore use the
-#     ubuntu2404 repo for the toolkit packages — NVIDIA publishes the
-#     same .deb files cross-distro and they install correctly on Ubuntu
-#     26.04 (glibc 2.43 is backward-compatible with packages built for
-#     glibc 2.35/2.39).
+#   - The NVIDIA ubuntu2604 apt repo carries the cuda-keyring and the exact
+#     cuda-toolkit-13-4 / nvcc / cudart package versions recorded in
+#     build-config.env.
 #
-#   - We pin to `cuda-toolkit-13-3` (13.3.0) instead of the
-#     unversioned `cuda-toolkit` meta-package.  Reason: Ubuntu 26.04
-#     ships glibc 2.43, whose `bits/mathcalls.h` declares
-#     `rsqrt(double)` with `noexcept(true)`.  CUDA 13.0 and 13.1's
-#     `crt/math_functions.h` redeclared the same symbol WITHOUT the
-#     noexcept spec, producing a C2059/C2143/C2085 cascade under NVCC.
-#     CUDA 13.2 fixed that; 13.3 retains the fix.
+#   - The shared installer's `full` mode constrains the toolkit meta-package,
+#     nvcc, and both cudart packages with apt `package=version` operands, then
+#     verifies the installed dpkg versions. A CUDA series name alone is not a pin.
+#     Ubuntu 26.04 ships glibc 2.43, whose `bits/mathcalls.h` declares
+#     `rsqrt(double)` with `noexcept(true)`. CUDA 13.2+ resolved the
+#     re-declaration mismatch under NVCC.
 #
 #   - Fix B (belt-and-suspenders): `-D__MATH_NO_INLINES` is also added
 #     to the nvcc flags in `core/src/meson.build`.  That flag tells
@@ -273,25 +267,18 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #     the noexcept annotation, eliminating the conflict even if a future
 #     CUDA patch version accidentally re-introduces the mismatch.
 #
-# Note: The NVIDIA Container Toolkit must be installed on the *host*
-# for GPU passthrough. See docs/development/dev-mcp.md §Prerequisites.
-RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
-        -o /tmp/cuda-keyring.deb \
-    && dpkg -i /tmp/cuda-keyring.deb \
-    && rm /tmp/cuda-keyring.deb
-
-# `cuda-toolkit-13-3` pulls in nvcc 13.3 + headers + the user-mode
-# library stubs. Do NOT install `libcuda1` (the runtime driver) — that
-# comes from the host via nvidia-container-runtime at run-time;
-# installing it here would shadow the host driver.
+# Note: The NVIDIA Container Toolkit must be installed on the *host* for GPU
+# passthrough. The full mode never installs `libcuda1`; the driver comes from
+# nvidia-container-runtime at run time. See docs/development/dev-mcp.md.
+COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    cuda-toolkit-13-4
+    /tmp/install-cuda-toolkit.sh --mode=full /tmp \
+    && rm -f /tmp/install-cuda-toolkit.sh /tmp/build-config.env
 
-# CUDA_HOME is the symlink the meta-package maintains pointing at the
-# latest installed major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).
+# CUDA_HOME is the symlink the shared installer validates and repoints at this
+# exact major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
@@ -1136,6 +1123,7 @@ COPY internal/ ./internal/
 ENV CGO_ENABLED=1
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked,id=gobuild-dev-mcp \
     --mount=type=cache,target=/root/go/pkg/mod,sharing=locked,id=gomod-dev-mcp \
+    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm" \
     go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/... \
     && binaries=(/out/*) \
     && printf '%s\n' "${binaries[@]}" \
@@ -1157,8 +1145,10 @@ USER root
 # crashed on ``ModuleNotFoundError: matplotlib`` because the package
 # wasn't baked in. ADR-0498 closes the gap.
 RUN python3.14 -m venv /opt/vmaf-venv \
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir matplotlib \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir --require-hashes \
+        -r /build/vmaf/requirements/locks/package-build.txt \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir --no-build-isolation --require-hashes \
+        -r /build/vmaf/dev/requirements-python-env-lock.txt \
     # The Python harness (`python/pyproject.toml`, package name `vmaf`,
     # re-exporting compat/python-vmaf per ADR-0700). The layout comment at the
     # top of this stage has always described it as "pip-installed via the
@@ -1169,15 +1159,12 @@ RUN python3.14 -m venv /opt/vmaf-venv \
     # served no reachable purpose. Installed FIRST among the editable packages
     # so that the ai/ and vmaf-tune pins below are resolved last and win on any
     # shared dependency (numpy in particular).
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/python \
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/ai[dev]' \
-    # Pin torchvision to the ABI-compatible wheel for torch 2.12.x.
-    # Without this pin, pip may resolve torchvision 0.26.0 (built against
-    # torch 2.11) which raises ``RuntimeError: operator torchvision::nms does
-    # not exist`` when pytorch-lightning → torchmetrics eagerly imports
-    # torchvision at import time (see ai/pyproject.toml and ai/AGENTS.md).
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir 'torchvision>=0.27.0,<0.28.0' \
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/tools/vmaf-tune[fast]'
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir --no-deps --no-build-isolation \
+        -e /build/vmaf/python \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir --no-deps --no-build-isolation \
+        -e /build/vmaf/ai \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir --no-deps --no-build-isolation \
+        -e /build/vmaf/tools/vmaf-tune
 
 # The seven Go binaries from the go-build stage (ADR-0702), on PATH beside the
 # C `vmaf` CLI at /usr/local/bin/vmaf.

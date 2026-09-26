@@ -28,10 +28,21 @@
 #ifndef LIBVMAF_FEATURE_CAMBI_INTERNAL_H_
 #define LIBVMAF_FEATURE_CAMBI_INTERNAL_H_
 
+#ifdef __cplusplus
+#include <cstddef>
+#include <cstdint>
+
+using std::ptrdiff_t;
+using std::uint16_t;
+using std::uint32_t;
+#else
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+#endif
 
 #include "libvmaf/picture.h"
+#include "luminance_tools.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -74,15 +85,22 @@ static inline bool cambi_validate_dimensions(unsigned w, unsigned h)
 
 /* Range update + derivative callback signatures (mirrors cambi.c
  * internal typedefs). */
+#ifdef __cplusplus
+using VmafCambiRangeUpdater = void (*)(uint16_t *arr, int left, int right);
+using VmafCambiDerivativeCalculator = void (*)(const uint16_t *image_data,
+                                               uint16_t *derivative_buffer, int width, int height,
+                                               int row, int stride);
+#else
 typedef void (*VmafCambiRangeUpdater)(uint16_t *arr, int left, int right);
 typedef void (*VmafCambiDerivativeCalculator)(const uint16_t *image_data,
                                               uint16_t *derivative_buffer, int width, int height,
                                               int row, int stride);
+#endif
 
 /* Buffer bundle mirror of cambi.c::CambiBuffers. The GPU twins
  * (CUDA, HIP) allocate these directly (no aligned_malloc helper —
  * device memory + plain malloc serve the host residual). */
-typedef struct VmafCambiHostBuffers {
+struct VmafCambiHostBuffers {
     float *c_values;
     uint32_t *mask_dp;
     uint16_t *c_values_histograms;
@@ -94,9 +112,13 @@ typedef struct VmafCambiHostBuffers {
     int *all_diffs;
     uint16_t v_band_base;
     uint16_t v_band_size;
-} VmafCambiHostBuffers;
+};
 
-/* ----- functions exported from cambi.c (otherwise file-static) ----- */
+#ifndef __cplusplus
+typedef struct VmafCambiHostBuffers VmafCambiHostBuffers;
+#endif
+
+/* ----- functions exported from cambi.c for GPU twins & consumers ----- */
 
 /* CPU 7×7 spatial mask: derivative kernel + 7×7 SAT box-sum + threshold
  * compare. Stays bit-exact with the in-tree CPU extractor. */
@@ -145,6 +167,67 @@ int vmaf_cambi_init_tvi_and_vlt(int num_diffs, const uint16_t *diffs_to_consider
                                 double tvi_threshold, double cambi_vis_lum_threshold,
                                 const char *cambi_eotf, const char *eotf, uint16_t *tvi_for_diff,
                                 uint16_t *vlt_luma, uint16_t *v_band_base, uint16_t *v_band_size);
+
+/* ----- internal test trampolines (narrowly exposed for in-tree unit tests) ----- */
+
+void vmaf_cambi_test_anti_dithering_filter(VmafPicture *pic, unsigned width, unsigned height);
+void vmaf_cambi_test_decimate_generic_uint8_and_convert_to_10b(const VmafPicture *pic,
+                                                               VmafPicture *out_pic, unsigned width,
+                                                               unsigned height);
+void vmaf_cambi_test_decimate_generic_9b_and_convert_to_10b(const VmafPicture *pic,
+                                                            VmafPicture *out_pic, unsigned width,
+                                                            unsigned height);
+void vmaf_cambi_test_decimate_generic_uint16_and_convert_to_10b(const VmafPicture *pic,
+                                                                VmafPicture *out_pic,
+                                                                unsigned width, unsigned height);
+uint16_t vmaf_cambi_test_get_mask_index(unsigned input_width, unsigned input_height,
+                                        uint16_t filter_size);
+void vmaf_cambi_test_get_spatial_mask_for_index(
+    const VmafPicture *image, VmafPicture *mask, uint32_t *dp, uint16_t *derivative_buffer,
+    uint16_t mask_index, uint16_t filter_size, int width, int height,
+    VmafCambiDerivativeCalculator derivative_callback,
+    void (*compute_dp_row_callback)(uint32_t *dp_curr, const uint32_t *dp_prev,
+                                    const uint16_t *deriv, int width, int pad_size,
+                                    bool deriv_valid),
+    void (*compute_mask_row_callback)(uint16_t *mask_row, const uint32_t *dp_bottom,
+                                      const uint32_t *dp_top, int width, int pad_size,
+                                      uint32_t mask_index));
+void vmaf_cambi_test_calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic,
+                                        float *c_values, uint16_t *histograms, uint16_t window_size,
+                                        const uint16_t num_diffs, const uint16_t *tvi_for_diff,
+                                        uint16_t vlt_luma, const int *diff_weights,
+                                        const int *all_diffs, int width, int height);
+float vmaf_cambi_test_c_value_pixel(const uint16_t *histograms, uint16_t value,
+                                    const int *diff_weights, const int *diffs, uint16_t num_diffs,
+                                    const uint16_t *tvi_thresholds, uint16_t vlt_luma,
+                                    uint16_t v_band_offset_val, uint16_t v_band_size,
+                                    int histogram_col, int histogram_width);
+void vmaf_cambi_test_calculate_c_values_row(float *c_values, const uint16_t *histograms,
+                                            const uint16_t *image, const uint16_t *mask, int row,
+                                            int width, ptrdiff_t stride, const uint16_t num_diffs,
+                                            const uint16_t *tvi_for_diff, uint16_t vlt_luma,
+                                            const int *diff_weights, const int *all_diffs,
+                                            const float *reciprocals);
+void vmaf_cambi_test_increment_range(uint16_t *arr, int left, int right);
+void vmaf_cambi_test_decrement_range(uint16_t *arr, int left, int right);
+void vmaf_cambi_test_get_derivative_data_for_row(const uint16_t *image_data,
+                                                 uint16_t *derivative_buffer, int width, int height,
+                                                 int row, int stride);
+void vmaf_cambi_test_quick_select(float *arr, int n, int k);
+double vmaf_cambi_test_average_topk_elements(const float *arr, int topk_elements);
+void vmaf_cambi_test_adjust_window_size(uint16_t *window_size, unsigned input_width,
+                                        unsigned input_height, bool cambi_high_res_speedup);
+int vmaf_cambi_test_get_tvi_for_diff(int diff, double tvi_threshold, int bitdepth,
+                                     VmafLumaRange luma_range, VmafEOTF eotf);
+bool vmaf_cambi_test_tvi_condition(int sample, int diff, double tvi_threshold,
+                                   VmafLumaRange luma_range, VmafEOTF eotf);
+int vmaf_cambi_test_set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_consider,
+                                        int **diff_weights, int **all_diffs);
+int vmaf_cambi_test_tvi_hard_threshold_condition(int sample, int diff, double tvi_threshold,
+                                                 VmafLumaRange luma_range, VmafEOTF eotf);
+int vmaf_cambi_test_get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange luma_range,
+                                 VmafEOTF eotf);
+int vmaf_cambi_test_open_heatmaps(char *path, unsigned enc_width, unsigned enc_height);
 
 #ifdef __cplusplus
 }

@@ -141,6 +141,15 @@ class TestSGDEMAStep:
             ema_after, expected, atol=1e-5
         ), f"EMA mismatch: got {ema_after}, expected {expected}"
 
+    def test_step_rejects_mismatched_prediction_and_target_counts(self):
+        model = _tiny_model()
+        trainer = SGDEMATrainer(model)
+        features = torch.ones(2, N_FEATURES)
+        targets = torch.zeros(1)
+
+        with pytest.raises(ValueError, match="prediction/target shape mismatch"):
+            trainer.step(features, targets)
+
 
 # ---------------------------------------------------------------------------
 # Warmup
@@ -179,6 +188,17 @@ class TestCheckpoint:
         trainer = SGDEMATrainer(_tiny_model(), cfg)
         assert not trainer.should_checkpoint()
 
+    def test_checkpoint_gate_counts_only_new_rows_in_mixed_batches(self):
+        cfg = SGDEMAConfig(checkpoint_interval_s=0.0, min_samples_per_checkpoint=4)
+        trainer = SGDEMATrainer(_tiny_model(), cfg)
+        features, scores = _batch(4)
+
+        trainer.step(features, scores, new_sample_count=2)
+        assert not trainer.should_checkpoint()
+
+        trainer.step(features, scores, new_sample_count=2)
+        assert trainer.should_checkpoint()
+
     def test_export_onnx_writes_file(self):
         cfg = SGDEMAConfig(checkpoint_interval_s=0.0, min_samples_per_checkpoint=0)
         trainer = SGDEMATrainer(_tiny_model(), cfg)
@@ -201,6 +221,10 @@ class TestCheckpoint:
             trainer.export_onnx(path, n_features=N_FEATURES)
             model_proto = onnx.load(path)
             onnx.checker.check_model(model_proto)
+            input_batch = model_proto.graph.input[0].type.tensor_type.shape.dim[0]
+            output_batch = model_proto.graph.output[0].type.tensor_type.shape.dim[0]
+            assert input_batch.dim_param == "batch"
+            assert output_batch.dim_param == "batch"
 
     def test_state_dict_round_trip(self):
         """state_dict / load_state_dict preserves step count and weights."""

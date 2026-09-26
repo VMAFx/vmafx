@@ -457,6 +457,7 @@ def check_scanf_match(string, template):
         sscanf(string, template)
         return True
     except (FormatError, IncompleteCaptureError):
+        # sscanf failed to parse template against string; fall back to fnmatch.
         pass
 
     if fnmatch(string, template):

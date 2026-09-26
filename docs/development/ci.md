@@ -16,7 +16,7 @@ The main `pull_request`-triggered workflows include:
 | [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep / CodeQL / Gitleaks / Dependency Review. |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files + whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
-| [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go vet, security scan, runner smoke, and tests (ADR-1238). |
+| [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go modernization, vet, security scan, runner smoke, and tests (ADRs 1238 and 1338). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (Linux GCC / macOS Clang / SYCL). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix: 17 lanes, six of them required. |
 | [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; not required. |
@@ -30,6 +30,27 @@ For the complete inventory, mapping of shortened names, and conventions,
 see [CI job display names](ci-job-names.md). For every build lane, whether it
 is required and which ADR owns it, see
 [ADR-1259](../adr/1259-ci-build-matrix-as-it-runs.md).
+
+## Python type-check gate
+
+`Python Lint` is a required, fail-closed check. It installs the reviewed
+`requirements/locks/mypy.txt` lock and runs the same merge-base gate as the
+local `mypy-local` pre-push hook:
+
+```bash
+python3 scripts/git-hooks/pre-push-mypy.py
+```
+
+The gate checks added, copied, modified, renamed, and type-changed tracked
+`*.py` paths under `ai/` and `scripts/`. It reports only findings absent from
+the selected merge base, but an analysis crash, missing tool/base/file, or
+unattributable nonzero status fails the job. `ai/src/` is checked separately
+with `--explicit-package-bases` so each module has one canonical identity.
+
+Pull requests compare with `origin/master`. A master push compares with the
+event's previous commit, so hosted post-merge validation covers the pushed
+range. See [ADR-1310](../adr/1310-mypy-ci-fail-closed.md) and the detailed
+[hook contract](pre-commit-hooks.md#python-push-scope).
 
 ## Draft pull requests defer heavy CI
 
@@ -131,6 +152,13 @@ notice. A failing `gosec` scan blocks merging even though it prevents later
 Go tests from running. The job also starts on ready-for-review events, so
 draft-era results cannot replace the current validation run.
 
+Before installing native build dependencies, that job runs
+`go fix -diff ./...` under the exact `go.mod` toolchain. Per
+[ADR-1338](../adr/1338-go-fix-clean-tree-gate.md), any available source
+rewrite is a blocking failure; CI never mutates the checkout. Run
+`make go-fix`, repeat if the Go tool reports cascading fixes, and finish with
+`make go-fix-check` locally.
+
 For the hardware-dependent `SYCL Parity (Arc A380)` check
 ([ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md)), the aggregator
 reads the repository variable `SYCL_ARC_RUNNER_ENABLED`. While it is not
@@ -140,6 +168,16 @@ job is accepted as passing; while it is `true` the job must report
 `sycl-parity.yml` produces when the runner is unregistered, offline, or the
 probe token is rejected — fails the aggregator. Operator runbook:
 [ci-self-hosted-sycl.md](ci-self-hosted-sycl.md).
+
+`Coverage GPU` uses the same fail-closed shape under
+[ADR-1319](../adr/1319-fail-closed-self-hosted-gpu-admission.md), but remains a
+distinct `gpu-full` capability: a hosted job checks
+`GPU_COVERAGE_ENABLED` and the complete `self-hosted,linux,gpu-full` online
+label set before the hardware job can be dispatched. Disabled means
+absence/skip is permitted. Enabled means `Coverage GPU` must report success;
+probe failure, absence, skip or neutral blocks the aggregator. The Arc-only
+runner must not be relabelled to satisfy this CUDA + SYCL contract. Operator
+runbook: [self-hosted-runner.md](self-hosted-runner.md).
 
 ## Twin-drift gate
 
@@ -385,7 +423,7 @@ to CI:
 | Carve-out | Blocker | Owner / plan |
 | --- | --- | --- |
 | Changed-files clang-tidy job excludes `core/src/cuda/`, `core/src/feature/cuda/`, `core/test/test_cuda_*`, `core/test/test_gpu_picture_pool.c` | CUDA toolkit headers on the hosted runner (`--cuda-host-only` needs them) | cuda lane → PR-required; retire the `grep -v` lines in the same PR |
-| … excludes `core/src/sycl/`, `core/src/feature/sycl/`, `core/test/test_sycl*`; `Tidy SYCL (advisory)` job is `continue-on-error` | oneAPI on the runner (the advisory job already installs it) | sycl lane → PR-required first; drop `continue-on-error` |
+| `Tidy Changed` excludes `core/src/sycl/`, `core/src/feature/sycl/`, and `core/test/test_sycl*`; the separate `Tidy SYCL` job now covers those changed-file globs as a required, fail-closed gate, but no workflow runs `tidy-ratchet.py --lane sycl` and `core/tools/vmaf_vpl.c` remains outside that job's selectors | The CPU ratchet has no complete SYCL/oneVPL compile database; the dedicated oneAPI job currently measures changed SYCL TUs rather than the whole SYCL baseline | add a required whole-lane SYCL ratchet and include `core/tools/vmaf_vpl.c`; keep `Tidy SYCL` required |
 | … excludes `core/src/hip/`, `core/src/feature/hip/`, `core/test/test_hip*` | ROCm headers on the hosted runner | hip lane → PR-required |
 | … excludes `core/src/feature/arm64/` | no aarch64 compile DB on x86 runners | measure on the ARM build leg (cross `-target aarch64`) |
 | … excludes `core/src/mcp/`, `core/test/test_mcp*`, `core/test/fuzz/`, `core/src/compat/win32/`, `core/tools/vmaf_vpl.c` | needs `-Denable_mcp=true` / fuzz / libva / MinGW compile DBs | add those TUs to the cpu-lane build in CI |
@@ -469,6 +507,14 @@ missing, the gate errors instead of passing over rows that have quietly become
 ungated. The other — an unrecognised status cell — is uncovered, and is the
 likelier of the two, since it takes a single row edit rather than a heading
 rename.
+
+An explicit move tombstone closes that last common no-status case. If a comment
+under `## Open bugs` says an id "moved to Recently closed", the same id may not
+still have a table row in Open bugs. This is checked independently of table
+status columns: a bookkeeping change once added the PTQ row's tombstone while
+leaving the stale Open row directly above it, and all status-token checks
+reported clean. The valid result is the tombstone in Open bugs plus the single
+authoritative row under `## Recently closed`.
 
 ## Bug-status hygiene gate (ADR-0165 / ADR-0334)
 
@@ -569,7 +615,7 @@ make verify-all     # HISS/context/evidence plus duplicate implementations
 make dedupe-check   # fast standalone AST clone scan
 make format-check   # clang-format + black + ruff, no writes
 make lint           # configured native + Python, shell, Markdown, Go and docs checks
-meson test -C build --suite=fast
+make test-fast
 bash scripts/ci/twin-drift-check.sh  # .c/.cpp twin drift + stale source refs (ADR-1135)
 pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 ```

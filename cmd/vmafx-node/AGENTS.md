@@ -58,7 +58,18 @@ into fx graph.
    revert to ctx-bound constructor spawning at construction time -> leaked
    goroutine past `Close`, bound drainer to caller lifetime fx does not own.
    Newline-delimited JSON wire protocol, bounded ring-buffer drop semantics
-   unchanged.
+   unchanged. Admission-aware trainer failures use `ok: true`,
+   `retry_queued: true`, and `training_error`: the sidecar retained the sample,
+   so the Go client counts it delivered and logs the deferred training error
+   without resubmitting. A capacity-deferred sample uses `ok: false` and
+   `retryable: true`; the client retains that in-flight sample locally across
+   reconnects and retries it ahead of the bounded queue without competing for a
+   queue slot or incrementing `delivered`. Non-retryable `ok: false` remains terminal.
+   Local JSON encoding failures are also terminal: increment `dropped`, keep the
+   connection open, and continue with the next queued sample so a non-finite
+   payload cannot poison the drainer. Only transport failures and explicit
+   retryable ACKs retain the in-flight sample.
+   Keep `feedbackAck` synchronized with the Python response.
 
 5. **Encoder probe is NON-FATAL and runs in OnStart** (`providers.go`,
    ADR-0717): `provideEncoderInventory` returns shared `*probe.Inventory`

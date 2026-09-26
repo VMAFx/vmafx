@@ -22,7 +22,7 @@ index 3375a2a255ffb69670616c149df7aac04d8f32bd..1f2c0529a66c186e904e1b53488d5c6e
  enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
                                 require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 552743f4e3fa2cc94d36487b94e2272546862660..4d72812bff3e242cc48b08748a729ecb76e505ee 100644
+index bb8d925c3ec623c8b9da1406e4c754ad9abf7af1..0bd442b3c92f34f5f2ccca510d77ec2539a4b149 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -47,6 +47,10 @@
@@ -94,7 +94,7 @@ index 552743f4e3fa2cc94d36487b94e2272546862660..4d72812bff3e242cc48b08748a729ecb
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -655,6 +696,13 @@ clean_up:
+@@ -662,6 +703,13 @@ clean_up:
  
      if (s->vmaf)
          vmaf_close(s->vmaf);

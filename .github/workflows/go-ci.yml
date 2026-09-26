@@ -23,6 +23,11 @@ jobs:
     # required-aggregator
     name: go vet + go test
     runs-on: ubuntu-26.04
+    env:
+      # pkg/libvmaf intentionally has no implicit -lvmaf fallback: every build
+      # selects the just-built fork library instead of a runner's distro copy.
+      CGO_LDFLAGS: -L${{ github.workspace }}/core/build-cpu/src -lvmaf -lm
+      LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-cpu/src
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -54,6 +59,12 @@ jobs:
           go-version-file: go.mod  # single source of truth: the go directive in go.mod (Renovate bumps it)
           cache: true
 
+      # ADR-1338: fail before native setup when the pinned Go toolchain can
+      # produce a reviewed source modernization that is not yet committed.
+      - name: go fix (diff)
+        if: steps.impact.outputs.go_checks == 'true'
+        run: go fix -diff ./...
+
       # ADR-0973 sibling — pkg/libvmaf uses cgo with -L core/build-cpu/src -lvmaf
       # so go test fails to link unless libvmaf is built first.
       - name: Install meson + ninja for libvmaf build
@@ -70,7 +81,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends ninja-build pkg-config nasm
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r requirements/locks/build.txt
 
       # cmd/vmafx-ort-runner (ADR-1134) is a cgo shim over libvmaf's ONNX
       # session API, so this job builds libvmaf WITH ONNX Runtime: the
@@ -191,12 +203,4 @@ jobs:
 
       - name: go test
         if: steps.impact.outputs.go_checks == 'true'
-        env:
-          # cgo packages (vmafx-controller, vmafx-mcp, vmafx-node, vmafx-server,
-          # pkg/libvmaf) link against libvmaf.so.3 which is built in
-          # core/build-cpu/src but not installed system-wide.  Without this
-          # variable the dynamic linker cannot locate libvmaf.so.3 at test
-          # run-time and the test binary exits with "cannot open shared object
-          # file" before running a single test case.
-          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-cpu/src
         run: go test ./...

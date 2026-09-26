@@ -1,0 +1,7 @@
+-r requirements.txt
+-r test/requirements.txt
+pytest==9.1.1
+pytest-timeout==2.4.0
+setuptools==84.0.0
+wheel==0.48.0
+cython==3.2.4

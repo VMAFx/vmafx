@@ -205,7 +205,7 @@ func TestRunTPEHitsTheBandAtDefaultBudgets(t *testing.T) {
 			within := 0
 			seen := make([]int, 0, repeats)
 
-			for i := 0; i < repeats; i++ {
+			for range repeats {
 				got, err := RunTPE(context.Background(), TPEParams{
 					TargetVMAF: tc.target,
 					Predict:    SmokePredictor,

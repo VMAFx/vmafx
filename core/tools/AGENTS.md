@@ -103,6 +103,14 @@ tools/
   protects rebase, and
   `core/test/test_cli_parse_long_only_args.c` protects
   unit-test path.
+- **`cli_parse.cpp::usage()` discrete overloads** (rebase-sensitive).
+  `usage()` provides discrete template overloads for 1, 2, and 3 arguments
+  and no variadic parameter-pack fallback. This prevents zero-argument pack
+  expansions that trip CodeQL
+  `cpp/unused-local-variable` and `cpp/unused-static-variable` (Alerts 1002/1003).
+  Do not collapse back into an unconstrained variadic pack without verifying
+  CodeQL analysis. Adversarial regression coverage is pinned by
+  `core/test/test_cli_parse_long_only_args.c`.
 - **`y4m_convert_411_422jpeg` chroma-row write guards are
   load-bearing** (rebase-sensitive). 4:1:1 → 4:2:2-jpeg upsample
   in [y4m_input.c](y4m_input.c) writes both even and odd output
@@ -147,30 +155,26 @@ tools/
     silently succeed. `per_shot_long_opts` table maps `--help` to
     `'H'`; `per_shot_parse_args` handles `'H'` for help and `'?'` for
     error path. Never change short-option value.
-  - **Scan stops at `VMAF_PER_SHOT_MAX_FRAMES`.** `per_shot_scan_loop`
-    counts frames in a `uint32_t` and `per_shot_record_frame` stores that
-    index, so an endless input (FIFO with live writer, `/dev/zero`) used to
-    spin forever and would wrap numbering past `UINT32_MAX`. Loop now
-    reports `-EFBIG` at bound. Never restore bare `for (;;)`. The bound is
-    the counter width, not a timeout — do not shrink it to make an endless
-    input fail faster, because any smaller value can truncate real content
-    ([ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md)).
-    The ceiling is tested *after* the loop, so the scan is conservative by
-    exactly one frame: an input of `UINT32_MAX` frames is rejected even
-    though every frame was numbered without wrapping, and the largest
-    accepted input is `UINT32_MAX - 1` frames. That is deliberate and
-    unreachable (about a petabyte at 576x324); do not relax the guard past
-    the counter width to recover it.
-    The ceiling is tested *after* the loop, so the scan is conservative by
-    exactly one frame: an input of `UINT32_MAX` frames is reported `-EFBIG`
-    even though every frame was numbered without wrapping. That is
-    deliberate and unreachable (about a petabyte at 576x324); do not
-    "fix" it by relaxing the guard past the counter width.
-  - **Chroma skip uses `fseeko` / `_fseeki64`** (rebase-sensitive).
-    `per_shot_read_luma` skips chroma bytes via `fseeko` (POSIX) or
-    `_fseeki64` (WIN32). Never revert to `fseek((long)...)` —
-    `long` cast silently truncates on 32-bit targets for frames
-    larger than 2 GiB, seeking to wrong position without error.
+  - **Scan stops at `VMAF_PER_SHOT_MAX_FRAMES` or `--frames` ceiling.** `per_shot_scan_loop`
+    tracks frames in a `uint64_t` and `per_shot_record_frame` stores that
+    index. An explicit operator ceiling `-F, --frames <N>` (with aliases
+    `--frame_cnt` and `--max-frames`) bounds scans on FIFOs, streams, or
+    synthetic inputs, exiting cleanly with code 0 on reaching N frames
+    ([ADR-1318](../../docs/adr/1318-pershot-frames-ceiling.md)). The default
+    is `0U` (unbounded), preserving full scans on finite files up to
+    `VMAF_PER_SHOT_MAX_FRAMES` (`UINT32_MAX`), where exhaustion reports `-EFBIG`.
+    Never restore a bare `for (;;)`. At the built-in boundary, the reader probes
+    for one additional *complete* frame and checks that read before indexing it:
+    an input of exactly `UINT32_MAX` frames is accepted when EOF is reached,
+    reporting `-EFBIG` only if input strictly exceeds `UINT32_MAX` complete
+    frames, resolving the off-by-one check from
+    [ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md).
+  - **Raw-frame reads consume every luma and chroma byte** (rebase-sensitive).
+    `vmaf_per_shot_read_luma` treats EOF as clean only before the first luma
+    byte of a new frame. A short luma plane, short chroma planes, or `ferror`
+    fails closed. Never restore seek-based chroma skipping: ISO C permits a
+    regular file seek beyond EOF, so seek success does not prove that the raw
+    frame is complete and can create a phantom final frame.
 - `vmaf_vpl.c` — VPL decode -> SYCL pipeline (fork-local, not upstream).
   - **`vpl_decode_frame` retries under `VPL_DECODE_MAX_ATTEMPTS`.** The
     ceiling is *derived*: `VPL_SYNC_TIMEOUT_MS` / `VPL_DECODE_RETRY_US`, i.e.
@@ -322,6 +326,22 @@ help, version and parse errors, which skips automatic destructors but runs
 static destructors. `CliRunGuard` is created immediately after successful
 parsing and owns all ordinary-return cleanup.
 
+## Windows CLI arguments are strict UTF-8 (ADR-1182 follow-up)
+
+The Windows `vmaf` and `vmafx` targets enter through `wmain`, convert every
+UTF-16 token with `WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, ...)`,
+and only then call the parser shared with POSIX `main`. Keep the conversion
+before `cli_parse()`: reference, distorted, output, and model paths must reach
+the existing UTF-8 path layer before any option handler can copy them. Invalid
+UTF-16 must fail closed, not use replacement characters.
+
+GNU-style Windows linkers need `-municode` on both CLI targets so CRT startup
+selects `wmain`; MSVC-style linkers infer the entry point. Do not apply that
+flag to unrelated tools with narrow `main`. The Windows-only
+`test_vmaf_windows_utf8_argv` regression launches the built binary through
+`CreateProcessW` and checks the exact accented+CJK output path. POSIX entry and
+argument bytes remain unchanged.
+
 ## `parse_unsigned` rejects negatives on purpose (ADR-1209)
 
 `parse_unsigned` refuses leading `'-'` before calling `strtoul`, because
@@ -354,3 +374,14 @@ warning, keeps report, exits 0. Scoring common prefix of shorter clip is
 supported use. Do not fold two cases together.
 
 `core/tools/test/test_vmaf_read_error_exit.sh` pins all four cases, `fast` suite.
+
+## GPU-tagged tool tests run exclusively
+
+Every test under `core/tools/test/` carrying the Meson `gpu` suite tag must
+also set `is_parallel : false`. These shell-driven CLI tests consume the same
+physical accelerator as the kernel tests under `core/test/`; leaving either
+`test_vmaf_cuda_gpumask` or a `test_vmaf_<backend>_threads` registration
+parallel defeats the shared-device scheduling contract. The global
+`check_gpu_test_serialization` test reads Meson introspection across the whole
+project, so keep these registrations visible to it and do not replace the
+suite tag with a local-only convention.

@@ -19,7 +19,7 @@ hip/
                         #   the one way a host VmafPicture plane reaches the
                         #   device (waits for the copy; see ../feature/hip/AGENTS.md)
   hip_handle.h          # uintptr_t <-> hipStream_t / hipEvent_t, via a union
-  dispatch_strategy.{c,h} # Feature-name → kernel routing — stub
+  dispatch_strategy.{c,h} # Feature/extractor-name → active-kernel routing
   kernel_template.{h,c} # per-feature HIP kernel scaffolding (T7-10 / ADR-0241)
   stubs.c               # -ENOSYS fallbacks for the public libvmaf_hip.h
                         #   entry points when HAVE_HIP is OFF. Wired in
@@ -71,7 +71,7 @@ ADR-0372 (batch-1, this PR).
    `vmaf_hip_state_init` returns `0` on host with `>=1` AMD GPU;
    `-ENODEV` otherwise. `vmaf_hip_import_state` was implemented in
    ADR-0519 (2026-05-18), now lives in `core/src/libvmaf.c` next to
-   CUDA / SYCL / Vulkan / Metal `_import_state` twins; stub body
+   CUDA / SYCL / Metal `_import_state` twins; stub body
    removed from `common.c`. Remaining feature-kernel ports follow as
    their own PRs gated by `places=4` cross-backend-diff lane
    (ADR-0214).
@@ -106,6 +106,30 @@ ADR-0372 (batch-1, this PR).
   mirror. See "Rebase-sensitive invariants" below.
 
 ## Rebase-sensitive invariants
+
+- **The HIP dispatch allowlist uses exact public names.** Under
+  `HAVE_HIPCC`, `g_hip_features[]` must contain each active HIP extractor's
+  `.name` and every `provided_features[]` key that callers may route through
+  `vmaf_hip_dispatch_supports()`. Keep the terminating `NULL` and the
+  fail-closed `direct` / `none` / `disable` environment override semantics.
+  Adding an extractor to `feature_extractor_list[]` without adding its exact
+  dispatch names silently falls back to CPU. The repository's
+  `check-dispatch-registry.sh` guards global symbol registration only; review
+  the extractor's `provided_features[]` and extend the relevant HIP runtime
+  test when changing this table. Commit `53c8ef155` established this coupling.
+
+- **HIP HSACO kernel header dependency tracking**
+  ([ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
+  [Research-2106](../../../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
+  All HIP HSACO custom targets (`hip_hsaco_*`) in `core/src/meson.build`
+  must bind `depend_files: hip_kernel_shared_headers` covering the complete
+  repo-local quoted include closure, combined with compiler depfiles
+  (`depfile: name + '.hsaco.d'` and
+  passing `-Xclang -dependency-file -Xclang @DEPFILE@ -Xclang -MT -Xclang @OUTPUT@`
+  to hipcc).
+  Editing structs in shared headers (e.g. `integer_adm_cuda.h`, `vif_cuda.h`, `moment_cuda.h`)
+  must reliably trigger incremental HSACO rebuilds in Ninja without manual `touch`
+  workarounds. Do not remove `depend_files` or omit shared headers on rebase.
 
 - **`kernel_template.h` mirrors `cuda/kernel_template.h`** (fork-local,
   ADR-0241). Struct shapes (`VmafHipKernelLifecycle` ↔
@@ -231,8 +255,12 @@ do not replace — scaffold invariants already documented above.
   calls (GCN/RDNA warp size = 64; HIP exposes no native uint64
   shuffle). If future ROCm release adds native uint64 shuffle
   primitives, kernel can be simplified, but cross-backend numeric
-  gate (`meson test -C build --suite=hip-parity`) must pass before
-  landing any change.
+  gate must pass before landing any change:
+
+  ```bash
+  python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+    -C build --suite=hip-parity
+  ```
 
 - **Merge-conflict risk with PR #612**:
   `vmaf_hip_kernel_submit_post_record` in `kernel_template.{h,c}`
@@ -245,14 +273,14 @@ do not replace — scaffold invariants already documented above.
 - **`vmaf_hip_import_state` lives in `core/src/libvmaf.c`, not in
   `core/src/hip/common.c`** (fork-local, ADR-0519). Function needs
   `VmafContext` field-level access; placing it next to CUDA / SYCL /
-  Vulkan / Metal `_import_state` twins keeps four "stash the
-  borrowed state pointer on the context" implementations in one TU.
+  Metal `_import_state` twins keeps the borrowed-state implementations in
+  one TU.
   Do NOT re-introduce copy of function in `hip/common.c` —
   duplicate-symbol link error is obvious failure mode, but more
   insidious one is divergent behaviour between two definitions. On
   rebase: if upstream port adds HIP-related function to
   `libvmaf.c`, leave `vmaf_hip_import_state` block intact next to
-  its SYCL / Vulkan / Metal siblings.
+  its SYCL / Metal siblings.
 
 - **`VmafContext::hip` substruct is appended after `metal`**
   (fork-local, ADR-0519). `hip` struct holds a single
@@ -263,10 +291,11 @@ do not replace — scaffold invariants already documented above.
   keep HIP block at end. Keep its `#ifdef HAVE_HIP` guard exactly
   aligned with public-header include block at top of file.
 
-- **HIP state lifetime mirrors SYCL / Vulkan / Metal, not CUDA**
+- **HIP state lifetime mirrors SYCL / Metal, not CUDA**
   (fork-local, ADR-0519). `vmaf_close` clears `vmaf->hip.state =
   NULL` without freeing underlying state — caller owns state, frees
-  it via `vmaf_hip_state_free()` after `vmaf_close`. This
+  it via `vmaf_hip_state_free()` only after `vmaf_close()` returns exactly 0.
+  Every nonzero close retains the context and borrowed state for retry. This
   deliberately differs from CUDA twin's by-value copy semantics,
   which historically grew ownership-transfer ambiguity newer
   backends avoid. On rebase: if upstream changes CUDA twin's
@@ -298,8 +327,8 @@ do not replace — scaffold invariants already documented above.
   [`../feature/cuda/AGENTS.md`](../feature/cuda/AGENTS.md).
   `integer_motion_v2_hip.c` and `float_motion_hip.c` both carry
   `motion_fps_weight` option and apply it identically to CUDA /
-  SYCL / Vulkan / Metal twins. Any future change to weight
-  application math must span all motion-family GPU twins in same
+  SYCL / Metal twins. Any future change to weight
+  application math must span all current motion-family GPU twins in same
   PR.
 
 - **`float_ssim_hip.c` mirrors `integer_ssim_cuda.c`
@@ -372,8 +401,8 @@ do not replace — scaffold invariants already documented above.
 - [ADR-0519](../../../docs/adr/0519-hip-import-state-implementation.md)
   — `vmaf_hip_import_state` implementation; moves function from
   `hip/common.c` to `libvmaf.c`, unblocks `vmaf --backend hip` on
-  AMD ROCm hosts. HIP joins CUDA / SYCL / Vulkan as fully working
-  runtime-selected backend (scores match CPU bit-exactly because
+  AMD ROCm hosts. HIP joins CUDA / SYCL / Metal as a runtime-selected
+  backend (scores match CPU bit-exactly because
   dispatch still routes through CPU twins).
 - [ADR-0523](../../../docs/adr/0523-hip-integer-motion-extractor-registration.md)
   — register `vmaf_fex_integer_motion_hip` (single-extractor fix).
@@ -393,6 +422,9 @@ do not replace — scaffold invariants already documented above.
   scaffolds whose extractor names already register via canonical
   `ciede_hip.c` / `float_moment_hip.c` TUs — leave them out of
   `hip_sources` to avoid duplicate-symbol link error.
+- [ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md)
+  — CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit
+  depend_files and compiler depfiles.
 
 ## Build
 
@@ -401,7 +433,7 @@ do not replace — scaffold invariants already documented above.
 meson setup build -Denable_hip=true -Denable_hipcc=false \
     -Denable_cuda=false -Denable_sycl=false libvmaf
 ninja -C build
-meson test -C build
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build
 
 # Full HIP build with real kernels (requires ROCm 6+ and hipcc in PATH):
 meson setup build_full -Denable_hip=true -Denable_hipcc=true \

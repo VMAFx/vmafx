@@ -49,6 +49,21 @@ under [`../../meson.build`](../../meson.build) adds
   - ADM gain limiting uses int64 Q31 (`gain_limit_to_q31` +
     `launch_decouple_csf<false>` in `integer_adm_sycl.cpp`).
   - VIF gain limiting uses fp32 `sycl::fmin`.
+- **Kernel identities and output captures have an explicit boundary**
+  ([Research-2090](../../../../docs/research/2090-sycl-silent-revert-residuals-2026-09-24.md)).
+  `speed_chroma_sycl.cpp` and `speed_temporal_sycl.cpp` use role-prefixed
+  `launch_{chroma,temporal}_{indterm,score}` names. Their anonymous kernel
+  lambdas otherwise receive identical generated names across translation
+  units, allowing the linker to pair one launcher's host capture layout with
+  the other launcher's device image. Never collapse the role prefixes.
+  `float_psnr_sycl.cpp` and `integer_psnr_sycl.cpp` capture their output
+  pointers through `FpsnrOutput` and `PsnrKernelArgs`; do not flatten those
+  structs back into raw lambda captures. `integer_moment_sycl.cpp` is the
+  remaining scalar-argument shape and aliases `d_sums` to `e_sums` before the
+  submit lambda. Keep the alias and use it for all four atomics. The source
+  contract in `core/test/test_sycl_kernel_source_contract.py` plants the fp64,
+  cross-TU kernel-name, and raw-capture regressions and must stay wired into
+  the fast suite.
 - **Wholly-new fork files use dual Netflix + Lusoris/Claude
   copyright header** per [ADR-0025](../../../../docs/adr/0025-copyright-handling-dual-notice.md).
   Most TUs here fork-original SYCL ports of
@@ -78,6 +93,17 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
 
 ## Rebase-sensitive invariants
 
+- **A failed extractor `init` owns its cleanup (BUG-048 section E).** The
+  generic feature-extractor framework does not invoke `close` after `init`
+  returns an error. Every SYCL init path that has acquired USM, a feature-name
+  dictionary, or a graph registration must therefore call its NULL-safe local
+  close callback before propagating the error. This is enforced without a GPU
+  by `core/test/test_sycl_init_unwind.cpp`; keep the allocator, dictionary, and
+  graph fault cases when rebasing any init/close pair. Historical producer
+  `709ce470e` was reverted by `5d070b0b4`; the current restoration boundary is
+  documented in
+  `docs/research/2101-bug048-sycl-init-unwind-restoration-2026-09-24.md`.
+
 - **`integer_motion_sycl.cpp::motion3_postprocess_*` honours
   motion3 GPU contract** (ADR-0219). Applies CPU's host-side
   post-process to motion2 with no device-side state.
@@ -91,8 +117,12 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `launch_blur_sad_fused` kernels for U and V, each writing to
   `d_blur_u/v[cur]`, accumulating into `d_sad_u` / `d_sad_v`.
   `collect_fex_sycl` sums Y + U + V contributions, each normalized by
-  respective plane area (`chroma_w × chroma_h` for UV in YUV420P),
-  matching `float_motion(motion_add_uv=true)` CPU parity at places=4.
+  respective plane area (`chroma_w × chroma_h` for UV in YUV420P). The
+  numerical gate is the scalar fixed-point oracle in
+  `test_sycl_motion_add_uv_parity.c` (ADR-1326), including its required
+  960x540 variant. `float_motion(motion_add_uv=true)` has the same semantic
+  option but different coefficients and float reduction order, so it is not
+  the kernel's numerical oracle.
   CUDA, Vulkan, HIP, and Metal twins expose option but return
   `-ENOTSUP` with `WARNING` until their kernel ports land. On rebase:
   if upstream Netflix adds `motion_add_uv` to `integer_motion.c`, verify
@@ -158,19 +188,24 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   CUDA + HIP twins in same PR.
 
 - **`integer_ms_ssim_sycl.cpp` honours `enable_chroma` option parity**
-  (mirrors ms_ssim_vulkan PR #957 / ADR-0453 pattern). `enable_chroma`
+  (ADR-0526, ADR-0583). `enable_chroma`
   option (default `false`) clamps `n_planes` to 1 in `init_fex_sycl` when
   set to `false`, to 3 otherwise (except YUV400P which always forces 1).
-  v1 kernel reads plane 0 only; `n_planes > 1` reserved for v2. On rebase:
-  keep default `false` and clamp logic aligned with Vulkan and CUDA
-  MS-SSIM twins; all three backends must agree on default and dispatch.
+  Chroma geometry uses the picture allocator's ceil subsampling, so a
+  176x176 chroma minimum maps to an exact 351x351 4:2:0 luma minimum;
+  the init error suggestion uses that exact inverse. Submit, computation and
+  publication iterate every active plane, so `enable_chroma=true` dispatches
+  Y, Cb and Cr today. On rebase: keep the default, YUV400P clamp and
+  three-plane dispatch aligned with the CPU and Metal MS-SSIM extractors.
 
 - **`integer_ms_ssim_sycl.cpp` honours `enable_lcs`, `enable_db`,
   `clip_db` GPU option parity** (ADR-0243, ADR-1078). When
   `enable_lcs=true`, emits 15 extra metrics
   (`float_ms_ssim_{l,c,s}_scale{0..4}`). When `enable_db=true`,
   returns `-10*log10(1 - ms_ssim)` instead of raw linear score;
-  `clip_db` clamps linear value to `[0, 1]` before conversion.
+  `clip_db=true` derives the geometry-dependent `max_db` ceiling from frame
+  dimensions and bit depth, then caps the dB-domain output at that ceiling
+  (ADR-1221). It never clamps the linear score to `[0, 1]`.
   All three options default to `false` — output at default settings
   numerically identical to pre-ADR-1078 binary. Metric ordering
   and `places=4` cross-backend contract = part of public API
@@ -264,9 +299,9 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   (ADR-1220) — see canonical note in
   [`../cuda/AGENTS.md`](../cuda/AGENTS.md). `launch_csf_cm` and
   `launch_aim_cm` capture `adm_p_norm`; host pooling uses
-  `1.0f / adm_p_norm` for root and noise constant. This twin
-  does not declare `adm_bypass_cm`, rejects it — deliberate,
-  adding it = feature, tracked in `docs/state.md`.
+  `1.0f / adm_p_norm` for root and noise constant. `adm_bypass_cm`
+  (`bcm`) captured into `FadmCmParams.bypass_cm`; `fadm_cm_threshold`
+  returns 0.0f when non-zero (CPU/CUDA/Metal parity, ADR-1220).
 
 - **VAAPI / dmabuf zero-copy import** — FFmpeg `libvmaf_sycl`
   filter (`ffmpeg-patches/0005-*.patch`) consumes
@@ -331,11 +366,12 @@ DPC++ toolchain with `icpx` on PATH.
 
 ## Per-kernel parity-test invariant (rounds 1–3)
 
-Every SYCL feature kernel here has CPU twin and
-`core/test/test_sycl_<kernel>_parity.c` gate at ADR-0214 places=4
-(1e-4) tolerance. Coverage matrix below tracks which SYCL kernel
-maps to which CPU twin and which parity test. **On rebase**: if
-SYCL kernel renamed or new one added, parity test name +
+Every SYCL feature kernel here has a scalar reference and
+`core/test/test_sycl_<kernel>_parity.c` gate. Most use ADR-0214 places=4
+(1e-4) tolerance; `motion_add_uv` uses ADR-1326's exact fixed-point oracle
+because its CPU float semantic twin has different arithmetic. Coverage matrix
+below tracks which SYCL kernel maps to which CPU twin and which parity test.
+**On rebase**: if SYCL kernel renamed or new one added, parity test name +
 ADR-0884 / ADR-0946 backlog must update in same PR.
 
 | SYCL TU | CPU TU | Parity test | ADR |
@@ -406,13 +442,14 @@ tables come from shared `vmaf_cambi_init_tvi_and_vlt()` in `cambi.c`
 
 ## Per-kernel parity-test invariant (ADR-0214 + ADR-0868 + ADR-0884)
 
-**Every shipping SYCL kernel here must have CPU-vs-SYCL parity test
+**Every shipping SYCL kernel here must have a scalar-vs-SYCL parity test
 under [`core/test/`](../../../test/), wired into
 [`core/test/meson.build`](../../../test/meson.build) with suite
-`['fast', 'gpu']`.** Parity test asserts headline score
-matches CPU scalar reference within ADR-0214 places=4 (`1e-4`)
-tolerance. Skips cleanly when no SYCL device visible — mirrors
-`[skip: no SYCL device]` pattern in
+`['fast', 'gpu']`.** A parity test normally asserts the headline score
+matches its CPU scalar reference within ADR-0214 places=4 (`1e-4`);
+`motion_add_uv` instead matches an arithmetic-identical fixed-point oracle
+within ADR-1326's derived host-double bound. Tests skip cleanly when no SYCL
+device visible — mirrors `[skip: no SYCL device]` pattern in
 [`test_sycl_motion3_parity.c`](../../../test/test_sycl_motion3_parity.c).
 
 Coverage matrix:
@@ -434,7 +471,7 @@ Coverage matrix:
 **Rebase-sensitive**: adding new SYCL kernel TU, same PR
 must add matching `test_sycl_<kernel>_parity.c` and meson
 wiring. `/cross-backend-diff` skill = dev-time tool only,
-does NOT run in CI on every PR; only in-tree `meson test` parity
+does NOT run in CI on every PR; only in-tree repository-runner parity
 tests catch per-kernel regressions automatically.
 
 ## motion3_v2 cross-twin invariant (ADR-1108)

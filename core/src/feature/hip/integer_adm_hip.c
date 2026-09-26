@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include "adm_csf_fixed_point.h"
+#include "adm_score.h"
 #include "barten_csf_tools.h"
 #include "common.h"
 #include "dict.h"
@@ -39,6 +40,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "integer_adm.h"
+#include "nonfinite_score.h"
 #include "libvmaf/picture.h"
 
 #include "hip/integer_adm_hip.h"
@@ -81,6 +83,7 @@ typedef struct AdmStateHip {
     double adm_p_norm;
     float rfactor[12];
     uint32_t i_rfactor[12];
+    uint32_t csf_normalization_shift[4];
     unsigned submit_w, submit_h; /* stored by submit for collect */
 
 #ifdef HAVE_HIPCC
@@ -180,34 +183,11 @@ static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
     return f;
 }
 
-static void adm_csf_rfactor_scale0(const float rfactor1[3], double adm_norm_view_dist,
-                                   int adm_ref_display_height, int adm_csf_mode,
-                                   uint16_t i_rfactor[3])
-{
-    if (fabs(adm_norm_view_dist * adm_ref_display_height -
-             DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) < 1.0e-8 &&
-        adm_csf_mode == ADM_CSF_MODE_WATSON97) {
-        i_rfactor[0] = 36453;
-        i_rfactor[1] = 36453;
-        i_rfactor[2] = 49417;
-    } else {
-        const double pow2_21 = pow(2, 21);
-        const double pow2_23 = pow(2, 23);
-        i_rfactor[0] = (uint16_t)(rfactor1[0] * pow2_21);
-        i_rfactor[1] = (uint16_t)(rfactor1[1] * pow2_21);
-        i_rfactor[2] = (uint16_t)(rfactor1[2] * pow2_23);
-    }
-}
-
 /**
- * Refuse a CSF configuration whose fixed-point weights would wrap
- * (ADR-1191). Mirrors `adm_csf_config_check()` in
- * core/src/feature/integer_adm.c so the CPU reference and this twin accept
- * exactly the same set of configurations -- the bounds in
- * adm_csf_fixed_point.h are the CPU pipeline's, deliberately applied here
- * too, because a twin that accepted a configuration the CPU rejects would
- * break the option / feature-name parity contract (ADR-1183). Returns 0 or
- * -EINVAL.
+ * Validate a CSF configuration before claiming device resources. Mirrors
+ * `adm_csf_config_check()` in core/src/feature/integer_adm.c so the CPU and
+ * this twin reject the same invalid table output. Finite over-range weights
+ * are assigned the shared per-scale normalisation exponent later.
  */
 static int adm_csf_config_check(const AdmStateHip *s)
 {
@@ -225,14 +205,13 @@ static int adm_csf_config_check(const AdmStateHip *s)
     return 0;
 }
 
-/* CSF weight per scale and band (rfactor) and its fixed-point form
- * (i_rfactor): adm_csf_rfactor_scale0() for scale 0, rfactor * 2^32 for
- * scales 1-3. */
+/* CSF weight per scale and band plus its fixed-point form and shared
+ * normalisation exponent. */
 static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_height,
                              int adm_csf_mode, double adm_csf_scale, double adm_csf_diag_scale,
-                             float rfactor[12], uint32_t i_rfactor[12])
+                             float rfactor[12], uint32_t i_rfactor[12],
+                             uint32_t normalization_shift[4])
 {
-    const double pow2_32 = pow(2, 32);
     for (unsigned scale = 0; scale < 4; ++scale) {
         const size_t band0 = (size_t)scale * 3u;
         const AdmCsfFactors f =
@@ -241,17 +220,15 @@ static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_heig
         rfactor[band0] = f.factor1;
         rfactor[band0 + 1] = f.factor1;
         rfactor[band0 + 2] = f.factor2;
-        if (scale == 0) {
-            uint16_t i_rf[3];
-            adm_csf_rfactor_scale0(rfactor, adm_norm_view_dist, adm_ref_display_height,
-                                   adm_csf_mode, i_rf);
-            i_rfactor[0] = i_rf[0];
-            i_rfactor[1] = i_rf[1];
-            i_rfactor[2] = i_rf[2];
-        } else {
-            i_rfactor[band0] = (uint32_t)(rfactor[band0] * pow2_32);
-            i_rfactor[band0 + 1] = (uint32_t)(rfactor[band0 + 1] * pow2_32);
-            i_rfactor[band0 + 2] = (uint32_t)(rfactor[band0 + 2] * pow2_32);
+        double fixed[3];
+        normalization_shift[scale] = 0u;
+        const int err = adm_csf_fixed_scale((int)scale, &rfactor[band0], adm_norm_view_dist,
+                                            adm_ref_display_height, adm_csf_mode, fixed,
+                                            &normalization_shift[scale]);
+        if (!err) {
+            i_rfactor[band0] = (uint32_t)fixed[0];
+            i_rfactor[band0 + 1] = (uint32_t)fixed[1];
+            i_rfactor[band0 + 2] = (uint32_t)fixed[2];
         }
     }
 }
@@ -264,8 +241,9 @@ static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_heig
 /* Score computation helpers (host-side, same as CUDA twin)            */
 /* ------------------------------------------------------------------ */
 
-static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_weight,
-                            double p_norm, float *result)
+static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale,
+                            uint32_t normalization_shift, float noise_weight, double p_norm,
+                            float *result)
 {
     int left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int top = (int)(h * ADM_BORDER_FACTOR - 0.5);
@@ -278,11 +256,13 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
                                     (uint32_t)ceil(log2((double)w) - 4.0),
                                     (uint32_t)ceil(log2((double)w) - 3.0)};
     int constant_offset[3] = {52, 52, 57};
+    const int restored_bits = 3 * (int)normalization_shift;
 
     uint32_t shift_cub = (uint32_t)ceil(log2((double)w));
-    float final_shift[3] = {powf(2.0f, (float)(45 - (int)shift_cub - (int)shift_inner_accum)),
-                            powf(2.0f, (float)(39 - (int)shift_cub - (int)shift_inner_accum)),
-                            powf(2.0f, (float)(36 - (int)shift_cub - (int)shift_inner_accum))};
+    float final_shift[3] = {
+        powf(2.0f, (float)(45 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
+        powf(2.0f, (float)(39 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
+        powf(2.0f, (float)(36 - restored_bits - (int)shift_cub - (int)shift_inner_accum))};
     float powf_add =
         powf((float)((bottom - top) * (right - left)) * noise_weight, (float)p_norm_exp);
 
@@ -290,8 +270,9 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
     *result = 0;
     for (int i = 0; i < 3; ++i) {
         if (scale == 0) {
-            f_accum = (float)(accum[i] / pow(2.0, (double)(constant_offset[i] - (int)shift_xcub[i] -
-                                                           (int)shift_inner_accum)));
+            f_accum =
+                (float)(accum[i] / pow(2.0, (double)(constant_offset[i] - restored_bits -
+                                                     (int)shift_xcub[i] - (int)shift_inner_accum)));
         } else {
             f_accum = (float)((double)accum[i] / (double)final_shift[scale - 1]);
         }
@@ -340,11 +321,6 @@ typedef struct write_score_parameters_adm_hip {
     unsigned index, h, w;
 } write_score_parameters_adm_hip;
 
-typedef struct AdmHipNamedScore {
-    const char *name;
-    double value;
-} AdmHipNamedScore;
-
 /* Per-scale numerator and denominator into scores[2 * scale] and
  * scores[2 * scale + 1], and their sums over the scales that count. */
 static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, double scores[8],
@@ -362,7 +338,8 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, d
         w = (w + 1) / 2;
         h = (h + 1) / 2;
 
-        conclude_adm_cm(&adm_cm[band0], (int)h, (int)w, (int)scale, (float)s->adm_noise_weight,
+        conclude_adm_cm(&adm_cm[band0], (int)h, (int)w, (int)scale,
+                        s->csf_normalization_shift[scale], (float)s->adm_noise_weight,
                         s->adm_p_norm, &num_scale);
         conclude_adm_csf_den(&adm_csf[band0], (int)h, (int)w, (int)scale, &den_scale,
                              &s->rfactor[band0], (float)s->adm_noise_weight);
@@ -384,19 +361,11 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, d
     }
 }
 
-/* Append each score in order; returns the OR of the collector statuses. */
-static int adm_hip_append_scores(VmafFeatureCollector *feature_collector, VmafDictionary *dict,
-                                 const AdmHipNamedScore *list, size_t count, unsigned index)
-{
-    int err = 0;
-    for (size_t i = 0; i < count; ++i) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, dict, list[i].name,
-                                                       list[i].value, index);
-    }
-    return err;
-}
-
-static void write_scores(const write_score_parameters_adm_hip *params)
+/* AIM / adm3 are intentionally absent: this twin has no second CM pass with
+ * decouple_a / decouple_r swapped. Omitting both names routes them to CPU via
+ * ADR-0530; fabricating them here would be wrong. See
+ * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05. */
+static int write_scores(const write_score_parameters_adm_hip *params)
 {
     const AdmStateHip *s = params->s;
     double scores[8];
@@ -409,51 +378,49 @@ static void write_scores(const write_score_parameters_adm_hip *params)
      * scales with the FULL-FRAME area, not the scale-3 area the per-scale
      * loop ends on. */
     const double numden_limit = 1e-10 * ((double)params->w * params->h) / (1920.0 * 1080.0);
-    num = num < numden_limit ? 0 : num;
-    den = den < numden_limit ? 0 : den;
+    int err = vmaf_adm_floor_pair_named("integer_adm_hip", params->index, num, den, numden_limit,
+                                        &num, &den);
+    if (err)
+        return err;
 
     /* ADR-0487 clamps adm3 only: the CPU reference emits
      * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
      * applies MAX(..., adm_min_val) to the adm3 expression alone). */
-    const double score = (den == 0.0) ? 1.0 : num / den;
-
-    /* AIM / adm3 are NOT emitted by this twin: the AIM contrast measure needs
-     * a second device CM pass with the decouple_a / decouple_r roles swapped
-     * (the CUDA twin's ADR-0746 kernels), which the HIP kernel set does not
-     * have. Leaving both features out of `provided_features` routes them to
-     * the CPU twin through the ADR-0530 name-based fallback, which produces
-     * the correct value under the correct feature-name key. Emitting them
-     * here from a hard-coded aim_num would fabricate a score. Tracked as
-     * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md. */
-
-    const AdmHipNamedScore main_scores[] = {
-        {"VMAF_integer_feature_adm2_score", score},
-        {"integer_adm_scale0", scores[0] / scores[1]},
-        {"integer_adm_scale1", scores[2] / scores[3]},
-        {"integer_adm_scale2", scores[4] / scores[5]},
-        {"integer_adm_scale3", scores[6] / scores[7]},
-    };
-    int err = adm_hip_append_scores(params->feature_collector, s->feature_name_dict, main_scores,
-                                    sizeof(main_scores) / sizeof(main_scores[0]), params->index);
-
-    if (s->debug) {
-        const AdmHipNamedScore debug_scores[] = {
-            {"integer_adm", score},
-            {"integer_adm_num", num},
-            {"integer_adm_den", den},
-            {"integer_adm_num_scale0", scores[0]},
-            {"integer_adm_den_scale0", scores[1]},
-            {"integer_adm_num_scale1", scores[2]},
-            {"integer_adm_den_scale1", scores[3]},
-            {"integer_adm_num_scale2", scores[4]},
-            {"integer_adm_den_scale2", scores[5]},
-            {"integer_adm_num_scale3", scores[6]},
-            {"integer_adm_den_scale3", scores[7]},
-        };
-        err |= adm_hip_append_scores(params->feature_collector, s->feature_name_dict, debug_scores,
-                                     sizeof(debug_scores) / sizeof(debug_scores[0]), params->index);
+    const double aggregate_pair[2] = {num, den};
+    double score = 0.0;
+    err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_adm_hip: undefined or non-finite aggregate at frame %u "
+                 "(num=%g den=%g)\n",
+                 params->index, num, den);
+        return err;
     }
-    (void)err; /* accumulated collector status intentionally discarded; void writer API */
+
+    double scale_scores[4];
+    err = vmaf_adm_scale_ratios_named("integer_adm_hip", params->index, scores, 4u, scale_scores);
+    if (err)
+        return err;
+    VmafNamedScore values[16] = {
+        {"VMAF_integer_feature_adm2_score", score}, {"integer_adm_scale0", scale_scores[0]},
+        {"integer_adm_scale1", scale_scores[1]},    {"integer_adm_scale2", scale_scores[2]},
+        {"integer_adm_scale3", scale_scores[3]},
+    };
+    size_t value_count = 5u;
+    if (s->debug) {
+        static const char *const debug_names[8] = {
+            "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
+            "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
+            "integer_adm_num_scale3", "integer_adm_den_scale3",
+        };
+        values[value_count++] = (VmafNamedScore){"integer_adm", score};
+        values[value_count++] = (VmafNamedScore){"integer_adm_num", num};
+        values[value_count++] = (VmafNamedScore){"integer_adm_den", den};
+        for (size_t i = 0u; i < 8u; ++i)
+            values[value_count++] = (VmafNamedScore){debug_names[i], scores[i]};
+    }
+    return vmaf_feature_emit_finite_scores(params->feature_collector, s->feature_name_dict,
+                                           "integer_adm_hip", values, value_count, params->index);
 }
 
 #endif /* HAVE_HIPCC */
@@ -1058,8 +1025,8 @@ static void adm_hip_fixed_params(const AdmStateHip *s, int w, int h, double adm_
     p->adm_norm_view_dist = adm_norm_view_dist;
     p->adm_enhn_gain_limit = adm_enhn_gain_limit;
 
-    adm_hip_rfactors(adm_norm_view_dist, adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
-                     s->adm_csf_diag_scale, p->rfactor, p->i_rfactor);
+    memcpy(p->rfactor, s->rfactor, sizeof(p->rfactor));
+    memcpy(p->i_rfactor, s->i_rfactor, sizeof(p->i_rfactor));
 }
 
 /* ADR-1211: stage the host-resident luma planes onto the device.
@@ -1196,8 +1163,6 @@ static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPic
     AdmFixedParametersHip p;
     adm_hip_fixed_params(s, w, h, adm_enhn_gain_limit, adm_norm_view_dist, adm_ref_display_height,
                          &p);
-    memcpy(s->rfactor, p.rfactor, sizeof(p.rfactor));
-
     /* Zero result accumulator */
     hipError_t hip_err = hipMemsetAsync(buf->tmp_res, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str);
     if (hip_err != hipSuccess)
@@ -1589,15 +1554,9 @@ static int adm_hip_validate(const AdmStateHip *s, unsigned w, unsigned h)
         return size_err;
     }
 
-    if (s->adm_norm_view_dist * s->adm_ref_display_height <
-        DEFAULT_ADM_NORM_VIEW_DIST * DEFAULT_ADM_REF_DISPLAY_HEIGHT) {
-        return -EINVAL;
-    }
-
-    /* ADR-1191: reject CSF configurations the fixed-point pipeline cannot
-     * represent before any device resource is claimed, so an unsupported
-     * adm_csf_mode / viewing geometry fails loudly instead of wrapping.
-     * Same accept/reject set as the CPU reference. */
+    /* Reject invalid CSF table output before any device resource is claimed.
+     * Finite over-range weights are normalised with the CPU's shared
+     * per-scale exponent in adm_hip_rfactors(). */
     return adm_csf_config_check(s);
 }
 
@@ -1615,7 +1574,8 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     }
 
     adm_hip_rfactors(s->adm_norm_view_dist, s->adm_ref_display_height, s->adm_csf_mode,
-                     s->adm_csf_scale, s->adm_csf_diag_scale, s->rfactor, s->i_rfactor);
+                     s->adm_csf_scale, s->adm_csf_diag_scale, s->rfactor, s->i_rfactor,
+                     s->csf_normalization_shift);
 
 #ifndef HAVE_HIPCC
     (void)w;
@@ -1685,8 +1645,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         .w = s->submit_w,
         .h = s->submit_h,
     };
-    write_scores(&params);
-    return 0;
+    return write_scores(&params);
 #endif
 }
 

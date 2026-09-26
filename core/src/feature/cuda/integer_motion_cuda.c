@@ -117,6 +117,7 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_force_zero",
+        .alias = "force_0",
         .help = "forcing motion score to zero",
         .offset = offsetof(MotionStateCuda, motion_force_zero),
         .type = VMAF_OPT_TYPE_BOOL,
@@ -282,36 +283,46 @@ static int calculate_motion_score(const VmafPicture *src, VmafCudaBuffer *src_bl
 }
 
 /* ------------------------------------------------------------------ */
+static void motion_preserve_error(int *rc, int err)
+{
+    if (!*rc)
+        *rc = err;
+}
+
+static int motion_close_lifecycle(VmafFeatureExtractor *fex, MotionStateCuda *s)
+{
+    const int stream_rc = vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
+    if (stream_rc)
+        return stream_rc;
+    return vmaf_cuda_event_destroy(fex->cu_state, &s->event);
+}
+
+static int motion_release_buffers(VmafFeatureExtractor *fex, MotionStateCuda *s, int rc)
+{
+    motion_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->blur[0]));
+    motion_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->blur[1]));
+    for (int b = 0; b < MOTION_BATCH_DEPTH; b++)
+        motion_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->sad[b]));
+    motion_preserve_error(&rc,
+                          vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->sad_host));
+    return rc;
+}
+
 /* motion_init_unwind - the single teardown path for init_fex_cuda.
  *
- * HISS-01: lifted verbatim from the former `free_ref` label. The same
- * resources are released in the same order on every exit path, and the
- * value returned is the one the label returned.
+ * Drain the stream and event before releasing anything queued work may
+ * reference. The original init failure remains the first returned error.
  */
 static int motion_init_unwind(VmafFeatureExtractor *fex, MotionStateCuda *s, int ret)
 {
-    if (s->blur[0]) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[0]);
-        free(s->blur[0]);
-    }
-    if (s->blur[1]) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
-        free(s->blur[1]);
-    }
-    for (int b = 0; b < MOTION_BATCH_DEPTH; b++) {
-        if (s->sad[b]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad[b]);
-            free(s->sad[b]);
-        }
-    }
-    if (s->sad_host) {
-        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->sad_host);
-        s->sad_host = NULL;
-    }
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    (void)ret; // accumulated cleanup status intentionally discarded on error path
+    const int lifecycle_rc = motion_close_lifecycle(fex, s);
+    if (lifecycle_rc)
+        return ret ? ret : lifecycle_rc;
 
-    return -ENOMEM;
+    int rc = motion_release_buffers(fex, s, ret);
+    motion_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
+    motion_preserve_error(&rc, vmaf_cuda_module_unload(fex->cu_state, &s->module));
+    return rc;
 }
 
 /* motion_check_unsupported - the three up-front refusals.
@@ -358,9 +369,8 @@ static int motion_check_unsupported(const MotionStateCuda *s, unsigned w, unsign
 
 /* motion_init_cuda_context - stream, event, module and the two kernels.
  *
- * HISS-04: lifted verbatim out of init_fex_cuda. CHECK_CUDA_GOTO and the
- * graduated labels it targets move with it, so every exit path releases the
- * same resources in the same order and returns the same errno.
+ * CHECK_CUDA_GOTO keeps the context-pop boundary local; failures then enter
+ * the shared phase-ordered init unwind with the original CUDA errno.
  */
 static int motion_init_cuda_context(VmafFeatureExtractor *fex, MotionStateCuda *s,
                                     CudaFunctions *cu_f)
@@ -370,37 +380,24 @@ static int motion_init_cuda_context(VmafFeatureExtractor *fex, MotionStateCuda *
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    /* ADR-1090 — graduated labels so earlier allocations are freed when a
-     * later step fails; previously all paths jumped to `fail` which only
-     * popped the context, leaking the stream and event. */
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail_after_stream);
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, motion_score_ptx), fail_after_event);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, motion_score_ptx), fail);
 
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_motion_score_kernel_16bpc"),
-        fail_after_module);
+        fail);
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "calculate_motion_score_kernel_8bpc"),
-        fail_after_module);
+        fail);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
     return 0;
 
-fail_after_module:
-    (void)cu_f->cuModuleUnload(s->module);
-    s->module = NULL;
-fail_after_event:
-    (void)cu_f->cuEventDestroy(s->event);
-    s->event = 0;
-fail_after_stream:
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    return _cuda_err;
+    return motion_init_unwind(fex, s, _cuda_err);
 }
 
 /* motion_alloc_buffers - the blur pair, the SAD slots and the pinned host
@@ -421,22 +418,22 @@ static int motion_alloc_buffers(VmafFeatureExtractor *fex, MotionStateCuda *s, u
     for (int b = 0; b < MOTION_BATCH_DEPTH; b++)
         s->score_ring[b] = 0.0;
 
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[0], sizeof(uint16_t) * w * h);
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[0], sizeof(uint16_t) * w * h);
     if (ret)
         return motion_init_unwind(fex, s, ret);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], sizeof(uint16_t) * w * h);
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], sizeof(uint16_t) * w * h);
     if (ret)
         return motion_init_unwind(fex, s, ret);
     /* Allocate MOTION_BATCH_DEPTH device SAD slots (ADR-0845).
      * Each slot is 8 bytes; slots are zeroed per-frame in submit(). */
     for (int b = 0; b < MOTION_BATCH_DEPTH; b++) {
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->sad[b], sizeof(uint64_t));
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->sad[b], sizeof(uint64_t));
         if (ret)
             return motion_init_unwind(fex, s, ret);
     }
     /* Single pinned host buffer — MOTION_BATCH_DEPTH × 8 bytes. */
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->sad_host,
-                                       MOTION_BATCH_DEPTH * sizeof(uint64_t));
+    ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->sad_host,
+                                      MOTION_BATCH_DEPTH * sizeof(uint64_t));
     if (ret)
         return motion_init_unwind(fex, s, ret);
     return 0;
@@ -445,6 +442,8 @@ static int motion_alloc_buffers(VmafFeatureExtractor *fex, MotionStateCuda *s, u
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
+    (void)pix_fmt;
+    (void)bpc;
     MotionStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
 
@@ -452,29 +451,33 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
-    err = motion_init_cuda_context(fex, s, cu_f);
-    if (err)
-        return err;
+    /* Build the feature-name dict early so the force-zero path (below)
+     * and the GPU path both get a valid dict.  extract_force_zero() calls
+     * vmaf_feature_collector_append_with_dict() which requires a non-NULL
+     * dict; without this the force-zero path returned -EINVAL. */
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return -ENOMEM;
 
     if (s->motion_force_zero) {
         fex->extract = extract_force_zero;
         fex->submit = NULL;
         fex->collect = NULL;
         fex->flush = NULL;
-        fex->close = NULL;
+        /* Keep close callback so the dict is freed at teardown. */
         return 0;
     }
+
+    err = motion_init_cuda_context(fex, s, cu_f);
+    if (err)
+        return err;
 
     s->calculate_motion_score = calculate_motion_score;
 
     int ret = motion_alloc_buffers(fex, s, w, h);
     if (ret)
         return ret;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        return motion_init_unwind(fex, s, ret);
 
     return 0;
 }
@@ -840,44 +843,13 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     MotionStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
-    /* Close path must continue unwinding every allocation even when a
-     * CUDA call fails — bailing on the first error would leak buffers.
-     * Each CHECK is independent and we OR the errnos into ret. */
-    int _cuda_err = 0;
-    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->str), after_stream_sync);
-after_stream_sync:
-    CHECK_CUDA_GOTO(cu_f, cuStreamDestroy(s->str), after_stream_destroy);
-after_stream_destroy:
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->event), after_event1_destroy);
-after_event1_destroy:;
+    int ret = motion_close_lifecycle(fex, s);
+    if (ret)
+        return ret;
 
-    int ret = _cuda_err;
-
-    if (s->blur[0]) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[0]);
-        free(s->blur[0]);
-    }
-    if (s->blur[1]) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
-        free(s->blur[1]);
-    }
-    /* Free all MOTION_BATCH_DEPTH device SAD slots (ADR-0845). */
-    for (int b = 0; b < MOTION_BATCH_DEPTH; b++) {
-        if (s->sad[b]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad[b]);
-            free(s->sad[b]);
-        }
-    }
-    /* Free the pinned host buffer (MOTION_BATCH_DEPTH × 8 bytes).
-     * Allocated via vmaf_cuda_buffer_host_alloc() in init_fex_cuda(). */
-    if (s->sad_host) {
-        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->sad_host);
-        s->sad_host = NULL;
-    }
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    ret = motion_release_buffers(fex, s, 0);
+    motion_preserve_error(&ret, vmaf_dictionary_free(&s->feature_name_dict));
+    motion_preserve_error(&ret, vmaf_cuda_module_unload(fex->cu_state, &s->module));
 
     return ret;
 }

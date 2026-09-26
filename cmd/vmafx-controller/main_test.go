@@ -273,11 +273,3 @@ func TestGracefulShutdown(t *testing.T) {
 		t.Error("expected error after server shutdown, got nil")
 	}
 }
-
-// min is a small integer minimum helper (for test truncation only).
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

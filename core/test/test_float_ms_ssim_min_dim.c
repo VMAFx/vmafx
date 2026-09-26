@@ -150,13 +150,13 @@ static char *test_float_ms_ssim_init_accepts_chroma_at_min_dim(void)
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ms_ssim");
     mu_assert("float_ms_ssim extractor missing", fex != NULL);
 
-    /* Exact boundary for 4:2:0: 352/2 = 176 on both axes. */
-    mu_assert("enable_chroma must accept 352x352 4:2:0 (chroma exactly 176x176)",
-              invoke_init_chroma(fex, VMAF_PIX_FMT_YUV420P, 352u, 352u) == 0);
+    /* Exact boundary for 4:2:0: ceil(351/2) = 176 on both axes. */
+    mu_assert("enable_chroma must accept 351x351 4:2:0 (chroma exactly 176x176)",
+              invoke_init_chroma(fex, VMAF_PIX_FMT_YUV420P, 351u, 351u) == 0);
 
-    /* 4:2:2 keeps full height, so the height floor is the luma one. */
-    mu_assert("enable_chroma must accept 352x176 4:2:2 (chroma 176x176)",
-              invoke_init_chroma(fex, VMAF_PIX_FMT_YUV422P, 352u, 176u) == 0);
+    /* 4:2:2 keeps full height, so only width uses the ceil-half boundary. */
+    mu_assert("enable_chroma must accept 351x176 4:2:2 (chroma 176x176)",
+              invoke_init_chroma(fex, VMAF_PIX_FMT_YUV422P, 351u, 176u) == 0);
 
     /* 4:4:4 chroma equals luma, so the luma minimum is the only constraint. */
     mu_assert("enable_chroma must accept 176x176 4:4:4 (chroma equals luma)",

@@ -17,6 +17,25 @@ grouped dependency-update PRs on the configured weekday schedule.
 3. Tick a checkbox in the dashboard issue to force creation of any
    awaiting update; the App reacts within a minute or two.
 
+## Merge policy during release candidates
+
+Ordinary Renovate and other version-update pull requests are **not frozen**
+during RC1, RC2, or RC3. Merge them when the repository's normal required
+checks, review, digest/pin policy, and component-specific validation pass.
+Security updates are prioritised, but they are not the only version changes
+allowed. The strict dependency-only classification in
+[ADR-1152](../adr/1152-dependency-pr-gate-exemption.md) exempts qualifying bot
+PRs from documentation-process gates only; it does not waive build, test,
+security, or review requirements.
+
+Major or coordinated CUDA, ROCm, oneAPI, compiler, action, and base-image
+updates retain their existing specialised smoke and lockstep checks. Candidate
+acceptance is bound to an exact commit and artifact under
+[ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md), so a
+version update merged after evidence collection requires the affected checks,
+benchmarks, or model validation to be rerun. Revalidation replaces a blanket
+version freeze; it does not permit stale evidence.
+
 ## Configuration
 
 All configuration lives in [`renovate.json`](../../renovate.json). The
@@ -26,7 +45,7 @@ App reads it on every webhook. Top-level knobs:
 |---------|-------|
 | `schedule` | `before 6am every weekday` (`Europe/Vienna`) |
 | `prHourlyLimit` | `0` (unlimited) |
-| `prConcurrentLimit` | `10` |
+| `prConcurrentLimit` | `3` |
 | `prCreation` | `immediate` |
 | `minimumReleaseAge` | `3 days` |
 

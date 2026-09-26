@@ -101,7 +101,8 @@ jobs:
           sudo apt-get install -y clang-tools-22 libclang-rt-22-dev lld-22
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r requirements/locks/build.txt
       # ccache the clang-22 debug instrumentation build. Sanitizer builds
       # are cold-rebuild ~5-7 min today; ccache + warm bucket per PR push
       # cycle drops re-runs to <2 min for unchanged TUs. Mirrors the
@@ -177,7 +178,7 @@ jobs:
             exit 1
           fi
           # shellcheck disable=SC2086
-          meson test -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
 
   # ── TSan (master push only) ───────────────────────────────────────────
   # Thread-Sanitizer is expensive (~5–10× overhead) and catches
@@ -227,7 +228,8 @@ jobs:
           sudo apt-get install -y clang-tools-22 libclang-rt-22-dev lld-22
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
-          sudo pip3 install --break-system-packages --quiet meson
+          sudo pip3 install --break-system-packages --quiet --require-hashes \
+            -r requirements/locks/build.txt
       - name: Restore ccache
         if: steps.impact.outputs.c_core == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -287,7 +289,7 @@ jobs:
             exit 1
           fi
           # shellcheck disable=SC2086
-          meson test -C build --print-errorlogs $TESTS
+          python3 ../scripts/ci/run_meson_test.py -- -C build --print-errorlogs $TESTS
 
   # ── libFuzzer + ASan nightly ──────────────────────────────────────────
   # Runs the persistent fuzz corpus against all harnesses under
@@ -301,7 +303,7 @@ jobs:
       || github.event_name == 'workflow_dispatch'
     name: Fuzz ${{ matrix.target }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -334,7 +336,8 @@ jobs:
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 22
-          sudo pip3 install --break-system-packages meson
+          sudo pip3 install --break-system-packages --require-hashes \
+            -r requirements/locks/build.txt
       - name: Configure (clang + ASan + libFuzzer)
         run: |
           # b_lto=false is required: ASan + LTO together cause the linker

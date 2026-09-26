@@ -13,7 +13,6 @@ content-level split columns are filled into the parquet.
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -37,7 +36,7 @@ def _load_runtime_helpers() -> tuple[Any, ...]:
 
     from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
     from aiutils.parquet_utils import write_parquet_atomic
-    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+    from aiutils.run_manifest import build_run_provenance, dumps_manifest_json, write_manifest_json
 
     return (
         DEFAULT_CHUG_SPLIT_SEED,
@@ -46,6 +45,7 @@ def _load_runtime_helpers() -> tuple[Any, ...]:
         make_argument_parser,
         write_parquet_atomic,
         build_run_provenance,
+        dumps_manifest_json,
         write_manifest_json,
     )
 
@@ -57,6 +57,7 @@ def _load_runtime_helpers() -> tuple[Any, ...]:
     make_argument_parser,
     write_parquet_atomic,
     build_run_provenance,
+    dumps_manifest_json,
     write_manifest_json,
 ) = _load_runtime_helpers()
 
@@ -204,9 +205,8 @@ def main(argv: list[str] | None = None) -> int:
     write_parquet_atomic(enriched, out_path, index=False)
     _write_enrich_manifest(args, raw_argv, stats, metadata, out_path)
     print(
-        json.dumps(
-            {"out": str(out_path), "manifest": str(args.manifest_out), **stats}, sort_keys=True
-        )
+        dumps_manifest_json({"out": str(out_path), "manifest": str(args.manifest_out), **stats}),
+        end="",
     )
     return 0
 

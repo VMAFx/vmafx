@@ -92,24 +92,32 @@ static const VmafOption options[2] = {
 /* ------------------------------------------------------------------ */
 /* float_psnr_init_unwind - the single teardown path for init_fex_cuda.
  *
- * HISS-01: lifted verbatim from the former `free_buffers` label. The same
- * resources are released in the same order on every exit path, and the
- * value returned is the one the label returned.
+ * Drain the lifecycle before releasing anything queued work may reference.
+ * The original init failure remains the first returned error.
  */
 static int float_psnr_init_unwind(VmafFeatureExtractor *fex, FloatPsnrStateCuda *s, int ret)
 {
-    if (s->ref_in) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
-        free(s->ref_in);
-    }
-    if (s->dis_in) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_in);
-        free(s->dis_in);
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    const int lifecycle_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (lifecycle_rc)
+        return ret ? ret : lifecycle_rc;
+
+    int rc = ret;
+    const int ref_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_in);
+    if (!rc)
+        rc = ref_rc;
+    const int dis_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dis_in);
+    if (!rc)
+        rc = dis_rc;
+    const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    if (!rc)
+        rc = rb_rc;
+    const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
+    if (!rc)
+        rc = dict_rc;
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (!rc)
+        rc = module_rc;
+    return rc;
 }
 
 /* float_psnr_peak_for_bpc - the (peak, psnr_max) pair for a bit depth.
@@ -155,7 +163,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return float_psnr_init_unwind(fex, s, err);
 
     int _cuda_err = 0;
     int ctx_pushed = 0;
@@ -167,7 +175,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "float_psnr_kernel_16bpc"),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t plane_bytes = (size_t)w * h * bpp;
@@ -177,8 +185,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     const size_t pbytes = (size_t)s->wg_count * sizeof(float);
 
     int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_in, plane_bytes);
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_in, plane_bytes);
     if (ret)
         return float_psnr_init_unwind(fex, s, ret);
     ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, pbytes);
@@ -196,9 +205,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-fail_after_pop:
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return float_psnr_init_unwind(fex, s, _cuda_err);
 }
 
 /* float_psnr_upload_plane - stage one luma plane into a packed device buffer.
@@ -321,28 +328,24 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     FloatPsnrStateCuda *s = fex->priv;
     int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (rc)
+        return rc;
 
-    if (s->ref_in) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
-        free(s->ref_in);
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->dis_in) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->dis_in);
-        free(s->dis_in);
-        if (rc == 0)
-            rc = e;
-    }
+    const int ref_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_in);
+    if (!rc)
+        rc = ref_rc;
+    const int dis_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dis_in);
+    if (!rc)
+        rc = dis_rc;
     const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    if (rc == 0)
+    if (!rc)
         rc = rb_rc;
     const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
-    if (rc == 0)
+    if (!rc)
         rc = dict_rc;
-    const CudaFunctions *cu_f = fex->cu_state->f;
-    if (cu_f && s->module)
-        (void)cu_f->cuModuleUnload(s->module);
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (!rc)
+        rc = module_rc;
     return rc;
 }
 

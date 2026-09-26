@@ -95,6 +95,18 @@ The server binary lands as `vmaf-mcp` on your PATH. It expects to find
 the vmaf CLI at `build/tools/vmaf` relative to the repo root. Override
 with `VMAF_BIN=/abs/path/to/vmaf`.
 
+### Testing
+
+The MCP server test suite is located in `mcp-server/vmaf-mcp/tests/`. The package
+`pyproject.toml` configures `pythonpath = ["src"]` under `[tool.pytest.ini_options]`
+so that running pytest directly from the package directory discovers the in-tree
+`vmaf_mcp` module without requiring an editable installation:
+
+```bash
+cd mcp-server/vmaf-mcp
+pytest
+```
+
 ## Run
 
 ```bash

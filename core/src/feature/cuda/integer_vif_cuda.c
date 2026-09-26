@@ -29,6 +29,7 @@
 #include "feature_name.h"
 #include "log.h"
 #include "mem.h"
+#include "feature/nonfinite_score.h"
 
 #include "picture.h"
 #include "cuda/integer_vif_cuda.h"
@@ -123,6 +124,7 @@ static const VmafOption options[] = {{
                                      },
                                      {
                                          .name = "vif_skip_scale0",
+                                         .alias = "ssclz",
                                          .help = "skip scale 0 (finest scale) VIF computation; "
                                                  "score0 is forced to 0.0 (parity with CPU option)",
                                          .offset = offsetof(VifStateCuda, vif_skip_scale0),
@@ -139,98 +141,56 @@ static const VmafOption options[] = {{
  * resources are released in the same order on every exit path, and the
  * value returned is the one the label returned.
  */
-static int vif_init_unwind(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFunctions *cu_f, int ret)
+static int vif_init_unwind(VmafFeatureExtractor *fex, VifStateCuda *s, int ret)
 {
-    if (s->buf.data) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.data);
-        free(s->buf.data);
-    }
-    if (s->buf.accum_data) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.accum_data);
-        free(s->buf.accum_data);
-    }
-    if (s->buf.accum_host) {
-        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->buf.accum_host);
-    }
-    (void)ret; // accumulated cleanup status intentionally discarded on error path
+    int rc = ret;
+    int phase_rc = vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
+    if (phase_rc)
+        return rc ? rc : phase_rc;
 
-    /* The context is already popped (cuCtxPopCurrent at the end of module
-     * setup) before any `free_ref` jump fires, so we must not route through
-     * the `fail` label (it would double-pop).  Tear down the module, events,
-     * and stream explicitly here, mirroring the `fail_after_module` ladder. */
-    (void)cu_f->cuModuleUnload(s->filter1d_module);
-    s->filter1d_module = NULL;
-    (void)cu_f->cuEventDestroy(s->finished);
-    s->finished = 0;
-    (void)cu_f->cuEventDestroy(s->event);
-    s->event = 0;
-    (void)cu_f->cuStreamDestroy(s->str);
-    s->str = 0;
+    phase_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->finished);
+    const int event_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->event);
+    if (!phase_rc)
+        phase_rc = event_rc;
+    if (phase_rc)
+        return rc ? rc : phase_rc;
 
-    return -ENOMEM;
+    int e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->buf.data);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->buf.accum_data);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->buf.accum_host);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_dictionary_free(&s->feature_name_dict);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_module_unload(fex->cu_state, &s->filter1d_module);
+    if (e && !rc)
+        rc = e;
+    return rc;
 }
 
-/* VifInitStage - how far init_fex_cuda's CUDA-context setup got before it
- * failed, i.e. which rung of the former `fail_after_*` label ladder the
- * unwind has to start at. */
-typedef enum VifInitStage {
-    VIF_INIT_POP_ONLY = 0,
-    VIF_INIT_AFTER_STREAM,
-    VIF_INIT_AFTER_EVENT,
-    VIF_INIT_AFTER_FINISHED,
-    VIF_INIT_AFTER_MODULE,
-} VifInitStage;
-
-/* vif_init_kernel_unwind - the former graduated fail_after_* ladder.
- *
- * HISS-01 / HISS-04: the ladder's statements are lifted verbatim and still
- * run in the same fall-through order, so every exit path releases the same
- * resources in the same sequence and returns the same errno.
- */
-static int vif_init_kernel_unwind(VifStateCuda *s, CudaFunctions *cu_f, VifInitStage stage,
+/* Release every context-owned handle created before kernel setup failed. */
+static int vif_init_kernel_unwind(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFunctions *cu_f,
                                   int cuda_err)
 {
-    if (stage >= VIF_INIT_AFTER_MODULE) {
-        /* cuModuleGetFunction failed — unload the module before releasing stream
-         * and events.  cuModuleUnload is safe even if no kernels were resolved. */
-        (void)cu_f->cuModuleUnload(s->filter1d_module);
-        s->filter1d_module = NULL;
-    }
-    if (stage >= VIF_INIT_AFTER_FINISHED) {
-        (void)cu_f->cuEventDestroy(s->finished);
-        s->finished = 0;
-    }
-    if (stage >= VIF_INIT_AFTER_EVENT) {
-        (void)cu_f->cuEventDestroy(s->event);
-        s->event = 0;
-    }
-    if (stage >= VIF_INIT_AFTER_STREAM) {
-        (void)cu_f->cuStreamDestroy(s->str);
-        s->str = 0;
-    }
     (void)cu_f->cuCtxPopCurrent(NULL);
-    return cuda_err;
+    return vif_init_unwind(fex, s, cuda_err);
 }
 
-/* vif_create_stream_and_events - stream, the two events and the PTX module.
- *
- * `*stage` tracks which rung the unwind must start at, exactly matching the
- * label each CHECK_CUDA_GOTO used to jump to.
- */
-static int vif_create_stream_and_events(VifStateCuda *s, CudaFunctions *cu_f, VifInitStage *stage)
+/* vif_create_stream_and_events - stream, the two events and the PTX module. */
+static int vif_create_stream_and_events(VifStateCuda *s, CudaFunctions *cu_f)
 {
-    *stage = VIF_INIT_POP_ONLY;
     CHECK_CUDA_RETURN(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0));
     /* ADR-1090 — graduated stages so each earlier allocation is freed when a
      * later one fails; previously all paths only popped the context, leaking
      * the stream and any events already created. */
-    *stage = VIF_INIT_AFTER_STREAM;
     CHECK_CUDA_RETURN(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT));
-    *stage = VIF_INIT_AFTER_EVENT;
     CHECK_CUDA_RETURN(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT));
-    *stage = VIF_INIT_AFTER_FINISHED;
     CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->filter1d_module, filter1d_ptx));
-    *stage = VIF_INIT_AFTER_MODULE;
     return 0;
 }
 
@@ -283,16 +243,17 @@ static int vif_init_cuda_context(VmafFeatureExtractor *fex, VifStateCuda *s, Cud
 {
     CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
 
-    VifInitStage stage = VIF_INIT_POP_ONLY;
-    int err = vif_create_stream_and_events(s, cu_f, &stage);
+    int err = vif_create_stream_and_events(s, cu_f);
     if (err)
-        return vif_init_kernel_unwind(s, cu_f, stage, err);
+        return vif_init_kernel_unwind(fex, s, cu_f, err);
 
     err = vif_get_filter1d_functions(s, cu_f);
     if (err)
-        return vif_init_kernel_unwind(s, cu_f, VIF_INIT_AFTER_MODULE, err);
+        return vif_init_kernel_unwind(fex, s, cu_f, err);
 
-    CHECK_CUDA_RETURN(cu_f, cuCtxPopCurrent(NULL));
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS)
+        return vif_init_kernel_unwind(fex, s, cu_f, vmaf_cuda_result_to_errno((int)pop_res));
     return 0;
 }
 
@@ -308,13 +269,12 @@ static int vif_init_cuda_context(VmafFeatureExtractor *fex, VifStateCuda *s, Cud
  * changing the public libvmaf-CUDA contract. Per the touched-file
  * rule, upstream-parity exception (ADR-0141 §2 load-bearing invariant). */
 // NOLINTBEGIN(performance-no-int-to-ptr)
-static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFunctions *cu_f,
-                             unsigned h, size_t rd_size)
+static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, unsigned h, size_t rd_size)
 {
     CUdeviceptr data;
     int ret = vmaf_cuda_buffer_get_dptr(s->buf.data, &data);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
     s->buf.ref = data;
     data += rd_size;
@@ -354,7 +314,7 @@ static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFun
     CUdeviceptr data_accum;
     ret = vmaf_cuda_buffer_get_dptr(s->buf.accum_data, &data_accum);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
     s->buf.accum = (int64_t *)data_accum;
     return 0;
@@ -367,8 +327,8 @@ static int vif_carve_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFun
  * the allocation order are unchanged, and each failure still unwinds through
  * vif_init_unwind().
  */
-static int vif_setup_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFunctions *cu_f,
-                             unsigned w, unsigned h, int tex_alignment, bool hbd)
+static int vif_setup_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, unsigned w, unsigned h,
+                             int tex_alignment, bool hbd)
 {
     s->buf.stride = tex_alignment * (((w * (1 << (int)hbd) + tex_alignment - 1) / tex_alignment));
     {
@@ -384,18 +344,18 @@ static int vif_setup_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, CudaFun
                            8 * (s->buf.stride_tmp * h); // intermediater buffers
     int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.data, data_sz);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
     ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->buf.accum_data, sizeof(vif_accums) * 4);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
     ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->buf.accum_host,
                                       sizeof(vif_accums) * 4);
     if (ret)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, ret);
 
-    return vif_carve_buffers(fex, s, cu_f, h, rd_size);
+    return vif_carve_buffers(fex, s, h, rd_size);
 }
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -431,18 +391,19 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     const bool hbd = bpc > 8;
 
     int tex_alignment;
-    CHECK_CUDA_RETURN(cu_f,
-                      cuDeviceGetAttribute(&tex_alignment, CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT,
-                                           fex->cu_state->dev));
+    const CUresult attr_res = cu_f->cuDeviceGetAttribute(
+        &tex_alignment, CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT, fex->cu_state->dev);
+    if (attr_res != CUDA_SUCCESS)
+        return vif_init_unwind(fex, s, vmaf_cuda_result_to_errno((int)attr_res));
 
-    int ret = vif_setup_buffers(fex, s, cu_f, w, h, tex_alignment, hbd);
+    int ret = vif_setup_buffers(fex, s, w, h, tex_alignment, hbd);
     if (ret)
         return ret;
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
-        return vif_init_unwind(fex, s, cu_f, ret);
+        return vif_init_unwind(fex, s, -ENOMEM);
     return 0;
 }
 
@@ -634,91 +595,6 @@ static void vif_reduce_accums(const vif_accums *accum, VifScore *vif)
     }
 }
 
-/* vif_append_debug_scale_pairs - the per-scale num/den rows for scales 1-3.
- *
- * HISS-04: lifted verbatim out of write_scores; same order, same names.
- */
-static int vif_append_debug_scale_pairs(VmafFeatureCollector *feature_collector, VifStateCuda *s,
-                                        const VifScore *vif, unsigned index)
-{
-    int err = 0;
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_num_scale1", vif->scale[1].num, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_den_scale1", vif->scale[1].den, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_num_scale2", vif->scale[2].num, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_den_scale2", vif->scale[2].den, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_num_scale3", vif->scale[3].num, index);
-
-    err |=
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "integer_vif_den_scale3", vif->scale[3].den, index);
-
-    return err;
-}
-
-/* vif_append_debug_scores - the debug-only rows.
- *
- * HISS-04: lifted verbatim out of write_scores. The totals keep their whole
- * expressions and the rows are appended in the same order; the caller folds
- * the returned status into its own with the same bitwise OR.
- */
-static int vif_append_debug_scores(VmafFeatureCollector *feature_collector, VifStateCuda *s,
-                                   const VifScore *vif, unsigned index)
-{
-    const double score_num =
-        s->vif_skip_scale0 ?
-            (double)vif->scale[1].num + (double)vif->scale[2].num + (double)vif->scale[3].num :
-            (double)vif->scale[0].num + (double)vif->scale[1].num + (double)vif->scale[2].num +
-                (double)vif->scale[3].num;
-
-    const double score_den =
-        s->vif_skip_scale0 ?
-            (double)vif->scale[1].den + (double)vif->scale[2].den + (double)vif->scale[3].den :
-            (double)vif->scale[0].den + (double)vif->scale[1].den + (double)vif->scale[2].den +
-                (double)vif->scale[3].den;
-
-    const double score = score_den == 0.0 ? 1.0f : score_num / score_den;
-
-    int err = 0;
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif", score, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_num", score_num, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "integer_vif_den", score_den, index);
-
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_num_scale0", 0.0, index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_den_scale0", -1.0, index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_num_scale0", vif->scale[0].num,
-                                                       index);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "integer_vif_den_scale0", vif->scale[0].den,
-                                                       index);
-    }
-
-    return err | vif_append_debug_scale_pairs(feature_collector, s, vif, index);
-}
-
 static int write_scores(write_score_parameters_vif *data)
 {
     VmafFeatureCollector *feature_collector = data->feature_collector;
@@ -727,37 +603,23 @@ static int write_scores(write_score_parameters_vif *data)
 
     VifScore vif;
     vif_reduce_accums((const vif_accums *)data->s->buf.accum_host, &vif);
-    int err = 0;
-
-    /* When vif_skip_scale0 is set, emit 0.0 for the finest scale (parity
-     * with integer_vif.c CPU path, lines 698-706 and 747-761). The GPU
-     * still computes scale 0 but we discard its contribution here. */
-    if (s->vif_skip_scale0) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_vif_scale0_score", 0.0,
-                                                       index);
-    } else {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_vif_scale0_score",
-                                                       vif.scale[0].num / vif.scale[0].den, index);
+    VmafVifScoreSet output = {
+        .single_precision_ratio = true,
+        .skip_scale0 = s->vif_skip_scale0,
+        .debug = s->debug,
+    };
+    const unsigned scale_start = s->vif_skip_scale0 ? 1u : 0u;
+    for (unsigned scale = 0u; scale < 4u; ++scale) {
+        output.scale[scale * 2u] = vif.scale[scale].num;
+        output.scale[scale * 2u + 1u] = vif.scale[scale].den;
+        if (scale >= scale_start) {
+            output.score_num += vif.scale[scale].num;
+            output.score_den += vif.scale[scale].den;
+        }
     }
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale1_score",
-                                                   vif.scale[1].num / vif.scale[1].den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale2_score",
-                                                   vif.scale[2].num / vif.scale[2].den, index);
-
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_vif_scale3_score",
-                                                   vif.scale[3].num / vif.scale[3].den, index);
-
-    if (!s->debug)
-        return err;
-
-    return err | vif_append_debug_scores(feature_collector, s, &vif, index);
+    output.score = output.score_den > 0.0 ? output.score_num / output.score_den : NAN;
+    return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "integer_vif_cuda",
+                                &output, VMAF_VIF_INTEGER_NAMES, index);
 }
 
 /* vif_dispatch_filter - pick the filter1d variant this scale needs.
@@ -792,6 +654,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CudaFunctions *cu_f = fex->cu_state->f;
     (void)ref_pic_90;
     (void)dist_pic_90;
+    (void)index;
     /* n_planes is always 1: VIF is luma-only by design across every backend
      * (matches CPU integer_vif and upstream Netflix/vmaf — see ADR-0541).
      * The loop is retained for shape-parity with the CPU/HIP/SYCL twins. */
@@ -855,34 +718,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     VifStateCuda *s = fex->priv;
-    /* Close path continues unwinding on CUDA error. */
-    int _cuda_err = 0;
-    CHECK_CUDA_GOTO(fex->cu_state->f, cuStreamSynchronize(s->str), after_sync);
-after_sync:
-    CHECK_CUDA_GOTO(fex->cu_state->f, cuStreamDestroy(s->str), after_stream);
-after_stream:
-    CHECK_CUDA_GOTO(fex->cu_state->f, cuEventDestroy(s->event), after_ev1);
-after_ev1:
-    CHECK_CUDA_GOTO(fex->cu_state->f, cuEventDestroy(s->finished), after_ev2);
-after_ev2:;
-
-    int ret = _cuda_err;
-    if (s->buf.data) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.data);
-        free(s->buf.data);
-    }
-    if (s->buf.accum_data) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.accum_data);
-        free(s->buf.accum_data);
-    }
-    if (s->buf.accum_host) {
-        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->buf.accum_host);
-    }
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const CudaFunctions *cu_f_close = fex->cu_state->f;
-    if (cu_f_close && s->filter1d_module)
-        (void)cu_f_close->cuModuleUnload(s->filter1d_module);
-    return ret;
+    return vif_init_unwind(fex, s, 0);
 }
 
 static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)

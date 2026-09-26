@@ -92,11 +92,11 @@ packages = ["src/vmaf_train", "src/aiutils"]
 "configs" = "vmaf_train/configs"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "sidecar/tests"]
 filterwarnings = ["error"]
-# ai/scripts/ modules use _script_bootstrap which lives alongside them; add
-# the scripts/ directory so importlib-loaded batch scripts can resolve it.
-pythonpath = ["scripts", "src"]
+# Package-local test runs need the repository parent for ``import ai``;
+# ai/scripts/ modules also use _script_bootstrap alongside them.
+pythonpath = ["..", "scripts", "src"]
 markers = [
     # Tests >30 s wall (or that exercise real GPUs / containers and may grow
     # past 30 s). Exclude with `pytest -m 'not slow'` for fast iteration.

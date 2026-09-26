@@ -146,13 +146,44 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
     return 0;
 }
 
-void feature_extractor_vector_destroy(RegisteredFeatureExtractors *rfe)
+int feature_extractor_vector_close(RegisteredFeatureExtractors *rfe)
+{
+    /* ADR-1336 prepare phase: retain the vector until every close succeeds. */
+    if (!rfe)
+        return -EINVAL;
+    int first_err = 0;
+    for (unsigned i = 0; i < rfe->cnt; i++) {
+        VmafFeatureExtractorContext *ctx = rfe->fex_ctx[i];
+        if (!ctx || ctx->is_closed || (!ctx->is_initialized && !ctx->close_required))
+            continue;
+        const int err = vmaf_feature_extractor_context_close(ctx);
+        if (err && !first_err)
+            first_err = err;
+    }
+    return first_err;
+}
+
+int feature_extractor_vector_destroy(RegisteredFeatureExtractors *rfe)
 {
     if (!rfe)
-        return;
+        return -EINVAL;
     for (unsigned i = 0; i < rfe->cnt; i++) {
-        (void)vmaf_feature_extractor_context_close(rfe->fex_ctx[i]);
-        (void)vmaf_feature_extractor_context_destroy(rfe->fex_ctx[i]);
+        const VmafFeatureExtractorContext *ctx = rfe->fex_ctx[i];
+        if (ctx &&
+            (ctx->close_required || (ctx->fex->close && ctx->is_initialized && !ctx->is_closed)))
+            return -EBUSY;
+    }
+    for (unsigned i = 0; i < rfe->cnt; i++) {
+        if (!rfe->fex_ctx[i])
+            continue;
+        const int err = vmaf_feature_extractor_context_destroy(rfe->fex_ctx[i]);
+        if (err)
+            return err;
+        rfe->fex_ctx[i] = nullptr;
     }
     free(static_cast<void *>(rfe->fex_ctx));
+    rfe->fex_ctx = nullptr;
+    rfe->cnt = 0;
+    rfe->capacity = 0;
+    return 0;
 }

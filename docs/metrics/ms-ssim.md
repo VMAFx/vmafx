@@ -22,9 +22,16 @@ user-visible. Read from the twins' own `options[]` tables:
 | `float_ms_ssim_cuda` | yes | yes | yes | **no** |
 | `float_ms_ssim_sycl` | yes | yes | yes | yes — computed on the GPU (3 planes) |
 | `integer_ms_ssim_hip` | yes | yes | yes | yes — **accepted but a no-op** |
+| `float_ms_ssim_metal` | yes | yes | yes | yes — computed on the GPU (3 planes) |
 
 What that means when a model requests `enable_chroma`:
 
+- **Metal** computes it. Each plane gets its own geometry and pyramid/partials
+  storage, dispatched through the Metal compute pipeline. The twin advertises
+  `float_ms_ssim_cb` and `float_ms_ssim_cr` in `provided_features` and the
+  `g_metal_features` dispatch table, serving chroma on the GPU. It also exposes
+  `enable_db` and `clip_db`, extending the ADR-1221 `max_db` rule under
+  [ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md).
 - **SYCL** computes it. Each plane gets its own geometry, staging buffer and
   pyramid, and the planes run sequentially through the shared reduction
   workspace the way the five scales already do. The twin advertises
@@ -50,9 +57,11 @@ What that means when a model requests `enable_chroma`:
 ### Minimum resolution with chroma
 
 The 5-level 11-tap pyramid needs every scored plane to be at least 176x176, and
-with `enable_chroma` that includes the subsampled ones. For 4:2:0 that means
-352x352 luma, not 176x176. Both the CPU and the SYCL twin now refuse a smaller
-input at init and name the chroma size they measured; before ADR-1299 the CPU
+with `enable_chroma` that includes the subsampled ones. Plane allocation uses
+ceil subsampling, so for 4:2:0 the exact luma minimum is 351x351 (352x352 is
+the next even-sized input), not 176x176. The CPU, SYCL, and Metal twins refuse
+an input whose scored plane is smaller at init and name the chroma size they
+measured; before ADR-1299 the CPU
 twin checked luma only and a 4:2:0 input in between died mid-run with
 `error: scale below 1x1!` on stdout and no output file — including on this
 repository's own 576x324 Netflix fixture, whose chroma is 288x162.
@@ -104,8 +113,10 @@ rejected with an error at init time (Netflix#1414 / ADR-0153).
   > `+Inf`, and every high-similarity pair returned an uncapped dB value, so
   > `clip_db` did not clip. Fixed per
   > [ADR-1221](../adr/1221-gpu-ms-ssim-db-ceiling.md). **Re-measure any GPU
-  > MS-SSIM dB score taken with `clip_db` set.** The Metal twin exposes neither
-  > `enable_db` nor `clip_db` and is unaffected.
+  > MS-SSIM dB score taken with `clip_db` set.** The Metal twin has been brought
+  > to full parity by [ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md),
+  > implementing `enable_db`, `clip_db` with `max_db` ceiling, and
+  > `enable_chroma`.
 
 ### How to run
 

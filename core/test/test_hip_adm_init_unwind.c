@@ -342,6 +342,16 @@ int vmaf_dictionary_free(VmafDictionary **dict)
     return 0;
 }
 
+int vmaf_feature_collector_append(VmafFeatureCollector *fc, const char *name, double score,
+                                  unsigned index)
+{
+    (void)fc;
+    (void)name;
+    (void)score;
+    (void)index;
+    return 0;
+}
+
 int vmaf_feature_collector_append_with_dict(VmafFeatureCollector *fc, VmafDictionary *dict,
                                             const char *name, double score, unsigned index)
 {

@@ -85,7 +85,7 @@ typedef struct VmafDnnConfig {
  *
  * @return 1 if DNN support was compiled in, 0 otherwise.
  *
- * @thread-safety Safe to call from any thread.
+ * @note Thread safety: Safe to call from any thread.
  */
 VMAF_EXPORT int vmaf_dnn_available(void);
 
@@ -101,7 +101,7 @@ VMAF_EXPORT int vmaf_dnn_available(void);
  *         args, -ENOENT if the path does not exist, -E2BIG if the file is
  *         larger than the compile-time 50 MB cap (VMAF_DNN_DEFAULT_MAX_BYTES).
  *
- * @thread-safety Not thread-safe. Call before vmaf_read_pictures() on the
+ * @note Thread safety: Not thread-safe. Call before vmaf_read_pictures() on the
  *               same context.
  */
 VMAF_EXPORT int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path,
@@ -122,7 +122,7 @@ VMAF_EXPORT int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path,
  * validated against the sidecar's `encoder_vocab`; unknown names return
  * `-ENOENT` (the "unknown" bucket is still written so callers can choose
  * to continue). Preset strings are looked up in a per-encoder ordinal
- * table that mirrors `ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL`;
+ * table that mirrors the `PRESET_ORDINAL` mapping in `ai/scripts/train_fr_regressor_v2.py`;
  * unknown presets fall back to ordinal 5 ("medium"-equivalent). The CRF
  * is clamped to [0, 63] before normalisation.
  *
@@ -148,7 +148,7 @@ VMAF_EXPORT int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path,
  * @return -ENOTSUP    the attached model has no codec block (rank-4
  *                     image model or rank-2 single-input model).
  *
- * @thread-safety Not thread-safe. Call before the first vmaf_read_pictures()
+ * @note Thread safety: Not thread-safe. Call before the first vmaf_read_pictures()
  *               on the same context.
  */
 VMAF_EXPORT int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_name,
@@ -167,7 +167,7 @@ VMAF_EXPORT int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_n
  * @param ctx  live VmafContext (may be NULL — returns 0 safely).
  * @return 1 if a codec-aware model with a codec block is attached, 0 otherwise.
  *
- * @thread-safety Safe to call before vmaf_read_pictures() on the same context.
+ * @note Thread safety: Safe to call before vmaf_read_pictures() on the same context.
  */
 VMAF_EXPORT int vmaf_dnn_is_codec_aware(const VmafContext *ctx);
 
@@ -220,7 +220,7 @@ typedef enum VmafDnnResizeMode {
  * @return -EINVAL     @p ctx is NULL or @p mode is outside the enum.
  * @return -ENOSYS     libvmaf was built without DNN support.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per driver thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */
 VMAF_EXPORT int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode);
 
@@ -245,7 +245,7 @@ typedef struct VmafDnnSession VmafDnnSession;
  *         -E2BIG if the file exceeds VMAF_DNN_DEFAULT_MAX_BYTES; -EIO on
  *         ORT failure.
  *
- * @thread-safety Not thread-safe. Each session handle must be owned by one
+ * @note Thread safety: Not thread-safe. Each session handle must be owned by one
  *               thread at a time; create one session per thread for concurrency.
  */
 VMAF_EXPORT int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path,
@@ -268,7 +268,7 @@ VMAF_EXPORT int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_pat
  * @return 0 on success, -ENOTSUP if the model shape is not luma-only,
  *         -ERANGE if @p w/@p h don't match the model's static input shape.
  *
- * @thread-safety Not thread-safe. Each session must be owned by one thread
+ * @note Thread safety: Not thread-safe. Each session must be owned by one thread
  *               at a time.
  */
 VMAF_EXPORT int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *in,
@@ -299,7 +299,7 @@ VMAF_EXPORT int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *
  *         single-channel; -ERANGE if @p w/@p h don't match; -EINVAL on
  *         a bad @p bpc.
  *
- * @thread-safety Not thread-safe. Each session must be owned by one thread
+ * @note Thread safety: Not thread-safe. Each session must be owned by one thread
  *               at a time.
  */
 VMAF_EXPORT int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in,
@@ -350,7 +350,7 @@ typedef struct VmafDnnOutput {
  *         -EINVAL on bad arity / null pointers; -ENOSPC if any output
  *         buffer is too small; -EIO on ORT failure.
  *
- * @thread-safety Not thread-safe. Each session must be owned by one thread
+ * @note Thread safety: Not thread-safe. Each session must be owned by one thread
  *               at a time.
  */
 VMAF_EXPORT int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *inputs,
@@ -365,7 +365,7 @@ VMAF_EXPORT int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *i
  *
  * @param sess Session handle from @ref vmaf_dnn_session_open. NULL is a no-op.
  *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
 
@@ -382,7 +382,7 @@ VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
  * @return NUL-terminated provider tag, or NULL if @p sess is NULL or
  *         libvmaf was built without DNN support.
  *
- * @thread-safety Safe to call from any thread once the session is open and
+ * @note Thread safety: Safe to call from any thread once the session is open and
  *               no concurrent inference is in flight on that session.
  */
 VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
@@ -407,7 +407,7 @@ VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
  *         Windows (the supply-chain workflow runs on Linux/macOS only),
  *         -EINVAL on a NULL @p onnx_path.
  *
- * @thread-safety Safe to call from any thread; uses no shared mutable state.
+ * @note Thread safety: Safe to call from any thread; uses no shared mutable state.
  */
 VMAF_EXPORT int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path);
 

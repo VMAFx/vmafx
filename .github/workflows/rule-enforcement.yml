@@ -41,6 +41,9 @@ jobs:
       - name: Verify Go required-check contract
         run: python3 scripts/ci/test_go_workflow_contract.py
 
+      - name: Verify SYCL required clang-tidy contract
+        run: python3 scripts/ci/test_sycl_tidy_workflow_contract.py
+
       - name: Verify Security Scans concurrency contract
         run: python3 scripts/ci/test_security_workflow_contract.py
 
@@ -724,6 +727,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Test changelog renderer and release rollover
@@ -764,6 +768,18 @@ jobs:
           bash scripts/ci/check-local-data-contract.sh
           bash scripts/ci/tests/test-check-local-data-contract.sh
 
+      - name: Research digest identifier ratchet
+        # A keep-both merge resurrected two digests already renumbered by
+        # 5ac5b4167. ADR-1335 binds the live scan to the PR base SHA so a
+        # rewritten branch baseline cannot bless a new collision or H1 drift.
+        env:
+          VMAFX_RESEARCH_BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          python3 -B scripts/ci/check-research-digest-ids.py \
+            --trusted-ref "${VMAFX_RESEARCH_BASE_REF}"
+          python3 -B scripts/ci/tests/test_research_digest_ids.py
+
       - name: state.md row hygiene (ADR-0165)
         # A keep-both rebase resolution can leave a bug id in both "## Open
         # bugs" and "## Recently closed", so a fixed bug reads as open forever
@@ -772,6 +788,13 @@ jobs:
         run: |
           bash scripts/ci/check-state-md-rows.sh
           bash scripts/ci/tests/test-check-state-md-rows.sh
+
+      - name: Historical issue-reference provenance
+        # BUG-048 Section E: the active fork reused old lusoris/vmaf numbers.
+        # Both the live check and semantic mutation suite stay network-free.
+        run: |
+          python3 -B scripts/ci/check-issue-reference-provenance.py
+          python3 -B -m unittest scripts/ci/tests/test_issue_reference_provenance.py
 
       - name: Required check names have one reporter each (ADR-1259)
         # The aggregator keeps one check run per name, so two jobs sharing a
@@ -785,9 +808,12 @@ jobs:
       - name: HISS replay evidence remains fail-closed (ADR-1274)
         run: python3 -B scripts/ci/tests/test_hiss_replay_contract.py
 
-      - name: Test the self-hosted SYCL runner probe
-        # ADR-1177. Hermetic unit suite for check-runner-available.sh.
-        run: bash scripts/ci/tests/test-runner-available.sh
+      - name: Test self-hosted runner admission
+        # ADR-1177 / ADR-1319. Hermetic probe cases plus real workflow and
+        # required-aggregator contracts for the distinct hardware lanes.
+        run: |
+          bash scripts/ci/tests/test-runner-available.sh
+          python3 -B scripts/ci/test_self_hosted_runner_workflow_contract.py
 
       - name: Test the self-hosted SYCL runner supervisor
         # ADR-1177. Hermetic unit suite for runner-supervisor.sh with stubbed gh and docker.

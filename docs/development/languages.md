@@ -32,7 +32,8 @@ brew install llvm
 
 **Used in:** `cmd/` (future: `cmd/vmafx-server`, `cmd/vmafx-mcp`, `cmd/vmafx-tune`)
 
-**Minimum version:** Go 1.25 (go.mod: `go 1.26.4`; toolchain 1.26.4)
+**Required version:** the exact version declared by `go.mod` (currently Go
+1.27.1). CI reads the same file through `actions/setup-go`.
 
 **Install:**
 
@@ -42,25 +43,45 @@ brew install llvm
 # or via mise / asdf / homebrew
 
 brew install go          # macOS
-sudo apt install golang  # Ubuntu (may not be 1.25 yet — prefer upstream)
+sudo apt install golang  # Ubuntu may lag go.mod — prefer the upstream installer
 ```
 
 **Verify:**
 
 ```bash
-go version  # must be >= go1.25
+go version  # must match the go directive in go.mod
 ```
 
 **Workspace quick-start:**
 
 ```bash
-go build ./...     # or: make go-build
-go test ./...      # or: make go-test
-go vet ./...       # static analysis (required CI gate)
+meson setup core/build-cpu core && ninja -C core/build-cpu
+make go-fix-check
+make go-build
+make go-test
 ```
 
 The Go module root is `github.com/VMAFx/vmafx` (declared in `go.mod`).
 Packages live under `pkg/`; binaries live under `cmd/`.
+
+The Make targets explicitly link `pkg/libvmaf` against the in-tree fork.
+For a direct Go invocation, select the same verified library; the package has
+no implicit `-lvmaf` fallback because a missing build must not silently select
+a distro or stale system copy:
+
+```bash
+export CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lm"
+export LD_LIBRARY_PATH="$(pwd)/core/build-cpu/src${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+go fix -diff ./...
+go vet ./...
+go test ./...
+```
+
+`make go-fix` applies the pinned toolchain's source rewrites. Re-run it when
+the tool asks for another pass, then use `make go-fix-check`; CI runs the same
+non-mutating `go fix -diff ./...` check and rejects any remaining patch. The
+default invocation covers the host Go package graph (CI: Linux/amd64 with
+cgo); platform- or tag-exclusive files need a matching qualified invocation.
 
 ## Rust — FFI bindings + feature-extractor pilots
 
@@ -157,8 +178,8 @@ See the backend-specific guides:
 
 | Language | CI gate | Workflow file |
 |---|---|---|
-| C / C++23 | clang-tidy, cppcheck, meson test | `.github/workflows/lint-and-format.yml` |
-| Go | `go vet ./...` + `go test ./...` | `.github/workflows/go-ci.yml` |
+| C / C++23 | clang-tidy, cppcheck, credential-safe Meson test runner | `.github/workflows/lint-and-format.yml` |
+| Go | `go fix -diff ./...` + `go vet ./...` + `go test ./...` | `.github/workflows/go-ci.yml` |
 | Rust | `cargo check --all` + `cargo test --all` | `.github/workflows/rust-ci.yml` |
 | Python | ruff + mypy strict + pytest | `.github/workflows/python-ci.yml` |
 

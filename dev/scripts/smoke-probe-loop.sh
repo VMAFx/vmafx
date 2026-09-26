@@ -11,8 +11,8 @@
 #   1. Runs the golden pair (ref_576x324_48f.yuv / dis_576x324_48f.yuv)
 #      through the 3 active backends (cpu, cuda, sycl) and hip.
 #      (ADR-0726: Vulkan backend removed.)
-#   2. Sends an MCP list_features request via stdio.
-#   3. Sends an MCP compute_vmaf HBD (10-bit simulated) request via stdio.
+#   2. Sends an MCP list_extractors request via stdio.
+#   3. Sends an MCP vmaf_score request for the same 8-bit pair via stdio.
 #   4. Writes a JSON probe record to ${PROBE_OUTPUT_DIR}/probe-${ts}.json
 #
 # Output schema:
@@ -53,15 +53,20 @@ PROBE_INTERVAL="${PROBE_INTERVAL_SECONDS:-900}"
 PROBE_OUTPUT_DIR="${PROBE_OUTPUT_DIR:-/probes}"
 TESTDATA="${VMAF_TESTDATA_PATH:-/workspace/testdata}"
 MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
-# MCP_SOCK is read by vmaf-mcp-server via VMAF_MCP_UDS_PATH env; not referenced
-# directly in this script.
 
 REF_YUV="${TESTDATA}/ref_576x324_48f.yuv"
 DIS_YUV="${TESTDATA}/dis_576x324_48f.yuv"
 WIDTH=576
 HEIGHT=324
 # FRAMES=48 — golden pair has 48 frames; vmaf CLI detects this automatically
-PIXEL_FORMAT="yuv420p"
+PIXEL_FORMAT="420"
+BITDEPTH=8
+
+# Bash treats tab as IFS whitespace and discards a leading empty field. Use a
+# non-whitespace separator so a failed probe cannot shift duration/error into
+# the score/duration columns. Error strings are JSON-encoded before they reach
+# this boundary, so an actual unit separator is escaped as \u001f.
+RESULT_SEP=$'\x1f'
 
 # Default VMAF model for standard scoring
 VMAF_MODEL="${MODEL_PATH}/vmaf_v0.6.1.json"
@@ -74,27 +79,30 @@ ts_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 ms_now() { python3 -c "import time; print(int(time.monotonic() * 1000))"; }
 
 json_str() {
-  # Escape a string for inline JSON embedding
-  local v="${1:-}"
-  v="${v//\\/\\\\}"
-  v="${v//\"/\\\"}"
-  v="${v//$'\n'/\\n}"
-  printf '%s' "\"${v}\""
+  # Use the same strict JSON encoder as the probe readers. Shell replacement
+  # missed tabs and other control bytes, which made an error message capable
+  # of corrupting the complete probe record.
+  python3 -c 'import json, sys; print(json.dumps(sys.argv[1]), end="")' "${1:-}"
 }
 
 json_num() {
   # Emit a JSON number or null
   local v="${1:-}"
-  if [[ "${v}" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+  if [[ "${v}" =~ ^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$ ]]; then
     printf '%s' "${v}"
   else
     printf 'null'
   fi
 }
 
+probe_failed_record() {
+  printf 'null%s0%s%s' "${RESULT_SEP}" "${RESULT_SEP}" \
+    "$(json_str "probe failed")"
+}
+
 # ---------------------------------------------------------------------------
 # Single backend probe
-# Outputs: score duration_ms error (tab-separated)
+# Outputs: score, duration_ms, and JSON-encoded error (unit-separator-delimited)
 # ---------------------------------------------------------------------------
 probe_backend() {
   local backend="${1}"
@@ -102,63 +110,190 @@ probe_backend() {
 
   t0="$(ms_now)"
 
-  # Build the vmaf CLI backend flag
+  # Reject unknown values before invoking the CLI. Every supported value is
+  # passed through the exclusive selector so a successful probe proves that
+  # exact backend ran rather than silently falling back through auto dispatch.
   case "${backend}" in
-    cpu) backend_flag="" ;;
-    cuda) backend_flag="--cuda" ;;
-    sycl) backend_flag="--sycl" ;;
-    hip) backend_flag="--hip" ;;
+    cpu | cuda | sycl | hip) ;;
     *)
-      printf 'null\t0\t%s' "unknown backend: ${backend}"
+      printf 'null%s0%s%s' "${RESULT_SEP}" "${RESULT_SEP}" \
+        "$(json_str "unknown backend: ${backend}")"
       return
       ;;
   esac
 
-  # Run vmaf CLI; capture stdout + stderr separately
-  local tmp_out
-  tmp_out="$(mktemp)"
-  _SMOKE_TMPFILES+=("$tmp_out")
+  # The CLI reports pooled scores in its JSON output file. It deliberately
+  # suppresses the human pooled-score line on non-TTY stderr, so grepping the
+  # redirected process output can never be a valid probe. Keep the JSON and
+  # diagnostic log separate and verify backend_used as well as the score.
+  local tmp_json tmp_log
+  tmp_json="$(mktemp)"
+  tmp_log="$(mktemp)"
+  _SMOKE_TMPFILES+=("${tmp_json}" "${tmp_log}")
 
-  # shellcheck disable=SC2086
   if vmaf \
     --reference "${REF_YUV}" \
     --distorted "${DIS_YUV}" \
     --width "${WIDTH}" \
     --height "${HEIGHT}" \
     --pixel_format "${PIXEL_FORMAT}" \
+    --bitdepth "${BITDEPTH}" \
     --model "path=${VMAF_MODEL}" \
-    --output /dev/null \
-    ${backend_flag} \
-    --no_prediction_flags \
-    >"${tmp_out}" 2>&1; then
+    --backend "${backend}" \
+    --json \
+    --output "${tmp_json}" \
+    >"${tmp_log}" 2>&1; then
     t1="$(ms_now)"
-    # Parse the aggregate VMAF score from stdout
-    score="$(grep -oP '(?<=VMAF score: )\d+(\.\d+)?' "${tmp_out}" | tail -1 || echo '')"
-    err="null"
+    if score="$(
+      python3 - "${tmp_json}" "${backend}" 2>>"${tmp_log}" <<'PY'
+import json
+import math
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    payload = json.load(stream)
+score = payload["pooled_metrics"]["vmaf"]["mean"]
+if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
+    raise ValueError(f"non-finite or non-numeric pooled VMAF score: {score!r}")
+backend_used = payload.get("backend_used")
+if backend_used != sys.argv[2]:
+    raise ValueError(f"requested backend {sys.argv[2]!r}, output reports {backend_used!r}")
+print(score)
+PY
+    )"; then
+      err="null"
+    else
+      score="null"
+      err="$(json_str "$(tail -3 "${tmp_log}" | tr '\n' ' ')")"
+    fi
   else
     t1="$(ms_now)"
-    score=""
-    err="$(tail -3 "${tmp_out}" | tr '\n' ' ')"
+    score="null"
+    err="$(json_str "$(tail -3 "${tmp_log}" | tr '\n' ' ')")"
   fi
-  rm -f "${tmp_out}"
+  rm -f "${tmp_json}" "${tmp_log}"
 
   local duration_ms=$((t1 - t0))
-  printf '%s\t%s\t%s' "${score}" "${duration_ms}" "${err}"
+  printf '%s%s%s%s%s' "${score}" "${RESULT_SEP}" "${duration_ms}" \
+    "${RESULT_SEP}" "${err}"
+}
+
+# Run one MCP tool call over the production Go stdio server. MCP requires an
+# initialize handshake before tools/call; a bare tools/call was rejected by the
+# Go SDK even when the tool name happened to exist in the retired Python server.
+_mcp_call() {
+  local tool_name="$1" arguments_json="$2"
+
+  python3 - "${tool_name}" "${arguments_json}" <<'PY'
+import json
+import os
+import selectors
+import subprocess
+import sys
+import time
+
+tool = sys.argv[1]
+arguments = json.loads(sys.argv[2])
+messages = [
+    {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "vmafx-smoke-probe", "version": "1"},
+        },
+    },
+    {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+    {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": tool, "arguments": arguments},
+    },
+]
+
+env = os.environ.copy()
+env["VMAFX_MCP_TRANSPORT"] = "stdio"
+proc = subprocess.Popen(
+    ["vmafx-mcp"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
+    env=env,
+)
+response = None
+try:
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+    wire = b"".join(
+        json.dumps(message, separators=(",", ":")).encode("utf-8") + b"\n"
+        for message in messages
+    )
+    proc.stdin.write(wire)
+    proc.stdin.flush()
+
+    # Keep stdin open until the response arrives. Closing it immediately after
+    # writing races the Go SDK: EOF disconnects the stdio session before its
+    # handler goroutine can publish id=2.
+    deadline = time.monotonic() + 120.0
+    pending = b""
+    with selectors.DefaultSelector() as selector:
+        selector.register(proc.stdout, selectors.EVENT_READ)
+        while response is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"MCP tool {tool!r} timed out")
+            if not selector.select(remaining):
+                raise TimeoutError(f"MCP tool {tool!r} timed out")
+            chunk = os.read(proc.stdout.fileno(), 65536)
+            if not chunk:
+                raise RuntimeError(
+                    f"MCP server exited before replying to tool {tool!r}"
+                )
+            pending += chunk
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                try:
+                    message = json.loads(line)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                if message.get("id") == 2:
+                    response = message
+                    break
+finally:
+    if proc.stdin is not None:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+if response is None:
+    raise RuntimeError(f"MCP tool {tool!r} returned no response")
+print(json.dumps(response, separators=(",", ":")))
+PY
 }
 
 # ---------------------------------------------------------------------------
-# MCP stdio probe — list_features
+# MCP stdio probe — list_extractors (stable output key: list_features)
 # ---------------------------------------------------------------------------
 probe_mcp_list_features() {
   local t0 t1 duration_ms feature_count err
 
   t0="$(ms_now)"
 
-  local request
-  request='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_features","arguments":{}}}'
-
   local response
-  response="$(printf '%s\n' "${request}" | vmaf-mcp-server --transport stdio 2>/dev/null || echo '')"
+  response="$(_mcp_call "list_extractors" '{}' || echo '')"
   t1="$(ms_now)"
   duration_ms=$((t1 - t0))
 
@@ -166,42 +301,61 @@ probe_mcp_list_features() {
     feature_count="null"
     err='"mcp stdio returned empty response"'
   elif echo "${response}" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if 'result' in d else 1)" 2>/dev/null; then
-    feature_count="$(echo "${response}" | python3 -c "
+    if feature_count="$(echo "${response}" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-content = d.get('result', {}).get('content', [])
-# Count features from text output
-text = next((c.get('text','') for c in content if c.get('type') == 'text'), '')
-import re
-matches = re.findall(r'^\s*-\s+\w', text, re.MULTILINE)
-print(len(matches))
-" 2>/dev/null || echo "null")"
-    err="null"
+result = d.get('result', {})
+if result.get('isError'):
+    raise ValueError('list_extractors returned isError')
+content = result.get('content', [])
+text = next((c.get('text', '') for c in content if c.get('type') == 'text'), '')
+payload = json.loads(text)
+extractors = payload.get('extractors')
+if not isinstance(extractors, list):
+    raise ValueError('list_extractors response lacks an extractors array')
+print(len(extractors))
+" 2>/dev/null)"; then
+      err="null"
+    else
+      feature_count="null"
+      err='"invalid list_extractors response"'
+    fi
   else
     feature_count="null"
     err="$(echo "${response}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('error',{}).get('message','unknown')))" 2>/dev/null || echo '"parse error"')"
   fi
 
-  printf '%s\t%s\t%s' "${feature_count}" "${duration_ms}" "${err}"
+  printf '%s%s%s%s%s' "${feature_count}" "${RESULT_SEP}" "${duration_ms}" \
+    "${RESULT_SEP}" "${err}"
 }
 
 # ---------------------------------------------------------------------------
-# MCP stdio probe — compute_vmaf (HBD 10-bit, same golden pair)
+# MCP stdio probe — vmaf_score (stable output key: compute_vmaf)
 # ---------------------------------------------------------------------------
 probe_mcp_compute_vmaf() {
   local t0 t1 duration_ms score err
 
   t0="$(ms_now)"
 
-  local request
-  request="$(
-    cat <<'JSONEOF'
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"compute_vmaf","arguments":{"reference":"/workspace/testdata/ref_576x324_48f.yuv","distorted":"/workspace/testdata/dis_576x324_48f.yuv","width":576,"height":324,"pixel_format":"yuv420p","model":"vmaf_v0.6.1","backend":"cpu"}}}
-JSONEOF
-  )"
+  local arguments
+  arguments="$(python3 -c '
+import json
+import sys
+
+print(json.dumps({
+    "ref": sys.argv[1],
+    "dis": sys.argv[2],
+    "width": 576,
+    "height": 324,
+    "pixfmt": "420",
+    "bitdepth": 8,
+    "model": "version=vmaf_v0.6.1",
+    "backend": "cpu",
+}, separators=(",", ":")))
+' "${REF_YUV}" "${DIS_YUV}")"
 
   local response
-  response="$(printf '%s\n' "${request}" | vmaf-mcp-server --transport stdio 2>/dev/null || echo '')"
+  response="$(_mcp_call "vmaf_score" "${arguments}" || echo '')"
   t1="$(ms_now)"
   duration_ms=$((t1 - t0))
 
@@ -209,21 +363,34 @@ JSONEOF
     score="null"
     err='"mcp stdio returned empty response"'
   elif echo "${response}" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if 'result' in d else 1)" 2>/dev/null; then
-    score="$(echo "${response}" | python3 -c "
-import sys, json, re
+    if score="$(echo "${response}" | python3 -c "
+import sys, json, math
 d = json.load(sys.stdin)
-content = d.get('result', {}).get('content', [])
-text = next((c.get('text','') for c in content if c.get('type') == 'text'), '')
-m = re.search(r'VMAF score.*?(\d+\.\d+)', text)
-print(m.group(1) if m else 'null')
-" 2>/dev/null || echo "null")"
-    err="null"
+result = d.get('result', {})
+if result.get('isError'):
+    raise ValueError('vmaf_score returned isError')
+content = result.get('content', [])
+text = next((c.get('text', '') for c in content if c.get('type') == 'text'), '')
+payload = json.loads(text)
+score = payload['pooled_metrics']['vmaf']['mean']
+if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
+    raise ValueError('vmaf_score returned a non-finite score')
+if payload.get('backend_used') != 'cpu':
+    raise ValueError('vmaf_score did not confirm the CPU backend')
+print(score)
+" 2>/dev/null)"; then
+      err="null"
+    else
+      score="null"
+      err='"invalid vmaf_score response"'
+    fi
   else
     score="null"
     err="$(echo "${response}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('error',{}).get('message','unknown')))" 2>/dev/null || echo '"parse error"')"
   fi
 
-  printf '%s\t%s\t%s' "${score}" "${duration_ms}" "${err}"
+  printf '%s%s%s%s%s' "${score}" "${RESULT_SEP}" "${duration_ms}" \
+    "${RESULT_SEP}" "${err}"
 }
 
 # ---------------------------------------------------------------------------
@@ -242,24 +409,33 @@ run_probe() {
   declare -A scores durations errors
   for backend in cpu cuda sycl hip; do
     echo "[smoke-probe]   backend=${backend}…" >&2
-    IFS=$'\t' read -r score dur err <<<"$(probe_backend "${backend}" 2>/dev/null || echo "null	0	\"probe failed\"")"
+    IFS="${RESULT_SEP}" read -r score dur err <<<"$(
+      probe_backend "${backend}" 2>/dev/null ||
+        probe_failed_record
+    )"
     scores[${backend}]="$(json_num "${score}")"
     durations[${backend}]="${dur:-0}"
     errors[${backend}]="${err:-null}"
   done
 
   # MCP probes
-  echo "[smoke-probe]   mcp list_features…" >&2
-  IFS=$'\t' read -r mcp_fc_count mcp_fc_dur mcp_fc_err <<<"$(probe_mcp_list_features 2>/dev/null || echo "null	0	\"probe failed\"")"
-  echo "[smoke-probe]   mcp compute_vmaf…" >&2
-  IFS=$'\t' read -r mcp_cv_score mcp_cv_dur mcp_cv_err <<<"$(probe_mcp_compute_vmaf 2>/dev/null || echo "null	0	\"probe failed\"")"
+  echo "[smoke-probe]   mcp list_extractors…" >&2
+  IFS="${RESULT_SEP}" read -r mcp_fc_count mcp_fc_dur mcp_fc_err <<<"$(
+    probe_mcp_list_features 2>/dev/null ||
+      probe_failed_record
+  )"
+  echo "[smoke-probe]   mcp vmaf_score…" >&2
+  IFS="${RESULT_SEP}" read -r mcp_cv_score mcp_cv_dur mcp_cv_err <<<"$(
+    probe_mcp_compute_vmaf 2>/dev/null ||
+      probe_failed_record
+  )"
 
   # Write JSON
   mkdir -p "$(dirname "${output_file}")"
   cat >"${output_file}" <<JSONEOF
 {
-  "ts": "$(json_str "${ts}" | tr -d '"')",
-  "host_id": "$(json_str "${host_id}" | tr -d '"')",
+  "ts": $(json_str "${ts}"),
+  "host_id": $(json_str "${host_id}"),
   "backend_results": {
     "cpu":  { "score": ${scores[cpu]},  "duration_ms": ${durations[cpu]},  "error": ${errors[cpu]} },
     "cuda": { "score": ${scores[cuda]}, "duration_ms": ${durations[cuda]}, "error": ${errors[cuda]} },
@@ -279,6 +455,10 @@ JSONEOF
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
+
 ONCE=false
 OUTPUT_OVERRIDE=""
 

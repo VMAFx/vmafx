@@ -17,5 +17,143 @@
     "command": "standardsctl",
     "args": ["compile-context", "--verify"],
     "use_new_terminal": false
+  },
+  {
+    "label": "Dev container: build exact source",
+    "command": "dev/scripts/container-build.sh",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Dev container: start",
+    "command": "docker",
+    "args": [
+      "compose",
+      "--project-directory",
+      "$ZED_WORKTREE_ROOT",
+      "-f",
+      "$ZED_WORKTREE_ROOT/dev/docker-compose.yml",
+      "up",
+      "-d",
+      "dev-mcp"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Dev container: shell",
+    "command": "dev/scripts/dev-mcp-shell.sh",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Dev container: CPU fast gate",
+    "command": "docker",
+    "args": [
+      "exec",
+      "-i",
+      "vmaf-dev-mcp",
+      "bash",
+      "-lc",
+      "set -euo pipefail; if [[ -f /probes/zed-build-cpu/build.ninja ]]; then meson setup --reconfigure /probes/zed-build-cpu /workspace/core -Denable_cuda=false -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled -Db_lto=false; else meson setup /probes/zed-build-cpu /workspace/core -Denable_cuda=false -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled -Db_lto=false; fi; ninja -C /probes/zed-build-cpu; python3 /workspace/scripts/ci/run_meson_test.py -- -C /probes/zed-build-cpu --suite=fast --print-errorlogs"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "MCP: probe running container",
+    "command": "dev/scripts/dev-mcp-probe.sh",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "vmaf-tune: compare CPU smoke",
+    "command": "docker",
+    "args": [
+      "exec",
+      "-i",
+      "vmaf-dev-mcp",
+      "vmaf-tune",
+      "compare",
+      "--src",
+      "/workspace/testdata/ref_576x324_48f.yuv",
+      "--width",
+      "576",
+      "--height",
+      "324",
+      "--pix-fmt",
+      "yuv420p",
+      "--framerate",
+      "24",
+      "--duration",
+      "2",
+      "--encoders",
+      "libx264,libx265",
+      "--target-vmafs",
+      "94",
+      "--score-backend",
+      "cpu",
+      "--max-iterations",
+      "2"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Netflix golden",
+    "command": "make",
+    "args": ["test-netflix-golden"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Format check",
+    "command": "make",
+    "args": ["format-check"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Lint all",
+    "command": "make",
+    "args": ["lint"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "pytest: current file",
+    "command": "python3",
+    "args": ["-m", "pytest", "$ZED_FILE", "-v"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "ADR: claim selected slug",
+    "command": "scripts/adr/next-free.sh",
+    "args": ["--claim", "${ZED_SELECTED_TEXT:new-decision}"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
   }
 ]

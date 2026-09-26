@@ -40,8 +40,7 @@ sycl/
 - **Numerical snapshots**: same rule as CUDA — see CLAUDE.md §9.
 - **`-fp-model=precise` load-bearing.** SYCL feature build line in
   `core/src/meson.build` adds `-fp-model=precise` to every per-kernel
-  TU. Blocks `icpx` from FMA contraction in kernel lambdas, matches
-  GLSL `precise` / `NoContraction` decorations on Vulkan twins.
+  TU. It blocks `icpx` from FMA contraction in kernel lambdas.
   Removing it drifts `float_adm_sycl`
   ([ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)) past
   `places=4` at scale 2, `ssimulacra2_sycl`
@@ -175,6 +174,14 @@ sycl/
   the stride comparison — widening it to `size_t` changes which pictures take
   the bulk-memcpy path.
 
+- **`vmaf_sycl_graph_register` allocation order (ADR-0982 / BUG-048 Sec A3).**
+  In `vmaf_sycl_graph_register()` (`common.cpp`), ensure `state->combined_queue`
+  is allocated (via `std::make_unique<sycl::queue>`) *before* incrementing
+  `state->num_graph_extractors` or populating the extractor entry. If queue
+  creation throws or fails, `num_graph_extractors` must not be left dirty with
+  an uninitialized entry in `graph_extractors[]`. On rebase: preserve this
+  allocation-before-registration sequence.
+
 - [ADR-0002](../../../docs/adr/0002-merge-path-master-default.md) —
   sycl branch → master merge history.
 - [ADR-0016](../../../docs/adr/0016-sycl-to-master-merge-conflict-policy.md)
@@ -189,6 +196,8 @@ sycl/
   — AdaptiveCpp added as a second SYCL toolchain alongside icpx;
   Intel-specific kernel attributes routed through
   `feature/sycl/sycl_compat.h`.
+- [ADR-0982](../../../docs/adr/0982-gpu-runtime-bug-audit-round-26.md) —
+  GPU runtime bug audit — round 26 (init/teardown leak sweep).
 - [ADR-1121](../../../docs/adr/1121-sycl-qsv-zerocopy-p010-normalization.md)
   — QSV zero-copy P010/P012 MSB→LSB normalization in the VA import +
   separate-per-decoder-session decode contract.

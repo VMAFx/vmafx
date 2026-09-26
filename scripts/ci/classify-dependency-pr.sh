@@ -135,6 +135,7 @@ is_allowed_dependency_path() {
       docker/* | \
       deploy/helm/* | \
       .github/workflows/* | \
+      requirements/* | \
       changelog.d/*)
       return 0
       ;;
@@ -149,6 +150,7 @@ is_allowed_dependency_path() {
       pyproject.toml | poetry.lock | uv.lock | tox.ini | \
       setup.py | setup.cfg | \
       requirements*.txt | constraints*.txt | \
+      requirements*.in | \
       Dockerfile* | *.Dockerfile | \
       Chart.yaml | Chart.lock | \
       docker-compose.y*ml | docker-compose.*.y*ml | compose.y*ml)

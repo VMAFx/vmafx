@@ -43,6 +43,7 @@
 #endif
 
 #include "cli_parse.h"
+#include "compat/path_utf8.h"
 #include "spinner.h"
 #include "vidinput.h"
 
@@ -63,6 +64,7 @@
 #endif
 
 #include "feature/feature_dimensions.h"
+#include "vmaf_close_retry.h"
 
 /* ADR-0543 (extends ADR-0498): dedicated exit code for an explicit-
  * backend init failure. Distinguishes a "you asked for SYCL but it
@@ -162,7 +164,7 @@ void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt
     /* Use open()+fdopen() with explicit 0644 mode so the created file is never
      * world-writable regardless of the caller's umask (CodeQL cpp/world-writable-file-creation). */
 #ifdef _WIN32
-    FILE *fp = fopen(output_path, "wb");
+    FILE *fp = vmaf_fopen_utf8(output_path, "wb");
 #else
     const int raw_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     FILE *fp = (raw_fd >= 0) ? fdopen(raw_fd, "wb") : nullptr;
@@ -693,6 +695,7 @@ struct GpuStates {
     bool sycl_active;
 #endif
 #ifdef HAVE_CUDA
+    VmafCudaState *cuda_state;
     bool cuda_active;
 #endif
 #ifdef HAVE_HIP
@@ -800,9 +803,8 @@ namespace
     if (states->sycl_active)
         return 0;
 #endif
-    VmafCudaState *cuda_state;
-    const VmafCudaConfiguration cfg = {0};
-    int err = vmaf_cuda_state_init(&cuda_state, cfg);
+    const VmafCudaConfiguration cfg = {nullptr};
+    int err = vmaf_cuda_state_init(&states->cuda_state, cfg);
     if (err) {
         (void)fprintf(stderr, "problem during vmaf_cuda_state_init, using CPU\n");
         if (!explicit_backend_requested(c) || strcmp(c->backend, "cuda") != 0)
@@ -813,7 +815,7 @@ namespace
                                  "vmaf_cuda_state_init failed", err);
         return VMAF_INIT_GPU_EXPLICIT_FAIL;
     }
-    err = vmaf_cuda_import_state(vmaf, cuda_state);
+    err = vmaf_cuda_import_state(vmaf, states->cuda_state);
     if (err) {
         (void)fprintf(stderr, "problem during vmaf_cuda_import_state\n");
         return -1;
@@ -1218,7 +1220,7 @@ double wall_time_s()
     /* The performance-counter frequency is fixed at boot, so query it once and
      * cache it (static, zero-initialised) instead of every FPS update. */
     static LARGE_INTEGER freq;
-    LARGE_INTEGER cnt = {0};
+    LARGE_INTEGER cnt = {};
     if (!freq.QuadPart)
         (void)QueryPerformanceFrequency(&freq);
     (void)QueryPerformanceCounter(&cnt);
@@ -1267,7 +1269,7 @@ class WindowsConsoleGuard
         if (prev_code_page_ != 0 && prev_code_page_ != CP_UTF8)
             code_page_changed_ = SetConsoleOutputCP(CP_UTF8) != 0;
 
-        const HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+        HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
         if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &prev_mode_) != 0) {
             const DWORD wanted = prev_mode_ | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
             if (wanted != prev_mode_)
@@ -1283,7 +1285,7 @@ class WindowsConsoleGuard
         if (code_page_changed_)
             (void)SetConsoleOutputCP(prev_code_page_);
         if (mode_changed_) {
-            const HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+            HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
             if (h != INVALID_HANDLE_VALUE)
                 (void)SetConsoleMode(h, prev_mode_);
         }
@@ -1298,6 +1300,80 @@ class WindowsConsoleGuard
 
 } // namespace
 
+#endif /* _WIN32 */
+
+#ifdef _WIN32
+namespace
+{
+
+struct WindowsUtf8Argv {
+    char **values = nullptr;
+    int count = 0;
+    DWORD error = ERROR_SUCCESS;
+};
+
+void windows_utf8_argv_destroy(WindowsUtf8Argv *args)
+{
+    if (!args || !args->values)
+        return;
+    for (int i = 0; i < args->count; i++)
+        std::free(args->values[i]);
+    std::free(static_cast<void *>(args->values));
+    args->values = nullptr;
+    args->count = 0;
+}
+
+} // namespace
+
+namespace
+{
+
+[[nodiscard]] bool windows_utf8_argv_init(int argc, wchar_t *wide_argv[], WindowsUtf8Argv *args)
+{
+    if (!args || !wide_argv || argc < 1 ||
+        static_cast<size_t>(argc) > SIZE_MAX / sizeof(*args->values) - 1u) {
+        if (args)
+            args->error = ERROR_INVALID_PARAMETER;
+        return false;
+    }
+    args->count = argc;
+    args->values =
+        static_cast<char **>(std::calloc(static_cast<size_t>(argc) + 1u, sizeof(*args->values)));
+    if (!args->values) {
+        args->error = ERROR_NOT_ENOUGH_MEMORY;
+        return false;
+    }
+
+    for (int i = 0; i < argc; i++) {
+        if (!wide_argv[i]) {
+            args->error = ERROR_INVALID_PARAMETER;
+            windows_utf8_argv_destroy(args);
+            return false;
+        }
+        const int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[i], -1,
+                                              nullptr, 0, nullptr, nullptr);
+        if (bytes <= 0) {
+            args->error = GetLastError();
+            windows_utf8_argv_destroy(args);
+            return false;
+        }
+        args->values[i] = static_cast<char *>(std::malloc(static_cast<size_t>(bytes)));
+        if (!args->values[i]) {
+            args->error = ERROR_NOT_ENOUGH_MEMORY;
+            windows_utf8_argv_destroy(args);
+            return false;
+        }
+        if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[i], -1, args->values[i],
+                                bytes, nullptr, nullptr) != bytes) {
+            args->error = GetLastError();
+            windows_utf8_argv_destroy(args);
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
 #endif /* _WIN32 */
 
 /* Glyph table + erase-to-EOL sequence for the interactive progress line. */
@@ -1324,7 +1400,7 @@ unsigned console_output_code_page()
 
 int console_vt_enabled()
 {
-    const HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+    HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
     DWORD mode = 0;
     /* A redirected stderr has no console mode; raw bytes reach the file or
      * pipe unmodified, so the CSI sequence is fine there. */
@@ -1599,7 +1675,7 @@ void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat
     if (fmt != VMAF_OUTPUT_FORMAT_JSON)
         return;
 
-    FILE *fp = fopen(output_path, "rb+");
+    FILE *fp = vmaf_fopen_utf8(output_path, "rb+");
     if (!fp)
         return;
     if (fseek(fp, 0, SEEK_END) != 0) {
@@ -1659,11 +1735,19 @@ struct CliRunState {
     VmafPictureConfiguration pic_cfg = {};
 };
 
-void cleanup_gpu_states(GpuStates *states)
+[[nodiscard]] int cleanup_gpu_states(GpuStates *states)
 {
 #ifdef HAVE_SYCL
-    if (states->sycl_active)
+    if (states->sycl_state)
         vmaf_sycl_state_free(&states->sycl_state);
+#endif
+#ifdef HAVE_CUDA
+    if (states->cuda_state) {
+        const int err = vmaf_cuda_state_free(states->cuda_state);
+        if (err)
+            return err;
+        states->cuda_state = nullptr;
+    }
 #endif
 #ifdef HAVE_HIP
     if (states->hip_state)
@@ -1674,23 +1758,43 @@ void cleanup_gpu_states(GpuStates *states)
         vmaf_metal_state_free(&states->metal_state);
 #endif
     (void)states;
+    return 0;
 }
 
-void cleanup_cli_run_state(CliRunState *state)
+[[nodiscard]] int cleanup_cli_run_state(CliRunState *state)
 {
-    if (state->vmaf)
-        vmaf_close(state->vmaf);
-    cleanup_gpu_states(&state->gpu);
-    if (state->vid_dist_open)
+    const int close_err = vmaf_tool_close_context(&state->vmaf);
+    if (close_err) {
+        (void)fprintf(stderr,
+                      "vmaf: context cleanup failed after %u attempts (err=%d); "
+                      "retaining dependent resources\n",
+                      VMAF_TOOL_CLOSE_MAX_ATTEMPTS, close_err);
+        return close_err;
+    }
+    const int gpu_err = cleanup_gpu_states(&state->gpu);
+    if (gpu_err) {
+        (void)fprintf(stderr, "vmaf: backend-state cleanup failed (err=%d)\n", gpu_err);
+        return gpu_err;
+    }
+    if (state->vid_dist_open) {
         video_input_close(&state->vid_dist);
-    if (state->vid_ref_open)
+        state->vid_dist_open = false;
+    }
+    if (state->vid_ref_open) {
         video_input_close(&state->vid_ref);
-    if (state->file_dist)
+        state->vid_ref_open = false;
+    }
+    if (state->file_dist) {
         (void)fclose(state->file_dist);
-    if (state->file_ref)
+        state->file_dist = nullptr;
+    }
+    if (state->file_ref) {
         (void)fclose(state->file_ref);
+        state->file_ref = nullptr;
+    }
     cli_free(&state->c);
     destroy_model_arrays(&state->arrays);
+    return 0;
 }
 
 } // namespace
@@ -1708,11 +1812,18 @@ class CliRunGuard
     CliRunGuard &operator=(const CliRunGuard &) = delete;
     ~CliRunGuard()
     {
-        cleanup_cli_run_state(state_);
+        if (!cleanup_attempted_)
+            (void)cleanup_cli_run_state(state_);
+    }
+    [[nodiscard]] int close()
+    {
+        cleanup_attempted_ = true;
+        return cleanup_cli_run_state(state_);
     }
 
   private:
     CliRunState *state_;
+    bool cleanup_attempted_ = false;
 };
 
 void print_cli_banner(const CLISettings *c, int istty)
@@ -1731,12 +1842,12 @@ void print_cli_banner(const CLISettings *c, int istty)
 [[nodiscard]] int open_cli_inputs(CliRunState *state)
 {
     const char *const ref_path = state->c.no_reference ? state->c.path_dist : state->c.path_ref;
-    state->file_ref = fopen(ref_path, "rb");
+    state->file_ref = vmaf_fopen_utf8(ref_path, "rb");
     if (!state->file_ref) {
         (void)fprintf(stderr, "could not open file: %s\n", ref_path);
         return -1;
     }
-    state->file_dist = fopen(state->c.path_dist, "rb");
+    state->file_dist = vmaf_fopen_utf8(state->c.path_dist, "rb");
     if (!state->file_dist) {
         (void)fprintf(stderr, "could not open file: %s\n", state->c.path_dist);
         return -1;
@@ -1991,15 +2102,45 @@ namespace
 
 } // namespace
 
-int main(int argc, char *argv[])
+namespace
 {
+
+// NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-1336: when both bounded
+// vmaf_close attempts fail, model and backend owners must remain allocated
+// until process exit rather than dangling the retryable context.
+[[nodiscard]] int vmaf_cli_main(int argc, char *argv[])
+{
+    CliRunState state = {};
+    cli_parse(argc, argv, &state.c);
+    CliRunGuard guard(&state);
+    const int run_err = run_cli(&state, isatty(fileno(stderr)));
+    const int cleanup_err = guard.close();
+    return run_err ? run_err : (cleanup_err ? EXIT_FAILURE : EXIT_SUCCESS);
+}
+// NOLINTEND(clang-analyzer-unix.Malloc)
+
+} // namespace
+
 #ifdef _WIN32
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- ADR-1182: CRT entry point requires external wmain.
+int wmain(int argc, wchar_t *argv[])
+{
     /* cli_parse exits directly for --help, --version, and parse errors. Static
      * storage ensures the console restoration destructor runs on those paths. */
     static const WindowsConsoleGuard console_guard;
-#endif
-    CliRunState state = {};
-    cli_parse(argc, argv, &state.c);
-    const CliRunGuard guard(&state);
-    return run_cli(&state, isatty(fileno(stderr)));
+    WindowsUtf8Argv utf8_argv;
+    if (!windows_utf8_argv_init(argc, argv, &utf8_argv)) {
+        (void)fprintf(stderr, "failed to convert the Windows command line to UTF-8 (win32=%lu)\n",
+                      (unsigned long)utf8_argv.error);
+        return EXIT_FAILURE;
+    }
+    const int result = vmaf_cli_main(utf8_argv.count, utf8_argv.values);
+    windows_utf8_argv_destroy(&utf8_argv);
+    return result;
 }
+#else
+int main(int argc, char *argv[])
+{
+    return vmaf_cli_main(argc, argv);
+}
+#endif

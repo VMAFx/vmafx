@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "'/home/kilian/dev/vmaf/.codex/hooks/block-unsafe-bash.sh'"
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/block-unsafe-bash.sh\""
           }
         ]
       }
@@ -17,19 +17,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "'/home/kilian/dev/vmaf/.codex/hooks/auto-format-on-edit.sh'"
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/auto-format-on-edit.sh\""
           },
           {
             "type": "command",
-            "command": "'/home/kilian/dev/vmaf/.codex/hooks/auto-snapshot-warn.sh'"
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/auto-snapshot-warn.sh\""
           },
           {
             "type": "command",
-            "command": "'/home/kilian/dev/vmaf/.codex/hooks/docs-drift-warn.sh'"
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/docs-drift-warn.sh\""
           },
           {
             "type": "command",
-            "command": "'/home/kilian/dev/vmaf/.codex/hooks/compile-commands-sync.sh'"
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/compile-commands-sync.sh\""
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "'/home/kilian/dev/vmaf/.codex/hooks/session-start.sh'"
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/session-start.sh\""
           }
         ]
       }
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "'/home/kilian/dev/vmaf/.codex/hooks/stop.sh'"
+            "command": "\"$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git rev-parse --show-toplevel)/.codex/hooks/stop.sh\""
           }
         ]
       }

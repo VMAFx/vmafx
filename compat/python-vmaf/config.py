@@ -94,7 +94,9 @@ class VmafExternalConfig(object):
             if path and os.path.exists(path):
                 return path
         except ImportError:
-            print("ImportError")
+            # The externals module is an optional local override; without it
+            # the caller falls back to the in-tree build.
+            pass
 
         return None
 
@@ -110,7 +112,9 @@ class VmafExternalConfig(object):
             attr = getattr(externals, name, None)
             return attr
         except ImportError:
-            print("ImportError")
+            # The externals module is an optional local override; no
+            # configured attribute means the default applies.
+            pass
         return None
 
     @classmethod
@@ -182,6 +186,9 @@ class VmafExternalConfig(object):
         """
         :return str: Path to external vmaf executable, if installed and configured via `externals` module
         """
+        env_path = os.environ.get("VMAF_PATH")
+        if env_path:
+            return env_path
         return cls._path_from_external("VMAF_PATH")
 
     @classmethod
@@ -189,6 +196,9 @@ class VmafExternalConfig(object):
         """
         :return str: Path to external vmafexec executable, if installed and configured via `externals` module
         """
+        env_path = os.environ.get("VMAFEXEC_PATH")
+        if env_path:
+            return env_path
         return cls._path_from_external("VMAFEXEC_PATH")
 
     @classmethod

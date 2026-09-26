@@ -326,6 +326,43 @@ static char *feed_sycl_checkerboard_frames(VmafContext *vmaf)
     return NULL;
 }
 
+static char *setup_sycl_checkerboard(VmafSyclState *sycl_state, VmafContext **out_vmaf)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, cfg);
+    mu_assert("SYCL: vmaf_init failed", !err);
+
+    err = vmaf_sycl_import_state(vmaf, sycl_state);
+    mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
+
+    VmafFeatureDictionary *opts = NULL;
+    err = vmaf_feature_dictionary_set(&opts, "motion_max_val", "18.0");
+    mu_assert("SYCL: vmaf_feature_dictionary_set(motion_max_val) failed", !err);
+
+    err = vmaf_use_feature(vmaf, "motion_sycl", opts);
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
+    mu_assert("SYCL: vmaf_use_feature(motion_sycl) failed", !err);
+
+    *out_vmaf = vmaf;
+    return NULL;
+}
+
+static char *collect_sycl_checkerboard_scores(VmafContext *vmaf, double *m2_f1, double *m2_f2,
+                                              double *m3_f1, double *m3_f2)
+{
+    int err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f1, 1u);
+    mu_assert("SYCL: motion2 at idx=1 failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f2, 2u);
+    mu_assert("SYCL: motion2 at idx=2 failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f1, 1u);
+    mu_assert("SYCL: motion3 at idx=1 failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f2, 2u);
+    mu_assert("SYCL: motion3 at idx=2 failed", !err);
+    return NULL;
+}
+
 static char *run_sycl_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, double *m3_f2)
 {
     *m2_f1 = NAN;
@@ -342,36 +379,14 @@ static char *run_sycl_checkerboard(double *m2_f1, double *m2_f2, double *m3_f1, 
         return NULL;
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("SYCL: vmaf_init failed", !err);
-
-    err = vmaf_sycl_import_state(vmaf, sycl_state);
-    mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-
-    VmafFeatureDictionary *opts = NULL;
-    err = vmaf_feature_dictionary_set(&opts, "motion_max_val", "18.0");
-    mu_assert("SYCL: vmaf_feature_dictionary_set(motion_max_val) failed", !err);
-
-    err = vmaf_use_feature(vmaf, "motion_sycl", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("SYCL: vmaf_use_feature(motion_sycl) failed", !err);
-
+    mu_assert_msg(setup_sycl_checkerboard(sycl_state, &vmaf));
     mu_assert_msg(feed_sycl_checkerboard_frames(vmaf));
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
 
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f1, 1u);
-    mu_assert("SYCL: motion2 at idx=1 failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mmxv_18", m2_f2, 2u);
-    mu_assert("SYCL: motion2 at idx=2 failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f1, 1u);
-    mu_assert("SYCL: motion3 at idx=1 failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "integer_motion3_mmxv_18", m3_f2, 2u);
-    mu_assert("SYCL: motion3 at idx=2 failed", !err);
+    mu_assert_msg(collect_sycl_checkerboard_scores(vmaf, m2_f1, m2_f2, m3_f1, m3_f2));
 
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);

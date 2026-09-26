@@ -207,17 +207,17 @@ Both static PTQ and QAT easily beat the current synthetic CI gate budget of `qua
 To ship retrained models as int8 static PTQ or QAT in epic #1246, the following six concrete defects and gaps must be resolved in epic #1242:
 
 1. **[C Loader] Wire `.int8.onnx` redirect into `vmaf_use_tiny_model()` (`core/src/dnn/dnn_attach_api.c`)**:
-   `vmaf_use_tiny_model()` must mirror the redirect logic of `vmaf_dnn_session_open()` in `dnn_api.c`: when `have_meta && meta.quant_mode != VMAF_QUANT_FP32`, rewrite `<stem>.onnx` to `<stem>.int8.onnx`, validate size and allowlist, and open the int8 sibling.
+   **Resolved** (PR #1320, `T-DNN-ATTACH-INT8-REDIRECT-MISSING-2026-09-04`): mirrors redirect logic of `vmaf_dnn_session_open()` in `dnn_api.c`.
 2. **[Model Sidecar] Fix `vmaf_tiny_v3.int8.json` missing `"onnx_has_scaler"`**:
-   Add `"onnx_has_scaler": true` to `model/tiny/vmaf_tiny_v3.int8.json` (and any other int8 sidecar where normalization is in-graph) so `libvmaf.c:1442` does not apply double-scaling.
+   **Resolved** (PR #1320, `T-TINY-V3-INT8-SIDECAR-MISSING-ONNX-HAS-SCALER-2026-09-04`): `"onnx_has_scaler": true` added to prevent runtime double-scaling.
 3. **[Script] Pin `quant_format=QuantFormat.QDQ` in `ptq_static.py` and `qat_train.py`**:
-   Currently both scripts rely on the ambient ORT default. As recorded in `T-AI-PTQ-STATIC-QUANT-FORMAT-UNPINNED-2026-09-03`, they must explicitly pass `quant_format=QuantFormat.QDQ` (matching `ai/src/vmaf_train/quantize.py:135`) to guarantee no QOperator-static ops (`QLinear*`) are emitted.
+   **Resolved** (`T-AI-PTQ-STATIC-QUANT-FORMAT-UNPINNED-2026-09-03` / `T-AI-QAT-QUANT-FORMAT-UNPINNED-2026-09-23`): `ptq_static.py` pinned in PR #1306, and `ai/train/qat.py`'s `_ort_static_quantize()` explicitly pins `quant_format=QuantFormat.QDQ` with regression coverage in `ai/tests/test_qat_smoke.py`.
 4. **[Script] Generalise `qat_train.py` data loader for 4D image tensors**:
-   `_build_train_loader_factory` unconditionally invokes `VmafTrainDataModule`, which only loads 1D tabular features. For 2D CNN models (`learned_filter`), training requires image tensor batches; currently `learned_filter_v1_qat.yaml` only works because the missing cache triggers fallback to `--smoke`.
+   **Resolved** (PR #1320 / ADR-1293): rank-4 NCHW loader added alongside rank-2 tabular reader.
 5. **[Script] Add `--fp32` / `--int8` CLI path overrides to `measure_quant_drop.py`**:
-   `measure_quant_drop.py` enforces paths under `model/tiny/` and looks up entries in `model/tiny/registry.json`. For development, CI smoke testing, and pre-release gating, it needs direct flags `--fp32 <path> --int8 <path>` to measure uncommitted models without touching `registry.json`.
+   **Resolved** (PR #1320): `--fp32` and `--int8` flags added for registry-free gating.
 6. **[CI / Validation] End-to-end VMAF delta gate**:
-   The current accuracy gate only measures PLCC on 16 synthetic random tensors. A true release gate must assert that VMAF score predictions across a validation corpus do not drift by more than a defined threshold.
+   **Resolved** (`ai/scripts/validate_quant_parity.py` / `ai/tests/test_validate_quant_parity.py`): deterministic clip-level validation gate on real feature clips enforcing Research-2029 §6 thresholds (`mean_abs_delta <= 0.10`, `max_abs_delta <= 0.50`, `PLCC >= 0.990`). Shipped un-retrained dynamic models fail strict thresholds as expected until QAT retraining in Epic #1246.
 
 ---
 

@@ -17,7 +17,7 @@ CI job and matrix display names (`name:`) conform to the following guidelines:
    than the check name itself.
 3. **Discriminative qualifiers**: Essential matrix qualifiers remain intact in
    compact form (e.g. `Sanitizers (address)`, `CodeQL (C/C++)`,
-   `Tidy SYCL (advisory)`).
+   `Tidy SYCL`).
 4. **Platform consistency**: Operating system matrix legs follow a uniform
    prefix pattern (e.g. `Ubuntu gcc+DNN`, `Ubuntu clang+DNN`, `Ubuntu HIP`,
    `Windows MinGW64`, `Windows MSVC+CUDA`, `Windows MSVC+SYCL`).
@@ -55,9 +55,10 @@ means re-pointing every badge.
 
 Branch protection targets a single context: `Required Checks Aggregator` in
 [`.github/workflows/required-aggregator.yml`](../../.github/workflows/required-aggregator.yml).
-The aggregator's `required` list holds 40 check names defined across eleven
-workflows; each run evaluates 39 of them, because only the Scorecard gate for
-the triggering event applies.
+The aggregator's `required` list holds 79 check names defined across 20
+workflows; each run evaluates 78 of them. It declares both Scorecard event
+gates, then removes the non-applicable one so only `Scorecard PR Gate` or
+`Scorecard Master Gate` is evaluated for a run.
 
 A required name must be reported by exactly one job, because the aggregator
 keeps one check run per name, so two jobs sharing a name can mask each other's
@@ -110,7 +111,7 @@ job the PR renamed, every required check and every build lane.
 | `lint-and-format.yml` | unchanged | `Docs` | 4 | Yes |
 | `lint-and-format.yml` | `Twin Drift + Stale Source Refs (ADR-1135)` | `Twin Drift` | 10 | Yes |
 | `lint-and-format.yml` | `ShellCheck + shfmt (All *.sh)` | `ShellCheck + shfmt` | 17 | Yes |
-| `lint-and-format.yml` | `Clang-Tidy SYCL (Changed Files, Advisory)` | `Tidy SYCL (advisory)` | 20 | No |
+| `lint-and-format.yml` | `Clang-Tidy SYCL (Changed Files, Advisory)` | `Tidy SYCL` | 9 | Yes |
 | `lint-and-format.yml` | `Check — No committed conflict markers` | `No Conflict Markers` | 19 | No |
 | `lint-and-format.yml` | `Markdown lint (markdownlint-cli2)` | `Markdown Lint` | 13 | No |
 | `rule-enforcement.yml` | `Deep-Dive Deliverables Checklist (ADR-0108)` | `Deliverables Checklist` | 22 | Yes |
@@ -132,7 +133,6 @@ job the PR renamed, every required check and every build lane.
 | `tests-and-quality-gates.yml` | `Sanitizers — ASan + UBSan + MSan (thread)` | `Sanitizers (thread)` | 19 | Yes |
 | `tests-and-quality-gates.yml` | `Sanitizers — ASan + UBSan + MSan (undefined)` | `Sanitizers (undefined)` | 22 | Yes |
 | `tests-and-quality-gates.yml` | `Tiny AI (DNN Suite + ai/ Pytests)` | `Tiny AI` | 7 | Yes |
-| `tests-and-quality-gates.yml` | `SYCL float_ssim Parity (Arc DG2-G10)` | `SYCL float_ssim Parity` | 23 | Yes |
 | `tests-and-quality-gates.yml` | `Assertion Density (Power of 10 §5)` | `Assertion Density` | 17 | Yes |
 | `tests-and-quality-gates.yml` | `Coverage Gate (Ramping to 70% / 85% Critical)` | `Coverage Gate` | 13 | No |
 | `tests-and-quality-gates.yml` | `Coverage Gate — GPU Backends (Advisory)` | `Coverage GPU` | 12 | Yes |

@@ -56,8 +56,8 @@ GPU device-plugin reference
   intel   →  gpu.intel.com/i915   (requires: Intel GPU device plugin daemonset)
   cpu     →  (no device plugin required)
 
-Vulkan is NOT a separate Kubernetes resource — it runs through whichever
-GPU device-plugin is allocated.  See docs/development/gpu-scheduling.md.
+Vulkan was removed as a VMAFX backend (ADR-0726).
+Supported backends are CUDA, HIP, SYCL, and CPU.
 
 To verify device-plugin allocations on a node:
   kubectl describe node <node> | grep -E "Capacity|Allocatable" -A 10

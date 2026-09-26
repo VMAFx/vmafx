@@ -18,7 +18,6 @@ Supported mask formats are intentionally dependency-light:
 from __future__ import annotations
 
 import argparse
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
@@ -35,7 +34,11 @@ SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import (  # noqa: E402
+    build_run_provenance,
+    dumps_manifest_json,
+    write_manifest_json,
+)
 
 SUPPORTED_SUFFIXES = (".npy", ".pgm")
 
@@ -254,8 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         outputs={"json_report": args.out_json},
     )
     if args.out_json is None:
-        text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-        print(text, end="")
+        print(dumps_manifest_json(payload), end="")
     else:
         write_manifest_json(args.out_json, payload)
     return 0

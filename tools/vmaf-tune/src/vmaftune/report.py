@@ -2240,6 +2240,72 @@ def render_html(data: ReportData) -> str:
     )
 
 
+_UNAVAILABLE_ERROR_PREFIXES = (
+    "encoder unavailable",
+    "hardware encoder not available",
+)
+
+
+def _row_is_unavailable(row: CodecRow | CodecSweepPoint) -> bool:
+    """Return whether a failed row represents missing runtime infrastructure."""
+    return (not row.ok) and row.error.startswith(_UNAVAILABLE_ERROR_PREFIXES)
+
+
+def build_report_status(data: ReportData, *, outputs: Sequence[Path] = ()) -> dict[str, Any]:
+    """Build the CLI status payload without treating unavailable encoders as failures."""
+    aggregate = [*data.codec_rows, *data.sweep_points]
+    failures = [row for row in aggregate if not row.ok]
+    unavailable = [row for row in failures if _row_is_unavailable(row)]
+    real_failures = [row for row in failures if not _row_is_unavailable(row)]
+    any_ok = any(row.ok for row in aggregate) if aggregate else True
+    return {
+        "ok": bool(any_ok and not real_failures),
+        "degraded": bool(unavailable),
+        "outputs": [str(path) for path in outputs],
+        "codec_rows": len(data.codec_rows),
+        "codec_rows_ok": sum(1 for row in data.codec_rows if row.ok),
+        "codec_rows_failed": sum(1 for row in data.codec_rows if not row.ok),
+        "codec_rows_unavailable": sum(1 for row in data.codec_rows if _row_is_unavailable(row)),
+        "sweep_points": len(data.sweep_points),
+        "sweep_points_ok": sum(1 for row in data.sweep_points if row.ok),
+        "sweep_points_failed": sum(1 for row in data.sweep_points if not row.ok),
+        "ladder_samples": len(data.ladder_samples),
+        "ladder_rungs": len(data.ladder_rungs),
+        "shots": len(data.shots),
+    }
+
+
+def write_report_outputs(
+    data: ReportData,
+    *,
+    output: Path,
+    format_name: str,
+    json_sidecar: bool = False,
+    assets_dir: Path | None = None,
+) -> tuple[Path, ...]:
+    """Write the requested profile artifacts and return their paths in CLI order."""
+    if format_name not in {"html", "markdown", "both"}:
+        raise ValueError(f"unsupported report format {format_name!r}")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    outputs: list[Path] = []
+    if format_name == "both" or json_sidecar:
+        json_path = output.with_suffix(".json")
+        json_path.write_text(
+            _portable_json_dump(data.to_dict(), sort_keys=False) + "\n", encoding="utf-8"
+        )
+        outputs.append(json_path)
+    if format_name in ("html", "both"):
+        html_path = output if format_name == "html" else output.with_suffix(".html")
+        html_path.write_text(render_html(data), encoding="utf-8")
+        outputs.append(html_path)
+    if format_name in ("markdown", "both"):
+        markdown_path = output if format_name == "markdown" else output.with_suffix(".md")
+        markdown_path.write_text(render_markdown(data, assets_dir=assets_dir), encoding="utf-8")
+        outputs.append(markdown_path)
+    return tuple(outputs)
+
+
 # ---------------------------------------------------------------------------
 # ffprobe helper
 # ---------------------------------------------------------------------------
@@ -2344,9 +2410,11 @@ __all__ = [
     "ShotRow",
     "SourceInfo",
     "build_encoder_profile",
+    "build_report_status",
     "codec_metadata",
     "compute_pareto_frontier",
     "probe_source",
     "render_html",
     "render_markdown",
+    "write_report_outputs",
 ]

@@ -1,0 +1,1 @@
+| [ADR-1326](1326-sycl-motion-uv-fixed-oracle.md) | Replaces fixture-calibrated float-vs-fixed SYCL motion-add-UV parity with a resolution-independent fixed-point oracle and derived host-roundoff bound. | Accepted | sycl, motion, correctness, testing, numerics |

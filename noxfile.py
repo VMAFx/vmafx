@@ -12,13 +12,15 @@ dev affordance, not a CI gate.
 
 Usage::
 
-    pip install nox
+    python3 -m pip install --require-hashes -r requirements/locks/nox.txt
     nox -l                          # list every defined session
     nox -s ai                       # run the ai/ pytest suite
+    nox -s compat_decorator         # run compat memoization regressions
     nox -s mcp vmaf_tune            # run multiple suites in sequence
+    nox -s rc1_tester                # run the external tester report suite
     nox -s python_harness           # run the legacy python/ tox harness
     nox -s all                      # every fork-local Python package
-    nox -s lint                     # ruff + black + isort (check-only)
+    nox -s lint                     # ruff + black (check-only)
 
 Each per-package session installs the package into a throw-away venv
 with its ``[dev]`` extras (where defined) and invokes ``pytest`` against
@@ -34,10 +36,9 @@ from __future__ import annotations
 
 import nox
 
-# Default to the interpreter nox itself runs under; do not pin a matrix
-# here. The matrix lives in CI (tests-and-quality-gates.yml) where it
-# can vary per package. Locally, developers run whatever ``python3``
-# resolves to in their venv, matching the CI dev-container baseline.
+# Default to the interpreter nox itself runs under. Sessions whose package
+# metadata excludes that interpreter pin the supported CI version instead;
+# Nox can obtain that standalone interpreter when it is not installed locally.
 nox.options.sessions = ["lint", "all"]
 nox.options.reuse_existing_virtualenvs = True
 
@@ -47,18 +48,40 @@ nox.options.reuse_existing_virtualenvs = True
 # ---------------------------------------------------------------------------
 
 
-@nox.session(name="ai")
+@nox.session(name="ai", python="3.14")
 def ai_tests(session: nox.Session) -> None:
-    """Run the ``ai/`` package pytest suite (tiny-AI training scripts)."""
-    session.install("-e", "./ai")
-    session.install("pytest")
-    session.run("pytest", "ai/tests/", "-v", *session.posargs)
+    """Run the ``ai/`` package pytest suite (tiny-AI training scripts and sidecar)."""
+    session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
+    session.install(
+        "--no-build-isolation", "--require-hashes", "-r", "ai/requirements-dev-lock.txt"
+    )
+    session.install("--no-deps", "--no-build-isolation", "-e", "./ai")
+    session.run("pytest", "ai/tests/", "ai/sidecar/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="mcp")
+@nox.session(name="compat_decorator", python="3.14")
+def compat_decorator_tests(session: nox.Session) -> None:
+    """Run SHA-256 memoization and cross-process cache regressions."""
+    session.install("--require-hashes", "-r", "requirements/locks/pytest-timeout.txt")
+    session.run(
+        "pytest",
+        "compat/vmaf/tests/test_decorator_extended.py",
+        "-v",
+        *session.posargs,
+    )
+
+
+@nox.session(name="mcp", python="3.14")
 def mcp_tests(session: nox.Session) -> None:
     """Run the ``mcp-server/vmaf-mcp/`` pytest suite."""
-    session.install("-e", "./mcp-server/vmaf-mcp[dev]")
+    session.install("--require-hashes", "-r", "requirements/locks/package-build.txt")
+    session.install(
+        "--no-build-isolation",
+        "--require-hashes",
+        "-r",
+        "mcp-server/vmaf-mcp/requirements-dev-lock.txt",
+    )
+    session.install("--no-deps", "--no-build-isolation", "-e", "./mcp-server/vmaf-mcp")
     session.run(
         "pytest",
         "mcp-server/vmaf-mcp/tests/",
@@ -68,31 +91,55 @@ def mcp_tests(session: nox.Session) -> None:
     )
 
 
-@nox.session(name="vmaf_tune")
+@nox.session(name="vmaf_tune", python="3.14")
 def vmaf_tune_tests(session: nox.Session) -> None:
     """Run the ``tools/vmaf-tune/`` pytest suite."""
-    session.install("-e", "./tools/vmaf-tune[dev]")
+    session.install(
+        "--no-build-isolation",
+        "--require-hashes",
+        "-r",
+        "tools/vmaf-tune/requirements-dev-lock.txt",
+    )
+    session.install("--no-deps", "--no-build-isolation", "-e", "./tools/vmaf-tune")
     session.run("pytest", "tools/vmaf-tune/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="dev_llm")
+@nox.session(name="dev_llm", python="3.14")
 def dev_llm_tests(session: nox.Session) -> None:
     """Run the ``dev-llm/`` pytest suite (local-LLM helper)."""
-    session.install("-e", "./dev-llm[dev]")
+    session.install(
+        "--no-build-isolation",
+        "--require-hashes",
+        "-r",
+        "dev-llm/requirements-dev-lock.txt",
+    )
+    session.install("--no-deps", "--no-build-isolation", "-e", "./dev-llm")
     session.run("pytest", "dev-llm/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="roi_score")
+@nox.session(name="roi_score", python="3.12")
 def roi_score_tests(session: nox.Session) -> None:
     """Run the ``tools/vmaf-roi-score/`` pytest suite."""
-    session.install("-e", "./tools/vmaf-roi-score[dev]")
+    session.install(
+        "--no-build-isolation",
+        "--require-hashes",
+        "-r",
+        "tools/vmaf-roi-score/requirements-dev-lock.txt",
+    )
+    session.install("--no-deps", "--no-build-isolation", "-e", "./tools/vmaf-roi-score")
     session.run("pytest", "tools/vmaf-roi-score/tests/", "-v", *session.posargs)
 
 
-@nox.session(name="ensemble_kit")
+@nox.session(name="ensemble_kit", python="3.12")
 def ensemble_kit_tests(session: nox.Session) -> None:
     """Run the ``tools/ensemble-training-kit/`` pytest suite."""
-    session.install("-e", "./tools/ensemble-training-kit[dev]")
+    session.install(
+        "--no-build-isolation",
+        "--require-hashes",
+        "-r",
+        "tools/ensemble-training-kit/requirements-dev-lock.txt",
+    )
+    session.install("--no-deps", "--no-build-isolation", "-e", "./tools/ensemble-training-kit")
     session.run(
         "pytest",
         "tools/ensemble-training-kit/tests/",
@@ -101,7 +148,20 @@ def ensemble_kit_tests(session: nox.Session) -> None:
     )
 
 
-@nox.session(name="python_harness")
+@nox.session(name="rc1_tester", python="3.14")
+def rc1_tester_tests(session: nox.Session) -> None:
+    """Run the zero-runtime-dependency ``tools/rc1-tester/`` suite."""
+    session.install(
+        "--no-build-isolation",
+        "--require-hashes",
+        "-r",
+        "tools/rc1-tester/requirements-dev-lock.txt",
+    )
+    session.install("--no-deps", "--no-build-isolation", "-e", "./tools/rc1-tester")
+    session.run("pytest", "tools/rc1-tester/tests/", "-v", *session.posargs)
+
+
+@nox.session(name="python_harness", python="3.14")
 def python_harness_tests(session: nox.Session) -> None:
     """Delegate to the legacy ``python/tox.ini`` harness.
 
@@ -110,7 +170,7 @@ def python_harness_tests(session: nox.Session) -> None:
     built ``core/build/tools/vmaf`` binary. Nox does not re-implement
     those build steps; it shells out to tox to keep one source of truth.
     """
-    session.install("tox")
+    session.install("--require-hashes", "-r", "requirements/locks/tox.txt")
     session.run("tox", "-c", "python", *session.posargs)
 
 
@@ -126,20 +186,28 @@ def all_tests(session: nox.Session) -> None:
     Skips ``python_harness`` because that session needs the C build
     artifacts and is exercised separately by ``make test-netflix-golden``.
     """
-    for name in ("ai", "mcp", "vmaf_tune", "dev_llm", "roi_score", "ensemble_kit"):
+    for name in (
+        "ai",
+        "compat_decorator",
+        "mcp",
+        "vmaf_tune",
+        "dev_llm",
+        "roi_score",
+        "ensemble_kit",
+        "rc1_tester",
+    ):
         session.notify(name)
 
 
-@nox.session(name="lint")
+@nox.session(name="lint", python="3.12")
 def lint(session: nox.Session) -> None:
-    """Run ruff + black + isort in check-only mode across Python trees.
+    """Run ruff + black in check-only mode across Python trees (ADR-1126: no isort).
 
     Mirrors ``make lint-py`` for parity with the CI gate, but installs
     the linters into a controlled venv rather than relying on whatever
     happens to be on ``PATH``.
     """
-    session.install("ruff", "black", "isort")
-    targets = ["python/", "ai/", "scripts/"]
+    session.install("--require-hashes", "-r", "requirements/locks/dev-linters.txt")
+    targets = ["python/", "ai/", "scripts/", "tools/rc1-tester/"]
     session.run("ruff", "check", *targets)
     session.run("black", "--check", *targets)
-    session.run("isort", "--check-only", *targets)

@@ -171,6 +171,40 @@ cat >"$tmp/misfiled.md" <<'MD'
 MD
 expect "a 'fixed' row under Open bugs fails" 1 "$tmp/misfiled.md"
 
+# Regression: a bookkeeping move can leave an open row in place while adding a
+# tombstone that explicitly says the same id moved to Recently closed. The row
+# has no Status column, so status-token checks cannot infer the contradiction.
+cat >"$tmp/moved-tombstone.md" <<'MD'
+## Open bugs
+
+| ID | Description |
+| --- | --- |
+| **T-MOVED-2026-01-17** | stale open wording |
+<!-- T-MOVED-2026-01-17 moved to Recently closed — fixed by PR #17 -->
+
+## Recently closed
+
+| ID | Description |
+| --- | --- |
+| **T-OTHER-2026-01-18** | fixed |
+MD
+expect "an Open row contradicted by a moved-to-closed tombstone fails" 1 \
+  "$tmp/moved-tombstone.md"
+
+cat >"$tmp/valid-move.md" <<'MD'
+## Open bugs
+
+<!-- T-MOVED-2026-01-17 moved to Recently closed — fixed by PR #17 -->
+
+## Recently closed
+
+| ID | Description | Status |
+| --- | --- | --- |
+| **T-MOVED-2026-01-17** | authoritative moved row | closed |
+MD
+expect "a tombstone plus its single Recently closed row passes" 0 \
+  "$tmp/valid-move.md"
+
 # The mirror case: a row that still says `open` filed under Recently closed.
 sed -e 's/| fixed |/| open |/' -e 's/| closed |/| open |/' \
   "$tmp/misfiled.md" >"$tmp/reopened.md"

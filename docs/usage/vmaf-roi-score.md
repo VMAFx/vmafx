@@ -144,13 +144,18 @@ the interval between them is blended.
 | `--vmaf-bin PATH` | `vmaf` | location of the libvmaf CLI binary |
 | `--output PATH` | stdout | write JSON result to this path |
 
+Output is RFC-8259 strict JSON. If either underlying `vmaf` invocation returns
+a non-finite pooled score (`NaN` or either infinity), the tool reports the bad
+score on stderr, exits 65, and does not write the output file. It never emits a
+bare non-standard numeric token.
+
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | success |
 | 64 | saliency-mask materialisation failed (missing runtime deps, unsupported pix_fmt, bad mask shape) |
-| 65 | `vmaf` ran but produced JSON missing the pooled scalar |
+| 65 | `vmaf` ran but the pooled scalar is missing or non-finite; no report is written |
 | other | passed through from the underlying `vmaf` invocation |
 
 ## See also

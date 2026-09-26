@@ -33,9 +33,9 @@ each = 1452 global reads per block total.  After `__syncthreads()`, each thread
 sums its 7x7 window from SLM only (49 SLM reads, 0 additional global reads).
 
 Global memory traffic per block falls from 256 x 147 = 37,632 to 1,452 reads,
-a 26x reduction.  Expected wall-clock speedup on the kernel: 25-40% at 1080p on
-RTX 4090 (measured against the cambi_score baseline once Issue #857 is fully
-resolved and the path is exercisable end-to-end).
+a 26x reduction. Expected wall-clock speedup on the kernel: 25-40% at 1080p on
+RTX 4090 (measured against the cambi_score baseline once Issue
+lusoris/vmaf#857 is fully resolved and the path is exercisable end-to-end).
 
 `__launch_bounds__(256)` is added to help the compiler optimise register
 allocation for the known block size and to document the occupancy contract.

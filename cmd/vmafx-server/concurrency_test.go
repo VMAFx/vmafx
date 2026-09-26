@@ -225,10 +225,8 @@ func TestHTTP_ConcurrencyCap_Enforced(t *testing.T) {
 	// Launch maxConcurrent requests that will block inside the vmaf stub so they
 	// hold the semaphore slots.
 	var fillWg sync.WaitGroup
-	for i := 0; i < maxConcurrent; i++ {
-		fillWg.Add(1)
-		go func() {
-			defer fillWg.Done()
+	for range maxConcurrent {
+		fillWg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			body := `{"reference":"/tmp/ref.yuv","distorted":"/tmp/dis.yuv","model":"vmaf_v0.6.1"}`
@@ -240,7 +238,7 @@ func TestHTTP_ConcurrencyCap_Enforced(t *testing.T) {
 				return
 			}
 			resp.Body.Close()
-		}()
+		})
 	}
 
 	// Wait for the stubs to signal they are running (each stub creates a .pid file).
@@ -262,7 +260,7 @@ func TestHTTP_ConcurrencyCap_Enforced(t *testing.T) {
 	// --- Phase 2: overflow requests with cancelled contexts → 429 ---
 	const overflowRequests = 2
 	got429 := 0
-	for i := 0; i < overflowRequests; i++ {
+	for range overflowRequests {
 		cancelledCtx, cancel := context.WithCancel(context.Background())
 		cancel() // already cancelled
 
@@ -316,7 +314,7 @@ func TestHTTP_NoCap_AllPass(t *testing.T) {
 	const n = 4
 	var wg sync.WaitGroup
 	statuses := make([]int, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -478,7 +476,7 @@ func TestGRPC_NoCap_AllPass(t *testing.T) {
 	const n = 3
 	var wg sync.WaitGroup
 	errs := make([]error, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -516,12 +514,10 @@ func TestStubScorerCounter_PeakTracking(t *testing.T) {
 
 	const n = 4
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range n {
+		wg.Go(func() {
 			_, _, _ = stub.scoreFunc(context.Background(), "", "", "")
-		}()
+		})
 	}
 
 	// Give goroutines time to all enter scoreFunc.

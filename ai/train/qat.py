@@ -247,7 +247,12 @@ def _ort_static_quantize(
     than vanilla static PTQ: the weights are pre-conditioned, then
     ORT bakes activation ranges from the same distribution.
     """
-    from onnxruntime.quantization import CalibrationDataReader, QuantType, quantize_static
+    from onnxruntime.quantization import (
+        CalibrationDataReader,
+        QuantFormat,
+        QuantType,
+        quantize_static,
+    )
 
     class _ListReader(CalibrationDataReader):
         def __init__(self, samples: list[dict[str, np.ndarray]]) -> None:
@@ -261,6 +266,7 @@ def _ort_static_quantize(
         model_input=str(fp32_path),
         model_output=str(int8_path),
         calibration_data_reader=_ListReader(calibration_samples),
+        quant_format=QuantFormat.QDQ,
         weight_type=QuantType.QInt8,
         activation_type=QuantType.QInt8,
         per_channel=True,

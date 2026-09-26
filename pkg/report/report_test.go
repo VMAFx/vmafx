@@ -33,7 +33,6 @@ func TestNanToNull(t *testing.T) {
 		{"negative", -7.0, -7.0},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := nanToNull(tc.in)

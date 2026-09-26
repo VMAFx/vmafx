@@ -118,9 +118,26 @@ not make that image digest-pinned. Repository rulesets can be read by the defaul
 token; classic branch-protection visibility errors must not be mistaken for proof
 that the actual settings are strong.
 
+## Dependency pinning and hash locking
+
+Under [ADR-1305](../adr/1305-hash-locked-python-installs.md), all Python dependencies
+across workflows, Dockerfiles, setup scripts, and Makefile are locked with cryptographic
+SHA-256 hashes (`--require-hashes`).
+
+Prior live evidence was Scorecard 8.7, Pinned Dependencies 7, and CII InProgress project
+14549 at 42 percent; local work is not post-merge proof until merged and scanned by the
+master publisher.
+
+Workflows that call `slsa-framework/slsa-github-generator` maintain an intentional
+exception to commit-SHA pinning: the generator strictly requires an exact `@vX.Y.Z`
+semantic release tag so that `slsa-verifier` can verify the identity of the trusted
+builder (ADR-1128, slsa-verifier#12). Converting this reference to a SHA breaks
+cryptographic provenance.
+
 ## References
 
 - [ADR-1247](../adr/1247-scorecard-exact-head-gates.md) — current policy and tradeoffs.
+- [ADR-1305](../adr/1305-hash-locked-python-installs.md) — hash-locked Python dependency installs.
 - [Research-0053 correction](../research/0053-ossf-scorecard-investigation.md#2026-09-08-correction-and-measured-gate-design) — dated evidence, limitations and superseded claims.
 - [Exact action publishing restrictions](https://github.com/ossf/scorecard-action/blob/2d1146689b8cda280b9bc96326124645441f03bc/README.md#workflow-restrictions).
 - [Scorecard 5.5.0 checks](https://github.com/ossf/scorecard/blob/c395761df6afe1a69e476bc60a013a94bcbc153f/docs/checks.md).

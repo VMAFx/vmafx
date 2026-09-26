@@ -1,0 +1,1 @@
+| [ADR-1325](1325-integer-adm-barten-fixed-point-normalization.md) | Normalize integer ADM Barten CSF weights with one shared power-of-two exponent per scale and restore it after contrast masking. | Accepted | metrics, adm, correctness, cuda, sycl, hip, metal, simd |

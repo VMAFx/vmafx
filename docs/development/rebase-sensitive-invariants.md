@@ -20,6 +20,28 @@ linked AGENTS.md before resolving conflicts.
   repository-root build instructions in `docs/getting-started/index.md` and
   include Meson's `core/` source directory when showing a configure command.
 
+- **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
+  `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
+  and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,
+  preflight, bisection, setup-guidance, and Zed entry point must remain on that wrapper.
+  `core/meson.build` retains a default test setup using `environment().unset()` for
+  (`GITHUB_PERSONAL_ACCESS_TOKEN`,
+  `GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GITHUB_PAT`,
+  `GH_PAT`, `GITHUB_AUTH_TOKEN`, `GITHUB_API_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`,
+  `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, `ACTIONS_RUNTIME_TOKEN`) at the child and JSON-log layer.
+  The regression contract rejects raw supported-entry-point bypasses, alternate setups, and
+  explicit forbidden-name reintroduction. Preserve the runner, callers, setup, and
+  `core/test/test_meson_secret_env_sanitization.py` together. Raw external Meson/Ninja test
+  commands are outside this bounded guarantee.
+
+- **Zed project settings are project-scoped**: `.zed/settings.json` is parsed
+  as Zed's `ProjectSettingsContent`, so it must not regain `agent`,
+  `agent_servers`, provider/model pins, or permission policy. Preserve the
+  current `docker exec -i vmaf-dev-mcp vmafx-mcp` context-server entry, the
+  three `Standards:` tasks, and the contract in
+  `scripts/ci/tests/test_zed_project_config.py`. The scoped mechanics live in
+  [`.zed/AGENTS.md`](../../.zed/AGENTS.md).
+
 - **GPU long-tail terminus reached** — every registered feature
   extractor has at least one GPU twin (lpips remains ORT-delegated
   per [ADR-0022](../adr/0022-inference-runtime-onnx.md)).
@@ -86,6 +108,17 @@ linked AGENTS.md before resolving conflicts.
   Netflix's feature/motion several-options commit; PR #213 (open)
   ports `d3647c73` `feature/speed` extractors (`speed_chroma` +
   `speed_temporal`).
+- **Metal `float_ms_ssim` option parity ([ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md))**:
+  `float_ms_ssim_metal` exposes `enable_db`, `clip_db`, `enable_chroma`, and `enable_lcs`
+  matching CPU/SYCL/HIP twins. It emits `float_ms_ssim`, `float_ms_ssim_cb`, and
+  `float_ms_ssim_cr` on the GPU, enforces the >= 176 minimum plane dimension at init,
+  resolves YUV400P to one plane before chroma validation, and uses the exact
+  ceil-subsampled 351x351 YUV420P luma boundary. It wires
+  `s->enable_db, s->max_db` into `vmaf_ms_ssim_emit_scores` /
+  `vmaf_ssim_emit_score_named`. Device-free contracts in
+  `core/test/test_metal_ms_ssim_option_semantics`,
+  `core/test/test_metal_ms_ssim_options_contract.py`, and
+  `core/test/test_nonfinite_collector_wiring.py` protect this against regression.
 
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
@@ -114,7 +147,10 @@ linked AGENTS.md before resolving conflicts.
 
 - **dev-MCP Docker container**
   ([ADR-0451](../adr/0451-local-dev-mcp-container.md)):
-  `dev/Containerfile` pins `cuda-toolkit-13-3`, the unversioned
+  `dev/Containerfile` installs CUDA through the shared installer's exact
+  `--mode=full` contract (ADR-1306). `build-config.env` owns the apt series,
+  release lock, and exact toolkit/nvcc/cudart package versions; do not restore a
+  floating `cuda-toolkit-13-4` command in the Containerfile. It also pins the unversioned
   `intel-basekit` meta-package (Intel does not publish a
   `intel-basekit-2025.3` apt package), and the digest-pinned
   `rocm/dev-ubuntu-26.04:10.0.0-full` image in the `rocm-src` stage

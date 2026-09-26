@@ -185,7 +185,7 @@ func TestFloorDiv2MatchesPython(t *testing.T) {
 // repeat returns n concatenated copies of values.
 func repeat(values []float64, n int) []float64 {
 	out := make([]float64, 0, len(values)*n)
-	for i := 0; i < n; i++ {
+	for range n {
 		out = append(out, values...)
 	}
 	return out

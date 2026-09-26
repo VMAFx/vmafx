@@ -27,6 +27,8 @@
   "minimumReleaseAge": "3 days",
   "ignorePaths": [
     "python/requirements.txt",
+    "requirements/locks/*.txt",
+    "**/*-lock.txt",
     "subprojects/**",
     "python/test/resource/**",
     "build_artifacts/**",
@@ -34,6 +36,14 @@
     "ai/**/runs/**",
     ".devcontainer/**"
   ],
+  "pip_requirements": {
+    "fileMatch": [
+      "(^|/)requirements.*\\.txt$",
+      "(^|/)requirements.*\\.in$",
+      "^requirements/locks/.*\\.in$",
+      "^docs/requirements\\.txt$"
+    ]
+  },
   "packageRules": [
     {
       "description": "slsa-github-generator MUST be referenced by an exact @vX.Y.Z tag, never a digest: its README states the generators 'MUST be referenced by tag in order for the slsa-verifier to be able to verify the ref of the trusted builder' (hash-pinned reusable workflows are unsupported, slsa-verifier#12). ADR-1128's Release Script Contract enforces the tag form, so a digest-pin PR (#1183) can never pass it. Keep tag updates, forbid digest pinning.",
@@ -212,7 +222,7 @@
       "automerge": false
     },
     {
-      "description": "Batch every Docker base-image digest/pin refresh into one PR. Ungrouped, each image (debian, fedora, ubuntu, golang, archlinux, python, both distroless variants, docker/dockerfile, otel-collector, nvidia/cuda) opened its own PR and its own full CI matrix run; on 2026-08-30 that fan-out starved the Required Checks Aggregator so no dependency PR could merge at all.",
+      "description": "Batch every Docker base-image digest/pin refresh into one PR. Ungrouped, each image opened its own PR and its own full CI matrix run; on 2026-08-30 that fan-out starved the Required Checks Aggregator so no dependency PR could merge at all.",
       "matchDatasources": [
         "docker"
       ],
@@ -225,16 +235,14 @@
       "draftPR": false
     },
     {
-      "description": "CUDA is a coordinated pin, not an image tag. One release is named in sixteen places across seven files in seven spellings, and scripts/ci/check-base-image-single-source.sh rejects an image tag that disagrees with CUDA_VERSION, so a tags-only pull request (#1487) is structurally unmergeable \u2014 it can never go green on its own. This rule and the \"CUDA release\" custom manager below put every site Renovate can express \u2014 CUDA_VERSION, the Jimver/cuda-toolkit inputs, the Windows installer versions, the two nvidia/cuda image pins and their four Dockerfile ARG mirrors \u2014 into one branch, so a release moves as a unit or not at all. The five derived spellings Renovate cannot write (the $cudaMajorMinor series literals, the cuda-toolkit-NN-N apt names and the OCI description label) are a pure function of CUDA_VERSION and belong to scripts/ci/check-cuda-pin-lockstep.py --write instead. Digest and pin refreshes are deliberately left to the \"Docker digests\" batch above: a new digest on the same tag needs no coordination. The Linux legs install from NVIDIA's apt repository via scripts/ci/install-cuda-toolkit.sh, so no third-party action caps which CUDA releases can be pinned. They previously used Jimver/cuda-toolkit, whose own release table did cap it \u2014 v0.2.36, its newest as of 2026-08-02, tops out at 13.3.1 with no 13.4.x entry \u2014 which left a CUDA bump waiting on someone else cutting a release. See ADR-1285.",
+      "description": "CUDA_VERSION resolves from NVIDIA's official redist HTML index, which exposes versions but no release timestamps. Keep the global three-day age policy for timestamped dependencies, but permit this manually reviewed source to update instead of leaving every CUDA release pending forever.",
+      "matchDatasources": [
+        "custom.nvidia-cuda-redist"
+      ],
       "matchPackageNames": [
-        "nvidia/cuda"
+        "nvidia-cuda-redist"
       ],
-      "matchUpdateTypes": [
-        "major",
-        "minor",
-        "patch"
-      ],
-      "groupName": "CUDA release (coordinated pin)",
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
       "automerge": false,
       "labels": [
         "dependencies",
@@ -301,7 +309,7 @@
       ]
     },
     {
-      "description": "Let the base-image custom manager own the wired Dockerfiles. Renovate's dockerfile manager also understands `ARG X=image` + `FROM $X`, so without this both managers would update the same pin and could land the Dockerfile and build-config.env halves in separate PRs -- which is exactly the drift ADR-1231 exists to stop. docker/dev/*.Dockerfile is deliberately NOT listed: those pin Alpine / Arch / Fedora on purpose and stay with the built-in manager.",
+      "description": "Let the base-image custom manager own the wired Dockerfiles. Renovate's dockerfile manager also understands `ARG X=image` + `FROM $X`, so without this both managers would update the same pin and could land the Dockerfile and build-config.env halves in separate PRs -- which is exactly the drift ADR-1231 exists to stop. The Ubuntu CUDA compatibility file is the sole docker/dev exception; Alpine / Arch / Fedora remain independent under the built-in manager.",
       "matchManagers": [
         "dockerfile"
       ],
@@ -313,7 +321,8 @@
         "docker/Dockerfile.node",
         "docker/Dockerfile.operator",
         "docker/Dockerfile.production",
-        "docker/Dockerfile.production-gpu"
+        "docker/Dockerfile.production-gpu",
+        "docker/dev/ubuntu-26.04-cuda.Dockerfile"
       ],
       "enabled": false
     }
@@ -458,7 +467,8 @@
         "/^docker/Dockerfile\\.node$/",
         "/^docker/Dockerfile\\.operator$/",
         "/^docker/Dockerfile\\.production$/",
-        "/^docker/Dockerfile\\.production-gpu$/"
+        "/^docker/Dockerfile\\.production-gpu$/",
+        "/^docker/dev/ubuntu-26\\.04-cuda\\.Dockerfile$/"
       ],
       "matchStrings": [
         "(?:ARG\\s+)?[A-Z][A-Z0-9_]*=\"(?<depName>[^\"\\s:@]+):(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
@@ -467,18 +477,17 @@
     },
     {
       "customType": "regex",
-      "description": "CUDA release literals that are a plain x.y.z, so Renovate can rewrite them directly: CUDA_VERSION in build-config.env, and $cudaVersion on the Windows installer legs. They resolve as nvidia/cuda so the package rule above groups them with the image pins the base-image manager owns. extractVersion pulls the bare release out of tags like `13.3.1-devel-ubuntu26.04`: a bare `13.3.1` matches no nvidia/cuda tag, so without it the lookup returns nothing and the manager would look wired while doing nothing. Deliberately absent: the two-component $cudaMajorMinor literals, the cuda-toolkit-NN-N apt names, the CUDA_PATH_V<major>_<minor> variable names and the OCI description label. Renovate substitutes the whole looked-up version into the matched slot, so it would write `13.4.0` where `13.4` or `13-4` belongs; scripts/ci/check-cuda-pin-lockstep.py derives and rewrites those instead and fails the build if any of them drifts. See ADR-1285 and docs/research/renovate-cuda-coordinated-pin.md.",
+      "description": "CUDA release literal in build-config.env (CUDA_VERSION). Resolves against the NVIDIA official redist HTML index (custom.nvidia-cuda-redist) so bumping CUDA is never gated by OCI image publication lag. extractVersionTemplate strips the redistrib_ prefix and .json suffix, accepting only redistrib_X.Y.Z.json links and rejecting directory links or other href values. Exact toolkit, nvcc, and cudart Debian versions are deliberately outside this manager: CUDA_APT_LOCK_RELEASE keeps the bot PR red until a maintainer verifies those mappings against NVIDIA's live package metadata. See ADR-1285 and ADR-1306.",
       "managerFilePatterns": [
-        "/^build-config\\.env$/",
-        "/^\\.github/workflows/[^/]+\\.yml$/"
+        "/^build-config\\.env$/"
       ],
       "matchStrings": [
         "(?:^|\\n)CUDA_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
       ],
-      "datasourceTemplate": "docker",
-      "depNameTemplate": "nvidia/cuda",
-      "extractVersionTemplate": "^(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)-devel-",
-      "versioningTemplate": "docker"
+      "datasourceTemplate": "custom.nvidia-cuda-redist",
+      "depNameTemplate": "nvidia-cuda-redist",
+      "extractVersionTemplate": "^redistrib_(?<version>[0-9]+\\.[0-9]+\\.[0-9]+)\\.json$",
+      "versioningTemplate": "semver"
     }
   ],
   "vulnerabilityAlerts": {
@@ -506,5 +515,11 @@
   },
   "draftPR": true,
   "branchConcurrentLimit": 5,
-  "dependencyDashboard": true
+  "dependencyDashboard": true,
+  "customDatasources": {
+    "nvidia-cuda-redist": {
+      "defaultRegistryUrlTemplate": "https://developer.download.nvidia.com/compute/cuda/redist/",
+      "format": "html"
+    }
+  }
 }

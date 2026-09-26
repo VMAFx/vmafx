@@ -46,9 +46,11 @@ ENABLE_CUDA := -Denable_cuda=true -Denable_nvcc=$(ENABLE_NVCC)
 LIBVMAF_DIR := core
 BUILD_DIR := $(LIBVMAF_DIR)/build
 DEBUG_DIR := $(LIBVMAF_DIR)/debug
+GOLDEN_BUILD_DIR ?= $(LIBVMAF_DIR)/build-golden
 
 .PHONY: default all debug build install cythonize clean distclean cythonize-deps \
-    go-build go-test go-ort-runner rust-build rust-test setup-envtest setup-envtest-env
+    go-build go-test go-fix go-fix-check go-ort-runner rust-build rust-test setup-envtest setup-envtest-env \
+    build-golden
 
 default: build
 
@@ -60,6 +62,9 @@ $(BUILD_DIR): $(MESON) $(NINJA)
 $(DEBUG_DIR): $(MESON) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) $(DEBUG_DIR) $(LIBVMAF_DIR) $(BUILDTYPE_DEBUG) $(ENABLE_FLOAT) $(ENABLE_CUDA)
 
+build-golden: $(MESON) $(NINJA)
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" bash scripts/ci/setup-golden-build.sh $(GOLDEN_BUILD_DIR) $(LIBVMAF_DIR) $(NINJA)
+
 cythonize: cythonize-deps
 	pushd python && "$(VENV_PYTHON)" setup.py build_ext --build-lib . && popd || exit 1
 
@@ -67,7 +72,9 @@ build: $(BUILD_DIR) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR)
 
 test: build $(NINJA)
-	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) test
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" "$(VENV_PYTHON)" scripts/ci/run_meson_test.py \
+	    --meson-executable "$(MESON_EXEC)" -- -C $(BUILD_DIR) \
+	    --no-rebuild --print-errorlogs
 
 debug: $(DEBUG_DIR) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(DEBUG_DIR)
@@ -76,7 +83,7 @@ install: $(BUILD_DIR) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) install
 
 clean:
-	rm -rf $(BUILD_DIR) $(DEBUG_DIR)
+	rm -rf $(BUILD_DIR) $(DEBUG_DIR) $(GOLDEN_BUILD_DIR)
 	rm -f compat/python-vmaf/core/adm_dwt2_cy.c*
 
 distclean: clean
@@ -86,14 +93,14 @@ distclean: clean
 $(VENV_PIP):
 	@echo "Setting up the virtual environment..."
 	$(PYTHON_INTERPRETER) -m venv $(VENV) || { echo "Failed to create virtual environment"; exit 1; }
-	$(VENV_PIP) install --upgrade pip || { echo "Failed to upgrade pip"; exit 1; }
+	$(VENV_PIP) install --require-hashes -r requirements/locks/build.txt || { echo "Failed to bootstrap virtual environment"; exit 1; }
 	@echo "Virtual environment setup complete."
 
 $(MESON): $(VENV_PIP)
-	$(VENV_PIP) install meson || { echo "Failed to install meson"; exit 1; }
+	$(VENV_PIP) install --require-hashes -r requirements/locks/build.txt || { echo "Failed to install meson"; exit 1; }
 
 $(NINJA): $(VENV_PIP)
-	$(VENV_PIP) install ninja || { echo "Failed to install ninja"; exit 1; }
+	$(VENV_PIP) install --require-hashes -r requirements/locks/build.txt || { echo "Failed to install ninja"; exit 1; }
 
 # Provision the lint / format toolchain into the project venv. Versions are
 # kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
@@ -103,8 +110,7 @@ BLACK_VERSION := 26.5.1
 
 .PHONY: lint-tools
 lint-tools: $(VENV_PIP)
-	$(VENV_PIP) install --quiet \
-	    'ruff==$(RUFF_VERSION)' 'black==$(BLACK_VERSION)' mypy
+	$(VENV_PIP) install --quiet --require-hashes -r requirements/locks/dev-linters.txt
 	@echo "lint tools installed into $(VENV_PIP:%/pip=%)"
 	@command -v shfmt >/dev/null || { \
 	   echo "note: shfmt is not a Python package and was not installed."; \
@@ -112,12 +118,9 @@ lint-tools: $(VENV_PIP)
 	@command -v shellcheck >/dev/null || \
 	   echo "note: shellcheck not found — install it via your package manager."
 
-# setuptools>=77.0.1 matches the floor python/pyproject.toml declares: the
-# PEP 639 SPDX license expression there is unreadable to older setuptools,
-# and `cythonize` below runs setup.py against this venv directly, with no
-# PEP 517 isolation to fetch a newer backend on its own.
+# Cythonize build dependencies are hash-locked in requirements/locks/cythonize.txt.
 cythonize-deps: $(VENV_PIP)
-	$(VENV_PIP) install 'setuptools>=77.0.1' 'packaging>=24.2' cython numpy || { echo "Failed to install dependencies"; exit 1; }
+	$(VENV_PIP) install --require-hashes -r requirements/locks/cythonize.txt || { echo "Failed to install dependencies"; exit 1; }
 
 # ============================================================================
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
@@ -125,15 +128,33 @@ cythonize-deps: $(VENV_PIP)
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
 	base-images-sync cuda-pin-sync python-deps-sync \
+	python-locks-check python-locks-write \
 	preflight \
 	format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
-        coverage coverage-html coverage-check assertion-density pr-check \
+        coverage coverage-html coverage-check assertion-density pr-check ffmpeg-input-contract \
         silent-revert-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
-lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check
+lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check lint-reuse python-locks-check
 	@echo "=== all lints passed ==="
+
+# REUSE 3.3 compliance check (BUG-003). Ensures 100% license and copyright coverage.
+.PHONY: lint-reuse
+lint-reuse:
+	@echo "--- REUSE 3.3 compliance check ---"
+	@if command -v reuse >/dev/null 2>&1; then \
+	    reuse lint; \
+	else \
+	    echo "ERROR: reuse executable not found on PATH. Install via 'pip install reuse==6.2.0'." >&2; \
+	    exit 1; \
+	fi
+
+python-locks-check:
+	@python3 scripts/ci/check_python_dependency_locks.py check
+
+python-locks-write:
+	@python3 scripts/ci/check_python_dependency_locks.py write
 
 # Go security scan (gosec). Skips generated files by default; surfaces every
 # G* finding outside the gen/ tree. Source of truth for the gate added by
@@ -220,7 +241,7 @@ TIDY_RATCHET_EXTRA_cpu :=
 TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
 TIDY_RATCHET_EXTRA_hip := --extra-arg=-x --extra-arg=hip \
 	--extra-arg=-D__HIP_PLATFORM_AMD__=1 --extra-arg=-I/opt/rocm/include
-TIDY_RATCHET_EXTRA_sycl := --clang-tidy scripts/ci/clang-tidy-sycl.sh
+TIDY_RATCHET_EXTRA_sycl := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-sycl.sh
 TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
 	--extra-arg=--sysroot=$(AARCH64_SYSROOT)
 
@@ -282,10 +303,10 @@ preflight:
 
 lint-py:
 	@scripts/ci/check-python-requirements-single-source.sh
-	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
-	ruff check python/ ai/ scripts/
-	$(call require-tool,black,pip install black==$(BLACK_VERSION))
-	black --check python/ ai/ scripts/
+	$(call require-tool,ruff,make lint-tools)
+	ruff check python/ ai/ scripts/ tools/rc1-tester/
+	$(call require-tool,black,make lint-tools)
+	black --check python/ ai/ scripts/ tools/rc1-tester/
 # mypy is advisory (leading `-`): it currently reports ~295 module-resolution
 # errors ("duplicate module", "adding __init__.py somewhere") that stop it
 # before it type-checks anything real. That is a mypy-configuration gap
@@ -294,7 +315,11 @@ lint-py:
 	@command -v mypy >/dev/null || { echo "note: mypy not installed, skipping advisory check"; exit 0; }
 	-mypy ai/scripts/ ai/tests/ ai/train/ ai/lpips_export.py scripts/
 
-lint-sh:
+ffmpeg-input-contract:
+	bash ffmpeg-patches/test/check-input-contract.sh
+	python3 -m unittest discover -s ffmpeg-patches/test -p 'test_input_contract.py' -v
+
+lint-sh: ffmpeg-input-contract
 	$(call require-tool,shellcheck,your package manager, e.g. pacman -S shellcheck)
 	shellcheck $$(git ls-files '*.sh')
 	@scripts/ci/check-default-model-single-source.sh
@@ -345,8 +370,8 @@ format:
 	 clang-format -i $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
 	                   | grep -v '^subprojects/' | grep -v '^core/test/data/' \
 	                   | python3 scripts/ci/pelorus_mirror.py filter) || true
-	@command -v black >/dev/null && black python/ ai/ scripts/ 2>/dev/null || true
-	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ || true
+	@command -v black >/dev/null && black python/ ai/ scripts/ tools/rc1-tester/ 2>/dev/null || true
+	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ tools/rc1-tester/ || true
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
 
 # Formatters — check-only (CI gate, no writes).
@@ -356,10 +381,10 @@ format-check:
 	   $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
 	      | grep -v '^subprojects/' | grep -v '^core/test/data/' \
 	      | python3 scripts/ci/pelorus_mirror.py filter)
-	$(call require-tool,black,pip install black==$(BLACK_VERSION))
-	black --check python/ ai/ scripts/
-	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
-	ruff check --select I python/ ai/ scripts/
+	$(call require-tool,black,make lint-tools)
+	black --check python/ ai/ scripts/ tools/rc1-tester/
+	$(call require-tool,ruff,make lint-tools)
+	ruff check --select I python/ ai/ scripts/ tools/rc1-tester/
 	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
 	shfmt -d -i 2 -ci $$(git ls-files '*.sh')
 
@@ -382,9 +407,9 @@ sbom:
 # Netflix CPU golden-data gate (D24) — the 3 test pairs that MUST pass.
 # Runs the Python tests whose hardcoded CPU scores are the source of truth
 # for VMAF numerical correctness.
-test-netflix-golden: build
+test-netflix-golden: build-golden
 	@echo "=== Netflix CPU golden-data gate (D24) ==="
-	CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu PYTHONPATH=$(CURDIR)/python python3 -m pytest \
+	CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu VMAF_BUILD_DIR="$(CURDIR)/$(GOLDEN_BUILD_DIR)" PYTHONPATH=$(CURDIR)/python python3 -m pytest \
 	    python/test/quality_runner_test.py \
 	    python/test/feature_extractor_test.py \
 	    python/test/vmafexec_test.py \
@@ -403,10 +428,11 @@ test-sanitizers:
 	    -Db_sanitize=address,undefined \
 	    -Denable_cuda=false -Denable_sycl=false
 	ninja -C build-san
-	meson test -C build-san --print-errorlogs
+	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs
 
 test-fast: build
-	PATH="$(VIRTUAL_ENV_ABS):$$PATH" meson test -C $(BUILD_DIR) --suite=fast
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" "$(VENV_PYTHON)" scripts/ci/run_meson_test.py \
+	    --meson-executable "$(MESON_EXEC)" -- -C $(BUILD_DIR) --suite=fast
 
 # ============================================================================
 # Coverage gate (docs/principles.md §3 — ≥70% overall, ≥85% security-critical)
@@ -427,7 +453,8 @@ coverage:
 	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
 	    -Denable_cuda=false -Denable_sycl=false
 	ninja -C $(COVERAGE_DIR)
-	meson test -C $(COVERAGE_DIR) --print-errorlogs
+	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- \
+	    -C $(COVERAGE_DIR) --print-errorlogs
 	@echo "--- gathering coverage ---"
 	lcov --capture --directory $(COVERAGE_DIR) --output-file $(COVERAGE_DIR)/coverage.info \
 	     --ignore-errors mismatch,gcov,source --rc geninfo_unexecuted_blocks=1
@@ -527,20 +554,34 @@ silent-revert-check:
 
 # ── Go workspace (ADR-0702) ─────────────────────────────────────────────────
 #
-# go-build: compile all Go packages in the workspace (no output binary in the
-#           foundation PR; cmd/ binaries are added by per-sweep PRs).
-# go-test:  run `go test ./...` (covers pkg/version and future packages).
+# go-build:     compile all Go packages in the workspace (no output binary in the
+#               foundation PR; cmd/ binaries are added by per-sweep PRs).
+# go-test:      run `go test ./...` (covers pkg/version and future packages).
+# go-fix:       apply authoritative Go modernizations via `go fix ./...`.
+# go-fix-check: verify clean tree via `go fix -diff ./...` (fails if rewrites available).
 #
-# Both targets require Go ≥ 1.23 on PATH. If `go` is absent they fail with an
-# actionable message rather than a confusing "command not found".
+# All targets require the Go toolchain declared by go.mod. If `go` is absent,
+# they fail with an actionable message rather than "command not found".
 
 go-build:
-	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go build ./...
 
 go-test:
-	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go test ./...
+
+go-fix:
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	go fix ./...
+
+go-fix-check:
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	go fix -diff ./...
 
 # go-ort-runner: build the ONNX Runtime subprocess that pkg/ai.Registry.Infer
 #                execs (cmd/vmafx-ort-runner, ADR-1134) to ./vmafx-ort-runner.
@@ -550,7 +591,9 @@ go-test:
 #                call exits 3. See docs/usage/vmafx-ort-runner.md.
 
 go-ort-runner:
-	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go build -o vmafx-ort-runner ./cmd/vmafx-ort-runner
 
 # setup-envtest: install the kubebuilder envtest control-plane binaries
@@ -626,6 +669,8 @@ help:
 	@echo ""
 	@echo "  make go-build         — go build ./... (Go workspace, ADR-0702)"
 	@echo "  make go-test          — go test ./... (Go workspace, ADR-0702)"
+	@echo "  make go-fix           — go fix ./... (apply Go modernizations, ADR-1338)"
+	@echo "  make go-fix-check     — go fix -diff ./... (check Go modernizations, ADR-1338)"
 	@echo "  make go-ort-runner    — build ./vmafx-ort-runner, the ONNX subprocess behind pkg/ai (ADR-1134)"
 	@echo "  make rust-build       — cargo check --all (Rust workspace, ADR-0702)"
 	@echo "  make rust-test        — cargo test --all (Rust workspace, ADR-0702)"

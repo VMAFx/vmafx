@@ -13,8 +13,8 @@
  *
  *  Post-fix: on first per-slot failure, the pool calls
  *  free_picture_callback for every successfully-allocated prior slot,
- *  destroys the mutex, frees the slot array, frees the pool, and
- *  NULLs *pool.
+ *  then destroys the unpublished owner. Those construction-time callbacks
+ *  remain best effort because there is no retryable pool handle yet.
  *
  *  This test is CPU-only (no GPU runtime needed): both the alloc and
  *  free callbacks are pure-C stubs that count their invocations. ASan
@@ -23,6 +23,7 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +42,7 @@ typedef struct {
     unsigned succeed_n;   /* allocate fine for the first N calls; fail after */
     unsigned alloc_calls; /* total alloc calls observed */
     unsigned free_calls;  /* total free calls observed */
+    bool fail_free_once;
 } TestCookie;
 
 static int stub_alloc(VmafPicture *pic, void *cookie)
@@ -65,6 +67,10 @@ static int stub_free(VmafPicture *pic, void *cookie)
 {
     TestCookie *c = (TestCookie *)cookie;
     c->free_calls++;
+    if (c->fail_free_once) {
+        c->fail_free_once = false;
+        return -EIO;
+    }
     if (pic && pic->data[0]) {
         free(pic->data[0]);
         pic->data[0] = NULL;
@@ -125,10 +131,33 @@ static char *test_pool_init_success_path_unaffected(void)
     return NULL;
 }
 
+static char *test_pool_close_retries_only_failed_slots(void)
+{
+    TestCookie cookie = {.succeed_n = 3, .fail_free_once = true};
+    VmafGpuPicturePoolConfig cfg = {
+        .pic_cnt = 3,
+        .alloc_picture_callback = stub_alloc,
+        .free_picture_callback = stub_free,
+        .cookie = &cookie,
+    };
+    VmafGpuPicturePool *pool = NULL;
+    int err = vmaf_gpu_picture_pool_init(&pool, cfg);
+    mu_assert("pool init succeeds", err == 0 && pool != NULL);
+
+    err = vmaf_gpu_picture_pool_close(pool);
+    mu_assert("first close reports the transient slot failure", err == -EIO);
+    mu_assert("close still releases the other slots", cookie.free_calls == 3);
+    err = vmaf_gpu_picture_pool_close(pool);
+    mu_assert("retained pool closes on retry", err == 0);
+    mu_assert("retry calls only the slot that did not commit", cookie.free_calls == 4);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_pool_init_unwinds_partial_success);
     mu_run_test(test_pool_init_success_path_unaffected);
+    mu_run_test(test_pool_close_retries_only_failed_slots);
     return NULL;
 }
 

@@ -21,8 +21,8 @@ as the slug -- and either half can go stale independently:
                 too.
 
 Slug wins when both could apply, and that ordering is load-bearing rather than a
-preference. The reason is in the history: `af227b026` (PR #310, 2026-05-03) and
-`fb14bc332` (PR #752, 2026-05-10) were ADR collision sweeps that renumbered
+preference. The reason is in the history: `af227b026` (lusoris/vmaf#310, 2026-05-03) and
+`fb14bc332` (lusoris/vmaf#752, 2026-05-10) were ADR collision sweeps that renumbered
 duplicate-numbered ADRs -- the second renamed 50 files, moving
 `0241-vmaf-tiny-v3-mlp-medium.md` to `0389-vmaf-tiny-v3-mlp-medium.md` and 27
 others into the 0388-0415 band. Each sweep moved the file and its index fragment

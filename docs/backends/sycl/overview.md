@@ -121,8 +121,8 @@ ffmpeg \
   -init_hw_device vaapi=va0@drm0 \
   -init_hw_device qsv=qsv_ref@va0 \
   -init_hw_device qsv=qsv_dis@va0 \
+  -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv -i dis.mkv \
   -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_ref -c:v hevc_qsv -i ref.mkv \
-  -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv  -i dis.mkv \
   -lavfi '[0:v][1:v]libvmaf_sycl=log_fmt=csv:log_path=out.csv' \
   -frames:v 500 -f null -
 ```
@@ -199,7 +199,8 @@ The pool depth (2) matches the double-buffered shared-frame upload in
 `VmafSyclState`, so frame N+1 can start filling slot 1 while frame N's
 compute still consumes slot 0. The caller owns the ref returned by
 `vmaf_sycl_picture_fetch` and must release it via `vmaf_picture_unref` when
-done with it; the pool retains its own ref until `vmaf_close()`.
+done with it; the pool retains its own ref until `vmaf_close()` returns exactly
+zero. A nonzero close status retains the pool with the teardown-only context.
 
 Minimal example:
 

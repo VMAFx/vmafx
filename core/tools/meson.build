@@ -15,6 +15,12 @@ endif
 vmaf_tool_deps = [stdatomic_dependency, cuda_dependency, getopt_dependency]
 vmaf_tool_cflags = [vmaf_cflags_common, compat_cflags]
 vmaf_tool_link_args = []
+vmaf_cli_link_args = vmaf_tool_link_args
+if host_machine.system() == 'windows' and cxx.get_argument_syntax() != 'msvc'
+    # GNU-style Windows CRT startup selects narrow main unless -municode asks
+    # for wmainCRTStartup. MSVC-syntax linkers infer wmain directly.
+    vmaf_cli_link_args += ['-municode']
+endif
 if get_option('enable_cuda')
     vmaf_tool_cflags += ['-DHAVE_CUDA=1']
 endif
@@ -47,6 +53,7 @@ vmaf_tool_link_target = libvmaf
 if get_option('default_library') == 'both'
     vmaf_tool_link_target = libvmaf.get_shared_lib()
 endif
+vmaf_close_retry_source = files('vmaf_close_retry.c')
 
 # ADR-0809: vmaf.c and cli_parse.c converted to C++23 (vmaf.cpp, cli_parse.cpp).
 # The two C++ TUs are compiled at the project-wide C++ standard that
@@ -54,14 +61,22 @@ endif
 # no per-target cpp_std override is needed or used.
 # y4m_input.c / vidinput.c / yuv_input.c remain C23; they are compiled under the
 # project default (c_args only) and linked together with the C++ TUs.
+vmaf_cli_sources = [
+    'vmaf.cpp',
+    'cli_parse.cpp',
+    'y4m_input.c',
+    'vidinput.c',
+    'yuv_input.c',
+    '../src/compat/path_utf8.c',
+] + vmaf_close_retry_source
 vmaf = executable(
     'vmaf',
-    ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c'],
+    vmaf_cli_sources,
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_tool_deps,
     c_args : vmaf_tool_cflags,
     cpp_args : vmaf_tool_cflags,
-    link_args : vmaf_tool_link_args,
+    link_args : vmaf_cli_link_args,
     link_with : vmaf_tool_link_target,
     install : true,
 )
@@ -73,12 +88,12 @@ vmaf = executable(
 if host_machine.system() == 'windows'
     vmafx = executable(
         'vmafx',
-        ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c'],
+        vmaf_cli_sources,
         include_directories : [libvmaf_inc, vmaf_include],
         dependencies: vmaf_tool_deps,
         c_args : vmaf_tool_cflags,
         cpp_args : vmaf_tool_cflags,
-        link_args : vmaf_tool_link_args,
+        link_args : vmaf_cli_link_args,
         link_with : vmaf_tool_link_target,
         install : true,
     )
@@ -105,7 +120,7 @@ endif
 
 vmaf_per_shot = executable(
     'vmaf-perShot',
-    ['vmaf_per_shot.c'],
+    ['vmaf_per_shot.c', 'vmaf_per_shot_input.c', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_per_shot_deps,
     c_args : vmaf_per_shot_cflags,
@@ -113,10 +128,22 @@ vmaf_per_shot = executable(
     install : true,
 )
 
+# Compile the same public CLI with a tiny built-in ceiling so the exact-boundary
+# and one-more-frame contracts are executable in CI without a UINT32_MAX input.
+vmaf_per_shot_boundary_test = executable(
+    'vmaf-perShot-boundary-test',
+    ['vmaf_per_shot.c', 'vmaf_per_shot_input.c', '../src/compat/path_utf8.c'],
+    include_directories : [libvmaf_inc, vmaf_include],
+    dependencies: vmaf_per_shot_deps,
+    c_args : vmaf_per_shot_cflags + ['-DVMAF_PER_SHOT_MAX_FRAMES=3U'],
+    link_with : vmaf_per_shot_link_target,
+    build_by_default : true,
+)
+
 # vmaf-roi — T6-2b per-CTU QP offset sidecar (x265 / SVT-AV1 ROI).
 vmaf_roi = executable(
     'vmaf_roi',
-    ['vmaf_roi.c'],
+    ['vmaf_roi.c', '../src/compat/path_utf8.c'],
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies : [stdatomic_dependency, getopt_dependency],
     c_args : vmaf_tool_cflags,
@@ -141,7 +168,7 @@ vmaf_bench_link_target = get_option('default_library') == 'both' ? libvmaf.get_s
 
 vmaf_bench = executable(
     'vmaf_bench',
-    ['vmaf_bench.c'],
+    ['vmaf_bench.c', '../src/compat/path_utf8.c'] + vmaf_close_retry_source,
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_bench_deps,
     c_args : vmaf_bench_cflags,
@@ -168,7 +195,7 @@ if get_option('enable_sycl')
     if vmaf_vpl_ok
         vmaf_vpl = executable(
             'vmaf_vpl',
-            ['vmaf_vpl.c'],
+            ['vmaf_vpl.c', '../src/compat/path_utf8.c'] + vmaf_close_retry_source,
             include_directories : [libvmaf_inc, vmaf_include],
             dependencies: vmaf_vpl_deps,
             c_args : vmaf_cflags_common + ['-DHAVE_SYCL=1'],

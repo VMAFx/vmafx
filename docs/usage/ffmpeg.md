@@ -13,6 +13,43 @@ Using FFmpeg+libvmaf is very powerful, as you can create complex filters to calc
 
 We provide a few examples how you can construct the FFmpeg command line and use VMAF as a filter. Note that you may need to download the test videos from [vmaf_resource](https://github.com/Netflix/vmaf_resource/tree/master/python/test/resource).
 
+## Input ordering convention — read this first {#input-ordering}
+
+> **Warning — FFmpeg uses distorted first, reference second.** The two input
+> pads on `libvmaf`, `libvmaf_cuda`, `libvmaf_sycl`, `libvmaf_metal`, and
+> `libvmaf_tune` are the opposite of the Python runner and standalone `vmaf`
+> CLI. FFmpeg pad 0 is the **distorted/main** stream; pad 1 is the
+> **reference** stream. The Python and CLI surfaces take reference first and
+> distorted second.
+>
+> Reversing the FFmpeg pads does not fail. It changes the direction of the
+> comparison and can silently inflate the result: the measured Netflix-pair
+> example in [Research-0730](../research/0730-ffmpeg-libvmaf-smoke-20260527.md#bug-2-input-ordering-trap-libvmaf-filter-reverses-refdis-vs-python-runner)
+> produced `83.782079` in the wrong direction instead of the correct
+> `76.667830`.
+
+Correct — distorted input feeds pad 0 and reference input feeds pad 1:
+
+```bash
+ffmpeg -i distorted.mp4 -i reference.mp4 \
+  -filter_complex "[0:v][1:v]libvmaf=log_fmt=json:log_path=/dev/stdout" \
+  -f null -
+```
+
+Incorrect — shown only so the dangerous inversion is recognizable; do not use
+this ordering:
+
+<!-- vmafx-ffmpeg-input-order: intentionally-wrong -->
+```bash
+ffmpeg -i reference.mp4 -i distorted.mp4 \
+  -filter_complex "[0:v][1:v]libvmaf=log_fmt=json:log_path=/dev/stdout" \
+  -f null -
+```
+
+The maintained FFmpeg patch also logs the pad contract at filter
+initialization, but that informational message cannot repair an already
+reversed command.
+
 Below is an example on how you can run FFmpeg+libvmaf on a pair of YUV files. First, download the reference video [`src01_hrc00_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc00_576x324.yuv) and the distorted video [`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv). `-r 24` sets the frame rate (note that it needs to be before `-i`), and `PTS-STARTPTS` synchronizes the PTS (presentation timestamp) of the two videos (this is crucial if one of your videos does not start at PTS 0, for example, if you cut your video out of a long video stream). It is important to set the frame rate and the PTS right, since FFmpeg filters synchronize based on timestamps instead of frames.
 
 The `log_path` is set to standard output `/dev/stdout`. The model is specified
@@ -139,7 +176,7 @@ syntax but accepts an additional `sycl_device=<n>` option. See
 Score a pair with the default model plus PSNR + CIEDE attached:
 
 ```bash
-ffmpeg -i ref.y4m -i dis.y4m \
+ffmpeg -i dis.y4m -i ref.y4m \
   -lavfi "[0:v][1:v]libvmaf=feature='name=psnr|name=ciede':log_fmt=json:log_path=/dev/stdout" \
   -f null -
 ```
@@ -147,7 +184,7 @@ ffmpeg -i ref.y4m -i dis.y4m \
 Score against two models in one pass (both appear in the report):
 
 ```bash
-ffmpeg -i ref.y4m -i dis.y4m \
+ffmpeg -i dis.y4m -i ref.y4m \
   -lavfi "[0:v][1:v]libvmaf=model='version=vmaf_v0.6.1|version=vmaf_v0.6.1neg':log_fmt=json:log_path=/dev/stdout" \
   -f null -
 ```
@@ -222,7 +259,7 @@ patch `0004` is retained as a no-op shim per ADR-0860.)
 **CPU (default — no hwaccel, no GPU build needed):**
 
 ```bash
-ffmpeg -i reference.mp4 -i distorted.mp4 \
+ffmpeg -i distorted.mp4 -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
@@ -231,8 +268,8 @@ ffmpeg -i reference.mp4 -i distorted.mp4 \
 dedicated `libvmaf_cuda` filter to keep frames device-resident):**
 
 ```bash
-ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i reference.mp4 \
-       -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 \
+ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 \
+       -hwaccel cuda -hwaccel_output_format cuda -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
@@ -243,7 +280,7 @@ selector on the regular `libvmaf` filter — runs CUDA feature kernels
 without the CUDA hwaccel decode round-trip):**
 
 ```bash
-ffmpeg -i reference.mp4 -i distorted.mp4 \
+ffmpeg -i distorted.mp4 -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf=cuda=1:log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
@@ -262,7 +299,7 @@ fork-added `sycl_device=N` selector on the regular `libvmaf` filter,
 fed by software-decoded frames):**
 
 ```bash
-ffmpeg -i reference.mp4 -i distorted.mp4 \
+ffmpeg -i distorted.mp4 -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf=sycl_device=0:log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
@@ -289,8 +326,8 @@ hardware decoders, then bridge to the libvmaf compute backend.
 **CUDA — zero-copy end-to-end (decode + compute on the same GPU):**
 
 ```bash
-ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i reference.mp4 \
-       -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 \
+ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i distorted.mp4 \
+       -hwaccel cuda -hwaccel_output_format cuda -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf_cuda=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
@@ -300,8 +337,8 @@ dedicated `libvmaf_sycl` filter (no CPU readback —
 `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch`):**
 
 ```bash
-ffmpeg -hwaccel qsv -hwaccel_output_format qsv -i reference.mp4 \
-       -hwaccel qsv -hwaccel_output_format qsv -i distorted.mp4 \
+ffmpeg -hwaccel qsv -hwaccel_output_format qsv -i distorted.mp4 \
+       -hwaccel qsv -hwaccel_output_format qsv -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf_sycl=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
@@ -320,11 +357,11 @@ specifically.
 (software-frame bridge):**
 
 ```bash
-ffmpeg -hwaccel vaapi -hwaccel_output_format vaapi -i reference.mp4 \
-       -hwaccel vaapi -hwaccel_output_format vaapi -i distorted.mp4 \
-       -filter_complex "[0:v]hwdownload,format=yuv420p[r]; \
-                        [1:v]hwdownload,format=yuv420p[d]; \
-                        [r][d]libvmaf=sycl_device=0:log_fmt=json:log_path=/dev/stdout" \
+ffmpeg -hwaccel vaapi -hwaccel_output_format vaapi -i distorted.mp4 \
+       -hwaccel vaapi -hwaccel_output_format vaapi -i reference.mp4 \
+       -filter_complex "[0:v]hwdownload,format=yuv420p[d]; \
+                        [1:v]hwdownload,format=yuv420p[r]; \
+                        [d][r]libvmaf=sycl_device=0:log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```
 
@@ -348,8 +385,8 @@ directly without the `hwdownload,format=yuv420p` round-trip:
 **With `libvmaf_metal` (VideoToolbox hwdec):**
 
 ```bash
-ffmpeg -hwaccel videotoolbox -hwaccel_output_format videotoolbox -i reference.mp4 \
-       -hwaccel videotoolbox -hwaccel_output_format videotoolbox -i distorted.mp4 \
+ffmpeg -hwaccel videotoolbox -hwaccel_output_format videotoolbox -i distorted.mp4 \
+       -hwaccel videotoolbox -hwaccel_output_format videotoolbox -i reference.mp4 \
        -filter_complex "[0:v][1:v]libvmaf_metal=log_fmt=json:log_path=/dev/stdout" \
        -f null -
 ```

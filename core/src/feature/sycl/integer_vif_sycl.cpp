@@ -53,6 +53,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/nonfinite_score.h"
 #include "sycl/common.h"
 #include "log.h"
 
@@ -1666,42 +1667,6 @@ static inline void vif_compute_scores(const struct vif_accums *accums, bool vif_
 
 namespace
 {
-static inline void vif_collect_debug_features(VmafFeatureCollector *feature_collector,
-                                              VifStateSycl *s, unsigned index, double score_num,
-                                              double score_den, const double *vif_scale_num,
-                                              const double *vif_scale_den)
-{
-    const double vif = (score_den > 0.0) ? score_num / score_den : 1.0;
-    vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, "integer_vif",
-                                            vif, index);
-    vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                            "integer_vif_num", score_num, index);
-    vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                            "integer_vif_den", score_den, index);
-
-    for (int i = 0; i < VIF_NUM_SCALES; i++) {
-        char name[64];
-        if (i == 0 && s->vif_skip_scale0) {
-            (void)std::snprintf(name, sizeof(name), "integer_vif_num_scale0");
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    0.0, index);
-            (void)std::snprintf(name, sizeof(name), "integer_vif_den_scale0");
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    -1.0, index);
-        } else {
-            (void)std::snprintf(name, sizeof(name), "integer_vif_num_scale%d", i);
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    vif_scale_num[i], index);
-            (void)std::snprintf(name, sizeof(name), "integer_vif_den_scale%d", i);
-            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
-                                                    vif_scale_den[i], index);
-        }
-    }
-}
-} // namespace
-
-namespace
-{
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
@@ -1721,30 +1686,23 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     vif_compute_scores(accums, s->vif_skip_scale0, score_num, score_den, vif_scale_num,
                        vif_scale_den);
 
-    for (int i = 0; i < VIF_NUM_SCALES; i++) {
-        const double score =
-            (i == 0 && s->vif_skip_scale0) ?
-                0.0 :
-                ((vif_scale_den[i] > 0.0) ? vif_scale_num[i] / vif_scale_den[i] : 1.0);
-
-        static const char *const key_names[] = {
-            "VMAF_integer_feature_vif_scale0_score",
-            "VMAF_integer_feature_vif_scale1_score",
-            "VMAF_integer_feature_vif_scale2_score",
-            "VMAF_integer_feature_vif_scale3_score",
-        };
-
-        const int err = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, key_names[i], score, index);
-        if (err)
-            return err;
+    VmafVifScoreSet output = {
+        .score = score_den > 0.0 ? score_num / score_den : NAN,
+        .score_num = score_num,
+        .score_den = score_den,
+        .skip_scale0 = s->vif_skip_scale0,
+        .debug = s->debug,
+    };
+    for (int scale = 0; scale < VIF_NUM_SCALES; ++scale) {
+        const size_t offset = (size_t)scale * 2u;
+        output.scale[offset] = vif_scale_num[scale];
+        output.scale[offset + 1u] = vif_scale_den[scale];
     }
-
-    if (s->debug) {
-        vif_collect_debug_features(feature_collector, s, index, score_num, score_den, vif_scale_num,
-                                   vif_scale_den);
-    }
-
+    const int err =
+        vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "integer_vif_sycl", &output,
+                             VMAF_VIF_INTEGER_NAMES, index);
+    if (err)
+        return err;
     s->has_pending = false;
     return 0;
 }

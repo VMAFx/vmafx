@@ -120,20 +120,22 @@ var streamFeatures = []string{
 // Construct with NewStreamScorer, feed frames with PushFrame, finalise with
 // Finish, and always Close (idempotent) to release the context and model.
 type StreamScorer struct {
-	cfg       StreamConfig
-	vmafCtx   *C.VmafContext
-	model     *C.VmafModel
-	frameSize int
-	nFrames   int
-	closed    bool
+	cfg             StreamConfig
+	vmafCtx         *C.VmafContext
+	model           *C.VmafModel
+	frameSize       int
+	nFrames         int
+	teardownStarted bool
+	owner           cgoScoringOwner
 }
 
 // NewStreamScorer initialises a libvmaf context and loads the model named by
 // cfg.ModelPath.  It validates cfg up-front and returns typed errors
 // (ErrInvalidArgument / ErrModelNotFound / ...) so the gRPC layer can map them
-// to the right status code.  On any error the partially-initialised context is
-// released before returning, so the caller never needs to Close a failed
-// constructor result.
+// to the right status code.  Constructor unwind closes the context before
+// destroying its dependent model and makes one bounded close retry.  A
+// persistent teardown failure is joined into the returned error; the C owners
+// remain allocated instead of freeing a still-referenced model.
 func NewStreamScorer(cfg StreamConfig) (*StreamScorer, error) {
 	if cfg.Width <= 0 || cfg.Height <= 0 {
 		return nil, fmt.Errorf("StreamScorer: width/height must be positive: %w", ErrInvalidArgument)
@@ -157,18 +159,17 @@ func NewStreamScorer(cfg StreamConfig) (*StreamScorer, error) {
 		int(C.vmaf_init(&vmafCtx, newScoringConfiguration()))); err != nil {
 		return nil, err
 	}
+	owner := newCGOScoringOwner(vmafCtx)
 
 	model, err := loadModelFromPath(cfg.ModelPath, "vmaf_stream")
 	if err != nil {
-		C.vmaf_close(vmafCtx)
-		return nil, err
+		return nil, closeAfterError("NewStreamScorer", err, &owner)
 	}
+	owner.ownModel(model)
 
 	if err := mapErrno("vmaf_use_features_from_model",
 		int(C.vmaf_use_features_from_model(vmafCtx, model))); err != nil {
-		C.vmaf_model_destroy(model)
-		C.vmaf_close(vmafCtx)
-		return nil, err
+		return nil, closeAfterError("NewStreamScorer", err, &owner)
 	}
 
 	return &StreamScorer{
@@ -176,6 +177,7 @@ func NewStreamScorer(cfg StreamConfig) (*StreamScorer, error) {
 		vmafCtx:   vmafCtx,
 		model:     model,
 		frameSize: frameBytes(cfg.Width, cfg.Height, cfg.PixFmt, cfg.BitDepth),
+		owner:     owner,
 	}, nil
 }
 
@@ -194,8 +196,8 @@ func (s *StreamScorer) FrameSize() int { return s.frameSize }
 // libvmaf inside vmaf_read_pictures; on any pre-transfer error both pictures
 // are unref'd so no C heap leaks.
 func (s *StreamScorer) PushFrame(idx int, refBytes, disBytes []byte) error {
-	if s.closed {
-		return fmt.Errorf("StreamScorer: PushFrame after Close: %w", ErrInvalidArgument)
+	if s.teardownStarted {
+		return fmt.Errorf("StreamScorer: PushFrame after teardown started: %w", ErrInvalidArgument)
 	}
 	if idx != s.nFrames {
 		return fmt.Errorf("StreamScorer: frame index %d out of order (expected %d): %w",
@@ -250,8 +252,8 @@ func (s *StreamScorer) PushFrame(idx int, refBytes, disBytes []byte) error {
 // scores so a client disconnect during the post-flush score harvest aborts
 // promptly with the wrapped context error.
 func (s *StreamScorer) Finish(ctx context.Context) (*StreamResult, error) {
-	if s.closed {
-		return nil, fmt.Errorf("StreamScorer: Finish after Close: %w", ErrInvalidArgument)
+	if s.teardownStarted {
+		return nil, fmt.Errorf("StreamScorer: Finish after teardown started: %w", ErrInvalidArgument)
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -351,22 +353,18 @@ func (s *StreamScorer) pooledFeatures() map[string]float64 {
 	return out
 }
 
-// Close releases the libvmaf context and model.  Idempotent and safe to call
-// from a defer even when NewStreamScorer succeeded but Finish was never called
-// (e.g. the client disconnected mid-stream).
-func (s *StreamScorer) Close() {
-	if s.closed {
-		return
+// Close releases the libvmaf context and then its dependent model.  A failed
+// context close retains both owners and may be retried by calling Close again.
+// Once teardown starts, PushFrame and Finish reject all further work even when
+// the first Close fails.  Successful Close calls are idempotent.
+func (s *StreamScorer) Close() error {
+	s.teardownStarted = true
+	if err := s.owner.Close(); err != nil {
+		return fmt.Errorf("StreamScorer.Close: %w", err)
 	}
-	s.closed = true
-	if s.model != nil {
-		C.vmaf_model_destroy(s.model)
-		s.model = nil
-	}
-	if s.vmafCtx != nil {
-		C.vmaf_close(s.vmafCtx)
-		s.vmafCtx = nil
-	}
+	s.vmafCtx = nil
+	s.model = nil
+	return nil
 }
 
 // copyPlanesInto copies tightly-packed planar Y-U-V bytes from src into the

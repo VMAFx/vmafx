@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
+from aiutils.run_manifest import dumps_manifest_json
+
 # 1920x1080 YUV420p 8-bit -> 3110400 bytes/frame.
 DEFAULT_W: int = 1920
 DEFAULT_H: int = 1080
@@ -268,6 +270,6 @@ def load_or_compute(
     if use_cache:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = cache_file.with_suffix(cache_file.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload))
+        tmp.write_text(dumps_manifest_json(payload))
         tmp.replace(cache_file)
     return payload

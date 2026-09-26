@@ -66,8 +66,11 @@ Subcommands:
 // The Python CLI distinguishes exit 2 (a requested-but-unavailable feature:
 // no Pelorus filter, no ROI dispatch for the encoder, a bad CRF range) from
 // exit 1 (a plain failure), and `predict` uses exit 2 for a FALL_BACK
-// verdict. Scripts branch on those codes, so the Go port preserves them.
+// verdict. Scripts branch on those codes, so the Go port preserves them. The
+// interface embeds error because its values travel through an error chain and
+// Go 1.27's errors.AsType constrains matched types to error (ADR-1338).
 type exitCoder interface {
+	error
 	ExitCode() int
 }
 
@@ -89,12 +92,10 @@ func Execute(version string) {
 		// vmafx-tune's own -- e.g. ffmpeg exiting 42 made the CLI exit 42, which
 		// collides with the documented usage/verdict codes. Both construction
 		// styles are in the tree, so check pointer and value forms.
-		var codePtr *exitCodeError
-		if errors.As(err, &codePtr) {
+		if codePtr, ok := errors.AsType[*exitCodeError](err); ok {
 			os.Exit(codePtr.ExitCode())
 		}
-		var codeVal exitCodeError
-		if errors.As(err, &codeVal) {
+		if codeVal, ok := errors.AsType[exitCodeError](err); ok {
 			os.Exit(codeVal.ExitCode())
 		}
 		if code, ok := fastExitCode(err); ok {

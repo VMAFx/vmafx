@@ -52,7 +52,9 @@
 #endif
 
 #include "libvmaf/picture.h"
+#include "compat/path_utf8.h"
 #include "libvmaf/libvmaf.h"
+#include "vmaf_close_retry.h"
 
 #ifdef HAVE_CUDA
 #include "libvmaf/libvmaf_cuda.h"
@@ -68,6 +70,20 @@
  * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
+#define VMAF_BENCH_CLEANUP_FAILED INT_MIN
+
+static int close_bench_context(VmafContext **vmaf, const char *owner)
+{
+    const int err = vmaf_tool_close_context(vmaf);
+    if (err) {
+        (void)fprintf(stderr,
+                      "%s: context cleanup failed after %u attempts (err=%d); "
+                      "retaining dependent resources\n",
+                      owner, VMAF_TOOL_CLOSE_MAX_ATTEMPTS, err);
+    }
+    return err;
+}
 
 /* clock_gettime-based high-resolution timer */
 #ifdef _WIN32
@@ -127,9 +143,9 @@ static int yuv_pair_open(YuvPair *yp, unsigned w, unsigned h)
     (void)snprintf(ref_path, sizeof(ref_path), "%s/ref_%ux%u.yuv", get_data_dir(), w, h);
     (void)snprintf(dis_path, sizeof(dis_path), "%s/dis_%ux%u.yuv", get_data_dir(), w, h);
 
-    /* Canonicalize to a real, existing path before opening. realpath(3)
-     * (POSIX) / _fullpath (Windows) collapses ".." and symlinks; if the
-     * resolved path doesn't exist it returns NULL and we abort the open.
+    /* Canonicalize to an absolute path before opening. The internal UTF-8
+     * wrapper uses realpath(3) on POSIX and _wfullpath on Windows; the open
+     * below remains the authoritative existence check on Windows.
      * The data-dir input is trusted-by-design (this is a developer
      * benchmark binary, never invoked over a network surface — see file
      * header) but CodeQL's cpp/path-injection still flags getenv() flowing
@@ -137,15 +153,10 @@ static int yuv_pair_open(YuvPair *yp, unsigned w, unsigned h)
      * changing semantics for the legitimate use case. */
     char ref_resolved[PATH_MAX];
     char dis_resolved[PATH_MAX];
-#ifdef _WIN32
-    const char *ref_can = _fullpath(ref_resolved, ref_path, PATH_MAX);
-    const char *dis_can = _fullpath(dis_resolved, dis_path, PATH_MAX);
-#else
-    const char *ref_can = realpath(ref_path, ref_resolved);
-    const char *dis_can = realpath(dis_path, dis_resolved);
-#endif
-    yp->ref_fp = ref_can ? fopen(ref_can, "rb") : NULL;
-    yp->dis_fp = dis_can ? fopen(dis_can, "rb") : NULL;
+    const char *ref_can = vmaf_fullpath_utf8(ref_path, ref_resolved, sizeof(ref_resolved));
+    const char *dis_can = vmaf_fullpath_utf8(dis_path, dis_resolved, sizeof(dis_resolved));
+    yp->ref_fp = ref_can ? vmaf_fopen_utf8(ref_can, "rb") : NULL;
+    yp->dis_fp = dis_can ? vmaf_fopen_utf8(dis_can, "rb") : NULL;
     if (!yp->ref_fp || !yp->dis_fp) {
         (void)fprintf(stderr,
                       "Cannot open test data for %ux%u\n"
@@ -338,14 +349,18 @@ typedef struct {
     bool yuv_open;
 } SyclProfileState;
 
-static void cleanup_sycl_profile(SyclProfileState *state)
+static int cleanup_sycl_profile(SyclProfileState *state)
 {
-    if (state->yuv_open)
+    if (state->yuv_open) {
         yuv_pair_close(&state->yuv);
-    if (state->vmaf)
-        vmaf_close(state->vmaf);
+        state->yuv_open = false;
+    }
+    const int close_err = close_bench_context(&state->vmaf, "vmaf_bench --gpu-profile");
+    if (close_err)
+        return close_err;
     if (state->sycl_state)
         vmaf_sycl_state_free(&state->sycl_state);
+    return 0;
 }
 
 static int setup_sycl_profile(SyclProfileState *state, unsigned w, unsigned h)
@@ -435,7 +450,9 @@ static int run_sycl_gpu_profile(unsigned w, unsigned h, unsigned n_frames)
         const int flush_err = finish_sycl_profile(&state, w, h, n_frames);
         err = frame_err ? frame_err : flush_err;
     }
-    cleanup_sycl_profile(&state);
+    const int cleanup_err = cleanup_sycl_profile(&state);
+    if (!err)
+        err = cleanup_err;
     return err;
 }
 #endif /* HAVE_SYCL */
@@ -576,25 +593,34 @@ static int bench_setup_target(const BenchTarget *const target, VmafContext *cons
     return vmaf_use_feature(vmaf, target->feature, NULL);
 }
 
-static void bench_cleanup_resources(VmafContext *const vmaf, YuvPair *const yp, const bool yp_open,
+static int bench_cleanup_resources(VmafContext **const vmaf, YuvPair *const yp, const bool yp_open,
 #if defined(HAVE_CUDA) || defined(HAVE_SYCL)
-                                    BenchGpuState *const gpu)
+                                   BenchGpuState *const gpu)
 #else
-                                    const BenchGpuState *const gpu)
+                                   const BenchGpuState *const gpu)
 #endif
 {
     if (yp_open)
         yuv_pair_close(yp);
-    vmaf_close(vmaf);
+    const int close_err = close_bench_context(vmaf, "vmaf_bench");
+    if (close_err)
+        return close_err;
 #ifdef HAVE_CUDA
-    if (gpu->cu_state)
-        (void)vmaf_cuda_state_free(gpu->cu_state);
+    if (gpu->cu_state) {
+        const int err = vmaf_cuda_state_free(gpu->cu_state);
+        if (err) {
+            (void)fprintf(stderr, "vmaf_bench: CUDA state cleanup failed (err=%d)\n", err);
+            return err;
+        }
+        gpu->cu_state = NULL;
+    }
 #endif
 #ifdef HAVE_SYCL
     if (gpu->sycl_state)
         vmaf_sycl_state_free(&gpu->sycl_state);
 #endif
     (void)gpu;
+    return 0;
 }
 
 static int bench_feature(const BenchTarget *const target, const unsigned w, const unsigned h,
@@ -634,7 +660,9 @@ static int bench_feature(const BenchTarget *const target, const unsigned w, cons
                 err = flush_err;
         }
     }
-    bench_cleanup_resources(vmaf, &yp, yp_open, &gpu);
+    const int cleanup_err = bench_cleanup_resources(&vmaf, &yp, yp_open, &gpu);
+    if (cleanup_err)
+        return VMAF_BENCH_CLEANUP_FAILED;
     return err;
 }
 
@@ -779,7 +807,9 @@ static int run_feature_collect(const char *feature, enum Backend backend, unsign
             (void)fprintf(stderr, "vmaf_read_pictures(flush) failed (err=%d)\n", err);
         collect_validation_scores(vmaf, n_frames, score_names, scores);
     }
-    bench_cleanup_resources(vmaf, &yp, yp_open, &gpu);
+    const int cleanup_err = bench_cleanup_resources(&vmaf, &yp, yp_open, &gpu);
+    if (cleanup_err)
+        return VMAF_BENCH_CLEANUP_FAILED;
     return err;
 }
 
@@ -847,8 +877,18 @@ static int run_validation_pair(const ValidationPair *pair, const char *resolutio
 
     const int cpu_err = run_feature_collect(pair->cpu_feature, BACKEND_CPU, w, h, n_frames,
                                             pair->score_names, cpu_scores);
+    if (cpu_err == VMAF_BENCH_CLEANUP_FAILED) {
+        free(cpu_scores);
+        free(gpu_scores);
+        return VMAF_BENCH_CLEANUP_FAILED;
+    }
     const int gpu_err = run_feature_collect(pair->gpu_feature, pair->backend, w, h, n_frames,
                                             pair->score_names, gpu_scores);
+    if (gpu_err == VMAF_BENCH_CLEANUP_FAILED) {
+        free(cpu_scores);
+        free(gpu_scores);
+        return VMAF_BENCH_CLEANUP_FAILED;
+    }
     if (cpu_err || gpu_err) {
         (void)printf("  %-10s @ %s: SKIP (cpu_err=%d gpu_err=%d)\n", pair->label, resolution,
                      cpu_err, gpu_err);
@@ -1059,6 +1099,8 @@ static int run_bench_loop(const int r_start, const int r_end, const unsigned n_f
 
             const int err =
                 bench_feature(&targets[t], w, h, n_frames, &init_ms, &avg_ms, &total_ms);
+            if (err == VMAF_BENCH_CLEANUP_FAILED)
+                return EXIT_FAILURE;
             if (err) {
                 (void)printf("%-28s  %8s  %8s  %8s  %8s  %8s\n", targets[t].label, res_str, "FAIL",
                              "-", "-", "-");
@@ -1082,7 +1124,10 @@ static int run_bench_validation_mode(const int r_start, const int r_end, const u
                  vmaf_version(), get_data_dir(), n_frames, g_bpc);
     int total_fail = 0;
     for (int r = r_start; r < r_end; r++) {
-        total_fail += run_validation(resolutions[r].width, resolutions[r].height, n_frames);
+        const int result = run_validation(resolutions[r].width, resolutions[r].height, n_frames);
+        if (result == VMAF_BENCH_CLEANUP_FAILED)
+            return EXIT_FAILURE;
+        total_fail += result;
     }
     (void)printf("\n%s\n", (total_fail == 0) ? "ALL PASSED" : "FAILURES");
     return total_fail > 0 ? 1 : 0;

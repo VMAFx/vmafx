@@ -1,7 +1,9 @@
 - **The last live references to a licence that does not exist are gone, and
   one file's licence tag is now machine-readable at all.** ADR-1255 corrected
+  <!-- REUSE-IgnoreStart -->
   every `SPDX-License-Identifier:` declaration that carried the non-existent
   `BSD-3-Clause-Plus-Patent`, and ADR-1250's relicensing finished the job;
+  <!-- REUSE-IgnoreEnd -->
   measured on this tree, **no file declares an invalid identifier** and
   `reuse lint` reports only real identifiers in use. What ADR-1255 could not
   reach was everything that states a licence in some *other* syntax, because

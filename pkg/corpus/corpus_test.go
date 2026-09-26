@@ -814,7 +814,7 @@ func TestNewRunIDIsHexAndUnique(t *testing.T) {
 	t.Parallel()
 
 	seen := map[string]bool{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		id := NewRunID()
 		if len(id) != 32 {
 			t.Fatalf("run id %q has length %d, want 32", id, len(id))

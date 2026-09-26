@@ -31,6 +31,13 @@
 #include "read_json_model.h"
 #include "svm.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is an
+ * upstream-mirror file whose Netflix source spells the null pointer constant
+ * `NULL` (every upstream sync would re-conflict against a keyword rewrite) and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 typedef struct VmafBuiltInModel {
     const char *version;
     const char *data;
@@ -172,6 +179,19 @@ static const VmafBuiltInModel built_in_models[] = {
 
 #define BUILT_IN_MODEL_CNT (((sizeof(built_in_models)) / (sizeof(built_in_models[0]))) - 1)
 
+unsigned vmaf_built_in_model_count_for_test(void)
+{
+    return BUILT_IN_MODEL_CNT;
+}
+
+const char *vmaf_built_in_model_version_for_test(const void *built_in_model)
+{
+    if (!built_in_model)
+        return NULL;
+    const VmafBuiltInModel *model = built_in_model;
+    return model->version;
+}
+
 int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version)
 {
     /* `version` reaches strcmp unprotected; a NULL caller would dereference
@@ -245,7 +265,7 @@ int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
     int err = 0;
 
     for (unsigned i = 0; i < model->n_features; i++) {
-        VmafFeatureExtractor *fex =
+        const VmafFeatureExtractor *fex =
             vmaf_get_feature_extractor_by_feature_name(model->feature[i].name, 0);
         if (!fex)
             continue;
@@ -328,7 +348,6 @@ unsigned vmaf_model_feature_count(const VmafModel *model)
 const char *vmaf_model_feature_name(const VmafModel *model, unsigned index)
 {
     if (!model || index >= model->n_features) {
-        /* NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr). */
         return NULL;
     }
     return model->feature[index].name;
@@ -540,3 +559,5 @@ const char *vmaf_default_model_version(void)
 {
     return VMAF_DEFAULT_MODEL_VERSION;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

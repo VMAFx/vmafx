@@ -72,8 +72,8 @@
  *   - The fixed-point decouple, get_best15_from32 (__clz emulation via MSL
  *     clz()), and per-band shift tables are load-bearing for places=4 parity;
  *     they replicate the CUDA inline helpers exactly.
- *   - csf_mode 0 (Watson-97) only — the CPU default; other modes rejected in
- *     the .mm init (matches the CUDA twin which only ships mode 0).
+ *   - CSF mode selection and per-scale power-of-two normalisation happen in
+ *     the .mm host wrapper; all modes use these same integer kernels.
  */
 
 #include <metal_stdlib>
@@ -858,6 +858,13 @@ static inline ulong iadm_cm_cube(long accum_thread, int shift_sq, long add_shift
     return (ulong)cube;
 }
 
+/* MSL twin of feature/adm_cm_accumulator.h. Keep the full row total as ulong
+ * until this final fold; shifting per lane/threadgroup is not distributive. */
+static inline ulong adm_cm_round_row_total(ulong row_total, ulong rounding, uint shift)
+{
+    return (row_total + rounding) >> shift;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Stage 3 — CSF denominator + DLM CM fused. Writes accum slots [0..5] */
 /*  threadgroup_count.x = 3 * num_active_rows.                          */
@@ -958,7 +965,8 @@ static void iadm_csf_cm_s0(const device short *ref_band, const device short *dis
 
     if (lid == 0) {
         /* inner-accum shift applied per (band,row) to match accum_global. */
-        ulong cm_out = (total_cm + (ulong)c.cm_add_shift_inner) >> (uint)c.cm_shift_inner;
+        ulong cm_out =
+            adm_cm_round_row_total(total_cm, (ulong)c.cm_add_shift_inner, (uint)c.cm_shift_inner);
         ulong csf_out = (total_csf + (ulong)c.den_add_shift_accum) >> (uint)c.den_shift_accum;
         const uint slot = wg_id * (uint)IADM_ACCUM_SLOTS;
         const uint base = slot * 2u;
@@ -1081,7 +1089,8 @@ static void iadm_csf_cm_s123(const device int *ref_band, const device int *dis_b
     ulong total_cm = iadm_tg_reduce_u64(local_cm, s_cm_lo, s_cm_hi, lid, tg_size);
 
     if (lid == 0) {
-        ulong cm_out = (total_cm + (ulong)c.cm_add_shift_inner) >> (uint)c.cm_shift_inner;
+        ulong cm_out =
+            adm_cm_round_row_total(total_cm, (ulong)c.cm_add_shift_inner, (uint)c.cm_shift_inner);
         ulong csf_out = (total_csf + (ulong)c.den_add_shift_accum) >> (uint)c.den_shift_accum;
         const uint slot = wg_id * (uint)IADM_ACCUM_SLOTS;
         const uint base = slot * 2u;
@@ -1197,7 +1206,8 @@ static void iadm_aim_cm_s0(const device short *ref_band, const device short *dis
 
     ulong total = iadm_tg_reduce_u64(local_aim, s_lo, s_hi, lid, tg_size);
     if (lid == 0) {
-        ulong out = (total + (ulong)c.cm_add_shift_inner) >> (uint)c.cm_shift_inner;
+        ulong out =
+            adm_cm_round_row_total(total, (ulong)c.cm_add_shift_inner, (uint)c.cm_shift_inner);
         const uint slot = wg_id * (uint)IADM_ACCUM_SLOTS;
         const uint base = slot * 2u;
         accum_out[(base + 6u + band_idx) * 2u + 0u] = (uint)(out & 0xFFFFFFFFul);
@@ -1287,7 +1297,8 @@ static void iadm_aim_cm_s123(const device int *ref_band, const device int *dis_b
 
     ulong total = iadm_tg_reduce_u64(local_aim, s_lo, s_hi, lid, tg_size);
     if (lid == 0) {
-        ulong out = (total + (ulong)c.cm_add_shift_inner) >> (uint)c.cm_shift_inner;
+        ulong out =
+            adm_cm_round_row_total(total, (ulong)c.cm_add_shift_inner, (uint)c.cm_shift_inner);
         const uint slot = wg_id * (uint)IADM_ACCUM_SLOTS;
         const uint base = slot * 2u;
         accum_out[(base + 6u + band_idx) * 2u + 0u] = (uint)(out & 0xFFFFFFFFul);

@@ -42,6 +42,7 @@ idempotent if `--cache-dir` is set — per-clip JSON caches under
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shlex
@@ -49,6 +50,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -264,42 +266,50 @@ def _process_clip(
             p.unlink(missing_ok=True)
     if cache_dir is not None:
         cache_path = cache_dir / f"{key}.json"
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with cache_path.open("w") as f:
-            json.dump(rows, f)
+        write_manifest_json(cache_path, rows)
     return rows
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(
-        prog="konvid_to_vmaf_pairs.py",
-        description=__doc__,
-    )
-    ap.add_argument(
+def _add_io_args(parser: argparse.ArgumentParser) -> None:
+    """Register corpus, binary, model, and output flags."""
+    parser.add_argument(
         "--konvid-root",
         type=Path,
         default=Path(os.environ.get("VMAF_DATA_ROOT", str(Path.home() / "datasets"))) / "konvid-1k",
         help="KoNViD-1k root (contains KoNViD_1k_videos/).",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--vmaf-bin",
         type=Path,
         default=REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf",
         help="Path to the vmaf CLI binary.",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--model",
         default=None,
         help="Path or version name for teacher VMAF model (default: single-source default model).",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--out",
         type=Path,
         default=REPO_ROOT / "ai" / "data" / "konvid_vmaf_pairs.parquet",
         help="Output parquet path.",
     )
-    ap.add_argument(
+    parser.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <out>.manifest.json and "
+            "records clip/frame counts, failed clips, cache settings, and exact "
+            "CLI args used to build the parquet."
+        ),
+    )
+
+
+def _add_runtime_args(parser: argparse.ArgumentParser) -> None:
+    """Register scratch, cache, and encoder-runtime flags."""
+    parser.add_argument(
         "--scratch",
         type=Path,
         default=Path(os.environ.get("VMAF_TINY_AI_SCRATCH", "/tmp/konvid_vmaf_pairs_scratch")),
@@ -308,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
             "(default: $VMAF_TINY_AI_SCRATCH, else /tmp/konvid_vmaf_pairs_scratch)."
         ),
     )
-    ap.add_argument(
+    parser.add_argument(
         "--cache-dir",
         type=Path,
         default=Path(
@@ -320,37 +330,37 @@ def main(argv: list[str] | None = None) -> int:
         / "konvid-1k",
         help="Per-clip JSON cache (set --no-cache to disable).",
     )
-    ap.add_argument("--no-cache", action="store_true")
-    ap.add_argument(
+    parser.add_argument("--no-cache", action="store_true")
+    parser.add_argument(
         "--crf",
         type=int,
         default=35,
         help="libx264 CRF for the synthetic distortion (default 35; matches "
         "the Netflix-corpus dis-pair recipe in docs/benchmarks.md).",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--max-clips",
         type=int,
         default=None,
         help="Cap number of clips processed (smoke / dry-run).",
     )
-    ap.add_argument(
-        "--manifest-out",
-        type=Path,
-        default=None,
-        help=(
-            "Run-provenance JSON sidecar. Defaults to <out>.manifest.json and "
-            "records clip/frame counts, failed clips, cache settings, and exact "
-            "CLI args used to build the parquet."
-        ),
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Assemble the command-line parser from bounded argument groups."""
+    parser = make_argument_parser(
+        prog="konvid_to_vmaf_pairs.py",
+        description=__doc__,
     )
-    args = ap.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.out.with_suffix(".manifest.json")
+    _add_io_args(parser)
+    _add_runtime_args(parser)
+    return parser
 
-    resolved_teacher = resolve_teacher_model(args.model)
 
-    videos_dir = args.konvid_root / "KoNViD_1k_videos"
+def _run_preflight_checks(
+    args: argparse.Namespace, resolved_teacher: Any, videos_dir: Path
+) -> int | None:
+    """Return an error code when required corpus, binary, or model inputs are absent."""
     if not videos_dir.is_dir():
         print(f"error: KoNViD videos not found at {videos_dir}", file=sys.stderr)
         return 2
@@ -360,16 +370,16 @@ def main(argv: list[str] | None = None) -> int:
     if resolved_teacher.is_path and not Path(resolved_teacher.resolved).is_file():
         print(f"error: model not found at {resolved_teacher.resolved}", file=sys.stderr)
         return 2
+    return None
 
-    cache_dir = None if args.no_cache else args.cache_dir
-    args.scratch.mkdir(parents=True, exist_ok=True)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
 
-    clips = sorted(videos_dir.glob("*.mp4"))
-    if args.max_clips is not None:
-        clips = clips[: args.max_clips]
-    print(f"[konvid] processing {len(clips)} clips → {args.out}", flush=True)
-
+def _process_all_clips(
+    clips: list[Path],
+    args: argparse.Namespace,
+    cache_dir: Path | None,
+    resolved_teacher: Any,
+) -> tuple[list[dict], list[str], float]:
+    """Extract all selected clips and return rows, failures, and elapsed time."""
     all_rows: list[dict] = []
     failed_clips: list[str] = []
     t0 = time.monotonic()
@@ -396,9 +406,22 @@ def main(argv: list[str] | None = None) -> int:
                 f"{time.monotonic() - t0:.1f}s",
                 flush=True,
             )
+    return all_rows, failed_clips, time.monotonic() - t0
 
-    df = pd.DataFrame(all_rows)
-    df.to_parquet(args.out, index=False)
+
+def _write_pairs_manifest(
+    *,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    resolved_teacher: Any,
+    videos_dir: Path,
+    clips: list[Path],
+    failed_clips: list[str],
+    cache_dir: Path | None,
+    df: pd.DataFrame,
+    elapsed_s: float,
+) -> None:
+    """Write the run-provenance sidecar for the extracted pair table."""
     write_manifest_json(
         args.manifest_out,
         {
@@ -410,7 +433,7 @@ def main(argv: list[str] | None = None) -> int:
                 "clips_failed": len(failed_clips),
                 "clips_processed": len(clips) - len(failed_clips),
                 "frames": len(df),
-                "elapsed_s": round(time.monotonic() - t0, 6),
+                "elapsed_s": round(elapsed_s, 6),
             },
             "failed_clips": failed_clips,
             "crf": args.crf,
@@ -430,6 +453,43 @@ def main(argv: list[str] | None = None) -> int:
                 outputs={"parquet": args.out, "manifest": args.manifest_out},
             ),
         },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_arg_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
+
+    resolved_teacher = resolve_teacher_model(args.model)
+    videos_dir = args.konvid_root / "KoNViD_1k_videos"
+    preflight_rc = _run_preflight_checks(args, resolved_teacher, videos_dir)
+    if preflight_rc is not None:
+        return preflight_rc
+
+    cache_dir = None if args.no_cache else args.cache_dir
+    args.scratch.mkdir(parents=True, exist_ok=True)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+
+    clips = sorted(videos_dir.glob("*.mp4"))
+    if args.max_clips is not None:
+        clips = clips[: args.max_clips]
+    print(f"[konvid] processing {len(clips)} clips → {args.out}", flush=True)
+
+    all_rows, failed_clips, elapsed_s = _process_all_clips(clips, args, cache_dir, resolved_teacher)
+    df = pd.DataFrame(all_rows)
+    df.to_parquet(args.out, index=False)
+    _write_pairs_manifest(
+        args=args,
+        raw_argv=raw_argv,
+        resolved_teacher=resolved_teacher,
+        videos_dir=videos_dir,
+        clips=clips,
+        failed_clips=failed_clips,
+        cache_dir=cache_dir,
+        df=df,
+        elapsed_s=elapsed_s,
     )
     print(
         f"[konvid] wrote {args.out} ({len(df)} frames, {len(clips)} clips); "

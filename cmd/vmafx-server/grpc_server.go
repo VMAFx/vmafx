@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"runtime/debug"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -112,9 +114,7 @@ func (s *grpcServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*vma
 
 	// Convert map[string]float64 → map[string]float64 (proto uses float64 doubles).
 	protoFeatures := make(map[string]float64, len(features))
-	for k, v := range features {
-		protoFeatures[k] = v
-	}
+	maps.Copy(protoFeatures, features)
 
 	s.log.Info("grpc Score completed", "score", fmt.Sprintf("%.4f", score), "duration_s", elapsed)
 	return &vmafxv1.ScoreResponse{
@@ -150,9 +150,10 @@ func (s *grpcServer) Health(_ context.Context, _ *vmafxv1.HealthRequest) (*vmafx
 //
 // Cancellation: stream.Context() (cancelled on client disconnect or deadline)
 // is propagated into the score harvest and checked between received frames, so
-// a dropped client tears the scorer down promptly. The StreamScorer is always
-// Closed via defer so the libvmaf context is released on every exit path.
-func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) error {
+// a dropped client tears the scorer down promptly. The StreamScorer is closed
+// on every exit path; a failed close gets one immediate retry and a persistent
+// failure is returned alongside the primary handler error.
+func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) (retErr error) {
 	ctx := stream.Context()
 	s.metrics.ScoreRequests.Inc()
 	start := time.Now()
@@ -175,7 +176,9 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 		s.log.Error("grpc ScoreStream: scorer init failed", "error", err)
 		return streamScorerStatus(err)
 	}
-	defer scorer.Close()
+	defer func() {
+		retErr = s.closeStreamScorer(scorer, retErr)
+	}()
 
 	s.log.Info("grpc ScoreStream: config accepted",
 		"width", cfg.GetWidth(),
@@ -204,6 +207,32 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 
 	// Terminal AggregateScore.
 	return s.sendAggregate(stream, result, time.Since(start))
+}
+
+// closeStreamScorer closes scorer with the request-scoped retry contract and
+// preserves any handler error when teardown also fails.
+func (s *grpcServer) closeStreamScorer(
+	scorer *libvmaf.StreamScorer,
+	operationErr error,
+) error {
+	closeResult := scoringservice.CloseStreamScorerWithRetry(scorer)
+	if closeResult.InitialErr == nil {
+		return operationErr
+	}
+	if closeResult.RetryErr == nil {
+		s.log.Warn("grpc ScoreStream: scorer close recovered on retry",
+			"error", closeResult.InitialErr)
+		return operationErr
+	}
+
+	closeErr := closeResult.Err()
+	s.metrics.ScoreErrors.Inc()
+	s.log.Error("grpc ScoreStream: scorer close failed after retry",
+		"error", closeErr,
+		"operation_error", operationErr,
+	)
+	return errors.Join(operationErr, status.Errorf(codes.Internal,
+		"ScoreStream teardown failed after retry: %v", closeErr))
 }
 
 // acquireStreamSlot takes one scoring slot for the lifetime of a streaming call and
@@ -429,10 +458,10 @@ func streamScorerStatus(err error) error {
 func recoveryUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (resp interface{}, err error) {
+	) (resp any, err error) {
 		defer func() {
 			if p := recover(); p != nil {
 				log.Error("grpc unary handler panic recovered",
@@ -451,7 +480,7 @@ func recoveryUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 // recoveryUnaryInterceptor. ADR-0978.
 func recoveryStreamInterceptor(log *slog.Logger) grpc.StreamServerInterceptor {
 	return func(
-		srv interface{},
+		srv any,
 		ss grpc.ServerStream,
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,

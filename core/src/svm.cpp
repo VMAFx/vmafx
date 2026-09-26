@@ -535,8 +535,11 @@ double Kernel::k_function(const svm_node *x, const svm_node *y, const svm_parame
 class Solver
 {
   public:
-    Solver() {};
-    virtual ~Solver() {};
+    Solver() = default;
+    virtual ~Solver();
+
+    Solver(const Solver &) = delete;
+    Solver &operator=(const Solver &) = delete;
 
     struct SolutionInfo {
         double obj;
@@ -578,6 +581,7 @@ class Solver
     virtual int select_working_set(int &i, int &j);
     virtual double calculate_rho();
     virtual void do_shrinking();
+    void solve_cleanup();
 
   private:
     bool be_shrunk(int i, double Gmax1, double Gmax2);
@@ -794,6 +798,7 @@ void Solver::solve_update_gradients(int i, int j, const Qfloat *Q_i, const Qfloa
 void Solver::solve_setup(int l_in, const QMatrix &Q_in, const double *p_in, const schar *y_in,
                          const double *alpha_in, double Cp_in, double Cn_in, double eps_in)
 {
+    solve_cleanup();
     this->l = l_in;
     this->Q = &Q_in;
     QD = Q_in.get_QD();
@@ -949,13 +954,30 @@ void Solver::solve_finish(SolutionInfo *si, double *alpha_out, int iter)
 
     info("\noptimization finished, #iter = %d\n", iter);
 
+    solve_cleanup();
+}
+
+void Solver::solve_cleanup()
+{
     delete[] p;
+    p = nullptr;
     delete[] y;
+    y = nullptr;
     delete[] alpha;
+    alpha = nullptr;
     delete[] alpha_status;
+    alpha_status = nullptr;
     delete[] active_set;
+    active_set = nullptr;
     delete[] G;
+    G = nullptr;
     delete[] G_bar;
+    G_bar = nullptr;
+}
+
+Solver::~Solver()
+{
+    solve_cleanup();
 }
 
 /* select_working_set()'s first scan: i maximising -y_i * grad(f)_i over
@@ -1167,9 +1189,11 @@ double Solver::calculate_rho()
 class Solver_NU : public Solver
 {
   public:
-    Solver_NU()
-    {
-    }
+    Solver_NU() = default;
+    ~Solver_NU() override = default;
+
+    Solver_NU(const Solver_NU &) = delete;
+    Solver_NU &operator=(const Solver_NU &) = delete;
     void Solve(int l, const QMatrix &Q, const double *p, const schar *y, double *alpha, double Cp,
                double Cn, double eps, SolutionInfo *si, int shrinking) override
     {
@@ -3574,12 +3598,8 @@ template <typename TSource> void SVMModelParser<TSource>::parse_support_vectors(
     for (int i = 0; i < model->l; ++i)
         parse_support_vector(i, line_buffer, node_buffer, sv_buffer);
 
-    // prepare sv structure
-    // support vectors will be stored within a single memory plane, that is indexed into
-    // by a pointer-array
-
-    // create memory plane that stores the support vectors. An
-    // empty `sv_buffer` means parsing produced no support vectors
+    // Support vectors are stored in a single plane, indexed by model->SV.
+    // An empty `sv_buffer` means parsing produced no support vectors
     // — we treat that as a malformed model rather than `Malloc(_,
     // 0)` + `memcpy(NULL, NULL, 0)` (technically UB; ASan flags
     // it as `null-passed-as-argument`). SAN-MODEL-MALLOC-OOB.
@@ -3595,12 +3615,14 @@ template <typename TSource> void SVMModelParser<TSource>::parse_support_vectors(
     // is what keeps the two equal; this bound is what keeps a future
     // divergence a clean error instead of a heap overflow.
     size_t s = 0;
-    for (size_t i = 0; i < sv_buffer.size(); ++i) {
+    size_t i = 0;
+    while (i < sv_buffer.size()) {
         exceptAssert(s < (size_t)model->l, "More support vectors than total_sv declares");
         model->SV[s++] = &support_vectors[i];
-        while (support_vectors[i].index != -1) {
+        while (i < sv_buffer.size() && support_vectors[i].index != -1)
             ++i;
-        }
+        exceptAssert(i < sv_buffer.size(), "Support-vector run missing sentinel");
+        ++i;
     }
     exceptAssert(s == (size_t)model->l, "Fewer support vectors than total_sv declares");
 

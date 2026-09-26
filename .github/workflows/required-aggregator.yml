@@ -1,13 +1,15 @@
 name: CI
 
-# ADR-1140 — required contexts now ALWAYS start and route their own work through
-# scripts/ci/plan-ci-impact.py; the absent-means-pass rule below is only a backstop.
+# ADR-1140 / BUG-098 — converted required consumer workflows always start and
+# route work through scripts/ci/plan-ci-impact.py. Their exact-name gates are
+# strictMustReport; absent-means-pass remains for contexts not yet under that contract.
 # ADR-0313 — Permanent fix for the doc/Python-only-PR vs C-build-required-checks
 # structural deadlock. This single workflow runs on every PR (no path filter)
-# and verifies that each named required check on the head SHA reported either
-# success, skipped (path-filter short-circuit), or neutral. It becomes the
-# single required-status-check that branch protection enforces; the individual
-# build/lint workflows can keep their path filters.
+# and verifies that each named required check on the head SHA reported an
+# accepted result (with stricter success-only handling for strictMustReport). It becomes the
+# single required-status-check that branch protection enforces. Required-context
+# workflows route expensive work in-job; only non-required/advisory workflows may
+# retain trigger path filters.
 
 on:
   pull_request:
@@ -46,6 +48,8 @@ jobs:
         env:
           # ADR-1177 — operator switch for the Arc A380 self-hosted lane.
           SYCL_ARC_RUNNER_ENABLED: ${{ vars.SYCL_ARC_RUNNER_ENABLED }}
+          # ADR-1319 — distinct switch for the unprovisioned multi-vendor lane.
+          GPU_COVERAGE_ENABLED: ${{ vars.GPU_COVERAGE_ENABLED }}
         with:
           retries: 3
           script: |
@@ -90,7 +94,6 @@ jobs:
               'Twin Drift',
               'Tiny AI',
               'Ubuntu HIP',
-              'SYCL float_ssim Parity',
               'SYCL Parity (Arc A380)',
               // ADR-1151 — the process gates in rule-enforcement.yml were
               // reporting but not required, so a red Release Script Contract
@@ -186,6 +189,7 @@ jobs:
               // that legitimately skips — gated and this one not.
               'Coverage Gate',
               'MCP Smoke',
+              'RC1 Tester Report',
               'Sanitizers ASan+UBSan',
               // Lint gates. ADR-0217 made `Tidy SYCL` advisory until one
               // green master run confirmed the wrapper; the last six Lint
@@ -198,10 +202,9 @@ jobs:
               'No Conflict Markers',
               'Tiny-Model Registry Validate',
               'Tidy SYCL',
-              // Consumer and artifact contracts. These are path-filtered, so
-              // the ADR-0313 absent-means-skip rule applies and the gate is
-              // only as strong as the `paths:` lists in those workflows.
-              // Auditing those lists is tracked separately in docs/state.md.
+              // Consumer and artifact contracts. BUG-098 removed their
+              // workflow-level path filters: impact planners now skip only
+              // expensive work, while exact-name gates always report.
               'FFmpeg Ubuntu gcc',
               'FFmpeg macOS clang',
               'FFmpeg SYCL',
@@ -262,16 +265,89 @@ jobs:
               // never registers — without this list, a vanished platform
               // would read as a pass.
               // Deliberately NOT here: `Sanitizers ASan+UBSan`, whose `if:`
-              // excludes `push` so it never reports on a master push, and
-              // every path-filtered addition, whose absence IS a legitimate
-              // ADR-0313 outcome.
+              // excludes `push` so it never reports on a master push.
               'Coverage Gate',
               'MCP Smoke',
+              // ADR-1342 — the shipped external tester package always runs;
+              // absence means its workflow registration failed.
+              'RC1 Tester Report',
               'Markdown Lint',
               'No Conflict Markers',
               'Tiny-Model Registry Validate',
+              // The Tidy SYCL job has no workflow or job-level path filter.
+              // Its detect step may skip the expensive body, but the job still
+              // reports success on every eligible PR and master push. Absence
+              // therefore means the workflow failed to register, not that a
+              // path filter legitimately omitted the context.
+              'Tidy SYCL',
               'Windows ARM64 MSVC',
+              // BUG-098 — these workflows now start for every pull request
+              // and master push. The planner may skip their expensive work,
+              // but an exact-name gate still reports. Absence therefore means
+              // broken workflow registration, never "not applicable".
+              'Linux Intel LLVM',
+              'macOS Clang+Metal',
+              'Windows MSVC+CUDA (full)',
+              'FFmpeg Ubuntu gcc',
+              'FFmpeg macOS clang',
+              'FFmpeg SYCL',
+              'Docker Image Build',
+              'Dev Container Build',
+              'vmafx-sys CI',
+              'cargo-deny',
+              'helm lint + template',
+              'Doxygen Public API',
             ];
+
+            // GitHub does not create a dependent job's check run until every
+            // `needs` job has completed. The BUG-098 exact-name gates therefore
+            // remain absent while their distinctly named work checks run. Keep
+            // polling through that legitimate absence, plus a short propagation
+            // window after the last dependency completes. Matrix gates depend on
+            // the aggregate matrix result, so each maps every row in that matrix.
+            // ADR-1319 extends the same rule to hosted hardware-admission probes.
+            const delayedStrictDependencies = {
+              "Coverage GPU": ["Probe GPU Full Runner"],
+              "SYCL Parity (Arc A380)": ["Probe SYCL Runner"],
+              "Linux Intel LLVM": [
+                "Plan build impact",
+                "Linux Intel LLVM work",
+                "macOS Clang+Metal work",
+                "Windows MSVC+CUDA (full) work"
+              ],
+              "macOS Clang+Metal": [
+                "Plan build impact",
+                "Linux Intel LLVM work",
+                "macOS Clang+Metal work",
+                "Windows MSVC+CUDA (full) work"
+              ],
+              "Windows MSVC+CUDA (full)": [
+                "Plan build impact",
+                "Linux Intel LLVM work",
+                "macOS Clang+Metal work",
+                "Windows MSVC+CUDA (full) work"
+              ],
+              "FFmpeg Ubuntu gcc": [
+                "Plan FFmpeg impact",
+                "FFmpeg Ubuntu gcc work",
+                "FFmpeg macOS clang work"
+              ],
+              "FFmpeg macOS clang": [
+                "Plan FFmpeg impact",
+                "FFmpeg Ubuntu gcc work",
+                "FFmpeg macOS clang work"
+              ],
+              "FFmpeg SYCL": ["Plan FFmpeg impact", "FFmpeg SYCL work"],
+              "Docker Image Build": ["Plan Docker image impact", "Docker Image Build work"],
+              "Dev Container Build": [
+                "Plan dev-container impact",
+                "Dev Container Build work"
+              ],
+              "vmafx-sys CI": ["Plan Rust impact", "vmafx-sys CI work"],
+              "cargo-deny": ["Plan Rust impact", "cargo-deny work"],
+              "helm lint + template": ["Plan Helm impact", "helm lint + template work"],
+              "Doxygen Public API": ["Plan Doxygen impact", "Doxygen Public API work"]
+            };
 
             // ADR-1151 — absent-means-pass (below) is correct ADR-0313
             // semantics for a doc-only PR and wrong for the one PR whose merge
@@ -314,6 +390,10 @@ jobs:
             const runCreatedMs = Date.parse(currentRun.data.created_at);
             const minCreatedMs = runCreatedMs - 2 * 60 * 1000;
             const registrationGraceDeadline = Date.now() + 2 * 60 * 1000;
+            const registrationPropagationMs = 2 * 60 * 1000;
+            const activeStatuses = new Set([
+              'queued', 'in_progress', 'requested', 'waiting', 'pending',
+            ]);
 
             function runTimestampMs(run) {
               return Date.parse(run.started_at || run.created_at || run.completed_at || 0);
@@ -331,7 +411,34 @@ jobs:
               return byName;
             }
 
-            // Poll up to 90 minutes for sibling workflows to register their
+            async function listAllCheckRuns() {
+              const checkRuns = [];
+              for (let page = 1; page <= 20; page += 1) {
+                const { data } = await github.rest.checks.listForRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: sha,
+                  per_page: 100,
+                  page,
+                });
+                checkRuns.push(...data.check_runs);
+                if (data.check_runs.length < 100) return checkRuns;
+              }
+              throw new Error('more than 2000 check runs reported for one SHA');
+            }
+
+            function delayedRegistrationStillExpected(name, nowMs) {
+              return (delayedStrictDependencies[name] || []).some(dependency => {
+                const run = byName[dependency];
+                if (!run) return false;
+                if (activeStatuses.has(run.status)) return true;
+                const completedMs = Date.parse(run.completed_at || 0);
+                return Number.isFinite(completedMs) &&
+                  nowMs - completedMs <= registrationPropagationMs;
+              });
+            }
+
+            // Poll up to 240 minutes for sibling workflows to register their
             // check_runs and reach a terminal state. A run that has never
             // appeared after a short registration grace period is treated as
             // path-filter-not-applicable (acceptable). Older draft-era
@@ -365,23 +472,28 @@ jobs:
             const deadline = Date.now() + 240 * 60 * 1000;
             let byName = {};
             while (Date.now() < deadline) {
-              const { data: { check_runs } } = await github.rest.checks.listForRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: sha,
-                per_page: 100,
-              });
+              const check_runs = await listAllCheckRuns();
               byName = newestByName(check_runs);
               const missing = required.filter(n => !byName[n]);
               const stillRunning = required.filter(n => {
                 const run = byName[n];
-                return run && (run.status === 'queued' || run.status === 'in_progress');
+                return run && activeStatuses.has(run.status);
               });
-              if (stillRunning.length === 0 && (missing.length === 0 || Date.now() > registrationGraceDeadline)) {
+              const nowMs = Date.now();
+              const delayedMissing = missing.filter(name =>
+                delayedRegistrationStillExpected(name, nowMs));
+              if (stillRunning.length === 0 && delayedMissing.length === 0 &&
+                  (missing.length === 0 || nowMs > registrationGraceDeadline)) {
                 break;
               }
               core.info(`Waiting on: ${stillRunning.slice(0, 3).join(', ')}` +
                         (stillRunning.length > 3 ? ` (+${stillRunning.length - 3} more)` : ''));
+              if (delayedMissing.length > 0) {
+                core.info(`Waiting for dependent gate registration: ` +
+                          `${delayedMissing.slice(0, 3).join(', ')}` +
+                          (delayedMissing.length > 3
+                            ? ` (+${delayedMissing.length - 3} more)` : ''));
+              }
               if (missing.length > 0 && Date.now() <= registrationGraceDeadline) {
                 core.info(`Waiting for check registration: ${missing.slice(0, 3).join(', ')}` +
                           (missing.length > 3 ? ` (+${missing.length - 3} more)` : ''));
@@ -389,16 +501,23 @@ jobs:
               await new Promise(r => setTimeout(r, 30000));
             }
 
-            // ADR-1177 — 'SYCL Parity (Arc A380)' runs on the workstation's
-            // Arc A380 self-hosted runner. The lane is switched by the repository
-            // variable SYCL_ARC_RUNNER_ENABLED (read below from env; the runner
-            // list itself is not queried here because GITHUB_TOKEN cannot list
-            // self-hosted runners). Disabled: absence or skip is accepted.
-            // Enabled: the job must report and succeed — the probe job in
-            // sycl-parity.yml fails loudly when the runner is missing/offline,
-            // which skips the parity job, and that skip is rejected here.
-            const syclArcEnabled = (process.env.SYCL_ARC_RUNNER_ENABLED || '').trim() === 'true';
-            core.info(`SYCL_ARC_RUNNER_ENABLED=${syclArcEnabled}`);
+            // ADR-1177 / ADR-1319 — hardware lanes are admitted by an explicit
+            // operator switch plus a hosted live-runner probe. Disabled means
+            // absence or skip is permitted. Enabled means the hardware job must
+            // report success; absence, skip, neutral or failure is blocking.
+            const hardwareLanes = {
+              'Coverage GPU': {
+                enabled: (process.env.GPU_COVERAGE_ENABLED || '').trim() === 'true',
+                switchName: 'GPU_COVERAGE_ENABLED',
+              },
+              'SYCL Parity (Arc A380)': {
+                enabled: (process.env.SYCL_ARC_RUNNER_ENABLED || '').trim() === 'true',
+                switchName: 'SYCL_ARC_RUNNER_ENABLED',
+              },
+            };
+            for (const [name, lane] of Object.entries(hardwareLanes)) {
+              core.info(`${lane.switchName}=${lane.enabled} (${name})`);
+            }
 
             const failed = [];
             const accepted = ['success', 'skipped', 'neutral'];
@@ -422,25 +541,26 @@ jobs:
                 }
                 continue;
               }
-              if (name === 'SYCL Parity (Arc A380)') {
-                if (syclArcEnabled) {
+              const hardwareLane = hardwareLanes[name];
+              if (hardwareLane) {
+                if (hardwareLane.enabled) {
                   if (!run) {
-                    failed.push(`${name}: SYCL_ARC_RUNNER_ENABLED=true but the job never reported on SHA ${sha}`);
+                    failed.push(`${name}: ${hardwareLane.switchName}=true but the job never reported on SHA ${sha}`);
                     continue;
                   }
                   if (run.conclusion === 'skipped') {
-                    failed.push(`${name}: SYCL_ARC_RUNNER_ENABLED=true but the job was skipped (runner probe failed — runner not registered or offline)`);
+                    failed.push(`${name}: ${hardwareLane.switchName}=true but the job was skipped (runner probe failed — runner not registered or offline)`);
                     continue;
                   }
-                  if (!['success', 'neutral'].includes(run.conclusion)) {
+                  if (run.conclusion !== 'success') {
                     failed.push(`${name}: ${run.conclusion ?? run.status}`);
                   } else {
-                    core.info(`OK (${run.conclusion}): ${name}`);
+                    core.info(`OK (hardware success): ${name}`);
                   }
                   continue;
                 }
                 if (!run || run.conclusion === 'skipped') {
-                  core.info(`OK (Arc A380 lane disabled, absence/skip permitted): ${name}`);
+                  core.info(`OK (${hardwareLane.switchName} disabled, absence/skip permitted): ${name}`);
                   continue;
                 }
               }

@@ -16,17 +16,15 @@
  *
  */
 
+#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 
 #include "test.h"
 
-/* ADR-0729 Wave 3: feature_name.c renamed to feature_name.cpp; the test drives
- * translation-unit-local helpers, so the implementation is unity-included rather
- * than linked. The .cpp extension is deliberate and load-bearing here. */
-// NOLINTNEXTLINE(bugprone-suspicious-include) — ADR-0729 unity include, see above
-#include "feature/feature_name.cpp"
+#include "dict.h"
+#include "feature/feature_name.h"
 
 /* Fixtures for `vmaf_feature_name_from_options()` and
  * `vmaf_feature_name_dict_from_provided_features()`. The option table below is
@@ -332,16 +330,83 @@ mu_message_t test_feature_name_dict_from_provided_features()
     return nullptr;
 }
 
+struct DoubleOptState {
+    double val;
+};
+
+mu_message_t test_feature_name_double_option_semantics()
+{
+    static const VmafOption opts[] = {
+        {
+            .name = "threshold",
+            .help = nullptr,
+            .alias = nullptr,
+            .offset = offsetof(DoubleOptState, val),
+            .type = VMAF_OPT_TYPE_DOUBLE,
+            .default_val = {.d = 0.0},
+            .min = -100.0,
+            .max = 100.0,
+            .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        },
+        {},
+    };
+
+    DoubleOptState s_pos = {.val = 0.0};
+    char *out = vmaf_feature_name_from_options("feat", opts, &s_pos);
+    const bool pos_ok = out && !strcmp(out, "feat");
+    free(out);
+    mu_assert("+0.0 matches default 0.0", pos_ok);
+
+    DoubleOptState s_neg = {.val = -0.0};
+    out = vmaf_feature_name_from_options("feat", opts, &s_neg);
+    const bool neg_ok = out && !strcmp(out, "feat");
+    free(out);
+    mu_assert("-0.0 matches default 0.0", neg_ok);
+
+    DoubleOptState s_diff = {.val = 1.5};
+    out = vmaf_feature_name_from_options("feat", opts, &s_diff);
+    const bool diff_ok = out && strstr(out, "threshold") != nullptr;
+    free(out);
+    mu_assert("non-default double must be appended", diff_ok);
+
+    DoubleOptState s_nan = {.val = NAN};
+    out = vmaf_feature_name_from_options("feat", opts, &s_nan);
+    const bool nan_ok = out && strstr(out, "threshold") != nullptr;
+    free(out);
+    mu_assert("NaN double must be treated as non-default", nan_ok);
+
+    return nullptr;
+}
+
 } // namespace
 
-mu_message_t run_tests()
+namespace
+{
+
+mu_message_t run_tests_basic()
 {
     mu_run_test(test_feature_name_all_defaults);
     mu_run_test(test_feature_name_bool_override);
     mu_run_test(test_feature_name_double_override);
     mu_run_test(test_feature_name_all_overridden);
+    return nullptr;
+}
+
+mu_message_t run_tests_extended()
+{
     mu_run_test(test_feature_name_null_inputs);
     mu_run_test(test_feature_name_string_option);
     mu_run_test(test_feature_name_dict_from_provided_features);
+    mu_run_test(test_feature_name_double_option_semantics);
     return nullptr;
+}
+
+} // namespace
+
+mu_message_t run_tests()
+{
+    mu_message_t msg = run_tests_basic();
+    if (msg)
+        return msg;
+    return run_tests_extended();
 }

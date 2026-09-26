@@ -257,6 +257,23 @@ static const char *const MODEL_KEYS[] = {
 };
 #define NUM_MODEL_KEYS (sizeof(MODEL_KEYS) / sizeof(MODEL_KEYS[0]))
 
+static VmafFeatureDictionary *barten_opts(void)
+{
+    VmafFeatureDictionary *d = NULL;
+    if (vmaf_feature_dictionary_set(&d, "adm_csf_mode", "1")) {
+        (void)vmaf_feature_dictionary_free(&d);
+        return NULL;
+    }
+    return d;
+}
+
+static const char *const BARTEN_KEYS[] = {
+    "integer_adm2_csf_1",       "integer_aim_csf_1",        "integer_adm3_csf_1",
+    "integer_adm_scale0_csf_1", "integer_adm_scale1_csf_1", "integer_adm_scale2_csf_1",
+    "integer_adm_scale3_csf_1",
+};
+#define NUM_BARTEN_KEYS (sizeof(BARTEN_KEYS) / sizeof(BARTEN_KEYS[0]))
+
 static const VmafOption *find_option(const VmafOption *table, const char *name)
 {
     for (unsigned j = 0; table[j].name; j++) {
@@ -308,6 +325,11 @@ static char *test_adm_cpu_cuda_model_option_parity(void)
     return check_parity("adm model-opt", model_opts, MODEL_KEYS, NUM_MODEL_KEYS);
 }
 
+static char *test_adm_cpu_cuda_barten_mode_parity(void)
+{
+    return check_parity("adm Barten mode", barten_opts, BARTEN_KEYS, NUM_BARTEN_KEYS);
+}
+
 static char *test_adm_cuda_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm_cuda");
@@ -327,6 +349,7 @@ char *run_tests(void)
     mu_run_test(test_adm_cuda_option_table_mirrors_cpu);
     mu_run_test(test_adm_cpu_cuda_parity);
     mu_run_test(test_adm_cpu_cuda_model_option_parity);
+    mu_run_test(test_adm_cpu_cuda_barten_mode_parity);
     return NULL;
 }
 

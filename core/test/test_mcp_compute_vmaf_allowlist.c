@@ -15,9 +15,8 @@
  *  /workspace/python/test/resource, or a $VMAF_MCP_ALLOW entry.
  *
  *  White-box strategy: `validate_path()` is `static`, so this test
- *  #include's the compilation unit directly (the established pattern — see
- *  test_feature_collector.c which #include's feature_collector.c). The
- *  public entry point `vmaf_mcp_compute_vmaf` is macro-renamed before the
+ *  #include's the compilation unit directly. The public entry point
+ *  `vmaf_mcp_compute_vmaf` is macro-renamed before the
  *  include so it does not clash with the copy already linked from libvmaf
  *  when enable_mcp=true.
  *
@@ -39,8 +38,7 @@
 /* Dodge the duplicate-symbol clash with libvmaf's own copy of the public
  * entry point (present when the library is built with enable_mcp=true). */
 #define vmaf_mcp_compute_vmaf vmaf_mcp_compute_vmaf__allowlist_test_dup
-/* White-box include of the CU under test to reach the static validate_path();
- * established pattern, see test_feature_collector.c. */
+/* White-box include of the CU under test to reach the static validate_path(). */
 /* NOLINTNEXTLINE(bugprone-suspicious-include) — white-box test, see above (ADR-0141 / ADR-0278). */
 #include "mcp/compute_vmaf.c"
 #undef vmaf_mcp_compute_vmaf
@@ -50,6 +48,45 @@
 static int test_repo_root(char *out, size_t out_sz)
 {
     return discover_repo_root(out, out_sz);
+}
+
+static unsigned close_calls;
+
+static int close_fail_once(VmafContext *vmaf)
+{
+    if (vmaf == NULL)
+        return -EINVAL;
+    close_calls++;
+    return close_calls == 1u ? -EIO : 0;
+}
+
+static int close_fail_persistently(VmafContext *vmaf)
+{
+    if (vmaf == NULL)
+        return -EINVAL;
+    close_calls++;
+    return close_calls == 1u ? -EBUSY : -EIO;
+}
+
+static char *test_close_retry_preserves_owner_contract(void)
+{
+    unsigned char context_token = 0u;
+    VmafContext *vmaf = (VmafContext *)&context_token;
+    close_calls = 0u;
+
+    int rc = close_vmaf_context_with(&vmaf, close_fail_once);
+    mu_assert("fail-once context close must recover", rc == 0);
+    mu_assert("fail-once context close must make exactly two attempts", close_calls == 2u);
+    mu_assert("successful context close must invalidate the handle", vmaf == NULL);
+
+    VmafContext *const expected = (VmafContext *)&context_token;
+    vmaf = expected;
+    close_calls = 0u;
+    rc = close_vmaf_context_with(&vmaf, close_fail_persistently);
+    mu_assert("persistent context close must preserve the first error", rc == -EBUSY);
+    mu_assert("persistent context close must stop after one retry", close_calls == 2u);
+    mu_assert("persistent context close must retain the owner", vmaf == expected);
+    return NULL;
 }
 
 /* A path that resolves outside every allowlisted root must be rejected
@@ -170,6 +207,7 @@ static char *test_vmaf_mcp_allow_extends_roots(void)
 
 char *run_tests(void)
 {
+    mu_run_test(test_close_retry_preserves_owner_contract);
     mu_run_test(test_rejects_outside_allowlist);
     mu_run_test(test_rejects_traversal_escape);
     mu_run_test(test_accepts_in_allowlist);

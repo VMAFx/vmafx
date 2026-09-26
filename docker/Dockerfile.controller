@@ -65,7 +65,7 @@ RUN go mod download
 # Build the controller binary.  CGO_ENABLED=1 is required for libvmaf linkage.
 # modernc.org/sqlite uses CGO_ENABLED=0-compatible pure-Go compilation.
 RUN CGO_ENABLED=${CGO_ENABLED} \
-    CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lvmaf" \
+    CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lvmaf -lm" \
     go build \
         -trimpath \
         -ldflags "-s -w -X main.buildVersion=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \

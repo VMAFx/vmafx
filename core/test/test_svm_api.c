@@ -33,6 +33,7 @@
 // NOLINTBEGIN(modernize-use-nullptr)
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,19 @@
 
 #include "svm.h"
 #include "test.h"
+
+static inline int svm_labels_equal(double a, double b)
+{
+    if (isnan(a) || isnan(b))
+        return 0;
+    if (a == 0.0 && b == 0.0)
+        return 1;
+    uint64_t a_bits = 0;
+    uint64_t b_bits = 0;
+    memcpy(&a_bits, &a, sizeof(a_bits));
+    memcpy(&b_bits, &b, sizeof(b_bits));
+    return a_bits == b_bits;
+}
 
 /* Silence libsvm's diagnostic output so the test log stays focused on
  * mu_assert results. */
@@ -363,9 +377,9 @@ static char *test_train_csvc_predict(void)
     const struct svm_node q_pos[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
     double dec[1] = {0.0};
     double y_pos = svm_predict_values(m, q_pos, dec);
-    /* SVM predict returns exact integer class labels (+1.0 / -1.0); these are
-     * sentinel comparisons, not computed-float equality. */
-    int pos_ok = (svm_predict(m, q_pos) == y_pos) && (y_pos == 1.0); /* sentinel: SVM label */
+    /* SVM predict returns exact integer class labels (+1.0 / -1.0); exact
+     * bit-pattern comparison validates equality without float-equality alerts. */
+    int pos_ok = svm_labels_equal(svm_predict(m, q_pos), y_pos) && (y_pos == 1.0);
 
     /* - side */
     const struct svm_node q_neg[3] = {{1, -2.5}, {2, -2.5}, {-1, 0.0}};
@@ -468,6 +482,42 @@ static char *test_train_epsilon_svr(void)
     return NULL;
 }
 
+static char *test_train_all_formulations_lifecycle(void)
+{
+    /* Train NU_SVC, ONE_CLASS, and NU_SVR to exercise Solver and Solver_NU
+     * lifecycle, destructors, and cleanup under ASan/LSan. */
+    struct binary_fixture fx = {0};
+    mu_assert("fixture build", build_binary_problem(&fx) == 0);
+    svm_set_print_string_function(&silence_svm_log);
+
+    const int types[3] = {NU_SVC, ONE_CLASS, NU_SVR};
+    for (int i = 0; i < 3; ++i) {
+        struct svm_parameter p;
+        memset(&p, 0, sizeof(p));
+        p.svm_type = types[i];
+        p.kernel_type = LINEAR;
+        p.cache_size = 16.0;
+        p.eps = 1e-3;
+        p.C = 1.0;
+        p.nu = 0.5;
+        p.shrinking = 1;
+        p.probability = 0;
+        const char *err = svm_check_parameter(&fx.prob, &p);
+        mu_assert("svm_check_parameter ok", err == NULL);
+
+        struct svm_model *m = svm_train(&fx.prob, &p);
+        mu_assert("model trained", m != NULL);
+        mu_assert("svm_type matches", svm_get_svm_type(m) == types[i]);
+
+        const struct svm_node q[3] = {{1, 2.0}, {2, 2.0}, {-1, 0.0}};
+        (void)svm_predict(m, q);
+        svm_free_and_destroy_model(&m);
+    }
+
+    free_binary_problem(&fx);
+    return NULL;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Save + load round-trip                                             */
 /* ------------------------------------------------------------------ */
@@ -486,8 +536,8 @@ static int models_inspector_equal(const struct svm_model *a, const struct svm_mo
     const struct svm_node q[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
     /* SVM predict returns an exact integer class label; comparing two calls
      * on the same input verifies that the serialised model round-trips
-     * identically. Intentional exact float equality. */
-    return svm_predict(a, q) == svm_predict(b, q); /* model round-trip identity */
+     * identically. */
+    return svm_labels_equal(svm_predict(a, q), svm_predict(b, q));
 }
 
 /* Portable temp-path helper: MSYS2/MinGW64 on GitHub Actions does not expose
@@ -581,6 +631,38 @@ static char *run_check_param_kernel_svm_tests(void)
     return NULL;
 }
 
+static char *test_svm_labels_equal_semantics(void)
+{
+    typedef struct {
+        char *message;
+        double lhs;
+        double rhs;
+        int expected;
+    } EqualityCase;
+
+    /* Label contract: SVM classification labels are exact integers stored as
+     * doubles. Bit identity with signed-zero equivalence and same-infinity
+     * behavior verifies equality without floating comparison alerts, while
+     * rejecting NaN (never equal). */
+    const EqualityCase cases[] = {
+        {"+1.0 matches +1.0", 1.0, 1.0, 1},
+        {"-1.0 matches -1.0", -1.0, -1.0, 1},
+        {"0.0 matches 0.0", 0.0, 0.0, 1},
+        {"+0.0 matches -0.0", 0.0, -0.0, 1},
+        {"+1.0 does not match -1.0", 1.0, -1.0, 0},
+        {"+1.0 does not match 1.0000000000000002", 1.0, 1.0000000000000002, 0},
+        {"NAN does not match NAN", NAN, NAN, 0},
+        {"NAN does not match 1.0", NAN, 1.0, 0},
+        {"INFINITY matches INFINITY", INFINITY, INFINITY, 1},
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const int actual = svm_labels_equal(cases[i].lhs, cases[i].rhs);
+        mu_assert(cases[i].message, actual == cases[i].expected);
+    }
+    return NULL;
+}
+
 static char *run_train_predict_tests(void)
 {
     mu_run_test(test_train_csvc_inspectors);
@@ -588,6 +670,8 @@ static char *run_train_predict_tests(void)
     mu_run_test(test_train_csvc_predict);
     mu_run_test(test_predict_probability_csvc);
     mu_run_test(test_train_epsilon_svr);
+    mu_run_test(test_svm_labels_equal_semantics);
+    mu_run_test(test_train_all_formulations_lifecycle);
     return NULL;
 }
 

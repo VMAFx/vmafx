@@ -26,6 +26,7 @@
 #include <math.h>
 
 #include "mem.h"
+#include "moment.h"
 #include "moment_options.h"
 
 int compute_1st_moment(const float *pic, int w, int h, int stride, double *score)
@@ -58,7 +59,8 @@ int compute_2nd_moment(const float *pic, int w, int h, int stride, double *score
     for (int i = 0; i < h; ++i) {
         for (int j = 0; j < w; ++j) {
             pic_ = pic[(ptrdiff_t)i * stride_ + j];
-            cum += pic_ * pic_;
+            const float term = pic_ * pic_;
+            cum += (double)term;
         }
     }
     cum /= ((double)w * h);

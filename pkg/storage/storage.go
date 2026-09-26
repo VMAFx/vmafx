@@ -201,8 +201,8 @@ func rcloneRemotePath(sourceURI string) (string, error) {
 	// Special-case the rclone:// scheme before calling url.Parse because the
 	// host component can contain a colon (e.g. "s3-prod:bucket"), which
 	// url.Parse misinterprets as an invalid port number.
-	if strings.HasPrefix(sourceURI, "rclone://") {
-		rest := strings.TrimPrefix(sourceURI, "rclone://")
+	if after, ok := strings.CutPrefix(sourceURI, "rclone://"); ok {
+		rest := after
 		// rest = "s3-prod:bucket/path" → pass through as-is.
 		return rest, nil
 	}

@@ -112,6 +112,17 @@ metal/
 
 ## Rebase-sensitive invariants
 
+- **The Metal dispatch allowlist uses extractor names and exact provided
+  feature keys.** `g_metal_features[]` in `dispatch_strategy.c` carries both
+  every registered Metal extractor's `.name` and each routable
+  `provided_features[]` string. Do not abbreviate or infer these keys: a
+  mismatch makes `vmaf_metal_dispatch_supports()` return false and silently
+  routes the feature away from Metal. `test_metal_kernel_coverage_audit`
+  guards extractor-name coverage and `test_metal_smoke` pins representative
+  provided keys; add an explicit assertion when a new provided key lands.
+  `check-dispatch-registry.sh` checks the separate global extractor registry,
+  not this string allowlist. Commit `53c8ef155` established this coupling.
+
 - **`kernel_template.h` mirrors `hip/kernel_template.h` modulo
   unified-memory buffer collapse** (fork-local, ADR-0361).
   `VmafMetalKernelLifecycle` struct mirrors `VmafHipKernelLifecycle`
@@ -220,7 +231,7 @@ metal/
 # On macOS:
 meson setup build -Denable_metal=enabled
 ninja -C build
-meson test -C build test_metal_smoke
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- -C build test_metal_smoke
 
 # On Linux / Windows: -Denable_metal=auto resolves to disabled
 # (no Metal frameworks); -Denable_metal=enabled fails the meson

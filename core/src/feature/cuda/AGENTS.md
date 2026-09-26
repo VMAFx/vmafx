@@ -95,6 +95,20 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
 
 ## Rebase-sensitive invariants
 
+- **Every successfully loaded CUDA module has an owned handle and context-owned
+  unload path ([ADR-1336](../../../../docs/adr/1336-cuda-context-owned-resource-teardown.md)).**
+  Any extractor that calls `cuModuleLoadData` must retain the resulting
+  `CUmodule` in its state and call `vmaf_cuda_module_unload` on every matching
+  close or init-unwind path after pending device work is synchronized. Custom
+  streams and events use `vmaf_cuda_stream_destroy` and
+  `vmaf_cuda_event_destroy` for the same reason: raw driver teardown acts on
+  the current context, which may be absent or belong to another caller at
+  close. Guard partially initialized handles, clear them only after confirmed
+  destruction, preserve the first teardown error, and continue best-effort
+  cleanup. Preserve the four-module teardown in `integer_adm_cuda.c` and the
+  two-module teardown in `ssimulacra2_cuda.c`. The complete inventory in
+  `test_cuda_module_lifecycle_contract.py` must change with every new owner.
+
 - **GPU SpEED means/cov must match CPU GLOBAL covariance, and ref/dis
   must use SEPARATE eigenvalue bases** (PR #1029,
   `research-1120-gpu-speed-covariance-eigenbasis-correctness`). In
@@ -249,7 +263,8 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   residual. `places=4` gate load-bearing; do not loosen it.
 
 - **`cuLaunchKernel` `kernelParams[]` must point to device-pointer
-  VALUE, not to `VmafCudaBuffer` struct** (Issue #857 / fix PR).
+  VALUE, not to `VmafCudaBuffer` struct** (Issue lusoris/vmaf#857 /
+  lusoris/vmaf#866).
   Dispatch helpers in `integer_cambi_cuda.c` (`dispatch_mask`,
   `dispatch_decimate`, `dispatch_filter_mode`) pass `&buf->data`
   (address of `CUdeviceptr` field) to `cuLaunchKernel`. Passing
@@ -285,7 +300,8 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   `vmaf_cuda_picture_get_stream`) before passing picture to any
   host-side function dereferencing `data[]`. CAMBI extractor
   (`integer_cambi_cuda.c::submit_fex_cuda`) = canonical example
-  of this pattern (Issue #857 fix). All other CUDA extractors here
+  of this pattern (Issue lusoris/vmaf#857, fixed by lusoris/vmaf#870).
+  All other CUDA extractors here
   currently keep preprocessing on GPU, not affected,
   but rule applies to any future extractor mixing GPU input
   pictures with host-side preprocessing.

@@ -1,0 +1,234 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Sat, 26 Sep 2026 12:36:19 +0200
+Subject: [PATCH] libvmaf: honor retryable close ownership
+
+Treat only an exact zero return from vmaf_close as ownership transfer. Retry once, retain every model and imported backend state after persistent failure, and report both close results while preserving the first error.
+
+Release models and SYCL, Vulkan, CUDA, HIP, or Metal state only after the
+context is gone. The shared cleanup now also releases the caller-owned state
+used by the dedicated CUDA filter. Keep a reference to that filter's CUDA
+hardware-frames context until exact-zero close so its borrowed CUcontext cannot
+expire during retryable teardown.
+---
+ libavfilter/vf_libvmaf.c      | 68 +++++++++++++++++++++++++++--------
+ libavfilter/vf_libvmaf_tune.c | 33 ++++++++++++++---
+ 2 files changed, 82 insertions(+), 19 deletions(-)
+
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 17f2a4ef29d6b207efde8147f0749c7aea1cb88d..b5980acd0e97a066b5d6554d89203655db8fde0a 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -147,6 +147,7 @@ typedef struct LIBVMAFContext {
+     unsigned bpc;
+ #if CONFIG_LIBVMAF_CUDA_FILTER
+     VmafCudaState *cu_state;
++    AVBufferRef *cuda_hw_frames_ref;
+ #endif
+ } LIBVMAFContext;
+ 
+@@ -180,6 +181,31 @@ static const AVOption libvmaf_options[] = {
+ 
+ FRAMESYNC_DEFINE_CLASS(libvmaf, LIBVMAFContext, fs);
+ 
++static int close_vmaf_context(AVFilterContext *ctx, VmafContext **vmaf)
++{
++    int close_err, retry_err;
++
++    if (!vmaf || !*vmaf)
++        return 0;
++
++    close_err = vmaf_close(*vmaf);
++    if (close_err == 0) {
++        *vmaf = NULL;
++        return 0;
++    }
++
++    retry_err = vmaf_close(*vmaf);
++    if (retry_err == 0) {
++        *vmaf = NULL;
++        return 0;
++    }
++
++    av_log(ctx, AV_LOG_ERROR,
++           "vmaf_close failed: %d (retry: %d); retaining context and dependencies.\n",
++           close_err, retry_err);
++    return close_err;
++}
++
+ static enum VmafPixelFormat pix_fmt_map(enum AVPixelFormat av_pix_fmt)
+ {
+     switch (av_pix_fmt) {
+@@ -1007,6 +1033,9 @@ static av_cold void uninit(AVFilterContext *ctx)
+     }
+ 
+ clean_up:
++    if (close_vmaf_context(ctx, &s->vmaf) != 0)
++        return;
++
+     if (s->model) {
+         for (unsigned i = 0; i < s->model_cnt; i++) {
+             if (s->model[i])
+@@ -1015,9 +1044,6 @@ clean_up:
+         av_free(s->model);
+     }
+ 
+-    if (s->vmaf)
+-        vmaf_close(s->vmaf);
+-
+ #if CONFIG_LIBVMAF_SYCL
+     if (s->sycl_state) {
+         vmaf_sycl_state_free(&s->sycl_state);
+@@ -1032,13 +1058,17 @@ clean_up:
+     }
+ #endif
+ 
+-#if CONFIG_LIBVMAF_CUDA && !CONFIG_LIBVMAF_CUDA_FILTER
++#if CONFIG_LIBVMAF_CUDA || CONFIG_LIBVMAF_CUDA_FILTER
+     if (s->cu_state) {
+         vmaf_cuda_state_free(s->cu_state);
+         s->cu_state = NULL;
+     }
+ #endif
+ 
++#if CONFIG_LIBVMAF_CUDA_FILTER
++    av_buffer_unref(&s->cuda_hw_frames_ref);
++#endif
++
+ #if CONFIG_LIBVMAF_HIP
+     if (s->hip_state) {
+         vmaf_hip_state_free(&s->hip_state);
+@@ -1111,7 +1141,15 @@ static int config_props_cuda(AVFilterLink *outlink)
+     LIBVMAFContext *s = ctx->priv;
+     AVFilterLink *inlink = ctx->inputs[0];
+     FilterLink      *inl = ff_filter_link(inlink);
+-    AVHWFramesContext *frames_ctx = (AVHWFramesContext*) inl->hw_frames_ctx->data;
++    AVHWFramesContext *frames_ctx;
++    if (!inl->hw_frames_ctx) {
++        av_log(ctx, AV_LOG_ERROR, "No CUDA hw_frames_ctx on input.\n");
++        return AVERROR(EINVAL);
++    }
++    s->cuda_hw_frames_ref = av_buffer_ref(inl->hw_frames_ctx);
++    if (!s->cuda_hw_frames_ref)
++        return AVERROR(ENOMEM);
++    frames_ctx = (AVHWFramesContext *)s->cuda_hw_frames_ref->data;
+     AVCUDADeviceContext *device_hwctx = frames_ctx->device_ctx->hwctx;
+     CUcontext cu_ctx = device_hwctx->cuda_ctx;
+     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frames_ctx->sw_format);
+@@ -1494,6 +1532,9 @@ static av_cold void uninit_sycl(AVFilterContext *ctx)
+     }
+ 
+ clean_up:
++    if (close_vmaf_context(ctx, &s->vmaf) != 0)
++        return;
++
+     if (s->model) {
+         for (unsigned i = 0; i < s->model_cnt; i++) {
+             if (s->model[i])
+@@ -1502,12 +1543,7 @@ clean_up:
+         av_free(s->model);
+     }
+ 
+-    if (s->vmaf)
+-        vmaf_close(s->vmaf);
+-    // vmaf_close() does NOT free sycl_state: ownership is not transferred
+-    // (see libvmaf.c — the caller must call vmaf_sycl_state_free() after
+-    // vmaf_close()). Free it explicitly here to avoid leaking the SYCL
+-    // state + USM allocations on every filter close.
++    // Imported SYCL state remains caller-owned after vmaf_close().
+     if (s->sycl_state) {
+         vmaf_sycl_state_free(&s->sycl_state);
+         s->sycl_state = NULL;
+@@ -1782,6 +1818,9 @@ static av_cold void uninit_vulkan(AVFilterContext *ctx)
+                                       s->score_fmt);
+ 
+ clean_up:
++    if (close_vmaf_context(ctx, &s->vmaf) != 0)
++        return;
++
+     if (s->model) {
+         for (unsigned i = 0; i < s->model_cnt; i++) {
+             if (s->model[i])
+@@ -1790,8 +1829,6 @@ clean_up:
+         av_free(s->model);
+     }
+ 
+-    if (s->vmaf)
+-        vmaf_close(s->vmaf);
+     if (s->vulkan_state)
+         vmaf_vulkan_state_free(&s->vulkan_state);
+ }
+@@ -2081,6 +2118,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
+                                       s->score_fmt);
+ 
+ clean_up:
++    if (close_vmaf_context(ctx, &s->vmaf) != 0)
++        return;
++
+     if (s->model) {
+         for (unsigned i = 0; i < s->model_cnt; i++) {
+             if (s->model[i])
+@@ -2089,8 +2129,6 @@ clean_up:
+         av_free(s->model);
+     }
+ 
+-    if (s->vmaf)
+-        vmaf_close(s->vmaf);
+     if (s->metal_state)
+         vmaf_metal_state_free(&s->metal_state);
+ }
+diff --git a/libavfilter/vf_libvmaf_tune.c b/libavfilter/vf_libvmaf_tune.c
+index 37b1e9c83e4e21a2cfeb2eaf04c0fa9a0e4668f5..7a87f0bc6018a8103adb1278eda8051d345b9259 100644
+--- a/libavfilter/vf_libvmaf_tune.c
++++ b/libavfilter/vf_libvmaf_tune.c
+@@ -94,6 +94,32 @@ static const AVOption libvmaf_tune_options[] = {
+ 
+ AVFILTER_DEFINE_CLASS(libvmaf_tune);
+ 
++static int close_vmaf_context(AVFilterContext *ctx, VmafContext **vmaf)
++{
++    int close_err, retry_err;
++
++    if (!vmaf || !*vmaf)
++        return 0;
++
++    close_err = vmaf_close(*vmaf);
++    if (close_err == 0) {
++        *vmaf = NULL;
++        return 0;
++    }
++
++    retry_err = vmaf_close(*vmaf);
++    if (retry_err == 0) {
++        *vmaf = NULL;
++        return 0;
++    }
++
++    av_log(ctx, AV_LOG_ERROR,
++           "libvmaf_tune: vmaf_close failed: %d (retry: %d); "
++           "retaining context and model.\n",
++           close_err, retry_err);
++    return close_err;
++}
++
+ static enum VmafPixelFormat pix_fmt_map(enum AVPixelFormat av_pix_fmt)
+ {
+     switch (av_pix_fmt) {
+@@ -315,14 +341,13 @@ static av_cold void uninit(AVFilterContext *ctx)
+                rec_crf, s->recommend_target_vmaf, observed, s->frame_cnt);
+     }
+ 
++    if (close_vmaf_context(ctx, &s->vmaf) != 0)
++        return;
++
+     if (s->vmaf_model) {
+         vmaf_model_destroy(s->vmaf_model);
+         s->vmaf_model = NULL;
+     }
+-    if (s->vmaf) {
+-        vmaf_close(s->vmaf);
+-        s->vmaf = NULL;
+-    }
+ }
+ 
+ static int activate(AVFilterContext *ctx)

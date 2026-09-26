@@ -28,14 +28,15 @@
  *
  * Why this is load-bearing on a CPU-only build
  * --------------------------------------------
- * The white-box test below includes libvmaf.c directly so it can call the static
- * flush_context_threaded() and observe vmaf->flushed. The structural invariant —
- * "the inner threaded flush must NOT set vmaf->flushed; only flush_context()
- * does, and only after all backends ran" — is independent of which GPU backends
- * are compiled in. Pre-fix, flush_context_threaded() set vmaf->flushed = true
- * and the FIRST assertion below fails. Post-fix it leaves it false and
- * flush_context() flips it. Toggling the fix flips this test red/green without
- * any CUDA or SYCL toolchain.
+ * The white-box test below links libvmaf and reaches the two static flush paths
+ * through narrow accessors in libvmaf_priv.h; companion accessors observe the
+ * opaque context state. The structural invariant — "the inner threaded flush
+ * must NOT set vmaf->flushed; only flush_context() does, and only after all
+ * backends ran" — is independent of which GPU backends are compiled in.
+ * Pre-fix, flush_context_threaded() set vmaf->flushed = true and the FIRST
+ * assertion below fails. Post-fix it leaves it false and flush_context() flips
+ * it. Toggling the fix flips this test red/green without any CUDA or SYCL
+ * toolchain.
  */
 
 #include <math.h>
@@ -44,13 +45,23 @@
 
 #include "test.h"
 
-/* White-box include: pulls in the static flush_context* helpers and the full
- * VmafContext definition. Mirrors the established pattern in
- * test_feature_collector.c. */
-// NOLINTNEXTLINE(bugprone-suspicious-include): white-box test, see above (ADR-0141 / ADR-0278).
-#include "feature_collector.c"
-// NOLINTNEXTLINE(bugprone-suspicious-include): static flush_context* and the private VmafContext (ADR-0141 / ADR-0278).
-#include "libvmaf.c"
+#include "libvmaf/libvmaf.h"
+#include "libvmaf/picture.h"
+#include "feature/cambi_internal.h"
+#include "feature/luminance_tools.h"
+#include "libvmaf_priv.h"
+#include "model.h"
+
+_Static_assert(sizeof(enum VmafPixelRange) == sizeof(unsigned int),
+               "VmafPixelRange must retain its unsigned-int ABI width");
+_Static_assert(sizeof(enum VmafModelType) == sizeof(unsigned int),
+               "VmafModelType must retain its unsigned-int ABI width");
+_Static_assert(sizeof(enum VmafModelNormalizationType) == sizeof(unsigned int),
+               "VmafModelNormalizationType must retain its unsigned-int ABI width");
+_Static_assert(sizeof(VmafCambiHostBuffers) == sizeof(struct VmafCambiHostBuffers),
+               "the C CAMBI host-buffer typedef must name its struct");
+_Static_assert(sizeof(VmafLumaRange) == sizeof(struct VmafLumaRange),
+               "the C luminance-range typedef must name its struct");
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -82,37 +93,64 @@ static int alloc_frame(VmafPicture *pic, unsigned seed)
     return 0;
 }
 
+static char *close_context(VmafContext *vmaf, char *message)
+{
+    const int err = vmaf ? vmaf_close(vmaf) : 0;
+    if (!message && err)
+        return "vmaf_close failed";
+    return message;
+}
+
 /* Register a temporal extractor and push NUM_FRAMES frames through the threaded
  * read path, leaving the context ready for a terminal flush. Caller owns the
  * returned context (must vmaf_close it). */
 static char *prep_threaded_context(VmafContext **out)
 {
-    int err = 0;
+    char *message = NULL;
     VmafConfiguration cfg = {
         .log_level = VMAF_LOG_LEVEL_NONE,
         .n_threads = 4,
     };
 
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("vmaf_init failed", !err);
-    mu_assert("thread_pool must be active for the threaded path", vmaf->thread_pool != NULL);
+    int err = vmaf_init(&vmaf, cfg);
+    if (err)
+        message = "vmaf_init failed";
+    if (!message && !vmaf_context_has_thread_pool(vmaf))
+        message = "thread_pool must be active for the threaded path";
 
-    err = vmaf_use_feature(vmaf, "motion", NULL);
-    mu_assert("vmaf_use_feature(motion) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        err = alloc_frame(&ref, i);
-        mu_assert("alloc_frame(ref) failed", !err);
-        err = alloc_frame(&dist, i + 1u);
-        mu_assert("alloc_frame(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("vmaf_read_pictures failed", !err);
+    if (!message) {
+        err = vmaf_use_feature(vmaf, "motion", NULL);
+        if (err)
+            message = "vmaf_use_feature(motion) failed";
     }
 
-    mu_assert("flushed must be false before any flush", !vmaf->flushed);
+    for (unsigned i = 0; !message && i < NUM_FRAMES; i++) {
+        VmafPicture ref = {0};
+        VmafPicture dist = {0};
+
+        err = alloc_frame(&ref, i);
+        if (err) {
+            message = "alloc_frame(ref) failed";
+            break;
+        }
+        err = alloc_frame(&dist, i + 1u);
+        if (err) {
+            const int unref_err = vmaf_picture_unref(&ref);
+            message = unref_err ? "vmaf_picture_unref failed" : "alloc_frame(dist) failed";
+            break;
+        }
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (err) {
+            message = "vmaf_read_pictures failed";
+            break;
+        }
+    }
+
+    if (!message && vmaf_context_is_flushed(vmaf))
+        message = "flushed must be false before any flush";
+    if (message)
+        return close_context(vmaf, message);
     *out = vmaf;
     return NULL;
 }
@@ -120,12 +158,13 @@ static char *prep_threaded_context(VmafContext **out)
 /*
  * test_threaded_flush_does_not_set_flushed
  * ----------------------------------------
- * Calls the static flush_context_threaded() DIRECTLY on a fresh threaded
- * context and asserts it succeeds but does NOT flip vmaf->flushed. This is the
- * core R2-10 invariant: the inner CPU flush must not mark the context terminally
- * flushed, otherwise a subsequent CUDA-flush error in flush_context() would skip
- * flush_context_sycl() with no retry path (vmaf->flushed already true). Pre-fix,
- * flush_context_threaded() set the flag itself and the second mu_assert fails.
+ * Calls the internal accessor that delegates directly to
+ * flush_context_threaded() on a fresh threaded context and asserts it succeeds
+ * but does NOT flip vmaf->flushed. This is the core R2-10 invariant: the inner
+ * CPU flush must not mark the context terminally flushed, otherwise a subsequent
+ * CUDA-flush error in flush_context() would skip flush_context_sycl() with no
+ * retry path (vmaf->flushed already true). Pre-fix, flush_context_threaded() set
+ * the flag itself and the second mu_assert fails.
  *
  * A separate context is used for the flush_context() check below because calling
  * flush_context_threaded() and then flush_context() on the SAME context would
@@ -133,20 +172,17 @@ static char *prep_threaded_context(VmafContext **out)
  */
 static char *test_threaded_flush_does_not_set_flushed(void)
 {
-    int err = 0;
     VmafContext *vmaf = NULL;
-    char *prep = prep_threaded_context(&vmaf);
-    if (prep)
-        return prep;
-
-    err = flush_context_threaded(vmaf);
-    mu_assert("flush_context_threaded must succeed", !err);
-    mu_assert("flush_context_threaded must NOT set vmaf->flushed (R2-10)", !vmaf->flushed);
-
-    err = vmaf_close(vmaf);
-    mu_assert("vmaf_close failed", !err);
-
-    return NULL;
+    char *message = prep_threaded_context(&vmaf);
+    if (!message) {
+        const int err = vmaf_context_flush_threaded_for_test(vmaf);
+        if (err) {
+            message = "flush_context_threaded must succeed";
+        } else if (vmaf_context_is_flushed(vmaf)) {
+            message = "flush_context_threaded must NOT set vmaf->flushed (R2-10)";
+        }
+    }
+    return close_context(vmaf, message);
 }
 
 /*
@@ -159,20 +195,17 @@ static char *test_threaded_flush_does_not_set_flushed(void)
  */
 static char *test_central_flush_sets_flushed(void)
 {
-    int err = 0;
     VmafContext *vmaf = NULL;
-    char *prep = prep_threaded_context(&vmaf);
-    if (prep)
-        return prep;
-
-    err = flush_context(vmaf);
-    mu_assert("flush_context must succeed", !err);
-    mu_assert("flush_context must set vmaf->flushed once all backends ran", vmaf->flushed);
-
-    err = vmaf_close(vmaf);
-    mu_assert("vmaf_close failed", !err);
-
-    return NULL;
+    char *message = prep_threaded_context(&vmaf);
+    if (!message) {
+        const int err = vmaf_context_flush_for_test(vmaf);
+        if (err) {
+            message = "flush_context must succeed";
+        } else if (!vmaf_context_is_flushed(vmaf)) {
+            message = "flush_context must set vmaf->flushed once all backends ran";
+        }
+    }
+    return close_context(vmaf, message);
 }
 
 /* Feed NUM_FRAMES ref/dist pairs through the serial read path (n_threads=0).
@@ -182,14 +215,21 @@ static char *test_central_flush_sets_flushed(void)
 static char *feed_serial_frames(VmafContext *vmaf, unsigned n)
 {
     for (unsigned i = 0; i < n; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
+        VmafPicture ref = {0};
+        VmafPicture dist = {0};
         int err = alloc_frame(&ref, i);
-        mu_assert("serial: alloc_frame(ref) failed", !err);
+        if (err)
+            return "serial: alloc_frame(ref) failed";
         err = alloc_frame(&dist, i + 1u);
-        mu_assert("serial: alloc_frame(dist) failed", !err);
+        if (err) {
+            const int unref_err = vmaf_picture_unref(&ref);
+            if (unref_err)
+                return "serial: vmaf_picture_unref failed";
+            return "serial: alloc_frame(dist) failed";
+        }
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("serial: vmaf_read_pictures failed", !err);
+        if (err)
+            return "serial: vmaf_read_pictures failed";
     }
     return NULL;
 }
@@ -201,11 +241,8 @@ static char *check_double_flush_rejected_and_close(VmafContext *vmaf)
     /* A second flush must be rejected — proves the no-retry-once-flushed
      * contract the fix's ordering depends on. */
     int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("serial: second flush must return -EINVAL", err == -EINVAL);
-
-    err = vmaf_close(vmaf);
-    mu_assert("serial: vmaf_close failed", !err);
-    return NULL;
+    char *message = err == -EINVAL ? NULL : "serial: second flush must return -EINVAL";
+    return close_context(vmaf, message);
 }
 
 /*
@@ -218,7 +255,7 @@ static char *check_double_flush_rejected_and_close(VmafContext *vmaf)
  */
 static char *test_flush_via_public_api_sets_flushed(void)
 {
-    int err = 0;
+    char *message = NULL;
 
     VmafConfiguration cfg = {
         .log_level = VMAF_LOG_LEVEL_NONE,
@@ -226,27 +263,29 @@ static char *test_flush_via_public_api_sets_flushed(void)
     };
 
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("serial: vmaf_init failed", !err);
+    int err = vmaf_init(&vmaf, cfg);
+    if (err)
+        return "serial: vmaf_init failed";
 
     err = vmaf_use_feature(vmaf, "motion", NULL);
-    mu_assert("serial: vmaf_use_feature(motion) failed", !err);
-
-    char *msg = feed_serial_frames(vmaf, NUM_FRAMES);
-    if (msg)
-        return msg;
-
-    mu_assert("serial: flushed false before EOS", !vmaf->flushed);
-
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("serial: EOS flush failed", !err);
-    mu_assert("serial: flushed must be true after EOS", vmaf->flushed);
-
-    msg = check_double_flush_rejected_and_close(vmaf);
-    if (msg)
-        return msg;
-
-    return NULL;
+    if (err) {
+        message = "serial: vmaf_use_feature(motion) failed";
+    } else {
+        message = feed_serial_frames(vmaf, NUM_FRAMES);
+    }
+    if (!message && vmaf_context_is_flushed(vmaf))
+        message = "serial: flushed false before EOS";
+    if (!message) {
+        err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+        if (err) {
+            message = "serial: EOS flush failed";
+        } else if (!vmaf_context_is_flushed(vmaf)) {
+            message = "serial: flushed must be true after EOS";
+        }
+    }
+    if (message)
+        return close_context(vmaf, message);
+    return check_double_flush_rejected_and_close(vmaf);
 }
 
 char *run_tests()

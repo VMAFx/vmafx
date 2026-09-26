@@ -74,7 +74,7 @@ ninja -vC build
 Build and run tests with:
 
 ```text
-ninja -vC build test
+python3 ../scripts/ci/run_meson_test.py -- -C build --no-rebuild --print-errorlogs
 ```
 
 ## Install
@@ -123,12 +123,25 @@ A command line tool called `vmaf` is included as part of the build/installation.
 
 ## API Walkthrough
 
-Create a `VmafContext` with `vmaf_init()`. `VmafContext` is an opaque type, and `VmafConfiguration` is a options struct used to initialize the context. Be sure to clean up the `VmafContext` with `vmaf_close()` when you are done with it.
+Create a `VmafContext` with `vmaf_init()`. `VmafContext` is an opaque type, and
+`VmafConfiguration` is an options struct used to initialize the context. Clean
+it up with `vmaf_close()` when done. Exact zero invalidates the context; any
+nonzero result retains a teardown-only context that must be passed to
+`vmaf_close()` again. Keep models and imported backend states alive across that
+retry, then destroy or free those dependencies only after close returns 0.
 
 ```c
 int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
 
 int vmaf_close(VmafContext *vmaf);
+
+int close_err = vmaf_close(vmaf);
+if (close_err != 0)
+    close_err = vmaf_close(vmaf); /* retained teardown-only context */
+if (close_err == 0) {
+    vmaf = NULL;
+    /* Now destroy models and free imported backend states. */
+}
 ```
 
 Calculating a VMAF score requires a VMAF model. The next step is to create a `VmafModel`. There are a few ways to get a `VmafModel`. Use `vmaf_model_load()` when you would like to load one of the default built-in models. Use `vmaf_model_load_from_path()` when you would like to read a model file from a filesystem. After you are done using the `VmafModel`, clean it up with `vmaf_model_destroy()`.

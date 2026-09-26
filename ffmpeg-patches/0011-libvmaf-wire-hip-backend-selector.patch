@@ -86,7 +86,7 @@ index 992ccaf9860c356bce018d9c00499b1240dfb063..46973b60e1128fdf60f5236c0666fbe9
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
  enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index baf35892fb865be020e529737a6d2c8f1e727866..d8b582902257109bf8c0fb0cdc40137a60295514 100644
+index cf447b93d182cd7f3b33e99c1697bcdd7df16a2d..82a64fbbcb6327782452bc2381875c55a206c8e4 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -68,6 +68,10 @@
@@ -155,7 +155,7 @@ index baf35892fb865be020e529737a6d2c8f1e727866..d8b582902257109bf8c0fb0cdc40137a
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -886,6 +924,13 @@ clean_up:
+@@ -893,6 +931,13 @@ clean_up:
          s->cu_state = NULL;
      }
  #endif

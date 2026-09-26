@@ -17,10 +17,201 @@
  */
 
 #include "test.h"
-#include "feature_collector.c"
-#include "libvmaf.c"
+#include "mu_table.h"
+#include "feature_collector_internal.h"
+#include "libvmaf.c" // NOLINT(bugprone-suspicious-include): white-box seam (ADR-0141).
 #include <limits.h>
 #include <time.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr`. This
+ * test follows the cross-platform spelling of the surface it exercises.
+ * ADR-1138. */
+
+static unsigned close_retry_calls;
+
+static int close_retry_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                            unsigned w, unsigned h)
+{
+    (void)fex;
+    (void)pix_fmt;
+    (void)bpc;
+    (void)w;
+    (void)h;
+    return 0;
+}
+
+static int close_retry_once(VmafFeatureExtractor *fex)
+{
+    (void)fex;
+    close_retry_calls++;
+    return close_retry_calls == 1 ? -EIO : 0;
+}
+
+static char *prepare_public_close_retry(VmafContext **vmaf, VmafFeatureExtractor *synth)
+{
+    int err = vmaf_init(vmaf, (VmafConfiguration){0});
+    mu_assert("vmaf_init", err == 0 && *vmaf != NULL);
+    *synth = (VmafFeatureExtractor){
+        .name = "synth_public_close_retry",
+        .init = close_retry_init,
+        .close = close_retry_once,
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    err = vmaf_feature_extractor_context_create(&ctx, synth, NULL);
+    mu_assert("context_create", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("context_init", err == 0);
+    err = feature_extractor_vector_append(&(*vmaf)->registered_feature_extractors, ctx, 0);
+    mu_assert("vector append", err == 0);
+    return NULL;
+}
+
+static char *test_vmaf_close_retains_context_for_retry(void)
+{
+    VmafContext *vmaf = NULL;
+    VmafFeatureExtractor synth = {0};
+    mu_assert_msg(prepare_public_close_retry(&vmaf, &synth));
+    close_retry_calls = 0;
+    int err = vmaf_close(vmaf);
+    mu_assert("first vmaf_close returns the transient close error", err == -EIO);
+    mu_assert("failed close retains the public context", vmaf->feature_collector != NULL);
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close retry succeeds", err == 0);
+    mu_assert("close callback was retried exactly once", close_retry_calls == 2);
+    return NULL;
+}
+
+static int install_worker_close_retry(void *data, void **thread_data)
+{
+    BatchThreadData *td = NULL;
+    int err = batch_thread_data_ensure(thread_data, 1, &td);
+    if (err)
+        return err;
+    const VmafFeatureExtractor *fex = data;
+    err = vmaf_feature_extractor_context_create(&td->fex_ctx[0], fex, NULL);
+    if (err)
+        return err;
+    return vmaf_feature_extractor_context_init(td->fex_ctx[0], VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+}
+
+static char *test_vmaf_close_retains_worker_private_context(void)
+{
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, (VmafConfiguration){.n_threads = 1});
+    mu_assert("threaded vmaf_init", err == 0 && vmaf != NULL);
+    VmafFeatureExtractor synth = {
+        .name = "synth_worker_close_retry",
+        .init = close_retry_init,
+        .close = close_retry_once,
+    };
+    err = vmaf_thread_pool_enqueue(vmaf->thread_pool, install_worker_close_retry, &synth,
+                                   sizeof(synth));
+    mu_assert("worker fixture enqueue", err == 0);
+    err = vmaf_thread_pool_wait(vmaf->thread_pool);
+    mu_assert("worker fixture install", err == 0);
+
+    close_retry_calls = 0;
+    err = vmaf_close(vmaf);
+    mu_assert("worker close failure reaches the public caller", err == -EIO);
+    mu_assert("failed worker prepare retains the pool", vmaf->thread_pool != NULL);
+    err = vmaf_close(vmaf);
+    mu_assert("public close retry commits worker ownership", err == 0);
+    mu_assert("worker close callback was retried", close_retry_calls == 2);
+    return NULL;
+}
+
+#ifdef HAVE_CUDA
+static unsigned backend_close_calls;
+
+static int backend_picture_alloc(VmafPicture *pic, void *cookie)
+{
+    (void)cookie;
+    memset(pic, 0, sizeof(*pic));
+    pic->data[0] = malloc(1);
+    return pic->data[0] ? 0 : -ENOMEM;
+}
+
+static int backend_picture_close_positive_once(VmafPicture *pic, void *cookie)
+{
+    (void)cookie;
+    backend_close_calls++;
+    if (backend_close_calls == 1)
+        return EIO; /* pthread-style positive errno must not look successful. */
+    free(pic->data[0]);
+    pic->data[0] = NULL;
+    return 0;
+}
+
+static char *test_vmaf_close_commit_retry_is_idempotent(void)
+{
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, (VmafConfiguration){0});
+    mu_assert("vmaf_init", err == 0 && vmaf != NULL);
+
+    vmaf->dnn.in_buf = malloc(sizeof(*vmaf->dnn.in_buf));
+    vmaf->dnn.in_elements = 1;
+    vmaf->perceptual.summaries = malloc(sizeof(*vmaf->perceptual.summaries));
+    vmaf->perceptual.capacity = 1;
+    mu_assert("commit fixture allocations",
+              vmaf->dnn.in_buf != NULL && vmaf->perceptual.summaries != NULL);
+
+    VmafGpuPicturePoolConfig cfg = {
+        .pic_cnt = 1,
+        .alloc_picture_callback = backend_picture_alloc,
+        .free_picture_callback = backend_picture_close_positive_once,
+    };
+    err = vmaf_gpu_picture_pool_init(&vmaf->cuda.ring_buffer, cfg);
+    mu_assert("backend ring fixture", err == 0 && vmaf->cuda.ring_buffer != NULL);
+
+    backend_close_calls = 0;
+    err = vmaf_close(vmaf);
+    mu_assert("positive child error is normalized at the public boundary", err == -EIO);
+    mu_assert("collector commit stays committed", vmaf->feature_collector == NULL);
+    mu_assert("framesync commit stays committed", vmaf->framesync == NULL);
+    mu_assert("DNN commit is zeroed for retry",
+              vmaf->dnn.in_buf == NULL && vmaf->dnn.in_elements == 0);
+    mu_assert("perceptual commit is zeroed for retry",
+              vmaf->perceptual.summaries == NULL && vmaf->perceptual.capacity == 0);
+    mu_assert("failed backend owner remains reachable", vmaf->cuda.ring_buffer != NULL);
+
+    err = vmaf_close(vmaf);
+    mu_assert("commit-phase retry succeeds", err == 0);
+    mu_assert("failed backend child alone was retried", backend_close_calls == 2);
+    return NULL;
+}
+
+static char *test_cuda_state_import_rejects_duplicate_owners(void)
+{
+    VmafContext *first = NULL;
+    VmafContext *second = NULL;
+    VmafCudaState *state = calloc(1, sizeof(*state));
+    mu_assert("CUDA state fixture allocation", state != NULL);
+    state->ctx = (CUcontext)state;
+
+    int err = vmaf_init(&first, (VmafConfiguration){0});
+    err |= vmaf_init(&second, (VmafConfiguration){0});
+    mu_assert("context fixtures", err == 0 && first != NULL && second != NULL);
+    err = vmaf_cuda_import_state(first, state);
+    mu_assert("first CUDA import succeeds", err == 0 && state->imported);
+    mu_assert("context copy is an independent release owner", !first->cuda.state.imported);
+    err = vmaf_cuda_import_state(second, state);
+    mu_assert("same CUDA state cannot be imported twice", err == -EBUSY);
+
+    VmafCudaState *other = calloc(1, sizeof(*other));
+    mu_assert("second CUDA state fixture allocation", other != NULL);
+    err = vmaf_cuda_import_state(first, other);
+    mu_assert("live context CUDA state cannot be overwritten", err == -EBUSY);
+
+    memset(&first->cuda.state, 0, sizeof(first->cuda.state));
+    mu_assert("first context cleanup", vmaf_close(first) == 0);
+    mu_assert("second context cleanup", vmaf_close(second) == 0);
+    mu_assert("imported wrapper cleanup", vmaf_cuda_state_free(state) == 0);
+    mu_assert("never-imported fixture cleanup", vmaf_cuda_state_free(other) == 0);
+    return NULL;
+}
+#endif
 
 static char *test_model_mount_with_use_features()
 {
@@ -46,6 +237,166 @@ static char *test_model_mount_with_use_features()
     err = vmaf_close(vmaf);
     mu_assert("problem During vmaf_close", !err);
 
+    return NULL;
+}
+
+static const VmafOption model_value_capability_options[] = {
+    {.name = "vif_kernelscale",
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 1.0,
+     .min = 0.1,
+     .max = 4.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {0},
+};
+
+typedef struct {
+    bool setup_ok;
+    bool selected_mock;
+    const char *selected_name;
+} ModelCapabilitySelection;
+
+static ModelCapabilitySelection select_for_model_option(const char *value)
+{
+    VmafFeatureExtractor mock_gpu = {
+        .name = "mock_float_vif_gpu",
+        .options = model_value_capability_options,
+        .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
+    };
+    VmafModelFeature feature = {.name = "VMAF_feature_vif_scale0_score"};
+    ModelCapabilitySelection result = {0};
+    if (vmaf_dictionary_set(&feature.opts_dict, "vif_kernelscale", value, 0))
+        return result;
+
+    result.setup_ok = true;
+    VmafFeatureExtractor *selected = fex_honouring_model_options(&mock_gpu, &feature);
+    result.selected_mock = selected == &mock_gpu;
+    result.selected_name = selected ? selected->name : NULL;
+    (void)vmaf_dictionary_free(&feature.opts_dict);
+    return result;
+}
+
+static char *test_model_option_minimum_falls_back(void)
+{
+    const ModelCapabilitySelection result = select_for_model_option("0.1");
+    mu_assert("valid minimum must select CPU float_vif",
+              result.setup_ok && !result.selected_mock && result.selected_name &&
+                  !strcmp(result.selected_name, "float_vif"));
+    return NULL;
+}
+
+static char *test_model_option_maximum_falls_back(void)
+{
+    const ModelCapabilitySelection result = select_for_model_option("4.0");
+    mu_assert("valid maximum must select CPU float_vif",
+              result.setup_ok && !result.selected_mock && result.selected_name &&
+                  !strcmp(result.selected_name, "float_vif"));
+    return NULL;
+}
+
+static char *test_model_option_default_preserves_gpu(void)
+{
+    const ModelCapabilitySelection result = select_for_model_option("1.0");
+    mu_assert("declared default must preserve selected GPU twin",
+              result.setup_ok && result.selected_mock && result.selected_name &&
+                  !strcmp(result.selected_name, "mock_float_vif_gpu"));
+    return NULL;
+}
+
+static char *test_model_option_invalid_stays_parser_owned(void)
+{
+    const ModelCapabilitySelection result = select_for_model_option("invalid");
+    mu_assert("malformed value must remain on selected GPU for parser rejection",
+              result.setup_ok && result.selected_mock && result.selected_name &&
+                  !strcmp(result.selected_name, "mock_float_vif_gpu"));
+    return NULL;
+}
+
+typedef struct {
+    int scale;
+} MockContextScaleState;
+
+static int mock_context_scale_check(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                                    unsigned bpc, unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    const MockContextScaleState *s = fex->priv;
+    const int scale = s->scale > 0 ? s->scale : (int)((float)(w < h ? w : h) / 256.0f + 0.5f);
+    return (scale < 2) ? 0 : -ENOTSUP;
+}
+
+static const VmafOption mock_context_scale_options[] = {
+    {.name = "scale",
+     .type = VMAF_OPT_TYPE_INT,
+     .default_val.i = 0,
+     .min = 0,
+     .max = 10,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {0},
+};
+
+static bool context_fallback_case_matches(unsigned w, unsigned h, const char *scale,
+                                          bool allow_fallback, bool expect_cpu)
+{
+    VmafContext *vmaf = NULL;
+    if (vmaf_init(&vmaf, (VmafConfiguration){0}))
+        return false;
+
+    VmafDictionary *options = NULL;
+    int err = vmaf_dictionary_set(&options, "scale", scale, 0);
+    VmafFeatureExtractor mock_gpu = {
+        .name = "mock_float_ssim_gpu",
+        .options = mock_context_scale_options,
+        .priv_size = sizeof(MockContextScaleState),
+        .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
+        .context_check = mock_context_scale_check,
+        .context_fallback_name = "float_ssim",
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    if (!err)
+        err = vmaf_feature_extractor_context_create(&ctx, &mock_gpu, options);
+    if (err) {
+        (void)vmaf_dictionary_free(&options);
+        (void)vmaf_close(vmaf);
+        return false;
+    }
+
+    ctx->allow_context_fallback = allow_fallback;
+    err = feature_extractor_vector_append(&vmaf->registered_feature_extractors, ctx, 0);
+    if (err) {
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        (void)vmaf_close(vmaf);
+        return false;
+    }
+    vmaf->pic_params.w = w;
+    vmaf->pic_params.h = h;
+    vmaf->pic_params.bpc = 8;
+    vmaf->pic_params.pix_fmt = VMAF_PIX_FMT_YUV420P;
+    err = resolve_context_fallbacks(vmaf);
+
+    ctx = vmaf->registered_feature_extractors.fex_ctx[0];
+    const bool used_cpu = !strcmp(ctx->fex->name, "float_ssim");
+    const VmafDictionaryEntry *scale_entry = vmaf_dictionary_get(&ctx->opts_dict, "scale", 0);
+    const bool option_preserved = scale_entry && !strcmp(scale_entry->val, scale);
+    err |= vmaf_close(vmaf);
+    return !err && used_cpu == expect_cpu && option_preserved;
+}
+
+static char *test_context_fallback_threshold_and_direct_contract(void)
+{
+    mu_assert("320x240 auto-scale must stay on the selected GPU twin",
+              context_fallback_case_matches(320, 240, "0", true, false));
+    mu_assert("383x383 auto-scale must stay on the selected GPU twin",
+              context_fallback_case_matches(383, 383, "0", true, false));
+    mu_assert("384x384 auto-scale must fall back to CPU float_ssim",
+              context_fallback_case_matches(384, 384, "0", true, true));
+    mu_assert("960x540 auto-scale must fall back to CPU float_ssim",
+              context_fallback_case_matches(960, 540, "0", true, true));
+    mu_assert("explicit scale=1 must stay on the selected GPU twin",
+              context_fallback_case_matches(960, 540, "1", true, false));
+    mu_assert("direct extractor selection must retain its backend contract",
+              context_fallback_case_matches(960, 540, "0", false, false));
     return NULL;
 }
 
@@ -123,34 +474,40 @@ static char *test_model_unmount()
     return NULL;
 }
 
-static char *test_aggregate_vector_init_append_and_destroy()
+static char *prepare_aggregate_vector(AggregateVector *aggregate_vector)
 {
     int err = 0;
 
-    AggregateVector aggregate_vector;
-    err = aggregate_vector_init(&aggregate_vector);
+    err = aggregate_vector_init(aggregate_vector);
     mu_assert("problem during aggregate_vector_init", !err);
     mu_assert("aggregate_vector is not initialized properly",
-              (aggregate_vector.cnt == 0) && (aggregate_vector.capacity == 8));
+              (aggregate_vector->cnt == 0) && (aggregate_vector->capacity == 8));
 
-    err = aggregate_vector_append(&aggregate_vector, "A", 1);
+    err = aggregate_vector_append(aggregate_vector, "A", 1);
     mu_assert("problem during aggregate_vector_append", !err);
     mu_assert(
         "name and value were incorrectly set",
-        (!strcmp("A", aggregate_vector.metric[0].name) && aggregate_vector.metric[0].value == 1));
+        (!strcmp("A", aggregate_vector->metric[0].name) && aggregate_vector->metric[0].value == 1));
 
-    err |= aggregate_vector_append(&aggregate_vector, "B", 2);
-    err |= aggregate_vector_append(&aggregate_vector, "C", 3);
-    err |= aggregate_vector_append(&aggregate_vector, "D", 4);
-    err |= aggregate_vector_append(&aggregate_vector, "E", 5);
-    err |= aggregate_vector_append(&aggregate_vector, "F", 6);
-    err |= aggregate_vector_append(&aggregate_vector, "G", 7);
-    err |= aggregate_vector_append(&aggregate_vector, "H", 8);
+    err |= aggregate_vector_append(aggregate_vector, "B", 2);
+    err |= aggregate_vector_append(aggregate_vector, "C", 3);
+    err |= aggregate_vector_append(aggregate_vector, "D", 4);
+    err |= aggregate_vector_append(aggregate_vector, "E", 5);
+    err |= aggregate_vector_append(aggregate_vector, "F", 6);
+    err |= aggregate_vector_append(aggregate_vector, "G", 7);
+    err |= aggregate_vector_append(aggregate_vector, "H", 8);
     mu_assert("problem during aggregate_vector_append", !err);
     mu_assert("aggregate_vector is not sized properly",
-              (aggregate_vector.cnt == 8) && (aggregate_vector.capacity == 8));
+              (aggregate_vector->cnt == 8) && (aggregate_vector->capacity == 8));
+    return NULL;
+}
 
-    err = aggregate_vector_append(&aggregate_vector, "I", 9);
+static char *test_aggregate_vector_init_append_and_destroy()
+{
+    AggregateVector aggregate_vector;
+    mu_assert_msg(prepare_aggregate_vector(&aggregate_vector));
+
+    int err = aggregate_vector_append(&aggregate_vector, "I", 9);
     mu_assert("problem during aggregate_vector_append", !err);
     mu_assert("aggregate_vector has not realloc'd properly",
               (aggregate_vector.cnt == 9) && (aggregate_vector.capacity == 16));
@@ -225,39 +582,45 @@ static char *test_feature_vector_append_rejects_huge_index()
     return NULL;
 }
 
-static char *test_feature_collector_init_append_get_and_destroy()
+static char *prepare_feature_collector(VmafFeatureCollector **feature_collector)
 {
-    int err;
-
-    VmafFeatureCollector *feature_collector;
-    err = vmaf_feature_collector_init(&feature_collector);
+    int err = vmaf_feature_collector_init(feature_collector);
     mu_assert("problem during vmaf_feature_collector_init", !err);
-    unsigned initial_capacity = feature_collector->capacity;
+    const unsigned initial_capacity = (*feature_collector)->capacity;
     mu_assert("this test assumes an initial capacity of 8", initial_capacity == 8);
-    err = vmaf_feature_collector_append(feature_collector, "feature0", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature1", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature2", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature3", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature4", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature5", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature6", 60., 1);
-    err |= vmaf_feature_collector_append(feature_collector, "feature7", 60., 1);
+    err = vmaf_feature_collector_append(*feature_collector, "feature0", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature1", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature2", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature3", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature4", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature5", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature6", 60., 1);
+    err |= vmaf_feature_collector_append(*feature_collector, "feature7", 60., 1);
     mu_assert("problem during vmaf_feature_collector_append", !err);
     mu_assert("feature_collector->capacity should not have changed",
-              feature_collector->capacity == initial_capacity);
-    err = vmaf_feature_collector_append(feature_collector, "feature8", 60., 1);
+              (*feature_collector)->capacity == initial_capacity);
+    err = vmaf_feature_collector_append(*feature_collector, "feature8", 60., 1);
     mu_assert("problem during vmaf_feature_collector_append", !err);
     mu_assert("feature_collector->capacity did not double its allocation",
-              feature_collector->capacity == initial_capacity * 2);
+              (*feature_collector)->capacity == initial_capacity * 2);
+    return NULL;
+}
 
+static char *check_feature_collector_scores(VmafFeatureCollector *feature_collector)
+{
+    int err;
     double score;
     err = vmaf_feature_collector_get_score(feature_collector, "feature5", &score, 1);
     mu_assert("problem during vmaf_feature_collector_get_score", !err);
     mu_assert("vmaf_feature_collector_get_score did not get the expected score", score == 60.);
     err = vmaf_feature_collector_get_score(feature_collector, "feature5", &score, 2);
     mu_assert("vmaf_feature_collector_get_score did not fail with bad index", err);
+    return NULL;
+}
 
-    err = vmaf_feature_collector_set_aggregate(feature_collector, "aggregate0", 100.);
+static char *check_feature_collector_aggregates(VmafFeatureCollector *feature_collector)
+{
+    int err = vmaf_feature_collector_set_aggregate(feature_collector, "aggregate0", 100.);
     err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate1", 101.);
     err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate2", 102.);
     err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate3", 103.);
@@ -269,25 +632,57 @@ static char *test_feature_collector_init_append_get_and_destroy()
     err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate9", 109.);
     mu_assert("problem during vmaf_feature_collector_set_aggregate", !err);
 
+    double score;
     err = vmaf_feature_collector_get_aggregate(feature_collector, "aggregate5", &score);
     mu_assert("problem during vmaf_feature_collector_get_aggregate", !err);
     mu_assert("unexpected aggreggate_score", score == 105.);
     err = vmaf_feature_collector_get_aggregate(feature_collector, "aggregate9", &score);
     mu_assert("problem during vmaf_feature_collector_get_aggregate", !err);
     mu_assert("unexpected aggreggate_score", score == 109.);
+    return NULL;
+}
 
+static char *test_feature_collector_init_append_get_and_destroy()
+{
+    VmafFeatureCollector *feature_collector;
+    mu_assert_msg(prepare_feature_collector(&feature_collector));
+    mu_assert_msg(check_feature_collector_scores(feature_collector));
+    mu_assert_msg(check_feature_collector_aggregates(feature_collector));
     vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
+static char *run_model_option_capability_tests(void)
+{
+    mu_run_test(test_model_option_minimum_falls_back);
+    mu_run_test(test_model_option_maximum_falls_back);
+    mu_run_test(test_model_option_default_preserves_gpu);
+    mu_run_test(test_model_option_invalid_stays_parser_owned);
+    mu_run_test(test_context_fallback_threshold_and_direct_contract);
     return NULL;
 }
 
 char *run_tests()
 {
-    mu_run_test(test_feature_vector_init_append_and_destroy);
-    mu_run_test(test_feature_vector_append_rejects_huge_index);
-    mu_run_test(test_feature_collector_init_append_get_and_destroy);
-    mu_run_test(test_aggregate_vector_init_append_and_destroy);
-    mu_run_test(test_model_mount);
-    mu_run_test(test_model_unmount);
-    mu_run_test(test_model_mount_with_use_features);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_vmaf_close_retains_context_for_retry),
+        MU_TEST(test_vmaf_close_retains_worker_private_context),
+#ifdef HAVE_CUDA
+        MU_TEST(test_vmaf_close_commit_retry_is_idempotent),
+        MU_TEST(test_cuda_state_import_rejects_duplicate_owners),
+#endif
+        MU_TEST(test_feature_vector_init_append_and_destroy),
+        MU_TEST(test_feature_vector_append_rejects_huge_index),
+        MU_TEST(test_feature_collector_init_append_get_and_destroy),
+        MU_TEST(test_aggregate_vector_init_append_and_destroy),
+        MU_TEST(test_model_mount),
+        MU_TEST(test_model_unmount),
+        MU_TEST(test_model_mount_with_use_features),
+    };
+    mu_message_t err = mu_run_table(tests, MU_TABLE_LEN(tests));
+    if (err)
+        return err;
+    return run_model_option_capability_tests();
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

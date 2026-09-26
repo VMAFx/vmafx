@@ -7,7 +7,7 @@ Orientation for agents working on C unit test suite. Parent:
 ## Scope
 
 C unit tests for libvmaf engine. Runs on every build via
-`meson test -C build`. Separate suite under
+`python3 scripts/ci/run_meson_test.py -- -C build`. Separate suite under
 [dnn/](dnn/) covers ONNX Runtime integration.
 
 ## Test style
@@ -30,7 +30,7 @@ char *run_tests(void)
 ```
 
 Each `test_*.c` compiles into own binary. `meson.build` registers them
-with `meson test`. No fixtures, no shared state — each test owns setup
+with the repository's Meson test runner. No fixtures, no shared state — each test owns setup
 and teardown.
 
 **Function size** (`readability-function-size`, 15-branch budget):
@@ -39,6 +39,7 @@ and teardown.
 - more than 7 tests -> `MU_TEST(fn)` rows + `mu_run_table()` from [mu_table.h](mu_table.h). 0 branches at any length.
 - assertion-heavy test -> `check_*` helpers, called as `char *msg = check_x(...); if (msg) return msg;` = 1 branch.
 - `mu_assert_msg(check_x(...))` from [test.h](test.h) is same propagation in one line. Use it; do not re-declare local copy.
+- SYCL parity test pipelines -> split linear setup, frame-feed loop, and score collection into cohesive phase helpers (`setup_*`, `feed_*_frames`, `collect_*_scores`) returning `mu_message_t` and propagated via `mu_assert_msg()`. Preserves verbatim assertion strings and numeric checks without exceeding BranchThreshold 15 (T-SYCL-RATCHET-TEST-BRANCH-COUNT-2026-09-22).
 
 **Block length** (HISS-04, `praetorctl audit`, 60-line hard cap):
 
@@ -93,6 +94,13 @@ and teardown.
   must cover each initialization stage, a null init-output pointer, the
   documented null destroy no-op, unpublished context, and exact partial
   unwind.
+- **`test_sycl_init_unwind` is a device-free GNU-ld interposer.** Keep it
+  Linux-only, statically linked, and disabled when `b_lto=true`: LLVM LTO
+  resolves libvmaf's internal allocator/dictionary/graph calls before
+  `--wrap` can rewrite them. It must remain in the `fast` + `sycl` suites and
+  cover all descriptors listed in
+  `docs/research/2101-bug048-sycl-init-unwind-restoration-2026-09-24.md`; adding a
+  SYCL init that owns USM requires adding its failure case here.
 - **`test_framesync_init_failure` builds with LTO off on Darwin, and that is
   load-bearing.** **Rebase-sensitive**: keep
   `override_options : framesync_interposer_lto_override` on the target. Under
@@ -131,12 +139,21 @@ and teardown.
   `test_feature.cpp` are sole authoritative test files for `dict`
   and `feature_name`; uncompiled legacy C twins `test_dict.c` and
   `test_feature.c` were deleted as obsolete.
-- **CAMBI bounded-search regression seam**: `test_cambi.c` deliberately
-  includes the production `cambi.c` translation unit. Keep the tests for TVI
-  threshold/difference extremes, an unreachable VLT threshold, and duplicate
-  plus descending quick-select inputs. They pin termination bounds and
-  partition ordering directly; an end-to-end score alone cannot distinguish
-  a hang from a numerically wrong search result.
+- **CAMBI bounded-search regression seam**: `test_cambi.c` and
+  `test_cambi_stage_simd.c` exercise internal helper routines via
+  `feature/cambi_internal.h` linked against `libvmaf` (formerly unity-including
+  `cambi.c`, resolved per CodeQL cpp/include-non-header alerts 1218 and 1241).
+  Keep the tests for TVI threshold/difference extremes, an unreachable VLT
+  threshold, and duplicate plus descending quick-select inputs. They pin
+  termination bounds and partition ordering directly; an end-to-end score alone
+  cannot distinguish a hang from a numerically wrong search result.
+- **Internal C/C++ header boundary smoke**: `test_flush_context_ordering.c` (C)
+  and `test_luminance_tools.cpp` (C++) consume `cambi_internal.h`,
+  `luminance_tools.h`, `model.h`, and `libvmaf_priv.h` directly and assert enum
+  widths and ABI layout across the language boundary without expanding the
+  authoritative CPU tidy translation unit inventory. Keep these dual-use header
+  inclusions and static assertions when changing the CodeQL link seams; unity
+  includes formerly hid this boundary.
 - **GPU tests must skip gracefully when no device present.** Any
   test calling `vmaf_cuda_state_init`, `vmaf_hip_state_init`, or
   equivalent GPU-init helpers must check return value before
@@ -189,7 +206,7 @@ and teardown.
   [test_lpips.c](test_lpips.c) for `_putenv_s`-based shim for
   `setenv`/`unsetenv` — MinGW's mingw.org / MSYS2 headers do not
   expose those functions under `-std=c11 -pedantic`. CI MINGW build
-  will catch this but running `meson test` locally on Linux won't.
+  will catch this but running the native test suite locally on Linux won't.
 - **Never modify Netflix golden assertions**: those are Python-side, not
   here — see [../../python/test/](../../python/test/) and
   [ADR-0024](../../docs/adr/0024-netflix-golden-preserved.md).
@@ -311,8 +328,9 @@ Rules for those files:
   reinvent.
 - ADR-1138 `NULL` carve-out applies (MSVC `/std:clatest`, no `nullptr`).
 - Local check before push: `meson setup build/aarch64 core --cross-file
-  ~/.cache/vmafx-cross/aarch64-clang.ini`, `meson test -C build/aarch64
-  <test>` under qemu. MSVC itself: CI only.
+  ~/.cache/vmafx-cross/aarch64-clang.ini`, then
+  `python3 scripts/ci/run_meson_test.py -- -C build/aarch64 <test>` under qemu.
+  MSVC itself: CI only.
 
 ## Pelorus exact-source conformance fixture (ADR-1113, ADR-1276)
 
@@ -362,7 +380,7 @@ identical to that source.
   sanitizer matrix test-set scope. **Rebase-sensitive invariant**:
   sanitizer job in
   `.github/workflows/tests-and-quality-gates.yml` enumerates full
-  unit-test set via `meson test --list` and applies per-sanitizer
+  unit-test set via `meson introspect --tests` and applies per-sanitizer
   deselect regex (ASan / UBSan / TSan each have own list). When
   adding new `test()` call to [`meson.build`](meson.build), test
   inherits sanitizer coverage automatically. Do NOT add
@@ -381,9 +399,20 @@ identical to that source.
 
 **Every `test()` declaration in [`meson.build`](meson.build) MUST
 carry `suite:` argument.** `fast` suite is documented pre-push gate
-(`CLAUDE.md §3`; `meson test -C build --suite=fast`) and must
+(`CLAUDE.md §3`; `python3 scripts/ci/run_meson_test.py -- -C build --suite=fast`) and must
 contain every test that completes in under 2 seconds under normal
 CPU load.
+
+**Every test carrying the `gpu` suite tag MUST also set
+`is_parallel : false`.** GPU-suite tests share the physical accelerator and
+its finite queue/memory resources. Meson defines `is_parallel : false` as an
+exclusive test: it waits for all running tests before starting it and starts no
+other test until it completes. `check_gpu_test_serialization.py` enforces this
+contract from Meson's public `intro-tests.json` metadata for every configured
+backend. `test_gpu_serialization_contract.py` also scans the source registry so
+a dormant backend (notably Metal on Linux) cannot evade the configured-metadata
+check. Keep both guards registered outside the `gpu` suite so they can inspect
+the complete test set without making themselves accelerator tests.
 
 Tag assignments:
 
@@ -404,7 +433,26 @@ grep "^test(" core/test/meson.build | grep -v "suite :"
 
 Any line returned is a violation — add the appropriate `suite:` before
 merging. Keep this check with every upstream sync because upstream does not
-carry the fork's suite classification contract.
+carry the fork's suite classification contract. Then run both the
+source-registry and configured-metadata guards:
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build --no-rebuild \
+  test_gpu_serialization_contract check_gpu_test_serialization
+```
+
+Together they catch new `gpu` registrations that omitted the exclusive
+scheduling flag, including dormant backend and combined-backend suite lists
+such as `['slow', 'gpu', 'sycl']`.
+
+## Bootstrap score-name source contract (ADR-0480)
+
+`test_bootstrap_name_contract.py` is intentionally a source-level test. Public
+score tests cannot detect whether `libvmaf.c` and `predict.c` have copied the
+same suffix literals away from `bootstrap_names.h`; both implementations can
+remain behaviorally identical until a later edit changes only one. Keep the
+test in the `fast` suite and require both consumers to include the header, use
+all four shared symbols, and contain none of the four literal definitions.
 
 ## Pixel-format edge coverage invariant (ADR-0912)
 
@@ -518,6 +566,33 @@ cases, group them into named driver functions (see
   poll readiness endpoints with timeout, rather than using fixed
   `sleep()` calls.
 
+## Combined CUDA+SYCL upload lifetime (BUG-040)
+
+`test_sycl_cuda_serial_upload_lifetime.c` is registered only when both
+`enable_cuda` and `enable_sycl` are true. That compile combination is
+load-bearing: CUDA's host-picture cleanup has an early return which must not
+bypass the SYCL upload wait. The test uses the public `vmaf_read_pictures()`
+path with `psnr_sycl` at both `n_threads=0` and `n_threads=1`; a private release
+callback poisons each 4K distorted plane immediately when its final reference
+drops. Identical input must remain at the 8-bit 60 dB cap for all 48 frames,
+proving the upload finished before the callback on both ownership paths. It
+needs a SYCL device but no CUDA device and skips cleanly when SYCL
+initialization is unavailable. Keep it in the `slow`, `gpu`, and `sycl`
+suites.
+
+## Output-file `EINTR` fault control (Research-2084)
+
+`test_output_open_eintr.c` is a Linux static-link control for
+`core/src/libvmaf.c::output_file_open()`. The project defines large-file
+support, so the production `open(2)` reference reaches the linker as
+`open64`; the test must wrap that actual symbol and inject `EINTR` exactly
+once for its target path. Its Meson target is restricted to a non-shared,
+non-LTO Linux build because whole-program optimization or a shared-library
+boundary defeats GNU ld `--wrap`. Preserve the assertions that the write
+succeeds and exactly two target opens occurred. A passing write with zero
+wrapped calls is not evidence. See
+[Research-2084](../../docs/research/2084-dev-mcp-resilience-restoration.md).
+
 ## Observation-only SVM test cleanup (Research-2049)
 
 `test_svm_parser.c` keeps nine malformed-model fixtures and their
@@ -589,9 +664,12 @@ both documented in ADR-1206:
   Variant is kept so twin which stops refusing and starts returning
   scale=1 score fails loudly instead of silently comparing two
   metrics.
-- `test_sycl_motion_add_uv_parity` is not registered at all: it
-  compares float CPU against fixed-point SYCL, so its tolerance is
-  per-fixture budget rather than bit-exactness bound.
+- `test_sycl_motion_add_uv_parity` uses a scalar fixed-point oracle for
+  coefficients, both rounding stages, reflect-101 borders, integer SAD and
+  per-plane normalization (ADR-1326). Its error budget is only the derived
+  host-double `2*gamma_5` reconstruction bound, so both small and large
+  registrations are required. Do not restore `float_motion` as the numerical
+  oracle: it uses different coefficients and float reduction order.
 
 HIP and Metal are not registered yet — unverifiable on current
 workstation.
@@ -610,7 +688,7 @@ session to diagnose.
 
 `should_fail : true` in `meson.build` needs a reason that is true today.
 Meson counts an unexpected pass as a failure, so a stale marker breaks
-`meson test` on every machine with the device. When the cited defect is
+the native test suite on every machine with the device. When the cited defect is
 fixed, drop the marker in the same PR (ADR-1211 fixed the staging fault
 the three HIP ADM markers cited; the markers outlived it by two weeks).
 
@@ -624,4 +702,79 @@ fail. Rounding placement inside a row (per pixel, per warp, per row)
 does not reach any emitted ADM score: the CPU divides the accumulator by
 `2^(52 - shift_cub - shift_inner_accum)` and casts to `float`. No
 score-level tolerance detects it
-(T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19).
+(T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19). Preserve the paired
+device-free guards: `test_adm_cm_row_rounding.c` exercises the private raw
+`int64_t` row-fold seam with a worked value that separates correct row
+rounding (`2`) from per-partition rounding (`4`), truncation (`0`) and a
+  post-shift increment (`3`); `test_adm_cm_row_rounding_contract.py` binds that
+  seam after the complete reduction in the scalar CPU reference, all 72
+  AVX2/AVX-512 band-fold sites, and every CUDA, HIP, SYCL and Metal call shape,
+  then proves its own sensitivity with source mutations. The raw seam also
+  guards ADR-0155's negative CUDA i4 rounding term against unsigned
+  reinterpretation. A new backend shape must be added to that contract in the
+  same change.
+
+## Test target source identity contracts (ADR-1142, Research-2096)
+
+Do not add uncalled library implementation sources directly to test executables in
+`core/test/meson.build`. `test_picture*` must not compile `thread_pool.c`, and
+`test_predict` / `test_model*` must not compile redundant `pdjson.c` copies.
+`test_picture`, `test_picture_v2`, and `test_picture_pool_error_paths` link the
+test-local static library `test_picture_impl` rather than compiling duplicate
+private copies of `picture.c`, `mem.cpp`, and `ref.cpp`. The error-path target
+still compiles `picture_pool.c` directly; preserve that ADR-0960 seam while
+keeping the shared picture implementation identity.
+
+`test_predict.c` includes `predict_internal.h` for the pure mapping/equality
+helpers and links the production predictor; it must never text-include
+`predict.c`. A unity include creates a second set of static helpers whose calls
+can attach to CodeQL's coalesced production identity, orphaning the duplicate
+graph. `test_predict_source_authority.py` locks that build boundary, while
+`test_predict_nonfinite_log_output.py` runs the linked binary and verifies the
+real production warning is emitted exactly once.
+
+All private-source test binaries use `predict_test_dependencies`, which links
+the one `predict_c_lib` object compiled in `core/src/meson.build`; no test source
+list may compile `../src/predict.c`. Keep the source-authority test's global
+Meson assertions. The former per-target pattern produced 52 redundant test
+objects plus the library object and left CodeQL with an orphan scan graph.
+
+`test_feature_collector` text-includes `libvmaf.c` for private collector state,
+but it must not compile `predict.c`. Keep `vmaf_cflags_common` and
+`predict_test_dependencies` on the target: the linked source-authority archive
+satisfies the included file's predictor references without creating another
+implementation identity.
+
+When a test must compile an implementation source under a special configuration,
+its repeated definitions need unambiguous test-local identities. The pdjson
+default, zero-increment, and oversized-increment copies are separate static
+libraries. Their private helpers receive target-unique names while the public
+`json_*` API stays unchanged; each executable separately renames `run_tests` so
+its test body retains a distinct root. The backpressure test renames the four
+`vmaf_thread_pool_*` entry points around its intentional `thread_pool.c`
+inclusion. Keep definitions and test calls under the same aliases; never export
+the aliases from production headers or replace them with scanner suppressions.
+
+Configuration-only helpers must be emitted only in the configuration that uses
+them. In particular, `vector_unchanged` stays inside `FEX_VECTOR_ALLOC_TEST`; do
+not restore `[[maybe_unused]]` or add an unrelated unconditional test merely to
+manufacture analyzer reachability. The two specialized pdjson growth tests remain
+separate binaries and retain their focused invalid-increment assertions.
+
+CodeQL closure is proved by replaying `UnusedStaticFunctions.ql` against a fresh
+full-build database and then confirmed by a hosted default-branch run. Runtime
+coverage alone cannot prove this repeated-compilation identity contract.
+
+## Floating-point assertions and CodeQL contracts (ADR-1308)
+
+CodeQL query `cpp/equality-on-floats` flags direct equality checks on floats.
+In tests:
+
+- In `test_cambi.c` (Alert 1244), `check_c_values_avx2_parity` uses
+  `float_bits_equal(c_scalar[i], c_avx2[i])` comparing `uint32_t` bit patterns
+  via `memcpy` to enforce bit-exact parity between AVX2 and scalar
+  `calculate_c_values` paths. Do not revert to `c_scalar[i] == c_avx2[i]`.
+- In SVM API tests (`test_svm_api.c`, Alert 1101), `svm_labels_equal(a, b)`
+  compares discrete integer-class labels via 64-bit IEEE bit identity with
+  signed-zero equivalence (`+0.0 == -0.0`) and same-infinity behavior, rejecting
+  NaN (never equal). It does not use `a - b == 0.0` or finiteness checks.

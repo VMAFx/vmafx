@@ -115,6 +115,7 @@ static const VmafOption options[] = {
     },
     {
         .name = "motion_force_zero",
+        .alias = "force_0",
         .help = "force motion score to zero",
         .offset = offsetof(FloatMotionStateHip, motion_force_zero),
         .type = VMAF_OPT_TYPE_BOOL,
@@ -155,14 +156,18 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return err;
 }
 
-/* Extracted from init: motion_force_zero short-circuit. */
+static int close_fex_hip(VmafFeatureExtractor *fex);
+
+/* Extracted from init: motion_force_zero short-circuit.  init_fex_hip releases
+ * the device objects before it returns; the regular null-safe close callback
+ * remains responsible for the feature-name dictionary allocated below. */
 static int init_force_zero_hip(VmafFeatureExtractor *fex, FloatMotionStateHip *s)
 {
     fex->extract = extract_force_zero;
     fex->submit = NULL;
     fex->collect = NULL;
     fex->flush = NULL;
-    fex->close = NULL;
+    fex->close = close_fex_hip;
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (s->feature_name_dict == NULL) {
@@ -414,9 +419,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0)
         err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err == 0 && s->motion_force_zero) {
-        /* extract_force_zero needs the name dict only, and close() is not
-         * called on this path: release the HIP resources now rather than
-         * leak them. */
+        /* extract_force_zero needs the name dictionary but not the device
+         * objects. Release those now; close_fex_hip() remains installed and
+         * later frees the dictionary through the regular context teardown. */
         err = init_force_zero_hip(fex, s);
         (void)fm_hip_release_device(s);
         return err;
@@ -546,16 +551,22 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
 #else
     FloatMotionStateHip *s = fex->priv;
 
-    if (s->index == 0u) {
-        /* Zero or one frame processed — no tail motion2 to emit. */
+    if (s->index == 0u)
         return 1;
-    }
+
+    static const char feature_name[] = "VMAF_feature_motion2_score";
+    const VmafDictionaryEntry *entry = vmaf_dictionary_get(&s->feature_name_dict, feature_name, 0);
+    const char *resolved_name = entry ? entry->val : feature_name;
+    double existing;
+    if (vmaf_feature_collector_get_score(feature_collector, resolved_name, &existing, s->index) ==
+        0)
+        return 1;
 
     /* Emit the tail motion2 = prev_motion_score * fps_weight at the last
-     * frame index.  Mirrors the CUDA twin's flush_fex_cuda shape exactly;
-     * identity when motion_fps_weight = 1.0. */
+     * frame index. A pending collect can already have written the same
+     * option-derived feature/index, so the probe above makes flush idempotent. */
     int err = vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_feature_motion2_score",
+        feature_collector, s->feature_name_dict, feature_name,
         s->prev_motion_score * s->motion_fps_weight, s->index);
     return (err != 0) ? err : 1;
 #endif /* HAVE_HIPCC */
