@@ -144,6 +144,23 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("-Db_lto=false", tidy_job)
         self.assertIn("--clang-tidy /usr/bin/clang-tidy-22", tidy_job)
 
+    def test_changed_tidy_excludes_windows_only_translation_unit(self) -> None:
+        workflow = (WORKFLOWS / "lint-and-format.yml").read_text(encoding="utf-8")
+        tidy_job = workflow_job(workflow, "clang-tidy")
+        self.assertIn("^core/tools/test/test_vmaf_windows_utf8_argv\\.cpp$", tidy_job)
+
+    def test_tidy_ratchet_build_stays_outside_repository(self) -> None:
+        workflow = (WORKFLOWS / "lint-and-format.yml").read_text(encoding="utf-8")
+        ratchet_job = workflow_job(workflow, "clang-tidy-ratchet")
+        build_step = workflow_step(ratchet_job, "Build (compile_commands.json + generated headers)")
+        run_step = workflow_step(
+            ratchet_job, "Ratchet — whole-tree clang-tidy vs committed baseline"
+        )
+        self.assertIn('TIDY_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"', build_step)
+        self.assertIn('meson setup "$TIDY_BUILD_DIR" core', build_step)
+        self.assertIn('--build-dir "$RUNNER_TEMP/vmafx-tidy-cpu"', run_step)
+        self.assertNotIn("meson setup build core", executable_body(build_step))
+
     def test_fuzz_workflows_have_adequate_timeout_budget(self) -> None:
         fuzz_wf = (WORKFLOWS / "fuzz.yml").read_text(encoding="utf-8")
         fuzz_job = workflow_job(fuzz_wf, "fuzz")
