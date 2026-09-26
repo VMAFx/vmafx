@@ -48,9 +48,10 @@ def _safe_add_exception_note(exc, note):
         return
     try:
         add_note(exc, note)
-    except (Exception, GeneratorExit, KeyboardInterrupt, SystemExit):
+    # codeql[py/catch-base-exception]
+    except BaseException:
         # Diagnostic enrichment is secondary and must not replace the target failure,
-        # even when note storage raises a control-flow exception.
+        # even when hostile note storage raises a direct BaseException subclass.
         return
 
 

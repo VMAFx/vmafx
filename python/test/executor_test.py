@@ -346,10 +346,13 @@ class ExecutorTest(unittest.TestCase):
         self.assertFalse(hasattr(cm.exception, "__notes__"))
 
     def test_fifo_worker_baseexception_note_storage_failure_preserves_target_exception(self):
+        class DirectControl(BaseException):
+            pass
+
         class NoteStorageFailure(ValueError):
             def __setattr__(self, name, value):
                 if name == "__notes__":
-                    raise KeyboardInterrupt("secondary note storage interruption")
+                    raise DirectControl("secondary note storage interruption")
                 return super().__setattr__(name, value)
 
         context = multiprocessing.get_context("spawn")

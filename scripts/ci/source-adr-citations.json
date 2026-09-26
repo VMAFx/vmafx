@@ -7385,6 +7385,12 @@
       },
       "target": "1304-mcp-http-runtime-isolation.md"
     },
+    "1305": {
+      "sites": {
+        ".github/workflows/security-scans.yml": 1
+      },
+      "target": "1305-hash-locked-python-installs.md"
+    },
     "1306": {
       "sites": {
         "Dockerfile": 2,
