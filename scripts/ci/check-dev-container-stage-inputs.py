@@ -83,7 +83,7 @@ def repository_source(path: str, stage: Stage) -> str | None:
 
 def pip_requirement_paths(arguments: str) -> list[str]:
     """Requirement and constraint files read by the pip-install segments of a RUN."""
-    paths = []
+    paths: list[str] = []
     for segment in re.split(r"&&|;|\|\|", arguments):
         if "pip" in segment and "install" in segment:
             paths.extend(match.group(1) for match in REQUIREMENT_ARG.finditer(segment))
