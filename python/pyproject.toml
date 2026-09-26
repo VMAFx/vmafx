@@ -32,7 +32,10 @@ run_vmaf_training = "vmaf.script.run_vmaf_training:main"
 # when it is missing `dist._finalize_license_expression()` raises
 # `ImportError: Cannot import \`packaging.licenses\`` and setup.py exits 1 --
 # the same failure the setuptools floor was meant to end, one layer down.
-requires = ["setuptools>=77.0.1", "packaging>=24.2", "wheel", "Cython", "numpy>=2.5.3"]
+# The floors are now higher for security: setuptools 83.0.0 fixes
+# PYSEC-2025-49 and PYSEC-2026-3447, and wheel 0.46.2 fixes PYSEC-2026-2047.
+# The hash-locked build inputs already pin setuptools 84.0.0 and wheel 0.48.0.
+requires = ["setuptools>=83.0.0", "packaging>=24.2", "wheel>=0.46.2", "Cython", "numpy>=2.5.3"]
 
 [project]
 name = "vmaf"

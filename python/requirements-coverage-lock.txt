@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.12.18
-# vmafx-input-sha256: 79409f1a025aab0c810142ea2e698121d47c8fe5dc37ec5b14f713331c32b0a7
+# vmafx-input-sha256: 70eb565be9c057d45f578d4a500cc004585aff0959f5ce970603a0817345a441
 # vmafx-inputs: python/pyproject.toml, python/requirements.txt, python/test/requirements.txt, python/requirements-coverage.in
 cloudpickle==3.1.2 \
     --hash=sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414 \
