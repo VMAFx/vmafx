@@ -227,6 +227,10 @@ VMAF_EXPORT int vmaf_model_feature_overload(VmafModel *model, const char *featur
  * invalidated. Do not invoke after the model has been handed to a
  * @ref VmafModelCollection — that collection takes ownership and will
  * destroy contained models when @ref vmaf_model_collection_destroy runs.
+ * If the model was registered with a VmafContext through
+ * @ref vmaf_use_features_from_model, that context borrows it through teardown.
+ * Destroy the model only after `vmaf_close()` returns exactly 0; every nonzero
+ * close result retains the dependency for retry.
  *
  * @param model Model handle from @ref vmaf_model_load or
  *              @ref vmaf_model_load_from_path. NULL is a no-op.
@@ -424,6 +428,10 @@ VMAF_EXPORT int vmaf_model_collection_feature_overload(VmafModel *model,
  *
  * After this call the lead-model pointer returned by the matching load call
  * is invalidated — do not pass it to @ref vmaf_model_destroy.
+ * If the collection was registered with a VmafContext through
+ * @ref vmaf_use_features_from_model_collection, that context borrows it through
+ * teardown. Destroy the collection only after `vmaf_close()` returns exactly
+ * 0; every nonzero close result retains the dependency for retry.
  *
  * @param model_collection Collection handle from
  *                         @ref vmaf_model_collection_load /

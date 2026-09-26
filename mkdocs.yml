@@ -190,6 +190,7 @@ nav:
           - Fast NR pre-scoring: usage/vmaf-tune-fast-nr.md
   - C API:
       - api/index.md
+      - Rust context close/retry: api/rust-context-close.md
       - DNN sessions: api/dnn.md
       - GPU (CUDA / SYCL): api/gpu.md
       - MCP C API: api/mcp.md

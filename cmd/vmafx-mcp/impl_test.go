@@ -554,7 +554,6 @@ func TestScoreIsHealthy(t *testing.T) {
 		{"jsonNumberJunk", json.Number("not-a-number"), false},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := scoreIsHealthy(tc.score); got != tc.want {

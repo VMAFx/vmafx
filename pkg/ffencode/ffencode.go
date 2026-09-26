@@ -360,8 +360,7 @@ func defaultRunner(ctx context.Context, argv []string) (string, int, error) {
 	cmd.WaitDelay = 2 * time.Second
 	out, runErr := cmd.CombinedOutput()
 	if runErr != nil {
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](runErr); ok {
 			return string(out), exitErr.ExitCode(), nil
 		}
 		return string(out), 1, runErr

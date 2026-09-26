@@ -754,7 +754,7 @@ static char *run_registry_tests(void)
 }
 
 /* ---------------------------------------------------------------------------
- * Blocker #1/#2 regression: close-retry lifecycle correctness.
+ * Close-retry lifecycle correctness contract.
  *
  * When the underlying close() callback returns an error, is_closed must stay
  * false so the caller can retry.  A successful retry must then set is_closed
@@ -784,14 +784,13 @@ static char *test_close_retry_lifecycle(void)
     VmafFeatureExtractorContext *ctx = NULL;
     int err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
     mu_assert("context_create must succeed", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("context_init must succeed", err == 0);
 
-    /* Force is_initialized = true so close() can be called. */
-    ctx->is_initialized = true;
-
-    /* First close: callback fails; is_closed must stay false (blocker #1). */
+    /* First close: callback fails; is_closed must stay false. */
     err = vmaf_feature_extractor_context_close(ctx);
     mu_assert("first close must propagate the error", err == -EIO);
-    mu_assert("is_closed must stay false after a failed close (blocker #1)", !ctx->is_closed);
+    mu_assert("is_closed must stay false after a failed close", !ctx->is_closed);
 
     /* Second close (retry): callback succeeds; is_closed must be set now. */
     err = vmaf_feature_extractor_context_close(ctx);
@@ -804,7 +803,164 @@ static char *test_close_retry_lifecycle(void)
 }
 
 /* ---------------------------------------------------------------------------
- * Blocker #3 regression: motion force_zero dict before collector publish.
+ * Fail-closed teardown contract: destroy must refuse while close is pending.
+ *
+ * vmaf_feature_extractor_context_destroy() must return -EBUSY when the fex
+ * has a close callback and is_closed is false.  This prevents free(priv)
+ * from releasing GPU handles that the close callback hasn't released yet.
+ *
+ * Device-free: uses only a synthetic extractor with a no-op close.
+ * -------------------------------------------------------------------------- */
+
+static int g_destroy_guard_closed = 0;
+static int close_set_flag(struct VmafFeatureExtractor *fex)
+{
+    (void)fex;
+    g_destroy_guard_closed = 1;
+    return 0;
+}
+
+static char *test_destroy_refused_before_close(void)
+{
+    g_destroy_guard_closed = 0;
+    VmafFeatureExtractor synth = {
+        .name = "synth_close_guard",
+        .close = close_set_flag,
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
+    mu_assert("context_create must succeed", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("context_init must succeed", err == 0);
+
+    /* Destroy before close: must be refused. */
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("destroy before close must return -EBUSY", err == -EBUSY);
+    mu_assert("close callback must NOT have been called by destroy", g_destroy_guard_closed == 0);
+
+    /* Now close then destroy: must succeed. */
+    err = vmaf_feature_extractor_context_close(ctx);
+    mu_assert("close must succeed", err == 0);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("destroy after successful close must succeed", err == 0);
+    return NULL;
+}
+
+typedef struct PartialInitState {
+    bool resource_live;
+    unsigned close_calls;
+} PartialInitState;
+
+static int partial_init_fails(struct VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
+                              unsigned bpc, unsigned w, unsigned h)
+{
+    (void)pix_fmt;
+    (void)bpc;
+    (void)w;
+    (void)h;
+    PartialInitState *state = fex->priv;
+    state->resource_live = true;
+    return -EIO;
+}
+
+static int partial_init_close(struct VmafFeatureExtractor *fex)
+{
+    PartialInitState *state = fex->priv;
+    state->close_calls++;
+    state->resource_live = false;
+    return 0;
+}
+
+static char *test_partial_init_requires_retryable_close(void)
+{
+    VmafFeatureExtractor synth = {
+        .name = "synth_partial_init",
+        .init = partial_init_fails,
+        .close = partial_init_close,
+        .priv_size = sizeof(PartialInitState),
+        .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
+    mu_assert("context_create must succeed", err == 0 && ctx != NULL);
+
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("partial init failure reaches caller", err == -EIO);
+    const PartialInitState *state = ctx->fex->priv;
+    mu_assert("failed init left a live resource", state->resource_live);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("destroy refuses a partial init pending close", err == -EBUSY);
+
+    err = vmaf_feature_extractor_context_close(ctx);
+    mu_assert("partial init close succeeds", err == 0);
+    state = ctx->fex->priv;
+    mu_assert("partial resource was released exactly once",
+              !state->resource_live && state->close_calls == 1);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("closed partial init can be destroyed", err == 0);
+    return NULL;
+}
+
+static unsigned non_cuda_partial_close_calls;
+
+static int non_cuda_partial_close(struct VmafFeatureExtractor *fex)
+{
+    (void)fex;
+    non_cuda_partial_close_calls++;
+    return 0;
+}
+
+static char *test_non_cuda_failed_init_keeps_legacy_close_scope(void)
+{
+    VmafFeatureExtractor synth = {
+        .name = "synth_non_cuda_partial_init",
+        .init = partial_init_fails,
+        .close = non_cuda_partial_close,
+        .priv_size = sizeof(PartialInitState),
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
+    mu_assert("context_create must succeed", err == 0 && ctx != NULL);
+    non_cuda_partial_close_calls = 0;
+
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("failed non-CUDA init reaches caller", err == -EIO);
+    mu_assert("non-CUDA failed init does not publish an unaudited close obligation",
+              !ctx->close_required);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("legacy non-CUDA failed-init context can be destroyed", err == 0);
+    mu_assert("destroy does not invoke the non-CUDA close callback",
+              non_cuda_partial_close_calls == 0);
+    return NULL;
+}
+
+static char *test_pool_close_failure_retains_ownership(void)
+{
+    VmafFeatureExtractor synth = {
+        .name = "synth_pool_close_retry",
+        .close = close_fail_once,
+    };
+    VmafFeatureExtractorContextPool *pool = NULL;
+    int err = vmaf_fex_ctx_pool_create(&pool, 1);
+    mu_assert("pool_create must succeed", err == 0 && pool != NULL);
+    VmafFeatureExtractorContext *ctx = NULL;
+    err = vmaf_fex_ctx_pool_aquire(pool, &synth, NULL, &ctx);
+    mu_assert("pool acquire must succeed", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("pooled context init must succeed", err == 0);
+    mu_assert("pool release must succeed", vmaf_fex_ctx_pool_release(pool, ctx) == 0);
+
+    g_close_call_count = 0;
+    mu_assert("first pool close reports transient error", vmaf_fex_ctx_pool_close(pool) == -EIO);
+    mu_assert("pool destroy retains an unclosed context",
+              vmaf_fex_ctx_pool_destroy(pool) == -EBUSY);
+    mu_assert("pool close retry succeeds", vmaf_fex_ctx_pool_close(pool) == 0);
+    mu_assert("prepared pool commits", vmaf_fex_ctx_pool_destroy(pool) == 0);
+    return NULL;
+}
+
+/* ---------------------------------------------------------------------------
+ * Regression: motion force_zero dict must exist before collector publish.
  *
  * Regression guard for the CUDA extractors where extract_force_zero() is
  * registered as the extract callback when motion_force_zero=true, but the
@@ -841,11 +997,10 @@ static char *test_motion_force_zero_publishes_scores(void)
     err = vmaf_feature_collector_init(&vfc);
     mu_assert("collector init", err == 0);
 
-    /* Frame 0: must succeed without -EINVAL (blocker #3 regression guard).
-     * The key assertion: extract() must not fail due to a NULL feature_name_dict.
+    /* Frame 0: must succeed; extract() must not fail due to a NULL feature_name_dict.
      * Score values in the collector are verified by the full pipeline test suite. */
     err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, vfc);
-    mu_assert("extract frame 0 with force_zero must succeed (blocker #3)", err == 0);
+    mu_assert("extract frame 0 with force_zero must succeed", err == 0);
 
     /* Frame 1: same requirement, second frame verifies the force-zero path
      * repeats cleanly (first call stores prev_ref internally). */
@@ -869,6 +1024,10 @@ static char *run_context_tests(void)
     mu_run_test(test_fex_ctx_pool_null_guards);
     /* Blocker regression tests — device-free, CPU paths only. */
     mu_run_test(test_close_retry_lifecycle);
+    mu_run_test(test_destroy_refused_before_close);
+    mu_run_test(test_partial_init_requires_retryable_close);
+    mu_run_test(test_non_cuda_failed_init_keeps_legacy_close_scope);
+    mu_run_test(test_pool_close_failure_retains_ownership);
     mu_run_test(test_motion_force_zero_publishes_scores);
     return NULL;
 }

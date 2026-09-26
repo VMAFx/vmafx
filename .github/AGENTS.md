@@ -222,7 +222,7 @@ moving branch or tag, duplicate the pin in workflow YAML, or tolerate a missing
 object: ABI-stable parser safety releases must be able to trigger a reviewed
 re-pin, and CI must prove source provenance rather than local-tree similarity.
 
-### Go validation (ADR-1238)
+### Go validation (ADRs 1238 and 1338)
 
 `go-ci.yml` reports `go vet + go test` as required. It starts on non-draft
 PRs including `ready_for_review`, master pushes, and manual dispatches,
@@ -230,7 +230,11 @@ then gates heavyweight steps on `go_checks` (`go` plus `c_core`). Preserve
 its explicit documentation-only no-work result, CPU/optional-backend
 settings, and CI-authority classification. Rules job runs
 `scripts/ci/test_go_workflow_contract.py` before authoring exemptions;
-this test executes aggregator script with failing Go outcomes.
+this test executes aggregator script with failing Go outcomes. The first
+selected source gate after `setup-go` is exactly `go fix -diff ./...`; keep it
+before native dependency installation/build, non-mutating, and under the same
+impact predicate. Local `go-fix` and `go-fix-check` Make targets must stay
+aligned with that command.
 
 ### CI job display names and aggregator parity
 

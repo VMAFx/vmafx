@@ -130,10 +130,7 @@ func (c PipelineConfig) presetArgs() []string {
 
 // crfNorm maps a CRF onto the [0, 1] axis the proxy's codec block carries.
 func (c PipelineConfig) crfNorm(crf int) float64 {
-	span := c.CRFHi - c.CRFLo
-	if span < 1 {
-		span = 1
-	}
+	span := max(c.CRFHi-c.CRFLo, 1)
 	return float64(crf-c.CRFLo) / float64(span)
 }
 

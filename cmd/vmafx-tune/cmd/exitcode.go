@@ -86,8 +86,7 @@ func asUsageError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var ece exitCodeError
-	if errors.As(err, &ece) {
+	if _, ok := errors.AsType[exitCodeError](err); ok {
 		return err
 	}
 	return exitCodeError{code: usageExitCode, err: err}

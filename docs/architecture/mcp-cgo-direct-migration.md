@@ -99,16 +99,24 @@ The mapping is defined in `pkg/libvmaf/errors.go` and tested in
 `pkg/libvmaf/errors_test.go`. The Phase 1 contract is frozen by ADR-0931;
 extensions need an ADR amendment.
 
+Direct scoring also treats teardown as fallible. It closes the context before
+destroying the registered model and makes one immediate close retry. A
+persistent failure is joined into the returned operation error while the C
+context and model remain allocated through process exit; freeing the model
+beneath a teardown-pending context would be a use-after-free.
+
 ## Reproducer
 
 ```bash
 # Build the CPU-only libvmaf and the MCP binary.
-meson setup core/build-cpu -Denable_cuda=false -Denable_sycl=false
+meson setup core/build-cpu core -Denable_cuda=false -Denable_sycl=false
 ninja -C core/build-cpu
-go build -o /tmp/vmafx-mcp ./cmd/vmafx-mcp/
+CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lm" \
+  go build -o /tmp/vmafx-mcp ./cmd/vmafx-mcp/
 
 # Run the smoke test against the 576x324 / 48-frame fixture.
-LD_LIBRARY_PATH=$(pwd)/core/build-cpu/src \
+CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lm" \
+  LD_LIBRARY_PATH=$(pwd)/core/build-cpu/src \
   VMAFX_MCP_DIRECT=1 \
   VMAF_MCP_ALLOW=$(pwd)/testdata \
   go test -v -run TestHandleVmafScore_RoutesToDirect ./cmd/vmafx-mcp/

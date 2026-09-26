@@ -283,7 +283,10 @@ extern "C" int vmaf_sycl_picture_pool_close(VmafSyclPicturePool *pool)
     if (!pool)
         return -EINVAL;
     int const err = vmaf_gpu_picture_pool_close(pool->gpool);
+    if (err)
+        return err;
+    pool->gpool = nullptr;
     delete pool;
-    return err;
+    return 0;
 }
 // NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)

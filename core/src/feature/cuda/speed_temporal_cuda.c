@@ -253,30 +253,15 @@ static void st_free_host_aligned(SpeedTemporalCudaState *s)
 #undef FREE_A
 }
 
-static int st_free_device_and_pinned(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
+static int st_free_device(SpeedTemporalCudaState *s, VmafCudaState *cu_state)
 {
     int rc = 0;
 #define FREE_D(p)                                                                                  \
     do {                                                                                           \
-        if ((p)) {                                                                                 \
-            const CUresult free_res = cu_f->cuMemFree((p));                                        \
-            if (free_res == CUDA_SUCCESS)                                                          \
-                (p) = 0;                                                                           \
-            else if (rc == 0)                                                                      \
-                rc = vmaf_cuda_result_to_errno((int)free_res);                                     \
-        }                                                                                          \
+        const int free_err = vmaf_cuda_deviceptr_free_owned(cu_state, &(p));                       \
+        if (free_err != 0 && rc == 0)                                                              \
+            rc = free_err;                                                                         \
     } while (0)
-#define FREE_H(p)                                                                                  \
-    do {                                                                                           \
-        if ((p)) {                                                                                 \
-            const CUresult free_res = cu_f->cuMemFreeHost((p));                                    \
-            if (free_res == CUDA_SUCCESS)                                                          \
-                (p) = NULL;                                                                        \
-            else if (rc == 0)                                                                      \
-                rc = vmaf_cuda_result_to_errno((int)free_res);                                     \
-        }                                                                                          \
-    } while (0)
-
     FREE_D(s->d_plane);
     FREE_D(s->d_means);
     FREE_D(s->d_cov_mat);
@@ -291,14 +276,25 @@ static int st_free_device_and_pinned(SpeedTemporalCudaState *s, CudaFunctions *c
     FREE_D(s->d_ref_variances);
     FREE_D(s->d_dis_entropies);
     FREE_D(s->d_dis_variances);
-    FREE_H(s->h_cov_mat);
-    FREE_H(s->h_ref_entropies);
-    FREE_H(s->h_ref_variances);
-    FREE_H(s->h_dis_entropies);
-    FREE_H(s->h_dis_variances);
-
 #undef FREE_D
-#undef FREE_H
+    return rc;
+}
+
+static int st_free_pinned(SpeedTemporalCudaState *s, VmafCudaState *cu_state)
+{
+    int rc = vmaf_cuda_buffer_host_free_owned(cu_state, (void **)&s->h_cov_mat);
+    int e = vmaf_cuda_buffer_host_free_owned(cu_state, (void **)&s->h_ref_entropies);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_host_free_owned(cu_state, (void **)&s->h_ref_variances);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_host_free_owned(cu_state, (void **)&s->h_dis_entropies);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_host_free_owned(cu_state, (void **)&s->h_dis_variances);
+    if (e && !rc)
+        rc = e;
     return rc;
 }
 
@@ -311,20 +307,10 @@ static int free_cuda_buffers_st(SpeedTemporalCudaState *s, VmafCudaState *cu_sta
         return -EINVAL;
     }
 
-    CudaFunctions *const cu_f = cu_state->f;
-    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
-    if (push_res != CUDA_SUCCESS) {
-        st_free_host_aligned(s);
-        return vmaf_cuda_result_to_errno((int)push_res);
-    }
-
-    int rc = st_free_device_and_pinned(s, cu_f);
-    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
-    if (pop_res != CUDA_SUCCESS) {
-        (void)cu_f->cuCtxPopCurrent(NULL);
-        if (rc == 0)
-            rc = vmaf_cuda_result_to_errno((int)pop_res);
-    }
+    int rc = st_free_device(s, cu_state);
+    const int pinned_rc = st_free_pinned(s, cu_state);
+    if (!rc)
+        rc = pinned_rc;
     st_free_host_aligned(s);
     return rc;
 }
@@ -505,29 +491,29 @@ fail:
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
-static int release_cuda_module_and_stream_st(SpeedTemporalCudaState *s, VmafCudaState *cu_state)
-{
-    if (!s || !cu_state)
-        return -EINVAL;
-    int rc = vmaf_cuda_stream_destroy(cu_state, &s->stream, true);
-    const int module_rc = vmaf_cuda_module_unload(cu_state, &s->module);
-    if (rc == 0)
-        rc = module_rc;
-    return rc;
-}
-
-/* ------------------------------------------------------------------ */
 /* speed_temporal_init_unwind - the single teardown path for init_fex_cuda.
  *
- * HISS-01: lifted verbatim from the former `free_all` label. The same
- * resources are released in the same order on every exit path, and the
- * value returned is the one the label returned.
+ * The stream must quiesce before any memory it may reference is released.
+ * Buffer failures retain their owner fields for retry, and the module is
+ * unloaded last. The original init error remains authoritative.
  */
 static int speed_temporal_init_unwind(SpeedTemporalCudaState *s, VmafCudaState *cu_state, int err)
 {
-    (void)release_cuda_module_and_stream_st(s, cu_state);
-    (void)free_cuda_buffers_st(s, cu_state);
-    return err;
+    int rc = err;
+    const int phase_rc = vmaf_cuda_stream_destroy(cu_state, &s->stream, true);
+    if (phase_rc)
+        return rc ? rc : phase_rc;
+
+    int e = free_cuda_buffers_st(s, cu_state);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_dictionary_free(&s->feature_name_dict);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_module_unload(cu_state, &s->module);
+    if (e && !rc)
+        rc = e;
+    return rc;
 }
 
 /* st_init_unwind_pop - the body the former `fail_pop` label ran, verbatim and
@@ -539,9 +525,7 @@ static int st_init_unwind_pop(SpeedTemporalCudaState *s, VmafCudaState *cu_state
     const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
     if (pop_res != CUDA_SUCCESS)
         (void)cu_f->cuCtxPopCurrent(NULL);
-    (void)release_cuda_module_and_stream_st(s, cu_state);
-    (void)free_cuda_buffers_st(s, cu_state);
-    return cuda_err;
+    return speed_temporal_init_unwind(s, cu_state, cuda_err);
 }
 
 /* st_get_kernels - load the PTX module, resolve the kernels, create the
@@ -971,19 +955,7 @@ static int close_fex_st(VmafFeatureExtractor *fex)
 {
     SpeedTemporalCudaState *s = fex->priv;
     speed_internal_report_singular(&s->singular_tally, "speed_temporal_cuda");
-    int rc = 0;
-    if (fex->cu_state && fex->cu_state->f) {
-        rc = release_cuda_module_and_stream_st(s, fex->cu_state);
-        const int buffers_rc = free_cuda_buffers_st(s, fex->cu_state);
-        if (rc == 0)
-            rc = buffers_rc;
-    }
-    if (s->feature_name_dict) {
-        const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
-        if (rc == 0)
-            rc = dict_rc;
-    }
-    return rc;
+    return speed_temporal_init_unwind(s, fex->cu_state, 0);
 }
 
 /* ------------------------------------------------------------------ */

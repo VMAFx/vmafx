@@ -60,6 +60,9 @@ typedef struct VmafGpuPicturePool VmafGpuPicturePool;
 
 int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConfig cfg);
 
+/* Close every unreleased slot and free the pool only after all callbacks
+ * succeed. Failed slots remain owned by the pool and may be retried; slots
+ * whose callback already succeeded are not called again. */
 int vmaf_gpu_picture_pool_close(VmafGpuPicturePool *pool);
 
 /* Returns the next slot in round-robin order. The synchronize callback

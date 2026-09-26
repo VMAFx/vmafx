@@ -42,6 +42,7 @@ typedef struct VmafCudaState {
     CUdevice dev;
     CudaFunctions *f;
     int release_ctx;
+    bool imported;
 } VmafCudaState;
 
 #define VMAF_CUDA_THREADS_PER_WARP 32
@@ -78,14 +79,14 @@ bool vmaf_cuda_arch_supported(int major, int minor);
 int vmaf_cuda_sync(VmafCudaState *cu_state);
 
 /**
- * Destroys a VmafCudaState object by destroying all of its members.
- * If rel_ctx is true, it will release the GPU driver context and also
- * release the driver. CUDA cannot be used when the context has be released,
- * afterwards all VmafCudaState objects are invalid.
+ * Destroys the stream and primary context owned by a VmafCudaState.
+ * Driver failures retain the state, live handle, and function table so the
+ * caller can retry this function. The structure and function table are
+ * cleared only after every release operation succeeds.
  *
  * @param cu_state  VmafCudaState to free.
  *
- * @return CUDA_SUCCESS on success, or < 0 (a negative errno code) on error.
+ * @return 0 on success, or < 0 (a negative errno code) with ownership retained.
  */
 
 int vmaf_cuda_release(VmafCudaState *cu_state);
@@ -150,6 +151,55 @@ int vmaf_cuda_buffer_alloc(VmafCudaState *cu_state, VmafCudaBuffer **buf, size_t
  * @return CUDA_SUCCESS on success, or < 0 (a negative errno code) on error.
  */
 int vmaf_cuda_buffer_free(VmafCudaState *cu_state, VmafCudaBuffer *buf);
+
+/**
+ * Frees a VmafCudaBuffer from the GPU and releases the wrapper struct.
+ *
+ * The caller passes a pointer to its `VmafCudaBuffer *` field.  The wrapper
+ * struct and the caller's pointer are cleared only after cuMemFree succeeds,
+ * so a failed free retains ownership for retry.  A later context-pop error
+ * is still returned but does not prevent the pointer from being cleared when
+ * the actual free succeeded.
+ *
+ * @param cu_state  Initialized VmafCudaState object.
+ * @param p_buf     Pointer to the caller's VmafCudaBuffer pointer. A NULL
+ *                  *p_buf is a no-op (returns 0). A non-NULL wrapper whose
+ *                  device handle is zero is released without CUDA state.
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ */
+int vmaf_cuda_buffer_free_owned(VmafCudaState *cu_state, VmafCudaBuffer **p_buf);
+
+/**
+ * Frees a raw CUDA device allocation and clears the caller's handle.
+ *
+ * The caller passes a pointer to its `CUdeviceptr` field. The handle is zeroed
+ * only after cuMemFree succeeds, so a failed free retains ownership for retry.
+ * A later context-pop error is still returned but does not undo a confirmed
+ * free.
+ *
+ * @param cu_state Initialized owner of the allocation's CUDA context.
+ * @param p_buf Pointer to the caller's device handle. A zero handle is a no-op.
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ */
+int vmaf_cuda_deviceptr_free_owned(VmafCudaState *cu_state, CUdeviceptr *p_buf);
+
+/**
+ * Frees pinned host memory and clears the caller's pointer.
+ *
+ * The caller passes a pointer to its `void *` (or typed pinned pointer)
+ * field.  The pointer is nulled only after cuMemFreeHost succeeds.  A later
+ * context-pop error is still returned but does not prevent the null when the
+ * actual free succeeded.
+ *
+ * @param cu_state  Initialized VmafCudaState object.
+ * @param p_buf     Pointer to the caller's host-buffer pointer. A NULL
+ *                  *p_buf is a no-op (returns 0).
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ */
+int vmaf_cuda_buffer_host_free_owned(VmafCudaState *cu_state, void **p_buf);
 
 /**
  * Uploads data in the size of the VmafCudaBuffer from src pointer (Host/CPU)

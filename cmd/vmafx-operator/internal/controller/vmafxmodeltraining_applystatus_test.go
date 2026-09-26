@@ -38,7 +38,6 @@ func TestApplySidecarStatus_PhaseMapping(t *testing.T) {
 
 	r := &VmafxModelTrainingReconciler{}
 	for _, tt := range tests {
-		tt := tt
 		t.Run("phase="+tt.sidecarPhase, func(t *testing.T) {
 			t.Parallel()
 			cr := &vmafxv1.VmafxModelTraining{}

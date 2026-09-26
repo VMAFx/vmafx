@@ -62,7 +62,9 @@ VMAF_EXPORT int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigu
 /**
  * Import a VmafSyclState into a VmafContext.
  * After this call every feature extractor registered with the SYCL flag
- * will receive a pointer to this state during init.
+ * will receive a pointer to this state during init. Ownership is not
+ * transferred: the state must remain alive until `vmaf_close()` returns
+ * exactly 0, including across nonzero close results retained for retry.
  *
  * @param vmaf        The VMAF context.
  * @param sycl_state  Previously initialised state (ownership is NOT transferred).
@@ -380,13 +382,14 @@ VMAF_EXPORT int vmaf_sycl_profiling_get_string(VmafSyclState *sycl_state, char *
 
 /**
  * Release all resources owned by the SYCL state (queue, buffers, etc.)
- * and reset the pointer. The state must not be imported in any
- * VmafContext when this is called (call vmaf_close() first).
+ * and reset the pointer. The state must not be imported in any live
+ * VmafContext when this is called (first obtain exact-zero success from
+ * vmaf_close()). A nonzero close retains the state dependency for retry.
  *
  * @param sycl_state  The SYCL state (freed and set to NULL). NULL is a no-op.
  *
- * @note Thread safety: Not thread-safe. Call after vmaf_close() on every context
- *               that imported this state.
+ * @note Thread safety: Not thread-safe. Call only after vmaf_close() returns
+ *               0 on every context that imported this state.
  */
 VMAF_EXPORT void vmaf_sycl_state_free(VmafSyclState **sycl_state);
 

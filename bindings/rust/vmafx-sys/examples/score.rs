@@ -136,9 +136,9 @@ fn read_yuv_frame(file: &mut File, pic: &mut vmafx_sys::VmafPicture) -> std::io:
 }
 
 fn score_inputs(paths: &InputPaths) -> Result<(u32, f64), Box<dyn std::error::Error>> {
+    let model = VmafModel::from_path(&paths.model)?;
     let mut ctx = VmafContext::new()?;
-    let mut model = VmafModel::from_path(&paths.model)?;
-    ctx.use_features_from_model(&mut model)?;
+    ctx.use_features_from_model(&model)?;
 
     let mut ref_file = File::open(&paths.reference)
         .map_err(|e| format!("Cannot open reference YUV {}: {e}", paths.reference))?;
@@ -182,7 +182,9 @@ fn score_inputs(paths: &InputPaths) -> Result<(u32, f64), Box<dyn std::error::Er
         eprintln!("ERROR: no frames read — check that the YUV paths are correct.");
         std::process::exit(1);
     }
-    let score = ctx.score_pooled(&mut model, 0, n_frames - 1)?;
+    let score = ctx.score_pooled(&model, 0, n_frames - 1)?;
+    ctx.close()
+        .map_err(|err| std::io::Error::other(format!("vmaf context teardown failed: {err}")))?;
     Ok((n_frames, score))
 }
 

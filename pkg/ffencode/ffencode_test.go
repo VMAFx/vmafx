@@ -443,7 +443,7 @@ func TestProbeEncoderLabel_memoises(t *testing.T) {
 		return "configuration: --enable-libx264\n", 0, nil
 	}
 	const bin = "/fake/ffmpeg-memo"
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if got := ffencode.ProbeEncoderLabel(
 			context.Background(), bin, "libx264", runner); got != "libx264-enabled" {
 			t.Fatalf("ProbeEncoderLabel = %q", got)

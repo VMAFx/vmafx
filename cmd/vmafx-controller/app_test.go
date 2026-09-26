@@ -318,8 +318,7 @@ func TestProductionGraphBadGRPCAddrFailsStart(t *testing.T) {
 	t.Setenv("VMAFX_GRPC_LISTEN", "invalid-addr-not-bindable")
 
 	app := fx.New(productionGraph())
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	if err := app.Start(ctx); err == nil {
 		if stopErr := app.Stop(context.Background()); stopErr != nil {

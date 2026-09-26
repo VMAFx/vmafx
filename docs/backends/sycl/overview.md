@@ -199,7 +199,8 @@ The pool depth (2) matches the double-buffered shared-frame upload in
 `VmafSyclState`, so frame N+1 can start filling slot 1 while frame N's
 compute still consumes slot 0. The caller owns the ref returned by
 `vmaf_sycl_picture_fetch` and must release it via `vmaf_picture_unref` when
-done with it; the pool retains its own ref until `vmaf_close()`.
+done with it; the pool retains its own ref until `vmaf_close()` returns exactly
+zero. A nonzero close status retains the pool with the teardown-only context.
 
 Minimal example:
 

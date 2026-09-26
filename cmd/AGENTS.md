@@ -70,7 +70,8 @@
 ```bash
 go test ./internal/app/bootstrap/ ./cmd/vmafx-tune/cmd/ ./cmd/vmafx-operator/ ./pkg/ai/
 # cgo packages link libvmaf from core/build-cpu/src (see go-ci.yml):
-CGO_LDFLAGS=-L$PWD/core/build-cpu/src LD_LIBRARY_PATH=$PWD/core/build-cpu/src \
+CGO_LDFLAGS="-L$PWD/core/build-cpu/src -lvmaf -lm" \
+  LD_LIBRARY_PATH=$PWD/core/build-cpu/src \
   go test ./cmd/vmafx-server/ ./cmd/vmafx-controller/ ./cmd/vmafx-node/ ./cmd/vmafx-mcp/
 ```
 

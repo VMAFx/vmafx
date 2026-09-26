@@ -2810,6 +2810,26 @@ no rebase impact: fork-local SYCL feature extractor and tests.
   warning. `grow_fex_list` uses a hard `if (pool->capacity == 0) return -EINVAL;` guard rather
   than `assert()`, because clang-tidy 22's `misc-static-assert` / `cert-dcl03-c` flags every
   `assert()` whose condition contains no non-constexpr call.
+  **Fail-closed teardown invariant (ADR-1336 follow-up):** CUDA contexts publish
+  `close_required` before feature init; `context_destroy()` returns `-EBUSY` while
+  either that partial-init obligation or an initialized close obligation remains.
+  Worker-private data, `vmaf_fex_ctx_pool`, and `RegisteredFeatureExtractors` use a
+  close-only prepare followed by a destroy-only commit. A failed prepare retains the
+  owner container and public `VmafContext` for retry. Preserve prepare order after
+  worker drain: worker-private contexts, pooled contexts, registered contexts, then
+  the CUDA drain stream. Do not move close back into a void free callback or free a
+  vector/pool after a child close fails. GPU picture pools likewise remember committed
+  slots, and CUDA state/function tables are cleared only after release succeeds.
+  Exact zero is the only public close commit; normalize positive pthread-style
+  errno values and retain the context after every nonzero result.
+  Apply the same bounded retry and dependency retention to embedded callers,
+  including `core/src/mcp/compute_vmaf.c`; never destroy its model first.
+  Preserve the CUDA state's internal imported marker: unimported state-free
+  performs retry-safe runtime release, imported wrapper free remains
+  allocation-only after exact-zero close, and duplicate imports return
+  `-EBUSY` rather than aliasing or overwriting live ownership.
+  Non-CUDA failed-init callbacks remain outside `close_required` until separately
+  audited (see ADR-1336 §Follow-up).
 - `core/src/feature/feature_extractor.h`: upstream Netflix header. Keeps the upstream
   `__VMAF_FEATURE_EXTRACTOR_H__` include guard, `<stdint.h>` / `<stdlib.h>`, plain C
   `typedef struct` and untyped flag enums, because roughly a hundred C translation units
@@ -54319,3 +54339,47 @@ handles, and restore a foreign caller context. Rebase conflicts must keep that
 ownership behavior even if upstream changes extractor cleanup structure. Run
 `meson test -C build-cuda-unwind test_cuda_runtime_unwind
 test_cuda_module_lifecycle_contract --print-errorlogs` after resolution.
+
+The public close contract is also consumed by the cumulative FFmpeg patch
+stack. Patch `0020-libvmaf-honor-retryable-close-ownership.patch` treats only
+exact zero as ownership transfer, retries once, and releases models/backend
+state only after success. Its dedicated CUDA filter retains an
+`AVHWFramesContext` reference through close so the borrowed `CUcontext` cannot
+expire during a failed retry. Preserve that reference and the early-return
+ordering when rebasing `vf_libvmaf.c`. The full 20-patch series replays to tree
+`0918464997239e1ed03a47f334fdae2b1221c71e` on n9.0.1 and
+`18f1772438491879abc28028d10bda7ae32cc796` on n9.0.2.
+
+## ADR-1125 — Go cgo callers select the fork library explicitly (2026-09-26)
+
+`pkg/libvmaf/libvmaf.go` intentionally contains no `#cgo LDFLAGS` directive.
+Do not restore an implicit `-L... -lvmaf`: if the named in-tree directory is
+absent, the platform linker continues into system paths and may bind an
+unrelated or stale libvmaf. Local Make targets and `go-ci.yml` explicitly use
+`core/build-cpu/src`; the server, controller, node, and dev-container builders
+explicitly select the fork library staged inside their image.
+
+When adding a cgo build caller, add its explicit `CGO_LDFLAGS` selection and
+extend `scripts/ci/test_go_workflow_contract.py` in the same change. A direct
+developer invocation must set both `CGO_LDFLAGS` (link time) and the relevant
+runtime loader path, or use the Make targets. This is fork-only build plumbing
+with no Netflix source or golden-data impact.
+
+## ADR-1338 — Go fix clean-tree gate (2026-09-26)
+
+The required `go vet + go test` workflow keeps its published check name, but
+its first selected source gate after `actions/setup-go` is
+`go fix -diff ./...`. Preserve that exact non-mutating command, the shared
+`go_checks` impact predicate, and its placement before Meson, ONNX Runtime,
+and libvmaf setup so modernization drift fails cheaply. Keep the local
+`go-fix` / `go-fix-check` Make targets and
+`scripts/ci/test_go_workflow_contract.py` synchronized with the workflow.
+
+The baseline sweep intentionally includes the hand-maintained
+`api/vmafx/v1/zz_generated_deepcopy.go`. It resolved the overlapping
+`stringsseq` / `slicescontains` suggestion in `cmd/vmafx-mcp` by selecting
+`strings.SplitSeq`, and `exitCoder` embeds `error` so Go 1.27's
+`errors.AsType` preserves the CLI's negative-control test. Do not weaken the
+gate by permanently excluding either analyzer when rebasing; resolve any new
+overlap in reviewed source, then require the full default fixer set to be
+clean.

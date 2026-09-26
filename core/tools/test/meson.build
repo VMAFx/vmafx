@@ -57,6 +57,21 @@ test_vmaf_per_shot_input = executable(
 )
 test('test_vmaf_per_shot_input', test_vmaf_per_shot_input, suite : ['fast'])
 
+# A failed vmaf_close() retains a teardown-only context. Tool callers retry
+# once, NULL the handle only after success, and otherwise retain every imported
+# backend dependency through process exit.
+test_vmaf_close_retry = executable(
+    'test_vmaf_close_retry',
+    ['../../test/test.c', 'test_vmaf_close_retry.c', '../vmaf_close_retry.c'],
+    include_directories : [
+        include_directories('../../test'),
+        include_directories('..'),
+        libvmaf_inc,
+    ],
+    c_args : vmaf_tool_cflags,
+)
+test('test_vmaf_close_retry', test_vmaf_close_retry, suite : ['fast'])
+
 # T6-2b / ADR-0247 — vmaf-roi accepts high-bit-depth planar YUV by
 # downscaling luma to the existing 8-bit saliency-model contract.
 test_vmaf_roi_high_bitdepth = find_program('test_vmaf_roi_high_bitdepth.sh')

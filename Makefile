@@ -49,7 +49,7 @@ DEBUG_DIR := $(LIBVMAF_DIR)/debug
 GOLDEN_BUILD_DIR ?= $(LIBVMAF_DIR)/build-golden
 
 .PHONY: default all debug build install cythonize clean distclean cythonize-deps \
-    go-build go-test go-ort-runner rust-build rust-test setup-envtest setup-envtest-env \
+    go-build go-test go-fix go-fix-check go-ort-runner rust-build rust-test setup-envtest setup-envtest-env \
     build-golden
 
 default: build
@@ -554,20 +554,34 @@ silent-revert-check:
 
 # ── Go workspace (ADR-0702) ─────────────────────────────────────────────────
 #
-# go-build: compile all Go packages in the workspace (no output binary in the
-#           foundation PR; cmd/ binaries are added by per-sweep PRs).
-# go-test:  run `go test ./...` (covers pkg/version and future packages).
+# go-build:     compile all Go packages in the workspace (no output binary in the
+#               foundation PR; cmd/ binaries are added by per-sweep PRs).
+# go-test:      run `go test ./...` (covers pkg/version and future packages).
+# go-fix:       apply authoritative Go modernizations via `go fix ./...`.
+# go-fix-check: verify clean tree via `go fix -diff ./...` (fails if rewrites available).
 #
-# Both targets require Go ≥ 1.23 on PATH. If `go` is absent they fail with an
-# actionable message rather than a confusing "command not found".
+# All targets require the Go toolchain declared by go.mod. If `go` is absent,
+# they fail with an actionable message rather than "command not found".
 
 go-build:
-	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go build ./...
 
 go-test:
-	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go test ./...
+
+go-fix:
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	go fix ./...
+
+go-fix-check:
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	go fix -diff ./...
 
 # go-ort-runner: build the ONNX Runtime subprocess that pkg/ai.Registry.Infer
 #                execs (cmd/vmafx-ort-runner, ADR-1134) to ./vmafx-ort-runner.
@@ -577,7 +591,9 @@ go-test:
 #                call exits 3. See docs/usage/vmafx-ort-runner.md.
 
 go-ort-runner:
-	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	@command -v go >/dev/null || { echo "go not found — install the version declared by go.mod (https://go.dev/dl/)"; exit 1; }
+	CGO_LDFLAGS="-L$(CURDIR)/core/build-cpu/src -lvmaf -lm" \
+	LD_LIBRARY_PATH="$(CURDIR)/core/build-cpu/src$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 	go build -o vmafx-ort-runner ./cmd/vmafx-ort-runner
 
 # setup-envtest: install the kubebuilder envtest control-plane binaries
@@ -653,6 +669,8 @@ help:
 	@echo ""
 	@echo "  make go-build         — go build ./... (Go workspace, ADR-0702)"
 	@echo "  make go-test          — go test ./... (Go workspace, ADR-0702)"
+	@echo "  make go-fix           — go fix ./... (apply Go modernizations, ADR-1338)"
+	@echo "  make go-fix-check     — go fix -diff ./... (check Go modernizations, ADR-1338)"
 	@echo "  make go-ort-runner    — build ./vmafx-ort-runner, the ONNX subprocess behind pkg/ai (ADR-1134)"
 	@echo "  make rust-build       — cargo check --all (Rust workspace, ADR-0702)"
 	@echo "  make rust-test        — cargo test --all (Rust workspace, ADR-0702)"

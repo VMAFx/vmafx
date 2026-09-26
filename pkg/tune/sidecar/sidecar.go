@@ -242,7 +242,7 @@ func (m *Model) Update(f predictor.ShotFeatures, observedVMAF, predictedVMAF flo
 	predictionError := residual - dot(x, m.Weights)
 	coeff := predictionError / denom
 	aInvXNew := matvec(m.AInv, x)
-	for i := 0; i < FeatureDim; i++ {
+	for i := range FeatureDim {
 		m.Weights[i] += coeff * aInvXNew[i]
 	}
 

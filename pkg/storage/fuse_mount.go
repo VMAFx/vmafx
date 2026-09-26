@@ -227,7 +227,7 @@ func waitForPath(ctx context.Context, assetPath string, timeout time.Duration) e
 	// deadline check below is what normally ends it, and the bound only keeps
 	// a stalled clock from turning this into a spin (HISS-02).
 	maxPolls := int(timeout/mountReadyPollInterval) + 2
-	for poll := 0; poll < maxPolls; poll++ {
+	for range maxPolls {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out after %v waiting for %s", timeout, assetPath)
 		}

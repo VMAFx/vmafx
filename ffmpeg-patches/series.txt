@@ -28,3 +28,4 @@
 0017-libvmaf-read-pelorus-sidedata.patch
 0018-libvmaf-map-percentile-pool-methods.patch
 0019-ffmpeg-eliminate-gcc-14-build-diagnostics.patch
+0020-libvmaf-honor-retryable-close-ownership.patch

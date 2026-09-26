@@ -33,7 +33,9 @@ func withInterval(r recommend.Row, low, high float64) recommend.Row {
 }
 
 // f returns a pointer to v, for the optional Request targets.
-func f(v float64) *float64 { return &v }
+//
+//go:fix inline
+func f(v float64) *float64 { return new(v) }
 
 // TestValidateRequest pins the mutually-exclusive target contract.
 func TestValidateRequest(t *testing.T) {
@@ -44,11 +46,11 @@ func TestValidateRequest(t *testing.T) {
 		req     recommend.Request
 		wantErr bool
 	}{
-		{"target vmaf only", recommend.Request{TargetVMAF: f(93)}, false},
-		{"target bitrate only", recommend.Request{TargetBitrateKbps: f(5000)}, false},
+		{"target vmaf only", recommend.Request{TargetVMAF: new(float64(93))}, false},
+		{"target bitrate only", recommend.Request{TargetBitrateKbps: new(float64(5000))}, false},
 		{
 			"both targets", recommend.Request{
-				TargetVMAF: f(93), TargetBitrateKbps: f(5000),
+				TargetVMAF: new(float64(93)), TargetBitrateKbps: new(float64(5000)),
 			}, true,
 		},
 		{"no target", recommend.Request{}, true},
@@ -237,7 +239,7 @@ func TestRecommend_filtering(t *testing.T) {
 	}
 
 	got, err := recommend.Recommend(rows, recommend.Request{
-		TargetVMAF: f(93.0), Encoder: "libx264", Preset: "medium",
+		TargetVMAF: new(93.0), Encoder: "libx264", Preset: "medium",
 	})
 	if err != nil {
 		t.Fatalf("Recommend: %v", err)
@@ -254,7 +256,7 @@ func TestRecommend_allRowsFiltered(t *testing.T) {
 
 	_, err := recommend.Recommend(
 		[]recommend.Row{row(24, 93.5, 5000)},
-		recommend.Request{TargetVMAF: f(93.0), Encoder: "libsvtav1"},
+		recommend.Request{TargetVMAF: new(93.0), Encoder: "libsvtav1"},
 	)
 	if err == nil {
 		t.Fatal("expected an error when the filter removes every row")
@@ -565,7 +567,7 @@ func TestParseCorpusJSONL_nanScoreRowIsFiltered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseCorpusJSONL: %v", err)
 	}
-	got, pickErr := recommend.Recommend(rows, recommend.Request{TargetVMAF: f(93.0)})
+	got, pickErr := recommend.Recommend(rows, recommend.Request{TargetVMAF: new(93.0)})
 	if pickErr != nil {
 		t.Fatalf("Recommend: %v", pickErr)
 	}

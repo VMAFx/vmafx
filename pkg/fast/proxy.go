@@ -217,7 +217,7 @@ func resolveProxyDir(modelDir, modelID string) (string, error) {
 		// the root itself and a possible trailing separator (HISS-02).
 		maxSteps := strings.Count(wd, string(os.PathSeparator)) + 2
 		dir := wd
-		for step := 0; step < maxSteps; step++ {
+		for range maxSteps {
 			candidates = append(candidates, filepath.Join(dir, "model", "tiny"))
 			parent := filepath.Dir(dir)
 			if parent == dir {

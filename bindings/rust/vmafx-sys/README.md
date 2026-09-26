@@ -22,16 +22,27 @@ vmafx-sys = { path = "bindings/rust/vmafx-sys" }
 ```rust
 use vmafx_sys::safe::{VmafContext, VmafModel};
 
+let model = VmafModel::from_path("/path/to/vmaf_v0.6.1.json")?;
 let mut ctx = VmafContext::new()?;
-let mut model = VmafModel::from_path("/path/to/vmaf_v0.6.1.json")?;
-ctx.use_features_from_model(&mut model)?;
+ctx.use_features_from_model(&model)?;
 
 // ... queue frames with ctx.read_pictures() ...
 
 ctx.flush()?;
-let score = ctx.score_pooled(&mut model, 0, n_frames - 1)?;
+let score = ctx.score_pooled(&model, 0, n_frames - 1)?;
 println!("Mean VMAF: {score:.4}");
+ctx.close().expect("vmaf_close failed");
 ```
+
+`VmafContext::close` consumes the active wrapper. Exactly zero invalidates the
+context; any other status returns a `VmafContextCloseError` that exposes only
+the initial error and one `retry()`. The context and retry token carry the
+registered model lifetime, so safe Rust cannot destroy a model while libvmaf
+still references it. Dropping an active context makes an initial close attempt
+plus at most one retry. Dropping a close-retry token consumes that retry only
+if it has not happened; after a failed explicit retry, drop aborts without a
+third close call rather than ending the registered-model borrow while libvmaf
+retains the pointer.
 
 ## Building
 
@@ -100,7 +111,8 @@ or output file writing (`vmaf_write_output`), which the safe layer does not yet 
 
 **Safe layer** (`use vmafx_sys::safe::*`): thin RAII wrappers that manage object lifetime
 and convert negative C error codes to `Result<_, VmafxError>`. `unsafe` is confined to the
-actual FFI call sites. All safe types are `Send`.
+actual FFI call sites. `VmafModel` is `Send` but `!Sync`; a `VmafContext` and
+its close-retry token are `!Send` because they carry a shared model borrow.
 
 A higher-level `vmafx` crate (in progress) will be built on top of this one.
 

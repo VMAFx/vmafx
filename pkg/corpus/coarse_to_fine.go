@@ -56,7 +56,7 @@ func CoarseGridCRFs(crfMin, crfMax, coarseStep int) ([]int, error) {
 	n := (crfMax-crfMin)/coarseStep + 1
 	seen := map[int]bool{}
 	var grid []int
-	for i := 0; i < n; i++ {
+	for i := range n {
 		c := crfClamp(crfMin + i*coarseStep)
 		if !seen[c] {
 			seen[c] = true

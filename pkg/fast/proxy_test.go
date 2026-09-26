@@ -261,7 +261,7 @@ func TestCodecBlock(t *testing.T) {
 			if len(block) != len(shippedVocab)+2 {
 				t.Fatalf("block length = %d, want %d", len(block), len(shippedVocab)+2)
 			}
-			for i := 0; i < len(shippedVocab); i++ {
+			for i := range shippedVocab {
 				want := 0.0
 				if i == tc.wantSlot {
 					want = 1.0

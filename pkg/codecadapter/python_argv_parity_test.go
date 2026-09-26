@@ -579,7 +579,6 @@ func TestFFmpegCodecArgs_matchesPythonAdapters(t *testing.T) {
 		{name: "av1_videotoolbox", preset: "veryslow", quality: 50, wantErr: true},
 		{name: "av1_videotoolbox", preset: "veryslow", quality: 100, wantErr: true},
 	} {
-		tc := tc
 		t.Run(fmt.Sprintf("%s/%s/%d", tc.name, tc.preset, tc.quality), func(t *testing.T) {
 			t.Parallel()
 			a, err := Get(tc.name)
@@ -619,7 +618,6 @@ func TestTwoPassArgs_matchesPythonAdapters(t *testing.T) {
 		{"libvpx-vp9", []string{"-pass", "1", "-passlogfile", "/tmp/s"}},
 		{"libvvenc", []string{"-pass", "1", "-passlogfile", "/tmp/s"}},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			a, err := Get(tc.name)

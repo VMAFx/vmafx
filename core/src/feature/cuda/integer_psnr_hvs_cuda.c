@@ -135,6 +135,12 @@ static const VmafOption options[] = {
 
 static int close_fex_cuda(VmafFeatureExtractor *fex);
 
+static int psnr_hvs_init_failure(VmafFeatureExtractor *fex, int cause)
+{
+    const int cleanup_rc = close_fex_cuda(fex);
+    return cause ? cause : cleanup_rc;
+}
+
 static int psnr_hvs_configure_planes(PsnrHvsStateCuda *s, enum VmafPixelFormat pix_fmt, unsigned w,
                                      unsigned h)
 {
@@ -246,16 +252,32 @@ static int psnr_hvs_alloc_buffers(VmafFeatureExtractor *fex, PsnrHvsStateCuda *s
         const size_t plane_bytes = (size_t)s->width[p] * s->height[p] * sizeof(float);
         const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
         const size_t uint_bytes = (size_t)s->width[p] * s->height[p] * bpc_bytes;
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_ref[p], plane_bytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_dist[p], plane_bytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_partials[p], partials_bytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref[p], plane_bytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_dist[p], plane_bytes);
-        ret |=
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_ref[p], plane_bytes);
+        if (ret)
+            return ret;
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_dist[p], plane_bytes);
+        if (ret)
+            return ret;
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_partials[p], partials_bytes);
+        if (ret)
+            return ret;
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref[p], plane_bytes);
+        if (ret)
+            return ret;
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_dist[p], plane_bytes);
+        if (ret)
+            return ret;
+        ret =
             vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_partials[p], partials_bytes);
+        if (ret)
+            return ret;
         /* T-GPU-OPT-3: persistent pinned uint8/uint16 staging for D2H. */
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_ref[p], uint_bytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_dist[p], uint_bytes);
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_ref[p], uint_bytes);
+        if (ret)
+            return ret;
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_dist[p], uint_bytes);
+        if (ret)
+            return ret;
     }
     return ret;
 }
@@ -269,23 +291,17 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return err;
 
     err = psnr_hvs_load_cuda(fex, s);
-    if (err) {
-        (void)close_fex_cuda(fex);
-        return err;
-    }
+    if (err)
+        return psnr_hvs_init_failure(fex, err);
 
     const int ret = psnr_hvs_alloc_buffers(fex, s);
-    if (ret) {
-        (void)close_fex_cuda(fex);
-        return -ENOMEM;
-    }
+    if (ret)
+        return psnr_hvs_init_failure(fex, ret);
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        (void)close_fex_cuda(fex);
-        return -ENOMEM;
-    }
+    if (!s->feature_name_dict)
+        return psnr_hvs_init_failure(fex, -ENOMEM);
     return 0;
 }
 
@@ -518,47 +534,55 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     PsnrHvsStateCuda *s = fex->priv;
-    int ret = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    int phase_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
 
     /* T-GPU-OPT-2: tear down dedicated upload stream + event.
      * Drain first so any in-flight H2D completes before the pinned
      * staging it sources is freed below. */
     const int upload_stream_rc = vmaf_cuda_stream_destroy(fex->cu_state, &s->upload_str, true);
-    if (ret == 0)
-        ret = upload_stream_rc;
-    const int upload_event_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->upload_done);
-    if (ret == 0)
-        ret = upload_event_rc;
+    if (!phase_rc)
+        phase_rc = upload_stream_rc;
+    if (phase_rc)
+        return phase_rc;
 
+    phase_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->upload_done);
+    if (phase_rc)
+        return phase_rc;
+
+    int ret = 0;
     for (unsigned p = 0; p < s->n_planes; p++) {
-        if (s->d_ref[p]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->d_ref[p]);
-            free(s->d_ref[p]);
-        }
-        if (s->d_dist[p]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->d_dist[p]);
-            free(s->d_dist[p]);
-        }
-        if (s->d_partials[p]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->d_partials[p]);
-            free(s->d_partials[p]);
-        }
-        if (s->h_ref[p])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->h_ref[p]);
-        if (s->h_dist[p])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->h_dist[p]);
-        if (s->h_partials[p])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->h_partials[p]);
+        int e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_ref[p]);
+        if (e && !ret)
+            ret = e;
+        e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_dist[p]);
+        if (e && !ret)
+            ret = e;
+        e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_partials[p]);
+        if (e && !ret)
+            ret = e;
+        e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->h_ref[p]);
+        if (e && !ret)
+            ret = e;
+        e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->h_dist[p]);
+        if (e && !ret)
+            ret = e;
+        e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->h_partials[p]);
+        if (e && !ret)
+            ret = e;
         /* T-GPU-OPT-3: persistent uint staging buffers. */
-        if (s->h_uint_ref[p])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->h_uint_ref[p]);
-        if (s->h_uint_dist[p])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->h_uint_dist[p]);
+        e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, &s->h_uint_ref[p]);
+        if (e && !ret)
+            ret = e;
+        e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, &s->h_uint_dist[p]);
+        if (e && !ret)
+            ret = e;
     }
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    if (ret == 0)
-        ret = module_rc;
+    int e = vmaf_dictionary_free(&s->feature_name_dict);
+    if (e && !ret)
+        ret = e;
+    e = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (e && !ret)
+        ret = e;
     return ret;
 }
 

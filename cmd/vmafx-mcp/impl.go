@@ -814,10 +814,7 @@ var modelResHints = []struct{ needle, class string }{
 }
 
 func classifySourceResolution(width, height int) string {
-	long := width
-	if height > long {
-		long = height
-	}
+	long := max(height, width)
 	if long >= 3840 {
 		return "4k"
 	}

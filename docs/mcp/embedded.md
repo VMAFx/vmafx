@@ -95,8 +95,17 @@ VmafMcpSseConfig sse = { .port = 8723, .path = "/mcp/sse" };
 
 (void)vmaf_mcp_stop(server);
 vmaf_mcp_close(&server);
-/* vmaf_close(ctx); */
+int close_rc = vmaf_close(ctx);
+if (close_rc != 0)
+    close_rc = vmaf_close(ctx); /* retained teardown-only context */
+if (close_rc == 0)
+    ctx = NULL;
+/* A persistent error retains ctx and every borrowed dependency. */
 ```
+
+Close the MCP handle before context teardown. Only exact-zero
+`vmaf_close()` success invalidates the context; any nonzero status retains the
+teardown-only context and its borrowed dependencies for retry.
 
 The full API is documented in
 [`core/include/libvmaf/libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h).

@@ -143,26 +143,34 @@ static const VmafOption options[] = {{
  */
 static int vif_init_unwind(VmafFeatureExtractor *fex, VifStateCuda *s, int ret)
 {
-    if (s->buf.data) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.data);
-        free(s->buf.data);
-        s->buf.data = NULL;
-    }
-    if (s->buf.accum_data) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.accum_data);
-        free(s->buf.accum_data);
-        s->buf.accum_data = NULL;
-    }
-    if (s->buf.accum_host) {
-        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->buf.accum_host);
-        s->buf.accum_host = NULL;
-    }
-    (void)vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
-    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->finished);
-    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->event);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->filter1d_module);
+    int rc = ret;
+    int phase_rc = vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
+    if (phase_rc)
+        return rc ? rc : phase_rc;
 
-    return (ret != 0) ? ret : -ENOMEM;
+    phase_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->finished);
+    const int event_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->event);
+    if (!phase_rc)
+        phase_rc = event_rc;
+    if (phase_rc)
+        return rc ? rc : phase_rc;
+
+    int e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->buf.data);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->buf.accum_data);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->buf.accum_host);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_dictionary_free(&s->feature_name_dict);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_module_unload(fex->cu_state, &s->filter1d_module);
+    if (e && !rc)
+        rc = e;
+    return rc;
 }
 
 /* Release every context-owned handle created before kernel setup failed. */
@@ -170,11 +178,7 @@ static int vif_init_kernel_unwind(VmafFeatureExtractor *fex, VifStateCuda *s, Cu
                                   int cuda_err)
 {
     (void)cu_f->cuCtxPopCurrent(NULL);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->filter1d_module);
-    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->finished);
-    (void)vmaf_cuda_event_destroy(fex->cu_state, &s->event);
-    (void)vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
-    return cuda_err;
+    return vif_init_unwind(fex, s, cuda_err);
 }
 
 /* vif_create_stream_and_events - stream, the two events and the PTX module. */
@@ -399,7 +403,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
-        return vif_init_unwind(fex, s, ret);
+        return vif_init_unwind(fex, s, -ENOMEM);
     return 0;
 }
 
@@ -714,32 +718,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     VifStateCuda *s = fex->priv;
-    int ret = vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
-    const int event_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->event);
-    if (ret == 0)
-        ret = event_rc;
-    const int finished_rc = vmaf_cuda_event_destroy(fex->cu_state, &s->finished);
-    if (ret == 0)
-        ret = finished_rc;
-    if (s->buf.data) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.data);
-        free(s->buf.data);
-        s->buf.data = NULL;
-    }
-    if (s->buf.accum_data) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->buf.accum_data);
-        free(s->buf.accum_data);
-        s->buf.accum_data = NULL;
-    }
-    if (s->buf.accum_host) {
-        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->buf.accum_host);
-        s->buf.accum_host = NULL;
-    }
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->filter1d_module);
-    if (ret == 0)
-        ret = module_rc;
-    return ret;
+    return vif_init_unwind(fex, s, 0);
 }
 
 static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)

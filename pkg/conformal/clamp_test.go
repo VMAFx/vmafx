@@ -25,7 +25,6 @@ func TestIntervalForClampsToVMAFRange(t *testing.T) {
 		{"near the floor", 0.5},
 		{"at the floor", 0},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			iv := cal.IntervalFor(tc.point)

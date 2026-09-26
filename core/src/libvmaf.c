@@ -142,16 +142,17 @@ typedef struct VmafContext {
 #ifdef HAVE_METAL
     /* T8-IOS (ADR-0423): caller-imported MTLDevice + IOSurface ring.
      * Ownership stays with the caller — vmaf_metal_state_free()
-     * after vmaf_close(), same lifetime model as the SYCL and HIP
-     * backends. */
+     * only after vmaf_close() returns 0; nonzero retains the dependency
+     * for retry. Same lifetime model as the SYCL and HIP backends. */
     struct {
         VmafMetalState *state;
     } metal;
 #endif
 #ifdef HAVE_HIP
     /* ADR-0519: caller-imported HIP state. Same lifetime model as the
-     * SYCL / Metal backends — vmaf_hip_state_free() after
-     * vmaf_close(). The HIP feature extractors do not yet set the
+     * SYCL / Metal backends — vmaf_hip_state_free() only after
+     * vmaf_close() returns 0. A nonzero result retains it for retry.
+     * The HIP feature extractors do not yet set the
      * VMAF_FEATURE_EXTRACTOR_HIP flag, so dispatch routes them through
      * their CPU twins; storing the state here is the wiring that
      * unblocks `vmaf --backend hip` end-to-end and the future
@@ -230,14 +231,34 @@ typedef struct BatchThreadData {
     unsigned cnt;
 } BatchThreadData;
 
+static int batch_thread_data_prepare(void *data)
+{
+    BatchThreadData *td = data;
+    int first_err = 0;
+    for (unsigned i = 0; i < td->cnt; i++) {
+        VmafFeatureExtractorContext *ctx = td->fex_ctx[i];
+        if (!ctx || ctx->is_closed || (!ctx->is_initialized && !ctx->close_required))
+            continue;
+        const int err = vmaf_feature_extractor_context_close(ctx);
+        if (err && !first_err)
+            first_err = err;
+    }
+    return first_err;
+}
+
 static void batch_thread_data_free(void *data)
 {
     BatchThreadData *td = data;
     for (unsigned i = 0; i < td->cnt; i++) {
-        if (td->fex_ctx[i]) {
-            (void)vmaf_feature_extractor_context_close(td->fex_ctx[i]);
-            (void)vmaf_feature_extractor_context_destroy(td->fex_ctx[i]);
-        }
+        if (!td->fex_ctx[i])
+            continue;
+        /* batch_thread_data_prepare() is the fallible phase. The pool invokes
+         * this commit callback only after every worker-private close has
+         * succeeded, so destroy cannot orphan live extractor resources. */
+        const int err = vmaf_feature_extractor_context_destroy(td->fex_ctx[i]);
+        assert(!err);
+        (void)err;
+        td->fex_ctx[i] = NULL;
     }
     free((void *)td->fex_ctx);
     free(td);
@@ -253,6 +274,7 @@ static int vmaf_ctx_thread_pools_init(VmafContext *v)
 
     VmafThreadPoolConfig tpool_cfg = {
         .n_threads = v->cfg.n_threads,
+        .thread_data_prepare = batch_thread_data_prepare,
         .thread_data_free = batch_thread_data_free,
     };
     int err = vmaf_thread_pool_create(&v->thread_pool, tpool_cfg);
@@ -291,7 +313,7 @@ static int vmaf_ctx_subsystems_init(VmafContext *v)
             if (!err) {
                 return 0;
             }
-            feature_extractor_vector_destroy(&(v->registered_feature_extractors));
+            (void)feature_extractor_vector_destroy(&(v->registered_feature_extractors));
         }
         vmaf_feature_collector_destroy(v->feature_collector);
     }
@@ -388,8 +410,14 @@ int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state)
         return -EINVAL;
     if (!cu_state)
         return -EINVAL;
+    if (cu_state->imported || vmaf->cuda.state.ctx || vmaf->cuda.state.str || vmaf->cuda.state.f)
+        return -EBUSY;
 
+    /* Copy first: the context-owned copy must remain independently releasable.
+     * The caller wrapper is then marked as imported so it cannot be copied into
+     * a second context or overwrite this context's live CUDA ownership. */
     vmaf->cuda.state = *cu_state;
+    cu_state->imported = true;
     vmaf->active_backend = VMAF_BACKEND_CUDA;
 
     return 0;
@@ -694,8 +722,9 @@ int vmaf_metal_read_imported_pictures(VmafContext *vmaf, unsigned index)
 #ifdef HAVE_HIP
 /* ADR-0519: stash the caller-imported HIP state on the VmafContext.
  * Mirrors vmaf_sycl_import_state / vmaf_metal_import_state field-for-field — ownership stays with the
- * caller, vmaf_close() clears the pointer without freeing, and the
- * caller calls vmaf_hip_state_free() after vmaf_close().
+ * caller, successful vmaf_close() clears the pointer without freeing, and the
+ * caller calls vmaf_hip_state_free() only after close returns 0. A nonzero
+ * close retains both the context and this borrowed state for retry.
  *
  * Implementation lives here (not in core/src/hip/common.c) because
  * it needs VmafContext field-level access. The CUDA / SYCL / Metal
@@ -1485,21 +1514,46 @@ static int vmaf_ctx_dnn_run_frame(VmafContext *vmaf, const VmafPicture *ref, uns
  * call cuStreamDestroy, T-GPU-OPT-1 / ADR-0242). SYCL / Metal / HIP state is
  * caller-owned: vmaf_<backend>_import_state() does not transfer ownership,
  * so only the SYCL picture pool is closed here and the state pointers are
- * cleared — the caller calls vmaf_<backend>_state_free() after vmaf_close()
- * (ADR-0519). */
-static void vmaf_close_backends(VmafContext *vmaf)
+ * cleared — the caller calls vmaf_<backend>_state_free() only after
+ * vmaf_close() returns 0 (ADR-0519). */
+static int normalize_close_error(int err)
 {
+    /* pthread APIs report positive errno values while libvmaf's public C API
+     * reports negative errno values. Exact zero is the only ownership commit. */
+    return err > 0 ? -err : err;
+}
+
+static void preserve_first_error(int *first_err, int err)
+{
+    err = normalize_close_error(err);
+    if (err && !*first_err)
+        *first_err = err;
+}
+
+static int vmaf_close_backends(VmafContext *vmaf)
+{
+#if defined(HAVE_CUDA) || defined(HAVE_SYCL)
+    int err = 0;
+#endif
 #ifdef HAVE_CUDA
-    if (vmaf->cuda.ring_buffer)
-        vmaf_gpu_picture_pool_close(vmaf->cuda.ring_buffer);
-    if (vmaf->cuda.state.ctx)
-        vmaf_cuda_drain_batch_thread_destroy(&vmaf->cuda.state);
-    if (vmaf->cuda.state.ctx)
-        vmaf_cuda_release(&vmaf->cuda.state);
+    if (vmaf->cuda.ring_buffer) {
+        err = vmaf_gpu_picture_pool_close(vmaf->cuda.ring_buffer);
+        if (err)
+            return err;
+        vmaf->cuda.ring_buffer = NULL;
+    }
+    err = vmaf_cuda_drain_batch_thread_destroy(&vmaf->cuda.state);
+    if (err)
+        return err;
+    err = vmaf_cuda_release(&vmaf->cuda.state);
+    if (err)
+        return err;
 #endif
 #ifdef HAVE_SYCL
     if (vmaf->sycl.pool) {
-        vmaf_sycl_picture_pool_close(vmaf->sycl.pool);
+        err = vmaf_sycl_picture_pool_close(vmaf->sycl.pool);
+        if (err)
+            return err;
         vmaf->sycl.pool = NULL;
     }
     vmaf->sycl.state = NULL;
@@ -1513,6 +1567,70 @@ static void vmaf_close_backends(VmafContext *vmaf)
 #if !defined(HAVE_CUDA) && !defined(HAVE_SYCL) && !defined(HAVE_METAL) && !defined(HAVE_HIP)
     (void)vmaf; /* CPU-only build: no backend state to release. */
 #endif
+    return 0;
+}
+
+static int vmaf_prepare_close(VmafContext *vmaf)
+{
+    /* ADR-1336: close child resources without freeing any owner container. */
+    int first_err = 0;
+    if (vmaf->thread_pool)
+        preserve_first_error(&first_err, vmaf_thread_pool_wait(vmaf->thread_pool));
+    if (vmaf->thread_pool)
+        preserve_first_error(&first_err, vmaf_thread_pool_prepare_destroy(vmaf->thread_pool));
+    if (vmaf->fex_ctx_pool)
+        preserve_first_error(&first_err, vmaf_fex_ctx_pool_close(vmaf->fex_ctx_pool));
+    preserve_first_error(&first_err,
+                         feature_extractor_vector_close(&vmaf->registered_feature_extractors));
+#ifdef HAVE_CUDA
+    preserve_first_error(&first_err, vmaf_cuda_drain_batch_thread_destroy(&vmaf->cuda.state));
+#endif
+    return first_err;
+}
+
+static int vmaf_commit_extractor_owners(VmafContext *vmaf)
+{
+    int err = 0;
+    if (vmaf->thread_pool) {
+        err = vmaf_thread_pool_destroy(vmaf->thread_pool);
+        if (err)
+            return err;
+        vmaf->thread_pool = NULL;
+    }
+    if (vmaf->fex_ctx_pool) {
+        err = vmaf_fex_ctx_pool_destroy(vmaf->fex_ctx_pool);
+        if (err)
+            return err;
+        vmaf->fex_ctx_pool = NULL;
+    }
+    return feature_extractor_vector_destroy(&vmaf->registered_feature_extractors);
+}
+
+static int vmaf_commit_remaining_owners(VmafContext *vmaf)
+{
+    int err = 0;
+    if (vmaf->prev_ref.ref) {
+        err = vmaf_picture_unref(&vmaf->prev_ref);
+        if (err)
+            return err;
+    }
+    if (vmaf->framesync) {
+        err = vmaf_framesync_destroy(vmaf->framesync);
+        if (err)
+            return err;
+        vmaf->framesync = NULL;
+    }
+    vmaf_feature_collector_destroy(vmaf->feature_collector);
+    vmaf->feature_collector = NULL;
+    vmaf_ctx_dnn_free(vmaf);
+    vmaf_perceptual_weight_store_destroy(&vmaf->perceptual);
+    if (vmaf->picture_pool) {
+        err = vmaf_picture_pool_close(vmaf->picture_pool);
+        if (err)
+            return err;
+        vmaf->picture_pool = NULL;
+    }
+    return vmaf_close_backends(vmaf);
 }
 
 int vmaf_close(VmafContext *vmaf)
@@ -1520,34 +1638,17 @@ int vmaf_close(VmafContext *vmaf)
     if (!vmaf)
         return -EINVAL;
 
-    /* Propagate errors from cleanup helpers per CERT ERR33-C / Power-of-10 #7.
-     * Use the first non-zero code; later cleanup must still run so we
-     * cannot bail on the first error.
-     * Guard: thread_pool is NULL when cfg.n_threads == 0 (single-threaded
-     * mode); vmaf_thread_pool_wait returns -EINVAL for a NULL pool, which
-     * would be a false error here. */
-    int close_err = vmaf->thread_pool ? vmaf_thread_pool_wait(vmaf->thread_pool) : 0;
-    if (vmaf->prev_ref.ref)
-        (void)vmaf_picture_unref(&vmaf->prev_ref);
-    const int framesync_err = vmaf_framesync_destroy(vmaf->framesync);
-    if (!close_err)
-        close_err = framesync_err;
-    feature_extractor_vector_destroy(&(vmaf->registered_feature_extractors));
-    vmaf_feature_collector_destroy(vmaf->feature_collector);
-    /* Both pool destroys return -EINVAL for a NULL pool (single-threaded
-     * mode) — not an error here, so their status is deliberately dropped. */
-    (void)vmaf_thread_pool_destroy(vmaf->thread_pool);
-    (void)vmaf_fex_ctx_pool_destroy(vmaf->fex_ctx_pool);
-    vmaf_ctx_dnn_free(vmaf);
-    /* Release the Pelorus perceptual-weight summary store (ADR-1118). Safe on a
-     * zero-initialised store (no side-data ever registered) — it is a no-op. */
-    vmaf_perceptual_weight_store_destroy(&vmaf->perceptual);
-    if (vmaf->picture_pool)
-        vmaf_picture_pool_close(vmaf->picture_pool);
-    vmaf_close_backends(vmaf);
+    int err = vmaf_prepare_close(vmaf);
+    if (err)
+        return normalize_close_error(err);
+    err = vmaf_commit_extractor_owners(vmaf);
+    if (err)
+        return normalize_close_error(err);
+    err = vmaf_commit_remaining_owners(vmaf);
+    if (err)
+        return normalize_close_error(err);
     free(vmaf);
-
-    return close_err;
+    return 0;
 }
 
 int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
@@ -2197,8 +2298,8 @@ static int flush_non_temporal_cpu_extractors(VmafContext *vmaf)
          * deep copy) and may lazily allocate state in fex->priv (e.g.
          * integer_motion::flush allocates s->feature_name_dict when it
          * was never set by init).  Mark the shared context as initialised
-         * so that vmaf_feature_extractor_context_close - called from
-         * feature_extractor_vector_destroy at teardown - actually invokes
+         * so that vmaf_feature_extractor_context_close - called by the
+         * vector prepare phase at teardown - actually invokes
          * fex->close and frees whatever flush allocated.  Without this,
          * is_initialized == false causes close to return -EINVAL early,
          * leaking the dict (detected as a memory leak by ASan with

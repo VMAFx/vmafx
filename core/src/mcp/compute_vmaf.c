@@ -550,20 +550,56 @@ typedef struct ScoreResources {
     VmafModel *model;
 } ScoreResources;
 
+typedef int (*VmafCloseFn)(VmafContext *vmaf);
+
+#define MCP_CLOSE_MAX_ATTEMPTS 2U
+
+/* A failed vmaf_close() retains a teardown-only context.  Function-scoped MCP
+ * requests cannot return that owner to their caller, so make one immediate
+ * retry and keep the handle non-NULL after a persistent failure. */
+static int close_vmaf_context_with(VmafContext **vmaf, VmafCloseFn close_fn)
+{
+    if (vmaf == nullptr || close_fn == nullptr)
+        return -EINVAL;
+    if (*vmaf == nullptr)
+        return 0;
+
+    int first_err = 0;
+    for (unsigned attempt = 0u; attempt < MCP_CLOSE_MAX_ATTEMPTS; ++attempt) {
+        const int err = close_fn(*vmaf);
+        if (err == 0) {
+            *vmaf = nullptr;
+            return 0;
+        }
+        if (first_err == 0)
+            first_err = err;
+    }
+    return first_err;
+}
+
+static int close_vmaf_context(VmafContext **vmaf)
+{
+    return close_vmaf_context_with(vmaf, vmaf_close);
+}
+
 /* Release every resource acquired by score_yuv_pair. A scoring error remains
  * primary, but cleanup failures are still checked and become observable when
  * the scoring path itself succeeded. */
 static int close_score_resources(ScoreResources *resources, int primary_rc, char **err_owned)
 {
     int cleanup_rc = 0;
-    if (resources->model != nullptr) {
-        vmaf_model_destroy(resources->model);
-    }
     if (resources->vmaf != nullptr) {
-        const int close_rc = vmaf_close(resources->vmaf);
+        const int close_rc = close_vmaf_context(&resources->vmaf);
         if (cleanup_rc == 0 && close_rc != 0) {
             cleanup_rc = close_rc;
         }
+    }
+    /* The context stores model-backed feature ownership until close succeeds.
+     * Retain the model after a persistent close failure rather than creating a
+     * dangling dependency during process-exit teardown. */
+    if (resources->vmaf == nullptr && resources->model != nullptr) {
+        vmaf_model_destroy(resources->model);
+        resources->model = nullptr;
     }
     if (resources->reference_fd >= 0 && close(resources->reference_fd) != 0 && cleanup_rc == 0) {
         cleanup_rc = -errno;

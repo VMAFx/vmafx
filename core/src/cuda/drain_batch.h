@@ -146,9 +146,12 @@ void vmaf_cuda_drain_batch_close(void);
  * Tear down the calling thread's drain stream.
  *
  * Called from the engine on context shutdown. Safe on a thread that
- * never opened a batch.
+ * never opened a batch. A driver failure retains the stream and batch
+ * ownership for a later retry.
+ *
+ * @return 0 on success, or a negative errno while ownership is retained.
  */
-void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state);
+int vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state);
 
 /**
  * Number of entries currently registered in this thread's batch.

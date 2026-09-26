@@ -122,7 +122,7 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     CGO_ENABLED=${CGO_ENABLED} \
-    CGO_LDFLAGS="-L/usr/local/lib -lvmaf" \
+    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm" \
     go build \
         -trimpath \
         -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \

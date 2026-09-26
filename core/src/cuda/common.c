@@ -391,16 +391,24 @@ int vmaf_cuda_stream_destroy(VmafCudaState *cu_state, CUstream *stream, bool syn
         return vmaf_cuda_result_to_errno((int)push_res);
 
     int rc = 0;
+    bool quiesced = !synchronize;
     if (synchronize) {
         const CUresult sync_res = cu_f->cuStreamSynchronize(*stream);
-        if (sync_res != CUDA_SUCCESS)
+        if (sync_res == CUDA_SUCCESS) {
+            quiesced = true;
+        } else {
             rc = vmaf_cuda_result_to_errno((int)sync_res);
+        }
     }
-    const CUresult destroy_res = cu_f->cuStreamDestroy(*stream);
-    if (destroy_res == CUDA_SUCCESS) {
-        *stream = NULL;
-    } else if (rc == 0) {
-        rc = vmaf_cuda_result_to_errno((int)destroy_res);
+    /* Only destroy the stream after quiescence.  A sync failure means the
+     * stream is still live — destroying it would orphan in-flight work. */
+    if (quiesced) {
+        const CUresult destroy_res = cu_f->cuStreamDestroy(*stream);
+        if (destroy_res == CUDA_SUCCESS) {
+            *stream = NULL;
+        } else if (rc == 0) {
+            rc = vmaf_cuda_result_to_errno((int)destroy_res);
+        }
     }
 
     const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
@@ -445,65 +453,52 @@ int vmaf_cuda_release(VmafCudaState *cu_state)
 {
     if (is_cudastate_empty(cu_state))
         return 0;
+    if (!cu_state->f)
+        return -EINVAL;
 
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_state->ctx), fail);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(cu_state->f, cuStreamDestroy(cu_state->str), fail);
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_release_funcs);
+    /* ADR-1336 prepare: retain the context and function table until every fallible
+     * driver operation has succeeded. A transient failure can then be
+     * retried through the same VmafCudaState. */
+    if (cu_state->str) {
+        const int stream_err = vmaf_cuda_stream_destroy(cu_state, &cu_state->str, true);
+        if (stream_err)
+            return stream_err;
+    }
+    if (cu_state->release_ctx) {
+        const CUresult release_res = cu_state->f->cuDevicePrimaryCtxRelease(cu_state->dev);
+        if (release_res != CUDA_SUCCESS)
+            return vmaf_cuda_result_to_errno((int)release_res);
+    }
 
-    if (cu_state->release_ctx)
-        CHECK_CUDA_GOTO(cu_state->f, cuDevicePrimaryCtxRelease(cu_state->dev), fail_release_funcs);
-
-    /* Save the dlopen'd driver function table before the memset so we
-     * can release it afterwards. Order matters: zeroing cu_state first
-     * guarantees that any caller that reinspects the struct after
-     * vmaf_close() sees a NULL f field rather than a pointer to freed
-     * memory. Netflix#1300 — the original code leaked the CudaFunctions
-     * table (~hundreds of function pointers) on every init/close
-     * cycle. */
+    /* Commit only after stream quiescence/destruction and primary-context
+     * release. Zero before freeing the table so reinspection cannot observe
+     * a dangling function-table pointer. */
     CudaFunctions *f = cu_state->f;
     memset((void *)cu_state, 0, sizeof(*cu_state));
-    if (f)
-        cuda_free_functions(&f);
+    cuda_free_functions(&f);
     return 0;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_state->f->cuCtxPopCurrent(NULL);
-fail_release_funcs:
-    /* Round-26 audit (ADR-0982): the previous unwind dropped to
-     * fail_after_pop, which only returned the error code, leaving
-     * the dlopen'd CudaFunctions table allocated. Release it on
-     * the error path too so a caller that loops over init→release
-     * after a transient driver fault does not leak ~hundreds of
-     * function pointers per cycle. Stream and context state may be
-     * partly destroyed at this point; zero the struct so a caller
-     * who re-enters via vmaf_cuda_release_state_free sees a
-     * "cleanly empty" state and skips the free path. */
-    {
-        CudaFunctions *f = cu_state->f;
-        memset((void *)cu_state, 0, sizeof(*cu_state));
-        if (f)
-            cuda_free_functions(&f);
-    }
-    return _cuda_err;
 }
 
 int vmaf_cuda_state_free(VmafCudaState *cu_state)
 {
     /* NULL-safe like libc free(). Netflix#1300 — vmaf_cuda_state_init()
      * heap-allocates a VmafCudaState that vmaf_cuda_import_state()
-     * copies by value into the VmafContext; vmaf_close() only tears
-     * down the copy, never the original allocation. Callers must
-     * invoke vmaf_cuda_state_free() after vmaf_close() to release the
-     * original struct. By this point vmaf_close() has already run
+     * copies by value into the VmafContext; successful vmaf_close() only tears
+     * down the copy, never the original allocation. Callers must retain the
+     * original through every nonzero close and invoke vmaf_cuda_state_free()
+     * only after vmaf_close() returns 0. By this point close has already run
      * vmaf_cuda_release(), which destroys stream + context and memsets
      * the struct to zero, so the only work left here is the free()
-     * itself. */
+     * itself. An initialized state that was never imported still owns those
+     * runtime handles, so release them here through the same retry-safe path.
+     * A failure retains the allocation and handles for another call. */
     if (!cu_state)
         return 0;
+    if (!cu_state->imported) {
+        const int err = vmaf_cuda_release(cu_state);
+        if (err)
+            return err;
+    }
     free(cu_state);
     return 0;
 }
@@ -561,6 +556,105 @@ fail:
         (void)cu_state->f->cuCtxPopCurrent(NULL);
 fail_after_pop:
     return _cuda_err;
+}
+
+int vmaf_cuda_buffer_free_owned(VmafCudaState *cu_state, VmafCudaBuffer **p_buf)
+{
+    if (!p_buf)
+        return -EINVAL;
+    if (!*p_buf)
+        return 0;
+    if ((*p_buf)->data == 0) {
+        free(*p_buf);
+        *p_buf = NULL;
+        return 0;
+    }
+    if (is_cudastate_empty(cu_state) || !cu_state->f)
+        return -EINVAL;
+
+    CudaFunctions *const cu_f = cu_state->f;
+    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
+    if (push_res != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push_res);
+
+    int rc = 0;
+    const CUresult free_res = cu_f->cuMemFree((*p_buf)->data);
+    if (free_res == CUDA_SUCCESS) {
+        free(*p_buf);
+        *p_buf = NULL;
+    } else {
+        rc = vmaf_cuda_result_to_errno((int)free_res);
+    }
+
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        if (rc == 0)
+            rc = vmaf_cuda_result_to_errno((int)pop_res);
+    }
+    return rc;
+}
+
+int vmaf_cuda_deviceptr_free_owned(VmafCudaState *cu_state, CUdeviceptr *p_buf)
+{
+    if (!p_buf)
+        return -EINVAL;
+    if (!*p_buf)
+        return 0;
+    if (is_cudastate_empty(cu_state) || !cu_state->f)
+        return -EINVAL;
+
+    CudaFunctions *const cu_f = cu_state->f;
+    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
+    if (push_res != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push_res);
+
+    int rc = 0;
+    const CUresult free_res = cu_f->cuMemFree(*p_buf);
+    if (free_res == CUDA_SUCCESS) {
+        *p_buf = 0;
+    } else {
+        rc = vmaf_cuda_result_to_errno((int)free_res);
+    }
+
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        if (rc == 0)
+            rc = vmaf_cuda_result_to_errno((int)pop_res);
+    }
+    return rc;
+}
+
+int vmaf_cuda_buffer_host_free_owned(VmafCudaState *cu_state, void **p_buf)
+{
+    if (!p_buf)
+        return -EINVAL;
+    if (!*p_buf)
+        return 0;
+    if (is_cudastate_empty(cu_state) || !cu_state->f)
+        return -EINVAL;
+
+    CudaFunctions *const cu_f = cu_state->f;
+    const CUresult push_res = cu_f->cuCtxPushCurrent(cu_state->ctx);
+    if (push_res != CUDA_SUCCESS)
+        return vmaf_cuda_result_to_errno((int)push_res);
+
+    int rc = 0;
+    const CUresult free_res = cu_f->cuMemFreeHost(*p_buf);
+    if (free_res == CUDA_SUCCESS) {
+        *p_buf = NULL;
+    } else {
+        rc = vmaf_cuda_result_to_errno((int)free_res);
+    }
+
+    const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
+    if (pop_res != CUDA_SUCCESS) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+        if (rc == 0)
+            rc = vmaf_cuda_result_to_errno((int)pop_res);
+    }
+    return rc;
 }
 
 int vmaf_cuda_buffer_host_alloc(VmafCudaState *cu_state, void **p_buf, size_t size)

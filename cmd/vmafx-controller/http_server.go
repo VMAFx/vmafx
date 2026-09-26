@@ -128,8 +128,7 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	var req scoreRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.metrics.ScoreErrors.Inc()
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			scoringservice.WriteJSON(h.log, w, http.StatusRequestEntityTooLarge, errorResponse{
 				Error: fmt.Sprintf("request body exceeds %d bytes", maxScoreRequestBodyBytes),
 			})

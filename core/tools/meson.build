@@ -53,6 +53,7 @@ vmaf_tool_link_target = libvmaf
 if get_option('default_library') == 'both'
     vmaf_tool_link_target = libvmaf.get_shared_lib()
 endif
+vmaf_close_retry_source = files('vmaf_close_retry.c')
 
 # ADR-0809: vmaf.c and cli_parse.c converted to C++23 (vmaf.cpp, cli_parse.cpp).
 # The two C++ TUs are compiled at the project-wide C++ standard that
@@ -60,9 +61,17 @@ endif
 # no per-target cpp_std override is needed or used.
 # y4m_input.c / vidinput.c / yuv_input.c remain C23; they are compiled under the
 # project default (c_args only) and linked together with the C++ TUs.
+vmaf_cli_sources = [
+    'vmaf.cpp',
+    'cli_parse.cpp',
+    'y4m_input.c',
+    'vidinput.c',
+    'yuv_input.c',
+    '../src/compat/path_utf8.c',
+] + vmaf_close_retry_source
 vmaf = executable(
     'vmaf',
-    ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c', '../src/compat/path_utf8.c'],
+    vmaf_cli_sources,
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_tool_deps,
     c_args : vmaf_tool_cflags,
@@ -79,7 +88,7 @@ vmaf = executable(
 if host_machine.system() == 'windows'
     vmafx = executable(
         'vmafx',
-        ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c', '../src/compat/path_utf8.c'],
+        vmaf_cli_sources,
         include_directories : [libvmaf_inc, vmaf_include],
         dependencies: vmaf_tool_deps,
         c_args : vmaf_tool_cflags,
@@ -159,7 +168,7 @@ vmaf_bench_link_target = get_option('default_library') == 'both' ? libvmaf.get_s
 
 vmaf_bench = executable(
     'vmaf_bench',
-    ['vmaf_bench.c', '../src/compat/path_utf8.c'],
+    ['vmaf_bench.c', '../src/compat/path_utf8.c'] + vmaf_close_retry_source,
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_bench_deps,
     c_args : vmaf_bench_cflags,
@@ -186,7 +195,7 @@ if get_option('enable_sycl')
     if vmaf_vpl_ok
         vmaf_vpl = executable(
             'vmaf_vpl',
-            ['vmaf_vpl.c', '../src/compat/path_utf8.c'],
+            ['vmaf_vpl.c', '../src/compat/path_utf8.c'] + vmaf_close_retry_source,
             include_directories : [libvmaf_inc, vmaf_include],
             dependencies: vmaf_vpl_deps,
             c_args : vmaf_cflags_common + ['-DHAVE_SYCL=1'],

@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"sort"
 	"sync"
@@ -125,9 +126,7 @@ var defaultCoeffs = map[string]Coefficients{
 // table.
 func DefaultCoefficients() map[string]Coefficients {
 	out := make(map[string]Coefficients, len(defaultCoeffs))
-	for k, v := range defaultCoeffs {
-		out[k] = v
-	}
+	maps.Copy(out, defaultCoeffs)
 	return out
 }
 
@@ -299,20 +298,14 @@ func (p *Predictor) PickCRF(features ShotFeatures, targetVMAF float64, codec str
 // operator needs to tune them per corpus; the learned model picks the CRF on
 // top of these bands.
 func PickKeyint(features ShotFeatures, fps float64) (keyint, minKeyint int) {
-	fpsInt := int(math.Round(fps))
-	if fpsInt < 1 {
-		fpsInt = 1
-	}
+	fpsInt := max(int(math.Round(fps)), 1)
 	// Empirical bands in kbps for 1080p natural content at the codec's probe
 	// quality; valid within about one octave of that resolution.
 	const lowMotionThresholdKbps = 1500.0
 	const highMotionThresholdKbps = 8000.0
 
 	isLong := features.ShotLengthFrames >= int(math.Round(4.0*float64(fpsInt)))
-	half := fpsInt / 2
-	if half < 1 {
-		half = 1
-	}
+	half := max(fpsInt/2, 1)
 	switch {
 	case isLong && features.ProbeBitrateKbps < lowMotionThresholdKbps:
 		return 4 * fpsInt, fpsInt
@@ -464,7 +457,7 @@ func SelectValidationShots(
 	perQuartile := k / 4
 	extra := k - perQuartile*4
 	selected := make([]pershot.Shot, 0, k)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		lo := i * quartileSize
 		hi := (i + 1) * quartileSize
 		if i == 3 {
@@ -507,16 +500,10 @@ func spreadOverQuartile(quartile []pershot.Shot, nPick int) []pershot.Shot {
 	if nPick <= 0 {
 		return nil
 	}
-	step := len(quartile) / nPick
-	if step < 1 {
-		step = 1
-	}
+	step := max(len(quartile)/nPick, 1)
 	picked := make([]pershot.Shot, 0, nPick)
 	for j := 0; j < nPick; j++ {
-		idx := j * step
-		if idx > len(quartile)-1 {
-			idx = len(quartile) - 1
-		}
+		idx := min(j*step, len(quartile)-1)
 		picked = append(picked, quartile[idx])
 	}
 	return picked

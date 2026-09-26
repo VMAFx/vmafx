@@ -199,7 +199,7 @@ func TestOpenScoreStream_SurfaceServerStatusOnSendEOF(t *testing.T) {
 	// that *whenever* a Send returns EOF, the wrapper translates it into
 	// the server's actual status rather than leaking the meaningless EOF.
 	var pushErr error
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		stream, err := cli.OpenScoreStream(ctx, 64, 48,
 			vmafxv1.PixelFormat_PIXEL_FORMAT_YUV420P, "", 0)
 		if err != nil {

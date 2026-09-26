@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -33,6 +34,11 @@
  * submits a 32-byte VmafPicture pair, MCP transports submit 48-byte
  * frame events — 64 bytes gives comfortable headroom). */
 #define JOB_INLINE_DATA_SIZE 64
+
+/* A context's public frame index is unsigned, so one worker cannot service
+ * more than UINT_MAX distinct frame jobs without leaving that API domain.
+ * Exhaustion fails the pool closed instead of wrapping the loop counter. */
+#define THREAD_POOL_MAX_JOBS_PER_WORKER UINT_MAX
 
 typedef struct VmafThreadPoolJob {
     int (*func)(void *data, void **thread_data);
@@ -64,6 +70,7 @@ typedef struct VmafThreadPool {
     unsigned n_working;
     bool stop;
     VmafThreadPoolWorker *workers;
+    int (*thread_data_prepare)(void *thread_data);
     void (*thread_data_free)(void *thread_data);
     /* Recycled job objects for reuse, keyed off the pool's lock. */
     VmafThreadPoolJob *free_jobs;
@@ -119,12 +126,27 @@ static void vmaf_thread_pool_job_recycle(VmafThreadPool *pool, VmafThreadPoolJob
     pool->free_jobs = job;
 }
 
+static void vmaf_thread_pool_worker_finish(VmafThreadPool *pool, bool budget_exhausted)
+{
+    (void)pthread_mutex_lock(&(pool->queue.lock));
+    if (budget_exhausted && !pool->stop) {
+        pool->last_error |= -EOVERFLOW;
+        pool->stop = true;
+        (void)pthread_cond_broadcast(&(pool->queue.empty));
+        (void)pthread_cond_broadcast(&(pool->queue.not_full));
+    }
+    if (--(pool->n_threads) == 0)
+        (void)pthread_cond_signal(&(pool->working));
+    (void)pthread_mutex_unlock(&(pool->queue.lock));
+}
+
 static void *vmaf_thread_pool_runner(void *p)
 {
     VmafThreadPoolWorker *worker = p;
     VmafThreadPool *pool = worker->pool;
+    bool budget_exhausted = true;
 
-    for (;;) {
+    for (unsigned jobs_run = 0; jobs_run < THREAD_POOL_MAX_JOBS_PER_WORKER; jobs_run++) {
         pthread_mutex_lock(&(pool->queue.lock));
         /* Round-5 race fix (finding #6): POSIX allows pthread_cond_wait to
          * return spuriously.  Use while instead of if so a spurious wakeup
@@ -132,8 +154,11 @@ static void *vmaf_thread_pool_runner(void *p)
          * job. */
         while (!pool->queue.head && !pool->stop)
             pthread_cond_wait(&(pool->queue.empty), &(pool->queue.lock));
-        if (pool->stop)
+        if (pool->stop) {
+            budget_exhausted = false;
+            (void)pthread_mutex_unlock(&(pool->queue.lock));
             break;
+        }
         VmafThreadPoolJob *job = vmaf_thread_pool_fetch_job(pool);
         if (job) {
             pool->queue.depth--;
@@ -156,10 +181,7 @@ static void *vmaf_thread_pool_runner(void *p)
         pthread_mutex_unlock(&(pool->queue.lock));
     }
 
-    if (--(pool->n_threads) == 0)
-        pthread_cond_signal(&(pool->working));
-
-    pthread_mutex_unlock(&(pool->queue.lock));
+    vmaf_thread_pool_worker_finish(pool, budget_exhausted);
     return NULL;
 }
 
@@ -247,6 +269,7 @@ int vmaf_thread_pool_create(VmafThreadPool **pool, VmafThreadPoolConfig cfg)
     memset(p, 0, sizeof(*p));
     p->n_threads = cfg.n_threads;
     p->n_workers_created = cfg.n_threads;
+    p->thread_data_prepare = cfg.thread_data_prepare;
     p->thread_data_free = cfg.thread_data_free;
 
     p->workers = malloc(sizeof(*p->workers) * cfg.n_threads);
@@ -282,6 +305,20 @@ static int wait_for_queue_capacity(VmafThreadPool *pool)
     }
 
     return 0;
+}
+
+/* Publish a fully initialized job while queue.lock is held. */
+static void vmaf_thread_pool_publish_job(VmafThreadPool *pool, VmafThreadPoolJob *job)
+{
+    if (!pool->queue.head) {
+        pool->queue.head = job;
+        pool->queue.tail = job;
+    } else {
+        pool->queue.tail->next = job;
+        pool->queue.tail = job;
+    }
+    pool->queue.depth++;
+    (void)pthread_cond_signal(&(pool->queue.empty));
 }
 
 int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void **thread_data),
@@ -333,16 +370,7 @@ int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void 
         }
     }
 
-    if (!pool->queue.head) {
-        pool->queue.head = job;
-        pool->queue.tail = pool->queue.head;
-    } else {
-        pool->queue.tail->next = job;
-        pool->queue.tail = job;
-    }
-
-    pool->queue.depth++;
-    pthread_cond_signal(&(pool->queue.empty));
+    vmaf_thread_pool_publish_job(pool, job);
     pthread_mutex_unlock(&(pool->queue.lock));
 
     return 0;
@@ -365,10 +393,49 @@ int vmaf_thread_pool_wait(VmafThreadPool *pool)
     pthread_mutex_unlock(&(pool->queue.lock));
     return err;
 }
+
+int vmaf_thread_pool_visit_thread_data(VmafThreadPool *pool, int (*visit)(void *thread_data))
+{
+    if (!pool || !visit)
+        return -EINVAL;
+
+    pthread_mutex_lock(&(pool->queue.lock));
+    if (pool->n_working || (!pool->stop && pool->queue.head) ||
+        (pool->stop && (pool->n_threads || pool->queue.waiting_producers))) {
+        (void)pthread_mutex_unlock(&(pool->queue.lock));
+        return -EBUSY;
+    }
+
+    int first_err = 0;
+    for (unsigned i = 0; i < pool->n_workers_created; i++) {
+        if (!pool->workers[i].data)
+            continue;
+        const int err = visit(pool->workers[i].data);
+        if (err && !first_err)
+            first_err = err;
+    }
+    (void)pthread_mutex_unlock(&(pool->queue.lock));
+    return first_err;
+}
+
+int vmaf_thread_pool_prepare_destroy(VmafThreadPool *pool)
+{
+    /* ADR-1336 keeps worker-private owners reachable across close failure. */
+    if (!pool)
+        return -EINVAL;
+    if (!pool->thread_data_prepare)
+        return 0;
+    return vmaf_thread_pool_visit_thread_data(pool, pool->thread_data_prepare);
+}
+
 int vmaf_thread_pool_destroy(VmafThreadPool *pool)
 {
     if (!pool)
         return -EINVAL;
+
+    const int prepare_err = vmaf_thread_pool_prepare_destroy(pool);
+    if (prepare_err)
+        return prepare_err;
 
     /* n_workers_created is written once at pool_create and never modified
      * afterwards, so it is safe to read without the lock.  Using n_threads

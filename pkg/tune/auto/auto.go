@@ -40,6 +40,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -176,10 +177,8 @@ type PlanState struct {
 
 // Fired records that sc fired. Idempotent on repeats.
 func (s *PlanState) Fired(sc ShortCircuit) {
-	for _, existing := range s.ShortCircuits {
-		if existing == string(sc) {
-			return
-		}
+	if slices.Contains(s.ShortCircuits, string(sc)) {
+		return
 	}
 	s.ShortCircuits = append(s.ShortCircuits, string(sc))
 }

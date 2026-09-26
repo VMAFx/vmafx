@@ -137,7 +137,7 @@ func indentString(indent int) string {
 
 // jsonNumberType is matched before the kind switch: json.Number is a string
 // kind that must render as a number.
-var jsonNumberType = reflect.TypeOf(json.Number(""))
+var jsonNumberType = reflect.TypeFor[json.Number]()
 
 // encoder accumulates one rendering.
 type encoder struct {
@@ -164,7 +164,7 @@ const maxIndirection = 64
 // This is the iterative form of what used to be value's self-call (HISS-01):
 // every step removes exactly one level of indirection.
 func resolveIndirection(v reflect.Value) (reflect.Value, bool, error) {
-	for level := 0; level < maxIndirection; level++ {
+	for range maxIndirection {
 		if !v.IsValid() {
 			return v, false, nil
 		}
@@ -363,7 +363,7 @@ func (e *encoder) newlineIndent(depth int) {
 		return
 	}
 	e.sb.WriteByte('\n')
-	for i := 0; i < depth; i++ {
+	for range depth {
 		e.sb.WriteString(e.opts.Indent)
 	}
 }

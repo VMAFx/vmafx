@@ -32,9 +32,13 @@ typedef struct VmafThreadPool VmafThreadPool;
  * @var VmafThreadPoolConfig::thread_data_free
  *   Optional destructor called on each thread's private data pointer when the
  *   pool is destroyed.  May be NULL if no per-thread state is allocated.
+ * @var VmafThreadPoolConfig::thread_data_prepare
+ *   Optional fallible prepare callback. Destruction retains the pool and
+ *   worker-private ownership when this callback fails.
  */
 typedef struct VmafThreadPoolConfig {
     unsigned n_threads;
+    int (*thread_data_prepare)(void *thread_data);
     void (*thread_data_free)(void *thread_data);
 } VmafThreadPoolConfig;
 
@@ -83,6 +87,23 @@ int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void 
  * @return 0 on success, negative errno on failure.
  */
 int vmaf_thread_pool_wait(VmafThreadPool *pool);
+
+/**
+ * @brief Visit each worker's private data while the pool is idle.
+ *
+ * The caller must first drain the pool with vmaf_thread_pool_wait() and must
+ * externally serialize this call against enqueue. The visitor may prepare
+ * private state for destruction without transferring ownership. All workers
+ * are visited even when one visitor call fails; the first error is returned.
+ *
+ * @param pool   Idle thread pool.
+ * @param visit  Callback invoked for each non-NULL worker-private pointer.
+ * @return 0 on success, -EBUSY when work is pending, or another negative errno.
+ */
+int vmaf_thread_pool_visit_thread_data(VmafThreadPool *pool, int (*visit)(void *thread_data));
+
+/** Run the configured fallible prepare callback for every worker-private value. */
+int vmaf_thread_pool_prepare_destroy(VmafThreadPool *pool);
 
 /**
  * @brief Discard queued jobs, finish active jobs, and free the pool.

@@ -3796,7 +3796,7 @@
     "0574": {
       "sites": {
         "core/src/feature/cuda/float_adm/float_adm_score.cu": 4,
-        "core/src/feature/cuda/float_adm_cuda.c": 14,
+        "core/src/feature/cuda/float_adm_cuda.c": 13,
         "core/src/feature/hip/float_adm/float_adm_score.hip": 3,
         "core/src/feature/hip/float_adm_hip.c": 9,
         "core/src/feature/metal/float_adm.metal": 1,
@@ -4794,7 +4794,7 @@
     },
     "0845": {
       "sites": {
-        "core/src/feature/cuda/integer_motion_cuda.c": 8
+        "core/src/feature/cuda/integer_motion_cuda.c": 7
       },
       "target": "0845-cuda-motion-launch-overhead.md"
     },
@@ -5360,7 +5360,6 @@
     },
     "0982": {
       "sites": {
-        "core/src/cuda/common.c": 1,
         "core/src/cuda/drain_batch.c": 1,
         "core/src/cuda/picture_cuda.c": 1,
         "core/src/sycl/common.cpp": 1,
@@ -5857,7 +5856,7 @@
         "core/include/libvmaf/meson.build": 1,
         "core/include/libvmaf/perceptual_weight.h": 1,
         "core/src/feature/perceptual_weight.h": 1,
-        "core/src/libvmaf.c": 5,
+        "core/src/libvmaf.c": 4,
         "core/src/meson.build": 1,
         "core/test/meson.build": 1,
         "core/test/test_perceptual_weight.c": 1
@@ -5926,6 +5925,7 @@
     "1125": {
       "sites": {
         "pkg/codecadapter/python_metadata_parity_test.go": 1,
+        "pkg/libvmaf/libvmaf.go": 1,
         "pkg/tune/executor/executor_test.go": 1
       },
       "target": "1125-vmafx-tune-go-port-integration.md"
@@ -6320,8 +6320,10 @@
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/test_y_funque_plus.c": 1,
+        "core/tools/test/test_vmaf_close_retry.c": 1,
         "core/tools/test/test_vmaf_per_shot_input.c": 1,
         "core/tools/vmaf_bench.c": 1,
+        "core/tools/vmaf_close_retry.c": 1,
         "core/tools/vmaf_per_shot.c": 1,
         "core/tools/vmaf_roi.c": 2,
         "core/tools/vmaf_roi_input.h": 2,
@@ -7521,7 +7523,16 @@
     },
     "1336": {
       "sites": {
-        "core/test/meson.build": 1
+        "core/src/cuda/common.c": 1,
+        "core/src/cuda/drain_batch.c": 1,
+        "core/src/cuda/picture_cuda.c": 1,
+        "core/src/feature/feature_extractor.cpp": 1,
+        "core/src/fex_ctx_vector.cpp": 1,
+        "core/src/gpu_picture_pool.cpp": 2,
+        "core/src/libvmaf.c": 1,
+        "core/src/thread_pool.c": 1,
+        "core/test/meson.build": 1,
+        "core/tools/vmaf.cpp": 1
       },
       "target": "1336-cuda-context-owned-resource-teardown.md"
     },
@@ -7531,6 +7542,14 @@
         "core/test/check_exported_symbols.py": 1
       },
       "target": "1337-cpp-placement-new-visibility.md"
+    },
+    "1338": {
+      "sites": {
+        ".github/workflows/go-ci.yml": 1,
+        "Makefile": 2,
+        "cmd/vmafx-tune/cmd/root.go": 1
+      },
+      "target": "1338-go-fix-clean-tree-gate.md"
     }
   },
   "retired": {

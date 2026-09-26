@@ -245,6 +245,12 @@ core/
   — to iterate `workers[]` for `thread_data_free`; never collapse
   these two counters back into one during rebase or `destroy`
   path reacquires data race (C11 UB, TSan-detected). See
+  Worker-private extractor teardown has a fallible prepare callback:
+  `thread_data_prepare` closes every private context while workers and their
+  owner array remain alive. `vmaf_thread_pool_destroy` returns the first
+  prepare error without stopping or freeing the pool; `thread_data_free` is
+  commit-only and runs after a successful retry. Never move close calls back
+  into the void free callback.
   [Research-0097](../docs/research/0097-thread-pool-pthread-create-unchecked-2026-05-10.md).
   See [ADR-0147](../docs/adr/0147-thread-pool-job-pool.md) and
   [rebase-notes 0040](../docs/rebase-notes.md).
@@ -284,7 +290,7 @@ core/
   `data[0]` only, has no `enable_chroma` option; CUDA
   [`src/feature/cuda/integer_vif_cuda.c`](src/feature/cuda/integer_vif_cuda.c)
   hardcodes `s->n_planes = 1`, warn-on-trues `enable_chroma`; HIP,
-  SYCL, Vulkan, Metal twins all match. Upstream Netflix/vmaf is
+  SYCL, and Metal twins all match. Upstream Netflix/vmaf is
   same. VIF (Sheikh & Bovik, 2006) is defined on single luminance
   channel — multi-plane VIF has no MOS-correlation literature. Never
   "fix" `n_planes = 1` or "wire enable_chroma through" without

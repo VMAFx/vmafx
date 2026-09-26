@@ -89,6 +89,10 @@ exercised against real Intel hardware — see
 
 ## Status
 
+Context cleanup is fail-closed. `vmaf_vpl` retries `vmaf_close()` once; if the
+second attempt fails it reports the negative error, exits non-zero, and keeps
+the model and imported SYCL state alive until process exit.
+
 The tool tracks ADR-0183 (FFmpeg `libvmaf_sycl` filter) — both share
 the same SYCL dmabuf-import primitive. `vmaf_vpl` exists primarily as
 a contributor regression-test entry point so the import path can be

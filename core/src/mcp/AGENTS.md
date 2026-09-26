@@ -117,6 +117,9 @@ Fork-local subtree. Read this before editing any TU under
    corrupt host's main measurement run. Tool accepts YUV420p
    8/10/12/16-bit inputs only; adding 4:2:2 / 4:4:4 requires
    `pixel_format` schema extension, docs, and tests in same PR.
+   Teardown is dependency ordered and fail-closed: retry `vmaf_close()` once,
+   destroy the request model only after close returns exactly zero, and retain
+   both context and model through process exit after a persistent failure.
 5. **Vendored cJSON = v1.7.19 plus fork delta, NOT verbatim.**
    `3rdparty/cJSON/cJSON.c` carries banned-function replacements
    (ADR-0683 / ADR-1061), `cJSON_GetArraySize` saturation, ADR-1142

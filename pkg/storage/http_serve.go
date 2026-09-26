@@ -206,7 +206,7 @@ func waitForHTTP(ctx context.Context, addr string, timeout time.Duration) error 
 	// deadline check below is what normally ends it, and the bound only keeps
 	// a stalled clock from turning this into a spin (HISS-02).
 	maxPolls := int(timeout/serveReadyPollInterval) + 2
-	for poll := 0; poll < maxPolls; poll++ {
+	for range maxPolls {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out after %v waiting for http://%s/", timeout, addr)
 		}

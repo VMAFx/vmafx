@@ -115,20 +115,29 @@ cuda/
   → `vmaf_close` destroys CUDA stream + context + frees
   `CudaFunctions` driver table (via fork-local
   `cuda_free_functions()` call in `vmaf_cuda_release`) →
-  `vmaf_cuda_state_free` frees heap allocation itself. Call order
-  `vmaf_close → vmaf_cuda_state_free → vmaf_model_destroy`
+  `vmaf_cuda_state_free` frees heap allocation itself. Any nonzero
+  `vmaf_close` retains a teardown-only context and the imported state;
+  retry close before releasing dependencies. Call order
+  `successful vmaf_close → vmaf_cuda_state_free → vmaf_model_destroy`
   load-bearing; reversing first two = use-after-free. Mirrors SYCL
   backend's `vmaf_sycl_state_free()` pattern. **On rebase**: keep
   fork's public symbol; upstream doesn't have this API as of
   2026-04-24. See
   [ADR-0157](../../../docs/adr/0157-cuda-preallocation-leak-netflix-1300.md)
   and [rebase-notes 0050](../../../docs/rebase-notes.md).
+  An initialized state that was never imported is the exception:
+  `vmaf_cuda_state_free` first invokes retry-safe `vmaf_cuda_release` and
+  retains the wrapper on error. Import marks the caller wrapper so imported
+  state-free stays allocation-only after exact-zero context close. Never remove
+  the `-EBUSY` guard against duplicate import or live CUDA-owner overwrite.
 - **`vmaf_gpu_picture_pool_close` mutex destroy order** (fork-local,
   ADR-0157, promoted out of `cuda/` to `core/src/gpu_picture_pool.c`
   per ADR-0239): function does `pthread_mutex_unlock` →
   `pthread_mutex_destroy` → `free(pic)` → `free(pool)`. Destroying
   locked mutex = POSIX UB; old code destroyed it locked. On rebase:
-  keep unlock-before-destroy order.
+  keep unlock-before-destroy order. Slot release is also two-phase:
+  successful callbacks are marked committed, a failed callback retains the
+  pool, and a retry visits only slots not yet released.
 
 - **`CHECK_CUDA` graceful error propagation** (fork-local,
   ADR-0156): `CHECK_CUDA` macro in
@@ -268,6 +277,13 @@ cuda/
   device-free `test_cuda_runtime_unwind` and complete owner inventory in
   `test_cuda_module_lifecycle_contract.py` guard this rule. Adding a
   `cuModuleLoadData` owner requires updating that inventory in the same PR.
+  Wrapped, raw-device, and pinned feature buffers use
+  `vmaf_cuda_buffer_free_owned`, `vmaf_cuda_deviceptr_free_owned`, and
+  `vmaf_cuda_buffer_host_free_owned`; a field is cleared only after the driver
+  confirms the actual free. CUDA extractor contexts publish `close_required`
+  before entering `init`, so a failed partial init remains closeable even
+  though `is_initialized` is false. Do not extend that failed-init behavior to
+  non-CUDA extractors without auditing their close callbacks first.
 - **Drain batch belongs to one engine at a time.** `drain_batch.c`'s
   `g_drain_batch` thread-local (ADR-0242), but two `VmafContext`s can
   run on one OS thread, so it carries owning `VmafCudaState`:
@@ -276,8 +292,9 @@ cuda/
     left by different owner.
   - `vmaf_cuda_drain_batch_flush()` returns 0 without touching CUDA
     when caller isn't owner; clears entries it consumed.
-  - `vmaf_cuda_drain_batch_thread_destroy()` wipes entries, open
-    flag, and owner before engine state freed.
+  - `vmaf_cuda_drain_batch_thread_destroy()` first quiesces and destroys its
+    stream; a failure retains the stream, entries, open flag, and owner for
+    retry. It clears registration ownership only after success.
 
   Never restore owner-less `open(void)` signature: without it,
   closed context leaves dangling `CUevent`s and freed `bool *` flags
@@ -287,10 +304,19 @@ cuda/
 
 - **ADR-0982 error-path unwinds and partial-init cleanup (BUG-048 Sec A3)**:
   - In `picture_cuda.c`: `vmaf_cuda_picture_alloc` zeroes `priv` struct immediately upon allocation (`memset(priv, 0, sizeof(*priv))`). On plane allocation failure (`device_pic_alloc_planes` non-zero), `device_pic_unwind` is invoked with `DEV_PIC_UNWIND_DATA` so that prior successfully allocated device planes are freed (`cuMemFree(pic->data[i])`) and pointers zeroed (`pic->data[i] = NULL`), rather than `DEV_PIC_UNWIND_FINISHED` which skipped plane unwinding.
-  - In `common.c`: in `vmaf_cuda_release()`, failure paths on `cuStreamDestroy`, `cuCtxPopCurrent`, and `cuDevicePrimaryCtxRelease` route via `fail_release_funcs` to ensure `cuda_free_functions(&f)` is invoked and `cu_state` is zeroed on error instead of leaking dynamically loaded driver function handles.
+  - In `common.c`: `vmaf_cuda_release()` retains `cu_state`, its live handle,
+    and `CudaFunctions` table after a driver failure. Only successful stream
+    quiescence/destruction and primary-context release commit the zeroed state
+    and function-table free.
   - In `drain_batch.c`: in `drain_stream_ensure()`, if `cuCtxPopCurrent` fails after `cuStreamCreateWithPriority`, execution branches to `fail_after_stream` to destroy `g_drain_batch.drain_str` before returning `-ENOTRECOVERABLE`.
   - Guarded by deterministic mock-driver unit test `core/test/test_cuda_runtime_unwind.c`.
-  - On rebase: maintain these unwinds and never bypass `DEV_PIC_UNWIND_DATA` on plane allocation failures or drop `cuda_free_functions` on `vmaf_cuda_release` error paths.
+  - On rebase: maintain these unwinds, never bypass `DEV_PIC_UNWIND_DATA` on
+    plane allocation failures, and never clear `VmafCudaState` after a failed
+    `vmaf_cuda_release`. Allocator-internal `device_pic_unwind` and
+    `device_pic_free_after_pop`, including earlier-slot cleanup during failed
+    pool construction, remain best-effort rollback; ADR-1336 retry guarantees
+    apply to fully published extractor and ring-picture owners, not half-built
+    allocator-local objects.
 
 ## Governing ADRs
 
@@ -316,14 +342,14 @@ cuda/
   consumes public CUDA C-API surface
   (`vmaf_cuda_state_init` / `_state_free` / `_import_state` /
   `_preallocate_pictures` / `_fetch_preallocated_picture` from
-  [`include/libvmaf/libvmaf_cuda.h`](../../include/libvmaf/libvmaf_cuda.h))
-  exactly like SYCL/Vulkan do via patches `0003`/`0004`. **On
+  [`include/libvmaf/libvmaf_cuda.h`](../../include/libvmaf/libvmaf_cuda.h)). **On
   rename / signature change of any of those entry points**: FFmpeg
   patch must update in same PR per CLAUDE.md §12 r14. Verify by
   cumulative `git am --3way` replay of every entry in
   `ffmpeg-patches/series.txt` against pristine FFmpeg `n9.0.2`.
-  CUDA filter selector mirrors picture-pool ownership contract above: state freed
-  *after* `vmaf_close()`. Reversing order = use-after-free.
+  CUDA filter selector mirrors picture-pool ownership contract above: state is
+  freed only after `vmaf_close()` returns exactly 0. Every nonzero result retains
+  the context and state for retry; reversing order violates ownership.
 
 ## Build
 

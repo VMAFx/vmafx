@@ -771,9 +771,19 @@ int vmaf_feature_extractor_context_init(VmafFeatureExtractorContext *fex_ctx,
         return -EINVAL;
     if (fex_ctx->is_initialized)
         return -EINVAL;
+    if (fex_ctx->is_closed || fex_ctx->close_required)
+        return -EBUSY;
     if (!pix_fmt)
         return -EINVAL;
 
+    /* ADR-1336: CUDA init callbacks may publish several device owners before a later
+     * allocation fails. Publish their close obligation before entering feature
+     * code so that partial state remains reachable. The generic extractor
+     * registry has many legacy non-CUDA close callbacks whose partial-init
+     * contract has not been audited; successful initialization remains the
+     * close obligation for those extractors. */
+    fex_ctx->close_required =
+        fex_ctx->fex->close != nullptr && (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA);
     if (fex_ctx->fex->init && !fex_ctx->is_initialized) {
         const int err = fex_ctx->fex->init(fex_ctx->fex, pix_fmt, bpc, w, h);
         if (err)
@@ -966,21 +976,21 @@ int vmaf_feature_extractor_context_close(VmafFeatureExtractorContext *fex_ctx)
 {
     if (!fex_ctx)
         return -EINVAL;
-    if (!fex_ctx->is_initialized)
-        return -EINVAL;
     if (fex_ctx->is_closed)
         return 0;
+    if (!fex_ctx->is_initialized && !fex_ctx->close_required)
+        return -EINVAL;
 
     int err = 0;
     if (fex_ctx->fex->close)
         err = fex_ctx->fex->close(fex_ctx->fex);
-    /* Only mark closed on success so a failed close is retryable
-     * (blocker #1: retry lifecycle correctness; blocker #2: destroy
-     * calls free(priv) unconditionally — leaving is_closed = false on
-     * error prevents double-free of GPU handles the close did not
-     * release). */
-    if (!err)
+    /* Only mark closed on success so a failed close is retryable.
+     * context_destroy() enforces the contract by refusing to free priv
+     * when is_closed is false and a close callback exists. */
+    if (!err) {
         fex_ctx->is_closed = true;
+        fex_ctx->close_required = false;
+    }
     return err;
 }
 
@@ -990,6 +1000,12 @@ int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx)
         return -EINVAL;
 
     if (fex_ctx->fex) {
+        /* Fail closed for both a completed initialization and an init callback
+         * that failed after acquiring resources. The separate close_required
+         * bit is published before init() is entered. */
+        if (fex_ctx->close_required ||
+            (fex_ctx->fex->close && fex_ctx->is_initialized && !fex_ctx->is_closed))
+            return -EBUSY;
         /* Release any prev_ref picture reference taken by
          * vmaf_feature_extractor_context_extract() for PREV_REF extractors. */
         if (fex_ctx->fex->prev_ref.ref)
@@ -1341,6 +1357,90 @@ int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
     return first_err;
 }
 
+namespace
+{
+
+bool context_needs_close(const VmafFeatureExtractorContext *fex_ctx)
+{
+    return fex_ctx && !fex_ctx->is_closed && (fex_ctx->is_initialized || fex_ctx->close_required);
+}
+
+int close_pool_contexts(VmafFeatureExtractorContextPool *pool)
+{
+    int first_err = 0;
+    for (unsigned i = 0; i < pool->cnt; i++) {
+        if (!pool->fex_list[i]->ctx_list)
+            continue;
+        for (int j = 0; j < pool->fex_list[i]->capacity.load(); j++) {
+            VmafFeatureExtractorContext *ctx = pool->fex_list[i]->ctx_list[j].fex_ctx;
+            if (!context_needs_close(ctx))
+                continue;
+            const int err = vmaf_feature_extractor_context_close(ctx);
+            if (err && !first_err)
+                first_err = err;
+        }
+    }
+    return first_err;
+}
+
+int pool_contexts_ready_to_destroy(const VmafFeatureExtractorContextPool *pool)
+{
+    for (unsigned i = 0; i < pool->cnt; i++) {
+        if (!pool->fex_list[i]->ctx_list)
+            continue;
+        for (int j = 0; j < pool->fex_list[i]->capacity.load(); j++) {
+            const VmafFeatureExtractorContext *ctx = pool->fex_list[i]->ctx_list[j].fex_ctx;
+            if (ctx && (ctx->close_required ||
+                        (ctx->fex->close && ctx->is_initialized && !ctx->is_closed)))
+                return -EBUSY;
+        }
+    }
+    return 0;
+}
+
+int destroy_pool_contexts(VmafFeatureExtractorContextPool *pool)
+{
+    for (unsigned i = 0; i < pool->cnt; i++) {
+        if (!pool->fex_list[i]->ctx_list)
+            continue;
+        for (int j = 0; j < pool->fex_list[i]->capacity.load(); j++) {
+            VmafFeatureExtractorContext **ctx = &pool->fex_list[i]->ctx_list[j].fex_ctx;
+            if (!*ctx)
+                continue;
+            const int err = vmaf_feature_extractor_context_destroy(*ctx);
+            if (err)
+                return err;
+            *ctx = nullptr;
+        }
+    }
+    return 0;
+}
+
+void destroy_pool_entries(VmafFeatureExtractorContextPool *pool)
+{
+    for (unsigned i = 0; i < pool->cnt; i++) {
+        vmaf_dictionary_free(&pool->fex_list[i]->opts_dict);
+        free(pool->fex_list[i]->ctx_list);
+        (void)pthread_cond_destroy(&pool->fex_list[i]->full);
+        pool->fex_list[i]->~fex_list_entry();
+        free(pool->fex_list[i]);
+    }
+}
+
+} // namespace
+
+int vmaf_fex_ctx_pool_close(VmafFeatureExtractorContextPool *pool)
+{
+    if (!pool)
+        return -EINVAL;
+    if (!pool->fex_list)
+        return 0;
+    pthread_mutex_lock(&(pool->lock));
+    const int err = close_pool_contexts(pool);
+    (void)pthread_mutex_unlock(&(pool->lock));
+    return err;
+}
+
 int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)
 {
     if (!pool)
@@ -1350,26 +1450,15 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)
         return 0;
     }
     pthread_mutex_lock(&(pool->lock));
-
-    for (unsigned i = 0; i < pool->cnt; i++) {
-        if (!pool->fex_list[i]->ctx_list)
-            continue;
-        for (int j = 0; j < pool->fex_list[i]->capacity.load(); j++) {
-            VmafFeatureExtractorContext *fex_ctx = pool->fex_list[i]->ctx_list[j].fex_ctx;
-            if (!fex_ctx)
-                continue;
-            vmaf_feature_extractor_context_close(fex_ctx);
-            vmaf_feature_extractor_context_destroy(fex_ctx);
-        }
-        vmaf_dictionary_free(&pool->fex_list[i]->opts_dict);
-        free(pool->fex_list[i]->ctx_list);
-        /* Destroy the per-entry condvar initialised by ctx_pool_alloc_slot().
-         * POSIX requires destroy before the memory is freed; omitting it
-         * leaks POSIX TSD resources on glibc and is flagged by ASan/LeakSan. */
-        (void)pthread_cond_destroy(&pool->fex_list[i]->full);
-        pool->fex_list[i]->~fex_list_entry();
-        free(pool->fex_list[i]);
+    int err = pool_contexts_ready_to_destroy(pool);
+    if (!err)
+        err = destroy_pool_contexts(pool);
+    if (err) {
+        (void)pthread_mutex_unlock(&(pool->lock));
+        return err;
     }
+
+    destroy_pool_entries(pool);
     free(static_cast<void *>(pool->fex_list));
     /* POSIX requires unlock + destroy before free; freeing a locked or
      * un-destroyed mutex is undefined behaviour. Unlock first (we hold
