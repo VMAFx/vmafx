@@ -974,7 +974,13 @@ int vmaf_feature_extractor_context_close(VmafFeatureExtractorContext *fex_ctx)
     int err = 0;
     if (fex_ctx->fex->close)
         err = fex_ctx->fex->close(fex_ctx->fex);
-    fex_ctx->is_closed = true;
+    /* Only mark closed on success so a failed close is retryable
+     * (blocker #1: retry lifecycle correctness; blocker #2: destroy
+     * calls free(priv) unconditionally — leaving is_closed = false on
+     * error prevents double-free of GPU handles the close did not
+     * release). */
+    if (!err)
+        fex_ctx->is_closed = true;
     return err;
 }
 
