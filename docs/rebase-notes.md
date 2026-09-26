@@ -54412,3 +54412,16 @@ The baseline sweep intentionally includes the hand-maintained
 gate by permanently excluding either analyzer when rebasing; resolve any new
 overlap in reviewed source, then require the full default fixer set to be
 clean.
+
+## CodeQL exact-head ownership and arithmetic contracts (2026-09-26)
+
+`fex_list_entry` owns a by-value `VmafFeatureExtractor` snapshot so a caller's
+stack descriptor cannot escape into lazily-created contexts. Preserve that
+ownership on upstream conflict; refresh only framework-managed CUDA, SYCL, and
+frame-sync pointers under the pool lock. `test_fex_pool_growth` mutates the
+original descriptor after registration as the regression guard.
+
+Do not widen `float * float` operands in `iqa_convolve_vertical_pass` before
+their result is accumulated into `double`. CodeQL alert 1005 is a false
+positive against the ADR-0138 bit-exact SIMD contract; the adjacent suppression
+and bitwise kernel test are intentional.

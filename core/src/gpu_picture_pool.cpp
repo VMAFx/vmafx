@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <pthread.h>
 
 #include "picture.h"
@@ -115,10 +116,13 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
     std::memset(p, 0, sizeof(*p));
     p->cfg = cfg;
 
-    const size_t slot_bytes = sizeof(VmafPicture) + sizeof(bool);
-    if (p->cfg.pic_cnt > SIZE_MAX / slot_bytes) {
-        gpu_pool_destruct(p, pool);
-        return -EOVERFLOW;
+    constexpr size_t slot_bytes = sizeof(VmafPicture) + sizeof(bool);
+    constexpr size_t max_slot_count = SIZE_MAX / slot_bytes;
+    if constexpr (std::numeric_limits<unsigned>::max() > max_slot_count) {
+        if (p->cfg.pic_cnt > max_slot_count) {
+            gpu_pool_destruct(p, pool);
+            return -EOVERFLOW;
+        }
     }
     p->pic = static_cast<VmafPicture *>(malloc(slot_bytes * p->cfg.pic_cnt));
     if (!p->pic) {
@@ -161,10 +165,11 @@ int vmaf_gpu_picture_pool_close(VmafGpuPicturePool *pool)
         if (pool->released[i])
             continue;
         const int free_err = pool->cfg.free_picture_callback(&pool->pic[i], pool->cfg.cookie);
-        if (!free_err)
+        if (!free_err) {
             pool->released[i] = true;
-        else if (!first_free_err)
+        } else if (!first_free_err) {
             first_free_err = negative_errno(free_err);
+        }
     }
 
     /* ADR-1336: each callback owns its slot until it reports success. Keep the pool,
@@ -203,7 +208,7 @@ int vmaf_gpu_picture_pool_fetch(VmafGpuPicturePool *pool, VmafPicture *pic)
     int err = pthread_mutex_lock(&pool->busy);
     if (err)
         return err;
-    unsigned pic_idx = pool->curr_idx;
+    const unsigned pic_idx = pool->curr_idx;
     pool->curr_idx = (pool->curr_idx + 1) % pool->cfg.pic_cnt;
     err |= pthread_mutex_unlock(&pool->busy);
     if (err)

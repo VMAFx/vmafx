@@ -31956,6 +31956,11 @@ across the fork-local Python trees (`ai/`, `mcp-server/vmaf-mcp/`,
   710, 767, 768.
 
 
+- Restrict Python cache lock files to their owner and close actionable CodeQL
+  findings in exception annotation, feature-context ownership, allocation
+  bounds, non-finite score validation, and exact floating-point test helpers.
+
+
 - **CWE-78 shell-injection sweep across `compat/python-vmaf/core/`
   (final-area security audit)** — seven subprocess call sites
   (`executor.py` ffmpeg invocation + six MATLAB feature-extractor

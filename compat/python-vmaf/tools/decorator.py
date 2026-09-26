@@ -99,7 +99,7 @@ def _file_lock(lock_path: str):
         lock_dir = os.path.dirname(abs_path) or "."
         os.makedirs(lock_dir, exist_ok=True)
         flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_BINARY", 0)
-        fd = os.open(abs_path, flags, 0o660)
+        fd = os.open(abs_path, flags, 0o600)
         try:
             _lock_file_descriptor(fd)
             _thread_local.locks[abs_path] = {"fd": fd, "count": 1}

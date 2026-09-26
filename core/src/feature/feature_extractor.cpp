@@ -1069,7 +1069,7 @@ struct fex_list_entry *find_fex_list_entry(VmafFeatureExtractorContextPool *pool
 {
     for (unsigned i = 0; i < pool->cnt; i++) {
         struct fex_list_entry *entry = pool->fex_list[i];
-        if (!strcmp(fex->name, entry->fex->name) &&
+        if (!strcmp(fex->name, entry->fex.name) &&
             !vmaf_dictionary_compare(opts_dict, entry->opts_dict)) {
             return entry;
         }
@@ -1092,9 +1092,13 @@ int grow_fex_list(VmafFeatureExtractorContextPool *pool)
      * assert() is compiled out under NDEBUG exactly where that matters. */
     if (pool->capacity == 0)
         return -EINVAL;
-    const size_t current_capacity = pool->capacity;
-    if (pool->capacity > UINT_MAX / 2 || current_capacity > SIZE_MAX / sizeof(*pool->fex_list) / 2)
+    if (pool->capacity > UINT_MAX / 2u)
         return -ENOMEM;
+    constexpr size_t max_table_capacity = SIZE_MAX / sizeof(*pool->fex_list) / 2u;
+    if constexpr (UINT_MAX > max_table_capacity) {
+        if (pool->capacity > max_table_capacity)
+            return -ENOMEM;
+    }
     const unsigned capacity = pool->capacity * 2;
     struct fex_list_entry **fex_list = static_cast<struct fex_list_entry **>(
         realloc(static_cast<void *>(pool->fex_list), sizeof(*(pool->fex_list)) * capacity));
@@ -1114,7 +1118,7 @@ int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex, u
 {
     new (slot) fex_list_entry(); /* placement-new value-init (ADR-0772) */
 
-    slot->fex = fex;
+    slot->fex = *fex;
     /* In C++ TUs atomic_init() is not valid on std::atomic<T> (clang rejects
      * it with "address argument must be a pointer to _Atomic type").
      * Use .store() for initialisation and .load() for reads instead
@@ -1124,10 +1128,12 @@ int init_fex_list_slot(struct fex_list_entry *slot, VmafFeatureExtractor *fex, u
     slot->in_use.store(0, std::memory_order_relaxed);
     if (pthread_cond_init(&(slot->full), nullptr) != 0)
         return -ENOMEM;
-    const size_t thread_count = n_threads;
-    if (thread_count > SIZE_MAX / sizeof(slot->ctx_list[0])) {
-        pthread_cond_destroy(&(slot->full));
-        return -ENOMEM;
+    constexpr size_t max_thread_count = SIZE_MAX / sizeof(slot->ctx_list[0]);
+    if constexpr (UINT_MAX > max_thread_count) {
+        if (n_threads > max_thread_count) {
+            pthread_cond_destroy(&(slot->full));
+            return -ENOMEM;
+        }
     }
     const size_t ctx_array_sz = sizeof(slot->ctx_list[0]) * n_threads;
     slot->ctx_list = static_cast<decltype(slot->ctx_list)>(malloc(ctx_array_sz));
@@ -1186,6 +1192,21 @@ struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool *pool,
     return entry;
 }
 
+/* The entry owns the stable descriptor fields so callers may register stack
+ * descriptors safely. Framework-managed backend state is populated after
+ * registration, so keep those runtime pointers current before lazily creating
+ * another per-thread context. The pool lock serializes this refresh. */
+void refresh_fex_runtime_state(struct fex_list_entry *entry, const VmafFeatureExtractor *fex)
+{
+#ifdef HAVE_CUDA
+    entry->fex.cu_state = fex->cu_state;
+#endif
+#ifdef HAVE_SYCL
+    entry->fex.sycl_state = fex->sycl_state;
+#endif
+    entry->fex.framesync = fex->framesync;
+}
+
 /* ctx_pool_ensure_slot_ctx — allocate and initialise the per-thread context
  * for pool slot [i] if not already present.
  *
@@ -1197,13 +1218,9 @@ struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool *pool,
  * the pointer once under the pool lock and passing it in, we guarantee a
  * single read at a point where a happens-before relationship to the
  * registration write exists. */
-int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFeatureExtractor *fex,
-                             VmafDictionary *opts_dict, VmafFrameSyncContext *framesync)
+int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafDictionary *opts_dict,
+                             VmafFrameSyncContext *framesync)
 {
-    /* fex is retained in the signature to document the caller's snapshot
-     * contract (see comment above); the body uses entry->fex, so the
-     * parameter itself is intentionally unreferenced here. */
-    (void)fex;
     if (entry->ctx_list[i].fex_ctx)
         return 0;
 
@@ -1216,7 +1233,7 @@ int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFeatureExt
         }
     }
     VmafFeatureExtractorContext *f = nullptr;
-    const int err = vmaf_feature_extractor_context_create(&f, entry->fex, d);
+    const int err = vmaf_feature_extractor_context_create(&f, &entry->fex, d);
     if (err) {
         (void)vmaf_dictionary_free(&d);
         return err;
@@ -1231,12 +1248,11 @@ int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFeatureExt
     return 0;
 }
 
-int ctx_pool_claim_slot(struct fex_list_entry *entry, VmafFeatureExtractor *fex,
-                        VmafDictionary *opts_dict, VmafFeatureExtractorContext **fex_ctx,
-                        VmafFrameSyncContext *framesync)
+int ctx_pool_claim_slot(struct fex_list_entry *entry, VmafDictionary *opts_dict,
+                        VmafFeatureExtractorContext **fex_ctx, VmafFrameSyncContext *framesync)
 {
     for (int i = 0; i < entry->capacity.load(); i++) {
-        const int err = ctx_pool_ensure_slot_ctx(entry, i, fex, opts_dict, framesync);
+        const int err = ctx_pool_ensure_slot_ctx(entry, i, opts_dict, framesync);
         if (err)
             return err;
         if (!entry->ctx_list[i].in_use) {
@@ -1281,7 +1297,8 @@ int vmaf_fex_ctx_pool_aquire(VmafFeatureExtractorContextPool *pool, VmafFeatureE
      * with the memcpy inside vmaf_feature_extractor_context_create(). */
     VmafFrameSyncContext *framesync =
         (fex->flags & VMAF_FEATURE_FRAME_SYNC) ? fex->framesync : nullptr;
-    err = ctx_pool_claim_slot(entry, fex, opts_dict, fex_ctx, framesync);
+    refresh_fex_runtime_state(entry, fex);
+    err = ctx_pool_claim_slot(entry, opts_dict, fex_ctx, framesync);
     pthread_mutex_unlock(&(pool->lock));
     return err;
 }
@@ -1300,7 +1317,7 @@ int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
     const VmafFeatureExtractor *const fex = fex_ctx->fex;
     struct fex_list_entry *entry = nullptr;
     for (unsigned i = 0; i < pool->cnt; i++) {
-        if (!strcmp(fex->name, pool->fex_list[i]->fex->name) &&
+        if (!strcmp(fex->name, pool->fex_list[i]->fex.name) &&
             !vmaf_dictionary_compare(fex_ctx->opts_dict, pool->fex_list[i]->opts_dict)) {
             entry = pool->fex_list[i];
             break;
@@ -1340,7 +1357,7 @@ int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
 
     int first_err = 0;
     for (unsigned i = 0; i < pool->cnt; i++) {
-        const VmafFeatureExtractor *const fex = pool->fex_list[i]->fex;
+        const VmafFeatureExtractor *const fex = &pool->fex_list[i]->fex;
         if (!(fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
             continue;
         for (int j = 0; j < pool->fex_list[i]->capacity.load(); j++) {

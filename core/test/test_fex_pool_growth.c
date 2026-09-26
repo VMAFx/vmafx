@@ -178,6 +178,37 @@ static void *worker(void *unused)
 static const char *const names[9] = {"pool0", "pool1", "pool2", "pool3", "pool4",
                                      "pool5", "pool6", "pool7", "pool8"};
 
+static char *check_pool_owns_registered_descriptor(void)
+{
+    VmafFeatureExtractorContextPool *owned_pool = NULL;
+    VmafFeatureExtractorContext *context = NULL;
+    VmafFeatureExtractor descriptor = {.name = "owned_descriptor"};
+    char *error = NULL;
+
+    if (vmaf_fex_ctx_pool_create(&owned_pool, 1))
+        return "descriptor pool creation failed";
+    if (vmaf_fex_ctx_pool_aquire(owned_pool, &descriptor, NULL, &context))
+        error = "descriptor registration failed";
+    if (!error && vmaf_fex_ctx_pool_release(owned_pool, context))
+        error = "descriptor context release failed";
+    if (!error) {
+        context = NULL;
+        descriptor.name = "mutated_descriptor";
+    }
+
+    VmafFeatureExtractor lookup = {.name = "owned_descriptor"};
+    if (!error && vmaf_fex_ctx_pool_aquire(owned_pool, &lookup, NULL, &context))
+        error = "owned descriptor lookup failed";
+    if (!error && owned_pool->cnt != 1)
+        error = "pool retained the caller's mutable descriptor address";
+
+    if (context)
+        (void)vmaf_fex_ctx_pool_release(owned_pool, context);
+    if (vmaf_fex_ctx_pool_destroy(owned_pool) && !error)
+        error = "descriptor pool destruction failed";
+    return error;
+}
+
 static char *prepare_pool(VmafFeatureExtractorContext **contexts)
 {
     if (sem_init(&waiting, 0, 0) || sem_init(&completed, 0, 0))
@@ -341,7 +372,11 @@ static char *check_option_allocation_failures(void)
 
 char *run_tests(void)
 {
-    char *error = check_pool_growth(0, 1);
+    char *error = check_pool_owns_registered_descriptor();
+    mu_tests_run++;
+    if (error)
+        return error;
+    error = check_pool_growth(0, 1);
     mu_tests_run++;
     if (error)
         return error;

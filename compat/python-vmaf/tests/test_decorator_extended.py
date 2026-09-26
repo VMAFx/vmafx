@@ -541,3 +541,18 @@ class TestCacheKeyStabilityAndCollision:
             pass
 
         assert fake_msvcrt.calls == [(0, fake_msvcrt.LK_LOCK, 1), (0, fake_msvcrt.LK_UNLCK, 1)]
+
+    def test_file_lock_requests_owner_only_permissions(self, monkeypatch, tmp_path):
+        """Lock files must never request group or other access."""
+        requested_modes = []
+        real_open = os.open
+
+        def tracked_open(path, flags, mode=0o777):
+            requested_modes.append(mode)
+            return real_open(path, flags, mode)
+
+        monkeypatch.setattr(decorator_module.os, "open", tracked_open)
+        with decorator_module._file_lock(str(tmp_path / "owner-only.lock")):
+            pass
+
+        assert requested_modes == [0o600]

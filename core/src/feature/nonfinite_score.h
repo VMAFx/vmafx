@@ -336,7 +336,7 @@ static inline int vmaf_ssim_prepare_score(double raw_score, int enable_db, doubl
         *score = raw_score;
         return 0;
     }
-    if (isnan(max_db) || max_db == -INFINITY)
+    if (isnan(max_db) || (isinf(max_db) && signbit(max_db)))
         return -EINVAL;
     if (raw_score >= 1.0) {
         *score = max_db;
