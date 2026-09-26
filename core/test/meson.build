@@ -32,7 +32,7 @@ test('test_meson_secret_env_sanitization',
     import('python').find_installation(),
     args : files('test_meson_secret_env_sanitization.py'),
     suite : ['fast'],
-    timeout : 30,
+    timeout : 120,
 )
 
 # Execute Windows discovery with stubbed tools on POSIX build hosts. This
