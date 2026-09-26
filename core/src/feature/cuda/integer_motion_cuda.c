@@ -448,12 +448,21 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
+    /* Build the feature-name dict early so the force-zero path (below)
+     * and the GPU path both get a valid dict.  extract_force_zero() calls
+     * vmaf_feature_collector_append_with_dict() which requires a non-NULL
+     * dict; without this the force-zero path returned -EINVAL (blocker #3). */
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return -ENOMEM;
+
     if (s->motion_force_zero) {
         fex->extract = extract_force_zero;
         fex->submit = NULL;
         fex->collect = NULL;
         fex->flush = NULL;
-        fex->close = NULL;
+        /* Keep close callback so the dict is freed at teardown. */
         return 0;
     }
 
@@ -466,11 +475,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     int ret = motion_alloc_buffers(fex, s, w, h);
     if (ret)
         return ret;
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
-        return motion_init_unwind(fex, s, ret);
 
     return 0;
 }
