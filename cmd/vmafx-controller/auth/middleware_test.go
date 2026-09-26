@@ -315,6 +315,45 @@ func TestVerifyJWT_KidInJWKSTail(t *testing.T) {
 	}
 }
 
+// TestVerifyJWT_WeakRSAKeyRejected: a JWKS key below 2048 bits is skipped, so a
+// token signed with it fails, while a strong key in the same JWKS still works.
+func TestVerifyJWT_WeakRSAKeyRejected(t *testing.T) {
+	weakPriv, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("generate 1024-bit key: %v", err)
+	}
+	strongPriv, strongPub, err := auth.GenerateTestKeyPair()
+	if err != nil {
+		t.Fatalf("generate 2048-bit key: %v", err)
+	}
+	jwks := `{"keys":[` + jwkJSON(t, "weak", &weakPriv.PublicKey) + "," +
+		jwkJSON(t, "strong", strongPub) + `]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(jwks))
+	}))
+	t.Cleanup(srv.Close)
+
+	status := func(priv *rsa.PrivateKey, kid string) int {
+		fi := &fakeIssuer{priv: priv, pub: &priv.PublicKey, server: srv, kid: kid}
+		mw := newTestMiddleware(t, fi)
+		req := httptest.NewRequest(http.MethodGet, "/v1/score", nil)
+		req.Header.Set("Authorization", "Bearer "+fi.MakeToken(t, tokenOpts{kid: kid}))
+		rr := httptest.NewRecorder()
+		mw.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})).ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	if got := status(weakPriv, "weak"); got != http.StatusUnauthorized {
+		t.Fatalf("token signed with a 1024-bit key: got %d, want 401", got)
+	}
+	if got := status(strongPriv, "strong"); got != http.StatusOK {
+		t.Fatalf("token signed with the 2048-bit key in the same JWKS: got %d, want 200", got)
+	}
+}
+
 func TestVerifyJWT_MissingTenantClaim(t *testing.T) {
 	fi := newFakeIssuer(t)
 	// Use a non-default tenant claim that the token does NOT have.

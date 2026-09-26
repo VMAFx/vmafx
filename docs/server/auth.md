@@ -90,6 +90,12 @@ Example payload:
 The controller only needs the IdP's JWKS endpoint and issuer URL. It does
 not perform OIDC discovery automatically — provide the endpoint directly.
 
+Signing keys must be RSA keys of at least 2048 bits with an odd public
+exponent (normally 65537). The controller skips a JWKS key below 2048 bits and
+logs `jwks: skipping RSA key below the minimum size` with its `kid`; tokens
+signed with that key are rejected with `401`, while other keys in the same
+JWKS keep working. A key with a malformed exponent makes the JWKS refresh fail.
+
 ### Auth0
 
 ```bash

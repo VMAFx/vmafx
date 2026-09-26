@@ -49,9 +49,11 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"math/big"
 	"net/http"
 	"slices"
@@ -333,6 +335,12 @@ func parseJWKS(body []byte) ([]jwkKey, error) {
 			continue
 		}
 		pub, err := rsaKeyFromComponents(k.N, k.E)
+		if errors.Is(err, errWeakRSAKey) {
+			// A weak key is unusable, not a broken document: skip it so tokens
+			// signed with it fail as an unknown kid while other keys still work.
+			slog.Warn("jwks: skipping RSA key below the minimum size", "kid", k.Kid, "err", err)
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("jwks: parse key %q: %w", k.Kid, err)
 		}
@@ -341,7 +349,16 @@ func parseJWKS(body []byte) ([]jwkKey, error) {
 	return result, nil
 }
 
+// minRSAKeyBits is the smallest RSA modulus accepted from the JWKS. Go itself
+// accepts keys down to 1024 bits; 2048 is the NIST SP 800-57 minimum.
+const minRSAKeyBits = 2048
+
+// errWeakRSAKey marks a JWKS key whose modulus is below minRSAKeyBits.
+var errWeakRSAKey = errors.New("RSA key below the minimum size")
+
 // rsaKeyFromComponents reconstructs an *rsa.PublicKey from JWKS n / e fields.
+// It rejects moduli below minRSAKeyBits and exponents that are even, below 3
+// or outside the int32 range.
 func rsaKeyFromComponents(nB64, eB64 string) (*rsa.PublicKey, error) {
 	nBytes, err := base64.RawURLEncoding.DecodeString(nB64)
 	if err != nil {
@@ -353,9 +370,15 @@ func rsaKeyFromComponents(nB64, eB64 string) (*rsa.PublicKey, error) {
 	}
 
 	n := new(big.Int).SetBytes(nBytes)
+	if n.BitLen() < minRSAKeyBits {
+		return nil, fmt.Errorf("%w: %d-bit modulus, need at least %d", errWeakRSAKey, n.BitLen(), minRSAKeyBits)
+	}
 	e := new(big.Int).SetBytes(eBytes)
+	if !e.IsInt64() || e.Int64() < 3 || e.Int64() > math.MaxInt32 || e.Bit(0) == 0 {
+		return nil, fmt.Errorf("invalid RSA public exponent %s", e.String())
+	}
 
-	return &rsa.PublicKey{N: n, E: int(e.Int64())}, nil //nolint:gosec // safe: e is always a small public exponent (65537)
+	return &rsa.PublicKey{N: n, E: int(e.Int64())}, nil //nolint:gosec // bounded: 3 <= e <= MaxInt32 is checked above
 }
 
 // ---------------------------------------------------------------------------
