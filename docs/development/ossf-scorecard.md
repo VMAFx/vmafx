@@ -57,7 +57,9 @@ case is `Signed-Releases = -1` with the exact upstream reason `no releases found
 It is displayed as **unassessed: no releases (not signed)** and excluded from the
 weighted denominator just as upstream does. Once a release exists, its actual
 result applies; keyless signing configuration alone proves no shipped artifact.
-Code-Review and CII-Best-Practices zero scores remain zero and lower the aggregate.
+A Code-Review zero score remains zero and lowers the aggregate. CII-Best-Practices
+scores 5 out of 10 for the passing badge VMAFx earned on 2026-09-26
+([passing badge record](best-practices-assessment.md)); silver scores 7 and gold 10.
 
 The public [Scorecard dashboard](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
 and badge show the latest published result, which may describe an older commit.
@@ -126,7 +128,7 @@ SHA-256 hashes (`--require-hashes`).
 
 Prior live evidence was Scorecard 8.7, Pinned Dependencies 7, and CII InProgress project
 14549 at 42 percent; local work is not post-merge proof until merged and scanned by the
-master publisher.
+master publisher. Project 14549 reached the passing badge on 2026-09-26.
 
 Workflows that call `slsa-framework/slsa-github-generator` maintain an intentional
 exception to commit-SHA pinning: the generator strictly requires an exact `@vX.Y.Z`
