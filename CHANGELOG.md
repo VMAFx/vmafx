@@ -31665,7 +31665,8 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   child environments and `testlog.json`. Fail-closed contracts reject raw supported-entry
   point bypasses across shell, multiline YAML (plain and quoted keys), and Python implicit
   list/tuple continuations, alternate test setups, and explicit per-test credential
-  reintroduction. Subprocess probes enforce a bounded, load-tolerant 120-second deadline.
+  reintroduction. Subprocess probes default to a load-tolerant 120-second deadline, and the
+  optional override fails closed unless it is finite and within 60--300 seconds.
   Disposable RED/GREEN probes cover both log formats using synthetic values only. Direct raw
   Meson or Ninja test-target commands remain a documented unsupported bypass.
 

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -493,11 +494,37 @@ def _precommit_contract_pattern() -> re.Pattern[str]:
 
 # ADR-1333: Bounded deadline for Meson setup and test probe subprocesses.
 # Replaces a fixed 30 s limit that is load-sensitive on heavily contested machines
-# during compiler discovery and meson test execution. Aligns with SUBPROCESS_TIMEOUT_S (120 s)
-# across CI contracts and DEFAULT_TIMEOUT_SECONDS in safe_subprocess.py. Catches hangs while
-# preventing false-positive flakes under heavy CPU/IO contention.
-PROBE_SUBPROCESS_TIMEOUT_SECONDS: float = float(
-    os.environ.get("VMAFX_MESON_TEST_TIMEOUT_SECONDS", "120.0")
+# during compiler discovery and meson test execution. The finite 60--300 s override
+# range keeps local probes configurable without letting inherited environment state
+# remove the hang boundary.
+PROBE_SUBPROCESS_TIMEOUT_DEFAULT_SECONDS = 120.0
+PROBE_SUBPROCESS_TIMEOUT_MIN_SECONDS = 60.0
+PROBE_SUBPROCESS_TIMEOUT_MAX_SECONDS = 300.0
+
+
+def _parse_probe_subprocess_timeout(raw: str | None) -> float:
+    """Return a finite probe timeout inside the configured safety bounds."""
+    if raw is None:
+        return PROBE_SUBPROCESS_TIMEOUT_DEFAULT_SECONDS
+    try:
+        timeout_seconds = float(raw)
+    except ValueError as exc:
+        raise ValueError(
+            "VMAFX_MESON_TEST_TIMEOUT_SECONDS must be a finite number from 60 through 300"
+        ) from exc
+    if not math.isfinite(timeout_seconds) or not (
+        PROBE_SUBPROCESS_TIMEOUT_MIN_SECONDS
+        <= timeout_seconds
+        <= PROBE_SUBPROCESS_TIMEOUT_MAX_SECONDS
+    ):
+        raise ValueError(
+            "VMAFX_MESON_TEST_TIMEOUT_SECONDS must be a finite number from 60 through 300"
+        )
+    return timeout_seconds
+
+
+PROBE_SUBPROCESS_TIMEOUT_SECONDS = _parse_probe_subprocess_timeout(
+    os.environ.get("VMAFX_MESON_TEST_TIMEOUT_SECONDS")
 )
 
 
@@ -898,10 +925,26 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
         )
 
     def test_probe_subprocess_timeout_is_bounded_and_load_tolerant(self) -> None:
+        self.assertEqual(
+            _parse_probe_subprocess_timeout(None),
+            PROBE_SUBPROCESS_TIMEOUT_DEFAULT_SECONDS,
+        )
+        for raw in ("60", "120", "180.5", "300"):
+            with self.subTest(valid_override=raw):
+                self.assertEqual(_parse_probe_subprocess_timeout(raw), float(raw))
+        for raw in ("", "not-a-number", "nan", "inf", "-inf", "59.9", "300.1"):
+            with self.subTest(invalid_override=raw):
+                with self.assertRaisesRegex(ValueError, "finite number from 60 through 300"):
+                    _parse_probe_subprocess_timeout(raw)
         self.assertGreaterEqual(
             PROBE_SUBPROCESS_TIMEOUT_SECONDS,
-            60.0,
+            PROBE_SUBPROCESS_TIMEOUT_MIN_SECONDS,
             "probe subprocess timeout must tolerate loaded compilation/test deadlines",
+        )
+        self.assertLessEqual(
+            PROBE_SUBPROCESS_TIMEOUT_SECONDS,
+            PROBE_SUBPROCESS_TIMEOUT_MAX_SECONDS,
+            "probe subprocess timeout must retain a finite hang boundary",
         )
 
     def test_entrypoint_contract_rejects_powershell_split_raw_meson(self) -> None:

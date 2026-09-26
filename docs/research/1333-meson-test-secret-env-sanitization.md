@@ -98,9 +98,10 @@ test: it can capture unrelated credentials before Meson starts. The replacement 
 platform-runtime names when present. It supplies temp-local `HOME`, `TMPDIR`, `TEMP`, and `TMP`,
 deterministic locale and user values, one ordinary control variable, and synthetic values for the
 twelve credential names. A regression poisons an unrelated synthetic credential and proves it is
-not copied. Subprocess probes run with a bounded 120-second timeout (`PROBE_SUBPROCESS_TIMEOUT_SECONDS`,
-aligned with `safe_subprocess.DEFAULT_TIMEOUT_SECONDS`) that avoids false-positive flakes under heavy
-machine contention while remaining bounded against hangs.
+not copied. Subprocess probes default to a 120-second timeout
+(`PROBE_SUBPROCESS_TIMEOUT_SECONDS`) that avoids false-positive flakes under heavy machine
+contention. The optional override is validated as a finite value in the inclusive 60--300 second
+range; invalid or out-of-range input fails closed rather than weakening the hang boundary.
 
 The child probe only asks whether keys are present. It never indexes a credential key, reads a
 credential value, prints the environment, or emits a value in a failure message. A mapping

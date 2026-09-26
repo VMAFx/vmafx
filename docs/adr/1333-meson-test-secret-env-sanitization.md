@@ -66,8 +66,9 @@ source-contract boundaries:
    `.exe` suffix, split by explicit or implicit continuation, or placed beside the wrapper after
    a shell separator. Mutation tests replace each inventoried wrapper call in turn and require the
    contract to fail. Synthetic test probes enforce a bounded, load-tolerant subprocess deadline
-   (`PROBE_SUBPROCESS_TIMEOUT_SECONDS`, 120 s default, aligned with `SUBPROCESS_TIMEOUT_S`) to
-   prevent false-positive flakes on busy runners while continuing to catch hangs. The
+   (`PROBE_SUBPROCESS_TIMEOUT_SECONDS`, 120 s default); overrides are finite and restricted to
+   60--300 seconds. This prevents false-positive flakes on busy runners while continuing to catch
+   hangs. The
    pre-commit hook's path filter covers every scanned source scope and every Meson declaration,
    including representative future files, so adding a bypass in a newly tracked supported entry
    point runs the contract.
@@ -75,9 +76,10 @@ source-contract boundaries:
    platform-runtime allowlist `PATH`, `PATHEXT`, `SYSTEMROOT`, `SystemRoot`, `WINDIR`, and
    `COMSPEC` when present. Home, temporary-directory, locale, user, ordinary-control, and
    credential values are synthetic and private to each temporary directory. The tests never
-   enumerate or copy the caller's remaining environment. Subprocess probe execution runs with
-   a bounded 120-second timeout that avoids load-sensitive timeout failures during compiler
-   discovery and test execution under heavy machine contention.
+   enumerate or copy the caller's remaining environment. Subprocess probes default to 120 seconds
+   to avoid load-sensitive timeout failures during compiler discovery and test execution under
+   heavy machine contention. The optional timeout override accepts only finite values from 60
+   through 300 seconds and fails closed otherwise, preserving a hard upper bound.
 5. **Red-capable runtime proof**: hermetic Meson projects demonstrate that raw Meson records
    the synthetic parent keys in `testlog.txt` even when the default setup protects the child
    and JSON log. The GREEN probe starts through the repository wrapper and requires all twelve

@@ -48,6 +48,7 @@ one change:
 
 The regression suite uses disposable build directories and synthetic markers. It verifies
 both `testlog.txt` and `testlog.json` without reading, copying, or printing caller credential
-values. Probe subprocesses execute with a bounded 120-second timeout (configurable via
-`VMAFX_MESON_TEST_TIMEOUT_SECONDS`) to avoid false-positive timeout flakes under CPU/IO
-contention while maintaining a hard hang boundary.
+values. Probe subprocesses default to 120 seconds to avoid false-positive timeout flakes under
+CPU/IO contention. `VMAFX_MESON_TEST_TIMEOUT_SECONDS` accepts only finite values from 60 through
+300 seconds; malformed, non-finite, too-low, and too-high overrides fail closed so configuration
+cannot remove the hard hang boundary.

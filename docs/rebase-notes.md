@@ -16,9 +16,10 @@ per-test environments after the setup; the regression contract therefore invento
 supported callers, rejects direct test-target bypasses across shell, multiline YAML (plain and
 quoted keys), and Python implicit list/tuple continuations, requires the default to remain the
 only `add_test_setup` under `core/`, and rejects explicit forbidden-name reintroduction. Its
-subprocess probes enforce a bounded, load-tolerant 120-second deadline, never copy arbitrary host
-variables, and inspect only disposable synthetic logs. Raw external Meson/Ninja commands remain
-an explicit unsupported bypass.
+subprocess probes default to a load-tolerant 120-second deadline; the optional override accepts
+only finite values from 60 through 300 seconds and fails closed otherwise. Probes never copy
+arbitrary host variables and inspect only disposable synthetic logs. Raw external Meson/Ninja
+commands remain an explicit unsupported bypass.
 
 - Research digest: [Research-1333](research/1333-meson-test-secret-env-sanitization.md).
 - Decision matrix: [ADR-1333](adr/1333-meson-test-secret-env-sanitization.md#alternatives-considered).
