@@ -1,4 +1,5 @@
 <!-- markdownlint-disable MD013 MD037 MD038 MD041 MD060 -->
+_Updated: 2026-09-26 (ADR-1341 assigns the first-release gates explicitly: RC1 closes confirmed release-blocking correctness and proves the outside-hardware report path; RC2 owns benchmarking/profiling/tuning; RC3 owns the one-shot real retrain. “Done fixing” means no confirmed RC1 blocker and no untriaged row remain, with required checks green on the exact candidate head. Performance/training rows remain open in their assigned phases rather than blocking RC1. Ordinary version PRs are not frozen; affected exact-head evidence is rerun after a merge.)_
 _Updated: 2026-09-25 (`T-MESON-TEST-SECRET-ENV-LEAK-2026-09-25` closed on `agent/meson-secret-env-sanitize`: Meson recorded its raw parent environment in `testlog.txt` before its default setup could remove credential-bearing keys. Every supported repository test entry point now starts through `scripts/ci/run_meson_test.py`, which deletes twelve GitHub and Actions access-token names before Meson starts; the default setup remains the child/JSON defense. Fail-closed caller and declaration contracts plus disposable synthetic probes cover both log formats. Raw external Meson/Ninja commands remain a documented unsupported bypass. ADR-1333, Research-1333.)_
 _Updated: 2026-09-25 (`T-FFMPEG-LIBVMAF-INPUT-ORDERING-DOC-2026-05-28` restored on `agent/fix-ffmpeg-input-order-3139`: the FFmpeg VMAF filter contract again states distorted/main on pad 0 and reference on pad 1, opposite the Python runner and standalone CLI. Every current user-facing two-input VMAF filter command is semantically ordered, including multiline hardware options and named filter graphs. A fail-closed checker validates the executable patch log, fenced commands, narrow wrong-example marker, and Make/CI/pre-commit wiring; its public CLI mutation suite covers log removal/mutation, direct and labeled reversal, ambiguous/conflicting roles, marker misuse, and automation removal. Research-0730. No dependency, score arithmetic, model, snapshot, golden assertion, benchmark, tuning, or retraining change.)_
 _Updated: 2026-09-25 (`T-RESEARCH-DIGEST-0033-0034-RESURRECTION-2026-09-25` closed: a collector merge had resurrected the pre-`5ac5b4167` HIP-applicability and CI-audit digests under IDs 0033/0034 and reverted their authoritative links even though 0432/0433 remained live. The stale twins and links are removed, and ADR-1335's required trusted-merge-base ratchet rejects branch-owned baseline laundering, new collision members, and filename/H1 drift. The audit also repaired the train-era 2080 collision and malformed 1306/1317 H1s. Broader inherited normalization remains open as `T-RESEARCH-DIGEST-LEGACY-ID-DEBT-2026-09-25`; no public API, score, golden assertion, benchmark, tuning or retraining changed.)_
@@ -408,6 +409,28 @@ prevent re-investigation of already-closed bugs across session resets.
   (one file per non-trivial choice; immutable once Accepted).
 `Netflix#N` = upstream issue / PR; `#N` = fork PR.
 
+## First-release phase classification
+
+[ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md) makes this
+ledger the RC1 scope boundary. Before RC1 acceptance, every remaining row must
+be classified as one of:
+
+- **RC1 blocker** — confirmed, actionable correctness, reliability, security,
+  build, packaging, supported-backend usability, or tester-report failure;
+- **RC2 performance** — benchmarking, profiling, tuning, or performance-only
+  work that must preserve the accepted correctness contracts;
+- **RC3 training** — real model retraining, validation, provenance, and
+  production-weight promotion;
+- **explicitly deferred** — externally blocked or later-release work with its
+  evidence, owner/trigger, and closure condition recorded.
+
+RC1 is “done fixing” only when no confirmed RC1 blocker and no untriaged row
+remain, the required integrated checks pass on the exact candidate head, and a
+tester can produce a reproducible hardware report. This is a bounded release
+decision, not a claim that no future defect can be discovered. A correctness
+defect found in RC2 or RC3 returns to the fix-and-revalidate path before the
+next stage proceeds.
+
 ## Open bugs
 
 | **T-RESEARCH-DIGEST-LEGACY-ID-DEBT-2026-09-25** | The research tree still contains **51 inherited numeric-prefix collision sets** and **209 exact H1 exceptions** to the current `# Research-NNNN` convention. They predate this narrow restoration and include unrelated workstreams, so renumbering them in one correctness-train repair would rewrite hundreds of cross-links and collide with active branches. ADR-1335 binds `scripts/ci/research-digest-id-baseline.json` to the trusted merge base: the branch file must exactly match its tree and may only reduce trusted debt. The repair also removed train-era debt that the first self-authored baseline had laundered (the three-way 2080 collision and malformed 1306/1317 H1s). | [ADR-1335](adr/1335-research-digest-identity-ratchet.md), [Research-2114](research/2114-research-digest-ratchet-authority.md) | Documentation normalization follow-up | Close when the generated baseline contains zero collisions and zero H1 exceptions, with all authoritative links migrated in reviewed batches. |
@@ -507,7 +530,7 @@ landed fix yet._
 <!-- T-DOCKER-SMOKE moved to Recently closed — promoted to blocking 2026-06-08, chore/promote-docker-smoke-blocking -->
 <!-- T-RC-CI-GREENUP-2026-06-13 moved to Recently closed — fixed by PR #912 (da315b893) -->
 <!-- T-THREADED-MULTI-PREV-REF-STARVATION-2026-06-13 moved to Recently closed — fixed by PR #906 (f460ee065, ADR-1107) -->
-| **T-ENSEMBLE-V2-PROD-FLIP-DEFERRED-2026-06-13** | The five `fr_regressor_v2_ensemble_v1_seed{0..4}` rows ship at smoke quality for the RC. ADR-0321 promoted them to production with LOSO-validated weights trained at `codec_vocab=14`; the vocab was trimmed to 6, so PR #865 regenerated the ONNX in `--smoke` mode (1 epoch, synthetic) to keep the load path correct and set `smoke: true`. PR #865 also dropped `license`/`license_url`/`sigstore_bundle` from the five rows — restored here. The production flip is deferred to the locked one-shot post-RC retrain (ensemble is in scope), per [ADR-1105](adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md). `test_fr_regressor_v2_ensemble_seed_rows_are_production` is `xfail(strict=True)` so it auto-fails the moment real weights land. | `python3 -m pytest python/test/model_registry_schema_test.py -q` → 10 passed, 1 xfailed (the deferred production assertion). | One-shot retrain (post-RC, locked plan). | Closes when the one-shot retrain re-runs `export_ensemble_v2_seeds.py` at `codec_vocab=6`, flips `smoke: false`, and removes the xfail marker (test xpasses → strict failure forces marker removal). |
+| **T-ENSEMBLE-V2-PROD-FLIP-DEFERRED-2026-06-13** | **RC3 training.** The five `fr_regressor_v2_ensemble_v1_seed{0..4}` rows ship at smoke quality through RC2. ADR-0321 promoted them to production with LOSO-validated weights trained at `codec_vocab=14`; the vocab was trimmed to 6, so PR #865 regenerated the ONNX in `--smoke` mode (1 epoch, synthetic) to keep the load path correct and set `smoke: true`. PR #865 also dropped `license`/`license_url`/`sigstore_bundle` from the five rows — restored here. The production flip is deferred to the locked one-shot RC3 retrain (ensemble is in scope), per [ADR-1105](adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md) and [ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md). `test_fr_regressor_v2_ensemble_seed_rows_are_production` is `xfail(strict=True)` so it auto-fails the moment real weights land. | `python3 -m pytest python/test/model_registry_schema_test.py -q` → 10 passed, 1 xfailed (the deferred production assertion). | One-shot RC3 retrain (locked plan). | Closes when the RC3 retrain re-runs `export_ensemble_v2_seeds.py` at `codec_vocab=6`, flips `smoke: false`, and removes the xfail marker (test xpasses → strict failure forces marker removal). |
 <!-- T-CI-APT-MS-REPO-FLAKE-2026-06-13 moved to Recently closed — fixed by PR #903 (b9eb49e79) -->
 <!-- T-CI-DOCKER-SMOKE-NO-OUTPUT-2026-06-13 moved to Recently closed — hardened by PR #903 (b9eb49e79) -->
 <!-- T-HIP-MOTION-V2-MIRROR-OFF-BY-ONE-2026-06-13 moved to Recently closed — fixed by PR #905 (dcd3cad65, ADR-1106) -->

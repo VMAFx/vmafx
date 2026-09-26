@@ -5,8 +5,13 @@ This runbook defines the end-to-end operational procedure for the one-shot
 retraining pass of the fork's tiny-AI models against the canonical
 `vmaf_v1.0.16_3d0h` teacher model (Epic [#1246](https://github.com/VMAFx/vmafx/issues/1246)).
 
-The retrain executes **once** when all preceding 1.0.0 epics are closed and
-preconditions are satisfied.
+The retrain executes **once** as RC3, after RC2 evidence is accepted and the
+remaining preconditions are satisfied. Under
+[ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md), this is
+an **RC3-only** operation: RC1 completes correctness and tester reporting, RC2
+completes benchmark/tuning evidence, and the real training run starts only
+after the accepted RC2 tree is clean and frozen. Do not start this run during
+RC1 or RC2.
 
 ---
 
@@ -14,6 +19,12 @@ preconditions are satisfied.
 
 All procedures in this runbook strictly enforce the binding maintainer decisions
 and architectural records:
+
+- **Release sequence (ADR-1341)**: this one-shot programme is the RC3 gate.
+  Accepted RC2 benchmark/tuning evidence, an exact-head green tree, and an
+  explicit maintainer go-ahead are preconditions. Any later code or version
+  merge invalidates the frozen-head evidence and must be reconciled before
+  training starts.
 
 - **Maintainer decision, 2026-09-04 (D1 — Student Features)**: Raw extraction collects
   the union feature pool (`FULL_FEATURES` + `adm3`, 26 raw features per ADR-1173).

@@ -15283,6 +15283,17 @@ and config paths are also updated in `docs/architecture/workspace.md`.
   `libmfx` and `libvpl` correctly.
 
 
+- The first-release candidate sequence now has explicit responsibilities:
+  RC1 finishes release-blocking correctness and ships a reproducible hardware
+  report path, RC2 owns benchmarking and performance tuning, and RC3 owns the
+  one-shot real model retrain. “Done fixing” means no confirmed RC1 blocker or
+  untriaged ledger row remains and exact-head gates pass; it does not mix
+  performance or training into RC1. Ordinary Renovate and version PRs may merge
+  under their existing required checks, with affected candidate evidence rerun
+  after any merge. See
+  [ADR-1341](docs/adr/1341-rc-correctness-benchmark-retrain-sequence.md).
+
+
 - **README overhaul for clarity, accuracy, and first-time readers.** Restructures `README.md` to clearly explain what VMAFx is, why it differs from upstream Netflix/vmaf, how to build and score video, and links to deeper documentation. Corrects the broken logo path (`compat/python-vmaf/resource/images/vmaf_logo.jpg`), removes rotted static language/compiler badges and internal ADR citations, documents all 17 registered Metal kernels on Apple Silicon, highlights the five fork-added quality metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+), and adds links to the public roadmap and GitHub milestones.
 
 

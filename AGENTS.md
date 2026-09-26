@@ -254,6 +254,9 @@ Three Netflix-authored CPU reference test pairs = numerical-correctness ground t
 - `release-please`, triggered by pushes to `master`.
 - One ordinary SemVer stream (`vMAJOR.MINOR.PATCH`), independent of Netflix release cadence (ADR-1127 supersedes ADR-0011). Root release aligns release-owned Python packages + Helm `appVersion`.
 - Signing: keyless, Sigstore / GitHub OIDC. Local dry-run: `/prep-release`.
+- First-release responsibilities are ordered and must not leak across phases (ADR-1341): RC1 closes release-blocking correctness and proves the outside-hardware report path; RC2 owns benchmarks, profiling, and tuning; RC3 owns the one-shot real retrain. A short correctness/device smoke is valid in RC1, but performance claims and real training are not.
+- “Done fixing” for RC1 means zero confirmed RC1 blockers and zero untriaged `docs/state.md` rows, required checks green on the exact candidate head, and a reproducible tester report path. It does not mean future bugs are impossible or that RC2/RC3 work moved earlier.
+- Ordinary Renovate/version PRs remain mergeable in every candidate phase under normal required checks, review, pinning, and specialised component validation. Any merge invalidates affected exact-head evidence and requires revalidation; it does not justify a blanket version freeze.
 
 ## 12. Hard rules, worktree discipline and rebase invariants
 

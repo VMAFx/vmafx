@@ -655,6 +655,20 @@ resolution. Do not copy the archived 1.3.6 configuration back into live files.
    Discrete template overloads for 1, 2, and 3 arguments prevent empty parameter pack instantiations for `Rest &&...rest`, closing CodeQL `cpp/unused-local-variable` and `cpp/unused-static-variable` (Alerts 1002/1003). Covered by adversarial exit tests in `core/test/test_cli_parse_long_only_args.c`.
 5. **`.github/workflows/security-scans.yml` Meson configure outside extraction.**
    Meson configure runs before `github/codeql-action/init` with the build directory in `${{ runner.temp }}/build`. Running configure before extraction prevents Meson compiler probe files (`testfile.c`) from polluting the CodeQL database (current hosted probe alert 1279, historical 1278 / pre-merge 1232–1235); keeping the build tree outside `$GITHUB_WORKSPACE` prevents generated artifacts from being indexed as project source.
+## docs/release-sequence-rcs — RC responsibilities stay separated (2026-09-26)
+
+No upstream source impact: this change is fork-only release governance and
+documentation. Preserve [ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md)'s
+phase boundary when rebasing release, roadmap, backlog, or model-training
+documents: RC1 owns correctness completion plus the reproducible outside-hardware
+report path; RC2 owns benchmark/profiling/tuning; RC3 owns the one-shot real
+retrain. Do not resolve a conflict by restoring generic “post-RC” training or by
+moving performance work back into RC1.
+
+Ordinary Renovate/version PRs remain mergeable under existing required gates.
+Their merge invalidates affected exact-head candidate evidence and triggers
+revalidation; it does not restore a blanket version freeze. The Netflix golden
+assertions remain untouched.
 
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 

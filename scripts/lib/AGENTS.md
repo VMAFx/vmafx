@@ -81,8 +81,8 @@ from scripts.lib.backlog_tracker import BacklogTracker, explain
 bk = BacklogTracker()
 print('rows:', len(bk.all()))
 print('open:', len(bk.list_open()))
-for tid in ['T-RC1-MASTER-GREEN', 'T-RC1-BENCH-TUNE',
-            'T-RC1-MODEL-RETRAIN', 'T-FIXSWEEP-REUSE-COMPLIANCE']:
+for tid in ['T-RC1-MASTER-GREEN', 'T-RC2-BENCH-TUNE',
+            'T-RC3-MODEL-RETRAIN', 'T-FIXSWEEP-REUSE-COMPLIANCE']:
     print(tid, '→', explain(tid))
 "
 ```
