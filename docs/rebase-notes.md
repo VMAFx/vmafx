@@ -54425,3 +54425,12 @@ Do not widen `float * float` operands in `iqa_convolve_vertical_pass` before
 their result is accumulated into `double`. CodeQL alert 1005 is a false
 positive against the ADR-0138 bit-exact SIMD contract; the adjacent suppression
 and bitwise kernel test are intentional.
+
+## OpenSSF Best Practices passing badge (2026-09-26)
+
+Documentation only. [The badge record](development/best-practices-assessment.md)
+mirrors the answers stored for project 14549; when either side changes, keep
+its **Submitted** column equal to the public readback of
+`https://www.bestpractices.dev/projects/14549.json`. The README badge points at
+`https://www.bestpractices.dev/projects/14549/badge`. No native/public API,
+numerical or FFmpeg rebase impact.
