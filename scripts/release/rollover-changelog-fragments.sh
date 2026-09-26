@@ -296,6 +296,10 @@ else:
         encoding="utf-8",
     )
 
+# A first release has no older section below Unreleased, so the archived index
+# would end the file with its trailing blank line; end-of-file-fixer rejects it.
+while new_lines and not new_lines[-1].strip():
+    new_lines.pop()
 pathlib.Path(out_file).write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 PYEOF
 

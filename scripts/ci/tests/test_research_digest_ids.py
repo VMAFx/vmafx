@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import re
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -31,6 +32,22 @@ def _load_checker() -> ModuleType:
 
 
 CHECKER = _load_checker()
+
+
+def _load_provenance() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "check_issue_reference_provenance_for_digest_ids",
+        ROOT / "scripts/ci/check-issue-reference-provenance.py",
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot import issue-reference provenance checker")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+PROVENANCE = _load_provenance()
 
 
 class ResearchDigestIdTests(unittest.TestCase):
@@ -474,13 +491,21 @@ class ResearchDigestIdTests(unittest.TestCase):
                 "0034-ci-pipeline-audit-2026-05.md",
                 "0433-ci-pipeline-audit-2026-05.md",
             ),
+            # The legacy changelog links the digest by its docs/ path. After a
+            # release cut this prose shares the released changelog with
+            # fragments that name the old file while describing the rename, so
+            # only the link target itself is checked.
             "changelog.d/_pre_fragment_legacy.md": (
-                "0033-hip-applicability.md",
-                "0432-hip-applicability.md",
+                "docs/research/0033-hip-applicability.md",
+                "docs/research/0432-hip-applicability.md",
             ),
         }
         for relative, (old_target, current_target) in expected_targets.items():
-            text = (ROOT / relative).read_text(encoding="utf-8")
+            # A release cut consumes the legacy changelog source; its prose then
+            # lives in CHANGELOG.md or docs/changelog-archive/ (ADR-1128).
+            text = PROVENANCE.contract_text(ROOT, relative)
+            self.assertIsNotNone(text, relative)
+            assert text is not None
             self.assertNotIn(old_target, text)
             self.assertIn(current_target, text)
 

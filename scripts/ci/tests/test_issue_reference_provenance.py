@@ -328,6 +328,64 @@ class IssueReferenceProvenanceTests(unittest.TestCase):
             self.assertEqual(len(empty_findings), 1)
             self.assertIn("matched 0 logical blocks", empty_findings[0])
 
+    @staticmethod
+    def _released_root(tmproot: Path, *, receipt: bool) -> None:
+        """Lay out a repository after a release cut consumed its fragments."""
+
+        archive = tmproot / "docs/changelog-archive/1.0.0-rc.1.md"
+        archive.parent.mkdir(parents=True)
+        archive.write_text(
+            "# Changelog archive\n\n- historical CAMBI row fixed lusoris/vmaf#857.\n",
+            encoding="utf-8",
+        )
+        (tmproot / "CHANGELOG.md").write_text(
+            "# Changelog\n\n## [1.0.0-rc.1] - 2026-09-26\n\n| Fixed | 1 |\n",
+            encoding="utf-8",
+        )
+        if receipt:
+            releases = tmproot / "changelog.d/releases"
+            releases.mkdir(parents=True)
+            (releases / "1.0.0-rc.1.json").write_text('{"version": "1.0.0-rc.1"}\n')
+
+    def test_consumed_fragment_follows_the_release_cut(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmproot = Path(tmpdir)
+            self._released_root(tmproot, receipt=True)
+            contracts = (
+                CHECKER.ProvenanceContract(
+                    "changelog.d/fixed/cambi.md", "historical CAMBI row", ("lusoris/vmaf#857",)
+                ),
+                CHECKER.ProvenanceContract(
+                    "CHANGELOG.md", "historical CAMBI row", ("lusoris/vmaf#857",)
+                ),
+            )
+            self.assertEqual(CHECKER.check_root(tmproot, contracts), [])
+
+    def test_consumed_fragment_without_a_cut_receipt_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmproot = Path(tmpdir)
+            self._released_root(tmproot, receipt=False)
+            contract = CHECKER.ProvenanceContract(
+                "changelog.d/fixed/cambi.md", "historical CAMBI row", ("lusoris/vmaf#857",)
+            )
+            self.assertEqual(
+                CHECKER.check_root(tmproot, (contract,)),
+                ["changelog.d/fixed/cambi.md: file not found"],
+            )
+
+    def test_prose_both_inline_and_archived_is_ambiguous(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmproot = Path(tmpdir)
+            self._released_root(tmproot, receipt=True)
+            with (tmproot / "CHANGELOG.md").open("a", encoding="utf-8") as changelog:
+                changelog.write("\n- historical CAMBI row fixed lusoris/vmaf#857.\n")
+            contract = CHECKER.ProvenanceContract(
+                "CHANGELOG.md", "historical CAMBI row", ("lusoris/vmaf#857",)
+            )
+            findings = CHECKER.check_root(tmproot, (contract,))
+            self.assertEqual(len(findings), 1)
+            self.assertIn("matched 2 logical blocks", findings[0])
+
     def test_main_cli_returns_zero_on_clean_repo(self) -> None:
         self.assertEqual(CHECKER.main(["--root", str(ROOT)]), 0)
 

@@ -356,6 +356,37 @@ def check_contract(text: str, contract: ProvenanceContract) -> list[str]:
     return findings
 
 
+def released_changelog_text(root: Path) -> str | None:
+    """Return all released changelog prose, or ``None`` before the first cut.
+
+    ``scripts/release/rollover-changelog-fragments.sh`` deletes the fragments
+    it consumes and moves the rendered Unreleased body into a versioned
+    ``CHANGELOG.md`` section or, when long, ``docs/changelog-archive/X.Y.Z.md``.
+    A receipt under ``changelog.d/releases/`` proves a cut ran; without one a
+    missing fragment is a deletion, not a release, and stays a finding.
+    """
+
+    receipts = root / "changelog.d/releases"
+    if not receipts.is_dir() or not any(receipts.glob("*.json")):
+        return None
+    sources = [root / "CHANGELOG.md", *sorted((root / "docs/changelog-archive").glob("*.md"))]
+    return "\n\n".join(p.read_text(encoding="utf-8") for p in sources if p.is_file())
+
+
+def contract_text(root: Path, relative: str) -> str | None:
+    """Read a contract's file, following changelog prose a release cut moved."""
+
+    path = root / relative
+    changelog_owned = relative == "CHANGELOG.md" or relative.startswith("changelog.d/")
+    released = released_changelog_text(root) if changelog_owned else None
+    if path.is_file():
+        # After a cut, CHANGELOG.md's own history includes its archives.
+        if relative == "CHANGELOG.md" and released is not None:
+            return released
+        return path.read_text(encoding="utf-8")
+    return released
+
+
 def check_root(root: Path, contracts: Sequence[ProvenanceContract] = CONTRACTS) -> list[str]:
     """Return repository-relative provenance findings under ``root``."""
 
@@ -363,12 +394,9 @@ def check_root(root: Path, contracts: Sequence[ProvenanceContract] = CONTRACTS) 
     texts: dict[str, str | None] = {}
     for contract in contracts:
         if contract.path not in texts:
-            path = root / contract.path
-            if not path.is_file():
+            texts[contract.path] = contract_text(root, contract.path)
+            if texts[contract.path] is None:
                 findings.append(f"{contract.path}: file not found")
-                texts[contract.path] = None
-            else:
-                texts[contract.path] = path.read_text(encoding="utf-8")
         text = texts[contract.path]
         if text is None:
             continue

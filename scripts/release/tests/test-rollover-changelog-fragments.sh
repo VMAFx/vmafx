@@ -336,5 +336,22 @@ boundary_ok=pass
 [[ "$rc_b" -ne 0 && "$(tree_hash "$rc_manifest")" == "$before_manifest" ]] || boundary_ok=fail
 check 'triple and rc versions never satisfy each other' "$boundary_ok"
 
+# T17: A first release has no older section under Unreleased. The archived
+# index must still end CHANGELOG.md with exactly one newline, or the cut commit
+# fails end-of-file-fixer.
+first="$scratch/first-release"
+fixture "$first"
+printf '%s\n' '# Changelog' '' '## [Unreleased]' '' >"$first/CHANGELOG.md"
+VMAFX_REPO_ROOT="$first" "$first/scripts/release/concat-changelog-fragments.sh" \
+  --write >/dev/null 2>&1
+eof_ok=fail
+if VMAFX_REPO_ROOT="$first" "$first/scripts/release/rollover-changelog-fragments.sh" \
+  --version 3.2.1 --date 2026-08-02 --archive-over 1 >/dev/null 2>&1 &&
+  [[ "$(tail -c 1 "$first/CHANGELOG.md" | od -An -c | tr -d ' ')" == '\n' ]] &&
+  [[ "$(tail -c 2 "$first/CHANGELOG.md" | od -An -c | tr -d ' ')" != '\n\n' ]]; then
+  eof_ok=pass
+fi
+check 'first-release archived cut ends CHANGELOG.md with one newline' "$eof_ok"
+
 printf '\n=== Results: %d passed, %d failed ===\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]

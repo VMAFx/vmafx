@@ -54442,5 +54442,9 @@ numerical or FFmpeg rebase impact.
 `X.Y.Z` or `X.Y.Z-rc.N`, and extract version markers with the same optional
 `-rc.N` group. If either changes alone, a release candidate either cannot be cut
 or cannot be published. `test-rollover-changelog-fragments.sh` runs the verifier
-against an RC cut to hold them together. No native/public API, numerical or
+against an RC cut to hold them together. Checks that pin historical prose to a
+`changelog.d/` fragment or to `CHANGELOG.md` must resolve it through
+`contract_text()` in `scripts/ci/check-issue-reference-provenance.py`, which
+follows a cut into `CHANGELOG.md` and `docs/changelog-archive/`; a raw read of
+the fragment breaks the next release cut. No native/public API, numerical or
 FFmpeg rebase impact.
