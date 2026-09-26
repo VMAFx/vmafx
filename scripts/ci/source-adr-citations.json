@@ -4791,7 +4791,8 @@
     },
     "0819": {
       "sites": {
-        ".github/workflows/dev-container-build.yml": 1
+        ".github/workflows/dev-container-build.yml": 1,
+        "scripts/ci/check-dev-container-stage-inputs.py": 1
       },
       "target": "0819-dev-container-ci-gate.md"
     },
@@ -7575,6 +7576,14 @@
         "tools/rc1-tester/tests/test_bundle.py": 1
       },
       "target": "1342-rc1-external-tester-report-bundle.md"
+    },
+    "1343": {
+      "sites": {
+        ".pre-commit-config.yaml": 1,
+        "scripts/ci/check-dev-container-stage-inputs.py": 1,
+        "scripts/ci/tests/test_dev_container_stage_inputs.py": 1
+      },
+      "target": "1343-dev-container-stage-input-contract.md"
     }
   },
   "retired": {

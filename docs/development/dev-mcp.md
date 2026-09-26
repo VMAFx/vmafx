@@ -127,6 +127,22 @@ Run `hadolint dev/Containerfile` to check the Dockerfile and embedded shell
 before a rebuild. This static check does not establish native build or GPU
 runtime acceptance.
 
+CI builds the image only up to `libvmaf-build`
+([ADR-0819](../adr/0819-dev-container-ci-gate.md)), so the final `dev-mcp`
+stage is covered by a static contract instead
+([ADR-1343](../adr/1343-dev-container-stage-input-contract.md)):
+
+```bash
+python3 scripts/ci/check-dev-container-stage-inputs.py
+```
+
+It fails when a stage's `RUN` reads a pip requirement or constraint file under
+`/build/vmaf/` that no `COPY` into that stage or its parent stages provides, or
+when a `COPY` source is missing from the repository. It runs from pre-commit
+whenever `dev/Containerfile`, a lock file or the check itself changes. Add the
+matching `COPY` to the stage that reads the file; copying it in the final stage
+keeps the libvmaf and FFmpeg layers cached.
+
 The container installs ONNX Runtime's native CPU archive for libvmaf's C/C++
 API. That archive does not add CUDA or ROCm execution providers; libvmaf's
 own GPU feature backends and the Python `onnxruntime` package are separate
