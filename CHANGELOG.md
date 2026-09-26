@@ -23073,6 +23073,13 @@ uses the kernel-template readback pair: `integer_psnr_cuda`, `integer_ssim_cuda`
   docs use the new `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` / `_LEADER_ELECTION` names.
 
 
+- **Dev container**: `dev/Containerfile` builds again. The `dev-mcp` stage
+  now copies `requirements/`, which its hash-locked Python install reads, and
+  the `Dev Container Publish` workflow passes the GitHub token as a BuildKit
+  secret, so the Intel NEO release lookup no longer fails on GitHub's
+  anonymous API rate limit.
+
+
 Replace fragile `/dev/dri/by-path` bind with whole `/dev/dri` directory bind in
 `dev/docker-compose.yml`. The former bind-mount referenced PCI-address-named
 symlinks (e.g. `pci-0000:01:00.0-card`) that change after any PCI

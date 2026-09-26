@@ -1134,6 +1134,10 @@ USER vmaf
 FROM libvmaf-build AS dev-mcp
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# The hash-locked installs below read requirements/locks/*.txt. Copied here,
+# not with the libvmaf-build subtrees, so lock changes do not invalidate the
+# libvmaf and FFmpeg build layers.
+COPY --chown=vmaf:vmaf requirements/ /build/vmaf/requirements/
 # Install in-tree Python packages (editable for dev convenience)
 # vmaf-mcp: embedded MCP JSON-RPC server
 # vmaf-train: tiny-AI training harness (ai/)
