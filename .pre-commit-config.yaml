@@ -171,6 +171,14 @@ repos:
 
   - repo: local
     hooks:
+      - id: rc1-tester-report-tests
+        name: RC1 tester report unit regressions
+        entry: python -m pytest -q tools/rc1-tester/tests
+        language: python
+        additional_dependencies: [pytest==9.1.1]
+        files: '^tools/rc1-tester/(src/|tests/|vmaf-rc1-report|pyproject\.toml|README\.md|AGENTS\.md)'
+        pass_filenames: false
+
       - id: no-conflict-markers
         name: No committed git conflict markers (belt-and-suspenders)
         # Belt-and-suspenders companion to the `check-merge-conflict` hook

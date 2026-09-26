@@ -32,6 +32,8 @@ ADR_1297_STRICT_CONTEXTS = {
     "Windows ARM64 MSVC",
 }
 
+ADR_1342_STRICT_CONTEXTS = {"RC1 Tester Report"}
+
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
@@ -76,7 +78,10 @@ class HissReplayContractTests(unittest.TestCase):
         aggregator = read(".github/workflows/required-aggregator.yml")
         required = javascript_array(aggregator, "required")
         strict = javascript_array(aggregator, "strictMustReport")
-        self.assertEqual(strict, STRICT_CONTEXTS | ADR_1297_STRICT_CONTEXTS)
+        self.assertEqual(
+            strict,
+            STRICT_CONTEXTS | ADR_1297_STRICT_CONTEXTS | ADR_1342_STRICT_CONTEXTS,
+        )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)
         self.assertIn("if (strictMustReport.includes(name))", aggregator)

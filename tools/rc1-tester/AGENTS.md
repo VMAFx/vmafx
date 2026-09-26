@@ -1,0 +1,11 @@
+<!-- markdownlint-disable MD013 -->
+# `tools/rc1-tester/` — Agent Operating Harness
+
+## Invariants & Scope
+
+1. **RC1 release boundary**: `tools/rc1-tester/` provides hardware probing, tool discovery, smoke validation, and shareable report bundling. It does **not** trigger performance benchmarks (RC2) or tiny-AI training pipelines (RC3).
+2. **Rebase stability**: Hardware, toolchain, binary, and validation subprocesses must accept an injected `runner` so their tests remain hermetic and offline.
+3. **NASA JPL Rule 2 & Rule 4**: All production subprocess calls enforce explicit process-group timeouts and a 1 MiB combined stdout/stderr ceiling through the packaged `vmaf_rc1_tester.safe_process` module, so an installed console command never depends on repository-only imports. No loops without bounds. Maximum function complexity $\le 10$, function length $\le 60$ LOC.
+4. **Fail-closed backend correctness (HISS-07)**: Exit zero is not enough. A PASS requires four consecutively numbered frames (through temporal frame 3), finite required model metrics, VMAF inside the pinned model's `[0, 100]` clip range, consistent pooled metrics, and `backend_used` exactly matching the explicit request. CPU must match the pinned first-four-frame snapshot; each accelerator must match the automatically run CPU reference within `5e-5` per metric and frame. ADR-1342 deliberately adopts ADR-0214's feature threshold for overall VMAF too; do not attribute that overall-score contract to ADR-0214. `backend_used` proves root state, not per-feature accelerator dispatch. The pinned model/snapshot/fixtures are hashed. Missing evidence and silent fallback never pass. Exit code 100 (`VMAF_EXIT_BACKEND_INIT_FAILED`) remains `BACKEND_UNAVAILABLE` evidence per ADR-0498 and ADR-0543.
+5. **No Netflix golden assertion modification**: Golden assertions in `python/test/` must never be touched.
+6. **Report integrity and privacy**: `manifest.json` schema version is `1.0`. `SHA256SUMS` covers payload files other than itself and the manifest; the manifest repeats payload hashes and hashes `SHA256SUMS`; the CLI prints the whole-archive hash. Shared text redacts home/repository prefixes, archive metadata is normalized, and probes never request serial numbers or GPU UUIDs; documentation still tells testers to inspect reports before sharing.

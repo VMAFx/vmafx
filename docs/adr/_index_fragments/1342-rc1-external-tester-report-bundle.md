@@ -1,0 +1,1 @@
+| [ADR-1342](1342-rc1-external-tester-report-bundle.md) | Runtime-dependency-free RC1 collector that checks four-frame CPU-pinned and CPU-to-accelerator emitted-metric correctness, then packages privacy-redacted replay evidence while benchmarking/tuning remains RC2 and real training remains RC3. | Accepted | rc1, testing, diagnostics, backends, report, packaging |

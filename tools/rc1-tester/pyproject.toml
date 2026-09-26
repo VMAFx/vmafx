@@ -1,0 +1,42 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+[project]
+name = "vmafx-rc1-tester"
+dynamic = ["version"]
+description = "Bounded VMAFx RC1 hardware diagnostics and report bundling."
+readme = "README.md"
+requires-python = ">=3.10,<3.15"
+license = "EUPL-1.2"
+authors = [
+  { name = "Lusoris", email = "lusoris@pm.me" },
+]
+dependencies = []
+
+[project.scripts]
+vmaf-rc1-report = "vmaf_rc1_tester.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=9.1.1", "ruff>=0.16.8", "black>=26.5.1"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/vmaf_rc1_tester/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vmaf_rc1_tester"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["PLR2004"]

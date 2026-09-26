@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # Python test orchestrator (nox)
 
-The fork ships eight Python distributions, each with its own
+The fork ships several Python distributions, each with its own
 `pyproject.toml`, `tests/` directory, and `requires-python` range. To
 avoid copy-pasting per-package venv recipes out of CI YAML, the repo
 has a top-level [`noxfile.py`](../../noxfile.py) that exposes every
@@ -34,9 +34,10 @@ re-runs of the same session skip the install step.
 | `dev_llm` | `dev-llm/tests/` | Local-LLM helper (Ollama-backed). |
 | `roi_score` | `tools/vmaf-roi-score/tests/` | Saliency-aware ROI tooling. |
 | `ensemble_kit` | `tools/ensemble-training-kit/tests/` | ONNX ensemble training. |
+| `rc1_tester` | `tools/rc1-tester/tests/` | Dependency-free RC1 hardware/report collector. |
 | `python_harness` | `python/tox.ini` | Delegates to legacy tox (Cython + golden-data). |
 | `all` | every per-package suite | Excludes `python_harness` (needs C build). |
-| `lint` | `python/`, `ai/`, `scripts/` | ruff + black + isort, check-only. |
+| `lint` | `python/`, `ai/`, `scripts/`, `tools/rc1-tester/` | ruff + black + isort, check-only. |
 
 ## Usage
 
@@ -44,6 +45,7 @@ re-runs of the same session skip the install step.
 nox -l                          # list every session with its docstring
 nox -s ai                       # run ai/tests/ in an isolated venv
 nox -s mcp vmaf_tune            # run multiple suites in sequence
+nox -s rc1_tester               # run RC1 collector regressions
 nox -s python_harness           # invoke the legacy python/ tox harness
 nox -s all                      # every fork-local Python package
 nox -s lint                     # check-only ruff + black + isort

@@ -154,6 +154,7 @@ nav:
       - Building on Windows: getting-started/building-on-windows.md
   - Usage:
       - CLI reference: usage/cli.md
+      - RC1 External Tester Guide: usage/rc1-tester-guide.md
       - vmaf_bench: usage/bench.md
       - '--precision': usage/precision.md
       - Python library: usage/python.md
@@ -1422,6 +1423,7 @@ nav:
         - "ADR-1301: speed-nonfinite-score-fails-frame": adr/1301-speed-nonfinite-score-fails-frame.md
         - "ADR-1303: backlog-checklist-tracker-schema": adr/1303-backlog-checklist-tracker-schema.md
         - "ADR-1304: mcp-http-runtime-isolation": adr/1304-mcp-http-runtime-isolation.md
+        - "ADR-1342: rc1-external-tester-report-bundle": adr/1342-rc1-external-tester-report-bundle.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1469,6 +1471,7 @@ nav:
         - "avx2": adr/by-tag/avx2.md
         - "avx512": adr/by-tag/avx512.md
         - "backend": adr/by-tag/backend.md
+        - "backends": adr/by-tag/backends.md
         - "backlog": adr/by-tag/backlog.md
         - "batch-threading": adr/by-tag/batch-threading.md
         - "batch": adr/by-tag/batch.md
@@ -1869,6 +1872,7 @@ nav:
         - "rbac": adr/by-tag/rbac.md
         - "rc-blocking": adr/by-tag/rc-blocking.md
         - "rc": adr/by-tag/rc.md
+        - "rc1": adr/by-tag/rc1.md
         - "rclone": adr/by-tag/rclone.md
         - "readme": adr/by-tag/readme.md
         - "rebase-hygiene": adr/by-tag/rebase-hygiene.md

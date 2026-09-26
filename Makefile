@@ -283,9 +283,9 @@ preflight:
 lint-py:
 	@scripts/ci/check-python-requirements-single-source.sh
 	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
-	ruff check python/ ai/ scripts/
+	ruff check python/ ai/ scripts/ tools/rc1-tester/
 	$(call require-tool,black,pip install black==$(BLACK_VERSION))
-	black --check python/ ai/ scripts/
+	black --check python/ ai/ scripts/ tools/rc1-tester/
 # mypy is advisory (leading `-`): it currently reports ~295 module-resolution
 # errors ("duplicate module", "adding __init__.py somewhere") that stop it
 # before it type-checks anything real. That is a mypy-configuration gap
@@ -345,8 +345,8 @@ format:
 	 clang-format -i $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
 	                   | grep -v '^subprojects/' | grep -v '^core/test/data/' \
 	                   | python3 scripts/ci/pelorus_mirror.py filter) || true
-	@command -v black >/dev/null && black python/ ai/ scripts/ 2>/dev/null || true
-	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ || true
+	@command -v black >/dev/null && black python/ ai/ scripts/ tools/rc1-tester/ 2>/dev/null || true
+	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ tools/rc1-tester/ || true
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
 
 # Formatters — check-only (CI gate, no writes).
@@ -357,9 +357,9 @@ format-check:
 	      | grep -v '^subprojects/' | grep -v '^core/test/data/' \
 	      | python3 scripts/ci/pelorus_mirror.py filter)
 	$(call require-tool,black,pip install black==$(BLACK_VERSION))
-	black --check python/ ai/ scripts/
+	black --check python/ ai/ scripts/ tools/rc1-tester/
 	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
-	ruff check --select I python/ ai/ scripts/
+	ruff check --select I python/ ai/ scripts/ tools/rc1-tester/
 	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
 	shfmt -d -i 2 -ci $$(git ls-files '*.sh')
 

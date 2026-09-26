@@ -16,6 +16,7 @@ Usage::
     nox -l                          # list every defined session
     nox -s ai                       # run the ai/ pytest suite
     nox -s mcp vmaf_tune            # run multiple suites in sequence
+    nox -s rc1_tester                # run the external tester report suite
     nox -s python_harness           # run the legacy python/ tox harness
     nox -s all                      # every fork-local Python package
     nox -s lint                     # ruff + black + isort (check-only)
@@ -101,6 +102,13 @@ def ensemble_kit_tests(session: nox.Session) -> None:
     )
 
 
+@nox.session(name="rc1_tester")
+def rc1_tester_tests(session: nox.Session) -> None:
+    """Run the zero-runtime-dependency ``tools/rc1-tester/`` suite."""
+    session.install("-e", "./tools/rc1-tester[dev]")
+    session.run("pytest", "tools/rc1-tester/tests/", "-v", *session.posargs)
+
+
 @nox.session(name="python_harness")
 def python_harness_tests(session: nox.Session) -> None:
     """Delegate to the legacy ``python/tox.ini`` harness.
@@ -126,7 +134,15 @@ def all_tests(session: nox.Session) -> None:
     Skips ``python_harness`` because that session needs the C build
     artifacts and is exercised separately by ``make test-netflix-golden``.
     """
-    for name in ("ai", "mcp", "vmaf_tune", "dev_llm", "roi_score", "ensemble_kit"):
+    for name in (
+        "ai",
+        "mcp",
+        "vmaf_tune",
+        "dev_llm",
+        "roi_score",
+        "ensemble_kit",
+        "rc1_tester",
+    ):
         session.notify(name)
 
 
@@ -139,7 +155,7 @@ def lint(session: nox.Session) -> None:
     happens to be on ``PATH``.
     """
     session.install("ruff", "black", "isort")
-    targets = ["python/", "ai/", "scripts/"]
+    targets = ["python/", "ai/", "scripts/", "tools/rc1-tester/"]
     session.run("ruff", "check", *targets)
     session.run("black", "--check", *targets)
     session.run("isort", "--check-only", *targets)
