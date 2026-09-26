@@ -33,6 +33,7 @@ to explicitly include `-fvisibility-inlines-hidden` alongside the existing
 `-fvisibility=hidden`.
 
 Cross-platform compiler behavior is handled cleanly:
+
 - On GCC (including GCC 16) and Clang (including Clang 22, Apple Clang on
   macOS, and MinGW GCC/Clang on Windows), `-fvisibility-inlines-hidden` is
   supported and enforced, hiding inline standard library symbols and preventing

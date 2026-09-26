@@ -83,17 +83,18 @@ def test_collect_gpu_calibration_help_names_current_default_backend(
     assert "default: cuda only" in help_text
 
 
-@pytest.mark.parametrize("payload", ({}, [], {"frames": {}}, {"frames": [1]}))
 def test_collect_gpu_calibration_rejects_malformed_frames(
     tmp_path: Path,
-    payload: object,
 ) -> None:
     mod = _load_script("collect_gpu_calibration_data")
-    report = tmp_path / "malformed.json"
-    report.write_text(json.dumps(payload), encoding="utf-8")
+    payloads: tuple[object, ...] = ({}, [], {"frames": {}}, {"frames": [1]})
 
-    with pytest.raises(ValueError, match=r"expected|every frame"):
-        mod.load_frames(report)
+    for index, payload in enumerate(payloads):
+        report = tmp_path / f"malformed-{index}.json"
+        report.write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(ValueError, match=r"expected|every frame"):
+            mod.load_frames(report)
 
 
 def test_benchmark_harness_uses_current_portable_contract() -> None:

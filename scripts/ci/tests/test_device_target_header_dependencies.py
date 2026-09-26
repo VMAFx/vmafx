@@ -28,9 +28,7 @@ def _load_contract_module() -> ModuleType:
 
 
 _mod = _load_contract_module()
-DeviceTargetHeaderDependencyContractTest = (
-    _mod.DeviceTargetHeaderDependencyContractTest  # type: ignore[attr-defined]
-)
+DeviceTargetHeaderDependencyContractTest = _mod.DeviceTargetHeaderDependencyContractTest
 
 __all__ = ["DeviceTargetHeaderDependencyContractTest"]
 
