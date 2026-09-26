@@ -12,7 +12,7 @@
  * core/src/feature/float_vif.c (CPU) and
  * core/src/feature/cuda/float_vif_cuda.c (CUDA).  Both emit the four
  * VMAF_feature_vif_scale[0..3]_score features.  Before this test the
- * integer-VIF path had a parity gate (ADR-0541) but the float twin did
+ * integer-VIF path had a parity gate (ADR-0597) but the float twin did
  * not — a SIMD pivot on either CPU or CUDA could silently drift any of
  * the four scales without surfacing in the integer gate.
  *
@@ -92,7 +92,7 @@ static int fill_ref(VmafPicture *pic, unsigned frame_idx)
         }
     }
     /* Distinct chroma pattern to surface accidental chroma reads
-     * (VIF is luma-only by design — see ADR-0541). */
+     * (VIF is luma-only by design — see ADR-0597). */
     for (unsigned p = 1; p < 3; p++) {
         uint8_t *plane = (uint8_t *)pic->data[p];
         for (unsigned row = 0; row < pic->h[p]; row++) {

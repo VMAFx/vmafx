@@ -2579,7 +2579,7 @@ test('test_cuda_motion3_parity', test_cuda_motion3_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
-# ADR-0541 — integer_vif CPU vs. CUDA parity gate.  Pins the luma-only
+# ADR-0597 — integer_vif CPU vs. CUDA parity gate.  Pins the luma-only
 # design contract as a regression assertion so DEEP_AUDIT 2026-05-18
 # finding 23 (false-positive "CUDA VIF skips chroma planes") cannot
 # refile.  Also exercises the vestigial enable_chroma=true option to

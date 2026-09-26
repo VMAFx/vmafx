@@ -676,42 +676,14 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
      multiple of MOTION_BATCH_DEPTH. `flush_start` clamp to 1 skips frame 0
      (has no valid SAD — kernel runs but prev_blurred uninitialized).
 
-## Resolution-aware kernel variant dispatch (ADR-0753)
+## Resolution-aware kernel variants: removed (ADR-0753, superseded by ADR-1143)
 
-`resolution_dispatch.h` / `resolution_dispatch.c` here provide
-lightweight `vmaf_cuda_workload_class(w, h)` classifier used to pick between
-kernel variants at runtime. Current policy table is in ADR-0753.
+No workload classifier and no `_no_bounds` kernel variant exist. ADR-1143
+deleted the uncompiled `resolution_dispatch.c` / `.h`. Launch-bound variants
+per resolution = RC2 performance work (ADR-1341): reintroduce only with a new
+ADR and measurements, never by reviving ADR-0753 text.
 
-**How to add a new resolution-aware variant:**
-
-1. In extractor's `.cu` file, define two kernel entry points using sibling
-   macros: one WITH `__launch_bounds__` (or other occupancy hint), one
-   WITHOUT, giving no-hint variant `_no_bounds` suffix.
-   Both must be inside `extern "C" { }` block (ADR-0747).
-2. In extractor state struct (e.g. `AdmStateCuda`), add second
-   `CUfunction` pointer for no-hint variant.
-3. In `init_fex_cuda`, load both pointers via `cuModuleGetFunction`.
-   Add short comment citing ADR-0753 policy (see existing examples).
-4. At kernel-launch site in `submit_fex_cuda`, call
-   `vmaf_cuda_workload_class(w, h)`, branch on result.
-   Branch structure always single ternary / if-else — no nested
-   policy trees. Consult policy table in ADR-0753 for which class gets
-   bounded variant; pattern so far:
-   - `adm_cm`: BOUNDED at `WS_MEDIUM` only; NO_BOUNDS at `WS_SMALL` + `WS_LARGE`.
-   - `filter1d` + `ssim_vert_combine`: BOUNDED at `WS_MEDIUM` + `WS_LARGE`;
-     NO_BOUNDS at `WS_SMALL` only.
-5. Add row to policy table in ADR-0753 `## Decision` and to kernel
-   list in `resolution_dispatch.h`.
-6. Note new invariant in this file under "Rebase-sensitive invariants".
-7. Update `docs/backends/cuda/overview.md` kernel table.
-
-**Verified wirings (as of the ADR-0753 extended scope):**
-
-| Feature | BOUNDED variant (kernel name) | NO_BOUNDS variant | Policy |
-|---|---|---|---|
-| `adm_cm` | `adm_cm_line_kernel_8` | `adm_cm_line_kernel_8_no_bounds` | MEDIUM only |
-| `filter1d` | `filter1d_8_horizontal_kernel_2_17_9` | `filter1d_8_horizontal_kernel_2_17_9_no_bounds` | MEDIUM + LARGE |
-| `ssim_vert_combine` | `calculate_ssim_vert_combine` | `calculate_ssim_vert_combine_no_bounds` | MEDIUM + LARGE |
+## Kernel option and scoring invariants
 
 - **`float_vif` options must be kernel ARGUMENTS, never kernel-local
   constants** (ADR-1217) — `vif_sigma_nsq` and `vif_enhn_gain_limit`
@@ -793,22 +765,6 @@ kernel variants at runtime. Current policy table is in ADR-0753.
   `test_*_ms_ssim_*clip_db_ceiling` variant, which must feed
   IDENTICAL pair — on merely high-similarity fixture ceiling
   never binds, variant passes against unfixed twin.
-
-- **`integer_vif_cuda.c::filter1d_8` picks `filter1d_8_horizontal_kernel_2_17_9_no_bounds`
-  at `WS_SMALL`, bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
-  scope). `VifStateCuda` carries `func_filter1d_8_horizontal_kernel_2_17_9_no_bounds`.
-  `filter1d.cu` defines `FILTER1D_8_HORI_NO_BOUNDS(2, 17, 9)` inside `extern "C" {}`.
-  On rebase: verify both `cuModuleGetFunction` calls in `init_fex_cuda` reference
-  valid symbols. If upstream refactors macro or adds new `fwidth` variants,
-  apply `_NO_BOUNDS` sibling macro around new body too.
-
-- **`integer_ssim_cuda.c::submit_fex_cuda` picks `calculate_ssim_vert_combine_no_bounds`
-  at `WS_SMALL`, bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
-  scope). `SsimStateCuda` carries `func_vert_no_bounds`.
-  `integer_ssim/ssim_score.cu` defines both variants inside `extern "C" {}`.
-  On rebase: if upstream modifies `calculate_ssim_vert_combine`, apply same
-  diff to `calculate_ssim_vert_combine_no_bounds` (body identical; only
-  `__launch_bounds__(128)` annotation differs).
 
 ## `__ldg()` pattern for VmafPicture channel reads (ADR-0762)
 

@@ -51,12 +51,12 @@ ffprobe geometry override (Win 2 — Research-0135):
   regardless of actual bit depth.  ffprobe remains necessary for clips not
   covered by the sidecar.
 
-tmpfs scratch (Win 3 — Research-0135):
-  When ``/dev/shm`` is writable and has >=20 GiB free, temporary YUV files
-  are written there instead of the OS temp directory.  This eliminates NVMe
-  I/O for the intermediate per-clip raw YUV (~1.5 GiB per 1080p 30 fps 240-
-  frame clip) and reduces the per-clip wall time by an estimated 5–15 s on
-  NVMe-bound hosts.  Pass ``--scratch-dir`` to override auto-selection.
+Scratch directory:
+  Temporary per-clip YUV files (~1.5 GiB per 1080p 30 fps 240-frame clip) go to
+  ``--scratch-dir``, which defaults to ``k150k_yuv_scratch`` under the OS temp
+  directory.  To avoid NVMe I/O, point it at tmpfs explicitly, for example
+  ``--scratch-dir /dev/shm/k150k_yuv_scratch``.  Automatic ``/dev/shm``
+  selection (Research-0135, Win 3) is not implemented.
 
 Parallelism (ADR-0382): clips are dispatched to a
 ``concurrent.futures.ProcessPoolExecutor`` with ``--threads-cuda`` workers
@@ -255,9 +255,11 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "motion": ("motion", "integer_motion"),
     "motion2": ("motion2", "integer_motion2"),
     "motion3": ("motion3", "integer_motion3"),
-    "psnr_y": ("psnr_y", "integer_psnr_y"),
-    "psnr_cb": ("psnr_cb", "integer_psnr_cb"),
-    "psnr_cr": ("psnr_cr", "integer_psnr_cr"),
+    # libvmaf emits per-plane PSNR as "psnr_y"/"psnr_cb"/"psnr_cr" only; there
+    # is no "integer_psnr_*" key, so a second candidate would never match.
+    "psnr_y": ("psnr_y",),
+    "psnr_cb": ("psnr_cb",),
+    "psnr_cr": ("psnr_cr",),
     "float_ssim": ("float_ssim",),
     "float_ms_ssim": ("float_ms_ssim",),
     "cambi": ("cambi",),

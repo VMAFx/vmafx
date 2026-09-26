@@ -185,7 +185,7 @@ static char *test_feature_extractor_list_no_duplicates(void)
 {
     int err = vmaf_feature_extractor_list_audit();
     mu_assert("feature_extractor_list[] contains duplicate registrations "
-              "(see ADR-0541; check the audit log above for the offending "
+              "(see ADR-0597; check the audit log above for the offending "
               "names/indices)",
               !err);
     return NULL;

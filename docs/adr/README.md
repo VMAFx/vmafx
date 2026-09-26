@@ -806,7 +806,7 @@ public authority; documentation never links into either local root.
 | [ADR-0749](0749-sunset-legacy-vmaf-feature-extractor.md) | Sunset VmafLegacyQualityRunner (float-path runner) | Accepted | python, quality-runner, breaking-change, cleanup |
 | [ADR-0750](0750-cuda-ms-ssim-decimate-adm-cm-measure.md) | Hardware Measurement Verdict for PR perf/cuda-ms-ssim-decimate-adm-cm-ncu-driven | Accepted | cuda, performance, ms_ssim, adm_cm, measurement |
 | [ADR-0752](0752-perf-bench-multi-resolution.md) | Multi-Resolution Performance Benchmark Baseline | Accepted |  |
-| [ADR-0753](0753-cuda-resolution-aware-dispatch.md) | Runtime Resolution-Aware CUDA Kernel Variant Dispatch | Accepted | cuda, perf, build |
+| [ADR-0753](0753-cuda-resolution-aware-dispatch.md) | Runtime Resolution-Aware CUDA Kernel Variant Dispatch | Superseded by ADR-1143 | cuda, perf, build |
 | [ADR-0754](0754-cuda-ssim-vert-combine-ldg-pinned-leak.md) | CUDA SSIM `vert_combine`: `__ldg()` + `__launch_bounds__` + pinned-host leak fix | Accepted |  |
 | [ADR-0755](0755-cpp23-wave7-single-file.md) | C++23 Wave 7 — drop orphan `cpu.c`, activate `cpu.cpp` | Accepted | cpp23, build, core, fork-local |
 | [ADR-0756](0756-cuda-f3-struct-by-value-audit.md) | CUDA F3 struct-by-value kernel audit (scope + dispatch order) | Accepted | cuda, perf, research |
