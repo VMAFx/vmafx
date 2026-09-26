@@ -530,10 +530,10 @@ updates, run:
 
 ```bash
 scripts/release/concat-changelog-fragments.sh --write
-git commit -am 'docs(release): render final 1.0.0 notes'
+git commit -am 'docs(release): render final 1.0.0 notes'  # skip if nothing changed
 scripts/release/rollover-changelog-fragments.sh \
   --version 1.0.0 --date YYYY-MM-DD
-git add CHANGELOG.md changelog.d release-please-config.json
+git add CHANGELOG.md changelog.d release-please-config.json docs/changelog-archive
 git commit -m 'chore(release): cut 1.0.0 changelog'
 ```
 
@@ -544,6 +544,20 @@ non-empty active source set. It then removes the consumed fragments and legacy
 source, leaving their exact content in the versioned changelog section and a
 SHA-256 receipt under `changelog.d/releases/`. The removals are recoverable
 from Git history. A second identical invocation is a no-op.
+
+A release candidate is cut the same way, with its full version:
+`--version 1.0.0-rc.1`. The script accepts exactly the shapes the tag-time
+verifier accepts, `X.Y.Z` and `X.Y.Z-rc.N`, and each candidate gets its own
+`## [1.0.0-rc.1] - YYYY-MM-DD` section and `changelog.d/releases/1.0.0-rc.1.json`
+receipt. The first candidate's cut also retires `release-as` and
+`bootstrap-sha`, because the verifier refuses them at every tag, candidates
+included.
+
+Later candidates need an explicit version. With `versioning: default`,
+release-please bumps a fix on `1.0.0-rc.1` to `1.0.1-rc.1`: its patch update
+keeps the prerelease tag and never counts candidates. Put a
+`Release-As: 1.0.0-rc.2` footer on the last commit merged before the next cut,
+and check the release PR title before cutting it.
 
 [ADR-1128](../adr/1128-fragment-owned-release-cuts.md) governs this cutover.
 

@@ -8,6 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROLLOVER="$SCRIPT_DIR/../rollover-changelog-fragments.sh"
+VERIFY="$SCRIPT_DIR/../verify-release-version.sh"
 CONCAT="$SCRIPT_DIR/../concat-changelog-fragments.sh"
 
 pass=0
@@ -40,6 +41,7 @@ fixture() {
   local root="$1"
   local manifest_version="${2:-3.2.1}"
   local marker_version="${3:-3.2.1}"
+  local release_as="${4:-3.2.1}"
   mkdir -p "$root/scripts/release" "$root/changelog.d/added" \
     "$root/changelog.d/fixed"
   cp "$ROLLOVER" "$root/scripts/release/"
@@ -53,7 +55,7 @@ fixture() {
     '  "packages": {' \
     '    ".": {' \
     '      "_comment_release_as": "one-shot, ADR-1151",' \
-    '      "release-as": "3.2.1",' \
+    "      \"release-as\": \"$release_as\"," \
     '      "skip-changelog": true,' \
     '      "extra-files": [{"type":"generic","path":"version-marker.txt"}]' \
     '    }' \
@@ -273,6 +275,66 @@ if VMAFX_REPO_ROOT="$small" "$small/scripts/release/rollover-changelog-fragments
 else
   check "short body stays inline and writes no archive" fail
 fi
+
+# T14: A release candidate is cut like a release (ADR-1201). The tag-time
+# verifier demands the heading, receipt and retired one-shot fields for
+# v1.0.0-rc.1 too, so the rollover must accept the same narrow -rc.N shape and
+# read an rc marker as the full version, not as its 1.0.0 prefix.
+rc_cut="$scratch/rc-cut"
+fixture "$rc_cut" 1.0.0-rc.1 1.0.0-rc.1 1.0.0-rc.1
+if VMAFX_REPO_ROOT="$rc_cut" "$rc_cut/scripts/release/rollover-changelog-fragments.sh" \
+  --version 1.0.0-rc.1 --date 2026-09-26 >/dev/null 2>&1 &&
+  [[ "$(grep -Ec '^## \[1\.0\.0-rc\.1\] - 2026-09-26$' "$rc_cut/CHANGELOG.md")" -eq 1 ]] &&
+  jq -e '.version == "1.0.0-rc.1" and .source_count == 3' \
+    "$rc_cut/changelog.d/releases/1.0.0-rc.1.json" >/dev/null &&
+  jq -e '(has("bootstrap-sha") | not) and (.packages["."] | has("release-as") | not)' \
+    "$rc_cut/release-please-config.json" >/dev/null &&
+  [[ "$(find "$rc_cut/changelog.d/added" "$rc_cut/changelog.d/fixed" -type f | wc -l)" -eq 0 ]]; then
+  check 'release candidate is cut with its own heading, receipt and retired fields' pass
+else
+  check 'release candidate is cut with its own heading, receipt and retired fields' fail
+fi
+# The cut is what the tag-time verifier checks; the fixture has no .git, so the
+# verifier skips only its tag-points-at-HEAD step.
+if VMAFX_REPO_ROOT="$rc_cut" "$VERIFY" v1.0.0-rc.1 >/dev/null 2>&1; then
+  check 'tag-time verifier accepts the release-candidate cut' pass
+else
+  check 'tag-time verifier accepts the release-candidate cut' fail
+fi
+
+# T15: Every prerelease shape the verifier refuses is refused here too, as a
+# usage error and without touching the tree.
+rc_shapes="$scratch/rc-shapes"
+fixture "$rc_shapes" 1.0.0-rc.1 1.0.0-rc.1 1.0.0-rc.1
+before="$(tree_hash "$rc_shapes")"
+shapes_ok=pass
+for shape in 1.0.0-beta 1.0.0-rc 1.0.0-rc.01 1.0.0-rc.1.2 1.0.0-RC.1 1.0.0-rc.-1; do
+  rc=0
+  VMAFX_REPO_ROOT="$rc_shapes" "$rc_shapes/scripts/release/rollover-changelog-fragments.sh" \
+    --version "$shape" --date 2026-09-26 >/dev/null 2>&1 || rc=$?
+  [[ "$rc" -eq 64 ]] || shapes_ok=fail
+done
+[[ "$(tree_hash "$rc_shapes")" == "$before" ]] || shapes_ok=fail
+check 'non-rc prerelease shapes are rejected without mutation' "$shapes_ok"
+
+# T16: Boundary between the triple and its candidate: a plain 1.0.0 marker does
+# not satisfy 1.0.0-rc.1, and an rc manifest does not satisfy --version 1.0.0.
+rc_marker="$scratch/rc-marker"
+fixture "$rc_marker" 1.0.0-rc.1 1.0.0 1.0.0-rc.1
+before="$(tree_hash "$rc_marker")"
+rc_a=0
+VMAFX_REPO_ROOT="$rc_marker" "$rc_marker/scripts/release/rollover-changelog-fragments.sh" \
+  --version 1.0.0-rc.1 --date 2026-09-26 >/dev/null 2>&1 || rc_a=$?
+rc_manifest="$scratch/rc-manifest"
+fixture "$rc_manifest" 1.0.0-rc.1 1.0.0-rc.1 1.0.0-rc.1
+before_manifest="$(tree_hash "$rc_manifest")"
+rc_b=0
+VMAFX_REPO_ROOT="$rc_manifest" "$rc_manifest/scripts/release/rollover-changelog-fragments.sh" \
+  --version 1.0.0 --date 2026-09-26 >/dev/null 2>&1 || rc_b=$?
+boundary_ok=pass
+[[ "$rc_a" -ne 0 && "$(tree_hash "$rc_marker")" == "$before" ]] || boundary_ok=fail
+[[ "$rc_b" -ne 0 && "$(tree_hash "$rc_manifest")" == "$before_manifest" ]] || boundary_ok=fail
+check 'triple and rc versions never satisfy each other' "$boundary_ok"
 
 printf '\n=== Results: %d passed, %d failed ===\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]

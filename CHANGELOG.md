@@ -28110,6 +28110,13 @@ try to resolve a tag that intentionally remains absent until an operator publish
 the draft.
 
 
+- `scripts/release/rollover-changelog-fragments.sh` now cuts release
+  candidates: it accepts `--version X.Y.Z-rc.N`, the same shape the tag-time
+  verifier accepts, and reads an `-rc.N` version marker as the full version.
+  Before this, the verifier required an RC changelog cut that the rollover
+  refused to make, so no release candidate could pass publication.
+
+
 - docs: remove stale "Vulkan image import" entry from `docs/index.md` C API section.
   The Vulkan backend was dropped in ADR-0726 (2026-05-28); the list item falsely
   implied `api/vulkan-image-import.md` described a live API. The page itself already

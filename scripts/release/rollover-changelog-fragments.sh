@@ -24,12 +24,13 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: rollover-changelog-fragments.sh --version X.Y.Z --date YYYY-MM-DD
+Usage: rollover-changelog-fragments.sh --version X.Y.Z[-rc.N] --date YYYY-MM-DD
                                        [--archive-over N]
 
 Versions the exact rendered Unreleased body, removes the active fragment
 sources, retires one-time release-please cutover fields, and writes
-changelog.d/releases/X.Y.Z.json as a verification receipt.
+changelog.d/releases/X.Y.Z.json as a verification receipt. A release
+candidate (X.Y.Z-rc.N) is cut the same way and gets its own section.
 
 --archive-over N (default 400)
   When the rendered body is longer than N lines, the detail moves to
@@ -83,8 +84,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-  printf 'ERROR: --version must be ordinary SemVer X.Y.Z\n' >&2
+# ADR-1201: a release candidate is cut like any other release, so the accepted
+# shape is exactly the one scripts/release/verify-release-version.sh accepts at
+# tag time -- the plain triple or `-rc.N` with no leading zero. The verifier
+# demands this cut's heading, receipt and retired one-shot fields for an RC tag
+# too, so refusing the suffix here made every RC unpublishable.
+if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$ ]]; then
+  printf 'ERROR: --version must be X.Y.Z or X.Y.Z-rc.N\n' >&2
   exit 64
 fi
 if [[ ! "$archive_over" =~ ^[0-9]+$ ]]; then
@@ -135,7 +141,9 @@ for relative_path in "${marker_files[@]}"; do
   fi
   marker_line="$(grep -E 'x-release-please-version' "$marker_path" || true)"
   marker_count="$(grep -Ec 'x-release-please-version' "$marker_path" || true)"
-  marker_version="$(printf '%s\n' "$marker_line" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+  # Same extractor as the tag-time verifier: without the optional group a
+  # 1.0.0-rc.1 marker reads as "1.0.0" and mismatches the version it agrees with.
+  marker_version="$(printf '%s\n' "$marker_line" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?' || true)"
   if [[ "$marker_count" -ne 1 || "$marker_version" != "$version" ]]; then
     printf 'ERROR: %s does not contain exactly one %s release marker\n' \
       "$relative_path" "$version" >&2

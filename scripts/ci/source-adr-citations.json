@@ -6739,6 +6739,8 @@
         ".github/workflows/rule-enforcement.yml": 1,
         ".github/workflows/supply-chain.yml": 1,
         "python/test/setup_metadata_test.py": 1,
+        "scripts/release/rollover-changelog-fragments.sh": 1,
+        "scripts/release/tests/test-rollover-changelog-fragments.sh": 1,
         "scripts/release/tests/test-verify-release-version.sh": 2,
         "scripts/release/verify-release-version.sh": 2
       },

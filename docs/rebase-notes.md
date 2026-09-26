@@ -54434,3 +54434,13 @@ its **Submitted** column equal to the public readback of
 `https://www.bestpractices.dev/projects/14549.json`. The README badge points at
 `https://www.bestpractices.dev/projects/14549/badge`. No native/public API,
 numerical or FFmpeg rebase impact.
+
+## Release-candidate changelog rollover (2026-09-26)
+
+`scripts/release/rollover-changelog-fragments.sh` and
+`scripts/release/verify-release-version.sh` must accept the same version shape,
+`X.Y.Z` or `X.Y.Z-rc.N`, and extract version markers with the same optional
+`-rc.N` group. If either changes alone, a release candidate either cannot be cut
+or cannot be published. `test-rollover-changelog-fragments.sh` runs the verifier
+against an RC cut to hold them together. No native/public API, numerical or
+FFmpeg rebase impact.

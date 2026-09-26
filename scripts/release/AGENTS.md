@@ -72,8 +72,15 @@ exist, and no active sources or cutover fields remain. Late merge
 after rollover adds active fragment again, invalidating release PR
 until operator rebuilds cut.
 
+Version shape = verifier's shape, no wider: `X.Y.Z` or `X.Y.Z-rc.N`
+(ADR-1201). RC cut = own dated section + `releases/X.Y.Z-rc.N.json`
+receipt; rc.1 cut retires one-shot fields, as `verify-release-version.sh`
+demands at every tag. Marker extractor keeps optional `-rc.N` group, same
+as verifier; without it `1.0.0-rc.1` marker reads `1.0.0`, mismatches.
+
 Test coverage:
-`scripts/release/tests/test-rollover-changelog-fragments.sh`.
+`scripts/release/tests/test-rollover-changelog-fragments.sh` (T14 runs
+verifier against RC cut).
 
 ## Release-line invariants (ADR-1151)
 
@@ -91,6 +98,10 @@ same PR that merges release; `Release Script Contract (ADR-1128)` job
 in `.github/workflows/rule-enforcement.yml` fails if either survives
 once root manifest reaches 1.0.0. To force later version: use
 `Release-As: X.Y.Z` commit footer — inherently one-shot, cannot rot.
+Later RCs need that footer: `versioning: default` bumps
+`1.0.0-rc.1` + fix -> `1.0.1-rc.1` (`PatchVersionUpdate` keeps
+pre-release tag), never `1.0.0-rc.2`. Merge commit before RC2 cut carries
+`Release-As: 1.0.0-rc.2`.
 
 **Product version and ABI SONAME = independent.** `release-please`
 owns product version (tag, `core/meson.build` `project(version:)`,
