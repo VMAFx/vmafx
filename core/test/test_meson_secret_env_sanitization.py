@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import os
@@ -391,6 +392,7 @@ def _logical_python_lines(content: str) -> list[tuple[int, str]]:
     return logical_lines
 
 
+@functools.lru_cache(maxsize=1024)
 def _entrypoint_commands(path: Path, content: str) -> list[tuple[int, str]]:
     """Return active logical commands with source line numbers."""
     if _is_workflow_yaml(path):
@@ -428,28 +430,40 @@ def _normalize_test_tool_executables(command: str) -> str:
     return UNQUOTED_TEST_TOOL.sub(lambda match: match.group("tool").lower(), normalized)
 
 
+_ENTRYPOINT_SOURCES_CACHE: dict[Path, dict[Path, str]] = {}
+
+
 def _read_entrypoint_sources() -> dict[Path, str]:
-    sources: dict[Path, str] = {}
-    for pattern in ENTRYPOINT_GLOBS:
-        for absolute_path in ROOT.glob(pattern):
-            if absolute_path.is_file():
-                relative_path = absolute_path.relative_to(ROOT)
-                if relative_path.name not in MAKEFILE_NAMES and (
-                    "tests" in relative_path.parts or relative_path.name.startswith("test_")
-                ):
-                    continue
-                sources[relative_path] = absolute_path.read_text(encoding="utf-8")
-    return sources
+    if ROOT not in _ENTRYPOINT_SOURCES_CACHE:
+        sources: dict[Path, str] = {}
+        for pattern in ENTRYPOINT_GLOBS:
+            for absolute_path in ROOT.glob(pattern):
+                if absolute_path.is_file():
+                    relative_path = absolute_path.relative_to(ROOT)
+                    if relative_path.name not in MAKEFILE_NAMES and (
+                        "tests" in relative_path.parts or relative_path.name.startswith("test_")
+                    ):
+                        continue
+                    sources[relative_path] = absolute_path.read_text(encoding="utf-8")
+        _ENTRYPOINT_SOURCES_CACHE[ROOT] = sources
+    return dict(_ENTRYPOINT_SOURCES_CACHE[ROOT])
 
 
-def _raw_entrypoint_errors(path: Path, content: str) -> list[str]:
+def _raw_commands_errors(path: Path, commands: list[tuple[int, str]]) -> list[str]:
     errors: list[str] = []
-    for line_number, command in _entrypoint_commands(path, content):
+    for line_number, command in commands:
+        cmd_lower = command.lower()
+        if "meson" not in cmd_lower and "ninja" not in cmd_lower:
+            continue
         command_without_runner = RUNNER_PATH.sub(" ", command)
         normalized_command = _normalize_test_tool_executables(command_without_runner)
         if RAW_MESON_TEST.search(normalized_command) or RAW_NINJA_TEST.search(normalized_command):
             errors.append(f"raw Meson test entry point at {path}:{line_number}")
     return errors
+
+
+def _raw_entrypoint_errors(path: Path, content: str) -> list[str]:
+    return _raw_commands_errors(path, _entrypoint_commands(path, content))
 
 
 def _entrypoint_contract_errors(sources: dict[Path, str]) -> list[str]:
@@ -459,14 +473,16 @@ def _entrypoint_contract_errors(sources: dict[Path, str]) -> list[str]:
     for path, content in sources.items():
         if path == MESON_TEST_RUNNER.relative_to(ROOT):
             continue
+        commands = _entrypoint_commands(path, content)
         runner_paths = tuple(
             match.group("path")
-            for _, command in _entrypoint_commands(path, content)
+            for _, command in commands
+            if "run_meson_test.py" in command
             for match in RUNNER_PATH.finditer(command)
         )
         if runner_paths:
             actual_calls[path] = runner_paths
-        errors.extend(_raw_entrypoint_errors(path, content))
+        errors.extend(_raw_commands_errors(path, commands))
 
     if actual_calls != EXPECTED_RUNNER_PATHS:
         errors.append(

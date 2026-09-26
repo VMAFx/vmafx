@@ -137,7 +137,7 @@ vmaf_per_shot_boundary_test = executable(
     dependencies: vmaf_per_shot_deps,
     c_args : vmaf_per_shot_cflags + ['-DVMAF_PER_SHOT_MAX_FRAMES=3U'],
     link_with : vmaf_per_shot_link_target,
-    build_by_default : false,
+    build_by_default : true,
 )
 
 # vmaf-roi — T6-2b per-CTU QP offset sidecar (x265 / SVT-AV1 ROI).
