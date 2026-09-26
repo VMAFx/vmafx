@@ -100,7 +100,7 @@ CLI is normally `build/tools/vmaf` (`build\tools\vmaf.exe` on Windows).
 Run the build's bounded fast suite before collecting a report:
 
 ```bash
-meson test -C build --suite=fast --print-errorlogs
+make test-fast
 ```
 
 The collector does not run or embed that suite automatically. If it fails,
