@@ -82,7 +82,7 @@ must carry a stable backtick ID immediately after it:
 
 ```markdown
 2. [ ] `T-RC1-MASTER-GREEN` **Master green and the queue drained**
-7. [ ] `T-RC1-BENCH-TUNE` **[BLOCKED]** **Bench and tune**
+7. [ ] `T-RC2-BENCH-TUNE` **[BLOCKED]** **Bench and tune**
 1. [x] `T-RC1-RELEASE-PIPELINE` **Release pipeline correct and idle**
 ```
 

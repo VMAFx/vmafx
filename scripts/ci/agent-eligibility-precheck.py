@@ -37,7 +37,7 @@ Usage::
 
     scripts/ci/agent-eligibility-precheck.py --backlog-id T-RC1-MASTER-GREEN
     scripts/ci/agent-eligibility-precheck.py --task-tag codeql-cpp-overflow
-    scripts/ci/agent-eligibility-precheck.py --backlog-id T-RC1-BENCH-TUNE --skip-gh-search
+    scripts/ci/agent-eligibility-precheck.py --backlog-id T-RC2-BENCH-TUNE --skip-gh-search
 
 The ``--task-tag`` form is for runs without a backlog row (e.g.
 CodeQL sweeps); checks 1 and 2 are skipped, only check 3 runs.

@@ -1,6 +1,21 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs/release-sequence-rcs — RC responsibilities stay separated (2026-09-26)
+
+No upstream source impact: this change is fork-only release governance and
+documentation. Preserve [ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md)'s
+phase boundary when rebasing release, roadmap, backlog, or model-training
+documents: RC1 owns correctness completion plus the reproducible outside-hardware
+report path; RC2 owns benchmark/profiling/tuning; RC3 owns the one-shot real
+retrain. Do not resolve a conflict by restoring generic “post-RC” training or by
+moving performance work back into RC1.
+
+Ordinary Renovate/version PRs remain mergeable under existing required gates.
+Their merge invalidates affected exact-head candidate evidence and triggers
+revalidation; it does not restore a blanket version freeze. The Netflix golden
+assertions remain untouched.
+
 ## fix/mcp-cyclic-imports — Python transports form an import DAG (2026-09-23)
 
 No upstream impact: `mcp-server/` is fork-only.  Preserve

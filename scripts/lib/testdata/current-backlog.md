@@ -9,8 +9,8 @@
        completed by PR #1216.
 2. [ ] `T-RC1-MASTER-GREEN` **Master green and the queue drained** (#1236) —
        PR #1528 is pending.
-3. [ ] `T-RC1-BENCH-TUNE` **[BLOCKED]** **Bench and tune** — wait for fixes.
-4. [ ] `T-RC1-RETRAIN` **[IN_FLIGHT]** **Model retraining** — one pass.
+3. [ ] `T-RC2-BENCH-TUNE` **[BLOCKED]** **Bench and tune** — wait for RC1 acceptance.
+4. [ ] `T-RC3-MODEL-RETRAIN` **[BLOCKED]** **Model retraining** — one pass after RC2.
 
 ## Post-rc.1 Workstreams
 

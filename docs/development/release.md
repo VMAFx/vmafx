@@ -21,8 +21,10 @@ zero GitHub releases, and every `vX.Y.Z` tag currently visible belongs to
 Netflix upstream history (none is an ancestor of `master`). The 3.2.x baseline
 that used to be in the manifest was a *source-version* alignment with Netflix's
 SONAME, not a fork release. `release-please-config.json` therefore carries a
-one-shot `release-as: "1.0.0"` and `.release-please-manifest.json` starts at
-`0.0.0`, so the first cut is a monotone `0.0.0 -> 1.0.0` bump.
+one-shot `release-as: "1.0.0-rc.1"` with the `rc` prerelease channel enabled,
+and `.release-please-manifest.json` starts at `0.0.0`, so the first candidate
+is a monotone `0.0.0 -> 1.0.0-rc.1` bump. The final cut switches the override
+to `1.0.0` after the candidate sequence passes.
 [ADR-1151](../adr/1151-vmafx-first-release-1-0-0.md) governs this and supersedes
 [ADR-1127](../adr/1127-single-semver-release-stream.md)'s "start at v3.2.1".
 
@@ -35,6 +37,34 @@ v1.1.0  # backward-compatible feature release
 v2.0.0  # incompatible public-surface release
 ```
 
+## First-release candidate responsibilities
+
+[ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md)
+separates the first release into ordered evidence stages:
+
+| Candidate | Proves | Must not be used to claim |
+| --- | --- | --- |
+| `v1.0.0-rc.1` (RC1) | Release-blocking correctness is closed or explicitly deferred, required checks pass on the exact head, and outside testers can run the bounded hardware-validation/report path | Final performance or production-trained model quality |
+| `v1.0.0-rc.2` (RC2) | Benchmarks, profiles, and tuning results are comparable, reproducible, and still numerically correct on the tested hardware | Completion of the real retraining programme |
+| `v1.0.0-rc.3` (RC3) | The one-shot real retrain and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
+
+Candidate tags are immutable. RC1, RC2, and RC3 name the first candidate for
+each responsibility; if a stage finds a correctness defect, land the fix and
+rerun the affected evidence before advancing. A later repair candidate may be
+cut without moving benchmark work into RC1 or real training before RC3.
+
+Every report and acceptance record identifies the exact commit, published
+artifact or image digest, fixtures, host and device, drivers/runtimes, tool
+versions, commands, exit codes, and raw logs. A green check or benchmark from a
+different head is not evidence for the candidate being evaluated.
+
+Ordinary Renovate and version-update PRs are not frozen between candidates.
+They merge under the same required checks, review, digest/pin policy, and
+component-specific validation as any other change. Coordinated major SDK,
+toolchain, and base-image updates keep their specialised validation. If one
+merges after evidence was collected, rerun the checks or measurements it can
+affect against the new exact head.
+
 The VMAFx release stream advances independently of Netflix/vmaf. Upstream
 alignment remains recorded in sync commits and release notes, not encoded in
 the tag.
@@ -45,7 +75,7 @@ These are two different numbers and only the first one moves at release time.
 
 | Number | Owner | Value today | Moves when |
 | --- | --- | --- | --- |
-| **Product version** | release-please | `1.0.0` at the first cut | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)`, `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. It does **not** reach `libvmaf.pc` — see ADR-1235. |
+| **Product version** | release-please | `1.0.0-rc.1` at the first candidate; `1.0.0` at final | Every release. Covers the `vX.Y.Z` tag, `core/meson.build`'s `project(version:)`, `compat/python-vmaf`, the three fork-local Python distributions (`ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`), and the Helm chart's `appVersion`. It does **not** reach `libvmaf.pc` — see ADR-1235. |
 | **ABI SONAME / interface version** | hand-maintained | `vmaf_soname_version = '3.0.0'` at `core/meson.build:19`, shipping `libvmaf.so.3` **and advertised as `libvmaf.pc`'s `Version:`** | Only on a C API change. **The 1.0.0 cut does not reset it.** |
 
 So `libvmaf.so` keeps its 3.x SONAME while the product goes to 1.0.0, and

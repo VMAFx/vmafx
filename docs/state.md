@@ -1,4 +1,5 @@
 <!-- markdownlint-disable MD013 MD037 MD038 MD041 MD060 -->
+_Updated: 2026-09-26 (ADR-1341 assigns the first-release gates explicitly: RC1 closes confirmed release-blocking correctness and proves the outside-hardware report path; RC2 owns benchmarking/profiling/tuning; RC3 owns the one-shot real retrain. “Done fixing” means no confirmed RC1 blocker and no untriaged row remain, with required checks green on the exact candidate head. Performance/training rows remain open in their assigned phases rather than blocking RC1. Ordinary version PRs are not frozen; affected exact-head evidence is rerun after a merge.)_
 _Updated: 2026-09-23 (T-PY-FIFO-SEM-ACQUIRE-NO-TIMEOUT-2026-09-22 closed on `fix/fifo-bounded-wait`: FIFO workfile and procfile producers now use per-child readiness/error channels, bounded child-state polling, and a 60-second hard startup ceiling; real-spawn regressions cover base and no-reference executors.)_
 _Updated: 2026-09-21 (T-PRAETOR-LOCAL-GATE-UNPASSABLE-2026-09-21 closed on `chore/hiss21-core-tools`: the fail-closed `praetorctl` pre-commit gates could not pass on this branch or on `origin/master`. The debt baseline is re-recorded downward 1411 → 938, the README carries its managed governance block, and the HISS-04 negative fixture is now genuinely 60 lines brace-to-brace. No suppression, baseline hand-edit or gate change.)_
 _Updated: 2026-09-21 (T-CORE-TOOLS-UNBOUNDED-LOOPS-2026-09-21 closed on `chore/hiss21-core-tools`: `vmaf-perShot`'s frame scan and `vmaf_vpl`'s decode retry both have explicit ceilings and report exhaustion instead of spinning, and the four core CLI sources drop twelve `goto` jumps and six oversized functions without moving a score. Three items opened by the same change: T-VPL-DECODE-CEILING-UNVERIFIED-2026-09-21, T-PER-SHOT-ENDLESS-INPUT-NOT-A-TIMEOUT-2026-09-21 and T-TIDY-BASELINE-SYCL-STALE-VPL-2026-09-21.)_
@@ -353,6 +354,28 @@ prevent re-investigation of already-closed bugs across session resets.
   (one file per non-trivial choice; immutable once Accepted).
 `Netflix#N` = upstream issue / PR; `#N` = fork PR.
 
+## First-release phase classification
+
+[ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md) makes this
+ledger the RC1 scope boundary. Before RC1 acceptance, every remaining row must
+be classified as one of:
+
+- **RC1 blocker** — confirmed, actionable correctness, reliability, security,
+  build, packaging, supported-backend usability, or tester-report failure;
+- **RC2 performance** — benchmarking, profiling, tuning, or performance-only
+  work that must preserve the accepted correctness contracts;
+- **RC3 training** — real model retraining, validation, provenance, and
+  production-weight promotion;
+- **explicitly deferred** — externally blocked or later-release work with its
+  evidence, owner/trigger, and closure condition recorded.
+
+RC1 is “done fixing” only when no confirmed RC1 blocker and no untriaged row
+remain, the required integrated checks pass on the exact candidate head, and a
+tester can produce a reproducible hardware report. This is a bounded release
+decision, not a claim that no future defect can be discovered. A correctness
+defect found in RC2 or RC3 returns to the fix-and-revalidate path before the
+next stage proceeds.
+
 ## Open bugs
 
 | **T-SYCL-SPEED-CHROMA-BOTH-SINGULAR-REGRESSED-2026-09-23** | **`test_speed_chroma_both_singular_parity` fails: `cpu=0.00000000 gpu=1000.00000000 delta=1.00e+03 tol=1.00e-04`.** This is a regression of `T-GPU-SPEED-SINGULAR-SOLUTION-2026-09-07`, which is filed **closed** (PR #1377) and states the contract explicitly: "with both sides singular the CPU's own zeroed solution drives every variance to 0 and the score to exactly 0 regardless". The CPU still returns 0; the SYCL chroma twin returns the `speed_chroma_max_val` cap. The two sibling cases (`temporal/one-sided`, `temporal/both-singular`) pass, so it is specific to the chroma twin's both-singular path. Found while running the `fast` suite for an unrelated MS-SSIM change; reproduced on an Intel Arc A380. **Ruled out, so the next person does not repeat it**: (1) stale device eigenvalues -- `run_channel` (`speed_chroma_sycl.cpp:550-559`) uploads `h_eigenvalues` to `d_eigenvalues` unconditionally, after `solve_channel` returns, on the singular path too; (2) a missing XOR guard -- `process_chroma_plane` has `if (reference_singular == distorted_singular)` and so runs the aggregate for both-singular exactly as the CPU's `speed_extract_score` does (`speed.c:1072-1078`); (3) a divergent uv combine -- `combine_chroma_uv` matches `speed.c`'s rule term for term, including the average when both are singular. **Live lead**: the singular path memsets only `device_solution` (`speed_chroma_sycl.cpp:530,539`) while `launch_score` reads `d_indterm_ref` / `d_indterm_dis` as well (`:627-629`), which are left holding the computed independent terms. The CPU's `est_params` likewise zeroes only the solution, so the remaining difference is inside the score formula itself: `get_speed_score` versus `launch_score` + `block_score` for a zeroed-solution, live-indterm input. That comparison is the work. | [ADR-1202](adr/1202-cuda-speed-chroma-4k-launch-bounds.md) | `meson test -C build-sycl --suite fast test_sycl_speed_singular_parity` on a SYCL device | unassigned | Closes when the chroma twin returns 0 for both-singular and the parity test passes |
@@ -461,7 +484,7 @@ landed fix yet._
 <!-- T-DOCKER-SMOKE moved to Recently closed — promoted to blocking 2026-06-08, chore/promote-docker-smoke-blocking -->
 <!-- T-RC-CI-GREENUP-2026-06-13 moved to Recently closed — fixed by PR #912 (da315b893) -->
 <!-- T-THREADED-MULTI-PREV-REF-STARVATION-2026-06-13 moved to Recently closed — fixed by PR #906 (f460ee065, ADR-1107) -->
-| **T-ENSEMBLE-V2-PROD-FLIP-DEFERRED-2026-06-13** | The five `fr_regressor_v2_ensemble_v1_seed{0..4}` rows ship at smoke quality for the RC. ADR-0321 promoted them to production with LOSO-validated weights trained at `codec_vocab=14`; the vocab was trimmed to 6, so PR #865 regenerated the ONNX in `--smoke` mode (1 epoch, synthetic) to keep the load path correct and set `smoke: true`. PR #865 also dropped `license`/`license_url`/`sigstore_bundle` from the five rows — restored here. The production flip is deferred to the locked one-shot post-RC retrain (ensemble is in scope), per [ADR-1105](adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md). `test_fr_regressor_v2_ensemble_seed_rows_are_production` is `xfail(strict=True)` so it auto-fails the moment real weights land. | `python3 -m pytest python/test/model_registry_schema_test.py -q` → 10 passed, 1 xfailed (the deferred production assertion). | One-shot retrain (post-RC, locked plan). | Closes when the one-shot retrain re-runs `export_ensemble_v2_seeds.py` at `codec_vocab=6`, flips `smoke: false`, and removes the xfail marker (test xpasses → strict failure forces marker removal). |
+| **T-ENSEMBLE-V2-PROD-FLIP-DEFERRED-2026-06-13** | **RC3 training.** The five `fr_regressor_v2_ensemble_v1_seed{0..4}` rows ship at smoke quality through RC2. ADR-0321 promoted them to production with LOSO-validated weights trained at `codec_vocab=14`; the vocab was trimmed to 6, so PR #865 regenerated the ONNX in `--smoke` mode (1 epoch, synthetic) to keep the load path correct and set `smoke: true`. PR #865 also dropped `license`/`license_url`/`sigstore_bundle` from the five rows — restored here. The production flip is deferred to the locked one-shot RC3 retrain (ensemble is in scope), per [ADR-1105](adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md) and [ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md). `test_fr_regressor_v2_ensemble_seed_rows_are_production` is `xfail(strict=True)` so it auto-fails the moment real weights land. | `python3 -m pytest python/test/model_registry_schema_test.py -q` → 10 passed, 1 xfailed (the deferred production assertion). | One-shot RC3 retrain (locked plan). | Closes when the RC3 retrain re-runs `export_ensemble_v2_seeds.py` at `codec_vocab=6`, flips `smoke: false`, and removes the xfail marker (test xpasses → strict failure forces marker removal). |
 <!-- T-CI-APT-MS-REPO-FLAKE-2026-06-13 moved to Recently closed — fixed by PR #903 (b9eb49e79) -->
 <!-- T-CI-DOCKER-SMOKE-NO-OUTPUT-2026-06-13 moved to Recently closed — hardened by PR #903 (b9eb49e79) -->
 <!-- T-HIP-MOTION-V2-MIRROR-OFF-BY-ONE-2026-06-13 moved to Recently closed — fixed by PR #905 (dcd3cad65, ADR-1106) -->
