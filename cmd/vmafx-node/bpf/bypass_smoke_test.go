@@ -159,7 +159,7 @@ func measureReadP50(path string, targetBytes int, n int) (time.Duration, error) 
 	buf := make([]byte, 64*1024) // 64 KiB read buffer
 	times := make([]time.Duration, 0, n)
 
-	for i := 0; i < n; i++ {
+	for range n {
 		f, err := os.Open(path)
 		if err != nil {
 			return 0, fmt.Errorf("open: %w", err)
@@ -203,10 +203,7 @@ func createSyntheticFile(path string, size int) error {
 	chunk := make([]byte, 64*1024)
 	written := 0
 	for written < size {
-		n := size - written
-		if n > len(chunk) {
-			n = len(chunk)
-		}
+		n := min(size-written, len(chunk))
 		nw, err := f.Write(chunk[:n])
 		written += nw
 		if err != nil {

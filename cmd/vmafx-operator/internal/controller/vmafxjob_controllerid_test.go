@@ -34,7 +34,6 @@ import (
 	"context"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -52,10 +51,8 @@ func TestControllerJobID_SetThenRead(t *testing.T) {
 
 	sc := fakeScheme(t)
 	job := &vmafxv1.VmafxJob{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "job-with-id",
-			Namespace: "default",
-		},
+		Name:      "job-with-id",
+		Namespace: "default",
 		Spec: vmafxv1.VmafxJobSpec{
 			Reference: "file:///ref.yuv",
 			Distorted: "file:///dis.yuv",
@@ -99,10 +96,8 @@ func TestControllerJobID_ReconcileRequeuesWhenGRPCUnreachable(t *testing.T) {
 
 	sc := fakeScheme(t)
 	job := &vmafxv1.VmafxJob{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "job-grpc-fail",
-			Namespace: "default",
-		},
+		Name:      "job-grpc-fail",
+		Namespace: "default",
 		Spec: vmafxv1.VmafxJobSpec{
 			Reference: "file:///ref.yuv",
 			Distorted: "file:///dis.yuv",
@@ -131,7 +126,7 @@ func TestControllerJobID_ReconcileRequeuesWhenGRPCUnreachable(t *testing.T) {
 	}
 
 	result, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "job-grpc-fail", Namespace: "default"},
+		Name: "job-grpc-fail", Namespace: "default",
 	})
 	// The reconciler must not surface the dial error — it should absorb it and requeue.
 	if err != nil {
@@ -149,10 +144,8 @@ func TestControllerJobID_ReconcilePendingNoID(t *testing.T) {
 
 	sc := fakeScheme(t)
 	job := &vmafxv1.VmafxJob{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "job-no-id",
-			Namespace: "default",
-		},
+		Name:      "job-no-id",
+		Namespace: "default",
 		Spec: vmafxv1.VmafxJobSpec{
 			Reference: "file:///ref.yuv",
 			Distorted: "file:///dis.yuv",

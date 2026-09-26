@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -83,9 +84,7 @@ func (s *scoringServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*
 	}
 
 	protoFeatures := make(map[string]float64, len(features))
-	for k, v := range features {
-		protoFeatures[k] = v
-	}
+	maps.Copy(protoFeatures, features)
 
 	s.log.Info("grpc Score completed", "score", fmt.Sprintf("%.4f", score), "duration_s", elapsed)
 	return &vmafxv1.ScoreResponse{

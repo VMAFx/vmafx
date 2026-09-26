@@ -66,11 +66,9 @@ func TestLastHeartbeatNotOverwrittenByReconcile_FreshNode(t *testing.T) {
 
 	sc := fakeScheme(t)
 	node := &vmafxv1.VmafxNode{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "fresh-node",
-			Namespace: "default",
-		},
-		Spec: vmafxv1.VmafxNodeSpec{GPUVendor: "nvidia", Capacity: 1},
+		Name:      "fresh-node",
+		Namespace: "default",
+		Spec:      vmafxv1.VmafxNodeSpec{GPUVendor: "nvidia", Capacity: 1},
 	}
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(sc).
@@ -85,7 +83,7 @@ func TestLastHeartbeatNotOverwrittenByReconcile_FreshNode(t *testing.T) {
 	}
 
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "fresh-node", Namespace: "default"},
+		Name: "fresh-node", Namespace: "default",
 	})
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
@@ -123,11 +121,9 @@ func TestLastHeartbeatNotOverwrittenByReconcile_PreexistingTimestamp(t *testing.
 	// cause a false-positive Equal failure.
 	staleTime := metav1.NewTime(time.Now().Add(-90 * time.Second).Truncate(time.Second))
 	node := &vmafxv1.VmafxNode{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "stale-node",
-			Namespace: "default",
-		},
-		Spec: vmafxv1.VmafxNodeSpec{GPUVendor: "intel"},
+		Name:      "stale-node",
+		Namespace: "default",
+		Spec:      vmafxv1.VmafxNodeSpec{GPUVendor: "intel"},
 	}
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(sc).
@@ -148,7 +144,7 @@ func TestLastHeartbeatNotOverwrittenByReconcile_PreexistingTimestamp(t *testing.
 		ControllerHTTPAddr: srv.URL,
 	}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "stale-node", Namespace: "default"},
+		Name: "stale-node", Namespace: "default",
 	})
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
@@ -188,11 +184,9 @@ func TestLastHeartbeatNotOverwrittenByReconcile_UnhealthyProbe(t *testing.T) {
 
 	sc := fakeScheme(t)
 	node := &vmafxv1.VmafxNode{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "unhealthy-node",
-			Namespace: "default",
-		},
-		Spec: vmafxv1.VmafxNodeSpec{GPUVendor: "amd", Capacity: 2},
+		Name:      "unhealthy-node",
+		Namespace: "default",
+		Spec:      vmafxv1.VmafxNodeSpec{GPUVendor: "amd", Capacity: 2},
 	}
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(sc).
@@ -206,7 +200,7 @@ func TestLastHeartbeatNotOverwrittenByReconcile_UnhealthyProbe(t *testing.T) {
 		ControllerHTTPAddr: srv.URL,
 	}
 	_, err := r.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "unhealthy-node", Namespace: "default"},
+		Name: "unhealthy-node", Namespace: "default",
 	})
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)

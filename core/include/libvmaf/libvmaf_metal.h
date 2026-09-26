@@ -107,8 +107,9 @@ VMAF_EXPORT int vmaf_metal_state_init(VmafMetalState **out, VmafMetalConfigurati
  * Hand the Metal state to a VmafContext. After import, the context
  * borrows the state pointer for the duration of its lifetime; the
  * caller still owns the state and must free it with
- * @ref vmaf_metal_state_free after vmaf_close(). Same lifetime model as
- * the SYCL + Vulkan + HIP backends.
+ * @ref vmaf_metal_state_free only after vmaf_close() returns exactly 0.
+ * A nonzero close retains the state dependency for retry. Same lifetime
+ * model as the SYCL + HIP backends.
  *
  * @param ctx    live VmafContext (from vmaf_init()).
  * @param state  state handle previously allocated via
@@ -122,8 +123,9 @@ VMAF_EXPORT int vmaf_metal_import_state(VmafContext *ctx, VmafMetalState *state)
 /**
  * Release a state previously allocated via @ref vmaf_metal_state_init.
  * Safe to pass `NULL` or a state that was never imported. After import
- * the caller is still responsible for freeing — call this after
- * vmaf_close() to avoid using a state the context still references.
+ * the caller is still responsible for freeing — call this only after
+ * vmaf_close() returns 0. Keep the state alive across any nonzero close
+ * result because the retained context still references it.
  *
  * @param state  pointer to the state handle to release; set to NULL on
  *               return.

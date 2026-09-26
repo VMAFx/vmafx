@@ -114,9 +114,9 @@ fn netflix_golden_score() {
         return;
     }
 
+    let model = VmafModel::from_path(&model_path).expect("vmaf_model_load_from_path failed");
     let mut ctx = VmafContext::new().expect("vmaf_init failed");
-    let mut model = VmafModel::from_path(&model_path).expect("vmaf_model_load_from_path failed");
-    ctx.use_features_from_model(&mut model)
+    ctx.use_features_from_model(&model)
         .expect("vmaf_use_features_from_model failed");
 
     let mut ref_file = File::open(&yuv_ref).expect("open ref YUV");
@@ -143,12 +143,20 @@ fn netflix_golden_score() {
     assert!(n_frames > 0, "no frames read from YUV files");
 
     let score = ctx
-        .score_pooled(&mut model, 0, n_frames - 1)
+        .score_pooled(&model, 0, n_frames - 1)
         .expect("vmaf_score_pooled failed");
+
+    ctx.close().expect("vmaf_close failed");
 
     let delta = (score - EXPECTED_SCORE).abs();
     assert!(
         delta <= PLACES_3_TOLERANCE,
         "Netflix golden score assertion failed: expected {EXPECTED_SCORE:.4}, got {score:.4} (delta={delta:.6})"
     );
+}
+
+#[test]
+fn context_explicit_close_consumes_on_success() {
+    let ctx = VmafContext::new().expect("vmaf_init failed");
+    ctx.close().expect("vmaf_close failed");
 }

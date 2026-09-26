@@ -3,7 +3,7 @@
 
 - **Status**: Complete
 - **Workstream**: [ADR-1336](../adr/1336-cuda-context-owned-resource-teardown.md)
-- **Last updated**: 2026-09-25
+- **Last updated**: 2026-09-26
 
 ## Question
 
@@ -40,14 +40,15 @@ partial-module paths. The force-zero motion paths also allocated lifecycle
 resources before selecting their CPU-like zero-emission behavior, making that
 otherwise resource-free option depend on close cleanup.
 
-The shared repair establishes four rules:
+The shared repair establishes five rules:
 
 1. push the resource owner's context before module, stream, event, or raw
    device-buffer teardown;
-2. attempt the complete cleanup set and return the first error;
-3. clear a handle only after the corresponding driver destroy succeeds; and
+2. quiesce and destroy streams before releasing objects they may reference;
+3. clear a handle only after the corresponding driver release succeeds;
 4. restore the previously current context, including the established one-retry
-   unwind when the first pop reports failure.
+   unwind when the first pop reports failure; and
+5. retain every owner container until all fallible child closes succeed.
 
 The motion force-zero decision now precedes CUDA resource creation. The SpEED,
 ADM, PSNR-HVS, SSIMULACRA2, VIF, and template-based extractors use the same
@@ -72,13 +73,18 @@ throughout `core/src/feature/cuda/*.c`.
 `test_cuda_runtime_unwind` uses a fake driver with a context stack and injected
 push, pop, synchronize, destroy, creation, and unload failures. It proves owner
 context selection, foreign-context restoration, first-error preservation,
-retryable failed handles, complete best-effort close, and partial-init rollback.
+retryable failed handles, phased stream quiescence, ring-picture retry, and
+partial-init rollback. Vector, context-pool, worker-private, public-close, and
+mixed-success ring-pool tests prove that a failed close never loses its owner.
 The CUDA 13.4 build compiles every migrated feature translation unit. The two
 device-free lifecycle tests pass, and the focused `float_ms_ssim_cuda` and
 `psnr_hvs_cuda` parity tests pass on an NVIDIA GeForce RTX 4090 with driver
 615.71.09 after the touched-file HISS refactors. No benchmark, tuning,
-profiling, retraining, model, snapshot, dependency, public API, FFmpeg surface,
-or Netflix golden assertion changed.
+profiling, retraining, model, snapshot, dependency, public ABI shape, score,
+or Netflix golden assertion changed. Public close semantics did change, and
+the in-tree tools, embedded MCP compute handler, plus FFmpeg patch-stack callers
+were adapted to retain the context on nonzero and invalidate it only on exact
+zero.
 
 ## Open questions
 
@@ -92,3 +98,74 @@ or Netflix golden assertion changed.
 
 - [ADR-1336](../adr/1336-cuda-context-owned-resource-teardown.md)
 - `T-CUDA-CONTEXT-OWNED-TEARDOWN-2026-09-25` in `docs/state.md`
+
+## Addendum: fail-closed teardown contract (2026-09-26)
+
+The initial fix made individual handles retryable but left their enclosing
+owners disposable. `context_destroy()` still freed `priv`; the context pool,
+registered vector, and worker callback could still free pointer arrays after a
+child close failed; and public `vmaf_close()` freed the top-level context after
+ignoring those failures. The ring pool and drain stream had the same shape.
+
+The follow-up separates teardown into fallible prepare and ownership commit:
+
+- CUDA `close_required` is published before feature `init()` so a failed init
+  remains visible without setting `is_initialized`.
+- Context pools, vectors, and worker-private arrays retain all storage until
+  every required close succeeds. Their destroy operations reject unprepared
+  children with `-EBUSY`.
+- `vmaf_close()` returns the first prepare error, normalized to negative errno,
+  with the public context intact. A retry closes only remaining owners, then
+  exact-zero success commits and invalidates the pointer.
+- The ring pool records successful slots; retry never calls their callbacks
+  again. A fully initialized CUDA picture commits stream, plane, and event
+  releases individually. Drain-stream and primary-context failures retain the
+  live state and driver table.
+- An unimported `VmafCudaState` now releases its stream/context through
+  retry-safe `vmaf_cuda_state_free()` rather than leaking them with a bare
+  wrapper free. Import marks the caller wrapper so state-free remains
+  allocation-only after context-owned teardown; duplicate imports fail closed.
+- FFmpeg patch 0020 retains models and imported backend state until exact-zero
+  close. Its dedicated CUDA filter also retains the source
+  `AVHWFramesContext`, because the imported CUDA state borrows the device's
+  `CUcontext` and a persistent close error outlives normal filter-link cleanup.
+- `MotionForcezeroSourceContractTest` binds dict-before-force-zero ordering,
+  close-callback preservation, and the device-free path in both CUDA motion
+  files. The owner inventory additionally rejects legacy buffer-free helpers.
+
+Scope is deliberately precise. Approximately 90 non-CUDA close callbacks have
+not been audited for failed-init safety, so `close_required` is published only
+for CUDA extractors; successfully initialized non-CUDA contexts still receive
+normal close handling. The allocator-local `device_pic_unwind()` and
+`device_pic_free_after_pop()` paths remain best-effort rollback of an object
+that was never published to a ring pool. They are not covered by the retained
+owner guarantee. Pool-construction rollback of earlier slots after a later slot
+allocation fails has the same best-effort limitation because no retryable pool
+owner is published. These paths should be a separate audit if retryable
+half-built picture allocation becomes a requirement.
+
+## Adjacent verification finding: Go link authority (2026-09-26)
+
+Running the adapted Go callers against the branch-local libvmaf exposed the
+deferred ADR-1125 defect: `pkg/libvmaf` embedded a
+`-Lcore/build-cpu/src -lvmaf` directive. When that directory did not exist,
+the linker kept searching and selected an installed stale library. The first
+focused run then failed on missing `vmaf_dnn_*` symbols rather than exercising
+this branch.
+
+The binding now supplies headers only; every build authority supplies its
+verified library explicitly. Local Make and Go CI select
+`core/build-cpu/src`, while the server, controller, node, and dev-container
+builders select the fork library staged into their image. This preserves both
+in-tree and installed-container layouts without an implicit system fallback.
+
+| Alternative | Consequence | Result |
+| --- | --- | --- |
+| Keep the embedded `-L... -lvmaf` | Convenient plain `go test`, but an absent directory silently searches the host | Rejected: original defect |
+| Embed the exact in-tree `.so` path | Fails closed locally, but makes verified installed/container layouts impossible | Rejected |
+| Require each build authority to set `CGO_LDFLAGS` | Explicit provenance at every caller; plain Go commands fail until configured | Chosen |
+
+Verification covered both directions: focused Go tests and `go vet` pass when
+pointed at `build-cuda-unwind/src`; the same package fails with unresolved
+`vmaf_*` references when `CGO_LDFLAGS` is absent. The workflow contract test
+pins Make, Go CI, and all four cgo container builders.

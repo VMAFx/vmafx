@@ -24,9 +24,11 @@ consumer to re-link.
 use vmafx::{Context, Model, Picture, PoolingMethod};
 
 fn main() -> vmafx::Result<()> {
+    // The model is declared first because libvmaf keeps a borrowed pointer to
+    // it until context teardown completes.
+    let model = Model::from_path("/usr/local/share/model/vmaf_v0.6.1.json")?;
     let mut ctx = Context::new()?;
-    let mut model = Model::from_path("/usr/local/share/model/vmaf_v0.6.1.json")?;
-    ctx.use_features_from_model(&mut model)?;
+    ctx.use_features_from_model(&model)?;
 
     // Push one frame; reuse for every frame in your pipeline.
     let r = Picture::new_yuv420p_8bit(576, 324)?;
@@ -34,7 +36,7 @@ fn main() -> vmafx::Result<()> {
     ctx.read_pictures(r, d, 0)?;
     ctx.flush()?;
 
-    let score = ctx.score_pooled(&mut model, PoolingMethod::Mean, 0, 0)?;
+    let score = ctx.score_pooled(&model, PoolingMethod::Mean, 0, 0)?;
     println!("VMAF mean = {score}");
     Ok(())
 }
@@ -42,35 +44,53 @@ fn main() -> vmafx::Result<()> {
 
 ## API surface (Phase 1)
 
-| Type             | Purpose                                                             |
-| ---------------- | ------------------------------------------------------------------- |
-| `Context`        | Owns a `vmaf_context`; drives the scoring loop.                     |
-| `ContextBuilder` | Optional fine-grained configuration before `Context`.               |
-| `Model`          | Owns a `vmaf_model` loaded from a `.json` file.                     |
-| `Picture`        | Owns a `vmaf_picture` plane allocation.                             |
-| `PixelFormat`    | YUV 4:0:0 / 4:2:0 / 4:2:2 / 4:4:4 enum.                             |
-| `PoolingMethod`  | Mean / Min / Max / HarmonicMean / Median / Perc5 / Perc10 / Perc20. |
-| `Score`          | `(index, value)` pair for per-frame results.                        |
-| `LogLevel`       | None / Error / Warning / Info / Debug.                              |
-| `Error`          | Result-friendly error type with errno mapping.                      |
+| Type                | Purpose                                                             |
+| ------------------- | ------------------------------------------------------------------- |
+| `Context`           | Owns a `vmaf_context`; drives the scoring loop.                     |
+| `ContextBuilder`    | Optional fine-grained configuration before `Context`.               |
+| `ContextCloseError` | Teardown-only context retained after a failed explicit close.       |
+| `Model`             | Owns a `vmaf_model` loaded from a `.json` file.                     |
+| `Picture`           | Owns a `vmaf_picture` plane allocation.                             |
+| `PixelFormat`       | YUV 4:0:0 / 4:2:0 / 4:2:2 / 4:4:4 enum.                             |
+| `PoolingMethod`     | Mean / Min / Max / HarmonicMean / Median / Perc5 / Perc10 / Perc20. |
+| `Score`             | `(index, value)` pair for per-frame results.                        |
+| `LogLevel`          | None / Error / Warning / Info / Debug.                              |
+| `Error`             | Result-friendly error type with errno mapping.                      |
 
 ## Ownership model
 
-- `Context`, `Model`, `Picture` are RAII: their `Drop` impl calls the
-  matching `vmaf_*_destroy` / `vmaf_*_unref` / `vmaf_close`.
+- `Model` and `Picture` are ordinary RAII owners. Dropping an active `Context`
+  makes an initial close attempt plus at most one retry. A close-retry token
+  preserves the initial error; dropping it consumes the retry only if the
+  caller has not already done so. After a failed explicit retry, dropping the
+  token aborts without a third close call rather than ending the
+  registered-model borrow while libvmaf still retains model pointers.
+- `Context::close` consumes the active context. Zero from `vmaf_close`
+  invalidates it; any other status returns `ContextCloseError`, which retains
+  the model lifetime and exposes only the initial error plus one `retry()`.
 - `Context::read_pictures` **consumes** both `Picture` values — libvmaf
   takes ownership of their plane buffers internally. Allocate fresh
   pictures per frame.
-- All three types are `Send` (safe to move between threads) but `!Sync`
-  (libvmaf does not document concurrent access from multiple threads on a
-  single context).
+- `Model` and `Picture` are `Send` but `!Sync`. A `Context` and its close-retry
+  token are also `!Send`: they carry a shared model borrow, while `Model` is
+  deliberately `!Sync` because libvmaf does not document concurrent access.
 
 ## Errors
 
-Every fallible call returns `vmafx::Result<T>`. The `Error` enum maps
-common libvmaf errno values (`ENOMEM`, `EINVAL`, `ENOSYS`, `EACCES`,
-`ENOENT`) to dedicated variants; the long tail is preserved as
-`Error::Libvmaf { code }` so callers can log the raw return value.
+Scoring operations return `vmafx::Result<T>`. The `Error` enum maps common
+libvmaf errno values (`ENOMEM`, `EINVAL`, `ENOSYS`, `EACCES`, `ENOENT`) to
+dedicated variants; the long tail is preserved as `Error::Libvmaf { code }`.
+`Context::close` instead returns `Result<(), ContextCloseError>` because a
+failure must carry the still-owned context for a safe retry.
+
+```rust
+match ctx.close() {
+    Ok(()) => {}
+    Err(pending) => pending
+        .retry()
+        .expect("context teardown still pending after retry"),
+}
+```
 
 ```rust
 use vmafx::{Error, Model};

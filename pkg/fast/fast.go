@@ -142,10 +142,7 @@ var ErrSrcRequired = errors.New(
 // Smoke mode uses it so the optimiser has a sensible objective without real
 // weights.
 func SmokePredictor(crf int) (TrialSample, error) {
-	span := DefaultCRFHi - DefaultCRFLo
-	if span < 1 {
-		span = 1
-	}
+	span := max(DefaultCRFHi-DefaultCRFLo, 1)
 	crfNorm := float64(crf-DefaultCRFLo) / float64(span)
 	// VMAF curve: smooth taper from ~99 at CRF 10 to ~52 at CRF 51.
 	vmaf := 99.0 - 47.0*math.Pow(crfNorm, 1.2)

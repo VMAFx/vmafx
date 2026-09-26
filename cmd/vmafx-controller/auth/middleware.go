@@ -54,6 +54,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -142,10 +143,8 @@ type Claims struct {
 // HasRole returns true if the caller holds at least one of the given roles.
 func (c Claims) HasRole(roles ...string) bool {
 	for _, want := range roles {
-		for _, have := range c.Roles {
-			if have == want {
-				return true
-			}
+		if slices.Contains(c.Roles, want) {
+			return true
 		}
 	}
 	return false
@@ -482,10 +481,8 @@ func checkAudience(aud json.RawMessage, want string) error {
 	if err := json.Unmarshal(aud, &multi); err != nil {
 		return fmt.Errorf("jwt: parse audience claim: %w", err)
 	}
-	for _, a := range multi {
-		if a == want {
-			return nil
-		}
+	if slices.Contains(multi, want) {
+		return nil
 	}
 	return fmt.Errorf("jwt: audience %q not in token audience list", want)
 }

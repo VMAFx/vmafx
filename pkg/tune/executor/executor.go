@@ -98,8 +98,7 @@ func ExecRunner(ctx context.Context, argv []string) (CommandResult, error) {
 	if err == nil {
 		return result, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		result.ExitCode = exitCodeOf(exitErr.ProcessState)
 		return result, nil
 	}

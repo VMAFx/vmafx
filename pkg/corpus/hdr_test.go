@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -324,12 +325,7 @@ func TestDetectHDR(t *testing.T) {
 }
 
 func containsArg(argv []string, needle string) bool {
-	for _, a := range argv {
-		if a == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(argv, needle)
 }
 
 func TestHDRModelNameFor(t *testing.T) {

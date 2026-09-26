@@ -134,6 +134,9 @@ psnr             max |Δ| = 1e-9    max |Δ| = 1e-9     OK
 
 ## Limitations
 
+- Cleanup is fail-closed: `vmaf_bench` retries a failed context close once.
+  A second failure is reported on stderr and makes the run fail; imported GPU
+  state remains owned until process exit.
 - Test data must be pre-staged. `vmaf_bench` does not download anything.
 - Resolution list is hard-coded to `576x324`, `640x480`, `1280x720`,
   `1920x1080`, `3840x2160` (per `core/tools/vmaf_bench.c:291-293`).

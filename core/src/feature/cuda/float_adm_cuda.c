@@ -295,68 +295,51 @@ static void compute_per_scale_dims(FloatAdmStateCuda *s)
 }
 
 /* ------------------------------------------------------------------ */
+static void float_adm_preserve_error(int *rc, int err)
+{
+    if (!*rc)
+        *rc = err;
+}
+
+static int float_adm_release_buffers(VmafFeatureExtractor *fex, FloatAdmStateCuda *s, int rc)
+{
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->src_ref));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->src_dis));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dwt_tmp_ref));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dwt_tmp_dis));
+    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+        float_adm_preserve_error(&rc,
+                                 vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_band[scale]));
+        float_adm_preserve_error(&rc,
+                                 vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dis_band[scale]));
+    }
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_a));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_f));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_a_aim));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_f_aim));
+    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+        float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->accum[scale]));
+        float_adm_preserve_error(
+            &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->accum_host[scale]));
+    }
+    return rc;
+}
+
 /* float_adm_init_unwind - the single teardown path for init_fex_cuda.
  *
- * HISS-01: lifted verbatim from the former `free_buffers` label. The same
- * resources are released in the same order on every exit path, and the
- * value returned is the one the label returned.
+ * Drain the lifecycle before releasing anything queued work may reference.
+ * The original init failure remains the first returned error.
  */
-static int float_adm_init_unwind(VmafFeatureExtractor *fex, FloatAdmStateCuda *s)
+static int float_adm_init_unwind(VmafFeatureExtractor *fex, FloatAdmStateCuda *s, int err)
 {
-    if (s->src_ref) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->src_ref);
-        free(s->src_ref);
-    }
-    if (s->src_dis) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->src_dis);
-        free(s->src_dis);
-    }
-    if (s->dwt_tmp_ref) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dwt_tmp_ref);
-        free(s->dwt_tmp_ref);
-    }
-    if (s->dwt_tmp_dis) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dwt_tmp_dis);
-        free(s->dwt_tmp_dis);
-    }
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        if (s->ref_band[scale]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_band[scale]);
-            free(s->ref_band[scale]);
-        }
-        if (s->dis_band[scale]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_band[scale]);
-            free(s->dis_band[scale]);
-        }
-    }
-    if (s->csf_a) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->csf_a);
-        free(s->csf_a);
-    }
-    if (s->csf_f) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->csf_f);
-        free(s->csf_f);
-    }
-    if (s->csf_a_aim) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->csf_a_aim);
-        free(s->csf_a_aim);
-    }
-    if (s->csf_f_aim) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->csf_f_aim);
-        free(s->csf_f_aim);
-    }
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        if (s->accum[scale]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->accum[scale]);
-            free(s->accum[scale]);
-        }
-        if (s->accum_host[scale])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->accum_host[scale]);
-    }
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return -ENOMEM;
+    const int lifecycle_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (lifecycle_rc)
+        return err ? err : lifecycle_rc;
+
+    int rc = float_adm_release_buffers(fex, s, err);
+    float_adm_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
+    float_adm_preserve_error(&rc, vmaf_cuda_module_unload(fex->cu_state, &s->module));
+    return rc;
 }
 
 /* float_adm_init_rfactors - per-scale CSF rfactor table.
@@ -387,10 +370,8 @@ static void float_adm_init_rfactors(FloatAdmStateCuda *s)
 
 /* float_adm_load_kernels - module load plus every kernel handle lookup.
  *
- * HISS-04: lifted verbatim out of init_fex_cuda. CHECK_CUDA_GOTO and the
- * two labels it targets move with it, so the context is still popped
- * exactly once on every exit path and the kernel lifecycle is closed in
- * the same order and with the same returned errno as before.
+ * CHECK_CUDA_GOTO keeps the context-pop boundary local; failures then enter
+ * the shared phase-ordered init unwind with the original CUDA errno.
  */
 static int float_adm_load_kernels(VmafFeatureExtractor *fex, FloatAdmStateCuda *s,
                                   CudaFunctions *cu_f)
@@ -419,30 +400,29 @@ static int float_adm_load_kernels(VmafFeatureExtractor *fex, FloatAdmStateCuda *
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return float_adm_init_unwind(fex, s, _cuda_err);
 }
 
 /* float_adm_alloc_device_buffers - every device and pinned-host allocation.
  *
- * HISS-04: lifted verbatim out of init_fex_cuda. The allocations run in the
- * same order and the caller still unwinds through float_adm_init_unwind(),
- * so the set and order of resources released on the error path is unchanged.
+ * Allocations retain their original order and stop at the first error. The
+ * caller releases any partial ownership through float_adm_init_unwind().
  */
 static int float_adm_alloc_device_buffers(VmafFeatureExtractor *fex, FloatAdmStateCuda *s,
                                           unsigned w, unsigned h, unsigned bpc)
 {
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t raw_bytes = (size_t)w * h * bpp;
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->src_ref, raw_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->src_dis, raw_bytes);
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->src_ref, raw_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->src_dis, raw_bytes);
 
     /* DWT scratch sized at scale 0 (worst case). */
     const size_t dwt_bytes = (size_t)s->width * 2u * s->scale_half_h[0] * sizeof(float);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dwt_tmp_ref, dwt_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dwt_tmp_dis, dwt_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dwt_tmp_ref, dwt_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dwt_tmp_dis, dwt_bytes);
 
     /* Per-scale band buffers — 4 bands x buf_stride x half_h. The
      * scale-(s+1) DWT vert kernel reads scale-s's LL band, so each
@@ -450,18 +430,24 @@ static int float_adm_alloc_device_buffers(VmafFeatureExtractor *fex, FloatAdmSta
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const size_t band_bytes =
             (size_t)4u * s->buf_stride * s->scale_half_h[scale] * sizeof(float);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_band[scale], band_bytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_band[scale], band_bytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_band[scale], band_bytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_band[scale], band_bytes);
     }
 
     /* csf_a + csf_f reused per-scale (sized to scale 0 worst case). */
     const size_t csf_bytes =
         (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_a, csf_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_f, csf_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_a, csf_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_f, csf_bytes);
     /* ADR-0574: AIM pass CSF buffers — same size as csf_a / csf_f. */
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_a_aim, csf_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_f_aim, csf_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_a_aim, csf_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_f_aim, csf_bytes);
 
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const int hh = (int)s->scale_half_h[scale];
@@ -473,9 +459,12 @@ static int float_adm_alloc_device_buffers(VmafFeatureExtractor *fex, FloatAdmSta
         const unsigned wg_count = 3u * num_rows;
         s->wg_count[scale] = wg_count;
         const size_t accum_bytes = (size_t)wg_count * FADM_ACCUM_SLOTS * sizeof(float);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->accum[scale], accum_bytes);
-        ret |=
-            vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->accum_host[scale], accum_bytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->accum[scale], accum_bytes);
+        if (!ret) {
+            ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->accum_host[scale],
+                                              accum_bytes);
+        }
     }
     return ret;
 }
@@ -498,19 +487,20 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return float_adm_init_unwind(fex, s, err);
 
     err = float_adm_load_kernels(fex, s, cu_f);
     if (err)
         return err;
 
-    if (float_adm_alloc_device_buffers(fex, s, w, h, bpc))
-        return float_adm_init_unwind(fex, s);
+    err = float_adm_alloc_device_buffers(fex, s, w, h, bpc);
+    if (err)
+        return float_adm_init_unwind(fex, s, err);
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
-        return float_adm_init_unwind(fex, s);
+        return float_adm_init_unwind(fex, s, -ENOMEM);
     return 0;
 }
 
@@ -1137,61 +1127,12 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     FloatAdmStateCuda *s = fex->priv;
     int ret = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    if (s->src_ref) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->src_ref);
-        free(s->src_ref);
-    }
-    if (s->src_dis) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->src_dis);
-        free(s->src_dis);
-    }
-    if (s->dwt_tmp_ref) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->dwt_tmp_ref);
-        free(s->dwt_tmp_ref);
-    }
-    if (s->dwt_tmp_dis) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->dwt_tmp_dis);
-        free(s->dwt_tmp_dis);
-    }
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        if (s->ref_band[scale]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->ref_band[scale]);
-            free(s->ref_band[scale]);
-        }
-        if (s->dis_band[scale]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->dis_band[scale]);
-            free(s->dis_band[scale]);
-        }
-    }
-    if (s->csf_a) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->csf_a);
-        free(s->csf_a);
-    }
-    if (s->csf_f) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->csf_f);
-        free(s->csf_f);
-    }
-    /* ADR-0574: free AIM pass CSF buffers. */
-    if (s->csf_a_aim) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->csf_a_aim);
-        free(s->csf_a_aim);
-    }
-    if (s->csf_f_aim) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->csf_f_aim);
-        free(s->csf_f_aim);
-    }
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        if (s->accum[scale]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->accum[scale]);
-            free(s->accum[scale]);
-        }
-        if (s->accum_host[scale])
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->accum_host[scale]);
-    }
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    if (ret == 0)
-        ret = module_rc;
+    if (ret)
+        return ret;
+
+    ret = float_adm_release_buffers(fex, s, 0);
+    float_adm_preserve_error(&ret, vmaf_dictionary_free(&s->feature_name_dict));
+    float_adm_preserve_error(&ret, vmaf_cuda_module_unload(fex->cu_state, &s->module));
     return ret;
 }
 

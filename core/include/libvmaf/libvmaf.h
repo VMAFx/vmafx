@@ -269,7 +269,10 @@ VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
  *
  * @param vmaf  The VMAF context allocated with `vmaf_init()`.
  *
- * @param model Opaque model context.
+ * @param model Opaque model context. Ownership is not transferred. After a
+ *              successful registration the model is borrowed by @p vmaf and
+ *              must remain alive until `vmaf_close(vmaf)` returns exactly 0,
+ *              including across nonzero close results retained for retry.
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
@@ -285,7 +288,12 @@ VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model
  *
  * @param vmaf             The VMAF context allocated with `vmaf_init()`.
  *
- * @param model_collection Opaque model collection context.
+ * @param model_collection Opaque model collection context. Ownership is not
+ *                          transferred. After a successful registration the
+ *                          collection is borrowed by @p vmaf and must remain
+ *                          alive until `vmaf_close(vmaf)` returns exactly 0,
+ *                          including across nonzero close results retained for
+ *                          retry.
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
@@ -569,23 +577,29 @@ VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *
  * Close a VMAF instance and free all associated memory.
  *
  * @param vmaf The VMAF instance to close.
- *             The pointer becomes invalid after this call returns.
- *             Callers must not dereference or pass @p vmaf to any libvmaf
- *             function after `vmaf_close()` returns.  To guard against
- *             accidental use-after-free, set the pointer to NULL immediately
- *             after calling this function:
+ *             The pointer becomes invalid only when this function returns 0.
+ *             Any nonzero return retains all ownership that could not be
+ *             released; the context is then teardown-only and the caller must
+ *             retry `vmaf_close()` rather than call another libvmaf operation.
+ *             Imported backend states and model dependencies must remain alive
+ *             until close succeeds. Set the pointer to NULL only on success:
  *
  *             @code
- *               vmaf_close(ctx);
- *               ctx = NULL;
+ *               int err = vmaf_close(ctx);
+ *               if (err != 0)
+ *                   err = vmaf_close(ctx); // retry retained teardown ownership
+ *               if (err == 0)
+ *                   ctx = NULL;
  *             @endcode
  *
  *             Calling `vmaf_close(NULL)` returns `-EINVAL` harmlessly;
- *             however passing a dangling (already-freed) pointer is
- *             undefined behaviour and is **not** detected.
+ *             however passing a pointer after a successful close is undefined
+ *             behaviour and is **not** detected.
  *
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
+ * @return Exactly 0 after freeing the context, or < 0 (negative errno) with a
+ *         retryable teardown-only context retained. Treat every nonzero result
+ *         as retained ownership.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */

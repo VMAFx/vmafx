@@ -186,11 +186,15 @@ architectural rationale.
   │ vmaf_write_output[_with_format] │
   └────────┬────────────────────────┘
            │
-  ┌────────▼────────┐
-  │ vmaf_model_destroy()           │
-  │ vmaf_close()                   │
-  └─────────────────┘
+  ┌────────▼───────────────────────────────┐
+  │ vmaf_close() → retry on nonzero │
+  │ exact 0: model_destroy()        │
+  └───────────────────────────────┘
 ```
+
+Models and imported backend states are borrowed dependencies of the context.
+Keep them alive through every nonzero close result; destroy or free them only
+after `vmaf_close()` returns exactly 0.
 
 ## Core configuration — `VmafConfiguration`
 
@@ -247,7 +251,14 @@ typedef struct VmafConfiguration {
 | `vmaf_write_output_with_format(ctx, path, fmt, "%.17g")` | 0 / -errno | Write report with a caller-controlled printf format. Pass `NULL` for the `%.6f` default. Pass `"%.17g"` for IEEE-754 round-trip lossless. Format must take exactly one `double`. |
 | `vmaf_preallocate_pictures(ctx, cfg)` | 0 / -errno | Allocate a reusable picture pool (CPU path; for GPU see [gpu.md](gpu.md)). |
 | `vmaf_fetch_preallocated_picture(ctx, *pic)` | 0 / -errno | Pull a picture from the pool; return it via `vmaf_picture_unref()`. |
-| `vmaf_close(ctx)` | 0 / -errno | Free the context. After this the pointer is invalid. |
+| `vmaf_close(ctx)` | 0 / -errno | Free the context only on exact 0. Any nonzero result retains a teardown-only context that must be passed to `vmaf_close()` again. |
+
+`vmaf_close()` uses a prepare/commit teardown. It first closes registered,
+pooled, and worker-private extractor contexts without freeing their owners. If
+any close callback fails, it returns a negative errno and retains the `VmafContext`
+for retry. Do not call scoring APIs or release imported GPU states and model
+dependencies after any nonzero result. Retry `vmaf_close()`; set the pointer to
+`NULL` and release those dependencies only after it returns 0.
 
 ### `VmafPoolingMethod`
 
@@ -705,8 +716,15 @@ int main(int argc, char **argv)
     if (err == 0) printf("PSNR-Y (mean): %.17g\n", psnr_pooled);
 
 done:
+    if (vmaf) {
+        int close_err = vmaf_close(vmaf);
+        if (close_err != 0)
+            close_err = vmaf_close(vmaf); /* retained teardown-only context */
+        if (close_err != 0)
+            return 1; /* model and backend dependencies must remain alive */
+        vmaf = NULL;
+    }
     if (model) vmaf_model_destroy(model);
-    if (vmaf)  vmaf_close(vmaf);
     return err < 0 ? 1 : 0;
 }
 ```
@@ -780,6 +798,8 @@ and [ADR-1315](../adr/1315-doxygen-public-api-fail-closed.md).
 
 ## Related
 
+- [rust-context-close.md](rust-context-close.md) — retry-safe context ownership
+  in the safe Rust wrappers
 - [gpu.md](gpu.md) — CUDA / SYCL additions to the lifecycle
 - [dnn.md](dnn.md) — tiny-AI session API
 - [../usage/cli.md](../usage/cli.md) — the `vmaf` CLI walkthrough mirrors this

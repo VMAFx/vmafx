@@ -198,7 +198,7 @@ func TestInferBackendFromPayload(t *testing.T) {
 	}
 	// >12 metrics → cpu (ADR-0726 removed the vulkan branch; matches Python).
 	metrics30 := map[string]any{}
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		metrics30[strFromInt(i)] = float64(i)
 	}
 	highMetricPayload := map[string]any{
@@ -211,7 +211,7 @@ func TestInferBackendFromPayload(t *testing.T) {
 	}
 	// <=12 metrics → gpu.
 	metrics8 := map[string]any{}
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		metrics8[strFromInt(i)] = float64(i)
 	}
 	gpuPayload := map[string]any{
@@ -224,7 +224,7 @@ func TestInferBackendFromPayload(t *testing.T) {
 	}
 	// Between 13 and 29 metrics → cpu.
 	metrics20 := map[string]any{}
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		metrics20[strFromInt(i)] = float64(i)
 	}
 	cpuPayload := map[string]any{
@@ -466,7 +466,6 @@ func TestScoreIsHealthy(t *testing.T) {
 		{"jsonNumberJunk", json.Number("not-a-number"), false},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := scoreIsHealthy(tc.score); got != tc.want {

@@ -129,9 +129,7 @@ func TestScoreHandler_ClientDisconnectKillsSubprocess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	var sawErr atomic.Bool
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		resp, doErr := ts.Client().Do(req)
 		if doErr != nil {
 			sawErr.Store(true)
@@ -141,7 +139,7 @@ func TestScoreHandler_ClientDisconnectKillsSubprocess(t *testing.T) {
 		// Score call cancelled.  Either way drain the body so the test
 		// doesn't leak fds.
 		_ = resp.Body.Close()
-	}()
+	})
 
 	// Wait for the stub to write its PID, then cancel.
 	if err := waitForPidFile(pidFile, 5*time.Second); err != nil {

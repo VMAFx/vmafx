@@ -240,6 +240,16 @@ enum VmafFeatureExtractorContextFlags {
 
 typedef struct VmafFeatureExtractorContext {
     bool is_initialized, is_closed;
+    /**
+     * A close callback owns state created by an init attempt.
+     *
+     * Set before invoking a CUDA fex->init so a failed, partially-complete
+     * device initialization is still visible to teardown. Cleared only after
+     * close succeeds. This is intentionally distinct from is_initialized,
+     * which becomes true only after init completes successfully. Non-CUDA
+     * close callbacks retain their established successful-init-only contract.
+     */
+    bool close_required;
     VmafDictionary *opts_dict;
     VmafFeatureExtractor *fex;
     bool allow_context_fallback; ///< Model dispatch may replace an unsupported GPU twin (ADR-1324)
@@ -333,6 +343,10 @@ int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
 int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
                             VmafFeatureCollector *feature_collector);
 
+/** Close every initialized or partially initialized context without freeing ownership. */
+int vmaf_fex_ctx_pool_close(VmafFeatureExtractorContextPool *pool);
+
+/** Destroy a pool only after vmaf_fex_ctx_pool_close() has succeeded. */
 int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool);
 
 #ifdef __cplusplus

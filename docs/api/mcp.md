@@ -113,12 +113,21 @@ if (vmaf_mcp_available()) {
     vmaf_mcp_close(&mcp);
 }
 
-vmaf_close(ctx);
+int close_rc = vmaf_close(ctx);
+if (close_rc != 0)
+    close_rc = vmaf_close(ctx); /* retained teardown-only context */
+if (close_rc == 0)
+    ctx = NULL;
+/* A persistent error retains ctx and every borrowed dependency. */
 ```
 
 `-ENOSYS` from init/start calls means this libvmaf build omitted the
 embedded MCP umbrella flag. `vmaf_mcp_transport_available()` lets hosts
 check individual transport flags before calling `_start_*`.
+
+Close the MCP handle before attempting context teardown. Exact-zero
+`vmaf_close()` success invalidates the context; any nonzero result retains a
+teardown-only context and its borrowed dependencies for retry.
 
 ## Error contract
 

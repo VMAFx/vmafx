@@ -14,6 +14,8 @@
 package v1
 
 import (
+	"maps"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -229,9 +231,7 @@ func (in *VmafxModelTrainingDataSource) DeepCopyInto(out *VmafxModelTrainingData
 	if in.NodeSelector != nil {
 		in, out := &in.NodeSelector, &out.NodeSelector
 		*out = make(map[string]string, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val
-		}
+		maps.Copy((*out), *in)
 	}
 }
 

@@ -38,6 +38,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -89,8 +90,7 @@ func runSidecar(ctx context.Context, argv []string) (string, string, int, error)
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return stdout.String(), stderr.String(), exitErr.ExitCode(), nil
 		}
 		return stdout.String(), stderr.String(), -1,
@@ -414,13 +414,7 @@ func buildBenchArgv(bin string, args map[string]any) ([]string, bool, error) {
 	}
 	if hasArg(args, "resolution") {
 		res := strArg(args, "resolution", "")
-		found := false
-		for _, r := range benchResolutions {
-			if r == res {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(benchResolutions, res)
 		if !found {
 			return nil, false, fmt.Errorf("invalid resolution %q: must be one of %s",
 				res, strings.Join(benchResolutions, ", "))

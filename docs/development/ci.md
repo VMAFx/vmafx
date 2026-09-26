@@ -16,7 +16,7 @@ The main `pull_request`-triggered workflows include:
 | [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep / CodeQL / Gitleaks / Dependency Review. |
 | [`lint-and-format.yml`](../../.github/workflows/lint-and-format.yml) | Pre-commit, clang-tidy (changed files + whole-tree ratchet, ADR-1142), cppcheck, mypy, registry validate, twin-drift gate (ADR-1135). |
 | [`required-aggregator.yml`](../../.github/workflows/required-aggregator.yml) | Single required-check aggregator (ADR-0313). |
-| [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go vet, security scan, runner smoke, and tests (ADR-1238). |
+| [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go modernization, vet, security scan, runner smoke, and tests (ADRs 1238 and 1338). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg + libvmaf build (Linux GCC / macOS Clang / SYCL). |
 | [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform / cross-backend libvmaf build matrix: 17 lanes, six of them required. |
 | [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; not required. |
@@ -151,6 +151,13 @@ unrelated documentation changes report success after an explicit impact
 notice. A failing `gosec` scan blocks merging even though it prevents later
 Go tests from running. The job also starts on ready-for-review events, so
 draft-era results cannot replace the current validation run.
+
+Before installing native build dependencies, that job runs
+`go fix -diff ./...` under the exact `go.mod` toolchain. Per
+[ADR-1338](../adr/1338-go-fix-clean-tree-gate.md), any available source
+rewrite is a blocking failure; CI never mutates the checkout. Run
+`make go-fix`, repeat if the Go tool reports cascading fixes, and finish with
+`make go-fix-check` locally.
 
 For the hardware-dependent `SYCL Parity (Arc A380)` check
 ([ADR-1177](../adr/1177-sycl-arc-self-hosted-runner.md)), the aggregator

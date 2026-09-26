@@ -83,7 +83,7 @@ func coerceFloat(token string) float64 {
 // tokenizeStatsLine returns case-insensitive key/value tokens for a stats row.
 func tokenizeStatsLine(text string) map[string]string {
 	tokens := map[string]string{}
-	for _, raw := range strings.Fields(strings.ReplaceAll(text, ",", " ")) {
+	for raw := range strings.FieldsSeq(strings.ReplaceAll(text, ",", " ")) {
 		tok := strings.TrimRight(strings.TrimSpace(raw), ";")
 		if tok == "" {
 			continue

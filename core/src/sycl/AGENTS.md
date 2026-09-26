@@ -40,8 +40,7 @@ sycl/
 - **Numerical snapshots**: same rule as CUDA — see CLAUDE.md §9.
 - **`-fp-model=precise` load-bearing.** SYCL feature build line in
   `core/src/meson.build` adds `-fp-model=precise` to every per-kernel
-  TU. Blocks `icpx` from FMA contraction in kernel lambdas, matches
-  GLSL `precise` / `NoContraction` decorations on Vulkan twins.
+  TU. It blocks `icpx` from FMA contraction in kernel lambdas.
   Removing it drifts `float_adm_sycl`
   ([ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)) past
   `places=4` at scale 2, `ssimulacra2_sycl`

@@ -43,8 +43,7 @@ func runCommand(ctx context.Context, argv []string) (stdout, stderr string, exit
 
 	runErr := cmd.Run()
 	if runErr != nil {
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](runErr); ok {
 			return outBuf.String(), errBuf.String(), exitErr.ExitCode(), nil
 		}
 		return outBuf.String(), errBuf.String(), 1, runErr

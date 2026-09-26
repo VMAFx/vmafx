@@ -10,9 +10,16 @@
   `Picture` values via `into_raw_owned()`; clears `owned` flag so `Drop` does
   not double-free buffers libvmaf owns. any refactor changing picture passing
   across FFI boundary must preserve this contract.
-- **`Send` / `!Sync` split**: `Context`, `Model`, `Picture` marked `Send`,
-  deliberately not `Sync`. libvmaf does not document thread-safe concurrent
-  access on single object. Do not add `unsafe impl Sync` without ADR.
+- **Thread-trait split follows retained borrows**: `Model` and `Picture` are
+  `Send` but deliberately `!Sync`. `Context<'a>` and `ContextCloseError<'a>`
+  carry `PhantomData<&'a Model>` and therefore stay `!Send`/`!Sync`; never
+  bypass that dependency with an unsafe auto-trait impl. libvmaf does not
+  document concurrent model access.
+- **Context Drop fails closed**: active contexts retry close once; close-error
+  tokens consume that sole retry only if it has not already happened. After a
+  failed explicit retry, token drop aborts without a third close call. Any
+  persistent nonzero status aborts because returning from `Drop` would end
+  registered-model borrows while libvmaf still retained their pointers.
 - **errno mapping is a stable subset**: `Error::from_libvmaf_rc` maps 5 POSIX
   errno values (`ENOMEM=12`, `EINVAL=22`, `ENOSYS=38`/`ENOTSUP=95`,
   `EACCES=13`, `ENOENT=2`); falls through to `Error::Libvmaf { code }`. new

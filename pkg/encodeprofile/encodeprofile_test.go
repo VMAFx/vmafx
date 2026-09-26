@@ -30,8 +30,11 @@ import (
 	"testing"
 )
 
-func f64p(v float64) *float64 { return &v }
-func intp(v int) *int         { return &v }
+//go:fix inline
+func f64p(v float64) *float64 { return new(v) }
+
+//go:fix inline
+func intp(v int) *int { return new(v) }
 
 // goldenCase is one row of testdata/ep_expected.json.
 type goldenCase struct {
@@ -77,18 +80,18 @@ func TestSelectAndBuildMatchPython(t *testing.T) {
 		{name: "default", file: "profile.json", ffbin: "ffmpeg"},
 		// Codec / target filters narrow the candidate set.
 		{name: "codec_x264", file: "profile.json", sel: SelectOptions{Codec: "libx264"}, ffbin: "ffmpeg"},
-		{name: "target_90", file: "profile.json", sel: SelectOptions{TargetVMAF: f64p(90)}, ffbin: "ffmpeg"},
+		{name: "target_90", file: "profile.json", sel: SelectOptions{TargetVMAF: new(float64(90))}, ffbin: "ffmpeg"},
 		{
 			name: "codec_x264_target_90", file: "profile.json",
-			sel:   SelectOptions{Codec: "libx264", TargetVMAF: f64p(90)},
+			sel:   SelectOptions{Codec: "libx264", TargetVMAF: new(float64(90))},
 			ffbin: "ffmpeg",
 		},
 		// The index applies AFTER filtering and AFTER the Pareto sort.
-		{name: "index_0", file: "profile.json", sel: SelectOptions{Index: intp(0)}, ffbin: "ffmpeg"},
-		{name: "index_3", file: "profile.json", sel: SelectOptions{Index: intp(3)}, ffbin: "ffmpeg"},
+		{name: "index_0", file: "profile.json", sel: SelectOptions{Index: new(0)}, ffbin: "ffmpeg"},
+		{name: "index_3", file: "profile.json", sel: SelectOptions{Index: new(3)}, ffbin: "ffmpeg"},
 		// index 6 is the last row, reached only after the codec tie-break
 		// orders the two non-Pareto rows that share a bitrate.
-		{name: "index_6", file: "profile.json", sel: SelectOptions{Index: intp(6)}, ffbin: "ffmpeg"},
+		{name: "index_6", file: "profile.json", sel: SelectOptions{Index: new(6)}, ffbin: "ffmpeg"},
 
 		// The four accepted container shapes all yield the same argv.
 		{name: "bare_profile", file: "profile_bare.json", ffbin: "ffmpeg"},
@@ -117,9 +120,9 @@ func TestSelectAndBuildMatchPython(t *testing.T) {
 			name: "overrides", file: "profile.json", sel: SelectOptions{Codec: "libsvtav1"},
 			build: BuildOptions{
 				SourceOverride: "other//clip.yuv", PresetOverride: "fast",
-				PixFmtOverride: "yuv420p10le", FramerateOverride: f64p(24),
-				WidthOverride: intp(1280), HeightOverride: intp(720),
-				DurationOverride: f64p(4),
+				PixFmtOverride: "yuv420p10le", FramerateOverride: new(float64(24)),
+				WidthOverride: new(1280), HeightOverride: new(720),
+				DurationOverride: new(float64(4)),
 			},
 			ffbin: "ffmpeg",
 		},
@@ -143,7 +146,7 @@ func TestSelectAndBuildMatchPython(t *testing.T) {
 		// otherwise contribute.
 		{
 			name: "duration_zero", file: "profile.json",
-			build: BuildOptions{DurationOverride: f64p(0)}, ffbin: "ffmpeg",
+			build: BuildOptions{DurationOverride: new(float64(0))}, ffbin: "ffmpeg",
 		},
 	}
 
@@ -257,12 +260,12 @@ func TestSelectRecommendationErrors(t *testing.T) {
 	}{
 		{
 			name:    "index past the end",
-			sel:     SelectOptions{Index: intp(99)},
+			sel:     SelectOptions{Index: new(99)},
 			wantMsg: "recommendation index 99 outside filtered range 0..6",
 		},
 		{
 			name:    "negative index",
-			sel:     SelectOptions{Index: intp(-1)},
+			sel:     SelectOptions{Index: new(-1)},
 			wantMsg: "recommendation index -1 outside filtered range 0..6",
 		},
 		{
@@ -272,14 +275,14 @@ func TestSelectRecommendationErrors(t *testing.T) {
 		},
 		{
 			name:    "target filter matches nothing",
-			sel:     SelectOptions{TargetVMAF: f64p(42)},
+			sel:     SelectOptions{TargetVMAF: new(float64(42))},
 			wantMsg: "encoder profile has no recommendation matching the requested filters",
 		},
 		{
 			// The index range is computed AFTER filtering, so a filter that
 			// leaves one row rejects index 1.
 			name:    "index past the filtered end",
-			sel:     SelectOptions{Codec: "h264_nvenc", Index: intp(1)},
+			sel:     SelectOptions{Codec: "h264_nvenc", Index: new(1)},
 			wantMsg: "recommendation index 1 outside filtered range 0..0",
 		},
 	}

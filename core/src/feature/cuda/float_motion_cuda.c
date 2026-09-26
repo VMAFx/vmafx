@@ -122,37 +122,41 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 /* ------------------------------------------------------------------ */
 /* float_motion_init_unwind - the single teardown path for init_fex_cuda.
  *
- * HISS-01: lifted verbatim from the former `free_buffers` label. The same
- * resources are released in the same order on every exit path, and the
- * value returned is the one the label returned.
+ * Drain the lifecycle before releasing anything queued work may reference.
+ * The original init failure remains the first returned error.
  */
 static int float_motion_init_unwind(VmafFeatureExtractor *fex, FloatMotionStateCuda *s, int ret)
 {
-    if (s->ref_in) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
-        free(s->ref_in);
-    }
-    if (s->blur[0]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->blur[0]);
-        free(s->blur[0]);
-    }
-    if (s->blur[1]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
-        free(s->blur[1]);
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    const int lifecycle_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (lifecycle_rc)
+        return ret ? ret : lifecycle_rc;
+
+    int rc = ret;
+    const int ref_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_in);
+    if (!rc)
+        rc = ref_rc;
+    const int blur0_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->blur[0]);
+    if (!rc)
+        rc = blur0_rc;
+    const int blur1_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->blur[1]);
+    if (!rc)
+        rc = blur1_rc;
+    const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    if (!rc)
+        rc = rb_rc;
+    const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
+    if (!rc)
+        rc = dict_rc;
+    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (!rc)
+        rc = module_rc;
+    return rc;
 }
 
-/* float_motion_alloc_buffers - device buffers, readback slot and name dict.
+/* float_motion_alloc_buffers - device buffers and readback slot.
  *
- * HISS-04: the allocation tail of init_fex_cuda, moved whole. The `ret |=`
- * accumulation keeps its order and every failure still routes through
- * float_motion_init_unwind with the same `ret`, so each exit path frees the
- * same resources and returns the same code.
+ * Every failure routes through float_motion_init_unwind, so partial owners are
+ * released through the same retry-safe path as close.
  */
 static int float_motion_alloc_buffers(VmafFeatureExtractor *fex, FloatMotionStateCuda *s,
                                       unsigned w, unsigned h, unsigned bpc)
@@ -165,22 +169,17 @@ static int float_motion_alloc_buffers(VmafFeatureExtractor *fex, FloatMotionStat
     s->wg_count = gx * gy;
     const size_t pbytes = (size_t)s->wg_count * sizeof(float);
 
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[0], blur_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], blur_bytes);
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[0], blur_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], blur_bytes);
     if (ret)
         return float_motion_init_unwind(fex, s, ret);
     ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, pbytes);
     if (ret)
         return float_motion_init_unwind(fex, s, ret);
 
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        return float_motion_init_unwind(fex, s, ret);
-    }
     return 0;
 }
 
@@ -227,7 +226,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
      * (below) and the GPU path share the same dict.  extract_force_zero()
      * calls vmaf_feature_collector_append_with_dict() which requires a
      * non-NULL dict; without this the force-zero path returned -EINVAL
-     * from the collector (blocker #3). */
+     * from the collector. */
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
@@ -244,7 +243,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return float_motion_init_unwind(fex, s, err);
 
     int _cuda_err = 0;
     int ctx_pushed = 0;
@@ -263,9 +262,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return float_motion_init_unwind(fex, s, _cuda_err);
 }
 
 /* float_motion_launch - dispatch the 8bpc or 16bpc motion kernel.
@@ -444,23 +441,26 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     FloatMotionStateCuda *s = fex->priv;
     int ret = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (ret)
+        return ret;
 
-    if (s->ref_in) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->ref_in);
-        free(s->ref_in);
-    }
-    if (s->blur[0]) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[0]);
-        free(s->blur[0]);
-    }
-    if (s->blur[1]) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
-        free(s->blur[1]);
-    }
-    ret |= vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
+    const int ref_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_in);
+    if (!ret)
+        ret = ref_rc;
+    const int blur0_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->blur[0]);
+    if (!ret)
+        ret = blur0_rc;
+    const int blur1_rc = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->blur[1]);
+    if (!ret)
+        ret = blur1_rc;
+    const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    if (!ret)
+        ret = rb_rc;
+    const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
+    if (!ret)
+        ret = dict_rc;
     const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    if (ret == 0)
+    if (!ret)
         ret = module_rc;
     return ret;
 }

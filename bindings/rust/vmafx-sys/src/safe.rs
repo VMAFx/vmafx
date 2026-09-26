@@ -6,7 +6,8 @@
 // Design principles:
 //   - `unsafe` is used only at the FFI call sites themselves.
 //   - All public functions return `Result<T, VmafxError>` so callers can use `?`.
-//   - Ownership follows RAII: `VmafContext` closes the underlying context on drop.
+//   - Ownership follows RAII: `VmafContext` makes a final close attempt on drop
+//     and exposes a consuming, retryable explicit close.
 //   - `VmafModel` destroys the C model on drop.
 
 // This module is hand-written (not generated); enforce the unsafe-op lint so
@@ -15,6 +16,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use std::ffi::{CStr, CString};
+use std::marker::PhantomData;
+use std::mem;
 use std::ptr;
 
 use crate::{
@@ -28,7 +31,8 @@ use crate::{
 /// Errors returned by the safe wrapper.
 #[derive(Debug)]
 pub enum VmafxError {
-    /// libvmaf returned a negative errno value.
+    /// libvmaf returned a failure status (normally a negative errno).
+    /// An unexpected positive `vmaf_close` status is also a failure.
     LibvmafError(i32),
     /// A string passed to the API contained an interior NUL byte.
     NulError(std::ffi::NulError),
@@ -67,12 +71,102 @@ const fn check(rc: i32) -> Result<(), VmafxError> {
 // ---------------------------------------------------------------------------
 
 /// RAII wrapper around a `*mut VmafContext`.
-pub struct VmafContext {
+///
+/// The lifetime parameter binds every registered [`VmafModel`] to the
+/// context. libvmaf retains model pointers until context teardown completes,
+/// so the model must outlive both the active context and any close-retry token.
+pub struct VmafContext<'a> {
     inner: *mut RawVmafContext,
+    _models: PhantomData<&'a VmafModel>,
 }
 
-// Safety: libvmaf contexts are self-contained; no thread-local state is accessed.
-unsafe impl Send for VmafContext {}
+/// A context retained by libvmaf after a failed close attempt.
+///
+/// The token exposes only retry and error inspection, preventing normal API
+/// use after teardown has started.  Any [`VmafModel`] registered with the
+/// context remains borrowed until retry succeeds. The token preserves the
+/// first close error and permits one close retry in total.
+#[derive(Debug)]
+pub struct VmafContextCloseError<'a> {
+    error: VmafxError,
+    inner: *mut RawVmafContext,
+    retry_attempted: bool,
+    _models: PhantomData<&'a VmafModel>,
+}
+
+impl VmafContextCloseError<'_> {
+    /// Return the error from the initial close attempt.
+    #[must_use]
+    pub const fn error(&self) -> &VmafxError {
+        &self.error
+    }
+
+    /// Retry closing the retained teardown-only context.
+    ///
+    /// # Errors
+    /// Returns itself with the original close error if the sole retry leaves
+    /// teardown pending. Dropping that persistent-failure token aborts without
+    /// issuing another close attempt.
+    pub fn retry(self) -> Result<(), Self> {
+        self.retry_with(|inner| {
+            // SAFETY: the retry token is the sole owner of the retained pointer.
+            unsafe { vmaf_close(inner) }
+        })
+    }
+
+    fn retry_with(mut self, close: impl FnOnce(*mut RawVmafContext) -> i32) -> Result<(), Self> {
+        if self.retry_attempted {
+            return Err(self);
+        }
+        self.retry_attempted = true;
+        let rc = close(self.inner);
+        if rc == 0 {
+            self.inner = ptr::null_mut();
+            Ok(())
+        } else {
+            Err(self)
+        }
+    }
+
+    fn drop_requires_abort_with(&mut self, close: impl FnOnce(*mut RawVmafContext) -> i32) -> bool {
+        if self.inner.is_null() {
+            return false;
+        }
+        if self.retry_attempted {
+            return true;
+        }
+        self.retry_attempted = true;
+        if close(self.inner) != 0 {
+            return true;
+        }
+        self.inner = ptr::null_mut();
+        false
+    }
+}
+
+impl std::fmt::Display for VmafContextCloseError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "libvmaf context teardown is pending: {}", self.error)
+    }
+}
+
+impl std::error::Error for VmafContextCloseError<'_> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
+impl Drop for VmafContextCloseError<'_> {
+    fn drop(&mut self) {
+        // SAFETY: the retry token is the sole owner. Drop consumes the single
+        // permitted retry only when the caller has not already attempted it.
+        // Persistent failure aborts before the registered-model borrow ends.
+        let must_abort = self.drop_requires_abort_with(|inner| unsafe { vmaf_close(inner) });
+        if must_abort {
+            std::process::abort();
+        }
+    }
+}
 
 // NOTE: `Default` is intentionally NOT implemented for `VmafContext`.
 // A panicking `Default` impl (i.e. `Self::new().unwrap()`) would hide
@@ -80,7 +174,7 @@ unsafe impl Send for VmafContext {}
 // path.  Callers that want a context with default settings should call
 // `VmafContext::new()` directly and handle the `Result`.
 
-impl VmafContext {
+impl<'a> VmafContext<'a> {
     /// Allocate and open a new VMAF context with sensible defaults.
     ///
     /// - `n_threads = 0` lets libvmaf choose the number of threads.
@@ -99,7 +193,10 @@ impl VmafContext {
         let mut ctx: *mut RawVmafContext = ptr::null_mut();
         // SAFETY: `cfg` is fully initialised; `ctx` is a valid out-pointer.
         check(unsafe { vmaf_init(&raw mut ctx, cfg) })?;
-        Ok(Self { inner: ctx })
+        Ok(Self {
+            inner: ctx,
+            _models: PhantomData,
+        })
     }
 
     /// Return the raw pointer. For use in advanced FFI scenarios.
@@ -110,10 +207,15 @@ impl VmafContext {
 
     /// Register all feature extractors required by `model`.
     ///
+    /// The model is borrowed for the remaining lifetime of this context.
+    /// This prevents safe Rust from destroying the model before context close
+    /// or before a retained close-retry token is consumed.
+    ///
     /// # Errors
     /// Returns [`VmafxError::LibvmafError`] if libvmaf rejects the model.
-    pub fn use_features_from_model(&mut self, model: &mut VmafModel) -> Result<(), VmafxError> {
-        // SAFETY: both pointers are valid for the duration of the call.
+    pub fn use_features_from_model(&mut self, model: &'a VmafModel) -> Result<(), VmafxError> {
+        // SAFETY: both pointers are valid and `'a` keeps the model alive until
+        // context teardown finishes.
         check(unsafe { vmaf_use_features_from_model(self.inner, model.inner) })
     }
 
@@ -178,7 +280,7 @@ impl VmafContext {
     /// Returns [`VmafxError::LibvmafError`] if libvmaf fails to compute the score.
     pub fn score_pooled(
         &mut self,
-        model: &mut VmafModel,
+        model: &VmafModel,
         index_low: u32,
         index_high: u32,
     ) -> Result<f64, VmafxError> {
@@ -196,13 +298,47 @@ impl VmafContext {
         })?;
         Ok(score)
     }
+
+    /// Consume and close this context.
+    ///
+    /// A failure returns a teardown-only retry token; the original context can
+    /// no longer be used for scoring after this call.
+    ///
+    /// # Errors
+    /// Returns [`VmafContextCloseError`] when libvmaf retains the context for a
+    /// later close retry.
+    pub fn close(mut self) -> Result<(), VmafContextCloseError<'a>> {
+        // SAFETY: `self` is the sole owner and is consumed by this method.
+        let rc = unsafe { vmaf_close(self.inner) };
+        if rc == 0 {
+            self.inner = ptr::null_mut();
+            Ok(())
+        } else {
+            Err(VmafContextCloseError {
+                error: VmafxError::LibvmafError(rc),
+                inner: mem::replace(&mut self.inner, ptr::null_mut()),
+                retry_attempted: false,
+                _models: PhantomData,
+            })
+        }
+    }
 }
 
-impl Drop for VmafContext {
+impl Drop for VmafContext<'_> {
     fn drop(&mut self) {
         if !self.inner.is_null() {
-            // SAFETY: we are the sole owner; no further access occurs after drop.
-            unsafe { vmaf_close(self.inner) };
+            // SAFETY: we are the sole owner; no further access occurs after
+            // drop.  Give a transient failure one bounded retry.  Persistent
+            // failure must abort so registered-model borrows cannot end while
+            // libvmaf retains their raw pointers.
+            let first_rc = unsafe { vmaf_close(self.inner) };
+            if first_rc != 0 {
+                // SAFETY: the failed first close retained the pointer, and
+                // `self` remains its sole owner for this bounded retry.
+                if unsafe { vmaf_close(self.inner) } != 0 {
+                    std::process::abort();
+                }
+            }
             self.inner = ptr::null_mut();
         }
     }
@@ -288,4 +424,88 @@ pub fn version() -> &'static str {
     unsafe { CStr::from_ptr(crate::vmaf_version()) }
         .to_str()
         .unwrap_or("<invalid utf8>")
+}
+
+#[cfg(test)]
+mod close_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn close_failure_token_retries_once_and_preserves_first_error() {
+        let expected = ptr::NonNull::<RawVmafContext>::dangling().as_ptr();
+        let pending = VmafContextCloseError {
+            error: VmafxError::LibvmafError(-5),
+            inner: expected,
+            retry_attempted: false,
+            _models: PhantomData,
+        };
+        let calls = Cell::new(0_u32);
+
+        let pending = pending
+            .retry_with(|inner| {
+                assert_eq!(inner, expected);
+                calls.set(calls.get() + 1);
+                -12
+            })
+            .expect_err("first retry must fail");
+        let mut pending = pending
+            .retry_with(|_| {
+                calls.set(calls.get() + 1);
+                -22
+            })
+            .expect_err("a second retry must not run");
+
+        let first_error_preserved = matches!(pending.error(), VmafxError::LibvmafError(-5));
+        let retained_pointer = pending.inner;
+        pending.inner = ptr::null_mut();
+
+        assert_eq!(calls.get(), 1);
+        assert!(first_error_preserved);
+        assert_eq!(retained_pointer, expected);
+    }
+
+    #[test]
+    fn unexpected_positive_close_status_preserves_first_error() {
+        let expected = ptr::NonNull::<RawVmafContext>::dangling().as_ptr();
+        let pending = VmafContextCloseError {
+            error: VmafxError::LibvmafError(-5),
+            inner: expected,
+            retry_attempted: false,
+            _models: PhantomData,
+        };
+
+        let mut pending = pending
+            .retry_with(|_| 1)
+            .expect_err("positive is not success");
+        let first_error_preserved = matches!(pending.error(), VmafxError::LibvmafError(-5));
+        let retained_pointer = pending.inner;
+        pending.inner = ptr::null_mut();
+
+        assert!(first_error_preserved);
+        assert_eq!(retained_pointer, expected);
+    }
+
+    #[test]
+    fn drop_after_failed_retry_aborts_without_calling_close_again() {
+        let expected = ptr::NonNull::<RawVmafContext>::dangling().as_ptr();
+        let calls = Cell::new(0_u32);
+        let mut pending = VmafContextCloseError {
+            error: VmafxError::LibvmafError(-5),
+            inner: expected,
+            retry_attempted: true,
+            _models: PhantomData,
+        };
+
+        let must_abort = pending.drop_requires_abort_with(|_| {
+            calls.set(calls.get() + 1);
+            0
+        });
+        let retained_pointer = pending.inner;
+        pending.inner = ptr::null_mut();
+
+        assert!(must_abort);
+        assert_eq!(calls.get(), 0);
+        assert_eq!(retained_pointer, expected);
+    }
 }

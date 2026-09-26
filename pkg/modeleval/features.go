@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 
 	"github.com/parquet-go/parquet-go"
@@ -138,11 +139,8 @@ func selectColumns(names, want []string) map[int]string {
 			wanted[i] = n
 			continue
 		}
-		for _, w := range want {
-			if n == w {
-				wanted[i] = n
-				break
-			}
+		if slices.Contains(want, n) {
+			wanted[i] = n
 		}
 	}
 	return wanted
@@ -182,7 +180,7 @@ func readChunk(cc parquet.ColumnChunk, name string, tbl *Table) error {
 	// instead of spinning (HISS-02).
 	budget := cc.NumValues() + 1
 	buf := make([]parquet.Value, 512)
-	for page := int64(0); page < budget; page++ {
+	for range budget {
 		pg, err := pages.ReadPage()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -204,7 +202,7 @@ func readPageValues(pg parquet.Page, name string, tbl *Table, buf []parquet.Valu
 	// values, so the page's value count bounds the loop; +1 admits the final
 	// batch that returns io.EOF alongside the last values.
 	budget := pg.NumValues() + 1
-	for batch := int64(0); batch < budget; batch++ {
+	for range budget {
 		n, err := vr.ReadValues(buf)
 		for i := range n {
 			if name == KeyColumn {

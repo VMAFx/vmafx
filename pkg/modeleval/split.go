@@ -27,6 +27,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"slices"
 )
 
 // splitSalt prefixes every key before hashing. Changing this string
@@ -58,10 +59,8 @@ var ValidSplits = []string{SplitTrain, SplitVal, SplitTest, SplitAll}
 // ValidateSplit reports whether name is an accepted split, returning an
 // error whose text mirrors the Python server's ValueError.
 func ValidateSplit(name string) error {
-	for _, s := range ValidSplits {
-		if name == s {
-			return nil
-		}
+	if slices.Contains(ValidSplits, name) {
+		return nil
 	}
 	return fmt.Errorf("split must be one of ('train', 'val', 'test', 'all'); got %q", name)
 }

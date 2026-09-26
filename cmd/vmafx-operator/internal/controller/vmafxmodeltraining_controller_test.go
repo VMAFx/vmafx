@@ -15,7 +15,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -33,10 +32,8 @@ var _ = Describe("VmafxModelTraining controller", func() {
 
 	It("sets Phase to Initializing on a new VmafxModelTraining", func() {
 		mt := &vmafxv1.VmafxModelTraining{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-training",
-				Namespace: "default",
-			},
+			Name:      "test-training",
+			Namespace: "default",
 			Spec: vmafxv1.VmafxModelTrainingSpec{
 				BaseModel:      "vmaf_v0.6.1",
 				Algorithm:      "online-sgd-ema",

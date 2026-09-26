@@ -53,13 +53,14 @@ Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
    (`cmd/vmafx-mcp/impl_direct.go`) routes `.onnx`
    to subprocess fallback; never silently accept `.onnx` here.
 
-6. **CGO_LDFLAGS coupling**: cgo `LDFLAGS` directive in `libvmaf.go`
-   points at `core/build-cpu/src` for local dev. Production builds rely
-   on `libvmaf.so` at `/usr/local/lib` via `LD_LIBRARY_PATH` or
-   `ldconfig`. Changing local path requires updating
-   `LD_LIBRARY_PATH=$(pwd)/core/build-cpu/src` invocation in
-   `docs/architecture/mcp-cgo-direct-migration.md`'s reproducer block
-   and in any agent skill building Go tree.
+6. **CGO linking fails closed**: `libvmaf.go` deliberately has no `#cgo
+   LDFLAGS` fallback. Every build caller must set `CGO_LDFLAGS` to a verified
+   fork library: local Make/CI use `core/build-cpu/src`; production container
+   stages use `/usr/local/lib`. This prevents a missing build directory from
+   silently resolving an unrelated distro libvmaf. Keep the Make targets,
+   `go-ci.yml`, `Dockerfile.go-server`, `docker/Dockerfile.node`, the dev
+   container, `scripts/ci/test_go_workflow_contract.py`, and the documented
+   direct-command examples aligned.
 
 7. **`VMAF_MCP_ALLOW` uses `filepath.SplitList`** (`paths.go::AllowedRoots`,
    ADR-1084): env-var path list split with `filepath.SplitList` so
@@ -104,3 +105,13 @@ Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
     `C.CString(inputName)` would bind to graph input literally named `""`
     and fail every runner call. Pinned by `TestDNNSessionPositionalBinding`,
     which only runs against ORT-enabled libvmaf — Go CI job builds one.
+
+12. **Context teardown is exact-zero and dependency ordered**
+    (`direct.go::cgoScoringOwner`, `stream.go::StreamScorer.Close`):
+    `vmaf_close` returning anything other than zero retains a teardown-only
+    context. Never destroy the registered model until a close attempt returns
+    zero. Stateful `StreamScorer.Close` returns the error and may be retried;
+    `PushFrame` and `Finish` stay disabled after teardown begins. Function-
+    scoped `ScoreDirect` and constructor unwinds make one immediate retry and
+    deliberately retain the C owners after persistent failure rather than
+    create a use-after-free.

@@ -22,6 +22,184 @@
 #include <limits.h>
 #include <time.h>
 
+static unsigned close_retry_calls;
+
+static int close_retry_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                            unsigned w, unsigned h)
+{
+    (void)fex;
+    (void)pix_fmt;
+    (void)bpc;
+    (void)w;
+    (void)h;
+    return 0;
+}
+
+static int close_retry_once(VmafFeatureExtractor *fex)
+{
+    (void)fex;
+    close_retry_calls++;
+    return close_retry_calls == 1 ? -EIO : 0;
+}
+
+static char *test_vmaf_close_retains_context_for_retry(void)
+{
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, (VmafConfiguration){0});
+    mu_assert("vmaf_init", err == 0 && vmaf != NULL);
+    VmafFeatureExtractor synth = {
+        .name = "synth_public_close_retry",
+        .init = close_retry_init,
+        .close = close_retry_once,
+    };
+    VmafFeatureExtractorContext *ctx = NULL;
+    err = vmaf_feature_extractor_context_create(&ctx, &synth, NULL);
+    mu_assert("context_create", err == 0 && ctx != NULL);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("context_init", err == 0);
+    err = feature_extractor_vector_append(&vmaf->registered_feature_extractors, ctx, 0);
+    mu_assert("vector append", err == 0);
+
+    close_retry_calls = 0;
+    err = vmaf_close(vmaf);
+    mu_assert("first vmaf_close returns the transient close error", err == -EIO);
+    mu_assert("failed close retains the public context", vmaf->feature_collector != NULL);
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close retry succeeds", err == 0);
+    mu_assert("close callback was retried exactly once", close_retry_calls == 2);
+    return NULL;
+}
+
+static int install_worker_close_retry(void *data, void **thread_data)
+{
+    BatchThreadData *td = NULL;
+    int err = batch_thread_data_ensure(thread_data, 1, &td);
+    if (err)
+        return err;
+    const VmafFeatureExtractor *fex = data;
+    err = vmaf_feature_extractor_context_create(&td->fex_ctx[0], fex, NULL);
+    if (err)
+        return err;
+    return vmaf_feature_extractor_context_init(td->fex_ctx[0], VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+}
+
+static char *test_vmaf_close_retains_worker_private_context(void)
+{
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, (VmafConfiguration){.n_threads = 1});
+    mu_assert("threaded vmaf_init", err == 0 && vmaf != NULL);
+    VmafFeatureExtractor synth = {
+        .name = "synth_worker_close_retry",
+        .init = close_retry_init,
+        .close = close_retry_once,
+    };
+    err = vmaf_thread_pool_enqueue(vmaf->thread_pool, install_worker_close_retry, &synth,
+                                   sizeof(synth));
+    mu_assert("worker fixture enqueue", err == 0);
+    err = vmaf_thread_pool_wait(vmaf->thread_pool);
+    mu_assert("worker fixture install", err == 0);
+
+    close_retry_calls = 0;
+    err = vmaf_close(vmaf);
+    mu_assert("worker close failure reaches the public caller", err == -EIO);
+    mu_assert("failed worker prepare retains the pool", vmaf->thread_pool != NULL);
+    err = vmaf_close(vmaf);
+    mu_assert("public close retry commits worker ownership", err == 0);
+    mu_assert("worker close callback was retried", close_retry_calls == 2);
+    return NULL;
+}
+
+#ifdef HAVE_CUDA
+static unsigned backend_close_calls;
+
+static int backend_picture_alloc(VmafPicture *pic, void *cookie)
+{
+    (void)cookie;
+    memset(pic, 0, sizeof(*pic));
+    pic->data[0] = malloc(1);
+    return pic->data[0] ? 0 : -ENOMEM;
+}
+
+static int backend_picture_close_positive_once(VmafPicture *pic, void *cookie)
+{
+    (void)cookie;
+    backend_close_calls++;
+    if (backend_close_calls == 1)
+        return EIO; /* pthread-style positive errno must not look successful. */
+    free(pic->data[0]);
+    pic->data[0] = NULL;
+    return 0;
+}
+
+static char *test_vmaf_close_commit_retry_is_idempotent(void)
+{
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, (VmafConfiguration){0});
+    mu_assert("vmaf_init", err == 0 && vmaf != NULL);
+
+    vmaf->dnn.in_buf = malloc(sizeof(*vmaf->dnn.in_buf));
+    vmaf->dnn.in_elements = 1;
+    vmaf->perceptual.summaries = malloc(sizeof(*vmaf->perceptual.summaries));
+    vmaf->perceptual.capacity = 1;
+    mu_assert("commit fixture allocations",
+              vmaf->dnn.in_buf != NULL && vmaf->perceptual.summaries != NULL);
+
+    VmafGpuPicturePoolConfig cfg = {
+        .pic_cnt = 1,
+        .alloc_picture_callback = backend_picture_alloc,
+        .free_picture_callback = backend_picture_close_positive_once,
+    };
+    err = vmaf_gpu_picture_pool_init(&vmaf->cuda.ring_buffer, cfg);
+    mu_assert("backend ring fixture", err == 0 && vmaf->cuda.ring_buffer != NULL);
+
+    backend_close_calls = 0;
+    err = vmaf_close(vmaf);
+    mu_assert("positive child error is normalized at the public boundary", err == -EIO);
+    mu_assert("collector commit stays committed", vmaf->feature_collector == NULL);
+    mu_assert("framesync commit stays committed", vmaf->framesync == NULL);
+    mu_assert("DNN commit is zeroed for retry",
+              vmaf->dnn.in_buf == NULL && vmaf->dnn.in_elements == 0);
+    mu_assert("perceptual commit is zeroed for retry",
+              vmaf->perceptual.summaries == NULL && vmaf->perceptual.capacity == 0);
+    mu_assert("failed backend owner remains reachable", vmaf->cuda.ring_buffer != NULL);
+
+    err = vmaf_close(vmaf);
+    mu_assert("commit-phase retry succeeds", err == 0);
+    mu_assert("failed backend child alone was retried", backend_close_calls == 2);
+    return NULL;
+}
+
+static char *test_cuda_state_import_rejects_duplicate_owners(void)
+{
+    VmafContext *first = NULL;
+    VmafContext *second = NULL;
+    VmafCudaState *state = calloc(1, sizeof(*state));
+    mu_assert("CUDA state fixture allocation", state != NULL);
+    state->ctx = (CUcontext)state;
+
+    int err = vmaf_init(&first, (VmafConfiguration){0});
+    err |= vmaf_init(&second, (VmafConfiguration){0});
+    mu_assert("context fixtures", err == 0 && first != NULL && second != NULL);
+    err = vmaf_cuda_import_state(first, state);
+    mu_assert("first CUDA import succeeds", err == 0 && state->imported);
+    mu_assert("context copy is an independent release owner", !first->cuda.state.imported);
+    err = vmaf_cuda_import_state(second, state);
+    mu_assert("same CUDA state cannot be imported twice", err == -EBUSY);
+
+    VmafCudaState *other = calloc(1, sizeof(*other));
+    mu_assert("second CUDA state fixture allocation", other != NULL);
+    err = vmaf_cuda_import_state(first, other);
+    mu_assert("live context CUDA state cannot be overwritten", err == -EBUSY);
+
+    memset(&first->cuda.state, 0, sizeof(first->cuda.state));
+    mu_assert("first context cleanup", vmaf_close(first) == 0);
+    mu_assert("second context cleanup", vmaf_close(second) == 0);
+    mu_assert("imported wrapper cleanup", vmaf_cuda_state_free(state) == 0);
+    mu_assert("never-imported fixture cleanup", vmaf_cuda_state_free(other) == 0);
+    return NULL;
+}
+#endif
+
 static char *test_model_mount_with_use_features()
 {
     int err = 0;
@@ -455,6 +633,12 @@ static char *run_model_option_capability_tests(void)
 
 char *run_tests()
 {
+    mu_run_test(test_vmaf_close_retains_context_for_retry);
+    mu_run_test(test_vmaf_close_retains_worker_private_context);
+#ifdef HAVE_CUDA
+    mu_run_test(test_vmaf_close_commit_retry_is_idempotent);
+    mu_run_test(test_cuda_state_import_rejects_duplicate_owners);
+#endif
     mu_run_test(test_feature_vector_init_append_and_destroy);
     mu_run_test(test_feature_vector_append_rejects_huge_index);
     mu_run_test(test_feature_collector_init_append_get_and_destroy);

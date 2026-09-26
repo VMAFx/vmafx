@@ -88,8 +88,7 @@ func CommandRunner(ctx context.Context, argv []string) (string, int, error) {
 	if err == nil {
 		return string(out), 0, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return string(out), exitErr.ExitCode(), nil
 	}
 	return "", 1, err

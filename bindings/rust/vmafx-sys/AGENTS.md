@@ -15,6 +15,17 @@ Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
 - **safe layer unsafe boundary**: `unsafe` must remain confined to FFI call
   sites inside `src/safe.rs`. Adding `unsafe` to safe-layer function signatures
   breaks module contract.
+- **Registered-model lifetime is encoded**: `VmafContext<'a>` and
+  `VmafContextCloseError<'a>` carry `PhantomData<&'a VmafModel>`.
+  `use_features_from_model` takes a shared `&'a VmafModel`; never erase this
+  lifetime or restore a caller-managed raw model contract. libvmaf retains the
+  model pointer through context teardown, including a failed close retry.
+- **Context guards are not `Send`**: `VmafModel` is deliberately `!Sync`, so a
+  `VmafContext<'a>` or close-retry token carrying `&'a VmafModel` must not
+  override auto traits with `unsafe impl Send`. Their `Drop` paths retry once
+  only when an explicit retry has not happened; after a failed explicit retry,
+  drop aborts without a third close call. Returning would end the model borrow
+  while libvmaf still retained the pointer.
 - **`links = "vmaf"`**: `links` field in `Cargo.toml` tells Cargo crate provides
   native `vmaf` library. Only one crate in build graph may set
   `links = "vmaf"`. Do not add second crate with same links key.

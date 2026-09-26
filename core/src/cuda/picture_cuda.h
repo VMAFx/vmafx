@@ -62,6 +62,9 @@ int vmaf_cuda_picture_alloc_pinned(VmafPicture *pic, enum VmafPixelFormat pix_fm
 
 int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie);
 
+/** Release a complete CUDA picture in retry-safe phases. Successful handle
+ * releases stay committed; a failed handle and the picture owner are retained
+ * for a later call. A zeroed picture is an idempotent success. */
 int vmaf_cuda_picture_free(VmafPicture *pic, void *cookie);
 
 int vmaf_cuda_picture_synchronize(VmafPicture *pic, void *cookie);

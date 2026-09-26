@@ -136,92 +136,97 @@ static void compute_per_scale_dims(FloatVifStateCuda *s)
 }
 
 /* ------------------------------------------------------------------ */
-/* float_vif_init_unwind - the single teardown path for init_fex_cuda.
- *
- * HISS-01: lifted verbatim from the former `free_buffers` label. The same
- * resources are released in the same order on every exit path, and the
- * value returned is the one the label returned.
- */
-static int float_vif_init_unwind(VmafFeatureExtractor *fex, FloatVifStateCuda *s)
+static void float_vif_preserve_error(int *rc, int err)
 {
-    if (s->ref_raw) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_raw);
-        free(s->ref_raw);
-    }
-    if (s->dis_raw) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_raw);
-        free(s->dis_raw);
-    }
+    if (!*rc)
+        *rc = err;
+}
+
+static int float_vif_release_buffers(VmafFeatureExtractor *fex, FloatVifStateCuda *s, int rc)
+{
+    float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_raw));
+    float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dis_raw));
     for (int i = 0; i < 2; i++) {
-        if (s->ref_buf[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->ref_buf[i]);
-            free(s->ref_buf[i]);
-        }
-        if (s->dis_buf[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->dis_buf[i]);
-            free(s->dis_buf[i]);
-        }
+        float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_buf[i]));
+        float_vif_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dis_buf[i]));
     }
     for (int i = 0; i < 4; i++) {
-        if (s->num_partials[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->num_partials[i]);
-            free(s->num_partials[i]);
-        }
-        if (s->den_partials[i]) {
-            (void)vmaf_cuda_buffer_free(fex->cu_state, s->den_partials[i]);
-            free(s->den_partials[i]);
-        }
-        if (s->num_host[i])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->num_host[i]);
-        if (s->den_host[i])
-            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->den_host[i]);
+        float_vif_preserve_error(&rc,
+                                 vmaf_cuda_buffer_free_owned(fex->cu_state, &s->num_partials[i]));
+        float_vif_preserve_error(&rc,
+                                 vmaf_cuda_buffer_free_owned(fex->cu_state, &s->den_partials[i]));
+        float_vif_preserve_error(
+            &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->num_host[i]));
+        float_vif_preserve_error(
+            &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->den_host[i]));
     }
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return -ENOMEM;
+    return rc;
+}
+
+/* float_vif_init_unwind - the single teardown path for init_fex_cuda.
+ *
+ * Drain the lifecycle before releasing anything queued work may reference.
+ * The original init failure remains the first returned error.
+ */
+static int float_vif_init_unwind(VmafFeatureExtractor *fex, FloatVifStateCuda *s, int err)
+{
+    const int lifecycle_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (lifecycle_rc)
+        return err ? err : lifecycle_rc;
+
+    int rc = float_vif_release_buffers(fex, s, err);
+    float_vif_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
+    float_vif_preserve_error(&rc, vmaf_cuda_module_unload(fex->cu_state, &s->module));
+    return rc;
 }
 
 /* float_vif_alloc_buffers - raw planes, per-scale partials and the name dict.
  *
- * HISS-04: the allocation tail of init_fex_cuda, moved whole. The `ret |=`
- * accumulation, the per-scale loop bounds and the two unwind points keep their
- * original order, so each failure frees the same buffers and returns the same
- * code, and every wg_count / byte size is computed exactly as before.
+ * The per-scale loop bounds and byte sizes match the scoring path. Each
+ * allocation stops on its first failure and unwinds through the owned helpers.
  */
 static int float_vif_alloc_buffers(VmafFeatureExtractor *fex, FloatVifStateCuda *s, unsigned w,
                                    unsigned h, unsigned bpc)
 {
     const size_t bpp = (bpc <= 8u) ? 1u : 2u;
     const size_t raw_bytes = (size_t)w * h * bpp;
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_raw, raw_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_raw, raw_bytes);
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_raw, raw_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_raw, raw_bytes);
     const size_t fbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(float);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[0], fbytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[0], fbytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[1], fbytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[1], fbytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[0], fbytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[0], fbytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_buf[1], fbytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_buf[1], fbytes);
     if (ret)
-        return float_vif_init_unwind(fex, s);
+        return float_vif_init_unwind(fex, s, ret);
 
     for (int i = 0; i < 4; i++) {
         const unsigned gx = (s->scale_w[i] + FVIF_BX - 1u) / FVIF_BX;
         const unsigned gy = (s->scale_h[i] + FVIF_BY - 1u) / FVIF_BY;
         s->wg_count[i] = gx * gy;
         const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->num_partials[i], pbytes);
-        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->den_partials[i], pbytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->num_host[i], pbytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->den_host[i], pbytes);
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->num_partials[i], pbytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->den_partials[i], pbytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->num_host[i], pbytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->den_host[i], pbytes);
+        if (ret)
+            break;
     }
     if (ret)
-        return float_vif_init_unwind(fex, s);
+        return float_vif_init_unwind(fex, s, ret);
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
-        return float_vif_init_unwind(fex, s);
+        return float_vif_init_unwind(fex, s, -ENOMEM);
     return 0;
 }
 
@@ -272,7 +277,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return float_vif_init_unwind(fex, s, err);
 
     int _cuda_err = 0;
     int ctx_pushed = 0;
@@ -290,9 +295,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return float_vif_init_unwind(fex, s, _cuda_err);
 }
 
 /* FloatVifSubmit - the per-frame constants submit_fex_cuda's seven kernel
@@ -598,42 +601,12 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     FloatVifStateCuda *s = fex->priv;
     int ret = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    if (s->ref_raw) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->ref_raw);
-        free(s->ref_raw);
-    }
-    if (s->dis_raw) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->dis_raw);
-        free(s->dis_raw);
-    }
-    for (int i = 0; i < 2; i++) {
-        if (s->ref_buf[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->ref_buf[i]);
-            free(s->ref_buf[i]);
-        }
-        if (s->dis_buf[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->dis_buf[i]);
-            free(s->dis_buf[i]);
-        }
-    }
-    for (int i = 0; i < 4; i++) {
-        if (s->num_partials[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->num_partials[i]);
-            free(s->num_partials[i]);
-        }
-        if (s->den_partials[i]) {
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->den_partials[i]);
-            free(s->den_partials[i]);
-        }
-        if (s->num_host[i])
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->num_host[i]);
-        if (s->den_host[i])
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->den_host[i]);
-    }
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    if (ret == 0)
-        ret = module_rc;
+    if (ret)
+        return ret;
+
+    ret = float_vif_release_buffers(fex, s, 0);
+    float_vif_preserve_error(&ret, vmaf_dictionary_free(&s->feature_name_dict));
+    float_vif_preserve_error(&ret, vmaf_cuda_module_unload(fex->cu_state, &s->module));
     return ret;
 }
 

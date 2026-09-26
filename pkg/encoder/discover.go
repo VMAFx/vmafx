@@ -84,7 +84,7 @@ func runCodecProbe(ffmpegBin string) map[string]bool {
 		return map[string]bool{}
 	}
 	result := make(map[string]bool)
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		// ffmpeg -encoders output format (column 2 is codec name):
 		//   VFS... libx264              H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10
 		trimmed := strings.TrimSpace(line)

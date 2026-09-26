@@ -282,6 +282,96 @@ func TestLogDirectPathSelected_Idempotent(t *testing.T) {
 	LogDirectPathSelected()
 }
 
+// TestCGOScoringOwnerRetainsModelUntilContextCloseSucceeds verifies the
+// ordering shared by ScoreDirect, constructor unwind, and StreamScorer.Close.
+func TestCGOScoringOwnerRetainsModelUntilContextCloseSucceeds(t *testing.T) {
+	closeErr := errors.New("injected vmaf_close failure")
+	closeCalls := 0
+	destroyCalls := 0
+	owner := cgoScoringOwner{
+		closeContext: func() error {
+			closeCalls++
+			if closeCalls == 1 {
+				return closeErr
+			}
+			return nil
+		},
+		destroyModel: func() { destroyCalls++ },
+	}
+
+	if err := owner.Close(); !errors.Is(err, closeErr) {
+		t.Fatalf("first Close error = %v, want %v", err, closeErr)
+	}
+	if destroyCalls != 0 {
+		t.Fatalf("model destroyed after failed context close: calls=%d", destroyCalls)
+	}
+	if err := owner.Close(); err != nil {
+		t.Fatalf("retry Close: %v", err)
+	}
+	if closeCalls != 2 || destroyCalls != 1 {
+		t.Fatalf("cleanup calls = close:%d destroy:%d, want 2/1", closeCalls, destroyCalls)
+	}
+}
+
+func TestMapCloseRCRequiresExactZero(t *testing.T) {
+	if err := mapCloseRC(0); err != nil {
+		t.Fatalf("mapCloseRC(0): %v", err)
+	}
+	if err := mapCloseRC(1); err == nil {
+		t.Fatal("mapCloseRC(1) = nil, want fail-closed error")
+	}
+	if err := mapCloseRC(-12); !errors.Is(err, ErrOutOfMemory) {
+		t.Fatalf("mapCloseRC(-ENOMEM) = %v, want ErrOutOfMemory", err)
+	}
+}
+
+func TestCGOScoringOwnerFunctionCleanupRecoversFromOneCloseFailure(t *testing.T) {
+	closeCalls := 0
+	destroyCalls := 0
+	owner := cgoScoringOwner{
+		closeContext: func() error {
+			closeCalls++
+			if closeCalls == 1 {
+				return errors.New("transient vmaf_close failure")
+			}
+			return nil
+		},
+		destroyModel: func() { destroyCalls++ },
+	}
+
+	if err := owner.closeWithImmediateRetry(); err != nil {
+		t.Fatalf("bounded cleanup retry: %v", err)
+	}
+	if closeCalls != 2 || destroyCalls != 1 {
+		t.Fatalf("cleanup calls = close:%d destroy:%d, want 2/1", closeCalls, destroyCalls)
+	}
+}
+
+func TestCGOScoringOwnerFunctionCleanupPreservesFirstPersistentError(t *testing.T) {
+	firstErr := errors.New("first vmaf_close failure")
+	secondErr := errors.New("second vmaf_close failure")
+	closeCalls := 0
+	destroyCalls := 0
+	owner := cgoScoringOwner{
+		closeContext: func() error {
+			closeCalls++
+			if closeCalls == 1 {
+				return firstErr
+			}
+			return secondErr
+		},
+		destroyModel: func() { destroyCalls++ },
+	}
+
+	err := owner.closeWithImmediateRetry()
+	if !errors.Is(err, firstErr) || errors.Is(err, secondErr) {
+		t.Fatalf("cleanup error = %v, want first error only", err)
+	}
+	if closeCalls != 2 || destroyCalls != 0 {
+		t.Fatalf("cleanup calls = close:%d destroy:%d, want 2/0", closeCalls, destroyCalls)
+	}
+}
+
 // TestScoreDirect_PreCancelledContext verifies that ScoreDirect rejects a
 // pre-cancelled context before opening any files or allocating any C state.
 // This is the cheap-but-load-bearing fast path for the cgo direct flow —

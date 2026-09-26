@@ -213,7 +213,7 @@ func probeIntel() (Capability, bool) {
 	count := 0
 	name := "Intel GPU"
 	inIntelPlatform := false
-	for _, l := range strings.Split(out, "\n") {
+	for l := range strings.SplitSeq(out, "\n") {
 		lower := strings.ToLower(l)
 		if strings.Contains(lower, "platform name") && strings.Contains(lower, "intel") {
 			inIntelPlatform = true
@@ -254,7 +254,7 @@ func probeAppleMetal() (Capability, bool) {
 
 	count := 0
 	name := "Apple GPU"
-	for _, l := range strings.Split(out, "\n") {
+	for l := range strings.SplitSeq(out, "\n") {
 		lower := strings.ToLower(l)
 		if strings.Contains(lower, "chipset model:") {
 			count++
@@ -298,11 +298,11 @@ func nonEmptyLines(s string) []string {
 
 // extractAfterColon returns the portion of s after the first colon, trimmed.
 func extractAfterColon(s string) string {
-	idx := strings.Index(s, ":")
-	if idx < 0 {
+	_, after, ok := strings.Cut(s, ":")
+	if !ok {
 		return s
 	}
-	return strings.TrimSpace(s[idx+1:])
+	return strings.TrimSpace(after)
 }
 
 // DeviceCountStr returns the device count as a string (for logging).

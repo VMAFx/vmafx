@@ -262,14 +262,10 @@ func (a Adapter) VFFragment(params map[string]float64, includeDefaults bool) (st
 		return "", err
 	}
 	resolved := make(map[string]float64, len(params))
-	for k, v := range params {
-		resolved[k] = v
-	}
+	maps.Copy(resolved, params)
 	if includeDefaults {
 		merged := a.Defaults()
-		for k, v := range resolved {
-			merged[k] = v
-		}
+		maps.Copy(merged, resolved)
 		resolved = merged
 	}
 	tokens := make([]string, 0, len(DebandKnobs))

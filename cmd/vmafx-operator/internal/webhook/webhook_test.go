@@ -15,8 +15,6 @@ import (
 	"context"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	vmafxv1 "github.com/VMAFx/vmafx/api/vmafx/v1"
 	"github.com/VMAFx/vmafx/cmd/vmafx-operator/internal/webhook"
 )
@@ -41,10 +39,9 @@ func TestVmafxJobValidator_Create_ValidURIs(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			job := &vmafxv1.VmafxJob{
-				ObjectMeta: metav1.ObjectMeta{Name: "j", Namespace: "default"},
+				Name: "j", Namespace: "default",
 				Spec: vmafxv1.VmafxJobSpec{
 					Reference: tc.ref,
 					Distorted: tc.dis,
@@ -75,10 +72,9 @@ func TestVmafxJobValidator_Create_InvalidURIs(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			job := &vmafxv1.VmafxJob{
-				ObjectMeta: metav1.ObjectMeta{Name: "j", Namespace: "default"},
+				Name: "j", Namespace: "default",
 				Spec: vmafxv1.VmafxJobSpec{
 					Reference: tc.ref,
 					Distorted: tc.dis,
@@ -127,11 +123,10 @@ func TestVmafxNodeValidator_Create_ValidVendors(t *testing.T) {
 	ctx := context.Background()
 
 	for _, vendor := range []string{"nvidia", "amd", "intel", "cpu"} {
-		vendor := vendor
 		t.Run(vendor, func(t *testing.T) {
 			node := &vmafxv1.VmafxNode{
-				ObjectMeta: metav1.ObjectMeta{Name: "n", Namespace: "default"},
-				Spec:       vmafxv1.VmafxNodeSpec{GPUVendor: vendor},
+				Name: "n", Namespace: "default",
+				Spec: vmafxv1.VmafxNodeSpec{GPUVendor: vendor},
 			}
 			_, err := v.ValidateCreate(ctx, node)
 			if err != nil {
@@ -146,11 +141,10 @@ func TestVmafxNodeValidator_Create_InvalidVendor(t *testing.T) {
 	ctx := context.Background()
 
 	for _, vendor := range []string{"", "NVIDIA", "arm", "fpga", "x86"} {
-		vendor := vendor
 		t.Run(vendor, func(t *testing.T) {
 			node := &vmafxv1.VmafxNode{
-				ObjectMeta: metav1.ObjectMeta{Name: "n", Namespace: "default"},
-				Spec:       vmafxv1.VmafxNodeSpec{GPUVendor: vendor},
+				Name: "n", Namespace: "default",
+				Spec: vmafxv1.VmafxNodeSpec{GPUVendor: vendor},
 			}
 			_, err := v.ValidateCreate(ctx, node)
 			if err == nil {

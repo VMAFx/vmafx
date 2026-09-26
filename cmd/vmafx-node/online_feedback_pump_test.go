@@ -43,7 +43,7 @@ func startEchoSidecar(t *testing.T, n int) (string, <-chan struct{}, func()) {
 
 	go func() {
 		close(ready)
-		for i := 0; i < n; i++ {
+		for range n {
 			conn, acceptErr := lis.Accept()
 			if acceptErr != nil {
 				return

@@ -361,7 +361,7 @@ func ParseCSV(payload string) ([]Shot, error) {
 	// means the reader stopped making progress, which is reported rather than
 	// spun on (HISS-02).
 	maxRows := len(payload) + 1
-	for row := 0; row < maxRows; row++ {
+	for range maxRows {
 		rec, readErr := reader.Read()
 		if errors.Is(readErr, io.EOF) {
 			return out, nil
@@ -408,10 +408,7 @@ func SplitLongShots(shots []Shot, maxDurationSec, framerate float64) []Shot {
 	if maxDurationSec <= 0 {
 		return shots
 	}
-	maxFrames := int(math.Round(maxDurationSec * framerate))
-	if maxFrames < 1 {
-		maxFrames = 1
-	}
+	maxFrames := max(int(math.Round(maxDurationSec*framerate)), 1)
 
 	out := make([]Shot, 0, len(shots))
 	for _, shot := range shots {

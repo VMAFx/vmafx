@@ -99,27 +99,35 @@ let v = unsafe { CStr::from_ptr(vmaf_version()) };
 
 Thin RAII wrappers that:
 
-- Manage object lifetimes automatically (`VmafContext` closes on drop,
-  `VmafModel` destroys on drop).
-- Convert negative C error codes into `Result<T, VmafxError>`.
+- Manage object lifetimes automatically (`VmafContext` gets at most two native
+  close attempts, while `VmafModel` destroys on drop).
+- Convert C status codes into `Result`; context close accepts exact zero only,
+  preserves the first error, and permits one retry.
 - Confine `unsafe` to the actual FFI call sites only.
-- Mark all types `Send`.
+- Keep contexts and close-retry tokens thread-affine (`!Send`) so teardown
+  stays on the thread that owns the native pipeline.
+
+Context close is explicitly retryable: a nonzero native close result becomes a
+teardown-only token rather than discarding ownership. A failed explicit retry
+exhausts the token; dropping it aborts without a third native close. See
+[Rust context close and retry](../api/rust-context-close.md) for the public
+contract and failure-handling example.
 
 ```rust
-use vmafx_sys::safe::{VmafContext, VmafModel, alloc_yuv420p_8bit, unref_picture};
+use vmafx_sys::safe::{VmafContext, VmafModel, alloc_yuv420p_8bit};
 
 let mut ctx = VmafContext::new()?;
-let mut model = VmafModel::from_path("/usr/local/share/model/vmaf_v0.6.1.json")?;
-ctx.use_features_from_model(&mut model)?;
+let model = VmafModel::from_path("/usr/local/share/model/vmaf_v0.6.1.json")?;
+ctx.use_features_from_model(&model)?;
 
 // Queue frames...
 let mut ref_pic = alloc_yuv420p_8bit(576, 324)?;
 let mut dist_pic = alloc_yuv420p_8bit(576, 324)?;
 // ... fill pic.data[0..3] with YUV plane bytes ...
-ctx.read_pictures(&mut ref_pic, &mut dist_pic, 0)?;
+ctx.read_pictures(ref_pic, dist_pic, 0)?;
 
 ctx.flush()?;
-let score = ctx.score_pooled(&mut model, 0, 0)?;
+let score = ctx.score_pooled(&model, 0, 0)?;
 ```
 
 ## Building

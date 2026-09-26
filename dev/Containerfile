@@ -1123,6 +1123,7 @@ COPY internal/ ./internal/
 ENV CGO_ENABLED=1
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked,id=gobuild-dev-mcp \
     --mount=type=cache,target=/root/go/pkg/mod,sharing=locked,id=gomod-dev-mcp \
+    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm" \
     go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/... \
     && binaries=(/out/*) \
     && printf '%s\n' "${binaries[@]}" \

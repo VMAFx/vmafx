@@ -29,6 +29,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -147,13 +148,7 @@ func DefaultConfig() Config {
 
 // Validate rejects an unknown aggregator or an out-of-range EMA weight.
 func (c Config) Validate() error {
-	known := false
-	for _, a := range Aggregators {
-		if c.TemporalAggregator == a {
-			known = true
-			break
-		}
-	}
+	known := slices.Contains(Aggregators, c.TemporalAggregator)
 	if !known {
 		return fmt.Errorf(
 			"saliency: temporal_aggregator must be one of %v, got %q",
@@ -254,8 +249,8 @@ func (f Frame420p) ToRGBImageNet() []float32 {
 	out := make([]float32, 3*h*w)
 	planeStride := h * w
 
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			yf := (float64(f.Y[y*w+x]) - 16.0) / 219.0
 			ci := (y/2)*chromaW + (x / 2)
 			uf := (float64(f.U[ci]) - 128.0) / 224.0
@@ -284,10 +279,7 @@ func SampleFrameIndices(total, n int) []int {
 	if n <= 1 || total == 1 {
 		return []int{0}
 	}
-	step := total / n
-	if step < 1 {
-		step = 1
-	}
+	step := max(total/n, 1)
 	idx := make([]int, 0, n)
 	for i := 0; i < total && len(idx) < n; i += step {
 		idx = append(idx, i)
@@ -314,10 +306,10 @@ func PadToMultiple(tensor []float32, height, width, multiple int) (padded []floa
 		return tensor, height, width
 	}
 	out := make([]float32, 3*padH*padW)
-	for c := 0; c < 3; c++ {
+	for c := range 3 {
 		srcPlane := c * height * width
 		dstPlane := c * padH * padW
-		for y := 0; y < height; y++ {
+		for y := range height {
 			copy(out[dstPlane+y*padW:dstPlane+y*padW+width],
 				tensor[srcPlane+y*width:srcPlane+y*width+width])
 		}
@@ -402,8 +394,8 @@ func inferMask(session Session, frame Frame420p, width, height int) ([]float64, 
 			len(raw), padH*padW, padW, padH)
 	}
 	mask := make([]float64, width*height)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			mask[y*width+x] = float64(raw[y*padW+x])
 		}
 	}
@@ -546,9 +538,9 @@ func ReduceToBlocks(qpMap []int, width, height, block int) ([][]int, error) {
 	}
 	out := make([][]int, bh)
 	blockArea := float64(block * block)
-	for by := 0; by < bh; by++ {
+	for by := range bh {
 		row := make([]int, bw)
-		for bx := 0; bx < bw; bx++ {
+		for bx := range bw {
 			sum := 0.0
 			for y := by * block; y < (by+1)*block; y++ {
 				base := y * width
@@ -572,7 +564,7 @@ func ReduceToBlocks(qpMap []int, width, height, block int) ([][]int, error) {
 // GOP structure.
 func X264QPFile(blockOffsets [][]int, durationFrames int) string {
 	var sb strings.Builder
-	for frameIdx := 0; frameIdx < durationFrames; frameIdx++ {
+	for frameIdx := range durationFrames {
 		kind := "P"
 		if frameIdx == 0 {
 			kind = "I"
@@ -642,10 +634,7 @@ func X265ZonesArg(blockOffsets [][]int, durationFrames int) string {
 	if count > 0 {
 		meanOffset = int(clampFloat(math.Round(sum/float64(count)), QPOffsetMin, QPOffsetMax))
 	}
-	lastFrame := durationFrames - 1
-	if lastFrame < 0 {
-		lastFrame = 0
-	}
+	lastFrame := max(durationFrames-1, 0)
 	return fmt.Sprintf("0,%d,q=%d", lastFrame, meanOffset)
 }
 

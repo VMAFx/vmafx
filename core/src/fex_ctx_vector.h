@@ -60,11 +60,27 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
                                     VmafFeatureExtractorContext *fex_ctx, uint64_t flags);
 
 /**
- * @brief Destroy all contexts in the vector and free the backing array.
+ * @brief Close every initialized or partially initialized context.
  *
- * @param rfe  Vector to destroy.  Safe to call on a zero-initialised struct.
+ * Ownership remains in the vector. A failed close is retryable by calling
+ * this function again.
+ *
+ * @param rfe  Vector whose contexts should be prepared for destruction.
+ * @return 0 on success, first negative close error otherwise.
  */
-void feature_extractor_vector_destroy(RegisteredFeatureExtractors *rfe);
+int feature_extractor_vector_close(RegisteredFeatureExtractors *rfe);
+
+/**
+ * @brief Destroy all closed contexts and free the backing array.
+ *
+ * This is the commit phase paired with feature_extractor_vector_close(). It
+ * returns -EBUSY without releasing the vector when any context still owns
+ * close-required state.
+ *
+ * @param rfe  Vector to destroy. Safe to call on a zero-initialised struct.
+ * @return 0 on success, negative errno on failure.
+ */
+int feature_extractor_vector_destroy(RegisteredFeatureExtractors *rfe);
 
 #ifdef __cplusplus
 }

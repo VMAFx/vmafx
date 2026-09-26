@@ -99,7 +99,7 @@ func FindCalibratedRecipesPath(start string) string {
 		// (HISS-02).
 		maxSteps := strings.Count(root, string(os.PathSeparator)) + 2
 		dir := root
-		for step := 0; step < maxSteps; step++ {
+		for range maxSteps {
 			candidate := filepath.Join(dir, CalibratedRecipesFilename)
 			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 				return candidate

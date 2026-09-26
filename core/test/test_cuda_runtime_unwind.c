@@ -18,12 +18,15 @@
  *    the label that frees plane 0, leaking the device allocation.
  *  - vmaf_cuda_picture_alloc: the private struct came from a bare malloc, so a
  *    successful allocation left `cookie` and `release_picture` indeterminate.
- *  - vmaf_cuda_release: a failed cuCtxPopCurrent / cuDevicePrimaryCtxRelease /
- *    cuCtxPushCurrent returned without releasing the function table; the only
- *    caller (vmaf_close) frees the context right after, so the table leaked.
+ *  - vmaf_cuda_release: a transient stream/context release failure must retain
+ *    the context and function table because public close now retries ownership.
+ *  - vmaf_cuda_state_free: an unimported state releases those runtime owners
+ *    retry-safely; an imported wrapper remains allocation-only.
  *  - drain_stream_ensure (via vmaf_cuda_drain_batch_flush): a failed
  *    cuCtxPopCurrent after the drain stream was created cleared the handle
- *    without destroying the stream. */
+ *    without destroying the stream.
+ *  - complete CUDA pictures and drain streams must retain the first live
+ *    handle after a teardown failure and commit successful earlier releases. */
 
 #include <errno.h>
 #include <stdbool.h>
@@ -36,6 +39,7 @@
 #include "cuda/kernel_template.h"
 #include "cuda/picture_cuda.h"
 #include "picture.h"
+#include "ref.h"
 #include "test.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -81,7 +85,10 @@ typedef struct FakeDriver {
     int fail_event_destroy_at;
     int fail_module_unload_at;
     int fail_alloc_at;
-    bool fail_primary_release;
+    int fail_mem_free_at;
+    int fail_mem_free_host_at;
+    int primary_release_calls;
+    int fail_primary_release_at;
 } FakeDriver;
 
 static FakeDriver g_drv;
@@ -238,13 +245,47 @@ static CUresult CUDAAPI fake_mem_free(CUdeviceptr dptr)
 {
     (void)dptr;
     g_drv.frees++;
+    if (g_drv.fail_mem_free_at != 0 && g_drv.frees == g_drv.fail_mem_free_at)
+        return fake_cuda_result(FAKE_CUDA_ERROR_INVALID_CONTEXT);
+    return CUDA_SUCCESS;
+}
+
+static CUresult CUDAAPI fake_mem_alloc(CUdeviceptr *dptr, size_t bytesize)
+{
+    (void)bytesize;
+    if (g_drv.fail_alloc_at != 0 && g_drv.allocations + 1 == g_drv.fail_alloc_at)
+        return fake_cuda_result(FAKE_CUDA_ERROR_OUT_OF_MEMORY);
+    g_drv.allocations++;
+    *dptr = (CUdeviceptr)0x10000U * (CUdeviceptr)g_drv.allocations;
+    return CUDA_SUCCESS;
+}
+
+static CUresult CUDAAPI fake_mem_host_alloc(void **pp, size_t bytesize, unsigned int flags)
+{
+    (void)flags;
+    *pp = calloc(1, bytesize > 0 ? bytesize : 1);
+    if (!*pp)
+        return fake_cuda_result(FAKE_CUDA_ERROR_OUT_OF_MEMORY);
+    return CUDA_SUCCESS;
+}
+
+static CUresult CUDAAPI fake_mem_free_host(void *p)
+{
+    g_drv.frees++;
+    if (g_drv.fail_mem_free_host_at != 0 && g_drv.frees == g_drv.fail_mem_free_host_at)
+        return fake_cuda_result(FAKE_CUDA_ERROR_INVALID_CONTEXT);
+    free(p);
     return CUDA_SUCCESS;
 }
 
 static CUresult CUDAAPI fake_primary_ctx_release(CUdevice dev)
 {
     (void)dev;
-    return g_drv.fail_primary_release ? CUDA_ERROR_UNKNOWN : CUDA_SUCCESS;
+    g_drv.primary_release_calls++;
+    if (g_drv.fail_primary_release_at != 0 &&
+        g_drv.primary_release_calls == g_drv.fail_primary_release_at)
+        return CUDA_ERROR_UNKNOWN;
+    return CUDA_SUCCESS;
 }
 
 /* The runtime releases the table with the nv-codec-headers
@@ -267,7 +308,10 @@ static CudaFunctions *fake_table_new(void)
     f->cuEventRecord = fake_event_record;
     f->cuModuleUnload = fake_module_unload;
     f->cuMemAllocPitch = fake_mem_alloc_pitch;
+    f->cuMemAlloc = fake_mem_alloc;
     f->cuMemFree = fake_mem_free;
+    f->cuMemHostAlloc = fake_mem_host_alloc;
+    f->cuMemFreeHost = fake_mem_free_host;
     f->cuDevicePrimaryCtxRelease = fake_primary_ctx_release;
     return f;
 }
@@ -399,9 +443,9 @@ static char *test_picture_alloc_leaves_no_indeterminate_private_fields(void)
     return NULL;
 }
 
-/* Runs vmaf_cuda_release against a failure injected by `arm`, then reports
- * whether the function table was released and the state emptied. */
-static char *release_must_drop_the_table(void (*arm)(void))
+/* A transient release failure must retain enough state for the caller to
+ * retry. The second call then commits the state/function-table teardown. */
+static char *release_must_remain_retryable(void (*arm)(void))
 {
     VmafCudaState state;
     CudaFunctions *f = fake_table_new();
@@ -409,14 +453,15 @@ static char *release_must_drop_the_table(void (*arm)(void))
     fake_state_init(&state, f);
     arm();
 
-    const int err = vmaf_cuda_release(&state);
+    const int first_err = vmaf_cuda_release(&state);
+    mu_assert("the transient driver failure reaches the caller", first_err != 0);
+    mu_assert("failed release retains the driver table for retry", state.f == f);
+    mu_assert("failed release retains the context for retry", state.ctx != NULL);
 
-    const bool table_released = state.f == NULL;
-    if (!table_released)
-        free(f); /* the unfixed runtime still owns it; keep the harness leak-free */
-    mu_assert("the driver failure reaches the caller", err != 0);
-    mu_assert("the function table is released on the error path", table_released);
-    mu_assert("the state reads as empty afterwards", state.ctx == NULL);
+    const int retry_err = vmaf_cuda_release(&state);
+    mu_assert("release retry succeeds", retry_err == 0);
+    mu_assert("successful retry releases the driver table", state.f == NULL);
+    mu_assert("successful retry empties the state", state.ctx == NULL && state.str == NULL);
     return NULL;
 }
 
@@ -427,7 +472,7 @@ static void arm_pop_failure(void)
 
 static void arm_primary_release_failure(void)
 {
-    g_drv.fail_primary_release = true;
+    g_drv.fail_primary_release_at = 1;
 }
 
 static void arm_push_failure(void)
@@ -435,19 +480,19 @@ static void arm_push_failure(void)
     g_drv.fail_push_at = 1;
 }
 
-static char *test_release_drops_the_table_when_pop_fails(void)
+static char *test_release_retries_after_pop_failure(void)
 {
-    return release_must_drop_the_table(arm_pop_failure);
+    return release_must_remain_retryable(arm_pop_failure);
 }
 
-static char *test_release_drops_the_table_when_primary_release_fails(void)
+static char *test_release_retries_after_primary_release_failure(void)
 {
-    return release_must_drop_the_table(arm_primary_release_failure);
+    return release_must_remain_retryable(arm_primary_release_failure);
 }
 
-static char *test_release_drops_the_table_when_push_fails(void)
+static char *test_release_retries_after_push_failure(void)
 {
-    return release_must_drop_the_table(arm_push_failure);
+    return release_must_remain_retryable(arm_push_failure);
 }
 
 static char *test_release_success_path_still_drops_the_table(void)
@@ -462,6 +507,131 @@ static char *test_release_success_path_still_drops_the_table(void)
     mu_assert("a clean release succeeds", err == 0);
     mu_assert("the function table is released", state.f == NULL);
     mu_assert("the engine stream is destroyed", g_drv.streams_destroyed == 1);
+    return NULL;
+}
+
+static char *test_unimported_state_free_retries_runtime_release(void)
+{
+    VmafCudaState *state = malloc(sizeof(*state));
+    CudaFunctions *f = fake_table_new();
+    mu_assert("state and fake table allocation", state != NULL && f != NULL);
+    fake_state_init(state, f);
+    g_drv.fail_stream_sync_at = 1;
+
+    const int first_err = vmaf_cuda_state_free(state);
+    mu_assert("unimported state free reports release failure", first_err == -ENOMEM);
+    mu_assert("failed state free retains the wrapper", state->f == f && state->str != NULL);
+    mu_assert("failed state free does not release primary context",
+              g_drv.primary_release_calls == 0);
+
+    const int retry_err = vmaf_cuda_state_free(state);
+    mu_assert("unimported state free retry succeeds", retry_err == 0);
+    mu_assert("retry destroys the stream once", g_drv.streams_destroyed == 1);
+    mu_assert("retry releases the primary context once", g_drv.primary_release_calls == 1);
+    return NULL;
+}
+
+static char *test_imported_state_free_is_allocation_only(void)
+{
+    VmafCudaState *state = malloc(sizeof(*state));
+    CudaFunctions *f = fake_table_new();
+    mu_assert("state and fake table allocation", state != NULL && f != NULL);
+    fake_state_init(state, f);
+    state->imported = true;
+
+    const int err = vmaf_cuda_state_free(state);
+    mu_assert("imported wrapper free succeeds", err == 0);
+    mu_assert("imported wrapper free leaves runtime teardown to context",
+              g_drv.stream_destroy_calls == 0 && g_drv.primary_release_calls == 0);
+    cuda_free_functions(&f);
+    return NULL;
+}
+
+static char *test_owned_device_buffer_free_is_retryable(void)
+{
+    VmafCudaState state;
+    CudaFunctions *f = fake_table_new();
+    mu_assert("fake table allocation", f != NULL);
+    fake_state_init(&state, f);
+    VmafCudaBuffer *buf = calloc(1, sizeof(*buf));
+    mu_assert("device wrapper allocation", buf != NULL);
+    buf->data = (CUdeviceptr)0x10000U;
+    g_drv.fail_mem_free_at = 1;
+
+    const int first_err = vmaf_cuda_buffer_free_owned(&state, &buf);
+    mu_assert("device free failure reaches caller", first_err == -EINVAL);
+    mu_assert("failed device free retains ownership", buf != NULL);
+    const int retry_err = vmaf_cuda_buffer_free_owned(&state, &buf);
+
+    free(f);
+    mu_assert("device free retry succeeds", retry_err == 0);
+    mu_assert("successful device free clears ownership", buf == NULL);
+    return NULL;
+}
+
+static char *test_owned_device_buffer_zero_handle_is_idempotent(void)
+{
+    memset(&g_drv, 0, sizeof(g_drv));
+    VmafCudaBuffer *buf = calloc(1, sizeof(*buf));
+    mu_assert("device wrapper allocation", buf != NULL);
+
+    const int err = vmaf_cuda_buffer_free_owned(NULL, &buf);
+
+    mu_assert("zero device handle needs no CUDA state", err == 0);
+    mu_assert("zero device handle releases its wrapper", buf == NULL);
+    mu_assert("zero device handle makes no driver call", g_drv.frees == 0);
+    return NULL;
+}
+
+static char *test_owned_raw_deviceptr_free_is_retryable(void)
+{
+    VmafCudaState state;
+    CudaFunctions *f = fake_table_new();
+    mu_assert("fake table allocation", f != NULL);
+    fake_state_init(&state, f);
+    CUcontext foreign_context = (CUcontext)fake_handle();
+    g_drv.current_context = foreign_context;
+    CUdeviceptr device = (CUdeviceptr)0x10000U;
+    const CUdeviceptr expected = device;
+    g_drv.fail_mem_free_at = 1;
+
+    const int first_err = vmaf_cuda_deviceptr_free_owned(&state, &device);
+    mu_assert("raw device free failure reaches caller", first_err == -EINVAL);
+    mu_assert("failed raw device free retains ownership", device == expected);
+    mu_assert("failed raw device free restores the foreign context",
+              g_drv.current_context == foreign_context && g_drv.context_depth == 0);
+    const int retry_err = vmaf_cuda_deviceptr_free_owned(&state, &device);
+
+    free(f);
+    mu_assert("raw device free retry succeeds", retry_err == 0);
+    mu_assert("successful raw device free clears ownership", device == 0);
+    mu_assert("raw device free retry restores the foreign context",
+              g_drv.current_context == foreign_context && g_drv.context_depth == 0);
+    return NULL;
+}
+
+static char *test_owned_buffer_free_commits_before_pop_error(void)
+{
+    VmafCudaState state;
+    CudaFunctions *f = fake_table_new();
+    mu_assert("fake table allocation", f != NULL);
+    fake_state_init(&state, f);
+    VmafCudaBuffer *device = calloc(1, sizeof(*device));
+    mu_assert("device wrapper allocation", device != NULL);
+    device->data = (CUdeviceptr)0x10000U;
+    g_drv.fail_pop_at = 1;
+
+    const int device_err = vmaf_cuda_buffer_free_owned(&state, &device);
+    mu_assert("post-free pop error reaches caller", device_err == -EINVAL);
+    mu_assert("successful device free stays committed", device == NULL);
+
+    void *host = calloc(1, 16);
+    mu_assert("host buffer allocation", host != NULL);
+    g_drv.fail_pop_at = g_drv.pops + 1;
+    const int host_err = vmaf_cuda_buffer_host_free_owned(&state, &host);
+    free(f);
+    mu_assert("post-host-free pop error reaches caller", host_err == -EINVAL);
+    mu_assert("successful host free stays committed", host == NULL);
     return NULL;
 }
 
@@ -481,12 +651,69 @@ static char *test_drain_stream_is_destroyed_when_its_pop_fails(void)
     const int created = g_drv.streams_created;
     const int destroyed = g_drv.streams_destroyed;
 
-    vmaf_cuda_drain_batch_thread_destroy(&state);
+    (void)vmaf_cuda_drain_batch_thread_destroy(&state);
     free(f);
     mu_assert("the pop failure reaches the caller", err != 0);
     mu_assert("the drain stream was created", created == 1);
     mu_assert("the drain stream is destroyed, not just forgotten", destroyed == created);
     mu_assert("nothing is marked drained after a failed flush", drained == false);
+    return NULL;
+}
+
+static char *test_drain_stream_close_retries_after_sync_failure(void)
+{
+    VmafCudaState state;
+    CudaFunctions *f = fake_table_new();
+    mu_assert("fake table allocation", f != NULL);
+    fake_state_init(&state, f);
+    bool drained = false;
+    vmaf_cuda_drain_batch_open(&state);
+    (void)vmaf_cuda_drain_batch_register_event((CUevent)fake_handle(), &drained);
+    mu_assert("drain stream setup succeeds", vmaf_cuda_drain_batch_flush(&state) == 0);
+    g_drv.fail_stream_sync_at = g_drv.stream_sync_calls + 1;
+
+    const int first_err = vmaf_cuda_drain_batch_thread_destroy(&state);
+    mu_assert("drain sync failure reaches caller", first_err == -ENOMEM);
+    mu_assert("failed quiescence does not destroy the drain stream",
+              g_drv.stream_destroy_calls == 0);
+    const int retry_err = vmaf_cuda_drain_batch_thread_destroy(&state);
+    free(f);
+    mu_assert("drain teardown retry succeeds", retry_err == 0);
+    mu_assert("successful retry destroys exactly one stream",
+              g_drv.stream_destroy_calls == 1 && g_drv.streams_destroyed == 1);
+    return NULL;
+}
+
+static char *test_cuda_picture_free_retries_from_first_live_handle(void)
+{
+    VmafCudaState state;
+    CudaFunctions *f = fake_table_new();
+    mu_assert("fake table allocation", f != NULL);
+    fake_state_init(&state, f);
+    VmafPicture pic = {0};
+    VmafPicturePrivate *priv = calloc(1, sizeof(*priv));
+    mu_assert("picture private allocation", priv != NULL);
+    pic.priv = priv;
+    priv->cuda.state = &state;
+    priv->cuda.ctx = state.ctx;
+    priv->cuda.str = (CUstream)fake_handle();
+    priv->cuda.ready = (CUevent)fake_handle();
+    priv->cuda.finished = (CUevent)fake_handle();
+    pic.data[0] = fake_handle();
+    pic.data[1] = fake_handle();
+    mu_assert("picture ref allocation", vmaf_ref_init(&pic.ref) == 0);
+    g_drv.fail_mem_free_at = 2;
+
+    const int first_err = vmaf_cuda_picture_free(&pic, NULL);
+    mu_assert("plane free failure reaches caller", first_err == -EINVAL);
+    mu_assert("successful stream and first plane release stay committed",
+              pic.priv != NULL && priv->cuda.str == NULL && pic.data[0] == NULL &&
+                  pic.data[1] != NULL);
+    const int retry_err = vmaf_cuda_picture_free(&pic, NULL);
+    free(f);
+    mu_assert("picture teardown retry succeeds", retry_err == 0);
+    mu_assert("successful retry commits picture ownership",
+              pic.priv == NULL && pic.ref == NULL && pic.data[1] == NULL);
     return NULL;
 }
 
@@ -609,16 +836,19 @@ static char *test_stream_destroy_preserves_handle_and_first_error(void)
     CUstream stream = (CUstream)fake_handle();
     CUstream original = stream;
     g_drv.fail_stream_sync_at = 1;
-    g_drv.fail_stream_destroy_at = 1;
 
     const int err = vmaf_cuda_stream_destroy(&state, &stream, true);
-
-    free(f);
     mu_assert("the first teardown error wins", err == -ENOMEM);
-    mu_assert("a failed destroy remains retryable", stream == original);
-    mu_assert("destroy is attempted after sync failure", g_drv.stream_destroy_calls == 1);
+    mu_assert("sync failure retains the stream for retry", stream == original);
+    /* Phased teardown: sync failure must NOT attempt stream destroy —
+     * the stream is still live and destroying it would orphan in-flight work. */
+    mu_assert("destroy is NOT attempted after sync failure", g_drv.stream_destroy_calls == 0);
     mu_assert("the helper restores the context",
               g_drv.pushes == 1 && g_drv.pops == 1 && g_drv.context_depth == 0);
+    const int retry_err = vmaf_cuda_stream_destroy(&state, &stream, true);
+    free(f);
+    mu_assert("stream teardown retry succeeds", retry_err == 0);
+    mu_assert("successful retry clears the stream", stream == NULL);
     return NULL;
 }
 
@@ -711,7 +941,7 @@ static char *lifecycle_init_must_rollback(int fail_stream_at, int fail_event_at,
     mu_assert("the partial lifecycle is empty",
               lc.str == NULL && lc.submit == NULL && lc.finished == NULL);
     mu_assert("init balances the context stack",
-              g_drv.pushes == 1 && g_drv.pops == 1 && g_drv.context_depth == 0);
+              g_drv.pushes == g_drv.pops && g_drv.context_depth == 0);
     return NULL;
 }
 
@@ -745,7 +975,7 @@ static char *test_lifecycle_init_rolls_back_every_handle_when_final_pop_fails(vo
     mu_assert("the failed lifecycle is empty",
               lc.str == NULL && lc.submit == NULL && lc.finished == NULL);
     mu_assert("the failed pop is retried and the context stack is balanced",
-              g_drv.pops == 2 && g_drv.context_depth == 0);
+              g_drv.pops == g_drv.pushes + 1 && g_drv.context_depth == 0);
     return NULL;
 }
 
@@ -772,7 +1002,7 @@ static char *test_lifecycle_close_uses_owner_context_and_restores_foreign_contex
     mu_assert("all successfully destroyed handles are cleared",
               lc.str == NULL && lc.submit == NULL && lc.finished == NULL);
     mu_assert("close balances the context stack",
-              g_drv.pushes == 1 && g_drv.pops == 1 && g_drv.context_depth == 0);
+              g_drv.pushes == 3 && g_drv.pops == 3 && g_drv.context_depth == 0);
     return NULL;
 }
 
@@ -789,20 +1019,26 @@ static char *test_lifecycle_close_preserves_failed_handles_and_first_error(void)
     };
     CUstream original_stream = lc.str;
     CUevent original_submit = lc.submit;
+    CUevent original_finished = lc.finished;
     g_drv.fail_stream_sync_at = 1;
-    g_drv.fail_stream_destroy_at = 1;
-    g_drv.fail_event_destroy_at = 1;
 
     const int err = vmaf_cuda_kernel_lifecycle_close(&lc, &state);
-
-    free(f);
     mu_assert("the first teardown error wins", err == -ENOMEM);
-    mu_assert("failed stream destroy preserves the handle", lc.str == original_stream);
-    mu_assert("failed event destroy preserves the handle", lc.submit == original_submit);
-    mu_assert("later successful destroys still clear their handles", lc.finished == NULL);
-    mu_assert("teardown continues after failures", g_drv.event_destroy_calls == 2);
+    /* Phased teardown: sync failure prevents stream destroy and
+     * skips event destruction — the stream is still live and events
+     * may be in-flight. All handles remain intact for retry. */
+    mu_assert("sync failure retains the stream", lc.str == original_stream);
+    mu_assert("sync failure skips event destroy (submit)", lc.submit == original_submit);
+    mu_assert("sync failure skips event destroy (finished)", lc.finished == original_finished);
+    mu_assert("stream destroy is NOT attempted", g_drv.stream_destroy_calls == 0);
+    mu_assert("event destroy is NOT attempted", g_drv.event_destroy_calls == 0);
     mu_assert("close restores the context after failures",
               g_drv.pushes == 1 && g_drv.pops == 1 && g_drv.context_depth == 0);
+    const int retry_err = vmaf_cuda_kernel_lifecycle_close(&lc, &state);
+    free(f);
+    mu_assert("lifecycle close retry succeeds", retry_err == 0);
+    mu_assert("successful retry clears every handle",
+              lc.str == NULL && lc.submit == NULL && lc.finished == NULL);
     return NULL;
 }
 
@@ -827,7 +1063,7 @@ static char *test_lifecycle_close_retries_pop_and_restores_foreign_context(void)
     mu_assert("the first pop error reaches the caller", err == -EINVAL);
     mu_assert("successful resource teardown remains committed",
               lc.str == NULL && lc.submit == NULL && lc.finished == NULL);
-    mu_assert("the failed pop is retried", g_drv.pops == 2);
+    mu_assert("the failed pop is retried", g_drv.pops == g_drv.pushes + 1);
     mu_assert("the retry restores the foreign context",
               g_drv.current_context == foreign_context && g_drv.context_depth == 0);
     return NULL;
@@ -838,16 +1074,29 @@ static char *run_legacy_unwind_tests_a(void)
     mu_run_test(test_picture_alloc_frees_earlier_planes_when_a_later_one_fails);
     mu_run_test(test_picture_alloc_unwinds_everything_when_the_final_pop_fails);
     mu_run_test(test_picture_alloc_leaves_no_indeterminate_private_fields);
-    mu_run_test(test_release_drops_the_table_when_pop_fails);
+    mu_run_test(test_release_retries_after_pop_failure);
     return NULL;
 }
 
 static char *run_legacy_unwind_tests_b(void)
 {
-    mu_run_test(test_release_drops_the_table_when_primary_release_fails);
-    mu_run_test(test_release_drops_the_table_when_push_fails);
+    mu_run_test(test_release_retries_after_primary_release_failure);
+    mu_run_test(test_release_retries_after_push_failure);
     mu_run_test(test_release_success_path_still_drops_the_table);
+    mu_run_test(test_unimported_state_free_retries_runtime_release);
+    mu_run_test(test_imported_state_free_is_allocation_only);
     mu_run_test(test_drain_stream_is_destroyed_when_its_pop_fails);
+    mu_run_test(test_drain_stream_close_retries_after_sync_failure);
+    mu_run_test(test_cuda_picture_free_retries_from_first_live_handle);
+    return NULL;
+}
+
+static char *run_owned_buffer_teardown_tests(void)
+{
+    mu_run_test(test_owned_device_buffer_free_is_retryable);
+    mu_run_test(test_owned_device_buffer_zero_handle_is_idempotent);
+    mu_run_test(test_owned_raw_deviceptr_free_is_retryable);
+    mu_run_test(test_owned_buffer_free_commits_before_pop_error);
     return NULL;
 }
 
@@ -885,6 +1134,7 @@ char *run_tests(void)
 {
     mu_assert_msg(run_legacy_unwind_tests_a());
     mu_assert_msg(run_legacy_unwind_tests_b());
+    mu_assert_msg(run_owned_buffer_teardown_tests());
     mu_assert_msg(run_context_owned_teardown_tests_a());
     mu_assert_msg(run_context_owned_teardown_tests_b());
     return run_context_owned_teardown_tests_c();

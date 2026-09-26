@@ -169,34 +169,40 @@ static const VmafOption options[] = {
  */
 static int motion_v2_init_unwind(VmafFeatureExtractor *fex, MotionV2StateCuda *s, int ret)
 {
-    if (s->pix[0]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->pix[0]);
-        free(s->pix[0]);
-        s->pix[0] = NULL;
-    }
-    if (s->pix[1]) {
-        (void)vmaf_cuda_buffer_free(fex->cu_state, s->pix[1]);
-        free(s->pix[1]);
-        s->pix[1] = NULL;
-    }
-    (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return ret;
+    int rc = ret;
+    const int phase_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (phase_rc)
+        return rc ? rc : phase_rc;
+
+    int e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->pix[0]);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->pix[1]);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_dictionary_free(&s->feature_name_dict);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (e && !rc)
+        rc = e;
+    return rc;
 }
 
 /* motion_v2_alloc_buffers - the two pixel planes, the readback slot, the dict.
  *
- * HISS-04: the allocation tail of init_fex_cuda, moved whole. The `ret |=`
- * accumulation keeps its order and every failure still routes through
- * motion_v2_init_unwind with the same `ret`.
+ * HISS-04: the allocation tail of init_fex_cuda, moved whole. Every failure
+ * routes through motion_v2_init_unwind with the exact allocation error.
  */
 static int motion_v2_alloc_buffers(VmafFeatureExtractor *fex, MotionV2StateCuda *s)
 {
-    int ret = 0;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[0], s->plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[1], s->plane_bytes);
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[0], s->plane_bytes);
+    if (ret)
+        return motion_v2_init_unwind(fex, s, ret);
+    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->pix[1], s->plane_bytes);
     if (ret)
         return motion_v2_init_unwind(fex, s, ret);
 
@@ -253,7 +259,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return motion_v2_init_unwind(fex, s, err);
 
     int _cuda_err = 0;
     int ctx_pushed = 0;
@@ -273,9 +279,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return motion_v2_init_unwind(fex, s, _cuda_err);
 }
 
 /* motion_v2_launch - dispatch the 8bpc or 16bpc SAD kernel.
@@ -540,32 +544,7 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     MotionV2StateCuda *s = fex->priv;
-
-    int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-
-    if (s->pix[0]) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->pix[0]);
-        free(s->pix[0]);
-        if (rc == 0)
-            rc = e;
-    }
-    if (s->pix[1]) {
-        const int e = vmaf_cuda_buffer_free(fex->cu_state, s->pix[1]);
-        free(s->pix[1]);
-        if (rc == 0)
-            rc = e;
-    }
-
-    const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
-    if (rc == 0)
-        rc = rb_rc;
-    const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
-    if (rc == 0)
-        rc = dict_rc;
-    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    if (rc == 0)
-        rc = module_rc;
-    return rc;
+    return motion_v2_init_unwind(fex, s, 0);
 }
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",

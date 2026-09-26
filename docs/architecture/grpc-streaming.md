@@ -82,6 +82,17 @@ sequence does not inflate a single message. The streaming pooled VMAF is
 bit-identical to the file-reading `ScoreDirect` path (verified on the 48-frame
 golden pair).
 
+### Teardown and close errors
+
+`StreamScorer.Close()` is fallible and retryable. A close result of exactly
+zero releases the libvmaf context and only then destroys its registered model.
+Any other result starts teardown, retains both owners, and disables
+`PushFrame` and `Finish`; callers may only call `Close()` again. The server and
+node handlers make one immediate retry. If it also fails, they log both close
+errors and return a gRPC teardown error without releasing the retained model.
+This bounded fail-closed path prevents a model use-after-free while avoiding an
+unbounded shutdown loop.
+
 ## Client usage
 
 The `pkg/score` package wraps the generated client so callers do not

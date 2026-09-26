@@ -64,6 +64,7 @@
 #endif
 
 #include "feature/feature_dimensions.h"
+#include "vmaf_close_retry.h"
 
 /* ADR-0543 (extends ADR-0498): dedicated exit code for an explicit-
  * backend init failure. Distinguishes a "you asked for SYCL but it
@@ -694,6 +695,7 @@ struct GpuStates {
     bool sycl_active;
 #endif
 #ifdef HAVE_CUDA
+    VmafCudaState *cuda_state;
     bool cuda_active;
 #endif
 #ifdef HAVE_HIP
@@ -801,9 +803,8 @@ namespace
     if (states->sycl_active)
         return 0;
 #endif
-    VmafCudaState *cuda_state;
-    const VmafCudaConfiguration cfg = {0};
-    int err = vmaf_cuda_state_init(&cuda_state, cfg);
+    const VmafCudaConfiguration cfg = {nullptr};
+    int err = vmaf_cuda_state_init(&states->cuda_state, cfg);
     if (err) {
         (void)fprintf(stderr, "problem during vmaf_cuda_state_init, using CPU\n");
         if (!explicit_backend_requested(c) || strcmp(c->backend, "cuda") != 0)
@@ -814,7 +815,7 @@ namespace
                                  "vmaf_cuda_state_init failed", err);
         return VMAF_INIT_GPU_EXPLICIT_FAIL;
     }
-    err = vmaf_cuda_import_state(vmaf, cuda_state);
+    err = vmaf_cuda_import_state(vmaf, states->cuda_state);
     if (err) {
         (void)fprintf(stderr, "problem during vmaf_cuda_import_state\n");
         return -1;
@@ -1734,11 +1735,19 @@ struct CliRunState {
     VmafPictureConfiguration pic_cfg = {};
 };
 
-void cleanup_gpu_states(GpuStates *states)
+[[nodiscard]] int cleanup_gpu_states(GpuStates *states)
 {
 #ifdef HAVE_SYCL
-    if (states->sycl_active)
+    if (states->sycl_state)
         vmaf_sycl_state_free(&states->sycl_state);
+#endif
+#ifdef HAVE_CUDA
+    if (states->cuda_state) {
+        const int err = vmaf_cuda_state_free(states->cuda_state);
+        if (err)
+            return err;
+        states->cuda_state = nullptr;
+    }
 #endif
 #ifdef HAVE_HIP
     if (states->hip_state)
@@ -1749,23 +1758,43 @@ void cleanup_gpu_states(GpuStates *states)
         vmaf_metal_state_free(&states->metal_state);
 #endif
     (void)states;
+    return 0;
 }
 
-void cleanup_cli_run_state(CliRunState *state)
+[[nodiscard]] int cleanup_cli_run_state(CliRunState *state)
 {
-    if (state->vmaf)
-        vmaf_close(state->vmaf);
-    cleanup_gpu_states(&state->gpu);
-    if (state->vid_dist_open)
+    const int close_err = vmaf_tool_close_context(&state->vmaf);
+    if (close_err) {
+        (void)fprintf(stderr,
+                      "vmaf: context cleanup failed after %u attempts (err=%d); "
+                      "retaining dependent resources\n",
+                      VMAF_TOOL_CLOSE_MAX_ATTEMPTS, close_err);
+        return close_err;
+    }
+    const int gpu_err = cleanup_gpu_states(&state->gpu);
+    if (gpu_err) {
+        (void)fprintf(stderr, "vmaf: backend-state cleanup failed (err=%d)\n", gpu_err);
+        return gpu_err;
+    }
+    if (state->vid_dist_open) {
         video_input_close(&state->vid_dist);
-    if (state->vid_ref_open)
+        state->vid_dist_open = false;
+    }
+    if (state->vid_ref_open) {
         video_input_close(&state->vid_ref);
-    if (state->file_dist)
+        state->vid_ref_open = false;
+    }
+    if (state->file_dist) {
         (void)fclose(state->file_dist);
-    if (state->file_ref)
+        state->file_dist = nullptr;
+    }
+    if (state->file_ref) {
         (void)fclose(state->file_ref);
+        state->file_ref = nullptr;
+    }
     cli_free(&state->c);
     destroy_model_arrays(&state->arrays);
+    return 0;
 }
 
 } // namespace
@@ -1783,11 +1812,18 @@ class CliRunGuard
     CliRunGuard &operator=(const CliRunGuard &) = delete;
     ~CliRunGuard()
     {
-        cleanup_cli_run_state(state_);
+        if (!cleanup_attempted_)
+            (void)cleanup_cli_run_state(state_);
+    }
+    [[nodiscard]] int close()
+    {
+        cleanup_attempted_ = true;
+        return cleanup_cli_run_state(state_);
     }
 
   private:
     CliRunState *state_;
+    bool cleanup_attempted_ = false;
 };
 
 void print_cli_banner(const CLISettings *c, int istty)
@@ -2069,13 +2105,19 @@ namespace
 namespace
 {
 
+// NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-1336: when both bounded
+// vmaf_close attempts fail, model and backend owners must remain allocated
+// until process exit rather than dangling the retryable context.
 [[nodiscard]] int vmaf_cli_main(int argc, char *argv[])
 {
     CliRunState state = {};
     cli_parse(argc, argv, &state.c);
-    const CliRunGuard guard(&state);
-    return run_cli(&state, isatty(fileno(stderr)));
+    CliRunGuard guard(&state);
+    const int run_err = run_cli(&state, isatty(fileno(stderr)));
+    const int cleanup_err = guard.close();
+    return run_err ? run_err : (cleanup_err ? EXIT_FAILURE : EXIT_SUCCESS);
 }
+// NOLINTEND(clang-analyzer-unix.Malloc)
 
 } // namespace
 

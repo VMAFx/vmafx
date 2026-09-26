@@ -17,7 +17,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -35,10 +34,8 @@ var _ = Describe("VmafxJob controller", func() {
 
 	It("sets Phase to Pending on a new VmafxJob", func() {
 		job := &vmafxv1.VmafxJob{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-job-pending",
-				Namespace: "default",
-			},
+			Name:      "test-job-pending",
+			Namespace: "default",
 			Spec: vmafxv1.VmafxJobSpec{
 				Reference: "file:///ref.yuv",
 				Distorted: "file:///dis.yuv",
@@ -51,10 +48,8 @@ var _ = Describe("VmafxJob controller", func() {
 			Scheme: scheme,
 		}
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      job.Name,
-				Namespace: job.Namespace,
-			},
+			Name:      job.Name,
+			Namespace: job.Namespace,
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -72,10 +67,8 @@ var _ = Describe("VmafxJob controller", func() {
 		// Stage 2: the operator waits for the external scheduler to set ControllerJobID.
 		// Until then the job stays Pending and is requeued after jobPollInterval.
 		job := &vmafxv1.VmafxJob{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-job-no-id",
-				Namespace: "default",
-			},
+			Name:      "test-job-no-id",
+			Namespace: "default",
 			Spec: vmafxv1.VmafxJobSpec{
 				Reference: "file:///ref.yuv",
 				Distorted: "file:///dis.yuv",
@@ -107,10 +100,8 @@ var _ = Describe("VmafxJob controller", func() {
 
 	It("does not requeue terminal (Succeeded) jobs", func() {
 		job := &vmafxv1.VmafxJob{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-job-succeeded",
-				Namespace: "default",
-			},
+			Name:      "test-job-succeeded",
+			Namespace: "default",
 			Spec: vmafxv1.VmafxJobSpec{
 				Reference: "file:///ref.yuv",
 				Distorted: "file:///dis.yuv",

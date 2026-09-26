@@ -371,8 +371,7 @@ func buildSaliencyAugment(
 	if buildErr == nil {
 		return augment, true, nil
 	}
-	var unsupported *saliency.UnsupportedEncoderError
-	if !errors.As(buildErr, &unsupported) {
+	if _, ok := errors.AsType[*saliency.UnsupportedEncoderError](buildErr); !ok {
 		return none, false, buildErr
 	}
 	if !saliency.FallbackAllowed(cfg) {

@@ -171,7 +171,7 @@ func TestGRPCScoreStream_EndToEnd(t *testing.T) {
 	// single-threaded send loop against gRPC flow control.
 	sendErr := make(chan error, 1)
 	go func() {
-		for i := 0; i < nFrames; i++ {
+		for i := range nFrames {
 			lo, hi := i*frameSize, (i+1)*frameSize
 			if err := stream.Send(&vmafxv1.ScoreStreamRequest{
 				Payload: &vmafxv1.ScoreStreamRequest_FramePair{

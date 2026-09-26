@@ -177,7 +177,7 @@ func pathString(s string) string {
 	}
 
 	parts := make([]string, 0, 8)
-	for _, seg := range strings.Split(s, "/") {
+	for seg := range strings.SplitSeq(s, "/") {
 		if seg == "" || seg == "." {
 			continue
 		}

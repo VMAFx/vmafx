@@ -45,6 +45,7 @@ import (
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/probe"
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/internal/app/scoringservice"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
 
@@ -99,7 +100,7 @@ func (h *scoringHandler) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (
 // It shares the contract and engine with the vmafx-server handler: opening
 // StreamConfig, then FramePair messages, then EOF; the server flushes and
 // streams back one FrameScore per frame plus a terminal AggregateScore.
-func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) error {
+func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) (retErr error) {
 	if h.scorer == nil {
 		return status.Errorf(codes.FailedPrecondition, "node has no scorer configured")
 	}
@@ -110,7 +111,7 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 	if err != nil {
 		return err
 	}
-	defer scorer.Close()
+	defer h.closeStreamScorer(scorer, &retErr)
 
 	if ingestErr := ingestStreamFrames(ctx, stream, scorer); ingestErr != nil {
 		return ingestErr
@@ -144,6 +145,26 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 		"score", fmt.Sprintf("%.4f", result.Score),
 	)
 	return nil
+}
+
+func (h *scoringHandler) closeStreamScorer(scorer *libvmaf.StreamScorer, retErr *error) {
+	closeResult := scoringservice.CloseStreamScorerWithRetry(scorer)
+	if closeResult.InitialErr == nil {
+		return
+	}
+	if closeResult.RetryErr == nil {
+		h.log.Warn("node ScoreStream: scorer close recovered on retry",
+			"error", closeResult.InitialErr)
+		return
+	}
+
+	closeErr := closeResult.Err()
+	h.log.Error("node ScoreStream: scorer close failed after retry",
+		"error", closeErr,
+		"operation_error", *retErr,
+	)
+	*retErr = errors.Join(*retErr, status.Errorf(codes.Internal,
+		"ScoreStream teardown failed after retry: %v", closeErr))
 }
 
 // openStreamScorer reads the opening StreamConfig message and builds the per-call

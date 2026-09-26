@@ -185,8 +185,7 @@ func explainRunnerFailure(ctx context.Context, runErr error) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("ai: vmafx-ort-runner cancelled: %w (run err: %v)", ctxErr, runErr)
 	}
-	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](runErr); ok {
 		if msg := strings.TrimSpace(string(exitErr.Stderr)); msg != "" {
 			return fmt.Errorf("ai: vmafx-ort-runner failed: %w: %s", runErr, msg)
 		}

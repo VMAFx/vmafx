@@ -195,7 +195,7 @@ func validateRemotePath(field, p string) (string, error) {
 	if !strings.HasPrefix(p, "/") {
 		return "", fmt.Errorf("%s must be an absolute path on the worker node (got %q)", field, p)
 	}
-	for _, seg := range strings.Split(p, "/") {
+	for seg := range strings.SplitSeq(p, "/") {
 		if seg == ".." {
 			return "", fmt.Errorf("%s must not contain a '..' traversal component", field)
 		}

@@ -8,9 +8,11 @@
 //
 //   - No `unsafe` in the public API surface.
 //   - Errors are returned as `Result<T, Error>` so callers can use `?`.
-//   - Resources (contexts, models, pictures) free themselves on `Drop`.
-//   - Types are `Send` where the underlying C object is self-contained and
-//     thread-safe to migrate; `!Sync` until libvmaf documents otherwise.
+//   - Resources release on `Drop`; context teardown retries once and aborts on
+//     persistent failure so retained model borrows cannot end early. Contexts
+//     also expose a consuming `close` with a teardown-only retry token.
+//   - Models and pictures are `Send` but `!Sync`. Contexts are `!Send` because
+//     they carry shared borrows of deliberately-`!Sync` models.
 //
 // Phase 1 (ADR-0929) ships the essential scoring loop: load a model, open a
 // context, push reference/distorted pictures frame by frame, and read out a
@@ -79,7 +81,7 @@ mod model;
 mod picture;
 mod score;
 
-pub use context::{Context, ContextBuilder, LogLevel};
+pub use context::{Context, ContextBuilder, ContextCloseError, LogLevel};
 pub use error::{Error, Result};
 pub use model::Model;
 pub use picture::{Picture, PixelFormat};

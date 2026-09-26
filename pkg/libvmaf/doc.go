@@ -9,15 +9,22 @@
 //
 // # Build requirements
 //
-// The host must have libvmaf installed (headers + shared library). The
-// recommended approach is to build the fork with:
+// The host must have this fork's libvmaf headers and shared library. The
+// recommended local workflow uses the canonical cgo build directory:
 //
-//	meson setup build && ninja -C build && ninja -C build install
+//	meson setup core/build-cpu core && ninja -C core/build-cpu
+//	make go-build
 //
-// Or to point to an in-tree build via CGO_CFLAGS / CGO_LDFLAGS:
+// Direct Go commands must select the library explicitly:
 //
-//	export CGO_CFLAGS="-I$(pwd)/core/include"
-//	export CGO_LDFLAGS="-L$(pwd)/core/build -lvmaf -Wl,-rpath,$(pwd)/core/build"
+//	export CGO_LDFLAGS="-L$(pwd)/core/build-cpu/src -lvmaf -lm"
+//	export LD_LIBRARY_PATH="$(pwd)/core/build-cpu/src${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+//	go test ./pkg/libvmaf
+//
+// There is intentionally no implicit `-lvmaf` fallback in the package. This
+// prevents a missing fork build from silently linking a distro or stale
+// system library. Container builds may point CGO_LDFLAGS at their separately
+// verified, staged fork library instead.
 //
 // # Scope
 //

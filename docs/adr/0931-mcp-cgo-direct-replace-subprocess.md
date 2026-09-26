@@ -66,12 +66,16 @@ The direct path calls libvmaf in the following order, mirroring
 6. Flush: `vmaf_read_pictures(ctx, NULL, NULL, 0)`.
 7. `vmaf_score_pooled(ctx, model, VMAF_POOL_METHOD_MEAN, &score, 0,
    frame_count-1)`.
-8. `vmaf_model_destroy(model)` + `vmaf_close(ctx)`.
+8. Close the context first. Exactly zero from `vmaf_close(ctx)` permits
+   `vmaf_model_destroy(model)`; any other status retains both owners for one
+   bounded close retry. This lifecycle correction is governed by ADR-1336.
 
 ### Ownership semantics
 
-- `VmafContext *` — owned by Go; freed in `defer vmaf_close()`.
-- `VmafModel *` — owned by Go; freed in `defer vmaf_model_destroy()`.
+- `VmafContext *` — owned by Go through the retry-aware scoring owner. It is
+  invalid only after `vmaf_close()` returns exactly zero.
+- `VmafModel *` — owned by the same Go owner and destroyed only after context
+  close succeeds, because the context retains model pointers through teardown.
 - `VmafPicture` — allocated by Go (stack struct, heap planes via
   `vmaf_picture_alloc`); ownership transferred to libvmaf on
   `vmaf_read_pictures`. On error before the read call, Go calls

@@ -194,7 +194,6 @@ func TestNewExtended_AllNames(t *testing.T) {
 		{codec: "libaom-av1", wantName: "libaom-av1", wantLo: 0, wantHi: 63},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.codec, func(t *testing.T) {
 			t.Parallel()
 			enc, err := NewExtended(tc.codec)

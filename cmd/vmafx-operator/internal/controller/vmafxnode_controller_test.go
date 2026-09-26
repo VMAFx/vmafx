@@ -52,10 +52,8 @@ var _ = Describe("VmafxNode controller", func() {
 		DeferCleanup(srv.Close)
 
 		node := &vmafxv1.VmafxNode{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-node-healthy",
-				Namespace: "default",
-			},
+			Name:      "test-node-healthy",
+			Namespace: "default",
 			Spec: vmafxv1.VmafxNodeSpec{
 				GPUVendor: "nvidia",
 				Capacity:  1,
@@ -91,10 +89,8 @@ var _ = Describe("VmafxNode controller", func() {
 		DeferCleanup(srv.Close)
 
 		node := &vmafxv1.VmafxNode{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-node-unhealthy",
-				Namespace: "default",
-			},
+			Name:      "test-node-unhealthy",
+			Namespace: "default",
 			Spec: vmafxv1.VmafxNodeSpec{
 				GPUVendor: "amd",
 				Capacity:  2,
@@ -136,10 +132,8 @@ var _ = Describe("VmafxNode controller", func() {
 		// in-memory staleTime carries nanoseconds that the API server drops.
 		staleTime := metav1.NewTime(time.Now().Add(-90 * time.Second).Truncate(time.Second))
 		node := &vmafxv1.VmafxNode{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-node-stale",
-				Namespace: "default",
-			},
+			Name:      "test-node-stale",
+			Namespace: "default",
 			Spec: vmafxv1.VmafxNodeSpec{
 				GPUVendor: "intel",
 			},

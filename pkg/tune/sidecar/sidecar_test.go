@@ -6,6 +6,7 @@ package sidecar
 import (
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -275,7 +276,7 @@ func TestStateRoundTrip(t *testing.T) {
 		PredictorVersion: DefaultPredictorVersion}
 	model := NewModel(cfg)
 	features := predictor.ShotFeatures{ProbeBitrateKbps: 4200.5, FPS: 24, Width: 1920}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if err := model.Update(features, 90+float64(i), 85, 23+i); err != nil {
 			t.Fatalf("Update: %v", err)
 		}
@@ -327,9 +328,7 @@ func TestLoadFallsBackToColdStart(t *testing.T) {
 
 	mutate := func(edit func(map[string]any)) string {
 		state := map[string]any{}
-		for k, v := range good {
-			state[k] = v
-		}
+		maps.Copy(state, good)
 		edit(state)
 		raw, err := json.Marshal(state)
 		if err != nil {

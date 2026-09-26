@@ -16,7 +16,7 @@
 //   - per-frame: vmaf_picture_alloc x2, read planes, vmaf_read_pictures
 //   - flush: vmaf_read_pictures(NULL, NULL, 0)
 //   - vmaf_score_pooled (MEAN)
-//   - cleanup: vmaf_model_destroy + vmaf_close
+//   - cleanup: retryable vmaf_close, then vmaf_model_destroy after success
 //
 // Locale: setlocale(LC_NUMERIC, "C") is invoked once via init() — ADR-0137.
 
@@ -45,6 +45,7 @@ import "C"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -226,6 +227,77 @@ func init() {
 // operator sees the choice without a per-call spam.
 var directOnce sync.Once
 
+// cgoScoringOwner keeps the model alive until vmaf_close has successfully
+// released every context-side reference to it.  A failed context close leaves
+// both callbacks installed so a stateful owner can retry without using freed
+// dependencies.  Function-scoped callers surface the error and deliberately
+// leak the retained C objects rather than manufacture a use-after-free.
+type cgoScoringOwner struct {
+	closeContext func() error
+	destroyModel func()
+}
+
+func mapCloseRC(rc int) error {
+	if rc == 0 {
+		return nil
+	}
+	if rc < 0 {
+		return mapErrno("vmaf_close", rc)
+	}
+	return fmt.Errorf("libvmaf: vmaf_close returned unexpected positive status %d", rc)
+}
+
+func newCGOScoringOwner(vmafCtx *C.VmafContext) cgoScoringOwner {
+	return cgoScoringOwner{
+		closeContext: func() error {
+			return mapCloseRC(int(C.vmaf_close(vmafCtx)))
+		},
+	}
+}
+
+func (o *cgoScoringOwner) ownModel(model *C.VmafModel) {
+	o.destroyModel = func() { C.vmaf_model_destroy(model) }
+}
+
+// Close releases the context first, then the model.  On context failure no
+// ownership state is cleared and the model is not destroyed, making a later
+// call a retry of the same teardown.
+func (o *cgoScoringOwner) Close() error {
+	if o.closeContext != nil {
+		if err := o.closeContext(); err != nil {
+			return err
+		}
+		o.closeContext = nil
+	}
+	if o.destroyModel != nil {
+		o.destroyModel()
+		o.destroyModel = nil
+	}
+	return nil
+}
+
+// closeWithImmediateRetry is for function-scoped owners that cannot return a
+// retry handle to their caller.  It makes one bounded retry, preserves the
+// first error if both attempts fail, and never destroys the model before a
+// successful context close.
+func (o *cgoScoringOwner) closeWithImmediateRetry() error {
+	firstErr := o.Close()
+	if firstErr == nil {
+		return nil
+	}
+	if retryErr := o.Close(); retryErr == nil {
+		return nil
+	}
+	return firstErr
+}
+
+func closeAfterError(operation string, primary error, owner *cgoScoringOwner) error {
+	if closeErr := owner.closeWithImmediateRetry(); closeErr != nil {
+		return errors.Join(primary, fmt.Errorf("%s cleanup: %w", operation, closeErr))
+	}
+	return primary
+}
+
 // LogDirectPathSelected emits a one-shot INFO-level marker that the direct
 // cgo scoring path is being used.  The MCP tool handlers call this on the
 // first dispatched request when VMAFX_MCP_DIRECT=1 is set.
@@ -246,18 +318,23 @@ func LogDirectPathSelected() {
 // fallback path remains the caller's responsibility.
 //
 // Goroutine safety: each call constructs a fresh VmafContext + VmafModel and
-// destroys them on return.  Concurrent ScoreDirect calls are safe — libvmaf
-// is thread-safe at the per-context level since 2.0.0.
+// closes the context before destroying its model.  A close failure gets one
+// immediate retry; persistent failure is returned and the C owners are left
+// allocated rather than freeing a dependency still referenced by the context.
+// Concurrent ScoreDirect calls are safe — libvmaf is thread-safe at the
+// per-context level since 2.0.0.
 //
 // The supplied ctx governs cancellation of the per-frame read+queue loop.
 // libvmaf itself has no cancellation API, so cancellation is checked at frame
 // boundaries: when ctx.Done() fires we unref any half-allocated pictures,
-// abandon the loop, and let the deferred vmaf_close / vmaf_model_destroy
-// release the context cleanly.  Cancelled calls return ctx.Err() wrapped
+// abandon the loop, and let the deferred ordered owner close the context then
+// destroy the model.  Cancelled calls return ctx.Err() wrapped
 // in fmt.Errorf so callers can use errors.Is(err, context.Canceled).
 // Passing nil ctx is treated as context.Background().
 // Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
-func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (*ScoreDirectResult, error) {
+func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (
+	result *ScoreDirectResult, retErr error,
+) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -273,18 +350,16 @@ func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (*ScoreDirectResul
 	if err := mapErrno("vmaf_init", int(rc)); err != nil {
 		return nil, err
 	}
-	defer C.vmaf_close(vmafCtx)
+	owner := newCGOScoringOwner(vmafCtx)
+	defer func() {
+		if closeErr := owner.closeWithImmediateRetry(); closeErr != nil {
+			result = nil
+			retErr = errors.Join(retErr, fmt.Errorf("ScoreDirect cleanup: %w", closeErr))
+		}
+	}()
 
-	model, err := loadModelFromPath(req.ModelPath, "vmaf_direct")
+	model, err := loadAndRegisterDirectModel(vmafCtx, req.ModelPath, &owner)
 	if err != nil {
-		return nil, err
-	}
-	defer C.vmaf_model_destroy(model)
-
-	// vmaf_use_features_from_model registers the feature extractors the
-	// model's predictor needs.
-	rc = C.vmaf_use_features_from_model(vmafCtx, model)
-	if err := mapErrno("vmaf_use_features_from_model", int(rc)); err != nil {
 		return nil, err
 	}
 
@@ -315,6 +390,21 @@ func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (*ScoreDirectResul
 		return nil, err
 	}
 	return &ScoreDirectResult{VMAF: score, FrameCount: frameIdx, Backend: "cpu"}, nil
+}
+
+func loadAndRegisterDirectModel(
+	vmafCtx *C.VmafContext, modelPath string, owner *cgoScoringOwner,
+) (*C.VmafModel, error) {
+	model, err := loadModelFromPath(modelPath, "vmaf_direct")
+	if err != nil {
+		return nil, err
+	}
+	owner.ownModel(model)
+	rc := C.vmaf_use_features_from_model(vmafCtx, model)
+	if err := mapErrno("vmaf_use_features_from_model", int(rc)); err != nil {
+		return nil, err
+	}
+	return model, nil
 }
 
 // validateScoreDirectRequest fails fast with typed errors rather than relying
@@ -423,9 +513,8 @@ const maxDirectFrames = 1 << 20
 //
 // Cancellation is checked at frame boundaries — libvmaf has no cancellation
 // API, so this is the only place the loop can bail out.  Returning here lets
-// the caller's deferred vmaf_close + vmaf_model_destroy release whatever
-// state libvmaf accumulated; the un-flushed frames simply never reach
-// vmaf_score_pooled.
+// the caller's deferred ordered owner release whatever state libvmaf
+// accumulated; the un-flushed frames simply never reach vmaf_score_pooled.
 func feedDirectFrames(
 	ctx context.Context,
 	vmafCtx *C.VmafContext,

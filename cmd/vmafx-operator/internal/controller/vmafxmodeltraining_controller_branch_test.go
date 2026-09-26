@@ -22,7 +22,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -39,10 +38,8 @@ var _ = Describe("VmafxModelTraining controller — branch coverage", func() {
 			Scheme: scheme,
 		}
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      "never-created-training",
-				Namespace: "default",
-			},
+			Name:      "never-created-training",
+			Namespace: "default",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RequeueAfter).To(BeZero())
@@ -50,10 +47,8 @@ var _ = Describe("VmafxModelTraining controller — branch coverage", func() {
 
 	It("preserves Phase when the training run is already past Initializing", func() {
 		mt := &vmafxv1.VmafxModelTraining{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-training-running",
-				Namespace: "default",
-			},
+			Name:      "test-training-running",
+			Namespace: "default",
 			Spec: vmafxv1.VmafxModelTrainingSpec{
 				BaseModel:      "vmaf_v0.6.1",
 				Algorithm:      "online-sgd-ema",

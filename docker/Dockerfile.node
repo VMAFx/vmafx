@@ -292,7 +292,7 @@ RUN go mod download
 # Keep module download independently cacheable from source compilation.
 # hadolint ignore=DL3059
 RUN CGO_ENABLED=${CGO_ENABLED} \
-    CGO_LDFLAGS="-L/usr/local/lib -lvmaf" \
+    CGO_LDFLAGS="-L/usr/local/lib -lvmaf -lm" \
     go build \
         -trimpath \
         -ldflags "-s -w -X github.com/VMAFx/vmafx/pkg/version.version=${VMAFX_VERSION}" \

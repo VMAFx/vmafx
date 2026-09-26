@@ -468,12 +468,7 @@ func Known() []string {
 
 // HasPreset reports whether preset is in the adapter's mnemonic table.
 func (a *Adapter) HasPreset(preset string) bool {
-	for _, p := range a.Presets {
-		if p == preset {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(a.Presets, preset)
 }
 
 // Validate mirrors the Python adapter's validate(): unknown preset or an

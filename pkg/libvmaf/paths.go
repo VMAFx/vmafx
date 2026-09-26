@@ -62,7 +62,7 @@ func discoverRepoRoot() (string, bool) {
 	// same thing as walking off the root: the marker was not found.
 	maxSteps := strings.Count(cwd, string(os.PathSeparator)) + 2
 	dir := cwd
-	for step := 0; step < maxSteps; step++ {
+	for range maxSteps {
 		if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err == nil {
 			return dir, true
 		}

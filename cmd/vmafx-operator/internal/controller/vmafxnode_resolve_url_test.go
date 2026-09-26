@@ -84,7 +84,6 @@ func TestResolveControllerHTTPURL_DefaultNamespaceInURL(t *testing.T) {
 	}
 	r := &VmafxNodeReconciler{}
 	for _, ns := range []string{"default", "prod", "staging", "my-ns"} {
-		ns := ns
 		t.Run(ns, func(t *testing.T) {
 			t.Parallel()
 			got := r.resolveControllerHTTPURL(ns)

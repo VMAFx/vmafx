@@ -27,17 +27,14 @@ func TestExecuteDoesNotAdoptChildExitStatus(t *testing.T) {
 
 	// The interface still matches — that is precisely why Execute must not use
 	// it as the discriminator.
-	var coder exitCoder
-	if !errors.As(wrapped, &coder) {
+	if _, ok := errors.AsType[exitCoder](wrapped); !ok {
 		t.Skip("*exec.ExitError no longer satisfies exitCoder; the trap is gone")
 	}
 
-	var codePtr *exitCodeError
-	if errors.As(wrapped, &codePtr) {
+	if codePtr, ok := errors.AsType[*exitCodeError](wrapped); ok {
 		t.Errorf("a wrapped *exec.ExitError matched *exitCodeError; the CLI would exit %d", codePtr.ExitCode())
 	}
-	var codeVal exitCodeError
-	if errors.As(wrapped, &codeVal) {
+	if codeVal, ok := errors.AsType[exitCodeError](wrapped); ok {
 		t.Errorf("a wrapped *exec.ExitError matched exitCodeError; the CLI would exit %d", codeVal.ExitCode())
 	}
 

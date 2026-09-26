@@ -547,6 +547,15 @@ Reported upstream as [Netflix/vmaf#743](https://github.com/Netflix/vmaf/issues/7
 | 101 | No frames were decoded (empty or too-short input, or a `--frame_skip_*` value past end-of-stream). `vmaf` writes `no frames decoded ...` to stderr. |
 | 102 | An input stream failed to read (truncated file, unreadable media, I/O error). `vmaf` writes `problem while reading pictures` to stderr and writes **no** output file, so a partial score cannot be mistaken for a complete one (ADR-1262). |
 
+Context cleanup is also part of success. The CLI makes at most two immediate
+`vmaf_close()` attempts. If both fail, it prints
+`vmaf: context cleanup failed after 2 attempts (err=<n>); retaining dependent resources`
+and exits non-zero. Imported backend state and models deliberately remain alive
+until process exit instead of being freed beneath the retained context. The
+`vmaf_bench` and `vmaf_vpl` tools use the same two-attempt rule and emit the
+same diagnostic shape with their own command prefix. Embedders should follow
+the retry ownership contract documented in [the C API](../api/index.md#core-lifecycle-api).
+
 A reference or distorted stream that simply **ends earlier than its partner** is
 not an error. `vmaf` writes `"<path>" ended before "<path>".` to stderr, scores
 the frames the two have in common, and exits 0 — scoring a shorter distorted

@@ -41,7 +41,6 @@ func TestNewLogger_LevelResolution(t *testing.T) {
 		{"notalevel", true, false}, // unrecognised → INFO
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.in, func(t *testing.T) {
 			t.Parallel()
 			// NewLogger writes to stdout; use a custom handler with the
@@ -257,7 +256,7 @@ func TestNewShutdownContext_NoGoroutineLeak(t *testing.T) {
 	baseline := runtime.NumGoroutine()
 
 	const iterations = 100
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		_, stop := NewShutdownContext()
 		stop()
 	}

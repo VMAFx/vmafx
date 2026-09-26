@@ -142,7 +142,7 @@ func TestParzen_isAProperDensity(t *testing.T) {
 			p := newParzen(tc.values, dim, 1.0)
 			const steps = 20000
 			integral := 0.0
-			for i := 0; i < steps; i++ {
+			for i := range steps {
 				x := dim.Lo + (float64(i)+0.5)*(dim.Hi-dim.Lo)/steps
 				integral += math.Exp(p.logPDF(x)) * (dim.Hi - dim.Lo) / steps
 			}
@@ -179,7 +179,7 @@ func TestParzen_sampleStaysInBounds(t *testing.T) {
 	//nolint:gosec // G404: deterministic test fixture, not a security context.
 	rng := rand.New(rand.NewSource(1))
 
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		v := p.sample(rng)
 		if v < dim.Lo || v > dim.Hi {
 			t.Fatalf("sample %v escaped [%v, %v]", v, dim.Lo, dim.Hi)
@@ -234,7 +234,7 @@ func TestTPESampler_startupIsUniform(t *testing.T) {
 	s := NewTPESampler(dims, DefaultTPEConfig(), 1)
 
 	seen := map[float64]bool{}
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		p := s.Suggest()
 		crf, grainy := p["crf"], p["grainy"]
 		if crf < 18 || crf > 40 || crf != math.Trunc(crf) {
@@ -291,7 +291,7 @@ func TestTPESampler_convergesOnTheOptimum(t *testing.T) {
 	for seed := int64(1); seed <= seeds; seed++ {
 		s := NewTPESampler(dims, DefaultTPEConfig(), seed)
 		var tpeLate []float64
-		for i := 0; i < trials; i++ {
+		for i := range trials {
 			p := s.Suggest()
 			s.Observe(p, math.Abs(p["x"]-optimum))
 			if i >= lateAt {
@@ -303,7 +303,7 @@ func TestTPESampler_convergesOnTheOptimum(t *testing.T) {
 		//nolint:gosec // G404: deterministic test fixture, not a security context.
 		rng := rand.New(rand.NewSource(seed))
 		var uniformLate []float64
-		for i := 0; i < trials; i++ {
+		for i := range trials {
 			x := rng.Float64() * 100.0
 			if i >= lateAt {
 				uniformLate = append(uniformLate, x)
@@ -333,7 +333,7 @@ func TestTPESampler_isDeterministic(t *testing.T) {
 	run := func(seed int64) []map[string]float64 {
 		s := NewTPESampler(dims, DefaultTPEConfig(), seed)
 		out := make([]map[string]float64, 0, 30)
-		for i := 0; i < 30; i++ {
+		for range 30 {
 			p := s.Suggest()
 			out = append(out, p)
 			s.Observe(p, math.Abs(p["crf"]-30))
@@ -367,7 +367,7 @@ func TestTPESampler_degenerateDimension(t *testing.T) {
 
 	dims := []Dimension{{Name: "crf", Kind: KindInt, Lo: 23, Hi: 23}}
 	s := NewTPESampler(dims, DefaultTPEConfig(), 1)
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		p := s.Suggest()
 		if p["crf"] != 23 {
 			t.Fatalf("proposal %v on a degenerate axis, want 23", p["crf"])

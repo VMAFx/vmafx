@@ -19,6 +19,7 @@ Shared application wiring for `vmafx-server` and `vmafx-controller`.
 
 ```bash
 CGO_ENABLED=0 go test ./internal/app/scoringservice/
-CGO_LDFLAGS=-L$PWD/core/build-cpu/src LD_LIBRARY_PATH=$PWD/core/build-cpu/src \
+CGO_LDFLAGS="-L$PWD/core/build-cpu/src -lvmaf -lm" \
+  LD_LIBRARY_PATH=$PWD/core/build-cpu/src \
   go test ./cmd/vmafx-server/ ./cmd/vmafx-controller/
 ```

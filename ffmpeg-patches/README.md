@@ -41,8 +41,9 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   `hip_device` integer option on the `libvmaf` filter and the
   `--enable-libvmaf-hip` configure flag. When `hip_device >= 0` the
   filter inits a `VmafHipState` on the selected AMD ROCm/HIP device,
-  imports it via `vmaf_hip_import_state`, and frees the state after
-  `vmaf_close()`. Completes the SYCL / Vulkan / CUDA / HIP selector
+  imports it via `vmaf_hip_import_state`, and frees the state only after
+  `vmaf_close()` returns exactly zero (enforced cumulatively by patch 0020).
+  Completes the SYCL / Vulkan / CUDA / HIP selector
   symmetry on the `libvmaf` filter. A dedicated `libvmaf_hip` filter
   for ROCm hwdec zero-copy import is deferred until FFmpeg exposes a
   ROCm/HIP hardware-frame context (no `ffhipcodec` equivalent of
@@ -89,11 +90,22 @@ Local patches against FFmpeg **n9.0.2** for integrating this VMAF fork into
   AAC-window, and table invariants become explicit; disabled HVQM decoders no
   longer leave dead helpers; and DASH, SmoothStreaming, RTSP, and ismindex
   propagate the failures exposed while hardening those paths.
+- **`0020-libvmaf-honor-retryable-close-ownership.patch`** — makes every
+  FFmpeg `vmaf_close()` owner honor libvmaf's retryable teardown contract.
+  Each owner makes at most one immediate retry, treats only an exact zero as
+  ownership transfer, and retains all models and imported backend state when
+  both attempts fail. The ordinary filter, dedicated CUDA/SYCL/Vulkan/Metal
+  filters, and `libvmaf_tune` all share that fail-closed ordering. The dedicated
+  CUDA filter also holds an `AVHWFramesContext` reference until close succeeds,
+  keeping its borrowed `CUcontext` alive through retries. The Vulkan hunks
+  remain compatibility-only context for the removed backend, as described in
+  `series.txt`; they do not restore a Vulkan runtime.
 
 Every libvmaf integration patch is guarded by `check_pkg_config` so it degrades
 gracefully when libvmaf was built without the relevant feature
 (`-Denable_dnn`, `-Denable_sycl`, `-Denable_vulkan`, `-Denable_cuda`,
-`-Denable_hip`). Patch 0019 hardens the pinned FFmpeg baseline itself.
+`-Denable_hip`). Patch 0019 hardens the pinned FFmpeg baseline itself. Patch
+0020 hardens the teardown ownership boundary shared by those filters.
 
 ## What works without a patch
 
@@ -147,11 +159,13 @@ Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 > `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch
 > `git apply --check`. The latter rejects `0002+` because they
 > reference cumulative-state hunks that don't exist in pristine
-> `n9.0.2`. All 19 patches replay cumulatively on upstream commit
+> `n9.0.2`. All 20 patches replay cumulatively on upstream commit
 > `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; patches 0001–0018 remain
 > byte-identical to the n9.0.1 series, while 0019 carries the warning-clean
-> compiler hardening. The resulting tree is
-> `1fd76f79179a6a51b5bb773a89c5334c6324c755`. The refresh evidence and
+> compiler hardening and 0020 carries the retryable teardown contract. The
+> resulting tree is `18f1772438491879abc28028d10bda7ae32cc796`.
+> The same 20-patch series also replays on n9.0.1, producing tree
+> `0918464997239e1ed03a47f334fdae2b1221c71e`. The refresh evidence and
 > earlier replay history live in
 > [`docs/rebase-notes.md`](../docs/rebase-notes.md).
 

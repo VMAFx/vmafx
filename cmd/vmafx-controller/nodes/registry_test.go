@@ -122,7 +122,7 @@ func TestCount(t *testing.T) {
 		t.Errorf("initial count: got %d, want 0", r.Count())
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		_, _, err := r.Register("w", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 		if err != nil {
 			t.Fatalf("Register %d: %v", i, err)
@@ -247,7 +247,7 @@ func TestAllSeq(t *testing.T) {
 // allocation in All is unavoidable even when the caller wants the first match).
 func TestAllSeq_earlyBreak(t *testing.T) {
 	r := newTestRegistry(t)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, _, _ = r.Register("worker", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
 	}
 

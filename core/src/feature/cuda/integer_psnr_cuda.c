@@ -153,16 +153,25 @@ static int psnr_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis, Vm
  * resources are released in the same order on every exit path, and the
  * value returned is the one the label returned.
  */
-static int psnr_init_unwind(VmafFeatureExtractor *fex, PsnrStateCuda *s)
+static int psnr_init_unwind(VmafFeatureExtractor *fex, PsnrStateCuda *s, int cause)
 {
-    for (unsigned p = 0; p < s->n_planes; p++)
-        (void)vmaf_cuda_kernel_readback_free(&s->rb[p], fex->cu_state);
-    if (s->feature_name_dict) {
-        (void)vmaf_dictionary_free(&s->feature_name_dict);
+    int rc = cause;
+    const int phase_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
+    if (phase_rc)
+        return rc ? rc : phase_rc;
+
+    for (unsigned p = 0; p < s->n_planes; p++) {
+        const int e = vmaf_cuda_kernel_readback_free(&s->rb[p], fex->cu_state);
+        if (e && !rc)
+            rc = e;
     }
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    return -ENOMEM;
+    int e = vmaf_dictionary_free(&s->feature_name_dict);
+    if (e && !rc)
+        rc = e;
+    e = vmaf_cuda_module_unload(fex->cu_state, &s->module);
+    if (e && !rc)
+        rc = e;
+    return rc;
 }
 
 /* psnr_cuda_plane_geometry - derive the per-plane dimensions from pix_fmt.
@@ -217,7 +226,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
      * → cuCtxPopCurrent block every CUDA feature kernel hand-rolled. */
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
-        return err;
+        return psnr_init_unwind(fex, s, err);
 
     /* Module load + function lookups stay per-feature (each metric
      * has its own .ptx blob and entry-point names). */
@@ -245,22 +254,20 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     for (unsigned p = 0; p < s->n_planes; p++) {
         err = vmaf_cuda_kernel_readback_alloc(&s->rb[p], fex->cu_state, sizeof(uint64_t));
         if (err)
-            return psnr_init_unwind(fex, s);
+            return psnr_init_unwind(fex, s, err);
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
-        return psnr_init_unwind(fex, s);
+        return psnr_init_unwind(fex, s, -ENOMEM);
 
     return 0;
 
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    return _cuda_err;
+    return psnr_init_unwind(fex, s, _cuda_err);
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -367,23 +374,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     PsnrStateCuda *s = fex->priv;
-
-    /* Lifecycle teardown via the template (sync → destroy stream →
-     * destroy events). Best-effort error aggregation matches the
-     * old hand-rolled CHECK_CUDA_GOTO chain. */
-    int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    for (unsigned p = 0; p < s->n_planes; p++) {
-        const int err = vmaf_cuda_kernel_readback_free(&s->rb[p], fex->cu_state);
-        if (err && rc == 0)
-            rc = err;
-    }
-    const int err = vmaf_dictionary_free(&s->feature_name_dict);
-    if (err && rc == 0)
-        rc = err;
-    const int module_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    if (rc == 0)
-        rc = module_rc;
-    return rc;
+    return psnr_init_unwind(fex, s, 0);
 }
 
 /* Provided features — full luma + chroma per the chroma extension

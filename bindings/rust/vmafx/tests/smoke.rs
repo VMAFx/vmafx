@@ -23,6 +23,12 @@ fn context_default_constructs_and_drops() {
 }
 
 #[test]
+fn context_explicit_close_consumes_on_success() {
+    let ctx = Context::new().expect("Context::new failed");
+    ctx.close().expect("Context::close failed");
+}
+
+#[test]
 fn context_builder_round_trip() {
     let _ctx = ContextBuilder::new()
         .log_level(LogLevel::None)

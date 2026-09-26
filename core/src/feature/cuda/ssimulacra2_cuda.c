@@ -601,44 +601,67 @@ static void ss2c_downsample_2x2(const float *in, unsigned iw, unsigned ih, float
 
 static int close_fex_cuda(VmafFeatureExtractor *fex);
 
+static int ss2c_alloc_raw_host_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s,
+                                       size_t worst_plane_bytes)
+{
+    for (int p = 0; p < 3; p++) {
+        int ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_ref_raw[p], worst_plane_bytes);
+        if (ret)
+            return ret;
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_dis_raw[p], worst_plane_bytes);
+        if (ret)
+            return ret;
+        s->raw_plane_bytes[p] = worst_plane_bytes;
+    }
+    return 0;
+}
+
+static int ss2c_alloc_device_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s, size_t bytes)
+{
+    VmafCudaBuffer **buffers[] = {
+        &s->d_ref_lin, &s->d_dis_lin,      &s->d_ref_xyb,       &s->d_dis_xyb,
+        &s->d_mul_buf, &s->d_blur_scratch, &s->d_transpose_buf, &s->d_mu1,
+        &s->d_mu2,     &s->d_s11,          &s->d_s22,           &s->d_s12,
+    };
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++) {
+        const int ret = vmaf_cuda_buffer_alloc(fex->cu_state, buffers[i], bytes);
+        if (ret)
+            return ret;
+    }
+    return 0;
+}
+
+static int ss2c_alloc_float_host_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s,
+                                         size_t bytes)
+{
+    void **buffers[] = {
+        (void **)&s->h_ref_lin,    (void **)&s->h_dis_lin, (void **)&s->h_ref_lin_ds,
+        (void **)&s->h_dis_lin_ds, (void **)&s->h_ref_xyb, (void **)&s->h_dis_xyb,
+        (void **)&s->h_mu1,        (void **)&s->h_mu2,     (void **)&s->h_s11,
+        (void **)&s->h_s22,        (void **)&s->h_s12,
+    };
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++) {
+        const int ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, buffers[i], bytes);
+        if (ret)
+            return ret;
+    }
+    return 0;
+}
+
 static int ss2c_alloc_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
 {
     const size_t three_plane_bytes = 3u * (size_t)s->width * (size_t)s->height * sizeof(float);
     /* Worst-case raw plane bytes per channel (luma full-res, 16-bit). The
      * actual sub-sampled chroma dims come from the VmafPicture in
-     * `extract_fex_cuda`; we lazily reuse the pinned buffer if its size
-     * fits. Allocate to the upper bound so 4:4:4 / 16-bit also fits. */
+     * `extract_fex_cuda`; allocate to the upper bound so 4:4:4 / 16-bit fits. */
     const size_t worst_plane_bytes = (size_t)s->width * (size_t)s->height * 2u;
-    int ret = 0;
-    for (int p = 0; p < 3; p++) {
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_ref_raw[p], worst_plane_bytes);
-        ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_dis_raw[p], worst_plane_bytes);
-        s->raw_plane_bytes[p] = worst_plane_bytes;
-    }
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_ref_lin, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_dis_lin, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_ref_xyb, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_dis_xyb, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_mul_buf, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_blur_scratch, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_transpose_buf, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_mu1, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_mu2, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_s11, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_s22, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_s12, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref_lin, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_dis_lin, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref_lin_ds, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_dis_lin_ds, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref_xyb, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_dis_xyb, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_mu1, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_mu2, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_s11, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_s22, three_plane_bytes);
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_s12, three_plane_bytes);
-    return ret ? -ENOMEM : 0;
+    int ret = ss2c_alloc_raw_host_buffers(fex, s, worst_plane_bytes);
+    if (ret)
+        return ret;
+    ret = ss2c_alloc_device_buffers(fex, s, three_plane_bytes);
+    if (ret)
+        return ret;
+    return ss2c_alloc_float_host_buffers(fex, s, three_plane_bytes);
 }
 
 /* ss2c_load_kernels - stream creation, both PTX modules and every kernel
@@ -679,10 +702,10 @@ static int ss2c_load_kernels(VmafFeatureExtractor *fex, Ssimu2StateCuda *s, Cuda
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);
-    (void)vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module_mul);
-    (void)vmaf_cuda_module_unload(fex->cu_state, &s->module_blur);
-    return _cuda_err;
+    {
+        const int cleanup_rc = close_fex_cuda(fex);
+        return _cuda_err ? _cuda_err : cleanup_rc;
+    }
 }
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -715,8 +738,8 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int ret = ss2c_alloc_buffers(fex, s);
     if (ret) {
-        (void)close_fex_cuda(fex);
-        return ret;
+        const int cleanup_rc = close_fex_cuda(fex);
+        return ret ? ret : cleanup_rc;
     }
     return 0;
 }
@@ -1239,21 +1262,14 @@ out:
     return ss2c_submit_unwind(cu_f, ctx_pushed, _cuda_err);
 }
 
-/* ss2c_close_stream_and_modules - drain the stream, unload both PTX modules
- * and destroy the stream.
+/* ss2c_close_stream - drain and destroy the stream before any allocation or
+ * module teardown.
  *
  * HISS-04: lifted verbatim out of close_fex_cuda.
  */
-static int ss2c_close_stream_and_modules(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
+static int ss2c_close_stream(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
 {
-    int rc = vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
-    const int blur_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module_blur);
-    if (rc == 0)
-        rc = blur_rc;
-    const int mul_rc = vmaf_cuda_module_unload(fex->cu_state, &s->module_mul);
-    if (rc == 0)
-        rc = mul_rc;
-    return rc;
+    return vmaf_cuda_stream_destroy(fex->cu_state, &s->str, true);
 }
 
 /* ss2c_free_device_buffers - the twelve device allocations.
@@ -1265,11 +1281,9 @@ static int ss2c_free_device_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *
     int ret = 0;
 #define SS2C_FREE_DEV(b)                                                                           \
     do {                                                                                           \
-        if (s->b) {                                                                                \
-            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->b);                                     \
-            free(s->b);                                                                            \
-            s->b = NULL;                                                                           \
-        }                                                                                          \
+        const int e = vmaf_cuda_buffer_free_owned(fex->cu_state, &s->b);                           \
+        if (e && !ret)                                                                             \
+            ret = e;                                                                               \
     } while (0)
     SS2C_FREE_DEV(d_ref_lin);
     SS2C_FREE_DEV(d_dis_lin);
@@ -1296,10 +1310,9 @@ static int ss2c_free_host_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
     int ret = 0;
 #define SS2C_FREE_HOST(p)                                                                          \
     do {                                                                                           \
-        if (s->p) {                                                                                \
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->p);                                \
-            s->p = NULL;                                                                           \
-        }                                                                                          \
+        const int e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->p);             \
+        if (e && !ret)                                                                             \
+            ret = e;                                                                               \
     } while (0)
     SS2C_FREE_HOST(h_ref_lin);
     SS2C_FREE_HOST(h_dis_lin);
@@ -1315,14 +1328,12 @@ static int ss2c_free_host_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
 #undef SS2C_FREE_HOST
 
     for (int p = 0; p < 3; p++) {
-        if (s->h_ref_raw[p]) {
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_ref_raw[p]);
-            s->h_ref_raw[p] = NULL;
-        }
-        if (s->h_dis_raw[p]) {
-            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_dis_raw[p]);
-            s->h_dis_raw[p] = NULL;
-        }
+        int e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, &s->h_ref_raw[p]);
+        if (e && !ret)
+            ret = e;
+        e = vmaf_cuda_buffer_host_free_owned(fex->cu_state, &s->h_dis_raw[p]);
+        if (e && !ret)
+            ret = e;
     }
     return ret;
 }
@@ -1332,13 +1343,22 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     Ssimu2StateCuda *s = fex->priv;
     if (!s)
         return 0;
-    int ret = ss2c_close_stream_and_modules(fex, s);
-    const int device_rc = ss2c_free_device_buffers(fex, s);
-    if (ret == 0)
-        ret = device_rc;
-    const int host_rc = ss2c_free_host_buffers(fex, s);
-    if (ret == 0)
-        ret = host_rc;
+    int ret = ss2c_close_stream(fex, s);
+    if (ret)
+        return ret;
+
+    int e = ss2c_free_device_buffers(fex, s);
+    if (e && !ret)
+        ret = e;
+    e = ss2c_free_host_buffers(fex, s);
+    if (e && !ret)
+        ret = e;
+    e = vmaf_cuda_module_unload(fex->cu_state, &s->module_blur);
+    if (e && !ret)
+        ret = e;
+    e = vmaf_cuda_module_unload(fex->cu_state, &s->module_mul);
+    if (e && !ret)
+        ret = e;
     return ret;
 }
 

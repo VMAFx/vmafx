@@ -218,7 +218,6 @@ func TestBuild_invalidParams(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := ladder.Build("src.mp4", "libx264", tc.params)

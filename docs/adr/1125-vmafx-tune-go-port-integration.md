@@ -143,6 +143,13 @@ not see:
    is not this fork at all. Recorded here; the fix (failing closed when the
    fork's libvmaf is absent) is deliberately left out of this PR's scope.
 
+The third item was resolved on 2026-09-26. `pkg/libvmaf` no longer supplies an
+implicit `#cgo LDFLAGS` value. Make, Go CI, and each cgo container build now
+select the verified fork library explicitly; an unqualified `go test` fails at
+link time instead of searching a system libvmaf. The source-level workflow
+contract pins every required caller so a new build surface cannot silently
+reintroduce the fallback.
+
 ## References
 
 - `req` — user direction 2026-08-30: continue the Go migration and get local-only

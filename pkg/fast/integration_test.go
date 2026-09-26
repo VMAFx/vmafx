@@ -153,7 +153,7 @@ func TestProbePipelineExtractsRealFeatures(t *testing.T) {
 	// adm2 and the vif scales are ratios in [0, 1]; motion2 is unbounded but
 	// non-negative. A vector outside those ranges means the pooled keys were
 	// mismatched rather than merely missing.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if gotFeatures[i] < 0 || gotFeatures[i] > 1.0001 {
 			t.Errorf("feature %s = %v, outside the expected [0, 1] range",
 				canonical6[i], gotFeatures[i])

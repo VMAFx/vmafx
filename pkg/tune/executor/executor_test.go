@@ -594,7 +594,7 @@ func TestRunPlanWritesPortableJSONL(t *testing.T) {
 	params.EncodeRunner, params.ScoreRunner, params.Log = encode, score, quietLogger()
 
 	// Two runs to prove the log appends rather than truncates.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if _, err := RunPlan(context.Background(), plan, "src.mkv", params); err != nil {
 			t.Fatalf("RunPlan (run %d): %v", i, err)
 		}

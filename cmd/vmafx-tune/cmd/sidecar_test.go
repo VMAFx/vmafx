@@ -8,6 +8,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -438,9 +439,7 @@ func TestSidecarFeaturesFromMapping(t *testing.T) {
 	t.Run("non-numeric required value", func(t *testing.T) {
 		t.Parallel()
 		bad := map[string]any{}
-		for k, v := range base {
-			bad[k] = v
-		}
+		maps.Copy(bad, base)
 		bad["probe_bitrate_kbps"] = true
 		_, err := sidecarFeaturesFromMapping(bad)
 		if err == nil || !strings.Contains(err.Error(), "not numeric") {

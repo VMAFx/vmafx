@@ -235,7 +235,7 @@ func CoarseGridCRFs(crfMin, crfMax, coarseStep int) ([]int, error) {
 	n := (crfMax-crfMin)/coarseStep + 1
 	seen := make(map[int]bool, n)
 	grid := make([]int, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		c := CRFClamp(crfMin + i*coarseStep)
 		if !seen[c] {
 			seen[c] = true

@@ -1581,17 +1581,26 @@ static int adm_cuda_load_kernels(CudaFunctions *cu_f, AdmStateCuda *s)
  * succeeds, so only what was created is destroyed. */
 static int adm_cuda_destroy_stream_events(VmafCudaState *cu_state, AdmStateCuda *s)
 {
-    int rc = vmaf_cuda_event_destroy(cu_state, &s->dis_event);
+    int rc = vmaf_cuda_stream_destroy(cu_state, &s->str, true);
+    if (rc)
+        return rc;
+
+    rc = vmaf_cuda_event_destroy(cu_state, &s->dis_event);
     const int ref_rc = vmaf_cuda_event_destroy(cu_state, &s->ref_event);
-    if (rc == 0)
+    if (!rc)
         rc = ref_rc;
     const int finished_rc = vmaf_cuda_event_destroy(cu_state, &s->finished);
-    if (rc == 0)
+    if (!rc)
         rc = finished_rc;
-    const int stream_rc = vmaf_cuda_stream_destroy(cu_state, &s->str, true);
-    if (rc == 0)
-        rc = stream_rc;
     return rc;
+}
+
+static int adm_cuda_release_device(VmafCudaState *cu_state, AdmStateCuda *s)
+{
+    const int lifecycle_rc = adm_cuda_destroy_stream_events(cu_state, s);
+    if (lifecycle_rc)
+        return lifecycle_rc;
+    return adm_cuda_unload_modules(cu_state, s);
 }
 
 /* Create the fex stream and events and load the kernels, with the fex context
@@ -1610,19 +1619,11 @@ static int adm_cuda_init_device_locked(VmafCudaState *cu_state, AdmStateCuda *s)
     if (!_cuda_err) {
         return 0;
     }
-    /* Unload whatever modules loaded before the failing call. */
-    (void)adm_cuda_unload_modules(cu_state, s);
 fail:
-    (void)adm_cuda_destroy_stream_events(cu_state, s);
-    return _cuda_err;
-}
-
-/* Undo adm_cuda_init_device(): used when a later init step fails, because the
- * framework never calls close() after a failed init(). */
-static void adm_cuda_release_device(VmafFeatureExtractor *fex, AdmStateCuda *s)
-{
-    (void)adm_cuda_unload_modules(fex->cu_state, s);
-    (void)adm_cuda_destroy_stream_events(fex->cu_state, s);
+    {
+        const int release_rc = adm_cuda_release_device(cu_state, s);
+        return _cuda_err ? _cuda_err : release_rc;
+    }
 }
 
 /* Everything init needs from the device: stream, events, kernels and the SM
@@ -1650,35 +1651,47 @@ static int adm_cuda_init_device(VmafFeatureExtractor *fex, AdmStateCuda *s)
     const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
     if (pop_res != CUDA_SUCCESS) {
         (void)cu_f->cuCtxPopCurrent(NULL);
-        adm_cuda_release_device(fex, s);
+        (void)adm_cuda_release_device(fex->cu_state, s);
         return vmaf_cuda_result_to_errno((int)pop_res);
     }
     return 0;
 }
 
 /* Free a device buffer and its handle; a NULL buffer was never allocated. */
-static int adm_cuda_free_device_buffer(VmafCudaState *cu_state, VmafCudaBuffer *buf)
+static int adm_cuda_free_device_buffer(VmafCudaState *cu_state, VmafCudaBuffer **buf)
 {
-    if (!buf) {
-        return 0;
-    }
-    const int ret = vmaf_cuda_buffer_free(cu_state, buf);
-    free(buf);
-    return ret;
+    return vmaf_cuda_buffer_free_owned(cu_state, buf);
 }
 
-/* Free every buffer init allocated. Returns the OR of the free results. */
+static void adm_cuda_preserve_error(int *rc, int err)
+{
+    if (!*rc)
+        *rc = err;
+}
+
+/* Free every buffer init allocated while preserving the first error. */
 static int adm_cuda_free_buffers(VmafCudaState *cu_state, AdmBufferCuda *buf)
 {
-    int ret = 0;
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->data_buf);
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_ref);
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_dis);
-    ret |= adm_cuda_free_device_buffer(cu_state, buf->tmp_res);
-    if (buf->results_host) {
-        ret |= vmaf_cuda_buffer_host_free(cu_state, buf->results_host);
-    }
-    return ret;
+    int rc = 0;
+    adm_cuda_preserve_error(&rc, adm_cuda_free_device_buffer(cu_state, &buf->data_buf));
+    adm_cuda_preserve_error(&rc, adm_cuda_free_device_buffer(cu_state, &buf->tmp_ref));
+    adm_cuda_preserve_error(&rc, adm_cuda_free_device_buffer(cu_state, &buf->tmp_dis));
+    adm_cuda_preserve_error(&rc, adm_cuda_free_device_buffer(cu_state, &buf->tmp_res));
+    adm_cuda_preserve_error(&rc, vmaf_cuda_buffer_host_free_owned(cu_state, &buf->results_host));
+    return rc;
+}
+
+static int adm_cuda_init_unwind(VmafFeatureExtractor *fex, AdmStateCuda *s, int err)
+{
+    const int lifecycle_rc = adm_cuda_destroy_stream_events(fex->cu_state, s);
+    if (lifecycle_rc)
+        return err ? err : lifecycle_rc;
+
+    int rc = err;
+    adm_cuda_preserve_error(&rc, adm_cuda_free_buffers(fex->cu_state, &s->buf));
+    adm_cuda_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
+    adm_cuda_preserve_error(&rc, adm_cuda_unload_modules(fex->cu_state, s));
+    return rc;
 }
 
 /* Allocate the device buffers and the pinned result buffer of a frame `h`
@@ -1744,8 +1757,7 @@ static int adm_cuda_carve_buffers(VmafCudaState *cu_state, AdmStateCuda *s, size
 }
 
 /* Allocate and lay out every buffer of a `w` x `h` frame and build the
- * feature-name dictionary. Any failure frees what was allocated and returns
- * -ENOMEM. */
+ * feature-name dictionary. The caller owns the phase-ordered unwind. */
 static int adm_cuda_init_buffers(VmafFeatureExtractor *fex, AdmStateCuda *s, unsigned w, unsigned h)
 {
     s->integer_stride = ALIGN_CEIL(w * sizeof(int32_t));
@@ -1765,11 +1777,7 @@ static int adm_cuda_init_buffers(VmafFeatureExtractor *fex, AdmStateCuda *s, uns
         }
     }
 
-    ret |= adm_cuda_free_buffers(fex->cu_state, &s->buf);
-    (void)vmaf_dictionary_free(&s->feature_name_dict);
-    (void)ret; // accumulated cleanup status intentionally discarded on error path
-
-    return -ENOMEM;
+    return ret ? ret : -ENOMEM;
 }
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -1801,10 +1809,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
 
     const int buf_err = adm_cuda_init_buffers(fex, s, w, h);
-    if (buf_err) {
-        adm_cuda_release_device(fex, s);
-    }
-    return buf_err;
+    if (buf_err)
+        return adm_cuda_init_unwind(fex, s, buf_err);
+    return 0;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -1850,12 +1857,14 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     AdmStateCuda *s = fex->priv;
     int ret = adm_cuda_destroy_stream_events(fex->cu_state, s);
+    if (ret)
+        return ret;
 
-    ret |= adm_cuda_free_buffers(fex->cu_state, &s->buf);
+    ret = adm_cuda_free_buffers(fex->cu_state, &s->buf);
 
-    ret |= vmaf_dictionary_free(&s->feature_name_dict);
+    adm_cuda_preserve_error(&ret, vmaf_dictionary_free(&s->feature_name_dict));
     const int module_rc = adm_cuda_unload_modules(fex->cu_state, s);
-    if (ret == 0)
+    if (!ret)
         ret = module_rc;
     return ret;
 }

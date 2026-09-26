@@ -63,8 +63,7 @@ func DefaultCommandRunner(ctx context.Context, argv []string) (string, string, i
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return stdout.String(), stderr.String(), exitErr.ExitCode(), nil
 		}
 		return stdout.String(), stderr.String(), 1, err
@@ -250,7 +249,7 @@ func ParseVStats(content string) (iAvg, pAvg, bAvg float64) {
 	sums := map[string]float64{"I": 0, "P": 0, "B": 0}
 	counts := map[string]int{"I": 0, "P": 0, "B": 0}
 
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		typeMatch := vstatsTypeRE.FindStringSubmatch(line)
 		sizeMatch := vstatsSizeRE.FindStringSubmatch(line)
 		if typeMatch == nil || sizeMatch == nil {
@@ -303,7 +302,7 @@ func SignalstatsCommand(shot pershot.Shot, source string, cfg ExtractorConfig, f
 // the same approximation.
 func ParseSignalstats(metadata string) SignalStats {
 	var yavg, ydif, yvar []float64
-	for _, line := range strings.Split(metadata, "\n") {
+	for line := range strings.SplitSeq(metadata, "\n") {
 		switch {
 		case strings.Contains(line, "lavfi.signalstats.YAVG="):
 			yavg = append(yavg, parseMetadataFloat(line))
@@ -523,13 +522,7 @@ func runSaliency(
 	if _, statErr := os.Stat(rawPath); statErr != nil {
 		return 0.0, 0.0
 	}
-	samples := cfg.SaliencyFrameSamples
-	if samples < 1 {
-		samples = 1
-	}
-	if samples > frames {
-		samples = frames
-	}
+	samples := min(max(cfg.SaliencyFrameSamples, 1), frames)
 	mean, variance, salErr := saliency(
 		rawPath, geometry.Width, geometry.Height, samples, cfg.SaliencyModel)
 	if salErr != nil {

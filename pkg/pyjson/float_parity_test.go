@@ -93,7 +93,7 @@ func TestFormatFloatRoundTrips(t *testing.T) {
 		state = state*6364136223846793005 + 1442695040888963407
 		return state
 	}
-	for i := 0; i < 20000; i++ {
+	for range 20000 {
 		x := math.Float64frombits(next())
 		if math.IsNaN(x) || math.IsInf(x, 0) {
 			continue

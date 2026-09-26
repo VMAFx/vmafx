@@ -276,14 +276,6 @@ func TestGracefulShutdown(t *testing.T) {
 	}
 }
 
-// min is a small integer minimum helper (for test truncation only).
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // TestScoreEndpoint_RejectsOversizedBody guards the ADR-0978 regression: the
 // /v1/score endpoint must cap incoming JSON bodies to maxScoreRequestBodyBytes
 // (1 MiB) so an unauthenticated POST with a multi-GB body cannot OOM the
