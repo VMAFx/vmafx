@@ -1451,6 +1451,7 @@ nav:
         - "ADR-1335: research-digest-identity-ratchet": adr/1335-research-digest-identity-ratchet.md
         - "ADR-1336: cuda-context-owned-resource-teardown": adr/1336-cuda-context-owned-resource-teardown.md
         - "ADR-1337: cpp-placement-new-visibility": adr/1337-cpp-placement-new-visibility.md
+        - "ADR-1338: go-fix-clean-tree-gate": adr/1338-go-fix-clean-tree-gate.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

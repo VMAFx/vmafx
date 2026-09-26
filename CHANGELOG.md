@@ -13933,6 +13933,10 @@ No code changes in this PR — research only.
   canonical key. (ADR-0935)
 
 
+- Modernize the Go tree with Go 1.27's fixers and require
+  `go fix -diff ./...` to stay clean in CI and local Make checks.
+
+
 - Consolidated Go tuning model-argument formatting, sorted registry enumeration,
   and scoring-backend detection onto their canonical implementations while
   preserving bare/default model semantics and strict explicit-backend selection;
@@ -23568,6 +23572,9 @@ proposed follow-up.
   of `dist_device`.
 
 
+- CUDA extractor teardown now retains partial-init state, registered and pooled contexts, worker-private contexts, ring-picture slots, drain streams, and driver state until their fallible close phase succeeds. `vmaf_close()` retains a teardown-only context after any nonzero result and invalidates the pointer only on exact 0; internal pthread-style errors are normalized to negative errno. Unimported CUDA state-free now releases runtime handles retry-safely, while duplicate imports fail with `-EBUSY`. The CLI, benchmark, VPL, embedded MCP compute handler, and FFmpeg patch-stack callers retain dependencies, retry safely where appropriate, and fail closed after persistent cleanup failure.
+
+
 - Fixed the fail-closed CI contract reporting a workflow comment as a fail-open: it searched a step's whole text for `|| true`, so a comment recording that the suffix had been removed failed the gate. Full-line comments are now dropped before the check; inline trailing comments and real suffixes are still caught, pinned by a new case in `scripts/ci/test_fail_closed_ci.py`.
 
 
@@ -24161,6 +24168,12 @@ is addressed.
 - The in-place Cython extension under `compat/python-vmaf/core/*.so`
   (`setup.py build_ext`) is ignored too — it was showing as an untracked file
   after any Python-harness build.
+
+
+- Go cgo builds now require each caller to select a verified VMAFx libvmaf
+  explicitly. Local Make/CI builds use `core/build-cpu/src`, container builders
+  use their staged fork library, and a missing selection fails at link time
+  instead of silently falling through to a distro or stale system libvmaf.
 
 
 - Go context-propagation sweep: callers that previously dropped a

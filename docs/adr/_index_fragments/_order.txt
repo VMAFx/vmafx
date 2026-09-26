@@ -1048,3 +1048,4 @@
 1337-cpp-placement-new-visibility
 1333-meson-test-secret-env-sanitization
 1336-cuda-context-owned-resource-teardown
+1338-go-fix-clean-tree-gate
