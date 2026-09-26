@@ -40,7 +40,6 @@
 
 #include "test.h"
 
-#include "dict.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_metal.h"
 #include "libvmaf/picture.h"
@@ -246,6 +245,21 @@ static char *test_integer_psnr_cpu_metal_parity(void)
     return NULL;
 }
 
+/* Register integer_psnr_metal with enable_chroma=false. `vmaf` is an open
+ * context and the feature name is a registered literal, so none of the
+ * argument guards in vmaf_use_feature() can fire: it owns `opts` on every
+ * path it can take here, and the caller must not free it afterwards. */
+static int use_psnr_metal_without_chroma(VmafContext *vmaf)
+{
+    VmafFeatureDictionary *opts = NULL;
+    int err = vmaf_feature_dictionary_set(&opts, "enable_chroma", "false");
+    if (err) {
+        (void)vmaf_feature_dictionary_free(&opts);
+        return err;
+    }
+    return vmaf_use_feature(vmaf, "integer_psnr_metal", opts);
+}
+
 static char *test_integer_psnr_metal_enable_chroma_false(void)
 {
     VmafMetalConfiguration mcfg = {.device_index = -1, .flags = 0};
@@ -256,20 +270,14 @@ static char *test_integer_psnr_metal_enable_chroma_false(void)
         return NULL;
     }
 
-    VmafDictionary *opts = NULL;
-    err = vmaf_dictionary_set(&opts, "enable_chroma", "false", 0);
-    mu_assert("vmaf_dictionary_set(enable_chroma=false) failed", !err);
-
     VmafContext *vmaf = NULL;
     char *open_err = open_metal_context(&vmaf, mstate);
     if (open_err) {
-        (void)vmaf_dictionary_free(&opts);
         vmaf_metal_state_free(&mstate);
         return open_err;
     }
 
-    err = vmaf_use_feature(vmaf, "integer_psnr_metal", opts);
-    (void)vmaf_dictionary_free(&opts);
+    err = use_psnr_metal_without_chroma(vmaf);
     mu_assert("Metal: vmaf_use_feature(integer_psnr_metal, enable_chroma=false) failed", !err);
 
     char *feed_err = feed_fixture_pair(vmaf);

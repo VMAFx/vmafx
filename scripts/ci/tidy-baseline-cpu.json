@@ -4,8 +4,9 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "cc (GCC) 16.2.1 20260810",
-  "tus": 296,
+  "tus": 306,
   "measured_sources": [
+    "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
     "core/src/cuda/dispatch_strategy.c",
     "core/src/dict.cpp",
@@ -29,7 +30,6 @@
     "core/src/feature/common/convolution_avx512.c",
     "core/src/feature/delta_e_itp.c",
     "core/src/feature/fastdvdnet_pre.c",
-    "core/src/feature/feature_collector.c",
     "core/src/feature/feature_collector.cpp",
     "core/src/feature/feature_dists.c",
     "core/src/feature/feature_extractor.cpp",
@@ -121,6 +121,7 @@
     "core/src/hip/dispatch_strategy.c",
     "core/src/hip/stubs.c",
     "core/src/libvmaf.c",
+    "core/src/log.c",
     "core/src/log.cpp",
     "core/src/mcp/3rdparty/cJSON/cJSON.c",
     "core/src/mem.cpp",
@@ -147,12 +148,14 @@
     "core/test/dnn/test_model_loader.c",
     "core/test/dnn/test_onnx_scan.c",
     "core/test/dnn/test_op_allowlist.c",
+    "core/test/dnn/test_ort_error_injection.c",
     "core/test/dnn/test_ort_internals.c",
     "core/test/dnn/test_tensor_io.c",
     "core/test/dnn/test_tiny_model_verify.c",
     "core/test/dnn/test_vmaf_use_tiny_model.c",
     "core/test/test.c",
     "core/test/test_adm_angle_flag.c",
+    "core/test/test_adm_cm_row_rounding.c",
     "core/test/test_adm_coverage.c",
     "core/test/test_adm_csf.c",
     "core/test/test_adm_csf_representable.c",
@@ -228,6 +231,7 @@
     "core/test/test_log.c",
     "core/test/test_lpips.c",
     "core/test/test_luminance_tools.cpp",
+    "core/test/test_metal_ms_ssim_option_semantics.c",
     "core/test/test_mkdirp.c",
     "core/test/test_mobilesal.c",
     "core/test/test_model.c",
@@ -245,6 +249,8 @@
     "core/test/test_niqe.c",
     "core/test/test_opt.c",
     "core/test/test_output.c",
+    "core/test/test_output_open_eintr.c",
+    "core/test/test_path_utf8.c",
     "core/test/test_pdjson.c",
     "core/test/test_pdjson_stack_increment.c",
     "core/test/test_perceptual_weight.c",
@@ -295,16 +301,20 @@
     "core/test/test_y4m_alloc_failure.c",
     "core/test/test_y_funque_plus.c",
     "core/tools/cli_parse.cpp",
+    "core/tools/test/test_vmaf_close_retry.c",
+    "core/tools/test/test_vmaf_per_shot_input.c",
     "core/tools/vidinput.c",
     "core/tools/vmaf.cpp",
     "core/tools/vmaf_bench.c",
+    "core/tools/vmaf_close_retry.c",
     "core/tools/vmaf_per_shot.c",
+    "core/tools/vmaf_per_shot_input.c",
     "core/tools/vmaf_roi.c",
     "core/tools/y4m_input.c",
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 620,
+  "total_warnings": 613,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -313,7 +323,7 @@
     "core/include/libvmaf/model.h": 8,
     "core/include/libvmaf/picture.h": 3,
     "core/src/cpu.h": 1,
-    "core/src/dict.cpp": 16,
+    "core/src/dict.cpp": 15,
     "core/src/dict.h": 4,
     "core/src/dict_internal.h": 2,
     "core/src/feature/adm.c": 31,
@@ -340,7 +350,6 @@
     "core/src/feature/iqa/iqa_os.h": 1,
     "core/src/feature/iqa/math_utils.h": 6,
     "core/src/feature/iqa/ssim_tools.c": 4,
-    "core/src/feature/moment.c": 2,
     "core/src/feature/moment_options.h": 1,
     "core/src/feature/motion.c": 2,
     "core/src/feature/motion_blend_tools.h": 1,
@@ -362,7 +371,6 @@
     "core/src/feature/x86/motion_avx512.c": 18,
     "core/src/fex_ctx_vector.h": 2,
     "core/src/framesync.h": 1,
-    "core/src/gpu_picture_pool.cpp": 1,
     "core/src/gpu_picture_pool.h": 2,
     "core/src/hip/stubs.c": 2,
     "core/src/mcp/3rdparty/cJSON/cJSON.h": 8,
@@ -371,7 +379,7 @@
     "core/src/metadata_handler.h": 3,
     "core/src/opt.h": 4,
     "core/src/output.h": 1,
-    "core/src/pdjson.h": 5,
+    "core/src/pdjson.h": 4,
     "core/src/percentile.h": 1,
     "core/src/picture.h": 2,
     "core/src/picture_pool.c": 4,
@@ -392,7 +400,7 @@
     "core/test/test_ciede.c": 11,
     "core/test/test_context.c": 14,
     "core/test/test_cpu.c": 2,
-    "core/test/test_dict.cpp": 31,
+    "core/test/test_dict.cpp": 29,
     "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_locale_handling.c": 21,
     "core/test/test_log.c": 4,
@@ -411,68 +419,25 @@
   "scoped_updates": [
     {
       "sources": [
-        "core/src/feature/feature_collector.cpp"
+        "core/src/dict.cpp",
+        "core/test/test_dict.cpp"
       ],
       "clang_tidy_version": "22.1.8",
       "changes": {
-        "core/src/feature/feature_collector.cpp": {
+        "core/src/dict.cpp": {
           "warnings": [
             16,
-            0
+            15
           ]
-        }
-      },
-      "previous_baseline_sha256": "e76e9b9d928ebd7fa2e6173a1df8432012e51bcfbb69c6f81a09e2b288b774f1"
-    },
-    {
-      "sources": [
-        "core/test/test_feature_collector.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/test/test_feature_collector.c": {
+        },
+        "core/test/test_dict.cpp": {
           "warnings": [
-            16,
-            12
+            31,
+            29
           ]
         }
       },
-      "previous_baseline_sha256": "c83fe0d98a3dfa5f5e59d10b956d833fb8755189753c2e6faa792426e45a4079"
-    },
-    {
-      "sources": [
-        "core/test/test_predict.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/test/test_predict.c": {
-          "warnings": [
-            14,
-            13
-          ]
-        }
-      },
-      "previous_baseline_sha256": "57778564931d10279bdb2b70f61edd55a18e801f3a3c3e5a3daa3467c363a884"
-    },
-    {
-      "sources": [
-        "core/src/fex_ctx_vector.cpp",
-        "core/test/test_adm_nonfinite_score.c",
-        "core/test/test_feature_collector.c",
-        "core/test/test_feature_extractor.c",
-        "core/test/test_fex_ctx_vector.cpp",
-        "core/test/test_output_open_eintr.c"
-      ],
-      "clang_tidy_version": "22.1.8",
-      "changes": {
-        "core/test/test_feature_collector.c": {
-          "warnings": [
-            12,
-            0
-          ]
-        }
-      },
-      "previous_baseline_sha256": "8ccb7ff2a7a33a3e7329dc56447f190351fdb37bdcac1df01300375c33875b48"
+      "previous_baseline_sha256": "fac46c37d4c29471a611672e43390b6d1ab2246a1c424143e2f6f2d5d3088a1e"
     }
   ]
 }

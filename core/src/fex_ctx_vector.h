@@ -19,11 +19,14 @@
 #ifndef __VMAF_SRC_FEX_CTX_VECTOR_H__
 #define __VMAF_SRC_FEX_CTX_VECTOR_H__
 
+/* Outside the extern "C" block: in C++ mode feature_extractor.h pulls in
+ * <atomic>, whose templates cannot take C linkage. The header carries its
+ * own extern "C" guard for its declarations. */
+#include "feature/feature_extractor.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "feature/feature_extractor.h"
 
 /**
  * @brief Dynamic array of registered feature-extractor contexts.

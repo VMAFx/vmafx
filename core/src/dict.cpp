@@ -40,7 +40,6 @@
  * marginal here; kept simple.)
  */
 
-#include <cassert>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -122,7 +121,11 @@ dict_normalize_numeric(std::string_view val)
 {
     if (d->cnt < d->size)
         return {};
-    assert(d->size > 0);
+    /* A hard guard, not assert(): a zero size would make the doubling a
+     * no-op and leave the caller writing past cnt, and assert() is compiled
+     * out under NDEBUG exactly where that matters. */
+    if (d->size == 0)
+        return std::unexpected(-EINVAL);
     const std::size_t sz = d->size * sizeof(*d->entry) * 2u;
     auto *entry = static_cast<VmafDictionaryEntry *>(std::realloc(d->entry, sz));
     if (!entry)
