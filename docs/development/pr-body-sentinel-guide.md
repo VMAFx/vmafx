@@ -13,6 +13,12 @@ wired by `make hooks-install`) and the standalone validator
 before the push. The hook bounds `gh` lookup time, falls back to the
 repository's public pull-request pages when local credentials are unavailable,
 and blocks the push if neither source can establish the PR state and body.
+Like the CI gate, the hook skips the machine-generated release-please PR
+(ADR-1151): it asks `scripts/ci/release-pr-exempt.sh` whether the PR's head
+ref is `release-please--…` **and** its author is a bot, using the author that
+`gh` reports. A human PR on a `release-please--` branch is still validated, and
+so is every PR looked up through the public-page fallback, which carries no
+author identity.
 
 ## Quick start
 
