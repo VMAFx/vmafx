@@ -39,6 +39,12 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
+      # PEP 440 spelling of `version` (ADR-1201): hatchling names the vmaf-mcp
+      # wheel and sdist `vmaf_mcp-1.0.0rc1*`, not `vmaf_mcp-1.0.0-rc.1*`.
+      # Every Python distribution FILENAME match (and the PyPI release URL)
+      # uses this; SBOM identities keep `version`, because the wheel METADATA
+      # and therefore Syft's package version and purl keep the SemVer spelling.
+      pep440_version: ${{ steps.release.outputs.pep440_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -86,8 +92,12 @@ jobs:
             echo "ERROR: $RELEASE_TAG must name a published GitHub release with prerelease=$tag_is_rc" >&2
             exit 1
           fi
-          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+          pep440_version="$(scripts/release/pep440-version.sh "${RELEASE_TAG#v}")"
+          {
+            echo "tag=$RELEASE_TAG"
+            echo "version=${RELEASE_TAG#v}"
+            echo "pep440_version=$pep440_version"
+          } >> "$GITHUB_OUTPUT"
       - name: Require the protected publication environments to exist
         env:
           GH_TOKEN: ${{ github.token }}
@@ -282,15 +292,16 @@ jobs:
           python-version: "3.14.7"
       - name: Prepare native and Python SBOM roots
         env:
-          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+          VMAFX_PEP440_VERSION: ${{ needs.validate-release.outputs.pep440_version }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          wheels=(mcp-dist/vmaf_mcp-"$VMAFX_VERSION"-*.whl)
-          sdists=(mcp-dist/vmaf_mcp-"$VMAFX_VERSION".tar.gz)
+          wheels=(mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION"-*.whl)
+          sdists=(mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION".tar.gz)
           distributions=(mcp-dist/*)
           if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
-                ${#distributions[@]} -ne 2 ]]; then
+                ${#distributions[@]} -ne 2 ||
+                ! -f "${sdists[0]}" ]]; then
             echo "ERROR: expected one version-matched wheel and sdist" >&2
             exit 1
           fi
@@ -380,6 +391,9 @@ jobs:
                   .alg == "SHA-256" and .content == $sha))
             ' sbom/vmafx.cdx.json >/dev/null
           done
+          # SemVer on purpose, not pep440_version: hatchling 1.32 writes the
+          # pyproject spelling (1.0.0-rc.1) into METADATA and Syft 1.51 copies
+          # it verbatim into versionInfo and the purl.
           jq -e --arg version "$VMAFX_VERSION" '
             . as $doc
             | first(
@@ -524,14 +538,15 @@ jobs:
       - name: Compute SHA256 hashes (SLSA input)
         id: hash
         env:
-          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+          VMAFX_PEP440_VERSION: ${{ needs.validate-release.outputs.pep440_version }}
         run: |
           shopt -s nullglob
-          wheels=(mcp-dist/vmaf_mcp-"$VMAFX_VERSION"-*.whl)
-          sdists=(mcp-dist/vmaf_mcp-"$VMAFX_VERSION".tar.gz)
+          wheels=(mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION"-*.whl)
+          sdists=(mcp-dist/vmaf_mcp-"$VMAFX_PEP440_VERSION".tar.gz)
           distributions=(mcp-dist/*)
           if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
-                ${#distributions[@]} -ne 2 ]]; then
+                ${#distributions[@]} -ne 2 ||
+                ! -f "${sdists[0]}" ]]; then
             echo "ERROR: expected exactly one version-matched wheel and sdist" >&2
             exit 1
           fi
@@ -607,15 +622,16 @@ jobs:
       - name: Refuse immutable PyPI filename/hash divergence
         id: pypi-state
         env:
-          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+          VMAFX_PEP440_VERSION: ${{ needs.validate-release.outputs.pep440_version }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          wheels=(dist/vmaf_mcp-"$VMAFX_VERSION"-*.whl)
-          sdists=(dist/vmaf_mcp-"$VMAFX_VERSION".tar.gz)
+          wheels=(dist/vmaf_mcp-"$VMAFX_PEP440_VERSION"-*.whl)
+          sdists=(dist/vmaf_mcp-"$VMAFX_PEP440_VERSION".tar.gz)
           distributions=(dist/*)
           if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
-                ${#distributions[@]} -ne 2 ]]; then
+                ${#distributions[@]} -ne 2 ||
+                ! -f "${sdists[0]}" ]]; then
             echo "ERROR: expected one version-matched wheel and sdist" >&2
             exit 1
           fi
@@ -623,13 +639,13 @@ jobs:
           response="$RUNNER_TEMP/pypi-release.json"
           http_code="$(curl --retry 3 --silent --show-error \
             --output "$response" --write-out '%{http_code}' \
-            "https://pypi.org/pypi/vmaf-mcp/$VMAFX_VERSION/json")"
+            "https://pypi.org/pypi/vmaf-mcp/$VMAFX_PEP440_VERSION/json")"
           publish=false
           case "$http_code" in
             200)
               while IFS= read -r filename; do
                 if [[ ! -f "dist/$filename" ]]; then
-                  echo "ERROR: PyPI has unexpected file for $VMAFX_VERSION: $filename" >&2
+                  echo "ERROR: PyPI has unexpected file for $VMAFX_PEP440_VERSION: $filename" >&2
                   exit 1
                 fi
               done < <(jq -r '.urls[].filename' "$response")
@@ -678,16 +694,17 @@ jobs:
       - name: Verify exact immutable PyPI file set after publication
         env:
           PUBLISH_PERFORMED: ${{ steps.pypi-state.outputs.publish }}
-          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+          VMAFX_PEP440_VERSION: ${{ needs.validate-release.outputs.pep440_version }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          wheels=(dist/vmaf_mcp-"$VMAFX_VERSION"-*.whl)
-          sdists=(dist/vmaf_mcp-"$VMAFX_VERSION".tar.gz)
+          wheels=(dist/vmaf_mcp-"$VMAFX_PEP440_VERSION"-*.whl)
+          sdists=(dist/vmaf_mcp-"$VMAFX_PEP440_VERSION".tar.gz)
           distribution_files=(dist/*.whl dist/*.tar.gz)
           all_files=(dist/*)
           if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 ||
-                ${#distribution_files[@]} -ne 2 ]]; then
+                ${#distribution_files[@]} -ne 2 ||
+                ! -f "${sdists[0]}" ]]; then
             echo "ERROR: expected one version-matched wheel and sdist" >&2
             exit 1
           fi
@@ -716,7 +733,7 @@ jobs:
           for attempt in {1..12}; do
             http_code="$(curl --retry 3 --silent --show-error --output "$response" \
               --write-out '%{http_code}' \
-              "https://pypi.org/pypi/vmaf-mcp/$VMAFX_VERSION/json")"
+              "https://pypi.org/pypi/vmaf-mcp/$VMAFX_PEP440_VERSION/json")"
             if [[ "$http_code" == "200" &&
                   "$(jq '.urls | length' "$response")" -eq 2 ]]; then
               break
@@ -733,7 +750,7 @@ jobs:
           fi
           while IFS= read -r filename; do
             if [[ ! -f "dist/$filename" ]]; then
-              echo "ERROR: PyPI has unexpected file for $VMAFX_VERSION: $filename" >&2
+              echo "ERROR: PyPI has unexpected file for $VMAFX_PEP440_VERSION: $filename" >&2
               exit 1
             fi
           done < <(jq -r '.urls[].filename' "$response")
