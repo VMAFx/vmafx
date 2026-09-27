@@ -9,7 +9,7 @@
 # image built from `dev/Containerfile` and that a host-side build is
 # diagnostic-only. The native release job (`build-artifacts` in
 # `.github/workflows/supply-chain.yml`, ADR-1346) builds that file's
-# `libvmaf-build` stage on a GitHub-hosted runner and runs the release build
+# `build-deps` stage on a GitHub-hosted runner and runs the release build
 # inside it; the local `vmaf-dev-mcp` container is the same file's final stage.
 # Until this script existed the policy was documentation-only: nothing in the
 # release path could tell a container build from a host build, so a host-built
@@ -49,8 +49,8 @@
 #   check-container-build.sh --verify <artifact-dir>
 #       Verify a previously-stamped artifact directory. Runs anywhere (the
 #       verifying job need not itself be containerised); fails closed when the
-#       stamp is missing, truncated, of an unknown schema, or does not declare
-#       a container build.
+#       stamp is a symlink, missing, truncated, of an unknown schema, or does
+#       not declare a container build.
 #
 # The --stamp / --verify pair is the shape the release path needs: the build
 # job stamps the staged `artifacts/` tree, and a later job (or a consumer)
@@ -200,6 +200,14 @@ verify_dir() {
   if [ ! -d "$dir" ]; then
     echo "check-container-build: not a directory: ${dir}" >&2
     return 2
+  fi
+
+  # A symlink is not staged provenance: it can point outside the artifact
+  # tree at a file the build never wrote. verify-native-release-artifacts.sh
+  # rejects one for the same reason.
+  if [ -L "$stamp" ]; then
+    fail "container-only publishing policy violated: ${stamp} is a symlink, not a staged stamp"
+    return 1
   fi
 
   if [ ! -s "$stamp" ]; then

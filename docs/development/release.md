@@ -121,7 +121,10 @@ carries an inline comment saying so.
 4. **An authenticated operator publishes the draft.** Publication creates the
    `vX.Y.Z` tag and emits the `release.published` event. This explicit gate is
    deliberate: publication is the irreversible step, and a human is the only
-   actor allowed to take it.
+   actor allowed to take it. Before publishing, add the
+   [native Linux bundle requirements](#release-notes-native-linux-bundle-requirements)
+   to the draft's release notes; GitHub generates the body from pull requests
+   and does not add them.
 5. **The publication workflows** check out the published release's immutable
    tag rather than the default branch. The Docker workflows derive their image
    tags from the same `github.event.release.tag_name`; the other release jobs
@@ -281,14 +284,39 @@ LD_LIBRARY_PATH="$PWD" ./vmaf --version
 ```
 
 **Runtime requirement: glibc 2.43 or newer.** The bundle is compiled in the
-Ubuntu 26.04 dev container ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md)),
-and `libvmaf.so` binds `sqrtf@GLIBC_2.43` and `GLIBCXX_3.4.30`. It runs on
-Ubuntu 26.04 and distributions of the same generation. It does not load on
-Ubuntu 24.04 (glibc 2.39), which fails with
-`version 'GLIBC_2.43' not found`. On older systems use the production
+Ubuntu 26.04 `build-deps` stage of the dev container
+([ADR-1346](../adr/1346-hosted-slim-container-release-build.md)), and
+`libvmaf.so` binds `sqrtf@GLIBC_2.43` and `GLIBCXX_3.4.30`. It runs on Ubuntu
+26.04 and distributions of the same generation. It does not load on Ubuntu
+24.04 (glibc 2.39) or Debian 13 (glibc 2.41), including the fork's own
+distroless Debian 13 runtime image; each fails with
+`version 'GLIBC_2.43' not found`. On those systems use the production
 containers or build from source. Check a host with `ldd --version`. The bundle
 is CPU-only and built without the ONNX Runtime tiny-AI backend, so it needs no
 GPU runtime or `libonnxruntime`.
+
+This floor is a recorded exception to `build-config.env`'s rule that published
+artifacts are built on the Debian 13 release track. Building the native bundle
+on that track, so that it loads on glibc 2.41 and Ubuntu 24.04-class systems,
+is tracked as `T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27` in
+[`docs/state.md`](../state.md) and is due before the final 1.0.0.
+
+#### Release notes: native Linux bundle requirements
+
+GitHub builds the release body from merged pull requests, so it never states
+the runtime floor on its own. Until the release-track row above is closed,
+the operator adds this section to the draft release notes before publishing
+every release, starting with `v1.0.0-rc.1`:
+
+```markdown
+### Native Linux bundle: system requirements
+
+The `vmaf` CLI and `libvmaf.so*` files attached to this release need glibc
+2.43 or newer (Ubuntu 26.04 or a distribution of the same generation). They
+are not supported on Ubuntu 24.04 (glibc 2.39) or Debian 13 (glibc 2.41) and
+fail there with `version 'GLIBC_2.43' not found`. On those systems use the
+`ghcr.io/vmafx/vmafx` container images or build from source.
+```
 
 The clean-environment release gate exercises that same layout after an
 artifact upload/download round trip and requires the CLI's `DT_NEEDED` entry
@@ -305,20 +333,29 @@ release artifacts to be built inside `dev/Containerfile`.
 ADR-1178's self-hosted runner) meets that on a GitHub-hosted runner:
 
 - **Where**: `build-artifacts` in `.github/workflows/supply-chain.yml` runs on
-  `ubuntu-latest`. It builds the `libvmaf-build` stage of the release tag's own
-  `dev/Containerfile` with `scripts/ci/build-dev-container-stage.sh`, the same
-  script the Dev Container PR gate runs. The build uses no layer cache and no
-  registry.
-- **How long**: the stage build takes about 30 to 35 minutes, based on the PR
-  gate's recent hosted runs. The job has a 90-minute limit. No workstation or
-  self-hosted runner has to be online.
+  `ubuntu-latest`. It builds the `build-deps` stage of the release tag's own
+  `dev/Containerfile` with `scripts/ci/build-dev-container-stage.sh build-deps`.
+  That stage is the digest-pinned Ubuntu 26.04 base plus Ubuntu archive
+  packages (gcc-13, Meson, Ninja, NASM); it downloads nothing from third
+  parties and needs no GitHub token. The build uses no external layer cache
+  and no registry. Archive packages resolve when the stage is built, so a
+  later rebuild of the same tag may use newer distribution packages.
+- **How long**: an uncached stage build took about two minutes and the
+  release compile about two and a half minutes on four workstation CPUs. The
+  job has a 60-minute limit. No workstation or self-hosted runner has to be
+  online.
 - **Compile**: `scripts/release/build-native-release-artifacts.sh` runs inside
-  the image with networking disabled. It uses the Meson flags
-  `--buildtype=release -Denable_avx512=true -Denable_cuda=false
+  the image with `docker run --pull never --network none` as the runner's
+  user. It refuses to build unless the checkout is `GITHUB_SHA`, uses the
+  Meson flags `--buildtype=release -Denable_avx512=true -Denable_cuda=false
   -Denable_sycl=false -Denable_dnn=disabled`, stages the bundle, stamps
   `container-build-provenance.txt` with
   `scripts/ci/check-container-build.sh --stamp` and runs
   `scripts/release/verify-native-release-artifacts.sh`.
+- **Rehearsal**: the Dev Container PR gate builds the same stage with the
+  same script and runs the same invocation on every container-affecting pull
+  request, against a local tag named after `.release-please-manifest.json`'s
+  version, so a change that would break the release compile fails there.
 - **Verification**: `verify-native-artifacts` runs on `ubuntu-26.04`, the
   oldest hosted image that can load the bundle. It checks the stamp with
   `--verify` and exercises the downloaded CLI in a clean environment. The

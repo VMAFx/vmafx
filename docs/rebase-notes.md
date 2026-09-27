@@ -54471,16 +54471,24 @@ regex. Python distribution names use the PEP 440 spelling from
 read a `changelog.d/` fragment's contents: every release cut deletes them.
 No native/public API, numerical or FFmpeg rebase impact.
 
-## ADR-1346 — hosted-runner release build in the libvmaf-build stage (2026-09-27)
+## ADR-1346 — hosted-runner release build in the build-deps stage (2026-09-27)
 
-`build-artifacts` must keep building the tag's `libvmaf-build` stage through
-`scripts/ci/build-dev-container-stage.sh` and compiling through
+`build-artifacts` must keep building the tag's `build-deps` stage through
+`scripts/ci/build-dev-container-stage.sh build-deps` and compiling through
 `scripts/release/build-native-release-artifacts.sh` under
-`docker run --network none`. Never restore the `sycl-arc` label, a host compile
-or a GHCR pull. Keep the stage-build script cache-free and free of
-`--build-arg`; the Dev Container PR gate must keep calling the same script, and
-`check-dev-container-build-secret.py` binds both callers. Keep
-`-Denable_dnn=disabled` and `CCACHE_DISABLE=1` in the release build, and keep
-`verify-native-artifacts` on `ubuntu-26.04` while `ubuntu-latest` is 24.04.
-`check-container-build.sh` accepts exactly `vmaf-dev-mcp`. No native/public
-API, numerical or FFmpeg rebase impact.
+`docker run --pull never --network none`, with no `GITHUB_TOKEN` on that step
+and no job-level concurrency group. Never restore the `sycl-arc` label, a host
+compile, a GHCR pull or a `libvmaf-build` release build. Keep the stage-build
+script's target allowlist, its per-target secret forwarding, and its freedom
+from `--cache-from`/`--cache-to` and `--build-arg`;
+`check-dev-container-build-secret.py` derives the secret-consuming stages from
+`dev/Containerfile` and binds both workflow callers. The Dev Container PR gate
+must keep its release rehearsal (same script, same `docker run`, local
+`v<manifest version>` tag). Keep the `gcc-ar`/`gcc-nm`/`gcc-ranlib`
+`update-alternatives` slaves in `build-deps` (without them LTO links against
+`libvmaf.a` fail there), `-Denable_dnn=disabled`, `CCACHE_DISABLE=1` and the
+`GITHUB_SHA` == `HEAD` check in the release script, and keep
+`verify-native-artifacts` on `ubuntu-26.04` while the bundle needs glibc 2.43
+(`T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27`).
+`check-container-build.sh` accepts exactly `vmaf-dev-mcp` and rejects a
+symlinked stamp. No native/public API, numerical or FFmpeg rebase impact.

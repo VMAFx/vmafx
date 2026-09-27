@@ -60,14 +60,21 @@ explicit SBOM artifact feeds keyless signing before final strict
 attachment job. Never bypass that DAG or restore permissive unmatched-file
 uploads; green workflow must mean every promised asset exists.
 
-Native payload built on `ubuntu-latest` inside `libvmaf-build` stage of
-tagged `dev/Containerfile` (ADR-1346, supersedes ADR-1178): stage built in
-job by `scripts/ci/build-dev-container-stage.sh` (same script as Dev
-Container PR gate; no layer cache, no registry), compile by
+Native payload built on `ubuntu-latest` inside `build-deps` stage of tagged
+`dev/Containerfile` (ADR-1346, supersedes ADR-1178): stage built in job by
+`scripts/ci/build-dev-container-stage.sh build-deps` (no GITHUB_TOKEN: stage
+mounts no secret; no external layer cache, no registry), compile by
 `scripts/release/build-native-release-artifacts.sh` under
-`docker run --network none`. Never restore self-hosted `sycl-arc` label,
-host compile, or GHCR pull for release build. `verify-native-artifacts`
-stays `ubuntu-26.04`: bundle needs glibc >= 2.43.
+`docker run --pull never --network none` as runner UID. No job-level
+concurrency group on `build-artifacts` (GitHub cancels older pending job in
+a group); workflow-level per-tag group stays. Dev Container PR gate
+rehearses both steps (same script, same `docker run`, local tag
+`v<manifest version>` on HEAD so describe matches a tag build); change one,
+change other. Never restore self-hosted `sycl-arc` label, host compile, or
+GHCR pull for release build. `verify-native-artifacts` stays `ubuntu-26.04`:
+bundle needs glibc >= 2.43, so no Debian 13 / Ubuntu 24.04 / distroless
+release runtime (recorded two-track exception, `docs/state.md`
+`T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27`).
 
 Native payload is Linux ELF, materializes complete Meson
 `libvmaf.so` / SONAME / real-name chain as regular files. Before any native

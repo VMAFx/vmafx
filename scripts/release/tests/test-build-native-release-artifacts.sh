@@ -34,7 +34,7 @@ check() {
   fi
 }
 
-# The marker dev/Containerfile bakes into every stage, libvmaf-build included.
+# The marker dev/Containerfile bakes into every stage, build-deps included.
 marker="$scratch/etc-vmafx-dev-container"
 printf '%s\n' 'vmafx_dev_container=1' 'image_title=vmaf-dev-mcp' \
   'containerfile=dev/Containerfile' 'source=https://github.com/VMAFx/vmafx' >"$marker"
@@ -85,13 +85,21 @@ new_repo() {
 }
 
 # run_build <dir> <marker> [args...] — exit status of the script in <dir>.
+# GITHUB_SHA is the fixture's HEAD, as actions/checkout leaves it in CI, unless
+# RUN_GITHUB_SHA overrides it; RUN_GITHUB_SHA='' runs with GITHUB_SHA unset.
 run_build() {
-  local dir="$1" marker_path="$2"
+  local dir="$1" marker_path="$2" sha
   shift 2
+  sha="${RUN_GITHUB_SHA-$(git -C "$dir" rev-parse HEAD 2>/dev/null || true)}"
   (
     cd "$dir"
+    if [ -n "$sha" ]; then
+      export GITHUB_SHA="$sha"
+    else
+      unset GITHUB_SHA
+    fi
     env PATH="$stub_bin:$PATH" STUB_MESON_LOG="$dir/meson.log" \
-      VMAFX_CONTAINER_MARKER="$marker_path" GITHUB_SHA=0123456789abcdef \
+      VMAFX_CONTAINER_MARKER="$marker_path" \
       bash scripts/release/build-native-release-artifacts.sh "$@"
   ) >"$dir/run.log" 2>&1
 }
@@ -102,6 +110,14 @@ expect_status() {
   local rc=0
   run_build "$@" || rc=$?
   [ "$rc" -eq "$expected" ]
+}
+
+# with_github_sha <sha> <helper> [args...] — run a helper with RUN_GITHUB_SHA
+# set for run_build ('' = GITHUB_SHA unset).
+with_github_sha() {
+  local RUN_GITHUB_SHA="$1"
+  shift
+  "$@"
 }
 
 expect_failure() {
@@ -134,6 +150,44 @@ check 'stamp keeps a wall-clock stamped_at (epoch scoped to the build)' lacks_li
   'stamped_at=2001-02-03T04:05:06Z' "$good/artifacts/container-build-provenance.txt"
 check 'no u2netp license without the mirror binary' absent \
   "$good/artifacts/LicenseRef-Apache-2.0-u2netp.txt"
+check 'stamp records the checked-out commit' grep -qx \
+  "git_commit=$(git -C "$good" rev-parse HEAD)" "$good/artifacts/container-build-provenance.txt"
+
+# --- GITHUB_SHA must name the checked-out commit (the stamp records it) ---
+local_run="$scratch/no-github-sha"
+new_repo "$local_run"
+check 'a run without GITHUB_SHA builds (local use)' \
+  with_github_sha '' expect_status 0 "$local_run" "$marker" 3.2.1
+check 'without GITHUB_SHA the stamp records HEAD' grep -qx \
+  "git_commit=$(git -C "$local_run" rev-parse HEAD)" \
+  "$local_run/artifacts/container-build-provenance.txt"
+
+other_sha="$scratch/other-sha"
+new_repo "$other_sha"
+check 'GITHUB_SHA naming another commit exits 1' \
+  with_github_sha 0123456789abcdef0123456789abcdef01234567 \
+  expect_status 1 "$other_sha" "$marker" 3.2.1
+check 'the mismatch names both commits' grep -q \
+  "checked-out HEAD $(git -C "$other_sha" rev-parse HEAD) is not GITHUB_SHA 0123456789abcdef0123456789abcdef01234567" \
+  "$other_sha/run.log"
+check 'a mismatched GITHUB_SHA never invokes meson' absent "$other_sha/meson.log"
+check 'a mismatched GITHUB_SHA creates no artifacts/' absent "$other_sha/artifacts"
+
+short_sha="$scratch/short-sha"
+new_repo "$short_sha"
+check 'an abbreviated GITHUB_SHA is not the commit (exact match only)' \
+  with_github_sha "$(git -C "$short_sha" rev-parse --short HEAD)" \
+  expect_status 1 "$short_sha" "$marker" 3.2.1
+
+no_git="$scratch/no-git"
+new_repo "$no_git"
+rm -rf "$no_git/.git"
+check 'GITHUB_SHA without a Git checkout fails closed' \
+  with_github_sha 0123456789abcdef0123456789abcdef01234567 \
+  expect_status 1 "$no_git" "$marker" 3.2.1
+check 'an unresolvable HEAD is reported' grep -q \
+  'cannot resolve the checked-out commit' "$no_git/run.log"
+check 'an unresolvable HEAD never invokes meson' absent "$no_git/meson.log"
 
 # --- boundary: models.tar.gz is byte-reproducible across builds ---
 again="$scratch/again"

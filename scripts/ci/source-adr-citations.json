@@ -4795,7 +4795,7 @@
         ".github/workflows/dev-container-build.yml": 1,
         ".github/workflows/supply-chain.yml": 2,
         "scripts/ci/build-dev-container-stage.sh": 1,
-        "scripts/ci/check-dev-container-build-secret.py": 1,
+        "scripts/ci/check-dev-container-build-secret.py": 2,
         "scripts/ci/check-dev-container-stage-inputs.py": 1
       },
       "target": "0819-dev-container-ci-gate.md"
@@ -7621,12 +7621,13 @@
     },
     "1346": {
       "sites": {
-        ".github/workflows/dev-container-build.yml": 1,
+        ".github/workflows/dev-container-build.yml": 3,
         ".github/workflows/dev-container-publish.yml": 2,
         ".github/workflows/supply-chain.yml": 5,
+        "dev/Containerfile": 1,
         "scripts/ci/build-dev-container-stage.sh": 2,
         "scripts/ci/check-container-build.sh": 2,
-        "scripts/ci/check-dev-container-build-secret.py": 2,
+        "scripts/ci/check-dev-container-build-secret.py": 3,
         "scripts/ci/tests/test-check-container-build.sh": 4,
         "scripts/release/build-native-release-artifacts.sh": 1,
         "scripts/release/tests/test-build-native-release-artifacts.sh": 1

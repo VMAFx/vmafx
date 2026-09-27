@@ -219,8 +219,18 @@ RUN for pkg in intel-media-va-driver-non-free mesa-libgallium libvpl-dev; do \
             || (echo "FATAL: ${pkg} was not installed" && exit 1); \
     done
 
-# Ensure gcc-13 / clang-19 are the default compilers
+# Ensure gcc-13 / clang-19 are the default compilers.
+# gcc-ar, gcc-nm and gcc-ranlib follow gcc. This stage installs no default
+# `gcc` package, so it has no unversioned gcc-ar and no
+# /usr/lib/bfd-plugins/liblto_plugin.so. Meson archives static libraries with
+# `gcc-ar` when it exists and otherwise falls back to plain `ar`, which then
+# cannot index GCC LTO objects: every LTO link against libvmaf.a (the unit
+# tests) fails with undefined references. The native release build runs in
+# this stage (ADR-1346), so the full default target set must link here.
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
+        --slave /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-13 \
+        --slave /usr/bin/gcc-nm gcc-nm /usr/bin/gcc-nm-13 \
+        --slave /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-13 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100 \
     && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 100 \
     && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100

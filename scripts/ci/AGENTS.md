@@ -366,31 +366,48 @@ fingerprint logic in a CI-only script.
 
 `check-dev-container-build-secret.py` binds these surfaces: the optional
 `github_token` mount in `dev/Containerfile`, its Compose environment source,
-the one raw stage build `build-dev-container-stage.sh` (ADR-1346), its two
-callers (`dev-container-build.yml` PR gate, `supply-chain.yml`
-`build-artifacts`), the NEO fetcher's rate-limit remedy, and the
-anonymous/authenticated operator examples. Never replace the secret with
-`ARG` or `ENV`, make it required, or expose it to the runtime service. Never
-inline a second `docker build --target libvmaf-build` in a workflow; call the
-script. Script stays cache-free and `--build-arg`-free: a release must not
-restore layers another run wrote. `tests/test_dev_container_build_secret.py`
-mutation-checks those failure modes and is wired to pre-commit/pre-push; the
-Dev Container workflow additionally runs native Docker and Compose `--check`
-before building.
+stage builder `build-dev-container-stage.sh <target> <tag>` (ADR-1346), its
+workflow callers, the GHCR publisher's secret, the NEO fetcher's rate-limit
+remedy, and the anonymous/authenticated operator examples. Secret consumers
+derived from stage graph (FROM parent + `COPY --from`, via
+`check-container-image-references.py` parser): `build-deps` consumes nothing;
+`gpu-sdks` and every stage built on it consume. Builder allowlists targets in
+a `case` (`build-deps`, `libvmaf-build`) and forwards `--secret` exactly for
+consuming targets; callers set `GITHUB_TOKEN` on the step exactly for
+consuming targets, never job- or workflow-wide. Callers:
+`dev-container-build.yml` (`libvmaf-build` gate + `build-deps` release
+rehearsal), `supply-chain.yml` `build-artifacts` (`build-deps`). Never
+replace the secret with `ARG` or `ENV`, make it required, or expose it to
+the runtime service. Real invariant on raw builds: in those two workflows
+every `docker build` is either `--check` (lint, builds no image; the gate
+runs `docker build --check --target libvmaf-build`) or goes through the
+builder; `dev-container-publish.yml` is the one other workflow build of
+`dev/Containerfile` (build-push-action to GHCR, off release path, own
+`secrets:` check). Builder stays free of `--cache-from`/`--cache-to` and
+`--build-arg`: a release must not restore layers another run wrote.
+`tests/test_dev_container_build_secret.py` mutation-checks those failure
+modes, runs the real builder against a stub `docker`, and is wired to
+pre-commit/pre-push; the Dev Container workflow additionally runs native
+Docker and Compose `--check` before building.
 
 ### Container-build provenance gate (ADR-1102, ADR-1346)
 
 `check-container-build.sh` accepts one identity: `CANONICAL_TITLE`
 (`vmaf-dev-mcp`), the `image_title` `dev/Containerfile` writes once in
-`build-deps`; every later stage (`libvmaf-build` = release build image)
-inherits it. Retired `vmaf-sycl-arc-runner` (ADR-1178) and `vmafx-*` aliases
-stay rejected; no image writes them. Adding an identity = new ADR plus marker
-write in the image, never an allowlist entry alone.
+`build-deps` (= release build image); every later stage (`libvmaf-build`,
+`dev-mcp`) inherits it. Retired `vmaf-sycl-arc-runner` (ADR-1178) and
+`vmafx-*` aliases stay rejected; no image writes them. Adding an identity =
+new ADR plus marker write in the image, never an allowlist entry alone.
+`--verify` rejects a symlinked stamp, same as
+`verify-native-release-artifacts.sh`; keep both gates agreeing.
 `tests/test-check-container-build.sh` extracts the marker from
 `dev/Containerfile`, asserts single write in `build-deps`, the
 `gpu-sdks` -> `libvmaf-build` chain and `CANONICAL_TITLE` equality, plus
-near-miss titles (case, prefix, whitespace, first-key-wins). Stamp schema
-`vmafx-container-build-provenance/1` unchanged; `--verify` runs on any host.
+near-miss titles (case, prefix, whitespace, first-key-wins), symlinked and
+dangling stamps, and a native-verifier fixture that reaches the provenance
+check (executable `vmaf`, non-empty `libvmaf.so`) and asserts its message.
+Stamp schema `vmafx-container-build-provenance/1` unchanged; `--verify` runs
+on any host.
 
 ### Workflow coupling
 

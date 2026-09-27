@@ -1,11 +1,23 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: EUPL-1.2
 # Copyright 2026 Lusoris
-"""Enforce optional BuildKit-secret transport for the NEO GitHub token."""
+"""Enforce optional BuildKit-secret transport for the NEO GitHub token.
+
+The token reaches exactly one RUN (the Intel NEO release lookup) as the
+optional BuildKit secret ``github_token``. Which dev/Containerfile stages
+consume it is derived from the stage graph, not hard-coded: a stage consumes
+the secret when it, a stage it is built FROM, or a stage it copies from
+mounts it, transitively. The shared stage
+builder (ADR-0819, ADR-1346) must forward the secret for exactly those
+targets, and every workflow step that calls the builder must hand it
+GITHUB_TOKEN exactly when its target consumes the secret.
+"""
 
 from __future__ import annotations
 
+import importlib.util
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -15,6 +27,32 @@ BUILD_OPTION = "--secret id=github_token,env=GITHUB_TOKEN"
 CALLER_ENV_LINE = "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
 TOKEN_DECLARATION = re.compile(r"(?m)^\s*(?:ARG|ENV)\s+GITHUB_TOKEN(?:\s|=)")
 MOUNT = re.compile(r"--mount=(?P<options>[^\s\\]+)")
+# Every workflow that builds a stage image through STAGE_BUILDER, with the
+# targets it must build. dev-container-build.yml builds libvmaf-build for the
+# PR gate and build-deps for the release rehearsal; supply-chain.yml builds
+# build-deps for the release itself.
+STAGE_CALLERS = {
+    ".github/workflows/dev-container-build.yml": ("raw CI build", ("libvmaf-build", "build-deps")),
+    ".github/workflows/supply-chain.yml": ("release build", ("build-deps",)),
+}
+INVOCATION = re.compile(
+    r"bash " + re.escape(STAGE_BUILDER) + r"[ \t]+(?:\\\n[ \t]*)?(?P<target>[^\s\\]+)"
+)
+SCRIPT_ARM = re.compile(r"(?ms)^[ \t]*(?P<target>[a-z][a-z0-9-]*)\)[ \t]*\n(?P<body>.*?)^[ \t]*;;")
+STEP_START = re.compile(r"^(?P<indent>[ \t]*)- [A-Za-z][A-Za-z-]*:")
+TOKEN_KEY = re.compile(r"^(?P<indent>[ \t]*)GITHUB_TOKEN[ \t]*:")
+# "FROM image AS name" is three tokens.
+FROM_AS_TOKENS = 3
+# A workflow-level `env:` key sits at indent 2 and a job-level one at 6; step
+# keys are deeper. Either of the first two would reach every step of the job.
+MAX_SHARED_ENV_INDENT = 6
+
+_SPEC = importlib.util.spec_from_file_location(
+    "container_image_references", ROOT / "scripts/ci/check-container-image-references.py"
+)
+assert _SPEC is not None and _SPEC.loader is not None
+_PARSER = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_PARSER)
 
 
 def _mount_options(containerfile: str) -> list[dict[str, str]]:
@@ -27,6 +65,46 @@ def _mount_options(containerfile: str) -> list[dict[str, str]]:
         if options.get("type") == "secret" and options.get("id") == "github_token":
             mounts.append(options)
     return mounts
+
+
+def secret_stages(containerfile: str) -> tuple[set[str], set[str]]:
+    """Return (every named stage, the stages whose build reaches the secret mount).
+
+    Building a stage builds its FROM parent and every stage it copies from, so a
+    stage consumes the secret when any stage in that dependency closure mounts it.
+    """
+    deps: dict[str, set[str]] = {}
+    mounting: set[str] = set()
+    current = ""
+    for _, command, arguments in _PARSER.logical_instructions(containerfile):
+        if command == "FROM":
+            tokens = [token for token in shlex.split(arguments) if not token.startswith("--")]
+            named = len(tokens) >= FROM_AS_TOKENS and tokens[1].upper() == "AS"
+            current = tokens[2].lower() if named else ""
+            if current:
+                deps[current] = {tokens[0].lower()}
+        elif not current:
+            continue
+        elif command == "COPY":
+            deps[current].update(
+                token.split("=", 1)[1].lower()
+                for token in shlex.split(arguments)
+                if token.startswith("--from=")
+            )
+        elif command == "RUN" and _mount_options(arguments):
+            mounting.add(current)
+    consumers: set[str] = set()
+    for stage in deps:
+        pending, seen = [stage], set()
+        while pending:
+            node = pending.pop()
+            if node in seen or node not in deps:
+                continue
+            seen.add(node)
+            pending.extend(deps[node])
+        if seen & mounting:
+            consumers.add(stage)
+    return set(deps), consumers
 
 
 def validate_containerfile(text: str) -> list[str]:
@@ -63,12 +141,52 @@ def validate_compose(text: str) -> list[str]:
     return errors
 
 
-def validate_stage_builder(script: str) -> list[str]:
-    """The one raw `docker build` of the libvmaf-build stage (ADR-0819, ADR-1346)."""
+def _code(script: str) -> str:
+    return "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+
+
+def _joined_commands(text: str) -> list[str]:
+    """Shell or YAML text with backslash continuations joined, comments dropped."""
+    return [
+        line.strip()
+        for line in re.sub(r"\\\n[ \t]*", " ", text).splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def _validate_builder_arms(code: str, containerfile: str) -> list[str]:
+    """Each allowlisted target forwards the secret exactly when its stage consumes it."""
     errors: list[str] = []
-    code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
-    if BUILD_OPTION not in code or "--target libvmaf-build" not in code:
-        errors.append("the stage build script must pass GITHUB_TOKEN as github_token")
+    stages, consumers = secret_stages(containerfile)
+    arms = {
+        match.group("target"): match.group("body").replace('"', "").replace("'", "")
+        for match in SCRIPT_ARM.finditer(code)
+    }
+    if not arms:
+        errors.append("the stage build script must allowlist its targets in a case statement")
+    for target, body in sorted(arms.items()):
+        if target not in stages:
+            errors.append(f"the stage build script allows {target}, not a dev/Containerfile stage")
+        elif target in consumers and BUILD_OPTION not in body:
+            errors.append(
+                f"the stage build script must pass GITHUB_TOKEN as github_token for {target}"
+            )
+        elif target not in consumers and "--secret" in body:
+            errors.append(f"the stage build script must not pass a secret for {target}")
+    return errors
+
+
+def _validate_builder_command(code: str) -> list[str]:
+    """One docker build, fed the target and the arm's secret, and nothing shared."""
+    errors: list[str] = []
+    builds = [line for line in _joined_commands(code) if line.startswith("docker build")]
+    if len(builds) != 1:
+        errors.append("the stage build script must run exactly one docker build")
+    for build in builds:
+        if '--target "$target"' not in build or '"${secret_args[@]}"' not in build:
+            errors.append("the docker build must take --target and the secret from the case arm")
+        if "--secret" in build:
+            errors.append("the docker build must not pass a secret for every target")
     if "--build-arg" in code:
         errors.append("the stage build script must not pass Docker build arguments")
     if re.search(r"--cache-(?:from|to)\b", code):
@@ -76,15 +194,76 @@ def validate_stage_builder(script: str) -> list[str]:
     return errors
 
 
-def validate_stage_caller(workflow: str, label: str) -> list[str]:
-    """A workflow that builds the stage must call the shared script with the token."""
-    if STAGE_BUILDER not in workflow or CALLER_ENV_LINE not in workflow:
-        return [f"the {label} must build via {STAGE_BUILDER} with GITHUB_TOKEN set"]
-    return []
+def validate_stage_builder(script: str, containerfile: str) -> list[str]:
+    """The one raw `docker build` of a dev/Containerfile stage (ADR-0819, ADR-1346)."""
+    code = _code(script)
+    return _validate_builder_arms(code, containerfile) + _validate_builder_command(code)
 
 
-def validate_callers(workflow: str, docs: str, fetcher: str) -> list[str]:
-    errors = validate_stage_caller(workflow, "raw CI build")
+def _step_blocks(workflow: str) -> list[str]:
+    """Split a workflow into list-item blocks: each runs to its next sibling or dedent."""
+    lines = workflow.splitlines()
+    blocks: list[str] = []
+    for index, line in enumerate(lines):
+        start = STEP_START.match(line)
+        if not start:
+            continue
+        indent = len(start.group("indent"))
+        end = index + 1
+        while end < len(lines):
+            following = lines[end]
+            depth = len(following) - len(following.lstrip())
+            if following.strip() and depth <= indent:
+                break
+            end += 1
+        blocks.append("\n".join(lines[index:end]))
+    return blocks
+
+
+def _validate_caller_steps(
+    workflow: str, label: str, expected: tuple[str, ...], consumers: set[str]
+) -> list[str]:
+    """Each builder step names an expected target and gets GITHUB_TOKEN iff it is consumed."""
+    errors: list[str] = []
+    built: list[str] = []
+    for block in _step_blocks(workflow):
+        match = INVOCATION.search(block)
+        if not match:
+            continue
+        target = match.group("target").strip("\"'")
+        built.append(target)
+        has_token = any(TOKEN_KEY.match(line) for line in block.splitlines())
+        if target in consumers and CALLER_ENV_LINE not in block:
+            errors.append(f"the {label} of {target} must set GITHUB_TOKEN from the secret")
+        elif target not in consumers and has_token:
+            errors.append(f"the {label} of {target} must not receive GITHUB_TOKEN")
+    if sorted(built) != sorted(expected):
+        errors.append(
+            f"the {label} must build {', '.join(expected)} via {STAGE_BUILDER} "
+            f"(found: {', '.join(built) or 'none'})"
+        )
+    return errors
+
+
+def validate_stage_caller(
+    workflow: str, label: str, expected: tuple[str, ...], containerfile: str
+) -> list[str]:
+    """Each stage build goes through the script, with GITHUB_TOKEN iff it is consumed."""
+    _, consumers = secret_stages(containerfile)
+    errors = _validate_caller_steps(workflow, label, expected, consumers)
+    for line in workflow.splitlines():
+        key = TOKEN_KEY.match(line)
+        if key and len(key.group("indent")) <= MAX_SHARED_ENV_INDENT:
+            errors.append(f"the {label} workflow must not set GITHUB_TOKEN for a whole job")
+    for command in _joined_commands(workflow):
+        if "docker build" in command and "--check" not in command:
+            errors.append(f"the {label} workflow must build stage images only via {STAGE_BUILDER}")
+    return errors
+
+
+def validate_callers(workflow: str, docs: str, fetcher: str, containerfile: str) -> list[str]:
+    label, expected = STAGE_CALLERS[".github/workflows/dev-container-build.yml"]
+    errors = validate_stage_caller(workflow, label, expected, containerfile)
     if "--build-arg GITHUB_TOKEN" in workflow + docs + fetcher:
         errors.append("token-valued Docker build arguments are forbidden")
     if BUILD_OPTION not in docs:
@@ -112,19 +291,24 @@ def validate_tree(root: Path = ROOT) -> list[str]:
     def read(path: str) -> str:
         return (root / path).read_text(encoding="utf-8")
 
-    errors = validate_containerfile(read("dev/Containerfile"))
+    containerfile = read("dev/Containerfile")
+    errors = validate_containerfile(containerfile)
     errors.extend(validate_compose(read("dev/docker-compose.yml")))
     errors.extend(
         validate_callers(
             read(".github/workflows/dev-container-build.yml"),
             read("docs/development/dev-mcp.md"),
             read("dev/scripts/fetch-intel-neo.py"),
+            containerfile,
         )
     )
     errors.extend(validate_publish(read(".github/workflows/dev-container-publish.yml")))
-    errors.extend(validate_stage_builder(read(STAGE_BUILDER)))
+    errors.extend(validate_stage_builder(read(STAGE_BUILDER), containerfile))
+    label, expected = STAGE_CALLERS[".github/workflows/supply-chain.yml"]
     errors.extend(
-        validate_stage_caller(read(".github/workflows/supply-chain.yml"), "release build")
+        validate_stage_caller(
+            read(".github/workflows/supply-chain.yml"), label, expected, containerfile
+        )
     )
     return errors
 

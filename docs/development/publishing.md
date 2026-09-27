@@ -3,7 +3,8 @@
 
 All canonical build artifacts for the VMAFx fork are produced inside an
 image built from `dev/Containerfile`: the `vmaf-dev-mcp` container locally, or
-its `libvmaf-build` stage in CI. Host-side meson/ninja builds are available
+one of its stages in CI (`build-deps` for the native release bundle). Host-side
+meson/ninja builds are available
 for diagnostic purposes (IDE integration, debugger sessions, sanitizer sweeps)
 but are **not** the authoritative source for any published artifact.
 
@@ -112,17 +113,18 @@ is four workflows plus one job:
 |---|---|---|---|
 | `.github/workflows/dev-container-publish.yml` | push to `master` (`dev/Containerfile`, `dev/scripts/**`) | `ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>`, `:master` | Yes — builds `libvmaf-build` stage. Published for transparency; releases do not pull it |
 | `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
-| `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, SLSA provenance, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the `libvmaf-build` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md)) |
+| `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, SLSA provenance, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the `build-deps` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md)) |
 | `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm7 / oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
 | `cross-backend` job in `.github/workflows/tests-and-quality-gates.yml` | Disabled (`if: false`, awaits self-hosted GPU runner) | backend-parity report (a gate, not an artifact) | **No** — `ubuntu-latest` host toolchain |
 
 Consequences:
 
 - Release native binaries (`libvmaf.so` SONAME chain, `vmaf` CLI, `models.tar.gz`)
-  are compiled inside the `libvmaf-build` stage, built in the release job from
-  the tagged commit's own `dev/Containerfile`. No registry image and no layer
-  cache are involved ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md),
-  which supersedes ADR-1178).
+  are compiled inside the `build-deps` stage, built in the release job from
+  the tagged commit's own `dev/Containerfile`. No registry image and no
+  external layer cache are involved
+  ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), which
+  supersedes ADR-1178).
 - Non-release PR CI gates (e.g. `tests-and-quality-gates.yml`) continue to run on
   host runners for fast unit testing. When a container run and a CI host run
   disagree, the toolchain difference remains a live hypothesis.
@@ -202,10 +204,10 @@ the release pipeline, not malicious evasion.
 
 | Job / Script | What it asserts |
 |---|---|
-| `Dev Container Build (PR gate)` in `dev-container-build.yml` | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it |
+| `Dev Container Build (PR gate)` in `dev-container-build.yml` | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it; the release rehearsal then runs the whole release build in `build-deps` and verifies its stamp |
 | `Release Script Contract (ADR-1128)` in `rule-enforcement.yml` | the gate's hermetic unit suite (`scripts/ci/tests/test-check-container-build.sh`, no Docker needed) |
-| `build-artifacts` in `supply-chain.yml` | runs `--assert`, then stamps `artifacts/` with `--stamp`, both inside the `libvmaf-build` stage it builds from the release tag (ADR-1346) |
-| `verify-native-artifacts` in `supply-chain.yml` | verifies downloaded `artifacts/` with `scripts/ci/check-container-build.sh --verify` |
+| `build-artifacts` in `supply-chain.yml` | runs `--assert`, then stamps `artifacts/` with `--stamp`, both inside the `build-deps` stage it builds from the release tag (ADR-1346) |
+| `verify-native-artifacts` in `supply-chain.yml` | verifies downloaded `artifacts/` with `scripts/ci/check-container-build.sh --verify`, which rejects a missing, empty, malformed or symlinked stamp |
 | `scripts/release/verify-native-release-artifacts.sh` | verifies staged release bundle contains valid, non-empty, non-symlink `container-build-provenance.txt` |
 | `attach-to-release` in `supply-chain.yml` | requires `container-build-provenance.txt` as a required release asset and verifies cosign signature bundle |
 
@@ -218,41 +220,68 @@ and been cancelled. `build-artifacts` in `.github/workflows/supply-chain.yml`
 now runs on `ubuntu-latest`:
 
 1. It checks out the release tag.
-2. It builds the `libvmaf-build` stage of that tag's `dev/Containerfile` with
-   `scripts/ci/build-dev-container-stage.sh`, the same script the Dev Container
-   PR gate uses. The build uses the default Docker builder, with no layer cache
-   and no registry, so no state from another workflow run can enter a release.
-   The PR gate's uncached builds of this stage take 28 to 35 minutes on hosted
-   runners, and the job allows 90.
+2. It builds the `build-deps` stage of that tag's `dev/Containerfile` with
+   `scripts/ci/build-dev-container-stage.sh build-deps`. `build-deps` is the
+   digest-pinned Ubuntu 26.04 base plus Ubuntu archive packages (gcc-13,
+   Meson, Ninja, NASM) and downloads nothing from third parties, so the job
+   needs no GitHub token. The build uses the default Docker builder with no
+   external layer cache and no registry, so no state from another workflow
+   run can enter a release. An uncached build of the stage took about two
+   minutes on a workstation; the job allows 60.
 3. It runs `scripts/release/build-native-release-artifacts.sh` in that image
-   with `docker run --network none`, as the runner's user, with the checkout
-   mounted. The script asserts the container marker, builds with Meson, stages
-   the bundle, writes `container-build-provenance.txt` and runs the
-   clean-environment verifier.
+   with `docker run --pull never --network none`, as the runner's user, with
+   the checkout mounted. The script asserts the container marker, refuses to
+   build unless the checkout is `GITHUB_SHA` (the commit the stamp records),
+   builds with Meson, stages the bundle, writes
+   `container-build-provenance.txt` and runs the clean-environment verifier.
 4. It hashes and uploads `artifacts/` on the runner for SBOM, signing, SLSA
    provenance and attachment, exactly as before.
 
-The stamp records `image_title=vmaf-dev-mcp`. Every stage of
-`dev/Containerfile` inherits that identity from the `build-deps` marker, and
-the gate accepts no other. `verify-native-artifacts` then checks the stamp and
-the runtime on `ubuntu-26.04`, because a bundle compiled in the Ubuntu 26.04
-image needs glibc 2.43 or newer (see
+The stamp records `image_title=vmaf-dev-mcp`. `build-deps` writes that marker
+and every later stage of `dev/Containerfile` inherits it; the gate accepts no
+other identity. `verify-native-artifacts` then checks the stamp and the
+runtime on `ubuntu-26.04`, because a bundle compiled in the Ubuntu 26.04 image
+needs glibc 2.43 or newer (see
 [the release guide](release.md#native-linux-release-layout)).
 
-To reproduce the release build locally, from a clean checkout of the tag:
+**What is pinned and what is not.** The base image is pinned by digest through
+`build-config.env`. The Ubuntu archive packages in `build-deps` resolve when
+the stage is built, so rebuilding an old tag later may install newer
+compilers or Meson than the original release used. The release compile itself
+runs with networking disabled.
+
+**Release-track exception.** `build-config.env` says published artifacts are
+built on the `RELEASE_*` track (`RELEASE_BUILDER_BASE`, Debian 13, glibc 2.41)
+and ship on `RELEASE_RUNTIME_CC` (distroless `cc-debian13`). The native bundle
+is the exception: it is built on the `DEV_*` track, so it needs glibc 2.43 and
+does not load on Debian 13, on the distroless release runtime or on Ubuntu
+24.04. ADR-1346 records this for 1.0.0-rc.1; `docs/state.md` row
+`T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27` tracks building the bundle
+on the release track before the final 1.0.0.
+
+**Rehearsal on every container-affecting pull request.** The Dev Container PR
+gate (`dev-container-build.yml`) builds `build-deps` with the same script and
+runs the same `docker run` invocation. A pull request checkout reaches no tag,
+so the gate first creates a local lightweight tag named after
+`.release-please-manifest.json`'s version on `HEAD`; `vmaf --version` then
+reports the `v<version>-0-g<commit>` form a release reports, and the verifier
+checks it against the manifest version.
+
+To reproduce the release build locally from a clean checkout of the tag (use a
+UID that owns the checkout; the image needs no passwd entry for it):
 
 ```bash
 tag=vX.Y.Z
-bash scripts/ci/build-dev-container-stage.sh vmafx-release-build:local
-docker run --rm --network none --user "$(id -u):$(id -g)" \
+bash scripts/ci/build-dev-container-stage.sh build-deps vmafx-release-build:local
+docker run --rm --pull never --network none --user "$(id -u):$(id -g)" \
   --volume "$PWD:/src" --workdir /src vmafx-release-build:local \
   bash scripts/release/build-native-release-artifacts.sh "${tag#v}"
 bash scripts/ci/check-container-build.sh --verify artifacts
 ```
 
 `.github/workflows/dev-container-publish.yml` still publishes
-`ghcr.io/vmafx/vmafx-dev-mcp` for transparency and contributor convenience.
-No release job pulls it.
+`ghcr.io/vmafx/vmafx-dev-mcp` (the `libvmaf-build` stage) for transparency and
+contributor convenience. No release job pulls it.
 
 Run the unit suite locally with:
 
@@ -264,7 +293,7 @@ bash scripts/ci/tests/test-check-container-build.sh
 
 ## Related documents
 
-- [ADR-1346](../adr/1346-hosted-slim-container-release-build.md) — native release build on a hosted runner inside the `libvmaf-build` stage
+- [ADR-1346](../adr/1346-hosted-slim-container-release-build.md) — native release build on a hosted runner inside the `build-deps` stage
 - [ADR-1178](../adr/1178-dev-container-image-publish.md) — dev container publication and the former self-hosted release build (superseded by ADR-1346)
 - [ADR-1102](../adr/1102-phase4b9-container-only-publishing.md) — policy decision and rationale
 - [ADR-0496](../adr/0496-prefer-dev-mcp-container-rule.md) — default-to-container project rule (CLAUDE.md §15)

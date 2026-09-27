@@ -10,6 +10,9 @@
 # `docker build --target libvmaf-build` only when container inputs change,
 # fails fast on any build error, and smoke-tests the resulting image by invoking
 # `vmaf --version` and the CPU-backend probe against the bundled test YUVs.
+# It then rehearses the native release build (ADR-1346): it builds the
+# `build-deps` stage and runs the release compile in it exactly as
+# supply-chain.yml's `build-artifacts` does.
 #
 # No image is pushed — this is a pure build-verification gate.
 
@@ -62,12 +65,19 @@ jobs:
     name: Dev Container Build work
     runs-on: ubuntu-latest
     # GPU SDK downloads (CUDA keyring, oneAPI, ROCm) + multi-stage build can
-    # take up to 45 min on a cold runner; set a generous ceiling.
-    timeout-minutes: 60
+    # take up to 45 min on a cold runner, and the release rehearsal adds a
+    # CPU-only release compile; set a generous ceiling.
+    timeout-minutes: 75
 
     steps:
+      # No persisted credentials: nothing here pushes or fetches, and the
+      # release rehearsal mounts this checkout into a container, as
+      # supply-chain.yml's `build-artifacts` does with its own
+      # credential-free checkout.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       # Regression guard for PR #707 / ADR-0529: assert that every /dev/dri
       # bind-mount in docker-compose.yml is writable (read_only: false).
@@ -126,13 +136,13 @@ jobs:
       # a free-tier runner. The GPU SDK layers (CUDA, oneAPI, ROCm) are the
       # main regression surface — they're included in `libvmaf-build`.
       # The build goes through the same script as the release job's
-      # `build-artifacts` (supply-chain.yml, ADR-1346), so this gate proves the
-      # exact image build every native release depends on.
+      # `build-artifacts` (supply-chain.yml, ADR-1346), which builds the
+      # `build-deps` stage; the release rehearsal below builds that stage too.
       - name: Build dev container (up to libvmaf-build stage)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash scripts/ci/build-dev-container-stage.sh \
+          bash scripts/ci/build-dev-container-stage.sh libvmaf-build \
             "vmaf-dev-mcp-gate:${{ github.sha }}"
 
       # Smoke test: verify `vmaf --version` exits 0 and the CPU backend
@@ -179,9 +189,50 @@ jobs:
           cat provenance/container-build-provenance.txt
           bash scripts/ci/check-container-build.sh --verify provenance
 
+      # Release-path rehearsal (ADR-1346). `build-artifacts` in supply-chain.yml
+      # builds `build-deps` from the release tag and runs
+      # build-native-release-artifacts.sh in it; these two steps do the same
+      # with the same script, flags and user, so a pull request that would
+      # break the release compile fails here instead of at publication.
+      # `build-deps` is the first stage of the image built above, so its
+      # layers normally come from this daemon's build cache (the release job
+      # itself starts from an empty cache and builds them in a few minutes).
+      # No GITHUB_TOKEN: build-deps mounts no secret.
+      - name: Release rehearsal — build the build-deps stage
+        run: |
+          bash scripts/ci/build-dev-container-stage.sh build-deps \
+            "vmafx-release-build:${GITHUB_SHA}"
+
+      # A release checks out its tag, so `git describe` reports
+      # v<version>-0-g<commit> and the verifier compares that with the tag's
+      # version. This checkout reaches no tag: describe would fail and Meson
+      # would fall back to core/meson.build's project version, which equals
+      # .release-please-manifest.json only on a release commit. A local
+      # lightweight tag named after the manifest version, created in this
+      # throwaway checkout only and never pushed, gives the build the same
+      # shape as a release: the same describe form, the same verifier branch,
+      # and the manifest version as the expected version.
+      - name: Release rehearsal — build, stage, stamp and verify in build-deps
+        run: |
+          version="$(jq -er '.["."]' .release-please-manifest.json)"
+          git update-ref "refs/tags/v${version}" HEAD
+          git describe --tags --long --match 'v*.*.*'
+          docker run --rm \
+            --pull never \
+            --network none \
+            --user "$(id -u):$(id -g)" \
+            --env GITHUB_SHA \
+            --volume "$PWD:/src" \
+            --workdir /src \
+            "vmafx-release-build:${GITHUB_SHA}" \
+            bash scripts/release/build-native-release-artifacts.sh "$version"
+          bash scripts/ci/check-container-build.sh --verify artifacts
+
       - name: Cleanup image
         if: always()
-        run: docker rmi vmaf-dev-mcp-gate:${{ github.sha }} || true
+        run: |
+          docker rmi vmaf-dev-mcp-gate:${{ github.sha }} || true
+          docker rmi "vmafx-release-build:${GITHUB_SHA}" || true
 
   dev-container-build:
     needs: [impact, dev-container-build-work]

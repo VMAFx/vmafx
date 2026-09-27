@@ -145,18 +145,22 @@ jobs:
     # Fork-PR guard: tag releases on the canonical repository only
     if: github.repository == 'VMAFx/vmafx' && startsWith(github.ref, 'refs/tags/v')
     # ADR-1346 (supersedes ADR-1178): native release artifacts are built on a
-    # GitHub-hosted runner inside the `libvmaf-build` stage of the tagged
-    # commit's own dev/Containerfile, which keeps the container-only publishing
-    # policy (ADR-1102) without a workstation runner. The stage is built here
-    # by the same script as the PR gate (ADR-0819), with no layer cache and no
-    # registry, so nothing another workflow wrote can reach a release. That
-    # gate's uncached hosted builds take 28-35 minutes; 90 leaves room for the
-    # release compile and a slow runner.
+    # GitHub-hosted runner inside the `build-deps` stage of the tagged commit's
+    # own dev/Containerfile, which keeps the container-only publishing policy
+    # (ADR-1102) without a workstation runner. `build-deps` is the digest-pinned
+    # Ubuntu 26.04 base plus Ubuntu archive packages (gcc-13, Meson, Ninja,
+    # NASM) and fetches nothing from third parties. The stage is built here by
+    # the same script the PR gate (ADR-0819) uses to rehearse this job, with no
+    # external layer cache and no registry, so nothing another workflow wrote
+    # can reach a release. Locally an uncached stage build took about 2 minutes
+    # and the release compile about 2.5 minutes on four CPUs; 60 leaves wide
+    # room for a slow runner or archive mirror.
+    # No job-level concurrency group: the old cross-tag `release-artifacts-build`
+    # group only served the single self-hosted runner, and GitHub cancels an
+    # older pending job when a newer one joins its group. The workflow-level
+    # per-tag group still serialises runs of one tag.
     runs-on: ubuntu-latest
-    concurrency:
-      group: release-artifacts-build
-      cancel-in-progress: false
-    timeout-minutes: 90
+    timeout-minutes: 60
     permissions:
       contents: read
     outputs:
@@ -167,20 +171,25 @@ jobs:
           ref: ${{ needs.validate-release.outputs.tag }}
           submodules: recursive
           persist-credentials: false
-      - name: Build the libvmaf-build container stage from the tag (ADR-0819, ADR-1346)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # No GITHUB_TOKEN: build-deps mounts no secret, so the script forwards
+      # none for it (scripts/ci/check-dev-container-build-secret.py).
+      - name: Build the build-deps container stage from the tag (ADR-0819, ADR-1346)
         run: |
-          bash scripts/ci/build-dev-container-stage.sh "vmafx-release-build:${GITHUB_SHA}"
+          bash scripts/ci/build-dev-container-stage.sh build-deps \
+            "vmafx-release-build:${GITHUB_SHA}"
       # Build, stage, provenance stamp (ADR-1102) and clean-environment verify
       # all run inside the stage. The checkout is mounted as the runner user so
       # artifacts/ stays writable and uploadable; `--network none` proves the
-      # release compile fetches nothing the image build did not already pin.
+      # release compile fetches nothing the image build did not already bring,
+      # and `--pull never` runs the image this job just built or nothing.
+      # The Dev Container PR gate rehearses this exact step on every
+      # container-affecting pull request.
       - name: Build, stage, stamp and verify inside the container (ADR-1102, ADR-1346)
         env:
           VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
         run: |
           docker run --rm \
+            --pull never \
             --network none \
             --user "$(id -u):$(id -g)" \
             --env GITHUB_SHA \

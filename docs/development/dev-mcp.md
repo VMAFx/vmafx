@@ -95,17 +95,32 @@ Never pass this credential with `--build-arg`. The secret is mounted only for
 the NEO metadata-fetch instruction and is not recorded in image layers,
 metadata, or provenance. See [ADR-1271](../adr/1271-neo-buildkit-github-token-secret.md).
 
-The Dev Container PR gate and the native release job (`build-artifacts` in
-`supply-chain.yml`) run this same stage build through one script. It passes
-the optional secret, uses no layer cache and tags the result. Run it to
-reproduce either job's image; an unset `GITHUB_TOKEN` keeps it anonymous:
+CI builds stage images through one script,
+`scripts/ci/build-dev-container-stage.sh <target> <image-tag>`, which accepts
+two targets. `libvmaf-build` is the stage the Dev Container PR gate builds and
+smoke-tests; the script forwards the optional secret for it, and an unset
+`GITHUB_TOKEN` keeps the build anonymous. `build-deps` is the first stage, the
+Ubuntu base with the compilers and build tools; the native release job
+(`build-artifacts` in `supply-chain.yml`) compiles the release inside it, and
+the PR gate rehearses that release build on every container-affecting pull
+request. `build-deps` fetches nothing from GitHub, so the script never passes
+it a secret. The script uses no external layer cache and passes no build
+arguments. Run it to reproduce either job's image:
 
 ```bash
-bash scripts/ci/build-dev-container-stage.sh vmaf-dev-mcp:local
+bash scripts/ci/build-dev-container-stage.sh libvmaf-build vmaf-dev-mcp:local
+bash scripts/ci/build-dev-container-stage.sh build-deps vmafx-release-build:local
 ```
 
 See [publishing](publishing.md#release-compilation-environment-adr-1346) for
-the release build that runs inside that image.
+the release build that runs inside `build-deps`.
+
+In `build-deps`, `gcc`, `g++`, `gcc-ar`, `gcc-nm` and `gcc-ranlib` all point at
+GCC 13 through `update-alternatives`. Meson archives static libraries with
+`gcc-ar` when it exists; without it, plain `ar` cannot index GCC's LTO objects
+in that stage and every LTO link against `libvmaf.a` fails with undefined
+references. A later stage installs Ubuntu's default GCC 15, which replaces
+those links, so `libvmaf-build` and the final image compile with GCC 15.
 
 > **Important — always pass `--project-directory`.**  Without it, Docker
 > Compose v2 sets the project directory to the compose-file's parent (`dev/`),
@@ -140,7 +155,10 @@ before a rebuild. This static check does not establish native build or GPU
 runtime acceptance.
 
 CI builds the image only up to `libvmaf-build`
-([ADR-0819](../adr/0819-dev-container-ci-gate.md)), so the final `dev-mcp`
+([ADR-0819](../adr/0819-dev-container-ci-gate.md)), plus `build-deps` on its
+own for the release rehearsal
+([ADR-1346](../adr/1346-hosted-slim-container-release-build.md)), so the final
+`dev-mcp`
 stage is covered by a static contract instead
 ([ADR-1343](../adr/1343-dev-container-stage-input-contract.md)):
 

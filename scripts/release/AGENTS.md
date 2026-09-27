@@ -246,23 +246,36 @@ Test coverage:
 
 ## build-native-release-artifacts.sh (ADR-1346)
 
-Runs inside `libvmaf-build` stage image, never on runner host:
+Runs inside `build-deps` stage image, never on runner host:
 `supply-chain.yml` `build-artifacts` builds stage from release tag via
-`scripts/ci/build-dev-container-stage.sh`, then `docker run --network none`
-as runner UID/GID with checkout mounted. Order fixed: `--assert` container
-marker first (host run compiles nothing), Meson build, stage, `--stamp`,
-`verify-native-release-artifacts.sh`. Meson flags keep hosted-era bundle:
-`--buildtype=release -Denable_avx512=true -Denable_cuda=false
--Denable_sycl=false` plus `-Denable_dnn=disabled` (image ships ONNX Runtime;
-`auto` makes `libvmaf.so` NEED `libonnxruntime.so.1`, not shipped) and
-`CCACHE_DISABLE=1`. `SOURCE_DATE_EPOCH` scoped to build subshell; stamp keeps
-wall-clock `stamped_at`. Bundle needs glibc >= 2.43 (Ubuntu 26.04 image), so
-`verify-native-artifacts` runs `ubuntu-26.04`; never move it back to
-`ubuntu-latest` while `ubuntu-latest` is 24.04.
+`scripts/ci/build-dev-container-stage.sh build-deps`, then
+`docker run --pull never --network none` as runner UID/GID (usually no
+passwd entry in image -> HOME=/) with checkout mounted. Dev Container PR gate rehearses
+same invocation with manifest version and local tag `v<version>` on HEAD.
+Order fixed: `--assert` container marker first (host run compiles nothing),
+`GITHUB_SHA` set -> `git rev-parse HEAD` must equal it (stamp records
+`GITHUB_SHA` as `git_commit`; mismatch or unresolvable HEAD = exit 1 before
+Meson), Meson build, stage, `--stamp`, `verify-native-release-artifacts.sh`.
+Meson flags keep hosted-era bundle: `--buildtype=release
+-Denable_avx512=true -Denable_cuda=false -Denable_sycl=false` plus
+`-Denable_dnn=disabled` (no-op in `build-deps`, which has no ONNX Runtime;
+pinned so a stage that ships ORT cannot make `libvmaf.so` NEED
+`libonnxruntime.so.1`) and `CCACHE_DISABLE=1` (load-bearing: `build-deps`
+ships ccache, Meson auto-wraps compiler, ccache as HOME=/ UID fails every
+compile with `Permission denied`). Full default target set (tests included)
+links only because `build-deps` registers `gcc-ar`/`gcc-nm`/`gcc-ranlib` as
+`update-alternatives` slaves of `gcc`; without them Meson falls back to plain
+`ar`, which cannot index GCC LTO objects there. `SOURCE_DATE_EPOCH` scoped
+to build subshell; stamp keeps wall-clock `stamped_at`. Bundle needs glibc
+>= 2.43 (Ubuntu 26.04 image), so `verify-native-artifacts` runs
+`ubuntu-26.04`; never move it back to `ubuntu-latest` while `ubuntu-latest`
+is 24.04. Release-track (Debian 13) build = deferred
+`T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27`, due before final 1.0.0.
 
 Test coverage:
 `scripts/release/tests/test-build-native-release-artifacts.sh` (stub
-`meson`, real ELF fixture chain, no Docker).
+`meson`, real ELF fixture chain, `GITHUB_SHA` match / mismatch /
+abbreviated / unset / no-Git cases, no Docker).
 
 ## check-release-bot-secrets.sh (ADR-1171)
 
