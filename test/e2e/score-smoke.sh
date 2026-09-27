@@ -46,6 +46,36 @@ export KUBECONFIG="${KUBECONFIG_PATH}"
 
 tmp_dir="$(mktemp -d)"
 port_forward_pid=""
+
+# Print what a failed score needs for diagnosis: the server's error body and
+# the logs of the Pods behind the Service. The logs are selected through the
+# Service's own selector because `kubectl logs deployment/vmafx` resolves the
+# chart Deployment's broader selector, which also matches the operator Pod.
+print_failure_diagnostics() {
+  local selector
+  if [[ -s "${tmp_dir}/score.json" ]]; then
+    printf '/v1/score response body:\n' >&2
+    cat "${tmp_dir}/score.json" >&2
+    printf '\n' >&2
+  fi
+  cat "${tmp_dir}/port-forward.log" >&2 2>/dev/null || true
+  # jsonpath prints the selector map as {"key":"value",...}. Label keys and
+  # values cannot contain '{', '}', '"', ':' or ',', so stripping the JSON
+  # punctuation and turning ':' into '=' yields a valid label selector.
+  selector="$(
+    kubectl get service --namespace "${NAMESPACE}" "${SERVICE}" \
+      --output 'jsonpath={.spec.selector}' 2>/dev/null |
+      tr -d '{}"' | tr ':' '=' || true
+  )"
+  if [[ -z "${selector}" ]]; then
+    printf 'service/%s has no selector; server logs unavailable\n' "${SERVICE}" >&2
+    return 0
+  fi
+  printf 'Logs of Pods selected by service/%s (%s):\n' "${SERVICE}" "${selector}" >&2
+  kubectl logs --namespace "${NAMESPACE}" --selector "${selector}" \
+    --all-containers --prefix --tail=200 >&2 2>/dev/null || true
+}
+
 cleanup() {
   status=$?
   if [[ -n "${port_forward_pid}" ]]; then
@@ -53,9 +83,7 @@ cleanup() {
     wait "${port_forward_pid}" >/dev/null 2>&1 || true
   fi
   if [[ "${status}" -ne 0 ]]; then
-    cat "${tmp_dir}/port-forward.log" >&2 2>/dev/null || true
-    kubectl logs --namespace "${NAMESPACE}" deployment/vmafx \
-      --tail=200 >&2 2>/dev/null || true
+    print_failure_diagnostics
   fi
   rm -rf "${tmp_dir}"
   exit "${status}"

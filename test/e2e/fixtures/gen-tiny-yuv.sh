@@ -4,19 +4,27 @@
 #
 # test/e2e/fixtures/gen-tiny-yuv.sh
 #
-# Generate a pair of tiny synthetic YUV420p clips for e2e tests.
+# Generate a pair of small synthetic YUV420p clips for e2e tests.
 # Output: test/e2e/fixtures/{ref,dist}.{yuv,y4m}
 #
 # Spec:
-#   Resolution: 64x64
+#   Resolution: 216x160
 #   Frames:     8
 #   Format:     YUV420p 8-bit
 #   ref.yuv:    solid grey (Y=128, U=128, V=128)
 #   dist.yuv:   solid grey with a 5% brightness reduction (Y=121)
 #
-# The raw clips are small enough to commit to git. The Y4M wrappers are
-# regenerated for each run so the vmafx-server can infer the frame geometry
-# from their headers without adding dimensions to its REST contract.
+# 216x160 is the smallest 4:2:0 geometry the default model accepts. The
+# server scores with vmaf_v1.0.16_3d0h (ADR-1169), whose cambi feature needs
+# one axis >= 216 and whose speed_chroma feature needs both chroma planes
+# >= 80, i.e. luma >= 160 on both axes. Below that the CLI refuses the input
+# and /v1/score answers 500. scripts/ci/test_e2e_runtime_contract.py checks
+# this geometry against the thresholds in core/src/feature/.
+#
+# The raw clips are committed; solid frames compress to almost nothing in
+# git. The Y4M wrappers are regenerated for each run so the vmafx-server can
+# infer the frame geometry from their headers without adding dimensions to
+# its REST contract.
 #
 # ADR-0783.
 
@@ -28,21 +36,22 @@ DIST="${SCRIPT_DIR}/dist.yuv"
 REF_Y4M="${SCRIPT_DIR}/ref.y4m"
 DIST_Y4M="${SCRIPT_DIR}/dist.y4m"
 
-WIDTH=64
-HEIGHT=64
+WIDTH=216
+HEIGHT=160
 FRAMES=8
 
-echo "Preparing tiny YUV420p fixtures (${WIDTH}x${HEIGHT}, ${FRAMES} frames)..."
+echo "Preparing YUV420p fixtures (${WIDTH}x${HEIGHT}, ${FRAMES} frames)..."
 
 # Require python3 for deterministic byte generation and Y4M framing. The raw
 # files remain committed evidence; an unexpected size fails closed instead of
 # silently producing a malformed scoring request.
-python3 - "${REF}" "${DIST}" "${REF_Y4M}" "${DIST_Y4M}" <<'PYEOF'
+python3 - "${WIDTH}" "${HEIGHT}" "${FRAMES}" \
+  "${REF}" "${DIST}" "${REF_Y4M}" "${DIST_Y4M}" <<'PYEOF'
 import hashlib
 import os
 import sys
 
-width, height, frames = 64, 64, 8
+width, height, frames = (int(value) for value in sys.argv[1:4])
 y_size = width * height
 uv_size = width * height // 4
 frame_size = y_size + 2 * uv_size
@@ -76,9 +85,9 @@ def write_y4m(raw_path, y4m_path):
         if raw.read(1):
             raise SystemExit(f"fixture {raw_path} contains trailing data")
 
-ref, dist, ref_y4m, dist_y4m = sys.argv[1:]
-ensure_raw(ref, "2af5ead05032faafc0818cc27fe86c562e70fe7bea63d38366ef7355051b8fe9")
-ensure_raw(dist, "2db6817000793cb15a71898cab96d134f88a95d1cc99614af2e7ec94f6105ce5")
+ref, dist, ref_y4m, dist_y4m = sys.argv[4:]
+ensure_raw(ref, "086f54a3241754a0d89ffe899dcc57ea16ae6030f860795a5b18e6181c57a5a2")
+ensure_raw(dist, "3b5e57077dc0d41f95dc8f3d80f7d5895b58398b83cdb8ac6e1bfc27957e031a")
 write_y4m(ref, ref_y4m)
 write_y4m(dist, dist_y4m)
 

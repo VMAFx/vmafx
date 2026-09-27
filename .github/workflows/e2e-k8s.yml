@@ -183,9 +183,10 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Prepare tiny Y4M fixtures (64x64 8-frame synthetic clip). The raw YUVs are
-  # committed; the generator validates them and adds geometry-bearing Y4M
-  # headers for the server's file-path scoring API.
+  # Prepare small Y4M fixtures (216x160 8-frame synthetic clip, the smallest
+  # geometry the default model accepts). The raw YUVs are committed; the
+  # generator validates them and adds geometry-bearing Y4M headers for the
+  # server's file-path scoring API.
   # ---------------------------------------------------------------------------
   prepare-fixtures:
     name: "Prepare YUV fixtures"
@@ -363,9 +364,13 @@ jobs:
           echo "=== Operator logs ===" && \
             kubectl logs -n vmafx-e2e-test deployment/vmafx-operator \
               --tail=200 2>/dev/null || true
+          # Select the server Pods by the chart Service's labels: the server
+          # Deployment's own selector also matches the operator Pod, so
+          # `kubectl logs deployment/vmafx` can print the operator's logs.
           echo "=== Server logs ===" && \
-            kubectl logs -n vmafx-e2e-test deployment/vmafx \
-              --tail=200 2>/dev/null || true
+            kubectl logs -n vmafx-e2e-test \
+              -l app.kubernetes.io/instance=vmafx,app.kubernetes.io/component=server \
+              --all-containers --prefix --tail=200 2>/dev/null || true
           echo "=== Events (all namespaces) ===" && \
             kubectl get events -A --sort-by=.lastTimestamp 2>/dev/null || true
 

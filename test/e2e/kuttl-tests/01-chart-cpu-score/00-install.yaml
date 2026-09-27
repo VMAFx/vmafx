@@ -4,6 +4,12 @@
 # Install the chart's default Deployment workload with the images built by the
 # exact workflow head. The CPU vendor override removes the chart's default GPU
 # scheduling requirement; all other workload selection remains at its default.
+#
+# The fixture ConfigMap is applied server-side. Client-side apply copies the
+# whole object, base64 payload included, into the last-applied-configuration
+# annotation, and the Y4M pair the default model needs (see
+# fixtures/gen-tiny-yuv.sh) is larger than the API server's 256 KiB
+# annotation limit.
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
@@ -16,7 +22,8 @@ commands:
         --namespace vmafx-e2e-test \
         --from-file=ref.y4m=../../fixtures/ref.y4m \
         --from-file=dist.y4m=../../fixtures/dist.y4m \
-        --dry-run=client -o yaml | kubectl apply -f -
+        --dry-run=client -o yaml |
+        kubectl apply --server-side --field-manager=vmafx-e2e -f -
       '
   - command: >-
       helm upgrade --install vmafx
