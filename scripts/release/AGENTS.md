@@ -195,6 +195,20 @@ executable bit first — raw artifact and release downloads do not
 carry POSIX mode metadata. Never replace runtime check with
 filename-only assertion.
 
+Version check (ADR-1201). `VERSION` argument = narrow tag shape minus
+`v`: `X.Y.Z` or `X.Y.Z-rc.N`, no leading zero; anything else exit 64.
+`vmaf --version` prints `VMAF_VERSION` from `core/include/meson.build`
+`git describe --tags --long --match 'v*.*.*'`, so build checked out
+at tag reports `vX.Y.Z[-rc.N]-0-g<hex>`, never bare `X.Y.Z`
+(reproduced on real CPU builds: `v1.0.0-rc.1-0-gd0f0e7e`,
+`v1.0.0-0-g8820048`). Accept exactly two strings: that describe form
+(distance `0`, lowercase hex 7–64) or bare `X.Y.Z[-rc.N]` vcs_tag
+fallback (tagless checkout; `verify-release-version.sh` pins
+`core/meson.build` marker to tag). Never prefix-match: `-N-g` with N>0
+= commit after tag, `-dirty` or other suffix = not tagged tree, `rc.10`
+never satisfies `rc.1`. Changing `vcs_tag` command or `--version`
+output format -> update verifier + test fixtures in same PR.
+
 Test coverage:
 `scripts/release/tests/test-verify-native-release-artifacts.sh`.
 
