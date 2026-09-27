@@ -141,7 +141,7 @@ jobs:
     name: Build vmafx-operator (${{ matrix.arch }})
     needs: validate-release
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    timeout-minutes: 60
     environment: release-publish
     strategy:
       fail-fast: false
@@ -344,7 +344,7 @@ jobs:
     name: Build vmafx-server (${{ matrix.arch }})
     needs: validate-release
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    timeout-minutes: 60
     environment: release-publish
     strategy:
       fail-fast: false
