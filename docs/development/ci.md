@@ -300,7 +300,9 @@ instead of a touched-files rule:
   configures with `-Db_lto=false` for the same reason. The directory may be
   inside or outside the repository: generated sources under it (`*.json.c`,
   HIP `*_hsaco.c`) are skipped either way, and the committed baselines contain
-  checked-in paths only.
+  checked-in paths only. The ratchet now enforces what ADR-1290 stated as a
+  precondition (build directory outside the repository), so an in-tree build
+  can no longer count generated files.
 
   The `sycl` lane additionally needs `scripts/ci/gen-sycl-compile-commands.py`
   to run between the native database export and the measurement: meson emits

@@ -50,10 +50,13 @@ The regression suite uses disposable build directories and synthetic markers. It
 both `testlog.txt` and `testlog.json` without reading, copying, or printing caller credential
 values. Its probes run your `meson` in a small synthetic environment with a temporary `HOME`.
 Python normally finds `pip install --user` packages under `HOME`, so the probes also set
-`PYTHONUSERBASE` to the user base the test interpreter resolved. A Meson installed with
-`--user`, as `scripts/setup/ubuntu.sh` does, therefore works the same as a system or virtualenv
-install. If the probes fail with `No module named 'mesonbuild'`, check that `meson` on `PATH`
-and the Python that runs the test share that user base. Probe subprocesses default to 120 seconds to avoid false-positive timeout flakes under
+`PYTHONUSERBASE` to the user base the test interpreter resolved (an explicit host
+`PYTHONUSERBASE` is carried unchanged). This extends ADR-1333's platform-runtime allowlist by one
+path so that a Meson installed with `--user`, as `scripts/setup/ubuntu.sh` does, works the same
+as a system or virtualenv install. If the probes fail with `No module named 'mesonbuild'`, check
+that `meson` on `PATH` and the Python that runs the test share that user base.
+
+Probe subprocesses default to 120 seconds to avoid false-positive timeout flakes under
 CPU/IO contention. `VMAFX_MESON_TEST_TIMEOUT_SECONDS` accepts only finite values from 60 through
 300 seconds; malformed, non-finite, too-low, and too-high overrides fail closed so configuration
 cannot remove the hard hang boundary.

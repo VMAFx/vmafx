@@ -180,6 +180,16 @@ class E2EFixtureGeometryTest(unittest.TestCase):
         width, height, _ = _fixture_geometry()
         self.assertIsNone(yuv420_rejection(_default_model_features(), width, height))
 
+    def test_committed_fixtures_match_the_generator_geometry(self) -> None:
+        # A geometry change in gen-tiny-yuv.sh without regenerated raw files
+        # would otherwise surface only in the nightly 'Prepare YUV fixtures' job.
+        width, height, frames = _fixture_geometry()
+        expected = width * height * 3 // 2 * frames
+        for name in ("ref.yuv", "dist.yuv"):
+            with self.subTest(fixture=name):
+                path = REPO_ROOT / "test/e2e/fixtures" / name
+                self.assertEqual(path.stat().st_size, expected)
+
     def test_fixture_pair_fits_one_configmap(self) -> None:
         width, height, frames = _fixture_geometry()
         frame_size = width * height * 3 // 2
