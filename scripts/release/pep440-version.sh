@@ -17,6 +17,8 @@
 # guessing, so a mis-shaped version can never produce a plausible filename.
 
 set -euo pipefail
+# Bracket ranges such as [0-9] match non-ASCII digits in some UTF-8 locales.
+export LC_ALL=C
 
 usage() {
   printf 'Usage: pep440-version.sh MAJOR.MINOR.PATCH[-rc.N]\n'

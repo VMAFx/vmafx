@@ -16,9 +16,10 @@ and blocks the push if neither source can establish the PR state and body.
 Like the CI gate, the hook skips the machine-generated release-please PR
 (ADR-1151): it asks `scripts/ci/release-pr-exempt.sh` whether the PR's head
 ref is `release-please--…` **and** its author is a bot, using the author that
-`gh` reports. A human PR on a `release-please--` branch is still validated, and
-so is every PR looked up through the public-page fallback, which carries no
-author identity.
+`gh` reports. The PR's head ref must also be the branch being pushed. A human
+PR on a `release-please--` branch is still validated, and a PR found only
+through the public-page fallback, which carries no author identity, is never
+exempted.
 
 ## Quick start
 

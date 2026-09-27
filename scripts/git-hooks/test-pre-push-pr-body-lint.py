@@ -292,6 +292,19 @@ class ReleasePullRequestExemption(HookFixture):
                     f"exempt=false (head ref '{RELEASE_REF}' looks like a release branch",
                 )
 
+    def test_numeric_branch_resolving_to_the_release_pr_is_validated(self) -> None:
+        # gh reads a numeric branch name as a PR number, so a local branch
+        # named after the release PR's number finds the release PR itself.
+        self.git("switch", "-qc", "1213")
+        self.serve_pull("1213", headRefName=RELEASE_REF)
+
+        result = self.run_hook()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(VALIDATOR_MARKER, result.stderr)
+        self.assertIn("BLOCKED", result.stderr)
+        self.assertIn("is not the local branch", result.stderr)
+
     def test_bot_pr_missing_head_ref_is_validated(self) -> None:
         self.open_pull(RELEASE_REF, headRefName=ABSENT)
 

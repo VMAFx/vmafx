@@ -222,6 +222,7 @@ PY
 release_pr_exempt() {
   local input_path="$1"
   local predicate="$2"
+  local local_branch="$3"
   local identity=()
   local verdict
 
@@ -230,9 +231,16 @@ release_pr_exempt() {
     PR_AUTHOR_TYPE="${identity[2]:-}" GITHUB_OUTPUT="" bash "${predicate}")" || return 1
   printf 'pre-push-pr-body-lint: %s\n' "${verdict}" >&2
   case "${verdict}" in
-    'release-pr-exempt: exempt=true '*) return 0 ;;
+    'release-pr-exempt: exempt=true '*) ;;
     *) return 1 ;;
   esac
+  # gh resolves a numeric branch name ("1213", "#1213") to that PR number, so
+  # the PR found may not be this branch's PR. Only the branch's own PR counts.
+  if [ "${identity[0]:-}" != "${local_branch}" ]; then
+    printf 'pre-push-pr-body-lint: PR head ref %s is not the local branch %s; release-PR exemption not applied\n' \
+      "'${identity[0]:-}'" "'${local_branch}'" >&2
+    return 1
+  fi
 }
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -313,7 +321,7 @@ if [ "${metadata_source}" != "gh" ]; then
   echo "pre-push-pr-body-lint: public PR pages carry no author identity; the release-PR exemption (ADR-1151) does not apply." >&2
 elif [ ! -f "${exemption_predicate}" ]; then
   echo "pre-push-pr-body-lint: scripts/ci/release-pr-exempt.sh not found (branch predates ADR-1151); the release-PR exemption does not apply." >&2
-elif release_pr_exempt "${pr_path}" "${exemption_predicate}"; then
+elif release_pr_exempt "${pr_path}" "${exemption_predicate}" "${branch}"; then
   echo "pre-push-pr-body-lint: machine-generated release PR — skipping (CI's deliverables checklist exempts it too)." >&2
   exit 0
 fi

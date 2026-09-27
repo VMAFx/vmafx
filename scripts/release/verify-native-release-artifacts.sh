@@ -5,6 +5,8 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 set -euo pipefail
+# Bracket ranges such as [0-9] match non-ASCII digits in some UTF-8 locales.
+export LC_ALL=C
 
 usage() {
   printf 'Usage: verify-native-release-artifacts.sh ARTIFACT_DIR VERSION\n'

@@ -200,7 +200,7 @@ git -C "$tagged" init -q
 git -C "$tagged" add .
 git -C "$tagged" -c user.name=test -c user.email=test@example.invalid \
   commit -q -m fixture
-git -C "$tagged" tag v3.2.1
+git -C "$tagged" -c tag.gpgsign=false tag v3.2.1
 check 'selected tag at HEAD succeeds' env VMAFX_REPO_ROOT="$tagged" "$VERIFY" v3.2.1
 printf 'later\n' >"$tagged/later.txt"
 git -C "$tagged" add later.txt

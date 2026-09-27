@@ -14,7 +14,8 @@
 #
 #   1. the jq filter alone, against sample release lists;
 #   2. the filter's accepted tag shape, against verify-release-version.sh's;
-#   3. the whole step script, run under the runner's default `bash -e` with a
+#   3. the whole step script, run under plain `bash` (the step sets
+#      `set -euo pipefail` itself, so it never relies on the runner default) with a
 #      stub `gh`, for its exists/tag outputs and its fail-closed exits (an
 #      unreadable or unparseable release list must stop the job, never read as
 #      "no draft");
@@ -135,7 +136,7 @@ run_step() {
   env PATH="$scratch/bin:$PATH" STUB_GH_FIXTURE="$fixture" STUB_GH_FAIL="$gh_fails" \
     RUNNER_TEMP="$scratch/runner.$case_no" GITHUB_OUTPUT="$step_output" \
     GITHUB_REPOSITORY=example/repo GH_TOKEN=stub \
-    bash -e "$scratch/step.sh" >/dev/null 2>&1 || step_rc=$?
+    bash "$scratch/step.sh" >/dev/null 2>&1 || step_rc=$?
 }
 
 # expect DESCRIPTION RELEASES_JSON [SELECTED_TAG...]

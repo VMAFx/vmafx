@@ -144,6 +144,7 @@ jobs:
         # Explicit, so fail-closed (-e, pipefail) never rests on the runner default.
         shell: bash
         run: |
+          set -euo pipefail
           releases="$RUNNER_TEMP/releases.json"
           gh api --paginate --slurp \
             "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
