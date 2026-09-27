@@ -35,10 +35,10 @@ duplicate release waiting at human publication gate. Draft step's inline jq
 tag regex = exact shape `scripts/release/verify-release-version.sh` accepts;
 narrower hides waiting draft, re-runs `release-please` against untagged
 release. `scripts/release/tests/test-release-please-draft-gate.sh` extracts
-step from workflow, proves parity. Initial 3.2.1 cut is selected
-by one-time `release-as` config field; release-PR rollover must remove that
-field and `bootstrap-sha` before release PR merges so neither override can
-affect 3.2.2.
+step from workflow, proves parity. First cut (1.0.0-rc.1, ADR-1151 /
+ADR-1201) is selected by one-time `release-as` config field; release-PR
+rollover removes that field and `bootstrap-sha` before release PR merges, so
+neither override can affect later releases. Later RCs: `Release-As:` footer.
 
 Every job publishing to GHCR, uploading GitHub Release assets, or minting
 release-artifact Sigstore identity is bound to protected

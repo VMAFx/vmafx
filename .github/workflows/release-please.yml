@@ -141,6 +141,8 @@ jobs:
         id: draft
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
+        # Explicit, so fail-closed (-e, pipefail) never rests on the runner default.
+        shell: bash
         run: |
           releases="$RUNNER_TEMP/releases.json"
           gh api --paginate --slurp \
