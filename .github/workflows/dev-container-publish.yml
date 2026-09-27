@@ -39,7 +39,9 @@ jobs:
   publish:
     name: Build, push, and sign dev container (libvmaf-build stage)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The uncached stage build takes 28-35 min on a hosted runner (the
+    # Dev Container PR gate); pushing ~29.5 GB adds several more.
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: write
@@ -71,8 +73,11 @@ jobs:
           tags: |
             ghcr.io/vmafx/vmafx-dev-mcp:sha-${{ github.sha }}
             ghcr.io/vmafx/vmafx-dev-mcp:master
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # No GitHub Actions layer cache: exporting every layer of this
+          # ~29.5 GB stage (mode=max) into a cache capped at 10 GB per
+          # repository never finished, and six of ten master runs were
+          # cancelled at the timeout after pushing but before cosign signed
+          # the image.
           # BuildKit secret for the NEO release lookup; without it the
           # unauthenticated GitHub API rate limit fails the build.
           secrets: |
