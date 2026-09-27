@@ -113,6 +113,12 @@ The release workflow currently publishes only `node-cpu`. All targets use the
 same native-architecture FFmpeg dependency collector, so arm64 stages resolve
 `aarch64-linux-gnu` libraries rather than copying an amd64-only path.
 
+The release workflow builds each architecture on a native GitHub runner
+(amd64 on `ubuntu-latest`, arm64 on `ubuntu-26.04-arm`), then merges the two
+into one multi-arch index that is signed, attested and given an SBOM as a whole
+([ADR-1349](../adr/1349-native-arch-node-image-build.md)). Built under QEMU
+emulation instead, the arm64 half did not finish within two hours.
+
 Build example:
 
 ```bash

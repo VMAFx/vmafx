@@ -167,7 +167,8 @@ job the PR renamed, every required check and every build lane.
 | `docker-publish-operator-node.yml` | `Validate published ordinary tag` | `Validate tag` | 12 | No |
 | `docker-publish-operator-node.yml` | `Build + push vmafx-operator (amd64 + arm64)` | `Publish vmafx-operator` | 22 | No |
 | `docker-publish-operator-node.yml` | `Build + push vmafx-server (amd64 + arm64)` | `Publish vmafx-server` | 20 | No |
-| `docker-publish-operator-node.yml` | `Build + push vmafx-node CPU (amd64 + arm64)` | `Publish vmafx-node CPU` | 21 | No |
+| `docker-publish-operator-node.yml` | `Build + push vmafx-node CPU (amd64 + arm64)` | `Build vmafx-node (${{ matrix.arch }})` | <=24 | No |
+| `docker-publish-operator-node.yml` | (new, ADR-1349) | `Publish vmafx-node CPU` | 21 | No |
 | `docker-publish-operator-node.yml` | `Smoke-test operator + server + node images` | `Smoke-test images` | 17 | No |
 | `docker-publish-operator-node.yml` | `All Go service images published` | `Images published` | 16 | No |
 | `docker-publish-production.yml` | `Validate published ordinary tag` | `Validate tag` | 12 | No |

@@ -1,0 +1,1 @@
+| [ADR-1349](1349-native-arch-node-image-build.md) | Build the `vmafx-node` release image per architecture on native runners (`ubuntu-latest`, `ubuntu-26.04-arm`), push by digest, and publish one merged multi-arch index that is signed, attested and given an SBOM; the arm64 half never finished under QEMU. | Accepted | release, ci, container |

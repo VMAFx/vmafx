@@ -1057,3 +1057,4 @@
 1346-hosted-slim-container-release-build
 1347-image-recovery-from-default-branch
 1348-release-candidate-prerelease-versioning
+1349-native-arch-node-image-build

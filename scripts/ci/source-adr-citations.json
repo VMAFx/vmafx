@@ -7650,6 +7650,13 @@
         ".github/workflows/rule-enforcement.yml": 2
       },
       "target": "1348-release-candidate-prerelease-versioning.md"
+    },
+    "1349": {
+      "sites": {
+        ".github/workflows/docker-publish-operator-node.yml": 1,
+        "scripts/release/tests/test-docker-publish-source-binding.sh": 1
+      },
+      "target": "1349-native-arch-node-image-build.md"
     }
   },
   "retired": {

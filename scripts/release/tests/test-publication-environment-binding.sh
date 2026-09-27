@@ -43,7 +43,7 @@ VERIFY_TARGETS = {
         '"${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@'
         '${{ needs.build-server.outputs.digest }}"',
         '"${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@'
-        '${{ needs.build-node.outputs.digest }}"',
+        '${{ needs.publish-node.outputs.digest }}"',
     ),
 }
 

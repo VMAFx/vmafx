@@ -119,6 +119,29 @@ for relative_path, build_jobs in workflows.items():
         if overlays != ["docker/ Dockerfile.go-server"]:
             raise AssertionError(f"{relative_path}: {job} overlays {overlays}, not the build recipe only")
 
+    if relative_path.endswith("docker-publish-operator-node.yml"):
+        # ADR-1349: vmafx-node builds each architecture on a native runner and
+        # merges the two digests; under QEMU the arm64 build outran its limit.
+        node_build = job_block(jobs_text, "build-node")
+        for snippet in (
+            "runs-on: ${{ matrix.runner }}",
+            "runner: ubuntu-26.04-arm",
+            "push-by-digest=true",
+        ):
+            if snippet not in node_build:
+                raise AssertionError(f"{relative_path}: build-node lacks {snippet!r}")
+        if "setup-qemu-action" in node_build:
+            raise AssertionError(f"{relative_path}: build-node still emulates arm64 with QEMU")
+        node_publish = job_block(jobs_text, "publish-node")
+        for snippet in (
+            "      - build-node\n",
+            'if [[ "${#digests[@]}" -ne 2 ]]; then',
+            "docker buildx imagetools create",
+            "${{ env.NODE_IMAGE }}@${{ steps.index.outputs.digest }}",
+        ):
+            if snippet not in node_publish:
+                raise AssertionError(f"{relative_path}: publish-node lacks {snippet!r}")
+
     if "ref: ${{ github.event.release.tag_name || github.ref }}" in jobs_text:
         raise AssertionError(f"{relative_path}: independent event-ref checkout remains")
     print(f"PASS: {relative_path} binds every image build to one published tag")
