@@ -19,6 +19,13 @@ model/tiny/*.onnx binary -filter -diff -merge
 model/tiny/*.onnx.sig binary
 model/tiny/*.onnx.cert binary
 
+# Raw video (fixtures, fuzz seeds, golden pairs) is binary. A frame with no NUL
+# byte (flat grey, for example) is otherwise auto-detected as text, so `git
+# diff` emits raw non-UTF-8 bytes and `text=auto` may rewrite CR/LF bytes
+# inside a frame.
+*.yuv binary
+*.y4m binary
+
 # Ffmpeg patch series — diff-friendly text.
 ffmpeg-patches/*.patch text eol=lf
 

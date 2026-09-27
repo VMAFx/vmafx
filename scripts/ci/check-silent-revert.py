@@ -130,6 +130,12 @@ class Repo:
             [GIT, "-C", str(self.root), *args],
             capture_output=True,
             text=True,
+            # git content is bytes: a file auto-detected as text may hold any
+            # byte (a flat-grey raw frame is all 0x80). Strict UTF-8 decoding
+            # crashed the gate; surrogateescape keeps every byte and compares
+            # removed and added lines exactly.
+            encoding="utf-8",
+            errors="surrogateescape",
             check=False,
         )
         if check and proc.returncode != 0:

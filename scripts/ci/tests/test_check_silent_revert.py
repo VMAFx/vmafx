@@ -182,6 +182,22 @@ class SilentRevertGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("clean", result.stdout)
 
+    def test_non_utf8_text_file_change_does_not_crash(self) -> None:
+        """A text-classified file holding non-UTF-8 bytes (a flat raw frame) is diffed."""
+        self.seed()
+        frame = self.repo / "test/fixtures/grey.raw"
+        frame.parent.mkdir(parents=True, exist_ok=True)
+        frame.write_bytes(b"\x80" * 64 + b"\n")
+        base = self.commit("test: add a flat grey frame")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", base)
+        frame.write_bytes(b"\x79" * 64 + b"\n")
+        head = self.commit("test: regenerate the grey frame")
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_stale_branch_that_does_not_touch_the_file_is_clean(self) -> None:
         """Being behind the target is not by itself a revert."""
         start = self.seed()
