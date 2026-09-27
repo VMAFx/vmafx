@@ -7656,7 +7656,7 @@
     },
     "1349": {
       "sites": {
-        ".github/workflows/docker-publish-operator-node.yml": 1,
+        ".github/workflows/docker-publish-operator-node.yml": 3,
         "scripts/release/tests/test-docker-publish-source-binding.sh": 1
       },
       "target": "1349-native-arch-node-image-build.md"

@@ -38,6 +38,12 @@
   also takes `ffmpeg-patches/` from the dispatching commit (ADR-1350).
 
 
+- The `vmafx-operator` and `vmafx-server` release images build each
+  architecture on its own native runner, like `vmafx-node` (ADR-1349). Their
+  arm64 halves were emulated with QEMU and took 30 to 46 minutes of a 60-minute
+  limit; each still publishes one signed, attested multi-arch image.
+
+
 - A published release's container images can be recovered after a build
   recipe fix (ADR-1347). A `workflow_dispatch` of the image publish workflows
   on the default branch builds the release tag's source with that commit's

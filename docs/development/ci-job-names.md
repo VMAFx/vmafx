@@ -165,8 +165,10 @@ job the PR renamed, every required check and every build lane.
 | `supply-chain.yml` | `Publish vmaf-mcp to PyPI (Trusted Publishing)` | `Publish vmaf-mcp PyPI` | 20 | No |
 | `supply-chain.yml` | `Attach SBOM + signatures to GitHub Release` | `Attach release assets` | 21 | No |
 | `docker-publish-operator-node.yml` | `Validate published ordinary tag` | `Validate tag` | 12 | No |
-| `docker-publish-operator-node.yml` | `Build + push vmafx-operator (amd64 + arm64)` | `Publish vmafx-operator` | 22 | No |
-| `docker-publish-operator-node.yml` | `Build + push vmafx-server (amd64 + arm64)` | `Publish vmafx-server` | 20 | No |
+| `docker-publish-operator-node.yml` | `Build + push vmafx-operator (amd64 + arm64)` | `Build vmafx-operator (${{ matrix.arch }})` | <=28 | No |
+| `docker-publish-operator-node.yml` | (new, ADR-1349) | `Publish vmafx-operator` | 22 | No |
+| `docker-publish-operator-node.yml` | `Build + push vmafx-server (amd64 + arm64)` | `Build vmafx-server (${{ matrix.arch }})` | <=26 | No |
+| `docker-publish-operator-node.yml` | (new, ADR-1349) | `Publish vmafx-server` | 20 | No |
 | `docker-publish-operator-node.yml` | `Build + push vmafx-node CPU (amd64 + arm64)` | `Build vmafx-node (${{ matrix.arch }})` | <=24 | No |
 | `docker-publish-operator-node.yml` | (new, ADR-1349) | `Publish vmafx-node CPU` | 21 | No |
 | `docker-publish-operator-node.yml` | `Smoke-test operator + server + node images` | `Smoke-test images` | 17 | No |

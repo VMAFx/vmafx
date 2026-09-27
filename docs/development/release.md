@@ -476,7 +476,10 @@ repo or in CI secrets.
   `ghcr.io/vmafx/vmafx-operator:<tag>`, and
   `ghcr.io/vmafx/vmafx-node:<tag>`): the same cosign signature, CycloneDX SBOM,
   and GitHub-native build provenance, emitted by
-  `docker-publish-operator-node.yml`.
+  `docker-publish-operator-node.yml`. Each is built per architecture on a
+  native runner and published as one multi-arch index, which carries the
+  signature, SBOM and provenance
+  ([ADR-1349](../adr/1349-native-arch-node-image-build.md)).
 
 ### Consumer verification recipes
 

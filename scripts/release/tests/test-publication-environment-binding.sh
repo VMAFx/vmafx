@@ -39,9 +39,9 @@ VERIFY_TARGETS = {
     ),
     "docker-publish-operator-node.yml": (
         '"${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@'
-        '${{ needs.build-operator.outputs.digest }}"',
+        '${{ needs.publish-operator.outputs.digest }}"',
         '"${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@'
-        '${{ needs.build-server.outputs.digest }}"',
+        '${{ needs.publish-server.outputs.digest }}"',
         '"${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@'
         '${{ needs.publish-node.outputs.digest }}"',
     ),
