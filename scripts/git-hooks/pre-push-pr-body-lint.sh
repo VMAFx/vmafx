@@ -17,6 +17,10 @@
 #   - Bounds `gh` lookup time and falls back to GitHub's public PR pages.
 #   - No-op if HEAD has no open PR with this branch as head.
 #   - No-op if the PR is a draft (CI's deep-dive-checklist skips drafts).
+#   - No-op if scripts/ci/release-pr-exempt.sh (ADR-1151) classifies the PR as
+#     the machine-generated release PR, exactly as CI's deep-dive-checklist
+#     does. Only `gh` metadata carries the author identity the predicate
+#     needs; the public-page fallback never exempts.
 #   - Otherwise: fetches the PR body via `gh pr view`, computes the diff
 #     via `git diff --name-only origin/master..HEAD`, and runs
 #     scripts/ci/validate-pr-body.sh. Non-zero exit blocks the push.
@@ -45,7 +49,8 @@ run_gh_lookup() {
   local status=0
   local watchdog_pid
 
-  gh pr view "${branch_name}" --json body,state,isDraft >"${output_path}" 2>/dev/null &
+  gh pr view "${branch_name}" --json author,body,headRefName,isDraft,state \
+    >"${output_path}" 2>/dev/null &
   command_pid=$!
   (
     sleep "${lookup_timeout}"
@@ -177,6 +182,59 @@ raise SystemExit(0 if valid else 1)
 PY
 }
 
+# Print the pull request's head ref, author login and author type as the
+# pull_request event hands them to CI (github.event.pull_request.head.ref,
+# .user.login, .user.type), one per line. `gh pr view --json author` reports a
+# User as {"is_bot": false, "login": "<login>"} and every other actor as
+# {"is_bot": true, "login": "app/<login>"} (cli/cli api/queries_issue.go
+# Author.MarshalJSON), while the event payload names the same App
+# `<login>[bot]` with type `Bot`. Anything that does not match one of those two
+# shapes (a deleted author, missing metadata) yields empty identity fields,
+# which the predicate never exempts.
+release_pr_identity() {
+  local input_path="$1"
+  python3 - "${input_path}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    pull = json.load(handle)
+head_ref = pull.get("headRefName")
+author = pull.get("author")
+login = ""
+author_type = ""
+if isinstance(author, dict) and isinstance(author.get("login"), str):
+    if author.get("is_bot") is True:
+        app = author["login"].removeprefix("app/")
+        if app and app != author["login"]:
+            login, author_type = f"{app}[bot]", "Bot"
+    elif author.get("is_bot") is False and author["login"]:
+        login, author_type = author["login"], "User"
+print(head_ref if isinstance(head_ref, str) else "")
+print(login)
+print(author_type)
+PY
+}
+
+# Ask the shared ADR-1151 predicate whether CI would exempt this PR from the
+# deliverables checklist. Prints the predicate's verdict line; succeeds only
+# when that verdict is `exempt=true`.
+release_pr_exempt() {
+  local input_path="$1"
+  local predicate="$2"
+  local identity=()
+  local verdict
+
+  mapfile -t identity < <(release_pr_identity "${input_path}" 2>/dev/null || true)
+  verdict="$(HEAD_REF="${identity[0]:-}" PR_AUTHOR="${identity[1]:-}" \
+    PR_AUTHOR_TYPE="${identity[2]:-}" GITHUB_OUTPUT="" bash "${predicate}")" || return 1
+  printf 'pre-push-pr-body-lint: %s\n' "${verdict}" >&2
+  case "${verdict}" in
+    'release-pr-exempt: exempt=true '*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "${repo_root}" ]; then
   exit 0
@@ -207,10 +265,13 @@ search_path="${temporary_directory}/pull-search.html"
 page_path="${temporary_directory}/pull-page.html"
 
 lookup_status=1
+metadata_source=""
 if command -v gh >/dev/null 2>&1 && run_gh_lookup "${branch}" "${pr_path}"; then
   lookup_status=0
+  metadata_source="gh"
 elif lookup_with_public_web "${branch}" "${pr_path}" "${search_path}" "${page_path}"; then
   lookup_status=0
+  metadata_source="public-web"
 else
   lookup_status=$?
 fi
@@ -237,6 +298,23 @@ fi
 is_draft="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("isDraft",False)).lower())' 2>/dev/null || echo "false")"
 if [ "${is_draft}" = "true" ]; then
   echo "pre-push-pr-body-lint: PR for '${branch}' is a draft — skipping (CI also skips drafts)." >&2
+  exit 0
+fi
+
+# Release PR: CI's deep-dive-checklist consults scripts/ci/release-pr-exempt.sh
+# (ADR-1151) and skips the deliverables check for the release-please PR, whose
+# body is a rendered changelog (or a link to one) with no ADR-0108 checklist.
+# Consult the same predicate so the release-branch changelog cut can be pushed.
+# The public-page fallback has no author identity, so it cannot prove the bot
+# half of the predicate and never exempts. A branch without the predicate
+# (pre-ADR-1151) validates as before.
+exemption_predicate="${repo_root}/scripts/ci/release-pr-exempt.sh"
+if [ "${metadata_source}" != "gh" ]; then
+  echo "pre-push-pr-body-lint: public PR pages carry no author identity; the release-PR exemption (ADR-1151) does not apply." >&2
+elif [ ! -f "${exemption_predicate}" ]; then
+  echo "pre-push-pr-body-lint: scripts/ci/release-pr-exempt.sh not found (branch predates ADR-1151); the release-PR exemption does not apply." >&2
+elif release_pr_exempt "${pr_path}" "${exemption_predicate}"; then
+  echo "pre-push-pr-body-lint: machine-generated release PR — skipping (CI's deliverables checklist exempts it too)." >&2
   exit 0
 fi
 

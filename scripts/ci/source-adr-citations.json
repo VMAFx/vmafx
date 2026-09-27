@@ -179,7 +179,8 @@
         "scripts/ci/release-pr-exempt.sh": 1,
         "scripts/ci/tests/test-pr-body-input-selection.sh": 3,
         "scripts/ci/validate-pr-body.sh": 1,
-        "scripts/git-hooks/pre-push-pr-body-lint.sh": 2
+        "scripts/git-hooks/pre-push-pr-body-lint.sh": 3,
+        "scripts/git-hooks/test-pre-push-pr-body-lint.py": 2
       },
       "target": "0108-deep-dive-deliverables-rule.md"
     },
@@ -6440,6 +6441,7 @@
         ".github/workflows/required-aggregator.yml": 2,
         ".github/workflows/rule-enforcement.yml": 13,
         ".github/workflows/supply-chain.yml": 1,
+        ".pre-commit-config.yaml": 1,
         "bindings/rust/vmafx-sys/Cargo.toml": 1,
         "bindings/rust/vmafx/Cargo.toml": 1,
         "core/meson.build": 1,
@@ -6451,6 +6453,8 @@
         "pyproject.toml": 1,
         "scripts/ci/release-pr-exempt.sh": 3,
         "scripts/ci/tests/test-release-pr-exempt.sh": 1,
+        "scripts/git-hooks/pre-push-pr-body-lint.sh": 6,
+        "scripts/git-hooks/test-pre-push-pr-body-lint.py": 2,
         "scripts/release/check-release-bot-secrets.sh": 2,
         "scripts/release/rollover-changelog-fragments.sh": 1,
         "scripts/release/tests/test-rollover-changelog-fragments.sh": 2,

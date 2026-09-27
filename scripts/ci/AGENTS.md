@@ -530,6 +530,18 @@ validation. Indeterminate metadata fails closed. Preserve
 `test-pre-push-pr-body-lint.py` in both commit and push hooks so a locked keyring
 cannot restore the unbounded hang or an authentication failure bypass.
 
+The hook skips the machine-generated release PR only by calling
+`release-pr-exempt.sh` (ADR-1151), the same predicate CI's Deliverables
+Checklist calls; never re-implement it in the hook. It feeds the predicate the
+PR's `headRefName` and an author mapped from `gh pr view --json author` to the
+event-payload shape CI passes: `{"is_bot": true, "login": "app/<x>"}` ->
+`PR_AUTHOR=<x>[bot]`, `PR_AUTHOR_TYPE=Bot`; `{"is_bot": false, "login": "<x>"}`
+-> `<x>`, `User`; any other shape (deleted author, missing field) -> empty,
+which never exempts. The public-page fallback carries no author and must never
+exempt; a branch without the predicate validates as before. The
+`test-pr-body-lookup` hook re-runs on predicate edits and covers the bot,
+human-same-ref, non-bot-lookalike and fallback cases.
+
 **Invariant — single parser source of truth**: do not fork or
 re-implement deliverables-check parsing logic in any other
 language. If gate's regex shape ever changes, change lands
@@ -832,7 +844,10 @@ bytes.
   That ambiguity is exactly what `mustReport` list exists to close.
 - Only four authoring-discipline gates may consult it: Deliverables
   Checklist, Doc-Substance Gate, `docs/state.md` Gate, FFmpeg-Patches Surface
-  Sync. `Release Script Contract` and `ADR Collision Guard` stay armed on
+  Sync. The local pre-push mirror of the Deliverables Checklist
+  (`scripts/git-hooks/pre-push-pr-body-lint.sh`) consults it too, so pushing
+  the release-branch changelog cut is not blocked by a gate CI would skip.
+  `Release Script Contract` and `ADR Collision Guard` stay armed on
   release PRs. Former = gate proving cut ran; also runs
   `tests/test-release-pr-exempt.sh`, so exemption's own test can never
   be skipped by exemption.
