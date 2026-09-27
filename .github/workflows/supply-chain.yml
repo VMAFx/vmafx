@@ -471,7 +471,11 @@ jobs:
     needs: [validate-release, build-artifacts, verify-native-artifacts]
     permissions:
       id-token: write
-      contents: read
+      # The generator's `upload-assets` job requests contents: write, and GitHub
+      # checks every nested job's permissions when the run starts, even a job
+      # that `upload-assets: false` skips. With contents: read the whole
+      # workflow fails with startup_failure (v1.0.0-rc.1, 2026-09-27).
+      contents: write
       actions: read
     # Sole tag-pin exception: the SLSA generator rejects SHA-pinned reusable
     # workflow refs because its builder identity must be refs/tags/vX.Y.Z.
@@ -578,7 +582,11 @@ jobs:
     needs: [validate-release, mcp-build]
     permissions:
       id-token: write
-      contents: read
+      # The generator's `upload-assets` job requests contents: write, and GitHub
+      # checks every nested job's permissions when the run starts, even a job
+      # that `upload-assets: false` skips. With contents: read the whole
+      # workflow fails with startup_failure (v1.0.0-rc.1, 2026-09-27).
+      contents: write
       actions: read
     # See the documented SLSA reusable-workflow tag-pin exception above.
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0

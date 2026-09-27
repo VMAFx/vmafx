@@ -123,7 +123,10 @@ def validate_workflow_permissions(relative_path: str, workflow: str) -> None:
 def validate_slsa_job(relative_path: str, job: str, block: str) -> None:
     expected_permissions = {
         "actions": "read",
-        "contents": "read",
+        # The pinned generator's upload-assets job requests contents: write;
+        # GitHub validates it at startup even though upload-assets: false
+        # skips the job, so the caller must grant it or the run never starts.
+        "contents": "write",
         "id-token": "write",
     }
     permissions = dict(
