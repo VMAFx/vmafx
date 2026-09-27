@@ -66,6 +66,30 @@ def is_exact_pelorus_mirror(path: str) -> bool:
     return path in EXACT_PELORUS_MIRROR_PATHS
 
 
+def build_dir_prefix(build_dir: Path | None, repo_root: Path) -> str | None:
+    """Return *build_dir* as a repo-relative prefix, or None when out of tree.
+
+    Everything meson writes into the build directory is a build product: the
+    ``xxd`` model embeds (``src/*.json.c``), HIP ``*_hsaco.c`` blobs,
+    ``config.h``.  ADR-1142 exempts generated files, and the committed
+    baselines hold checked-in sources only, so a build directory inside the
+    repository must not change what is measured.  The repository root itself
+    is never a prefix: that would exclude every source.
+    """
+    if build_dir is None:
+        return None
+    try:
+        rel = build_dir.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return None
+    return None if rel == "." else rel
+
+
+def is_build_product(path: str, prefix: str | None) -> bool:
+    """Return whether repo-relative *path* lies inside the build directory."""
+    return prefix is not None and path.startswith(prefix + "/")
+
+
 @dataclass
 class Measurement:
     """Per-file counts for one lane."""
@@ -163,14 +187,16 @@ def relpath(path: str, repo_root: Path, cwd: Path) -> str | None:
 
 
 def parse_diagnostics(
-    output: str, repo_root: Path, cwd: Path
+    output: str, repo_root: Path, cwd: Path, build_dir: Path | None = None
 ) -> tuple[set[tuple[str, int, int, str]], bool]:
     """Parse clang-tidy output into a deduplicated diagnostic set.
 
     Returns ``(diagnostics, compile_failed)``.  Diagnostics outside the
-    repository (system headers) are dropped; a ``clang-diagnostic-error``
-    marks the translation unit as unusable.
+    repository (system headers) or inside *build_dir* (generated headers)
+    are dropped; a ``clang-diagnostic-error`` marks the translation unit as
+    unusable.
     """
+    build_prefix = build_dir_prefix(build_dir, repo_root)
     diags: set[tuple[str, int, int, str]] = set()
     compile_failed = False
     for raw in output.splitlines():
@@ -188,7 +214,7 @@ def parse_diagnostics(
             compile_failed = True
             continue
         rel = relpath(match["path"], repo_root, cwd)
-        if rel is None or is_exact_pelorus_mirror(rel):
+        if rel is None or is_exact_pelorus_mirror(rel) or is_build_product(rel, build_prefix):
             continue
         diags.add((rel, int(match["line"]), int(match["col"]), match["check"]))
     return diags, compile_failed
@@ -254,12 +280,18 @@ def count_uncited_nolints(text: str) -> int:
 
 
 def load_compile_commands(build_dir: Path, repo_root: Path) -> list[tuple[Path, Path]]:
-    """Return ``(source, directory)`` pairs for in-repo translation units."""
+    """Return ``(source, directory)`` pairs for checked-in translation units.
+
+    Sources generated into *build_dir* are skipped even when it lies inside
+    the repository, so an in-tree and an out-of-tree build measure the same
+    set.
+    """
     compdb = build_dir / "compile_commands.json"
     try:
         entries = json.loads(compdb.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise SystemExit(f"tidy-ratchet: cannot read {compdb}: {exc}") from exc
+    build_prefix = build_dir_prefix(build_dir, repo_root)
     seen: set[str] = set()
     units: list[tuple[Path, Path]] = []
     for entry in entries:
@@ -270,6 +302,7 @@ def load_compile_commands(build_dir: Path, repo_root: Path) -> list[tuple[Path, 
             or rel in seen
             or rel.startswith("subprojects/")
             or is_exact_pelorus_mirror(rel)
+            or is_build_product(rel, build_prefix)
         ):
             continue
         if Path(rel).suffix not in SOURCE_SUFFIXES:
@@ -414,7 +447,7 @@ def measure(
         for future in concurrent.futures.as_completed(futures):
             source, directory = futures[future]
             _source, output, returncode = future.result()
-            unit_diags, failed = parse_diagnostics(output, repo_root, directory)
+            unit_diags, failed = parse_diagnostics(output, repo_root, directory, build_dir)
             # The ratchet has always counted promoted checks as debt. A normal
             # warnings-as-errors exit is distinct from a tool/compile failure.
             promoted_only = (
@@ -430,17 +463,24 @@ def measure(
         result.warnings[path] = result.warnings.get(path, 0) + 1
         result.diagnostics.append(f"{path}:{line}:{col}: [{check}]")
     result.diagnostics.sort()
-    result.nolint_uncited = scan_nolints(repo_root, units, lane)
+    result.nolint_uncited = scan_nolints(repo_root, units, lane, build_dir)
     return result
 
 
-def scan_nolints(repo_root: Path, units: list[tuple[Path, Path]], lane: str) -> dict[str, int]:
+def scan_nolints(
+    repo_root: Path,
+    units: list[tuple[Path, Path]],
+    lane: str,
+    build_dir: Path | None = None,
+) -> dict[str, int]:
     """Count uncited NOLINTs in every measured TU and the headers of its lane.
 
     The ``cpu`` lane owns every header under ``core/``; a GPU lane only owns
     the headers that live next to its translation units, so a header is
-    never counted twice across lanes.
+    never counted twice across lanes.  Generated headers inside *build_dir*
+    are not checked-in sources and are skipped.
     """
+    build_prefix = build_dir_prefix(build_dir, repo_root)
     counts: dict[str, int] = {}
     paths = {u[0] for u in units}
     if lane == "cpu":
@@ -452,7 +492,7 @@ def scan_nolints(repo_root: Path, units: list[tuple[Path, Path]], lane: str) -> 
             paths.update(p for p in root.rglob("*") if p.suffix in HEADER_SUFFIXES)
     for path in sorted(paths):
         rel = relpath(str(path), repo_root, repo_root)
-        if rel is None or is_exact_pelorus_mirror(rel):
+        if rel is None or is_exact_pelorus_mirror(rel) or is_build_product(rel, build_prefix):
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")

@@ -806,10 +806,16 @@ Alpha pre-releases (`X.Y.Za<N>`) never acceptable pin.
   lane locally with the Ubuntu 26.04 dev image plus `clang-tidy-22` from
   apt.llvm.org, configured exactly as the workflow does
   (`CC=gcc-15 CXX=g++-15 meson setup build core -Denable_cuda=false
-  -Denable_sycl=false -Db_lto=false`). The build directory must be `build`
-  inside the repo: the 18 generated `build/src/*.json.c` model TUs are
-  baseline entries, and a build directory outside the tree silently drops
-  them from the measurement.
+  -Denable_sycl=false -Db_lto=false`).
+- **Build products never measured.** Everything under `--build-dir` = generated
+  (xxd `src/*.json.c` + `src/brisque_live.model.c`, HIP `*_hsaco.c`,
+  `config.h`); ADR-1142 exempts generated files. `load_compile_commands()`,
+  `parse_diagnostics()`, `scan_nolints()` all drop paths under build dir
+  (`build_dir_prefix()` / `is_build_product()`) -> in-tree `build/` and
+  out-of-tree `$RUNNER_TEMP` measure same set. Baselines = checked-in paths
+  only; `build*/` key in any baseline = stale measurement. Before this rule
+  nightly in-tree `build/` saw `build/src/*.json.c: warnings 0 -> 2` x18 (run
+  36308945712) against out-of-tree cpu baseline.
 - **arm64 lane = cross lane (ADR-1283).** Build dir configured with
   `build-aux/aarch64-linux-gnu.ini`; nothing else in the tree compiles
   `core/src/feature/arm64/` or the `ARCH_AARCH64` bodies of `core/test/`, so
