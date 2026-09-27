@@ -1,8 +1,9 @@
 # release-please — on each push to master, first create a draft release when a
 # completed release PR is present; otherwise open or update that release PR.
 # Changelog fragments own CHANGELOG.md (ADR-1128). Publishing the draft creates
-# the `vMAJOR.MINOR.PATCH` tag and fires release workflows for signing, SBOM,
-# SLSA, and container publication (ADR-1127).
+# the `vMAJOR.MINOR.PATCH` tag (`vMAJOR.MINOR.PATCH-rc.N` for a release
+# candidate, ADR-1201) and fires release workflows for signing, SBOM, SLSA, and
+# container publication (ADR-1127).
 
 name: release-please
 
@@ -127,7 +128,15 @@ jobs:
             echo "token=$PAT" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Detect an unpublished ordinary-SemVer draft
+      # While one release draft waits at the human publication gate, both
+      # release-please phases below stay paused (ADR-1127). The tag filter must
+      # accept exactly the shape scripts/release/verify-release-version.sh
+      # accepts -- vX.Y.Z or the ADR-1201 release candidate vX.Y.Z-rc.N -- or a
+      # waiting draft becomes invisible and the next master push re-runs
+      # release-please against an untagged release. The job has no checkout, so
+      # the regex is inlined; scripts/release/tests/test-release-please-draft-gate.sh
+      # extracts this step and proves both accept the same tags.
+      - name: Detect an unpublished release or release-candidate draft
         if: steps.creds.outputs.present == 'true'
         id: draft
         env:
@@ -136,14 +145,18 @@ jobs:
           releases="$RUNNER_TEMP/releases.json"
           gh api --paginate --slurp \
             "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
-          mapfile -t drafts < <(jq -r '
+          # jq writes a file rather than feeding `mapfile < <(...)`: a failure
+          # inside process substitution is swallowed, and an empty list would
+          # read as "no draft" -- the fail-open this gate exists to prevent.
+          jq -r '
             .[][]
             | select(.draft == true)
-            | select(.tag_name | test("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
+            | select(.tag_name | test("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-rc\\.(0|[1-9][0-9]*))?$"))
             | .tag_name
-          ' "$releases")
+          ' "$releases" > "$RUNNER_TEMP/draft-tags.txt"
+          mapfile -t drafts < "$RUNNER_TEMP/draft-tags.txt"
           if [[ ${#drafts[@]} -gt 1 ]]; then
-            echo "ERROR: multiple ordinary-SemVer draft releases require operator cleanup" >&2
+            echo "ERROR: multiple vX.Y.Z / vX.Y.Z-rc.N draft releases require operator cleanup" >&2
             printf '  %s\n' "${drafts[@]}" >&2
             exit 1
           fi

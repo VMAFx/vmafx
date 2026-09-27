@@ -5951,12 +5951,13 @@
     },
     "1127": {
       "sites": {
-        ".github/workflows/release-please.yml": 1,
+        ".github/workflows/release-please.yml": 2,
         "bindings/rust/vmafx-sys/Cargo.toml": 1,
         "bindings/rust/vmafx/Cargo.toml": 1,
         "core/src/feature/rust/tad/Cargo.toml": 1,
         "deploy/helm/vmafx/Chart.yaml": 1,
-        "pyproject.toml": 1
+        "pyproject.toml": 1,
+        "scripts/release/tests/test-release-please-draft-gate.sh": 2
       },
       "target": "1127-single-semver-release-stream.md"
     },
@@ -6738,10 +6739,12 @@
       "sites": {
         ".github/workflows/docker-publish-operator-node.yml": 1,
         ".github/workflows/docker-publish-production.yml": 2,
+        ".github/workflows/release-please.yml": 2,
         ".github/workflows/rule-enforcement.yml": 1,
         ".github/workflows/supply-chain.yml": 1,
         "python/test/setup_metadata_test.py": 1,
         "scripts/release/rollover-changelog-fragments.sh": 1,
+        "scripts/release/tests/test-release-please-draft-gate.sh": 1,
         "scripts/release/tests/test-rollover-changelog-fragments.sh": 1,
         "scripts/release/tests/test-verify-release-version.sh": 2,
         "scripts/release/verify-release-version.sh": 2
