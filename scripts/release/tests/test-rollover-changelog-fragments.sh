@@ -353,5 +353,39 @@ if VMAFX_REPO_ROOT="$first" "$first/scripts/release/rollover-changelog-fragments
 fi
 check 'first-release archived cut ends CHANGELOG.md with one newline' "$eof_ok"
 
+# T18: The archive the rollover writes (T12) is exempt from the 1 MB
+# check-added-large-files gate, and the exemption stays narrow (ADR-1345).
+# The first release candidate's archive is 1.86 MB; without the exemption its
+# cut commit is refused.
+precommit="$SCRIPT_DIR/../../../.pre-commit-config.yaml"
+exempt_ok=fail
+if [[ -f "$big/docs/changelog-archive/3.2.1.md" ]] &&
+  python3 - "$precommit" "docs/changelog-archive/3.2.1.md" <<'PYEOF_T18'; then
+import re
+import sys
+
+config, written = sys.argv[1], sys.argv[2]
+text = open(config, encoding="utf-8").read()
+block = text.split("- id: check-added-large-files", 1)[1].split("- id:", 1)[0]
+match = re.search(r"^\s*exclude:\s*'([^']+)'", block, re.M)
+if match is None:
+    sys.exit(1)
+pattern = match.group(1)
+exempt = [written, "docs/changelog-archive/1.0.0-rc.1.md"]
+guarded = [
+    "docs/changelog-archive/1.0.0-rc.1.bin",
+    "docs/changelog-archive/nested/1.0.0.md",
+    "docs/changelog-archive.md",
+    "docs/research/1.0.0.md",
+    "model/tiny/transnet_v2.onnx",
+]
+exempt_ok = all(re.search(pattern, path) for path in exempt)
+guarded_ok = not any(re.search(pattern, path) for path in guarded)
+sys.exit(0 if exempt_ok and guarded_ok else 1)
+PYEOF_T18
+  exempt_ok=pass
+fi
+check 'rollover archive is exempt from the large-file gate, and only it' "$exempt_ok"
+
 printf '\n=== Results: %d passed, %d failed ===\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]

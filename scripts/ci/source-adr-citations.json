@@ -5825,6 +5825,7 @@
     },
     "1115": {
       "sites": {
+        ".pre-commit-config.yaml": 1,
         "core/src/feature/brisque.c": 2,
         "core/src/feature/brisque_math.h": 2,
         "core/src/feature/brisque_model.h": 2,
@@ -7594,6 +7595,13 @@
         "scripts/ci/tests/test_python_dependency_locks.py": 1
       },
       "target": "1344-lock-fingerprint-ignores-project-version.md"
+    },
+    "1345": {
+      "sites": {
+        ".pre-commit-config.yaml": 1,
+        "scripts/release/tests/test-rollover-changelog-fragments.sh": 1
+      },
+      "target": "1345-changelog-archive-large-file-exemption.md"
     }
   },
   "retired": {

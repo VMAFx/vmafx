@@ -54448,3 +54448,12 @@ against an RC cut to hold them together. Checks that pin historical prose to a
 follows a cut into `CHANGELOG.md` and `docs/changelog-archive/`; a raw read of
 the fragment breaks the next release cut. No native/public API, numerical or
 FFmpeg rebase impact.
+
+## ADR-1345 — changelog archive large-file exemption (2026-09-27)
+
+`.pre-commit-config.yaml` exempts `^docs/changelog-archive/[^/]+\.md$` from
+`check-added-large-files`. The pattern and the rollover's archive path
+(`docs/changelog-archive/X.Y.Z.md` in
+`scripts/release/rollover-changelog-fragments.sh`) move together;
+`test-rollover-changelog-fragments.sh` T18 fails if they diverge or the pattern
+widens. No native/public API, numerical or FFmpeg rebase impact.

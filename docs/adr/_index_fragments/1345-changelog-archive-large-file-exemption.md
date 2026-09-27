@@ -1,0 +1,1 @@
+| [ADR-1345](1345-changelog-archive-large-file-exemption.md) | Exempt top-level Markdown files in `docs/changelog-archive/` from the 1 MB `check-added-large-files` gate, so a release cut can commit its changelog archive. | Accepted | ci, release, docs |

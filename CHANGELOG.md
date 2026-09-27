@@ -28102,6 +28102,14 @@ Fix three RC-gate failures surfaced by the pre-release validation matrix:
 - Repair Linux release staging to publish Meson's complete materialized `libvmaf.so` SONAME chain and prove the downloaded CLI resolves it in a clean environment before signing or attestation.
 
 
+- A release cut whose changelog archive is larger than 1 MB can now be
+  committed. Top-level Markdown files in `docs/changelog-archive/` are exempt
+  from the `check-added-large-files` pre-commit gate
+  ([ADR-1345](../docs/adr/1345-changelog-archive-large-file-exemption.md)).
+  The 1.0.0-rc.1 archive holds the fork's whole fragment history (1.86 MB), and
+  the gate refused its cut commit.
+
+
 Remove duplicate `chore` entry in `ai` package `changelog-sections` array that caused a
 JSON parse error at line 64 column 9, breaking every release-please workflow run.
 

@@ -50,6 +50,12 @@ repos:
       - id: check-toml
       - id: check-added-large-files
         args: ["--maxkb=1024"]
+        # ADR-1345: a release's changelog archive is the only remaining copy of
+        # the fragments its cut consumed (scripts/release/rollover-changelog-
+        # fragments.sh), so it cannot be generated at build time the way
+        # ADR-1115 moved the BRISQUE header. Only top-level .md files under
+        # docs/changelog-archive/ are exempt; every other path keeps the limit.
+        exclude: '^docs/changelog-archive/[^/]+\.md$'
       - id: mixed-line-ending
         args: ["--fix=lf"]
         # Same binary-file exclusions as trailing-whitespace / end-of-file-fixer

@@ -545,6 +545,12 @@ source, leaving their exact content in the versioned changelog section and a
 SHA-256 receipt under `changelog.d/releases/`. The removals are recoverable
 from Git history. A second identical invocation is a no-op.
 
+A long body goes to `docs/changelog-archive/X.Y.Z.md` (see `--archive-over`).
+The first release's archive holds the whole fragment history and is larger than
+the 1 MB `check-added-large-files` limit, so top-level Markdown files in that
+directory are exempt from it ([ADR-1345](../adr/1345-changelog-archive-large-file-exemption.md)).
+Nothing else in the directory is.
+
 A release candidate is cut the same way, with its full version:
 `--version 1.0.0-rc.1`. The script accepts exactly the shapes the tag-time
 verifier accepts, `X.Y.Z` and `X.Y.Z-rc.N`, and each candidate gets its own

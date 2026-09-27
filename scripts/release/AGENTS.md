@@ -78,6 +78,11 @@ receipt; rc.1 cut retires one-shot fields, as `verify-release-version.sh`
 demands at every tag. Marker extractor keeps optional `-rc.N` group, same
 as verifier; without it `1.0.0-rc.1` marker reads `1.0.0`, mismatches.
 
+Archive path `docs/changelog-archive/X.Y.Z.md` exempt from 1 MB
+`check-added-large-files` gate (ADR-1345): exclusion
+`^docs/changelog-archive/[^/]+\.md$` in `.pre-commit-config.yaml`. Move
+archive path -> move exclusion in same PR; never widen it. T18 pins both.
+
 Test coverage:
 `scripts/release/tests/test-rollover-changelog-fragments.sh` (T14 runs
 verifier against RC cut).
