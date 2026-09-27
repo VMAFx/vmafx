@@ -228,6 +228,40 @@ class BuildSecretContract(unittest.TestCase):
 
     # --- the publisher and the docs ------------------------------------------
 
+    def test_release_rehearsal_matches_the_release_run(self) -> None:
+        self.assertEqual(MODULE.validate_release_rehearsal(self.release, self.workflow), [])
+
+    def test_release_rehearsal_drift_fails(self) -> None:
+        drifted = self.workflow.replace("--workdir /src \\", "--workdir /src --privileged \\", 1)
+        self.assertNotEqual(drifted, self.workflow)
+        errors = MODULE.validate_release_rehearsal(self.release, drifted)
+        self.assertTrue(any("same docker run" in e for e in errors), errors)
+
+    def test_release_run_without_isolation_flags_fails(self) -> None:
+        for flag in ("--pull never", "--network none"):
+            with self.subTest(flag=flag):
+                text = self.release.replace(f"{flag} \\\n", "", 1)
+                self.assertNotEqual(text, self.release)
+                errors = MODULE.validate_release_rehearsal(text, self.workflow)
+                self.assertTrue(any(f"lacks {flag}" in e for e in errors), errors)
+
+    def test_release_run_with_another_image_fails(self) -> None:
+        # The image name also appears in the stage-build step; replace the
+        # docker run's own image line.
+        line = '            "vmafx-release-build:${GITHUB_SHA}" \\\n'
+        self.assertEqual(self.release.count(line), 1)
+        text = self.release.replace(line, "            ghcr.io/vmafx/vmafx-dev-mcp:master \\\n")
+        self.assertNotEqual(text, self.release)
+        errors = MODULE.validate_release_rehearsal(text, self.workflow)
+        self.assertTrue(any("built in the same job" in e for e in errors), errors)
+
+    def test_missing_rehearsal_run_fails(self) -> None:
+        text = self.workflow.replace(
+            "scripts/release/build-native-release-artifacts.sh", "scripts/release/other.sh"
+        )
+        errors = MODULE.validate_release_rehearsal(self.release, text)
+        self.assertTrue(any("exactly one docker run (found 0)" in e for e in errors), errors)
+
     def test_current_publish_workflow_passes(self) -> None:
         self.assertEqual(MODULE.validate_publish(self.publish), [])
 

@@ -121,8 +121,9 @@ Consequences:
 
 - Release native binaries (`libvmaf.so` SONAME chain, `vmaf` CLI, `models.tar.gz`)
   are compiled inside the `build-deps` stage, built in the release job from
-  the tagged commit's own `dev/Containerfile`. No registry image and no
-  external layer cache are involved
+  the tagged commit's own `dev/Containerfile`. The only registry pulls are
+  the digest-pinned base image and BuildKit frontend it names; no external
+  layer cache is involved
   ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), which
   supersedes ADR-1178).
 - Non-release PR CI gates (e.g. `tests-and-quality-gates.yml`) continue to run on

@@ -287,6 +287,48 @@ def validate_publish(workflow: str) -> list[str]:
     return errors
 
 
+RELEASE_SCRIPT = "scripts/release/build-native-release-artifacts.sh"
+RELEASE_IMAGE = '"vmafx-release-build:${GITHUB_SHA}"'
+RELEASE_RUN_FLAGS = ("--pull never", "--network none")
+
+
+def _release_run(workflow: str, label: str) -> tuple[str | None, list[str]]:
+    """The one `docker run` that compiles the release, without its version argument."""
+    runs = [
+        command
+        for command in _joined_commands(workflow)
+        if command.startswith("docker run ") and RELEASE_SCRIPT in command
+    ]
+    if len(runs) != 1:
+        return None, [
+            f"{label} must run {RELEASE_SCRIPT} in exactly one docker run (found {len(runs)})"
+        ]
+    command = runs[0]
+    errors = [
+        f"{label} release docker run lacks {flag}"
+        for flag in RELEASE_RUN_FLAGS
+        if flag not in command.split(" ", 1)[1]
+    ]
+    if f" {RELEASE_IMAGE} " not in f" {command} ":
+        errors.append(
+            f"{label} release docker run must use the image built in the same job, {RELEASE_IMAGE}"
+        )
+    # The last word is the version, which legitimately differs between callers.
+    return command.rsplit(" ", 1)[0], errors
+
+
+def validate_release_rehearsal(release: str, gate: str) -> list[str]:
+    """ADR-1346: the PR gate rehearses exactly the release job's container run."""
+    release_run, errors = _release_run(release, "supply-chain.yml build-artifacts")
+    gate_run, gate_errors = _release_run(gate, "the Dev Container gate rehearsal")
+    errors.extend(gate_errors)
+    if release_run is not None and gate_run is not None and release_run != gate_run:
+        errors.append(
+            "the Dev Container gate rehearsal must run the same docker run as build-artifacts"
+        )
+    return errors
+
+
 def validate_tree(root: Path = ROOT) -> list[str]:
     def read(path: str) -> str:
         return (root / path).read_text(encoding="utf-8")
@@ -308,6 +350,12 @@ def validate_tree(root: Path = ROOT) -> list[str]:
     errors.extend(
         validate_stage_caller(
             read(".github/workflows/supply-chain.yml"), label, expected, containerfile
+        )
+    )
+    errors.extend(
+        validate_release_rehearsal(
+            read(".github/workflows/supply-chain.yml"),
+            read(".github/workflows/dev-container-build.yml"),
         )
     )
     return errors

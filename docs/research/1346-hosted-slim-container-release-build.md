@@ -37,9 +37,10 @@ every pull request rehearse that release build?
 
 ### Which stage
 
-`libvmaf-build` is the ~29.5 GB stage. It adds the GPU SDKs and, in
-`gpu-sdks`, downloads the Level Zero `.deb`s from GitHub releases, clones
-`vpl-gpu-rt` by tag, and fetches the ONNX Runtime tarball, none of them
+`libvmaf-build` is the ~29.5 GB stage. It adds the GPU SDKs: `gpu-sdks`
+downloads the Level Zero `.deb`s from GitHub releases and clones `vpl-gpu-rt`
+by tag, and `libvmaf-build` itself fetches the ONNX Runtime tarball and
+`nv-codec-headers` and clones SVT-AV1, VVenC and FFmpeg by tag, none of them
 checked against a hash. `build-deps` is the first stage: the digest-pinned
 `ubuntu:26.04` base (`DEV_BASE`), Ubuntu archive packages (gcc-13, clang-19,
 Meson, Ninja, NASM, Python 3.14, git, xxd, jq), the

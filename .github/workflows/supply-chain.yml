@@ -230,6 +230,17 @@ jobs:
       - name: Verify container build provenance (ADR-1102, ADR-1346)
         run: |
           bash scripts/ci/check-container-build.sh --verify artifacts
+      # The stamp's git_commit comes from GITHUB_SHA, which build-artifacts
+      # already requires to be HEAD. Bind it to the tag checked out here too, so
+      # the verified bundle names the commit this release was cut from.
+      - name: Bind the provenance stamp to the tagged commit (ADR-1346)
+        run: |
+          stamped="$(sed -n 's/^git_commit=//p' artifacts/container-build-provenance.txt)"
+          tagged="$(git rev-parse HEAD)"
+          if [ "$stamped" != "$tagged" ]; then
+            echo "::error::provenance stamp names commit '${stamped}', but the tag is ${tagged}" >&2
+            exit 1
+          fi
       - name: Prove the downloaded CLI resolves its staged SONAME library
         env:
           VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}

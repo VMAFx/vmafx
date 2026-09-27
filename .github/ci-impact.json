@@ -312,8 +312,10 @@
       ],
       "patterns": [
         ".dockerignore",
+        ".github/workflows/supply-chain.yml",
         "dev/*",
-        "dev/**"
+        "dev/**",
+        "scripts/release/build-native-release-artifacts.sh"
       ]
     },
     "doxygen": {

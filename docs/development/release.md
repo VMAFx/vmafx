@@ -303,10 +303,11 @@ is tracked as `T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27` in
 
 #### Release notes: native Linux bundle requirements
 
-GitHub builds the release body from merged pull requests, so it never states
-the runtime floor on its own. Until the release-track row above is closed,
-the operator adds this section to the draft release notes before publishing
-every release, starting with `v1.0.0-rc.1`:
+release-please writes the draft release body from Conventional Commit
+subjects, so it never states the runtime floor on its own. The changelog
+fragment already puts the floor into `CHANGELOG.md`. Until the release-track
+row above is closed, the operator adds this section to the draft release notes
+before publishing every release, starting with `v1.0.0-rc.1`:
 
 ```markdown
 ### Native Linux bundle: system requirements

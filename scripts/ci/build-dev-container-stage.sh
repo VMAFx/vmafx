@@ -34,8 +34,9 @@
 # Containerfile's stage graph, which targets reach the `github_token` mount and
 # fails unless this script forwards the secret for exactly those targets.
 #
-# No external layer cache and no registry: no `--cache-from`/`--cache-to`, no
-# push, no pull. A release build must not restore layers another workflow
+# No external layer cache and no registry push: no `--cache-from`/`--cache-to`,
+# no push. The only pulls are the digest-pinned base images and BuildKit
+# frontend the Containerfile names. A release build must not restore layers another workflow
 # wrote (ADR-1346 § Decision). The daemon's own build cache still applies; it
 # starts empty on a GitHub-hosted runner, and inside one job it lets a second
 # build reuse the layers the first one just produced. Base images and SDK

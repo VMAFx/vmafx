@@ -7623,11 +7623,11 @@
       "sites": {
         ".github/workflows/dev-container-build.yml": 3,
         ".github/workflows/dev-container-publish.yml": 2,
-        ".github/workflows/supply-chain.yml": 5,
+        ".github/workflows/supply-chain.yml": 6,
         "dev/Containerfile": 1,
         "scripts/ci/build-dev-container-stage.sh": 2,
         "scripts/ci/check-container-build.sh": 2,
-        "scripts/ci/check-dev-container-build-secret.py": 3,
+        "scripts/ci/check-dev-container-build-secret.py": 4,
         "scripts/ci/tests/test-check-container-build.sh": 4,
         "scripts/release/build-native-release-artifacts.sh": 1,
         "scripts/release/tests/test-build-native-release-artifacts.sh": 1
