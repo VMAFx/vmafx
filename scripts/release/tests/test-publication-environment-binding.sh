@@ -265,9 +265,12 @@ def validate_attachment(block: str) -> None:
 def validate_docker_identities(relative_path: str, text: str) -> None:
     if "--certificate-identity-regexp" in text or "@.*" in text:
         raise AssertionError(f"{relative_path}: broad certificate identity remains")
+    # The signer is this run's own workflow at GITHUB_REF: the release tag, or
+    # the default branch for an ADR-1347 recovery dispatch. validate-release
+    # admits no other ref, so the identity stays exact without a regexp.
     expected_identity = (
         "https://github.com/VMAFx/vmafx/.github/workflows/"
-        f"{Path(relative_path).name}@refs/tags/${{PUBLISH_TAG}}"
+        f"{Path(relative_path).name}@${{GITHUB_REF}}"
     )
     lines = text.splitlines()
     commands: list[list[str]] = []
@@ -366,7 +369,7 @@ production_path = workflow_paths[1]
 bad_identity = deepcopy(texts)
 expected_identity = (
     "https://github.com/VMAFx/vmafx/.github/workflows/"
-    "docker-publish-production.yml@refs/tags/${PUBLISH_TAG}"
+    "docker-publish-production.yml@${GITHUB_REF}"
 )
 bad_identity[production_path] = bad_identity[production_path].replace(
     expected_identity,
@@ -374,6 +377,16 @@ bad_identity[production_path] = bad_identity[production_path].replace(
     1,
 )
 expect_rejected("one wrong certificate identity", bad_identity)
+
+# A verifier pinned to the tag ref can never match a recovery run's signature,
+# which carries the default branch (ADR-1347; v1.0.0-rc.1's smoke test failed so).
+tag_bound_identity = deepcopy(texts)
+tag_bound_identity[production_path] = tag_bound_identity[production_path].replace(
+    expected_identity,
+    expected_identity.replace("${GITHUB_REF}", "refs/tags/${PUBLISH_TAG}"),
+    1,
+)
+expect_rejected("a verifier bound to the tag ref", tag_bound_identity)
 
 misbound_identities = deepcopy(texts)
 identity_clause_pattern = re.compile(
@@ -512,5 +525,5 @@ expect_rejected("unverified extra release asset", extra_release_asset)
 
 print("PASS: every publication write is environment-bound")
 print("PASS: SLSA provenance is attached only by the protected release writer")
-print("PASS: container signatures require the exact published tag identity")
+print("PASS: container signatures require the exact identity of the signing run")
 PY

@@ -288,7 +288,7 @@ jobs:
         run: |
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${PUBLISH_TAG}" \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-cpu.outputs.digest }}"
 
@@ -694,7 +694,7 @@ jobs:
             "${{ needs.build-oneapi2025.outputs.digest }}"; do
             cosign verify \
               --certificate-identity \
-                "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${PUBLISH_TAG}" \
+                "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@${GITHUB_REF}" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${digest}"
           done
@@ -854,7 +854,7 @@ jobs:
         run: |
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${PUBLISH_TAG}" \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-server.outputs.digest }}"
 

@@ -512,9 +512,26 @@ cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
+An image rebuilt by a [recovery run](#recovering-a-releases-container-images)
+was signed by the workflow on `master`, not at the tag, so its identity ends
+in `@refs/heads/master`. Such an image carries the label
+`io.vmafx.build-recipe=<master commit>`; every v1.0.0-rc.1 image was built
+this way. Check the label, then verify with the `master` identity:
+
+```bash
+docker buildx imagetools inspect ghcr.io/vmafx/vmafx:v1.0.0-rc.1 \
+  --format '{{json .Image}}' | jq -r '.. | .Labels? // empty | ."io.vmafx.build-recipe"'
+cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
+  --certificate-identity \
+    "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 The post-push smoke jobs in both Docker workflows run the matching cosign
-verification recipe before pulling an image. The production workflow also
-executes the CPU CLI and the Python 3.14 server entrypoints; the Go-service
+verification recipe before pulling an image, with the identity of the run that
+signed it (`@${GITHUB_REF}`: the tag, or `master` for a recovery run). The
+production workflow also executes the CPU CLI and the Python 3.14 server
+entrypoints; the Go-service
 workflow starts the Go scoring server and probes `/healthz` plus `/readyz`,
 checks the operator version, and executes `vmaf --version` plus `ffmpeg -version`
 from the node image. A signature or runtime-linkage gap fails the release rather

@@ -7640,7 +7640,8 @@
       "sites": {
         ".github/workflows/docker-publish-operator-node.yml": 4,
         ".github/workflows/docker-publish-production.yml": 6,
-        "scripts/release/tests/test-docker-publish-source-binding.sh": 1
+        "scripts/release/tests/test-docker-publish-source-binding.sh": 1,
+        "scripts/release/tests/test-publication-environment-binding.sh": 2
       },
       "target": "1347-image-recovery-from-default-branch.md"
     }

@@ -514,17 +514,17 @@ jobs:
         run: |
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${PUBLISH_TAG}" \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ needs.build-operator.outputs.digest }}"
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${PUBLISH_TAG}" \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ needs.build-server.outputs.digest }}"
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${PUBLISH_TAG}" \
+              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.build-node.outputs.digest }}"
 

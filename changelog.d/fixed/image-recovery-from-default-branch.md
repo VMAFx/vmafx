@@ -8,3 +8,9 @@
   recovery run needs (the environment admits only `v*` tags, so `master` is
   allowed for the recovery and removed afterwards) and how to make a new GHCR
   package public, which the REST API cannot do.
+  The post-push smoke tests verify each image's signature against the
+  identity of the run that signed it; they required the tag identity, which a
+  recovery run cannot produce, so the first v1.0.0-rc.1 recovery failed its
+  CPU smoke test after pushing and signing the image. The release guide shows
+  how to verify a recovered image (`@refs/heads/master` identity and its
+  `io.vmafx.build-recipe` label).
