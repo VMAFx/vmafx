@@ -65,6 +65,7 @@ RUN meson setup /build core \
         -Denable_sycl=false \
         -Denable_dnn=disabled \
         -Denable_avx512=true \
+        -Denable_tests=false \
     && ninja -C /build -j"${VMAF_BUILD_JOBS}"
 
 # Collect outputs under /dist so the COPY step in the runtime stage is simple

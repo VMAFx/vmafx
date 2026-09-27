@@ -135,7 +135,9 @@ jobs:
     name: Publish CPU image
     needs: validate-release
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # amd64 + arm64 (QEMU): v1.0.0-rc.1's run was cancelled at 60 minutes
+    # while still linking unit tests; the image now builds without them.
+    timeout-minutes: 120
     environment: release-publish
     permissions:
       contents: read
@@ -654,7 +656,9 @@ jobs:
     name: Publish MCP server image
     needs: validate-release
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # amd64 + arm64 (QEMU): v1.0.0-rc.1's run was cancelled at 60 minutes
+    # while still linking unit tests; the image now builds without them.
+    timeout-minutes: 120
     environment: release-publish
     permissions:
       contents: read

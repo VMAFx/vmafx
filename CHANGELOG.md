@@ -6,6 +6,15 @@
 ## [Unreleased]
 ### Fixed
 
+- Container publication finishes for the large images. The GPU image jobs free
+  runner disk before `syft` scans the pushed image (the 1.0.0-rc.1 ROCm SBOM
+  failed with "no space left on device" after the image was pushed and
+  signed), and the two-platform `vmafx-operator` build gets 60 minutes instead
+  of 30. The CPU, MCP server, node and controller images no longer compile
+  libvmaf's unit-test suite, which they never shipped: the arm64 builds were
+  cancelled at 60 minutes while still linking tests under emulation.
+
+
 - **Nightly Kubernetes E2E scores again** — the kind + kuttl scoring smoke sent
   a 64x64 clip to `/v1/score`. Since `vmaf_v1.0.16_3d0h` became the default
   model (ADR-1169), libvmaf refuses input that small (`cambi` needs one side of
@@ -41,11 +50,6 @@
   baseline, recorded from an in-tree `build-arm64`, was re-measured on its own toolchain:
   764 to 615 warnings (36 generated-file warnings, 25 already-ignored Pelorus-mirror
   entries and 88 warnings cleaned since 2026-09-23; no count rose) (ADR-1142).
-- Container publication finishes for the large images. The GPU image jobs free
-  runner disk before `syft` scans the pushed image (the 1.0.0-rc.1 ROCm SBOM
-  failed with "no space left on device" after the image was pushed and
-  signed), and the two-platform `vmafx-operator` build gets 60 minutes instead
-  of 30.
 
 ## [1.0.0-rc.1] - 2026-09-27
 

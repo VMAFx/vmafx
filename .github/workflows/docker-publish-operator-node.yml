@@ -333,7 +333,8 @@ jobs:
     name: Publish vmafx-node CPU
     needs: validate-release
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # amd64 + arm64 (QEMU) libvmaf build; same headroom as the production CPU image.
+    timeout-minutes: 120
     environment: release-publish
     permissions:
       contents: read
