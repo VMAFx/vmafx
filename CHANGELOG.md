@@ -26307,6 +26307,12 @@ so that MCP output is Netflix-compatible without explicit precision argument (AD
 - `mcp-server/vmaf-mcp/tests/test_smoke_e2e.py`: replace the hardcoded `_EXPECTED_VMAF_SCORE = 76.69926` (which never matched the Netflix golden it claimed to source) with `76.66890519623612` from `quality_runner_test.py::test_run_vmaf_runner`. Tolerance widened from 1e-3 to 1e-2 to match the Netflix gate's own `places=2`.
 
 
+- The required MCP Smoke check no longer times out on healthy runs. Most runs
+  take 11 minutes against a 12-minute limit, so a slightly slow runner
+  cancelled a run whose every step passed and turned `master` red; the limit
+  is now 25 minutes.
+
+
 - Refreshed the fork-added SSIMULACRA2 snapshot gate for the current
   extractor output, hardened its `vmaf` invocation to use an argv list
   instead of `shell=True`, and refreshed MCP docs that still described
