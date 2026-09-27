@@ -55,13 +55,10 @@ func (v *VmafxNodeValidator) ValidateCreate(_ context.Context, obj runtime.Objec
 	return nil, validateGPUVendor(node)
 }
 
-// ValidateUpdate validates an updated VmafxNode.
-func (v *VmafxNodeValidator) ValidateUpdate(_ context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
-	node, ok := newObj.(*vmafxv1.VmafxNode)
-	if !ok {
-		return nil, fmt.Errorf("expected *VmafxNode, got %T", newObj)
-	}
-	return nil, validateGPUVendor(node)
+// ValidateUpdate validates an updated VmafxNode. An update must satisfy the same
+// rules as a new object, so it validates newObj exactly as ValidateCreate does.
+func (v *VmafxNodeValidator) ValidateUpdate(ctx context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
+	return v.ValidateCreate(ctx, newObj)
 }
 
 // ValidateDelete is a no-op for VmafxNode.

@@ -54,13 +54,10 @@ func (v *VmafxJobValidator) ValidateCreate(_ context.Context, obj runtime.Object
 	return nil, validateJobURIs(job)
 }
 
-// ValidateUpdate validates an updated VmafxJob.
-func (v *VmafxJobValidator) ValidateUpdate(_ context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
-	job, ok := newObj.(*vmafxv1.VmafxJob)
-	if !ok {
-		return nil, fmt.Errorf("expected *VmafxJob, got %T", newObj)
-	}
-	return nil, validateJobURIs(job)
+// ValidateUpdate validates an updated VmafxJob. An update must satisfy the same
+// rules as a new object, so it validates newObj exactly as ValidateCreate does.
+func (v *VmafxJobValidator) ValidateUpdate(ctx context.Context, _, newObj runtime.Object) (admission.Warnings, error) {
+	return v.ValidateCreate(ctx, newObj)
 }
 
 // ValidateDelete is a no-op for VmafxJob.

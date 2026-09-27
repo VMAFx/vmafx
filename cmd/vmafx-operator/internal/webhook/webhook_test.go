@@ -13,6 +13,7 @@ package webhook_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	vmafxv1 "github.com/VMAFx/vmafx/api/vmafx/v1"
@@ -105,6 +106,39 @@ func TestVmafxJobValidator_Update_Valid(t *testing.T) {
 	}
 }
 
+// An update is held to the same rules as a new object: an invalid new
+// reference is rejected even when the old object was valid.
+func TestVmafxJobValidator_Update_InvalidURI(t *testing.T) {
+	v := &webhook.VmafxJobValidator{}
+	ctx := context.Background()
+
+	old := &vmafxv1.VmafxJob{
+		Spec: vmafxv1.VmafxJobSpec{
+			Reference: "s3://bucket/ref.yuv",
+			Distorted: "s3://bucket/dis.yuv",
+		},
+	}
+	newJob := &vmafxv1.VmafxJob{
+		Spec: vmafxv1.VmafxJobSpec{
+			Reference: "/mnt/ref.yuv",
+			Distorted: "s3://bucket/dis.yuv",
+		},
+	}
+	if _, err := v.ValidateUpdate(ctx, old, newJob); err == nil {
+		t.Fatal("expected validation error for an update without a URI scheme, got nil")
+	}
+}
+
+func TestVmafxJobValidator_Update_WrongType(t *testing.T) {
+	v := &webhook.VmafxJobValidator{}
+	ctx := context.Background()
+
+	_, err := v.ValidateUpdate(ctx, &vmafxv1.VmafxJob{}, &vmafxv1.VmafxNode{})
+	if err == nil || !strings.Contains(err.Error(), "expected *VmafxJob") {
+		t.Fatalf("expected a type error naming *VmafxJob, got %v", err)
+	}
+}
+
 func TestVmafxJobValidator_Delete_NoOp(t *testing.T) {
 	v := &webhook.VmafxJobValidator{}
 	ctx := context.Background()
@@ -165,5 +199,27 @@ func TestVmafxNodeValidator_Update_Valid(t *testing.T) {
 	_, err := v.ValidateUpdate(ctx, old, newNode)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// An update is held to the same rules as a new object.
+func TestVmafxNodeValidator_Update_InvalidVendor(t *testing.T) {
+	v := &webhook.VmafxNodeValidator{}
+	ctx := context.Background()
+
+	old := &vmafxv1.VmafxNode{Spec: vmafxv1.VmafxNodeSpec{GPUVendor: "intel"}}
+	newNode := &vmafxv1.VmafxNode{Spec: vmafxv1.VmafxNodeSpec{GPUVendor: "fpga"}}
+	if _, err := v.ValidateUpdate(ctx, old, newNode); err == nil {
+		t.Fatal("expected validation error for an unknown GPU vendor on update, got nil")
+	}
+}
+
+func TestVmafxNodeValidator_Update_WrongType(t *testing.T) {
+	v := &webhook.VmafxNodeValidator{}
+	ctx := context.Background()
+
+	_, err := v.ValidateUpdate(ctx, &vmafxv1.VmafxNode{}, &vmafxv1.VmafxJob{})
+	if err == nil || !strings.Contains(err.Error(), "expected *VmafxNode") {
+		t.Fatalf("expected a type error naming *VmafxNode, got %v", err)
 	}
 }
