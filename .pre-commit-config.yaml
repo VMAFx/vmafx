@@ -319,7 +319,7 @@ repos:
         name: Dev-container GitHub token uses an optional BuildKit secret
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_dev_container_build_secret.py
         language: system
-        files: '^(\.github/workflows/dev-container-(build|publish)\.yml|\.pre-commit-config\.yaml|dev/(Containerfile|docker-compose\.yml|scripts/fetch-intel-neo\.py)|docs/development/dev-mcp\.md|scripts/ci/(check-dev-container-build-secret\.py|tests/test_dev_container_build_secret\.py))$'
+        files: '^(\.github/workflows/(dev-container-(build|publish)|supply-chain)\.yml|\.pre-commit-config\.yaml|dev/(Containerfile|docker-compose\.yml|scripts/fetch-intel-neo\.py)|docs/development/dev-mcp\.md|scripts/ci/(build-dev-container-stage\.sh|check-dev-container-build-secret\.py|tests/test_dev_container_build_secret\.py))$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

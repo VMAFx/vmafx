@@ -735,6 +735,7 @@ jobs:
           bash scripts/release/tests/test-concat-changelog-fragments.sh
           bash scripts/release/tests/test-rollover-changelog-fragments.sh
           bash scripts/release/tests/test-verify-native-release-artifacts.sh
+          bash scripts/release/tests/test-build-native-release-artifacts.sh
           bash scripts/release/tests/test-verify-release-version.sh
           bash scripts/release/tests/test-pep440-version.sh
           bash scripts/release/tests/test-check-release-bot-secrets.sh

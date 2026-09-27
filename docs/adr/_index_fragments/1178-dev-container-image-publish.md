@@ -1,1 +1,1 @@
-| [ADR-1178](1178-dev-container-image-publish.md) | Dev container image publication and release artifact container enforcement | Accepted | ci, release, supply-chain, container, dev-container, adr-1102, fork-local |
+| [ADR-1178](1178-dev-container-image-publish.md) | Dev container image publication and release artifact container enforcement | Superseded by ADR-1346 | ci, release, supply-chain, container, dev-container, adr-1102, fork-local |

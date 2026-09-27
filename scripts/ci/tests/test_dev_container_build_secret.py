@@ -26,6 +26,8 @@ class BuildSecretContract(unittest.TestCase):
         self.docs = (ROOT / "docs/development/dev-mcp.md").read_text(encoding="utf-8")
         self.fetcher = (ROOT / "dev/scripts/fetch-intel-neo.py").read_text(encoding="utf-8")
         self.publish = (ROOT / ".github/workflows/dev-container-publish.yml").read_text()
+        self.builder = (ROOT / MODULE.STAGE_BUILDER).read_text(encoding="utf-8")
+        self.release = (ROOT / ".github/workflows/supply-chain.yml").read_text()
 
     def errors(
         self,
@@ -69,8 +71,48 @@ class BuildSecretContract(unittest.TestCase):
                 self.assertTrue(any("Compose" in error for error in self.errors(compose=text)))
 
     def test_missing_raw_build_wiring_fails(self) -> None:
-        text = self.workflow.replace("--secret id=github_token,env=GITHUB_TOKEN", "", 1)
-        self.assertTrue(any("raw CI build" in error for error in self.errors(workflow=text)))
+        for needle in (MODULE.STAGE_BUILDER, MODULE.CALLER_ENV_LINE):
+            with self.subTest(needle=needle):
+                text = self.workflow.replace(needle, "", 1)
+                self.assertTrue(
+                    any("raw CI build" in error for error in self.errors(workflow=text))
+                )
+
+    def test_current_stage_builder_and_release_caller_pass(self) -> None:
+        self.assertEqual(MODULE.validate_stage_builder(self.builder), [])
+        self.assertEqual(MODULE.validate_stage_caller(self.release, "release build"), [])
+        self.assertEqual(MODULE.validate_tree(ROOT), [])
+
+    def test_stage_builder_without_secret_fails(self) -> None:
+        text = self.builder.replace(MODULE.BUILD_OPTION, "", 1)
+        self.assertTrue(
+            any("github_token" in error for error in MODULE.validate_stage_builder(text))
+        )
+
+    def test_stage_builder_build_arg_or_cache_fails(self) -> None:
+        for extra, expected in (
+            ("  --build-arg FOO=bar \\\n", "build arguments"),
+            ("  --cache-from type=gha \\\n", "cache-free"),
+            ("  --cache-to type=gha,mode=max \\\n", "cache-free"),
+        ):
+            with self.subTest(extra=extra.strip()):
+                text = self.builder.replace(
+                    "  --target libvmaf-build", extra + "  --target libvmaf-build", 1
+                )
+                self.assertTrue(
+                    any(expected in error for error in MODULE.validate_stage_builder(text))
+                )
+
+    def test_release_caller_without_script_or_token_fails(self) -> None:
+        for needle in (MODULE.STAGE_BUILDER, MODULE.CALLER_ENV_LINE):
+            with self.subTest(needle=needle):
+                text = self.release.replace(needle, "", 1)
+                self.assertTrue(
+                    any(
+                        "release build" in error
+                        for error in MODULE.validate_stage_caller(text, "release build")
+                    )
+                )
 
     def test_current_publish_workflow_passes(self) -> None:
         self.assertEqual(MODULE.validate_publish(self.publish), [])

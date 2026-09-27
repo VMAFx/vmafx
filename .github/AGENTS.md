@@ -60,6 +60,15 @@ explicit SBOM artifact feeds keyless signing before final strict
 attachment job. Never bypass that DAG or restore permissive unmatched-file
 uploads; green workflow must mean every promised asset exists.
 
+Native payload built on `ubuntu-latest` inside `libvmaf-build` stage of
+tagged `dev/Containerfile` (ADR-1346, supersedes ADR-1178): stage built in
+job by `scripts/ci/build-dev-container-stage.sh` (same script as Dev
+Container PR gate; no layer cache, no registry), compile by
+`scripts/release/build-native-release-artifacts.sh` under
+`docker run --network none`. Never restore self-hosted `sycl-arc` label,
+host compile, or GHCR pull for release build. `verify-native-artifacts`
+stays `ubuntu-26.04`: bundle needs glibc >= 2.43.
+
 Native payload is Linux ELF, materializes complete Meson
 `libvmaf.so` / SONAME / real-name chain as regular files. Before any native
 write or OIDC job, artifact round-trip verifier must prove

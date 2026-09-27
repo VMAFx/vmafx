@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# Regression tests for the in-container native release build (ADR-1346).
+#
+# Runs scripts/release/build-native-release-artifacts.sh against a throwaway
+# Git repository with a stub `meson` on PATH. The stub records how it was
+# called and, on `compile`, links a tiny real ELF libvmaf chain and CLI, so
+# staging, the provenance stamp and the clean-environment verifier all run for
+# real. The dev container is simulated through VMAFX_CONTAINER_MARKER, as in
+# scripts/ci/tests/test-check-container-build.sh. No Docker is needed.
+#
+# Usage: bash scripts/release/tests/test-build-native-release-artifacts.sh
+#
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT INT TERM
+pass=0
+fail=0
+
+check() {
+  local description="$1"
+  shift
+  if "$@"; then
+    printf 'PASS: %s\n' "$description"
+    pass=$((pass + 1))
+  else
+    printf 'FAIL: %s\n' "$description" >&2
+    fail=$((fail + 1))
+  fi
+}
+
+# The marker dev/Containerfile bakes into every stage, libvmaf-build included.
+marker="$scratch/etc-vmafx-dev-container"
+printf '%s\n' 'vmafx_dev_container=1' 'image_title=vmaf-dev-mcp' \
+  'containerfile=dev/Containerfile' 'source=https://github.com/VMAFx/vmafx' >"$marker"
+
+# Stub meson. `setup` only records its arguments and environment; `compile`
+# links a real SONAME chain unless STUB_MESON_MODE asks for a failure.
+stub_bin="$scratch/bin"
+mkdir -p "$stub_bin"
+cat >"$stub_bin/meson" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s|CCACHE_DISABLE=%s|SOURCE_DATE_EPOCH=%s\n' \
+  "$*" "${CCACHE_DISABLE:-}" "${SOURCE_DATE_EPOCH:-}" >>"$STUB_MESON_LOG"
+[ "$1" = compile ] || exit 0
+[ "${STUB_MESON_MODE:-ok}" = fail ] && exit 42
+mkdir -p build/src build/tools
+printf 'int vmafx_fixture(void) { return 321; }\n' >build/libvmaf.c
+printf '%s\n' '#include <stdio.h>' '#include <string.h>' \
+  'int vmafx_fixture(void);' \
+  'int main(int argc, char **argv) {' \
+  '    if (argc == 2 && strcmp(argv[1], "--version") == 0 && vmafx_fixture() == 321) {' \
+  '        puts("3.2.1");' \
+  '        return 0;' \
+  '    }' \
+  '    return 1;' \
+  '}' >build/vmaf.c
+cc -fPIC -shared -Wl,-soname,libvmaf.so.3 -o build/src/libvmaf.so.3.0.0 build/libvmaf.c
+ln -s libvmaf.so.3.0.0 build/src/libvmaf.so.3
+[ "${STUB_MESON_MODE:-ok}" = short-chain ] || ln -s libvmaf.so.3 build/src/libvmaf.so
+cc -o build/tools/vmaf build/vmaf.c -Lbuild/src -l:libvmaf.so.3.0.0
+STUB
+chmod +x "$stub_bin/meson"
+
+# new_repo <dir> — a committed tree holding only what the build script reads.
+new_repo() {
+  local dir="$1"
+  mkdir -p "$dir/scripts/ci" "$dir/scripts/release" "$dir/model" "$dir/LICENSES" "$dir/core"
+  cp -- "$REPO_ROOT/scripts/ci/check-container-build.sh" "$dir/scripts/ci/"
+  cp -- "$REPO_ROOT/scripts/release/build-native-release-artifacts.sh" \
+    "$REPO_ROOT/scripts/release/verify-native-release-artifacts.sh" "$dir/scripts/release/"
+  printf '{"model": "fixture"}\n' >"$dir/model/vmaf_fixture.json"
+  printf 'Apache-2.0 fixture\n' >"$dir/LICENSES/LicenseRef-Apache-2.0-u2netp.txt"
+  git -C "$dir" -c init.defaultBranch=main init -q
+  git -C "$dir" add -A
+  GIT_COMMITTER_DATE='2001-02-03T04:05:06Z' GIT_AUTHOR_DATE='2001-02-03T04:05:06Z' \
+    git -C "$dir" -c user.name=fixture -c user.email=fixture@example.invalid \
+    -c core.hooksPath=/dev/null -c commit.gpgsign=false commit -q -m fixture
+}
+
+# run_build <dir> <marker> [args...] — exit status of the script in <dir>.
+run_build() {
+  local dir="$1" marker_path="$2"
+  shift 2
+  (
+    cd "$dir"
+    env PATH="$stub_bin:$PATH" STUB_MESON_LOG="$dir/meson.log" \
+      VMAFX_CONTAINER_MARKER="$marker_path" GITHUB_SHA=0123456789abcdef \
+      bash scripts/release/build-native-release-artifacts.sh "$@"
+  ) >"$dir/run.log" 2>&1
+}
+
+expect_status() {
+  local expected="$1"
+  shift
+  local rc=0
+  run_build "$@" || rc=$?
+  [ "$rc" -eq "$expected" ]
+}
+
+expect_failure() {
+  local rc=0
+  run_build "$@" || rc=$?
+  [ "$rc" -ne 0 ]
+}
+
+regular_nonempty() { [[ -f "$1" && ! -L "$1" && -s "$1" ]]; }
+absent() { [[ ! -e "$1" ]]; }
+lacks_line() { ! grep -qx -- "$1" "$2"; }
+
+# --- positive: inside the container the full bundle is built and verified ---
+good="$scratch/good"
+new_repo "$good"
+check 'container build exits 0' expect_status 0 "$good" "$marker" 3.2.1
+for name in libvmaf.so libvmaf.so.3 libvmaf.so.3.0.0 vmaf models.tar.gz \
+  container-build-provenance.txt; do
+  check "stages $name as a regular non-empty file" regular_nonempty "$good/artifacts/$name"
+done
+check 'meson setup keeps the release flags and pins DNN off' grep -q \
+  '^setup build core --buildtype=release -Denable_avx512=true -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled|' \
+  "$good/meson.log"
+check 'meson runs with ccache disabled' grep -q '^compile -C build|CCACHE_DISABLE=1|' "$good/meson.log"
+check 'meson sees SOURCE_DATE_EPOCH from the commit' grep -q \
+  '^compile -C build|CCACHE_DISABLE=1|SOURCE_DATE_EPOCH=981173106$' "$good/meson.log"
+check 'stamp records the dev-container identity' grep -qx \
+  'image_title=vmaf-dev-mcp' "$good/artifacts/container-build-provenance.txt"
+check 'stamp keeps a wall-clock stamped_at (epoch scoped to the build)' lacks_line \
+  'stamped_at=2001-02-03T04:05:06Z' "$good/artifacts/container-build-provenance.txt"
+check 'no u2netp license without the mirror binary' absent \
+  "$good/artifacts/LicenseRef-Apache-2.0-u2netp.txt"
+
+# --- boundary: models.tar.gz is byte-reproducible across builds ---
+again="$scratch/again"
+new_repo "$again"
+check 'second container build exits 0' expect_status 0 "$again" "$marker" 3.2.1
+check 'models.tar.gz is byte-identical across builds' cmp -s \
+  "$good/artifacts/models.tar.gz" "$again/artifacts/models.tar.gz"
+
+# --- boundary: an untracked u2netp mirror is staged with its license ---
+mirror="$scratch/mirror"
+new_repo "$mirror"
+printf 'onnx-bytes\n' >"$mirror/model/u2netp_mirror.onnx"
+check 'build with the u2netp mirror exits 0' expect_status 0 "$mirror" "$marker" 3.2.1
+check 'u2netp mirror is staged' regular_nonempty "$mirror/artifacts/u2netp_mirror.onnx"
+check 'u2netp license is staged' regular_nonempty \
+  "$mirror/artifacts/LicenseRef-Apache-2.0-u2netp.txt"
+
+# --- negative: a host build is refused before anything is compiled ---
+host="$scratch/host"
+new_repo "$host"
+check 'host build exits 1' expect_status 1 "$host" "$scratch/no/such/marker" 3.2.1
+check 'host build never invokes meson' absent "$host/meson.log"
+check 'host build creates no artifacts/' absent "$host/artifacts"
+
+# --- negative: wrong version, failed compile, short SONAME chain ---
+wrong="$scratch/wrong-version"
+new_repo "$wrong"
+check 'version mismatch fails the build' expect_failure "$wrong" "$marker" 3.2.2
+check 'version mismatch is reported by the verifier' grep -q \
+  "reported '3.2.1', expected '3.2.2'" "$wrong/run.log"
+
+broken="$scratch/broken"
+new_repo "$broken"
+STUB_MESON_MODE=fail
+export STUB_MESON_MODE
+check 'compile failure fails the build' expect_failure "$broken" "$marker" 3.2.1
+unset STUB_MESON_MODE
+check 'compile failure writes no stamp' absent \
+  "$broken/artifacts/container-build-provenance.txt"
+
+short="$scratch/short-chain"
+new_repo "$short"
+STUB_MESON_MODE="short-chain"
+export STUB_MESON_MODE
+check 'incomplete SONAME chain exits 1' expect_status 1 "$short" "$marker" 3.2.1
+unset STUB_MESON_MODE
+check 'incomplete SONAME chain is named' grep -q \
+  'incomplete Meson libvmaf SONAME chain' "$short/run.log"
+
+# --- negative: invocation errors ---
+usage="$scratch/usage"
+new_repo "$usage"
+check 'no version exits 64' expect_status 64 "$usage" "$marker"
+check 'empty version exits 64' expect_status 64 "$usage" "$marker" ''
+check 'extra argument exits 64' expect_status 64 "$usage" "$marker" 3.2.1 extra
+check 'usage errors never invoke meson' absent "$usage/meson.log"
+
+printf '\n%d passed, %d failed\n' "$pass" "$fail"
+[ "$fail" -eq 0 ]
