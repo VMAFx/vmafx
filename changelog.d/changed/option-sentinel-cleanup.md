@@ -1,1 +1,0 @@
-- Simplify internal feature-option iteration while preserving generated feature names, option validation and backend fallback behavior.

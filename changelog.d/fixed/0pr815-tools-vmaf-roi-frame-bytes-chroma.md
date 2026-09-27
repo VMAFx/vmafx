@@ -1,1 +1,0 @@
-- Fixed: `frame_bytes()` in `vmaf-roi` now applies ceiling-division for chroma planes on odd-dimension inputs, eliminating a one-byte undercount that caused read-past-buffer on non-mod-2 widths. (PR #815)

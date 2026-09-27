@@ -1,1 +1,0 @@
-Close T-MACOS-SIGSEGV-UNRESOLVED-2026-05-19 — investigation confirmed the macOS CI red was a compile error (missing `integer_ssim_moments_t` on non-x86), not a SIGSEGV. Fixed in PR #654 (ADR-1040). State.md updated; investigation doc added at `docs/development/macos-sigsegv-investigation.md`.

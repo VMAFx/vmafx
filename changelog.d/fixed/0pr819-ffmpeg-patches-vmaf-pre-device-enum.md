@@ -1,1 +1,0 @@
-- Fixed: `vmaf_pre` ffmpeg filter patch now enumerates all backend device values in the `device=` option rather than hard-coding `cuda`; copyright and gpumask comment updated per ADR-0482. (PR #819)

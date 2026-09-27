@@ -1,1 +1,0 @@
-- Keep motion-v2, SSIM and PSNR coverage descriptors read-only and bound their setup helpers while preserving all nineteen cases, assertions and failure behavior.

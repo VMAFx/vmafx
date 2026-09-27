@@ -1,1 +1,0 @@
-- Make integer ADM AVX2/AVX-512 temporary scopes and read-only aliases analyzer-clean while preserving dispatch signatures and numerical expression order.

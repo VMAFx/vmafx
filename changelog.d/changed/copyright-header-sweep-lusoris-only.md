@@ -1,1 +1,0 @@
-**Copyright headers**: removed "and Claude (Anthropic)" from all `Copyright 2026 Lusoris` notices across `core/`, `ai/`, and `mcp-server/`; added missing headers to 52 Python files in `ai/` and `mcp-server/`; added vendor attribution to vendored `pdjson.c`/`.h`. See ADR-0776.

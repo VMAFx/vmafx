@@ -1,1 +1,0 @@
-Release private feature-option dictionaries when registration rejects options or an internal copy fails, including partially copied dictionaries. Model options remain available for correction or retry; successful registration and dictionary-consumption rules are unchanged.

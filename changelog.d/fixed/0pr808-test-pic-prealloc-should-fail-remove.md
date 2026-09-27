@@ -1,1 +1,0 @@
-- Fixed: removed `should_fail: true` from `test_pic_preallocation`; the test now passes on all required CI builders and the `UNEXPECTEDPASS` result no longer blocks master. (PR #808)

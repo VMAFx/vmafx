@@ -1,1 +1,0 @@
-- Fixed: resolved the 3-libs ODR violation follow-up in `core/src/meson.build`; added ORT error-injection tests bringing `ort_backend.c` line coverage to 84%, satisfying ADR-0922's security floor. (PR #844)

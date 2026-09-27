@@ -1,8 +1,0 @@
-### Chore
-
-- Audit all `cppcheck-suppress` comments in `core/`; add inline citations
-  (`[MISRA-C:2012-11.3/EXP36-C: see block comment above]`) to 10 bare
-  `invalidPointerCast` suppressions in `core/src/feature/vif.c` and expand
-  the prose justification in the block comment above them.
-  Enforces CLAUDE.md §12 r12 — every suppression must cite the ADR /
-  standard that forces it.

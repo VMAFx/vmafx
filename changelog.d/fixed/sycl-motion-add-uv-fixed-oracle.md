@@ -1,1 +1,0 @@
-- Replaced the fixture-calibrated SYCL `motion_add_uv` float-vs-fixed tolerance with a fixed-point scalar oracle and registered the 960x540 parity variant under a derived resolution-independent roundoff bound.
