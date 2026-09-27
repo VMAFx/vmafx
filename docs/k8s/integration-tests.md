@@ -78,9 +78,22 @@ The main Service additionally selects `app.kubernetes.io/component: server`,
 so enabling the operator cannot route scoring traffic to its metrics port.
 
 The raw `ref.yuv` and `dist.yuv` files are committed. The generator validates
-their exact SHA-256 and 64x64, eight-frame size, then creates Y4M wrappers
+their exact SHA-256 and 216x160, eight-frame size, then creates Y4M wrappers
 because the REST score request carries paths, not explicit frame dimensions.
-The test mounts those wrappers through a test-only ConfigMap at `/fixtures`.
+The test mounts those wrappers through a test-only ConfigMap at `/fixtures`,
+created with `kubectl apply --server-side`: client-side apply would copy the
+base64 payload into the `last-applied-configuration` annotation, which the API
+server caps at 256 KiB.
+
+216x160 is the smallest 4:2:0 size the default model accepts. The request names
+no model, so the server scores with `vmaf_v1.0.16_3d0h`
+([ADR-1169](../adr/1169-default-model-v1-0-16.md)). Its `cambi` feature needs
+one side of at least 216 pixels and its `speed_chroma` feature needs both
+chroma planes at least 80 pixels, so the luma plane needs at least 160 on both
+sides. On a smaller clip the CLI refuses the input and `/v1/score` answers
+HTTP 500. `scripts/ci/test_e2e_runtime_contract.py` checks the generator's
+`WIDTH` and `HEIGHT` against the thresholds in `core/src/feature/` on every
+pull request, and checks that the Y4M pair fits the 1 MiB ConfigMap limit.
 The score helper chooses an unused loopback port unless
 `VMAFX_E2E_LOCAL_PORT` is explicitly set, avoiding collisions with unrelated
 developer port-forwards.
@@ -125,9 +138,14 @@ kind cluster through the same dedicated kubeconfig.
 ```bash
 kubectl get pods -n vmafx-e2e-test -o wide
 kubectl describe deployment -n vmafx-e2e-test vmafx vmafx-operator
-kubectl logs -n vmafx-e2e-test deployment/vmafx --tail=200
+kubectl logs -n vmafx-e2e-test --tail=200 \
+  -l app.kubernetes.io/instance=vmafx,app.kubernetes.io/component=server
 kubectl logs -n vmafx-e2e-test deployment/vmafx-operator --tail=200
 ```
+
+Select the server Pods by label rather than with `deployment/vmafx`. The server
+Deployment's selector matches every Pod of the release, the operator's
+included, so `kubectl logs deployment/vmafx` can print the operator's logs.
 
 An `ErrImageNeverPull` event means the required `e2e-test` image was not loaded
 into the named kind cluster. Rebuild it and run `kind load docker-image` with
@@ -141,14 +159,18 @@ means the Docker staging copy no longer matches `VMAFX_MODEL_DIR`.
 
 ```bash
 kubectl get configmap -n vmafx-e2e-test vmafx-e2e-fixtures
-kubectl get pod -n vmafx-e2e-test -l app.kubernetes.io/name=vmafx
-kubectl logs -n vmafx-e2e-test deployment/vmafx --tail=200
+kubectl get pod -n vmafx-e2e-test -l app.kubernetes.io/component=server
+kubectl logs -n vmafx-e2e-test --tail=200 \
+  -l app.kubernetes.io/instance=vmafx,app.kubernetes.io/component=server
 bash test/e2e/score-smoke.sh
 ```
 
 The ConfigMap must contain both `ref.y4m` and `dist.y4m`, and the Deployment
-must mount it at `/fixtures`. The score script prints the response failure and
-server logs before exiting non-zero.
+must mount it at `/fixtures`. On failure the score script prints the
+`/v1/score` response body and the logs of the Pods behind the Service. A body
+such as `requires feature 'cambi', which needs width or height >= 216` means
+the fixtures are smaller than the default model accepts; see the fixture
+section above.
 
 ### CRDs do not become established
 

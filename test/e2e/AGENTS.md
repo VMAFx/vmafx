@@ -32,8 +32,17 @@ such cases only after production component + every fixture/service
 prerequisite exist.
 
 `fixtures/gen-tiny-yuv.sh` validates committed raw files, generates Y4M
-wrappers so file-path REST API infers 64x64 geometry. Scoring smoke
-must not add or modify Netflix golden-score assertions.
+wrappers so file-path REST API infers 216x160 geometry. Geometry must
+satisfy default model (`vmaf_v1.0.16_3d0h`, ADR-1169): cambi needs one
+axis >= 216, speed_chroma needs 4:2:0 luma >= 160 both axes. Smaller ->
+CLI refuses input, `/v1/score` 500 (nightly red 2026-09-24..27).
+`WIDTH`/`HEIGHT`/`FRAMES` in the script = single source; contract test
+checks them against `core/src/feature/` thresholds + ConfigMap 1 MiB cap.
+Fixture ConfigMap: `kubectl apply --server-side` only; client-side apply
+copies base64 payload into 256 KiB-capped annotation. Server logs: select
+by Service selector (`component=server`); `deployment/vmafx` selector
+also matches operator Pod. Scoring smoke must not add or modify Netflix
+golden-score assertions.
 
 Suite coupled to `.github/workflows/e2e-k8s.yml` +
 `scripts/ci/test_e2e_runtime_contract.py`: operator, CPU node, Go server

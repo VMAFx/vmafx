@@ -6545,6 +6545,8 @@
         "python/test/default_model_test.py": 2,
         "python/test/gpu_default_model_test.py": 1,
         "python/test/vmafexec_test.py": 1,
+        "scripts/ci/test_e2e_runtime_contract.py": 1,
+        "test/e2e/fixtures/gen-tiny-yuv.sh": 1,
         "testdata/bench_upstream_ab.py": 1,
         "tools/vmaf-tune/src/vmaftune/resolution.py": 1,
         "tools/vmaf-tune/tests/test_compare.py": 1,

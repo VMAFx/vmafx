@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +31,13 @@ INSTALL_STEP = KUTTL_CASES / "01-chart-cpu-score" / "00-install.yaml"
 READY_STEP = KUTTL_CASES / "01-chart-cpu-score" / "01-ready.yaml"
 SCORE_STEP = KUTTL_CASES / "01-chart-cpu-score" / "02-score.yaml"
 SCORE_SCRIPT = REPO_ROOT / "test" / "e2e" / "score-smoke.sh"
+FIXTURE_SCRIPT = REPO_ROOT / "test" / "e2e" / "fixtures" / "gen-tiny-yuv.sh"
+DEFAULT_MODEL_HEADER = REPO_ROOT / "core" / "include" / "libvmaf" / "model.h"
+CAMBI_HEADER = REPO_ROOT / "core" / "src" / "feature" / "cambi_internal.h"
+SPEED_HEADER = REPO_ROOT / "core" / "src" / "feature" / "speed_internal.h"
+MODEL_DIR = REPO_ROOT / "model"
+# Kubernetes rejects a ConfigMap whose data exceeds 1 MiB.
+CONFIGMAP_DATA_LIMIT = 1024 * 1024
 CHART_TEMPLATES = REPO_ROOT / "deploy" / "helm" / "vmafx" / "templates"
 NODE_BUILD_STEP = "Build vmafx-node image (cpu variant, e2e tag)"
 SERVER_BUILD_STEP = "Build vmafx-server image (cpu variant, e2e tag)"
@@ -84,6 +93,117 @@ def _docker_stage(dockerfile: str, name: str) -> str:
         len(lines),
     )
     return "\n".join(lines[start:end])
+
+
+def _c_define(header: Path, name: str) -> str:
+    """Return the replacement text of one `#define` in a C header."""
+    source = header.read_text(encoding="utf-8")
+    match = re.search(rf"(?m)^#define\s+{name}\s+(.+?)\s*$", source)
+    if match is None:
+        raise AssertionError(f"{header.name} does not define {name}")
+    return match.group(1)
+
+
+def _c_int_define(header: Path, name: str) -> int:
+    """Return an integer `#define`, allowing one pair of parentheses."""
+    return int(_c_define(header, name).strip("()"))
+
+
+def _dimension_thresholds() -> tuple[int, int]:
+    """CAMBI's one-axis minimum and SpEED's per-plane minimum, from the C headers."""
+    speed_formula = _c_define(SPEED_HEADER, "SPEED_INTERNAL_MIN_DIMENSION")
+    if speed_formula != "(SPEED_INTERNAL_BLOCK_SIZE << SPEED_INTERNAL_NUM_SCALES)":
+        raise AssertionError(f"SPEED_INTERNAL_MIN_DIMENSION changed form: {speed_formula}")
+    speed_min = _c_int_define(SPEED_HEADER, "SPEED_INTERNAL_BLOCK_SIZE") << _c_int_define(
+        SPEED_HEADER, "SPEED_INTERNAL_NUM_SCALES"
+    )
+    return _c_int_define(CAMBI_HEADER, "CAMBI_MIN_WIDTH_HEIGHT"), speed_min
+
+
+def _default_model_features() -> list[str]:
+    """Feature names of the model libvmaf scores with when none is named."""
+    version = _c_define(DEFAULT_MODEL_HEADER, "VMAF_DEFAULT_MODEL_VERSION").strip('"')
+    candidates = sorted(MODEL_DIR.rglob(f"{version}.json"))
+    if len(candidates) != 1:
+        raise AssertionError(f"expected one model file for {version}, found {candidates}")
+    model = json.loads(candidates[0].read_text(encoding="utf-8"))
+    return list(model["model_dict"]["feature_names"])
+
+
+def yuv420_rejection(features: Sequence[str], width: int, height: int) -> str | None:
+    """Why libvmaf would refuse a YUV420P input for a model, or None.
+
+    Mirrors vmaf_validate_model_dimensions() in
+    core/src/feature/feature_dimensions.h for the checks that bite 4:2:0
+    input, reading the thresholds from the same headers it does.
+    """
+    cambi_min, speed_min = _dimension_thresholds()
+    names = " ".join(features).lower()
+    if "cambi" in names and width < cambi_min and height < cambi_min:
+        return f"cambi needs width or height >= {cambi_min}; got {width}x{height}"
+    chroma_width, chroma_height = width // 2, height // 2
+    if "speed_chroma" in names and min(chroma_width, chroma_height) < speed_min:
+        return (
+            f"speed_chroma needs chroma planes >= {speed_min}; got {chroma_width}x{chroma_height}"
+        )
+    temporal = "speed_temporal" in names or "speed_qa" in names
+    if temporal and min(width, height) < speed_min:
+        return f"speed_temporal/speed_qa need width and height >= {speed_min}"
+    return None
+
+
+def _fixture_geometry() -> tuple[int, int, int]:
+    """WIDTH, HEIGHT and FRAMES from the fixture generator, their single source."""
+    script = FIXTURE_SCRIPT.read_text(encoding="utf-8")
+    values = []
+    for name in ("WIDTH", "HEIGHT", "FRAMES"):
+        match = re.search(rf"(?m)^{name}=([0-9]+)$", script)
+        if match is None:
+            raise AssertionError(f"{FIXTURE_SCRIPT.name} does not set {name}")
+        values.append(int(match.group(1)))
+    return values[0], values[1], values[2]
+
+
+class E2EFixtureGeometryTest(unittest.TestCase):
+    """The scoring smoke must send an input the default model can score.
+
+    ADR-1169 made vmaf_v1.0.16_3d0h the default and made undersized input a
+    hard error, so a fixture below the model's minimum turns the nightly
+    /v1/score into an HTTP 500. The E2E job itself only runs nightly; this
+    check runs on every pull request through the Rules workflow.
+    """
+
+    # The features of the current default model that carry size limits.
+    CONSTRAINED = ("Cambi_feature_cambi_score", "Speed_chroma_feature_speed_chroma_uv_score")
+
+    def test_fixture_geometry_satisfies_default_model(self) -> None:
+        width, height, _ = _fixture_geometry()
+        self.assertIsNone(yuv420_rejection(_default_model_features(), width, height))
+
+    def test_fixture_pair_fits_one_configmap(self) -> None:
+        width, height, frames = _fixture_geometry()
+        frame_size = width * height * 3 // 2
+        # Two Y4M files: a stream header (under 64 bytes) plus a FRAME marker
+        # per frame.
+        payload = 2 * (64 + frames * (len(b"FRAME\n") + frame_size))
+        self.assertLessEqual(payload, CONFIGMAP_DATA_LIMIT)
+
+    def test_rejection_boundaries_match_libvmaf(self) -> None:
+        # The same boundaries the vmaf CLI enforces for this feature set:
+        # 216x160 scores, 214x160 fails on cambi, 216x158 on speed_chroma.
+        cambi_min, speed_min = _dimension_thresholds()
+        luma_min = 2 * speed_min
+        self.assertIsNone(yuv420_rejection(self.CONSTRAINED, cambi_min, luma_min))
+        self.assertIsNone(yuv420_rejection(self.CONSTRAINED, luma_min, cambi_min))
+        self.assertIn("cambi", yuv420_rejection(self.CONSTRAINED, cambi_min - 2, luma_min) or "")
+        self.assertIn(
+            "speed_chroma", yuv420_rejection(self.CONSTRAINED, cambi_min, luma_min - 2) or ""
+        )
+        self.assertIsNotNone(yuv420_rejection(self.CONSTRAINED, 64, 64))
+
+    def test_unconstrained_model_accepts_small_input(self) -> None:
+        features = ["VMAF_integer_feature_adm2_score", "VMAF_integer_feature_motion2_score"]
+        self.assertIsNone(yuv420_rejection(features, 64, 64))
 
 
 class E2ERuntimeContractTest(unittest.TestCase):
@@ -254,6 +374,9 @@ class E2ERuntimeContractTest(unittest.TestCase):
         self.assertIn("--set operator.image.pullPolicy=Never", install)
         self.assertIn("--set gpu.vendor=cpu", install)
         self.assertIn("vmafx-e2e-fixtures", install)
+        # Client-side apply would copy the fixture payload into an annotation
+        # capped at 256 KiB.
+        self.assertIn("kubectl apply --server-side", install)
         self.assertIn("--type=strategic", install)
         self.assertIn("kubectl wait --for=condition=Established", ready)
         self.assertIn("kubectl wait --for=condition=Available", ready)
