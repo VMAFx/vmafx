@@ -6417,7 +6417,7 @@
         "scripts/ci/tests/test_semgrep_vendored_scope.py": 3,
         "scripts/ci/tests/test_tidy_ratchet.py": 1,
         "scripts/ci/tests/test_write_compile_commands.py": 1,
-        "scripts/ci/tidy-ratchet.py": 1
+        "scripts/ci/tidy-ratchet.py": 2
       },
       "target": "1142-whole-codebase-standards.md"
     },

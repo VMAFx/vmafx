@@ -11,14 +11,18 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 SCRIPT = HERE.parent / "tidy-ratchet.py"
 
 
-def _load():
+def _load() -> ModuleType:
     spec = importlib.util.spec_from_file_location("tidy_ratchet", SCRIPT)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {SCRIPT}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -116,6 +120,23 @@ class ParseDiagnostics(unittest.TestCase):
         self.assertFalse(failed)
         self.assertEqual(diags, set())
 
+    def test_omits_diagnostics_from_generated_headers_in_the_build_dir(self) -> None:
+        build = self.root / "build"
+        (build / "src").mkdir(parents=True)
+        out = "\n".join(
+            [
+                "src/config.h:3:9: warning: macro [cppcoreguidelines-macro-usage]",
+                "../core/src/a.h:2:2: warning: w [x-y]",
+            ]
+        )
+        diags, failed = ratchet.parse_diagnostics(out, self.root, build, build)
+        self.assertFalse(failed)
+        self.assertEqual(diags, {("core/src/a.h", 2, 2, "x-y")})
+        # Without the build directory the generated header is indistinguishable
+        # from a checked-in one; callers that measure must pass it.
+        diags, _ = ratchet.parse_diagnostics(out, self.root, build)
+        self.assertIn(("build/src/config.h", 3, 9, "cppcoreguidelines-macro-usage"), diags)
+
 
 class UncitedNolints(unittest.TestCase):
     def test_counts_only_uncited(self) -> None:
@@ -174,6 +195,18 @@ class UncitedNolints(unittest.TestCase):
     def test_no_markers(self) -> None:
         self.assertEqual(ratchet.count_uncited_nolints("int x;\n"), 0)
 
+    def test_scan_omits_generated_headers_in_an_in_tree_build_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "core/src/a.c"
+            generated = root / "core/src/build/gen.h"
+            generated.parent.mkdir(parents=True)
+            source.write_text("int a;\n", encoding="utf-8")
+            generated.write_text("int g; // NOLINT\n", encoding="utf-8")
+            units = [(source, root)]
+            self.assertEqual(ratchet.scan_nolints(root, units, "cpu"), {"core/src/build/gen.h": 1})
+            self.assertEqual(ratchet.scan_nolints(root, units, "cpu", generated.parent), {})
+
     def test_scan_omits_exact_pelorus_headers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -191,7 +224,7 @@ class UncitedNolints(unittest.TestCase):
 
 
 class Compare(unittest.TestCase):
-    def _m(self, warnings: dict, nolint: dict | None = None) -> ratchet.Measurement:
+    def _m(self, warnings: dict[str, int], nolint: dict[str, int] | None = None) -> Any:
         return ratchet.Measurement(lane="cpu", warnings=warnings, nolint_uncited=nolint or {})
 
     def test_regression_and_slack(self) -> None:
@@ -294,6 +327,128 @@ class CompileCommands(unittest.TestCase):
 
             units = ratchet.load_compile_commands(build, root)
             self.assertEqual([u[0].relative_to(root).as_posix() for u in units], ["core/src/a.c"])
+
+    def test_omits_sources_generated_into_an_in_tree_build_dir(self) -> None:
+        # The nightly lane configures `build` inside the repository; meson
+        # writes the xxd model embeds there as src/*.json.c (run 36308945712).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build = root / "build"
+            (build / "src").mkdir(parents=True)
+            checked_in = ("core/src/a.c", "build-aux/b.c", "builder/c.c")
+            for rel in checked_in:
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text("int x;\n", encoding="utf-8")
+            entries = [
+                {"directory": str(build), "file": "src/vmaf_v0.6.1.json.c", "command": "cc"},
+                {"directory": str(build), "file": "src/brisque_live.model.c", "command": "cc"},
+                *(
+                    {"directory": str(build), "file": f"../{rel}", "command": "cc"}
+                    for rel in checked_in
+                ),
+            ]
+            (build / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
+
+            units = ratchet.load_compile_commands(build, root)
+            self.assertEqual(
+                [u[0].relative_to(root).as_posix() for u in units],
+                sorted(checked_in),
+            )
+
+
+class BuildDirPrefix(unittest.TestCase):
+    def test_in_tree_build_dirs_are_repo_relative(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertEqual(ratchet.build_dir_prefix(root / "build", root), "build")
+            self.assertEqual(ratchet.build_dir_prefix(root / "core/build", root), "core/build")
+
+    def test_out_of_tree_and_absent_build_dirs_have_no_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as other:
+            self.assertIsNone(ratchet.build_dir_prefix(Path(other) / "build", Path(tmp)))
+            self.assertIsNone(ratchet.build_dir_prefix(None, Path(tmp)))
+
+    def test_repository_root_is_never_a_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertIsNone(ratchet.build_dir_prefix(root, root))
+            self.assertFalse(ratchet.is_build_product("core/src/a.c", None))
+
+    def test_prefix_matches_whole_path_components_only(self) -> None:
+        self.assertTrue(ratchet.is_build_product("build/src/x.json.c", "build"))
+        self.assertTrue(ratchet.is_build_product("core/build/src/x.c", "core/build"))
+        self.assertFalse(ratchet.is_build_product("build-arm64/src/x.json.c", "build"))
+        self.assertFalse(ratchet.is_build_product("build-aux/x.c", "build"))
+        self.assertFalse(ratchet.is_build_product("core/src/build.c", "build"))
+
+
+def _generating_clang_tidy(directory: Path) -> Path:
+    """A clang-tidy stand-in reporting what xxd's output looks like to it.
+
+    Every ``*.json.c`` TU gets the two misc-use-internal-linkage warnings
+    clang-tidy 22 reports on ``unsigned char src_x[]`` / ``unsigned int
+    src_x_len``; every other TU gets one warning of checked-in debt.
+    """
+    script = directory / "generating-clang-tidy.sh"
+    script.write_text(
+        "#!/bin/sh\n"
+        "for last do :; done\n"
+        'case "$last" in\n'
+        '  --version) echo "LLVM version 22.1.8" ;;\n'
+        "  *.json.c)\n"
+        '    echo "$last:1:15: warning: can be made static [misc-use-internal-linkage]"\n'
+        '    echo "$last:9:14: warning: can be made static [misc-use-internal-linkage]" ;;\n'
+        '  *) echo "$last:1:1: warning: debt [readability-magic-numbers]" ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
+class BuildDirPlacement(unittest.TestCase):
+    """Where the build directory lives must not change the measurement.
+
+    Nightly run 36308945712 measured an in-tree ``build`` and failed with
+    ``build/src/*.json.c: warnings 0 -> 2`` on all 18 generated model TUs,
+    while the required lane measures an out-of-tree build against the same
+    baseline and passed.
+    """
+
+    def _build(self, build: Path, root: Path) -> None:
+        (build / "src").mkdir(parents=True)
+        generated = build / "src" / "vmaf_v0.6.1.json.c"
+        generated.write_text("unsigned char src_vmaf_v0_6_1_json[] = {0};\n", encoding="utf-8")
+        entries = [
+            {"directory": str(build), "file": str(generated), "command": "cc"},
+            {"directory": str(build), "file": str(root / "core/src/a.c"), "command": "cc"},
+        ]
+        (build / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
+
+    def test_in_tree_build_measures_what_an_out_of_tree_build_measures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
+            root = Path(tmp)
+            (root / "core" / "src").mkdir(parents=True)
+            (root / "core" / "src" / "a.c").write_text("int a;\n", encoding="utf-8")
+            binary = str(_generating_clang_tidy(Path(outside)))
+            out_of_tree, in_tree = Path(outside) / "build", root / "build"
+            self._build(out_of_tree, root)
+            self._build(in_tree, root)
+
+            expected = ratchet.measure("cpu", out_of_tree, root, binary, [], 1)
+            measured = ratchet.measure("cpu", in_tree, root, binary, [], 1)
+
+            self.assertEqual(expected.sources, ["core/src/a.c"])
+            self.assertEqual(expected.warnings, {"core/src/a.c": 1})
+            self.assertEqual(measured.sources, expected.sources)
+            self.assertEqual(measured.warnings, expected.warnings)
+            self.assertEqual(measured.tus, expected.tus)
+
+            baseline = root / "baseline.json"
+            baseline.write_text(json.dumps(expected.to_json()), encoding="utf-8")
+            argv = ["--build-dir", str(in_tree), "--repo-root", str(root)]
+            argv += ["--baseline", str(baseline), "--clang-tidy", binary, "--jobs", "1"]
+            self.assertEqual(ratchet.main(argv), 0)
 
 
 def _fake_clang_tidy(directory: Path) -> Path:

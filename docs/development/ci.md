@@ -270,37 +270,37 @@ instead of a touched-files rule:
   lacks optional dependencies, so its TU set differs from a workstation
   build). The guarded scoped update below can subsequently tighten measured
   translation units while retaining that full-report metadata. The compile
-  database also lists the model-JSON → C translation
-  units meson generates under `build/src/` (`vmaf_v0.6.1.json.c`, …); they are
-  measured like every other TU and appear in the baseline under that path, so
-  the `cpu` lane is always measured with `--build-dir build` at the repository
-  root, as CI does. The nightly workflow runs the same lane and fails on drift
-  (it used to swallow the full scan with `|| true`).
+  database also lists the translation units meson generates into the build
+  directory: the `xxd` model embeds `src/vmaf_v0.6.1.json.c`, … and
+  `src/brisque_live.model.c`. They are build products, which
+  [ADR-1142](../adr/1142-whole-codebase-standards.md) exempts, so the ratchet
+  skips every source and header under `--build-dir`. An in-repo `build/` (the
+  nightly workflow, `make tidy-ratchet`'s default `core/build`) therefore
+  measures the same checked-in files as the out-of-repo build the required job
+  uses. The nightly workflow runs the same lane and fails on drift (it used to
+  swallow the full scan with `|| true`).
 - **`cuda`, `sycl`, `hip` lanes** — re-measured on 2026-09-22 (clang-tidy
   22.1.8; CUDA TUs analysed with `--cuda-host-only -nocudalib`, HIP with
   `-x hip -D__HIP_PLATFORM_AMD__=1`, SYCL through
   `scripts/ci/clang-tidy-sycl.sh`). Each lane wants its **own** build
-  directory, and that directory has two preconditions the `cpu` lane does
-  not share:
+  directory, configured with **`-Db_lto=false`**:
 
   ```bash
-  # one lane per build dir; -Db_lto=false and an out-of-repo path are required
+  # one lane per build dir; -Db_lto=false is required
   meson setup ~/.cache/vmafx-gpu-tidy/cuda core \
       -Denable_cuda=true -Denable_sycl=false -Denable_hip=false -Db_lto=false
   make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=~/.cache/vmafx-gpu-tidy/cuda
   ```
 
-  1. **`-Db_lto=false`.** `core/meson.build` sets `b_lto_threads=4`
-     ([ADR-1172](../adr/1172-bound-lto-link-parallelism.md)), which meson
-     renders as GCC's `-flto=4`. clang-tidy parses these compile commands
-     with clang, which
-     rejects the argument outright, so *every* TU comes back as a compile
-     failure and the run exits 4. The `cpu` lane in `lint-and-format.yml`
-     already configures with `-Db_lto=false` for the same reason.
-  2. **A build directory outside the repository.** Anything inside it makes
-     meson's generated model sources (`<build>/src/*.json.c`) part of the
-     measurement, and their baseline keys then embed the build-dir name. The
-     committed GPU baselines contain `core/` entries only.
+  `core/meson.build` sets `b_lto_threads=4`
+  ([ADR-1172](../adr/1172-bound-lto-link-parallelism.md)), which meson renders
+  as GCC's `-flto=4`. clang-tidy parses these compile commands with clang,
+  which rejects the argument outright, so *every* TU comes back as a compile
+  failure and the run exits 4. The `cpu` lane in `lint-and-format.yml` already
+  configures with `-Db_lto=false` for the same reason. The directory may be
+  inside or outside the repository: generated sources under it (`*.json.c`,
+  HIP `*_hsaco.c`) are skipped either way, and the committed baselines contain
+  checked-in paths only.
 
   The `sycl` lane additionally needs `scripts/ci/gen-sycl-compile-commands.py`
   to run between the native database export and the measurement: meson emits
