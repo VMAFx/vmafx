@@ -23,8 +23,12 @@ fi
 artifact_dir="$1"
 expected_version="$2"
 
-if [[ ! "$expected_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-  printf 'ERROR: expected version must be ordinary SemVer MAJOR.MINOR.PATCH: %s\n' \
+# ADR-1201: the same narrow shape scripts/release/verify-release-version.sh
+# accepts for the tag, minus its leading `v` -- a plain triple, optionally
+# followed by `-rc.N` with no leading zero. Nothing else (`-beta`, `-rc`,
+# `-rc.01`, `-rc.1.2`) is a version this fork releases.
+if [[ ! "$expected_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$ ]]; then
+  printf 'ERROR: expected version must be MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rc.N: %s\n' \
     "$expected_version" >&2
   exit 64
 fi
@@ -126,9 +130,25 @@ if ! version_output="$(
   printf '%s\n' "$version_output" >&2
   die "staged vmaf failed to run in the clean environment"
 fi
-if [[ "$version_output" != "$expected_version" ]]; then
-  die "staged vmaf reported '$version_output', expected '$expected_version'"
+# `vmaf --version` prints VMAF_VERSION, which core/include/meson.build takes
+# from `git describe --tags --long --match 'v*.*.*'` and, only when that
+# command fails, from the vcs_tag fallback meson.project_version(). A release
+# build checks out the tag itself, so describe succeeds and reports
+# `v<version>-0-g<object name>` (reproduced: tag v1.0.0-rc.1 ->
+# "v1.0.0-rc.1-0-gd0f0e7e", tag v1.0.0 -> "v1.0.0-0-g8820048"). Accept exactly
+# that string, or exactly the bare fallback, which verify-release-version.sh
+# pins to the tag through the coordinated core/meson.build marker. Nothing
+# looser: a non-zero distance is a build of a commit after the tag, and a
+# `-dirty` or any other suffix is not the tagged tree.
+describe_prefix="v${expected_version}-0-g"
+if [[ "$version_output" == "$expected_version" ]]; then
+  reported_form='project version (no tag reachable at build time)'
+elif [[ "$version_output" == "$describe_prefix"* &&
+  "${version_output#"$describe_prefix"}" =~ ^[0-9a-f]{7,64}$ ]]; then
+  reported_form='git describe exactly on the release tag'
+else
+  die "staged vmaf reported '$version_output', expected '$expected_version' or '${describe_prefix}<commit>'"
 fi
 
-printf 'Verified Linux release runtime %s with materialized %s chain.\n' \
-  "$expected_version" "$soname"
+printf 'Verified Linux release runtime %s (%s: %s) with materialized %s chain.\n' \
+  "$expected_version" "$reported_form" "$version_output" "$soname"
