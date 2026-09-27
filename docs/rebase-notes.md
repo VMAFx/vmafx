@@ -54470,3 +54470,17 @@ regex. Python distribution names use the PEP 440 spelling from
 `scripts/ci/release-pr-exempt.sh` rather than re-implementing it. No test may
 read a `changelog.d/` fragment's contents: every release cut deletes them.
 No native/public API, numerical or FFmpeg rebase impact.
+
+## ADR-1346 — hosted-runner release build in the libvmaf-build stage (2026-09-27)
+
+`build-artifacts` must keep building the tag's `libvmaf-build` stage through
+`scripts/ci/build-dev-container-stage.sh` and compiling through
+`scripts/release/build-native-release-artifacts.sh` under
+`docker run --network none`. Never restore the `sycl-arc` label, a host compile
+or a GHCR pull. Keep the stage-build script cache-free and free of
+`--build-arg`; the Dev Container PR gate must keep calling the same script, and
+`check-dev-container-build-secret.py` binds both callers. Keep
+`-Denable_dnn=disabled` and `CCACHE_DISABLE=1` in the release build, and keep
+`verify-native-artifacts` on `ubuntu-26.04` while `ubuntu-latest` is 24.04.
+`check-container-build.sh` accepts exactly `vmaf-dev-mcp`. No native/public
+API, numerical or FFmpeg rebase impact.

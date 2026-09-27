@@ -14069,6 +14069,17 @@ See `docs/research/0755-hip-backend-audit-20260529.md`.
   landing upstream in `VMAFx/pelorus`. (ADR-1113, ADR-0141)
 
 
+- Native release artifacts are built on a GitHub-hosted runner inside the
+  `libvmaf-build` container stage ([ADR-1346](../docs/adr/1346-hosted-slim-container-release-build.md),
+  supersedes ADR-1178). `build-artifacts` in `supply-chain.yml` no longer waits
+  for a self-hosted runner that is not registered. It builds the release tag's
+  own `libvmaf-build` stage with `scripts/ci/build-dev-container-stage.sh`, the
+  script the Dev Container PR gate also uses, with no layer cache and no
+  registry, then compiles, stages, stamps and verifies the bundle inside it with
+  networking disabled. The Linux bundle is CPU-only, built without the ONNX
+  Runtime backend, and needs glibc 2.43 or newer (Ubuntu 26.04-class).
+
+
 docs(research): hardware backend audit recommends dropping Vulkan backend (#733)
 
 Research digest 0733 audits all six GPU backends (CUDA, HIP, SYCL, Vulkan, Metal)
@@ -23150,6 +23161,13 @@ discover Arc GPUs. ADR-0528.
   character device when it is present (non-NVIDIA hosts skip this check via
   `|| true` short-circuit) and raising `start_period` from 20 s to 45 s to
   accommodate slower host CUDA-init sequences.
+
+
+- `dev-container-publish.yml` finishes and signs the dev container image again.
+  Six of its last ten master runs were cancelled at the 60-minute timeout while
+  exporting a layer cache that cannot fit GitHub's 10 GB cache limit, after the
+  image was pushed but before cosign signed it. The cache export is gone and the
+  timeout is 90 minutes.
 
 
 - **Dev container builds:** make pipeline failure handling explicit per stage,
