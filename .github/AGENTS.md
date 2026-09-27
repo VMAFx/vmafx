@@ -25,12 +25,17 @@ parent environment to `testlog.txt` before applying the default setup.
 
 `release-please.yml` owns one root package, creates draft GitHub release.
 Publishing that draft is authenticated operation that creates `vX.Y.Z`
-tag, starts `supply-chain.yml` plus both Docker publication workflows. Never
+tag (`vX.Y.Z-rc.N` for ADR-1201 release candidate), starts
+`supply-chain.yml` plus both Docker publication workflows. Never
 split `release-please` back into unqualified component tags or make release
 non-draft without first providing and validating explicit downstream
 workflow trigger. Workflow pauses both `release-please` phases while one
-ordinary-SemVer draft exists; later master pushes must not move or duplicate
-release waiting at human publication gate. Initial 3.2.1 cut is selected
+`vX.Y.Z` or `vX.Y.Z-rc.N` draft exists; later master pushes must not move or
+duplicate release waiting at human publication gate. Draft step's inline jq
+tag regex = exact shape `scripts/release/verify-release-version.sh` accepts;
+narrower hides waiting draft, re-runs `release-please` against untagged
+release. `scripts/release/tests/test-release-please-draft-gate.sh` extracts
+step from workflow, proves parity. Initial 3.2.1 cut is selected
 by one-time `release-as` config field; release-PR rollover must remove that
 field and `bootstrap-sha` before release PR merges so neither override can
 affect 3.2.2.
