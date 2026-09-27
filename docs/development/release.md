@@ -465,7 +465,7 @@ repo or in CI secrets.
   (Trusted Publishing, no token). See
   [ADR-0166](../adr/0166-mcp-server-release-channel.md).
 - **Production container images** (`ghcr.io/vmafx/vmafx:<tag>` and the
-  `-cuda13` / `-rocm7` / `-oneapi2025` / `-server` variants): cosign keyless
+  `-cuda13` / `-rocm10` / `-oneapi2025` / `-server` variants): cosign keyless
   signature plus a GitHub-native build-provenance attestation
   (`actions/attest-build-provenance`). See
   [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
@@ -639,17 +639,54 @@ The image workflows (`docker-publish-production.yml`,
 `docker-publish-operator-node.yml`) normally run at the release tag with the
 tag's own workflow file. If an image job fails because of the build recipe,
 fix it on `master`, then dispatch the workflow on `master` with the published
-tag ([ADR-1347](../adr/1347-image-recovery-from-default-branch.md)):
+tag ([ADR-1347](../adr/1347-image-recovery-from-default-branch.md)).
+
+The `release-publish` environment admits only `v*` tags, so a run on `master`
+is rejected at the environment gate ("Branch "master" is not allowed to deploy
+to release-publish") before any step runs. Allow `master` for the recovery
+only, then take the permission away again:
 
 ```bash
+# 1. Let master deploy to release-publish; the required reviewer still applies.
+policy=$(gh api -X POST \
+  repos/VMAFx/vmafx/environments/release-publish/deployment-branch-policies \
+  -f name=master -f type=branch --jq .id)
+
+# 2. Dispatch the recovery runs and approve their release-publish deployments.
 gh workflow run docker-publish-production.yml --ref master -f tag=v1.0.0-rc.1
 gh workflow run docker-publish-operator-node.yml --ref master -f tag=v1.0.0-rc.1
+
+# 3. After both runs have finished (re-runs need the policy too), remove it.
+gh api -X DELETE \
+  "repos/VMAFx/vmafx/environments/release-publish/deployment-branch-policies/$policy"
+gh api repos/VMAFx/vmafx/environments/release-publish/deployment-branch-policies \
+  --jq '.branch_policies[] | "\(.type) \(.name)"'   # expect only: tag v*
 ```
 
 The run verifies the published tag, builds the tag's source with `master`'s
 `docker/` and `Dockerfile.go-server`, and labels every image
 `io.vmafx.build-recipe=<master commit>`. Only the build recipe comes from
 `master`; the compiled code is the tag's.
+
+#### Making the container images public
+
+GHCR creates each package private on its first push, and the REST API cannot
+change a package's visibility: the packages endpoints offer only read and
+delete. After the first release of a package (`vmafx`, `vmafx-server`,
+`vmafx-operator`, `vmafx-node`), an organization owner switches it once in the
+web UI: **Package settings → Danger Zone → Change visibility → Public**, then
+types the package name to confirm. The option is greyed out ("disabled by
+organization administrators") unless **Organization settings → Packages →
+Package creation → Public** is checked; the VMAFx organization has had it
+checked since v1.0.0-rc.1. Later pushes keep the package's visibility.
+
+Check that an anonymous client can pull:
+
+```bash
+token=$(curl -s "https://ghcr.io/token?scope=repository:vmafx/vmafx-node:pull" | jq -r .token)
+curl -s -H "Authorization: Bearer $token" \
+  https://ghcr.io/v2/vmafx/vmafx-node/tags/list | jq '.tags'
+```
 
 #### Freezing the release PR while you cut it
 

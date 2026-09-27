@@ -36,6 +36,10 @@
   `docker/` recipe and labels each image with `io.vmafx.build-recipe`; the
   dispatch path also reads the prerelease flag from the release itself, so it
   works for release candidates.
+  The release guide now covers the `release-publish` environment step a
+  recovery run needs (the environment admits only `v*` tags, so `master` is
+  allowed for the recovery and removed afterwards) and how to make a new GHCR
+  package public, which the REST API cannot do.
 
 
 - `test_meson_secret_env_sanitization` passes when Meson is installed with
