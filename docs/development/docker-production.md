@@ -38,11 +38,11 @@ docker run --rm \
 
 | Tag | Platforms | Description | Approx. size |
 |-----|-----------|-------------|--------------|
-| `vX.Y.Z` (also `latest` for a final release) | amd64, arm64 | CPU-only CLI (default) | ~150 MB |
-| `vX.Y.Z-server` | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~350 MB |
-| `vX.Y.Z-cuda13` | amd64 | CUDA 13 runtime added | ~500 MB |
-| `vX.Y.Z-rocm10` | amd64 | ROCm 10 HIP runtime added | ~600 MB |
-| `vX.Y.Z-oneapi2025` | amd64 | Intel oneAPI 2025 SYCL runtime added | ~500 MB |
+| `vX.Y.Z` (also `latest` for a final release) | amd64, arm64 | CPU-only CLI (default) | ~144 MB unpacked, ~55 MB compressed |
+| `vX.Y.Z-server` | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~1.1 GB unpacked, ~283 MB compressed |
+| `vX.Y.Z-cuda13` | amd64 | CUDA 13 runtime added | ~313 MB unpacked, ~100 MB compressed |
+| `vX.Y.Z-rocm10` | amd64 | ROCm 10 HIP runtime added | ~29 GB unpacked, ~8.3 GB compressed |
+| `vX.Y.Z-oneapi2025` | amd64 | Intel oneAPI 2025 SYCL runtime added | ~5.8 GB unpacked, ~1.4 GB compressed |
 
 The CPU CLI uses `gcr.io/distroless/cc-debian13:nonroot`, matching its Debian 13
 builder ABI. The server uses the official Python 3.14 slim image (also Debian 13)
@@ -72,28 +72,59 @@ it builds the tag's source with `master`'s `docker/` recipe and signs as
 
 ## GPU variants
 
+`vmaf --version` never touches the GPU, so it does not show that an image can
+use one. Check with a scoring run that forces the backend: with
+`--backend cuda`, `hip` or `sycl`, a backend that cannot initialise makes the
+CLI exit with code `100` instead of scoring on the CPU (see
+[explicit-backend semantics](../backends/index.md#explicit-backend-semantics-backend-name)).
+The default, `--backend auto`, falls back to the CPU with only a message on
+stderr, so a container started without GPU access still prints a score.
+
+The examples score the pair in `/path/to/videos` with `tag` set as in the
+[quick start](#quick-start), and pass the model by path, which works in
+every image.
+
 ### CUDA 13.4.2
 
 ```bash
-docker pull ghcr.io/vmafx/vmafx:vX.Y.Z-cuda13
 docker run --rm --gpus all \
-  ghcr.io/vmafx/vmafx:vX.Y.Z-cuda13 \
-  --version
+  -v /path/to/videos:/data:ro \
+  ghcr.io/vmafx/vmafx:$tag-cuda13 \
+  --backend cuda \
+  --reference /data/ref.yuv --distorted /data/dis.yuv \
+  --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+  --model path=/usr/local/share/vmafx/model/vmaf_v0.6.1.json \
+  --output /dev/stdout
 ```
 
 Requires the NVIDIA Container Toolkit and a host driver compatible with CUDA 13.4.2.
+Without `--gpus all` the container has no GPU: `--backend cuda` exits with
+code `100`, and the default auto mode scores on the CPU.
 
-### ROCm 7.2.4 (HIP)
+### ROCm 10.0.0 (HIP)
+
+Pass `/dev/kfd` and the render node of the GPU to use, found from its PCI
+address under `/dev/dri/by-path/`. Passing all of `/dev/dri` also works, but
+exposes every GPU in the host. Add the host's `render` and `video` groups by
+numeric ID: the image has no `render` group, so `--group-add render` fails
+with `unable to find group render`, and `--group-add video` resolves to the
+image's GID 44 rather than the host's `video` group.
 
 ```bash
-docker pull ghcr.io/vmafx/vmafx:vX.Y.Z-rocm7
+# The GPU's PCI address; list them with: ls -l /dev/dri/by-path/
+render=$(readlink -f /dev/dri/by-path/pci-0000:7d:00.0-render)
 docker run --rm \
   --device /dev/kfd \
-  --device /dev/dri \
-  --group-add video \
-  --group-add render \
-  ghcr.io/vmafx/vmafx:vX.Y.Z-rocm7 \
-  --version
+  --device "$render" \
+  --group-add "$(getent group render | cut -d: -f3)" \
+  --group-add "$(getent group video | cut -d: -f3)" \
+  -v /path/to/videos:/data:ro \
+  ghcr.io/vmafx/vmafx:$tag-rocm10 \
+  --backend hip \
+  --reference /data/ref.yuv --distorted /data/dis.yuv \
+  --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+  --model path=/usr/local/share/vmafx/model/vmaf_v0.6.1.json \
+  --output /dev/stdout
 ```
 
 Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>` accessible.
@@ -103,16 +134,31 @@ Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>` acc
 The image is compiled in Intel's oneAPI Base Toolkit container tagged 2025.3.2
 and runs on Intel's oneAPI Runtime 2025.3.1 image. Intel has not published a matching
 `oneapi-runtime:2025.3.2-0-devel-ubuntu24.04` tag, so the release keeps the
-runtime on the latest available 2025.3 patch and verifies the resulting image's
-driver-independent `vmaf --version` entrypoint during publication.
+runtime on the latest available 2025.3 patch.
+
+`vmaf --version` loads only the libraries `vmaf` links directly. It does not
+load the oneAPI Unified Runtime adapters, which SYCL opens with `dlopen()`
+when it looks for a device. The `v1.0.0-rc.1` image passed `--version` while
+every adapter failed to load for want of `libumf.so.1`: SYCL reported "No
+device of requested type available" and `--backend sycl` exited with code
+`100`. The publication smoke test now also checks the adapters with `ldd`.
+
+Pass the render node and the host's `render` group by numeric ID, as for
+ROCm:
 
 ```bash
-docker pull ghcr.io/vmafx/vmafx:vX.Y.Z-oneapi2025
+# The GPU's PCI address; list them with: ls -l /dev/dri/by-path/
+render=$(readlink -f /dev/dri/by-path/pci-0000:03:00.0-render)
 docker run --rm \
-  --device /dev/dri \
-  --group-add render \
-  ghcr.io/vmafx/vmafx:vX.Y.Z-oneapi2025 \
-  --version
+  --device "$render" \
+  --group-add "$(getent group render | cut -d: -f3)" \
+  -v /path/to/videos:/data:ro \
+  ghcr.io/vmafx/vmafx:$tag-oneapi2025 \
+  --backend sycl \
+  --reference /data/ref.yuv --distorted /data/dis.yuv \
+  --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+  --model path=/usr/local/share/vmafx/model/vmaf_v0.6.1.json \
+  --output /dev/stdout
 ```
 
 Requires: `i915` or `xe` kernel module loaded and `/dev/dri/renderD<N>` accessible.
@@ -228,9 +274,10 @@ Both Dockerfiles use a multi-stage build:
    interpreter to which `/venv/bin/python` links. It runs as UID/GID 65532.
 5. **GPU builders/runtimes**: CUDA 13.4.2 uses the same digest-pinned Ubuntu 26.04
    base for its builder and runtime, installing exact NVIDIA apt packages in each
-   stage. ROCm 7.2.4 uses AMD's supported dev/application image, and the Intel
-   image uses the oneAPI basekit image tagged 2025.3.2 with the latest published
-   2025.3.1 runtime. Every base-image reference is digest-pinned.
+   stage. ROCm 10.0.0 uses AMD's `rocm/dev-ubuntu-26.04:10.0.0-full` image for
+   both its builder and runtime, and the Intel image uses the oneAPI basekit
+   image tagged 2025.3.2 with the latest published 2025.3.1 runtime. Every
+   base-image reference is digest-pinned.
 
 Publishing a GitHub release drives the two Docker workflows through the
 `release.published` event. Each workflow checks out
@@ -238,8 +285,12 @@ Publishing a GitHub release drives the two Docker workflows through the
 so a release cannot accidentally publish a branch tip under a release tag.
 After each GPU image is signed and receives its SBOM and provenance, the
 workflow verifies the digest-pinned signature before pulling the image and
-runs the driver-independent `vmaf --version` entrypoint. This catches missing
-runtime libraries without requiring accelerator hardware on the smoke runner.
+runs `vmaf --version`, which needs no accelerator hardware. That proves only
+that the libraries `vmaf` links directly are present. Runtime plugins opened
+with `dlopen()` are not loaded until a backend initialises, so for the oneAPI
+image the smoke also runs `ldd` on the Unified Runtime adapters. Neither check
+exercises a GPU; run a forced-backend score from
+[GPU variants](#gpu-variants) on the target hardware for that.
 
 See [ADR-0698](../adr/0698-vmafx-production-dockerfile.md) for the full rationale,
 alternatives considered, and tag matrix design decisions.

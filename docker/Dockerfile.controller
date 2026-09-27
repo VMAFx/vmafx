@@ -91,6 +91,7 @@ RUN apt-get update \
         nasm \
         pkg-config \
         ca-certificates \
+        xxd \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src

@@ -13,3 +13,10 @@
   for recovered images, and a recovered image's
   `org.opencontainers.image.revision` label names the tag's source commit
   rather than the recipe commit it was built with.
+- The container images carry the built-in models again: the CPU, MCP-server,
+  CUDA and oneAPI builders lacked `xxd`, so libvmaf silently embedded no model
+  and scoring without `--model` failed. The oneAPI image now installs the
+  Unified Memory Framework runtime its SYCL adapters need; without it the image
+  found no SYCL device. The publish smoke tests now score with the default model
+  and check the oneAPI adapters, and the GPU image docs give working device and
+  group flags, forced-backend scoring examples and measured parity figures.

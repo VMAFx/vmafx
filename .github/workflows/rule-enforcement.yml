@@ -741,6 +741,7 @@ jobs:
           bash scripts/release/tests/test-check-release-bot-secrets.sh
           bash scripts/release/tests/test-docker-publish-source-binding.sh
           bash scripts/release/tests/test-publication-environment-binding.sh
+          bash scripts/release/tests/test-docker-image-runtime-contract.sh
           bash scripts/release/tests/test-release-please-draft-gate.sh
           scripts/release/concat-changelog-fragments.sh --check
 

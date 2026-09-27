@@ -110,9 +110,21 @@ When the binary is built with CUDA, the backend is auto-selected on GPU-capable
 hosts. CLI controls:
 
 ```bash
-./build/tools/vmaf ...            # CUDA used automatically
-./build/tools/vmaf --no_cuda ...  # force CPU path
+./build/tools/vmaf ...                 # CUDA used automatically
+./build/tools/vmaf --backend cuda ...  # exit 100 if CUDA cannot initialise
+./build/tools/vmaf --no_cuda ...       # force CPU path
 ```
+
+Automatic selection falls back to the CPU when CUDA cannot initialise, and
+reports it only on stderr (`problem during vmaf_cuda_state_init, using CPU`);
+the run still prints a score and exits 0. In a container this is what happens
+without `--gpus all`: the NVIDIA Container Toolkit then injects no GPU and no
+`libcuda.so.1`. `--backend cuda` refuses to fall back and exits with code
+`100` (see
+[explicit-backend semantics](../index.md#explicit-backend-semantics-backend-name)).
+With `--gpus all`, the published `v1.0.0-rc.1-cuda13` image on an RTX 4090
+scores the Netflix `src01` pair with `vmaf_v0.6.1` at 76.6678303 on CUDA
+against 76.6678309 on the CPU.
 
 The FFmpeg filter name is `libvmaf_cuda` — see [usage/ffmpeg.md](../../usage/ffmpeg.md)
 for a hwaccel pipeline that keeps decoded frames on the GPU. For

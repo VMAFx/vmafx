@@ -43,9 +43,18 @@ Level Zero device. CLI controls:
 
 ```bash
 ./build/tools/vmaf ...                   # SYCL used automatically
+./build/tools/vmaf --backend sycl ...    # exit 100 if SYCL cannot initialise
 ./build/tools/vmaf --no_sycl ...         # force CPU path
 ./build/tools/vmaf --sycl_device 1 ...   # pick device index 1 explicitly
 ```
+
+Automatic selection falls back to the CPU when SYCL cannot initialise, for
+example when a Level Zero or Unified Runtime library fails to load or a
+container has no render node. The run still prints a score and exits 0; only
+a stderr line such as `problem during vmaf_sycl_state_init, using CPU` shows
+it. `--backend sycl` makes the failure explicit: the CLI exits with code
+`100` instead (see
+[explicit-backend semantics](../index.md#explicit-backend-semantics-backend-name)).
 
 Device index `0` (the default) is whichever device SYCL's default selector
 picks — usually the first discrete GPU. Use `--sycl_device` to pin an
@@ -366,8 +375,10 @@ See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) and the
 SYCL kernels target **close agreement** with the CPU fixed-point
 path, not bit-exact equality. Like every GPU path for VMAF, different
 reduction orders, parallel-prefix scans, and FMA contractions can
-perturb the final accumulator by a fraction of a ULP. Agreement is
-typically at ~6 decimal places of the pooled VMAF score.
+perturb the final accumulator by a fraction of a ULP. Measured on an Intel
+Arc A380 (2026-09-27) with `vmaf_v0.6.1` on the Netflix `src01` pair, the
+pooled VMAF score differs from the CPU by 2.48e-5 and the largest per-frame
+difference is 5.92e-5.
 
 The **Netflix golden-data gate is CPU-only** — see
 [docs/principles.md §3.1](../../principles.md#31-netflix-golden-data-gate).
@@ -410,8 +421,10 @@ the deviation:
   agrees to every printed digit here — this is a measurement on these four
   fixtures, **not** a general bit-exactness guarantee for the SYCL backend
   (see [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md) for the tolerance
-  contract). Pooled `vmaf` still differs by 2.2e-6 on `src01` because the
-  ADM / VIF / motion twins carry their own deltas.
+  contract). In that CAMBI measurement, pooled `vmaf` still differed by
+  2.2e-6 on `src01` because the ADM / VIF / motion twins carry their own
+  deltas; for the `vmaf_v0.6.1` figure see
+  [Numerical tolerance vs the CPU scalar path](#numerical-tolerance-vs-the-cpu-scalar-path).
 - **GPU twins are only reached through a model.** `--feature <name>`
   resolves via `vmaf_get_feature_extractor_by_name()`, a plain name match
   on the registry, so `--backend sycl --feature cambi` runs the CPU

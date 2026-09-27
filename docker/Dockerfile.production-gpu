@@ -34,6 +34,7 @@ ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e95
 ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
 ARG ONEAPI_BUILDER="intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a"
 ARG ONEAPI_RUNTIME="intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f"
+ARG INTEL_UMF_RUNTIME_PACKAGE="intel-oneapi-umf-1.0=1.0.3-17"
 
 FROM scratch AS meson-wheel
 ADD --checksum=sha256:71f133147fa0fcfe8f4df49fa1045771064947834538409e5d97b3613aac8b4e \
@@ -66,7 +67,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ninja-build \
         nasm \
         pkg-config \
-        ca-certificates
+        ca-certificates \
+        xxd
 
 WORKDIR /src
 COPY . .
@@ -124,7 +126,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         nasm \
         ninja-build \
         pkg-config \
-        python3-pip
+        python3-pip \
+        xxd
 
 RUN --mount=type=bind,from=meson-wheel,source=/meson-1.12.0-py3-none-any.whl,target=/tmp/meson-1.12.0-py3-none-any.whl \
     python3 -m pip install --break-system-packages --no-cache-dir --no-deps \
@@ -243,7 +246,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         nasm \
         ninja-build \
         pkg-config \
-        python3-pip
+        python3-pip \
+        xxd
 
 RUN --mount=type=bind,from=meson-wheel,source=/meson-1.12.0-py3-none-any.whl,target=/tmp/meson-1.12.0-py3-none-any.whl \
     python3 -m pip install --break-system-packages --no-cache-dir --no-deps \
@@ -342,12 +346,28 @@ USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM ${ONEAPI_RUNTIME} AS final-oneapi2025
+ARG INTEL_UMF_RUNTIME_PACKAGE
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX oneAPI 2025.3.1 runtime built from basekit 2025.3.2"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
-ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/intel/oneapi/redist/lib"
+# The Unified Runtime adapters SYCL dlopen()s at device discovery need
+# libumf.so.1, which the runtime image lacks (build-config.env). Without it
+# every adapter fails to load and SYCL reports no device while `vmaf
+# --version` still passes, so the stage fails the build on any unresolved
+# adapter dependency.
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends "${INTEL_UMF_RUNTIME_PACKAGE}" \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+ENV LD_LIBRARY_PATH="/usr/local/lib:/opt/intel/oneapi/redist/lib:/opt/intel/oneapi/umf/1.0/lib"
+RUN for adapter in /opt/intel/oneapi/redist/lib/libur_adapter_*.so.0; do \
+        if ldd "${adapter}" | grep 'not found'; then \
+            echo "unresolved dependency in ${adapter}" >&2; exit 1; \
+        fi; \
+    done
 ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
 COPY --from=builder-oneapi2025 /dist/lib/   /usr/local/lib/
 COPY --from=builder-oneapi2025 /dist/bin/   /usr/local/bin/

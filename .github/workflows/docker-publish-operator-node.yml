@@ -567,6 +567,20 @@ jobs:
           version="$(docker run --rm "${image}" --version)"
           test "${version}" = "${{ env.PUBLISH_TAG }}"
           docker run --rm --entrypoint /usr/local/bin/vmaf "${image}" --version
+          # `--version` never loads a model: the first v1.0.0-rc.1 images passed it
+          # although their builder lacked xxd and embedded no model. Scoring
+          # without --model only works when the default model is compiled in.
+          frames="${RUNNER_TEMP}/smoke-frames"
+          mkdir -p "${frames}"
+          # Two identical 576x324 4:2:0 frames, large enough for the default
+          # model's cambi and speed_chroma minimums.
+          head -c $((576 * 324 * 3)) /dev/urandom > "${frames}/ref.yuv"
+          docker run --rm --entrypoint /usr/local/bin/vmaf \
+            -v "${frames}:/frames:ro" "${image}" \
+            --reference /frames/ref.yuv --distorted /frames/ref.yuv \
+            --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+            --json --output /dev/stdout \
+            | jq -e '.pooled_metrics.vmaf.mean'
 
       - name: Smoke-test vmafx-server HTTP startup
         run: |
@@ -610,6 +624,20 @@ jobs:
           version="$(docker run --rm "${image}" --version)"
           test "${version}" = "${{ env.PUBLISH_TAG }}"
           docker run --rm --entrypoint /usr/local/bin/vmaf "${image}" --version
+          # `--version` never loads a model: the first v1.0.0-rc.1 images passed it
+          # although their builder lacked xxd and embedded no model. Scoring
+          # without --model only works when the default model is compiled in.
+          frames="${RUNNER_TEMP}/smoke-frames"
+          mkdir -p "${frames}"
+          # Two identical 576x324 4:2:0 frames, large enough for the default
+          # model's cambi and speed_chroma minimums.
+          head -c $((576 * 324 * 3)) /dev/urandom > "${frames}/ref.yuv"
+          docker run --rm --entrypoint /usr/local/bin/vmaf \
+            -v "${frames}:/frames:ro" "${image}" \
+            --reference /frames/ref.yuv --distorted /frames/ref.yuv \
+            --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+            --json --output /dev/stdout \
+            | jq -e '.pooled_metrics.vmaf.mean'
           docker run --rm --entrypoint /usr/local/bin/ffmpeg "${image}" -version
 
   # -------------------------------------------------------------------------

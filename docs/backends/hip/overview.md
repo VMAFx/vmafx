@@ -5,12 +5,17 @@
 > ROCm hosts following [ADR-0519](../../adr/0519-hip-import-state-implementation.md).
 > The library-side `vmaf_hip_import_state` was promoted from `-ENOSYS` to a
 > real implementation; the CLI now produces a valid VMAF JSON on any AMD GPU
-> visible to ROCm. Verified on AMD gfx1036 (Radeon 680M) inside the
-> `vmaf-dev-mcp` container: VMAF = 76.66783 on the Netflix golden src01
-> pair, bit-exact match against the CPU backend (delta = 0; meets the
-> `places=4` cross-backend gate from [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)
-> with room to spare). HIP joins CUDA / SYCL / Metal as a fully working
+> visible to ROCm. HIP joins CUDA / SYCL / Metal as a fully working
 > runtime-selected backend. (The Vulkan backend was removed in ADR-0726.)
+>
+> **Measured parity (2026-09-27):** with the published `v1.0.0-rc.1-rocm10`
+> image on AMD gfx1036 (the Radeon iGPU of a Granite Ridge CPU), the Netflix
+> golden src01 pair and `vmaf_v0.6.1`, HIP scores 76.667848 against the CPU's
+> 76.667831, a pooled difference of 1.67e-5. Per frame, `motion2` and
+> `motion3` differ by up to 1.26e-5 and VIF by up to 5.4e-7; ADM runs on the
+> CPU (see `integer_adm_hip` below). This is close agreement, not
+> bit-exactness, and it is inside the 5e-5 `places=4` cross-backend gate
+> from [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md).
 >
 > **Dispatch posture (2026-05-18, updated per
 > [ADR-0530](../../adr/0530-hip-feature-flag-promotion-and-picture-buffer.md)):**
@@ -24,8 +29,10 @@
 > perform their own HtoD copies (`hipMemcpy2DAsync`). End-to-end
 > verification: `--backend hip --feature integer_motion` produces
 > a clean VMAF JSON with VMAF = 76.71 on the Netflix src01 pair
-> (vs CPU 76.67, well inside the places=4 cross-backend gate from
-> [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)); 48
+> (vs CPU 76.67: a 0.04 gap, far outside the 5e-5 places=4
+> cross-backend gate from
+> [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md); the measured
+> parity at the top of this page supersedes it); 48
 > `hipModuleLaunchKernel(calculate_motion_score_kernel_8bpc)`
 > launches per 48-frame clip confirm the HIP kernel is actually
 > dispatching.
@@ -132,7 +139,7 @@ dev container, and in the published GPU images (ADR-1225).
 ROCm 10 has no apt channel — since ROCm 7.14 AMD builds and releases through
 "TheRock", and `repo.radeon.com/rocm/apt/` tops out at 7.2.4. The fork
 therefore installs ROCm from the digest-pinned
-`rocm/dev-ubuntu-24.04:10.0.0-full` container image. On a workstation, either
+`rocm/dev-ubuntu-26.04:10.0.0-full` container image. On a workstation, either
 use your distribution's ROCm packages (any 7.0+ release builds this fork) or
 run the dev container; CI uses `scripts/ci/install-rocm-from-image.sh`, which
 streams the image's `/opt/rocm` out of the registry without a 29 GB
