@@ -10,19 +10,25 @@ hosted at `ghcr.io/vmafx/vmafx`.
 
 ## Quick start
 
+Name the release you want. `latest` points at the newest final release only;
+release candidates (`vX.Y.Z-rc.N`) are never tagged `latest`, so until 1.0.0
+is out, `latest` does not exist.
+
 ```bash
+tag=v1.0.0-rc.1
+
 # Pull and run the vmaf CLI (CPU, smallest image)
-docker pull ghcr.io/vmafx/vmafx:latest
-docker run --rm ghcr.io/vmafx/vmafx:latest --version
+docker pull ghcr.io/vmafx/vmafx:$tag
+docker run --rm ghcr.io/vmafx/vmafx:$tag --version
 
 # Score a video pair (mount a local directory)
 docker run --rm \
   -v /path/to/videos:/data:ro \
-  ghcr.io/vmafx/vmafx:latest \
+  ghcr.io/vmafx/vmafx:$tag \
   --reference /data/ref.yuv \
   --distorted /data/dis.yuv \
   --width 576 --height 324 \
-  --pixel_format yuv420p \
+  --pixel_format 420 \
   --bitdepth 8 \
   --model path=/usr/local/share/vmafx/model/vmaf_v0.6.1.json \
   --output /dev/stdout
@@ -32,10 +38,10 @@ docker run --rm \
 
 | Tag | Platforms | Description | Approx. size |
 |-----|-----------|-------------|--------------|
-| `latest`, `vX.Y.Z` | amd64, arm64 | CPU-only CLI (default) | ~150 MB |
+| `vX.Y.Z` (also `latest` for a final release) | amd64, arm64 | CPU-only CLI (default) | ~150 MB |
 | `vX.Y.Z-server` | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~350 MB |
 | `vX.Y.Z-cuda13` | amd64 | CUDA 13 runtime added | ~500 MB |
-| `vX.Y.Z-rocm7` | amd64 | ROCm 7 HIP runtime added | ~600 MB |
+| `vX.Y.Z-rocm10` | amd64 | ROCm 10 HIP runtime added | ~600 MB |
 | `vX.Y.Z-oneapi2025` | amd64 | Intel oneAPI 2025 SYCL runtime added | ~500 MB |
 
 The CPU CLI uses `gcr.io/distroless/cc-debian13:nonroot`, matching its Debian 13
@@ -48,17 +54,21 @@ variants use their vendors' pinned runtime families.
 ## Recovering a published image set
 
 Manual publication is an idempotent recovery path for an existing published
-ordinary-SemVer release, not a way to mint an arbitrary image tag from a branch.
-Run the workflow at the same immutable tag passed as input:
+release (final or candidate), not a way to mint an arbitrary image tag from a
+branch. Run the workflow at the same immutable tag passed as input:
 
 ```bash
 tag=vX.Y.Z
 gh workflow run docker-publish-production.yml --ref "$tag" -f tag="$tag"
 ```
 
-The preflight rejects prereleases, unpublished tags, a dispatch ref other than
-`refs/tags/$tag`, a source SHA mismatch, or coordinated version drift before
-granting package-write or OIDC permissions.
+The preflight rejects unpublished tags, a prerelease flag that disagrees with
+the tag, a dispatch ref other than `refs/tags/$tag` or `master`, a source SHA
+mismatch, or coordinated version drift before granting package-write or OIDC
+permissions. A dispatch on `master` is the recovery for a broken build recipe:
+it builds the tag's source with `master`'s `docker/` recipe and signs as
+`master`; see
+[Recovering a release's container images](release.md#recovering-a-releases-container-images).
 
 ## GPU variants
 
@@ -155,18 +165,24 @@ Every image is signed via Sigstore keyless cosign and carries a CycloneDX SBOM
 attestation. Verify before deploying in a security-sensitive context:
 
 ```bash
+tag=v1.0.0-rc.1
+# The signing identity is the workflow at the ref it ran on: refs/tags/$tag for
+# a normal publish, refs/heads/master for a recovered image (every
+# v1.0.0-rc.1 image; see release.md). Pin the one that applies.
+identity="https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master"
+
 # Verify the cosign signature
 cosign verify \
-  --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@.*" \
+  --certificate-identity "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/vmafx/vmafx:latest
+  ghcr.io/vmafx/vmafx:$tag
 
 # Verify and print the SBOM attestation
 cosign verify-attestation \
-  --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@.*" \
+  --certificate-identity "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --type cyclonedx \
-  ghcr.io/vmafx/vmafx:latest \
+  ghcr.io/vmafx/vmafx:$tag \
   | jq '.payload | @base64d | fromjson'
 ```
 

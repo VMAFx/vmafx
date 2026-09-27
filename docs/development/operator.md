@@ -82,7 +82,7 @@ metadata:
 spec:
   gpuVendor: nvidia
   capacity: 4
-  image: ghcr.io/vmafx/vmafx-node:latest
+  image: ghcr.io/vmafx/vmafx-node:v1.0.0-rc.1  # a release tag; `latest` exists only after a final release
 ```
 
 ```bash

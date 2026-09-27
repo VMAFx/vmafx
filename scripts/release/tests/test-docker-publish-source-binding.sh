@@ -48,11 +48,20 @@ validation_snippets = (
     '"$GITHUB_EVENT_NAME" != workflow_dispatch',
     '"$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH"',
     '"$recovery" == false && "$(git rev-parse HEAD)" != "$GITHUB_SHA"',
+    'echo "source_sha=$(git rev-parse HEAD)"',
 )
 
 RECOVERY_OVERLAY = (
     "        if: needs.validate-release.outputs.recovery == 'true'\n",
     '          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server\n',
+)
+
+# The OCI revision label names the packaged source (the tag's commit), not the
+# recipe commit a recovery run executes at (v1.0.0-rc.1's first recovered
+# images said a919f359 instead of ce00cf24).
+SOURCE_REVISION_LABEL = (
+    "            org.opencontainers.image.revision="
+    "${{ needs.validate-release.outputs.source-sha }}\n"
 )
 
 
@@ -104,6 +113,8 @@ for relative_path, build_jobs in workflows.items():
         for snippet in RECOVERY_OVERLAY:
             if snippet not in block:
                 raise AssertionError(f"{relative_path}: {job} recovery overlay missing {snippet!r}")
+        if SOURCE_REVISION_LABEL not in block:
+            raise AssertionError(f"{relative_path}: {job} does not label the tag's source revision")
         overlays = re.findall(r"git checkout FETCH_HEAD -- ([^\n]*)", block)
         if overlays != ["docker/ Dockerfile.go-server"]:
             raise AssertionError(f"{relative_path}: {job} overlays {overlays}, not the build recipe only")

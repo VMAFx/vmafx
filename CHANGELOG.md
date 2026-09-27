@@ -65,6 +65,13 @@
   also no longer claims that every new GHCR package starts private: with the
   organization's public-package setting on, a package first pushed from this
   repository is created public.
+- The container quick start works for release candidates: it names the
+  release tag instead of `latest` (release candidates are never tagged
+  `latest`) and passes `--pixel_format 420` instead of the rejected `yuv420p`.
+  The image docs list the `-rocm10` variant and the exact signing identities
+  for recovered images, and a recovered image's
+  `org.opencontainers.image.revision` label names the tag's source commit
+  rather than the recipe commit it was built with.
 
 
 - **Whole-tree clang-tidy ratchet ignores generated build products**: `tidy-ratchet.py`

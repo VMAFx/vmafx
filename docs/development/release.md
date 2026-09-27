@@ -367,8 +367,8 @@ ADR-1178's self-hosted runner) meets that on a GitHub-hosted runner:
 ### Release recovery dispatches
 
 Use the manual supply-chain and Docker dispatches only to recover an existing,
-published, non-prerelease GitHub release. Run each workflow at the immutable
-tag ref and pass that same tag as its input:
+published GitHub release (a final release or a candidate). To re-run a workflow
+unchanged, run it at the immutable tag ref and pass that same tag as its input:
 
 ```bash
 tag=vX.Y.Z
@@ -377,11 +377,14 @@ gh workflow run docker-publish-production.yml --ref "$tag" -f tag="$tag"
 gh workflow run docker-publish-operator-node.yml --ref "$tag" -f tag="$tag"
 ```
 
-The tag/ref equality is a release invariant in all three workflows:
-dispatching from `master` or a different ref would make rebuilt artefacts,
-containers, and signed provenance refer to source other than the published
-release. Each preflight also verifies the coordinated versions and published
-GitHub release before any write or OIDC job starts.
+`supply-chain.yml` only runs at the tag: its release binaries and their
+signatures must come from the tag's own workflow. The two image workflows can
+also be dispatched on `master` when the tag's build recipe itself was broken;
+that run builds the tag's source with `master`'s `docker/` recipe and signs as
+`master` ([ADR-1347](../adr/1347-image-recovery-from-default-branch.md), see
+[Recovering a release's container images](#recovering-a-releases-container-images)).
+Each preflight verifies the coordinated versions and the published GitHub
+release before any write or OIDC job starts.
 The protected deployment environments still apply on recovery runs; approval
 authorizes the write-bearing jobs only, after the read-only preflight has
 proved the tag/ref/release identity.
@@ -525,7 +528,22 @@ cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
   --certificate-identity \
     "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# vmafx-server, vmafx-operator and vmafx-node come from the other workflow.
+cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
+  --certificate-identity \
+    "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/heads/master" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+For a recovered image the tag identities above fail with `no matching
+CertificateIdentity found`, and so does `gh attestation verify` pinned to the
+tag with `--source-ref refs/tags/<tag>` or `--source-digest <tag commit>`. The
+GitHub build-provenance attestation records the run that built the image:
+`refs/heads/master` and the recipe commit. The built source is the tag's
+commit, which a recovery run also writes into `org.opencontainers.image.revision`.
+The v1.0.0-rc.1 images were recovered before that label was corrected, so
+theirs names the recipe commit `a919f3596` instead of the tag's `ce00cf245`.
 
 The post-push smoke jobs in both Docker workflows run the matching cosign
 verification recipe before pulling an image, with the identity of the run that

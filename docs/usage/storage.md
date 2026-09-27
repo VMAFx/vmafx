@@ -147,7 +147,7 @@ sftp://archive.example.com/corpus/ref.yuv
 The `vmafx-node` image bundles rclone at `/usr/local/bin/rclone`.  Verify:
 
 ```bash
-docker run --rm --entrypoint /usr/local/bin/rclone ghcr.io/vmafx/vmafx-node:latest version
+docker run --rm --entrypoint /usr/local/bin/rclone ghcr.io/vmafx/vmafx-node:v1.0.0-rc.1 version
 ```
 
 ### Authentication errors

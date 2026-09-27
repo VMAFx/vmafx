@@ -66,7 +66,7 @@ docker run --rm \
   -e VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8081 \
   -e VMAFX_OPERATOR_LEADER_ELECTION=false \
   -e VMAFX_LOG_LEVEL=info \
-  ghcr.io/vmafx/vmafx-operator:latest
+  ghcr.io/vmafx/vmafx-operator:v1.0.0-rc.1
 ```
 
 In-cluster the operator reads kubeconfig from the service-account token

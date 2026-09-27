@@ -59,6 +59,7 @@ jobs:
       is-latest: ${{ steps.release.outputs.is_latest }}
       recovery: ${{ steps.release.outputs.recovery }}
       recipe-sha: ${{ steps.release.outputs.recipe_sha }}
+      source-sha: ${{ steps.release.outputs.source_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -97,8 +98,11 @@ jobs:
             echo "ERROR: workflow source SHA $GITHUB_SHA does not match checked-out tag" >&2
             exit 1
           fi
-          echo "recovery=$recovery" >> "$GITHUB_OUTPUT"
-          echo "recipe_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo "recovery=$recovery"
+            echo "recipe_sha=$GITHUB_SHA"
+            echo "source_sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
           release_json="$RUNNER_TEMP/github-release.json"
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLISH_TAG" > "$release_json"
           if [[ "$(jq -r '.tag_name' "$release_json")" != "$PUBLISH_TAG" || \
@@ -182,6 +186,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}
           labels: |
             io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
+            org.opencontainers.image.revision=${{ needs.validate-release.outputs.source-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}
             type=raw,value=latest,enable=${{ needs.validate-release.outputs.is-latest == 'true' }}
@@ -300,6 +305,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}
           labels: |
             io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
+            org.opencontainers.image.revision=${{ needs.validate-release.outputs.source-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}
             type=raw,value=latest,enable=${{ needs.validate-release.outputs.is-latest == 'true' }}
@@ -420,6 +426,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}
           labels: |
             io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
+            org.opencontainers.image.revision=${{ needs.validate-release.outputs.source-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}
             type=raw,value=latest,enable=${{ needs.validate-release.outputs.is-latest == 'true' }}
