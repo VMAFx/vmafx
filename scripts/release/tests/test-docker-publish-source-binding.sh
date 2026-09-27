@@ -43,6 +43,16 @@ validation_snippets = (
     '"$(git rev-parse HEAD)" != "$GITHUB_SHA"',
     'releases/tags/$PUBLISH_TAG',
     ".published_at != null",
+    # ADR-1347: only a recovery dispatch on the default branch may run away
+    # from the tag, and tag runs still bind the workflow source to the tag.
+    '"$GITHUB_EVENT_NAME" != workflow_dispatch',
+    '"$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH"',
+    '"$recovery" == false && "$(git rev-parse HEAD)" != "$GITHUB_SHA"',
+)
+
+RECOVERY_OVERLAY = (
+    "        if: needs.validate-release.outputs.recovery == 'true'\n",
+    '          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server\n',
 )
 
 
@@ -74,6 +84,10 @@ for relative_path, build_jobs in workflows.items():
         raise AssertionError(f"{relative_path}: arbitrary dev publication remains enabled")
 
     validation = job_block(jobs_text, "validate-release")
+    if "github.event.release.prerelease" in validation:
+        raise AssertionError(
+            f"{relative_path}: prerelease must come from the release API; a dispatch has no release payload"
+        )
     for snippet in validation_snippets:
         if snippet not in validation:
             raise AssertionError(
@@ -86,6 +100,13 @@ for relative_path, build_jobs in workflows.items():
             raise AssertionError(f"{relative_path}: {job} bypasses validate-release")
         if "ref: ${{ needs.validate-release.outputs.tag }}" not in block:
             raise AssertionError(f"{relative_path}: {job} does not check out validated tag")
+        # The recovery overlay replaces only the build recipe, only in recovery.
+        for snippet in RECOVERY_OVERLAY:
+            if snippet not in block:
+                raise AssertionError(f"{relative_path}: {job} recovery overlay missing {snippet!r}")
+        overlays = re.findall(r"git checkout FETCH_HEAD -- ([^\n]*)", block)
+        if overlays != ["docker/ Dockerfile.go-server"]:
+            raise AssertionError(f"{relative_path}: {job} overlays {overlays}, not the build recipe only")
 
     if "ref: ${{ github.event.release.tag_name || github.ref }}" in jobs_text:
         raise AssertionError(f"{relative_path}: independent event-ref checkout remains")

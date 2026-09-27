@@ -7635,6 +7635,14 @@
         "scripts/release/tests/test-build-native-release-artifacts.sh": 1
       },
       "target": "1346-hosted-slim-container-release-build.md"
+    },
+    "1347": {
+      "sites": {
+        ".github/workflows/docker-publish-operator-node.yml": 4,
+        ".github/workflows/docker-publish-production.yml": 6,
+        "scripts/release/tests/test-docker-publish-source-binding.sh": 1
+      },
+      "target": "1347-image-recovery-from-default-branch.md"
     }
   },
   "retired": {

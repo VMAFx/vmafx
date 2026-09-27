@@ -1,0 +1,1 @@
+| [ADR-1347](1347-image-recovery-from-default-branch.md) | Let a `workflow_dispatch` on the default branch recover a published release's container images: the tag's source is built with that commit's build recipe (`docker/`, `Dockerfile.go-server`), recorded in an `io.vmafx.build-recipe` label. | Accepted | release, ci, container, supply-chain |

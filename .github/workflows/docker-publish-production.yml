@@ -55,6 +55,8 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       is-latest: ${{ steps.release.outputs.is_latest }}
+      recovery: ${{ steps.release.outputs.recovery }}
+      recipe-sha: ${{ steps.release.outputs.recipe_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -64,7 +66,7 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || false }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           # ADR-1201: release candidates are published as images too, so a
           # prerelease is no longer rejected. The tag and the release flag must
@@ -75,20 +77,29 @@ jobs:
             *-rc.*) tag_is_rc=true ;;
             *)      tag_is_rc=false ;;
           esac
-          if [[ "$RELEASE_IS_PRERELEASE" != "$tag_is_rc" ]]; then
-            echo "ERROR: $PUBLISH_TAG has prerelease=$RELEASE_IS_PRERELEASE but the tag says rc=$tag_is_rc" >&2
-            exit 1
-          fi
+          # The release's prerelease flag is read from the API below: a
+          # workflow_dispatch event carries no release payload.
           expected_ref="refs/tags/$PUBLISH_TAG"
+          recovery=false
           if [[ "$GITHUB_REF" != "$expected_ref" ]]; then
-            echo "ERROR: run this workflow at $expected_ref, not $GITHUB_REF" >&2
-            exit 1
+            # ADR-1347: only a recovery dispatch on the default branch may run
+            # away from the tag; it builds the tag's source with this ref's
+            # build recipe (docker/ and Dockerfile.go-server).
+            if [[ "$GITHUB_EVENT_NAME" != workflow_dispatch || \
+                  "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+              echo "ERROR: run this workflow at $expected_ref, not $GITHUB_REF" >&2
+              exit 1
+            fi
+            recovery=true
+            echo "::notice::recovery dispatch: $PUBLISH_TAG source, build recipe from $GITHUB_SHA"
           fi
           scripts/release/verify-release-version.sh "$PUBLISH_TAG"
-          if [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+          if [[ "$recovery" == false && "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
             echo "ERROR: workflow source SHA $GITHUB_SHA does not match checked-out tag" >&2
             exit 1
           fi
+          echo "recovery=$recovery" >> "$GITHUB_OUTPUT"
+          echo "recipe_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           release_json="$RUNNER_TEMP/github-release.json"
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLISH_TAG" > "$release_json"
           if [[ "$(jq -r '.tag_name' "$release_json")" != "$PUBLISH_TAG" || \
@@ -156,6 +167,17 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # ADR-1347: a recovery dispatch builds the tag's source with the build
+      # recipe of the default-branch commit it runs from; nothing else moves.
+      - name: Use the recovery dispatch's build recipe
+        if: needs.validate-release.outputs.recovery == 'true'
+        env:
+          RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server
+          git status --short
+
       - name: Set up QEMU (cross-arch emulation)
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
 
@@ -174,6 +196,8 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}
             type=raw,value=latest,enable=${{ needs.validate-release.outputs.is-latest == 'true' }}
@@ -302,6 +326,17 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # ADR-1347: a recovery dispatch builds the tag's source with the build
+      # recipe of the default-branch commit it runs from; nothing else moves.
+      - name: Use the recovery dispatch's build recipe
+        if: needs.validate-release.outputs.recovery == 'true'
+        env:
+          RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server
+          git status --short
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
@@ -317,6 +352,8 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}-cuda13
 
@@ -408,6 +445,17 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # ADR-1347: a recovery dispatch builds the tag's source with the build
+      # recipe of the default-branch commit it runs from; nothing else moves.
+      - name: Use the recovery dispatch's build recipe
+        if: needs.validate-release.outputs.recovery == 'true'
+        env:
+          RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server
+          git status --short
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
@@ -423,6 +471,8 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}-rocm10
 
@@ -514,6 +564,17 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # ADR-1347: a recovery dispatch builds the tag's source with the build
+      # recipe of the default-branch commit it runs from; nothing else moves.
+      - name: Use the recovery dispatch's build recipe
+        if: needs.validate-release.outputs.recovery == 'true'
+        env:
+          RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server
+          git status --short
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
@@ -529,6 +590,8 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}-oneapi2025
 
@@ -676,6 +739,17 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # ADR-1347: a recovery dispatch builds the tag's source with the build
+      # recipe of the default-branch commit it runs from; nothing else moves.
+      - name: Use the recovery dispatch's build recipe
+        if: needs.validate-release.outputs.recovery == 'true'
+        env:
+          RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server
+          git status --short
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
 
@@ -694,6 +768,8 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}-server
 

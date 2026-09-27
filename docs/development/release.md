@@ -633,6 +633,24 @@ How a candidate moves through the rest of the pipeline:
 
 [ADR-1128](../adr/1128-fragment-owned-release-cuts.md) governs this cutover.
 
+#### Recovering a release's container images
+
+The image workflows (`docker-publish-production.yml`,
+`docker-publish-operator-node.yml`) normally run at the release tag with the
+tag's own workflow file. If an image job fails because of the build recipe,
+fix it on `master`, then dispatch the workflow on `master` with the published
+tag ([ADR-1347](../adr/1347-image-recovery-from-default-branch.md)):
+
+```bash
+gh workflow run docker-publish-production.yml --ref master -f tag=v1.0.0-rc.1
+gh workflow run docker-publish-operator-node.yml --ref master -f tag=v1.0.0-rc.1
+```
+
+The run verifies the published tag, builds the tag's source with `master`'s
+`docker/` and `Dockerfile.go-server`, and labels every image
+`io.vmafx.build-recipe=<master commit>`. Only the build recipe comes from
+`master`; the compiled code is the tag's.
+
 #### Freezing the release PR while you cut it
 
 release-please **force-recreates** `release-please--branches--master--…` on every
