@@ -198,6 +198,26 @@ filename-only assertion.
 Test coverage:
 `scripts/release/tests/test-verify-native-release-artifacts.sh`.
 
+## build-native-release-artifacts.sh (ADR-1346)
+
+Runs inside `libvmaf-build` stage image, never on runner host:
+`supply-chain.yml` `build-artifacts` builds stage from release tag via
+`scripts/ci/build-dev-container-stage.sh`, then `docker run --network none`
+as runner UID/GID with checkout mounted. Order fixed: `--assert` container
+marker first (host run compiles nothing), Meson build, stage, `--stamp`,
+`verify-native-release-artifacts.sh`. Meson flags keep hosted-era bundle:
+`--buildtype=release -Denable_avx512=true -Denable_cuda=false
+-Denable_sycl=false` plus `-Denable_dnn=disabled` (image ships ONNX Runtime;
+`auto` makes `libvmaf.so` NEED `libonnxruntime.so.1`, not shipped) and
+`CCACHE_DISABLE=1`. `SOURCE_DATE_EPOCH` scoped to build subshell; stamp keeps
+wall-clock `stamped_at`. Bundle needs glibc >= 2.43 (Ubuntu 26.04 image), so
+`verify-native-artifacts` runs `ubuntu-26.04`; never move it back to
+`ubuntu-latest` while `ubuntu-latest` is 24.04.
+
+Test coverage:
+`scripts/release/tests/test-build-native-release-artifacts.sh` (stub
+`meson`, real ELF fixture chain, no Docker).
+
 ## check-release-bot-secrets.sh (ADR-1171)
 
 Preflight for release-bot identity: `gh secret list` must show both

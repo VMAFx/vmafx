@@ -280,6 +280,16 @@ chmod +x vmaf
 LD_LIBRARY_PATH="$PWD" ./vmaf --version
 ```
 
+**Runtime requirement: glibc 2.43 or newer.** The bundle is compiled in the
+Ubuntu 26.04 dev container ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md)),
+and `libvmaf.so` binds `sqrtf@GLIBC_2.43` and `GLIBCXX_3.4.30`. It runs on
+Ubuntu 26.04 and distributions of the same generation. It does not load on
+Ubuntu 24.04 (glibc 2.39), which fails with
+`version 'GLIBC_2.43' not found`. On older systems use the production
+containers or build from source. Check a host with `ldd --version`. The bundle
+is CPU-only and built without the ONNX Runtime tiny-AI backend, so it needs no
+GPU runtime or `libonnxruntime`.
+
 The clean-environment release gate exercises that same layout after an
 artifact upload/download round trip and requires the CLI's `DT_NEEDED` entry
 to resolve to the staged SONAME file. Windows `vmaf.exe` remains a CI build
@@ -287,36 +297,34 @@ artifact, not a GitHub Release asset, and this workflow currently publishes no
 macOS native CLI or dylib. Use the production containers or build from source
 for those platforms until platform-specific release bundles are introduced.
 
-### Canonical build environment and runner execution (ADR-1178)
+### Canonical build environment (ADR-1346)
 
-Per [ADR-1178](../adr/1178-dev-container-image-publish.md) and
-[ADR-1102](../adr/1102-phase4b9-container-only-publishing.md), native release
-artifacts are compiled inside the canonical container environment:
+[ADR-1102](../adr/1102-phase4b9-container-only-publishing.md) requires native
+release artifacts to be built inside `dev/Containerfile`.
+[ADR-1346](../adr/1346-hosted-slim-container-release-build.md) (superseding
+ADR-1178's self-hosted runner) meets that on a GitHub-hosted runner:
 
-- **Runner**: The `build-artifacts` job in `.github/workflows/supply-chain.yml`
-  runs on the Arc A380 containerised self-hosted runner
-  (`runs-on: [self-hosted, linux, x64, sycl-arc]`, provisioned by ADR-1177 /
-  PR #1304). Compilation executes directly inside the runner container
-  (`vmaf-sycl-arc-runner:local`, built `FROM vmaf-dev-mcp:local`), using the
-  workstation's local image with zero network pull latency.
-- **Verification**: Staged artifacts are stamped with container-build
-  provenance (`container-build-provenance.txt`) via
-  `scripts/ci/check-container-build.sh --stamp`. The downstream
-  `verify-native-artifacts` job (running on `ubuntu-latest`) verifies the stamp
-  via `--verify`, and `scripts/release/verify-native-release-artifacts.sh` fails
-  closed if the provenance stamp is missing, empty, or a symlink. The stamp is
-  signed with Cosign and attached as an official release asset.
-- **Offline runner handling**: If the workstation runner is paused or offline
-  when a release is published, the `build-artifacts` job queues until the runner
-  is started. The maintainer can resume the runner using the operator runbook
-  ([`docs/development/ci-self-hosted-sycl.md`](ci-self-hosted-sycl.md)):
-
-  ```bash
-  docker compose -f dev/docker-compose.runner.yml up -d
-  ```
-
-  Job concurrency (`concurrency: group: release-artifacts-build`) ensures serial
-  execution.
+- **Where**: `build-artifacts` in `.github/workflows/supply-chain.yml` runs on
+  `ubuntu-latest`. It builds the `libvmaf-build` stage of the release tag's own
+  `dev/Containerfile` with `scripts/ci/build-dev-container-stage.sh`, the same
+  script the Dev Container PR gate runs. The build uses no layer cache and no
+  registry.
+- **How long**: the stage build takes about 30 to 35 minutes, based on the PR
+  gate's recent hosted runs. The job has a 90-minute limit. No workstation or
+  self-hosted runner has to be online.
+- **Compile**: `scripts/release/build-native-release-artifacts.sh` runs inside
+  the image with networking disabled. It uses the Meson flags
+  `--buildtype=release -Denable_avx512=true -Denable_cuda=false
+  -Denable_sycl=false -Denable_dnn=disabled`, stages the bundle, stamps
+  `container-build-provenance.txt` with
+  `scripts/ci/check-container-build.sh --stamp` and runs
+  `scripts/release/verify-native-release-artifacts.sh`.
+- **Verification**: `verify-native-artifacts` runs on `ubuntu-26.04`, the
+  oldest hosted image that can load the bundle. It checks the stamp with
+  `--verify` and exercises the downloaded CLI in a clean environment. The
+  stamp is signed with Cosign and attached as a release asset.
+- **Failure recovery**: a timed-out or failed build is re-run with the
+  recovery dispatch below. It rebuilds the stage from the same tag.
 
 ### Release recovery dispatches
 

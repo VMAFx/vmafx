@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1178: Dev container image publication and release artifact container enforcement
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1346](1346-hosted-slim-container-release-build.md)
 - **Date**: 2026-09-04
 - **Deciders**: lusoris
 - **Tags**: ci, release, supply-chain, container, dev-container, adr-1102, fork-local

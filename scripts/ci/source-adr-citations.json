@@ -2320,7 +2320,6 @@
     },
     "0325": {
       "sites": {
-        ".github/workflows/supply-chain.yml": 2,
         "ai/scripts/calibrate_phase_f_recipes.py": 5,
         "ai/scripts/extract_k150k_features.sh": 1,
         "ai/scripts/konvid_150k_to_corpus_jsonl.py": 5,
@@ -2334,6 +2333,7 @@
         "pkg/predictor/predictor.go": 1,
         "pkg/tune/auto/auto.go": 1,
         "pkg/tune/auto/recipes.go": 1,
+        "scripts/release/build-native-release-artifacts.sh": 3,
         "tools/vmaf-tune/src/vmaftune/auto.py": 8,
         "tools/vmaf-tune/src/vmaftune/predictor.py": 3,
         "tools/vmaf-tune/src/vmaftune/sidecar.py": 2,
@@ -4792,6 +4792,9 @@
     "0819": {
       "sites": {
         ".github/workflows/dev-container-build.yml": 1,
+        ".github/workflows/supply-chain.yml": 2,
+        "scripts/ci/build-dev-container-stage.sh": 1,
+        "scripts/ci/check-dev-container-build-secret.py": 1,
         "scripts/ci/check-dev-container-stage-inputs.py": 1
       },
       "target": "0819-dev-container-ci-gate.md"
@@ -5747,11 +5750,12 @@
         ".github/workflows/dev-container-publish.yml": 1,
         ".github/workflows/docker-image.yml": 1,
         ".github/workflows/rule-enforcement.yml": 2,
-        ".github/workflows/supply-chain.yml": 2,
+        ".github/workflows/supply-chain.yml": 4,
         "dev/Containerfile": 2,
         "scripts/ci/check-container-build.sh": 2,
         "scripts/ci/tests/test-check-container-build.sh": 1,
-        "scripts/dev/check-container-source.sh": 1
+        "scripts/dev/check-container-source.sh": 1,
+        "scripts/release/build-native-release-artifacts.sh": 1
       },
       "target": "1102-phase4b9-container-only-publishing.md"
     },
@@ -6588,7 +6592,6 @@
       "sites": {
         ".github/workflows/required-aggregator.yml": 2,
         ".github/workflows/rule-enforcement.yml": 2,
-        ".github/workflows/supply-chain.yml": 1,
         ".github/workflows/sycl-parity.yml": 1,
         "dev/Containerfile.runner": 1,
         "dev/docker-compose.runner.yml": 1,
@@ -6603,7 +6606,9 @@
     "1178": {
       "sites": {
         ".github/workflows/dev-container-publish.yml": 1,
-        ".github/workflows/supply-chain.yml": 3
+        ".github/workflows/supply-chain.yml": 1,
+        "scripts/ci/check-container-build.sh": 1,
+        "scripts/ci/tests/test-check-container-build.sh": 2
       },
       "target": "1178-dev-container-image-publish.md"
     },
@@ -7602,6 +7607,20 @@
         "scripts/release/tests/test-rollover-changelog-fragments.sh": 1
       },
       "target": "1345-changelog-archive-large-file-exemption.md"
+    },
+    "1346": {
+      "sites": {
+        ".github/workflows/dev-container-build.yml": 1,
+        ".github/workflows/dev-container-publish.yml": 2,
+        ".github/workflows/supply-chain.yml": 5,
+        "scripts/ci/build-dev-container-stage.sh": 2,
+        "scripts/ci/check-container-build.sh": 2,
+        "scripts/ci/check-dev-container-build-secret.py": 2,
+        "scripts/ci/tests/test-check-container-build.sh": 4,
+        "scripts/release/build-native-release-artifacts.sh": 1,
+        "scripts/release/tests/test-build-native-release-artifacts.sh": 1
+      },
+      "target": "1346-hosted-slim-container-release-build.md"
     }
   },
   "retired": {

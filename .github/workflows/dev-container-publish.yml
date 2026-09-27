@@ -4,12 +4,13 @@
 # dev-container-publish.yml — build, push, and sign the canonical dev container
 # image (libvmaf-build stage) to GHCR.
 #
-# Motivation (ADR-1102, ADR-1178):
+# Motivation (ADR-1102, ADR-1178, ADR-1346):
 # All canonical build artifacts (release binaries, published images) must be
 # produced inside the canonical dev container rather than on the bare runner host.
 # This workflow publishes ghcr.io/vmafx/vmafx-dev-mcp on every change to
-# dev/Containerfile or dev/scripts/** so that downstream release workflows
-# (such as supply-chain.yml) can pull a pre-built, pinned image.
+# dev/Containerfile or dev/scripts/** for transparency and contributor
+# convenience. It is not on the release path: supply-chain.yml builds the
+# same stage from the release tag itself (ADR-1346) and never pulls this image.
 #
 # Produces:
 #   ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>

@@ -134,14 +134,15 @@ jobs:
     needs: validate-release
     # Fork-PR guard: tag releases on the canonical repository only
     if: github.repository == 'VMAFx/vmafx' && startsWith(github.ref, 'refs/tags/v')
-    # ADR-1178 / Maintainer Decision (2026-09-05): Native release artifacts
-    # are built on the Arc A380 containerised self-hosted runner (labels:
-    # [self-hosted, linux, x64, sycl-arc], prepared by ADR-1177 / PR #1304)
-    # using the workstation's local canonical dev container environment
-    # (vmaf-sycl-arc-runner:local, built FROM vmaf-dev-mcp:local) — no GHCR
-    # registry pull (avoiding the ~29.5 GB uncompressed layer size pull blocker).
-    # The runner container itself is the build environment (no Docker socket needed).
-    runs-on: [self-hosted, linux, x64, sycl-arc]
+    # ADR-1346 (supersedes ADR-1178): native release artifacts are built on a
+    # GitHub-hosted runner inside the `libvmaf-build` stage of the tagged
+    # commit's own dev/Containerfile, which keeps the container-only publishing
+    # policy (ADR-1102) without a workstation runner. The stage is built here
+    # by the same script as the PR gate (ADR-0819), with no layer cache and no
+    # registry, so nothing another workflow wrote can reach a release. That
+    # gate's uncached hosted builds take 28-35 minutes; 90 leaves room for the
+    # release compile and a slow runner.
+    runs-on: ubuntu-latest
     concurrency:
       group: release-artifacts-build
       cancel-in-progress: false
@@ -156,71 +157,27 @@ jobs:
           ref: ${{ needs.validate-release.outputs.tag }}
           submodules: recursive
           persist-credentials: false
-      - name: Build (release, optimized)
+      - name: Build the libvmaf-build container stage from the tag (ADR-0819, ADR-1346)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-          export SOURCE_DATE_EPOCH
-          meson setup build core --buildtype=release -Denable_avx512=true \
-            -Denable_cuda=false -Denable_sycl=false
-          meson compile -C build
-      - name: Stage artifacts
-        run: |
-          mkdir -p artifacts
-          # actions/upload-artifact does not preserve symlinks. Materialize
-          # every Meson link-chain name so the downloaded CLI's DT_NEEDED
-          # entry (libvmaf.so.MAJOR) exists as a regular release asset.
-          mapfile -d '' libvmaf_chain < <(
-            find build/src -maxdepth 1 \( -type f -o -type l \) \
-              -name 'libvmaf.so*' -print0 | LC_ALL=C sort -z
-          )
-          if [[ ${#libvmaf_chain[@]} -lt 3 ]]; then
-            echo "ERROR: incomplete Meson libvmaf SONAME chain" >&2
-            exit 1
-          fi
-          for library in "${libvmaf_chain[@]}"; do
-            cp -L -- "$library" "artifacts/$(basename -- "$library")"
-          done
-          cp build/tools/vmaf artifacts/
-          archive_epoch="$(git show -s --format=%ct HEAD)"
-          tar --sort=name --mtime="@$archive_epoch" --owner=0 --group=0 \
-            --numeric-owner -cf - model/ | gzip -n > artifacts/models.tar.gz
-
-          # u2netp_mirror — fork-local mirror of the upstream
-          # `xuebinqin/U-2-Net` `u2netp` checkpoint, redistributed
-          # under Apache-2.0 §4 NOTICE compliance per ADR-0325. The
-          # binary is gitignored (lives at model/u2netp_mirror.onnx
-          # or model/u2netp_mirror.pth, dropped manually by the
-          # binary-upload PR). This step is **idempotent**: missing
-          # files are a fast-exit no-op so a release without the
-          # mirror still succeeds. When the binary lands, it gets
-          # copied into the artifacts/ tree alongside the canonical
-          # libvmaf.so / vmaf / models.tar.gz, picked up by the
-          # SHA256 hashing step (so SLSA provenance covers it), and
-          # signed by the existing cosign sign-blob loop. The
-          # license text + attribution receipt rides along.
-          if [ -f model/u2netp_mirror.onnx ]; then
-            cp model/u2netp_mirror.onnx artifacts/
-            echo "u2netp_mirror: ONNX rewrap staged"
-          fi
-          if [ -f model/u2netp_mirror.pth ]; then
-            cp model/u2netp_mirror.pth artifacts/
-            echo "u2netp_mirror: verbatim .pth staged"
-          fi
-          if [ -f model/u2netp_mirror.onnx ] || [ -f model/u2netp_mirror.pth ]; then
-            cp LICENSES/LicenseRef-Apache-2.0-u2netp.txt artifacts/
-            echo "u2netp_mirror: license text staged"
-          else
-            echo "u2netp_mirror: binary not present, skipping (scaffold-only state per ADR-0325)"
-          fi
-      - name: Stamp container build provenance (ADR-1102, ADR-1178)
-        run: |
-          bash scripts/ci/check-container-build.sh --stamp artifacts
-      - name: Verify staged Linux runtime in a clean environment
+          bash scripts/ci/build-dev-container-stage.sh "vmafx-release-build:${GITHUB_SHA}"
+      # Build, stage, provenance stamp (ADR-1102) and clean-environment verify
+      # all run inside the stage. The checkout is mounted as the runner user so
+      # artifacts/ stays writable and uploadable; `--network none` proves the
+      # release compile fetches nothing the image build did not already pin.
+      - name: Build, stage, stamp and verify inside the container (ADR-1102, ADR-1346)
         env:
           VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
         run: |
-          scripts/release/verify-native-release-artifacts.sh \
-            artifacts "$VMAFX_VERSION"
+          docker run --rm \
+            --network none \
+            --user "$(id -u):$(id -g)" \
+            --env GITHUB_SHA \
+            --volume "$PWD:/src" \
+            --workdir /src \
+            "vmafx-release-build:${GITHUB_SHA}" \
+            bash scripts/release/build-native-release-artifacts.sh "$VMAFX_VERSION"
       - name: Compute SHA256 hashes (SLSA input)
         id: hash
         run: |
@@ -236,7 +193,11 @@ jobs:
   verify-native-artifacts:
     name: Verify Linux runtime
     needs: [validate-release, build-artifacts]
-    runs-on: ubuntu-latest
+    # ADR-1346: the bundle is compiled in the Ubuntu 26.04 dev container and
+    # needs glibc >= 2.43 (libvmaf.so binds sqrtf@GLIBC_2.43), so the consumer
+    # check runs on the matching hosted image; ubuntu-latest (24.04, glibc
+    # 2.39) cannot load it. docs/development/release.md states the floor.
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -247,7 +208,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with: { name: release-artifacts, path: artifacts/ }
-      - name: Verify container build provenance (ADR-1102, ADR-1178)
+      - name: Verify container build provenance (ADR-1102, ADR-1346)
         run: |
           bash scripts/ci/check-container-build.sh --verify artifacts
       - name: Prove the downloaded CLI resolves its staged SONAME library

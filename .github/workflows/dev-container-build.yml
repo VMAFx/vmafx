@@ -121,22 +121,19 @@ jobs:
           fi
           echo "OK: the gate rejects a host build."
 
-      # Build only up to the `libvmaf-build` stage (skips the heavy FFmpeg
-      # stage and the final `dev-mcp` assembly) so the gate stays under 45 min
-      # on a free-tier runner.  The GPU SDK layers (CUDA, oneAPI, ROCm) are the
+      # Build only up to the `libvmaf-build` stage (skips the Go builder and
+      # the final `dev-mcp` Python assembly) so the gate stays under 45 min on
+      # a free-tier runner. The GPU SDK layers (CUDA, oneAPI, ROCm) are the
       # main regression surface — they're included in `libvmaf-build`.
-      # Full multi-stage builds (including FFmpeg) are covered by the
-      # release-tag docker-publish-production workflow.
+      # The build goes through the same script as the release job's
+      # `build-artifacts` (supply-chain.yml, ADR-1346), so this gate proves the
+      # exact image build every native release depends on.
       - name: Build dev container (up to libvmaf-build stage)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker build \
-            --file dev/Containerfile \
-            --target libvmaf-build \
-            --tag vmaf-dev-mcp-gate:${{ github.sha }} \
-            --secret id=github_token,env=GITHUB_TOKEN \
-            .
+          bash scripts/ci/build-dev-container-stage.sh \
+            "vmaf-dev-mcp-gate:${{ github.sha }}"
 
       # Smoke test: verify `vmaf --version` exits 0 and the CPU backend
       # can score the bundled 48-frame fixture YUVs.

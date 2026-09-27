@@ -95,6 +95,18 @@ Never pass this credential with `--build-arg`. The secret is mounted only for
 the NEO metadata-fetch instruction and is not recorded in image layers,
 metadata, or provenance. See [ADR-1271](../adr/1271-neo-buildkit-github-token-secret.md).
 
+The Dev Container PR gate and the native release job (`build-artifacts` in
+`supply-chain.yml`) run this same stage build through one script. It passes
+the optional secret, uses no layer cache and tags the result. Run it to
+reproduce either job's image; an unset `GITHUB_TOKEN` keeps it anonymous:
+
+```bash
+bash scripts/ci/build-dev-container-stage.sh vmaf-dev-mcp:local
+```
+
+See [publishing](publishing.md#release-compilation-environment-adr-1346) for
+the release build that runs inside that image.
+
 > **Important — always pass `--project-directory`.**  Without it, Docker
 > Compose v2 sets the project directory to the compose-file's parent (`dev/`),
 > causing `context: .` to resolve to `dev/` instead of the repo root.  This

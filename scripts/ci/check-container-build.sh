@@ -5,9 +5,12 @@
 # check-container-build.sh — enforcement gate for the container-only
 # publishing policy (ADR-1102, docs/development/publishing.md).
 #
-# The policy says every canonical/published artifact is produced inside the
-# `vmaf-dev-mcp` container or the self-hosted canonical runner environment
-# and that a host-side build is diagnostic-only.
+# The policy says every canonical/published artifact is produced inside an
+# image built from `dev/Containerfile` and that a host-side build is
+# diagnostic-only. The native release job (`build-artifacts` in
+# `.github/workflows/supply-chain.yml`, ADR-1346) builds that file's
+# `libvmaf-build` stage on a GitHub-hosted runner and runs the release build
+# inside it; the local `vmaf-dev-mcp` container is the same file's final stage.
 # Until this script existed the policy was documentation-only: nothing in the
 # release path could tell a container build from a host build, so a host-built
 # binary could be attached to a release with no signal at all.
@@ -15,8 +18,15 @@
 # The gate has one source of truth: the marker file `/etc/vmafx-dev-container`,
 # written by `dev/Containerfile` in its first (`build-deps`) stage and
 # therefore inherited by every downstream stage (`gpu-sdks`, `libvmaf-build`,
-# `go-build`, `dev-mcp`). The marker cannot exist on a host checkout unless
-# somebody deliberately creates it.
+# `go-build`, `dev-mcp`). Every stage therefore carries the one identity
+# `image_title=vmaf-dev-mcp`; OCI labels differ per stage but are invisible
+# from inside a container and play no part here. The marker cannot exist on a
+# host checkout unless somebody deliberately creates it.
+#
+# Exactly one identity is accepted (CANONICAL_TITLE below). The retired
+# self-hosted runner title `vmaf-sycl-arc-runner` (ADR-1178, superseded by
+# ADR-1346) and the never-written `vmafx-*` aliases are rejected: no image
+# writes them, so accepting them only widened the gate.
 #
 # THREAT MODEL. This is an accident gate, not a security boundary. It catches
 # "the release job silently ran meson on the runner host", which is the failure
@@ -69,6 +79,9 @@ STAMP_NAME="container-build-provenance.txt"
 STAMP_SCHEMA="vmafx-container-build-provenance/1"
 POLICY_DOC="docs/development/publishing.md"
 POLICY_ADR="docs/adr/1102-phase4b9-container-only-publishing.md"
+# The only image identity dev/Containerfile writes into its marker. The unit
+# suite checks this literal against the Containerfile so the two cannot drift.
+CANONICAL_TITLE="vmaf-dev-mcp"
 
 usage() {
   cat >&2 <<'EOF'
@@ -93,6 +106,23 @@ fail() {
   return 0
 }
 
+# require_canonical_title <title> <source-description>
+# Fails unless <title> is exactly CANONICAL_TITLE. Shared by --assert/--stamp
+# (reading the marker) and --verify (reading a stamp) so both apply one rule.
+require_canonical_title() {
+  local title="$1" source="$2"
+  if [ -z "$title" ]; then
+    fail "${source} is malformed: image_title is empty"
+    return 1
+  fi
+  if [ "$title" != "$CANONICAL_TITLE" ]; then
+    fail "${source} carries unrecognized canonical image title: '${title}'"
+    echo "Expected '${CANONICAL_TITLE}' (any stage of dev/Containerfile). See ${POLICY_DOC}." >&2
+    return 1
+  fi
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 # assert_container — the fail-closed containerness predicate.
 # ---------------------------------------------------------------------------
@@ -100,9 +130,9 @@ assert_container() {
   if [ ! -f "$MARKER_PATH" ]; then
     fail "container-only publishing policy violated: no VMAFx dev-container marker at ${MARKER_PATH}"
     {
-      echo "This process is NOT running inside the vmaf-dev-mcp container or the canonical runner."
+      echo "This process is NOT running inside an image built from dev/Containerfile."
       echo "Canonical artifacts (release binaries, published images, CI"
-      echo "artifacts consumed downstream) must be built in the container environment."
+      echo "artifacts consumed downstream) must be built in that container."
       echo "See ${POLICY_DOC} and ${POLICY_ADR}."
       echo
       echo "  docker compose --project-directory \"\$(git rev-parse --show-toplevel)\" \\"
@@ -122,20 +152,7 @@ assert_container() {
 
   local title
   title="$(read_field image_title "$MARKER_PATH")"
-  if [ -z "$title" ]; then
-    fail "marker ${MARKER_PATH} is malformed: image_title is empty"
-    return 1
-  fi
-
-  case "$title" in
-    vmaf-dev-mcp | vmaf-sycl-arc-runner | vmafx-dev-mcp | vmafx-sycl-arc-runner)
-      ;;
-    *)
-      fail "marker ${MARKER_PATH} carries unrecognized canonical image title: '${title}'"
-      echo "Expected 'vmaf-dev-mcp' or 'vmaf-sycl-arc-runner'. See ${POLICY_DOC}." >&2
-      return 1
-      ;;
-  esac
+  require_canonical_title "$title" "marker ${MARKER_PATH}" || return 1
 
   echo "container-build: OK — inside '${title}' (marker ${MARKER_PATH})"
   return 0
@@ -189,8 +206,8 @@ verify_dir() {
     fail "container-only publishing policy violated: ${stamp} is missing or empty"
     {
       echo "The artifact directory carries no container-build provenance, so"
-      echo "it cannot be shown to have been produced inside the vmaf-dev-mcp"
-      echo "container. Build it in the container and stamp it with:"
+      echo "it cannot be shown to have been produced inside an image built from"
+      echo "dev/Containerfile. Build it in the container and stamp it with:"
       echo "  scripts/ci/check-container-build.sh --stamp ${dir}"
       echo "See ${POLICY_DOC} and ${POLICY_ADR}."
     } >&2
@@ -211,20 +228,7 @@ verify_dir() {
   fi
 
   title="$(read_field image_title "$stamp")"
-  if [ -z "$title" ]; then
-    fail "${stamp} is malformed: image_title is empty"
-    return 1
-  fi
-
-  case "$title" in
-    vmaf-dev-mcp | vmaf-sycl-arc-runner | vmafx-dev-mcp | vmafx-sycl-arc-runner)
-      ;;
-    *)
-      fail "${stamp} carries unrecognized canonical image title: '${title}'"
-      echo "Expected 'vmaf-dev-mcp' or 'vmaf-sycl-arc-runner'. See ${POLICY_DOC}." >&2
-      return 1
-      ;;
-  esac
+  require_canonical_title "$title" "$stamp" || return 1
 
   echo "container-build: verified ${stamp} — built in '${title}'" \
     "at $(read_field stamped_at "$stamp") from commit $(read_field git_commit "$stamp")"

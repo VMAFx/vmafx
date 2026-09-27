@@ -10,6 +10,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+STAGE_BUILDER = "scripts/ci/build-dev-container-stage.sh"
+BUILD_OPTION = "--secret id=github_token,env=GITHUB_TOKEN"
+CALLER_ENV_LINE = "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
 TOKEN_DECLARATION = re.compile(r"(?m)^\s*(?:ARG|ENV)\s+GITHUB_TOKEN(?:\s|=)")
 MOUNT = re.compile(r"--mount=(?P<options>[^\s\\]+)")
 
@@ -60,18 +63,35 @@ def validate_compose(text: str) -> list[str]:
     return errors
 
 
-def validate_callers(workflow: str, docs: str, fetcher: str) -> list[str]:
+def validate_stage_builder(script: str) -> list[str]:
+    """The one raw `docker build` of the libvmaf-build stage (ADR-0819, ADR-1346)."""
     errors: list[str] = []
-    build_option = "--secret id=github_token,env=GITHUB_TOKEN"
-    if build_option not in workflow or "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}" not in workflow:
-        errors.append("the raw CI build must pass GITHUB_TOKEN as github_token")
+    code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+    if BUILD_OPTION not in code or "--target libvmaf-build" not in code:
+        errors.append("the stage build script must pass GITHUB_TOKEN as github_token")
+    if "--build-arg" in code:
+        errors.append("the stage build script must not pass Docker build arguments")
+    if re.search(r"--cache-(?:from|to)\b", code):
+        errors.append("the stage build script must stay cache-free (ADR-1346)")
+    return errors
+
+
+def validate_stage_caller(workflow: str, label: str) -> list[str]:
+    """A workflow that builds the stage must call the shared script with the token."""
+    if STAGE_BUILDER not in workflow or CALLER_ENV_LINE not in workflow:
+        return [f"the {label} must build via {STAGE_BUILDER} with GITHUB_TOKEN set"]
+    return []
+
+
+def validate_callers(workflow: str, docs: str, fetcher: str) -> list[str]:
+    errors = validate_stage_caller(workflow, "raw CI build")
     if "--build-arg GITHUB_TOKEN" in workflow + docs + fetcher:
         errors.append("token-valued Docker build arguments are forbidden")
-    if build_option not in docs:
+    if BUILD_OPTION not in docs:
         errors.append("dev-mcp docs must show the authenticated raw-build secret")
     if "env -u GITHUB_TOKEN docker build" not in docs:
         errors.append("dev-mcp docs must retain an anonymous raw-build command")
-    if build_option not in fetcher:
+    if BUILD_OPTION not in fetcher:
         errors.append("the NEO rate-limit remedy must name the BuildKit secret")
     return errors
 
@@ -102,6 +122,10 @@ def validate_tree(root: Path = ROOT) -> list[str]:
         )
     )
     errors.extend(validate_publish(read(".github/workflows/dev-container-publish.yml")))
+    errors.extend(validate_stage_builder(read(STAGE_BUILDER)))
+    errors.extend(
+        validate_stage_caller(read(".github/workflows/supply-chain.yml"), "release build")
+    )
     return errors
 
 

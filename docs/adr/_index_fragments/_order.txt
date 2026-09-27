@@ -1054,3 +1054,4 @@
 1343-dev-container-stage-input-contract
 1344-lock-fingerprint-ignores-project-version
 1345-changelog-archive-large-file-exemption
+1346-hosted-slim-container-release-build

@@ -364,14 +364,33 @@ fingerprint logic in a CI-only script.
 
 ### Dev-container GitHub build secret (ADR-1271)
 
-`check-dev-container-build-secret.py` binds five surfaces: the optional
+`check-dev-container-build-secret.py` binds these surfaces: the optional
 `github_token` mount in `dev/Containerfile`, its Compose environment source,
-the authenticated raw build in `dev-container-build.yml`, the NEO fetcher's
-rate-limit remedy, and the anonymous/authenticated operator examples. Never
-replace the secret with `ARG` or `ENV`, make it required, or expose it to the
-runtime service. `tests/test_dev_container_build_secret.py` mutation-checks
-those failure modes and is wired to pre-commit/pre-push; the Dev Container
-workflow additionally runs native Docker and Compose `--check` before building.
+the one raw stage build `build-dev-container-stage.sh` (ADR-1346), its two
+callers (`dev-container-build.yml` PR gate, `supply-chain.yml`
+`build-artifacts`), the NEO fetcher's rate-limit remedy, and the
+anonymous/authenticated operator examples. Never replace the secret with
+`ARG` or `ENV`, make it required, or expose it to the runtime service. Never
+inline a second `docker build --target libvmaf-build` in a workflow; call the
+script. Script stays cache-free and `--build-arg`-free: a release must not
+restore layers another run wrote. `tests/test_dev_container_build_secret.py`
+mutation-checks those failure modes and is wired to pre-commit/pre-push; the
+Dev Container workflow additionally runs native Docker and Compose `--check`
+before building.
+
+### Container-build provenance gate (ADR-1102, ADR-1346)
+
+`check-container-build.sh` accepts one identity: `CANONICAL_TITLE`
+(`vmaf-dev-mcp`), the `image_title` `dev/Containerfile` writes once in
+`build-deps`; every later stage (`libvmaf-build` = release build image)
+inherits it. Retired `vmaf-sycl-arc-runner` (ADR-1178) and `vmafx-*` aliases
+stay rejected; no image writes them. Adding an identity = new ADR plus marker
+write in the image, never an allowlist entry alone.
+`tests/test-check-container-build.sh` extracts the marker from
+`dev/Containerfile`, asserts single write in `build-deps`, the
+`gpu-sdks` -> `libvmaf-build` chain and `CANONICAL_TITLE` equality, plus
+near-miss titles (case, prefix, whitespace, first-key-wins). Stamp schema
+`vmafx-container-build-provenance/1` unchanged; `--verify` runs on any host.
 
 ### Workflow coupling
 
