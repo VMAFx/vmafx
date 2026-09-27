@@ -853,6 +853,14 @@ jobs:
           # legitimately still present. Verified: printf '1.0.0\n1.0.0-rc.1\n'
           # | sort -V | head -1  ->  1.0.0
           if [[ "$manifest_version" == *-* ]]; then
+            # ADR-1348: while candidates are cut, release-please must count
+            # them. `versioning: default` turns a fix on 1.0.0-rc.1 into
+            # 1.0.1-rc.1 (release PR #1575); `prerelease` gives 1.0.0-rc.2.
+            versioning="$(jq -r '.packages["."].versioning // "default"' release-please-config.json)"
+            if [[ "$versioning" != prerelease ]]; then
+              echo "::error::manifest $manifest_version is a release candidate but release-please versioning is '$versioning'; set \"versioning\": \"prerelease\" (ADR-1348)"
+              exit 1
+            fi
             echo "::notice::manifest $manifest_version is a prerelease - one-shot fields still allowed"
             exit 0
           fi

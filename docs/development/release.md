@@ -622,11 +622,16 @@ receipt. The first candidate's cut also retires `release-as` and
 `bootstrap-sha`, because the verifier refuses them at every tag, candidates
 included.
 
-Later candidates need an explicit version. With `versioning: default`,
-release-please bumps a fix on `1.0.0-rc.1` to `1.0.1-rc.1`: its patch update
-keeps the prerelease tag and never counts candidates. Put a
-`Release-As: 1.0.0-rc.2` footer on the last commit merged before the next cut,
-and check the release PR title before cutting it.
+Later candidates are numbered automatically. The root package uses
+release-please's `prerelease` versioning
+([ADR-1348](../adr/1348-release-candidate-prerelease-versioning.md)): a fix,
+feature or breaking change on `1.0.0-rc.1` gives `1.0.0-rc.2`, and so on. The
+release PR stays open as a proposal; merge it only when the next candidate is
+due, and check its title before cutting it. For the final release, set
+`"prerelease": false`: the same strategy then proposes `1.0.0`. With the
+earlier `versioning: default`, a fix on `1.0.0-rc.1` gave `1.0.1-rc.1`, and the
+Release Script Contract job now rejects that setting while the manifest is a
+release candidate.
 
 How a candidate moves through the rest of the pipeline:
 
@@ -687,15 +692,23 @@ The run verifies the published tag, builds the tag's source with `master`'s
 
 #### Making the container images public
 
-GHCR creates each package private on its first push, and the REST API cannot
-change a package's visibility: the packages endpoints offer only read and
-delete. After the first release of a package (`vmafx`, `vmafx-server`,
-`vmafx-operator`, `vmafx-node`), an organization owner switches it once in the
-web UI: **Package settings → Danger Zone → Change visibility → Public**, then
-types the package name to confirm. The option is greyed out ("disabled by
-organization administrators") unless **Organization settings → Packages →
-Package creation → Public** is checked; the VMAFx organization has had it
-checked since v1.0.0-rc.1. Later pushes keep the package's visibility.
+The four packages (`vmafx`, `vmafx-server`, `vmafx-operator`, `vmafx-node`)
+must be public so that anyone can pull the release images. The organization
+setting **Organization settings → Packages → Package creation → Public** decides
+what a new package gets; it has been checked since v1.0.0-rc.1:
+
+- **Setting checked.** A package first pushed from this public repository is
+  created public, as `vmafx-operator` was for v1.0.0-rc.1, and no further step
+  is needed.
+- **Setting unchecked.** The package is created private, and the per-package
+  option is greyed out ("disabled by organization administrators"). `vmafx`
+  and `vmafx-server` were created this way before v1.0.0-rc.1. Once the setting
+  is checked, an organization owner switches such a package once in the web
+  UI: **Package settings → Danger Zone → Change visibility → Public**, then
+  types the package name to confirm. The REST API cannot do this, because the
+  packages endpoints offer only read and delete.
+
+Later pushes keep the package's visibility.
 
 Check that an anonymous client can pull:
 

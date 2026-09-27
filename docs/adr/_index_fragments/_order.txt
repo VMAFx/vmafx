@@ -1056,3 +1056,4 @@
 1345-changelog-archive-large-file-exemption
 1346-hosted-slim-container-release-build
 1347-image-recovery-from-default-branch
+1348-release-candidate-prerelease-versioning

@@ -103,10 +103,11 @@ same PR that merges release; `Release Script Contract (ADR-1128)` job
 in `.github/workflows/rule-enforcement.yml` fails if either survives
 once root manifest reaches 1.0.0. To force later version: use
 `Release-As: X.Y.Z` commit footer — inherently one-shot, cannot rot.
-Later RCs need that footer: `versioning: default` bumps
-`1.0.0-rc.1` + fix -> `1.0.1-rc.1` (`PatchVersionUpdate` keeps
-pre-release tag), never `1.0.0-rc.2`. Merge commit before RC2 cut carries
-`Release-As: 1.0.0-rc.2`.
+Later RCs need no footer (ADR-1348): `versioning: prerelease` bumps
+`1.0.0-rc.N` + fix/feat/breaking -> `1.0.0-rc.N+1`; `prerelease: false`
+-> `1.0.0`. `versioning: default` gave `1.0.1-rc.1` (release PR #1575).
+Release Script Contract fails on non-`prerelease` versioning while
+manifest = rc.
 
 **Product version and ABI SONAME = independent.** `release-please`
 owns product version (tag, `core/meson.build` `project(version:)`,

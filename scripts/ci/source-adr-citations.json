@@ -7644,6 +7644,12 @@
         "scripts/release/tests/test-publication-environment-binding.sh": 2
       },
       "target": "1347-image-recovery-from-default-branch.md"
+    },
+    "1348": {
+      "sites": {
+        ".github/workflows/rule-enforcement.yml": 2
+      },
+      "target": "1348-release-candidate-prerelease-versioning.md"
     }
   },
   "retired": {

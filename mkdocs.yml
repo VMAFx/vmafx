@@ -1461,6 +1461,7 @@ nav:
         - "ADR-1345: changelog-archive-large-file-exemption": adr/1345-changelog-archive-large-file-exemption.md
         - "ADR-1346: hosted-slim-container-release-build": adr/1346-hosted-slim-container-release-build.md
         - "ADR-1347: image-recovery-from-default-branch": adr/1347-image-recovery-from-default-branch.md
+        - "ADR-1348: release-candidate-prerelease-versioning": adr/1348-release-candidate-prerelease-versioning.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

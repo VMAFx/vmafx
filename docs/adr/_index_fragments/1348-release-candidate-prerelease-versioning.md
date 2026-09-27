@@ -1,0 +1,1 @@
+| [ADR-1348](1348-release-candidate-prerelease-versioning.md) | Number release candidates with release-please's `prerelease` versioning strategy: fixes, features and breaking changes on `1.0.0-rc.N` give `1.0.0-rc.N+1`, and the final cut is `1.0.0`, without a `Release-As` footer. | Accepted | release, ci |
