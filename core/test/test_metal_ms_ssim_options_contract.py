@@ -24,9 +24,6 @@ MESON_TESTS = REPO_ROOT / "core/test/meson.build"
 METAL_AGENTS = REPO_ROOT / "core/src/feature/metal/AGENTS.md"
 METRICS_DOC = REPO_ROOT / "docs/metrics/ms-ssim.md"
 RESEARCH_DOC = REPO_ROOT / "docs/research/2110-metal-ms-ssim-option-parity-2026-09-25.md"
-CHANGELOG_FRAGMENT = (
-    REPO_ROOT / "changelog.d/added/T-GAP-METAL-MS-SSIM-DB-CHROMA-OPTIONS-2026-09-07.md"
-)
 
 
 def function_body(source: str, signature: str) -> str:
@@ -185,7 +182,9 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
         cls.meson_src = MESON_TESTS.read_text(encoding="utf-8")
         cls.exact_boundary_docs = {
             path: path.read_text(encoding="utf-8")
-            for path in (METAL_AGENTS, METRICS_DOC, RESEARCH_DOC, CHANGELOG_FRAGMENT)
+            # No changelog.d fragment here: a release cut deletes every fragment
+            # it consumes, and these three documents keep the boundary.
+            for path in (METAL_AGENTS, METRICS_DOC, RESEARCH_DOC)
         }
 
     def test_production_and_parity_wiring(self) -> None:

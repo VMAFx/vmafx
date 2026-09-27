@@ -371,10 +371,18 @@ match = re.search(r"^\s*exclude:\s*'([^']+)'", block, re.M)
 if match is None:
     sys.exit(1)
 pattern = match.group(1)
+# Pin the exact pattern: sample paths alone cannot see every widening (a lost
+# anchor, an unescaped dot, an added alternative), so any edit to the exclude
+# must edit this line in the same change.
+if pattern != r"^docs/changelog-archive/[^/]+\.md$":
+    sys.exit(1)
 exempt = [written, "docs/changelog-archive/1.0.0-rc.1.md"]
 guarded = [
     "docs/changelog-archive/1.0.0-rc.1.bin",
     "docs/changelog-archive/nested/1.0.0.md",
+    "docs/changelog-archive/1.0.0.md.onnx",
+    "docs/changelog-archive/1.0.0Xmd",
+    "src/docs/changelog-archive/1.0.0.md",
     "docs/changelog-archive.md",
     "docs/research/1.0.0.md",
     "model/tiny/transnet_v2.onnx",

@@ -54455,5 +54455,5 @@ FFmpeg rebase impact.
 `check-added-large-files`. The pattern and the rollover's archive path
 (`docs/changelog-archive/X.Y.Z.md` in
 `scripts/release/rollover-changelog-fragments.sh`) move together;
-`test-rollover-changelog-fragments.sh` T18 fails if they diverge or the pattern
-widens. No native/public API, numerical or FFmpeg rebase impact.
+`test-rollover-changelog-fragments.sh` T18 pins the exact pattern and fails if
+the two diverge. No native/public API, numerical or FFmpeg rebase impact.
