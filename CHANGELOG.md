@@ -65,6 +65,14 @@
   synthetic.
 
 
+- The `vmafx-node` image bundles rclone at `/usr/local/bin/rclone` again, as the
+  storage guide states. The node resolves `s3://`, `gs://`, `rclone://` and
+  `remote:path` inputs by running rclone (ADR-0719), but `docker/Dockerfile.node`
+  never installed it, so every remote input failed. The static binary comes
+  from the official rclone image, pinned by digest in `build-config.env`, and
+  the release smoke test now runs it.
+
+
 - The `vmafx-node` release image builds again. Its arm64 half compiled FFmpeg,
   libvmaf and the node binary under QEMU emulation and never finished within
   the job's two-hour limit, so no node image was published for v1.0.0-rc.1.

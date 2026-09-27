@@ -4363,12 +4363,15 @@
     },
     "0719": {
       "sites": {
+        ".github/workflows/docker-publish-operator-node.yml": 1,
         "deploy/helm/vmafx/templates/node.yaml": 2,
         "deploy/helm/vmafx/templates/secret-rclone-config.yaml": 1,
+        "docker/Dockerfile.node": 1,
         "pkg/storage/fuse_mount.go": 2,
         "pkg/storage/http_serve.go": 1,
         "pkg/storage/storage.go": 1,
-        "pkg/storage/storage_test.go": 1
+        "pkg/storage/storage_test.go": 1,
+        "scripts/release/tests/test-docker-image-runtime-contract.sh": 1
       },
       "target": "0719-vmafx-node-rclone-integration.md"
     },

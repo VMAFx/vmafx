@@ -82,6 +82,16 @@ def validate(texts: dict[str, str]) -> None:
     if not re.search(r'(?m)^INTEL_UMF_RUNTIME_PACKAGE="intel-oneapi-umf-1\.0=', config):
         raise AssertionError("build-config.env does not pin the UMF 1.0 runtime package")
 
+    # pkg/storage runs rclone for remote inputs (ADR-0719); the v1.0.0-rc.1
+    # node image shipped without it although the storage guide promised it.
+    node_stages = stages(texts["docker/Dockerfile.node"])
+    if node_stages.get("rclone-bin", ("", ""))[0] != "${RCLONE_IMAGE}":
+        raise AssertionError("docker/Dockerfile.node has no rclone-bin stage from ${RCLONE_IMAGE}")
+    if "COPY --from=rclone-bin /usr/local/bin/rclone /usr/local/bin/rclone" not in node_stages["runtime-base"][1]:
+        raise AssertionError("the node runtime does not bundle rclone")
+    if '--entrypoint /usr/local/bin/rclone "${image}" version' not in texts[OPERATOR_NODE]:
+        raise AssertionError(f"{OPERATOR_NODE}: the node smoke test does not run rclone")
+
     production = texts[PRODUCTION]
     if production.count(SCORE_CHECK) != 3:
         raise AssertionError(
@@ -137,5 +147,11 @@ with_model[OPERATOR_NODE] = with_model[OPERATOR_NODE].replace(
 )
 expect_rejected("a default-model check that names a model", with_model)
 
-print("PASS: images build their models in and the smoke tests load them")
+no_rclone = deepcopy(texts)
+no_rclone["docker/Dockerfile.node"] = no_rclone["docker/Dockerfile.node"].replace(
+    "COPY --from=rclone-bin /usr/local/bin/rclone /usr/local/bin/rclone\n", ""
+)
+expect_rejected("a node runtime without rclone", no_rclone)
+
+print("PASS: images build their models in, the node bundles rclone, and the smoke tests load them")
 PY

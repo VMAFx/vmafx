@@ -725,6 +725,8 @@ jobs:
             --json --output /dev/stdout \
             | jq -e '.pooled_metrics.vmaf.mean'
           docker run --rm --entrypoint /usr/local/bin/ffmpeg "${image}" -version
+          # Remote storage inputs run rclone (pkg/storage, ADR-0719).
+          docker run --rm --entrypoint /usr/local/bin/rclone "${image}" version
 
   # -------------------------------------------------------------------------
   # Summary gate — CI shows a single green/red status

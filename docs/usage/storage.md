@@ -4,7 +4,10 @@
 `vmafx-node` streams reference and distorted video directly from remote storage
 without writing the content to local disk or RAM.  It uses
 [rclone](https://rclone.org) — a single Go binary that supports 70+ storage backends —
-bundled into the node container image.
+bundled into the node container image at `/usr/local/bin/rclone`. The version is
+pinned by `RCLONE_IMAGE` in `build-config.env` (rclone 1.75.1 as of
+v1.0.0-rc.1's image rebuild); the v1.0.0-rc.1 node image first published
+without it, so remote inputs failed until the image was rebuilt.
 
 ## Supported remote types
 
