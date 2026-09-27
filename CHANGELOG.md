@@ -26108,6 +26108,13 @@ Nine regression tests added in `tests/test_mcp_http_edge_cases_adr1075.py`.
   message.
 
 
+- Release candidates can publish `vmaf-mcp`. The supply-chain workflow looked
+  for `vmaf_mcp-1.0.0-rc.1` wheels, but Python tools name them
+  `vmaf_mcp-1.0.0rc1`, so the MCP build found nothing and SBOM, signing, PyPI
+  upload and release attachment were all skipped. It now matches the PEP 440
+  spelling.
+
+
 Fix MCP precision-default drift: change probe --precision 6 (to %.6g) and schema
 default "17" (to %.17g) to "legacy" (to %.6f) in both Go (cmd/vmafx-mcp) and Python
 (mcp-server/vmaf-mcp) MCP surfaces, matching the C CLI default per ADR-0119
@@ -26949,6 +26956,14 @@ ADR-0519.
   `cpuid.obj` where it previously reported no work to do.
 
 
+- The native release-artifact verifier accepts release candidates and the
+  version a release build actually reports. It refused `1.0.0-rc.1`, and it
+  compared `vmaf --version` with the bare version although a build at the tag
+  reports `v1.0.0-rc.1-0-g<commit>`; every release, the final 1.0.0 included,
+  would have failed publication. It now accepts exactly the bare version or
+  the on-tag `git describe` form.
+
+
 ### Fixed
 
 - `dev/Containerfile`: derive the matched set of Intel NEO compute-runtime,
@@ -27643,6 +27658,12 @@ Fix 23 pre-existing test failures across three packages.
   different from the checked-out HEAD.
 
 
+- Pushing the changelog cut to the release-please branch is no longer blocked
+  by the local pre-push PR-body hook. The hook now applies CI's release-PR
+  exemption (`scripts/ci/release-pr-exempt.sh`) to the bot release PR, and
+  still validates human PRs and any PR whose head ref is not the pushed branch.
+
+
 - markdownlint no longer lints golden fixtures as prose. The exclude pattern was
   `^testdata/`, anchored at the repository root, so fixture trees under
   `pkg/*/testdata/` — the benchmark renderer's byte-exact expected Markdown, for
@@ -28116,6 +28137,15 @@ JSON parse error at line 64 column 9, breaking every release-please workflow run
 Split draft-release creation from next-PR generation so release-please does not
 try to resolve a tag that intentionally remains absent until an operator publishes
 the draft.
+
+
+- An unpublished release-candidate draft now pauses release-please. The
+  draft check in `.github/workflows/release-please.yml` matched only plain
+  `vX.Y.Z` tags, so a waiting `v1.0.0-rc.1` draft was invisible and the next
+  push to `master` would have re-run release-PR generation against an untagged
+  release. It now accepts the same `vX.Y.Z` / `vX.Y.Z-rc.N` shapes as
+  `scripts/release/verify-release-version.sh`, and it fails closed when the
+  release list cannot be read.
 
 
 - `scripts/release/rollover-changelog-fragments.sh` now cuts release
