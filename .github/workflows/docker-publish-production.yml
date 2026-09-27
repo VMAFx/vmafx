@@ -349,6 +349,17 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+      # syft pulls the pushed image from the registry into /tmp. After a
+      # multi-GB GPU build the buildx cache leaves too little disk for that:
+      # v1.0.0-rc.1's ROCm SBOM failed with "no space left on device".
+      - name: Free runner disk for the SBOM scan
+        run: |
+          df -h /
+          docker buildx prune --all --force
+          docker system prune --all --force
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
 
@@ -444,6 +455,17 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+      # syft pulls the pushed image from the registry into /tmp. After a
+      # multi-GB GPU build the buildx cache leaves too little disk for that:
+      # v1.0.0-rc.1's ROCm SBOM failed with "no space left on device".
+      - name: Free runner disk for the SBOM scan
+        run: |
+          df -h /
+          docker buildx prune --all --force
+          docker system prune --all --force
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
 
@@ -538,6 +560,17 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+      # syft pulls the pushed image from the registry into /tmp. After a
+      # multi-GB GPU build the buildx cache leaves too little disk for that:
+      # v1.0.0-rc.1's ROCm SBOM failed with "no space left on device".
+      - name: Free runner disk for the SBOM scan
+        run: |
+          df -h /
+          docker buildx prune --all --force
+          docker system prune --all --force
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2

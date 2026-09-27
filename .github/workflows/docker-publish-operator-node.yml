@@ -123,7 +123,9 @@ jobs:
     name: Publish vmafx-operator
     needs: validate-release
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A two-platform (amd64 + arm64 under QEMU) Go build; v1.0.0-rc.1's run
+    # was cancelled at 30 minutes mid-build. Same limit as vmafx-server.
+    timeout-minutes: 60
     environment: release-publish
     permissions:
       contents: read
