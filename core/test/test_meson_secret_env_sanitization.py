@@ -11,6 +11,7 @@ import math
 import os
 import re
 import shutil
+import site
 import sys
 import tempfile
 import unittest
@@ -574,6 +575,11 @@ def _minimal_probe_env(tmppath: Path, probe_marker: str) -> dict[str, str]:
     env.setdefault("PATH", os.defpath)
     env.update(
         HOME=str(probe_home),
+        # Python derives its per-user site directory from HOME unless PYTHONUSERBASE
+        # pins it, so the synthetic HOME alone hides a Meson installed with
+        # `pip install --user` (scripts/setup/ubuntu.sh) from its own interpreter.
+        # Pin the base this interpreter resolved; it is a path, not a copied value.
+        PYTHONUSERBASE=site.getuserbase(),
         TMPDIR=str(probe_tmp),
         TEMP=str(probe_tmp),
         TMP=str(probe_tmp),
@@ -1066,6 +1072,7 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
             self.assertNotIn("VMAFX_UNRELATED_SYNTHETIC_CREDENTIAL", env)
             allowed = set(SAFE_HOST_ENV_VARS) | {
                 "HOME",
+                "PYTHONUSERBASE",
                 "TMPDIR",
                 "TEMP",
                 "TMP",
@@ -1076,6 +1083,58 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
                 *SECRET_ENV_VARS,
             }
             self.assertLessEqual(set(env), allowed)
+            self.assertEqual(env["HOME"], str(tmppath / "home"))
+
+    def _assert_user_site_package_importable_under_probe_env(
+        self, host_environment: dict[str, str], *, removed: tuple[str, ...] = ()
+    ) -> None:
+        """Run a child that imports a package living only in the host's user site."""
+        package = "vmafx_probe_user_site_marker"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            host_environment = {
+                name: value.replace("<TMP>", str(tmppath))
+                for name, value in host_environment.items()
+            }
+            with (
+                mock.patch.dict(os.environ, host_environment),
+                mock.patch.object(site, "USER_BASE", None),
+                mock.patch.object(site, "USER_SITE", None),
+            ):
+                for name in removed:
+                    os.environ.pop(name, None)
+                user_site = Path(site.getusersitepackages())
+                env = _minimal_probe_env(tmppath, "synthetic_secret")
+            self.assertTrue(user_site.is_relative_to(tmppath / "host"), user_site)
+            (user_site / package).mkdir(parents=True)
+            (user_site / package / "__init__.py").write_text("", encoding="utf-8")
+            child = [sys.executable, "-c", f"import {package}"]
+
+            pinned = _run_cmd(child, tmppath, env)
+            self.assertEqual(pinned.returncode, 0, _diagnostic(pinned, "synthetic_secret"))
+            self.assertFalse(Path(env["PYTHONUSERBASE"]).is_relative_to(Path(env["HOME"])))
+
+            # Control: the synthetic HOME alone relocates the user site, so the same
+            # child cannot import the package. This is the pre-fix probe environment.
+            unpinned_env = {name: value for name, value in env.items() if name != "PYTHONUSERBASE"}
+            unpinned = _run_cmd(child, tmppath, unpinned_env)
+            self.assertNotEqual(unpinned.returncode, 0)
+            self.assertIn("ModuleNotFoundError", unpinned.stderr)
+
+    @unittest.skipUnless(site.ENABLE_USER_SITE, "user site-packages disabled for this interpreter")
+    @unittest.skipIf(os.name == "nt", "Windows derives the user base from APPDATA, not HOME")
+    def test_probe_environment_keeps_home_derived_user_site_importable(self) -> None:
+        """A `pip install --user` Meson stays importable although HOME is synthetic."""
+        self._assert_user_site_package_importable_under_probe_env(
+            {"HOME": "<TMP>/host/home"}, removed=("PYTHONUSERBASE",)
+        )
+
+    @unittest.skipUnless(site.ENABLE_USER_SITE, "user site-packages disabled for this interpreter")
+    def test_probe_environment_keeps_explicit_user_base_importable(self) -> None:
+        """An explicit host PYTHONUSERBASE outside HOME is carried unchanged."""
+        self._assert_user_site_package_importable_under_probe_env(
+            {"PYTHONUSERBASE": "<TMP>/host/userbase"}
+        )
 
     def test_live_process_environment_excludes_secrets(self) -> None:
         """The registered test itself observes no forbidden credential keys."""
