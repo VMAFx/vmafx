@@ -704,9 +704,11 @@ gh api repos/VMAFx/vmafx/environments/release-publish/deployment-branch-policies
 ```
 
 The run verifies the published tag, builds the tag's source with `master`'s
-`docker/` and `Dockerfile.go-server`, and labels every image
-`io.vmafx.build-recipe=<master commit>`. Only the build recipe comes from
-`master`; the compiled code is the tag's.
+build recipe, and labels every image `io.vmafx.build-recipe=<master commit>`.
+The recipe is `docker/`, `Dockerfile.go-server` and `ffmpeg-patches/`, the
+patch series for the FFmpeg that the node image bundles
+([ADR-1350](../adr/1350-recovery-overlay-ffmpeg-patches.md)). Everything else,
+including all VMAFx and libvmaf code, is the tag's.
 
 #### Making the container images public
 

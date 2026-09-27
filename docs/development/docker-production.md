@@ -66,8 +66,8 @@ The preflight rejects unpublished tags, a prerelease flag that disagrees with
 the tag, a dispatch ref other than `refs/tags/$tag` or `master`, a source SHA
 mismatch, or coordinated version drift before granting package-write or OIDC
 permissions. A dispatch on `master` is the recovery for a broken build recipe:
-it builds the tag's source with `master`'s `docker/` recipe and signs as
-`master`; see
+it builds the tag's source with `master`'s build recipe (`docker/`,
+`Dockerfile.go-server`, `ffmpeg-patches/`) and signs as `master`; see
 [Recovering a release's container images](release.md#recovering-a-releases-container-images).
 
 ## GPU variants

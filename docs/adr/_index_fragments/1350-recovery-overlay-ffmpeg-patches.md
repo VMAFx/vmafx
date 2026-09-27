@@ -1,0 +1,1 @@
+| [ADR-1350](1350-recovery-overlay-ffmpeg-patches.md) | A release image recovery run also takes `ffmpeg-patches/` (the patch series for the bundled FFmpeg) from the dispatching commit, so the rc.1 node image can build with patch 0019's aarch64 warning fix; all VMAFx and libvmaf code stays the tag's. | Accepted | release, ci, container, ffmpeg |

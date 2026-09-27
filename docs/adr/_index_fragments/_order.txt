@@ -1058,3 +1058,4 @@
 1347-image-recovery-from-default-branch
 1348-release-candidate-prerelease-versioning
 1349-native-arch-node-image-build
+1350-recovery-overlay-ffmpeg-patches

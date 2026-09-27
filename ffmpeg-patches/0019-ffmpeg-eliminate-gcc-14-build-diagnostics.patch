@@ -5,7 +5,7 @@ Subject: [PATCH] build: eliminate GCC 14 and 16 diagnostics
 
 Move oversized production and test buffers to checked heap storage, prove array bounds before indexed access, make configuration guards match call sites, and construct tool paths without truncation. Preserve valid-input behavior while making warning-clean GCC 14 and GCC 16 builds possible across production, tools, and generated FATE targets.
 ---
- libavcodec/a64multienc.c         |   7 +-
+ libavcodec/a64multienc.c         |  23 ++++-
  libavcodec/aacenc.c              |   6 ++
  libavcodec/aacsbr_template.c     |  13 +--
  libavcodec/adpcm.c               |  18 +++-
@@ -55,10 +55,10 @@ Move oversized production and test buffers to checked heap storage, prove array 
  tests/checkasm/vvc_sao.c         |  66 ++++++++++-----
  tools/ismindex.c                 | 139 +++++++++++++++++++++++--------
  tools/seek_print.c               |   3 +-
- 50 files changed, 1012 insertions(+), 420 deletions(-)
+ 50 files changed, 1026 insertions(+), 422 deletions(-)
 
 diff --git a/libavcodec/a64multienc.c b/libavcodec/a64multienc.c
-index d81718dff5f73cc95a751554cab421a5bc5267a7..c835452354a2e5fc8af5d709b64517785815bf17 100644
+index d81718dff5f73cc95a751554cab421a5bc5267a7..d93959b9c9774a47bb521b73c276a2da79a6e898 100644
 --- a/libavcodec/a64multienc.c
 +++ b/libavcodec/a64multienc.c
 @@ -106,7 +106,7 @@ static void render_charset(AVCodecContext *avctx, uint8_t *charset,
@@ -87,6 +87,31 @@ index d81718dff5f73cc95a751554cab421a5bc5267a7..c835452354a2e5fc8af5d709b6451778
          if(i < c->mc_pal_size -1 && a == c->mc_luma_vals[i + 1]) {
              distance = c->mc_luma_vals[i + 1] - c->mc_luma_vals[i];
              for(b = 0; b <= distance; b++) {
+@@ -130,10 +133,22 @@ static void render_charset(AVCodecContext *avctx, uint8_t *charset,
+             i++;
+         }
+         if(i >= c->mc_pal_size - 1) dither[a] = 0;
+-        index1[a] = i;
+-        index2[a] = FFMIN(i + 1, c->mc_pal_size - 1);
+     }
+ 
++    /* index1 and index2 are constant on each palette interval. Filling them
++     * per interval, rather than one byte per luma value in the loop above,
++     * keeps GCC's aarch64 vectoriser from emitting 16-byte stores that it
++     * then reports as overflowing the tables (-Wstringop-overflow). */
++    for (i = 0; i < c->mc_pal_size - 1; i++) {
++        const int start = i ? c->mc_luma_vals[i] : 0;
++        const int end   = c->mc_luma_vals[i + 1];
++        av_assert0(start < end && end <= FF_ARRAY_ELEMS(index1));
++        memset(index1 + start, i,     end - start);
++        memset(index2 + start, i + 1, end - start);
++    }
++    memset(index1 + c->mc_luma_vals[i], i, FF_ARRAY_ELEMS(index1) - c->mc_luma_vals[i]);
++    memset(index2 + c->mc_luma_vals[i], i, FF_ARRAY_ELEMS(index2) - c->mc_luma_vals[i]);
++
+     /* and render charset */
+     for (charpos = 0; charpos < CHARSET_CHARS; charpos++) {
+         lowdiff  = 0;
 diff --git a/libavcodec/aacenc.c b/libavcodec/aacenc.c
 index 94558ff23f3e0517aa4030697cc53d08f40809ca..dd4332d91ebe59502448ccb4501db3a1a0a0e7cf 100644
 --- a/libavcodec/aacenc.c

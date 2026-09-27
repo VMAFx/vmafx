@@ -7657,6 +7657,14 @@
         "scripts/release/tests/test-docker-publish-source-binding.sh": 1
       },
       "target": "1349-native-arch-node-image-build.md"
+    },
+    "1350": {
+      "sites": {
+        ".github/workflows/docker-publish-operator-node.yml": 3,
+        ".github/workflows/docker-publish-production.yml": 5,
+        "scripts/release/tests/test-docker-publish-source-binding.sh": 1
+      },
+      "target": "1350-recovery-overlay-ffmpeg-patches.md"
     }
   },
   "retired": {

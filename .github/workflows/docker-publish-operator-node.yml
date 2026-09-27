@@ -159,14 +159,15 @@ jobs:
           persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
 
       # ADR-1347: a recovery dispatch builds the tag's source with the build
-      # recipe of the default-branch commit it runs from; nothing else moves.
+      # recipe of the default-branch commit it runs from (ADR-1350: including
+      # the patches to the bundled FFmpeg); nothing else moves.
       - name: Use the recovery dispatch's build recipe
         if: needs.validate-release.outputs.recovery == 'true'
         env:
           RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
-          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/
           git status --short
 
       - name: Set up Docker Buildx
@@ -275,14 +276,15 @@ jobs:
           persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
 
       # ADR-1347: a recovery dispatch builds the tag's source with the build
-      # recipe of the default-branch commit it runs from; nothing else moves.
+      # recipe of the default-branch commit it runs from (ADR-1350: including
+      # the patches to the bundled FFmpeg); nothing else moves.
       - name: Use the recovery dispatch's build recipe
         if: needs.validate-release.outputs.recovery == 'true'
         env:
           RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
-          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/
           git status --short
 
       - name: Set up QEMU (arm64 cross-emulation for CGO + libvmaf stages)
@@ -404,14 +406,15 @@ jobs:
           persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
 
       # ADR-1347: a recovery dispatch builds the tag's source with the build
-      # recipe of the default-branch commit it runs from; nothing else moves.
+      # recipe of the default-branch commit it runs from (ADR-1350: including
+      # the patches to the bundled FFmpeg); nothing else moves.
       - name: Use the recovery dispatch's build recipe
         if: needs.validate-release.outputs.recovery == 'true'
         env:
           RECIPE_SHA: ${{ needs.validate-release.outputs.recipe-sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
-          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server
+          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/
           git status --short
 
       - name: Set up Docker Buildx

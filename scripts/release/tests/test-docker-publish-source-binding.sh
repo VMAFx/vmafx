@@ -53,7 +53,7 @@ validation_snippets = (
 
 RECOVERY_OVERLAY = (
     "        if: needs.validate-release.outputs.recovery == 'true'\n",
-    '          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server\n',
+    '          git checkout FETCH_HEAD -- docker/ Dockerfile.go-server ffmpeg-patches/\n',
 )
 
 # The OCI revision label names the packaged source (the tag's commit), not the
@@ -116,7 +116,8 @@ for relative_path, build_jobs in workflows.items():
         if SOURCE_REVISION_LABEL not in block:
             raise AssertionError(f"{relative_path}: {job} does not label the tag's source revision")
         overlays = re.findall(r"git checkout FETCH_HEAD -- ([^\n]*)", block)
-        if overlays != ["docker/ Dockerfile.go-server"]:
+        # ADR-1350: the recipe includes the patches to the bundled FFmpeg.
+        if overlays != ["docker/ Dockerfile.go-server ffmpeg-patches/"]:
             raise AssertionError(f"{relative_path}: {job} overlays {overlays}, not the build recipe only")
 
     if relative_path.endswith("docker-publish-operator-node.yml"):
