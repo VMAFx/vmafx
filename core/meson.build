@@ -1,5 +1,5 @@
 project('libvmaf', ['c', 'cpp'],
-    version : '1.0.0-rc.1', # x-release-please-version
+    version : '1.0.0-rc.2', # x-release-please-version
     default_options : [
                        'warning_level=2',
                        'buildtype=release',
