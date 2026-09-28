@@ -1798,6 +1798,15 @@ double vmaf_cambi_spatial_pooling(float *c_values, double topk, unsigned width, 
     return spatial_pooling(c_values, topk, width, height);
 }
 
+/* ADR-1357: the device-resident GPU twins upload this exact table so their
+ * c-values multiply by the same reciprocal constants as c_value_pixel(). */
+const float *vmaf_cambi_reciprocal_lut(unsigned *size)
+{
+    if (size)
+        *size = CAMBI_RECIPROCAL_LUT_SIZE;
+    return reciprocal_lut;
+}
+
 /* ADR-0205: shared CPU/GPU helper; see 2043-cambi-production-lint-2026-09-08.md. */
 double vmaf_cambi_weight_scores_per_scale(const double *scores_per_scale, uint16_t normalization)
 {

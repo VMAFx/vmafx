@@ -288,14 +288,16 @@ CAMBI has a CUDA backend (T3-15a / [ADR-0360](../adr/0360-cambi-cuda.md)).
 > backend.** The Metal twin carried the first two and gets the same fixes;
 > CUDA and SYCL were unaffected.
 
-It uses the Strategy II hybrid architecture: the integer phases (spatial mask,
-2× decimate, 3-tap separable mode filter) run on the GPU; the
-precision-sensitive sliding-histogram `calculate_c_values` + top-K spatial
-pool stay on the host. Cross-backend gate runs at `places=4`.
+The CUDA, HIP and Metal twins use the Strategy II hybrid architecture: the
+integer phases (spatial mask, 2× decimate, 3-tap separable mode filter) run on
+the GPU; the sliding-histogram `calculate_c_values` and the top-K spatial pool
+run on the host after a device-to-host copy at every scale. The SYCL twin runs
+every stage on the device ([below](#sycl)). Cross-backend gate runs at
+`places=4`.
 
 > **Note**: The Vulkan backend (formerly T7-36 / ADR-0210) was removed in
 > [ADR-0726](../adr/0726-drop-vulkan-backend.md). CAMBI no longer has a Vulkan
-> path. Use the CUDA backend for GPU-accelerated CAMBI scoring.
+> path. Use the SYCL, CUDA, HIP or Metal twin for GPU CAMBI scoring.
 
 ### CUDA
 
@@ -321,3 +323,52 @@ versus CPU `cambi` is verified at `places=4` per ADR-0214.
 
 Companion research digest:
 [Research-0091](../research/0091-cambi-cuda-integration.md) (CUDA).
+
+### SYCL
+
+`cambi_sycl` computes the whole frame on the GPU and reads back one 88-byte
+block of per-scale sums
+([ADR-1357](../adr/1357-sycl-cambi-device-resident.md)). It takes the
+distorted plane from the SYCL frame upload every SYCL extractor shares, so it
+adds no transfer of its own, and it joins the combined command graph with the
+other SYCL extractors.
+
+```bash
+meson setup build-sycl core -Denable_sycl=true
+ninja -C build-sycl
+
+# Name the twin: --feature cambi alone runs the CPU extractor even with
+# --backend sycl. A model that lists cambi (the default model does) picks
+# cambi_sycl on its own.
+./build-sycl/tools/vmaf -r ref.yuv -d dis.yuv -w W -h H \
+    -p 420 -b 8 --backend sycl --feature cambi_sycl
+```
+
+How the device matches `cambi.c`:
+
+- **c-values.** Each work-item keeps one column of the level histogram for a
+  band of rows and slides the window down, as `calculate_c_values` does. The
+  histogram cells always hold the true count of their level in the window, so
+  the counts equal the CPU's, and each c-value is `c_value_pixel()`'s formula
+  with the same reciprocal table (`vmaf_cambi_reciprocal_lut()`).
+- **Top-K pooling.** `cambi.c` averages the largest `topk` fraction of
+  c-values after a quick-select, summing in `double`. The device finds the same
+  set with a radix select and sums it exactly, as an integer in units of
+  2^-24 (every non-zero c-value is at least 0.5 and below 2^18). The two agree
+  to the last bit whenever the CPU's own sum is exact. On frames with a very
+  large banded area the CPU's sum rounds and the scores differ in the last few
+  digits: at most 2.2e-15 over 50 frames of Big Buck Bunny at 3840x2160
+  (47 identical), against a `places=4` gate.
+
+Measured on Big Buck Bunny, 3840x2160 8-bit 4:2:0, `--precision max`,
+milliseconds per frame from `t(22 frames) - t(2 frames)`, median of five runs:
+
+| Device | Before (host residual) | After (device) |
+| --- | --- | --- |
+| CPU, `--backend cpu --threads 16 --feature cambi` | 10.6 | 10.7 |
+| Intel Arc B580, `--feature cambi_sycl` | 140 | 7.6 |
+| Intel UHD 770, `--feature cambi_sycl` | 944 | 40 |
+| Intel UHD 770, default model | 976 | 105 |
+
+Parity and timing reproduce with the commands in
+[Research-2122](../research/2122-sycl-cambi-device-resident.md).

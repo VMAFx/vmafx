@@ -398,11 +398,20 @@ the deviation:
 
 ## Known gaps
 
-- **CAMBI** — SYCL twin (`cambi_sycl`) shipped in ADR-0371. Strategy II
-  hybrid: three GPU kernels (spatial-mask, 2× decimate, 3-tap mode filter)
-  and host CPU residual (`calculate_c_values` + top-K pooling).
+- **CAMBI** — SYCL twin (`cambi_sycl`) shipped in ADR-0415 as a Strategy II
+  hybrid (GPU spatial mask, decimate and mode filter; host c-values and top-K
+  pooling with a device-to-host copy per scale). Since
+  [ADR-1357](../../adr/1357-sycl-cambi-device-resident.md) it runs every
+  stage on the device, reads the distorted plane from the shared frame upload
+  and reads back one 88-byte block per frame; at 3840x2160 it takes 7.6 ms a
+  frame on an Arc B580 (was 140) and 40 ms on a UHD 770 (was 944). Per-frame
+  scores are bit-identical to `--backend cpu` whenever the CPU's own top-K
+  double sum is exact, and otherwise differ by that sum's rounding (at most
+  2.2e-15 over 50 frames of Big Buck Bunny 4K). See
+  [the CAMBI metric page](../../metrics/cambi.md#sycl).
 
-  Until branch `fix/gpu-cambi-parity-drift` the twin drifted from the CPU
+  The history below describes the hybrid twin. Until branch
+  `fix/gpu-cambi-parity-drift` the twin drifted from the CPU
   extractor on real content by 2.7e-3 pooled (7.2e-3 max per frame) on the
   576x324 `src01` pair: its spatial-mask kernel clamped out-of-image
   neighbours where `cambi.c` zero-pads them, and its vertical `filter_mode`
@@ -415,12 +424,12 @@ the deviation:
   | Tennis 1920x1080 | 10 | 0.5670459080762581 (CPU and SYCL) | 0 |
   | checkerboard 1px / 10px 1920x1080 | 3 each | 0 (CPU and SYCL) | 0 |
 
-  Measured at `--precision max` (`%.17g`) on an Intel Arc A380. Every CAMBI
-  GPU stage is integer-only and the c-value / pooling residual is the CPU
-  code called through `cambi_internal.h`, which is why the emitted score
-  agrees to every printed digit here — this is a measurement on these four
-  fixtures, **not** a general bit-exactness guarantee for the SYCL backend
-  (see [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md) for the tolerance
+  Measured at `--precision max` (`%.17g`) on an Intel Arc A380, before
+  ADR-1357. Every CAMBI GPU stage was integer-only and the c-value / pooling
+  residual was the CPU code called through `cambi_internal.h`, which is why
+  the emitted score agreed to every printed digit — this is a measurement
+  on these four fixtures, **not** a general bit-exactness guarantee for the
+  SYCL backend (see [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md) for the tolerance
   contract). In that CAMBI measurement, pooled `vmaf` still differed by
   2.2e-6 on `src01` because the ADM / VIF / motion twins carry their own
   deltas; for the `vmaf_v0.6.1` figure see

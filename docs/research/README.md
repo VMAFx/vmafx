@@ -128,6 +128,7 @@ Conventions:
 | [2118](2118-bug048-script-environment-drift-2026-09-25.md) | BUG-048 script environment drift | Complete | — (BUG-048 restoration) |
 | [2119](2119-gcc16-placement-new-symbol-visibility.md) | GCC 16 C++ placement new/delete symbol visibility | Complete | [ADR-1337](../adr/1337-cpp-placement-new-visibility.md) |
 | [2120](2120-sycl-ciede-throughput.md) | SYCL ciede2000 throughput: `--feature ciede` never reached SYCL; `ciede_sycl` stages chroma at native size | Active | — (RC3 performance) |
+| [2122](2122-sycl-cambi-device-resident.md) | Device-resident CAMBI on SYCL: c-values and exact top-K pooling on the GPU, parity proof and measurements | Active | [ADR-1357](../adr/1357-sycl-cambi-device-resident.md) |
 
 | [0053](0053-post-merge-cpu-profile-2026-05-03.md) | Post-merge CPU profile 2026-05-03 — perf top-10 after lusoris/vmaf#310 through lusoris/vmaf#321; surfaces 3 new opt targets (convolve widen, SSIM double reduction, VIF gather elimination) | Active | — |
 | [0081](0081-fr-regressor-v2-ensemble-real-corpus-methodology.md) | Real-corpus retrain methodology for the `fr_regressor_v2` deep ensemble — corpus-size sufficiency (9 ref + 70 dis @ `.workingdir2/netflix/`), 9-fold LOSO sizing inherited from the deterministic ADR-0291 baseline, seed-diversity hyperparameters, and the `Seeking_25fps` weak-fold diagnostic for HOLD-on-spread cases. | Active | [ADR-0309](../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md) |

@@ -793,6 +793,46 @@ static char *test_spatial_pooling()
     return CAMBI_TEST_NULL_POINTER;
 }
 
+/* ADR-1357: the device-resident SYCL twin uploads the table c_value_pixel()
+ * multiplies by, so the accessor must expose exactly that table. It is not
+ * the same as computing 1.0f / i: 42 of its 4226 decimal literals parse one
+ * ulp away from the correctly rounded reciprocal (i = 82, 83, 244, ...),
+ * which is why a GPU twin must copy it rather than divide. */
+static char *test_reciprocal_lut_accessor()
+{
+    unsigned size = 0;
+    const float *lut = vmaf_cambi_reciprocal_lut(&size);
+    mu_assert("reciprocal_lut returns a table", lut != CAMBI_TEST_NULL_POINTER);
+    mu_assert("reciprocal_lut size", size == CAMBI_RECIPROCAL_LUT_SIZE);
+    mu_assert("reciprocal_lut NULL size pointer",
+              vmaf_cambi_reciprocal_lut(CAMBI_TEST_NULL_POINTER) == lut);
+    int same_table = 1;
+    for (unsigned i = 0; i < CAMBI_RECIPROCAL_LUT_SIZE; i++) {
+        same_table &= float_bits_equal(lut[i], reciprocal_lut[i]);
+    }
+    mu_assert("reciprocal_lut is cambi.h's table", same_table);
+    mu_assert("reciprocal_lut[0] is zero", float_bits_equal(lut[0], 0.0f));
+    mu_assert("reciprocal_lut[1] is one", float_bits_equal(lut[1], 1.0f));
+    return CAMBI_TEST_NULL_POINTER;
+}
+
+static char *test_reciprocal_lut_values()
+{
+    const float *lut = vmaf_cambi_reciprocal_lut(CAMBI_TEST_NULL_POINTER);
+    int within_ulp = 1;
+    unsigned off_by_one_ulp = 0;
+    for (unsigned i = 1; i < CAMBI_RECIPROCAL_LUT_SIZE; i++) {
+        const float exact = 1.0f / (float)i;
+        const int equal = float_bits_equal(lut[i], exact);
+        within_ulp &= equal || float_bits_equal(lut[i], nextafterf(exact, 0.0f)) ||
+                      float_bits_equal(lut[i], nextafterf(exact, 1.0f));
+        off_by_one_ulp += equal ? 0u : 1u;
+    }
+    mu_assert("reciprocal_lut[i] within one ulp of 1.0f / i", within_ulp);
+    mu_assert("reciprocal_lut differs from 1.0f / i (a twin must copy it)", off_by_one_ulp > 0u);
+    return CAMBI_TEST_NULL_POINTER;
+}
+
 static char *test_quick_select()
 {
     float arr[12] = {0, 1, 2, 3, 4, 5, 10, 7, 8, 9, 6, 11};
@@ -1424,6 +1464,14 @@ static char *test_calculate_c_values_scalar_avx2_parity()
     return msg;
 }
 
+/* Tables the device-resident GPU twins upload (ADR-1357). */
+static char *run_cambi_gpu_twin_tables(void)
+{
+    mu_run_test(test_reciprocal_lut_accessor);
+    mu_run_test(test_reciprocal_lut_values);
+    return CAMBI_TEST_NULL_POINTER;
+}
+
 static char *run_cambi_preprocessing_and_masks(void)
 {
     mu_run_test(test_anti_dithering_filter);
@@ -1555,6 +1603,9 @@ char *run_tests(void)
     if (error)
         return error;
     error = run_cambi_thresholds_rows_and_parity();
+    if (error)
+        return error;
+    error = run_cambi_gpu_twin_tables();
     if (error)
         return error;
     mu_run_test(test_open_heatmaps_utf8_path);

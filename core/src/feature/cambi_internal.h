@@ -144,6 +144,11 @@ void vmaf_cambi_calculate_c_values(VmafPicture *pic, const VmafPicture *mask_pic
 /* Top-K spatial pooling. Mutates `c_values` in place via quick-select. */
 double vmaf_cambi_spatial_pooling(float *c_values, double topk, unsigned width, unsigned height);
 
+/* The reciprocal table c_value_pixel() multiplies by (reciprocal_lut[i] =
+ * 1.0f / i, [0] = 0). Returns the table and stores its entry count in `*size`
+ * when `size` is non-NULL. Device-resident twins upload it verbatim (ADR-1357). */
+const float *vmaf_cambi_reciprocal_lut(unsigned *size);
+
 /* Per-scale weight × 16/8/4/2/1 normalisation. */
 double vmaf_cambi_weight_scores_per_scale(const double *scores_per_scale, uint16_t normalization);
 

@@ -837,39 +837,45 @@ feature/
   [ADR-0223](../../../docs/adr/0223-transnet-v2-shot-detector.md)
   [ADR-0257](../../../docs/adr/0257-transnet-v2-real-weights.md).
 
-- **`cambi.c` GPU port is hybrid host/GPU per
+- **`cambi.c` GPU ports: CUDA / HIP / Metal hybrid host/GPU per
   [ADR-0205](../../../docs/adr/0205-cambi-gpu-feasibility.md) +
-  [ADR-0210](../../../docs/adr/0210-cambi-vulkan-integration.md)
-  (T7-36 integration).** Vulkan kernel offloads only
-  embarrassingly-parallel phases (preprocessing scaffold +
-  derivative + 7×7 SAT spatial mask + 2× decimate + 3-tap mode
-  filter) to GPU; precision-sensitive
-  `calculate_c_values` sliding-histogram pass + top-K spatial
-  pooling stay on host. Any CPU-side change to c-value
-  formula or histogram update protocol must keep host
-  residual call site
-  (`cambi_vulkan.c::cambi_vk_extract` → `vmaf_cambi_calculate_c_values`)
-  lock-step with CPU `calculate_c_values` — they are
-  intentionally same code, called against GPU-produced
-  image + mask buffers.
+  [ADR-0210](../../../docs/adr/0210-cambi-vulkan-integration.md); SYCL
+  fully on device per
+  [ADR-1357](../../../docs/adr/1357-sycl-cambi-device-resident.md).**
+  Hybrid twins offload only embarrassingly-parallel phases (derivative +
+  7×7 spatial mask + 2× decimate + 3-tap mode filter) and call
+  `vmaf_cambi_calculate_c_values` + `vmaf_cambi_spatial_pooling` on host
+  against GPU-produced image + mask; those call sites stay lock-step with
+  CPU `calculate_c_values` because they *are* the CPU code. `cambi_sycl`
+  reimplements c-values (per-chunk column histograms) and top-K pooling
+  (radix select + exact 128-bit fixed-point sum) on device: any CPU-side
+  change to `c_value_pixel`, the histogram window walk,
+  `spatial_pooling`, `cambi_preprocessing` or `filter_mode` must be
+  mirrored into `sycl/integer_cambi_sycl.cpp` in same PR
+  (`test_sycl_cambi_parity` asserts bit-exact per frame). Open RC3 rows
+  `T-{CUDA,HIP,METAL}-CAMBI-HOST-RESIDUAL-2026-09-29` in
+  `docs/state.md` port the SYCL design to the other twins.
   - **`cambi_internal.h` invariant**: this internal-only header
     exposes cambi.c's file-static helpers (`get_spatial_mask`,
     `decimate`, `filter_mode`, `calculate_c_values`,
     `spatial_pooling`, `weight_scores_per_scale`,
     `get_pixels_in_window`, `cambi_preprocessing`,
     `increment_range` / `decrement_range` /
-    `get_derivative_data_for_row` callbacks) to GPU twin via
+    `get_derivative_data_for_row` callbacks) and the
+    `reciprocal_lut` table (`vmaf_cambi_reciprocal_lut`, ADR-1357 —
+    device twins upload it verbatim; 42 entries are 1 ulp off
+    `1.0f / i`, so never recompute it) to GPU twins via
     thin trampoline block at bottom of `cambi.c`. **Do not
     rename or change signatures of those helpers without
     updating trampoline block + header in same PR
     or GPU build breaks.** trampoline body is *only*
     fork-added code inside `cambi.c`; upstream-mirror body
     above stays byte-identical to keep Netflix sync clean.
-  - Strategy III (fully-on-GPU c-values via direct per-pixel
-    histogram) is documented in
+  - Strategy III (fully-on-GPU c-values) from
     [research digest 0020](../../../docs/research/0020-cambi-gpu-strategies.md)
-    but deferred to future batch — *do not* attempt to
-    optimise it inside v1 hybrid integration.
+    is implemented for SYCL by ADR-1357 (column-owned sliding window,
+    not the direct per-pixel histogram 0020 sketched); see
+    [Research-2122](../../../docs/research/2122-sycl-cambi-device-resident.md).
 
 - **VIF kernelscale stays on precomputed
   `vif_filter1d_table_s` flow — Strategy E in Research-0024.**

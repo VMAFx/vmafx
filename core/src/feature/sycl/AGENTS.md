@@ -241,22 +241,31 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   [../../AGENTS.md §"`picture_copy()` carries a `channel`
   parameter"](../../AGENTS.md).
 
-- **`integer_cambi_sycl.cpp` — Strategy II hybrid: no graph register,
-  event-chained GPU passes with synchronous D2H barrier** (T3-15 /
-  ADR-0371 / SY-1 perf fix 2026-05-16). `submit()` flow: H2D
-  upload + single `q.wait()` → `launch_spatial_mask` (returns event) →
-  per-scale `launch_decimate` image + mask (each returns event, chained
-  via `depends_on`) → `launch_filter_mode` H + V (chained via events) →
-  `ev_prev.wait()` to drain GPU work → D2H memcpy rows → `q.wait()` →
-  `vmaf_cambi_calculate_c_values` + `vmaf_cambi_spatial_pooling`.
-  GPU-to-GPU transitions use `sycl::event` chains, not `q.wait()`;
-  only H2D-drain and pre-D2H barriers call `wait()`.
-  CPU-residual phases must stay inside `submit()`, not `collect()`.
-  `collect()` only emits `s->score`. Do **not** move CPU residual
-  into `collect()` and do **not** register with `vmaf_sycl_graph_register`
-  — per-scale D2H readback and host histogram pass incompatible
-  with graph-replay model. CUDA twin (ADR-0360) retains
-  synchronous v1 posture; event-chain refactor SYCL-only.
+- **`integer_cambi_sycl.cpp` — fully device-resident, graph-registered**
+  ([ADR-1357](../../../../docs/adr/1357-sycl-cambi-device-resident.md),
+  supersedes the ADR-0415 / ADR-0489 host residual). Reads distorted luma
+  from shared frame (`enqueue_fn` `shared_dis`), no own upload. Whole frame
+  = one `enqueue_cambi_work`: reset → validate → preprocess → tiled mask →
+  per scale {decimate, filter H, filter V + level map Q, `launch_row_masks`,
+  `launch_c_values` (+ radix pass 0 + per-group sum), `launch_topk_pooling`}.
+  `post_fn` = only D2H (88-byte `CambiSyclResults`); `collect()` = only host
+  arithmetic (`vmaf_cambi_weight_scores_per_scale`). Load-bearing:
+  - every kernel argument init-time state: graph recording replays
+    `enqueue_fn` for both slots; no host decision per frame, no
+    `memset`/`fill` inside `enqueue_fn` (reset is a kernel);
+  - c-values multiply by `vmaf_cambi_reciprocal_lut()` table, never
+    `1.0f / i` (42 entries differ by 1 ulp);
+  - top-K sum exact: 128-bit fixed point, units 2^-24 (all non-zero
+    c-values in [0.5, 2^18)); no fp64, no float accumulation;
+  - `CambiSyclSelect::k_rem[p + 1]` written by scan of pass p: no lane
+    rewrites word another lane reads; bin 0 of pass 0 = exact zeros
+    → `resolved`, later passes return on device;
+  - histogram cells `uint16`, modular; order of updates free (true window
+    counts), so run/skip rewrites keep bit-exactness.
+  **On rebase**: `cambi.c` change to `c_value_pixel`,
+  `calculate_c_values` window walk, `spatial_pooling`, preprocessing or
+  `filter_mode` → mirror into device kernels same PR;
+  `test_sycl_cambi_parity` asserts bit-exact per frame.
 
 - **Per-step `q.wait()` in feature extractors forbidden — use
   in-order queue** (ADR-0458 / SY-1). SYCL in-order queue serialises
@@ -265,8 +274,8 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   mandatory `q.wait()` calls at **CPU-reads-from-device boundaries**
   (i.e., right before host code reads `vmaf_sycl_malloc_host` buffer
   written by preceding `q.memcpy`). Example: `integer_cambi_sycl.cpp`
-  has exactly one `q.wait()` per scale, right before
-  `vmaf_cambi_calculate_c_values`.
+  has none of its own — `collect()` reads its readback after
+  `vmaf_sycl_graph_wait()` (ADR-1357).
 
 - **Stencil/convolution SYCL kernels MUST use `local_accessor` for tap
   reuse** (ADR-0458 / SY-2). Separable filter (Gaussian, box,
@@ -390,7 +399,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 
 | SYCL TU | CPU TU | Parity test | ADR |
 |---|---|---|---|
-| `integer_cambi_sycl.cpp` | `cambi.c` | `test_integer_cambi_sycl.c` | pre-existing |
+| `integer_cambi_sycl.cpp` | `cambi.c` | `test_sycl_cambi_parity.c` (bit-exact, 4 frames), `test_integer_cambi_sycl.c` (smoke) | [ADR-1357](../../../../docs/adr/1357-sycl-cambi-device-resident.md) |
 | `integer_motion_sycl.cpp` (motion3) | `integer_motion.c` | `test_sycl_motion3_parity.c` | ADR-0219 |
 | `integer_motion_sycl.cpp` (motion_add_uv) | `float_motion.c` | `test_sycl_motion_add_uv_parity.c` | ADR-0989 |
 | `integer_psnr_sycl.cpp` | `integer_psnr.c` | `test_sycl_psnr_parity.c` | ADR-0868 (round 1) |
@@ -479,7 +488,7 @@ Coverage matrix:
 | `integer_motion_v2_sycl.cpp` | `test_sycl_motion_v2_parity.c` | ADR-0884 |
 | `integer_motion_sycl.cpp` | `test_sycl_motion3_parity.c` | [ADR-0219](../../../../docs/adr/0219-motion3-gpu-contract.md) |
 | `integer_motion_sycl.cpp` (motion_add_uv) | `test_sycl_motion_add_uv_parity.c` | [ADR-0989](../../../../docs/adr/0989-sycl-motion-add-uv.md) |
-| `integer_cambi_sycl.cpp` | `test_integer_cambi_sycl.c` (smoke + score sanity) | [ADR-0371](../../../../docs/adr/0371-sycl-cambi-port.md) |
+| `integer_cambi_sycl.cpp` | `test_sycl_cambi_parity.c` (bit-exact per frame) + `test_integer_cambi_sycl.c` (smoke) | [ADR-0415](../../../../docs/adr/0415-cambi-sycl-port.md), [ADR-1357](../../../../docs/adr/1357-sycl-cambi-device-resident.md) |
 | `float_*_sycl.cpp`, `speed_*_sycl.cpp`, `ssimulacra2_sycl.cpp`, `integer_moment_sycl.cpp`, `integer_psnr_hvs_sycl.cpp` | (round 3 backlog — see ADR-0884) | — |
 
 **Rebase-sensitive**: adding new SYCL kernel TU, same PR

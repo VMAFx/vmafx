@@ -4,84 +4,64 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CAMBI banding-detection feature extractor on the SYCL backend
- *  (T3-15 / ADR-0371). SYCL twin of integer_cambi_cuda.c (ADR-0360)
- *  and cambi_vulkan.c (ADR-0210).
+ *  (T3-15 / ADR-0415), fully device-resident since ADR-1357.
  *
- *  Strategy II hybrid — identical to the CUDA twin (ADR-0360):
+ *  Per-frame flow — every stage runs on the device, in order, on the
+ *  combined in-order queue (vmaf_sycl_graph_register), reading the distorted
+ *  luma plane the shared-frame upload already placed on the device:
  *
- *    GPU stages (three SYCL kernels):
- *      - launch_spatial_mask  : derivative + 7×7 box sum + threshold.
- *        Produces a uint16 mask buffer (0 = flat, 1 = edge).
- *        Bit-exact port of cambi_spatial_mask_kernel.
- *      - launch_decimate      : strict 2× stride-2 subsample.
- *        Bit-exact port of cambi_decimate_kernel.
- *      - launch_filter_mode   : separable 3-tap mode filter (H + V).
- *        Bit-exact port of cambi_filter_mode_kernel.
+ *    1. reset         : zero the per-scale selection state and the status word.
+ *    2. validate      : flag samples above the declared bit depth (only for
+ *                       bpc other than 8 and 16, as cambi.c::validate_image).
+ *    3. preprocess    : convert to 10 bit (and resize to enc_width x enc_height
+ *                       through init-time index tables), then the anti-dither
+ *                       2x2 average when enc_bitdepth < 10.
+ *    4. spatial mask  : derivative + zero-padded 7x7 box sum + threshold, one
+ *                       local-memory tile per work-group.
+ *    5. per scale s   : decimate (s > 0 or high-res speed-up), 3-tap mode filter
+ *                       horizontal then vertical — the vertical pass also emits
+ *                       the compact level map Q — then the per-row run/change
+ *                       bit masks, c-values (+ top-K pass 0), top-K pooling.
+ *    6. readback      : one D2H copy of the five per-scale top-K sums and the
+ *                       status word (post_fn); collect() weights the scales.
  *
- *    Host CPU stages (exact CPU code via cambi_internal.h wrappers):
- *      - vmaf_cambi_preprocessing: decimate/upcast to 10-bit.
- *      - vmaf_cambi_calculate_c_values: sliding-histogram c-value pass.
- *      - vmaf_cambi_spatial_pooling: top-K pooling → per-scale score.
- *      - vmaf_cambi_weight_scores_per_scale: inner-product scale weights.
+ *  c-values (cvals_column): one work-item owns one histogram column of one
+ *  row chunk and slides the (2 * pad + 1)^2 window down its rows as
+ *  cambi.c::calculate_c_values slides its column histograms, so every cell it
+ *  reads holds the true window count of that level (modular uint16 updates in
+ *  any order give the same final count, and no count reaches 65536). Rows
+ *  whose leaving and entering segments agree are skipped and a changed
+ *  segment is applied one run of equal levels at a time (bit masks from
+ *  launch_row_masks). The per-pixel formula is c_value_pixel()'s, float for
+ *  float, with the same reciprocal table (vmaf_cambi_reciprocal_lut).
  *
- *  Per-frame flow (event-chained GPU passes, SY-1 perf-audit 2026-05-16):
- *    1. Host preprocessing (CPU): resize/upcast dist_pic → pics[0].
- *    2. H2D upload of pics[0] luma plane → d_image (USM device).
- *       One q.wait() drains the H2D upload before GPU kernel launch.
- *    3. GPU launch_spatial_mask over d_image → d_mask.
- *       Returns a sycl::event — no q.wait() here.
- *    4. For scale = 0 .. NUM_SCALES-1:
- *         a. (scale > 0) GPU launch_decimate d_image → d_tmp, depends on
- *            prior event; GPU launch_decimate d_mask → d_tmp, depends on
- *            image-decimate event.  Both return events; no q.wait().
- *         b. GPU launch_filter_mode H: d_image → d_tmp, depends on prior
- *            event.  Returns event.
- *         c. GPU launch_filter_mode V: d_tmp → d_image, depends on H event.
- *            Returns event.
- *         d. One q.wait() to drain all GPU work before D2H.
- *            D2H memcpy → pics[0], pics[1].  q.wait() after D2H.
- *         e. Host vmaf_cambi_calculate_c_values + vmaf_cambi_spatial_pooling.
- *    5. Host vmaf_cambi_weight_scores_per_scale → final score.
- *    6. Store score; collect() emits "Cambi_feature_cambi_score".
+ *  Top-K pooling: cambi.c sums the k largest c-values in double after a
+ *  quick-select. The device finds the k-th largest value T with a 3-pass
+ *  radix select on the IEEE bit patterns (monotonic for the non-negative
+ *  c-values; pass 0 is counted by the c-values kernel) and sums
+ *  sum(v > T) + (k - #(v > T)) * T exactly, as a 128-bit integer in units of
+ *  2^-24: every non-zero c-value is at least 0.5 and below 2^18, so it is an
+ *  integer multiple of 2^-24 and the sum is exact. The host converts it to
+ *  double once. That equals cambi.c's double sum whenever that sum is exact
+ *  (always below 2^29, and in practice far beyond); otherwise it differs from
+ *  it by the CPU's own accumulated rounding (a few ulp of the score). See
+ *  ADR-1357 for the proof and the measured deltas.
  *
- *  Precision contract: `places=4` (ULP=0 on emitted score). All GPU
- *  stages use integer arithmetic only. The host residual runs the exact
- *  CPU code path from cambi_internal.h, so the emitted score is
- *  bit-for-bit identical to `vmaf_fex_cambi` and the CUDA twin.
- *
- *  SYCL specifics:
- *    - Buffers are USM device pointers (uint16_t *) allocated via
- *      vmaf_sycl_malloc_device / vmaf_sycl_malloc_host.
- *    - Kernels submitted with q.submit([=](sycl::handler &) { ... }).
- *    - q.wait() used only at H2D completion and before each D2H read.
- *      GPU-to-GPU dependencies use sycl::event depends_on chains so the
- *      runtime can overlap or pipeline adjacent dispatches without a full
- *      queue drain (SY-1 fix — perf-audit 2026-05-16).  The CUDA twin
- *      (ADR-0360) retains its v1 synchronous posture for now.
- *    - Does NOT use vmaf_sycl_graph_register because CAMBI's host
- *      residual is non-trivial and the per-scale CPU work serialises
- *      frames already. Same reasoning as the CUDA twin.
- *    - Supports both Intel oneAPI (icpx -fsycl) and AdaptiveCpp
- *      (acpp --acpp-targets=...) per ADR-0335. The strict-FP contract
- *      is honoured by the meson.build sycl_strict_fp_args mechanism
- *      (-fp-model=precise for icpx, -ffp-contract=off for acpp).
- *      Since all arithmetic in the SYCL kernels is integer-only,
- *      strict-FP has no effect here; the flag is inherited from the
- *      common feature build recipe.
- *
- *  Kernel mapping from CUDA → SYCL:
- *    cambi_spatial_mask_kernel → launch_spatial_mask (anonymous ns)
- *    cambi_decimate_kernel     → launch_decimate     (anonymous ns)
- *    cambi_filter_mode_kernel  → launch_filter_mode  (anonymous ns)
+ *  Precision contract: integer-only mask/decimate/filter/histogram stages,
+ *  fp32 c-values bit-identical to cambi.c, exact top-K sums. No kernel uses
+ *  fp64 (ADR-0220).
  */
 
 #include <sycl/sycl.hpp>
 
+#include <algorithm>
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <utility>
+#include <vector>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -94,29 +74,110 @@
 #include "feature/cambi_internal.h"
 
 /* ------------------------------------------------------------------ */
-/* Constants (mirroring integer_cambi_cuda.c). */
+/* Constants (mirroring cambi.c / integer_cambi_cuda.c).               */
 /* ------------------------------------------------------------------ */
 namespace
 {
 
-constexpr int CAMBI_SYCL_NUM_SCALES = 5;
-static constexpr int CAMBI_SYCL_MIN_WIDTH_HEIGHT = CAMBI_MIN_WIDTH_HEIGHT;
-static constexpr unsigned CAMBI_SYCL_MASK_FILTER_SIZE = 7U;
-static constexpr double CAMBI_SYCL_DEFAULT_MAX_VAL = 1000.0;
-static constexpr int CAMBI_SYCL_DEFAULT_WINDOW_SIZE = 65;
-static constexpr double CAMBI_SYCL_DEFAULT_TOPK = 0.6;
-static constexpr double CAMBI_SYCL_DEFAULT_TVI = 0.019;
-static constexpr double CAMBI_SYCL_DEFAULT_VLT = 0.0;
-static constexpr int CAMBI_SYCL_DEFAULT_MAX_LOG_CONTRAST = 2;
+constexpr int CAMBI_SYCL_NUM_SCALES = VMAF_CAMBI_NUM_SCALES;
+constexpr unsigned CAMBI_SYCL_MASK_FILTER_SIZE = 7U;
+constexpr double CAMBI_SYCL_DEFAULT_MAX_VAL = 1000.0;
+constexpr int CAMBI_SYCL_DEFAULT_WINDOW_SIZE = 65;
+constexpr double CAMBI_SYCL_DEFAULT_TOPK = 0.6;
+constexpr double CAMBI_SYCL_DEFAULT_TVI = 0.019;
+constexpr double CAMBI_SYCL_DEFAULT_VLT = 0.0;
+constexpr int CAMBI_SYCL_DEFAULT_MAX_LOG_CONTRAST = 2;
 /* `default_val.s` in `VmafOption` is declared `char *` (not `const char *`);
  * use a `char[]` so the array decays to `char *` without a const cast.
  * Mirrors the CUDA twin `CAMBI_CUDA_DEFAULT_EOTF` which uses a `#define`
  * macro for the same reason. */
 char CAMBI_SYCL_DEFAULT_EOTF[] = "bt1886";
 
-/* Work-group tile size. */
-static constexpr size_t WG_X = 16;
+/* Work-group tile for the 2-D image kernels. */
+constexpr size_t WG_X = 16;
 constexpr size_t WG_Y = 16;
+
+/* c-values: work-items per work-group along the columns of one row chunk,
+ * and the shortest row chunk worth re-priming a window for. */
+constexpr size_t CVALS_WG = 64;
+constexpr unsigned CVALS_MIN_CHUNK_ROWS = 32U;
+/* Upper bound on the per-chunk column histograms (chunks x width x levels
+ * uint16 cells) — more chunks stop paying off well before this. */
+constexpr size_t CVALS_HIST_BUDGET = (size_t)64U << 20U;
+/* Level map value of a pixel that neither contributes to nor queries a
+ * histogram: masked out, or outside the [v_band_base, v_band_base +
+ * v_band_size) band calculate_c_values() keeps. */
+constexpr uint16_t CAMBI_Q_INVALID = 0xFFFFU;
+
+/* Top-K radix select: 11 + 11 + 10 bits over the IEEE pattern. */
+constexpr unsigned RADIX_BINS = 2048U;
+constexpr int RADIX_PASSES = 3;
+constexpr uint32_t RADIX_KNOWN_MASK[RADIX_PASSES] = {0U, 0xFFE00000U, 0xFFFFFC00U};
+constexpr unsigned RADIX_SHIFT[RADIX_PASSES] = {21U, 10U, 0U};
+constexpr uint32_t RADIX_BIN_MASK[RADIX_PASSES] = {0x7FFU, 0x7FFU, 0x3FFU};
+constexpr size_t POOL_WG = 256;
+constexpr unsigned RADIX_BINS_PER_LANE = RADIX_BINS / (unsigned)POOL_WG;
+constexpr unsigned POOL_MAX_GROUPS = 512U;
+/* Elements per pooling work-group: keeps every per-group partial sum of
+ * fixed-point c-values (< 2^42 each) below 2^64. */
+constexpr unsigned POOL_ELEMS_PER_GROUP = 4096U;
+/* c-value -> fixed point: every non-zero c-value is a multiple of 2^-24. */
+constexpr float CAMBI_FIXED_SCALE = 16777216.0F;
+constexpr int CAMBI_FIXED_SHIFT = 24;
+
+/* Status bits read back with the per-scale sums. */
+constexpr uint32_t CAMBI_STATUS_INVALID_INPUT = 1U;
+
+} // namespace
+
+/* ------------------------------------------------------------------ */
+/* Device-shared structures                                            */
+/* ------------------------------------------------------------------ */
+namespace
+{
+
+/* Per-scale radix-select working state (device only). k_rem[p] is the rank
+ * pass p looks for inside the bucket chosen so far; the scan of pass p writes
+ * k_rem[p + 1], so no lane rewrites a word another lane still reads. */
+struct CambiSyclSelect {
+    uint32_t hist[RADIX_BINS];
+    uint32_t prefix;
+    uint32_t k_rem[RADIX_PASSES + 1];
+    /* Set when pass 0 lands in bin 0: that bin holds only exact zeros (every
+     * non-zero c-value is >= 0.5), so the threshold is 0 and the later passes
+     * and the partial-sum pass have nothing left to do. */
+    uint32_t resolved;
+};
+
+/* Everything collect() reads back, in one D2H copy. */
+struct CambiSyclResults {
+    uint64_t sum_lo[CAMBI_SYCL_NUM_SCALES];
+    uint64_t sum_hi[CAMBI_SYCL_NUM_SCALES];
+    uint32_t status;
+    uint32_t reserved;
+};
+
+/* Init-time geometry of one scale. */
+struct CambiScaleGeom {
+    unsigned width;
+    unsigned height;
+    unsigned chunks;
+    unsigned chunk_rows;
+    unsigned cvals_groups;
+    unsigned pool_groups;
+    unsigned topk;
+};
+
+using GlobalCounter =
+    sycl::atomic_ref<uint32_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                     sycl::access::address_space::global_space>;
+
+/* Fixed point in units of 2^-24; exact for 0 and for every value in
+ * [0.5, 2^18), the whole c-value range (ADR-1357). */
+inline uint64_t cambi_fixed(float value)
+{
+    return (uint64_t)(value * CAMBI_FIXED_SCALE);
+}
 
 } // namespace
 
@@ -129,25 +190,28 @@ namespace
 struct CambiStateSycl {
     VmafSyclState *sycl_state;
 
-    /* USM device buffers (flat uint16 arrays). */
+    /* Image-pipeline device buffers (proc_width x proc_height, uint16). */
     uint16_t *d_image;
     uint16_t *d_mask;
     uint16_t *d_tmp;
+    uint16_t *d_q;
+    uint32_t *d_runs;
+    uint32_t *d_change;
+    float *d_cvals;
+    uint16_t *d_hist;
 
-    /* USM host staging buffers for D2H. */
-    uint16_t *h_image;
-    uint16_t *h_mask;
+    /* Init-time constant tables. */
+    float *d_lut;
+    uint16_t *d_tvi;
+    int *d_weights;
+    uint32_t *d_ori_x;
+    uint32_t *d_ori_y;
 
-    /* Host VmafPicture pair for the CPU residual. */
-    VmafPicture pics[2]; /* [0] = image, [1] = mask */
-
-    /* Host scratch buffers for the CPU residual. */
-    VmafCambiHostBuffers buffers;
-
-    /* Callbacks (scalar; mirrors CUDA twin). */
-    VmafCambiRangeUpdater inc_range_callback;
-    VmafCambiRangeUpdater dec_range_callback;
-    VmafCambiDerivativeCalculator derivative_callback;
+    /* Pooling state and the readback block. */
+    CambiSyclSelect *d_select;
+    uint64_t *d_partials;
+    CambiSyclResults *d_results;
+    CambiSyclResults *h_results;
 
     /* Configuration options. */
     int enc_width;
@@ -164,143 +228,181 @@ struct CambiStateSycl {
     char *cambi_eotf;
     int cambi_high_res_speedup;
 
-    /* Resolved per-frame geometry. */
+    /* Resolved geometry. */
     unsigned src_width;
     unsigned src_height;
     unsigned src_bpc;
     unsigned proc_width;
     unsigned proc_height;
-
+    unsigned num_diffs;
+    unsigned levels;
+    unsigned mask_index;
     uint16_t adjusted_window;
     uint16_t vlt_luma;
+    uint16_t v_band_base;
+    uint16_t v_band_size;
+    CambiScaleGeom geom[CAMBI_SYCL_NUM_SCALES];
 
-    /* Pre-computed per-scale score storage. */
-    double score; /* final weighted score stored by submit, emitted by collect */
-
-    bool has_pending;
-    unsigned pending_index;
-
+    bool registered;
     VmafDictionary *feature_name_dict;
 };
 
 } // namespace
 
 /* ------------------------------------------------------------------ */
-/* Helpers (mirrors integer_cambi_cuda.c's static helpers). */
+/* Geometry helpers (mirror cambi.c's static helpers).                 */
 /* ------------------------------------------------------------------ */
 namespace
 {
 
-static uint16_t cambi_sycl_adjust_window(int window_size, unsigned w, unsigned h,
-                                         bool cambi_high_res_speedup)
+uint16_t cambi_sycl_adjust_window(int window_size, unsigned w, unsigned h,
+                                  bool cambi_high_res_speedup)
 {
     unsigned adjusted = (unsigned)(window_size) * (w + h) / (unsigned)CAMBI_WINDOW_DIVISOR;
     adjusted >>= 4;
     if (cambi_high_res_speedup) {
-        adjusted = (adjusted + 1u) >> 1;
+        adjusted = (adjusted + 1U) >> 1;
     }
-    if (adjusted < 1u)
-        adjusted = 1u;
-    if ((adjusted & 1u) == 0u)
+    if (adjusted < 1U)
+        adjusted = 1U;
+    if ((adjusted & 1U) == 0U)
         adjusted++;
     return (uint16_t)adjusted;
 }
 
-} // namespace
-
-namespace
+uint16_t cambi_sycl_ceil_log2(uint32_t num)
 {
-
-static uint16_t cambi_sycl_ceil_log2(uint32_t num)
-{
-    if (num == 0u)
-        return 0u;
-    uint32_t tmp = num - 1u;
+    if (num == 0U)
+        return 0U;
+    uint32_t tmp = num - 1U;
     uint16_t shift = 0;
-    while (tmp > 0u) {
+    for (int bit = 0; bit < 32 && tmp > 0U; bit++) {
         tmp >>= 1;
         shift++;
     }
     return shift;
 }
 
-} // namespace
-
-namespace
-{
-
-static uint16_t cambi_sycl_get_mask_index(unsigned w, unsigned h, unsigned filter_size)
+uint16_t cambi_sycl_get_mask_index(unsigned w, unsigned h, unsigned filter_size)
 {
     uint32_t const shifted_wh = (w >> 6) * (h >> 6);
-    return (uint16_t)((filter_size * filter_size + 3u * (cambi_sycl_ceil_log2(shifted_wh) - 11u) -
-                       1u) >>
-                      1u);
+    return (uint16_t)((filter_size * filter_size + 3U * (cambi_sycl_ceil_log2(shifted_wh) - 11U) -
+                       1U) >>
+                      1U);
+}
+
+/* Element offset of (row, column 0) in a plane of `pitch` elements, kept in
+ * 32 bits on purpose: every plane here holds fewer than 2^32 elements (enc
+ * dimensions are capped at 7680 x 7680), and 32-bit index arithmetic is
+ * native on every Intel GPU while 64-bit multiplies are not. */
+inline unsigned plane_offset(unsigned row, unsigned pitch)
+{
+    return row * pitch;
+}
+
+sycl::nd_range<2> image_range(unsigned width, unsigned height)
+{
+    const size_t global_x = ((size_t)width + WG_X - 1U) / WG_X * WG_X;
+    const size_t global_y = ((size_t)height + WG_Y - 1U) / WG_Y * WG_Y;
+    return sycl::nd_range<2>{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
 }
 
 } // namespace
 
 /* ------------------------------------------------------------------ */
-/* SYCL kernel 1: Spatial mask                                         */
-/* Port of cambi_spatial_mask_kernel from cambi_score.cu.              */
+/* Kernel: preprocessing (cambi.c::cambi_preprocessing).               */
 /* ------------------------------------------------------------------ */
 namespace
 {
 
-static inline bool is_zero_derivative(const uint16_t *image, int x, int y, unsigned width,
-                                      unsigned height, unsigned stride)
-{
-    const uint16_t pixel = image[(size_t)(unsigned)y * stride + (unsigned)x];
-    const int right_x = x == (int)width - 1 ? x : x + 1;
-    const int below_y = y == (int)height - 1 ? y : y + 1;
-    const uint16_t right = image[(size_t)(unsigned)y * stride + (unsigned)right_x];
-    const uint16_t below = image[(size_t)(unsigned)below_y * stride + (unsigned)x];
-    return (x == (int)width - 1 || pixel == right) && (y == (int)height - 1 || pixel == below);
-}
+struct PreprocArgs {
+    const void *src;
+    uint16_t *dst;
+    const uint32_t *ori_x;
+    const uint32_t *ori_y;
+    unsigned in_w;
+    unsigned out_w;
+    unsigned out_h;
+    unsigned bpc;
+    bool same_size;
+    bool anti_dither;
+};
 
-} // namespace
-
-namespace
+/* One output sample of decimate_generic_*_and_convert_to_10b. */
+inline unsigned preproc_sample(const PreprocArgs &a, unsigned i, unsigned j)
 {
-
-static inline unsigned spatial_box_sum(const uint16_t *image, int x, int y, unsigned width,
-                                       unsigned height, unsigned stride)
-{
-    unsigned sum = 0u;
-    for (int delta_y = -3; delta_y <= 3; ++delta_y) {
-        const int row = y + delta_y;
-        if (row < 0 || std::cmp_greater_equal(row, height)) {
-            continue;
-        }
-        for (int delta_x = -3; delta_x <= 3; ++delta_x) {
-            const int column = x + delta_x;
-            if (column >= 0 && std::cmp_less(column, width)) {
-                sum += (unsigned)is_zero_derivative(image, column, row, width, height, stride);
-            }
-        }
+    const unsigned row = a.same_size ? i : a.ori_y[i];
+    const unsigned col = a.same_size ? j : a.ori_x[j];
+    const unsigned off = row * a.in_w + col;
+    if (a.bpc <= 8U) {
+        return (unsigned)static_cast<const uint8_t *>(a.src)[off] << (10U - a.bpc);
     }
-    return sum;
+    const unsigned v = static_cast<const uint16_t *>(a.src)[off];
+    if (a.bpc == 9U) {
+        return v << 1U;
+    }
+    const unsigned shift = a.bpc - 10U;
+    const unsigned rounding = shift == 0U ? 0U : 1U << (shift - 1U);
+    return (v + rounding) >> shift;
 }
 
-} // namespace
-
-namespace
+/* anti_dithering_filter(): the in-place row-major pass only ever reads samples
+ * it has not yet overwritten, so it equals this out-of-place 2x2 average. */
+inline uint16_t preproc_pixel(const PreprocArgs &a, unsigned i, unsigned j)
 {
+    const unsigned here = preproc_sample(a, i, j);
+    if (!a.anti_dither) {
+        return (uint16_t)here;
+    }
+    const bool last_row = i + 1U == a.out_h;
+    const bool last_col = j + 1U == a.out_w;
+    if (last_row && last_col) {
+        return (uint16_t)here;
+    }
+    if (last_row) {
+        return (uint16_t)((here + preproc_sample(a, i, j + 1U)) >> 1);
+    }
+    if (last_col) {
+        return (uint16_t)((here + preproc_sample(a, i + 1U, j)) >> 1);
+    }
+    const unsigned sum = here + preproc_sample(a, i, j + 1U) + preproc_sample(a, i + 1U, j) +
+                         preproc_sample(a, i + 1U, j + 1U);
+    return (uint16_t)(sum >> 2);
+}
 
-static sycl::event launch_spatial_mask(sycl::queue &queue, const uint16_t *image, uint16_t *mask,
-                                       unsigned width, unsigned height, unsigned stride,
-                                       unsigned mask_index)
+void launch_preprocess(sycl::queue &queue, const PreprocArgs &args)
 {
-    const size_t global_x = ((size_t)width + WG_X - 1u) / WG_X * WG_X;
-    const size_t global_y = ((size_t)height + WG_Y - 1u) / WG_Y * WG_Y;
-    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
-    return queue.submit([=](sycl::handler &handler) {
-        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
-            const int x = (int)item.get_global_id(1);
-            const int y = (int)item.get_global_id(0);
-            if (std::cmp_less(x, width) && std::cmp_less(y, height)) {
-                const unsigned sum = spatial_box_sum(image, x, y, width, height, stride);
-                mask[(size_t)(unsigned)y * stride + (unsigned)x] =
-                    (uint16_t)(sum > mask_index ? 1u : 0u);
+    const PreprocArgs a = args;
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(image_range(a.out_w, a.out_h), [=](sycl::nd_item<2> item) {
+            const auto x = (unsigned)item.get_global_id(1);
+            const auto y = (unsigned)item.get_global_id(0);
+            if (x < a.out_w && y < a.out_h) {
+                a.dst[y * a.out_w + x] = preproc_pixel(a, y, x);
+            }
+        });
+    });
+}
+
+/* cambi.c::validate_image: flag any sample above (1 << bpc) - 1. */
+void launch_validate(sycl::queue &queue, const void *src, unsigned width, unsigned height,
+                     unsigned bpc, CambiSyclResults *results)
+{
+    const unsigned max_val = (1U << bpc) - 1U;
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(image_range(width, height), [=](sycl::nd_item<2> item) {
+            const auto x = (unsigned)item.get_global_id(1);
+            const auto y = (unsigned)item.get_global_id(0);
+            if (x >= width || y >= height) {
+                return;
+            }
+            const unsigned off = y * width + x;
+            const unsigned v = bpc <= 8U ? (unsigned)static_cast<const uint8_t *>(src)[off] :
+                                           (unsigned)static_cast<const uint16_t *>(src)[off];
+            if (v > max_val) {
+                sycl::atomic_ref<uint32_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                                 sycl::access::address_space::global_space>(results->status)
+                    .fetch_or(CAMBI_STATUS_INVALID_INPUT);
             }
         });
     });
@@ -309,55 +411,148 @@ static sycl::event launch_spatial_mask(sycl::queue &queue, const uint16_t *image
 } // namespace
 
 /* ------------------------------------------------------------------ */
-/* SYCL kernel 2: 2× decimate                                          */
-/* Port of cambi_decimate_kernel from cambi_score.cu.                  */
+/* Kernel: spatial mask (cambi.c::get_spatial_mask).                   */
 /* ------------------------------------------------------------------ */
-/* Returns the submit event; dep is a prerequisite event (use a default-constructed
- * sycl::event{} when there is no explicit dependency). */
 namespace
 {
 
-static sycl::event launch_decimate(sycl::queue &q, const uint16_t *src, uint16_t *dst,
-                                   unsigned out_w, unsigned out_h, unsigned src_stride_words,
-                                   unsigned dst_stride_words, const sycl::event &dep)
+/* One work-group computes a WG_Y x WG_X tile of the mask from a local copy
+ * of the image: a (tile + 7) square of samples, the (tile + 6) square of
+ * zero-derivative flags they give, and the horizontal 7-tap sums of those
+ * flags. Flags outside the image are 0, exactly as the zero-padded
+ * summed-area table in get_spatial_mask_for_index() counts them, so the
+ * 7x7 integer sum is unchanged. */
+constexpr unsigned MASK_HALO = 3U;
+constexpr unsigned MASK_FLAGS_W = (unsigned)WG_X + 2U * MASK_HALO;
+constexpr unsigned MASK_FLAGS_H = (unsigned)WG_Y + 2U * MASK_HALO;
+constexpr unsigned MASK_PIX_W = MASK_FLAGS_W + 1U;
+constexpr unsigned MASK_PIX_H = MASK_FLAGS_H + 1U;
+constexpr uint32_t MASK_OUTSIDE = 0xFFFFFFFFU;
+
+struct MaskArgs {
+    const uint16_t *image;
+    uint16_t *mask;
+    unsigned width;
+    unsigned height;
+    unsigned mask_index;
+};
+
+struct MaskTile {
+    sycl::local_accessor<uint32_t, 1> pixels;
+    sycl::local_accessor<uint8_t, 1> flags;
+    sycl::local_accessor<uint8_t, 1> row_sums;
+};
+
+/* Image sample at tile position (r, c) of the tile whose flag origin is
+ * (y0, x0) in image coordinates (may be negative), or MASK_OUTSIDE. */
+inline uint32_t mask_sample(const MaskArgs &a, int y0, int x0, unsigned r, unsigned c)
 {
-    const size_t global_x = ((size_t)out_w + WG_X - 1u) / WG_X * WG_X;
-    const size_t global_y = ((size_t)out_h + WG_Y - 1u) / WG_Y * WG_Y;
-    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
+    const int y = y0 + (int)r;
+    const int x = x0 + (int)c;
+    if (y < 0 || x < 0 || std::cmp_greater_equal(y, a.height) ||
+        std::cmp_greater_equal(x, a.width)) {
+        return MASK_OUTSIDE;
+    }
+    return a.image[(unsigned)y * a.width + (unsigned)x];
+}
 
-    const unsigned e_out_w = out_w;
-    const unsigned e_out_h = out_h;
-    const unsigned e_src_stride = src_stride_words;
-    const unsigned e_dst_stride = dst_stride_words;
-    const uint16_t *e_src = src;
-    uint16_t *e_dst = dst;
+/* Zero-derivative flag at flag position (r, c): equal to the right and the
+ * lower neighbour, a missing neighbour (image edge) counting as equal. */
+inline uint8_t mask_flag(const MaskTile &t, unsigned r, unsigned c)
+{
+    const uint32_t pixel = t.pixels[r * MASK_PIX_W + c];
+    if (pixel == MASK_OUTSIDE) {
+        return 0U;
+    }
+    const uint32_t right = t.pixels[r * MASK_PIX_W + c + 1U];
+    const uint32_t below = t.pixels[(r + 1U) * MASK_PIX_W + c];
+    return (uint8_t)((right == MASK_OUTSIDE || right == pixel) &&
+                     (below == MASK_OUTSIDE || below == pixel));
+}
 
-    return q.submit([=](sycl::handler &h) {
-        h.depends_on(dep);
-        h.parallel_for(ndr, [=](sycl::nd_item<2> it) {
-            const unsigned x = (unsigned)it.get_global_id(1);
-            const unsigned y = (unsigned)it.get_global_id(0);
-            if (x >= e_out_w || y >= e_out_h)
-                return;
-            /* Strict stride-2 subsample — bit-exact with cambi.c::decimate. */
-            e_dst[(size_t)y * e_dst_stride + x] =
-                e_src[(size_t)y * 2u * e_src_stride + (size_t)x * 2u];
-        });
+inline void mask_tile(const MaskArgs &a, const MaskTile &t, sycl::nd_item<2> item)
+{
+    const auto lid = (unsigned)item.get_local_linear_id();
+    const unsigned lanes = (unsigned)(WG_X * WG_Y);
+    const int y0 = (int)(item.get_group(0) * WG_Y) - (int)MASK_HALO;
+    const int x0 = (int)(item.get_group(1) * WG_X) - (int)MASK_HALO;
+    for (unsigned i = lid; i < MASK_PIX_W * MASK_PIX_H; i += lanes) {
+        t.pixels[i] = mask_sample(a, y0, x0, i / MASK_PIX_W, i % MASK_PIX_W);
+    }
+    sycl::group_barrier(item.get_group());
+    for (unsigned i = lid; i < MASK_FLAGS_W * MASK_FLAGS_H; i += lanes) {
+        t.flags[i] = mask_flag(t, i / MASK_FLAGS_W, i % MASK_FLAGS_W);
+    }
+    sycl::group_barrier(item.get_group());
+    for (unsigned i = lid; i < (unsigned)WG_X * MASK_FLAGS_H; i += lanes) {
+        const unsigned r = i / (unsigned)WG_X;
+        const unsigned c = i % (unsigned)WG_X;
+        unsigned sum = 0U;
+        for (unsigned d = 0U; d <= 2U * MASK_HALO; ++d) {
+            sum += t.flags[r * MASK_FLAGS_W + c + d];
+        }
+        t.row_sums[i] = (uint8_t)sum;
+    }
+    sycl::group_barrier(item.get_group());
+    const auto x = (unsigned)item.get_global_id(1);
+    const auto y = (unsigned)item.get_global_id(0);
+    if (x < a.width && y < a.height) {
+        const auto ly = (unsigned)item.get_local_id(0);
+        const auto lx = (unsigned)item.get_local_id(1);
+        unsigned sum = 0U;
+        for (unsigned d = 0U; d <= 2U * MASK_HALO; ++d) {
+            sum += t.row_sums[(ly + d) * (unsigned)WG_X + lx];
+        }
+        a.mask[y * a.width + x] = (uint16_t)(sum > a.mask_index ? 1U : 0U);
+    }
+}
+
+void launch_spatial_mask(sycl::queue &queue, const MaskArgs &args)
+{
+    const MaskArgs a = args;
+    queue.submit([=](sycl::handler &handler) {
+        const MaskTile tile{
+            .pixels =
+                sycl::local_accessor<uint32_t, 1>{sycl::range<1>{(size_t)MASK_PIX_W * MASK_PIX_H},
+                                                  handler},
+            .flags =
+                sycl::local_accessor<uint8_t, 1>{
+                    sycl::range<1>{(size_t)MASK_FLAGS_W * MASK_FLAGS_H}, handler},
+            .row_sums =
+                sycl::local_accessor<uint8_t, 1>{sycl::range<1>{WG_X * MASK_FLAGS_H}, handler},
+        };
+        handler.parallel_for(image_range(a.width, a.height),
+                             [=](sycl::nd_item<2> item) { mask_tile(a, tile, item); });
     });
 }
 
 } // namespace
 
 /* ------------------------------------------------------------------ */
-/* SYCL kernel 3: Separable 3-tap mode filter                          */
-/* Port of cambi_filter_mode_kernel from cambi_score.cu.               */
-/* axis=0 → horizontal, axis=1 → vertical.                             */
+/* Kernels: 2x decimate and the 3-tap mode filter.                     */
 /* ------------------------------------------------------------------ */
-/* Returns the submit event; dep is a prerequisite event. */
 namespace
 {
 
-static inline uint16_t mode3(uint16_t first, uint16_t second, uint16_t third)
+/* Strict stride-2 subsample — cambi.c::decimate (in place there; the
+ * in-place walk only reads samples it has not overwritten). */
+void launch_decimate(sycl::queue &queue, const uint16_t *src, uint16_t *dst, unsigned out_w,
+                     unsigned out_h, unsigned src_stride)
+{
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(image_range(out_w, out_h), [=](sycl::nd_item<2> item) {
+            const auto x = (unsigned)item.get_global_id(1);
+            const auto y = (unsigned)item.get_global_id(0);
+            if (x < out_w && y < out_h) {
+                dst[y * out_w + x] = src[y * 2U * src_stride + x * 2U];
+            }
+        });
+    });
+}
+
+/* mode3 is symmetric in its arguments, so the cyclic line order of
+ * cambi.c::filter_mode's row buffer does not matter. */
+inline uint16_t mode3(uint16_t first, uint16_t second, uint16_t third)
 {
     if (first == second || first == third) {
         return first;
@@ -368,53 +563,62 @@ static inline uint16_t mode3(uint16_t first, uint16_t second, uint16_t third)
     return first < second ? (first < third ? first : third) : (second < third ? second : third);
 }
 
-} // namespace
-
-namespace
+/* Horizontal pass: edge columns keep their value (mode3(a, a, b) == a). */
+void launch_filter_horizontal(sycl::queue &queue, const uint16_t *input, uint16_t *output,
+                              unsigned width, unsigned height)
 {
-
-static inline uint16_t filter_mode_pixel(const uint16_t *input, int x, int y, unsigned width,
-                                         unsigned height, unsigned stride, int axis)
-{
-    if (axis == 0) {
-        const int left = x > 0 ? x - 1 : 0;
-        const int right = x < (int)width - 1 ? x + 1 : (int)width - 1;
-        return mode3(input[(size_t)(unsigned)y * stride + (unsigned)left],
-                     input[(size_t)(unsigned)y * stride + (unsigned)x],
-                     input[(size_t)(unsigned)y * stride + (unsigned)right]);
-    }
-    const int above = y > 0 ? y - 1 : 0;
-    const int below = y < (int)height - 1 ? y + 1 : (int)height - 1;
-    return mode3(input[(size_t)(unsigned)above * stride + (unsigned)x],
-                 input[(size_t)(unsigned)y * stride + (unsigned)x],
-                 input[(size_t)(unsigned)below * stride + (unsigned)x]);
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(image_range(width, height), [=](sycl::nd_item<2> item) {
+            const auto x = (unsigned)item.get_global_id(1);
+            const auto y = (unsigned)item.get_global_id(0);
+            if (x >= width || y >= height) {
+                return;
+            }
+            const uint16_t *row = input + plane_offset(y, width);
+            const unsigned left = x > 0U ? x - 1U : 0U;
+            const unsigned right = x + 1U < width ? x + 1U : width - 1U;
+            output[y * width + x] = mode3(row[left], row[x], row[right]);
+        });
+    });
 }
 
-} // namespace
+struct VerticalArgs {
+    const uint16_t *filtered_h;
+    uint16_t *image;
+    const uint16_t *mask;
+    uint16_t *q;
+    unsigned width;
+    unsigned height;
+    uint16_t v_band_base;
+    uint16_t v_band_size;
+};
 
-namespace
+/* Vertical pass + level map. cambi.c::filter_mode writes rows 1 .. height-2
+ * only, so the first and last rows keep their pre-filter value. Q is the
+ * histogram row calculate_c_values() files the pixel under, or
+ * CAMBI_Q_INVALID when the pixel is masked out or outside the band. */
+inline void vertical_pixel(const VerticalArgs &a, unsigned x, unsigned y)
 {
+    const unsigned idx = y * a.width + x;
+    uint16_t value = a.image[idx];
+    if (y > 0U && y + 1U < a.height) {
+        value = mode3(a.filtered_h[idx - a.width], a.filtered_h[idx], a.filtered_h[idx + a.width]);
+        a.image[idx] = value;
+    }
+    const auto compact = (uint16_t)(value - a.v_band_base);
+    a.q[idx] = (a.mask[idx] != 0U && compact < a.v_band_size) ? compact : CAMBI_Q_INVALID;
+}
 
-static sycl::event launch_filter_mode(sycl::queue &queue, const uint16_t *input, uint16_t *output,
-                                      unsigned width, unsigned height, unsigned stride, int axis,
-                                      const sycl::event &dependency)
+void launch_filter_vertical_and_levels(sycl::queue &queue, const VerticalArgs &args)
 {
-    const size_t global_x = ((size_t)width + WG_X - 1u) / WG_X * WG_X;
-    const size_t global_y = ((size_t)height + WG_Y - 1u) / WG_Y * WG_Y;
-    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
-    return queue.submit([=](sycl::handler &handler) {
-        handler.depends_on(dependency);
-        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
-            const int x = (int)item.get_global_id(1);
-            const int y = (int)item.get_global_id(0);
-            if (std::cmp_greater_equal(x, width) || std::cmp_greater_equal(y, height)) {
-                return;
+    const VerticalArgs a = args;
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(image_range(a.width, a.height), [=](sycl::nd_item<2> item) {
+            const auto x = (unsigned)item.get_global_id(1);
+            const auto y = (unsigned)item.get_global_id(0);
+            if (x < a.width && y < a.height) {
+                vertical_pixel(a, x, y);
             }
-            if (axis == 1 && (y == 0 || y >= (int)height - 1)) {
-                return;
-            }
-            output[(size_t)(unsigned)y * stride + (unsigned)x] =
-                filter_mode_pixel(input, x, y, width, height, stride, axis);
         });
     });
 }
@@ -422,7 +626,571 @@ static sycl::event launch_filter_mode(sycl::queue &queue, const uint16_t *input,
 } // namespace
 
 /* ------------------------------------------------------------------ */
-/* Options (mirrors integer_cambi_cuda.c). */
+/* Kernels: c-values (cambi.c::calculate_c_values).                    */
+/* ------------------------------------------------------------------ */
+namespace
+{
+
+/* Per-row bit masks over the level map, 32 columns per word:
+ *   runs[y]   bit x (x > 0) set where Q[y][x] != Q[y][x - 1] — run starts;
+ *   change[y] bit x set where the row leaving the window of row y
+ *             (y - pad - 1) and the row entering it (y + pad) differ at x,
+ *             an absent row reading as CAMBI_Q_INVALID.
+ * They let a work-item skip unchanged window rows and apply a row segment
+ * run by run instead of pixel by pixel. */
+struct RowMaskArgs {
+    const uint16_t *q;
+    uint32_t *runs;
+    uint32_t *change;
+    unsigned width;
+    unsigned height;
+    unsigned words;
+    unsigned pad;
+};
+
+/* Work-group of ROWMASK_ROWS rows x 32 columns: every item tests one column
+ * (coalesced level-map loads) and parks its two bits in local memory; the
+ * first item of each row then ORs the row's 32 bits into the mask words. */
+constexpr size_t ROWMASK_ROWS = 8;
+
+struct RowMaskBits {
+    sycl::local_accessor<uint32_t, 1> runs;
+    sycl::local_accessor<uint32_t, 1> change;
+};
+
+inline void row_mask_item(const RowMaskArgs &a, const RowMaskBits &bits, sycl::nd_item<2> item)
+{
+    const auto y = (unsigned)item.get_global_id(0);
+    const auto x = (unsigned)item.get_global_id(1);
+    const auto slot = (unsigned)item.get_local_linear_id();
+    const unsigned bit = 1U << (x & 31U);
+    uint32_t runs = 0U;
+    uint32_t change = 0U;
+    if (x < a.width && y < a.height) {
+        const uint16_t *row = a.q + plane_offset(y, a.width);
+        runs = (x > 0U && row[x] != row[x - 1U]) ? bit : 0U;
+        const uint16_t leaving = y > a.pad ? a.q[(y - a.pad - 1U) * a.width + x] : CAMBI_Q_INVALID;
+        const uint16_t entering =
+            y + a.pad < a.height ? a.q[(y + a.pad) * a.width + x] : CAMBI_Q_INVALID;
+        change = leaving != entering ? bit : 0U;
+    }
+    bits.runs[slot] = runs;
+    bits.change[slot] = change;
+    sycl::group_barrier(item.get_group());
+    if (item.get_local_id(1) != 0U || y >= a.height) {
+        return;
+    }
+    uint32_t runs_word = 0U;
+    uint32_t change_word = 0U;
+    for (unsigned b = 0U; b < 32U; ++b) {
+        runs_word |= bits.runs[slot + b];
+        change_word |= bits.change[slot + b];
+    }
+    const auto word = (unsigned)item.get_group(1);
+    a.runs[y * a.words + word] = runs_word;
+    a.change[y * a.words + word] = change_word;
+}
+
+void launch_row_masks(sycl::queue &queue, const RowMaskArgs &args)
+{
+    const RowMaskArgs a = args;
+    const size_t rows = ((size_t)a.height + ROWMASK_ROWS - 1U) / ROWMASK_ROWS * ROWMASK_ROWS;
+    const sycl::nd_range<2> range{sycl::range<2>{rows, (size_t)a.words * 32U},
+                                  sycl::range<2>{ROWMASK_ROWS, 32U}};
+    queue.submit([=](sycl::handler &handler) {
+        const RowMaskBits bits{
+            .runs = sycl::local_accessor<uint32_t, 1>{sycl::range<1>{ROWMASK_ROWS * 32U}, handler},
+            .change =
+                sycl::local_accessor<uint32_t, 1>{sycl::range<1>{ROWMASK_ROWS * 32U}, handler},
+        };
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) { row_mask_item(a, bits, item); });
+    });
+}
+
+struct CValuesArgs {
+    const uint16_t *q;
+    const uint32_t *runs;
+    const uint32_t *change;
+    uint16_t *hist;
+    float *cvals;
+    CambiSyclSelect *select;
+    uint64_t *partials;
+    const float *lut;
+    const uint16_t *tvi;
+    const int *weights;
+    unsigned width;
+    unsigned height;
+    unsigned words;
+    unsigned pad;
+    unsigned chunk_rows;
+    unsigned levels;
+    unsigned num_diffs;
+    unsigned vlt_luma;
+    unsigned v_band_base;
+};
+
+/* Word `w` of a mask row restricted to columns [lo, hi]. */
+inline uint32_t mask_word_in_range(const uint32_t *mask_row, unsigned w, unsigned lo, unsigned hi)
+{
+    uint32_t bits = mask_row[w];
+    if (w == lo >> 5U) {
+        bits &= ~0U << (lo & 31U);
+    }
+    if (w == hi >> 5U && (hi & 31U) != 31U) {
+        bits &= (1U << ((hi & 31U) + 1U)) - 1U;
+    }
+    return bits;
+}
+
+inline bool mask_any(const uint32_t *mask_row, unsigned lo, unsigned hi)
+{
+    uint32_t any = 0U;
+    for (unsigned w = lo >> 5U; w <= hi >> 5U; ++w) {
+        any |= mask_word_in_range(mask_row, w, lo, hi);
+    }
+    return any != 0U;
+}
+
+/* Apply `count` (+/-) to one histogram cell with uint16 wrap-around, the
+ * arithmetic increment_range() / decrement_range() use. Updates commute, so
+ * the cell ends at the true window count whatever the order. */
+inline void hist_apply(uint16_t *col_hist, unsigned width, uint16_t level, int count)
+{
+    if (level == CAMBI_Q_INVALID) {
+        return;
+    }
+    uint16_t &cell = col_hist[plane_offset(level, width)];
+    cell = (uint16_t)((int)cell + count);
+}
+
+/* Add (sign +1) or remove (sign -1) row y's pixels in [lo, hi], one update
+ * per run of equal levels. */
+inline void hist_row_runs(const CValuesArgs &a, uint16_t *col_hist, unsigned y, unsigned lo,
+                          unsigned hi, int sign)
+{
+    const uint16_t *row = a.q + plane_offset(y, a.width);
+    const uint32_t *runs = a.runs + plane_offset(y, a.words);
+    unsigned start = lo;
+    if (lo < hi) {
+        for (unsigned w = (lo + 1U) >> 5U; w <= hi >> 5U; ++w) {
+            uint32_t bits = mask_word_in_range(runs, w, lo + 1U, hi);
+            for (int visited = 0; visited < 32 && bits != 0U; ++visited) {
+                const unsigned x = w * 32U + (unsigned)sycl::ctz(bits);
+                bits &= bits - 1U;
+                hist_apply(col_hist, a.width, row[start], sign * (int)(x - start));
+                start = x;
+            }
+        }
+    }
+    hist_apply(col_hist, a.width, row[start], sign * (int)(hi + 1U - start));
+}
+
+/* Move the window of column `col` from row y - 1 to row y: remove row
+ * y - pad - 1, add row y + pad; skipped when both agree over the window. */
+inline void hist_slide(const CValuesArgs &a, uint16_t *col_hist, unsigned y, unsigned lo,
+                       unsigned hi)
+{
+    if (!mask_any(a.change + plane_offset(y, a.words), lo, hi)) {
+        return;
+    }
+    if (y > a.pad) {
+        hist_row_runs(a, col_hist, y - a.pad - 1U, lo, hi, -1);
+    }
+    if (y + a.pad < a.height) {
+        hist_row_runs(a, col_hist, y + a.pad, lo, hi, 1);
+    }
+}
+
+/* cambi.c::c_value_pixel for the pixel whose level-map value is q0. */
+inline float cvals_pixel(const CValuesArgs &a, const uint16_t *col_hist, uint16_t q0)
+{
+    if (q0 == CAMBI_Q_INVALID) {
+        return 0.0F;
+    }
+    const unsigned value = (unsigned)q0 + a.v_band_base + a.num_diffs;
+    const int p0 = col_hist[plane_offset(q0, a.width)];
+    float c_value = 0.0F;
+    for (unsigned d = 0U; d < a.num_diffs; ++d) {
+        if (value > a.tvi[d] || value + d + 1U <= a.vlt_luma) {
+            continue;
+        }
+        const unsigned up = (unsigned)q0 + d + 1U;
+        const int p1 = up < a.levels ? col_hist[plane_offset(up, a.width)] : 0;
+        const int p2 = q0 >= d + 1U ? col_hist[plane_offset(q0 - d - 1U, a.width)] : 0;
+        const int pm = p1 > p2 ? p1 : p2;
+        const float val = (float)(a.weights[d] * p0 * pm) * a.lut[pm + p0];
+        if (val > c_value) {
+            c_value = val;
+        }
+    }
+    return c_value;
+}
+
+/* Zero the column, then load the window of the chunk's first row. */
+inline void cvals_prime(const CValuesArgs &a, uint16_t *col_hist, unsigned y0, unsigned lo,
+                        unsigned hi)
+{
+    for (unsigned level = 0U; level < a.levels; ++level) {
+        col_hist[plane_offset(level, a.width)] = 0U;
+    }
+    const unsigned first = y0 > a.pad ? y0 - a.pad : 0U;
+    const unsigned last = y0 + a.pad < a.height ? y0 + a.pad : a.height - 1U;
+    for (unsigned y = first; y <= last; ++y) {
+        hist_row_runs(a, col_hist, y, lo, hi, 1);
+    }
+}
+
+/* A work-item's running share of top-K pass 0: the radix count of its
+ * c-values (one atomic per run of equal bins) and their fixed-point sum. */
+struct CvalsTally {
+    uint64_t sum;
+    uint32_t bin;
+    uint32_t count;
+};
+
+inline void tally_flush(const CValuesArgs &a, CvalsTally &tally)
+{
+    if (tally.count != 0U) {
+        GlobalCounter(a.select->hist[tally.bin]).fetch_add(tally.count);
+        tally.count = 0U;
+    }
+}
+
+inline void tally_add(const CValuesArgs &a, CvalsTally &tally, float value)
+{
+    const uint32_t bin = (sycl::bit_cast<uint32_t>(value) >> RADIX_SHIFT[0]) & RADIX_BIN_MASK[0];
+    if (bin != tally.bin) {
+        tally_flush(a, tally);
+        tally.bin = bin;
+    }
+    ++tally.count;
+    tally.sum += cambi_fixed(value);
+}
+
+/* One work-item: histogram column `col` of row chunk `chunk`. The window of
+ * row y covers rows [y - pad, y + pad] and columns [col - pad, col + pad],
+ * clipped to the image, as calculate_c_values()'s first-pass / top-edge /
+ * middle-slide / bottom-edge walk leaves it. */
+inline void cvals_column(const CValuesArgs &a, unsigned chunk, unsigned col, CvalsTally &tally)
+{
+    const unsigned y0 = chunk * a.chunk_rows;
+    if (col >= a.width || y0 >= a.height) {
+        return;
+    }
+    const unsigned y1 = y0 + a.chunk_rows < a.height ? y0 + a.chunk_rows : a.height;
+    const unsigned lo = col > a.pad ? col - a.pad : 0U;
+    const unsigned hi = col + a.pad < a.width ? col + a.pad : a.width - 1U;
+    uint16_t *col_hist = a.hist + plane_offset(chunk * a.levels, a.width) + col;
+    cvals_prime(a, col_hist, y0, lo, hi);
+    for (unsigned y = y0; y < y1; ++y) {
+        if (y > y0) {
+            hist_slide(a, col_hist, y, lo, hi);
+        }
+        const unsigned idx = y * a.width + col;
+        const float value = cvals_pixel(a, col_hist, a.q[idx]);
+        a.cvals[idx] = value;
+        tally_add(a, tally, value);
+    }
+}
+
+/* c-values plus top-K pass 0: the radix histogram of every c-value and one
+ * fixed-point partial sum per work-group (the whole top-K sum whenever the
+ * threshold resolves to 0). */
+void launch_c_values(sycl::queue &queue, const CValuesArgs &args, unsigned chunks)
+{
+    const CValuesArgs a = args;
+    const size_t global_x = ((size_t)a.width + CVALS_WG - 1U) / CVALS_WG * CVALS_WG;
+    const sycl::nd_range<2> range{sycl::range<2>{(size_t)chunks, global_x},
+                                  sycl::range<2>{1U, CVALS_WG}};
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
+            CvalsTally tally{.sum = 0U, .bin = 0U, .count = 0U};
+            cvals_column(a, (unsigned)item.get_global_id(0), (unsigned)item.get_global_id(1),
+                         tally);
+            tally_flush(a, tally);
+            const uint64_t group_sum =
+                sycl::reduce_over_group(item.get_group(), tally.sum, sycl::plus<>());
+            if (item.get_local_linear_id() == 0U) {
+                a.partials[item.get_group_linear_id()] = group_sum;
+            }
+        });
+    });
+}
+
+} // namespace
+
+/* ------------------------------------------------------------------ */
+/* Kernels: exact top-K pooling (cambi.c::spatial_pooling).            */
+/* ------------------------------------------------------------------ */
+namespace
+{
+
+using LocalCounter =
+    sycl::atomic_ref<uint32_t, sycl::memory_order::relaxed, sycl::memory_scope::work_group,
+                     sycl::access::address_space::local_space>;
+
+struct PoolArgs {
+    const float *cvals;
+    CambiSyclSelect *select;
+    uint64_t *partials;
+    CambiSyclResults *results;
+    unsigned n;
+    unsigned groups;
+    unsigned cvals_groups;
+    int scale;
+};
+
+/* Contiguous element block of work-group `group`. */
+inline void pool_block(const PoolArgs &a, size_t group, unsigned &begin, unsigned &end)
+{
+    const unsigned per_group = (a.n + a.groups - 1U) / a.groups;
+    begin = (unsigned)group * per_group;
+    end = begin + per_group < a.n ? begin + per_group : a.n;
+}
+
+inline void radix_count_block(const PoolArgs &a, sycl::nd_item<1> item,
+                              const sycl::local_accessor<uint32_t, 1> &local_hist, int pass)
+{
+    unsigned begin = 0U;
+    unsigned end = 0U;
+    pool_block(a, item.get_group(0), begin, end);
+    const uint32_t prefix = a.select->prefix;
+    uint32_t cur_bin = 0U;
+    uint32_t cur_count = 0U;
+    for (unsigned i = begin + (unsigned)item.get_local_id(0); i < end; i += (unsigned)POOL_WG) {
+        const auto bits = sycl::bit_cast<uint32_t>(a.cvals[i]);
+        if ((bits & RADIX_KNOWN_MASK[pass]) != prefix) {
+            continue;
+        }
+        const uint32_t bin = (bits >> RADIX_SHIFT[pass]) & RADIX_BIN_MASK[pass];
+        if (bin != cur_bin && cur_count != 0U) {
+            LocalCounter(local_hist[cur_bin]).fetch_add(cur_count);
+            cur_count = 0U;
+        }
+        cur_bin = bin;
+        ++cur_count;
+    }
+    if (cur_count != 0U) {
+        LocalCounter(local_hist[cur_bin]).fetch_add(cur_count);
+    }
+}
+
+/* One work-group's share: count its block into a local histogram, then add
+ * the non-empty bins to the scale's global histogram. The resolved flag is
+ * uniform, so either every item of the group returns or none does. */
+inline void radix_histogram_group(const PoolArgs &a, sycl::nd_item<1> item,
+                                  const sycl::local_accessor<uint32_t, 1> &local_hist, int pass)
+{
+    if (a.select->resolved != 0U) {
+        return;
+    }
+    for (size_t b = item.get_local_id(0); b < RADIX_BINS; b += POOL_WG) {
+        local_hist[b] = 0U;
+    }
+    sycl::group_barrier(item.get_group());
+    radix_count_block(a, item, local_hist, pass);
+    sycl::group_barrier(item.get_group());
+    for (size_t b = item.get_local_id(0); b < RADIX_BINS; b += POOL_WG) {
+        if (local_hist[b] != 0U) {
+            GlobalCounter(a.select->hist[b]).fetch_add(local_hist[b]);
+        }
+    }
+}
+
+/* Radix histogram of passes 1 and 2 (pass 0 is counted by the c-values
+ * kernel), restricted to the bucket the previous passes chose. */
+void launch_radix_histogram(sycl::queue &queue, const PoolArgs &args, int pass)
+{
+    const PoolArgs a = args;
+    const sycl::nd_range<1> range{sycl::range<1>{(size_t)a.groups * POOL_WG},
+                                  sycl::range<1>{POOL_WG}};
+    queue.submit([=](sycl::handler &handler) {
+        const sycl::local_accessor<uint32_t, 1> local_hist{sycl::range<1>{RADIX_BINS}, handler};
+        handler.parallel_for(range, [=](sycl::nd_item<1> item) {
+            radix_histogram_group(a, item, local_hist, pass);
+        });
+    });
+}
+
+/* One lane of the bucket scan: lane l owns bins [2047 - 8l - 7, 2047 - 8l],
+ * visited high to low. The lane whose range holds the k_rem-th largest
+ * element records its bin and the rank left inside it; every lane then
+ * clears its bins for the next pass. */
+inline void radix_scan_lane(const PoolArgs &a, sycl::nd_item<1> item, int pass)
+{
+    if (a.select->resolved != 0U) {
+        return;
+    }
+    const auto lane = (unsigned)item.get_local_id(0);
+    const unsigned top = RADIX_BINS - 1U - lane * RADIX_BINS_PER_LANE;
+    const uint32_t k = a.select->k_rem[pass];
+    uint32_t mine = 0U;
+    for (unsigned j = 0U; j < RADIX_BINS_PER_LANE; ++j) {
+        mine += a.select->hist[top - j];
+    }
+    const uint32_t before = sycl::exclusive_scan_over_group(item.get_group(), mine, sycl::plus<>());
+    if (before < k && k <= before + mine) {
+        uint32_t cum = before;
+        for (unsigned j = 0U; j < RADIX_BINS_PER_LANE; ++j) {
+            const uint32_t count = a.select->hist[top - j];
+            if (cum + count >= k) {
+                a.select->prefix |= (top - j) << RADIX_SHIFT[pass];
+                a.select->k_rem[pass + 1] = k - cum;
+                a.select->resolved = (pass == 0 && top - j == 0U) ? 1U : 0U;
+                break;
+            }
+            cum += count;
+        }
+    }
+    for (unsigned j = 0U; j < RADIX_BINS_PER_LANE; ++j) {
+        a.select->hist[top - j] = 0U;
+    }
+}
+
+void launch_radix_scan(sycl::queue &queue, const PoolArgs &args, int pass)
+{
+    const PoolArgs a = args;
+    const sycl::nd_range<1> range{sycl::range<1>{POOL_WG}, sycl::range<1>{POOL_WG}};
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::nd_item<1> item) { radix_scan_lane(a, item, pass); });
+    });
+}
+
+/* Per work-group sum of every element strictly above the threshold. Not
+ * needed when the threshold resolved to 0: the c-values kernel's partials
+ * already hold the sum of every element. */
+void launch_topk_partials(sycl::queue &queue, const PoolArgs &args)
+{
+    const PoolArgs a = args;
+    const sycl::nd_range<1> range{sycl::range<1>{(size_t)a.groups * POOL_WG},
+                                  sycl::range<1>{POOL_WG}};
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::nd_item<1> item) {
+            if (a.select->resolved != 0U) {
+                return;
+            }
+            unsigned begin = 0U;
+            unsigned end = 0U;
+            pool_block(a, item.get_group(0), begin, end);
+            const uint32_t threshold = a.select->prefix;
+            uint64_t sum = 0U;
+            for (unsigned i = begin + (unsigned)item.get_local_id(0); i < end;
+                 i += (unsigned)POOL_WG) {
+                const float value = a.cvals[i];
+                sum += sycl::bit_cast<uint32_t>(value) > threshold ? cambi_fixed(value) : 0U;
+            }
+            const uint64_t group_sum =
+                sycl::reduce_over_group(item.get_group(), sum, sycl::plus<>());
+            if (item.get_local_id(0) == 0U) {
+                a.partials[item.get_group(0)] = group_sum;
+            }
+        });
+    });
+}
+
+/* 128-bit accumulator: value = hi * 2^64 + lo. */
+struct U128 {
+    uint64_t lo;
+    uint64_t hi;
+};
+
+/* hi32 * 2^32 + lo32 as a 128-bit value (both halves < 2^64). */
+inline U128 u128_from_halves(uint64_t hi32_sum, uint64_t lo32_sum)
+{
+    const uint64_t shifted = hi32_sum << 32U;
+    U128 r{.lo = shifted + lo32_sum, .hi = hi32_sum >> 32U};
+    r.hi += r.lo < shifted ? 1U : 0U;
+    return r;
+}
+
+inline U128 u128_add(U128 x, U128 y)
+{
+    U128 r{.lo = x.lo + y.lo, .hi = x.hi + y.hi};
+    r.hi += r.lo < x.lo ? 1U : 0U;
+    return r;
+}
+
+/* Sum the per-group partials (each < 2^64) and the k_rem copies of the
+ * threshold value into the 128-bit per-scale result. */
+inline void topk_final_lane(const PoolArgs &a, sycl::nd_item<1> item)
+{
+    const bool resolved = a.select->resolved != 0U;
+    const unsigned count = resolved ? a.cvals_groups : a.groups;
+    uint64_t lo32 = 0U;
+    uint64_t hi32 = 0U;
+    for (size_t g = item.get_local_id(0); g < count; g += POOL_WG) {
+        lo32 += a.partials[g] & 0xFFFFFFFFU;
+        hi32 += a.partials[g] >> 32U;
+    }
+    lo32 = sycl::reduce_over_group(item.get_group(), lo32, sycl::plus<>());
+    hi32 = sycl::reduce_over_group(item.get_group(), hi32, sycl::plus<>());
+    if (item.get_local_id(0) != 0U) {
+        return;
+    }
+    const uint64_t t_fixed = resolved ? 0U : cambi_fixed(sycl::bit_cast<float>(a.select->prefix));
+    const uint64_t k_rem = a.select->k_rem[RADIX_PASSES];
+    const U128 ties = u128_from_halves((t_fixed >> 32U) * k_rem, (t_fixed & 0xFFFFFFFFU) * k_rem);
+    const U128 total = u128_add(u128_from_halves(hi32, lo32), ties);
+    a.results->sum_lo[a.scale] = total.lo;
+    a.results->sum_hi[a.scale] = total.hi;
+}
+
+void launch_topk_final(sycl::queue &queue, const PoolArgs &args)
+{
+    const PoolArgs a = args;
+    const sycl::nd_range<1> range{sycl::range<1>{POOL_WG}, sycl::range<1>{POOL_WG}};
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::nd_item<1> item) { topk_final_lane(a, item); });
+    });
+}
+
+/* Everything after the c-values kernel (which counted pass 0): scan 0,
+ * passes 1-2 (skipped on device once resolved), partial sums, final sum. */
+void launch_topk_pooling(sycl::queue &queue, const PoolArgs &args)
+{
+    launch_radix_scan(queue, args, 0);
+    for (int pass = 1; pass < RADIX_PASSES; ++pass) {
+        launch_radix_histogram(queue, args, pass);
+        launch_radix_scan(queue, args, pass);
+    }
+    launch_topk_partials(queue, args);
+    launch_topk_final(queue, args);
+}
+
+/* Frame start: clear every scale's selection state and the readback block. */
+void launch_reset(sycl::queue &queue, CambiSyclSelect *select, CambiSyclResults *results,
+                  const CambiScaleGeom (&geom)[CAMBI_SYCL_NUM_SCALES])
+{
+    unsigned topk[CAMBI_SYCL_NUM_SCALES];
+    for (int scale = 0; scale < CAMBI_SYCL_NUM_SCALES; ++scale) {
+        topk[scale] = geom[scale].topk;
+    }
+    const sycl::range<2> range{(size_t)CAMBI_SYCL_NUM_SCALES, (size_t)RADIX_BINS};
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::id<2> id) {
+            const size_t scale = id[0];
+            const size_t bin = id[1];
+            select[scale].hist[bin] = 0U;
+            if (bin <= (size_t)RADIX_PASSES) {
+                select[scale].k_rem[bin] = bin == 0U ? topk[scale] : 0U;
+            }
+            if (bin == 0U) {
+                select[scale].prefix = 0U;
+                select[scale].resolved = 0U;
+                results->sum_lo[scale] = 0U;
+                results->sum_hi[scale] = 0U;
+            }
+            if (scale == 0U && bin == 0U) {
+                results->status = 0U;
+            }
+        });
+    });
+}
+
+} // namespace
+
+/* ------------------------------------------------------------------ */
+/* Options (mirrors integer_cambi_cuda.c).                             */
 /* ------------------------------------------------------------------ */
 namespace
 {
@@ -442,11 +1210,6 @@ constexpr VmafOption double_option(const char *name, const char *help, const cha
             .flags = VMAF_OPT_FLAG_FEATURE_PARAM};
 }
 
-} // namespace
-
-namespace
-{
-
 constexpr VmafOption int_option(const char *name, const char *help, const char *alias, int offset,
                                 int value, int minimum, int maximum) noexcept
 {
@@ -460,11 +1223,6 @@ constexpr VmafOption int_option(const char *name, const char *help, const char *
             .max = (double)maximum,
             .flags = VMAF_OPT_FLAG_FEATURE_PARAM};
 }
-
-} // namespace
-
-namespace
-{
 
 constexpr VmafOption string_option(const char *name, const char *help, const char *alias,
                                    int offset) noexcept
@@ -515,10 +1273,13 @@ static constexpr VmafOption options_cambi_sycl[] = {
     {.name = nullptr},
 };
 
+/* ------------------------------------------------------------------ */
+/* Init: configuration, geometry, allocation, constant tables.         */
+/* ------------------------------------------------------------------ */
 namespace
 {
 
-static bool speedup_is_valid(int requested, int pixels)
+bool speedup_is_valid(int requested, int pixels)
 {
     if (requested == 1080) {
         return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p;
@@ -532,12 +1293,7 @@ static bool speedup_is_valid(int requested, int pixels)
     return false;
 }
 
-} // namespace
-
-namespace
-{
-
-static int configure_cambi(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height)
+int configure_cambi(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height)
 {
     if (s->enc_bitdepth == 0) {
         s->enc_bitdepth = (int)bpc;
@@ -562,7 +1318,122 @@ static int configure_cambi(CambiStateSycl *s, unsigned bpc, unsigned width, unsi
     s->proc_height = (unsigned)s->enc_height;
     s->adjusted_window = cambi_sycl_adjust_window(s->window_size, s->proc_width, s->proc_height,
                                                   (bool)s->cambi_high_res_speedup);
+    s->mask_index =
+        cambi_sycl_get_mask_index(s->proc_width, s->proc_height, CAMBI_SYCL_MASK_FILTER_SIZE);
+    s->num_diffs = 1U << (unsigned)s->max_log_contrast;
     return 0;
+}
+
+/* Row chunks for the c-values pass. One work-item walks one column of one
+ * chunk, row after row, so a chunk is a latency chain: enough of them keep
+ * the device busy (compute_units * 512 work-items measured best on Arc B580
+ * and UHD 770), and at least CVALS_MIN_CHUNK_ROWS rows each keep the
+ * per-chunk window priming (2 * pad + 1 row segments) a minor cost. */
+unsigned cvals_chunks(unsigned width, unsigned height, unsigned levels, unsigned compute_units)
+{
+    const unsigned target_items = compute_units * 512U;
+    const unsigned chunks = (target_items + width - 1U) / width;
+    const size_t chunk_bytes = (size_t)width * levels * sizeof(uint16_t);
+    const auto by_memory = (unsigned)std::max((size_t)1U, CVALS_HIST_BUDGET / chunk_bytes);
+    const unsigned max_chunks = std::min(std::max(1U, height / CVALS_MIN_CHUNK_ROWS), by_memory);
+    return std::clamp(chunks, 1U, max_chunks);
+}
+
+/* Per-scale dimensions (cambi_score's scaled_width / scaled_height walk),
+ * c-values chunking and top-K counts (spatial_pooling's clip()). */
+void compute_scale_geometry(CambiStateSycl *s, double topk, unsigned compute_units)
+{
+    unsigned width = s->proc_width;
+    unsigned height = s->proc_height;
+    for (int scale = 0; scale < CAMBI_SYCL_NUM_SCALES; ++scale) {
+        if (scale > 0 || s->cambi_high_res_speedup) {
+            width = (width + 1U) >> 1;
+            height = (height + 1U) >> 1;
+        }
+        CambiScaleGeom &g = s->geom[scale];
+        g.width = width;
+        g.height = height;
+        g.chunks = cvals_chunks(width, height, s->levels, compute_units);
+        g.chunk_rows = (height + g.chunks - 1U) / g.chunks;
+        g.chunks = (height + g.chunk_rows - 1U) / g.chunk_rows;
+        g.cvals_groups = g.chunks * (unsigned)((width + CVALS_WG - 1U) / CVALS_WG);
+        const unsigned n = height * width;
+        const auto raw = static_cast<int>(topk * (int)n);
+        g.topk = (unsigned)std::clamp(raw, 1, (int)n);
+        g.pool_groups =
+            std::clamp((n + POOL_ELEMS_PER_GROUP - 1U) / POOL_ELEMS_PER_GROUP, 1U, POOL_MAX_GROUPS);
+    }
+}
+
+size_t hist_elements(const CambiStateSycl *s)
+{
+    size_t most = 0U;
+    for (const CambiScaleGeom &g : s->geom) {
+        most = std::max(most, (size_t)g.chunks * g.width);
+    }
+    return most * s->levels;
+}
+
+/* Partial-sum slots: one per c-values work-group or per pooling group. */
+size_t partial_elements(const CambiStateSycl *s)
+{
+    size_t most = POOL_MAX_GROUPS;
+    for (const CambiScaleGeom &g : s->geom) {
+        most = std::max(most, (size_t)g.cvals_groups);
+    }
+    return most;
+}
+
+template <typename T> T *device_alloc(const CambiStateSycl *s, size_t count)
+{
+    return static_cast<T *>(vmaf_sycl_malloc_device(s->sycl_state, count * sizeof(T)));
+}
+
+int allocate_cambi_buffers(CambiStateSycl *s)
+{
+    const size_t pixels = (size_t)s->proc_width * s->proc_height;
+    s->d_image = device_alloc<uint16_t>(s, pixels);
+    s->d_mask = device_alloc<uint16_t>(s, pixels);
+    s->d_tmp = device_alloc<uint16_t>(s, pixels);
+    s->d_q = device_alloc<uint16_t>(s, pixels);
+    const size_t mask_words = (size_t)s->proc_height * ((s->proc_width + 31U) / 32U);
+    s->d_runs = device_alloc<uint32_t>(s, mask_words);
+    s->d_change = device_alloc<uint32_t>(s, mask_words);
+    s->d_cvals = device_alloc<float>(s, pixels);
+    s->d_hist = device_alloc<uint16_t>(s, hist_elements(s));
+    s->d_select = device_alloc<CambiSyclSelect>(s, CAMBI_SYCL_NUM_SCALES);
+    s->d_partials = device_alloc<uint64_t>(s, partial_elements(s));
+    s->d_results = device_alloc<CambiSyclResults>(s, 1U);
+    s->h_results = static_cast<CambiSyclResults *>(
+        vmaf_sycl_malloc_host(s->sycl_state, sizeof(CambiSyclResults)));
+    const bool ok = s->d_image && s->d_mask && s->d_tmp && s->d_q && s->d_runs && s->d_change &&
+                    s->d_cvals && s->d_hist && s->d_select && s->d_partials && s->d_results &&
+                    s->h_results;
+    return ok ? 0 : -ENOMEM;
+}
+
+/* Upload `count` elements of `host` into a fresh device buffer. */
+template <typename T> int upload_table(CambiStateSycl *s, T *&device, const T *host, size_t count)
+{
+    device = device_alloc<T>(s, count);
+    if (!device) {
+        return -ENOMEM;
+    }
+    return vmaf_sycl_memcpy_h2d(s->sycl_state, device, host, count * sizeof(T));
+}
+
+/* c_value_pixel()'s reciprocal table, verbatim, extended with the same
+ * 1.0f / i formula for windows larger than the table covers. */
+int upload_reciprocal_lut(CambiStateSycl *s)
+{
+    unsigned table_size = 0U;
+    const float *table = vmaf_cambi_reciprocal_lut(&table_size);
+    const size_t window_pixels = (size_t)s->adjusted_window * s->adjusted_window;
+    std::vector<float> lut(std::max((size_t)table_size, window_pixels + 1U));
+    for (size_t i = 0; i < lut.size(); ++i) {
+        lut[i] = i < table_size ? table[i] : 1.0F / (float)i;
+    }
+    return upload_table(s, s->d_lut, lut.data(), lut.size());
 }
 
 } // namespace
@@ -570,7 +1441,75 @@ static int configure_cambi(CambiStateSycl *s, unsigned bpc, unsigned width, unsi
 namespace
 {
 
-template <typename T> static void release_sycl_buffer(VmafSyclState *state, T *&pointer)
+/* tvi_for_diff / vlt_luma / v_band (vmaf_cambi_init_tvi_and_vlt) and the
+ * diff weights, uploaded once. */
+int upload_contrast_tables(CambiStateSycl *s)
+{
+    static const int weights[32] = {1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8,
+                                    8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
+    std::vector<uint16_t> diffs(s->num_diffs);
+    std::vector<uint16_t> tvi(s->num_diffs);
+    for (unsigned d = 0U; d < s->num_diffs; ++d) {
+        diffs[d] = (uint16_t)(d + 1U);
+    }
+    int err = vmaf_cambi_init_tvi_and_vlt(
+        (int)s->num_diffs, diffs.data(), s->tvi_threshold, s->cambi_vis_lum_threshold,
+        s->cambi_eotf, s->eotf, tvi.data(), &s->vlt_luma, &s->v_band_base, &s->v_band_size);
+    if (err) {
+        return err;
+    }
+    s->levels = s->v_band_size;
+    err = upload_table(s, s->d_tvi, tvi.data(), tvi.size());
+    if (!err) {
+        err = upload_table(s, s->d_weights, &weights[0], s->num_diffs);
+    }
+    return err;
+}
+
+/* decimate_generic_*_and_convert_to_10b's resize walk, evaluated once on the
+ * host in the same float arithmetic: output index -> source index. */
+std::vector<uint32_t> resize_indices(unsigned in_len, unsigned out_len)
+{
+    std::vector<uint32_t> idx(out_len);
+    const float ratio = (float)in_len / (float)out_len;
+    const auto start = (float)(ratio / 2 - 0.5);
+    float pos = start;
+    for (unsigned i = 0U; i < out_len; ++i) {
+        idx[i] = (uint32_t)(int)lroundf(pos);
+        pos += ratio;
+    }
+    return idx;
+}
+
+int upload_resize_tables(CambiStateSycl *s)
+{
+    if (s->proc_width == s->src_width && s->proc_height == s->src_height) {
+        return 0;
+    }
+    const std::vector<uint32_t> ori_x = resize_indices(s->src_width, s->proc_width);
+    const std::vector<uint32_t> ori_y = resize_indices(s->src_height, s->proc_height);
+    int err = upload_table(s, s->d_ori_x, ori_x.data(), ori_x.size());
+    if (!err) {
+        err = upload_table(s, s->d_ori_y, ori_y.data(), ori_y.size());
+    }
+    return err;
+}
+
+/* Everything after the contrast tables: they fix the level count that the
+ * scale geometry (c-values chunking) depends on. */
+int setup_device_state(CambiStateSycl *s)
+{
+    int err = upload_reciprocal_lut(s);
+    if (!err) {
+        err = upload_resize_tables(s);
+    }
+    if (!err) {
+        err = allocate_cambi_buffers(s);
+    }
+    return err;
+}
+
+template <typename T> void release_sycl_buffer(VmafSyclState *state, T *&pointer)
 {
     if (pointer) {
         vmaf_sycl_free(state, pointer);
@@ -578,37 +1517,31 @@ template <typename T> static void release_sycl_buffer(VmafSyclState *state, T *&
     }
 }
 
-template <typename T> static void release_host_buffer(T *&pointer)
-{
-    free(pointer);
-    pointer = nullptr;
-}
-
-} // namespace
-
-namespace
-{
-
-static void release_cambi_resources(CambiStateSycl *s)
+void release_cambi_resources(CambiStateSycl *s)
 {
     if (s->sycl_state) {
+        if (s->registered) {
+            (void)vmaf_sycl_graph_unregister(s->sycl_state, s);
+            s->registered = false;
+        }
         release_sycl_buffer(s->sycl_state, s->d_image);
         release_sycl_buffer(s->sycl_state, s->d_mask);
         release_sycl_buffer(s->sycl_state, s->d_tmp);
-        release_sycl_buffer(s->sycl_state, s->h_image);
-        release_sycl_buffer(s->sycl_state, s->h_mask);
+        release_sycl_buffer(s->sycl_state, s->d_q);
+        release_sycl_buffer(s->sycl_state, s->d_runs);
+        release_sycl_buffer(s->sycl_state, s->d_change);
+        release_sycl_buffer(s->sycl_state, s->d_cvals);
+        release_sycl_buffer(s->sycl_state, s->d_hist);
+        release_sycl_buffer(s->sycl_state, s->d_lut);
+        release_sycl_buffer(s->sycl_state, s->d_tvi);
+        release_sycl_buffer(s->sycl_state, s->d_weights);
+        release_sycl_buffer(s->sycl_state, s->d_ori_x);
+        release_sycl_buffer(s->sycl_state, s->d_ori_y);
+        release_sycl_buffer(s->sycl_state, s->d_select);
+        release_sycl_buffer(s->sycl_state, s->d_partials);
+        release_sycl_buffer(s->sycl_state, s->d_results);
+        release_sycl_buffer(s->sycl_state, s->h_results);
     }
-    (void)vmaf_picture_unref(&s->pics[0]);
-    (void)vmaf_picture_unref(&s->pics[1]);
-    release_host_buffer(s->buffers.diffs_to_consider);
-    release_host_buffer(s->buffers.diff_weights);
-    release_host_buffer(s->buffers.all_diffs);
-    release_host_buffer(s->buffers.tvi_for_diff);
-    release_host_buffer(s->buffers.c_values);
-    release_host_buffer(s->buffers.c_values_histograms);
-    release_host_buffer(s->buffers.mask_dp);
-    release_host_buffer(s->buffers.filter_mode_buffer);
-    release_host_buffer(s->buffers.derivative_buffer);
     if (s->feature_name_dict) {
         (void)vmaf_dictionary_free(&s->feature_name_dict);
     }
@@ -616,129 +1549,194 @@ static void release_cambi_resources(CambiStateSycl *s)
 
 } // namespace
 
+/* ------------------------------------------------------------------ */
+/* Per-frame enqueue (graph-safe: every argument is init-time state).  */
+/* ------------------------------------------------------------------ */
 namespace
 {
 
-static int allocate_cambi_core(CambiStateSycl *s)
+struct ScaleBuffers {
+    uint16_t *image;
+    uint16_t *mask;
+    uint16_t *scratch;
+    unsigned width;
+    unsigned height;
+};
+
+void enqueue_preprocess(sycl::queue &queue, const CambiStateSycl *s, const void *dist)
 {
-    const size_t bytes = (size_t)s->proc_width * s->proc_height * sizeof(uint16_t);
-    s->d_image = static_cast<uint16_t *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
-    s->d_mask = static_cast<uint16_t *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
-    s->d_tmp = static_cast<uint16_t *>(vmaf_sycl_malloc_device(s->sycl_state, bytes));
-    s->h_image = static_cast<uint16_t *>(vmaf_sycl_malloc_host(s->sycl_state, bytes));
-    s->h_mask = static_cast<uint16_t *>(vmaf_sycl_malloc_host(s->sycl_state, bytes));
-    if (!s->d_image || !s->d_mask || !s->d_tmp || !s->h_image || !s->h_mask) {
-        return -ENOMEM;
+    if (s->src_bpc != 8U && s->src_bpc != 16U) {
+        launch_validate(queue, dist, s->src_width, s->src_height, s->src_bpc, s->d_results);
     }
-    int error =
-        vmaf_picture_alloc(&s->pics[0], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
+    const PreprocArgs args{
+        .src = dist,
+        .dst = s->d_image,
+        .ori_x = s->d_ori_x,
+        .ori_y = s->d_ori_y,
+        .in_w = s->src_width,
+        .out_w = s->proc_width,
+        .out_h = s->proc_height,
+        .bpc = s->src_bpc,
+        .same_size = s->proc_width == s->src_width && s->proc_height == s->src_height,
+        .anti_dither = s->enc_bitdepth < 10,
+    };
+    launch_preprocess(queue, args);
+    const MaskArgs mask{
+        .image = s->d_image,
+        .mask = s->d_mask,
+        .width = s->proc_width,
+        .height = s->proc_height,
+        .mask_index = s->mask_index,
+    };
+    launch_spatial_mask(queue, mask);
+}
+
+/* cambi_score's per-scale decimate + filter_mode on the device buffers. */
+void enqueue_scale_image(sycl::queue &queue, const CambiStateSycl *s, ScaleBuffers &b, int scale)
+{
+    const CambiScaleGeom &g = s->geom[scale];
+    if (scale > 0 || s->cambi_high_res_speedup) {
+        launch_decimate(queue, b.image, b.scratch, g.width, g.height, b.width);
+        std::swap(b.image, b.scratch);
+        launch_decimate(queue, b.mask, b.scratch, g.width, g.height, b.width);
+        std::swap(b.mask, b.scratch);
+        b.width = g.width;
+        b.height = g.height;
+    }
+    launch_filter_horizontal(queue, b.image, b.scratch, b.width, b.height);
+    const VerticalArgs vertical{
+        .filtered_h = b.scratch,
+        .image = b.image,
+        .mask = b.mask,
+        .q = s->d_q,
+        .width = b.width,
+        .height = b.height,
+        .v_band_base = s->v_band_base,
+        .v_band_size = s->v_band_size,
+    };
+    launch_filter_vertical_and_levels(queue, vertical);
+}
+
+void enqueue_scale_score(sycl::queue &queue, const CambiStateSycl *s, int scale)
+{
+    const CambiScaleGeom &g = s->geom[scale];
+    const unsigned words = (g.width + 31U) / 32U;
+    const unsigned pad = (unsigned)s->adjusted_window >> 1;
+    const RowMaskArgs masks{
+        .q = s->d_q,
+        .runs = s->d_runs,
+        .change = s->d_change,
+        .width = g.width,
+        .height = g.height,
+        .words = words,
+        .pad = pad,
+    };
+    launch_row_masks(queue, masks);
+    const CValuesArgs cvals{
+        .q = s->d_q,
+        .runs = s->d_runs,
+        .change = s->d_change,
+        .hist = s->d_hist,
+        .cvals = s->d_cvals,
+        .select = s->d_select + scale,
+        .partials = s->d_partials,
+        .lut = s->d_lut,
+        .tvi = s->d_tvi,
+        .weights = s->d_weights,
+        .width = g.width,
+        .height = g.height,
+        .words = words,
+        .pad = pad,
+        .chunk_rows = g.chunk_rows,
+        .levels = s->levels,
+        .num_diffs = s->num_diffs,
+        .vlt_luma = s->vlt_luma,
+        .v_band_base = s->v_band_base,
+    };
+    launch_c_values(queue, cvals, g.chunks);
+    const PoolArgs pool{
+        .cvals = s->d_cvals,
+        .select = s->d_select + scale,
+        .partials = s->d_partials,
+        .results = s->d_results,
+        .n = g.width * g.height,
+        .groups = g.pool_groups,
+        .cvals_groups = g.cvals_groups,
+        .scale = scale,
+    };
+    launch_topk_pooling(queue, pool);
+}
+
+/* VmafSyclGraphEnqueueFn: the whole frame, graph-recordable. */
+void enqueue_cambi_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis)
+{
+    (void)shared_ref;
+    sycl::queue &queue = *static_cast<sycl::queue *>(queue_ptr);
+    const auto *s = static_cast<const CambiStateSycl *>(priv);
+    launch_reset(queue, s->d_select, s->d_results, s->geom);
+    enqueue_preprocess(queue, s, shared_dis);
+    ScaleBuffers buffers{
+        .image = s->d_image,
+        .mask = s->d_mask,
+        .scratch = s->d_tmp,
+        .width = s->proc_width,
+        .height = s->proc_height,
+    };
+    for (int scale = 0; scale < CAMBI_SYCL_NUM_SCALES; ++scale) {
+        enqueue_scale_image(queue, s, buffers, scale);
+        enqueue_scale_score(queue, s, scale);
+    }
+}
+
+/* VmafSyclGraphPostFn: the single D2H copy of the frame's results. */
+void cambi_post_graph(void *queue_ptr, void *priv)
+{
+    sycl::queue &queue = *static_cast<sycl::queue *>(queue_ptr);
+    const auto *s = static_cast<const CambiStateSycl *>(priv);
+    queue.memcpy(s->h_results, s->d_results, sizeof(CambiSyclResults));
+}
+
+} // namespace
+
+/* ------------------------------------------------------------------ */
+/* Extractor callbacks.                                                */
+/* ------------------------------------------------------------------ */
+namespace
+{
+
+unsigned device_compute_units(VmafSyclState *state)
+{
+    const auto *queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
+    if (!queue) {
+        return 1U;
+    }
+    return std::max(1U, queue->get_device().get_info<sycl::info::device::max_compute_units>());
+}
+
+int init_cambi_device(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height)
+{
+    int error = configure_cambi(s, bpc, width, height);
     if (!error) {
-        error = vmaf_picture_alloc(&s->pics[1], VMAF_PIX_FMT_YUV400P, 10, s->proc_width,
-                                   s->proc_height);
+        error = upload_contrast_tables(s);
+    }
+    if (!error) {
+        const double topk = s->topk != CAMBI_SYCL_DEFAULT_TOPK ? s->topk : s->cambi_topk;
+        compute_scale_geometry(s, topk, device_compute_units(s->sycl_state));
+        error = vmaf_sycl_shared_frame_init(s->sycl_state, width, height, bpc);
+    }
+    if (!error) {
+        error = setup_device_state(s);
+    }
+    if (!error) {
+        error = vmaf_sycl_graph_register(s->sycl_state, enqueue_cambi_work, nullptr,
+                                         cambi_post_graph, nullptr, s, "cambi_sycl");
+        s->registered = error == 0;
     }
     return error;
 }
 
-} // namespace
-
-namespace
-{
-
-static int allocate_cambi_differences(CambiStateSycl *s, int differences)
-{
-    static const int weights[32] = {1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8,
-                                    8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
-    s->buffers.diffs_to_consider =
-        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)differences));
-    s->buffers.diff_weights = static_cast<int *>(malloc(sizeof(int) * (size_t)differences));
-    s->buffers.all_diffs = static_cast<int *>(malloc(sizeof(int) * (size_t)(2 * differences + 1)));
-    if (!s->buffers.diffs_to_consider || !s->buffers.diff_weights || !s->buffers.all_diffs) {
-        return -ENOMEM;
-    }
-    for (int difference = 0; difference < differences; ++difference) {
-        s->buffers.diffs_to_consider[difference] = (uint16_t)(difference + 1);
-        s->buffers.diff_weights[difference] = weights[difference];
-    }
-    for (int difference = -differences; difference <= differences; ++difference) {
-        s->buffers.all_diffs[difference + differences] = difference;
-    }
-    return 0;
-}
-
-} // namespace
-
-namespace
-{
-
-static int allocate_cambi_thresholds(CambiStateSycl *s, int differences)
-{
-    s->buffers.tvi_for_diff =
-        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)differences));
-    if (!s->buffers.tvi_for_diff) {
-        return -ENOMEM;
-    }
-    return vmaf_cambi_init_tvi_and_vlt(differences, s->buffers.diffs_to_consider, s->tvi_threshold,
-                                       s->cambi_vis_lum_threshold, s->cambi_eotf, s->eotf,
-                                       s->buffers.tvi_for_diff, &s->vlt_luma,
-                                       &s->buffers.v_band_base, &s->buffers.v_band_size);
-}
-
-} // namespace
-
-namespace
-{
-
-static int allocate_cambi_analysis(CambiStateSycl *s, int differences)
-{
-    const size_t final_difference = (size_t)differences * 2u;
-    const uint16_t bins = (uint16_t)(1024u + (unsigned)(s->buffers.all_diffs[final_difference] -
-                                                        s->buffers.all_diffs[0]));
-    const size_t histogram_bins =
-        s->buffers.v_band_size > bins ? (size_t)s->buffers.v_band_size : (size_t)bins;
-    const int padding = (int)(CAMBI_SYCL_MASK_FILTER_SIZE / 2u);
-    const int dp_width = (int)s->proc_width + 2 * padding + 1;
-    const int dp_height = 2 * padding + 2;
-    s->buffers.c_values =
-        static_cast<float *>(malloc(sizeof(float) * s->proc_width * s->proc_height));
-    s->buffers.c_values_histograms =
-        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * (size_t)s->proc_width * histogram_bins));
-    s->buffers.mask_dp =
-        static_cast<uint32_t *>(malloc(sizeof(uint32_t) * (size_t)dp_width * (size_t)dp_height));
-    s->buffers.filter_mode_buffer =
-        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * 3u * s->proc_width));
-    s->buffers.derivative_buffer =
-        static_cast<uint16_t *>(malloc(sizeof(uint16_t) * s->proc_width));
-    return s->buffers.c_values && s->buffers.c_values_histograms && s->buffers.mask_dp &&
-                   s->buffers.filter_mode_buffer && s->buffers.derivative_buffer ?
-               0 :
-               -ENOMEM;
-}
-
-} // namespace
-
-namespace
-{
-
-static int allocate_cambi_scratch(CambiStateSycl *s)
-{
-    const int differences = 1 << s->max_log_contrast;
-    int error = allocate_cambi_differences(s, differences);
-    if (!error) {
-        error = allocate_cambi_thresholds(s, differences);
-    }
-    if (!error) {
-        error = allocate_cambi_analysis(s, differences);
-    }
-    return error;
-}
-
-} // namespace
-
-namespace
-{
-
-static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                         unsigned width, unsigned height)
+int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                  unsigned width, unsigned height)
 {
     (void)pix_fmt;
     auto *s = static_cast<CambiStateSycl *>(fex->priv);
@@ -749,239 +1747,80 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->sycl_state = fex->sycl_state;
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    int error = s->feature_name_dict ? configure_cambi(s, bpc, width, height) : -ENOMEM;
-    if (!error) {
-        error = allocate_cambi_core(s);
-    }
-    if (!error) {
-        error = allocate_cambi_scratch(s);
+    int error = s->feature_name_dict ? 0 : -ENOMEM;
+    try {
+        if (!error) {
+            error = init_cambi_device(s, bpc, width, height);
+        }
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: init failed: %s\n", e.what());
+        error = -EIO;
     }
     if (error) {
         release_cambi_resources(s);
-        return error;
     }
-    vmaf_cambi_default_callbacks(&s->inc_range_callback, &s->dec_range_callback,
-                                 &s->derivative_callback);
-    s->has_pending = false;
-    return 0;
+    return error;
 }
 
-} // namespace
-
-namespace
-{
-
-struct CambiScaleState {
-    uint16_t *image = nullptr;
-    uint16_t *mask = nullptr;
-    uint16_t *scratch = nullptr;
-    unsigned width = 0;
-    unsigned height = 0;
-    sycl::event previous{};
-};
-
-template <typename Picture>
-static int upload_cambi_image(CambiStateSycl *s, sycl::queue &queue, Picture *distorted)
-{
-    const int error = vmaf_cambi_preprocessing(distorted, &s->pics[0], (int)s->proc_width,
-                                               (int)s->proc_height, s->enc_bitdepth);
-    if (error) {
-        return error;
-    }
-    const auto *source = static_cast<const uint8_t *>(s->pics[0].data[0]);
-    const size_t row_bytes = (size_t)s->proc_width * sizeof(uint16_t);
-    for (unsigned row = 0; row < s->proc_height; ++row) {
-        queue.memcpy(s->d_image + (size_t)row * s->proc_width,
-                     source + (size_t)row * (size_t)s->pics[0].stride[0], row_bytes);
-    }
-    queue.wait();
-    return 0;
-}
-
-} // namespace
-
-namespace
-{
-
-static void decimate_cambi_scale(sycl::queue &queue, CambiScaleState &state)
-{
-    const unsigned new_width = (state.width + 1u) >> 1;
-    const unsigned new_height = (state.height + 1u) >> 1;
-    const sycl::event image_event =
-        launch_decimate(queue, state.image, state.scratch, new_width, new_height, state.width,
-                        new_width, state.previous);
-    std::swap(state.image, state.scratch);
-    const sycl::event mask_event =
-        launch_decimate(queue, state.mask, state.scratch, new_width, new_height, state.width,
-                        new_width, state.previous);
-    std::swap(state.mask, state.scratch);
-    state.width = new_width;
-    state.height = new_height;
-    state.previous = queue.submit([&](sycl::handler &handler) {
-        handler.depends_on({image_event, mask_event});
-        handler.single_task([=]() {});
-    });
-}
-
-} // namespace
-
-namespace
-{
-
-static void filter_cambi_scale(sycl::queue &queue, CambiScaleState &state)
-{
-    const sycl::event horizontal =
-        launch_filter_mode(queue, state.image, state.scratch, state.width, state.height,
-                           state.width, 0, state.previous);
-    state.previous = launch_filter_mode(queue, state.scratch, state.image, state.width,
-                                        state.height, state.width, 1, horizontal);
-}
-
-} // namespace
-
-namespace
-{
-
-static void copy_cambi_plane(VmafPicture *picture, const uint16_t *source, unsigned width,
-                             unsigned height)
-{
-    auto *destination = static_cast<uint8_t *>(picture->data[0]);
-    const size_t row_bytes = (size_t)width * sizeof(uint16_t);
-    for (unsigned row = 0; row < height; ++row) {
-        (void)memcpy(destination + (size_t)row * (size_t)picture->stride[0],
-                     source + (size_t)row * width, row_bytes);
-    }
-}
-
-} // namespace
-
-namespace
-{
-
-static void download_cambi_scale(CambiStateSycl *s, sycl::queue &queue, CambiScaleState &state)
-{
-    state.previous.wait();
-    const size_t bytes = (size_t)state.width * state.height * sizeof(uint16_t);
-    queue.memcpy(s->h_image, state.image, bytes);
-    queue.memcpy(s->h_mask, state.mask, bytes);
-    queue.wait();
-    copy_cambi_plane(&s->pics[0], s->h_image, state.width, state.height);
-    copy_cambi_plane(&s->pics[1], s->h_mask, state.width, state.height);
-}
-
-} // namespace
-
-namespace
-{
-
-static double score_cambi_scale(CambiStateSycl *s, unsigned width, unsigned height, int differences,
-                                double topk)
-{
-    vmaf_cambi_calculate_c_values(&s->pics[0], &s->pics[1], s->buffers.c_values,
-                                  s->buffers.c_values_histograms, s->adjusted_window,
-                                  (uint16_t)differences, s->buffers.tvi_for_diff, s->vlt_luma,
-                                  s->buffers.diff_weights, s->buffers.all_diffs, (int)width,
-                                  (int)height, s->inc_range_callback, s->dec_range_callback);
-    return vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, width, height);
-}
-
-} // namespace
-
-namespace
-{
-
-static double process_cambi_scale(CambiStateSycl *s, sycl::queue &queue, CambiScaleState &state,
-                                  int scale, int differences, double topk)
-{
-    if (scale > 0 || s->cambi_high_res_speedup) {
-        decimate_cambi_scale(queue, state);
-    }
-    filter_cambi_scale(queue, state);
-    download_cambi_scale(s, queue, state);
-    return score_cambi_scale(s, state.width, state.height, differences, topk);
-}
-
-} // namespace
-
-namespace
-{
-
-static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
-                           VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
+int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
+                    VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic;
     (void)ref_pic_90;
+    (void)dist_pic;
     (void)dist_pic_90;
+    (void)index;
+    return vmaf_sycl_graph_submit(fex->sycl_state);
+}
+
+/* Per-scale mean of the top-K c-values: the exact fixed-point sum, converted
+ * to double once, then spatial_pooling()'s division. */
+double scale_score(const CambiSyclResults &r, int scale, unsigned topk)
+{
+    constexpr double two_pow_64 = 18446744073709551616.0;
+    const double fixed = r.sum_hi[scale] == 0U ?
+                             (double)r.sum_lo[scale] :
+                             (double)r.sum_hi[scale] * two_pow_64 + (double)r.sum_lo[scale];
+    return std::ldexp(fixed, -CAMBI_FIXED_SHIFT) / (double)topk;
+}
+
+int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
+                     VmafFeatureCollector *feature_collector)
+{
     auto *s = static_cast<CambiStateSycl *>(fex->priv);
-    auto *queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!queue) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: null queue pointer\n");
+    const int err = vmaf_sycl_graph_wait(s->sycl_state);
+    if (err) {
+        return err;
+    }
+    const CambiSyclResults &r = *s->h_results;
+    if (r.status & CAMBI_STATUS_INVALID_INPUT) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "cambi_sycl: frame %u holds samples above the %u-bit maximum\n", index,
+                 s->src_bpc);
         return -EINVAL;
     }
-    const int upload_error = upload_cambi_image(s, *queue, dist_pic);
-    if (upload_error) {
-        return upload_error;
-    }
-    const unsigned mask_index = (unsigned)cambi_sycl_get_mask_index(s->proc_width, s->proc_height,
-                                                                    CAMBI_SYCL_MASK_FILTER_SIZE);
-    CambiScaleState state = {
-        .image = s->d_image,
-        .mask = s->d_mask,
-        .scratch = s->d_tmp,
-        .width = s->proc_width,
-        .height = s->proc_height,
-        .previous = launch_spatial_mask(*queue, s->d_image, s->d_mask, s->proc_width,
-                                        s->proc_height, s->proc_width, mask_index),
-    };
-    const int differences = 1 << s->max_log_contrast;
-    const double topk = s->topk != CAMBI_SYCL_DEFAULT_TOPK ? s->topk : s->cambi_topk;
     double scores[CAMBI_SYCL_NUM_SCALES]{};
     for (int scale = 0; scale < CAMBI_SYCL_NUM_SCALES; ++scale) {
-        scores[scale] = process_cambi_scale(s, *queue, state, scale, differences, topk);
+        scores[scale] = scale_score(r, scale, s->geom[scale].topk);
     }
     const uint16_t pixels = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
     const double raw_score = vmaf_cambi_weight_scores_per_scale(scores, pixels);
-    s->score = raw_score > s->cambi_max_val ? s->cambi_max_val : raw_score;
-    if (s->score < 0.0) {
-        s->score = 0.0;
+    double score = raw_score > s->cambi_max_val ? s->cambi_max_val : raw_score;
+    if (score < 0.0) {
+        score = 0.0;
     }
-    s->pending_index = index;
-    s->has_pending = true;
-    return 0;
-}
-
-} // namespace
-
-/* ------------------------------------------------------------------ */
-/* collect_fex_sycl — emit the pre-computed score. */
-/* ------------------------------------------------------------------ */
-namespace
-{
-
-static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
-                            VmafFeatureCollector *feature_collector)
-{
-    auto *s = static_cast<CambiStateSycl *>(fex->priv);
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "Cambi_feature_cambi_score", s->score, index);
+                                                   "Cambi_feature_cambi_score", score, index);
 }
 
-} // namespace
-
-/* ------------------------------------------------------------------ */
-/* close_fex_sycl */
-/* ------------------------------------------------------------------ */
-namespace
-{
-
-static int close_fex_sycl(VmafFeatureExtractor *fex)
+int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<CambiStateSycl *>(fex->priv);
     release_cambi_resources(s);
     return 0;
 }
 
-static const char *provided_features_cambi_sycl[] = {"Cambi_feature_cambi_score", nullptr};
+const char *provided_features_cambi_sycl[] = {"Cambi_feature_cambi_score", nullptr};
 
 } // namespace
 
@@ -997,15 +1836,16 @@ extern "C" VmafFeatureExtractor vmaf_fex_cambi_sycl = {
     .priv_size = sizeof(CambiStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_cambi_sycl,
-    /* 15 GPU dispatches/frame (5 scales × 3 kernels: mask + filter_H + filter_V).
-     * dispatch_hint = DIRECT (matches CUDA twin and Vulkan twin): the per-frame
-     * CPU residual (calculate_c_values) serialises frames already.
-     * is_reduction_only = false: the GPU phases are not pure reductions. */
+    /* Device-resident (ADR-1357): ~65 kernels per frame on the combined
+     * in-order queue — reset, preprocess, mask, and per scale decimate,
+     * filter, c-values and 8 top-K pooling kernels — and one readback. No
+     * host stage remains, so the extractor rides the combined graph like
+     * the other registered SYCL extractors (dispatch_hint AUTO). */
     .chars =
         {
-            .n_dispatches_per_frame = 15,
+            .n_dispatches_per_frame = 65,
             .is_reduction_only = false,
             .min_useful_frame_area = 1920U * 1080U,
-            .dispatch_hint = VMAF_FEATURE_DISPATCH_DIRECT,
+            .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };

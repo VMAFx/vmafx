@@ -17,6 +17,23 @@
 - `scripts/release/tests/test-publication-environment-binding.sh` pins the job names,
   permissions, environment, subjects, verification step and bundle names; rename them
   together with the workflow.
+## perf/sycl-cambi-device-resident — device-resident `cambi_sycl` (ADR-1357) (2026-09-29)
+
+- `core/src/feature/sycl/integer_cambi_sycl.cpp`: fork-only. The twin now
+  reimplements `cambi.c`'s c-values and top-K pooling on the device instead of
+  calling them on the host. An upstream Netflix change to `c_value_pixel`,
+  the `calculate_c_values` window walk (`c_values_first_pass`, `_top_edge`,
+  `_middle_slide`, `_bottom_edge`), `spatial_pooling`, `cambi_preprocessing`
+  or `filter_mode` must be mirrored into the device kernels in the same sync;
+  `test_sycl_cambi_parity` fails on any per-frame difference.
+- `core/src/feature/cambi.c` / `cambi_internal.h`: one fork-added trampoline,
+  `vmaf_cambi_reciprocal_lut()`, in the fork block at the end of `cambi.c`;
+  the upstream-mirror body is unchanged. If upstream regenerates
+  `reciprocal_lut` in `cambi.h`, the device picks the new table up through
+  the accessor; `test_cambi`'s "differs from `1.0f / i`" assertion documents
+  the current table and may need updating.
+- No other backend changes; the CUDA, HIP and Metal twins keep their host
+  residual (RC3 rows in `docs/state.md`).
 
 ## perf/sycl-ciede-throughput — `ciede_sycl` stages chroma at native size (2026-09-29)
 
