@@ -19,8 +19,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 GATE = Path(__file__).resolve().parents[1] / "check-helm-selector-isolation.py"
 _SPEC = importlib.util.spec_from_file_location("check_helm_selector_isolation", GATE)
@@ -43,11 +44,11 @@ def labels(component: str | None = None, **extra: str) -> dict[str, str]:
 def workload(
     kind: str,
     name: str,
-    selector: dict | None,
+    selector: dict[str, Any] | None,
     pod_labels: dict[str, str],
     namespace: str = "vmafx",
-) -> dict:
-    spec: dict = {"template": {"metadata": {"labels": pod_labels}}}
+) -> dict[str, Any]:
+    spec: dict[str, Any] = {"template": {"metadata": {"labels": pod_labels}}}
     if selector is not None:
         spec["selector"] = selector
     return {
@@ -57,16 +58,16 @@ def workload(
     }
 
 
-def component_deployment(name: str, component: str) -> dict:
+def component_deployment(name: str, component: str) -> dict[str, Any]:
     return workload("Deployment", name, {"matchLabels": labels(component)}, labels(component))
 
 
-def service(name: str, selector: dict[str, str] | None) -> dict:
+def service(name: str, selector: dict[str, str] | None) -> dict[str, Any]:
     spec = {} if selector is None else {"selector": selector}
     return {"kind": "Service", "metadata": {"name": name, "namespace": "vmafx"}, "spec": spec}
 
 
-def pdb(name: str, component: str) -> dict:
+def pdb(name: str, component: str) -> dict[str, Any]:
     return {
         "kind": "PodDisruptionBudget",
         "metadata": {"name": name, "namespace": "vmafx"},
@@ -74,7 +75,7 @@ def pdb(name: str, component: str) -> dict:
     }
 
 
-def chart(server: dict) -> list[dict]:
+def chart(server: dict[str, Any]) -> list[dict[str, Any]]:
     """The Deployment-mode render with operator, node and helm test enabled."""
     test_pod = {
         "kind": "Pod",
