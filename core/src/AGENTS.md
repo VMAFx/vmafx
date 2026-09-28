@@ -258,12 +258,12 @@ initialisers where cast already spells type. These match checks
 enabled by ADR-0915; deviating reintroduces warnings that touched-file
 rule (ADR-0141) requires discharging in same PR.
 
-### 10. Vendored libsvm — four fork patches must not regress on sync (ADR-0889, Research-2094)
+### 10. Vendored libsvm — five fork patches must not regress on sync (ADR-0889, Research-2094)
 
 `core/src/svm.cpp` + `core/src/svm.h` = verbatim vendored copy of
 upstream libsvm 3.24 (Chih-Chung Chang / Chih-Jen Lin), wrapped in
 file-level `NOLINTBEGIN` / `NOLINTEND` cordon so fork's
-touched-file lint-clean rule does not re-flow vendored body. Four
+touched-file lint-clean rule does not re-flow vendored body. Five
 fork-local patch families live inside that cordon and must survive any
 future upstream sync:
 
@@ -299,6 +299,18 @@ future upstream sync:
    copying and double-free. In `parse_support_vectors()`, support-vector
    parsing replaces outer `for` loop counter mutation with bounded `while`
    loop verifying sentinel termination. Eliminates CodeQL alerts 1222–1226.
+
+5. **`using std::swap;` replaces libsvm's global `swap` template** —
+   template + `std::vector<svm_node>` = ambiguous call inside libc++ 23
+   `__split_buffer::__swap_layouts` (`using std::swap; swap(...)`, ADL
+   on `svm_node *`); file stops compiling. Never restore template.
+   libsvm `min` / `max` stay deliberately: tie or NaN operand returns
+   second argument, `std::min` / `std::max` return first — switching
+   changes training (zero-rho sign, NaN propagation). Upstream fix for
+   issue 1616 takes `std::min` / `std::max` too; keep libsvm pair on
+   sync unless that semantic change gets separate decision.
+   `Solver_NU` overrides carry `override` (clang
+   `-Winconsistent-missing-override`).
 
 Additionally:
 

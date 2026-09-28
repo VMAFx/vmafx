@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cli-unescape-values-svm-swap — libsvm uses std::swap for libc++ 23 (2026-09-28)
+
+- `core/src/svm.cpp`: libsvm's global `template <class T> void swap(T &, T &)` is
+  replaced by `using std::swap;`. libc++ 23 `__split_buffer::__swap_layouts`
+  calls `swap` unqualified after `using std::swap`, so for `std::vector<svm_node>`
+  argument-dependent lookup found both templates and the call was ambiguous
+  (upstream issue 1616; libc++ 21.1.8 and 22.1.8 qualify the call and were
+  unaffected). Do not restore the template on a libsvm re-vendor.
+- The upstream fix (upstream PR 1617) also replaces libsvm's `min` / `max` with
+  `std::min` / `std::max`. The fork keeps libsvm's pair: on a tie or a NaN
+  operand libsvm returns the second argument and the standard ones the first,
+  which would change training results (the sign of a zero rho, NaN propagation
+  in working-set selection). Scoring never reaches them. A port of that commit
+  should take the `swap` hunk only, unless the semantic change is decided
+  separately.
+- `Solver_NU`'s `select_working_set`, `calculate_rho` and `do_shrinking` carry
+  `override`, which clears clang's `-Winconsistent-missing-override` now that
+  `Solve` is marked. Keep them on a re-vendor.
+- The check that this stayed correct: the Netflix 576x324 pair scores
+  byte-identically at `--precision max` against the pre-change binary.
+
 ## fix/cli-unescape-values-svm-swap — CLI option values keep their backslashes (ADR-1355) (2026-09-28)
 
 - `core/tools/cli_parse.cpp`: `cli_unescape()` is split into `cli_unescape_key()`

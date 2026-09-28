@@ -84,6 +84,7 @@
 #include <thread>
 #include <fstream>
 #include <sstream>
+#include <utility>
 #include <vector>
 #include "svm.h"
 
@@ -106,12 +107,20 @@ template <class T> static inline T max(T x, T y)
     return (x > y) ? x : y;
 }
 #endif
-template <class T> static inline void swap(T &x, T &y)
-{
-    T t = x;
-    x = y;
-    y = t;
-}
+/* Fork delta: std::swap replaces libsvm's global `template <class T> void
+ * swap(T &, T &)`. That template is found by argument-dependent lookup for any
+ * global-namespace type, so libc++'s `using std::swap; swap(__begin_, ...)`
+ * inside std::vector<svm_node> (`__split_buffer::__swap_layouts`) became an
+ * ambiguous call and the file stopped compiling (upstream issue 1616). A
+ * using-declaration names the same function for both lookups; every call
+ * below swaps scalars or pointers, where std::swap does the same three copies.
+ *
+ * min/max stay libsvm's own on purpose: on a tie or a NaN operand they return
+ * the second argument and std::min/std::max return the first, which would
+ * change training results (the sign of a zero rho, NaN propagation in the
+ * working-set selection). They only ever see arithmetic types, which ADL
+ * cannot associate with this file's templates. */
+using std::swap;
 template <class S, class T> static inline void clone(T *&dst, S *src, int n)
 {
     dst = new T[n];
@@ -1203,14 +1212,14 @@ class Solver_NU : public Solver
 
   private:
     SolutionInfo *si = nullptr;
-    int select_working_set(int &i, int &j);
+    int select_working_set(int &i, int &j) override;
     void nu_select_max_violating(double &Gmaxp, int &Gmaxp_idx, double &Gmaxn,
                                  int &Gmaxn_idx) const;
     int nu_select_pair(int ip, int in, const Qfloat *Q_ip, const Qfloat *Q_in, double Gmaxp,
                        double &Gmaxp2, double Gmaxn, double &Gmaxn2) const;
-    double calculate_rho();
+    double calculate_rho() override;
     bool be_shrunk(int i, double Gmax1, double Gmax2, double Gmax3, double Gmax4);
-    void do_shrinking();
+    void do_shrinking() override;
 };
 
 /* Solver_NU::select_working_set()'s first scan, unchanged: the best violating
