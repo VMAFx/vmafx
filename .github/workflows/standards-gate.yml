@@ -6,11 +6,17 @@ name: Standards
 # reads source, the baseline ratchet has to see every change, and a required
 # context that silently does not start would leave the aggregator waiting on a
 # check that never reports.
+#
+# `ready_for_review` is listed because the required aggregator ignores check
+# runs older than its own run (e8b9c9cfa). Without it, a PR opened as a draft
+# and later marked ready keeps only draft-era Standards runs, and the strict
+# contexts below count as never reported.
 on:
   push:
     branches:
       - master
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: standards-${{ github.workflow }}-${{ github.ref }}

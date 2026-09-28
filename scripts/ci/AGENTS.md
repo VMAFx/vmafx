@@ -224,6 +224,11 @@ pinned fail-closed by `test_sycl_tidy_workflow_contract.py` using the shared
 `required_aggregator_harness.py` driver. The exact strict-required set is also
 pinned by `tests/test_hiss_replay_contract.py`; update that replay contract when
 a reporting-always context legitimately joins or leaves `strictMustReport`.
+Every workflow that reports a strict context lists `ready_for_review` in its
+`pull_request` types. The aggregator ignores check runs older than its own run,
+so without that type a PR opened as a draft (every Renovate PR) keeps only
+draft-era runs and fails with "never reported". The same test pins this for
+each strict context.
 
 Real-Make fixtures create failing/recording pip sentinel before fake
 Meson and Ninja, satisfying recursive build dependency graph without tool

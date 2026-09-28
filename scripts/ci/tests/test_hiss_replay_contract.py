@@ -106,9 +106,41 @@ BUG_098_GATE_DEPENDENCIES = {
 
 ADR_1342_STRICT_CONTEXTS = {"RC1 Tester Report"}
 
+# GitHub's activity types for a bare `pull_request:` trigger.
+PULL_REQUEST_DEFAULT_TYPES = frozenset({"opened", "synchronize", "reopened"})
+
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def pull_request_types(workflow: str) -> set[str] | None:
+    """Return the `pull_request` activity types a workflow triggers on.
+
+    None means the workflow has no `pull_request` trigger. A bare
+    `pull_request:` gets GitHub's default types.
+    """
+    trigger = workflow.split("\njobs:", 1)[0]
+    match = re.search(r"(?m)^  pull_request:[ \t]*\n((?:    .*\n)*)", trigger)
+    if match is None:
+        return None
+    types = re.search(r"(?m)^    types:[ \t]*\[([^\]]*)\]", match.group(1))
+    if types is None:
+        return set(PULL_REQUEST_DEFAULT_TYPES)
+    return {item.strip() for item in types.group(1).split(",") if item.strip()}
+
+
+def strict_context_producers(strict: set[str]) -> dict[str, list[str]]:
+    """Map each strict context to the workflow files whose job reports it."""
+    producers: dict[str, list[str]] = {name: [] for name in strict}
+    for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        for name in strict:
+            # Matrix legs spell `Name (Leg)` as `Name (${{ matrix.name }})`.
+            spellings = {name, re.sub(r"\([^()]*\)$", "(${{ matrix.name }})", name)}
+            if any(re.search(rf"(?m)^    name: {re.escape(s)}[ \t]*$", text) for s in spellings):
+                producers[name].append(path.name)
+    return producers
 
 
 def javascript_array(source: str, name: str) -> set[str]:
@@ -230,6 +262,32 @@ class HissReplayContractTests(unittest.TestCase):
         self.assertIn("if (!run)", aggregator)
         self.assertIn("run.conclusion !== 'success'", aggregator)
         self.assertIn("never reported (strict required context)", aggregator)
+
+    def test_strict_contexts_rerun_when_a_draft_becomes_ready(self) -> None:
+        # The aggregator ignores check runs older than its own run, so a strict
+        # context must report again on `ready_for_review`. Otherwise a PR opened
+        # as a draft (every Renovate PR) fails with "never reported".
+        aggregator = read(".github/workflows/required-aggregator.yml")
+        self.assertIn("if (runTimestampMs(run) < minCreatedMs) continue;", aggregator)
+        strict = javascript_array(aggregator, "strictMustReport")
+        for name, workflows in sorted(strict_context_producers(strict).items()):
+            with self.subTest(context=name):
+                self.assertEqual(len(workflows), 1, f"{name} producers: {workflows}")
+                types = pull_request_types(read(f".github/workflows/{workflows[0]}"))
+                self.assertIsNotNone(types, f"{workflows[0]} has no pull_request trigger")
+                self.assertIn("ready_for_review", types or set(), workflows[0])
+
+    def test_pull_request_types_reads_bare_explicit_and_absent_triggers(self) -> None:
+        bare = "on:\n  push:\n  pull_request:\n\nconcurrency:\n  group: x\njobs:\n"
+        explicit = (
+            "on:\n  pull_request:\n    types: [opened, ready_for_review]\n"
+            "    paths: [a]\njobs:\n"
+        )
+        # A job named `pull_request` under `jobs:` is not a trigger.
+        target_only = "on:\n  pull_request_target:\n    types: [opened]\njobs:\n  pull_request:\n"
+        self.assertEqual(pull_request_types(bare), PULL_REQUEST_DEFAULT_TYPES)
+        self.assertEqual(pull_request_types(explicit), {"opened", "ready_for_review"})
+        self.assertIsNone(pull_request_types(target_only))
 
     def test_delayed_gate_dependencies_match_the_converted_workflows(self) -> None:
         aggregator = read(".github/workflows/required-aggregator.yml")
