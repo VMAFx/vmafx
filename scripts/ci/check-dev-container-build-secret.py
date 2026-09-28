@@ -8,7 +8,7 @@ optional BuildKit secret ``github_token``. Which dev/Containerfile stages
 consume it is derived from the stage graph, not hard-coded: a stage consumes
 the secret when it, a stage it is built FROM, or a stage it copies from
 mounts it, transitively. The shared stage
-builder (ADR-0819, ADR-1346) must forward the secret for exactly those
+builder (ADR-0819, ADR-1346, ADR-1354) must forward the secret for exactly those
 targets, and every workflow step that calls the builder must hand it
 GITHUB_TOKEN exactly when its target consumes the secret.
 """
@@ -29,11 +29,15 @@ TOKEN_DECLARATION = re.compile(r"(?m)^\s*(?:ARG|ENV)\s+GITHUB_TOKEN(?:\s|=)")
 MOUNT = re.compile(r"--mount=(?P<options>[^\s\\]+)")
 # Every workflow that builds a stage image through STAGE_BUILDER, with the
 # targets it must build. dev-container-build.yml builds libvmaf-build for the
-# PR gate and build-deps for the release rehearsal; supply-chain.yml builds
-# build-deps for the release itself.
+# PR gate and release-build for the release rehearsal; supply-chain.yml builds
+# release-build, the Debian 13 release-track stage, for the release itself
+# (ADR-1354).
 STAGE_CALLERS = {
-    ".github/workflows/dev-container-build.yml": ("raw CI build", ("libvmaf-build", "build-deps")),
-    ".github/workflows/supply-chain.yml": ("release build", ("build-deps",)),
+    ".github/workflows/dev-container-build.yml": (
+        "raw CI build",
+        ("libvmaf-build", "release-build"),
+    ),
+    ".github/workflows/supply-chain.yml": ("release build", ("release-build",)),
 }
 INVOCATION = re.compile(
     r"bash " + re.escape(STAGE_BUILDER) + r"[ \t]+(?:\\\n[ \t]*)?(?P<target>[^\s\\]+)"

@@ -133,8 +133,8 @@ searches that can turn an initialization diagnostic into a false success.
 ### SHELL / hadolint DL4006
 
 - Declare `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` explicitly in
-  `build-deps`, `gpu-sdks`, `libvmaf-build`, `go-build`, and
-  `dev-mcp`. Each executing stage then exposes pipeline failure
+  `build-deps`, `release-build`, `gpu-sdks`, `libvmaf-build`,
+  `go-build`, and `dev-mcp`. Each executing stage then exposes pipeline failure
   contract to both builder and static analysis without depending on
   parent-stage tracking.
 - Keep Go output-count guard as Bash array, not parsed `ls` output.
@@ -487,3 +487,15 @@ stage free. Four pins hidden this way were most out-of-date images
 in repository.
 
 See [docs/development/base-images.md](../docs/development/base-images.md).
+
+## `release-build` stage (ADR-1354)
+
+Native release bundle compiles in `release-build`: separate root
+`FROM ${RELEASE_BUILDER_BASE}` (Debian 13, glibc 2.41), placed before
+`gpu-sdks` so last stage stays `dev-mcp`. Never base it on, or copy from,
+an Ubuntu stage: bundle would bind glibc 2.43 again. Marker write must
+stay byte-identical to `build-deps` one (unit suite requires exactly two
+writes). `xxd` load-bearing (built-in model embed); `patchelf` pinned to
+Debian 13 package (`PATCHELF_VERSION`, RUNPATH fix). Moving
+`RELEASE_BUILDER_BASE` to another Debian release fails that install until
+pin follows.

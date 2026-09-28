@@ -10,9 +10,9 @@
 # `docker build --target libvmaf-build` only when container inputs change,
 # fails fast on any build error, and smoke-tests the resulting image by invoking
 # `vmaf --version` and the CPU-backend probe against the bundled test YUVs.
-# It then rehearses the native release build (ADR-1346): it builds the
-# `build-deps` stage and runs the release compile in it exactly as
-# supply-chain.yml's `build-artifacts` does.
+# It then rehearses the native release build (ADR-1346, ADR-1354): it builds
+# the Debian 13 `release-build` stage and runs the release compile in it
+# exactly as supply-chain.yml's `build-artifacts` does.
 #
 # No image is pushed — this is a pure build-verification gate.
 
@@ -137,7 +137,8 @@ jobs:
       # main regression surface — they're included in `libvmaf-build`.
       # The build goes through the same script as the release job's
       # `build-artifacts` (supply-chain.yml, ADR-1346), which builds the
-      # `build-deps` stage; the release rehearsal below builds that stage too.
+      # `release-build` stage; the release rehearsal below builds that stage
+      # too.
       - name: Build dev container (up to libvmaf-build stage)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -189,18 +190,18 @@ jobs:
           cat provenance/container-build-provenance.txt
           bash scripts/ci/check-container-build.sh --verify provenance
 
-      # Release-path rehearsal (ADR-1346). `build-artifacts` in supply-chain.yml
-      # builds `build-deps` from the release tag and runs
+      # Release-path rehearsal (ADR-1346, ADR-1354). `build-artifacts` in
+      # supply-chain.yml builds `release-build` from the release tag and runs
       # build-native-release-artifacts.sh in it; these two steps do the same
       # with the same script, flags and user, so a pull request that would
       # break the release compile fails here instead of at publication.
-      # `build-deps` is the first stage of the image built above, so its
-      # layers normally come from this daemon's build cache (the release job
-      # itself starts from an empty cache and builds them in a few minutes).
-      # No GITHUB_TOKEN: build-deps mounts no secret.
-      - name: Release rehearsal — build the build-deps stage
+      # `release-build` is its own Debian 13 root, not a parent of the image
+      # built above, so it builds here from an empty cache exactly as in the
+      # release job (under a minute). No GITHUB_TOKEN: release-build mounts
+      # no secret.
+      - name: Release rehearsal — build the release-build stage
         run: |
-          bash scripts/ci/build-dev-container-stage.sh build-deps \
+          bash scripts/ci/build-dev-container-stage.sh release-build \
             "vmafx-release-build:${GITHUB_SHA}"
 
       # A release checks out its tag, so `git describe` reports
@@ -212,7 +213,7 @@ jobs:
       # throwaway checkout only and never pushed, gives the build the same
       # shape as a release: the same describe form, the same verifier branch,
       # and the manifest version as the expected version.
-      - name: Release rehearsal — build, stage, stamp and verify in build-deps
+      - name: Release rehearsal — build, stage, stamp and verify in release-build
         run: |
           version="$(jq -er '.["."]' .release-please-manifest.json)"
           git update-ref "refs/tags/v${version}" HEAD

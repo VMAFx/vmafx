@@ -1,10 +1,19 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1346: Build native release artifacts on a hosted runner inside the build-deps container stage
 
-- **Status**: Accepted
+- **Status**: Accepted (amended by [ADR-1354](1354-native-bundle-release-track.md))
 - **Date**: 2026-09-27
 - **Deciders**: lusoris
 - **Tags**: ci, release, supply-chain, container, dev-container, adr-1102, fork-local
+
+> **Amendment (2026-09-28, [ADR-1354](1354-native-bundle-release-track.md))**:
+> The native bundle now compiles in the Debian 13 `release-build` stage of `dev/Containerfile`
+> (`RELEASE_BUILDER_BASE`) instead of `build-deps`, which ends the two-track exception below and
+> the release-notes checklist step. `verify-native-artifacts` runs on `ubuntu-24.04` and also
+> starts the CLI on `RELEASE_RUNTIME_CC`. The release compile leaves out the unit tests
+> (`-Denable_tests=false`). The hosted runner, the stage build through
+> `scripts/ci/build-dev-container-stage.sh`, the `docker run` flags and the PR-gate rehearsal
+> stay as decided here.
 
 ## Context
 
@@ -37,7 +46,7 @@ Three build settings are explicit:
 
 `scripts/ci/check-container-build.sh` accepts exactly one identity, `image_title=vmaf-dev-mcp`, which `build-deps` writes and every later stage inherits. Its `--verify` mode rejects a symlinked stamp, as `verify-native-release-artifacts.sh` does. The retired runner title `vmaf-sycl-arc-runner` and the `vmafx-*` aliases are rejected; no image ever wrote them.
 
-**Two-track exception.** `build-config.env`'s TWO TRACKS rule assigns published artifacts to the `RELEASE_*` track. The native bundle is built on the `DEV_*` track instead and needs glibc 2.43. It does not load on the release runtime image (`RELEASE_RUNTIME_CC`, distroless `cc-debian13`, glibc 2.41), on Debian 13 or on Ubuntu 24.04; each fails with `version 'GLIBC_2.43' not found`. `verify-native-artifacts` therefore runs on `ubuntu-26.04`. This exception holds for 1.0.0-rc.1 only as far as `docs/state.md` row `T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27` allows: the native bundle moves to the Debian 13 release track before the final 1.0.0. Until then the operator adds the floor to each draft release's notes, a checklist step in the [release guide](../development/release.md#release-notes-native-linux-bundle-requirements).
+**Two-track exception.** `build-config.env`'s TWO TRACKS rule assigns published artifacts to the `RELEASE_*` track. The native bundle is built on the `DEV_*` track instead and needs glibc 2.43. It does not load on the release runtime image (`RELEASE_RUNTIME_CC`, distroless `cc-debian13`, glibc 2.41), on Debian 13 or on Ubuntu 24.04; each fails with `version 'GLIBC_2.43' not found`. `verify-native-artifacts` therefore runs on `ubuntu-26.04`. This exception holds for 1.0.0-rc.1 only as far as `docs/state.md` row `T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27` allows: the native bundle moves to the Debian 13 release track before the final 1.0.0. Until then the operator adds the floor to each draft release's notes, a checklist step in the [release guide](../development/release.md#native-linux-release-layout) until ADR-1354 removed it.
 
 ## Alternatives considered
 

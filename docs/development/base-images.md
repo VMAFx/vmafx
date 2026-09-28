@@ -96,6 +96,13 @@ Keep both on the same libc generation unless you have a written reason not to.
 A dev container on a different libc than the release image tests the wrong
 thing.
 
+The native Linux release bundle (`libvmaf.so*` and `vmaf`) follows the release
+track even though it is built from `dev/Containerfile`: its `release-build`
+stage takes `RELEASE_BUILDER_BASE`, not `DEV_BASE`
+([ADR-1354](../adr/1354-native-bundle-release-track.md)). A binary compiled on
+the Ubuntu 26.04 dev base needs glibc 2.43 and does not start on Debian 13, on
+Ubuntu 24.04 or on `RELEASE_RUNTIME_CC`.
+
 ## Version knobs
 
 The top of the config carries the human-meaningful version of each pin

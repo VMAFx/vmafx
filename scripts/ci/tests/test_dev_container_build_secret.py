@@ -29,7 +29,7 @@ SPEC.loader.exec_module(MODULE)
 
 GATE = ".github/workflows/dev-container-build.yml"
 RELEASE = ".github/workflows/supply-chain.yml"
-REHEARSAL_BUILD = "bash scripts/ci/build-dev-container-stage.sh build-deps \\\n"
+REHEARSAL_BUILD = "bash scripts/ci/build-dev-container-stage.sh release-build \\\n"
 STEP_CREDENTIAL_ENV = "        env:\n          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"
 BUILDER_FORWARDING_ARM = 'secret_args=(--secret "id=github_token,env=GITHUB_TOKEN")'
 
@@ -102,8 +102,9 @@ class BuildSecretContract(unittest.TestCase):
 
     def test_secret_consumers_follow_the_stage_graph(self) -> None:
         stages, consumers = MODULE.secret_stages(self.containerfile)
-        self.assertLessEqual({"build-deps", "gpu-sdks", "libvmaf-build"}, stages)
+        self.assertLessEqual({"build-deps", "release-build", "gpu-sdks", "libvmaf-build"}, stages)
         self.assertNotIn("build-deps", consumers)
+        self.assertNotIn("release-build", consumers)
         self.assertLessEqual({"gpu-sdks", "libvmaf-build", "dev-mcp"}, consumers)
 
     def test_copy_from_a_consumer_consumes(self) -> None:
@@ -131,10 +132,10 @@ class BuildSecretContract(unittest.TestCase):
             any("github_token for libvmaf-build" in error for error in self.builder_errors(text))
         )
 
-    def test_stage_builder_secret_for_build_deps_fails(self) -> None:
+    def test_stage_builder_secret_for_release_build_fails(self) -> None:
         text = self.builder.replace("secret_args=()", BUILDER_FORWARDING_ARM, 1)
         self.assertTrue(
-            any("must not pass a secret for build-deps" in e for e in self.builder_errors(text))
+            any("must not pass a secret for release-build" in e for e in self.builder_errors(text))
         )
 
     def test_stage_builder_secret_for_every_target_fails(self) -> None:
@@ -148,12 +149,12 @@ class BuildSecretContract(unittest.TestCase):
         )
 
     def test_stage_builder_unknown_or_missing_targets_fail(self) -> None:
-        unknown = self.builder.replace("  build-deps)\n", "  release-image)\n", 1)
+        unknown = self.builder.replace("  release-build)\n", "  release-image)\n", 1)
         self.assertTrue(
             any("release-image, not a dev/Containerfile" in e for e in self.builder_errors(unknown))
         )
         no_case = self.builder.replace("  libvmaf-build)\n", "", 1).replace(
-            "  build-deps)\n", "", 1
+            "  release-build)\n", "", 1
         )
         self.assertTrue(any("allowlist" in e for e in self.builder_errors(no_case)))
 
@@ -183,19 +184,36 @@ class BuildSecretContract(unittest.TestCase):
         self.assertIn(REHEARSAL_BUILD, self.workflow)
         text = self.workflow.replace(REHEARSAL_BUILD, "true \\\n", 1)
         self.assertTrue(
-            any("build libvmaf-build, build-deps" in e for e in self.caller_errors(text, GATE))
+            any("build libvmaf-build, release-build" in e for e in self.caller_errors(text, GATE))
         )
 
-    def test_token_on_a_build_deps_step_fails(self) -> None:
+    def test_release_on_the_dev_track_stage_fails(self) -> None:
+        # ADR-1354: the release compiles in the Debian 13 release-track stage.
+        # Pointing the release job back at build-deps (Ubuntu 26.04) must fail.
+        text = self.release.replace(
+            "build-dev-container-stage.sh release-build \\\n",
+            "build-dev-container-stage.sh build-deps \\\n",
+            1,
+        )
+        self.assertNotEqual(text, self.release)
+        self.assertTrue(
+            any("must build release-build" in e for e in self.caller_errors(text, RELEASE))
+        )
+
+    def test_token_on_a_release_build_step_fails(self) -> None:
         for path, workflow in ((GATE, self.workflow), (RELEASE, self.release)):
             with self.subTest(path=path):
-                step = "Build the build-deps" if path == RELEASE else "build the build-deps stage"
+                step = (
+                    "Build the release-build"
+                    if path == RELEASE
+                    else "build the release-build stage"
+                )
                 start = workflow.index(step)
                 run_at = workflow.index("        run: |\n", start)
                 text = workflow[:run_at] + STEP_CREDENTIAL_ENV + workflow[run_at:]
                 self.assertTrue(
                     any(
-                        "of build-deps must not receive GITHUB_TOKEN" in e
+                        "of release-build must not receive GITHUB_TOKEN" in e
                         for e in self.caller_errors(text, path)
                     )
                 )
@@ -218,10 +236,11 @@ class BuildSecretContract(unittest.TestCase):
 
     def test_inline_stage_build_fails_but_check_passes(self) -> None:
         inline = self.release.replace(
-            "bash scripts/ci/build-dev-container-stage.sh build-deps \\\n",
-            "docker build --file dev/Containerfile --target build-deps \\\n",
+            "bash scripts/ci/build-dev-container-stage.sh release-build \\\n",
+            "docker build --file dev/Containerfile --target release-build \\\n",
             1,
         )
+        self.assertNotEqual(inline, self.release)
         self.assertTrue(any("only via" in e for e in self.caller_errors(inline, RELEASE)))
         self.assertIn("docker build \\\n            --check", self.workflow)
         self.assertEqual(self.caller_errors(self.workflow, GATE), [])
@@ -303,12 +322,12 @@ class StageBuilderBehaviour(unittest.TestCase):
             recorded = log.read_text(encoding="utf-8") if log.exists() else ""
         return result.returncode, recorded
 
-    def test_build_deps_gets_no_secret_even_with_a_token(self) -> None:
-        status, recorded = self.run_builder("build-deps", "img:1")
+    def test_release_build_gets_no_secret_even_with_a_token(self) -> None:
+        status, recorded = self.run_builder("release-build", "img:1")
         self.assertEqual(status, 0)
         lines = recorded.splitlines()
         self.assertEqual(lines[:2], ["build", "--file"])
-        self.assertIn("--target\nbuild-deps\n--tag\nimg:1\n", recorded)
+        self.assertIn("--target\nrelease-build\n--tag\nimg:1\n", recorded)
         self.assertNotIn("--secret", recorded)
 
     def test_libvmaf_build_gets_the_optional_secret(self) -> None:
@@ -323,9 +342,11 @@ class StageBuilderBehaviour(unittest.TestCase):
         for args in (
             ("img:3",),
             ("dev-mcp", "img:3"),
+            # ADR-1354: no caller builds the dev-track stage any more.
+            ("build-deps", "img:3"),
             ("", "img:3"),
-            ("build-deps", ""),
-            ("build-deps", "img:3", "extra"),
+            ("release-build", ""),
+            ("release-build", "img:3", "extra"),
         ):
             with self.subTest(args=args):
                 status, recorded = self.run_builder(*args)

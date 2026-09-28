@@ -1,0 +1,1 @@
+| [ADR-1354](1354-native-bundle-release-track.md) | Build the native Linux bundle (`libvmaf.so*`, `vmaf`) in a Debian 13 `release-build` stage of `dev/Containerfile` on the release track; verify on `ubuntu-24.04` and the distroless release runtime; amends ADR-1346. | Accepted | ci, release, supply-chain, container, dev-container, adr-1102, fork-local |

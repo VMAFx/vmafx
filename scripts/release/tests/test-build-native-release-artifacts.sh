@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression tests for the in-container native release build (ADR-1346).
+# Regression tests for the in-container native release build (ADR-1346, ADR-1354).
 #
 # Runs scripts/release/build-native-release-artifacts.sh against a throwaway
 # Git repository with a stub `meson` on PATH. The stub records how it was
@@ -8,8 +8,8 @@
 # real. The dev container is simulated through VMAFX_CONTAINER_MARKER, as in
 # scripts/ci/tests/test-check-container-build.sh. No Docker is needed, but the
 # host needs cc, readelf and patchelf (the ubuntu-26.04 runner image and the
-# build-deps stage carry all three): the staged CLI's RUNPATH is rewritten and
-# inspected for real.
+# release-build stage carry all three): the staged CLI's RUNPATH is rewritten
+# and inspected for real.
 #
 # Usage: bash scripts/release/tests/test-build-native-release-artifacts.sh
 #
@@ -44,7 +44,7 @@ check() {
   fi
 }
 
-# The marker dev/Containerfile bakes into every stage, build-deps included.
+# The marker dev/Containerfile bakes into every stage, release-build included.
 marker="$scratch/etc-vmafx-dev-container"
 printf '%s\n' 'vmafx_dev_container=1' 'image_title=vmaf-dev-mcp' \
   'containerfile=dev/Containerfile' 'source=https://github.com/VMAFx/vmafx' >"$marker"
@@ -177,8 +177,10 @@ for name in libvmaf.so libvmaf.so.3 libvmaf.so.3.0.0 vmaf models.tar.gz \
   container-build-provenance.txt; do
   check "stages $name as a regular non-empty file" regular_nonempty "$good/artifacts/$name"
 done
-check 'meson setup keeps the release flags and pins DNN off' grep -q \
-  '^setup build core --buildtype=release -Denable_avx512=true -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled|' \
+# ADR-1354: unit tests stay out of the release build; GCC 14.2 on the Debian 13
+# release track crashed at random while LTO-linking them.
+check 'meson setup keeps the release flags and pins DNN and unit tests off' grep -q \
+  '^setup build core --buildtype=release -Denable_avx512=true -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Denable_tests=false|' \
   "$good/meson.log"
 check 'meson runs with ccache disabled' grep -q '^compile -C build|CCACHE_DISABLE=1|' "$good/meson.log"
 check 'meson sees SOURCE_DATE_EPOCH from the commit' grep -q \

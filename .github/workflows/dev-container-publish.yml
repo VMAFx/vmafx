@@ -10,8 +10,8 @@
 # This workflow publishes ghcr.io/vmafx/vmafx-dev-mcp on every change to
 # dev/Containerfile or dev/scripts/** for transparency and contributor
 # convenience. It is not on the release path: supply-chain.yml builds the
-# smaller `build-deps` stage from the release tag itself (ADR-1346) and never
-# pulls this image. This is the one workflow build of dev/Containerfile that
+# small Debian 13 `release-build` stage from the release tag itself
+# (ADR-1346, ADR-1354) and never pulls this image. This is the one workflow build of dev/Containerfile that
 # does not go through scripts/ci/build-dev-container-stage.sh, because it
 # pushes to a registry; check-dev-container-build-secret.py checks its secret.
 #

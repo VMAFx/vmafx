@@ -60,10 +60,11 @@ explicit SBOM artifact feeds keyless signing before final strict
 attachment job. Never bypass that DAG or restore permissive unmatched-file
 uploads; green workflow must mean every promised asset exists.
 
-Native payload built on `ubuntu-latest` inside `build-deps` stage of tagged
-`dev/Containerfile` (ADR-1346, supersedes ADR-1178): stage built in job by
-`scripts/ci/build-dev-container-stage.sh build-deps` (no GITHUB_TOKEN: stage
-mounts no secret; no external layer cache, no registry), compile by
+Native payload built on `ubuntu-latest` inside `release-build` stage of
+tagged `dev/Containerfile` (ADR-1346, supersedes ADR-1178; ADR-1354 moved it
+to Debian 13 release track): stage built in job by
+`scripts/ci/build-dev-container-stage.sh release-build` (no GITHUB_TOKEN:
+stage mounts no secret; no external layer cache, no registry), compile by
 `scripts/release/build-native-release-artifacts.sh` under
 `docker run --pull never --network none` as runner UID. No job-level
 concurrency group on `build-artifacts` (GitHub cancels older pending job in
@@ -71,10 +72,12 @@ a group); workflow-level per-tag group stays. Dev Container PR gate
 rehearses both steps (same script, same `docker run`, local tag
 `v<manifest version>` on HEAD so describe matches a tag build); change one,
 change other. Never restore self-hosted `sycl-arc` label, host compile, or
-GHCR pull for release build. `verify-native-artifacts` stays `ubuntu-26.04`:
-bundle needs glibc >= 2.43, so no Debian 13 / Ubuntu 24.04 / distroless
-release runtime (recorded two-track exception, `docs/state.md`
-`T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27`).
+GHCR pull for release build, or `build-deps` (Ubuntu 26.04, glibc 2.43)
+as release stage. `verify-native-artifacts` pinned `ubuntu-24.04`, oldest
+hosted image that loads bundle (floor GLIBC_2.38 + GLIBCXX_3.4.30;
+`ubuntu-22.04` fails); never `ubuntu-latest`. Same job starts downloaded CLI
+on `RELEASE_RUNTIME_CC` (distroless `cc-debian13`, from `build-config.env`)
+with no `LD_LIBRARY_PATH`: proves RUNPATH `$ORIGIN` there; never add it back.
 
 Native payload is Linux ELF, materializes complete Meson
 `libvmaf.so` / SONAME / real-name chain as regular files. Before any native

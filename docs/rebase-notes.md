@@ -54553,10 +54553,12 @@ are untouched.
 
 `scripts/release/build-native-release-artifacts.sh` must keep running
 `patchelf --set-rpath '$ORIGIN'` on the staged copy of the CLI, never on
-`build/tools/vmaf`, and `dev/Containerfile`'s `build-deps` stage must keep
+`build/tools/vmaf`, and the stage the release compiles in must keep
 installing the pinned `patchelf=${PATCHELF_VERSION}`: the release compile
-runs with `--network none` and cannot install it. A `DEV_BASE` move to another
-Ubuntu series moves that pin in the same pull request.
+runs with `--network none` and cannot install it. Since ADR-1354 that stage
+is `release-build` (Debian 13 `0.18.0-1.4`), not `build-deps`; a
+`RELEASE_BUILDER_BASE` move to another Debian release moves that pin in the
+same pull request.
 `verify-native-release-artifacts.sh` must keep requiring exactly one
 `DT_RUNPATH` entry, `$ORIGIN`, and no `DT_RPATH`, and must keep running `ldd`
 and `vmaf --version` without `LD_LIBRARY_PATH`; setting it hid the v1.0.0-rc.1
@@ -54586,3 +54588,24 @@ rebase impact.
   then `helm template vmafx deploy/helm/vmafx --set operator.enabled=true --set node.enabled=true > r.yaml`
   and `python3 scripts/ci/check-helm-selector-isolation.py r.yaml`.
 - Changelog: `changelog.d/fixed/helm-server-selector.md`.
+
+## ADR-1354 — native Linux bundle on the Debian 13 release track (2026-09-28)
+
+The native release compile runs in the `release-build` stage of
+`dev/Containerfile`, a separate root `FROM ${RELEASE_BUILDER_BASE}` (Debian 13),
+not in `build-deps`. Keep that stage free of any `FROM`/`COPY --from` link to the
+Ubuntu stages, keep its marker write byte-identical to the one in `build-deps`
+(`scripts/ci/tests/test-check-container-build.sh` requires exactly two writes),
+keep `xxd` (built-in models) and `patchelf` pinned to Debian 13's version, and
+place the stage before `gpu-sdks` so the file's last stage stays `dev-mcp`.
+`build-dev-container-stage.sh` allowlists `release-build` and `libvmaf-build`
+only; `check-dev-container-build-secret.py` `STAGE_CALLERS` requires
+`supply-chain.yml` to build `release-build` and the Dev Container gate to build
+`libvmaf-build` and `release-build`. The release script adds
+`-Denable_tests=false` because Debian 13's GCC 14.2 crashes at random while
+LTO-linking the unit tests. `verify-native-artifacts` stays pinned to
+`ubuntu-24.04` (never `ubuntu-latest`) and keeps the `RELEASE_RUNTIME_CC` start
+check, which runs the CLI with no `LD_LIBRARY_PATH` so it also proves the
+RUNPATH `$ORIGIN` from the note above. `patchelf` for that RUNPATH lives in
+`release-build` only; do not reinstall it in `build-deps`. No native/public
+API, numerical or FFmpeg rebase impact.

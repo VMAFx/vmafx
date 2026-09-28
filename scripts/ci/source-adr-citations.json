@@ -5755,7 +5755,7 @@
         ".github/workflows/docker-image.yml": 1,
         ".github/workflows/rule-enforcement.yml": 2,
         ".github/workflows/supply-chain.yml": 4,
-        "dev/Containerfile": 2,
+        "dev/Containerfile": 3,
         "scripts/ci/check-container-build.sh": 2,
         "scripts/ci/tests/test-check-container-build.sh": 1,
         "scripts/dev/check-container-source.sh": 1,
@@ -7628,12 +7628,12 @@
       "sites": {
         ".github/workflows/dev-container-build.yml": 3,
         ".github/workflows/dev-container-publish.yml": 2,
-        ".github/workflows/supply-chain.yml": 6,
-        "dev/Containerfile": 1,
+        ".github/workflows/supply-chain.yml": 4,
+        "dev/Containerfile": 2,
         "scripts/ci/build-dev-container-stage.sh": 2,
         "scripts/ci/check-container-build.sh": 2,
         "scripts/ci/check-dev-container-build-secret.py": 4,
-        "scripts/ci/tests/test-check-container-build.sh": 4,
+        "scripts/ci/tests/test-check-container-build.sh": 2,
         "scripts/release/build-native-release-artifacts.sh": 1,
         "scripts/release/tests/test-build-native-release-artifacts.sh": 1
       },
@@ -7677,6 +7677,22 @@
         "scripts/ci/tests/test_check_helm_selector_isolation.py": 1
       },
       "target": "1353-helm-server-component-selector.md"
+    },
+    "1354": {
+      "sites": {
+        ".github/workflows/dev-container-build.yml": 2,
+        ".github/workflows/dev-container-publish.yml": 1,
+        ".github/workflows/supply-chain.yml": 6,
+        "dev/Containerfile": 5,
+        "scripts/ci/build-dev-container-stage.sh": 1,
+        "scripts/ci/check-container-build.sh": 1,
+        "scripts/ci/check-dev-container-build-secret.py": 2,
+        "scripts/ci/tests/test-check-container-build.sh": 3,
+        "scripts/ci/tests/test_dev_container_build_secret.py": 2,
+        "scripts/release/build-native-release-artifacts.sh": 2,
+        "scripts/release/tests/test-build-native-release-artifacts.sh": 2
+      },
+      "target": "1354-native-bundle-release-track.md"
     },
     "1355": {
       "sites": {

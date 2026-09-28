@@ -2,10 +2,11 @@
 # Build, stage, stamp and verify the native Linux release bundle.
 #
 # Runs INSIDE an image built from dev/Containerfile. The release job
-# (`build-artifacts` in .github/workflows/supply-chain.yml, ADR-1346) builds
-# the `build-deps` stage with scripts/ci/build-dev-container-stage.sh and runs
-# this script in it with the checkout mounted as the working directory, as the
-# runner's UID (usually without a passwd entry in the image, so HOME is /).
+# (`build-artifacts` in .github/workflows/supply-chain.yml, ADR-1346, ADR-1354)
+# builds the Debian 13 `release-build` stage with
+# scripts/ci/build-dev-container-stage.sh and runs this script in it with the
+# checkout mounted as the working directory, as the runner's UID (usually
+# without a passwd entry in the image, so HOME is /).
 # The Dev Container PR gate rehearses the same invocation. Outside the
 # container the first step fails closed (ADR-1102).
 #
@@ -33,18 +34,25 @@ usage() {
   printf 'Usage: build-native-release-artifacts.sh VERSION\n' >&2
 }
 
-# Two settings keep the bundle and the build independent of what the image
+# Three settings keep the bundle and the build independent of what the image
 # happens to carry:
-#   * enable_dnn=disabled: the release ships no ONNX Runtime. build-deps has
-#     none, so today this changes nothing; it is explicit so that a stage that
-#     does carry ONNX Runtime (libvmaf-build, or a future build-deps) cannot
-#     turn `auto` on and make libvmaf.so NEED libonnxruntime.so.1, which the
-#     clean-environment verifier cannot resolve.
+#   * enable_dnn=disabled: the release ships no ONNX Runtime. release-build
+#     has none, so today this changes nothing; it is explicit so that a stage
+#     that does carry ONNX Runtime (libvmaf-build, or a future release-build)
+#     cannot turn `auto` on and make libvmaf.so NEED libonnxruntime.so.1,
+#     which the clean-environment verifier cannot resolve.
+#   * enable_tests=false: the release ships libvmaf.so* and vmaf, not the unit
+#     tests, which other CI jobs build and run. Debian 13's GCC 14.2 crashed
+#     at random while LTO-linking the ~150 test executables (an internal
+#     compiler error, once reported as heap corruption in lto1) in two of
+#     three full builds, so building them would make the release fail by
+#     chance (ADR-1354). docker/Dockerfile.production, Dockerfile.node and
+#     Dockerfile.controller build libvmaf on the same base with it too.
 #   * CCACHE_DISABLE=1: build-deps installs ccache and Meson wraps the
 #     compiler in it automatically. Run as a UID with no passwd entry, HOME is
 #     / and ccache cannot create its cache directory, so every compile fails
-#     with "ccache: error: Permission denied". Disabled, ccache runs the
-#     compiler directly and every object is compiled from source.
+#     with "ccache: error: Permission denied". release-build has no ccache;
+#     the setting keeps any stage that does from breaking the release build.
 # The subshell scopes both exports to the build, as the former separate
 # workflow step did: the provenance stamp keeps its wall-clock stamped_at.
 build_release() (
@@ -52,7 +60,8 @@ build_release() (
   export SOURCE_DATE_EPOCH
   export CCACHE_DISABLE=1
   meson setup build core --buildtype=release -Denable_avx512=true \
-    -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled
+    -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled \
+    -Denable_tests=false
   meson compile -C build
 )
 
@@ -94,7 +103,7 @@ stage_libvmaf_chain() {
 
 require_patchelf() {
   if ! command -v patchelf >/dev/null; then
-    echo "ERROR: patchelf is required to stage the vmaf CLI; dev/Containerfile installs it in build-deps" >&2
+    echo "ERROR: patchelf is required to stage the vmaf CLI; dev/Containerfile installs it in release-build" >&2
     return 1
   fi
 }

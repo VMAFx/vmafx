@@ -8,9 +8,10 @@
 # The policy says every canonical/published artifact is produced inside an
 # image built from `dev/Containerfile` and that a host-side build is
 # diagnostic-only. The native release job (`build-artifacts` in
-# `.github/workflows/supply-chain.yml`, ADR-1346) builds that file's
-# `build-deps` stage on a GitHub-hosted runner and runs the release build
-# inside it; the local `vmaf-dev-mcp` container is the same file's final stage.
+# `.github/workflows/supply-chain.yml`, ADR-1346, ADR-1354) builds that file's
+# Debian 13 `release-build` stage on a GitHub-hosted runner and runs the
+# release build inside it; the local `vmaf-dev-mcp` container is the same
+# file's final stage.
 # Until this script existed the policy was documentation-only: nothing in the
 # release path could tell a container build from a host build, so a host-built
 # binary could be attached to a release with no signal at all.
@@ -18,7 +19,8 @@
 # The gate has one source of truth: the marker file `/etc/vmafx-dev-container`,
 # written by `dev/Containerfile` in its first (`build-deps`) stage and
 # therefore inherited by every downstream stage (`gpu-sdks`, `libvmaf-build`,
-# `go-build`, `dev-mcp`). Every stage therefore carries the one identity
+# `go-build`, `dev-mcp`), and written with the same bytes by the separate
+# `release-build` root. Every stage therefore carries the one identity
 # `image_title=vmaf-dev-mcp`; OCI labels differ per stage but are invisible
 # from inside a container and play no part here. The marker cannot exist on a
 # host checkout unless somebody deliberately creates it.

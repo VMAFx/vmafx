@@ -7,11 +7,12 @@
 #
 # One implementation, every CI caller that needs a stage image to run:
 #
-#   .github/workflows/supply-chain.yml          `build-artifacts` (ADR-1346):
-#       builds `build-deps` from the release tag's own Containerfile on a
-#       GitHub-hosted runner, then runs the native release build inside it.
+#   .github/workflows/supply-chain.yml          `build-artifacts` (ADR-1346,
+#       ADR-1354): builds `release-build` from the release tag's own
+#       Containerfile on a GitHub-hosted runner, then runs the native release
+#       build inside it.
 #   .github/workflows/dev-container-build.yml  PR gate (ADR-0819): builds
-#       `libvmaf-build` and smoke-tests it, then builds `build-deps` and
+#       `libvmaf-build` and smoke-tests it, then builds `release-build` and
 #       rehearses the release build in it exactly as `build-artifacts` does.
 #
 # Keeping every caller on this script means the PR gate exercises exactly the
@@ -22,9 +23,10 @@
 # The target is an explicit argument from a fixed allowlist so no caller can
 # build a stage by accident:
 #
-#   build-deps     digest-pinned Ubuntu base plus Ubuntu archive packages
-#                  (gcc-13, meson, ninja, nasm, ...). No third-party download,
-#                  so no GitHub token: nothing in the stage could use one.
+#   release-build  digest-pinned Debian 13 base (RELEASE_BUILDER_BASE) plus
+#                  Debian archive packages (gcc, meson, ninja, nasm, ...). No
+#                  third-party download, so no GitHub token: nothing in the
+#                  stage could use one.
 #   libvmaf-build  adds the GPU SDKs and third-party fetches; the Intel NEO
 #                  release lookup takes the optional BuildKit secret
 #                  `github_token` from GITHUB_TOKEN (never a build argument).
@@ -52,7 +54,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: build-dev-container-stage.sh {build-deps|libvmaf-build} <image-tag>" >&2
+  echo "usage: build-dev-container-stage.sh {release-build|libvmaf-build} <image-tag>" >&2
 }
 
 if [ "$#" -ne 2 ] || [ -z "$1" ] || [ -z "$2" ]; then
@@ -64,7 +66,7 @@ target="$1"
 image_tag="$2"
 
 case "$target" in
-  build-deps)
+  release-build)
     secret_args=()
     ;;
   libvmaf-build)

@@ -375,13 +375,14 @@ stage builder `build-dev-container-stage.sh <target> <tag>` (ADR-1346), its
 workflow callers, the GHCR publisher's secret, the NEO fetcher's rate-limit
 remedy, and the anonymous/authenticated operator examples. Secret consumers
 derived from stage graph (FROM parent + `COPY --from`, via
-`check-container-image-references.py` parser): `build-deps` consumes nothing;
-`gpu-sdks` and every stage built on it consume. Builder allowlists targets in
-a `case` (`build-deps`, `libvmaf-build`) and forwards `--secret` exactly for
-consuming targets; callers set `GITHUB_TOKEN` on the step exactly for
-consuming targets, never job- or workflow-wide. Callers:
-`dev-container-build.yml` (`libvmaf-build` gate + `build-deps` release
-rehearsal), `supply-chain.yml` `build-artifacts` (`build-deps`). Never
+`check-container-image-references.py` parser): `build-deps` and
+`release-build` consume nothing; `gpu-sdks` and every stage built on it
+consume. Builder allowlists targets in a `case` (`release-build`,
+`libvmaf-build`; `build-deps` dropped by ADR-1354, no caller) and forwards
+`--secret` exactly for consuming targets; callers set `GITHUB_TOKEN` on the
+step exactly for consuming targets, never job- or workflow-wide. Callers:
+`dev-container-build.yml` (`libvmaf-build` gate + `release-build` release
+rehearsal), `supply-chain.yml` `build-artifacts` (`release-build`). Never
 replace the secret with `ARG` or `ENV`, make it required, or expose it to
 the runtime service. Real invariant on raw builds: in those two workflows
 every `docker build` is either `--check` (lint, builds no image; the gate
@@ -395,18 +396,20 @@ modes, runs the real builder against a stub `docker`, and is wired to
 pre-commit/pre-push; the Dev Container workflow additionally runs native
 Docker and Compose `--check` before building.
 
-### Container-build provenance gate (ADR-1102, ADR-1346)
+### Container-build provenance gate (ADR-1102, ADR-1346, ADR-1354)
 
 `check-container-build.sh` accepts one identity: `CANONICAL_TITLE`
-(`vmaf-dev-mcp`), the `image_title` `dev/Containerfile` writes once in
-`build-deps` (= release build image); every later stage (`libvmaf-build`,
-`dev-mcp`) inherits it. Retired `vmaf-sycl-arc-runner` (ADR-1178) and
+(`vmaf-dev-mcp`), the `image_title` `dev/Containerfile` writes in its two
+roots: `build-deps` (every later dev stage, `libvmaf-build`, `dev-mcp`,
+inherits it) and `release-build` (Debian 13 release build image, ADR-1354;
+same bytes). Retired `vmaf-sycl-arc-runner` (ADR-1178) and
 `vmafx-*` aliases stay rejected; no image writes them. Adding an identity =
 new ADR plus marker write in the image, never an allowlist entry alone.
 `--verify` rejects a symlinked stamp, same as
 `verify-native-release-artifacts.sh`; keep both gates agreeing.
 `tests/test-check-container-build.sh` extracts the marker from
-`dev/Containerfile`, asserts single write in `build-deps`, the
+`dev/Containerfile`, asserts exactly two writes (one in `build-deps`, one in
+`release-build` rooted at `${RELEASE_BUILDER_BASE}`, byte-identical), the
 `gpu-sdks` -> `libvmaf-build` chain and `CANONICAL_TITLE` equality, plus
 near-miss titles (case, prefix, whitespace, first-key-wins), symlinked and
 dangling stamps, and a native-verifier fixture that reaches the provenance

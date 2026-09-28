@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Test harness for scripts/ci/check-container-build.sh (ADR-1102, ADR-1346).
+# Test harness for scripts/ci/check-container-build.sh (ADR-1102, ADR-1346,
+# ADR-1354).
 #
 # Proves the container-only publishing gate in both directions:
 #
 #   * it FAILS on a non-container (host) build, in every mode, and
 #   * it PASSES on a container build, and on an artifact tree stamped by one.
 #
-# ADR-1346 moved the release build into the `build-deps` stage of
-# dev/Containerfile on a hosted runner. That stage writes the marker and every
-# later stage (`libvmaf-build`, the local `vmaf-dev-mcp`) inherits it, so the
-# gate accepts exactly one identity (`vmaf-dev-mcp`) and rejects the retired
+# dev/Containerfile has two roots that write the marker. `build-deps` writes
+# it and every later dev stage (`libvmaf-build`, the local `vmaf-dev-mcp`)
+# inherits it. `release-build`, the Debian 13 release-track stage the native
+# release compiles in (ADR-1354), writes the same bytes. The gate therefore
+# accepts exactly one identity (`vmaf-dev-mcp`) and rejects the retired
 # self-hosted runner title (`vmaf-sycl-arc-runner`, ADR-1178) plus near-miss
 # spellings.
 #
@@ -73,21 +75,66 @@ else
   echo "note dev/Containerfile not found at ${CONTAINERFILE}; drift check skipped"
 fi
 
-# The build-deps stage the release job runs in (ADR-1346) must write the
-# marker, exactly once, and libvmaf-build must inherit it through gpu-sdks.
+# next_from_after <line> — the line number of the first FROM after <line>, or
+# one past the end of the file when that stage is the last one.
+next_from_after() {
+  awk -v after="$1" 'NR > after && /^FROM / { print NR; found = 1; exit }
+    END { if (!found) print NR + 1 }' "$CONTAINERFILE"
+}
+
+# Exactly two stages write the marker, once each: build-deps (libvmaf-build
+# inherits it through gpu-sdks) and release-build, the Debian 13 release-track
+# root the native release compiles in (ADR-1354). release-build must root at
+# RELEASE_BUILDER_BASE and write the same bytes as build-deps.
 if [ -f "$CONTAINERFILE" ]; then
   writes="$(grep -c '> /etc/vmafx-dev-container' "$CONTAINERFILE" || true)"
-  marker_line="$(grep -n '> /etc/vmafx-dev-container' "$CONTAINERFILE" | head -1 | cut -d: -f1)"
-  deps_line="$(grep -n '^FROM .* AS build-deps$' "$CONTAINERFILE" | head -1 | cut -d: -f1)"
-  sdks_line="$(grep -n '^FROM build-deps AS gpu-sdks$' "$CONTAINERFILE" | head -1 | cut -d: -f1)"
-  if [ "$writes" = "1" ] && [ -n "$deps_line" ] && [ -n "$sdks_line" ] &&
-    [ "$marker_line" -gt "$deps_line" ] && [ "$marker_line" -lt "$sdks_line" ] &&
+  mapfile -t marker_lines < <(grep -n '> /etc/vmafx-dev-container' "$CONTAINERFILE" | cut -d: -f1)
+  # `|| true`: a missing stage must reach the FAIL report below, not end the
+  # suite silently through set -e and pipefail.
+  deps_line="$(grep -n '^FROM .* AS build-deps$' "$CONTAINERFILE" | head -1 | cut -d: -f1 || true)"
+  sdks_line="$(grep -n '^FROM build-deps AS gpu-sdks$' "$CONTAINERFILE" | head -1 | cut -d: -f1 ||
+    true)"
+  release_line="$(grep -n '^FROM [$]{RELEASE_BUILDER_BASE} AS release-build$' "$CONTAINERFILE" |
+    head -1 | cut -d: -f1 || true)"
+  # marker_in_stage <FROM line> — the marker write inside that stage, if any.
+  marker_in_stage() {
+    local from="$1" end line
+    [ -n "$from" ] || return 0
+    end="$(next_from_after "$from")"
+    for line in "${marker_lines[@]}"; do
+      if [ "$line" -gt "$from" ] && [ "$line" -lt "$end" ]; then
+        echo "$line"
+        return 0
+      fi
+    done
+  }
+  deps_marker="$(marker_in_stage "$deps_line")"
+  release_marker="$(marker_in_stage "$release_line")"
+  if [ "$writes" = "2" ] && [ -n "$deps_marker" ] && [ -n "$sdks_line" ] &&
+    [ "$deps_marker" -lt "$sdks_line" ] &&
     grep -qx 'FROM gpu-sdks AS libvmaf-build' "$CONTAINERFILE"; then
     PASS=$((PASS + 1))
-    echo "ok   build-deps writes the single marker and libvmaf-build inherits it"
+    echo "ok   build-deps writes the marker once and libvmaf-build inherits it"
   else
     FAIL=$((FAIL + 1))
     echo "FAIL marker is not written once in build-deps and inherited by libvmaf-build"
+  fi
+
+  RELEASE_EXTRACTED="${WORKDIR}/extracted-release-marker"
+  if [ -n "$release_marker" ]; then
+    sed -n "${release_line},${release_marker}p" "$CONTAINERFILE" |
+      grep -E "^[[:space:]]+'[a-z_]+=.*'[[:space:]]*\\\\$" |
+      sed -E "s/^[[:space:]]*'(.*)'[[:space:]]*\\\\$/\1/" >"$RELEASE_EXTRACTED" || true
+  else
+    : >"$RELEASE_EXTRACTED"
+  fi
+  if [ -n "$release_marker" ] && cmp -s "$CONTAINER_MARKER" "$RELEASE_EXTRACTED"; then
+    PASS=$((PASS + 1))
+    echo "ok   release-build roots at RELEASE_BUILDER_BASE and writes the same marker"
+  else
+    FAIL=$((FAIL + 1))
+    echo "FAIL release-build must root at \${RELEASE_BUILDER_BASE} and write the build-deps marker"
+    diff -u "$CONTAINER_MARKER" "$RELEASE_EXTRACTED" | sed 's/^/       | /' || true
   fi
 
   # The gate's accepted identity is the Containerfile's, not a second spelling.

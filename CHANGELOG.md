@@ -6,6 +6,14 @@
 ## [Unreleased]
 ### Changed
 
+- The native Linux release bundle (`vmaf` and `libvmaf.so*`) now runs on
+  Ubuntu 24.04, Debian 13 and newer distributions: it needs glibc 2.38 and the
+  libstdc++ of GCC 12 instead of glibc 2.43. It is compiled on the fork's
+  Debian 13 release track, the base of the published container images, and
+  each release checks it on Ubuntu 24.04 and in the distroless `cc-debian13`
+  runtime image. Ubuntu 22.04 and Debian 12 remain unsupported (ADR-1354).
+
+
 - **The first-release candidate plan moved back by one candidate.**
   `v1.0.0-rc.2` is a stabilisation candidate: it ships the dependency updates
   and fixes merged since rc.1, and testers use the same report kit

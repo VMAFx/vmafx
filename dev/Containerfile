@@ -7,6 +7,9 @@
 # Multi-stage build:
 #   Stage 1 (build-deps)  — base tools: meson, ninja, nasm, gcc-13, clang-19,
 #                           python3.14, pkg-config, git, curl, ca-certificates
+#   release-build         — separate root on the Debian 13 release track
+#                           (RELEASE_BUILDER_BASE): the native release
+#                           bundle's compiler, nothing else (ADR-1354)
 #   Stage 2 (gpu-sdks)    — GPU SDK layer on top of Stage 1:
 #                           exact CUDA toolkit release from build-config.env,
 #                           Intel oneAPI latest,
@@ -62,6 +65,7 @@
 # They must precede the FIRST FROM: an ARG declared after one is scoped to the
 # stage it follows, so `FROM ${ROCM_BUILDER}` above would expand to nothing.
 ARG DEV_BASE="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"
+ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG DEV_GO_BASE="golang:1.27-trixie@sha256:433790e515d27dc6003e847e644cc0af956985cf315c1c58a3b73ee2dd305183"
 ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
 
@@ -134,8 +138,10 @@ LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 # build from a host build; without it the container-only publishing policy is
 # documentation with nothing enforcing it. Written in the FIRST stage so every
 # downstream stage (gpu-sdks, libvmaf-build, go-build, dev-mcp) inherits it.
+# `release-build` is a separate root and writes the same bytes (ADR-1354).
 # Keep the key names in sync with the gate script and with its unit test
-# (scripts/ci/tests/test-check-container-build.sh).
+# (scripts/ci/tests/test-check-container-build.sh), which requires both
+# writes to match.
 RUN printf '%s\n' \
     'vmafx_dev_container=1' \
     'image_title=vmaf-dev-mcp' \
@@ -145,15 +151,6 @@ RUN printf '%s\n' \
     && chmod 0644 /etc/vmafx-dev-container
 
 ARG DEBIAN_FRONTEND=noninteractive
-
-# patchelf rewrites the staged release CLI's RUNPATH from Meson's build-tree
-# `$ORIGIN/../src` to `$ORIGIN` (scripts/release/build-native-release-artifacts.sh,
-# which runs in this stage). Unlike the rest of this layer it is pinned: it
-# edits a published binary. The version is the Ubuntu 26.04 release-pocket
-# build, which stays in the archive for the life of the series; moving
-# DEV_BASE to another Ubuntu series fails the install here until this pin
-# follows it.
-ARG PATCHELF_VERSION=0.18.0-1.4build1
 
 # BuildKit cache mounts on /var/cache/apt and /var/lib/apt let sequential
 # rebuilds reuse the downloaded .deb files and the package index. With the
@@ -213,8 +210,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     intel-media-va-driver-non-free \
     mesa-libgallium \
     xxd \
-    # Release packaging (pinned above)
-    "patchelf=${PATCHELF_VERSION}" \
     # Misc
     jq
 
@@ -236,8 +231,9 @@ RUN for pkg in intel-media-va-driver-non-free mesa-libgallium libvpl-dev; do \
 # /usr/lib/bfd-plugins/liblto_plugin.so. Meson archives static libraries with
 # `gcc-ar` when it exists and otherwise falls back to plain `ar`, which then
 # cannot index GCC LTO objects: every LTO link against libvmaf.a (the unit
-# tests) fails with undefined references. The native release build runs in
-# this stage (ADR-1346), so the full default target set must link here.
+# tests) fails with undefined references. The native release build ran in
+# this stage under ADR-1346 and moved to `release-build` (ADR-1354); the fix
+# stays so the full default target set keeps linking in this stage.
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
         --slave /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-13 \
         --slave /usr/bin/gcc-nm gcc-nm /usr/bin/gcc-nm-13 \
@@ -257,6 +253,69 @@ RUN groupadd --gid 2000 vmaf \
     && useradd --uid 2000 --gid 2000 --create-home --shell /bin/bash vmaf \
     && mkdir -p /home/vmaf/.cache/ccache \
     && chown -R vmaf:vmaf /home/vmaf/.cache
+
+# ---------------------------------------------------------------------------
+# release-build — native release bundle compiler (Debian 13 release track)
+# ---------------------------------------------------------------------------
+# ADR-1354 (amends ADR-1346). supply-chain.yml `build-artifacts` builds this
+# stage from the release tag with scripts/ci/build-dev-container-stage.sh and
+# runs scripts/release/build-native-release-artifacts.sh in it. It roots at
+# RELEASE_BUILDER_BASE, not DEV_BASE, because build-config.env's TWO TRACKS
+# rule puts published artifacts on the release track: a bundle compiled here
+# links against Debian 13's glibc 2.41, so it loads on Debian 13, on the
+# RELEASE_RUNTIME_CC distroless image and on Ubuntu 24.04. Compiled in the
+# Ubuntu 26.04 build-deps stage it bound sqrtf@GLIBC_2.43 and loaded on none
+# of them.
+#
+# No stage builds FROM this one and it copies from none: its inputs are the
+# digest-pinned base and the Debian archive packages below, and it downloads
+# nothing else, so it needs no GitHub token. `xxd` is load-bearing:
+# core/src/meson.build embeds the built-in models only when xxd is found.
+FROM ${RELEASE_BUILDER_BASE} AS release-build
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+LABEL org.opencontainers.image.title="vmafx-release-build"
+LABEL org.opencontainers.image.description="Debian 13 release-track compiler for the VMAFx native Linux bundle"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
+
+# The same container marker build-deps writes (ADR-1102). The gate accepts one
+# identity for every stage of this file, and the unit suite requires both
+# writes to carry identical bytes.
+RUN printf '%s\n' \
+    'vmafx_dev_container=1' \
+    'image_title=vmaf-dev-mcp' \
+    'containerfile=dev/Containerfile' \
+    'source=https://github.com/VMAFx/vmafx' \
+    > /etc/vmafx-dev-container \
+    && chmod 0644 /etc/vmafx-dev-container
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# patchelf rewrites the staged release CLI's RUNPATH from Meson's build-tree
+# `$ORIGIN/../src` to `$ORIGIN` (scripts/release/build-native-release-artifacts.sh,
+# which runs in this stage). Unlike the rest of this layer it is pinned: it
+# edits a published binary, and the release compile runs with
+# `--network none`, so nothing can install it later. The version is Debian
+# 13's trixie/main build; moving RELEASE_BUILDER_BASE to another Debian
+# release fails the install here until this pin follows it. build-deps no
+# longer installs it (ADR-1354).
+ARG PATCHELF_VERSION=0.18.0-1.4
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        meson \
+        ninja-build \
+        nasm \
+        pkg-config \
+        git \
+        xxd \
+        "patchelf=${PATCHELF_VERSION}" \
+    && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
 # Stage 2 — gpu-sdks
