@@ -692,3 +692,45 @@ func strFromInt(i int) string {
 func writeFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o600)
 }
+
+// ---------------------------------------------------------------------------
+// extractFrameArgs — ffmpeg argv for describe_worst_frames
+// ---------------------------------------------------------------------------
+
+// FFmpeg 9 rejects `-vsync` with "Unrecognized option", so the frame
+// extraction must use `-fps_mode passthrough`, the same mode as `-vsync 0`.
+func TestExtractFrameArgs(t *testing.T) {
+	cases := []struct {
+		name   string
+		pixFmt string
+		frame  int
+		filter string
+	}{
+		{"8-bit frame 7", "yuv420p", 7, "select='eq(n,7)'"},
+		{"10-bit first frame", "yuv420p10le", 0, "select='eq(n,0)'"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			argv := extractFrameArgs("in.yuv", "out.png", 320, 240, tc.pixFmt, tc.frame)
+			joined := strings.Join(argv, " ")
+			for _, want := range []string{
+				"-fps_mode passthrough",
+				"-pix_fmt " + tc.pixFmt,
+				"-s 320x240",
+				"-i in.yuv",
+				"-vf " + tc.filter,
+				"-frames:v 1",
+				"-y out.png",
+			} {
+				if !strings.Contains(joined, want) {
+					t.Errorf("argv %q lacks %q", joined, want)
+				}
+			}
+			for _, arg := range argv {
+				if arg == "-vsync" {
+					t.Fatalf("argv %q uses -vsync, which FFmpeg 9 removed", joined)
+				}
+			}
+		})
+	}
+}

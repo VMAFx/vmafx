@@ -1396,8 +1396,9 @@ async def _extract_frame_png(
         str(yuv),
         "-vf",
         f"select='eq(n,{frame_index})'",
-        "-vsync",
-        "0",
+        # FFmpeg 9 removed `-vsync`; `-fps_mode passthrough` is `-vsync 0`.
+        "-fps_mode",
+        "passthrough",
         "-frames:v",
         "1",
         "-y",

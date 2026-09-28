@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/ffmpeg9-fps-mode — `-fps_mode passthrough` replaces `-vsync 0` (2026-09-28)
+- `compat/python-vmaf/core/executor.py`: ports Netflix/vmaf `aeaf2877d`; the
+  decode command now matches upstream. Upstream's `python/vmaf/__init__.py`
+  `__version__` bump to 4.0.0 is deliberately not ported (ADR-1127): resolve
+  a sync conflict there by keeping the fork's release-owned version.
+- `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` and `cmd/vmafx-mcp/impl.go`:
+  fork-only. Never reintroduce `-vsync`; FFmpeg 9, which `build-config.env`
+  pins, rejects it.
+
 ## fix/cli-unescape-values-svm-swap — libsvm uses std::swap for libc++ 23 (2026-09-28)
 
 - `core/src/svm.cpp`: libsvm's global `template <class T> void swap(T &, T &)` is

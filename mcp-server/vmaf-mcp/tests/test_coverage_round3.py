@@ -448,6 +448,11 @@ def test_extract_frame_png_success(monkeypatch, tmp_path):
     assert "ffmpeg" in captured_argv[0]
     assert any("select" in str(a) for a in captured_argv)
     assert any("eq(n,7)" in str(a) for a in captured_argv)
+    # FFmpeg 9 rejects `-vsync` ("Unrecognized option"); its replacement is
+    # `-fps_mode`, and `passthrough` is the old `-vsync 0`.
+    mode = captured_argv.index("-fps_mode")
+    assert captured_argv[mode + 1] == "passthrough"
+    assert "-vsync" not in captured_argv
 
 
 def test_extract_frame_png_10bit(monkeypatch, tmp_path):

@@ -68,6 +68,14 @@
   also takes `ffmpeg-patches/` from the dispatching commit (ADR-1350).
 
 
+- **ffmpeg calls work with FFmpeg 9 again**: FFmpeg 9 removed the `-vsync`
+  option, so the Python harness's decode step and the `describe_worst_frames`
+  MCP tool (Python and Go servers) failed with "Unrecognized option 'vsync'"
+  on the FFmpeg release this project pins. They now pass
+  `-fps_mode passthrough`, the same mode as the old `-vsync 0`. The harness
+  change ports Netflix/vmaf `aeaf2877d`.
+
+
 - The `vmafx-operator` and `vmafx-server` release images build each
   architecture on its own native runner, like `vmafx-node` (ADR-1349). Their
   arm64 halves were emulated with QEMU and took 30 to 46 minutes of a 60-minute

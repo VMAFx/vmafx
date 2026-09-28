@@ -1212,18 +1212,25 @@ func floatFromAny(v any) float64 {
 	return 0
 }
 
-func extractFramePNG(ctx context.Context, yuv, outPNG string, width, height int, pixFmt string, frameIdx int) error {
-	argv := []string{
+// extractFrameArgs returns the ffmpeg arguments that write frame @p frameIdx
+// of a raw YUV file to @p outPNG. FFmpeg 9 removed `-vsync`;
+// `-fps_mode passthrough` is the same mode as the old `-vsync 0`.
+func extractFrameArgs(yuv, outPNG string, width, height int, pixFmt string, frameIdx int) []string {
+	return []string{
 		"-loglevel", "error",
 		"-f", "rawvideo",
 		"-pix_fmt", pixFmt,
 		"-s", fmt.Sprintf("%dx%d", width, height),
 		"-i", yuv,
 		"-vf", fmt.Sprintf("select='eq(n,%d)'", frameIdx),
-		"-vsync", "0",
+		"-fps_mode", "passthrough",
 		"-frames:v", "1",
 		"-y", outPNG,
 	}
+}
+
+func extractFramePNG(ctx context.Context, yuv, outPNG string, width, height int, pixFmt string, frameIdx int) error {
+	argv := extractFrameArgs(yuv, outPNG, width, height, pixFmt, frameIdx)
 	// #nosec G204 -- "ffmpeg" is a fixed binary name; argv values originate
 	// from libvmaf.ValidatePath-filtered YUV paths and integer geometry
 	// fields validated by extractFramePNG's caller (handleDescribeWorstFrames).
