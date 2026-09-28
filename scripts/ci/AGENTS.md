@@ -919,6 +919,10 @@ file, new container build file outside `docker/`) -> add it to
 Never replace with env-file glob or basename match: nested build
 configs and unrelated runtime env files must still fail path condition.
 
+Root `Makefile` allowance = exact root-path match too: Renovate
+`custom.regex` bumps `RUFF_VERSION` / `BLACK_VERSION` there with the
+pre-commit revs (#1588). Nested Makefiles, `*.mk` stay gated.
+
 Two invariants test suite pins deliberately — do not "simplify" them away:
 
 - Widening allowlist must never drop conjunction with condition (a).

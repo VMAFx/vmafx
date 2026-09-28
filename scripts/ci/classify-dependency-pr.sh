@@ -126,9 +126,16 @@ is_allowed_dependency_path() {
   # reach this, so a human editing chart logic is still fully gated.
   # ADR-1231's root build config owns the pins mirrored into Dockerfiles.
   # Keep it an exact path: other env files are not dependency manifests.
+  # The root Makefile carries RUFF_VERSION / BLACK_VERSION, which Renovate's
+  # custom.regex manager bumps together with the pre-commit hook revs (the
+  # formatter single-source gate needs both files to agree). Without it every
+  # pre-commit-hooks PR (#1588) failed the deliverables gate, and Renovate
+  # rewrites the PR body on each rebase, so an opt-out block does not stick.
+  # Exact root path only: nested Makefiles and *.mk stay gated.
   case "$path" in
     renovate.json | \
       build-config.env | \
+      Makefile | \
       .github/renovate.json* | \
       .pre-commit-config.yaml | \
       dev/Containerfile | \

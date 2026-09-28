@@ -401,6 +401,27 @@ DIFF
 expect_exit "non-dependency manifest.json is NOT exempt" 1 "renovate[bot]" \
   "renovate/lookalike-manifest" "${work}/case32_non_dependency_manifest.diff"
 
+# Renovate's pre-commit-hooks group bumps the Makefile's ruff/black pins
+# together with the hook revs (PR #1588). Exact root path only.
+cat >"${work}/case33_pr1588_precommit_makefile.diff" <<'DIFF'
+.pre-commit-config.yaml
+Makefile
+DIFF
+expect_exit "PR #1588 fixture (pre-commit revs + Makefile pins) is exempt" 0 "app/renovate" \
+  "renovate/pre-commit-hooks" "${work}/case33_pr1588_precommit_makefile.diff"
+
+cat >"${work}/case34_nested_makefile.diff" <<'DIFF'
+core/test/Makefile
+DIFF
+expect_exit "nested Makefile is NOT exempt" 1 "renovate[bot]" \
+  "renovate/lookalike-makefile" "${work}/case34_nested_makefile.diff"
+
+cat >"${work}/case35_human_makefile.diff" <<'DIFF'
+Makefile
+DIFF
+expect_exit "human author editing the root Makefile is NOT exempt" 1 "developer" \
+  "feat/make-target" "${work}/case35_human_makefile.diff"
+
 echo ""
 echo "test-classify-dependency-pr: ${pass_count} passed, ${fail_count} failed"
 
