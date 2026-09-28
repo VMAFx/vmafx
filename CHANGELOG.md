@@ -4,6 +4,8 @@
 > entries and Conventional Commits into ordinary SemVer releases.
 
 ## [Unreleased]
+
+## [1.0.0-rc.2] - 2026-09-28
 ### Changed
 
 - The native Linux release bundle (`vmaf` and `libvmaf.so*`) now runs on
