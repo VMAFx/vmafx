@@ -102,7 +102,7 @@ def test_list_tools_reports_release_boundaries(capsys: pytest.CaptureFixture[str
     assert main(["list-tools"]) == 0
     output = capsys.readouterr().out
     assert "Repository tool inventory by release phase" in output
-    assert "Performance benchmarking/tuning starts in RC2" in output
+    assert "Performance benchmarking/tuning starts in RC3" in output
 
 
 def test_probe_json_and_text(

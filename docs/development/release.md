@@ -40,18 +40,22 @@ v2.0.0  # incompatible public-surface release
 ## First-release candidate responsibilities
 
 [ADR-1341](../adr/1341-rc-correctness-benchmark-retrain-sequence.md)
-separates the first release into ordered evidence stages:
+separates the first release into ordered evidence stages.
+[ADR-1352](../adr/1352-rc-phase-shift-plus-one.md) adds a stabilisation
+candidate after rc.1 and moves the later stages back by one tag, so each phase
+number matches its tag:
 
 | Candidate | Proves | Must not be used to claim |
 | --- | --- | --- |
 | `v1.0.0-rc.1` (RC1) | Release-blocking correctness is closed or explicitly deferred, required checks pass on the exact head, and outside testers can run the bounded hardware-validation/report path | Final performance or production-trained model quality |
-| `v1.0.0-rc.2` (RC2) | Benchmarks, profiles, and tuning results are comparable, reproducible, and still numerically correct on the tested hardware | Completion of the real retraining programme |
-| `v1.0.0-rc.3` (RC3) | The one-shot real retrain and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
+| `v1.0.0-rc.2` (RC2) | The dependency and fix train since rc.1 meets the RC1 bar: no confirmed release blocker or untriaged `docs/state.md` row, required checks pass on the exact head, and the tester report path still works | Final performance or production-trained model quality |
+| `v1.0.0-rc.3` (RC3) | Benchmarks, profiles, and tuning results are comparable, reproducible, and still numerically correct on the tested hardware | Completion of the real retraining programme |
+| `v1.0.0-rc.4` (RC4) | The one-shot real retrain and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
 
-Candidate tags are immutable. RC1, RC2, and RC3 name the first candidate for
-each responsibility; if a stage finds a correctness defect, land the fix and
-rerun the affected evidence before advancing. A later repair candidate may be
-cut without moving benchmark work into RC1 or real training before RC3.
+Candidate tags are immutable. RC1 to RC4 name the planned candidate for each
+responsibility; if a stage finds a correctness defect, land the fix and rerun
+the affected evidence before advancing. A later repair candidate may be cut
+without moving benchmark work into RC1 or RC2 or real training before RC4.
 
 Every report and acceptance record identifies the exact commit, published
 artifact or image digest, fixtures, host and device, drivers/runtimes, tool

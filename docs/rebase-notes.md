@@ -54492,3 +54492,18 @@ must keep its release rehearsal (same script, same `docker run`, local
 (`T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27`).
 `check-container-build.sh` accepts exactly `vmaf-dev-mcp` and rejects a
 symlinked stamp. No native/public API, numerical or FFmpeg rebase impact.
+
+## docs/rc-phase-shift — first-release candidate mapping shifted by one (2026-09-28)
+
+No upstream source impact: this is fork-only release governance and
+documentation. [ADR-1352](adr/1352-rc-phase-shift-plus-one.md) amends the tag
+mapping in [ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md)
+and supersedes the phase names in the `docs/release-sequence-rcs` entry above.
+RC2 (`v1.0.0-rc.2`) is a stabilisation candidate with the RC1 exit bar; RC3
+owns benchmarks, profiling and tuning; RC4 owns the one-shot real retrain. When
+rebasing release, roadmap, runbook, tester or ledger documents, keep phase
+numbers equal to tag numbers and never restore "RC2 = benchmarks" or
+"RC3 = retrain" in forward-looking text. `tools/rc1-tester/` keeps its name and
+its catalog phases (`RC1`, `RC3`, `RC4`); the backlog IDs `T-RC2-BENCH-TUNE`
+and `T-RC3-MODEL-RETRAIN` stay stable (ADR-1303). The Netflix golden assertions
+are untouched.

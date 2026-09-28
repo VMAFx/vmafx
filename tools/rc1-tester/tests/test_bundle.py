@@ -195,7 +195,7 @@ def test_report_explains_four_frame_correctness_and_dispatch_limit(tmp_path: Pat
     assert "Frame 3 exercises temporal motion" in report
     assert "ADR-0214 bound for listed feature metrics" in report
     assert "adopted by ADR-1342 for overall VMAF" in report
-    assert "RC2 benchmarking" in report
+    assert "RC3 benchmarking" in report
 
 
 def test_bundle_rejects_empty_validation_set(tmp_path: Path) -> None:

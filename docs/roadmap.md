@@ -12,7 +12,7 @@ map of where that plan lives and how the releases are sequenced.
 
 | Milestone | Theme |
 | --- | --- |
-| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 benchmarking and tuning, RC3 real model retraining, then final |
+| [1.0.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: RC1 correctness and tester reports, RC2 stabilisation, RC3 benchmarking and tuning, RC4 real model retraining, then final |
 | [1.1](https://github.com/VMAFx/vmafx/milestone/2) | New metrics (ΔE-ITP, PU21, NIQE, BRISQUE, Y-FUNQUE+), their GPU twins, and the tools surface |
 | [1.2](https://github.com/VMAFx/vmafx/milestone/3) | Cloud-native foundation: server mode, observability, containers and Kubernetes |
 | [1.3](https://github.com/VMAFx/vmafx/milestone/4) | Cloud-native scale-out: operator, controller/node, multi-vendor GPU scheduling |
@@ -27,27 +27,32 @@ Two milestones are deliberately **rolling** rather than tied to a release:
 
 ## How 1.0.0 is gated
 
-The fork has never cut a release; every existing tag is inherited upstream
-history. [ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md)
-gives each first-release candidate one responsibility:
+The fork's first release candidate, `v1.0.0-rc.1`, was published on
+2026-09-27; older tags are inherited upstream history.
+[ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md) gives each
+first-release candidate one responsibility, and
+[ADR-1352](adr/1352-rc-phase-shift-plus-one.md) inserts a stabilisation
+candidate after rc.1 so that each stage number matches its `v1.0.0-rc.N` tag:
 
 | Stage | In scope | Exit boundary |
 | --- | --- | --- |
 | **RC1 — correctness and tester readiness** | Release-blocking correctness, reliability, security, build, packaging, backend usability, and a portable report path for outside hardware | The exact candidate head is green; no confirmed RC1 blocker or untriaged `docs/state.md` row remains; a tester can return artifact/environment identity, device and tool versions, backend availability, correctness/parity results, commands, logs, and failures |
-| **RC2 — benchmark and tune** | Comparable benchmark baselines, profiling, hardware-generation retuning, and measured performance fixes | Results identify the exact artifact, fixtures, host, drivers and runtimes; accepted wins are re-measured and preserve correctness/parity |
-| **RC3 — real retraining** | The locked one-shot model retraining programme on the clean, tuned tree | Model-quality gates, model cards, registry/signing metadata, and unchanged Netflix golden assertions pass |
-| **Final `v1.0.0`** | Accepted RC3 output plus any required repair candidate | Publication preflight passes on the immutable final tag |
+| **RC2 — stabilisation and repair** | The dependency updates and correctness fixes merged since rc.1, delivered to testers through the same report path; no benchmark or training work | The RC1 boundary, re-established on the rc.2 head |
+| **RC3 — benchmark and tune** | Comparable benchmark baselines, profiling, hardware-generation retuning, and measured performance fixes | Results identify the exact artifact, fixtures, host, drivers and runtimes; accepted wins are re-measured and preserve correctness/parity |
+| **RC4 — real retraining** | The locked one-shot model retraining programme on the clean, tuned tree | Model-quality gates, model cards, registry/signing metadata, and unchanged Netflix golden assertions pass |
+| **Final `v1.0.0`** | Accepted RC4 output plus any required repair candidate | Publication preflight passes on the immutable final tag |
 
 “Done fixing” is deliberately bounded rather than a promise that no future bug
-will be found. RC1 is ready when there are no confirmed, actionable RC1
-blockers and no untriaged rows. Performance-only findings belong to RC2, real
-training belongs to RC3, and externally blocked work stays explicitly deferred
-with its trigger and evidence.
+will be found. RC1 and RC2 are ready when there are no confirmed, actionable
+release blockers and no untriaged rows. Performance-only findings belong to
+RC3, real training belongs to RC4, and externally blocked work stays explicitly
+deferred with its trigger and evidence.
 
-If RC2 or RC3 exposes a correctness regression, fix it and rerun the affected
+If RC3 or RC4 exposes a correctness regression, fix it and rerun the affected
 stage evidence before proceeding. Do not pull general benchmarking into RC1 or
-real training before RC3. RC1's report envelope may run a short correctness and
-device-engagement smoke; it does not make a performance claim.
+RC2, or real training before RC4. The RC1 and RC2 report envelope may run a
+short correctness and device-engagement smoke; it does not make a performance
+claim.
 
 Ordinary Renovate and other version PRs remain mergeable throughout the
 sequence when normal required checks, review, pinning, and component-specific

@@ -205,7 +205,7 @@ def _render_report(
             "within 5e-5: the ADR-0214 bound for listed feature metrics, conservatively adopted "
             "by ADR-1342 for overall VMAF too. Frame 3 exercises temporal motion. `backend_used` "
             "remains backend-state evidence, not proof that every individual feature ran on the "
-            "accelerator; this smoke does not replace the compiled backend suites or RC2 "
+            "accelerator; this smoke does not replace the compiled backend suites or RC3 "
             "benchmarking."
         ),
         "",

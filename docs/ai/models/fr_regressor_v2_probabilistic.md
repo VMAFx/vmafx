@@ -8,9 +8,10 @@ form _"give me the CRF where the **lower** bound of the 95 % interval is
 still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
 (planned, see [ADR-0237](../../adr/0237-quality-aware-encode-automation.md)).
 
-> **Status — smoke placeholder through RC2; production flip deferred to
-> the one-shot RC3 retrain ([ADR-1105](../../adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md),
-> [ADR-1341](../../adr/1341-rc-correctness-benchmark-retrain-sequence.md)).**
+> **Status — smoke placeholder through RC3; production flip deferred to
+> the one-shot RC4 retrain ([ADR-1105](../../adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md),
+> [ADR-1341](../../adr/1341-rc-correctness-benchmark-retrain-sequence.md),
+> [ADR-1352](../../adr/1352-rc-phase-shift-plus-one.md)).**
 > The five `fr_regressor_v2_ensemble_v1_seed{0..4}` rows in
 > `model/tiny/registry.json` currently carry `smoke: true`. The
 > ADR-0321 production flip (2026-05-06) shipped LOSO-validated weights
@@ -22,7 +23,7 @@ still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
 > smoke weights are placeholders, not a production fit. Re-establishing
 > production at `codec_vocab=6` requires re-running
 > `export_ensemble_v2_seeds.py`, which is part of the locked one-shot
-> RC3 retrain (the ensemble is in scope). Until then,
+> RC4 retrain (the ensemble is in scope). Until then,
 > `test_fr_regressor_v2_ensemble_seed_rows_are_production` is marked
 > `xfail(strict=True)`; it auto-fails the suite the moment the retrain
 > lands real weights (`smoke: false` + matching sidecar sha), forcing
@@ -41,8 +42,9 @@ still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
 > [ADR-1105](../../adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md)
 > (one-shot deferral), and
 > [ADR-1341](../../adr/1341-rc-correctness-benchmark-retrain-sequence.md)
-> (RC3 scheduling). The scaffold-era ADR-0393 entry point is preserved
-> for history.
+> (release-candidate sequence; the retrain is RC4 under
+> [ADR-1352](../../adr/1352-rc-phase-shift-plus-one.md)). The
+> scaffold-era ADR-0393 entry point is preserved for history.
 
 ## What the output means
 

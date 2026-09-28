@@ -680,8 +680,8 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
 
 No workload classifier and no `_no_bounds` kernel variant exist. ADR-1143
 deleted the uncompiled `resolution_dispatch.c` / `.h`. Launch-bound variants
-per resolution = RC2 performance work (ADR-1341): reintroduce only with a new
-ADR and measurements, never by reviving ADR-0753 text.
+per resolution = RC3 performance work (ADR-1341, ADR-1352): reintroduce only
+with a new ADR and measurements, never by reviving ADR-0753 text.
 
 ## Kernel option and scoring invariants
 

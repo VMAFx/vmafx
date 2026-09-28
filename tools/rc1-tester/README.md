@@ -56,13 +56,13 @@ filtered process. Run a separate bundle for each ordinal you want to cover.
 
 | Phase | Tester activity |
 | :--- | :--- |
-| RC1 | Build and correctness readiness, device/toolchain discovery, bounded four-frame backend checks, shareable reports. |
-| RC2 | Performance benchmarking and tuning with tools such as `vmaf_bench` and `vmaf-tune`. |
-| RC3 | Real corpus generation and model training under `ai/` and `tools/ensemble-training-kit/`. |
+| RC1 and RC2 | Build and correctness readiness, device/toolchain discovery, bounded four-frame backend checks, shareable reports. RC2 (`v1.0.0-rc.2`) is a stabilisation candidate with the same scope. |
+| RC3 | Performance benchmarking and tuning with tools such as `vmaf_bench` and `vmaf-tune`. |
+| RC4 | Real corpus generation and model training under `ai/` and `tools/ensemble-training-kit/`. |
 
-`list-tools` also records current benchmark coverage gaps so an RC1 report does
-not imply that the deferred RC2 harnesses already cover every backend or host
-operating system.
+`list-tools` also records current benchmark coverage gaps so an RC1 or RC2
+report does not imply that the deferred RC3 harnesses already cover every
+backend or host operating system.
 
 ## Exit status
 

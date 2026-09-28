@@ -63,7 +63,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_binary_arguments(validate)
     _add_backend_arguments(validate)
     validate.set_defaults(handler=_handle_validate)
-    tools = subparsers.add_parser("list-tools", help="Show RC1, RC2, and RC3 tool boundaries")
+    tools = subparsers.add_parser("list-tools", help="Show the release-phase tool boundaries")
     tools.set_defaults(handler=_handle_list_tools)
     bundle = subparsers.add_parser("bundle", help="Create one shareable evidence archive")
     _add_binary_arguments(bundle)

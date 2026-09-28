@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1341: Stage correctness, benchmarking, and retraining across RC1 through RC3
 
-- **Status**: Accepted
+- **Status**: Accepted (amended by [ADR-1352](1352-rc-phase-shift-plus-one.md))
 - **Date**: 2026-09-26
 - **Deciders**: Kilian
 - **Tags**: release, rc, process, benchmarking, performance, ai, dependencies, docs

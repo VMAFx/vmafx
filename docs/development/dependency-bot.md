@@ -20,8 +20,9 @@ grouped dependency-update PRs on the configured weekday schedule.
 ## Merge policy during release candidates
 
 Ordinary Renovate and other version-update pull requests are **not frozen**
-during RC1, RC2, or RC3. Merge them when the repository's normal required
-checks, review, digest/pin policy, and component-specific validation pass.
+during any release candidate, RC1 through RC4. Merge them when the
+repository's normal required checks, review, digest/pin policy, and
+component-specific validation pass.
 Security updates are prioritised, but they are not the only version changes
 allowed. The strict dependency-only classification in
 [ADR-1152](../adr/1152-dependency-pr-gate-exemption.md) exempts qualifying bot
