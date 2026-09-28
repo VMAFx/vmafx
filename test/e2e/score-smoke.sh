@@ -49,8 +49,8 @@ port_forward_pid=""
 
 # Print what a failed score needs for diagnosis: the server's error body and
 # the logs of the Pods behind the Service. The logs are selected through the
-# Service's own selector because `kubectl logs deployment/vmafx` resolves the
-# chart Deployment's broader selector, which also matches the operator Pod.
+# Service's own selector, so they come from exactly the Pods that could have
+# answered the request.
 print_failure_diagnostics() {
   local selector
   if [[ -s "${tmp_dir}/score.json" ]]; then

@@ -404,8 +404,10 @@ class E2ERuntimeContractTest(unittest.TestCase):
         job = (CHART_TEMPLATES / "job.yaml").read_text(encoding="utf-8")
 
         self.assertGreaterEqual(service.count("app.kubernetes.io/component: server"), 2)
-        self.assertGreaterEqual(deployment.count("app.kubernetes.io/component: server"), 2)
-        self.assertGreaterEqual(statefulset.count("app.kubernetes.io/component: server"), 4)
+        # Metadata, Pod template and, since ADR-1353, the workload selector.
+        # scripts/ci/check-helm-selector-isolation.py checks the rendered result.
+        self.assertGreaterEqual(deployment.count("app.kubernetes.io/component: server"), 3)
+        self.assertGreaterEqual(statefulset.count("app.kubernetes.io/component: server"), 5)
         self.assertGreaterEqual(job.count("app.kubernetes.io/component: server"), 2)
 
     def test_impossible_legacy_scenarios_are_absent(self) -> None:

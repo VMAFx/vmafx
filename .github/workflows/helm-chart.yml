@@ -113,6 +113,24 @@ jobs:
           helm template vmafx deploy/helm/vmafx \
             --set pushgateway.enabled=true > /dev/null
 
+      # ADR-1353: the server Deployment selected every Pod of the release, the
+      # operator's and node's included. Render each server workload with every
+      # other component on and require each selector to pick only its own Pods.
+      - name: Workload selector isolation
+        run: |
+          set -euo pipefail
+          python3 -B -m unittest discover -s scripts/ci/tests \
+            -p 'test_check_helm_selector_isolation.py'
+          for workload in Deployment StatefulSet Job; do
+            rendered="$RUNNER_TEMP/selectors-${workload}.yaml"
+            helm template vmafx deploy/helm/vmafx \
+              --set "workload=${workload}" \
+              --set operator.enabled=true \
+              --set node.enabled=true \
+              --set podDisruptionBudget.enabled=true > "$rendered"
+            python3 scripts/ci/check-helm-selector-isolation.py "$rendered"
+          done
+
       # ADR-1119 removed the pre-fx operator flags. A plain Helm render stayed
       # syntactically valid while Kubernetes probed the now-unused :8082 port,
       # so pin the semantic env/port contract as well as YAML validity.

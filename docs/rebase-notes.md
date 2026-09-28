@@ -3919,8 +3919,9 @@ the MCP HTTP transport registers dynamic routes only.
   validated Y4M fixtures, and requires a finite real `/v1/score` response.
   The chart Service and server Pod templates must share
   `app.kubernetes.io/component: server` so an enabled operator's metrics port
-  cannot become a scoring endpoint; do not add that discriminator to immutable
-  Deployment/StatefulSet selectors during a patch upgrade.
+  cannot become a scoring endpoint. ADR-1353 (1.0.0-rc.2) later added the
+  discriminator to the server Deployment/StatefulSet selectors as well, with a
+  documented one-time upgrade step; keep it there.
   Do not restore the removed Pod-creation, operator-heartbeat, MinIO/rclone, or
   trainer-sidecar cases unless the production reconcilers first implement and
   provision every asserted prerequisite.
@@ -54562,3 +54563,26 @@ and `vmaf --version` without `LD_LIBRARY_PATH`; setting it hid the v1.0.0-rc.1
 build-tree RUNPATH `$ORIGIN/../src`
 (`T-RELEASE-NATIVE-RUNPATH-BUILD-TREE-2026-09-27`). No native/public API,
 numerical or FFmpeg rebase impact.
+## ADR-1353 — Helm server workload component selector (2026-09-28)
+
+`deploy/helm/vmafx/templates/deployment.yaml` and `statefulset.yaml` select
+`app.kubernetes.io/component: server` in addition to `vmafx.selectorLabels`,
+matching the operator and node templates' per-component selectors. Do not drop
+it back to the release labels: that selector matched the operator, node and
+`helm test` Pods. A workload's `spec.selector` is immutable, so any further
+selector change needs its own ADR and a documented delete-and-upgrade step
+like the one in `docs/development/k8s-deployment.md#upgrading-from-100-rc1`.
+Keep `scripts/ci/check-helm-selector-isolation.py`, its test suite and the
+`Workload selector isolation` step in `.github/workflows/helm-chart.yml`
+together; the step renders Deployment, StatefulSet and Job workloads with the
+operator, node and PDBs enabled. No native/public API, numerical or FFmpeg
+rebase impact.
+
+- Research digest: no digest needed; the decision and alternatives are in
+  [ADR-1353](adr/1353-helm-server-component-selector.md).
+- Decision matrix: [ADR-1353](adr/1353-helm-server-component-selector.md#alternatives-considered).
+- AGENTS.md invariant: `deploy/helm/vmafx/AGENTS.md`, "Server component selector".
+- Reproducer / smoke: `python3 -B -m unittest discover -s scripts/ci/tests -p 'test_check_helm_selector_isolation.py'`,
+  then `helm template vmafx deploy/helm/vmafx --set operator.enabled=true --set node.enabled=true > r.yaml`
+  and `python3 scripts/ci/check-helm-selector-isolation.py r.yaml`.
+- Changelog: `changelog.d/fixed/helm-server-selector.md`.

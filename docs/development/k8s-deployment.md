@@ -257,6 +257,49 @@ helm uninstall vmafx -n vmafx
 kubectl delete pvc -n vmafx -l app.kubernetes.io/instance=vmafx
 ```
 
+## Upgrading from 1.0.0-rc.1 {#upgrading-from-100-rc1}
+
+A release installed from the v1.0.0-rc.1 chart needs one manual step before
+its first `helm upgrade` to a later chart. Since 1.0.0-rc.2 the server
+Deployment (or StatefulSet) selects `app.kubernetes.io/component: server` as
+well as the release labels. The rc.1 selector held only the release labels, so
+it also matched the operator, node and `helm test` Pods
+([ADR-1353](../adr/1353-helm-server-component-selector.md)). Kubernetes does
+not allow a workload's selector to change, so a plain upgrade fails:
+
+```text
+Error: UPGRADE FAILED: ... Deployment.apps "vmafx" is invalid: spec.selector:
+Invalid value: {"matchLabels":{"app.kubernetes.io/component":"server",...}}:
+field is immutable
+```
+
+Delete the server workload and upgrade. `--cascade=orphan` keeps its Pods
+running; the new Deployment or StatefulSet adopts them and then rolls them to
+the new version as usual:
+
+```bash
+kubectl delete deployment,statefulset -n vmafx --cascade=orphan \
+  -l app.kubernetes.io/instance=vmafx,app.kubernetes.io/component=server
+helm upgrade vmafx deploy/helm/vmafx/ -n vmafx --reuse-values
+```
+
+Replace `vmafx` in `-n vmafx` and `app.kubernetes.io/instance=vmafx` with your
+namespace and release name. The label selector removes only the server
+workload: the operator and node Deployments carry their own component labels.
+A StatefulSet keeps its `state-*` PersistentVolumeClaims, and the new
+StatefulSet binds them again. Without `--cascade=orphan` the server Pods are
+deleted with the workload, and scoring is unavailable until the upgrade has
+started new ones.
+
+Uninstalling and installing again also works (`helm uninstall vmafx -n vmafx`,
+then the `helm upgrade --install` command from [Quick start](#quick-start)).
+It removes the operator and node workloads too, and leaves PVCs in place (see
+[Uninstall](#uninstall)).
+
+Argo CD and Flux report the same immutable-field error. Delete the server
+workload the same way and let them sync again. Releases installed from
+1.0.0-rc.2 or later upgrade without this step.
+
 ## Pod security {#pod-security}
 
 Every pod the chart emits — controller `Deployment`, batch `Job`, sticky

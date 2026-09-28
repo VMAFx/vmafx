@@ -12,6 +12,7 @@ spec:
   selector:
     matchLabels:
       {{- include "vmafx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
   strategy:
     {{- toYaml .Values.deployment.strategy | nindent 4 }}
   template:

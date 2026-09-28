@@ -17,6 +17,7 @@ spec:
   selector:
     matchLabels:
       {{- include "vmafx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
   updateStrategy:
     {{- toYaml .Values.statefulSet.updateStrategy | nindent 4 }}
   # minReadySeconds: 0 by default; set via .Values.minReadySeconds if needed.

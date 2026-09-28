@@ -7669,6 +7669,15 @@
       },
       "target": "1350-recovery-overlay-ffmpeg-patches.md"
     },
+    "1353": {
+      "sites": {
+        ".github/workflows/helm-chart.yml": 1,
+        "scripts/ci/check-helm-selector-isolation.py": 1,
+        "scripts/ci/test_e2e_runtime_contract.py": 1,
+        "scripts/ci/tests/test_check_helm_selector_isolation.py": 1
+      },
+      "target": "1353-helm-server-component-selector.md"
+    },
     "1355": {
       "sites": {
         "core/test/fuzz/fuzz_cli_parse.c": 1,

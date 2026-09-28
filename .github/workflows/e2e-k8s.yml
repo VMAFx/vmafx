@@ -364,9 +364,8 @@ jobs:
           echo "=== Operator logs ===" && \
             kubectl logs -n vmafx-e2e-test deployment/vmafx-operator \
               --tail=200 2>/dev/null || true
-          # Select the server Pods by the chart Service's labels: the server
-          # Deployment's own selector also matches the operator Pod, so
-          # `kubectl logs deployment/vmafx` can print the operator's logs.
+          # Select the server Pods by the chart Service's labels so every
+          # server Pod's log is printed; `deployment/vmafx` picks one Pod.
           echo "=== Server logs ===" && \
             kubectl logs -n vmafx-e2e-test \
               -l app.kubernetes.io/instance=vmafx,app.kubernetes.io/component=server \

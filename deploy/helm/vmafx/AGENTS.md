@@ -117,9 +117,15 @@ adds its metrics port 8080 as endpoint behind scoring Service, producing
 nondeterministic HTTP 404 responses. Keep headless Service, main PDB, HTTP
 NetworkPolicy, and ServiceMonitor selectors aligned with server label.
 
-Never add label to existing Deployment/StatefulSet `spec.selector` in
-patch release: those fields are immutable for installed workloads. Pod
-template label plus consumer selectors provides upgrade-safe routing isolation.
+Server Deployment + StatefulSet `spec.selector` also carry
+`component: server` (ADR-1353, 1.0.0-rc.2). rc.1 selector (release labels
+only) matched operator, node, `helm test` Pods. Keep label. Workload selectors
+immutable: any later
+`spec.selector` change needs ADR + documented delete-and-upgrade path, like
+`docs/development/k8s-deployment.md#upgrading-from-100-rc1`.
+`scripts/ci/check-helm-selector-isolation.py` (`helm-chart.yml`) fails when
+any workload selector matches another component's Pods. New component: own
+`component` label in both selector and Pod template.
 
 ## Active GPU backends
 
@@ -141,3 +147,4 @@ scheduling documentation when rebasing older chart work.
 - [ADR-1119](../../../docs/adr/1119-golusoris-go-framework-adoption.md) — env-only fx migration
 - [ADR-1129](../../../docs/adr/1129-release-container-runtime-alignment.md) — release image/runtime alignment
 - [ADR-0726](../../../docs/adr/0726-drop-vulkan-backend.md) — Vulkan backend removal
+- [ADR-1353](../../../docs/adr/1353-helm-server-component-selector.md) — server workload component selector, rc.1 upgrade path

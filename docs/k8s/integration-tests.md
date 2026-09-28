@@ -131,6 +131,11 @@ diagnostics, and server/operator logs are uploaded after failures. Kuttl keeps
 the namespace for those diagnostics; the workflow then deletes only the named
 kind cluster through the same dedicated kubeconfig.
 
+Every run creates a new cluster, so the harness installs the chart and never
+upgrades an existing release. The one-time upgrade from a v1.0.0-rc.1 release
+([upgrade guide](../development/k8s-deployment.md#upgrading-from-100-rc1)) was
+checked by hand on kind; ADR-1353 records the steps and results.
+
 ## Troubleshooting
 
 ### Server or operator Pod does not start
@@ -143,9 +148,11 @@ kubectl logs -n vmafx-e2e-test --tail=200 \
 kubectl logs -n vmafx-e2e-test deployment/vmafx-operator --tail=200
 ```
 
-Select the server Pods by label rather than with `deployment/vmafx`. The server
-Deployment's selector matches every Pod of the release, the operator's
-included, so `kubectl logs deployment/vmafx` can print the operator's logs.
+Selecting the server Pods by label prints the log of every server Pod;
+`kubectl logs deployment/vmafx` prints one. Before 1.0.0-rc.2 the server
+Deployment's selector matched every Pod of the release, the operator's
+included, so `deployment/vmafx` could print the operator's log
+([ADR-1353](../adr/1353-helm-server-component-selector.md)).
 
 An `ErrImageNeverPull` event means the required `e2e-test` image was not loaded
 into the named kind cluster. Rebuild it and run `kind load docker-image` with
@@ -171,6 +178,15 @@ must mount it at `/fixtures`. On failure the score script prints the
 such as `requires feature 'cambi', which needs width or height >= 216` means
 the fixtures are smaller than the default model accepts; see the fixture
 section above.
+
+### `helm upgrade` fails with `spec.selector` ... `field is immutable`
+
+The reused cluster still holds a `vmafx` release installed from a chart older
+than 1.0.0-rc.2, whose server Deployment selector cannot be changed in place.
+Tear the cluster down with `TEARDOWN=1 bash test/e2e/kind-cluster.sh`, or
+delete the server Deployment as the
+[upgrade guide](../development/k8s-deployment.md#upgrading-from-100-rc1)
+describes, and run kuttl again.
 
 ### CRDs do not become established
 
