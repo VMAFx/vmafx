@@ -434,10 +434,17 @@ the deviation:
   pass a model that uses the feature (`--model version=vmaf_v1.0.16_3d0h`
   for `cambi_sycl` / `speed_chroma_sycl`) or name the twin explicitly
   through the C API (`vmaf_use_feature(vmaf, "cambi_sycl", NULL)`).
-- **CIEDE2000** — no SYCL kernel; CPU fallback.
-- **SSIM / MS-SSIM / PSNR / PSNR-HVS** — no SYCL kernels (`float_ansnr`
-  removed per
-  [ADR-0865](../../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md)).
+- **CIEDE2000** — `ciede_sycl`. The luma and both chroma planes are
+  uploaded at their native size, and the kernel reads chroma at the
+  subsampled position (the CUDA and HIP twins index the same way). The
+  host no longer upscales chroma to full resolution before the copy,
+  which roughly halves the per-frame time at 4K on an Arc B580. Scores
+  are unchanged; they sit within 1e-4 of the CPU `ciede` (the parity gate
+  allows 5e-3).
+- **SSIM / MS-SSIM / PSNR / PSNR-HVS** — SYCL twins exist
+  (`integer_ssim_sycl`, `float_ssim_sycl`, `float_ms_ssim_sycl`,
+  `psnr_sycl`, `psnr_hvs_sycl`); `float_ansnr` was removed per
+  [ADR-0865](../../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md).
 - **Float-twin extractors (`float_*`)** — the SYCL backend
   implements PSNR / Motion / VIF / ADM
   ([ADR-0202](../../adr/0202-float-adm-cuda-sycl.md)).
