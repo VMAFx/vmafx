@@ -503,7 +503,9 @@ wants narrative context for low-quality regions. Added in
 1. Run `vmaf_score` to populate per-frame VMAF.
 2. Pick the `n` frames with smallest VMAF.
 3. For each picked frame, run `ffmpeg -f rawvideo` with
-   `select='eq(n,<idx>)'` to emit a single PNG.
+   `select='eq(n,<idx>)'` and `-fps_mode passthrough` to emit a single
+   PNG. This needs FFmpeg 5.1 or newer: FFmpeg 5.0 and older do not know
+   `-fps_mode`, and FFmpeg 9 removed the older `-vsync 0` spelling.
 4. Pass the PNG to the cached VLM pipeline. The pipeline is loaded
    lazily on first call:
    - Try `HuggingFaceTB/SmolVLM-Instruct` (~2 GB).
@@ -538,6 +540,10 @@ during the lifetime of the process.
 ### Errors
 
 - `ffmpeg` not on PATH → `{"error": "ffmpeg not on PATH; install ffmpeg to use describe_worst_frames"}`.
+- `ffmpeg` older than 5.1 → the Python server fails the call with
+  `ffmpeg frame-extract failed: ... Unrecognized option 'fps_mode'`; the Go
+  server (`vmafx-mcp`) returns the frame with an empty `png` and
+  `(frame extraction failed: ...)` as its `description`.
 - Unsupported `pixfmt`/`bitdepth` combo → `{"error": "unsupported pixfmt/bitdepth combo: ..."}`.
 - VMAF subprocess failure → bubbles up the underlying `vmaf_score` error.
 - VLM inference exception per-frame → the frame's `description`
