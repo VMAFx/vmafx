@@ -1,0 +1,1 @@
+| [ADR-1355](1355-cli-option-value-backslashes.md) | Backslashes in `--model` / `--feature` values are data, except in a run that directly precedes `:` / `=` or ends the value, which is read in pairs; keys keep the ADR-1190 escape set, so `..\`, `\server` and `\.cache` paths survive | Accepted | cli, parser, windows, upstream, bug |

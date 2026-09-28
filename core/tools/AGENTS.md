@@ -279,14 +279,23 @@ tools/
   **Escape-aware `--model` / `--feature` option-string splitting.**
   `cli_parse.cpp` no longer contains `strsep` (nor `vmaf_cli_strsep`
   shim or its `#ifndef HAVE_STRSEP` fork); nine split sites all go
-  through `cli_split()` plus `cli_unescape()`.
+  through `cli_split()` plus `cli_unescape_key()` /
+  `cli_unescape_value()` (ADR-1355).
   **Rebase invariants**:
   - Splitting and unescaping are two passes. `cli_split()` must leave
     backslash sequences intact — escape written for `:` pass stays
-    literal at `=` pass. `cli_unescape()` must run exactly once per
-    token, after last split that token undergoes.
+    literal at `=` pass. Leaf unescaper runs exactly once per token,
+    after last split that token undergoes.
     Unescaping earlier eats user's literal backslash; unescaping twice
     eats it again.
+  - Keys and values unescape differently (ADR-1355). Keys, `--feature`
+    name, both overload-key halves: `cli_unescape_key()` (`\:` `\=` `\.`
+    `\\`). Values (paths, names, option values): `cli_unescape_value()`
+    — backslash = data unless in run directly before `:` / `=` or at
+    value end; such run reads in pairs, leftover lone backslash escapes
+    `:` / `=`. Pairing matches `cli_split()` (`:` after odd run =
+    literal). Never route value through key unescaper: `..\`,
+    `\\server`, `\.cache` lose bytes.
   - Key/value pair's value is whole remainder after first
     unescaped `=` — never second split. Removed second split =
     silent-truncation bug (`path=/a/dir=eq/m.json` became `/a/dir`), so if

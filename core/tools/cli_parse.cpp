@@ -484,7 +484,8 @@ void error(const char *const app, const char *const optarg, const int option,
  * `cli_split()` replaces `strsep` at all nine sites. It breaks on the first
  * UNESCAPED separator and leaves backslash sequences intact, so a `\:` written
  * for the ':' pass is still literal when the '=' pass runs; the leaf token is
- * unescaped exactly once, by `cli_unescape()`, after the last split. A ':' that
+ * unescaped exactly once, after the last split — keys and feature names by
+ * `cli_unescape_key()`, values by `cli_unescape_value()` (ADR-1355). A ':' that
  * spells a Windows drive letter is data rather than a separator, so the common
  * `path=C:\...` form needs no escaping at all.
  *
@@ -512,7 +513,9 @@ void error(const char *const app, const char *const optarg, const int option,
 /* strsep() semantics — returns the token, advances *sp past the separator or to
  * nullptr when the token runs to the end — except that a backslash-escaped
  * separator and a Windows drive-letter colon are literal. Backslashes are
- * preserved here; cli_unescape() removes them at the leaf. */
+ * preserved here; the leaf unescaper decides which of them are escapes. A
+ * separator after an odd run of backslashes is therefore literal and one after
+ * an even run is a separator, which is the pairing cli_unescape_value() uses. */
 char *cli_split(char **sp, const char sep)
 {
     if (!sp || !*sp)
@@ -521,7 +524,7 @@ char *cli_split(char **sp, const char sep)
     size_t i = 0U;
     while (s[i] != '\0') {
         if ((s[i] == '\\') && (s[i + 1U] != '\0')) {
-            i += 2U; /* skip the escaped byte; cli_unescape() drops the backslash */
+            i += 2U; /* skip the escaped byte; the leaf unescaper handles the backslash */
             continue;
         }
         if (s[i] != sep) {
@@ -540,10 +543,12 @@ char *cli_split(char **sp, const char sep)
     return s;
 }
 
-/* In-place removal of the escaping backslash in `\:`, `\=`, `\.` and `\\`.
- * Every other backslash is data, so `C:\models\m.json` survives verbatim.
- * Call once, on a token that will not be split again. */
-void cli_unescape(char *const s)
+/* In-place removal of the escaping backslash in `\:`, `\=`, `\.` and `\\`, for
+ * keys and feature names only: a model overload key is split on '.', so all
+ * four are escapes there. Every other backslash is data. Values go through
+ * cli_unescape_value() instead. Call once, on a token that will not be split
+ * again. */
+void cli_unescape_key(char *const s)
 {
     if (!s)
         return;
@@ -556,6 +561,52 @@ void cli_unescape(char *const s)
         *w = *r;
         w++;
         r++;
+    }
+    *w = '\0';
+}
+
+/* Length of the run of backslashes that starts at s. */
+[[nodiscard]] size_t cli_backslash_run(const char *const s)
+{
+    size_t n = 0U;
+    while (s[n] == '\\')
+        n++;
+    return n;
+}
+
+/* ADR-1355 — in-place unescape of a value: a path, a model name, an option
+ * value. Values are where Windows paths live, so a backslash is data unless it
+ * belongs to a run that sits directly before ':' or '=' or ends the value.
+ * Such a run is read in pairs, `\\` standing for one backslash; a lone
+ * backslash left over escapes the ':' or '=' after it, or, at the end of the
+ * value, stands for itself. `..\m.json`, `\\server\share` and
+ * `C:\models\.cache` pass through byte for byte, while `\:` and `\=` keep their
+ * ADR-1190 meaning and a literal backslash can still precede ':' or '='. */
+void cli_unescape_value(char *const s)
+{
+    if (!s)
+        return;
+    char *w = s;
+    const char *r = s;
+    while (*r != '\0') {
+        if (*r != '\\') {
+            *w = *r;
+            w++;
+            r++;
+            continue;
+        }
+        const size_t run = cli_backslash_run(r);
+        const char next = r[run];
+        const bool paired = (next == ':') || (next == '=') || (next == '\0');
+        size_t keep = paired ? (run / 2U) : run;
+        if ((next == '\0') && ((run % 2U) != 0U))
+            keep++; /* a lone trailing backslash is data */
+        /* keep <= run, so the write cursor never passes the read cursor. */
+        for (size_t k = 0U; k < keep; k++) {
+            *w = '\\';
+            w++;
+        }
+        r += run;
     }
     *w = '\0';
 }
@@ -584,8 +635,8 @@ void apply_model_opt(CLIModelConfig &model_cfg, char *key, char *val, const char
          * separator. */
         char *const name = cli_split(&key, '.');
         char *const opt = cli_split(&key, '.');
-        cli_unescape(name);
-        cli_unescape(opt);
+        cli_unescape_key(name);
+        cli_unescape_key(opt);
         model_cfg.feature_overload[model_cfg.overload_cnt].name = name;
         const int err = vmaf_feature_dictionary_set(
             &model_cfg.feature_overload[model_cfg.overload_cnt].opts_dict, opt, val);
@@ -650,7 +701,7 @@ CLIModelConfig parse_model_config(const char *const optarg, const char *const ap
          * '=' inside a path no longer truncates it. The key keeps its
          * backslashes: apply_model_opt() may still split it on '.'. */
         char *val = key_val;
-        cli_unescape(val);
+        cli_unescape_value(val);
         if (!val) {
             if (!strcmp(key, "disable_clip") || !strcmp(key, "enable_transform")) {
                 val = const_cast<char *>("true");
@@ -719,7 +770,7 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
     void *buf = optarg_copy;
 
     char *const feature_name = cli_split(&optarg_copy, '=');
-    cli_unescape(feature_name);
+    cli_unescape_key(feature_name);
 
     CLIFeatureConfig feature_cfg = {
         .name = feature_name,
@@ -742,8 +793,8 @@ CLIFeatureConfig parse_feature_config(const char *const optarg, const char *cons
         char *const key = cli_split(&key_val, '=');
         /* Value = the whole remainder after the first unescaped '='. */
         char *const val = key_val;
-        cli_unescape(key);
-        cli_unescape(val);
+        cli_unescape_key(key);
+        cli_unescape_value(val);
         if (!val)
             feature_usage_free(&feature_cfg, app, key);
         const int err = vmaf_feature_dictionary_set(&feature_cfg.opts_dict, key, val);

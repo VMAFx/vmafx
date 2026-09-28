@@ -1465,6 +1465,7 @@ nav:
         - "ADR-1349: native-arch-node-image-build": adr/1349-native-arch-node-image-build.md
         - "ADR-1350: recovery-overlay-ffmpeg-patches": adr/1350-recovery-overlay-ffmpeg-patches.md
         - "ADR-1352: rc-phase-shift-plus-one": adr/1352-rc-phase-shift-plus-one.md
+        - "ADR-1355: cli-option-value-backslashes": adr/1355-cli-option-value-backslashes.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

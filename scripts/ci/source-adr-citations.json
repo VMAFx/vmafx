@@ -6171,7 +6171,7 @@
         "core/test/test_ciede_neon.c": 1,
         "core/test/test_ciede_simd_parity.c": 1,
         "core/test/test_cjson.c": 1,
-        "core/test/test_cli_parse.c": 19,
+        "core/test/test_cli_parse.c": 27,
         "core/test/test_cli_parse_long_only_args.c": 1,
         "core/test/test_compat_clz.c": 1,
         "core/test/test_convolution_edge_small.c": 1,
@@ -6665,8 +6665,8 @@
     "1190": {
       "sites": {
         "core/test/fuzz/fuzz_cli_parse.c": 1,
-        "core/test/test_cli_parse.c": 12,
-        "core/tools/cli_parse.cpp": 1,
+        "core/test/test_cli_parse.c": 13,
+        "core/tools/cli_parse.cpp": 2,
         "core/tools/meson.build": 1,
         "pkg/cliopt/escape.go": 2,
         "pkg/cliopt/escape_test.go": 1,
@@ -7668,6 +7668,16 @@
         "scripts/release/tests/test-docker-publish-source-binding.sh": 1
       },
       "target": "1350-recovery-overlay-ffmpeg-patches.md"
+    },
+    "1355": {
+      "sites": {
+        "core/test/fuzz/fuzz_cli_parse.c": 1,
+        "core/test/test_cli_parse.c": 21,
+        "core/tools/cli_parse.cpp": 2,
+        "pkg/cliopt/escape.go": 2,
+        "pkg/cliopt/escape_test.go": 1
+      },
+      "target": "1355-cli-option-value-backslashes.md"
     }
   },
   "retired": {

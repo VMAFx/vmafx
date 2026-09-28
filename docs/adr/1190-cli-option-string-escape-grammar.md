@@ -2,7 +2,7 @@
 
 # ADR-1190: Backslash escapes and a drive-letter affordance in the CLI option-string grammar
 
-- **Status**: Accepted
+- **Status**: Accepted (value escapes amended by [ADR-1355](1355-cli-option-value-backslashes.md))
 - **Date**: 2026-09-06
 - **Deciders**: Lusoris
 - **Tags**: cli, parser, windows, upstream, bug

@@ -90,46 +90,63 @@ the value, and `.` separates the feature name from the option name in a model
 feature overload (`--model version=...:adm.adm_enhn_gain_limit=1.2`).
 
 Everything after that first `=` belongs to the value, so a path may contain
-further `=` characters without being cut short. To put one of the three
-delimiters — or a literal backslash — *inside* a key or a value, escape it with
-a backslash:
+further `=` characters without being cut short. Keys and values escape
+differently, because values are where paths live:
 
-| You want | Write |
-| --- | --- |
-| `:` inside a value | `\:` |
-| `=` inside a key or value | `\=` |
-| `.` inside an overload's feature/option name | `\.` |
-| a literal `\` | `\\` |
+| You want | In a key | In a value |
+| --- | --- | --- |
+| a literal `:` | `\:` | `\:` |
+| a literal `=` | `\=` | `=` or `\=` |
+| a literal `.` | `\.` (overload feature/option name) | `.` |
+| a literal `\` | `\\` | `\` (but see below) |
 
-Any other backslash is data and is passed through unchanged, so Windows paths
-need no escaping in the common case:
+A *key* is the part before the first `=`, the feature name of `--feature`, or
+either half of a model overload key. In a key, `\:`, `\=`, `\.` and `\\` are
+escapes and any other backslash is data.
+
+In a *value*, a backslash is data, so Windows paths are written as they are:
 
 ```shell
 vmaf -r ref.y4m -d dist.y4m --model 'path=C:\models\vmaf_v0.6.1.json'
+vmaf -r ref.y4m -d dist.y4m --model 'path=..\..\models\vmaf_v0.6.1.json'
+vmaf -r ref.y4m -d dist.y4m --model 'path=\\server\share\models\vmaf_v0.6.1.json'
+vmaf -r ref.y4m -d dist.y4m --model 'path=C:\models\.cache\vmaf_v0.6.1.json'
 vmaf -r ref.y4m -d dist.y4m --model 'path=/srv/models=2026/vmaf.json'
 vmaf -r ref.y4m -d dist.y4m --model 'path=/srv/odd\:name/vmaf.json'
 ```
 
+The one exception is a run of backslashes that sits directly before a `:` or
+`=`, or that ends the value. Such a run is read in pairs: `\\` stands for one
+backslash, and a single backslash left over escapes the `:` or `=` after it (at
+the very end of the value it stays a backslash). This keeps a backslash in
+front of a delimiter expressible:
+
+| Written | Value |
+| --- | --- |
+| `path=C:\out\` | `C:\out\` |
+| `path=C:\out\\:name=x` | `C:\out\`, then the pair `name=x` |
+| `name=a\:b` | `a:b` |
+| `name=a\\\:b` | `a\:b` |
+
 A `:` that spells a Windows drive letter — a single ASCII letter at the start of
 a key or a value, followed by `:` and then `\` or `/` — is treated as data, not
-as a pair separator. Two caveats follow from the table above:
-
-- A UNC prefix (`\\server\share`) *does* start with an escapable `\\`, so it must
-  be written `\\\\server\share` or with forward slashes (`//server/share`).
-- Quote the whole option string in your shell (single quotes above), otherwise
-  the shell eats the backslashes before `vmaf` ever sees them.
+as a pair separator. Quote the whole option string in your shell (single quotes
+above), otherwise the shell eats the backslashes before `vmaf` ever sees them.
 
 The rules are identical for `--model`, `--feature` and the `vmafx` alias. Before
 [ADR-1190](../adr/1190-cli-option-string-escape-grammar.md) there was no escape
 mechanism at all: `path=C:\models\m.json` was rejected with `bad option string
 "\models\m.json"`, and `path=/a/dir=eq/m.json` was silently truncated to
-`/a/dir`.
+`/a/dir`. Until [ADR-1355](../adr/1355-cli-option-value-backslashes.md) the key
+escapes also applied to values, so `..\..\models\m.json` was read as
+`....\models\m.json`, `\\server\share` as `\server\share`, and
+`C:\models\.cache` as `C:\models.cache`.
 
 ## Models
 
 The `--model / -m` flag takes a colon-delimited key/value string (see
-[Option-string grammar](#option-string-grammar) for how to escape a `:`, `=` or
-`.` inside a path):
+[Option-string grammar](#option-string-grammar) for how to write a `:` inside a
+path, and for backslashes):
 
 ```text
 --model path=<file>         # load a .json model from disk

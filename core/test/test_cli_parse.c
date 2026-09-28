@@ -752,8 +752,9 @@ static char *test_model_escaped_equals_and_backslash(void)
 {
     CLISettings settings;
     parse_one_opt("-m", "version=vmaf_v0.6.1:name=a\\=b\\\\c", &settings);
-    mu_assert("ADR-1190: `\\=` is a literal '=' and `\\\\` a literal backslash",
-              str_eq(settings.model_config[0].cfg.name, "a=b\\c"));
+    mu_assert("ADR-1355: `\\=` is a literal '=' in a value, and a `\\\\` that precedes "
+              "neither ':' nor '=' is data (ADR-1190 used to collapse it to one backslash)",
+              str_eq(settings.model_config[0].cfg.name, "a=b\\\\c"));
     mu_assert("ADR-1190: the preceding key/value pair is unaffected",
               str_eq(settings.model_config[0].version, "vmaf_v0.6.1"));
     cli_free(&settings);
@@ -830,6 +831,131 @@ static char *test_feature_plain_options_unchanged(void)
     return NULL;
 }
 
+/* ---------------------------------------------------------------------------
+ * ADR-1355 — a backslash inside a VALUE is data unless it belongs to a run that
+ * sits directly before ':' or '=' or ends the value.
+ *
+ * ADR-1190 applied the key escape set (`\:`, `\=`, `\.`, `\\`) to values as
+ * well, so Windows paths lost bytes: `..\..\models\m.json` became
+ * `....\models\m.json`, `\\server\share\m.json` became `\server\share\m.json`
+ * and `C:\models\.cache\m.json` became `C:\models.cache\m.json`.
+ * ------------------------------------------------------------------------- */
+
+/* Release everything parse_one_opt() allocated; non-zero when a feature
+ * dictionary refused to free. */
+static int release_parsed(CLISettings *settings)
+{
+    cli_free(settings);
+    return cli_free_dicts(settings);
+}
+
+static char *test_value_relative_parent_path(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "path=..\\..\\models\\m.json", &settings);
+    mu_assert("ADR-1355: `\\.` in a value is data, so a `..\\` path keeps every byte "
+              "(it used to become \"....\\models\\m.json\")",
+              str_eq(settings.model_config[0].path, "..\\..\\models\\m.json"));
+    mu_assert("ADR-1355: release", release_parsed(&settings) == 0);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_value_unc_path(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "path=\\\\server\\share\\m.json", &settings);
+    mu_assert("ADR-1355: a UNC prefix is data, not an escaped backslash "
+              "(it used to become \"\\server\\share\\m.json\")",
+              str_eq(settings.model_config[0].path, "\\\\server\\share\\m.json"));
+    mu_assert("ADR-1355: release", release_parsed(&settings) == 0);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_value_drive_path_with_dot_dir(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "path=C:\\models\\.cache\\m.json", &settings);
+    mu_assert("ADR-1355: `\\.` inside a drive path is data "
+              "(it used to become \"C:\\models.cache\\m.json\")",
+              str_eq(settings.model_config[0].path, "C:\\models\\.cache\\m.json"));
+    mu_assert("ADR-1355: release", release_parsed(&settings) == 0);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_value_colon_and_equals_escapes_kept(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "path=/a/dir\\=eq/m.json:name=x\\:y", &settings);
+    mu_assert("ADR-1355: `\\=` in a value is still a literal '='",
+              str_eq(settings.model_config[0].path, "/a/dir=eq/m.json"));
+    mu_assert("ADR-1355: `\\:` in a value is still a literal ':'",
+              str_eq(settings.model_config[0].cfg.name, "x:y"));
+    mu_assert("ADR-1355: release", release_parsed(&settings) == 0);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_key_escaped_dot_overload(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "version=vmaf_v0.6.1:my\\.feat.my\\.opt=v\\.1", &settings);
+    VmafFeatureDictionary **dict = &settings.model_config[0].feature_overload[0].opts_dict;
+    mu_assert("ADR-1355: a key still honours `\\.`, so the overload splits on the bare '.'",
+              settings.model_config[0].overload_cnt == 1 &&
+                  str_eq(settings.model_config[0].feature_overload[0].name, "my.feat"));
+    mu_assert("ADR-1355: the option half of the key is unescaped, its value is not",
+              str_eq(opt_value(*dict, "my.opt"), "v\\.1"));
+    mu_assert("ADR-1355: overload dictionary release", vmaf_feature_dictionary_free(dict) == 0);
+    mu_assert("ADR-1355: release", release_parsed(&settings) == 0);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+/* Boundary: backslash runs that end a value or precede ':' are read in pairs. */
+static char *test_value_backslash_run_boundaries(void)
+{
+    CLISettings settings;
+    parse_one_opt("-m", "path=C:\\models\\\\:name=a\\\\\\:b\\", &settings);
+    mu_assert("ADR-1355: `\\\\` before a pair separator is one trailing backslash",
+              str_eq(settings.model_config[0].path, "C:\\models\\"));
+    mu_assert("ADR-1355: `\\\\\\:` is a backslash plus a literal ':', and a lone "
+              "trailing backslash is data",
+              str_eq(settings.model_config[0].cfg.name, "a\\:b\\"));
+    mu_assert("ADR-1355: release", release_parsed(&settings) == 0);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *test_feature_value_keeps_backslashes(void)
+{
+    CLISettings settings;
+    parse_one_opt("--feature", "psnr=dump\\.dir=\\\\srv\\out\\..\\x:other=C:\\a\\.b", &settings);
+    mu_assert(
+        "ADR-1355: a feature option key still honours `\\.`",
+        str_eq(opt_value(settings.feature_cfg[0].opts_dict, "dump.dir"), "\\\\srv\\out\\..\\x"));
+    mu_assert("ADR-1355: a feature option value keeps `\\.` after a drive letter",
+              str_eq(opt_value(settings.feature_cfg[0].opts_dict, "other"), "C:\\a\\.b"));
+    mu_assert("ADR-1355: release", release_parsed(&settings) == 0);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+static char *run_value_backslash_tests(void)
+{
+    mu_run_test(test_value_relative_parent_path);
+    mu_run_test(test_value_unc_path);
+    mu_run_test(test_value_drive_path_with_dot_dir);
+    mu_run_test(test_value_colon_and_equals_escapes_kept);
+    mu_run_test(test_key_escaped_dot_overload);
+    mu_run_test(test_value_backslash_run_boundaries);
+    mu_run_test(test_feature_value_keeps_backslashes);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
 static char *run_model_delimiter_tests(void)
 {
     mu_run_test(test_model_path_keeps_inner_equals);
@@ -871,6 +997,9 @@ char *run_tests()
     if (result)
         return result;
     result = run_feature_delimiter_tests();
+    if (result)
+        return result;
+    result = run_value_backslash_tests();
     if (result)
         return result;
     return NULL;

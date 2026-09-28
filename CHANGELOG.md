@@ -18,6 +18,16 @@
 
 ### Fixed
 
+- `--model` and `--feature` values keep their backslashes, so Windows paths work
+  as typed: `path=..\..\models\m.json`, `path=\\server\share\m.json` and
+  `path=C:\models\.cache\m.json` used to lose a backslash each (`\.` and `\\`
+  were escapes in values too). `\:` and `\=` still escape a delimiter, and a
+  backslash run directly before `:` or `=`, or at the end of a value, is read in
+  pairs so a backslash in front of a delimiter stays writable. Keys and
+  overload names keep the full escape set (ADR-1355). If you wrote a UNC path
+  as `\\\\server\share` per the earlier advice, write `\\server\share` now.
+
+
 - Container publication finishes for the large images. The GPU image jobs free
   runner disk before `syft` scans the pushed image (the 1.0.0-rc.1 ROCm SBOM
   failed with "no space left on device" after the image was pushed and

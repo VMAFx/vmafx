@@ -11,8 +11,9 @@
  * script wraps `vmaf` and forwards untrusted CLI arguments
  * (filenames, model strings, `--feature` payloads). The colon-
  * delimited `parse_model_config` / `parse_feature_config`
- * sub-parsers run `cli_split()` / `cli_unescape()` chains over
- * heap-duplicated argv strings (ADR-1190; `strsep` before it);
+ * sub-parsers run `cli_split()` / `cli_unescape_key()` /
+ * `cli_unescape_value()` chains over heap-duplicated argv strings
+ * (ADR-1190, ADR-1355; `strsep` before them);
  * bugs there are classic format-string / overrun shapes.
  *
  * Strategy: treat the fuzzer's input bytes as a sequence of
