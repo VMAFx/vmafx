@@ -361,14 +361,16 @@ How the device matches `cambi.c`:
   (47 identical), against a `places=4` gate.
 
 Measured on Big Buck Bunny, 3840x2160 8-bit 4:2:0, `--precision max`,
-milliseconds per frame from `t(22 frames) - t(2 frames)`, median of five runs:
+milliseconds per frame from `t(22 frames) - t(2 frames)`, median of five to
+nine runs:
 
 | Device | Before (host residual) | After (device) |
 | --- | --- | --- |
-| CPU, `--backend cpu --threads 16 --feature cambi` | 10.6 | 10.7 |
-| Intel Arc B580, `--feature cambi_sycl` | 140 | 7.6 |
-| Intel UHD 770, `--feature cambi_sycl` | 944 | 40 |
-| Intel UHD 770, default model | 976 | 105 |
+| CPU, `--backend cpu --threads 16 --feature cambi` (unchanged code) | 10.6 | 11.6 |
+| Intel Arc B580, `--feature cambi_sycl` | 140 | 9.3 |
+| Intel UHD 770, `--feature cambi_sycl` | 944 | 42 |
+| Intel UHD 770, default model | 976 | 103 |
+| Intel Arc B580, default model | 123 | 71 |
 
 Parity and timing reproduce with the commands in
 [Research-2122](../research/2122-sycl-cambi-device-resident.md).

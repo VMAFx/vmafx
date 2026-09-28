@@ -35,11 +35,30 @@ Per-stage wall clock with a queue wait after every stage (`VMAF_SYCL_DISPATCH=ca
 | v1: column-owned window histogram, 130 row-segment reads per column per row; 7x7 mask with 147 loads per pixel | 22.3 / 129.3 ms | 2.0 / 44.9 ms | 31.2 / 197.9 ms |
 | v2: per-row *change* mask (skip rows whose leaving and entering segments agree) and *run* mask (apply a segment one run of equal levels at a time); separable mask; 32-bit indexing | 4.2 / 22.9 ms | 0.9 / 13.8 ms | 11.5 / 74.0 ms |
 | v3: radix pass 0 and a per-group sum folded into the c-values kernel; later passes skip on device once the threshold resolves to 0 | 5.7 / 23.1 ms | 0.9 / 14.0 ms | 12.5 / 61.4 ms |
-| v4: one local-memory tile for the 7x7 mask; row masks through local memory; chunk tuning | 5.0 / 21.8 ms | 0.7 / 5.2 ms | 11.8 / 52.6 ms |
+| v4 (shipped): one local-memory tile for the 7x7 mask; row masks through local memory; chunk tuning | 5.1 / 22.6 ms | 0.7 / 5.9 ms | 11.6 / 49.8 ms |
 
 - **Chunking.** A work-item walks one column of one row chunk, so each chunk is a latency chain. `compute_units * 512` target work-items and at least 32 rows per chunk measured best on both devices (c-values s0 2.76 ms on the B580 against 4.86 ms at `* 32`); the per-chunk column histograms are capped at 64 MiB.
 - **What did not help.** `[[sycl::reqd_sub_group_size(32)]]` on the row-mask kernel was slower on both devices; a work-group-wide `reduce_over_group` of 32 bits per word was slower on the B580 than one item per word (1.4 against 0.9 ms) but three times faster on the UHD 770, and the local-memory version beats both. 32-bit index arithmetic did not move the UHD 770 mask time (9.1 ms either way); the UHD 770's cost is dominated by 16-bit gathers, not 64-bit address math.
 - **Where the UHD 770 time goes now.** c-values at scale 0 (about 15 ms of 53 ms): scattered 16-bit histogram reads and read-modify-writes, which Xe-LP's data port serves slowly. Everything else is a handful of image passes of 1-5 ms each.
+
+### Before and after (wall clock, no per-stage waits)
+
+ms/frame, `--no_prediction`, before = `c894eb9d0`, after = the shipped kernels. 4K rows: `t(22) - t(2)` over 20 frames of Big Buck Bunny 3840x2160, median of 5 runs (after: 9 runs). 576x324 rows: `t(48) - t(2)` over 46 frames of `src01`, median of 9 runs, because start-up noise swamps a 20-frame difference at a few ms a frame. CPU = `--backend cpu --threads 16 --feature cambi`; GPU = `--backend sycl --feature cambi_sycl`; default model = no `--model` and no `--feature`.
+
+| Configuration | Before | After |
+| --- | --- | --- |
+| cambi, 4K, CPU (code unchanged) | 10.6 | 11.6 |
+| cambi, 4K, Arc B580 | 140.0 | 9.3 |
+| cambi, 4K, UHD 770 | 944.0 | 42.2 |
+| cambi, 576x324, CPU | 0.2 | 0.0 (below resolution) |
+| cambi, 576x324, Arc B580 | 6.7 | 1.8 |
+| cambi, 576x324, UHD 770 | 147.4 | 4.2 |
+| default model, 4K, Arc B580 | 122.5 | 71.3 |
+| default model, 4K, UHD 770 | 976.3 | 102.8 |
+| default model, 576x324, Arc B580 | 11.2 | 4.4 |
+| default model, 576x324, UHD 770 | 137.7 | 19.7 |
+
+A second after-run of the 4K rows (5 repetitions, before the final lint-only edits) gave 7.6 ms on the B580, 40.5 ms on the UHD 770 and 58.4 / 105.3 ms for the default model; the spread comes from reading two 12 MB frames per frame from the container volume.
 
 ### Parity evidence (per-frame `Cambi_feature_cambi_score`, `--precision max`)
 

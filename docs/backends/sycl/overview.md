@@ -403,8 +403,8 @@ the deviation:
   pooling with a device-to-host copy per scale). Since
   [ADR-1357](../../adr/1357-sycl-cambi-device-resident.md) it runs every
   stage on the device, reads the distorted plane from the shared frame upload
-  and reads back one 88-byte block per frame; at 3840x2160 it takes 7.6 ms a
-  frame on an Arc B580 (was 140) and 40 ms on a UHD 770 (was 944). Per-frame
+  and reads back one 88-byte block per frame; at 3840x2160 it takes 9.3 ms a
+  frame on an Arc B580 (was 140) and 42 ms on a UHD 770 (was 944). Per-frame
   scores are bit-identical to `--backend cpu` whenever the CPU's own top-K
   double sum is exact, and otherwise differ by that sum's rounding (at most
   2.2e-15 over 50 frames of Big Buck Bunny 4K). See
