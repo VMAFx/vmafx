@@ -353,7 +353,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 947,
+  "total_warnings": 933,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -408,7 +408,6 @@
     "core/src/feature/speed_internal.h": 3,
     "core/src/feature/ssim.c": 6,
     "core/src/feature/ssimulacra2_eotf_lut.h": 6,
-    "core/src/feature/sycl/integer_ciede_sycl.cpp": 14,
     "core/src/feature/sycl/ssimulacra2_sycl.cpp": 19,
     "core/src/feature/vif_options.h": 1,
     "core/src/feature/vif_tools.h": 2,
@@ -500,6 +499,22 @@
         }
       },
       "previous_baseline_sha256": "549c20477399077134b404c4a9c64d39886ed3e7cc3a031a2d0aa28245bc3aaa"
+    },
+    {
+      "sources": [
+        "core/src/feature/sycl/integer_ciede_sycl.cpp",
+        "core/test/test_sycl_ciede_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/sycl/integer_ciede_sycl.cpp": {
+          "warnings": [
+            14,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "9ffd9094084625eae97a4824238ca16f23e69370111360c8e69ed80d7753ff91"
     }
   ]
 }

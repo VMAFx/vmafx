@@ -15,10 +15,15 @@
  * the Intel-Arc lane (the CUDA + HIP equivalents are covered by
  * PR #351's test_cuda_ciede_parity / ADR-0868).
  *
- * The Vulkan CIEDE2000 path has a documented NVIDIA-only f32/f64
- * precision gap (T-VK-CIEDE-F32-F64 / ADR-0273), so it's important to
- * pin the SYCL path independently — SYCL runs in double-precision on
- * Intel iGPU + dGPU and should match the CPU reference at places=4.
+ * The SYCL kernel computes in fp32 (ADR-0220: no fp64 in SYCL kernels)
+ * while ciede.c computes in double, so the gate is places=4.
+ *
+ * The kernel reads chroma at native resolution with (x >> ss_hor,
+ * y >> ss_ver) indexing, so the build compiles this file four times:
+ * the default 256x144 4:2:0 8-bit case, an odd-sized 577x325 4:2:0 case
+ * (ceil chroma width 289, the ADR-1213 hazard), a 577x325 4:2:2 10-bit
+ * case (horizontal-only subsampling plus the 16-bit sample path) and a
+ * 4:4:4 case (no subsampling). See core/test/meson.build.
  *
  * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
  * or no device visible) the test emits "[skip: no SYCL device]" and
@@ -49,29 +54,45 @@
 #ifndef FIXTURE_H
 #define FIXTURE_H 144u
 #endif
+#ifndef FIXTURE_BPC
 #define FIXTURE_BPC 8u
+#endif
+#ifndef FIXTURE_PIX_FMT
+#define FIXTURE_PIX_FMT VMAF_PIX_FMT_YUV420P
+#endif
 #define PARITY_TOL 1e-4
+
+/* Store one sample; `value` is masked to the fixture bit depth. */
+static void put_sample(VmafPicture *pic, unsigned p, unsigned row, unsigned col, unsigned value)
+{
+    const unsigned masked = value & ((1u << FIXTURE_BPC) - 1u);
+#if FIXTURE_BPC > 8
+    uint16_t *plane = (uint16_t *)pic->data[p];
+    plane[(size_t)row * (size_t)(pic->stride[p] / 2) + col] = (uint16_t)masked;
+#else
+    uint8_t *plane = (uint8_t *)pic->data[p];
+    plane[(size_t)row * (size_t)pic->stride[p] + col] = (uint8_t)masked;
+#endif
+}
 
 static int fill_pic(VmafPicture *pic, unsigned salt)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    int err = vmaf_picture_alloc(pic, FIXTURE_PIX_FMT, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
+    /* Scale the 8-bit pattern to the fixture depth so the high-bit-depth
+     * cases exercise the same colour range. */
+    const unsigned up = FIXTURE_BPC - 8u;
     for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row * 5u + col + salt * 11u) & 0xFFu);
-        }
+        for (unsigned col = 0; col < pic->w[0]; col++)
+            put_sample(pic, 0u, row, col, ((row * 5u + col + salt * 11u) & 0xFFu) << up);
     }
     /* Chroma planes carry the colour delta that CIEDE2000 measures —
      * vary them with row/col + salt so ΔE != 0 on every CTU. */
     for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
         for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                plane[row * pic->stride[p] + col] =
-                    (uint8_t)((row + col * (1u + p) + salt * 7u) & 0xFFu);
-            }
+            for (unsigned col = 0; col < pic->w[p]; col++)
+                put_sample(pic, p, row, col, ((row + col * (1u + p) + salt * 7u) & 0xFFu) << up);
         }
     }
     return 0;

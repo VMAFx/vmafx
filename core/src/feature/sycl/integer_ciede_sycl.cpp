@@ -11,14 +11,18 @@
  *
  *  Self-contained submit / collect — does *not* register with
  *  vmaf_sycl_graph_register because the shared_frame buffers are
- *  luma-only and ciede needs full Y/U/V. Each submit uploads
- *  ref/dis luma + chroma (host-side upscale to luma resolution
- *  mirrors ciede.c::scale_chroma_planes), launches one kernel,
- *  and reads back a single float sum. Host applies the CPU's
- *  `45 - 20*log10(mean_dE)` transform for the final score.
+ *  luma-only and ciede needs full Y/U/V. Each submit packs the
+ *  ref/dis Y, U and V planes at their native resolution into
+ *  pinned staging, uploads them, launches one kernel, and reads
+ *  back one float partial per work-group. The kernel reads chroma
+ *  at (x >> ss_hor, y >> ss_ver), the nearest-neighbour upsample
+ *  of ciede.c::scale_chroma_planes, as the CUDA and HIP twins
+ *  do. Host applies the CPU's `45 - 20*log10(mean_dE)` transform
+ *  for the final score.
  *
- *  Float per-pixel math throughout; places=4 on real hardware
- *  (Intel Arc A380 + Mesa anv → 1.0e-5 max_abs on 48 frames).
+ *  Float per-pixel math throughout (ADR-0220: no fp64 in the
+ *  kernel); the CPU reference computes in double, so parity is
+ *  places=4, not bit-exact.
  */
 
 #include <sycl/sycl.hpp>
@@ -28,6 +32,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <numbers>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -40,31 +45,36 @@
 namespace
 {
 
+/* Y, U, V. */
+static constexpr unsigned CIEDE_SYCL_PLANES = 3U;
+
 struct CiedeStateSycl {
     /* Frame geometry. */
     unsigned width;
     unsigned height;
     unsigned bpc;
     enum VmafPixelFormat pix_fmt;
+    /* 1 when chroma is half-size along that axis (4:2:0 both, 4:2:2
+     * horizontal only), 0 for 4:4:4. */
+    unsigned ss_hor;
+    unsigned ss_ver;
+    /* Native per-plane geometry; chroma uses picture.c's ceil rule
+     * `(w + ss_hor) >> ss_hor` so odd luma sizes stage every column. */
+    unsigned plane_w[CIEDE_SYCL_PLANES];
+    unsigned plane_h[CIEDE_SYCL_PLANES];
+    size_t row_bytes[CIEDE_SYCL_PLANES];
 
     /* SYCL state back-pointer. */
     VmafSyclState *sycl_state;
 
-    /* Host-pinned staging for the 6 input planes (full luma
-     * resolution per plane). Bytes per plane = w * h * bpp. */
-    void *h_ref_y;
-    void *h_ref_u;
-    void *h_ref_v;
-    void *h_dis_y;
-    void *h_dis_u;
-    void *h_dis_v;
-    /* Device USM for the 6 input planes. */
-    void *d_ref_y;
-    void *d_ref_u;
-    void *d_ref_v;
-    void *d_dis_y;
-    void *d_dis_u;
-    void *d_dis_v;
+    /* Host-pinned staging and device USM, one tightly packed buffer
+     * per plane at native resolution: 4:2:0 moves half the bytes the
+     * former luma-resolution upscale did, and the host no longer
+     * writes one byte per luma pixel per plane. */
+    void *h_ref[CIEDE_SYCL_PLANES];
+    void *h_dis[CIEDE_SYCL_PLANES];
+    void *d_ref[CIEDE_SYCL_PLANES];
+    void *d_dis[CIEDE_SYCL_PLANES];
 
     /* Per-workgroup float partials. Tree-reducing inside each WG
      * keeps per-block sums in float7 range (~5000 max); the host
@@ -141,7 +151,7 @@ static inline float get_h_prime_dev(float b, float a)
     float h = sycl::atan2(b, a);
     if (h < 0.0f)
         h += 6.283185307179586f;
-    return h * 180.0f / 3.141592653589793f;
+    return h * 180.0f / std::numbers::pi_v<float>;
 }
 
 static inline float get_delta_h_prime_dev(float c1, float c2, float h1, float h2)
@@ -150,34 +160,35 @@ static inline float get_delta_h_prime_dev(float c1, float c2, float h1, float h2
         return 0.0f;
     float const diff = h2 - h1;
     if (sycl::fabs(diff) <= 180.0f)
-        return diff * 3.141592653589793f / 180.0f;
+        return diff * std::numbers::pi_v<float> / 180.0f;
     if (diff > 180.0f)
-        return (diff - 360.0f) * 3.141592653589793f / 180.0f;
-    return (diff + 360.0f) * 3.141592653589793f / 180.0f;
+        return (diff - 360.0f) * std::numbers::pi_v<float> / 180.0f;
+    return (diff + 360.0f) * std::numbers::pi_v<float> / 180.0f;
 }
 
 static inline float get_upcase_h_bar_prime_dev(float h1, float h2)
 {
     float const diff = sycl::fabs(h1 - h2);
     if (diff > 180.0f)
-        return ((h1 + h2 + 360.0f) / 2.0f) * 3.141592653589793f / 180.0f;
-    return ((h1 + h2) / 2.0f) * 3.141592653589793f / 180.0f;
+        return ((h1 + h2 + 360.0f) / 2.0f) * std::numbers::pi_v<float> / 180.0f;
+    return ((h1 + h2) / 2.0f) * std::numbers::pi_v<float> / 180.0f;
 }
 
 static inline float get_upcase_t_dev(float h_bar)
 {
-    return 1.0f - 0.17f * sycl::cos(h_bar - 3.141592653589793f / 6.0f) +
+    return 1.0f - 0.17f * sycl::cos(h_bar - std::numbers::pi_v<float> / 6.0f) +
            0.24f * sycl::cos(2.0f * h_bar) +
-           0.32f * sycl::cos(3.0f * h_bar + 3.141592653589793f / 30.0f) -
-           0.20f * sycl::cos(4.0f * h_bar - 63.0f * 3.141592653589793f / 180.0f);
+           0.32f * sycl::cos(3.0f * h_bar + std::numbers::pi_v<float> / 30.0f) -
+           0.20f * sycl::cos(4.0f * h_bar - 63.0f * std::numbers::pi_v<float> / 180.0f);
 }
 
 static inline float get_r_sub_t_dev(float c_bar, float h_bar)
 {
-    float const exponent = -sycl::pow((h_bar * 180.0f / 3.141592653589793f - 275.0f) / 25.0f, 2.0f);
+    float const exponent =
+        -sycl::pow((h_bar * 180.0f / std::numbers::pi_v<float> - 275.0f) / 25.0f, 2.0f);
     float const c7 = sycl::pow(c_bar, 7.0f);
     float const r_c = 2.0f * sycl::sqrt(c7 / (c7 + sycl::pow(25.0f, 7.0f)));
-    return -sycl::sin(60.0f * 3.141592653589793f / 180.0f * sycl::exp(exponent)) * r_c;
+    return -sycl::sin(60.0f * std::numbers::pi_v<float> / 180.0f * sycl::exp(exponent)) * r_c;
 }
 
 static inline float ciede2000_dev(float l1, float a1, float b1, float l2, float a2, float b2)
@@ -215,23 +226,23 @@ static inline float ciede2000_dev(float l1, float a1, float b1, float l2, float 
     return sycl::sqrt(lightness * lightness + chroma * chroma + hue * hue + r_t * chroma * hue);
 }
 
-template <typename T>
-static void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigned out_w,
-                          unsigned out_h, enum VmafPixelFormat pix_fmt)
+/* Copy `rows` rows of plane `p` into a tightly packed host buffer: one
+ * memcpy when the picture rows are already contiguous, one per row
+ * otherwise. Byte-oriented, so it serves every bit depth. */
+static void stage_plane(const VmafPicture *pic, unsigned p, void *dst, size_t row_bytes,
+                        unsigned rows)
 {
-    const int ss_hor = (p > 0u) && (pix_fmt != VMAF_PIX_FMT_YUV444P);
-    const int ss_ver = (p > 0u) && (pix_fmt == VMAF_PIX_FMT_YUV420P);
-    const T *in_buf = static_cast<const T *>(pic->data[p]);
-    T *out_buf = static_cast<T *>(dst);
-    const ptrdiff_t in_stride_t = pic->stride[p] / static_cast<ptrdiff_t>(sizeof(T));
-    for (unsigned i = 0; i < out_h; i++) {
-        for (unsigned j = 0; j < out_w; j++) {
-            unsigned const in_x = ss_hor ? (j >> 1) : j;
-            out_buf[j] = in_buf[in_x];
-        }
-        unsigned const in_row_step = ss_ver ? (i & 1u) : 1u;
-        in_buf += in_row_step * in_stride_t;
-        out_buf += out_w;
+    const auto *src = static_cast<const uint8_t *>(pic->data[p]);
+    auto *out = static_cast<uint8_t *>(dst);
+    const auto stride = static_cast<size_t>(pic->stride[p]);
+    if (stride == row_bytes) {
+        std::memcpy(out, src, row_bytes * rows);
+        return;
+    }
+    for (unsigned i = 0; i < rows; i++) {
+        std::memcpy(out, src, row_bytes);
+        src += stride;
+        out += row_bytes;
     }
 }
 
@@ -239,88 +250,158 @@ static void upscale_plane(unsigned p, const VmafPicture *pic, void *dst, unsigne
  * contributions in float (per-WG max ~5000, fits cleanly in
  * float7), then writes one float to partials[wg_idx]. Host then
  * accumulates the WG totals in `double`. This is the same
- * precision pattern as ciede_vulkan, and necessary because
+ * precision pattern as ciede_cuda, and necessary because
  * Intel Arc A380 lacks native fp64 (so sycl::reduction<double>
  * fails at runtime). */
 static constexpr size_t CIEDE_SYCL_WG_X = 16;
 static constexpr size_t CIEDE_SYCL_WG_Y = 16;
 
-static void launch_ciede(sycl::queue &q, void *ref_y, void *ref_u, void *ref_v, void *dis_y,
-                         void *dis_u, void *dis_v, float *d_partials, unsigned width,
-                         unsigned height, unsigned bpc)
+/* Everything the kernel reads, captured by value as one struct so the
+ * output pointer travels with its geometry (same shape as
+ * PsnrKernelArgs / FpsnrOutput). Planes are packed at native size. */
+struct CiedeKernelArgs {
+    const void *ref[CIEDE_SYCL_PLANES];
+    const void *dis[CIEDE_SYCL_PLANES];
+    float *partials;
+    unsigned width;
+    unsigned height;
+    unsigned chroma_w;
+    unsigned ss_hor;
+    unsigned ss_ver;
+    unsigned bpc;
+    unsigned wg_count_x;
+};
+
+/* Fetch one pixel's Y/U/V as float from native-resolution planes. */
+template <typename T>
+static inline void load_yuv(const void *const planes[CIEDE_SYCL_PLANES], size_t off_y, size_t off_c,
+                            float yuv[CIEDE_SYCL_PLANES])
+{
+    yuv[0] = (float)static_cast<const T *>(planes[0])[off_y];
+    yuv[1] = (float)static_cast<const T *>(planes[1])[off_c];
+    yuv[2] = (float)static_cast<const T *>(planes[2])[off_c];
+}
+
+/* ΔE2000 of the pixel at (x, y). Chroma is read at
+ * (x >> ss_hor, y >> ss_ver): output row i of scale_chroma_planes
+ * reads input row i >> 1 on 4:2:0 and column j >> 1 whenever the
+ * format is not 4:4:4. */
+static inline float ciede_pixel(const CiedeKernelArgs &a, size_t x, size_t y)
+{
+    const size_t cx = a.ss_hor ? (x >> 1) : x;
+    const size_t cy = a.ss_ver ? (y >> 1) : y;
+    const size_t off_y = y * (size_t)a.width + x;
+    const size_t off_c = cy * (size_t)a.chroma_w + cx;
+    float r[CIEDE_SYCL_PLANES];
+    float d[CIEDE_SYCL_PLANES];
+    if (a.bpc <= 8) {
+        load_yuv<uint8_t>(a.ref, off_y, off_c, r);
+        load_yuv<uint8_t>(a.dis, off_y, off_c, d);
+    } else {
+        load_yuv<uint16_t>(a.ref, off_y, off_c, r);
+        load_yuv<uint16_t>(a.dis, off_y, off_c, d);
+    }
+    float l1;
+    float a1;
+    float b1;
+    float l2;
+    float a2;
+    float b2;
+    yuv_to_lab(r[0], r[1], r[2], a.bpc, l1, a1, b1);
+    yuv_to_lab(d[0], d[1], d[2], a.bpc, l2, a2, b2);
+    return ciede2000_dev(l1, a1, b1, l2, a2, b2);
+}
+
+static void launch_ciede(sycl::queue &q, const CiedeKernelArgs &args)
 {
     /* Round work-item count up to WG-multiples; out-of-range
      * threads contribute 0.0 to the WG sum. */
-    const size_t global_x = ((width + CIEDE_SYCL_WG_X - 1) / CIEDE_SYCL_WG_X) * CIEDE_SYCL_WG_X;
-    const size_t global_y = ((height + CIEDE_SYCL_WG_Y - 1) / CIEDE_SYCL_WG_Y) * CIEDE_SYCL_WG_Y;
-    const size_t wg_count_x = global_x / CIEDE_SYCL_WG_X;
+    const size_t global_x =
+        ((args.width + CIEDE_SYCL_WG_X - 1) / CIEDE_SYCL_WG_X) * CIEDE_SYCL_WG_X;
+    const size_t global_y =
+        ((args.height + CIEDE_SYCL_WG_Y - 1) / CIEDE_SYCL_WG_Y) * CIEDE_SYCL_WG_Y;
     sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x},
                                 sycl::range<2>{CIEDE_SYCL_WG_Y, CIEDE_SYCL_WG_X}};
-    const unsigned e_w = width;
-    const unsigned e_h = height;
-    const unsigned e_bpc = bpc;
-    const size_t e_wg_count_x = wg_count_x;
-    void const *e_ref_y = ref_y;
-    void const *e_ref_u = ref_u;
-    void const *e_ref_v = ref_v;
-    void const *e_dis_y = dis_y;
-    void const *e_dis_u = dis_u;
-    void const *e_dis_v = dis_v;
+    const CiedeKernelArgs a = args;
 
     q.submit([=](sycl::handler &h) {
         h.parallel_for(ndr, [=](sycl::nd_item<2> it) {
             const size_t x = it.get_global_id(1);
             const size_t y = it.get_global_id(0);
             float my_de = 0.0f;
-            if (x < (size_t)e_w && y < (size_t)e_h) {
-                const size_t off = y * (size_t)e_w + x;
-                float r_y;
-                float r_u;
-                float r_v;
-                float d_y;
-                float d_u;
-                float d_v;
-                if (e_bpc <= 8) {
-                    r_y = (float)static_cast<const uint8_t *>(e_ref_y)[off];
-                    r_u = (float)static_cast<const uint8_t *>(e_ref_u)[off];
-                    r_v = (float)static_cast<const uint8_t *>(e_ref_v)[off];
-                    d_y = (float)static_cast<const uint8_t *>(e_dis_y)[off];
-                    d_u = (float)static_cast<const uint8_t *>(e_dis_u)[off];
-                    d_v = (float)static_cast<const uint8_t *>(e_dis_v)[off];
-                } else {
-                    r_y = (float)static_cast<const uint16_t *>(e_ref_y)[off];
-                    r_u = (float)static_cast<const uint16_t *>(e_ref_u)[off];
-                    r_v = (float)static_cast<const uint16_t *>(e_ref_v)[off];
-                    d_y = (float)static_cast<const uint16_t *>(e_dis_y)[off];
-                    d_u = (float)static_cast<const uint16_t *>(e_dis_u)[off];
-                    d_v = (float)static_cast<const uint16_t *>(e_dis_v)[off];
-                }
-                float l1;
-                float a1;
-                float b1;
-                float l2;
-                float a2;
-                float b2;
-                yuv_to_lab(r_y, r_u, r_v, e_bpc, l1, a1, b1);
-                yuv_to_lab(d_y, d_u, d_v, e_bpc, l2, a2, b2);
-                my_de = ciede2000_dev(l1, a1, b1, l2, a2, b2);
-            }
+            if (x < (size_t)a.width && y < (size_t)a.height)
+                my_de = ciede_pixel(a, x, y);
             /* Reduce within the WG via reduce_over_group. */
             float const wg_sum =
                 sycl::reduce_over_group(it.get_group(), my_de, sycl::plus<float>{});
             if (it.get_local_id(0) == 0 && it.get_local_id(1) == 0) {
-                const size_t wg_idx = it.get_group(0) * e_wg_count_x + it.get_group(1);
-                d_partials[wg_idx] = wg_sum;
+                const size_t wg_idx = it.get_group(0) * (size_t)a.wg_count_x + it.get_group(1);
+                a.partials[wg_idx] = wg_sum;
             }
         });
     });
+}
+
+/* Record frame geometry, chroma subsampling and per-plane sizes. */
+static void ciede_set_geometry(CiedeStateSycl *s, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                               unsigned w, unsigned h)
+{
+    s->width = w;
+    s->height = h;
+    s->bpc = bpc;
+    s->pix_fmt = pix_fmt;
+    s->ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1U : 0U;
+    s->ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1U : 0U;
+    const size_t bpp = (bpc <= 8U) ? 1U : 2U;
+    for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
+        const unsigned sh = (p > 0U) ? s->ss_hor : 0U;
+        const unsigned sv = (p > 0U) ? s->ss_ver : 0U;
+        s->plane_w[p] = (w + sh) >> sh;
+        s->plane_h[p] = (h + sv) >> sv;
+        s->row_bytes[p] = (size_t)s->plane_w[p] * bpp;
+    }
+    s->wg_count_x = (unsigned)((w + CIEDE_SYCL_WG_X - 1) / CIEDE_SYCL_WG_X);
+    s->wg_count_y = (unsigned)((h + CIEDE_SYCL_WG_Y - 1) / CIEDE_SYCL_WG_Y);
+    s->wg_count = s->wg_count_x * s->wg_count_y;
+}
+
+/* Allocate staging, device planes and partials. Stops at the first
+ * failure; close_fex_sycl releases whatever was allocated. */
+static bool ciede_alloc_buffers(CiedeStateSycl *s)
+{
+    VmafSyclState *state = s->sycl_state;
+    for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
+        const size_t bytes = s->row_bytes[p] * s->plane_h[p];
+        s->h_ref[p] = vmaf_sycl_malloc_host(state, bytes);
+        s->h_dis[p] = vmaf_sycl_malloc_host(state, bytes);
+        s->d_ref[p] = vmaf_sycl_malloc_device(state, bytes);
+        s->d_dis[p] = vmaf_sycl_malloc_device(state, bytes);
+        if (!s->h_ref[p] || !s->h_dis[p] || !s->d_ref[p] || !s->d_dis[p])
+            return false;
+    }
+    const size_t partials_bytes = (size_t)s->wg_count * sizeof(float);
+    s->d_partials = static_cast<float *>(vmaf_sycl_malloc_device(state, partials_bytes));
+    s->h_partials = static_cast<float *>(vmaf_sycl_malloc_host(state, partials_bytes));
+    return s->d_partials != nullptr && s->h_partials != nullptr;
+}
+
+/* True when `pic` has the geometry the staging buffers were sized for. */
+static bool ciede_picture_matches(const CiedeStateSycl *s, const VmafPicture *pic)
+{
+    if (!pic || pic->bpc != s->bpc)
+        return false;
+    for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
+        if (!pic->data[p] || pic->w[p] != s->plane_w[p] || pic->h[p] != s->plane_h[p])
+            return false;
+    }
+    return true;
 }
 
 } /* anonymous namespace */
 
 extern "C" {
 
-static const VmafOption options_ciede_sycl[] = {{nullptr}};
+static const VmafOption options_ciede_sycl[] = {{.name = nullptr}};
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage) — ADR-0141 §2 load-bearing invariant: the
 // `init_fex_sycl` / `submit_fex_sycl` / `collect_fex_sycl` / `close_fex_sycl`
@@ -340,43 +421,15 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return -EINVAL;
 
     auto *s = static_cast<CiedeStateSycl *>(fex->priv);
-    s->width = w;
-    s->height = h;
-    s->bpc = bpc;
-    s->pix_fmt = pix_fmt;
+    ciede_set_geometry(s, pix_fmt, bpc, w, h);
 
     if (!fex->sycl_state) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ciede_sycl: no SYCL state\n");
         return -EINVAL;
     }
+    s->sycl_state = fex->sycl_state;
 
-    VmafSyclState *state = fex->sycl_state;
-    s->sycl_state = state;
-
-    const size_t bpp = (bpc <= 8) ? 1u : 2u;
-    const size_t plane_bytes = (size_t)w * h * bpp;
-
-    s->h_ref_y = vmaf_sycl_malloc_host(state, plane_bytes);
-    s->h_ref_u = vmaf_sycl_malloc_host(state, plane_bytes);
-    s->h_ref_v = vmaf_sycl_malloc_host(state, plane_bytes);
-    s->h_dis_y = vmaf_sycl_malloc_host(state, plane_bytes);
-    s->h_dis_u = vmaf_sycl_malloc_host(state, plane_bytes);
-    s->h_dis_v = vmaf_sycl_malloc_host(state, plane_bytes);
-    s->d_ref_y = vmaf_sycl_malloc_device(state, plane_bytes);
-    s->d_ref_u = vmaf_sycl_malloc_device(state, plane_bytes);
-    s->d_ref_v = vmaf_sycl_malloc_device(state, plane_bytes);
-    s->d_dis_y = vmaf_sycl_malloc_device(state, plane_bytes);
-    s->d_dis_u = vmaf_sycl_malloc_device(state, plane_bytes);
-    s->d_dis_v = vmaf_sycl_malloc_device(state, plane_bytes);
-    s->wg_count_x = (unsigned)((w + CIEDE_SYCL_WG_X - 1) / CIEDE_SYCL_WG_X);
-    s->wg_count_y = (unsigned)((h + CIEDE_SYCL_WG_Y - 1) / CIEDE_SYCL_WG_Y);
-    s->wg_count = s->wg_count_x * s->wg_count_y;
-    const size_t partials_bytes = (size_t)s->wg_count * sizeof(float);
-    s->d_partials = static_cast<float *>(vmaf_sycl_malloc_device(state, partials_bytes));
-    s->h_partials = static_cast<float *>(vmaf_sycl_malloc_host(state, partials_bytes));
-    if (!s->h_ref_y || !s->h_ref_u || !s->h_ref_v || !s->h_dis_y || !s->h_dis_u || !s->h_dis_v ||
-        !s->d_ref_y || !s->d_ref_u || !s->d_ref_v || !s->d_dis_y || !s->d_dis_u || !s->d_dis_v ||
-        !s->d_partials || !s->h_partials) {
+    if (!ciede_alloc_buffers(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ciede_sycl: USM allocation failed\n");
         (void)close_fex_sycl(fex);
         return -ENOMEM;
@@ -402,36 +455,31 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)
         return -EINVAL;
+    if (!ciede_picture_matches(s, ref_pic) || !ciede_picture_matches(s, dist_pic))
+        return -EINVAL;
     sycl::queue &q = *qptr;
 
-    /* Host-side chroma upscale into pinned staging. */
-    if (s->bpc <= 8) {
-        upscale_plane<uint8_t>(0, ref_pic, s->h_ref_y, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint8_t>(1, ref_pic, s->h_ref_u, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint8_t>(2, ref_pic, s->h_ref_v, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint8_t>(0, dist_pic, s->h_dis_y, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint8_t>(1, dist_pic, s->h_dis_u, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint8_t>(2, dist_pic, s->h_dis_v, s->width, s->height, s->pix_fmt);
-    } else {
-        upscale_plane<uint16_t>(0, ref_pic, s->h_ref_y, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint16_t>(1, ref_pic, s->h_ref_u, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint16_t>(2, ref_pic, s->h_ref_v, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint16_t>(0, dist_pic, s->h_dis_y, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint16_t>(1, dist_pic, s->h_dis_u, s->width, s->height, s->pix_fmt);
-        upscale_plane<uint16_t>(2, dist_pic, s->h_dis_v, s->width, s->height, s->pix_fmt);
+    CiedeKernelArgs args = {};
+    /* Stage and enqueue plane by plane so the DMA of one plane overlaps
+     * the host packing the next. */
+    for (unsigned p = 0; p < CIEDE_SYCL_PLANES; p++) {
+        const size_t bytes = s->row_bytes[p] * s->plane_h[p];
+        stage_plane(ref_pic, p, s->h_ref[p], s->row_bytes[p], s->plane_h[p]);
+        q.memcpy(s->d_ref[p], s->h_ref[p], bytes);
+        stage_plane(dist_pic, p, s->h_dis[p], s->row_bytes[p], s->plane_h[p]);
+        q.memcpy(s->d_dis[p], s->h_dis[p], bytes);
+        args.ref[p] = s->d_ref[p];
+        args.dis[p] = s->d_dis[p];
     }
-
-    const size_t bpp = (s->bpc <= 8) ? 1u : 2u;
-    const size_t plane_bytes = (size_t)s->width * s->height * bpp;
-    q.memcpy(s->d_ref_y, s->h_ref_y, plane_bytes);
-    q.memcpy(s->d_ref_u, s->h_ref_u, plane_bytes);
-    q.memcpy(s->d_ref_v, s->h_ref_v, plane_bytes);
-    q.memcpy(s->d_dis_y, s->h_dis_y, plane_bytes);
-    q.memcpy(s->d_dis_u, s->h_dis_u, plane_bytes);
-    q.memcpy(s->d_dis_v, s->h_dis_v, plane_bytes);
-
-    launch_ciede(q, s->d_ref_y, s->d_ref_u, s->d_ref_v, s->d_dis_y, s->d_dis_u, s->d_dis_v,
-                 s->d_partials, s->width, s->height, s->bpc);
+    args.partials = s->d_partials;
+    args.width = s->width;
+    args.height = s->height;
+    args.chroma_w = s->plane_w[1];
+    args.ss_hor = s->ss_hor;
+    args.ss_ver = s->ss_ver;
+    args.bpc = s->bpc;
+    args.wg_count_x = s->wg_count_x;
+    launch_ciede(q, args);
 
     q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(float));
 
@@ -465,34 +513,15 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<CiedeStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        if (s->h_ref_y)
-            vmaf_sycl_free(s->sycl_state, s->h_ref_y);
-        if (s->h_ref_u)
-            vmaf_sycl_free(s->sycl_state, s->h_ref_u);
-        if (s->h_ref_v)
-            vmaf_sycl_free(s->sycl_state, s->h_ref_v);
-        if (s->h_dis_y)
-            vmaf_sycl_free(s->sycl_state, s->h_dis_y);
-        if (s->h_dis_u)
-            vmaf_sycl_free(s->sycl_state, s->h_dis_u);
-        if (s->h_dis_v)
-            vmaf_sycl_free(s->sycl_state, s->h_dis_v);
-        if (s->d_ref_y)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_y);
-        if (s->d_ref_u)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_u);
-        if (s->d_ref_v)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_v);
-        if (s->d_dis_y)
-            vmaf_sycl_free(s->sycl_state, s->d_dis_y);
-        if (s->d_dis_u)
-            vmaf_sycl_free(s->sycl_state, s->d_dis_u);
-        if (s->d_dis_v)
-            vmaf_sycl_free(s->sycl_state, s->d_dis_v);
-        if (s->d_partials)
-            vmaf_sycl_free(s->sycl_state, s->d_partials);
-        if (s->h_partials)
-            vmaf_sycl_free(s->sycl_state, s->h_partials);
+        void *const buffers[] = {
+            s->h_ref[0], s->h_ref[1], s->h_ref[2],   s->h_dis[0],   s->h_dis[1],
+            s->h_dis[2], s->d_ref[0], s->d_ref[1],   s->d_ref[2],   s->d_dis[0],
+            s->d_dis[1], s->d_dis[2], s->d_partials, s->h_partials,
+        };
+        for (void *buf : buffers) {
+            if (buf)
+                vmaf_sycl_free(s->sycl_state, buf);
+        }
     }
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);

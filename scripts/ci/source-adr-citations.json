@@ -1396,9 +1396,11 @@
     "0220": {
       "sites": {
         "core/src/feature/feature_extractor.cpp": 2,
+        "core/src/feature/sycl/integer_ciede_sycl.cpp": 1,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
         "core/src/sycl/common.cpp": 1,
         "core/test/meson.build": 1,
+        "core/test/test_sycl_ciede_parity.c": 1,
         "core/tools/vmaf_per_shot.c": 1,
         "scripts/ci/gpu_ulp_calibration.yaml": 5
       },
@@ -1748,8 +1750,7 @@
       "sites": {
         "core/src/feature/feature_extractor.cpp": 2,
         "core/src/feature/hip/float_motion_hip.c": 1,
-        "core/test/test_hip_smoke.c": 2,
-        "core/test/test_sycl_ciede_parity.c": 1
+        "core/test/test_hip_smoke.c": 2
       },
       "target": "0273-hip-seventh-consumer-float-motion.md"
     },
@@ -6875,7 +6876,8 @@
     "1213": {
       "sites": {
         "core/src/feature/hip/ciede_hip.c": 1,
-        "core/test/meson.build": 1
+        "core/test/meson.build": 2,
+        "core/test/test_sycl_ciede_parity.c": 1
       },
       "target": "1213-hip-ciede-chroma-ceil-dimensions.md"
     },

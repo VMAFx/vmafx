@@ -29,8 +29,11 @@ Dispatch precedence inside `libvmaf` (highest first):
 
 1. User-disabled backends are removed from the candidate list
    (`--no_cuda` / `--no_sycl` / `--cpumask` ISA bits).
-2. If a feature has a GPU kernel and a GPU backend survives the filter, the GPU
-   path runs.
+2. If a feature a model requests has a GPU kernel and a GPU backend survives the
+   filter, the GPU path runs. A `--feature` name is used exactly as given:
+   `--feature ciede` runs the CPU extractor even with `--backend sycl`, and
+   `--feature ciede_sycl` runs the SYCL twin (see
+   [../usage/cli.md](../usage/cli.md#additional-features)).
 3. Otherwise the best available CPU SIMD twin runs; scalar C is the universal
    fallback.
 

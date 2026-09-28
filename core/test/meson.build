@@ -3735,6 +3735,27 @@ test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
 test('test_sycl_ciede_parity', test_sycl_ciede_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
+# ciede_sycl reads chroma at native size with (x >> ss_hor, y >> ss_ver)
+# indexing, so pin the odd-size ceil chroma width (ADR-1213 hazard), 4:2:2
+# with the 16-bit sample path, and 4:4:4 against the CPU extractor.
+sycl_ciede_format_variants = [
+    ['oddw', ['-DFIXTURE_W=577u', '-DFIXTURE_H=325u']],
+    ['422_10b', ['-DFIXTURE_W=577u', '-DFIXTURE_H=325u', '-DFIXTURE_BPC=10u',
+                 '-DFIXTURE_PIX_FMT=VMAF_PIX_FMT_YUV422P']],
+    ['444', ['-DFIXTURE_PIX_FMT=VMAF_PIX_FMT_YUV444P']],
+]
+foreach variant : sycl_ciede_format_variants
+    variant_exe = executable('test_sycl_ciede_parity_' + variant[0],
+        ['test.c', 'test_sycl_ciede_parity.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, sycl_dependency, math_lib],
+        c_args: ['-DHAVE_SYCL=1'] + variant[1]
+    )
+    test('test_sycl_ciede_parity_' + variant[0], variant_exe,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endforeach
 
 test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     ['test.c', 'test_sycl_ssim_parity.c'],

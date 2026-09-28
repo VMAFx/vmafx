@@ -228,6 +228,17 @@ disabled). See [../metrics/brisque.md](../metrics/brisque.md).
 See [../metrics/features.md](../metrics/features.md) for the full list of feature
 identifiers and per-feature options.
 
+`--feature` selects an extractor by its exact name, and `--backend` does not
+change that choice. `--feature ciede --backend sycl` initialises the SYCL device
+but computes `ciede2000` with the CPU `ciede` extractor, one frame at a time
+unless `--threads` is set, and the JSON still reports `"backend_used": "sycl"`.
+To compute a feature on the GPU, name its twin: `--feature ciede_sycl`,
+`--feature ciede_cuda`, `--feature ciede_hip` and so on. A twin name fails with
+exit code `100` when its backend is not active. Features that a `--model` needs
+are different: they resolve to the active backend's twin on their own. The
+[state ledger](../state.md) tracks this as
+`T-CLI-FEATURE-NAME-BYPASSES-GPU-BACKEND-2026-09-29`.
+
 Option validation is strict: specifying an unknown option key or a typo
 (e.g., `--feature adm=adm_csf_moed=2`) causes libvmaf to reject the configuration
 immediately with `libvmaf ERROR feature extractor '<name>': unknown option '<key>'`
@@ -283,7 +294,7 @@ variable that overrides it.
 | `--backend <name>` | `auto` | Exclusive backend selector — `auto` (default; whichever backends are built compete by registry order), `cpu`, `cuda`, `sycl`, `hip`, `metal`. Setting a specific backend disables the others via the matching `--no_X` flags BEFORE dispatch and pins the device index for the chosen backend (`gpumask=0` for CUDA, `sycl_device=0` for SYCL, `hip_device=0` for HIP, `metal_device=0` for Metal). (The `vulkan` token and `--no_vulkan` / `--vulkan_device` flags were removed in ADR-0726.) |
 | `--cpumask <bitmask>` (`-c`) | all ISAs enabled | Mask out specific CPU ISAs (e.g. force scalar, disable AVX-512). Values are fork-internal — see `core/src/cpu.h`. |
 | `--gpumask <mask>` | GPU enabled | Despite the `$bitmask` placeholder in the usage string, this is **not** a per-op mask: passing the flag at all opts into GPU backend selection, and then **any non-zero value disables the GPU feature extractors** for both CUDA and SYCL, so the run falls back to the CPU implementations. `--gpumask 0` therefore means "use the GPU" and `--gpumask 1` means "use the CPU" — the latter is byte-identical to `--no_cuda --no_sycl`. **Negative values are rejected** (`should be a non-negative integer`). Upstream accepts `--gpumask -1` only because POSIX `strtoul` silently converts `"-1"` to `ULONG_MAX`; this fork refuses a value the caller did not mean rather than wrap it (ADR-1209). Write `--gpumask 1` instead. |
-| `--threads <N>` | host `nproc` | Worker thread count. Valid with every backend, including `cuda` and `sycl`, and the result is identical to a serial run. |
+| `--threads <N>` | `0` (serial) | Worker thread count. Without the flag no worker pool is created and CPU extractors run one frame at a time; values above the host's core count are capped. Valid with every backend, including `cuda` and `sycl`, and the result is identical to a serial run. |
 
 Threaded CPU submission keeps at most one pending frame job per worker, in
 addition to jobs already running. When decoding runs ahead of feature extraction,

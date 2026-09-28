@@ -18,6 +18,22 @@
   permissions, environment, subjects, verification step and bundle names; rename them
   together with the workflow.
 
+## perf/sycl-ciede-throughput — `ciede_sycl` stages chroma at native size (2026-09-29)
+
+- `core/src/feature/sycl/integer_ciede_sycl.cpp`: fork-only. `submit()` packs
+  Y, U and V at their native size (`stage_plane()`, chroma by `picture.c`'s ceil
+  rule) and the kernel reads chroma at `(x >> ss_hor, y >> ss_ver)`. Do not
+  bring back the host `upscale_plane` from before this change or floor the
+  chroma size. The horizontal index follows `ss_hor` and the vertical one
+  `ss_ver`, matching the fork's fixed `ciede.c::scale_chroma_planes`, not
+  upstream's transposed pair.
+- `core/test/test_sycl_ciede_parity.c` takes `FIXTURE_PIX_FMT` and
+  `FIXTURE_BPC`; `core/test/meson.build` builds the `_oddw`, `_422_10b` and
+  `_444` variants. Keep them with the TU.
+- `scripts/ci/tidy-baseline-sycl.json`: scoped tightening of
+  `integer_ciede_sycl.cpp` from 14 to 0 (clang-tidy 22.1.8). On a conflict,
+  rerun `tidy-ratchet.py --only` rather than merging the JSON by hand.
+
 ## fix/ffmpeg9-fps-mode — `-fps_mode passthrough` replaces `-vsync 0` (2026-09-28)
 - `compat/python-vmaf/core/executor.py`: ports Netflix/vmaf `aeaf2877d`; the
   decode command now matches upstream. Upstream's `python/vmaf/__init__.py`

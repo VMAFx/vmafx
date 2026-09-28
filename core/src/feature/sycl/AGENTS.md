@@ -221,6 +221,20 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   these into graph register — precision posture
   load-bearing.
 
+- **`integer_ciede_sycl.cpp` stages Y/U/V at native size; kernel
+  subsamples chroma** ([Research-2120](../../../../docs/research/2120-sycl-ciede-throughput.md)).
+  `stage_plane()` packs each plane into host USM (`plane_w[p]` x
+  `plane_h[p]`, chroma by `picture.c`'s ceil rule `(w + ss) >> ss`),
+  one DMA per plane. `ciede_pixel()` reads chroma at
+  `(x >> ss_hor, y >> ss_ver)` = nearest-neighbour upsample of
+  `ciede.c::scale_chroma_planes`: horizontal from `ss_hor`, vertical
+  from `ss_ver` (fork's fixed flags, not upstream's transposed pair).
+  Same indexing as CUDA / HIP twins. **On rebase**: do not restore the
+  host `upscale_plane` (9.5 of 15 ms per 4K frame on Arc B580) and do
+  not floor chroma dims. Output bit-identical to the old upscale path;
+  `test_sycl_ciede_parity{,_oddw,_422_10b,_444}` pin odd 4:2:0,
+  4:2:2 10-bit, 4:4:4 against CPU.
+
 - **`picture_copy()` channel parameter** — `integer_ms_ssim_sycl.cpp`
   and `integer_ssim_sycl.cpp` pass `channel=0` per d3647c73
   prerequisite port. See
