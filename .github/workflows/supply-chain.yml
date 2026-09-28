@@ -221,7 +221,7 @@ jobs:
     # ubuntu-24.04 (glibc 2.39); ubuntu-22.04 (glibc 2.35) cannot. Pinned
     # rather than ubuntu-latest so the check cannot drift to a newer glibc.
     # docs/development/release.md states the requirement.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
