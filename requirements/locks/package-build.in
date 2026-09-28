@@ -5,6 +5,6 @@ editables==0.6
 setuptools==84.0.0
 wheel==0.48.0
 packaging==26.3
-Cython==3.2.4
+Cython==3.3.0
 numpy==2.5.3
 scipy==1.18.1
