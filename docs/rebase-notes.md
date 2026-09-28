@@ -54507,3 +54507,17 @@ numbers equal to tag numbers and never restore "RC2 = benchmarks" or
 its catalog phases (`RC1`, `RC3`, `RC4`); the backlog IDs `T-RC2-BENCH-TUNE`
 and `T-RC3-MODEL-RETRAIN` stay stable (ADR-1303). The Netflix golden assertions
 are untouched.
+## Native release CLI RUNPATH `$ORIGIN` (2026-09-28)
+
+`scripts/release/build-native-release-artifacts.sh` must keep running
+`patchelf --set-rpath '$ORIGIN'` on the staged copy of the CLI, never on
+`build/tools/vmaf`, and `dev/Containerfile`'s `build-deps` stage must keep
+installing the pinned `patchelf=${PATCHELF_VERSION}`: the release compile
+runs with `--network none` and cannot install it. A `DEV_BASE` move to another
+Ubuntu series moves that pin in the same pull request.
+`verify-native-release-artifacts.sh` must keep requiring exactly one
+`DT_RUNPATH` entry, `$ORIGIN`, and no `DT_RPATH`, and must keep running `ldd`
+and `vmaf --version` without `LD_LIBRARY_PATH`; setting it hid the v1.0.0-rc.1
+build-tree RUNPATH `$ORIGIN/../src`
+(`T-RELEASE-NATIVE-RUNPATH-BUILD-TREE-2026-09-27`). No native/public API,
+numerical or FFmpeg rebase impact.

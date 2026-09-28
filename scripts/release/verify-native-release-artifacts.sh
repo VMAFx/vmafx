@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Verify that staged Linux release artifacts form a runnable ELF bundle.
 #
+# The bundle is one flat directory: the vmaf CLI next to every libvmaf chain
+# name. The CLI must find libvmaf through its own RUNPATH, exactly `$ORIGIN`,
+# so the dependency check and the version run below set no LD_LIBRARY_PATH.
+#
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
@@ -92,8 +96,11 @@ for library in "$soname_library" "$realname_library"; do
   fi
 done
 
+if ! cli_dynamic="$(readelf --dynamic -- "$cli")"; then
+  die "cannot read the ELF dynamic section of vmaf"
+fi
 mapfile -t needed_libraries < <(
-  LC_ALL=C readelf --dynamic -- "$cli" |
+  printf '%s\n' "$cli_dynamic" |
     sed -n 's/.*(NEEDED).*\[\([^]]*\)\].*/\1/p'
 )
 soname_needed=false
@@ -105,9 +112,31 @@ for needed_library in "${needed_libraries[@]}"; do
 done
 [[ "$soname_needed" == true ]] || die "vmaf does not declare $soname as a dependency"
 
+# The loader searches DT_RUNPATH for the CLI's direct dependencies, so the
+# bundle needs exactly one entry, `$ORIGIN`, and no DT_RPATH (which the loader
+# ignores beside a RUNPATH and which can only carry a stale path). Meson's
+# build-tree RUNPATH `$ORIGIN/../src`, shipped in the v1.0.0-rc.1 asset, finds
+# nothing next to the downloaded CLI; an extra entry would let a directory
+# outside the bundle supply libvmaf (T-RELEASE-NATIVE-RUNPATH-BUILD-TREE-2026-09-27).
+# The value runs to the last `]` of readelf's line, so a `]` inside it cannot
+# cut it short.
+# shellcheck disable=SC2016 # $ORIGIN is for the dynamic loader, not the shell.
+expected_runpath='$ORIGIN'
+mapfile -t cli_runpaths < <(
+  printf '%s\n' "$cli_dynamic" | sed -n 's/.*(RUNPATH)[^[]*\[\(.*\)\]$/\1/p'
+)
+mapfile -t cli_rpaths < <(
+  printf '%s\n' "$cli_dynamic" | sed -n 's/.*(RPATH)[^[]*\[\(.*\)\]$/\1/p'
+)
+if [[ ${#cli_rpaths[@]} -ne 0 ]]; then
+  die "vmaf must carry no DT_RPATH, found: ${cli_rpaths[*]}"
+fi
+if [[ ${#cli_runpaths[@]} -ne 1 || "${cli_runpaths[0]}" != "$expected_runpath" ]]; then
+  die "vmaf RUNPATH must be exactly $expected_runpath, found: ${cli_runpaths[*]:-(none)}"
+fi
+
 if ! ldd_output="$(
-  env -i PATH=/usr/bin:/bin LD_LIBRARY_PATH="$artifact_dir" \
-    /usr/bin/ldd "$cli" 2>&1
+  env -i PATH=/usr/bin:/bin /usr/bin/ldd "$cli" 2>&1
 )"; then
   printf '%s\n' "$ldd_output" >&2
   die "vmaf dependency resolution failed in the clean environment"
@@ -125,10 +154,7 @@ if [[ "$resolved_library" != "$soname_library" ]]; then
   die "$soname resolved outside the staged artifact directory: $resolved_library"
 fi
 
-if ! version_output="$(
-  env -i PATH=/usr/bin:/bin LD_LIBRARY_PATH="$artifact_dir" \
-    "$cli" --version 2>&1
-)"; then
+if ! version_output="$(env -i PATH=/usr/bin:/bin "$cli" --version 2>&1)"; then
   printf '%s\n' "$version_output" >&2
   die "staged vmaf failed to run in the clean environment"
 fi
@@ -152,5 +178,5 @@ else
   die "staged vmaf reported '$version_output', expected '$expected_version' or '${describe_prefix}<commit>'"
 fi
 
-printf 'Verified Linux release runtime %s (%s: %s) with materialized %s chain.\n' \
-  "$expected_version" "$reported_form" "$version_output" "$soname"
+printf 'Verified Linux release runtime %s (%s: %s) with materialized %s chain and RUNPATH %s.\n' \
+  "$expected_version" "$reported_form" "$version_output" "$soname" "$expected_runpath"

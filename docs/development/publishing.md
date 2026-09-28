@@ -224,17 +224,18 @@ now runs on `ubuntu-latest`:
 2. It builds the `build-deps` stage of that tag's `dev/Containerfile` with
    `scripts/ci/build-dev-container-stage.sh build-deps`. `build-deps` is the
    digest-pinned Ubuntu 26.04 base plus Ubuntu archive packages (gcc-13,
-   Meson, Ninja, NASM) and downloads nothing from third parties, so the job
-   needs no GitHub token. The build uses the default Docker builder with no
-   external layer cache and no registry, so no state from another workflow
-   run can enter a release. An uncached build of the stage took about two
-   minutes on a workstation; the job allows 60.
+   Meson, Ninja, NASM, patchelf) and downloads nothing from third parties, so
+   the job needs no GitHub token. The build uses the default Docker builder
+   with no external layer cache and no registry, so no state from another
+   workflow run can enter a release. An uncached build of the stage took about
+   two minutes on a workstation; the job allows 60.
 3. It runs `scripts/release/build-native-release-artifacts.sh` in that image
    with `docker run --pull never --network none`, as the runner's user, with
    the checkout mounted. The script asserts the container marker, refuses to
    build unless the checkout is `GITHUB_SHA` (the commit the stamp records),
-   builds with Meson, stages the bundle, writes
-   `container-build-provenance.txt` and runs the clean-environment verifier.
+   builds with Meson, stages the bundle with the CLI's RUNPATH set to
+   `$ORIGIN`, writes `container-build-provenance.txt` and runs the
+   clean-environment verifier.
 4. It hashes and uploads `artifacts/` on the runner for SBOM, signing, SLSA
    provenance and attachment, exactly as before.
 
@@ -248,8 +249,10 @@ needs glibc 2.43 or newer (see
 **What is pinned and what is not.** The base image is pinned by digest through
 `build-config.env`. The Ubuntu archive packages in `build-deps` resolve when
 the stage is built, so rebuilding an old tag later may install newer
-compilers or Meson than the original release used. The release compile itself
-runs with networking disabled.
+compilers or Meson than the original release used. patchelf is the exception:
+it rewrites the published CLI's RUNPATH, so `dev/Containerfile` pins it to
+the Ubuntu 26.04 release build (`PATCHELF_VERSION`). The release compile
+itself runs with networking disabled.
 
 **Release-track exception.** `build-config.env` says published artifacts are
 built on the `RELEASE_*` track (`RELEASE_BUILDER_BASE`, Debian 13, glibc 2.41)

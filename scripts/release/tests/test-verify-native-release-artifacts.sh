@@ -36,13 +36,19 @@ expect_rejected() {
 # Run the verifier and require one specific exit status and, when given, a
 # fixed string on stderr -- so a case that expects the version comparison to
 # reject is not satisfied by an unrelated earlier failure.
+#
+# The verifier runs under `env -i` with the caller's PATH only, unless the
+# with_caller_library_path wrapper below hands it an LD_LIBRARY_PATH as well.
+caller_ld_library_path=''
 expect_status() {
   local status="$1"
   local root="$2"
   local expected_version="$3"
   local stderr_needle="${4:-}"
   local actual=0
-  env -i PATH="$PATH" "$VERIFY" "$root" "$expected_version" \
+  env -i PATH="$PATH" \
+    ${caller_ld_library_path:+"LD_LIBRARY_PATH=$caller_ld_library_path"} \
+    "$VERIFY" "$root" "$expected_version" \
     >/dev/null 2>"$scratch/stderr" || actual=$?
   if [[ "$actual" -ne "$status" ]]; then
     printf '  exit %d, expected %d; stderr: %s\n' \
@@ -79,12 +85,25 @@ cc -fPIC -shared -Wl,-soname,libvmaf.so.3 \
 ln -s libvmaf.so.3.0.0 "$build/libvmaf.so.3"
 ln -s libvmaf.so.3 "$build/libvmaf.so"
 
-# build_cli REPORTED OUTPUT: compile a fixture CLI whose --version prints
-# REPORTED. REPORTED is spliced into a C string literal, so `\n` in it becomes
-# a real newline in the output.
+# link_cli REPORTED OUTPUT [LINKER_FLAG...]: compile a fixture CLI whose
+# --version prints REPORTED, linked with the given RUNPATH / RPATH flags.
+# REPORTED is spliced into a C string literal, so `\n` in it becomes a real
+# newline in the output.
+link_cli() {
+  local reported="$1"
+  local output="$2"
+  shift 2
+  cc -DVMAFX_FIXTURE_VERSION="\"$reported\"" -o "$output" "$scratch/vmaf.c" \
+    -L"$build" -lvmaf "$@"
+}
+
+# The loader token the release CLI carries as its only RUNPATH entry.
+# shellcheck disable=SC2016 # $ORIGIN is for the dynamic loader, not the shell.
+origin='$ORIGIN'
+
+# build_cli REPORTED OUTPUT: the release shape, DT_RUNPATH exactly $ORIGIN.
 build_cli() {
-  cc -DVMAFX_FIXTURE_VERSION="\"$1\"" -o "$2" "$scratch/vmaf.c" \
-    -L"$build" -lvmaf
+  link_cli "$1" "$2" -Wl,--enable-new-dtags -Wl,-rpath,"$origin"
 }
 build_cli '3.2.1' "$build/vmaf"
 
@@ -127,6 +146,72 @@ good="$scratch/good"
 stage_fixture "$good"
 check 'materialized SONAME chain runs in a clean environment' \
   env -i PATH="$PATH" "$VERIFY" "$good" 3.2.1
+check "the RUNPATH $origin bundle runs with no LD_LIBRARY_PATH" \
+  expect_status 0 "$good" 3.2.1
+
+# --- RUNPATH contract (T-RELEASE-NATIVE-RUNPATH-BUILD-TREE-2026-09-27) ------
+#
+# stage_linked NAME [LINKER_FLAG...]: stage an otherwise-valid bundle whose CLI
+# reports 3.2.1 and is linked with the given flags, into $linked_root.
+linked_root=''
+stage_linked() {
+  linked_root="$scratch/linked-$1"
+  shift
+  link_cli 3.2.1 "$linked_root.vmaf" "$@"
+  stage_fixture "$linked_root" "$linked_root.vmaf"
+}
+
+# with_caller_library_path DIR HELPER [ARGS...]: run HELPER with the verifier
+# receiving LD_LIBRARY_PATH=DIR from its caller, the documented rc.1
+# workaround. The verifier must neither need nor honour it.
+with_caller_library_path() {
+  local caller_ld_library_path="$1"
+  shift
+  "$@"
+}
+
+check "a caller LD_LIBRARY_PATH does not change the RUNPATH $origin verdict" \
+  with_caller_library_path "$good" expect_status 0 "$good" 3.2.1
+
+# Negative: Meson's build-tree RUNPATH, as the v1.0.0-rc.1 asset carried it.
+stage_linked build-tree -Wl,--enable-new-dtags -Wl,-rpath,"$origin/../src"
+build_tree="$linked_root"
+check "build-tree RUNPATH $origin/../src is rejected" \
+  expect_status 1 "$build_tree" 3.2.1 \
+  "vmaf RUNPATH must be exactly $origin, found: $origin/../src"
+check 'build-tree RUNPATH is rejected even with a caller LD_LIBRARY_PATH' \
+  with_caller_library_path "$build_tree" \
+  expect_status 1 "$build_tree" 3.2.1 'vmaf RUNPATH must be exactly'
+
+stage_linked no-runpath
+check 'a CLI without RUNPATH is rejected' \
+  expect_status 1 "$linked_root" 3.2.1 \
+  "vmaf RUNPATH must be exactly $origin, found: (none)"
+
+# Boundary: $ORIGIN is present but is not the whole RUNPATH, or not exactly.
+stage_linked origin-then-extra -Wl,--enable-new-dtags \
+  -Wl,-rpath,"$origin:/opt/vmafx-extra"
+check "RUNPATH $origin with a trailing extra entry is rejected" \
+  expect_status 1 "$linked_root" 3.2.1 \
+  "vmaf RUNPATH must be exactly $origin, found: $origin:/opt/vmafx-extra"
+
+stage_linked extra-then-origin -Wl,--enable-new-dtags \
+  -Wl,-rpath,"/opt/vmafx-extra:$origin"
+check "RUNPATH $origin with a leading extra entry is rejected" \
+  expect_status 1 "$linked_root" 3.2.1 'vmaf RUNPATH must be exactly'
+
+stage_linked origin-slash -Wl,--enable-new-dtags -Wl,-rpath,"$origin/"
+check "RUNPATH $origin/ (not exactly $origin) is rejected" \
+  expect_status 1 "$linked_root" 3.2.1 'vmaf RUNPATH must be exactly'
+
+stage_linked absolute -Wl,--enable-new-dtags \
+  -Wl,-rpath,"$scratch/linked-absolute"
+check 'an absolute RUNPATH naming the bundle directory is rejected' \
+  expect_status 1 "$linked_root" 3.2.1 'vmaf RUNPATH must be exactly'
+
+stage_linked rpath-origin -Wl,--disable-new-dtags -Wl,-rpath,"$origin"
+check "a legacy DT_RPATH $origin instead of DT_RUNPATH is rejected" \
+  expect_status 1 "$linked_root" 3.2.1 'vmaf must carry no DT_RPATH'
 
 missing_soname="$scratch/missing-soname"
 stage_fixture "$missing_soname"

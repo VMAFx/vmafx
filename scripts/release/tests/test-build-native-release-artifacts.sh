@@ -6,7 +6,10 @@
 # called and, on `compile`, links a tiny real ELF libvmaf chain and CLI, so
 # staging, the provenance stamp and the clean-environment verifier all run for
 # real. The dev container is simulated through VMAFX_CONTAINER_MARKER, as in
-# scripts/ci/tests/test-check-container-build.sh. No Docker is needed.
+# scripts/ci/tests/test-check-container-build.sh. No Docker is needed, but the
+# host needs cc, readelf and patchelf (the ubuntu-26.04 runner image and the
+# build-deps stage carry all three): the staged CLI's RUNPATH is rewritten and
+# inspected for real.
 #
 # Usage: bash scripts/release/tests/test-build-native-release-artifacts.sh
 #
@@ -14,6 +17,13 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 set -euo pipefail
+
+for tool in cc patchelf readelf; do
+  if ! command -v "$tool" >/dev/null; then
+    printf 'ERROR: %s is required to run these tests\n' "$tool" >&2
+    exit 1
+  fi
+done
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
@@ -64,9 +74,28 @@ printf '%s\n' '#include <stdio.h>' '#include <string.h>' \
 cc -fPIC -shared -Wl,-soname,libvmaf.so.3 -o build/src/libvmaf.so.3.0.0 build/libvmaf.c
 ln -s libvmaf.so.3.0.0 build/src/libvmaf.so.3
 [ "${STUB_MESON_MODE:-ok}" = short-chain ] || ln -s libvmaf.so.3 build/src/libvmaf.so
-cc -o build/tools/vmaf build/vmaf.c -Lbuild/src -l:libvmaf.so.3.0.0
+# Meson links the build-tree CLI with RUNPATH $ORIGIN/../src, as the
+# v1.0.0-rc.1 asset still carried; the release script must rewrite it.
+cc -o build/tools/vmaf build/vmaf.c -Lbuild/src -l:libvmaf.so.3.0.0 \
+  -Wl,--enable-new-dtags -Wl,-rpath,'$ORIGIN/../src'
 STUB
 chmod +x "$stub_bin/meson"
+
+# A patchelf that fails, put in front of the real one by with_failing_patchelf.
+failing_patchelf_bin="$scratch/failing-patchelf"
+mkdir -p "$failing_patchelf_bin"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "patchelf stub: refusing" >&2' 'exit 3' \
+  >"$failing_patchelf_bin/patchelf"
+chmod +x "$failing_patchelf_bin/patchelf"
+
+# runpath_of FILE: the DT_RUNPATH value readelf reports, or nothing.
+runpath_of() {
+  LC_ALL=C readelf --dynamic -- "$1" | sed -n 's/.*(RUNPATH)[^[]*\[\(.*\)\]$/\1/p'
+}
+runpath_is() { [[ "$(runpath_of "$1")" == "$2" ]]; }
+runs_without_library_path() { env -i PATH=/usr/bin:/bin "$1" --version >/dev/null; }
+# shellcheck disable=SC2016 # $ORIGIN is for the dynamic loader, not the shell.
+origin='$ORIGIN'
 
 # new_repo <dir> — a committed tree holding only what the build script reads.
 new_repo() {
@@ -87,6 +116,8 @@ new_repo() {
 # run_build <dir> <marker> [args...] — exit status of the script in <dir>.
 # GITHUB_SHA is the fixture's HEAD, as actions/checkout leaves it in CI, unless
 # RUN_GITHUB_SHA overrides it; RUN_GITHUB_SHA='' runs with GITHUB_SHA unset.
+# RUN_PATH_PREFIX, when set, goes in front of the stub meson on PATH.
+RUN_PATH_PREFIX=''
 run_build() {
   local dir="$1" marker_path="$2" sha
   shift 2
@@ -98,7 +129,8 @@ run_build() {
     else
       unset GITHUB_SHA
     fi
-    env PATH="$stub_bin:$PATH" STUB_MESON_LOG="$dir/meson.log" \
+    env PATH="${RUN_PATH_PREFIX:+$RUN_PATH_PREFIX:}$stub_bin:$PATH" \
+      STUB_MESON_LOG="$dir/meson.log" \
       VMAFX_CONTAINER_MARKER="$marker_path" \
       bash scripts/release/build-native-release-artifacts.sh "$@"
   ) >"$dir/run.log" 2>&1
@@ -117,6 +149,13 @@ expect_status() {
 with_github_sha() {
   local RUN_GITHUB_SHA="$1"
   shift
+  "$@"
+}
+
+# with_failing_patchelf <helper> [args...] — run a helper with a patchelf that
+# exits 3 ahead of the real one on the build's PATH.
+with_failing_patchelf() {
+  local RUN_PATH_PREFIX="$failing_patchelf_bin"
   "$@"
 }
 
@@ -152,6 +191,23 @@ check 'no u2netp license without the mirror binary' absent \
   "$good/artifacts/LicenseRef-Apache-2.0-u2netp.txt"
 check 'stamp records the checked-out commit' grep -qx \
   "git_commit=$(git -C "$good" rev-parse HEAD)" "$good/artifacts/container-build-provenance.txt"
+
+# --- the staged CLI carries RUNPATH $ORIGIN (T-RELEASE-NATIVE-RUNPATH-...) ---
+check "staged vmaf has RUNPATH exactly $origin" runpath_is "$good/artifacts/vmaf" "$origin"
+check "build-tree vmaf keeps Meson's RUNPATH $origin/../src" \
+  runpath_is "$good/build/tools/vmaf" "$origin/../src"
+check 'staged vmaf stays executable after the RUNPATH rewrite' test -x "$good/artifacts/vmaf"
+check 'staged vmaf runs next to its library with no LD_LIBRARY_PATH' \
+  runs_without_library_path "$good/artifacts/vmaf"
+check 'the verifier confirms the RUNPATH' grep -qF \
+  "chain and RUNPATH $origin." "$good/run.log"
+
+failing_patchelf="$scratch/failing-patchelf-run"
+new_repo "$failing_patchelf"
+check 'a failing patchelf fails the build' \
+  with_failing_patchelf expect_failure "$failing_patchelf" "$marker" 3.2.1
+check 'a failing patchelf leaves no provenance stamp' absent \
+  "$failing_patchelf/artifacts/container-build-provenance.txt"
 
 # --- GITHUB_SHA must name the checked-out commit (the stamp records it) ---
 local_run="$scratch/no-github-sha"

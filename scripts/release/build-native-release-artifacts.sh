@@ -13,11 +13,13 @@
 #   1. assert the process runs in the dev container
 #   2. when GITHUB_SHA is set, assert the checkout is that commit: the
 #      provenance stamp records GITHUB_SHA as git_commit
-#   3. CPU-only optimized Meson build into build/
-#   4. stage artifacts/: the libvmaf SONAME chain as regular files, the vmaf
-#      CLI, models.tar.gz, and the optional u2netp mirror (ADR-0325)
-#   5. stamp artifacts/container-build-provenance.txt
-#   6. verify the bundle with verify-native-release-artifacts.sh
+#   3. assert patchelf is available, before anything is compiled
+#   4. CPU-only optimized Meson build into build/
+#   5. stage artifacts/: the libvmaf SONAME chain as regular files, the vmaf
+#      CLI with its RUNPATH rewritten to $ORIGIN, models.tar.gz, and the
+#      optional u2netp mirror (ADR-0325)
+#   6. stamp artifacts/container-build-provenance.txt
+#   7. verify the bundle with verify-native-release-artifacts.sh
 #
 # Usage (from the repository root):
 #   bash scripts/release/build-native-release-artifacts.sh VERSION
@@ -90,6 +92,26 @@ stage_libvmaf_chain() {
   done
 }
 
+require_patchelf() {
+  if ! command -v patchelf >/dev/null; then
+    echo "ERROR: patchelf is required to stage the vmaf CLI; dev/Containerfile installs it in build-deps" >&2
+    return 1
+  fi
+}
+
+# Meson links build/tools/vmaf with the build-tree RUNPATH `$ORIGIN/../src`,
+# which finds libvmaf only inside build/. The bundle ships the CLI next to its
+# libvmaf chain, so the staged copy gets RUNPATH exactly `$ORIGIN` and runs
+# without LD_LIBRARY_PATH (T-RELEASE-NATIVE-RUNPATH-BUILD-TREE-2026-09-27).
+# `meson install` is no substitute: it removes the build RUNPATH and writes the
+# target's install_rpath, which is empty, and setting one would change every
+# installed vmaf rather than this bundle. The build tree keeps its own RUNPATH.
+stage_cli() {
+  cp -- build/tools/vmaf artifacts/vmaf
+  # shellcheck disable=SC2016 # $ORIGIN is for the dynamic loader, not the shell.
+  patchelf --set-rpath '$ORIGIN' artifacts/vmaf
+}
+
 stage_models() {
   local archive_epoch
   archive_epoch="$(git show -s --format=%ct HEAD)"
@@ -129,10 +151,11 @@ main() {
 
   bash scripts/ci/check-container-build.sh --assert
   require_checkout_is_github_sha
+  require_patchelf
   build_release
   mkdir -p artifacts
   stage_libvmaf_chain
-  cp build/tools/vmaf artifacts/
+  stage_cli
   stage_models
   stage_u2netp_mirror
   bash scripts/ci/check-container-build.sh --stamp artifacts

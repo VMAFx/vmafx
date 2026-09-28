@@ -221,6 +221,15 @@ CLI's `DT_NEEDED`, rejects missing or divergent chain member.
 Requires `ldd` to resolve dependency from staged directory before
 running exact CLI version under `env -i`.
 
+RUNPATH contract (T-RELEASE-NATIVE-RUNPATH-BUILD-TREE-2026-09-27): CLI
+`DT_RUNPATH` = exactly one entry `$ORIGIN`; zero `DT_RPATH`. Checked
+from `readelf --dynamic` before `ldd`; `ldd` and `--version` run under
+`env -i PATH=/usr/bin:/bin`, NO `LD_LIBRARY_PATH`. Never re-add
+`LD_LIBRARY_PATH` to either run: hid rc.1 build-tree RUNPATH
+`$ORIGIN/../src`. Extra entry, trailing `/`, absolute path, legacy
+`DT_RPATH` = reject. Value parsed to last `]` of readelf line (inner `]`
+never truncates).
+
 Run verifier both before hashing/signing and after artifact
 upload/download round trip. Round-trip job restores `vmaf`'s
 executable bit first — raw artifact and release downloads do not
@@ -256,7 +265,14 @@ same invocation with manifest version and local tag `v<version>` on HEAD.
 Order fixed: `--assert` container marker first (host run compiles nothing),
 `GITHUB_SHA` set -> `git rev-parse HEAD` must equal it (stamp records
 `GITHUB_SHA` as `git_commit`; mismatch or unresolvable HEAD = exit 1 before
-Meson), Meson build, stage, `--stamp`, `verify-native-release-artifacts.sh`.
+Meson), `patchelf` present, Meson build, stage, `--stamp`,
+`verify-native-release-artifacts.sh`. Stage copies `build/tools/vmaf` then
+`patchelf --set-rpath '$ORIGIN'` on copy only; build tree keeps Meson's
+`$ORIGIN/../src`. Not `meson install`: strips build RUNPATH, writes
+target `install_rpath` (empty); setting one changes every installed `vmaf`,
+beyond bundle. `patchelf` pinned in `build-deps` (`PATCHELF_VERSION`,
+Ubuntu 26.04 release-pocket build); `DEV_BASE` series move -> move pin, same
+PR. Never drop pin: release compile runs `--network none`, no install.
 Meson flags keep hosted-era bundle: `--buildtype=release
 -Denable_avx512=true -Denable_cuda=false -Denable_sycl=false` plus
 `-Denable_dnn=disabled` (no-op in `build-deps`, which has no ONNX Runtime;
@@ -275,8 +291,11 @@ is 24.04. Release-track (Debian 13) build = deferred
 
 Test coverage:
 `scripts/release/tests/test-build-native-release-artifacts.sh` (stub
-`meson`, real ELF fixture chain, `GITHUB_SHA` match / mismatch /
-abbreviated / unset / no-Git cases, no Docker).
+`meson`, real ELF fixture chain linked with Meson's build-tree RUNPATH,
+staged RUNPATH `$ORIGIN` + build tree untouched, failing-`patchelf` case,
+`GITHUB_SHA` match / mismatch / abbreviated / unset / no-Git cases, no
+Docker; host needs `cc`, `readelf`, `patchelf` — `ubuntu-26.04` runner
+image ships all three).
 
 ## check-release-bot-secrets.sh (ADR-1171)
 

@@ -146,6 +146,15 @@ RUN printf '%s\n' \
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+# patchelf rewrites the staged release CLI's RUNPATH from Meson's build-tree
+# `$ORIGIN/../src` to `$ORIGIN` (scripts/release/build-native-release-artifacts.sh,
+# which runs in this stage). Unlike the rest of this layer it is pinned: it
+# edits a published binary. The version is the Ubuntu 26.04 release-pocket
+# build, which stays in the archive for the life of the series; moving
+# DEV_BASE to another Ubuntu series fails the install here until this pin
+# follows it.
+ARG PATCHELF_VERSION=0.18.0-1.4build1
+
 # BuildKit cache mounts on /var/cache/apt and /var/lib/apt let sequential
 # rebuilds reuse the downloaded .deb files and the package index. With the
 # cache mount in place we INTENTIONALLY drop the trailing
@@ -204,6 +213,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     intel-media-va-driver-non-free \
     mesa-libgallium \
     xxd \
+    # Release packaging (pinned above)
+    "patchelf=${PATCHELF_VERSION}" \
     # Misc
     jq
 

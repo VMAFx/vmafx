@@ -276,16 +276,24 @@ symlinks, so the workflow publishes all three names as identical regular-file
 assets. Each name is hashed, inventoried in both native SBOMs, signed, and
 covered by the native SLSA provenance.
 
-Download the CLI with the entire library chain, restore the raw CLI asset's
-executable bit, and keep the files together when running it:
+Download the CLI with the entire library chain into one directory and restore
+the raw CLI asset's executable bit. The CLI's only RUNPATH entry is `$ORIGIN`,
+the directory the CLI itself sits in, so it loads `libvmaf.so.3` from there
+without `LD_LIBRARY_PATH`, from any working directory, as long as the files
+stay together:
 
 ```bash
 mkdir vmafx-linux && cd vmafx-linux
 gh release download v1.0.0 --repo VMAFx/vmafx \
   --pattern vmaf --pattern 'libvmaf.so*'
 chmod +x vmaf
-LD_LIBRARY_PATH="$PWD" ./vmaf --version
+./vmaf --version
+readelf -d vmaf | grep RUNPATH   # Library runpath: [$ORIGIN]
 ```
+
+The `v1.0.0-rc.1` CLI predates this: it carries Meson's build-tree RUNPATH
+`$ORIGIN/../src`, which finds nothing next to the downloaded file. Run that
+release candidate as `LD_LIBRARY_PATH="$PWD" ./vmaf --version`.
 
 **Runtime requirement: glibc 2.43 or newer.** The bundle is compiled in the
 Ubuntu 26.04 `build-deps` stage of the dev container
@@ -323,12 +331,19 @@ fail there with `version 'GLIBC_2.43' not found`. On those systems use the
 `ghcr.io/vmafx/vmafx` container images or build from source.
 ```
 
-The clean-environment release gate exercises that same layout after an
-artifact upload/download round trip and requires the CLI's `DT_NEEDED` entry
-to resolve to the staged SONAME file. Windows `vmaf.exe` remains a CI build
-artifact, not a GitHub Release asset, and this workflow currently publishes no
-macOS native CLI or dylib. Use the production containers or build from source
-for those platforms until platform-specific release bundles are introduced.
+`scripts/release/build-native-release-artifacts.sh` sets the CLI's RUNPATH
+`$ORIGIN` on the staged copy with `patchelf`; the build tree keeps Meson's
+`$ORIGIN/../src`. The clean-environment release gate,
+`scripts/release/verify-native-release-artifacts.sh`, exercises the layout
+before signing and again after an artifact upload/download round trip, with
+no `LD_LIBRARY_PATH`. It requires the CLI's RUNPATH to be exactly `$ORIGIN`
+(no other entry and no `DT_RPATH`), its `DT_NEEDED` entry to resolve to the
+staged SONAME file, and `vmaf --version` to report the release version.
+
+Windows `vmaf.exe` remains a CI build artifact, not a GitHub Release asset,
+and this workflow currently publishes no macOS native CLI or dylib. Use the
+production containers or build from source for those platforms until
+platform-specific release bundles are introduced.
 
 ### Canonical build environment (ADR-1346)
 
@@ -341,10 +356,12 @@ ADR-1178's self-hosted runner) meets that on a GitHub-hosted runner:
   `ubuntu-latest`. It builds the `build-deps` stage of the release tag's own
   `dev/Containerfile` with `scripts/ci/build-dev-container-stage.sh build-deps`.
   That stage is the digest-pinned Ubuntu 26.04 base plus Ubuntu archive
-  packages (gcc-13, Meson, Ninja, NASM); it downloads nothing from third
-  parties and needs no GitHub token. The build uses no external layer cache
-  and no registry. Archive packages resolve when the stage is built, so a
-  later rebuild of the same tag may use newer distribution packages.
+  packages (gcc-13, Meson, Ninja, NASM, patchelf); it downloads nothing from
+  third parties and needs no GitHub token. The build uses no external layer
+  cache and no registry. Archive packages resolve when the stage is built, so
+  a later rebuild of the same tag may use newer distribution packages. The
+  exception is patchelf, which edits the published CLI: `dev/Containerfile`
+  pins it to the Ubuntu 26.04 release build (`PATCHELF_VERSION`).
 - **How long**: an uncached stage build took about two minutes and the
   release compile about two and a half minutes on four workstation CPUs. The
   job has a 60-minute limit. No workstation or self-hosted runner has to be
@@ -353,7 +370,8 @@ ADR-1178's self-hosted runner) meets that on a GitHub-hosted runner:
   the image with `docker run --pull never --network none` as the runner's
   user. It refuses to build unless the checkout is `GITHUB_SHA`, uses the
   Meson flags `--buildtype=release -Denable_avx512=true -Denable_cuda=false
-  -Denable_sycl=false -Denable_dnn=disabled`, stages the bundle, stamps
+  -Denable_sycl=false -Denable_dnn=disabled`, stages the bundle (setting the
+  staged CLI's RUNPATH to `$ORIGIN`), stamps
   `container-build-provenance.txt` with
   `scripts/ci/check-container-build.sh --stamp` and runs
   `scripts/release/verify-native-release-artifacts.sh`.

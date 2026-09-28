@@ -123,6 +123,15 @@
   group flags, forced-backend scoring examples and measured parity figures.
 
 
+- The native Linux `vmaf` CLI attached to a release runs next to the
+  downloaded `libvmaf.so*` files without `LD_LIBRARY_PATH`. The
+  `v1.0.0-rc.1` CLI kept Meson's build-tree RUNPATH `$ORIGIN/../src`, so it
+  found `libvmaf.so.3` only when `LD_LIBRARY_PATH` pointed at the download
+  directory. The release build now sets the staged CLI's RUNPATH to exactly
+  `$ORIGIN`, and the release gate runs the CLI without `LD_LIBRARY_PATH` and
+  rejects any other RUNPATH.
+
+
 - **Whole-tree clang-tidy ratchet ignores generated build products**: `tidy-ratchet.py`
   now skips every translation unit, diagnostic and header under `--build-dir`, so a
   build directory inside the repository measures the same checked-in sources as one
