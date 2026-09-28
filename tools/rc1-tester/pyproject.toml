@@ -17,7 +17,7 @@ dependencies = []
 vmaf-rc1-report = "vmaf_rc1_tester.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1.1", "ruff>=0.16.8", "black>=26.5.1"]
+dev = ["pytest>=9.1.1", "ruff>=0.16.9", "black>=26.5.1"]
 
 [build-system]
 requires = ["hatchling"]
