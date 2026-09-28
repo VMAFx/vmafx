@@ -96,7 +96,7 @@ repos:
         exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
+    rev: v0.16.9
     hooks:
       - id: ruff-check
         files: '^(python|ai|scripts|tools)/.*\.py$'
@@ -655,7 +655,7 @@ repos:
         # hook would fail with `Executable 'semgrep' not found` on
         # every CI run.
         language: python
-        additional_dependencies: ["semgrep>=1.177.0,<2.0"]
+        additional_dependencies: ["semgrep>=1.178.0,<2.0"]
         require_serial: true
         types_or: [c, c++, cuda, python]
         # Paths this hook skips: (a) upstream vendored subprojects,
@@ -693,7 +693,7 @@ repos:
         # Same isolated semgrep environment and serial execution as above.
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
         language: python
-        additional_dependencies: ["semgrep>=1.177.0,<2.0"]
+        additional_dependencies: ["semgrep>=1.178.0,<2.0"]
         require_serial: true
         files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
         pass_filenames: false
