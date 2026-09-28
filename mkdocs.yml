@@ -1468,6 +1468,7 @@ nav:
         - "ADR-1353: helm-server-component-selector": adr/1353-helm-server-component-selector.md
         - "ADR-1354: native-bundle-release-track": adr/1354-native-bundle-release-track.md
         - "ADR-1355: cli-option-value-backslashes": adr/1355-cli-option-value-backslashes.md
+        - "ADR-1356: release-provenance-attest": adr/1356-release-provenance-attest.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

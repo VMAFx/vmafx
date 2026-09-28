@@ -7703,6 +7703,13 @@
         "pkg/cliopt/escape_test.go": 1
       },
       "target": "1355-cli-option-value-backslashes.md"
+    },
+    "1356": {
+      "sites": {
+        ".github/workflows/supply-chain.yml": 3,
+        "scripts/release/tests/test-publication-environment-binding.sh": 1
+      },
+      "target": "1356-release-provenance-attest.md"
     }
   },
   "retired": {

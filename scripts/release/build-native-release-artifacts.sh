@@ -132,7 +132,7 @@ stage_models() {
 # checkpoint, redistributed under Apache-2.0 §4 NOTICE compliance per
 # ADR-0325. The binary is gitignored (model/u2netp_mirror.onnx or .pth, dropped
 # by the binary-upload PR). Missing files are a no-op so a release without the
-# mirror still succeeds; when present it is hashed into the SLSA subjects and
+# mirror still succeeds; when present it is hashed into the provenance subjects and
 # signed with everything else, and its license text rides along.
 stage_u2netp_mirror() {
   if [ -f model/u2netp_mirror.onnx ]; then

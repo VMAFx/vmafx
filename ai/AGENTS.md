@@ -1121,7 +1121,7 @@ upload is a separate PR.
 - **Never commit `model/u2netp_mirror.onnx` or
   `model/u2netp_mirror.pth` to git.** Both paths are gitignored
   (see `.gitignore`). Binary lives in GitHub Release assets
-  only — signed via Sigstore, hashed for SLSA, paired with
+  only — signed via Sigstore, hashed as provenance subject, paired with
   `LICENSES/LicenseRef-Apache-2.0-u2netp.txt` at upload time. Binary
   upload PR ever attempting to commit either file -> ADR-0412
   contract is broken; reject the PR.

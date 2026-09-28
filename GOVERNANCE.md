@@ -144,7 +144,9 @@ Every tagged release ships:
 
 - SBOM (SPDX + CycloneDX).
 - Sigstore keyless signatures (`cosign verify-blob ...`).
-- SLSA L3 provenance (`slsa-verifier ...`).
+- GitHub build-provenance attestations with the SLSA v1 provenance predicate
+  (`gh attestation verify ...`,
+  [ADR-1356](docs/adr/1356-release-provenance-attest.md)).
 
 See [`SECURITY.md`](SECURITY.md) §"Supply-chain guarantees" and
 [ADR-0010](docs/adr/0010-sigstore-keyless-signing.md). Local

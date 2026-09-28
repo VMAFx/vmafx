@@ -244,8 +244,8 @@ HEAD_REF=release-please--branches--master--components--vmafx \
 
 Before publication, repository setup must provide two protected environments:
 
-- `release-publish` for GHCR writes, release-blob signing, and GitHub Release
-  attachment;
+- `release-publish` for GHCR writes, release-blob signing, build-provenance
+  attestations, and GitHub Release attachment;
 - `pypi-publish` for the `vmaf-mcp` Trusted Publisher identity.
 
 Each must accept selected tag refs matching `v*` and require the release
@@ -258,10 +258,12 @@ YAML, so it cannot see that server-side drift. `supply-chain.yml`'s
 closed unless each carries a `required_reviewers` protection rule. That
 preflight is read-only and runs before any job holds write or OIDC scope.
 
-The external SLSA reusable workflow cannot carry a caller-side environment, so
-it writes only a workflow artifact with `contents: read`; the protected
-attachment job is the sole job that uploads its two provenance files to the
-GitHub Release.
+The two build-provenance jobs (`provenance` for the native files,
+`mcp-provenance` for the `vmaf-mcp` distributions) hold OIDC and attestation
+write scope, so they run in `release-publish` as well, with `contents: read`.
+Each writes its attestation bundle as a workflow artifact; the protected
+attachment job is the sole job that uploads the two bundles to the GitHub
+Release ([ADR-1356](../adr/1356-release-provenance-attest.md)).
 
 ### Native Linux release layout
 
@@ -271,7 +273,7 @@ ABI SONAME such as `libvmaf.so.3`, and its ABI real name such as
 `libvmaf.so.3.0.0`. GitHub artifact and release downloads do not preserve
 symlinks, so the workflow publishes all three names as identical regular-file
 assets. Each name is hashed, inventoried in both native SBOMs, signed, and
-covered by the native SLSA provenance.
+listed as a subject of the native build-provenance attestation.
 
 Download the CLI with the entire library chain into one directory and restore
 the raw CLI asset's executable bit. The CLI's only RUNPATH entry is `$ORIGIN`,
@@ -474,13 +476,19 @@ repo or in CI secrets.
 
 ### What is signed
 
-- **Release blobs** (`libvmaf.so*`, `vmaf`, `models.tar.gz`, optional
-  `u2netp_mirror.{onnx,pth}`): cosign sign-blob bundles attached to the
-  GitHub Release. SLSA L3 provenance via
-  `slsa-framework/slsa-github-generator`. SPDX + CycloneDX SBOM attached.
-- **`vmaf-mcp` Python package** (wheel + sdist): cosign sign-blob bundles
-  plus PEP 740 attestations stored alongside the PyPI artefact
-  (Trusted Publishing, no token). See
+- **Release blobs** (`libvmaf.so*`, `vmaf`, `models.tar.gz`,
+  `container-build-provenance.txt`, optional `u2netp_mirror.{onnx,pth}`):
+  cosign sign-blob bundles attached to the GitHub Release, plus one GitHub
+  build-provenance attestation (`actions/attest-build-provenance`) that lists
+  every file as a subject. The attestation is an in-toto statement with the
+  [SLSA v1 build-provenance](https://slsa.dev/spec/v1.0/provenance) predicate,
+  signed through Sigstore; it is stored with the repository's attestations and
+  attached as `vmafx-build-provenance.sigstore.json`. SPDX + CycloneDX SBOM
+  attached. See [ADR-1356](../adr/1356-release-provenance-attest.md).
+- **`vmaf-mcp` Python package** (wheel + sdist): cosign sign-blob bundles, a
+  GitHub build-provenance attestation attached as
+  `vmaf-mcp-provenance.sigstore.json`, and PEP 740 attestations stored
+  alongside the PyPI artefact (Trusted Publishing, no token). See
   [ADR-0166](../adr/0166-mcp-server-release-channel.md).
 - **Production container images** (`ghcr.io/vmafx/vmafx:<tag>` and the
   `-cuda13` / `-rocm10` / `-oneapi2025` / `-server` variants): cosign keyless
@@ -511,6 +519,23 @@ cosign verify-blob --bundle vmaf.bundle vmaf \
     "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@refs/tags/${tag}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
+# Release blob, build provenance (ADR-1356). gh fetches the attestation from
+# GitHub. Works for every native asset; the vmaf-mcp wheel and sdist from the
+# GitHub Release verify the same way.
+gh attestation verify vmaf --repo VMAFx/vmafx \
+  --signer-workflow VMAFx/vmafx/.github/workflows/supply-chain.yml \
+  --source-ref "refs/tags/${tag}"
+
+# The same check against the attached bundle, without the attestations API.
+# Fetch the Sigstore trusted root once while online; after that no network
+# access is needed.
+gh attestation trusted-root > trusted_root.jsonl
+gh attestation verify vmaf --repo VMAFx/vmafx \
+  --bundle vmafx-build-provenance.sigstore.json \
+  --custom-trusted-root trusted_root.jsonl \
+  --signer-workflow VMAFx/vmafx/.github/workflows/supply-chain.yml \
+  --source-ref "refs/tags/${tag}"
+
 # vmaf-mcp wheel on PyPI. The PyPI integrity API supplies the PEP 740
 # provenance; pypi-attestations binds it to the expected source repository.
 pypi-attestations verify pypi \
@@ -531,6 +556,22 @@ cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
   --certificate-identity \
     "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${tag}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+`supply-chain.yml` runs the provenance recipe above against the attached bundle
+for every subject before the bundle can reach the release, so a release whose
+provenance does not verify is never published.
+
+v1.0.0-rc.1 and v1.0.0-rc.2 predate ADR-1356. They carry
+`slsa-github-generator` provenance as `vmafx-build-provenance.intoto.jsonl` and
+`vmaf-mcp-provenance.intoto.jsonl` instead of the `.sigstore.json` bundles and
+have no GitHub attestation. Verify those with
+[`slsa-verifier`](https://github.com/slsa-framework/slsa-verifier):
+
+```bash
+slsa-verifier verify-artifact vmaf \
+  --provenance-path vmafx-build-provenance.intoto.jsonl \
+  --source-uri github.com/VMAFx/vmafx --source-tag v1.0.0-rc.2
 ```
 
 An image rebuilt by a [recovery run](#recovering-a-releases-container-images)

@@ -59,7 +59,10 @@ SBOM, signature, provenance and package-attestation steps. Configuration alone
 is not proof that these outputs were produced or verified for a release.
 Because no VMAFx release has been published at this assessment date, this policy
 does not claim an achieved SLSA level, published attestations or universal
-signed-artifact coverage.
+signed-artifact coverage. Release-blob and `vmaf-mcp` provenance is a GitHub
+build-provenance attestation (an in-toto statement with the SLSA v1 provenance
+predicate, signed through Sigstore), verified with `gh attestation verify`
+([ADR-1356](docs/adr/1356-release-provenance-attest.md)).
 
 For a future release, use its actual asset list and verification receipts with
 the [release verification guide](docs/development/release.md). Missing expected

@@ -113,7 +113,7 @@ is four workflows plus one job:
 |---|---|---|---|
 | `.github/workflows/dev-container-publish.yml` | push to `master` (`dev/Containerfile`, `dev/scripts/**`) | `ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>`, `:master` | Yes — builds `libvmaf-build` stage. Published for transparency; releases do not pull it |
 | `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
-| `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, SLSA provenance, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the Debian 13 `release-build` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), [ADR-1354](../adr/1354-native-bundle-release-track.md)) |
+| `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, GitHub build-provenance attestations, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the Debian 13 `release-build` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), [ADR-1354](../adr/1354-native-bundle-release-track.md)) |
 | `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm10 / oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
 | `cross-backend` job in `.github/workflows/tests-and-quality-gates.yml` | Disabled (`if: false`, awaits self-hosted GPU runner) | backend-parity report (a gate, not an artifact) | **No** — `ubuntu-latest` host toolchain |
 
@@ -194,7 +194,7 @@ This is an **accident gate, not a security boundary**. It catches "the release
 job silently ran meson on the runner host", which is the failure this policy
 exists to prevent. It does not defend against someone who deliberately forges
 the marker; the cryptographic story for published bytes is cosign signing plus
-SLSA provenance in `supply-chain.yml`.
+GitHub build-provenance attestations in `supply-chain.yml`.
 
 **Known limitation:** the `VMAFX_CONTAINER_MARKER` environment variable
 overrides the marker path (introduced so the offline unit suite
@@ -244,7 +244,7 @@ from the Ubuntu 26.04 `build-deps` stage onto the Debian 13 release track.
    below), stages the bundle with the CLI's RUNPATH set to `$ORIGIN`, writes
    `container-build-provenance.txt` and runs the clean-environment verifier.
    The compile took under a minute on four CPUs.
-4. It hashes and uploads `artifacts/` on the runner for SBOM, signing, SLSA
+4. It hashes and uploads `artifacts/` on the runner for SBOM, signing, build
    provenance and attachment, exactly as before.
 
 The stamp records `image_title=vmaf-dev-mcp`. `build-deps` writes that marker

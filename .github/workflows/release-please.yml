@@ -2,8 +2,8 @@
 # completed release PR is present; otherwise open or update that release PR.
 # Changelog fragments own CHANGELOG.md (ADR-1128). Publishing the draft creates
 # the `vMAJOR.MINOR.PATCH` tag (`vMAJOR.MINOR.PATCH-rc.N` for a release
-# candidate, ADR-1201) and fires release workflows for signing, SBOM, SLSA, and
-# container publication (ADR-1127).
+# candidate, ADR-1201) and fires release workflows for signing, SBOM, build
+# provenance, and container publication (ADR-1127).
 
 name: release-please
 

@@ -21,14 +21,20 @@ workflow_paths = (
     ".github/workflows/docker-publish-production.yml",
     ".github/workflows/docker-publish-operator-node.yml",
 )
-SLSA_USES = (
-    "slsa-framework/slsa-github-generator/.github/workflows/"
-    "generator_generic_slsa3.yml@v2.1.0"
-)
-SLSA_JOBS = {
-    "slsa-provenance": "vmafx-build-provenance.intoto.jsonl",
-    "mcp-slsa-provenance": "vmaf-mcp-provenance.intoto.jsonl",
+# ADR-1356: GitHub-native build provenance. Job -> (the job whose `hashes`
+# output names the subjects, the workflow artifact carrying the bundle).
+PROVENANCE_JOBS = {
+    "provenance": ("build-artifacts", "vmafx-build-provenance"),
+    "mcp-provenance": ("mcp-build", "vmaf-mcp-provenance"),
 }
+ATTEST_USES = re.compile(
+    r"(?m)^        uses: actions/attest-build-provenance@[0-9a-f]{40}$"
+)
+# The organisation requires every action, nested ones included, to be pinned
+# to a full commit SHA. slsa-github-generator calls its own sub-actions by
+# tag, so it can never run there (v1.0.0-rc.2).
+USES_LINE = re.compile(r"(?m)^\s*(?:- )?uses:\s+(\S+)\s*$")
+PINNED_REF = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$")
 VERIFY_TARGETS = {
     "docker-publish-production.yml": (
         '"${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@'
@@ -120,13 +126,27 @@ def validate_workflow_permissions(relative_path: str, workflow: str) -> None:
         )
 
 
-def validate_slsa_job(relative_path: str, job: str, block: str) -> None:
+def validate_pinned_uses(relative_path: str, workflow: str) -> None:
+    for ref in USES_LINE.findall(workflow):
+        if ref.startswith("./"):
+            continue
+        if "slsa-framework/slsa-github-generator" in ref:
+            raise AssertionError(
+                f"{relative_path}: slsa-github-generator cannot run under "
+                "sha_pinning_required; use actions/attest-build-provenance"
+            )
+        if not PINNED_REF.fullmatch(ref):
+            raise AssertionError(
+                f"{relative_path}: `uses: {ref}` is not pinned to a full commit SHA"
+            )
+
+
+def validate_provenance_job(relative_path: str, job: str, block: str) -> None:
+    build_job, artifact = PROVENANCE_JOBS[job]
+    bundle = f"provenance/{artifact}.sigstore.json"
     expected_permissions = {
-        "actions": "read",
-        # The pinned generator's upload-assets job requests contents: write;
-        # GitHub validates it at startup even though upload-assets: false
-        # skips the job, so the caller must grant it or the run never starts.
-        "contents": "write",
+        "attestations": "write",
+        "contents": "read",
         "id-token": "write",
     }
     permissions = dict(
@@ -137,17 +157,31 @@ def validate_slsa_job(relative_path: str, job: str, block: str) -> None:
             f"{relative_path}: {job} permissions are {permissions}, "
             f"expected {expected_permissions}"
         )
-    if f"    uses: {SLSA_USES}\n" not in block:
-        raise AssertionError(f"{relative_path}: {job} does not use the pinned generator")
-    if "    environment:" in block:
-        raise AssertionError(f"{relative_path}: reusable job {job} has invalid environment")
-    if "      upload-assets: false\n" not in block:
-        raise AssertionError(f"{relative_path}: {job} may upload a release asset")
-    if "upload-tag-name:" in block:
-        raise AssertionError(f"{relative_path}: {job} retains direct release upload")
-    expected_name = SLSA_JOBS[job]
-    if f"      provenance-name: {expected_name}\n" not in block:
-        raise AssertionError(f"{relative_path}: {job} provenance name drifted")
+    if re.search(r"(?m)^    uses:", block):
+        raise AssertionError(f"{relative_path}: {job} must not be a reusable-workflow call")
+    if len(ATTEST_USES.findall(block)) != 1:
+        raise AssertionError(
+            f"{relative_path}: {job} must run SHA-pinned attest-build-provenance once"
+        )
+    required_fragments = (
+        # Subjects come from the build job's digests, checked against the bytes.
+        f"SUBJECT_HASHES: ${{{{ needs.{build_job}.outputs.hashes }}}}\n",
+        "subject-checksums: ${{ steps.subjects.outputs.checksums }}\n",
+        "BUNDLE: ${{ steps.attest.outputs.bundle-path }}\n",
+        # The staged bundle passes the documented consumer recipe.
+        "gh attestation verify ",
+        '--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/supply-chain.yml"',
+        '--source-ref "refs/tags/$RELEASE_TAG"',
+        f"staged={bundle}\n",
+        f"          name: {artifact}\n",
+        f"          path: {bundle}\n",
+    )
+    for fragment in required_fragments:
+        if fragment not in block:
+            raise AssertionError(f"{relative_path}: {job} lost {fragment.strip()!r}")
+    for forbidden in ("subject-path:", "push-to-registry:", "softprops/action-gh-release@"):
+        if forbidden in block:
+            raise AssertionError(f"{relative_path}: {job} must not use {forbidden}")
 
 
 def validate_attachment(block: str) -> None:
@@ -175,7 +209,7 @@ def validate_attachment(block: str) -> None:
         line.strip().removeprefix("- ")
         for line in needs_match.group("body").splitlines()
     }
-    missing_needs = set(SLSA_JOBS) - needs
+    missing_needs = set(PROVENANCE_JOBS) - needs
     if missing_needs:
         raise AssertionError(
             f"supply-chain.yml attachment does not wait for {sorted(missing_needs)}"
@@ -238,24 +272,24 @@ def validate_attachment(block: str) -> None:
         raise AssertionError("supply-chain.yml attachment lists are not parseable")
     required = {line.strip() for line in required_match.group("body").splitlines()}
     files = {line.strip() for line in files_match.group("body").splitlines()}
+    provenance_paths = [
+        f"dist/{artifact}/{artifact}.sigstore.json"
+        for _, artifact in PROVENANCE_JOBS.values()
+    ]
     expected_files = {
         "dist/release-artifacts/*",
         "dist/sbom/*",
         "dist/signatures/*",
         "dist/mcp-dist/*",
         "dist/mcp-signatures/*",
-        *(
-            f"dist/{name}/{name}"
-            for name in SLSA_JOBS.values()
-        ),
+        *provenance_paths,
     }
     if files != expected_files:
         raise AssertionError(
             "supply-chain.yml release asset set drifted: "
             f"expected {sorted(expected_files)}, got {sorted(files)}"
         )
-    for name in SLSA_JOBS.values():
-        artifact_path = f"dist/{name}/{name}"
+    for artifact_path in provenance_paths:
         if artifact_path not in required:
             raise AssertionError(f"supply-chain.yml does not require {artifact_path}")
         if artifact_path not in files:
@@ -323,6 +357,7 @@ def validate(texts: dict[str, str]) -> None:
             raise AssertionError(f"{relative_path}: read-only validation is environment-gated")
         workflow = active_text(texts[relative_path])
         validate_workflow_permissions(relative_path, workflow)
+        validate_pinned_uses(relative_path, workflow)
         if re.search(
             r"(?m)^    permissions:[ \t]+(?!\{\}[ \t]*$)\S",
             workflow,
@@ -334,9 +369,10 @@ def validate(texts: dict[str, str]) -> None:
                 r"(?m)^      ([a-z0-9-]+): (?:write|\"write\"|'write')$",
                 block,
             )
-            if job in SLSA_JOBS:
-                validate_slsa_job(relative_path, job, block)
-                continue
+            if job in PROVENANCE_JOBS:
+                if relative_path != workflow_paths[0]:
+                    raise AssertionError(f"{relative_path}: unexpected job {job}")
+                validate_provenance_job(relative_path, job, block)
             if not write_scopes:
                 continue
             expected = (
@@ -345,6 +381,9 @@ def validate(texts: dict[str, str]) -> None:
             require_environment(relative_path, job, block, expected)
 
     supply_blocks = parsed[workflow_paths[0]]
+    missing_jobs = set(PROVENANCE_JOBS) - set(supply_blocks)
+    if missing_jobs:
+        raise AssertionError(f"supply-chain.yml lost provenance jobs {sorted(missing_jobs)}")
     validate_attachment(supply_blocks["attach-to-release"])
     for relative_path in workflow_paths[1:]:
         validate_docker_identities(relative_path, active_text(texts[relative_path]))
@@ -483,8 +522,8 @@ expect_rejected("underscore-named unprotected writer", underscore_job)
 
 commented_provenance = deepcopy(texts)
 native_path = (
-    "dist/vmafx-build-provenance.intoto.jsonl/"
-    "vmafx-build-provenance.intoto.jsonl"
+    "dist/vmafx-build-provenance/"
+    "vmafx-build-provenance.sigstore.json"
 )
 last_index = commented_provenance[workflow_paths[0]].rfind(f"            {native_path}")
 if last_index < 0:
@@ -523,7 +562,74 @@ extra_release_asset[workflow_paths[0]] = extra_release_asset[workflow_paths[0]].
 )
 expect_rejected("unverified extra release asset", extra_release_asset)
 
+supply_path = workflow_paths[0]
+provenance_job_anchor = "\n  provenance:\n"
+if texts[supply_path].count(provenance_job_anchor) != 1:
+    raise AssertionError("provenance-job fixture anchor is not unique")
+provenance_start = texts[supply_path].index(provenance_job_anchor)
+
+
+def mutate_native_provenance(old: str, new: str) -> dict[str, str]:
+    """Replace the first `old` inside the native provenance job only."""
+    mutated = deepcopy(texts)
+    index = mutated[supply_path].find(old, provenance_start)
+    if index < 0:
+        raise AssertionError(f"provenance fixture anchor is absent: {old!r}")
+    mutated[supply_path] = (
+        mutated[supply_path][:index] + new + mutated[supply_path][index + len(old) :]
+    )
+    return mutated
+
+
+# The v1.0.0-rc.2 failure: a tag-referenced third-party workflow or action.
+tag_pinned = deepcopy(texts)
+tag_pinned[supply_path], replacements = re.subn(
+    r"actions/attest-build-provenance@[0-9a-f]{40}",
+    "actions/attest-build-provenance@v4.2.2",
+    tag_pinned[supply_path],
+    count=1,
+)
+if replacements != 1:
+    raise AssertionError("tag-pinned fixture mutation did not apply")
+expect_rejected("tag-pinned attest action", tag_pinned)
+
+restored_generator = mutate_native_provenance(
+    "    runs-on: ubuntu-latest\n",
+    "    uses: slsa-framework/slsa-github-generator/.github/workflows/"
+    "generator_generic_slsa3.yml@0123456789abcdef0123456789abcdef01234567\n"
+    "    runs-on: ubuntu-latest\n",
+)
+expect_rejected("restored slsa-github-generator", restored_generator)
+
+expect_rejected(
+    "provenance job outside release-publish",
+    mutate_native_provenance("    environment: release-publish\n", ""),
+)
+expect_rejected(
+    "provenance job with contents: write",
+    mutate_native_provenance("      contents: read\n", "      contents: write\n"),
+)
+expect_rejected(
+    "provenance subjects detached from the build job's digests",
+    mutate_native_provenance(
+        "${{ needs.build-artifacts.outputs.hashes }}",
+        "${{ needs.verify-native-artifacts.outputs.hashes }}",
+    ),
+)
+expect_rejected(
+    "provenance subjects recomputed from downloaded paths",
+    mutate_native_provenance(
+        "subject-checksums: ${{ steps.subjects.outputs.checksums }}",
+        "subject-path: artifacts/*",
+    ),
+)
+expect_rejected(
+    "provenance bundle not checked with the consumer recipe",
+    mutate_native_provenance('--source-ref "refs/tags/$RELEASE_TAG"', ""),
+)
+
 print("PASS: every publication write is environment-bound")
-print("PASS: SLSA provenance is attached only by the protected release writer")
+print("PASS: every release workflow action is pinned to a full commit SHA")
+print("PASS: provenance is attested behind release-publish, attached by the release writer")
 print("PASS: container signatures require the exact identity of the signing run")
 PY

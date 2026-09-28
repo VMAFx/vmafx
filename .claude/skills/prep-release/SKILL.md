@@ -36,7 +36,9 @@ description: Dry-run `release-please` locally, preview CHANGELOG diff, verify si
    (ADR-1127).
 6. Report supply-chain prerequisites:
    - SBOM generator present (`syft`, `cyclonedx-cli`).
-   - SLSA generator workflow configured.
+   - Build-provenance jobs configured (`provenance`, `mcp-provenance` in
+     `supply-chain.yml`, SHA-pinned `actions/attest-build-provenance`,
+     ADR-1356).
    - Container image build target present (if applicable).
 7. Summary: GO / NO-GO + blocker list.
 

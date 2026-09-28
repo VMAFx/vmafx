@@ -1,4 +1,5 @@
-# Supply-chain provenance: SLSA L3 build, Sigstore keyless signing, SBOM.
+# Supply-chain provenance: GitHub build-provenance attestations (SLSA v1
+# provenance predicate, ADR-1356), Sigstore keyless signing, SBOM.
 # Triggered when an operator publishes release-please's draft
 # `vMAJOR.MINOR.PATCH` release. The authenticated publication emits the
 # `release:published` event. Manual dispatch is an idempotent recovery path for
@@ -200,7 +201,7 @@ jobs:
             --workdir /src \
             "vmafx-release-build:${GITHUB_SHA}" \
             bash scripts/release/build-native-release-artifacts.sh "$VMAFX_VERSION"
-      - name: Compute SHA256 hashes (SLSA input)
+      - name: Compute SHA256 hashes (provenance subjects)
         id: hash
         run: |
           cd artifacts
@@ -487,31 +488,76 @@ jobs:
           path: artifacts/*.bundle
           if-no-files-found: error
 
-  slsa-provenance:
-    name: SLSA libvmaf
+  # ADR-1356: GitHub-native build provenance (an in-toto statement with the
+  # SLSA v1 provenance predicate, signed through Sigstore and stored with the
+  # repository's attestations). It replaces slsa-github-generator, whose
+  # reusable workflow calls its own sub-actions by tag: the organisation's
+  # sha_pinning_required policy rejects that, so v1.0.0-rc.2's provenance jobs
+  # failed at `detect-env` and skipped the attachment and PyPI jobs. Every
+  # action below is SHA-pinned, and a plain job can name an environment, so
+  # this OIDC + attestation writer sits behind release-publish like `sign`.
+  provenance:
+    name: Attest libvmaf provenance
     needs: [validate-release, build-artifacts, verify-native-artifacts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-publish
     permissions:
-      id-token: write
-      # The generator's `upload-assets` job requests contents: write, and GitHub
-      # checks every nested job's permissions when the run starts, even a job
-      # that `upload-assets: false` skips. With contents: read the whole
-      # workflow fails with startup_failure (v1.0.0-rc.1, 2026-09-27).
-      contents: write
-      actions: read
-    # Sole tag-pin exception: the SLSA generator rejects SHA-pinned reusable
-    # workflow refs because its builder identity must be refs/tags/vX.Y.Z.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
-    with:
-      base64-subjects: ${{ needs.build-artifacts.outputs.hashes }}
-      provenance-name: vmafx-build-provenance.intoto.jsonl
-      # The reusable caller cannot reference an environment. Keep provenance
-      # as a workflow artifact; the environment-gated attachment job below is
-      # the sole GitHub Release writer.
-      upload-assets: false
+      contents: read
+      id-token: write       # Sigstore keyless OIDC
+      attestations: write   # store the attestation with the repository
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: release-artifacts, path: artifacts/ }
+      # The subjects are the digests build-artifacts computed next to the
+      # build, as the generator's base64-subjects were. The bytes the
+      # attachment job publishes must be exactly that set.
+      - name: Bind the build job's digests to the downloaded bytes
+        id: subjects
+        env:
+          SUBJECT_HASHES: ${{ needs.build-artifacts.outputs.hashes }}
+        run: |
+          set -euo pipefail
+          subjects="$RUNNER_TEMP/subjects.sha256"
+          base64 --decode <<<"$SUBJECT_HASHES" >"$subjects"
+          test -s "$subjects"
+          diff <(cd artifacts && sha256sum -- * | sort) <(sort "$subjects")
+          echo "checksums=$subjects" >>"$GITHUB_OUTPUT"
+      - name: Attest build provenance (GitHub native)
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-checksums: ${{ steps.subjects.outputs.checksums }}
+      # The consumer recipe in docs/development/release.md, run against every
+      # subject before the bundle can reach the release.
+      - name: Verify the bundle with the consumer recipe, then stage it
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          staged=provenance/vmafx-build-provenance.sigstore.json
+          mkdir -p provenance
+          cp -- "$BUNDLE" "$staged"
+          for f in artifacts/*; do
+            gh attestation verify "$f" \
+              --bundle "$staged" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/supply-chain.yml" \
+              --source-ref "refs/tags/$RELEASE_TAG" \
+              --deny-self-hosted-runners >/dev/null
+            echo "OK: $f"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: vmafx-build-provenance
+          path: provenance/vmafx-build-provenance.sigstore.json
+          if-no-files-found: error
 
   # ===== MCP server (vmaf-mcp Python package) =====
   # ADR-0166: ship to PyPI (Trusted Publishing) + GitHub release attachment
-  # with the same Sigstore + SLSA story as the libvmaf artifacts.
+  # with the same Sigstore + build-provenance story as the libvmaf artifacts.
 
   mcp-build:
     name: Build vmaf-mcp wheel + sdist
@@ -541,7 +587,7 @@ jobs:
           export SOURCE_DATE_EPOCH
           export PYTHONHASHSEED=0
           python -m build --no-isolation --wheel --sdist --outdir ../../mcp-dist
-      - name: Compute SHA256 hashes (SLSA input)
+      - name: Compute SHA256 hashes (provenance subjects)
         id: hash
         env:
           VMAFX_PEP440_VERSION: ${{ needs.validate-release.outputs.pep440_version }}
@@ -598,28 +644,65 @@ jobs:
           path: mcp-dist/*.bundle
           if-no-files-found: error
 
-  mcp-slsa-provenance:
-    name: SLSA vmaf-mcp
+  # ADR-1356: the vmaf-mcp twin of `provenance`, with its own subjects and
+  # bundle name. PyPI keeps its PEP 740 attestations (mcp-publish-pypi).
+  mcp-provenance:
+    name: Attest vmaf-mcp provenance
     needs: [validate-release, mcp-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-publish
     permissions:
-      id-token: write
-      # The generator's `upload-assets` job requests contents: write, and GitHub
-      # checks every nested job's permissions when the run starts, even a job
-      # that `upload-assets: false` skips. With contents: read the whole
-      # workflow fails with startup_failure (v1.0.0-rc.1, 2026-09-27).
-      contents: write
-      actions: read
-    # See the documented SLSA reusable-workflow tag-pin exception above.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
-    with:
-      base64-subjects: ${{ needs.mcp-build.outputs.hashes }}
-      provenance-name: vmaf-mcp-provenance.intoto.jsonl
-      # See the native provenance job: release upload is environment-gated.
-      upload-assets: false
+      contents: read
+      id-token: write       # Sigstore keyless OIDC
+      attestations: write   # store the attestation with the repository
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: mcp-dist, path: mcp-dist/ }
+      - name: Bind the build job's digests to the downloaded bytes
+        id: subjects
+        env:
+          SUBJECT_HASHES: ${{ needs.mcp-build.outputs.hashes }}
+        run: |
+          set -euo pipefail
+          subjects="$RUNNER_TEMP/subjects.sha256"
+          base64 --decode <<<"$SUBJECT_HASHES" >"$subjects"
+          test -s "$subjects"
+          diff <(cd mcp-dist && sha256sum -- * | sort) <(sort "$subjects")
+          echo "checksums=$subjects" >>"$GITHUB_OUTPUT"
+      - name: Attest build provenance (GitHub native)
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-checksums: ${{ steps.subjects.outputs.checksums }}
+      - name: Verify the bundle with the consumer recipe, then stage it
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          staged=provenance/vmaf-mcp-provenance.sigstore.json
+          mkdir -p provenance
+          cp -- "$BUNDLE" "$staged"
+          for f in mcp-dist/*; do
+            gh attestation verify "$f" \
+              --bundle "$staged" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/supply-chain.yml" \
+              --source-ref "refs/tags/$RELEASE_TAG" \
+              --deny-self-hosted-runners >/dev/null
+            echo "OK: $f"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: vmaf-mcp-provenance
+          path: provenance/vmaf-mcp-provenance.sigstore.json
+          if-no-files-found: error
 
   mcp-publish-pypi:
     name: Publish vmaf-mcp PyPI
-    needs: [validate-release, mcp-build, mcp-sign, mcp-slsa-provenance, sbom]
+    needs: [validate-release, mcp-build, mcp-sign, mcp-provenance, sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi-publish    # user binds this to PyPI Trusted Publisher
@@ -787,10 +870,10 @@ jobs:
       - verify-native-artifacts
       - sbom
       - sign
-      - slsa-provenance
+      - provenance
       - mcp-build
       - mcp-sign
-      - mcp-slsa-provenance
+      - mcp-provenance
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release-publish
@@ -811,8 +894,8 @@ jobs:
             dist/sbom/vmafx.cdx.json
             dist/sbom/vmaf-mcp.spdx.json
             dist/sbom/vmaf-mcp.cdx.json
-            dist/vmafx-build-provenance.intoto.jsonl/vmafx-build-provenance.intoto.jsonl
-            dist/vmaf-mcp-provenance.intoto.jsonl/vmaf-mcp-provenance.intoto.jsonl
+            dist/vmafx-build-provenance/vmafx-build-provenance.sigstore.json
+            dist/vmaf-mcp-provenance/vmaf-mcp-provenance.sigstore.json
           )
           wheels=(dist/mcp-dist/vmaf_mcp-*.whl)
           sdists=(dist/mcp-dist/vmaf_mcp-*.tar.gz)
@@ -853,5 +936,5 @@ jobs:
             dist/signatures/*
             dist/mcp-dist/*
             dist/mcp-signatures/*
-            dist/vmafx-build-provenance.intoto.jsonl/vmafx-build-provenance.intoto.jsonl
-            dist/vmaf-mcp-provenance.intoto.jsonl/vmaf-mcp-provenance.intoto.jsonl
+            dist/vmafx-build-provenance/vmafx-build-provenance.sigstore.json
+            dist/vmaf-mcp-provenance/vmaf-mcp-provenance.sigstore.json

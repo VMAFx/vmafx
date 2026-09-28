@@ -130,11 +130,16 @@ Prior live evidence was Scorecard 8.7, Pinned Dependencies 7, and CII InProgress
 14549 at 42 percent; local work is not post-merge proof until merged and scanned by the
 master publisher. Project 14549 reached the passing badge on 2026-09-26.
 
-Workflows that call `slsa-framework/slsa-github-generator` maintain an intentional
-exception to commit-SHA pinning: the generator strictly requires an exact `@vX.Y.Z`
-semantic release tag so that `slsa-verifier` can verify the identity of the trusted
-builder (ADR-1128, slsa-verifier#12). Converting this reference to a SHA breaks
-cryptographic provenance.
+Every `uses:` reference in `.github/workflows/` is pinned to a full commit SHA, with
+no exception. The VMAFx organisation enforces this as well (`sha_pinning_required`),
+and the enforcement reaches actions nested inside reusable workflows. The former
+exception, `slsa-framework/slsa-github-generator`, required a tag reference and calls
+its own sub-actions by tag, so it failed under that policy during the v1.0.0-rc.2
+publication. Release provenance now comes from the SHA-pinned
+`actions/attest-build-provenance`
+([ADR-1356](../adr/1356-release-provenance-attest.md)), and
+`scripts/release/tests/test-publication-environment-binding.sh` rejects any unpinned
+action in the release workflows.
 
 ## References
 

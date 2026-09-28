@@ -1,11 +1,18 @@
 <!-- markdownlint-disable MD013 -->
 # ADR-0166: MCP server release artifact channel — PyPI + GitHub release attachment + Sigstore (T7-2)
 
-- **Status**: Accepted
+- **Status**: Accepted (SLSA generator provenance superseded by [ADR-1356](1356-release-provenance-attest.md))
 - **Date**: 2026-04-25
 - **Deciders**: Lusoris
 - **Tags**: release, mcp, supply-chain, sigstore, pypi
 
+> **2026-09-29 amendment ([ADR-1356](1356-release-provenance-attest.md)):** the
+> wheel and sdist provenance no longer comes from `slsa-github-generator`. The
+> `mcp-provenance` job attests both files with the SHA-pinned
+> `actions/attest-build-provenance` and the release carries
+> `vmaf-mcp-provenance.sigstore.json`. PyPI Trusted Publishing, the PEP 740
+> attestations and the cosign bundles are unchanged.
+>
 > **2026-08-31 operational amendment:** the repository was transferred to
 > `VMAFx/vmafx`, and [ADR-1127](1127-single-semver-release-stream.md)
 > superseded the suffixed tag scheme with one ordinary `vX.Y.Z` stream. The

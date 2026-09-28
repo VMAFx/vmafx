@@ -34,7 +34,7 @@
 # "the release job silently ran meson on the runner host", which is the failure
 # ADR-1102 exists to prevent. It does not defend against an operator who forges
 # /etc/vmafx-dev-container; the cryptographic story for published bytes is
-# cosign + SLSA provenance in `.github/workflows/supply-chain.yml`, not this.
+# cosign + build provenance in `.github/workflows/supply-chain.yml`, not this.
 #
 # THREE MODES
 #

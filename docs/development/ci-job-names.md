@@ -159,9 +159,9 @@ job the PR renamed, every required check and every build lane.
 | `supply-chain.yml` | `Verify downloaded Linux release runtime` | `Verify Linux runtime` | 20 | No |
 | `supply-chain.yml` | `Generate libvmaf + vmaf-mcp SBOMs (SPDX + CycloneDX)` | `Generate SBOMs` | 14 | No |
 | `supply-chain.yml` | `Sigstore keyless sign (release artifacts + SBOMs)` | `Sigstore sign artifacts` | 23 | No |
-| `supply-chain.yml` | `SLSA L3 provenance — libvmaf artifacts` | `SLSA libvmaf` | 12 | No |
+| `supply-chain.yml` | `SLSA libvmaf` (ADR-1356 replaced the generator job) | `Attest libvmaf provenance` | 25 | No |
 | `supply-chain.yml` | `Sigstore keyless sign — vmaf-mcp` | `Sigstore sign vmaf-mcp` | 22 | No |
-| `supply-chain.yml` | `SLSA L3 provenance — vmaf-mcp distributions` | `SLSA vmaf-mcp` | 12 | No |
+| `supply-chain.yml` | `SLSA vmaf-mcp` (ADR-1356 replaced the generator job) | `Attest vmaf-mcp provenance` | 26 | No |
 | `supply-chain.yml` | `Publish vmaf-mcp to PyPI (Trusted Publishing)` | `Publish vmaf-mcp PyPI` | 20 | No |
 | `supply-chain.yml` | `Attach SBOM + signatures to GitHub Release` | `Attach release assets` | 21 | No |
 | `docker-publish-operator-node.yml` | `Validate published ordinary tag` | `Validate tag` | 12 | No |

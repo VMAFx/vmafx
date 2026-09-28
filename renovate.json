@@ -46,14 +46,6 @@
   },
   "packageRules": [
     {
-      "description": "slsa-github-generator MUST be referenced by an exact @vX.Y.Z tag, never a digest: its README states the generators 'MUST be referenced by tag in order for the slsa-verifier to be able to verify the ref of the trusted builder' (hash-pinned reusable workflows are unsupported, slsa-verifier#12). ADR-1128's Release Script Contract enforces the tag form, so a digest-pin PR (#1183) can never pass it. Keep tag updates, forbid digest pinning.",
-      "matchPackageNames": [
-        "slsa-framework/slsa-github-generator"
-      ],
-      "pinDigests": false,
-      "automerge": false
-    },
-    {
       "description": "Intel NEO compute stack: dev/Containerfile derives the matched set of gmmlib and IGC deb packages dynamically from the pinned intel/compute-runtime release at build time (ADR-1145). Only compute-runtime and level-zero are tracked; manual review (ADR-0605).",
       "matchPackageNames": [
         "intel/compute-runtime",

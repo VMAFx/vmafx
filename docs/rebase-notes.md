@@ -1,6 +1,23 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/release-provenance-attest — GitHub build-provenance attestations replace slsa-github-generator (ADR-1356) (2026-09-29)
+
+- `.github/workflows/supply-chain.yml`: fork-only; upstream Netflix/vmaf has no
+  release provenance. The `slsa-provenance` / `mcp-slsa-provenance` reusable-workflow
+  calls are gone; `provenance` / `mcp-provenance` run SHA-pinned
+  `actions/attest-build-provenance` in `release-publish`, and `attach-to-release`
+  attaches `*.sigstore.json` bundles. Never restore `slsa-framework/slsa-github-generator`
+  or any tag-referenced action: the VMAFx organisation enforces `sha_pinning_required`,
+  including on actions inside called reusable workflows (the v1.0.0-rc.2 failure).
+- This supersedes item 5 of `fix/scorecard-pins-best-practices` below ("SLSA GitHub
+  generator must remain tag-pinned") and the "single permitted exception" in the
+  SHA-pin entries further down: there is no exception any more, and the
+  `.github/AGENTS.md` sync-gate grep no longer filters the generator.
+- `scripts/release/tests/test-publication-environment-binding.sh` pins the job names,
+  permissions, environment, subjects, verification step and bundle names; rename them
+  together with the workflow.
+
 ## fix/ffmpeg9-fps-mode — `-fps_mode passthrough` replaces `-vsync 0` (2026-09-28)
 - `compat/python-vmaf/core/executor.py`: ports Netflix/vmaf `aeaf2877d`; the
   decode command now matches upstream. Upstream's `python/vmaf/__init__.py`

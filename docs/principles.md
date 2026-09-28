@@ -217,7 +217,8 @@ files and directories, and must not modify or override Netflix golden behavior.
 See the tracked [release](development/release.md) and
 [repository-security](development/repository-security.md) runbooks:
 
-- **SLSA Level 3** provenance attestation on every release
+- **SLSA v1 build provenance** on every release: a GitHub artifact attestation
+  signed through Sigstore ([ADR-1356](adr/1356-release-provenance-attest.md))
 - **CycloneDX + SPDX SBOMs** on every release
 - **Keyless cosign** signatures via Sigstore / GitHub OIDC
 - **Transparency log** (Rekor) makes signatures publicly verifiable

@@ -201,10 +201,14 @@ environment.
 Two Docker publishers bind every GHCR write/OIDC job to
 `release-publish`; `supply-chain.yml` binds Sigstore and GitHub
 Release writes there, keeping PyPI on its trusted-publisher
-environment `pypi-publish`. Third-party SLSA reusable jobs cannot
-declare environment, so may mint provenance but must keep
-`contents: read` and `upload-assets: false`; protected attachment job
-downloads and publishes their provenance artifacts. Container
+environment `pypi-publish`. Build-provenance jobs (`provenance`,
+`mcp-provenance`, ADR-1356) are `release-publish` jobs with exactly
+`attestations: write`, `id-token: write`, `contents: read`; they run
+SHA-pinned `actions/attest-build-provenance` on build job `hashes`, verify
+bundle with consumer `gh attestation verify` recipe, upload it as workflow
+artifact only; protected attachment job publishes both bundles. Every
+`uses:` in release workflows pinned to full commit SHA; no
+`slsa-github-generator` (org `sha_pinning_required`). Container
 verification accepts only exact release-tag workflow identity, never
 `@.*` ref wildcard.
 

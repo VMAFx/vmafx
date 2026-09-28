@@ -1,9 +1,16 @@
 # ADR-1305: Hash-locked Python dependency installs and OpenSSF supply-chain hardening
 
-- **Status**: Accepted
+- **Status**: Accepted (decision 8 superseded by [ADR-1356](1356-release-provenance-attest.md))
 - **Date**: 2026-09-23
 - **Deciders**: Lusoris
 - **Tags**: `security`, `dependencies`, `supply-chain`, `python`, `ci`
+
+> **Amendment (2026-09-29, [ADR-1356](1356-release-provenance-attest.md))**:
+> The `slsa-github-generator` tag-pin exception (Context item 5, decision 8) no
+> longer exists. The organisation's `sha_pinning_required` policy rejects the
+> generator's own tag-referenced sub-actions, so release provenance now comes from
+> the SHA-pinned `actions/attest-build-provenance` and every workflow action is
+> SHA-pinned.
 
 ## Context
 

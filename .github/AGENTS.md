@@ -45,14 +45,22 @@ release-artifact Sigstore identity is bound to protected
 `release-publish` environment. PyPI stays bound to `pypi-publish` because that
 exact environment name is part of its Trusted Publisher identity. Both
 environments accept ordinary release tags only, require configured
-release reviewer; read-only validation stays outside them. SLSA reusable
-workflow caller cannot declare environment, so it has `contents: read` and
-`upload-assets: false`; environment-gated attachment job is sole
-release-asset writer. Never restore direct SLSA release upload.
+release reviewer; read-only validation stays outside them. Provenance jobs
+`provenance` / `mcp-provenance` (ADR-1356) hold `id-token` + `attestations`
+write, `contents: read`, so they sit in `release-publish` too; they upload
+bundle only as workflow artifact. Environment-gated attachment job is sole
+release-asset writer. Never give provenance jobs `contents: write` or a
+release-upload step.
 
 `supply-chain.yml` runs `scripts/release/verify-release-version.sh` before any
-write or OIDC job. It keeps native and `vmaf-mcp` hashes in distinct SLSA jobs
-with distinct provenance asset names. Native SBOMs contain and hash every
+write or OIDC job. It keeps native and `vmaf-mcp` hashes in distinct provenance
+jobs with distinct bundle names (`vmafx-build-provenance.sigstore.json`,
+`vmaf-mcp-provenance.sigstore.json`). Subjects = build job `hashes` output,
+diffed against downloaded bytes; each job runs consumer
+`gh attestation verify --bundle` recipe on every subject before upload.
+Never restore `slsa-framework/slsa-github-generator`: its reusable workflow
+calls own sub-actions by tag, org `sha_pinning_required` rejects it
+(v1.0.0-rc.2 `detect-env` failure). Native SBOMs contain and hash every
 staged artifact; Python SBOMs inventory installed `vmaf-mcp` dependency
 graph plus wheel and sdist. Workflow fails if either inventory becomes
 empty or mislabeled. Anchore's implicit artifact/release uploads stay disabled:
@@ -83,14 +91,14 @@ Native payload is Linux ELF, materializes complete Meson
 `libvmaf.so` / SONAME / real-name chain as regular files. Before any native
 write or OIDC job, artifact round-trip verifier must prove
 downloaded `vmaf` resolves its declared SONAME from that directory, reports
-release version under `env -i`. Hashing, SBOM generation, signing, SLSA
+release version under `env -i`. Hashing, SBOM generation, signing, build
 provenance, and strict attachment cover every materialized chain name.
 
 Manual supply-chain recovery must use published tag as both workflow ref
 and input (`gh workflow run supply-chain.yml --ref "$tag" -f tag="$tag"`).
 Validation job rejects branch-ref dispatches, missing/draft/prerelease releases,
 or event SHA different from checked-out tag. This binding is required so
-SLSA provenance describes source that produced artifacts. Container
+build provenance describes source that produced artifacts. Container
 signature verification requires exact `@refs/tags/${PUBLISH_TAG}` workflow
 identity; wildcard ref would accept signatures minted by branch workflows.
 
@@ -291,22 +299,21 @@ trailing `# vN.M.K` comment. Floating-tag references (`@v4`,
 `@release/v1`) trip OSSF Scorecard `Pinned-Dependencies` check,
 rejected by sync gate below.
 
-**Single permitted exception**:
-`slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml`
-keeps its `vX.Y.Z` tag form because GitHub Actions consumers cannot
-SHA-pin reusable-workflow refs in every code path; carve-out is
-documented inline in
-[`workflows/supply-chain.yml`](workflows/supply-chain.yml), and
-mirrored in
-[`docs/rebase-notes.md` entry 0231](../docs/rebase-notes.md).
+**No exception** (ADR-1356). Org + repo set `sha_pinning_required`;
+GitHub enforces it on actions nested inside called reusable workflows
+too. Third-party reusable workflow that calls own actions by tag cannot
+run here, whatever caller pins. Former carve-out
+`slsa-framework/slsa-github-generator` failed so on v1.0.0-rc.2; replaced
+by SHA-pinned `actions/attest-build-provenance`. Release workflows:
+`scripts/release/tests/test-publication-environment-binding.sh` rejects
+unpinned `uses:`.
 
 **Sync gate** (run before merging any `/sync-upstream` that touches
 `.github/workflows/`):
 
 ```bash
 grep -hnE '^\s*(- )?uses:\s+[^@]+@[^ #]+\s*$' .github/workflows/*.yml \
-  | grep -vE '@[a-f0-9]{40}' \
-  | grep -v 'slsa-framework/slsa-github-generator/.github/workflows/'
+  | grep -vE '@[a-f0-9]{40}'
 # Empty output = clean. Anything that prints needs to be SHA-pinned
 # before the sync PR can merge.
 ```
