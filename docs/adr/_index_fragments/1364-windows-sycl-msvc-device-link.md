@@ -1,0 +1,1 @@
+| [ADR-1364](1364-windows-sycl-msvc-device-link.md) | Register the SYCL device images of a Windows MSVC build through one `icpx -fsycl -fsycl-link` step whose object carries an external anchor symbol that `sycl/common.cpp` `/include`s, because `link.exe` never runs the driver's image wrapper. | Accepted | sycl, build, meson, windows, msvc, gpu, intel, ci, fork-local |

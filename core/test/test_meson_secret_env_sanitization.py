@@ -109,6 +109,7 @@ EXPECTED_RUNNER_PATHS = {
         "scripts/ci/run_meson_test.py",
         "scripts/ci/run_meson_test.py",
         r"scripts\ci\run_meson_test.py",
+        r"scripts\ci\run_meson_test.py",
     ),
     Path(".github/workflows/nightly.yml"): ("scripts/ci/run_meson_test.py",),
     Path(".github/workflows/sanitizers.yml"): ("../scripts/ci/run_meson_test.py",) * 2,

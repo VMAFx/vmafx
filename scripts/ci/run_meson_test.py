@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 from collections.abc import MutableMapping, Sequence
 
@@ -58,6 +60,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     sanitize_process_environment(os.environ)
+    if os.name == "nt":
+        return _run_and_wait(command)
     try:
         # ADR-1333 requires same-process exec so no environment mapping is copied.
         os.execvp(command[0], command)  # noqa: S606
@@ -65,6 +69,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("run_meson_test.py: Meson executable not found", file=sys.stderr)
         return 127
     return 126
+
+
+def _run_and_wait(command: list[str]) -> int:
+    """Run Meson as a child on Windows and return its exit status.
+
+    Windows has no exec: the CRT's ``_execvp`` starts the new program and
+    ends this process at once with status 0, so every caller saw success while
+    ``meson test`` was still running, and CI moved on after the first tests
+    (ADR-1364). The child inherits this process's already-sanitized
+    environment block; no mapping is passed or copied.
+    """
+    executable = shutil.which(command[0])
+    if executable is None:
+        print("run_meson_test.py: Meson executable not found", file=sys.stderr)
+        return 127
+    # No timeout here: `meson test` enforces its own per-test timeouts.
+    completed = subprocess.run([executable, *command[1:]], check=False)  # noqa: S603
+    return completed.returncode
 
 
 if __name__ == "__main__":

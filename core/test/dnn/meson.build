@@ -152,6 +152,15 @@ if dnn_have_ort
 endif
 
 bash_prog = find_program('bash', required : false)
+# On Windows, System32\bash.exe (and its WindowsApps alias) is the WSL
+# launcher: it runs the script inside Linux, where the Windows paths these
+# tests pass do not exist. Use Git for Windows' bash there, or skip the tests
+# when it is absent (ADR-1364).
+if bash_prog.found() and host_machine.system() == 'windows' \
+        and (bash_prog.full_path().to_lower().contains('system32')
+             or bash_prog.full_path().to_lower().contains('windowsapps'))
+    bash_prog = find_program('C:/Program Files/Git/bin/bash.exe', required : false)
+endif
 if bash_prog.found()
     # test_cli shells out to the built `vmaf` CLI binary, which only
     # exists when -Denable_tools=true. Skip the CLI-level smoke test

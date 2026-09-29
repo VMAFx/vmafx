@@ -160,7 +160,7 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "adm_scale3",
     ),
     "ssimulacra2": ("ssimulacra2",),
-    "cambi": ("Cambi_feature_cambi_score",),
+    "cambi": ("cambi",),
 }
 
 # ---------------------------------------------------------------------------

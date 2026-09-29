@@ -35,6 +35,15 @@ test('test_meson_secret_env_sanitization',
     timeout : 120,
 )
 
+# ADR-1364: the runner must return meson test's status, and only once it has
+# finished. Windows has no exec, so os.execvp there ended the runner with 0.
+test('test_run_meson_test_exit_status',
+    import('python').find_installation(),
+    args : files('test_run_meson_test_exit_status.py'),
+    suite : ['fast'],
+    timeout : 90,
+)
+
 # Execute Windows discovery with stubbed tools on POSIX build hosts. This
 # exercises Meson control flow without requiring a Windows SDK or CUDA device.
 if build_machine.system() != 'windows'
@@ -61,6 +70,23 @@ test('test_strict_fp_compiler_args',
 test('test_sycl_aot_image_check',
     import('python').find_installation(),
     args : files('test_sycl_aot_image_check.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1364: the cross-backend gates read vmaf's JSON by the alias.c name.
+test('test_parity_gate_metric_names',
+    import('python').find_installation(),
+    args : files('test_parity_gate_metric_names.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1364: the Windows SYCL device-link anchor patcher, driven by synthetic
+# COFF objects so it runs on every host, Windows or not.
+test('test_sycl_coff_anchor',
+    import('python').find_installation(),
+    args : files('test_sycl_coff_anchor.py'),
     suite : ['fast'],
     timeout : 30,
 )
@@ -3520,6 +3546,18 @@ test('test_sycl', test_sycl,
 test('test_sycl_pic_preallocation', test_sycl_pic_preallocation,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
+
+# ADR-1364: the device images must be registered in a program that links
+# libvmaf. Needs no GPU, so it runs on the device-less Windows MSVC+SYCL lane.
+test_sycl_kernel_registration = executable('test_sycl_kernel_registration',
+    ['test.c', 'test_sycl_kernel_registration.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_kernel_registration', test_sycl_kernel_registration,
+    suite : ['fast', 'sycl'])
 
 # BUG-040: this compile combination used CUDA's host-picture cleanup early
 # return, bypassing the SYCL upload wait on the serial path. The worker path

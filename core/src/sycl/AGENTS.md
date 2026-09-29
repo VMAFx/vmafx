@@ -98,7 +98,8 @@ sycl/
   Default relocatable device code -> device codegen + ocloc run at LINK,
   link sees only `-fsycl` -> `spir64_gen` images silently dropped (bug
   ADR-0568 shipped with). Keep flags on compile line; keep
-  `sycl_dependency.link_args` = `-fsycl` only (link-time targets = 167 s+
+  `sycl_dependency.link_args` = `-fsycl` only, MSVC excepted (next bullet)
+  (link-time targets = 167 s+
   per link x 113 test links of `libvmaf.a`, one ocloc crash aborts whole
   link). Link-only device flags (e.g. `-foffload-fp32-prec-div`) now belong
   on compile line. `find_program('ocloc')` error = intended fail-closed;
@@ -108,6 +109,26 @@ sycl/
   (`integer_psnr_hvs_sycl` minus Xe2, IGC 2.41.5 crash). Drop entry once
   reworked kernel from `fix/sycl-b580-psnr-hvs-adm-tiny` lands (compiles for
   Xe2 under ocloc 26.35). **On rebase**: keep all three pieces together.
+
+- **MSVC builds register images through one explicit device link
+  (ADR-1364).** Meson links MSVC-syntax toolchains (`icx-cl`) with
+  `link.exe` directly; it drops `-fsycl` (LNK4044) and never wraps device
+  code -> empty kernel registry, every submit `No kernel named ... was
+  found`. Under `sycl_msvc_device_link` (`core/src/meson.build`): TUs compile
+  RDC (`-fsycl -fsycl-targets=spir64_gen,spir64`, no `-fno-sycl-rdc`); one
+  `icpx -fsycl -fsycl-link` (AOT `-device` list, `--offload-compress`,
+  `-fp-model=precise`, parallel link jobs) over `common_sycl_objects +
+  sycl_feature_objects` -> `sycl_device_link_raw.obj`;
+  `coff_add_anchor.py` adds external `vmaf_sycl_device_images` ->
+  `sycl_device_link.obj`, appended to `sycl_feature_objects`;
+  `common.cpp` `#pragma comment(linker, "/include:vmaf_sycl_device_images")`
+  under `VMAF_SYCL_MSVC_DEVICE_LINK` pulls it out of `vmaf.lib`;
+  `sycl_link_args` = `/IGNORE:4078` there, `-fsycl` everywhere else.
+  `-fsycl-link` crashes on `-fno-sycl-rdc` objects (oneAPI 2025.1), so do
+  not re-add it on this path. `sycl_icpx_aot_igc_skip` non-empty = configure
+  error here. Guards: `test_sycl_kernel_registration` (no GPU; runs on the
+  `Windows MSVC+SYCL` leg), `test_sycl_coff_anchor`. **On rebase**: keep all
+  pieces together; Linux path stays ADR-1360.
 
 - **Feature-name aliasing when querying scores from non-default SYCL
   extractors.** Any `VMAF_OPT_FLAG_FEATURE_PARAM` option set to

@@ -1702,7 +1702,40 @@ if is_sycl_enabled
         endif
     endif
 
+    # ADR-1364: with an MSVC-syntax toolchain (icx-cl on Windows) Meson links
+    # every target with link.exe itself, never through the icpx driver. link.exe
+    # ignores -fsycl (LNK4044), so nothing wraps or registers the device images
+    # and the first kernel submit fails with "No kernel named ... was found".
+    # There the TUs are compiled as relocatable device code and one explicit
+    # device link (`-fsycl -fsycl-link`, below the feature TUs) turns all of
+    # them into a single host object that registers every image. The AOT
+    # device list and --offload-compress move to that step. `-fsycl-link`
+    # cannot take -fno-sycl-rdc objects (clang-offload-wrapper crashes in
+    # oneAPI 2025.1). Other toolchains keep the ADR-1360 per-TU codegen.
+    sycl_msvc_device_link = not is_sycl_acpp and cc.get_argument_syntax() == 'msvc'
+    sycl_device_link_args = []
+    if sycl_msvc_device_link
+        # One device link builds every TU's images for every target, so let
+        # it run ocloc in parallel: 355 s serial, 127 s with 8 jobs, for 18
+        # targets on an i9-12900K.
+        sycl_device_link_args = ['-fsycl', '-fsycl-link', '-fsycl-max-parallel-link-jobs=8']
+        if sycl_icpx_aot_list.length() > 0
+            sycl_toolchain_args = ['-fsycl', '-fsycl-targets=spir64_gen,spir64']
+            sycl_device_link_args += [
+                '--offload-compress',
+                '-fsycl-targets=spir64_gen,spir64',
+                '-Xsycl-target-backend=spir64_gen',
+                '-device ' + ','.join(sycl_icpx_aot_list),
+            ]
+        endif
+        message('SYCL device images: explicit device link (MSVC link.exe), ADR-1364')
+    endif
+
     sycl_common_args = vmaf_cflags_common + ['-c'] + sycl_toolchain_args + ['-std=c++20'] + sycl_pic_arg
+    if sycl_msvc_device_link
+        # common.cpp pulls the device-link object out of vmaf.lib (/include).
+        sycl_common_args += ['-DVMAF_SYCL_MSVC_DEVICE_LINK=1']
+    endif
 
     sycl_sources = [
         sycl_dir + 'common.cpp',
@@ -1809,9 +1842,15 @@ if is_sycl_enabled
     # test executables — so no per-target duplication is needed.
     # Root-cause investigation: docs/research/sycl-fsycl-link-flag.md
     # (companion to ADR-NNNN-sycl-fsycl-link-propagation).
+    # link.exe does not know -fsycl (LNK4044 on every link); the MSVC build
+    # registers its images through the explicit device link instead (ADR-1364).
+    # Its image sections and the fat objects' bundle sections share the
+    # truncated name __CLANG_ with different attributes; the icpx driver's own
+    # link line passes /IGNORE:4078 for exactly that warning.
+    sycl_link_args = sycl_msvc_device_link ? ['/IGNORE:4078'] : ['-fsycl']
     sycl_dependency += declare_dependency(
         dependencies : [sycl_lib, libze_dep] + sycl_extra_runtime_deps + sycl_surface_deps,
-        link_args : ['-fsycl'],
+        link_args : sycl_link_args,
     )
 endif
 
@@ -2109,6 +2148,15 @@ if is_sycl_enabled
     sycl_speed_sources = ['speed_chroma_sycl', 'speed_temporal_sycl', 'speed_sycl_pipeline',
                           'speed_sycl_host']
 
+    # The one explicit device link (ADR-1364) generates every TU's images with
+    # a single target list, so it cannot leave targets out per TU.
+    if sycl_msvc_device_link and sycl_icpx_aot_list.length() > 0 \
+            and sycl_icpx_aot_igc_skip.keys().length() > 0
+        error('sycl_icpx_aot_igc_skip is not supported with the MSVC device link ' +
+              '(ADR-1364): configure -Dsycl_icpx_aot_targets without ' +
+              'the targets IGC cannot compile, or teach the device link to split.')
+    endif
+
     foreach src : sycl_feature_sources
         name = fs.stem(src)
         tu_toolchain_args = sycl_toolchain_args
@@ -2139,6 +2187,25 @@ if is_sycl_enabled
                       + ['@INPUT@', '-o', '@OUTPUT@'],
         )
     endforeach
+
+    # ADR-1364: wrap and register every device image in one host object, then
+    # give it the external symbol sycl/common.cpp /include-s. The object joins
+    # the SYCL objects of libvmaf, so vmaf.lib carries it for every consumer.
+    # -fp-model=precise is repeated because the device link builds the images.
+    if sycl_msvc_device_link
+        sycl_device_link_raw = custom_target('sycl_device_link',
+            input : common_sycl_objects + sycl_feature_objects,
+            output : 'sycl_device_link_raw.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+        sycl_feature_objects += custom_target('sycl_device_link_anchor',
+            input : sycl_device_link_raw,
+            output : 'sycl_device_link.obj',
+            command : [import('python').find_installation(), files('sycl/coff_add_anchor.py'),
+                       '--symbol', 'vmaf_sycl_device_images', '@INPUT@', '@OUTPUT@'],
+        )
+    endif
 endif
 
 # ADR-0891 (round-2 SIMD bit-exact fix, follow-up to #339):

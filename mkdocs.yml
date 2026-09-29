@@ -237,6 +237,7 @@ nav:
       - NVTX profiling: backends/nvtx/profiling.md
       - SYCL / oneAPI: backends/sycl/overview.md
       - SYCL bundling: backends/sycl/bundling.md
+      - SYCL on Windows: backends/sycl/windows.md
       - HIP (AMD ROCm): backends/hip/overview.md
       - Metal (Apple Silicon): backends/metal/index.md
       - Context API contract: backends/context-api-contract.md
@@ -1477,6 +1478,7 @@ nav:
         - "ADR-1362: sycl-integer-adm-aim-device-pass": adr/1362-sycl-integer-adm-aim-device-pass.md
         - "ADR-1365: sycl-twin-cpu-option-parity": adr/1365-sycl-twin-cpu-option-parity.md
         - "ADR-1371: sycl-motion-diff-first-pipeline": adr/1371-sycl-motion-diff-first-pipeline.md
+        - "ADR-1364: windows-sycl-msvc-device-link": adr/1364-windows-sycl-msvc-device-link.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

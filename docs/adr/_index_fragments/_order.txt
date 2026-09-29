@@ -1072,3 +1072,4 @@
 1365-sycl-twin-cpu-option-parity
 1371-sycl-motion-diff-first-pipeline
 1362-sycl-integer-adm-aim-device-pass
+1364-windows-sycl-msvc-device-link

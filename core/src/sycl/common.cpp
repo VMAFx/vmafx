@@ -150,6 +150,29 @@ struct VmafSyclState {
 };
 
 /* ------------------------------------------------------------------ */
+/* Device-image registration                                           */
+/* ------------------------------------------------------------------ */
+
+#if defined(_WIN32) && defined(VMAF_SYCL_MSVC_DEVICE_LINK)
+/* ADR-1364: link.exe never runs the SYCL device-image wrapper, so the build
+ * wraps every image of libvmaf into one object (sycl_device_link.obj) whose
+ * only external symbol is this anchor. Asking for it here pulls that object
+ * out of vmaf.lib into every program that uses the SYCL backend. */
+#pragma comment(linker, "/include:vmaf_sycl_device_images")
+#endif
+
+extern "C" int vmaf_sycl_registered_kernel_count(void)
+{
+    try {
+        const std::vector<sycl::kernel_id> ids = sycl::get_kernel_ids();
+        return static_cast<int>(ids.size());
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL: kernel registry query failed: %s\n", e.what());
+        return -EIO;
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* Device enumeration                                                  */
 /* ------------------------------------------------------------------ */
 

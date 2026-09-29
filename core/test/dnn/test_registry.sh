@@ -29,13 +29,15 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 77
 fi
 
-python3 - <<PY
+# The path travels as an argument: interpolated into the source, a Windows
+# path's backslashes became Python escape sequences (ADR-1364).
+python3 - "$TINY_DIR" <<'PY'
 import hashlib
 import json
 import sys
 from pathlib import Path
 
-tiny = Path("$TINY_DIR")
+tiny = Path(sys.argv[1])
 reg  = json.loads((tiny / "registry.json").read_text())
 
 errors = []

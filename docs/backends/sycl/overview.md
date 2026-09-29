@@ -16,7 +16,8 @@ ninja -C build
 
 Requires Intel oneAPI DPC++ (`icpx`). A bundled self-contained deployment —
 useful for shipping the binary to hosts that don't have oneAPI installed —
-is described in [bundling.md](bundling.md).
+is described in [bundling.md](bundling.md). For a native Windows build with
+MSVC and oneAPI, see [SYCL on Windows](windows.md).
 
 Meson options:
 
@@ -311,6 +312,13 @@ clang-offload-bundler --list --type=o --input=build/src/libvmaf.so
 
 Before [ADR-1360](../../adr/1360-sycl-aot-compile-time-device-codegen.md) the
 link silently dropped the native images and every build was SPIR-V only.
+
+Windows MSVC builds work differently, because Meson links them with
+`link.exe`, which cannot handle the device code: the TUs keep relocatable
+device code, and one `icpx -fsycl -fsycl-link` step generates the native
+images for all of them and the object that registers them
+([ADR-1364](../../adr/1364-windows-sycl-msvc-device-link.md),
+[SYCL on Windows](windows.md)). The image check above does not run there.
 
 Measured with the default 19 targets on a 22-thread host at `-j6`: a clean
 build takes 162 s instead of 82 s for SPIR-V only, and `libvmaf.so` is 7.7 MB

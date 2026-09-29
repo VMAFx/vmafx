@@ -7,7 +7,8 @@ the upgrade procedure when a newer Intel release ships.
 
 CI installs oneAPI from Intel's apt repository on Linux and from Intel's
 offline installer on Windows; this page covers the **local developer machine**
-path.
+path on Linux. For a native Windows build, see
+[SYCL on Windows](../backends/sycl/windows.md).
 
 ## Pinned version
 

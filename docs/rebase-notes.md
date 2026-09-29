@@ -54898,3 +54898,39 @@ No public C API, CLI syntax or FFmpeg patch impact. CPU scores are unchanged;
 1.3e-5 on the Netflix pair), and its `motion_add_uv` scores move the same way
 and match the updated fixed-point oracle exactly; the staging change alone is
 bit-identical. `motion_v2_sycl` scores are unchanged.
+## ADR-1364 — Windows MSVC SYCL device link, Windows test runner exit status (2026-09-29)
+
+`fix/windows-sycl-native-run`, Research-2125, ADR-1364.
+
+- `core/src/meson.build`: under `sycl_msvc_device_link` (MSVC-syntax
+  toolchain, icpx) the SYCL TUs compile as relocatable device code, and
+  `sycl_device_link` (`icpx -fsycl -fsycl-link`, AOT device list,
+  `--offload-compress`, `-fp-model=precise`, `-fsycl-max-parallel-link-jobs=8`)
+  plus `sycl_device_link_anchor` (`core/src/sycl/coff_add_anchor.py`) produce
+  `sycl_device_link.obj`, appended to `sycl_feature_objects`.
+  `sycl_link_args` is `/IGNORE:4078` there and `-fsycl` everywhere else. A
+  sync that touches the SYCL toolchain arguments, `sycl_dependency` or the
+  feature object list must keep the MSVC branch whole; the Linux ADR-1360
+  per-TU codegen is unchanged.
+- `core/src/sycl/common.cpp`: the `/include:vmaf_sycl_device_images` pragma
+  and `vmaf_sycl_registered_kernel_count()` belong together with the anchor
+  symbol name in `core/src/meson.build`; `test_sycl_kernel_registration` and
+  `scripts/ci/tests/test_sycl_aot_command.py` check all three.
+- `scripts/ci/run_meson_test.py`: POSIX keeps the ADR-1333 same-process
+  `exec`; Windows runs Meson as a child and returns its status. Do not
+  collapse the two paths: `os.execvp` on Windows ends the runner with 0.
+- `.github/workflows/libvmaf-build-matrix.yml`: the `Windows MSVC+SYCL` leg
+  gained a device-free registration step, so the ADR-1333 runner inventory in
+  `core/test/test_meson_secret_env_sanitization.py` lists five runner calls
+  for that workflow.
+- `scripts/ci/cross_backend_parity_gate.py`, `scripts/ci/cross_backend_vif_diff.py`:
+  `FEATURE_METRICS` names the keys `vmaf --json` writes (`cambi`, not
+  `Cambi_feature_cambi_score`); `core/test/test_parity_gate_metric_names.py`
+  checks every entry against `core/src/feature/alias.c`.
+- Windows test harness: `core/tools/test/test_vmaf_per_shot_input.c` installs a
+  no-op CRT invalid-parameter handler around its injected read error,
+  `core/test/test_device_target_header_dependencies.py` drives Ninja through a
+  Python stand-in compiler, `core/tools/test/test_vmaf_per_shot.sh` skips its
+  `/dev/zero` and FIFO cases for native Windows binaries, and
+  `core/test/dnn/meson.build` refuses the WSL `bash.exe` launcher. Keep them
+  platform-neutral when rebasing those tests.

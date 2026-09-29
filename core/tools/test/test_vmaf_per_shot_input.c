@@ -8,6 +8,7 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include <stdlib.h>
 #define CLOSE_FD _close
 #define FILE_FD _fileno
 #else
@@ -83,6 +84,22 @@ static char *test_incomplete_frame_variants_fail(void)
     return NULL;
 }
 
+#ifdef _WIN32
+/* The Windows CRT treats a read from a closed descriptor as an invalid
+ * parameter, and its default handler ends the process with 0xC0000409 before
+ * fread can report the error. With this handler the CRT returns -1 / EBADF
+ * instead, which is the read error the test injects (ADR-1364). */
+static void ignore_invalid_parameter(const wchar_t *expression, const wchar_t *function,
+                                     const wchar_t *file, unsigned line, uintptr_t reserved)
+{
+    (void)expression;
+    (void)function;
+    (void)file;
+    (void)line;
+    (void)reserved;
+}
+#endif
+
 static char *test_read_error_after_complete_frame_fails(void)
 {
     FILE *fin = make_raw_stream(TEST_LUMA_BYTES, TEST_CHROMA_BYTES);
@@ -90,12 +107,21 @@ static char *test_read_error_after_complete_frame_fails(void)
     uint8_t luma[TEST_LUMA_BYTES];
     int rc = vmaf_per_shot_read_luma(fin, luma, sizeof(luma), TEST_CHROMA_BYTES);
     mu_assert("first frame was not complete", rc == VMAF_PER_SHOT_READ_FRAME);
-    mu_assert("failed to close backing descriptor", CLOSE_FD(FILE_FD(fin)) == 0);
+#ifdef _WIN32
+    const _invalid_parameter_handler previous =
+        _set_invalid_parameter_handler(ignore_invalid_parameter);
+#endif
+    const int close_rc = CLOSE_FD(FILE_FD(fin));
 
     rc = vmaf_per_shot_read_luma(fin, luma, sizeof(luma), TEST_CHROMA_BYTES);
-    mu_assert("stdio read error was mistaken for EOF", rc == VMAF_PER_SHOT_READ_ERROR);
-    mu_assert("stdio did not expose the injected read error", ferror(fin) != 0);
+    const int stream_error = ferror(fin);
     (void)fclose(fin);
+#ifdef _WIN32
+    (void)_set_invalid_parameter_handler(previous);
+#endif
+    mu_assert("failed to close backing descriptor", close_rc == 0);
+    mu_assert("stdio read error was mistaken for EOF", rc == VMAF_PER_SHOT_READ_ERROR);
+    mu_assert("stdio did not expose the injected read error", stream_error != 0);
     return NULL;
 }
 

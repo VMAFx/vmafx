@@ -43,6 +43,18 @@ extern "C" {
  *   - Profiling accumulators
  */
 
+/**
+ * Count the SYCL kernels whose device images this program registered.
+ *
+ * Needs no device: it asks the SYCL runtime for the kernel IDs every linked
+ * device image declared. Zero means the images were never registered, which
+ * is how a link that skipped the device-image wrapper fails (ADR-1364); the
+ * first kernel submit would then fail with "No kernel named ... was found".
+ *
+ * @return Number of registered kernels, or -EIO if the runtime threw.
+ */
+int vmaf_sycl_registered_kernel_count(void);
+
 /* ---- Device-memory helpers (USM wrappers) ---- */
 
 /**

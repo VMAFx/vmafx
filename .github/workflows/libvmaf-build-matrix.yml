@@ -1052,9 +1052,20 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           ninja -v -C core\build install
 
-      # No test step — windows-2025 has no GPU. The whole point of
-      # this job is exercising the MSVC + CUDA / MSVC + oneAPI link
-      # paths to catch portability regressions at compile time.
+      # windows-2025 has no GPU, so no kernel runs here. Whether the linked
+      # programs registered their SYCL device images needs none:
+      # test_sycl_kernel_registration asks the SYCL runtime for its kernel
+      # IDs. Until the MSVC device link (ADR-1364) that registry was empty,
+      # and every SYCL kernel submit failed on real Arc / UHD hardware while
+      # this build-only leg stayed green. ze_loader.dll comes from the
+      # Level Zero prefix built above.
+      - name: Check SYCL device-image registration (SYCL leg only)
+        if: matrix.backend == 'sycl'
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          set "PATH=%CD%\level-zero-prefix\bin;%PATH%"
+          python scripts\ci\run_meson_test.py -- -C core\build --print-errorlogs test_sycl_kernel_registration test_sycl_coff_anchor
 
   # ===== Windows on ARM64 (native MSVC ARM64, CPU + NEON) =====
   # Builds libvmaf natively on a Windows 11 Arm64 runner with the

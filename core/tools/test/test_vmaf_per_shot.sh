@@ -261,47 +261,58 @@ for ALIAS_FLAG in "-F" "--frame_cnt" "--max-frames"; do
   fi
 done
 
-# 12. Bounded read on /dev/zero must terminate promptly and produce requested frames.
-DEV_ZERO_CSV="${WORK}/plan_dev_zero.csv"
-run_with_timeout "${BIN}" \
-  --reference /dev/zero \
-  --width 16 --height 16 \
-  --pixel_format 420 --bitdepth 8 \
-  --output "${DEV_ZERO_CSV}" \
-  --frames 6
+# 12-13 read a character device and a FIFO. A native Windows build of the tool
+# opens paths through the Windows CRT, where neither exists (MSYS hands
+# /dev/zero to it as \Device\Null), so those two cases are POSIX-only.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) POSIX_DEVICES=0 ;;
+  *) POSIX_DEVICES=1 ;;
+esac
+if [ "${POSIX_DEVICES}" -eq 1 ]; then
+  # 12. Bounded read on /dev/zero must terminate promptly and produce requested frames.
+  DEV_ZERO_CSV="${WORK}/plan_dev_zero.csv"
+  run_with_timeout "${BIN}" \
+    --reference /dev/zero \
+    --width 16 --height 16 \
+    --pixel_format 420 --bitdepth 8 \
+    --output "${DEV_ZERO_CSV}" \
+    --frames 6
 
-DEV_ZERO_FRAMES=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${DEV_ZERO_CSV}")
-if [ "${DEV_ZERO_FRAMES}" -ne 6 ]; then
-  echo "test_vmaf_per_shot: expected 6 frames from /dev/zero, got ${DEV_ZERO_FRAMES}" >&2
-  exit 1
-fi
+  DEV_ZERO_FRAMES=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${DEV_ZERO_CSV}")
+  if [ "${DEV_ZERO_FRAMES}" -ne 6 ]; then
+    echo "test_vmaf_per_shot: expected 6 frames from /dev/zero, got ${DEV_ZERO_FRAMES}" >&2
+    exit 1
+  fi
 
-# 13. Bounded read on endless FIFO must terminate cleanly and promptly (cannot hang).
-FIFO_TEST="${WORK}/endless_fifo.yuv"
-rm -f "${FIFO_TEST}"
-mkfifo "${FIFO_TEST}"
-yes 2>/dev/null | tr -d '\n' >"${FIFO_TEST}" 2>/dev/null &
-FIFO_WRITER_PID=$!
-FIFO_CSV="${WORK}/plan_fifo.csv"
-if ! run_with_timeout "${BIN}" \
-  --reference "${FIFO_TEST}" \
-  --width 16 --height 16 \
-  --pixel_format 420 --bitdepth 8 \
-  --output "${FIFO_CSV}" \
-  --frames 5; then
-  echo "test_vmaf_per_shot: FIFO test timed out or failed" >&2
-  kill -9 "${FIFO_WRITER_PID}" 2>/dev/null || true
+  # 13. Bounded read on endless FIFO must terminate cleanly and promptly (cannot hang).
+  FIFO_TEST="${WORK}/endless_fifo.yuv"
   rm -f "${FIFO_TEST}"
-  exit 1
-fi
-kill -9 "${FIFO_WRITER_PID}" 2>/dev/null || true
-wait "${FIFO_WRITER_PID}" 2>/dev/null || true
-rm -f "${FIFO_TEST}"
+  mkfifo "${FIFO_TEST}"
+  yes 2>/dev/null | tr -d '\n' >"${FIFO_TEST}" 2>/dev/null &
+  FIFO_WRITER_PID=$!
+  FIFO_CSV="${WORK}/plan_fifo.csv"
+  if ! run_with_timeout "${BIN}" \
+    --reference "${FIFO_TEST}" \
+    --width 16 --height 16 \
+    --pixel_format 420 --bitdepth 8 \
+    --output "${FIFO_CSV}" \
+    --frames 5; then
+    echo "test_vmaf_per_shot: FIFO test timed out or failed" >&2
+    kill -9 "${FIFO_WRITER_PID}" 2>/dev/null || true
+    rm -f "${FIFO_TEST}"
+    exit 1
+  fi
+  kill -9 "${FIFO_WRITER_PID}" 2>/dev/null || true
+  wait "${FIFO_WRITER_PID}" 2>/dev/null || true
+  rm -f "${FIFO_TEST}"
 
-FIFO_FRAMES=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${FIFO_CSV}")
-if [ "${FIFO_FRAMES}" -ne 5 ]; then
-  echo "test_vmaf_per_shot: expected 5 frames from endless FIFO, got ${FIFO_FRAMES}" >&2
-  exit 1
+  FIFO_FRAMES=$(awk -F, 'NR>1 { sum += $4 } END { print sum }' "${FIFO_CSV}")
+  if [ "${FIFO_FRAMES}" -ne 5 ]; then
+    echo "test_vmaf_per_shot: expected 5 frames from endless FIFO, got ${FIFO_FRAMES}" >&2
+    exit 1
+  fi
+else
+  echo "test_vmaf_per_shot: skipping the /dev/zero and FIFO cases (native Windows binary)" >&2
 fi
 
 # 14. Invalid --frames arguments fail.

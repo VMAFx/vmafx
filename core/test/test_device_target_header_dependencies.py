@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -35,6 +36,26 @@ def run_ninja(ninja_exe: str, args: list[str], cwd: str | Path) -> subprocess.Co
         check=True,
         timeout=10,
     )
+
+
+def fake_compiler(tmppath: Path) -> str:
+    """Return a Ninja command prefix for a stand-in compiler that runs on every host.
+
+    Ninja hands a rule's command to /bin/sh on POSIX but straight to
+    CreateProcess on Windows, where `echo ... > f && touch $out` is no shell
+    pipeline at all (ADR-1364). The stand-in touches its first argument and,
+    given a depfile path and a header, writes a one-rule depfile for it.
+    """
+    tool = tmppath / "fake_compiler.py"
+    tool.write_text(
+        "import pathlib, sys\n"
+        "out, *dep = sys.argv[1:]\n"
+        "if dep:\n"
+        "    pathlib.Path(dep[0]).write_text(f'{out}: {dep[1]}\\n', encoding='utf-8')\n"
+        "pathlib.Path(out).touch()\n",
+        encoding="utf-8",
+    )
+    return f'"{sys.executable}" {tool.name}'
 
 
 def refresh_ninja_manifest(ninja_exe: str) -> None:
@@ -108,7 +129,7 @@ class DeviceTargetHeaderDependencyContractTest(unittest.TestCase):
             # Defective rule: only input kernel.cu is declared; no depfile, no depend_files.
             ninja_content = (
                 "rule compile\n"
-                "  command = touch $out\n"
+                f"  command = {fake_compiler(tmppath)} $out\n"
                 f"build {output_file.name}: compile {source_file.name}\n"
             )
             ninja_file.write_text(ninja_content, encoding="utf-8")
@@ -144,7 +165,7 @@ class DeviceTargetHeaderDependencyContractTest(unittest.TestCase):
             # Fixed rule: header is listed as an order-independent dependency (| header)
             ninja_content = (
                 "rule compile\n"
-                "  command = touch $out\n"
+                f"  command = {fake_compiler(tmppath)} $out\n"
                 f"build {output_file.name}: compile {source_file.name} | {header_file.name}\n"
             )
             ninja_file.write_text(ninja_content, encoding="utf-8")
@@ -183,7 +204,7 @@ class DeviceTargetHeaderDependencyContractTest(unittest.TestCase):
             ninja_content = (
                 "rule compile_dep\n"
                 f"  depfile = {dep_file.name}\n"
-                f'  command = echo "{output_file.name}: {header_file.name}" > {dep_file.name} && touch $out\n'
+                f"  command = {fake_compiler(tmppath)} $out {dep_file.name} {header_file.name}\n"
                 f"build {output_file.name}: compile_dep {source_file.name}\n"
             )
             ninja_file.write_text(ninja_content, encoding="utf-8")

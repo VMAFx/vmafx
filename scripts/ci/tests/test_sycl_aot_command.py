@@ -75,9 +75,31 @@ class MesonCommandContractTest(unittest.TestCase):
         )
         if link is None:
             self.fail("missing sycl_dependency declaration")
-        self.assertIn("link_args : ['-fsycl'],", link.group("body"))
+        self.assertIn("link_args : sycl_link_args,", link.group("body"))
+        # Every driver-linked build keeps `-fsycl` on the link; only MSVC's
+        # link.exe, which cannot use it, swaps it for the device link (ADR-1364).
+        self.assertIn(
+            "sycl_link_args = sycl_msvc_device_link ? ['/IGNORE:4078'] : ['-fsycl']", source
+        )
         self.assertIn("find_program('ocloc', required : false)", source)
         self.assertIn("files('sycl/check_aot_image.py')", source)
+
+    def test_msvc_build_registers_images_through_one_device_link(self) -> None:
+        # ADR-1364: link.exe never wraps device code, so an MSVC build compiles
+        # relocatable device code, device-links every SYCL object once and
+        # anchors the result so link.exe pulls it out of vmaf.lib.
+        source = MESON_SOURCE.read_text(encoding="utf-8")
+        self.assertIn(
+            "sycl_msvc_device_link = not is_sycl_acpp and cc.get_argument_syntax() == 'msvc'",
+            source,
+        )
+        self.assertIn("'-fsycl', '-fsycl-link'", source)
+        self.assertIn("input : common_sycl_objects + sycl_feature_objects", source)
+        self.assertIn("files('sycl/coff_add_anchor.py')", source)
+        self.assertIn("'--symbol', 'vmaf_sycl_device_images'", source)
+        self.assertIn("-DVMAF_SYCL_MSVC_DEVICE_LINK=1", source)
+        common = (ROOT / "core" / "src" / "sycl" / "common.cpp").read_text(encoding="utf-8")
+        self.assertIn('#pragma comment(linker, "/include:vmaf_sycl_device_images")', common)
 
     def test_tidy_database_strips_target_scoped_aot_argument(self) -> None:
         module = load_generator()

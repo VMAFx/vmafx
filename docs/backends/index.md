@@ -121,6 +121,7 @@ per-backend page below.
 - [NVTX profiling](nvtx/profiling.md) — profiling CUDA kernels with NVIDIA Nsight
 - [SYCL / oneAPI](sycl/overview.md) — Intel GPU backend + build / invocation
 - [SYCL bundling](sycl/bundling.md) — self-contained deployment without oneAPI
+- [SYCL on Windows](sycl/windows.md) — native MSVC + oneAPI build, run and test
   runtime
 - [Vulkan](vulkan/overview.md) — **removed in ADR-0726**; historical
   reference only

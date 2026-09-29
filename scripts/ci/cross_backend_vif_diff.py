@@ -205,7 +205,7 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # are byte-identical to the CPU's, so the host residual emits a
     # bit-identical score — places=4 (canonical floor) per
     # ADR-0205 §Precision contract.
-    "cambi": ("Cambi_feature_cambi_score",),
+    "cambi": ("cambi",),
 }
 
 # Some `--feature` keys here are pseudo-names that map to a real
