@@ -1471,6 +1471,7 @@ nav:
         - "ADR-1356: release-provenance-attest": adr/1356-release-provenance-attest.md
         - "ADR-1357: sycl-cambi-device-resident": adr/1357-sycl-cambi-device-resident.md
         - "ADR-1358: sycl-speed-device-resident-linalg": adr/1358-sycl-speed-device-resident-linalg.md
+        - "ADR-1359: cli-feature-backend-twin": adr/1359-cli-feature-backend-twin.md
         - "ADR-1360: sycl-aot-compile-time-device-codegen": adr/1360-sycl-aot-compile-time-device-codegen.md
         - "ADR-1361: psnr-hvs-area-scaled-parity-tolerance": adr/1361-psnr-hvs-area-scaled-parity-tolerance.md
       - "By tag":
