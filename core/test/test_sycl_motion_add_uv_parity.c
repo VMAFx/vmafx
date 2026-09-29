@@ -16,7 +16,8 @@
  *    non-uniform chroma motion).
  *
  * 2. The SYCL Y-only and Y+U+V scores match a scalar oracle that reproduces
- *    the fixed-point filter coefficients, per-pass rounding, reflect-101
+ *    the fixed-point filter coefficients, the difference taken before the
+ *    blur (prev - cur, as in integer_motion.c), per-pass rounding, reflect-101
  *    border handling, integer SAD accumulation, and per-plane normalization.
  *
  * Note: the CPU `motion` extractor (integer path) does NOT have
@@ -68,7 +69,7 @@
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 2u
 
-/* Fixed-point implementation constants from integer_motion_sycl.cpp. */
+/* Fixed-point implementation constants from integer_motion_pipeline_sycl.cpp. */
 #define FIXED_BLUR_RADIUS 2
 #define FIXED_BLUR_TAPS 5
 #define FIXED_BLUR_SCALE 256.0
@@ -107,7 +108,7 @@ static int fill_yuv_fixture(VmafPicture *pic, unsigned frame_idx)
 }
 
 /* ------------------------------------------------------------------ */
-/* Scalar fixed-point oracle — mirrors integer_motion_sycl.cpp.        */
+/* Scalar fixed-point oracle — mirrors integer_motion_pipeline_sycl.cpp */
 /* ------------------------------------------------------------------ */
 static int oracle_mirror(int idx, unsigned extent)
 {
@@ -128,8 +129,10 @@ static uint8_t oracle_fixture_sample(unsigned plane, unsigned frame_idx, int row
     return (uint8_t)((y * 2u + x + frame_idx * 7u + plane * 31u) & 0xFFu);
 }
 
-static int32_t oracle_blur_pixel(unsigned plane, unsigned frame_idx, unsigned y, unsigned x,
-                                 unsigned width, unsigned height)
+/* Blur of (frame 0 - frame 1) at (y, x): the CPU's motion_score_pipeline_8
+ * differences the frames first and rounds after each pass. */
+static int32_t oracle_blur_diff_pixel(unsigned plane, unsigned y, unsigned x, unsigned width,
+                                      unsigned height)
 {
     int32_t vertical[FIXED_BLUR_TAPS];
     const int32_t vertical_round = 1 << (FIXTURE_BPC - 1u);
@@ -138,8 +141,10 @@ static int32_t oracle_blur_pixel(unsigned plane, unsigned frame_idx, unsigned y,
         for (int hy = 0; hy < FIXED_BLUR_TAPS; hy++) {
             const int row = (int)y + hy - FIXED_BLUR_RADIUS;
             const int col = (int)x + hx - FIXED_BLUR_RADIUS;
-            sum += fixed_blur_filter[hy] *
-                   (int32_t)oracle_fixture_sample(plane, frame_idx, row, col, width, height);
+            const int32_t diff =
+                (int32_t)oracle_fixture_sample(plane, 0u, row, col, width, height) -
+                (int32_t)oracle_fixture_sample(plane, 1u, row, col, width, height);
+            sum += fixed_blur_filter[hy] * diff;
         }
         vertical[hx] = (sum + vertical_round) >> FIXTURE_BPC;
     }
@@ -155,10 +160,8 @@ static int64_t oracle_plane_sad(unsigned plane, unsigned width, unsigned height)
     int64_t sad = 0;
     for (unsigned y = 0; y < height; y++) {
         for (unsigned x = 0; x < width; x++) {
-            const int32_t first = oracle_blur_pixel(plane, 0u, y, x, width, height);
-            const int32_t second = oracle_blur_pixel(plane, 1u, y, x, width, height);
-            const int64_t diff = (int64_t)second - first;
-            sad += (diff < 0) ? -diff : diff;
+            const int64_t blurred = oracle_blur_diff_pixel(plane, y, x, width, height);
+            sad += (blurred < 0) ? -blurred : blurred;
         }
     }
     return sad;

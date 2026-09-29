@@ -3757,6 +3757,21 @@ test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# T-SYCL-MOTION-TINY-FRAME-PARITY-2026-09-29 — motion_sycl and motion_v2_sycl
+# against the scalar CPU motion / motion_v2 with == on 3x3 to 1283x723 frames
+# (the last one replays the combined graph) at 8, 10 and 16 bits, and
+# rejection below 3x3.
+test_sycl_motion_tiny_frames = executable('test_sycl_motion_tiny_frames',
+    ['test.c', 'test_sycl_motion_tiny_frames.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_motion_tiny_frames', test_sycl_motion_tiny_frames,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
 # T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29 — vif_sycl declares its 16-pixel
 # minimum through the ADR-1324 gate: model dispatch falls back to the CPU `vif`
 # below it (bit-identical), a direct request fails init, and 16x16 stays on

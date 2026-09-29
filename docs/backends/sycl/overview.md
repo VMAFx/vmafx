@@ -744,6 +744,50 @@ The CUDA, HIP and Metal twins still lack these options; see
 `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26` in
 [`state.md`](../../state.md).
 
+## `motion_sycl` matches the CPU `motion` exactly (2026-09-29)
+
+`motion_sycl` now gives the same `integer_motion2` and `integer_motion3`
+scores as `--backend cpu`, bit for bit
+([ADR-1371](../../adr/1371-sycl-motion-diff-first-pipeline.md)). It used to
+blur each frame and compare the blurred frames, while the CPU blurs the
+difference of the two frames and rounds after each filter pass. The results
+differ by rounding, which averages out over large frames but not small ones:
+
+| Frame | Worst `integer_motion2` difference before | After |
+|---|---|---|
+| 17x17 | 2.0e-4 | 0 |
+| 33x33 | 1.3e-4 | 0 |
+| 64x64 | 4.9e-5 | 0 |
+| Netflix 576x324 pair | 1.3e-5 | 0 |
+| 3840x2160 | 5.6e-6 | 0 |
+
+Measured on an Arc B580 and a UHD 770 with 8- and 10-bit input; the
+default-model VMAF score at 4K moves by at most 4e-6. `motion_v2_sycl` already
+matched the CPU and now shares the same kernel. The motion step reads two
+frames instead of one blurred frame, which costs about 11% more device time
+at 4K (0.54 instead of 0.48 ms per frame on the B580, 6.8 instead of 6.2 ms on
+the UHD 770); a default-model run is unchanged within run-to-run noise. To
+check a build:
+
+```bash
+for b in cpu sycl; do
+  vmaf -r src01_hrc00_576x324.yuv -d src01_hrc01_576x324.yuv -w 576 -h 324 -p 420 -b 8 \
+    --no_prediction --feature motion --backend "$b" --precision=max --json -q -o "motion_$b.json"
+done
+python3 -c "import json; a, b = (json.load(open(f'motion_{x}.json'))['frames'] for x in ('cpu', 'sycl')); print(max(abs(p['metrics']['integer_motion2'] - q['metrics']['integer_motion2']) for p, q in zip(a, b)))"
+```
+
+It prints `0.0`. The CUDA, HIP and Metal `motion` twins still compare blurred
+frames (`T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29` and its HIP and Metal rows in
+[`state.md`](../../state.md)).
+
+With `motion_add_uv=true`, `motion_sycl` no longer waits for the U and V
+upload inside `submit()`. It stages both planes in pinned host memory and
+uploads them on the queue that runs the motion kernels, so the frame keeps a
+single wait, in `collect()`. On a 4K clip the host spends 0.6 ms per frame on
+it instead of 5.4 ms on the UHD 770 (0.55 instead of 0.89 ms on the B580),
+and the scores are unchanged.
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix

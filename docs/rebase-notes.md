@@ -54834,3 +54834,38 @@ bit-identical; `psnr_sycl` and default `float_motion_sycl` output are
 bit-identical to the previous twins; default `integer_ssim_sycl` /
 `float_ssim_sycl` output moves by at most 1.1e-8 (2.2e-8 on identical frames,
 now exactly 1).
+
+## ADR-1371 — SYCL motion differences the frames before the blur, in one shared kernel (2026-09-29)
+
+`fix/sycl-motion-tiny-frame-parity`, Research-1371, ADR-1371.
+
+- `core/src/feature/sycl/integer_motion_pipeline_sycl.{h,cpp}` (new, fork-only):
+  the one SYCL motion SAD kernel, `sum |blur(prev - cur)|` with the CPU
+  `integer_motion.c` rounding (`>> bpc`, then `>> 16`), reflect-101 borders,
+  int32 vertical sum up to 15 bits per sample and int64 at 16 (host-selected
+  `submit_sad<Acc>`). Both `motion_sycl` and `motion_v2_sycl` call
+  `motion_sycl_pipeline::enqueue_sad()`; neither extractor TU defines a kernel
+  (Research-2090). Do not restore the per-frame blur (`blur(cur) - blur(prev)`)
+  or swap the operands to `cur - prev`: both change the rounding and fail
+  `test_sycl_motion_tiny_frames`, which compares with `==`.
+- `core/src/feature/sycl/integer_motion_sycl.cpp`: raw luma ping-pong
+  `d_raw_y[2]` (filled by a device copy after the kernel) replaces the int32
+  blurred ping-pong and the unused `d_blur_tmp`; `cur_blur` is now `cur_slot`.
+  With `motion_add_uv`, `submit()` stages U / V into pinned `h_stage_u` /
+  `h_stage_v` and `motion_pre_graph` uploads them on the combined queue; the
+  ADR-1034 primary-queue upload and `vmaf_sycl_queue_wait()` are gone. An
+  upstream-sync or rebase that reintroduces `vmaf_sycl_memcpy_h2d_async` for
+  the chroma planes also needs the host wait back; keep the staging.
+- `core/src/meson.build`: `integer_motion_pipeline_sycl.cpp` joins
+  `sycl_feature_sources`. `core/test/meson.build`: `test_sycl_motion_tiny_frames`.
+- `core/test/test_sycl_motion_add_uv_parity.c`: the fixed-point oracle
+  differences the frames before the blur, like the kernel and the CPU.
+- If upstream Netflix changes `motion_score_pipeline_8` / `_16` in
+  `integer_motion.c`, mirror the arithmetic in the pipeline TU (one place for
+  both SYCL motion twins).
+
+No public C API, CLI syntax or FFmpeg patch impact. CPU scores are unchanged;
+`motion_sycl` scores move to the CPU's (at most 2.0e-4 on 17x17 frames,
+1.3e-5 on the Netflix pair), and its `motion_add_uv` scores move the same way
+and match the updated fixed-point oracle exactly; the staging change alone is
+bit-identical. `motion_v2_sycl` scores are unchanged.

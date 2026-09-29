@@ -269,7 +269,7 @@ lookups back into the runtime test. See Research-2091.
   `integer_motion_v2.metal::mv2_mirror` uses iterated reflect-101
   `idx = (idx < 0) ? -idx : 2 * (sup - 1) - idx`, bit-identical to CPU
   `integer_motion_v2.c::mirror`, CUDA `motion_v2_score.cu::mv2_mirror`,
-  SYCL `integer_motion_v2_sycl.cpp::dev_mirror_mv2`, and HIP
+  SYCL `integer_motion_pipeline_sycl.cpp::reflect_101`, and HIP
   `motion_v2_score.hip::mv2_mirror`. Never revert to single-bounce or
   `- 1` edge-replicating form.
 

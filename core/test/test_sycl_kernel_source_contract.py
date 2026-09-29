@@ -86,6 +86,56 @@ def _contract_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+# T-SYCL-MOTION-TINY-FRAME-PARITY-2026-09-29 / ADR-1371: both SYCL motion twins
+# run the one diff-first SAD kernel of the pipeline TU, which differences
+# prev - cur before the blur like integer_motion.c and stays fp64-free; the
+# extractor TUs hold no kernel, and motion_sycl's submit() never waits on the
+# device (T-SYCL-MOTION-ADD-UV-SUBMIT-WAIT-2026-09-29).
+MOTION_PIPELINE = "integer_motion_pipeline_sycl.cpp"
+MOTION_TUS = ("integer_motion_sycl.cpp", "integer_motion_v2_sycl.cpp")
+MOTION_DIFF_FIRST = re.compile(
+    r"read_sample\(args\.prev[^;]*?\)\s*-\s*read_sample\(args\.cur", re.S
+)
+MOTION_SUBMIT_FNS = ("submit_fex_sycl", "motion_stage_chroma", "motion_stage_plane")
+
+
+def _motion_sources() -> dict[str, str]:
+    return {
+        name: (SYCL_ROOT / name).read_text(encoding="utf-8")
+        for name in (MOTION_PIPELINE, *MOTION_TUS)
+    }
+
+
+def _function_body(source: str, name: str) -> str:
+    match = re.search(rf"^static [^\n]*\b{name}\(.*?^}}$", source, re.S | re.M)
+    return match.group(0) if match else ""
+
+
+MOTION_WAIT = re.compile(r"\bvmaf_sycl_(?:queue_wait|memcpy_h2d_async)\(|\.wait(?:_and_throw)?\(")
+
+
+def _motion_failures(sources: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    pipeline = sources[MOTION_PIPELINE]
+    if re.search(r"\bdouble\b", pipeline):
+        failures.append(f"{MOTION_PIPELINE}: fp64 type appears in the motion kernel")
+    if not MOTION_DIFF_FIRST.search(pipeline):
+        failures.append(f"{MOTION_PIPELINE}: the tile no longer stages prev - cur before the blur")
+    for name in MOTION_TUS:
+        if re.search(r"\b(?:parallel_for|single_task)\b", sources[name]):
+            failures.append(f"{name}: device kernel outside {MOTION_PIPELINE}")
+    motion = sources["integer_motion_sycl.cpp"]
+    for fn in MOTION_SUBMIT_FNS:
+        body = _function_body(motion, fn)
+        if not body:
+            failures.append(f"integer_motion_sycl.cpp: {fn}() not found")
+        elif MOTION_WAIT.search(body):
+            failures.append(
+                f"integer_motion_sycl.cpp: {fn}() waits on or uploads through the primary queue"
+            )
+    return failures
+
+
 class SyclKernelSourceContractTest(unittest.TestCase):
     def test_live_sources_keep_fp32_and_capture_contracts(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
@@ -132,6 +182,37 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         )
         failures = _contract_failures(sources)
         self.assertTrue(any("MS_SSIM_MAX_PLANES plane loop" in item for item in failures))
+
+    def test_live_motion_sources_keep_pipeline_contract(self) -> None:
+        self.assertEqual(_motion_failures(_motion_sources()), [])
+
+    def test_motion_blur_before_difference_is_detected(self) -> None:
+        sources = _motion_sources()
+        sources[MOTION_PIPELINE] = sources[MOTION_PIPELINE].replace(
+            "read_sample(args.prev, offset, args.bpc) - read_sample(args.cur, offset, args.bpc)",
+            "read_sample(args.cur, offset, args.bpc) - read_sample(args.prev, offset, args.bpc)",
+            1,
+        )
+        self.assertTrue(any("prev - cur" in item for item in _motion_failures(sources)))
+
+    def test_motion_kernel_in_extractor_tu_is_detected(self) -> None:
+        sources = _motion_sources()
+        sources["integer_motion_sycl.cpp"] += "\nq.parallel_for(range, kernel);\n"
+        self.assertTrue(any("device kernel outside" in item for item in _motion_failures(sources)))
+
+    def test_motion_submit_wait_is_detected(self) -> None:
+        sources = _motion_sources()
+        sources["integer_motion_sycl.cpp"] = sources["integer_motion_sycl.cpp"].replace(
+            "    motion_stage_chroma(s, ref_pic);\n",
+            "    motion_stage_chroma(s, ref_pic);\n    (void)vmaf_sycl_queue_wait(fex->sycl_state);\n",
+            1,
+        )
+        self.assertTrue(any("primary queue" in item for item in _motion_failures(sources)))
+
+    def test_motion_fp64_is_detected(self) -> None:
+        sources = _motion_sources()
+        sources[MOTION_PIPELINE] += "\nstatic double motion_scale;\n"
+        self.assertTrue(any("fp64 type" in item for item in _motion_failures(sources)))
 
 
 if __name__ == "__main__":

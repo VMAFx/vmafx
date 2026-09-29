@@ -2029,6 +2029,11 @@ if is_sycl_enabled
         feature_src_dir + 'sycl/integer_adm_sycl.cpp',
         feature_src_dir + 'sycl/integer_motion_sycl.cpp',
         feature_src_dir + 'sycl/integer_motion_v2_sycl.cpp',
+        # The motion SAD kernel both motion extractors run: difference first,
+        # then the blur, rounded per pass like integer_motion.c
+        # (T-SYCL-MOTION-TINY-FRAME-PARITY-2026-09-29). Its only kernel lives
+        # here so no two TUs define one (Research-2090).
+        feature_src_dir + 'sycl/integer_motion_pipeline_sycl.cpp',
         feature_src_dir + 'sycl/float_psnr_sycl.cpp',
         feature_src_dir + 'sycl/float_motion_sycl.cpp',
         feature_src_dir + 'sycl/float_vif_sycl.cpp',

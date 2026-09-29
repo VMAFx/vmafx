@@ -5535,12 +5535,6 @@
       },
       "target": "1033-cpu-scoring-nan-ub-guards.md"
     },
-    "1034": {
-      "sites": {
-        "core/src/feature/sycl/integer_motion_sycl.cpp": 1
-      },
-      "target": "1034-sycl-vif-rd-stride-motion-uv-sync.md"
-    },
     "1036": {
       "sites": {
         "deny.toml": 2
@@ -6326,6 +6320,7 @@
         "core/test/test_sycl_float_vif_parity.c": 1,
         "core/test/test_sycl_motion3_parity.c": 1,
         "core/test/test_sycl_motion_add_uv_parity.c": 1,
+        "core/test/test_sycl_motion_tiny_frames.c": 1,
         "core/test/test_sycl_motion_v2_parity.c": 1,
         "core/test/test_sycl_ms_ssim_parity.c": 1,
         "core/test/test_sycl_psnr_hvs_parity.c": 1,
@@ -7820,6 +7815,14 @@
         "core/tools/test/test_vmaf_feature_backend.sh": 1
       },
       "target": "1365-sycl-twin-cpu-option-parity.md"
+    },
+    "1371": {
+      "sites": {
+        "core/src/feature/sycl/integer_motion_pipeline_sycl.h": 1,
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 1,
+        "core/test/test_sycl_kernel_source_contract.py": 1
+      },
+      "target": "1371-sycl-motion-diff-first-pipeline.md"
     }
   },
   "retired": {

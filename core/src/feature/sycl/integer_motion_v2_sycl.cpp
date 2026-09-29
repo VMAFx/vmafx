@@ -27,19 +27,20 @@
  *  post-process and its option surface were added in ADR-1108 (the
  *  cross-backend follow-up to the CUDA twin landed in #909).
  *
- *  Mirror padding: reflect-101 (`2 * size - idx - 2` for idx >= size),
- *  matching CPU `integer_motion_v2.c::mirror` and `motion_sycl`.
+ *  The SAD kernel is the motion pipeline shared with `motion_sycl`
+ *  (integer_motion_pipeline_sycl.h): difference first, then the blur with
+ *  the CPU's per-pass rounding and reflect-101 borders
+ *  (`2 * size - idx - 2` for idx >= size), matching CPU
+ *  `integer_motion_v2.c::motion_score_pipeline_8/_16` bit for bit.
  */
 
 #include <sycl/sycl.hpp>
 
-#include "sycl_compat.h"
-#include "sycl_tile_index.h"
+#include "integer_motion_pipeline_sycl.h"
 
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
-#include <utility>
 
 #include "config.h"
 #include "dict.h"
@@ -101,175 +102,6 @@ struct MotionV2StateSycl {
 
     VmafDictionary *feature_name_dict;
 };
-
-} // namespace
-
-namespace
-{
-
-static constexpr int32_t MV2_FILTER[5] = {3571, 16004, 26386, 16004, 3571};
-static constexpr int MV2_WG_X = 32;
-static constexpr int MV2_WG_Y = 8;
-static constexpr int MV2_HALF_FW = 2;
-static constexpr int MV2_TILE_W = MV2_WG_X + 2 * MV2_HALF_FW; /* 36 */
-static constexpr int MV2_TILE_H = MV2_WG_Y + 2 * MV2_HALF_FW; /* 12 */
-
-struct Mv2KernelArgs {
-    const void *prev;
-    const void *cur;
-    int64_t *sad;
-    unsigned width;
-    unsigned height;
-    unsigned bpc;
-};
-
-} // namespace
-
-namespace
-{
-
-static inline int dev_mirror_mv2(int idx, int sup)
-{
-    if (idx < 0) {
-        return -idx;
-    }
-    if (idx >= sup) {
-        return 2 * sup - idx - 2;
-    }
-    return idx;
-}
-
-static inline int32_t mv2_read_pixel(const void *plane, int y, int x, const Mv2KernelArgs &args)
-{
-    const size_t offset = (size_t)y * args.width + (size_t)x;
-    if (args.bpc <= 8) {
-        return (int32_t)static_cast<const uint8_t *>(plane)[offset];
-    }
-    return (int32_t)static_cast<const uint16_t *>(plane)[offset];
-}
-
-} // namespace
-
-namespace
-{
-
-static inline void mv2_load_diff(sycl::nd_item<2> item,
-                                 const sycl::local_accessor<int32_t, 2> &diff,
-                                 const Mv2KernelArgs &args)
-{
-    const unsigned lid = item.get_local_linear_id();
-    const int tile_y = (int)(item.get_group(0) * MV2_WG_Y) - MV2_HALF_FW;
-    const int tile_x = (int)(item.get_group(1) * MV2_WG_X) - MV2_HALF_FW;
-    const bool interior = (tile_y >= 0) && (tile_y + MV2_TILE_H <= (int)args.height) &&
-                          (tile_x >= 0) && (tile_x + MV2_TILE_W <= (int)args.width);
-    constexpr unsigned tile_elems = MV2_TILE_H * MV2_TILE_W;
-    constexpr unsigned group_size = MV2_WG_X * MV2_WG_Y;
-    for (unsigned i = lid; i < tile_elems; i += group_size) {
-        const unsigned row = i / MV2_TILE_W;
-        const unsigned col = i % MV2_TILE_W;
-        int pixel_y = tile_y + (int)row;
-        int pixel_x = tile_x + (int)col;
-        if (!interior) {
-            pixel_y =
-                vmaf_sycl_tile_index(dev_mirror_mv2(pixel_y, (int)args.height), (int)args.height);
-            pixel_x =
-                vmaf_sycl_tile_index(dev_mirror_mv2(pixel_x, (int)args.width), (int)args.width);
-        }
-        diff[row][col] = mv2_read_pixel(args.prev, pixel_y, pixel_x, args) -
-                         mv2_read_pixel(args.cur, pixel_y, pixel_x, args);
-    }
-}
-
-} // namespace
-
-namespace
-{
-
-static inline int64_t mv2_filtered_abs(sycl::nd_item<2> item,
-                                       const sycl::local_accessor<int32_t, 2> &diff,
-                                       const Mv2KernelArgs &args)
-{
-    const int x = (int)item.get_global_id(1);
-    const int y = (int)item.get_global_id(0);
-    if (!std::cmp_less(x, args.width) || !std::cmp_less(y, args.height)) {
-        return 0;
-    }
-    const unsigned local_x = item.get_local_id(1);
-    const unsigned local_y = item.get_local_id(0);
-    const int64_t round_y = (int64_t)1 << ((int)args.bpc - 1);
-    const int shift_y = (int)args.bpc;
-    int32_t vertical[5];
-#pragma unroll
-    for (int hx = 0; hx < 5; hx++) {
-        const unsigned tile_col = local_x + (unsigned)hx;
-        int64_t const sum =
-            (int64_t)MV2_FILTER[0] * (diff[local_y][tile_col] + diff[local_y + 4][tile_col]) +
-            (int64_t)MV2_FILTER[1] * (diff[local_y + 1][tile_col] + diff[local_y + 3][tile_col]) +
-            (int64_t)MV2_FILTER[2] * diff[local_y + 2][tile_col];
-        vertical[hx] = (int32_t)((sum + round_y) >> shift_y);
-    }
-    const int64_t horizontal = (int64_t)MV2_FILTER[0] * (vertical[0] + vertical[4]) +
-                               (int64_t)MV2_FILTER[1] * (vertical[1] + vertical[3]) +
-                               (int64_t)MV2_FILTER[2] * vertical[2];
-    const int64_t blurred = (horizontal + 32768) >> 16;
-    return blurred < 0 ? -blurred : blurred;
-}
-
-} // namespace
-
-namespace
-{
-
-static inline void mv2_reduce_sad(sycl::nd_item<2> item,
-                                  const sycl::local_accessor<int64_t, 1> &scratch, int64_t absolute,
-                                  int64_t *sad)
-{
-    sycl::sub_group const subgroup = item.get_sub_group();
-    const int64_t subgroup_sum = sycl::reduce_over_group(subgroup, absolute, sycl::plus<int64_t>{});
-    const uint32_t subgroup_id = subgroup.get_group_linear_id();
-    const uint32_t subgroup_lane = subgroup.get_local_linear_id();
-    const uint32_t subgroup_count = subgroup.get_group_linear_range();
-    if (subgroup_lane == 0) {
-        scratch[subgroup_id] = subgroup_sum;
-    }
-    item.barrier(sycl::access::fence_space::local_space);
-    if (item.get_local_linear_id() == 0) {
-        int64_t total = 0;
-        for (uint32_t i = 0; i < subgroup_count; i++) {
-            total += scratch[i];
-        }
-        sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                         sycl::access::address_space::global_space> const output(*sad);
-        output.fetch_add(total);
-    }
-}
-
-} // namespace
-
-namespace
-{
-
-static sycl::event launch_motion_v2(sycl::queue &q, Mv2KernelArgs args)
-{
-    const size_t global_height = ((size_t)args.height + MV2_WG_Y - 1) / MV2_WG_Y * MV2_WG_Y;
-    const size_t global_width = ((size_t)args.width + MV2_WG_X - 1) / MV2_WG_X * MV2_WG_X;
-    sycl::range<2> global(global_height, global_width);
-    sycl::range<2> local(MV2_WG_Y, MV2_WG_X);
-
-    return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<int32_t, 2> const s_diff(sycl::range<2>(MV2_TILE_H, MV2_TILE_W), cgh);
-        constexpr int MAX_SUBGROUPS = 32;
-        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>(MAX_SUBGROUPS), cgh);
-
-        cgh.parallel_for(sycl::nd_range<2>(global, local),
-                         [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                             mv2_load_diff(item, s_diff, args);
-                             item.barrier(sycl::access::fence_space::local_space);
-                             const int64_t absolute = mv2_filtered_abs(item, s_diff, args);
-                             mv2_reduce_sad(item, lmem, absolute, args.sad);
-                         });
-    });
-}
 
 } // namespace
 
@@ -408,8 +240,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     (void)pix_fmt;
     auto *s = static_cast<MotionV2StateSycl *>(fex->priv);
 
-    /* The 5-tap SYCL motion_v2 kernel uses reflect-101 mirror padding;
-     * dev_mirror_mv2() returns 2*sup - idx - 2, which is negative when sup < 3.
+    /* The 5-tap SYCL motion_v2 kernel uses reflect-101 mirror padding; the
+     * reflection 2*sup - idx - 2 is negative when sup < 3.
      * Refuse smaller frames up front to prevent out-of-bounds device reads.
      * Minimum: filter_width/2 + 1 = 3. */
     if (h < 3u || w < 3u) {
@@ -479,12 +311,13 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     if (index > 0) {
         const unsigned prev_idx = (index + 1u) % 2u;
         q.memset(s->d_sad, 0, sizeof(int64_t));
-        launch_motion_v2(q, {.prev = s->d_pix[prev_idx],
-                             .cur = s->d_pix[cur_idx],
-                             .sad = s->d_sad,
-                             .width = s->width,
-                             .height = s->height,
-                             .bpc = s->bpc});
+        motion_sycl_pipeline::enqueue_sad(q, {.prev = s->d_pix[prev_idx],
+                                              .cur = s->d_pix[cur_idx],
+                                              .cur_copy = nullptr,
+                                              .sad = s->d_sad,
+                                              .width = s->width,
+                                              .height = s->height,
+                                              .bpc = s->bpc});
         q.memcpy(s->h_sad, s->d_sad, sizeof(int64_t));
     }
 

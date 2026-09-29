@@ -135,12 +135,31 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `motion_five_frame_window=true` returns `-ENOTSUP` at `init()` with
   `WARNING` log. See [../../AGENTS.md §"motion3_score GPU contract"](../../AGENTS.md).
 
+- **Motion SAD = one shared kernel, difference first
+  (T-SYCL-MOTION-TINY-FRAME-PARITY-2026-09-29).** `motion_sycl` and
+  `motion_v2_sycl` both call `motion_sycl_pipeline::enqueue_sad()`
+  (`integer_motion_pipeline_sycl.{h,cpp}`): `sum |blur(prev - cur)|`,
+  vertical pass rounded `>> bpc`, horizontal `>> 16`, reflect-101 borders =
+  CPU `integer_motion.c` / `integer_motion_v2.c` `motion_score_pipeline_*`
+  since the Netflix a4a1492d port (PR #532). Bit-exact; gate
+  `test_sycl_motion_tiny_frames` compares with `==` (3x3 .. 1283x723, 8/10/16
+  bit). `blur(cur) - blur(prev)` rounds twice per pixel -> 2e-4 off at 17x17;
+  never reintroduce it. `prev - cur` order load-bearing (arithmetic shift
+  floors negatives). Vertical sum int32 up to 15 bpc, int64 at 16 (host picks
+  the `submit_sad<Acc>` instance). Kernel lives only in the pipeline TU
+  (Research-2090 name collision); extractor TUs hold none. `motion_sycl` keeps
+  the raw luma of the previous frame in `d_raw_y[2]` (device memcpy from the
+  shared frame after the kernel), because the shared frame buffers are
+  overwritten by the next upload. Measured cost vs the old per-frame blur
+  (4K micro-benchmark, kernel + copy): about +11% on B580 and UHD 770.
+
 - **`integer_motion_sycl.cpp::motion_add_uv` GPU contract** (ADR-0989).
-  When `motion_add_uv=true`, `submit_fex_sycl` uploads U and V plane data
-  H2D to `d_ref_u[cur_blur]` / `d_ref_v[cur_blur]` before calling
-  `vmaf_sycl_graph_submit`. `enqueue_motion_work` launches additional
-  `launch_blur_sad_fused` kernels for U and V, each writing to
-  `d_blur_u/v[cur]`, accumulating into `d_sad_u` / `d_sad_v`.
+  When `motion_add_uv=true`, `submit_fex_sycl` packs the reference U and V
+  planes into pinned host staging (`h_stage_u` / `h_stage_v`);
+  `motion_pre_graph` copies them H2D on the combined queue into
+  `d_ref_u[cur_slot]` / `d_ref_v[cur_slot]`; `enqueue_motion_work` runs the
+  shared SAD kernel on `d_ref_*[1 - cur_slot]` - `d_ref_*[cur_slot]`,
+  accumulating into `d_sad_u` / `d_sad_v`.
   `collect_fex_sycl` sums Y + U + V contributions, each normalized by
   respective plane area (`chroma_w × chroma_h` for UV in YUV420P). The
   numerical gate is the scalar fixed-point oracle in
@@ -152,14 +171,15 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `-ENOTSUP` with `WARNING` until their kernel ports land. On rebase:
   if upstream Netflix adds `motion_add_uv` to `integer_motion.c`, verify
   per-plane normalization formula stays consistent.
-  **Queue-sync invariant (ADR-1034)**: `vmaf_sycl_memcpy_h2d_async` submits
-  UV H2D copies to `state->queue` (primary queue), NOT same as
-  `copy_queue` (DMA engine used for Y-plane uploads). `vmaf_sycl_graph_submit`
-  barriers `combined_queue` only on `last_upload_event` from `copy_queue`.
-  So `submit_fex_sycl` calls `vmaf_sycl_queue_wait(state)` after UV copies
-  to flush primary queue before graph submission. If future PR routes UV H2D
-  through `copy_queue` and updates `last_upload_event`, `vmaf_sycl_queue_wait`
-  call can be removed in favour of GPU-side barrier — update this note then.
+  **Queue-sync invariant (T-SYCL-MOTION-ADD-UV-SUBMIT-WAIT-2026-09-29,
+  supersedes the ADR-1034 primary-queue wait)**: no host wait in `submit()`.
+  UV H2D rides the in-order combined queue in `pre_fn`, ahead of the kernels
+  (graph replay is fenced by `ext_oneapi_submit_barrier()`). Staging is
+  safe to refill in the next `submit()`: the graph fires on the last
+  extractor's submit, after staging, and this extractor's `collect()` of the
+  previous frame (`vmaf_sycl_graph_wait`) drained the copy that read it. Do
+  not move the UV copies back to `vmaf_sycl_memcpy_h2d_async` (primary queue)
+  — that needs the host wait again.
 
 - **`integer_vif_sycl.cpp` rd_stride uses ceiling division for odd widths** (ADR-1034).
   Both `launch_vif_hori_impl` (scalar/SIMD-32) and `launch_vif_fused_impl` (SIMD-16)
@@ -272,8 +292,8 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   the USM buffer -> `UR_RESULT_ERROR_DEVICE_LOST` when the page is unmapped.
   Every single-reflection loader wraps the reflected index in
   `vmaf_sycl_tile_index()`: `integer_adm` `launch_dwt_vert_pair`, `integer_vif`
-  `dev_vert_load_tile` + `dev_fused_load_tile`, `integer_motion`
-  `motion_load_tile`, `integer_motion_v2` `mv2_load_diff`, `float_motion`
+  `dev_vert_load_tile` + `dev_fused_load_tile`, `integer_motion_pipeline`
+  `load_diff` (motion + motion_v2), `float_motion`
   `fm_load_tile`, `float_vif` `load_vif_tile`. Identity for consumed samples ->
   no score change. New tiled kernel = same wrap. Per-output reflections
   (`dev_hori_convolve_border`, float VIF decimate) are consumed-only and stay
@@ -516,6 +536,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 |---|---|---|---|
 | `integer_cambi_sycl.cpp` | `cambi.c` | `test_sycl_cambi_parity.c` (bit-exact, 4 frames), `test_integer_cambi_sycl.c` (smoke) | [ADR-1357](../../../../docs/adr/1357-sycl-cambi-device-resident.md) |
 | `integer_motion_sycl.cpp` (motion3) | `integer_motion.c` | `test_sycl_motion3_parity.c` | ADR-0219 |
+| `integer_motion_pipeline_sycl.cpp` (motion + motion_v2 SAD) | `integer_motion.c`, `integer_motion_v2.c` | `test_sycl_motion_tiny_frames.c` (bit-exact, 3x3 .. 1283x723) | T-SYCL-MOTION-TINY-FRAME-PARITY-2026-09-29 |
 | `integer_motion_sycl.cpp` (motion_add_uv) | `float_motion.c` | `test_sycl_motion_add_uv_parity.c` | ADR-0989 |
 | `integer_psnr_sycl.cpp` | `integer_psnr.c` | `test_sycl_psnr_parity.c` | ADR-0868 (round 1) |
 | `integer_vif_sycl.cpp` | `integer_vif.c` | `test_sycl_vif_parity.c` | ADR-0868 (round 1) |

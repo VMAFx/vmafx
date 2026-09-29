@@ -20,17 +20,19 @@
 /**
  * SYCL/DPC++ Motion feature extractor.
  *
- * Implements separable 5-tap Gaussian blur + SAD (Sum of Absolute
- * Differences) between consecutive blurred reference frames.
+ * SAD (Sum of Absolute Differences) of the 5-tap Gaussian blur
+ * {3571, 16004, 26386, 16004, 3571} (sum = 65536) of the difference between
+ * consecutive reference frames, computed by the shared motion pipeline
+ * (integer_motion_pipeline_sycl.h), which reproduces the CPU reference
+ * integer_motion.c bit for bit:
+ *   1. motion_score = SAD(blur(prev - cur)) / 256.0 / (width * height)
+ *   2. motion2_score = min(motion_score[i], motion_score[i + 1])
+ *   3. motion3_score = host-side blend / clip / moving average of motion2
  *
- * Algorithm:
- *   1. Blur the current reference frame with a separable 5-tap Gaussian
- *      kernel: {3571, 16004, 26386, 16004, 3571} (sum = 65536).
- *   2. Compute SAD between current blurred frame and previous blurred frame.
- *   3. motion_score = SAD / 256.0 / (width * height)
- *   4. motion2_score = min(prev_motion_score, cur_motion_score)
- *
- * Uses ping-pong buffers for blurred frames across temporal frames.
+ * The luma kernel reads the current frame from the shared frame buffer and
+ * keeps a copy in a raw ping-pong (d_raw_y) that the next frame differences
+ * against; with motion_add_uv the uploaded chroma ping-pongs already hold both
+ * frames.
  *
  * Pattern: init -> submit (non-blocking) -> collect (wait + scores)
  * TEMPORAL flag: frames must be processed in sequential order.
@@ -38,14 +40,12 @@
 
 #include <sycl/sycl.hpp>
 
-#include "sycl_compat.h"
-#include "sycl_tile_index.h"
+#include "integer_motion_pipeline_sycl.h"
 
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <utility>
 
 #include "config.h"
 #include "feature_collector.h"
@@ -72,20 +72,6 @@ static constexpr double MOTION_SYCL_DEFAULT_MAX_VAL = 10000.0;
 // boundary expects, and clang-tidy's `misc-use-internal-linkage` no-ops
 // against `extern "C"` type aliases anyway. Per CLAUDE.md §12 r12 these are
 // load-bearing invariants of the SYCL ↔ libvmaf C-API ABI.
-
-/* ------------------------------------------------------------------ */
-/* Constants                                                           */
-/* ------------------------------------------------------------------ */
-
-// 5-tap Gaussian filter: {3571, 16004, 26386, 16004, 3571}, sum = 65536
-static constexpr int32_t blur_filter[5] = {3571, 16004, 26386, 16004, 3571};
-static constexpr int MOTION_WG_X = 32;
-static constexpr int MOTION_WG_Y = 8;
-static constexpr int MOTION_HALF_FW = 2;
-static constexpr int MOTION_TILE_H = MOTION_WG_Y + 2 * MOTION_HALF_FW;
-static constexpr int MOTION_TILE_W = MOTION_WG_X + 2 * MOTION_HALF_FW;
-static constexpr int MOTION_WG_SIZE = MOTION_WG_X * MOTION_WG_Y;
-static constexpr int MOTION_MAX_SUBGROUPS = 32;
 
 /* ------------------------------------------------------------------ */
 /* Extractor private state                                             */
@@ -115,28 +101,28 @@ struct MotionStateSycl {
     // MotionState.previous_score. T3-15(c) / ADR-0219.
     double prev_motion3_blended;
 
-    // Ping-pong blur buffers for Y plane (device)
-    int32_t *d_blur[2]; // alternating current / previous
-    int cur_blur;       // index into d_blur for current frame
-
-    // Vertical intermediate buffer (Y only; UV uses same kernel in-kernel)
-    int32_t *d_blur_tmp; // vertical pass output
+    // Raw Y-plane ping-pong (device): the kernel copies the current frame
+    // from the shared frame buffer into d_raw_y[cur_slot]; the next frame
+    // differences against it as d_raw_y[1 - cur_slot].
+    void *d_raw_y[2];
+    int cur_slot; // ping-pong slot of the current frame
 
     // Y-plane SAD accumulator (device + host)
     int64_t *d_sad_accum;
     int64_t *h_sad_accum;
 
     // UV plane support — ADR-0989.
-    // When motion_add_uv=true, two additional ping-pong pairs hold the
-    // raw input U/V pixels (copied H2D in submit) and the blurred U/V
-    // pixels (written by the kernel).  Separate SAD accumulators allow
+    // When motion_add_uv=true, submit packs the reference U/V planes into
+    // pinned host staging, pre_fn copies them H2D on the combined queue into
+    // two more ping-pong pairs, and the kernel differences d_ref_u[cur_slot]
+    // against d_ref_u[1 - cur_slot].  Separate SAD accumulators allow
     // per-plane normalization on the host (UV planes are smaller than Y
     // for YUV420P).
     unsigned chroma_w, chroma_h; // U/V plane dimensions
+    void *h_stage_u;             // packed U staging (pinned host), written in submit
+    void *h_stage_v;             // packed V staging (pinned host)
     void *d_ref_u[2];            // raw U-plane ping-pong (device, void* for bpc agnostic)
     void *d_ref_v[2];            // raw V-plane ping-pong (device)
-    int32_t *d_blur_u[2];        // blurred U ping-pong (device, int32)
-    int32_t *d_blur_v[2];        // blurred V ping-pong (device, int32)
     int64_t *d_sad_u;            // U-plane SAD accumulator (device)
     int64_t *h_sad_u;            // U-plane SAD readback (host-mapped)
     int64_t *d_sad_v;            // V-plane SAD accumulator (device)
@@ -244,180 +230,6 @@ static const VmafOption options[] = {
     {.name = nullptr}};
 
 /* ------------------------------------------------------------------ */
-/* Device helpers                                                      */
-/* ------------------------------------------------------------------ */
-
-/* Skip-boundary mirror matching CPU integer_motion's edge_8 / edge_16:
- *   idx=-1    -> 1     (skip row 0 in the reflection)
- *   idx=-2    -> 2
- *   idx=sup   -> sup-2  (skip row sup-1; `-2` below, not `-1`, enforces
- *                        the skip semantics)
- *   idx=sup+1 -> sup-3
- * Previously used `2 * sup - idx - 1` which reflected idx=sup back to
- * sup-1 (repeated the boundary row), producing a systematic ~2.6e-3
- * motion drift vs CPU on every frame after the first. Same root cause
- * as the CUDA mirror() bug also fixed in PR #120 (T7-15). */
-static inline int dev_mirror_motion(int idx, int sup)
-{
-    if (idx < 0)
-        return -idx;
-    if (idx >= sup)
-        return 2 * sup - idx - 2;
-    return idx;
-}
-
-static inline int32_t motion_read_sample(const void *input, int y, int x, unsigned width,
-                                         unsigned bpc)
-{
-    if (bpc <= 8) {
-        return static_cast<const uint8_t *>(input)[y * width + x];
-    } else {
-        return static_cast<const uint16_t *>(input)[y * width + x];
-    }
-}
-
-static inline void motion_load_tile(sycl::nd_item<2> item, const void *input, unsigned width,
-                                    unsigned height, unsigned bpc,
-                                    const sycl::local_accessor<int32_t, 2> &tile)
-{
-    unsigned const lid = item.get_local_linear_id();
-    int const tile_origin_y = (int)(item.get_group(0) * MOTION_WG_Y) - MOTION_HALF_FW;
-    int const tile_origin_x = (int)(item.get_group(1) * MOTION_WG_X) - MOTION_HALF_FW;
-    constexpr unsigned tile_elems = MOTION_TILE_H * MOTION_TILE_W;
-    bool const interior_wg = (tile_origin_y >= 0) &&
-                             (tile_origin_y + MOTION_TILE_H <= (int)height) &&
-                             (tile_origin_x >= 0) && (tile_origin_x + MOTION_TILE_W <= (int)width);
-
-    if (interior_wg) {
-        for (unsigned i = lid; i < tile_elems; i += MOTION_WG_SIZE) {
-            unsigned const tr = i / MOTION_TILE_W;
-            unsigned const tc = i % MOTION_TILE_W;
-            int const py = tile_origin_y + (int)tr;
-            int const px = tile_origin_x + (int)tc;
-            tile[tr][tc] = motion_read_sample(input, py, px, width, bpc);
-        }
-    } else {
-        for (unsigned i = lid; i < tile_elems; i += MOTION_WG_SIZE) {
-            unsigned const tr = i / MOTION_TILE_W;
-            unsigned const tc = i % MOTION_TILE_W;
-            int const py = vmaf_sycl_tile_index(
-                dev_mirror_motion(tile_origin_y + (int)tr, (int)height), (int)height);
-            int const px = vmaf_sycl_tile_index(
-                dev_mirror_motion(tile_origin_x + (int)tc, (int)width), (int)width);
-            tile[tr][tc] = motion_read_sample(input, py, px, width, bpc);
-        }
-    }
-}
-
-static inline int64_t motion_blur_pixel(sycl::nd_item<2> item, bool valid, bool compute_sad,
-                                        unsigned width,
-                                        const sycl::local_accessor<int32_t, 2> &tile,
-                                        int32_t *blur_out, const int32_t *prev_blur, unsigned bpc)
-{
-    if (!valid)
-        return 0;
-
-    unsigned const lx = item.get_local_id(1);
-    unsigned const ly = item.get_local_id(0);
-    int32_t const round1 = 1 << (bpc - 1);
-    int32_t vtmp[5];
-
-#pragma unroll
-    for (int hx = 0; hx < 5; hx++) {
-        unsigned const tcol = lx + (unsigned)hx;
-        int32_t const vsum = blur_filter[0] * (tile[ly + 0][tcol] + tile[ly + 4][tcol]) +
-                             blur_filter[1] * (tile[ly + 1][tcol] + tile[ly + 3][tcol]) +
-                             blur_filter[2] * tile[ly + 2][tcol];
-        vtmp[hx] = (vsum + round1) >> bpc;
-    }
-
-    int64_t const hsum = (int64_t)blur_filter[0] * (vtmp[0] + vtmp[4]) +
-                         (int64_t)blur_filter[1] * (vtmp[1] + vtmp[3]) +
-                         (int64_t)blur_filter[2] * vtmp[2];
-    int32_t const blurred = (int32_t)((hsum + 32768) >> 16);
-    int const gx = item.get_global_id(1);
-    int const gy = item.get_global_id(0);
-    blur_out[gy * width + gx] = blurred;
-    if (!compute_sad)
-        return 0;
-
-    int32_t const prev = prev_blur[gy * width + gx];
-    int32_t const diff = blurred - prev;
-    return (diff < 0) ? -(int64_t)diff : (int64_t)diff;
-}
-
-static inline void motion_reduce_sad(sycl::nd_item<2> item, int64_t abs_diff, bool compute_sad,
-                                     const sycl::local_accessor<int64_t, 1> &lmem,
-                                     int64_t *sad_accum)
-{
-    if (!compute_sad)
-        return;
-
-    sycl::sub_group const sg = item.get_sub_group();
-    int64_t const sg_sum = sycl::reduce_over_group(sg, abs_diff, sycl::plus<int64_t>{});
-    uint32_t const sg_id = sg.get_group_linear_id();
-    uint32_t const sg_lid = sg.get_local_linear_id();
-    uint32_t const n_subgroups = sg.get_group_linear_range();
-    if (sg_lid == 0)
-        lmem[sg_id] = sg_sum;
-
-    item.barrier(sycl::access::fence_space::local_space);
-    if (item.get_local_linear_id() == 0) {
-        int64_t total = 0;
-        for (uint32_t subgroup = 0; subgroup < n_subgroups; subgroup++)
-            total += lmem[subgroup];
-
-        sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                         sycl::access::address_space::global_space> const ref(*sad_accum);
-        ref.fetch_add(total);
-    }
-}
-
-/* ------------------------------------------------------------------ */
-/* SYCL Kernel: Fused 2D Gaussian Blur + SAD (single dispatch)        */
-/*                                                                     */
-/* Eliminates the intermediate vertical output buffer by computing     */
-/* the full separable filter from a 2D SLM tile in registers:          */
-/*   Step A: vertical filter at 5 horizontal positions → vtmp[5]       */
-/*   Step B: horizontal filter on vtmp[5] → final blurred pixel        */
-/* This matches the V→H ordering for exact bit-identical results.      */
-/* ------------------------------------------------------------------ */
-
-static sycl::event launch_blur_sad_fused(sycl::queue &q, const void *input, int32_t *blur_out,
-                                         const int32_t *prev_blur, int64_t *sad_accum,
-                                         unsigned width, unsigned height, unsigned bpc,
-                                         bool compute_sad)
-{
-    auto e_w = width;
-    auto e_h = height;
-    auto e_bpc = bpc;
-    auto e_sad = compute_sad;
-    auto p_in = input;
-
-    sycl::range<2> global((size_t)((height + MOTION_WG_Y - 1) / MOTION_WG_Y) * MOTION_WG_Y,
-                          (size_t)((width + MOTION_WG_X - 1) / MOTION_WG_X) * MOTION_WG_X);
-    sycl::range<2> local(MOTION_WG_Y, MOTION_WG_X);
-
-    return q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<int32_t, 2> const s_tile(sycl::range<2>(MOTION_TILE_H, MOTION_TILE_W),
-                                                      cgh);
-        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>(MOTION_MAX_SUBGROUPS), cgh);
-
-        cgh.parallel_for(sycl::nd_range<2>(global, local),
-                         [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                             const int gx = item.get_global_id(1);
-                             const int gy = item.get_global_id(0);
-                             const bool valid = (std::cmp_less(gx, e_w) && std::cmp_less(gy, e_h));
-                             motion_load_tile(item, p_in, e_w, e_h, e_bpc, s_tile);
-                             item.barrier(sycl::access::fence_space::local_space);
-                             int64_t const abs_diff = motion_blur_pixel(
-                                 item, valid, e_sad, e_w, s_tile, blur_out, prev_blur, e_bpc);
-                             motion_reduce_sad(item, abs_diff, e_sad, lmem, sad_accum);
-                         });
-    });
-}
-
-/* ------------------------------------------------------------------ */
 /* Feature extractor callbacks                                         */
 /* ------------------------------------------------------------------ */
 
@@ -455,18 +267,18 @@ static void motion_reset_state(MotionStateSycl *s, unsigned w, unsigned h, unsig
     s->prev_motion_score = 0.0;
     s->prev_motion3_blended = 0.0;
     s->has_pending = false;
-    s->cur_blur = 0;
+    s->cur_slot = 0;
 }
 
-static int motion_alloc_luma(VmafSyclState *state, MotionStateSycl *s, unsigned w, unsigned h)
+static int motion_alloc_luma(VmafSyclState *state, MotionStateSycl *s, unsigned w, unsigned h,
+                             unsigned bpc)
 {
-    size_t const buf_size = (size_t)w * h * sizeof(int32_t);
-    s->d_blur[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, buf_size));
-    s->d_blur[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, buf_size));
-    s->d_blur_tmp = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, buf_size));
+    size_t const buf_size = (size_t)w * h * ((bpc <= 8) ? 1U : 2U);
+    s->d_raw_y[0] = vmaf_sycl_malloc_device(state, buf_size);
+    s->d_raw_y[1] = vmaf_sycl_malloc_device(state, buf_size);
     s->d_sad_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
     s->h_sad_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
-    if (!s->d_blur[0] || !s->d_blur[1] || !s->d_blur_tmp || !s->d_sad_accum || !s->h_sad_accum) {
+    if (!s->d_raw_y[0] || !s->d_raw_y[1] || !s->d_sad_accum || !s->h_sad_accum) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: device memory allocation failed\n");
         return -ENOMEM;
     }
@@ -475,14 +287,12 @@ static int motion_alloc_luma(VmafSyclState *state, MotionStateSycl *s, unsigned 
 
 static void motion_reset_chroma(MotionStateSycl *s)
 {
+    s->h_stage_u = nullptr;
+    s->h_stage_v = nullptr;
     s->d_ref_u[0] = nullptr;
     s->d_ref_u[1] = nullptr;
     s->d_ref_v[0] = nullptr;
     s->d_ref_v[1] = nullptr;
-    s->d_blur_u[0] = nullptr;
-    s->d_blur_u[1] = nullptr;
-    s->d_blur_v[0] = nullptr;
-    s->d_blur_v[1] = nullptr;
     s->d_sad_u = nullptr;
     s->h_sad_u = nullptr;
     s->d_sad_v = nullptr;
@@ -515,22 +325,18 @@ static int motion_alloc_chroma(VmafSyclState *state, MotionStateSycl *s, unsigne
 
     size_t const bpp = (bpc <= 8) ? 1U : 2U;
     size_t const uv_raw_size = (size_t)s->chroma_w * s->chroma_h * bpp;
-    size_t const uv_blur_size = (size_t)s->chroma_w * s->chroma_h * sizeof(int32_t);
+    s->h_stage_u = vmaf_sycl_malloc_host(state, uv_raw_size);
+    s->h_stage_v = vmaf_sycl_malloc_host(state, uv_raw_size);
     s->d_ref_u[0] = vmaf_sycl_malloc_device(state, uv_raw_size);
     s->d_ref_u[1] = vmaf_sycl_malloc_device(state, uv_raw_size);
     s->d_ref_v[0] = vmaf_sycl_malloc_device(state, uv_raw_size);
     s->d_ref_v[1] = vmaf_sycl_malloc_device(state, uv_raw_size);
-    s->d_blur_u[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
-    s->d_blur_u[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
-    s->d_blur_v[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
-    s->d_blur_v[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
     s->d_sad_u = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
     s->h_sad_u = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
     s->d_sad_v = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
     s->h_sad_v = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
-    if (!s->d_ref_u[0] || !s->d_ref_u[1] || !s->d_ref_v[0] || !s->d_ref_v[1] || !s->d_blur_u[0] ||
-        !s->d_blur_u[1] || !s->d_blur_v[0] || !s->d_blur_v[1] || !s->d_sad_u || !s->h_sad_u ||
-        !s->d_sad_v || !s->h_sad_v) {
+    if (!s->h_stage_u || !s->h_stage_v || !s->d_ref_u[0] || !s->d_ref_u[1] || !s->d_ref_v[0] ||
+        !s->d_ref_v[1] || !s->d_sad_u || !s->h_sad_u || !s->d_sad_v || !s->h_sad_v) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: UV device memory allocation failed\n");
         return -ENOMEM;
     }
@@ -557,7 +363,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
-    err = motion_alloc_luma(state, s, w, h);
+    err = motion_alloc_luma(state, s, w, h, bpc);
     if (err) {
         close_fex_sycl(fex);
         return err;
@@ -645,17 +451,39 @@ static double motion3_postprocess_sycl(MotionStateSycl *s, double score2)
 /* C-compatible callbacks for combined command graph                    */
 /* ------------------------------------------------------------------ */
 
-// Pre-graph: zero SAD accumulators (direct enqueue, outside graph)
+// Pre-graph (direct enqueue, outside graph): the chroma H2D copies from the
+// staging submit filled, then the SAD accumulator resets. The combined queue
+// is in order and the graph replay is fenced behind a barrier, so the kernels
+// read this frame's chroma without any host wait
+// (T-SYCL-MOTION-ADD-UV-SUBMIT-WAIT-2026-09-29, ADR-1371).
 static void motion_pre_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<MotionStateSycl *>(priv);
+    if (s->motion_add_uv) {
+        size_t const bytes = (size_t)s->chroma_w * s->chroma_h * ((s->bpc <= 8) ? 1U : 2U);
+        q.memcpy(s->d_ref_u[s->cur_slot], s->h_stage_u, bytes);
+        q.memcpy(s->d_ref_v[s->cur_slot], s->h_stage_v, bytes);
+    }
     if (s->frame_index > 0) {
         q.memset(s->d_sad_accum, 0, sizeof(int64_t));
         if (s->motion_add_uv) {
             q.memset(s->d_sad_u, 0, sizeof(int64_t));
             q.memset(s->d_sad_v, 0, sizeof(int64_t));
         }
+    }
+}
+
+/* One plane's share of the frame: the SAD against the previous frame, or on
+ * the first frame (nothing to difference against) only the copy of the
+ * current frame that the next one needs. */
+static void enqueue_motion_plane(sycl::queue &q, const motion_sycl_pipeline::SadArgs &args,
+                                 bool has_prev)
+{
+    if (has_prev) {
+        motion_sycl_pipeline::enqueue_sad(q, args);
+    } else {
+        motion_sycl_pipeline::enqueue_copy(q, args);
     }
 }
 
@@ -666,30 +494,52 @@ static void enqueue_motion_work(void *queue_ptr, void *priv, void *shared_ref, v
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<MotionStateSycl *>(priv);
 
-    bool const compute_sad = (s->frame_index > 0);
-    int const cur = s->cur_blur;
+    bool const has_prev = (s->frame_index > 0);
+    int const cur = s->cur_slot;
     int const prev = 1 - cur;
 
-    // Y-plane kernel (always)
-    launch_blur_sad_fused(q, shared_ref, s->d_blur[cur], s->d_blur[prev], s->d_sad_accum, s->width,
-                          s->height, s->bpc, compute_sad);
+    // Y plane (always). The current frame comes from the shared frame buffer,
+    // which a later frame overwrites, so the kernel keeps a copy of it.
+    enqueue_motion_plane(q,
+                         {.prev = s->d_raw_y[prev],
+                          .cur = shared_ref,
+                          .cur_copy = s->d_raw_y[cur],
+                          .sad = s->d_sad_accum,
+                          .width = s->width,
+                          .height = s->height,
+                          .bpc = s->bpc},
+                         has_prev);
 
-    // UV-plane kernels — ADR-0989.
-    // d_ref_u[cur] / d_ref_v[cur] were uploaded H2D in submit_fex_sycl
-    // before the graph fires; the pointer values are stable across graph
-    // replays (ping-pong captured per slot via config_fn).
+    // UV planes — ADR-0989. d_ref_u[cur] / d_ref_v[cur] were uploaded H2D in
+    // submit_fex_sycl before the graph fires and are not overwritten before
+    // the next frame reads them, so no copy is needed; the pointer values are
+    // stable across graph replays (ping-pong captured per slot via config_fn).
     if (s->motion_add_uv) {
-        launch_blur_sad_fused(q, s->d_ref_u[cur], s->d_blur_u[cur], s->d_blur_u[prev], s->d_sad_u,
-                              s->chroma_w, s->chroma_h, s->bpc, compute_sad);
-        launch_blur_sad_fused(q, s->d_ref_v[cur], s->d_blur_v[cur], s->d_blur_v[prev], s->d_sad_v,
-                              s->chroma_w, s->chroma_h, s->bpc, compute_sad);
+        enqueue_motion_plane(q,
+                             {.prev = s->d_ref_u[prev],
+                              .cur = s->d_ref_u[cur],
+                              .cur_copy = nullptr,
+                              .sad = s->d_sad_u,
+                              .width = s->chroma_w,
+                              .height = s->chroma_h,
+                              .bpc = s->bpc},
+                             has_prev);
+        enqueue_motion_plane(q,
+                             {.prev = s->d_ref_v[prev],
+                              .cur = s->d_ref_v[cur],
+                              .cur_copy = nullptr,
+                              .sad = s->d_sad_v,
+                              .width = s->chroma_w,
+                              .height = s->chroma_h,
+                              .bpc = s->bpc},
+                             has_prev);
     }
 }
 
 // Post-graph: D2H SAD accumulator download (direct enqueue, outside graph)
-// With two graph slots (config_fn sets cur_blur=slot), each slot writes
-// to d_blur[slot] and reads from d_blur[1-slot].  The natural ping-pong
-// alternation keeps the "previous" buffer correct — no copy needed.
+// With two graph slots (config_fn sets cur_slot=slot), each slot writes
+// to d_raw_y[slot] and reads from d_raw_y[1-slot].  The natural ping-pong
+// alternation keeps the "previous" buffer correct — no extra copy needed.
 static void motion_post_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
@@ -706,48 +556,39 @@ static void motion_post_graph(void *queue_ptr, void *priv)
 static void config_motion_slot(void *priv, int slot)
 {
     auto *s = static_cast<MotionStateSycl *>(priv);
-    s->cur_blur = slot;
+    s->cur_slot = slot;
 }
 
 /* ------------------------------------------------------------------ */
 /* Submit / Collect                                                    */
 /* ------------------------------------------------------------------ */
 
-static int motion_upload_chroma(VmafSyclState *state, MotionStateSycl *s,
-                                const VmafPicture *ref_pic)
+/* Pack one reference chroma plane, `rows` rows of `row_bytes`, into pinned
+ * staging. */
+static void motion_stage_plane(const VmafPicture *pic, unsigned plane, void *dst, size_t row_bytes,
+                               unsigned rows)
+{
+    const auto *src = static_cast<const uint8_t *>(pic->data[plane]);
+    auto *out = static_cast<uint8_t *>(dst);
+    for (unsigned row = 0; row < rows; row++) {
+        std::memcpy(out + ((size_t)row * row_bytes), src + ((size_t)row * pic->stride[plane]),
+                    row_bytes);
+    }
+}
+
+/* Stage this frame's reference U and V for motion_pre_graph's H2D copies.
+ * Host work only: the graph for this frame is enqueued by the last extractor
+ * to submit, so it cannot start before this runs, and this extractor's collect
+ * of the previous frame has already drained the copies that read the staging
+ * last time. */
+static void motion_stage_chroma(const MotionStateSycl *s, const VmafPicture *ref_pic)
 {
     if (!s->motion_add_uv || ref_pic == nullptr)
-        return 0;
+        return;
 
-    int const cur = s->cur_blur;
-    size_t const bpp = (s->bpc <= 8) ? 1U : 2U;
-    size_t const row_bytes = s->chroma_w * bpp;
-    size_t const uv_raw_bytes = (size_t)s->chroma_w * s->chroma_h * bpp;
-    const uint8_t *u_src = static_cast<const uint8_t *>(ref_pic->data[1]);
-    const uint8_t *v_src = static_cast<const uint8_t *>(ref_pic->data[2]);
-    uint8_t *u_dst = static_cast<uint8_t *>(s->d_ref_u[cur]);
-    uint8_t *v_dst = static_cast<uint8_t *>(s->d_ref_v[cur]);
-
-    if (std::cmp_equal(ref_pic->stride[1], row_bytes)) {
-        int const eu = vmaf_sycl_memcpy_h2d_async(state, u_dst, u_src, uv_raw_bytes);
-        int const ev = vmaf_sycl_memcpy_h2d_async(state, v_dst, v_src, uv_raw_bytes);
-        if (eu || ev)
-            return eu ? eu : ev;
-    } else {
-        for (unsigned row = 0; row < s->chroma_h; row++) {
-            int const eu = vmaf_sycl_memcpy_h2d_async(state, u_dst + row * row_bytes,
-                                                      u_src + row * ref_pic->stride[1], row_bytes);
-            int const ev = vmaf_sycl_memcpy_h2d_async(state, v_dst + row * row_bytes,
-                                                      v_src + row * ref_pic->stride[2], row_bytes);
-            if (eu || ev)
-                return eu ? eu : ev;
-        }
-    }
-
-    /* UV uploads use the primary queue while graph submission barriers the
-     * copy queue. Drain the primary queue before the graph reads these buffers
-     * (ADR-1034). */
-    return vmaf_sycl_queue_wait(state);
+    size_t const row_bytes = (size_t)s->chroma_w * ((s->bpc <= 8) ? 1U : 2U);
+    motion_stage_plane(ref_pic, 1U, s->h_stage_u, row_bytes, s->chroma_h);
+    motion_stage_plane(ref_pic, 2U, s->h_stage_v, row_bytes, s->chroma_h);
 }
 
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -758,13 +599,11 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     (void)dist_pic_90;
 
     auto *s = static_cast<MotionStateSycl *>(fex->priv);
-    VmafSyclState *state = fex->sycl_state;
-    int const upload_err = motion_upload_chroma(state, s, ref_pic);
-    if (upload_err)
-        return upload_err;
+    motion_stage_chroma(s, ref_pic);
 
-    // Combined graph submit (idempotent per frame — first extractor wins)
-    int const err = vmaf_sycl_graph_submit(state);
+    // Combined graph submit (once per frame — the last extractor's call
+    // enqueues every registered extractor's work)
+    int const err = vmaf_sycl_graph_submit(fex->sycl_state);
     if (err)
         return err;
 
@@ -866,7 +705,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     // Advance state
     s->prev_motion_score = motion_score;
-    s->cur_blur = 1 - s->cur_blur; // flip ping-pong (direct mode)
+    s->cur_slot = 1 - s->cur_slot; // flip ping-pong (direct mode)
     s->frame_index++;
     s->has_pending = false;
 
@@ -934,12 +773,10 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
 
 static void motion_free_luma(VmafSyclState *state, MotionStateSycl *s)
 {
-    if (s->d_blur[0])
-        vmaf_sycl_free(state, s->d_blur[0]);
-    if (s->d_blur[1])
-        vmaf_sycl_free(state, s->d_blur[1]);
-    if (s->d_blur_tmp)
-        vmaf_sycl_free(state, s->d_blur_tmp);
+    if (s->d_raw_y[0])
+        vmaf_sycl_free(state, s->d_raw_y[0]);
+    if (s->d_raw_y[1])
+        vmaf_sycl_free(state, s->d_raw_y[1]);
     if (s->d_sad_accum)
         vmaf_sycl_free(state, s->d_sad_accum);
     if (s->h_sad_accum)
@@ -948,6 +785,10 @@ static void motion_free_luma(VmafSyclState *state, MotionStateSycl *s)
 
 static void motion_free_chroma(VmafSyclState *state, MotionStateSycl *s)
 {
+    if (s->h_stage_u)
+        vmaf_sycl_free(state, s->h_stage_u);
+    if (s->h_stage_v)
+        vmaf_sycl_free(state, s->h_stage_v);
     if (s->d_ref_u[0])
         vmaf_sycl_free(state, s->d_ref_u[0]);
     if (s->d_ref_u[1])
@@ -956,14 +797,6 @@ static void motion_free_chroma(VmafSyclState *state, MotionStateSycl *s)
         vmaf_sycl_free(state, s->d_ref_v[0]);
     if (s->d_ref_v[1])
         vmaf_sycl_free(state, s->d_ref_v[1]);
-    if (s->d_blur_u[0])
-        vmaf_sycl_free(state, s->d_blur_u[0]);
-    if (s->d_blur_u[1])
-        vmaf_sycl_free(state, s->d_blur_u[1]);
-    if (s->d_blur_v[0])
-        vmaf_sycl_free(state, s->d_blur_v[0]);
-    if (s->d_blur_v[1])
-        vmaf_sycl_free(state, s->d_blur_v[1]);
     if (s->d_sad_u)
         vmaf_sycl_free(state, s->d_sad_u);
     if (s->h_sad_u)

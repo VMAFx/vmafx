@@ -1475,6 +1475,7 @@ nav:
         - "ADR-1360: sycl-aot-compile-time-device-codegen": adr/1360-sycl-aot-compile-time-device-codegen.md
         - "ADR-1361: psnr-hvs-area-scaled-parity-tolerance": adr/1361-psnr-hvs-area-scaled-parity-tolerance.md
         - "ADR-1365: sycl-twin-cpu-option-parity": adr/1365-sycl-twin-cpu-option-parity.md
+        - "ADR-1371: sycl-motion-diff-first-pipeline": adr/1371-sycl-motion-diff-first-pipeline.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

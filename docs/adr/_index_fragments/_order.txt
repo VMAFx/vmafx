@@ -1070,3 +1070,4 @@
 1361-psnr-hvs-area-scaled-parity-tolerance
 1359-cli-feature-backend-twin
 1365-sycl-twin-cpu-option-parity
+1371-sycl-motion-diff-first-pipeline
