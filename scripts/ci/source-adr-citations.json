@@ -7689,6 +7689,7 @@
         "scripts/ci/check-dev-container-build-secret.py": 2,
         "scripts/ci/tests/test-check-container-build.sh": 3,
         "scripts/ci/tests/test_dev_container_build_secret.py": 2,
+        "scripts/ci/tests/test_renovate_file_patterns.py": 1,
         "scripts/release/build-native-release-artifacts.sh": 2,
         "scripts/release/tests/test-build-native-release-artifacts.sh": 2
       },
