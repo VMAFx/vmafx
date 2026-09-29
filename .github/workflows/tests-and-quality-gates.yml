@@ -1065,9 +1065,12 @@ jobs:
           # icx + -flto=auto incompatibility.
           bash -e -o pipefail -c '
             source /opt/intel/oneapi/setvars.sh
+            # ADR-1360: coverage needs no AOT device images; the self-hosted
+            # host has no ocloc, so build the SPIR-V JIT path only.
             meson setup build-coverage-gpu --buildtype=debug \
               -Db_coverage=true -Db_lto=false \
               -Denable_cuda=true -Denable_sycl=true \
+              -Dsycl_icpx_aot_targets= \
               -Denable_float=true -Denable_avx512=true \
               -Dc_args=-fprofile-update=atomic \
               -Dcpp_args=-fprofile-update=atomic

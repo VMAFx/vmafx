@@ -85,10 +85,13 @@ jobs:
           CC: icx
           CXX: icpx
         run: |
+          # ADR-1360: parity runs don't need AOT device images, and the
+          # self-hosted runner has no ocloc; build the SPIR-V JIT path only.
           meson setup core/build core \
             --buildtype=release \
             -Denable_cuda=false \
             -Denable_sycl=true \
+            -Dsycl_icpx_aot_targets= \
             -Denable_float=true
           ninja -C core/build
       - name: Run SYCL unit and parity tests
