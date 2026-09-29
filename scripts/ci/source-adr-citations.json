@@ -280,7 +280,8 @@
     },
     "0121": {
       "sites": {
-        ".github/workflows/libvmaf-build-matrix.yml": 2
+        ".github/workflows/libvmaf-build-matrix.yml": 2,
+        "core/src/meson.build": 1
       },
       "target": "0121-windows-gpu-build-only-legs.md"
     },
@@ -3773,7 +3774,7 @@
         "core/src/feature/speed_internal.h": 1,
         "core/src/feature/sycl/speed_chroma_sycl.cpp": 3,
         "core/src/feature/sycl/speed_temporal_sycl.cpp": 3,
-        "core/src/meson.build": 2,
+        "core/src/meson.build": 1,
         "core/test/meson.build": 1,
         "core/test/test_cuda_speed_chroma_smoke.c": 2,
         "core/test/test_cuda_speed_temporal_smoke.c": 2,
@@ -3787,6 +3788,7 @@
       "sites": {
         "core/meson_options.txt": 1,
         "core/src/feature/hip/integer_vif/vif_statistics.hip": 2,
+        "core/src/meson.build": 1,
         "core/test/test_hip_vif_parity.c": 2,
         "dev/Containerfile": 2
       },
@@ -7720,6 +7722,25 @@
         "core/test/test_sycl_cambi_parity.c": 4
       },
       "target": "1357-sycl-cambi-device-resident.md"
+    },
+    "1360": {
+      "sites": {
+        ".github/workflows/build.yml": 1,
+        ".github/workflows/ffmpeg-integration.yml": 1,
+        ".github/workflows/libvmaf-build-matrix.yml": 1,
+        ".github/workflows/lint-and-format.yml": 1,
+        "core/meson_options.txt": 1,
+        "core/src/meson.build": 6,
+        "core/src/sycl/check_aot_image.py": 2,
+        "core/test/meson.build": 1,
+        "core/test/test_sycl_aot_image_check.py": 1,
+        "dev/Containerfile": 1,
+        "dev/scripts/fetch-intel-neo.py": 1,
+        "docker/Dockerfile.production-gpu": 1,
+        "scripts/ci/install-intel-ocloc.sh": 1,
+        "scripts/ci/tests/test_sycl_aot_command.py": 1
+      },
+      "target": "1360-sycl-aot-compile-time-device-codegen.md"
     }
   },
   "retired": {
