@@ -2134,19 +2134,20 @@ if is_sycl_enabled
     # with an ocloc failure to cite.
     sycl_icpx_aot_igc_skip = {}
 
-    # ADR-1358: the SpEED TUs reproduce the CPU reference operation for
-    # operation, which `-fp-model=precise` alone does not give on the device.
-    # Measured with icpx 2026.1 on Arc B580 and UHD 770: precise still
-    # contracts `a * b + c` into one FMA inside kernel lambdas (28% of random
-    # products differ from the host). `-ffp-contract=off` AFTER
-    # `-fp-model=precise` (order is load-bearing, see the strict FP policy
+    # ADR-1358 / ADR-1363: the SpEED and ssimulacra2 TUs reproduce the CPU
+    # reference operation for operation, which `-fp-model=precise` alone does
+    # not give on the device. Measured with icpx 2026.1 on Arc B580 and UHD
+    # 770: precise still contracts `a * b + c` into one FMA inside kernel
+    # lambdas (28% of random products differ from the host). `-ffp-contract=off`
+    # AFTER `-fp-model=precise` (order is load-bearing, see the strict FP policy
     # above) stops it, per TU. Division and square root are made correctly
-    # rounded in the source (fdiv_rn / fsqrt_rn), because the offload
-    # precision flags act only on the final image link, which every SYCL
-    # extractor shares. AdaptiveCpp's strict line is already contraction-off.
-    sycl_speed_strict_fp_args = is_sycl_acpp ? [] : ['-ffp-contract=off']
-    sycl_speed_sources = ['speed_chroma_sycl', 'speed_temporal_sycl', 'speed_sycl_pipeline',
-                          'speed_sycl_host']
+    # rounded in the source (div_rn / sqrt_rn in feature/sycl/sycl_exact_fp.h),
+    # because the offload precision flags act only on the final image link,
+    # which every SYCL extractor shares. AdaptiveCpp's strict line is already
+    # contraction-off.
+    sycl_exact_fp_args = is_sycl_acpp ? [] : ['-ffp-contract=off']
+    sycl_exact_fp_sources = ['speed_chroma_sycl', 'speed_temporal_sycl', 'speed_sycl_pipeline',
+                             'speed_sycl_host', 'ssimulacra2_sycl']
 
     # The one explicit device link (ADR-1364) generates every TU's images with
     # a single target list, so it cannot leave targets out per TU.
@@ -2178,7 +2179,7 @@ if is_sycl_enabled
                     ','.join(sycl_icpx_aot_igc_skip[name]) +
                     ' (IGC cannot compile it for them; SPIR-V JIT there). ADR-1360.')
         endif
-        extra_args = sycl_speed_sources.contains(name) ? sycl_speed_strict_fp_args : []
+        extra_args = sycl_exact_fp_sources.contains(name) ? sycl_exact_fp_args : []
         sycl_feature_objects += custom_target('sycl_feature_' + name,
             output : name + '.o',
             input : src,

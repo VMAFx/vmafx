@@ -47,9 +47,11 @@ under [`../../meson.build`](../../meson.build) adds
   Every SpEED kernel lives in `speed_sycl_pipeline.cpp`; the two
   extractor TUs and `speed_sycl_host.cpp` hold none and never wait on
   the queue outside `pipeline_collect()` / `pipeline_wait()`. The four
-  TUs are built with `sycl_speed_strict_fp_args` (`-ffp-contract=off`)
-  in `core/src/meson.build`. In the pipeline, every division and square
-  root goes through `div_rn()` / `sqrt_rn()`, every `log2f` through
+  TUs are built with `sycl_exact_fp_args` (`-ffp-contract=off`, listed
+  in `sycl_exact_fp_sources`) in `core/src/meson.build`. In the
+  pipeline, every division and square root goes through `div_rn()` /
+  `sqrt_rn()` (shared with ssimulacra2 in `sycl_exact_fp.h`, ADR-1363),
+  every `log2f` through
   `speed_log2()`, every product feeding an add sits in a named
   temporary, and the fp64 comparisons of `speed.c` go through
   `below_eps()` / `below_eps_scaled()`. The file must not mention the
@@ -525,6 +527,40 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `scripts/ci/gpu_ulp_calibration.yaml` at places=1 (`5.0e-2`), not compensated
   via pseudo-Kahan recurrence.
 
+- **`ssimulacra2_sycl.cpp` is device-resident
+  ([ADR-1363](../../../../docs/adr/1363-sycl-ssimulacra2-msssim-device-resident.md)).**
+  `submit()` uploads the six raw planes and enqueues the whole frame (YUV ->
+  linear RGB, per scale XYB, the three products and five blurs, SSIM / edge
+  sums, downsample) plus one copy of the per-scale
+  sums; `collect()` is the only wait. Load-bearing: the TU is in
+  `sycl_exact_fp_sources` (contraction off); `VMAF_SS2_FDIV` maps the shared
+  `vmaf_ss2_cbrtf` division to `div_rn` before `ssimulacra2_math.h` is
+  included; products feeding adds sit in named temporaries; YUV / XYB /
+  blur / downsample are bit-identical to `ssimulacra2.c` and the parity sweep
+  proves it. The per-pixel fp64 terms of `ssim_map` / `edge_diff_map` are
+  exact fp32 pairs (`ff_div`, `ff_add`, `ff_mul` in `sycl_exact_fp.h`) summed
+  in a fixed tree whose shape depends only on the plane size
+  (`ss2s_reduce_groups`): deterministic and device-independent, within about
+  1e-11 of the CPU. **On rebase**: do not reintroduce a host stage or a
+  mid-frame wait (`test_sycl_kernel_source_contract.py` fails), do not replace
+  the pair arithmetic with plain fp32 or `sycl::reduction`, and keep the
+  per-channel sum order (L1, L4, artifact, artifact^4, detail, detail^4) that
+  `ss2s_scale_norms` reads. Two blur variants measured slower (ADR-1363): the
+  products fused into the horizontal pass (2.3x on the UHD 770, which is bound
+  by the per-lane loads of the row walk) and the rows staged through local
+  memory (2x on the B580, 5.6x on the UHD 770); do not retry either without
+  measuring per stage.
+
+- **`integer_ms_ssim_sycl.cpp` waits once per frame (ADR-1363).** Each
+  (plane, scale) owns the span `partial_offset[plane][scale]` of
+  `d_partials` / `h_partials` (`[l x groups][c x groups][s x groups]`);
+  `submit()` enqueues the pyramid and every scale's `enqueue_scale_lcs` plus one
+  copy of the whole buffer, and `collect()` waits once and sums each span in
+  group order (`sum_scale_lcs`). Output is bit-identical to the per-scale
+  readback it replaced. **On rebase**: do not share one partials buffer across
+  scales again (the reuse is what forced the per-scale wait); the horizontal
+  workspace may be shared because the queue is in order.
+
 ## icpx-aware clang-tidy
 
 Stock LLVM `clang-tidy` cannot resolve `<sycl/sycl.hpp>`. Use
@@ -599,7 +635,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `integer_moment_sycl.cpp` (`float_moment_sycl`) | `float_moment.c` | `test_sycl_float_moment_parity.c` | ADR-0957 (round 4) |
 | `speed_chroma_sycl.cpp` + `speed_sycl_pipeline.cpp` | `speed.c` | `test_sycl_speed_chroma_parity.c`, `test_sycl_speed_singular_parity.c` | ADR-0957 (round 4), ADR-1358 |
 | `speed_temporal_sycl.cpp` + `speed_sycl_pipeline.cpp` | `speed.c` | `test_sycl_speed_temporal_parity.c`, `test_sycl_speed_singular_parity.c` | ADR-0957 (round 4), ADR-1358 |
-| `ssimulacra2_sycl.cpp` | `ssimulacra2.c` | `test_sycl_ssimulacra2_parity.c` | ADR-0957 (round 4) |
+| `ssimulacra2_sycl.cpp` | `ssimulacra2.c` | `test_sycl_ssimulacra2_parity.c` (3 frames, submit/collect) | ADR-0957 (round 4), ADR-1363 |
 
 > **SpEED twins are wired and device-resident (ADR-0964, ADR-1358).**
 > Both extractors are in `sycl_feature_sources` with the shared

@@ -72,6 +72,49 @@
 - Keep `request_stop()` on both readers before either `join()`, and the ring
   slot reservation before the pool fetch; see `core/tools/AGENTS.md`
   §Frame read-ahead.
+## perf/sycl-ssimulacra2-msssim-device-resident — device-resident `ssimulacra2_sycl`, single-wait `float_ms_ssim_sycl` (ADR-1363) (2026-09-29)
+
+- All touched files are fork-only (upstream Netflix/vmaf has no SYCL, and its
+  `ssimulacra2` does not exist); no Netflix golden-data, public C API or FFmpeg
+  patch impact.
+- `core/src/feature/sycl/ssimulacra2_sycl.cpp` is now submit/collect and holds
+  no host stage: a sync that restores `ss2s_host_combine`,
+  `ss2s_host_linear_rgb_to_xyb`, `ss2s_downsample_2x2` or
+  `ss2s_picture_to_linear_rgb`, or adds a `wait()` outside `collect_fex_sycl`,
+  fails `core/test/test_sycl_kernel_source_contract.py`. A change to
+  `ssimulacra2.c`'s `picture_to_linear_rgb`, `linear_rgb_to_xyb`,
+  `fast_gaussian_1d`, `downsample_2x2`, `ssim_map`, `edge_diff_map` or
+  `pool_score` must be mirrored in the device functions of the same names
+  (`ss2s_yuv_pixel`, `ss2s_xyb_pixel`, `ss2s_iir_step`, `ss2s_down_pixel`,
+  `ss2s_ssim_term`, `ss2s_edge_terms`, `ss2s_pool_score`) and re-checked with
+  `scripts/dev/speed_gpu_parity.py --backend sycl --feature ssimulacra2
+  --max-abs-diff 1e-9`.
+- `core/src/feature/ssimulacra2_math.h`: `vmaf_ss2_cbrtf` divides through
+  `VMAF_SS2_FDIV(a, b)`, default `((a) / (b))`, so host code is unchanged;
+  keep the hook if the cube root is rewritten.
+- `core/src/feature/sycl/sycl_exact_fp.h` is the one home of `div_rn`,
+  `sqrt_rn` and the fp32-pair helpers, moved verbatim out of
+  `speed_sycl_pipeline.cpp` (which now has using-declarations) plus `ff_neg`
+  and `ff_div`. Its slow paths call `sycl::ext::intel::math::fdiv_rn` /
+  `fsqrt_rn` only under `__SYCL_DEVICE_ONLY__`: DPC++ also emits a host copy
+  of every kernel body, and the extension's host fallback in
+  `libsycl-devicelib-host.a` needs libm symbols the static test links do not
+  resolve (`test_speed`, `test_sycl_ssimulacra2_parity` failed to link before).
+  The SYCL feature TUs are custom targets without header dependency tracking:
+  after editing the header, touch `ssimulacra2_sycl.cpp` and
+  `speed_sycl_pipeline.cpp` in an incremental build.
+  `core/src/meson.build` renames `sycl_speed_strict_fp_args` /
+  `sycl_speed_sources` to `sycl_exact_fp_args` / `sycl_exact_fp_sources` and
+  adds `ssimulacra2_sycl`; a branch still using the old names must follow the
+  rename (the source contract checks the list).
+- `core/src/feature/sycl/integer_ms_ssim_sycl.cpp`: `d_l/c/s_partials` and
+  `h_l/c/s_partials` became one `d_partials` / `h_partials` pair with a
+  per-(plane, scale) `partial_offset`; the horizontal and vertical passes moved
+  from `collect()` to `submit()` (`enqueue_scale_lcs`), and `collect()` sums
+  (`sum_scale_lcs`) after one wait. Any change that adds a plane or a scale
+  must extend the offset table in `allocate_ms_ssim_buffers`.
+- `scripts/dev/speed_gpu_parity.py` gained `--feature` and `--max-abs-diff`;
+  the defaults keep the SpEED behaviour.
 
 ## fix/sycl-aot-at-link — SYCL AOT images built at compile time, checked after link (ADR-1360) (2026-09-29)
 

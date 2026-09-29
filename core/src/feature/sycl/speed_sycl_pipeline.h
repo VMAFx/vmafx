@@ -18,7 +18,7 @@
  *  Numerical contract: every stage mirrors the CPU reference operation for
  *  operation in fp32 (no fp64 anywhere, ADR-0220). The pipeline TU is built
  *  with contraction off and correctly rounded fp32 division and square root
- *  (core/src/meson.build, `sycl_speed_strict_fp_args`), without which no
+ *  (core/src/meson.build, `sycl_exact_fp_args`), without which no
  *  device kernel can reproduce the host arithmetic.
  */
 

@@ -50,9 +50,11 @@ sycl/
   expression, and device fp32 `/` and `sqrt` stay non-correctly-rounded
   (measured with icpx 2026.1 on Arc B580 and UHD 770,
   [ADR-1358](../../../docs/adr/1358-sycl-speed-device-resident-linalg.md)).
-  Bit-exact TUs add `-ffp-contract=off` after it (the SpEED TUs'
-  `sycl_speed_strict_fp_args`) and round division / square root
-  explicitly; see `T-SYCL-FP-MODEL-PRECISE-CONTRACTS-2026-09-29`.
+  Bit-exact TUs add `-ffp-contract=off` after it (`sycl_exact_fp_args`
+  for the TUs listed in `sycl_exact_fp_sources`: SpEED and, since
+  ADR-1363, `ssimulacra2_sycl`) and round division / square root
+  explicitly through `feature/sycl/sycl_exact_fp.h`; see
+  `T-SYCL-FP-MODEL-PRECISE-CONTRACTS-2026-09-29`.
 - **fp64-free kernels load-bearing
   ([ADR-0220](../../../docs/adr/0220-sycl-fp64-fallback.md), T7-17).**
   Every SYCL feature-kernel lambda must capture and operate on

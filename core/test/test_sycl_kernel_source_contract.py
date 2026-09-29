@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Protect fp64-free SpEED kernels and explicit SYCL output captures."""
+"""Protect fp64-free SpEED kernels, device-resident twins and explicit SYCL output captures."""
 
 from __future__ import annotations
 
@@ -12,6 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SYCL_ROOT = ROOT / "core" / "src" / "feature" / "sycl"
 
+# ADR-1358 / ADR-1363: the exact fp32 helpers shared by the SpEED pipeline and
+# the ssimulacra2 twin are device code and must never mention the fp64 type.
+EXACT_FP_HEADER = "sycl_exact_fp.h"
 # ADR-1358: every SpEED device kernel lives in the pipeline TU, which must stay
 # fp64-free; the extractor and host-setup TUs hold no kernel and never call the
 # retired host linear-algebra residual or wait on the queue mid-frame.
@@ -31,22 +34,95 @@ SPEED_HOST_RESIDUAL = tuple(
     )
 )
 MOMENT_OUTPUT_COUNT = 4
+# ADR-1363: ssimulacra2 and float_ms_ssim run the whole frame from submit() and
+# wait on the queue once, in collect(). The retired ssimulacra2 host stages
+# (per-scale host XYB, host downsample, host SSIM / edge combine, host YUV
+# conversion) must not come back.
+SSIMULACRA2 = "ssimulacra2_sycl.cpp"
+MS_SSIM = "integer_ms_ssim_sycl.cpp"
+SSIMULACRA2_HOST_RESIDUAL = tuple(
+    re.compile(rf"\b{name}\(")
+    for name in (
+        "ss2s_host_combine",
+        "ss2s_host_linear_rgb_to_xyb",
+        "ss2s_downsample_2x2",
+        "ss2s_picture_to_linear_rgb",
+    )
+)
+QUEUE_WAIT = re.compile(r"(?:\.|->)wait(?:_and_throw)?\(")
 
 
 def _sources() -> dict[str, str]:
     names = (
+        EXACT_FP_HEADER,
         SPEED_PIPELINE,
         *SPEED_HOST_TUS,
+        SSIMULACRA2,
         "float_psnr_sycl.cpp",
         "integer_psnr_sycl.cpp",
         "integer_moment_sycl.cpp",
-        "integer_ms_ssim_sycl.cpp",
+        MS_SSIM,
     )
     return {name: (SYCL_ROOT / name).read_text(encoding="utf-8") for name in names}
 
 
+def _function_body(source: str, name: str) -> str:
+    """Text of the first definition of `name` (brace-matched), or empty."""
+    match = re.search(rf"\b{name}\([^;{{]*\)\s*\{{", source)
+    if not match:
+        return ""
+    depth = 0
+    for index in range(match.end() - 1, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[match.start() : index + 1]
+    return ""
+
+
+def _single_collect_wait_failures(sources: dict[str, str], name: str) -> list[str]:
+    waits = QUEUE_WAIT.findall(sources[name])
+    collect = _function_body(sources[name], "collect_fex_sycl")
+    if len(waits) != 1 or len(QUEUE_WAIT.findall(collect)) != 1:
+        return [f"{name}: the queue must be waited on exactly once, in collect_fex_sycl"]
+    return []
+
+
+EXACT_FP_TUS = (
+    "speed_chroma_sycl",
+    "speed_temporal_sycl",
+    "speed_sycl_pipeline",
+    "speed_sycl_host",
+    "ssimulacra2_sycl",
+)
+
+
+def _exact_fp_build_failures(meson: str) -> list[str]:
+    """Every TU that relies on sycl_exact_fp.h is built with contraction off."""
+    match = re.search(r"sycl_exact_fp_sources\s*=\s*\[([^\]]*)\]", meson)
+    listed = set(re.findall(r"'([^']+)'", match.group(1))) if match else set()
+    missing = [name for name in EXACT_FP_TUS if name not in listed]
+    if missing or "sycl_exact_fp_sources.contains(name) ? sycl_exact_fp_args" not in meson:
+        return [f"core/src/meson.build: contraction-off TUs missing {missing}"]
+    return []
+
+
+def _device_resident_failures(sources: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    for helper in SSIMULACRA2_HOST_RESIDUAL:
+        if helper.search(sources[SSIMULACRA2]):
+            failures.append(f"{SSIMULACRA2}: host residual {helper.pattern} reintroduced")
+    failures += _single_collect_wait_failures(sources, SSIMULACRA2)
+    failures += _single_collect_wait_failures(sources, MS_SSIM)
+    return failures
+
+
 def _speed_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
+    if re.search(r"\bdouble\b", sources[EXACT_FP_HEADER]):
+        failures.append(f"{EXACT_FP_HEADER}: fp64 type appears in the shared device helpers")
     if re.search(r"\bdouble\b", sources[SPEED_PIPELINE]):
         failures.append(f"{SPEED_PIPELINE}: fp64 type appears in the device pipeline")
     for name in (SPEED_PIPELINE, *SPEED_HOST_TUS):
@@ -63,6 +139,7 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
 
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     failures = _speed_failures(sources)
+    failures += _device_resident_failures(sources)
 
     float_psnr = sources["float_psnr_sycl.cpp"]
     if "FpsnrOutput output" not in float_psnr or "output.partials" not in float_psnr:
@@ -142,10 +219,46 @@ class SyclKernelSourceContractTest(unittest.TestCase):
 
     def test_fp64_speed_regression_is_detected(self) -> None:
         sources = _sources()
-        sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(
+        sources[SPEED_PIPELINE] += "\nstruct Wide { double sum; };\n"
+        failures = _contract_failures(sources)
+        self.assertTrue(any(f"{SPEED_PIPELINE}: fp64 type" in item for item in failures))
+
+    def test_fp64_exact_fp_header_regression_is_detected(self) -> None:
+        sources = _sources()
+        sources[EXACT_FP_HEADER] = sources[EXACT_FP_HEADER].replace(
             "struct Ff {", "struct Wide { double sum; };\nstruct Ff {", 1
         )
-        self.assertTrue(any("fp64 type" in item for item in _contract_failures(sources)))
+        failures = _contract_failures(sources)
+        self.assertTrue(any(f"{EXACT_FP_HEADER}: fp64 type" in item for item in failures))
+
+    def test_exact_fp_tus_build_with_contraction_off(self) -> None:
+        meson = (ROOT / "core" / "src" / "meson.build").read_text(encoding="utf-8")
+        self.assertEqual(_exact_fp_build_failures(meson), [])
+        dropped = meson.replace("'speed_sycl_host', 'ssimulacra2_sycl'", "'speed_sycl_host'", 1)
+        self.assertTrue(_exact_fp_build_failures(dropped))
+
+    def test_ssimulacra2_host_residual_regression_is_detected(self) -> None:
+        sources = _sources()
+        sources[SSIMULACRA2] += "\nss2s_host_combine(s, scale, avg_ssim, avg_ed);\n"
+        self.assertTrue(any("host residual" in item for item in _contract_failures(sources)))
+
+    def test_ssimulacra2_mid_frame_wait_is_detected(self) -> None:
+        sources = _sources()
+        sources[SSIMULACRA2] = sources[SSIMULACRA2].replace(
+            "    launch_xyb(q, xyb);\n", "    launch_xyb(q, xyb);\n    q.wait();\n", 1
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any(f"{SSIMULACRA2}: the queue" in item for item in failures))
+
+    def test_ms_ssim_per_scale_wait_is_detected(self) -> None:
+        sources = _sources()
+        sources[MS_SSIM] = sources[MS_SSIM].replace(
+            "            enqueue_scale_lcs(s, q, plane, scale);\n",
+            "            enqueue_scale_lcs(s, q, plane, scale);\n            q.wait();\n",
+            1,
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any(f"{MS_SSIM}: the queue" in item for item in failures))
 
     def test_host_residual_regression_is_detected(self) -> None:
         sources = _sources()

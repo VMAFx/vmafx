@@ -22,6 +22,8 @@
  *    - horiz (11-tap separable Gaussian over 5 stats)
  *    - vert+lcs (vertical 11-tap + per-pixel l/c/s + per-WG
  *      partials × 3 via reduce_over_group)
+ *  submit() enqueues every plane and scale plus one copy of all
+ *  partials; collect() waits once and sums them (ADR-1363).
  *
  *  fp64-free (Intel Arc A380 lacks native fp64 — same constraint
  *  as ssim_sycl).
@@ -114,21 +116,24 @@ struct MsSsimStateSycl {
     MsSsimPlaneGeometry geom[MS_SSIM_MAX_PLANES];
     float c1, c2, c3;
     VmafSyclState *sycl_state;
-    /* The reduction workspace below is deliberately NOT per plane. It is already
-     * reused across the five scales, and no chroma plane is larger than luma in
-     * any supported pixel format, so the plane-0 sizing dominates. Planes run
-     * sequentially for the same reason the scales do. */
+    /* The horizontal workspace below is deliberately NOT per plane. It is
+     * reused across the five scales and the planes, which the in-order queue
+     * serialises, and no chroma plane is larger than luma in any supported
+     * pixel format, so the plane-0 sizing dominates. */
     float *d_h_ref_mu;
     float *d_h_cmp_mu;
     float *d_h_ref_sq;
     float *d_h_cmp_sq;
     float *d_h_refcmp;
-    float *d_l_partials;
-    float *d_c_partials;
-    float *d_s_partials;
-    float *h_l_partials;
-    float *h_c_partials;
-    float *h_s_partials;
+    /* Per-group l/c/s partials of every (plane, scale), NOT reused: each
+     * (plane, scale) owns the span at partial_offset, laid out as
+     * [l x groups][c x groups][s x groups]. submit() enqueues every scale and
+     * one copy of the whole buffer; collect() waits once and sums them on the
+     * host in the order the per-scale readback used (ADR-1363). */
+    float *d_partials;
+    float *h_partials;
+    size_t partial_offset[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES];
+    size_t partial_floats;
     bool has_pending;
     unsigned pending_index;
     VmafDictionary *feature_name_dict;
@@ -528,13 +533,17 @@ static void allocate_ms_ssim_buffers(MsSsimStateSycl *s)
     s->d_h_ref_sq = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
     s->d_h_cmp_sq = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
     s->d_h_refcmp = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
-    const size_t partial_bytes = (size_t)s->geom[0].scale_wg_count[0] * sizeof(float);
-    s->d_l_partials = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, partial_bytes));
-    s->d_c_partials = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, partial_bytes));
-    s->d_s_partials = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, partial_bytes));
-    s->h_l_partials = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, partial_bytes));
-    s->h_c_partials = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, partial_bytes));
-    s->h_s_partials = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, partial_bytes));
+    size_t partial_floats = 0;
+    for (unsigned plane = 0; plane < s->n_planes; plane++) {
+        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
+            s->partial_offset[plane][scale] = partial_floats;
+            partial_floats += 3u * (size_t)s->geom[plane].scale_wg_count[scale];
+        }
+    }
+    s->partial_floats = partial_floats;
+    const size_t partial_bytes = partial_floats * sizeof(float);
+    s->d_partials = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, partial_bytes));
+    s->h_partials = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, partial_bytes));
 }
 
 } // namespace
@@ -545,8 +554,7 @@ namespace
 static bool ms_ssim_allocations_complete(const MsSsimStateSycl *s)
 {
     if (!s->d_h_ref_mu || !s->d_h_cmp_mu || !s->d_h_ref_sq || !s->d_h_cmp_sq || !s->d_h_refcmp ||
-        !s->d_l_partials || !s->d_c_partials || !s->d_s_partials || !s->h_l_partials ||
-        !s->h_c_partials || !s->h_s_partials) {
+        !s->d_partials || !s->h_partials) {
         return false;
     }
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
@@ -609,6 +617,35 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 namespace
 {
 
+/* Horizontal pass, then vertical pass + per-group l/c/s of one (plane, scale).
+ * The shared horizontal workspace is safe to reuse across scales and planes
+ * because the queue is in order; the partials go to the pair's own span. */
+static void enqueue_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, unsigned plane, int scale)
+{
+    const MsSsimPlaneGeometry &geometry = s->geom[plane];
+    const size_t groups = geometry.scale_wg_count[scale];
+    float *span = s->d_partials + s->partial_offset[plane][scale];
+    launch_horiz(queue, geometry.d_pyramid_ref[scale], geometry.d_pyramid_cmp[scale], s->d_h_ref_mu,
+                 s->d_h_cmp_mu, s->d_h_ref_sq, s->d_h_cmp_sq, s->d_h_refcmp,
+                 geometry.scale_w[scale], geometry.scale_w_horiz[scale],
+                 geometry.scale_h_horiz[scale]);
+    launch_vert_lcs(queue, {.ref_mu = s->d_h_ref_mu,
+                            .cmp_mu = s->d_h_cmp_mu,
+                            .ref_sq = s->d_h_ref_sq,
+                            .cmp_sq = s->d_h_cmp_sq,
+                            .refcmp = s->d_h_refcmp,
+                            .luminance = span,
+                            .contrast = span + groups,
+                            .structure = span + 2u * groups,
+                            .horizontal_width = geometry.scale_w_horiz[scale],
+                            .final_width = geometry.scale_w_final[scale],
+                            .final_height = geometry.scale_h_final[scale],
+                            .group_columns = geometry.scale_wg_count_x[scale],
+                            .c1 = s->c1,
+                            .c2 = s->c2,
+                            .c3 = s->c3});
+}
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -624,7 +661,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     /* Every plane is staged here, not in collect: libvmaf's double-buffered GPU
      * dispatch (libvmaf.c, dispatch_gpu_double_buffer) releases the picture
      * after submit returns, so collect has no VmafPicture to read from. The
-     * per-plane pyramids therefore all live until collect consumes them. */
+     * whole frame -- pyramids and every scale's l/c/s pass -- is enqueued here
+     * without a wait; collect only waits for the one partials copy
+     * (ADR-1363). */
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
         const MsSsimPlaneGeometry &geometry = s->geom[plane];
         const ptrdiff_t stride = (ptrdiff_t)((size_t)geometry.width * sizeof(float));
@@ -650,7 +689,12 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                                 .output_width = geometry.scale_w[i + 1],
                                 .output_height = geometry.scale_h[i + 1]});
         }
+        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
+            enqueue_scale_lcs(s, q, plane, scale);
+        }
     }
+    /* The only device-to-host copy of the frame; collect() waits on it. */
+    q.memcpy(s->h_partials, s->d_partials, s->partial_floats * sizeof(float));
 
     s->pending_index = index;
     s->has_pending = true;
@@ -662,41 +706,23 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 namespace
 {
 
-static void compute_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, unsigned plane, int scale,
-                              double &luminance, double &contrast, double &structure)
+/* Sums one (plane, scale)'s group partials from the frame's single readback,
+ * in the group order the per-scale readback used, so the result is unchanged. */
+static void sum_scale_lcs(const MsSsimStateSycl *s, unsigned plane, int scale, double &luminance,
+                          double &contrast, double &structure)
 {
     const MsSsimPlaneGeometry &geometry = s->geom[plane];
-    launch_horiz(queue, geometry.d_pyramid_ref[scale], geometry.d_pyramid_cmp[scale], s->d_h_ref_mu,
-                 s->d_h_cmp_mu, s->d_h_ref_sq, s->d_h_cmp_sq, s->d_h_refcmp,
-                 geometry.scale_w[scale], geometry.scale_w_horiz[scale],
-                 geometry.scale_h_horiz[scale]);
-    launch_vert_lcs(queue, {.ref_mu = s->d_h_ref_mu,
-                            .cmp_mu = s->d_h_cmp_mu,
-                            .ref_sq = s->d_h_ref_sq,
-                            .cmp_sq = s->d_h_cmp_sq,
-                            .refcmp = s->d_h_refcmp,
-                            .luminance = s->d_l_partials,
-                            .contrast = s->d_c_partials,
-                            .structure = s->d_s_partials,
-                            .horizontal_width = geometry.scale_w_horiz[scale],
-                            .final_width = geometry.scale_w_final[scale],
-                            .final_height = geometry.scale_h_final[scale],
-                            .group_columns = geometry.scale_wg_count_x[scale],
-                            .c1 = s->c1,
-                            .c2 = s->c2,
-                            .c3 = s->c3});
-    const size_t bytes = (size_t)geometry.scale_wg_count[scale] * sizeof(float);
-    queue.memcpy(s->h_l_partials, s->d_l_partials, bytes);
-    queue.memcpy(s->h_c_partials, s->d_c_partials, bytes);
-    queue.memcpy(s->h_s_partials, s->d_s_partials, bytes);
-    queue.wait();
+    const unsigned groups = geometry.scale_wg_count[scale];
+    const float *l_partials = s->h_partials + s->partial_offset[plane][scale];
+    const float *c_partials = l_partials + groups;
+    const float *s_partials = c_partials + groups;
     double total_l = 0.0;
     double total_c = 0.0;
     double total_s = 0.0;
-    for (unsigned group = 0; group < geometry.scale_wg_count[scale]; group++) {
-        total_l += (double)s->h_l_partials[group];
-        total_c += (double)s->h_c_partials[group];
-        total_s += (double)s->h_s_partials[group];
+    for (unsigned group = 0; group < groups; group++) {
+        total_l += (double)l_partials[group];
+        total_c += (double)c_partials[group];
+        total_s += (double)s_partials[group];
     }
     const double pixels =
         (double)geometry.scale_w_final[scale] * (double)geometry.scale_h_final[scale];
@@ -723,18 +749,16 @@ static double combine_ms_ssim(const double luminance[MS_SSIM_SCALES],
     return score;
 }
 
-static int compute_plane_scores(MsSsimStateSycl *s, sycl::queue &queue, unsigned index,
+static int compute_plane_scores(const MsSsimStateSycl *s, unsigned index,
                                 double plane_scores[MS_SSIM_MAX_PLANES],
                                 double plane_l[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES],
                                 double plane_c[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES],
                                 double plane_s[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES])
 {
     for (unsigned plane = 0; plane < s->n_planes; ++plane) {
-        /* Planes run sequentially because their intermediates and partials use
-         * one shared workspace; compute_scale_lcs waits before returning. */
         for (int scale = 0; scale < MS_SSIM_SCALES; ++scale) {
-            compute_scale_lcs(s, queue, plane, scale, plane_l[plane][scale], plane_c[plane][scale],
-                              plane_s[plane][scale]);
+            sum_scale_lcs(s, plane, scale, plane_l[plane][scale], plane_c[plane][scale],
+                          plane_s[plane][scale]);
             if (!std::isfinite(plane_l[plane][scale]) || !std::isfinite(plane_c[plane][scale]) ||
                 !std::isfinite(plane_s[plane][scale])) {
                 vmaf_log(VMAF_LOG_LEVEL_WARNING,
@@ -770,7 +794,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     if (!qptr) {
         return -EINVAL;
     }
-    sycl::queue &q = *qptr;
+    /* The one host wait per frame: h_partials is written by the last copy of
+     * the chain submit() enqueued. */
+    qptr->wait();
 
     /* Feature names per plane, matching float_ms_ssim.c's ms_ssim_feature_names
      * exactly -- a GPU twin that emitted different names would be scored as a
@@ -785,7 +811,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     double plane_l[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
     double plane_c[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
     double plane_s[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES] = {{0.0}};
-    int err = compute_plane_scores(s, q, index, plane_scores, plane_l, plane_c, plane_s);
+    int err = compute_plane_scores(s, index, plane_scores, plane_l, plane_c, plane_s);
     if (err)
         return err;
 
@@ -857,12 +883,8 @@ static void free_ms_ssim_workspace(MsSsimStateSycl *s)
     free_ms_ssim_pointer(s->sycl_state, s->d_h_ref_sq);
     free_ms_ssim_pointer(s->sycl_state, s->d_h_cmp_sq);
     free_ms_ssim_pointer(s->sycl_state, s->d_h_refcmp);
-    free_ms_ssim_pointer(s->sycl_state, s->d_l_partials);
-    free_ms_ssim_pointer(s->sycl_state, s->d_c_partials);
-    free_ms_ssim_pointer(s->sycl_state, s->d_s_partials);
-    free_ms_ssim_pointer(s->sycl_state, s->h_l_partials);
-    free_ms_ssim_pointer(s->sycl_state, s->h_c_partials);
-    free_ms_ssim_pointer(s->sycl_state, s->h_s_partials);
+    free_ms_ssim_pointer(s->sycl_state, s->d_partials);
+    free_ms_ssim_pointer(s->sycl_state, s->h_partials);
 }
 
 } // namespace

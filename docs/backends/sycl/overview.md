@@ -528,17 +528,27 @@ the deviation:
   pass `0` for the new trailing `channel` argument (Y-plane only,
   preserving SYCL pre-port behaviour).
 - **SSIMULACRA 2** — `ssimulacra2_sycl` shipped per
-  [ADR-0206](../../adr/0206-ssimulacra2-cuda-sycl.md) (hybrid
-  host/GPU pipeline, kernel lambdas held in IEEE-754 strict mode by
-  the existing `-fp-model=precise`). The Charalampidis recursive blur is
-  pure float32 matching the CUDA twin; pseudo-Kahan recurrence attempts are
+  [ADR-0206](../../adr/0206-ssimulacra2-cuda-sycl.md) and has been
+  device-resident since
+  [ADR-1363](../../adr/1363-sycl-ssimulacra2-msssim-device-resident.md):
+  one upload of the raw planes, colour conversion, XYB, blurs, SSIM and
+  edge sums and downsample on the device, one 864-byte readback per frame.
+  Its TU builds with `-ffp-contract=off` like the SpEED TUs and divides
+  through the correctly rounded `div_rn()`, so everything up to the sums is
+  bit-identical to the CPU; the sums use pairs of floats in a fixed tree
+  (no fp64 on the device), which puts the score within about 1e-11 of
+  `--backend cpu`, identical on the B580 and the UHD 770. The Charalampidis
+  recursive blur is pure float32; pseudo-Kahan recurrence attempts are
   strictly forbidden as the 3-pole IIR filter has no running accumulator and
-  diverges exponentially when perturbed. Under Arc A-series (e.g. A380) and
-  other fp64-less hardware, cross-backend differences accumulate across the
-  6-scale pyramid, leading to ~1.2e-2 delta on natural video sequences.
-  This divergence is calibrated via `scripts/ci/gpu_ulp_calibration.yaml`
-  at places=1 (`5.0e-2`) per
-  [ADR-0985](../../adr/0985-sycl-parity-divergence-2026-06-03.md).
+  diverges exponentially when perturbed. The places=1 (`5.0e-2`) Arc A380
+  calibration in `scripts/ci/gpu_ulp_calibration.yaml`
+  ([ADR-0985](../../adr/0985-sycl-parity-divergence-2026-06-03.md)) predates
+  the device-resident chain and has not been re-measured on an A380. See
+  [SSIMULACRA 2](../../metrics/ssimulacra2.md#sycl-device-resident-one-readback-per-frame).
+- **MS-SSIM waits once per frame (ADR-1363).** `float_ms_ssim_sycl`
+  enqueues the pyramid and every scale's passes in `submit()`, each scale
+  writing its partials to its own span, and `collect()` waits once and sums
+  them. The output is identical to the earlier per-scale readback.
 - **dmabuf import is Linux-only.** The VA-API → dmabuf fast path is
   gated on `#ifndef _WIN32` in `sycl/dmabuf_import.cpp`; on Windows,
   `vmaf_sycl_dmabuf_import` and `vmaf_sycl_import_va_surface` return

@@ -60,9 +60,41 @@ vmaf ... --feature ssimulacra2=yuv_matrix=2
 - GPU twins: `ssimulacra2_cuda`, `ssimulacra2_sycl`, and
   `ssimulacra2_hip`. (The Vulkan backend was removed in ADR-0726.)
 
-The CPU scalar/SIMD path is bit-exact across the fork's host matrix. The GPU
-twins offload the pyramid blur and per-pixel multiply stages while keeping the
-XYB conversion and final combine on the host.
+The CPU scalar/SIMD path is bit-exact across the fork's host matrix. The CUDA,
+HIP and Metal twins offload the pyramid blur and per-pixel multiply stages while
+keeping the colour conversion, XYB, downsample and final combine on the host.
+
+### SYCL: device-resident, one readback per frame
+
+`ssimulacra2_sycl` runs the whole frame on the device (ADR-1363): it uploads the
+raw Y/U/V planes once, converts to linear RGB and XYB, blurs, forms the SSIM and
+edge-difference sums and downsamples on the device, and reads back one 864-byte
+block of per-scale sums. Request it by name — `--feature ssimulacra2` runs the
+CPU extractor whatever `--backend` says:
+
+```shell
+vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 \
+    --backend sycl --no_prediction --feature ssimulacra2_sycl -o out.json --json
+```
+
+Colour conversion, XYB, blurs and downsample match the CPU bit for bit. The CPU
+evaluates the per-pixel SSIM and edge terms in double precision and adds them
+one by one; the device has no double precision, so it evaluates them in pairs of
+floats (about 13 significant digits) and adds them in a fixed tree. The
+per-frame score is within about 1e-11 of `--backend cpu` (6.7e-12 at worst at
+3840x2160) and is the same on every device and every run. Before ADR-1363 the
+twin matched the CPU exactly but copied about 4 GB per 4K frame between device
+and host. On an Arc B580 a 3840x2160 frame now takes about 33 ms, against
+963 ms before and about 167 ms for the CPU extractor on 16 threads. Check and
+time it with:
+
+```shell
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --feature ssimulacra2 --max-abs-diff 1e-9 \
+    --netflix-dir python/test/resource/yuv --bbb-dir testdata/bbb
+```
+
+`ssimulacra2_sycl` rejects 4:0:0 (luma-only) input at init.
 
 ### Cross-compiler bit-exactness (FMA unification)
 

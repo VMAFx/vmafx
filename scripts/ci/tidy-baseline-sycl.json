@@ -353,7 +353,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 933,
+  "total_warnings": 914,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -408,7 +408,6 @@
     "core/src/feature/speed_internal.h": 3,
     "core/src/feature/ssim.c": 6,
     "core/src/feature/ssimulacra2_eotf_lut.h": 6,
-    "core/src/feature/sycl/ssimulacra2_sycl.cpp": 19,
     "core/src/feature/vif_options.h": 1,
     "core/src/feature/vif_tools.h": 2,
     "core/src/feature/x86/float_adm_avx2.c": 7,
@@ -515,6 +514,21 @@
         }
       },
       "previous_baseline_sha256": "9ffd9094084625eae97a4824238ca16f23e69370111360c8e69ed80d7753ff91"
+    },
+    {
+      "sources": [
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp": {
+          "warnings": [
+            19,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "777239bb9372f360c72665d5082d6bb891e5f79aa572da6bb4ff9e28100baf4f"
     }
   ]
 }

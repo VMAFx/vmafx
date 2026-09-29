@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Frame-by-frame parity and timing of a SpEED GPU twin against the CPU extractor.
+"""Frame-by-frame parity and timing of a GPU twin against the CPU extractor.
 
-ADR-1358 makes the SYCL twins bit-identical to the CPU extractor; the CUDA and
-HIP twins are to follow. For each fixture (the Netflix 576x324 pair, 48 frames,
-and BBB 3840x2160, 50 frames) and each of ``speed_chroma`` / ``speed_temporal``
-this runs the CPU extractor and the ``<feature>_<backend>`` twin at
-``--precision max``, reports the bit-identical frame count and the maximum
-absolute difference per output, then times both as ``(t(22) - t(2)) / 20``
-milliseconds per frame, the median of ``--reps`` repetitions.
+ADR-1358 makes the SYCL SpEED twins bit-identical to the CPU extractor; the CUDA
+and HIP twins are to follow. For each fixture (the Netflix 576x324 pair, 48
+frames, and BBB 3840x2160, 50 frames) and each feature (``speed_chroma`` /
+``speed_temporal`` unless ``--feature`` names others, e.g. ``ssimulacra2`` or
+``float_ms_ssim``, ADR-1363) this runs the CPU extractor and the
+``<feature>_<backend>`` twin at ``--precision max``, reports the bit-identical
+frame count and the maximum absolute difference per output, then times both as
+``(t(22) - t(2)) / 20`` milliseconds per frame, the median of ``--reps``
+repetitions.
 
 A GPU twin must be requested by its registered name: ``--feature speed_chroma``
 resolves to the CPU extractor whatever ``--backend`` says.
@@ -18,15 +20,18 @@ Usage::
 
     python3 scripts/dev/speed_gpu_parity.py --backend cuda
     ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py --backend sycl
+    python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2 --max-abs-diff 1e-9
 
-Exit status: 0 when every output of every frame is identical, 1 when any
-differs, 2 on a usage or run error.
+Exit status: 0 when every output of every frame is identical (or, with
+``--max-abs-diff``, within that bound), 1 when any is not, 2 on a usage or run
+error.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 import tempfile
@@ -147,7 +152,9 @@ def compare(cpu: list[dict[str, float]], gpu: list[dict[str, float]]) -> dict[st
     for name in names:
         deltas = [abs(c[name] - g[name]) for c, g in zip(cpu, gpu, strict=True)]
         exact = sum(1 for delta in deltas if delta == 0.0)
-        result[name] = Difference(exact, len(deltas), max(deltas))
+        # max() skips a NaN that is not first; a NaN delta is never within a bound.
+        worst = math.inf if any(math.isnan(delta) for delta in deltas) else max(deltas)
+        result[name] = Difference(exact, len(deltas), worst)
     return result
 
 
@@ -191,7 +198,8 @@ def timed(args: argparse.Namespace, fixture: Fixture, feature: str, backend: str
 
 
 def check_pair(args: argparse.Namespace, fixture: Fixture, feature: str) -> bool:
-    """Run, compare and report one fixture/feature pair; True when identical."""
+    """Run, compare and report one fixture/feature pair; True when every output
+    is identical, or within ``--max-abs-diff`` when that bound is set."""
     with tempfile.TemporaryDirectory() as tmp:
         cpu_out = Path(tmp) / "cpu.json"
         gpu_out = Path(tmp) / "gpu.json"
@@ -203,7 +211,8 @@ def check_pair(args: argparse.Namespace, fixture: Fixture, feature: str) -> bool
         result = compare(load_frames(cpu_out), load_frames(gpu_out))
     identical = True
     for name, diff in result.items():
-        identical = identical and diff.exact == diff.total
+        within = diff.exact == diff.total or diff.max_abs <= args.max_abs_diff
+        identical = identical and within
         print(
             f"{fixture.name} {name}: bit-identical {diff.exact}/{diff.total}, "
             f"max abs diff {diff.max_abs:.3e}"
@@ -220,9 +229,24 @@ def parse(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--threads", type=int, default=16)
     parser.add_argument("--reps", type=int, default=3)
     parser.add_argument("--no-timing", action="store_true")
+    parser.add_argument(
+        "--feature",
+        action="append",
+        help="CPU feature name whose <feature>_<backend> twin to check; repeatable "
+        f"(default: {' '.join(FEATURES)})",
+    )
+    parser.add_argument(
+        "--max-abs-diff",
+        type=float,
+        default=0.0,
+        help="pass when every output's max abs diff is at most this (default 0: bit-identical)",
+    )
     args = parser.parse_args(argv)
     if args.reps < 1 or args.threads < 1:
         parser.error("--reps and --threads must be at least 1")
+    if not math.isfinite(args.max_abs_diff) or args.max_abs_diff < 0.0:
+        parser.error("--max-abs-diff must be a finite non-negative number")
+    args.feature = tuple(args.feature) if args.feature else FEATURES
     return args
 
 
@@ -231,7 +255,7 @@ def main(argv: Sequence[str]) -> int:
     identical = True
     try:
         for fixture in fixtures(args.netflix_dir, args.bbb_dir):
-            for feature in FEATURES:
+            for feature in args.feature:
                 identical = check_pair(args, fixture, feature) and identical
                 if args.no_timing:
                     continue

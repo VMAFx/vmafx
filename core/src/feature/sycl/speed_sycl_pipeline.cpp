@@ -21,9 +21,6 @@
 #include "speed_sycl_pipeline.h"
 
 #include <sycl/sycl.hpp>
-#if defined(SYCL_IMPLEMENTATION_ONEAPI)
-#include <sycl/ext/intel/math.hpp>
-#endif
 
 #include <cassert>
 #include <cerrno>
@@ -36,6 +33,7 @@
 #include <utility>
 
 #include "log.h"
+#include "sycl_exact_fp.h"
 
 using speed_sycl::ChannelBinding;
 using speed_sycl::FrameResult;
@@ -65,235 +63,17 @@ constexpr float kElementsF = static_cast<float>(kN); /* elements_in_block */
 constexpr float kEpsHi = 0x1.0c6f7ap-20f;            /* (float)EIGENVALUE_EPS */
 constexpr float kEpsLo = 0x1.6bdb1ap-49f;            /* EIGENVALUE_EPS - kEpsHi, exact */
 
-/* ------------------------------------------------------------------ */
-/* Correctly rounded fp32 division and square root                     */
-/* ------------------------------------------------------------------ */
-
-/* Device `/` and sqrt() are not correctly rounded by default (measured: 28%
- * and 8% of random operands differ from the host), and the offload precision
- * flags only act when the final image is linked, which is shared with every
- * other extractor. Every division and square root below therefore goes
- * through div_rn() / sqrt_rn(): a hardware approximation refined once, then
- * the two adjacent floats around it are checked with exact FMA residuals.
- * When their residual signs prove the true value lies between them, the
- * nearer one (ties to even) is the correctly rounded result; otherwise, and
- * for zero, non-finite or extreme operands, the oneAPI math extension's
- * software round-to-nearest routine answers (exact, about 15x slower).
- * 0 mismatches against the host on 16.7M operands spanning 2^-126..2^127 on
- * B580 and UHD 770. AdaptiveCpp has no such extension: its slow path is the
- * plain operator, and the contract there is ADR-0214's tolerance.
- *
- * Operand ranges where every residual is exact: a dividend or radicand of at
- * least 2^-100 keeps the residual bits above the subnormal range, and a
- * normal divisor and quotient keep q * b finite. */
-constexpr float kFastLow = 0x1p-100f;
-constexpr float kNormalLow = 0x1p-126f;
-constexpr float kFastHigh = 0x1p+126f;
-
-inline bool in_fast_range(float v)
-{
-    const float magnitude = sycl::fabs(v);
-    return magnitude >= kFastLow && magnitude <= kFastHigh;
-}
-
-inline bool in_normal_range(float v)
-{
-    const float magnitude = sycl::fabs(v);
-    return magnitude >= kNormalLow && magnitude <= kFastHigh;
-}
-
-} // namespace
-
-namespace
-{
-
-inline float slow_div_rn(float a, float b)
-{
-#if defined(SYCL_IMPLEMENTATION_ONEAPI)
-    return sycl::ext::intel::math::fdiv_rn(a, b);
-#else
-    return a / b;
-#endif
-}
-
-inline float slow_sqrt_rn(float x)
-{
-#if defined(SYCL_IMPLEMENTATION_ONEAPI)
-    return sycl::ext::intel::math::fsqrt_rn(x);
-#else
-    return sycl::sqrt(x);
-#endif
-}
-
-/* Adjacent float of a finite non-zero x, one step up or down in value. */
-inline float step_float(float x, bool up)
-{
-    const auto bits = sycl::bit_cast<uint32_t>(x);
-    const bool away_from_zero = (x > 0.0f) == up;
-    return sycl::bit_cast<float>(away_from_zero ? bits + 1u : bits - 1u);
-}
-
-inline bool even_significand(float x)
-{
-    return (sycl::bit_cast<uint32_t>(x) & 1u) == 0u;
-}
-
-/* Correctly rounded a / b from a faithful q with exact residual r = a - q b,
- * or NaN when the bracket cannot be proved (the caller then takes the slow
- * path). */
-inline float round_quotient(float a, float b, float q, float r)
-{
-    const float other = step_float(q, (r > 0.0f) == (b > 0.0f));
-    const float r_other = sycl::fma(-other, b, a);
-    if (r_other == 0.0f) {
-        return other;
-    }
-    if ((r_other > 0.0f) == (r > 0.0f)) {
-        return std::numeric_limits<float>::quiet_NaN(); /* a / b not between q and other */
-    }
-    const float near = sycl::fabs(r);
-    const float far = sycl::fabs(r_other);
-    if (near != far) {
-        return near < far ? q : other;
-    }
-    return even_significand(q) ? q : other;
-}
-
-} // namespace
-
-namespace
-{
-
-inline float div_rn(float a, float b)
-{
-    if (a == 0.0f && in_normal_range(b)) {
-        return a / b; /* signed zero, exact */
-    }
-    const float y = sycl::native::recip(b);
-    const float q0 = a * y;
-    if (!in_fast_range(a) || !in_normal_range(b) || !in_normal_range(q0)) {
-        return slow_div_rn(a, b);
-    }
-    const float q = sycl::fma(sycl::fma(-q0, b, a), y, q0);
-    const float r = sycl::fma(-q, b, a); /* b * (a / b - q) */
-    if (r == 0.0f) {
-        return q;
-    }
-    const float rounded = round_quotient(a, b, q, r);
-    return sycl::isnan(rounded) ? slow_div_rn(a, b) : rounded;
-}
-
-/* Choose between adjacent lo < hi around sqrt(x): hi iff x > ((lo + hi) / 2)^2,
- * i.e. r_lo = x - lo^2 > lo * w + w^2 / 4 with w = hi - lo a power of two.
- * The square root of a float is never exactly a midpoint. */
-inline float nearer_root(float lo, float hi, float r_lo)
-{
-    const float w = hi - lo;
-    const float c = lo * w;
-    const float d = 0.25f * (w * w);
-    if (r_lo < 0.5f * c) {
-        return lo;
-    }
-    if (r_lo > 2.0f * c) {
-        return hi;
-    }
-    const float excess = r_lo - c; /* exact (Sterbenz) */
-    return excess > d ? hi : lo;
-}
-
-} // namespace
-
-namespace
-{
-
-inline float sqrt_rn(float x)
-{
-    if (x == 0.0f) {
-        return x;
-    }
-    if (!(x >= kFastLow && x <= kFastHigh)) {
-        return slow_sqrt_rn(x);
-    }
-    const float s0 = sycl::native::sqrt(x);
-    const float half_inverse = 0.5f * sycl::native::recip(s0);
-    const float s = sycl::fma(sycl::fma(-s0, s0, x), half_inverse, s0);
-    const float r = sycl::fma(-s, s, x);
-    if (r == 0.0f) {
-        return s;
-    }
-    const float other = step_float(s, r > 0.0f);
-    const float r_other = sycl::fma(-other, other, x);
-    if (r_other == 0.0f) {
-        return other;
-    }
-    if ((r_other > 0.0f) == (r > 0.0f)) {
-        return slow_sqrt_rn(x); /* sqrt(x) is not between s and other */
-    }
-    return r > 0.0f ? nearer_root(s, other, r) : nearer_root(other, s, r_other);
-}
-
-/* ------------------------------------------------------------------ */
-/* Exact fp32 pair arithmetic                                          */
-/* ------------------------------------------------------------------ */
-
-struct Ff {
-    float hi;
-    float lo;
-};
-
-inline Ff two_sum(float a, float b)
-{
-    const float sum = a + b;
-    const float b_virtual = sum - a;
-    const float a_virtual = sum - b_virtual;
-    const float b_error = b - b_virtual;
-    const float a_error = a - a_virtual;
-    return {.hi = sum, .lo = a_error + b_error};
-}
-
-inline Ff quick_two_sum(float a, float b)
-{
-    const float sum = a + b;
-    const float rebuilt = sum - a;
-    return {.hi = sum, .lo = b - rebuilt};
-}
-
-} // namespace
-
-namespace
-{
-
-inline Ff two_prod(float a, float b)
-{
-    const float product = a * b;
-    return {.hi = product, .lo = sycl::fma(a, b, -product)};
-}
-
-inline Ff ff_add(Ff a, Ff b)
-{
-    const Ff high = two_sum(a.hi, b.hi);
-    const Ff low = two_sum(a.lo, b.lo);
-    const Ff first = quick_two_sum(high.hi, high.lo + low.hi);
-    return quick_two_sum(first.hi, low.lo + first.lo);
-}
-
-inline Ff ff_mul(Ff a, Ff b)
-{
-    const Ff product = two_prod(a.hi, b.hi);
-    const float cross1 = a.hi * b.lo;
-    const float cross2 = a.lo * b.hi;
-    const float cross = cross1 + cross2;
-    return quick_two_sum(product.hi, product.lo + cross);
-}
-
-/* (hi + lo) / divisor, rounded once to fp32. */
-inline float ff_div_to_float(Ff value, float divisor)
-{
-    const float quotient = div_rn(value.hi, divisor);
-    const float remainder = sycl::fma(-quotient, divisor, value.hi);
-    const float correction = div_rn(remainder + value.lo, divisor);
-    return quotient + correction;
-}
+/* Correctly rounded division / square root and exact fp32 pairs, shared with
+ * the ssimulacra2 twin (sycl_exact_fp.h, ADR-1363). */
+using vmaf_sycl_exact::div_rn;
+using vmaf_sycl_exact::Ff;
+using vmaf_sycl_exact::ff_add;
+using vmaf_sycl_exact::ff_div_to_float;
+using vmaf_sycl_exact::ff_mul;
+using vmaf_sycl_exact::quick_two_sum;
+using vmaf_sycl_exact::sqrt_rn;
+using vmaf_sycl_exact::two_prod;
+using vmaf_sycl_exact::two_sum;
 
 /* speed.c compares against EIGENVALUE_EPS = 1e-6, an fp64 constant, after
  * promoting the fp32 operands. `a < 1e-6 * s` is decided exactly here from

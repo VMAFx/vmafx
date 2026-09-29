@@ -96,11 +96,21 @@ linked AGENTS.md before resolving conflicts.
 - **SYCL SpEED device-resident pipeline ([ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md))**:
   every SpEED kernel lives in `core/src/feature/sycl/speed_sycl_pipeline.cpp`
   and reproduces `speed.c` operation for operation; the SpEED TUs build with
-  `-ffp-contract=off` (`sycl_speed_strict_fp_args`), divide and take square
+  `-ffp-contract=off` (`sycl_exact_fp_args`), divide and take square
   roots through `div_rn()` / `sqrt_rn()`, and never wait on the queue
   mid-frame. `core/test/test_sycl_kernel_source_contract.py` guards the
   layout; `scripts/dev/speed_gpu_parity.py --backend sycl` re-checks bit
   parity. See [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+- **SYCL ssimulacra2 / float_ms_ssim single wait ([ADR-1363](../adr/1363-sycl-ssimulacra2-msssim-device-resident.md))**:
+  `ssimulacra2_sycl.cpp` runs the whole frame on the device and reads one
+  block of per-scale sums in `collect()`; its SSIM / edge sums are exact fp32
+  pairs over a fixed tree (within about 1e-11 of the CPU). The exact-fp
+  helpers live in `core/src/feature/sycl/sycl_exact_fp.h`, and every TU using
+  them is listed in `sycl_exact_fp_sources` (contraction off).
+  `integer_ms_ssim_sycl.cpp` enqueues every scale in `submit()` into its own
+  partials span and waits once. `core/test/test_sycl_kernel_source_contract.py`
+  guards all of it; `scripts/dev/speed_gpu_parity.py --backend sycl --feature
+  ssimulacra2 --max-abs-diff 1e-9` re-checks parity.
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

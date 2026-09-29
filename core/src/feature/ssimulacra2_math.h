@@ -37,6 +37,16 @@
  * so this is within scope.
  */
 
+/* Division used by vmaf_ss2_cbrtf(). Host compilers divide correctly
+ * rounded, so the default is the plain operator. A caller whose division is
+ * not correctly rounded defines this before including the header: the SYCL
+ * twin evaluates the cube root in device code, where fp32 `/` differs from
+ * the host in about 28% of operands, and maps it to
+ * vmaf_sycl_exact::div_rn() (ADR-1363). */
+#ifndef VMAF_SS2_FDIV
+#define VMAF_SS2_FDIV(a, b) ((a) / (b))
+#endif
+
 /* Deterministic cube root of a non-negative float.
  *
  * Bit-trick initial estimate via `(i / 3) + magic_constant` followed
@@ -59,8 +69,8 @@ static inline float vmaf_ss2_cbrtf(float x)
     u.i = u.i / 3u + 0x2a5137a0u;
     float y = u.f;
     /* Two Newton iterations of f(y) = y^3 - x, y <- (2y + x/y^2) / 3. */
-    y = (2.0f * y + x / (y * y)) * (1.0f / 3.0f);
-    y = (2.0f * y + x / (y * y)) * (1.0f / 3.0f);
+    y = (2.0f * y + VMAF_SS2_FDIV(x, y * y)) * (1.0f / 3.0f);
+    y = (2.0f * y + VMAF_SS2_FDIV(x, y * y)) * (1.0f / 3.0f);
     return y;
 }
 

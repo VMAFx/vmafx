@@ -11,11 +11,11 @@
  *
  * The SSIMULACRA2 extractor is implemented by ssimulacra2.c (CPU
  * scalar via vmaf_fex_ssimulacra2) and by
- * ssimulacra2_sycl.cpp::vmaf_fex_ssimulacra2_sycl (hybrid host + SYCL
- * GPU port of the ADR-0201 Vulkan pipeline: host YUV→linear-RGB +
- * 2x2 box downsample + linear-RGB→XYB + per-pixel SSIM/EdgeDiff
- * combine; GPU 3-plane elementwise multiply + separable Charalampidis
- * 2016 3-pole IIR blur — ADR-0206).
+ * ssimulacra2_sycl.cpp::vmaf_fex_ssimulacra2_sycl (ADR-0206; since
+ * ADR-1363 the whole frame runs on the device: YUV→linear-RGB,
+ * linear-RGB→XYB, the separable Charalampidis 2016 3-pole IIR blur,
+ * the per-pixel SSIM/EdgeDiff sums and the 2x2 downsample, with one
+ * readback per frame in collect()).
  *
  * Round 3 (ADR-0946) deferred this kernel because the SYCL twin
  * relies on the `yuv_matrix` option-table entry that was not yet
@@ -33,7 +33,12 @@
  * would silently shift every SSIMULACRA2 column on Intel-Arc CHUG
  * re-extracts.
  *
- * Headline score asserted: "ssimulacra2" at frame index 0.
+ * Headline score asserted: "ssimulacra2" at every one of PARITY_FRAMES
+ * frames with distinct content. Several frames matter since ADR-1363:
+ * the twin is submit/collect, so frame N is collected after frame N+1
+ * is submitted and a mis-keyed readback would score the wrong frame.
+ * Measured on Arc B580 / UHD 770 the delta is about 1e-12 (ADR-1363);
+ * the assertion stays the ADR-0214 tolerance.
  *
  * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
  * or no device visible) the test emits "[skip: no SYCL device]" and
@@ -71,6 +76,7 @@
  * stage XYB + IIR + SSIM-combine pipeline accumulates per-stage
  * float rounding past the places=4 baseline. */
 #define PARITY_TOL 5e-3
+#define PARITY_FRAMES 3u
 
 static int fill_pic(VmafPicture *pic, unsigned salt)
 {
@@ -93,22 +99,42 @@ static int fill_pic(VmafPicture *pic, unsigned salt)
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
+static int feed_frame(VmafContext *vmaf, unsigned index)
 {
     VmafPicture ref;
     VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
+    int err = fill_pic(&ref, 2u * index);
     if (err)
         return err;
-    err = fill_pic(&dist, 1u);
+    err = fill_pic(&dist, 2u * index + 1u + index * 5u);
     if (err) {
         vmaf_picture_unref(&ref);
         return err;
     }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    return vmaf_read_pictures(vmaf, &ref, &dist, index);
 }
 
-static char *run_cpu(double *score)
+static int feed_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < PARITY_FRAMES; i++) {
+        const int err = feed_frame(vmaf, i);
+        if (err)
+            return err;
+    }
+    return vmaf_read_pictures(vmaf, NULL, NULL, 0);
+}
+
+static int read_scores(VmafContext *vmaf, double scores[PARITY_FRAMES])
+{
+    for (unsigned i = 0; i < PARITY_FRAMES; i++) {
+        const int err = vmaf_feature_score_at_index(vmaf, "ssimulacra2", &scores[i], i);
+        if (err)
+            return err;
+    }
+    return 0;
+}
+
+static char *run_cpu(double score[PARITY_FRAMES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
@@ -116,20 +142,19 @@ static char *run_cpu(double *score)
     mu_assert("CPU: vmaf_init failed", !err);
     err = vmaf_use_feature(vmaf, "ssimulacra2", NULL);
     mu_assert("CPU: vmaf_use_feature(ssimulacra2) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "ssimulacra2", score, 0u);
+    err = feed_frames(vmaf);
+    mu_assert("CPU: feeding frames failed", !err);
+    err = read_scores(vmaf, score);
     mu_assert("CPU: ssimulacra2 score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_sycl(double *score, int *device_present)
+static char *run_sycl(double score[PARITY_FRAMES], int *device_present)
 {
-    *score = NAN;
+    for (unsigned i = 0; i < PARITY_FRAMES; i++)
+        score[i] = NAN;
     *device_present = 0;
     VmafSyclState *sycl_state = NULL;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
@@ -147,11 +172,9 @@ static char *run_sycl(double *score, int *device_present)
     mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
     err = vmaf_use_feature(vmaf, "ssimulacra2_sycl", NULL);
     mu_assert("SYCL: vmaf_use_feature(ssimulacra2_sycl) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "ssimulacra2", score, 0u);
+    err = feed_frames(vmaf);
+    mu_assert("SYCL: feeding frames failed", !err);
+    err = read_scores(vmaf, score);
     mu_assert("SYCL: ssimulacra2 score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
@@ -169,24 +192,32 @@ static char *test_ssimulacra2_sycl_registered(void)
 
 static char *test_ssimulacra2_cpu_sycl_parity(void)
 {
-    double cpu_score = 0.0;
-    double sycl_score = NAN;
+    double cpu_score[PARITY_FRAMES] = {0.0};
+    double sycl_score[PARITY_FRAMES] = {0.0};
     int device_present = 0;
-    char *msg = run_cpu(&cpu_score);
+    char *msg = run_cpu(cpu_score);
     if (msg)
         return msg;
-    msg = run_sycl(&sycl_score, &device_present);
+    msg = run_sycl(sycl_score, &device_present);
     if (msg)
         return msg;
     if (!device_present)
         return NULL;
-    double delta = fabs(cpu_score - sycl_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\nssimulacra2 parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, sycl_score, delta, PARITY_TOL);
+    for (unsigned i = 0; i < PARITY_FRAMES; i++) {
+        const double delta = fabs(cpu_score[i] - sycl_score[i]);
+        if (!(delta <= PARITY_TOL)) {
+            (void)fprintf(stderr,
+                          "\nssimulacra2 parity FAIL: frame=%u cpu=%.12f sycl=%.12f delta=%.2e "
+                          "tol=%.2e\n",
+                          i, cpu_score[i], sycl_score[i], delta, PARITY_TOL);
+        }
+        mu_assert("ssimulacra2 CPU vs. SYCL delta exceeds ADR-0214 ssimulacra2 tolerance (5e-3)",
+                  delta <= PARITY_TOL);
     }
-    mu_assert("ssimulacra2 CPU vs. SYCL delta exceeds ADR-0214 ssimulacra2 tolerance (5e-3)",
-              delta <= PARITY_TOL);
+    /* Distinct content per frame: equal neighbours would hide a readback
+     * keyed to the wrong frame index. */
+    mu_assert("ssimulacra2 fixture frames must score differently",
+              cpu_score[0] != cpu_score[1] && cpu_score[1] != cpu_score[2]);
     return NULL;
 }
 
