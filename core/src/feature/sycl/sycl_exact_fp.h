@@ -21,7 +21,15 @@
 
 #include <sycl/sycl.hpp>
 #if defined(SYCL_IMPLEMENTATION_ONEAPI)
+/* <windows.h> (via compat/win32/pthread.h) defines min and max as macros,
+ * which break the declarations in Intel's math headers on MSVC+SYCL. */
+#pragma push_macro("min")
+#pragma push_macro("max")
+#undef min
+#undef max
 #include <sycl/ext/intel/math.hpp>
+#pragma pop_macro("max")
+#pragma pop_macro("min")
 #endif
 
 #include <cstdint>
@@ -122,10 +130,11 @@ inline float round_quotient(float a, float b, float q, float r)
     if ((r_other > 0.0f) == (r > 0.0f)) {
         return std::numeric_limits<float>::quiet_NaN(); /* a / b not between q and other */
     }
-    const float near = sycl::fabs(r);
-    const float far = sycl::fabs(r_other);
-    if (near != far) {
-        return near < far ? q : other;
+    /* Not near / far: <windows.h> defines both as empty macros. */
+    const float dist_q = sycl::fabs(r);
+    const float dist_other = sycl::fabs(r_other);
+    if (dist_q != dist_other) {
+        return dist_q < dist_other ? q : other;
     }
     return even_significand(q) ? q : other;
 }

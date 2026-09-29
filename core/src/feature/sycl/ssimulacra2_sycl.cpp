@@ -578,8 +578,8 @@ inline void ss2s_down_pixel(const float *in, float *out, const Ss2PlanesArgs &a,
         float sum = 0.0f;
         for (unsigned dy = 0; dy < 2u; dy++) {
             for (unsigned dx = 0; dx < 2u; dx++) {
-                const unsigned ix = sycl::min(ox * 2u + dx, a.width - 1u);
-                const unsigned iy = sycl::min(oy * 2u + dy, a.height - 1u);
+                const unsigned ix = (sycl::min)(ox * 2u + dx, a.width - 1u);
+                const unsigned iy = (sycl::min)(oy * 2u + dy, a.height - 1u);
                 sum += ip[(size_t)iy * a.width + ix];
             }
         }
