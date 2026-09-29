@@ -46,6 +46,23 @@
   },
   "packageRules": [
     {
+      "description": "ADR-1354: the Verify Linux runtime job in supply-chain.yml stays on ubuntu-24.04, the oldest hosted image whose glibc (2.39) loads the native bundle. Moving it to a newer image would stop proving the documented glibc floor, so only this pin is frozen; other runner labels in the file still update.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDatasources": [
+        "github-runners"
+      ],
+      "matchFileNames": [
+        ".github/workflows/supply-chain.yml"
+      ],
+      "matchDepNames": [
+        "ubuntu"
+      ],
+      "matchCurrentValue": "24.04",
+      "enabled": false
+    },
+    {
       "description": "Intel NEO compute stack: dev/Containerfile derives the matched set of gmmlib and IGC deb packages dynamically from the pinned intel/compute-runtime release at build time (ADR-1145). Only compute-runtime and level-zero are tracked; manual review (ADR-0605).",
       "matchPackageNames": [
         "intel/compute-runtime",

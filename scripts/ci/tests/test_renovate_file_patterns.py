@@ -103,6 +103,25 @@ class RenovateFilePatterns(unittest.TestCase):
         self.assertEqual(len(rules), 1)
         self.assertEqual(set(rules[0]["matchFileNames"]), BASE_FILES - {"build-config.env"})
 
+    def test_glibc_floor_runner_pin_is_frozen(self) -> None:
+        # ADR-1354: Renovate must not move the native-bundle verify job off the
+        # oldest image that can load it, and the rule must still point at the
+        # job it protects.
+        rules = [
+            rule
+            for rule in self.config["packageRules"]
+            if rule.get("matchDatasources") == ["github-runners"] and rule.get("enabled") is False
+        ]
+        self.assertEqual(len(rules), 1)
+        rule = rules[0]
+        self.assertEqual(rule["matchDepNames"], ["ubuntu"])
+        self.assertEqual(rule["matchCurrentValue"], "24.04")
+        self.assertEqual(rule["matchFileNames"], [".github/workflows/supply-chain.yml"])
+        workflow = (ROOT / rule["matchFileNames"][0]).read_text(encoding="utf-8")
+        match = re.search(r"(?ms)^  verify-native-artifacts:\n(.*?)(?=^  [\w-]+:\n|\Z)", workflow)
+        self.assertIsNotNone(match, "supply-chain.yml has no verify-native-artifacts job")
+        self.assertRegex(match.group(1) if match else "", r"(?m)^    runs-on: ubuntu-24\.04$")
+
 
 if __name__ == "__main__":
     unittest.main()
