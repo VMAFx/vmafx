@@ -256,7 +256,11 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   - c-values multiply by `vmaf_cambi_reciprocal_lut()` table, never
     `1.0f / i` (42 entries differ by 1 ulp);
   - top-K sum exact: 128-bit fixed point, units 2^-24 (all non-zero
-    c-values in [0.5, 2^18)); no fp64, no float accumulation;
+    c-values in [0.5, 2^14)); no fp64, no float accumulation;
+  - `check_window_fits_lut` = `cambi.c::setup_contrast_and_luminance`
+    guard, same place (after TVI), same -EINVAL + message, both enc and
+    source windows; LUT uploaded verbatim, never extended —
+    `test_sycl_cambi_parity` window cases pin accept/reject set;
   - `CambiSyclSelect::k_rem[p + 1]` written by scan of pass p: no lane
     rewrites word another lane reads; bin 0 of pass 0 = exact zeros
     → `resolved`, later passes return on device;

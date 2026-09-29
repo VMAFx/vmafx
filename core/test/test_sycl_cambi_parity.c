@@ -40,6 +40,7 @@
  * mirroring test_sycl_motion3_parity.c and all subsequent round tests.
  */
 
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -47,6 +48,7 @@
 #include "test.h"
 
 #include "feature/feature_extractor.h"
+#include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
@@ -230,7 +232,9 @@ static char *test_cambi_sycl_registered(void)
 /* Bit-exact per frame: every stage is integer or float-for-float with
  * cambi.c, and the device top-K sum is exact. cambi.c's own double sum is
  * exact too while the top-K sum stays below 2^29: at 256x256 the window is
- * 5x5, every c-value is below 2^6 and the top-K sum below 2^22, so the two
+ * 5x5, every c-value is below 2^6 and the top-K sum below 2^22; in the
+ * 960x540 `_large` build the window is 17x17, every c-value is below 2^10
+ * and the top-K sum (311040 values) below 2^28, so the two
  * agree to the last bit here (ADR-1357). */
 static char *cambi_parity_for_fixture(int textured)
 {
@@ -256,10 +260,11 @@ static char *cambi_parity_for_fixture(int textured)
         mu_assert("cambi CPU vs. SYCL score is not bit-exact",
                   cpu_scores[frame] == sycl_scores[frame]);
     }
-    /* The textured fixture's +1 dither is a 4-code step at 10 bit, inside the
-     * contrast range, so it must exercise non-zero c-values; the gradient's
-     * 32-code steps are not banding to CAMBI and score 0. */
-    if (textured)
+    /* At 256x256 the textured fixture's +1 dither is a 4-code step at 10 bit,
+     * inside the contrast range, so it must exercise non-zero c-values; the
+     * gradient's 32-code steps are not banding to CAMBI and score 0. The
+     * 960x540 `_large` build scores 0 on both fixtures and checks parity only. */
+    if (textured && FIXTURE_W == 256u)
         mu_assert("textured cambi fixture must score non-zero", cpu_scores[0] > 0.0);
     return NULL;
 }
@@ -277,11 +282,103 @@ static char *test_cambi_cpu_sycl_parity_textured(void)
     return cambi_parity_for_fixture(1);
 }
 
+/* Window-size guard (ADR-1357): cambi.c::init rejects any configuration whose
+ * adjusted window (encode or source resolution, after the high-res speed-up)
+ * has window^2 >= CAMBI_RECIPROCAL_LUT_SIZE (4226), i.e. above 65 x 65, with
+ * -EINVAL. cambi_sycl must accept and reject exactly the same set. The cases
+ * are init-only, at 3840x2160 where the default window_size of 65 adjusts to
+ * a 65-pixel window, the largest accepted:
+ *   window_size 65                    -> 65                accepted (boundary)
+ *   window_size 66                    -> 67                rejected
+ *   window_size 66, enc 1920x1080     -> 33 enc / 67 source rejected
+ *   window_size 127, hrs 2160         -> 127 halved to 65  accepted
+ *   window_size 127                   -> 127               rejected */
+typedef struct {
+    const char *window_size;
+    const char *enc_width;
+    const char *enc_height;
+    const char *high_res_speedup;
+    int expected;
+} CambiWindowCase;
+
+static const CambiWindowCase cambi_window_cases[] = {
+    {"65", NULL, NULL, NULL, 0},           {"66", NULL, NULL, NULL, -EINVAL},
+    {"66", "1920", "1080", NULL, -EINVAL}, {"127", NULL, NULL, "2160", 0},
+    {"127", NULL, NULL, NULL, -EINVAL},
+};
+
+static int cambi_window_options(const CambiWindowCase *c, VmafFeatureDictionary **opts)
+{
+    int err = vmaf_feature_dictionary_set(opts, "window_size", c->window_size);
+    if (!err && c->enc_width)
+        err = vmaf_feature_dictionary_set(opts, "enc_width", c->enc_width);
+    if (!err && c->enc_height)
+        err = vmaf_feature_dictionary_set(opts, "enc_height", c->enc_height);
+    if (!err && c->high_res_speedup)
+        err = vmaf_feature_dictionary_set(opts, "cambi_high_res_speedup", c->high_res_speedup);
+    return err;
+}
+
+/* Initialise `name` for a 3840x2160 8-bit picture with the case's options and
+ * return init's code (tearing the context down either way). */
+static char *cambi_window_init_rc(const char *name, VmafSyclState *sycl_state,
+                                  const CambiWindowCase *c, int *rc)
+{
+    const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(name);
+    mu_assert("cambi extractor must be registered", fex != NULL);
+    VmafFeatureDictionary *opts = NULL;
+    mu_assert("cambi window options", !cambi_window_options(c, &opts));
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, (VmafDictionary *)opts);
+    mu_assert("cambi context create", !err);
+    ctx->fex->sycl_state = sycl_state;
+    *rc = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, 3840u, 2160u);
+    if (*rc == 0) {
+        err = vmaf_feature_extractor_context_close(ctx);
+        mu_assert("cambi context close", !err);
+    }
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    mu_assert("cambi context destroy", !err);
+    return NULL;
+}
+
+static char *test_cambi_window_lut_guard(void)
+{
+    VmafSyclState *sycl_state = NULL;
+    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
+    const int sycl_err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
+    const int device_present = sycl_err == 0 && sycl_state != NULL;
+    if (!device_present)
+        (void)fprintf(stderr, "[skip SYCL half: no SYCL device] ");
+    char *msg = NULL;
+    const size_t n_cases = sizeof(cambi_window_cases) / sizeof(cambi_window_cases[0]);
+    for (size_t i = 0; i < n_cases && !msg; i++) {
+        const CambiWindowCase *c = &cambi_window_cases[i];
+        int cpu_rc = 1;
+        int sycl_rc = 1;
+        msg = cambi_window_init_rc("cambi", NULL, c, &cpu_rc);
+        if (!msg && device_present)
+            msg = cambi_window_init_rc("cambi_sycl", sycl_state, c, &sycl_rc);
+        if (msg)
+            break;
+        if (cpu_rc != c->expected || (device_present && sycl_rc != cpu_rc)) {
+            (void)fprintf(stderr,
+                          "\ncambi window case %zu (window_size=%s): cpu=%d sycl=%d want=%d\n", i,
+                          c->window_size, cpu_rc, sycl_rc, c->expected);
+            msg = "cambi window-size guard differs between CPU, SYCL and the LUT bound";
+        }
+    }
+    if (device_present)
+        vmaf_sycl_state_free(&sycl_state);
+    return msg;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_cambi_sycl_registered);
     mu_run_test(test_cambi_cpu_sycl_parity);
     mu_run_test(test_cambi_cpu_sycl_parity_textured);
+    mu_run_test(test_cambi_window_lut_guard);
     return NULL;
 }
 

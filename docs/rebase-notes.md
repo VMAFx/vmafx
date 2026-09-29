@@ -32,6 +32,9 @@
   `reciprocal_lut` in `cambi.h`, the device picks the new table up through
   the accessor; `test_cambi`'s "differs from `1.0f / i`" assertion documents
   the current table and may need updating.
+- The twin's init repeats `cambi.c`'s reciprocal-LUT window guard
+  (`check_window_fits_lut`, same -EINVAL and message, encode and source
+  windows). If upstream changes that guard or the table size, change both.
 - No other backend changes; the CUDA, HIP and Metal twins keep their host
   residual (RC3 rows in `docs/state.md`).
 

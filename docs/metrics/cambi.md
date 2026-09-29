@@ -354,7 +354,7 @@ How the device matches `cambi.c`:
 - **Top-K pooling.** `cambi.c` averages the largest `topk` fraction of
   c-values after a quick-select, summing in `double`. The device finds the same
   set with a radix select and sums it exactly, as an integer in units of
-  2^-24 (every non-zero c-value is at least 0.5 and below 2^18). The two agree
+  2^-24 (every non-zero c-value is at least 0.5 and below 2^14). The two agree
   to the last bit whenever the CPU's own sum is exact. On frames with a very
   large banded area the CPU's sum rounds and the scores differ in the last few
   digits: at most 2.2e-15 over 50 frames of Big Buck Bunny at 3840x2160
@@ -371,6 +371,11 @@ nine runs:
 | Intel UHD 770, `--feature cambi_sycl` | 944 | 42 |
 | Intel UHD 770, default model | 976 | 103 |
 | Intel Arc B580, default model | 123 | 71 |
+
+Like the CPU extractor, `cambi_sycl` refuses to initialise when the adjusted
+window exceeds 65 x 65 (the size of the reciprocal table): at 3840x2160 that is
+any `window_size` above 65 without `cambi_high_res_speedup`. Both fail with
+"cambi: window_size N too large for reciprocal LUT".
 
 Parity and timing reproduce with the commands in
 [Research-2122](../research/2122-sycl-cambi-device-resident.md).

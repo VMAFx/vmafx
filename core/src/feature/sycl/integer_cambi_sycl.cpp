@@ -29,7 +29,8 @@
  *  row chunk and slides the (2 * pad + 1)^2 window down its rows as
  *  cambi.c::calculate_c_values slides its column histograms, so every cell it
  *  reads holds the true window count of that level (modular uint16 updates in
- *  any order give the same final count, and no count reaches 65536). Rows
+ *  any order give the same final count; init rejects any window above
+ *  65 x 65 exactly as cambi.c does, so no count exceeds 4225). Rows
  *  whose leaving and entering segments agree are skipped and a changed
  *  segment is applied one run of equal levels at a time (bit masks from
  *  launch_row_masks). The per-pixel formula is c_value_pixel()'s, float for
@@ -40,7 +41,7 @@
  *  radix select on the IEEE bit patterns (monotonic for the non-negative
  *  c-values; pass 0 is counted by the c-values kernel) and sums
  *  sum(v > T) + (k - #(v > T)) * T exactly, as a 128-bit integer in units of
- *  2^-24: every non-zero c-value is at least 0.5 and below 2^18, so it is an
+ *  2^-24: every non-zero c-value is at least 0.5 and below 2^14, so it is an
  *  integer multiple of 2^-24 and the sum is exact. The host converts it to
  *  double once. That equals cambi.c's double sum whenever that sum is exact
  *  (always below 2^29, and in practice far beyond); otherwise it differs from
@@ -118,8 +119,9 @@ constexpr uint32_t RADIX_BIN_MASK[RADIX_PASSES] = {0x7FFU, 0x7FFU, 0x3FFU};
 constexpr size_t POOL_WG = 256;
 constexpr unsigned RADIX_BINS_PER_LANE = RADIX_BINS / (unsigned)POOL_WG;
 constexpr unsigned POOL_MAX_GROUPS = 512U;
-/* Elements per pooling work-group: keeps every per-group partial sum of
- * fixed-point c-values (< 2^42 each) below 2^64. */
+/* Elements per pooling work-group (before the POOL_MAX_GROUPS clamp). Even
+ * clamped, a group of a 7680 x 7680 frame holds under 2^17 elements, so its
+ * partial sum of fixed-point c-values (each < 2^38) stays below 2^55. */
 constexpr unsigned POOL_ELEMS_PER_GROUP = 4096U;
 /* c-value -> fixed point: every non-zero c-value is a multiple of 2^-24. */
 constexpr float CAMBI_FIXED_SCALE = 16777216.0F;
@@ -173,7 +175,7 @@ using GlobalCounter =
                      sycl::access::address_space::global_space>;
 
 /* Fixed point in units of 2^-24; exact for 0 and for every value in
- * [0.5, 2^18), the whole c-value range (ADR-1357). */
+ * [0.5, 2^14), the whole c-value range (ADR-1357). */
 inline uint64_t cambi_fixed(float value)
 {
     return (uint64_t)(value * CAMBI_FIXED_SCALE);
@@ -1422,18 +1424,13 @@ template <typename T> int upload_table(CambiStateSycl *s, T *&device, const T *h
     return vmaf_sycl_memcpy_h2d(s->sycl_state, device, host, count * sizeof(T));
 }
 
-/* c_value_pixel()'s reciprocal table, verbatim, extended with the same
- * 1.0f / i formula for windows larger than the table covers. */
+/* c_value_pixel()'s reciprocal table, verbatim. check_window_fits_lut()
+ * guarantees every index p0 + pm (at most window^2) lies inside it. */
 int upload_reciprocal_lut(CambiStateSycl *s)
 {
     unsigned table_size = 0U;
     const float *table = vmaf_cambi_reciprocal_lut(&table_size);
-    const size_t window_pixels = (size_t)s->adjusted_window * s->adjusted_window;
-    std::vector<float> lut(std::max((size_t)table_size, window_pixels + 1U));
-    for (size_t i = 0; i < lut.size(); ++i) {
-        lut[i] = i < table_size ? table[i] : 1.0F / (float)i;
-    }
-    return upload_table(s, s->d_lut, lut.data(), lut.size());
+    return upload_table(s, s->d_lut, table, (size_t)table_size);
 }
 
 } // namespace
@@ -1713,11 +1710,35 @@ unsigned device_compute_units(VmafSyclState *state)
     return std::max(1U, queue->get_device().get_info<sycl::info::device::max_compute_units>());
 }
 
+/* cambi.c::setup_contrast_and_luminance()'s guard, in the same place in the
+ * init sequence (after the TVI tables) and with the same code and message:
+ * both the encode-resolution window and the source-resolution window (the
+ * full input here, as cambi.c's default src_width / src_height), adjusted
+ * with the high-res speed-up, must satisfy window^2 < the reciprocal table
+ * size, so the largest accepted window is 65 x 65. */
+int check_window_fits_lut(const CambiStateSycl *s)
+{
+    const auto src_window = cambi_sycl_adjust_window(s->window_size, s->src_width, s->src_height,
+                                                     (bool)s->cambi_high_res_speedup);
+    const int max_window = std::max((int)s->adjusted_window, (int)src_window);
+    unsigned table_size = 0U;
+    (void)vmaf_cambi_reciprocal_lut(&table_size);
+    if (std::cmp_greater_equal(max_window * max_window, table_size)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: window_size %d too large for reciprocal LUT\n",
+                 max_window);
+        return -EINVAL;
+    }
+    return 0;
+}
+
 int init_cambi_device(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height)
 {
     int error = configure_cambi(s, bpc, width, height);
     if (!error) {
         error = upload_contrast_tables(s);
+    }
+    if (!error) {
+        error = check_window_fits_lut(s);
     }
     if (!error) {
         const double topk = s->topk != CAMBI_SYCL_DEFAULT_TOPK ? s->topk : s->cambi_topk;
