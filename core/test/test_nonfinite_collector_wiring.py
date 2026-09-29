@@ -23,6 +23,7 @@ REQUIRED = {
         "cuda/integer_adm_cuda.c",
         "hip/float_adm_hip.c",
         "sycl/float_adm_sycl.cpp",
+        "sycl/integer_adm_sycl.cpp",
         "metal/float_adm_metal.mm",
         "metal/integer_adm_metal.mm",
     ),

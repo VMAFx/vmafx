@@ -684,7 +684,9 @@ the arm's twin provides. HIP `integer_adm` twin has no AIM pass, so
 asking for them returns `-EINVAL` from `vmaf_feature_score_at_index()`
 before any parity check runs. Guard such names with
 `#if !defined(HAVE_HIP)`. Print the failing name: a bare "failed" cost a
-session to diagnose.
+session to diagnose. `test_gpu_adm_tiny_frames.c` scores aim / adm3 only in
+its SYCL arm (`NUM_KEYS` 7 under `HAVE_SYCL`, bit-exact per ADR-1362); the
+CUDA arm keeps five keys until someone runs it on a CUDA device with seven.
 
 `should_fail : true` in `meson.build` needs a reason that is true today.
 Meson counts an unexpected pass as a failure, so a stale marker breaks

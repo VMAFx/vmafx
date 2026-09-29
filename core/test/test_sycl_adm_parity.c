@@ -20,7 +20,9 @@
  *
  * The test asserts VMAF_integer_feature_adm2_score (the headline
  * combined-scale ADM2 score) matches between CPU and SYCL within
- * ADR-0214 places=4 (1e-4) tolerance.
+ * ADR-0214 places=4 (1e-4) tolerance, and that the AIM pass (ADR-1362)
+ * reproduces VMAF_integer_feature_aim_score and
+ * VMAF_integer_feature_adm3_score bit for bit.
  *
  * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
  * or no device visible) the test emits "[skip: no SYCL device]" and
@@ -176,14 +178,15 @@ static VmafFeatureDictionary *model_opts(void)
 }
 
 #define MODEL_SUFFIX "_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02"
-/* adm3 / aim are deliberately absent: the SYCL twin has no AIM device pass
- * (see test_adm_sycl_does_not_claim_aim below), so those two features route to
- * the CPU twin through the ADR-0530 fallback instead. */
+/* The first NUM_AIM_KEYS keys are the AIM pass's (ADR-1362): the default
+ * model reads adm3, so the SYCL twin answers it under the CPU twin's key. */
 static const char *const MODEL_KEYS[] = {
+    "integer_adm3" MODEL_SUFFIX,       "integer_aim" MODEL_SUFFIX,
     "integer_adm2" MODEL_SUFFIX,       "integer_adm_scale0" MODEL_SUFFIX,
     "integer_adm_scale1" MODEL_SUFFIX, "integer_adm_scale2" MODEL_SUFFIX,
     "integer_adm_scale3" MODEL_SUFFIX,
 };
+#define NUM_AIM_KEYS 2u
 #define NUM_MODEL_KEYS (sizeof(MODEL_KEYS) / sizeof(MODEL_KEYS[0]))
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
@@ -252,11 +255,6 @@ static char *test_adm_sycl_option_table_mirrors_cpu(void)
 
     for (unsigned i = 0; cpu->options[i].name; i++) {
         const VmafOption *a = &cpu->options[i];
-        /* adm_skip_aim is not a feature param and only drives the AIM pass,
-         * which this twin does not have — it is correctly absent rather than
-         * declared-and-ignored. */
-        if (!strcmp(a->name, "adm_skip_aim"))
-            continue;
         const VmafOption *b = NULL;
         for (unsigned j = 0; gpu->options[j].name; j++) {
             if (!strcmp(gpu->options[j].name, a->name)) {
@@ -278,20 +276,28 @@ static char *test_adm_sycl_option_table_mirrors_cpu(void)
     return NULL;
 }
 
-/* Never fabricate a feature to make a name resolve: this twin has no AIM
- * device pass, so aim_score / adm3_score must stay out of
- * provided_features[] and fall back to the CPU twin. */
-static char *test_adm_sycl_does_not_claim_aim(void)
+static bool provides(const VmafFeatureExtractor *fex, const char *feature)
+{
+    for (unsigned i = 0; fex->provided_features[i]; i++) {
+        if (!strcmp(fex->provided_features[i], feature))
+            return true;
+    }
+    return false;
+}
+
+/* The AIM pass runs on the device (ADR-1362), so the twin claims both
+ * features: a model asking for adm3 under --backend sycl resolves to adm_sycl
+ * rather than to the CPU twin (ADR-0530 fallback), and the default model's
+ * whole ADM branch stays on the device. */
+static char *test_adm_sycl_claims_aim(void)
 {
     VmafFeatureExtractor *gpu = vmaf_get_feature_extractor_by_name("adm_sycl");
     mu_assert("adm_sycl extractor must be registered", gpu != NULL);
     mu_assert("adm_sycl must declare provided_features", gpu->provided_features != NULL);
-    for (unsigned i = 0; gpu->provided_features[i]; i++) {
-        mu_assert("adm_sycl must not claim VMAF_integer_feature_aim_score",
-                  strcmp(gpu->provided_features[i], "VMAF_integer_feature_aim_score") != 0);
-        mu_assert("adm_sycl must not claim VMAF_integer_feature_adm3_score",
-                  strcmp(gpu->provided_features[i], "VMAF_integer_feature_adm3_score") != 0);
-    }
+    mu_assert("adm_sycl must claim VMAF_integer_feature_aim_score",
+              provides(gpu, "VMAF_integer_feature_aim_score"));
+    mu_assert("adm_sycl must claim VMAF_integer_feature_adm3_score",
+              provides(gpu, "VMAF_integer_feature_adm3_score"));
     return NULL;
 }
 
@@ -352,6 +358,46 @@ static char *test_adm_cpu_sycl_model_option_parity(void)
     return NULL;
 }
 
+/* Bit-for-bit equality of two scores (compares the IEEE-754 bit patterns, not
+ * the object representations, which tidy rejects for double). */
+static bool same_bits(double a, double b)
+{
+    uint64_t ua = 0;
+    uint64_t ub = 0;
+    memcpy(&ua, &a, sizeof(ua));
+    memcpy(&ub, &b, sizeof(ub));
+    return ua == ub;
+}
+
+/* ADR-1362 numerical contract: the device accumulators are bit-exact with the
+ * CPU's and aim / adm3 are finalised in the CPU's own float arithmetic, so
+ * both scores must carry the CPU's bits, not merely agree to places=4. adm2
+ * keeps its double finalisation and is covered by the tolerance test above. */
+static char *test_adm_cpu_sycl_aim_bit_exact(void)
+{
+    double cpu[NUM_MODEL_KEYS];
+    double gpu[NUM_MODEL_KEYS];
+
+    char *msg = run_adm_with_model_opts(false, cpu);
+    if (msg)
+        return msg;
+    msg = run_adm_with_model_opts(true, gpu);
+    if (msg)
+        return msg;
+    if (isnan(gpu[0]))
+        return NULL;
+
+    for (unsigned k = 0; k < NUM_AIM_KEYS; k++) {
+        const bool same = same_bits(cpu[k], gpu[k]);
+        if (!same) {
+            (void)fprintf(stderr, "\n%s not bit-exact: cpu=%.17g sycl=%.17g\n", MODEL_KEYS[k],
+                          cpu[k], gpu[k]);
+        }
+        mu_assert("aim / adm3: SYCL differs from the CPU bits", same);
+    }
+    return NULL;
+}
+
 static char *test_adm_sycl_registered(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm_sycl");
@@ -385,7 +431,7 @@ char *run_tests(void)
 {
     mu_run_test(test_adm_sycl_registered);
     mu_run_test(test_adm_sycl_option_table_mirrors_cpu);
-    mu_run_test(test_adm_sycl_does_not_claim_aim);
+    mu_run_test(test_adm_sycl_claims_aim);
     /* test_adm_cpu_sycl_parity runs LAST: `mu_run_test` aborts the whole
      * binary on the first failure, and that test is currently red on Intel
      * Arc A380 (delta 1.10e-04 vs the 1e-4 gate, pre-existing on master —
@@ -394,6 +440,7 @@ char *run_tests(void)
      * masking a real regression in the new coverage. */
     mu_run_test(test_adm_cpu_sycl_model_option_keys);
     mu_run_test(test_adm_cpu_sycl_model_option_parity);
+    mu_run_test(test_adm_cpu_sycl_aim_bit_exact);
     mu_run_test(test_adm_cpu_sycl_parity);
     return NULL;
 }

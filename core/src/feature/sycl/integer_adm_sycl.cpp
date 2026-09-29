@@ -26,11 +26,14 @@
  * Pipeline per scale:
  *   1. DWT vertical pass -> tmp (lo/hi interleaved)
  *   2. DWT horizontal pass -> 4 sub-bands (LL, LH, HL, HH)
- *   3. Decouple+CSF fused pass -> r, csf_a, csf_f
- *   4. CSF denominator reduction -> csf_den_accum
- *   5. Contrast measure reduction -> cm_accum
+ *   3. Decouple + CSF pass -> csf_f (|csf(t - r)| / 30) and, for AIM,
+ *      csf_f_aim (|csf(r)| / 30)
+ *   4. One row-parallel reduction: CSF denominator, DLM contrast measure
+ *      and AIM contrast measure (ADR-1362) -> accum
  *
- * Pattern: init -> submit (non-blocking) -> collect (wait + scores)
+ * Pattern: init -> submit (non-blocking) -> collect (wait + scores). The
+ * whole frame is one combined-graph replay; the accumulators come back in
+ * one device-to-host copy.
  */
 
 #include <utility>
@@ -49,6 +52,7 @@
 
 #include "config.h"
 #include "feature/adm_angle_flag.h"
+#include "feature/adm_cm_accumulator.h"
 #include "feature/adm_csf_fixed_point.h"
 #include "feature/adm_score.h"
 #include "feature/barten_csf_tools.h"
@@ -83,6 +87,20 @@ namespace
 constexpr int ADM_NUM_SCALES = 4;
 constexpr int ADM_NUM_BANDS = 3; // h, v, d (skip band_a for scoring)
 constexpr double ADM_BORDER_FACTOR = 0.1;
+
+/* Accumulator terms, in slot order: [term * ADM_TERM_SLOTS + scale * 3 + band]. */
+constexpr int ADM_TERM_CM = 0;  // DLM contrast measure (CPU adm_cm(measure_aim=false))
+constexpr int ADM_TERM_DEN = 1; // CSF denominator (CPU adm_csf_den_scale / _s123)
+constexpr int ADM_TERM_AIM = 2; // AIM contrast measure (CPU adm_cm(measure_aim=true))
+constexpr int ADM_NUM_TERMS = 3;
+constexpr int ADM_TERM_SLOTS = ADM_NUM_SCALES * ADM_NUM_BANDS;
+constexpr int ADM_ACCUM_SLOTS = ADM_NUM_TERMS * ADM_TERM_SLOTS;
+
+/* Slot of band 0 of `scale` in accumulator term `term`. */
+constexpr size_t adm_accum_slot(int term, int scale)
+{
+    return ((size_t)term * ADM_TERM_SLOTS) + ((size_t)scale * ADM_NUM_BANDS);
+}
 
 // DWT filter coefficients (DB2, 4-tap)
 constexpr int32_t dwt_lo[4] = {15826, 27411, 7345, -4240};
@@ -126,6 +144,7 @@ struct AdmStateSycl {
     double adm_noise_weight;
     double adm_min_val;   /* ADR-0487: minimum score floor (mirrors CPU + CUDA option). */
     bool adm_skip_scale0; /* host-side suppression: scale-0 excluded from score when set */
+    bool adm_skip_aim;    /* skip the AIM contrast measure (aim = 0), as on the CPU */
     double adm_dlm_weight;
     double adm_p_norm;
 
@@ -144,17 +163,19 @@ struct AdmStateSycl {
     int32_t *d_ref_band[4]; // [0]=a(LL), [1]=h(HL), [2]=v(LH), [3]=d(HH)
     int32_t *d_dis_band[4];
 
-    // CSF outputs (d_decouple_r and d_csf_a eliminated — recomputed inline in CM kernel)
-    int32_t *d_csf_f[3]; // |csf_a| / 30 — kept for 3×3 neighborhood access
+    // CSF outputs kept for the 3x3 neighbourhood of the masking threshold.
+    // r, t - r and both CSF-weighted values are recomputed in the CM kernel.
+    int32_t *d_csf_f[3];     // DLM: |csf(t - r)| / 30 (CPU csf_f)
+    int32_t *d_csf_f_aim[3]; // AIM: |csf(r)| / 30 (CPU csf_a after adm_csf(measure_aim))
 
     // Integer division LUT
     int32_t *d_div_lookup; // 65537 entries
 
-    // Accumulators (device + host)
-    int64_t *d_cm_accum;      // 4 scales x 3 bands = 12 int64
-    int64_t *d_csf_den_accum; // 4 scales x 3 bands = 12 int64
-    int64_t *h_cm_accum;
-    int64_t *h_csf_den_accum;
+    // Accumulators, device + host: [term][scale][band] with the terms
+    // DLM contrast measure, CSF denominator, AIM contrast measure
+    // (ADM_ACCUM_SLOTS int64, one memset and one readback per frame).
+    int64_t *d_accum;
+    int64_t *h_accum;
 
     // Deferred state
     unsigned pending_index;
@@ -189,13 +210,8 @@ const VmafOption options[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
-        /* FEATURE_PARAM: honoured for feature-name-key parity only. dlm_weight
-         * enters the arithmetic of VMAF_integer_feature_adm3_score, which this
-         * twin does not emit (see collect_fex_sycl). Dropping it from the table
-         * would make this twin emit `integer_adm2_...` where the CPU twin emits
-         * `integer_adm2_dlmw_<v>_...` for the same opts dict, and the model
-         * lookup would miss. Same posture as the CPU reference, where
-         * adm_dlm_weight likewise has no arithmetic effect on adm2. */
+        /* Weights DLM against AIM in VMAF_integer_feature_adm3_score; like on
+         * the CPU it has no arithmetic effect on adm2. */
         .name = "adm_dlm_weight",
         .help = "linear weighting between DLM and AIM; 1 corresponds to DLM-only",
         .alias = "dlmw",
@@ -261,6 +277,13 @@ const VmafOption options[] = {
         .min = 0.0,
         .max = 1500.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_skip_aim",
+        .help = "skip the calculation of AIM",
+        .offset = offsetof(AdmStateSycl, adm_skip_aim),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
     },
     {
         .name = "adm_skip_scale0",
@@ -685,7 +708,7 @@ sycl::event launch_dwt_hori_pair(sycl::queue &q, const int32_t *dwt_tmp_ref, int
 }
 
 /* ------------------------------------------------------------------ */
-/* SYCL Kernel: Decouple + CSF (Fused)                                */
+/* Decouple, CSF weighting and contrast masking: device helpers        */
 /* ------------------------------------------------------------------ */
 
 /*
@@ -705,6 +728,11 @@ sycl::event launch_dwt_hori_pair(sycl::queue &q, const int32_t *dwt_tmp_ref, int
  *   gain_lo  = gain_q31 & 0xFFFF        -- 16 bits
  *   product  = r_val * gain_hi << 16 + r_val * gain_lo
  *   result   = product >> 31
+ *
+ * No kernel may use 'double': all kernels of a SYCL translation unit share
+ * one SPIR-V module, and one fp64 instruction in it makes the runtime reject
+ * the whole module on devices without fp64 (Intel Arc A-series, iGPUs) --
+ * even kernels that are never submitted (ADR-0220).
  */
 struct GainLimitQ31 {
     int32_t gain_hi; // upper 22 bits of gain_q31
@@ -720,662 +748,504 @@ inline GainLimitQ31 gain_limit_to_q31(double gain_limit)
     };
 }
 
-template <bool UseFP64>
-sycl::event
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch lambda body, see comment block above (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278)
-launch_decouple_csf(sycl::queue &q, int scale, unsigned half_w, unsigned half_h,
-                    unsigned buf_stride, double adm_enhn_gain_limit, uint32_t i_rfactor_h,
-                    uint32_t i_rfactor_v, uint32_t i_rfactor_d, const int32_t *ref_h,
-                    const int32_t *ref_v, const int32_t *ref_d, const int32_t *dis_h,
-                    const int32_t *dis_v, const int32_t *dis_d, int32_t *csf_f_h, int32_t *csf_f_v,
-                    int32_t *csf_f_d, const int32_t *div_lookup)
+/* The CPU's get_best15_from32() (integer_adm.c): |o| >= 2^15 at scales 1-3
+ * rounded to its top 15 bits, and the shift that took it there. */
+struct AdmBest15 {
+    uint32_t value;
+    int shift;
+};
+
+/*
+ * There is no __builtin_clz on the SYCL device, so the MSB index is found by
+ * a binary scan. The caller guarantees tmp >= 2^15, so the index is at least
+ * 15 and the scan is seeded with that floor; that makes the shift provably
+ * positive to the static analyser (clang-analyzer-core.BitwiseShift is
+ * error-level under WarningsAsErrors). The analyser sums all five conditional
+ * increments without the branch conditions, so it believes n can reach 46;
+ * the clamp states the real bound [15, 31] and is a no-op for every uint32_t
+ * input (verified exhaustively over the low boundary and 400k random guarded
+ * inputs). Bit for bit the CPU and the CUDA / HIP twins
+ * (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04).
+ */
+inline AdmBest15 adm_dev_best15(uint32_t tmp)
 {
-    auto e_scale = scale;
-    auto e_w = half_w;
-    auto e_h = half_h;
-    auto e_stride = buf_stride;
+    int n = 15;
+    uint32_t v = (tmp >> 15) & 0x1FFFFu; // no-op on uint32_t input; states v < 2^17
+    if (v >= (1u << 16)) {
+        n += 16;
+        v >>= 16;
+    }
+    if (v >= (1u << 8)) {
+        n += 8;
+        v >>= 8;
+    }
+    if (v >= (1u << 4)) {
+        n += 4;
+        v >>= 4;
+    }
+    if (v >= (1u << 2)) {
+        n += 2;
+        v >>= 2;
+    }
+    if (v >= (1u << 1)) {
+        n += 1;
+    }
+    n = n > 31 ? 31 : n;
+    int const ks = n - 14; // == 17 - (31 - n), in [1, 17]
+    return {.value = (tmp + (1u << (ks - 1))) >> ks, .shift = ks};
+}
 
-    // Always use int64 Q31 fixed-point for gain limiting.
-    // This avoids requiring fp64 capability (not available on Intel Arc A-series,
-    // Intel iGPUs, mobile GPUs, etc.) while being exact for all production
-    // gain values (1.0 and 100.0).  At most ±1 LSB for exotic fractional gains.
-    //
-    // NOTE: We must NOT instantiate a kernel lambda that uses 'double' operations
-    // because in SYCL, all kernels from a translation unit share a SPIR-V module.
-    // If the module contains fp64 instructions, the runtime rejects the entire
-    // module on non-fp64 hardware — even if the fp64 kernel is never submitted.
-    GainLimitQ31 const e_gain_q31 = gain_limit_to_q31(adm_enhn_gain_limit);
+/*
+ * Q15 ratio k = clamp(t / o, 0, 1) of one band sample with o != 0, the
+ * division carried out with the reciprocal table: CPU adm_decouple_band() at
+ * scale 0 (int16 bands, so |o| <= 2^15 indexes the table directly) and
+ * adm_decouple_band_s123() at scales 1-3. The quotient is clamped in 64 bits
+ * like the CPU's tmp_k: at scales 1-3 it passes INT32_MAX once |t / o| > 2^16,
+ * and narrowing it before the clamp, as this twin used to, wrapped it.
+ */
+inline int32_t adm_dev_decouple_k(int scale, int32_t oh, int32_t th, const int32_t *div_lookup)
+{
+    int32_t const abs_oh = oh < 0 ? -oh : oh;
+    int32_t const sign_oh = oh < 0 ? -1 : 1;
+    bool const direct = scale == 0 || abs_oh < 32768;
+    AdmBest15 const best = direct ? AdmBest15{.value = (uint32_t)abs_oh, .shift = 0} :
+                                    adm_dev_best15((uint32_t)abs_oh);
+    int const shift = 15 + best.shift;
+    int32_t const div_val = div_lookup[32768u + best.value] * sign_oh;
+    int64_t const k = ((int64_t)div_val * th + ((int64_t)1 << (shift - 1))) >> shift;
+    return (int32_t)(k < 0 ? 0 : (k > 32768 ? 32768 : k));
+}
 
-    constexpr int WG_X = 16;
-    constexpr int WG_Y = 16;
-    sycl::range<2> const global(((size_t)(half_h + WG_Y - 1) / WG_Y) * WG_Y,
-                                ((size_t)(half_w + WG_X - 1) / WG_X) * WG_X);
+/* Enhancement gain limit of one decoupled sample whose angle_flag is set.
+ * rst_f is the CPU's (k / 32768) * (o / 64); only its sign is used. The
+ * limit clamps against the distorted sample t, not the reference. */
+inline int32_t adm_dev_gain_limit(int32_t r_val, int32_t k, int32_t oh, int32_t th, GainLimitQ31 g)
+{
+    // No-contract block (T7-16): the pragma has to head a compound statement.
+    float rst_f;
+    {
+#pragma clang fp contract(off)
+        float const a = (float)k / 32768.0f;
+        float const b = (float)oh / 64.0f;
+        rst_f = a * b;
+    }
+    // gained = (r_val * gain_q31) >> 31 = (r_val*hi << 16 + r_val*lo) >> 31,
+    // kept in int64: at scales 1-3 r_val * 100 exceeds int32.
+    int64_t const prod_hi = (int64_t)r_val * g.gain_hi;
+    int64_t const prod_lo = (int64_t)r_val * g.gain_lo;
+    int64_t const main_part = prod_hi >> 15;
+    int64_t const rem = ((prod_hi - (main_part << 15)) << 16) + prod_lo;
+    int64_t const gained = main_part + (rem >> 31);
+    if (rst_f > 0.0f) {
+        return (int32_t)((gained < (int64_t)th) ? gained : (int64_t)th);
+    }
+    if (rst_f < 0.0f) {
+        return (int32_t)((gained > (int64_t)th) ? gained : (int64_t)th);
+    }
+    return r_val;
+}
+
+/* Restored part r of one band sample, the CPU's decouple_r. o == 0 gives
+ * k = 32768 and r = 0, which the gain limit leaves alone (rst_f == 0). */
+inline int32_t adm_dev_decouple(int scale, int32_t oh, int32_t th, bool angle_flag, GainLimitQ31 g,
+                                const int32_t *div_lookup)
+{
+    if (oh == 0) {
+        return 0;
+    }
+    int32_t const k = adm_dev_decouple_k(scale, oh, th, div_lookup);
+    int32_t const r_val = (int32_t)(((int64_t)k * oh + 16384) >> 15);
+    return angle_flag ? adm_dev_gain_limit(r_val, k, oh, th, g) : r_val;
+}
+
+/* CSF weighting of one decoupled sample, the CPU adm_csf() / i4_adm_csf()
+ * dst: v is t - r in the DLM pass and r in the AIM pass. */
+inline int32_t adm_dev_csf(int scale, uint32_t i_rfactor, int32_t v, int band)
+{
+    if (scale == 0) {
+        return adm_s0_csf_a(i_rfactor, v, band); // int16 storage, see adm_i16()
+    }
+    return (int32_t)(((int64_t)i_rfactor * v + (1LL << 27)) >> 28);
+}
+
+/* |csf| / 30, one neighbourhood term of the masking threshold: the CPU
+ * adm_csf() / i4_adm_csf() flt (int16 at scale 0). */
+inline int32_t adm_dev_csf_f(int scale, int32_t csf)
+{
+    int32_t const abs_csf = csf < 0 ? -csf : csf;
+    if (scale == 0) {
+        return adm_i16((4369 * abs_csf + 2048) >> 12);
+    }
+    return (int32_t)(((int64_t)143165577 * abs_csf + I4_FLT_ROUND) >> 32);
+}
+
+/* |csf| / 15, the centre term of the masking threshold: CPU adm_cm_thresh()
+ * / i4_adm_cm_thresh(). int16 at scale 0, where it wraps negative once
+ * |csf| >= 15360 -- the one narrowing 8-bit content reaches with the default
+ * weights. */
+inline int32_t adm_dev_csf_centre(int scale, int32_t csf)
+{
+    int32_t const abs_csf = csf < 0 ? -csf : csf;
+    if (scale == 0) {
+        return adm_i16((ONE_BY_15 * abs_csf + 2048) >> 12);
+    }
+    return (int32_t)(((int64_t)I4_ONE_BY_15 * abs_csf + I4_FLT_ROUND) >> 32);
+}
+
+/* What the decouple of a sample needs; shared by both per-scale kernels. */
+struct AdmBandInputs {
+    const int32_t *ref[3]; // reference h, v, d bands
+    const int32_t *dis[3]; // distorted h, v, d bands
+    const int32_t *div_lookup;
+    uint32_t i_rfactor[3];
+    GainLimitQ31 gain;
+    int scale;
+    int w; // band width
+    int h; // band height
+    unsigned stride;
+    bool aim; // !adm_skip_aim
+};
+
+/* The three bands of one sample after decoupling (CPU adm_decouple /
+ * adm_decouple_s123). */
+struct AdmSample {
+    int32_t o[3]; // reference
+    int32_t r[3]; // restored part, CPU decouple_r
+    int32_t d[3]; // additive impairment t - r, CPU decouple_a
+};
+
+inline AdmSample adm_dev_sample(const AdmBandInputs &in, unsigned idx)
+{
+    AdmSample s{};
+    int32_t t[3];
+    for (int b = 0; b < 3; ++b) {
+        s.o[b] = in.ref[b][idx];
+        t[b] = in.dis[b][idx];
+    }
+    // Angle between (oh, ov) and (th, tv). ADR-1194: the CPU narrows each
+    // operand to float and compares in double; adm_angle_flag_i64() is the
+    // bit-identical form without binary64, which this TU must not contain.
+    int64_t const ot_dp = (int64_t)s.o[0] * t[0] + (int64_t)s.o[1] * t[1];
+    int64_t const o_mag_sq = (int64_t)s.o[0] * s.o[0] + (int64_t)s.o[1] * s.o[1];
+    int64_t const t_mag_sq = (int64_t)t[0] * t[0] + (int64_t)t[1] * t[1];
+    bool const angle_flag = adm_angle_flag_i64(ot_dp, o_mag_sq, t_mag_sq) != 0;
+    for (int b = 0; b < 3; ++b) {
+        s.r[b] = adm_dev_decouple(in.scale, s.o[b], t[b], angle_flag, in.gain, in.div_lookup);
+        s.d[b] = t[b] - s.r[b];
+    }
+    return s;
+}
+
+/* ------------------------------------------------------------------ */
+/* SYCL Kernel: Decouple + CSF                                         */
+/* ------------------------------------------------------------------ */
+
+struct AdmDecoupleArgs {
+    AdmBandInputs in;
+    int32_t *csf_f[3];     // DLM neighbourhood term, |csf(t - r)| / 30
+    int32_t *csf_f_aim[3]; // AIM neighbourhood term, |csf(r)| / 30
+};
+
+/* One sample. The CPU computes these over the reduction region widened by
+ * one tap (adm_border_filt); this pass covers the whole band, a superset, so
+ * every neighbour the CM pass reads holds the CPU's value. */
+inline void adm_dev_decouple_csf_px(const AdmDecoupleArgs &a, unsigned idx)
+{
+    AdmBandInputs const &in = a.in;
+    AdmSample const s = adm_dev_sample(in, idx);
+    for (int b = 0; b < 3; ++b) {
+        int32_t const csf_d = adm_dev_csf(in.scale, in.i_rfactor[b], s.d[b], b);
+        a.csf_f[b][idx] = adm_dev_csf_f(in.scale, csf_d);
+        if (in.aim) {
+            int32_t const csf_r = adm_dev_csf(in.scale, in.i_rfactor[b], s.r[b], b);
+            a.csf_f_aim[b][idx] = adm_dev_csf_f(in.scale, csf_r);
+        }
+    }
+}
+
+sycl::event launch_decouple_csf(sycl::queue &q, const AdmDecoupleArgs &args)
+{
+    constexpr size_t WG_X = 16;
+    constexpr size_t WG_Y = 16;
+    AdmDecoupleArgs const a = args;
+    sycl::range<2> const global(((size_t)a.in.h + WG_Y - 1) / WG_Y * WG_Y,
+                                ((size_t)a.in.w + WG_X - 1) / WG_X * WG_X);
     sycl::range<2> const local(WG_Y, WG_X);
 
     return q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<2>(global, local), [=](sycl::nd_item<2> item) {
-            const int gx = item.get_global_id(1);
-            const int gy = item.get_global_id(0);
-            if (std::cmp_greater_equal(gx, e_w) || std::cmp_greater_equal(gy, e_h))
+            auto const gx = (int)item.get_global_id(1);
+            auto const gy = (int)item.get_global_id(0);
+            if (gx >= a.in.w || gy >= a.in.h) {
                 return;
-
-            unsigned const idx = gy * e_stride + gx;
-
-            // Load all 3 bands for ref and dis
-            int32_t const o[3] = {ref_h[idx], ref_v[idx], ref_d[idx]};
-            int32_t const t[3] = {dis_h[idx], dis_v[idx], dis_d[idx]};
-            int32_t *const cf_ptr[3] = {csf_f_h, csf_f_v, csf_f_d};
-            uint32_t const irf[3] = {i_rfactor_h, i_rfactor_v, i_rfactor_d};
-
-            // --- 2D Angle test using (H, V) bands only ---
-            // Matches CPU: angle between (oh,ov) and (th,tv)
-            int64_t const ot_dp = (int64_t)o[0] * t[0] + (int64_t)o[1] * t[1];
-            int64_t const o_mag_sq = (int64_t)o[0] * o[0] + (int64_t)o[1] * o[1];
-            int64_t const t_mag_sq = (int64_t)t[0] * t[0] + (int64_t)t[1] * t[1];
-
-            // ADR-1194: the CPU narrows each operand to float and then
-            // evaluates the comparison in double. Doing the whole thing in
-            // float (as this kernel used to) is a *different* predicate — it
-            // rounds the squared dot product and the cos(1deg)^2 product to
-            // 24 bits each — and flipped angle_flag on ~3e-5 of near-parallel
-            // band quadruples. binary64 is not an option here: Intel Arc
-            // A-series and most iGPUs expose no fp64, and one fp64
-            // instruction anywhere in this TU makes the runtime reject the
-            // whole SPIR-V module (see the GainLimitQ31 note above). The
-            // shared helper reproduces the CPU's double-precision result
-            // bit-for-bit in int64 arithmetic instead.
-            bool const angle_flag = adm_angle_flag_i64(ot_dp, o_mag_sq, t_mag_sq) != 0;
-
-            // Process each band
-            for (int band = 0; band < 3; band++) {
-                int32_t const oh = o[band];
-                int32_t const th = t[band];
-
-                // --- Decouple: project dis onto ref ---
-                int32_t r_val = 0;
-                int32_t k = 0;
-
-                if (oh == 0) {
-                    // When ref is 0, k = 32768 (Q15 = 1.0)
-                    k = 32768;
-                    // r = (32768 * 0 + 16384) >> 15 = 0
-                    r_val = 0;
-                } else {
-                    int32_t const abs_oh = oh < 0 ? -oh : oh;
-                    int32_t const sign_oh = oh < 0 ? -1 : 1;
-
-                    int32_t div_val;
-                    int kh_shift = 0;
-
-                    if (e_scale == 0) {
-                        // Scale 0: 16-bit values, direct LUT
-                        // CPU: div_lookup[oh + 32768] (oh is int16)
-                        // Equivalent: div_lookup[32768 + abs_oh] * sign
-                        div_val = div_lookup[32768 + abs_oh] * sign_oh;
-                    } else {
-                        // Scale 1-3: reduce to ~15 bits
-                        // Match CPU's get_best15_from32 with rounding
-                        if (abs_oh < 32768) {
-                            div_val = div_lookup[32768 + abs_oh] * sign_oh;
-                        } else {
-                            // Count how many bits to shift
-                            uint32_t const tmp = (uint32_t)abs_oh;
-                            // Find the MSB index.
-                            //
-                            // This branch is guarded by abs_oh >= 32768 == 2^15, so the MSB index is
-                            // at least 15. The scan is seeded with that floor instead of
-                            // rediscovering it, which makes `ks` provably positive to the static
-                            // analyser rather than resting on a comment
-                            // (clang-analyzer-core.BitwiseShift, error-level under
-                            // WarningsAsErrors). It computes the identical n for every input:
-                            // floor(log2(tmp)) == 15 + floor(log2(tmp >> 15)) whenever tmp >= 2^15.
-                            // (no __builtin_clz on the SYCL device)
-                            int n = 15;
-                            uint32_t v =
-                                (tmp >> 15) & 0x1FFFFu; // no-op on uint32_t input; states v < 2^17
-                            if (v >= (1u << 16)) {
-                                n += 16;
-                                v >>= 16;
-                            }
-                            if (v >= (1u << 8)) {
-                                n += 8;
-                                v >>= 8;
-                            }
-                            if (v >= (1u << 4)) {
-                                n += 4;
-                                v >>= 4;
-                            }
-                            if (v >= (1u << 2)) {
-                                n += 2;
-                                v >>= 2;
-                            }
-                            if (v >= (1u << 1)) {
-                                n += 1;
-                                v >>= 1;
-                            }
-                            // ks == 17 - (31 - n) == n - 14, written directly so its lower bound
-                            // follows from `n` alone. n >= 15 by the seed above, so ks is in
-                            // [1, 17] and the shift amount below is never negative. Matches the CPU
-                            // get_best15_from32 and the CUDA / HIP twins bit for bit
-                            // (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04).
-                            // The analyser sums all five conditional increments without propagating
-                            // the branch conditions, so it believes n can reach 46 and the shift
-                            // below can be 32. n is in [15, 31] for every uint32_t tmp >= 2^15 --
-                            // v < 2^17 after the seed, so only the 16-step can fire and the rest
-                            // cannot. Clamping states that bound; it is a no-op, verified
-                            // exhaustively over the low boundary and 400k random guarded inputs.
-                            n = n > 31 ? 31 : n;
-                            int const ks = n - 14;
-                            uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
-                            kh_shift = ks;
-                            div_val = div_lookup[32768 + rounded] * sign_oh;
-                        }
-                    }
-
-                    // k = clamp((div_val * th) >> shift, 0, 32768)
-                    int64_t const k64 = (int64_t)div_val * th;
-                    if (e_scale == 0) {
-                        k = (int32_t)((k64 + (1 << 14)) >> 15);
-                    } else {
-                        int const shift = 15 + kh_shift;
-                        k = (int32_t)((k64 + ((int64_t)1 << (shift - 1))) >> shift);
-                    }
-
-                    if (k < 0)
-                        k = 0;
-                    if (k > 32768)
-                        k = 32768;
-
-                    r_val = (int32_t)(((int64_t)k * oh + 16384) >> 15);
-                }
-
-                // --- Enhancement gain limiting ---
-                // Match CPU: uses floating-point rst_f for sign check,
-                // clamps against distorted signal (th), not reference
-                if (angle_flag) {
-                    // rst_f = (k/32768) * (oh/64) — sign depends on
-                    // k (>=0) and oh, so rst_f > 0 iff oh > 0.
-                    // No-contract block (T7-16): wrapped so the pragma
-                    // sits at the head of a compound statement.
-                    float rst_f;
-                    {
-#pragma clang fp contract(off)
-                        float const a = (float)k / 32768.0f;
-                        float const b = (float)oh / 64.0f;
-                        rst_f = a * b;
-                    }
-
-                    // int64 Q31 split-multiply gain limiting
-                    // gained = (r_val * gain_q31) >> 31
-                    //        = (r_val*hi << 16 + r_val*lo) >> 31
-                    //        = r_val*hi >> 15 + remainder >> 31
-                    int64_t const prod_hi = (int64_t)r_val * e_gain_q31.gain_hi;
-                    int64_t const prod_lo = (int64_t)r_val * e_gain_q31.gain_lo;
-                    int64_t const main_part = prod_hi >> 15;
-                    int64_t const rem = ((prod_hi - (main_part << 15)) << 16) + prod_lo;
-                    // Keep as int64 — gained can exceed int32 at scales 1-3
-                    // where r_val is 32-bit and gain=100 → gained ≈ r*100
-                    int64_t const gained = main_part + (rem >> 31);
-
-                    if (rst_f > 0.0f) {
-                        int64_t const c = (gained < (int64_t)th) ? gained : (int64_t)th;
-                        r_val = (int32_t)c;
-                    } else if (rst_f < 0.0f) {
-                        int64_t const c = (gained > (int64_t)th) ? gained : (int64_t)th;
-                        r_val = (int32_t)c;
-                    }
-                }
-
-                // r_val and csf_a_val are recomputed inline in the CM kernel
-                // — only csf_f needs to be stored (3×3 neighborhood access)
-
-                // a = dis - r (residual)
-                int32_t const a_val = th - r_val;
-
-                // --- Fused CSF ---
-                int32_t csf_f_val;
-                if (e_scale == 0) {
-                    // Scale 0: rfactor * 2^21 (h,v) or 2^23 (d); int16
-                    // storage as in the CPU's adm_csf() (see adm_i16()).
-                    int32_t const csf_a_val = adm_s0_csf_a(irf[band], a_val, band);
-                    // csf_f = (4369 * |csf_a| + 2048) >> 12
-                    int32_t const abs_csf = csf_a_val < 0 ? -csf_a_val : csf_a_val;
-                    csf_f_val = adm_i16((4369 * abs_csf + 2048) >> 12);
-                } else {
-                    // Scales 1-3: rfactor * 2^32
-                    int32_t const csf_a_val =
-                        (int32_t)(((int64_t)irf[band] * a_val + (1LL << 27)) >> 28);
-                    int32_t const abs_csf = csf_a_val < 0 ? -csf_a_val : csf_a_val;
-                    csf_f_val = (int32_t)(((int64_t)143165577 * abs_csf + I4_FLT_ROUND) >> 32);
-                }
-
-                cf_ptr[band][idx] = csf_f_val;
             }
+            adm_dev_decouple_csf_px(a, ((unsigned)gy * a.in.stride) + (unsigned)gx);
         });
     });
 }
 
 /* ------------------------------------------------------------------ */
-/* SYCL Kernel: CSF Denominator Reduction — 3 bands fused             */
-/* ------------------------------------------------------------------ */
-
-/* ------------------------------------------------------------------ */
-/* SYCL Kernel: CSF Denominator + Contrast Measure — 3 bands fused    */
+/* SYCL Kernel: CSF denominator + DLM and AIM contrast measures        */
 /*                                                                     */
-/* Combines csf_den_3band, cm_3band, AND decouple+CSF into a single   */
-/* dispatch.  Decouple+CSF values (r_val, csf_a_val) are recomputed   */
-/* per pixel instead of read from global memory, eliminating           */
-/* d_decouple_r[3] and d_csf_a[3] buffers (~47 MB at 4K).             */
-/* d_csf_f[3] is still read from global memory (3×3 neighborhood).    */
+/* One work-group per row of the reduction region computes all three  */
+/* bands of all three reductions. r and t - r are recomputed per       */
+/* sample instead of read from buffers; only the |csf| / 30 bands are  */
+/* stored, because the threshold reads their 3x3 neighbourhood.        */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-sycl::event launch_csf_den_cm_3band(
-    sycl::queue &q, int scale, unsigned half_w, unsigned half_h, unsigned buf_stride,
-    // csf_den inputs
-    const int32_t *ref_band_h, const int32_t *ref_band_v, const int32_t *ref_band_d,
-    int64_t *csf_accum_h, int64_t *csf_accum_v, int64_t *csf_accum_d,
-    // cm inputs (decouple inlined)
-    uint32_t i_rfactor_h, uint32_t i_rfactor_v, uint32_t i_rfactor_d, const int32_t *dis_band_h,
-    const int32_t *dis_band_v, const int32_t *dis_band_d, const int32_t *csf_f_h,
-    const int32_t *csf_f_v, const int32_t *csf_f_d, const int32_t *div_lookup,
-    double adm_enhn_gain_limit, int64_t *cm_accum_h, int64_t *cm_accum_v, int64_t *cm_accum_d)
+/* Shift budget of one scale's reductions (CPU adm_csf_den_scale /
+ * adm_csf_den_s123 and adm_cm_ctx_init / i4_adm_cm_ctx_init). */
+struct AdmCmShifts {
+    uint32_t den_sq;    // scales 1-3: square, rounded with 1 << den_sq
+    uint32_t den_cub;   // scales 1-3: cube
+    uint32_t den_accum; // row total of the denominator
+    uint32_t cm_inner;  // row total of the contrast measures (shift_inner_accum)
+    uint32_t cm_sub[3]; // scale 0: threshold into the band's Q format
+    uint32_t cm_xsq[3];
+    uint32_t cm_xcub[3];
+};
+
+struct AdmCmArgs {
+    AdmBandInputs in;
+    const int32_t *csf_f[3];
+    const int32_t *csf_f_aim[3];
+    int64_t *accum; // band 0 of this scale in the DLM term
+    AdmCmShifts sh;
+    int left;
+    int top;
+    int right;
+};
+
+/* Sub-group size 16: each work-item keeps nine int64 sums live across the
+ * column loop, and at 32 lanes the UHD 770 (Xe-LP) spills -- adm_sycl alone at
+ * 3840x2160 took 59.5 ms per frame at 32 and 45.6 at 16. The Arc B580 (Xe2,
+ * native SIMD16) shows no difference. The sums are integer, so the sub-group
+ * size cannot change a score. */
+constexpr int ADM_CM_WG = 256;    // work-items per row
+constexpr int ADM_CM_SG = 16;     // sub-group size
+constexpr int ADM_CM_MAX_SG = 32; // sub-groups per work-group, upper bound
+constexpr int ADM_CM_SUMS = ADM_NUM_TERMS * ADM_NUM_BANDS;
+static_assert(ADM_CM_WG / ADM_CM_SG <= ADM_CM_MAX_SG, "reduction slots");
+
+/* The eight 3x3 neighbours of (row, col) in one |csf| / 30 band.
+ * ADR-1210: the CPU rule is asymmetric -- the near edge MIRRORS to index 1,
+ * the far edge CLAMPS to the last index (adm_cm_thresh() in integer_adm.c).
+ * The two readings only differ once a scale's border crop collapses to 0
+ * (band dimensions <= 14), the one case with row 0 / column 0 inside the
+ * region. */
+inline int64_t adm_dev_neighbours(const int32_t *flt, int row, int col, const AdmBandInputs &in)
 {
-    int left = (int)(half_w * ADM_BORDER_FACTOR - 0.5);
-    int top = (int)(half_h * ADM_BORDER_FACTOR - 0.5);
-    int const right = (int)half_w - left;
-    int const bottom = (int)half_h - top;
-    if (left < 0)
-        left = 0;
-    if (top < 0)
-        top = 0;
-
-    int const active_w = right - left;
-    int const active_h = bottom - top;
-    if (active_w <= 0 || active_h <= 0)
-        return sycl::event{};
-
-    // csf_den shift params
-    uint32_t csf_shift_sq;
-    uint32_t csf_shift_cub;
-    uint32_t csf_shift_accum;
-    if (scale == 0) {
-        csf_shift_sq = 0;
-        csf_shift_cub = 0;
-        int const area = active_w * active_h;
-        int const s = (int)std::ceil(std::log2(area) - 20);
-        csf_shift_accum = s > 0 ? (uint32_t)s : 0;
-    } else {
-        csf_shift_sq = (scale == 2) ? 30 : 31;
-        csf_shift_cub = (uint32_t)std::ceil(std::log2(active_w));
-        csf_shift_accum = (uint32_t)std::ceil(std::log2(active_h));
-    }
-
-    // cm shift params
-    uint32_t const cm_shift_inner_accum = (uint32_t)std::ceil(std::log2((double)half_h));
-    uint32_t cm_shift_sub[3];
-    uint32_t cm_shift_xsq[3];
-    uint32_t cm_shift_xcub[3];
-    for (int b = 0; b < 3; b++) {
-        if (scale == 0) {
-            cm_shift_sub[b] = (b < 2) ? 10 : 12;
-            cm_shift_xsq[b] = (b < 2) ? 29 : 30;
-            cm_shift_xcub[b] = (uint32_t)(std::ceil(std::log2((double)half_w)) - ((b < 2) ? 4 : 3));
-        } else {
-            cm_shift_sub[b] = 15;
-            cm_shift_xsq[b] = 30;
-            cm_shift_xcub[b] = (uint32_t)std::ceil(std::log2((double)half_w));
+    int const rows[3] = {(row == 0) ? 1 : row - 1, row, (row == in.h - 1) ? in.h - 1 : row + 1};
+    auto const col_m1 = (unsigned)((col == 0) ? 1 : col - 1);
+    auto const col_p1 = (unsigned)((col == in.w - 1) ? in.w - 1 : col + 1);
+    int64_t sum = 0;
+    for (int i = 0; i < 3; ++i) {
+        unsigned const line = (unsigned)rows[i] * in.stride;
+        sum += flt[line + col_m1];
+        sum += flt[line + col_p1];
+        if (i != 1) {
+            sum += flt[line + (unsigned)col];
         }
     }
+    return sum;
+}
 
-    auto e_left = left;
-    auto e_top = top;
-    auto e_right = right;
-    auto e_stride = buf_stride;
-    auto e_scale = scale;
-    auto e_w = half_w;
-    auto e_h = half_h;
-    // csf_den
-    auto e_csf_shift_sq = csf_shift_sq;
-    auto e_csf_shift_cub = csf_shift_cub;
-    auto e_csf_shift_accum = csf_shift_accum;
-    // cm
-    auto e_cm_shift_inner = cm_shift_inner_accum;
-    auto e_cm_shift_sub0 = cm_shift_sub[0];
-    auto e_cm_shift_sub2 = cm_shift_sub[2];
-    auto e_cm_shift_xsq0 = cm_shift_xsq[0];
-    auto e_cm_shift_xsq2 = cm_shift_xsq[2];
-    auto e_cm_shift_xcub0 = cm_shift_xcub[0];
-    auto e_cm_shift_xcub2 = cm_shift_xcub[2];
-    // decouple gain limit (Q31 fixed-point, same as in launch_decouple_csf)
-    GainLimitQ31 e_gain_q31 = gain_limit_to_q31(adm_enhn_gain_limit);
+/* Masking threshold of one sample, the CPU's 27-term sum over h, v and d:
+ * the neighbourhood of `flt` plus the 1/15 centre of csf(centre_src). DLM
+ * passes csf_f and t - r, AIM csf_f_aim and r. */
+inline int64_t adm_dev_threshold(const AdmBandInputs &in, const int32_t *const flt[3],
+                                 const int32_t centre_src[3], int row, int col)
+{
+    int64_t thr = 0;
+    for (int b = 0; b < 3; ++b) {
+        thr += adm_dev_neighbours(flt[b], row, col, in);
+        thr +=
+            adm_dev_csf_centre(in.scale, adm_dev_csf(in.scale, in.i_rfactor[b], centre_src[b], b));
+    }
+    return thr;
+}
 
-    constexpr int WG_SIZE = 256;
-    constexpr int MAX_SUBGROUPS = 32;
-    int num_rows = bottom - top;
+/* |x| - thr at scale 0, x = v * rfactor. The CPU subtracts the shifted
+ * threshold in int32_t, where thr << 12 can wrap on the diagonal band; so
+ * does this, modulo 2^32. */
+inline int64_t adm_dev_cm_excess_s0(uint32_t i_rfactor, int32_t v, int64_t thr, uint32_t shift_sub)
+{
+    int64_t const x = (int64_t)i_rfactor * v;
+    auto const abs_x = static_cast<uint32_t>(x < 0 ? -x : x);
+    return static_cast<int32_t>(abs_x - (static_cast<uint32_t>(thr) << shift_sub));
+}
 
-    // Dispatch 3 × num_rows workgroups: band = wg / num_rows
+/* |x| - thr at scales 1-3, x the CSF-weighted sample (i4_adm_cm_scale). */
+inline int64_t adm_dev_cm_excess_s123(uint32_t i_rfactor, int32_t v, int64_t thr)
+{
+    int64_t const scaled = ((int64_t)i_rfactor * v + (1LL << 27)) >> 28;
+    return (scaled < 0 ? -scaled : scaled) - thr;
+}
+
+/* Rounded max(|x| - thr, 0)^3 of one band sample: CPU adm_cm_accum_round()
+ * at scale 0, i4_adm_cm_accum_round() at scales 1-3. v is the sample the
+ * pass measures: r for DLM, t - r for AIM. */
+inline int64_t adm_dev_cm_cube(const AdmCmArgs &a, int band, int32_t v, int64_t thr)
+{
+    uint32_t const i_rfactor = a.in.i_rfactor[band];
+    int64_t const excess = (a.in.scale == 0) ?
+                               adm_dev_cm_excess_s0(i_rfactor, v, thr, a.sh.cm_sub[band]) :
+                               adm_dev_cm_excess_s123(i_rfactor, v, thr);
+    int64_t const cm = excess < 0 ? 0 : excess;
+    uint32_t const xsq = a.sh.cm_xsq[band];
+    uint32_t const xcub = a.sh.cm_xcub[band];
+    int64_t const rnd_sq = xsq > 0 ? ((int64_t)1 << (xsq - 1)) : 0;
+    auto const x_sq = (int32_t)(((cm * cm) + rnd_sq) >> xsq);
+    int64_t const rnd_cub = xcub > 0 ? ((int64_t)1 << (xcub - 1)) : 0;
+    return (((int64_t)x_sq * cm) + rnd_cub) >> xcub;
+}
+
+/* |o|^3 of one reference sample, the CSF-denominator term: exact at scale 0
+ * (adm_csf_den_scale), rounded twice at scales 1-3 (i4_cube_term, whose
+ * square rounds with 1 << den_sq rather than half of it). */
+inline int64_t adm_dev_den_cube(const AdmCmArgs &a, int32_t o)
+{
+    int64_t const abs_o = o < 0 ? -(int64_t)o : (int64_t)o;
+    if (a.in.scale == 0) {
+        return abs_o * abs_o * abs_o;
+    }
+    int64_t const o_sq = ((abs_o * abs_o) + ((int64_t)1 << a.sh.den_sq)) >> a.sh.den_sq;
+    int64_t const rnd_cub = a.sh.den_cub > 0 ? ((int64_t)1 << (a.sh.den_cub - 1)) : 0;
+    return ((o_sq * abs_o) + rnd_cub) >> a.sh.den_cub;
+}
+
+/* All reductions of one sample. DLM: threshold from csf(t - r), measure r.
+ * AIM (the CPU's measure_aim): the roles swap -- threshold from csf(r),
+ * measure t - r -- and the pass adds no noise floor (host side). */
+inline void adm_dev_cm_px(const AdmCmArgs &a, int row, int col, int64_t sums[ADM_CM_SUMS])
+{
+    AdmBandInputs const &in = a.in;
+    AdmSample const s = adm_dev_sample(in, ((unsigned)row * in.stride) + (unsigned)col);
+    int64_t const thr = adm_dev_threshold(in, a.csf_f, s.d, row, col);
+    for (int b = 0; b < 3; ++b) {
+        sums[(ADM_TERM_CM * ADM_NUM_BANDS) + b] += adm_dev_cm_cube(a, b, s.r[b], thr);
+        sums[(ADM_TERM_DEN * ADM_NUM_BANDS) + b] += adm_dev_den_cube(a, s.o[b]);
+    }
+    if (!in.aim) {
+        return;
+    }
+    int64_t const thr_aim = adm_dev_threshold(in, a.csf_f_aim, s.r, row, col);
+    for (int b = 0; b < 3; ++b) {
+        sums[(ADM_TERM_AIM * ADM_NUM_BANDS) + b] += adm_dev_cm_cube(a, b, s.d[b], thr_aim);
+    }
+}
+
+/* Fold one complete row total into the frame accumulator of sum k. ADR-1167:
+ * the rounding shift is applied once per row, after every column of the row
+ * has been summed -- never to a work-item or sub-group partial. */
+inline void adm_dev_fold_row(const AdmCmArgs &a, int k, int64_t row_total)
+{
+    int const term = k / ADM_NUM_BANDS;
+    uint32_t const shift = (term == ADM_TERM_DEN) ? a.sh.den_accum : a.sh.cm_inner;
+    int64_t const rounding = shift > 0 ? ((int64_t)1 << (shift - 1)) : 0;
+    int64_t const shifted = adm_cm_round_row_total(row_total, rounding, shift);
+    sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                     sycl::access::address_space::global_space> const
+        slot(a.accum[(term * ADM_TERM_SLOTS) + (k % ADM_NUM_BANDS)]);
+    slot.fetch_add(shifted);
+}
+
+/* Work-group sum of every per-item total, then one fold per sum. */
+inline void adm_dev_reduce_row(sycl::nd_item<1> item, const sycl::local_accessor<int64_t, 1> &lmem,
+                               const AdmCmArgs &a, const int64_t sums[ADM_CM_SUMS])
+{
+    sycl::sub_group const sg = item.get_sub_group();
+    uint32_t const sg_id = sg.get_group_linear_id();
+    bool const sg_leader = sg.get_local_linear_id() == 0;
+    for (int k = 0; k < ADM_CM_SUMS; ++k) {
+        int64_t const part = sycl::reduce_over_group(sg, sums[k], sycl::plus<int64_t>{});
+        if (sg_leader) {
+            lmem[((size_t)k * ADM_CM_MAX_SG) + sg_id] = part;
+        }
+    }
+    item.barrier(sycl::access::fence_space::local_space);
+    if (item.get_local_id(0) != 0) {
+        return;
+    }
+    uint32_t const n_sg = sg.get_group_linear_range();
+    for (int k = 0; k < ADM_CM_SUMS; ++k) {
+        int64_t row_total = 0;
+        for (uint32_t i = 0; i < n_sg; ++i) {
+            row_total += lmem[((size_t)k * ADM_CM_MAX_SG) + i];
+        }
+        adm_dev_fold_row(a, k, row_total);
+    }
+}
+
+sycl::event launch_csf_den_cm(sycl::queue &q, const AdmCmArgs &args, int num_rows)
+{
+    AdmCmArgs const a = args;
     return q.submit([&](sycl::handler &cgh) {
-        // 2 reduction slots: [0..MAX_SUBGROUPS) for csf_den,
-        //                    [MAX_SUBGROUPS..2*MAX_SUBGROUPS) for cm
-        sycl::local_accessor<int64_t, 1> const lmem(sycl::range<1>((size_t)2 * MAX_SUBGROUPS), cgh);
-
-        cgh.parallel_for(
-            sycl::nd_range<1>((size_t)3 * num_rows * WG_SIZE, WG_SIZE),
-            [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(32) {
-                int const wg = item.get_group(0);
-                int const band_idx = wg / num_rows;
-                int const row_idx = wg % num_rows;
-                int const lid = item.get_local_id(0);
-                int const row = e_top + row_idx;
-
-                // Select band-specific pointers
-                const int32_t *ref_band = (band_idx == 0) ? ref_band_h :
-                                          (band_idx == 1) ? ref_band_v :
-                                                            ref_band_d;
-                int64_t *csf_accum_ptr = (band_idx == 0) ? csf_accum_h :
-                                         (band_idx == 1) ? csf_accum_v :
-                                                           csf_accum_d;
-                int64_t *cm_accum_ptr = (band_idx == 0) ? cm_accum_h :
-                                        (band_idx == 1) ? cm_accum_v :
-                                                          cm_accum_d;
-                uint32_t const i_rfactor = (band_idx == 0) ? i_rfactor_h :
-                                           (band_idx == 1) ? i_rfactor_v :
-                                                             i_rfactor_d;
-                auto e_cm_shift_sub = (band_idx < 2) ? e_cm_shift_sub0 : e_cm_shift_sub2;
-                auto e_cm_shift_xsq = (band_idx < 2) ? e_cm_shift_xsq0 : e_cm_shift_xsq2;
-                auto e_cm_shift_xcub = (band_idx < 2) ? e_cm_shift_xcub0 : e_cm_shift_xcub2;
-
-                const int32_t *const cf_ptrs[3] = {csf_f_h, csf_f_v, csf_f_d};
-                // All 3 ref/dis band pointers for inline decouple
-                const int32_t *const ref_ptrs[3] = {ref_band_h, ref_band_v, ref_band_d};
-                const int32_t *const dis_ptrs[3] = {dis_band_h, dis_band_v, dis_band_d};
-                uint32_t const irf_all[3] = {i_rfactor_h, i_rfactor_v, i_rfactor_d};
-
-                // Per-thread accumulators for both reductions
-                int64_t local_csf_sum = 0;
-                int64_t local_cm_sum = 0;
-
-                for (int col = e_left + lid; col < e_right; col += WG_SIZE) {
-                    unsigned const idx = row * e_stride + col;
-
-                    // ── CSF denominator: |ref|³ ──
-                    int32_t const t = ref_band[idx];
-                    int32_t const abs_t = t < 0 ? -t : t;
-                    int64_t t_cub;
-                    if (e_scale == 0) {
-                        t_cub = (int64_t)abs_t * abs_t * abs_t;
-                    } else {
-                        int64_t const rnd_sq = ((int64_t)1 << e_csf_shift_sq);
-                        int64_t const t_sq = ((int64_t)abs_t * abs_t + rnd_sq) >> e_csf_shift_sq;
-                        int64_t const rnd_cub =
-                            e_csf_shift_cub > 0 ? ((int64_t)1 << (e_csf_shift_cub - 1)) : 0;
-                        t_cub = (t_sq * abs_t + rnd_cub) >> e_csf_shift_cub;
-                    }
-                    local_csf_sum += t_cub;
-
-                    // ── Inline decouple + CSF for all 3 bands ──
-                    // Load ref/dis for H,V,D bands
-                    int32_t const o[3] = {ref_ptrs[0][idx], ref_ptrs[1][idx], ref_ptrs[2][idx]};
-                    int32_t const th_all[3] = {dis_ptrs[0][idx], dis_ptrs[1][idx],
-                                               dis_ptrs[2][idx]};
-
-                    // 2D angle test (uses H,V bands only)
-                    int64_t const ot_dp = (int64_t)o[0] * th_all[0] + (int64_t)o[1] * th_all[1];
-                    int64_t const o_mag_sq = (int64_t)o[0] * o[0] + (int64_t)o[1] * o[1];
-                    int64_t const t_mag_sq =
-                        (int64_t)th_all[0] * th_all[0] + (int64_t)th_all[1] * th_all[1];
-                    // fp64-free replica of the CPU predicate (ADR-1194) —
-                    // see the scale-0 kernel above for why binary64 cannot
-                    // be used in this translation unit.
-                    bool const angle_flag = adm_angle_flag_i64(ot_dp, o_mag_sq, t_mag_sq) != 0;
-
-                    // Decouple + CSF for each band → r_val[band], csf_a_val[band]
-                    int32_t r_vals[3];
-                    int32_t csf_a_vals[3];
-                    for (int b = 0; b < 3; b++) {
-                        int32_t const oh = o[b];
-                        int32_t const bth = th_all[b];
-                        int32_t r_val = 0;
-                        int32_t k = 0;
-
-                        if (oh == 0) {
-                            k = 32768;
-                            r_val = 0;
-                        } else {
-                            int32_t const abs_oh = oh < 0 ? -oh : oh;
-                            int32_t const sign_oh = oh < 0 ? -1 : 1;
-                            int32_t div_val;
-                            int kh_shift = 0;
-
-                            if (e_scale == 0) {
-                                div_val = div_lookup[32768 + abs_oh] * sign_oh;
-                            } else {
-                                if (abs_oh < 32768) {
-                                    div_val = div_lookup[32768 + abs_oh] * sign_oh;
-                                } else {
-                                    uint32_t const tmp = (uint32_t)abs_oh;
-                                    // Find the MSB index.
-                                    //
-                                    // This branch is guarded by abs_oh >= 32768 == 2^15, so the MSB index is
-                                    // at least 15. The scan is seeded with that floor instead of
-                                    // rediscovering it, which makes `ks` provably positive to the static
-                                    // analyser rather than resting on a comment
-                                    // (clang-analyzer-core.BitwiseShift, error-level under
-                                    // WarningsAsErrors). It computes the identical n for every input:
-                                    // floor(log2(tmp)) == 15 + floor(log2(tmp >> 15)) whenever tmp >= 2^15.
-                                    // (no __builtin_clz on the SYCL device)
-                                    int n = 15;
-                                    uint32_t v =
-                                        (tmp >> 15) &
-                                        0x1FFFFu; // no-op on uint32_t input; states v < 2^17
-                                    if (v >= (1u << 16)) {
-                                        n += 16;
-                                        v >>= 16;
-                                    }
-                                    if (v >= (1u << 8)) {
-                                        n += 8;
-                                        v >>= 8;
-                                    }
-                                    if (v >= (1u << 4)) {
-                                        n += 4;
-                                        v >>= 4;
-                                    }
-                                    if (v >= (1u << 2)) {
-                                        n += 2;
-                                        v >>= 2;
-                                    }
-                                    if (v >= (1u << 1)) {
-                                        n += 1;
-                                        v >>= 1;
-                                    }
-                                    // ks == 17 - (31 - n) == n - 14, written directly so its lower bound
-                                    // follows from `n` alone. n >= 15 by the seed above, so ks is in
-                                    // [1, 17] and the shift amount below is never negative. Matches the CPU
-                                    // get_best15_from32 and the CUDA / HIP twins bit for bit
-                                    // (T-SYCL-ADM-NEGATIVE-SHIFT-REACHABILITY-2026-09-04).
-                                    // The analyser sums all five conditional increments without propagating
-                                    // the branch conditions, so it believes n can reach 46 and the shift
-                                    // below can be 32. n is in [15, 31] for every uint32_t tmp >= 2^15 --
-                                    // v < 2^17 after the seed, so only the 16-step can fire and the rest
-                                    // cannot. Clamping states that bound; it is a no-op, verified
-                                    // exhaustively over the low boundary and 400k random guarded inputs.
-                                    n = n > 31 ? 31 : n;
-                                    int const ks = n - 14;
-                                    uint32_t const rounded = (tmp + (1u << (ks - 1))) >> ks;
-                                    kh_shift = ks;
-                                    div_val = div_lookup[32768 + rounded] * sign_oh;
-                                }
-                            }
-
-                            int64_t const k64 = (int64_t)div_val * bth;
-                            if (e_scale == 0) {
-                                k = (int32_t)((k64 + (1 << 14)) >> 15);
-                            } else {
-                                int const shift = 15 + kh_shift;
-                                k = (int32_t)((k64 + ((int64_t)1 << (shift - 1))) >> shift);
-                            }
-                            if (k < 0)
-                                k = 0;
-                            if (k > 32768)
-                                k = 32768;
-                            r_val = (int32_t)(((int64_t)k * oh + 16384) >> 15);
-                        }
-
-                        // Enhancement gain limiting
-                        if (angle_flag) {
-                            // No-contract block (T7-16).
-                            float rst_f;
-                            {
-#pragma clang fp contract(off)
-                                float const a = (float)k / 32768.0f;
-                                float const b = (float)oh / 64.0f;
-                                rst_f = a * b;
-                            }
-                            int64_t const prod_hi = (int64_t)r_val * e_gain_q31.gain_hi;
-                            int64_t const prod_lo = (int64_t)r_val * e_gain_q31.gain_lo;
-                            int64_t const main_part = prod_hi >> 15;
-                            int64_t const rem = ((prod_hi - (main_part << 15)) << 16) + prod_lo;
-                            int64_t const gained = main_part + (rem >> 31);
-
-                            if (rst_f > 0.0f) {
-                                int64_t const c = (gained < (int64_t)bth) ? gained : (int64_t)bth;
-                                r_val = (int32_t)c;
-                            } else if (rst_f < 0.0f) {
-                                int64_t const c = (gained > (int64_t)bth) ? gained : (int64_t)bth;
-                                r_val = (int32_t)c;
-                            }
-                        }
-
-                        r_vals[b] = r_val;
-
-                        // CSF: a = dis - r, csf_a = rfactor * a
-                        int32_t const a_val = bth - r_val;
-                        if (e_scale == 0) {
-                            csf_a_vals[b] = adm_s0_csf_a(irf_all[b], a_val, b);
-                        } else {
-                            csf_a_vals[b] =
-                                (int32_t)(((int64_t)irf_all[b] * a_val + (1LL << 27)) >> 28);
-                        }
-                    }
-
-                    // ── Contrast measure (uses inline csf_a and r_val) ──
-                    int64_t thr = 0;
-                    for (int b = 0; b < 3; b++) {
-                        for (int dy = -1; dy <= 1; dy++) {
-                            for (int dx = -1; dx <= 1; dx++) {
-                                if (dx == 0 && dy == 0)
-                                    continue;
-                                /* ADR-1210: the CPU rule is ASYMMETRIC — the
-                                 * near edge MIRRORS to index 1, the far edge
-                                 * CLAMPS to the last index:
-                                 *   i_m1 = (i == 0)     ? 1     : i - 1;
-                                 *   i_p1 = (i == h - 1) ? h - 1 : i + 1;
-                                 * (core/src/feature/integer_adm.c:1009-1012).
-                                 * Clamping the near edge to 0 instead reads the
-                                 * centre row/column twice and drops the mirror,
-                                 * which only diverges once a scale's border crop
-                                 * collapses to 0 — band dimensions <= 14 — since
-                                 * only then are row 0 / col 0 inside the CM
-                                 * region. The CUDA and HIP scale 1-3 kernels had
-                                 * the ADR-1167 fix; their scale-0 kernels got it
-                                 * with T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18. */
-                                int ny = row + dy;
-                                int nx = col + dx;
-                                if (ny < 0)
-                                    ny = 1;
-                                if (std::cmp_greater_equal(ny, e_h))
-                                    ny = (int)e_h - 1;
-                                if (nx < 0)
-                                    nx = 1;
-                                if (std::cmp_greater_equal(nx, e_w))
-                                    nx = (int)e_w - 1;
-                                thr += cf_ptrs[b][ny * e_stride + nx];
-                            }
-                        }
-                        int32_t const abs_ca = csf_a_vals[b] < 0 ? -csf_a_vals[b] : csf_a_vals[b];
-                        if (e_scale == 0) {
-                            // int16 like the CPU's adm_cm_thresh(): wraps
-                            // negative once |csf_a| >= 15360.
-                            thr += adm_i16((ONE_BY_15 * abs_ca + 2048) >> 12);
-                        } else {
-                            thr += ((int64_t)I4_ONE_BY_15 * abs_ca + I4_FLT_ROUND) >> 32;
-                        }
-                    }
-
-                    int32_t const r_val = r_vals[band_idx];
-                    int64_t cm;
-                    if (e_scale == 0) {
-                        // adm_cm_accum_round() (integer_adm.c:1083) subtracts
-                        // the shifted threshold in int32_t, where thr << 12
-                        // can wrap on the diagonal band; so does this.
-                        int64_t const x = (int64_t)i_rfactor * r_val;
-                        auto const abs_x = static_cast<uint32_t>(x < 0 ? -x : x);
-                        cm = static_cast<int32_t>(abs_x -
-                                                  (static_cast<uint32_t>(thr) << e_cm_shift_sub));
-                    } else {
-                        int64_t const scaled_r = ((int64_t)i_rfactor * r_val + (1LL << 27)) >> 28;
-                        cm = scaled_r < 0 ? -scaled_r : scaled_r;
-                        cm -= thr;
-                    }
-                    if (cm < 0)
-                        cm = 0;
-
-                    int64_t const rnd_sq2 =
-                        e_cm_shift_xsq > 0 ? ((int64_t)1 << (e_cm_shift_xsq - 1)) : 0;
-                    int32_t const x_sq = (int32_t)(((cm * cm) + rnd_sq2) >> e_cm_shift_xsq);
-                    int64_t const rnd_cub2 =
-                        e_cm_shift_xcub > 0 ? ((int64_t)1 << (e_cm_shift_xcub - 1)) : 0;
-                    int64_t const x_cub = (((int64_t)x_sq * cm) + rnd_cub2) >> e_cm_shift_xcub;
-                    local_cm_sum += x_cub;
-                }
-
-                // ── Two-phase reduction for both values ──
-                sycl::sub_group const sg = item.get_sub_group();
-                int64_t const sg_csf =
-                    sycl::reduce_over_group(sg, local_csf_sum, sycl::plus<int64_t>{});
-                int64_t const sg_cm =
-                    sycl::reduce_over_group(sg, local_cm_sum, sycl::plus<int64_t>{});
-
-                const uint32_t sg_id = sg.get_group_linear_id();
-                const uint32_t sg_lid = sg.get_local_linear_id();
-                const uint32_t n_subgroups = sg.get_group_linear_range();
-
-                if (sg_lid == 0) {
-                    lmem[sg_id] = sg_csf;
-                    lmem[MAX_SUBGROUPS + sg_id] = sg_cm;
-                }
-
-                item.barrier(sycl::access::fence_space::local_space);
-
-                if (lid == 0) {
-                    int64_t total_csf = 0;
-                    int64_t total_cm = 0;
-                    for (uint32_t s = 0; s < n_subgroups; s++) {
-                        total_csf += lmem[s];
-                        total_cm += lmem[MAX_SUBGROUPS + s];
-                    }
-
-                    // csf_den: shift and atomic add
-                    int64_t const rnd_csf =
-                        e_csf_shift_accum > 0 ? ((int64_t)1 << (e_csf_shift_accum - 1)) : 0;
-                    int64_t const shifted_csf = (total_csf + rnd_csf) >> e_csf_shift_accum;
-                    sycl::atomic_ref<
-                        int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                        sycl::access::address_space::global_space> const csf_ref(*csf_accum_ptr);
-                    csf_ref.fetch_add(shifted_csf);
-
-                    // cm: shift and atomic add
-                    int64_t const rnd_cm =
-                        e_cm_shift_inner > 0 ? ((int64_t)1 << (e_cm_shift_inner - 1)) : 0;
-                    int64_t const shifted_cm = (total_cm + rnd_cm) >> e_cm_shift_inner;
-                    sycl::atomic_ref<
-                        int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                        sycl::access::address_space::global_space> const cm_ref(*cm_accum_ptr);
-                    cm_ref.fetch_add(shifted_cm);
-                }
-            });
+        sycl::local_accessor<int64_t, 1> const lmem(
+            sycl::range<1>((size_t)ADM_CM_SUMS * ADM_CM_MAX_SG), cgh);
+        cgh.parallel_for(sycl::nd_range<1>((size_t)num_rows * ADM_CM_WG, ADM_CM_WG),
+                         [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(ADM_CM_SG) {
+                             int const row = a.top + (int)item.get_group(0);
+                             int64_t sums[ADM_CM_SUMS] = {};
+                             for (int col = a.left + (int)item.get_local_id(0); col < a.right;
+                                  col += ADM_CM_WG) {
+                                 adm_dev_cm_px(a, row, col, sums);
+                             }
+                             adm_dev_reduce_row(item, lmem, a, sums);
+                         });
     });
+}
+
+/* ------------------------------------------------------------------ */
+/* Host-side launch parameters                                         */
+/* ------------------------------------------------------------------ */
+
+/* The CPU's reduction region, adm_border() in integer_adm.c. */
+struct AdmRegion {
+    int left;
+    int top;
+    int right;
+    int bottom;
+};
+
+AdmRegion adm_region(int w, int h)
+{
+    AdmRegion r{};
+    r.left = (int)(w * ADM_BORDER_FACTOR - 0.5);
+    r.top = (int)(h * ADM_BORDER_FACTOR - 0.5);
+    r.right = w - r.left;
+    r.bottom = h - r.top;
+    return r;
+}
+
+AdmCmShifts adm_cm_shifts(int scale, int w, int h, const AdmRegion &r)
+{
+    assert(scale >= 0 && scale < ADM_NUM_SCALES);
+    // The caller skips empty regions; every log2 below needs a positive span.
+    assert(r.right > r.left && r.bottom > r.top);
+    AdmCmShifts sh{};
+    int const active_w = r.right - r.left;
+    int const active_h = r.bottom - r.top;
+    if (scale == 0) {
+        int const s = (int)std::ceil(std::log2(active_w * active_h) - 20);
+        sh.den_accum = s > 0 ? (uint32_t)s : 0;
+    } else {
+        sh.den_sq = (scale == 2) ? 30 : 31;
+        sh.den_cub = (uint32_t)std::ceil(std::log2(active_w));
+        sh.den_accum = (uint32_t)std::ceil(std::log2(active_h));
+    }
+    sh.cm_inner = (uint32_t)std::ceil(std::log2((double)h));
+    auto const log2_w = (uint32_t)std::ceil(std::log2((double)w));
+    // adm_frame_size_check() keeps scale-0 bands >= 9 wide, so the scale-0
+    // cube shift log2_w - 4 cannot wrap.
+    assert(scale != 0 || log2_w >= 4u);
+    for (int b = 0; b < 3; b++) {
+        bool const hv = b < 2;
+        sh.cm_sub[b] = (scale == 0) ? (hv ? 10 : 12) : 15;
+        sh.cm_xsq[b] = (scale == 0 && hv) ? 29 : 30;
+        sh.cm_xcub[b] = (scale == 0) ? (log2_w - (hv ? 4 : 3)) : log2_w;
+    }
+    return sh;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1460,6 +1330,78 @@ void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, double
     }
 }
 
+/*
+ * The CPU's own finalisation of one scale (ADR-1362). integer_adm.c ends every
+ * scale in float -- adm_cm() / i4_adm_cm() and adm_csf_den_scale() /
+ * adm_csf_den_s123() each return the float sum of three float band terms --
+ * and integer_compute_adm() sums those floats in double. The device
+ * accumulators are bit-exact with the CPU's, so repeating that arithmetic
+ * expression for expression reproduces aim and adm3 bit for bit. adm2 and
+ * integer_adm_scale* keep conclude_adm_cm() / conclude_adm_csf_den() above,
+ * whose double arithmetic sits ~1e-7 from the CPU.
+ */
+float adm_cm_scale_cpu(const int64_t accum[3], int h, int w, int scale,
+                       uint32_t normalization_shift, double noise_weight, double p_norm)
+{
+    AdmRegion const b = adm_region(w, h);
+    auto const shift_inner_accum = (uint32_t)std::ceil(std::log2(h));
+    int const restored_bits = 3 * (int)normalization_shift;
+    float f_accum[3];
+    if (scale == 0) {
+        auto const shift_xhcub = (uint32_t)std::ceil(std::log2(w) - 4);
+        auto const shift_xdcub = (uint32_t)std::ceil(std::log2(w) - 3);
+        int const base_exp[3] = {52, 52, 57};
+        uint32_t const shift_cub[3] = {shift_xhcub, shift_xhcub, shift_xdcub};
+        for (int i = 0; i < 3; ++i) {
+            int const divisor_exp =
+                base_exp[i] - restored_bits - (int)shift_cub[i] - (int)shift_inner_accum;
+            f_accum[i] = (float)(accum[i] / std::pow(2, divisor_exp));
+        }
+    } else {
+        auto const shift_cub = (uint32_t)std::ceil(std::log2(w));
+        int const pending = restored_bits + (int)shift_cub + (int)shift_inner_accum;
+        float const final_shift[3] = {(float)std::pow(2, (45 - pending)),
+                                      (float)std::pow(2, (39 - pending)),
+                                      (float)std::pow(2, (36 - pending))};
+        for (int i = 0; i < 3; ++i) {
+            // int64 / float: the accumulator is rounded to float first, as on the CPU
+            f_accum[i] = (float)(accum[i] / final_shift[scale - 1]);
+        }
+    }
+    float const p_norm_exp = 1.0f / (float)p_norm;
+    int const area = (b.bottom - b.top) * (b.right - b.left);
+    float num[3];
+    for (int i = 0; i < 3; ++i) {
+        num[i] = powf(f_accum[i], p_norm_exp) + powf((float)(area * noise_weight), p_norm_exp);
+    }
+    return num[0] + num[1] + num[2];
+}
+
+/* The CPU's adm_csf_den_scale() / adm_csf_den_s123() finalisation. */
+float adm_den_scale_cpu(const int64_t accum[3], int h, int w, int scale, const float rfactor[3],
+                        double noise_weight)
+{
+    AdmRegion const b = adm_region(w, h);
+    int const area = (b.bottom - b.top) * (b.right - b.left);
+    double shift_csf = 0.0;
+    if (scale == 0) {
+        auto const shift_accum = (int32_t)std::ceil(std::log2(area) - 20);
+        shift_csf = std::pow(2, (18 - (shift_accum > 0 ? shift_accum : 0)));
+    } else {
+        uint32_t const accum_convert_float[3] = {32, 27, 23};
+        auto const shift_cub = (uint32_t)std::ceil(std::log2(b.right - b.left));
+        auto const shift_accum = (uint32_t)std::ceil(std::log2(b.bottom - b.top));
+        shift_csf = std::pow(2, (accum_convert_float[scale - 1] - shift_accum - shift_cub));
+    }
+    float const powf_add = powf((float)(area * noise_weight), 1.0f / 3.0f);
+    float den[3];
+    for (int i = 0; i < 3; ++i) {
+        double const csf = (double)((uint64_t)accum[i] / shift_csf) * std::pow(rfactor[i], 3);
+        den[i] = powf((float)csf, 1.0f / 3.0f) + powf_add;
+    }
+    return den[0] + den[1] + den[2];
+}
+
 /* ------------------------------------------------------------------ */
 /* Feature extractor callbacks                                         */
 /* ------------------------------------------------------------------ */
@@ -1468,11 +1410,102 @@ void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, double
 void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis);
 void adm_pre_graph(void *queue_ptr, void *priv);
 void adm_post_graph(void *queue_ptr, void *priv);
-int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
+int close_fex_sycl(VmafFeatureExtractor *fex); /* init error paths own their cleanup — SY-2a */
 
-int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init-failure cleanup — SY-2a */
+constexpr size_t ADM_ACCUM_BYTES = (size_t)ADM_ACCUM_SLOTS * sizeof(int64_t);
+constexpr size_t ADM_DIV_LOOKUP_ENTRIES = 65537;
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+/* CSF factors and fixed-point weights of every scale (ADR-1325). */
+void adm_init_rfactors(AdmStateSycl *s)
+{
+    for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
+        AdmCsfFactors const f =
+            adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+        size_t const band0 = (size_t)scale * ADM_NUM_BANDS;
+        s->rfactor[band0 + 0] = f.factor1;
+        s->rfactor[band0 + 1] = f.factor1;
+        s->rfactor[band0 + 2] = f.factor2;
+
+        double fixed[3];
+        s->csf_normalization_shift[scale] = 0u;
+        int const fixed_err = adm_csf_fixed_scale(scale, &s->rfactor[band0], s->adm_norm_view_dist,
+                                                  s->adm_ref_display_height, s->adm_csf_mode, fixed,
+                                                  &s->csf_normalization_shift[scale]);
+        // init_fex_sycl() ran adm_csf_config_check(), which calls the same
+        // conversion through adm_csf_check_scale(), before this point.
+        assert(fixed_err == 0);
+        if (fixed_err == 0) {
+            s->i_rfactor[band0] = (uint32_t)fixed[0];
+            s->i_rfactor[band0 + 1] = (uint32_t)fixed[1];
+            s->i_rfactor[band0 + 2] = (uint32_t)fixed[2];
+        }
+    }
+}
+
+int32_t *adm_alloc_band(VmafSyclState *state, size_t bytes)
+{
+    return static_cast<int32_t *>(vmaf_sycl_malloc_device(state, bytes));
+}
+
+/* Every USM buffer. A NULL buffer handed to a kernel page-faults the device
+ * instead of failing cleanly, so all of them are checked; on failure the
+ * caller's close_fex_sycl() frees the partial set (it NULL-guards each free). */
+int adm_alloc_buffers(AdmStateSycl *s, VmafSyclState *state, unsigned w, unsigned half_h)
+{
+    assert(s != nullptr && state != nullptr);
+    // Bands are half the frame width, padded to buf_stride.
+    assert(s->buf_stride >= (w + 1) / 2);
+    size_t const dwt_tmp_size = (size_t)w * 2 * half_h * sizeof(int32_t);
+    s->d_dwt_tmp_ref = adm_alloc_band(state, dwt_tmp_size);
+    s->d_dwt_tmp_dis = adm_alloc_band(state, dwt_tmp_size);
+    bool ok = s->d_dwt_tmp_ref && s->d_dwt_tmp_dis;
+
+    size_t const band_size = (size_t)s->buf_stride * half_h * sizeof(int32_t);
+    for (int i = 0; i < 4; i++) {
+        s->d_ref_band[i] = adm_alloc_band(state, band_size);
+        s->d_dis_band[i] = adm_alloc_band(state, band_size);
+        ok = ok && s->d_ref_band[i] && s->d_dis_band[i];
+    }
+    for (int b = 0; b < ADM_NUM_BANDS; b++) {
+        s->d_csf_f[b] = adm_alloc_band(state, band_size);
+        s->d_csf_f_aim[b] = adm_alloc_band(state, band_size);
+        ok = ok && s->d_csf_f[b] && s->d_csf_f_aim[b];
+    }
+
+    s->d_div_lookup = adm_alloc_band(state, ADM_DIV_LOOKUP_ENTRIES * sizeof(int32_t));
+    s->d_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, ADM_ACCUM_BYTES));
+    s->h_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, ADM_ACCUM_BYTES));
+    ok = ok && s->d_div_lookup && s->d_accum && s->h_accum;
+    if (!ok) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: device memory allocation failed\n");
+        return -ENOMEM;
+    }
+    return 0;
+}
+
+/* The decouple's reciprocal table (CPU div_lookup): 2^30 / i, i in [-2^15, 2^15]. */
+int adm_upload_div_lookup(AdmStateSycl *s, VmafSyclState *state)
+{
+    auto *lut = static_cast<int32_t *>(std::calloc(ADM_DIV_LOOKUP_ENTRIES, sizeof(int32_t)));
+    if (!lut) {
+        return -ENOMEM;
+    }
+    static const int32_t Q_factor = 1073741824; // 2^30
+    for (int i = 1; i <= 32768; i++) {
+        int32_t const recip = (int32_t)(Q_factor / i);
+        lut[32768 + i] = recip;
+        lut[32768 - i] = -recip;
+    }
+    int const err =
+        vmaf_sycl_memcpy_h2d(state, s->d_div_lookup, lut, ADM_DIV_LOOKUP_ENTRIES * sizeof(int32_t));
+    std::free(lut);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: div_lookup upload failed\n");
+    }
+    return err;
+}
+
 int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                   unsigned h)
 {
@@ -1498,139 +1531,90 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
 
     /* Reject invalid CSF table output before any device resource is claimed.
      * Finite over-range weights are normalised with the CPU's shared
-     * per-scale exponent below. */
-    {
-        const int csf_err = adm_csf_config_check(s);
-        if (csf_err) {
-            return csf_err;
-        }
+     * per-scale exponent in adm_init_rfactors(). */
+    const int csf_err = adm_csf_config_check(s);
+    if (csf_err) {
+        return csf_err;
     }
 
     VmafSyclState *state = fex->sycl_state;
 
     // Initialize shared frame buffers (idempotent, first extractor wins)
     int err = vmaf_sycl_shared_frame_init(state, w, h, bpc);
-    if (err)
-        return err;
-
-    unsigned const half_w = (w + 1) / 2;
-    unsigned const half_h = (h + 1) / 2;
-    s->buf_stride = (half_w + 3) & ~3u; // align to 4
-
-    // Compute rfactors
-    for (unsigned scale = 0; scale < 4; scale++) {
-        AdmCsfFactors const f =
-            adm_csf_factors(scale, s->adm_norm_view_dist, s->adm_ref_display_height,
-                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
-        s->rfactor[scale * 3 + 0] = f.factor1;
-        s->rfactor[scale * 3 + 1] = f.factor1;
-        s->rfactor[scale * 3 + 2] = f.factor2;
-
-        size_t const band0 = (size_t)scale * 3;
-        double fixed[3];
-        s->csf_normalization_shift[scale] = 0u;
-        int const fixed_err = adm_csf_fixed_scale(
-            (int)scale, &s->rfactor[band0], s->adm_norm_view_dist, s->adm_ref_display_height,
-            s->adm_csf_mode, fixed, &s->csf_normalization_shift[scale]);
-        if (fixed_err == 0) {
-            s->i_rfactor[band0] = (uint32_t)fixed[0];
-            s->i_rfactor[band0 + 1] = (uint32_t)fixed[1];
-            s->i_rfactor[band0 + 2] = (uint32_t)fixed[2];
-        }
-    }
-
-    // Allocate device buffers
-    size_t const dwt_tmp_size = (size_t)w * 2 * half_h * sizeof(int32_t);
-    s->d_dwt_tmp_ref = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, dwt_tmp_size));
-    s->d_dwt_tmp_dis = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, dwt_tmp_size));
-
-    size_t const band_size = (size_t)s->buf_stride * half_h * sizeof(int32_t);
-    for (int i = 0; i < 4; i++) {
-        s->d_ref_band[i] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
-        s->d_dis_band[i] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
-    }
-
-    for (auto &csf_buf : s->d_csf_f) {
-        csf_buf = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, band_size));
-    }
-
-    // Division LUT: 65537 entries
-    size_t const div_size = 65537 * sizeof(int32_t);
-    s->d_div_lookup = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, div_size));
-
-    // Accumulators: 4 scales x 3 bands = 12 int64 each
-    size_t const accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
-    s->d_cm_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, accum_size));
-    s->d_csf_den_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, accum_size));
-    s->h_cm_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, accum_size));
-    s->h_csf_den_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, accum_size));
-
-    // Check ALL allocations. A NULL band/csf buffer handed to a SYCL kernel
-    // page-faults the device instead of failing cleanly here, so every USM
-    // buffer allocated above is verified. On failure, close_fex_sycl frees the
-    // partial set (it NULL-guards each free) before returning.
-    bool band_ok = true;
-    for (int i = 0; i < 4; i++) {
-        if (!s->d_ref_band[i] || !s->d_dis_band[i])
-            band_ok = false;
-    }
-    for (const auto *csf_buf : s->d_csf_f) {
-        if (!csf_buf)
-            band_ok = false;
-    }
-    if (!s->d_dwt_tmp_ref || !s->d_dwt_tmp_dis || !band_ok || !s->d_div_lookup || !s->d_cm_accum ||
-        !s->d_csf_den_accum || !s->h_cm_accum || !s->h_csf_den_accum) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: device memory allocation failed\n");
-        close_fex_sycl(fex);
-        return -ENOMEM;
-    }
-
-    // Generate and upload div_lookup
-    {
-        int32_t *lut = static_cast<int32_t *>(std::malloc(div_size));
-        if (!lut) {
-            close_fex_sycl(fex);
-            return -ENOMEM;
-        }
-        std::memset(lut, 0, div_size);
-        static const int32_t Q_factor = 1073741824; // 2^30
-        for (int i = 1; i <= 32768; i++) {
-            int32_t const recip = (int32_t)(Q_factor / i);
-            lut[32768 + i] = recip;
-            lut[32768 - i] = -recip;
-        }
-        int const cpy_err = vmaf_sycl_memcpy_h2d(state, s->d_div_lookup, lut, div_size);
-        std::free(lut);
-        if (cpy_err) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: div_lookup upload failed\n");
-            close_fex_sycl(fex);
-            return cpy_err;
-        }
-    }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
-        return -ENOMEM;
-    }
-
-    // Register with combined command graph
-    err = vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph, nullptr,
-                                   s, "ADM");
     if (err) {
-        close_fex_sycl(fex);
         return err;
     }
 
-    return 0;
+    s->buf_stride = (((w + 1) / 2) + 3) & ~3u; // half width, aligned to 4
+    adm_init_rfactors(s);
+
+    err = adm_alloc_buffers(s, state, w, (h + 1) / 2);
+    if (!err) {
+        err = adm_upload_div_lookup(s, state);
+    }
+    if (!err) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        err = s->feature_name_dict ? 0 : -ENOMEM;
+    }
+    if (!err) {
+        // Register with combined command graph
+        err = vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph,
+                                       nullptr, s, "ADM");
+    }
+    if (err) {
+        (void)close_fex_sycl(fex);
+    }
+    return err;
 }
 
 /* ------------------------------------------------------------------ */
 /* Enqueue all ADM compute work (used for both recording and direct)   */
 /* ------------------------------------------------------------------ */
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
+/* Decouple + CSF, then the three reductions, of one scale whose bands are in
+ * d_ref_band / d_dis_band. */
+void enqueue_adm_reductions(sycl::queue &q, const AdmStateSycl *s, int scale, int half_w,
+                            int half_h)
+{
+    AdmBandInputs in{};
+    for (int b = 0; b < ADM_NUM_BANDS; ++b) {
+        in.ref[b] = s->d_ref_band[b + 1];
+        in.dis[b] = s->d_dis_band[b + 1];
+        in.i_rfactor[b] = s->i_rfactor[(scale * ADM_NUM_BANDS) + b];
+    }
+    in.div_lookup = s->d_div_lookup;
+    in.gain = gain_limit_to_q31(s->adm_enhn_gain_limit);
+    in.scale = scale;
+    in.w = half_w;
+    in.h = half_h;
+    in.stride = s->buf_stride;
+    in.aim = !s->adm_skip_aim;
+
+    AdmDecoupleArgs dec{};
+    AdmCmArgs cm{};
+    dec.in = in;
+    cm.in = in;
+    for (int b = 0; b < ADM_NUM_BANDS; ++b) {
+        dec.csf_f[b] = s->d_csf_f[b];
+        dec.csf_f_aim[b] = s->d_csf_f_aim[b];
+        cm.csf_f[b] = s->d_csf_f[b];
+        cm.csf_f_aim[b] = s->d_csf_f_aim[b];
+    }
+    (void)launch_decouple_csf(q, dec);
+
+    AdmRegion const r = adm_region(half_w, half_h);
+    if (r.right <= r.left || r.bottom <= r.top) {
+        return;
+    }
+    cm.accum = s->d_accum + adm_accum_slot(ADM_TERM_CM, scale);
+    cm.sh = adm_cm_shifts(scale, half_w, half_h, r);
+    cm.left = r.left;
+    cm.top = r.top;
+    cm.right = r.right;
+    (void)launch_csf_den_cm(q, cm, r.bottom - r.top);
+}
+
 void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref, void *shared_dis)
 {
     assert(s != nullptr);
@@ -1661,13 +1645,7 @@ void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref, vo
         // Input source: scale 0 reads from shared frame, others from LL band
         const void *ref_src = (scale == 0) ? shared_ref : (const void *)s->d_ref_band[0];
         const void *dis_src = (scale == 0) ? shared_dis : (const void *)s->d_dis_band[0];
-
-        unsigned in_stride;
-        if (scale == 0) {
-            in_stride = (s->bpc <= 8) ? cur_w : cur_w * 2;
-        } else {
-            in_stride = cur_stride;
-        }
+        unsigned const in_stride = (scale != 0) ? cur_stride : ((s->bpc <= 8) ? cur_w : cur_w * 2);
 
         // DWT vertical pass: ref + dis fused
         launch_dwt_vert_pair(q, ref_src, s->d_dwt_tmp_ref, dis_src, s->d_dwt_tmp_dis, scale, cur_w,
@@ -1680,29 +1658,7 @@ void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_ref, vo
                              s->d_dis_band[1], s->d_dis_band[2], s->d_dis_band[3], cur_w, cur_h,
                              cur_stride, dwt_shifts[scale].h_shift);
 
-        // Decouple + CSF → writes only d_csf_f (r and csf_a recomputed in CM kernel)
-        launch_decouple_csf<false>(q, scale, half_w, half_h, cur_stride, s->adm_enhn_gain_limit,
-                                   s->i_rfactor[scale * 3 + 0], s->i_rfactor[scale * 3 + 1],
-                                   s->i_rfactor[scale * 3 + 2], s->d_ref_band[1], s->d_ref_band[2],
-                                   s->d_ref_band[3], s->d_dis_band[1], s->d_dis_band[2],
-                                   s->d_dis_band[3], s->d_csf_f[0], s->d_csf_f[1], s->d_csf_f[2],
-                                   s->d_div_lookup);
-
-        // CSF denominator + Contrast measure: fused 3-band kernel with inline decouple
-        launch_csf_den_cm_3band(q, scale, half_w, half_h, cur_stride,
-                                // csf_den inputs
-                                s->d_ref_band[1], s->d_ref_band[2], s->d_ref_band[3],
-                                s->d_csf_den_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 0,
-                                s->d_csf_den_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 1,
-                                s->d_csf_den_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 2,
-                                // cm inputs (decouple inlined)
-                                s->i_rfactor[scale * 3 + 0], s->i_rfactor[scale * 3 + 1],
-                                s->i_rfactor[scale * 3 + 2], s->d_dis_band[1], s->d_dis_band[2],
-                                s->d_dis_band[3], s->d_csf_f[0], s->d_csf_f[1], s->d_csf_f[2],
-                                s->d_div_lookup, s->adm_enhn_gain_limit,
-                                s->d_cm_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 0,
-                                s->d_cm_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 1,
-                                s->d_cm_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 2);
+        enqueue_adm_reductions(q, s, scale, (int)half_w, (int)half_h);
 
         // Next scale dimensions
         cur_w = half_w;
@@ -1719,9 +1675,7 @@ void adm_pre_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
-    size_t const adm_accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
-    q.memset(s->d_cm_accum, 0, adm_accum_size);
-    q.memset(s->d_csf_den_accum, 0, adm_accum_size);
+    q.memset(s->d_accum, 0, ADM_ACCUM_BYTES);
 }
 
 // Graph-recorded: compute kernels only
@@ -1732,14 +1686,12 @@ void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void *share
     enqueue_adm_work_impl(q, s, shared_ref, shared_dis);
 }
 
-// Post-graph: D2H accumulator download (direct enqueue, outside graph)
+// Post-graph: the frame's one D2H copy, all three accumulator terms (direct enqueue, outside graph)
 void adm_post_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
-    size_t const accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
-    q.memcpy(s->h_cm_accum, s->d_cm_accum, accum_size);
-    q.memcpy(s->h_csf_den_accum, s->d_csf_den_accum, accum_size);
+    q.memcpy(s->h_accum, s->d_accum, ADM_ACCUM_BYTES);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1768,134 +1720,198 @@ int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture
     return 0;
 }
 
-// NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
-                     VmafFeatureCollector *feature_collector)
+/* Per-scale numerator / denominator of adm2, integer_adm_scale* and the
+ * debug outputs, and their sums over the scales that count. */
+struct AdmDlmTerms {
+    double scores[8]; /* [2 * scale] numerator, [2 * scale + 1] denominator */
+    double num;
+    double den;
+};
+
+/* This twin's double-precision finalisation of the DLM terms (see
+ * adm_cm_scale_cpu() for why aim / adm3 do not use it). */
+void adm_dlm_terms(const AdmStateSycl *s, AdmDlmTerms *t)
 {
-    auto *s = static_cast<AdmStateSycl *>(fex->priv);
-    VmafSyclState *state = fex->sycl_state;
-
-    // Combined graph wait (once per frame); a failed wait leaves stale accumulators.
-    s->has_pending = false;
-    if (int const wait_err = vmaf_sycl_graph_wait(state))
-        return wait_err;
-
-    // Read back accumulators
-    int64_t cm_results[ADM_NUM_SCALES][ADM_NUM_BANDS];
-    int64_t csf_den_results[ADM_NUM_SCALES][ADM_NUM_BANDS];
-    std::memcpy(cm_results, s->h_cm_accum, sizeof(cm_results));
-    std::memcpy(csf_den_results, s->h_csf_den_accum, sizeof(csf_den_results));
-
-    // Compute scores
-    double num = 0.0;
-    double den = 0.0;
-    double scores_num[ADM_NUM_SCALES];
-    double scores_den[ADM_NUM_SCALES];
-    unsigned score_w = s->width;
-    unsigned score_h = s->height;
-
+    assert(s != nullptr && t != nullptr);
+    // Filled by the post-graph copy that vmaf_sycl_graph_wait() completed.
+    assert(s->h_accum != nullptr);
+    unsigned w = s->width;
+    unsigned h = s->height;
+    t->num = 0.0;
+    t->den = 0.0;
     for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
-        score_w = (score_w + 1) / 2;
-        score_h = (score_h + 1) / 2;
-
-        /* Promote to double — fp32 rounding in per-scale normalization amplifies
-         * to >5e-5 final-score error on devices without native fp64 (Arc A380).
-         * Both conclude_* functions are host-side; no device-kernel impact. */
-        double num_scale;
-        double den_scale;
-        conclude_adm_cm(cm_results[scale], score_h, score_w, scale,
+        w = (w + 1) / 2;
+        h = (h + 1) / 2;
+        size_t const band0 = (size_t)scale * ADM_NUM_BANDS;
+        double num_scale = 0.0;
+        double den_scale = 0.0;
+        conclude_adm_cm(&s->h_accum[adm_accum_slot(ADM_TERM_CM, scale)], (int)h, (int)w, scale,
                         s->csf_normalization_shift[scale], (float)s->adm_noise_weight,
                         s->adm_p_norm, &num_scale);
-        conclude_adm_csf_den((uint64_t *)csf_den_results[scale], score_h, score_w, scale,
-                             &den_scale, &s->rfactor[(size_t)scale * 3],
-                             (float)s->adm_noise_weight);
+        conclude_adm_csf_den(
+            reinterpret_cast<const uint64_t *>(&s->h_accum[adm_accum_slot(ADM_TERM_DEN, scale)]),
+            (int)h, (int)w, scale, &den_scale, &s->rfactor[band0], (float)s->adm_noise_weight);
 
         /* adm_skip_scale0: exclude scale 0 from num/den accumulation, mirroring
          * the CPU integer_adm.c fast-path (den_scale = 1e-10, num_scale = 0).
          * The GPU kernel still computes scale 0; suppression is host-side only. */
         if (scale == 0 && s->adm_skip_scale0) {
-            scores_num[0] = 0.0;
-            scores_den[0] = 1e-10;
+            t->scores[0] = 0.0;
+            t->scores[1] = 1e-10;
             continue;
         }
-
-        num += num_scale;
-        den += den_scale;
-        scores_num[scale] = num_scale;
-        scores_den[scale] = den_scale;
+        t->num += num_scale;
+        t->den += den_scale;
+        size_t const pair = 2 * (size_t)scale;
+        t->scores[pair] = num_scale;
+        t->scores[pair + 1] = den_scale;
     }
+}
 
-    /* Apply numden_limit — CPU parity (integer_adm.c::integer_compute_adm):
-     * the precision floor scales with the FULL-FRAME area, not the scale-3
-     * area that `score_w` / `score_h` hold after the loop above. */
-    double const numden_limit = 1e-10 * ((double)s->width * s->height) / (1920.0 * 1080.0);
+/* Numerator, denominator and AIM numerator of one scale, in float like the
+ * CPU's AdmScaleScores. */
+struct AdmScaleCpu {
+    float num;
+    float den;
+    float aim_num;
+};
+
+AdmScaleCpu adm_scale_cpu(const AdmStateSycl *s, int scale, int w, int h)
+{
+    AdmScaleCpu sc{};
+    if (scale == 0 && s->adm_skip_scale0) {
+        sc.den = (float)1e-10; // integer_adm_scale0(): avoid divide by zero
+        return sc;
+    }
+    const int64_t *acc = s->h_accum;
+    uint32_t const ns = s->csf_normalization_shift[scale];
+    sc.num = adm_cm_scale_cpu(&acc[adm_accum_slot(ADM_TERM_CM, scale)], h, w, scale, ns,
+                              s->adm_noise_weight, s->adm_p_norm);
+    sc.den = adm_den_scale_cpu(&acc[adm_accum_slot(ADM_TERM_DEN, scale)], h, w, scale,
+                               &s->rfactor[(size_t)scale * ADM_NUM_BANDS], s->adm_noise_weight);
+    if (!s->adm_skip_aim) {
+        // measure_aim: noise_weight 0.0, as integer_adm_scale0() / _s123() pass it
+        sc.aim_num = adm_cm_scale_cpu(&acc[adm_accum_slot(ADM_TERM_AIM, scale)], h, w, scale, ns,
+                                      0.0, s->adm_p_norm);
+    }
+    return sc;
+}
+
+/* Floor num / den at the full-frame precision limit and form num / den and
+ * aim_num / den, as integer_adm.c::adm_result_finalise(). */
+int adm_aggregate(unsigned index, double num, double den, double aim_num, double numden_limit,
+                  double ratios[2])
+{
     int err =
         vmaf_adm_floor_pair_named("integer_adm_sycl", index, num, den, numden_limit, &num, &den);
-    if (err)
+    if (err) {
         return err;
-
-    /* ADR-0487 clamps adm3 only: the CPU reference emits
-     * VMAF_integer_feature_adm2_score unclamped (integer_adm.c::extract()
-     * applies MAX(..., adm_min_val) to the adm3 expression alone). */
-    const double aggregate_pair[2] = {num, den};
-    double score = 0.0;
-    err = vmaf_adm_scale_ratios(aggregate_pair, 1u, &score);
+    }
+    const double pairs[4] = {num, den, aim_num, den};
+    err = vmaf_adm_scale_ratios(pairs, 2u, ratios);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "integer_adm_sycl: undefined or non-finite aggregate at frame %u "
-                 "(num=%g den=%g)\n",
-                 index, num, den);
+                 "(num=%g den=%g aim_num=%g)\n",
+                 index, num, den, aim_num);
+    }
+    return err;
+}
+
+/* aim and adm3 from the CPU's float finalisation (ADR-1362). */
+int adm_aim_scores(const AdmStateSycl *s, unsigned index, double numden_limit, double *score_aim,
+                   double *score_adm3)
+{
+    double num = 0.0;
+    double den = 0.0;
+    double aim_num = 0.0;
+    int w = (int)s->width;
+    int h = (int)s->height;
+    for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
+        w = (w + 1) / 2;
+        h = (h + 1) / 2;
+        AdmScaleCpu const sc = adm_scale_cpu(s, scale, w, h);
+        num += sc.num;
+        den += sc.den;
+        aim_num += sc.aim_num;
+    }
+    double ratios[2];
+    int const err = adm_aggregate(index, num, den, aim_num, numden_limit, ratios);
+    if (err) {
         return err;
     }
+    *score_aim = ratios[1];
+    return vmaf_adm3_score_named("integer_adm_sycl", index, ratios[0], ratios[1], 0,
+                                 s->adm_dlm_weight, s->adm_min_val, score_adm3);
+}
 
-    /* AIM / adm3 are NOT emitted by this twin: the AIM contrast measure needs
-     * a second device CM pass with the decouple_a / decouple_r roles swapped
-     * (the CUDA twin's ADR-0746 kernels), which the SYCL kernel set does not
-     * have. Leaving both features out of `provided_features` routes them to
-     * the CPU twin through the ADR-0530 name-based fallback, which produces
-     * the correct value under the correct feature-name key. Emitting them
-     * here from a hard-coded aim_num would fabricate a score. Tracked as
-     * T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md. */
-
-    static const char *const scale_names[ADM_NUM_SCALES] = {
-        "integer_adm_scale0", "integer_adm_scale1", "integer_adm_scale2", "integer_adm_scale3"};
-    double scale_pairs[ADM_NUM_SCALES * 2];
-    for (int i = 0; i < ADM_NUM_SCALES; i++) {
-        const size_t offset = (size_t)i * 2u;
-        scale_pairs[offset] = scores_num[i];
-        scale_pairs[offset + 1u] = scores_den[i];
-    }
-    double scale_scores[ADM_NUM_SCALES];
-    err = vmaf_adm_scale_ratios_named("integer_adm_sycl", index, scale_pairs, ADM_NUM_SCALES,
-                                      scale_scores);
-    if (err)
-        return err;
-
-    VmafNamedScore values[16] = {
-        {.name = "VMAF_integer_feature_adm2_score", .value = score},
-        {.name = scale_names[0], .value = scale_scores[0]},
-        {.name = scale_names[1], .value = scale_scores[1]},
-        {.name = scale_names[2], .value = scale_scores[2]},
-        {.name = scale_names[3], .value = scale_scores[3]},
+int emit_adm_scores(const AdmStateSycl *s, VmafFeatureCollector *feature_collector, unsigned index,
+                    const double headline[3], const AdmDlmTerms &dlm, const double scale_scores[4])
+{
+    VmafNamedScore values[18] = {
+        {.name = "VMAF_integer_feature_adm2_score", .value = headline[0]},
+        {.name = "VMAF_integer_feature_aim_score", .value = headline[1]},
+        {.name = "VMAF_integer_feature_adm3_score", .value = headline[2]},
+        {.name = "integer_adm_scale0", .value = scale_scores[0]},
+        {.name = "integer_adm_scale1", .value = scale_scores[1]},
+        {.name = "integer_adm_scale2", .value = scale_scores[2]},
+        {.name = "integer_adm_scale3", .value = scale_scores[3]},
     };
-    size_t value_count = 5u;
+    size_t value_count = 7u;
     if (s->debug) {
-        static const char *const num_names[ADM_NUM_SCALES] = {
-            "integer_adm_num_scale0", "integer_adm_num_scale1", "integer_adm_num_scale2",
-            "integer_adm_num_scale3"};
-        static const char *const den_names[ADM_NUM_SCALES] = {
-            "integer_adm_den_scale0", "integer_adm_den_scale1", "integer_adm_den_scale2",
-            "integer_adm_den_scale3"};
-        values[value_count++] = VmafNamedScore{.name = "integer_adm", .value = score};
-        values[value_count++] = VmafNamedScore{.name = "integer_adm_num", .value = num};
-        values[value_count++] = VmafNamedScore{.name = "integer_adm_den", .value = den};
-        for (int i = 0; i < ADM_NUM_SCALES; ++i) {
-            values[value_count++] = VmafNamedScore{.name = num_names[i], .value = scores_num[i]};
-            values[value_count++] = VmafNamedScore{.name = den_names[i], .value = scores_den[i]};
+        static const char *const debug_names[8] = {
+            "integer_adm_num_scale0", "integer_adm_den_scale0", "integer_adm_num_scale1",
+            "integer_adm_den_scale1", "integer_adm_num_scale2", "integer_adm_den_scale2",
+            "integer_adm_num_scale3", "integer_adm_den_scale3",
+        };
+        values[value_count++] = VmafNamedScore{.name = "integer_adm", .value = headline[0]};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm_num", .value = dlm.num};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm_den", .value = dlm.den};
+        for (size_t i = 0u; i < 8u; ++i) {
+            values[value_count++] = VmafNamedScore{.name = debug_names[i], .value = dlm.scores[i]};
         }
     }
     return vmaf_feature_emit_finite_scores(feature_collector, s->feature_name_dict,
                                            "integer_adm_sycl", values, value_count, index);
+}
+
+int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
+                     VmafFeatureCollector *feature_collector)
+{
+    auto *s = static_cast<AdmStateSycl *>(fex->priv);
+
+    // Combined graph wait (once per frame); a failed wait leaves stale accumulators.
+    s->has_pending = false;
+    if (int const wait_err = vmaf_sycl_graph_wait(fex->sycl_state))
+        return wait_err;
+
+    AdmDlmTerms dlm{};
+    adm_dlm_terms(s, &dlm);
+
+    /* numden_limit — CPU parity (integer_adm.c::integer_compute_adm): the
+     * precision floor scales with the FULL-FRAME area, not the scale-3 area. */
+    double const numden_limit = 1e-10 * ((double)s->width * s->height) / (1920.0 * 1080.0);
+
+    /* adm2 is emitted unclamped: ADR-0487's adm_min_val clamps adm3 only, as
+     * in integer_adm.c::extract(). */
+    double adm2_ratios[2];
+    int err = adm_aggregate(index, dlm.num, dlm.den, 0.0, numden_limit, adm2_ratios);
+    if (err) {
+        return err;
+    }
+    double headline[3] = {adm2_ratios[0], 0.0, 0.0}; // adm2, aim, adm3
+    err = adm_aim_scores(s, index, numden_limit, &headline[1], &headline[2]);
+    if (err) {
+        return err;
+    }
+
+    double scale_scores[ADM_NUM_SCALES];
+    err = vmaf_adm_scale_ratios_named("integer_adm_sycl", index, dlm.scores, ADM_NUM_SCALES,
+                                      scale_scores);
+    if (err) {
+        return err;
+    }
+    return emit_adm_scores(s, feature_collector, index, headline, dlm, scale_scores);
 }
 
 int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -1922,6 +1938,13 @@ int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_coll
     return 1; // done — collect already consumed pending work
 }
 
+void adm_free(VmafSyclState *state, void *ptr)
+{
+    if (ptr) {
+        vmaf_sycl_free(state, ptr);
+    }
+}
+
 int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     assert(fex != nullptr);
@@ -1941,32 +1964,19 @@ int close_fex_sycl(VmafFeatureExtractor *fex)
          * same sycl_state does not inherit a dangling priv pointer. */
         (void)vmaf_sycl_graph_unregister(state, s);
 
-        if (s->d_dwt_tmp_ref)
-            vmaf_sycl_free(state, s->d_dwt_tmp_ref);
-        if (s->d_dwt_tmp_dis)
-            vmaf_sycl_free(state, s->d_dwt_tmp_dis);
-
+        adm_free(state, s->d_dwt_tmp_ref);
+        adm_free(state, s->d_dwt_tmp_dis);
         for (int i = 0; i < 4; i++) {
-            if (s->d_ref_band[i])
-                vmaf_sycl_free(state, s->d_ref_band[i]);
-            if (s->d_dis_band[i])
-                vmaf_sycl_free(state, s->d_dis_band[i]);
+            adm_free(state, s->d_ref_band[i]);
+            adm_free(state, s->d_dis_band[i]);
         }
-        for (auto *csf_buf : s->d_csf_f) {
-            if (csf_buf)
-                vmaf_sycl_free(state, csf_buf);
+        for (int b = 0; b < ADM_NUM_BANDS; b++) {
+            adm_free(state, s->d_csf_f[b]);
+            adm_free(state, s->d_csf_f_aim[b]);
         }
-
-        if (s->d_div_lookup)
-            vmaf_sycl_free(state, s->d_div_lookup);
-        if (s->d_cm_accum)
-            vmaf_sycl_free(state, s->d_cm_accum);
-        if (s->d_csf_den_accum)
-            vmaf_sycl_free(state, s->d_csf_den_accum);
-        if (s->h_cm_accum)
-            vmaf_sycl_free(state, s->h_cm_accum);
-        if (s->h_csf_den_accum)
-            vmaf_sycl_free(state, s->h_csf_den_accum);
+        adm_free(state, s->d_div_lookup);
+        adm_free(state, s->d_accum);
+        adm_free(state, s->h_accum);
     }
 
     if (s->feature_name_dict)
@@ -1980,6 +1990,8 @@ int close_fex_sycl(VmafFeatureExtractor *fex)
 /* ------------------------------------------------------------------ */
 
 const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
+                                   "VMAF_integer_feature_aim_score",
+                                   "VMAF_integer_feature_adm3_score",
                                    "integer_adm_scale0",
                                    "integer_adm_scale1",
                                    "integer_adm_scale2",

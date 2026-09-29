@@ -128,6 +128,13 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_metal_ms_ssim_options_contract.py`, and
   `core/test/test_nonfinite_collector_wiring.py` protect this against regression.
 
+- **SYCL integer ADM AIM pass ([ADR-1362](../adr/1362-sycl-integer-adm-aim-device-pass.md))**:
+  `integer_adm_sycl.cpp` computes aim / adm3 on the device and finalises them
+  in the CPU's float arithmetic (bit-exact); adm2 keeps the double finaliser.
+  The decouple quotient is clamped in int64 before narrowing. Details and the
+  mirror list for upstream `integer_adm.c` changes:
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

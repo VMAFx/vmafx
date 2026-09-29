@@ -1,6 +1,33 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## perf/sycl-adm-aim-device — AIM pass on the SYCL integer ADM twin (ADR-1362) (2026-09-29)
+
+- `core/src/feature/sycl/integer_adm_sycl.cpp`: fork-only (upstream Netflix/vmaf
+  has no SYCL). The twin claims `VMAF_integer_feature_aim_score` /
+  `_adm3_score` again. Per scale: `launch_decouple_csf` writes `d_csf_f`
+  (`|csf(t - r)| / 30`) and `d_csf_f_aim` (`|csf(r)| / 30`);
+  `launch_csf_den_cm` is one work-group per region row with nine sums (CSF
+  denominator, DLM and AIM for h, v, d), folded once per row through
+  `adm_cm_round_row_total()`. An upstream change to `adm_csf()` /
+  `i4_adm_csf()`, `adm_cm()` / `i4_adm_cm()`, the `measure_aim` role swap, the
+  threshold macros or the scale finalisation in `integer_adm.c` has to be
+  mirrored in `adm_dev_*` and in `adm_cm_scale_cpu()` / `adm_den_scale_cpu()` in
+  the same sync; `test_sycl_adm_parity` and `test_sycl_adm_tiny_frames` fail on
+  any aim / adm3 bit difference.
+- Keep the int64 clamp in `adm_dev_decouple_k()`; narrowing the quotient to
+  int32 before the clamp is the old defect (`integer_adm_scale2` up to
+  1.40e-6 off the CPU at 4K).
+- aim / adm3 use the CPU-float finaliser, adm2 / `integer_adm_scale*` the double
+  one. Do not "unify" them in a conflict resolution: moving aim to double
+  breaks the bit-exact tests, moving adm2 to float changes emitted values.
+- `core/test/test_adm_cm_row_rounding_contract.py` now pins the SYCL fold in
+  `adm_dev_fold_row` (was an inline expression in `launch_csf_den_cm_3band`).
+- `.standards-baseline.json`: re-recorded 190 -> 185; the five over-long
+  functions of the old file are gone and the two DWT launchers moved lines.
+  Re-record from a clean tree after a conflict; never edit it by hand.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## fix/sycl-aot-at-link — SYCL AOT images built at compile time, checked after link (ADR-1360) (2026-09-29)
 
 - `core/src/meson.build`: fork-only (upstream Netflix/vmaf has no SYCL). The

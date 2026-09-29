@@ -210,9 +210,11 @@ Three things fall out of this, and only the first is comfortable:
    signature of ADR-1183's twin gating: features whose GPU twin does not
    support the model's options are dispatched to the CPU, so the run pays the
    host↔device transfer cost and then does the work on the host anyway. The
-   missing SYCL/HIP AIM device pass
+   missing HIP AIM device pass
    (`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05`) is the same class
-   of gap on the other two backends.
+   of gap on HIP; SYCL had it too until
+   [ADR-1362](adr/1362-sycl-integer-adm-aim-device-pass.md) gave that twin its
+   own AIM pass.
 
 3. **GPU offload only pays at 4K, and only for v0.6.1.** Every 1080p×3f cell
    has CUDA losing to CPU by 2.5–5×, which is expected — three frames cannot

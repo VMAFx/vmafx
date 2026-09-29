@@ -71,16 +71,16 @@ COMMON_KEYS = tuple(
 )
 
 #: Emitted only where the twin has an AIM contrast-measure device pass.
-#: CUDA has one (ADR-0746); SYCL and HIP do not, and correctly leave both
-#: features out of ``provided_features[]`` so the ADR-0530 name lookup routes
-#: them to the CPU twin instead of fabricating a score. Tracked as
-#: T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md.
+#: CUDA (ADR-0746) and SYCL (ADR-1362) have one; HIP does not, and correctly
+#: leaves both features out of ``provided_features[]`` so the ADR-0530 name
+#: lookup routes them to the CPU twin instead of fabricating a score. Tracked
+#: as T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05 in docs/state.md.
 AIM_KEYS = tuple(base + NAME_SUFFIX for base in ("integer_aim", "integer_adm3"))
 
 #: (extractor name, CLI backend flags, does this twin emit aim/adm3?)
 BACKENDS = (
     ("cuda", "adm_cuda", ["--backend", "cuda"], True),
-    ("sycl", "adm_sycl", ["--backend", "sycl"], False),
+    ("sycl", "adm_sycl", ["--backend", "sycl"], True),
     ("hip", "adm_hip", ["--backend", "hip"], False),
 )
 

@@ -656,7 +656,44 @@ tests catch per-kernel regressions automatically.
 - Scales 1-3 `>> 32` rounding term = `I4_FLT_ROUND` = -2^31: the CPU's
   wrapped `(int32_t)(1u << 31)` (Netflix#955, ADR-0155), same as CUDA / HIP.
   Netflix fixes #955 -> change CPU and this constant together.
-- Residual vs scalar CPU (~1e-7) = double host finalisation. With the CPU's
+- adm2 / `integer_adm_scale*` residual vs scalar CPU (~1e-7) = double host
+  finalisation (`conclude_adm_cm` / `conclude_adm_csf_den`). With the CPU's
   float finalisation swapped in, every score matched the CPU exactly (noise
-  at five sizes, src01, checkerboards).
+  at five sizes, src01, checkerboards; BBB 4K again for ADR-1362).
 - Guard: `test_sycl_adm_tiny_frames` (tiny frames + full-range noise).
+
+## Integer ADM AIM pass (ADR-1362, T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05)
+
+- `adm_sycl` provides `VMAF_integer_feature_aim_score` +
+  `VMAF_integer_feature_adm3_score` -> default model `vmaf_v1.0.16_3d0h` runs
+  its whole ADM branch on the device. AIM = CPU `measure_aim`: threshold from
+  csf(r) (3x3 `|csf(r)| / 30` + 1/15 centre), measure t - r, no noise floor.
+- Per scale 2 kernels after the DWT: `launch_decouple_csf` stores
+  `d_csf_f` (`|csf(t - r)| / 30`) + `d_csf_f_aim` (`|csf(r)| / 30`) over the
+  whole band; `launch_csf_den_cm` = one work-group per region row, all 3
+  bands, 9 sums (CM, CSF den, AIM). r and t - r recomputed per sample
+  (`adm_dev_sample`); storing r measured slower on the UHD 770 (bandwidth).
+- One accumulator buffer `[term][scale][band]` (`adm_accum_slot`, 36 int64):
+  one memset in `pre_fn`, one D2H in `post_fn`, read in `collect()` after
+  `vmaf_sycl_graph_wait()`. No host wait inside a frame; keep it that way.
+- Row fold through `adm_cm_round_row_total()` in `adm_dev_fold_row`, once per
+  row per sum (ADR-1167). `test_adm_cm_row_rounding_contract.py` pins it.
+- `adm_dev_decouple_k` clamps the Q15 quotient in int64 like the CPU's
+  `tmp_k`. Old kernel narrowed to int32 first -> |t / o| > 2^16 at scales 1-3
+  wrapped -> `integer_adm_scale2` up to 1.40e-6 off the CPU at 4K, aim not
+  exact. Never
+  narrow before the clamp.
+- aim / adm3 finalised in the CPU's own float arithmetic (`adm_cm_scale_cpu`,
+  `adm_den_scale_cpu`, `adm_scale_cpu`: float per band, float per scale,
+  double sum, `(float)1e-10` skip-scale0 den) -> bit-exact. adm2 / scale*
+  stay on the double finaliser (unchanged outputs). Do not move aim / adm3 to
+  the double path. Moving adm2 to the float path makes it bit-exact too
+  (measured) but changes it by ~1e-7: maintainer call, not a rebase fix.
+- CM kernel sub-group size 16: 9 int64 sums spill at 32 lanes on Xe-LP.
+- `adm_skip_aim` mirrors the CPU: AIM sums skipped, aim = 0.
+- Non-integer `adm_enhn_gain_limit` (e.g. 1.2): Q31 floor emulation != CPU
+  trunc(double) -> aim / adm3 ~1.4e-7 off, as adm2. Integer gains (1.0, 100.0,
+  every shipped model) exact.
+- Guards: `test_sycl_adm_parity` (`test_adm_cpu_sycl_aim_bit_exact`),
+  `test_sycl_adm_tiny_frames` (aim / adm3 bit-exact under `HAVE_SYCL`: tiny,
+  noise, 16-bit, CSF modes 0-3), `python/test/gpu_default_model_test.py`.

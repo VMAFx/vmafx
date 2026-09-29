@@ -37,7 +37,7 @@ limitations in the same PR as the code.
 | Motion2 (fixed)    | `motion`        | Yes           | `motion2` (+ `motion` if `debug=true`)                                                         | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
 | Motion v2 (fixed)  | `motion_v2`     | No            | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`            | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
 | Motion2 (float)    | `float_motion`  | Yes           | `float_motion2` (+ `float_motion` if `debug=true`)                                             | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
-| ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`, `aim_score`⁷, `adm3_score`⁷    | AVX2, AVX-512, NEON       | CUDA, SYCL⁷, HIP⁷, Metal |
+| ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`, `aim_score`⁷, `adm3_score`⁷    | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP⁷, Metal  |
 | ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `adm_scale0..3`, `aim_score`⁶, `adm3_score`⁶                                    | AVX2, AVX-512, NEON       | CUDA⁶, SYCL, HIP, Metal |
 | [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal⁴ |
 | CIEDE2000          | `ciede`         | No            | `ciede2000`                                                                                    | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
@@ -108,12 +108,12 @@ follow-up. (The Vulkan backend was removed in ADR-0726.)
 
 ⁷ On the **fixed-point** path, `aim_score` and `adm3_score` are
 emitted by the CPU `adm` extractor, by `integer_adm_cuda`
-(ADR-0746) and by `integer_adm_metal` — each has a dedicated AIM
-contrast-measure device pass. The SYCL and HIP `integer_adm` twins do
-**not**, so they leave both features out of `provided_features[]`; a
-request
-for either resolves to the CPU twin through the ADR-0530 name-based
-fallback, which returns the correct value under the correct
+(ADR-0746), by `integer_adm_sycl` (ADR-1362, bit-identical to the CPU
+extractor) and by `integer_adm_metal` — each has a dedicated AIM
+contrast-measure device pass. The HIP `integer_adm` twin does
+**not**, so it leaves both features out of `provided_features[]`; a
+request for either resolves to the CPU twin through the ADR-0530
+name-based fallback, which returns the correct value under the correct
 feature-name key. Tracked as
 `T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in
 [`docs/state.md`](../state.md).

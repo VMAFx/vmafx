@@ -596,21 +596,58 @@ The default model `vmaf_v1.0.16_3d0h` requests
 CPU table, so the `adm2` and `integer_adm_scale*` keys it emits are identical
 to the CPU twin's for any options dict.
 
-**`adm3_score` / `aim_score` are not emitted by this twin.** The AIM contrast
-measure needs a second device CM pass with the `decouple_a` / `decouple_r`
-roles swapped (the CUDA twin's ADR-0746 kernels); the SYCL kernel set does not
-have one. Both features are therefore left out of `provided_features[]`, and
-`vmaf_get_feature_extractor_by_feature_name()` routes a request for either to
-the CPU `integer_adm` twin through the ADR-0530 fallback — correct value,
-correct key. So on `--backend sycl` the default model's ADM branch runs on the
-CPU while VIF / motion / CAMBI run on the device. Tracked as
-`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in
-[`state.md`](../../state.md).
-
 Two CPU-parity corrections landed with the option work: `adm_min_val` no
 longer clamps `adm2` (the CPU floors the adm3 expression only), and the
 `numden_limit` precision floor scales with the full-frame area rather than the
 scale-3 area.
+
+**`aim_score` and `adm3_score` come from the device (ADR-1362, 2026-09-29).**
+Until this change the twin had no AIM pass and left both features to the CPU
+`integer_adm` extractor, so under `--backend sycl` the default model scored
+ADM on the CPU beside the device VIF, motion and CAMBI. The twin now runs the
+CPU's second contrast-masking pass itself: the masking threshold comes from
+the CSF-weighted restored signal and the measured signal is the additive
+impairment, the two roles swapped relative to the DLM pass. It shares one
+reduction kernel with the DLM measure and the CSF denominator, and the
+accumulators still come back in one small copy per frame. To see the two
+features from the twin itself, name it:
+`vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 --backend sycl
+--feature adm_sycl --no_prediction --json -o out.json` lists `integer_aim` and
+`integer_adm3` next to `integer_adm2`.
+
+How close the twin's ADM features are to `--backend cpu`, measured at
+`--precision max` on an Arc B580 and a UHD 770 (Netflix `src01` pair, 50
+frames of Big Buck Bunny 3840x2160, 853x480 and 17x17 crops, 10-bit input):
+
+| Feature | Difference from the CPU extractor |
+| --- | --- |
+| `integer_aim`, `integer_adm3` | none: bit-identical on every frame |
+| `integer_adm2`, `integer_adm_scale0..3` | at most 2.9e-7, from finalising the scale sums in double where the CPU uses float |
+| any of them with a non-integer `adm_enhn_gain_limit` (e.g. 1.2) | up to 1.4e-6, from the fixed-point gain limit; the shipped models use 1.0 or 100 |
+
+Default model, milliseconds per frame, before this change → after (median of
+seven runs at 576x324 and three at 3840x2160; `--threads 0` is the CLI
+default, under which a CPU extractor runs on the main thread):
+
+| Size | `--threads` | Arc B580 | UHD 770 | CPU backend |
+| --- | --- | --- | --- | --- |
+| 576x324 | 0 | 2.80 → 2.83 | 9.32 → 10.78 | — |
+| 576x324 | 16 | 2.14 → 3.01 | 8.51 → 10.97 | 0.73 → 0.62 |
+| 3840x2160 | 0 | 48.4 → 9.2 | 75.7 → 87.5 | — |
+| 3840x2160 | 16 | 24.3 → 9.7 | 40.5 → 79.4 | 32.1 → 26.5 |
+
+On the B580 a 4K frame is now 2.5 to 5 times faster and no longer depends on
+`--threads`. On the UHD 770 the default model gets slower, most of all with
+`--threads 16`: the CPU used to compute ADM for several frames in parallel
+with the iGPU, and now the iGPU does that work as well. SYCL on the UHD 770
+stays slower than the CPU backend either way. At 576x324 the B580 numbers are
+within the run-to-run spread. The CPU backend runs the same code in both
+builds; its spread is load from other jobs on the machine.
+
+The twin also accepts the CPU's `adm_skip_aim` option (`aim` becomes 0 and the
+AIM pass is skipped). The HIP twin still has no AIM pass
+(`T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05` in
+[`state.md`](../../state.md)).
 
 ## SpEED-chroma reports singularity separately from failure (ADR-1202, 2026-09-06)
 

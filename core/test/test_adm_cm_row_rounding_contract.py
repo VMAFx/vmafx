@@ -51,6 +51,11 @@ NATIVE_FOLD_CALLS = (
         "const int64_t shifted = adm_cm_round_row_total(s_row[0], "
         "add_shift_inner_accum, shift_inner_accum);",
     ),
+    (
+        "sycl",
+        "adm_dev_fold_row",
+        "int64_t const shifted = adm_cm_round_row_total(row_total, rounding, shift);",
+    ),
 )
 
 METAL_FOLD_CALLS = (
@@ -195,22 +200,13 @@ def _require_native_contract(failures: list[str], sources: dict[str, str]) -> No
         "cpu": '#include "adm_cm_accumulator.h"',
         "cuda": '#include "adm_cm_accumulator.h"',
         "hip": '#include "adm_cm_accumulator.h"',
+        "sycl": '#include "feature/adm_cm_accumulator.h"',
     }.items():
         if _compact(sources[role]).count(_compact(include)) != 1:
             failures.append(f"{role}: missing private accumulator header")
 
     for role, function, statement in NATIVE_FOLD_CALLS:
         _require_exact_call(failures, role, sources[role], function, statement)
-
-    sycl_fold = "(total_cm + rnd_cm) >> e_cm_shift_inner"
-    _require_exact_call(
-        failures,
-        "sycl",
-        sources["sycl"],
-        "launch_csf_den_cm_3band",
-        f"int64_t const shifted_cm = {sycl_fold};",
-        sycl_fold,
-    )
 
 
 def _require_x86_contract(failures: list[str], sources: dict[str, str]) -> None:
@@ -312,10 +308,12 @@ class AdmCmRowRoundingContractTest(unittest.TestCase):
         sources = _sources()
         sources["sycl"] = _sub_exact(
             sources["sycl"],
-            r"\(total_cm\s*\+\s*rnd_cm\)\s*>>\s*e_cm_shift_inner",
-            "((total_cm + rnd_cm) >> e_cm_shift_inner) + 1",
+            r"adm_cm_round_row_total\(row_total,\s*rounding,\s*shift\)",
+            "adm_cm_round_row_total(row_total, rounding, shift) + 1",
         )
-        self.assertTrue(any("sycl:launch_csf" in item for item in _contract_failures(sources)))
+        self.assertTrue(
+            any("sycl:adm_dev_fold_row" in item for item in _contract_failures(sources))
+        )
 
     def test_metal_pre_reduction_mutation_is_detected(self) -> None:
         sources = _sources()

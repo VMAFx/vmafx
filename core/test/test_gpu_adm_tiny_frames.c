@@ -41,6 +41,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -104,16 +105,25 @@ static const Geometry REJECTED[] = {
 };
 #define NUM_REJECTED (sizeof(REJECTED) / sizeof(REJECTED[0]))
 
+/* The SYCL arm also scores the AIM pass (ADR-1362): aim and adm3 go through
+ * the same tiny frames, noise and CSF modes. The HIP twin has no AIM pass
+ * yet (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05), and the CUDA
+ * arm keeps the five DLM keys until it is run on a CUDA device with them. */
+#if defined(HAVE_SYCL)
+#define NUM_KEYS (7u)
+#else
 #define NUM_KEYS (5u)
-static const char *const CSF_SCORE_KEYS[4][NUM_KEYS] = {
+#endif
+static const char *const CSF_SCORE_KEYS[4][7] = {
     {"integer_adm_scale0", "integer_adm_scale1", "integer_adm_scale2", "integer_adm_scale3",
-     "VMAF_integer_feature_adm2_score"},
+     "VMAF_integer_feature_adm2_score", "VMAF_integer_feature_aim_score",
+     "VMAF_integer_feature_adm3_score"},
     {"integer_adm_scale0_csf_1", "integer_adm_scale1_csf_1", "integer_adm_scale2_csf_1",
-     "integer_adm_scale3_csf_1", "integer_adm2_csf_1"},
+     "integer_adm_scale3_csf_1", "integer_adm2_csf_1", "integer_aim_csf_1", "integer_adm3_csf_1"},
     {"integer_adm_scale0_csf_2", "integer_adm_scale1_csf_2", "integer_adm_scale2_csf_2",
-     "integer_adm_scale3_csf_2", "integer_adm2_csf_2"},
+     "integer_adm_scale3_csf_2", "integer_adm2_csf_2", "integer_aim_csf_2", "integer_adm3_csf_2"},
     {"integer_adm_scale0_csf_3", "integer_adm_scale1_csf_3", "integer_adm_scale2_csf_3",
-     "integer_adm_scale3_csf_3", "integer_adm2_csf_3"},
+     "integer_adm_scale3_csf_3", "integer_adm2_csf_3", "integer_aim_csf_3", "integer_adm3_csf_3"},
 };
 static const char *const CSF_MODE_VALUES[4] = {"0", "1", "2", "3"};
 
@@ -383,6 +393,19 @@ static const Content BRIGHT_16BIT = {
     "GPU integer ADM differs from scalar CPU by more than 1e-4 on bright 16-bit input",
 };
 
+#if defined(HAVE_SYCL)
+/* Bit-for-bit equality of two scores (compares the IEEE-754 bit patterns, not
+ * the object representations, which tidy rejects for double). */
+static bool same_bits(double a, double b)
+{
+    uint64_t ua = 0;
+    uint64_t ub = 0;
+    memcpy(&ua, &a, sizeof(ua));
+    memcpy(&ub, &b, sizeof(ub));
+    return ua == ub;
+}
+#endif
+
 static char *check_parity(Geometry g, const Content *c, unsigned csf_mode, int *skipped)
 {
     double cpu[NUM_KEYS];
@@ -403,6 +426,17 @@ static char *check_parity(Geometry g, const Content *c, unsigned csf_mode, int *
             return c->mismatch;
         }
     }
+#if defined(HAVE_SYCL)
+    /* ADR-1362: the SYCL AIM pass carries the scalar CPU's bits for aim and
+     * adm3 (keys 5 and 6), not merely places=4. */
+    for (size_t k = 5; k < NUM_KEYS; k++) {
+        if (!same_bits(cpu[k], gpu[k])) {
+            (void)fprintf(stderr, "\n  %ux%u %s: cpu=%.17g gpu=%.17g not bit-exact\n", g.w, g.h,
+                          CSF_SCORE_KEYS[csf_mode][k], cpu[k], gpu[k]);
+            return "SYCL aim / adm3 differ from the scalar CPU bits";
+        }
+    }
+#endif
     return NULL;
 }
 

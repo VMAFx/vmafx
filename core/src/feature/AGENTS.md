@@ -540,10 +540,11 @@ feature/
   Bitwise right-shift with rounding bias is non-linear and non-distributive
   over addition. Every implementation must accumulate all columns of a row in
   64-bit precision across the entire width `[start_col, end_col)` before
-  applying the shift once per row. Scalar CPU, CUDA and HIP use the private
-  `adm_cm_round_row_total()` seam; AVX2/AVX-512 and SYCL keep equivalent inline
-  expressions to avoid behavior-only refactors in their inherited functions;
-  Metal uses an MSL-local twin.
+  applying the shift once per row. Scalar CPU, CUDA, HIP and SYCL (since
+  ADR-1362, `adm_dev_fold_row`) use the private `adm_cm_round_row_total()`
+  seam; AVX2/AVX-512 keep equivalent inline expressions to avoid
+  behavior-only refactors in their inherited functions; Metal uses an
+  MSL-local twin.
   The helper's rounding term stays signed: CUDA i4 passes ADR-0155's negative
   `INT32_MIN` term, which must never be cast through `uint32_t`.
   Kernel launch grids must use `gridDim.x = 1` to ensure single-block/warp
