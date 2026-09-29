@@ -45,6 +45,9 @@ int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
     twin_fake.seen_name = feature_name;
     twin_fake.seen_opts = opts_dict;
     twin_fake.seen_pic_cfg = pic_cfg;
+    /* Same contract as the real function: no result pointer, no lookup. */
+    if (!twin_name)
+        return -EINVAL;
     *twin_name = twin_fake.twin;
     if (unsupported_option)
         *unsupported_option = twin_fake.option;

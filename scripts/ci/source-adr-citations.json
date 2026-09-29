@@ -547,6 +547,7 @@
         "core/test/test_delta_e_itp.c": 1,
         "core/test/test_dists.c": 1,
         "core/test/test_fastdvdnet_pre.c": 1,
+        "core/test/test_feature_backend_twin.c": 1,
         "core/test/test_feature_collector.c": 1,
         "core/test/test_feature_extractor.c": 1,
         "core/test/test_flush_context_ordering.c": 1,
@@ -3479,7 +3480,7 @@
     "0530": {
       "sites": {
         "core/include/libvmaf/libvmaf.h": 1,
-        "core/src/feature/feature_extractor.cpp": 4,
+        "core/src/feature/feature_extractor.cpp": 5,
         "core/src/feature/hip/integer_adm_hip.c": 3,
         "core/src/feature/hip/integer_motion_hip.c": 4,
         "core/src/feature/hip/integer_vif_hip.c": 1,
@@ -3625,7 +3626,8 @@
     "0543": {
       "sites": {
         "core/src/libvmaf.c": 1,
-        "core/tools/vmaf.cpp": 4,
+        "core/tools/test/test_vmaf_feature_backend.sh": 1,
+        "core/tools/vmaf.cpp": 5,
         "tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py": 20
       },
       "target": "0543-adr-0498-enforcement-hardening.md"
@@ -6188,6 +6190,7 @@
         "core/test/test_delta_e_itp.c": 1,
         "core/test/test_dists.c": 1,
         "core/test/test_fastdvdnet_pre.c": 1,
+        "core/test/test_feature_backend_twin.c": 1,
         "core/test/test_feature_collector.c": 1,
         "core/test/test_feature_collector_coverage.c": 1,
         "core/test/test_feature_extractor.c": 1,
@@ -6347,6 +6350,7 @@
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/test_y_funque_plus.c": 1,
+        "core/tools/test/test_cli_feature_backend.c": 1,
         "core/tools/test/test_vmaf_close_retry.c": 1,
         "core/tools/test/test_vmaf_per_shot_input.c": 1,
         "core/tools/vmaf_bench.c": 1,
@@ -6639,7 +6643,7 @@
     "1183": {
       "sites": {
         "core/src/feature/metal/integer_adm_metal.mm": 1,
-        "core/src/libvmaf.c": 1,
+        "core/src/libvmaf.c": 2,
         "core/test/meson.build": 1,
         "core/test/test_cuda_float_adm_parity.c": 2,
         "core/test/test_gpu_option_alias_contract.py": 1,
@@ -7472,7 +7476,7 @@
     },
     "1316": {
       "sites": {
-        "core/src/libvmaf.c": 1,
+        "core/src/libvmaf.c": 2,
         "core/src/opt.h": 1
       },
       "target": "1316-gpu-option-value-capability-fallback.md"
@@ -7524,9 +7528,11 @@
         "core/src/feature/metal/float_ssim_metal.mm": 2,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
         "core/src/feature/sycl/integer_vif_sycl.cpp": 2,
-        "core/src/libvmaf.c": 1,
+        "core/src/libvmaf.c": 3,
         "core/test/meson.build": 1,
-        "core/test/test_sycl_vif_min_dim.c": 2
+        "core/test/test_feature_backend_twin.c": 2,
+        "core/test/test_sycl_vif_min_dim.c": 2,
+        "core/tools/test/test_vmaf_feature_backend.sh": 1
       },
       "target": "1324-gpu-float-ssim-auto-scale-fallback.md"
     },
@@ -7746,6 +7752,22 @@
         "scripts/dev/speed_gpu_parity.py": 2
       },
       "target": "1358-sycl-speed-device-resident-linalg.md"
+    },
+    "1359": {
+      "sites": {
+        "core/src/feature/feature_extractor.cpp": 1,
+        "core/src/feature/feature_extractor.h": 1,
+        "core/src/libvmaf.c": 3,
+        "core/test/meson.build": 1,
+        "core/test/test_feature_backend_twin.c": 1,
+        "core/tools/cli_feature_backend.cpp": 1,
+        "core/tools/cli_feature_backend.h": 1,
+        "core/tools/test/meson.build": 2,
+        "core/tools/test/test_cli_feature_backend.c": 1,
+        "core/tools/test/test_vmaf_feature_backend.sh": 1,
+        "core/tools/vmaf.cpp": 3
+      },
+      "target": "1359-cli-feature-backend-twin.md"
     },
     "1360": {
       "sites": {

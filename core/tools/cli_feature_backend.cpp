@@ -155,7 +155,8 @@ void sink_put(TextSink *sink, char ch)
 void sink_puts(TextSink *sink, const char *text)
 {
     constexpr size_t max_text = 4096;
-    for (size_t i = 0; i < max_text && text[i]; i++)
+    const size_t text_len = strnlen(text, max_text);
+    for (size_t i = 0; i < text_len; i++)
         sink_put(sink, text[i]);
 }
 
