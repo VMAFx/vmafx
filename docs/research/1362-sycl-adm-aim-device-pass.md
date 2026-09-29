@@ -49,18 +49,16 @@ AIM inside its existing command graph, without a host wait, and give the CPU
    quotient passes INT32_MAX and wraps. Planting the old narrowing into the
    new kernel reproduces the old twin's adm2 and scale outputs on BBB 4K
    exactly (50/50 frames, every key), and breaks aim / adm3 on 2-3 frames of
-   50. With the int64 clamp every DLM output at 4K is within 2.9e-7 of the
-   CPU; the old twin's `integer_adm_scale2` was up to 1.40e-6 off (measured
-   directly against the CPU). At 576x324 two frames of 48 move by at most
+   50. The old twin's `integer_adm_scale2` was up to 1.40e-6 off the CPU at
+   4K (measured directly); at 576x324 two frames of 48 moved by at most
    3.7e-12.
 4. **The device accumulators are exact; only the host finalisation differs.**
    The CPU finalises each scale in float (`adm_cm_restore_accum()`,
    `adm_num_scale()`, `adm_den_scale_finalise()`, `(float)(int64 / float)` at
    scales 1-3) and sums the float scale terms in double. Repeating exactly
-   that on the host makes aim and adm3 bit-exact everywhere tested. The same
-   finaliser applied to adm2 makes adm2 bit-exact too (50/50 frames at 4K);
-   the twin's historical double finalisation leaves adm2 and the scales at
-   1.4e-7 to 2.9e-7.
+   that on the host makes every ADM output bit-exact everywhere tested. The
+   twin's historical double finalisation had left adm2 and the scales 1.4e-7
+   to 2.9e-7 from the CPU; it is removed (maintainer decision, 2026-09-29).
 5. **Sub-group size matters on Xe-LP.** Nine int64 sums per work-item spill at
    32 lanes on the UHD 770: `adm_sycl` alone at 4K took 59.5 ms per frame at
    sub-group 32 and 45.6 at 16 (DLM only on the old kernel: 41.0). The B580 is
@@ -85,16 +83,32 @@ Every per-frame `aim` and `adm3` value equals `--backend cpu` at
 model's (`adm_csf_mode=2`, `adm_dlm_weight=0.7`, `adm_enhn_gain_limit=1.0`,
 `adm_min_val=0.5`, `adm_noise_weight=0.02`):
 
-| Fixture | Frames | aim / adm3 max abs diff | adm2 / scale* vs CPU | adm2 / scale* vs old twin |
+Final state, every ADM output against the CPU (the Netflix pair and BBB 4K
+re-measured on both GPUs after the float finaliser took over adm2 and the
+scales):
+
+| Fixture | Frames | aim / adm3 | adm2, scale0..3 | old twin's adm2 / scale* vs CPU |
 | --- | --- | --- | --- | --- |
-| Netflix 576x324, 8-bit | 48 | 0 | 2.4e-7 | 3.7e-12 (2 frames) |
-| BBB 3840x2160, 8-bit | 50 | 0 | 2.9e-7 (old twin: 1.40e-6) | 1.47e-6 (clamp fix) |
-| 853x480 crop, 8-bit | 50 | 0 | 2.6e-7 | 2.8e-10 |
-| 17x17 crop, 8-bit | 48 | 0 | 1.9e-7 | 0 |
-| Netflix 576x324, 10-bit (real, dithered) | 3, 48 | 0 | 2.4e-7 | 1.7e-11 |
-| 853x480 / 17x17 crops, 10-bit | 50, 48 | 0 | 2.6e-7 | 2.1e-10 |
-| `adm_skip_aim`, `adm_skip_scale0` | 48 | 0 | 2.3e-7 | 3.7e-12 |
-| `adm_enhn_gain_limit=1.2`, `adm_p_norm=2` | 48 | 1.4e-7 | 1.4e-6 | 2.5e-11 |
+| Netflix 576x324, 8-bit | 48 | 0 | 0 | 2.3e-7 |
+| Netflix 576x324, default-model options | 48 | 0 | 0 | 2.4e-7 |
+| BBB 3840x2160, 8-bit | 50 | 0 | 0 | 1.34e-6 |
+| BBB 3840x2160, default-model options | 50 | 0 | 0 | 1.40e-6 |
+
+Measured with aim / adm3 on the float finaliser and adm2 / scales still on the
+double one (so the DLM column shows that finaliser's residual; the device
+accumulators are the same in both builds):
+
+| Fixture | Frames | aim / adm3 | adm2 / scale* (double finaliser) |
+| --- | --- | --- | --- |
+| 853x480 crop, 8-bit | 50 | 0 | 2.6e-7 |
+| 17x17 crop, 8-bit | 48 | 0 | 1.9e-7 |
+| Netflix 576x324, 10-bit (real, dithered) | 3, 48 | 0 | 2.4e-7 |
+| 853x480 / 17x17 crops, 10-bit | 50, 48 | 0 | 2.6e-7 |
+| `adm_skip_aim`, `adm_skip_scale0` | 48 | 0 | 2.3e-7 |
+| `adm_enhn_gain_limit=1.2`, `adm_p_norm=2` | 48 | 1.4e-7 | 1.4e-6 |
+
+`test_sycl_adm_tiny_frames` now compares every key bit for bit on tiny
+frames, noise, 16-bit input and CSF modes 0-3 on both GPUs.
 
 Default model (no `--model`), ms per frame, (t(N) - t(2)) / (N - 2) with
 N = 48 at 576x324 (median of 7 runs) and N = 22 at 4K (median of 3); "before"
@@ -129,5 +143,5 @@ CPU cores, so its rows move with that load as well.
 
 - Port the design to the HIP twin (`core/src/feature/hip/integer_adm/adm_cm.hip`);
   the row stays open for it.
-- Whether adm2 and the scale outputs should switch to the float finaliser
-  (bit-exact, but a visible change of up to 2.9e-7).
+- `T-SYCL-ADM-FRACTIONAL-GAIN-LIMIT-2026-09-29`: exact non-integer gain
+  limits.

@@ -1252,93 +1252,15 @@ AdmCmShifts adm_cm_shifts(int scale, int w, int h, const AdmRegion &r)
 /* CPU scoring functions                                               */
 /* ------------------------------------------------------------------ */
 
-void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, uint32_t normalization_shift,
-                     float noise_weight, double p_norm, double *result)
-{
-    int const left = (int)(w * ADM_BORDER_FACTOR - 0.5);
-    int const top = (int)(h * ADM_BORDER_FACTOR - 0.5);
-    int const right = w - left;
-    int const bottom = h - top;
-
-    const int shift_inner_accum = (int)std::ceil(std::log2(h));
-    double const p_norm_exp = 1.0 / p_norm;
-    int const restored_bits = 3 * (int)normalization_shift;
-
-    /* Promote powf_add to double to avoid fp32 precision loss on Arc A380
-     * (no native fp64 device, but this function is host-side — no device impact). */
-    double const powf_add =
-        std::pow((double)((bottom - top) * (right - left)) * (double)noise_weight, p_norm_exp);
-
-    *result = 0;
-    for (int i = 0; i < 3; i++) {
-        /* Promote f_accum to double: on fp32-only devices the per-scale
-         * normalization intermediate is computed host-side and fed directly into
-         * SVM; fp32 rounding here amplifies to >5e-5 final-score error (iter10
-         * cross-backend-parity finding). */
-        double f_accum;
-        if (scale == 0) {
-            // CPU uses w (full band width) for shift_xcub, not active_w
-            const int shift_xcub[3] = {(int)(std::ceil(std::log2((double)w)) - 4),
-                                       (int)(std::ceil(std::log2((double)w)) - 4),
-                                       (int)(std::ceil(std::log2((double)w)) - 3)};
-            int const constant_offset[3] = {52, 52, 57};
-            f_accum = accum[i] / std::pow(2.0, constant_offset[i] - restored_bits - shift_xcub[i] -
-                                                   shift_inner_accum);
-        } else {
-            // CPU uses w (full band width) for shift_cub, not active_w
-            int const shift_cub = (int)std::ceil(std::log2((double)w));
-            double const final_shift[3] = {
-                std::pow(2.0, 45.0 - restored_bits - shift_cub - shift_inner_accum),
-                std::pow(2.0, 39.0 - restored_bits - shift_cub - shift_inner_accum),
-                std::pow(2.0, 36.0 - restored_bits - shift_cub - shift_inner_accum)};
-            f_accum = (double)accum[i] / final_shift[scale - 1];
-        }
-        *result += std::pow(f_accum, p_norm_exp) + powf_add;
-    }
-}
-
-void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, double *result,
-                          const float rfactor[3], float noise_weight)
-{
-    int const left = (int)(w * ADM_BORDER_FACTOR - 0.5);
-    int const top = (int)(h * ADM_BORDER_FACTOR - 0.5);
-    int const right = w - left;
-    int const bottom = h - top;
-
-    const uint32_t accum_convert[4] = {18, 32, 27, 23};
-
-    int32_t shift_accum;
-    double shift_csf;
-    if (scale == 0) {
-        shift_accum = (int32_t)std::ceil(std::log2((bottom - top) * (right - left)) - 20);
-        if (shift_accum < 0)
-            shift_accum = 0;
-        shift_csf = std::pow(2.0, accum_convert[scale] - shift_accum);
-    } else {
-        shift_accum = (int32_t)std::ceil(std::log2(bottom - top));
-        uint32_t const shift_cub = (uint32_t)std::ceil(std::log2(right - left));
-        shift_csf = std::pow(2.0, accum_convert[scale] - shift_accum - shift_cub);
-    }
-
-    float const powf_add =
-        powf((float)((bottom - top) * (right - left)) * noise_weight, 1.0f / 3.0f);
-
-    *result = 0;
-    for (int i = 0; i < 3; i++) {
-        double const csf = (double)(accum[i] / shift_csf) * std::pow(rfactor[i], 3);
-        *result += powf((float)csf, 1.0f / 3.0f) + powf_add;
-    }
-}
-
 /*
  * The CPU's own finalisation of one scale (ADR-1362). integer_adm.c ends every
  * scale in float -- adm_cm() / i4_adm_cm() and adm_csf_den_scale() /
  * adm_csf_den_s123() each return the float sum of three float band terms --
  * and integer_compute_adm() sums those floats in double. The device
  * accumulators are bit-exact with the CPU's, so repeating that arithmetic
- * expression for expression reproduces aim and adm3 bit for bit. adm2 and
- * integer_adm_scale* keep conclude_adm_cm() / conclude_adm_csf_den() above,
- * whose double arithmetic sits ~1e-7 from the CPU.
+ * expression for expression reproduces every ADM output bit for bit. This twin
+ * used to finalise in double instead, which left adm2 and integer_adm_scale*
+ * up to 2.9e-7 from the CPU; do not bring that back.
  */
 float adm_cm_scale_cpu(const int64_t accum[3], int h, int w, int scale,
                        uint32_t normalization_shift, double noise_weight, double p_norm)
@@ -1720,54 +1642,6 @@ int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture
     return 0;
 }
 
-/* Per-scale numerator / denominator of adm2, integer_adm_scale* and the
- * debug outputs, and their sums over the scales that count. */
-struct AdmDlmTerms {
-    double scores[8]; /* [2 * scale] numerator, [2 * scale + 1] denominator */
-    double num;
-    double den;
-};
-
-/* This twin's double-precision finalisation of the DLM terms (see
- * adm_cm_scale_cpu() for why aim / adm3 do not use it). */
-void adm_dlm_terms(const AdmStateSycl *s, AdmDlmTerms *t)
-{
-    assert(s != nullptr && t != nullptr);
-    // Filled by the post-graph copy that vmaf_sycl_graph_wait() completed.
-    assert(s->h_accum != nullptr);
-    unsigned w = s->width;
-    unsigned h = s->height;
-    t->num = 0.0;
-    t->den = 0.0;
-    for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
-        w = (w + 1) / 2;
-        h = (h + 1) / 2;
-        size_t const band0 = (size_t)scale * ADM_NUM_BANDS;
-        double num_scale = 0.0;
-        double den_scale = 0.0;
-        conclude_adm_cm(&s->h_accum[adm_accum_slot(ADM_TERM_CM, scale)], (int)h, (int)w, scale,
-                        s->csf_normalization_shift[scale], (float)s->adm_noise_weight,
-                        s->adm_p_norm, &num_scale);
-        conclude_adm_csf_den(
-            reinterpret_cast<const uint64_t *>(&s->h_accum[adm_accum_slot(ADM_TERM_DEN, scale)]),
-            (int)h, (int)w, scale, &den_scale, &s->rfactor[band0], (float)s->adm_noise_weight);
-
-        /* adm_skip_scale0: exclude scale 0 from num/den accumulation, mirroring
-         * the CPU integer_adm.c fast-path (den_scale = 1e-10, num_scale = 0).
-         * The GPU kernel still computes scale 0; suppression is host-side only. */
-        if (scale == 0 && s->adm_skip_scale0) {
-            t->scores[0] = 0.0;
-            t->scores[1] = 1e-10;
-            continue;
-        }
-        t->num += num_scale;
-        t->den += den_scale;
-        size_t const pair = 2 * (size_t)scale;
-        t->scores[pair] = num_scale;
-        t->scores[pair + 1] = den_scale;
-    }
-}
-
 /* Numerator, denominator and AIM numerator of one scale, in float like the
  * CPU's AdmScaleScores. */
 struct AdmScaleCpu {
@@ -1778,6 +1652,7 @@ struct AdmScaleCpu {
 
 AdmScaleCpu adm_scale_cpu(const AdmStateSycl *s, int scale, int w, int h)
 {
+    assert(s != nullptr && s->h_accum != nullptr);
     AdmScaleCpu sc{};
     if (scale == 0 && s->adm_skip_scale0) {
         sc.den = (float)1e-10; // integer_adm_scale0(): avoid divide by zero
@@ -1797,56 +1672,58 @@ AdmScaleCpu adm_scale_cpu(const AdmStateSycl *s, int scale, int w, int h)
     return sc;
 }
 
-/* Floor num / den at the full-frame precision limit and form num / den and
- * aim_num / den, as integer_adm.c::adm_result_finalise(). */
-int adm_aggregate(unsigned index, double num, double den, double aim_num, double numden_limit,
-                  double ratios[2])
+/* The frame's scale terms and sums, as integer_compute_adm() forms them. */
+struct AdmTerms {
+    double scores[8]; /* [2 * scale] numerator, [2 * scale + 1] denominator */
+    double num;
+    double den;
+    double aim_num;
+};
+
+void adm_terms(const AdmStateSycl *s, AdmTerms *t)
 {
-    int err =
-        vmaf_adm_floor_pair_named("integer_adm_sycl", index, num, den, numden_limit, &num, &den);
+    assert(s != nullptr && t != nullptr);
+    int w = (int)s->width;
+    int h = (int)s->height;
+    t->num = 0.0;
+    t->den = 0.0;
+    t->aim_num = 0.0;
+    for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
+        w = (w + 1) / 2;
+        h = (h + 1) / 2;
+        AdmScaleCpu const sc = adm_scale_cpu(s, scale, w, h);
+        size_t const pair = 2 * (size_t)scale;
+        t->scores[pair] = sc.num;
+        t->scores[pair + 1] = sc.den;
+        t->num += sc.num;
+        t->den += sc.den;
+        t->aim_num += sc.aim_num;
+    }
+}
+
+/* integer_adm.c::adm_result_finalise(): floor num / den at the full-frame
+ * precision limit (in place, as the debug outputs report them), then
+ * ratios = {num / den, aim_num / den}. */
+int adm_finalise(unsigned index, AdmTerms *t, double numden_limit, double ratios[2])
+{
+    int err = vmaf_adm_floor_pair_named("integer_adm_sycl", index, t->num, t->den, numden_limit,
+                                        &t->num, &t->den);
     if (err) {
         return err;
     }
-    const double pairs[4] = {num, den, aim_num, den};
+    const double pairs[4] = {t->num, t->den, t->aim_num, t->den};
     err = vmaf_adm_scale_ratios(pairs, 2u, ratios);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "integer_adm_sycl: undefined or non-finite aggregate at frame %u "
                  "(num=%g den=%g aim_num=%g)\n",
-                 index, num, den, aim_num);
+                 index, t->num, t->den, t->aim_num);
     }
     return err;
 }
 
-/* aim and adm3 from the CPU's float finalisation (ADR-1362). */
-int adm_aim_scores(const AdmStateSycl *s, unsigned index, double numden_limit, double *score_aim,
-                   double *score_adm3)
-{
-    double num = 0.0;
-    double den = 0.0;
-    double aim_num = 0.0;
-    int w = (int)s->width;
-    int h = (int)s->height;
-    for (int scale = 0; scale < ADM_NUM_SCALES; scale++) {
-        w = (w + 1) / 2;
-        h = (h + 1) / 2;
-        AdmScaleCpu const sc = adm_scale_cpu(s, scale, w, h);
-        num += sc.num;
-        den += sc.den;
-        aim_num += sc.aim_num;
-    }
-    double ratios[2];
-    int const err = adm_aggregate(index, num, den, aim_num, numden_limit, ratios);
-    if (err) {
-        return err;
-    }
-    *score_aim = ratios[1];
-    return vmaf_adm3_score_named("integer_adm_sycl", index, ratios[0], ratios[1], 0,
-                                 s->adm_dlm_weight, s->adm_min_val, score_adm3);
-}
-
 int emit_adm_scores(const AdmStateSycl *s, VmafFeatureCollector *feature_collector, unsigned index,
-                    const double headline[3], const AdmDlmTerms &dlm, const double scale_scores[4])
+                    const double headline[3], const AdmTerms &t, const double scale_scores[4])
 {
     VmafNamedScore values[18] = {
         {.name = "VMAF_integer_feature_adm2_score", .value = headline[0]},
@@ -1865,10 +1742,10 @@ int emit_adm_scores(const AdmStateSycl *s, VmafFeatureCollector *feature_collect
             "integer_adm_num_scale3", "integer_adm_den_scale3",
         };
         values[value_count++] = VmafNamedScore{.name = "integer_adm", .value = headline[0]};
-        values[value_count++] = VmafNamedScore{.name = "integer_adm_num", .value = dlm.num};
-        values[value_count++] = VmafNamedScore{.name = "integer_adm_den", .value = dlm.den};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm_num", .value = t.num};
+        values[value_count++] = VmafNamedScore{.name = "integer_adm_den", .value = t.den};
         for (size_t i = 0u; i < 8u; ++i) {
-            values[value_count++] = VmafNamedScore{.name = debug_names[i], .value = dlm.scores[i]};
+            values[value_count++] = VmafNamedScore{.name = debug_names[i], .value = t.scores[i]};
         }
     }
     return vmaf_feature_emit_finite_scores(feature_collector, s->feature_name_dict,
@@ -1885,33 +1762,34 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     if (int const wait_err = vmaf_sycl_graph_wait(fex->sycl_state))
         return wait_err;
 
-    AdmDlmTerms dlm{};
-    adm_dlm_terms(s, &dlm);
+    AdmTerms t{};
+    adm_terms(s, &t);
 
     /* numden_limit — CPU parity (integer_adm.c::integer_compute_adm): the
      * precision floor scales with the FULL-FRAME area, not the scale-3 area. */
     double const numden_limit = 1e-10 * ((double)s->width * s->height) / (1920.0 * 1080.0);
-
-    /* adm2 is emitted unclamped: ADR-0487's adm_min_val clamps adm3 only, as
-     * in integer_adm.c::extract(). */
-    double adm2_ratios[2];
-    int err = adm_aggregate(index, dlm.num, dlm.den, 0.0, numden_limit, adm2_ratios);
+    double ratios[2];
+    int err = adm_finalise(index, &t, numden_limit, ratios);
     if (err) {
         return err;
     }
-    double headline[3] = {adm2_ratios[0], 0.0, 0.0}; // adm2, aim, adm3
-    err = adm_aim_scores(s, index, numden_limit, &headline[1], &headline[2]);
+
+    /* adm2 is emitted unclamped: ADR-0487's adm_min_val clamps adm3 only, as
+     * in integer_adm.c::extract(). */
+    double headline[3] = {ratios[0], ratios[1], 0.0}; // adm2, aim, adm3
+    err = vmaf_adm3_score_named("integer_adm_sycl", index, ratios[0], ratios[1], 0,
+                                s->adm_dlm_weight, s->adm_min_val, &headline[2]);
     if (err) {
         return err;
     }
 
     double scale_scores[ADM_NUM_SCALES];
-    err = vmaf_adm_scale_ratios_named("integer_adm_sycl", index, dlm.scores, ADM_NUM_SCALES,
+    err = vmaf_adm_scale_ratios_named("integer_adm_sycl", index, t.scores, ADM_NUM_SCALES,
                                       scale_scores);
     if (err) {
         return err;
     }
-    return emit_adm_scores(s, feature_collector, index, headline, dlm, scale_scores);
+    return emit_adm_scores(s, feature_collector, index, headline, t, scale_scores);
 }
 
 int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,

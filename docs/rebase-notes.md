@@ -18,9 +18,11 @@
 - Keep the int64 clamp in `adm_dev_decouple_k()`; narrowing the quotient to
   int32 before the clamp is the old defect (`integer_adm_scale2` up to
   1.40e-6 off the CPU at 4K).
-- aim / adm3 use the CPU-float finaliser, adm2 / `integer_adm_scale*` the double
-  one. Do not "unify" them in a conflict resolution: moving aim to double
-  breaks the bit-exact tests, moving adm2 to float changes emitted values.
+- Every output (adm2, `integer_adm_scale*`, debug num / den, aim, adm3) uses
+  the CPU-float finaliser (`adm_scale_cpu` / `adm_terms` / `adm_finalise`). The
+  twin's old double finaliser is deleted on purpose; a conflict resolution
+  that restores `conclude_adm_cm` / `conclude_adm_csf_den` breaks the
+  bit-exact tests.
 - `core/test/test_adm_cm_row_rounding_contract.py` now pins the SYCL fold in
   `adm_dev_fold_row` (was an inline expression in `launch_csf_den_cm_3band`).
 - `.standards-baseline.json`: re-recorded 190 -> 185; the five over-long

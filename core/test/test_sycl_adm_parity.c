@@ -20,9 +20,9 @@
  *
  * The test asserts VMAF_integer_feature_adm2_score (the headline
  * combined-scale ADM2 score) matches between CPU and SYCL within
- * ADR-0214 places=4 (1e-4) tolerance, and that the AIM pass (ADR-1362)
- * reproduces VMAF_integer_feature_aim_score and
- * VMAF_integer_feature_adm3_score bit for bit.
+ * ADR-0214 places=4 (1e-4) tolerance, and that under the default model's
+ * options every ADM output -- aim and adm3 from the AIM pass included
+ * (ADR-1362) -- carries the CPU's bits.
  *
  * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
  * or no device visible) the test emits "[skip: no SYCL device]" and
@@ -178,15 +178,14 @@ static VmafFeatureDictionary *model_opts(void)
 }
 
 #define MODEL_SUFFIX "_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02"
-/* The first NUM_AIM_KEYS keys are the AIM pass's (ADR-1362): the default
- * model reads adm3, so the SYCL twin answers it under the CPU twin's key. */
+/* The first two keys are the AIM pass's (ADR-1362): the default model reads
+ * adm3, so the SYCL twin answers it under the CPU twin's key. */
 static const char *const MODEL_KEYS[] = {
     "integer_adm3" MODEL_SUFFIX,       "integer_aim" MODEL_SUFFIX,
     "integer_adm2" MODEL_SUFFIX,       "integer_adm_scale0" MODEL_SUFFIX,
     "integer_adm_scale1" MODEL_SUFFIX, "integer_adm_scale2" MODEL_SUFFIX,
     "integer_adm_scale3" MODEL_SUFFIX,
 };
-#define NUM_AIM_KEYS 2u
 #define NUM_MODEL_KEYS (sizeof(MODEL_KEYS) / sizeof(MODEL_KEYS[0]))
 
 // NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
@@ -370,10 +369,10 @@ static bool same_bits(double a, double b)
 }
 
 /* ADR-1362 numerical contract: the device accumulators are bit-exact with the
- * CPU's and aim / adm3 are finalised in the CPU's own float arithmetic, so
- * both scores must carry the CPU's bits, not merely agree to places=4. adm2
- * keeps its double finalisation and is covered by the tolerance test above. */
-static char *test_adm_cpu_sycl_aim_bit_exact(void)
+ * CPU's and the host finalises them in the CPU's own float arithmetic, so
+ * every emitted ADM score must carry the CPU's bits, not merely agree to
+ * places=4. */
+static char *test_adm_cpu_sycl_bit_exact(void)
 {
     double cpu[NUM_MODEL_KEYS];
     double gpu[NUM_MODEL_KEYS];
@@ -387,13 +386,13 @@ static char *test_adm_cpu_sycl_aim_bit_exact(void)
     if (isnan(gpu[0]))
         return NULL;
 
-    for (unsigned k = 0; k < NUM_AIM_KEYS; k++) {
+    for (unsigned k = 0; k < NUM_MODEL_KEYS; k++) {
         const bool same = same_bits(cpu[k], gpu[k]);
         if (!same) {
             (void)fprintf(stderr, "\n%s not bit-exact: cpu=%.17g sycl=%.17g\n", MODEL_KEYS[k],
                           cpu[k], gpu[k]);
         }
-        mu_assert("aim / adm3: SYCL differs from the CPU bits", same);
+        mu_assert("ADM: SYCL differs from the CPU bits", same);
     }
     return NULL;
 }
@@ -440,7 +439,7 @@ char *run_tests(void)
      * masking a real regression in the new coverage. */
     mu_run_test(test_adm_cpu_sycl_model_option_keys);
     mu_run_test(test_adm_cpu_sycl_model_option_parity);
-    mu_run_test(test_adm_cpu_sycl_aim_bit_exact);
+    mu_run_test(test_adm_cpu_sycl_bit_exact);
     mu_run_test(test_adm_cpu_sycl_parity);
     return NULL;
 }

@@ -106,9 +106,10 @@ static const Geometry REJECTED[] = {
 #define NUM_REJECTED (sizeof(REJECTED) / sizeof(REJECTED[0]))
 
 /* The SYCL arm also scores the AIM pass (ADR-1362): aim and adm3 go through
- * the same tiny frames, noise and CSF modes. The HIP twin has no AIM pass
- * yet (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05), and the CUDA
- * arm keeps the five DLM keys until it is run on a CUDA device with them. */
+ * the same tiny frames, noise and CSF modes, and every key is compared bit for
+ * bit. The HIP twin has no AIM pass yet
+ * (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05), and the CUDA arm
+ * keeps the five DLM keys until it is run on a CUDA device with them. */
 #if defined(HAVE_SYCL)
 #define NUM_KEYS (7u)
 #else
@@ -427,13 +428,13 @@ static char *check_parity(Geometry g, const Content *c, unsigned csf_mode, int *
         }
     }
 #if defined(HAVE_SYCL)
-    /* ADR-1362: the SYCL AIM pass carries the scalar CPU's bits for aim and
-     * adm3 (keys 5 and 6), not merely places=4. */
-    for (size_t k = 5; k < NUM_KEYS; k++) {
+    /* ADR-1362: the SYCL twin carries the scalar CPU's bits on every ADM
+     * output (scales, adm2, aim, adm3), not merely places=4. */
+    for (size_t k = 0; k < NUM_KEYS; k++) {
         if (!same_bits(cpu[k], gpu[k])) {
             (void)fprintf(stderr, "\n  %ux%u %s: cpu=%.17g gpu=%.17g not bit-exact\n", g.w, g.h,
                           CSF_SCORE_KEYS[csf_mode][k], cpu[k], gpu[k]);
-            return "SYCL aim / adm3 differ from the scalar CPU bits";
+            return "SYCL integer ADM differs from the scalar CPU bits";
         }
     }
 #endif

@@ -621,9 +621,12 @@ frames of Big Buck Bunny 3840x2160, 853x480 and 17x17 crops, 10-bit input):
 
 | Feature | Difference from the CPU extractor |
 | --- | --- |
-| `integer_aim`, `integer_adm3` | none: bit-identical on every frame |
-| `integer_adm2`, `integer_adm_scale0..3` | at most 2.9e-7, from finalising the scale sums in double where the CPU uses float |
+| `integer_aim`, `integer_adm3`, `integer_adm2`, `integer_adm_scale0..3` | none: bit-identical on every frame |
 | any of them with a non-integer `adm_enhn_gain_limit` (e.g. 1.2) | up to 1.4e-6, from the fixed-point gain limit; the shipped models use 1.0 or 100 |
+
+Before this change adm2 and the scale outputs were up to 2.9e-7 from the CPU
+(the twin finalised its sums in double where the CPU uses float), and
+`integer_adm_scale2` up to 1.40e-6 on 4K content.
 
 Default model, milliseconds per frame, before this change → after (median of
 seven runs at 576x324 and three at 3840x2160; `--threads 0` is the CLI

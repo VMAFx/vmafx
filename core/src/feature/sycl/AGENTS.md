@@ -656,10 +656,9 @@ tests catch per-kernel regressions automatically.
 - Scales 1-3 `>> 32` rounding term = `I4_FLT_ROUND` = -2^31: the CPU's
   wrapped `(int32_t)(1u << 31)` (Netflix#955, ADR-0155), same as CUDA / HIP.
   Netflix fixes #955 -> change CPU and this constant together.
-- adm2 / `integer_adm_scale*` residual vs scalar CPU (~1e-7) = double host
-  finalisation (`conclude_adm_cm` / `conclude_adm_csf_den`). With the CPU's
-  float finalisation swapped in, every score matched the CPU exactly (noise
-  at five sizes, src01, checkerboards; BBB 4K again for ADR-1362).
+- Host finalisation = the CPU's float arithmetic (ADR-1362) -> every ADM
+  output bit-exact. The old double finaliser (`conclude_adm_cm` /
+  `conclude_adm_csf_den`, ~1e-7 residual) is gone; do not bring it back.
 - Guard: `test_sycl_adm_tiny_frames` (tiny frames + full-range noise).
 
 ## Integer ADM AIM pass (ADR-1362, T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05)
@@ -683,12 +682,12 @@ tests catch per-kernel regressions automatically.
   wrapped -> `integer_adm_scale2` up to 1.40e-6 off the CPU at 4K, aim not
   exact. Never
   narrow before the clamp.
-- aim / adm3 finalised in the CPU's own float arithmetic (`adm_cm_scale_cpu`,
-  `adm_den_scale_cpu`, `adm_scale_cpu`: float per band, float per scale,
-  double sum, `(float)1e-10` skip-scale0 den) -> bit-exact. adm2 / scale*
-  stay on the double finaliser (unchanged outputs). Do not move aim / adm3 to
-  the double path. Moving adm2 to the float path makes it bit-exact too
-  (measured) but changes it by ~1e-7: maintainer call, not a rebase fix.
+- All outputs (adm2, scale*, debug num / den, aim, adm3) finalised in the
+  CPU's own float arithmetic (`adm_cm_scale_cpu`, `adm_den_scale_cpu`,
+  `adm_scale_cpu`, `adm_terms`, `adm_finalise`: float per band, float per
+  scale, double sum, `(float)1e-10` skip-scale0 den, floor in place) ->
+  bit-exact. Maintainer contract: bit-exact with the CPU. Any double
+  shortcut here breaks `test_sycl_adm_parity` / `test_sycl_adm_tiny_frames`.
 - CM kernel sub-group size 16: 9 int64 sums spill at 32 lanes on Xe-LP.
 - `adm_skip_aim` mirrors the CPU: AIM sums skipped, aim = 0.
 - Non-integer `adm_enhn_gain_limit` (e.g. 1.2): Q31 floor emulation != CPU

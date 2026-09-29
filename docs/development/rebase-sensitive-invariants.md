@@ -129,8 +129,8 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_nonfinite_collector_wiring.py` protect this against regression.
 
 - **SYCL integer ADM AIM pass ([ADR-1362](../adr/1362-sycl-integer-adm-aim-device-pass.md))**:
-  `integer_adm_sycl.cpp` computes aim / adm3 on the device and finalises them
-  in the CPU's float arithmetic (bit-exact); adm2 keeps the double finaliser.
+  `integer_adm_sycl.cpp` computes aim / adm3 on the device and finalises every
+  ADM output in the CPU's float arithmetic (bit-exact with the CPU).
   The decouple quotient is clamped in int64 before narrowing. Details and the
   mirror list for upstream `integer_adm.c` changes:
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
