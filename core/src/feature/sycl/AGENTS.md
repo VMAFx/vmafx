@@ -541,8 +541,11 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   exact fp32 pairs (`ff_div`, `ff_add`, `ff_mul` in `sycl_exact_fp.h`) summed
   in a fixed tree whose shape depends only on the plane size
   (`ss2s_reduce_groups`): deterministic and device-independent, within about
-  1e-11 of the CPU. **On rebase**: do not reintroduce a host stage or a
-  mid-frame wait (`test_sycl_kernel_source_contract.py` fails), do not replace
+  1e-11 of the CPU. `check_context_sycl` routes the inputs init rejects
+  (4:0:0, a side below 8) to the CPU `ssimulacra2` (ADR-1324 / ADR-1359); keep
+  it in step with `init_fex_sycl`. **On rebase**: do not reintroduce a host
+  stage or a mid-frame wait (`test_sycl_kernel_source_contract.py` fails),
+  do not replace
   the pair arithmetic with plain fp32 or `sycl::reduction`, and keep the
   per-channel sum order (L1, L4, artifact, artifact^4, detail, detail^4) that
   `ss2s_scale_norms` reads. Two blur variants measured slower (ADR-1363): the

@@ -45,6 +45,7 @@
  * passes, mirroring test_sycl_motion3_parity.c.
  */
 
+#include <errno.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -221,9 +222,41 @@ static char *test_ssimulacra2_cpu_sycl_parity(void)
     return NULL;
 }
 
+/* ADR-1324 / ADR-1359: inputs the twin's init rejects go to the CPU extractor
+ * instead. Boundaries: 8x8 is the smallest accepted frame; 4:0:0 has no
+ * chroma to convert. Needs no device. */
+static char *test_ssimulacra2_sycl_context_check(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2_sycl");
+    mu_assert("ssimulacra2_sycl extractor must be registered", fex != NULL);
+    mu_assert("ssimulacra2_sycl declares a context check", fex->context_check != NULL);
+    mu_assert("ssimulacra2_sycl falls back to the CPU extractor",
+              fex->context_fallback_name && !strcmp(fex->context_fallback_name, "ssimulacra2"));
+    return NULL;
+}
+
+static char *test_ssimulacra2_sycl_context_bounds(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2_sycl");
+    mu_assert("ssimulacra2_sycl declares a context check", fex && fex->context_check);
+    mu_assert("8x8 4:2:0 is accepted",
+              fex->context_check(fex, VMAF_PIX_FMT_YUV420P, 8u, 8u, 8u) == 0);
+    mu_assert("4K 4:4:4 10-bit is accepted",
+              fex->context_check(fex, VMAF_PIX_FMT_YUV444P, 10u, 3840u, 2160u) == 0);
+    mu_assert("7x8 is rejected",
+              fex->context_check(fex, VMAF_PIX_FMT_YUV420P, 8u, 7u, 8u) == -ENOTSUP);
+    mu_assert("8x7 is rejected",
+              fex->context_check(fex, VMAF_PIX_FMT_YUV422P, 8u, 8u, 7u) == -ENOTSUP);
+    mu_assert("4:0:0 is rejected",
+              fex->context_check(fex, VMAF_PIX_FMT_YUV400P, 8u, 576u, 324u) == -ENOTSUP);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_ssimulacra2_sycl_registered);
+    mu_run_test(test_ssimulacra2_sycl_context_check);
+    mu_run_test(test_ssimulacra2_sycl_context_bounds);
     mu_run_test(test_ssimulacra2_cpu_sycl_parity);
     return NULL;
 }

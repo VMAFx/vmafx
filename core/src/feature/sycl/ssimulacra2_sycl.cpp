@@ -1163,6 +1163,18 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
     return 0;
 }
 
+/* ADR-1324 / ADR-1359: the inputs init rejects (no chroma planes, a side
+ * below 8) go to the CPU extractor when the twin was picked for a model or a
+ * `--backend sycl --feature ssimulacra2` request. */
+int check_context_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                       unsigned w, unsigned h)
+{
+    (void)fex;
+    (void)bpc;
+    const bool chroma = pix_fmt != VMAF_PIX_FMT_YUV400P && pix_fmt != VMAF_PIX_FMT_UNKNOWN;
+    return (chroma && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
+}
+
 bool ss2s_picture_matches(const Ssimu2StateSycl *s, const VmafPicture *pic)
 {
     if (!pic || pic->bpc != s->bpc)
@@ -1293,4 +1305,6 @@ extern "C" VmafFeatureExtractor vmaf_fex_ssimulacra2_sycl = {
     .priv_size = sizeof(Ssimu2StateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features_ssimulacra2_sycl,
+    .context_check = check_context_sycl,
+    .context_fallback_name = "ssimulacra2",
 };

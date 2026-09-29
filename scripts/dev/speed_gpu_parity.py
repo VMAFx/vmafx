@@ -13,8 +13,9 @@ frame count and the maximum absolute difference per output, then times both as
 ``(t(22) - t(2)) / 20`` milliseconds per frame, the median of ``--reps``
 repetitions.
 
-A GPU twin must be requested by its registered name: ``--feature speed_chroma``
-resolves to the CPU extractor whatever ``--backend`` says.
+The twin is requested by its registered name, so the run measures it even
+where ``--backend <gpu> --feature <cpu name>`` would fall back to the CPU
+extractor (ADR-1359).
 
 Usage::
 

@@ -69,8 +69,9 @@ keeping the colour conversion, XYB, downsample and final combine on the host.
 `ssimulacra2_sycl` runs the whole frame on the device (ADR-1363): it uploads the
 raw Y/U/V planes once, converts to linear RGB and XYB, blurs, forms the SSIM and
 edge-difference sums and downsamples on the device, and reads back one 864-byte
-block of per-scale sums. Request it by name — `--feature ssimulacra2` runs the
-CPU extractor whatever `--backend` says:
+block of per-scale sums. Name it, or pass `--backend sycl --feature ssimulacra2`,
+which maps to the twin for inputs it can run and to the CPU extractor otherwise
+(ADR-1359; `ssimulacra2_sycl` needs chroma planes and at least 8x8):
 
 ```shell
 vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 \
