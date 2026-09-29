@@ -67,6 +67,21 @@
   the host's core count.
 
 
+- **`float_ssim` runs on SYCL at 1080p and 4K (ADR-1370).** The SYCL twin
+  implemented only scale 1, so `--backend sycl --feature float_ssim` and every
+  model on a picture with a short side of 384 px or more computed the feature
+  on the CPU and printed `float_ssim_sycl cannot run 3840x2160 8-bit pictures
+  with these options`. `float_ssim_sycl` now applies `float_ssim`'s automatic
+  (or explicit, `scale=2..10`) decimation on the device, with planes identical
+  to the CPU's bit for bit, and uploads raw samples instead of converting both
+  planes to fp32 on the host. At 3840x2160 8-bit on an Arc B580 it takes 6.7 ms
+  per frame, against 11.0 ms for the CPU extractor on 16 threads and 29.3 ms
+  for the old fallback at the default thread count; scale 1 at 4K drops from
+  10.6 to 7.8 ms. `enable_lcs`, `enable_db` and `clip_db` work at every scale.
+  Only a plane that decimates below 11x11 still falls back. See
+  [the SYCL backend guide](docs/backends/sycl/overview.md#float_ssim-decimation-on-the-device-2026-09-29).
+
+
 - **The SYCL SpEED twins run entirely on the device and match the CPU bit for
   bit (ADR-1358).** `speed_chroma_sycl` and `speed_temporal_sycl` no longer
   filter, factorise the 25x25 covariance or wait on the queue on the host
@@ -220,6 +235,15 @@
   `enable_chroma` option and `_cb` / `_cr` outputs that the `ssim` extractor
   does not have; it lists `enable_db` and `clip_db`
   ([SSIM](docs/metrics/ssim.md#options)).
+
+
+- **`float_ssim_sycl` with `enable_db` no longer reports tens of dB below the
+  CPU on near-identical frames.** The CPU rounds each frame's SSIM mean to fp32
+  before converting it to dB, so a frame within half an fp32 step of 1 scores
+  exactly 1 and reports `+inf` or the `clip_db` ceiling; the twin kept the
+  double mean and reported a finite value (93.6 dB against the CPU's 121 dB on
+  the first frames of a 4K pair). The twin now rounds the `float_ssim` and
+  `float_ssim_l/c/s` means the same way; linear scores move by less than 6e-8.
 
 
 - **`motion_sycl` matches the CPU `motion` exactly.** The SYCL twin blurred

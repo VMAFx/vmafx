@@ -253,7 +253,7 @@ feature and the reason, when:
 | --- | --- |
 | The backend has no twin of the extractor | `vmaf: warning: --feature brisque: the sycl backend has no twin of this extractor; computing it on the CPU` |
 | The twin lacks an option you set, or implements only its default value | `vmaf: warning: --feature float_motion: float_motion_sycl cannot honour option 'motion_filter_size'; computing it on the CPU` |
-| The twin cannot run this input size and bit depth with these options | `vmaf: warning: --feature float_ssim: float_ssim_sycl cannot run 1920x1080 8-bit pictures with these options; computing it on the CPU` |
+| The twin cannot run this input size and bit depth with these options | `vmaf: warning: --feature float_ssim: float_ssim_sycl cannot run 100x100 8-bit pictures with these options; computing it on the CPU` (with `float_ssim=scale=10`, which leaves less than SSIM's 11x11 window) |
 | A non-zero `--gpumask` disables the backend's extractors | `vmaf: warning: --feature ciede: cuda feature extraction is disabled (non-zero --gpumask); computing it on the CPU` |
 
 The run carries on after a warning; the [JSON receipt](#backend-receipt-in-json-output)

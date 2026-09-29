@@ -135,6 +135,15 @@ linked AGENTS.md before resolving conflicts.
   mirror list for upstream `integer_adm.c` changes:
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 
+- **SYCL `float_ssim` decimation mirrors the CPU's ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md))**:
+  `float_ssim_sycl` reproduces `ssim.c`'s box low-pass and
+  `iqa/decimate.c::iqa_decimate()` bit for bit (int64 fixed-point window sum,
+  `KBND_SYMMETRIC`, `picture_copy()` scaling) and sizes its planes with the
+  shared `iqa/decimate_dim.h`. A change on the CPU side of that pipeline
+  changes `core/src/feature/sycl/integer_ssim_sycl.cpp` in the same PR. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md) and
+  [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
+
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

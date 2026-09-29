@@ -496,6 +496,8 @@ the deviation:
   (`integer_ssim_sycl`, `float_ssim_sycl`, `float_ms_ssim_sycl`,
   `psnr_sycl`, `psnr_hvs_sycl`); `float_ansnr` was removed per
   [ADR-0865](../../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md).
+  `float_ssim_sycl` decimates on the device at every `float_ssim` scale
+  ([below](#float_ssim-decimation-on-the-device-2026-09-29)).
 - **Float-twin extractors (`float_*`)** — the SYCL backend
   implements PSNR / Motion / VIF / ADM
   ([ADR-0202](../../adr/0202-float-adm-cuda-sycl.md)).
@@ -835,6 +837,68 @@ uploads them on the queue that runs the motion kernels, so the frame keeps a
 single wait, in `collect()`. On a 4K clip the host spends 0.6 ms per frame on
 it instead of 5.4 ms on the UHD 770 (0.55 instead of 0.89 ms on the B580),
 and the scores are unchanged.
+
+## float_ssim decimation on the device (2026-09-29)
+
+CPU `float_ssim` shrinks both pictures before it computes SSIM, by a factor
+it picks from the short side: `max(1, round(min(w, h) / 256))`, so 1 below
+384 px, 2 at 853x480, 4 at 1920x1080 and 8 at 3840x2160. `scale=N` (2 to 10)
+forces the factor and `scale=1` turns it off. `float_ssim_sycl` used to
+implement only factor 1, so at 1080p and 4K the CPU extractor ran instead
+and `--backend sycl` printed
+`float_ssim_sycl cannot run 3840x2160 8-bit pictures with these options`.
+
+Since [ADR-1370](../../adr/1370-sycl-float-ssim-device-decimation.md) the
+twin does the whole reduction on the GPU. It uploads the raw luma samples
+(one byte each at 8 bits, instead of four after a host fp32 conversion),
+averages each `N x N` block with the CPU's rounding, and runs SSIM on the
+smaller planes. The reduced planes are identical to the CPU's bit for bit at
+8, 10, 12 and 16 bits, for every factor and for odd sizes. The run needs no
+option and prints no warning:
+
+```bash
+vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 \
+    --backend sycl --feature float_ssim --json -o out.json
+# out.json: "feature_backends": [{"extractor": "float_ssim_sycl", "backend": "sycl"}]
+```
+
+`enable_lcs`, `enable_db` and `clip_db` work at every factor. The CPU
+extractor still runs, with the usual warning, only when the reduced picture
+is smaller than SSIM's 11x11 window (for example 100x100 with `scale=10`).
+
+Agreement with `--backend cpu` (largest difference over all frames, the same
+on an Arc B580 and a UHD 770):
+
+| Input | Factor | `float_ssim` |
+|---|---|---|
+| Netflix 576x324, 48 frames | auto (1), 2, 3 | 3.0e-7, 6.0e-8, 6.0e-8 |
+| BBB 1920x1080, 24 frames | auto (4), 3 | 4.3e-5, 3.7e-5 |
+| BBB 3840x2160, 24 frames | auto (8) | 4.3e-5 |
+| BBB 853x480 4:4:4, 24 frames | auto (2), 3 | 4.5e-5, 4.8e-5 |
+
+What remains is the twin's fp32 SSIM arithmetic, which uses the combined
+Wang formula rather than the CPU's luminance x contrast x structure product
+([Research-0985](../../research/0985-sycl-parity-divergence-2026-06-03.md)).
+The automatic factors stay inside the 5e-5 cross-backend tolerance; an
+explicit `scale=1` or `scale=2` on BBB 1080p is 7.8e-5 or 5.6e-5 from the CPU,
+as `scale=1` was before. The dB form magnifies these differences near 1.
+
+Time per frame at 3840x2160, 8-bit, whole `vmaf` run, median of three:
+
+| Configuration | ms / frame |
+|---|---|
+| CPU `float_ssim`, `--threads 16` (Core i9-12900K) | 11.0 |
+| `float_ssim_sycl`, Arc B580 | 6.7 |
+| `float_ssim_sycl`, UHD 770 | 12.0 |
+| Before: `--backend sycl` fell back to the CPU, default threads | 29.3 |
+
+The B580 figure is 0.6 ms above what the `vmaf` tool itself spends per 4K
+frame. With `scale=1` the B580 drops from 10.6 to 7.8 ms because of the
+smaller upload. [Research-2130](../../research/2130-sycl-float-ssim-device-decimation.md)
+has the exactness argument and every measurement.
+
+The CUDA, HIP and Metal `float_ssim` twins still compute factor 1 only and
+fall back above it; their porting notes are in [`state.md`](../../state.md).
 
 ## Licensing of the SYCL kernels (ADR-1250)
 

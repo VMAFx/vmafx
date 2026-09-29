@@ -177,7 +177,11 @@ feature/
   not mark `scale` default-only, narrow its range, or retry arbitrary init
   failures on CPU. Extend
   `test_gpu_float_ssim_auto_scale_contract.py` whenever this capability
-  changes.
+  changes. **Since ADR-1370 `float_ssim_sycl` decimates on the device**
+  (bit-identical to `iqa_decimate()`); its check refuses only a decimated
+  plane under 11x11 or a scale above 128 via
+  `float_ssim_geometry_supported()`. CUDA, HIP and Metal keep the scale-1
+  rule until they port the same kernel.
 - **ANSNR / float_ansnr feature extractor removal (ADR-0865)**:
   `ansnr` and `float_ansnr` (CPU scalar, AVX2, AVX-512, NEON, CUDA, HIP, SYCL,
   Metal) were sunset and completely removed from library. ANSNR is legacy

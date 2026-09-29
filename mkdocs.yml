@@ -1479,6 +1479,7 @@ nav:
         - "ADR-1364: windows-sycl-msvc-device-link": adr/1364-windows-sycl-msvc-device-link.md
         - "ADR-1365: sycl-twin-cpu-option-parity": adr/1365-sycl-twin-cpu-option-parity.md
         - "ADR-1368: oneapi-release-image-debian13": adr/1368-oneapi-release-image-debian13.md
+        - "ADR-1370: sycl-float-ssim-device-decimation": adr/1370-sycl-float-ssim-device-decimation.md
         - "ADR-1371: sycl-motion-diff-first-pipeline": adr/1371-sycl-motion-diff-first-pipeline.md
       - "By tag":
         - Overview: adr/by-tag/index.md

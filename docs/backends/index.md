@@ -168,22 +168,30 @@ the decimation boundary and is not a multiple of the kernel block width. When
 adding a parity test, add it to the large-fixture list in
 `core/test/meson.build` too.
 
-All four GPU `float_ssim` twins remain v1 **scale=1-only** extractors. For
-automatic model dispatch through the host-picture API, libvmaf now evaluates
-the first picture before backend initialization: auto-scale `1` stays on the
-selected CUDA, SYCL, HIP or Metal twin, while a resolved value above `1`
-replaces only that context with CPU `float_ssim` and preserves its options
+The CUDA, HIP and Metal `float_ssim` twins remain v1 **scale=1-only**
+extractors. For automatic model dispatch through the host-picture API, libvmaf
+evaluates the first picture before backend initialization: auto-scale `1`
+stays on the selected twin, while a resolved value above `1` replaces only
+that context with CPU `float_ssim` and preserves its options
 ([ADR-1324](../adr/1324-gpu-float-ssim-auto-scale-fallback.md)). This makes
-common broadcast dimensions complete without pretending the GPU implements
-decimation.
+common broadcast dimensions complete without pretending those backends
+implement decimation.
 
-Explicitly naming `float_ssim_{cuda,sycl,hip,metal}` retains the direct
-capability contract: auto at `min(w, h) >= 384` returns `-EINVAL`, and
-`scale=1` opts into full-resolution GPU SSIM. Pinning `scale=1` on the GPU
-while leaving the CPU on `auto` still compares different quantities rather
-than two backends. The SYCL device-buffer-only `vmaf_read_pictures_sycl()`
-path cannot run a CPU extractor and therefore also retains its scale-1-only
-contract until SYCL decimation is implemented.
+`float_ssim_sycl` implements the decimation itself: it reduces both pictures
+on the device exactly as the CPU does, bit for bit, so it serves 1080p and 4K
+at the automatic scale and every explicit `scale`
+([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md),
+[SYCL guide](sycl/overview.md#float_ssim-decimation-on-the-device-2026-09-29)).
+It falls back only when the reduced picture is smaller than SSIM's 11x11
+window.
+
+Explicitly naming `float_ssim_{cuda,hip,metal}` retains the direct capability
+contract: auto at `min(w, h) >= 384` returns `-EINVAL`, and `scale=1` opts
+into full-resolution GPU SSIM. Pinning `scale=1` on the GPU while leaving the
+CPU on `auto` still compares different quantities rather than two backends.
+The SYCL device-buffer-only `vmaf_read_pictures_sycl()` path has no host
+pictures, so `float_ssim_sycl` cannot run there and fails its first frame with
+an error.
 
 ## Related
 

@@ -12,12 +12,18 @@
  *  batch 2 part 1b).
  *
  *  Self-contained submit / collect — does *not* register with
- *  vmaf_sycl_graph_register because shared_frame is luma-only
- *  packed at uint width and SSIM needs float [0, 255]
- *  intermediates with picture_copy normalisation. Same approach
- *  as ciede_sycl (PR #137).
+ *  vmaf_sycl_graph_register (see core/src/feature/sycl/AGENTS.md).
+ *  Same approach as ciede_sycl (PR #137).
  *
-*  Two-pass design mirrors ssim_vulkan / ssim_cuda:
+ *  Per frame (ADR-1370), all on the device, one queue wait in collect:
+ *    0. the raw luma samples (uint8 or uint16, packed) go up in one DMA
+ *       per plane; launch_decimate() applies picture_copy()'s
+ *       normalisation and ssim.c's scale x scale box low-pass +
+ *       decimation (iqa_decimate(), KBND_SYMMETRIC edges) with the
+ *       CPU's rounding: every product is the CPU's fp32 product and
+ *       the CPU's exact double sum is reproduced in int64 fixed point,
+ *       so the decimated planes are bit-identical to the CPU's. Scale 1
+ *       is the plain picture_copy() conversion.
  *    1. horizontal 11-tap separable Gaussian over ref / cmp /
  *       ref² / cmp² / ref·cmp into 5 device float buffers.
  *       SLM-staged (SY-2, ADR-0458): 26-float tile per WG row
@@ -26,7 +32,7 @@
  *       per-WG float partial sums via sycl::reduce_over_group.
  *
  *  Host accumulates partials in `double`, divides by
- *  (W-10)·(H-10) and emits `float_ssim`.
+ *  (W'-10)·(H'-10) over the decimated W' x H' and emits `float_ssim`.
  *
  *  Options mirror CPU float_ssim.c. `enable_lcs` switches pass 2 to a
  *  variant that also reduces the per-pixel luminance / contrast /
@@ -35,9 +41,11 @@
  *  `float_ssim_{l,c,s}`. `enable_db` / `clip_db` act on the host through
  *  the shared nonfinite_score.h SSIM helpers.
  *
- *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
- *  back to CPU before init when auto resolves above 1; direct requests keep
- *  the -EINVAL capability error.
+ *  `scale` resolves as in ssim.c::compute_ssim (0 = auto from the short
+ *  side). The ADR-1324 context check refuses only a geometry the device
+ *  cannot compute exactly (decimated plane under the 11x11 Gaussian, or a
+ *  scale past SSIM_MAX_EXACT_SCALE); model dispatch and `--feature` then
+ *  run the CPU float_ssim, direct requests keep the -EINVAL init error.
  *  fp64-free (Intel Arc A380 lacks native fp64).
  */
 
@@ -56,7 +64,7 @@
 #include "feature/nonfinite_score.h"
 #include "log.h"
 #include "picture.h"
-#include "../picture_copy.h"
+#include "../iqa/decimate_dim.h"
 #include "sycl/common.h"
 
 namespace
@@ -65,6 +73,18 @@ namespace
 constexpr size_t SSIM_WG_X = 16;
 static constexpr size_t SSIM_WG_Y = 8;
 static constexpr int SSIM_K = 11;
+
+/* ADR-1370 fixed point of the decimation sum. ssim.c's low-pass tap is
+ * 1.0f / (scale * scale) and every sample is a multiple of 2^-8 (16-bit
+ * picture_copy()), so each fp32 product is a multiple of 2^-52 up to
+ * scale 128, and a whole window sums below 2^8.001: the int64 sum in units
+ * of 2^-52 is exact, as is the CPU's double sum over that range.
+ * Converting it to fp32 once, round-to-nearest-even, therefore gives the
+ * CPU's (float)sum bit for bit. Past scale 128 (short side above 32767
+ * px) the CPU's double sum stops being exact; the context check refuses. */
+constexpr float SSIM_DECIMATE_FIXED_ONE = 0x1p52f;
+constexpr float SSIM_DECIMATE_FIXED_INV = 0x1p-52f;
+constexpr int SSIM_MAX_EXACT_SCALE = 128;
 
 /* Same 11-tap normalised Gaussian as the Vulkan + CUDA twins —
  * matches g_gaussian_window_h in iqa/ssim_tools.h byte-for-byte. */
@@ -90,6 +110,17 @@ struct SsimStateSycl {
     /* vmaf_ssim_max_db(): +inf unless clip_db. */
     double max_db;
 
+    /* ADR-1370 decimation: resolved scale, the decimated plane the SSIM
+     * passes run on (== width x height at scale 1), and the raw-sample
+     * layout picture_copy() reads (1 or 2 bytes, multiplied by
+     * sample_scale = 1 / its divisor). tap_weight = ssim.c's low-pass tap. */
+    int scale;
+    unsigned dec_width;
+    unsigned dec_height;
+    unsigned sample_bytes;
+    float sample_scale;
+    float tap_weight;
+
     unsigned w_horiz;
     unsigned h_horiz;
     unsigned w_final;
@@ -104,10 +135,12 @@ struct SsimStateSycl {
     /* SYCL state back-pointer. */
     VmafSyclState *sycl_state;
 
-    /* Host-pinned float ref / cmp staging (post picture_copy). */
-    float *h_ref;
-    float *h_cmp;
-    /* Device USM ref / cmp + 5 intermediates + WG partials. */
+    /* Host-pinned packed raw luma staging and its device copy. */
+    void *h_ref_raw;
+    void *h_cmp_raw;
+    void *d_ref_raw;
+    void *d_cmp_raw;
+    /* Device USM decimated float ref / cmp + 5 intermediates + WG partials. */
     float *d_ref;
     float *d_cmp;
     float *d_ref_mu;
@@ -187,6 +220,121 @@ struct SsimLcs {
     float contrast;
     float structure;
 };
+
+} // namespace
+
+namespace
+{
+
+/* ADR-1370: everything launch_decimate() reads, captured by value. */
+struct FloatDecimateArgs {
+    const void *reference;
+    const void *comparison;
+    float *reference_out;
+    float *comparison_out;
+    unsigned width;
+    unsigned height;
+    unsigned output_width;
+    unsigned output_height;
+    int scale;
+    float sample_scale;
+    float tap_weight;
+};
+
+/* iqa/convolve.c::KBND_SYMMETRIC: period-2n mirror, edge sample repeated.
+ * Identity inside the plane, so it also covers iqa_filter_pixel()'s
+ * direct-read interior path. */
+static inline int symmetric_index(int position, int extent)
+{
+    const int period = 2 * extent;
+    int folded = position % period;
+    if (folded < 0) {
+        folded += period;
+    }
+    return folded >= extent ? period - folded - 1 : folded;
+}
+
+/* fp32 product -> integer units of 2^-52; exact (SSIM_DECIMATE_FIXED_ONE). */
+static inline std::int64_t decimate_fixed(float product)
+{
+    const float scaled = product * SSIM_DECIMATE_FIXED_ONE;
+    return static_cast<std::int64_t>(scaled);
+}
+
+} // namespace
+
+namespace
+{
+
+/* One output of iqa_decimate() with ssim.c's low-pass kernel: the
+ * picture_copy() value times the tap in fp32 (the CPU's `prod`), summed
+ * exactly and rounded to fp32 once, as the CPU's `(float)(double sum)`.
+ * Row r of the window is offset r - scale / 2, iqa_filter_pixel()'s
+ * -vc .. vc - kh_even for odd and even scales alike. */
+template <typename T>
+static inline float decimate_sample(const T *plane, const FloatDecimateArgs &args, int centre_x,
+                                    int centre_y)
+{
+    const int half = args.scale / 2;
+    std::int64_t sum = 0;
+    for (int row = 0; row < args.scale; ++row) {
+        const int source_y = symmetric_index(centre_y + row - half, (int)args.height);
+        const size_t row_offset = (size_t)source_y * args.width;
+        for (int column = 0; column < args.scale; ++column) {
+            const int source_x = symmetric_index(centre_x + column - half, (int)args.width);
+            const float sample = (float)plane[row_offset + (size_t)source_x] * args.sample_scale;
+            const float product = sample * args.tap_weight;
+            sum += decimate_fixed(product);
+        }
+    }
+    const sycl::vec<std::int64_t, 1> exact{sum};
+    const float rounded = exact.convert<float, sycl::rounding_mode::rte>()[0];
+    return rounded * SSIM_DECIMATE_FIXED_INV;
+}
+
+} // namespace
+
+namespace
+{
+
+/* Both planes in one launch. The windows tile the plane without overlap
+ * (stride == window), so each sample is read by one work-item: there is
+ * no tap reuse for an SLM tile to exploit (SY-2 targets overlapping
+ * stencils). */
+template <typename T>
+static void launch_decimate_typed(sycl::queue &queue, const FloatDecimateArgs &args)
+{
+    const size_t global_x = ((args.output_width + SSIM_WG_X - 1) / SSIM_WG_X) * SSIM_WG_X;
+    const size_t global_y = ((args.output_height + SSIM_WG_Y - 1) / SSIM_WG_Y) * SSIM_WG_Y;
+    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x},
+                                  sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
+            const size_t x = item.get_global_id(1);
+            const size_t y = item.get_global_id(0);
+            if (x >= args.output_width || y >= args.output_height) {
+                return;
+            }
+            const int centre_x = (int)x * args.scale;
+            const int centre_y = (int)y * args.scale;
+            const size_t index = y * args.output_width + x;
+            args.reference_out[index] =
+                decimate_sample(static_cast<const T *>(args.reference), args, centre_x, centre_y);
+            args.comparison_out[index] =
+                decimate_sample(static_cast<const T *>(args.comparison), args, centre_x, centre_y);
+        });
+    });
+}
+
+static void launch_decimate(sycl::queue &queue, const FloatDecimateArgs &args,
+                            unsigned sample_bytes)
+{
+    if (sample_bytes == 2U) {
+        launch_decimate_typed<std::uint16_t>(queue, args);
+    } else {
+        launch_decimate_typed<std::uint8_t>(queue, args);
+    }
+}
 
 } // namespace
 
@@ -476,6 +624,20 @@ static int compute_scale(unsigned w, unsigned h, int override_)
     return scaled < 1 ? 1 : scaled;
 }
 
+/* ssim.c decimates only above scale 1, to iqa_decimate_dim() samples. */
+static unsigned decimated_extent(unsigned extent, int scale)
+{
+    return scale > 1 ? (unsigned)iqa_decimate_dim((int)extent, scale) : extent;
+}
+
+/* ADR-1370: what the device computes exactly — a decimated plane that holds
+ * the 11x11 Gaussian and a scale whose window sum is exact in int64. */
+static bool float_ssim_geometry_supported(unsigned w, unsigned h, int scale)
+{
+    return scale <= SSIM_MAX_EXACT_SCALE && decimated_extent(w, scale) >= (unsigned)SSIM_K &&
+           decimated_extent(h, scale) >= (unsigned)SSIM_K;
+}
+
 /* ADR-1324: dimensions are unavailable to the earlier option-value gate. */
 static int check_context_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                               unsigned w, unsigned h)
@@ -483,7 +645,8 @@ static int check_context_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
     (void)pix_fmt;
     (void)bpc;
     const auto *s = static_cast<const SsimStateSycl *>(fex->priv);
-    return compute_scale(w, h, s->scale_override) == 1 ? 0 : -ENOTSUP;
+    const int scale = compute_scale(w, h, s->scale_override);
+    return float_ssim_geometry_supported(w, h, scale) ? 0 : -ENOTSUP;
 }
 
 } // namespace
@@ -512,9 +675,7 @@ static const VmafOption options_ssim_sycl[] = {
     },
     {
         .name = "scale",
-        .help = "decimation scale factor (0=auto, 1=no downscaling). "
-                "v1: direct GPU use requires scale=1; model dispatch falls back to CPU "
-                "when auto resolves above 1.",
+        .help = "decimation scale factor (0=auto, 1=no downscaling, 2-10=explicit)",
         .offset = offsetof(SsimStateSycl, scale_override),
         .type = VMAF_OPT_TYPE_INT,
         .default_val = {.i = 0},
@@ -527,28 +688,48 @@ static const VmafOption options_ssim_sycl[] = {
 namespace
 {
 
+/* picture_copy(): 10 / 12 / 16-bit samples are uint16 divided by 4 / 16 /
+ * 256 (exact, so a reciprocal multiply matches); every other depth is read
+ * as uint8 unscaled. */
+static void configure_sample_layout(SsimStateSycl *s, unsigned bpc)
+{
+    s->sample_bytes = 2U;
+    if (bpc == 10U) {
+        s->sample_scale = 1.0f / 4.0f;
+    } else if (bpc == 12U) {
+        s->sample_scale = 1.0f / 16.0f;
+    } else if (bpc == 16U) {
+        s->sample_scale = 1.0f / 256.0f;
+    } else {
+        s->sample_bytes = 1U;
+        s->sample_scale = 1.0f;
+    }
+}
+
 static int configure_float_ssim(SsimStateSycl *s, unsigned bpc, unsigned width, unsigned height)
 {
     const int scale = compute_scale(width, height, s->scale_override);
-    if (scale != 1) {
+    if (!float_ssim_geometry_supported(width, height, scale)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssim_sycl: v1 supports scale=1 only (auto-detected scale=%d at %ux%u). "
-                 "Pin --feature float_ssim_sycl:scale=1 if intended.\n",
-                 scale, width, height);
-        return -EINVAL;
-    }
-    if (width < (unsigned)SSIM_K || height < (unsigned)SSIM_K) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "ssim_sycl: input %ux%u smaller than 11x11 Gaussian footprint.\n", width, height);
+                 "ssim_sycl: %ux%u at scale=%d decimates to %ux%u; needs at least the 11x11 "
+                 "Gaussian footprint and scale <= %d.\n",
+                 width, height, scale, decimated_extent(width, scale),
+                 decimated_extent(height, scale), SSIM_MAX_EXACT_SCALE);
         return -EINVAL;
     }
     s->width = width;
     s->height = height;
     s->bpc = bpc;
-    s->w_horiz = width - (SSIM_K - 1);
-    s->h_horiz = height;
-    s->w_final = width - (SSIM_K - 1);
-    s->h_final = height - (SSIM_K - 1);
+    s->scale = scale;
+    s->dec_width = decimated_extent(width, scale);
+    s->dec_height = decimated_extent(height, scale);
+    /* ssim.c::ssim_low_pass_alloc: inv2 = 1.0f / (float)(scale * scale). */
+    s->tap_weight = 1.0f / (float)(scale * scale);
+    configure_sample_layout(s, bpc);
+    s->w_horiz = s->dec_width - (SSIM_K - 1);
+    s->h_horiz = s->dec_height;
+    s->w_final = s->dec_width - (SSIM_K - 1);
+    s->h_final = s->dec_height - (SSIM_K - 1);
     s->wg_count_x = (s->w_final + (unsigned)SSIM_WG_X - 1) / (unsigned)SSIM_WG_X;
     s->wg_count_y = (s->h_final + (unsigned)SSIM_WG_Y - 1) / (unsigned)SSIM_WG_Y;
     s->wg_count = s->wg_count_x * s->wg_count_y;
@@ -583,11 +764,14 @@ namespace
 
 static void allocate_float_ssim(SsimStateSycl *s)
 {
-    const size_t input_bytes = (size_t)s->width * s->height * sizeof(float);
+    const size_t raw_bytes = (size_t)s->width * s->height * s->sample_bytes;
+    const size_t input_bytes = (size_t)s->dec_width * s->dec_height * sizeof(float);
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
     const size_t partials_bytes = (size_t)s->wg_count * sizeof(float);
-    s->h_ref = allocate_host<float>(s->sycl_state, input_bytes);
-    s->h_cmp = allocate_host<float>(s->sycl_state, input_bytes);
+    s->h_ref_raw = allocate_host<void>(s->sycl_state, raw_bytes);
+    s->h_cmp_raw = allocate_host<void>(s->sycl_state, raw_bytes);
+    s->d_ref_raw = allocate_device<void>(s->sycl_state, raw_bytes);
+    s->d_cmp_raw = allocate_device<void>(s->sycl_state, raw_bytes);
     s->d_ref = allocate_device<float>(s->sycl_state, input_bytes);
     s->d_cmp = allocate_device<float>(s->sycl_state, input_bytes);
     s->d_ref_mu = allocate_device<float>(s->sycl_state, horiz_bytes);
@@ -608,12 +792,42 @@ static void allocate_float_ssim(SsimStateSycl *s)
 namespace
 {
 
+/* Packs the first `width` samples of every luma row into pinned staging so
+ * each plane goes up in one DMA. Shared by float_ssim_sycl (ADR-1370) and
+ * integer_ssim_sycl. */
+template <typename T>
+static void pack_integer_plane(T *destination, const VmafPicture *picture, unsigned width,
+                               unsigned height)
+{
+    const auto *source = static_cast<const uint8_t *>(picture->data[0]);
+    for (unsigned y = 0; y < height; ++y) {
+        __builtin_memcpy(destination + (size_t)y * width, source + (size_t)y * picture->stride[0],
+                         (size_t)width * sizeof(T));
+    }
+}
+
+/* The samples picture_copy() reads: uint16 at 10 / 12 / 16 bits, else the
+ * first `width` bytes of each row. */
+static void stage_raw_luma(const SsimStateSycl *s, const VmafPicture *picture, void *staging)
+{
+    if (s->sample_bytes == 2U) {
+        pack_integer_plane(static_cast<std::uint16_t *>(staging), picture, s->width, s->height);
+    } else {
+        pack_integer_plane(static_cast<std::uint8_t *>(staging), picture, s->width, s->height);
+    }
+}
+
+} // namespace
+
+namespace
+{
+
 static bool float_ssim_allocations_complete(const SsimStateSycl *s)
 {
     const bool lcs_complete = !s->enable_lcs || (s->d_lcs_partials && s->h_lcs_partials);
-    return s->h_ref && s->h_cmp && s->d_ref && s->d_cmp && s->d_ref_mu && s->d_cmp_mu &&
-           s->d_ref_sq && s->d_cmp_sq && s->d_refcmp && s->d_partials && s->h_partials &&
-           lcs_complete;
+    return s->h_ref_raw && s->h_cmp_raw && s->d_ref_raw && s->d_cmp_raw && s->d_ref && s->d_cmp &&
+           s->d_ref_mu && s->d_cmp_mu && s->d_ref_sq && s->d_cmp_sq && s->d_refcmp &&
+           s->d_partials && s->h_partials && lcs_complete;
 }
 
 } // namespace
@@ -700,19 +914,35 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)
         return -EINVAL;
+    if (!ref_pic || !dist_pic) {
+        /* vmaf_read_pictures_sycl() passes no host pictures; this twin
+         * uploads its own luma and does not read the shared frame. */
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssim_sycl: needs host pictures\n");
+        return -EINVAL;
+    }
     sycl::queue &q = *qptr;
 
-    /* Host-side picture_copy → uint sample → float [0, 255]
-     * (matches CPU float_ssim.c::extract). The destination is
-     * tightly packed at width*sizeof(float). */
-    picture_copy(s->h_ref, (ptrdiff_t)((size_t)s->width * sizeof(float)), ref_pic, /*offset=*/0,
-                 ref_pic->bpc, 0);
-    picture_copy(s->h_cmp, (ptrdiff_t)((size_t)s->width * sizeof(float)), dist_pic, 0,
-                 dist_pic->bpc, 0);
-
-    const size_t input_bytes = (size_t)s->width * s->height * sizeof(float);
-    q.memcpy(s->d_ref, s->h_ref, input_bytes);
-    q.memcpy(s->d_cmp, s->h_cmp, input_bytes);
+    /* ADR-1370: raw luma up (one DMA per plane), then picture_copy()'s
+     * normalisation and ssim.c's decimation on the device. No host wait:
+     * collect() waits once for the read-back. */
+    stage_raw_luma(s, ref_pic, s->h_ref_raw);
+    stage_raw_luma(s, dist_pic, s->h_cmp_raw);
+    const size_t raw_bytes = (size_t)s->width * s->height * s->sample_bytes;
+    q.memcpy(s->d_ref_raw, s->h_ref_raw, raw_bytes);
+    q.memcpy(s->d_cmp_raw, s->h_cmp_raw, raw_bytes);
+    launch_decimate(q,
+                    {.reference = s->d_ref_raw,
+                     .comparison = s->d_cmp_raw,
+                     .reference_out = s->d_ref,
+                     .comparison_out = s->d_cmp,
+                     .width = s->width,
+                     .height = s->height,
+                     .output_width = s->dec_width,
+                     .output_height = s->dec_height,
+                     .scale = s->scale,
+                     .sample_scale = s->sample_scale,
+                     .tap_weight = s->tap_weight},
+                    s->sample_bytes);
 
     launch_horiz(q, {.reference = s->d_ref,
                      .comparison = s->d_cmp,
@@ -721,7 +951,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                      .reference_square = s->d_ref_sq,
                      .comparison_square = s->d_cmp_sq,
                      .cross_product = s->d_refcmp,
-                     .width = s->width,
+                     .width = s->dec_width,
                      .output_width = s->w_horiz,
                      .output_height = s->h_horiz});
     enqueue_float_vertical(s, q);
@@ -744,22 +974,34 @@ static double sum_partials(const float *partials, unsigned count)
     return total;
 }
 
+/* iqa/ssim_tools.c::iqa_ssim returns every frame mean as fp32,
+ * `(float)(sum / (double)(w * h))`; the twin rounds the same way, so a frame
+ * whose mean rounds to 1 scores exactly 1 and enable_db reports the CPU's
+ * +inf / clip_db ceiling for it (ADR-1370). */
+static int float_ssim_frame_mean(const char *feature, double sum, double n_pixels, unsigned index,
+                                 double *mean)
+{
+    const int err =
+        vmaf_feature_finite_ratio_named("float_ssim_sycl", feature, sum, n_pixels, index, mean);
+    if (!err) {
+        *mean = (double)(float)*mean;
+    }
+    return err;
+}
+
 /* enable_lcs: the three per-WG L / C / S partial rows become the frame means
  * float_ssim_{l,c,s}, published with the score in CPU float_ssim.c order
  * after the shared SSIM validation (ADR-1302). */
-static int emit_float_ssim_lcs(const SsimStateSycl *s, double total, double n_pixels,
+static int emit_float_ssim_lcs(const SsimStateSycl *s, double score, double n_pixels,
                                unsigned index, VmafFeatureCollector *feature_collector)
 {
     static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
-    double score = 0.0;
-    int err = vmaf_feature_finite_ratio_named("float_ssim_sycl", "float_ssim", total, n_pixels,
-                                              index, &score);
     VmafNamedScore atoms[3];
+    int err = 0;
     for (unsigned k = 0; k < 3U && !err; k++) {
         const double sum = sum_partials(s->h_lcs_partials + (size_t)k * s->wg_count, s->wg_count);
         atoms[k].name = atom_names[k];
-        err = vmaf_feature_finite_ratio_named("float_ssim_sycl", atom_names[k], sum, n_pixels,
-                                              index, &atoms[k].value);
+        err = float_ssim_frame_mean(atom_names[k], sum, n_pixels, index, &atoms[k].value);
     }
     if (err)
         return err;
@@ -777,17 +1019,20 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         return -EINVAL;
     qptr->wait();
 
-    /* Per-WG float partials → host double sum → mean SSIM
-     * over (W-10)·(H-10) pixels. Same precision pattern as
-     * ssim_vulkan / ssim_cuda. */
+    /* Per-WG float partials → host double sum → mean SSIM over
+     * (W'-10)·(H'-10) decimated pixels, rounded to fp32 like the CPU. */
     const double total = sum_partials(s->h_partials, s->wg_count);
     const double n_pixels = (double)s->w_final * (double)s->h_final;
+    double score = 0.0;
+    const int err = float_ssim_frame_mean("float_ssim", total, n_pixels, index, &score);
+    if (err)
+        return err;
     if (!s->enable_lcs) {
-        return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
-                                                "float_ssim_sycl", "float_ssim", total, n_pixels,
-                                                s->enable_db, s->max_db, index);
+        return vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict,
+                                          "float_ssim_sycl", "float_ssim", score, s->enable_db,
+                                          s->max_db, index);
     }
-    return emit_float_ssim_lcs(s, total, n_pixels, index, feature_collector);
+    return emit_float_ssim_lcs(s, score, n_pixels, index, feature_collector);
 }
 
 } // namespace
@@ -811,8 +1056,10 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<SsimStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        release_buffer(s->sycl_state, s->h_ref);
-        release_buffer(s->sycl_state, s->h_cmp);
+        release_buffer(s->sycl_state, s->h_ref_raw);
+        release_buffer(s->sycl_state, s->h_cmp_raw);
+        release_buffer(s->sycl_state, s->d_ref_raw);
+        release_buffer(s->sycl_state, s->d_cmp_raw);
         release_buffer(s->sycl_state, s->d_ref);
         release_buffer(s->sycl_state, s->d_cmp);
         release_buffer(s->sycl_state, s->d_ref_mu);
@@ -849,7 +1096,7 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_ssim_sycl = {
     .provided_features = provided_features_ssim_sycl,
     .chars =
         {
-            .n_dispatches_per_frame = 2,
+            .n_dispatches_per_frame = 3,
             .is_reduction_only = false,
             .min_useful_frame_area = 1920U * 1080U,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
@@ -1315,22 +1562,6 @@ static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat p
     }
     s->has_pending = false;
     return 0;
-}
-
-} // namespace
-
-namespace
-{
-
-template <typename T>
-static void pack_integer_plane(T *destination, const VmafPicture *picture, unsigned width,
-                               unsigned height)
-{
-    const auto *source = static_cast<const uint8_t *>(picture->data[0]);
-    for (unsigned y = 0; y < height; ++y) {
-        __builtin_memcpy(destination + (size_t)y * width, source + (size_t)y * picture->stride[0],
-                         (size_t)width * sizeof(T));
-    }
 }
 
 } // namespace

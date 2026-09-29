@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Pin dimension-aware float-SSIM fallback without requiring a GPU."""
+"""Pin dimension-aware float-SSIM fallback without requiring a GPU.
+
+CUDA, HIP and Metal implement scale 1 only and fall back whenever the resolved
+scale is above 1 (ADR-1324). SYCL decimates on the device (ADR-1370) and falls
+back only for a geometry its decimation cannot compute exactly.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +19,6 @@ FEATURE_ROOT = CORE_ROOT / "src" / "feature"
 
 BACKENDS = (
     ("cuda/integer_ssim_cuda.c", "check_context_cuda", "compute_scale", "scale_override"),
-    ("sycl/integer_ssim_sycl.cpp", "check_context_sycl", "compute_scale", "scale_override"),
     ("hip/float_ssim_hip.c", "check_context_hip", "ssim_hip_compute_scale", "scale_override"),
     ("metal/float_ssim_metal.mm", "check_context_metal", "ssim_metal_compute_scale", "scale"),
 )
@@ -49,7 +53,7 @@ class GpuFloatSsimAutoScaleContractTest(unittest.TestCase):
         self.assertEqual(auto_scale(960, 540), 2)
         self.assertEqual(auto_scale(960, 540, 1), 1)
 
-    def test_every_gpu_twin_enforces_the_same_context_fallback(self) -> None:
+    def test_scale_one_gpu_twins_enforce_the_same_context_fallback(self) -> None:
         for relative_path, callback, scale_helper, scale_member in BACKENDS:
             with self.subTest(path=relative_path):
                 source = (FEATURE_ROOT / relative_path).read_text(encoding="utf-8")
@@ -64,6 +68,31 @@ class GpuFloatSsimAutoScaleContractTest(unittest.TestCase):
                 )
                 self.assertRegex(source, rf"\.context_check\s*=\s*{re.escape(callback)}")
                 self.assertRegex(source, r'\.context_fallback_name\s*=\s*"float_ssim"')
+
+    def test_sycl_twin_falls_back_only_where_decimation_is_inexact(self) -> None:
+        source = (FEATURE_ROOT / "sycl/integer_ssim_sycl.cpp").read_text(encoding="utf-8")
+        body = function_body(source, "static int check_context_sycl(")
+        returns = re.findall(r"\breturn\s+[^;]+;", body)
+        self.assertEqual(len(returns), 1)
+        self.assertRegex(
+            returns[0],
+            r"\breturn\s+float_ssim_geometry_supported\s*\(\s*w\s*,\s*h\s*,\s*scale\s*\)"
+            r"\s*\?\s*0\s*:\s*-ENOTSUP\s*;",
+        )
+        self.assertRegex(body, r"compute_scale\s*\(\s*w\s*,\s*h\s*,\s*s->scale_override\s*\)")
+        self.assertNotRegex(body, r"==\s*1\s*\?")
+        predicate = function_body(source, "static bool float_ssim_geometry_supported(")
+        self.assertIn("SSIM_MAX_EXACT_SCALE", predicate)
+        self.assertIn("(unsigned)SSIM_K", predicate)
+        self.assertRegex(source, r"\.context_check\s*=\s*check_context_sycl")
+        self.assertRegex(source, r'\.context_fallback_name\s*=\s*"float_ssim"')
+        # The device plane size is the CPU's own iqa_decimate() rule.
+        self.assertIn(
+            "iqa_decimate_dim(", function_body(source, "static unsigned decimated_extent(")
+        )
+        decimate = (FEATURE_ROOT / "iqa/decimate.c").read_text(encoding="utf-8")
+        self.assertIn("iqa_decimate_dim(w, factor)", decimate)
+        self.assertIn("iqa_decimate_dim(h, factor)", decimate)
 
     def test_model_dispatch_resolves_before_backend_translation(self) -> None:
         header = (FEATURE_ROOT / "feature_extractor.h").read_text(encoding="utf-8")

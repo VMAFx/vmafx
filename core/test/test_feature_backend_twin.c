@@ -211,10 +211,25 @@ static char *check_registry_twins(VmafContext *vmaf, unsigned flag)
     const VmafPictureConfiguration qhd = geometry(960, 540);
     mu_assert("float_ssim twin runs 320x240",
               vmaf_feature_backend_twin(vmaf, "float_ssim", NULL, &small, &twin, NULL) == 0);
-    mu_assert("float_ssim twin cannot auto-scale 960x540",
+#if defined(HAVE_SYCL)
+    /* ADR-1370: the SYCL twin decimates on the device. */
+    const int qhd_verdict = 0;
+#else
+    const int qhd_verdict = -ENOTSUP;
+#endif
+    mu_assert("float_ssim twin auto-scales 960x540 only where it decimates",
               vmaf_feature_backend_twin(vmaf, "float_ssim", NULL, &qhd, &twin, &option) ==
-                      -ENOTSUP &&
+                      qhd_verdict &&
                   twin != NULL && option == NULL);
+    /* Every twin refuses a plane decimated below the 11x11 Gaussian. */
+    VmafDictionary *scale10 = NULL;
+    mu_assert("scale option", !vmaf_dictionary_set(&scale10, "scale", "10", 0));
+    const VmafPictureConfiguration tiny = geometry(100, 100);
+    const int tiny_verdict = vmaf_feature_backend_twin(
+        vmaf, "float_ssim", (const VmafFeatureDictionary *)scale10, &tiny, &twin, &option);
+    (void)vmaf_dictionary_free(&scale10);
+    mu_assert("float_ssim twin cannot run 100x100 at scale=10",
+              tiny_verdict == -ENOTSUP && twin != NULL && option == NULL);
     return NULL;
 }
 

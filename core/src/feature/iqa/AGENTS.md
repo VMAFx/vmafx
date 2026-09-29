@@ -10,6 +10,7 @@ shared 11-tap Gaussian convolve. Parent: [../AGENTS.md](../AGENTS.md).
 feature/iqa/
   convolve.{c,h}              # iqa_convolve / iqa_convolve_2d / 1D-separable scalar
   decimate.{c,h}              # iqa_decimate (used by MS-SSIM scalar)
+  decimate_dim.h              # iqa_decimate_dim: decimated size, shared with SYCL float_ssim
   iqa.h                       # Public-facing iqa_* declarations
   iqa_options.h               # IQA_CONVOLVE_2D / IQA_CONVOLVE_1D / IQA_BND_* enums
   iqa_os.h                    # OS-portability shims (alignment, restrict)
@@ -39,6 +40,17 @@ accumulated several load-bearing modifications on top.
   reintroduce those spellings on rebase.
 
 ## Rebase-sensitive invariants
+
+- **`decimate.c::iqa_decimate` + `ssim.c`'s low-pass are the bit-exact
+  reference of the SYCL `float_ssim` decimation** (ADR-1370). The device
+  kernel in `../sycl/integer_ssim_sycl.cpp` (`decimate_sample`) reproduces
+  the window centring of `iqa_filter_pixel()` (offsets `-k/2 .. k-1-k/2`),
+  `KBND_SYMMETRIC`, the fp32 `prod` and its exact `double` sum, and sizes its
+  planes with `iqa_decimate_dim()` from [`decimate_dim.h`](decimate_dim.h),
+  which `decimate.c` calls too. A change to any of those, or to
+  `ssim_low_pass_alloc()`'s tap `1.0f / (scale * scale)`, must change the
+  device kernel in the same PR; `decimate_dim.h` stays include-free so the
+  C++ SYCL TU does not parse the C-only kernel declarations.
 
 - **`ssim_tools.c::ssim_accumulate_default_scalar` defines
   ADR-0139 reduction shape.** Two `2.0 *` literals

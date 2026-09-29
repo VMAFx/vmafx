@@ -39,8 +39,8 @@ int iqa_decimate(float *img, int w, int h, int factor, const struct iqa_kernel *
 {
     int x;
     int y;
-    int sw = w / factor + (w & 1);
-    int sh = h / factor + (h & 1);
+    int sw = iqa_decimate_dim(w, factor);
+    int sh = iqa_decimate_dim(h, factor);
     int dst_offset;
     float *dst = img;
 

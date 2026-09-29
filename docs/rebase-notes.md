@@ -54954,3 +54954,35 @@ restore them from an older branch. `docker/Dockerfile.node`'s
 `oneapi-runtime-libs` stage runs the same runtime installer and copies from
 `/opt/intel/oneapi/redist/lib`. No public API, CLI, numerical or FFmpeg patch
 impact; the image's scores match its CPU backend within the parity gate.
+## ADR-1370 — float_ssim_sycl decimates on the device (2026-09-29)
+
+`feat/sycl-float-ssim-scale`, Research-2130, ADR-1370.
+
+- `core/src/feature/iqa/decimate_dim.h` (new, include-free) holds
+  `iqa_decimate_dim()`, the `w / factor + (w & 1)` size rule;
+  `iqa/decimate.h` includes it and `iqa/decimate.c` (upstream-mirror) calls it
+  for `sw` / `sh`. An upstream change to that size rule lands in the header,
+  once, for the CPU and the SYCL twin.
+- `core/src/feature/sycl/integer_ssim_sycl.cpp`: `float_ssim_sycl` uploads raw
+  luma (`stage_raw_luma()` + one DMA per plane), and `launch_decimate()`
+  reproduces `picture_copy()` scaling, `ssim.c`'s `1.0f / (scale * scale)`
+  box and `iqa_filter_pixel()` (window offsets, `KBND_SYMMETRIC`, fp32
+  product, exact sum as int64 units of 2^-52, one RTE conversion). An
+  upstream Netflix hunk to `iqa_filter_pixel()`, `KBND_SYMMETRIC`,
+  `ssim_low_pass_alloc()`, `compute_ssim()`'s scale rule or `picture_copy()`
+  needs the matching device change in the same PR. `check_context_sycl()` and
+  `configure_float_ssim()` share `float_ssim_geometry_supported()`; do not
+  restore the `scale == 1` test. Frame means go through
+  `float_ssim_frame_mean()` (fp32 rounding like `iqa_ssim()`).
+  `pack_integer_plane()` moved above the float twin and serves both twins.
+- Tests: `test_gpu_float_ssim_auto_scale_contract.py` pins SYCL separately
+  from the scale-1 CUDA / HIP / Metal twins; `test_feature_backend_twin.c`
+  expects SYCL to serve 960x540 and every twin to refuse 100x100 at
+  `scale=10`; `test_vmaf_feature_backend.sh` case 5 runs `float_ssim=scale=2`
+  on the SYCL twin.
+
+No public C API, CLI syntax, option table or FFmpeg patch impact (the option
+help string now matches the CPU's). CPU scores are bit-identical. At scale 1
+`float_ssim_sycl` output is byte-identical to the previous twin apart from
+the fp32 rounding of the frame means (at most 6e-8); at scale > 1 it now runs
+on the device instead of the CPU fallback.

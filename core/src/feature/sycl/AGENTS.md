@@ -341,12 +341,37 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
 
 - **`integer_ssim_sycl.cpp` and `integer_ms_ssim_sycl.cpp` are
   self-contained submit/collect** — do **not** register with
-  `vmaf_sycl_graph_register` because shared `shared_frame` is
-  luma-only packed at uint width, SSIM needs float [0, 255]
-  intermediates with `picture_copy()` normalisation. `ciede_sycl`
-  TU follows same pattern. **On rebase**: do not "consolidate"
-  these into graph register — precision posture
-  load-bearing.
+  `vmaf_sycl_graph_register`. `integer_ms_ssim_sycl.cpp` needs float
+  [0, 255] intermediates from `picture_copy()`; `float_ssim_sycl` uploads
+  its own raw luma and does that scaling on the device (ADR-1370).
+  `ciede_sycl` TU follows same pattern. **On rebase**: do not
+  "consolidate" these into graph register — precision posture
+  load-bearing. Reading the shared frame from `float_ssim_sycl` is a
+  separate decision (it would also serve `vmaf_read_pictures_sycl()`).
+
+- **`float_ssim_sycl` decimation is bit-exact with the CPU**
+  ([ADR-1370](../../../../docs/adr/1370-sycl-float-ssim-device-decimation.md)).
+  `decimate_sample()` = `iqa_filter_pixel()` at `(x * scale, y * scale)`:
+  window rows / columns `r - scale / 2` for `r` in `[0, scale)`,
+  `symmetric_index()` = `KBND_SYMMETRIC`, product `sample * tap_weight`
+  in fp32 (`tap_weight` = `ssim.c`'s `1.0f / (scale * scale)`, computed on
+  the host), summed exactly in int64 units of 2^-52, converted once with
+  `rounding_mode::rte`. No fp32 accumulation, no FMA path (no adds on
+  floats), no reordering matters because the sum is integer. Exact only up
+  to `SSIM_MAX_EXACT_SCALE` (128); `float_ssim_geometry_supported()` is
+  the single predicate for `check_context_sycl()` and init, also requiring
+  an 11x11 decimated plane. Plane size = `iqa_decimate_dim()` from
+  `iqa/decimate_dim.h` (shared with `iqa/decimate.c`; include-free so this
+  C++ TU never parses `convolve.h`). Samples: `picture_copy()`'s layout
+  (uint16 at 10 / 12 / 16 bits scaled by the exact reciprocal of 4 / 16 /
+  256, else uint8). Frame means go through `float_ssim_frame_mean()`,
+  which rounds to fp32 like `iqa_ssim()`: removing it breaks `enable_db`
+  on near-identical frames. One queue wait per frame, in `collect()`.
+  Guards: `test_sycl_float_ssim_parity` (+ `_large`, scales 1-10, 8 / 10 /
+  12-bit, odd sizes, `enable_lcs`, gate verdicts),
+  `test_gpu_float_ssim_auto_scale_contract`. On rebase: a change to
+  `iqa_filter_pixel()`, `KBND_SYMMETRIC`, `ssim_low_pass_alloc()` or
+  `picture_copy()` scaling changes this kernel in the same PR.
 
 - **`integer_ciede_sycl.cpp` stages Y/U/V at native size; kernel
   subsamples chroma** ([Research-2120](../../../../docs/research/2120-sycl-ciede-throughput.md)).
@@ -363,8 +388,8 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   4:2:2 10-bit, 4:4:4 against CPU.
 
 - **`picture_copy()` channel parameter** — `integer_ms_ssim_sycl.cpp`
-  and `integer_ssim_sycl.cpp` pass `channel=0` per d3647c73
-  prerequisite port. See
+  passes `channel=0` per d3647c73 prerequisite port
+  (`integer_ssim_sycl.cpp` no longer calls `picture_copy()`, ADR-1370). See
   [../../AGENTS.md §"`picture_copy()` carries a `channel`
   parameter"](../../AGENTS.md).
 
@@ -543,6 +568,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `integer_adm_sycl.cpp` | `integer_adm.c` | `test_sycl_adm_parity.c` | ADR-0884 (round 2) |
 | `integer_ciede_sycl.cpp` | `ciede.c` | `test_sycl_ciede_parity.c` | ADR-0884 (round 2) |
 | `integer_ssim_sycl.cpp` | `integer_ssim.c` | `test_sycl_ssim_parity.c` | ADR-0884 (round 2) |
+| `integer_ssim_sycl.cpp` (`float_ssim_sycl`) | `float_ssim.c` + `ssim.c` | `test_sycl_float_ssim_parity.c` (+ `_large`) | ADR-1370 |
 | `integer_ms_ssim_sycl.cpp` | `ms_ssim.c` | `test_sycl_ms_ssim_parity.c` | ADR-0884 (round 2) |
 | `integer_motion_v2_sycl.cpp` | `integer_motion_v2.c` | `test_sycl_motion_v2_parity.c` | ADR-0884 (round 2) |
 | `float_psnr_sycl.cpp` | `float_psnr.c` | `test_sycl_float_psnr_parity.c` | ADR-0946 (round 3) |

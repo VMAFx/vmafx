@@ -429,8 +429,9 @@ core/
   fork-local caller (`float_adm.c`, `float_moment.c`,
   `float_ms_ssim.c`, `float_psnr.c`, `float_ssim.c`, `float_vif.c`,
   `cuda/integer_ms_ssim_cuda.c`, `sycl/integer_ms_ssim_sycl.cpp`,
-  `sycl/integer_ssim_sycl.cpp`, `vulkan/ms_ssim_vulkan.c`,
-  `vulkan/ssim_vulkan.c`) passes `0` for Y-plane. On future upstream
+  `vulkan/ms_ssim_vulkan.c`, `vulkan/ssim_vulkan.c`) passes `0` for
+  Y-plane. (`sycl/integer_ssim_sycl.cpp` applies the same scaling on the
+  device since ADR-1370 and no longer calls it.) On future upstream
   syncs, never drop SIMD fast-path wrapper: NASA/JPL Power-of-10
   inner-loop budget still demands it, and Netflix golden-data gate
   ([ADR-0024](../docs/adr/0024-netflix-golden-preserved.md)) is regression-

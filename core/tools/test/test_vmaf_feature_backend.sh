@@ -138,10 +138,17 @@ run option 0 --no_prediction --feature float_motion=motion_filter_size=3 --backe
 has_warning option float_motion "cannot honour option 'motion_filter_size'"
 receipt option cpu float_motion=cpu
 
-# 5. The twin implements scale=1 only (ADR-1324): scale=2 keeps the CPU.
+# 5. scale=2: the SYCL twin decimates on the device (ADR-1370) and runs it;
+#    the CUDA, HIP and Metal twins implement scale=1 only (ADR-1324) and keep
+#    the CPU extractor.
 run geometry 0 --no_prediction --feature float_ssim=scale=2 --backend "$BACKEND"
-has_warning geometry float_ssim "cannot run 576x324 8-bit pictures"
-receipt geometry cpu float_ssim=cpu
+if [ "$BACKEND" = sycl ]; then
+  no_warning geometry
+  receipt geometry sycl float_ssim_sycl=sycl
+else
+  has_warning geometry float_ssim "cannot run 576x324 8-bit pictures"
+  receipt geometry cpu float_ssim=cpu
+fi
 
 # 6. A mixed run reports the device and lists the CPU extractor next to it.
 run mixed 0 --no_prediction --feature ciede --feature brisque --backend "$BACKEND"

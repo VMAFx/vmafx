@@ -35,6 +35,7 @@
 #define DECIMATE_INCLUDED
 
 #include "convolve.h"
+#include "decimate_dim.h"
 
 /**
  * @brief Downsamples (decimates) an image.

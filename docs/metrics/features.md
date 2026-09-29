@@ -749,10 +749,14 @@ backend was removed in ADR-0726.)
 
 For `ssim` and `float_ssim`, the SYCL twins implement every CPU option:
 `integer_ssim_sycl` takes `enable_db` / `clip_db`, and `float_ssim_sycl`
-takes `enable_lcs` / `enable_db` / `clip_db` (plus `scale`, which must
-resolve to 1 on the device). Identical frames report the CPU's `+inf` or
-`clip_db` ceiling on the device too
-([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). The CUDA twins lack
+takes `enable_lcs` / `enable_db` / `clip_db` and `scale`. Identical frames
+report the CPU's `+inf` or `clip_db` ceiling on the device too
+([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). `float_ssim_sycl`
+decimates on the device at the automatic scale and every explicit one, with
+the CPU's reduced planes bit for bit, so 1080p and 4K `float_ssim` run on
+SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)); the CUDA,
+HIP and Metal `float_ssim` twins compute scale 1 only and leave larger
+scales to the CPU extractor. The CUDA twins lack
 `enable_db` / `clip_db` (and `float_ssim_cuda` `enable_lcs`), and
 `float_ssim_hip` lacks `enable_db` / `clip_db`; a model setting one of them
 computes that feature on the CPU.

@@ -1074,3 +1074,4 @@
 1362-sycl-integer-adm-aim-device-pass
 1364-windows-sycl-msvc-device-link
 1368-oneapi-release-image-debian13
+1370-sycl-float-ssim-device-decimation
