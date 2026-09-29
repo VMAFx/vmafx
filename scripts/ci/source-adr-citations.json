@@ -1215,8 +1215,7 @@
       "sites": {
         "ai/scripts/export_fastdvdnet_pre_placeholder.py": 1,
         "core/src/feature/cuda/integer_cambi/cambi_score.cu": 2,
-        "core/src/feature/cuda/integer_cambi_cuda.c": 2,
-        "core/src/feature/sycl/integer_cambi_sycl.cpp": 1
+        "core/src/feature/cuda/integer_cambi_cuda.c": 2
       },
       "target": "0210-cambi-vulkan-integration.md"
     },
@@ -1329,7 +1328,7 @@
         "core/test/test_metal_motion_v2_parity.c": 3,
         "core/test/test_metal_ssimulacra2_parity.c": 2,
         "core/test/test_sycl_adm_parity.c": 1,
-        "core/test/test_sycl_cambi_parity.c": 3,
+        "core/test/test_sycl_cambi_parity.c": 1,
         "core/test/test_sycl_motion3_parity.c": 2,
         "core/test/test_sycl_ms_ssim_parity.c": 1,
         "core/test/test_sycl_speed_singular_parity.c": 1,
@@ -1396,6 +1395,7 @@
     "0220": {
       "sites": {
         "core/src/feature/feature_extractor.cpp": 2,
+        "core/src/feature/sycl/integer_cambi_sycl.cpp": 1,
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 1,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
         "core/src/sycl/common.cpp": 1,
@@ -2447,7 +2447,6 @@
         "ai/scripts/hardware_caps_loader.py": 1,
         "ai/tests/test_hardware_caps.py": 1,
         "core/meson_options.txt": 3,
-        "core/src/feature/sycl/integer_cambi_sycl.cpp": 1,
         "core/src/feature/sycl/sycl_compat.h": 2,
         "core/src/meson.build": 4,
         "scripts/ci/tests/test_check_adr_links.py": 1
@@ -2582,7 +2581,6 @@
         "core/src/feature/hip/integer_cambi_hip.h": 1,
         "core/src/feature/metal/integer_cambi.metal": 1,
         "core/src/feature/metal/integer_cambi_metal.mm": 2,
-        "core/src/feature/sycl/integer_cambi_sycl.cpp": 3,
         "core/src/meson.build": 2,
         "core/test/test_metal_integer_cambi_parity.c": 1,
         "scripts/ci/cross_backend_parity_gate.py": 1
@@ -2714,7 +2712,6 @@
         "ai/tests/test_corpus_base.py": 1,
         "core/src/feature/feature_extractor.cpp": 2,
         "core/src/feature/hip/integer_psnr_hip.c": 1,
-        "core/src/feature/sycl/integer_cambi_sycl.cpp": 1,
         "core/test/test_integer_cambi_sycl.c": 1
       },
       "target": "0371-corpus-ingest-base-class.md"
@@ -2861,6 +2858,7 @@
     },
     "0415": {
       "sites": {
+        "core/src/feature/sycl/integer_cambi_sycl.cpp": 1,
         "core/test/test_sycl_cambi_parity.c": 1
       },
       "target": "0415-cambi-sycl-port.md"
@@ -7712,6 +7710,16 @@
         "scripts/release/tests/test-publication-environment-binding.sh": 1
       },
       "target": "1356-release-provenance-attest.md"
+    },
+    "1357": {
+      "sites": {
+        "core/src/feature/cambi.c": 1,
+        "core/src/feature/cambi_internal.h": 1,
+        "core/src/feature/sycl/integer_cambi_sycl.cpp": 4,
+        "core/test/test_cambi.c": 2,
+        "core/test/test_sycl_cambi_parity.c": 4
+      },
+      "target": "1357-sycl-cambi-device-resident.md"
     }
   },
   "retired": {

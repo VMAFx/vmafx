@@ -6,17 +6,6 @@
 ## [Unreleased]
 ### Changed
 
-- **`ciede_sycl` is about twice as fast at 4K on Intel Arc.** The SYCL
-  ciede2000 extractor no longer upscales U and V to luma resolution on the host
-  before every frame. It uploads the planes at their native size and the kernel
-  reads chroma at the subsampled position, as the CUDA and HIP extractors do.
-  Measured at 3840x2160 8-bit 4:2:0, `--feature ciede_sycl` drops from 17.2 to
-  8.4 ms per frame on an Arc B580 and from 52.9 to 46.0 ms on a UHD 770. Scores
-  are unchanged, bit for bit.
-- The CLI guide now says that `--feature <name>` picks the extractor by its
-  exact name: `--feature ciede --backend sycl` still computes on the CPU, and
-  `--feature ciede_sycl` is how to run the SYCL extractor. It also corrects the
-  `--threads` default, which is serial (`0`), not the host's core count.
 - `cambi_sycl` now runs every stage on the GPU — preprocessing, the spatial
   mask, the per-scale decimation and mode filter, the sliding-histogram
   c-values and the top-K pooling — and reads back one 88-byte block per
@@ -33,6 +22,19 @@
   (at most 2.2e-15 on Big Buck Bunny). `cambi.c` exports its reciprocal table
   as `vmaf_cambi_reciprocal_lut()` for GPU twins. The CUDA, HIP and Metal
   twins keep the host residual (RC3 rows in `docs/state.md`).
+
+
+- **`ciede_sycl` is about twice as fast at 4K on Intel Arc.** The SYCL
+  ciede2000 extractor no longer upscales U and V to luma resolution on the host
+  before every frame. It uploads the planes at their native size and the kernel
+  reads chroma at the subsampled position, as the CUDA and HIP extractors do.
+  Measured at 3840x2160 8-bit 4:2:0, `--feature ciede_sycl` drops from 17.2 to
+  8.4 ms per frame on an Arc B580 and from 52.9 to 46.0 ms on a UHD 770. Scores
+  are unchanged, bit for bit.
+- The CLI guide now says that `--feature <name>` picks the extractor by its
+  exact name: `--feature ciede --backend sycl` still computes on the CPU, and
+  `--feature ciede_sycl` is how to run the SYCL extractor. It also corrects the
+  `--threads` default, which is serial (`0`), not the host's core count.
 
 
 ### Fixed

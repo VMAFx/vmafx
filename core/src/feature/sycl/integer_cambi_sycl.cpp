@@ -56,6 +56,7 @@
 #include <sycl/sycl.hpp>
 
 #include <algorithm>
+#include <cassert>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -1063,6 +1064,7 @@ void launch_radix_scan(sycl::queue &queue, const PoolArgs &args, int pass)
  * already hold the sum of every element. */
 void launch_topk_partials(sycl::queue &queue, const PoolArgs &args)
 {
+    assert(args.groups >= 1U && args.groups <= POOL_MAX_GROUPS);
     const PoolArgs a = args;
     const sycl::nd_range<1> range{sycl::range<1>{(size_t)a.groups * POOL_WG},
                                   sycl::range<1>{POOL_WG}};
@@ -1297,6 +1299,7 @@ bool speedup_is_valid(int requested, int pixels)
 
 int configure_cambi(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height)
 {
+    assert(s != nullptr && width > 0U && height > 0U);
     if (s->enc_bitdepth == 0) {
         s->enc_bitdepth = (int)bpc;
     }
@@ -1336,8 +1339,9 @@ unsigned cvals_chunks(unsigned width, unsigned height, unsigned levels, unsigned
     const unsigned target_items = compute_units * 512U;
     const unsigned chunks = (target_items + width - 1U) / width;
     const size_t chunk_bytes = (size_t)width * levels * sizeof(uint16_t);
-    const auto by_memory = (unsigned)std::max((size_t)1U, CVALS_HIST_BUDGET / chunk_bytes);
-    const unsigned max_chunks = std::min(std::max(1U, height / CVALS_MIN_CHUNK_ROWS), by_memory);
+    const auto by_memory = (unsigned)(std::max)((size_t)1U, CVALS_HIST_BUDGET / chunk_bytes);
+    const unsigned max_chunks =
+        (std::min)((std::max)(1U, height / CVALS_MIN_CHUNK_ROWS), by_memory);
     return std::clamp(chunks, 1U, max_chunks);
 }
 
@@ -1345,6 +1349,8 @@ unsigned cvals_chunks(unsigned width, unsigned height, unsigned levels, unsigned
  * c-values chunking and top-K counts (spatial_pooling's clip()). */
 void compute_scale_geometry(CambiStateSycl *s, double topk, unsigned compute_units)
 {
+    /* The level count comes from the TVI tables, which init loads first. */
+    assert(s->levels >= 1U && compute_units >= 1U);
     unsigned width = s->proc_width;
     unsigned height = s->proc_height;
     for (int scale = 0; scale < CAMBI_SYCL_NUM_SCALES; ++scale) {
@@ -1371,7 +1377,7 @@ size_t hist_elements(const CambiStateSycl *s)
 {
     size_t most = 0U;
     for (const CambiScaleGeom &g : s->geom) {
-        most = std::max(most, (size_t)g.chunks * g.width);
+        most = (std::max)(most, (size_t)g.chunks * g.width);
     }
     return most * s->levels;
 }
@@ -1381,7 +1387,7 @@ size_t partial_elements(const CambiStateSycl *s)
 {
     size_t most = POOL_MAX_GROUPS;
     for (const CambiScaleGeom &g : s->geom) {
-        most = std::max(most, (size_t)g.cvals_groups);
+        most = (std::max)(most, (size_t)g.cvals_groups);
     }
     return most;
 }
@@ -1393,6 +1399,7 @@ template <typename T> T *device_alloc(const CambiStateSycl *s, size_t count)
 
 int allocate_cambi_buffers(CambiStateSycl *s)
 {
+    assert(s->proc_width > 0U && s->proc_height > 0U && s->levels >= 1U);
     const size_t pixels = (size_t)s->proc_width * s->proc_height;
     s->d_image = device_alloc<uint16_t>(s, pixels);
     s->d_mask = device_alloc<uint16_t>(s, pixels);
@@ -1444,6 +1451,8 @@ int upload_contrast_tables(CambiStateSycl *s)
 {
     static const int weights[32] = {1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8,
                                     8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
+    /* max_log_contrast is capped at 5 by the option table. */
+    assert(s->num_diffs >= 1U && s->num_diffs <= 32U);
     std::vector<uint16_t> diffs(s->num_diffs);
     std::vector<uint16_t> tvi(s->num_diffs);
     for (unsigned d = 0U; d < s->num_diffs; ++d) {
@@ -1516,6 +1525,7 @@ template <typename T> void release_sycl_buffer(VmafSyclState *state, T *&pointer
 
 void release_cambi_resources(CambiStateSycl *s)
 {
+    assert(s != nullptr);
     if (s->sycl_state) {
         if (s->registered) {
             (void)vmaf_sycl_graph_unregister(s->sycl_state, s);
@@ -1562,6 +1572,7 @@ struct ScaleBuffers {
 
 void enqueue_preprocess(sycl::queue &queue, const CambiStateSycl *s, const void *dist)
 {
+    assert(dist != nullptr && s->d_image != nullptr);
     if (s->src_bpc != 8U && s->src_bpc != 16U) {
         launch_validate(queue, dist, s->src_width, s->src_height, s->src_bpc, s->d_results);
     }
@@ -1591,6 +1602,7 @@ void enqueue_preprocess(sycl::queue &queue, const CambiStateSycl *s, const void 
 /* cambi_score's per-scale decimate + filter_mode on the device buffers. */
 void enqueue_scale_image(sycl::queue &queue, const CambiStateSycl *s, ScaleBuffers &b, int scale)
 {
+    assert(scale >= 0 && scale < CAMBI_SYCL_NUM_SCALES);
     const CambiScaleGeom &g = s->geom[scale];
     if (scale > 0 || s->cambi_high_res_speedup) {
         launch_decimate(queue, b.image, b.scratch, g.width, g.height, b.width);
@@ -1616,7 +1628,10 @@ void enqueue_scale_image(sycl::queue &queue, const CambiStateSycl *s, ScaleBuffe
 
 void enqueue_scale_score(sycl::queue &queue, const CambiStateSycl *s, int scale)
 {
+    assert(scale >= 0 && scale < CAMBI_SYCL_NUM_SCALES);
     const CambiScaleGeom &g = s->geom[scale];
+    /* The row chunks must cover every row of the scale. */
+    assert(g.chunks >= 1U && g.chunks * g.chunk_rows >= g.height);
     const unsigned words = (g.width + 31U) / 32U;
     const unsigned pad = (unsigned)s->adjusted_window >> 1;
     const RowMaskArgs masks{
@@ -1707,7 +1722,7 @@ unsigned device_compute_units(VmafSyclState *state)
     if (!queue) {
         return 1U;
     }
-    return std::max(1U, queue->get_device().get_info<sycl::info::device::max_compute_units>());
+    return (std::max)(1U, queue->get_device().get_info<sycl::info::device::max_compute_units>());
 }
 
 /* cambi.c::setup_contrast_and_luminance()'s guard, in the same place in the
@@ -1720,7 +1735,7 @@ int check_window_fits_lut(const CambiStateSycl *s)
 {
     const auto src_window = cambi_sycl_adjust_window(s->window_size, s->src_width, s->src_height,
                                                      (bool)s->cambi_high_res_speedup);
-    const int max_window = std::max((int)s->adjusted_window, (int)src_window);
+    const int max_window = (std::max)((int)s->adjusted_window, (int)src_window);
     unsigned table_size = 0U;
     (void)vmaf_cambi_reciprocal_lut(&table_size);
     if (std::cmp_greater_equal(max_window * max_window, table_size)) {
@@ -1733,6 +1748,7 @@ int check_window_fits_lut(const CambiStateSycl *s)
 
 int init_cambi_device(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height)
 {
+    assert(s->sycl_state != nullptr);
     int error = configure_cambi(s, bpc, width, height);
     if (!error) {
         error = upload_contrast_tables(s);

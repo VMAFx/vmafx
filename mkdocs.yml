@@ -1469,6 +1469,7 @@ nav:
         - "ADR-1354: native-bundle-release-track": adr/1354-native-bundle-release-track.md
         - "ADR-1355: cli-option-value-backslashes": adr/1355-cli-option-value-backslashes.md
         - "ADR-1356: release-provenance-attest": adr/1356-release-provenance-attest.md
+        - "ADR-1357: sycl-cambi-device-resident": adr/1357-sycl-cambi-device-resident.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1926,6 +1927,7 @@ nav:
         - "rc-blocking": adr/by-tag/rc-blocking.md
         - "rc": adr/by-tag/rc.md
         - "rc1": adr/by-tag/rc1.md
+        - "rc3": adr/by-tag/rc3.md
         - "rclone": adr/by-tag/rclone.md
         - "readme": adr/by-tag/readme.md
         - "rebase-hygiene": adr/by-tag/rebase-hygiene.md
