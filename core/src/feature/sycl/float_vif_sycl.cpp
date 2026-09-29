@@ -19,6 +19,7 @@
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
+#include "sycl_tile_index.h"
 
 #include <cerrno>
 #include <cmath>
@@ -264,8 +265,10 @@ static inline void load_vif_tile(sycl::nd_item<2> item, const VifComputeArgs &ar
     for (int offset = local; offset < tile_height * tile_width; offset += FVIF_BX * FVIF_BY) {
         const int tile_y = offset / tile_width;
         const int tile_x = offset - tile_y * tile_width;
-        const int y = vif_mirror(origin_y + tile_y, (int)args.height);
-        const int x = vif_mirror(origin_x + tile_x, (int)args.width);
+        const int y =
+            vmaf_sycl_tile_index(vif_mirror(origin_y + tile_y, (int)args.height), (int)args.height);
+        const int x =
+            vmaf_sycl_tile_index(vif_mirror(origin_x + tile_x, (int)args.width), (int)args.width);
         const size_t index = (size_t)tile_y * maximum_tile_width + (size_t)tile_x;
         scratch.reference[index] =
             read_vif_sample<SCALE>(args, args.reference_raw, args.reference_float, y, x);

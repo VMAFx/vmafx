@@ -11,6 +11,7 @@
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
+#include "sycl_tile_index.h"
 
 #include <cerrno>
 #include <cstdint>
@@ -155,8 +156,10 @@ static inline void fm_load_tile(sycl::nd_item<2> item, const sycl::local_accesso
         int pixel_y = tile_y + (int)row;
         int pixel_x = tile_x + (int)col;
         if (!interior) {
-            pixel_y = dev_mirror_fm(pixel_y, (int)args.height);
-            pixel_x = dev_mirror_fm(pixel_x, (int)args.width);
+            pixel_y =
+                vmaf_sycl_tile_index(dev_mirror_fm(pixel_y, (int)args.height), (int)args.height);
+            pixel_x =
+                vmaf_sycl_tile_index(dev_mirror_fm(pixel_x, (int)args.width), (int)args.width);
         }
         tile[row][col] = fm_read_pixel(args, pixel_y, pixel_x, inv_scaler);
     }

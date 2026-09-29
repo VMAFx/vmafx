@@ -460,7 +460,10 @@ int vmaf_sycl_graph_submit(VmafSyclState *state);
 
 /**
  * Wait for all GPU work to complete.
- * Idempotent per frame: only the first call per frame actually waits.
+ * Idempotent per frame: once a wait for the frame has succeeded, later calls
+ * return 0 without waiting. A failed wait does not count, so after a device
+ * fault every collecting extractor's call waits again and fails, instead of
+ * only the first.
  *
  * @param state  The SYCL state.
  *

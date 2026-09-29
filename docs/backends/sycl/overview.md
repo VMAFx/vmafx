@@ -649,6 +649,38 @@ row, which cost 0.602 s of a 1.03 s run over 48 frames of 1080p. See
 for the measurements. **If you add a GPU twin that reads a plane back, copy it
 in one transfer.**
 
+## Arc B580, small frames and device faults (2026-09-29)
+
+Three fixes from one investigation on an Arc B580 (Xe2) and a UHD 770
+(Xe-LP); the measurements are in
+[Research-2123](../../research/2123-sycl-b580-psnr-hvs-and-tile-halo-faults.md).
+
+- **`psnr_hvs_sycl` runs on Xe2.** It used to crash the process with
+  SIGSEGV on the B580: the Intel GPU compiler (IGC 2.41.5) crashed while
+  compiling the kernel at SIMD32. Its 8x8 DCT now runs in local memory instead
+  of one work-item's private memory. Scores are bit-identical wherever the old
+  kernel ran, and a 4K frame costs 130 ms instead of 208 ms on the UHD 770.
+- **Small frames no longer lose the device.** Frames 64 rows high or less
+  used to end in `UR_RESULT_ERROR_DEVICE_LOST` with `adm_sycl`, and so did
+  small frames with `vif_sycl` and `motion_sycl` on the B580. The tiled kernels
+  now keep their tile loads inside the plane; scores for other frames are
+  unchanged. `vif_sycl` still fails on frames of 8x8 and below
+  (`T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29`).
+- **A device fault fails the run.** When the device reports a fault, the
+  graph extractors (`adm_sycl`, `vif_sycl`, `motion_sycl`, `psnr_sycl`,
+  `float_moment_sycl`) and `psnr_hvs_sycl` return `-EIO` for the frame, and the
+  CLI stops with an error after a line such as
+  `libvmaf ERROR SYCL graph wait: level_zero backend failed with error: 20
+  (UR_RESULT_ERROR_DEVICE_LOST)`. Before, the graph extractors emitted scores
+  for the faulted frame from stale buffers (about 1.0 for every ADM scale);
+  only a later frame's upload noticed the fault, so a one-frame run exited 0.
+
+At 3840x2160, `psnr_hvs_sycl` differs from the CPU `psnr_hvs` by up to
+8.4e-4 dB per frame, above the 5e-4 cross-backend tolerance; at 576x324 the
+difference is 8.4e-5. The CPU accumulates all per-coefficient errors of a plane
+in one `float`, the twin per block
+(`T-SYCL-PSNR-HVS-4K-PARITY-GATE-2026-09-29`).
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix

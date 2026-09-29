@@ -498,7 +498,10 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     auto *s = static_cast<PsnrStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
 
-    vmaf_sycl_graph_wait(state);
+    /* A failed wait leaves the SSE stale: fail, never score it. */
+    int const wait_err = vmaf_sycl_graph_wait(state);
+    if (wait_err)
+        return wait_err;
 
     int rc = 0;
     for (unsigned p = 0; p < s->n_planes; p++) {

@@ -1135,14 +1135,18 @@ extern "C" int vmaf_sycl_graph_wait(VmafSyclState *state)
 
     uint64_t const frame = state->frame_counter;
 
-    // Idempotent: only wait once per frame
+    // Idempotent: only wait once per frame, and only a wait that succeeded
+    // counts. A device fault (UR_RESULT_ERROR_DEVICE_LOST) leaves every graph
+    // extractor's host results stale, so the frame stays unwaited: each
+    // collector's own call waits again, the lost device fails it again, and
+    // none of them scores the frame.
     if (state->graph_waited_frame == frame)
         return 0;
-    state->graph_waited_frame = frame;
 
     try {
         double const t_before_wait = monotonic_ms();
         state->combined_queue->wait_and_throw();
+        state->graph_waited_frame = frame;
         double const now = monotonic_ms();
 
         double const wait_ms = now - t_before_wait;                             // actual GPU wait

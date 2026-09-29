@@ -197,6 +197,19 @@ sycl/
   the stride comparison — widening it to `size_t` changes which pictures take
   the bulk-memcpy path.
 
+- **`vmaf_sycl_graph_wait()` counts only a successful wait
+  (T-SYCL-GRAPH-WAIT-ERROR-DROPPED-2026-09-29).** Idempotent per frame, but
+  `graph_waited_frame = frame` is set only after `wait_and_throw()` returns: a
+  failed wait leaves the frame unwaited, so every collector's call waits again
+  and the lost device (`UR_RESULT_ERROR_DEVICE_LOST` is sticky) fails it too.
+  Graph collectors (`adm`, `vif`, `motion`, `psnr`, `float_moment`) return a
+  non-zero result before touching host buffers. Before: first caller failed,
+  the rest got 0 and scored stale buffers. No new state member on purpose:
+  one more public member of `VmafSyclState` is one more
+  `misc-non-private-member-variables-in-classes` finding in `common.cpp`.
+  **On rebase**: keep the assignment after the wait, and every collector's
+  `if (wait_err) return wait_err;`.
+
 - **`vmaf_sycl_graph_register` allocation order (ADR-0982 / BUG-048 Sec A3).**
   In `vmaf_sycl_graph_register()` (`common.cpp`), ensure `state->combined_queue`
   is allocated (via `std::make_unique<sycl::queue>`) *before* incrementing

@@ -38,6 +38,7 @@
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
+#include "sycl_tile_index.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -357,7 +358,8 @@ static inline void dev_vert_load_tile(sycl::nd_item<2> item, const void *p_ref, 
             const unsigned tr = i / WG_X;
             const unsigned tc = i % WG_X;
             int px = tile_col_x + (int)tc;
-            const int py = dev_mirror(tile_origin_y + (int)tr, (int)height);
+            const int py =
+                vmaf_sycl_tile_index(dev_mirror(tile_origin_y + (int)tr, (int)height), (int)height);
             if (std::cmp_less(px, width)) {
                 px = dev_mirror(px, (int)width);
                 s_ref[tr][tc] = dev_read_pixel<SCALE>(p_ref, py, px, src_stride, bpc);
@@ -1024,8 +1026,10 @@ static inline void dev_fused_load_tile(sycl::nd_item<2> item, const void *p_ref,
         for (unsigned i = lid; i < tile_elems; i += WG_SIZE) {
             const unsigned tr = i / TILE_W;
             const unsigned tc = i % TILE_W;
-            const int py = dev_mirror(tile_origin_y + (int)tr, (int)height);
-            const int px = dev_mirror(tile_origin_x + (int)tc, (int)width);
+            const int py =
+                vmaf_sycl_tile_index(dev_mirror(tile_origin_y + (int)tr, (int)height), (int)height);
+            const int px =
+                vmaf_sycl_tile_index(dev_mirror(tile_origin_x + (int)tc, (int)width), (int)width);
             s_ref[tr * TILE_W + tc] = dev_read_pixel<SCALE>(p_ref, py, px, src_stride, bpc);
             s_dis[tr * TILE_W + tc] = dev_read_pixel<SCALE>(p_dis, py, px, src_stride, bpc);
         }
@@ -1673,7 +1677,10 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     auto *s = static_cast<VifStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
 
-    vmaf_sycl_graph_wait(state);
+    /* A failed wait leaves the accumulators stale: fail, never score them. */
+    int const wait_err = vmaf_sycl_graph_wait(state);
+    if (wait_err)
+        return wait_err;
 
     struct vif_accums accums[VIF_NUM_SCALES];
     std::memcpy(accums, s->h_accum, sizeof(accums));

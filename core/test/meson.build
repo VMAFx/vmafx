@@ -3668,6 +3668,16 @@ test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
 test('test_sycl_psnr_hvs_parity', test_sycl_psnr_hvs_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
+# T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29: the Intel GPU compiler crashed
+# (host SIGSEGV) building the psnr_hvs kernel at SIMD32 for Xe2 while the
+# DCT ran in work-item 0's private memory. IGC picks the SIMD width itself,
+# so the same executable runs again with SIMD32 forced; the persistent
+# compiler cache is off so a cached SIMD16 binary cannot stand in for it.
+# Other drivers and toolchains ignore both variables.
+test('test_sycl_psnr_hvs_parity_simd32', test_sycl_psnr_hvs_parity,
+    env : ['IGC_ForceOCLSIMDWidth=32', 'NEO_CACHE_PERSISTENT=0'],
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0957 — SYCL kernel coverage round 4. Four new CPU vs. SYCL
 # parity gates closing the last uncovered SYCL extractors after

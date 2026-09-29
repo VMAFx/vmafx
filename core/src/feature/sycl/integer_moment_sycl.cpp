@@ -218,7 +218,10 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     auto *s = static_cast<MomentStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
 
-    vmaf_sycl_graph_wait(state);
+    /* A failed wait leaves the sums stale: fail, never score them. */
+    int const wait_err = vmaf_sycl_graph_wait(state);
+    if (wait_err)
+        return wait_err;
 
     /* ADR-1212: normalise by the bit-depth scaler exactly as the CPU reference
      * does. `float_moment` runs `picture_copy()` first, which divides every

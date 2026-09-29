@@ -199,6 +199,35 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `integer_psnr.c::init`, propagate here and to CUDA and Vulkan twins
   in same PR.
 
+- **`integer_psnr_hvs_sycl.cpp` DCT lives in local memory, never in one
+  work-item's private arrays** (T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29,
+  Research-2123). Old shape: work-item 0 ran the whole 8x8 DCT + masking on
+  five private 64-element arrays; IGC 2.41.5 SIGSEGVs the host compiling that
+  at SIMD32 for Xe2 (Arc B580). Now: `hvs_fdct8_pass()` = one 1-D transform per
+  work-item per pass (items 8-23 pass 1 while items 0-1 take the variance
+  ratios; items 0-15 pass 2), work-item 0 streams coefficients from local
+  memory, `hvs_mask_at()` recomputes the mask per coefficient. Float reductions
+  keep CPU `i, j` order -> bit-identical to the old kernel. Guard:
+  `test_sycl_psnr_hvs_parity_simd32` (`IGC_ForceOCLSIMDWidth=32`,
+  `NEO_CACHE_PERSISTENT=0`). On rebase: no private `int[64]` / `float[64]` in
+  this kernel; do not "fix" by pinning `VMAF_SYCL_REQD_SG_SIZE(16)` instead.
+
+- **Tile loaders clamp after reflecting (`sycl_tile_index.h`)**
+  (T-SYCL-TILE-HALO-OOB-READ-2026-09-29, Research-2123). Fixed-size SLM tiles
+  load padding lanes too; one reflection of those leaves the plane on small
+  frames (ADM vertical DWT: row 16 of an 8-row plane -> -1) and reads outside
+  the USM buffer -> `UR_RESULT_ERROR_DEVICE_LOST` when the page is unmapped.
+  Every single-reflection loader wraps the reflected index in
+  `vmaf_sycl_tile_index()`: `integer_adm` `launch_dwt_vert_pair`, `integer_vif`
+  `dev_vert_load_tile` + `dev_fused_load_tile`, `integer_motion`
+  `motion_load_tile`, `integer_motion_v2` `mv2_load_diff`, `float_motion`
+  `fm_load_tile`, `float_vif` `load_vif_tile`. Identity for consumed samples ->
+  no score change. New tiled kernel = same wrap. Per-output reflections
+  (`dev_hori_convolve_border`, float VIF decimate) are consumed-only and stay
+  unwrapped; integer VIF below 16x16 still faults there
+  (T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29, needs a minimum-size decision).
+  Guard: `test_sycl_adm_tiny_frames`.
+
 - **`integer_psnr_hvs_sycl.cpp` uses ceiling division for chroma plane
   geometry** (PR #1031). `init_fex_sycl` computes 4:2:0 / 4:2:2 chroma
   `width[1..2]` / `height[1..2]` via `(w + 1U) >> 1` / `(h + 1U) >> 1`, not

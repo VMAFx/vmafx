@@ -38,6 +38,7 @@
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
+#include "sycl_tile_index.h"
 
 #include <cassert>
 #include <cerrno>
@@ -479,8 +480,15 @@ sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, int32_t 
             int const row_start = 2 * n_start - 1; // first input row
 
             // Read pixel from source at (x, y) with mirroring
+            // Output row n reads input rows 2n-1 .. 2n+2, inside [-1, h + 1],
+            // which one reflection covers. The tile also holds the rows of
+            // padding work-items, up to 2 * n_start + 16: on a plane of 8 rows
+            // or fewer one reflection leaves those below zero (row 16 of an
+            // 8-row plane mirrors to -1, of a 3-row plane to -11), so every
+            // frame 64 rows high or less read before the band's allocation at
+            // scale 3 and lost the device. sycl_tile_index.h.
             auto read_px = [&](int x, int y) -> int32_t {
-                y = dev_mirror_adm(y, (int)e_h);
+                y = vmaf_sycl_tile_index(dev_mirror_adm(y, (int)e_h), (int)e_h);
                 if (std::cmp_greater_equal(x, e_w))
                     return 0;
                 if (e_scale == 0) {
@@ -1767,9 +1775,12 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     auto *s = static_cast<AdmStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
 
-    // Combined graph wait (idempotent per frame — first extractor wins)
-    vmaf_sycl_graph_wait(state);
+    // Combined graph wait (idempotent per frame — first extractor wins). A
+    // failed wait means the accumulators are stale: fail, never score them.
+    int const wait_err = vmaf_sycl_graph_wait(state);
     s->has_pending = false;
+    if (wait_err)
+        return wait_err;
 
     // Read back accumulators
     int64_t cm_results[ADM_NUM_SCALES][ADM_NUM_BANDS];

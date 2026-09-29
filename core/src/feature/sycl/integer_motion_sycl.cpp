@@ -39,6 +39,7 @@
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
+#include "sycl_tile_index.h"
 
 #include <cerrno>
 #include <cmath>
@@ -299,8 +300,10 @@ static inline void motion_load_tile(sycl::nd_item<2> item, const void *input, un
         for (unsigned i = lid; i < tile_elems; i += MOTION_WG_SIZE) {
             unsigned const tr = i / MOTION_TILE_W;
             unsigned const tc = i % MOTION_TILE_W;
-            int const py = dev_mirror_motion(tile_origin_y + (int)tr, (int)height);
-            int const px = dev_mirror_motion(tile_origin_x + (int)tc, (int)width);
+            int const py = vmaf_sycl_tile_index(
+                dev_mirror_motion(tile_origin_y + (int)tr, (int)height), (int)height);
+            int const px = vmaf_sycl_tile_index(
+                dev_mirror_motion(tile_origin_x + (int)tc, (int)width), (int)width);
             tile[tr][tc] = motion_read_sample(input, py, px, width, bpc);
         }
     }
@@ -845,8 +848,11 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     auto *s = static_cast<MotionStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
 
-    // Combined graph wait (idempotent per frame — first extractor wins)
-    vmaf_sycl_graph_wait(state);
+    // Combined graph wait (idempotent per frame — first extractor wins). A
+    // failed wait leaves the SAD stale: fail, never score it.
+    int const wait_err = vmaf_sycl_graph_wait(state);
+    if (wait_err)
+        return wait_err;
 
     double const motion_score = motion_score_from_sad(s);
     int err;

@@ -15,9 +15,13 @@
  *  Same pattern as ssim_sycl / ms_ssim_sycl.
  *
  *  Per-plane single-dispatch design — one work-group per output
- *  8×8 image block (step=7), 64 threads/WG. Cooperative load +
- *  thread-0-serial reductions matching CPU's exact i,j summation
- *  order (locks float bit-order to CPU's calc_psnrhvs).
+ *  8×8 image block (step=7), 64 threads/WG. Cooperative load, the
+ *  integer 8×8 DCT split across work-items through local memory
+ *  (one 1-D transform per item and pass), then thread-0-serial float
+ *  reductions matching CPU's exact i,j summation order (locks float
+ *  bit-order to CPU's calc_psnrhvs). The DCT must not move back into
+ *  thread 0's private memory: that footprint crashed the Xe2 GPU
+ *  compiler at SIMD32 (T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29).
  *
  *  fp64-free (Intel Arc A380 lacks native fp64 — same constraint
  *  as ssim_sycl / ms_ssim_sycl).
@@ -48,6 +52,7 @@ static constexpr int PSNR_HVS_BLOCK = 8;
 static constexpr int PSNR_HVS_STEP = 7;
 static constexpr int PSNR_HVS_NUM_PLANES = 3;
 static constexpr size_t WG_DIM = 8;
+static constexpr size_t BLOCK_AREA = WG_DIM * WG_DIM;
 
 static constexpr float CSF_TABLES[3][64] = {
     /* Y */
@@ -216,50 +221,35 @@ static void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4, int &y5, i
 namespace
 {
 
-static void od_bin_fdct8x8(int blk[64])
+using HvsLocal = sycl::local_accessor<int, 1>;
+
+/* One pass of the CPU's od_bin_fdct8x8() for one index `i`: transform the
+ * column src[0 * 8 + i] .. src[7 * 8 + i] and store it as row dst[i * 8 + 0 ..
+ * 7]. The first pass runs blk -> z and the second z -> blk, exactly like the
+ * CPU, so the eight transforms of a pass are independent and one work-item
+ * computes each. Integer arithmetic, so the split cannot change a result. */
+static void hvs_fdct8_pass(const HvsLocal &src, const HvsLocal &dst, size_t i)
 {
-    int z[64];
-    for (int i = 0; i < 8; i++) {
-        int y0;
-        int y1;
-        int y2;
-        int y3;
-        int y4;
-        int y5;
-        int y6;
-        int y7;
-        od_bin_fdct8(y0, y1, y2, y3, y4, y5, y6, y7, blk[0 * 8 + i], blk[1 * 8 + i], blk[2 * 8 + i],
-                     blk[3 * 8 + i], blk[4 * 8 + i], blk[5 * 8 + i], blk[6 * 8 + i],
-                     blk[7 * 8 + i]);
-        z[i * 8 + 0] = y0;
-        z[i * 8 + 1] = y1;
-        z[i * 8 + 2] = y2;
-        z[i * 8 + 3] = y3;
-        z[i * 8 + 4] = y4;
-        z[i * 8 + 5] = y5;
-        z[i * 8 + 6] = y6;
-        z[i * 8 + 7] = y7;
-    }
-    for (int i = 0; i < 8; i++) {
-        int y0;
-        int y1;
-        int y2;
-        int y3;
-        int y4;
-        int y5;
-        int y6;
-        int y7;
-        od_bin_fdct8(y0, y1, y2, y3, y4, y5, y6, y7, z[0 * 8 + i], z[1 * 8 + i], z[2 * 8 + i],
-                     z[3 * 8 + i], z[4 * 8 + i], z[5 * 8 + i], z[6 * 8 + i], z[7 * 8 + i]);
-        blk[i * 8 + 0] = y0;
-        blk[i * 8 + 1] = y1;
-        blk[i * 8 + 2] = y2;
-        blk[i * 8 + 3] = y3;
-        blk[i * 8 + 4] = y4;
-        blk[i * 8 + 5] = y5;
-        blk[i * 8 + 6] = y6;
-        blk[i * 8 + 7] = y7;
-    }
+    int y0;
+    int y1;
+    int y2;
+    int y3;
+    int y4;
+    int y5;
+    int y6;
+    int y7;
+    od_bin_fdct8(y0, y1, y2, y3, y4, y5, y6, y7, src[i], src[WG_DIM + i], src[(2 * WG_DIM) + i],
+                 src[(3 * WG_DIM) + i], src[(4 * WG_DIM) + i], src[(5 * WG_DIM) + i],
+                 src[(6 * WG_DIM) + i], src[(7 * WG_DIM) + i]);
+    const size_t row = i * WG_DIM;
+    dst[row + 0] = y0;
+    dst[row + 1] = y1;
+    dst[row + 2] = y2;
+    dst[row + 3] = y3;
+    dst[row + 4] = y4;
+    dst[row + 5] = y5;
+    dst[row + 6] = y6;
+    dst[row + 7] = y7;
 }
 
 } // namespace
@@ -283,10 +273,8 @@ static inline int sample_to_int(float v, int bpc)
 namespace
 {
 
-static inline bool load_hvs_block(sycl::nd_item<2> item,
-                                  const sycl::local_accessor<int, 1> &local_ref,
-                                  const sycl::local_accessor<int, 1> &local_dist,
-                                  const PsnrHvsKernelArgs &args)
+static inline bool load_hvs_block(sycl::nd_item<2> item, const HvsLocal &local_ref,
+                                  const HvsLocal &local_dist, const PsnrHvsKernelArgs &args)
 {
     const size_t block_y = item.get_group(0);
     const size_t block_x = item.get_group(1);
@@ -314,14 +302,10 @@ static inline bool load_hvs_block(sycl::nd_item<2> item,
 namespace
 {
 
-static inline void copy_hvs_block(const sycl::local_accessor<int, 1> &source, int output[64])
-{
-    for (int index = 0; index < 64; index++) {
-        output[index] = source[index];
-    }
-}
-
-static inline float hvs_variance_ratio(const int block[64])
+/* Reads the block straight from local memory: a private int[64] copy per
+ * block (and the DCT's z[64]) is the footprint the Xe2 SIMD32 compile could
+ * not survive. Summation order is the CPU's, unchanged. */
+static inline float hvs_variance_ratio(const HvsLocal &block)
 {
     float means[4] = {0.f, 0.f, 0.f, 0.f};
     float global_mean = 0.f;
@@ -365,25 +349,22 @@ static inline float hvs_variance_ratio(const int block[64])
 namespace
 {
 
-static inline void hvs_mask(float output[64], int plane)
+/* mask[i][j] of calc_psnrhvs(), recomputed per coefficient instead of held in
+ * a private float[64]; the same two float multiplies, so the same value. */
+static inline float hvs_mask_at(int plane, int index)
 {
-    for (int row = 0; row < 8; row++) {
-        for (int col = 0; col < 8; col++) {
-            const float csf = CSF_TABLES[plane][row * 8 + col];
-            const float scaled = csf * 0.3885746225901003f;
-            output[row * 8 + col] = scaled * scaled;
-        }
-    }
+    const float scaled = CSF_TABLES[plane][index] * 0.3885746225901003f;
+    return scaled * scaled;
 }
 
-static inline float hvs_mask_energy(const int block[64], const float mask[64])
+static inline float hvs_mask_energy(const HvsLocal &block, int plane)
 {
     float energy = 0.f;
     for (int row = 0; row < 8; row++) {
         const int first_col = (row == 0) ? 1 : 0;
         for (int col = first_col; col < 8; col++) {
-            const int coefficient = block[row * 8 + col];
-            energy += (float)(coefficient * coefficient) * mask[row * 8 + col];
+            const int coefficient = block[(row * 8) + col];
+            energy += (float)(coefficient * coefficient) * hvs_mask_at(plane, (row * 8) + col);
         }
     }
     return energy;
@@ -394,17 +375,16 @@ static inline float hvs_mask_energy(const int block[64], const float mask[64])
 namespace
 {
 
-static inline float hvs_error(const int ref[64], const int dist[64], const float mask[64],
-                              float threshold, int plane)
+static inline float hvs_error(const HvsLocal &ref, const HvsLocal &dist, float threshold, int plane)
 {
     float error_sum = 0.f;
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
-            const int index = row * 8 + col;
+            const int index = (row * 8) + col;
             const float csf = CSF_TABLES[plane][index];
             float error = sycl::fabs((float)ref[index] - (float)dist[index]);
             if (row != 0 || col != 0) {
-                const float masking = threshold / mask[index];
+                const float masking = threshold / hvs_mask_at(plane, index);
                 error = error < masking ? 0.f : error - masking;
             }
             error_sum += (error * csf) * (error * csf);
@@ -418,27 +398,18 @@ static inline float hvs_error(const int ref[64], const int dist[64], const float
 namespace
 {
 
-static inline float score_hvs_block(const sycl::local_accessor<int, 1> &local_ref,
-                                    const sycl::local_accessor<int, 1> &local_dist, int plane)
+/* Runs on work-item 0 once the block holds its DCT coefficients. */
+static inline float score_hvs_block(const HvsLocal &ref, const HvsLocal &dist, float ref_ratio,
+                                    float dist_ratio, int plane)
 {
-    int ref[64];
-    int dist[64];
-    copy_hvs_block(local_ref, ref);
-    copy_hvs_block(local_dist, dist);
-    const float ref_ratio = hvs_variance_ratio(ref);
-    const float dist_ratio = hvs_variance_ratio(dist);
-    od_bin_fdct8x8(ref);
-    od_bin_fdct8x8(dist);
-    float mask[64];
-    hvs_mask(mask, plane);
-    const float ref_energy = hvs_mask_energy(ref, mask);
-    const float dist_energy = hvs_mask_energy(dist, mask);
+    const float ref_energy = hvs_mask_energy(ref, plane);
+    const float dist_energy = hvs_mask_energy(dist, plane);
     float threshold = sycl::sqrt(ref_energy * ref_ratio) / 32.f;
     const float dist_threshold = sycl::sqrt(dist_energy * dist_ratio) / 32.f;
     if (dist_threshold > threshold) {
         threshold = dist_threshold;
     }
-    return hvs_error(ref, dist, mask, threshold, plane);
+    return hvs_error(ref, dist, threshold, plane);
 }
 
 } // namespace
@@ -446,21 +417,60 @@ static inline float score_hvs_block(const sycl::local_accessor<int, 1> &local_re
 namespace
 {
 
+/* Between the load and the first DCT pass: items 0 and 1 take the variance
+ * ratios of the untransformed ref / dist samples (calc_psnrhvs() does that
+ * before its DCT), items 8-15 and 16-23 run the first pass of the ref and dist
+ * DCTs into the z scratch. Both only read the samples. */
+static inline void hvs_ratios_and_first_pass(size_t lid, const HvsLocal &ref, const HvsLocal &dist,
+                                             const HvsLocal &z_ref, const HvsLocal &z_dist,
+                                             const sycl::local_accessor<float, 1> &ratio)
+{
+    if (lid < 2u) {
+        const HvsLocal &block = (lid == 0u) ? ref : dist;
+        ratio[lid] = hvs_variance_ratio(block);
+    } else if (lid >= WG_DIM && lid < 2u * WG_DIM) {
+        hvs_fdct8_pass(ref, z_ref, lid - WG_DIM);
+    } else if (lid >= 2u * WG_DIM && lid < 3u * WG_DIM) {
+        hvs_fdct8_pass(dist, z_dist, lid - (2u * WG_DIM));
+    }
+}
+
+/* Second DCT pass: items 0-7 (ref) and 8-15 (dist) write the coefficients
+ * back over the samples, which the ratios no longer need. */
+static inline void hvs_second_pass(size_t lid, const HvsLocal &ref, const HvsLocal &dist,
+                                   const HvsLocal &z_ref, const HvsLocal &z_dist)
+{
+    if (lid < WG_DIM) {
+        hvs_fdct8_pass(z_ref, ref, lid);
+    } else if (lid < 2u * WG_DIM) {
+        hvs_fdct8_pass(z_dist, dist, lid - WG_DIM);
+    }
+}
+
 static void launch_psnr_hvs(sycl::queue &q, PsnrHvsKernelArgs args)
 {
     sycl::nd_range<2> const ndr{
         sycl::range<2>{(size_t)args.blocks_y * WG_DIM, (size_t)args.blocks_x * WG_DIM},
         sycl::range<2>{WG_DIM, WG_DIM}};
     q.submit([=](sycl::handler &h_) {
-        sycl::local_accessor<int, 1> const s_ref(sycl::range<1>(64), h_);
-        sycl::local_accessor<int, 1> const s_dist(sycl::range<1>(64), h_);
+        HvsLocal const s_ref(sycl::range<1>(BLOCK_AREA), h_);
+        HvsLocal const s_dist(sycl::range<1>(BLOCK_AREA), h_);
+        HvsLocal const s_z_ref(sycl::range<1>(BLOCK_AREA), h_);
+        HvsLocal const s_z_dist(sycl::range<1>(BLOCK_AREA), h_);
+        sycl::local_accessor<float, 1> const s_ratio(sycl::range<1>(2), h_);
         h_.parallel_for(ndr, [=](sycl::nd_item<2> it) {
+            const size_t lid = it.get_local_linear_id();
             const bool valid = load_hvs_block(it, s_ref, s_dist, args);
             it.barrier(sycl::access::fence_space::local_space);
-            if (it.get_local_linear_id() != 0u) {
+            hvs_ratios_and_first_pass(lid, s_ref, s_dist, s_z_ref, s_z_dist, s_ratio);
+            it.barrier(sycl::access::fence_space::local_space);
+            hvs_second_pass(lid, s_ref, s_dist, s_z_ref, s_z_dist);
+            it.barrier(sycl::access::fence_space::local_space);
+            if (lid != 0u) {
                 return;
             }
-            const float score = valid ? score_hvs_block(s_ref, s_dist, args.plane) : 0.f;
+            const float score =
+                valid ? score_hvs_block(s_ref, s_dist, s_ratio[0], s_ratio[1], args.plane) : 0.f;
             const size_t slot = it.get_group(0) * (size_t)args.blocks_x + it.get_group(1);
             args.partials[slot] = score;
         });
@@ -733,16 +743,25 @@ namespace
 static const char *const plane_features[PSNR_HVS_NUM_PLANES] = {"psnr_hvs_y", "psnr_hvs_cb",
                                                                 "psnr_hvs_cr"};
 
-static void copy_hvs_partials(PsnrHvsStateSycl *s, sycl::queue &queue)
+/* A device fault surfaces here as a sycl::exception; it must not cross the C
+ * collect callback, and the partials it leaves behind are stale. */
+static int copy_hvs_partials(PsnrHvsStateSycl *s, sycl::queue &queue)
 {
-    for (int plane = 0; plane < PSNR_HVS_NUM_PLANES; ++plane) {
-        if (std::cmp_greater_equal(plane, s->n_active_planes)) {
-            break;
+    try {
+        for (int plane = 0; plane < PSNR_HVS_NUM_PLANES; ++plane) {
+            if (std::cmp_greater_equal(plane, s->n_active_planes)) {
+                break;
+            }
+            const size_t bytes = (size_t)s->num_blocks[plane] * sizeof(float);
+            queue.memcpy(s->h_partials[plane], s->d_partials[plane], bytes);
         }
-        const size_t bytes = (size_t)s->num_blocks[plane] * sizeof(float);
-        queue.memcpy(s->h_partials[plane], s->d_partials[plane], bytes);
+        queue.wait_and_throw();
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: reading back the block errors: %s\n",
+                 e.what());
+        return -EIO;
     }
-    queue.wait();
+    return 0;
 }
 
 static void reduce_hvs_planes(const PsnrHvsStateSycl *s, double scores[PSNR_HVS_NUM_PLANES])
@@ -799,7 +818,10 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         return -EINVAL;
     }
     sycl::queue &q = *qptr;
-    copy_hvs_partials(s, q);
+    const int copy_err = copy_hvs_partials(s, q);
+    if (copy_err) {
+        return copy_err;
+    }
     double plane_score[PSNR_HVS_NUM_PLANES] = {};
     reduce_hvs_planes(s, plane_score);
     return append_hvs_scores(feature_collector, s, plane_score, index);
