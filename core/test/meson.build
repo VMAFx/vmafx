@@ -56,6 +56,15 @@ test('test_strict_fp_compiler_args',
     timeout : 90,
 )
 
+# ADR-1360: the build-time SYCL AOT image check, driven by synthetic ELF
+# fixtures so it runs on every host, oneAPI or not.
+test('test_sycl_aot_image_check',
+    import('python').find_installation(),
+    args : files('test_sycl_aot_image_check.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-0220 and Research-2090: source-level guard for fp64-free SpEED
 # device regions, unique cross-TU kernel names, and explicit output captures.
 test('test_sycl_kernel_source_contract',

@@ -86,6 +86,23 @@ sycl/
   ensure `-fsycl` stays in link-time `link_args` of every dependency
   SYCL consumers inherit.
 
+- **AOT images generated at compile time, checked after link
+  (ADR-1360).** AOT path of `sycl_toolchain_args` (`sycl_icpx_aot_base_args`
+  in `core/src/meson.build`) carries `-fno-sycl-rdc --offload-compress`.
+  Default relocatable device code -> device codegen + ocloc run at LINK,
+  link sees only `-fsycl` -> `spir64_gen` images silently dropped (bug
+  ADR-0568 shipped with). Keep flags on compile line; keep
+  `sycl_dependency.link_args` = `-fsycl` only (link-time targets = 167 s+
+  per link x 113 test links of `libvmaf.a`, one ocloc crash aborts whole
+  link). Link-only device flags (e.g. `-foffload-fp32-prec-div`) now belong
+  on compile line. `find_program('ocloc')` error = intended fail-closed;
+  never demote to warning. `sycl_aot_image_check`
+  (`core/src/sycl/check_aot_image.py`) fails build unless `libvmaf.so` has
+  image per requested GFX IP; `sycl_icpx_aot_igc_skip` = only allowed gap
+  (`integer_psnr_hvs_sycl` minus Xe2, IGC 2.41.5 crash). Drop entry once
+  reworked kernel from `fix/sycl-b580-psnr-hvs-adm-tiny` lands (compiles for
+  Xe2 under ocloc 26.35). **On rebase**: keep all three pieces together.
+
 - **Feature-name aliasing when querying scores from non-default SYCL
   extractors.** Any `VMAF_OPT_FLAG_FEATURE_PARAM` option set to
   non-default value -> `vmaf_feature_name_from_opts_dict` stores

@@ -397,6 +397,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #   libigdgmm12            → /usr/lib/x86_64-linux-gnu/libigdgmm.so.12 (Intel
 #                            Graphics Memory Management — managed by the GPU
 #                            ICD for surface/BO allocation)
+#   intel-ocloc            → /usr/bin/ocloc (offline compiler; icpx runs it to
+#                            compile the SYCL spir64_gen AOT images at build
+#                            time, and the Linux oneAPI compiler does not ship
+#                            it — without it configure refuses, ADR-1360)
 #
 # **Why NOT use Intel's noble/unified APT repo for these (ADR-0541).**
 # As of 2026-05-18 the Intel apt repo only carries up to
@@ -406,36 +410,44 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # returns ZE_RESULT_ERROR_UNINITIALIZED (0x78000001) and sycl-ls reports
 # `Platforms: 0` even though /dev/dri/renderD<N> for the Arc card is passed
 # through and accessible. Host-side current Arch packages work; pinning the
-# container to the matching `NEO_VER` GitHub release fixes the in-container
-# fallback-to-CPU regression.
+# container to the matching compute-runtime GitHub release fixes the
+# in-container fallback-to-CPU regression.
 #
 # clinfo is installed in the same layer as the NEO .debs to avoid a
 # separate apt-get update/install round (saves one image layer). ADR-0790.
-# The matched set of Intel NEO runtime, gmmlib, and IGC packages is derived
-# dynamically from the pinned NEO_VER release metadata at build time. ADR-1145.
-ARG NEO_VER=26.35.39758.10
+# The matched set of Intel NEO runtime, gmmlib, IGC and ocloc packages is
+# derived dynamically from the release pinned as INTEL_NEO_VERSION in
+# build-config.env (ADR-1145); CI build hosts install that release's ocloc
+# through scripts/ci/install-intel-ocloc.sh, so both compile with one IGC.
+# The IGC debs install into /usr/local/lib without an ldconfig trigger, hence
+# the explicit ldconfig before anything loads them.
+COPY build-config.env /opt/vmafx/build-config.env
 COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends clinfo \
+    . /opt/vmafx/build-config.env \
+    && apt-get update && apt-get install -y --no-install-recommends clinfo \
     && mkdir -p /tmp/neo && cd /tmp/neo \
     && token_args=() \
     && if [[ -n "${GITHUB_TOKEN:-}" ]]; then token_args=(--github-token "${GITHUB_TOKEN}"); fi \
-    && python3 /tmp/fetch-intel-neo.py --neo-ver "${NEO_VER}" "${token_args[@]}" \
+    && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" "${token_args[@]}" \
     && apt-get update \
     && apt-get install -y --no-install-recommends ./*.deb \
+    && ldconfig \
     && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py
 
-# Verify NEO compute-runtime packages were actually installed.
-RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
+# Verify NEO compute-runtime packages were actually installed, and that ocloc
+# is the pinned release (icpx looks for exactly `ocloc` on PATH).
+RUN . /opt/vmafx/build-config.env \
+    && for pkg in intel-opencl-icd libze-intel-gpu1 intel-ocloc; do \
         dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
             || (echo "FATAL: ${pkg} was not installed" && exit 1); \
-    done
+    done \
+    && test "$(ocloc query OCL_DRIVER_VERSION | tail -n 1)" = "${INTEL_NEO_VERSION}"
 
 # Level Zero loader (libze_loader) for SYCL
-COPY build-config.env /opt/vmafx/build-config.env
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     . /opt/vmafx/build-config.env \

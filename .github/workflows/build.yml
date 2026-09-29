@@ -266,7 +266,12 @@ jobs:
         env:
           CC: gcc
           CXX: g++
+          # Lifts the anonymous GitHub API limit for the NEO release lookup.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          # ocloc compiles the SYCL ahead-of-time images; the Linux compiler
+          # does not ship it and meson setup refuses without it (ADR-1360).
+          bash scripts/ci/install-intel-ocloc.sh
           sudo apt-get update
           sudo -E apt-get -yq install gpg-agent cmake
           wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \

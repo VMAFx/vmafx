@@ -153,12 +153,14 @@ def test_stack_resolution_uses_matched_igc_assets_from_release_body() -> None:
     gmm = "libigdgmm12_22.10.0_amd64.deb"
     icd = "intel-opencl-icd_26.31.39395.13_amd64.deb"
     level_zero = "libze-intel-gpu1_26.31.39395.13_amd64.deb"
+    ocloc = "intel-ocloc_26.31.39395.13_amd64.deb"
     checksum = "ww31.sum"
     igc_core = "intel-igc-core-2_2.40.13+22418_amd64.deb"
     igc_opencl = "intel-igc-opencl-2_2.40.13+22418_amd64.deb"
     igc_base = "https://github.com/intel/intel-graphics-compiler/releases/download/v2.40.13/"
+    release_names = (gmm, icd, level_zero, "intel-ocloc-dbgsym_26.31.39395.13_amd64.ddeb", ocloc)
     document = {
-        "assets": [_release_asset(name) for name in (gmm, icd, level_zero, checksum)],
+        "assets": [_release_asset(name) for name in (*release_names, checksum)],
         "body": (
             f"{igc_base}{igc_core.replace('+', '%2B')}\n"
             f"{igc_base}{igc_opencl.replace('+', '%2B')}\n"
@@ -173,8 +175,32 @@ def test_stack_resolution_uses_matched_igc_assets_from_release_body() -> None:
         level_zero,
         igc_core,
         igc_opencl,
+        ocloc,
     ]
+    assert [name for name, _url in stack.select("ocloc")] == [igc_core, igc_opencl, ocloc]
     assert stack.checksum[0] == checksum
+
+
+def test_unknown_component_set_is_fatal() -> None:
+    asset = ("x.deb", "https://github.com/intel/x.deb")
+    stack = fetch_intel_neo.StackAssets(asset, asset, asset, asset, asset, asset, asset)
+
+    with pytest.raises(SystemExit, match="1"):
+        stack.select("everything")
+
+
+def test_release_without_ocloc_is_fatal() -> None:
+    names = (
+        "libigdgmm12_22.10.0_amd64.deb",
+        "intel-opencl-icd_26.31.39395.13_amd64.deb",
+        "libze-intel-gpu1_26.31.39395.13_amd64.deb",
+        "intel-ocloc-dbgsym_26.31.39395.13_amd64.ddeb",
+        "ww31.sum",
+    )
+    document = {"assets": [_release_asset(name) for name in names], "body": ""}
+
+    with pytest.raises(SystemExit, match="1"):
+        fetch_intel_neo._resolve_stack(document, "neo", "fixture release")
 
 
 def test_download_retries_interrupted_stream_without_exposing_partial_file(
@@ -240,6 +266,7 @@ def test_igc_checksum_merge_rejects_conflict(monkeypatch: pytest.MonkeyPatch) ->
         ("level-zero.deb", "https://github.com/intel/level-zero.deb"),
         (core_name, release_url + core_name),
         (opencl_name, release_url + opencl_name),
+        ("ocloc.deb", "https://github.com/intel/ocloc.deb"),
         ("checksums.sum", "https://github.com/intel/checksums.sum"),
     )
     release = {

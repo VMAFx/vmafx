@@ -40,21 +40,44 @@ class MesonCommandContractTest(unittest.TestCase):
     def test_device_list_is_scoped_to_spir64_gen(self) -> None:
         source = MESON_SOURCE.read_text(encoding="utf-8")
         match = re.search(
-            r"# AOT path:.*?sycl_toolchain_args\s*=\s*\[(?P<body>.*?)\]",
+            r"# AOT path:.*?sycl_icpx_aot_base_args\s*=\s*\[(?P<body>.*?)\]",
             source,
             flags=re.DOTALL,
         )
         if match is None:
-            self.fail("missing SYCL toolchain argument list")
+            self.fail("missing SYCL AOT base argument list")
         body = match.group("body")
+        arguments = re.findall(r"'([^']*)'", body)
 
-        self.assertIn("'-fsycl-targets=spir64_gen,spir64'", body)
-        self.assertIn("'-Xsycl-target-backend=spir64_gen'", body)
-        self.assertNotIn("'-Xs'", body)
-        self.assertRegex(
-            body,
-            r"'-Xsycl-target-backend=spir64_gen'\s*,\s*'-device '\s*\+\s*icpx_aot_targets",
+        self.assertIn("-fsycl-targets=spir64_gen,spir64", arguments)
+        self.assertNotIn("-Xs", arguments)
+        # The backend selector is last so the device list appended at every use
+        # site lands directly after it.
+        self.assertEqual(arguments[-1], "-Xsycl-target-backend=spir64_gen")
+        uses = re.findall(r"sycl_icpx_aot_base_args\s*\+\s*\[\s*'([^']*)'", source)
+        self.assertGreaterEqual(len(uses), 2, "toolchain and per-TU device lists")
+        self.assertTrue(all(use == "-device " for use in uses), uses)
+
+    def test_aot_images_are_generated_at_compile_time(self) -> None:
+        # ADR-1360: with relocatable device code the ocloc step runs at the link,
+        # and the links pass only -fsycl, so the spir64_gen images were dropped.
+        source = MESON_SOURCE.read_text(encoding="utf-8")
+        match = re.search(
+            r"sycl_icpx_aot_base_args\s*=\s*\[(?P<body>.*?)\]", source, flags=re.DOTALL
         )
+        if match is None:
+            self.fail("missing SYCL AOT base argument list")
+        self.assertIn("'-fno-sycl-rdc'", match.group("body"))
+        link = re.search(
+            r"sycl_dependency \+= declare_dependency\((?P<body>.*?)\n    \)",
+            source,
+            flags=re.DOTALL,
+        )
+        if link is None:
+            self.fail("missing sycl_dependency declaration")
+        self.assertIn("link_args : ['-fsycl'],", link.group("body"))
+        self.assertIn("find_program('ocloc', required : false)", source)
+        self.assertIn("files('sycl/check_aot_image.py')", source)
 
     def test_tidy_database_strips_target_scoped_aot_argument(self) -> None:
         module = load_generator()

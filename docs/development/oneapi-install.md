@@ -16,6 +16,35 @@ path.
 | Intel oneAPI Base Toolkit | **2025.3.1** | Bumped from 2025.0.4 (2026-04-25, T7-8). |
 | `icpx` (DPC++/C++ compiler) | shipped with the basekit | LLVM 20 base. |
 | Compute runtime (`level-zero-loader`) | distro package | Arch / CachyOS: `pacman -S level-zero-loader`. |
+| `ocloc` (GPU offline compiler) | `INTEL_NEO_VERSION` in `build-config.env` | Needed for the default ahead-of-time build; see below. |
+
+## The `ocloc` offline compiler
+
+The default build compiles native Intel GPU code for every target in
+`sycl_icpx_aot_targets` ([ADR-0568](../adr/0568-sycl-icpx-aot-targets-default.md)),
+and icpx hands that work to Intel's `ocloc`. The Linux oneAPI compiler does not
+include it (the Windows one does), so `meson setup -Denable_sycl=true` stops
+with an error that names this page's remedy when `ocloc` is not on `PATH`
+([ADR-1360](../adr/1360-sycl-aot-compile-time-device-codegen.md)).
+
+On Debian or Ubuntu x86-64, install the release the rest of the tree pins:
+
+```bash
+bash scripts/ci/install-intel-ocloc.sh     # sudo is used when not root
+ocloc query OCL_DRIVER_VERSION             # prints INTEL_NEO_VERSION
+```
+
+The script downloads `intel-ocloc` and the two Intel Graphics Compiler packages
+it loads from the `intel/compute-runtime` release named by `INTEL_NEO_VERSION`
+in `build-config.env`, checks them against the release's published SHA-256
+sums, installs them and proves that ocloc can compile a kernel. Set
+`GITHUB_TOKEN` if the anonymous GitHub API limit is exhausted. On Arch /
+CachyOS the `intel-compute-runtime` package ships `ocloc`. The `vmaf-dev-mcp`
+container already has it.
+
+If you only need a SPIR-V build, for example to run clang-tidy, skip ocloc and
+configure with `-Dsycl_icpx_aot_targets=`: the binary then compiles its kernels
+at first launch instead.
 
 ## Install paths
 
@@ -217,7 +246,8 @@ ICPX_ROOT=/opt/intel/oneapi-2025.3/compiler/latest/linux \
 
 The Linux SYCL lanes install `${ONEAPI_APT_PACKAGE}` from Intel's apt
 repository; its version is set once, as `ONEAPI_VERSION` in
-`build-config.env`, and can differ from the local pin documented here. The
+`build-config.env`, and can differ from the local pin documented here. They
+install `ocloc` with `scripts/ci/install-intel-ocloc.sh`. The
 `Windows MSVC+SYCL` lane pins its own offline-installer release in the
 workflow. Local-vs-CI divergence on the SYCL kernel binaries is acceptable as
 long as both build cleanly and the `Ubuntu SYCL` matrix row stays green;

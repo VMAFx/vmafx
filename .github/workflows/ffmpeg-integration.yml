@@ -170,8 +170,15 @@ jobs:
 
       - name: Install Intel oneAPI
         # oneAPI version comes from ONEAPI_APT_PACKAGE in build-config.env;
-        # Level Zero from LEVEL_ZERO_VERSION. See libvmaf-build-matrix.yml.
+        # Level Zero from LEVEL_ZERO_VERSION, ocloc from INTEL_NEO_VERSION.
+        # See libvmaf-build-matrix.yml.
+        env:
+          # Lifts the anonymous GitHub API limit for the NEO release lookup.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          # ocloc compiles the SYCL ahead-of-time images; the Linux compiler
+          # does not ship it and meson setup refuses without it (ADR-1360).
+          bash scripts/ci/install-intel-ocloc.sh
           wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
             | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \

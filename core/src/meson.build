@@ -1558,6 +1558,8 @@ endif
 
 sycl_dependency = []
 common_sycl_objects = []
+# Parsed sycl_icpx_aot_targets; stays empty for AdaptiveCpp and JIT-only builds.
+sycl_icpx_aot_list = []
 
 if is_sycl_enabled
     # Find SYCL compiler — defaults to 'icpx' from Intel oneAPI.
@@ -1627,26 +1629,72 @@ if is_sycl_enabled
     #          kernel launch. The binary embeds native ISA blobs for each
     #          listed target plus a SPIR-V fallback for unlisted devices.
     #          Set `sycl_icpx_aot_targets=''` to revert to SPIR-V JIT only
-    #          (smaller binary, mandatory JIT on first launch). ADR-0567.
+    #          (smaller binary, mandatory JIT on first launch). ADR-0568.
     #   acpp:  `--acpp-targets=<targets>` selects backend(s); the
     #          equivalent of `-fsycl` is implicit.
+    #
+    # `-fno-sycl-rdc` is load-bearing (ADR-1360). With icpx's default
+    # relocatable device code, `-fsycl-targets` on a `-c` step only picks the
+    # device bitcode stored in the fat object: the device link, sycl-post-link
+    # and the ocloc AOT compile all run at the final LINK, which reads its
+    # targets from the link command line. The links here pass only `-fsycl`
+    # (sycl_dependency below), so the spir64_gen bitcode was dropped and every
+    # binary shipped SPIR-V only while this file announced AOT. Under
+    # `-fno-sycl-rdc` each TU finishes device code generation, ocloc included,
+    # at compile time, the object carries the native images, and every link
+    # that pulls it in with plain `-fsycl` keeps them: libvmaf.so, the test
+    # executables that link libvmaf.a, and static downstream consumers. The
+    # AOT cost is paid once per TU, in parallel, instead of once per link.
+    # It forbids SYCL_EXTERNAL calls across TUs; none exist.
+    # `--offload-compress` zstd-compresses those images: 60 MB of native ISA per
+    # binary for the default 19 targets becomes 3 MB (libvmaf.so 65 MB -> 7.7 MB;
+    # every test executable linking libvmaf.a carries the same payload), with no
+    # measurable startup cost on Arc B580 or UHD 770 (ADR-1360).
     if is_sycl_acpp
         acpp_targets = get_option('sycl_acpp_targets')
         sycl_toolchain_args = ['--acpp-targets=' + acpp_targets]
     else
         icpx_aot_targets = get_option('sycl_icpx_aot_targets')
-        if icpx_aot_targets != ''
+        foreach aot_target : icpx_aot_targets.split(',')
+            if aot_target.strip() != ''
+                sycl_icpx_aot_list += aot_target.strip()
+            endif
+        endforeach
+        if sycl_icpx_aot_list.length() > 0
             # AOT path: emit spir64_gen (IGC) ISA blobs for the listed targets.
             # Scope the device list to IGC. The unqualified `-Xs` form is
             # ambiguous in a multi-target command and oneAPI 2026 reports it as
             # unused when the portable `spir64` fallback is present.
             # `spir64` fallback embeds portable SPIR-V for any unlisted device.
-            sycl_toolchain_args = [
+            # The device list must directly follow the backend selector, so it
+            # is appended last wherever these base arguments are used.
+            sycl_icpx_aot_base_args = [
                 '-fsycl',
+                '-fno-sycl-rdc',
+                '--offload-compress',
                 '-fsycl-targets=spir64_gen,spir64',
-                '-Xsycl-target-backend=spir64_gen', '-device ' + icpx_aot_targets,
+                '-Xsycl-target-backend=spir64_gen',
             ]
-            message('SYCL AOT targets (icpx): ' + icpx_aot_targets)
+            sycl_toolchain_args = sycl_icpx_aot_base_args + [
+                '-device ' + ','.join(sycl_icpx_aot_list),
+            ]
+            # icpx hands spir64_gen code generation to ocloc (intel-ocloc from
+            # the intel/compute-runtime release; bundled with oneAPI only on
+            # Windows). Without it every AOT compile fails, so refuse here with
+            # the remedy instead of letting ninja fail on the first SYCL TU.
+            ocloc = find_program('ocloc', required : false)
+            if not ocloc.found()
+                error('sycl_icpx_aot_targets asks for Intel GPU AOT (' +
+                      ','.join(sycl_icpx_aot_list) + '), which icpx compiles ' +
+                      'with the ocloc offline compiler, and ocloc is not on ' +
+                      'PATH. Install intel-ocloc from the intel/compute-runtime ' +
+                      'release pinned as INTEL_NEO_VERSION in build-config.env ' +
+                      '(scripts/ci/install-intel-ocloc.sh on Debian/Ubuntu), or ' +
+                      'configure -Dsycl_icpx_aot_targets= to build SPIR-V JIT ' +
+                      'only. See ADR-1360.')
+            endif
+            message('SYCL AOT targets (icpx): ' + ','.join(sycl_icpx_aot_list)
+                    + ' (ocloc: ' + ocloc.full_path() + ')')
         else
             # JIT path: portable SPIR-V only; compiled to native ISA at first launch.
             sycl_toolchain_args = ['-fsycl']
@@ -2025,18 +2073,52 @@ if is_sycl_enabled
     else
         sycl_strict_fp_args = ['-fp-model=precise']
     endif
-    sycl_feature_args = vmaf_cflags_common + ['-c'] + sycl_toolchain_args + ['-std=c++20'] + sycl_strict_fp_args + sycl_pic_arg + ['-fpermissive']
+    sycl_feature_tail_args = ['-std=c++20'] + sycl_strict_fp_args + sycl_pic_arg + ['-fpermissive']
     sycl_feature_inc = sycl_inc_flags + [
         '-I' + meson.current_source_dir() / 'cuda',
         '-I' + meson.current_source_dir() / 'feature' / 'sycl',
     ]
 
+    # AOT targets IGC cannot compile a TU for (ADR-1360). IGC 2.41.5 (NEO
+    # 26.35.39758.10) crashes in integer_psnr_hvs_sycl.cpp for every Xe2 target
+    # ("longjmp causes uninitialized stack frame" from ocloc), the same fault
+    # that makes the SPIR-V JIT segfault psnr_hvs_sycl on an Arc B580 at run
+    # time (T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29). That TU therefore
+    # embeds native ISA for the other targets and SPIR-V for Xe2, which is no
+    # worse than before; every other TU keeps the full list, and
+    # sycl_aot_image_check below allows this gap and no other. The reworked
+    # kernel on fix/sycl-b580-psnr-hvs-adm-tiny compiles for all three Xe2
+    # targets: drop the entry with it. A stale entry only costs cold start.
+    sycl_icpx_aot_igc_skip = {
+        'integer_psnr_hvs_sycl' : ['lnl-m', 'bmg-g21', 'bmg-g31'],
+    }
+
     foreach src : sycl_feature_sources
         name = fs.stem(src)
+        tu_toolchain_args = sycl_toolchain_args
+        if sycl_icpx_aot_list.length() > 0 and sycl_icpx_aot_igc_skip.has_key(name)
+            tu_aot_list = []
+            foreach aot_target : sycl_icpx_aot_list
+                if aot_target not in sycl_icpx_aot_igc_skip[name]
+                    tu_aot_list += aot_target
+                endif
+            endforeach
+            if tu_aot_list.length() > 0
+                tu_toolchain_args = sycl_icpx_aot_base_args + [
+                    '-device ' + ','.join(tu_aot_list),
+                ]
+            else
+                tu_toolchain_args = ['-fsycl']
+            endif
+            message('SYCL AOT: ' + name + ' excludes ' +
+                    ','.join(sycl_icpx_aot_igc_skip[name]) +
+                    ' (IGC cannot compile it for them; SPIR-V JIT there). ADR-1360.')
+        endif
         sycl_feature_objects += custom_target('sycl_feature_' + name,
             output : name + '.o',
             input : src,
-            command : [icpx] + sycl_feature_args + sycl_feature_inc
+            command : [icpx] + vmaf_cflags_common + ['-c'] + tu_toolchain_args
+                      + sycl_feature_tail_args + sycl_feature_inc
                       + ['@INPUT@', '-o', '@OUTPUT@'],
         )
     endforeach
@@ -2363,6 +2445,29 @@ libvmaf = library(
     soversion : vmaf_soversion,
     install: true,
 )
+
+# ADR-1360: fail the build, not the first cold start, when AOT goes inert.
+# The check reads the linked libvmaf.so and requires a spir64_gen image with an
+# ocloc member for every requested target (only the TUs in
+# sycl_icpx_aot_igc_skip may omit their listed targets). It runs on ELF shared
+# libraries: a static-only build has no linked library to inspect, and Windows
+# builds libvmaf static (ADR-0121) into PE files this reader does not parse;
+# there a missing ocloc still fails every SYCL compile outright.
+if is_sycl_enabled and sycl_icpx_aot_list.length() > 0 \
+        and host_machine.system() == 'linux' and get_option('default_library') != 'static'
+    sycl_aot_check_args = ['--ocloc', ocloc.full_path(),
+                           '--targets', ','.join(sycl_icpx_aot_list)]
+    foreach tu_name, skipped_targets : sycl_icpx_aot_igc_skip
+        sycl_aot_check_args += ['--partial', tu_name + '=' + ','.join(skipped_targets)]
+    endforeach
+    sycl_aot_image_check = custom_target('sycl_aot_image_check',
+        input : get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf,
+        output : 'sycl_aot_image_check.stamp',
+        command : [import('python').find_installation(), files('sycl/check_aot_image.py')]
+                  + sycl_aot_check_args + ['--stamp', '@OUTPUT@', '@INPUT@'],
+        build_by_default : true,
+    )
+endif
 
 pkg_mod = import('pkgconfig')
 

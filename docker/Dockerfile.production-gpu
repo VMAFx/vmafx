@@ -247,7 +247,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ninja-build \
         pkg-config \
         python3-pip \
-        xxd
+        xxd \
+        zstd
 
 RUN --mount=type=bind,from=meson-wheel,source=/meson-1.12.0-py3-none-any.whl,target=/tmp/meson-1.12.0-py3-none-any.whl \
     python3 -m pip install --break-system-packages --no-cache-dir --no-deps \
@@ -256,6 +257,21 @@ RUN --mount=type=bind,from=meson-wheel,source=/meson-1.12.0-py3-none-any.whl,tar
 
 ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
+
+# ocloc compiles the SYCL ahead-of-time images (sycl_icpx_aot_targets); the
+# Linux oneAPI compiler does not ship it and meson setup refuses without it.
+# The installer takes it from the compute-runtime release pinned as
+# INTEL_NEO_VERSION in build-config.env. zstd above lets the build-time AOT
+# image check read the compressed images under this image's Python 3.12
+# (ADR-1360).
+COPY build-config.env /tmp/vmafx/build-config.env
+COPY scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/install-intel-ocloc.sh
+COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
+# hadolint ignore=DL3008
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh /tmp/vmafx \
+    && rm -rf /tmp/vmafx
 
 WORKDIR /src
 COPY . .

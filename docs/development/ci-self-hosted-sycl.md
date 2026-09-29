@@ -32,7 +32,7 @@ the container sees one.
 
 | Property | Value | Where |
 | --- | --- | --- |
-| Image | `vmaf-sycl-arc-runner:local`, `FROM vmaf-dev-mcp:local` (oneAPI + NEO already inside) plus the official `actions/runner` tarball | [`dev/Containerfile.runner`](../../dev/Containerfile.runner) |
+| Image | `vmaf-sycl-arc-runner:local`, `FROM vmaf-dev-mcp:local` (oneAPI, NEO and the `ocloc` the ahead-of-time SYCL build needs already inside; rebuild the runner image after rebuilding the dev image, ADR-1360) plus the official `actions/runner` tarball | [`dev/Containerfile.runner`](../../dev/Containerfile.runner) |
 | Runner version | `v2.337.0`, tarball SHA-256 `70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613`, verified at build time | `Containerfile.runner` `ARG RUNNER_VERSION` / `RUNNER_SHA256` |
 | GPU exposed | the Intel Arc A380 render node only: `/dev/dri/by-path/pci-0000:03:00.0-render` (vendor `0x8086`, device `0x56a5`), currently `renderD129`. The RTX 4090 (`pci-0000:06:00.0`, `renderD128`) and the AMD iGPU (`pci-0000:7d:00.0`, `renderD130`) are not mapped | [`dev/docker-compose.runner.yml`](../../dev/docker-compose.runner.yml) `devices:` |
 | User | `runner` (uid 1001, gid 1001) in the host `render` (988) and `video` (984) groups; never root | `Containerfile.runner`, compose `group_add:` |

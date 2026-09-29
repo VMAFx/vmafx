@@ -1,0 +1,1 @@
+| [ADR-1360](1360-sycl-aot-compile-time-device-codegen.md) | Compile SYCL AOT images at compile time (`-fno-sycl-rdc --offload-compress`) because the link dropped them, require `ocloc` (pinned as `INTEL_NEO_VERSION`) at configure, and fail the build when `libvmaf.so` lacks an image for a requested target. | Accepted | sycl, build, meson, gpu, intel, aot, ci, docker, fork-local |

@@ -45,6 +45,11 @@ The runner needs to satisfy the union of all jobs that target it:
 - **Intel GPU + Level Zero + oneAPI Base Toolkit ≥ 2024.2** — drives
   the SYCL build (`-Denable_sycl=true`). `sycl-ls` must list at least
   one Intel GPU device.
+- **Intel `ocloc`** — the SYCL build compiles native GPU code ahead of time
+  and `meson setup` refuses without `ocloc` on `PATH`
+  ([ADR-1360](../adr/1360-sycl-aot-compile-time-device-codegen.md)). Run
+  `bash scripts/ci/install-intel-ocloc.sh` once on the host; it installs the
+  release pinned as `INTEL_NEO_VERSION` in `build-config.env`.
 - **AVX-512-capable CPU** (Ice Lake or newer / Zen 4 or newer) — the
   AVX-512 SIMD code paths. `lscpu | grep avx512f` should return a hit.
 - **≥ 16 GB RAM** — coverage + multi-backend builds peak around 8 GB

@@ -31,7 +31,7 @@ class ClangTidyCommandTests(unittest.TestCase):
         generator = load_generator()
         translated = generator.clang_tidy_command(
             "/opt/intel/oneapi/compiler/2026/bin/icpx -fsycl "
-            "-fsycl-targets=spir64_gen,spir64 -fno-sycl-rdc "
+            "-fsycl-targets=spir64_gen,spir64 -fno-sycl-rdc --offload-compress "
             "-Xsycl-target-backend=spir64_gen '-device pvc' -fp-model=precise "
             "-pedantic -Wall -Wextra -Werror -c ../unit.cpp -o unit.o"
         )
@@ -39,6 +39,7 @@ class ClangTidyCommandTests(unittest.TestCase):
         self.assertTrue(translated.startswith("clang++ "))
         self.assertNotIn("-fsycl", translated)
         self.assertNotIn("-fno-sycl-rdc", translated)
+        self.assertNotIn("--offload-compress", translated)
         self.assertNotIn("-Xsycl-target-backend", translated)
         self.assertNotIn("-device", translated)
         self.assertIn("-ffp-model=precise", translated)

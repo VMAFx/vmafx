@@ -623,8 +623,13 @@ jobs:
           # libvmaf-build-matrix.yml disable LTO for exactly this reason.
           # This job only needs codegen outputs and compile_commands.json,
           # so it has nothing to gain from LTO anyway.
+          # -Dsycl_icpx_aot_targets=: nothing here compiles device code, and
+          # gen-sycl-compile-commands.py strips the AOT flags for clang-tidy,
+          # so the job does not need the ocloc that AOT configure requires
+          # (ADR-1360).
           CC=icx CXX=icpx meson setup build-sycl core \
-            -Denable_sycl=true -Denable_cuda=false -Db_lto=false
+            -Denable_sycl=true -Denable_cuda=false -Db_lto=false \
+            -Dsycl_icpx_aot_targets=
           # Build only the generated version header so include/vcs_version.h
           # exists on disk before clang-tidy parses TUs, without compiling
           # untouched files across the whole tree.

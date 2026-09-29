@@ -4,8 +4,13 @@
 """Resolve, download, and verify Intel NEO compute stack packages.
 
 Derives the matched set of intel-opencl-icd, libze-intel-gpu1, libigdgmm12,
-intel-igc-core-2, and intel-igc-opencl-2 deb packages from a pinned
-intel/compute-runtime release tag. See ADR-1145.
+intel-igc-core-2, intel-igc-opencl-2, and intel-ocloc deb packages from a
+pinned intel/compute-runtime release tag. See ADR-1145.
+
+``--components runtime`` (the default) fetches the whole set: the GPU runtime a
+host needs to run SYCL kernels plus the ocloc offline compiler. ``--components
+ocloc`` fetches only ocloc and the IGC libraries it loads, which is what a build
+host needs for icpx SYCL ahead-of-time compilation (ADR-1360).
 """
 
 from __future__ import annotations
@@ -259,6 +264,9 @@ def _package_version(name: str, pattern: str) -> str:
     return match.group(1) if match else "unknown"
 
 
+COMPONENTS = ("runtime", "ocloc")
+
+
 @dataclass(frozen=True)
 class StackAssets:
     gmm: tuple[str, str]
@@ -266,11 +274,25 @@ class StackAssets:
     level_zero: tuple[str, str]
     igc_core: tuple[str, str]
     igc_opencl: tuple[str, str]
+    ocloc: tuple[str, str]
     checksum: tuple[str, str]
 
     @property
     def targets(self) -> list[tuple[str, str]]:
-        return [self.gmm, self.icd, self.level_zero, self.igc_core, self.igc_opencl]
+        return self.select("runtime")
+
+    def select(self, components: str) -> list[tuple[str, str]]:
+        """Return the packages one component set installs.
+
+        ocloc declares no package dependency on IGC but loads libigc and
+        libigdfcl at run time, so both IGC packages travel with it.
+        """
+        compiler = [self.igc_core, self.igc_opencl, self.ocloc]
+        if components == "ocloc":
+            return compiler
+        if components == "runtime":
+            return [self.gmm, self.icd, self.level_zero, *compiler]
+        _fatal(f"unknown component set {components!r}; expected one of {COMPONENTS}")
 
 
 def _resolve_stack(document: dict[str, Any], neo_ver: str, source: str) -> StackAssets:
@@ -293,12 +315,18 @@ def _resolve_stack(document: dict[str, Any], neo_ver: str, source: str) -> Stack
         f"libze-intel-gpu1 / level-zero-gpu deb in compute-runtime {neo_ver}",
         reject=(".ddeb", "legacy"),
     )
+    ocloc = _first_asset(
+        assets,
+        r"^intel-ocloc_[0-9].*_amd64\.deb$",
+        f"intel-ocloc deb in compute-runtime {neo_ver}",
+        reject=(".ddeb", "legacy"),
+    )
     checksum = _first_asset(
         assets, r"^.*(?:\.sum|sha256.*)$", f"checksum in compute-runtime {neo_ver}"
     )
     igc_core = _optional_igc_asset(assets, body, "intel-igc-core-2", neo_ver)
     igc_opencl = _optional_igc_asset(assets, body, "intel-igc-opencl-2", neo_ver)
-    return StackAssets(gmm, icd, level_zero, igc_core, igc_opencl, checksum)
+    return StackAssets(gmm, icd, level_zero, igc_core, igc_opencl, ocloc, checksum)
 
 
 def _optional_igc_asset(
@@ -326,6 +354,7 @@ def _print_resolution(neo_ver: str, stack: StackAssets) -> None:
     print(f"  - gmmlib:           {stack.gmm[0]} (derived GMMLIB_VER: {gmm_version})")
     print(f"  - intel-igc-core-2: {stack.igc_core[0]} (derived IGC_VER: {igc_version})")
     print(f"  - intel-igc-opencl: {stack.igc_opencl[0]}")
+    print(f"  - intel-ocloc:      {stack.ocloc[0]}")
     print(f"  - checksum file:    {stack.checksum[0]}")
     print("========================================================================")
 
@@ -400,19 +429,22 @@ def _write_checksum_audit(
             stream.write(f"{checksums[deb_name]}  {deb_name}\n")
 
 
-def resolve_and_fetch(neo_ver: str, output_dir: Path, token: str | None = None) -> None:
+def resolve_and_fetch(
+    neo_ver: str, output_dir: Path, token: str | None = None, components: str = "runtime"
+) -> None:
     """Resolve deb URLs, download, and verify against published checksums."""
     output_dir.mkdir(parents=True, exist_ok=True)
     source = f"https://api.github.com/repos/intel/compute-runtime/releases/tags/{neo_ver}"
     print(f"Querying Intel compute-runtime release metadata for {neo_ver}...")
     stack = _resolve_stack(_decode_json(make_request(source, token=token), source), neo_ver, source)
     _print_resolution(neo_ver, stack)
+    targets = stack.select(components)
     print(f"Downloading checksum file: {stack.checksum[1]}...")
     checksums = _parse_checksums(make_request(stack.checksum[1], token=token), stack.checksum[1])
     _add_igc_checksums(checksums, stack, token)
-    _download_and_verify(output_dir, stack.targets, checksums, token)
-    _write_checksum_audit(output_dir, stack.targets, checksums)
-    print("\nAll Intel NEO deb packages downloaded and verified successfully.")
+    _download_and_verify(output_dir, targets, checksums, token)
+    _write_checksum_audit(output_dir, targets, checksums)
+    print(f"\nIntel NEO '{components}' deb packages downloaded and verified successfully.")
 
 
 def main() -> None:
@@ -435,10 +467,19 @@ def main() -> None:
         default=os.getenv("GITHUB_TOKEN", ""),
         help="Optional GitHub token for rate limiting",
     )
+    parser.add_argument(
+        "--components",
+        choices=COMPONENTS,
+        default="runtime",
+        help=(
+            "runtime: GPU runtime plus ocloc (a host that runs SYCL kernels); "
+            "ocloc: the offline compiler and its IGC libraries only (an AOT build host)"
+        ),
+    )
 
     args = parser.parse_args()
     token = args.github_token.strip() or None
-    resolve_and_fetch(args.neo_ver, args.output_dir, token=token)
+    resolve_and_fetch(args.neo_ver, args.output_dir, token=token, components=args.components)
 
 
 if __name__ == "__main__":

@@ -287,6 +287,44 @@ cold-start cost. The build forwards `-device <list>` with
 unqualified `-Xs` also reaches the portable `spir64` target and oneAPI reports
 the device selector as unused.
 
+One exception: `integer_psnr_hvs_sycl` (`psnr_hvs_sycl`) is compiled without
+`lnl-m`, `bmg-g21` and `bmg-g31`, because the Intel Graphics Compiler in
+compute-runtime 26.35 crashes compiling that kernel for Xe2. On those devices it
+falls back to SPIR-V, and the same compiler fault currently makes it fail at run
+time on an Arc B580. Configure prints the exclusion.
+
+### What the build needs and checks
+
+AOT needs Intel's `ocloc` offline compiler on `PATH`. The Linux oneAPI compiler
+does not ship it; install it with `scripts/ci/install-intel-ocloc.sh` (see
+[the oneAPI install guide](../../development/oneapi-install.md#the-ocloc-offline-compiler))
+or configure with `-Dsycl_icpx_aot_targets=''`. Without it, `meson setup` stops
+with an error that says so.
+
+Each SYCL source file is compiled to native code for every listed target at
+compile time (`-fno-sycl-rdc`), and the images are zstd-compressed
+(`--offload-compress`), so every binary that links a SYCL object carries them:
+`libvmaf.so`, static consumers of `libvmaf.a`, and the test executables. After
+linking `libvmaf.so` on Linux, the build runs `core/src/sycl/check_aot_image.py`,
+which fails the build unless the library holds a native image for every listed
+target. You can check a library yourself:
+
+```bash
+clang-offload-bundler --list --type=o --input=build/src/libvmaf.so
+# sycl-spir64_gen   <- native images
+# sycl-spir64       <- SPIR-V fallback
+```
+
+Before [ADR-1360](../../adr/1360-sycl-aot-compile-time-device-codegen.md) the
+link silently dropped the native images and every build was SPIR-V only.
+
+Measured with the default 19 targets on a 22-thread host at `-j6`: a clean
+build takes 162 s instead of 82 s for SPIR-V only, and `libvmaf.so` is 7.7 MB
+instead of 4.6 MB. On an Arc B580 the default model's first frame with a cold
+compiler cache drops from 524 ms to 201 ms (UHD 770: 609 ms to 245 ms).
+Per-frame speed and scores are unchanged: with a warm cache the SPIR-V build
+starts as fast, and AOT and JIT scores are bit-identical.
+
 ### Adjusting the target list
 
 Override the default at configure time with `-Dsycl_icpx_aot_targets=`:
@@ -307,14 +345,16 @@ are unaffected).
 
 ### Known toolchain version constraints
 
-- `lnl-m` (Lunar Lake): requires icpx 2025.0.0 or later. Older releases emit
-  an "unknown device" warning and silently skip that target; the remaining
-  targets and the SPIR-V fallback still work.
-- `bmg-g21`, `bmg-g31` (Battlemage): requires icpx 2025.1.0 or later. Same
-  graceful-skip behaviour on older toolchains.
-- If your toolchain is older than 2025.0.0 and the build fails on an unknown
-  target name, narrow the list to the targets your toolchain supports, or set
-  `sycl_icpx_aot_targets=''` to disable AOT.
+The target names are resolved by `ocloc`, so what counts is the ocloc
+(compute-runtime) release, not the icpx version. The release pinned as
+`INTEL_NEO_VERSION` in `build-config.env` knows every default target.
+
+- `lnl-m` (Lunar Lake) and `bmg-g21`, `bmg-g31` (Battlemage) are the targets
+  an older ocloc is most likely not to know; `ocloc ids <target>` tells you.
+- An ocloc that does not know a listed target fails the compile, and a target
+  that goes missing from the images fails the build-time image check. Narrow
+  the list to what your ocloc supports, or set `sycl_icpx_aot_targets=''` to
+  disable AOT.
 
 ### AdaptiveCpp (acpp) side
 

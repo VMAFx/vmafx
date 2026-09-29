@@ -46,6 +46,7 @@ def clang_tidy_command(raw_command: str) -> str:
     )
     command = re.sub(r"\s+-fsycl-targets=\S+", "", command)
     command = re.sub(r"\s+-fno-sycl-rdc\b", "", command)
+    command = re.sub(r"\s+--offload-compress\b", "", command)
     command = re.sub(r"\s+-fsycl\b", "", command)
     command = re.sub(
         r"\s+-Xsycl-target-backend(?:=\S+)?\s+(?:'[^']*'|\"[^\"]*\"|\S+)",
@@ -82,6 +83,8 @@ def parse_ninja_sycl_commands(build_ninja_path: Path) -> list[dict]:
         # Flags removed:
         #   -fsycl-targets  — SYCL device targets; unsupported by clang++
         #   -fno-sycl-rdc   — SYCL device-link policy; irrelevant to analysis
+        #   --offload-compress
+        #                   — device-image compression; nothing to analyse
         #   -fsycl          — SYCL device-compilation; unsupported by clang++
         #   -Xsycl-target-backend[=<target>] <arg>
         #                   — icpx AOT backend argument, scoped or unscoped

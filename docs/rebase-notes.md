@@ -1,6 +1,30 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/sycl-aot-at-link — SYCL AOT images built at compile time, checked after link (ADR-1360) (2026-09-29)
+
+- `core/src/meson.build`: fork-only (upstream Netflix/vmaf has no SYCL). The
+  AOT argument list `sycl_icpx_aot_base_args` carries `-fno-sycl-rdc` and
+  `--offload-compress`; without `-fno-sycl-rdc` the link, which passes only
+  `-fsycl` through `sycl_dependency`, drops every `spir64_gen` image. Do not
+  move the target flags to `sycl_dependency.link_args` instead: link-time AOT
+  reruns device codegen for all of `libvmaf.a` at each of its 113 test links,
+  and one ocloc crash aborts the whole link. Configure errors when AOT targets
+  are set and `ocloc` is missing; the `sycl_aot_image_check` custom target runs
+  `core/src/sycl/check_aot_image.py` on `libvmaf.so`. `sycl_icpx_aot_igc_skip`
+  (the Xe2 targets of `integer_psnr_hvs_sycl`) is the only allowed gap; remove
+  the entry when the reworked kernel of `fix/sycl-b580-psnr-hvs-adm-tiny`
+  lands, whichever branch merges second.
+- `build-config.env` `INTEL_NEO_VERSION` replaces `dev/Containerfile`'s
+  `ARG NEO_VER`; the Containerfile NEO step sources the copied config and also
+  installs `intel-ocloc`, and Renovate's compute-runtime manager watches
+  `build-config.env`. Never reintroduce `ARG NEO_VER`.
+  `dev/scripts/fetch-intel-neo.py --components ocloc` feeds
+  `scripts/ci/install-intel-ocloc.sh`, used by every Linux SYCL CI leg and by
+  `docker/Dockerfile.production-gpu`'s oneAPI builder.
+- `scripts/ci/gen-sycl-compile-commands.py` strips `--offload-compress`; the
+  clang-tidy SYCL job configures `-Dsycl_icpx_aot_targets=` and needs no ocloc.
+
 ## fix/release-provenance-attest — GitHub build-provenance attestations replace slsa-github-generator (ADR-1356) (2026-09-29)
 
 - `.github/workflows/supply-chain.yml`: fork-only; upstream Netflix/vmaf has no

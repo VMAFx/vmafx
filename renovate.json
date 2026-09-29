@@ -358,15 +358,12 @@
     },
     {
       "customType": "regex",
-      "description": "Intel compute-runtime (NEO) version in dev/Containerfile. Tracks github.com/intel/compute-runtime releases. See ADR-0605.",
+      "description": "Intel compute-runtime (NEO) release shared by the dev container GPU runtime and the ocloc every SYCL build host installs. build-config.env owns the version; consumers source it directly. Tracks github.com/intel/compute-runtime releases. See ADR-0605, ADR-1360.",
       "managerFilePatterns": [
-        "/^dev/Containerfile$/",
-        "/^docker/Dockerfile\\.node$/",
-        "/^Dockerfile$/",
-        "/^Dockerfile\\.ffmpeg$/"
+        "/^build-config\\.env$/"
       ],
       "matchStrings": [
-        "ARG NEO_VER=(?<currentValue>[0-9.]+)"
+        "(?:^|\\n)INTEL_NEO_VERSION=\"(?<currentValue>[0-9.]+)\""
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "intel/compute-runtime",
