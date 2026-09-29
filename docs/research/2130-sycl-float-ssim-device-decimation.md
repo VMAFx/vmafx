@@ -28,16 +28,17 @@ Samples are multiples of 2^-8 (16-bit `picture_copy()` is the finest). For `scal
 
 ### Bit identity of the decimated planes (Arc B580 and UHD 770)
 
-A dev-only build dumped `d_ref` / `d_cmp` after `launch_decimate()`; a C program linked against `libvmaf.a` ran the CPU `iqa_decimate()` with `ssim.c`'s kernel on the same frame; `cmp` compared the files. All 32 planes per device were byte-identical:
+A dev-only build dumped `d_ref` / `d_cmp` after `launch_decimate()`; a C program linked against `libvmaf.a` ran the CPU `iqa_decimate()` with `ssim.c`'s kernel on the same frame; `cmp` compared the files. All 50 planes per device were byte-identical, every scale from 1 to 10 among them:
 
 | Input | Scale | Decimated |
 |---|---|---|
 | BBB 3840x2160 8-bit | auto (8) | 480x270 |
 | BBB 1920x1080 8-bit | auto (4) | 480x270 |
-| Netflix 576x324 8-bit | 1, 2, 3, 5, 7, 10 | 576x324 .. 57x32 |
-| Netflix 576x324 10-bit, 12-bit | 3, 5 | 192x108, 115x64 |
-| Netflix 576x324 16-bit | 7 | 82x46 |
-| BBB 853x481 4:4:4 8-bit (odd both) | auto (2), 3, 9 | 427x241, 285x161, 95x54 |
+| Netflix 576x324 8-bit | 1 to 10 | 576x324 .. 57x32 |
+| Netflix 576x324 10-bit | 3, 5, 6 | 192x108, 115x64, 96x54 |
+| Netflix 576x324 12-bit | 3, 5, 10 | 192x108, 115x64, 57x32 |
+| Netflix 576x324 16-bit | 3, 7, 10 | 192x108, 82x46, 57x32 |
+| BBB 853x481 4:4:4 8-bit (odd both) | auto (2), 3, 6, 9 | 427x241, 285x161, 143x81, 95x54 |
 
 ### Score parity against `--backend cpu` (max abs difference over all frames)
 
