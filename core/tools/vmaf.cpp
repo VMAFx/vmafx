@@ -20,15 +20,25 @@
  * Conservative idioms: nullptr, static_cast and [[nodiscard]]. CliRunState
  * owns every resource acquired after option parsing; CliRunGuard performs the
  * single ordered teardown on all returns. Spinner header uses inline to
- * suppress ODR warnings. */
+ * suppress ODR warnings. ADR-1366: FrameReader reads each input on its own
+ * thread, a bounded number of frames ahead of the scoring loop. */
 
+#include <array>
+#include <cassert>
+#include <climits>
+#include <condition_variable>
 #include <cstdint>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <exception>
+#include <mutex>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <sys/stat.h>
+#include <sys/types.h>
 #ifdef _WIN32
 /* MSVC/UCRT provides isatty / fileno via <io.h> under the MSVC-prefixed
  * names _isatty / _fileno; the POSIX-style aliases stay available for
@@ -1457,6 +1467,266 @@ ProgressStyle console_progress_style()
 
 } // namespace
 
+/* ADR-1366: frame read-ahead. Each input stream gets a FrameReader. When the
+ * two inputs can be read independently, a reader runs fetch_picture() on its
+ * own thread, up to kReadaheadDepth frames ahead of the scoring loop, so the
+ * file I/O and the picture copy overlap scoring and the two streams are read
+ * in parallel. The scoring thread still makes every vmaf_read_pictures() call,
+ * in the same order, with the same frames. */
+namespace
+{
+
+/* Pictures one reader may hold: the frames queued for the scorer plus the one
+ * its thread is filling. preallocate_cli_pictures() grows the picture pool by
+ * 2 * kReadaheadDepth, so the readers never draw on the pictures the pool was
+ * already sized for, and a reader blocked on an empty pool is always woken by
+ * a picture the scorer or libvmaf releases (see FrameReader::request_stop()). */
+constexpr unsigned kReadaheadDepth = 2;
+
+/* One fetch_picture() result. `pic` is a filled pool picture when ret == 0;
+ * for 1 (end of stream) and -1 (read error) fetch_picture() already returned
+ * the picture to the pool. */
+struct FetchedFrame {
+    VmafPicture pic;
+    int ret;
+};
+
+void release_fetched_picture(VmafPicture *pic)
+{
+    assert(pic != nullptr);
+    if (vmaf_picture_unref(pic))
+        (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (read-ahead)\n");
+}
+
+} // namespace
+
+namespace
+{
+
+/* Delivers one input's fetch_picture() results in stream order. start() moves
+ * the reads onto a thread; without it, or when the thread cannot be created,
+ * next() calls fetch_picture() inline, exactly as the loop did before
+ * ADR-1366. The thread stops after `limit` frames, after the first frame that
+ * ends or fails its stream, or when request_stop() is called. */
+class FrameReader
+{
+  public:
+    FrameReader(VmafContext *vmaf, video_input *vid, int depth, unsigned limit)
+        : vmaf_(vmaf), vid_(vid), depth_(depth), limit_(limit)
+    {
+    }
+    FrameReader(const FrameReader &) = delete;
+    FrameReader &operator=(const FrameReader &) = delete;
+    FrameReader(FrameReader &&) = delete;
+    FrameReader &operator=(FrameReader &&) = delete;
+    ~FrameReader()
+    {
+        request_stop();
+        join();
+    }
+    void start();
+    [[nodiscard]] int next(VmafPicture *pic);
+    void request_stop();
+    void join();
+
+  private:
+    void produce();
+    [[nodiscard]] bool wait_for_free_slot();
+    [[nodiscard]] bool publish(const FetchedFrame &frame);
+    void finish();
+
+    VmafContext *vmaf_;
+    video_input *vid_;
+    int depth_;
+    unsigned limit_;
+    bool threaded_ = false; /* scoring thread only */
+    std::mutex lock_;
+    std::condition_variable not_empty_;
+    std::condition_variable not_full_;
+    std::array<FetchedFrame, kReadaheadDepth> slots_{}; /* ring, guarded by lock_ */
+    unsigned head_ = 0;                                 /* guarded by lock_ */
+    unsigned count_ = 0;                                /* guarded by lock_ */
+    bool stop_ = false;                                 /* guarded by lock_ */
+    bool done_ = false;                                 /* guarded by lock_ */
+    std::thread thread_;
+};
+
+} // namespace
+
+namespace
+{
+
+void FrameReader::start()
+{
+    assert(!threaded_);
+    assert(!thread_.joinable());
+    try {
+        thread_ = std::thread([this] { produce(); });
+    } catch (const std::exception &) {
+        /* No thread: next() keeps reading inline, which is still correct. */
+        return;
+    }
+    threaded_ = true;
+}
+
+/* Reader thread body. At most limit_ iterations, each one frame. */
+void FrameReader::produce()
+{
+    for (unsigned n = 0; n < limit_; n++) {
+        if (!wait_for_free_slot())
+            break;
+        FetchedFrame frame = {.pic = {}, .ret = 0};
+        frame.ret = fetch_picture(vmaf_, vid_, &frame.pic, depth_);
+        if (!publish(frame) || frame.ret != 0)
+            break;
+    }
+    finish();
+}
+
+/* Reserve a ring slot before touching the pool, so this reader never holds
+ * more than kReadaheadDepth pictures. Returns false once stop is requested. */
+bool FrameReader::wait_for_free_slot()
+{
+    std::unique_lock<std::mutex> lock(lock_);
+    not_full_.wait(lock, [this] { return stop_ || count_ < kReadaheadDepth; });
+    assert(count_ <= kReadaheadDepth);
+    return !stop_;
+}
+
+} // namespace
+
+namespace
+{
+
+/* Queue one frame for the scorer. After request_stop() nothing will consume
+ * it, so the picture goes straight back to the pool instead. */
+bool FrameReader::publish(const FetchedFrame &frame)
+{
+    bool published = false;
+    {
+        const std::scoped_lock<std::mutex> lock(lock_);
+        if (!stop_) {
+            assert(count_ < kReadaheadDepth);
+            slots_[(head_ + count_) % kReadaheadDepth] = frame;
+            count_++;
+            published = true;
+        }
+    }
+    if (!published) {
+        if (frame.ret == 0) {
+            VmafPicture pic = frame.pic;
+            release_fetched_picture(&pic);
+        }
+        return false;
+    }
+    not_empty_.notify_one();
+    return true;
+}
+
+void FrameReader::finish()
+{
+    {
+        const std::scoped_lock<std::mutex> lock(lock_);
+        done_ = true;
+    }
+    not_empty_.notify_one();
+}
+
+/* Next frame of the stream, with fetch_picture()'s return convention. A reader
+ * whose thread has finished without queuing a terminal frame (limit reached,
+ * or stopped) reports end of stream. */
+int FrameReader::next(VmafPicture *pic)
+{
+    assert(pic != nullptr);
+    if (!threaded_)
+        return fetch_picture(vmaf_, vid_, pic, depth_);
+    FetchedFrame frame = {.pic = {}, .ret = 1};
+    {
+        std::unique_lock<std::mutex> lock(lock_);
+        not_empty_.wait(lock, [this] { return count_ > 0 || done_; });
+        if (count_ > 0) {
+            frame = slots_[head_];
+            head_ = (head_ + 1) % kReadaheadDepth;
+            count_--;
+        }
+    }
+    not_full_.notify_one();
+    *pic = frame.pic;
+    return frame.ret;
+}
+
+} // namespace
+
+namespace
+{
+
+/* Stop reading ahead and return every queued frame's picture to the pool. The
+ * queue is drained here, before any join: a reader blocked in
+ * vmaf_fetch_preallocated_picture() is waiting for a pool picture, and the
+ * frames queued by either reader may be the pictures it waits for. Callers
+ * therefore request_stop() every reader before they join() any. */
+void FrameReader::request_stop()
+{
+    if (!threaded_)
+        return;
+    std::array<FetchedFrame, kReadaheadDepth> drained{};
+    unsigned n_drained = 0;
+    {
+        const std::scoped_lock<std::mutex> lock(lock_);
+        assert(count_ <= kReadaheadDepth);
+        stop_ = true;
+        for (; count_ > 0; count_--) {
+            drained[n_drained] = slots_[head_];
+            n_drained++;
+            head_ = (head_ + 1) % kReadaheadDepth;
+        }
+    }
+    not_full_.notify_one();
+    for (unsigned i = 0; i < n_drained; i++) {
+        if (drained[i].ret == 0)
+            release_fetched_picture(&drained[i].pic);
+    }
+}
+
+void FrameReader::join()
+{
+    if (thread_.joinable())
+        thread_.join();
+}
+
+} // namespace
+
+/* ADR-1366: whether the two inputs can be read on separate threads without
+ * changing which bytes each reader sees. Separately opened files keep separate
+ * offsets, so this holds unless both handles name the same object: one pipe or
+ * device opened twice would hand each reader whichever frames it reached first
+ * (--no-reference opens the distorted file twice on purpose; it reads inline).
+ * Windows reports no inode numbers, so there only two regular files qualify. */
+namespace
+{
+
+#ifdef _WIN32
+[[nodiscard]] bool inputs_read_independently(FILE *ref, FILE *dist)
+{
+    struct _stat64 st_ref = {};
+    struct _stat64 st_dist = {};
+    if (_fstat64(fileno(ref), &st_ref) != 0 || _fstat64(fileno(dist), &st_dist) != 0)
+        return false;
+    return (st_ref.st_mode & _S_IFMT) == _S_IFREG && (st_dist.st_mode & _S_IFMT) == _S_IFREG;
+}
+#else
+[[nodiscard]] bool inputs_read_independently(FILE *ref, FILE *dist)
+{
+    struct stat st_ref = {};
+    struct stat st_dist = {};
+    if (fstat(fileno(ref), &st_ref) != 0 || fstat(fileno(dist), &st_dist) != 0)
+        return false;
+    return st_ref.st_dev != st_dist.st_dev || st_ref.st_ino != st_dist.st_ino;
+}
+#endif
+
+} // namespace
+
 /* What a pair of fetch_picture() results means for the frame loop. */
 namespace
 {
@@ -1536,29 +1806,25 @@ void release_unpaired_pictures(int ret1, int ret2, VmafPicture *pic_ref, VmafPic
 } // namespace
 
 /* Drive the main per-frame fetch + process loop. Stops at EOF on either side,
- * on read errors, or when c->frame_cnt is reached; see FrameLoopResult for how
- * the caller tells those apart.
+ * on read errors, or after `limit` frames (c->frame_cnt, or UINT_MAX when it is
+ * unset); see FrameLoopResult for how the caller tells those apart.
  */
 namespace
 {
 
-FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
-                               const CLISettings *c, int common_bitdepth, int istty)
+FrameLoopResult score_frames(VmafContext *vmaf, FrameReader *ref, FrameReader *dist,
+                             const CLISettings *c, unsigned limit, int istty)
 {
     float fps = 0.;
     const double t0 = wall_time_s();
     const ProgressStyle progress_style = console_progress_style();
     int exit_code = 0;
     unsigned picture_index;
-    for (picture_index = 0;; picture_index++) {
-
-        if (c->frame_cnt && picture_index >= c->frame_cnt)
-            break;
-
+    for (picture_index = 0; picture_index < limit; picture_index++) {
         VmafPicture pic_ref;
         VmafPicture pic_dist;
-        const int ret1 = fetch_picture(vmaf, vid_ref, &pic_ref, common_bitdepth);
-        const int ret2 = fetch_picture(vmaf, vid_dist, &pic_dist, common_bitdepth);
+        const int ret1 = ref->next(&pic_ref);
+        const int ret2 = dist->next(&pic_dist);
 
         if (ret1 || ret2)
             release_unpaired_pictures(ret1, ret2, &pic_ref, &pic_dist);
@@ -1593,6 +1859,31 @@ FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
         (void)fprintf(stderr, "\n");
 
     return {.frames = picture_index, .exit_code = exit_code};
+}
+
+} // namespace
+
+namespace
+{
+
+/* ADR-1366: with `readahead`, each stream is read on its own thread; see
+ * FrameReader. Both readers are stopped before either is joined. */
+FrameLoopResult run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_input *vid_dist,
+                               const CLISettings *c, int common_bitdepth, int istty, bool readahead)
+{
+    const unsigned limit = c->frame_cnt ? c->frame_cnt : UINT_MAX;
+    FrameReader ref(vmaf, vid_ref, common_bitdepth, limit);
+    FrameReader dist(vmaf, vid_dist, common_bitdepth, limit);
+    if (readahead) {
+        ref.start();
+        dist.start();
+    }
+    const FrameLoopResult result = score_frames(vmaf, &ref, &dist, c, limit, istty);
+    ref.request_stop();
+    dist.request_stop();
+    ref.join();
+    dist.join();
+    return result;
 }
 
 } // namespace
@@ -1738,6 +2029,7 @@ struct CliRunState {
     GpuStates gpu = {};
     int common_bitdepth = 0;
     VmafPictureConfiguration pic_cfg = {};
+    bool readahead = false; /* ADR-1366: inputs are read on reader threads */
 };
 
 [[nodiscard]] int cleanup_gpu_states(GpuStates *states)
@@ -1910,6 +2202,9 @@ namespace
 {
     video_input_info info;
     video_input_get_info(&state->vid_ref, &info);
+    /* ADR-1366: each reader thread holds up to kReadaheadDepth extra pictures. */
+    state->readahead = inputs_read_independently(state->vid_ref.fin, state->vid_dist.fin);
+    const unsigned readahead_pics = state->readahead ? 2 * kReadaheadDepth : 0;
     state->pic_cfg = {
         .pic_params =
             {
@@ -1918,7 +2213,7 @@ namespace
                 .bpc = static_cast<unsigned>(state->common_bitdepth),
                 .pix_fmt = pix_fmt_map(info.pixel_fmt),
             },
-        .pic_cnt = 2 * (state->c.thread_cnt + 1) + 1,
+        .pic_cnt = 2 * (state->c.thread_cnt + 1) + 1 + readahead_pics,
     };
     const int err = vmaf_preallocate_pictures(state->vmaf, state->pic_cfg);
     if (err) {
@@ -2071,8 +2366,9 @@ namespace
 {
     skip_initial_frames(state->vmaf, &state->vid_ref, &state->vid_dist, &state->c,
                         state->common_bitdepth);
-    const FrameLoopResult loop = run_frame_loop(state->vmaf, &state->vid_ref, &state->vid_dist,
-                                                &state->c, state->common_bitdepth, istty);
+    const FrameLoopResult loop =
+        run_frame_loop(state->vmaf, &state->vid_ref, &state->vid_dist, &state->c,
+                       state->common_bitdepth, istty, state->readahead);
     if (loop.exit_code)
         return loop.exit_code;
     if (loop.frames == 0) {

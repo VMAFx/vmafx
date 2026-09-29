@@ -195,6 +195,9 @@ tools/
 - [ADR-0104](../../docs/adr/0104-picture-pool-always-on.md) — picture
   pool is always compiled in and sized for live-picture set; this
   is what makes `--frame_skip_*` unref invariant load-bearing.
+- [ADR-1366](../../docs/adr/1366-cli-frame-readahead.md) — per-input reader
+  threads read up to two frames ahead; pool grows by `2 * kReadaheadDepth`.
+  See §Frame read-ahead below.
 - [ADR-0247](../../docs/adr/0247-vmaf-roi-tool.md) — `vmaf-roi`
   sidecar (per-CTU QP offsets for x265 / SVT-AV1). Encoder format
   contract + per-CTU-mean reduction are rebase-sensitive.
@@ -410,6 +413,43 @@ warning, keeps report, exits 0. Scoring common prefix of shorter clip is
 supported use. Do not fold two cases together.
 
 `core/tools/test/test_vmaf_read_error_exit.sh` pins all four cases, `fast` suite.
+
+## Frame read-ahead (ADR-1366)
+
+`run_frame_loop()` gives each input a `FrameReader`. With read-ahead on, a
+reader thread runs `fetch_picture()` (pool picture, file read, copy) up to
+`kReadaheadDepth` frames ahead; `score_frames()` pops one frame per reader per
+step on the main thread. Rebase-sensitive rules:
+
+- Reader threads call `fetch_picture()` and `vmaf_picture_unref()`, nothing
+  else of libvmaf. `vmaf_read_pictures()`, `classify_frame_fetch()`,
+  `release_unpaired_pictures()` and the progress line stay on the main thread,
+  in frame order. Moving any of them onto a reader breaks index order and the
+  ADR-1262 exit semantics.
+- A reader reserves a ring slot (`wait_for_free_slot()`) BEFORE it takes a pool
+  picture, so it never holds more than `kReadaheadDepth` pictures, and
+  `preallocate_cli_pictures()` adds exactly `2 * kReadaheadDepth` when
+  `state->readahead`. Fetching first and queueing later makes pool use
+  unbounded and lets the readers starve libvmaf's pictures.
+- Shutdown calls `request_stop()` on BOTH readers before `join()` on either.
+  `request_stop()` drains the ring back to the pool, which is what wakes a
+  reader blocked in `vmaf_fetch_preallocated_picture()`; joining one reader
+  before stopping the other can wait forever on a picture queued in the other.
+- Readers stop after `--frame_cnt` frames (`UINT_MAX` unset) and after the
+  first frame that ends or fails their stream. `skip_initial_frames()` runs
+  inline before the readers start.
+- `inputs_read_independently()` keeps two handles on one object (same
+  `st_dev`/`st_ino` on POSIX; anything but two regular files on Windows) on the
+  inline path. `--no-reference` opens the distorted file twice and therefore
+  reads inline on POSIX. Never thread two readers over one pipe: each would
+  get whichever frames it reached first.
+- Upstream Netflix `vmaf.c` still has the inline `for (;;)` fetch loop. A sync
+  conflict in `run_frame_loop()` resolves to ours; port upstream per-frame read
+  changes into `fetch_picture()`, which both paths call.
+
+`core/tools/test/test_vmaf_frame_readahead.sh` (fast suite) pins frame order,
+pairing, `--frame_cnt` (no reader reads past it), `--frame_skip_dist`, the
+inline path, an early end and a failed read.
 
 ## GPU-tagged tool tests run exclusively
 

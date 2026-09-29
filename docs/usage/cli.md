@@ -406,6 +406,58 @@ which features have GPU/SIMD twins.
 `--subsample` trades precision for speed — pooled scores are still computed
 over the sampled subset, so keep it at 1 for final reports.
 
+## Input read-ahead
+
+`vmaf` reads the reference and the distorted input on two reader threads, each
+up to two frames ahead of scoring
+([ADR-1366](../adr/1366-cli-frame-readahead.md)). Reading the files and copying
+each frame into a libvmaf picture then overlaps feature extraction, and the two
+inputs are read at the same time instead of one after the other. There is no
+flag to set. Runs whose per-frame cost was mostly reading gain the most: at
+3840x2160 8-bit 4:2:0, `--feature psnr` drops from about 7 to 8 ms to about
+3.5 to 4 ms per frame on the CPU, with or without `--threads`, and the
+`psnr`, `motion` and `adm` twins on an Intel Arc B580 (`--backend sycl`) drop
+from about 8 ms to about 4 ms. A run that is already limited by feature
+extraction, such as the default model on 16 CPU threads, runs at the same
+speed as before. The measurements are in
+[Research-1366](../research/1366-cli-frame-readahead.md).
+
+Read-ahead does not change what is scored:
+
+- The scoring loop receives the same frames, in the same order and pairs, and
+  hands them to libvmaf from the same thread as before. Scores are identical,
+  including at `--precision max`.
+- `--frame_cnt N` stops each reader after `N` frames; nothing past frame `N`
+  is read.
+- `--frame_skip_ref` and `--frame_skip_dist` skip their frames before the
+  readers start.
+- The [exit codes](#exit-codes) are unchanged: a stream that ends early still
+  exits 0 with the `ended before` warning, and a failed read still exits 102
+  without writing a report.
+
+What changes:
+
+- **Memory.** The picture pool holds four more pictures, two per input: about
+  50 MB at 3840x2160 8-bit 4:2:0, about 100 MB at 10-bit. The
+  `picture pool: N pictures pre-allocated` line shown on a terminal counts
+  them.
+- **Threads.** Two more threads exist while frames are being scored.
+- **Diagnostics.** A reader can reach a damaged frame of its input before the
+  scoring loop stops at the end of the other input. The reader's own message,
+  for example `Error reading YUV frame data.`, is then printed although the run
+  scores the common frames and exits 0.
+
+Both inputs are read on the main thread, as before, when:
+
+- on Linux and macOS, both paths name the same file, pipe or device (the same
+  device and inode). Two readers of one pipe would each receive whichever
+  frames they reached first. `--no-reference` opens the distorted input twice,
+  so there it reads on the main thread;
+- on Windows, either input is not a regular file (a pipe or a console). Windows
+  reports no inode to compare, and two separately opened regular files never
+  share a read position;
+- a reader thread cannot be created.
+
 ## Preset bundles
 
 ```text

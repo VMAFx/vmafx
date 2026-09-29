@@ -1,0 +1,1 @@
+| [ADR-1366](1366-cli-frame-readahead.md) | The `vmaf` CLI reads the reference and the distorted input on one thread each, up to two frames ahead of scoring (picture pool grows by four), with an inline fallback when the inputs may share a read position; frame order, pairing, scores and exit codes unchanged | Accepted | cli, performance, threading, fork-local |

@@ -158,6 +158,21 @@ test('test_vmaf_read_error_exit', test_vmaf_read_error_exit,
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
 
+# ADR-1366 — frame read-ahead keeps frame order, pairing, --frame_cnt (no
+# reader reads past it), the frame-skip pre-loops and the end-of-stream /
+# read-error exits unchanged, on the threaded path (distinct files) and the
+# inline path (one file twice).
+# Pure CPU, 64x48 x 40 frames: fast suite.
+test_vmaf_frame_readahead = find_program('test_vmaf_frame_readahead.sh')
+test('test_vmaf_frame_readahead', test_vmaf_frame_readahead,
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ])
+
 # T-WINDOWS-CLI-UTF8-ARGV-2026-09-24 — CreateProcessW supplies an exact
 # Unicode command line so this does not depend on the launching shell's code
 # page. The child must preserve those paths through the CLI's argv boundary.

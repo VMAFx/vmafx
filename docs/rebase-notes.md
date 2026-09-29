@@ -53,6 +53,25 @@
 - `core/test/test_sycl_init_unwind.cpp` + `core/test/meson.build`: the
   `--wrap=vmaf_sycl_shared_chroma_init` link argument and its wrapper go
   together.
+## perf/cli-frame-readahead — per-input reader threads in the `vmaf` CLI (ADR-1366) (2026-09-29)
+
+- `core/tools/vmaf.cpp`: upstream Netflix `vmaf.c` keeps the inline
+  `for (picture_index = 0 ;; picture_index++)` loop that calls
+  `fetch_picture()` for the reference and then the distorted frame. The fork's
+  loop is `score_frames()` (bounded by `--frame_cnt` or `UINT_MAX`) fed by two
+  `FrameReader`s, and `run_frame_loop()` only starts, stops and joins them. A
+  sync conflict there resolves to the fork's side; port an upstream change to
+  how a frame is read into `fetch_picture()`, which the reader threads and the
+  inline path both call, and an upstream change to the per-frame scoring step
+  into `score_frames()`.
+- `preallocate_cli_pictures()` sizes the pool as `2 * (threads + 1) + 1` plus
+  `2 * kReadaheadDepth` when read-ahead is on. If upstream changes the base
+  term, keep the read-ahead term added to it.
+- `core/tools/meson.build`: the `vmaf` / `vmafx` targets take
+  `vmaf_cli_deps = vmaf_tool_deps + [thread_lib]` for `std::thread`.
+- Keep `request_stop()` on both readers before either `join()`, and the ring
+  slot reservation before the pool fetch; see `core/tools/AGENTS.md`
+  §Frame read-ahead.
 
 ## fix/sycl-aot-at-link — SYCL AOT images built at compile time, checked after link (ADR-1360) (2026-09-29)
 

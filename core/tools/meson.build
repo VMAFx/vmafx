@@ -70,11 +70,13 @@ vmaf_cli_sources = [
     'yuv_input.c',
     '../src/compat/path_utf8.c',
 ] + vmaf_close_retry_source
+# ADR-1366: vmaf.cpp reads each input on a std::thread (frame read-ahead).
+vmaf_cli_deps = vmaf_tool_deps + [thread_lib]
 vmaf = executable(
     'vmaf',
     vmaf_cli_sources,
     include_directories : [libvmaf_inc, vmaf_include],
-    dependencies: vmaf_tool_deps,
+    dependencies: vmaf_cli_deps,
     c_args : vmaf_tool_cflags,
     cpp_args : vmaf_tool_cflags,
     link_args : vmaf_cli_link_args,
@@ -91,7 +93,7 @@ if host_machine.system() == 'windows'
         'vmafx',
         vmaf_cli_sources,
         include_directories : [libvmaf_inc, vmaf_include],
-        dependencies: vmaf_tool_deps,
+        dependencies: vmaf_cli_deps,
         c_args : vmaf_tool_cflags,
         cpp_args : vmaf_tool_cflags,
         link_args : vmaf_cli_link_args,
