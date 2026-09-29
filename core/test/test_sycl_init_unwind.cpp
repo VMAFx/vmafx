@@ -204,7 +204,15 @@ struct InitCase {
     VmafFeatureExtractor *descriptor;
     bool has_dictionary;
     bool has_graph_registration;
+    /* Boolean option switched on before init; nullptr keeps the defaults. An
+     * option that adds buffers also gets its last allocation failed. */
+    const char *enabled_option = nullptr;
 };
+
+} // namespace
+
+namespace
+{
 
 const InitCase cases[] = {
     {.descriptor = &vmaf_fex_float_adm_sycl,
@@ -236,6 +244,10 @@ const InitCase cases[] = {
     {.descriptor = &vmaf_fex_float_ssim_sycl,
      .has_dictionary = true,
      .has_graph_registration = false},
+    {.descriptor = &vmaf_fex_float_ssim_sycl,
+     .has_dictionary = true,
+     .has_graph_registration = false,
+     .enabled_option = "enable_lcs"},
     {.descriptor = &vmaf_fex_integer_ssim_sycl,
      .has_dictionary = true,
      .has_graph_registration = false},
@@ -269,6 +281,17 @@ void apply_option_defaults(void *priv, const VmafOption *options)
     }
 }
 
+void enable_option(void *priv, const VmafOption *options, const char *name)
+{
+    for (unsigned i = 0U; name && options && options[i].name; i++) {
+        if (options[i].type != VMAF_OPT_TYPE_BOOL || std::strcmp(options[i].name, name) != 0) {
+            continue;
+        }
+        void *destination = static_cast<void *>(static_cast<char *>(priv) + options[i].offset);
+        *static_cast<bool *>(destination) = true;
+    }
+}
+
 struct InitResult {
     int error;
     unsigned allocations;
@@ -296,6 +319,7 @@ InitResult invoke_init(const InitCase &test_case)
                 .graph_unregistrations = 0U};
     }
     apply_option_defaults(extractor.priv, extractor.options);
+    enable_option(extractor.priv, extractor.options, test_case.enabled_option);
     extractor.sycl_state = reinterpret_cast<VmafSyclState *>(&fake_state_storage);
     const int error = extractor.init(&extractor, VMAF_PIX_FMT_YUV420P, 8U, 256U, 256U);
     const InitResult result = {
@@ -339,6 +363,18 @@ mu_message_t run_allocation_fault(const InitCase &test_case)
     return validate_result(test_case, "second-allocation", invoke_init(test_case), -ENOMEM);
 }
 
+/* Fail the last USM allocation an option adds (e.g. the enable_lcs partial
+ * buffers of float_ssim_sycl): count a clean init's allocations first. */
+mu_message_t run_last_allocation_fault(const InitCase &test_case)
+{
+    reset_faults();
+    const InitResult clean = invoke_init(test_case);
+    mu_assert("option-enabled init must succeed without faults", clean.error == 0);
+    reset_faults();
+    fail_allocation_at = clean.allocations;
+    return validate_result(test_case, "last-allocation", invoke_init(test_case), -ENOMEM);
+}
+
 mu_message_t run_dictionary_fault(const InitCase &test_case)
 {
     reset_faults();
@@ -367,6 +403,8 @@ mu_message_t test_sycl_init_failures_unwind()
 {
     for (const InitCase &test_case : cases) {
         mu_assert_msg(run_allocation_fault(test_case));
+        if (test_case.enabled_option)
+            mu_assert_msg(run_last_allocation_fault(test_case));
         if (test_case.has_dictionary)
             mu_assert_msg(run_dictionary_fault(test_case));
         if (test_case.has_graph_registration)

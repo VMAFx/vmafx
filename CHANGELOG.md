@@ -75,6 +75,23 @@
   on identical chroma) (ADR-1361).
 
 
+- **Four SYCL twins take the CPU extractor's options and match it
+  (ADR-1365).** `psnr_sycl` now accepts `enable_mse`, `enable_apsnr`,
+  `reduced_hbd_peak` and `min_sse` and matches `--backend cpu` bit for bit,
+  `apsnr_*` aggregates included; the PSNR option math now lives in
+  `core/src/feature/psnr_score.h`, shared by the CPU extractor and the twin.
+  `integer_ssim_sycl` accepts `enable_db` / `clip_db`, `float_ssim_sycl`
+  `enable_lcs` / `enable_db` / `clip_db` (`float_ssim_l/c/s` within 8.3e-7 of
+  the CPU), and `float_motion_sycl` `motion_max_val`. Before, a model or a
+  `--backend sycl --feature psnr=enable_mse=true`-style request that set one of
+  these options computed the feature on the CPU, and naming the twin with the
+  option failed with `unknown option`. Both SSIM twins now score an
+  identical window exactly 1, so with `enable_db` identical frames report the
+  CPU's `+inf` or `clip_db` ceiling; their default linear scores moved by at
+  most 1.1e-8. Measured on an Arc B580 and a UHD 770; see
+  [the SYCL backend guide](docs/backends/sycl/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins-2026-09-29).
+
+
 ### Fixed
 
 - **`--feature <name>` now runs on the GPU that `--backend` names.**
@@ -155,6 +172,16 @@
   every ADM scale) and `vmaf_read_pictures()` returned 0; only a later frame's
   upload failed. They now return `-EIO` for the faulted frame
   (`T-SYCL-GRAPH-WAIT-ERROR-DROPPED-2026-09-29`).
+
+
+- **`float_motion_sycl` honours `motion_force_zero` and weights its debug
+  score.** The twin declared `motion_force_zero` but ignored it and emitted
+  real motion scores; it now emits zeros, like the CPU `float_motion`. Its
+  debug `VMAF_feature_motion_score` now carries `motion_fps_weight`, as on the
+  CPU, instead of the unweighted SAD. The SSIM page no longer documents an
+  `enable_chroma` option and `_cb` / `_cr` outputs that the `ssim` extractor
+  does not have; it lists `enable_db` and `clip_db`
+  ([SSIM](docs/metrics/ssim.md#options)).
 
 ## [1.0.0-rc.2] - 2026-09-28
 ### Changed

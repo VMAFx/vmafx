@@ -109,8 +109,9 @@ lifts the score of *identical* planes, because it moves the sentinel rather
 than removing the truncation: on the pair above,
 `--feature psnr=min_sse=0.000001` gives `psnr_y = 100.840479` but reports
 `psnr_cb = 155.000000` for byte-identical chroma. Prefer `uncapped` unless
-you specifically want a raised sentinel; `min_sse` is integer-extractor-only
-and is not mirrored on the GPU twins.
+you specifically want a raised sentinel. `min_sse` belongs to the integer
+`psnr` extractor only (`float_psnr` has no such option); of its GPU twins,
+only `psnr_sycl` implements it.
 
 ## Options
 
@@ -125,9 +126,30 @@ and is not mirrored on the GPU twins.
 | `min_sse` | double | `0.0` | Constrain the minimum MSE, raising both the ceiling and the identical-plane sentinel. |
 | `uncapped` | bool | `false` | Report the true PSNR instead of truncating at `psnr_max`. The `mse == 0` sentinel is unaffected. |
 
-The GPU twins implement `enable_chroma` and `uncapped`. `enable_mse`,
-`enable_apsnr`, `reduced_hbd_peak` and `min_sse` remain CPU-only — see
-`core/AGENTS.md` for that standing divergence.
+`psnr_sycl` implements the whole table and matches `--backend cpu` bit for
+bit with every option set: the device only reduces each plane's sum of
+squared errors, and the host turns it into `psnr_*`, `mse_*` and `apsnr_*`
+with the same helpers the CPU extractor uses
+(`core/src/feature/psnr_score.h`). The CUDA, HIP and Metal twins implement
+`enable_chroma` and `uncapped` only. On those backends a model that sets
+`enable_mse`, `enable_apsnr`, `reduced_hbd_peak` or `min_sse` computes `psnr`
+on the CPU instead
+([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)), and naming
+the twin with one of these options fails with `unknown option`.
+
+From the CLI, `--backend sycl` runs `--feature psnr` with any of these options
+on `psnr_sycl` ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)); naming
+the twin, `--feature psnr_sycl=...`, does the same:
+
+```bash
+vmaf --reference ref.yuv --distorted dist.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --backend sycl --no_prediction --json --output out.json \
+    --feature psnr=enable_mse=true:enable_apsnr=true:min_sse=0.5
+```
+
+`mse_y` / `mse_cb` / `mse_cr` then appear per frame and `apsnr_y` /
+`apsnr_cb` / `apsnr_cr` under `aggregate_metrics`.
 
 ### `float_psnr`
 

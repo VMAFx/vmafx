@@ -28,6 +28,13 @@
  *  Host accumulates partials in `double`, divides by
  *  (W-10)·(H-10) and emits `float_ssim`.
  *
+ *  Options mirror CPU float_ssim.c. `enable_lcs` switches pass 2 to a
+ *  variant that also reduces the per-pixel luminance / contrast /
+ *  structure terms of iqa/ssim_tools.c (clamped variances, flat-region
+ *  covariance clamp) into three more per-WG partials and emits
+ *  `float_ssim_{l,c,s}`. `enable_db` / `clip_db` act on the host through
+ *  the shared nonfinite_score.h SSIM helpers.
+ *
  *  v1: scale=1 only. ADR-1324 falls model-selected host-picture contexts
  *  back to CPU before init when auto resolves above 1; direct requests keep
  *  the -EINVAL capability error.
@@ -77,6 +84,11 @@ struct SsimStateSycl {
     unsigned height;
     unsigned bpc;
     int scale_override;
+    bool enable_lcs;
+    bool enable_db;
+    bool clip_db;
+    /* vmaf_ssim_max_db(): +inf unless clip_db. */
+    double max_db;
 
     unsigned w_horiz;
     unsigned h_horiz;
@@ -106,6 +118,10 @@ struct SsimStateSycl {
     float *d_partials;
     /* Host-pinned partials for D2H. */
     float *h_partials;
+    /* enable_lcs only: per-WG L / C / S partials, 3 x wg_count floats
+     * laid out [l | c | s]; NULL otherwise. */
+    float *d_lcs_partials;
+    float *h_lcs_partials;
 
     bool has_pending;
     unsigned pending_index;
@@ -147,10 +163,13 @@ struct FloatVertArgs {
     const float *comparison_square;
     const float *cross_product;
     float *partials;
+    /* enable_lcs kernel only: 3 x group_count floats, [l | c | s]. */
+    float *lcs_partials;
     unsigned horizontal_width;
     unsigned final_width;
     unsigned final_height;
     size_t group_columns;
+    size_t group_count;
     float c1;
     float c2;
 };
@@ -161,6 +180,12 @@ struct SsimMoments {
     float reference_square;
     float comparison_square;
     float cross_product;
+};
+
+struct SsimLcs {
+    float luminance;
+    float contrast;
+    float structure;
 };
 
 } // namespace
@@ -287,21 +312,61 @@ static inline SsimMoments vertical_moments(const FloatVertArgs &args, size_t x, 
 namespace
 {
 
+/* SSIM of one window. Every product sits in a named temporary so icpx
+ * cannot contract it into an FMA (-fp-model=precise still contracts
+ * `a * b + c` inside one expression, ADR-1358), which keeps the numerator
+ * and the denominator the same operation sequence mirrored. Identical
+ * windows therefore compare equal and score exactly 1, as the CPU does, and
+ * `enable_db` reports the CPU's +inf / `clip_db` ceiling for them instead of
+ * a finite dB value of an fp32 rounding residue (ADR-1221). */
+static inline float float_ssim_from_moments(const SsimMoments &moments, float c1, float c2)
+{
+    const float reference_mean_sq = moments.reference_mean * moments.reference_mean;
+    const float comparison_mean_sq = moments.comparison_mean * moments.comparison_mean;
+    const float mean_product = moments.reference_mean * moments.comparison_mean;
+    const float reference_variance = moments.reference_square - reference_mean_sq;
+    const float comparison_variance = moments.comparison_square - comparison_mean_sq;
+    const float covariance = moments.cross_product - mean_product;
+    const float numerator = (2.0f * mean_product + c1) * (2.0f * covariance + c2);
+    const float denominator = (reference_mean_sq + comparison_mean_sq + c1) *
+                              (reference_variance + comparison_variance + c2);
+    return numerator == denominator ? 1.0f : numerator / denominator;
+}
+
 static inline float float_ssim_value(const FloatVertArgs &args, size_t x, size_t y)
 {
-    const SsimMoments moments = vertical_moments(args, x, y);
-    const float reference_variance =
-        moments.reference_square - moments.reference_mean * moments.reference_mean;
-    const float comparison_variance =
-        moments.comparison_square - moments.comparison_mean * moments.comparison_mean;
-    const float covariance =
-        moments.cross_product - moments.reference_mean * moments.comparison_mean;
+    return float_ssim_from_moments(vertical_moments(args, x, y), args.c1, args.c2);
+}
+
+} // namespace
+
+namespace
+{
+
+/* Per-pixel L / C / S of CPU iqa/ssim_tools.c in fp32 (ADR-0220):
+ * ssim_variance_scalar clamps both variances at zero, and
+ * ssim_accumulate_default_scalar takes sigma_ref * sigma_cmp as one
+ * square root and clamps a negative covariance to zero on a flat
+ * window, with C3 = C2 / 2. */
+static inline SsimLcs float_ssim_lcs(const SsimMoments &moments, float c1, float c2)
+{
+    const float reference_mean_sq = moments.reference_mean * moments.reference_mean;
+    const float comparison_mean_sq = moments.comparison_mean * moments.comparison_mean;
     const float mean_product = moments.reference_mean * moments.comparison_mean;
-    const float numerator = (2.0f * mean_product + args.c1) * (2.0f * covariance + args.c2);
-    const float denominator = (moments.reference_mean * moments.reference_mean +
-                               moments.comparison_mean * moments.comparison_mean + args.c1) *
-                              (reference_variance + comparison_variance + args.c2);
-    return numerator / denominator;
+    const float reference_raw = moments.reference_square - reference_mean_sq;
+    const float comparison_raw = moments.comparison_square - comparison_mean_sq;
+    const float reference_variance = reference_raw < 0.0f ? 0.0f : reference_raw;
+    const float comparison_variance = comparison_raw < 0.0f ? 0.0f : comparison_raw;
+    const float covariance = moments.cross_product - mean_product;
+    const float variance_product = reference_variance * comparison_variance;
+    const float sigma_product = sycl::sqrt(variance_product);
+    const float c3 = c2 / 2.0f;
+    const float flat_covariance = (covariance < 0.0f && sigma_product <= 0.0f) ? 0.0f : covariance;
+    return {
+        .luminance = (2.0f * mean_product + c1) / (reference_mean_sq + comparison_mean_sq + c1),
+        .contrast = (2.0f * sigma_product + c2) / (reference_variance + comparison_variance + c2),
+        .structure = (flat_covariance + c3) / (sigma_product + c3),
+    };
 }
 
 } // namespace
@@ -323,12 +388,39 @@ static inline void store_float_group(sycl::nd_item<2> item, const FloatVertArgs 
 namespace
 {
 
-static void launch_vert_combine(sycl::queue &queue, const FloatVertArgs &args)
+static inline void store_lcs_group(sycl::nd_item<2> item, const FloatVertArgs &args,
+                                   const SsimLcs &lcs)
+{
+    const float luminance =
+        sycl::reduce_over_group(item.get_group(), lcs.luminance, sycl::plus<float>{});
+    const float contrast =
+        sycl::reduce_over_group(item.get_group(), lcs.contrast, sycl::plus<float>{});
+    const float structure =
+        sycl::reduce_over_group(item.get_group(), lcs.structure, sycl::plus<float>{});
+    if (item.get_local_id(0) == 0 && item.get_local_id(1) == 0) {
+        const size_t index = item.get_group(0) * args.group_columns + item.get_group(1);
+        args.lcs_partials[index] = luminance;
+        args.lcs_partials[args.group_count + index] = contrast;
+        args.lcs_partials[2U * args.group_count + index] = structure;
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+static sycl::nd_range<2> vert_combine_range(const FloatVertArgs &args)
 {
     const size_t global_x = ((args.final_width + SSIM_WG_X - 1) / SSIM_WG_X) * SSIM_WG_X;
     const size_t global_y = ((args.final_height + SSIM_WG_Y - 1) / SSIM_WG_Y) * SSIM_WG_Y;
-    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x},
-                                  sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
+    return sycl::nd_range<2>{sycl::range<2>{global_y, global_x},
+                             sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
+}
+
+static void launch_vert_combine(sycl::queue &queue, const FloatVertArgs &args)
+{
+    sycl::nd_range<2> const range = vert_combine_range(args);
     queue.submit([=](sycl::handler &handler) {
         handler.parallel_for(range, [=](sycl::nd_item<2> item) {
             const size_t x = item.get_global_id(1);
@@ -336,6 +428,28 @@ static void launch_vert_combine(sycl::queue &queue, const FloatVertArgs &args)
             const float value =
                 x < args.final_width && y < args.final_height ? float_ssim_value(args, x, y) : 0.0f;
             store_float_group(item, args, value);
+        });
+    });
+}
+
+/* enable_lcs variant: one set of vertical moments feeds the SSIM value
+ * and the L / C / S terms; out-of-frame work-items contribute zeros. */
+static void launch_vert_combine_lcs(sycl::queue &queue, const FloatVertArgs &args)
+{
+    sycl::nd_range<2> const range = vert_combine_range(args);
+    queue.submit([=](sycl::handler &handler) {
+        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
+            const size_t x = item.get_global_id(1);
+            const size_t y = item.get_global_id(0);
+            float value = 0.0f;
+            SsimLcs lcs{};
+            if (x < args.final_width && y < args.final_height) {
+                const SsimMoments moments = vertical_moments(args, x, y);
+                value = float_ssim_from_moments(moments, args.c1, args.c2);
+                lcs = float_ssim_lcs(moments, args.c1, args.c2);
+            }
+            store_float_group(item, args, value);
+            store_lcs_group(item, args, lcs);
         });
     });
 }
@@ -375,6 +489,27 @@ static int check_context_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
 } // namespace
 
 static const VmafOption options_ssim_sycl[] = {
+    {
+        .name = "enable_lcs",
+        .help = "enable luminance, contrast and structure intermediate output",
+        .offset = offsetof(SsimStateSycl, enable_lcs),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+    },
+    {
+        .name = "enable_db",
+        .help = "write SSIM values as dB",
+        .offset = offsetof(SsimStateSycl, enable_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+    },
+    {
+        .name = "clip_db",
+        .help = "clip dB scores",
+        .offset = offsetof(SsimStateSycl, clip_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+    },
     {
         .name = "scale",
         .help = "decimation scale factor (0=auto, 1=no downscaling). "
@@ -422,6 +557,7 @@ static int configure_float_ssim(SsimStateSycl *s, unsigned bpc, unsigned width, 
     const float k2 = 0.03f;
     s->c1 = (k1 * range) * (k1 * range);
     s->c2 = (k2 * range) * (k2 * range);
+    s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, width, height);
     return 0;
 }
 
@@ -461,6 +597,10 @@ static void allocate_float_ssim(SsimStateSycl *s)
     s->d_refcmp = allocate_device<float>(s->sycl_state, horiz_bytes);
     s->d_partials = allocate_device<float>(s->sycl_state, partials_bytes);
     s->h_partials = allocate_host<float>(s->sycl_state, partials_bytes);
+    if (s->enable_lcs) {
+        s->d_lcs_partials = allocate_device<float>(s->sycl_state, 3U * partials_bytes);
+        s->h_lcs_partials = allocate_host<float>(s->sycl_state, 3U * partials_bytes);
+    }
 }
 
 } // namespace
@@ -470,8 +610,10 @@ namespace
 
 static bool float_ssim_allocations_complete(const SsimStateSycl *s)
 {
+    const bool lcs_complete = !s->enable_lcs || (s->d_lcs_partials && s->h_lcs_partials);
     return s->h_ref && s->h_cmp && s->d_ref && s->d_cmp && s->d_ref_mu && s->d_cmp_mu &&
-           s->d_ref_sq && s->d_cmp_sq && s->d_refcmp && s->d_partials && s->h_partials;
+           s->d_ref_sq && s->d_cmp_sq && s->d_refcmp && s->d_partials && s->h_partials &&
+           lcs_complete;
 }
 
 } // namespace
@@ -516,6 +658,39 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 namespace
 {
 
+/* Pass 2 and the partials read-back; `enable_lcs` selects the L/C/S kernel
+ * and reads its three extra partial rows back as well. */
+static void enqueue_float_vertical(SsimStateSycl *s, sycl::queue &q)
+{
+    const FloatVertArgs vert_args{.reference_mean = s->d_ref_mu,
+                                  .comparison_mean = s->d_cmp_mu,
+                                  .reference_square = s->d_ref_sq,
+                                  .comparison_square = s->d_cmp_sq,
+                                  .cross_product = s->d_refcmp,
+                                  .partials = s->d_partials,
+                                  .lcs_partials = s->d_lcs_partials,
+                                  .horizontal_width = s->w_horiz,
+                                  .final_width = s->w_final,
+                                  .final_height = s->h_final,
+                                  .group_columns = s->wg_count_x,
+                                  .group_count = s->wg_count,
+                                  .c1 = s->c1,
+                                  .c2 = s->c2};
+    const size_t partials_bytes = (size_t)s->wg_count * sizeof(float);
+    if (s->enable_lcs) {
+        launch_vert_combine_lcs(q, vert_args);
+        q.memcpy(s->h_lcs_partials, s->d_lcs_partials, 3U * partials_bytes);
+    } else {
+        launch_vert_combine(q, vert_args);
+    }
+    q.memcpy(s->h_partials, s->d_partials, partials_bytes);
+}
+
+} // namespace
+
+namespace
+{
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -549,20 +724,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                      .width = s->width,
                      .output_width = s->w_horiz,
                      .output_height = s->h_horiz});
-    launch_vert_combine(q, {.reference_mean = s->d_ref_mu,
-                            .comparison_mean = s->d_cmp_mu,
-                            .reference_square = s->d_ref_sq,
-                            .comparison_square = s->d_cmp_sq,
-                            .cross_product = s->d_refcmp,
-                            .partials = s->d_partials,
-                            .horizontal_width = s->w_horiz,
-                            .final_width = s->w_final,
-                            .final_height = s->h_final,
-                            .group_columns = s->wg_count_x,
-                            .c1 = s->c1,
-                            .c2 = s->c2});
-
-    q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(float));
+    enqueue_float_vertical(s, q);
 
     s->pending_index = index;
     s->has_pending = true;
@@ -573,6 +735,38 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
 namespace
 {
+
+static double sum_partials(const float *partials, unsigned count)
+{
+    double total = 0.0;
+    for (unsigned i = 0; i < count; i++)
+        total += (double)partials[i];
+    return total;
+}
+
+/* enable_lcs: the three per-WG L / C / S partial rows become the frame means
+ * float_ssim_{l,c,s}, published with the score in CPU float_ssim.c order
+ * after the shared SSIM validation (ADR-1302). */
+static int emit_float_ssim_lcs(const SsimStateSycl *s, double total, double n_pixels,
+                               unsigned index, VmafFeatureCollector *feature_collector)
+{
+    static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
+    double score = 0.0;
+    int err = vmaf_feature_finite_ratio_named("float_ssim_sycl", "float_ssim", total, n_pixels,
+                                              index, &score);
+    VmafNamedScore atoms[3];
+    for (unsigned k = 0; k < 3U && !err; k++) {
+        const double sum = sum_partials(s->h_lcs_partials + (size_t)k * s->wg_count, s->wg_count);
+        atoms[k].name = atom_names[k];
+        err = vmaf_feature_finite_ratio_named("float_ssim_sycl", atom_names[k], sum, n_pixels,
+                                              index, &atoms[k].value);
+    }
+    if (err)
+        return err;
+    return vmaf_ssim_emit_scores_named(feature_collector, s->feature_name_dict, "float_ssim_sycl",
+                                       "float_ssim", score, s->enable_db, s->max_db, atoms, 3U,
+                                       index);
+}
 
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
@@ -586,13 +780,14 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     /* Per-WG float partials → host double sum → mean SSIM
      * over (W-10)·(H-10) pixels. Same precision pattern as
      * ssim_vulkan / ssim_cuda. */
-    double total = 0.0;
-    for (unsigned i = 0; i < s->wg_count; i++)
-        total += (double)s->h_partials[i];
+    const double total = sum_partials(s->h_partials, s->wg_count);
     const double n_pixels = (double)s->w_final * (double)s->h_final;
-    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
-                                            "float_ssim_sycl", "float_ssim", total, n_pixels, 0,
-                                            0.0, index);
+    if (!s->enable_lcs) {
+        return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                                "float_ssim_sycl", "float_ssim", total, n_pixels,
+                                                s->enable_db, s->max_db, index);
+    }
+    return emit_float_ssim_lcs(s, total, n_pixels, index, feature_collector);
 }
 
 } // namespace
@@ -627,6 +822,8 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
         release_buffer(s->sycl_state, s->d_refcmp);
         release_buffer(s->sycl_state, s->d_partials);
         release_buffer(s->sycl_state, s->h_partials);
+        release_buffer(s->sycl_state, s->d_lcs_partials);
+        release_buffer(s->sycl_state, s->h_lcs_partials);
     }
     if (s->feature_name_dict) {
         vmaf_dictionary_free(&s->feature_name_dict);
@@ -702,6 +899,11 @@ struct IssimStateSycl {
     unsigned width;
     unsigned height;
     unsigned bpc;
+    /* CPU integer_ssim.c options; host-side dB conversion. */
+    bool enable_db;
+    bool clip_db;
+    /* vmaf_ssim_max_db(): +inf unless clip_db. */
+    double max_db;
 
     unsigned wg_count_x;
     unsigned wg_count_y;
@@ -927,20 +1129,26 @@ static inline IssimContribution integer_ssim_contribution(const IntegerVertArgs 
     const float c2 = args.sample_max * args.sample_max * 0.0009f * weight * weight;
     const float reference_mean = (float)moments.reference_mean;
     const float comparison_mean = (float)moments.comparison_mean;
-    const float reference_square = (float)moments.reference_square;
-    const float cross_product = (float)moments.cross_product;
-    const float comparison_square = (float)moments.comparison_square;
+    /* Named products and the two variances summed as a pair: the same
+     * mirrored-operation contract as float_ssim_from_moments(), so an
+     * identical window scores exactly 1 like the exact-integer CPU path. */
+    const float reference_mean_sq = reference_mean * reference_mean;
+    const float comparison_mean_sq = comparison_mean * comparison_mean;
     const float mean_product = reference_mean * comparison_mean;
-    const float numerator =
-        (2.0f * mean_product + c1) * (2.0f * (cross_product * weight - mean_product) + c2);
-    const float denominator =
-        (reference_mean * reference_mean + comparison_mean * comparison_mean + c1) *
-        (reference_square * weight - reference_mean * reference_mean + comparison_square * weight -
-         comparison_mean * comparison_mean + c2);
+    const float reference_weighted = (float)moments.reference_square * weight;
+    const float comparison_weighted = (float)moments.comparison_square * weight;
+    const float cross_weighted = (float)moments.cross_product * weight;
+    const float reference_variance = reference_weighted - reference_mean_sq;
+    const float comparison_variance = comparison_weighted - comparison_mean_sq;
+    const float covariance = cross_weighted - mean_product;
+    const float numerator = (2.0f * mean_product + c1) * (2.0f * covariance + c2);
+    const float denominator = (reference_mean_sq + comparison_mean_sq + c1) *
+                              (reference_variance + comparison_variance + c2);
     if (denominator == 0.0f || moments.weight <= 0LL) {
         return {};
     }
-    return {.weighted_score = weight * (numerator / denominator), .weight = weight};
+    const float ratio = numerator == denominator ? 1.0f : numerator / denominator;
+    return {.weighted_score = weight * ratio, .weight = weight};
 }
 
 } // namespace
@@ -1009,6 +1217,7 @@ static int configure_integer_ssim(IssimStateSycl *s, unsigned bpc, unsigned widt
     s->width = width;
     s->height = height;
     s->bpc = bpc;
+    s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, width, height);
     s->wg_count_x = (unsigned)((width + ISSIM_WG_X - 1) / ISSIM_WG_X);
     s->wg_count_y = (unsigned)((height + ISSIM_WG_Y - 1) / ISSIM_WG_Y);
     s->wg_count = s->wg_count_x * s->wg_count_y;
@@ -1212,7 +1421,7 @@ static int collect_fex_issim_sycl(VmafFeatureExtractor *fex, unsigned index,
     }
     return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
                                             "integer_ssim_sycl", "ssim", total_ssim,
-                                            (double)total_wgt, 0, 0.0, index);
+                                            (double)total_wgt, s->enable_db, s->max_db, index);
 }
 
 } // namespace
@@ -1250,6 +1459,20 @@ static int close_fex_issim_sycl(VmafFeatureExtractor *fex)
 }
 
 static const VmafOption options_issim_sycl[] = {
+    {
+        .name = "enable_db",
+        .help = "write SSIM values as dB: -10*log10(1-ssim)",
+        .offset = offsetof(IssimStateSycl, enable_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+    },
+    {
+        .name = "clip_db",
+        .help = "clip dB scores to a peak-derived ceiling",
+        .offset = offsetof(IssimStateSycl, clip_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+    },
     {.name = nullptr},
 };
 

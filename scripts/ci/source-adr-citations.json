@@ -1399,9 +1399,10 @@
     "0220": {
       "sites": {
         "core/src/feature/feature_extractor.cpp": 2,
+        "core/src/feature/psnr_score.h": 1,
         "core/src/feature/sycl/integer_cambi_sycl.cpp": 1,
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 1,
-        "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 3,
         "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
         "core/src/feature/sycl/speed_sycl_pipeline.h": 1,
         "core/src/sycl/common.cpp": 1,
@@ -6334,6 +6335,7 @@
         "core/test/test_sycl_speed_temporal_parity.c": 1,
         "core/test/test_sycl_ssim_parity.c": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 1,
+        "core/test/test_sycl_twin_option_parity.c": 1,
         "core/test/test_sycl_vif_min_dim.c": 1,
         "core/test/test_sycl_vif_parity.c": 1,
         "core/test/test_tad_rust.c": 1,
@@ -6649,7 +6651,8 @@
         "core/test/test_gpu_option_alias_contract.py": 1,
         "core/test/test_hip_float_adm_parity.c": 2,
         "core/test/test_metal_integer_adm_parity.c": 1,
-        "core/test/test_sycl_float_adm_parity.c": 2
+        "core/test/test_sycl_float_adm_parity.c": 2,
+        "core/test/test_sycl_twin_option_parity.c": 2
       },
       "target": "1183-model-options-gate-gpu-twin-selection.md"
     },
@@ -6701,15 +6704,16 @@
         "core/src/feature/float_psnr.c": 2,
         "core/src/feature/hip/float_psnr_hip.c": 3,
         "core/src/feature/hip/integer_psnr_hip.c": 3,
-        "core/src/feature/integer_psnr.c": 2,
+        "core/src/feature/integer_psnr.c": 1,
         "core/src/feature/metal/float_psnr.metal": 1,
         "core/src/feature/metal/float_psnr_metal.mm": 4,
         "core/src/feature/metal/integer_psnr.metal": 1,
         "core/src/feature/metal/integer_psnr_metal.mm": 3,
         "core/src/feature/psnr.c": 1,
         "core/src/feature/psnr.h": 1,
+        "core/src/feature/psnr_score.h": 2,
         "core/src/feature/sycl/float_psnr_sycl.cpp": 3,
-        "core/src/feature/sycl/integer_psnr_sycl.cpp": 3,
+        "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
         "core/test/meson.build": 1,
         "core/test/test_psnr_uncapped.c": 2,
         "scripts/ci/gpu_ulp_calibration.yaml": 2
@@ -6978,9 +6982,12 @@
         "core/src/feature/cuda/integer_ms_ssim_cuda.c": 1,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 2,
         "core/src/feature/metal/float_ms_ssim_metal.mm": 1,
+        "core/src/feature/nonfinite_score.h": 1,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 2,
         "core/test/test_hip_ms_ssim_parity.c": 3,
-        "core/test/test_sycl_ms_ssim_parity.c": 3
+        "core/test/test_sycl_ms_ssim_parity.c": 3,
+        "core/test/test_sycl_twin_option_parity.c": 1
       },
       "target": "1221-gpu-ms-ssim-db-ceiling.md"
     },
@@ -7421,6 +7428,12 @@
       },
       "target": "1300-cuda-install-from-nvidia-apt.md"
     },
+    "1302": {
+      "sites": {
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 1
+      },
+      "target": "1302-nonfinite-scores-fail-the-frame.md"
+    },
     "1304": {
       "sites": {
         "mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py": 1
@@ -7742,6 +7755,7 @@
       "sites": {
         "core/src/feature/speed_constants.h": 1,
         "core/src/feature/speed_gpu_common.h": 1,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 1,
         "core/src/feature/sycl/speed_chroma_sycl.cpp": 1,
         "core/src/feature/sycl/speed_sycl_host.cpp": 1,
         "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
@@ -7799,6 +7813,13 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 1
       },
       "target": "1361-psnr-hvs-area-scaled-parity-tolerance.md"
+    },
+    "1365": {
+      "sites": {
+        "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
+        "core/tools/test/test_vmaf_feature_backend.sh": 1
+      },
+      "target": "1365-sycl-twin-cpu-option-parity.md"
     }
   },
   "retired": {

@@ -329,10 +329,13 @@ core/
   same number — applied only when `uncapped` option is `false`.
   Upstream conflates the two in one
   `MIN(10*log10(peak^2 / MAX(mse, 1e-16)), psnr_max)`, so verbatim
-  upstream hunk landing on `feature/integer_psnr.c::psnr_from_mse()`,
+  upstream hunk landing on `feature/integer_psnr.c` (arm now lives in
+  `feature/psnr_score.h::vmaf_psnr_from_mse()`, shared with GPU twins,
+  [ADR-1365](../docs/adr/1365-sycl-twin-cpu-option-parity.md)),
   `feature/float_psnr.c::extract()` or `feature/psnr.c::compute_psnr()`
   silently reintroduces Netflix/vmaf#1109. `!uncapped` arm is that
-  upstream expression character-for-character and must stay that way:
+  upstream expression, `MIN` / `MAX` macro-expanded in place, and must
+  stay that way:
   with `min_sse` below ~1.9e-11 ceiling rises past ~208 dB
   floored zero MSE produces, so re-derived `mse == 0 -> psnr_max`
   default would not be bit-identical there. Never merge two
@@ -345,9 +348,13 @@ core/
   backends emit different feature keys for same request.
   `core/test/test_psnr_uncapped.c` guards both directions (default
   must still report 60.0; `uncapped=true` must report 100.840479).
-  Standing divergence, unchanged by that ADR: GPU twins implement
-  only `enable_chroma` and `uncapped`; `enable_mse`, `enable_apsnr`,
-  `reduced_hbd_peak` and `min_sse` are CPU-only.
+  Option coverage: CUDA, HIP, Metal twins implement only
+  `enable_chroma` and `uncapped`; `psnr_sycl` implements full CPU
+  table (ADR-1365). Peak, `psnr_max` (`min_sse`), MSE -> PSNR and
+  APSNR aggregate = `feature/psnr_score.h`, one implementation for
+  CPU `integer_psnr.c` and twins: a twin reduces SSE on device, calls
+  these on host. Upstream change to that math -> edit header, not a
+  copy in one extractor.
 
 - **Embedded MCP runtime contract** (fork-local, [ADR-0209](../docs/adr/0209-mcp-embedded-scaffold.md)).
   [`src/mcp/`](src/mcp/) now contains promoted in-process MCP

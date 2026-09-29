@@ -131,13 +131,12 @@ run no_twin 0 --no_prediction --feature brisque --backend "$BACKEND"
 has_warning no_twin brisque "has no twin"
 receipt no_twin cpu brisque=cpu
 
-# 4. An option the twin does not implement keeps the CPU extractor. The Metal
-#    float_ssim twin mirrors enable_lcs, so the check runs on the other three.
-if [ "$BACKEND" != metal ]; then
-  run option 0 --no_prediction --feature float_ssim=enable_lcs=true:scale=1 --backend "$BACKEND"
-  has_warning option float_ssim "cannot honour option 'enable_lcs'"
-  receipt option cpu float_ssim=cpu
-fi
+# 4. An option the twin does not implement keeps the CPU extractor. No
+#    float_motion twin implements motion_filter_size (the SYCL and Metal
+#    float_ssim twins now mirror enable_lcs, ADR-1365), so every backend runs it.
+run option 0 --no_prediction --feature float_motion=motion_filter_size=3 --backend "$BACKEND"
+has_warning option float_motion "cannot honour option 'motion_filter_size'"
+receipt option cpu float_motion=cpu
 
 # 5. The twin implements scale=1 only (ADR-1324): scale=2 keeps the CPU.
 run geometry 0 --no_prediction --feature float_ssim=scale=2 --backend "$BACKEND"

@@ -244,6 +244,24 @@ returns `-ENOTSUP` with a warning until per-backend kernel ports land.
 Empirical GPU parity: max_abs_diff <= 3e-6 (8-bit, 48 frames) across CUDA,
 SYCL, and HIP backends (ADR-0196). (The Vulkan backend was removed in ADR-0726.)
 
+The GPU twins emit `motion` and `motion2`; `motion3` comes from the CPU
+extractor only. They take `debug`, `motion_force_zero` and `motion_fps_weight`.
+`float_motion_sycl` also takes `motion_max_val` (alias `mmxv`) and, like the
+CPU, scales every score it emits (the debug `motion` too) by
+`motion_fps_weight` before capping it at `motion_max_val`
+([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). On CUDA, HIP and
+Metal a `motion_max_val` setting keeps `float_motion` on the CPU
+([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)); their debug
+`motion` score is emitted without the fps weight.
+
+```bash
+# On float_motion_sycl with a motion cap (keys become motion2_mmxv_4 / motion_mmxv_4)
+vmaf --reference ref.yuv --distorted dist.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --backend sycl --no_prediction \
+    --feature float_motion=motion_max_val=4 --output /dev/stdout
+```
+
 ### How to run
 
 ```bash

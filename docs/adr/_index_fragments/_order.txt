@@ -1069,3 +1069,4 @@
 1358-sycl-speed-device-resident-linalg
 1361-psnr-hvs-area-scaled-parity-tolerance
 1359-cli-feature-backend-twin
+1365-sycl-twin-cpu-option-parity

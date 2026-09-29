@@ -656,8 +656,10 @@ at once. See [PSNR](psnr.md) for the full comparison.
 extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /
 `psnr_cr` identically to the CPU path when enabled. Pass
 `enable_chroma=false` for luma-only operation on any backend. `uncapped` is
-mirrored on every GPU twin under the same name and default; `enable_mse`,
-`enable_apsnr`, `reduced_hbd_peak` and `min_sse` remain CPU-only.
+mirrored on every GPU twin under the same name and default. `psnr_sycl` also
+implements `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and `min_sse`,
+bit-exact with the CPU; on CUDA, HIP and Metal these four keep `psnr` on the
+CPU (see [PSNR](psnr.md#options)).
 `float_psnr` adds CUDA / SYCL / HIP / Metal twins on the float pipeline and
 accepts `uncapped` on all of them. (The Vulkan backend was removed in
 ADR-0726.)
@@ -740,11 +742,20 @@ smaller inputs with `-EINVAL` and a clear log message — see
 `float_ssim` / `float_ms_ssim`: AVX2, AVX-512, NEON, plus the GPU
 twins `float_ms_ssim_cuda`, `float_ms_ssim_sycl` and
 `integer_ms_ssim_hip`. The `enable_lcs` option ships across **all**
-backends — CPU + CUDA emit the same 15
+MS-SSIM backends — CPU, CUDA, SYCL, HIP and Metal emit the same 15
 `float_ms_ssim_{l,c,s}_scale{0..4}` metrics on top of the combined
-score (T7-35 / [ADR-0243](../adr/0243-enable-lcs-gpu.md)). The SYCL
-twin does not expose `enable_lcs` at the option level; follow-up
-work tracked under T7-35. (The Vulkan backend was removed in ADR-0726.)
+score (T7-35 / [ADR-0243](../adr/0243-enable-lcs-gpu.md)). (The Vulkan
+backend was removed in ADR-0726.)
+
+For `ssim` and `float_ssim`, the SYCL twins implement every CPU option:
+`integer_ssim_sycl` takes `enable_db` / `clip_db`, and `float_ssim_sycl`
+takes `enable_lcs` / `enable_db` / `clip_db` (plus `scale`, which must
+resolve to 1 on the device). Identical frames report the CPU's `+inf` or
+`clip_db` ceiling on the device too
+([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). The CUDA twins lack
+`enable_db` / `clip_db` (and `float_ssim_cuda` `enable_lcs`), and
+`float_ssim_hip` lacks `enable_db` / `clip_db`; a model setting one of them
+computes that feature on the CPU.
 
 **MS-SSIM decimate (fork-local)** — the 9-tap 9/7 biorthogonal wavelet
 LPF that produces scales 1–4 runs through `ms_ssim_decimate` in

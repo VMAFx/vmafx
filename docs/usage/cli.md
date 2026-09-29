@@ -252,7 +252,7 @@ feature and the reason, when:
 | Reason | Warning (for `--backend sycl`) |
 | --- | --- |
 | The backend has no twin of the extractor | `vmaf: warning: --feature brisque: the sycl backend has no twin of this extractor; computing it on the CPU` |
-| The twin lacks an option you set, or implements only its default value | `vmaf: warning: --feature float_ssim: float_ssim_sycl cannot honour option 'enable_lcs'; computing it on the CPU` |
+| The twin lacks an option you set, or implements only its default value | `vmaf: warning: --feature float_motion: float_motion_sycl cannot honour option 'motion_filter_size'; computing it on the CPU` |
 | The twin cannot run this input size and bit depth with these options | `vmaf: warning: --feature float_ssim: float_ssim_sycl cannot run 1920x1080 8-bit pictures with these options; computing it on the CPU` |
 | A non-zero `--gpumask` disables the backend's extractors | `vmaf: warning: --feature ciede: cuda feature extraction is disabled (non-zero --gpumask); computing it on the CPU` |
 
@@ -263,7 +263,9 @@ scores can differ from the CPU extractor's within the
 auxiliary outputs can differ: on SYCL, `--feature motion` reports
 `integer_motion`, `integer_motion2` and `integer_motion3`, where the CPU
 extractor reports `VMAF_integer_feature_motion_sad_score` instead of
-`integer_motion`. Use `--backend cpu` to get the CPU extractor's exact output.
+`integer_motion`, and `--feature float_motion` reports `motion` and `motion2`
+but not `motion3`, which only the CPU extractor computes. Use `--backend cpu`
+to get the CPU extractor's exact output.
 
 Nothing changes in three cases:
 

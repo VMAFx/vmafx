@@ -54797,3 +54797,40 @@ No public API, CLI syntax or FFmpeg patch impact. Scores are bit-identical to
 the previous kernels wherever those ran, except `vif_sycl` scales 1-3 on
 odd-width ladders, which now match the CPU, and frames below 16 pixels that
 model dispatch now scores with the CPU `vif`.
+
+## ADR-1365 — SYCL PSNR, SSIM and float-motion twins take the CPU option tables (2026-09-29)
+
+`fix/sycl-twin-option-parity`, Research-2127, ADR-1365.
+
+- `core/src/feature/psnr_score.h` (new) holds the integer `psnr` option math
+  that `integer_psnr.c` carried inline: `vmaf_psnr_peak()`,
+  `vmaf_psnr_max()`, `vmaf_psnr_from_mse()` (the ADR-1193 `uncapped` split,
+  upstream `MIN` / `MAX` macro-expanded) and `vmaf_psnr_aggregate()`.
+  `integer_psnr.c` (upstream-mirror) now calls them; its local `MIN` / `MAX`
+  macros and `psnr_from_mse()` are gone. An upstream Netflix hunk to
+  `integer_psnr.c::init`, `psnr()` / `psnr_hbd()` or `flush()` that changes
+  the math lands in the header, once, for the CPU and every twin that calls
+  it; a hunk that only touches the SSE loops applies as before.
+- `core/src/feature/sycl/integer_psnr_sycl.cpp`: full CPU option table,
+  options applied on the host through `psnr_score.h`, `flush_fex_sycl()`
+  publishes `apsnr_*`. Do not reintroduce a local copy of the math.
+- `core/src/feature/sycl/integer_ssim_sycl.cpp`: both SSIM twins keep every
+  product in a named temporary, sum the two variances as a pair and return 1
+  when numerator and denominator are equal, so identical windows score
+  exactly 1 (`enable_db` +inf / `clip_db` ceiling like the CPU). Folding a
+  product back into an expression or restoring the four-term left-to-right
+  variance sum breaks the identical-frame cases of
+  `test_sycl_twin_option_parity`. `enable_lcs` uses
+  `launch_vert_combine_lcs()`; keep it separate from the default kernel.
+- `core/src/feature/nonfinite_score.h`: `vmaf_ssim_max_db()` is the SSIM
+  `clip_db` ceiling for GPU twins; the CPU `integer_ssim.c` / `float_ssim.c`
+  keep their inline copies for upstream parity.
+- `core/src/feature/sycl/float_motion_sycl.cpp`: every emitted score goes
+  through `motion_clip()`; `motion_force_zero` short-circuits `submit()` /
+  `collect()`.
+
+No public C API, CLI syntax or FFmpeg patch impact. CPU scores are
+bit-identical; `psnr_sycl` and default `float_motion_sycl` output are
+bit-identical to the previous twins; default `integer_ssim_sycl` /
+`float_ssim_sycl` output moves by at most 1.1e-8 (2.2e-8 on identical frames,
+now exactly 1).

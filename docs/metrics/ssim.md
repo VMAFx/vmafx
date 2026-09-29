@@ -18,9 +18,10 @@ distorted frame.
 A model that lists the `ssim` feature gets the twin of the active backend
 (`--backend cuda/hip/sycl/metal`) automatically. The twins publish the same `"ssim"`
 feature name as the CPU extractor, so existing VMAF model JSON files work unchanged.
-On the CLI, `--feature` takes an extractor name: `--feature ssim` always runs the CPU
-extractor, whatever the backend. To run a twin from the CLI, name it, for example
-`--backend hip --feature integer_ssim_hip`.
+On the CLI, `--backend cuda/hip/sycl/metal --feature ssim` runs the same twin when it
+can honour the options you set, and the CPU extractor otherwise
+([ADR-1359](../adr/1359-cli-feature-backend-twin.md)). Naming a twin, for example
+`--backend hip --feature integer_ssim_hip`, always registers that twin.
 
 The HIP twin was kept out of dispatch until 2026-09-18, because its kernel was an
 11-tap float Gaussian 4.5e-3 away from the CPU. It now runs the CPU's 9-tap int64
@@ -45,28 +46,47 @@ implemented in `ssim_cuda.c` (CUDA), `integer_ssim_hip.c` (HIP),
 
 | Feature name | Description | Condition |
 |---|---|---|
-| `integer_ssim` | SSIM on the luma (Y) plane | Always |
-| `integer_ssim_cb` | SSIM on the Cb (U) chroma plane | `enable_chroma=true` only |
-| `integer_ssim_cr` | SSIM on the Cr (V) chroma plane | `enable_chroma=true` only |
+| `ssim` | SSIM of the luma (Y) plane, or its dB form with `enable_db` | Always |
+
+The extractor is luma-only; it has no chroma option.
 
 ## Options
 
-- `enable_chroma` (bool, default `false`): emit per-plane `_cb` and `_cr` scores in addition to luma. YUV400P sources are always luma-only.
+| Option | Type | Default | Effect |
+|---|---|---|---|
+| `enable_db` | bool | `false` | Report `-10 * log10(1 - ssim)` instead of the linear score. A perfect score (identical frames) is `+inf`. |
+| `clip_db` | bool | `false` | Cap the dB value at `ceil(10 * log10(peak^2 / (0.5 / (w * h))))`, the dB of half a sample of error over the frame. Needs `enable_db` to have an effect. |
+
+Backend support: the CPU extractor, `integer_ssim_sycl`, `integer_ssim_hip` and
+`integer_ssim_metal` accept both options; `ssim_cuda` accepts neither. The SYCL
+twin applies them on the host to the device-reduced score and reports the
+CPU's `+inf` / ceiling for identical frames
+([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). A model that sets
+an option the active backend's twin lacks computes `ssim` on the CPU
+([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
 
 ### How to run
 
 ```bash
-# Luma-only SSIM (default)
+# SSIM (default, linear)
 core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature integer_ssim --output /dev/stdout
 
-# Per-channel SSIM (luma + Cb + Cr)
+# SSIM in dB, capped for identical frames
 core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --no_prediction --feature 'integer_ssim:enable_chroma=true' --output /dev/stdout
+    --no_prediction --feature integer_ssim=enable_db=true:clip_db=true \
+    --output /dev/stdout
+
+# The same on the SYCL twin (integer_ssim_sycl)
+core/build/tools/vmaf \
+    --reference ref.yuv --distorted dist.yuv \
+    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+    --backend sycl --no_prediction \
+    --feature integer_ssim=enable_db=true:clip_db=true --output /dev/stdout
 ```
 
 ## See also

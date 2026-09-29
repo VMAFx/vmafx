@@ -3866,6 +3866,23 @@ test('test_sycl_psnr_parity', test_sycl_psnr_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# CPU-option parity for the SYCL twins (T-BUG048-GPU-OPTION-PARITY-REMAINDER,
+# SYCL part): psnr_sycl enable_mse / enable_apsnr / reduced_hbd_peak / min_sse,
+# integer_ssim_sycl + float_ssim_sycl enable_db / clip_db, float_ssim_sycl
+# enable_lcs, float_motion_sycl motion_max_val / motion_force_zero. The
+# option-table checks run without a device; the parity checks skip (77)
+# when no SYCL device is visible.
+test_sycl_twin_option_parity = executable('test_sycl_twin_option_parity',
+    ['test.c', 'test_sycl_twin_option_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_twin_option_parity', test_sycl_twin_option_parity,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
 # GPU-kernel coverage gap-fill — VIF scale0 CPU vs. SYCL parity (places=3).
 # Covers integer_vif_sycl.cpp, the SYCL Gaussian filter + statistical
 # accumulator path that had no cross-backend assertion before.

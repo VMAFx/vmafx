@@ -694,6 +694,56 @@ up to 576x324, 3.34e-3 at 3840x2160
 ([ADR-1361](../../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md),
 [the gate guide](../../development/cross-backend-gate.md)).
 
+## CPU options on the PSNR, SSIM and float-motion twins (2026-09-29)
+
+Four SYCL twins now take the CPU extractor's full option table
+([ADR-1365](../../adr/1365-sycl-twin-cpu-option-parity.md)). Before, a model
+that set one of these options computed the feature on the CPU (ADR-1183), and
+naming the twin with the option failed with `unknown option`.
+
+| Twin | Options added | Agreement with `--backend cpu` |
+|---|---|---|
+| `psnr_sycl` | `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse` | bit-exact, `apsnr_*` included |
+| `integer_ssim_sycl` | `enable_db`, `clip_db` | as the linear score (up to 1.5e-8), mapped through the dB slope |
+| `float_ssim_sycl` | `enable_lcs`, `enable_db`, `clip_db` | `float_ssim_l/c/s` within 8.3e-7; dB as above |
+| `float_motion_sycl` | `motion_max_val` (`mmxv`) | within 5.6e-6, as the default score; frames at the cap exact |
+
+Measured on an Arc B580 and a UHD 770 over the Netflix 576x324 pair, 853x480
+(4:4:4, 8- and 10-bit) and 576x324 10-bit, with every option alone and
+combined. The dB form of SSIM magnifies a linear difference by
+`4.34 / (1 - ssim)`, so the fp32 twins land within 3.4e-5 dB of the CPU on
+that content, and further apart as the score nears 1.
+
+Behaviour that changed with the options:
+
+- **Identical frames.** Both SSIM twins now score identical windows exactly 1,
+  as the CPU does, so `enable_db` reports `+inf` and `clip_db` the CPU's
+  ceiling, instead of the finite dB value of an fp32 rounding residue. The
+  default linear scores moved by at most 1.1e-8 (2.2e-8 on identical frames,
+  which now score exactly 1), far inside the twins' parity tolerance.
+- **`motion_force_zero` on `float_motion_sycl`** was declared but ignored: the
+  twin emitted real scores. It now emits zeros, like the CPU.
+- **The debug `motion` score of `float_motion_sycl`** now carries
+  `motion_fps_weight`, as on the CPU; before it was emitted unweighted.
+
+With `--backend sycl`, the CPU extractor names run on these twins with the
+options set ([ADR-1359](../../adr/1359-cli-feature-backend-twin.md)); the twin
+names work too:
+
+```bash
+vmaf ... --backend sycl --feature psnr=enable_mse=true:enable_apsnr=true
+vmaf ... --backend sycl --feature float_ssim=enable_lcs=true:enable_db=true:clip_db=true
+vmaf ... --backend sycl --feature float_motion_sycl=motion_max_val=4
+```
+
+The JSON `feature_backends` receipt lists `psnr_sycl`, `float_ssim_sycl` and
+`float_motion_sycl` for these runs. `--feature float_motion` on SYCL reports
+`motion` and `motion2`; `motion3` needs `--backend cpu`.
+
+The CUDA, HIP and Metal twins still lack these options; see
+`T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26` in
+[`state.md`](../../state.md).
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix

@@ -27,6 +27,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "opt.h"
+#include "psnr_score.h"
 
 #if ARCH_X86
 #include "x86/psnr_avx2.h"
@@ -112,7 +113,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {NULL}};
+    {0}};
 
 static uint32_t sse_line_8_c(const uint8_t *ref, const uint8_t *dis, unsigned w)
 {
@@ -138,24 +139,19 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
                 unsigned h)
 {
     PsnrState *s = fex->priv;
-    s->peak = s->reduced_hbd_peak ? 255 * 1 << (bpc - 8) : (1 << bpc) - 1;
+    s->peak = vmaf_psnr_peak(bpc, s->reduced_hbd_peak);
 
     if (pix_fmt == VMAF_PIX_FMT_YUV400P)
         s->enable_chroma = false;
 
+    const int ss_hor = pix_fmt != VMAF_PIX_FMT_YUV444P;
+    const int ss_ver = pix_fmt == VMAF_PIX_FMT_YUV420P;
     for (unsigned i = 0; i < 3; i++) {
-        if (s->min_sse != 0.0) {
-            const int ss_hor = pix_fmt != VMAF_PIX_FMT_YUV444P;
-            const int ss_ver = pix_fmt == VMAF_PIX_FMT_YUV420P;
-            /* Ceiling division for chroma plane dimensions — mirrors picture.c
-             * fix (Research-0094): odd luma → ceil(luma/2) chroma samples. */
-            const unsigned pw = (i && ss_hor) ? (w + 1u) >> 1 : w;
-            const unsigned ph = (i && ss_ver) ? (h + 1u) >> 1 : h;
-            const double mse = s->min_sse / ((double)pw * ph);
-            s->psnr_max[i] = ceil(10. * log10(s->peak * s->peak / mse));
-        } else {
-            s->psnr_max[i] = (6 * bpc) + 12;
-        }
+        /* Ceiling division for chroma plane dimensions — mirrors picture.c
+         * fix (Research-0094): odd luma → ceil(luma/2) chroma samples. */
+        const unsigned pw = (i && ss_hor) ? (w + 1u) >> 1 : w;
+        const unsigned ph = (i && ss_ver) ? (h + 1u) >> 1 : h;
+        s->psnr_max[i] = vmaf_psnr_max(bpc, s->peak, s->min_sse, pw, ph);
     }
 
     s->sse_line_8 = sse_line_8_c;
@@ -184,42 +180,6 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 #endif
 
     return 0;
-}
-
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-
-/*
- * Convert a per-plane MSE into a PSNR, keeping the two roles `psnr_max`
- * used to conflate strictly separate (ADR-1193, T-UPSTREAM-1109,
- * Netflix/vmaf#1109):
- *
- *   (a) infinity sentinel — `mse == 0` means the planes are byte-identical
- *       and the true PSNR is +inf, so a finite stand-in has to be reported.
- *       This role is unconditional and is what the golden 60 / 84 / 108 dB
- *       assertions pin.
- *   (b) hard truncation — every genuinely computed value above `psnr_max`
- *       was silently replaced by it, so an 8-bit pair differing by one
- *       luma step over 576x324 reported 60.000000 dB instead of its true
- *       100.840479 dB. `uncapped` drops role (b) only.
- *
- * The `uncapped == false` arm is the pre-fix expression verbatim rather
- * than a re-derivation of it, so the default is bit-identical by
- * construction. That matters in one corner: with a `min_sse` below
- * ~1.9e-11 the ceiling rises past the ~208 dB that a zero MSE floored to
- * 1e-16 produces, and a re-derived `mse == 0 -> psnr_max` arm would
- * report the ceiling where the shipped code reports 208 dB. The 1e-16
- * floor is kept in the `uncapped` arm too, so a denormal MSE cannot
- * divide to infinity (unreachable below ~1e16 pixels anyway, since sse
- * is a positive integer).
- */
-static double psnr_from_mse(double mse, double peak_sq, double psnr_max, bool uncapped)
-{
-    if (!uncapped)
-        return MIN(10. * log10(peak_sq / MAX(mse, 1e-16)), psnr_max);
-    if (mse <= 0.)
-        return psnr_max;
-    return 10. * log10(peak_sq / MAX(mse, 1e-16));
 }
 
 static char *mse_name[3] = {"mse_y", "mse_cb", "mse_cr"};
@@ -252,7 +212,8 @@ static int psnr(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
         }
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
-        const double psnr = psnr_from_mse(mse, (double)peak * peak, s->psnr_max[p], s->uncapped);
+        const double psnr =
+            vmaf_psnr_from_mse(mse, (double)peak * peak, s->psnr_max[p], s->uncapped);
 
         err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
         if (s->enable_mse) {
@@ -290,7 +251,7 @@ static int psnr_hbd(VmafPicture *ref_pic, VmafPicture *dist_pic, unsigned index,
 
         const double mse = ((double)sse) / (ref_pic->w[p] * ref_pic->h[p]);
         const double psnr =
-            psnr_from_mse(mse, (double)s->peak * s->peak, s->psnr_max[p], s->uncapped);
+            vmaf_psnr_from_mse(mse, (double)s->peak * s->peak, s->psnr_max[p], s->uncapped);
 
         err |= vmaf_feature_collector_append(feature_collector, psnr_name[p], psnr, index);
         if (s->enable_mse) {
@@ -333,23 +294,12 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
          * over disabled planes would invoke log10(0) yielding -inf / NaN.   */
         const unsigned n_planes = s->enable_chroma ? 3u : 1u;
         for (unsigned i = 0; i < n_planes; i++) {
-            /* Guard identical-frame case where SSE accumulates to zero:
-             * log10(0) = -inf.  Clamp to the per-channel theoretical max.   */
-            if (s->apsnr.sse[i] == 0) {
-                err |= vmaf_feature_collector_set_aggregate(feature_collector, apsnr_name[i],
-                                                            s->psnr_max[i]);
-                continue;
-            }
-
-            double apsnr = 10 * (log10(s->peak * s->peak) + log10(s->apsnr.n_pixels[i]) -
-                                 log10(s->apsnr.sse[i]));
-
-            /* Cap: 10*log10(peak^2 * n_pixels). The original "* 2" factor
-             * inflated the theoretical ceiling by one PSNR unit.            */
-            double max_apsnr = ceil(10 * log10((double)s->peak * s->peak * s->apsnr.n_pixels[i]));
-
-            err |= vmaf_feature_collector_set_aggregate(feature_collector, apsnr_name[i],
-                                                        MIN(apsnr, max_apsnr));
+            /* An all-zero SSE (identical clip) reports psnr_max instead of
+             * log10(0) = -inf; the cap is 10*log10(peak^2 * n_pixels) — the
+             * original "* 2" factor inflated it by one PSNR unit. */
+            const double apsnr =
+                vmaf_psnr_aggregate(s->peak, s->apsnr.sse[i], s->apsnr.n_pixels[i], s->psnr_max[i]);
+            err |= vmaf_feature_collector_set_aggregate(feature_collector, apsnr_name[i], apsnr);
         }
     }
 

@@ -327,6 +327,19 @@ static inline int vmaf_vif_emit_scores(VmafFeatureCollector *feature_collector,
                                            scores->debug ? 15u : 4u, index);
 }
 
+/* `clip_db` ceiling of the SSIM family (CPU integer_ssim.c / float_ssim.c
+ * init): the dB value of an MSE of half a sample over the frame, rounded
+ * up. Without `clip_db` the ceiling is +inf, so a perfect score with
+ * `enable_db` reports +inf (ADR-1221). */
+static inline double vmaf_ssim_max_db(bool clip_db, unsigned bpc, unsigned width, unsigned height)
+{
+    if (!clip_db)
+        return INFINITY;
+    const double peak = (double)((1u << bpc) - 1u);
+    const double mse = 0.5 / ((double)width * (double)height);
+    return ceil(10. * log10(peak * peak / mse));
+}
+
 static inline int vmaf_ssim_prepare_score(double raw_score, int enable_db, double max_db,
                                           double *score)
 {

@@ -207,6 +207,43 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `default_val.b = true` aligned with CUDA and Vulkan twins; all three
   backends must agree on default and dispatch logic.
 
+- **`integer_psnr_sycl.cpp` = full CPU `psnr` option table, bit-exact**
+  ([ADR-1365](../../../../docs/adr/1365-sycl-twin-cpu-option-parity.md)).
+  Device reduces per-plane SSE only. `enable_mse`, `enable_apsnr`,
+  `reduced_hbd_peak`, `min_sse`, `uncapped` act on host through
+  `feature/psnr_score.h` (`vmaf_psnr_peak` / `_max` / `_from_mse` /
+  `_aggregate`) — same helpers as CPU `integer_psnr.c`. `emit_plane()`
+  order = CPU (`psnr_*`, then `mse_*`); `collect()` folds SSE + sample
+  count into `apsnr_*` totals, `flush_fex_sycl()` publishes aggregates
+  after final collect. **On rebase**: no local copy of PSNR math; keep
+  option table = CPU table (names, defaults, range, no `FEATURE_PARAM`).
+  Guard: `test_sycl_twin_option_parity`.
+
+- **`integer_ssim_sycl.cpp` SSIM twins take CPU options; identical window
+  = exactly 1** (ADR-1365). `integer_ssim_sycl`: `enable_db`, `clip_db`;
+  `float_ssim_sycl`: `enable_lcs`, `enable_db`, `clip_db`, `scale`. dB
+  conversion + ceiling on host (`vmaf_ssim_max_db`,
+  `vmaf_ssim_emit_*_named` in `nonfinite_score.h`). Per-window formula:
+  every product in a named temporary, variances summed as a pair,
+  `numerator == denominator ? 1 : n / d`. Mirrored operation sequence ->
+  identical window gives exactly 1 -> `enable_db` = CPU's `+inf` /
+  `clip_db` ceiling (ADR-1221), not finite dB of an fp32 residue.
+  `enable_lcs` = separate kernel `launch_vert_combine_lcs` (default path
+  keeps one reduction), `float_ssim_lcs()` = `iqa/ssim_tools.c` L/C/S in
+  fp32 (clamped variances, flat-window covariance clamp, C3 = C2 / 2),
+  partials `[l | c | s]`. **On rebase**: do not fold products back into
+  expressions (icpx contracts `a * b + c`, ADR-1358) or restore the
+  left-to-right four-term variance sum; the identical-frame cases in
+  `test_sycl_twin_option_parity` fail on either.
+
+- **`float_motion_sycl.cpp` emits through `motion_clip()`** (ADR-1365).
+  Every emitted `motion` / `motion2` (debug score, tail in `flush()`
+  included) = `MIN(score * motion_fps_weight, motion_max_val)`, CPU
+  `float_motion.c` order (min of two SADs first). `motion_force_zero`
+  short-circuits `submit()` (no upload, no kernel) and `collect()` emits
+  zeros; before ADR-1365 it was declared and ignored. `motion3` not
+  provided (CPU extractor only).
+
 - **`integer_psnr_sycl.cpp` uses ceiling division for chroma plane geometry**
   (PR #878 Vulkan twin fix). `cw` and `ch` computed via
   `(w + 1U) >> 1` / `(h + 1U) >> 1`, not `w / 2U` / `h / 2U`, to match
@@ -374,10 +411,13 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `motion_fps_weight` option, apply it in `flush()` /
   `collect()` exactly as documented there. Any future change to
   weight application math must span all motion-family GPU twins in
-  same PR. v1 `integer_motion_sycl.cpp` twin covered by
-  same canonical note's **applied exactly once** clause (ADR-1216):
-  `motion3_postprocess_sycl()` must not re-apply weight its callers
-  already applied.
+  same PR. Since ADR-1365 `float_motion_sycl.cpp` spells it the CPU
+  way, `motion_clip(min(prev, cur))` = min, then weight, then
+  `motion_max_val` cap; for weight >= 0 bit-identical to
+  weight-before-min the note describes. v1 `integer_motion_sycl.cpp`
+  twin covered by same canonical note's **applied exactly once**
+  clause (ADR-1216): `motion3_postprocess_sycl()` must not re-apply
+  weight its callers already applied.
 
 - **`float_vif_sycl.cpp` options must be captured, not hardcoded**
   (ADR-1217) — see canonical note in
