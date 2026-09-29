@@ -1068,3 +1068,4 @@
 1360-sycl-aot-compile-time-device-codegen
 1358-sycl-speed-device-resident-linalg
 1361-psnr-hvs-area-scaled-parity-tolerance
+1359-cli-feature-backend-twin

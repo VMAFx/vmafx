@@ -61,6 +61,27 @@
   windows). If upstream changes that guard or the table size, change both.
 - No other backend changes; the CUDA, HIP and Metal twins keep their host
   residual (RC3 rows in `docs/state.md`).
+## fix/cli-feature-backend-twin — `--feature` runs the explicit `--backend`'s twin (ADR-1359) (2026-09-29)
+
+- `core/include/libvmaf/libvmaf.h`, `core/src/libvmaf.c`: fork-only, additive.
+  `vmaf_feature_backend_twin()` and `vmaf_registered_feature_extractor()` carry
+  `VMAF_EXPORT` (ADR-0379). An upstream sync that rewrites the tail of
+  `libvmaf.h` or the `vmaf_use_features_from_model*()` block of `libvmaf.c`
+  must keep both. `vmaf_use_feature()` keeps upstream's exact-name contract.
+- `core/src/feature/feature_extractor.{h,cpp}`: `vmaf_get_feature_extractor_twin()`
+  is the only CPU-to-twin pairing. It reuses
+  `vmaf_get_feature_extractor_by_feature_name()` and must require the backend
+  flag on the result, because that lookup's ADR-0530 second pass can return an
+  extractor of another backend or the CPU one. Never add a name-mangling table.
+- `core/tools/vmaf.cpp`: `register_cli_feature()` keeps the ADR-0543 suffix gate
+  before `cli_feature_extractor()`; `explicit_backend_requested()` delegates to
+  `cli_backend_is_device()` in `core/tools/cli_feature_backend.cpp`, the single
+  `auto` / `cpu` test. `write_cli_output()` builds `backend_used` from the
+  registered extractors after the final flush; do not restore the old
+  `active_backend_name()` from the initialised states. Upstream Netflix has no
+  `backend_used` key.
+- `ffmpeg-patches/`: unaffected; the filters call `vmaf_use_feature()` by exact
+  name and no patch touches the new symbols.
 
 ## perf/sycl-ciede-throughput — `ciede_sycl` stages chroma at native size (2026-09-29)
 

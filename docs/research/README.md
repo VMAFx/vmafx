@@ -128,6 +128,7 @@ Conventions:
 | [2118](2118-bug048-script-environment-drift-2026-09-25.md) | BUG-048 script environment drift | Complete | — (BUG-048 restoration) |
 | [2119](2119-gcc16-placement-new-symbol-visibility.md) | GCC 16 C++ placement new/delete symbol visibility | Complete | [ADR-1337](../adr/1337-cpp-placement-new-visibility.md) |
 | [2120](2120-sycl-ciede-throughput.md) | SYCL ciede2000 throughput: `--feature ciede` never reached SYCL; `ciede_sycl` stages chroma at native size | Active | — (RC3 performance) |
+| [2121](2121-cli-feature-backend-twin.md) | `--feature` with an explicit GPU `--backend`: twin pairing through the model-dispatch lookup, option/geometry gates, SYCL pairing table and JSON receipt | Active | [ADR-1359](../adr/1359-cli-feature-backend-twin.md) |
 | [2122](2122-sycl-cambi-device-resident.md) | Device-resident CAMBI on SYCL: c-values and exact top-K pooling on the GPU, parity proof and measurements | Active | [ADR-1357](../adr/1357-sycl-cambi-device-resident.md) |
 | [2123](2123-sycl-b580-psnr-hvs-and-tile-halo-faults.md) | Arc B580 SYCL crashes: IGC SIMD32 crash on the psnr_hvs private-memory DCT, tile-halo loads outside the plane, dropped graph-wait errors, integer VIF minimum size and odd-width stride, area-scaled psnr_hvs gate | Active | [ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md) |
 

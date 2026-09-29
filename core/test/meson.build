@@ -391,6 +391,19 @@ test_feature_collector = executable('test_feature_collector',
     objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
 )
 
+# ADR-1359: device-twin lookup for a CPU extractor name and the registered-
+# extractor report. White-box (includes libvmaf.c) like test_feature_collector;
+# a stand-in state pointer selects the compiled backend without a device.
+test_feature_backend_twin = executable('test_feature_backend_twin',
+    ['test.c', 'test_feature_backend_twin.c', '../src/metadata_handler.cpp', rev_target],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
+    link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+                 log_cpp23_lib],
+    c_args : vmaf_cflags_common,
+    dependencies: [pthread_dependency, predict_test_dependencies],
+    objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
+)
+
 # Finding R2-10: flush_context terminal-flush ordering. White-box test that
 # calls internal test accessors in libvmaf_priv.h to assert the inner
 # threaded flush no longer sets vmaf->flushed prematurely — the bug
@@ -4850,6 +4863,7 @@ test('test_log', test_log, suite : ['fast'])
 test('test_picture', test_picture, suite : ['fast'])
 test('test_picture_v2', test_picture_v2, suite : ['fast'])
 test('test_feature_collector', test_feature_collector, suite : ['fast'])
+test('test_feature_backend_twin', test_feature_backend_twin, suite : ['fast'])
 
 # BUG-048 section E: the collector has one C++ implementation authority.  This
 # source/build-graph red-cap prevents the memory-safety C twin from being

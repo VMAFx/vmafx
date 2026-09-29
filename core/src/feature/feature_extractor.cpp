@@ -543,6 +543,28 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
     return nullptr;
 }
 
+/* ADR-1359: pair a CPU extractor with a device twin through the same
+ * per-feature lookup model features use. The ADR-0530 second pass of
+ * vmaf_get_feature_extractor_by_feature_name() may return an extractor of
+ * another backend or the CPU extractor itself, so the result must carry one of
+ * the requested flags. The provided-feature lists are NULL-terminated; the
+ * bound only keeps the scan finite if one ever is not. */
+VmafFeatureExtractor *vmaf_get_feature_extractor_twin(const VmafFeatureExtractor *cpu_fex,
+                                                      unsigned flags)
+{
+    if (!cpu_fex || !cpu_fex->provided_features || !flags)
+        return nullptr;
+
+    constexpr unsigned max_provided_features = 256;
+    for (unsigned i = 0; i < max_provided_features && cpu_fex->provided_features[i]; i++) {
+        VmafFeatureExtractor *fex =
+            vmaf_get_feature_extractor_by_feature_name(cpu_fex->provided_features[i], flags);
+        if (fex && (fex->flags & flags))
+            return fex;
+    }
+    return nullptr;
+}
+
 bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
                                              const VmafDictionary *opts_dict,
                                              const char **missing_key)

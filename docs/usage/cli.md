@@ -228,21 +228,54 @@ disabled). See [../metrics/brisque.md](../metrics/brisque.md).
 See [../metrics/features.md](../metrics/features.md) for the full list of feature
 identifiers and per-feature options.
 
-`--feature` selects an extractor by its exact name, and `--backend` does not
-change that choice. `--feature ciede --backend sycl` initialises the SYCL device
-but computes `ciede2000` with the CPU `ciede` extractor, one frame at a time
-unless `--threads` is set, and the JSON still reports `"backend_used": "sycl"`.
-To compute a feature on the GPU, name its twin: `--feature ciede_sycl`,
-`--feature ciede_cuda`, `--feature ciede_hip` and so on. A twin name fails with
-exit code `100` when its backend is not active. Features that a `--model` needs
-are different: they resolve to the active backend's twin on their own. The
-[state ledger](../state.md) tracks this as
-`T-CLI-FEATURE-NAME-BYPASSES-GPU-BACKEND-2026-09-29`.
-
 Option validation is strict: specifying an unknown option key or a typo
 (e.g., `--feature adm=adm_csf_moed=2`) causes libvmaf to reject the configuration
 immediately with `libvmaf ERROR feature extractor '<name>': unknown option '<key>'`
 and exit non-zero ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
+
+### Feature extractors on a GPU backend
+
+With `--backend cuda`, `sycl`, `hip` or `metal`, a `--feature` that names a CPU
+extractor runs on that backend's twin, picked the same way a model's features
+are ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)):
+
+```shell
+vmaf ... --backend sycl --feature ciede          # runs ciede_sycl
+vmaf ... --backend cuda --feature float_ssim     # runs float_ssim_cuda
+vmaf ... --backend sycl --feature brisque        # no twin: runs brisque on the CPU
+```
+
+The twin is used only when it can compute exactly what you asked for. The CPU
+extractor runs instead, and `vmaf` prints one warning line on stderr naming the
+feature and the reason, when:
+
+| Reason | Warning (for `--backend sycl`) |
+| --- | --- |
+| The backend has no twin of the extractor | `vmaf: warning: --feature brisque: the sycl backend has no twin of this extractor; computing it on the CPU` |
+| The twin lacks an option you set, or implements only its default value | `vmaf: warning: --feature float_ssim: float_ssim_sycl cannot honour option 'enable_lcs'; computing it on the CPU` |
+| The twin cannot run this input size and bit depth with these options | `vmaf: warning: --feature float_ssim: float_ssim_sycl cannot run 1920x1080 8-bit pictures with these options; computing it on the CPU` |
+| A non-zero `--gpumask` disables the backend's extractors | `vmaf: warning: --feature ciede: cuda feature extraction is disabled (non-zero --gpumask); computing it on the CPU` |
+
+The run carries on after a warning; the [JSON receipt](#backend-receipt-in-json-output)
+lists which extractor ran where. A twin computes the same metric names, but its
+scores can differ from the CPU extractor's within the
+[cross-backend tolerances](../development/cross-backend-gate.md), and its
+auxiliary outputs can differ: on SYCL, `--feature motion` reports
+`integer_motion`, `integer_motion2` and `integer_motion3`, where the CPU
+extractor reports `VMAF_integer_feature_motion_sad_score` instead of
+`integer_motion`. Use `--backend cpu` to get the CPU extractor's exact output.
+
+Nothing changes in three cases:
+
+- **A twin name**, such as `--feature ciede_sycl`, registers that extractor.
+  It still fails with exit code `100` when its backend is not active
+  ([ADR-0543](../adr/0543-adr-0498-enforcement-hardening.md)).
+- **`--backend cpu`** always runs the CPU extractor.
+- **`--backend auto`, or no `--backend`**, registers the name as given, even
+  when a GPU backend is initialised.
+
+Features that a `--model` needs resolve to the active backend's twin in every
+mode, with the same option and input-size checks.
 
 ## Output
 
@@ -256,6 +289,32 @@ and exit non-zero ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.
 
 Stderr always carries a short progress line plus the final pooled-mean VMAF score,
 regardless of `--output`.
+
+### Backend receipt in JSON output
+
+A JSON report ends with two top-level keys that say where the features were
+computed ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)):
+
+```json
+"backend_used": "sycl",
+"feature_backends": [
+  {"extractor": "ciede_sycl", "backend": "sycl"},
+  {"extractor": "brisque", "backend": "cpu"}
+]
+```
+
+- **`backend_used`** is `cuda`, `sycl`, `hip` or `metal` when at least one
+  feature extractor ran on that device, and `cpu` when every extractor ran on
+  the CPU. It reports what ran, not what was initialised: `--backend sycl` with
+  only `--feature brisque` and `--no_prediction` reports `cpu`.
+- **`feature_backends`** lists every feature extractor of the run, in
+  registration order, with the backend it ran on. It includes the extractors a
+  model needs and reflects the CPU replacements made after the first frame, so
+  a model feature that fell back to the CPU appears as a `cpu` entry.
+
+A run mixed device twins and CPU extractors when `backend_used` names a device
+and `feature_backends` holds at least one `cpu` entry. XML, CSV and SUB output
+carry neither key.
 
 ### Score precision (fork-added)
 

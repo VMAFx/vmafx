@@ -36,6 +36,51 @@ foreach gpu_backend : ['cuda', 'sycl']
     endif
 endforeach
 
+# ADR-1359 — `--feature <cpu-name>` under an explicit device `--backend` runs
+# the backend's twin or falls back to the CPU with a warning, and the JSON
+# receipt reports what ran. The `cpu` registration checks that cpu, auto and
+# an unset --backend keep exact-name routing on every build; each compiled GPU
+# backend gets a device run that skips (exit 77) when the device is unusable.
+test_vmaf_feature_backend = find_program('test_vmaf_feature_backend.sh')
+test('test_vmaf_feature_backend_cpu', test_vmaf_feature_backend,
+     args : ['cpu'],
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     env : [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ],
+     timeout : 120)
+foreach gpu_backend : ['cuda', 'sycl', 'hip']
+    if get_option('enable_' + gpu_backend)
+        test('test_vmaf_feature_backend_' + gpu_backend, test_vmaf_feature_backend,
+             args : [gpu_backend],
+             suite : ['slow', 'gpu'],
+             depends : [vmaf],
+             workdir : meson.project_build_root(),
+             env : [
+                 'MESON_BUILD_ROOT=' + meson.project_build_root(),
+                 'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+             ],
+             is_parallel : false,
+             timeout : 300)
+    endif
+endforeach
+if is_metal_enabled
+    test('test_vmaf_feature_backend_metal', test_vmaf_feature_backend,
+         args : ['metal'],
+         suite : ['slow', 'gpu'],
+         depends : [vmaf],
+         workdir : meson.project_build_root(),
+         env : [
+             'MESON_BUILD_ROOT=' + meson.project_build_root(),
+             'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+         ],
+         is_parallel : false,
+         timeout : 300)
+endif
+
 # T6-3b / ADR-0222 — per-shot CRF predictor sidecar smoke test.
 test_vmaf_per_shot = find_program('test_vmaf_per_shot.sh')
 test('test_vmaf_per_shot', test_vmaf_per_shot,
@@ -71,6 +116,23 @@ test_vmaf_close_retry = executable(
     c_args : vmaf_tool_cflags,
 )
 test('test_vmaf_close_retry', test_vmaf_close_retry, suite : ['fast'])
+
+# ADR-1359: `--feature` routing under an explicit `--backend` and the JSON
+# backend receipt. The test defines vmaf_feature_backend_twin() and
+# vmaf_registered_feature_extractor() itself instead of linking libvmaf, so
+# every twin-lookup outcome runs without a GPU.
+test_cli_feature_backend = executable(
+    'test_cli_feature_backend',
+    ['../../test/test.c', 'test_cli_feature_backend.c', '../cli_feature_backend.cpp'],
+    include_directories : [
+        include_directories('../../test'),
+        include_directories('..'),
+        libvmaf_inc,
+    ],
+    c_args : vmaf_tool_cflags,
+    cpp_args : vmaf_tool_cflags,
+)
+test('test_cli_feature_backend', test_cli_feature_backend, suite : ['fast'])
 
 # T6-2b / ADR-0247 — vmaf-roi accepts high-bit-depth planar YUV by
 # downscaling luma to the existing 8-bit saliency-model contract.

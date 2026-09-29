@@ -238,7 +238,9 @@ typedef struct VmafConfiguration {
 | `vmaf_version()` | `const char *` | Version string `vX.Y.Z + git sha`. Does not need `vmaf_init()`. |
 | `vmaf_use_features_from_model(ctx, model)` | 0 / -errno | Register every feature a model needs. Deduplicates across multiple models. |
 | `vmaf_use_features_from_model_collection(ctx, coll)` | 0 / -errno | Same, for a bootstrap model collection. |
-| `vmaf_use_feature(ctx, "psnr", opts)` | 0 / -errno | Register an extra feature not required by any loaded model. Context takes ownership of `opts`; on success never free it yourself. |
+| `vmaf_use_feature(ctx, "psnr", opts)` | 0 / -errno | Register an extra feature not required by any loaded model. Context takes ownership of `opts`; on success never free it yourself. Selects the extractor by exact name. |
+| `vmaf_feature_backend_twin(ctx, "ciede", opts, &pic_cfg, &twin, &key)` | 0 / -errno | Ask for the imported backend's twin of a CPU extractor and whether it can run these options and this geometry. Registers nothing. See [Device twins](#device-twins-and-the-extractors-that-ran). |
+| `vmaf_registered_feature_extractor(ctx, i, &name, &backend)` | 0 / -ENOENT past the end | Name and backend of the `i`-th registered extractor. See [Device twins](#device-twins-and-the-extractors-that-ran). |
 | `vmaf_import_feature_score(ctx, name, value, index)` | 0 / -errno | Inject a pre-computed feature value (e.g. from a different pipeline). |
 | `vmaf_read_pictures(ctx, ref, dist, index)` | 0 / -errno | Feed a frame pair. `ctx` takes ownership via `vmaf_picture_unref()`. `index` must be **strictly increasing** across successive calls — non-monotonic indices return `-EINVAL` (see [ADR-0152](../adr/0152-vmaf-read-pictures-monotonic-index.md)). Pass `NULL, NULL, 0` to flush after the last frame. |
 | `vmaf_score_at_index(ctx, model, *score, index)` | 0 / -errno | Per-frame VMAF score. |
@@ -773,6 +775,73 @@ Returns `0` on success; `-EINVAL` if `vmaf` or `out` is `NULL`.
 New enum values may be appended in future releases. Callers should treat
 unknown values as `VMAF_BACKEND_UNKNOWN` (i.e. use a `default:` branch in
 any `switch`). See [ADR-0804](../adr/0804-vmaf-context-get-backend.md).
+
+## Device twins and the extractors that ran
+
+`vmaf_use_feature()` registers the extractor you name, exactly. A model's
+features are different: `vmaf_use_features_from_model()` picks the imported
+backend's twin of each one, keeps the CPU extractor when the twin cannot honour
+the model's options, and swaps in the CPU extractor at the first picture when
+the twin cannot run that geometry. Two functions expose that choice to a caller
+that registers features by name, such as the `vmaf` CLI
+([ADR-1359](../adr/1359-cli-feature-backend-twin.md)).
+
+### `vmaf_feature_backend_twin()`
+
+```c
+int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
+                              const VmafFeatureDictionary *opts_dict,
+                              const VmafPictureConfiguration *pic_cfg,
+                              const char **twin_name,
+                              const char **unsupported_option);
+```
+
+Asks which extractor of the backend imported into `vmaf` computes what the CPU
+extractor `feature_name` computes, using the model-dispatch lookup, and whether
+it can run with `opts_dict` on pictures of `pic_cfg`'s geometry. Pass `NULL`
+for `pic_cfg` to skip the geometry check; `pic_cnt` is ignored. Nothing is
+registered and `opts_dict` is not consumed. Call it after the backend's
+`vmaf_<backend>_import_state()`.
+
+| Return | Meaning | `*twin_name` | `*unsupported_option` |
+| --- | --- | --- | --- |
+| `0` | Use the twin: register `*twin_name` with `vmaf_use_feature()` | twin | `NULL` |
+| `-ENOENT` | The backend has no twin of this extractor | `NULL` | `NULL` |
+| `-ENOTSUP` | The twin cannot honour an option | twin | the option key |
+| `-ENOTSUP` | The twin cannot run this geometry with these options | twin | `NULL` |
+| `-ENODEV` | No backend imported, or a non-zero `gpumask` disables its extractors | `NULL` | `NULL` |
+| `-EINVAL` | `vmaf`, `feature_name` or `twin_name` is `NULL`, or `feature_name` is not a registered CPU extractor (an unknown name or a twin name) | `NULL` | `NULL` |
+
+Another negative errno means an option value could not be parsed. The twin
+name is static; the option key points into `opts_dict`, so read it before you
+free the dictionary or hand it to `vmaf_use_feature()`.
+
+```c
+const char *twin = NULL, *option = NULL;
+const char *name = "ciede";
+int err = vmaf_feature_backend_twin(vmaf, name, opts, &pic_cfg, &twin, &option);
+if (err == 0)
+    name = twin;                                  /* e.g. "ciede_sycl" */
+else if (err == -ENOTSUP && option)
+    fprintf(stderr, "%s cannot honour %s; using the CPU\n", twin, option);
+err = vmaf_use_feature(vmaf, name, opts);         /* consumes opts */
+```
+
+### `vmaf_registered_feature_extractor()`
+
+```c
+int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index,
+                                      const char **name, enum VmafBackend *backend);
+```
+
+Reports the extractor registered at `index` (after duplicate registrations were
+merged) and the backend it runs on; `VMAF_BACKEND_UNKNOWN` means the CPU. Walk
+`index` from `0` until it returns `-ENOENT`. Call it after the final
+`vmaf_read_pictures(vmaf, NULL, NULL, 0)` flush to see what actually ran,
+including a model feature whose twin was replaced by the CPU extractor at the
+first picture. Returns `-EINVAL` when `vmaf`, `name` or `backend` is `NULL`.
+The CLI builds its `backend_used` and `feature_backends` JSON keys from it
+([backend receipt](../usage/cli.md#backend-receipt-in-json-output)).
 
 ## Doxygen reference (auto-generated)
 

@@ -4,6 +4,20 @@
 > entries and Conventional Commits into ordinary SemVer releases.
 
 ## [Unreleased]
+### Added
+
+- **`vmaf_feature_backend_twin()` and `vmaf_registered_feature_extractor()`**
+  in `libvmaf.h`. The first tells a caller which device twin model dispatch
+  would use for a CPU extractor on the context's backend, and whether that twin
+  can honour the given options and picture size. The second lists the
+  registered extractors and the backend each one runs on. Both are additive;
+  `vmaf_use_feature()` still selects by exact name. See
+  [the C API reference](docs/api/index.md#device-twins-and-the-extractors-that-ran).
+- **`feature_backends` in the CLI's JSON output**: one
+  `{"extractor": ..., "backend": ...}` entry per registered extractor, next to
+  `backend_used`, so a run that mixes device twins and CPU extractors says so.
+
+
 ### Changed
 
 - `cambi_sycl` now runs every stage on the GPU — preprocessing, the spatial
@@ -31,10 +45,8 @@
   Measured at 3840x2160 8-bit 4:2:0, `--feature ciede_sycl` drops from 17.2 to
   8.4 ms per frame on an Arc B580 and from 52.9 to 46.0 ms on a UHD 770. Scores
   are unchanged, bit for bit.
-- The CLI guide now says that `--feature <name>` picks the extractor by its
-  exact name: `--feature ciede --backend sycl` still computes on the CPU, and
-  `--feature ciede_sycl` is how to run the SYCL extractor. It also corrects the
-  `--threads` default, which is serial (`0`), not the host's core count.
+- The CLI guide corrects the `--threads` default, which is serial (`0`), not
+  the host's core count.
 
 
 - **The SYCL SpEED twins run entirely on the device and match the CPU bit for
@@ -64,6 +76,23 @@
 
 
 ### Fixed
+
+- **`--feature <name>` now runs on the GPU that `--backend` names.**
+  `vmaf --backend sycl --feature ciede` used to initialise the SYCL device and
+  compute `ciede2000` with the CPU extractor, one frame at a time, while the
+  JSON reported `"backend_used": "sycl"`. With an explicit `--backend cuda`,
+  `sycl`, `hip` or `metal`, a CPU extractor name now runs on that backend's
+  twin (`ciede_sycl` here), chosen the way a model's features are
+  ([ADR-1359](docs/adr/1359-cli-feature-backend-twin.md)). When the backend has
+  no twin, or the twin cannot honour an option or the input size, the CPU
+  extractor runs and one `vmaf: warning: --feature <name>: ...` line says why.
+  Twin names such as `--feature ciede_sycl`, `--backend cpu`, `--backend auto`
+  and runs without `--backend` behave as before.
+- **`backend_used` reports the backend that computed the features.** It used to
+  name the backend that was initialised, even when nothing ran on it. It now
+  names the device when at least one extractor ran there and `cpu` otherwise;
+  the new `feature_backends` array says where each extractor ran.
+
 
 - Release provenance for the native Linux files and the `vmaf-mcp` wheel and
   sdist is a GitHub build-provenance attestation (SLSA v1 provenance

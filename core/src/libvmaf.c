@@ -1994,6 +1994,123 @@ int vmaf_use_features_from_model_collection(VmafContext *vmaf,
     return err;
 }
 
+/* ADR-1359: private copy of a caller-owned option dictionary that stays const
+ * at the public boundary. vmaf_dictionary_copy() takes a mutable source, so the
+ * entries are replayed in order instead. */
+static int fex_options_copy_const(const VmafDictionary *source, VmafDictionary **copy)
+{
+    *copy = NULL;
+    if (!source)
+        return 0;
+    for (unsigned i = 0; i < source->cnt; i++) {
+        const VmafDictionaryEntry *entry = &source->entry[i];
+        if (!entry->key || !entry->val)
+            continue;
+        const int err = vmaf_dictionary_set(copy, entry->key, entry->val, 0);
+        if (err) {
+            (void)vmaf_dictionary_free(copy);
+            return err;
+        }
+    }
+    return 0;
+}
+
+/* ADR-1359 reuses the ADR-1324 first-picture capability hook. The hook reads
+ * parsed options from the extractor's private state, so it runs on a scratch
+ * context that is never initialized or registered. */
+static int backend_twin_check_geometry(const VmafFeatureExtractor *twin, const VmafDictionary *opts,
+                                       const VmafPictureConfiguration *pic_cfg)
+{
+    VmafDictionary *copy = NULL;
+    int err = fex_options_copy_const(opts, &copy);
+    if (err)
+        return err;
+    VmafFeatureExtractorContext *ctx = NULL;
+    err = fex_ctx_create_owned_options(&ctx, twin, copy);
+    if (err)
+        return err;
+    const int check =
+        ctx->fex->context_check(ctx->fex, pic_cfg->pic_params.pix_fmt, pic_cfg->pic_params.bpc,
+                                pic_cfg->pic_params.w, pic_cfg->pic_params.h);
+    err = vmaf_feature_extractor_context_destroy(ctx);
+    return err ? err : check;
+}
+
+/* ADR-1359: a twin serves a direct request only when model dispatch would keep
+ * it for the same options (ADR-1183 / ADR-1316) and the same picture geometry
+ * (ADR-1324). Returns 0, -ENOTSUP, or the error of the geometry probe. */
+static int backend_twin_verdict(const VmafFeatureExtractor *twin, const VmafDictionary *opts,
+                                const VmafPictureConfiguration *pic_cfg,
+                                const char **unsupported_option)
+{
+    if (!vmaf_feature_extractor_honours_options(twin, opts, unsupported_option))
+        return -ENOTSUP;
+    if (!pic_cfg || !twin->context_check)
+        return 0;
+    return backend_twin_check_geometry(twin, opts, pic_cfg);
+}
+
+int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
+                              const VmafFeatureDictionary *opts_dict,
+                              const VmafPictureConfiguration *pic_cfg, const char **twin_name,
+                              const char **unsupported_option)
+{
+    if (unsupported_option)
+        *unsupported_option = NULL;
+    if (!vmaf || !feature_name || !twin_name)
+        return -EINVAL;
+    *twin_name = NULL;
+
+    const unsigned gpu_mask = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
+                              VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+    const VmafFeatureExtractor *cpu_fex = vmaf_get_feature_extractor_by_name(feature_name);
+    if (!cpu_fex || (cpu_fex->flags & gpu_mask))
+        return -EINVAL;
+
+    const unsigned fex_flags = compute_fex_flags(vmaf);
+    if (!fex_flags)
+        return -ENODEV;
+    const VmafFeatureExtractor *twin = vmaf_get_feature_extractor_twin(cpu_fex, fex_flags);
+    if (!twin)
+        return -ENOENT;
+    *twin_name = twin->name;
+
+    const char *key = NULL;
+    const int err = backend_twin_verdict(twin, (const VmafDictionary *)opts_dict, pic_cfg, &key);
+    if (unsupported_option)
+        *unsupported_option = key;
+    return err;
+}
+
+static enum VmafBackend fex_flags_backend(uint64_t flags)
+{
+    if (flags & VMAF_FEATURE_EXTRACTOR_CUDA)
+        return VMAF_BACKEND_CUDA;
+    if (flags & VMAF_FEATURE_EXTRACTOR_SYCL)
+        return VMAF_BACKEND_SYCL;
+    if (flags & VMAF_FEATURE_EXTRACTOR_HIP)
+        return VMAF_BACKEND_HIP;
+    if (flags & VMAF_FEATURE_EXTRACTOR_METAL)
+        return VMAF_BACKEND_METAL;
+    return VMAF_BACKEND_UNKNOWN;
+}
+
+int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index, const char **name,
+                                      enum VmafBackend *backend)
+{
+    if (!vmaf || !name || !backend)
+        return -EINVAL;
+    const RegisteredFeatureExtractors *rfe = &vmaf->registered_feature_extractors;
+    if (index >= rfe->cnt)
+        return -ENOENT;
+    const VmafFeatureExtractorContext *ctx = rfe->fex_ctx[index];
+    if (!ctx || !ctx->fex)
+        return -EINVAL;
+    *name = ctx->fex->name;
+    *backend = fex_flags_backend(ctx->fex->flags);
+    return 0;
+}
+
 /* Drop the counted previous-frame reference an extractor holds (if any) and
  * clear the field. Every PREV_REF dispatch path must balance the
  * vmaf_picture_ref() it took with exactly one call here — a bare memset

@@ -116,6 +116,9 @@ YUV reading and picture handling in the CLI. The UHD 770 is bound by the kernel.
 
 - Whether the CLI or `vmaf_use_feature()` should map `--feature ciede` to the
   active backend's twin (`T-CLI-FEATURE-NAME-BYPASSES-GPU-BACKEND-2026-09-29`).
+  Answered: the CLI does, with an explicit GPU `--backend`
+  ([ADR-1359](../adr/1359-cli-feature-backend-twin.md),
+  [Research-2121](2121-cli-feature-backend-twin.md)).
 - How much of the UHD 770 kernel time the transcendental calls take, and why it
   varies between 21 and 35 ms from frame to frame (shared power budget with the
   CPU is the likely cause; not measured).

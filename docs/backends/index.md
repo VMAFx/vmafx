@@ -72,7 +72,16 @@ it now returns exit 1 with an unsupported-backend error.) Per ADR-0498 (2026-05-
 - The JSON output gains a top-level `"backend_used": "NAME"` key
   echoing what actually ran (cpu / cuda / sycl / hip / metal).
   Downstream consumers can confirm dispatch independently of stderr;
-  mirrors the MCP-layer echo added by PR #1251.
+  mirrors the MCP-layer echo added by PR #1251. Since
+  [ADR-1359](../adr/1359-cli-feature-backend-twin.md) it names the device
+  only when at least one feature extractor ran on it, and a
+  `"feature_backends"` array lists the backend of every extractor. See
+  [the CLI receipt](../usage/cli.md#backend-receipt-in-json-output).
+- With an explicit device `--backend`, a CPU extractor name in `--feature`
+  (for example `ciede`) runs on that backend's twin when the twin can honour
+  the options and input size, and falls back to the CPU with a warning
+  otherwise ([ADR-1359](../adr/1359-cli-feature-backend-twin.md);
+  [details](../usage/cli.md#feature-extractors-on-a-gpu-backend)).
 
 Example:
 

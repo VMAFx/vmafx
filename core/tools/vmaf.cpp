@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <string>
 #include <string_view>
 #ifdef _WIN32
 /* MSVC/UCRT provides isatty / fileno via <io.h> under the MSVC-prefixed
@@ -42,6 +43,7 @@
 #include <unistd.h>
 #endif
 
+#include "cli_feature_backend.h"
 #include "cli_parse.h"
 #include "compat/path_utf8.h"
 #include "spinner.h"
@@ -710,7 +712,7 @@ struct GpuStates {
 
 [[nodiscard]] bool explicit_backend_requested(const CLISettings *c)
 {
-    return c->backend && strcmp(c->backend, "auto") != 0 && strcmp(c->backend, "cpu") != 0;
+    return cli_backend_is_device(c->backend);
 }
 
 } // namespace
@@ -1658,6 +1660,9 @@ namespace
 /* ADR-0498 / Bug #v2-E: amend the JSON output file with a top-level
  * ``"backend_used": "NAME"`` key so downstream consumers (CI gates,
  * MCP probes per PR #1251) can confirm which backend actually ran.
+ * ADR-1359 derives that value from the registered extractors and adds the
+ * per-extractor ``"feature_backends"`` list next to it; ``members`` carries
+ * both, formatted by cli_format_backend_members().
  * Implemented as a textual edit on the closing ``}`` to avoid pulling
  * a JSON parser into the CLI; the writer always emits a single
  * top-level object so the brace is at the file tail.
@@ -1667,10 +1672,10 @@ namespace
 namespace
 {
 
-void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat fmt,
-                                  const char *backend_used)
+void amend_json_with_backend_receipt(const char *output_path, enum VmafOutputFormat fmt,
+                                     const char *members)
 {
-    if (!output_path || !backend_used)
+    if (!output_path || !members)
         return;
     if (fmt != VMAF_OUTPUT_FORMAT_JSON)
         return;
@@ -1711,7 +1716,7 @@ void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat
         (void)fclose(fp);
         return;
     }
-    (void)fprintf(fp, ", \"backend_used\": \"%s\"}\n", backend_used);
+    (void)fprintf(fp, ", %s}\n", members);
     (void)fclose(fp);
 }
 
@@ -1958,6 +1963,25 @@ namespace
     return VMAF_EXIT_BACKEND_INIT_FAILED;
 }
 
+/* ADR-1359: with an explicit device `--backend`, a CPU extractor name runs on
+ * that backend's twin when libvmaf reports one that honours the options and
+ * the input geometry; otherwise the CPU extractor runs and the reason is
+ * printed. Twin-suffixed names (checked above, ADR-0543), `--backend cpu|auto`
+ * and no `--backend` keep the exact-name registration. */
+[[nodiscard]] const char *cli_feature_extractor(const CliRunState *state, const char *name,
+                                                const VmafFeatureDictionary *opts_dict,
+                                                bool pinned_to_backend)
+{
+    if (pinned_to_backend)
+        return name;
+    char warning[512];
+    const CliFeatureChoice choice = cli_choose_feature_extractor(
+        state->vmaf, state->c.backend, name, opts_dict, &state->pic_cfg, warning, sizeof(warning));
+    if (warning[0])
+        (void)fputs(warning, stderr);
+    return choice.extractor;
+}
+
 } // namespace
 
 namespace
@@ -1982,8 +2006,10 @@ namespace
         return reject_inactive_feature_backend(state, feature.name, requested_backend);
 #endif
     }
-    if (vmaf_use_feature(state->vmaf, feature.name, feature.opts_dict)) {
-        (void)fprintf(stderr, "problem loading feature extractor: %s\n", feature.name);
+    const char *extractor =
+        cli_feature_extractor(state, feature.name, feature.opts_dict, requested_backend != nullptr);
+    if (vmaf_use_feature(state->vmaf, extractor, feature.opts_dict)) {
+        (void)fprintf(stderr, "problem loading feature extractor: %s\n", extractor);
         return -1;
     }
     return 0;
@@ -2004,27 +2030,22 @@ namespace
 namespace
 {
 
-[[nodiscard]] const char *active_backend_name(const GpuStates *states)
+/* ADR-1359: `backend_used` names the backend the registered extractors ran on,
+ * not the backend that was initialised, and `feature_backends` lists each
+ * extractor so a run that mixes device twins and CPU extractors says so. */
+void amend_cli_backend_receipt(const CliRunState *state)
 {
-    const char *backend = "cpu";
-#ifdef HAVE_SYCL
-    if (states->sycl_active)
-        backend = "sycl";
-#endif
-#ifdef HAVE_HIP
-    if (states->hip_active)
-        backend = "hip";
-#endif
-#ifdef HAVE_METAL
-    if (states->metal_active)
-        backend = "metal";
-#endif
-#ifdef HAVE_CUDA
-    if (states->cuda_active)
-        backend = "cuda";
-#endif
-    (void)states;
-    return backend;
+    if (state->c.output_fmt != VMAF_OUTPUT_FORMAT_JSON)
+        return;
+    CliExtractorReport report = {};
+    const int err = cli_collect_extractor_report(state->vmaf, &report);
+    if (err) {
+        (void)fprintf(stderr, "vmaf: could not list the feature extractors (err=%d)\n", err);
+        return;
+    }
+    std::string members(cli_format_backend_members(&report, nullptr, 0), '\0');
+    (void)cli_format_backend_members(&report, members.data(), members.size() + 1);
+    amend_json_with_backend_receipt(state->c.output_path, state->c.output_fmt, members.c_str());
 }
 
 [[nodiscard]] int write_cli_output(const CliRunState *state)
@@ -2037,8 +2058,7 @@ namespace
         (void)fprintf(stderr, "problem writing output to %s (err=%d)\n", state->c.output_path, err);
         return err;
     }
-    amend_json_with_backend_used(state->c.output_path, state->c.output_fmt,
-                                 active_backend_name(&state->gpu));
+    amend_cli_backend_receipt(state);
     return 0;
 }
 

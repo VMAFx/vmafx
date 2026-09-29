@@ -667,6 +667,80 @@ VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *out
 VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out);
 
 /**
+ * @brief Find the device twin of a CPU feature extractor.
+ *
+ * Looks for the extractor that computes the same features as the CPU
+ * extractor @p feature_name on the device backend imported into @p vmaf. The
+ * lookup is the one `vmaf_use_features_from_model()` applies to model
+ * features: each feature the CPU extractor provides is looked up, in order,
+ * among the extractors of the imported backend. The twin is usable only when
+ * it honours every option in @p opts_dict and, when @p pic_cfg is given, can
+ * run pictures of that geometry. Model dispatch applies the same two checks
+ * before it falls back to the CPU extractor.
+ *
+ * Nothing is registered. To run the twin, pass @p *twin_name and the same
+ * options to `vmaf_use_feature()`. `vmaf_use_feature()` itself still selects
+ * extractors by exact name.
+ *
+ * @param vmaf               Context with a device backend imported through
+ *                           a `vmaf_<backend>_import_state()` call.
+ * @param feature_name       Registry name of a CPU extractor, as passed to
+ *                           `vmaf_use_feature()` (for example `"ciede"`).
+ * @param opts_dict          Options the caller will pass to
+ *                           `vmaf_use_feature()`, or NULL. Read, not consumed.
+ * @param pic_cfg            Picture geometry of the run, or NULL to skip the
+ *                           geometry check. `pic_cnt` is ignored.
+ * @param twin_name          Receives the twin's registry name, or NULL when
+ *                           the backend has none. Static storage; do not free.
+ * @param unsupported_option Receives the option key the twin cannot honour, or
+ *                           NULL. The key points into @p opts_dict and is
+ *                           valid until that dictionary is freed or passed to
+ *                           `vmaf_use_feature()`. May be NULL.
+ *
+ * @return 0 when the twin can compute this request;
+ *         -ENOENT when the imported backend has no twin for @p feature_name;
+ *         -ENOTSUP when the twin cannot honour an option (@p unsupported_option
+ *         names it) or the picture geometry (@p unsupported_option is NULL);
+ *         -ENODEV when @p vmaf has no device backend selected for feature
+ *         extraction (none imported, or a non-zero `gpumask` disables it);
+ *         -EINVAL when @p vmaf, @p feature_name or @p twin_name is NULL, or
+ *         @p feature_name is not a registered CPU extractor; another negative
+ *         errno when an option value cannot be parsed.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_EXPORT int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
+                                          const VmafFeatureDictionary *opts_dict,
+                                          const VmafPictureConfiguration *pic_cfg,
+                                          const char **twin_name, const char **unsupported_option);
+
+/**
+ * @brief Report a registered feature extractor and the backend it runs on.
+ *
+ * Enumerates the extractors registered in @p vmaf by
+ * `vmaf_use_features_from_model()`, `vmaf_use_feature()` and their variants,
+ * after duplicate registrations were merged. Iterate @p index from 0 until the
+ * call returns -ENOENT. Call it after the final
+ * `vmaf_read_pictures(vmaf, NULL, NULL, 0)` flush to see the extractors that
+ * actually ran: a model feature whose device twin cannot handle the first
+ * picture's geometry is replaced by its CPU extractor at that picture.
+ *
+ * @param vmaf    The VMAF context allocated with `vmaf_init()`.
+ * @param index   0-based registration index.
+ * @param name    Receives the extractor's registry name (for example
+ *                `"ciede_sycl"`). Static storage; do not free.
+ * @param backend Receives the backend the extractor runs on;
+ *                `VMAF_BACKEND_UNKNOWN` means the CPU.
+ *
+ * @return 0 on success, -ENOENT when @p index is past the last registered
+ *         extractor, or -EINVAL when @p vmaf, @p name or @p backend is NULL.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_EXPORT int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index,
+                                                  const char **name, enum VmafBackend *backend);
+
+/**
  * @brief Return the libvmaf version string (e.g. "3.2.1").
  *
  * @return NUL-terminated string owned by the library. Valid for the

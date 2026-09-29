@@ -196,6 +196,19 @@ extern "C" {
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name);
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *name, unsigned flags);
 
+/**
+ * @brief Find the device twin of a CPU feature extractor (ADR-1359).
+ *
+ * Looks up each feature @p cpu_fex provides, in order, with
+ * vmaf_get_feature_extractor_by_feature_name() and returns the first result
+ * that carries one of @p flags.
+ *
+ * @return the twin, or NULL when @p cpu_fex is NULL, @p flags is 0, or no
+ *         extractor carrying one of @p flags provides any of its features.
+ */
+VmafFeatureExtractor *vmaf_get_feature_extractor_twin(const VmafFeatureExtractor *cpu_fex,
+                                                      unsigned flags);
+
 /* ADR-0544: Audit feature_extractor_list[] for accidental duplicate
  * registrations (same `name` string registered more than once).
  * Returns 0 if every entry is unique, -EINVAL otherwise.  Each

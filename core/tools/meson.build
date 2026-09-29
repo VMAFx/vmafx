@@ -63,6 +63,7 @@ vmaf_close_retry_source = files('vmaf_close_retry.c')
 # project default (c_args only) and linked together with the C++ TUs.
 vmaf_cli_sources = [
     'vmaf.cpp',
+    'cli_feature_backend.cpp',
     'cli_parse.cpp',
     'y4m_input.c',
     'vidinput.c',
