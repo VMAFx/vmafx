@@ -563,9 +563,20 @@ the deviation:
   ensuring feature dictionary key and numerical parity with CPU CAMBI
   when running default model `vmaf_v1.0.16_3d0h`. Sizing of CAMBI histogram
   buffers is bounded by `MAX(num_bins, v_band_size)`. `speed_chroma_sycl`
-  and `speed_temporal_sycl` use single-precision `float` accumulators and
+  and `speed_temporal_sycl` use single-precision `float` arithmetic and
   work-group accessors exclusively, strictly adhering to ADR-0220 on
   hardware lacking native double-precision support (Intel Arc A-series).
+- **SpEED twins are device-resident and bit-identical to the CPU
+  ([ADR-1358](../../adr/1358-sycl-speed-device-resident-linalg.md)).**
+  `speed_chroma_sycl` and `speed_temporal_sycl` upload the raw planes once
+  per frame and run filtering, covariance, eigenvalues, QR solve and score on
+  the device, replayed as one recorded SYCL graph; the host reads one result
+  per frame. Their per-frame scores equal `--backend cpu` exactly. Timings and
+  the parity check are in [SpEED](../../metrics/speed_qa.md#sycl-device-resident-and-bit-identical-to-the-cpu).
+  The four SpEED TUs build with `-ffp-contract=off`: `-fp-model=precise`
+  alone still contracts `a * b + c` into an FMA inside kernels and leaves
+  fp32 division and square root non-correctly-rounded (measured with icpx
+  2026.1), so the pipeline rounds those two explicitly.
 
 See [metrics/features.md](../../metrics/features.md) for the
 per-extractor coverage matrix and [api/gpu.md](../../api/gpu.md#sycl)

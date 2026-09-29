@@ -1,0 +1,1 @@
+| [ADR-1358](1358-sycl-speed-device-resident-linalg.md) | The SYCL SpEED twins run the whole per-frame chain on the device, 25x25 eigenvalues and QR included, with contraction-off and correctly rounded fp32 arithmetic, and match the CPU extractor bit for bit; CUDA/HIP keep the ADR-0567 split until ported | Accepted | sycl, speed, gpu, performance, numerics |

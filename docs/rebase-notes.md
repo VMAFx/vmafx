@@ -78,6 +78,37 @@
   `integer_ciede_sycl.cpp` from 14 to 0 (clang-tidy 22.1.8). On a conflict,
   rerun `tidy-ratchet.py --only` rather than merging the JSON by hand.
 
+## perf/sycl-speed-device-resident — SYCL SpEED twins are device-resident (ADR-1358) (2026-09-29)
+
+- `core/src/feature/sycl/speed_sycl_pipeline.cpp` holds every SpEED kernel;
+  `speed_chroma_sycl.cpp`, `speed_temporal_sycl.cpp` and `speed_sycl_host.cpp`
+  hold none and do not wait on the queue outside `pipeline_collect()` /
+  `pipeline_wait()`. `core/test/test_sycl_kernel_source_contract.py` enforces
+  this, the absence of the fp64 type in the pipeline, and the absence of calls
+  to the host linear algebra (`speed_internal_compute_eigenvalues`,
+  `_qr_factorize`, `_qt_multiply`, `_filter_and_downscale`, `picture_copy`).
+- The pipeline is bit-identical to `speed.c` only while every sum keeps the
+  reference order and every product feeding an add stays in a named temporary;
+  division and square root go through `div_rn()` / `sqrt_rn()`, log2 through
+  `speed_log2()`, the fp64 `EIGENVALUE_EPS` comparisons through `below_eps()` /
+  `below_eps_scaled()`. An upstream change to `speed.c` (eigen sweep, QR,
+  scoring, `vif_tools.c` filtering) must be mirrored there and re-checked with
+  `scripts/dev/speed_gpu_parity.py --backend sycl`.
+- `core/src/meson.build`: the four SpEED TUs build with
+  `sycl_speed_strict_fp_args` (`-ffp-contract=off` after `-fp-model=precise`).
+  Keep the order; do not move the flags onto the shared SYCL feature line
+  without re-measuring every other twin (`T-SYCL-FP-MODEL-PRECISE-CONTRACTS-2026-09-29`).
+- `speed_internal.c` gains `speed_internal_entropy_constant()` and
+  `speed_internal_base_entropy()` (same expressions as `speed.c`), declared in
+  the new `core/src/feature/speed_constants.h`; `speed.c` and
+  `speed_internal.h` are untouched. The CUDA/HIP twins still use the host
+  helpers.
+- The four SpEED SYCL TUs keep their helpers in many short anonymous-namespace
+  blocks and define the `speed_sycl::` API with qualified names: the HISS-04
+  scanner counts a namespace block as one function, so a block over 60 lines
+  fails the touched-file gate.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## fix/ffmpeg9-fps-mode — `-fps_mode passthrough` replaces `-vsync 0` (2026-09-28)
 - `compat/python-vmaf/core/executor.py`: ports Netflix/vmaf `aeaf2877d`; the
   decode command now matches upstream. Upstream's `python/vmaf/__init__.py`

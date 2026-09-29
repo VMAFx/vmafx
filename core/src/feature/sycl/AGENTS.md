@@ -33,8 +33,31 @@ under [`../../meson.build`](../../meson.build) adds
   Removing it allows `icpx` to FMA-contract inside kernel
   lambdas, drifting `float_adm_sycl` past `places=4` at scale 2
   (ADR-0202), `ssimulacra2_sycl` past `places=2` through IIR
-  (ADR-0206). Matches GLSL `precise` / `NoContraction` and CUDA
-  `--fmad=false`.
+  (ADR-0206). **It does not stop all contraction** (measured, icpx
+  2026.1, ADR-1358): `a * b + c` written as one expression still
+  becomes one FMA in 28% of cases, and fp32 `/` and `sqrt` are not
+  correctly rounded (28% / 8% differ from the host). A product held
+  in a named temporary is not contracted. Kernels that must match
+  the host bit for bit need `-ffp-contract=off` after
+  `-fp-model=precise` per TU and correctly rounded division / square
+  root in the source; `-foffload-fp32-prec-div/-sqrt` act only on the
+  final image link. Tracked for the other TUs as
+  `T-SYCL-FP-MODEL-PRECISE-CONTRACTS-2026-09-29`.
+- **SpEED pipeline arithmetic contract ([ADR-1358](../../../../docs/adr/1358-sycl-speed-device-resident-linalg.md)).**
+  Every SpEED kernel lives in `speed_sycl_pipeline.cpp`; the two
+  extractor TUs and `speed_sycl_host.cpp` hold none and never wait on
+  the queue outside `pipeline_collect()` / `pipeline_wait()`. The four
+  TUs are built with `sycl_speed_strict_fp_args` (`-ffp-contract=off`)
+  in `core/src/meson.build`. In the pipeline, every division and square
+  root goes through `div_rn()` / `sqrt_rn()`, every `log2f` through
+  `speed_log2()`, every product feeding an add sits in a named
+  temporary, and the fp64 comparisons of `speed.c` go through
+  `below_eps()` / `below_eps_scaled()`. The file must not mention the
+  fp64 type at all (`core/test/test_sycl_kernel_source_contract.py`).
+  On rebase: a plain `/` or `sycl::sqrt` added to a pipeline kernel, or
+  a reduction reordered, breaks the bit-exact parity
+  `test_sycl_speed_*_parity` measures; keep the order of every sum
+  identical to its `speed.c` / `vif_tools.c` reference.
 - **fp64-free kernels non-negotiable** ([ADR-0220](../../../../docs/adr/0220-sycl-fp64-fallback.md)).
   Every SYCL feature-kernel lambda captures, operates on `float`
   / integer types only. **No `double` operand inside `parallel_for`
@@ -51,19 +74,21 @@ under [`../../meson.build`](../../meson.build) adds
   - VIF gain limiting uses fp32 `sycl::fmin`.
 - **Kernel identities and output captures have an explicit boundary**
   ([Research-2090](../../../../docs/research/2090-sycl-silent-revert-residuals-2026-09-24.md)).
-  `speed_chroma_sycl.cpp` and `speed_temporal_sycl.cpp` use role-prefixed
-  `launch_{chroma,temporal}_{indterm,score}` names. Their anonymous kernel
-  lambdas otherwise receive identical generated names across translation
-  units, allowing the linker to pair one launcher's host capture layout with
-  the other launcher's device image. Never collapse the role prefixes.
+  Anonymous kernel lambdas in two translation units can receive identical
+  generated names, letting the linker pair one launcher's host capture layout
+  with the other's device image; that is how the two SpEED TUs collided. Since
+  ADR-1358 every SpEED kernel lives in the one TU `speed_sycl_pipeline.cpp`, and
+  the source contract rejects a kernel in `speed_chroma_sycl.cpp`,
+  `speed_temporal_sycl.cpp` or `speed_sycl_host.cpp`. Do not split the pipeline
+  kernels back across TUs.
   `float_psnr_sycl.cpp` and `integer_psnr_sycl.cpp` capture their output
   pointers through `FpsnrOutput` and `PsnrKernelArgs`; do not flatten those
   structs back into raw lambda captures. `integer_moment_sycl.cpp` is the
   remaining scalar-argument shape and aliases `d_sums` to `e_sums` before the
   submit lambda. Keep the alias and use it for all four atomics. The source
   contract in `core/test/test_sycl_kernel_source_contract.py` plants the fp64,
-  cross-TU kernel-name, and raw-capture regressions and must stay wired into
-  the fast suite.
+  SpEED host-residual, kernel-outside-pipeline, mid-frame-wait and raw-capture
+  regressions and must stay wired into the fast suite.
 - **Wholly-new fork files use dual Netflix + Lusoris/Claude
   copyright header** per [ADR-0025](../../../../docs/adr/0025-copyright-handling-dual-notice.md).
   Most TUs here fork-original SYCL ports of
@@ -316,12 +341,13 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `sigma_max_inv` from `launch_compute`'s parameters; must not
   re-declare them as kernel-local constants.
 - **SpEED singular-covariance contract** — see canonical note in
-  [`../cuda/AGENTS.md`](../cuda/AGENTS.md). `speed_chroma_sycl.cpp` and
-  `speed_temporal_sycl.cpp` zero `d_sol` with `q.memset`, report via
-  `singular_out`. SYCL = worst case for getting this wrong:
-  `sycl::malloc_device` memory explicitly uninitialised, so missing
-  device zero = genuine uninitialised read on first singular
-  frame. ADR-1218.
+  [`../cuda/AGENTS.md`](../cuda/AGENTS.md). Since ADR-1358 the SYCL
+  twins decide singularity on the device: `linalg_store()` in
+  `speed_sycl_pipeline.cpp` writes the per-channel flag, and
+  `block_statistics()` solves into a zero-initialised private solution
+  that stays zero on a singular channel, so no device buffer is read
+  before it is written. `score_group()` applies the one-sided rule and
+  the flags reach the host in `FrameResult.singular`. ADR-1218.
 - **`float_adm_sycl.cpp` options must be captured, not hardcoded**
   (ADR-1220) — see canonical note in
   [`../cuda/AGENTS.md`](../cuda/AGENTS.md). `launch_csf_cm` and
@@ -419,20 +445,15 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `float_motion_sycl.cpp` | `float_motion.c` | `test_sycl_float_motion_parity.c` | ADR-0946 (round 3) |
 | `integer_psnr_hvs_sycl.cpp` | `third_party/xiph/psnr_hvs.c` | `test_sycl_psnr_hvs_parity.c` | ADR-0946 (round 3) |
 | `integer_moment_sycl.cpp` (`float_moment_sycl`) | `float_moment.c` | `test_sycl_float_moment_parity.c` | ADR-0957 (round 4) |
-| `speed_chroma_sycl.cpp` (dormant — not built) | `speed.c` | `test_sycl_speed_chroma_parity.c` (skips until wired in) | ADR-0957 (round 4) |
-| `speed_temporal_sycl.cpp` (dormant — not built) | `speed.c` | `test_sycl_speed_temporal_parity.c` (skips until wired in) | ADR-0957 (round 4) |
+| `speed_chroma_sycl.cpp` + `speed_sycl_pipeline.cpp` | `speed.c` | `test_sycl_speed_chroma_parity.c`, `test_sycl_speed_singular_parity.c` | ADR-0957 (round 4), ADR-1358 |
+| `speed_temporal_sycl.cpp` + `speed_sycl_pipeline.cpp` | `speed.c` | `test_sycl_speed_temporal_parity.c`, `test_sycl_speed_singular_parity.c` | ADR-0957 (round 4), ADR-1358 |
 | `ssimulacra2_sycl.cpp` | `ssimulacra2.c` | `test_sycl_ssimulacra2_parity.c` | ADR-0957 (round 4) |
 
-> **`speed_chroma_sycl.cpp` and `speed_temporal_sycl.cpp` dormant
-> scaffold (ADR-0957 §Context).** Source files exist (~1.5 KLOC
-> combined, no TODO/FIXME markers) but not in
-> `sycl_feature_sources` in `core/src/meson.build`; extractor
-> symbols `vmaf_fex_speed_chroma_sycl` / `vmaf_fex_speed_temporal_sycl`
-> not declared/registered in `core/src/feature/feature_extractor.c`.
-> Wiring them in = separate PR — changes production
-> extractor surface, not test coverage alone. Round-4 parity
-> tests added in dormant form, auto-activate as real gates
-> the day wiring lands.
+> **SpEED twins are wired and device-resident (ADR-0964, ADR-1358).**
+> Both extractors are in `sycl_feature_sources` with the shared
+> `speed_sycl_pipeline.cpp` and `speed_sycl_host.cpp`. Their parity tests
+> are live gates; on real video the twins match the CPU bit for bit (see
+> `docs/metrics/speed_qa.md`).
 
 ## Per-feature option-table sync invariant
 

@@ -2042,11 +2042,14 @@ if is_sycl_enabled
         feature_src_dir + 'sycl/float_adm_sycl.cpp',
         feature_src_dir + 'sycl/integer_cambi_sycl.cpp',
         # ADR-0964: speed_chroma_sycl + speed_temporal_sycl — GPU twins of
-        # vmaf_fex_speed_chroma / vmaf_fex_speed_temporal.  Hybrid GPU/CPU
-        # split mirrors the CUDA and HIP twins; CPU-side eigendecomp + QR
-        # live in feature/speed_internal.c.
+        # vmaf_fex_speed_chroma / vmaf_fex_speed_temporal. ADR-1358: both are
+        # device-resident; the whole per-frame chain (filtering, covariance,
+        # eigenvalues, QR, solve, score) lives in speed_sycl_pipeline.cpp and
+        # the init-time setup in speed_sycl_host.cpp.
         feature_src_dir + 'sycl/speed_chroma_sycl.cpp',
         feature_src_dir + 'sycl/speed_temporal_sycl.cpp',
+        feature_src_dir + 'sycl/speed_sycl_pipeline.cpp',
+        feature_src_dir + 'sycl/speed_sycl_host.cpp',
     ]
 
     # `-fp-model=precise` is Intel's strict-FP flag: no FMA contraction,
@@ -2093,6 +2096,20 @@ if is_sycl_enabled
         'integer_psnr_hvs_sycl' : ['lnl-m', 'bmg-g21', 'bmg-g31'],
     }
 
+    # ADR-1358: the SpEED TUs reproduce the CPU reference operation for
+    # operation, which `-fp-model=precise` alone does not give on the device.
+    # Measured with icpx 2026.1 on Arc B580 and UHD 770: precise still
+    # contracts `a * b + c` into one FMA inside kernel lambdas (28% of random
+    # products differ from the host). `-ffp-contract=off` AFTER
+    # `-fp-model=precise` (order is load-bearing, see the strict FP policy
+    # above) stops it, per TU. Division and square root are made correctly
+    # rounded in the source (fdiv_rn / fsqrt_rn), because the offload
+    # precision flags act only on the final image link, which every SYCL
+    # extractor shares. AdaptiveCpp's strict line is already contraction-off.
+    sycl_speed_strict_fp_args = is_sycl_acpp ? [] : ['-ffp-contract=off']
+    sycl_speed_sources = ['speed_chroma_sycl', 'speed_temporal_sycl', 'speed_sycl_pipeline',
+                          'speed_sycl_host']
+
     foreach src : sycl_feature_sources
         name = fs.stem(src)
         tu_toolchain_args = sycl_toolchain_args
@@ -2114,11 +2131,12 @@ if is_sycl_enabled
                     ','.join(sycl_icpx_aot_igc_skip[name]) +
                     ' (IGC cannot compile it for them; SPIR-V JIT there). ADR-1360.')
         endif
+        extra_args = sycl_speed_sources.contains(name) ? sycl_speed_strict_fp_args : []
         sycl_feature_objects += custom_target('sycl_feature_' + name,
             output : name + '.o',
             input : src,
             command : [icpx] + vmaf_cflags_common + ['-c'] + tu_toolchain_args
-                      + sycl_feature_tail_args + sycl_feature_inc
+                      + sycl_feature_tail_args + extra_args + sycl_feature_inc
                       + ['@INPUT@', '-o', '@OUTPUT@'],
         )
     endforeach

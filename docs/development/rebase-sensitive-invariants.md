@@ -93,6 +93,14 @@ linked AGENTS.md before resolving conflicts.
   Saliency-weighted VMAF, sidecar emit for `tools/vmaf-roi`.
 - **TransNet V2 shot-boundary extractor (T6-3a, PR #210)** —
   ~1M params; feeds `tools/vmaf-perShot` CRF predictor.
+- **SYCL SpEED device-resident pipeline ([ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md))**:
+  every SpEED kernel lives in `core/src/feature/sycl/speed_sycl_pipeline.cpp`
+  and reproduces `speed.c` operation for operation; the SpEED TUs build with
+  `-ffp-contract=off` (`sycl_speed_strict_fp_args`), divide and take square
+  roots through `div_rn()` / `sqrt_rn()`, and never wait on the queue
+  mid-frame. `core/test/test_sycl_kernel_source_contract.py` guards the
+  layout; `scripts/dev/speed_gpu_parity.py --backend sycl` re-checks bit
+  parity. See [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

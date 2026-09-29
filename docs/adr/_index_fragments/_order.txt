@@ -1066,3 +1066,4 @@
 1356-release-provenance-attest
 1357-sycl-cambi-device-resident
 1360-sycl-aot-compile-time-device-codegen
+1358-sycl-speed-device-resident-linalg

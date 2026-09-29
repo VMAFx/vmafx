@@ -40,13 +40,19 @@ sycl/
 - **Numerical snapshots**: same rule as CUDA — see CLAUDE.md §9.
 - **`-fp-model=precise` load-bearing.** SYCL feature build line in
   `core/src/meson.build` adds `-fp-model=precise` to every per-kernel
-  TU. It blocks `icpx` from FMA contraction in kernel lambdas.
+  TU. It limits `icpx`'s value-unsafe optimisation in kernel lambdas.
   Removing it drifts `float_adm_sycl`
   ([ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)) past
   `places=4` at scale 2, `ssimulacra2_sycl`
   ([ADR-0206](../../../docs/adr/0206-ssimulacra2-cuda-sycl.md)) past
   `places=2` through IIR. **On rebase**: keep flag on SYCL feature
-  line.
+  line. It does **not** stop FMA contraction of `a * b + c` within one
+  expression, and device fp32 `/` and `sqrt` stay non-correctly-rounded
+  (measured with icpx 2026.1 on Arc B580 and UHD 770,
+  [ADR-1358](../../../docs/adr/1358-sycl-speed-device-resident-linalg.md)).
+  Bit-exact TUs add `-ffp-contract=off` after it (the SpEED TUs'
+  `sycl_speed_strict_fp_args`) and round division / square root
+  explicitly; see `T-SYCL-FP-MODEL-PRECISE-CONTRACTS-2026-09-29`.
 - **fp64-free kernels load-bearing
   ([ADR-0220](../../../docs/adr/0220-sycl-fp64-fallback.md), T7-17).**
   Every SYCL feature-kernel lambda must capture and operate on

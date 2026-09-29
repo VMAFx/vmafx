@@ -27,6 +27,7 @@
  */
 
 #include "feature/speed_internal.h"
+#include "feature/speed_constants.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -50,6 +51,9 @@
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
+#endif
+#ifndef M_E
+#define M_E 2.71828182845904523536
 #endif
 
 #define SI_EIGENVALUE_EPS SPEED_INTERNAL_EIGENVALUE_EPS
@@ -770,6 +774,20 @@ bool speed_internal_is_matrix_regular(const float *eigenvalues, size_t num_eleme
         }
     }
     return true;
+}
+
+/* Same expressions as update_entropy() and get_speed_score() in speed.c, built
+ * with the same flags (libvmaf_feature_static_lib), so a compile-time fold or
+ * a libm call yields the same fp32 value the CPU extractor uses. */
+float speed_internal_entropy_constant(void)
+{
+    return log2f(2.0f * (float)M_PI * (float)M_E);
+}
+
+float speed_internal_base_entropy(size_t elements_in_block, float sigma_nn, float nn_floor)
+{
+    return elements_in_block *
+           (log2f((1.0f + nn_floor) * sigma_nn) + log2f(2.0f * (float)M_PI * (float)M_E));
 }
 
 int speed_internal_clamp_score(double score, double max_val, unsigned index, const char *who,

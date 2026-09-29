@@ -223,6 +223,78 @@ specific backend for a cross-backend parity check, use the fork's `--backend`
 selector. See [backends/cuda/overview](../backends/cuda/overview.md) and
 [backends/sycl/overview](../backends/sycl/overview.md).
 
+### SYCL: device-resident and bit-identical to the CPU
+
+Since [ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md),
+`speed_chroma_sycl` and `speed_temporal_sycl` run the whole per-frame chain on
+the device: picture conversion (and, for `speed_temporal`, the frame
+difference), the optional prescale, the anti-alias filter at the decimated
+sample points, local mean subtraction, the 25x25 covariance, its eigenvalues,
+the regularity decision, the QR solve and the score. Each frame costs one upload
+of the raw planes and one read of the result; the host no longer filters,
+factorises or waits in between. The chain is recorded once as a SYCL graph and
+replayed per frame where the device supports graphs.
+
+Every stage reproduces the CPU extractor's arithmetic in fp32, so the SYCL
+scores are not merely within tolerance: on the Netflix 576x324 pair (48 frames)
+and 50 frames of BBB 3840x2160, every per-frame `speed_chroma_u`,
+`speed_chroma_v`, `speed_chroma_uv` and `speed_temporal` value is identical to
+`--backend cpu` at `--precision max`, on an Arc B580 and on a UHD 770. Before
+this change 1 to 9 frames per run matched and the largest difference was
+4.2e-5. Two option paths keep the ADR-0214 tolerance instead of exact equality:
+`speed_prescale_method=lanczos4`, whose CPU kernel weights use fp64 `sin`, and
+builds with AdaptiveCpp, which lacks the correctly rounded division fallback.
+
+Milliseconds per frame, `(t(22) - t(2)) / 20`, median of 3, one Arc B580 and
+one UHD 770 through WSL2 Level Zero, i9-12900K, the icx/icpx 2026.1 build of the
+`vmaf-dev-mcp` image. The CPU row is `--backend cpu --threads 16`, which runs
+frames in parallel; the GPU rows run one frame at a time. At 576x324 the
+startup-free difference is within run-to-run noise, so those rows use 48 frames
+and 5 repetitions:
+
+| Feature | Size | CPU (16 threads) | B580 before | B580 after | UHD 770 before | UHD 770 after |
+|---|---|---:|---:|---:|---:|---:|
+| `speed_chroma` | 576x324 | 0.16 | 3.60 | 0.89 | 17.31 | 3.44 |
+| `speed_chroma` | 3840x2160 | 7.24 | 23.31 | 7.51 | 37.98 | 14.48 |
+| `speed_temporal` | 576x324 | 0.85 | 2.19 | 0.83 | 8.32 | 3.47 |
+| `speed_temporal` | 3840x2160 | 37.27 | 60.37 | 7.58 | 72.15 | 18.27 |
+
+At 4K both twins now run at about the rate the CLI reads 4K frames from disk;
+`speed_temporal`, which the CPU cannot run frames in parallel for, is about
+five times faster than the CPU. At 576x324 the eigenvalue sweep, which runs on
+one work item for the reference's operation order, keeps the twins at about a
+millisecond per frame on the B580.
+
+Request the twin by its registered name. `--feature speed_chroma` resolves to
+the CPU extractor whatever `--backend` says, so `--backend sycl --feature
+speed_chroma` times the CPU code on one thread (18.35 ms per frame at 4K on the
+machine above):
+
+```sh
+vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 --no_prediction \
+  --backend sycl --feature speed_chroma_sycl -o out.json --json
+```
+
+The CUDA and HIP twins still read the covariance back and run the linear algebra
+on the host; porting this chain to them is tracked in [`state.md`](../state.md)
+(`T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`, `T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`).
+
+### Checking a GPU twin against the CPU
+
+`scripts/dev/speed_gpu_parity.py` runs the CPU extractor and a GPU twin over the
+two fixtures above, prints the bit-identical frame count and the largest
+difference per output, then times both the same way as the table. It exits 0
+only when every output of every frame is identical:
+
+```sh
+python3 scripts/dev/speed_gpu_parity.py --backend cuda \
+  --vmaf build/tools/vmaf --netflix-dir python/test/resource/yuv --bbb-dir testdata/bbb
+# SYCL: pick the device first, e.g. ONEAPI_DEVICE_SELECTOR=level_zero:0
+```
+
+`--no-timing` skips the timing runs; `--reps` and `--threads` change the
+repetitions and the CPU thread count.
+
 ## "Covariance matrix singular" in the log
 
 On content whose chroma is flat or a smooth gradient — a desaturated scene, a

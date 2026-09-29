@@ -12,21 +12,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SYCL_ROOT = ROOT / "core" / "src" / "feature" / "sycl"
 
-SPEED_DEVICE_PREFIXES = {
-    "speed_chroma_sycl.cpp": "struct SpeedChromaSyclState",
-    "speed_temporal_sycl.cpp": "struct SpeedTemporalSyclState",
-}
-SPEED_ROLE_LAUNCHERS = {
-    "speed_chroma_sycl.cpp": ("launch_chroma_indterm", "launch_chroma_score"),
-    "speed_temporal_sycl.cpp": ("launch_temporal_indterm", "launch_temporal_score"),
-}
-EXPECTED_LAUNCHER_COUNT = 2  # definition and single call site
+# ADR-1358: every SpEED device kernel lives in the pipeline TU, which must stay
+# fp64-free; the extractor and host-setup TUs hold no kernel and never call the
+# retired host linear-algebra residual or wait on the queue mid-frame.
+SPEED_PIPELINE = "speed_sycl_pipeline.cpp"
+SPEED_HOST_TUS = ("speed_chroma_sycl.cpp", "speed_temporal_sycl.cpp", "speed_sycl_host.cpp")
+# Calls, not mentions: the sources cite `picture_copy()` in comments.
+SPEED_HOST_RESIDUAL = tuple(
+    re.compile(rf"\b{name}\(\s*[\w&*]")
+    for name in (
+        "speed_internal_compute_eigenvalues",
+        "speed_internal_qr_factorize",
+        "speed_internal_qt_multiply",
+        "speed_internal_filter_and_downscale",
+        "speed_internal_compute_means",
+        "speed_internal_is_matrix_regular",
+        "picture_copy",
+    )
+)
 MOMENT_OUTPUT_COUNT = 4
 
 
 def _sources() -> dict[str, str]:
     names = (
-        *SPEED_DEVICE_PREFIXES,
+        SPEED_PIPELINE,
+        *SPEED_HOST_TUS,
         "float_psnr_sycl.cpp",
         "integer_psnr_sycl.cpp",
         "integer_moment_sycl.cpp",
@@ -35,21 +45,24 @@ def _sources() -> dict[str, str]:
     return {name: (SYCL_ROOT / name).read_text(encoding="utf-8") for name in names}
 
 
-def _contract_failures(sources: dict[str, str]) -> list[str]:
+def _speed_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
-    for name, host_state_marker in SPEED_DEVICE_PREFIXES.items():
-        source = sources[name]
-        device_prefix, separator, _host_suffix = source.partition(host_state_marker)
-        if not separator:
-            failures.append(f"{name}: missing host-state boundary {host_state_marker}")
-            continue
-        if re.search(r"\bdouble\b", device_prefix):
-            failures.append(f"{name}: double appears in the device-kernel region")
-        for launcher in SPEED_ROLE_LAUNCHERS[name]:
-            if source.count(f"{launcher}(") != EXPECTED_LAUNCHER_COUNT:
-                failures.append(f"{name}: missing unique kernel launcher {launcher}")
-        if re.search(r"\blaunch_(?:indterm|score)\(", source):
-            failures.append(f"{name}: ambiguous cross-TU kernel launcher name")
+    if re.search(r"\bdouble\b", sources[SPEED_PIPELINE]):
+        failures.append(f"{SPEED_PIPELINE}: fp64 type appears in the device pipeline")
+    for name in (SPEED_PIPELINE, *SPEED_HOST_TUS):
+        for helper in SPEED_HOST_RESIDUAL:
+            if helper.search(sources[name]):
+                failures.append(f"{name}: host residual {helper.pattern} reintroduced")
+    for name in SPEED_HOST_TUS:
+        if re.search(r"\b(?:parallel_for|single_task)\b", sources[name]):
+            failures.append(f"{name}: device kernel outside {SPEED_PIPELINE}")
+        if re.search(r"\.wait(?:_and_throw)?\(", sources[name]):
+            failures.append(f"{name}: host wait outside the pipeline collect")
+    return failures
+
+
+def _contract_failures(sources: dict[str, str]) -> list[str]:
+    failures = _speed_failures(sources)
 
     float_psnr = sources["float_psnr_sycl.cpp"]
     if "FpsnrOutput output" not in float_psnr or "output.partials" not in float_psnr:
@@ -67,7 +80,9 @@ def _contract_failures(sources: dict[str, str]) -> list[str]:
 
     ms_ssim = sources.get("integer_ms_ssim_sycl.cpp", "")
     if "for (unsigned plane = 0; plane < MS_SSIM_MAX_PLANES; plane++)" not in ms_ssim:
-        failures.append("integer_ms_ssim_sycl.cpp: free_ms_ssim_pyramid must use bounded MS_SSIM_MAX_PLANES plane loop")
+        failures.append(
+            "integer_ms_ssim_sycl.cpp: free_ms_ssim_pyramid must use bounded MS_SSIM_MAX_PLANES plane loop"
+        )
     return failures
 
 
@@ -77,11 +92,27 @@ class SyclKernelSourceContractTest(unittest.TestCase):
 
     def test_fp64_speed_regression_is_detected(self) -> None:
         sources = _sources()
-        marker = SPEED_DEVICE_PREFIXES["speed_temporal_sycl.cpp"]
-        sources["speed_temporal_sycl.cpp"] = sources["speed_temporal_sycl.cpp"].replace(
-            marker, "double local_sum = 0.0;\n" + marker, 1
+        sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(
+            "struct Ff {", "struct Wide { double sum; };\nstruct Ff {", 1
         )
-        self.assertTrue(any("device-kernel" in item for item in _contract_failures(sources)))
+        self.assertTrue(any("fp64 type" in item for item in _contract_failures(sources)))
+
+    def test_host_residual_regression_is_detected(self) -> None:
+        sources = _sources()
+        sources["speed_chroma_sycl.cpp"] += "\nspeed_internal_qr_factorize(a, 25, q, r, t);\n"
+        self.assertTrue(any("host residual" in item for item in _contract_failures(sources)))
+
+    def test_kernel_outside_pipeline_is_detected(self) -> None:
+        sources = _sources()
+        sources["speed_temporal_sycl.cpp"] += "\nq.parallel_for(range, kernel);\n"
+        self.assertTrue(
+            any("device kernel outside" in item for item in _contract_failures(sources))
+        )
+
+    def test_mid_frame_wait_is_detected(self) -> None:
+        sources = _sources()
+        sources["speed_chroma_sycl.cpp"] += "\nqueue.wait();\n"
+        self.assertTrue(any("host wait" in item for item in _contract_failures(sources)))
 
     def test_raw_moment_capture_regression_is_detected(self) -> None:
         sources = _sources()
@@ -91,14 +122,6 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         sources["integer_moment_sycl.cpp"] = moment.replace("e_sums", "d_sums")
         failures = _contract_failures(sources)
         self.assertTrue(any("raw d_sums" in item for item in failures))
-
-    def test_colliding_speed_kernel_name_is_detected(self) -> None:
-        sources = _sources()
-        sources["speed_chroma_sycl.cpp"] = sources["speed_chroma_sycl.cpp"].replace(
-            "launch_chroma_score", "launch_score"
-        )
-        failures = _contract_failures(sources)
-        self.assertTrue(any("ambiguous cross-TU" in item for item in failures))
 
     def test_ms_ssim_pyramid_plane_loop_regression_is_detected(self) -> None:
         sources = _sources()

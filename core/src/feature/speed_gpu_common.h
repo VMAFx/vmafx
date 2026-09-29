@@ -28,6 +28,11 @@
  *  constraint — serial Lanczos/QR on a fixed-size tiny matrix.
  *
  *  ADR reference: ADR-0567.
+ *
+ *  The SYCL twins no longer use this split: since ADR-1358 layer (B) runs on
+ *  the device too (core/src/feature/sycl/speed_sycl_pipeline.cpp), bit-exact
+ *  with the CPU and without a per-frame round trip. The CUDA and HIP twins
+ *  still read the covariance back; porting them is tracked in docs/state.md.
  */
 
 #ifndef VMAF_SRC_FEATURE_SPEED_GPU_COMMON_H_
