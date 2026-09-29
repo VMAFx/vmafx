@@ -200,6 +200,8 @@
   `enable_chroma` option and `_cb` / `_cr` outputs that the `ssim` extractor
   does not have; it lists `enable_db` and `clip_db`
   ([SSIM](docs/metrics/ssim.md#options)).
+
+
 - **SYCL: the native Windows build runs its kernels.** A Windows MSVC build
   linked `vmaf.exe` and the tests with `link.exe`, which ignored `-fsycl` and
   never registered the SYCL device images, so every SYCL kernel submit failed
