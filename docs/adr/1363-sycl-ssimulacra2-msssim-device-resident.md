@@ -105,7 +105,9 @@ chain is ported; each is an RC3 row in `docs/state.md`.
   horizontal IIR walk alone takes 239 of its 427 ms of device time per frame
   (Research-1363, finding 7), and two alternatives measured slower.
   `ssimulacra2_sycl` now rejects 4:0:0 input at init (the CPU extractor and the
-  old twin read a chroma plane that does not exist).
+  old twin read a chroma plane that does not exist); its ADR-1324 context check
+  routes that input, and frames below 8x8, to the CPU extractor when the twin
+  was picked by a model or by the ADR-1359 `--backend` mapping.
 - **Neutral / follow-ups**: port the chain to CUDA, HIP and Metal
   (`T-CUDA-SSIMULACRA2-HOST-COMBINE-2026-09-29`,
   `T-HIP-SSIMULACRA2-HOST-COMBINE-2026-09-29`,
