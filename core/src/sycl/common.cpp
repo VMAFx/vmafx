@@ -34,7 +34,9 @@
 #include <cstring>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage) — ADR-0141 §2 load-bearing invariant: the
@@ -70,6 +72,31 @@ using exec_graph_t = syclex::command_graph<syclex::graph_state::executable>;
 /* VmafSyclState definition (opaque in the public header)             */
 /* ------------------------------------------------------------------ */
 
+/* Shared-plane state beyond the luma buffers (ADR-1369). A plain aggregate,
+ * so VmafSyclState holds it as one member.
+ *
+ * Opt-in Cb / Cr planes, double-buffered with the luma slots: [slot][plane -
+ * 1]. `frame` is the frame_counter whose chroma sits in the compute slot, so
+ * the first chroma reader of a frame uploads and the rest reuse it. `staging`
+ * holds the four packed planes in host USM (ref Cb, ref Cr, dis Cb, dis Cr) so
+ * every copy is one DMA from pinned memory; `staged` is the last copy out of
+ * it.
+ *
+ * Slot fence: readers_done[s] holds device markers on every compute queue,
+ * taken when slot s stopped being the compute slot; the upload that next
+ * overwrites s waits on them. */
+struct SyclPlaneState {
+    void *ref[2][2] = {};
+    void *dis[2][2] = {};
+    void *staging[4] = {};
+    sycl::event staged;
+    size_t plane_bytes = 0;
+    unsigned w = 0;
+    unsigned h = 0;
+    uint64_t frame = UINT64_MAX;
+    std::vector<sycl::event> readers_done[2];
+};
+
 struct VmafSyclState {
     sycl::queue queue;      // primary queue (legacy, misc ops)
     sycl::queue copy_queue; // separate queue for H2D/D2H DMA transfers
@@ -88,6 +115,7 @@ struct VmafSyclState {
     unsigned frame_w = 0;
     unsigned frame_h = 0;
     unsigned frame_bpc = 0;
+    SyclPlaneState planes; // opt-in chroma planes + slot fence, ADR-1369
 
     // VA import path: async de-tile + deferred DMA-BUF free
     // The de-tile kernel runs on the primary queue without q->wait().
@@ -343,10 +371,10 @@ extern "C" void vmaf_sycl_state_free(VmafSyclState **sycl_state)
     vmaf_sycl_flush_pending_imports(s);
 
     // Free combined command graphs and queue
-    for (int i = 0; i < 2; i++) {
-        if (s->combined_exec_graph[i]) {
-            delete s->combined_exec_graph[i];
-            s->combined_exec_graph[i] = nullptr;
+    for (exec_graph_t *&graph : s->combined_exec_graph) {
+        if (graph) {
+            delete graph;
+            graph = nullptr;
         }
     }
     if (s->combined_queue) {
@@ -553,6 +581,32 @@ static void sycl_shared_frame_release(VmafSyclState *state)
     }
 }
 
+/* Release the shared chroma planes (ADR-1369) and forget their geometry.
+ * Idempotent; each slot is null-checked, so a partial allocation is fine. */
+static void sycl_shared_chroma_release(VmafSyclState *state)
+{
+    SyclPlaneState &chroma = state->planes;
+    for (int slot = 0; slot < 2; slot++) {
+        for (int p = 0; p < 2; p++) {
+            if (chroma.ref[slot][p])
+                vmaf_sycl_free(state, chroma.ref[slot][p]);
+            if (chroma.dis[slot][p])
+                vmaf_sycl_free(state, chroma.dis[slot][p]);
+            chroma.ref[slot][p] = nullptr;
+            chroma.dis[slot][p] = nullptr;
+        }
+    }
+    for (void *&buffer : chroma.staging) {
+        if (buffer)
+            vmaf_sycl_free(state, buffer);
+        buffer = nullptr;
+    }
+    chroma.plane_bytes = 0;
+    chroma.w = 0;
+    chroma.h = 0;
+    chroma.frame = UINT64_MAX;
+}
+
 extern "C" int vmaf_sycl_shared_frame_init(VmafSyclState *state, unsigned w, unsigned h,
                                            unsigned bpc)
 {
@@ -645,6 +699,44 @@ static sycl::event sycl_enqueue_plane_upload(VmafSyclState *state, void *dst_buf
     return last_ev;
 }
 
+/* Order the upload into slot `ui` after every reader of that slot's previous
+ * frame, and mark the readers of the slot compute is leaving (ADR-1369).
+ * Upload F retires cur_compute (frame F-1's slot); all work enqueued so far
+ * reads that slot or older ones, so markers taken now on the compute queues
+ * complete once frame F-1's readers have run, and upload F+1 into the same
+ * slot waits on them. The host path already waits for a frame's kernels in
+ * the next frame's collect, so the barrier is normally satisfied; it matters
+ * when an extractor skips frames (n_subsample) and nothing collected it. */
+static bool sycl_events_pending(const std::vector<sycl::event> &events)
+{
+    for (const sycl::event &e : events) {
+        if (e.get_info<sycl::info::event::command_execution_status>() !=
+            sycl::info::event_command_status::complete)
+            return true;
+    }
+    return false;
+}
+
+static void sycl_fence_slot_readers(VmafSyclState *state, int ui)
+{
+    // Normally the readers were already waited for by the previous frame's
+    // collect; a barrier is only submitted when one is still running.
+    if (sycl_events_pending(state->planes.readers_done[ui]))
+        state->copy_queue.ext_oneapi_submit_barrier(state->planes.readers_done[ui]);
+    std::vector<sycl::event> &done = state->planes.readers_done[state->cur_compute];
+    done.clear();
+    // In-order queues: the last command's event completes after every
+    // earlier one. An empty queue has none and nothing to wait for.
+    std::optional<sycl::event> last = state->queue.ext_oneapi_get_last_event();
+    if (last)
+        done.push_back(*last);
+    if (state->combined_queue) {
+        last = state->combined_queue->ext_oneapi_get_last_event();
+        if (last)
+            done.push_back(*last);
+    }
+}
+
 extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *ref,
                                              VmafPicture *dis)
 {
@@ -662,6 +754,7 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
     size_t const row_bytes = static_cast<size_t>(state->frame_w) * bytes_per_pixel;
 
     try {
+        sycl_fence_slot_readers(state, ui);
         (void)sycl_enqueue_plane_upload(state, state->shared_ref_buf[ui], ref->data[0],
                                         ref->stride[0], row_bytes);
 
@@ -749,6 +842,124 @@ extern "C" void vmaf_sycl_shared_frame_close(VmafSyclState *state)
         }
     }
     state->shared_buf_size = 0;
+    sycl_shared_chroma_release(state);
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared chroma planes (opt-in, ADR-1369)                             */
+/* ------------------------------------------------------------------ */
+
+extern "C" int vmaf_sycl_shared_chroma_init(VmafSyclState *state, unsigned cw, unsigned ch)
+{
+    if (!state || !cw || !ch || !state->shared_ref_buf[0])
+        return -EINVAL;
+    SyclPlaneState &chroma = state->planes;
+    if (chroma.ref[0][0])
+        return (chroma.w == cw && chroma.h == ch) ? 0 : -EINVAL;
+
+    size_t const plane_bytes = static_cast<size_t>(cw) * ch * ((state->frame_bpc + 7) / 8);
+    for (int slot = 0; slot < 2; slot++) {
+        for (int p = 0; p < 2; p++) {
+            chroma.ref[slot][p] = vmaf_sycl_malloc_device(state, plane_bytes);
+            chroma.dis[slot][p] = vmaf_sycl_malloc_device(state, plane_bytes);
+            if (!chroma.ref[slot][p] || !chroma.dis[slot][p]) {
+                sycl_shared_chroma_release(state);
+                return -ENOMEM;
+            }
+        }
+    }
+    for (void *&buffer : chroma.staging) {
+        buffer = vmaf_sycl_malloc_host(state, plane_bytes);
+        if (!buffer) {
+            sycl_shared_chroma_release(state);
+            return -ENOMEM;
+        }
+    }
+    chroma.plane_bytes = plane_bytes;
+    chroma.w = cw;
+    chroma.h = ch;
+    chroma.frame = UINT64_MAX;
+    return 0;
+}
+
+/* Whether `pic`'s Cb / Cr planes are what the shared chroma planes hold. */
+static bool sycl_chroma_fits(const VmafSyclState *state, const VmafPicture *pic, size_t row_bytes)
+{
+    const SyclPlaneState &chroma = state->planes;
+    return pic->bpc == state->frame_bpc && pic->w[1] == chroma.w && pic->h[1] == chroma.h &&
+           pic->w[2] == chroma.w && pic->h[2] == chroma.h && pic->data[1] && pic->data[2] &&
+           std::cmp_greater_equal(pic->stride[1], row_bytes) &&
+           std::cmp_greater_equal(pic->stride[2], row_bytes);
+}
+
+/* One chroma plane: pack its rows into the pinned staging buffer, then one
+ * DMA from there. The caller's pictures are usually pageable; a direct copy
+ * from them makes the driver stage on the calling thread, and a pitched 2-D
+ * copy from pageable memory cost 5 ms per 576x324 frame on an Arc B580 and
+ * 168 ms on a UHD 770 (Research-1369). */
+static sycl::event sycl_enqueue_chroma_plane(VmafSyclState *state, void *dst, void *staging,
+                                             const void *src, ptrdiff_t src_stride,
+                                             size_t row_bytes)
+{
+    unsigned const rows = state->planes.h;
+    auto *packed = static_cast<uint8_t *>(staging);
+    const auto *row = static_cast<const uint8_t *>(src);
+    if (std::cmp_equal(src_stride, row_bytes)) {
+        std::memcpy(packed, row, row_bytes * rows);
+    } else {
+        for (unsigned y = 0; y < rows; y++) {
+            std::memcpy(packed + (static_cast<size_t>(y) * row_bytes), row, row_bytes);
+            row += src_stride;
+        }
+    }
+    return state->copy_queue.memcpy(dst, staging, state->planes.plane_bytes);
+}
+
+extern "C" int vmaf_sycl_shared_chroma_upload(VmafSyclState *state, VmafPicture *ref,
+                                              VmafPicture *dis)
+{
+    if (!state || !ref || !dis || !state->planes.ref[0][0] || !state->has_uploaded)
+        return -EINVAL;
+    SyclPlaneState &chroma = state->planes;
+    if (chroma.frame == state->frame_counter)
+        return 0;
+    size_t const row_bytes = static_cast<size_t>(chroma.w) * ((state->frame_bpc + 7) / 8);
+    if (!sycl_chroma_fits(state, ref, row_bytes) || !sycl_chroma_fits(state, dis, row_bytes))
+        return -EINVAL;
+
+    // The luma upload of this frame already made cur_compute its slot.
+    int const slot = state->cur_compute;
+    try {
+        // The previous frame's copies out of the staging buffers finished
+        // before its vmaf_read_pictures() returned; this wait only guards
+        // callers that did not go through it.
+        chroma.staged.wait();
+        sycl::event last_ev;
+        for (int p = 0; p < 2; p++) {
+            last_ev = sycl_enqueue_chroma_plane(state, chroma.ref[slot][p], chroma.staging[p],
+                                                ref->data[p + 1], ref->stride[p + 1], row_bytes);
+            last_ev = sycl_enqueue_chroma_plane(state, chroma.dis[slot][p], chroma.staging[2 + p],
+                                                dis->data[p + 1], dis->stride[p + 1], row_bytes);
+        }
+        // In-order copy queue: the last copy completes after the luma planes.
+        state->last_upload_event = last_ev;
+        chroma.staged = last_ev;
+        chroma.frame = state->frame_counter;
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL chroma upload: %s\n", e.what());
+        return -EIO;
+    }
+    return 0;
+}
+
+extern "C" void *vmaf_sycl_get_shared_plane(VmafSyclState *state, int is_ref, unsigned plane)
+{
+    if (!state || plane > 2)
+        return nullptr;
+    int const slot = state->cur_compute;
+    if (plane == 0)
+        return is_ref ? state->shared_ref_buf[slot] : state->shared_dis_buf[slot];
+    return is_ref ? state->planes.ref[slot][plane - 1] : state->planes.dis[slot][plane - 1];
 }
 
 /* ------------------------------------------------------------------ */
@@ -1070,6 +1281,21 @@ static void sycl_apply_input_barriers(sycl::queue &q, VmafSyclState *state)
     if (state->has_imported) {
         q.ext_oneapi_submit_barrier({state->last_detile_event});
     }
+}
+
+/* The same input barriers for an extractor's own queue (ADR-1369): it reads
+ * the shared planes without joining the combined graph. */
+extern "C" int vmaf_sycl_queue_after_upload(VmafSyclState *state, void *queue_ptr)
+{
+    if (!state || !queue_ptr)
+        return -EINVAL;
+    try {
+        sycl_apply_input_barriers(*static_cast<sycl::queue *>(queue_ptr), state);
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL upload barrier: %s\n", e.what());
+        return -EIO;
+    }
+    return 0;
 }
 
 /* Optional graph recording followed by the three enqueue phases, in order.

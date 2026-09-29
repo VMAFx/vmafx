@@ -15,10 +15,11 @@
  *  Self-contained submit / collect — does NOT register with
  *  vmaf_sycl_graph_register because motion_v2 needs the previous
  *  frame's raw ref pixels which the shared_frame buffer doesn't
- *  preserve across calls. Each submit copies the current ref Y plane
- *  into a private device-side ping-pong (`d_pix[2]`); the next
- *  frame's submit reads it as "prev". Same shape as ciede_sycl
- *  (PR #137 / ADR-0182) and the Vulkan / CUDA twins of this kernel.
+ *  preserve across calls. Each submit reads the current ref Y plane
+ *  from the shared frame, already uploaded once per frame for every
+ *  twin, and the SAD pipeline copies it device-to-device into a private
+ *  ping-pong (`d_pix[2]`); the next frame's submit reads it as "prev"
+ *  (ADR-1369). No host copy, no second upload.
  *
  *  motion2_v2_score = min(score[i], score[i+1]) and motion3_v2_score
  *  (per-frame blend + clip + optional moving-average) are both emitted
@@ -69,10 +70,6 @@ struct MotionV2StateSycl {
     /* SYCL state back-pointer. */
     VmafSyclState *sycl_state;
 
-    /* Pinned host staging — single buffer reused per submit for the
-     * cur ref Y upload. */
-    void *h_pix;
-
     /* Ping-pong of raw ref Y planes on device. d_pix[index%2] is the
      * current frame's slot; d_pix[(index+1)%2] is the previous. */
     void *d_pix[2];
@@ -102,24 +99,6 @@ struct MotionV2StateSycl {
 
     VmafDictionary *feature_name_dict;
 };
-
-} // namespace
-
-namespace
-{
-
-template <typename T> static void copy_y_plane(VmafPicture *pic, void *dst, unsigned w, unsigned h)
-{
-    const T *src = static_cast<const T *>(pic->data[0]);
-    T *out = static_cast<T *>(dst);
-    const ptrdiff_t src_stride_t = pic->stride[0] / static_cast<ptrdiff_t>(sizeof(T));
-    for (unsigned i = 0; i < h; i++) {
-        for (unsigned j = 0; j < w; j++)
-            out[j] = src[j];
-        src += src_stride_t;
-        out += w;
-    }
-}
 
 } // namespace
 
@@ -215,13 +194,20 @@ namespace
 
 static int allocate_motion_v2(MotionV2StateSycl *s)
 {
+    /* The current frame comes from the shared frame (same packed layout);
+     * idempotent when the read path or another twin already set it up. */
+    const int shared_err = vmaf_sycl_shared_frame_init(s->sycl_state, s->width, s->height, s->bpc);
+    if (shared_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_v2_sycl: shared frame unavailable (%d)\n",
+                 shared_err);
+        return shared_err;
+    }
     s->plane_bytes = (size_t)s->width * s->height * (s->bpc <= 8 ? 1u : 2u);
-    s->h_pix = vmaf_sycl_malloc_host(s->sycl_state, s->plane_bytes);
     s->d_pix[0] = vmaf_sycl_malloc_device(s->sycl_state, s->plane_bytes);
     s->d_pix[1] = vmaf_sycl_malloc_device(s->sycl_state, s->plane_bytes);
     s->d_sad = static_cast<int64_t *>(vmaf_sycl_malloc_device(s->sycl_state, sizeof(int64_t)));
     s->h_sad = static_cast<int64_t *>(vmaf_sycl_malloc_host(s->sycl_state, sizeof(int64_t)));
-    if (!s->h_pix || !s->d_pix[0] || !s->d_pix[1] || !s->d_sad || !s->h_sad) {
+    if (!s->d_pix[0] || !s->d_pix[1] || !s->d_sad || !s->h_sad) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_v2_sycl: USM allocation failed\n");
         return -ENOMEM;
     }
@@ -287,38 +273,43 @@ namespace
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
+    (void)ref_pic;
     (void)ref_pic_90;
     (void)dist_pic;
     (void)dist_pic_90;
     auto *s = static_cast<MotionV2StateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
-    if (!qptr) {
+    const void *cur = vmaf_sycl_get_shared_plane(s->sycl_state, 1, 0);
+    if (!qptr || !cur) {
         return -EINVAL;
     }
-    sycl::queue &q = *qptr;
-
-    /* Pack cur ref Y into pinned host staging (handles arbitrary
-     * pic stride), then upload to d_pix[index%2]. */
-    if (s->bpc <= 8) {
-        copy_y_plane<uint8_t>(ref_pic, s->h_pix, s->width, s->height);
-    } else {
-        copy_y_plane<uint16_t>(ref_pic, s->h_pix, s->width, s->height);
+    /* This frame's ref luma is on the device already; wait for its upload
+     * on the device. The pipeline keeps a copy as the next frame's "prev". */
+    const int barrier_err = vmaf_sycl_queue_after_upload(s->sycl_state, qptr);
+    if (barrier_err) {
+        return barrier_err;
     }
-
+    sycl::queue &q = *qptr;
     const unsigned cur_idx = index % 2u;
-    q.memcpy(s->d_pix[cur_idx], s->h_pix, s->plane_bytes);
-
-    if (index > 0) {
-        const unsigned prev_idx = (index + 1u) % 2u;
-        q.memset(s->d_sad, 0, sizeof(int64_t));
-        motion_sycl_pipeline::enqueue_sad(q, {.prev = s->d_pix[prev_idx],
-                                              .cur = s->d_pix[cur_idx],
-                                              .cur_copy = nullptr,
-                                              .sad = s->d_sad,
-                                              .width = s->width,
-                                              .height = s->height,
-                                              .bpc = s->bpc});
-        q.memcpy(s->h_sad, s->d_sad, sizeof(int64_t));
+    const motion_sycl_pipeline::SadArgs args = {.prev = s->d_pix[(index + 1u) % 2u],
+                                                .cur = cur,
+                                                .cur_copy = s->d_pix[cur_idx],
+                                                .sad = s->d_sad,
+                                                .width = s->width,
+                                                .height = s->height,
+                                                .bpc = s->bpc};
+    try {
+        if (index > 0) {
+            q.memset(s->d_sad, 0, sizeof(int64_t));
+            motion_sycl_pipeline::enqueue_sad(q, args);
+            q.memcpy(s->h_sad, s->d_sad, sizeof(int64_t));
+        } else {
+            motion_sycl_pipeline::enqueue_copy(q, args);
+        }
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_v2_sycl: submitting frame %u: %s\n", index,
+                 e.what());
+        return -EIO;
     }
 
     s->pending_index = index;
@@ -465,8 +456,6 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<MotionV2StateSycl *>(fex->priv);
     if (s->sycl_state) {
-        if (s->h_pix)
-            vmaf_sycl_free(s->sycl_state, s->h_pix);
         if (s->d_pix[0])
             vmaf_sycl_free(s->sycl_state, s->d_pix[0]);
         if (s->d_pix[1])

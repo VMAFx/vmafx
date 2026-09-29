@@ -143,19 +143,32 @@ sycl/
 
 ## Rebase-sensitive invariants per kernel
 
-- **`feature/sycl/integer_psnr_sycl.cpp` chroma planes ride on
-  per-extractor device buffers, NOT shared frame buffer.**
-  `vmaf_sycl_shared_frame_init` pipeline luma-only by design (see
-  `shared_*` documentation in `common.h`). Chroma upload happens in
-  combined-graph `pre_fn` callback as host-staged H2D copy into
-  `PsnrStateSycl::d_chroma_{ref,dis}[]`; chroma SSE kernel fires from
-  `post_fn` (direct, post-graph) on same in-order combined queue. **On
-  rebase**: upstream sync extending `vmaf_sycl_shared_frame_init` to
-  allocate chroma planes -> PSNR extension can migrate onto it,
-  per-extractor chroma buffers retire. Only after cross-backend gate
-  run confirms bit-exactness against CPU at `places=4` (see
-  ADR-0214). T3-15(b), ADR-0192 §"Status update 2026-05-09: T3-15 #2
-  SYCL PSNR chroma".
+- **Shared planes: one upload per plane per frame for every twin
+  ([ADR-1369](../../../docs/adr/1369-sycl-shared-planes-light-twins.md)).**
+  Luma: shared frame, uploaded by `read_pictures_sycl_prep` for every run.
+  Chroma: opt-in planes in `SyclPlaneState` (`VmafSyclState::planes`, which
+  also holds the fence markers): `vmaf_sycl_shared_chroma_init` at extractor
+  init, idempotent per geometry; `vmaf_sycl_shared_chroma_upload` in
+  `submit()`, first chroma reader of a frame packs into pinned `staging` and
+  uploads into `cur_compute`, rest return 0 on `frame == frame_counter`;
+  folded into `last_upload_event`. Never copy chroma straight from the
+  pageable picture (a pitched 2-D copy cost 168 ms per 576x324 frame on a
+  UHD 770). Luma-only runs (default model) never allocate or
+  upload chroma: do not move the chroma upload into
+  `vmaf_sycl_shared_frame_upload`. Readers: `psnr_sycl` (chroma in
+  `post_fn`, after `graph_submit`'s upload barrier), `psnr_hvs_sycl` and
+  `motion_v2_sycl` on the primary queue behind
+  `vmaf_sycl_queue_after_upload()` (= `sycl_apply_input_barriers`).
+  `sycl_fence_slot_readers()` in `vmaf_sycl_shared_frame_upload`: upload
+  into slot s waits on device for `ext_oneapi_get_last_event()` markers of
+  the primary + combined queues taken when s stopped being compute slot;
+  copy barrier only if a marker is still running. Covers readers the next
+  collect never waits for (`n_subsample` skips). **On rebase**: a new
+  compute queue that reads shared slots must add its marker there; keep
+  the fence before the ref upload; the zero-copy import path imports luma
+  only, so chroma readers must fail (`-EINVAL`) on NULL pictures, never
+  read stale chroma. Guards: `test_sycl_shared_planes`,
+  `test_sycl_init_unwind` (wraps `vmaf_sycl_shared_chroma_init`).
 
 - **`dmabuf_import.cpp` normalizes P010/P012 luma MSB→LSB on every
   import path (ADR-1121).** VA-API delivers 10/12-bit samples

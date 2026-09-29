@@ -240,6 +240,66 @@ int vmaf_sycl_upload_plane(VmafSyclState *state, const void *src, unsigned pitch
  */
 void vmaf_sycl_shared_frame_close(VmafSyclState *state);
 
+/* ---- Shared chroma planes (opt-in, ADR-1369) ---- */
+
+/**
+ * Allocate the shared Cb / Cr planes of ref and dis, double-buffered with the
+ * luma slots. Only extractors that read chroma call this, so a luma-only run
+ * never uploads chroma. Idempotent for the same geometry.
+ *
+ * Requires vmaf_sycl_shared_frame_init() first: the sample size comes from its
+ * bpc, and the planes are packed at `cw * bytes_per_sample`.
+ *
+ * @param state  The SYCL state.
+ * @param cw     Chroma plane width in samples.
+ * @param ch     Chroma plane height in samples.
+ *
+ * @return 0 on success, -EINVAL without luma planes or on a geometry mismatch,
+ *         -ENOMEM on allocation failure.
+ */
+int vmaf_sycl_shared_chroma_init(VmafSyclState *state, unsigned cw, unsigned ch);
+
+/**
+ * Upload the current frame's Cb / Cr planes of ref and dis into the compute
+ * slot, once per frame. The first caller of a frame enqueues the copies on the
+ * copy queue and makes them part of the last upload event; later callers in
+ * the same frame return 0 without copying. Call it after the frame's luma
+ * upload (the host read path uploads luma before any extractor submits).
+ *
+ * @param state  The SYCL state (chroma planes must be initialised).
+ * @param ref    Reference picture (host buffer).
+ * @param dis    Distorted picture (host buffer).
+ *
+ * @return 0 on success, -EINVAL on a missing picture, uninitialised planes or
+ *         a picture whose chroma geometry differs, -EIO on a SYCL error.
+ */
+int vmaf_sycl_shared_chroma_upload(VmafSyclState *state, VmafPicture *ref, VmafPicture *dis);
+
+/**
+ * Device pointer to one shared plane of the compute slot.
+ *
+ * @param state   The SYCL state.
+ * @param is_ref  Non-zero for the reference picture, zero for the distorted.
+ * @param plane   0 = luma, 1 = Cb, 2 = Cr.
+ *
+ * @return The plane, or NULL when it is not allocated.
+ */
+void *vmaf_sycl_get_shared_plane(VmafSyclState *state, int is_ref, unsigned plane);
+
+/**
+ * Make `queue_ptr` wait on the device for the last shared upload (luma and
+ * any chroma) without blocking the host. Extractors that read the shared
+ * planes from their own queue call it before their first kernel of a frame;
+ * graph-registered extractors get the same barrier from
+ * vmaf_sycl_graph_submit().
+ *
+ * @param state      The SYCL state.
+ * @param queue_ptr  Opaque pointer to the sycl::queue that reads the planes.
+ *
+ * @return 0 on success, -EINVAL on NULL arguments, -EIO on a SYCL error.
+ */
+int vmaf_sycl_queue_after_upload(VmafSyclState *state, void *queue_ptr);
+
 /* ---- Opaque queue handle for extractor kernels ---- */
 
 /**

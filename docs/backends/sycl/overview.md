@@ -900,6 +900,61 @@ has the exactness argument and every measurement.
 The CUDA, HIP and Metal `float_ssim` twins still compute factor 1 only and
 fall back above it; their porting notes are in [`state.md`](../../state.md).
 
+## psnr, psnr_hvs and motion_v2 share the uploaded frame (ADR-1369, 2026-09-29)
+
+Every SYCL run uploads the luma of both pictures once per frame into the
+state's shared frame. `psnr_sycl`, `psnr_hvs_sycl` and `motion_v2_sycl` now
+read it there instead of uploading their own copies, and chroma goes up once
+per frame into shared Cb / Cr planes that exist only when a twin that reads
+chroma is in use — a luma-only run, such as the default model, never uploads
+chroma. The chroma is packed into a pinned staging buffer and copied with one
+DMA per plane. Nothing but the results comes back to the host.
+[ADR-1369](../../adr/1369-sycl-shared-planes-light-twins.md) has the design and
+[Research-1369](../../research/1369-sycl-shared-planes-light-twins.md) the
+per-phase profile.
+
+Milliseconds per frame at 3840x2160 (Big Buck Bunny, 8-bit 4:2:0), measured as
+(t(22) - t(2)) / 20, median of 5, with the twin named explicitly
+(`--backend sycl -n --feature psnr_hvs`):
+
+| Twin | 16 CPU threads | Arc B580 before | Arc B580 after | UHD 770 before | UHD 770 after |
+| --- | --- | --- | --- | --- | --- |
+| `psnr_hvs` | 6.6 | 17.1 | 7.6 | 124.0 | 59.9 |
+| `psnr` | 5.4 | 7.9 | 7.2 | 25.3 | 12.3 |
+| `motion_v2` (against [ADR-1371](../../adr/1371-sycl-motion-diff-first-pipeline.md)) | 4.4 | 6.1 | 7.4 | 15.4 | 15.4 |
+
+On the B580 `psnr` and `motion_v2` were already at the rate the CLI reads 4K
+frames, and their 22-frame differences are within the measurement noise; over
+100 frames `motion_v2` measures 6.1 ms before and 5.4 after (the host copy and
+upload it no longer does). Its kernel is the ADR-1371 motion pipeline, which
+this change does not touch. The default model
+is unchanged (45.4 ms per 4K frame on the B580). At 576x324 every per-frame
+difference is below the timer noise of the CLI measurement. Scores are
+bit-identical to the previous twins on both devices, so `psnr` and `motion_v2`
+still equal the CPU and `psnr_hvs` keeps its distance from the CPU inside the
+[ADR-1361](../../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md) gate.
+
+- **psnr_hvs at 9 and 11 bits** now scores the raw sample, as the CPU does;
+  it used to score 16 times the sample (through the C API; the CLI accepts
+  8, 10, 12 and 16 bits).
+- **Zero-copy VA import** (FFmpeg `libvmaf_sycl` with QSV surfaces) imports
+  luma only and hands the extractors no host pictures. `motion_v2_sycl` and
+  `psnr_hvs_sycl` with `enable_chroma=false` no longer read host pictures, so
+  they need only the imported luma; `psnr_sycl` and `psnr_hvs_sycl` with
+  chroma fail the frame with `psnr_sycl: frame N chroma not on the device
+  (-22)` or `psnr_hvs_sycl: frame N planes not on the device (-22)` where they
+  used to dereference the missing picture. This path was not run for this
+  change (no VA-API decode under WSL2).
+- **One SYCL state, one frame size.** A state keeps the shared planes of the
+  first frame size it sees. When a program reuses a state for a context with
+  another size, twins that read chroma fail at init; luma-only twins score it
+  wrong (`T-SYCL-SHARED-FRAME-STICKY-GEOMETRY-2026-09-29`). Create a state per
+  geometry.
+- **Profiling a twin.** `VMAF_SYCL_PROFILE=1` gives the primary and combined
+  queues `enable_profiling`; with `VMAF_SYCL_NO_GRAPH=1` graph extractors
+  submit directly, so every kernel has its own event. Research-1369 describes
+  the event-timing build used for the numbers above.
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix

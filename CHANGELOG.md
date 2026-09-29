@@ -80,6 +80,21 @@
   10.6 to 7.8 ms. `enable_lcs`, `enable_db` and `clip_db` work at every scale.
   Only a plane that decimates below 11x11 still falls back. See
   [the SYCL backend guide](docs/backends/sycl/overview.md#float_ssim-decimation-on-the-device-2026-09-29).
+- **SYCL `psnr_hvs`, `psnr` and `motion_v2` read the frame the device already
+  holds (ADR-1369).** A SYCL run uploads each plane of a frame once, and these
+  twins now read it there: `psnr_hvs_sycl` no longer converts all three planes
+  to float on the host and uploads them a second time, `motion_v2_sycl` no
+  longer re-uploads the reference luma, and chroma goes up once per frame for
+  every twin that reads it, from a pinned staging buffer. The psnr_hvs kernel
+  runs two work-items per 8x8 block in one dispatch for all planes, and psnr
+  adds one atomic per work-group instead of one per pixel. At 3840x2160,
+  `psnr_hvs` drops from 17.1 to 7.6 ms per frame on an Arc B580 (16 CPU
+  threads: 6.6) and from 124 to 60 on a UHD 770, where `psnr` drops from 25.3
+  to 12.3; `motion_v2` loses about 1.6 ms of host copy and upload per frame.
+  Every score is bit-identical to the previous twins. On the zero-copy VA import path, which imports luma only,
+  `psnr_sycl` and `psnr_hvs_sycl` with chroma now fail the frame with an error
+  instead of crashing. See
+  [the SYCL backend guide](docs/backends/sycl/overview.md#psnr-psnr_hvs-and-motion_v2-share-the-uploaded-frame-adr-1369-2026-09-29).
 
 
 - **The SYCL SpEED twins run entirely on the device and match the CPU bit for
@@ -283,6 +298,12 @@
   and `cross_backend_vif_diff.py` looked the score up as `Cambi_feature_cambi_score`,
   but `vmaf --json` writes it as `cambi`, so the cell stopped with `KeyError`
   (`T-CI-PARITY-GATE-CAMBI-KEY-2026-09-29`).
+- **SYCL: `psnr_hvs_sycl` scores 9- and 11-bit input like the CPU.** The twin
+  multiplied 9- and 11-bit samples by 16 before scoring them, so through the C
+  API a 9-bit clip that the CPU scored at 22.47 dB came out at -1.57 dB
+  (11 bits: 33.97 against 10.43). It now reads the raw sample at every bit
+  depth, as `psnr_hvs` does; 8-, 10- and 12-bit scores are unchanged. The CLI
+  accepts only 8, 10, 12 and 16 bits (`T-SYCL-PSNR-HVS-ODD-BPC-SCALE-2026-09-29`).
 
 ## [1.0.0-rc.2] - 2026-09-28
 ### Changed

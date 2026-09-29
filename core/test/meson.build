@@ -3599,6 +3599,7 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
             '-Wl,--wrap=vmaf_feature_name_dict_from_provided_features',
             '-Wl,--wrap=vmaf_dictionary_free',
             '-Wl,--wrap=vmaf_sycl_shared_frame_init',
+            '-Wl,--wrap=vmaf_sycl_shared_chroma_init',
             '-Wl,--wrap=vmaf_sycl_graph_register',
             '-Wl,--wrap=vmaf_sycl_graph_unregister',
         ],
@@ -3727,6 +3728,23 @@ test('test_sycl_psnr_hvs_parity', test_sycl_psnr_hvs_parity,
 # Other drivers and toolchains ignore both variables.
 test('test_sycl_psnr_hvs_parity_simd32', test_sycl_psnr_hvs_parity,
     env : ['IGC_ForceOCLSIMDWidth=32', 'NEO_CACHE_PERSISTENT=0'],
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
+# ADR-1369: psnr_sycl, psnr_hvs_sycl and motion_v2_sycl read the planes the
+# SYCL state uploads once per frame (luma shared frame + opt-in shared
+# chroma). Runs the three twins in one context over frames whose chroma
+# changes every frame, at an odd width (pitched 2-D chroma copy), against the
+# CPU extractors, and pins the helper contract (geometry / ordering errors,
+# once-per-frame upload, double-buffered slots).
+test_sycl_shared_planes = executable('test_sycl_shared_planes',
+    ['test.c', 'test_sycl_shared_planes.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_shared_planes', test_sycl_shared_planes,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 

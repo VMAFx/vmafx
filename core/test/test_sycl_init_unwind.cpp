@@ -167,6 +167,13 @@ extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_sycl_shared_frame_init(VmafSyclState
 }
 
 // cppcheck-suppress unusedFunction
+extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_sycl_shared_chroma_init(VmafSyclState *, unsigned,
+                                                                    unsigned)
+{
+    return 0;
+}
+
+// cppcheck-suppress unusedFunction
 extern "C" VMAF_WRAP_EXPORT int
 __wrap_vmaf_sycl_graph_register(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyclGraphPreFn,
                                 VmafSyclGraphPostFn, VmafSyclGraphConfigFn, void *, const char *)

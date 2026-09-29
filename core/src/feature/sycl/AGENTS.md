@@ -276,14 +276,34 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   work-item's private arrays** (T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29,
   Research-2123). Old shape: work-item 0 ran the whole 8x8 DCT + masking on
   five private 64-element arrays; IGC 2.41.5 SIGSEGVs the host compiling that
-  at SIMD32 for Xe2 (Arc B580). Now: `hvs_fdct8_pass()` = one 1-D transform per
-  work-item per pass (items 8-23 pass 1 while items 0-1 take the variance
-  ratios; items 0-15 pass 2), work-item 0 streams coefficients from local
-  memory, `hvs_mask_at()` recomputes the mask per coefficient. Float reductions
-  keep CPU `i, j` order -> bit-identical to the old kernel. Guard:
-  `test_sycl_psnr_hvs_parity_simd32` (`IGC_ForceOCLSIMDWidth=32`,
-  `NEO_CACHE_PERSISTENT=0`). On rebase: no private `int[64]` / `float[64]` in
-  this kernel; do not "fix" by pinning `VMAF_SYCL_REQD_SG_SIZE(16)` instead.
+  at SIMD32 for Xe2 (Arc B580). Now (ADR-1369, Research-1369): two work-items
+  per block (2k ref, 2k + 1 dist, same sub-group), each with a 65-word local
+  slot (pad = distinct banks): `hvs_load_block()` raw samples ->
+  `hvs_variance_ratio()` -> `hvs_fdct8x8()` in place (columns stored as
+  columns = CPU `z` transposed, then rows) -> `hvs_mask_energy()`;
+  `permute_group_by_xor(.., 1)` exchanges ratio/energy, `group_barrier(sg)`,
+  ref item runs `score_hvs_block()`. One dispatch for all planes, partials
+  laid out `[Y | Cb | Cr]` (`first_block[]`), host sums each plane in block
+  order in one float (ADR-1361). Per-block float expressions are the old
+  kernel's verbatim -> bit-identical. On rebase: no private `int[64]` /
+  `float[64]`; keep the expression shapes (fmuladd contraction follows the
+  source expression); do not "fix" by pinning `VMAF_SYCL_REQD_SG_SIZE(16)`
+  (on the UHD 770 the compiler's own choice beats forced SIMD16 by 1.7x).
+  Samples are read raw at every depth (the old `sample_to_int` x16 for 9/11
+  bits is gone). Guards: `test_sycl_psnr_hvs_parity{,_simd32,_large}`,
+  `test_sycl_shared_planes`.
+
+- **`integer_motion_v2_sycl.cpp` reads the shared frame** (ADR-1369). `cur`
+  = `vmaf_sycl_get_shared_plane(state, 1, 0)` behind
+  `vmaf_sycl_queue_after_upload()`; the ADR-1371 pipeline's `cur_copy` keeps it
+  in `d_pix[index % 2]` as the next frame's `prev` (`enqueue_copy` on frame 0).
+  No host copy, no private upload; the kernel stays in
+  `integer_motion_pipeline_sycl.cpp`.
+
+- **`integer_psnr_sycl.cpp` SSE: group reduction, 32-bit squares**
+  (ADR-1369). `launch_sse()` = 16 pixels per work-item one grid apart,
+  `reduce_over_group`, one atomic per group; `psnr_item_sse<uint32_t>` only
+  while 16 squares fit (bpc <= 12). Chroma from the shared planes.
 
 - **Tile loaders clamp after reflecting (`sycl_tile_index.h`)**
   (T-SYCL-TILE-HALO-OOB-READ-2026-09-29, Research-2123). Fixed-size SLM tiles

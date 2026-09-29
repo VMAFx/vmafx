@@ -13,25 +13,27 @@
  *
  *  Algorithm (mirrors core/src/feature/integer_psnr.c::sse_line_{8,16}):
  *      diff = (int64)ref - (int64)dis;     (per pixel)
- *      sse  += diff * diff;                (atomic int64 reduction)
+ *      sse  += diff * diff;                (int64 reduction)
+ *  Each work-item sums PSNR_PIXELS_PER_ITEM pixels, the work-group
+ *  reduces them and adds its total to the plane's accumulator with one
+ *  atomic. Integer sums, so the result is the per-pixel-atomic one.
  *
  *  One SSE reduction per active plane (Y, Cb, Cr) per frame; the
  *  same plane-agnostic kernel is invoked three times against per-
- *  plane (w, h) and per-plane device buffers. Chroma buffers are
+ *  plane (w, h) and per-plane device buffers. Chroma planes are
  *  sized per the active subsampling (4:2:0 → w/2 × h/2,
  *  4:2:2 → w/2 × h, 4:4:4 → w × h). YUV400 clamps `n_planes = 1`.
  *
- *  Buffer layout differs from luma: luma reads from the SYCL state's
- *  shared frame buffer (`vmaf_sycl_shared_frame_init`, set up
- *  luma-only by design — see `core/src/sycl/common.h`). Chroma
- *  rides on per-extractor device buffers populated by host-side
- *  staging copies in `pre_fn` (the parallel pattern used by
- *  `float_psnr_sycl.cpp`). Direct enqueue on the combined queue
- *  preserves in-order ordering with the graph-replayed luma kernel.
+ *  Every plane comes from the SYCL state: luma from the shared frame,
+ *  Cb / Cr from the opt-in shared chroma planes (ADR-1369), uploaded
+ *  once per frame for every twin that reads them. Direct enqueue on
+ *  the combined queue preserves in-order ordering with the
+ *  graph-replayed luma kernel.
  *
  *  Phases (combined-graph contract — see `vmaf_sycl_graph_register`
  *  docs in `core/src/sycl/common.h`):
- *      pre_fn   : zero all 3 SSE accumulators + H2D copy chroma planes.
+ *      submit   : upload the shared chroma planes (once per frame).
+ *      pre_fn   : zero all 3 SSE accumulators.
  *      enqueue  : luma SSE reduction kernel (graph-recordable).
  *      post_fn  : chroma SSE reduction kernels (direct) + D2H all 3
  *                 SSE accumulators.
@@ -110,17 +112,6 @@ struct PsnrStateSycl {
     int64_t *d_sse[PSNR_NUM_PLANES];
     int64_t *h_sse[PSNR_NUM_PLANES];
 
-    /* Per-extractor chroma device buffers (planes 1/2 only — luma
-     * uses the shared frame buffer). Tightly packed at
-     * `width[p] * bytes_per_pixel`. */
-    void *d_chroma_ref[PSNR_NUM_PLANES];
-    void *d_chroma_dis[PSNR_NUM_PLANES];
-    /* Host staging buffers for the chroma H2D copies (USM host so
-     * the queue.memcpy is a true async DMA, not a blocking copy). */
-    void *h_chroma_ref[PSNR_NUM_PLANES];
-    void *h_chroma_dis[PSNR_NUM_PLANES];
-    size_t chroma_bytes[PSNR_NUM_PLANES];
-
     /* Submit/collect plumbing. */
     bool has_pending;
     unsigned pending_index;
@@ -147,34 +138,71 @@ struct PsnrKernelArgs {
 namespace
 {
 
-/* Per-pixel SSE kernel. Reads the supplied ref/dis device buffers —
- * tightly packed at `width * bytes_per_pixel`. Atomic-adds each
- * pixel's int64 squared error to the device accumulator. Plane-
- * agnostic: callers pass the appropriate (ref, dis, accumulator,
- * width, height) tuple. */
+/* Pixels per work-item and work-items per group of the SSE reduction. */
+constexpr size_t PSNR_PIXELS_PER_ITEM = 16U;
+constexpr size_t PSNR_WG = 256U;
+
+/* Squared error of one pixel, as integer_psnr.c::sse_line_{8,16}.
+ * |diff| <= 65535, so the square fits 32 unsigned bits at every depth. */
+static inline uint32_t psnr_pixel_se(const PsnrKernelArgs &args, size_t off)
+{
+    int32_t diff;
+    if (args.bpc <= 8) {
+        diff = (int32_t)static_cast<const uint8_t *>(args.ref)[off] -
+               (int32_t)static_cast<const uint8_t *>(args.dis)[off];
+    } else {
+        diff = (int32_t)static_cast<const uint16_t *>(args.ref)[off] -
+               (int32_t)static_cast<const uint16_t *>(args.dis)[off];
+    }
+    const auto magnitude = (uint32_t)(diff < 0 ? -diff : diff);
+    return magnitude * magnitude;
+}
+
+/* One work-item's PSNR_PIXELS_PER_ITEM pixels, one grid apart (coalesced
+ * loads). `Sum` is 32 bits while 16 squares of (2^bpc - 1) fit (bpc <= 12,
+ * < 2^28), 64 bits above: exact either way. */
+template <typename Sum>
+static inline uint64_t psnr_item_sse(const PsnrKernelArgs &args, size_t first, size_t stride,
+                                     size_t pixels)
+{
+    Sum se = 0;
+    for (size_t k = 0; k < PSNR_PIXELS_PER_ITEM; k++) {
+        const size_t off = first + (k * stride);
+        if (off < pixels) {
+            se += psnr_pixel_se(args, off);
+        }
+    }
+    return (uint64_t)se;
+}
+
+} // namespace
+
+namespace
+{
+
+/* SSE of one plane, tightly packed at `width * bytes_per_pixel`. The
+ * work-group reduces its items' sums and adds the total to the accumulator
+ * with one atomic. Integer sums: the order cannot change the result, which
+ * equals the per-pixel atomic the kernel used before (ADR-1369). */
 static void launch_sse(sycl::queue &q, PsnrKernelArgs args)
 {
-    sycl::range<2> const global{(size_t)args.height, (size_t)args.width};
+    const size_t pixels = (size_t)args.width * args.height;
+    const size_t items = (pixels + PSNR_PIXELS_PER_ITEM - 1U) / PSNR_PIXELS_PER_ITEM;
+    const size_t global = (items + PSNR_WG - 1U) / PSNR_WG * PSNR_WG;
+    const sycl::nd_range<1> ndr{sycl::range<1>{global}, sycl::range<1>{PSNR_WG}};
 
     q.submit([=](sycl::handler &h) {
-        h.parallel_for(global, [=](sycl::id<2> id) {
-            const size_t y = id[0];
-            const size_t x = id[1];
-            const size_t off = y * (size_t)args.width + x;
-            int64_t r;
-            int64_t d;
-            if (args.bpc <= 8) {
-                r = (int64_t)static_cast<const uint8_t *>(args.ref)[off];
-                d = (int64_t)static_cast<const uint8_t *>(args.dis)[off];
-            } else {
-                r = (int64_t)static_cast<const uint16_t *>(args.ref)[off];
-                d = (int64_t)static_cast<const uint16_t *>(args.dis)[off];
+        h.parallel_for(ndr, [=](sycl::nd_item<1> item) {
+            const size_t first = item.get_global_id(0);
+            const uint64_t se = (args.bpc <= 12U) ?
+                                    psnr_item_sse<uint32_t>(args, first, global, pixels) :
+                                    psnr_item_sse<uint64_t>(args, first, global, pixels);
+            const uint64_t group_se = sycl::reduce_over_group(item.get_group(), se, sycl::plus<>());
+            if (item.get_local_id(0) == 0U) {
+                sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+                                 sycl::access::address_space::global_space> const accum(*args.sse);
+                accum.fetch_add((int64_t)group_se);
             }
-            const int64_t diff = r - d;
-            const int64_t se = diff * diff;
-            sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-                             sycl::access::address_space::global_space> const accum(*args.sse);
-            accum.fetch_add(se);
         });
     });
 }
@@ -184,55 +212,13 @@ static void launch_sse(sycl::queue &q, PsnrKernelArgs args)
 namespace
 {
 
-/* Stage one chroma plane from a VmafPicture into a tightly-packed
- * host buffer. Mirrors `float_psnr_sycl.cpp::copy_y_plane`. */
-template <typename T>
-static void stage_chroma_plane(VmafPicture *pic, unsigned plane, void *dst, unsigned w, unsigned h)
-{
-    const T *src = static_cast<const T *>(pic->data[plane]);
-    T *out = static_cast<T *>(dst);
-    const ptrdiff_t src_stride_t = pic->stride[plane] / static_cast<ptrdiff_t>(sizeof(T));
-    for (unsigned i = 0; i < h; i++) {
-        for (unsigned j = 0; j < w; j++)
-            out[j] = src[j];
-        src += src_stride_t;
-        out += w;
-    }
-}
-
-} // namespace
-
-namespace
-{
-
-/* The submit-side picture pointers are captured here so pre_fn /
- * post_fn (which run on the combined queue but see only the priv
- * state) can stage chroma. submit_fex_sycl writes them; pre_fn
- * reads them; the in-order combined queue serializes against
- * graph_submit so this is single-threaded per frame. */
-struct PendingPics {
-    VmafPicture *ref;
-    VmafPicture *dis;
-};
-
-} // namespace
-
-namespace
-{
-
-/* Pre-graph: zero the SSE accumulators + H2D copy chroma planes
- * (direct enqueue, outside graph). */
+/* Pre-graph: zero the SSE accumulators (direct enqueue, outside graph). */
 static void psnr_pre_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<PsnrStateSycl *>(priv);
     for (unsigned p = 0; p < s->n_planes; p++) {
         q.memset(s->d_sse[p], 0, sizeof(int64_t));
-    }
-    /* Chroma H2D — host staging buffer was populated in submit. */
-    for (unsigned p = 1; p < s->n_planes; p++) {
-        q.memcpy(s->d_chroma_ref[p], s->h_chroma_ref[p], s->chroma_bytes[p]);
-        q.memcpy(s->d_chroma_dis[p], s->h_chroma_dis[p], s->chroma_bytes[p]);
     }
 }
 
@@ -252,10 +238,10 @@ static void launch_psnr_luma(sycl::queue &queue, State *state, void *reference, 
                        .bpc = state->bpc});
 }
 
-/* Graph-recorded: the luma per-pixel reduction kernel. Chroma stays
- * out of the graph — its inputs depend on per-frame H2D copies that
- * the L0 graph runtime cannot reliably replay (same constraint that
- * keeps memcpy/memset out per `common.h`). */
+/* Graph-recorded: the luma SSE reduction kernel. Chroma stays out of
+ * the graph: the recorded graph captures only the luma slot pointers
+ * the combined graph hands its extractors, and post_fn reads the
+ * compute slot's chroma planes when it runs. */
 static void enqueue_psnr_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
@@ -269,16 +255,17 @@ namespace
 {
 
 /* Post-graph: chroma SSE kernels (direct, post-graph) + D2H copy of
- * all SSE accumulators. The combined queue is in-order, so chroma
- * kernels see the H2D copies from pre_fn, and the D2H sees the
+ * all SSE accumulators. graph_submit put the combined queue behind the
+ * frame's last upload, chroma included (the chroma went up in submit,
+ * before graph_submit), and the queue is in-order, so the D2H sees the
  * luma kernel from the graph + chroma kernels above. */
 static void psnr_post_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<PsnrStateSycl *>(priv);
     for (unsigned p = 1; p < s->n_planes; p++) {
-        launch_sse(q, {.ref = s->d_chroma_ref[p],
-                       .dis = s->d_chroma_dis[p],
+        launch_sse(q, {.ref = vmaf_sycl_get_shared_plane(s->sycl_state, 1, p),
+                       .dis = vmaf_sycl_get_shared_plane(s->sycl_state, 0, p),
                        .sse = s->d_sse[p],
                        .width = s->width[p],
                        .height = s->height[p],
@@ -409,22 +396,18 @@ static int allocate_sse(PsnrStateSycl *s)
 namespace
 {
 
+/* Chroma comes from the state's shared Cb / Cr planes (ADR-1369):
+ * idempotent, so every twin that reads chroma shares one upload. */
 static int allocate_chroma(PsnrStateSycl *s)
 {
-    const size_t bpp = (s->bpc <= 8) ? 1u : 2u;
-    for (unsigned p = 1; p < s->n_planes; p++) {
-        s->chroma_bytes[p] = (size_t)s->width[p] * s->height[p] * bpp;
-        s->d_chroma_ref[p] = vmaf_sycl_malloc_device(s->sycl_state, s->chroma_bytes[p]);
-        s->d_chroma_dis[p] = vmaf_sycl_malloc_device(s->sycl_state, s->chroma_bytes[p]);
-        s->h_chroma_ref[p] = vmaf_sycl_malloc_host(s->sycl_state, s->chroma_bytes[p]);
-        s->h_chroma_dis[p] = vmaf_sycl_malloc_host(s->sycl_state, s->chroma_bytes[p]);
-        if (!s->d_chroma_ref[p] || !s->d_chroma_dis[p] || !s->h_chroma_ref[p] ||
-            !s->h_chroma_dis[p]) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_sycl: chroma buffer alloc failed\n");
-            return -ENOMEM;
-        }
+    if (s->n_planes < 2U) {
+        return 0;
     }
-    return 0;
+    const int err = vmaf_sycl_shared_chroma_init(s->sycl_state, s->width[1], s->height[1]);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_sycl: shared chroma planes unavailable (%d)\n", err);
+    }
+    return err;
 }
 
 } // namespace
@@ -515,18 +498,18 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     auto *s = static_cast<PsnrStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
 
-    /* Stage chroma planes into the host buffers BEFORE graph_submit
-     * — pre_fn runs the H2D copy from these buffers, and the
-     * combined queue's in-order semantics guarantee staging happens
-     * before any GPU consumer of the host buffer fires. */
-    for (unsigned p = 1; p < s->n_planes; p++) {
-        if (s->bpc <= 8) {
-            stage_chroma_plane<uint8_t>(ref_pic, p, s->h_chroma_ref[p], s->width[p], s->height[p]);
-            stage_chroma_plane<uint8_t>(dist_pic, p, s->h_chroma_dis[p], s->width[p], s->height[p]);
-        } else {
-            stage_chroma_plane<uint16_t>(ref_pic, p, s->h_chroma_ref[p], s->width[p], s->height[p]);
-            stage_chroma_plane<uint16_t>(dist_pic, p, s->h_chroma_dis[p], s->width[p],
-                                         s->height[p]);
+    /* Upload the frame's chroma BEFORE graph_submit, which puts the
+     * combined queue behind the last upload. Once per frame for every
+     * twin; the zero-copy import path hands no host pictures and
+     * imports luma only. */
+    if (s->n_planes > 1U) {
+        int const chroma_err = (ref_pic && dist_pic) ?
+                                   vmaf_sycl_shared_chroma_upload(state, ref_pic, dist_pic) :
+                                   -EINVAL;
+        if (chroma_err) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_sycl: frame %u chroma not on the device (%d)\n",
+                     index, chroma_err);
+            return chroma_err;
         }
     }
 
@@ -643,14 +626,6 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
                 vmaf_sycl_free(s->sycl_state, s->d_sse[p]);
             if (s->h_sse[p])
                 vmaf_sycl_free(s->sycl_state, s->h_sse[p]);
-            if (s->d_chroma_ref[p])
-                vmaf_sycl_free(s->sycl_state, s->d_chroma_ref[p]);
-            if (s->d_chroma_dis[p])
-                vmaf_sycl_free(s->sycl_state, s->d_chroma_dis[p]);
-            if (s->h_chroma_ref[p])
-                vmaf_sycl_free(s->sycl_state, s->h_chroma_ref[p]);
-            if (s->h_chroma_dis[p])
-                vmaf_sycl_free(s->sycl_state, s->h_chroma_dis[p]);
         }
     }
     if (s->feature_name_dict)

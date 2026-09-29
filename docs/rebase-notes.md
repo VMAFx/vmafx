@@ -29,6 +29,30 @@
   functions of the old file are gone and the two DWT launchers moved lines.
   Re-record from a clean tree after a conflict; never edit it by hand.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## perf/sycl-psnr-hvs-light-twins-4k — SYCL twins share the uploaded planes (ADR-1369) (2026-09-29)
+
+- `core/src/sycl/common.cpp` / `common.h`: fork-only (upstream Netflix/vmaf
+  has no SYCL). New `SyclSharedChroma` member of `VmafSyclState`,
+  `vmaf_sycl_shared_chroma_init` / `_upload`, `vmaf_sycl_get_shared_plane`,
+  `vmaf_sycl_queue_after_upload`, and `sycl_fence_slot_readers()` called first
+  inside `vmaf_sycl_shared_frame_upload`'s `try`. Keep the chroma upload out of
+  `vmaf_sycl_shared_frame_upload` (luma-only runs must not pay for it) and
+  keep the fence before the ref-plane upload; the ref-before-dis order and
+  `sycl_enqueue_plane_upload`'s `static_cast<unsigned>` are unchanged.
+- `core/src/feature/sycl/integer_psnr_sycl.cpp`: fork-local. The chroma
+  staging buffers (`d_chroma_*`, `h_chroma_*`, `stage_chroma_plane`) are gone.
+  Rebased onto ADR-1365 (#1624), which owns the option table, `configure_scores`,
+  `emit_plane` and `flush_fex_sycl` of the same TU; this change owns
+  `allocate_chroma`, `psnr_pre_graph`, `psnr_post_graph`, `launch_sse` and the
+  chroma upload in `submit_fex_sycl`. A conflict keeps both halves.
+- `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`: fork-local kernel;
+  per-block float expressions must stay verbatim (bit-identity).
+  `integer_motion_v2_sycl.cpp`: host path only — `cur` from the shared frame,
+  the ADR-1371 pipeline's `cur_copy` for the ping-pong; the kernel stays in
+  `integer_motion_pipeline_sycl.cpp`.
+- `core/test/test_sycl_init_unwind.cpp` + `core/test/meson.build`: the
+  `--wrap=vmaf_sycl_shared_chroma_init` link argument and its wrapper go
+  together.
 
 ## fix/sycl-aot-at-link — SYCL AOT images built at compile time, checked after link (ADR-1360) (2026-09-29)
 

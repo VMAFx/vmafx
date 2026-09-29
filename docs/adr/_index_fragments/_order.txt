@@ -1075,3 +1075,4 @@
 1364-windows-sycl-msvc-device-link
 1368-oneapi-release-image-debian13
 1370-sycl-float-ssim-device-decimation
+1369-sycl-shared-planes-light-twins
