@@ -350,6 +350,43 @@ the same integers as before.
 - Keep `request_stop()` on both readers before either `join()`, and the ring
   slot reservation before the pool fetch; see `core/tools/AGENTS.md`
   §Frame read-ahead.
+
+## fix/sycl-fp-contract-all-tus — one strict FP line for every SYCL feature TU (ADR-1367) (2026-09-29)
+
+- Folds ADR-1363's `sycl_exact_fp_args` / `sycl_exact_fp_sources` (#1627)
+  into `sycl_strict_fp_args`. If a sync brings either name back, or any per-TU FP
+  list (`extra_args`) into the `sycl_feature_sources` loop, drop it:
+  `core/test/test_strict_fp_compiler_args.py` and
+  `core/test/test_sycl_kernel_source_contract.py` fail on both.
+- `core/src/meson.build`: `sycl_fp32_prec_args` and `sycl_strict_fp_args` live
+  between `# BEGIN/END VMAF SYCL strict FP policy`, before `sycl_dependency`.
+  icpx order `-fp-model=precise -ffp-contract=off -foffload-fp32-prec-div
+  -foffload-fp32-prec-sqrt` is load-bearing (precise implies contraction on).
+  `sycl_link_args` is `['-fsycl']` plus the precision pair wherever the icpx
+  driver links; ADR-1360's "link carries `-fsycl` only" now means no device
+  *targets* at the link. The SPIR-V JIT image is still device-linked there, so
+  a sync that returns the link to plain `-fsycl` makes
+  `-Dsycl_icpx_aot_targets=` builds (the SYCL parity lane) approximate again;
+  `test_sycl_fp_arith_contract` fails on that path. The MSVC build
+  (ADR-1364) links with `link.exe` and generates every image in its explicit
+  device link, which takes `sycl_strict_fp_args` whole; keep it there.
+- `core/src/feature/sycl/integer_vif_sycl.cpp`
+  `dev_vif_stats_log_domain()`: `sv_sq` is `sycl::fma(-g, sigma12, sigma2_sq)`
+  on purpose. The CPU computes it in fp64; with contraction off a separate fp32
+  product moves the scores further from the CPU. Keep the explicit `fma` if the
+  VIF statistic is re-synced from upstream or the CUDA/HIP twins.
+- `core/test/sycl_fp_arith_probe.cpp` + `test_sycl_fp_arith_contract.c`: the
+  probe is compiled by a `custom_target` with `sycl_toolchain_args +
+  sycl_feature_tail_args`, so it follows the feature line automatically; do
+  not give it private flags. Under the MSVC device link it gets its own
+  explicit device link with libvmaf's arguments, because `link.exe` never
+  wraps device code.
+- `docs/state.md`: `T-SYCL-FP-MODEL-PRECISE-CONTRACTS-2026-09-29` closed;
+  `T-CUDA-FP-CONTRACT-DEFAULT-2026-09-29`, `T-HIP-FP-CONTRACT-DEFAULT-2026-09-29`
+  and `T-CLI-FLOAT-MOMENT-NO-TWIN-2026-09-29` opened (RC3).
+- No Netflix golden-data, public C API or FFmpeg patch impact; CPU code is
+  unchanged.
+
 ## perf/sycl-ssimulacra2-msssim-device-resident — device-resident `ssimulacra2_sycl`, single-wait `float_ms_ssim_sycl` (ADR-1363) (2026-09-29)
 
 - All touched files are fork-only (upstream Netflix/vmaf has no SYCL, and its

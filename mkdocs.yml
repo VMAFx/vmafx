@@ -1481,6 +1481,7 @@ nav:
         - "ADR-1364: windows-sycl-msvc-device-link": adr/1364-windows-sycl-msvc-device-link.md
         - "ADR-1365: sycl-twin-cpu-option-parity": adr/1365-sycl-twin-cpu-option-parity.md
         - "ADR-1366: cli-frame-readahead": adr/1366-cli-frame-readahead.md
+        - "ADR-1367: sycl-strict-fp-every-feature-tu": adr/1367-sycl-strict-fp-every-feature-tu.md
         - "ADR-1368: oneapi-release-image-debian13": adr/1368-oneapi-release-image-debian13.md
         - "ADR-1369: sycl-shared-planes-light-twins": adr/1369-sycl-shared-planes-light-twins.md
         - "ADR-1370: sycl-float-ssim-device-decimation": adr/1370-sycl-float-ssim-device-decimation.md

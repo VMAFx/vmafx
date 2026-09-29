@@ -38,23 +38,19 @@ sycl/
 - **dmabuf import** = Linux-only, gated at build time; no callers
   assume FD path exists on other OSes.
 - **Numerical snapshots**: same rule as CUDA — see CLAUDE.md §9.
-- **`-fp-model=precise` load-bearing.** SYCL feature build line in
-  `core/src/meson.build` adds `-fp-model=precise` to every per-kernel
-  TU. It limits `icpx`'s value-unsafe optimisation in kernel lambdas.
-  Removing it drifts `float_adm_sycl`
-  ([ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)) past
-  `places=4` at scale 2, `ssimulacra2_sycl`
-  ([ADR-0206](../../../docs/adr/0206-ssimulacra2-cuda-sycl.md)) past
-  `places=2` through IIR. **On rebase**: keep flag on SYCL feature
-  line. It does **not** stop FMA contraction of `a * b + c` within one
-  expression, and device fp32 `/` and `sqrt` stay non-correctly-rounded
-  (measured with icpx 2026.1 on Arc B580 and UHD 770,
-  [ADR-1358](../../../docs/adr/1358-sycl-speed-device-resident-linalg.md)).
-  Bit-exact TUs add `-ffp-contract=off` after it (`sycl_exact_fp_args`
-  for the TUs listed in `sycl_exact_fp_sources`: SpEED and, since
-  ADR-1363, `ssimulacra2_sycl`) and round division / square root
-  explicitly through `feature/sycl/sycl_exact_fp.h`; see
-  `T-SYCL-FP-MODEL-PRECISE-CONTRACTS-2026-09-29`.
+- **SYCL strict FP line load-bearing
+  ([ADR-1367](../../../docs/adr/1367-sycl-strict-fp-every-feature-tu.md)).**
+  `sycl_strict_fp_args` in `core/src/meson.build` (between the
+  `VMAF SYCL strict FP policy` markers) goes to every feature TU:
+  `-fp-model=precise -ffp-contract=off -foffload-fp32-prec-div
+  -foffload-fp32-prec-sqrt`, order fixed. precise alone: `a * b + c` still
+  one FMA in kernel lambdas, fp32 `/` and `sqrt` approximate (ADR-1358);
+  no precise: `float_adm_sycl` past `places=4`
+  ([ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)). Precision
+  pair also on `sycl_dependency` link (not Windows): SPIR-V JIT image made
+  there. **On rebase**: keep one line for all TUs, no per-TU FP list, keep
+  link pair; `test_strict_fp_compiler_args.py` +
+  `test_sycl_fp_arith_contract` fail otherwise.
 - **fp64-free kernels load-bearing
   ([ADR-0220](../../../docs/adr/0220-sycl-fp64-fallback.md), T7-17).**
   Every SYCL feature-kernel lambda must capture and operate on
@@ -100,11 +96,12 @@ sycl/
   Default relocatable device code -> device codegen + ocloc run at LINK,
   link sees only `-fsycl` -> `spir64_gen` images silently dropped (bug
   ADR-0568 shipped with). Keep flags on compile line; keep
-  `sycl_dependency.link_args` = `-fsycl` only, MSVC excepted (next bullet)
-  (link-time targets = 167 s+
-  per link x 113 test links of `libvmaf.a`, one ocloc crash aborts whole
-  link). Link-only device flags (e.g. `-foffload-fp32-prec-div`) now belong
-  on compile line. `find_program('ocloc')` error = intended fail-closed;
+  `sycl_dependency.link_args` = `-fsycl` + fp32 precision pair, no targets,
+  MSVC excepted (next bullet) (link-time targets = 167 s+ per link x 113
+  test links of `libvmaf.a`, one ocloc crash aborts whole link). `spir64`
+  JIT bitcode still device-linked at LINK under `-fno-sycl-rdc`: device
+  flags go on compile line (AOT) AND link (JIT), ADR-1367.
+  `find_program('ocloc')` error = intended fail-closed;
   never demote to warning. `sycl_aot_image_check`
   (`core/src/sycl/check_aot_image.py`) fails build unless `libvmaf.so` has
   image per requested GFX IP; `sycl_icpx_aot_igc_skip` = only allowed gap
@@ -136,7 +133,8 @@ sycl/
   found`. Under `sycl_msvc_device_link` (`core/src/meson.build`): TUs compile
   RDC (`-fsycl -fsycl-targets=spir64_gen,spir64`, no `-fno-sycl-rdc`); one
   `icpx -fsycl -fsycl-link` (AOT `-device` list, `--offload-compress`,
-  `-fp-model=precise`, parallel link jobs) over `common_sycl_objects +
+  whole `sycl_strict_fp_args` incl. fp32 precision pair (ADR-1367),
+  parallel link jobs) over `common_sycl_objects +
   sycl_feature_objects` -> `sycl_device_link_raw.obj`;
   `coff_add_anchor.py` adds external `vmaf_sycl_device_images` ->
   `sycl_device_link.obj`, appended to `sycl_feature_objects`;

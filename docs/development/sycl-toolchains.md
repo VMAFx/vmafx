@@ -111,12 +111,17 @@ no GPU / SYCL backend is bit-identical to the Netflix CPU golden
 assertions, only "close enough" within `places=4`. AdaptiveCpp adds
 another non-bit-identical lane to that family.
 
-The build replaces `-fp-model=precise` (an icpx-specific strict-FP
-flag) with `-ffp-contract=off` (which AdaptiveCpp's underlying clang
-accepts). This blocks FMA contraction in the kernel lambdas — the
-load-bearing invariant per
+Under icpx every SYCL feature TU compiles with
+`-fp-model=precise -ffp-contract=off -foffload-fp32-prec-div
+-foffload-fp32-prec-sqrt`: no fused multiply-add and correctly rounded fp32
+division and square root, as on the CPU
+([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md)). AdaptiveCpp
+accepts neither `-fp-model` nor the precision pair, so its line is
+`-ffp-contract=off` alone. That blocks FMA contraction in the kernel
+lambdas, but device division and square root keep whatever precision the
+AdaptiveCpp backend gives them. See
 [`core/src/sycl/AGENTS.md`](../../core/src/sycl/AGENTS.md) §
-"`-fp-model=precise` is load-bearing".
+"SYCL strict FP line load-bearing".
 
 When a future PR extends the cross-backend ULP-tolerance gate
 ([`/cross-backend-diff` skill](../../.claude/skills/cross-backend-diff/))

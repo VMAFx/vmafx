@@ -3681,6 +3681,43 @@ test_sycl_kernel_registration = executable('test_sycl_kernel_registration',
 test('test_sycl_kernel_registration', test_sycl_kernel_registration,
     suite : ['fast', 'sycl'])
 
+# ADR-1367: device fp32 arithmetic of the SYCL feature line. The probe TU is
+# compiled with the extractors' own arguments (sycl_toolchain_args +
+# sycl_feature_tail_args) and linked through sycl_dependency, so both device
+# image paths are covered: AOT images built at compile time and the SPIR-V JIT
+# image built at the link. link.exe never wraps device code, so under the MSVC
+# device link (ADR-1364) the probe gets its own explicit device link with
+# libvmaf's arguments. AdaptiveCpp's line has no precision flags.
+if not is_sycl_acpp
+    sycl_fp_arith_probe = custom_target('sycl_fp_arith_probe',
+        output : 'sycl_fp_arith_probe.o',
+        input : 'sycl_fp_arith_probe.cpp',
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_fp_arith_probe_objects = [sycl_fp_arith_probe]
+    if sycl_msvc_device_link
+        sycl_fp_arith_probe_objects += custom_target('sycl_fp_arith_probe_device_link',
+            input : sycl_fp_arith_probe,
+            output : 'sycl_fp_arith_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_fp_arith_contract = executable('test_sycl_fp_arith_contract',
+        ['test.c', 'test_sycl_fp_arith_contract.c'] + sycl_fp_arith_probe_objects,
+        include_directories : [test_inc],
+        dependencies : [math_lib, sycl_dependency],
+        # The host references are single fp64 operations rounded once; they only
+        # need icx's fast model (reciprocal division) turned off.
+        c_args : vmaf_fp_model_args,
+        link_language : 'cpp',
+    )
+    test('test_sycl_fp_arith_contract', test_sycl_fp_arith_contract,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endif
+
 # BUG-040: this compile combination used CUDA's host-picture cleanup early
 # return, bypassing the SYCL upload wait on the serial path. The worker path
 # can independently drop its counted references before the caller returns.

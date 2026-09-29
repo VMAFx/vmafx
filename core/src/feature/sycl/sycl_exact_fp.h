@@ -9,7 +9,8 @@
  *  Moved out of speed_sycl_pipeline.cpp (ADR-1358) so the SpEED pipeline and
  *  the ssimulacra2 twin share one implementation (HISS-19, ADR-1363). Every
  *  function here assumes its translation unit is compiled with contraction
- *  off (`sycl_exact_fp_args` in core/src/meson.build): two_sum() and
+ *  off, which every SYCL feature TU is (`sycl_strict_fp_args` in
+ *  core/src/meson.build, ADR-1367): two_sum() and
  *  quick_two_sum() are exact only when each add rounds on its own, and the
  *  residual FMAs are written out with sycl::fma() so contraction never has to
  *  be relied on. This header must not mention the fp64 type
@@ -43,9 +44,10 @@ namespace vmaf_sycl_exact
 /* ------------------------------------------------------------------ */
 
 /* Device `/` and sqrt() are not correctly rounded by default (measured: 28%
- * and 8% of random operands differ from the host), and the offload precision
- * flags only act when the final image is linked, which is shared with every
- * other extractor. Every division and square root below therefore goes
+ * and 8% of random operands differ from the host). Since ADR-1367 every SYCL
+ * feature TU compiles them correctly rounded (`sycl_strict_fp_args`); these
+ * helpers predate that and keep the kernels that call them exact whatever the
+ * flag line says. Every division and square root below goes
  * through div_rn() / sqrt_rn(): a hardware approximation refined once, then
  * the two adjacent floats around it are checked with exact FMA residuals.
  * When their residual signs prove the true value lies between them, the

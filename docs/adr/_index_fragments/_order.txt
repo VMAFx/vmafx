@@ -1087,3 +1087,4 @@
 1374-cuda-integer-tiny-frame-guards
 1392-cuda-integer-reductions-one-atomic-per-block
 1393-cambi-clip-window-to-frame
+1367-sycl-strict-fp-every-feature-tu

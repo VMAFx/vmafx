@@ -14,8 +14,8 @@ feature/sycl/
 ```
 
 All TUs compiled with `icpx` (Intel oneAPI) — build line
-under [`../../meson.build`](../../meson.build) adds
-`-fsycl -fp-model=precise` for every per-kernel TU.
+under [`../../meson.build`](../../meson.build) adds `-fsycl` and the SYCL
+strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
 
 ## Ground rules
 
@@ -29,26 +29,28 @@ under [`../../meson.build`](../../meson.build) adds
   oversized helpers at cohesive phase boundaries; do not add `NOLINT`, lower a
   baseline, or filter a diagnostic to make a lane green. Regenerate the SYCL
   database with `scripts/ci/gen-sycl-compile-commands.py` before clang-tidy.
-- **`-fp-model=precise` on SYCL feature line load-bearing.**
-  Removing it allows `icpx` to FMA-contract inside kernel
-  lambdas, drifting `float_adm_sycl` past `places=4` at scale 2
-  (ADR-0202), `ssimulacra2_sycl` past `places=2` through IIR
-  (ADR-0206). **It does not stop all contraction** (measured, icpx
-  2026.1, ADR-1358): `a * b + c` written as one expression still
-  becomes one FMA in 28% of cases, and fp32 `/` and `sqrt` are not
-  correctly rounded (28% / 8% differ from the host). A product held
-  in a named temporary is not contracted. Kernels that must match
-  the host bit for bit need `-ffp-contract=off` after
-  `-fp-model=precise` per TU and correctly rounded division / square
-  root in the source; `-foffload-fp32-prec-div/-sqrt` act only on the
-  final image link. Tracked for the other TUs as
-  `T-SYCL-FP-MODEL-PRECISE-CONTRACTS-2026-09-29`.
+- **SYCL strict FP line load-bearing, one line for every TU
+  ([ADR-1367](../../../../docs/adr/1367-sycl-strict-fp-every-feature-tu.md)).**
+  `sycl_strict_fp_args` = `-fp-model=precise -ffp-contract=off
+  -foffload-fp32-prec-div -foffload-fp32-prec-sqrt`, in that order.
+  precise alone leaves `a * b + c` contracted into an FMA inside kernel
+  lambdas and fp32 `/` and `sqrt` approximate (ADR-1358); without precise,
+  icpx's fast model drifts `float_adm_sycl` past `places=4` (ADR-0202).
+  With the line, a kernel's `+ - * / sqrt` round like the CPU reference's;
+  transcendentals (`sycl::log2`, `exp`, `pow`, `cbrt`), reduction order and
+  fp32 stand-ins for fp64 reference expressions still differ. Where a
+  kernel approximates an fp64 reference expression, write the fused form it
+  needs as `sycl::fma()` (`integer_vif_sycl.cpp` `sv_sq`); never rely on
+  contraction. No TU gets a private FP list; the precision pair also rides
+  `sycl_dependency` to the link for the SPIR-V JIT image (MSVC: the explicit
+  device link, ADR-1364, takes the whole line).
+  `test_sycl_fp_arith_contract` checks the device result on hardware.
 - **SpEED pipeline arithmetic contract ([ADR-1358](../../../../docs/adr/1358-sycl-speed-device-resident-linalg.md)).**
   Every SpEED kernel lives in `speed_sycl_pipeline.cpp`; the two
   extractor TUs and `speed_sycl_host.cpp` hold none and never wait on
   the queue outside `pipeline_collect()` / `pipeline_wait()`. The four
-  TUs are built with `sycl_exact_fp_args` (`-ffp-contract=off`, listed
-  in `sycl_exact_fp_sources`) in `core/src/meson.build`. In the
+  TUs are built with contraction off like every feature TU
+  (`sycl_strict_fp_args`, ADR-1367). In the
   pipeline, every division and square root goes through `div_rn()` /
   `sqrt_rn()` (shared with ssimulacra2 in `sycl_exact_fp.h`, ADR-1363),
   every `log2f` through
@@ -532,8 +534,8 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `submit()` uploads the six raw planes and enqueues the whole frame (YUV ->
   linear RGB, per scale XYB, the three products and five blurs, SSIM / edge
   sums, downsample) plus one copy of the per-scale
-  sums; `collect()` is the only wait. Load-bearing: the TU is in
-  `sycl_exact_fp_sources` (contraction off); `VMAF_SS2_FDIV` maps the shared
+  sums; `collect()` is the only wait. Load-bearing: the TU builds with
+  contraction off (every feature TU does, ADR-1367); `VMAF_SS2_FDIV` maps the shared
   `vmaf_ss2_cbrtf` division to `div_rn` before `ssimulacra2_math.h` is
   included; products feeding adds sit in named temporaries; YUV / XYB /
   blur / downsample are bit-identical to `ssimulacra2.c` and the parity sweep

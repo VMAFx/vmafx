@@ -99,14 +99,31 @@ EXACT_FP_TUS = (
 )
 
 
+FEATURE_TU_COMMAND = "+ sycl_feature_tail_args + sycl_feature_inc"
+STRICT_TAIL = "sycl_feature_tail_args = ['-std=c++20'] + sycl_strict_fp_args"
+
+
 def _exact_fp_build_failures(meson: str) -> list[str]:
-    """Every TU that relies on sycl_exact_fp.h is built with contraction off."""
-    match = re.search(r"sycl_exact_fp_sources\s*=\s*\[([^\]]*)\]", meson)
-    listed = set(re.findall(r"'([^']+)'", match.group(1))) if match else set()
+    """Every TU that relies on sycl_exact_fp.h is built with contraction off.
+
+    ADR-1367: the strict FP line (`sycl_strict_fp_args`, whose flags
+    test_strict_fp_compiler_args.py pins) reaches every SYCL feature TU through
+    `sycl_feature_tail_args`, so an exact-fp TU is covered by being a feature
+    source. A per-TU flag list next to it would be a second policy.
+    """
+    sources = re.search(r"sycl_feature_sources\s*=\s*\[(.*?)\n\s*\]", meson, re.S)
+    listed = set(re.findall(r"sycl/(\w+)\.cpp'", sources.group(1))) if sources else set()
     missing = [name for name in EXACT_FP_TUS if name not in listed]
-    if missing or "sycl_exact_fp_sources.contains(name) ? sycl_exact_fp_args" not in meson:
-        return [f"core/src/meson.build: contraction-off TUs missing {missing}"]
-    return []
+    loop = meson[meson.find("foreach src : sycl_feature_sources") :]
+    loop = loop[: loop.find("\n    endforeach\n")]  # the loop's own, not the AOT-list one
+    failures: list[str] = []
+    if missing:
+        failures.append(f"core/src/meson.build: exact-fp TUs not built as feature TUs: {missing}")
+    if STRICT_TAIL not in meson or FEATURE_TU_COMMAND not in loop:
+        failures.append("core/src/meson.build: feature TUs lost the SYCL strict FP line")
+    if "extra_args" in loop:
+        failures.append("core/src/meson.build: per-TU FP arguments beside the strict FP line")
+    return failures
 
 
 def _device_resident_failures(sources: dict[str, str]) -> list[str]:
@@ -243,8 +260,12 @@ class SyclKernelSourceContractTest(unittest.TestCase):
     def test_exact_fp_tus_build_with_contraction_off(self) -> None:
         meson = (ROOT / "core" / "src" / "meson.build").read_text(encoding="utf-8")
         self.assertEqual(_exact_fp_build_failures(meson), [])
-        dropped = meson.replace("'speed_sycl_host', 'ssimulacra2_sycl'", "'speed_sycl_host'", 1)
-        self.assertTrue(_exact_fp_build_failures(dropped))
+        unlisted = meson.replace("feature_src_dir + 'sycl/ssimulacra2_sycl.cpp',", "", 1)
+        self.assertTrue(_exact_fp_build_failures(unlisted))
+        no_strict = meson.replace(STRICT_TAIL, "sycl_feature_tail_args = ['-std=c++20']", 1)
+        self.assertTrue(_exact_fp_build_failures(no_strict))
+        per_tu = meson.replace(FEATURE_TU_COMMAND, "+ sycl_feature_tail_args + extra_args", 1)
+        self.assertTrue(_exact_fp_build_failures(per_tu))
 
     def test_ssimulacra2_host_residual_regression_is_detected(self) -> None:
         sources = _sources()

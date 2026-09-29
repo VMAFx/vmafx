@@ -424,12 +424,62 @@ See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) and the
 ## Numerical tolerance vs the CPU scalar path
 
 SYCL kernels target **close agreement** with the CPU fixed-point
-path, not bit-exact equality. Like every GPU path for VMAF, different
-reduction orders, parallel-prefix scans, and FMA contractions can
-perturb the final accumulator by a fraction of a ULP. Measured on an Intel
+path, not bit-exact equality. Measured on an Intel
 Arc A380 (2026-09-27) with `vmaf_v0.6.1` on the Netflix `src01` pair, the
 pooled VMAF score differs from the CPU by 2.48e-5 and the largest per-frame
 difference is 5.92e-5.
+
+### What the SYCL compile line guarantees
+
+Under icpx every SYCL feature kernel is compiled with
+`-fp-model=precise -ffp-contract=off -foffload-fp32-prec-div -foffload-fp32-prec-sqrt`
+([ADR-1367](../../adr/1367-sycl-strict-fp-every-feature-tu.md)). Each fp32
+`+`, `-`, `*`, `/` and `sqrt` in a kernel then rounds the way the CPU
+reference build rounds it: IEEE-754 round to nearest, one rounding per
+operation, `a * b + c` never fused into an FMA, subnormal results kept. This
+holds for the native images built for the `sycl_icpx_aot_targets` devices and
+for the SPIR-V image compiled at first launch on any other device, and
+`test_sycl_fp_arith_contract` checks it on the device. A Windows MSVC build
+generates every image, native and SPIR-V, in its one explicit device link
+([ADR-1364](../../adr/1364-windows-sycl-msvc-device-link.md)), which gets the
+same flags; that path has not been measured on a GPU yet. A kernel that needs
+a fused multiply-add says so with `sycl::fma()`.
+
+`-fp-model=precise` on its own did not give this: it left `a * b + c` fused
+and `/` and `sqrt` approximate (29% and 8% of random fp32 operands differ
+from the host), although earlier versions of this guide said the kernels ran
+in IEEE-754 strict mode.
+
+The line does not make scores bit-identical. What still differs from the CPU:
+
+- **Transcendental functions.** `sycl::log2`, `exp`, `pow`, `cbrt`, `sin`
+  and `atan2` are not correctly rounded on the device and are not the host's
+  libm. `float_vif` (`log2`) and `ciede` (`pow`, `atan2`, `sin`) call them
+  for every pixel.
+- **Summation order.** Work-group reductions add in a fixed tree, not in the
+  CPU's sequential order.
+- **fp64 on the CPU.** SYCL kernels are fp32-only
+  ([ADR-0220](../../adr/0220-sycl-fp64-fallback.md)); where the CPU evaluates
+  an expression in fp64, the twin approximates it in fp32, or in exact pairs
+  of floats where it must match (SpEED, `ssimulacra2`).
+- **Different formulas by design.** `float_ssim_sycl` uses the combined SSIM
+  form rather than the CPU's L x C x S product.
+
+Measured with icpx 2026.1 on an Arc B580 and a UHD 770 (both give the same
+result except where noted in the ADR), maximum absolute difference against
+`--backend cpu --precision max`: bit-identical for `motion_v2`, `float_psnr`,
+`psnr`, `float_moment`, `speed_chroma` and `speed_temporal`; within 2.2e-15
+for `cambi` and 6.7e-12 for `ssimulacra2`; the others between 1e-8 (`ssim`)
+and 8.4e-4 dB (`psnr_hvs` at 3840x2160), each inside its
+[cross-backend gate](../../development/cross-backend-gate.md) tolerance.
+The exception is `float_ssim` forced to `scale=1` at 3840x2160, 8.8e-5 from
+the CPU because of the formula difference above; with the default automatic
+scale a 4K `float_ssim` runs on the CPU extractor. The per-twin table is in
+[Research-1367](../../research/1367-sycl-strict-fp-every-feature-tu.md).
+
+AdaptiveCpp builds accept neither `-fp-model` nor the precision flags: they
+compile with contraction off, and division and square root keep the backend's
+default precision.
 
 The **Netflix golden-data gate is CPU-only** — see
 [docs/principles.md §3.1](../../principles.md#31-netflix-golden-data-gate).
@@ -542,8 +592,9 @@ the deviation:
   [ADR-1363](../../adr/1363-sycl-ssimulacra2-msssim-device-resident.md):
   one upload of the raw planes, colour conversion, XYB, blurs, SSIM and
   edge sums and downsample on the device, one 864-byte readback per frame.
-  Its TU builds with `-ffp-contract=off` like the SpEED TUs and divides
-  through the correctly rounded `div_rn()`, so everything up to the sums is
+  Like every SYCL feature TU it builds with contraction off and correctly
+  rounded division (ADR-1367), and divides through `div_rn()`, so everything
+  up to the sums is
   bit-identical to the CPU; the sums use pairs of floats in a fixed tree
   (no fp64 on the device), which puts the score within about 1e-11 of
   `--backend cpu`, identical on the B580 and the UHD 770. The Charalampidis
@@ -596,10 +647,11 @@ the deviation:
   the device, replayed as one recorded SYCL graph; the host reads one result
   per frame. Their per-frame scores equal `--backend cpu` exactly. Timings and
   the parity check are in [SpEED](../../metrics/speed_qa.md#sycl-device-resident-and-bit-identical-to-the-cpu).
-  The four SpEED TUs build with `-ffp-contract=off`: `-fp-model=precise`
-  alone still contracts `a * b + c` into an FMA inside kernels and leaves
-  fp32 division and square root non-correctly-rounded (measured with icpx
-  2026.1), so the pipeline rounds those two explicitly.
+  The pipeline rounds division and square root explicitly (`div_rn()` /
+  `sqrt_rn()`) and keeps every product that feeds an add in a named
+  temporary. It was written before every SYCL feature TU got contraction off
+  and correctly rounded division (ADR-1367) and stays exact whatever the
+  compile line.
 
 See [metrics/features.md](../../metrics/features.md) for the
 per-extractor coverage matrix and [api/gpu.md](../../api/gpu.md#sycl)

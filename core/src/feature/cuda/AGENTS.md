@@ -46,12 +46,15 @@ because ADM splits across DWT2 + decouple + CSF + CM passes.
   `cuda/integer_<feature>_cuda.h`, then `cuda_helper.cuh` /
   `kernel_template.h`. Don't shuffle.
 - **fmaf contraction OFF for precision-critical kernels.** Parent
-  build line passes `--fmad=false` to `nvcc` for feature
-  TUs participating in cross-backend gates with `places=4`.
+  build line passes `--fmad=false` to `nvcc` for two kernels only,
+  `ssimulacra2_blur` and `float_adm_score` (`cuda_cu_extra_flags`).
   Removing it drifts `float_adm_cuda` / `ssimulacra2_cuda` past
-  gate (mirror of SYCL `-fp-model=precise` and Vulkan
-  GLSL `precise` / `NoContraction` rules). On rebase: keep
-  flag.
+  gate. Every other kernel keeps nvcc's default `--fmad=true`
+  (contracts `a * b + c`), unlike SYCL, where every TU compiles with
+  contraction off (ADR-1367); tracked as
+  `T-CUDA-FP-CONTRACT-DEFAULT-2026-09-29`. Division and sqrt are
+  IEEE (`-prec-div` / `-prec-sqrt` default true, no `--use_fast_math`).
+  On rebase: keep flag.
 
 ## Twin-update rules
 

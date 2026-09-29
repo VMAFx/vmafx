@@ -1759,6 +1759,47 @@ if is_sycl_enabled
         sycl_common_args += ['-DVMAF_SYCL_MSVC_DEVICE_LINK=1']
     endif
 
+    # BEGIN VMAF SYCL strict FP policy
+    # ADR-1367: every SYCL feature TU compiles with the CPU reference's
+    # arithmetic. The reference (gcc/clang, x86-64 baseline) neither contracts
+    # `a * b + c` into an FMA nor approximates `/` and sqrt; icpx does both on
+    # the device unless told otherwise:
+    #   -fp-model=precise   turns off icpx's default fast model (reassociation,
+    #                       reciprocal math, flush-to-zero). Without it icpx
+    #                       fuses the cos(1deg) angle-flag comparison
+    #                       differently from gcc: 2.4e-4 adm_scale2 drift on
+    #                       Arc (T7-16, ADR-0202).
+    #   -ffp-contract=off   precise alone still contracts `a * b + c` inside
+    #                       kernel lambdas (ADR-1358). It must come AFTER
+    #                       -fp-model=precise, which implies -ffp-contract=on
+    #                       (same order as the x86 strict policy); icpx reports
+    #                       the intended override as -Woverriding-option.
+    #                       `#pragma clang fp contract(off)` does not reach
+    #                       device code.
+    #   sycl_fp32_prec_args correctly rounded fp32 `/` and sqrt. Each device
+    #                       image takes them where its code is generated: the
+    #                       spir64_gen images at compile time under
+    #                       `-fno-sycl-rdc` (ocloc gets
+    #                       -ze-fp32-correctly-rounded-divide-sqrt), the SPIR-V
+    #                       JIT image at the final link, which is why
+    #                       sycl_dependency carries the pair too. Where
+    #                       link.exe links (MSVC, ADR-1364), every image is
+    #                       generated at the explicit device link, which takes
+    #                       sycl_strict_fp_args whole. Compile-line flags
+    #                       alone leave -Dsycl_icpx_aot_targets= builds
+    #                       approximate.
+    # One flag set for every feature TU, none exempt; ADR-1367 has the per-twin
+    # parity and cost measurements. AdaptiveCpp takes neither -fp-model nor the
+    # precision pair: its line is contraction-off only, and its drift vs icpx
+    # is documented in docs/development/sycl-toolchains.md (ADR-0407).
+    sycl_fp32_prec_args = is_sycl_acpp ? [] : ['-foffload-fp32-prec-div', '-foffload-fp32-prec-sqrt']
+    if is_sycl_acpp
+        sycl_strict_fp_args = ['-ffp-contract=off']
+    else
+        sycl_strict_fp_args = ['-fp-model=precise', '-ffp-contract=off'] + sycl_fp32_prec_args
+    endif
+    # END VMAF SYCL strict FP policy
+
     sycl_sources = [
         sycl_dir + 'common.cpp',
         sycl_dir + 'dispatch_strategy.cpp',
@@ -1869,7 +1910,11 @@ if is_sycl_enabled
     # Its image sections and the fat objects' bundle sections share the
     # truncated name __CLANG_ with different attributes; the icpx driver's own
     # link line passes /IGNORE:4078 for exactly that warning.
-    sycl_link_args = sycl_msvc_device_link ? ['/IGNORE:4078'] : ['-fsycl']
+    # ADR-1367: the fp32 precision pair adds no device target, so the icpx link
+    # still does no AOT work (ADR-1360); it only sets the SPIR-V JIT image's
+    # build options. The MSVC build passes the pair to its explicit device link
+    # instead, with the rest of sycl_strict_fp_args.
+    sycl_link_args = sycl_msvc_device_link ? ['/IGNORE:4078'] : (['-fsycl'] + sycl_fp32_prec_args)
     sycl_dependency += declare_dependency(
         dependencies : [sycl_lib, libze_dep] + sycl_extra_runtime_deps + sycl_surface_deps,
         link_args : sycl_link_args,
@@ -2121,30 +2166,8 @@ if is_sycl_enabled
         feature_src_dir + 'sycl/speed_sycl_host.cpp',
     ]
 
-    # `-fp-model=precise` is Intel's strict-FP flag: no FMA contraction,
-    # no associativity reordering, IEEE-754 compliant. Matches CPU
-    # integer_adm.c's gcc -O2 default behaviour (gcc defaults to
-    # -ffp-contract=off for non-FMA-friendly architectures). Without
-    # it, icpx fuses the cos(1deg) angle-flag comparison's RHS
-    # multiplications differently than gcc and produces a 2.4e-4
-    # adm_scale2 drift on Arc vs CPU at the rounding boundary (T7-16).
-    # `-ffp-contract=off` and `#pragma clang fp contract(off)` blocks
-    # in the source files were not sufficient — those flags don't
-    # propagate to icpx's device-side codegen pass for SYCL kernel
-    # lambdas; `-fp-model=precise` does.
-    # `-fp-model=precise` is icpx's strict-FP flag (see comment above).
-    # AdaptiveCpp doesn't accept `-fp-model=precise`; it uses the
-    # underlying clang's `-ffp-contract=off` plus the source-level
-    # `precise` decoration on per-kernel arithmetic. Per
-    # `core/src/sycl/AGENTS.md`, the precise-FP contract is
-    # load-bearing for places=4 conformance, so emit `-ffp-contract=off`
-    # under acpp; the residual numerical drift vs icpx is documented
-    # in ADR-0335 §"Numerical conformance".
-    if is_sycl_acpp
-        sycl_strict_fp_args = ['-ffp-contract=off']
-    else
-        sycl_strict_fp_args = ['-fp-model=precise']
-    endif
+    # sycl_strict_fp_args: the SYCL strict FP policy above (ADR-1367), the same
+    # for every feature TU.
     sycl_feature_tail_args = ['-std=c++20'] + sycl_strict_fp_args + sycl_pic_arg + ['-fpermissive']
     sycl_feature_inc = sycl_inc_flags + [
         '-I' + meson.current_source_dir() / 'cuda',
@@ -2158,21 +2181,6 @@ if is_sycl_enabled
     # crashed on the old kernel for every Xe2 target. Add an entry only
     # with an ocloc failure to cite.
     sycl_icpx_aot_igc_skip = {}
-
-    # ADR-1358 / ADR-1363: the SpEED and ssimulacra2 TUs reproduce the CPU
-    # reference operation for operation, which `-fp-model=precise` alone does
-    # not give on the device. Measured with icpx 2026.1 on Arc B580 and UHD
-    # 770: precise still contracts `a * b + c` into one FMA inside kernel
-    # lambdas (28% of random products differ from the host). `-ffp-contract=off`
-    # AFTER `-fp-model=precise` (order is load-bearing, see the strict FP policy
-    # above) stops it, per TU. Division and square root are made correctly
-    # rounded in the source (div_rn / sqrt_rn in feature/sycl/sycl_exact_fp.h),
-    # because the offload precision flags act only on the final image link,
-    # which every SYCL extractor shares. AdaptiveCpp's strict line is already
-    # contraction-off.
-    sycl_exact_fp_args = is_sycl_acpp ? [] : ['-ffp-contract=off']
-    sycl_exact_fp_sources = ['speed_chroma_sycl', 'speed_temporal_sycl', 'speed_sycl_pipeline',
-                             'speed_sycl_host', 'ssimulacra2_sycl']
 
     # The one explicit device link (ADR-1364) generates every TU's images with
     # a single target list, so it cannot leave targets out per TU.
@@ -2204,12 +2212,11 @@ if is_sycl_enabled
                     ','.join(sycl_icpx_aot_igc_skip[name]) +
                     ' (IGC cannot compile it for them; SPIR-V JIT there). ADR-1360.')
         endif
-        extra_args = sycl_exact_fp_sources.contains(name) ? sycl_exact_fp_args : []
         sycl_feature_objects += custom_target('sycl_feature_' + name,
             output : name + '.o',
             input : src,
             command : [icpx] + vmaf_cflags_common + ['-c'] + tu_toolchain_args
-                      + sycl_feature_tail_args + extra_args + sycl_feature_inc
+                      + sycl_feature_tail_args + sycl_feature_inc
                       + ['@INPUT@', '-o', '@OUTPUT@'],
         )
     endforeach
@@ -2217,7 +2224,8 @@ if is_sycl_enabled
     # ADR-1364: wrap and register every device image in one host object, then
     # give it the external symbol sycl/common.cpp /include-s. The object joins
     # the SYCL objects of libvmaf, so vmaf.lib carries it for every consumer.
-    # -fp-model=precise is repeated because the device link builds the images.
+    # sycl_strict_fp_args is repeated because the device link builds the images,
+    # and the fp32 precision pair acts where an image is generated (ADR-1367).
     if sycl_msvc_device_link
         sycl_device_link_raw = custom_target('sycl_device_link',
             input : common_sycl_objects + sycl_feature_objects,

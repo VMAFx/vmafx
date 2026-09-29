@@ -76,10 +76,14 @@ class MesonCommandContractTest(unittest.TestCase):
         if link is None:
             self.fail("missing sycl_dependency declaration")
         self.assertIn("link_args : sycl_link_args,", link.group("body"))
-        # Every driver-linked build keeps `-fsycl` on the link; only MSVC's
-        # link.exe, which cannot use it, swaps it for the device link (ADR-1364).
+        # Every driver-linked build keeps `-fsycl` on the link, plus the fp32
+        # precision pair the SPIR-V JIT image is generated with (ADR-1367),
+        # which adds no device target; only MSVC's link.exe, which cannot use
+        # either, swaps them for the device link (ADR-1364).
         self.assertIn(
-            "sycl_link_args = sycl_msvc_device_link ? ['/IGNORE:4078'] : ['-fsycl']", source
+            "sycl_link_args = sycl_msvc_device_link ? ['/IGNORE:4078'] : "
+            "(['-fsycl'] + sycl_fp32_prec_args)",
+            source,
         )
         self.assertIn("find_program('ocloc', required : false)", source)
         self.assertIn("files('sycl/check_aot_image.py')", source)

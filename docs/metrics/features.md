@@ -895,8 +895,10 @@ collapses the drift to ~1e-7. Min input dimension: 8×8 (host loop
 early-exits at each scale that drops below). The CUDA fatbin for
 the IIR kernel is built with `--fmad=false` so the recursive
 expression `n2*sum - d1*prev1 - prev2` keeps its CPU
-FMUL/FSUB ordering; SYCL relies on `-fp-model=precise` for the
-same effect. Cross-backend gate: CUDA on RTX 4070 lands at
+FMUL/FSUB ordering; SYCL gets the same from its strict FP line,
+which turns contraction off in every SYCL feature TU
+([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md)).
+Cross-backend gate: CUDA on RTX 4070 lands at
 `1.0e-6` on the normal pair and bit-exact (0.0) on both
 checkerboard pairs.
 

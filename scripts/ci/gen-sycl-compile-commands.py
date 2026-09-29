@@ -38,7 +38,12 @@ EXPECTED_ARGUMENT_COUNT = 2
 
 
 def clang_tidy_command(raw_command: str) -> str:
-    """Translate one icpx command into the stock-clang analyzer profile."""
+    """Translate one icpx command into the stock-clang analyzer profile.
+
+    `-foffload-fp32-prec-div` / `-foffload-fp32-prec-sqrt` (ADR-1367) only set
+    how the device rounds fp32 `/` and sqrt; stock clang rejects them as
+    unknown arguments, and the host analysis does not depend on them.
+    """
     command = re.sub(
         r"(?:/opt/intel/oneapi/compiler/[^/]+/bin/)?icpx\b",
         "clang++",
@@ -55,6 +60,7 @@ def clang_tidy_command(raw_command: str) -> str:
     )
     command = re.sub(r"\s+-Xs\s+'[^']*'", "", command)
     command = re.sub(r"\s+-Xs\s+\S+", "", command)
+    command = re.sub(r"\s+-foffload-fp32-prec-(?:div|sqrt)\b", "", command)
     command = re.sub(r"(\s+)-fp-model=", r"\1-ffp-model=", command)
     return re.sub(r"\s+-o\s+\S+", "", command)
 

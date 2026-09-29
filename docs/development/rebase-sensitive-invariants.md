@@ -95,8 +95,9 @@ linked AGENTS.md before resolving conflicts.
   ~1M params; feeds `tools/vmaf-perShot` CRF predictor.
 - **SYCL SpEED device-resident pipeline ([ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md))**:
   every SpEED kernel lives in `core/src/feature/sycl/speed_sycl_pipeline.cpp`
-  and reproduces `speed.c` operation for operation; the SpEED TUs build with
-  `-ffp-contract=off` (`sycl_exact_fp_args`), divide and take square
+  and reproduces `speed.c` operation for operation; like every SYCL feature
+  TU the SpEED TUs build with contraction off (`sycl_strict_fp_args`,
+  ADR-1367), divide and take square
   roots through `div_rn()` / `sqrt_rn()`, and never wait on the queue
   mid-frame. `core/test/test_sycl_kernel_source_contract.py` guards the
   layout; `scripts/dev/speed_gpu_parity.py --backend sycl` re-checks bit
@@ -105,8 +106,8 @@ linked AGENTS.md before resolving conflicts.
   `ssimulacra2_sycl.cpp` runs the whole frame on the device and reads one
   block of per-scale sums in `collect()`; its SSIM / edge sums are exact fp32
   pairs over a fixed tree (within about 1e-11 of the CPU). The exact-fp
-  helpers live in `core/src/feature/sycl/sycl_exact_fp.h`, and every TU using
-  them is listed in `sycl_exact_fp_sources` (contraction off).
+  helpers live in `core/src/feature/sycl/sycl_exact_fp.h` and need
+  contraction off, which every SYCL feature TU has (ADR-1367).
   `integer_ms_ssim_sycl.cpp` enqueues every scale in `submit()` into its own
   partials span and waits once. `core/test/test_sycl_kernel_source_contract.py`
   guards all of it; `scripts/dev/speed_gpu_parity.py --backend sycl --feature
@@ -122,6 +123,20 @@ linked AGENTS.md before resolving conflicts.
   `speed/speed_score.cu` keeps its `__f*_rn` intrinsics and `--fmad=false`.
   `core/test/test_cuda_device_resident_contract.py` guards the design. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+- **SYCL strict FP line on every feature TU ([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md))**:
+  `core/src/meson.build` defines `sycl_strict_fp_args` once, between the
+  `BEGIN/END VMAF SYCL strict FP policy` markers: icpx gets
+  `-fp-model=precise -ffp-contract=off -foffload-fp32-prec-div
+  -foffload-fp32-prec-sqrt` in that order (precise implies contraction on, so
+  contraction-off must follow it), AdaptiveCpp `-ffp-contract=off`. Every
+  feature TU takes it through `sycl_feature_tail_args`; no TU gets a private
+  FP list. `sycl_link_args` also carries `sycl_fp32_prec_args` to every link
+  the icpx driver runs, because the SPIR-V JIT image is generated there;
+  dropping it leaves `-Dsycl_icpx_aot_targets=` builds with approximate `/`
+  and sqrt. The MSVC build's explicit device link (ADR-1364) generates every
+  image and takes `sycl_strict_fp_args` whole.
+  `core/test/test_strict_fp_compiler_args.py` executes the policy and
+  `test_sycl_fp_arith_contract` checks the device arithmetic.
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

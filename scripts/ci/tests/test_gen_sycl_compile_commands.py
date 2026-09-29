@@ -33,10 +33,15 @@ class ClangTidyCommandTests(unittest.TestCase):
             "/opt/intel/oneapi/compiler/2026/bin/icpx -fsycl "
             "-fsycl-targets=spir64_gen,spir64 -fno-sycl-rdc --offload-compress "
             "-Xsycl-target-backend=spir64_gen '-device pvc' -fp-model=precise "
+            "-ffp-contract=off -foffload-fp32-prec-div -foffload-fp32-prec-sqrt "
             "-pedantic -Wall -Wextra -Werror -c ../unit.cpp -o unit.o"
         )
 
         self.assertTrue(translated.startswith("clang++ "))
+        # ADR-1367: the device precision pair is icpx-only; contraction-off is
+        # a host-visible FP flag stock clang accepts, so it stays.
+        self.assertNotIn("-foffload-fp32-prec", translated)
+        self.assertIn("-ffp-contract=off", translated)
         self.assertNotIn("-fsycl", translated)
         self.assertNotIn("-fno-sycl-rdc", translated)
         self.assertNotIn("--offload-compress", translated)

@@ -582,7 +582,12 @@ static inline void dev_vif_stats_log_domain(int32_t sigma1_sq, int32_t sigma2_sq
 
     if (sigma12 > 0 && sigma1_sq != 0 && sigma2_sq != 0) {
         g = static_cast<float>(sigma12) / static_cast<float>(sigma1_sq);
-        sv_sq = static_cast<float>(sigma2_sq) - g * static_cast<float>(sigma12);
+        /* The CPU evaluates `sigma2_sq - g * sigma12` in fp64 (integer_vif.c).
+         * One fp32 rounding is the nearest this fp64-free kernel (ADR-0220)
+         * gets to it, so the fused form is written out: the TU compiles with
+         * contraction off (ADR-1367), and a separately rounded product moved
+         * the vif scores 6x further from the CPU on the Netflix pair. */
+        sv_sq = sycl::fma(-g, static_cast<float>(sigma12), static_cast<float>(sigma2_sq));
         if (sv_sq < 0.0f)
             sv_sq = 0.0f;
         g = sycl::fmin(g, vif_enhn_gain_limit);
