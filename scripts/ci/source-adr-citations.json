@@ -7846,6 +7846,20 @@
       },
       "target": "1365-sycl-twin-cpu-option-parity.md"
     },
+    "1368": {
+      "sites": {
+        ".github/workflows/docker-publish-production.yml": 2,
+        "dev/scripts/fetch-intel-neo.py": 1,
+        "docker/Dockerfile.node": 1,
+        "docker/Dockerfile.production-gpu": 7,
+        "scripts/ci/check-base-image-single-source.sh": 3,
+        "scripts/ci/install-intel-ocloc.sh": 2,
+        "scripts/ci/install-intel-oneapi.sh": 2,
+        "scripts/ci/tests/test_base_image_single_source.py": 1,
+        "scripts/release/tests/test-docker-image-runtime-contract.sh": 2
+      },
+      "target": "1368-oneapi-release-image-debian13.md"
+    },
     "1371": {
       "sites": {
         "core/src/feature/sycl/integer_motion_pipeline_sycl.h": 1,
