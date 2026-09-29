@@ -70,6 +70,10 @@ Per-frame JSON at `--precision max`, JIT build against the compressed AOT build,
 
 The SYCL test suite (`--suite sycl`, 49 tests) gives the same result for both builds: 48 pass on the UHD 770 and 46 on the B580. The failures are the same in both: `test_sycl_adm_tiny_frames` on both devices and the two `psnr_hvs` parity tests on the B580, all open on `fix/sycl-b580-psnr-hvs-adm-tiny`.
 
+### Production oneAPI image
+
+`docker/Dockerfile.production-gpu --target final-oneapi2025` builds with the change: the `intel/oneapi-basekit` 2025.3.2 builder installs ocloc through `scripts/ci/install-intel-ocloc.sh`, icpx 2025.3.2 compiles all 19 targets, and the image check passes under the image's Python 3.12 through the `zstd` command-line fallback. The `intel/oneapi-runtime` 2025.3.1 runtime loads the compressed images: on the UHD 770 the default model's first two frames take 240 ms against 761 ms for the master image (one cold run each), with the same score (92.632448). On the B580 both images segfault on the first kernel (`T-RELEASE-ONEAPI-IMAGE-B580-SIGSEGV-2026-09-29`), which predates this change; that runtime carries compute-runtime 25.18 and IGC 2.11.
+
 ## Reproducer
 
 ```bash
