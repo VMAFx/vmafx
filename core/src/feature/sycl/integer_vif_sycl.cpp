@@ -98,7 +98,9 @@ constexpr unsigned vif_min_dim()
         const unsigned rd_half = (unsigned)vif_fwidth_rd[scale] / 2U;
         const unsigned filter_need = (half + 1U) << scale;
         const unsigned rd_need = (vif_fwidth_rd[scale] > 0) ? (rd_half + 1U) << scale : 1U;
-        min_dim = std::max({min_dim, filter_need, rd_need});
+        // Parenthesised: windows.h, pulled in by the SYCL headers under
+        // MSVC, defines a function-like max macro.
+        min_dim = (std::max)({min_dim, filter_need, rd_need});
     }
     return min_dim;
 }

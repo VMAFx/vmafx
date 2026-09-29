@@ -213,7 +213,7 @@ The same comparison shows `motion_sycl` 1.22e-4 from the CPU at 17x17
 (motion2 5.75), shrinking to 4e-6 at 576x324, identical on master and on this
 branch; its root cause is open (`T-SYCL-MOTION-TINY-FRAME-PARITY-2026-09-29`).
 
-### 8. The psnr_hvs gate tolerance scales with the CPU's sum length (maintainer decision)
+### 8. psnr_hvs gate tolerance scales with the CPU's sum length (maintainer)
 
 On 2026-09-29 the maintainer chose an area-scaled tolerance over emulating the
 CPU's summation order. [ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)

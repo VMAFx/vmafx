@@ -54762,6 +54762,15 @@ API, numerical or FFmpeg rebase impact.
   `metric_delta()` are shared by both gates (ADR-1361). A new psnr_hvs
   tolerance in `FEATURE_TOLERANCE` or the calibration table is the 576x324
   contract; do not pre-scale it.
+- `.standards-baseline.json` was re-recorded downward, 201 -> 190, from a
+  clean clone with the pinned engine (`f41e74d8f`), and the README debt line
+  follows. The baseline is keyed `file:line` (cordanaLLM/praetor#29), so the
+  include and comment lines added to `integer_adm_sycl.cpp` moved its seven
+  pre-existing HISS-04 functions without changing them; `collect_fex_sycl`
+  grew 125 -> 126 lines for the fail-closed graph wait. The other eleven
+  removed entries were debt `master` had already paid down. A rebase that
+  moves lines in that file re-records again the same way; never with
+  `--allow-increase`.
 
 No public API, CLI syntax or FFmpeg patch impact. Scores are bit-identical to
 the previous kernels wherever those ran, except `vif_sycl` scales 1-3 on
