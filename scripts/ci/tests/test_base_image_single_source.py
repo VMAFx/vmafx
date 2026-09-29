@@ -178,6 +178,30 @@ class BaseImageGate(unittest.TestCase):
         output = self.check(BASE.format(pin=self.pin), 1)
         self.assertIn("CUDA_RUNTIME must equal DEV_BASE", output)
 
+    def test_oneapi_bases_must_equal_the_release_builder_base(self) -> None:
+        """ADR-1368: the oneAPI image builds and runs on the release track's Debian 13."""
+        config_path = self.repo / "build-config.env"
+        config = config_path.read_text(encoding="utf-8")
+        self.check(BASE.format(pin=self.pin), 0)
+        vendor_image = "intel/oneapi-runtime:2026.0.0-0-devel-ubuntu24.04@sha256:" + "0" * 64
+        for key, value in (
+            ("ONEAPI_BUILDER", self.pin[:-1] + ("0" if self.pin[-1] != "0" else "1")),
+            ("ONEAPI_RUNTIME", vendor_image),
+        ):
+            with self.subTest(key=key):
+                current = next(line for line in config.splitlines() if line.startswith(f'{key}="'))
+                config_path.write_text(
+                    config.replace(current, f'{key}="{value}"', 1), encoding="utf-8"
+                )
+                self.run_command([GIT, "add", "--", "build-config.env"], check=True)
+                output = self.check(BASE.format(pin=self.pin), 1)
+                self.assertIn(f"{key} must equal RELEASE_BUILDER_BASE", output)
+        config_path.write_text(config, encoding="utf-8")
+
+    def test_distro_exemption_list_is_empty(self) -> None:
+        gate = (ROOT / GATE).read_text(encoding="utf-8")
+        self.assertIn('distro_exempt=" "\n', gate)
+
 
 if __name__ == "__main__":
     unittest.main()

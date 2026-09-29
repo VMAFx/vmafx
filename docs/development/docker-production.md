@@ -42,14 +42,22 @@ docker run --rm \
 | `vX.Y.Z-server` | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~1.1 GB unpacked, ~283 MB compressed |
 | `vX.Y.Z-cuda13` | amd64 | CUDA 13 runtime added | ~313 MB unpacked, ~100 MB compressed |
 | `vX.Y.Z-rocm10` | amd64 | ROCm 10 HIP runtime added | ~29 GB unpacked, ~8.3 GB compressed |
-| `vX.Y.Z-oneapi2025` | amd64 | Intel oneAPI 2025 SYCL runtime added | ~5.8 GB unpacked, ~1.4 GB compressed |
+| `vX.Y.Z-oneapi2026` (also `vX.Y.Z-oneapi2025`) | amd64 | Intel oneAPI 2026.1 SYCL runtime and Intel GPU compute runtime added | ~2.4 GB unpacked, ~0.6 GB compressed |
 
 The CPU CLI uses `gcr.io/distroless/cc-debian13:nonroot`, matching its Debian 13
 builder ABI. The server uses the official Python 3.14 slim image (also Debian 13)
 because a virtualenv requires its matching interpreter and standard library. The
 CUDA variant uses the same digest-pinned Ubuntu 26.04 base for its builder and
-runtime and installs exact NVIDIA apt packages in each stage. The other GPU
-variants use their vendors' pinned runtime families.
+runtime and installs exact NVIDIA apt packages in each stage. The ROCm variant
+uses AMD's pinned image. The oneAPI variant uses `debian:13-slim`, the CPU
+image's builder base, for both its builder and its runtime, and installs exact
+Intel packages in each stage; see [oneAPI 2026.1](#oneapi-20261-sycl-intel-arc).
+
+Releases up to v1.0.0-rc.2 published the oneAPI image only as `-oneapi2025`.
+Later releases publish the same image under both `-oneapi2026` and
+`-oneapi2025`, so scripts that name the old suffix keep working. Use
+`-oneapi2026` in new scripts: the older suffix is kept for compatibility and
+will be retired only by a release that announces a breaking change.
 
 ## Recovering a published image set
 
@@ -129,19 +137,34 @@ docker run --rm \
 
 Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>` accessible.
 
-### oneAPI 2025.3 (SYCL / Intel Arc)
+### oneAPI 2026.1 (SYCL, Intel Arc)
 
-The image is compiled in Intel's oneAPI Base Toolkit container tagged 2025.3.2
-and runs on Intel's oneAPI Runtime 2025.3.1 image. Intel has not published a matching
-`oneapi-runtime:2025.3.2-0-devel-ubuntu24.04` tag, so the release keeps the
-runtime on the latest available 2025.3 patch.
+The image is built and run on Debian 13, the base of the CPU image. Everything
+Intel-specific is installed from pinned packages, with the versions set in
+`build-config.env`:
+
+| Component | Where it comes from | Pin |
+|-----------|---------------------|-----|
+| oneAPI DPC++/C++ compiler (builder) and SYCL runtime (image) | Intel's oneAPI apt repository | `ONEAPI_APT_VERSION` (2026.1.1-325) |
+| Unified Memory Framework (`libumf.so.1`) | Intel's oneAPI apt repository | `ONEAPI_UMF_APT_VERSION` |
+| GPU compute runtime: Level Zero GPU driver, OpenCL ICD, IGC, gmmlib | the `intel/compute-runtime` GitHub release | `INTEL_NEO_VERSION` (26.35.39758.10) |
+| Level Zero loader (`libze_loader.so.1`) | the `oneapi-src/level-zero` GitHub release | `LEVEL_ZERO_VERSION` |
+
+The GPU compute runtime is the part the host does not provide: the host
+supplies only the kernel driver (`i915` or `xe`) and the device node. Releases
+up to v1.0.0-rc.2 shipped the compute runtime of Intel's
+`oneapi-runtime:2025.3.1` image (version 25.18). On an Arc B580 it crashed
+every `--backend sycl` run with a segmentation fault (exit code 139) right after
+device selection, while an Arc A380 and a UHD 770 worked. The image now carries
+the same compute runtime as the development container.
 
 `vmaf --version` loads only the libraries `vmaf` links directly. It does not
 load the oneAPI Unified Runtime adapters, which SYCL opens with `dlopen()`
 when it looks for a device. The `v1.0.0-rc.1` image passed `--version` while
 every adapter failed to load for want of `libumf.so.1`: SYCL reported "No
 device of requested type available" and `--backend sycl` exited with code
-`100`. The publication smoke test now also checks the adapters with `ldd`.
+`100`. The image build and the publication smoke test now check the adapters
+with `ldd`.
 
 Pass the render node and the host's `render` group by numeric ID, as for
 ROCm:
@@ -153,7 +176,7 @@ docker run --rm \
   --device "$render" \
   --group-add "$(getent group render | cut -d: -f3)" \
   -v /path/to/videos:/data:ro \
-  ghcr.io/vmafx/vmafx:$tag-oneapi2025 \
+  ghcr.io/vmafx/vmafx:$tag-oneapi2026 \
   --backend sycl \
   --reference /data/ref.yuv --distorted /data/dis.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -162,6 +185,27 @@ docker run --rm \
 ```
 
 Requires: `i915` or `xe` kernel module loaded and `/dev/dri/renderD<N>` accessible.
+With more than one Intel GPU, pick one with `ONEAPI_DEVICE_SELECTOR`, for
+example `-e ONEAPI_DEVICE_SELECTOR=level_zero:0`.
+
+On Windows, Docker Desktop's WSL 2 backend exposes the GPUs through
+`/dev/dxg` instead of a render node, and the GPU driver's user-space half
+lives in the host's `/usr/lib/wsl/lib`. Pass both, and append that directory to
+the image's library path:
+
+```bash
+docker run --rm \
+  --device /dev/dxg \
+  -v /usr/lib/wsl:/usr/lib/wsl:ro \
+  -e LD_LIBRARY_PATH=/usr/local/lib:/opt/intel/oneapi/redist/lib:/opt/intel/oneapi/umf/latest/lib:/usr/lib/wsl/lib \
+  -e ONEAPI_DEVICE_SELECTOR=level_zero:0 \
+  -v /path/to/videos:/data:ro \
+  ghcr.io/vmafx/vmafx:$tag-oneapi2026 \
+  --backend sycl \
+  --reference /data/ref.yuv --distorted /data/dis.yuv \
+  --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+  --output /dev/stdout
+```
 
 ## MCP server variant
 
@@ -258,6 +302,17 @@ docker buildx build \
   -f docker/Dockerfile.production-gpu \
   -t vmafx:test-cuda13 \
   .
+
+# oneAPI variant. Its build looks up the Intel compute-runtime and Level Zero
+# releases through the GitHub API; the optional secret lifts the anonymous rate
+# limit. `final-oneapi2025` still names the same stage.
+GITHUB_TOKEN=$(gh auth token) docker buildx build \
+  --platform linux/amd64 \
+  --target final-oneapi2026 \
+  --secret id=github_token,env=GITHUB_TOKEN \
+  -f docker/Dockerfile.production-gpu \
+  -t vmafx:test-oneapi2026 \
+  .
 ```
 
 ## Architecture notes
@@ -275,8 +330,10 @@ Both Dockerfiles use a multi-stage build:
 5. **GPU builders/runtimes**: CUDA 13.4.2 uses the same digest-pinned Ubuntu 26.04
    base for its builder and runtime, installing exact NVIDIA apt packages in each
    stage. ROCm 10.0.0 uses AMD's `rocm/dev-ubuntu-26.04:10.0.0-full` image for
-   both its builder and runtime, and the Intel image uses the oneAPI basekit
-   image tagged 2025.3.2 with the latest published 2025.3.1 runtime. Every
+   both its builder and runtime. The Intel image uses `debian:13-slim` for both
+   and installs Intel's oneAPI 2026.1 compiler (builder) or runtime (image) at
+   one exact apt build, plus the pinned Intel GPU compute runtime and Level Zero
+   loader ([ADR-1368](../adr/1368-oneapi-release-image-debian13.md)). Every
    base-image reference is digest-pinned.
 
 Publishing a GitHub release drives the two Docker workflows through the

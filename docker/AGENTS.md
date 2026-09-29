@@ -33,7 +33,28 @@ toolkit/nvcc/cudart versions; a series-only apt package is not a pin.
 Renovate discovers `CUDA_VERSION` through the official NVIDIA redist HTML index
 (`custom.nvidia-cuda-redist`), never through `nvidia/cuda` Docker tags.
 
+oneAPI bases (ADR-1368): `ONEAPI_BUILDER` and `ONEAPI_RUNTIME` equal
+`RELEASE_BUILDER_BASE` exactly, digest included (gate). Never bring back
+`intel/oneapi-basekit` / `intel/oneapi-runtime`: 2025 images carry
+compute-runtime 25.18, which segfaulted every Arc B580 SYCL run; 2026 images
+cannot pair compiler + runtime on Debian 13 glibc.
+
 See [docs/development/base-images.md](../docs/development/base-images.md).
+
+## oneAPI production image (ADR-1368)
+
+`builder-oneapi2026` runs `scripts/ci/install-intel-oneapi.sh --mode=builder`,
+then `scripts/ci/install-intel-ocloc.sh --components build`. `final-oneapi2026`
+runs `--mode=runtime`, then `--components runtime`, then purges curl, gpg and
+python3 in same `RUN`. Versions come from `build-config.env` only
+(`ONEAPI_APT_VERSION`, `ONEAPI_UMF_APT_VERSION`,
+`INTEL_ONEAPI_APT_SIGNER_FINGERPRINT`, `INTEL_NEO_VERSION`, `LEVEL_ZERO_VERSION`).
+Load-bearing: NEO `runtime` set (B580 crash without it); `intel-oneapi-umf` in
+`ONEAPI_RUNTIME_APT_PACKAGES` (adapters need `libumf.so.1`); adapter `ldd`
+check; `ldd` + `--version` of `vmaf`; `USER 65532:65532`. `final-oneapi2025`
+stays alias stage; publish tags digest `-oneapi2026` and `-oneapi2025`
+(HISS-14). Retire alias only in breaking release with `!` + `Migration:` footer.
+`scripts/release/tests/test-docker-image-runtime-contract.sh` pins all of it.
 
 ## FFmpeg stable-release mirror
 

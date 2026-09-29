@@ -152,22 +152,20 @@ expect_equal() {
 }
 expect_equal CUDA_BUILDER DEV_BASE
 expect_equal CUDA_RUNTIME DEV_BASE
+# The oneAPI release image builds and runs on the release track's Debian 13 and
+# installs Intel's compiler, runtime and GPU stack from pinned packages
+# (ADR-1368); Intel's own images cannot pair a 2026 compiler and runtime on
+# Debian 13's glibc. A vendor image here again is the drift ADR-1368 removed.
+expect_equal ONEAPI_BUILDER RELEASE_BUILDER_BASE
+expect_equal ONEAPI_RUNTIME RELEASE_BUILDER_BASE
 
 # No release image may sit on a distro the release track has moved off.
 #
-# ONEAPI_BUILDER / ONEAPI_RUNTIME are exempt for exactly one PR. Crossing them
-# to 2026 is a restructure rather than a pin swap -- the SYCL soname goes
-# .so.8 -> .so.9 so both sides must move together, Intel's 2026 images are
-# Ubuntu-only and their glibc is newer than Debian 13's, and Intel's runtime
-# image carries the NEO GPU driver that Debian does not package. The follow-up
-# moves both to Intel's apt repo on Debian 13 with NEO from
-# dev/scripts/fetch-intel-neo.py, and deletes this exemption. See the oneAPI
-# block in build-config.env for the measurements.
-#
 # The exemption list is empty: every image pin is on the current distro. Keep it
 # that way -- an entry here means a release image is shipping on a base the tree
-# has moved off, which is the drift this gate exists to prevent.
-distro_exempt=" ONEAPI_BUILDER ONEAPI_RUNTIME "
+# has moved off, which is the drift this gate exists to prevent. The last
+# entries, ONEAPI_BUILDER and ONEAPI_RUNTIME, left with ADR-1368.
+distro_exempt=" "
 for key in "${image_keys[@]}"; do
   val="${!key:-}"
   case "$distro_exempt" in

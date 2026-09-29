@@ -7,7 +7,7 @@
 #   --target node-cpu    : CPU-only node worker (explicit target; smallest image)
 #   --target node-cuda   : CUDA 13 node worker (NVENC + GPU scoring)
 #   --target node-rocm   : ROCm 10 node worker (AMF + HIP scoring)
-#   --target node-sycl   : Intel oneAPI 2025 node worker (QSV + SYCL scoring)
+#   --target node-sycl   : Intel oneAPI 2026 node worker (QSV + SYCL scoring)
 #
 # Every target includes:
 #   - vmafx-node Go binary (cmd/vmafx-node)
@@ -50,7 +50,7 @@ ARG RCLONE_IMAGE="rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97"
 ARG CUDA_RUNTIME="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"
 ARG ROCM_RUNTIME="rocm/dev-ubuntu-26.04:10.0.0-full@sha256:8ebc02ee1aefb6b7c0e952b4088542133bad8805d19730db92cc61be673421d1"
-ARG ONEAPI_RUNTIME="intel/oneapi-runtime:2025.3.1-0-devel-ubuntu24.04@sha256:8942e89b6e6e0cd9a4ca26f12fd4b32a2f0dd1de7e631ea59101a183878d660f"
+ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 
 # Vendor runtime libraries as named stages: a digest-pinned
 # `COPY --from=<image>` is a base-image pin that no FROM-oriented search
@@ -60,7 +60,14 @@ COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/
 RUN /tmp/install-cuda-toolkit.sh --mode=runtime /tmp \
     && rm -rf /tmp/install-cuda-toolkit.sh /tmp/build-config.env /var/lib/apt/lists/*
 FROM ${ROCM_RUNTIME} AS rocm-runtime-libs
+# ONEAPI_RUNTIME is the release track's Debian 13; Intel's SYCL runtime comes
+# from its apt repository at the build-config.env pin (ADR-1368), the same
+# installer the oneAPI production image's final stage runs.
 FROM ${ONEAPI_RUNTIME} AS oneapi-runtime-libs
+COPY build-config.env /tmp/vmafx/build-config.env
+COPY scripts/ci/install-intel-oneapi.sh /tmp/vmafx/scripts/ci/install-intel-oneapi.sh
+RUN bash /tmp/vmafx/scripts/ci/install-intel-oneapi.sh --mode=runtime /tmp/vmafx \
+    && rm -rf /tmp/vmafx /var/lib/apt/lists/*
 FROM ${RCLONE_IMAGE} AS rclone-bin
 
 FROM ${RELEASE_BUILDER_BASE} AS vmaf-builder
@@ -435,7 +442,7 @@ USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
 
 # ---------------------------------------------------------------------------
-# Stage 9 (target: node-sycl) — Intel oneAPI 2025 node worker (SYCL scoring)
+# Stage 9 (target: node-sycl) — Intel oneAPI 2026 node worker (SYCL scoring)
 # ---------------------------------------------------------------------------
 FROM runtime-base AS node-sycl
 
@@ -446,8 +453,8 @@ COPY --from=ffmpeg-builder-cpu /ffmpeg-install/lib/libsw*.so*  /usr/local/lib/
 COPY --from=ffmpeg-builder-cpu /ffmpeg-install/runtime-libs/ /usr/local/lib/
 
 # Intel oneAPI SYCL + Level Zero runtime
-COPY --from=oneapi-runtime-libs /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
-COPY --from=oneapi-runtime-libs /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=oneapi-runtime-libs /opt/intel/oneapi/redist/lib/libsycl.so*   /usr/local/lib/
+COPY --from=oneapi-runtime-libs /opt/intel/oneapi/redist/lib/libOpenCL.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 

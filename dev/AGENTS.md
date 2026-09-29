@@ -87,7 +87,9 @@ silently falls back to CPU. Two hard pins live in
   verified against published sha256 checksums at build time by
   `dev/scripts/fetch-intel-neo.py`. CI SYCL build hosts install same
   release's ocloc via `scripts/ci/install-intel-ocloc.sh`
-  (`--components ocloc`). `intel-ocloc` load-bearing: icpx runs `ocloc`
+  (`--components ocloc`); oneAPI release image uses same script with
+  `--components build` / `runtime` (ADR-1368) = same fetcher, same package
+  set as this Containerfile. `intel-ocloc` load-bearing: icpx runs `ocloc`
   for SYCL `spir64_gen` AOT; no ocloc -> `meson setup` refuses. IGC debs
   land in `/usr/local/lib`, no ldconfig trigger -> keep `ldconfig` after
   NEO install.

@@ -11,6 +11,12 @@ pinned intel/compute-runtime release tag. See ADR-1145.
 host needs to run SYCL kernels plus the ocloc offline compiler. ``--components
 ocloc`` fetches only ocloc and the IGC libraries it loads, which is what a build
 host needs for icpx SYCL ahead-of-time compilation (ADR-1360).
+
+``--level-zero-ver`` also fetches the Level Zero loader (``libze1``, plus
+``libze-dev`` with ``--level-zero-dev``) from that oneapi-src/level-zero
+release. The loader is not part of compute-runtime, and that release publishes
+no checksum file, so each deb is checked against the SHA-256 digest GitHub
+records for the release asset (ADR-1368).
 """
 
 from __future__ import annotations
@@ -266,6 +272,12 @@ def _package_version(name: str, pattern: str) -> str:
 
 COMPONENTS = ("runtime", "ocloc")
 
+# The Level Zero release builds its debs per Ubuntu release. The u24.04 build
+# needs glibc 2.39, so it also installs on Debian 13 (glibc 2.41) and Ubuntu
+# 26.04, the two bases that install it; dev/Containerfile uses the same build.
+LEVEL_ZERO_DISTRO = "u24.04"
+SHA256_DIGEST = re.compile(r"sha256:([0-9a-f]{64})")
+
 
 @dataclass(frozen=True)
 class StackAssets:
@@ -429,8 +441,69 @@ def _write_checksum_audit(
             stream.write(f"{checksums[deb_name]}  {deb_name}\n")
 
 
+def level_zero_packages(dev: bool) -> tuple[str, ...]:
+    """Return the Level Zero loader packages to fetch: runtime, plus headers when asked."""
+    return ("libze1", "libze-dev") if dev else ("libze1",)
+
+
+def _resolve_level_zero(
+    document: dict[str, Any], version: str, packages: tuple[str, ...], source: str
+) -> tuple[list[tuple[str, str]], dict[str, str]]:
+    """Pick the loader debs of one level-zero release and the digests GitHub records for them."""
+    records = document.get("assets")
+    if not isinstance(records, list):
+        _fatal(f"release metadata from {source} has an invalid assets field")
+    by_name = {
+        record.get("name"): record
+        for record in records
+        if isinstance(record, dict) and isinstance(record.get("name"), str)
+    }
+    targets: list[tuple[str, str]] = []
+    checksums: dict[str, str] = {}
+    for package in packages:
+        name = f"{package}_{version}+{LEVEL_ZERO_DISTRO}_amd64.deb"
+        record = by_name.get(name)
+        if record is None:
+            _fatal(f"no {name} asset in level-zero release {version}")
+        url = record.get("browser_download_url")
+        digest = record.get("digest")
+        if not isinstance(url, str) or not isinstance(digest, str):
+            _fatal(f"release metadata from {source} gives {name} no URL or no digest")
+        match = SHA256_DIGEST.fullmatch(digest)
+        if match is None:
+            _fatal(f"release metadata from {source} gives {name} a non-SHA-256 digest {digest!r}")
+        _validate_https_url(url)
+        try:
+            url_name = _asset_filename(url)
+        except ValueError as error:
+            _fatal(f"release metadata from {source} contains an invalid asset: {error}")
+        if url_name != name:
+            _fatal(
+                f"release metadata from {source} names {name!r} but its URL ends in {url_name!r}"
+            )
+        targets.append((name, url))
+        _record_checksum(checksums, name, match.group(1), source)
+    return targets, checksums
+
+
+def _fetch_level_zero(
+    version: str, output_dir: Path, token: str | None, dev: bool
+) -> tuple[list[tuple[str, str]], dict[str, str]]:
+    source = f"https://api.github.com/repos/oneapi-src/level-zero/releases/tags/v{version}"
+    print(f"Querying Level Zero loader release metadata for v{version}...")
+    document = _decode_json(make_request(source, token=token), source)
+    targets, checksums = _resolve_level_zero(document, version, level_zero_packages(dev), source)
+    _download_and_verify(output_dir, targets, checksums, token)
+    return targets, checksums
+
+
 def resolve_and_fetch(
-    neo_ver: str, output_dir: Path, token: str | None = None, components: str = "runtime"
+    neo_ver: str,
+    output_dir: Path,
+    token: str | None = None,
+    components: str = "runtime",
+    level_zero_ver: str | None = None,
+    level_zero_dev: bool = False,
 ) -> None:
     """Resolve deb URLs, download, and verify against published checksums."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -443,6 +516,12 @@ def resolve_and_fetch(
     checksums = _parse_checksums(make_request(stack.checksum[1], token=token), stack.checksum[1])
     _add_igc_checksums(checksums, stack, token)
     _download_and_verify(output_dir, targets, checksums, token)
+    if level_zero_ver:
+        loader_targets, loader_checksums = _fetch_level_zero(
+            level_zero_ver, output_dir, token, level_zero_dev
+        )
+        targets = [*targets, *loader_targets]
+        checksums = {**checksums, **loader_checksums}
     _write_checksum_audit(output_dir, targets, checksums)
     print(f"\nIntel NEO '{components}' deb packages downloaded and verified successfully.")
 
@@ -477,9 +556,29 @@ def main() -> None:
         ),
     )
 
+    parser.add_argument(
+        "--level-zero-ver",
+        default="",
+        help="Also fetch the Level Zero loader (libze1) from this oneapi-src/level-zero release",
+    )
+    parser.add_argument(
+        "--level-zero-dev",
+        action="store_true",
+        help="With --level-zero-ver, also fetch the loader's headers and link library (libze-dev)",
+    )
+
     args = parser.parse_args()
+    if args.level_zero_dev and not args.level_zero_ver:
+        parser.error("--level-zero-dev needs --level-zero-ver")
     token = args.github_token.strip() or None
-    resolve_and_fetch(args.neo_ver, args.output_dir, token=token, components=args.components)
+    resolve_and_fetch(
+        args.neo_ver,
+        args.output_dir,
+        token=token,
+        components=args.components,
+        level_zero_ver=args.level_zero_ver.strip() or None,
+        level_zero_dev=args.level_zero_dev,
+    )
 
 
 if __name__ == "__main__":

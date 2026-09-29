@@ -491,8 +491,8 @@ repo or in CI secrets.
   alongside the PyPI artefact (Trusted Publishing, no token). See
   [ADR-0166](../adr/0166-mcp-server-release-channel.md).
 - **Production container images** (`ghcr.io/vmafx/vmafx:<tag>` and the
-  `-cuda13` / `-rocm10` / `-oneapi2025` / `-server` variants): cosign keyless
-  signature plus a GitHub-native build-provenance attestation
+  `-cuda13` / `-rocm10` / `-oneapi2026` (also tagged `-oneapi2025`) / `-server`
+  variants): cosign keyless signature plus a GitHub-native build-provenance attestation
   (`actions/attest-build-provenance`). See
   [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
 - **Go service images** (`ghcr.io/vmafx/vmafx-server:<tag>`,

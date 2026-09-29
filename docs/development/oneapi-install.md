@@ -43,6 +43,25 @@ sums, installs them and proves that ocloc can compile a kernel. Set
 CachyOS the `intel-compute-runtime` package ships `ocloc`. The `vmaf-dev-mcp`
 container already has it.
 
+`--components` widens the set to the rest of the pinned Intel GPU stack. The
+oneAPI release image uses both wider sets
+([ADR-1368](../adr/1368-oneapi-release-image-debian13.md)):
+
+| `--components` | Installs | For |
+| --- | --- | --- |
+| `ocloc` (default) | `intel-ocloc` and the two IGC packages | a build host that already has a Level Zero loader |
+| `build` | the `ocloc` set plus the Level Zero loader and its headers (`libze1`, `libze-dev`) at `LEVEL_ZERO_VERSION` | a build host with no other Level Zero source |
+| `runtime` | the whole compute runtime (Level Zero GPU driver, OpenCL ICD, gmmlib, IGC, `ocloc`), the set `vmaf-dev-mcp` installs, plus `libze1` | a host or image that runs SYCL kernels on an Intel GPU |
+
+The Level Zero loader release publishes no checksum file, so the script checks
+those debs against the SHA-256 digests GitHub records for the release assets.
+
+`scripts/ci/install-intel-oneapi.sh --mode=builder|runtime` installs the oneAPI
+compiler or its SYCL runtime from Intel's apt repository at the exact build
+`ONEAPI_APT_VERSION` in `build-config.env`, and trusts only the repository key
+named by `INTEL_ONEAPI_APT_SIGNER_FINGERPRINT`. The release image runs it on
+Debian 13; it works on any Debian or Ubuntu host.
+
 If you only need a SPIR-V build, for example to run clang-tidy, skip ocloc and
 configure with `-Dsycl_icpx_aot_targets=`: the binary then compiles its kernels
 at first launch instead.

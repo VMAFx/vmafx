@@ -238,12 +238,14 @@ six months later is the whole point. The gate rejects any entry without
 - **`docker/dev/*.Dockerfile`** pin Alpine, Arch and Fedora on purpose. They
   exist to prove the build survives distros the release track does not use, so
   unifying their bases would defeat them. The gate skips that directory.
-- **ROCm and oneAPI** are temporarily exempt from the "no Ubuntu 24.04" rule.
-  Each is a major SDK migration that needs matching source changes, not a pin
-  swap; both exemptions name their follow-up and delete themselves when it
-  lands. See
-  [ADR-1231](../adr/1231-base-image-single-source.md) and the
-  [research digest](../research/1231-base-image-single-source.md).
+- **No distro exemptions remain.** ROCm and oneAPI were once exempt from the
+  "no Ubuntu 24.04" rule because each needed an SDK migration, not a pin swap
+  ([ADR-1231](../adr/1231-base-image-single-source.md), [research
+  digest](../research/1231-base-image-single-source.md)). ROCm moved to its
+  Ubuntu 26.04 image; oneAPI moved to Debian 13 with Intel's apt packages, and
+  the gate requires `ONEAPI_BUILDER` and `ONEAPI_RUNTIME` to equal
+  `RELEASE_BUILDER_BASE`, as it requires the CUDA bases to equal `DEV_BASE`
+  ([ADR-1368](../adr/1368-oneapi-release-image-debian13.md)).
 
 ## Adding a new image
 

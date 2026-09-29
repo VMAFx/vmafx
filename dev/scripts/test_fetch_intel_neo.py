@@ -302,3 +302,74 @@ def test_checksum_mismatch_removes_untrusted_download(
         )
 
     assert not package_path.exists()
+
+
+def _level_zero_asset(name: str, digest: str = "sha256:" + "d" * 64) -> dict[str, str]:
+    return {
+        "name": name,
+        "browser_download_url": (
+            "https://github.com/oneapi-src/level-zero/releases/download/v1.34.0/"
+            + name.replace("+", "%2B")
+        ),
+        "digest": digest,
+    }
+
+
+def test_level_zero_resolution_takes_loader_debs_and_github_digests() -> None:
+    names = (
+        "libze1_1.34.0+u22.04_amd64.deb",
+        "libze1_1.34.0+u24.04_amd64.deb",
+        "libze1_1.34.0+u24.04_amd64.deb.sig",
+        "libze-dev_1.34.0+u24.04_amd64.deb",
+        "level-zero-win-sdk-1.34.0.zip",
+    )
+    document = {"assets": [_level_zero_asset(name) for name in names]}
+
+    runtime, runtime_sums = fetch_intel_neo._resolve_level_zero(
+        document, "1.34.0", fetch_intel_neo.level_zero_packages(dev=False), "fixture"
+    )
+    build, build_sums = fetch_intel_neo._resolve_level_zero(
+        document, "1.34.0", fetch_intel_neo.level_zero_packages(dev=True), "fixture"
+    )
+
+    assert [name for name, _url in runtime] == ["libze1_1.34.0+u24.04_amd64.deb"]
+    assert runtime_sums == {"libze1_1.34.0+u24.04_amd64.deb": "d" * 64}
+    assert [name for name, _url in build] == [
+        "libze1_1.34.0+u24.04_amd64.deb",
+        "libze-dev_1.34.0+u24.04_amd64.deb",
+    ]
+    assert set(build_sums) == {name for name, _url in build}
+
+
+def test_level_zero_release_without_the_loader_deb_is_fatal() -> None:
+    document = {"assets": [_level_zero_asset("libze1_1.34.0+u22.04_amd64.deb")]}
+
+    with pytest.raises(SystemExit, match="1"):
+        fetch_intel_neo._resolve_level_zero(document, "1.34.0", ("libze1",), "fixture")
+
+
+def test_level_zero_asset_without_a_sha256_digest_is_fatal() -> None:
+    name = "libze1_1.34.0+u24.04_amd64.deb"
+    for digest in ("", "md5:" + "d" * 32, "sha256:" + "d" * 63, "sha256:" + "D" * 64):
+        document = {"assets": [_level_zero_asset(name, digest)]}
+        with pytest.raises(SystemExit, match="1"):
+            fetch_intel_neo._resolve_level_zero(document, "1.34.0", ("libze1",), "fixture")
+
+
+def test_level_zero_asset_url_must_name_the_same_file() -> None:
+    record = _level_zero_asset("libze1_1.34.0+u24.04_amd64.deb")
+    record["browser_download_url"] = (
+        "https://github.com/oneapi-src/level-zero/releases/download/v1.34.0/other.deb"
+    )
+
+    with pytest.raises(SystemExit, match="1"):
+        fetch_intel_neo._resolve_level_zero({"assets": [record]}, "1.34.0", ("libze1",), "fixture")
+
+
+def test_level_zero_dev_without_a_version_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["fetch-intel-neo.py", "--neo-ver", "1", "--level-zero-dev"])
+
+    with pytest.raises(SystemExit, match="2"):
+        fetch_intel_neo.main()

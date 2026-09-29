@@ -54934,3 +54934,23 @@ bit-identical. `motion_v2_sycl` scores are unchanged.
   `/dev/zero` and FIFO cases for native Windows binaries, and
   `core/test/dnn/meson.build` refuses the WSL `bash.exe` launcher. Keep them
   platform-neutral when rebasing those tests.
+## ADR-1368 — oneAPI release image on Debian 13 with pinned Intel packages (2026-09-29)
+
+`docker/Dockerfile.production-gpu` builds `builder-oneapi2026` and
+`final-oneapi2026` from `ONEAPI_BUILDER` / `ONEAPI_RUNTIME`, which
+`build-config.env` sets equal to `RELEASE_BUILDER_BASE`; the base-image gate now
+enforces that equality and its distro exemption list is empty. Keep the three
+installers in both stages: `scripts/ci/install-intel-oneapi.sh` (compiler or
+runtime at `ONEAPI_APT_VERSION`, UMF at `ONEAPI_UMF_APT_VERSION`, repository key
+pinned by `INTEL_ONEAPI_APT_SIGNER_FINGERPRINT`) and
+`scripts/ci/install-intel-ocloc.sh --components build|runtime` (NEO at
+`INTEL_NEO_VERSION`, Level Zero loader at `LEVEL_ZERO_VERSION`). Dropping the
+`runtime` NEO set brings back the Arc B580 segfault; dropping UMF brings back
+"No device of requested type available". `final-oneapi2025` stays as an alias
+stage and the publish workflow tags the digest both `-oneapi2026` and
+`-oneapi2025` (HISS-14); `test-docker-image-runtime-contract.sh` rejects losing
+either. `INTEL_UMF_RUNTIME_PACKAGE` and the Intel 2025 image pins are gone; do not
+restore them from an older branch. `docker/Dockerfile.node`'s
+`oneapi-runtime-libs` stage runs the same runtime installer and copies from
+`/opt/intel/oneapi/redist/lib`. No public API, CLI, numerical or FFmpeg patch
+impact; the image's scores match its CPU backend within the parity gate.

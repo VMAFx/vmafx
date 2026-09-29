@@ -93,6 +93,13 @@
   on identical chroma) (ADR-1361).
 
 
+- The oneAPI container image is published as `ghcr.io/vmafx/vmafx:<tag>-oneapi2026`,
+  named for the oneAPI release it now carries. The same image is also tagged
+  `<tag>-oneapi2025`, so existing scripts keep working, and the Dockerfile
+  stage `final-oneapi2025` still builds it. Prefer `-oneapi2026` and
+  `final-oneapi2026` in new scripts (ADR-1368).
+
+
 - **Four SYCL twins take the CPU extractor's options and match it
   (ADR-1365).** `psnr_sycl` now accepts `enable_mse`, `enable_apsnr`,
   `reduced_hbd_peak` and `min_sse` and matches `--backend cpu` bit for bit,
@@ -127,6 +134,19 @@
   name the backend that was initialised, even when nothing ran on it. It now
   names the device when at least one extractor ran there and `cpu` otherwise;
   the new `feature_backends` array says where each extractor ran.
+
+
+- The oneAPI container image no longer crashes on Arc B580 (Battlemage)
+  GPUs. Through v1.0.0-rc.2 it shipped the Intel GPU compute runtime of
+  Intel's `oneapi-runtime:2025.3.1` image (version 25.18), and every
+  `vmaf --backend sycl` run on a B580 ended with a segmentation fault (exit
+  code 139) right after device selection. Arc A380 and UHD 770 GPUs were not
+  affected. Replacing only that runtime with compute-runtime 26.35 stopped the
+  crash; replacing only the Level Zero loader did not. The image now builds and
+  runs on Debian 13, like the CPU image, with Intel's oneAPI 2026.1 compiler
+  and SYCL runtime from Intel's apt repository at one exact build, and with the
+  compute runtime (26.35.39758.10) and Level Zero loader (1.34.0) that the
+  development container uses, all pinned in `build-config.env` (ADR-1368).
 
 
 - Release provenance for the native Linux files and the `vmaf-mcp` wheel and

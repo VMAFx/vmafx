@@ -12,8 +12,11 @@
 #     without an error when xxd is missing, so scoring without --model failed;
 #   * the oneAPI image found no SYCL device: its Unified Runtime adapters need
 #     libumf.so.1, which intel/oneapi-runtime does not ship.
+# The v1.0.0-rc.2 oneAPI image then segfaulted on every Arc B580 SYCL run: its
+# compute-runtime GPU driver was the 25.18 one intel/oneapi-runtime:2025.3.1
+# carried (ADR-1368).
 # This test pins the recipe fixes and the smoke checks that would have caught
-# both, and proves each assertion rejects the defect it guards against.
+# them, and proves each assertion rejects the defect it guards against.
 
 set -euo pipefail
 
@@ -70,17 +73,25 @@ def validate(texts: dict[str, str]) -> None:
                 )
 
     gpu_stages = stages(texts["docker/Dockerfile.production-gpu"])
-    oneapi = gpu_stages["final-oneapi2025"][1]
+    oneapi = gpu_stages["final-oneapi2026"][1]
     for snippet in (
-        '"${INTEL_UMF_RUNTIME_PACKAGE}"',
-        "/opt/intel/oneapi/umf/1.0/lib",
+        # Intel's SYCL runtime with UMF, at the compiler's exact apt build.
+        "install-intel-oneapi.sh --mode=runtime",
+        # The compute-runtime GPU driver at INTEL_NEO_VERSION (ADR-1368).
+        "install-intel-ocloc.sh --components runtime",
+        "/opt/intel/oneapi/umf/latest/lib",
         'ldd "${adapter}" | grep \'not found\'',
     ):
         if snippet not in oneapi:
-            raise AssertionError(f"final-oneapi2025 lacks {snippet!r}")
+            raise AssertionError(f"final-oneapi2026 lacks {snippet!r}")
+    if gpu_stages.get("final-oneapi2025", ("", ""))[0] != "final-oneapi2026":
+        raise AssertionError("final-oneapi2025 is no longer an alias of final-oneapi2026")
     config = texts["build-config.env"]
-    if not re.search(r'(?m)^INTEL_UMF_RUNTIME_PACKAGE="intel-oneapi-umf-1\.0=', config):
-        raise AssertionError("build-config.env does not pin the UMF 1.0 runtime package")
+    runtime_packages = re.search(r'(?m)^ONEAPI_RUNTIME_APT_PACKAGES="([^"]*)"', config)
+    if runtime_packages is None or "intel-oneapi-umf" not in runtime_packages.group(1).split():
+        raise AssertionError("build-config.env does not install UMF with the oneAPI runtime")
+    if not re.search(r'(?m)^ONEAPI_UMF_APT_VERSION="[0-9.]+-[0-9]+"', config):
+        raise AssertionError("build-config.env does not pin the UMF runtime package")
 
     # pkg/storage runs rclone for remote inputs (ADR-0719); the v1.0.0-rc.1
     # node image shipped without it although the storage guide promised it.
@@ -98,8 +109,12 @@ def validate(texts: dict[str, str]) -> None:
             f"{PRODUCTION}: expected default-model scoring in the CPU, GPU and "
             f"MCP smoke tests, found {production.count(SCORE_CHECK)}"
         )
-    if "libur_adapter_*.so.0" not in production or "needs.build-oneapi2025.outputs.digest" not in production:
+    if "libur_adapter_*.so.0" not in production or "needs.build-oneapi2026.outputs.digest" not in production:
         raise AssertionError(f"{PRODUCTION}: the oneAPI adapter check is missing")
+    # HISS-14: the pre-2026 tag suffix keeps resolving to the same image.
+    for suffix in ("-oneapi2026", "-oneapi2025"):
+        if f"type=raw,value=${{{{ env.PUBLISH_TAG }}}}{suffix}" not in production:
+            raise AssertionError(f"{PRODUCTION}: the oneAPI image is not tagged {suffix}")
     if texts[OPERATOR_NODE].count(SCORE_CHECK) != 2:
         raise AssertionError(
             f"{OPERATOR_NODE}: expected default-model scoring for vmafx-server and vmafx-node"
@@ -132,10 +147,29 @@ no_xxd["docker/Dockerfile.production"] = re.sub(
 expect_rejected("a libvmaf builder without xxd", no_xxd)
 
 no_umf = deepcopy(texts)
-no_umf["docker/Dockerfile.production-gpu"] = no_umf["docker/Dockerfile.production-gpu"].replace(
-    '"${INTEL_UMF_RUNTIME_PACKAGE}"', '"intel-oneapi-runtime-dpcpp-cpp"'
+no_umf["build-config.env"] = no_umf["build-config.env"].replace(
+    'ONEAPI_RUNTIME_APT_PACKAGES="intel-oneapi-runtime-dpcpp-cpp intel-oneapi-umf"',
+    'ONEAPI_RUNTIME_APT_PACKAGES="intel-oneapi-runtime-dpcpp-cpp"',
 )
 expect_rejected("a oneAPI runtime without UMF", no_umf)
+
+old_driver = deepcopy(texts)
+old_driver["docker/Dockerfile.production-gpu"] = old_driver[
+    "docker/Dockerfile.production-gpu"
+].replace("    && bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx \\\n", "")
+expect_rejected("a oneAPI runtime without the pinned GPU driver", old_driver)
+
+no_alias = deepcopy(texts)
+no_alias["docker/Dockerfile.production-gpu"] = no_alias["docker/Dockerfile.production-gpu"].replace(
+    "FROM final-oneapi2026 AS final-oneapi2025\n", ""
+)
+expect_rejected("a dropped final-oneapi2025 stage alias", no_alias)
+
+no_old_tag = deepcopy(texts)
+no_old_tag[PRODUCTION] = no_old_tag[PRODUCTION].replace(
+    "type=raw,value=${{ env.PUBLISH_TAG }}-oneapi2025", "", 1
+)
+expect_rejected("a dropped -oneapi2025 tag", no_old_tag)
 
 version_only = deepcopy(texts)
 version_only[PRODUCTION] = version_only[PRODUCTION].replace(SCORE_CHECK, "true", 1)
@@ -153,5 +187,8 @@ no_rclone["docker/Dockerfile.node"] = no_rclone["docker/Dockerfile.node"].replac
 )
 expect_rejected("a node runtime without rclone", no_rclone)
 
-print("PASS: images build their models in, the node bundles rclone, and the smoke tests load them")
+print(
+    "PASS: images build their models in, the oneAPI image carries its pinned GPU runtime, "
+    "the node bundles rclone, and the smoke tests load them"
+)
 PY
