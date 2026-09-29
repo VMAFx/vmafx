@@ -69,6 +69,10 @@ Storing `cur` from inside the kernel instead of the copy measured 0.517 ms and 6
 
 Running every geometry of the new test on one `VmafSyclState` scored 4x5 wrong after 3x3: `vmaf_sycl_shared_frame_init()` returns early once the shared buffers exist, so a second context importing the same state with a larger frame gets buffers sized for the first one. The test now opens a state per case; the library gap is `T-SYCL-SHARED-FRAME-GEOMETRY-REUSE-2026-09-29`.
 
+### `motion_add_uv` chroma geometry
+
+Reading `motion_configure_chroma()` for the staging change: the chroma size is `(w + 1) / 2` by `(h + 1) / 2` whatever the pixel format, so 4:2:2 and 4:4:4 input stage only part of each chroma plane. Not run; recorded as `T-SYCL-MOTION-ADD-UV-CHROMA-GEOMETRY-2026-09-29`.
+
 ## Conclusion
 
 The parity gap was the order of differencing and blurring, a leftover of the upstream motion rewrite that the GPU twins never followed. Sharing one diff-first kernel between `motion_sycl` and `motion_v2_sycl` makes both bit-exact at every size and depth measured, for a 4K SAD step about 11% slower; the `motion_add_uv` staging change removes the per-frame host wait. The CUDA, HIP and Metal `motion` twins need the same arithmetic.
