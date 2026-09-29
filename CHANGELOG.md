@@ -37,20 +37,6 @@
   `--threads` default, which is serial (`0`), not the host's core count.
 
 
-### Fixed
-
-- Release provenance for the native Linux files and the `vmaf-mcp` wheel and
-  sdist is a GitHub build-provenance attestation (SLSA v1 provenance
-  predicate, signed through Sigstore) instead of `slsa-github-generator`
-  output. The generator calls its own actions by tag, which the organisation's
-  SHA-pinning policy rejects, so the v1.0.0-rc.2 publication failed until the
-  policy was relaxed by hand. Releases now attach
-  `vmafx-build-provenance.sigstore.json` and `vmaf-mcp-provenance.sigstore.json`
-  in place of the `.intoto.jsonl` files; verify with
-  `gh attestation verify FILE --repo VMAFx/vmafx`, or offline with `--bundle`
-  (ADR-1356). PyPI's PEP 740 attestations are unchanged.
-### Changed
-
 - **The SYCL SpEED twins run entirely on the device and match the CPU bit for
   bit (ADR-1358).** `speed_chroma_sycl` and `speed_temporal_sycl` no longer
   filter, factorise the 25x25 covariance or wait on the queue on the host
@@ -79,6 +65,20 @@
   and configure stops with an explanation without it; configure with
   `-Dsycl_icpx_aot_targets=` for a SPIR-V-only build. On Linux the build fails
   if `libvmaf.so` lacks an image for any requested target (ADR-1360).
+
+
+### Fixed
+
+- Release provenance for the native Linux files and the `vmaf-mcp` wheel and
+  sdist is a GitHub build-provenance attestation (SLSA v1 provenance
+  predicate, signed through Sigstore) instead of `slsa-github-generator`
+  output. The generator calls its own actions by tag, which the organisation's
+  SHA-pinning policy rejects, so the v1.0.0-rc.2 publication failed until the
+  policy was relaxed by hand. Releases now attach
+  `vmafx-build-provenance.sigstore.json` and `vmaf-mcp-provenance.sigstore.json`
+  in place of the `.intoto.jsonl` files; verify with
+  `gh attestation verify FILE --repo VMAFx/vmafx`, or offline with `--bundle`
+  (ADR-1356). PyPI's PEP 740 attestations are unchanged.
 
 ## [1.0.0-rc.2] - 2026-09-28
 ### Changed
