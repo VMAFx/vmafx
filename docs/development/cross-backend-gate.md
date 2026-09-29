@@ -29,7 +29,7 @@ explicitly accepts its skip.
   | `vif`, `motion`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360 |
   | `float_ssim`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
-  | `psnr_hvs` | `5e-4` | ADR-0191 (DCT plus per-block float reduction) |
+  | `psnr_hvs` | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
 
 - **Backend pairs.** The script accepts `cpu`, `cuda`, and `sycl`; its command
@@ -39,6 +39,18 @@ explicitly accepts its skip.
 - **Per-device calibration.** `--gpu-id` selects the most-specific matching
   row in `scripts/ci/gpu_ulp_calibration.yaml`. If no row or feature override
   matches, the feature's built-in tolerance remains authoritative.
+
+- **Area-scaled `psnr_hvs`.** The CPU `psnr_hvs` adds every coefficient error
+  of a plane into one `float`, so its rounding error, and the achievable
+  CPU/GPU agreement, grows with the number of 8x8 blocks. Both
+  `cross_backend_parity_gate.py` and `cross_backend_vif_diff.py` take the
+  `psnr_hvs` tolerance from the table or calibration row as the contract at
+  576x324 and multiply it by √(N / N₅₇₆ₓ₃₂₄) for larger fixtures, where N is
+  the luma plane's term count (64 per block, a block every 7 pixels). Frames
+  of 576x324 or smaller keep `5e-4`; 1920x1080 gets `1.67e-3` and 3840x2160
+  `3.34e-3`. The label in the output shows the factor, for example
+  `default+area x6.69`. [ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)
+  derives the factor from the float-accumulation bound.
 
 - **FP16 features.** Names passed through `--fp16-features` use the `1e-2`
   FP16 absolute-tolerance contract.

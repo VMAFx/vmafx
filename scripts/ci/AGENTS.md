@@ -522,6 +522,17 @@ Enforced by `test_calibration.py`. Future PR
 existing CI lanes not passing `--gpu-id` will silently change
 behaviour.
 
+**Area-scaled features (ADR-1361).** The resolved tolerance (table
+default or calibration row) = contract at 576x324. For features in
+`AREA_SCALED_FEATURES` (`psnr_hvs`: CPU sums a whole plane in one
+float) both gates multiply it by `area_tolerance_factor(feature, w, h)`
+= √(N / N₅₇₆ₓ₃₂₄) above the reference term count, 1 at or below it.
+Never loosens or tightens small fixtures. FP16 contract stays
+absolute. Both gates compare metrics through `metric_delta()`: JSON
+`null` (non-finite score) on both sides = agreement, on one side =
+mismatch. Keep both helpers in `cross_backend_calibration.py`, the
+module both gates import; tests in `test_cross_backend_parity_gate.py`.
+
 ## When adding a new lane
 
 1. New `--feature` value → add to `FEATURE_METRICS` in *both*

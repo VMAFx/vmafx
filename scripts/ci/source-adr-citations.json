@@ -1029,6 +1029,7 @@
         "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
         "core/src/feature/cuda/integer_psnr_hvs_cuda.h": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
+        "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/cross_backend_vif_diff.py": 1
       },
       "target": "0191-psnr-hvs-vulkan.md"
@@ -1334,6 +1335,7 @@
         "core/test/test_sycl_ms_ssim_parity.c": 1,
         "core/test/test_sycl_speed_singular_parity.c": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 3,
+        "core/test/test_sycl_vif_min_dim.c": 1,
         "python/test/gpu_default_model_test.py": 1,
         "python/test/sycl_motion_parity_test.py": 1,
         "scripts/ci/cross_backend_parity_gate.py": 2,
@@ -6329,6 +6331,7 @@
         "core/test/test_sycl_speed_temporal_parity.c": 1,
         "core/test/test_sycl_ssim_parity.c": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 1,
+        "core/test/test_sycl_vif_min_dim.c": 1,
         "core/test/test_sycl_vif_parity.c": 1,
         "core/test/test_tad_rust.c": 1,
         "core/test/test_thread_pool_backpressure.c": 1,
@@ -7520,7 +7523,10 @@
         "core/src/feature/hip/float_ssim_hip.c": 2,
         "core/src/feature/metal/float_ssim_metal.mm": 2,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
-        "core/src/libvmaf.c": 1
+        "core/src/feature/sycl/integer_vif_sycl.cpp": 2,
+        "core/src/libvmaf.c": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_sycl_vif_min_dim.c": 2
       },
       "target": "1324-gpu-float-ssim-auto-scale-fallback.md"
     },
@@ -7761,6 +7767,16 @@
         "scripts/ci/tests/test_sycl_aot_command.py": 1
       },
       "target": "1360-sycl-aot-compile-time-device-codegen.md"
+    },
+    "1361": {
+      "sites": {
+        "scripts/ci/cross_backend_calibration.py": 2,
+        "scripts/ci/cross_backend_parity_gate.py": 2,
+        "scripts/ci/cross_backend_vif_diff.py": 2,
+        "scripts/ci/gpu_ulp_calibration.yaml": 1,
+        "scripts/ci/test_cross_backend_parity_gate.py": 1
+      },
+      "target": "1361-psnr-hvs-area-scaled-parity-tolerance.md"
     }
   },
   "retired": {

@@ -1,9 +1,13 @@
 # Research-2123: Arc B580 SYCL crashes — psnr_hvs compile, tile-halo faults
 
 - **Status**: Active
-- **Workstream**: bug fix, no ADR (`T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29`,
+- **Workstream**: bug fixes (`T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29`,
   `T-SYCL-TILE-HALO-OOB-READ-2026-09-29`,
-  `T-SYCL-GRAPH-WAIT-ERROR-DROPPED-2026-09-29`)
+  `T-SYCL-GRAPH-WAIT-ERROR-DROPPED-2026-09-29`,
+  `T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29`,
+  `T-SYCL-VIF-ODD-WIDTH-RD-STRIDE-2026-09-29`) and
+  [ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)
+  (`T-SYCL-PSNR-HVS-4K-PARITY-GATE-2026-09-29`)
 - **Last updated**: 2026-09-29
 
 ## Question
@@ -114,8 +118,8 @@ After a device fault they scored the faulted frame from stale host buffers and
 so a one-frame run exited 0. The wait now marks the frame waited only after it
 succeeds, so each collector's call waits again on the lost device and fails,
 and every collector returns that result (-EIO): the faulted frame itself
-fails. `vif_sycl` on an 8x8 frame, which still faults (Open questions), now
-stops at frame 0 with `problem reading pictures`.
+fails. Before finding 6, `vif_sycl` on an 8x8 frame still faulted; with this
+change it stopped at frame 0 with `problem reading pictures`.
 
 ### 4. The same tile-halo pattern elsewhere
 
@@ -149,6 +153,80 @@ alone, so the device link produces SPIR-V only and every run JIT-compiles.
 That is why the crash is in the runtime's compiler rather than at build time.
 Recorded as `T-SYCL-AOT-TARGETS-DROPPED-AT-LINK-2026-09-29`; not changed here.
 
+### 6. Integer VIF below 16 pixels: fall back to the CPU (maintainer decision)
+
+After the clamp the sweep was clean everywhere except `vif_sycl` at 3x3, 5x5
+and 8x8 on both GPUs. There the taps a valid output consumes are themselves more
+than one reflection outside the plane (a 17-tap scale-0 filter on an 8-wide
+plane), in per-output paths such as `dev_hori_convolve_border()`, not in a
+tile loader. Scale s filters floor(dim / 2^s) samples and reflects each tap
+once, which stays inside while floor(dim / 2^s) ≥ half-width + 1: {9, 10, 12, 16}
+for the {17, 9, 5, 3} filters and {5, 6, 8} for the decimation filters. The
+kernel's real bound is therefore 16 pixels in each dimension, the value
+`vif_get_min_dim()` gives float VIF for the same widths. The CPU `vif` accepts
+and scores smaller frames without faulting.
+
+On 2026-09-29 the maintainer chose to fall back to the CPU. `vif_sycl` declares
+`VIF_MIN_DIM` (computed from its filter tables, `static_assert` 16) through the
+[ADR-1324](../adr/1324-gpu-float-ssim-auto-scale-fallback.md) first-picture
+gate: `context_check` returns `-ENOTSUP` below it and names `vif` as the
+fallback, so model dispatch, and the CLI twin selection in #1619 that consults
+the gate, compute those frames on the CPU. A direct `vif_sycl` request fails
+`init()` with `-EINVAL`. `test_sycl_vif_min_dim` registers `vmaf_v0.6.1`'s
+four VIF features on a SYCL context: below 16 the scores equal the CPU's bit
+for bit; at 16x16, 17x17, 96x64 and 853x480 they stay on the device within
+2.6e-8 of the CPU, on both GPUs. `motion_sycl`, `motion_v2_sycl` and
+`float_motion_sycl` need no declaration: their 5-tap filters need 3 pixels,
+which their `init()` requires as the CPU does, and the sweep is clean from 3x3
+up. `float_vif_sycl` already refuses the same sizes the CPU `float_vif` does.
+
+### 7. Integer VIF read odd-width scales at the wrong stride
+
+The first run of that test failed above the bound: at 17x17
+`integer_vif_scale1` was 0.0765 on the CPU and 0.0962 on the device.
+`dev_downsample_rd()` writes the next scale at stride ceil(w / 2)
+([ADR-1034](../adr/1034-sycl-vif-rd-stride-motion-uv-sync.md)), but
+`enqueue_vif_work_impl()` read it back at stride floor(w / 2),
+so every row after the first was skewed as soon as one scale's width was odd.
+Worst scale difference from the CPU on master, ramp-plus-noise frames, UHD 770:
+
+| Size | Worst scale | Max difference |
+| --- | --- | --- |
+| 17x17 | scale 3 | 3.3e-2 |
+| 33x33 | scale 2 | 6.6e-3 |
+| 257x145 | scale 1 | 1.4e-3 |
+| 853x480 | scale 1 | 1.2e-3 |
+| 854x480 | scale 3 | 9.3e-4 |
+| 1366x768 | scale 3 | 7.9e-4 |
+| 576x324, 1920x1080 | — | ≤ 2.5e-7 |
+
+Every fixture in the tree has an even-width ladder, which is why none caught
+it. The next scale now reads at the stride it was written with; every size in
+the table is within 2.5e-5 of the CPU, 6.4e-7 or better from 257x145 up.
+`float_vif_sycl`, `float_adm_sycl` and `adm_sycl` were checked at 33x33,
+257x145, 853x480 and 1366x768 and stay within 3e-5 (2.1e-6 or better from
+257x145 up); `float_ms_ssim_sycl` within 4e-8 at 853x480 and 1366x768 (both
+backends refuse the two smaller sizes). CUDA and HIP keep one `rd_stride` for
+writer and reader (read, not run).
+
+The same comparison shows `motion_sycl` 1.22e-4 from the CPU at 17x17
+(motion2 5.75), shrinking to 4e-6 at 576x324, identical on master and on this
+branch; its root cause is open (`T-SYCL-MOTION-TINY-FRAME-PARITY-2026-09-29`).
+
+### 8. The psnr_hvs gate tolerance scales with the CPU's sum length (maintainer decision)
+
+On 2026-09-29 the maintainer chose an area-scaled tolerance over emulating the
+CPU's summation order. [ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)
+derives it: the CPU's single float sum over N luma terms has relative error
+about λ · 2⁻²⁴ · √N, which is (10 / ln 10) times that in dB; λ = 3.93 keeps
+576x324 at today's 5e-4, so the tolerance is 5e-4 · max(1, √(N / N₅₇₆ₓ₃₂₄)):
+3.34e-3 at 3840x2160. Both gates apply `area_tolerance_factor()`. Run through
+the real gate on both GPUs: 576x324 8.3e-5 against 5e-4 and 3840x2160
+8.43e-4 against 3.34e-3, both OK. The 4K fixture also crashed the gates with
+TypeError: identical chroma planes give `psnr_hvs_cb` = inf, which vmaf writes
+as JSON `null` (four of the 50 frames); `metric_delta()` treats `null` on both
+sides as agreement.
+
 ### Measurements after the fix
 
 - `test_sycl_psnr_hvs_parity`, `_large` and the new `_simd32`, and
@@ -158,8 +236,8 @@ Recorded as `T-SYCL-AOT-TARGETS-DROPPED-AT-LINK-2026-09-29`; not changed here.
   frame, identical on both GPUs: Netflix pair (48 frames) `psnr_hvs` 8.03e-5,
   `psnr_hvs_y` 8.37e-5, `_cb` 2.89e-5, `_cr` 3.91e-5 (gate 5e-4); BBB 4K
   (50 frames) `psnr_hvs` 7.63e-4, `psnr_hvs_y` 8.42e-4, `_cb` 1.59e-4,
-  `_cr` 1.47e-4. The 4K figures exceed the gate on master too (bit-identical
-  output), see Open questions.
+  `_cr` 1.47e-4. The 4K figures exceeded the fixed 5e-4 gate on master too
+  (bit-identical output); finding 8 scales the gate.
 - 4K `t(22) - t(2)`, median of three: `psnr_hvs_sycl` on the UHD 770
   208 ms/frame on master, 130 ms/frame now; 20.7 ms/frame on the B580 (master
   crashes). `adm_sycl` on the UHD 770 36.2 and 36.0 ms/frame.
@@ -185,33 +263,28 @@ Recorded as `T-SYCL-AOT-TARGETS-DROPPED-AT-LINK-2026-09-29`; not changed here.
 
 ## Open questions
 
-- Integer VIF below 16x16: after the fix the sweep is clean everywhere except
-  `vif_sycl` at 3x3, 5x5 and 8x8 on both GPUs. There even the taps a valid
-  output consumes are more than one reflection outside the plane (a 17-tap
-  scale-0 filter on an 8-wide plane), in per-output paths such as
-  `dev_hori_convolve_border()`. The CPU extractor accepts and scores 8x8;
-  `float_vif` refuses frames below `vif_get_min_dim()`. Needs a minimum-size
-  decision (`T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29`).
-- psnr_hvs at 4K: the CPU sums about 10.8 million per-coefficient terms into
-  one float per plane; the SYCL twin sums per block and then per plane. At
-  576x324 the difference is 8e-5, at 3840x2160 8.4e-4, above the 5e-4 gate.
-  Matching the CPU needs its exact term sequence on the host (64 floats per
-  block read back) or a resolution-aware tolerance
-  (`T-SYCL-PSNR-HVS-4K-PARITY-GATE-2026-09-29`).
 - The CUDA and HIP ADM vertical DWT (`adm_dwt2_load_column`) reflect the
   bottom edge once with `y_in - max(0, 2 * (y_in - h) + 1)` and load before
   any row check, the same pattern; not run here
   (`T-CUDA-HIP-ADM-DWT-VERT-TINY-HEIGHT-OOB-2026-09-29`).
-- The IGC crash itself is a driver defect; it has not been reported to
-  Intel. The kernel no longer triggers it.
+- The CUDA, HIP and Metal integer VIF twins declare no 16-pixel minimum
+  (`T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29`); not run here.
+- `motion_sycl` tiny-frame parity (finding 7,
+  `T-SYCL-MOTION-TINY-FRAME-PARITY-2026-09-29`).
 
 ## Related
 
 - Rows: `T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29` (opened in #1619),
   `T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18`,
   `T-SYCL-TILE-HALO-OOB-READ-2026-09-29`,
-  `T-SYCL-GRAPH-WAIT-ERROR-DROPPED-2026-09-29`
+  `T-SYCL-GRAPH-WAIT-ERROR-DROPPED-2026-09-29`,
+  `T-SYCL-PSNR-HVS-4K-PARITY-GATE-2026-09-29`,
+  `T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29`,
+  `T-SYCL-VIF-ODD-WIDTH-RD-STRIDE-2026-09-29`
 - ADRs: [ADR-0220](../adr/0220-sycl-fp64-fallback.md) (fp64-free kernels),
-  [ADR-0191](../adr/0191-psnr-hvs-vulkan.md) (psnr_hvs GPU design and tolerance)
+  [ADR-0191](../adr/0191-psnr-hvs-vulkan.md) (psnr_hvs GPU design and tolerance),
+  [ADR-1324](../adr/1324-gpu-float-ssim-auto-scale-fallback.md) (first-picture
+  CPU fallback), [ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md)
+  (area-scaled psnr_hvs tolerance)
 - PRs: #1619 (CLI twin selection, which routes
   `--backend sycl --feature psnr_hvs` to this kernel)

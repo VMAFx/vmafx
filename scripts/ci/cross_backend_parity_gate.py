@@ -57,7 +57,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.ci.cross_backend_calibration import (
     DEFAULT_CALIBRATION_PATH,
     CalibrationTable,
+    area_tolerance_factor,
     load_calibration_table,
+    metric_delta,
 )
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -196,7 +198,9 @@ FEATURE_TOLERANCE: dict[str, float] = {
     "float_adm": 5e-5,
     # Transcendentals / DCT — relaxed contract per ADR-0187 / ADR-0188.
     "ciede": 5e-3,  # per-pixel pow/sqrt/sin/atan2 — places=2.
-    "psnr_hvs": 5e-4,  # DCT + per-block float reductions — places=3.
+    # DCT + per-block float reductions — places=3 at 576x324; grows with
+    # sqrt(term count) above it (area_tolerance_factor, ADR-1361).
+    "psnr_hvs": 5e-4,
     # XYB cube root + IIR blur reassociation — places=2 per ADR-0192.
     "ssimulacra2": 5e-3,
     # Integer pipeline — places=4 (5e-5). ADR-0360.
@@ -409,8 +413,7 @@ def diff_frames(
     per_mismatch = dict.fromkeys(metrics, 0)
     for fa, fb in zip(a_frames, b_frames, strict=True):
         for m in metrics:
-            va, vb = fa["metrics"][m], fb["metrics"][m]
-            d = abs(va - vb)
+            d = metric_delta(fa["metrics"][m], fb["metrics"][m])
             per_max[m] = max(per_max[m], d)
             if d > tolerance:
                 per_mismatch[m] += 1
@@ -423,8 +426,15 @@ def resolve_cell_tolerance(
     fp16_features: Iterable[str],
     calibration: CalibrationTable | None,
     gpu_id: str | None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> tuple[float, str]:
     """Resolve ``(tolerance_abs, source_label)`` for one cell.
+
+    The FP32 tolerance (table default or calibration row) is the contract at
+    the reference geometry; for an area-scaled feature it is multiplied by
+    ``area_tolerance_factor`` for the fixture's ``width x height`` and the
+    label gains ``+area x<factor>`` (ADR-1361). The FP16 contract is absolute.
 
     Source-label vocabulary (recorded on every CellResult):
 
@@ -445,6 +455,21 @@ def resolve_cell_tolerance(
 
     if feature in fp16_features:
         return DEFAULT_FP16_TOLERANCE, "fp16"
+
+    tolerance, source = _reference_tolerance(feature, calibration=calibration, gpu_id=gpu_id)
+    factor = area_tolerance_factor(feature, width, height)
+    if factor > 1.0:
+        return tolerance * factor, f"{source}+area x{factor:.2f}"
+    return tolerance, source
+
+
+def _reference_tolerance(
+    feature: str,
+    *,
+    calibration: CalibrationTable | None,
+    gpu_id: str | None,
+) -> tuple[float, str]:
+    """FP32 tolerance at the reference geometry, from the table or a calibration row."""
 
     feature_default = FEATURE_TOLERANCE.get(feature, DEFAULT_FP32_TOLERANCE)
     if calibration is None or gpu_id is None:
@@ -750,6 +775,8 @@ def run_cells(
             fp16_features=args.fp16_features,
             calibration=calibration,
             gpu_id=args.gpu_id,
+            width=args.width,
+            height=args.height,
         )
         result = run_cell(
             cell,

@@ -54727,9 +54727,9 @@ RUNPATH `$ORIGIN` from the note above. `patchelf` for that RUNPATH lives in
 `release-build` only; do not reinstall it in `build-deps`. No native/public
 API, numerical or FFmpeg rebase impact.
 
-## SYCL B580 psnr_hvs crash, tile-halo faults, graph-wait result (2026-09-29)
+## SYCL B580 psnr_hvs crash, tile-halo faults, graph-wait result, VIF size and stride, psnr_hvs gate scaling (2026-09-29)
 
-`fix/sycl-b580-psnr-hvs-adm-tiny`, Research-2123.
+`fix/sycl-b580-psnr-hvs-adm-tiny`, Research-2123, ADR-1361.
 
 - `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`: the 8x8 DCT runs in local
   memory (`hvs_fdct8_pass()`, `hvs_ratios_and_first_pass()`,
@@ -54752,5 +54752,18 @@ API, numerical or FFmpeg rebase impact.
   collectors return its result before reading host buffers. Keep both halves
   when rebasing a collector or the wait.
 
-No public API, CLI, FFmpeg patch or numerical rebase impact: scores are
-bit-identical to the previous kernels wherever those ran.
+- `core/src/feature/sycl/integer_vif_sycl.cpp`: `VIF_MIN_DIM` (16, from the
+  filter tables, `static_assert`ed) is declared through the ADR-1324
+  `context_check` / `context_fallback_name = "vif"` pair and guarded again in
+  `init()`; the next scale reads the rd buffer at the ceiling stride it was
+  written with. An upstream VIF sync that touches the scale loop or the
+  filter tables must keep both.
+- `scripts/ci/cross_backend_calibration.py`: `area_tolerance_factor()` and
+  `metric_delta()` are shared by both gates (ADR-1361). A new psnr_hvs
+  tolerance in `FEATURE_TOLERANCE` or the calibration table is the 576x324
+  contract; do not pre-scale it.
+
+No public API, CLI syntax or FFmpeg patch impact. Scores are bit-identical to
+the previous kernels wherever those ran, except `vif_sycl` scales 1-3 on
+odd-width ladders, which now match the CPU, and frames below 16 pixels that
+model dispatch now scores with the CPU `vif`.

@@ -2082,19 +2082,13 @@ if is_sycl_enabled
         '-I' + meson.current_source_dir() / 'feature' / 'sycl',
     ]
 
-    # AOT targets IGC cannot compile a TU for (ADR-1360). IGC 2.41.5 (NEO
-    # 26.35.39758.10) crashes in integer_psnr_hvs_sycl.cpp for every Xe2 target
-    # ("longjmp causes uninitialized stack frame" from ocloc), the same fault
-    # that makes the SPIR-V JIT segfault psnr_hvs_sycl on an Arc B580 at run
-    # time (T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29). That TU therefore
-    # embeds native ISA for the other targets and SPIR-V for Xe2, which is no
-    # worse than before; every other TU keeps the full list, and
-    # sycl_aot_image_check below allows this gap and no other. The reworked
-    # kernel on fix/sycl-b580-psnr-hvs-adm-tiny compiles for all three Xe2
-    # targets: drop the entry with it. A stale entry only costs cold start.
-    sycl_icpx_aot_igc_skip = {
-        'integer_psnr_hvs_sycl' : ['lnl-m', 'bmg-g21', 'bmg-g31'],
-    }
+    # AOT targets IGC cannot compile a TU for (ADR-1360): TU stem -> list of
+    # targets to leave to the SPIR-V fallback. sycl_aot_image_check below
+    # allows exactly these gaps. Empty since the psnr_hvs_sycl DCT moved to
+    # local memory (T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29): IGC 2.41.5 had
+    # crashed on the old kernel for every Xe2 target. Add an entry only
+    # with an ocloc failure to cite.
+    sycl_icpx_aot_igc_skip = {}
 
     # ADR-1358: the SpEED TUs reproduce the CPU reference operation for
     # operation, which `-fp-model=precise` alone does not give on the device.

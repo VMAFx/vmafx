@@ -1472,6 +1472,7 @@ nav:
         - "ADR-1357: sycl-cambi-device-resident": adr/1357-sycl-cambi-device-resident.md
         - "ADR-1358: sycl-speed-device-resident-linalg": adr/1358-sycl-speed-device-resident-linalg.md
         - "ADR-1360: sycl-aot-compile-time-device-codegen": adr/1360-sycl-aot-compile-time-device-codegen.md
+        - "ADR-1361: psnr-hvs-area-scaled-parity-tolerance": adr/1361-psnr-hvs-area-scaled-parity-tolerance.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

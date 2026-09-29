@@ -41,7 +41,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # The repository root above makes the sibling import canonical for both direct
 # script execution and package-aware type checking.
-from scripts.ci.cross_backend_calibration import DEFAULT_CALIBRATION_PATH, load_calibration_table
+from scripts.ci.cross_backend_calibration import (
+    DEFAULT_CALIBRATION_PATH,
+    area_tolerance_factor,
+    load_calibration_table,
+    metric_delta,
+)
 from scripts.lib.safe_subprocess import run as run_command
 
 FEATURE_METRICS: dict[str, tuple[str, ...]] = {
@@ -143,7 +148,8 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # emit identical metric names — the suffix-renaming logic in
     # build_command takes care of routing. Precision target
     # places=2 per ADR-0188 (DCT integer-exact, but per-block float
-    # reductions and per-plane log10 limit the floor).
+    # reductions and per-plane log10 limit the floor). Above 576x324 the
+    # tolerance grows with the CPU's float-sum length (ADR-1361).
     # GPU long-tail batch 3 part 3 (T7-23 / ADR-0192 / ADR-0195):
     # float_psnr. Float twin of the integer psnr kernels already on
     # GPU; per-pixel (ref-dis)² + log10. Bit-exact across all three
@@ -345,8 +351,7 @@ def diff(
 
     for cf, gf in zip(cpu, gpu, strict=True):
         for m in metrics:
-            c, v = cf["metrics"][m], gf["metrics"][m]
-            d = abs(c - v)
+            d = metric_delta(cf["metrics"][m], gf["metrics"][m])
             per_metric_max[m] = max(per_metric_max[m], d)
             if d > threshold:
                 per_metric_mismatch[m] += 1
@@ -521,6 +526,13 @@ def main() -> int:
     #  - the matched row has no override for ``args.feature``
     #    (placeholder rows: registered arch, no calibration data).
     tolerance_override, tolerance_source = calibrated_tolerance(args)
+    # ADR-1361: the resolved tolerance is the reference-geometry contract;
+    # area-scaled features widen it with the fixture's term count.
+    factor = area_tolerance_factor(args.feature, args.width, args.height)
+    if factor > 1.0:
+        base = tolerance_override if tolerance_override is not None else 0.5 * (10**-args.places)
+        tolerance_override = base * factor
+        tolerance_source = f"{tolerance_source} +area x{factor:.2f}"
     return diff(
         load_frames(cpu_json),
         load_frames(gpu_json),

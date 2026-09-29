@@ -19,7 +19,12 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.ci.cross_backend_calibration import CalibrationEntry, CalibrationTable
+from scripts.ci.cross_backend_calibration import (
+    CalibrationEntry,
+    CalibrationTable,
+    area_tolerance_factor,
+    psnr_hvs_term_count,
+)
 from scripts.ci.cross_backend_parity_gate import (
     BACKEND_EXTRACTOR_ALIASES,
     BACKEND_SUFFIX,
@@ -333,7 +338,7 @@ def test_build_command_device_none_cpu_skips_device_flag(tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-def _make_frame(metrics: dict[str, float]) -> dict[str, Any]:
+def _make_frame(metrics: dict[str, float | None]) -> dict[str, Any]:
     return {"metrics": metrics}
 
 
@@ -624,3 +629,144 @@ def test_feature_metrics_values_are_non_empty_tuples() -> None:
     for feature, metrics in FEATURE_METRICS.items():
         assert isinstance(metrics, tuple), f"{feature}: FEATURE_METRICS value must be a tuple"
         assert len(metrics) >= 1, f"{feature}: FEATURE_METRICS must have at least one metric name"
+
+
+# ---------------------------------------------------------------------------
+# ADR-1361: area-scaled psnr_hvs tolerance
+# ---------------------------------------------------------------------------
+
+# Worst per-frame psnr_hvs_y difference between CPU and SYCL on 50 frames of
+# BBB 3840x2160, measured on an Arc B580 and a UHD 770 (Research-2123).
+_MEASURED_4K_PSNR_HVS_Y = 8.423e-4
+
+
+def _psnr_hvs_tolerance(width: int, height: int) -> float:
+    tol, _ = resolve_cell_tolerance(
+        "psnr_hvs",
+        fp16_features=[],
+        calibration=None,
+        gpu_id=None,
+        width=width,
+        height=height,
+    )
+    return tol
+
+
+_TERMS_PER_BLOCK = 64
+# Anchor of the stated bound: T_ref / ((10 / ln 10) * 2**-24 * sqrt(N_ref)) = 3.93.
+_LAMBDA_RANGE = (3.9, 4.0)
+
+
+def test_psnr_hvs_term_count_matches_calc_psnrhvs_loop() -> None:
+    # for (y = 0; y < h - 7; y += 7) / for (x = 0; x < w - 7; x += 7), 64 terms a block.
+    assert psnr_hvs_term_count(576, 324) == _TERMS_PER_BLOCK * 82 * 46
+    assert psnr_hvs_term_count(3840, 2160) == _TERMS_PER_BLOCK * 548 * 308
+    assert psnr_hvs_term_count(8, 8) == _TERMS_PER_BLOCK
+    assert psnr_hvs_term_count(15, 8) == 2 * _TERMS_PER_BLOCK
+    assert psnr_hvs_term_count(7, 64) == 0
+
+
+def test_psnr_hvs_tolerance_unchanged_at_reference_geometry() -> None:
+    tol, src = resolve_cell_tolerance(
+        "psnr_hvs", fp16_features=[], calibration=None, gpu_id=None, width=576, height=324
+    )
+    assert _close(tol, FEATURE_TOLERANCE["psnr_hvs"])
+    assert src == "default"
+
+
+def test_psnr_hvs_tolerance_never_loosens_or_tightens_below_reference() -> None:
+    for width, height in ((575, 324), (576, 323), (256, 144), (8, 8), (7, 7), (576, 8)):
+        tolerance = _psnr_hvs_tolerance(width, height)
+        assert _close(tolerance, FEATURE_TOLERANCE["psnr_hvs"]), (width, height)
+
+
+def test_psnr_hvs_tolerance_first_step_above_reference_scales() -> None:
+    # One more block column (583 = 576 + 7) is the first width above N_ref.
+    expected = FEATURE_TOLERANCE["psnr_hvs"] * math.sqrt(83 / 82)
+    assert _close(_psnr_hvs_tolerance(583, 324), expected)
+
+
+def test_psnr_hvs_tolerance_grows_with_sqrt_of_term_count() -> None:
+    tol_1080 = _psnr_hvs_tolerance(1920, 1080)
+    tol_4k = _psnr_hvs_tolerance(3840, 2160)
+    tol_8k = _psnr_hvs_tolerance(7680, 4320)
+    assert FEATURE_TOLERANCE["psnr_hvs"] < tol_1080 < tol_4k < tol_8k
+    ratio = tol_4k / FEATURE_TOLERANCE["psnr_hvs"]
+    assert _close(ratio, math.sqrt(psnr_hvs_term_count(3840, 2160) / (64 * 82 * 46)))
+
+
+def test_psnr_hvs_tolerance_matches_stated_accumulation_bound() -> None:
+    # T(N) = max(T_ref, (10 / ln 10) * lam * u * sqrt(N)), lam anchored at 576x324.
+    u = 2.0**-24
+    db_per_relative = 10.0 / math.log(10.0)
+    n_ref = psnr_hvs_term_count(576, 324)
+    lam = FEATURE_TOLERANCE["psnr_hvs"] / (db_per_relative * u * math.sqrt(n_ref))
+    assert _LAMBDA_RANGE[0] < lam < _LAMBDA_RANGE[1]
+    n_4k = psnr_hvs_term_count(3840, 2160)
+    bound = max(FEATURE_TOLERANCE["psnr_hvs"], db_per_relative * lam * u * math.sqrt(n_4k))
+    assert _close(_psnr_hvs_tolerance(3840, 2160), bound)
+
+
+def test_psnr_hvs_4k_measured_difference_passes_and_wrong_value_fails() -> None:
+    tolerance = _psnr_hvs_tolerance(3840, 2160)
+    metrics = FEATURE_METRICS["psnr_hvs"]
+    reference = [_make_frame(dict.fromkeys(metrics, 40.0))]
+    measured = [_make_frame(dict.fromkeys(metrics, 40.0 + _MEASURED_4K_PSNR_HVS_Y))]
+    wrong = [_make_frame(dict.fromkeys(metrics, 40.0 + 1e-2))]
+    _, ok_mismatch = diff_frames(reference, measured, metrics, tolerance)
+    _, bad_mismatch = diff_frames(reference, wrong, metrics, tolerance)
+    assert all(count == 0 for count in ok_mismatch.values())
+    assert all(count == 1 for count in bad_mismatch.values())
+    # The unscaled contract is what used to fail this fixture.
+    _, old_mismatch = diff_frames(reference, measured, metrics, FEATURE_TOLERANCE["psnr_hvs"])
+    assert all(count == 1 for count in old_mismatch.values())
+
+
+def test_area_scaling_applies_only_to_psnr_hvs() -> None:
+    for feature in ("vif", "ciede", "ssimulacra2", "float_ssim"):
+        tol, src = resolve_cell_tolerance(
+            feature, fp16_features=[], calibration=None, gpu_id=None, width=3840, height=2160
+        )
+        assert _close(tol, FEATURE_TOLERANCE[feature]), feature
+        assert "area" not in src
+    assert area_tolerance_factor("psnr_hvs", None, None) == 1.0
+
+
+def test_area_scaling_multiplies_a_calibrated_psnr_hvs_row() -> None:
+    table = _calibration_table(("sycl:0x8086:*", {"psnr_hvs": 2e-4}))
+    tol, src = resolve_cell_tolerance(
+        "psnr_hvs",
+        fp16_features=[],
+        calibration=table,
+        gpu_id="sycl:0x8086:0xe20b",
+        width=3840,
+        height=2160,
+    )
+    assert _close(tol, 2e-4 * area_tolerance_factor("psnr_hvs", 3840, 2160))
+    assert src.startswith("calibrated:sycl:0x8086:*+area x")
+
+
+def test_diff_frames_null_metrics_agree_only_when_both_null() -> None:
+    # vmaf writes an infinite psnr_hvs_cb (identical chroma) as JSON null.
+    metrics = ("psnr_hvs_cb",)
+    both_null = [_make_frame({"psnr_hvs_cb": None})]
+    finite = [_make_frame({"psnr_hvs_cb": 50.0})]
+    per_max, per_mismatch = diff_frames(both_null, both_null, metrics, tolerance=5e-4)
+    assert per_max["psnr_hvs_cb"] == 0.0
+    assert per_mismatch["psnr_hvs_cb"] == 0
+    per_max, per_mismatch = diff_frames(both_null, finite, metrics, tolerance=5e-4)
+    assert math.isinf(per_max["psnr_hvs_cb"])
+    assert per_mismatch["psnr_hvs_cb"] == 1
+
+
+def test_area_scaling_leaves_fp16_contract_absolute() -> None:
+    tol, src = resolve_cell_tolerance(
+        "psnr_hvs",
+        fp16_features=["psnr_hvs"],
+        calibration=None,
+        gpu_id=None,
+        width=3840,
+        height=2160,
+    )
+    assert _close(tol, DEFAULT_FP16_TOLERANCE)
+    assert src == "fp16"

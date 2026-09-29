@@ -13,8 +13,19 @@
   frames 64 rows high or less, `vif_sycl` up to at least 96x64 and
   `motion_sycl` up to 33x33 on the B580. The loads now stay inside the plane;
   scores for larger frames are unchanged
-  (`T-SYCL-TILE-HALO-OOB-READ-2026-09-29`). `vif_sycl` still fails on frames
-  of 8x8 and below (`T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29`).
+  (`T-SYCL-TILE-HALO-OOB-READ-2026-09-29`).
+- **SYCL: `vif_sycl` hands frames below 16 pixels to the CPU.** Its filters
+  reach more than one reflection outside planes smaller than 16 pixels in
+  either dimension, which lost the device at 8x8. Model dispatch now computes
+  such frames with the CPU `vif` extractor, bit-identical to a CPU run; a
+  direct `--feature vif_sycl` request fails with an error naming `vif`
+  (`T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29`).
+- **SYCL: `vif_sycl` scores are correct for odd widths.** When the width at
+  any scale was odd (for example 854x480, 1366x768 or 853x480), scales 1-3 read
+  the downsampled plane at the wrong row stride and drifted from the CPU by up
+  to 1.2e-3 at those sizes and 3.3e-2 on tiny frames, which also moved the
+  VMAF score. They now match the CPU within 1e-6 at those sizes
+  (`T-SYCL-VIF-ODD-WIDTH-RD-STRIDE-2026-09-29`).
 - **SYCL: a device fault now fails the frame.** After a failed graph wait the
   `adm_sycl`, `vif_sycl`, `motion_sycl`, `psnr_sycl` and `float_moment_sycl`
   extractors emitted scores for that frame from stale buffers (about 1.0 for

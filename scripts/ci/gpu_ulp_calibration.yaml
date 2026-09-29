@@ -91,6 +91,8 @@ gpus:
       float_vif: 5.0e-5
       float_adm: 5.0e-5
       ciede: 5.0e-3
+      # Contract at 576x324; both gates scale it with the frame's
+      # term count above that geometry (ADR-1361).
       psnr_hvs: 5.0e-4
       ssimulacra2: 5.0e-3
 

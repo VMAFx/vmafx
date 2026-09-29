@@ -25,6 +25,7 @@ This module is the loader, not the schema definition.
 from __future__ import annotations
 
 import dataclasses
+import math
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -43,6 +44,76 @@ except ImportError:  # pragma: no cover - exercised only when pyyaml absent
 
 
 DEFAULT_CALIBRATION_PATH = Path(__file__).parent / "gpu_ulp_calibration.yaml"
+
+# ---------------------------------------------------------------------------
+# ADR-1361: area-scaled tolerance for features whose CPU reference adds
+# every per-coefficient term of a plane into one running float.
+#
+# ``calc_psnrhvs()`` (third_party/xiph/psnr_hvs.c) sums N = 64 * blocks_x *
+# blocks_y terms per plane into one ``float``. Its relative rounding error
+# grows like u * sqrt(N) (probabilistic model, u = 2**-24), and the dB score
+# carries it as (10 / ln 10) * relative error, so the achievable CPU/GPU
+# agreement loosens with the frame area. The tolerance a table supplies is
+# the contract at the reference geometry (576x324, where ADR-0191 measured
+# it); above that it grows with sqrt(N / N_ref), below it never tightens or
+# loosens. The same scaling is equivalent to the bound
+#   T(N) = max(T_ref, (10 / ln 10) * lam * u * sqrt(N)),
+#   lam  = T_ref / ((10 / ln 10) * u * sqrt(N_ref))   (3.93 for T_ref = 5e-4).
+# ---------------------------------------------------------------------------
+
+PSNR_HVS_BLOCK = 8
+PSNR_HVS_STEP = 7
+AREA_SCALED_REFERENCE_GEOMETRY = (576, 324)
+
+# Only the luma plane's terms are counted: it has the most, and the combined
+# score's relative error is bounded by the worst plane's.
+AREA_SCALED_FEATURES = ("psnr_hvs",)
+
+
+def psnr_hvs_term_count(width: int, height: int) -> int:
+    """Terms ``calc_psnrhvs()`` adds into one float for a ``width x height`` luma plane.
+
+    Blocks start every ``PSNR_HVS_STEP`` pixels while a whole 8x8 block fits
+    (``for (y = 0; y < h - 7; y += 7)``), and each block contributes 64 terms.
+    A plane smaller than one block has no terms.
+    """
+
+    if width < PSNR_HVS_BLOCK or height < PSNR_HVS_BLOCK:
+        return 0
+    blocks_x = (width - PSNR_HVS_BLOCK) // PSNR_HVS_STEP + 1
+    blocks_y = (height - PSNR_HVS_BLOCK) // PSNR_HVS_STEP + 1
+    return PSNR_HVS_BLOCK * PSNR_HVS_BLOCK * blocks_x * blocks_y
+
+
+def metric_delta(value_a: float | None, value_b: float | None) -> float:
+    """Absolute difference of one metric between two runs, as both gates compare it.
+
+    vmaf writes a non-finite score as JSON ``null``: identical pictures give
+    ``psnr_hvs_cb`` = inf, for example (four of the first 50 BBB 4K frames).
+    Both sides ``null`` is agreement (0.0); one side ``null`` is a mismatch
+    (inf). Before this, the gates raised TypeError on such a fixture.
+    """
+
+    if value_a is None or value_b is None:
+        return 0.0 if value_a is None and value_b is None else math.inf
+    return abs(value_a - value_b)
+
+
+def area_tolerance_factor(feature: str, width: int | None, height: int | None) -> float:
+    """Multiplier applied to ``feature``'s reference-geometry tolerance (ADR-1361).
+
+    1.0 for every feature outside ``AREA_SCALED_FEATURES``, for an unknown
+    geometry, and for any frame at or below the reference term count;
+    ``sqrt(N / N_ref)`` above it.
+    """
+
+    if feature not in AREA_SCALED_FEATURES or width is None or height is None:
+        return 1.0
+    terms = psnr_hvs_term_count(width, height)
+    reference_terms = psnr_hvs_term_count(*AREA_SCALED_REFERENCE_GEOMETRY)
+    if terms <= reference_terms:
+        return 1.0
+    return math.sqrt(terms / reference_terms)
 
 
 @dataclasses.dataclass(frozen=True)

@@ -3744,6 +3744,21 @@ test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29 — vif_sycl declares its 16-pixel
+# minimum through the ADR-1324 gate: model dispatch falls back to the CPU `vif`
+# below it (bit-identical), a direct request fails init, and 16x16 stays on
+# the device within the VIF parity tolerance.
+test_sycl_vif_min_dim = executable('test_sycl_vif_min_dim',
+    ['test.c', 'test_sycl_vif_min_dim.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_vif_min_dim', test_sycl_vif_min_dim,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
 test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     ['test.c', 'test_sycl_ciede_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

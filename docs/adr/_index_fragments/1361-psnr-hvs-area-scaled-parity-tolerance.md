@@ -1,0 +1,1 @@
+| [ADR-1361](1361-psnr-hvs-area-scaled-parity-tolerance.md) | Scale the `psnr_hvs` cross-backend tolerance with the CPU's running-float-sum length: T = 5e-4 · max(1, √(N / N₅₇₆ₓ₃₂₄)), from the λ·u·√N accumulation bound with λ = 3.93; 576x324 and smaller unchanged, 4K 3.34e-3. | Accepted | gpu-parity, numerics, ci, testing, fork-local |
