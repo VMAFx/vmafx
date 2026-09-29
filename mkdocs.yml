@@ -1470,6 +1470,7 @@ nav:
         - "ADR-1355: cli-option-value-backslashes": adr/1355-cli-option-value-backslashes.md
         - "ADR-1356: release-provenance-attest": adr/1356-release-provenance-attest.md
         - "ADR-1357: sycl-cambi-device-resident": adr/1357-sycl-cambi-device-resident.md
+        - "ADR-1358: sycl-speed-device-resident-linalg": adr/1358-sycl-speed-device-resident-linalg.md
         - "ADR-1360: sycl-aot-compile-time-device-codegen": adr/1360-sycl-aot-compile-time-device-codegen.md
       - "By tag":
         - Overview: adr/by-tag/index.md

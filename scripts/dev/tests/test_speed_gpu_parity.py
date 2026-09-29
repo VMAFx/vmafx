@@ -84,8 +84,10 @@ class MainTests(unittest.TestCase):
                 frames = [{"metrics": {"speed_chroma_u": value}}]
             out.write_text(json.dumps({"frames": frames}), encoding="utf-8")
 
+        # SGP is loaded through importlib, so mypy sees its attributes as Any.
         with TemporaryDirectory() as tmp, mock.patch.object(SGP, "run_command", fake_run):
-            return SGP.main(["--backend", "sycl", "--no-timing", "--vmaf", str(Path(tmp) / "v")])
+            status = SGP.main(["--backend", "sycl", "--no-timing", "--vmaf", str(Path(tmp) / "v")])
+        return int(status)
 
     def test_identical_twin_exits_zero(self) -> None:
         self.assertEqual(self._run(7.0), 0)

@@ -25,6 +25,7 @@
 #include <sycl/ext/intel/math.hpp>
 #endif
 
+#include <cassert>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -42,6 +43,7 @@ using speed_sycl::Geometry;
 using speed_sycl::kBlock;
 using speed_sycl::kElements;
 using speed_sycl::kMaxChannels;
+using speed_sycl::kMaxPairs;
 using speed_sycl::kMaxRawPlanes;
 using speed_sycl::kMaxTaps;
 using speed_sycl::Pipeline;
@@ -1983,6 +1985,8 @@ template <typename T> void release(sycl::queue &q, T *&pointer)
 
 void release_all(Pipeline &p)
 {
+    assert(p.queue != nullptr);
+    assert(p.graph_count <= kMaxGraphs);
     sycl::queue &q = *p.queue;
     release(q, p.staging);
     release(q, p.raw);
@@ -2110,6 +2114,11 @@ void enqueue_statistics(Pipeline &p)
     sycl::queue &q = *p.queue;
     const Geometry &g = p.config.geometry;
     const uint32_t ch = p.config.channels;
+    /* The 25 submatrices are the truncated plane shifted by 0..4 in each axis:
+     * the mean and covariance windows end exactly at its last row and column. */
+    assert(g.sub_w + kBlock - 1u == g.trunc_w && g.sub_h + kBlock - 1u == g.trunc_h);
+    assert(g.trunc_w <= g.down_w && g.trunc_h <= g.down_h);
+    assert(g.blocks_h * kBlock == g.trunc_w && g.blocks > 0u);
     const CentreArgs centre{.down = p.down,
                             .taps = p.taps + kMaxTaps,
                             .centered = p.centered,
@@ -2153,6 +2162,10 @@ void enqueue_scoring(Pipeline &p)
     sycl::queue &q = *p.queue;
     const Geometry &g = p.config.geometry;
     const Scoring &s = p.config.scoring;
+    /* Channels come in (reference, distorted) pairs, one score per pair. */
+    assert(p.config.channels % 2u == 0u && p.config.channels / 2u <= kMaxPairs);
+    assert(g.blocks == g.blocks_h * (g.trunc_h / kBlock));
+    assert(s.weight_mode >= 0 && s.weight_mode <= 6);
     const SolveArgs solve{.indterm = p.indterm,
                           .qmat = p.qmat,
                           .rmat = p.rmat,
@@ -2220,6 +2233,8 @@ void stop_recording(syclex::command_graph<syclex::graph_state::modifiable> &grap
  * enqueueing the kernels directly. */
 int32_t recorded_chain(Pipeline &p, const ChannelBinding *bindings)
 {
+    assert(bindings != nullptr);
+    assert(p.graph_count <= kMaxGraphs && p.config.channels <= kMaxChannels);
     for (uint32_t i = 0; i < p.graph_count; i++) {
         if (same_bindings(p.graph_bindings[i], bindings, p.config.channels)) {
             return static_cast<int32_t>(i);
@@ -2290,6 +2305,9 @@ int speed_sycl::pipeline_create(Pipeline **out, const PipelineConfig &config)
     p->queue = static_cast<sycl::queue *>(config.queue);
     p->config = config;
     const Geometry &g = config.geometry;
+    /* configure() sets 2 for the picture_copy() 16-bit path and 1 otherwise;
+     * enqueue_chain() picks the sample type from exactly these two. */
+    assert(g.bytes_per_sample == 1u || g.bytes_per_sample == 2u);
     p->plane_bytes = static_cast<size_t>(g.src_w) * g.src_h * g.bytes_per_sample;
     try {
         allocate_planes(*p);
