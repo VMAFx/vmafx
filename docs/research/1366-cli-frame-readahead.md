@@ -148,6 +148,20 @@ row except one repetition of the SYCL default model. The `--feature` names on
 the device and `adm` on the CPU (the model's ADM options keep the CPU
 extractor), so that row is limited by serial CPU ADM, not by reading.
 
+Session C (load average 0.8 to 1.6), same method; the UHD 770 is the
+i9-12900K's integrated GPU (`level_zero:1`):
+
+| Backend, `--threads` | Feature | master | branch | speedup |
+|---|---|---|---|---|
+| CPU, 16 | `motion` | 4.72 [4.55..5.40] | 2.84 [2.72..3.15] | 1.66x |
+| SYCL UHD 770, 0 | `psnr` | 24.84 [24.06..26.25] | 20.63 [20.40..20.88] | 1.20x |
+| SYCL UHD 770, 0 | `motion` | 13.07 [12.56..14.17] | 9.65 [9.57..10.52] | 1.35x |
+| SYCL UHD 770, 0 | default model | 70.67 [69.54..72.31] | 67.29 [65.32..68.07] | 1.05x |
+
+The integrated GPU shares memory bandwidth with the CPU and computes more
+slowly, so the read cost is a smaller share of each frame; the branch still
+saves 3.4 to 4.2 ms per frame there, faster in every repetition.
+
 **Startup-difference method, 3 repetitions**: wall time of `--frame_cnt 22`
 minus `--frame_cnt 2`, divided by 20. It agrees on the CPU; on the GPU the
 device start-up varies by hundreds of milliseconds between runs, which puts
