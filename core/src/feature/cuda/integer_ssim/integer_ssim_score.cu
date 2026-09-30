@@ -6,7 +6,12 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause
  *
  *  CUDA compute kernels for the real integer_ssim feature extractor
- *  (ADR-0564). Bit-exact port of `libvmaf/src/feature/integer_ssim.c`.
+ *  (ADR-0564). Port of `libvmaf/src/feature/integer_ssim.c`: the int64
+ *  moments are the CPU's and every per-pixel SSIM term is the CPU's double
+ *  expression, operand for operand (this TU builds with --fmad=false,
+ *  ADR-1373). Only the order of the frame sum differs: the CPU adds the
+ *  terms row by row, this kernel per warp, per block and then on the host,
+ *  so the score can differ from the CPU's by a double rounding of the sum.
  *
  *  The CPU integer_ssim uses a 9-tap Gaussian kernel with INTEGER weights
  *  (sigma=1.5, KERNEL_WEIGHT=256, kernel=[2,9,28,55,68,55,28,9,2]).
@@ -40,9 +45,9 @@
  *    c1  = samplemax^2 * K1^2 * w_d^2
  *    c2  = samplemax^2 * K2^2 * w_d^2
  *    mxy = m.mux * m.muy
- *    num = (2*mxy + c1) * (2*(m.xy*w_d - mxy) + c2)
+ *    a   = 2*mxy + c1,  b = 2*(m.xy*w_d - mxy) + c2
  *    den = (m.mux^2 + m.muy^2 + c1) * (m.x2*w_d - m.mux^2 + m.y2*w_d - m.muy^2 + c2)
- *    contribution = m.w * num / den
+ *    contribution = ((m.w * a) * b) / den   (the CPU's grouping)
  *    weight = m.w
  *  Final: ssim = sum(contribution) / sum(weight)
  */
@@ -64,6 +69,70 @@
  * Result: [2, 9, 28, 55, 68, 55, 28, 9, 2], sum=256.
  */
 __device__ static const int32_t ISSIM_KERNEL[ISSIM_K_SZ] = {2, 9, 28, 55, 68, 55, 28, 9, 2};
+
+/* The six vertical moments of one output pixel (CPU ssim_moments). */
+struct IssimMoments {
+    int64_t mux;
+    int64_t muy;
+    int64_t x2;
+    int64_t xy;
+    int64_t y2;
+    int64_t w;
+};
+
+/* Vertical 9-tap accumulation over the horizontal moment arrays, with the
+ * CPU's boundary truncation (out-of-plane taps skipped). */
+__device__ static inline IssimMoments
+issim_vertical_moments(const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
+                       const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
+                       const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h,
+                       unsigned x, unsigned y, unsigned width, unsigned height)
+{
+    IssimMoments m = {0LL, 0LL, 0LL, 0LL, 0LL, 0LL};
+    const int k_min = (int)y < ISSIM_HALF_K ? ISSIM_HALF_K - (int)y : 0;
+    const int k_max = ((int)y + ISSIM_HALF_K >= (int)height) ?
+                          ISSIM_K_SZ - ((int)y + ISSIM_HALF_K - (int)height + 1) :
+                          ISSIM_K_SZ;
+    for (int k = k_min; k < k_max; k++) {
+        const int src_y = (int)y - ISSIM_HALF_K + k;
+        const unsigned hidx = (unsigned)src_y * width + x;
+        const int64_t vk = (int64_t)ISSIM_KERNEL[k];
+        m.mux += vk * d_mux_h[hidx];
+        m.muy += vk * d_muy_h[hidx];
+        m.x2 += vk * d_x2_h[hidx];
+        m.xy += vk * d_xy_h[hidx];
+        m.y2 += vk * d_y2_h[hidx];
+        m.w += vk * d_w_h[hidx];
+    }
+    return m;
+}
+
+/* One pixel's SSIM term in double, mirroring ssim_reduce_row_range operand
+ * for operand (this TU builds with --fmad=false). The CPU groups the term as
+ * ((m.w * a) * b) / den, not m.w * (a * b / den): on border pixels, where
+ * m.w is not a power of two, the two round differently. Returns false for a
+ * zero denominator, whose pixel then contributes neither term nor weight. */
+__device__ static inline bool issim_term(const IssimMoments &m, int64_t samplemax, double *term)
+{
+    const double w_d = (double)m.w;
+    const double sm = (double)samplemax;
+    const double c1 = sm * sm * 0.0001 * w_d * w_d; /* SSIM_K1=0.01, K1^2=1e-4 */
+    const double c2 = sm * sm * 0.0009 * w_d * w_d; /* SSIM_K2=0.03, K2^2=9e-4 */
+    const double dmux = (double)m.mux;
+    const double dmuy = (double)m.muy;
+    const double dx2 = (double)m.x2;
+    const double dxy = (double)m.xy;
+    const double dy2 = (double)m.y2;
+    const double mxy = dmux * dmuy;
+    const double a = 2.0 * mxy + c1;
+    const double b = 2.0 * (dxy * w_d - mxy) + c2;
+    const double den =
+        (dmux * dmux + dmuy * dmuy + c1) * (dx2 * w_d - dmux * dmux + dy2 * w_d - dmuy * dmuy + c2);
+    if (den == 0.0)
+        return false;
+    *term = w_d * a * b / den;
+    return true;
+}
 
 /*
  * Pass 1 — horizontal 9-tap integer moment accumulation (8bpc).
@@ -174,6 +243,15 @@ __global__ void integer_ssim_horiz_16bpc(const uint8_t *__restrict__ ref, ptrdif
  * Accumulates int64_t moments from the horizontal arrays, then
  * computes the SSIM contribution in double.
  *
+ * The int64 weight reduce uses warp_reduce(int64_t) from cuda_helper.cuh.
+ * CUDA has no int64 shuffle intrinsic, so each step shuffles the two 32-bit
+ * halves, and they must be reassembled into an int64 before adding. An
+ * earlier copy summed `lo` and `hi` as two int32 accumulators and recombined
+ * only at the end, dropping the carry out of the low half and able to
+ * overflow `lo` (undefined behaviour). Not reachable today (the per-pixel
+ * weight sum over a 9-tap window stays far below 2^31), but wrong; keep the
+ * shared helper rather than a second, subtly different copy. ADR-1224.
+ *
  * Writes one double per block into `partials`.
  * Writes one int64_t per block into `partial_weights`.
  * Host accumulates: ssim = sum(partials) / sum(partial_weights).
@@ -192,43 +270,10 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
     int64_t my_weight = 0LL;
 
     if (x < width && y < height) {
-        /* Vertical 9-tap accumulation over the horizontal moment arrays. */
-        int64_t mux = 0LL, muy = 0LL, x2 = 0LL, xy_ = 0LL, y2 = 0LL, w = 0LL;
-        const int k_min = (int)y < ISSIM_HALF_K ? ISSIM_HALF_K - (int)y : 0;
-        const int k_max = ((int)y + ISSIM_HALF_K >= (int)height) ?
-                              ISSIM_K_SZ - ((int)y + ISSIM_HALF_K - (int)height + 1) :
-                              ISSIM_K_SZ;
-
-        for (int k = k_min; k < k_max; k++) {
-            const int src_y = (int)y - ISSIM_HALF_K + k;
-            const unsigned hidx = (unsigned)src_y * width + x;
-            const int64_t vk = (int64_t)ISSIM_KERNEL[k];
-            mux += vk * d_mux_h[hidx];
-            muy += vk * d_muy_h[hidx];
-            x2 += vk * d_x2_h[hidx];
-            xy_ += vk * d_xy_h[hidx];
-            y2 += vk * d_y2_h[hidx];
-            w += vk * d_w_h[hidx];
-        }
-
-        /* SSIM formula in double, mirroring ssim_reduce_row_range. */
-        const double w_d = (double)w;
-        const double sm = (double)samplemax;
-        const double c1 = sm * sm * 0.0001 * w_d * w_d; /* SSIM_K1=0.01, K1^2=1e-4 */
-        const double c2 = sm * sm * 0.0009 * w_d * w_d; /* SSIM_K2=0.03, K2^2=9e-4 */
-        const double dmux = (double)mux;
-        const double dmuy = (double)muy;
-        const double dx2 = (double)x2;
-        const double dxy = (double)xy_;
-        const double dy2 = (double)y2;
-        const double mxy = dmux * dmuy;
-        const double num = (2.0 * mxy + c1) * (2.0 * (dxy * w_d - mxy) + c2);
-        const double den = (dmux * dmux + dmuy * dmuy + c1) *
-                           (dx2 * w_d - dmux * dmux + dy2 * w_d - dmuy * dmuy + c2);
-        if (den != 0.0) {
-            my_ssim = w_d * (num / den);
-            my_weight = w;
-        }
+        const IssimMoments m = issim_vertical_moments(d_mux_h, d_muy_h, d_x2_h, d_xy_h, d_y2_h,
+                                                      d_w_h, x, y, width, height);
+        if (issim_term(m, samplemax, &my_ssim))
+            my_weight = m.w;
     }
 
     /* Per-block reduction: double ssim partial + int64 weight partial.
@@ -241,19 +286,8 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
     for (int off = 16; off > 0; off >>= 1)
         warp_ssim += __shfl_down_sync(0xffffffffu, warp_ssim, off);
 
-    /* Warp-level reduce for weight (int64). CUDA has no int64 shuffle
-     * intrinsic, so each step shuffles the two 32-bit halves separately —
-     * but the halves must be REASSEMBLED into an int64 before adding.
-     *
-     * This previously summed `lo` and `hi` as two independent int32
-     * accumulators and only recombined at the end, so a carry out of the low
-     * half was silently dropped and `lo` itself could overflow a signed
-     * int32 (undefined behaviour). It is not reachable today — the per-pixel
-     * weight sum over a 9-tap window stays far below 2^31 — but it is wrong,
-     * and it is wrong in a way that only shows up at large frame sizes or a
-     * future weight scaling. `warp_reduce(int64_t)` in cuda_helper.cuh
-     * already does this correctly; use it rather than keeping a second,
-     * subtly different copy. ADR-1224. */
+    /* Warp-level reduce for weight (int64): warp_reduce(int64_t), see the
+     * function comment (ADR-1224). */
     const int64_t warp_wgt = warp_reduce(my_weight);
 
     const int tid = threadIdx.y * (int)blockDim.x + threadIdx.x;

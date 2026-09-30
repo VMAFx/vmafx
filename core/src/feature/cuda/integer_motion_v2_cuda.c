@@ -16,14 +16,14 @@
  *  pipeline (integer_motion_sad_cuda.h), which motion_cuda runs too
  *  (ADR-1372).
  *
- *  motion2_v2_score = min(score[i], score[i+1]) and motion3_v2_score
- *  (per-frame blend + clip + optional moving-average) are both emitted
- *  host-side in flush() (same shape and formula as CPU
- *  integer_motion_v2.c::flush, bit-exact at default options). No GPU
- *  work needed for the post-process; the kernel only emits the raw
- *  motion_v2_sad_score. The motion3_v2 post-process and its option
- *  surface were added in ADR-1108 (closing the GPU-twin deferral
- *  ADR-0337 left open).
+ *  collect() publishes the CPU's motion_v2_sad_score: the normalised SAD,
+ *  fps-weighted and capped at motion_max_val (integer_motion_v2.c::extract).
+ *  motion2_v2_score = min(score[i], score[i+1]) of those stored scores and
+ *  motion3_v2_score (per-frame blend + clip + optional moving-average) are
+ *  emitted host-side in flush(), with the CPU flush's formula and its 0 / 0
+ *  for a one-frame input (ADR-1373). No GPU work is needed for the
+ *  post-process. The motion3_v2 post-process and its option surface were
+ *  added in ADR-1108 (closing the GPU-twin deferral ADR-0337 left open).
  */
 
 #include <errno.h>
@@ -326,11 +326,14 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                                                        0.0, index);
     }
 
+    /* The CPU's SAD score (integer_motion_v2.c::extract): normalised, then
+     * fps-weighted and capped at motion_max_val. flush() derives motion2_v2
+     * and motion3_v2 from these stored values, as the CPU does. */
     const uint64_t *sad_host = s->rb.host_pinned;
     const double sad_score = (double)*sad_host / 256.0 / ((double)s->frame_w * s->frame_h);
-    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_motion_v2_sad_score",
-                                                   sad_score, index);
+    return vmaf_feature_collector_append_with_dict(
+        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score",
+        MIN(sad_score * s->motion_fps_weight, s->motion_max_val), index);
 }
 
 /* motion_v2_stamp_value - the motion3_v2 seed emitted for indices < min_idx.
@@ -359,12 +362,11 @@ static double motion_v2_stamp_value(const MotionV2StateCuda *s,
 
 /* motion_v2_emit_frame - emit motion2_v2 and motion3_v2 for one frame index.
  *
- * HISS-04: the body of flush_fex_cuda's emit loop, moved whole. Every
- * arithmetic statement is copied character for character and keeps its
- * position, so nothing is reassociated: score_cur / score_next are still
- * weighted before the min, and the moving average still reads the previous
- * `processed` before overwriting it. `prev_processed` is the loop-carried
- * accumulator, so it is passed by pointer rather than recomputed.
+ * The body of CPU integer_motion_v2.c::flush's loop: the stored SAD scores
+ * already carry motion_fps_weight and the motion_max_val cap (collect), so
+ * motion2_v2 is their plain minimum and motion3_v2 blends it. The moving
+ * average reads the previous `processed` before overwriting it;
+ * `prev_processed` is the loop-carried accumulator, passed by pointer.
  */
 static int motion_v2_emit_frame(MotionV2StateCuda *s, VmafFeatureCollector *feature_collector,
                                 const char *sad_name, unsigned i, unsigned n_frames,
@@ -373,14 +375,10 @@ static int motion_v2_emit_frame(MotionV2StateCuda *s, VmafFeatureCollector *feat
     double score_cur;
     double score_next;
     vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);
-    /* Apply fps weight — mirrors CPU integer_motion_v2.c flush logic.
-     * Bit-exact when motion_fps_weight = 1.0 (default). */
-    score_cur *= s->motion_fps_weight;
 
     double motion2;
     if (i + 1 < n_frames) {
         vmaf_feature_collector_get_score(feature_collector, sad_name, &score_next, i + 1);
-        score_next *= s->motion_fps_weight;
         motion2 = score_cur < score_next ? score_cur : score_next;
     } else {
         motion2 = score_cur;
@@ -426,14 +424,16 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     while (!vmaf_feature_collector_get_score(feature_collector, sad_name, &dummy, n_frames))
         n_frames++;
 
-    if (n_frames < 2)
+    /* A one-frame input still gets motion2_v2 = motion3_v2 = 0 at index 0,
+     * as the CPU flush emits them. */
+    if (n_frames == 0)
         return 1;
 
     /* motion3_v2 seeding — mirrors integer_motion_v2.c::flush exactly.
      * 3-frame mode only (min_idx = 1; the 5-frame window is unsupported
-     * on motion_v2, ADR-0337). stamp_value blends the *raw SAD* at
-     * min_idx, clipped to motion_max_val; it is emitted for all indices
-     * i < min_idx. */
+     * on motion_v2, ADR-0337). stamp_value blends the stored (weighted and
+     * capped) SAD at min_idx, clipped to motion_max_val; it is emitted for
+     * all indices i < min_idx. */
     const unsigned min_idx = 1;
     const double stamp_value =
         motion_v2_stamp_value(s, feature_collector, sad_name, n_frames, min_idx);

@@ -63,9 +63,10 @@ CUDA twins apply them on the host to the device-reduced score and report the
 CPU's `+inf` / ceiling for identical frames
 ([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md),
 [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)). The CUDA twin
-evaluates the CPU's per-pixel expression without FMA contraction, so at 8 and
-10 bits an identical window's numerator and denominator are equal by
-construction and identical frames score exactly 1. A model that sets
+computes every per-pixel term as the CPU does, bit for bit, and sums them in
+a different order, so its score can differ from the CPU's by a double
+rounding; on identical frames with a side below 12 pixels that can separate
+`+inf` from a value near 156 dB when `clip_db` is off. A model that sets
 an option the active backend's twin lacks computes `ssim` on the CPU
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
 

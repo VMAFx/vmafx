@@ -173,8 +173,9 @@ linked AGENTS.md before resolving conflicts.
   an upstream sync must not bring back the blur-each-frame `motion_score.cu`.
   `psnr_cuda`, `integer_ssim_cuda`, `float_ssim_cuda` and `float_motion_cuda`
   carry the CPU option tables and call the CPU's helpers (`psnr_score.h`,
-  `vmaf_ssim_max_db()`, `motion_clip()`); `ssim_score.cu` keeps `__fmul_rn` on
-  the three SSIM products and `integer_ssim_score` builds with `--fmad=false`.
+  `vmaf_ssim_max_db()`, `motion_clip()`); `ssim_score.cu::ssim_terms()` mirrors
+  the CPU's `l * c * s` rounding point for rounding point, and
+  `integer_ssim_score` builds with `--fmad=false` and the CPU's grouping.
   The integer ADM DWT row and tap arithmetic lives in
   `integer_adm/adm_dwt2_rows.h`, and `vif_cuda` falls back to the CPU below 16
   pixels. Details: [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
