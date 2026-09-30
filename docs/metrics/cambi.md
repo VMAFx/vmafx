@@ -51,11 +51,47 @@ This will yield the output:
 
 CAMBI supports the same input bit depths as VMAF: 8, 10, 12 and 16. However, the computations in CAMBI will always be performed at the 10-bit level, and the other formats will be converted to 10-bit as a preprocessing step.
 
+## Frame sizes
+
+CAMBI needs a width or a height of at least 216 pixels; `init()` refuses a
+frame when both are smaller (`CAMBI_MIN_WIDTH_HEIGHT`,
+`core/src/feature/cambi_internal.h`).
+
+The window scales with the encode resolution: `window_size * (width + height) /
+6000`, rounded up to an odd number (`adjust_window_size()` in
+`core/src/feature/cambi.c`). CAMBI then halves the frame four times, so the
+coarsest of its five scales has 1/16 of the rows and columns. On a wide, short
+input that scale can have fewer rows than half the window plus one (fewer than
+`pad_size + 1` rows: e.g. up to 160 rows at 1920 wide, up to 224 rows at 2560 wide,
+and up to 336 rows at 3840 wide, such as 1920x64, 1920x128, 1920x160, 3840x128,
+and 3840x256). CAMBI clips the window to the rows that exist, as it does at the
+top and bottom edge of any frame. Up to 2026-09-30 such frames read and wrote
+outside CAMBI's buffers and could crash
+([Netflix/vmaf#1628](https://github.com/Netflix/vmaf/issues/1628); the
+upstream fix is [Netflix/vmaf#1629](https://github.com/Netflix/vmaf/pull/1629)).
+Frames with fewer than `pad_size + 1` rows at the coarsest scale that previously
+completed on the scalar path while reading out of bounds now score differently
+(e.g. 3840x128 moves from 19.544347 to 19.512269; 1920x160 from 22.270340 to
+22.267602; 3840x256 from 21.778393 to 21.769946). Frames with at least
+`pad_size + 1` rows at every scale score exactly as before.
+
+A very wide frame can need a window larger than 65 x 65, the size of the
+reciprocal table. `init()` then fails with
+`cambi: window_size 85 too large for reciprocal LUT` (7680x216 at the default
+`window_size` of 65); a lower `window_size` fits (`cambi=window_size=50` runs
+at 7680x216).
+
+Known gap: on a frame narrower than half the window at some scale (tall,
+narrow inputs such as 64x1920) the scalar path reads columns past the frame
+and the SIMD paths do not, so `--cpumask 63` can give a slightly different
+score from the default dispatch on such inputs
+(`T-CAMBI-NARROW-FRAME-COLUMNS-2026-09-30` in [the bug ledger](../state.md)).
+
 ## Options
 
 The CAMBI feature extractor also supports additional optional parameters as listed below:
 
-- `window_size` (min: 15, max: 127, default: 63): Window size to compute CAMBI (default: 63 corresponds to ~1 degree at 4K resolution and 1.5H)
+- `window_size` (min: 15, max: 127, default: 65): Window size to compute CAMBI (default: 65 corresponds to ~1 degree at 4K resolution and 1.5H)
 - `topk` (min: 0, max: 1.0, default: 0.6): Ratio of pixels for the spatial pooling computation
 - `tvi_threshold` (min: 0.0001, max: 1.0, default: 0.019): Visibility threshold for luminance ΔL < tvi_threshold*L_mean for BT.1886
 - `max_log_contrast` (min: 0, max: 5, default: 2): Maximum contrast in log luma level (2^max_log_contrast) at 10-bits. Default 2 is equivalent to 4 luma levels at 10-bit and 1 luma level at 8-bit. The default is recommended for banding artifacts coming from video compression.

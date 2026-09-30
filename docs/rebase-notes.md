@@ -1,6 +1,45 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cambi-short-frame-oob — CAMBI c-values walks stay inside short frames (Netflix/vmaf#1628) (2026-09-30)
+
+- Partly a port, partly fork-local. `core/src/feature/cambi.c`
+  (`c_values_first_pass`, `c_values_top_edge`, `c_values_bottom_edge`) and
+  `core/src/feature/x86/cambi_avx2.c` (the `_avx2` twins) carry the loop bounds
+  of [Netflix/vmaf#1629](https://github.com/Netflix/vmaf/pull/1629):
+  `MIN(pad_size, height)`, `MIN(pad_size + 1, height)` and
+  `MAX(height - pad_size, 0)`. The fork split upstream's single
+  `calculate_c_values()` into those helpers, so `c_values_first_pass` /
+  `c_values_first_pass_avx2` gained a `height` parameter; upstream's diff does
+  not apply verbatim. When #1629 merges upstream, a sync keeps the fork's
+  helpers and checks the three bounds are present in both files. If upstream
+  instead chooses the alternative raised in Netflix/vmaf#1628 of rejecting
+  such short frames in `init()`, the fork keeps the window clipping: clipping
+  gracefully supports wide, short inputs (such as letterboxed bars, banners,
+  or sub-frame slices) where only the vertical padding requires boundary
+  clamping, matching the top and bottom edge clamping already applied to every
+  frame.
+- Fork-local: `core/src/feature/cambi_c_values_frame.h`
+  (`cambi_calculate_c_values_frame`, the walk the AVX2 scan, AVX-512 and NEON
+  drivers share) has the same three bounds. The header's comment already says
+  a change to the walk in `cambi.c` / `cambi_avx2.c` must be mirrored there;
+  this is such a change.
+- `core/test/test_cambi.c`: `test_calculate_c_values_short_frame` is the
+  fork's version of upstream's sentinel test, rewritten for the fork's test
+  style and extended: every driver the host has, heights 1 to 10, and a
+  from-scratch reference for each in-frame c-value. Keep its SIMD gates on
+  `vmaf_get_cpu_flags_x86()`; `vmaf_get_cpu_flags()` is 0 in this binary.
+  Upstream's version gates its AVX2 leg on `vmaf_get_cpu_flags()`, so on a sync
+  do not take it over the fork's.
+- `check_c_values_avx2_parity()` in the same file reads
+  `vmaf_get_cpu_flags_x86()` (the code fix from #1479 was dropped during rebase
+  onto #1483, which had merged first, leaving only the comment behind
+  `vmaf_get_cpu_flags()`).
+- `core/test/test_cambi_stage_simd.c`: the frame sweep adds 1-row and
+  `pad`-row heights for the production configuration.
+- No public API, FFmpeg patch or Netflix golden-data impact; golden gate and
+  `python/test/cambi_test.py` pass unchanged.
+
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 
 - `scripts/dev/resolve-state-md-conflict.py`: fork-only (upstream Netflix/vmaf

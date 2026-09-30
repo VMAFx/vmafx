@@ -7202,6 +7202,7 @@
     "1256": {
       "sites": {
         "core/src/feature/cambi.c": 1,
+        "core/src/feature/x86/cambi_avx2.c": 1,
         "core/test/test_cambi_dispatch_invariance.c": 1
       },
       "target": "1256-cambi-spatial-mask-simd-dispatch.md"

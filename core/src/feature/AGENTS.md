@@ -100,6 +100,18 @@ feature/
   descriptors equivalent to the public option table. See
   [measured source and binary equivalence](../../../docs/research/2043-cambi-production-lint-2026-09-08.md).
 
+- **CAMBI c-values walks stay inside short frames** (Netflix/vmaf#1628, port
+  of Netflix/vmaf#1629): `calculate_c_values()` in `cambi.c`,
+  `calculate_c_values_avx2()` in `x86/cambi_avx2.c` and
+  `cambi_calculate_c_values_frame()` in `cambi_c_values_frame.h` (AVX2 scan,
+  AVX-512, NEON) bound the first pass to `MIN(pad_size, height)` rows, the top
+  edge to `MIN(pad_size + 1, height)` and start the bottom edge at
+  `MAX(height - pad_size, 0)`. Keep the three walks identical; an upstream sync
+  that re-imports `calculate_c_values()` keeps the bounds.
+  `test_calculate_c_values_short_frame` (`core/test/test_cambi.c`) fails on
+  every driver if one is lost. The first column loops are not bounded by the
+  width yet (`T-CAMBI-NARROW-FRAME-COLUMNS-2026-09-30` in `docs/state.md`).
+
 - **CAMBI heatmap paths are UTF-8 on Windows** (ADR-1182):
   `mkdirp.cpp` must create each component through `vmaf_mkdir_utf8`, and
   `cambi.c::open_heatmaps` must open every `.gray` file through
