@@ -28,8 +28,8 @@
  *   2. DWT horizontal pass -> 4 sub-bands (LL, LH, HL, HH)
  *   3. Decouple + CSF pass -> csf_f (|csf(t - r)| / 30) and, for AIM,
  *      csf_f_aim (|csf(r)| / 30)
- *   4. One row-parallel reduction: CSF denominator, DLM contrast measure
- *      and AIM contrast measure (ADR-1362) -> accum
+ *   4. Two row-parallel reductions: the CSF denominator, then the DLM and
+ *      AIM contrast measures (ADR-1362) -> accum
  *
  * Pattern: init -> submit (non-blocking) -> collect (wait + scores). The
  * whole frame is one combined-graph replay; the accumulators come back in
@@ -420,11 +420,11 @@ inline int dev_mirror_adm(int idx, int sup)
  *   - csf_a, adm_csf() (integer_adm.c:743-746): adm_s0_csf_a();
  *   - csf_f, adm_csf() (integer_adm.c:747-748): launch_decouple_csf();
  *   - the 1/15 centre tap, adm_cm_thresh() (integer_adm.c:1028):
- *     launch_csf_den_cm_3band(). This is the one 8-bit content reaches
+ *     adm_dev_csf_centre(). This is the one 8-bit content reaches
  *     with the default weights: |csf_a| >= 15360 on the h and v bands.
  * csf_a and csf_f wrap only with h / v weights above ~44000 (the default is
  * 36453). The contrast measure itself is int32_t on the CPU, and
- * launch_csf_den_cm_3band() evaluates it modulo 2^32 too. Stores that
+ * adm_dev_cm_excess_s0() evaluates it modulo 2^32 too. Stores that
  * cannot overflow need no narrowing: the DWT row buffers and bands stay
  * within +-27.4k, |r| <= |o|, and a = t - r lies between 0 and t.
  */
@@ -985,12 +985,15 @@ sycl::event launch_decouple_csf(sycl::queue &q, const AdmDecoupleArgs &args)
 }
 
 /* ------------------------------------------------------------------ */
-/* SYCL Kernel: CSF denominator + DLM and AIM contrast measures        */
+/* SYCL Kernels: CSF denominator; DLM and AIM contrast measures        */
 /*                                                                     */
-/* One work-group per row of the reduction region computes all three  */
-/* bands of all three reductions. r and t - r are recomputed per       */
-/* sample instead of read from buffers; only the |csf| / 30 bands are  */
-/* stored, because the threshold reads their 3x3 neighbourhood.        */
+/* Two row reductions per scale, each one work-group per row of the   */
+/* reduction region and all three bands: the CSF denominator, which   */
+/* reads only the reference bands, and the masking pass, which        */
+/* computes the DLM and AIM contrast measures. The masking pass       */
+/* recomputes r and t - r per sample instead of reading them from     */
+/* buffers; only the |csf| / 30 bands are stored, because the         */
+/* threshold reads their 3x3 neighbourhood.                            */
 /* ------------------------------------------------------------------ */
 
 /* Shift budget of one scale's reductions (CPU adm_csf_den_scale /
@@ -1016,11 +1019,23 @@ struct AdmCmArgs {
     int right;
 };
 
-/* Sub-group size 16: each work-item keeps nine int64 sums live across the
- * column loop, and at 32 lanes the UHD 770 (Xe-LP) spills -- adm_sycl alone at
- * 3840x2160 took 59.5 ms per frame at 32 and 45.6 at 16. The Arc B580 (Xe2,
- * native SIMD16) shows no difference. The sums are integer, so the sub-group
- * size cannot change a score. */
+/*
+ * Both row reductions must run without scratch memory
+ * (T-SYCL-ADM-CM-SCRATCH-2026-09-30). Each work-item keeps its sums in
+ * registers across the column loop, and int64 values take four registers
+ * per sum at 16 lanes on GPUs with 32-byte registers (Arc A-series,
+ * Xe-LP). When one kernel carried all nine sums (DLM, CSF denominator,
+ * AIM), IGC 2.41.5 compiled it at SIMD16 with an 864-byte spill on the Arc
+ * A380 (672 on Xe-LP); on the A380 under the xe kernel driver every kernel
+ * that uses scratch computes wrong values, and there all 36 accumulators came
+ * back zero, so every ADM output read exactly 1. The CSF denominator
+ * therefore runs as its own pass, and the masking pass carries six sums;
+ * both compile with no spill at SIMD16 on dg2-g11, adl-s and bmg-g21.
+ * Sub-group size 16: at 32 lanes the UHD 770 spilled even more -- adm_sycl
+ * alone at 3840x2160 took 59.5 ms per frame at 32 and 45.6 at 16; the Arc
+ * B580 (Xe2, native SIMD16) showed no difference. The sums are integer, so
+ * neither the sub-group size nor the split can change a score.
+ */
 constexpr int ADM_CM_WG = 256;    // work-items per row
 constexpr int ADM_CM_SG = 16;     // sub-group size
 constexpr int ADM_CM_MAX_SG = 32; // sub-groups per work-group, upper bound
@@ -1114,24 +1129,50 @@ inline int64_t adm_dev_den_cube(const AdmCmArgs &a, int32_t o)
     return ((o_sq * abs_o) + rnd_cub) >> a.sh.den_cub;
 }
 
-/* All reductions of one sample. DLM: threshold from csf(t - r), measure r.
+/* CSF-denominator terms of one sample: |o|^3 of the three reference bands. */
+inline void adm_dev_den_px(const AdmCmArgs &a, int row, int col, int64_t den[ADM_NUM_BANDS])
+{
+    unsigned const idx = ((unsigned)row * a.in.stride) + (unsigned)col;
+    for (int b = 0; b < ADM_NUM_BANDS; ++b) {
+        den[b] += adm_dev_den_cube(a, a.in.ref[b][idx]);
+    }
+}
+
+/* Contrast measures of one sample. DLM: threshold from csf(t - r), measure r.
  * AIM (the CPU's measure_aim): the roles swap -- threshold from csf(r),
- * measure t - r -- and the pass adds no noise floor (host side). */
-inline void adm_dev_cm_px(const AdmCmArgs &a, int row, int col, int64_t sums[ADM_CM_SUMS])
+ * measure t - r -- and the pass adds no noise floor (host side). cm[] holds
+ * the DLM bands, then the AIM bands. */
+inline void adm_dev_cm_px(const AdmCmArgs &a, int row, int col, int64_t cm[2 * ADM_NUM_BANDS])
 {
     AdmBandInputs const &in = a.in;
     AdmSample const s = adm_dev_sample(in, ((unsigned)row * in.stride) + (unsigned)col);
     int64_t const thr = adm_dev_threshold(in, a.csf_f, s.d, row, col);
-    for (int b = 0; b < 3; ++b) {
-        sums[(ADM_TERM_CM * ADM_NUM_BANDS) + b] += adm_dev_cm_cube(a, b, s.r[b], thr);
-        sums[(ADM_TERM_DEN * ADM_NUM_BANDS) + b] += adm_dev_den_cube(a, s.o[b]);
+    for (int b = 0; b < ADM_NUM_BANDS; ++b) {
+        cm[b] += adm_dev_cm_cube(a, b, s.r[b], thr);
     }
     if (!in.aim) {
         return;
     }
     int64_t const thr_aim = adm_dev_threshold(in, a.csf_f_aim, s.r, row, col);
-    for (int b = 0; b < 3; ++b) {
-        sums[(ADM_TERM_AIM * ADM_NUM_BANDS) + b] += adm_dev_cm_cube(a, b, s.d[b], thr_aim);
+    for (int b = 0; b < ADM_NUM_BANDS; ++b) {
+        cm[ADM_NUM_BANDS + b] += adm_dev_cm_cube(a, b, s.d[b], thr_aim);
+    }
+}
+
+/* Sub-group sums of one term's per-item band totals into local memory,
+ * slot [term][band][sub-group]. */
+inline void adm_dev_sg_partials(sycl::nd_item<1> item, const sycl::local_accessor<int64_t, 1> &lmem,
+                                int term, const int64_t sums[ADM_NUM_BANDS])
+{
+    sycl::sub_group const sg = item.get_sub_group();
+    uint32_t const sg_id = sg.get_group_linear_id();
+    bool const sg_leader = sg.get_local_linear_id() == 0;
+    for (int b = 0; b < ADM_NUM_BANDS; ++b) {
+        int64_t const part = sycl::reduce_over_group(sg, sums[b], sycl::plus<int64_t>{});
+        if (sg_leader) {
+            size_t const k = ((size_t)term * ADM_NUM_BANDS) + (size_t)b;
+            lmem[(k * ADM_CM_MAX_SG) + sg_id] = part;
+        }
     }
 }
 
@@ -1150,24 +1191,15 @@ inline void adm_dev_fold_row(const AdmCmArgs &a, int k, int64_t row_total)
     slot.fetch_add(shifted);
 }
 
-/* Work-group sum of every per-item total, then one fold per sum. */
-inline void adm_dev_reduce_row(sycl::nd_item<1> item, const sycl::local_accessor<int64_t, 1> &lmem,
-                               const AdmCmArgs &a, const int64_t sums[ADM_CM_SUMS])
+/* Work-group sum of every sub-group partial, then one fold per sum. */
+inline void adm_dev_fold_rows(sycl::nd_item<1> item, const sycl::local_accessor<int64_t, 1> &lmem,
+                              const AdmCmArgs &a)
 {
-    sycl::sub_group const sg = item.get_sub_group();
-    uint32_t const sg_id = sg.get_group_linear_id();
-    bool const sg_leader = sg.get_local_linear_id() == 0;
-    for (int k = 0; k < ADM_CM_SUMS; ++k) {
-        int64_t const part = sycl::reduce_over_group(sg, sums[k], sycl::plus<int64_t>{});
-        if (sg_leader) {
-            lmem[((size_t)k * ADM_CM_MAX_SG) + sg_id] = part;
-        }
-    }
     item.barrier(sycl::access::fence_space::local_space);
     if (item.get_local_id(0) != 0) {
         return;
     }
-    uint32_t const n_sg = sg.get_group_linear_range();
+    uint32_t const n_sg = item.get_sub_group().get_group_linear_range();
     for (int k = 0; k < ADM_CM_SUMS; ++k) {
         int64_t row_total = 0;
         for (uint32_t i = 0; i < n_sg; ++i) {
@@ -1177,8 +1209,14 @@ inline void adm_dev_reduce_row(sycl::nd_item<1> item, const sycl::local_accessor
     }
 }
 
+/* One work-group per region row, in two phases whose sums are never live
+ * together: the CSF denominator (3 sums), then the DLM and AIM contrast
+ * measures (6 sums). Each phase hands its sub-group partials to local memory
+ * before the next begins. */
 sycl::event launch_csf_den_cm(sycl::queue &q, const AdmCmArgs &args, int num_rows)
 {
+    assert(num_rows > 0);
+    assert(args.right > args.left);
     AdmCmArgs const a = args;
     return q.submit([&](sycl::handler &cgh) {
         sycl::local_accessor<int64_t, 1> const lmem(
@@ -1186,12 +1224,19 @@ sycl::event launch_csf_den_cm(sycl::queue &q, const AdmCmArgs &args, int num_row
         cgh.parallel_for(sycl::nd_range<1>((size_t)num_rows * ADM_CM_WG, ADM_CM_WG),
                          [=](sycl::nd_item<1> item) VMAF_SYCL_REQD_SG_SIZE(ADM_CM_SG) {
                              int const row = a.top + (int)item.get_group(0);
-                             int64_t sums[ADM_CM_SUMS] = {};
-                             for (int col = a.left + (int)item.get_local_id(0); col < a.right;
-                                  col += ADM_CM_WG) {
-                                 adm_dev_cm_px(a, row, col, sums);
+                             int const first = a.left + (int)item.get_local_id(0);
+                             int64_t den[ADM_NUM_BANDS] = {};
+                             for (int col = first; col < a.right; col += ADM_CM_WG) {
+                                 adm_dev_den_px(a, row, col, den);
                              }
-                             adm_dev_reduce_row(item, lmem, a, sums);
+                             adm_dev_sg_partials(item, lmem, ADM_TERM_DEN, den);
+                             int64_t cm[2 * ADM_NUM_BANDS] = {};
+                             for (int col = first; col < a.right; col += ADM_CM_WG) {
+                                 adm_dev_cm_px(a, row, col, cm);
+                             }
+                             adm_dev_sg_partials(item, lmem, ADM_TERM_CM, cm);
+                             adm_dev_sg_partials(item, lmem, ADM_TERM_AIM, &cm[ADM_NUM_BANDS]);
+                             adm_dev_fold_rows(item, lmem, a);
                          });
     });
 }

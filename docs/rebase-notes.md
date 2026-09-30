@@ -78,6 +78,25 @@
   through `check_sync_failed_lifecycle_close()` after its frees, and the
   legacy runner is split into `_a`, `_b` and `_c`. With these changes the file
   is clean under clang-tidy (CUDA lane) and cppcheck.
+## perf/sycl-adm-no-spill — spill-free integer ADM row reduction on DG2 (ADR-1395) (2026-09-30)
+
+- `core/src/feature/sycl/integer_adm_sycl.cpp`: fork-only (upstream Netflix/vmaf
+  has no SYCL). The CSF denominator and contrast measure reductions in
+  `launch_csf_den_cm` run in two sequential column reduction phases (CSF
+  denominator 3 sums into `den[]`, then DLM and AIM contrast measures 6 sums
+  into `cm[]`), staging sub-group partials into local memory before folding.
+  Do not combine them into a single loop: keeping all nine 64-bit accumulators
+  live across the column loop causes IGC to spill 864 B/thread at SIMD16 on
+  DG2 (`dg2-g11`, Intel Arc A380), and under the Linux `xe` driver scratch
+  memory corrupts accumulator reads and produces zero sums, failing
+  `test_sycl_adm_parity` (`T-SYCL-ADM-CM-SCRATCH-2026-09-30`).
+- Both phases compile with zero private memory and zero spill memory on
+  `dg2-g11`, `adl-s`, and `bmg-g21`.
+- NASA JPL Rule 4: helper functions `adm_dev_den_px`, `adm_dev_cm_px`,
+  `adm_dev_sg_partials`, `adm_dev_fold_rows`, and `launch_csf_den_cm` each
+  remain under 25 LOC.
+- `core/test/test_adm_cm_row_rounding_contract.py` continues to validate
+  the fold in `adm_dev_fold_row`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
 ## fix/sycl-aot-check-single-target — the AOT image check accepts bare native images (2026-09-30)
 
