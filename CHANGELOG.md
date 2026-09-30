@@ -148,6 +148,8 @@
   at init. `scripts/dev/speed_gpu_parity.py` takes `--feature` and
   `--max-abs-diff` to check and time any GPU twin. See
   [SSIMULACRA 2](docs/metrics/ssimulacra2.md).
+
+
 - The praetor governance engine moves from `f41e74d` to `25451d8`
   (ADR-1351). Its HISS scanners now find 246 existing issues the old engine
   did not measure: 142 Python functions over 60 lines, 61 process exits from
