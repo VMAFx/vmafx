@@ -358,12 +358,56 @@ static int vif_setup_buffers(VmafFeatureExtractor *fex, VifStateCuda *s, unsigne
     return vif_carve_buffers(fex, s, h, rd_size);
 }
 
+/* Smallest frame dimension every scale filters like the CPU
+ * (T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29, ADR-1374). Scale s works on
+ * floor(dim / 2^s) samples and reflects each tap once; a tap half-width of k
+ * stays in the plane only while that is >= k + 1, i.e. dim >= (k + 1) << s.
+ * The scale filters {17, 9, 5, 3} need {9, 10, 12, 16} and the decimation
+ * filters (the next scale's) {5, 6, 8}, so the bound is 16, the one vif_sycl
+ * declares. Below it filter1d.cu clamps the taps a second reflection would
+ * need, which keeps its loads in bounds but is not the CPU's value. */
+static unsigned vif_cuda_min_dim(void)
+{
+    unsigned min_dim = 1u;
+    for (unsigned scale = 0u; scale < 4u; scale++) {
+        const unsigned need = (((unsigned)vif_filter1d_width[scale] / 2u) + 1u) << scale;
+        const unsigned rd_width = (scale < 3u) ? (unsigned)vif_filter1d_width[scale + 1u] : 0u;
+        const unsigned rd_need = rd_width ? ((rd_width / 2u) + 1u) << scale : 1u;
+        min_dim = (need > min_dim) ? need : min_dim;
+        min_dim = (rd_need > min_dim) ? rd_need : min_dim;
+    }
+    return min_dim;
+}
+
+/* ADR-1324 first-picture gate: model dispatch computes frames below the
+ * minimum with the CPU `vif` extractor instead of this twin. */
+static int check_context_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                              unsigned w, unsigned h)
+{
+    (void)fex;
+    (void)pix_fmt;
+    (void)bpc;
+    const unsigned min_dim = vif_cuda_min_dim();
+    return (w < min_dim || h < min_dim) ? -ENOTSUP : 0;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
     VifStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
 
+    /* Direct `vif_cuda` requests get no fallback (ADR-1324): refuse before
+     * touching the CUDA state, so there is nothing to release. */
+    const unsigned min_dim = vif_cuda_min_dim();
+    if (w < min_dim || h < min_dim) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "vif_cuda requires width >= %u and height >= %u (got %ux%u); the CPU "
+                 "extractor `vif` computes smaller frames\n",
+                 min_dim, min_dim, w, h);
+        return -EINVAL;
+    }
+
+    CudaFunctions *cu_f = fex->cu_state->f;
     const int cuda_err = vif_init_cuda_context(fex, s, cu_f);
     if (cuda_err)
         return cuda_err;
@@ -756,6 +800,8 @@ VmafFeatureExtractor vmaf_fex_integer_vif_cuda = {.name = "vif_cuda",
                                                   .close = close_fex_cuda,
                                                   .priv_size = sizeof(VifStateCuda),
                                                   .provided_features = provided_features,
-                                                  .flags = VMAF_FEATURE_EXTRACTOR_CUDA};
+                                                  .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
+                                                  .context_check = check_context_cuda,
+                                                  .context_fallback_name = "vif"};
 
 /* NOLINTEND(modernize-use-nullptr) */

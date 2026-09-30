@@ -1082,3 +1082,6 @@
 1379-cuda-cambi-device-resident-pipeline
 1380-cuda-speed-device-resident-pipeline
 1386-rc3-home-gpu-retest-kit
+1372-cuda-motion-diff-first-pipeline
+1373-cuda-twin-cpu-option-parity
+1374-cuda-integer-tiny-frame-guards

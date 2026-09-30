@@ -15,7 +15,8 @@
  *    1. Each thread computes one pixel's squared error (uint64).
  *    2. Warp shuffle reduction collapses 32 threads → 1.
  *    3. Lane 0 of each warp atomicAdd's to a single global uint64
- *       counter. (Same pattern as motion_score.cu's SAD reduction.)
+ *       counter. (Same pattern as the motion SAD reduction in
+ *       integer_motion_v2/motion_v2_score.cu.)
  *
  *  Bit-exactness contract: byte-equal int64 SSE accumulation with the
  *  scalar reference ⇒ places=4 cross-backend gate clears trivially.

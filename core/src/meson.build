@@ -1185,7 +1185,8 @@ if is_cuda_enabled
         'adm_csf' : [feature_src_dir + 'cuda/integer_adm/adm_csf.cu'],
         'adm_csf_den' : [feature_src_dir + 'cuda/integer_adm/adm_csf_den.cu'],
         'filter1d' : [feature_src_dir + 'cuda/integer_vif/filter1d.cu'],
-        'motion_score' : [feature_src_dir + 'cuda/integer_motion/motion_score.cu'],
+        # ADR-1372: the one motion SAD kernel, shared by motion_cuda and
+        # motion_v2_cuda through integer_motion_sad_cuda.c.
         'motion_v2_score' : [feature_src_dir + 'cuda/integer_motion_v2/motion_v2_score.cu'],
         'psnr_score' : [feature_src_dir + 'cuda/integer_psnr/psnr_score.cu'],
         'moment_score' : [feature_src_dir + 'cuda/integer_moment/moment_score.cu'],
@@ -1228,6 +1229,15 @@ if is_cuda_enabled
     # scale-3 and adm2 drift past places=4 vs CPU adm_decouple_s /
     # adm_cm_s. The integer ADM kernels use int64 accumulators so FMA
     # is irrelevant; default FMA-on flags stay for them.
+    #
+    # `integer_ssim_score` needs `--fmad=false` so its per-pixel SSIM combine
+    # evaluates the CPU expression (integer_ssim.c::ssim_reduce_row_range)
+    # operand for operand, as the HIP twin does with `-ffp-contract=off`
+    # (ADR-0564). Without it NVCC fuses the last multiply of the stability
+    # constant c1 into the denominator's sum while the numerator adds the
+    # rounded c1, so the two sides of an identical window are not computed
+    # alike and `enable_db` loses its guaranteed exact 1 (+inf / `clip_db`
+    # ceiling, ADR-1373).
     cuda_cu_extra_flags = {
         # `speed_score` (ADR-1380) reproduces speed.c operation for operation;
         # every fp32 operation whose rounding matters is already spelled with
@@ -1236,6 +1246,7 @@ if is_cuda_enabled
         'speed_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
         'ssimulacra2_blur' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
         'float_adm_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
+        'integer_ssim_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
     }
     message(cuda_cu_sources)
     # gpu_picture_pool.cpp moved to libvmaf_sources (always-compiled) per
@@ -1466,8 +1477,10 @@ if is_cuda_enabled
         'feature/integer_vif.h',
         'feature/cuda/integer_adm_cuda.h',
         'feature/cuda/integer_adm/adm_decouple_inline.cuh',
+        'feature/cuda/integer_adm/adm_dwt2_rows.h',
         'feature/cuda/integer_vif_cuda.h',
         'feature/cuda/integer_vif/vif_statistics.cuh',
+        'feature/cuda/cuda_tile_index.h',
         'feature/cuda/integer_motion_cuda.h',
         'feature/cuda/integer_motion_v2_cuda.h',
         'feature/cuda/integer_psnr_cuda.h',
@@ -2043,6 +2056,7 @@ if is_cuda_enabled
         feature_src_dir + 'cuda/integer_vif_cuda.c',
         feature_src_dir + 'cuda/integer_motion_cuda.c',
         feature_src_dir + 'cuda/integer_motion_v2_cuda.c',
+        feature_src_dir + 'cuda/integer_motion_sad_cuda.c',
         feature_src_dir + 'cuda/integer_psnr_cuda.c',
         feature_src_dir + 'cuda/integer_moment_cuda.c',
         feature_src_dir + 'cuda/integer_ciede_cuda.c',

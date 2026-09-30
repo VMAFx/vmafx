@@ -30,7 +30,11 @@
  *             ? psnr_max[p]                          (infinity sentinel)
  *             : uncapped ? 10 * log10(peak * peak / mse)
  *                        : MIN(10 * log10(peak * peak / mse), psnr_max[p]);
- *  Bit-exactness contract: int64 SSE accumulation → places=4 vs CPU.
+ *  Bit-exactness contract: the device reduces the integer SSE; the host
+ *  turns it into psnr_* / mse_* / apsnr_* with the psnr_score.h helpers the
+ *  CPU extractor calls, so every option of the CPU table (enable_mse,
+ *  enable_apsnr, reduced_hbd_peak, min_sse, uncapped) is bit-exact with the
+ *  CPU (ADR-1373, following ADR-1365 for SYCL).
  *
  *  4:0:0 (YUV400) handling: chroma planes are absent, so only the
  *  luma plane is dispatched and only `psnr_y` is emitted. This
@@ -48,6 +52,7 @@
  */
 
 #include <errno.h>
+#include <float.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -62,6 +67,7 @@
 #include "mem.h"
 #include "picture.h"
 #include "picture_cuda.h"
+#include "psnr_score.h"
 #include "cuda/cuda_helper.cuh"
 #include "cuda/kernel_template.h"
 
@@ -92,42 +98,78 @@ typedef struct PsnrStateCuda {
     unsigned width[PSNR_NUM_PLANES];
     unsigned height[PSNR_NUM_PLANES];
     unsigned bpc;
+    /* `vmaf_psnr_peak()` of bpc and `reduced_hbd_peak`. */
     uint32_t peak;
     /* `enable_chroma` option: when false, only luma is dispatched.
      * Default true mirrors CPU integer_psnr.c — see ADR-0453. */
     bool enable_chroma;
-    /* `uncapped` option: mirrors CPU integer_psnr.c. When true, psnr_max
-     * keeps only its `sse == 0` infinity-sentinel role and stops
-     * truncating genuinely computed values. Default false keeps every
-     * shipped score unchanged. See ADR-1193 / T-UPSTREAM-1109. */
+    /* CPU integer_psnr.c options, applied on the host to the per-plane
+     * SSE the device reduces (psnr_score.h, ADR-1373; `uncapped`:
+     * ADR-1193). `enable_mse` adds `mse_{y,cb,cr}`; `enable_apsnr` sums
+     * SSE and sample count across frames for the flush aggregates. */
+    bool enable_mse;
+    bool enable_apsnr;
+    bool reduced_hbd_peak;
     bool uncapped;
+    double min_sse;
+    uint64_t apsnr_sse[PSNR_NUM_PLANES];
+    uint64_t apsnr_n_pixels[PSNR_NUM_PLANES];
     /* Number of active planes (1 for YUV400, 3 otherwise). */
     unsigned n_planes;
-    /* Per-plane psnr_max — `(6 * bpc) + 12` in the default branch
-     * (CPU integer_psnr.c::init's `min_sse == 0.0` path). The array
-     * layout leaves `min_sse`-driven per-plane formulas a one-line
-     * change away. */
+    /* Per-plane `vmaf_psnr_max()`: `(6 * bpc) + 12`, or the `min_sse`
+     * ceiling derived from that plane's sample count. */
     double psnr_max[PSNR_NUM_PLANES];
     VmafDictionary *feature_name_dict;
 } PsnrStateCuda;
 
-static const VmafOption options[] = {{
-                                         .name = "enable_chroma",
-                                         .help = "enable calculation for chroma channels",
-                                         .offset = offsetof(PsnrStateCuda, enable_chroma),
-                                         .type = VMAF_OPT_TYPE_BOOL,
-                                         .default_val.b = true,
-                                     },
-                                     {
-                                         .name = "uncapped",
-                                         .help = "report the true PSNR instead of truncating at "
-                                                 "the psnr_max ceiling (an all-zero SSE still "
-                                                 "reports psnr_max)",
-                                         .offset = offsetof(PsnrStateCuda, uncapped),
-                                         .type = VMAF_OPT_TYPE_BOOL,
-                                         .default_val.b = false,
-                                     },
-                                     {0}};
+/* The CPU integer_psnr.c table: same names, defaults and range. */
+static const VmafOption options[] = {
+    {
+        .name = "enable_chroma",
+        .help = "enable calculation for chroma channels",
+        .offset = offsetof(PsnrStateCuda, enable_chroma),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = true,
+    },
+    {
+        .name = "enable_mse",
+        .help = "enable MSE calculation",
+        .offset = offsetof(PsnrStateCuda, enable_mse),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "enable_apsnr",
+        .help = "enable APSNR calculation",
+        .offset = offsetof(PsnrStateCuda, enable_apsnr),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "reduced_hbd_peak",
+        .help = "reduce hbd peak value to align with scaled 8-bit content",
+        .offset = offsetof(PsnrStateCuda, reduced_hbd_peak),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "min_sse",
+        .help = "constrain the minimum possible sse",
+        .offset = offsetof(PsnrStateCuda, min_sse),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 0.0,
+        .min = 0.0,
+        .max = DBL_MAX,
+    },
+    {
+        .name = "uncapped",
+        .help = "report the true PSNR instead of truncating at the psnr_max ceiling "
+                "(an all-zero SSE still reports psnr_max)",
+        .offset = offsetof(PsnrStateCuda, uncapped),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {0}};
 
 static int psnr_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis, VmafCudaBuffer *sse,
                               unsigned width, unsigned height, unsigned plane, unsigned bpc,
@@ -213,6 +255,22 @@ static void psnr_cuda_plane_geometry(PsnrStateCuda *s, enum VmafPixelFormat pix_
     }
 }
 
+/* psnr_cuda_configure_scores - peak, per-plane psnr_max and empty APSNR
+ * totals, derived as CPU integer_psnr.c::init derives them (psnr_score.h).
+ * Inactive planes keep the default ceiling: their zero size would turn a
+ * min_sse ceiling into -inf, and nothing reads it. */
+static void psnr_cuda_configure_scores(PsnrStateCuda *s, unsigned bpc)
+{
+    s->bpc = bpc;
+    s->peak = vmaf_psnr_peak(bpc, s->reduced_hbd_peak);
+    for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
+        const double min_sse = (p < s->n_planes) ? s->min_sse : 0.0;
+        s->psnr_max[p] = vmaf_psnr_max(bpc, s->peak, min_sse, s->width[p], s->height[p]);
+        s->apsnr_sse[p] = 0u;
+        s->apsnr_n_pixels[p] = 0u;
+    }
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -241,12 +299,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_psnr_kernel_16bpc"), fail);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
-    s->bpc = bpc;
-    s->peak = (1u << bpc) - 1u;
-    /* Match CPU integer_psnr.c::init's psnr_max default branch
-     * (`min_sse == 0.0`): psnr_max[p] = (6 * bpc) + 12. */
-    for (unsigned p = 0; p < PSNR_NUM_PLANES; p++)
-        s->psnr_max[p] = (double)(6U * bpc) + 12.0;
+    psnr_cuda_configure_scores(s, bpc);
 
     /* Per-plane readback pairs (device SSE accumulator + pinned host
      * slot) via the template. One pair per plane — matches the
@@ -323,9 +376,34 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
 }
 
-/* psnr_name[p] — same array as the CPU path
- * (libvmaf/src/feature/integer_psnr.c::psnr_name). */
+/* Feature names — same arrays as the CPU path
+ * (libvmaf/src/feature/integer_psnr.c::psnr_name / mse_name / flush). */
 static const char *const psnr_name[PSNR_NUM_PLANES] = {"psnr_y", "psnr_cb", "psnr_cr"};
+static const char *const mse_name[PSNR_NUM_PLANES] = {"mse_y", "mse_cb", "mse_cr"};
+static const char *const apsnr_name[PSNR_NUM_PLANES] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
+
+/* Score one plane from its device-reduced SSE, in CPU order: `psnr_*`, then
+ * `mse_*` when `enable_mse` is set. `enable_apsnr` folds the SSE into the
+ * clip totals that flush_fex_cuda() publishes. */
+static int psnr_cuda_emit_plane(PsnrStateCuda *s, unsigned p, unsigned index,
+                                VmafFeatureCollector *feature_collector)
+{
+    const uint64_t sse = *(const uint64_t *)s->rb[p].host_pinned;
+    if (s->enable_apsnr) {
+        s->apsnr_sse[p] += sse;
+        s->apsnr_n_pixels[p] += (uint64_t)s->height[p] * s->width[p];
+    }
+    const double mse = (double)sse / ((double)s->width[p] * (double)s->height[p]);
+    const double psnr =
+        vmaf_psnr_from_mse(mse, (double)s->peak * (double)s->peak, s->psnr_max[p], s->uncapped);
+    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      psnr_name[p], psnr, index);
+    if (!err && s->enable_mse) {
+        err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      mse_name[p], mse, index);
+    }
+    return err;
+}
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
@@ -340,35 +418,28 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 
     int rc = 0;
     for (unsigned p = 0; p < s->n_planes; p++) {
-        const double sse = (double)*(uint64_t *)s->rb[p].host_pinned;
-        const double n_pixels = (double)s->width[p] * (double)s->height[p];
-        const double mse = sse / n_pixels;
-        /* Match CPU integer_psnr.c::psnr_from_mse — `mse == 0` reports
-         * psnr_max[p] as the infinity sentinel, and the truncation at
-         * psnr_max[p] applies only when `uncapped` is false. The 1e-16
-         * floor is kept in the computed branch so the two modes agree
-         * on any 0 < mse < 1e-16 input; the CPU path uses the same
-         * constant. See ADR-1193 / T-UPSTREAM-1109. */
-        const double peak_sq = (double)s->peak * (double)s->peak;
-        const double mse_clamped = (mse > 1e-16) ? mse : 1e-16;
-        double psnr;
-        if (!s->uncapped) {
-            /* Pre-ADR-1193 expression verbatim — bit-identical default. */
-            psnr = 10.0 * log10(peak_sq / mse_clamped);
-            if (psnr > s->psnr_max[p])
-                psnr = s->psnr_max[p];
-        } else if (mse <= 0.0) {
-            psnr = s->psnr_max[p]; /* infinity sentinel */
-        } else {
-            psnr = 10.0 * log10(peak_sq / mse_clamped);
-        }
-
-        const int e = vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, psnr_name[p], psnr, index);
+        const int e = psnr_cuda_emit_plane(s, p, index, feature_collector);
         if (e && rc == 0)
             rc = e;
     }
     return rc;
+}
+
+/* `enable_apsnr`: publish the clip-aggregate APSNR of every active plane,
+ * exactly as CPU integer_psnr.c::flush does. Runs after the final collect
+ * (libvmaf.c flush_context_cuda), so the totals are complete. */
+static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    const PsnrStateCuda *s = fex->priv;
+    int err = 0;
+    if (s->enable_apsnr) {
+        for (unsigned p = 0; p < s->n_planes; p++) {
+            const double apsnr =
+                vmaf_psnr_aggregate(s->peak, s->apsnr_sse[p], s->apsnr_n_pixels[p], s->psnr_max[p]);
+            err |= vmaf_feature_collector_set_aggregate(feature_collector, apsnr_name[p], apsnr);
+        }
+    }
+    return (err < 0) ? err : !err;
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)
@@ -390,6 +461,7 @@ VmafFeatureExtractor vmaf_fex_psnr_cuda = {
     .init = init_fex_cuda,
     .submit = submit_fex_cuda,
     .collect = collect_fex_cuda,
+    .flush = flush_fex_cuda,
     .close = close_fex_cuda,
     .options = options,
     .priv_size = sizeof(PsnrStateCuda),

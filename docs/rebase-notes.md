@@ -82,6 +82,57 @@
   and in `scripts/ci/test_git_fixture_isolation.py`. It scrubs every `GIT_*`
   variable before it creates a repository; keep it that way.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## fix/cuda-rc3-parity — CUDA motion order, CPU option tables, tiny-frame guards (ADR-1372, ADR-1373, ADR-1374) (2026-09-30)
+
+- `core/src/feature/cuda/integer_motion_sad_cuda.{h,c}` (new, fork-only): the
+  one host path to the motion SAD kernel of
+  `integer_motion_v2/motion_v2_score.cu`, used by `motion_cuda` and
+  `motion_v2_cuda`. `integer_motion/motion_score.cu` (upstream NVIDIA
+  blur-each-frame kernel) is deleted with its `motion_score_ptx` target. An
+  upstream sync that brings back `motion_score.cu`, `calculate_motion_score`
+  or the blurred ping-pong reintroduces the blur-then-diff order; keep the
+  diff-first kernel and `test_cuda_motion_tiny_frames` (compares with `==`).
+  If upstream changes `motion_score_pipeline_8` / `_16` in
+  `integer_motion.c`, mirror it in `motion_v2_score.cu` once (both CUDA
+  motion twins).
+- `integer_motion_cuda.c`: raw-luma ping-pong `raw[2]` replaces `blur[2]`;
+  `submit()` passes the previous frame's `event` as `prev_done`, so the
+  copy and the kernel are ordered on the device. The ADR-0845 batch readback
+  (`motion_readback_slots()`) synchronises once; do not restore the extra
+  `cuStreamSynchronize` before the copies. The debug
+  `VMAF_integer_feature_motion_score` is `MIN(sad * mfw, mmxv)`, as in
+  `integer_motion.c::extract`.
+- `integer_adm/adm_dwt2_rows.h` (new): row and tap arithmetic of
+  `adm_dwt2.cu`; `adm_dwt2_load_column()` and `calculate_indices()` call it,
+  and the scale-0 load clamps through `cuda_tile_index.h`. Upstream-mirror
+  NVIDIA code changed here: on a sync, keep the header calls and the
+  `static_assert`s that tie the `DWT_8_VERT_HORI(4, 16, 32768, 128, 8, ...)`
+  instantiation to the header's geometry. `test_cuda_adm_dwt2_rows` replays
+  the arithmetic device-free.
+- `integer_vif_cuda.c`: `context_check` + `context_fallback_name = "vif"` and
+  an `init()` guard below `vif_cuda_min_dim()` (16), before any CUDA state is
+  read (ADR-1324 pattern, as `vif_sycl`).
+- Options (ADR-1373): `integer_psnr_cuda.c` calls `psnr_score.h` for every
+  score and gained a `flush` for `apsnr_*`; `ssim_cuda.c` and
+  `integer_ssim_cuda.c` emit through `vmaf_ssim_max_db()` / the
+  `nonfinite_score.h` emitters; `integer_ssim/ssim_score.cu` rounds the three
+  SSIM products with `__fmul_rn` (keep it: an FMA there breaks the exact 1 of
+  identical windows) and gained `calculate_ssim_vert_combine_lcs`;
+  `core/src/meson.build` builds `integer_ssim_score` with `--fmad=false`
+  (`cuda_cu_extra_flags`, the HIP twin's `-ffp-contract=off`);
+  `float_ssim_cuda` lost `enable_chroma`; `float_motion_cuda.c` routes every
+  score through `motion_clip()`.
+- Tests: `core/test/test_cuda_module_lifecycle_contract.py` inventory lists
+  `integer_motion_sad_cuda.c` as the motion module owner;
+  `test_device_target_header_dependencies.py` counts 21 CUDA fatbin targets.
+
+No public C API, CLI syntax or FFmpeg patch impact. CPU scores are
+bit-identical (no CPU source changed). `motion_cuda` scores move to the CPU's
+(expected up to 2.0e-4 on 17x17 frames, 1.3e-5 on the Netflix pair, from the
+SYCL measurement); `motion_v2_cuda` is unchanged; default `float_ssim_cuda`
+moves by an fp32 rounding; default `integer_ssim_cuda` per-pixel terms move
+by a double rounding (the combine no longer fuses `c1`, `c2` and `y2 * w`);
+`psnr_cuda` and `float_motion_cuda` default scores are unchanged.
 
 ## perf/sycl-adm-aim-device — AIM pass on the SYCL integer ADM twin (ADR-1362) (2026-09-29)
 

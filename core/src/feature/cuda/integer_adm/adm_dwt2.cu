@@ -21,6 +21,7 @@
 #include "feature_collector.h"
 #endif
 #include "cuda/integer_adm_cuda.h"
+#include "cuda/integer_adm/adm_dwt2_rows.h"
 
 #include "common.h"
 
@@ -36,31 +37,12 @@ namespace
 {
 
 // Calculates and returns vector with indices for dwt, if upper limit is
-// reached, the indices will be mirrored
+// reached, the indices will be mirrored. The per-tap arithmetic lives in
+// adm_dwt2_rows.h, where test_cuda_adm_dwt2_rows replays it on the host.
 __device__ __forceinline__ int4 calculate_indices(const int n, const int upper_limit)
 {
-    int4 indices = make_int4(2 * n - 1, 2 * n, 2 * n + 1, 2 * n + 2);
-
-    if (!n) {
-        indices.x = 1;
-        indices.y = 0;
-        indices.z = 1;
-        indices.w = 2;
-    }
-
-    if (indices.x >= upper_limit)
-        indices.x = (2 * upper_limit - indices.x - 1);
-
-    if (indices.y >= upper_limit)
-        indices.y = (2 * upper_limit - indices.y - 1);
-
-    if (indices.z >= upper_limit)
-        indices.z = (2 * upper_limit - indices.z - 1);
-
-    if (indices.w >= upper_limit)
-        indices.w = (2 * upper_limit - indices.w - 1);
-
-    return indices;
+    return make_int4(adm_dwt2_s123_tap(n, 0, upper_limit), adm_dwt2_s123_tap(n, 1, upper_limit),
+                     adm_dwt2_s123_tap(n, 2, upper_limit), adm_dwt2_s123_tap(n, 3, upper_limit));
 }
 
 template <int32_t add_shift, int16_t shift, typename T>
@@ -184,27 +166,18 @@ __device__ __forceinline__ int32_t dwt_tap4(const int32_t *filter, int32_t s0, i
 }
 
 /* Loads the 2 + 2 * v_rows_per_thread source rows of column x that one
- * thread's vertical outputs read, mirrored at the top and bottom edges. */
+ * thread's vertical outputs read, mirrored at the top and bottom edges and
+ * clamped into the plane for padding threads (adm_dwt2_rows.h). */
 template <int v_rows_per_thread, typename T>
 __device__ __forceinline__ void adm_dwt2_load_column(const T *d_picture, int x, int y_out, int h,
                                                      int src_stride,
                                                      int32_t (&u_s)[2 + 2 * v_rows_per_thread])
 {
-    const int read_backwards_elements = 1;
-    const int y_in_start = (2 * y_out) - read_backwards_elements;
-
+    static_assert(v_rows_per_thread == ADM_DWT2_V_ROWS_PER_THREAD,
+                  "adm_dwt2_rows.h describes a different launch geometry");
 #pragma unroll
     for (int i = 0; i < 2 + 2 * v_rows_per_thread; ++i) {
-        int y_in = y_in_start + i;
-
-        // mirror bottom
-        y_in = y_in - max(0, 2 * (y_in - h) + 1);
-
-        // mirror top, only required for read_backwards_elements elements.
-        if (i < read_backwards_elements)
-            y_in = abs(y_in);
-
-        // no bounds check required due to the mirroring
+        const int y_in = adm_dwt2_source_row(y_out, i, h);
         u_s[i] = d_picture[y_in * src_stride + x];
     }
 }
@@ -217,7 +190,6 @@ adm_dwt2_vert_tile(const T *d_picture, short2 (*s_tile)[tile_width], int w, int 
                    int16_t v_shift, int32_t v_add_shift, AdmFixedParametersCuda params)
 {
     using accum_t = typename DwtVertAccum<T>::type;
-    const int horz_out_tile_rows = tile_height;
     const int horz_out_tile_cols = tile_width / 2 - 2;
 
     int x = threadIdx.x + blockIdx.x * 2 * horz_out_tile_cols;
@@ -226,8 +198,9 @@ adm_dwt2_vert_tile(const T *d_picture, short2 (*s_tile)[tile_width], int w, int 
                         * line; requires auditing the horizontal-pass tile overlap to ensure
                         * the mirrored read is within the shared-memory window. */
 
-    const int y_out =
-        (threadIdx.y + blockIdx.y * horz_out_tile_rows / v_rows_per_thread) * v_rows_per_thread;
+    static_assert(tile_height == ADM_DWT2_TILE_ROWS && tile_width == ADM_DWT2_TILE_COLS,
+                  "adm_dwt2_rows.h describes a different launch geometry");
+    const int y_out = adm_dwt2_thread_y_out((int)blockIdx.y, (int)threadIdx.y);
     if (x >= w)
         return;
 

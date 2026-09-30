@@ -27,8 +27,9 @@ EXPECTED_MODULES = {
     "integer_cambi_cuda.c": {"module"},
     "integer_ciede_cuda.c": {"module"},
     "integer_moment_cuda.c": {"module"},
-    "integer_motion_cuda.c": {"module"},
-    "integer_motion_v2_cuda.c": {"module"},
+    # ADR-1372: motion_cuda and motion_v2_cuda share one SAD module, loaded
+    # and unloaded by the pipeline helper they both call.
+    "integer_motion_sad_cuda.c": {"module"},
     "integer_ms_ssim_cuda.c": {"module"},
     "integer_psnr_cuda.c": {"module"},
     "integer_psnr_hvs_cuda.c": {"module"},

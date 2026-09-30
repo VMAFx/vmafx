@@ -9,6 +9,12 @@
  *  Submit/collect async pattern matches motion_cuda. Float blur into
  *  ping-pong float buffer; SAD against previous frame's blur. motion2
  *  emitted at index-1 with min(prev_motion_score, motion_score).
+ *
+ *  Score options follow CPU float_motion.c on the host: every emitted
+ *  `motion` / `motion2` value is motion_clip()ped, i.e. scaled by
+ *  `motion_fps_weight` and capped at `motion_max_val` (ADR-1373, following
+ *  ADR-1365 for SYCL), and `motion_force_zero` publishes zeros without
+ *  touching the device.
  */
 
 #include <errno.h>
@@ -17,6 +23,7 @@
 #include <string.h>
 
 #include "common.h"
+#include "dict.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
@@ -33,6 +40,9 @@
  * translation unit whose sources spell the null pointer constant `NULL` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
+/* CPU float_motion.c DEFAULT_MOTION_MAX_VAL. */
+#define FM_DEFAULT_MAX_VAL (10000.0)
 
 typedef struct FloatMotionStateCuda {
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
@@ -60,6 +70,7 @@ typedef struct FloatMotionStateCuda {
     unsigned bpc;
     double prev_motion_score;
     double motion_fps_weight;
+    double motion_max_val;
     bool debug;
     bool motion_force_zero;
 
@@ -92,6 +103,17 @@ static const VmafOption options[] = {
         .default_val.d = 1.0,
         .min = 0.0,
         .max = 5.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "motion_max_val",
+        .alias = "mmxv",
+        .help = "maximum value allowed; larger values will be clipped to this value",
+        .offset = offsetof(FloatMotionStateCuda, motion_max_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = FM_DEFAULT_MAX_VAL,
+        .min = 0.0,
+        .max = 10000.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {0}};
@@ -359,6 +381,20 @@ static double reduce_sad(const FloatMotionStateCuda *s)
     return total / ((double)s->frame_w * s->frame_h);
 }
 
+/* CPU float_motion.c::motion_clip: fps weight, then the motion_max_val cap. */
+static double motion_clip(const FloatMotionStateCuda *s, double score)
+{
+    const double weighted = score * s->motion_fps_weight;
+    return (weighted < s->motion_max_val) ? weighted : s->motion_max_val;
+}
+
+static int motion_append(const FloatMotionStateCuda *s, VmafFeatureCollector *feature_collector,
+                         const char *name, double score, unsigned index)
+{
+    return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict, name,
+                                                   score, index);
+}
+
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
@@ -370,38 +406,26 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     int err = 0;
 
     if (index == 0) {
-        err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "VMAF_feature_motion2_score", 0.0, index);
-        if (s->debug && !err) {
-            err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                          "VMAF_feature_motion_score", 0.0, index);
-        }
+        err = motion_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, index);
+        if (s->debug && !err)
+            err = motion_append(s, feature_collector, "VMAF_feature_motion_score", 0.0, index);
         s->cur_blur = 1 - s->cur_blur;
         return err;
     }
 
     const double motion_score = reduce_sad(s);
 
-    if (index == 1) {
-        if (s->debug) {
-            err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                          "VMAF_feature_motion_score", motion_score,
-                                                          index);
-        }
-    } else {
-        /* Apply fps weight before taking the min — mirrors float_motion.c CPU path.
-         * Bit-exact when motion_fps_weight = 1.0 (default). */
-        const double w_cur = motion_score * s->motion_fps_weight;
-        const double w_prev = s->prev_motion_score * s->motion_fps_weight;
-        const double motion2 = (w_cur < w_prev) ? w_cur : w_prev;
-        err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "VMAF_feature_motion2_score", motion2,
-                                                      index - 1);
-        if (s->debug && !err) {
-            err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                          "VMAF_feature_motion_score", motion_score,
-                                                          index);
-        }
+    if (index > 1) {
+        /* motion2 of the previous frame: the smaller of its two SADs, then
+         * motion_clip() — CPU float_motion.c::extract order. */
+        const double motion2 =
+            (motion_score < s->prev_motion_score) ? motion_score : s->prev_motion_score;
+        err = motion_append(s, feature_collector, "VMAF_feature_motion2_score",
+                            motion_clip(s, motion2), index - 1);
+    }
+    if (s->debug && !err) {
+        err = motion_append(s, feature_collector, "VMAF_feature_motion_score",
+                            motion_clip(s, motion_score), index);
     }
 
     s->prev_motion_score = motion_score;
@@ -423,15 +447,19 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
          * written motion2_score[s->index] via the pending-collect.
          * Probe and skip in that case (re-append would trip the
          * "cannot be overwritten" warning and surface as
-         * "context could not be synchronized"). */
+         * "context could not be synchronized"). The probe reads the
+         * dictionary name, which carries non-default FEATURE_PARAM options
+         * such as motion2_mmxv_4. */
+        const VmafDictionaryEntry *entry =
+            vmaf_dictionary_get(&s->feature_name_dict, "VMAF_feature_motion2_score", 0);
+        const char *motion2_name = entry ? entry->val : "VMAF_feature_motion2_score";
         double existing;
-        if (vmaf_feature_collector_get_score(feature_collector, "VMAF_feature_motion2_score",
-                                             &existing, s->index) != 0) {
-            /* Apply fps weight on the tail motion2 — mirrors the collect path.
-             * Bit-exact when motion_fps_weight = 1.0 (default). */
-            ret = vmaf_feature_collector_append_with_dict(
-                feature_collector, s->feature_name_dict, "VMAF_feature_motion2_score",
-                s->prev_motion_score * s->motion_fps_weight, s->index);
+        if (vmaf_feature_collector_get_score(feature_collector, motion2_name, &existing,
+                                             s->index) != 0) {
+            /* Tail motion2: the last SAD alone, motion_clip()ped like the
+             * CPU float_motion.c::flush. */
+            ret = motion_append(s, feature_collector, "VMAF_feature_motion2_score",
+                                motion_clip(s, s->prev_motion_score), s->index);
         }
     }
     return (ret < 0) ? ret : !ret;

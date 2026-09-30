@@ -22,10 +22,13 @@
  *  back to CPU before init when auto resolves above 1; direct requests keep
  *  the -EINVAL capability error.
  *
- *  enable_chroma: mirrors CPU integer_ssim.c PR #939 option.
- *  Default false (luma-only). When true, n_planes follows pix_fmt
- *  (1 for YUV400P, 3 otherwise). Multi-plane kernel dispatch is
- *  deferred to v2 (the kernel currently reads data[0] only).
+ *  Options: the CPU float_ssim.c table (ADR-1373, following ADR-1365 for
+ *  SYCL). `enable_db` / `clip_db` act on the host through the
+ *  nonfinite_score.h emitters the CPU extractor uses; `enable_lcs` selects
+ *  the pass-2 kernel that also reduces the per-pixel L, C and S terms. The
+ *  kernel scores identical windows exactly 1, so identical frames report the
+ *  CPU's +inf / clip_db ceiling. The former `enable_chroma` option was a
+ *  no-op the CPU extractor does not have and is gone.
  */
 
 #include <errno.h>
@@ -66,16 +69,21 @@ typedef struct SsimStateCuda {
      * template's readback bundle. */
     VmafCudaKernelReadback rb;
 
+    /* `enable_lcs` only: per-block L, C and S partials, three rows of
+     * partials_capacity floats, device + pinned host. */
+    VmafCudaKernelReadback rb_lcs;
+
     CUfunction func_horiz_8;
     CUfunction func_horiz_16;
     CUfunction func_vert;
+    CUfunction func_vert_lcs;
     int scale_override;
-    /* `enable_chroma` option: when false, only luma is dispatched.
-     * Default false mirrors CPU integer_ssim.c PR #939. */
-    bool enable_chroma;
-    /* Number of active planes (1 for YUV400P or !enable_chroma, 3 otherwise).
-     * v1 kernel reads data[0] only; n_planes>1 is reserved for v2. */
-    unsigned n_planes;
+    /* CPU float_ssim.c options (ADR-1373). `max_db` is vmaf_ssim_max_db()
+     * of `clip_db` and the frame geometry. */
+    bool enable_lcs;
+    bool enable_db;
+    bool clip_db;
+    double max_db;
 
     /* 5 intermediate float buffers — kept outside the template's
      * readback bundle since the bundle models a single device+host
@@ -133,7 +141,29 @@ static int check_context_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
     return compute_scale(w, h, s->scale_override) == 1 ? 0 : -ENOTSUP;
 }
 
+/* The CPU float_ssim.c table: same names, defaults and range. */
 static const VmafOption options[] = {
+    {
+        .name = "enable_lcs",
+        .help = "enable luminance, contrast and structure intermediate output",
+        .offset = offsetof(SsimStateCuda, enable_lcs),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "enable_db",
+        .help = "write SSIM values as dB",
+        .offset = offsetof(SsimStateCuda, enable_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "clip_db",
+        .help = "clip dB scores",
+        .offset = offsetof(SsimStateCuda, clip_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
     {
         .name = "scale",
         .help = "decimation scale factor (0=auto, 1=no downscaling). "
@@ -144,14 +174,6 @@ static const VmafOption options[] = {
         .default_val.i = 0,
         .min = 0,
         .max = 10,
-    },
-    {
-        .name = "enable_chroma",
-        .help = "enable calculation for chroma channels (mirrors CPU PR #939; "
-                "v1 kernel defers multi-plane dispatch to v2)",
-        .offset = offsetof(SsimStateCuda, enable_chroma),
-        .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = false,
     },
     {0},
 };
@@ -188,6 +210,9 @@ static int integer_ssim_init_unwind(VmafFeatureExtractor *fex, SsimStateCuda *s,
     e = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
     if (e && !rc)
         rc = e;
+    e = vmaf_cuda_kernel_readback_free(&s->rb_lcs, fex->cu_state);
+    if (e && !rc)
+        rc = e;
     e = vmaf_dictionary_free(&s->feature_name_dict);
     if (e && !rc)
         rc = e;
@@ -221,6 +246,7 @@ static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda 
     const float K2 = 0.03f;
     s->c1 = (K1 * L) * (K1 * L);
     s->c2 = (K2 * L) * (K2 * L);
+    s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
 
     const unsigned grid_x = (s->w_final + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
     const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
@@ -247,6 +273,11 @@ static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda 
     ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, partials_bytes);
     if (ret)
         return integer_ssim_init_unwind(fex, s, ret);
+    if (s->enable_lcs) {
+        ret = vmaf_cuda_kernel_readback_alloc(&s->rb_lcs, fex->cu_state, 3u * partials_bytes);
+        if (ret)
+            return integer_ssim_init_unwind(fex, s, ret);
+    }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
@@ -260,15 +291,8 @@ static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
+    (void)pix_fmt; /* luma only, like the CPU float_ssim */
     SsimStateCuda *s = fex->priv;
-
-    /* Derive n_planes from pix_fmt, then clamp if !enable_chroma.
-     * Mirrors integer_psnr_cuda.c::init's enable_chroma guard (ADR-0453). */
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P) {
-        s->n_planes = 1U;
-    } else {
-        s->n_planes = s->enable_chroma ? 3U : 1U;
-    }
 
     int scale = compute_scale(w, h, s->scale_override);
     if (scale != 1) {
@@ -302,6 +326,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->func_vert, s->module, "calculate_ssim_vert_combine"), fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->func_vert_lcs, s->module, "calculate_ssim_vert_combine_lcs"),
+        fail);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
@@ -315,10 +342,10 @@ fail:
 
 /* integer_ssim_launch_vert - pass 2: vertical accumulation and SSIM combine.
  *
- * HISS-04: the pass-2 launch of submit_fex_cuda, moved whole. params2 keeps
- * its element order and still points at s->c1 / s->c2 themselves, so the
- * kernel reads the same stabiliser constants; the grid and block geometry and
- * the stream are unchanged.
+ * `enable_lcs` launches the L/C/S variant, whose extra lcs_partials argument
+ * sits between partials and w_horiz; each parameter array follows its
+ * kernel's signature exactly (ADR-1215). The grid and block geometry and the
+ * stream are the same for both.
  */
 static int integer_ssim_launch_vert(SsimStateCuda *s, CudaFunctions *cu_f, CUstream stream,
                                     unsigned grid_x, unsigned grid_y)
@@ -340,8 +367,24 @@ static int integer_ssim_launch_vert(SsimStateCuda *s, CudaFunctions *cu_f, CUstr
         &s->c1,
         &s->c2,
     };
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_vert, grid_x, grid_y, 1, SSIM_BLOCK_X,
-                                           SSIM_BLOCK_Y, 1, 0, stream, params2, NULL));
+    void *params_lcs[] = {
+        (void *)s->h_ref_mu,
+        (void *)s->h_cmp_mu,
+        (void *)s->h_ref_sq,
+        (void *)s->h_cmp_sq,
+        (void *)s->h_refcmp,
+        (void *)s->rb.device,
+        (void *)s->rb_lcs.device,
+        &s->w_horiz,
+        &s->w_final,
+        &s->h_final,
+        &s->c1,
+        &s->c2,
+    };
+    CUfunction func = s->enable_lcs ? s->func_vert_lcs : s->func_vert;
+    void **params = s->enable_lcs ? params_lcs : params2;
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_x, grid_y, 1, SSIM_BLOCK_X, SSIM_BLOCK_Y, 1,
+                                           0, stream, params, NULL));
     return 0;
 }
 
@@ -405,9 +448,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
     s->partials_count = grid_x * grid_y;
 
-    /* v1 dispatches luma plane only (kernel reads data[0]).
-     * When enable_chroma=true, n_planes=3 but the kernel loop is deferred
-     * to v2 (requires passing plane index into the kernel). */
+    /* The kernels read data[0]: float_ssim is luma only, like the CPU. */
 
     /* Sync ref-side stream against dist's ready event (matches
      * psnr_cuda's pattern). */
@@ -434,7 +475,46 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f,
                       cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
                                         (size_t)s->partials_count * sizeof(float), s->lc.str));
+    if (s->enable_lcs) {
+        CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb_lcs.host_pinned, s->rb_lcs.device->data,
+                                                  3u * (size_t)s->partials_count * sizeof(float),
+                                                  s->lc.str));
+    }
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+}
+
+static double sum_partials(const float *partials, unsigned count)
+{
+    double total = 0.0;
+    for (unsigned i = 0; i < count; i++)
+        total += (double)partials[i];
+    return total;
+}
+
+/* enable_lcs: the three per-block L / C / S partial rows become the frame
+ * means float_ssim_{l,c,s}, published with the score in CPU float_ssim.c
+ * order after the shared SSIM validation (ADR-1302). */
+static int emit_float_ssim_lcs(const SsimStateCuda *s, double total, double n_pixels,
+                               unsigned index, VmafFeatureCollector *feature_collector)
+{
+    static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
+    const float *lcs_partials = s->rb_lcs.host_pinned;
+    double score = 0.0;
+    int err = vmaf_feature_finite_ratio_named("float_ssim_cuda", "float_ssim", total, n_pixels,
+                                              index, &score);
+    VmafNamedScore atoms[3];
+    for (unsigned k = 0; k < 3u && !err; k++) {
+        const double sum =
+            sum_partials(lcs_partials + ((size_t)k * s->partials_count), s->partials_count);
+        atoms[k].name = atom_names[k];
+        err = vmaf_feature_finite_ratio_named("float_ssim_cuda", atom_names[k], sum, n_pixels,
+                                              index, &atoms[k].value);
+    }
+    if (err)
+        return err;
+    return vmaf_ssim_emit_scores_named(feature_collector, s->feature_name_dict, "float_ssim_cuda",
+                                       "float_ssim", score, s->enable_db, s->max_db, atoms, 3u,
+                                       index);
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
@@ -446,14 +526,16 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     if (sync_err)
         return sync_err;
 
-    const float *partials_host = s->rb.host_pinned;
-    double total = 0.0;
-    for (unsigned i = 0; i < s->partials_count; i++)
-        total += (double)partials_host[i];
+    /* Per-block float partials -> host double sum -> mean SSIM over
+     * (W-10)·(H-10) pixels, the ciede_cuda precision pattern. */
+    const double total = sum_partials(s->rb.host_pinned, s->partials_count);
     const double n_pixels = (double)s->w_final * (double)s->h_final;
-    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
-                                            "float_ssim_cuda", "float_ssim", total, n_pixels, 0,
-                                            0.0, index);
+    if (!s->enable_lcs) {
+        return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
+                                                "float_ssim_cuda", "float_ssim", total, n_pixels,
+                                                s->enable_db, s->max_db, index);
+    }
+    return emit_float_ssim_lcs(s, total, n_pixels, index, feature_collector);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)

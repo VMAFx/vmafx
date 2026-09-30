@@ -57,11 +57,15 @@ The extractor is luma-only; it has no chroma option.
 | `enable_db` | bool | `false` | Report `-10 * log10(1 - ssim)` instead of the linear score. A perfect score (identical frames) is `+inf`. |
 | `clip_db` | bool | `false` | Cap the dB value at `ceil(10 * log10(peak^2 / (0.5 / (w * h))))`, the dB of half a sample of error over the frame. Needs `enable_db` to have an effect. |
 
-Backend support: the CPU extractor, `integer_ssim_sycl`, `integer_ssim_hip` and
-`integer_ssim_metal` accept both options; `ssim_cuda` accepts neither. The SYCL
-twin applies them on the host to the device-reduced score and reports the
+Backend support: the CPU extractor, `integer_ssim_sycl`, `integer_ssim_cuda`,
+`integer_ssim_hip` and `integer_ssim_metal` accept both options. The SYCL and
+CUDA twins apply them on the host to the device-reduced score and report the
 CPU's `+inf` / ceiling for identical frames
-([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). A model that sets
+([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md),
+[ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)). The CUDA twin
+evaluates the CPU's per-pixel expression without FMA contraction, so at 8 and
+10 bits an identical window's numerator and denominator are equal by
+construction and identical frames score exactly 1. A model that sets
 an option the active backend's twin lacks computes `ssim` on the CPU
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
 
