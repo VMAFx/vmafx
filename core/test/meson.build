@@ -1172,6 +1172,29 @@ test_speed = executable('test_speed',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
 )
+
+# Frame buffers of the CPU SpEED extractors: speed_temporal at speed_prescale > 1
+# (T-SPEED-TEMPORAL-PRESCALE-UP-OVERFLOW-2026-09-30, Netflix/vmaf#1626) and
+# speed_chroma at odd frame sizes (T-SPEED-CHROMA-ODD-SIZE-OVERFLOW-2026-09-30).
+# Both overran a heap buffer, which only fails visibly under ASan
+# (sanitizers.yml); same link recipe and float gate as test_speed.
+test_speed_frame_buffers = executable('test_speed_frame_buffers',
+    ['test.c', 'test_speed_frame_buffers.c', '../src/mem.cpp', '../src/picture.c',
+     '../src/ref.cpp', '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
 endif
 # SpEED-QA extractor tests -- unconditional (speed_qa.c is not float-gated).
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.
@@ -5012,6 +5035,7 @@ test('test_cambi_stage_simd', test_cambi_stage_simd, suite : ['fast', 'simd'])
 endif
 if get_option('enable_float')
 test('test_speed', test_speed, suite : ['fast'])
+test('test_speed_frame_buffers', test_speed_frame_buffers, suite : ['fast'])
 endif
 test('test_speed_qa', test_speed_qa, suite : ['fast'])
 test('test_luminance_tools', test_luminance_tools, suite : ['fast'])

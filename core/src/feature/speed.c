@@ -1323,24 +1323,17 @@ static const VmafOption options_chroma[] = {
 // clang-format on
 
 static int init_chroma(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                       unsigned w, unsigned h)
+                       unsigned luma_w, unsigned luma_h)
 {
     (void)bpc;
 
-    switch (pix_fmt) {
-    case VMAF_PIX_FMT_UNKNOWN:
-    case VMAF_PIX_FMT_YUV400P:
+    /* The chroma planes' own extents: picture_copy() copies w/h[channel], which
+     * vmaf_picture_alloc() rounds up for odd sizes (T-SPEED-CHROMA-ODD-SIZE-
+     * OVERFLOW-2026-09-30). */
+    unsigned w = 0;
+    unsigned h = 0;
+    if (speed_chroma_dimensions(luma_w, luma_h, pix_fmt, &w, &h))
         return -EINVAL;
-    case VMAF_PIX_FMT_YUV420P:
-        w /= 2;
-        h /= 2;
-        break;
-    case VMAF_PIX_FMT_YUV422P:
-        w /= 2;
-        break;
-    case VMAF_PIX_FMT_YUV444P:
-        break;
-    }
 
     SpeedChromaState *s = fex->priv;
     s->speed_options = (SpeedOptions){
@@ -1564,8 +1557,11 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (speed_err)
         return speed_err;
 
+    /* filter_and_downscale() resamples each frame buffer in place at the
+     * prescaled size, so a buffer holds alloc_height rows, not h: a prescale
+     * above 1 makes the scaled plane taller than the source (Netflix/vmaf#1626). */
     size_t float_stride = s->speed_state.float_stride;
-    size_t frame_size = float_stride * h;
+    size_t frame_size = float_stride * s->speed_state.dimensions.alloc_height;
     s->frame_buffer_ref[0] = aligned_malloc(frame_size, 32);
     s->frame_buffer_ref[1] = aligned_malloc(frame_size, 32);
     s->frame_buffer_dis[0] = aligned_malloc(frame_size, 32);

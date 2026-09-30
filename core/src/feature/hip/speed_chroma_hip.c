@@ -622,31 +622,6 @@ static void sc_free_cpu_buffers(SpeedChromaHipState *s)
     aligned_free(s->h_qt_scratch);
 }
 
-/* Maps the picture format to the chroma-plane dimensions. Returns -EINVAL for
- * the formats speed_chroma cannot score. Extracted from init_chroma_hip() for
- * HISS-04; the divisions are copied unchanged. */
-static int sc_chroma_plane_dims(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h, unsigned *cw,
-                                unsigned *ch)
-{
-    *cw = w;
-    *ch = h;
-    switch (pix_fmt) {
-    case VMAF_PIX_FMT_UNKNOWN:
-    case VMAF_PIX_FMT_YUV400P:
-        return -EINVAL;
-    case VMAF_PIX_FMT_YUV420P:
-        *cw /= 2u;
-        *ch /= 2u;
-        break;
-    case VMAF_PIX_FMT_YUV422P:
-        *cw /= 2u;
-        break;
-    case VMAF_PIX_FMT_YUV444P:
-        break;
-    }
-    return 0;
-}
-
 /* Allocates the host scratch buffers and validates the mandatory ones.
  * Releases everything and reports -ENOMEM on failure, exactly as the former
  * inline block did. */
@@ -729,7 +704,9 @@ static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_f
 
     unsigned cw = 0u;
     unsigned ch = 0u;
-    if (sc_chroma_plane_dims(pix_fmt, w, h, &cw, &ch) != 0)
+    /* The chroma planes' own extents, as the CPU speed_chroma sizes them:
+     * picture_copy() copies w/h[channel], rounded up for odd sizes. */
+    if (speed_chroma_dimensions(w, h, pix_fmt, &cw, &ch) != 0)
         return -EINVAL;
 
     s->opt = (SpeedInternalOptions){

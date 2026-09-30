@@ -24,6 +24,7 @@
 
 #include "mem.h"
 #include "picture.h"
+#include "picture_geometry.h"
 #include "ref.h"
 
 #define DATA_ALIGN 64
@@ -144,9 +145,9 @@ static void picture_compute_geometry(VmafPicture *pic, unsigned w, unsigned h)
      * Floor (plain >> ss) under-allocates by one row for odd-height inputs,
      * causing one-past-end OOB in ciede scale_chroma_planes and similar
      * consumers.  (Research-0094, fix/picture-odd-dim-chroma-ceiling.) */
-    pic->w[1] = pic->w[2] = (w + ((unsigned)ss_hor)) >> ss_hor;
+    pic->w[1] = pic->w[2] = vmaf_chroma_extent(w, (unsigned)ss_hor);
     pic->h[0] = h;
-    pic->h[1] = pic->h[2] = (h + ((unsigned)ss_ver)) >> ss_ver;
+    pic->h[1] = pic->h[2] = vmaf_chroma_extent(h, (unsigned)ss_ver);
     if (pic->pix_fmt == VMAF_PIX_FMT_YUV400P)
         pic->w[1] = pic->w[2] = pic->h[1] = pic->h[2] = 0;
 

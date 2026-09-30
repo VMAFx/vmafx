@@ -1,6 +1,26 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/speed-temporal-prescale-overflow — `speed_temporal` frame buffers hold `alloc_height` rows (2026-09-30)
+
+- `core/src/feature/speed.c`, `speed_temporal` `init()`: `frame_size` is
+  `float_stride * s->speed_state.dimensions.alloc_height`, not
+  `float_stride * h`. Upstream Netflix/vmaf still has the `h` line
+  ([Netflix/vmaf#1626](https://github.com/Netflix/vmaf/issues/1626)); the
+  same one-line fix is proposed upstream. **Upstream-sync note: drop this
+  entry when the upstream fix is ported.** Until then, an upstream sync that
+  touches the `speed_temporal` `init()` must keep `alloc_height`; restoring
+  `h` brings back the heap overrun at `speed_prescale` above 1, which
+  `test_speed_temporal_prescale` reports under ASan (`sanitizers.yml`).
+- `core/test/test_speed_temporal_prescale.c` (new, fork-only, float-gated like
+  `test_speed`): three frames at `speed_prescale` 1.0, 1.5, 2.0 and 4.0, and
+  4.5 refused at context creation. When the upstream regression test lands in
+  a sync, keep this one or fold it into the ported file; it also covers the
+  1.0 and 4.0 boundaries.
+- No Netflix golden-data, public API or FFmpeg patch impact: output at
+  `speed_prescale` 1 and below is byte-identical, and none of the Netflix
+  reference pairs runs SpEED.
+
 ## perf/sycl-adm-aim-device — AIM pass on the SYCL integer ADM twin (ADR-1362) (2026-09-29)
 
 - `core/src/feature/sycl/integer_adm_sycl.cpp`: fork-only (upstream Netflix/vmaf

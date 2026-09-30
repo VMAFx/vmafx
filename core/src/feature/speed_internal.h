@@ -31,6 +31,7 @@
 #include <stdint.h>
 
 #include "libvmaf/picture.h"
+#include "picture_geometry.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,6 +67,12 @@ static inline bool speed_validate_dimensions(unsigned w, unsigned h, double pres
 /**
  * Derive chroma plane dimensions from luma dimensions and pixel format.
  * Returns 0 on success, -EINVAL if pixel format has no chroma planes or is invalid.
+ *
+ * The extents are the picture's own (vmaf_chroma_extent(), the rounding
+ * vmaf_picture_alloc() uses): picture_copy() copies VmafPicture::w/h[channel],
+ * so the CPU speed_chroma and every GPU twin size their plane buffers from this
+ * one function. The former floor division left an odd-sized plane one row or
+ * column larger than its buffer.
  */
 static inline int speed_chroma_dimensions(unsigned w, unsigned h, enum VmafPixelFormat pix_fmt,
                                           unsigned *chroma_w, unsigned *chroma_h)
@@ -75,11 +82,11 @@ static inline int speed_chroma_dimensions(unsigned w, unsigned h, enum VmafPixel
 
     switch (pix_fmt) {
     case VMAF_PIX_FMT_YUV420P:
-        *chroma_w = w / 2u;
-        *chroma_h = h / 2u;
+        *chroma_w = vmaf_chroma_extent(w, 1u);
+        *chroma_h = vmaf_chroma_extent(h, 1u);
         return 0;
     case VMAF_PIX_FMT_YUV422P:
-        *chroma_w = w / 2u;
+        *chroma_w = vmaf_chroma_extent(w, 1u);
         *chroma_h = h;
         return 0;
     case VMAF_PIX_FMT_YUV444P:

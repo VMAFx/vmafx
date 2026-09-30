@@ -1228,6 +1228,16 @@ including `speed_kernelscale`, `speed_prescale`,
 `core/src/feature/speed.c` for the per-option `help` strings and
 ranges; defaults match Netflix upstream.
 
+`speed_prescale` takes 0.1 to 4.0 (default 1.0) and resizes each plane by
+that factor before the SpEED filters run; values above 1 upsample. Before
+2026-09-30 the CPU `speed_temporal` overran its frame buffers for any
+`speed_prescale` above 1, so the run crashed or corrupted memory; it now
+sizes them for the upscaled plane
+([Netflix/vmaf#1626](https://github.com/Netflix/vmaf/issues/1626)). Output at
+`speed_prescale` 1 and below is unchanged, and so is `speed_chroma`, which
+was never affected. `core/test/test_speed_temporal_prescale.c` extracts
+three frames at 1.0, 1.5, 2.0 and 4.0.
+
 **Stability** — research; the option grammar and score scale may
 shift in future Netflix upstream commits. Track upstream releases
 before pinning these features into a downstream pipeline.

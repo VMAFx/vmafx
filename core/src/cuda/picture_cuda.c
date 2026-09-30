@@ -18,6 +18,7 @@
  */
 
 #include "mem.h"
+#include "picture_geometry.h"
 #include "picture_cuda.h"
 #include "common.h"
 #include "log.h"
@@ -166,10 +167,10 @@ static void picture_set_plane_dims(VmafPicture *pic, enum VmafPixelFormat pix_fm
     const int ss_hor = pic->pix_fmt != VMAF_PIX_FMT_YUV444P;
     const int ss_ver = pic->pix_fmt == VMAF_PIX_FMT_YUV420P;
     pic->w[0] = w;
-    /* Ceiling division — mirrors picture.c fix (Research-0094). */
-    pic->w[1] = pic->w[2] = (w + ((unsigned)ss_hor)) >> ss_hor;
+    /* Ceiling division, the one definition picture.c uses (Research-0094). */
+    pic->w[1] = pic->w[2] = vmaf_chroma_extent(w, (unsigned)ss_hor);
     pic->h[0] = h;
-    pic->h[1] = pic->h[2] = (h + ((unsigned)ss_ver)) >> ss_ver;
+    pic->h[1] = pic->h[2] = vmaf_chroma_extent(h, (unsigned)ss_ver);
     if (pic->pix_fmt == VMAF_PIX_FMT_YUV400P)
         pic->w[1] = pic->w[2] = pic->h[1] = pic->h[2] = 0;
 }
