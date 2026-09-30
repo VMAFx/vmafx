@@ -375,7 +375,7 @@ the same integers as before.
   on purpose. The CPU computes it in fp64; with contraction off a separate fp32
   product moves the scores further from the CPU. Keep the explicit `fma` if the
   VIF statistic is re-synced from upstream or the CUDA/HIP twins.
-- `core/test/sycl_fp_arith_probe.cpp` + `test_sycl_fp_arith_contract.c`: the
+- `core/test/test_sycl_fp_arith_probe.cpp` + `test_sycl_fp_arith_contract.c`: the
   probe is compiled by a `custom_target` with `sycl_toolchain_args +
   sycl_feature_tail_args`, so it follows the feature line automatically; do
   not give it private flags. Under the MSVC device link it gets its own

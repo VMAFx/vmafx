@@ -3691,7 +3691,7 @@ test('test_sycl_kernel_registration', test_sycl_kernel_registration,
 if not is_sycl_acpp
     sycl_fp_arith_probe = custom_target('sycl_fp_arith_probe',
         output : 'sycl_fp_arith_probe.o',
-        input : 'sycl_fp_arith_probe.cpp',
+        input : 'test_sycl_fp_arith_probe.cpp',
         command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
                   + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
     )

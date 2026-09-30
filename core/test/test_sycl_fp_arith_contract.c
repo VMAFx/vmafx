@@ -5,7 +5,7 @@
  *  ADR-1367: the SYCL feature line gives device kernels the CPU reference's
  *  fp32 arithmetic. A multiply-add written as one expression is not contracted
  *  into an FMA, and `/` and sqrt are correctly rounded. The kernel lives in
- *  sycl_fp_arith_probe.cpp, compiled like an extractor TU; this side builds
+ *  test_sycl_fp_arith_probe.cpp, compiled like an extractor TU; this side builds
  *  the operands and the correctly rounded host references. fp32 operations
  *  evaluated in fp64 and rounded once are correctly rounded (53 >= 2 * 24 + 2).
  */
