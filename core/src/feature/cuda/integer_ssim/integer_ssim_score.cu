@@ -287,7 +287,7 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
         warp_ssim += __shfl_down_sync(0xffffffffu, warp_ssim, off);
 
     /* Warp-level reduce for weight (int64): warp_reduce(int64_t), see the
-     * function comment (ADR-1224). */
+     * function comment. */
     const int64_t warp_wgt = warp_reduce(my_weight);
 
     const int tid = threadIdx.y * (int)blockDim.x + threadIdx.x;

@@ -73,9 +73,11 @@ twin does the same and matches the CPU bit for bit
 does the same since 2026-09-30: it runs the kernel `motion_v2_cuda` already
 used, and its debug `motion` score is the CPU's (weighted by
 `motion_fps_weight`, capped at `motion_max_val`)
-([ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md)); bit-exactness on
-an NVIDIA GPU is still to be confirmed (`T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`
-in [`state.md`](../state.md) carries the check). The HIP and Metal twins still
+([ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md)). On an RTX 4090
+its `motion2_score` and `motion3_score` equal the CPU's bit for bit on the
+Netflix 576x324 pair and on 50 frames of a 3840x2160 clip, where the previous
+order was 1.26e-5 and 6.9e-5 off (`T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29` in
+[`state.md`](../state.md)). The HIP and Metal twins still
 blur each frame and compare the blurred frames, which rounds differently. The
 SYCL twin did the same until 2026-09-29 and its `motion2_score` was up to
 2.0e-4 off on 17x17 frames and 1.3e-5 on the Netflix 576x324 pair; expect the
@@ -264,7 +266,12 @@ Empirical GPU parity: max_abs_diff <= 3e-6 (8-bit, 48 frames) across CUDA,
 SYCL, and HIP backends (ADR-0196). (The Vulkan backend was removed in ADR-0726.)
 
 The GPU twins emit `motion` and `motion2`; `motion3` comes from the CPU
-extractor only. They take `debug`, `motion_force_zero` and `motion_fps_weight`.
+extractor only, so a run on a twin (`--backend cuda --feature float_motion`,
+say) writes no `motion3` (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30` in
+[`state.md`](../state.md)). They take `debug`, `motion_force_zero` and
+`motion_fps_weight`. With `motion_force_zero`, `float_motion_cuda` and
+`motion_cuda` publish zeros from the first frame; before 2026-09-30 both
+crashed on it (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`).
 `float_motion_sycl` and `float_motion_cuda` also take `motion_max_val`
 (alias `mmxv`) and, like the CPU, scale every score they emit (the debug
 `motion` too) by `motion_fps_weight` before capping it at `motion_max_val`

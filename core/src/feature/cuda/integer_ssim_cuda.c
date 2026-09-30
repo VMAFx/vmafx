@@ -12,8 +12,8 @@
  *  the GLSL shader: horizontal 11-tap separable Gaussian over
  *  ref / cmp / ref² / cmp² / ref·cmp into 5 intermediate float
  *  buffers, then vertical 11-tap + per-pixel SSIM combine +
- *  per-block float partial sums. Host accumulates partials in
- *  `double`, divides by (W-10)·(H-10) and emits `float_ssim`.
+ *  per-block double partial sums. Host sums the partials, divides
+ *  by (W-10)·(H-10), rounds the mean to fp32 and emits `float_ssim`.
  *
  *  Mirrors the psnr_cuda submit/collect scaffolding and the
  *  ciede_cuda per-block-partials precision pattern.
@@ -325,7 +325,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (scale != 1) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "ssim_cuda: v1 supports scale=1 only (auto-detected scale=%d at %ux%u). "
-                 "Pin --feature float_ssim_cuda:scale=1 if intended.\n",
+                 "Pin --feature float_ssim_cuda=scale=1 if intended.\n",
                  scale, w, h);
         return -EINVAL;
     }

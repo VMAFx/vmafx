@@ -8,8 +8,9 @@
  *  Real integer_ssim feature extractor on the CUDA backend (ADR-0564).
  *
  *  This extractor provides the `"ssim"` feature (same name as the CPU
- *  `vmaf_fex_ssim` in `libvmaf/src/feature/integer_ssim.c`) using a
- *  fixed-point integer algorithm that is bit-exact with the CPU.
+ *  `vmaf_fex_ssim` in `libvmaf/src/feature/integer_ssim.c`) with the CPU's
+ *  fixed-point moments and the CPU's per-pixel arithmetic; only the order of
+ *  the frame sum differs (see below).
  *
  *  The CPU algorithm uses:
  *    - A 9-tap Gaussian kernel with INTEGER weights [2,9,28,55,68,55,28,9,2]
@@ -33,20 +34,25 @@
  *      double partial sum + int64 weight sum.
  *  Host: ssim = sum(partials) / sum(partial_weights).
  *
- *  Bit-exactness argument:
- *    - The integer Gaussian kernel is fixed (same 9 integer constants).
- *    - CUDA int64 arithmetic is deterministic on NVIDIA hardware.
- *    - The boundary-truncation logic is identical: same k_min/k_max
- *      formulas as the CPU.
- *    - The final double arithmetic is the same formula.
+ *  What matches the CPU, and what does not:
+ *    - The int64 moments are the CPU's: the same 9 integer weights and the
+ *      same boundary truncation (k_min / k_max).
+ *    - Every per-pixel term is the CPU's double expression, operand for
+ *      operand: the kernel builds with --fmad=false and groups the term as
+ *      the CPU does, ((w * a) * b) / den.
+ *    - The frame sum is not: the CPU adds the terms row by row, the kernel
+ *      per warp, per block and then on the host, so the score can differ
+ *      from the CPU's by a double rounding of the sum. On identical frames
+ *      that rounding matters only where the CPU's own sum sits within a few
+ *      ulps of the weight total: the Research-1372 replay found such frames
+ *      only with a side below 12 pixels, where one side can report exactly
+ *      1 (+inf with enable_db) and the other just below it. A single-pixel
+ *      frame has no sum to reorder.
  *    Target: places=6 vs CPU on the Netflix golden fixture (576×324 8bpc).
  *
  *  Options: the CPU table, `enable_db` and `clip_db`, applied on the host to
  *  the device-reduced score through the nonfinite_score.h emitter the CPU
- *  extractor uses (ADR-1373). The kernel builds with --fmad=false, so the
- *  per-pixel combine is the CPU expression operand for operand; at 8 and 10
- *  bits the moments and their products are exact in double, so identical
- *  frames give num == den and report the CPU's +inf / clip_db ceiling.
+ *  extractor uses (ADR-1373).
  */
 
 #include <errno.h>

@@ -49,7 +49,9 @@
   every frame into `apsnr_*` under `--subsample`, and its chroma accumulators
   can no longer be cleared while the chroma kernels run. `float_ssim_cuda`
   still accepts `enable_chroma`, which the CPU `float_ssim` does not have, and
-  warns that it is ignored. Not yet measured on an NVIDIA GPU; see
+  warns that it is ignored. Measured on an RTX 4090: the PSNR, `motion_v2`
+  and `float_motion` options give the CPU's scores exactly, `ssim` stays
+  within 7.3e-13 dB and `float_ssim` within 6.9e-6 dB of the CPU; see
   [the CUDA backend guide](docs/backends/cuda/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins).
 
 
@@ -322,8 +324,10 @@
   is the CPU's (weighted by `motion_fps_weight`, capped at `motion_max_val`).
   Each frame is ordered against the previous one on the device instead of by
   the engine's context barrier, and the eight-frame batch readback waits once
-  instead of twice. `motion_v2_cuda`'s SAD is unchanged. Not yet measured on
-  an NVIDIA GPU (ADR-1372; check in `docs/state.md`,
+  instead of twice. `motion_v2_cuda`'s SAD is unchanged. On an RTX 4090
+  `integer_motion2` / `integer_motion3` now equal the CPU's on the Netflix
+  pair and on 50 frames of a 3840x2160 clip, where they were 1.26e-5 and
+  6.9e-5 off (ADR-1372; `docs/state.md`,
   `T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`;
   [CUDA backend](docs/backends/cuda/overview.md#cpu-parity-motion-options-and-tiny-frames-2026-09-30)).
 - **CUDA integer ADM and VIF guard tiny frames like their SYCL twins.** The
@@ -341,6 +345,19 @@
   the repository, including a commit a force-push had already replaced,
   failed every other open pull request. Each run now scans the history of
   its own `HEAD`: on a pull request, master plus the PR's commits.
+
+
+- **`motion_force_zero` no longer crashes `motion_cuda` and
+  `float_motion_cuda`.** With the option set, the twins' `init()` switches
+  them from the asynchronous `submit()` / `collect()` pair to a synchronous
+  `extract()` that publishes zeros, but the engine had already chosen the
+  asynchronous path and called the cleared `submit()` on the first frame:
+  `--backend cuda --feature motion_cuda=motion_force_zero=true` (or
+  `float_motion_cuda=...`) died with SIGSEGV. The engine now initialises such
+  an extractor before it picks the path, so both twins publish zeros for
+  every frame, as the CPU extractors do. The HIP and Metal motion twins make
+  the same switch and take the same engine path
+  (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`).
 
 
 - The oneAPI container image no longer crashes on Arc B580 (Battlemage)

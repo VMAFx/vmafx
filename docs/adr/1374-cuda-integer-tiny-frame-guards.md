@@ -34,8 +34,8 @@ Constraints: no device was available to run either case; a guard must not change
 ## Consequences
 
 - **Positive**: every row and tap the CUDA ADM DWT kernels load is shown inside the plane for every height, device-free, and the scale-0 load stays in bounds even below the ADM minimum. VIF frames below 16 pixels get the CPU's scores under model dispatch, bit for bit, and a direct request fails loudly instead of returning a clamped score.
-- **Negative**: `vif_cuda` refuses frames below 16x16 that it used to score (with clamped taps); a caller naming `vif_cuda` for such frames must use `vif`. Not run on NVIDIA hardware here.
-- **Neutral / follow-ups**: the HIP halves of both rows and the Metal VIF twin stay open. Guarded by `test_cuda_adm_dwt2_rows` (fast suite, every host), `test_cuda_vif_min_dim` (declaration and direct rejection device-free; model boundary with a device), `test_cuda_adm_tiny_frames` under `compute-sanitizer` on a device, and the guard cases of `test_cuda_kernel_source_contract.py`.
+- **Negative**: `vif_cuda` refuses frames below 16x16 that it used to score (with clamped taps); a caller naming `vif_cuda` for such frames must use `vif`.
+- **Neutral / follow-ups**: verified on an RTX 4090 on 2026-09-30: `compute-sanitizer --tool memcheck` finds 0 errors in `test_cuda_adm_tiny_frames` and `test_cuda_vif_min_dim`, the `adm` parity gate reads 1.0e-6 on this change and on `master` alike, and below 16 pixels `vif` equals the CPU (the CPU computes it). The HIP halves of both rows and the Metal VIF twin stay open. Guarded by `test_cuda_adm_dwt2_rows` (fast suite, every host), `test_cuda_vif_min_dim` (declaration and direct rejection device-free; model boundary with a device), `test_cuda_adm_tiny_frames` under `compute-sanitizer` on a device, and the guard cases of `test_cuda_kernel_source_contract.py`.
 
 ## References
 

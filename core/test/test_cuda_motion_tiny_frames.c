@@ -28,7 +28,10 @@
  * motion_v2 runs with motion_fps_weight = 0.3 and with motion_max_val = 4 pin
  * the CPU's weighted, capped SAD score and the motion2_v2 / motion3_v2 derived
  * from it, and a one-frame run pins the CPU's 0 / 0 motion2_v2 / motion3_v2.
- * Frames below 3x3 must fail init() with -EINVAL; that case needs no device.
+ * A motion_force_zero run pins the CPU's zeros and the first-frame dispatch:
+ * the twin's init() swaps submit() / collect() for extract(), and the engine
+ * used to call the cleared submit(). Frames below 3x3 must fail init() with
+ * -EINVAL; that case needs no device.
  *
  * The parity cases skip (exit 77) when no CUDA device is visible.
  */
@@ -87,6 +90,7 @@ typedef struct {
 static const char *const DEBUG_WEIGHT_OPTS[] = {"debug", "true", "motion_fps_weight", "0.6", NULL};
 static const char *const V2_WEIGHT_OPTS[] = {"motion_fps_weight", "0.3", NULL};
 static const char *const V2_CAP_OPTS[] = {"motion_max_val", "4", NULL};
+static const char *const FORCE_ZERO_OPTS[] = {"debug", "true", "motion_force_zero", "true", NULL};
 
 static const Twin TWINS[] = {
     {"motion",
@@ -137,6 +141,16 @@ static const Twin TWINS[] = {
      1u,
      {"VMAF_integer_feature_motion_v2_sad_score", "VMAF_integer_feature_motion2_v2_score",
       "VMAF_integer_feature_motion3_v2_score"}},
+    /* motion_force_zero: zeros on every frame, as the CPU reports. The twin's
+     * init() swaps submit() / collect() for extract() here, and the engine
+     * used to call the cleared submit() on the first frame (SIGSEGV on an
+     * RTX 4090, 2026-09-30); force_0 is the option's FEATURE_PARAM alias. */
+    {"motion",
+     "motion_cuda",
+     FORCE_ZERO_OPTS,
+     3u,
+     0u,
+     {"integer_motion_force_0", "integer_motion2_force_0", "integer_motion3_force_0"}},
 };
 
 /* lowbias32 hash of the position and frame: stateless, so both runs see the
@@ -331,6 +345,13 @@ static char *test_motion_v2_cuda_options_and_one_frame(void)
     return NULL;
 }
 
+/* motion_force_zero on the first three geometries at 8 bits: the scores are
+ * constant, so the case pins the dispatch, not the arithmetic. */
+static char *test_motion_cuda_force_zero(void)
+{
+    return check_twin(&TWINS[6], 3u, 1u);
+}
+
 /* init() with a zeroed private state. Rejected sizes return before init()
  * reads the CUDA state or the options, so neither a device nor a close is
  * needed. */
@@ -372,6 +393,7 @@ char *run_tests(void)
         MU_TEST(test_motion_v2_cuda_matches_scalar_cpu),
         MU_TEST(test_motion_cuda_debug_score_is_weighted),
         MU_TEST(test_motion_v2_cuda_options_and_one_frame),
+        MU_TEST(test_motion_cuda_force_zero),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

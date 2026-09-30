@@ -14,7 +14,8 @@ The SYCL twins were brought to the CPU's arithmetic and options on 2026-09-29 (A
 - CPU references: `core/src/feature/integer_motion.c` (`motion_score_pipeline_8` / `_16`, `extract()`, `flush()`), `integer_motion_v2.c`, `float_motion.c` (`motion_clip()`), `integer_psnr.c` + `psnr_score.h`, `integer_ssim.c`, `float_ssim.c` + `iqa/ssim_tools.c`, `integer_adm.c`, `integer_vif.c` / `integer_vif.h`.
 - CUDA twins at `origin/master` f5dff7b58: `integer_motion_cuda.c` + `integer_motion/motion_score.cu`, `integer_motion_v2_cuda.c` + `integer_motion_v2/motion_v2_score.cu`, `integer_psnr_cuda.c`, `ssim_cuda.c`, `integer_ssim_cuda.c` + `integer_ssim/ssim_score.cu`, `float_motion_cuda.c`, `integer_adm_cuda.c` + `integer_adm/adm_dwt2.cu`, `integer_vif_cuda.c` + `integer_vif/filter1d.cu`; engine: `libvmaf.c` (`cuda_order_pictures_against_producer`, `read_pictures_extractor_loop_cuda`, `flush_context_cuda`).
 - SYCL references: `integer_motion_pipeline_sycl.cpp`, `integer_psnr_sycl.cpp`, `integer_ssim_sycl.cpp`, `float_motion_sycl.cpp`, `integer_vif_sycl.cpp`; [Research-1371](1371-sycl-motion-diff-first-pipeline.md), [Research-2127](2127-sycl-twin-cpu-option-parity.md), [Research-2123](2123-sycl-b580-psnr-hvs-and-tile-halo-faults.md).
-- Host: Windows 11 + WSL2, `vmaf-dev-mcp:ocloc` (CUDA 13.4 nvcc, gencode sm_80 / 86 / 89 / 90 / 100 / 120 + compute_80 / 120 PTX). **No NVIDIA device**: every CUDA device test skips (exit 77) here, and every number below that needs a GPU is taken from the SYCL measurements, not from CUDA.
+- Porting host: Windows 11 + WSL2, `vmaf-dev-mcp:ocloc` (CUDA 13.4 nvcc, gencode sm_80 / 86 / 89 / 90 / 100 / 120 + compute_80 / 120 PTX). **No NVIDIA device**: every CUDA device test skips (exit 77) here, and every number below that needs a GPU is taken from the SYCL measurements, not from CUDA.
+- Device host (2026-09-30): `ryzen-4090-arc`, RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4), host build with nvcc 13.4.92; see [Measured on an RTX 4090](#measured-on-an-rtx-4090-2026-09-30).
 
 ## Findings
 
@@ -73,7 +74,7 @@ Two reviews of the first push, one of them replaying the arithmetic on the host,
 
 The `.minnctapersm` advisory on the motion kernel (`__launch_bounds__(256, 8)`, above the thread limit of sm_86 / 89 / 120) only means ptxas ignores the minimum-blocks hint there. `-Xptxas -v` shows whether the 16-bit kernel's int64 vertical accumulator spills; the home steps add an `ncu` check.
 
-## What was verified here, and what was not
+## What the porting host verified (no GPU)
 
 Verified in `vmaf-dev-mcp:ocloc` (nvcc 13.4.92, gcc 15.2, no GPU):
 
@@ -83,7 +84,35 @@ Verified in `vmaf-dev-mcp:ocloc` (nvcc 13.4.92, gcc 15.2, no GPU):
 - The SSIM arithmetic: the PTX and SASS counts above, the host replays of both combines and reduction orders, and the CPU `ssim=enable_db=true` probe on identical frames.
 - clang-format 23.1.1 on every touched C, CUDA and header file; a scoped CUDA-lane `tidy-ratchet.py --only` run (clang-tidy 22.1.2; the baseline was recorded with 22.1.8) over the 13 touched host and test TUs: none above its baseline, the new files at 0.
 
-Not verified (needs an NVIDIA GPU): every CUDA score, the absence of device faults under `compute-sanitizer`, and the timing. The home steps are in the four rows of `docs/state.md`.
+That host could not check any CUDA score, the absence of device faults under `compute-sanitizer`, or the timing; the next section has those.
+
+## Measured on an RTX 4090 (2026-09-30)
+
+Host `ryzen-4090-arc`: RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4), host build with nvcc 13.4.92 and gcc (`meson setup build-cuda core -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled --buildtype=release`) of this branch rebased on `origin/master` 10f27efe2; the same build of `master` 10f27efe2 gives the before numbers. Eight other agents were building and testing on the host at the time (load average 7 to 27), so the timings bound the cost of the change, they do not benchmark it. Every device run held the host's CUDA lock, so no other job shared the GPU.
+
+| Check | Result |
+|---|---|
+| `motion`: `integer_motion2` / `integer_motion3` against the CPU, Netflix pair, 48 frames | 0.0 (`master`: 1.2600536372531224e-05) |
+| the same on bbb 3840x2160, 50 frames | 0.0 (`master`: 6.9334713029611805e-05) |
+| `test_cuda_motion_tiny_frames`, `test_cuda_motion_v2_parity`, `test_cuda_motion3_parity` | pass, none skipped |
+| SAD kernels as loaded on the device (`cuFuncGetAttribute`, `cuOccupancyMaxActiveBlocksPerMultiprocessor`) | 28 registers (8-bit) and 40 (16-bit), 0 bytes local memory, 6 blocks of 256 threads per SM; `cuobjdump --dump-resource-usage` reads the same from the sm_89 cubin |
+| `psnr` with `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse=0.5`, with and without `--subsample 2` | `psnr_*`, `mse_*`, `apsnr_*` identical |
+| `ssim` with `enable_db` / `clip_db` | at most 7.3e-13 dB (2.3e-14 linear) |
+| `float_ssim` with `enable_lcs` / `enable_db` | at most 6.9e-6 dB (1.8e-7 linear); `l` 0, `c` 4.8e-7, `s` 6.0e-7 |
+| both SSIM twins with `-d` equal to `-r` (Netflix clip) | 104 dB with `clip_db`, `+inf` without, on both sides; `float_ssim_l/c/s` 1 |
+| identical flat 64x64 frames, `float_ssim` with `enable_db` | 72.247198959355487 dB on both sides, as the host replay predicted |
+| `motion_v2` and `float_motion` with `motion_fps_weight=2`, `motion_max_val=4` | identical |
+| `compute-sanitizer --tool memcheck` on `test_cuda_adm_tiny_frames` and `test_cuda_vif_min_dim` | `ERROR SUMMARY: 0 errors`, every case passing |
+| parity gate cells `adm`, `vif`, `psnr`, `float_ssim`, `float_motion`, `motion_v2` | 1.0e-6, 0.0, 0.0, 1.0e-6, 3.0e-6, 0.0 (tolerance 5e-5); `adm` reads 1.0e-6 on `master` too |
+| `vif` below 16 pixels | computed by the CPU `vif` (0.0 from the CPU); `--feature vif_cuda` fails `init()` |
+
+4K time per frame, (t(200) - t(2)) / 198, median of 5, each feature interleaved with the `master` build: `motion_cuda` 5.1 against 4.8 ms, `motion_v2_cuda` 5.5 against 4.9, `psnr_cuda` 3.0 against 3.1, `integer_ssim_cuda` 5.3 against 5.5, `float_motion_cuda` 3.2 against 3.1, `adm_cuda` 3.7 against 3.7, `vif_cuda` 3.1 against 3.1; `float_ssim_cuda=scale=1` 4.2 against 4.6, and 4.1 with `enable_lcs` (median of 7, three-way interleaved). Reading and uploading two 12.4 MB frames dominate every one of these, so the differences are within the noise of the shared host; in particular the fp64 SSIM combine does not show.
+
+The device run found three things the porting host could not:
+
+- **`motion_force_zero` crashed the first frame** of `motion_cuda` and `float_motion_cuda` (SIGSEGV; a `master` build does the same). The twins' `init()` swaps `submit()` / `collect()` for a synchronous `extract()`, but the engine had already chosen the asynchronous path and `vmaf_feature_extractor_context_submit()`, which initialises lazily, then called the `submit()` its `init()` had cleared. `core/src/libvmaf.c` now initialises such an extractor before it chooses (`init_before_dispatch()`); `test_cuda_motion_tiny_frames` gained a `motion_force_zero` case that crashes without it, and the contract test pins the order (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`). The HIP and Metal motion twins make the same switch.
+- **`float_motion_cuda` writes no `motion3`**, which the CPU `float_motion` emits (48 of 48 frames missing with `--backend cuda --feature float_motion`); none of the GPU `float_motion` twins provides it (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`).
+- **Four verify commands in the state rows could not run as written**: the parity gate's `motion` cell stops with `KeyError: 'integer_motion'` because neither the CPU `motion` nor `motion_cuda` writes the debug score by default (`T-CI-PARITY-GATE-MOTION-DEBUG-DEFAULT-2026-09-29`); the CLI rejects the odd 15x15 4:2:0 VIF frame (14x14 4:2:0 and 15x15 4:4:4 were used); `float_ssim_cuda` refuses 4K without `scale=1`; and the host has neither `/usr/bin/time` (the shell's `time` was used) nor `ncu` (the driver API gave the register and occupancy numbers above). Its scale error also suggested `--feature float_ssim_cuda:scale=1`, which the CLI rejects; it now reads `float_ssim_cuda=scale=1`.
 
 ## References
 

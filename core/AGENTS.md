@@ -835,6 +835,14 @@ signal, never as fixed constants.
   `read_pictures_should_skip()`, which share `fex_subsample_skip()`. Two
   skip predicates must agree on which extractors worker pool runs, or
   extractor is dispatched twice (collector double-write) or never.
+- **Dispatch choice reads callbacks AFTER init** (`init_before_dispatch()`,
+  `src/libvmaf.c`). `read_pictures_cuda_submit_current()` and
+  `read_pictures_dispatch_one()` init extractor with `submit()` +
+  `collect()` before picking async path vs `extract()`: GPU motion twins'
+  `init()` swaps in `extract()` under `motion_force_zero`. Choice first =
+  first frame calls cleared `submit()` -> SIGSEGV
+  (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`). Keep init ahead of
+  decision; `test_cuda_kernel_source_contract.py` pins order.
 - **`vmaf_ctx_subsystems_init` owns init/teardown chain** for framesync →
   feature collector → extractor vector → thread pools; new subsystem gets
   new label in that function, not in `vmaf_init`.
