@@ -64,6 +64,7 @@ static double monotonic_ms()
 #include "dispatch_strategy.h"
 #include "feature/feature_extractor.h"
 #include "log.h"
+#include "scratch_check.h"
 
 namespace syclex = sycl::ext::oneapi::experimental;
 using exec_graph_t = syclex::command_graph<syclex::graph_state::executable>;
@@ -322,6 +323,11 @@ extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigur
 
         bool const profiling = sycl_profiling_enabled(cfg);
         sycl::queue q(dev, sycl_queue_props(profiling));
+
+        /* ADR-1395: warn once per device when kernels that use scratch
+         * memory return wrong values there (the Linux xe driver on DG2).
+         * Warning only: the device is used either way. */
+        vmaf_sycl_scratch_selftest(&q);
 
         // Create a separate copy queue for DMA transfers.
         // Uses the same context+device so USM pointers are interoperable.

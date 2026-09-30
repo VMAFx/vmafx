@@ -1099,3 +1099,4 @@
 1247-scorecard-exact-head-gates
 1388-release-pat-mode-gate-exemption
 1389-codeql-actions-universal-pr-sast
+1395-sycl-kernels-no-scratch

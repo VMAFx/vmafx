@@ -374,6 +374,36 @@
 - `core/test/test_hip_psnr_hvs_parity.c`: added `test_psnr_hvs_deep_parity` asserting
   exact parity against CPU for 9, 10, 11, and 12-bit inputs.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## fix/sycl-scratch-free-kernels — SYCL kernels use no scratch memory (ADR-1395) (2026-10-01)
+
+- `core/src/sycl/scratch_check.{h,cpp}` (new, fork-only): the two probe
+  kernels, the warning-only self-test `vmaf_sycl_state_init` calls, and the
+  kernel audit behind `test_sycl_kernel_scratch`. `kScratchExtractors` there
+  and the extractor column of `core/src/sycl/scratch_ratchet.txt` must name the
+  same extractors; the test compares them. A PR that clears a ratchet kernel
+  deletes its line and, when it was an extractor's last, the extractor from
+  `kScratchExtractors`. Never add a line to make the test pass.
+- The ratchet list keys on mangled kernel ids. A launcher whose name or
+  parameter types change produces a new id: the test then reports the kernel
+  as unlisted (fails if it still uses scratch) and the old line as not
+  registered. Update the line with the id the FAIL message prints.
+- `core/src/feature/sycl/sycl_compat.h`: `VmafSyclKernelShape<SG, GRF>` and
+  `VMAF_SYCL_FUNCTOR_SG_SIZE`. Under icpx the sub-group size of a functor
+  derived from it lives in its `get(properties_tag)`; do not also put the
+  `reqd_sub_group_size` attribute on its call operator (icpx warns and ignores
+  one of them).
+- `core/src/feature/sycl/integer_vif_sycl.cpp`: fork-only. The horizontal and
+  fused launchers submit the functors `IntegerVifHoriKernel` /
+  `IntegerVifFusedKernel`; their SIMD-32 instances take the 256-entry register
+  file (`vif_grf_size()`). Keep it: without it they spill up to 8832 bytes per
+  thread and score 0/0 on an Arc A380 under xe. `VMAF_SYCL_VIF_SUBGROUP_SIZE`
+  reads through `vmaf_gpu_dispatch_env_get()` (ADR-0488).
+- `core/test/meson.build`: `test_sycl_kernel_scratch` (ratchet path passed as
+  `VMAF_SYCL_SCRATCH_RATCHET`) and `test_sycl_vif_parity_sg32`
+  (`test_sycl_vif_parity` with `VMAF_SYCL_VIF_SUBGROUP_SIZE=32`).
+- No Netflix golden-data, public API or FFmpeg patch impact: the new
+  functions are internal, and the two environment variables are documented in
+  `docs/backends/sycl/overview.md`.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 

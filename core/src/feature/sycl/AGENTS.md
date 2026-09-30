@@ -76,6 +76,17 @@ strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
   - ADM gain limiting uses int64 Q31 (`gain_limit_to_q31` +
     `launch_decouple_csf<false>` in `integer_adm_sycl.cpp`).
   - VIF gain limiting uses fp32 `sycl::fmin`.
+- **No scratch memory in kernels ([ADR-1395](../../../../docs/adr/1395-sycl-kernels-no-scratch.md)).**
+  No private array indexed at run time outside local memory, no live set above
+  128 registers per thread at kernel SIMD width: Arc A-series under xe returns
+  wrong values from scratch. Kernel that cannot fit -> functor derived from
+  `VmafSyclKernelShape<SG, 256>` (`sycl_compat.h`, 256-entry register file).
+  `integer_vif_sycl.cpp` SIMD-32 hori + fused kernels need it (spilled up to
+  8832 B/thread without); do not turn them back into plain lambdas or drop the
+  shape. `VMAF_SYCL_VIF_SUBGROUP_SIZE=32` reaches them on Intel GPUs;
+  `test_sycl_vif_parity_sg32` runs parity through them. Run
+  `test_sycl_kernel_scratch` on Intel GPU after any kernel change; remaining
+  scratch kernels live in `core/src/sycl/scratch_ratchet.txt`.
 - **Kernel identities and output captures have an explicit boundary**
   ([Research-2090](../../../../docs/research/2090-sycl-silent-revert-residuals-2026-09-24.md)).
   Anonymous kernel lambdas in two translation units can receive identical

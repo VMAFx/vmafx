@@ -160,6 +160,15 @@ linked AGENTS.md before resolving conflicts.
   `scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2
   --max-abs-diff 1e-9` re-check parity. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+- **SYCL kernels use no scratch memory ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md))**:
+  on an Arc A-series GPU under the Linux xe driver, kernels with a private array
+  in memory or spilled registers return wrong values. `test_sycl_kernel_scratch`
+  fails on a scratch kernel missing from `core/src/sycl/scratch_ratchet.txt`,
+  whose extractors must match `kScratchExtractors` in
+  `core/src/sycl/scratch_check.cpp`; the list only shrinks. `integer_vif_sycl`'s
+  SIMD-32 kernels keep `VmafSyclKernelShape<32, 256>`. See
+  [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

@@ -67,6 +67,19 @@ sycl/
   limiting uses fp32 `sycl::fmin`. **On rebase**: upstream cherry-pick
   bringing `double` into kernel lambda -> refactor to int64 / fp32
   before merging.
+- **Scratch-free kernels ([ADR-1395](../../../docs/adr/1395-sycl-kernels-no-scratch.md)).**
+  Arc A-series under Linux xe driver returns wrong values from kernels with
+  scratch memory (private array in memory, register spill). No new kernel may
+  use scratch. `test_sycl_kernel_scratch` (`--suite sycl`, needs Intel GPU)
+  fails on scratch kernel missing from `scratch_ratchet.txt`; list only
+  shrinks. Cleared kernel -> delete its line and drop its extractor from
+  `kScratchExtractors` in `scratch_check.cpp` in same PR (test compares both).
+  Kernel ids are mangled launcher names: renamed or re-typed launcher shows up
+  as unlisted + unregistered, fix the line. `vmaf_sycl_state_init` calls
+  `vmaf_sycl_scratch_selftest()`: warning only, never refuses device, keep it
+  that way. Probe kernel names `VmafSyclScratchProbePrivate` /
+  `VmafSyclScratchProbeSpill` stay out of audit; probes must keep using scratch
+  (test asserts private-array probe `private_bytes > 0`).
 - **VAAPI / dmabuf zero-copy import surface
   ([ADR-0183](../../../docs/adr/0183-ffmpeg-libvmaf-sycl-filter.md))**:
   `vmaf_sycl_import_va_surface` consumed by `libvmaf_sycl` FFmpeg

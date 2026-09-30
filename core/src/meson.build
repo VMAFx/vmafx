@@ -1817,6 +1817,7 @@ if is_sycl_enabled
         sycl_dir + 'picture_sycl.cpp',
         sycl_dir + 'dmabuf_import.cpp',
         sycl_dir + 'd3d11_import.cpp',
+        sycl_dir + 'scratch_check.cpp',
     ]
 
     sycl_surface_args = []

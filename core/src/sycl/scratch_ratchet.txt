@@ -1,0 +1,58 @@
+# ADR-1395 ratchet: SYCL kernels that still use scratch memory on Intel GPUs.
+#
+# test_sycl_kernel_scratch (meson --suite sycl) builds every kernel libvmaf
+# registers for the default GPU and fails when a kernel that is NOT listed here
+# has a non-zero private_mem_size or spill_memory_size. A listed kernel that
+# no longer uses scratch memory makes the test print a note: delete its line in
+# the same PR. Never add a line to make the test pass; remove the scratch use
+# (move the array to local memory or registers, split the kernel, or request the
+# 256-entry register file, as integer_vif_sycl.cpp does at SIMD-32).
+#
+# The list is the Arc A380 (dg2-g11) measurement of 2026-10-01: Linux 7.2.8,
+# xe driver, NEO 26.35.39758.10, IGC 2.41.5, icpx 2026.0, JIT build of master
+# 10f27efe2 plus ADR-1395. vmaf_sycl_scratch_extractors() in scratch_check.cpp
+# names the same extractors as the first column; the test compares them.
+#
+# Columns (tab-separated): extractors  private-bytes  spill-bytes  kernel-id.
+# The byte columns record the measurement; only the kernel id is matched.
+
+
+# cambi_sycl: core/src/feature/sycl/integer_cambi_sycl.cpp
+# launch_reset
+cambi_sycl	1280	0	_ZTSZZN12_GLOBAL__N_112launch_resetERN4sycl3_V15queueEPNS_15CambiSyclSelectEPNS_16CambiSyclResultsERA5_KNS_14CambiScaleGeomEENKUlRNS1_7handlerEE_clESD_EUlNS1_2idILi2EEEE_
+# launch_reset, RoundedRangeKernel wrapper
+cambi_sycl	896	0	_ZTSN4sycl3_V16detail18RoundedRangeKernelINS0_4itemILi2ELb1EEELi2EZZN12_GLOBAL__N_112launch_resetERNS0_5queueEPNS5_15CambiSyclSelectEPNS5_16CambiSyclResultsERA5_KNS5_14CambiScaleGeomEENKUlRNS0_7handlerEE_clESH_EUlNS0_2idILi2EEEE_EE
+
+# float_adm_sycl: core/src/feature/sycl/float_adm_sycl.cpp
+# launch_aim_cm
+float_adm_sycl	896	0	_ZTSZZN12_GLOBAL__N_113launch_aim_cmERN4sycl3_V15queueEPKfS5_S5_S5_PfjjjiiiifffffiENKUlRNS1_7handlerEE_clES8_EUlNS1_7nd_itemILi1EEEE_
+# launch_csf_cm
+float_adm_sycl	896	0	_ZTSZZN12_GLOBAL__N_113launch_csf_cmERN4sycl3_V15queueEPKfS5_S5_S5_PfjjjiiiifffffiENKUlRNS1_7handlerEE_clES8_EUlNS1_7nd_itemILi1EEEE_
+
+# float_vif_sycl: core/src/feature/sycl/float_vif_sycl.cpp
+# launch_compute<0>
+float_vif_sycl	14080	0	_ZTSZZN12_GLOBAL__N_114launch_computeILi0EEEN4sycl3_V15eventERNS2_5queueEPKvS7_jPKfS9_jPfSA_jjjjfffENKUlRNS2_7handlerEE_clESC_EUlNS2_7nd_itemILi2EEEE_
+# launch_decimate<1>
+float_vif_sycl	2432	0	_ZTSZZN12_GLOBAL__N_115launch_decimateILi1EEEN4sycl3_V15eventERNS2_5queueEPKvS7_jPKfS9_jPfSA_jjjjjjENKUlRNS2_7handlerEE_clESC_EUlNS2_7nd_itemILi2EEEE_
+
+# motion_sycl, motion_v2_sycl: core/src/feature/sycl/integer_motion_pipeline_sycl.cpp
+# submit_sad<int64_t>, used above 15 bits per component
+motion_sycl,motion_v2_sycl	0	768	_ZTSZZN20motion_sycl_pipeline12_GLOBAL__N_110submit_sadIlEEvRN4sycl3_V15queueERKNS_7SadArgsEENKUlRNS3_7handlerEE_clESA_EUlNS3_7nd_itemILi2EEEE_
+
+# speed_chroma_sycl, speed_temporal_sycl: core/src/feature/sycl/speed_sycl_pipeline.cpp
+# launch_decimate<RawSource<uint16_t>>
+speed_chroma_sycl,speed_temporal_sycl	3584	0	_ZTSZN12_GLOBAL__N_115launch_decimateINS_9RawSourceItEEEEvRN4sycl3_V15queueERKT_RKNS_12DecimateArgsEjEUlNS4_4itemILi3ELb1EEEE_
+# launch_decimate<RawSource<uint16_t>>, RoundedRangeKernel wrapper
+speed_chroma_sycl,speed_temporal_sycl	1088	0	_ZTSN4sycl3_V16detail18RoundedRangeKernelINS0_4itemILi3ELb1EEELi3EZN12_GLOBAL__N_115launch_decimateINS5_9RawSourceItEEEEvRNS0_5queueERKT_RKNS5_12DecimateArgsEjEUlS4_E_EE
+# launch_decimate<RawSource<uint8_t>>
+speed_chroma_sycl,speed_temporal_sycl	3584	0	_ZTSZN12_GLOBAL__N_115launch_decimateINS_9RawSourceIhEEEEvRN4sycl3_V15queueERKT_RKNS_12DecimateArgsEjEUlNS4_4itemILi3ELb1EEEE_
+# launch_decimate<RawSource<uint8_t>>, RoundedRangeKernel wrapper
+speed_chroma_sycl,speed_temporal_sycl	2176	0	_ZTSN4sycl3_V16detail18RoundedRangeKernelINS0_4itemILi3ELb1EEELi3EZN12_GLOBAL__N_115launch_decimateINS5_9RawSourceIhEEEEvRNS0_5queueERKT_RKNS5_12DecimateArgsEjEUlS4_E_EE
+# launch_scale<RawSource<uint16_t>>
+speed_chroma_sycl,speed_temporal_sycl	832	0	_ZTSZN12_GLOBAL__N_112launch_scaleINS_9RawSourceItEEEEvRN4sycl3_V15queueERKT_RKNS_9ScaleArgsEjEUlNS4_4itemILi3ELb1EEEE_
+# launch_scale<RawSource<uint16_t>>, RoundedRangeKernel wrapper
+speed_chroma_sycl,speed_temporal_sycl	1024	0	_ZTSN4sycl3_V16detail18RoundedRangeKernelINS0_4itemILi3ELb1EEELi3EZN12_GLOBAL__N_112launch_scaleINS5_9RawSourceItEEEEvRNS0_5queueERKT_RKNS5_9ScaleArgsEjEUlS4_E_EE
+# launch_scale<RawSource<uint8_t>>
+speed_chroma_sycl,speed_temporal_sycl	832	0	_ZTSZN12_GLOBAL__N_112launch_scaleINS_9RawSourceIhEEEEvRN4sycl3_V15queueERKT_RKNS_9ScaleArgsEjEUlNS4_4itemILi3ELb1EEEE_
+# launch_scale<RawSource<uint8_t>>, RoundedRangeKernel wrapper
+speed_chroma_sycl,speed_temporal_sycl	1024	0	_ZTSN4sycl3_V16detail18RoundedRangeKernelINS0_4itemILi3ELb1EEELi3EZN12_GLOBAL__N_112launch_scaleINS5_9RawSourceIhEEEEvRNS0_5queueERKT_RKNS5_9ScaleArgsEjEUlS4_E_EE

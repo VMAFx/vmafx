@@ -3783,6 +3783,24 @@ if not is_sycl_acpp
         is_parallel : false)
 endif
 
+# ADR-1395: SYCL kernels use no scratch memory (private arrays in memory,
+# register spills) on Intel GPUs, where the Linux xe driver returns wrong
+# values from them. Builds every registered kernel for the default GPU and
+# fails on one that uses scratch memory and is not in the ratchet list;
+# listed kernels that became clean print a remove-me note. Skips without a GPU.
+test_sycl_kernel_scratch = executable('test_sycl_kernel_scratch',
+    ['test.c', 'test_sycl_kernel_scratch.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency],
+    c_args: ['-DHAVE_SYCL=1', '-DVMAF_SYCL_SCRATCH_RATCHET="'
+             + (meson.current_source_dir() / '..' / 'src' / 'sycl' / 'scratch_ratchet.txt') + '"']
+)
+test('test_sycl_kernel_scratch', test_sycl_kernel_scratch,
+    suite : ['fast', 'gpu', 'sycl'],
+    timeout : 300,
+    is_parallel : false)
+
 # BUG-040: this compile combination used CUDA's host-picture cleanup early
 # return, bypassing the SYCL upload wait on the serial path. The worker path
 # can independently drop its counted references before the caller returns.
@@ -4190,6 +4208,14 @@ test_sycl_vif_parity = executable('test_sycl_vif_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_vif_parity', test_sycl_vif_parity,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+# ADR-1395: an Intel GPU runs the SIMD-32 VIF kernels only when told to; the
+# same parity test runs them here. They needed the 256-register file to stop
+# spilling, and a spilling kernel scored every frame 0/0 on an Arc A380 under
+# the xe driver.
+test('test_sycl_vif_parity_sg32', test_sycl_vif_parity,
+    env : ['VMAF_SYCL_VIF_SUBGROUP_SIZE=32'],
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 

@@ -8247,6 +8247,18 @@
       },
       "target": "1392-cuda-integer-reductions-one-atomic-per-block.md"
     },
+    "1395": {
+      "sites": {
+        "core/src/feature/sycl/integer_vif_sycl.cpp": 3,
+        "core/src/feature/sycl/sycl_compat.h": 2,
+        "core/src/sycl/common.cpp": 1,
+        "core/src/sycl/scratch_check.cpp": 2,
+        "core/src/sycl/scratch_check.h": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_sycl_kernel_scratch.c": 2
+      },
+      "target": "1395-sycl-kernels-no-scratch.md"
+    },
     "1396": {
       "sites": {
         "core/src/libvmaf.c": 1,
