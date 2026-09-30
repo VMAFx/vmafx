@@ -30,8 +30,8 @@
  * channel. Large enough to exercise the speed_means/cov/score kernels
  * without singular-matrix warnings; small enough for fast CI.
  *
- * Skip behaviour: emits "[skip: no CUDA device]" and passes when
- * vmaf_cuda_state_init fails. Mirrors test_cuda_motion3_parity.c.
+ * Skip behaviour: emits "[skip: no CUDA device]" and exits 77, meson's
+ * "skipped" status, when vmaf_cuda_state_init fails.
  */
 
 #include <math.h>
@@ -107,6 +107,7 @@ static char *run_speed_chroma_smoke(double *out_scores, int *skipped)
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err != 0 || cu_state == NULL) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
+        mu_skipped = 1; /* exit 77, not a pass */
         *skipped = 1;
         return NULL;
     }

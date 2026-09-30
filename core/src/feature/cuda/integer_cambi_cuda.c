@@ -4,81 +4,53 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CAMBI banding-detection feature extractor on the CUDA backend
- *  (T3-15 / ADR-0360). The Vulkan twin (cambi_vulkan.c, ADR-0210)
- *  was removed per ADR-0726 (Vulkan backend dropped).
+ *  (T3-15 / ADR-0360), fully device-resident since ADR-1379 (the CUDA port of
+ *  the SYCL design of ADR-1357, core/src/feature/sycl/integer_cambi_sycl.cpp).
  *
- *  Strategy II hybrid (ADR-0205 / ADR-0210 precedent):
+ *  Per frame, submit() enqueues every stage of cambi.c on the distorted
+ *  picture's stream, the stream its upload ran on:
  *
- *    GPU stages (three CUDA kernels in cambi_score.cu):
- *      - cambi_spatial_mask_kernel: derivative + 7×7 box sum + threshold
- *        → produces a uint16 mask buffer (0 = flat, 1 = edge).
- *      - cambi_decimate_kernel: strict 2× stride-2 subsample.
- *      - cambi_filter_mode_kernel: separable 3-tap mode filter (H + V).
+ *    reset         the per-scale selection state and the result block
+ *                  (device memsets);
+ *    validate      samples above the declared bit depth (only for bpc other
+ *                  than 8 and 16, as cambi.c::validate_image);
+ *    preprocess    10-bit conversion, resize to enc_width x enc_height through
+ *                  init-time index tables, anti-dither when enc_bitdepth < 10;
+ *    spatial mask  the ADR-0464 shared-memory tile;
+ *    per scale     decimate (scale > 0 or high-res speed-up), the horizontal
+ *                  and vertical mode filter (the vertical pass also writes the
+ *                  level map), the per-row run/change bit masks, the c-values
+ *                  (+ top-K radix pass 0) and the exact top-K pooling;
  *
- *    Host CPU stages (exact CPU code via cambi_internal.h wrappers):
- *      - vmaf_cambi_preprocessing: decimate/upcast to 10-bit.
- *      - vmaf_cambi_calculate_c_values: sliding-histogram c-value pass.
- *      - vmaf_cambi_spatial_pooling: top-K pooling → per-scale score.
- *      - vmaf_cambi_weight_scores_per_scale: inner-product scale weights.
+ *  then one 88-byte device-to-host copy of the five per-scale top-K sums and
+ *  the status word on the private stream. collect() waits once and weights
+ *  the scales on the host with cambi.c's own helpers. No host code touches
+ *  pixel, histogram or c-value data, and nothing waits mid-frame.
  *
- *  Per-frame flow:
- *    1. Host preprocessing (CPU): resize/upcast dist_pic → pics[0].
- *    2. HtoD upload of pics[0] luma plane → d_image.
- *    3. Scale 0: GPU cambi_spatial_mask_kernel over d_image → d_mask.
- *    4. For scale = 0 .. NUM_SCALES-1:
- *         a. (scale > 0) GPU cambi_decimate_kernel on d_image → d_tmp,
- *            swap; same for d_mask.
- *         b. GPU cambi_filter_mode_kernel H: d_image → d_tmp.
- *         c. GPU cambi_filter_mode_kernel V: d_tmp → d_image.
- *         d. DtoH readback: d_image → pics[0], d_mask → pics[1].
- *         e. Host vmaf_cambi_calculate_c_values + vmaf_cambi_spatial_pooling.
- *    5. Host vmaf_cambi_weight_scores_per_scale → final score.
- *    6. Emit "Cambi_feature_cambi_score" into the feature collector.
+ *  Precision contract (ADR-1357): the per-frame score is bit-identical to
+ *  cambi.c whenever cambi.c's own sequential top-K double sum is exact;
+ *  otherwise the device value is the exactly rounded mean and the CPU carries
+ *  its accumulation rounding.
  *
- *  Precision contract: `places=4` (ULP=0 on the emitted score). All GPU
- *  phases are integer + bit-exact. The host residual runs the exact CPU
- *  code via cambi_internal.h, so the emitted score is bit-for-bit
- *  identical to `vmaf_fex_cambi`. Cross-backend gate target: ULP=0.
- *
- *  Out of scope for v1 (future work):
- *    - full_ref / FR-CAMBI mode (no GPU twin for the source pyramid).
- *    - heatmap dump via heatmaps_path.
- *    - high_res_speedup (GPU decimate path makes it cheap but v1 omits it).
- *    - EOTF variants other than bt1886 (host TVI table is already correct).
- *
- *  CUDA async lifecycle mirrors integer_psnr_cuda.c:
- *    submit() enqueues all GPU work on the picture's stream, records
- *    submit event, DtoH-copies on the private stream, records finished.
- *    collect() drains the private stream and runs the host residual.
- *    This keeps the pipeline asynchronous with respect to motion_cuda et al.
- *
- *  IMPORTANT: Because the host residual in collect() does significant
- *  CPU work (calculate_c_values is O(W*H*num_diffs)), this extractor
- *  is NOT marked is_reduction_only. The dispatch_hint is set to
- *  VMAF_FEATURE_DISPATCH_SEQUENTIAL so the engine does not pipeline
- *  this extractor with itself across frames.
+ *  Out of scope, as since ADR-0360: full_ref (FR-CAMBI) and the heatmap dump.
  */
 
 #include <errno.h>
-#include <math.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "common.h"
-#include "common/alignment.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "cuda/integer_cambi_cuda.h"
 #include "cuda/kernel_template.h"
+#include "cuda_helper.cuh"
 #include "log.h"
-#include "luminance_tools.h"
-#include "mem.h"
 #include "picture.h"
 #include "picture_cuda.h"
-#include "cuda_helper.cuh"
 
 #include "feature/cambi_internal.h"
 
@@ -88,10 +60,13 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-/* --- Constants matching cambi.c --- */
-/* CAMBI_MIN_WIDTH_HEIGHT and CAMBI_WINDOW_DIVISOR come from cambi_internal.h */
-#define CAMBI_CUDA_NUM_SCALES 5
-#define CAMBI_CUDA_MASK_FILTER_SIZE 7
+#if CAMBI_CUDA_NUM_SCALES != VMAF_CAMBI_NUM_SCALES
+#error "CAMBI_CUDA_NUM_SCALES must equal VMAF_CAMBI_NUM_SCALES"
+#endif
+#if CAMBI_CUDA_FIXED_SHIFT != VMAF_CAMBI_TOPK_FIXED_SHIFT
+#error "the device fixed point must match vmaf_cambi_fixed_topk_mean()"
+#endif
+
 #define CAMBI_CUDA_DEFAULT_MAX_VAL 1000.0
 #define CAMBI_CUDA_DEFAULT_WINDOW_SIZE 65
 #define CAMBI_CUDA_DEFAULT_TOPK 0.6
@@ -99,33 +74,82 @@
 #define CAMBI_CUDA_DEFAULT_VLT 0.0
 #define CAMBI_CUDA_DEFAULT_MAX_LOG_CONTRAST 2
 #define CAMBI_CUDA_DEFAULT_EOTF "bt1886"
-#define CAMBI_CUDA_BLOCK_X 16u
-#define CAMBI_CUDA_BLOCK_Y 16u
+#define CAMBI_CUDA_MAX_DIFFS 32 /* 1 << max_log_contrast, max_log_contrast <= 5 */
+
+/* c-values chunking (integer_cambi_sycl.cpp cvals_chunks()): enough column
+ * threads to fill the device, row chunks of at least CAMBI_CUDA_MIN_CHUNK_ROWS
+ * rows, and at most CAMBI_CUDA_HIST_BUDGET bytes of per-chunk histograms. */
+#define CAMBI_CUDA_ITEMS_PER_SM 512u
+#define CAMBI_CUDA_FALLBACK_SMS 32
+#define CAMBI_CUDA_MIN_CHUNK_ROWS 32u
+#define CAMBI_CUDA_HIST_BUDGET ((size_t)64u << 20u)
+/* Pooling blocks: a block of a 7680 x 7680 frame holds under 2^17 elements,
+ * so its fixed-point partial sum (each term < 2^38) stays below 2^55. */
+#define CAMBI_CUDA_POOL_MAX_GROUPS 512u
+#define CAMBI_CUDA_POOL_ELEMS_PER_GROUP 4096u
+
+typedef enum {
+    CAMBI_FN_VALIDATE,
+    CAMBI_FN_PREPROCESS,
+    CAMBI_FN_MASK,
+    CAMBI_FN_DECIMATE,
+    CAMBI_FN_FILTER_H,
+    CAMBI_FN_FILTER_V,
+    CAMBI_FN_ROW_MASKS,
+    CAMBI_FN_CVALS,
+    CAMBI_FN_RADIX_HIST,
+    CAMBI_FN_RADIX_SCAN,
+    CAMBI_FN_TOPK_PARTIALS,
+    CAMBI_FN_TOPK_FINAL,
+    CAMBI_FN_COUNT,
+} CambiCudaKernel;
+
+static const char *const cambi_kernel_names[CAMBI_FN_COUNT] = {
+    "cambi_validate_kernel",   "cambi_preprocess_kernel",    "cambi_spatial_mask_kernel",
+    "cambi_decimate_kernel",   "cambi_filter_mode_h_kernel", "cambi_filter_mode_v_levels_kernel",
+    "cambi_row_masks_kernel",  "cambi_cvals_kernel",         "cambi_radix_hist_kernel",
+    "cambi_radix_scan_kernel", "cambi_topk_partials_kernel", "cambi_topk_final_kernel",
+};
+
+/* Device buffers, one table so allocation and release walk the same list. */
+typedef enum {
+    CAMBI_BUF_IMAGE,
+    CAMBI_BUF_MASK,
+    CAMBI_BUF_TMP,
+    CAMBI_BUF_Q,
+    CAMBI_BUF_RUNS,
+    CAMBI_BUF_CHANGE,
+    CAMBI_BUF_CVALS,
+    CAMBI_BUF_HIST,
+    CAMBI_BUF_LUT,
+    CAMBI_BUF_TVI,
+    CAMBI_BUF_WEIGHTS,
+    CAMBI_BUF_ORI_X,
+    CAMBI_BUF_ORI_Y,
+    CAMBI_BUF_SELECT,
+    CAMBI_BUF_PARTIALS,
+    CAMBI_BUF_RESULTS,
+    CAMBI_BUF_COUNT,
+} CambiCudaBufferId;
+
+/* Init-time geometry of one scale. */
+typedef struct CambiCudaScaleGeom {
+    unsigned width;
+    unsigned height;
+    unsigned chunks;
+    unsigned chunk_rows;
+    unsigned cvals_groups;
+    unsigned pool_groups;
+    unsigned topk;
+} CambiCudaScaleGeom;
 
 typedef struct CambiStateCuda {
-    /* CUDA lifecycle (stream + events). */
-    VmafCudaKernelLifecycle lc;
-
-    /* CUDA kernel function handles (loaded from cambi_score.cu). */
-    CUfunction func_mask;
-    CUfunction func_decimate;
-    CUfunction func_filter_mode;
-
-    /* Device buffers (flat uint16 arrays sized for proc_width × proc_height). */
-    VmafCudaBuffer *d_image; /* current scale image on device */
-    VmafCudaBuffer *d_mask;  /* spatial mask on device */
-    VmafCudaBuffer *d_tmp;   /* scratch: filter_mode H output, decimate output */
-
-    /* Host VmafPicture pair for DtoH readback (same role as Vulkan's pics[]). */
-    VmafPicture pics[2]; /* pics[0] = image, pics[1] = mask */
-
-    /* Host scratch buffers for the CPU residual (mirrors CambiVkState::buffers). */
-    VmafCambiHostBuffers buffers;
-
-    /* Callbacks (always scalar scalar; GPU has done the heavy lifting). */
-    VmafCambiRangeUpdater inc_range_callback;
-    VmafCambiRangeUpdater dec_range_callback;
-    VmafCambiDerivativeCalculator derivative_callback;
+    VmafCudaState *cu_state;
+    VmafCudaKernelLifecycle lc; /* private readback stream + fences */
+    CUmodule module;
+    CUfunction fn[CAMBI_FN_COUNT];
+    VmafCudaBuffer *buf[CAMBI_BUF_COUNT];
+    CambiCudaResults *h_results; /* pinned */
 
     /* Configuration options (mirrors CambiState). */
     int enc_width;
@@ -140,40 +164,29 @@ typedef struct CambiStateCuda {
     double cambi_vis_lum_threshold;
     char *eotf;
     char *cambi_eotf;
-    /* Resolved in init_fex_cuda() against the encode pixel count, exactly as
-     * cambi.c does: a value of 1080 / 1440 / 2160 below its own threshold is
-     * reset to 0.  Non-zero means "decimate once before scale 0 and halve the
-     * adjusted window" (cambi.c::cambi_score / adjust_window_size). */
+    /* Resolved at init against the encode pixel count, exactly as cambi.c
+     * does: a value of 1080 / 1440 / 2160 below its own threshold is reset to
+     * 0. Non-zero means "decimate once before scale 0 and halve the adjusted
+     * window" (cambi.c::cambi_score / adjust_window_size). */
     int cambi_high_res_speedup;
 
-    /* Resolved per-frame geometry. */
+    /* Resolved geometry and contrast tables. */
     unsigned src_width;
     unsigned src_height;
     unsigned src_bpc;
     unsigned proc_width;
     unsigned proc_height;
-
-    /* Adjusted window (cambi_vk::adjusted_window equivalent). */
+    unsigned num_diffs;
+    unsigned levels;
+    unsigned mask_index;
     uint16_t adjusted_window;
     uint16_t vlt_luma;
-
-    /* Per-frame index stored by submit() for collect(). */
-    unsigned index;
-
-    /* Per-scale geometry stored by submit() for collect(). */
-    unsigned scale_widths[CAMBI_CUDA_NUM_SCALES];
-    unsigned scale_heights[CAMBI_CUDA_NUM_SCALES];
-
-    /* DtoH readback buffers — one flat slot per scale for image + mask.
-     * We read back after every scale (as in Vulkan v1), so we need only
-     * the current scale's readback; reuse the same pinned buffer. */
-    VmafCudaKernelReadback rb_image;
-    VmafCudaKernelReadback rb_mask;
-
-    /* PTX module backing the CAMBI kernels — owned here so
-     * `close_fex_cuda` can unload it. Skipping the unload leaks
-     * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
-    CUmodule module;
+    uint16_t v_band_base;
+    uint16_t v_band_size;
+    uint16_t tvi_for_diff[CAMBI_CUDA_MAX_DIFFS];
+    CambiCudaScaleGeom geom[CAMBI_CUDA_NUM_SCALES];
+    size_t hist_elements;
+    size_t partial_elements;
 
     VmafDictionary *feature_name_dict;
 } CambiStateCuda;
@@ -323,1047 +336,634 @@ static const VmafOption options[] = {
 };
 
 /* ------------------------------------------------------------------ */
-/* Helper: compute adjusted window size (mirrors cambi.c). */
+/* Configuration (cambi.c::init)                                       */
 /* ------------------------------------------------------------------ */
-static uint16_t cambi_cuda_adjust_window(int window_size, unsigned w, unsigned h,
-                                         bool cambi_high_res_speedup)
+
+static bool cambi_speedup_is_valid(int requested, int pixels)
 {
-    /* cambi.c::adjust_window_size formula:
-     *   window = window * (w + h) / (4K_W + 4K_H) / 16, rounded up to odd. */
-    unsigned adjusted = (unsigned)(window_size) * (w + h) / (unsigned)CAMBI_WINDOW_DIVISOR;
-    adjusted >>= 4;
-    if (cambi_high_res_speedup) {
-        adjusted = (adjusted + 1u) >> 1;
-    }
-    if (adjusted < 1u)
-        adjusted = 1u;
-    if ((adjusted & 1u) == 0u)
-        adjusted++;
-    return (uint16_t)adjusted;
+    if (requested == 1080)
+        return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p;
+    if (requested == 1440)
+        return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p;
+    if (requested == 2160)
+        return pixels >= CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p;
+    return false;
 }
 
-/* ------------------------------------------------------------------ */
-/* Helper: ceil_log2 for mask_index (mirrors cambi.c). */
-/* ------------------------------------------------------------------ */
-static uint16_t cambi_cuda_ceil_log2(uint32_t num)
-{
-    if (num == 0u)
-        return 0u;
-    uint32_t tmp = num - 1u;
-    uint16_t shift = 0;
-    while (tmp > 0u) {
-        tmp >>= 1;
-        shift++;
-    }
-    return shift;
-}
-
-static uint16_t cambi_cuda_get_mask_index(unsigned w, unsigned h, uint16_t filter_size)
-{
-    uint32_t shifted_wh = (w >> 6) * (h >> 6);
-    return (
-        uint16_t)((filter_size * filter_size + 3 * (cambi_cuda_ceil_log2(shifted_wh) - 11) - 1) >>
-                  1);
-}
-
-/* ------------------------------------------------------------------ */
-/* TVI table initialisation (mirrors cambi.c).                         */
-/* ------------------------------------------------------------------ */
-enum CambiCudaTVIBisectFlag {
-    CAMBI_CUDA_TVI_BISECT_TOO_SMALL,
-    CAMBI_CUDA_TVI_BISECT_CORRECT,
-    CAMBI_CUDA_TVI_BISECT_TOO_BIG,
-};
-
-static bool cambi_cuda_tvi_condition(int sample, int diff, double tvi_threshold,
-                                     VmafLumaRange luma_range, VmafEOTF eotf)
-{
-    double mean_luminance = vmaf_luminance_get_luminance(sample, luma_range, eotf);
-    double diff_luminance = vmaf_luminance_get_luminance(sample + diff, luma_range, eotf);
-    double delta_luminance = diff_luminance - mean_luminance;
-    return (delta_luminance > tvi_threshold * mean_luminance);
-}
-
-static enum CambiCudaTVIBisectFlag cambi_cuda_tvi_hard_threshold_condition(int sample, int diff,
-                                                                           double tvi_threshold,
-                                                                           VmafLumaRange luma_range,
-                                                                           VmafEOTF eotf)
-{
-    if (!cambi_cuda_tvi_condition(sample, diff, tvi_threshold, luma_range, eotf))
-        return CAMBI_CUDA_TVI_BISECT_TOO_BIG;
-
-    if (cambi_cuda_tvi_condition(sample + 1, diff, tvi_threshold, luma_range, eotf))
-        return CAMBI_CUDA_TVI_BISECT_TOO_SMALL;
-
-    return CAMBI_CUDA_TVI_BISECT_CORRECT;
-}
-
-static int cambi_cuda_get_tvi_for_diff(int diff, double tvi_threshold, int bitdepth,
-                                       VmafLumaRange luma_range, VmafEOTF eotf)
-{
-    const int max_val = (1 << bitdepth) - 1;
-    int foot = luma_range.foot;
-    int head = luma_range.head - diff - 1;
-
-    enum CambiCudaTVIBisectFlag tvi_bisect =
-        cambi_cuda_tvi_hard_threshold_condition(foot, diff, tvi_threshold, luma_range, eotf);
-    if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_TOO_BIG)
-        return 0;
-    if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_CORRECT)
-        return foot;
-
-    tvi_bisect =
-        cambi_cuda_tvi_hard_threshold_condition(head, diff, tvi_threshold, luma_range, eotf);
-    if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_TOO_SMALL)
-        return max_val;
-    if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_CORRECT)
-        return head;
-
-    while (head - foot > 1) {
-        int mid = foot + (head - foot) / 2;
-        tvi_bisect =
-            cambi_cuda_tvi_hard_threshold_condition(mid, diff, tvi_threshold, luma_range, eotf);
-        if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_TOO_BIG) {
-            head = mid;
-        } else if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_TOO_SMALL) {
-            foot = mid;
-        } else if (tvi_bisect == CAMBI_CUDA_TVI_BISECT_CORRECT) {
-            return mid;
-        }
-    }
-    return foot;
-}
-
-static int cambi_cuda_get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange luma_range,
-                                   VmafEOTF eotf)
-{
-    uint16_t sample = (uint16_t)luma_range.foot;
-    while (vmaf_luminance_get_luminance(sample, luma_range, eotf) <
-           visibility_luminance_threshold) {
-        sample++;
-    }
-    if (sample == (uint16_t)luma_range.foot)
-        return 0;
-    return sample;
-}
-
-static int cambi_cuda_init_tvi(CambiStateCuda *s)
-{
-    VmafLumaRange luma_range;
-    int err = vmaf_luminance_init_luma_range(&luma_range, 10, VMAF_PIXEL_RANGE_LIMITED);
-    if (err)
-        return err;
-
-    const char *effective_eotf;
-    if (s->cambi_eotf && strcmp(s->cambi_eotf, CAMBI_CUDA_DEFAULT_EOTF) != 0) {
-        effective_eotf = s->cambi_eotf;
-    } else {
-        effective_eotf = (s->eotf != NULL) ? s->eotf : CAMBI_CUDA_DEFAULT_EOTF;
-    }
-
-    VmafEOTF eotf;
-    err = vmaf_luminance_init_eotf(&eotf, effective_eotf);
-    if (err)
-        return err;
-
-    const int num_diffs = 1 << s->max_log_contrast;
-    for (int d = 0; d < num_diffs; d++) {
-        s->buffers.tvi_for_diff[d] = (uint16_t)cambi_cuda_get_tvi_for_diff(
-            s->buffers.diffs_to_consider[d], s->tvi_threshold, 10, luma_range, eotf);
-        s->buffers.tvi_for_diff[d] += (uint16_t)num_diffs;
-    }
-
-    s->vlt_luma = (uint16_t)cambi_cuda_get_vlt_luma(s->cambi_vis_lum_threshold, luma_range, eotf);
-    return 0;
-}
-
-/* ------------------------------------------------------------------ */
-static void cambi_preserve_error(int *rc, int err)
-{
-    if (!*rc)
-        *rc = err;
-}
-
-static int cambi_release_device_buffers(VmafFeatureExtractor *fex, CambiStateCuda *s, int rc)
-{
-    cambi_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_image));
-    cambi_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_mask));
-    cambi_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->d_tmp));
-    cambi_preserve_error(&rc, vmaf_cuda_kernel_readback_free(&s->rb_image, fex->cu_state));
-    cambi_preserve_error(&rc, vmaf_cuda_kernel_readback_free(&s->rb_mask, fex->cu_state));
-    return rc;
-}
-
-static void cambi_release_host_buffers(CambiStateCuda *s)
-{
-    free(s->buffers.c_values);
-    s->buffers.c_values = NULL;
-    free(s->buffers.c_values_histograms);
-    s->buffers.c_values_histograms = NULL;
-    free(s->buffers.mask_dp);
-    s->buffers.mask_dp = NULL;
-    free(s->buffers.filter_mode_buffer);
-    s->buffers.filter_mode_buffer = NULL;
-    free(s->buffers.derivative_buffer);
-    s->buffers.derivative_buffer = NULL;
-    free(s->buffers.diffs_to_consider);
-    s->buffers.diffs_to_consider = NULL;
-    free(s->buffers.diff_weights);
-    s->buffers.diff_weights = NULL;
-    free(s->buffers.all_diffs);
-    s->buffers.all_diffs = NULL;
-    free(s->buffers.tvi_for_diff);
-    s->buffers.tvi_for_diff = NULL;
-}
-
-/* cambi_init_unwind - the single teardown path for init_fex_cuda.
- *
- * Drain the lifecycle before releasing anything queued work may reference.
- * Every early-exit site retains its original error; allocation failures with
- * no more specific status remain -ENOMEM.
- */
-static int cambi_init_unwind(VmafFeatureExtractor *fex, CambiStateCuda *s, int err)
-{
-    const int primary_err = err ? err : -ENOMEM;
-    const int lifecycle_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    if (lifecycle_rc)
-        return primary_err;
-
-    int rc = cambi_release_device_buffers(fex, s, primary_err);
-    if (s->pics[0].ref)
-        cambi_preserve_error(&rc, vmaf_picture_unref(&s->pics[0]));
-    if (s->pics[1].ref)
-        cambi_preserve_error(&rc, vmaf_picture_unref(&s->pics[1]));
-    cambi_release_host_buffers(s);
-    cambi_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
-    cambi_preserve_error(&rc, vmaf_cuda_module_unload(fex->cu_state, &s->module));
-    return rc;
-}
-
-/* cambi_resolve_geometry - encoded geometry, high-res speedup and window.
- *
- * HISS-04: lifted verbatim out of init_fex_cuda; the resolution fallbacks,
- * the speedup switch and the window adjustment are unchanged.
- */
+/* Encoded geometry, high-res speed-up, window and mask index, resolved as
+ * cambi.c::validate_and_setup_dimensions() and init() resolve them. */
 static int cambi_resolve_geometry(CambiStateCuda *s, unsigned bpc, unsigned w, unsigned h)
 {
-    /* Resolve enc geometry (matches cambi.c::init logic). */
     if (s->enc_bitdepth == 0)
         s->enc_bitdepth = (int)bpc;
-    if (s->enc_width == 0 || s->enc_height == 0) {
+    if (s->enc_width == 0 || s->enc_height == 0 || (unsigned)s->enc_height > h ||
+        (unsigned)s->enc_width > w) {
         s->enc_width = (int)w;
         s->enc_height = (int)h;
     }
-    if ((unsigned)s->enc_height > h || (unsigned)s->enc_width > w) {
-        s->enc_width = (int)w;
-        s->enc_height = (int)h;
-    }
-    if (!cambi_validate_dimensions(s->enc_width, s->enc_height)) {
+    if (!cambi_validate_dimensions((unsigned)s->enc_width, (unsigned)s->enc_height)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "cambi_cuda: encoded resolution %dx%d below minimum %d×%d.\n", s->enc_width,
                  s->enc_height, CAMBI_MIN_WIDTH_HEIGHT, CAMBI_MIN_WIDTH_HEIGHT);
         return -EINVAL;
     }
-
-    const int enc_pix = s->enc_width * s->enc_height;
-    switch (s->cambi_high_res_speedup) {
-    case 1080:
-        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1080p)
-            s->cambi_high_res_speedup = 0;
-        break;
-    case 1440:
-        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p)
-            s->cambi_high_res_speedup = 0;
-        break;
-    case 2160:
-        if (enc_pix < CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p)
-            s->cambi_high_res_speedup = 0;
-        break;
-    default:
+    if (!cambi_speedup_is_valid(s->cambi_high_res_speedup, s->enc_width * s->enc_height))
         s->cambi_high_res_speedup = 0;
-        break;
-    }
-
     s->src_width = w;
     s->src_height = h;
     s->src_bpc = bpc;
     s->proc_width = (unsigned)s->enc_width;
     s->proc_height = (unsigned)s->enc_height;
-
-    s->adjusted_window = cambi_cuda_adjust_window(s->window_size, s->proc_width, s->proc_height,
+    s->adjusted_window = vmaf_cambi_adjust_window(s->window_size, s->proc_width, s->proc_height,
                                                   (bool)s->cambi_high_res_speedup);
+    s->mask_index = vmaf_cambi_mask_index(s->proc_width, s->proc_height);
+    s->num_diffs = 1u << (unsigned)s->max_log_contrast;
     return 0;
 }
 
-/* cambi_load_kernels - module load plus the three kernel handles.
- *
- * CHECK_CUDA_GOTO keeps the context-pop boundary local; failures then enter
- * the shared phase-ordered init unwind with the original CUDA errno.
- */
-static int cambi_load_kernels(VmafFeatureExtractor *fex, CambiStateCuda *s, CudaFunctions *cu_f)
+/* tvi_for_diff / vlt_luma / v_band through cambi.c's own routine, then
+ * cambi.c::setup_contrast_and_luminance()'s window guard at the same point
+ * (after the TVI tables), both windows, same code and message. */
+static int cambi_init_contrast(CambiStateCuda *s)
 {
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_cuda);
-    ctx_pushed = 1;
-
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, cambi_score_ptx), fail_cuda);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_mask, s->module, "cambi_spatial_mask_kernel"),
-                    fail_cuda);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_decimate, s->module, "cambi_decimate_kernel"),
-                    fail_cuda);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_filter_mode, s->module, "cambi_filter_mode_kernel"),
-        fail_cuda);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_cuda);
-    return 0;
-
-fail_cuda:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-    return cambi_init_unwind(fex, s, _cuda_err);
+    uint16_t diffs[CAMBI_CUDA_MAX_DIFFS];
+    for (unsigned d = 0u; d < s->num_diffs; d++)
+        diffs[d] = (uint16_t)(d + 1u);
+    const int err = vmaf_cambi_init_tvi_and_vlt(
+        (int)s->num_diffs, diffs, s->tvi_threshold, s->cambi_vis_lum_threshold, s->cambi_eotf,
+        s->eotf, s->tvi_for_diff, &s->vlt_luma, &s->v_band_base, &s->v_band_size);
+    if (err)
+        return err;
+    s->levels = s->v_band_size;
+    const uint16_t src_window = vmaf_cambi_adjust_window(
+        s->window_size, s->src_width, s->src_height, (bool)s->cambi_high_res_speedup);
+    return vmaf_cambi_check_window_fits_lut(s->adjusted_window, src_window);
 }
 
-/* cambi_alloc_device - device buffers, pinned readbacks and the two host
- * VmafPictures the CPU residual works on.
- *
- * HISS-04: lifted verbatim out of init_fex_cuda; each failure still unwinds
- * through cambi_init_unwind() with the same error value.
- */
-static int cambi_alloc_device(VmafFeatureExtractor *fex, CambiStateCuda *s)
+/* Row chunks for the c-values pass. One thread walks one column of one
+ * chunk, row after row, so a chunk is a latency chain: enough of them keep
+ * the device busy, and at least CAMBI_CUDA_MIN_CHUNK_ROWS rows each keep the
+ * per-chunk window priming a minor cost. */
+static unsigned cambi_cvals_chunks(unsigned width, unsigned height, unsigned levels, int sms)
 {
-    /* Device buffers: one flat uint16 array per logical buffer, sized for the
-     * full (proc_width × proc_height) luma plane at scale 0. Per-scale
-     * dispatches read only the leading (scaled_w × scaled_h) prefix. */
-    const size_t buf_bytes = (size_t)s->proc_width * s->proc_height * sizeof(uint16_t);
-    int err = vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_image, buf_bytes);
-    if (err)
-        return cambi_init_unwind(fex, s, err);
-    err = vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_mask, buf_bytes);
-    if (err)
-        return cambi_init_unwind(fex, s, err);
-    err = vmaf_cuda_buffer_alloc(fex->cu_state, &s->d_tmp, buf_bytes);
-    if (err)
-        return cambi_init_unwind(fex, s, err);
-
-    /* Pinned readback buffers: sized for scale-0 (worst case). */
-    err = vmaf_cuda_kernel_readback_alloc(&s->rb_image, fex->cu_state, buf_bytes);
-    if (err)
-        return cambi_init_unwind(fex, s, err);
-    err = vmaf_cuda_kernel_readback_alloc(&s->rb_mask, fex->cu_state, buf_bytes);
-    if (err)
-        return cambi_init_unwind(fex, s, err);
-
-    /* Host VmafPictures for the CPU residual. */
-    err = vmaf_picture_alloc(&s->pics[0], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
-    if (err)
-        return cambi_init_unwind(fex, s, err);
-    err = vmaf_picture_alloc(&s->pics[1], VMAF_PIX_FMT_YUV400P, 10, s->proc_width, s->proc_height);
-    if (err)
-        return cambi_init_unwind(fex, s, err);
-    return 0;
+    const unsigned target_items = (unsigned)sms * CAMBI_CUDA_ITEMS_PER_SM;
+    unsigned chunks = (target_items + width - 1u) / width;
+    const size_t chunk_bytes = (size_t)width * levels * sizeof(uint16_t);
+    size_t max_chunks = height / CAMBI_CUDA_MIN_CHUNK_ROWS;
+    const size_t by_memory = CAMBI_CUDA_HIST_BUDGET / chunk_bytes;
+    if (max_chunks > by_memory)
+        max_chunks = by_memory;
+    if (max_chunks < 1u)
+        max_chunks = 1u;
+    if (chunks > max_chunks)
+        chunks = (unsigned)max_chunks;
+    return chunks < 1u ? 1u : chunks;
 }
 
-/* cambi_alloc_diff_tables - the contrast difference tables and the TVI LUT.
- *
- * HISS-04: lifted verbatim out of init_fex_cuda. `err` starts at 0 here just
- * as it did at this point in the original function, so a failed malloc still
- * unwinds with -ENOMEM.
- */
-static int cambi_alloc_diff_tables(VmafFeatureExtractor *fex, CambiStateCuda *s, int num_diffs)
+static unsigned cambi_clamp_unsigned(unsigned value, unsigned low, unsigned high)
 {
-    int err = 0;
-    /* Host scratch buffers for the CPU residual. */
-    s->buffers.diffs_to_consider = malloc(sizeof(uint16_t) * (size_t)num_diffs);
-    if (!s->buffers.diffs_to_consider)
-        return cambi_init_unwind(fex, s, err);
-    s->buffers.diff_weights = malloc(sizeof(int) * (size_t)num_diffs);
-    if (!s->buffers.diff_weights)
-        return cambi_init_unwind(fex, s, err);
-    s->buffers.all_diffs = malloc(sizeof(int) * (size_t)(2 * num_diffs + 1));
-    if (!s->buffers.all_diffs)
-        return cambi_init_unwind(fex, s, err);
+    return value < low ? low : (value > high ? high : value);
+}
 
-    /* Suprathreshold contrast weights (g_contrast_weights from cambi.c). */
-    static const int contrast_weights[32] = {1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8,
-                                             8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
-    for (int d = 0; d < num_diffs; d++) {
-        s->buffers.diffs_to_consider[d] = (uint16_t)(d + 1);
-        s->buffers.diff_weights[d] = contrast_weights[d];
+/* Per-scale dimensions (cambi_score's scaled_width / scaled_height walk),
+ * c-values chunking and top-K counts (spatial_pooling's clip()). */
+static void cambi_scale_geometry(CambiStateCuda *s, double topk, int sms)
+{
+    unsigned width = s->proc_width;
+    unsigned height = s->proc_height;
+    s->hist_elements = 0u;
+    s->partial_elements = CAMBI_CUDA_POOL_MAX_GROUPS;
+    for (int scale = 0; scale < CAMBI_CUDA_NUM_SCALES; scale++) {
+        if (scale > 0 || s->cambi_high_res_speedup) {
+            width = (width + 1u) >> 1;
+            height = (height + 1u) >> 1;
+        }
+        CambiCudaScaleGeom *g = &s->geom[scale];
+        g->width = width;
+        g->height = height;
+        g->chunks = cambi_cvals_chunks(width, height, s->levels, sms);
+        g->chunk_rows = (height + g->chunks - 1u) / g->chunks;
+        g->chunks = (height + g->chunk_rows - 1u) / g->chunk_rows;
+        g->cvals_groups =
+            g->chunks * ((width + CAMBI_CUDA_CVALS_BLOCK - 1u) / CAMBI_CUDA_CVALS_BLOCK);
+        const unsigned n = width * height;
+        const int raw = (int)(topk * (int)n);
+        g->topk = cambi_clamp_unsigned(raw < 1 ? 1u : (unsigned)raw, 1u, n);
+        g->pool_groups = cambi_clamp_unsigned((n + CAMBI_CUDA_POOL_ELEMS_PER_GROUP - 1u) /
+                                                  CAMBI_CUDA_POOL_ELEMS_PER_GROUP,
+                                              1u, CAMBI_CUDA_POOL_MAX_GROUPS);
+        const size_t hist = (size_t)g->chunks * width * s->levels;
+        if (hist > s->hist_elements)
+            s->hist_elements = hist;
+        if (g->cvals_groups > s->partial_elements)
+            s->partial_elements = g->cvals_groups;
     }
-    for (int d = -num_diffs; d <= num_diffs; d++)
-        s->buffers.all_diffs[d + num_diffs] = d;
-
-    s->buffers.tvi_for_diff = malloc(sizeof(uint16_t) * (size_t)num_diffs);
-    if (!s->buffers.tvi_for_diff)
-        return cambi_init_unwind(fex, s, err);
-
-    err = cambi_cuda_init_tvi(s);
-    if (err)
-        return cambi_init_unwind(fex, s, err);
-    return 0;
-}
-
-/* cambi_alloc_histograms - c_values, the histogram bins and the mask scratch.
- *
- * HISS-04: lifted verbatim out of init_fex_cuda; the bin-count arithmetic and
- * the underflow guard are unchanged.
- */
-static int cambi_alloc_histograms(VmafFeatureExtractor *fex, CambiStateCuda *s, int num_diffs)
-{
-    const int err = 0;
-    s->buffers.c_values = malloc(sizeof(float) * s->proc_width * s->proc_height);
-    if (!s->buffers.c_values)
-        return cambi_init_unwind(fex, s, err);
-
-    int v_lo_signed = (int)s->vlt_luma - 3 * (int)num_diffs + 1;
-    uint16_t v_band_base = v_lo_signed > 0 ? (uint16_t)v_lo_signed : 0;
-    int v_band_size_signed = (int)s->buffers.tvi_for_diff[num_diffs - 1] + 1 - (int)v_band_base;
-    if (v_band_size_signed <= 0) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "cambi_cuda: v_band_size underflow (tvi_max=%u v_band_base=%u); "
-                 "cambi_vis_lum_threshold may be too low\n",
-                 (unsigned)s->buffers.tvi_for_diff[num_diffs - 1], (unsigned)v_band_base);
-        return cambi_init_unwind(fex, s, err);
-    }
-
-    const uint16_t num_bins = (uint16_t)(1024u + (unsigned)(s->buffers.all_diffs[2 * num_diffs] -
-                                                            s->buffers.all_diffs[0]));
-    const size_t hist_bins = (size_t)v_band_size_signed > (size_t)num_bins ?
-                                 (size_t)v_band_size_signed :
-                                 (size_t)num_bins;
-    s->buffers.c_values_histograms = malloc(sizeof(uint16_t) * s->proc_width * hist_bins);
-    if (!s->buffers.c_values_histograms)
-        return cambi_init_unwind(fex, s, err);
-
-    /* mask_dp scratch (not used for GPU; kept for cambi_internal API). */
-    const int pad_size = CAMBI_CUDA_MASK_FILTER_SIZE / 2;
-    const int dp_width = (int)s->proc_width + 2 * pad_size + 1;
-    const int dp_height = 2 * pad_size + 2;
-    s->buffers.mask_dp = malloc(sizeof(uint32_t) * (size_t)dp_width * (size_t)dp_height);
-    if (!s->buffers.mask_dp)
-        return cambi_init_unwind(fex, s, err);
-
-    s->buffers.filter_mode_buffer = malloc(sizeof(uint16_t) * 3u * s->proc_width);
-    if (!s->buffers.filter_mode_buffer)
-        return cambi_init_unwind(fex, s, err);
-    s->buffers.derivative_buffer = malloc(sizeof(uint16_t) * s->proc_width);
-    if (!s->buffers.derivative_buffer)
-        return cambi_init_unwind(fex, s, err);
-    return 0;
 }
 
 /* ------------------------------------------------------------------ */
-/* init_fex_cuda */
+/* Device state                                                        */
 /* ------------------------------------------------------------------ */
+
+static bool cambi_resizes(const CambiStateCuda *s)
+{
+    return s->proc_width != s->src_width || s->proc_height != s->src_height;
+}
+
+static size_t cambi_buffer_bytes(const CambiStateCuda *s, CambiCudaBufferId id)
+{
+    const size_t pixels = (size_t)s->proc_width * s->proc_height;
+    const size_t words = (size_t)s->proc_height * ((s->proc_width + 31u) / 32u);
+    unsigned lut_size = 0u;
+    switch (id) {
+    case CAMBI_BUF_IMAGE:
+    case CAMBI_BUF_MASK:
+    case CAMBI_BUF_TMP:
+    case CAMBI_BUF_Q:
+        return pixels * sizeof(uint16_t);
+    case CAMBI_BUF_RUNS:
+    case CAMBI_BUF_CHANGE:
+        return words * sizeof(uint32_t);
+    case CAMBI_BUF_CVALS:
+        return pixels * sizeof(float);
+    case CAMBI_BUF_HIST:
+        return s->hist_elements * sizeof(uint16_t);
+    case CAMBI_BUF_LUT:
+        (void)vmaf_cambi_reciprocal_lut(&lut_size);
+        return (size_t)lut_size * sizeof(float);
+    case CAMBI_BUF_TVI:
+        return s->num_diffs * sizeof(uint16_t);
+    case CAMBI_BUF_WEIGHTS:
+        return s->num_diffs * sizeof(int);
+    case CAMBI_BUF_ORI_X:
+        return cambi_resizes(s) ? s->proc_width * sizeof(uint32_t) : 0u;
+    case CAMBI_BUF_ORI_Y:
+        return cambi_resizes(s) ? s->proc_height * sizeof(uint32_t) : 0u;
+    case CAMBI_BUF_SELECT:
+        return CAMBI_CUDA_NUM_SCALES * sizeof(CambiCudaSelect);
+    case CAMBI_BUF_PARTIALS:
+        return s->partial_elements * sizeof(uint64_t);
+    case CAMBI_BUF_RESULTS:
+        return sizeof(CambiCudaResults);
+    default:
+        return 0u;
+    }
+}
+
+static CUdeviceptr cambi_dptr(const CambiStateCuda *s, CambiCudaBufferId id)
+{
+    return s->buf[id] ? s->buf[id]->data : (CUdeviceptr)0;
+}
+
+static int cambi_preserve(int rc, int err)
+{
+    return rc ? rc : err;
+}
+
+/* The single teardown path of init and close: quiesce the private stream,
+ * then release every buffer, the pinned block, the module and the name
+ * dictionary. A handle whose release fails is kept for a retry. */
+static int cambi_release(CambiStateCuda *s, int rc)
+{
+    if (s->cu_state) {
+        const int lc_rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, s->cu_state);
+        if (lc_rc)
+            return cambi_preserve(rc, lc_rc);
+        for (int id = 0; id < CAMBI_BUF_COUNT; id++)
+            rc = cambi_preserve(rc, vmaf_cuda_buffer_free_owned(s->cu_state, &s->buf[id]));
+        rc = cambi_preserve(rc,
+                            vmaf_cuda_buffer_host_free_owned(s->cu_state, (void **)&s->h_results));
+        rc = cambi_preserve(rc, vmaf_cuda_module_unload(s->cu_state, &s->module));
+    }
+    if (s->feature_name_dict)
+        rc = cambi_preserve(rc, vmaf_dictionary_free(&s->feature_name_dict));
+    return rc;
+}
+
+/* Run `body` with the extractor's context current and pop it on every path;
+ * the body's error wins over a failed pop. */
+static int cambi_in_context(CambiStateCuda *s, int (*body)(CambiStateCuda *))
+{
+    CudaFunctions *cu_f = s->cu_state->f;
+    CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(s->cu_state->ctx));
+    const int err = body(s);
+    const CUresult pop = cu_f->cuCtxPopCurrent(NULL);
+    return err ? err : vmaf_cuda_result_to_errno((int)pop);
+}
+
+static int cambi_load_kernels(CambiStateCuda *s)
+{
+    CudaFunctions *cu_f = s->cu_state->f;
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->module, cambi_score_ptx));
+    for (int k = 0; k < CAMBI_FN_COUNT; k++)
+        CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(&s->fn[k], s->module, cambi_kernel_names[k]));
+    return 0;
+}
+
+static int cambi_allocate(CambiStateCuda *s)
+{
+    for (int id = 0; id < CAMBI_BUF_COUNT; id++) {
+        const size_t bytes = cambi_buffer_bytes(s, (CambiCudaBufferId)id);
+        if (bytes == 0u)
+            continue; /* the resize tables of a same-size run */
+        const int err = vmaf_cuda_buffer_alloc(s->cu_state, &s->buf[id], bytes);
+        if (err)
+            return err;
+    }
+    return vmaf_cuda_buffer_host_alloc(s->cu_state, (void **)&s->h_results,
+                                       sizeof(CambiCudaResults));
+}
+
+static int cambi_upload(CambiStateCuda *s, CambiCudaBufferId id, const void *host)
+{
+    CHECK_CUDA_RETURN(s->cu_state->f,
+                      cuMemcpyHtoD(cambi_dptr(s, id), host, cambi_buffer_bytes(s, id)));
+    return 0;
+}
+
+/* The constant tables, once at init (the copies may be synchronous), all
+ * from cambi.c itself: the reciprocal table c_value_pixel() multiplies by,
+ * the TVI table, the contrast weights and, when resizing, the source-index
+ * walk of decimate_generic_*_and_convert_to_10b. */
+static int cambi_upload_tables(CambiStateCuda *s)
+{
+    int err = cambi_upload(s, CAMBI_BUF_LUT, vmaf_cambi_reciprocal_lut(NULL));
+    if (!err)
+        err = cambi_upload(s, CAMBI_BUF_TVI, s->tvi_for_diff);
+    if (!err)
+        err = cambi_upload(s, CAMBI_BUF_WEIGHTS, vmaf_cambi_contrast_weights(NULL));
+    if (err || !cambi_resizes(s))
+        return err;
+    uint32_t *ori_x = malloc(s->proc_width * sizeof(uint32_t));
+    uint32_t *ori_y = malloc(s->proc_height * sizeof(uint32_t));
+    err = (ori_x && ori_y) ? 0 : -ENOMEM;
+    if (!err) {
+        vmaf_cambi_resize_source_indices(s->src_width, s->proc_width, ori_x);
+        vmaf_cambi_resize_source_indices(s->src_height, s->proc_height, ori_y);
+        err = cambi_upload(s, CAMBI_BUF_ORI_X, ori_x);
+    }
+    if (!err)
+        err = cambi_upload(s, CAMBI_BUF_ORI_Y, ori_y);
+    free(ori_x);
+    free(ori_y);
+    return err;
+}
+
+static int cambi_init_device(VmafFeatureExtractor *fex, CambiStateCuda *s)
+{
+    int sms = 0;
+    if (fex->cu_state->f->cuDeviceGetAttribute(&sms, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
+                                               fex->cu_state->dev) != CUDA_SUCCESS ||
+        sms < 1)
+        sms = CAMBI_CUDA_FALLBACK_SMS; /* chunking only: any count is correct */
+    const double topk = (s->topk != CAMBI_CUDA_DEFAULT_TOPK) ? s->topk : s->cambi_topk;
+    cambi_scale_geometry(s, topk, sms);
+    s->cu_state = fex->cu_state;
+    int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
+    if (!err)
+        err = cambi_in_context(s, cambi_load_kernels);
+    if (!err)
+        err = cambi_allocate(s);
+    if (!err)
+        err = cambi_in_context(s, cambi_upload_tables);
+    return err;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
     (void)pix_fmt;
     CambiStateCuda *s = fex->priv;
-
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
         return -ENOMEM;
-
     int err = cambi_resolve_geometry(s, bpc, w, h);
+    if (!err)
+        err = cambi_init_contrast(s);
+    if (!err)
+        err = cambi_init_device(fex, s);
     if (err)
-        return cambi_init_unwind(fex, s, err);
-
-    /* CUDA lifecycle. */
-    err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
-    if (err)
-        return cambi_init_unwind(fex, s, err);
-
-    CudaFunctions *cu_f = fex->cu_state->f;
-    err = cambi_load_kernels(fex, s, cu_f);
-    if (err)
-        return err;
-
-    err = cambi_alloc_device(fex, s);
-    if (err)
-        return err;
-
-    const int num_diffs = 1 << s->max_log_contrast;
-    err = cambi_alloc_diff_tables(fex, s, num_diffs);
-    if (err)
-        return err;
-
-    err = cambi_alloc_histograms(fex, s, num_diffs);
-    if (err)
-        return err;
-
-    vmaf_cambi_default_callbacks(&s->inc_range_callback, &s->dec_range_callback,
-                                 &s->derivative_callback);
-
+        return cambi_release(s, err);
     return 0;
 }
 
 /* ------------------------------------------------------------------ */
-/* dispatch_mask — GPU spatial-mask kernel over (w × h) of d_image. */
+/* Per frame: enqueue only                                             */
 /* ------------------------------------------------------------------ */
-static int dispatch_mask(CambiStateCuda *s, CudaFunctions *cu_f, CUstream stream, unsigned w,
-                         unsigned h, unsigned stride_words, unsigned mask_index)
+
+typedef struct CambiLaunch {
+    unsigned grid_x;
+    unsigned grid_y;
+    unsigned block_x;
+    unsigned block_y;
+} CambiLaunch;
+
+static CambiLaunch cambi_image_launch(unsigned width, unsigned height)
 {
-    const unsigned grid_x = (w + CAMBI_CUDA_BLOCK_X - 1u) / CAMBI_CUDA_BLOCK_X;
-    const unsigned grid_y = (h + CAMBI_CUDA_BLOCK_Y - 1u) / CAMBI_CUDA_BLOCK_Y;
-    /* Bug fix (Issue lusoris/vmaf#857): cuLaunchKernel params[i] must point to the VALUE
-     * to pass, not to the VmafCudaBuffer struct. Pass &buf->data (address of the
-     * CUdeviceptr field) so the driver reads the device pointer, not buf->size. */
-    void *params[] = {&s->d_image->data, &s->d_mask->data, &w, &h, &stride_words, &mask_index};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_mask, grid_x, grid_y, 1u, CAMBI_CUDA_BLOCK_X,
-                                           CAMBI_CUDA_BLOCK_Y, 1u, 0u, stream, params, NULL));
+    const CambiLaunch l = {
+        .grid_x = (width + CAMBI_CUDA_IMAGE_BLOCK_X - 1u) / CAMBI_CUDA_IMAGE_BLOCK_X,
+        .grid_y = (height + CAMBI_CUDA_IMAGE_BLOCK_Y - 1u) / CAMBI_CUDA_IMAGE_BLOCK_Y,
+        .block_x = CAMBI_CUDA_IMAGE_BLOCK_X,
+        .block_y = CAMBI_CUDA_IMAGE_BLOCK_Y,
+    };
+    return l;
+}
+
+static CambiLaunch cambi_linear_launch(unsigned grid, unsigned threads)
+{
+    const CambiLaunch l = {.grid_x = grid, .grid_y = 1u, .block_x = threads, .block_y = 1u};
+    return l;
+}
+
+/* Every kernel takes its one argument block by value. */
+static int cambi_launch(const CambiStateCuda *s, CambiCudaKernel k, CambiLaunch l, CUstream stream,
+                        void *args)
+{
+    void *params[] = {args};
+    CHECK_CUDA_RETURN(s->cu_state->f, cuLaunchKernel(s->fn[k], l.grid_x, l.grid_y, 1u, l.block_x,
+                                                     l.block_y, 1u, 0u, stream, params, NULL));
     return 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* dispatch_decimate — GPU 2× decimate of src → dst. */
-/* ------------------------------------------------------------------ */
-static int dispatch_decimate(CambiStateCuda *s, CudaFunctions *cu_f, CUstream stream,
-                             VmafCudaBuffer *src, VmafCudaBuffer *dst, unsigned out_w,
-                             unsigned out_h, unsigned src_stride_words, unsigned dst_stride_words)
+/* The per-scale selection state and the result block start every frame at
+ * zero (device memsets on the frame's stream, no host wait). */
+static int cambi_enqueue_reset(const CambiStateCuda *s, CUstream stream)
 {
-    const unsigned grid_x = (out_w + CAMBI_CUDA_BLOCK_X - 1u) / CAMBI_CUDA_BLOCK_X;
-    const unsigned grid_y = (out_h + CAMBI_CUDA_BLOCK_Y - 1u) / CAMBI_CUDA_BLOCK_Y;
-    /* Bug fix (Issue lusoris/vmaf#857): pass device pointer addresses, not struct addresses. */
-    void *params[] = {&src->data, &dst->data, &out_w, &out_h, &src_stride_words, &dst_stride_words};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_decimate, grid_x, grid_y, 1u, CAMBI_CUDA_BLOCK_X,
-                                           CAMBI_CUDA_BLOCK_Y, 1u, 0u, stream, params, NULL));
+    CudaFunctions *cu_f = s->cu_state->f;
+    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(cambi_dptr(s, CAMBI_BUF_SELECT), 0,
+                                            cambi_buffer_bytes(s, CAMBI_BUF_SELECT), stream));
+    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(cambi_dptr(s, CAMBI_BUF_RESULTS), 0,
+                                            cambi_buffer_bytes(s, CAMBI_BUF_RESULTS), stream));
     return 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* dispatch_filter_mode — GPU 3-tap mode filter (axis=0 H, axis=1 V). */
-/* ------------------------------------------------------------------ */
-static int dispatch_filter_mode(CambiStateCuda *s, CudaFunctions *cu_f, CUstream stream,
-                                VmafCudaBuffer *in, VmafCudaBuffer *out, unsigned w, unsigned h,
-                                unsigned stride_words, int axis)
+/* validate (bpc other than 8 and 16), preprocess, spatial mask at scale 0. */
+static int cambi_enqueue_preprocess(const CambiStateCuda *s, CUstream stream, VmafPicture *dist)
 {
-    const unsigned grid_x = (w + CAMBI_CUDA_BLOCK_X - 1u) / CAMBI_CUDA_BLOCK_X;
-    const unsigned grid_y = (h + CAMBI_CUDA_BLOCK_Y - 1u) / CAMBI_CUDA_BLOCK_Y;
-    /* Bug fix (Issue lusoris/vmaf#857): pass device pointer addresses, not struct addresses. */
-    void *params[] = {&in->data, &out->data, &w, &h, &stride_words, &axis};
-    CHECK_CUDA_RETURN(cu_f,
-                      cuLaunchKernel(s->func_filter_mode, grid_x, grid_y, 1u, CAMBI_CUDA_BLOCK_X,
-                                     CAMBI_CUDA_BLOCK_Y, 1u, 0u, stream, params, NULL));
-    return 0;
-}
-
-/* ------------------------------------------------------------------ */
-/* submit_fex_cuda                                                     */
-/*                                                                     */
-/* Pipeline:                                                           */
-/*   1. Host preprocess → pics[0] (CPU, luma only).                   */
-/*   2. HtoD upload pics[0].data[0] → d_image.                        */
-/*   3. GPU spatial mask → d_mask.                                     */
-/*   4. For each scale:                                                */
-/*        a. (scale>0) GPU decimate d_image → d_tmp, swap;            */
-/*                     GPU decimate d_mask  → d_tmp, swap.            */
-/*        b. GPU filter_mode H: d_image → d_tmp.                      */
-/*           GPU filter_mode V: d_tmp   → d_image.                    */
-/*        c. DtoH: d_image → rb_image.host_pinned (async).            */
-/*           DtoH: d_mask  → rb_mask.host_pinned  (async).            */
-/*   5. Record submit + enqueue finished on private stream.            */
-/*                                                                     */
-/* Note: the DtoH copies at step 4c overwrite the same pinned buffers */
-/* each scale — this is safe because collect() processes one scale at */
-/* a time after the full GPU pipeline has drained. Alternatively, we  */
-/* could use per-scale readback slots; the current approach saves      */
-/* memory at the cost of requiring a sync between scales. Since the   */
-/* host residual (calculate_c_values) is the bottleneck anyway, this  */
-/* is the right tradeoff.                                              */
-/* ------------------------------------------------------------------ */
-/* Everything submit_fex_cuda has to give back when it bails out. The three
- * orig_d_* pointers are the device buffers as they were on entry: the
- * per-scale pipeline swaps s->d_image / s->d_mask / s->d_tmp around, so an
- * error mid-swap must put the original assignment back before returning. */
-typedef struct {
-    CambiStateCuda *s;
-    CudaFunctions *cu_f;
-    VmafPicture *dist_host; /* NULL unless the host staging picture is live */
-    VmafCudaBuffer *orig_d_image;
-    VmafCudaBuffer *orig_d_mask;
-    VmafCudaBuffer *orig_d_tmp;
-} CambiSubmitUnwind;
-
-/* cambi_submit_unwind - the single teardown path for submit_fex_cuda.
- *
- * HISS-01: the body of the former `fail_cuda` label, unchanged and in the
- * same order. `fail_cuda` is still a CHECK_CUDA_GOTO target so the label
- * stays and now defers here; `fail_after_pop` keeps its own bare return,
- * because reaching it means the success-path pop failed and the buffer
- * pointers were never swapped away from their originals.
- */
-static int cambi_submit_unwind(const CambiSubmitUnwind *u, int ctx_pushed, int err, int cuda_err)
-{
-    u->s->d_image = u->orig_d_image;
-    u->s->d_mask = u->orig_d_mask;
-    u->s->d_tmp = u->orig_d_tmp;
-    if (u->dist_host)
-        (void)vmaf_picture_unref(u->dist_host);
-    if (ctx_pushed)
-        (void)u->cu_f->cuCtxPopCurrent(NULL);
-    return (err != 0) ? err : (cuda_err != 0 ? cuda_err : -EIO);
-}
-
-/* cambi_precompute_scale_geometry - per-scale widths and heights.
- *
- * HISS-04: lifted verbatim out of submit_fex_cuda's "pre-compute per-scale
- * geometry" block. */
-static void cambi_precompute_scale_geometry(CambiStateCuda *s)
-{
-    unsigned sw = s->proc_width;
-    unsigned sh = s->proc_height;
-    for (int scale = 0; scale < CAMBI_CUDA_NUM_SCALES; scale++) {
-        s->scale_widths[scale] = sw;
-        s->scale_heights[scale] = sh;
-        sw = (sw + 1u) >> 1;
-        sh = (sh + 1u) >> 1;
+    CambiCudaPreprocArgs pre = {
+        .src = (uint64_t)(uintptr_t)dist->data[0],
+        .dst = cambi_dptr(s, CAMBI_BUF_IMAGE),
+        .ori_x = cambi_dptr(s, CAMBI_BUF_ORI_X),
+        .ori_y = cambi_dptr(s, CAMBI_BUF_ORI_Y),
+        .results = cambi_dptr(s, CAMBI_BUF_RESULTS),
+        .src_pitch = (uint32_t)dist->stride[0],
+        .src_width = s->src_width,
+        .src_height = s->src_height,
+        .out_width = s->proc_width,
+        .out_height = s->proc_height,
+        .bpc = s->src_bpc,
+        .same_size = cambi_resizes(s) ? 0u : 1u,
+        .anti_dither = s->enc_bitdepth < 10 ? 1u : 0u,
+    };
+    int err = 0;
+    if (s->src_bpc != 8u && s->src_bpc != 16u) {
+        err = cambi_launch(s, CAMBI_FN_VALIDATE, cambi_image_launch(s->src_width, s->src_height),
+                           stream, &pre);
     }
-}
-
-/* cambi_download_and_preprocess - step 0 and step 1.
- *
- * HISS-04: lifted verbatim out of submit_fex_cuda. Inside a helper the stream
- * sync uses CHECK_CUDA_RETURN instead of CHECK_CUDA_GOTO; the caller routes a
- * non-zero return into cambi_submit_unwind() with the same ctx_pushed, which
- * is what the `fail_cuda` label did, so the same resources are released in
- * the same order and the returned errno is unchanged. `u->dist_host` is
- * cleared at exactly the point the original cleared it, so a later failure
- * still unrefs the staging picture once and only once.
- */
-static int cambi_download_and_preprocess(CambiStateCuda *s, CudaFunctions *cu_f,
-                                         VmafPicture *dist_pic, VmafPicture *dist_host,
-                                         CambiSubmitUnwind *u)
-{
-    int err = vmaf_cuda_picture_download_async(dist_pic, dist_host, 0x1);
-    if (err)
-        return err;
-
-    /* Sync the dist_pic private stream: vmaf_cuda_picture_download_async
-     * enqueues the DtoH copy on that stream, so we must drain it before
-     * the host preprocessing reads dist_host.data[0]. */
-    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(vmaf_cuda_picture_get_stream(dist_pic)));
-
-    /* Step 1: host preprocessing → pics[0] (10-bit planar, proc_w × proc_h). */
-    err = vmaf_cambi_preprocessing(dist_host, &s->pics[0], (int)s->proc_width, (int)s->proc_height,
-                                   s->enc_bitdepth);
-    (void)vmaf_picture_unref(dist_host);
-    u->dist_host = NULL;
+    if (!err) {
+        err = cambi_launch(s, CAMBI_FN_PREPROCESS,
+                           cambi_image_launch(s->proc_width, s->proc_height), stream, &pre);
+    }
+    CambiCudaMaskArgs mask = {
+        .image = cambi_dptr(s, CAMBI_BUF_IMAGE),
+        .mask = cambi_dptr(s, CAMBI_BUF_MASK),
+        .width = s->proc_width,
+        .height = s->proc_height,
+        .mask_index = s->mask_index,
+    };
+    if (!err) {
+        err = cambi_launch(s, CAMBI_FN_MASK, cambi_image_launch(s->proc_width, s->proc_height),
+                           stream, &mask);
+    }
     return err;
 }
 
-/* cambi_upload_and_mask - step 2 and step 3.
- *
- * HISS-04: lifted verbatim out of submit_fex_cuda.
- */
-static int cambi_upload_and_mask(CambiStateCuda *s, CudaFunctions *cu_f, CUstream stream,
-                                 VmafPicture *dist_pic)
-{
-    /* Wait for dist upload to complete before starting GPU work. */
-    CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(stream, vmaf_cuda_picture_get_ready_event(dist_pic),
-                                              CU_EVENT_WAIT_DEFAULT));
+/* The three rotating image buffers of cambi_score's per-scale walk. */
+typedef struct CambiScaleBuffers {
+    CUdeviceptr image;
+    CUdeviceptr mask;
+    CUdeviceptr scratch;
+    unsigned width;
+} CambiScaleBuffers;
 
-    /* Step 2: HtoD upload pics[0].data[0] → d_image.
-     *
-     * One strided 2D copy, not one call per row. The host picture's stride and
-     * the packed device buffer's differ, which is exactly what the pitch fields
-     * are for; issuing a call per row cost `proc_height` driver round trips a
-     * frame for a copy the driver does in one. */
-    CUDA_MEMCPY2D upload = {
-        .srcMemoryType = CU_MEMORYTYPE_HOST,
-        .srcHost = s->pics[0].data[0],
-        .srcPitch = (size_t)s->pics[0].stride[0],
-        .dstMemoryType = CU_MEMORYTYPE_DEVICE,
-        .dstDevice = s->d_image->data,
-        .dstPitch = s->proc_width * sizeof(uint16_t),
-        .WidthInBytes = s->proc_width * sizeof(uint16_t),
-        .Height = s->proc_height,
+static int cambi_enqueue_decimate(const CambiStateCuda *s, CUstream stream, CambiScaleBuffers *b,
+                                  const CambiCudaScaleGeom *g)
+{
+    CambiCudaDecimateArgs dec = {
+        .src = b->image,
+        .dst = b->scratch,
+        .out_width = g->width,
+        .out_height = g->height,
+        .src_stride = b->width,
     };
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&upload, stream));
-
-    /* Step 3: spatial mask at full scale. */
-    const unsigned mask_index_0 = (unsigned)cambi_cuda_get_mask_index(s->proc_width, s->proc_height,
-                                                                      CAMBI_CUDA_MASK_FILTER_SIZE);
-    return dispatch_mask(s, cu_f, stream, s->proc_width, s->proc_height, s->proc_width,
-                         mask_index_0);
+    const CambiLaunch l = cambi_image_launch(g->width, g->height);
+    int err = cambi_launch(s, CAMBI_FN_DECIMATE, l, stream, &dec);
+    CUdeviceptr swap = b->image;
+    b->image = b->scratch;
+    b->scratch = swap;
+    dec.src = b->mask;
+    dec.dst = b->scratch;
+    if (!err)
+        err = cambi_launch(s, CAMBI_FN_DECIMATE, l, stream, &dec);
+    swap = b->mask;
+    b->mask = b->scratch;
+    b->scratch = swap;
+    b->width = g->width;
+    return err;
 }
 
-/* cambi_decimate_scale - halve d_image and d_mask into d_tmp and swap.
- *
- * HISS-04: lifted verbatim out of submit_fex_cuda's scale loop; the two
- * dispatches and the two pointer swaps keep their original order, and the
- * caller's CambiSubmitUnwind still holds the original allocations.
- */
-static int cambi_decimate_scale(CambiStateCuda *s, CudaFunctions *cu_f, CUstream stream,
-                                unsigned *scaled_w, unsigned *scaled_h)
+/* decimate (scale > 0 or high-res speed-up), then filter_mode H and V; the
+ * vertical pass also writes the level map. */
+static int cambi_enqueue_scale_image(const CambiStateCuda *s, CUstream stream, CambiScaleBuffers *b,
+                                     int scale)
 {
-    /* GPU decimate d_image → d_tmp (out = half resolution). */
-    const unsigned new_w = (*scaled_w + 1u) >> 1;
-    const unsigned new_h = (*scaled_h + 1u) >> 1;
-    int err =
-        dispatch_decimate(s, cu_f, stream, s->d_image, s->d_tmp, new_w, new_h, *scaled_w, new_w);
-    if (err)
-        return err;
-    /* Swap d_image ↔ d_tmp. */
-    VmafCudaBuffer *tmp = s->d_image;
-    s->d_image = s->d_tmp;
-    s->d_tmp = tmp;
-
-    /* GPU decimate d_mask → d_tmp. */
-    err = dispatch_decimate(s, cu_f, stream, s->d_mask, s->d_tmp, new_w, new_h, *scaled_w, new_w);
-    if (err)
-        return err;
-    tmp = s->d_mask;
-    s->d_mask = s->d_tmp;
-    s->d_tmp = tmp;
-
-    *scaled_w = new_w;
-    *scaled_h = new_h;
-    return 0;
-}
-
-/* cambi_filter_and_readback - the two filter_mode passes plus the DtoH pair.
- *
- * HISS-04: lifted verbatim out of submit_fex_cuda's scale loop.
- */
-static int cambi_filter_and_readback(CambiStateCuda *s, CudaFunctions *cu_f, CUstream stream,
-                                     unsigned scaled_w, unsigned scaled_h)
-{
-    /* GPU filter_mode H: d_image → d_tmp. */
-    int err = dispatch_filter_mode(s, cu_f, stream, s->d_image, s->d_tmp, scaled_w, scaled_h,
-                                   scaled_w, 0);
-    if (err)
-        return err;
-    /* GPU filter_mode V: d_tmp → d_image. */
-    err = dispatch_filter_mode(s, cu_f, stream, s->d_tmp, s->d_image, scaled_w, scaled_h, scaled_w,
-                               1);
-    if (err)
-        return err;
-
-    /* DtoH: d_image → pics[0].data[0], d_mask → pics[1].data[0].
-     *
-     * Two strided 2D copies enqueued on the stream, then one stall that
-     * waits for both. This used to stall first and then issue two BLOCKING
-     * copies per row: at 1080p that is 2,160 driver round trips for scale 0
-     * alone, about 4,200 a frame across the five scales, and it dominated
-     * the whole CUDA pipeline — 0.60 s of a 1.03 s run over 48 frames,
-     * more than every other extractor combined. */
-    const size_t scaled_row_bytes = scaled_w * sizeof(uint16_t);
-    CUDA_MEMCPY2D readback = {
-        .srcMemoryType = CU_MEMORYTYPE_DEVICE,
-        .srcDevice = s->d_image->data,
-        .srcPitch = scaled_row_bytes,
-        .dstMemoryType = CU_MEMORYTYPE_HOST,
-        .dstHost = s->pics[0].data[0],
-        .dstPitch = (size_t)s->pics[0].stride[0],
-        .WidthInBytes = scaled_row_bytes,
-        .Height = scaled_h,
+    const CambiCudaScaleGeom *g = &s->geom[scale];
+    int err = 0;
+    if (scale > 0 || s->cambi_high_res_speedup)
+        err = cambi_enqueue_decimate(s, stream, b, g);
+    CambiCudaFilterArgs filter = {
+        .image = b->image,
+        .filtered_h = b->scratch,
+        .mask = b->mask,
+        .q = cambi_dptr(s, CAMBI_BUF_Q),
+        .width = g->width,
+        .height = g->height,
+        .v_band_base = s->v_band_base,
+        .v_band_size = s->v_band_size,
     };
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&readback, stream));
-    readback.srcDevice = s->d_mask->data;
-    readback.dstHost = s->pics[1].data[0];
-    readback.dstPitch = (size_t)s->pics[1].stride[0];
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&readback, stream));
-    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(stream));
-    return 0;
+    const CambiLaunch l = cambi_image_launch(g->width, g->height);
+    if (!err)
+        err = cambi_launch(s, CAMBI_FN_FILTER_H, l, stream, &filter);
+    if (!err)
+        err = cambi_launch(s, CAMBI_FN_FILTER_V, l, stream, &filter);
+    return err;
 }
 
-/* cambi_submit_scale - one scale of the synchronous GPU + CPU pipeline.
- *
- * HISS-04: lifted verbatim out of submit_fex_cuda's scale loop. The design
- * notes that used to sit inline above the loop follow, unchanged.
- */
-/* We need to store per-scale readback data for the host residual in
- * collect(). Since we overwrite the same pinned buffers, we process
- * all scales in submit() on the GPU and record a finished event after
- * each scale's DtoH. collect() then runs the CPU residual per-scale.
- *
- * Practical approach: record a submit event after all GPU work, then
- * DtoH-copy each scale's result into per-scale pinned regions.
- * For v1, we simplify by doing a synchronous host-side approach:
- * all GPU work for all scales streams asynchronously, but the DtoH
- * copies and CPU residual run in collect() after a single sync.
- *
- * To avoid needing per-scale device buffers, we execute the GPU
- * pipeline for all 5 scales in submit() (streaming), DtoH each
- * scale into its dedicated section of the readback buffer, then
- * collect() reads from those sections.
- *
- * Buffer layout: rb_image.host_pinned and rb_mask.host_pinned are
- * each (proc_width × proc_height) — enough for scale 0. Each scale
- * occupies a prefix of size scaled_w × scaled_h within the stride-
- * proc_width layout. We copy each scale's data from device to the
- * top-left corner of the readback buffer sequentially (each DtoH
- * overwrites the previous scale), which is fine because collect()
- * first awaits the GPU sync, then runs the CPU residual for each
- * scale in order — so by the time scale k is processed on the host,
- * the DtoH for scale k+1 has not yet started on the device.
- *
- * The actual approach: record all scale GPU kernels in one go, then
- * for each scale do a separate DtoH + CPU residual in collect(). We
- * cannot mix GPU pipeline and DtoH in a single submit() without
- * blocking between scales, so we use a two-pass design:
- *   submit(): GPU pipeline for scale 0 only (mask + filter_mode).
- *             Record per-scale results for scales 1..4 by running
- *             all 5 scales on the GPU + recording events.
- *   collect(): For each scale, wait for the corresponding event,
- *              DtoH the readback, run CPU residual.
- *
- * For v1 simplicity, we run the GPU pipeline for all scales here
- * in submit() and enqueue DtoH copies for all scales into separate
- * regions of the readback buffer (laid out as a 5-element array).
- * collect() reads each region without a per-scale sync.
- *
- * Readback buffer size must accommodate 5 scales. Scale k has area:
- *   proc_width × proc_height / 4^k (approximately). Total ≤ 2×.
- * For clarity, we allocate one buffer per scale:
- *   scale 0: proc_w × proc_h
- *   scale 1: ceil(proc_w/2) × ceil(proc_h/2)
- *   ...
- * These are sub-regions of the pre-allocated rb_image/rb_mask (sized
- * for scale 0). We reuse the same device buffers (d_image, d_mask)
- * across scales, packing the DtoH copies into the pinned buffer
- * using stride-proc_width layout (row-major, same stride for all
- * scales — upper-left corner read back).
- *
- * After careful analysis, the cleanest approach that preserves the
- * async model and avoids per-scale host sync is:
- *   - Run GPU pipeline for all 5 scales: decimate/filter_mode each.
- *   - After each scale's filter_mode pass, record a CUevent and
- *     enqueue DtoH into a per-scale region of the pinned buffer.
- *   - collect() streams all 5 scales' host residuals after one drain.
- *
- * Implementation below uses per-scale pitched DtoH into the single
- * large pinned allocation (rb_image.host_pinned stores all 5 scales
- * sequentially, separated by scaled_w × scaled_h uint16 elements).
- */
-
-/* Total needed: offset bytes in each readback buffer. */
-/* rb_image and rb_mask were allocated for proc_w × proc_h — sufficient
- * only for scale 0. We need to ensure they are large enough.
- * Solution: rb_image / rb_mask allocated in init() for proc_w × proc_h
- * (scale 0 area). Scales 1..4 each have a smaller area, so their
- * cumulative total is < scale_0_area * 2. We therefore need 2×.
- *
- * Since this violates the allocation size, fall back to the
- * per-scale synchronous approach: after each scale's GPU filter_mode
- * pass, do a synchronous DtoH into the scale-0-sized buffer top-left,
- * run the CPU residual, then proceed to the next scale.
- *
- * This means submit() cannot be fully asynchronous for CAMBI v1 —
- * the per-scale CPU residual is integrated into submit(). collect()
- * only emits the already-computed score. This mirrors how the Vulkan
- * path works (extract() is fully synchronous).
- *
- * To fit the async submit/collect model:
- *   submit() runs all GPU + CPU work synchronously (no frame pipelining).
- *   collect() just emits the pre-computed score.
- *
- * A future optimisation (v2) could decouple per-frame GPU work
- * (all 5 scales) from the CPU residual by serialising the CPU
- * work in collect(). This requires per-scale pinned readback buffers.
- */
-
-/* ----  Synchronous per-scale loop  ---- */
-/* We run all GPU work + DtoH + CPU residual per scale in submit().
- * The CUstream is the picture stream (ref_pic's stream); we wait for
- * each scale's GPU pass to finish before doing the CPU residual.
- * This deviates from the pure-async model but is correct and matches
- * the Vulkan precedent (cambi_vk_extract is synchronous w.r.t. each
- * scale). The drain-batch optimisation (ADR-0242) does not apply here
- * because there is no DtoH to pipeline. */
-
-static int cambi_submit_scale(CambiStateCuda *s, CudaFunctions *cu_f, CUstream stream, int scale,
-                              unsigned *scaled_w, unsigned *scaled_h, int num_diffs, double topk,
-                              double *score_out)
+static CambiCudaCvalsArgs cambi_cvals_args(const CambiStateCuda *s, int scale)
 {
-    if (scale > 0 || s->cambi_high_res_speedup) {
-        const int dec_err = cambi_decimate_scale(s, cu_f, stream, scaled_w, scaled_h);
-        if (dec_err)
-            return dec_err;
+    const CambiCudaScaleGeom *g = &s->geom[scale];
+    const CambiCudaCvalsArgs a = {
+        .q = cambi_dptr(s, CAMBI_BUF_Q),
+        .runs = cambi_dptr(s, CAMBI_BUF_RUNS),
+        .change = cambi_dptr(s, CAMBI_BUF_CHANGE),
+        .hist = cambi_dptr(s, CAMBI_BUF_HIST),
+        .cvals = cambi_dptr(s, CAMBI_BUF_CVALS),
+        .select = cambi_dptr(s, CAMBI_BUF_SELECT) + (CUdeviceptr)(scale * sizeof(CambiCudaSelect)),
+        .partials = cambi_dptr(s, CAMBI_BUF_PARTIALS),
+        .lut = cambi_dptr(s, CAMBI_BUF_LUT),
+        .tvi = cambi_dptr(s, CAMBI_BUF_TVI),
+        .weights = cambi_dptr(s, CAMBI_BUF_WEIGHTS),
+        .width = g->width,
+        .height = g->height,
+        .words = (g->width + 31u) / 32u,
+        .pad = (unsigned)s->adjusted_window >> 1,
+        .chunk_rows = g->chunk_rows,
+        .levels = s->levels,
+        .num_diffs = s->num_diffs,
+        .vlt_luma = s->vlt_luma,
+        .v_band_base = s->v_band_base,
+    };
+    return a;
+}
+
+/* Scan 0 (pass 0 was counted by the c-values kernel), passes 1 and 2 (the
+ * device skips them once resolved), the partial sums and the final sum. */
+static int cambi_enqueue_pooling(const CambiStateCuda *s, CUstream stream, int scale)
+{
+    const CambiCudaScaleGeom *g = &s->geom[scale];
+    CambiCudaPoolArgs pool = {
+        .cvals = cambi_dptr(s, CAMBI_BUF_CVALS),
+        .select = cambi_dptr(s, CAMBI_BUF_SELECT) + (CUdeviceptr)(scale * sizeof(CambiCudaSelect)),
+        .partials = cambi_dptr(s, CAMBI_BUF_PARTIALS),
+        .results = cambi_dptr(s, CAMBI_BUF_RESULTS),
+        .n = g->width * g->height,
+        .groups = g->pool_groups,
+        .cvals_groups = g->cvals_groups,
+        .topk = g->topk,
+        .pass = 0,
+        .scale = scale,
+    };
+    const CambiLaunch one = cambi_linear_launch(1u, CAMBI_CUDA_POOL_BLOCK);
+    const CambiLaunch all = cambi_linear_launch(g->pool_groups, CAMBI_CUDA_POOL_BLOCK);
+    int err = cambi_launch(s, CAMBI_FN_RADIX_SCAN, one, stream, &pool);
+    for (int pass = 1; pass < CAMBI_CUDA_RADIX_PASSES && !err; pass++) {
+        pool.pass = pass;
+        err = cambi_launch(s, CAMBI_FN_RADIX_HIST, all, stream, &pool);
+        if (!err)
+            err = cambi_launch(s, CAMBI_FN_RADIX_SCAN, one, stream, &pool);
     }
-
-    const int err = cambi_filter_and_readback(s, cu_f, stream, *scaled_w, *scaled_h);
-    if (err)
-        return err;
-
-    /* CPU residual: calculate_c_values + spatial pooling. */
-    vmaf_cambi_calculate_c_values(&s->pics[0], &s->pics[1], s->buffers.c_values,
-                                  s->buffers.c_values_histograms, s->adjusted_window,
-                                  (uint16_t)num_diffs, s->buffers.tvi_for_diff, s->vlt_luma,
-                                  s->buffers.diff_weights, s->buffers.all_diffs, (int)*scaled_w,
-                                  (int)*scaled_h, s->inc_range_callback, s->dec_range_callback);
-
-    *score_out = vmaf_cambi_spatial_pooling(s->buffers.c_values, topk, *scaled_w, *scaled_h);
-    return 0;
+    if (!err)
+        err = cambi_launch(s, CAMBI_FN_TOPK_PARTIALS, all, stream, &pool);
+    if (!err)
+        err = cambi_launch(s, CAMBI_FN_TOPK_FINAL, one, stream, &pool);
+    return err;
 }
 
-/* cambi_finalize_score - weight the per-scale scores and park the result.
- *
- * HISS-04: lifted verbatim out of submit_fex_cuda; the clamps and the
- * pinned-buffer store are unchanged.
- */
-static void cambi_finalize_score(CambiStateCuda *s, double *scores_per_scale)
+/* Row masks, c-values (+ radix pass 0) and the top-K pooling of one scale. */
+static int cambi_enqueue_scale_score(const CambiStateCuda *s, CUstream stream, int scale)
 {
-    /* Compute the final score. */
-    const uint16_t pixels_in_window = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
-    double score = vmaf_cambi_weight_scores_per_scale(scores_per_scale, pixels_in_window);
-    if (score > s->cambi_max_val)
-        score = s->cambi_max_val;
-    if (score < 0.0)
-        score = 0.0;
-
-    /* Store in rb_image.host_pinned (single double — misuse of the
-     * readback slot, but safe: host_pinned is large enough and the
-     * collect() is the only reader). */
-    *(double *)s->rb_image.host_pinned = score;
+    const CambiCudaScaleGeom *g = &s->geom[scale];
+    CambiCudaCvalsArgs cvals = cambi_cvals_args(s, scale);
+    const CambiLaunch masks = {
+        .grid_x = cvals.words,
+        .grid_y = (g->height + CAMBI_CUDA_ROWMASK_ROWS - 1u) / CAMBI_CUDA_ROWMASK_ROWS,
+        .block_x = 32u,
+        .block_y = CAMBI_CUDA_ROWMASK_ROWS,
+    };
+    int err = cambi_launch(s, CAMBI_FN_ROW_MASKS, masks, stream, &cvals);
+    const CambiLaunch columns = {
+        .grid_x = (g->width + CAMBI_CUDA_CVALS_BLOCK - 1u) / CAMBI_CUDA_CVALS_BLOCK,
+        .grid_y = g->chunks,
+        .block_x = CAMBI_CUDA_CVALS_BLOCK,
+        .block_y = 1u,
+    };
+    if (!err)
+        err = cambi_launch(s, CAMBI_FN_CVALS, columns, stream, &cvals);
+    if (!err)
+        err = cambi_enqueue_pooling(s, stream, scale);
+    return err;
 }
 
-/* cambi_submit_pipeline - everything between the context push and the pop.
- *
- * HISS-04: lifted out of submit_fex_cuda. Every failure returns the errno
- * the caller then hands to cambi_submit_unwind() with the same ctx_pushed,
- * which is exactly what the `fail_cuda` label did.
- */
-static int cambi_submit_pipeline(VmafFeatureExtractor *fex, CambiStateCuda *s, CudaFunctions *cu_f,
-                                 VmafPicture *ref_pic, VmafPicture *dist_pic,
-                                 VmafPicture *dist_host, CambiSubmitUnwind *u)
+/* The whole frame on the distorted picture's stream, then the one readback
+ * on the private stream behind an event. Never waits. */
+static int cambi_enqueue_frame(CambiStateCuda *s, VmafPicture *dist)
 {
-    int err = cambi_download_and_preprocess(s, cu_f, dist_pic, dist_host, u);
-    if (err)
-        return err;
-
-    CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
-    err = cambi_upload_and_mask(s, cu_f, stream, dist_pic);
-    if (err)
-        return err;
-
-    /* Step 4: per-scale GPU pipeline. */
-    cambi_precompute_scale_geometry(s);
-
-    unsigned scaled_w = s->proc_width;
-    unsigned scaled_h = s->proc_height;
-    const int num_diffs = 1 << s->max_log_contrast;
-    double scores_per_scale[CAMBI_CUDA_NUM_SCALES] = {0.0, 0.0, 0.0, 0.0, 0.0};
-
-    /* The topk ratio: prefer topk if non-default, else cambi_topk. */
-    const double topk = (s->topk != CAMBI_CUDA_DEFAULT_TOPK) ? s->topk : s->cambi_topk;
-
-    for (int scale = 0; scale < CAMBI_CUDA_NUM_SCALES; scale++) {
-        err = cambi_submit_scale(s, cu_f, stream, scale, &scaled_w, &scaled_h, num_diffs, topk,
-                                 &scores_per_scale[scale]);
-        if (err)
-            return err;
+    CudaFunctions *cu_f = s->cu_state->f;
+    CUstream stream = vmaf_cuda_picture_get_stream(dist);
+    int err = cambi_enqueue_reset(s, stream);
+    if (!err)
+        err = cambi_enqueue_preprocess(s, stream, dist);
+    CambiScaleBuffers b = {
+        .image = cambi_dptr(s, CAMBI_BUF_IMAGE),
+        .mask = cambi_dptr(s, CAMBI_BUF_MASK),
+        .scratch = cambi_dptr(s, CAMBI_BUF_TMP),
+        .width = s->proc_width,
+    };
+    for (int scale = 0; scale < CAMBI_CUDA_NUM_SCALES && !err; scale++) {
+        err = cambi_enqueue_scale_image(s, stream, &b, scale);
+        if (!err)
+            err = cambi_enqueue_scale_score(s, stream, scale);
     }
-
-    /* Restore d_image / d_mask / d_tmp to point at the original allocations. */
-    s->d_image = u->orig_d_image;
-    s->d_mask = u->orig_d_mask;
-    s->d_tmp = u->orig_d_tmp;
-
-    cambi_finalize_score(s, scores_per_scale);
-
-    /* Emit a dummy event on the private stream so collect() can drain
-     * without blocking (the score is already computed). */
+    if (err)
+        return err;
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->h_results, cambi_dptr(s, CAMBI_BUF_RESULTS),
+                                              sizeof(CambiCudaResults), s->lc.str));
+    return vmaf_cuda_kernel_submit_post_record(&s->lc, s->cu_state);
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
+    (void)ref_pic;
     (void)ref_pic_90;
     (void)dist_pic_90;
+    (void)index;
     CambiStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
-    s->index = index;
-
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    int err = 0;
-    CambiSubmitUnwind u = {
-        .s = s,
-        .cu_f = cu_f,
-        .dist_host = NULL,
-        .orig_d_image = s->d_image,
-        .orig_d_mask = s->d_mask,
-        .orig_d_tmp = s->d_tmp,
-    };
-
-    /* Step 0: download dist_pic GPU→host so vmaf_cambi_preprocessing (host
-     * code) can read it.  Pictures delivered to a CUDA extractor's submit()
-     * have device pointers in data[]; dereferencing them on the host causes
-     * a segfault (Issue lusoris/vmaf#857).  Other CUDA extractors avoid this because
-     * they keep all preprocessing on the GPU; CAMBI is unique in needing a
-     * host-side decimate-and-10b-upcast before its GPU pipeline. */
-    VmafPicture dist_host;
-    err = vmaf_picture_alloc(&dist_host, dist_pic->pix_fmt, dist_pic->bpc, dist_pic->w[0],
-                             dist_pic->h[0]);
-    if (err)
-        return err;
-    u.dist_host = &dist_host;
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_cuda);
-    ctx_pushed = 1;
-
-    err = cambi_submit_pipeline(fex, s, cu_f, ref_pic, dist_pic, &dist_host, &u);
-    if (err)
-        return cambi_submit_unwind(&u, ctx_pushed, err, _cuda_err);
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-    return 0;
-
-fail_cuda:
-    return cambi_submit_unwind(&u, ctx_pushed, err, _cuda_err);
-fail_after_pop:
-    return (err != 0) ? err : (_cuda_err != 0 ? _cuda_err : -EIO);
+    CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
+    const int err = cambi_enqueue_frame(s, dist_pic);
+    const CUresult pop = cu_f->cuCtxPopCurrent(NULL);
+    return err ? err : vmaf_cuda_result_to_errno((int)pop);
 }
 
 /* ------------------------------------------------------------------ */
-/* collect_fex_cuda — emit the pre-computed score. */
+/* collect: the frame's one wait, then host arithmetic on 88 bytes     */
 /* ------------------------------------------------------------------ */
+
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
     CambiStateCuda *s = fex->priv;
-
-    /* Drain the private stream (no-op if drain_batch already handled it). */
-    int err = vmaf_cuda_kernel_collect_wait(&s->lc, fex->cu_state);
+    const int err = vmaf_cuda_kernel_collect_wait(&s->lc, fex->cu_state);
     if (err)
         return err;
-
-    const double score = *(double *)s->rb_image.host_pinned;
+    const CambiCudaResults *r = s->h_results;
+    if (r->status & CAMBI_CUDA_STATUS_INVALID_INPUT) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "cambi_cuda: frame %u holds samples above the %u-bit maximum\n", index,
+                 s->src_bpc);
+        return -EINVAL;
+    }
+    double scores[CAMBI_CUDA_NUM_SCALES];
+    for (int scale = 0; scale < CAMBI_CUDA_NUM_SCALES; scale++) {
+        scores[scale] =
+            vmaf_cambi_fixed_topk_mean(r->sum_hi[scale], r->sum_lo[scale], s->geom[scale].topk);
+    }
+    const uint16_t pixels = vmaf_cambi_get_pixels_in_window(s->adjusted_window);
+    double score = vmaf_cambi_weight_scores_per_scale(scores, pixels);
+    if (score > s->cambi_max_val)
+        score = s->cambi_max_val;
+    if (score < 0.0)
+        score = 0.0;
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "Cambi_feature_cambi_score", score, index);
 }
 
-/* ------------------------------------------------------------------ */
-/* close_fex_cuda */
-/* ------------------------------------------------------------------ */
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
-    CambiStateCuda *s = fex->priv;
-    int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
-    if (rc)
-        return rc;
-
-    rc = cambi_release_device_buffers(fex, s, 0);
-
-    if (s->pics[0].ref)
-        cambi_preserve_error(&rc, vmaf_picture_unref(&s->pics[0]));
-    if (s->pics[1].ref)
-        cambi_preserve_error(&rc, vmaf_picture_unref(&s->pics[1]));
-
-    cambi_release_host_buffers(s);
-
-    cambi_preserve_error(&rc, vmaf_dictionary_free(&s->feature_name_dict));
-    cambi_preserve_error(&rc, vmaf_cuda_module_unload(fex->cu_state, &s->module));
-    return rc;
+    return cambi_release(fex->priv, 0);
 }
 
 static const char *provided_features[] = {"Cambi_feature_cambi_score", NULL};
@@ -1378,18 +978,16 @@ VmafFeatureExtractor vmaf_fex_cambi_cuda = {
     .priv_size = sizeof(CambiStateCuda),
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_CUDA,
-    /* CAMBI has a non-trivial CPU residual (calculate_c_values) in submit().
-     * is_reduction_only = false (meaningful pixel processing on both GPU +
-     * CPU), dispatch_hint = VMAF_FEATURE_DISPATCH_DIRECT — run one frame
-     * at a time without batching; the per-frame CPU residual serialises
-     * frames already. DIRECT matches the per-scale synchronous posture
-     * previously established in the (now-removed) Vulkan twin. */
+    /* Device-resident (ADR-1379): about 68 launches per frame — validate,
+     * preprocess, mask, and per scale two decimates, two filter passes, row
+     * masks, c-values and seven top-K kernels — and one 88-byte readback. No
+     * host stage remains, so frames pipeline like any submit/collect twin. */
     .chars =
         {
-            .n_dispatches_per_frame = 15, /* 5 scales × 3 kernels (mask + filter_H + filter_V) */
+            .n_dispatches_per_frame = 68,
             .is_reduction_only = false,
             .min_useful_frame_area = 1920U * 1080U,
-            .dispatch_hint = VMAF_FEATURE_DISPATCH_DIRECT,
+            .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
 

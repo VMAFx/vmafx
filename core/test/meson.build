@@ -120,6 +120,17 @@ test('test_gpu_option_value_capability_contract',
     timeout : 30,
 )
 
+# ADR-1379 / ADR-1380: device-free guard for the device-resident CUDA CAMBI and
+# SpEED twins -- no host residual or host combine, one readback and one wait
+# per frame at collect, fp64-free kernels with the CPU's rounding spelled out,
+# one argument block per kernel.
+test('test_cuda_device_resident_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_device_resident_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.

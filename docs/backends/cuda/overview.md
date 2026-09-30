@@ -197,9 +197,10 @@ Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/ski
 Every CUDA feature extractor releases what it has already acquired when `init`
 or `submit` fails part-way: pinned host buffers, device buffers, the module and
 the stream, in the reverse order of acquisition and each one NULL-guarded. The
-`speed_chroma` / `speed_temporal` twins share one `release_cuda_module_and_stream()`
-helper so the two failure labels cannot drift apart again (PR #1007 added the
-calls inline and PR #1029 removed them the same day); `integer_ms_ssim` and
+`speed_chroma` / `speed_temporal` twins share one pipeline since ADR-1380, and
+`speed_cuda_pipeline_close()` is its only release path (it replaced the
+`release_cuda_module_and_stream()` helper both twins used to share);
+`integer_ms_ssim` and
 `integer_psnr_hvs` release their pinned buffers on the same labels. There is no
 user-visible behaviour change: a failed init still returns the same error code,
 it just no longer leaks (docs/state.md `T-CUDA-INIT-SUBMIT-LEAKS-2026-06-19`).
@@ -247,7 +248,10 @@ were ~7× low (and chroma ~2× high on the distorted path). They now match
 the CPU output. If you previously recorded GPU SpEED numbers, re-extract
 them. See
 [research-1120](../../research/1120-gpu-speed-covariance-eigenbasis-correctness-2026-06-20.md).
-The same correction was ported to the HIP and SYCL SpEED twins.
+The same correction was ported to the HIP and SYCL SpEED twins. Since
+ADR-1380 the CUDA SpEED twins go further and reproduce the CPU's fp32
+arithmetic step for step; see
+[below](#cambi-and-speed-run-entirely-on-the-device-adr-1379-adr-1380-2026-09-30).
 
 The **Netflix golden-data gate is CPU-only** — the three reference
 pairs in `python/test/` (1 normal + 2 checkerboard) are hardcoded
@@ -308,8 +312,8 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   | Tennis 1920x1080 | 10 | 0.5670459080762581 | 0 |
   | checkerboard 1px / 10px 1920x1080 | 3 each | 0 | 0 |
 
-  Every CAMBI GPU stage is integer-only and the c-value / pooling residual is the CPU code
-  called through `cambi_internal.h`, which is why the emitted score agrees to every printed
+  Every CAMBI GPU stage is integer-only and the c-value / pooling residual was the CPU code
+  called through `cambi_internal.h` (on the device since ADR-1379), so the score agreed to every printed
   digit on these fixtures. That is a measurement, **not** a bit-exactness guarantee for the
   CUDA backend in general — the golden gate is CPU-only and pooled `vmaf` still differs by
   1.1e-5 on the Tennis pair because of the ADM / VIF / motion twins.
@@ -587,6 +591,51 @@ SYCL 67.150065. The Netflix 576x324 pair is unchanged.
 Note that the GPU parity tests in the repository runner's `--suite=fast` selection all run below the
 256-system threshold, so they cannot catch this class of defect. Check 4K
 agreement against the CPU backend by hand when changing these kernels.
+
+## CAMBI and SpEED run entirely on the device (ADR-1379, ADR-1380, 2026-09-30)
+
+`cambi_cuda`, `speed_chroma_cuda` and `speed_temporal_cuda` no longer hand
+work back to the host inside a frame
+([ADR-1379](../../adr/1379-cuda-cambi-device-resident-pipeline.md),
+[ADR-1380](../../adr/1380-cuda-speed-device-resident-pipeline.md), ports of the
+SYCL designs of ADR-1357 and ADR-1358). Before, `cambi_cuda` downloaded the
+distorted picture, preprocessed it on the host and read the image and mask back
+at each of five scales for the host c-values and top-K pooling; the SpEED twins
+copied their planes to the host, filtered them there, and read the covariance,
+the independent terms and the per-block entropies back around a host eigenvalue
+problem and QR solve.
+
+Per frame now, counted in the driver calls over a run:
+
+| Twin | Kernel launches | Read back | Other work | Host waits |
+|---|---|---|---|---|
+| `cambi_cuda` | 65 (66 with the input validation that 9- to 15-bit input gets) | 88 bytes: five top-K sums and a status word | two device memsets | one, in `collect()` |
+| `speed_chroma_cuda` | 7 (8 with prescale) | 40 bytes: two scores and the singular / iteration-cap flags | four device-to-device plane copies | one, in `collect()` |
+| `speed_temporal_cuda` | 7 (8 with prescale) | 40 bytes | two device-to-device plane copies (the previous frame stays on the device) | one, in `collect()` |
+
+None of them uploads anything per frame: they read the planes the engine
+already uploaded. Because nothing waits in `submit()`, their frames overlap with
+the other CUDA extractors like any submit/collect twin.
+
+Scores:
+
+- `cambi_cuda` equals `--backend cpu` to the last bit whenever the CPU's own
+  `double` top-K sum is exact; otherwise the device holds the exact value and
+  the CPU its rounding (at most 3.0e-13 on a heavily banded 4K clip). It now
+  also rejects an adjusted window above 65 x 65, as `cambi.c` does.
+- `speed_chroma_cuda` and `speed_temporal_cuda` equal the CPU extractor to the
+  last bit when that extractor rounds `log2f` correctly and does not fuse
+  multiply-adds, as an icx build without `-march=native` does; a gcc build on
+  glibc differs in the last bits on a few frames. The `lanczos4` prescale does
+  not match (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`). Details:
+  [SpEED](../../metrics/speed_qa.md#the-cpu-reference-and-log2f).
+
+These results come from running the kernels through a host emulation of the
+CUDA driver; the port has not yet run on an NVIDIA GPU and has no measured
+timing ([Research-1379](../../research/1379-cuda-cambi-speed-device-resident.md)).
+The steps to verify and time it on an RTX 4090 are in
+[`state.md`](../../state.md) (`T-CUDA-CAMBI-HOST-RESIDUAL-2026-09-29`,
+`T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`).
 
 ## `psnr_hvs_cuda` computes chroma by default (ADR-1203, 2026-09-06)
 

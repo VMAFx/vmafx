@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1327,
+  "total_warnings": 1289,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -392,7 +392,7 @@
     "core/src/feature/cuda/float_motion_cuda.c": 3,
     "core/src/feature/cuda/float_psnr_cuda.c": 5,
     "core/src/feature/cuda/float_vif_cuda.c": 3,
-    "core/src/feature/cuda/integer_cambi_cuda.c": 3,
+    "core/src/feature/cuda/integer_cambi_cuda.c": 1,
     "core/src/feature/cuda/integer_ciede_cuda.c": 1,
     "core/src/feature/cuda/integer_moment_cuda.c": 1,
     "core/src/feature/cuda/integer_motion_cuda.c": 1,
@@ -402,8 +402,6 @@
     "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 2,
     "core/src/feature/cuda/integer_ssim_cuda.c": 2,
     "core/src/feature/cuda/integer_vif_cuda.c": 12,
-    "core/src/feature/cuda/speed_chroma_cuda.c": 10,
-    "core/src/feature/cuda/speed_temporal_cuda.c": 10,
     "core/src/feature/cuda/ssim_cuda.c": 2,
     "core/src/feature/cuda/ssimulacra2_cuda.c": 6,
     "core/src/feature/feature_characteristics.h": 3,
@@ -485,7 +483,6 @@
     "core/test/test_cuda_adm_parity.c": 39,
     "core/test/test_cuda_arch_floor.c": 5,
     "core/test/test_cuda_buffer_alloc_oom.c": 6,
-    "core/test/test_cuda_cambi_parity.c": 16,
     "core/test/test_cuda_ciede_parity.c": 18,
     "core/test/test_cuda_drain_batch.c": 12,
     "core/test/test_cuda_float_adm_parity.c": 26,
@@ -690,6 +687,43 @@
         }
       },
       "previous_baseline_sha256": "a85ba6fb7738e1ca24f45749e9144fe7892515cf61e71b58d3663e752051772b"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_cambi_cuda.c",
+        "core/src/feature/cuda/speed_chroma_cuda.c",
+        "core/src/feature/cuda/speed_cuda_pipeline.c",
+        "core/src/feature/cuda/speed_temporal_cuda.c",
+        "core/test/test_cuda_cambi_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_cambi_cuda.c": {
+          "warnings": [
+            3,
+            1
+          ]
+        },
+        "core/src/feature/cuda/speed_chroma_cuda.c": {
+          "warnings": [
+            10,
+            0
+          ]
+        },
+        "core/src/feature/cuda/speed_temporal_cuda.c": {
+          "warnings": [
+            10,
+            0
+          ]
+        },
+        "core/test/test_cuda_cambi_parity.c": {
+          "warnings": [
+            16,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b39032799a1c26e152df8b66c81a80503cfddecfbe6aa244941af16719633342"
     }
   ]
 }

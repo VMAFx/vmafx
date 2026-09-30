@@ -1079,3 +1079,5 @@
 1366-cli-frame-readahead
 1363-sycl-ssimulacra2-msssim-device-resident
 1383-state-md-three-way-conflict-resolver
+1379-cuda-cambi-device-resident-pipeline
+1380-cuda-speed-device-resident-pipeline

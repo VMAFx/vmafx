@@ -73,7 +73,7 @@ same PR:
 | **psnr_hvs** | `integer_psnr_hvs_cuda.c` ↔ `../sycl/integer_psnr_hvs_sycl.cpp` ↔ `../vulkan/psnr_hvs_vulkan.c` (+ `psnr_hvs.comp`) |
 | **ssimulacra2** | `ssimulacra2_cuda.c` (+ `ssimulacra2/*.cu`) ↔ `../sycl/ssimulacra2_sycl.cpp` ↔ `../vulkan/ssimulacra2_vulkan.c` (+ `ssimulacra2_*.comp`) |
 | **float_*** | `float_adm_cuda.c` / `float_motion_cuda.c` / `float_psnr_cuda.c` / `float_vif_cuda.c` ↔ matching `../sycl/float_*_sycl.cpp` ↔ partial `../hip/float_*_hip.c` (`float_ansnr_cuda.c` and its twins removed in commit 70ed8b3ce3 / PR #38) |
-| **cambi** | `integer_cambi_cuda.c` (+ `integer_cambi/cambi_score.cu`) ↔ `../vulkan/cambi_vulkan.c` (+ `cambi_*.comp`) — Strategy II hybrid twin. SYCL twin pending (T3-15b). |
+| **cambi** | `integer_cambi_cuda.c` (+ `integer_cambi/cambi_score.cu`) ↔ `../sycl/integer_cambi_sycl.cpp` ↔ `../hip/integer_cambi_hip.c` ↔ `../metal/integer_cambi_metal.mm` — CUDA + SYCL device-resident (ADR-1379 / ADR-1357); HIP + Metal still Strategy II hybrid. |
 
 Full GPU twin matrix governed by GPU long-tail batches:
 [ADR-0182](../../../../docs/adr/0182-gpu-long-tail-batch-1.md) (psnr /
@@ -111,26 +111,16 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
 
 - **GPU SpEED means/cov must match CPU GLOBAL covariance, and ref/dis
   must use SEPARATE eigenvalue bases** (PR #1029,
-  `research-1120-gpu-speed-covariance-eigenbasis-correctness`). In
-  `speed/speed_score.cu` (and HIP / SYCL twins) means kernel computes
-  **scalar global mean** for each of 25 phase-shift elements over
-  full phase-shifted submatrix — `means[25]`, indices `[0, 25)` — **NOT**
-  per-tile `means[25 * num_blocks]` block-local mean. Cov kernel does one
-  global submatrix sweep with those scalar means, divides by `N` **once**,
-  with **no** per-tile loop. `means[]` buffer stays over-allocated at
-  `25 * num_blocks` (launch geometry unchanged) but only `[0, 25)`
-  written/read — do not "tidy" it back to tiled layout. Separately,
-  `speed_chroma_cuda.c` / `speed_temporal_cuda.c` keep reference and
-  distorted **covariance + eigenvalues independent**: after reference
-  linalg, `cuMemcpyDtoD` ref eigenvalues into `d_eigenvalues_ref`; distorted
-  path keeps distorted covariance (do **not** re-add old
-  cov save/restore); `speed_score_kernel` takes both `ref_eigenvalues` and
-  `dis_eigenvalues` (ref entropy uses ref, dis entropy uses dis). Mixing them
-  reintroduces ~2× chroma error (masked on temporal, where `ref ≈ dis`).
-  Verify with `test_cuda_speed_chroma_parity` / `test_cuda_speed_temporal_parity`
-  at places=4 (1e-4, ADR-0214); pass bit-parity on RTX 4090. Any
-  change to SpEED kernel math must mirror across CPU
-  (`speed.c`), CUDA, HIP, and SYCL backends in same PR.
+  `research-1120-gpu-speed-covariance-eigenbasis-correctness`). Since
+  ADR-1380 `speed/speed_score.cu` holds it by construction: every channel
+  (U ref, U dis, V ref, V dis; temporal: ref, dis) owns its `means[25]`
+  (global mean per phase-shift element over the full submatrix, never
+  per tile), its one covariance sweep divided by `N` once, and its own
+  `speed_linalg_kernel` block (eigenvalues + QR). `speed_solve_kernel`
+  reads the channel's own eigenvalues. Never share a basis between ref
+  and dis channels: ~2× chroma error (masked on temporal, `ref ≈ dis`).
+  Any change to SpEED kernel math mirrors CPU (`speed.c`), CUDA, HIP and
+  SYCL in same PR. See §"Device-resident CAMBI and SpEED" below.
 
 - **`vmaf_cuda_kernel_readback_free` owns pinned-host free
   (2026-05-29 sweep).** Helper in `core/src/cuda/kernel_template.h`
@@ -158,9 +148,8 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   from `vmaf_cuda_result_to_errno(CUresult)` (`-ENOMEM` / `-ENODEV` / `-EINVAL`
   / `-EIO`). Returning literal `-EIO` discards real failure cause,
   diverges from `CHECK_CUDA_RETURN` convention in `cuda_helper.cuh`.
-  `speed_temporal_cuda.c` / `speed_chroma_cuda.c` extractors keep literal
-  `-EIO` only on two manual (non-macro) `cuMemcpyDtoH` / `cuCtxPushCurrent`
-  boolean checks. See branch fix/bughunt-cuda.
+  SpEED extractors' old manual `-EIO` checks gone with host residual
+  (ADR-1380). See branch fix/bughunt-cuda.
 
 - **`integer_ms_ssim_cuda.c` honours `enable_lcs`, `enable_db`,
   `clip_db` GPU contracts** (ADR-0243, ADR-0460). Emits 15 extra
@@ -251,23 +240,24 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   (via `cuobjdump --dump-sass`).
 
 - **`integer_cambi_cuda.c` + `integer_cambi/cambi_score.cu` are
-  Strategy II hybrid** (ADR-0360 / T3-15a). GPU kernels
-  (`cambi_spatial_mask_kernel`, `cambi_decimate_kernel`,
-  `cambi_filter_mode_kernel`) bit-exact w.r.t. CPU
-  implementation. Host residual calls `vmaf_cambi_calculate_c_values`
-  and `vmaf_cambi_spatial_pooling` via `cambi_internal.h`. If upstream
-  Netflix refactors `cambi.c` and renames those entry points,
-  `cambi_internal.h` **and** `cambi_vulkan.c` must update in
-  same PR. Never remove `cuStreamSynchronize` calls inside
-  `submit_fex_cuda` — guard DtoH coherency for host
-  residual. `places=4` gate load-bearing; do not loosen it.
+  device-resident since ADR-1379** (was Strategy II hybrid, ADR-0360).
+  Every stage on device, one 88-byte `CambiCudaResults` readback, one
+  wait in `collect_fex_cuda()`. Never re-add host c-values / pooling /
+  preprocessing, per-scale readback, or `cuStreamSynchronize` in
+  `submit_fex_cuda`. Host constants come from `cambi.c` via
+  `cambi_internal.h` (`vmaf_cambi_adjust_window`,
+  `vmaf_cambi_mask_index`, `vmaf_cambi_resize_source_indices`,
+  `vmaf_cambi_contrast_weights`, `vmaf_cambi_reciprocal_lut`,
+  `vmaf_cambi_check_window_fits_lut`, `vmaf_cambi_fixed_topk_mean`),
+  shared with SYCL twin. Upstream `cambi.c` refactor renaming them ->
+  update `cambi_internal.h`, both twins, same PR.
 
 - **`cuLaunchKernel` `kernelParams[]` must point to device-pointer
   VALUE, not to `VmafCudaBuffer` struct** (Issue lusoris/vmaf#857 /
   lusoris/vmaf#866).
-  Dispatch helpers in `integer_cambi_cuda.c` (`dispatch_mask`,
-  `dispatch_decimate`, `dispatch_filter_mode`) pass `&buf->data`
-  (address of `CUdeviceptr` field) to `cuLaunchKernel`. Passing
+  Since ADR-1379 / ADR-1380 cambi + SpEED kernels take ONE argument
+  struct by value (device pointers as `uint64_t` fields) and host passes
+  `void *params[] = {&args}` (`cambi_launch()`, `speed_launch()`). Passing
   `(void *)buf` (address of struct) makes driver read
   `buf->size` (host byte count) as device pointer, causing
   immediate GPU invalid-address fault (SIGSEGV/SIGBUS on host).
@@ -298,9 +288,9 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   directly. Use `vmaf_cuda_picture_download_async` followed by
   `cuStreamSynchronize` on picture's private stream (obtained via
   `vmaf_cuda_picture_get_stream`) before passing picture to any
-  host-side function dereferencing `data[]`. CAMBI extractor
-  (`integer_cambi_cuda.c::submit_fex_cuda`) = canonical example
-  of this pattern (Issue lusoris/vmaf#857, fixed by lusoris/vmaf#870).
+  host-side function dereferencing `data[]`. CAMBI extractor used this
+  pattern (Issue lusoris/vmaf#857, fixed by lusoris/vmaf#870) until
+  ADR-1379 moved its preprocessing on device.
   All other CUDA extractors here
   currently keep preprocessing on GPU, not affected,
   but rule applies to any future extractor mixing GPU input
@@ -499,6 +489,10 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   CAMBI CUDA port (Strategy II hybrid, T3-15a).
 - [ADR-0464](../../../../docs/adr/0464-cambi-cuda-smem-tile.md) --
   CAMBI CUDA spatial-mask SLM tile (perf-audit 2026-05-16 win 3).
+- [ADR-1379](../../../../docs/adr/1379-cuda-cambi-device-resident-pipeline.md) —
+  CAMBI device-resident (ADR-1357 design on CUDA).
+- [ADR-1380](../../../../docs/adr/1380-cuda-speed-device-resident-pipeline.md) —
+  SpEED device-resident (ADR-1358 chain on CUDA).
 - [ADR-0456](../../../../docs/adr/0456-ssimulacra2-cuda-blur-fusion-transpose.md) —
   SSIMULACRA2 CUDA blur: 3-channel kernel fusion + V-pass transpose.
 - [ADR-0574](../../../../docs/adr/0574-hdr-features-cuda-twins-phase-1.md) —
@@ -867,3 +861,52 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   identical; never narrow back to int32 for speed.
 - Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
   (parity only; device wrap hides the UB itself).
+
+## Device-resident CAMBI and SpEED (ADR-1379, ADR-1380)
+
+- **One readback, one wait per frame.** `cambi_cuda`: 88-byte
+  `CambiCudaResults`; SpEED twins: 40-byte `SpeedGpuFrameResult`. Readback
+  on lifecycle private stream behind `lc.submit` event; only wait =
+  `vmaf_cuda_kernel_collect_wait()` in collect (`speed_cuda_pipeline_wait()`
+  for SpEED). No `cuStreamSynchronize` / `cuCtxSynchronize` / sync copy in
+  submit path; no host combine of planes, histograms, c-values, covariance
+  or per-block entropies. `core/test/test_cuda_device_resident_contract.py`
+  counts readbacks + checks result-block `sizeof`.
+- **No per-frame upload.** Twins read engine-uploaded device planes:
+  cambi reads `dist->data[0]` on dist stream; SpEED copies planes device to
+  device into pipeline raw slots (`speed_cuda_pipeline_stage()`), temporal
+  keeps previous frame's luma in other slot (`index % 2`, CPU order).
+- **SpEED = one pipeline** (`speed_cuda_pipeline.c`), only TU loading
+  `speed_score.cu` / launching its kernels (module owner in
+  `test_cuda_module_lifecycle_contract.py`). Init constants from
+  `speed_internal_gpu_configure()` (`speed_internal.c`), shared with SYCL
+  (`speed_sycl_host.cpp`); contract types in `feature/speed_gpu_common.h`,
+  SYCL aliases them. Never add second config routine (HISS-19).
+- **CPU-exact fp32 in `speed_score.cu`.** Every rounding-relevant op =
+  `__fadd_rn` / `__fsub_rn` / `__fmul_rn` / `__fdiv_rn` / `__fsqrt_rn`
+  (never contracted, correctly rounded) + TU built `--fmad=false`
+  (`cuda_cu_extra_flags`). No fp64 type in file, no `sqrtf` / `log2f` /
+  `__fdividef` (libdevice `log2f` not correctly rounded -> `speed_log2()`
+  fp32 pairs). `EIGENVALUE_EPS` compared as `0x1.0c6f7ap-20f` +
+  `0x1.6bdb1ap-49f`. Only `exact_fma()` = error-free transforms.
+- **CAMBI c-value** = `__fmul_rn(__int2float_rn(w * p0 * pm), lut[pm + p0])`
+  with `vmaf_cambi_reciprocal_lut()` table (42 entries != `1.0f / i`); never
+  divide. Top-K = radix select + exact 128-bit sum in 2^-24 units
+  (`CAMBI_CUDA_FIXED_SHIFT == VMAF_CAMBI_TOPK_FIXED_SHIFT`, `#error`
+  guard); no fp64, no float atomics.
+- **Kernel args:** each kernel = one `const <Args> a` struct by value
+  (`integer_cambi_cuda.h`, `speed/speed_cuda_params.h`); ADR-1215 (driver
+  ignores surplus args). Contract test rejects loose params.
+- **Parity contract:** cambi bit-exact whenever CPU's double top-K sum is
+  exact (else CPU rounding only; `test_cuda_cambi_parity` compares `==`);
+  SpEED bit-exact vs CPU built without FMA contraction and with correctly
+  rounded `log2f` (icx build; gcc/glibc differs few frames <= 4.8e-7;
+  icx `-march=native` up to 7.9e-4, Research-1379). `lanczos4` prescale
+  outside tolerance (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30`).
+- **Init failure:** `speed_cuda_pipeline_open()` publishes pipeline before
+  first allocation; extractor close (owed after failed init, ADR-1336)
+  releases partial state. Do not self-close inside init.
+- Guards: `test_cuda_device_resident_contract.py` (planted regression per
+  rule), `test_cuda_cambi_parity{,_large}`,
+  `test_cuda_speed_{chroma,temporal,singular}_parity`, smoke tests (all
+  exit 77 without device).

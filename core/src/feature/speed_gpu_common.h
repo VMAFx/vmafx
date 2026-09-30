@@ -1,98 +1,103 @@
 /**
- *  Copyright 2016-2025 Netflix, Inc.
+ *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  Shared types and constants for the SpEED GPU-backend implementations
- *  (ADR-0567: real on-device GPU kernels for speed_chroma + speed_temporal).
+ *  Host/device contract of the device-resident SpEED pipelines (ADR-1358,
+ *  ADR-1380): the per-run constants a GPU twin needs to run every per-frame
+ *  stage of speed.c on the device, and the one result block it reads back
+ *  per frame.
  *
- *  The SpEED algorithm has two distinct layers of parallelism:
+ *  Plain C with fixed-width fields only, so the same layout is shared by the
+ *  C host code, the SYCL pipeline (speed_sycl_pipeline.h aliases these types)
+ *  and the CUDA kernels (cuda/speed/speed_score.cu takes them by value).
+ *  speed_internal_gpu_configure() (speed_internal.c) fills them at init from
+ *  the helpers the CPU extractor uses, so every backend receives the host's
+ *  values bit for bit. Nothing here runs per frame.
  *
- *    (A) Pixel-to-tile aggregation (highly parallel):
- *        - Covariance matrix accumulation: sum over all num_blocks tiles,
- *          each contributing a 25-element outer product. Maps to a 625-entry
- *          reduction that GPU handles well.
- *        - Independent term assembly: each of the num_blocks tiles contributes
- *          independently. Maps directly to a GPU parallel scatter.
- *        - Per-tile score computation: num_blocks independent scalars.
- *
- *    (B) 25×25 matrix operations (serial, fixed size):
- *        - Eigendecomposition via QR iteration (Householder tridiagonalisation
- *          + implicit-shift QR sweep, ≤500 iterations, ~50µs on any CPU).
- *        - QR factorisation of the 25×25 covariance matrix for the linear
- *          system solve.
- *
- *  GPU kernels cover layer (A); layer (B) runs on CPU after a D2H readback of
- *  625 floats (the covariance matrix). This is NOT CPU forwarding: the entire
- *  pixel/tile workload runs on device. The 25×25 eigendecomp is a mathematical
- *  constraint — serial Lanczos/QR on a fixed-size tiny matrix.
- *
- *  ADR reference: ADR-0567.
- *
- *  The SYCL twins no longer use this split: since ADR-1358 layer (B) runs on
- *  the device too (core/src/feature/sycl/speed_sycl_pipeline.cpp), bit-exact
- *  with the CPU and without a per-frame round trip. The CUDA and HIP twins
- *  still read the covariance back; porting them is tracked in docs/state.md.
+ *  Until ADR-1380 this header held the ADR-0567 split's parameter blocks,
+ *  which no translation unit included.
  */
 
 #ifndef VMAF_SRC_FEATURE_SPEED_GPU_COMMON_H_
 #define VMAF_SRC_FEATURE_SPEED_GPU_COMMON_H_
 
-#include <stddef.h>
 #include <stdint.h>
 
-/* ------------------------------------------------------------------ */
-/* Algorithm constants                                                 */
-/* ------------------------------------------------------------------ */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-#define SPEED_BLOCK_SIZE (5)
-#define SPEED_ELEMENTS (SPEED_BLOCK_SIZE * SPEED_BLOCK_SIZE) /* 25 */
-#define SPEED_NUM_SCALES (4)
-#define SPEED_EIGENVALUE_EPS (1e-6f)
+#define SPEED_GPU_BLOCK 5u                                     /* block_size */
+#define SPEED_GPU_ELEMENTS (SPEED_GPU_BLOCK * SPEED_GPU_BLOCK) /* elements_in_block */
+#define SPEED_GPU_MAX_CHANNELS 4u   /* two (reference, distorted) pairs */
+#define SPEED_GPU_MAX_PAIRS 2u      /* scores per frame */
+#define SPEED_GPU_MAX_RAW_PLANES 4u /* raw input planes a pipeline keeps */
+#define SPEED_GPU_MAX_TAPS 128u     /* filter taps per filter */
 
-/* ------------------------------------------------------------------ */
-/* GPU kernel launch constants                                         */
-/* ------------------------------------------------------------------ */
+/* Plane geometry, identical for every channel of one pipeline. Mirrors
+ * SpeedInternalDimensions (speed_internal.h) plus the raw sample format. */
+typedef struct SpeedGpuGeometry {
+    uint32_t src_w;            /* original_width: raw plane width in samples */
+    uint32_t src_h;            /* original_height */
+    uint32_t scaled_w;         /* after prescale */
+    uint32_t scaled_h;         /* after prescale */
+    uint32_t down_w;           /* scaled_w >> NUM_SCALES */
+    uint32_t down_h;           /* scaled_h >> NUM_SCALES */
+    uint32_t trunc_w;          /* multiple of SPEED_GPU_BLOCK */
+    uint32_t trunc_h;          /* multiple of SPEED_GPU_BLOCK */
+    uint32_t blocks_h;         /* blocks per row */
+    uint32_t blocks;           /* total blocks */
+    uint32_t sub_w;            /* submatrix width */
+    uint32_t sub_h;            /* submatrix height */
+    uint32_t bytes_per_sample; /* 2 on picture_copy()'s 16-bit path, else 1 */
+    float sample_scale;        /* picture_copy() divisor on the 2-byte path */
+    int32_t prescale;          /* non-zero: resample the frame before filtering */
+    int32_t scale_method;      /* enum vif_scaling_method */
+} SpeedGpuGeometry;
 
-/* Covariance kernel: one workgroup per (row, col) entry of the 25×25
- * symmetric covariance matrix.  Each workgroup accumulates partial sums
- * across min(num_blocks, threads_per_cov_wg) tiles in parallel.       */
-#define SPEED_COV_WG_SIZE (256)
+/* Filter taps, computed once on the host by vif_tools.c. */
+typedef struct SpeedGpuFilters {
+    float antialias[SPEED_GPU_MAX_TAPS];
+    float lowpass[SPEED_GPU_MAX_TAPS];
+    uint32_t antialias_width;
+    uint32_t lowpass_width;
+} SpeedGpuFilters;
 
-/* Independent-term kernel: threads cover (element_idx × tile_idx).     */
-#define SPEED_INDTERM_WG_SIZE (256)
+/* Scoring constants. The two log2f() constants are evaluated once on the host
+ * with the libm the CPU extractor uses. */
+typedef struct SpeedGpuScoring {
+    float sigma_nn;
+    float entropy_constant; /* log2f(2 * pi * e) */
+    float base_entropy;     /* get_speed_score() entropy floor */
+    int32_t weight_mode;    /* speed_weight_var_mode, 0..6 */
+} SpeedGpuScoring;
 
-/* Score kernel: one thread per tile.                                    */
-#define SPEED_SCORE_WG_SIZE (256)
+/* Raw planes one channel reads: `minuend - subtrahend` (the temporal
+ * difference of speed.c's subtract_image()), or `minuend` alone when
+ * `subtrahend` is negative. Channel 2p is the reference and 2p + 1 the
+ * distorted side of score pair p. */
+typedef struct SpeedGpuChannelBinding {
+    int32_t minuend;
+    int32_t subtrahend;
+} SpeedGpuChannelBinding;
 
-/* ------------------------------------------------------------------ */
-/* Push-constants / uniform block for GPU kernels                     */
-/* ------------------------------------------------------------------ */
+/* The per-frame device result, read back once at collect time. */
+typedef struct SpeedGpuFrameResult {
+    float score[SPEED_GPU_MAX_PAIRS];
+    int32_t singular[SPEED_GPU_MAX_CHANNELS];      /* covariance could not be inverted */
+    int32_t iteration_cap[SPEED_GPU_MAX_CHANNELS]; /* eigenvalue QR iteration hit its cap */
+} SpeedGpuFrameResult;
 
-typedef struct SpeedGpuParams {
-    uint32_t num_blocks_h;    /* tiles in X (truncated_width  / block_size) */
-    uint32_t num_blocks_v;    /* tiles in Y (truncated_height / block_size) */
-    uint32_t num_blocks;      /* total tiles = num_blocks_h * num_blocks_v  */
-    uint32_t op_width;        /* operating_width  (truncated_width)         */
-    uint32_t op_height;       /* operating_height (truncated_height)        */
-    uint32_t stride_px;       /* float_stride / sizeof(float)               */
-    float sigma_nn;           /* neural noise std dev                        */
-    float nn_floor;           /* neural noise floor fraction                 */
-    uint32_t weight_var_mode; /* 0-6 variance weighting mode                */
-} SpeedGpuParams;
+/* Everything speed_internal_gpu_configure() derives from the options. */
+typedef struct SpeedGpuConfig {
+    SpeedGpuGeometry geometry;
+    SpeedGpuFilters filters;
+    SpeedGpuScoring scoring;
+} SpeedGpuConfig;
 
-/* ------------------------------------------------------------------ */
-/* Host-side buffer layout for GPU results                            */
-/* ------------------------------------------------------------------ */
-
-/* Per-frame GPU result buffers (host-pinned or mapped).
- * cov_mat[25][25] (row-major, symmetric) → eigendecomp on CPU.
- * scores[num_blocks] → aggregate to frame score on CPU.               */
-typedef struct SpeedGpuResults {
-    float cov_mat[SPEED_ELEMENTS * SPEED_ELEMENTS]; /* 625 floats */
-    float *scores;                                  /* num_blocks floats */
-    float *variances;                               /* num_blocks floats */
-    float *entropies;                               /* num_blocks floats */
-} SpeedGpuResults;
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* VMAF_SRC_FEATURE_SPEED_GPU_COMMON_H_ */

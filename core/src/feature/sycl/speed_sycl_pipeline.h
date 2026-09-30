@@ -35,57 +35,22 @@
 namespace speed_sycl
 {
 
-inline constexpr uint32_t kBlock = 5;
-inline constexpr uint32_t kElements = kBlock * kBlock;
-inline constexpr uint32_t kMaxChannels = 4;
-inline constexpr uint32_t kMaxPairs = 2;
-inline constexpr uint32_t kMaxRawPlanes = 4;
-inline constexpr uint32_t kMaxTaps = 128;
+inline constexpr uint32_t kBlock = SPEED_GPU_BLOCK;
+inline constexpr uint32_t kElements = SPEED_GPU_ELEMENTS;
+inline constexpr uint32_t kMaxChannels = SPEED_GPU_MAX_CHANNELS;
+inline constexpr uint32_t kMaxPairs = SPEED_GPU_MAX_PAIRS;
+inline constexpr uint32_t kMaxRawPlanes = SPEED_GPU_MAX_RAW_PLANES;
+inline constexpr uint32_t kMaxTaps = SPEED_GPU_MAX_TAPS;
 
-/* Plane geometry, identical for every channel of one pipeline. Mirrors
- * SpeedInternalDimensions (speed_internal.h) plus the raw sample format. */
-struct Geometry {
-    uint32_t src_w;    /* original_width: raw plane width in samples */
-    uint32_t src_h;    /* original_height */
-    uint32_t scaled_w; /* after prescale */
-    uint32_t scaled_h;
-    uint32_t down_w; /* scaled >> 4 */
-    uint32_t down_h;
-    uint32_t trunc_w; /* multiple of kBlock */
-    uint32_t trunc_h;
-    uint32_t blocks_h;         /* blocks per row */
-    uint32_t blocks;           /* total blocks */
-    uint32_t sub_w;            /* submatrix width */
-    uint32_t sub_h;            /* submatrix height */
-    uint32_t bytes_per_sample; /* 2 for the picture_copy() high-bit-depth path, else 1 */
-    float sample_scale;        /* picture_copy() divisor on the 2-byte path */
-    int32_t prescale;          /* non-zero: resample the frame before filtering */
-    int32_t scale_method;      /* enum vif_scaling_method */
-};
-
-/* Filter taps computed once on the host by vif_tools.c. */
-struct Filters {
-    float antialias[kMaxTaps];
-    float lowpass[kMaxTaps];
-    uint32_t antialias_width;
-    uint32_t lowpass_width;
-};
-
-/* Scoring constants. The two log2f() constants are evaluated once on the host
- * with the same libm the CPU extractor uses. */
-struct Scoring {
-    float sigma_nn;
-    float entropy_constant; /* log2f(2 * pi * e) */
-    float base_entropy;     /* get_speed_score() entropy floor */
-    int32_t weight_mode;    /* speed_weight_var_mode, 0..6 */
-};
-
-/* Raw planes one channel reads: `minuend - subtrahend` (temporal difference),
- * or `minuend` alone when `subtrahend` is negative. */
-struct ChannelBinding {
-    int32_t minuend;
-    int32_t subtrahend;
-};
+/* The per-run contract every device-resident SpEED twin shares
+ * (feature/speed_gpu_common.h, filled by speed_internal_gpu_configure()):
+ * plane geometry, filter taps, scoring constants, the raw planes one channel
+ * reads (`minuend - subtrahend`, or `minuend` alone when `subtrahend` is
+ * negative) and the per-frame result. */
+using Geometry = SpeedGpuGeometry;
+using Filters = SpeedGpuFilters;
+using Scoring = SpeedGpuScoring;
+using ChannelBinding = SpeedGpuChannelBinding;
 
 } // namespace speed_sycl
 
@@ -94,11 +59,7 @@ namespace speed_sycl
 
 /* Per-frame device result, read back once at collect time. Channel 2p is the
  * reference and 2p + 1 the distorted side of score pair p. */
-struct FrameResult {
-    float score[kMaxPairs];
-    int32_t singular[kMaxChannels];      /* covariance could not be inverted */
-    int32_t iteration_cap[kMaxChannels]; /* eigenvalue QR iteration hit its cap */
-};
+using FrameResult = SpeedGpuFrameResult;
 
 struct Pipeline;
 
@@ -135,9 +96,10 @@ int pipeline_wait(Pipeline *pipeline);
 
 /* ---- Host setup shared by both extractors (speed_sycl_host.cpp) ---- */
 
-/* Fill geometry, filters and scoring from the SpEED dimensions and options,
- * validating kernelscale and prescale method exactly as speed_init() does.
- * The caller sets queue, channels, raw_planes and staged. */
+/* Fill geometry, filters and scoring from the SpEED dimensions and options
+ * through speed_internal_gpu_configure(), which validates kernelscale and
+ * prescale method exactly as speed_init() does. The caller sets queue,
+ * channels, raw_planes and staged. */
 int configure(const SpeedInternalDimensions &dim, const SpeedInternalOptions &opt, unsigned bpc,
               PipelineConfig &config);
 

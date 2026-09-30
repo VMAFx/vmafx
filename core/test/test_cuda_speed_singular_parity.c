@@ -36,7 +36,7 @@
  * `sum(sol * indterm)` vanishes whatever the solution holds.
  *
  * Skip behaviour: if vmaf_cuda_state_init() fails (no CUDA driver or no device visible)
- * every test emits "[skip: no CUDA device]" and passes.
+ * every test emits "[skip: no CUDA device]" and the binary exits 77.
  */
 
 #include <errno.h>
@@ -180,6 +180,7 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
         const int rc = vmaf_cuda_state_init(&cu_state, cuda_cfg);
         if (rc != 0 || cu_state == NULL) {
             (void)fprintf(stderr, "[skip: no CUDA device] ");
+            mu_skipped = 1; /* exit 77, not a pass */
             *skipped = 1;
             return NULL;
         }

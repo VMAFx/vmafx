@@ -58,7 +58,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cerrno>
-#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -82,7 +81,6 @@ namespace
 {
 
 constexpr int CAMBI_SYCL_NUM_SCALES = VMAF_CAMBI_NUM_SCALES;
-constexpr unsigned CAMBI_SYCL_MASK_FILTER_SIZE = 7U;
 constexpr double CAMBI_SYCL_DEFAULT_MAX_VAL = 1000.0;
 constexpr int CAMBI_SYCL_DEFAULT_WINDOW_SIZE = 65;
 constexpr double CAMBI_SYCL_DEFAULT_TOPK = 0.6;
@@ -124,9 +122,11 @@ constexpr unsigned POOL_MAX_GROUPS = 512U;
  * clamped, a group of a 7680 x 7680 frame holds under 2^17 elements, so its
  * partial sum of fixed-point c-values (each < 2^38) stays below 2^55. */
 constexpr unsigned POOL_ELEMS_PER_GROUP = 4096U;
-/* c-value -> fixed point: every non-zero c-value is a multiple of 2^-24. */
+/* c-value -> fixed point: every non-zero c-value is a multiple of 2^-24
+ * (VMAF_CAMBI_TOPK_FIXED_SHIFT). */
 constexpr float CAMBI_FIXED_SCALE = 16777216.0F;
-constexpr int CAMBI_FIXED_SHIFT = 24;
+static_assert(CAMBI_FIXED_SCALE == (float)(1U << VMAF_CAMBI_TOPK_FIXED_SHIFT),
+              "device fixed point matches vmaf_cambi_fixed_topk_mean()");
 
 /* Status bits read back with the per-scale sums. */
 constexpr uint32_t CAMBI_STATUS_INVALID_INPUT = 1U;
@@ -257,42 +257,6 @@ struct CambiStateSycl {
 /* ------------------------------------------------------------------ */
 namespace
 {
-
-uint16_t cambi_sycl_adjust_window(int window_size, unsigned w, unsigned h,
-                                  bool cambi_high_res_speedup)
-{
-    unsigned adjusted = (unsigned)(window_size) * (w + h) / (unsigned)CAMBI_WINDOW_DIVISOR;
-    adjusted >>= 4;
-    if (cambi_high_res_speedup) {
-        adjusted = (adjusted + 1U) >> 1;
-    }
-    if (adjusted < 1U)
-        adjusted = 1U;
-    if ((adjusted & 1U) == 0U)
-        adjusted++;
-    return (uint16_t)adjusted;
-}
-
-uint16_t cambi_sycl_ceil_log2(uint32_t num)
-{
-    if (num == 0U)
-        return 0U;
-    uint32_t tmp = num - 1U;
-    uint16_t shift = 0;
-    for (int bit = 0; bit < 32 && tmp > 0U; bit++) {
-        tmp >>= 1;
-        shift++;
-    }
-    return shift;
-}
-
-uint16_t cambi_sycl_get_mask_index(unsigned w, unsigned h, unsigned filter_size)
-{
-    uint32_t const shifted_wh = (w >> 6) * (h >> 6);
-    return (uint16_t)((filter_size * filter_size + 3U * (cambi_sycl_ceil_log2(shifted_wh) - 11U) -
-                       1U) >>
-                      1U);
-}
 
 /* Element offset of (row, column 0) in a plane of `pitch` elements, kept in
  * 32 bits on purpose: every plane here holds fewer than 2^32 elements (enc
@@ -1321,10 +1285,10 @@ int configure_cambi(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned he
     s->src_bpc = bpc;
     s->proc_width = (unsigned)s->enc_width;
     s->proc_height = (unsigned)s->enc_height;
-    s->adjusted_window = cambi_sycl_adjust_window(s->window_size, s->proc_width, s->proc_height,
+    /* cambi.c's own window and mask-index rounding (ADR-1379). */
+    s->adjusted_window = vmaf_cambi_adjust_window(s->window_size, s->proc_width, s->proc_height,
                                                   (bool)s->cambi_high_res_speedup);
-    s->mask_index =
-        cambi_sycl_get_mask_index(s->proc_width, s->proc_height, CAMBI_SYCL_MASK_FILTER_SIZE);
+    s->mask_index = vmaf_cambi_mask_index(s->proc_width, s->proc_height);
     s->num_diffs = 1U << (unsigned)s->max_log_contrast;
     return 0;
 }
@@ -1446,11 +1410,9 @@ namespace
 {
 
 /* tvi_for_diff / vlt_luma / v_band (vmaf_cambi_init_tvi_and_vlt) and the
- * diff weights, uploaded once. */
+ * contrast weights (vmaf_cambi_contrast_weights), uploaded once. */
 int upload_contrast_tables(CambiStateSycl *s)
 {
-    static const int weights[32] = {1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8,
-                                    8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
     /* max_log_contrast is capped at 5 by the option table. */
     assert(s->num_diffs >= 1U && s->num_diffs <= 32U);
     std::vector<uint16_t> diffs(s->num_diffs);
@@ -1467,23 +1429,17 @@ int upload_contrast_tables(CambiStateSycl *s)
     s->levels = s->v_band_size;
     err = upload_table(s, s->d_tvi, tvi.data(), tvi.size());
     if (!err) {
-        err = upload_table(s, s->d_weights, &weights[0], s->num_diffs);
+        err = upload_table(s, s->d_weights, vmaf_cambi_contrast_weights(nullptr), s->num_diffs);
     }
     return err;
 }
 
 /* decimate_generic_*_and_convert_to_10b's resize walk, evaluated once on the
- * host in the same float arithmetic: output index -> source index. */
+ * host by cambi.c itself: output index -> source index (ADR-1379). */
 std::vector<uint32_t> resize_indices(unsigned in_len, unsigned out_len)
 {
     std::vector<uint32_t> idx(out_len);
-    const float ratio = (float)in_len / (float)out_len;
-    const auto start = (float)(ratio / 2 - 0.5);
-    float pos = start;
-    for (unsigned i = 0U; i < out_len; ++i) {
-        idx[i] = (uint32_t)(int)lroundf(pos);
-        pos += ratio;
-    }
+    vmaf_cambi_resize_source_indices(in_len, out_len, idx.data());
     return idx;
 }
 
@@ -1726,24 +1682,16 @@ unsigned device_compute_units(VmafSyclState *state)
 }
 
 /* cambi.c::setup_contrast_and_luminance()'s guard, in the same place in the
- * init sequence (after the TVI tables) and with the same code and message:
- * both the encode-resolution window and the source-resolution window (the
- * full input here, as cambi.c's default src_width / src_height), adjusted
- * with the high-res speed-up, must satisfy window^2 < the reciprocal table
- * size, so the largest accepted window is 65 x 65. */
+ * init sequence (after the TVI tables), through the same routine: both the
+ * encode-resolution window and the source-resolution window (the full input
+ * here, as cambi.c's default src_width / src_height), adjusted with the
+ * high-res speed-up, must satisfy window^2 < the reciprocal table size, so
+ * the largest accepted window is 65 x 65 (ADR-1357, ADR-1379). */
 int check_window_fits_lut(const CambiStateSycl *s)
 {
-    const auto src_window = cambi_sycl_adjust_window(s->window_size, s->src_width, s->src_height,
-                                                     (bool)s->cambi_high_res_speedup);
-    const int max_window = (std::max)((int)s->adjusted_window, (int)src_window);
-    unsigned table_size = 0U;
-    (void)vmaf_cambi_reciprocal_lut(&table_size);
-    if (std::cmp_greater_equal(max_window * max_window, table_size)) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: window_size %d too large for reciprocal LUT\n",
-                 max_window);
-        return -EINVAL;
-    }
-    return 0;
+    const uint16_t src_window = vmaf_cambi_adjust_window(
+        s->window_size, s->src_width, s->src_height, (bool)s->cambi_high_res_speedup);
+    return vmaf_cambi_check_window_fits_lut(s->adjusted_window, src_window);
 }
 
 int init_cambi_device(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height)
@@ -1811,14 +1759,10 @@ int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture
 }
 
 /* Per-scale mean of the top-K c-values: the exact fixed-point sum, converted
- * to double once, then spatial_pooling()'s division. */
+ * to double once, then spatial_pooling()'s division (cambi.c, ADR-1379). */
 double scale_score(const CambiSyclResults &r, int scale, unsigned topk)
 {
-    constexpr double two_pow_64 = 18446744073709551616.0;
-    const double fixed = r.sum_hi[scale] == 0U ?
-                             (double)r.sum_lo[scale] :
-                             (double)r.sum_hi[scale] * two_pow_64 + (double)r.sum_lo[scale];
-    return std::ldexp(fixed, -CAMBI_FIXED_SHIFT) / (double)topk;
+    return vmaf_cambi_fixed_topk_mean(r.sum_hi[scale], r.sum_lo[scale], topk);
 }
 
 int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
