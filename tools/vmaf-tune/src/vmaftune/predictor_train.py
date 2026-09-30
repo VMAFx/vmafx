@@ -730,7 +730,7 @@ def _write_model_card(
         "below are artificially high because the regression target *is* the "
         "fallback. **Do not use this model to drive production CRF picks.** "
         "Generate a real corpus via `vmaftune.corpus` and re-run "
-        "`predictor_train.py` against it.\n"
+        "`predictor_train.py` against it.\n\n"
         if is_synthetic
         else ""
     )
@@ -753,8 +753,7 @@ def _write_model_card(
 - **File**: `model/predictor_{codec}.onnx` ({onnx_bytes} bytes)
 - **SHA-256**: `{onnx_sha256}`
 
-{warning}
-## 1. Purpose
+{warning}## 1. Purpose
 
 Per-shot VMAF predictor for the `{codec}` adapter. Consumed by
 `vmaftune.predictor.Predictor` at runtime to pick the CRF that hits a
@@ -785,10 +784,10 @@ The graph uses only `Gemm`, `Relu`, `Sigmoid`, `Mul`, `Sub`, `Div`,
 Computed on the 20 % held-out split.
 
 | Metric | Value |
-|--------|-------|
-| PLCC   | {plcc:.4f} |
-| SROCC  | {srocc:.4f} |
-| RMSE   | {rmse:.4f} VMAF |
+| --- | --- |
+| PLCC | {plcc:.4f} |
+| SROCC | {srocc:.4f} |
+| RMSE | {rmse:.4f} VMAF |
 
 ## 5. Signing
 
@@ -799,7 +798,7 @@ Computed on the 20 % held-out split.
 
 Tiny MLP, 14 inputs × 64 hidden × 1 output:
 
-```
+```text
 input ────► (x − mean) / std ────► Gemm 14→64 ─► ReLU ─►
             Gemm 64→64 ─► ReLU ─► Gemm 64→1 ─► Sigmoid×100 ─► vmaf
 ```

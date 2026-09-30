@@ -1,15 +1,40 @@
+---
 version: 1
 repository:
-    owner: vmafx
-    name: vmafx
-    visibility: public
-    description: ""
-    homepage: ""
-    topics: []
+  owner: vmafx
+  name: vmafx
+  default_branch: master
+  visibility: public
+  description: ""
+  homepage: ""
+  topics: []
 profiles:
-    - native-gpu-systems
+  - native-gpu-systems
 facets:
-    - security:high
-    - api:public-contract
-    - docs:seo-portal
-    - agent:sandboxed
+  - security:high
+  - api:public-contract
+  - docs:seo-portal
+  - agent:sandboxed
+documentation:
+  max_files: 8192
+  max_file_bytes: 4194304
+  style_exclude:
+    - "docs/adr/README.md"
+    - "docs/adr/_index_fragments/[0-9]*.md"
+    - "**/testdata/**"
+register:
+  sources:
+    expected: 13
+    sha256:
+      sha256:5a3006d30f84ffb6255122d2ae162400f493ccdfbef1eebcecc9b14a35e2f5c7
+    inputs:
+      - path: .paperclip/harness.json
+        surface: prompts
+        kind: message
+        format: json
+        selector: operating_contract.*
+      - path: .paperclip/harness.json
+        surface: prompts
+        kind: message
+        format: json
+        selector: invariants.*

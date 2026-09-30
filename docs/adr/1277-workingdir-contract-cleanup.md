@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1277: Separate private state, corpora, and tracked evidence
 
-- **Status**: Accepted
+- **Status**: Accepted (amended by [ADR-1351](1351-praetor-engine-pin-move.md))
 - **Date**: 2026-09-20
 - **Deciders**: Lusoris
 - **Tags**: workspace, datasets, agents, ci, docs

@@ -338,3 +338,25 @@ path = [
 precedence = "closest"
 SPDX-FileCopyrightText = "2026 Lusoris"
 SPDX-License-Identifier = "EUPL-1.2 AND LicenseRef-Apache-2.0-u2netp"
+
+# `praetorctl adopt` writes praetor's figure engine under tools/figures/ for the
+# docs:seo-portal facet. Its vendored interfig sources keep their upstream MIT
+# terms, and the committed player bundles praetor's loader (EUPL-1.2) with
+# interfig, React, react-dom and scheduler (MIT); dist/THIRD-PARTY-LICENSES.txt
+# carries those texts. REUSE 3.3 applies the last matching table, so both
+# overrides stay after the whole-tree table at the top (ADR-1351).
+[[annotations]]
+path = ["tools/figures/third_party/interfig/upstream/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2025 Vectorize AI, Inc."
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["tools/figures/dist/**"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "2026 Lusoris <lusoris@proton.me>",
+    "2025 Vectorize AI, Inc.",
+    "Meta Platforms, Inc. and affiliates",
+]
+SPDX-License-Identifier = "EUPL-1.2 AND MIT"

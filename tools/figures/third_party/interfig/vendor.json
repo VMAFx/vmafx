@@ -1,0 +1,49 @@
+{
+  "repo": "https://github.com/vectorize-io/hindsight",
+  "path": "hindsight-interfig",
+  "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
+  "path_commit": "db03d5448ff1290cc6e501aa7f62d5e4a1e979a3",
+  "fetched": "2026-09-27",
+  "license_sha256": "01fde0bedf83bdc185065d7af524a61690efe576a67f922eaff3a1280c17b63a",
+  "include": [
+    "README.md",
+    "package.json",
+    "src/figure-svg.test.ts",
+    "src/geometry.test.ts",
+    "src/geometry.ts",
+    "src/index.tsx",
+    "src/model.test.ts",
+    "src/model.ts",
+    "src/node-figures.ts",
+    "src/svg.test.ts",
+    "src/svg.ts",
+    "scripts/figure-loader.mjs",
+    "scripts/figure-svg.mjs"
+  ],
+  "exclude": [
+    ".gitignore",
+    ".prettierrc",
+    "demo/",
+    "figures/",
+    "index.html",
+    "scripts/export.mjs",
+    "tsconfig.json",
+    "vite.config.ts"
+  ],
+  "files": {
+    "LICENSE": "01fde0bedf83bdc185065d7af524a61690efe576a67f922eaff3a1280c17b63a",
+    "README.md": "6fa3e667ffa72f914df8e7d577058bad55025a80db71e99a15d75f6ab648ee9c",
+    "package.json": "da3a0ec11b797a5f60a397c48dcf7a8ee3c5f0166abc349f30c3cdc665cca98d",
+    "scripts/figure-loader.mjs": "51008823c92210855c2ff5863134c6468f49c07b626ea9228d50fd0bdb431118",
+    "scripts/figure-svg.mjs": "bfde60961a65b3767d2ee1d77110f095695405ff11e2ad2df6670fd0c27d3b15",
+    "src/figure-svg.test.ts": "0759bf160635baf9ffa985ec589855beafeb1f20efcef51db5d446f7e4d73c5d",
+    "src/geometry.test.ts": "c326a1a2667cbb586fdf6f506be63bcb4698aca310a34d30c1971c84c6ee46b1",
+    "src/geometry.ts": "89cc4b323db9583e6af5253433af128a318a5a36d67351539c7b345e777b8a46",
+    "src/index.tsx": "fa8612b77b0a048999b89d8f7a43b1b69514a68e3a858168f5f9c814f21b7068",
+    "src/model.test.ts": "a47c453cd381e17287eced63809ebff3cae875dccd7e2da3cca1b1d364616176",
+    "src/model.ts": "29a34a05176aa4e71dc80099050ef6d002fe7e3a7bb6052586f9baac899bc2e9",
+    "src/node-figures.ts": "75ac49c13763f9064374e22f05dccb04e1a7316c9866142d7274463adb084359",
+    "src/svg.test.ts": "579398e6da3c121889424eb73a86a192c17d010982822ab166734d36f51e4cf2",
+    "src/svg.ts": "c3f0015d374ea2cb211b15c8ab439ffd8d7184da733eac94abda87f5b6a780ae"
+  }
+}

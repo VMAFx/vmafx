@@ -40,10 +40,10 @@ The graph uses only `Gemm`, `Relu`, `Sigmoid`, `Mul`, `Sub`, `Div`,
 Computed on the 20 % held-out split.
 
 | Metric | Value |
-|--------|-------|
-| PLCC   | 0.9760 |
-| SROCC  | 0.8650 |
-| RMSE   | 0.8596 VMAF |
+| --- | --- |
+| PLCC | 0.9760 |
+| SROCC | 0.8650 |
+| RMSE | 0.8596 VMAF |
 
 ## 5. Signing
 
@@ -57,7 +57,7 @@ Computed on the 20 % held-out split.
 
 Tiny MLP, 14 inputs × 64 hidden × 1 output:
 
-```
+```text
 input ────► (x − mean) / std ────► Gemm 14→64 ─► ReLU ─►
             Gemm 64→64 ─► ReLU ─► Gemm 64→1 ─► Sigmoid×100 ─► vmaf
 ```

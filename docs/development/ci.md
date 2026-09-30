@@ -22,6 +22,7 @@ The main `pull_request`-triggered workflows include:
 | [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; not required. |
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
 | [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS/context verification and the fail-closed duplicate-implementation scan. |
+| [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
 | [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan+UBSan on PRs, TSan on master pushes, nightly fuzzing; not required (the required sanitizers are in `tests-and-quality-gates.yml`). |
 | [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity tests on self-hosted Intel Arc A380 runner (ADR-1177; see [runbook](ci-self-hosted-sycl.md)). |
@@ -672,7 +673,7 @@ Before pushing, run the local subset of CI to catch the common
 formatter / lint / fast-test failures:
 
 ```bash
-make verify-all     # HISS/context/evidence plus duplicate implementations
+make verify-all     # HISS/context/evidence, duplicate implementations, docs gate
 make dedupe-check   # fast standalone AST clone scan
 make format-check   # clang-format + black + ruff, no writes
 make lint           # configured native + Python, shell, Markdown, Go and docs checks
@@ -690,6 +691,61 @@ audit baseline does not include AST clones. `make verify-all`, pre-commit,
 pre-push, and the required Standards job therefore invoke
 `standardsctl dedupe scan .` explicitly. A finding is a hard failure; there is
 no origin, generated-code, or historical-debt exemption.
+
+### Praetor documentation gate
+
+`make verify-all` also runs two targets from praetor's Documentation Governance
+gate, which the `docs:seo-portal` facet in `.standards.yaml` requires:
+
+- `make docs-lint` runs `node tools/markdownlint/verify.mjs`. It installs its
+  pinned markdownlint-cli2 from the npm registry into a temporary directory, so
+  it needs network access and leaves no `node_modules` in the tree.
+- `make docs-figures` runs `node tools/figures/build.mjs check` and `sources`.
+  It skips, and says why, while the repository has no figure spec under
+  `docs/figures/` and no output under `docs/assets/figures/`.
+
+Both need Node.js 24. The hosted copy is
+[`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml), whose check name
+is `Documentation Governance`.
+
+Praetor owns these files. `praetorctl audit` locks them byte for byte:
+`.github/workflows/praetor-docs.yml`, everything under `tools/markdownlint/`
+and `tools/figures/`, the `# BEGIN praetor documentation gate` block in the
+`Makefile` and the `# BEGIN praetor managed attributes` block in
+`.gitattributes`. Renovate is told to leave them alone. Do not edit them by
+hand: a praetor pin move in `standards-gate.yml` brings their updates. For the
+same reason the workflow keeps praetor's name, which is two characters over the
+30-character budget in [CI job display names](ci-job-names.md). `.gitignore`
+re-includes `tools/figures/dist/`, which the repository-wide `dist/` rule would
+otherwise hide from a checkout that audit then fails on. The repository's own
+black, ruff and markdownlint pre-commit hooks skip `tools/figures/`, since a
+rewrite there fails the audit
+([cordanaLLM/praetor#578](https://github.com/cordanaLLM/praetor/issues/578)).
+Praetor also requires Git to ignore the retired numbered workspace root, so the
+[ADR-1277](../adr/1277-workingdir-contract-cleanup.md) contract check accepts
+praetor's managed rule for it and nothing else
+([ADR-1351](../adr/1351-praetor-engine-pin-move.md)).
+
+The gate's settings live in the `documentation` block of `.standards.yaml`:
+
+| Setting | Value | Reason |
+| --- | --- | --- |
+| `max_files` | 8192 | The tree holds about 4,000 Markdown files, close to the default bound of 4,096. |
+| `max_file_bytes` | 4194304 | `docs/rebase-notes.md`, `docs/changelog-archive/1.0.0-rc.1.md` and `docs/state.md` exceed the default 1 MiB. 4 MiB is praetor's ceiling. |
+| `style_exclude` | `docs/adr/README.md`, `docs/adr/_index_fragments/[0-9]*.md`, `**/testdata/**` | The generated ADR index, the per-ADR row fragments and test fixtures, which the repository's own markdownlint hook in `.pre-commit-config.yaml` also skips. |
+
+Excluded files still go through the gate's private-link rule. The style rules
+come from praetor's locked `tools/markdownlint/markdownlint-cli2.yaml`, not
+from the root `.markdownlint.json`, which the gate ignores. The two disagree on
+`MD013`: praetor turns it off, the root file limits lines to 80 characters.
+To exempt a block from line length, wrap it in `<!-- markdownlint-capture -->`
+and `<!-- markdownlint-disable MD013 -->` and close it with
+`<!-- markdownlint-restore -->`. A closing `markdownlint-enable MD013` switches
+the rule on with markdownlint's defaults under praetor's configuration, tables
+included.
+
+`docs/rebase-notes.md` grows with every rebase-sensitive change. It is 2.9 MB
+now and must be split before it reaches the 4 MiB ceiling.
 
 ### Local lint build profile and receipts
 

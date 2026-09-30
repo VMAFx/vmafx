@@ -7,7 +7,6 @@
 - **File**: `model/predictor_hevc_nvenc.onnx` (21877 bytes)
 - **SHA-256**: `ea80aae57089a34d31797dfdaf46d0db78a0f0bafa16231ffe30120120e45007`
 
-
 ## 1. Purpose
 
 Per-shot VMAF predictor for the `hevc_nvenc` adapter. Consumed by
@@ -39,10 +38,10 @@ The graph uses only `Gemm`, `Relu`, `Sigmoid`, `Mul`, `Sub`, `Div`,
 Computed on the 20 % held-out split.
 
 | Metric | Value |
-|--------|-------|
-| PLCC   | 0.7439 |
-| SROCC  | 0.7374 |
-| RMSE   | 12.0813 VMAF |
+| --- | --- |
+| PLCC | 0.7439 |
+| SROCC | 0.7374 |
+| RMSE | 12.0813 VMAF |
 
 ## 5. Signing
 
@@ -53,7 +52,7 @@ Computed on the 20 % held-out split.
 
 Tiny MLP, 14 inputs × 64 hidden × 1 output:
 
-```
+```text
 input ────► (x − mean) / std ────► Gemm 14→64 ─► ReLU ─►
             Gemm 64→64 ─► ReLU ─► Gemm 64→1 ─► Sigmoid×100 ─► vmaf
 ```

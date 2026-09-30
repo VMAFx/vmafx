@@ -166,12 +166,26 @@ This repository conforms to High-Integrity Systems Standards (HISS-21)
 and modernized NASA JPL Power-of-10 rules.
 
 <!-- praetor:readme-governance:start -->
-Praetor manages this repository's declared governance policy. This managed block records adoption state; it is not a verification certificate.
+[![Documentation Governance][praetor-docs-badge]][praetor-docs-runs]
 
-| Gate | Command | Contract |
-| :--- | :--- | :--- |
-| **Verification** | `make verify-all` | Runs the repository's configured verification cascade |
-| **HISS Audit** | `praetorctl audit` | Enforces policy, generated-surface integrity, and the debt ratchet |
-| **Context Sync** | `praetorctl compile-context --verify` | Verifies every generated agent context against `AGENTS.md` |
-| **Debt Baseline** | `.standards-baseline.json` | 185 recorded infractions; audit forbids growth |
+Praetor manages this repository's declared governance policy. This managed
+block records adoption state; it is not a verification certificate.
+
+**Verification**: `make verify-all` runs the repository's configured
+verification cascade.
+
+**HISS Audit**: `praetorctl audit` enforces policy, generated-surface
+integrity, and the debt ratchet.
+
+**Context Sync**: `praetorctl compile-context --verify` verifies every
+generated agent context against `AGENTS.md`.
+
+**Documentation**: `make docs-lint` enforces locked Markdown style and the
+private scratch-link policy.
+
+**Debt Baseline**: `.standards-baseline.json` anchors the debt ratchet at
+431 recorded infractions; audit forbids growth.
+
+[praetor-docs-badge]: https://github.com/vmafx/vmafx/actions/workflows/praetor-docs.yml/badge.svg
+[praetor-docs-runs]: https://github.com/vmafx/vmafx/actions/workflows/praetor-docs.yml
 <!-- praetor:readme-governance:end -->

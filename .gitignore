@@ -25,6 +25,9 @@ build/
 build-golden/
 core/build-golden/
 dist/
+# praetor commits its figure player bundle under tools/figures/dist/ (praetorctl
+# adopt, docs:seo-portal) and audit hashes it, so that one dist/ stays tracked.
+!/tools/figures/dist/
 vmaf_output.xml
 compile_commands.json
 
@@ -230,4 +233,10 @@ build-upstream-ab/
 # Vendor skill mirrors. `.claude/skills/` is canonical and tracked; the
 # per-vendor copies drift and are regenerated from it.
 .agents/skills/
+
+# BEGIN praetor private artifacts (praetorctl adopt)
+/.workingdir/
+/.workingdir2/
 /.standards/worktrees/
+/.agents/mcp_config.json
+# END praetor private artifacts
