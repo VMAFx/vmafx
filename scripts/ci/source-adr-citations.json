@@ -589,7 +589,6 @@
         "core/test/test_sycl_adm_parity.c": 2,
         "core/test/test_sycl_float_adm_parity.c": 2,
         "core/test/test_sycl_float_motion_parity.c": 2,
-        "core/test/test_sycl_float_ssim_parity.c": 1,
         "core/test/test_sycl_float_vif_parity.c": 2,
         "core/test/test_sycl_init_unwind.cpp": 1,
         "core/test/test_sycl_motion3_parity.c": 4,
@@ -1906,7 +1905,6 @@
         "core/test/test_sycl_adm_parity.c": 2,
         "core/test/test_sycl_float_adm_parity.c": 2,
         "core/test/test_sycl_float_motion_parity.c": 2,
-        "core/test/test_sycl_float_ssim_parity.c": 1,
         "core/test/test_sycl_float_vif_parity.c": 2,
         "core/test/test_sycl_motion3_parity.c": 4,
         "core/test/test_sycl_motion_v2_parity.c": 2,
@@ -7538,6 +7536,8 @@
         "core/src/libvmaf.c": 3,
         "core/test/meson.build": 1,
         "core/test/test_feature_backend_twin.c": 2,
+        "core/test/test_gpu_float_ssim_auto_scale_contract.py": 1,
+        "core/test/test_sycl_float_ssim_parity.c": 1,
         "core/test/test_sycl_vif_min_dim.c": 2,
         "core/tools/test/test_vmaf_feature_backend.sh": 1
       },
@@ -7859,6 +7859,17 @@
         "scripts/release/tests/test-docker-image-runtime-contract.sh": 2
       },
       "target": "1368-oneapi-release-image-debian13.md"
+    },
+    "1370": {
+      "sites": {
+        "core/src/feature/iqa/decimate_dim.h": 1,
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 8,
+        "core/test/test_feature_backend_twin.c": 1,
+        "core/test/test_gpu_float_ssim_auto_scale_contract.py": 1,
+        "core/test/test_sycl_float_ssim_parity.c": 1,
+        "core/tools/test/test_vmaf_feature_backend.sh": 1
+      },
+      "target": "1370-sycl-float-ssim-device-decimation.md"
     },
     "1371": {
       "sites": {
