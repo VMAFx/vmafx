@@ -234,7 +234,7 @@ typedef struct VmafConfiguration {
 
 | Function | Returns | Purpose |
 | --- | --- | --- |
-| `vmaf_init(VmafContext **out, VmafConfiguration cfg)` | 0 / -errno | Allocate a context. `*out` is owned by the caller; free with `vmaf_close()`. |
+| `vmaf_init(VmafContext **out, VmafConfiguration cfg)` | 0 / -errno | Allocate a context. `*out` is owned by the caller; free with `vmaf_close()`. `*out` is output-only, as in upstream: its incoming value is never read, so an uninitialised `VmafContext *` is fine. It is NULL after any failure. A handle that still holds an open context is overwritten, not closed, so close it first ([ADR-1396](../adr/1396-vmaf-init-output-only-handle.md)). |
 | `vmaf_version()` | `const char *` | Version string `vX.Y.Z + git sha`. Does not need `vmaf_init()`. |
 | `vmaf_use_features_from_model(ctx, model)` | 0 / -errno | Register every feature a model needs. Deduplicates across multiple models. |
 | `vmaf_use_features_from_model_collection(ctx, coll)` | 0 / -errno | Same, for a bootstrap model collection. |

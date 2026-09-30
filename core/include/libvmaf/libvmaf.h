@@ -251,11 +251,18 @@ typedef struct VmafContext VmafContext;
  *             To be used in further libvmaf api calls.
  *             $vmaf will be set to the allocated context.
  *             Context should be cleaned up with `vmaf_close()` when finished.
+ *             `*vmaf` is output-only: its incoming value is never read, so
+ *             an uninitialised `VmafContext *` is fine. It is set to NULL on
+ *             entry and to the new context on success, so it is NULL after
+ *             any failure. Passing a handle that still holds an open context
+ *             overwrites it without closing it: close it first.
  *
  * @param cfg  Configuration parameters.
  *
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
+ * @return 0 on success, or < 0 (a negative errno code) on error: -EINVAL when
+ *         `vmaf` is NULL, or the code of the allocation or subsystem set-up
+ *         that failed.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */

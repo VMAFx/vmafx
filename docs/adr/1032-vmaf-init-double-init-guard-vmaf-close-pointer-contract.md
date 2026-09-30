@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1032: vmaf_init double-init guard and vmaf_close pointer-contract documentation
 
-- **Status**: Accepted
+- **Status**: Accepted (Fix 1, the double-init guard, superseded by [ADR-1396](1396-vmaf-init-output-only-handle.md))
 - **Date**: 2026-06-04
 - **Deciders**: Lusoris
 - **Tags**: `api`, `correctness`, `memory-safety`

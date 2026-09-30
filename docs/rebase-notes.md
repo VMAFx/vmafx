@@ -176,6 +176,19 @@
   `pad`-row heights for the production configuration.
 - No public API, FFmpeg patch or Netflix golden-data impact; golden gate and
   `python/test/cambi_test.py` pass unchanged.
+## fix/vmaf-init-output-only-handle — vmaf_init never reads the incoming handle (ADR-1396) (2026-09-30)
+
+- `core/src/libvmaf.c` `vmaf_init()`: fork body. It sets `*vmaf = NULL` right
+  after the `vmaf == NULL` check and `*vmaf = v` only on success. Upstream
+  assigns `*vmaf = malloc(...)` up front and leaves the freed pointer there
+  when set-up fails; keep the fork's order. Do not bring back ADR-1032's
+  `if (*vmaf) return -EINVAL;` guard.
+- `core/test/test_context.c`: `test_vmaf_init_ignores_the_incoming_handle`
+  and `test_vmaf_init_overwrites_an_open_handle` replace
+  `test_vmaf_init_double_init_guard`.
+- Public header documentation only; no symbol, signature or FFmpeg patch
+  change (the FFmpeg filters pass a zeroed `LIBVMAFContext` member). No
+  Netflix golden-data impact.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 

@@ -166,6 +166,13 @@ core/
   `unsigned` type and `1u` literal. See
   [docs/rebase-notes.md](../docs/rebase-notes.md)
   §PR-fix-picture-align-unsigned-narrowing.
+- **`vmaf_init` never reads `*vmaf`** ([ADR-1396](../docs/adr/1396-vmaf-init-output-only-handle.md),
+  superseding ADR-1032 Fix 1): it sets `*vmaf = NULL` on entry and
+  `*vmaf = v` on success. Upstream callers pass an uninitialised handle
+  (`VmafContext *vmaf;`), so a check of the incoming value fails them at
+  random. Do not reintroduce an `if (*vmaf) return -EINVAL;` guard.
+  `test_vmaf_init_ignores_the_incoming_handle` (`test/test_context.c`) fails
+  if one comes back.
 - **`vmaf_init` cpumask narrowing uses explicit `(unsigned)` cast**
   (fork-local, round-5 `-fsanitize=integer` sweep):
   `vmaf_set_cpu_flags_mask((unsigned)(~cfg.cpumask))` in

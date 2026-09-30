@@ -325,12 +325,13 @@ int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
 {
     if (!vmaf)
         return -EINVAL;
-    /* Guard against double-init: if the caller passes a non-NULL *vmaf the
-     * old context would be silently overwritten and leak.  Returning -EINVAL
-     * surfaces the bug immediately instead of leaking memory on every
-     * subsequent initialisation path. */
-    if (*vmaf)
-        return -EINVAL;
+    /* ADR-1396: `*vmaf` is output-only, as in upstream. Its incoming value is
+     * never read: upstream's own tests and CLI pass an uninitialised
+     * `VmafContext *`, and reading it made this call fail with -EINVAL
+     * whenever the stack held a non-zero value (the ADR-1032 guard). It is
+     * NULL until a context exists, so a failed call never leaves a dangling
+     * handle (CERT MEM30-C). */
+    *vmaf = NULL;
 
     VmafContext *const v = malloc(sizeof(*v));
     if (!v)
@@ -351,7 +352,7 @@ int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
 
     const int err = vmaf_ctx_subsystems_init(v);
     if (err) {
-        /* The caller's handle stays NULL (checked above) so it cannot be
+        /* The caller's handle stays NULL (set above) so it cannot be
          * passed to vmaf_close() or dereferenced after a failed vmaf_init()
          * — CERT MEM30-C. Return the failing sub-init's own code rather than
          * a hardcoded -ENOMEM so callers can distinguish OOM from a
