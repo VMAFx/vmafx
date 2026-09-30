@@ -28,6 +28,11 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using):
+ * C host/device contract header shared by C host code, SYCL (C++) and CUDA.
+ * clang-tidy analyses this header under C++ translation units and proposes
+ * `using` in place of `typedef struct`, which is not valid C (ADR-0141, ADR-1380). */
+
 #define SPEED_GPU_BLOCK 5u                                     /* block_size */
 #define SPEED_GPU_ELEMENTS (SPEED_GPU_BLOCK * SPEED_GPU_BLOCK) /* elements_in_block */
 #define SPEED_GPU_MAX_CHANNELS 4u   /* two (reference, distorted) pairs */
@@ -95,6 +100,8 @@ typedef struct SpeedGpuConfig {
     SpeedGpuFilters filters;
     SpeedGpuScoring scoring;
 } SpeedGpuConfig;
+
+/* NOLINTEND(modernize-use-using) */
 
 #ifdef __cplusplus
 } /* extern "C" */

@@ -55185,4 +55185,8 @@ are bit-identical (the `cambi.c` changes move code into functions). CUDA CAMBI
 scores move to the CPU's (bit-identical except where the CPU's double top-K
 sum rounds); CUDA SpEED scores move from within 1e-4 of the CPU to
 bit-identical with a CPU build that rounds `log2f` correctly and does not
-fuse multiply-adds. Not yet run on an NVIDIA device.
+fuse multiply-adds. Verified on physical RTX 4090 on ryzen-4090-arc:
+CAMBI 48/48 bit-identical on 576x324 and 50/50 on 4K with 3.8x speedup
+(2.38 ms/frame); SpEED temporal 48/48 and 50/50 bit-identical with 7.0x
+speedup (2.81 ms/frame); SpEED chroma max diff <= 1.43e-06 with 2.1x
+speedup; compute-sanitizer memcheck 0 errors.

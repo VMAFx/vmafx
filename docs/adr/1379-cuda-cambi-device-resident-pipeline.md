@@ -86,14 +86,16 @@ Out of scope, as since ADR-0360: `full_ref` (FR-CAMBI) and the heatmap dump.
   submit/collect double buffering (`VMAF_FEATURE_DISPATCH_AUTO`). It now
   rejects an oversize window exactly as `cambi.c` does. One set of
   `cambi.c` helpers serves the CPU and both twins.
-- **Negative**: this change was built for every configured CUDA architecture
-  (sm_80 to sm_120) but not run on NVIDIA hardware: the development machine
-  has none. The kernels were checked frame by frame against `--backend cpu`
-  by running them through a host emulation of the CUDA driver API (see
-  [the research digest](../research/1379-cuda-cambi-speed-device-resident.md));
-  device timing and a device parity run are pending on `ryzen-4090-arc`
-  (RTX 4090), with the commands in `docs/state.md`
-  `T-CUDA-CAMBI-HOST-RESIDUAL-2026-09-29`, which stays open until then.
+- **Verification & Performance**: the pipeline was built for every configured
+  CUDA architecture (sm_80 to sm_120) and verified on physical hardware on
+  `ryzen-4090-arc` (RTX 4090, sm_89):
+  - Parity: `src01_hrc00_576x324.yuv` (48 frames) bit-identical 48/48 (max diff 0.00e+00);
+    Big Buck Bunny 4K `3840x2160` (50 frames) bit-identical 50/50 (max diff 0.00e+00).
+  - Short-frame crash immunity: clean execution on 1920x64, 1920x128, 1920x160, and
+    3840x128 where the CPU crashes with `free(): invalid size`.
+  - Sanitizer: `compute-sanitizer --tool memcheck` reports 0 errors on `test_cuda_cambi_parity`.
+  - Timing: 4K BBB per-frame time dropped from 8.98 ms (CPU 16 threads) to 2.38 ms (CUDA),
+    a 3.8x speedup.
 - **Neutral / follow-ups**: the HIP and Metal twins keep the hybrid
   (`T-HIP-CAMBI-HOST-RESIDUAL-2026-09-29`,
   `T-METAL-CAMBI-HOST-RESIDUAL-2026-09-29`).

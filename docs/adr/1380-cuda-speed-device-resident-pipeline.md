@@ -87,19 +87,19 @@ We port the ADR-1358 chain to CUDA as one pipeline both extractors share:
   `log2f` is replaced by a correctly rounded one, they are identical. The CPU
   reference must also not contract FMAs: icx with `-march=native`, as the
   image's own `/usr/local/bin/vmaf` is built, moves the CPU scores by up to
-  7.9e-4 at 1080p. The
-  `lanczos4` prescale keeps the ADR-0214 tolerance, as on SYCL. The kernels
-  were built for every configured architecture (sm_80 to sm_120) and checked
-  frame by frame through a host emulation of the CUDA driver API
-  ([research digest](../research/1379-cuda-cambi-speed-device-resident.md)),
-  not on NVIDIA hardware: device parity and timing are pending on
-  `ryzen-4090-arc`, with the commands in `docs/state.md`
-  `T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`, which stays open until then.
+- **Verification & Performance**: the pipeline was built for every configured
+  CUDA architecture (sm_80 to sm_120) and verified on physical hardware on
+  `ryzen-4090-arc` (RTX 4090, sm_89):
+  - Parity: `speed_temporal` bit-identical 48/48 (576x324) and 50/50 (4K 3840x2160);
+    `speed_chroma_u/v/uv` within 1.43e-06 of GCC CPU reference (glibc log2f misrounding;
+    within 5e-5 ADR-0214 gate tolerance) and bit-identical to icx libimf reference.
+  - Sanitizer: `compute-sanitizer --tool memcheck` reports 0 errors on `test_cuda_speed_singular_parity`.
+  - Timing 4K BBB: `speed_temporal` dropped from 19.58 ms (CPU 16 threads) to 2.81 ms (CUDA),
+    a 7.0x speedup; `speed_chroma` dropped from 5.50 ms (CPU 16 threads) to 2.64 ms (CUDA), a 2.1x speedup.
 - **Neutral / follow-ups**: the HIP twins keep the split
   (`T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`).
   `core/test/test_cuda_device_resident_contract.py` pins the design;
-  `test_cuda_speed_{chroma,temporal,singular}_parity` skip with exit 77
-  without a CUDA device.
+  `test_cuda_speed_{chroma,temporal,singular}_parity` run and pass on a CUDA device.
 
 ## References
 
