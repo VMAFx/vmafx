@@ -287,7 +287,11 @@ static int exercise_tail_flush(VmafFeatureExtractorContext *ctx, VmafFeatureColl
     int err = get_option_resolved_score(ctx, fc, "VMAF_feature_motion_score", 1u, &current_motion);
     if (err != 0)
         return err;
-    result->expected_tail = current_motion * 1.5;
+    /* The CPU float_motion emits the debug motion score and the flushed tail
+     * motion2 both through motion_clip(), which applies motion_fps_weight
+     * (1.5 here) once; the HIP twin does the same since ADR-1382, so the tail
+     * equals the last frame's debug score, not 1.5 times it. */
+    result->expected_tail = current_motion;
 
     result->first_flush = ctx->fex->flush(ctx->fex, fc);
     if (result->first_flush != 1)

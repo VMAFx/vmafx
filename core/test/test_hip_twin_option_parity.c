@@ -714,6 +714,26 @@ static char *test_float_motion_force_zero(void)
     return msg;
 }
 
+/* motion_force_zero on motion_hip through vmaf_read_pictures(): motion2,
+ * motion3 and the debug motion score are 0 on every frame, as on the CPU.
+ * The first frame used to call a NULL submit(): init() cleared it after
+ * libvmaf had already chosen the asynchronous path
+ * (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30). */
+static char *test_integer_motion_force_zero(void)
+{
+    static const char *const opts[] = {"motion_force_zero", "true", "debug", "true", NULL};
+    static const char *const names[] = {"integer_motion2_force_0", "integer_motion3_force_0",
+                                        "integer_motion_force_0"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_MOTION, "motion", "motion_hip", opts, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(names) / sizeof(names[0]); i++)
+        msg = expect_all(&pair, names[i], FX_MOTION.frames, 0.0);
+    pair_close(&pair);
+    return msg;
+}
+
 /* Negative: motion_max_val above the declared range is refused by both. */
 static char *test_float_motion_max_val_out_of_range(void)
 {
@@ -836,6 +856,7 @@ static char *run_motion_tests(void)
     mu_run_test(test_float_motion_max_val);
     mu_run_test(test_float_motion_fps_weight_debug_score);
     mu_run_test(test_float_motion_force_zero);
+    mu_run_test(test_integer_motion_force_zero);
     mu_run_test(test_float_motion_max_val_out_of_range);
     mu_run_test(test_integer_motion_debug_score_options);
     mu_run_test(test_motion_v2_weight_and_cap);

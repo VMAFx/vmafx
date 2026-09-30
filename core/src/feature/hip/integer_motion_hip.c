@@ -249,6 +249,27 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return err;
 }
 
+/* The asynchronous half of motion_force_zero (msh_init_force_zero()):
+ * submit() has no picture to read, collect() writes extract()'s zeros. */
+static int submit_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
+                             VmafPicture *ref_pic_90, VmafPicture *dist_pic,
+                             VmafPicture *dist_pic_90, unsigned index)
+{
+    (void)fex;
+    (void)ref_pic;
+    (void)ref_pic_90;
+    (void)dist_pic;
+    (void)dist_pic_90;
+    (void)index;
+    return 0;
+}
+
+static int collect_force_zero(VmafFeatureExtractor *fex, unsigned index,
+                              VmafFeatureCollector *feature_collector)
+{
+    return extract_force_zero(fex, NULL, NULL, NULL, NULL, index, feature_collector);
+}
+
 #ifdef HAVE_HIPCC
 
 /* Allocate the raw-luma ping-pong and the pinned staging plane. On failure
@@ -345,12 +366,13 @@ static int msh_check_config(const MotionStateHip *s, unsigned w, unsigned h)
     return 0;
 }
 
-/* Tear down everything init() may have set up. Every step tolerates a handle
- * that was never created, so this serves a failed init(), close(), and the
- * motion_force_zero switch to extract(). The stream is drained first, so no
- * copy or kernel still uses a buffer. Returns the first error; freeing the
- * buffers and the module is best-effort. */
-static int msh_release(MotionStateHip *s)
+/* Tear down the device objects init() may have set up. Every step tolerates
+ * a handle that was never created, so this serves a failed init(), close()
+ * (through msh_release()) and the motion_force_zero switch, which keeps the
+ * name dictionary. The stream is drained first, so no copy or kernel still
+ * uses a buffer. Returns the first error; freeing the buffers and the module
+ * is best-effort. */
+static int msh_release_device(MotionStateHip *s)
 {
     int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
 #ifdef HAVE_HIPCC
@@ -360,14 +382,39 @@ static int msh_release(MotionStateHip *s)
     const int err_rb = vmaf_hip_kernel_readback_free(&s->rb, s->ctx);
     if (err_rb != 0 && rc == 0)
         rc = err_rb;
+    vmaf_hip_context_destroy(s->ctx);
+    s->ctx = NULL;
+    return rc;
+}
+
+/* msh_release_device() plus the name dictionary: a failed init() and close(). */
+static int msh_release(MotionStateHip *s)
+{
+    int rc = msh_release_device(s);
     if (s->feature_name_dict != NULL) {
         const int err_dict = vmaf_dictionary_free(&s->feature_name_dict);
         if (err_dict != 0 && rc == 0)
             rc = err_dict;
     }
-    vmaf_hip_context_destroy(s->ctx);
-    s->ctx = NULL;
     return rc;
+}
+
+/* motion_force_zero writes zeros: from extract() for a direct caller and from
+ * collect() under libvmaf's asynchronous dispatch, which picks submit() /
+ * collect() from the callbacks of the uninitialised context
+ * (read_pictures_dispatch_one()) and runs init() only inside
+ * vmaf_feature_extractor_context_submit(). Clearing submit here had the
+ * framework call a NULL submit() on the first frame
+ * (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30). The device objects go
+ * now; close() stays and frees the name dictionary extract_force_zero()
+ * writes through. */
+static int msh_init_force_zero(VmafFeatureExtractor *fex, MotionStateHip *s)
+{
+    fex->extract = extract_force_zero;
+    fex->submit = submit_force_zero;
+    fex->collect = collect_force_zero;
+    fex->flush = NULL;
+    return msh_release_device(s);
 }
 
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -401,25 +448,14 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         err = msh_bufs_alloc(s);
 #endif /* HAVE_HIPCC */
 
-    if (err == 0 && s->motion_force_zero) {
-        /* extract_force_zero needs no device state, and close() is not
-         * called on this path, so release the HIP resources now rather than
-         * leak them. */
-        fex->extract = extract_force_zero;
-        fex->submit = NULL;
-        fex->collect = NULL;
-        fex->flush = NULL;
-        fex->close = NULL;
-        (void)msh_release(s);
-        return 0;
-    }
-
     if (err == 0) {
         s->feature_name_dict =
             vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
         if (s->feature_name_dict == NULL)
             err = -ENOMEM;
     }
+    if (err == 0 && s->motion_force_zero)
+        err = msh_init_force_zero(fex, s);
     if (err != 0)
         (void)msh_release(s);
     return err;

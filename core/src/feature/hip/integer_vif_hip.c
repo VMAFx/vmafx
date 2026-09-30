@@ -90,6 +90,7 @@ typedef struct VifStateHip {
     hipFunction_t func_hori_16_9_5_1;
     hipFunction_t func_hori_16_5_3_2;
     hipFunction_t func_hori_16_3_0_3;
+    hipFunction_t func_accums_zero;
 
     void *accum_dev;
     void *accum_host;
@@ -217,7 +218,7 @@ typedef struct VifHipKernelSlot {
     const char *name;
 } VifHipKernelSlot;
 
-/* Load the kernel blob and resolve the ten kernels by name. On failure the
+/* Load the kernel blob and resolve the eleven kernels by name. On failure the
  * module is unloaded again and `s->module` is NULL. */
 static int vif_hip_module_load(VifStateHip *s)
 {
@@ -236,6 +237,7 @@ static int vif_hip_module_load(VifStateHip *s)
         {&s->func_hori_16_9_5_1, "filter1d_16_horizontal_kernel_2_9_5_1"},
         {&s->func_hori_16_5_3_2, "filter1d_16_horizontal_kernel_2_5_3_2"},
         {&s->func_hori_16_3_0_3, "filter1d_16_horizontal_kernel_2_3_0_3"},
+        {&s->func_accums_zero, "vif_accums_zero_kernel"},
     };
     const unsigned n_kernels = (unsigned)(sizeof(kernels) / sizeof(kernels[0]));
     for (unsigned i = 0; i < n_kernels && rc == hipSuccess; i++)
@@ -599,6 +601,19 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 }
 
 #ifdef HAVE_HIPCC
+/* Zero the four per-scale accumulators with a kernel on the private stream,
+ * ahead of the scale kernels that accumulate into them
+ * (T-HIP-VIF-ACCUM-CARRYOVER-2026-09-30): hipMemsetAsync left the previous
+ * frame's sums in place on a gfx1036 now and then. */
+static int vif_hip_zero_accums(VifStateHip *s)
+{
+    int n_words = (int)((sizeof(vif_accums_hip) / sizeof(int64_t)) * 4u);
+    void *accum = s->accum_dev;
+    void *args[] = {(void *)&accum, (void *)&n_words};
+    return vif_hip_err(hipModuleLaunchKernel(s->func_accums_zero, 1u, 1u, 1u, 32u, 1u, 1u, 0u,
+                                             s->str, args, NULL));
+}
+
 /* Launch the four scales on the private stream. Scale 0 reads the staged
  * picture (ADR-0537); scales 1..3 read the half-resolution planes the
  * previous scale wrote. */
@@ -642,9 +657,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #else
     VifStateHip *s = fex->priv;
 
-    hipError_t rc = hipMemsetAsync(s->accum_dev, 0, sizeof(vif_accums_hip) * 4u, s->str);
-    if (rc != hipSuccess)
-        return vif_hip_err(rc);
+    int err = vif_hip_zero_accums(s);
+    if (err != 0)
+        return err;
 
     /* ADR-0537: stage the host Y plane into device memory. Returns once both
      * pictures are read: the caller recycles them when submit() returns
@@ -665,14 +680,14 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
          .row_bytes = row_bytes,
          .rows = dist_pic->h[0]},
     };
-    int err = vmaf_hip_picture_upload(planes, 2u, vmaf_hip_stream_bits(s->str));
+    err = vmaf_hip_picture_upload(planes, 2u, vmaf_hip_stream_bits(s->str));
     if (err == 0)
         err = vif_hip_launch_scales(s, ref_pic->w[0], ref_pic->h[0], ref_pic->bpc);
     if (err != 0)
         return err;
 
-    rc = hipMemcpyAsync(s->accum_host, s->accum_dev, sizeof(vif_accums_hip) * 4u,
-                        hipMemcpyDeviceToHost, s->str);
+    hipError_t rc = hipMemcpyAsync(s->accum_host, s->accum_dev, sizeof(vif_accums_hip) * 4u,
+                                   hipMemcpyDeviceToHost, s->str);
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
