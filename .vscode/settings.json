@@ -5,7 +5,6 @@
   "C_Cpp.errorSquiggles": "disabled",
   "C_Cpp.formatting": "disabled",
   "C_Cpp.autoAddFileAssociations": false,
-
   "clangd.arguments": [
     "--compile-commands-dir=${workspaceFolder}/build",
     "--background-index",
@@ -24,7 +23,6 @@
   ],
   "clangd.onConfigChanged": "restart",
   "clangd.checkUpdates": false,
-
   "[c]": {
     "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
     "editor.formatOnSave": true,
@@ -55,25 +53,26 @@
     "editor.formatOnSave": true,
     "editor.tabSize": 2
   },
-
   "ruff.enable": true,
   "ruff.organizeImports": true,
   "python.analysis.typeCheckingMode": "basic",
   "python.testing.pytestEnabled": true,
-  "python.testing.pytestArgs": ["python/test", "ai/tests"],
-
-  "editor.rulers": [100],
+  "python.testing.pytestArgs": [
+    "python/test",
+    "ai/tests"
+  ],
+  "editor.rulers": [
+    100
+  ],
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
   "files.eol": "\n",
-
   "files.associations": {
     "*.cu": "cuda-cpp",
     "*.cuh": "cuda-cpp",
     "meson.build": "meson",
     "meson_options.txt": "meson"
   },
-
   "files.watcherExclude": {
     "**/build/**": true,
     "**/build-san/**": true,
@@ -87,9 +86,9 @@
     "**/subprojects": true,
     "**/.venv": true
   },
-
   "cmake.configureOnOpen": false,
   "cmake.sourceDirectory": "",
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
-  "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild"
+  "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
+  "mesonbuild.selectRootDir": false
 }
