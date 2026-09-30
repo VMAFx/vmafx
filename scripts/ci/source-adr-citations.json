@@ -989,7 +989,6 @@
         "core/src/feature/cuda/integer_ms_ssim_cuda.h": 1,
         "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu": 1,
         "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
-        "core/src/feature/cuda/integer_psnr_hvs_cuda.h": 1,
         "core/src/feature/cuda/integer_ssim/ssim_score.cu": 1,
         "core/src/feature/cuda/integer_ssim_cuda.c": 1,
         "core/src/feature/cuda/integer_ssim_cuda.h": 1,
@@ -1026,7 +1025,6 @@
       "sites": {
         "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu": 1,
         "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
-        "core/src/feature/cuda/integer_psnr_hvs_cuda.h": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/cross_backend_vif_diff.py": 1
@@ -1412,7 +1410,6 @@
         ".codex/agents/doc-reviewer.toml": 1,
         ".pre-commit-config.yaml": 1,
         "Makefile": 2,
-        "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
         "core/src/hip/kernel_template.h": 1,
         "scripts/ci/deliverables-check.sh": 2
       },
@@ -1793,6 +1790,7 @@
         "core/src/feature/ciede.c": 4,
         "core/src/feature/cuda/float_vif_cuda.c": 1,
         "core/src/feature/cuda/integer_adm_cuda.c": 1,
+        "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
         "core/src/feature/cuda/ssim_cuda.c": 1,
         "core/src/feature/cuda/ssimulacra2_cuda.c": 3,
         "core/src/feature/delta_e_itp.c": 2,
@@ -2995,7 +2993,6 @@
     "0453": {
       "sites": {
         "core/src/feature/cuda/integer_psnr_cuda.c": 2,
-        "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
         "core/src/feature/cuda/integer_ssim_cuda.c": 1,
         "core/src/feature/hip/integer_psnr_hip.c": 3,
         "core/src/feature/metal/integer_psnr_metal.mm": 1,
@@ -4509,6 +4506,7 @@
         "core/src/feature/cuda/integer_adm/adm_cm.cu": 1,
         "core/src/feature/cuda/integer_adm/adm_dwt2.cu": 1,
         "core/src/feature/cuda/integer_adm_cuda.c": 2,
+        "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
         "scripts/dev/check-cuda-extern-c.sh": 1
       },
       "target": "0747-cuda-extern-c-sweep.md"
@@ -4531,7 +4529,6 @@
     "0754": {
       "sites": {
         "core/src/feature/cuda/integer_adm/adm_csf.cu": 2,
-        "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu": 1,
         "core/src/feature/cuda/integer_ssim/ssim_score.cu": 2
       },
       "target": "0754-cuda-ssim-vert-combine-ldg-pinned-leak.md"
@@ -4560,12 +4557,6 @@
         "core/src/feature/cuda/integer_adm/adm_csf.cu": 2
       },
       "target": "0763-cuda-adm-decouple-ldg.md"
-    },
-    "0764": {
-      "sites": {
-        "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu": 2
-      },
-      "target": "0764-psnr-hvs-ldg-launch-bounds.md"
     },
     "0768": {
       "sites": {
@@ -6175,6 +6166,7 @@
         "core/test/test_cuda_adm_parity.c": 1,
         "core/test/test_cuda_cambi_parity.c": 1,
         "core/test/test_cuda_drain_batch.c": 5,
+        "core/test/test_cuda_psnr_hvs_parity.c": 1,
         "core/test/test_cuda_runtime_unwind.c": 1,
         "core/test/test_cuda_single_frame_flush.c": 3,
         "core/test/test_delta_e_itp.c": 1,
@@ -6781,12 +6773,6 @@
         "core/src/feature/hip/speed_temporal_hip.c": 1
       },
       "target": "1202-cuda-speed-chroma-4k-launch-bounds.md"
-    },
-    "1203": {
-      "sites": {
-        "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1
-      },
-      "target": "1203-cuda-psnr-hvs-enable-chroma-default.md"
     },
     "1204": {
       "sites": {
@@ -7906,6 +7892,8 @@
     },
     "1369": {
       "sites": {
+        "core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu": 2,
+        "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 2,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 3,

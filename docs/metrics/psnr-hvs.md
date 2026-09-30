@@ -58,6 +58,39 @@ CPU / CUDA / HIP / SYCL on odd-dimension frames. (The SYCL path previously
 floored the chroma dimensions, dropping the last chroma column/row on odd
 inputs and diverging from the other backends.)
 
+## GPU twins
+
+### Sample conversion
+
+The CUDA (`psnr_hvs_cuda`) and SYCL (`psnr_hvs_sycl`,
+[ADR-1369](../adr/1369-sycl-shared-planes-light-twins.md)) twins read the raw
+integer samples of the device pictures at every supported depth, 8 to 12 bits
+(every backend rejects deeper input, like the CPU extractor). Two threads share
+each 8x8 block, one per image; the DCT runs in shared (local) memory, and one
+launch covers every plane. Each block's float sum goes to a partials buffer, and
+the host adds each plane's partials in block order. 4:0:0 input is scored on luma
+only, as on the CPU.
+
+`psnr_hvs_cuda` returns the same values, bit for bit, as the host-conversion twin
+it replaced, on the Netflix 576x324 pair, on 1920x1080 and on 3840x2160 content,
+except at 9 and 11 bits, where that twin was wrong (-1.57 dB and NaN on a
+64x48 test picture whose CPU scores are 22.47 and 33.97 dB).
+
+### Difference to the CPU extractor at large frame sizes
+
+The CPU extractor (`third_party/xiph/psnr_hvs.c`, `calc_psnrhvs()`) adds every
+masked coefficient error of a plane to one running `float`, about 10.8 million
+terms for a 3840x2160 luma plane. Its rounding error grows with the frame: on 22
+frames of the 3840x2160 Big Buck Bunny fixture that
+[docs/state.md](../state.md) uses, the CPU values are up to 1.1e-2 dB from the
+same sum taken in `double`, while `psnr_hvs_cuda` is within 5.1e-5 dB of it. The
+difference between a GPU twin and the CPU at that size is therefore mostly the
+CPU's. It exceeds the 3.34e-3 dB that
+[ADR-1361](../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md) allows at
+3840x2160 on this content; `T-PSNR-HVS-CPU-FLOAT-SUM-4K-2026-09-30` tracks it. The
+CPU extractor keeps its `float` sum because the Netflix golden values of
+`python/test/third_party/xiph/vmafexec_feature_extractor_test.py` pin it.
+
 ## See also
 
 - [Features](features.md) - full feature extractor reference

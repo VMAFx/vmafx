@@ -184,7 +184,7 @@ Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/ski
   per-scale partials buffers so all DtoH copies could enqueue back-to-back
   on the same stream ([ADR-0271](../../adr/0271-cuda-drain-batch-ms-ssim.md));
   PSNR-HVS follows the same submit-side readback + `lc.finished` registration
-  pattern for its three plane partial buffers.
+  pattern for its unified partial buffer.
   Bit-exactness is preserved (same kernels, same stream order — only the
   host wait point moves).
   **Note**: `motion_cuda` no longer participates in the drain batch (ADR-0845).
@@ -367,13 +367,18 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   passes `0` for the new trailing `channel` argument (Y-plane only,
   preserving CUDA pre-port behaviour). UV-plane motion on GPU is a
   follow-up tracked in [docs/state.md](../../state.md).
-- **`psnr_hvs_cuda` DCT scheduling** — the backend keeps the
-  established places=3 cross-backend contract by leaving the float
-  means, variances, masking, and masked-error accumulation in
-  thread-0 CPU scan order. The 8×8 integer DCT itself is parallelised
-  across the first eight CUDA threads inside each block; this is a
-  scheduling optimisation only and does not change emitted feature
-  names or CLI/API usage.
+- **`psnr_hvs_cuda` reads the device pictures directly** (closes
+  `T-CUDA-PSNR-HVS-HOST-ROUNDTRIP-2026-09-29`, the CUDA port of
+  [ADR-1369](../../adr/1369-sycl-shared-planes-light-twins.md)) — no host copy,
+  host conversion or float upload per frame. The kernel reads the raw 8- to
+  12-bit samples with the picture pitch, runs two threads per 8x8 block (one per
+  image, exchanging their statistics with `__shfl_xor_sync`) with the DCT in
+  shared memory, and covers every plane in one launch; the host sums each plane's
+  block partials in block order in `float`. Output is bit-identical to the
+  previous twin except at 9 and 11 bits, which it used to score wrongly. On an
+  RTX 4090 a 3840x2160 frame takes 3.20 ms instead of 18.28 ms. At 3840x2160 the
+  CPU extractor's own `float` sum sets the difference to the CPU; see
+  [the psnr_hvs page](../../metrics/psnr-hvs.md#difference-to-the-cpu-extractor-at-large-frame-sizes).
 - **SSIMULACRA 2** — `ssimulacra2_cuda` shipped per
   [ADR-0206](../../adr/0206-ssimulacra2-cuda-sycl.md) (hybrid
   host/GPU pipeline, IIR fatbin pinned with `--fmad=false`). The

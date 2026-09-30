@@ -199,45 +199,32 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   parameter"](../../AGENTS.md).
 
 - **`integer_psnr_hvs_cuda.c` participates in engine-scope CUDA
-  drain batch.** Its `submit_fex_cuda` queues all three plane partial
-  DtoH copies on `s->lc.str`, records `s->lc.finished` via
-  `vmaf_cuda_kernel_submit_post_record`, registers lifecycle
-  with `drain_batch`. Its `collect_fex_cuda` must call
-  `vmaf_cuda_kernel_collect_wait` before reading `h_partials[]`;
-  reintroducing raw `cuMemcpyDtoHAsync` + `cuStreamSynchronize` in
-  collect reopens T-GPU-OPT-3's per-frame sync stall. Scheduling
-  change is CUDA-only, does not require SYCL / Vulkan twin edits,
-  because it does not alter kernel math or emitted metrics.
+  drain batch.** `submit_fex_cuda` queues one DtoH copy of the block
+  partials (`s->rb`) on `s->lc.str`, then
+  `vmaf_cuda_kernel_submit_post_record`. `collect_fex_cuda` calls
+  `vmaf_cuda_kernel_collect_wait` before reading `s->rb.host_pinned`;
+  raw `cuStreamSynchronize` in collect reopens T-GPU-OPT-3's per-frame
+  stall. No host copy, host conversion or upload of the planes per frame
+  (T-CUDA-PSNR-HVS-HOST-ROUNDTRIP-2026-09-29); do not reintroduce one.
 
 - **`integer_psnr_hvs_cuda.c` honours `enable_chroma` option parity** (mirrors
-  ADR-0453 on psnr_hvs surface). `enable_chroma` option (default
-  `false`) clamps `n_planes` to 1 in `init_fex_cuda` when set to `false`;
-  YUV400P sources always force `n_planes=1` regardless of option.
-  All plane loops (`upload_frame`, `launch_plane_kernels`,
-  `enqueue_partials_readback`, `collect_fex_cuda`, `close_fex_cuda`) iterate
-  over `s->n_planes`, not compile-time constant `PSNR_HVS_NUM_PLANES`.
-  Vulkan and SYCL twins do not yet carry this option; add it there in
-  lockstep if combined-score formula diverges. `collect_fex_cuda`
-  combined-score path emits luma dB only when `n_planes == 1`.
+  ADR-0453 on psnr_hvs surface). `enable_chroma` (default `true`,
+  ADR-1203) clamps `n_planes` to 1 when `false`; YUV400P always forces
+  `n_planes = 1` (`configure_hvs_geometry`), as the CPU extractor does.
+  Plane loops iterate `s->n_planes`, not `PSNR_HVS_NUM_PLANES`; the combined
+  score is luma only when `n_planes == 1`.
 
-- **`integer_psnr_hvs/psnr_hvs_score.cu` parallelises only integer
-  DCT passes.** First eight CUDA threads perform two 8-point
-  DCT passes over shared memory; all float means, variance, masking,
-  and final masked-error accumulation remain thread-0 serial in CPU
-  scan order. Do not move float reductions into warp or block
-  reductions without new numeric-contract ADR and refreshed
-  cross-backend tolerance row.
-
-- **`integer_psnr_hvs/psnr_hvs_score.cu` uses `__ldg()` for tile loads**
-  (ADR-0764). `const float *__restrict__ ref_buf` and `dist_buf`
-  extracted from `VmafCudaBuffer` struct arguments once before
-  cooperative tile load; `__ldg(&ref_buf[src_idx])` and
-  `__ldg(&dist_buf[src_idx])` route 128 per-block reads through
-  L1 read-only texture cache. `__launch_bounds__(64)` set to
-  match actual 8x8 block dispatch. Do not revert to plain
-  `ref_buf[src_idx]` or pass VmafCudaBuffer by-value reads without
-  first verifying compiler still emits LDG.E.CONSTANT in SASS
-  (via `cuobjdump --dump-sass`).
+- **`integer_psnr_hvs/psnr_hvs_score.cu` reads raw device samples**
+  (CUDA port of ADR-1369). Two threads per 8x8 block (even thread =
+  reference, odd = distorted), raw 8- to 12-bit samples via the picture
+  pitch (`hvs_load_block`; no depth scaling, T-CUDA-PSNR-HVS-ODD-BPC-2026-09-30),
+  DCT in shared memory, `__shfl_xor_sync` swaps variance ratio + masking
+  energy, reference thread scores the block. Tail threads run block 0 and
+  never store, so the whole warp reaches the shuffle. Per-block float
+  expressions = the previous thread-0 kernel's (output bit-identical to
+  it); `reduce_hvs_planes` sums each plane's partials in block order in
+  `float` (the sum ADR-1361 calibrated). Changing either moves scores:
+  numeric-contract ADR + tolerance review first.
 
 - **`integer_cambi_cuda.c` + `integer_cambi/cambi_score.cu` are
   device-resident since ADR-1379** (was Strategy II hybrid, ADR-0360).

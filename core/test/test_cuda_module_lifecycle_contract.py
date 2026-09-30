@@ -50,7 +50,6 @@ EXPECTED_BUFFER_OWNERS = {
     "integer_motion_cuda.c",
     "integer_motion_v2_cuda.c",
     "integer_ms_ssim_cuda.c",
-    "integer_psnr_hvs_cuda.c",
     "integer_ssim_cuda.c",
     "integer_vif_cuda.c",
     "speed_cuda_pipeline.c",

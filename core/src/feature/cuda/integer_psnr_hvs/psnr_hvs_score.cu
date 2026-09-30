@@ -4,26 +4,20 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
  *  CUDA compute kernel for the psnr_hvs feature extractor
- *  (T7-23 / batch 2 part 3b / ADR-0188 / ADR-0191). Mirrors
- *  the Vulkan psnr_hvs.comp byte-for-byte modulo language
- *  differences. One CUDA kernel, one block per output 8×8
- *  block (step=7), 64 threads/block.
+ *  (T7-23 / batch 2 part 3b / ADR-0188 / ADR-0191 / ADR-1369).
  *
- *  Cooperative load + thread-0-serial float reductions matching CPU's
- *  linear i,j summation order (same precision strategy as the
- *  Vulkan kernel: lock per-block bit-order to CPU's calc_psnrhvs
- *  computation pattern). The two integer DCT passes are row/column
- *  parallel across the first eight CUDA threads; masking and float
- *  accumulation stay on thread 0 to preserve the established
- *  reduction order.
+ *  Port of ADR-1369: reads raw samples directly from device picture planes
+ *  with pitched row strides. Two threads per 8x8 block (one reference, one
+ *  distorted), warp-shuffle exchange of block stats, in-place integer DCT
+ *  in shared memory, and one launch across all active planes into a single
+ *  partials buffer. The block arithmetic is the previous CUDA kernel's, so
+ *  every block score is bit-identical to it. It is not the CPU's to the bit:
+ *  the masking threshold takes a float square root where calc_psnrhvs()
+ *  takes a double one, and nvcc contracts where the CPU build does not.
  */
 
-#include "cuda_helper.cuh"
+#include <cuda_runtime.h>
 #include "cuda/integer_psnr_hvs_cuda.h"
-#include "common.h"
-
-#define BLOCK_DIM 8
-#define BLOCK_SIZE (BLOCK_DIM * BLOCK_DIM)
 
 extern "C" {
 
@@ -74,17 +68,14 @@ __device__ static const float CSF_TABLES[3][64] = {
      0.478717061273f, 0.393021669543f, 0.330555063063f, 0.285345396658f}};
 
 /* Round-toward-zero right shift — matches OD_UNBIASED_RSHIFT32
- * macro in xiph/psnr_hvs.c. C/C++ signed `>>` of negatives is
- * implementation-defined, typically arithmetic shift (rounds
- * toward -inf). Adding the sign bit shifted to the low position
- * before the shift biases negatives toward zero. */
+ * macro in xiph/psnr_hvs.c. */
 __device__ static inline int od_dct_rshift(int a, int b)
 {
     return (int)(((unsigned int)a >> (32 - b)) + (unsigned int)a) >> b;
 }
 
 /* Forward 8-point DCT — port of od_bin_fdct8 from
- * libvmaf/src/feature/third_party/xiph/psnr_hvs.c:72. */
+ * libvmaf/src/feature/third_party/xiph/psnr_hvs.c. */
 __device__ static void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4, int &y5, int &y6,
                                     int &y7, int x0, int x1, int x2, int x3, int x4, int x5, int x6,
                                     int x7)
@@ -97,17 +88,16 @@ __device__ static void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4,
     int t3 = x5;
     int t5 = x6;
     int t1 = x7;
-    int t1h, t4h, t6h;
     t1 = t0 - t1;
-    t1h = od_dct_rshift(t1, 1);
+    const int t1h = od_dct_rshift(t1, 1);
     t0 -= t1h;
     t4 += t5;
-    t4h = od_dct_rshift(t4, 1);
+    const int t4h = od_dct_rshift(t4, 1);
     t5 -= t4h;
     t3 = t2 - t3;
     t2 -= od_dct_rshift(t3, 1);
     t6 += t7;
-    t6h = od_dct_rshift(t6, 1);
+    const int t6h = od_dct_rshift(t6, 1);
     t7 = t6h - t7;
     t0 += t6h;
     t6 = t0 - t6;
@@ -142,215 +132,211 @@ __device__ static void od_bin_fdct8(int &y0, int &y1, int &y2, int &y3, int &y4,
     y7 = t7;
 }
 
-__device__ static void od_bin_fdct8x8_parallel(int blk[64], int z[64], unsigned lane)
+__device__ static inline void hvs_fdct8_column(int *slm, size_t base, size_t i)
 {
-    /* Pass 1: read input column i, write z[8i + 0..7] = column DCT. */
-    if (lane < 8u) {
-        int y0, y1, y2, y3, y4, y5, y6, y7;
-        od_bin_fdct8(y0, y1, y2, y3, y4, y5, y6, y7, blk[0 * 8 + lane], blk[1 * 8 + lane],
-                     blk[2 * 8 + lane], blk[3 * 8 + lane], blk[4 * 8 + lane], blk[5 * 8 + lane],
-                     blk[6 * 8 + lane], blk[7 * 8 + lane]);
-        z[lane * 8 + 0] = y0;
-        z[lane * 8 + 1] = y1;
-        z[lane * 8 + 2] = y2;
-        z[lane * 8 + 3] = y3;
-        z[lane * 8 + 4] = y4;
-        z[lane * 8 + 5] = y5;
-        z[lane * 8 + 6] = y6;
-        z[lane * 8 + 7] = y7;
-    }
-    __syncthreads();
-
-    /* Pass 2: read column i of z, write blk[8i + 0..7] = 2-D DCT row. */
-    if (lane < 8u) {
-        int y0, y1, y2, y3, y4, y5, y6, y7;
-        od_bin_fdct8(y0, y1, y2, y3, y4, y5, y6, y7, z[0 * 8 + lane], z[1 * 8 + lane],
-                     z[2 * 8 + lane], z[3 * 8 + lane], z[4 * 8 + lane], z[5 * 8 + lane],
-                     z[6 * 8 + lane], z[7 * 8 + lane]);
-        blk[lane * 8 + 0] = y0;
-        blk[lane * 8 + 1] = y1;
-        blk[lane * 8 + 2] = y2;
-        blk[lane * 8 + 3] = y3;
-        blk[lane * 8 + 4] = y4;
-        blk[lane * 8 + 5] = y5;
-        blk[lane * 8 + 6] = y6;
-        blk[lane * 8 + 7] = y7;
-    }
-    __syncthreads();
+    int y0, y1, y2, y3, y4, y5, y6, y7;
+    od_bin_fdct8(y0, y1, y2, y3, y4, y5, y6, y7, slm[base + i], slm[base + 8 + i],
+                 slm[base + 16 + i], slm[base + 24 + i], slm[base + 32 + i], slm[base + 40 + i],
+                 slm[base + 48 + i], slm[base + 56 + i]);
+    slm[base + i] = y0;
+    slm[base + 8 + i] = y1;
+    slm[base + 16 + i] = y2;
+    slm[base + 24 + i] = y3;
+    slm[base + 32 + i] = y4;
+    slm[base + 40 + i] = y5;
+    slm[base + 48 + i] = y6;
+    slm[base + 56 + i] = y7;
 }
 
-__device__ static inline int sample_to_int(float v, int bpc)
+__device__ static inline void hvs_fdct8_row(int *slm, size_t base, size_t i)
 {
-    /* picture_copy normalises uint sample → float in [0, 255]
-     * (8-bit: scale=1; 10-bit: /4; 12-bit: /16). Reverse here. */
-    if (bpc == 8)
-        return (int)(v + 0.5f);
-    if (bpc == 10)
-        return (int)(v * 4.0f + 0.5f);
-    return (int)(v * 16.0f + 0.5f);
+    const size_t row = base + (i * 8);
+    int y0, y1, y2, y3, y4, y5, y6, y7;
+    od_bin_fdct8(y0, y1, y2, y3, y4, y5, y6, y7, slm[row + 0], slm[row + 1], slm[row + 2],
+                 slm[row + 3], slm[row + 4], slm[row + 5], slm[row + 6], slm[row + 7]);
+    slm[row + 0] = y0;
+    slm[row + 1] = y1;
+    slm[row + 2] = y2;
+    slm[row + 3] = y3;
+    slm[row + 4] = y4;
+    slm[row + 5] = y5;
+    slm[row + 6] = y6;
+    slm[row + 7] = y7;
 }
 
-/* psnr_hvs kernel: one CUDA block per output 8×8 image block.
- * Cooperative load (64 threads), then thread 0 runs the float
- * means / variances in CPU's exact i,j summation order. The first
- * eight threads run the integer DCT passes in parallel; thread 0
- * resumes for the masking and final float reduction so the
- * established CUDA/Vulkan numeric contract stays unchanged.
- *
- * __launch_bounds__(64): hints nvcc to budget registers for
- * 64-thread blocks (8×8); per ADR-0764 / ADR-0754 precedent. */
-__launch_bounds__(64) __global__
-    void psnr_hvs(VmafCudaBuffer ref_in, VmafCudaBuffer dist_in, VmafCudaBuffer partials_out,
-                  unsigned width, unsigned height, unsigned num_blocks_x, unsigned num_blocks_y,
-                  int plane, int bpc)
+__device__ static inline void hvs_fdct8x8(int *slm, size_t base)
 {
-    __shared__ int s_ref[64];
-    __shared__ int s_dist[64];
-    __shared__ int dct_s[64];
-    __shared__ int dct_d[64];
-    __shared__ int z_s[64];
-    __shared__ int z_d[64];
-
-    const unsigned blk_x = blockIdx.x;
-    const unsigned blk_y = blockIdx.y;
-    const unsigned lx = threadIdx.x;
-    const unsigned ly = threadIdx.y;
-    const unsigned local_idx = ly * 8u + lx;
-
-    const unsigned x0 = blk_x * 7u;
-    const unsigned y0 = blk_y * 7u;
-    const bool valid_block =
-        (blk_x < num_blocks_x && blk_y < num_blocks_y && x0 + 7u < width && y0 + 7u < height);
-
-    /* Extract raw __restrict__ pointers once before the tile load so
-     * the compiler can route all 64 reads through the read-only
-     * texture cache path via __ldg().  Passing VmafCudaBuffer by value
-     * hides the pointer from the compiler's non-coherent-load analysis;
-     * the extraction makes the alias-free invariant visible (ADR-0764). */
-    const float *__restrict__ ref_buf = reinterpret_cast<const float *>(ref_in.data);
-    const float *__restrict__ dist_buf = reinterpret_cast<const float *>(dist_in.data);
-
-    int my_ref = 0;
-    int my_dist = 0;
-    if (valid_block) {
-        const unsigned sx = x0 + lx;
-        const unsigned sy = y0 + ly;
-        const unsigned src_idx = sy * width + sx;
-        my_ref = sample_to_int(__ldg(&ref_buf[src_idx]), bpc);
-        my_dist = sample_to_int(__ldg(&dist_buf[src_idx]), bpc);
+#pragma unroll
+    for (size_t i = 0; i < 8; i++) {
+        hvs_fdct8_column(slm, base, i);
     }
-    s_ref[local_idx] = my_ref;
-    s_dist[local_idx] = my_dist;
-    dct_s[local_idx] = my_ref;
-    dct_d[local_idx] = my_dist;
-    __syncthreads();
+#pragma unroll
+    for (size_t i = 0; i < 8; i++) {
+        hvs_fdct8_row(slm, base, i);
+    }
+}
 
-    float s_means[4] = {0.f, 0.f, 0.f, 0.f};
-    float d_means[4] = {0.f, 0.f, 0.f, 0.f};
-    float s_vars[4] = {0.f, 0.f, 0.f, 0.f};
-    float d_vars[4] = {0.f, 0.f, 0.f, 0.f};
-    float s_gmean = 0.f, d_gmean = 0.f;
-    float s_gvar = 0.f, d_gvar = 0.f;
-    float s_mc = 0.f, d_mc = 0.f;
+struct HvsLaneBlock {
+    const void *src;
+    size_t stride;
+    size_t origin_x;
+    size_t origin_y;
+    unsigned block;
+    int plane;
+};
 
-    if (local_idx == 0u) {
-        /* Pass 1: means. */
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                s_gmean += (float)s_ref[i * 8 + j];
-                d_gmean += (float)s_dist[i * 8 + j];
-                s_means[sub] += (float)s_ref[i * 8 + j];
-                d_means[sub] += (float)s_dist[i * 8 + j];
+__device__ static inline HvsLaneBlock hvs_locate(const PsnrHvsKernelArgs &args, unsigned block,
+                                                 bool is_dist)
+{
+    int plane = 0;
+#pragma unroll
+    for (int p = 1; p < PSNR_HVS_NUM_PLANES; p++) {
+        if (p < (int)args.n_planes && block >= args.plane[p].first_block) {
+            plane = p;
+        }
+    }
+    const PsnrHvsPlaneArgs &geometry = args.plane[plane];
+    const unsigned in_plane = block - geometry.first_block;
+    const size_t origin_x = (size_t)(in_plane % geometry.blocks_x) * PSNR_HVS_STEP;
+    const size_t origin_y = (size_t)(in_plane / geometry.blocks_x) * PSNR_HVS_STEP;
+    return HvsLaneBlock{is_dist ? geometry.dist : geometry.ref,
+                        is_dist ? geometry.dist_stride : geometry.ref_stride,
+                        origin_x,
+                        origin_y,
+                        block,
+                        plane};
+}
+
+__device__ static inline void hvs_load_block(int *slm, size_t base, const HvsLaneBlock &lane,
+                                             bool wide)
+{
+    for (size_t row = 0; row < 8; row++) {
+        const size_t y = lane.origin_y + row;
+        // SAFETY: lane.src points to valid GPU frame buffer, stride is row stride in bytes.
+        const char *row_ptr = (const char *)lane.src + y * lane.stride;
+        for (size_t col = 0; col < 8; col++) {
+            const size_t x = lane.origin_x + col;
+            slm[base + row * 8 + col] =
+                wide ? (int)((const uint16_t *)row_ptr)[x] : (int)((const uint8_t *)row_ptr)[x];
+        }
+    }
+}
+
+__device__ static inline float hvs_variance_ratio(const int *block, size_t base)
+{
+    float means[4] = {0.f, 0.f, 0.f, 0.f};
+    float global_mean = 0.f;
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            const int subgroup = ((row & 12) >> 2) + ((col & 12) >> 1);
+            const int index = (row * 8) + col;
+            global_mean += (float)block[base + index];
+            means[subgroup] += (float)block[base + index];
+        }
+    }
+    global_mean /= 64.f;
+    means[0] /= 16.f;
+    means[1] /= 16.f;
+    means[2] /= 16.f;
+    means[3] /= 16.f;
+    float variances[4] = {0.f, 0.f, 0.f, 0.f};
+    float global_variance = 0.f;
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            const int subgroup = ((row & 12) >> 2) + ((col & 12) >> 1);
+            const int index = (row * 8) + col;
+            const float global_delta = (float)block[base + index] - global_mean;
+            const float subgroup_delta = (float)block[base + index] - means[subgroup];
+            global_variance += global_delta * global_delta;
+            variances[subgroup] += subgroup_delta * subgroup_delta;
+        }
+    }
+    global_variance *= 1.f / 63.f * 64.f;
+    variances[0] *= 1.f / 15.f * 16.f;
+    variances[1] *= 1.f / 15.f * 16.f;
+    variances[2] *= 1.f / 15.f * 16.f;
+    variances[3] *= 1.f / 15.f * 16.f;
+    if (global_variance > 0.f) {
+        global_variance =
+            (variances[0] + variances[1] + variances[2] + variances[3]) / global_variance;
+    }
+    return global_variance;
+}
+
+__device__ static inline float hvs_mask_at(int plane, int index)
+{
+    const float scaled = CSF_TABLES[plane][index] * 0.3885746225901003f;
+    return scaled * scaled;
+}
+
+__device__ static inline float hvs_mask_energy(const int *block, size_t base, int plane)
+{
+    float energy = 0.f;
+    for (int row = 0; row < 8; row++) {
+        const int first_col = (row == 0) ? 1 : 0;
+        for (int col = first_col; col < 8; col++) {
+            const int index = (row * 8) + col;
+            const int coefficient = block[base + index];
+            energy += (float)(coefficient * coefficient) * hvs_mask_at(plane, index);
+        }
+    }
+    return energy;
+}
+
+__device__ static inline float hvs_error(const int *block, size_t ref_base, size_t dist_base,
+                                         float threshold, int plane)
+{
+    float error_sum = 0.f;
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            const int index = (row * 8) + col;
+            const float csf = CSF_TABLES[plane][index];
+            float error = fabsf((float)block[ref_base + index] - (float)block[dist_base + index]);
+            if (row != 0 || col != 0) {
+                const float masking = threshold / hvs_mask_at(plane, index);
+                error = error < masking ? 0.f : error - masking;
             }
-        }
-        s_gmean /= 64.f;
-        d_gmean /= 64.f;
-        for (int i = 0; i < 4; i++)
-            s_means[i] /= 16.f;
-        for (int i = 0; i < 4; i++)
-            d_means[i] /= 16.f;
-
-        /* Pass 2: variances. */
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                const int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                const float ds = (float)s_ref[i * 8 + j] - s_gmean;
-                const float dd = (float)s_dist[i * 8 + j] - d_gmean;
-                s_gvar += ds * ds;
-                d_gvar += dd * dd;
-                const float qs = (float)s_ref[i * 8 + j] - s_means[sub];
-                const float qd = (float)s_dist[i * 8 + j] - d_means[sub];
-                s_vars[sub] += qs * qs;
-                d_vars[sub] += qd * qd;
-            }
-        }
-        s_gvar *= 1.f / 63.f * 64.f;
-        d_gvar *= 1.f / 63.f * 64.f;
-        for (int i = 0; i < 4; i++)
-            s_vars[i] *= 1.f / 15.f * 16.f;
-        for (int i = 0; i < 4; i++)
-            d_vars[i] *= 1.f / 15.f * 16.f;
-        if (s_gvar > 0.f)
-            s_gvar = (s_vars[0] + s_vars[1] + s_vars[2] + s_vars[3]) / s_gvar;
-        if (d_gvar > 0.f)
-            d_gvar = (d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar;
-    }
-
-    /* Integer DCT in place, parallel across the first eight threads. */
-    od_bin_fdct8x8_parallel(dct_s, z_s, local_idx);
-    od_bin_fdct8x8_parallel(dct_d, z_d, local_idx);
-
-    if (local_idx != 0u)
-        return;
-
-    /* Pass 3: per-coefficient mask·dct² accumulation, skipping DC. */
-    float mask[64];
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            const float c = CSF_TABLES[plane][i * 8 + j];
-            const float m = c * 0.3885746225901003f;
-            mask[i * 8 + j] = m * m;
+            error_sum += (error * csf) * (error * csf);
         }
     }
-    for (int i = 0; i < 8; i++) {
-        const int j0 = (i == 0) ? 1 : 0;
-        for (int j = j0; j < 8; j++) {
-            const int sq = dct_s[i * 8 + j] * dct_s[i * 8 + j];
-            s_mc += (float)sq * mask[i * 8 + j];
-        }
-    }
-    for (int i = 0; i < 8; i++) {
-        const int j0 = (i == 0) ? 1 : 0;
-        for (int j = j0; j < 8; j++) {
-            const int sq = dct_d[i * 8 + j] * dct_d[i * 8 + j];
-            d_mc += (float)sq * mask[i * 8 + j];
-        }
-    }
-    float sm = sqrtf(s_mc * s_gvar) / 32.f;
-    const float dm = sqrtf(d_mc * d_gvar) / 32.f;
-    if (dm > sm)
-        sm = dm;
-    const float thresh = sm;
+    return error_sum;
+}
 
-    /* Pass 4: per-coefficient masked-error contribution. */
-    float ret = 0.f;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            const float c = CSF_TABLES[plane][i * 8 + j];
-            float err = fabsf((float)dct_s[i * 8 + j] - (float)dct_d[i * 8 + j]);
-            if (i != 0 || j != 0) {
-                const float t = thresh / mask[i * 8 + j];
-                err = err < t ? 0.f : err - t;
-            }
-            ret += (err * c) * (err * c);
-        }
+__device__ static inline float score_hvs_block(const int *block, size_t ref_base, float ref_ratio,
+                                               float ref_energy, float dist_ratio,
+                                               float dist_energy, int plane)
+{
+    float threshold = sqrtf(ref_energy * ref_ratio) / 32.f;
+    const float dist_threshold = sqrtf(dist_energy * dist_ratio) / 32.f;
+    if (dist_threshold > threshold) {
+        threshold = dist_threshold;
     }
-    if (!valid_block)
-        ret = 0.f;
+    return hvs_error(block, ref_base, ref_base + PSNR_HVS_LANE_STRIDE, threshold, plane);
+}
 
-    const unsigned slot = blk_y * num_blocks_x + blk_x;
-    reinterpret_cast<float *>(partials_out.data)[slot] = ret;
+__launch_bounds__(64) __global__ void psnr_hvs(PsnrHvsKernelArgs args)
+{
+    __shared__ int s_block[PSNR_HVS_WG * PSNR_HVS_LANE_STRIDE];
+
+    const size_t id = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const bool active = id < 2U * (size_t)args.total_blocks;
+    const bool is_dist = (id & 1U) != 0U;
+    const HvsLaneBlock lane = hvs_locate(args, active ? (unsigned)(id >> 1) : 0U, is_dist);
+    const size_t base = (size_t)threadIdx.x * PSNR_HVS_LANE_STRIDE;
+
+    hvs_load_block(s_block, base, lane, args.wide != 0);
+    const float ratio = hvs_variance_ratio(s_block, base);
+    hvs_fdct8x8(s_block, base);
+    const float energy = hvs_mask_energy(s_block, base, lane.plane);
+
+    const float partner_ratio = __shfl_xor_sync(0xffffffff, ratio, 1);
+    const float partner_energy = __shfl_xor_sync(0xffffffff, energy, 1);
+    __syncwarp();
+
+    if (active && !is_dist) {
+        args.partials[lane.block] = score_hvs_block(s_block, base, ratio, energy, partner_ratio,
+                                                    partner_energy, lane.plane);
+    }
 }
 
 } /* extern "C" */
