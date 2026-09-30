@@ -10,9 +10,10 @@
 # call that takes it (vmaf_use_feature, vmaf_model_feature_overload,
 # vmaf_model_collection_feature_overload). A run that stopped before that call,
 # because an input could not be opened, the frame geometry was invalid, a model
-# or an earlier feature failed its dimension check, or the extractor name was
-# unknown, used to exit with the dictionaries still allocated: LeakSanitizer
-# reported 158 bytes for `--feature cambi=full_ref=true`.
+# or an earlier feature failed its dimension check, the extractor name was
+# unknown, or the feature was pinned to a backend the run did not start, used
+# to exit with the dictionaries still allocated: LeakSanitizer reported 158
+# bytes for `--feature cambi=full_ref=true`.
 #
 # Each case below must exit non-zero with its diagnostic and, in an ASan build,
 # without a sanitizer report. The last case runs to completion and checks that
@@ -51,7 +52,8 @@ fail() {
 }
 
 # run_case NAME EXPECTED_STATUS DIAGNOSTIC ARGS...
-# EXPECTED_STATUS is "ok" (exit 0) or "error" (non-zero, not a signal).
+# EXPECTED_STATUS is "ok" (exit 0), "error" (non-zero, not a signal) or an
+# exact exit code.
 run_case() {
   name=$1
   expected=$2
@@ -64,6 +66,8 @@ run_case() {
   fi
   if [ "${expected}" = "ok" ]; then
     [ "${status}" = "0" ] || fail "${name}: exited ${status}, expected 0"
+  elif [ "${expected}" != "error" ]; then
+    [ "${status}" = "${expected}" ] || fail "${name}: exited ${status}, expected ${expected}"
   else
     [ "${status}" != "0" ] || fail "${name}: exited 0, expected an error"
     if [ "${status}" -gt 128 ] && [ "${status}" -le 192 ]; then
@@ -110,7 +114,14 @@ run_case unknown-option error "unknown option 'no_such_option'" \
   -r "${WORK}/small.yuv" -d "${WORK}/small.yuv" -w 64 -h 64 -p 420 -b 8 \
   --no_prediction --feature "psnr=no_such_option=1"
 
-# 7. A complete run: every dictionary goes to libvmaf and none is freed twice.
+# 7. A backend-pinned twin the run cannot use: --backend cpu starts no GPU
+#    backend, so the CLI refuses psnr_cuda (ADR-0498, exit 100) before it
+#    registers anything. LeakSanitizer used to turn that exit 100 into 1.
+run_case pinned-backend-refused 100 "refusing to silently fall back to CPU" \
+  -r "${WORK}/small.yuv" -d "${WORK}/small.yuv" -w 64 -h 64 -p 420 -b 8 \
+  --backend cpu --no_prediction --feature psnr_cuda=enable_chroma=false
+
+# 8. A complete run: every dictionary goes to libvmaf and none is freed twice.
 run_case complete-run ok "" \
   -r "${WORK}/small.yuv" -d "${WORK}/small.yuv" -w 64 -h 64 -p 420 -b 8 \
   --feature "${FEATURE_OPTS}" --model "path=${MODEL_DIR}/vmaf_v0.6.1.json:${OVERLOAD}" \

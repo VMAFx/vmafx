@@ -65,7 +65,12 @@ tools/
   `vmaf_model_collection_feature_overload()` — clears the settings' pointer
   with `std::exchange` first; a new call site must too, or the run
   double-frees. `use_cli_feature()` restores the options only for an unknown
-  extractor name, the one `-EINVAL` on which libvmaf hands them back.
+  extractor name, the one `-EINVAL` on which libvmaf hands them back; it tells
+  that case apart with a second `vmaf_use_feature()` call without options,
+  which for a known name registers a default-options instance. That is sound
+  only while a registration failure ends the run (the context, instance
+  included, is closed right after); a change that lets the run continue past
+  a failed `--feature` must replace the probe.
   Regression tests: `test_vmaf_option_dict_ownership` (run it in an ASan
   build) and `test_cli_parse` (`release_parsed()`).
 - **`vmaf_roi` sidecar contract** (T6-2b / ADR-0247) is

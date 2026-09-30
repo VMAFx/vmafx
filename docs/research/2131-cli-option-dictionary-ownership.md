@@ -35,14 +35,24 @@ freeing one that libvmaf already took?
   did not reach its call: `open_cli_inputs()` failures (missing file, odd
   height with 4:2:0), `load_cli_models()` failures (a model feature that does
   not fit the frame, before the overloads are applied), and in
-  `register_cli_features()` every feature after the first failure.
+  `register_cli_features()` every feature after the first failure, and the
+  ADR-0498 refusal of a feature pinned to a backend the run did not start
+  (`--backend cpu --feature psnr_cuda=...`), which returns before the
+  hand-off.
 - Measured on master `10f27efe2`, clang 22 ASan build, 64x64 inputs: missing
   input with `--feature psnr=enable_chroma=true` and a
   `--model path=...:vif.vif_enhn_gain_limit=1.0` overload 329 bytes / 8
   allocations; odd height 329; `vmaf_v1.0.16_3d0h` on 64x64 329; failing
   `--feature cambi` before `--feature psnr=enable_chroma=true` 163; unknown
-  extractor with options 158. `--feature psnr=no_such_option=1` and a complete
+  extractor with options 158; `--backend cpu --feature
+  psnr_cuda=enable_chroma=false` 164, where LeakSanitizer also turns the
+  intended exit 100 into 1. `--feature psnr=no_such_option=1` and a complete
   run are clean.
+- Exit codes do not change. Without a sanitizer, master and the fix exit
+  alike on all eight paths the regression test drives (release builds, no
+  LTO): 255 for a missing input, an odd height, an unknown extractor and an
+  unknown option, 234 (`-EINVAL`) for a model or feature that does not fit,
+  100 for the refused pinned backend, 0 for a complete run.
 - The overload dictionary's leak is invisible to the default LeakSanitizer
   scan: a stale pointer in the exit-time stack frames keeps it reachable.
   `LSAN_OPTIONS=use_stacks=0:use_registers=0` reports it; the regression test
@@ -55,8 +65,12 @@ freeing one that libvmaf already took?
   freed). With a NULL dictionary every option setter returns 0, so
   `vmaf_use_feature(vmaf, name, NULL)` fails with `-EINVAL` only for an
   unknown name. The CLI runs that second call only after the first failed
-  with `-EINVAL`; for a known name it registers one more extractor in a
-  context the run is about to close, which `vmaf_close()` releases.
+  with `-EINVAL`; for a known name it registers one more extractor, with
+  default options, in a context the run is about to close, which
+  `vmaf_close()` releases. The probe stays sound only while a registration
+  failure ends the run. A `vmaf_feature_backend_twin()` pre-check cannot
+  replace it: that call returns `-EINVAL` both for an unknown name and for a
+  registered GPU extractor such as `psnr_cuda`.
 
 ## Alternatives explored
 

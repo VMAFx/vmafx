@@ -3171,6 +3171,7 @@
     },
     "0498": {
       "sites": {
+        "core/tools/test/test_vmaf_option_dict_ownership.sh": 1,
         "core/tools/vmaf.cpp": 12,
         "dev/Containerfile": 1,
         "dev/scripts/dev-mcp-entrypoint.sh": 1,

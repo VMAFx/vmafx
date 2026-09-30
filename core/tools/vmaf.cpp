@@ -2291,8 +2291,11 @@ namespace
  * takes them on every path except its argument guards: an -EINVAL for an
  * unknown extractor name hands them back. An option it rejects returns -EINVAL
  * too, after it has freed them, so on -EINVAL the second call (without
- * options) tells the two apart: it fails again only for an unknown name. Any
- * options that stay in the settings are released by cli_free(). */
+ * options) tells the two apart: it fails again only for an unknown name. For a
+ * known name that second call registers a default-options instance, which is
+ * harmless only because a registration failure ends the run and vmaf_close()
+ * destroys it. Any options that stay in the settings are released by
+ * cli_free(). */
 [[nodiscard]] int use_cli_feature(CliRunState *state, CLIFeatureConfig &feature,
                                   const char *extractor)
 {
