@@ -815,7 +815,8 @@ static char *test_motion_one_frame(void)
     static const char *const v2_names[] = {"VMAF_integer_feature_motion2_v2_score",
                                            "VMAF_integer_feature_motion3_v2_score"};
     static const char *const v1_names[] = {"VMAF_integer_feature_motion_sad_score",
-                                           "integer_motion2", "integer_motion3"};
+                                           "VMAF_integer_feature_motion2_score",
+                                           "VMAF_integer_feature_motion3_score"};
     Pair pair;
     bool ran = false;
     mu_assert_msg(pair_run(&pair, &FX_ONE, "motion_v2", "motion_v2_hip", NULL, &ran));
