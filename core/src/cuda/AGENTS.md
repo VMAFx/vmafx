@@ -43,6 +43,17 @@ cuda/
 
 ## Rebase-sensitive invariants
 
+- **Every CUDA picture records the state that allocated it.**
+  `vmaf_cuda_picture_alloc_pinned()` (`picture_cuda.c`) sets
+  `priv->cuda.state = cuda_state` next to `priv->cuda.ctx`, like the device
+  path. Upstream Netflix/vmaf master sets only `ctx`, so its
+  `default_release_pinned_picture()` loads `state->f` through a NULL state and
+  `test_cuda_pic_preallocation` dies with SIGSEGV in the host-pinned case (the
+  fix is upstream PR Netflix/vmaf#1573, hunk (a)). An upstream sync that takes
+  upstream's `vmaf_cuda_picture_alloc_pinned()` keeps the assignment.
+  `test_pinned_picture_release_uses_the_allocating_state`
+  (`core/test/test_cuda_runtime_unwind.c`) fails without it and needs no device.
+
 - **CUDA fatbin kernel header dependency tracking**
   ([ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
   [Research-2106](../../../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):

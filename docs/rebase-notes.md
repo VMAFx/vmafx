@@ -60,6 +60,24 @@
   and row existence contracts against `docs/state.md`.
 - `core/test/test_meson_secret_env_sanitization.py`: `EXPECTED_RUNNER_PATHS` registers
   `scripts/dev/rc3-home-gpu-retest.sh` as an authorized caller of `scripts/ci/run_meson_test.py`.
+## fix/cuda-pic-prealloc-check — the pinned CUDA picture keeps its allocating state (2026-09-30)
+
+- `core/src/cuda/picture_cuda.c` `vmaf_cuda_picture_alloc_pinned()`: keep
+  `priv->cuda.state = cuda_state;`. Upstream Netflix/vmaf master sets only
+  `priv->cuda.ctx` there, and `default_release_pinned_picture()` then loads
+  `state->f` through a NULL state (SIGSEGV in upstream's
+  `test_cuda_pic_preallocation` host-pinned case). The upstream fix is the
+  open Netflix/vmaf#1573, hunk (a). An upstream sync or `port-upstream-commit`
+  that takes upstream's function body must keep the line.
+  `test_pinned_picture_release_uses_the_allocating_state` in
+  `core/test/test_cuda_runtime_unwind.c` fails without it and runs without a
+  device.
+- `core/test/test_cuda_runtime_unwind.c`: fork-only. The allocation checks
+  free what they already allocated before they return,
+  `test_lifecycle_close_preserves_failed_handles_and_first_error` asserts
+  through `check_sync_failed_lifecycle_close()` after its frees, and the
+  legacy runner is split into `_a`, `_b` and `_c`. With these changes the file
+  is clean under clang-tidy (CUDA lane) and cppcheck.
 - No Netflix golden-data, public API or FFmpeg patch impact.
 ## fix/sycl-aot-check-single-target — the AOT image check accepts bare native images (2026-09-30)
 
