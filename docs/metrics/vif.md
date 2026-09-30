@@ -57,6 +57,16 @@ CPU `vif` is checked on the macOS Apple-Silicon CI lane (`places=4`, ADR-0214);
 because Apple GPUs lack fp64 the per-pixel gain is computed in float (the same
 fp64-free trade-off as the SYCL twin, ADR-0220).
 
+Every scale of the integer pyramid reflects its filter taps once, which stays
+inside the plane only from 16 pixels in each dimension up (the table below
+derives the same bound for `float_vif`). `vif_sycl` and `vif_cuda` declare that
+minimum ([ADR-1374](../adr/1374-cuda-integer-tiny-frame-guards.md)): under
+model dispatch, and for `--backend sycl` / `cuda` with `--feature vif`, a
+smaller frame is computed by the CPU `vif` and matches it bit for bit, while
+naming the twin (`--feature vif_cuda`) on such a frame fails with
+`vif_cuda requires width >= 16 and height >= 16`. The HIP and Metal twins do
+not declare it yet (`T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29`).
+
 ### Output features
 
 All features are computed on the luma (Y) plane only.

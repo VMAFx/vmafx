@@ -130,16 +130,18 @@ only `psnr_sycl` implements it.
 bit with every option set: the device only reduces each plane's sum of
 squared errors, and the host turns it into `psnr_*`, `mse_*` and `apsnr_*`
 with the same helpers the CPU extractor uses
-(`core/src/feature/psnr_score.h`). The CUDA, HIP and Metal twins implement
-`enable_chroma` and `uncapped` only. On those backends a model that sets
-`enable_mse`, `enable_apsnr`, `reduced_hbd_peak` or `min_sse` computes `psnr`
-on the CPU instead
+(`core/src/feature/psnr_score.h`). `psnr_cuda` does the same since
+2026-09-30 ([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)). The HIP
+and Metal twins implement `enable_chroma` and `uncapped` only. On those
+backends a model that sets `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` or
+`min_sse` computes `psnr` on the CPU instead
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)), and naming
 the twin with one of these options fails with `unknown option`.
 
-From the CLI, `--backend sycl` runs `--feature psnr` with any of these options
-on `psnr_sycl` ([ADR-1359](../adr/1359-cli-feature-backend-twin.md)); naming
-the twin, `--feature psnr_sycl=...`, does the same:
+From the CLI, `--backend sycl` (or `cuda`) runs `--feature psnr` with any of
+these options on `psnr_sycl` (or `psnr_cuda`)
+([ADR-1359](../adr/1359-cli-feature-backend-twin.md)); naming the twin,
+`--feature psnr_sycl=...`, does the same:
 
 ```bash
 vmaf --reference ref.yuv --distorted dist.yuv \

@@ -24,5 +24,6 @@
 #include "integer_motion.h"
 #include "common.h"
 
-extern const unsigned char motion_score_ptx[];
+/* The motion SAD kernel is shared with motion_v2_cuda; its module is
+ * loaded through integer_motion_sad_cuda.h (ADR-1372). */
 #endif /* _FEATURE_MOTION_CUDA_H_ */

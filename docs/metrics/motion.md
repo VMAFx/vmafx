@@ -61,7 +61,7 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 | AVX2           | Supported | `x86/motion_avx2.c`                           |
 | AVX-512        | Supported | `x86/motion_avx512.c`                         |
 | NEON (AArch64) | Supported | `arm64/motion_neon.c`                         |
-| CUDA           | Supported | `feature/cuda/integer_motion_cuda.c` (not bit-exact, see below) |
+| CUDA           | Supported | `feature/cuda/integer_motion_cuda.c` (CPU arithmetic, ADR-1372) |
 | SYCL           | Supported | `feature/sycl/integer_motion_sycl.cpp` (bit-exact, ADR-1371) |
 | HIP            | Supported | `feature/hip/integer_motion_hip.c` (not bit-exact, see below) |
 | Metal          | Supported | `feature/metal/integer_motion_metal.mm` (not bit-exact, see below) |
@@ -69,12 +69,17 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 The CPU computes the SAD of the blurred difference of the two frames,
 rounding after the vertical and after the horizontal filter pass. The SYCL
 twin does the same and matches the CPU bit for bit
-([ADR-1371](../adr/1371-sycl-motion-diff-first-pipeline.md)). The CUDA, HIP
-and Metal twins still blur each frame and compare the blurred frames, which
-rounds differently. The SYCL twin did the same until 2026-09-29 and its
-`motion2_score` was up to 2.0e-4 off on 17x17 frames and 1.3e-5 on the Netflix
-576x324 pair; expect the same from those three, which have not been measured
-yet (`T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29` and its HIP and Metal rows in
+([ADR-1371](../adr/1371-sycl-motion-diff-first-pipeline.md)). The CUDA twin
+does the same since 2026-09-30: it runs the kernel `motion_v2_cuda` already
+used, and its debug `motion` score is the CPU's (weighted by
+`motion_fps_weight`, capped at `motion_max_val`)
+([ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md)); bit-exactness on
+an NVIDIA GPU is still to be confirmed (`T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`
+in [`state.md`](../state.md) carries the check). The HIP and Metal twins still
+blur each frame and compare the blurred frames, which rounds differently. The
+SYCL twin did the same until 2026-09-29 and its `motion2_score` was up to
+2.0e-4 off on 17x17 frames and 1.3e-5 on the Netflix 576x324 pair; expect the
+same from those two, which have not been measured yet (their rows in
 [`state.md`](../state.md)).
 
 All GPU backends emit `motion2_score` and `motion3_score` in 3-frame window mode.
@@ -257,11 +262,12 @@ SYCL, and HIP backends (ADR-0196). (The Vulkan backend was removed in ADR-0726.)
 
 The GPU twins emit `motion` and `motion2`; `motion3` comes from the CPU
 extractor only. They take `debug`, `motion_force_zero` and `motion_fps_weight`.
-`float_motion_sycl` also takes `motion_max_val` (alias `mmxv`) and, like the
-CPU, scales every score it emits (the debug `motion` too) by
-`motion_fps_weight` before capping it at `motion_max_val`
-([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). On CUDA, HIP and
-Metal a `motion_max_val` setting keeps `float_motion` on the CPU
+`float_motion_sycl` and `float_motion_cuda` also take `motion_max_val`
+(alias `mmxv`) and, like the CPU, scale every score they emit (the debug
+`motion` too) by `motion_fps_weight` before capping it at `motion_max_val`
+([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md),
+[ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)). On HIP and Metal a
+`motion_max_val` setting keeps `float_motion` on the CPU
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)); their debug
 `motion` score is emitted without the fps weight.
 
