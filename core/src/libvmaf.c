@@ -4099,4 +4099,76 @@ int vmaf_context_flush_for_test(VmafContext *vmaf)
     return vmaf ? flush_context(vmaf) : -EINVAL;
 }
 
+int vmaf_backend_twin_verdict_for_test(const VmafFeatureExtractor *twin, const VmafDictionary *opts,
+                                       const VmafPictureConfiguration *pic_cfg,
+                                       const char **unsupported_option)
+{
+    return backend_twin_verdict(twin, opts, pic_cfg, unsupported_option);
+}
+
+unsigned vmaf_context_fake_backend_for_test(VmafContext *vmaf, void *token)
+{
+    if (!vmaf)
+        return 0;
+#if defined(HAVE_SYCL)
+    vmaf->sycl.state = token;
+    return VMAF_FEATURE_EXTRACTOR_SYCL;
+#elif defined(HAVE_CUDA)
+    vmaf->cuda.state.ctx = (CUcontext)token;
+    return VMAF_FEATURE_EXTRACTOR_CUDA;
+#elif defined(HAVE_HIP)
+    vmaf->hip.state = token;
+    return VMAF_FEATURE_EXTRACTOR_HIP;
+#elif defined(HAVE_METAL)
+    vmaf->metal.state = token;
+    return VMAF_FEATURE_EXTRACTOR_METAL;
+#else
+    (void)token;
+    return 0;
+#endif
+}
+
+void vmaf_context_set_gpumask_for_test(VmafContext *vmaf, unsigned gpumask)
+{
+    if (vmaf)
+        vmaf->cfg.gpumask = gpumask;
+}
+
+int vmaf_context_append_registered_feature_extractor_for_test(VmafContext *vmaf,
+                                                              const VmafFeatureExtractor *fex,
+                                                              bool allow_context_fallback)
+{
+    if (!vmaf || !fex)
+        return -EINVAL;
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    if (err)
+        return err;
+    ctx->allow_context_fallback = allow_context_fallback;
+    RegisteredFeatureExtractors *rfe = &(vmaf->registered_feature_extractors);
+    err = feature_extractor_vector_append(rfe, ctx, 0);
+    if (err) {
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+        return err;
+    }
+#ifdef HAVE_CUDA
+    vmaf->rfe_hw_flags_dirty = true;
+#endif
+    return 0;
+}
+
+int vmaf_context_resolve_context_fallbacks_for_test(VmafContext *vmaf,
+                                                    const VmafPictureConfiguration *pic_cfg)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (pic_cfg) {
+        vmaf->pic_params.w = pic_cfg->pic_params.w;
+        vmaf->pic_params.h = pic_cfg->pic_params.h;
+        vmaf->pic_params.bpc = pic_cfg->pic_params.bpc;
+        vmaf->pic_params.pix_fmt = pic_cfg->pic_params.pix_fmt;
+    }
+    return resolve_context_fallbacks(vmaf);
+}
+
 /* NOLINTEND(modernize-use-nullptr) */

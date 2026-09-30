@@ -1098,3 +1098,4 @@
 1387-mingw-ucrt64-migration
 1247-scorecard-exact-head-gates
 1388-release-pat-mode-gate-exemption
+1389-codeql-actions-universal-pr-sast

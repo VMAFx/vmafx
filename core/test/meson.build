@@ -464,16 +464,14 @@ test_feature_collector = executable('test_feature_collector',
 )
 
 # ADR-1359: device-twin lookup for a CPU extractor name and the registered-
-# extractor report. White-box (includes libvmaf.c) like test_feature_collector;
-# a stand-in state pointer selects the compiled backend without a device.
+# extractor report. Calls internal test accessors in libvmaf_priv.h to assert
+# twin verdicts, gpumask behavior, and context fallbacks.
 test_feature_backend_twin = executable('test_feature_backend_twin',
-    ['test.c', 'test_feature_backend_twin.c', '../src/metadata_handler.cpp', rev_target],
+    ['test.c', 'test_feature_backend_twin.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
-    link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-                 log_cpp23_lib],
+    link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf],
     c_args : vmaf_cflags_common,
-    dependencies: [pthread_dependency, predict_test_dependencies],
-    objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
+    dependencies: [pthread_dependency],
 )
 
 # Finding R2-10: flush_context terminal-flush ordering. White-box test that

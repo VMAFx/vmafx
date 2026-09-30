@@ -68,6 +68,8 @@ jobs:
               'Windows MSVC+CUDA',
               'Windows MSVC+SYCL',
               'CodeQL',
+              // ADR-1389: CodeQL (Actions) runs unconditionally on every PR and
+              // master push to guarantee SAST coverage across 100% of commits.
               'CodeQL (Actions)',
               'CodeQL (C/C++)',
               'CodeQL (Python)',

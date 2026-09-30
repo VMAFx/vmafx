@@ -8,9 +8,19 @@
  * backend's real registry entries without a device.
  */
 
-#include "test.h"
+#include <errno.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "libvmaf/libvmaf.h"
+#include "libvmaf/picture.h"
+#include "dict.h"
+#include "feature/feature_extractor.h"
+#include "libvmaf_priv.h"
 #include "mu_table.h"
-#include "libvmaf.c" // NOLINT(bugprone-suspicious-include): white-box seam (ADR-0141).
+#include "test.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. ADR-1138. */
 
@@ -75,7 +85,7 @@ static int verdict_for(const char *key, const char *value, bool with_check,
         return -ENOMEM;
     const VmafFeatureExtractor twin = mock_twin(with_check);
     const char *found = "stale";
-    const int err = backend_twin_verdict(&twin, opts, pic_cfg, &found);
+    const int err = vmaf_backend_twin_verdict_for_test(&twin, opts, pic_cfg, &found);
     /* The key points into opts; compare it before the dictionary goes. */
     *reported = found && key && !strcmp(found, key) ? key : found;
     (void)vmaf_dictionary_free(&opts);
@@ -157,30 +167,6 @@ static char *test_twin_lookup_without_device(void)
     return NULL;
 }
 
-/* Stand-in for an imported backend: compute_fex_flags() only tests the state
- * pointer, and nothing on the lookup path dereferences it. Returns the
- * extractor flag of the compiled backend, or 0 in a CPU-only build. */
-static unsigned fake_backend(VmafContext *vmaf, void *token)
-{
-#if defined(HAVE_SYCL)
-    vmaf->sycl.state = token;
-    return VMAF_FEATURE_EXTRACTOR_SYCL;
-#elif defined(HAVE_CUDA)
-    vmaf->cuda.state.ctx = token;
-    return VMAF_FEATURE_EXTRACTOR_CUDA;
-#elif defined(HAVE_HIP)
-    vmaf->hip.state = token;
-    return VMAF_FEATURE_EXTRACTOR_HIP;
-#elif defined(HAVE_METAL)
-    vmaf->metal.state = token;
-    return VMAF_FEATURE_EXTRACTOR_METAL;
-#else
-    (void)vmaf;
-    (void)token;
-    return 0;
-#endif
-}
-
 static bool twin_provides(const char *twin, unsigned flag, const char *feature)
 {
     const VmafFeatureExtractor *fex = twin ? vmaf_get_feature_extractor_by_name(twin) : NULL;
@@ -238,18 +224,18 @@ static char *test_twin_lookup_on_imported_backend(void)
     VmafContext *vmaf = NULL;
     mu_assert("vmaf_init", !vmaf_init(&vmaf, (VmafConfiguration){0}));
     unsigned char token = 0;
-    const unsigned flag = fake_backend(vmaf, &token);
+    const unsigned flag = vmaf_context_fake_backend_for_test(vmaf, &token);
     char *msg = flag ? check_registry_twins(vmaf, flag) : NULL;
 #if defined(HAVE_SYCL) || defined(HAVE_CUDA)
     if (!msg && flag) {
-        vmaf->cfg.gpumask = 1;
+        vmaf_context_set_gpumask_for_test(vmaf, 1);
         const char *twin = NULL;
         if (vmaf_feature_backend_twin(vmaf, "ciede", NULL, NULL, &twin, NULL) != -ENODEV)
             msg = "a non-zero gpumask must disable the twin lookup";
-        vmaf->cfg.gpumask = 0;
+        vmaf_context_set_gpumask_for_test(vmaf, 0);
     }
 #endif
-    (void)fake_backend(vmaf, NULL);
+    (void)vmaf_context_fake_backend_for_test(vmaf, NULL);
     mu_assert("vmaf_close", !vmaf_close(vmaf));
     return msg;
 }
@@ -257,18 +243,6 @@ static char *test_twin_lookup_on_imported_backend(void)
 static VmafFeatureExtractor mock_named(const char *name, uint64_t flags)
 {
     return (VmafFeatureExtractor){.name = name, .flags = flags};
-}
-
-static int append_mock(VmafContext *vmaf, const VmafFeatureExtractor *fex)
-{
-    VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    if (err)
-        return err;
-    err = feature_extractor_vector_append(&vmaf->registered_feature_extractors, ctx, 0);
-    if (err)
-        (void)vmaf_feature_extractor_context_destroy(ctx);
-    return err;
 }
 
 static bool reports(VmafContext *vmaf, unsigned index, const char *want_name,
@@ -286,8 +260,9 @@ static bool register_three(VmafContext *vmaf)
 {
     const VmafFeatureExtractor sycl = mock_named("mock_sycl", VMAF_FEATURE_EXTRACTOR_SYCL);
     const VmafFeatureExtractor metal = mock_named("mock_metal", VMAF_FEATURE_EXTRACTOR_METAL);
-    return !vmaf_use_feature(vmaf, "psnr", NULL) && !append_mock(vmaf, &sycl) &&
-           !append_mock(vmaf, &metal);
+    return !vmaf_use_feature(vmaf, "psnr", NULL) &&
+           !vmaf_context_append_registered_feature_extractor_for_test(vmaf, &sycl, false) &&
+           !vmaf_context_append_registered_feature_extractor_for_test(vmaf, &metal, false);
 }
 
 static char *test_registered_extractors_report_backends(void)
@@ -341,22 +316,16 @@ static char *test_report_follows_context_fallback(void)
     mu_assert("vmaf_init", !vmaf_init(&vmaf, (VmafConfiguration){0}));
     VmafFeatureExtractor twin = mock_twin(true);
     twin.context_fallback_name = "float_ssim";
-    VmafFeatureExtractorContext *ctx = NULL;
-    mu_assert("create", !vmaf_feature_extractor_context_create(&ctx, &twin, NULL));
-    ctx->allow_context_fallback = true;
     mu_assert("append",
-              !feature_extractor_vector_append(&vmaf->registered_feature_extractors, ctx, 0));
+              !vmaf_context_append_registered_feature_extractor_for_test(vmaf, &twin, true));
     const char *name = NULL;
     enum VmafBackend backend = VMAF_BACKEND_UNKNOWN;
     mu_assert("twin reported before the first picture",
               !vmaf_registered_feature_extractor(vmaf, 0, &name, &backend) &&
                   backend == VMAF_BACKEND_SYCL);
 
-    vmaf->pic_params.w = 960;
-    vmaf->pic_params.h = 540;
-    vmaf->pic_params.bpc = 8;
-    vmaf->pic_params.pix_fmt = VMAF_PIX_FMT_YUV420P;
-    mu_assert("fallback", !resolve_context_fallbacks(vmaf));
+    const VmafPictureConfiguration cfg = geometry(960, 540);
+    mu_assert("fallback", !vmaf_context_resolve_context_fallbacks_for_test(vmaf, &cfg));
     mu_assert("CPU extractor reported after the fallback",
               !vmaf_registered_feature_extractor(vmaf, 0, &name, &backend) &&
                   !strcmp(name, "float_ssim") && backend == VMAF_BACKEND_UNKNOWN);

@@ -547,7 +547,6 @@
         "core/test/test_delta_e_itp.c": 1,
         "core/test/test_dists.c": 1,
         "core/test/test_fastdvdnet_pre.c": 1,
-        "core/test/test_feature_backend_twin.c": 1,
         "core/test/test_feature_collector.c": 1,
         "core/test/test_feature_extractor.c": 1,
         "core/test/test_flush_context_ordering.c": 1,
@@ -6395,7 +6394,7 @@
         ".github/workflows/required-aggregator.yml": 1,
         ".github/workflows/rust-ci.yml": 1,
         ".github/workflows/sanitizers.yml": 4,
-        ".github/workflows/security-scans.yml": 6,
+        ".github/workflows/security-scans.yml": 4,
         ".github/workflows/tests-and-quality-gates.yml": 11,
         ".pre-commit-config.yaml": 1,
         "scripts/ci/plan-ci-impact.py": 1
@@ -7826,6 +7825,7 @@
         "core/src/feature/feature_extractor.h": 1,
         "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
         "core/src/libvmaf.c": 3,
+        "core/src/libvmaf_priv.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_feature_backend_twin.c": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 1,
@@ -8215,6 +8215,13 @@
         "scripts/git-hooks/pre-push-pr-body-lint.sh": 1
       },
       "target": "1388-release-pat-mode-gate-exemption.md"
+    },
+    "1389": {
+      "sites": {
+        ".github/workflows/required-aggregator.yml": 1,
+        ".github/workflows/security-scans.yml": 1
+      },
+      "target": "1389-codeql-actions-universal-pr-sast.md"
     },
     "1391": {
       "sites": {

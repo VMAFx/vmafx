@@ -221,6 +221,9 @@ jobs:
   # .github/workflows/*.yml for token-permission, injection, and pinning
   # issues. GitHub's default setup was auto-enabling this on the side; make
   # it explicit here so the job history is versioned with the repo.
+  # ADR-1389: Make CodeQL (Actions) run unconditionally on every PR and master push
+  # so that OSSF Scorecard's SAST check detects a SAST tool run on 100% of commits
+  # (including docs-only PRs) cheaply (~15-20s) without weakening any gate.
   codeql-actions:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # required-aggregator
@@ -234,29 +237,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-      - name: Plan CI impact (ADR-1140)
-        id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — CodeQL (Actions) skipped by plan
-        if: steps.impact.outputs.actions != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::actions not impacted (mode=$MODE reason=$REASON) — CodeQL (Actions) satisfied without running (ADR-1140)"
       - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
-        if: steps.impact.outputs.actions == 'true'
         with:
           languages: actions
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
-        if: steps.impact.outputs.actions == 'true'
         with:
           category: "/language:actions"
 

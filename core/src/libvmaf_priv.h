@@ -22,10 +22,16 @@
 
 #ifdef __cplusplus
 using VmafContext = struct VmafContext;
+using VmafFeatureExtractor = struct VmafFeatureExtractor;
+using VmafDictionary = struct VmafDictionary;
+using VmafPictureConfiguration = struct VmafPictureConfiguration;
 
 extern "C" {
 #else
 typedef struct VmafContext VmafContext;
+typedef struct VmafFeatureExtractor VmafFeatureExtractor;
+typedef struct VmafDictionary VmafDictionary;
+typedef struct VmafPictureConfiguration VmafPictureConfiguration;
 #endif
 
 /*
@@ -43,6 +49,21 @@ bool vmaf_context_is_flushed(const VmafContext *vmaf);
 bool vmaf_context_has_thread_pool(const VmafContext *vmaf);
 int vmaf_context_flush_threaded_for_test(VmafContext *vmaf);
 int vmaf_context_flush_for_test(VmafContext *vmaf);
+
+/*
+ * Test accessors for ADR-1359 device-twin lookup, gpumask gating,
+ * registered feature extractor inspection, and context fallback resolution.
+ */
+int vmaf_backend_twin_verdict_for_test(const VmafFeatureExtractor *twin, const VmafDictionary *opts,
+                                       const VmafPictureConfiguration *pic_cfg,
+                                       const char **unsupported_option);
+unsigned vmaf_context_fake_backend_for_test(VmafContext *vmaf, void *token);
+void vmaf_context_set_gpumask_for_test(VmafContext *vmaf, unsigned gpumask);
+int vmaf_context_append_registered_feature_extractor_for_test(VmafContext *vmaf,
+                                                              const VmafFeatureExtractor *fex,
+                                                              bool allow_context_fallback);
+int vmaf_context_resolve_context_fallbacks_for_test(VmafContext *vmaf,
+                                                    const VmafPictureConfiguration *pic_cfg);
 
 #ifdef __cplusplus
 }

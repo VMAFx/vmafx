@@ -266,6 +266,20 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-no-non-header-includes
+        name: Guard against non-header includes in core/test
+        entry: scripts/ci/check-no-non-header-includes.sh
+        language: script
+        files: '^core/test/.*\.(c|cpp)$'
+        pass_filenames: true
+
+      - id: test-check-no-non-header-includes
+        name: Unit test for check-no-non-header-includes.sh
+        entry: bash scripts/ci/tests/test-check-no-non-header-includes.sh
+        language: system
+        files: '^scripts/ci/(check-no-non-header-includes\.sh|tests/test-check-no-non-header-includes\.sh)$'
+        pass_filenames: false
+
       - id: reuse-lint
         name: REUSE 3.3 license and copyright compliance (BUG-003)
         entry: reuse lint

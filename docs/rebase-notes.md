@@ -53,6 +53,26 @@
 - `core/test/test_cli_parse.c` `release_parsed()`, `core/test/fuzz/fuzz_cli_parse.c`
   and `core/tools/test/test_vmaf_option_dict_ownership.sh` depend on that
   contract; the test and the fuzz harness no longer free dictionaries themselves.
+## fix/code-scanning-include-and-sast — CodeQL include-non-header and universal PR SAST coverage (ADR-1389) (2026-09-30)
+
+- `core/test/test_feature_backend_twin.c`: resolves CodeQL alert #1309 (`cpp/include-non-header`).
+  The test previously unity-included `core/src/libvmaf.c`. It now links against
+  `libvmaf` via `core/test/meson.build` and uses narrow internal test accessors
+  declared in `core/src/libvmaf_priv.h`:
+  `vmaf_backend_twin_verdict_for_test`, `vmaf_context_fake_backend_for_test`,
+  `vmaf_context_set_gpumask_for_test`, `vmaf_context_append_registered_feature_extractor_for_test`,
+  and `vmaf_context_resolve_context_fallbacks_for_test`.
+- `core/src/libvmaf.c`: static test helper functions implementing the above accessors.
+  Internal state and symbols remain private without exposing unwanted ABI surfaces.
+- `scripts/ci/check-no-non-header-includes.sh`: guards `core/test/` against future `.c`/`.cpp`
+  inclusions. Wired into `.pre-commit-config.yaml` and `.github/workflows/rule-enforcement.yml`.
+  Unit tests in `scripts/ci/tests/test-check-no-non-header-includes.sh`.
+- `.github/workflows/security-scans.yml`: resolves Scorecard alert #6 SAST. `CodeQL (Actions)`
+  now runs unconditionally on all pull requests and pushes, ensuring 100% commit SAST
+  coverage across all PR types (including docs-only PRs) without path filtering or
+  diff-skipping. Documented in [ADR-1389](adr/1389-codeql-actions-universal-pr-sast.md).
+- `.github/workflows/required-aggregator.yml`: added `'CodeQL (Actions)'` to `requiredJobNames`
+  so pull requests require green SAST scanning.
 - No Netflix golden-data, public API or FFmpeg patch impact.
 ## fix/speed-temporal-prescale-overflow — `speed_temporal` and `speed_chroma` frame buffers (2026-09-30)
 

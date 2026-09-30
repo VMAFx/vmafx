@@ -845,6 +845,13 @@ jobs:
         # daemon is reachable.
         run: bash scripts/ci/tests/test-check-container-source.sh
 
+      - name: No unallowlisted non-header includes in core/test
+        # CodeQL alert cpp/include-non-header guard. Unit tests under core/test
+        # must use internal headers and link seams rather than unity-including .c/.cpp.
+        run: |
+          bash scripts/ci/check-no-non-header-includes.sh
+          bash scripts/ci/tests/test-check-no-non-header-includes.sh
+
       - name: One-shot release-please fields must not outlive the first release
         run: |
           # ADR-1151. `release-as` and `bootstrap-sha` are one-shot cutover
