@@ -13,7 +13,8 @@
  * within the cross-backend tolerance (places=4, per ADR-0214).
  *
  * Skip behaviour: if `vmaf_cuda_state_init()` fails (no CUDA driver or no
- * device visible) the test emits `[skip: no CUDA device]` and passes cleanly.
+ * device visible) the test emits `[skip: no CUDA device]` and exits 77, meson's
+ * "skipped" status.
  * Mirrors the pattern from test_cuda_motion3_parity.c.
  */
 
@@ -111,6 +112,7 @@ static char *run_cuda(double *out_score)
     int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err != 0 || cu_state == NULL) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
+        mu_skipped = 1; /* exit 77, not a pass */
         return NULL;
     }
 

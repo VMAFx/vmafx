@@ -111,6 +111,17 @@ linked AGENTS.md before resolving conflicts.
   partials span and waits once. `core/test/test_sycl_kernel_source_contract.py`
   guards all of it; `scripts/dev/speed_gpu_parity.py --backend sycl --feature
   ssimulacra2 --max-abs-diff 1e-9` re-checks parity.
+- **CUDA CAMBI and SpEED device-resident ([ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md),
+  [ADR-1380](../adr/1380-cuda-speed-device-resident-pipeline.md))**:
+  `cambi_cuda`, `speed_chroma_cuda` and `speed_temporal_cuda` read back one
+  result block and wait once per frame, in `collect()`; a sync must not bring
+  back the host c-values, host pooling, host SpEED linear algebra or a
+  mid-frame `cuStreamSynchronize`. The host constants come from `cambi.c`
+  (`vmaf_cambi_*` helpers in `cambi_internal.h`) and
+  `speed_internal_gpu_configure()`, shared with the SYCL twins;
+  `speed/speed_score.cu` keeps its `__f*_rn` intrinsics and `--fmad=false`.
+  `core/test/test_cuda_device_resident_contract.py` guards the design. See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

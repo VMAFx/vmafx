@@ -168,11 +168,13 @@ unaffected either way.
 
 `speed_chroma` and `speed_temporal` carry CUDA, HIP, and SYCL implementations
 that are selected at runtime when the corresponding backend is active. The GPU
-paths reproduce the CPU reference algorithm. As of the SpEED GPU correctness
-fix they agree with the CPU score to within the fork's cross-backend tolerance
-(≤ 1e-4 relative); the CUDA path is additionally bit-parity-verified against
-the CPU reference on an RTX 4090 via `core/test/test_cuda_speed_chroma_parity`
-and `core/test/test_cuda_speed_temporal_parity`.
+paths reproduce the CPU reference algorithm. The SYCL and CUDA twins run the
+whole chain on the device and reproduce the CPU's fp32 arithmetic, so their
+scores equal the CPU's to the last bit (see
+[below](#sycl-device-resident-and-bit-identical-to-the-cpu) and
+[the CPU's `log2f`](#the-cpu-reference-and-log2f) for the one condition); the
+HIP twins agree within the fork's cross-backend tolerance (≤ 1e-4 relative),
+checked by `core/test/test_{cuda,sycl,hip}_speed_{chroma,temporal}_parity`.
 
 Two earlier algorithm defects in the GPU kernels are corrected:
 
@@ -241,9 +243,14 @@ and 50 frames of BBB 3840x2160, every per-frame `speed_chroma_u`,
 `speed_chroma_v`, `speed_chroma_uv` and `speed_temporal` value is identical to
 `--backend cpu` at `--precision max`, on an Arc B580 and on a UHD 770. Before
 this change 1 to 9 frames per run matched and the largest difference was
-4.2e-5. Two option paths keep the ADR-0214 tolerance instead of exact equality:
-`speed_prescale_method=lanczos4`, whose CPU kernel weights use fp64 `sin`, and
-builds with AdaptiveCpp, which lacks the correctly rounded division fallback.
+4.2e-5. Two option paths are not exact. Builds with AdaptiveCpp lack the
+correctly rounded division fallback and keep the ADR-0214 tolerance.
+`speed_prescale_method=lanczos4` evaluates its kernel weights in fp32 where the
+CPU uses fp64 `sin`, and SpEED amplifies the few-ulp weight differences: the
+CUDA twin, which computes the weights the same way, is up to 4.4e-4 relative
+from the CPU at 1920x1080 with `speed_prescale=0.5`, beyond the ADR-0214
+tolerance (`T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30` in
+[`state.md`](../state.md)).
 
 Milliseconds per frame, `(t(22) - t(2)) / 20`, median of 3, one Arc B580 and
 one UHD 770 through WSL2 Level Zero, i9-12900K, the icx/icpx 2026.1 build of the
@@ -265,19 +272,65 @@ five times faster than the CPU. At 576x324 the eigenvalue sweep, which runs on
 one work item for the reference's operation order, keeps the twins at about a
 millisecond per frame on the B580.
 
-Request the twin by its registered name. `--feature speed_chroma` resolves to
-the CPU extractor whatever `--backend` says, so `--backend sycl --feature
-speed_chroma` times the CPU code on one thread (18.35 ms per frame at 4K on the
-machine above):
+The rows above request the twin by its registered name. Since
+[ADR-1359](../adr/1359-cli-feature-backend-twin.md), `--backend sycl --feature
+speed_chroma` runs the twin as well and the JSON `feature_backends` array names
+it; before that, the CPU name ran the CPU extractor on one thread (18.35 ms per
+frame at 4K on the machine above):
 
 ```sh
 vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 --no_prediction \
   --backend sycl --feature speed_chroma_sycl -o out.json --json
 ```
 
-The CUDA and HIP twins still read the covariance back and run the linear algebra
-on the host; porting this chain to them is tracked in [`state.md`](../state.md)
-(`T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`, `T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`).
+### CUDA: the same chain on the device
+
+Since [ADR-1380](../adr/1380-cuda-speed-device-resident-pipeline.md),
+`speed_chroma_cuda` and `speed_temporal_cuda` run the SYCL chain above on CUDA,
+in one pipeline both extractors share. They take their planes from the picture
+the CUDA engine already uploaded, with device-to-device copies (`speed_temporal`
+keeps the previous frame's luma on the device), and read back one 40-byte
+result per frame; `collect()` is the only wait. Every rounding the CPU performs
+is spelled with a round-to-nearest intrinsic (`__fadd_rn`, `__fmul_rn`,
+`__fdiv_rn`, `__fsqrt_rn`, ...), which nvcc never fuses, and the kernels are
+also built with `--fmad=false`.
+
+```sh
+vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 --no_prediction   --backend cuda --feature speed_chroma_cuda -o out.json --json
+```
+
+The kernels have been checked frame by frame, through a host emulation of the
+CUDA driver, against the CPU extractor on the Netflix pair and on 1080p and 4K
+clips, with nearest, bilinear and bicubic prescale, every weighting mode tried
+and `speed_use_ref_diff`: identical on every frame, `lanczos4` aside
+([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)). They
+have not yet run on an NVIDIA GPU and have no measured timing; the
+verify-and-time steps for an RTX 4090 are in [`state.md`](../state.md)
+(`T-CUDA-SPEED-HOST-RESIDUAL-2026-09-29`).
+
+The HIP twins still read the covariance back and run the linear algebra on the
+host; porting the chain to them is tracked as
+`T-HIP-SPEED-HOST-RESIDUAL-2026-09-29`.
+
+### The CPU reference and `log2f`
+
+The CPU extractor calls `log2f` from the platform's C library about 25 times
+per block, and the device twins compute a correctly rounded `log2` instead.
+glibc's `log2f` rounds 0.14 % of the floats in [1, 1024) the other way (glibc
+2.43), Intel's libimf 0.00013 %. So "identical to the CPU" holds against a CPU
+build whose `log2f` rounds the arguments it meets correctly, such as a
+`CC=icx CXX=icpx meson setup` build. Against a gcc or clang build on glibc, a
+few frames differ in the last bits: 6 of 48 `speed_chroma_u` frames on the
+Netflix pair, by at most 4.8e-7, well inside the ADR-0214 tolerance. The CPU
+extractor itself then differs by the same amount between its gcc and icx
+builds.
+
+The CPU build must not fuse multiply-adds either. icx does when FMA
+instructions are available, for example with `-march=native`, which is how the
+`vmaf-dev-mcp` image builds its own `/usr/local/bin/vmaf`: that binary's
+SpEED scores are up to 7.9e-4 from a default build at 1080p. Compare the GPU
+twins against a build without `-march=native`
+([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)).
 
 ### Checking a GPU twin against the CPU
 
@@ -293,7 +346,10 @@ python3 scripts/dev/speed_gpu_parity.py --backend cuda \
 ```
 
 `--no-timing` skips the timing runs; `--reps` and `--threads` change the
-repetitions and the CPU thread count.
+repetitions and the CPU thread count. The CPU side runs from the same `vmaf`
+binary, so build it with icx (as the dev image does) for an exact comparison;
+with a gcc build expect the few [`log2f`](#the-cpu-reference-and-log2f) frames
+to differ and the script to exit 1.
 
 ## "Covariance matrix singular" in the log
 

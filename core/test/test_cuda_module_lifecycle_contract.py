@@ -34,8 +34,8 @@ EXPECTED_MODULES = {
     "integer_psnr_hvs_cuda.c": {"module"},
     "integer_ssim_cuda.c": {"module"},
     "integer_vif_cuda.c": {"filter1d_module"},
-    "speed_chroma_cuda.c": {"module"},
-    "speed_temporal_cuda.c": {"module"},
+    # ADR-1380: both SpEED extractors share one pipeline, which owns the module.
+    "speed_cuda_pipeline.c": {"module"},
     "ssim_cuda.c": {"module"},
     "ssimulacra2_cuda.c": {"module_blur", "module_mul"},
 }
@@ -53,8 +53,7 @@ EXPECTED_BUFFER_OWNERS = {
     "integer_psnr_hvs_cuda.c",
     "integer_ssim_cuda.c",
     "integer_vif_cuda.c",
-    "speed_chroma_cuda.c",
-    "speed_temporal_cuda.c",
+    "speed_cuda_pipeline.c",
     "ssim_cuda.c",
     "ssimulacra2_cuda.c",
 }

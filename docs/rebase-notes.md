@@ -55072,3 +55072,52 @@ help string now matches the CPU's). CPU scores are bit-identical. At scale 1
 `float_ssim_sycl` output is byte-identical to the previous twin apart from
 the fp32 rounding of the frame means (at most 6e-8); at scale > 1 it now runs
 on the device instead of the CPU fallback.
+
+## ADR-1379 / ADR-1380 — CUDA CAMBI and SpEED run entirely on the device (2026-09-30)
+
+`perf/cuda-rc3-device-resident`, Research-1379, ADR-1379, ADR-1380.
+
+- `core/src/feature/cuda/integer_cambi_cuda.{c,h}` and
+  `integer_cambi/cambi_score.cu` (fork-local): the ADR-1357 design on CUDA,
+  twelve kernels, one argument struct each, one 88-byte readback and one wait
+  per frame. The Strategy II host residual (`cambi_download_and_preprocess`,
+  `cambi_upload_and_mask`, `cambi_filter_and_readback`, `cambi_submit_scale`)
+  is gone; do not restore any of it.
+- `core/src/feature/cambi.c` / `cambi_internal.h` (upstream-mirror, additive
+  helpers only): the init window guard moved into
+  `vmaf_cambi_check_window_fits_lut()` (same code and message), and
+  `vmaf_cambi_adjust_window()`, `vmaf_cambi_mask_index()`,
+  `vmaf_cambi_resize_source_indices()`, `vmaf_cambi_contrast_weights()` and
+  `vmaf_cambi_fixed_topk_mean()` expose what both device twins need.
+  `integer_cambi_sycl.cpp` dropped its private copies and calls them. An
+  upstream Netflix change to `adjust_window_size()`, `get_mask_index()`, the
+  `decimate_generic_*_and_convert_to_10b()` walk, `g_contrast_weights` or
+  `average_topk_elements()` lands in `cambi.c` once and reaches both twins;
+  keep the helpers when resolving.
+- `core/src/feature/cuda/speed/speed_score.cu`,
+  `speed/speed_cuda_params.h`, `speed_cuda_pipeline.{c,h}` (new, fork-local):
+  the ADR-1358 chain on CUDA, shared by `speed_chroma_cuda.c` and
+  `speed_temporal_cuda.c`, which now only stage planes and read the result.
+  `speed_score` builds with `--fmad=false` (`cuda_cu_extra_flags` in
+  `core/src/meson.build`) and spells every rounding with `__f*_rn`
+  intrinsics. If upstream changes `speed.c`'s arithmetic, mirror it in
+  `speed_score.cu` and `speed_sycl_pipeline.cpp` in the same PR.
+- `core/src/feature/speed_gpu_common.h` now holds the host/device contract
+  (`SpeedGpuGeometry`, `SpeedGpuFilters`, `SpeedGpuScoring`,
+  `SpeedGpuChannelBinding`, `SpeedGpuFrameResult`, `SpeedGpuConfig`);
+  `speed_sycl_pipeline.h` aliases them. `speed_internal_gpu_configure()`
+  (`speed_internal.c`) replaced `speed_sycl_host.cpp`'s configuration code
+  and serves both backends.
+- Tests: `core/test/test_cuda_device_resident_contract.py` (new, fast suite);
+  `test_cuda_cambi_parity` compares every frame with `==`; the CUDA SpEED
+  parity, singular and smoke tests exit 77 without a device.
+  `test_cuda_module_lifecycle_contract.py` names `speed_cuda_pipeline.c` as
+  the SpEED module and buffer owner. `scripts/ci/tidy-baseline-cuda.json`
+  tightened for the rewritten TUs (scoped write).
+
+No public C API, CLI syntax, option table or FFmpeg patch impact. CPU scores
+are bit-identical (the `cambi.c` changes move code into functions). CUDA CAMBI
+scores move to the CPU's (bit-identical except where the CPU's double top-K
+sum rounds); CUDA SpEED scores move from within 1e-4 of the CPU to
+bit-identical with a CPU build that rounds `log2f` correctly and does not
+fuse multiply-adds. Not yet run on an NVIDIA device.

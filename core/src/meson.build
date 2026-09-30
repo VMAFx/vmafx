@@ -1202,11 +1202,12 @@ if is_cuda_enabled
         'ssimulacra2_blur' : [feature_src_dir + 'cuda/ssimulacra2/ssimulacra2_blur.cu'],
         'ssimulacra2_mul' : [feature_src_dir + 'cuda/ssimulacra2/ssimulacra2_mul.cu'],
         'float_adm_score' : [feature_src_dir + 'cuda/float_adm/float_adm_score.cu'],
-        # T3-15 / ADR-0360: cambi CUDA twin (Strategy II hybrid — three integer kernels).
+        # T3-15 / ADR-0360: cambi CUDA twin, device-resident since ADR-1379
+        # (every per-frame stage, one 88-byte readback per frame).
         'cambi_score' : [feature_src_dir + 'cuda/integer_cambi/cambi_score.cu'],
-        # ADR-0965: speed_chroma_cuda + speed_temporal_cuda share a single kernel
-        # (speed_score.cu) that computes means, covariance, and per-channel
-        # scores.  Both C wrappers extern the symbol `speed_score_ptx`; the PTX
+        # ADR-1380: speed_chroma_cuda + speed_temporal_cuda share one
+        # device-resident chain (speed_score.cu, loaded by
+        # speed_cuda_pipeline.c through the symbol `speed_score_ptx`); the PTX
         # array is generated here via the standard bin2c pipeline.
         'speed_score' : [feature_src_dir + 'cuda/speed/speed_score.cu'],
     }
@@ -1228,6 +1229,11 @@ if is_cuda_enabled
     # adm_cm_s. The integer ADM kernels use int64 accumulators so FMA
     # is irrelevant; default FMA-on flags stay for them.
     cuda_cu_extra_flags = {
+        # `speed_score` (ADR-1380) reproduces speed.c operation for operation;
+        # every fp32 operation whose rounding matters is already spelled with
+        # a round-to-nearest intrinsic nvcc never contracts, and
+        # `--fmad=false` keeps any plain `*` / `+` in the TU unfused as well.
+        'speed_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
         'ssimulacra2_blur' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
         'float_adm_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
     }
@@ -1479,6 +1485,8 @@ if is_cuda_enabled
         'feature/cuda/integer_cambi_cuda.h',
         'feature/cuda/speed_chroma_cuda.h',
         'feature/cuda/speed_temporal_cuda.h',
+        'feature/cuda/speed/speed_cuda_params.h',
+        'feature/speed_gpu_common.h',
         'feature/adm_angle_flag.h',
         'mem.h',
         'metadata.h',
@@ -2053,9 +2061,11 @@ if is_cuda_enabled
         feature_src_dir + 'cuda/integer_cambi_cuda.c',
         # ADR-0965: speed_chroma_cuda + speed_temporal_cuda wired after
         # CHECK_CUDA → CHECK_CUDA_GOTO repair pass (closes
-        # T-CUDA-SPEED-TU-REPAIR-2026-05-31).
+        # T-CUDA-SPEED-TU-REPAIR-2026-05-31). ADR-1380: both drive the shared
+        # device-resident pipeline in speed_cuda_pipeline.c.
         feature_src_dir + 'cuda/speed_chroma_cuda.c',
         feature_src_dir + 'cuda/speed_temporal_cuda.c',
+        feature_src_dir + 'cuda/speed_cuda_pipeline.c',
     ]
 endif
 

@@ -38,6 +38,36 @@
   [Input read-ahead](docs/usage/cli.md#input-read-ahead).
 
 
+- **`cambi_cuda` runs entirely on the device (ADR-1379).** The CUDA CAMBI twin
+  no longer downloads the distorted picture, preprocesses it on the host or
+  reads the image and mask back at each of the five scales for host c-values
+  and pooling: every stage runs on the GPU, the twin reads the plane the CUDA
+  engine already uploaded, and each frame reads back 88 bytes and waits once,
+  in `collect()`. Scores equal `--backend cpu` to the last bit whenever the
+  CPU's own double top-K sum is exact, and otherwise differ only by that sum's
+  rounding. Like `cambi.c`, the twin now rejects an adjusted window above
+  65 x 65 ("cambi: window_size N too large for reciprocal LUT") instead of
+  reading past the reciprocal table. Checked frame by frame through a host
+  emulation of the CUDA driver; not yet run or timed on an NVIDIA GPU. See
+  [CAMBI](docs/metrics/cambi.md#cuda).
+
+
+- **The CUDA SpEED twins run entirely on the device (ADR-1380).**
+  `speed_chroma_cuda` and `speed_temporal_cuda` no longer copy their planes to
+  the host to filter them or solve the 25x25 eigenvalue problem and QR system
+  there: the whole chain runs on the GPU, fed by device-to-device copies of the
+  planes the engine already uploaded, with one 40-byte readback and one wait
+  per frame. Every rounding the CPU performs is spelled with a round-to-nearest
+  intrinsic, so the scores move from within 1e-4 of `--backend cpu` to equal to
+  it, against a CPU build that rounds `log2f` correctly and does not fuse
+  multiply-adds (an icx build without `-march=native`; a gcc build on glibc
+  differs in the last bits on a few frames). The SpEED page now also states
+  that the SYCL and CUDA `lanczos4` prescale is up to 4.4e-4 relative from the
+  CPU rather than within tolerance. Checked frame by frame through a host
+  emulation of the CUDA driver; not yet run or timed on an NVIDIA GPU. See
+  [SpEED](docs/metrics/speed_qa.md#cuda-the-same-chain-on-the-device).
+
+
 - **The SYCL integer ADM twin computes AIM on the device, so the default model's
   ADM no longer falls back to the CPU under `--backend sycl` (ADR-1362).**
   `adm_sycl` now emits `VMAF_integer_feature_aim_score` and
