@@ -41,6 +41,7 @@ ISSIM_KERNEL = "integer_ssim/integer_ssim_score.hip"
 FSSIM_HOST = "float_ssim_hip.c"
 FSSIM_KERNEL = "float_ssim/ssim_score.hip"
 FMOTION_HOST = "float_motion_hip.c"
+FMOTION_KERNEL = "float_motion/float_motion_score.hip"
 PICTURE = "picture_hip.c"
 
 # A host wait or a synchronous copy: none may run between a frame's submit()
@@ -55,6 +56,8 @@ VERTICAL_ROUND = re.compile(r"\(\s*sum\s*\+\s*round_y\s*\)\s*>>\s*shift_y")
 HORIZONTAL_ROUND = re.compile(r"\(\s*blurred\s*\+\s*\(\(int64_t\)1 << 15\)\s*\)\s*>>\s*16")
 # The motion tile loader clamps both axes: x and y.
 TILE_AXES = 2
+# float_motion: both axes in each of the 8- and 16-bpc kernels.
+FM_TILE_LOADS = 4
 
 
 def _sources() -> dict[str, str]:
@@ -72,6 +75,7 @@ def _sources() -> dict[str, str]:
         FSSIM_HOST,
         FSSIM_KERNEL,
         FMOTION_HOST,
+        FMOTION_KERNEL,
     )
     sources = {name: (HIP_FEATURE / name).read_text(encoding="utf-8") for name in names}
     sources[PICTURE] = (HIP_RUNTIME / PICTURE).read_text(encoding="utf-8")
@@ -86,6 +90,33 @@ def _function_body(source: str, name: str) -> str:
         re.S | re.M,
     )
     return match.group(0) if match else ""
+
+
+DRAIN_CALL = re.compile(r"^.*\b\w+_drain_after_error\(.*$", re.M)
+
+
+def _drains_only_on_error_returns(body: str) -> bool:
+    """Every call of an error-path drain helper is a `return` statement."""
+    return all(line.strip().startswith("return ") for line in DRAIN_CALL.findall(body))
+
+
+def _staging_failures(src: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    for name in MOTION_TUS:
+        text = src[name]
+        if ".staging_bytes = s->plane_bytes" not in _function_body(text, MOTION_LAUNCH_FNS[name]):
+            failures.append(f"{name}: the staged upload no longer gets the allocated size")
+        if re.search(r"s->frame_[wh]\s*=", _function_body(text, "submit_fex_hip")):
+            failures.append(f"{name}: submit() rewrites the geometry init() sized the buffers for")
+    submit = _function_body(src[MOTION_SAD], "vmaf_hip_motion_sad_submit")
+    staged = _function_body(src[PICTURE], "vmaf_hip_picture_upload_staged")
+    if "frame->staging_bytes" not in submit:
+        failures.append(f"{MOTION_SAD}: the staging bound is derived from the frame, not the owner")
+    if "motion_sad_drain_after_error(" not in submit or "hip_pic_drain_after_error(" not in staged:
+        failures.append("a failed enqueue returns while earlier copies still use the staging")
+    if not _drains_only_on_error_returns(submit) or not _drains_only_on_error_returns(staged):
+        failures.append("an error-path drain is reachable outside an error return")
+    return failures
 
 
 def _motion_failures(src: dict[str, str]) -> list[str]:
@@ -118,9 +149,30 @@ def _motion_failures(src: dict[str, str]) -> list[str]:
     staged = _function_body(src[PICTURE], "vmaf_hip_picture_upload_staged")
     if not staged or re.search(r"Synchronize\s*\(", staged):
         failures.append(f"{PICTURE}: the staged upload waits on the host")
-    motion = src["integer_motion_hip.c"]
+    failures += _motion_hip_failures(src["integer_motion_hip.c"])
+    failures += _motion_v2_failures(src["integer_motion_v2_hip.c"])
+    return failures
+
+
+def _motion_hip_failures(motion: str) -> list[str]:
+    failures: list[str] = []
     if not re.search(r"\"VMAF_integer_feature_motion_score\",\s*motion_clip_hip\(", motion):
         failures.append("integer_motion_hip.c: the debug motion score skips motion_clip")
+    if not re.search(r"\"VMAF_integer_feature_motion_sad_score\",\s*motion_clip_hip\(", motion):
+        failures.append("integer_motion_hip.c: the CPU's motion_sad_score is not emitted")
+    if not re.search(r'\.name = "debug"[^}]*\.default_val\.b = false', motion):
+        failures.append("integer_motion_hip.c: `debug` no longer defaults to false like the CPU")
+    return failures
+
+
+def _motion_v2_failures(motion_v2: str) -> list[str]:
+    failures: list[str] = []
+    if "MIN(sad_score * s->motion_fps_weight, s->motion_max_val)" not in motion_v2:
+        failures.append("integer_motion_v2_hip.c: the stored SAD is not weighted and capped")
+    if "motion_fps_weight" in _function_body(motion_v2, "mv2_hip_motion2"):
+        failures.append("integer_motion_v2_hip.c: motion2_v2 weights the stored SAD again")
+    if "if (n_frames == 0u)" not in _function_body(motion_v2, "flush_fex_hip"):
+        failures.append("integer_motion_v2_hip.c: a one-frame run skips motion2_v2 / motion3_v2")
     return failures
 
 
@@ -144,8 +196,20 @@ def _guard_failures(src: dict[str, str]) -> list[str]:
         failures.append(f"{VIF_HOST}: vif_hip no longer declares its CPU fallback (ADR-1324)")
     init = _function_body(vif, "init_fex_hip")
     guard = init.find("vif_hip_min_dim()")
-    if guard < 0 or guard > init.find("#ifndef HAVE_HIPCC"):
-        failures.append(f"{VIF_HOST}: init() touches the device before the minimum-size check")
+    scaffold = init.find("return -ENOSYS;")
+    device = init.find("vif_hip_stream_init(")
+    if guard < 0 or scaffold < 0 or not scaffold < guard < device:
+        failures.append(
+            f"{VIF_HOST}: init() must return -ENOSYS first without HIPCC (ADR-1264) and "
+            "check the minimum size before any device work"
+        )
+    fm_kernel = src[FMOTION_KERNEL]
+    if (
+        "fm_mirror" in fm_kernel
+        or "vmaf_hip_tile_index(vmaf_hip_reflect_101(" not in fm_kernel
+        or fm_kernel.count("fm_tile_index(tile_o") != FM_TILE_LOADS
+    ):
+        failures.append(f"{FMOTION_KERNEL}: a tile load reflects without the index clamp")
     return failures
 
 
@@ -168,20 +232,33 @@ def _option_failures(src: dict[str, str]) -> list[str]:
     if "if (lum_num == lum_den && cs_num == cs_den)" not in src[ISSIM_KERNEL]:
         failures.append(f"{ISSIM_KERNEL}: an identical window no longer scores exactly 1")
     fssim = _function_body(
-        src[FSSIM_KERNEL].replace("__device__ __forceinline__ float", "static float"),
-        "ssim_from_moments",
+        src[FSSIM_KERNEL].replace("__device__ __forceinline__ void", "static void"),
+        "ssim_lcs",
     )
-    if "#pragma clang fp contract(off)" not in fssim or "num == den ? 1.0f" not in fssim:
-        failures.append(f"{FSSIM_KERNEL}: the SSIM numerator and denominator are not mirrored")
+    if "#pragma clang fp contract(off)" not in fssim:
+        failures.append(f"{FSSIM_KERNEL}: the CPU-typed L / C / S may be contracted")
     if "calculate_ssim_hip_vert_combine_lcs" not in src[FSSIM_HOST]:
         failures.append(f"{FSSIM_HOST}: enable_lcs has no device kernel")
+    if "return lcs[0] * lcs[1] * lcs[2];" not in src[FSSIM_KERNEL] or re.search(
+        r"\bnum\s*==\s*den\b", src[FSSIM_KERNEL]
+    ):
+        failures.append(f"{FSSIM_KERNEL}: the per-pixel term is not the CPU's l * c * s")
+    if "*mean = (double)(float)ratio;" not in src[FSSIM_HOST]:
+        failures.append(f"{FSSIM_HOST}: the frame mean is not rounded to fp32 like the CPU's")
+    if ".flags = VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_TEMPORAL" not in psnr:
+        failures.append(f"{PSNR_HOST}: psnr_hip is not temporal like the CPU psnr")
     if not re.search(r"\"VMAF_feature_motion_score\",\s*fm_hip_motion_clip\(", src[FMOTION_HOST]):
         failures.append(f"{FMOTION_HOST}: the debug motion score skips motion_clip")
     return failures
 
 
 def _failures(src: dict[str, str]) -> list[str]:
-    return _motion_failures(src) + _guard_failures(src) + _option_failures(src)
+    return (
+        _motion_failures(src)
+        + _guard_failures(src)
+        + _option_failures(src)
+        + _staging_failures(src)
+    )
 
 
 def _replace(src: dict[str, str], name: str, old: str, new: str) -> dict[str, str]:
@@ -264,10 +341,23 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             "integer_motion_hip.c",
-            "motion_clip_hip(s, s->score), index);",
-            "s->score, index);",
+            '"VMAF_integer_feature_motion_score",\n'
+            "                                                     motion_clip_hip(s, s->score), index);",
+            '"VMAF_integer_feature_motion_score",\n'
+            "                                                     s->score, index);",
         )
-        self.assert_detected(src, "skips motion_clip")
+        self.assert_detected(src, "debug motion score skips motion_clip")
+
+    def test_missing_motion_sad_score_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            "integer_motion_hip.c",
+            '"VMAF_integer_feature_motion_sad_score",\n'
+            "                                                    motion_clip_hip(s, s->score), index);",
+            '"VMAF_integer_feature_motion_sad_score",\n'
+            "                                                    s->score, index);",
+        )
+        self.assert_detected(src, "motion_sad_score is not emitted")
 
     def test_unclamped_adm_row_is_detected(self) -> None:
         src = _replace(
@@ -309,12 +399,98 @@ class HipKernelSourceContractTest(unittest.TestCase):
     def test_contracted_float_ssim_is_detected(self) -> None:
         src = _sources()
         kernel = src[FSSIM_KERNEL]
-        start = kernel.index("__device__ __forceinline__ float ssim_from_moments")
+        start = kernel.index("__device__ __forceinline__ void ssim_lcs")
         pragma = kernel.index("#pragma clang fp contract(off)\n", start)
         src[FSSIM_KERNEL] = (
             kernel[:pragma] + kernel[pragma + len("#pragma clang fp contract(off)\n") :]
         )
-        self.assert_detected(src, "not mirrored")
+        self.assert_detected(src, "may be contracted")
+
+    def test_forced_identical_float_ssim_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_KERNEL,
+            "    return lcs[0] * lcs[1] * lcs[2];",
+            "    const double num = lcs[0], den = lcs[1] * lcs[2];\n"
+            "    return num == den ? 1.0 : num * den;",
+        )
+        self.assert_detected(src, "not the CPU's l * c * s")
+
+    def test_double_float_ssim_mean_is_detected(self) -> None:
+        src = _replace(_sources(), FSSIM_HOST, "*mean = (double)(float)ratio;", "*mean = ratio;")
+        self.assert_detected(src, "rounded to fp32")
+
+    def test_unclamped_float_motion_tile_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FMOTION_KERNEL,
+            "return vmaf_hip_tile_index(vmaf_hip_reflect_101(idx, sup), sup);",
+            "return vmaf_hip_reflect_101(idx, sup);",
+        )
+        self.assert_detected(src, "float_motion_score.hip: a tile load reflects")
+
+    def test_unweighted_motion_v2_sad_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            "integer_motion_v2_hip.c",
+            "MIN(sad_score * s->motion_fps_weight, s->motion_max_val)",
+            "sad_score",
+        )
+        self.assert_detected(src, "not weighted and capped")
+
+    def test_one_frame_motion_v2_skip_is_detected(self) -> None:
+        src = _replace(
+            _sources(), "integer_motion_v2_hip.c", "if (n_frames == 0u)", "if (n_frames < 2u)"
+        )
+        self.assert_detected(src, "one-frame run")
+
+    def test_non_temporal_psnr_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            PSNR_HOST,
+            ".flags = VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_TEMPORAL",
+            ".flags = VMAF_FEATURE_EXTRACTOR_HIP",
+        )
+        self.assert_detected(src, "not temporal")
+
+    def test_motion_debug_default_true_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            "integer_motion_hip.c",
+            '.type = VMAF_OPT_TYPE_BOOL, .default_val.b = false},\n    {.name = "motion_force_zero"',
+            '.type = VMAF_OPT_TYPE_BOOL, .default_val.b = true},\n    {.name = "motion_force_zero"',
+        )
+        self.assert_detected(src, "defaults to false")
+
+    def test_frame_derived_staging_bound_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MOTION_SAD,
+            "frame->staging, frame->staging_bytes, stream);",
+            "frame->staging,\n"
+            "        vmaf_hip_motion_sad_plane_bytes(frame->width, frame->height, frame->bpc), stream);",
+        )
+        self.assert_detected(src, "derived from the frame")
+
+    def test_drain_on_the_success_path_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MOTION_SAD,
+            "        return motion_sad_drain_after_error(stream, launch_err);\n    return 0;",
+            "        return launch_err;\n    (void)motion_sad_drain_after_error(stream, 0);\n"
+            "    return 0;",
+        )
+        self.assert_detected(src, "reachable outside an error return")
+
+    def test_scaffold_vif_min_dim_first_is_detected(self) -> None:
+        src = _sources()
+        vif = src[VIF_HOST]
+        scaffold = (
+            "#ifndef HAVE_HIPCC\n    /* Scaffold posture: -ENOSYS and nothing else (ADR-1264). */"
+        )
+        assert scaffold in vif
+        src[VIF_HOST] = vif.replace(scaffold, "    (void)vif_hip_min_dim();\n" + scaffold, 1)
+        self.assert_detected(src, "return -ENOSYS first")
 
     def test_unweighted_float_motion_debug_score_is_detected(self) -> None:
         src = _replace(

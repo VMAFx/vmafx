@@ -19,9 +19,10 @@
  *    the SYCL twin hit), which shows the first check can fail.
  *
  *  The motion kernels' tile index (hip_tile_index.h) gets the same replay:
- *  every tile a 16x16 block of motion_v2_score.hip loads stays inside planes
- *  from 3x3 up, and the clamp is the identity for every sample an output
- *  consumes.
+ *  every tile a 16x16 block of motion_v2_score.hip or float_motion_score.hip
+ *  (both 16x16 blocks, 5-tap filter, the same clamped reflect-101 index)
+ *  loads stays inside planes from 3x3 up, and the clamp is the identity for
+ *  every sample an output consumes.
  */
 
 #include <stdio.h>
@@ -38,7 +39,8 @@
 
 #define MAX_HEIGHT 8192
 
-/* motion_v2_score.hip: 16x16 blocks, 5-tap filter (radius 2). */
+/* motion_v2_score.hip and float_motion_score.hip: 16x16 blocks, 5-tap filter
+ * (radius 2). */
 #define MOTION_BLOCK 16
 #define MOTION_RADIUS 2
 #define MOTION_MAX_DIM 1024
@@ -162,9 +164,12 @@ static char *test_motion_tile_loads_stay_inside(void)
         }
     }
     /* The defect the clamp removes: at 17 the last block's halo reflects 33
-     * to -1. */
+     * to -1, and on a 3-sample plane the tile's last slot (17) reflects to
+     * -13 (float_motion's fm_mirror() read both before the plane). */
     mu_assert("reflect-101 of 33 on a 17-sample plane must be -1",
               vmaf_hip_reflect_101(33, 17) == -1);
+    mu_assert("reflect-101 of 17 on a 3-sample plane must be -13",
+              vmaf_hip_reflect_101(17, 3) == -13);
     return NULL;
 }
 

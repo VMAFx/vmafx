@@ -171,6 +171,15 @@ static void hip_pic_stage_plane(const VmafHipPlaneUpload *p, uint8_t *dst)
         memcpy(dst + (row * p->row_bytes), src + (row * stride), p->row_bytes);
 }
 
+/* Error path only: copies already enqueued still read `staging`; wait for
+ * them before the caller may rewrite it, then report the enqueue failure. */
+static int hip_pic_drain_after_error(hipStream_t str, hipError_t failed)
+{
+    const hipError_t rc = hipStreamSynchronize(str);
+    (void)rc; /* `failed` is the error to report */
+    return hip_pic_rc_to_errno(failed);
+}
+
 int vmaf_hip_picture_upload_staged(const VmafHipPlaneUpload *planes, unsigned n_planes,
                                    void *staging, size_t staging_bytes, uintptr_t stream)
 {
@@ -191,6 +200,8 @@ int vmaf_hip_picture_upload_staged(const VmafHipPlaneUpload *planes, unsigned n_
          * is the extractor's buffer, not the picture, so nothing waits. */
         const hipError_t rc = hipMemcpy2DAsync(p->dst, p->dst_pitch, at, p->row_bytes, p->row_bytes,
                                                p->rows, hipMemcpyHostToDevice, str);
+        if (rc != hipSuccess && i > 0u)
+            return hip_pic_drain_after_error(str, rc);
         if (rc != hipSuccess)
             return hip_pic_rc_to_errno(rc);
         at += p->rows * p->row_bytes;

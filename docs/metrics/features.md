@@ -759,7 +759,9 @@ SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)); the CUDA,
 HIP and Metal `float_ssim` twins compute scale 1 only and leave larger
 scales to the CPU extractor. The HIP twins `integer_ssim_hip` and
 `float_ssim_hip` implement `enable_db` / `clip_db` (and `float_ssim_hip`
-`enable_lcs`) with the same identical-frame behaviour
+`enable_lcs`); `float_ssim_hip` scores each pixel with the CPU's own
+`l * c * s` arithmetic, so its identical frames report what the CPU reports,
+including the finite 72.247 dB the CPU gives some identical frames
 ([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)). The CUDA twins lack
 `enable_db` / `clip_db` (and `float_ssim_cuda` `enable_lcs`); a model setting
 one of them computes that feature on the CPU.

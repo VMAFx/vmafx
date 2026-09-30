@@ -55132,13 +55132,28 @@ on the device instead of the CPU fallback.
   guard before any device work.
 - `core/src/feature/hip/integer_psnr_hip.c`: the CPU option table, options
   applied on the host through `psnr_score.h`, new `flush_fex_hip()` for
-  `apsnr_*`. `integer_ssim_hip.c` / `float_ssim_hip.c`: `enable_db` /
-  `clip_db` through `vmaf_ssim_max_db()`; `float_ssim_hip` `enable_lcs`
-  selects `calculate_ssim_hip_vert_combine_lcs`. Identical SSIM windows score
-  exactly 1 (`issim_pixel_term()`, `ssim_from_moments()` with
-  `#pragma clang fp contract(off)`); folding the named temporaries back into
-  one expression breaks that. `float_motion_hip.c`: `motion_max_val` and
-  `fm_hip_motion_clip()` on every emitted score.
+  `apsnr_*`, and `VMAF_FEATURE_EXTRACTOR_TEMPORAL` like the CPU.
+  `integer_ssim_hip.c` / `float_ssim_hip.c`: `enable_db` / `clip_db` through
+  `vmaf_ssim_max_db()`; `float_ssim_hip` `enable_lcs` selects
+  `calculate_ssim_hip_vert_combine_lcs`. `integer_ssim_hip` scores an
+  identical window exactly its weight (`issim_pixel_term()`).
+  `float_ssim/ssim_score.hip` pass 2 is the CPU's per-pixel `l * c * s` in
+  double (`ssim_lcs()` under `#pragma clang fp contract(off)`,
+  `ssim_pixel()`), one double partial per block, and `fssim_hip_cpu_mean()`
+  rounds every frame mean to fp32 like `iqa_ssim()`; do not restore the
+  combined formula or an identical-window shortcut. `float_motion_hip.c`:
+  `motion_max_val` and `fm_hip_motion_clip()` on every emitted score;
+  `float_motion_score.hip` tile loads through `fm_tile_index()`
+  (`hip_tile_index.h`). `integer_motion_v2_hip.c`: the stored SAD is
+  `MIN(score * motion_fps_weight, motion_max_val)`, `motion2_v2` folds it
+  unweighted, a one-frame run emits both folds. `integer_motion_hip.c`:
+  `debug` defaults to false and `VMAF_integer_feature_motion_sad_score` is
+  emitted every frame, like the CPU `motion`. `integer_vif_hip.c`: the
+  scaffold `-ENOSYS` comes before the minimum-size check (ADR-1264).
+- `scripts/ci/cross_backend_parity_gate.py` / `cross_backend_vif_diff.py`:
+  `hip` backend (`--hip_device`), `float_ssim_lcs` cell, and
+  `BACKEND_EXTRACTOR_ALIASES` keyed by the base extractor
+  (`float_ms_ssim` is `integer_ms_ssim_hip`).
 - `core/src/meson.build`: `motion_score` HSACO target gone, the two new
   headers join the HIP kernel depfile list; `core/src/hip/meson.build`:
   `integer_motion_sad_hip.c`. `core/test/meson.build`:
@@ -55151,5 +55166,8 @@ No public C API, CLI syntax or FFmpeg patch impact. CPU scores are unchanged.
 `motion_hip` scores move to the CPU's (about 1.3e-5 on the Netflix pair);
 `motion_v2_hip`, `psnr_hip` with default options, `vif_hip` from 16x16 up and
 `integer_adm_hip` are unchanged by construction; default `float_ssim_hip`
-output can move at the fp32 rounding level and identical frames now score
-exactly 1. None of this was measured on an AMD device in this change.
+output moves from the combined formula to the CPU's product form (towards
+the CPU), `motion_v2_hip` output changes only with non-default
+`motion_fps_weight` / `motion_max_val`, and `motion_hip` no longer emits the
+debug score unless `debug=true`. None of this was measured on an AMD device
+in this change.

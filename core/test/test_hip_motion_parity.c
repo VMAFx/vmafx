@@ -130,7 +130,11 @@ static char *run_hip_motion(double *score)
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "motion_hip", NULL);
+    /* `debug` defaults to false on the twin too, as on the CPU. */
+    VmafFeatureDictionary *opts = NULL;
+    err = vmaf_feature_dictionary_set(&opts, "debug", "true");
+    mu_assert("HIP: vmaf_feature_dictionary_set(debug) failed", !err);
+    err = vmaf_use_feature(vmaf, "motion_hip", opts);
     mu_assert("HIP: vmaf_use_feature(motion_hip) failed", !err);
     err = feed_two_frames(vmaf);
     if (err == -ENOSYS) {

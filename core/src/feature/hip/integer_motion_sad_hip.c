@@ -99,6 +99,15 @@ static int motion_sad_launch(const VmafHipMotionSad *k, const VmafHipMotionSadFr
     return vmaf_hip_rc_to_errno(rc);
 }
 
+/* Error path only: the upload is already enqueued from `staging` into `cur`,
+ * so wait for it before the caller may reuse either, then pass `err` on. */
+static int motion_sad_drain_after_error(uintptr_t stream, int err)
+{
+    const hipError_t rc = hipStreamSynchronize(vmaf_hip_stream_of(stream));
+    (void)rc; /* `err` is the failure to report */
+    return err;
+}
+
 int vmaf_hip_motion_sad_submit(const VmafHipMotionSad *k, const VmafHipMotionSadFrame *frame,
                                uintptr_t stream)
 {
@@ -114,12 +123,14 @@ int vmaf_hip_motion_sad_submit(const VmafHipMotionSad *k, const VmafHipMotionSad
                                       .rows = frame->height};
     /* The host copy reads the picture now; the device copy runs later from
      * `staging`, ahead of the kernel on the same stream. No host wait. */
-    const int err = vmaf_hip_picture_upload_staged(
-        &plane, 1u, frame->staging,
-        vmaf_hip_motion_sad_plane_bytes(frame->width, frame->height, frame->bpc), stream);
+    const int err =
+        vmaf_hip_picture_upload_staged(&plane, 1u, frame->staging, frame->staging_bytes, stream);
     if (err != 0 || frame->prev == NULL)
         return err;
-    return motion_sad_launch(k, frame, vmaf_hip_stream_of(stream));
+    const int launch_err = motion_sad_launch(k, frame, vmaf_hip_stream_of(stream));
+    if (launch_err != 0)
+        return motion_sad_drain_after_error(stream, launch_err);
+    return 0;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

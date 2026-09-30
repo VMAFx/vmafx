@@ -44,7 +44,7 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 
 | Option                    | Alias    | Type   | Default   | Range         | Effect                                                                 |
 |---------------------------|----------|--------|-----------|---------------|------------------------------------------------------------------------|
-| `debug`                   | —        | bool   | `true`    | —             | Emit `motion_score` (legacy unfixed variant) alongside `motion2_score` |
+| `debug`                   | —        | bool   | `false`   | —             | Emit `motion_score` (legacy unfixed variant) alongside `motion2_score`; `motion_cuda` and `motion_hip` default to false too, `motion_sycl` to true |
 | `motion_force_zero`       | `force_0`| bool   | `false`   | —             | Override all emitted scores to `0.0`; used for deterministic fixtures  |
 | `motion_fps_weight`       | `mfw`    | double | `1.0`     | `0.0–5.0`     | Multiplicative FPS-aware correction applied before clamping            |
 | `motion_blend_factor`     | `mbf`    | double | `1.0`     | `0.0–1.0`     | Blend factor for `motion3_score`                                       |
@@ -189,7 +189,11 @@ CUDA twin landed first (#909); the SYCL, HIP, and Metal twins mirror its
 `motion2_v2`, and `motion3_v2` at `places=4` and skip cleanly when the backend
 device is absent. The host-side post-process is identical across all GPU twins,
 so any change to the CPU `motion_v2` flush blend/clip/seed/moving-average logic
-must be mirrored into all four in the same PR.
+must be mirrored into all four in the same PR. The stored
+`motion_v2_sad_score` carries `motion_fps_weight` and the `motion_max_val` cap,
+as the CPU's `extract()` stores it, and `motion2_v2` folds the stored value;
+`motion_v2_hip` weighted at fold time and never capped until
+[ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md).
 
 > **`motion_fps_weight` note.** All GPU twins store the *raw* SAD as
 > `motion_v2_sad_score` and apply `motion_fps_weight` in the host-side flush

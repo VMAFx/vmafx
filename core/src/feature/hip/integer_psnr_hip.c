@@ -577,7 +577,9 @@ VmafFeatureExtractor vmaf_fex_psnr_hip = {
     .options = options,
     .priv_size = sizeof(PsnrStateHip),
     .provided_features = provided_features,
-    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
+    /* TEMPORAL like CPU integer_psnr.c: with --subsample N > 1 every frame
+     * still reaches collect(), so the enable_apsnr totals cover the clip. */
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_TEMPORAL,
     .chars =
         {
             /* 3 dispatches/frame (one per plane) when enable_chroma=true.
