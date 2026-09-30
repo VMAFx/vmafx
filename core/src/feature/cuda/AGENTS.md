@@ -563,10 +563,12 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
 ## Integer reductions: one atomic per block (ADR-1392)
 
 - **`motion_v2_score.cu` and `psnr_score.cu` add ONE `atomicAdd` per
-  block** to the frame's single 64-bit accumulator: warp shuffle, warp
-  sums through `__shared__`, first warp sums them. Per-warp atomics to one
-  address serialised the kernels on the L2 atomic unit (PSNR spent most of
-  its GPU time there). Sums are integers, so any order is exact; never
+  block** to the frame's single 64-bit accumulator: warp shuffle, warp sums
+  through `__shared__`, first warp sums them. `integer_moment/moment_score.cu`
+  adds one per accumulator per block (threads 0..3 each sum one accumulator's
+  warp sums; geometry in `integer_moment_cuda.h`, as PSNR's). Per-warp atomics
+  to one address serialised the kernels on the L2 atomic unit (PSNR spent most
+  of its GPU time there). Sums are integers, so any order is exact; never
   return to per-warp or per-thread atomics on a single address.
 - **Motion SAD vertical pass once per block** into `VTile s_v` (16 output
   rows x 20 tile columns, CPU `>> bpc` rounding), then 5 horizontal taps

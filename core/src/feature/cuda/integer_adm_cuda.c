@@ -1612,6 +1612,7 @@ static int adm_cuda_release_device(VmafCudaState *cu_state, AdmStateCuda *s)
 static int adm_cuda_init_device_locked(VmafCudaState *cu_state, AdmStateCuda *s)
 {
     CudaFunctions *const cu_f = cu_state->f;
+    int release_rc = 0;
     int _cuda_err = 0;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
@@ -1623,10 +1624,8 @@ static int adm_cuda_init_device_locked(VmafCudaState *cu_state, AdmStateCuda *s)
         return 0;
     }
 fail:
-    {
-        const int release_rc = adm_cuda_release_device(cu_state, s);
-        return _cuda_err ? _cuda_err : release_rc;
-    }
+    release_rc = adm_cuda_release_device(cu_state, s);
+    return _cuda_err ? _cuda_err : release_rc;
 }
 
 /* Everything init needs from the device: stream, events, kernels and the SM

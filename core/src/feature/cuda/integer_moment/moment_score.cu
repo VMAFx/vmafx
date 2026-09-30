@@ -15,109 +15,113 @@
  *          dis1 += dis;        dis2 += dis * dis;
  *      host divides each accumulator by w*h.
  *
- *  Reduction strategy:
- *    1. Each thread computes its pixel's four contributions.
- *    2. Warp shuffle reduces 32 threads → 1 (uint64 via two
- *       uint32 shuffles, same trick as psnr_score.cu).
- *    3. Lane 0 of each warp atomicAdd's its four warp sums to
- *       the four global counters.
+ *  Reduction strategy (ADR-1392, as psnr_score.cu):
+ *    1. Each thread sums the four contributions of MOMENT_COLS_PER_THREAD
+ *       pixels of one row, MOMENT_BLOCK_X apart, so a warp's loads are
+ *       contiguous.
+ *    2. A warp shuffle collapses 32 threads -> 1 per sum, and the warp
+ *       sums go through shared memory.
+ *    3. Threads 0..3 each add up one sum over the block's warps and add
+ *       it to its accumulator: one atomic per accumulator per block. One
+ *       atomic per warp and sum, one pixel per thread, serialised the
+ *       kernel on the four addresses (T-CUDA-MOMENT-PER-WARP-ATOMICS-
+ *       2026-10-01).
  *
- *  Bit-exactness contract: int64 sum is exact on integer YUV
- *  inputs ⇒ places=4 cross-backend gate clears trivially
- *  (matches the empirical result on Vulkan: 0/48 mismatches).
+ *  Bit-exactness contract: the sums are integers, so their order cannot
+ *  change them; the host arithmetic is unchanged.
  */
 
 #include "cuda_helper.cuh"
 #include "cuda/integer_moment_cuda.h"
 #include "common.h"
 
-#define BLOCK_X 16
-#define BLOCK_Y 16
+namespace
+{
+
+/* The frame's four sums in accumulator order: ref1, dis1, ref2, dis2. */
+struct MomentSums {
+    unsigned long long v[MOMENT_SUMS];
+};
+
+/* Sum `m` over the block and add each sum to its accumulator with one
+ * atomic per block. Every thread of the block reaches this point, so the
+ * full masks are exact. */
+__device__ __forceinline__ void add_block_sums(MomentSums m, unsigned long long *__restrict__ acc)
+{
+    constexpr unsigned warps = (MOMENT_BLOCK_X * MOMENT_BLOCK_Y) / 32u;
+    __shared__ unsigned long long s_warp[MOMENT_SUMS][warps];
+#pragma unroll
+    for (unsigned k = 0; k < MOMENT_SUMS; k++) {
+        for (int off = 16; off > 0; off >>= 1)
+            m.v[k] += __shfl_down_sync(0xffffffffu, m.v[k], off);
+    }
+    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
+    if ((lid & 31u) == 0u) {
+#pragma unroll
+        for (unsigned k = 0; k < MOMENT_SUMS; k++)
+            s_warp[k][lid >> 5] = m.v[k];
+    }
+    __syncthreads();
+    if (lid < MOMENT_SUMS) {
+        unsigned long long sum = 0ull;
+#pragma unroll
+        for (unsigned w = 0; w < warps; w++)
+            sum += s_warp[lid][w];
+        atomicAdd(&acc[lid], sum);
+    }
+}
+
+/* Row `y` of the luma plane of `pic` as T samples. */
+template <typename T>
+__device__ __forceinline__ const T *luma_row(const VmafPicture &pic, unsigned y)
+{
+    return reinterpret_cast<const T *>(static_cast<const uint8_t *>(pic.data[0]) +
+                                       (size_t)y * pic.stride[0]);
+}
+
+/* The four sums of this thread's pixels; T is the sample type. */
+template <typename T>
+__device__ __forceinline__ MomentSums thread_sums(const VmafPicture &ref, const VmafPicture &dis,
+                                                  unsigned width, unsigned height)
+{
+    MomentSums m = {{0ull, 0ull, 0ull, 0ull}};
+    const unsigned y = blockIdx.y * MOMENT_BLOCK_Y + threadIdx.y;
+    if (y >= height)
+        return m;
+    const T *ref_row = luma_row<T>(ref, y);
+    const T *dis_row = luma_row<T>(dis, y);
+    const unsigned x0 = blockIdx.x * MOMENT_BLOCK_COLS + threadIdx.x;
+#pragma unroll
+    for (unsigned k = 0; k < MOMENT_COLS_PER_THREAD; k++) {
+        const unsigned x = x0 + k * MOMENT_BLOCK_X;
+        if (x < width) {
+            const unsigned long long r = __ldg(&ref_row[x]);
+            const unsigned long long d = __ldg(&dis_row[x]);
+            m.v[0] += r;
+            m.v[1] += d;
+            m.v[2] += r * r;
+            m.v[3] += d * d;
+        }
+    }
+    return m;
+}
+
+} // namespace
 
 extern "C" {
-
-__device__ static inline uint64_t warp_reduce_u64(uint64_t v)
-{
-    uint32_t lo = (uint32_t)v;
-    uint32_t hi = (uint32_t)(v >> 32);
-    for (int off = 16; off > 0; off >>= 1) {
-        uint32_t tlo = __shfl_down_sync(0xffffffff, lo, off);
-        uint32_t thi = __shfl_down_sync(0xffffffff, hi, off);
-        uint64_t other = ((uint64_t)thi << 32) | tlo;
-        uint64_t self = ((uint64_t)hi << 32) | lo;
-        uint64_t sum = self + other;
-        lo = (uint32_t)sum;
-        hi = (uint32_t)(sum >> 32);
-    }
-    return ((uint64_t)hi << 32) | lo;
-}
 
 __global__ void calculate_moment_kernel_8bpc(const VmafPicture ref, const VmafPicture dis,
                                              VmafCudaBuffer sums, unsigned width, unsigned height)
 {
-    const int x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    uint64_t r1 = 0, r2 = 0, d1 = 0, d2 = 0;
-    if (x < (int)width && y < (int)height) {
-        const uint8_t *ref_row = reinterpret_cast<const uint8_t *>(ref.data[0]) + y * ref.stride[0];
-        const uint8_t *dis_row = reinterpret_cast<const uint8_t *>(dis.data[0]) + y * dis.stride[0];
-        const uint64_t r = (uint64_t)ref_row[x];
-        const uint64_t d = (uint64_t)dis_row[x];
-        r1 = r;
-        r2 = r * r;
-        d1 = d;
-        d2 = d * d;
-    }
-
-    r1 = warp_reduce_u64(r1);
-    r2 = warp_reduce_u64(r2);
-    d1 = warp_reduce_u64(d1);
-    d2 = warp_reduce_u64(d2);
-
-    const int lane = (threadIdx.y * blockDim.x + threadIdx.x) % 32;
-    if (lane == 0) {
-        unsigned long long *acc = reinterpret_cast<unsigned long long *>(sums.data);
-        atomicAdd(&acc[0], (unsigned long long)r1);
-        atomicAdd(&acc[1], (unsigned long long)d1);
-        atomicAdd(&acc[2], (unsigned long long)r2);
-        atomicAdd(&acc[3], (unsigned long long)d2);
-    }
+    add_block_sums(thread_sums<uint8_t>(ref, dis, width, height),
+                   reinterpret_cast<unsigned long long *>(sums.data));
 }
 
 __global__ void calculate_moment_kernel_16bpc(const VmafPicture ref, const VmafPicture dis,
                                               VmafCudaBuffer sums, unsigned width, unsigned height)
 {
-    const int x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    uint64_t r1 = 0, r2 = 0, d1 = 0, d2 = 0;
-    if (x < (int)width && y < (int)height) {
-        const uint16_t *ref_row = reinterpret_cast<const uint16_t *>(
-            reinterpret_cast<const uint8_t *>(ref.data[0]) + y * ref.stride[0]);
-        const uint16_t *dis_row = reinterpret_cast<const uint16_t *>(
-            reinterpret_cast<const uint8_t *>(dis.data[0]) + y * dis.stride[0]);
-        const uint64_t r = (uint64_t)ref_row[x];
-        const uint64_t d = (uint64_t)dis_row[x];
-        r1 = r;
-        r2 = r * r;
-        d1 = d;
-        d2 = d * d;
-    }
-
-    r1 = warp_reduce_u64(r1);
-    r2 = warp_reduce_u64(r2);
-    d1 = warp_reduce_u64(d1);
-    d2 = warp_reduce_u64(d2);
-
-    const int lane = (threadIdx.y * blockDim.x + threadIdx.x) % 32;
-    if (lane == 0) {
-        unsigned long long *acc = reinterpret_cast<unsigned long long *>(sums.data);
-        atomicAdd(&acc[0], (unsigned long long)r1);
-        atomicAdd(&acc[1], (unsigned long long)d1);
-        atomicAdd(&acc[2], (unsigned long long)r2);
-        atomicAdd(&acc[3], (unsigned long long)d2);
-    }
+    add_block_sums(thread_sums<uint16_t>(ref, dis, width, height),
+                   reinterpret_cast<unsigned long long *>(sums.data));
 }
 
 } /* extern "C" */

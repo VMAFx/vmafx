@@ -11,8 +11,9 @@
  *
  *  Single dispatch per frame; emits all four metrics
  *  (float_moment_ref{1st,2nd}, float_moment_dis{1st,2nd}) in
- *  one kernel pass via four uint64 atomic counters. Mirrors the
- *  psnr_cuda host scaffolding shipped in PR #129.
+ *  one kernel pass via four uint64 atomic counters, one atomic per
+ *  counter per block (ADR-1392). Mirrors the psnr_cuda host scaffolding
+ *  shipped in PR #129.
  */
 
 #include <errno.h>
@@ -66,15 +67,15 @@ static int moment_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis,
                                 CUfunction funcbpc8, CUfunction funcbpc16, CudaFunctions *cu_f,
                                 CUstream stream)
 {
-    const int block_dim_x = 16;
-    const int block_dim_y = 16;
-    const int grid_dim_x = DIV_ROUND_UP(width, block_dim_x);
-    const int grid_dim_y = DIV_ROUND_UP(height, block_dim_y);
+    /* One block per MOMENT_BLOCK_COLS x MOMENT_BLOCK_Y luma pixels
+     * (integer_moment_cuda.h, ADR-1392). */
+    const unsigned grid_dim_x = DIV_ROUND_UP(width, MOMENT_BLOCK_COLS);
+    const unsigned grid_dim_y = DIV_ROUND_UP(height, MOMENT_BLOCK_Y);
 
     void *kernelParams[] = {(void *)ref, (void *)dis, (void *)sums, &width, &height};
     CUfunction func = (bpc == 8) ? funcbpc8 : funcbpc16;
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_dim_x, grid_dim_y, 1, block_dim_x,
-                                           block_dim_y, 1, 0, stream, kernelParams, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_dim_x, grid_dim_y, 1, MOMENT_BLOCK_X,
+                                           MOMENT_BLOCK_Y, 1, 0, stream, kernelParams, NULL));
     return 0;
 }
 
@@ -260,6 +261,7 @@ static const char *provided_features[] = {
     NULL,
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_moment_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_moment_cuda = {
     .name = "float_moment_cuda",
     .init = init_fex_cuda,

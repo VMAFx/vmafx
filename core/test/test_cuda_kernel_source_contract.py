@@ -29,9 +29,10 @@ case that edits the live source the way the old code read and must fail:
   swaps the first for the second under motion_force_zero (the first frame
   used to call the submit() init() had cleared);
 - reductions (ADR-1392): the motion SAD and PSNR kernels add one atomic per
-  block, the motion kernel computes its vertical pass once per block, and
-  the PSNR kernel never indexes its by-value VmafPicture parameters with the
-  runtime plane (nvcc then copies both pictures to every thread's stack).
+  block, the moment kernel one per accumulator per block, the motion kernel
+  computes its vertical pass once per block, and the PSNR kernel never
+  indexes its by-value VmafPicture parameters with the runtime plane (nvcc
+  then copies both pictures to every thread's stack).
 """
 
 from __future__ import annotations
@@ -55,6 +56,7 @@ LIBVMAF_PATH = ROOT / "core" / "src" / LIBVMAF
 INTEGER_SSIM_FMAD = "'integer_ssim_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false']"
 INTEGER_SSIM_KERNEL = "integer_ssim/integer_ssim_score.cu"
 PSNR_KERNEL = "integer_psnr/psnr_score.cu"
+MOMENT_KERNEL = "integer_moment/moment_score.cu"
 MOTION_V2_SAD_SCORE = "MIN(sad_score * s->motion_fps_weight, s->motion_max_val)"
 FLOAT_SSIM_MEAN = "*mean = (double)(float)*mean;"
 SOURCES = (
@@ -65,6 +67,7 @@ SOURCES = (
     INTEGER_SSIM_KERNEL,
     ADM_KERNEL,
     PSNR_KERNEL,
+    MOMENT_KERNEL,
     "integer_psnr_cuda.c",
     "ssim_cuda.c",
     "integer_ssim_cuda.c",
@@ -302,6 +305,13 @@ def _reduction_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{MOTION_KERNEL}: the vertical pass is no longer computed once per block")
     if re.search(r"\.(?:data|stride)\[plane\]", _code(sources[PSNR_KERNEL])):
         failures.append(f"{PSNR_KERNEL}: indexes the by-value picture with the runtime plane")
+    moment = _code(sources[MOMENT_KERNEL])
+    if len(re.findall(r"\batomicAdd\s*\(", moment)) != 1 or not re.search(
+        r"if \(lid < MOMENT_SUMS\) \{[^}]*atomicAdd\(&acc\[lid\], sum\);", moment
+    ):
+        failures.append(
+            f"{MOMENT_KERNEL}: each block sum must reach its accumulator with one atomic per block"
+        )
     return failures
 
 
@@ -495,6 +505,14 @@ class CudaKernelSourceContractTest(unittest.TestCase):
             MOTION_KERNEL,
             "if ((lid & 31u) == 0u)\n        s_warp[lid >> 5] = v;",
             "if ((lid & 31u) == 0u)\n        atomicAdd(sad, v);",
+        )
+        self._assert_detected(sources, "one atomic per block")
+
+    def test_per_warp_moment_atomic_is_detected(self) -> None:
+        sources = self._edit(
+            MOMENT_KERNEL,
+            "s_warp[k][lid >> 5] = m.v[k];",
+            "atomicAdd(&acc[k], m.v[k]);",
         )
         self._assert_detected(sources, "one atomic per block")
 
