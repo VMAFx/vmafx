@@ -16,14 +16,15 @@ the repo root.
 ## Prerequisites
 
 1. Install [MSYS2](https://www.msys2.org/).
-2. From an MSYS2 shell, install the MinGW-w64 toolchain and build tools:
+2. From an MSYS2 UCRT64 shell, install the MinGW-w64 toolchain and build tools:
 
    ```bash
    pacman -S --noconfirm --needed \
-     mingw-w64-x86_64-nasm \
-     mingw-w64-x86_64-gcc \
-     mingw-w64-x86_64-meson \
-     mingw-w64-x86_64-ninja
+     mingw-w64-ucrt-x86_64-nasm \
+     mingw-w64-ucrt-x86_64-gcc \
+     mingw-w64-ucrt-x86_64-meson \
+     mingw-w64-ucrt-x86_64-ninja \
+     mingw-w64-ucrt-x86_64-pkg-config
    ```
 
 ## Build and install

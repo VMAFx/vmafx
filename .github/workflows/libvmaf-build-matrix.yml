@@ -731,16 +731,14 @@ jobs:
           name: ${{ matrix.name }}-vmaf
           path: ./install/bin/vmaf
 
-  # ===== Windows (MSYS2 / MinGW-w64) =====
+  # ===== Windows (MSYS2 / MinGW-w64 UCRT64) =====
   # Folded in from the now-deleted .github/workflows/windows.yml so the
   # full build matrix lives in one workflow file. See ADR-0115.
   # MINGW32 is intentionally disabled (vmaf score mismatch — upstream note);
   # 32-bit support would need a SIMD audit before re-enabling.
   #
   # Job key renamed `build` → `windows` and display name set to Title Case
-  # per ADR-0116. The matrix-expanded required status check on master is
-  # re-pinned to `Build — Windows MinGW64 (CPU)` immediately after this
-  # workflow lands (see ADR-0116 §Consequences).
+  # per ADR-0116. Migrated from deprecated MINGW64 to UCRT64 (ADR-1387).
   windows:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: ${{ matrix.name }}
@@ -751,9 +749,9 @@ jobs:
       matrix:
         include:
           # required-aggregator
-          - name: Windows MinGW64
-            msystem: MINGW64
-            MINGW_PACKAGE_PREFIX: mingw-w64-x86_64
+          - name: Windows UCRT64
+            msystem: UCRT64
+            MINGW_PACKAGE_PREFIX: mingw-w64-ucrt-x86_64
     env:
       CC: ccache gcc
       CXX: ccache g++
@@ -1175,7 +1173,7 @@ jobs:
           }
           "vmaf.exe machine field 0x{0:X4} (ARM64)" -f $machine
 
-      # The MinGW64 lane runs the whole suite; this lane starts with
+      # The MinGW UCRT64 lane runs the whole suite; this lane starts with
       # `fast`. --print-errorlogs mirrors that lane so a failing test's
       # output lands in the CI log instead of only in testlog.txt.
       - name: Run fast unit suite

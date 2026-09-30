@@ -236,6 +236,19 @@
 - `core/src/feature/sycl/integer_motion_v2_sycl.cpp`: fork-only. Aligned FPS
   weighting in `collect()` and motion score clipping with CPU reference.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## ci/mingw-ucrt64 — migrate Windows MinGW CI leg to UCRT64 (ADR-1387) (2026-09-30)
+
+- `.github/workflows/libvmaf-build-matrix.yml`: the MSYS2 Windows matrix leg migrated
+  from `msystem: MINGW64` with `mingw-w64-x86_64-*` to `msystem: UCRT64` with
+  `mingw-w64-ucrt-x86_64-*` packages, resolving the deprecation warning from
+  `msys2/setup-msys2` v2.33.0 (#1609, ADR-1387). Matrix job display name renamed
+  from `Windows MinGW64` to `Windows UCRT64`.
+- `.github/workflows/required-aggregator.yml`: required status check context updated
+  from `'Windows MinGW64'` to `'Windows UCRT64'`. The two must remain identical
+  (`scripts/ci/check-aggregator-names.sh`).
+- `docs/getting-started/building-on-windows.md`: manual MSYS2 prerequisite command
+  updated to install `mingw-w64-ucrt-x86_64-*` packages under UCRT64.
+- No Netflix golden-data, public C API or FFmpeg patch impact.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 

@@ -91,6 +91,12 @@
   options matches the CPU exactly, `apsnr_*` included, and the parity gate
   passes every HIP cell; see
   [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
+- Migrated the Windows MSYS2 MinGW build matrix leg in
+  `.github/workflows/libvmaf-build-matrix.yml` from the deprecated `MINGW64`
+  environment linking legacy `msvcrt.dll` to `UCRT64` linking the Universal C
+  Runtime (`ucrtbase.dll`), using `mingw-w64-ucrt-x86_64-*` packages. Updated the
+  required status check name in `.github/workflows/required-aggregator.yml` to
+  `Windows UCRT64` (ADR-1387, #1609).
 
 
 - **`vmaf` reads its two inputs ahead of scoring, on one thread each

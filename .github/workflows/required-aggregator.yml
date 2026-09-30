@@ -64,7 +64,7 @@ jobs:
             const required = [
               'Ubuntu gcc+DNN',
               'Ubuntu clang+DNN',
-              'Windows MinGW64',
+              'Windows UCRT64',
               'Windows MSVC+CUDA',
               'Windows MSVC+SYCL',
               'CodeQL',
