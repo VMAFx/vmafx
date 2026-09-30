@@ -59,9 +59,11 @@ The extractor is luma-only; it has no chroma option.
 
 Backend support: the CPU extractor, `integer_ssim_sycl`, `integer_ssim_hip` and
 `integer_ssim_metal` accept both options; `ssim_cuda` accepts neither. The SYCL
-twin applies them on the host to the device-reduced score and reports the
+and HIP twins apply them on the host to the device-reduced score and report the
 CPU's `+inf` / ceiling for identical frames
-([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). A model that sets
+([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md),
+[ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); the HIP twin is not yet
+measured on an AMD device). A model that sets
 an option the active backend's twin lacks computes `ssim` on the CPU
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
 

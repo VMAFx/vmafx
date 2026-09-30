@@ -656,10 +656,11 @@ at once. See [PSNR](psnr.md) for the full comparison.
 extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /
 `psnr_cr` identically to the CPU path when enabled. Pass
 `enable_chroma=false` for luma-only operation on any backend. `uncapped` is
-mirrored on every GPU twin under the same name and default. `psnr_sycl` also
-implements `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and `min_sse`,
-bit-exact with the CPU; on CUDA, HIP and Metal these four keep `psnr` on the
-CPU (see [PSNR](psnr.md#options)).
+mirrored on every GPU twin under the same name and default. `psnr_sycl` and
+`psnr_hip` also implement `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and
+`min_sse` through the CPU's own helpers (`psnr_sycl` measured bit-exact; the
+HIP twin, ADR-1382, not yet measured on an AMD device); on CUDA and Metal
+these four keep `psnr` on the CPU (see [PSNR](psnr.md#options)).
 `float_psnr` adds CUDA / SYCL / HIP / Metal twins on the float pipeline and
 accepts `uncapped` on all of them. (The Vulkan backend was removed in
 ADR-0726.)
@@ -756,10 +757,12 @@ decimates on the device at the automatic scale and every explicit one, with
 the CPU's reduced planes bit for bit, so 1080p and 4K `float_ssim` run on
 SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)); the CUDA,
 HIP and Metal `float_ssim` twins compute scale 1 only and leave larger
-scales to the CPU extractor. The CUDA twins lack
-`enable_db` / `clip_db` (and `float_ssim_cuda` `enable_lcs`), and
-`float_ssim_hip` lacks `enable_db` / `clip_db`; a model setting one of them
-computes that feature on the CPU.
+scales to the CPU extractor. The HIP twins `integer_ssim_hip` and
+`float_ssim_hip` implement `enable_db` / `clip_db` (and `float_ssim_hip`
+`enable_lcs`) with the same identical-frame behaviour
+([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)). The CUDA twins lack
+`enable_db` / `clip_db` (and `float_ssim_cuda` `enable_lcs`); a model setting
+one of them computes that feature on the CPU.
 
 **MS-SSIM decimate (fork-local)** — the 9-tap 9/7 biorthogonal wavelet
 LPF that produces scales 1–4 runs through `ms_ssim_decimate` in

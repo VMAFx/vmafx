@@ -24,6 +24,11 @@
  *  `index` and `VMAF_feature_motion2_score = min(prev, cur)` at
  *  `index - 1`. The tail motion2 is emitted in `flush()`.
  *
+ *  Score options follow CPU float_motion.c on the host (ADR-1382, the HIP
+ *  port of ADR-1365): every emitted `motion` / `motion2` value goes through
+ *  motion_clip(), i.e. it is scaled by `motion_fps_weight` and capped at
+ *  `motion_max_val`, the debug `motion` score included.
+ *
  *  When `HAVE_HIPCC` is defined (enable_hipcc=true at configure time),
  *  the real HIP Module API path is active. Without it the scaffold
  *  posture is preserved: every lifecycle helper returns -ENOSYS.
@@ -72,6 +77,9 @@
 #define FMH_BX 16u
 #define FMH_BY 16u
 
+/* CPU float_motion.c DEFAULT_MOTION_MAX_VAL. */
+#define FMH_DEFAULT_MAX_VAL (10000.0)
+
 typedef struct FloatMotionStateHip {
     /* Lifecycle (private stream + submit/finished event pair) and
      * the (device per-WG SAD float partials, pinned host readback
@@ -99,6 +107,7 @@ typedef struct FloatMotionStateHip {
     unsigned bpc;
     double prev_motion_score;
     double motion_fps_weight;
+    double motion_max_val;
     bool debug;
     bool motion_force_zero;
 
@@ -133,8 +142,28 @@ static const VmafOption options[] = {
         .max = 5.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
+    {
+        .name = "motion_max_val",
+        .alias = "mmxv",
+        .help = "maximum value allowed; larger values will be clipped to this value",
+        .offset = offsetof(FloatMotionStateHip, motion_max_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = FMH_DEFAULT_MAX_VAL,
+        .min = 0.0,
+        .max = 10000.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
     {0},
 };
+
+#ifdef HAVE_HIPCC
+/* CPU float_motion.c::motion_clip: fps weight, then the motion_max_val cap. */
+static double fm_hip_motion_clip(const FloatMotionStateHip *s, double score)
+{
+    const double weighted = score * s->motion_fps_weight;
+    return weighted < s->motion_max_val ? weighted : s->motion_max_val;
+}
+#endif /* HAVE_HIPCC */
 
 static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                               VmafPicture *ref_pic_90, VmafPicture *dist_pic,
@@ -177,34 +206,13 @@ static int init_force_zero_hip(VmafFeatureExtractor *fex, FloatMotionStateHip *s
 }
 
 #ifdef HAVE_HIPCC
-/* Translate a HIP error code to a negative errno. */
-static int fm_hip_rc(hipError_t rc)
-{
-    if (rc == hipSuccess)
-        return 0;
-    switch (rc) {
-    case hipErrorInvalidValue:
-    case hipErrorInvalidHandle:
-        return -EINVAL;
-    case hipErrorOutOfMemory:
-        return -ENOMEM;
-    case hipErrorNoDevice:
-    case hipErrorInvalidDevice:
-        return -ENODEV;
-    case hipErrorNotSupported:
-        return -ENOSYS;
-    default:
-        return -EIO;
-    }
-}
-
 /* Load the HSACO module and look up the two per-bpc kernel entry points.
  * Called once from init() when HAVE_HIPCC is defined. */
 static int fm_hip_module_load(FloatMotionStateHip *s)
 {
     hipError_t rc = hipModuleLoadData(&s->module, float_motion_score_hsaco);
     if (rc != hipSuccess)
-        return fm_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
 
     rc = hipModuleGetFunction(&s->funcbpc8, s->module, "float_motion_hip_kernel_8bpc");
     if (rc == hipSuccess)
@@ -213,7 +221,7 @@ static int fm_hip_module_load(FloatMotionStateHip *s)
         (void)hipModuleUnload(s->module);
         s->module = NULL;
     }
-    return fm_hip_rc(rc);
+    return vmaf_hip_rc_to_errno(rc);
 }
 
 /* Blur + SAD kernel on `pstr`: blurs the staged frame into the current
@@ -243,8 +251,9 @@ static int fm_hip_launch_kernel(FloatMotionStateHip *s, ptrdiff_t plane_pitch, u
         (void *)&h,         (void *)&bpc,          (void *)&compute_sad,
     };
     const bool is8 = (s->bpc == 8u);
-    return fm_hip_rc(hipModuleLaunchKernel(is8 ? s->funcbpc8 : s->funcbpc16, gx, gy, 1, FMH_BX,
-                                           FMH_BY, 1, 0, pstr, is8 ? args8 : args16, NULL));
+    return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(is8 ? s->funcbpc8 : s->funcbpc16, gx, gy, 1,
+                                                      FMH_BX, FMH_BY, 1, 0, pstr,
+                                                      is8 ? args8 : args16, NULL));
 }
 
 /* HtoD copy ref luma plane, launch the motion kernel, record events,
@@ -292,7 +301,7 @@ static int fm_hip_launch(FloatMotionStateHip *s, VmafPicture *ref_pic, unsigned 
                             hipMemcpyDeviceToHost, str);
     }
     if (rc != hipSuccess)
-        return fm_hip_rc(rc);
+        return vmaf_hip_rc_to_errno(rc);
 
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
@@ -485,21 +494,21 @@ static int fm_hip_emit(FloatMotionStateHip *s, VmafFeatureCollector *feature_col
     }
 
     if (index > 1u) {
-        /* Apply fps weight to both operands before the min so the weight
-         * scales the motion2 output; identity when motion_fps_weight = 1.0.
-         * motion2 at index 0 was already written by the index == 0 branch,
-         * so index == 1 emits motion_score only. */
-        const double w_cur = motion_score * s->motion_fps_weight;
-        const double w_prev = s->prev_motion_score * s->motion_fps_weight;
-        const double motion2 = (w_cur < w_prev) ? w_cur : w_prev;
+        /* motion2 of the previous frame: the smaller of its two SADs, then
+         * motion_clip() — CPU float_motion.c::extract order. motion2 at
+         * index 0 was already written by the index == 0 branch, so index == 1
+         * emits motion_score only. */
+        const double motion2 =
+            (motion_score < s->prev_motion_score) ? motion_score : s->prev_motion_score;
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "VMAF_feature_motion2_score", motion2,
-                                                      index - 1u);
+                                                      "VMAF_feature_motion2_score",
+                                                      fm_hip_motion_clip(s, motion2), index - 1u);
     }
     if (s->debug && err == 0) {
+        /* The CPU emits the debug score motion_clip()ped, fps weight included. */
         err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "VMAF_feature_motion_score", motion_score,
-                                                      index);
+                                                      "VMAF_feature_motion_score",
+                                                      fm_hip_motion_clip(s, motion_score), index);
     }
     s->prev_motion_score = motion_score;
     return err;
@@ -562,12 +571,13 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
         0)
         return 1;
 
-    /* Emit the tail motion2 = prev_motion_score * fps_weight at the last
-     * frame index. A pending collect can already have written the same
-     * option-derived feature/index, so the probe above makes flush idempotent. */
+    /* Emit the tail motion2 = motion_clip(prev_motion_score) at the last
+     * frame index, as CPU float_motion.c::flush. A pending collect can
+     * already have written the same option-derived feature/index, so the
+     * probe above makes flush idempotent. */
     int err = vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, feature_name,
-        s->prev_motion_score * s->motion_fps_weight, s->index);
+        fm_hip_motion_clip(s, s->prev_motion_score), s->index);
     return (err != 0) ? err : 1;
 #endif /* HAVE_HIPCC */
 }

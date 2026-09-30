@@ -383,7 +383,7 @@
         "core/src/feature/arm64/ssimulacra2_sve2.h": 1,
         "core/src/feature/hip/ciede_hip.c": 1,
         "core/src/feature/hip/float_psnr_hip.c": 1,
-        "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip": 3,
+        "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip": 2,
         "core/src/feature/hip/integer_motion_v2_hip.c": 2,
         "core/src/feature/iqa/convolve.c": 1,
         "core/src/feature/iqa/ssim_simd.h": 1,
@@ -1260,7 +1260,6 @@
         "core/src/feature/cuda/speed_chroma_cuda.c": 1,
         "core/src/feature/feature_extractor.cpp": 1,
         "core/src/feature/hip/float_vif_hip.c": 1,
-        "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip": 1,
         "core/src/feature/hip/integer_vif/vif_statistics.hip": 3,
         "core/src/feature/hip/ssimulacra2_hip.c": 1,
         "core/src/feature/metal/float_adm_metal.mm": 1,
@@ -1305,6 +1304,7 @@
         "core/test/test_hip_speed_singular_parity.c": 1,
         "core/test/test_hip_speed_temporal_parity.c": 2,
         "core/test/test_hip_ssim_parity.c": 1,
+        "core/test/test_hip_vif_min_dim.c": 1,
         "core/test/test_hip_vif_parity.c": 3,
         "core/test/test_integer_vif_cpu_cuda_parity.c": 2,
         "core/test/test_metal_float_adm_parity.c": 3,
@@ -2773,7 +2773,6 @@
         "core/src/feature/hip/ciede_hip.c": 1,
         "core/src/feature/hip/ciede_hip.h": 1,
         "core/src/feature/hip/integer_ciede/ciede_score.hip": 1,
-        "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip": 1,
         "core/src/feature/hip/integer_motion_v2_hip.c": 1,
         "core/src/feature/hip/integer_motion_v2_hip.h": 1,
         "core/src/meson.build": 1
@@ -3433,7 +3432,6 @@
       "sites": {
         "core/src/dnn/dnn_api.c": 1,
         "core/src/feature/feature_extractor.cpp": 2,
-        "core/src/meson.build": 2,
         "core/test/dnn/meson.build": 1,
         "core/test/dnn/test_cli.sh": 1,
         "core/test/dnn/test_dnn_session_api.c": 1,
@@ -3469,7 +3467,6 @@
     "0529": {
       "sites": {
         ".github/workflows/dev-container-build.yml": 1,
-        "core/src/meson.build": 1,
         "dev/docker-compose.yml": 1,
         "scripts/ci/check-compose-dri-writable.sh": 2
       },
@@ -6093,6 +6090,7 @@
         "core/src/feature/hip/integer_adm_hip.c": 1,
         "core/src/feature/hip/integer_cambi_hip.c": 1,
         "core/src/feature/hip/integer_motion_hip.c": 1,
+        "core/src/feature/hip/integer_motion_sad_hip.c": 1,
         "core/src/feature/hip/integer_motion_v2_hip.c": 1,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 1,
         "core/src/feature/hip/integer_psnr_hip.c": 1,
@@ -6206,10 +6204,14 @@
         "core/test/test_gpu_picture_pool_alloc_failure.c": 1,
         "core/test/test_gpu_picture_pool_partial_init.c": 1,
         "core/test/test_gpu_picture_pool_uaf.c": 1,
+        "core/test/test_hip_adm_dwt2_rows.c": 1,
         "core/test/test_hip_adm_init_unwind.c": 1,
         "core/test/test_hip_float_motion_parity.c": 1,
+        "core/test/test_hip_motion_tiny_frames.c": 1,
         "core/test/test_hip_ssim_parity.c": 1,
+        "core/test/test_hip_twin_option_parity.c": 1,
         "core/test/test_hip_upload_race.c": 1,
+        "core/test/test_hip_vif_min_dim.c": 1,
         "core/test/test_integer_adm_dwt16_range.c": 1,
         "core/test/test_integer_adm_min_dim.c": 1,
         "core/test/test_integer_adm_simd.c": 1,
@@ -6642,6 +6644,7 @@
         "core/test/test_cuda_float_adm_parity.c": 2,
         "core/test/test_gpu_option_alias_contract.py": 1,
         "core/test/test_hip_float_adm_parity.c": 2,
+        "core/test/test_hip_twin_option_parity.c": 2,
         "core/test/test_metal_integer_adm_parity.c": 1,
         "core/test/test_sycl_float_adm_parity.c": 2,
         "core/test/test_sycl_twin_option_parity.c": 2
@@ -6695,7 +6698,7 @@
         "core/src/feature/cuda/integer_psnr_cuda.c": 3,
         "core/src/feature/float_psnr.c": 2,
         "core/src/feature/hip/float_psnr_hip.c": 3,
-        "core/src/feature/hip/integer_psnr_hip.c": 3,
+        "core/src/feature/hip/integer_psnr_hip.c": 2,
         "core/src/feature/integer_psnr.c": 1,
         "core/src/feature/metal/float_psnr.metal": 1,
         "core/src/feature/metal/float_psnr_metal.mm": 4,
@@ -6972,12 +6975,15 @@
     "1221": {
       "sites": {
         "core/src/feature/cuda/integer_ms_ssim_cuda.c": 1,
+        "core/src/feature/hip/float_ssim/ssim_score.hip": 1,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 2,
+        "core/src/feature/hip/integer_ssim/integer_ssim_score.hip": 1,
         "core/src/feature/metal/float_ms_ssim_metal.mm": 1,
         "core/src/feature/nonfinite_score.h": 1,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 2,
         "core/test/test_hip_ms_ssim_parity.c": 3,
+        "core/test/test_hip_twin_option_parity.c": 1,
         "core/test/test_sycl_ms_ssim_parity.c": 3,
         "core/test/test_sycl_twin_option_parity.c": 1
       },
@@ -7422,6 +7428,7 @@
     },
     "1302": {
       "sites": {
+        "core/src/feature/hip/float_ssim_hip.c": 1,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 1
       },
       "target": "1302-nonfinite-scores-fail-the-frame.md"
@@ -7530,14 +7537,17 @@
         "core/src/feature/cuda/integer_ssim_cuda.c": 2,
         "core/src/feature/feature_extractor.h": 2,
         "core/src/feature/hip/float_ssim_hip.c": 2,
+        "core/src/feature/hip/integer_vif_hip.c": 3,
         "core/src/feature/metal/float_ssim_metal.mm": 2,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
         "core/src/feature/sycl/integer_vif_sycl.cpp": 2,
         "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
         "core/src/libvmaf.c": 3,
-        "core/test/meson.build": 1,
+        "core/test/meson.build": 2,
         "core/test/test_feature_backend_twin.c": 2,
         "core/test/test_gpu_float_ssim_auto_scale_contract.py": 1,
+        "core/test/test_hip_kernel_source_contract.py": 1,
+        "core/test/test_hip_vif_min_dim.c": 3,
         "core/test/test_sycl_float_ssim_parity.c": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 1,
         "core/test/test_sycl_vif_min_dim.c": 2,
@@ -7862,7 +7872,13 @@
     },
     "1365": {
       "sites": {
+        "core/src/feature/hip/float_motion_hip.c": 1,
+        "core/src/feature/hip/float_ssim/ssim_score.hip": 1,
+        "core/src/feature/hip/float_ssim_hip.c": 1,
+        "core/src/feature/hip/integer_psnr_hip.c": 1,
+        "core/src/feature/hip/integer_ssim_hip.c": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
+        "core/test/test_hip_twin_option_parity.c": 1,
         "core/tools/test/test_vmaf_feature_backend.sh": 1
       },
       "target": "1365-sycl-twin-cpu-option-parity.md"
@@ -7915,11 +7931,62 @@
     },
     "1371": {
       "sites": {
+        "core/src/feature/hip/integer_motion_sad_hip.h": 1,
+        "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip": 1,
         "core/src/feature/sycl/integer_motion_pipeline_sycl.h": 1,
         "core/src/feature/sycl/integer_motion_sycl.cpp": 1,
+        "core/test/test_hip_motion_tiny_frames.c": 1,
         "core/test/test_sycl_kernel_source_contract.py": 1
       },
       "target": "1371-sycl-motion-diff-first-pipeline.md"
+    },
+    "1377": {
+      "sites": {
+        "core/src/feature/hip/hip_tile_index.h": 1,
+        "core/src/feature/hip/integer_motion_hip.c": 2,
+        "core/src/feature/hip/integer_motion_sad_hip.c": 1,
+        "core/src/feature/hip/integer_motion_sad_hip.h": 1,
+        "core/src/feature/hip/integer_motion_v2/motion_v2_score.hip": 1,
+        "core/src/feature/hip/integer_motion_v2_hip.c": 2,
+        "core/src/hip/kernel_template.c": 1,
+        "core/src/hip/meson.build": 1,
+        "core/src/hip/picture_hip.c": 1,
+        "core/src/hip/picture_hip.h": 1,
+        "core/src/meson.build": 2,
+        "core/test/meson.build": 2,
+        "core/test/test_hip_kernel_source_contract.py": 1,
+        "core/test/test_hip_motion_parity.c": 1,
+        "core/test/test_hip_motion_tiny_frames.c": 1,
+        "core/test/test_hip_twin_option_parity.c": 1
+      },
+      "target": "1377-hip-motion-diff-first.md"
+    },
+    "1381": {
+      "sites": {
+        "core/src/feature/hip/hip_tile_index.h": 1,
+        "core/src/feature/hip/integer_adm/adm_dwt2_rows.h": 1,
+        "core/src/feature/hip/integer_vif_hip.c": 2,
+        "core/src/meson.build": 1,
+        "core/test/meson.build": 3,
+        "core/test/test_hip_adm_dwt2_rows.c": 1,
+        "core/test/test_hip_kernel_source_contract.py": 1,
+        "core/test/test_hip_vif_min_dim.c": 1
+      },
+      "target": "1381-hip-integer-tiny-frame-guards.md"
+    },
+    "1382": {
+      "sites": {
+        "core/src/feature/hip/float_motion_hip.c": 1,
+        "core/src/feature/hip/float_ssim/ssim_score.hip": 3,
+        "core/src/feature/hip/float_ssim_hip.c": 2,
+        "core/src/feature/hip/integer_psnr_hip.c": 2,
+        "core/src/feature/hip/integer_ssim/integer_ssim_score.hip": 2,
+        "core/src/feature/hip/integer_ssim_hip.c": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_hip_kernel_source_contract.py": 1,
+        "core/test/test_hip_twin_option_parity.c": 2
+      },
+      "target": "1382-hip-twin-cpu-option-parity.md"
     }
   },
   "retired": {

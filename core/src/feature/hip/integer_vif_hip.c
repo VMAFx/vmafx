@@ -41,6 +41,7 @@
 #include "feature_name.h"
 #include "feature/nonfinite_score.h"
 #include "libvmaf/picture.h"
+#include "log.h"
 
 #include "integer_vif.h"
 #include "integer_vif_hip.h"
@@ -176,8 +177,8 @@ static int write_scores_hip(VmafFeatureCollector *feature_collector, VifStateHip
     };
     const unsigned scale_start = s->vif_skip_scale0 ? 1u : 0u;
     for (unsigned sc = 0; sc < 4u; ++sc) {
-        output.scale[sc * 2u] = vif.scale[sc].num;
-        output.scale[sc * 2u + 1u] = vif.scale[sc].den;
+        output.scale[(size_t)sc * 2u] = vif.scale[sc].num;
+        output.scale[((size_t)sc * 2u) + 1u] = vif.scale[sc].den;
         if (sc >= scale_start) {
             output.score_num += vif.scale[sc].num;
             output.score_den += vif.scale[sc].den;
@@ -508,16 +509,61 @@ static int vif_hip_release(VifStateHip *s)
 
 #endif /* HAVE_HIPCC */
 
+/*
+ * Smallest frame dimension every scale can filter
+ * (T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29, ADR-1381). Scale s works on
+ * floor(dim / 2^s) samples and the kernels reflect each filter tap once
+ * (mirror2_i in vif_statistics.hip, the CPU's reflection); a tap half-width
+ * of k stays inside the plane only while floor(dim / 2^s) >= k + 1, i.e.
+ * dim >= (k + 1) << s. The scale filters {17, 9, 5, 3} need {9, 10, 12, 16}
+ * and the decimation filters (the next scale's, {9, 5, 3}) need {5, 6, 8}, so
+ * the bound is 16, as for vif_sycl. Below it mirror2_i's safety clamp keeps
+ * the loads inside the buffers but reads other samples than the CPU does.
+ */
+static unsigned vif_hip_min_dim(void)
+{
+    unsigned min_dim = 1u;
+    for (unsigned scale = 0u; scale < 4u; scale++) {
+        const unsigned need = (((unsigned)vif_filter1d_width[scale] / 2u) + 1u) << scale;
+        const unsigned rd_need =
+            (scale < 3u) ? (((unsigned)vif_filter1d_width[scale + 1u] / 2u) + 1u) << scale : 1u;
+        min_dim = (need > min_dim) ? need : min_dim;
+        min_dim = (rd_need > min_dim) ? rd_need : min_dim;
+    }
+    return min_dim;
+}
+
+/* ADR-1324 first-picture gate: model dispatch computes frames below
+ * vif_hip_min_dim() with the CPU `vif` extractor instead of this twin. */
+static int check_context_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                             unsigned w, unsigned h)
+{
+    (void)fex;
+    (void)pix_fmt;
+    (void)bpc;
+    const unsigned min_dim = vif_hip_min_dim();
+    return (w < min_dim || h < min_dim) ? -ENOTSUP : 0;
+}
+
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
 {
     (void)pix_fmt;
 
+    /* Direct `vif_hip` requests get no fallback (ADR-1324): refuse before
+     * any device work, so there is nothing to free. */
+    const unsigned min_dim = vif_hip_min_dim();
+    if (w < min_dim || h < min_dim) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "vif_hip requires width >= %u and height >= %u (got %ux%u); the CPU "
+                 "extractor `vif` computes smaller frames\n",
+                 min_dim, min_dim, w, h);
+        return -EINVAL;
+    }
+
 #ifndef HAVE_HIPCC
     (void)fex;
     (void)bpc;
-    (void)w;
-    (void)h;
     return -ENOSYS;
 #else
     VifStateHip *s = fex->priv;
@@ -712,6 +758,10 @@ VmafFeatureExtractor vmaf_fex_integer_vif_hip = {
      * uploaded to device, kernel half-widths corrected, downsample
      * write path added).  ADR-0530 cleared this flag pending the fix. */
     .flags = VMAF_FEATURE_EXTRACTOR_HIP,
+    /* ADR-1381: frames below the 16-pixel filter footprint run on the CPU
+     * `vif` under model dispatch (ADR-1324 gate). */
+    .context_check = check_context_hip,
+    .context_fallback_name = "vif",
 };
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -57,6 +57,14 @@ CPU `vif` is checked on the macOS Apple-Silicon CI lane (`places=4`, ADR-0214);
 because Apple GPUs lack fp64 the per-pixel gain is computed in float (the same
 fp64-free trade-off as the SYCL twin, ADR-0220).
 
+`vif_sycl` and `vif_hip` need frames of at least 16x16, the same four-scale
+filter footprint as `float_vif` below: each scale reflects its filter taps
+once, which stays inside the plane only from 16 pixels up. With a model,
+smaller frames compute `vif` on the CPU extractor instead of the twin; a
+direct `--feature vif_sycl` or `--feature vif_hip` request below 16x16 fails
+at `init()` with `-EINVAL`
+([ADR-1381](../adr/1381-hip-integer-tiny-frame-guards.md) for HIP).
+
 ### Output features
 
 All features are computed on the luma (Y) plane only.

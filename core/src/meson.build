@@ -267,18 +267,10 @@ if is_hipcc_enabled and is_hip_enabled
         'moment_score' : feature_src_dir + 'hip/float_moment/moment_score.hip',
         'ssim_score' : feature_src_dir + 'hip/float_ssim/ssim_score.hip',
         'ciede_score' : feature_src_dir + 'hip/integer_ciede/ciede_score.hip',
+        # ADR-1377: motion_hip and motion_v2_hip both run this diff-first SAD
+        # (launched by feature/hip/integer_motion_sad_hip.c). motion_hip's
+        # blur-then-diff `motion_score.hip` is gone: it rounded unlike the CPU.
         'motion_v2_score' : feature_src_dir + 'hip/integer_motion_v2/motion_v2_score.hip',
-        # ADR-0523 follow-up: integer_motion_hip.c loads `motion_score_hsaco`
-        # but the .hip kernel was never wired into this dict, so the
-        # `extern const unsigned char motion_score_hsaco[]` in
-        # `integer_motion_hip.h` resolved to an undefined link reference
-        # whenever `enable_hipcc=true` was paired with `enable_hip=true`
-        # (i.e. the dev-MCP container's default build mode). The kernel
-        # source has lived at `core/src/feature/hip/integer_motion/
-        # motion_score.hip` since ADR-0523 added the registration; this
-        # entry closes the loop. Surfaced during ADR-0529 container
-        # rebuild verification.
-        'motion_score' : feature_src_dir + 'hip/integer_motion/motion_score.hip',
         # T7-10b batch-2 twelfth consumer: float_adm_score (ADR-0468).
         'float_adm_score' : feature_src_dir + 'hip/float_adm/float_adm_score.hip',
         # integer_cambi_hip HSACO blob.
@@ -337,8 +329,11 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/adm_cm_accumulator.h',
         'feature/hip/integer_adm_hip.h',
         'feature/hip/integer_adm/adm_decouple_inline.hip',
+        # ADR-1377 / ADR-1381: tile-load index guard and the ADM scale-0
+        # vertical DWT row arithmetic, shared by the kernels and host tests.
+        'feature/hip/hip_tile_index.h',
+        'feature/hip/integer_adm/adm_dwt2_rows.h',
         'feature/hip/integer_vif_hip.h',
-        'feature/hip/integer_motion_hip.h',
         'feature/hip/integer_motion_v2_hip.h',
         'feature/hip/integer_psnr_hip.h',
         'feature/hip/float_moment_hip.h',
