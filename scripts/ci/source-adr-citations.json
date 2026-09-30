@@ -7812,7 +7812,8 @@
         "scripts/ci/cross_backend_parity_gate.py": 2,
         "scripts/ci/cross_backend_vif_diff.py": 2,
         "scripts/ci/gpu_ulp_calibration.yaml": 1,
-        "scripts/ci/test_cross_backend_parity_gate.py": 1
+        "scripts/ci/test_cross_backend_parity_gate.py": 1,
+        "scripts/dev/rc3-home-gpu-retest.sh": 1
       },
       "target": "1361-psnr-hvs-area-scaled-parity-tolerance.md"
     },
@@ -7964,6 +7965,13 @@
         ".github/workflows/rule-enforcement.yml": 1
       },
       "target": "1383-state-md-three-way-conflict-resolver.md"
+    },
+    "1386": {
+      "sites": {
+        ".pre-commit-config.yaml": 1,
+        "scripts/dev/rc3-home-gpu-retest.sh": 1
+      },
+      "target": "1386-rc3-home-gpu-retest-kit.md"
     }
   },
   "retired": {

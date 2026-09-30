@@ -118,6 +118,7 @@ EXPECTED_RUNNER_PATHS = {
     Path(".zed/tasks.json"): ("/workspace/scripts/ci/run_meson_test.py",),
     Path(".claude/skills/bisect-regression/scaffold.sh"): ("scripts/ci/run_meson_test.py",),
     Path("scripts/dev/preflight.sh"): ("scripts/ci/run_meson_test.py",) * 3,
+    Path("scripts/dev/rc3-home-gpu-retest.sh"): ("scripts/ci/run_meson_test.py",),
     Path("scripts/setup/ubuntu.sh"): ("scripts/ci/run_meson_test.py",),
     Path("scripts/sync-pelorus-interop.sh"): ("scripts/ci/run_meson_test.py",),
 }

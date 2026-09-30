@@ -50,6 +50,16 @@
 - Invariant: the per-block arithmetic is the previous CUDA kernel's, and `reduce_hvs_planes()` adds each plane's partials in block order in `float` (the sum ADR-1361 calibrated). Changing either changes the output: `vmaf --feature psnr_hvs_cuda --precision max` before and after a rebase must stay bit-identical at 576x324 and 3840x2160.
 - 4:0:0 input is luma only (as on master and on the CPU); `test_psnr_hvs_yuv400_parity` pins it, and `test_psnr_hvs_odd_depth_parity` pins 9- and 11-bit parity with the CPU.
 - `core/test/test_cuda_module_lifecycle_contract.py`: `integer_psnr_hvs_cuda.c` left `EXPECTED_BUFFER_OWNERS`; it owns no `VmafCudaBuffer` of its own any more.
+## chore/rc3-home-gpu-retest — RC3 home GPU retest kit (ADR-1386) (2026-09-30)
+
+- `scripts/dev/rc3-home-gpu-retest.sh` and `scripts/dev/rc3_retest_helpers.py`: fork-only
+  harness. Runs verify-and-time commands for open RC3 `docs/state.md` rows on `ryzen-4090-arc`
+  under per-device locks (`~/.cache/vmafx-locks/{cuda-4090,sycl-a380,hip-gfx1036}.lock`).
+  Commands are explicitly encoded per row and backend, never parsed at run time.
+- `scripts/dev/tests/test_rc3_home_gpu_retest.py` validates argument handling, lock isolation,
+  and row existence contracts against `docs/state.md`.
+- `core/test/test_meson_secret_env_sanitization.py`: `EXPECTED_RUNNER_PATHS` registers
+  `scripts/dev/rc3-home-gpu-retest.sh` as an authorized caller of `scripts/ci/run_meson_test.py`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)

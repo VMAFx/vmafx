@@ -229,6 +229,13 @@ repos:
         files: '^scripts/dev/((install_)?merge_train_guard\.py|tests/test_(install_)?merge_train_guard\.py)$'
         pass_filenames: false
 
+      - id: rc3-home-gpu-retest-contract
+        name: RC3 home GPU retest kit regressions (ADR-1386)
+        entry: python3 -B -m unittest discover -s scripts/dev/tests -p test_rc3_home_gpu_retest.py
+        language: system
+        files: '^(scripts/dev/(rc3-home-gpu-retest\.sh|rc3_retest_helpers\.py|tests/test_rc3_home_gpu_retest\.py)|docs/state\.md)$'
+        pass_filenames: false
+
       - id: test-safe-subprocess-boundary
         name: Bounded process execution and fail-soft consumer regressions
         entry: python3 -m unittest scripts.lib.test_safe_subprocess scripts.lib.test_backlog_tracker scripts.ci.tests.test_agent_eligibility_precheck

@@ -57,3 +57,22 @@ both together. Never restore "ours wins": mid-rebase ours already holds the
 replayed branch commits. `test-resolve-state-md-conflict.py` drives real
 `git rebase` conflicts and runs in the Rules workflow and under
 `scripts/ci/test_git_fixture_isolation.py`.
+
+`rc3-home-gpu-retest.sh` (ADR-1386) runs the `ryzen-4090-arc` verify and
+time commands of `docs/state.md` rows. Preserve:
+
+- one explicit entry per row and backend; never parse `docs/state.md` at run
+  time
+- row gains or changes a command for this box -> same PR edits its entry;
+  closed row may drop its entry
+- every device run under its `flock` (`cuda-4090`, `hip-gfx1036`,
+  `sycl-a380` `.lock`); timing block takes lock before clock, holds it through
+  its reps; never two device locks at once; CPU runs unlocked
+- `lock_take` local stays `_take_fd`: bash scope is dynamic, a local named
+  like the caller's variable leaves the lock held, next `lock_take` on that
+  file waits on itself; `FakeDeviceRunTests` catches it
+- JSON compare and summaries only in `rc3_retest_helpers.py`
+
+`tests/test_rc3_home_gpu_retest.py` (pre-commit `rc3-home-gpu-retest-contract`)
+checks every entry names an existing row and runs the real path on a fake
+`vmaf`.

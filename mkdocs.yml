@@ -332,6 +332,7 @@ nav:
       - CI: development/ci.md
       - CI runners: development/ci-runners.md
       - Cross-backend gate: development/cross-backend-gate.md
+      - RC3 home GPU retest: development/rc3-home-gpu-retest.md
       - Fuzzing: development/fuzzing.md
       - IDE setup: development/ide-setup.md
       - oneAPI install: development/oneapi-install.md
@@ -1487,6 +1488,7 @@ nav:
         - "ADR-1379: cuda-cambi-device-resident-pipeline": adr/1379-cuda-cambi-device-resident-pipeline.md
         - "ADR-1380: cuda-speed-device-resident-pipeline": adr/1380-cuda-speed-device-resident-pipeline.md
         - "ADR-1383: state-md-three-way-conflict-resolver": adr/1383-state-md-three-way-conflict-resolver.md
+        - "ADR-1386: rc3-home-gpu-retest-kit": adr/1386-rc3-home-gpu-retest-kit.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
