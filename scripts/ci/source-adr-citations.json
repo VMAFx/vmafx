@@ -7862,7 +7862,7 @@
     },
     "1361": {
       "sites": {
-        "core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip": 1,
+        "core/src/feature/hip/integer_psnr_hvs_hip.c": 2,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "scripts/ci/cross_backend_calibration.py": 2,
         "scripts/ci/cross_backend_parity_gate.py": 2,
@@ -7982,6 +7982,7 @@
         "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 2,
         "core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip": 1,
         "core/src/feature/hip/integer_psnr_hvs_hip.c": 1,
+        "core/src/feature/hip/integer_psnr_hvs_hip.h": 1,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 3,

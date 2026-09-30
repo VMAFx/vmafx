@@ -3,20 +3,20 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-2-Clause
  *
- *  psnr_hvs feature extractor on the HIP backend.
- *  Direct port of `libvmaf/src/feature/cuda/integer_psnr_hvs_cuda.c`
- *  (s/cuda/hip/ + HIP API tweaks).
+ *  psnr_hvs feature extractor on the HIP backend (port of the ADR-1369
+ *  kernel of the SYCL twin to HIP).
  *
- *  Design mirrors the CUDA twin with the following difference (ADR-1369 port):
- *  - 3 dispatches per frame (Y, Cb, Cr).
- *  - Per-plane single-dispatch design: one HIP block per output 8x8
- *    image block (step=7), 64 threads per block.
- *  - Native samples (uint8_t or uint16_t) are uploaded directly from the
- *    VmafPicture via vmaf_hip_picture_upload(); no host float conversion.
- *    The kernel reads raw integers and skips the float round-trip, saving
- *    4x upload bandwidth at 8 bpc and 2x at 10/12 bpc.
- *  - Combined `psnr_hvs = 0.8*Y + 0.1*(Cb + Cr)` computed on the host
- *    after the per-plane partial-sum readback.
+ *  Per frame, on the extractor's private stream:
+ *  - submit() packs the six raw planes (Y, Cb, Cr of both pictures; uint8_t
+ *    at 8 bpc, uint16_t above) into extractor-owned pinned buffers and
+ *    enqueues their copies to the device, one dispatch of
+ *    `psnr_hvs_score.hip` that scores every block of every plane (two
+ *    work-items per 8x8 block, step 7), and one copy of the block errors
+ *    back. The pictures are not read after submit() returns, and submit()
+ *    does not wait for the device.
+ *  - collect() waits once, sums each plane's block errors in block order
+ *    (the float accumulator of the previous kernel, ADR-1361) and emits
+ *    `psnr_hvs_y/cb/cr` and `psnr_hvs = 0.8*Y + 0.1*(Cb + Cr)`.
  *  - Rejects YUV400P (no chroma) and bpc > 12 (matches CPU + CUDA).
  *
  *  Without `HAVE_HIPCC` (CPU-only builds, `enable_hip=true` but
@@ -39,13 +39,13 @@
 
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
-#include "../../hip/picture_hip.h"
 #include "integer_psnr_hvs_hip.h"
 
 #ifdef HAVE_HIPCC
 #include <hip/hip_runtime_api.h>
 
 #include "../../hip/hip_handle.h"
+#endif /* HAVE_HIPCC */
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -53,14 +53,9 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-extern const unsigned char psnr_hvs_score_hsaco[];
-extern const unsigned int psnr_hvs_score_hsaco_len;
-#endif /* HAVE_HIPCC */
-
 #define PSNR_HVS_BLOCK 8
 #define PSNR_HVS_STEP 7
-#define PSNR_HVS_NUM_PLANES 3
-#define PSNR_HVS_BLOCK_DIM 8
+#define PSNR_HVS_NUM_PLANES PSNR_HVS_HIP_NUM_PLANES
 
 typedef struct PsnrHvsStateHip {
     VmafHipKernelLifecycle lc;
@@ -71,6 +66,10 @@ typedef struct PsnrHvsStateHip {
     unsigned num_blocks_x[PSNR_HVS_NUM_PLANES];
     unsigned num_blocks_y[PSNR_HVS_NUM_PLANES];
     unsigned num_blocks[PSNR_HVS_NUM_PLANES];
+    /* Offset of each plane's blocks in the one partials buffer. */
+    unsigned first_block[PSNR_HVS_NUM_PLANES];
+    unsigned total_blocks;
+    size_t row_bytes[PSNR_HVS_NUM_PLANES];
     unsigned bpc;
     int32_t samplemax_sq;
 
@@ -78,14 +77,15 @@ typedef struct PsnrHvsStateHip {
     hipModule_t module;
     hipFunction_t func_psnr_hvs;
 
-    /* Per-plane ref / dist device buffers (native uint8 or uint16 samples). */
+    /* Raw samples of both pictures: device copies and their pinned
+     * staging, [plane]. */
     void *d_ref[PSNR_HVS_NUM_PLANES];
     void *d_dist[PSNR_HVS_NUM_PLANES];
-    /* Per-plane block partial-sum device buffers. */
-    float *d_partials[PSNR_HVS_NUM_PLANES];
-
-    /* Pinned host staging for partial readback. */
-    float *h_partials[PSNR_HVS_NUM_PLANES];
+    void *h_ref[PSNR_HVS_NUM_PLANES];
+    void *h_dist[PSNR_HVS_NUM_PLANES];
+    /* One masked-error sum per block, every plane, and its pinned copy. */
+    float *d_partials;
+    float *h_partials;
 #endif /* HAVE_HIPCC */
 
     unsigned index;
@@ -129,57 +129,67 @@ static int psnr_hvs_hip_module_load(PsnrHvsStateHip *s)
     }
     return 0;
 }
-#endif /* HAVE_HIPCC */
 
-#ifdef HAVE_HIPCC
-/* Releases every per-plane device + pinned allocation made by
- * psnr_hvs_alloc_plane_buffers(). Shared verbatim by the init unwind path and
- * close_fex_hip() so both free the same set in the same order (HISS-01). */
-static void psnr_hvs_free_plane_buffers(PsnrHvsStateHip *s)
+static void psnr_hvs_free_device(void **slot)
 {
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        if (s->d_ref[p]) {
-            (void)hipFree(s->d_ref[p]);
-            s->d_ref[p] = NULL;
-        }
-        if (s->d_dist[p]) {
-            (void)hipFree(s->d_dist[p]);
-            s->d_dist[p] = NULL;
-        }
-        if (s->d_partials[p]) {
-            (void)hipFree(s->d_partials[p]);
-            s->d_partials[p] = NULL;
-        }
-        if (s->h_partials[p]) {
-            (void)hipHostFree(s->h_partials[p]);
-            s->h_partials[p] = NULL;
-        }
+    if (*slot != NULL) {
+        (void)hipFree(*slot);
+        *slot = NULL;
     }
 }
 
-/* Allocates the per-plane device + pinned staging buffers. On the first
- * failure it returns -ENOMEM and leaves the partially-filled state for the
- * caller's unwind tier to release, exactly as the former goto ladder did. */
-static int psnr_hvs_alloc_plane_buffers(PsnrHvsStateHip *s)
+static void psnr_hvs_free_pinned(void **slot)
 {
-    const unsigned bpc_bytes = (s->bpc <= 8u ? 1u : 2u);
+    if (*slot != NULL) {
+        (void)hipHostFree(*slot);
+        *slot = NULL;
+    }
+}
+
+/* Releases every device + pinned allocation made by psnr_hvs_alloc_buffers().
+ * Null-guarded, so the init unwind path and close_fex_hip() share it after a
+ * partial allocation as well as a full one (HISS-01). */
+static void psnr_hvs_free_buffers(PsnrHvsStateHip *s)
+{
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        const size_t uint_bytes = (size_t)s->width[p] * s->height[p] * bpc_bytes;
-        const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
+        psnr_hvs_free_device(&s->d_ref[p]);
+        psnr_hvs_free_device(&s->d_dist[p]);
+        psnr_hvs_free_pinned(&s->h_ref[p]);
+        psnr_hvs_free_pinned(&s->h_dist[p]);
+    }
+    psnr_hvs_free_device((void **)&s->d_partials);
+    psnr_hvs_free_pinned((void **)&s->h_partials);
+}
 
-        /* Device buffers hold native samples (1 or 2 bytes each). */
-        if (hipMalloc(&s->d_ref[p], uint_bytes) != hipSuccess)
-            return -ENOMEM;
-        if (hipMalloc(&s->d_dist[p], uint_bytes) != hipSuccess)
-            return -ENOMEM;
-        if (hipMalloc((void **)&s->d_partials[p], partials_bytes) != hipSuccess)
-            return -ENOMEM;
-
-        if (hipHostMalloc((void **)&s->h_partials[p], partials_bytes, hipHostMallocDefault) !=
-            hipSuccess)
-            return -ENOMEM;
+/* One device and one pinned buffer of `bytes`; -ENOMEM on the first failure,
+ * leaving what was allocated for the caller's unwind tier to release. */
+static int psnr_hvs_alloc_pair(void **device, void **pinned, size_t bytes)
+{
+    if (hipMalloc(device, bytes) != hipSuccess) {
+        *device = NULL;
+        return -ENOMEM;
+    }
+    if (hipHostMalloc(pinned, bytes, hipHostMallocDefault) != hipSuccess) {
+        *pinned = NULL;
+        return -ENOMEM;
     }
     return 0;
+}
+
+static int psnr_hvs_alloc_buffers(PsnrHvsStateHip *s)
+{
+    int err = 0;
+    for (int p = 0; p < PSNR_HVS_NUM_PLANES && !err; p++) {
+        const size_t bytes = s->row_bytes[p] * s->height[p];
+        err = psnr_hvs_alloc_pair(&s->d_ref[p], &s->h_ref[p], bytes);
+        if (!err)
+            err = psnr_hvs_alloc_pair(&s->d_dist[p], &s->h_dist[p], bytes);
+    }
+    if (!err) {
+        err = psnr_hvs_alloc_pair((void **)&s->d_partials, (void **)&s->h_partials,
+                                  (size_t)s->total_blocks * sizeof(float));
+    }
+    return err;
 }
 #endif /* HAVE_HIPCC */
 
@@ -205,7 +215,7 @@ static int psnr_hvs_unwind_lc(PsnrHvsStateHip *s, int err)
 #ifdef HAVE_HIPCC
 static int psnr_hvs_unwind_module(PsnrHvsStateHip *s, int err)
 {
-    psnr_hvs_free_plane_buffers(s);
+    psnr_hvs_free_buffers(s);
     if (s->module != NULL) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
@@ -214,11 +224,9 @@ static int psnr_hvs_unwind_module(PsnrHvsStateHip *s, int err)
 }
 #endif /* HAVE_HIPCC */
 
-/* Derives the per-plane dimensions and block counts for `pix_fmt`.
- * Extracted from init_fex_hip() to keep that function inside the HISS-04
- * 60-LOC bound; the arithmetic is copied statement-for-statement. */
-static int psnr_hvs_set_plane_geometry(PsnrHvsStateHip *s, enum VmafPixelFormat pix_fmt, unsigned w,
-                                       unsigned h)
+/* Per-plane dimensions for `pix_fmt`, by picture.c's ceil rule. */
+static int psnr_hvs_set_plane_dims(PsnrHvsStateHip *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                                   unsigned h)
 {
     s->width[0] = w;
     s->height[0] = h;
@@ -239,7 +247,20 @@ static int psnr_hvs_set_plane_geometry(PsnrHvsStateHip *s, enum VmafPixelFormat 
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: unsupported pix_fmt\n");
         return -EINVAL;
     }
+    return 0;
+}
 
+/* Block grid of every plane and the planes' offsets in the one partials
+ * buffer the single dispatch writes. */
+static int psnr_hvs_set_plane_geometry(PsnrHvsStateHip *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                                       unsigned h)
+{
+    const int err = psnr_hvs_set_plane_dims(s, pix_fmt, w, h);
+    if (err != 0)
+        return err;
+
+    const size_t bytes_per_sample = (s->bpc > 8u) ? 2u : 1u;
+    s->total_blocks = 0u;
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
         if (s->width[p] < (unsigned)PSNR_HVS_BLOCK || s->height[p] < (unsigned)PSNR_HVS_BLOCK) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
@@ -250,16 +271,16 @@ static int psnr_hvs_set_plane_geometry(PsnrHvsStateHip *s, enum VmafPixelFormat 
         s->num_blocks_x[p] = (s->width[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1u;
         s->num_blocks_y[p] = (s->height[p] - PSNR_HVS_BLOCK) / PSNR_HVS_STEP + 1u;
         s->num_blocks[p] = s->num_blocks_x[p] * s->num_blocks_y[p];
+        s->first_block[p] = s->total_blocks;
+        s->total_blocks += s->num_blocks[p];
+        s->row_bytes[p] = (size_t)s->width[p] * bytes_per_sample;
     }
-
     return 0;
 }
 
-static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                        unsigned w, unsigned h)
+static int psnr_hvs_validate_input(enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
+                                   unsigned h)
 {
-    PsnrHvsStateHip *s = fex->priv;
-
     if (bpc > 12u) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: invalid bitdepth (%u); bpc must be <= 12\n",
                  bpc);
@@ -274,12 +295,23 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_hip: input %ux%u smaller than 8x8 block\n", w, h);
         return -EINVAL;
     }
+    return 0;
+}
+
+static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
+                        unsigned w, unsigned h)
+{
+    PsnrHvsStateHip *s = fex->priv;
+
+    int err = psnr_hvs_validate_input(pix_fmt, bpc, w, h);
+    if (err != 0)
+        return err;
 
     s->bpc = bpc;
     const int32_t samplemax = (int32_t)((1u << bpc) - 1u);
     s->samplemax_sq = samplemax * samplemax;
 
-    int err = psnr_hvs_set_plane_geometry(s, pix_fmt, w, h);
+    err = psnr_hvs_set_plane_geometry(s, pix_fmt, w, h);
     if (err != 0)
         return err;
 
@@ -296,7 +328,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err != 0)
         return psnr_hvs_unwind_lc(s, err);
 
-    err = psnr_hvs_alloc_plane_buffers(s);
+    err = psnr_hvs_alloc_buffers(s);
     if (err != 0)
         return psnr_hvs_unwind_module(s, err);
 #endif /* HAVE_HIPCC */
@@ -314,76 +346,80 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 }
 
 #ifdef HAVE_HIPCC
-/* Launch the psnr_hvs kernel for one plane, zero partials, and start D2H copy. */
-static int psnr_hvs_launch_plane(PsnrHvsStateHip *s, int p, int wide, hipStream_t str)
+static int psnr_hvs_picture_matches(const PsnrHvsStateHip *s, const VmafPicture *pic)
 {
-    const size_t partials_bytes = (size_t)s->num_blocks[p] * sizeof(float);
+    if (pic == NULL || pic->bpc != s->bpc)
+        return 0;
+    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+        if (pic->data[p] == NULL || pic->w[p] != s->width[p] || pic->h[p] != s->height[p])
+            return 0;
+    }
+    return 1;
+}
 
-    hipError_t rc = hipMemsetAsync(s->d_partials[p], 0, partials_bytes, str);
-    if (rc != hipSuccess)
-        return psnr_hvs_hip_rc(rc);
+/* Pack one plane's rows into pinned staging. The picture goes back to the
+ * caller when submit() returns, so the device copy must not read it
+ * (core/src/feature/hip/AGENTS.md, "Picture uploads"); the staging buffer is
+ * the extractor's until the next submit(), which follows collect(). */
+static void psnr_hvs_stage_plane(const PsnrHvsStateHip *s, const VmafPicture *pic, int p, void *dst)
+{
+    const uint8_t *src = (const uint8_t *)pic->data[p];
+    uint8_t *out = (uint8_t *)dst;
+    const size_t row_bytes = s->row_bytes[p];
+    const size_t stride = (size_t)pic->stride[p];
+    if (stride == row_bytes) {
+        memcpy(out, src, row_bytes * s->height[p]);
+        return;
+    }
+    for (unsigned row = 0; row < s->height[p]; row++)
+        memcpy(out + (size_t)row * row_bytes, src + (size_t)row * stride, row_bytes);
+}
 
-    unsigned nbx = s->num_blocks_x[p];
-    unsigned nby = s->num_blocks_y[p];
-    unsigned width = s->width[p];
-    unsigned height = s->height[p];
-    int plane_arg = p;
-    int wide_arg = wide;
-
-    void *args[] = {
-        (void *)&s->d_ref[p], (void *)&s->d_dist[p], (void *)&s->d_partials[p],
-        (void *)&width,       (void *)&height,       (void *)&nbx,
-        (void *)&nby,         (void *)&plane_arg,    (void *)&wide_arg,
-    };
-    rc = hipModuleLaunchKernel(s->func_psnr_hvs, nbx, nby, 1, PSNR_HVS_BLOCK_DIM,
-                               PSNR_HVS_BLOCK_DIM, 1, 0, str, args, NULL);
-    if (rc != hipSuccess)
-        return psnr_hvs_hip_rc(rc);
-
-    rc = hipMemcpyAsync(s->h_partials[p], s->d_partials[p], partials_bytes, hipMemcpyDeviceToHost,
-                        str);
-    if (rc != hipSuccess)
-        return psnr_hvs_hip_rc(rc);
+static int psnr_hvs_enqueue_uploads(const PsnrHvsStateHip *s, hipStream_t str)
+{
+    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+        const size_t bytes = s->row_bytes[p] * s->height[p];
+        hipError_t rc = hipMemcpyAsync(s->d_ref[p], s->h_ref[p], bytes, hipMemcpyHostToDevice, str);
+        if (rc == hipSuccess)
+            rc = hipMemcpyAsync(s->d_dist[p], s->h_dist[p], bytes, hipMemcpyHostToDevice, str);
+        if (rc != hipSuccess)
+            return psnr_hvs_hip_rc(rc);
+    }
     return 0;
 }
 
-/* Upload raw native samples and launch the psnr_hvs kernel on each plane.
- * ref_pic / dist_pic are VmafPictures with pageable host data.
- * vmaf_hip_picture_upload() copies and waits before returning (prevents the
- * pageable-upload race documented in picture_hip.h). */
-static int launch_psnr_hvs(PsnrHvsStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
+/* The frame's device work: raw planes up, one dispatch over every block of
+ * every plane, the block errors back. */
+static int psnr_hvs_enqueue_frame(const PsnrHvsStateHip *s)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
-    const unsigned bpc_bytes = (s->bpc <= 8u ? 1u : 2u);
-    const int wide = (s->bpc > 8u) ? 1 : 0;
-
-    VmafHipPlaneUpload uploads[2u * PSNR_HVS_NUM_PLANES];
-    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        const size_t row_bytes = (size_t)s->width[p] * bpc_bytes;
-        const size_t i = (size_t)p * 2u;
-        uploads[i] = (VmafHipPlaneUpload){.dst = s->d_ref[p],
-                                          .dst_pitch = row_bytes,
-                                          .pic = ref_pic,
-                                          .plane = (unsigned)p,
-                                          .row_bytes = row_bytes,
-                                          .rows = s->height[p]};
-        uploads[i + 1u] = (VmafHipPlaneUpload){.dst = s->d_dist[p],
-                                               .dst_pitch = row_bytes,
-                                               .pic = dist_pic,
-                                               .plane = (unsigned)p,
-                                               .row_bytes = row_bytes,
-                                               .rows = s->height[p]};
-    }
-    int err = vmaf_hip_picture_upload(uploads, 2u * PSNR_HVS_NUM_PLANES, s->lc.str);
+    int err = psnr_hvs_enqueue_uploads(s, str);
     if (err != 0)
         return err;
 
+    struct PsnrHvsHipKernelArgs args;
+    (void)memset(&args, 0, sizeof(args));
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
-        err = psnr_hvs_launch_plane(s, p, wide, str);
-        if (err != 0)
-            return err;
+        args.plane[p].ref = s->d_ref[p];
+        args.plane[p].dist = s->d_dist[p];
+        args.plane[p].width = s->width[p];
+        args.plane[p].blocks_x = s->num_blocks_x[p];
+        args.plane[p].first_block = s->first_block[p];
     }
-    return 0;
+    args.partials = s->d_partials;
+    args.n_planes = PSNR_HVS_NUM_PLANES;
+    args.total_blocks = s->total_blocks;
+    args.wide = (s->bpc > 8u) ? 1u : 0u;
+    void *params[] = {&args};
+    const size_t items = 2u * (size_t)s->total_blocks;
+    const unsigned groups = (unsigned)((items + PSNR_HVS_HIP_WG - 1u) / PSNR_HVS_HIP_WG);
+    hipError_t rc = hipModuleLaunchKernel(s->func_psnr_hvs, groups, 1, 1, PSNR_HVS_HIP_WG, 1, 1, 0,
+                                          str, params, NULL);
+    if (rc == hipSuccess) {
+        rc = hipMemcpyAsync(s->h_partials, s->d_partials, (size_t)s->total_blocks * sizeof(float),
+                            hipMemcpyDeviceToHost, str);
+    }
+    return psnr_hvs_hip_rc(rc);
 }
 #endif /* HAVE_HIPCC */
 
@@ -396,19 +432,21 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     s->index = index;
 
 #ifdef HAVE_HIPCC
-    /* Upload native samples to the device, launch the kernel, and read back
-     * partial sums. vmaf_hip_picture_upload() (called inside launch_psnr_hvs)
-     * blocks until the copies are done reading the picture, so by the time
-     * submit_fex_hip returns the pictures can be recycled safely. */
-    int err = launch_psnr_hvs(s, ref_pic, dist_pic);
+    if (!psnr_hvs_picture_matches(s, ref_pic) || !psnr_hvs_picture_matches(s, dist_pic))
+        return -EINVAL;
+    for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+        psnr_hvs_stage_plane(s, ref_pic, p, s->h_ref[p]);
+        psnr_hvs_stage_plane(s, dist_pic, p, s->h_dist[p]);
+    }
+    const int err = psnr_hvs_enqueue_frame(s);
     if (err != 0)
         return err;
 
-    /* Record the submit event on the kernel stream. vmaf_hip_kernel_submit_post_record
+    /* Record the submit event on the kernel stream (single-stream HIP
+     * posture, as float_psnr_hip). vmaf_hip_kernel_submit_post_record
      * records the finished event so collect() can wait for it. */
-    hipEvent_t submit_ev = vmaf_hip_event_of(s->lc.submit);
-    hipStream_t str = vmaf_hip_stream_of(s->lc.str);
-    hipError_t rc = hipEventRecord(submit_ev, str);
+    const hipError_t rc =
+        hipEventRecord(vmaf_hip_event_of(s->lc.submit), vmaf_hip_stream_of(s->lc.str));
     if (rc != hipSuccess)
         return psnr_hvs_hip_rc(rc);
 
@@ -433,30 +471,29 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #endif /* HAVE_HIPCC */
 }
 
-static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
-                           VmafFeatureCollector *feature_collector)
-{
-    PsnrHvsStateHip *s = fex->priv;
-
-    int wait_err = vmaf_hip_kernel_collect_wait(&s->lc, s->ctx);
-    if (wait_err != 0)
-        return wait_err;
-
 #ifdef HAVE_HIPCC
-    double plane_score[PSNR_HVS_NUM_PLANES];
+/* Block order, one float accumulator per plane: the sum the ADR-1361 gate
+ * was calibrated on. */
+static void psnr_hvs_plane_scores(const PsnrHvsStateHip *s, double plane_score[])
+{
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
+        const float *partials = s->h_partials + s->first_block[p];
         float ret = 0.0f;
         for (unsigned i = 0; i < s->num_blocks[p]; i++)
-            ret += s->h_partials[p][i];
+            ret += partials[i];
         const int pixels = (int)(s->num_blocks[p] * 64u);
         ret /= (float)pixels;
         ret /= (float)s->samplemax_sq;
         plane_score[p] = (double)ret;
     }
+}
 
-    int err = 0;
+static int psnr_hvs_append_scores(VmafFeatureCollector *feature_collector,
+                                  const double plane_score[], unsigned index)
+{
     static const char *plane_features[PSNR_HVS_NUM_PLANES] = {"psnr_hvs_y", "psnr_hvs_cb",
                                                               "psnr_hvs_cr"};
+    int err = 0;
     for (int p = 0; p < PSNR_HVS_NUM_PLANES; p++) {
         const double db = 10.0 * (-1.0 * log10(plane_score[p]));
         err |= vmaf_feature_collector_append(feature_collector, plane_features[p], db, index);
@@ -465,6 +502,22 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     const double db_combined = 10.0 * (-1.0 * log10(combined));
     err |= vmaf_feature_collector_append(feature_collector, "psnr_hvs", db_combined, index);
     return err;
+}
+#endif /* HAVE_HIPCC */
+
+static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
+                           VmafFeatureCollector *feature_collector)
+{
+    PsnrHvsStateHip *s = fex->priv;
+
+    const int wait_err = vmaf_hip_kernel_collect_wait(&s->lc, s->ctx);
+    if (wait_err != 0)
+        return wait_err;
+
+#ifdef HAVE_HIPCC
+    double plane_score[PSNR_HVS_NUM_PLANES];
+    psnr_hvs_plane_scores(s, plane_score);
+    return psnr_hvs_append_scores(feature_collector, plane_score, index);
 #else
     (void)feature_collector;
     (void)index;
@@ -478,9 +531,9 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     int rc = vmaf_hip_kernel_lifecycle_close(&s->lc, s->ctx);
 
 #ifdef HAVE_HIPCC
-    psnr_hvs_free_plane_buffers(s);
+    psnr_hvs_free_buffers(s);
     if (s->module != NULL) {
-        hipError_t hip_err = hipModuleUnload(s->module);
+        const hipError_t hip_err = hipModuleUnload(s->module);
         if (hip_err != hipSuccess && rc == 0)
             rc = -EIO;
         s->module = NULL;
@@ -488,7 +541,7 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 #endif /* HAVE_HIPCC */
 
     if (s->feature_name_dict != NULL) {
-        int err = vmaf_dictionary_free(&s->feature_name_dict);
+        const int err = vmaf_dictionary_free(&s->feature_name_dict);
         if (err != 0 && rc == 0)
             rc = err;
     }
@@ -518,7 +571,7 @@ VmafFeatureExtractor vmaf_fex_psnr_hvs_hip = {
     .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
-            .n_dispatches_per_frame = 3,
+            .n_dispatches_per_frame = 1,
             .is_reduction_only = false,
             .min_useful_frame_area = 1920U * 1080U,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
