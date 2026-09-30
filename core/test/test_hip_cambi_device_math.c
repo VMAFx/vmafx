@@ -796,9 +796,10 @@ static char *test_reference_matches_registered_extractor(void)
 }
 
 /* Window-size guard (cambi.c::setup_contrast_and_luminance(), ADR-1357):
- * cambi_hip must accept and reject exactly the windows cambi.c does, and
- * reject them in init() before any device work, so this runs without an AMD
- * device. At 3840x2160 the window_size option adjusts to itself (rounded up
+ * cambi_hip must accept and reject exactly the windows cambi.c does. A hipcc
+ * build rejects them in init() before any device work, so this needs no AMD
+ * device; a scaffold build reports -ENOSYS before any check (ADR-1264), so
+ * there only cambi.c's half runs. At 3840x2160 the window_size option adjusts to itself (rounded up
  * to odd); the reciprocal table (4226 entries) takes windows up to 65:
  *   65 -> 65 accepted (boundary); 66 -> 67 rejected;
  *   66 at enc 1920x1080 -> 33 encode / 67 source, rejected;
@@ -846,6 +847,7 @@ static int emu_window_init_rc(const char *name, const EmuWindowCase *c, int *rc)
 static char *test_window_guard_matches_cambi_c(void)
 {
     const size_t n = sizeof(emu_window_cases) / sizeof(emu_window_cases[0]);
+    unsigned scaffold_cases = 0u;
     for (size_t i = 0u; i < n; i++) {
         const EmuWindowCase *c = &emu_window_cases[i];
         int cpu_rc = 1;
@@ -856,11 +858,19 @@ static char *test_window_guard_matches_cambi_c(void)
             (void)fprintf(stderr, "\nwindow case %zu (%s): cambi %d, cambi_hip %d, rejected %d\n",
                           i, c->options[0], cpu_rc, hip_rc, c->rejected);
         mu_assert("cambi.c's window guard moved", (cpu_rc == -EINVAL) == c->rejected);
+        if (hip_rc == -ENOSYS && c->rejected) {
+            /* Only a scaffold build reports -ENOSYS for a window the guard
+             * rejects: it gives up before any check (ADR-1264). */
+            scaffold_cases++;
+            continue;
+        }
         /* Accepted: 0 with an AMD device, the missing device's code without
          * one; never the guard's -EINVAL. */
         mu_assert("cambi_hip's window guard differs from cambi.c",
                   (hip_rc == -EINVAL) == c->rejected);
     }
+    if (scaffold_cases)
+        (void)fprintf(stderr, "[cambi_hip window guard unchecked: scaffold build (-ENOSYS)] ");
     return NULL;
 }
 

@@ -202,8 +202,32 @@ def _device_failures(src: dict[str, str]) -> list[str]:
     return failures
 
 
+# Each twin's init(): the scaffold -ENOSYS comes before its host configure.
+SCAFFOLD_FIRST = (
+    (CAMBI_HOST, "init_fex_hip", "cambi_hip_configure("),
+    ("speed_chroma_hip.c", "init_chroma_hip", "sc_configure("),
+    ("speed_temporal_hip.c", "init_temporal_hip", "st_configure("),
+)
+
+
+def _scaffold_failures(src: dict[str, str]) -> list[str]:
+    """A build without hipcc reports -ENOSYS and nothing else (ADR-1264)."""
+    failures: list[str] = []
+    for name, fn, configure in SCAFFOLD_FIRST:
+        init = _body(src[name], fn)
+        scaffold = init.find("return -ENOSYS;")
+        if scaffold < 0 or not scaffold < init.find(configure):
+            failures.append(f"{name}: {fn}() must return -ENOSYS first without HIPCC")
+    return failures
+
+
 def _failures(src: dict[str, str]) -> list[str]:
-    return _cambi_failures(src) + _speed_failures(src) + _device_failures(src)
+    return (
+        _cambi_failures(src)
+        + _speed_failures(src)
+        + _device_failures(src)
+        + _scaffold_failures(src)
+    )
 
 
 def _replace(src: dict[str, str], name: str, old: str, new: str) -> dict[str, str]:
@@ -279,10 +303,34 @@ class HipDeviceResidentContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             CAMBI_HOST,
-            "    int err = cambi_hip_configure(s, bpc, w, h);\n#ifndef HAVE_HIPCC",
-            "    int err = 0;\n#ifndef HAVE_HIPCC",
+            "    int err = cambi_hip_configure(s, bpc, w, h);\n    if (!err)\n",
+            "    int err = 0;\n    if (!err)\n",
         )
         self.assert_detected(src, "before the window guard")
+
+    def test_cambi_scaffold_checks_first_is_detected(self) -> None:
+        scaffold = (
+            "#ifndef HAVE_HIPCC\n    /* Scaffold posture: -ENOSYS and nothing else (ADR-1264). */"
+        )
+        src = _replace(
+            _sources(),
+            CAMBI_HOST,
+            scaffold,
+            "    (void)cambi_hip_configure(fex->priv, bpc, w, h);\n" + scaffold,
+        )
+        self.assert_detected(src, "init_fex_hip() must return -ENOSYS first")
+
+    def test_speed_scaffold_checks_first_is_detected(self) -> None:
+        scaffold = (
+            "#ifndef HAVE_HIPCC\n    /* Scaffold posture: -ENOSYS and nothing else (ADR-1264). */"
+        )
+        src = _replace(
+            _sources(),
+            "speed_chroma_hip.c",
+            scaffold,
+            "    (void)sc_configure(fex->priv, pix_fmt, bpc, w, h, NULL);\n" + scaffold,
+        )
+        self.assert_detected(src, "init_chroma_hip() must return -ENOSYS first")
 
     def test_fp64_in_cambi_device_code_is_detected(self) -> None:
         src = _replace(
