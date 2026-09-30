@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 1223,
+  "total_warnings": 1197,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -394,7 +394,6 @@
     "core/src/feature/cuda/integer_cambi_cuda.c": 1,
     "core/src/feature/cuda/integer_ciede_cuda.c": 1,
     "core/src/feature/cuda/integer_ms_ssim_cuda.c": 4,
-    "core/src/feature/cuda/ssimulacra2_cuda.c": 6,
     "core/src/feature/feature_characteristics.h": 3,
     "core/src/feature/feature_collector.cpp": 16,
     "core/src/feature/feature_collector.h": 4,
@@ -495,7 +494,6 @@
     "core/test/test_cuda_speed_temporal_parity.c": 13,
     "core/test/test_cuda_speed_temporal_smoke.c": 13,
     "core/test/test_cuda_ssim_parity.c": 16,
-    "core/test/test_cuda_ssimulacra2_parity.c": 20,
     "core/test/test_dict.cpp": 33,
     "core/test/test_feature_collector.c": 12,
     "core/test/test_gpu_picture_pool.c": 5,
@@ -814,6 +812,28 @@
         }
       },
       "previous_baseline_sha256": "a02162ceb054f3e0d924af7ea78781bf207b5b618b6e138e75eb7cf1dda4b5da"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/ssimulacra2_cuda.c",
+        "core/test/test_cuda_ssimulacra2_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/ssimulacra2_cuda.c": {
+          "warnings": [
+            6,
+            0
+          ]
+        },
+        "core/test/test_cuda_ssimulacra2_parity.c": {
+          "warnings": [
+            20,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "384d423f90e58f089f86d6f154804622e792c42255fe99ad6cfad1d930090642"
     }
   ]
 }

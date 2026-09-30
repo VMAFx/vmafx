@@ -47,13 +47,21 @@
 #define VMAF_SS2_FDIV(a, b) ((a) / (b))
 #endif
 
+/* Linkage and execution space of the helpers below. Host code keeps the
+ * default. The CUDA twin runs them in device code, which cannot call a plain
+ * host function, and defines this as `static __device__ __forceinline__`
+ * before including the header (ADR-1391). */
+#ifndef VMAF_SS2_FUNC
+#define VMAF_SS2_FUNC static inline
+#endif
+
 /* Deterministic cube root of a non-negative float.
  *
  * Bit-trick initial estimate via `(i / 3) + magic_constant` followed
  * by 2 Newton–Raphson iterations. Accuracy: < 1 ulp on inputs in
  * [1e-30, 1e+30]. Negative inputs return 0 (matches the scalar
  * reference's `if (l < 0) l = 0;` clamp in `linear_rgb_to_xyb`). */
-static inline float vmaf_ss2_cbrtf(float x)
+VMAF_SS2_FUNC float vmaf_ss2_cbrtf(float x)
 {
     if (x <= 0.0f) {
         return 0.0f;
@@ -88,7 +96,7 @@ static inline float vmaf_ss2_cbrtf(float x)
  * already folds in the piecewise branch (for index i <= 41 ≈
  * 0.04045 * 1023 the LUT value is i/1023/12.92), so the runtime
  * path needs only the one load + lerp. */
-static inline float vmaf_ss2_srgb_eotf(float x)
+VMAF_SS2_FUNC float vmaf_ss2_srgb_eotf(float x)
 {
     if (x <= 0.0f) {
         return 0.0f;

@@ -485,7 +485,7 @@
         "core/src/feature/common/convolution_avx.c": 1,
         "core/src/feature/compat_builtin.h": 1,
         "core/src/feature/cuda/integer_vif_cuda.c": 2,
-        "core/src/feature/cuda/ssimulacra2_cuda.c": 4,
+        "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/feature/delta_e_itp.c": 1,
         "core/src/feature/feature_extractor.h": 1,
         "core/src/feature/float_vif.c": 1,
@@ -771,7 +771,6 @@
     },
     "0164": {
       "sites": {
-        "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/feature/metal/ssimulacra2.metal": 1,
         "core/src/feature/metal/ssimulacra2_metal.mm": 1,
         "core/src/feature/ssimulacra2.c": 2,
@@ -1044,8 +1043,6 @@
         "core/src/feature/cuda/float_vif/float_vif_score.cu": 2,
         "core/src/feature/cuda/float_vif_cuda.c": 1,
         "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
-        "core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu": 1,
-        "core/src/feature/cuda/ssimulacra2_cuda.c": 2,
         "core/src/feature/hip/float_vif/float_vif_score.hip": 1,
         "core/src/feature/metal/float_adm.metal": 1,
         "core/src/feature/metal/float_adm_metal.mm": 1,
@@ -1121,8 +1118,6 @@
     },
     "0201": {
       "sites": {
-        "core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu": 1,
-        "core/src/feature/cuda/ssimulacra2_cuda.c": 5,
         "core/src/feature/hip/ssimulacra2_hip.c": 1,
         "core/src/feature/metal/ssimulacra2.metal": 2,
         "core/src/feature/metal/ssimulacra2_metal.mm": 1,
@@ -1286,7 +1281,6 @@
         "core/test/test_cuda_speed_chroma_parity.c": 2,
         "core/test/test_cuda_speed_singular_parity.c": 1,
         "core/test/test_cuda_speed_temporal_parity.c": 2,
-        "core/test/test_cuda_ssimulacra2_parity.c": 1,
         "core/test/test_delta_e_itp.c": 1,
         "core/test/test_gpu_adm_tiny_frames.c": 1,
         "core/test/test_hip_adm_parity.c": 2,
@@ -1591,6 +1585,7 @@
         "core/src/feature/cuda/integer_ms_ssim_cuda.c": 1,
         "core/src/feature/cuda/integer_psnr_cuda.c": 1,
         "core/src/feature/cuda/integer_ssim_cuda.c": 1,
+        "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/metal/common.h": 1,
         "core/src/metal/kernel_template.h": 1
       },
@@ -1804,7 +1799,7 @@
         "core/src/feature/cuda/integer_ssim_cuda.c": 1,
         "core/src/feature/cuda/integer_vif_cuda.c": 1,
         "core/src/feature/cuda/ssim_cuda.c": 1,
-        "core/src/feature/cuda/ssimulacra2_cuda.c": 3,
+        "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/feature/delta_e_itp.c": 2,
         "core/src/feature/fastdvdnet_pre.c": 1,
         "core/src/feature/feature_dists.c": 1,
@@ -3027,13 +3022,6 @@
         "tools/vmaf-tune/tests/test_executor.py": 1
       },
       "target": "0454-vif-cuda-smem-staging.md"
-    },
-    "0456": {
-      "sites": {
-        "core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu": 1,
-        "core/src/feature/cuda/ssimulacra2_cuda.c": 8
-      },
-      "target": "0456-ssimulacra2-cuda-blur-fusion-transpose.md"
     },
     "0457": {
       "sites": {
@@ -4519,6 +4507,7 @@
         "core/src/feature/cuda/integer_adm/adm_dwt2.cu": 1,
         "core/src/feature/cuda/integer_adm_cuda.c": 2,
         "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
+        "core/src/feature/cuda/ssimulacra2_cuda.c": 2,
         "scripts/dev/check-cuda-extern-c.sh": 1
       },
       "target": "0747-cuda-extern-c-sweep.md"
@@ -4973,7 +4962,7 @@
         "core/src/feature/arm64/ssimulacra2_sve2.c": 2,
         "core/src/feature/common/convolution_internal.h": 1,
         "core/src/feature/common/fmaf_exact.h": 1,
-        "core/src/feature/cuda/ssimulacra2_cuda.c": 2,
+        "core/src/feature/cuda/ssimulacra2/ssimulacra2_device.cu": 1,
         "core/src/feature/hip/ssimulacra2_hip.c": 3,
         "core/src/feature/metal/ssimulacra2_metal.mm": 2,
         "core/src/feature/ssimulacra2.c": 2,
@@ -6191,6 +6180,7 @@
         "core/test/test_cuda_psnr_hvs_parity.c": 1,
         "core/test/test_cuda_runtime_unwind.c": 1,
         "core/test/test_cuda_single_frame_flush.c": 3,
+        "core/test/test_cuda_ssimulacra2_parity.c": 1,
         "core/test/test_cuda_twin_option_parity.c": 1,
         "core/test/test_cuda_vif_min_dim.c": 1,
         "core/test/test_delta_e_itp.c": 1,
@@ -6813,7 +6803,7 @@
     "1205": {
       "sites": {
         "core/src/feature/common/fmaf_exact.h": 1,
-        "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
+        "core/src/feature/cuda/ssimulacra2/ssimulacra2_device.cu": 1,
         "core/src/feature/hip/ssimulacra2_hip.c": 2,
         "core/src/feature/metal/ssimulacra2_metal.mm": 1,
         "core/src/feature/ssimulacra2.c": 1,
@@ -7553,6 +7543,7 @@
       "sites": {
         "core/src/feature/cuda/integer_ssim_cuda.c": 2,
         "core/src/feature/cuda/integer_vif_cuda.c": 2,
+        "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/feature/feature_extractor.h": 2,
         "core/src/feature/hip/float_ssim_hip.c": 2,
         "core/src/feature/hip/integer_vif_hip.c": 3,
@@ -7628,6 +7619,7 @@
         "core/src/feature/cuda/speed_cuda_pipeline.c": 1,
         "core/src/feature/cuda/speed_cuda_pipeline.h": 1,
         "core/src/feature/cuda/speed_temporal_cuda.c": 1,
+        "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/feature/feature_extractor.cpp": 1,
         "core/src/fex_ctx_vector.cpp": 1,
         "core/src/gpu_picture_pool.cpp": 2,
@@ -7825,6 +7817,7 @@
     },
     "1359": {
       "sites": {
+        "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/feature/feature_extractor.cpp": 1,
         "core/src/feature/feature_extractor.h": 1,
         "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
@@ -7886,6 +7879,8 @@
     },
     "1363": {
       "sites": {
+        "core/src/feature/cuda/ssimulacra2/ssimulacra2_device.cu": 1,
+        "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/feature/ssimulacra2_math.h": 1,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 3,
         "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
@@ -8197,6 +8192,21 @@
         "scripts/dev/rc3-home-gpu-retest.sh": 1
       },
       "target": "1386-rc3-home-gpu-retest-kit.md"
+    },
+    "1391": {
+      "sites": {
+        "core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu": 1,
+        "core/src/feature/cuda/ssimulacra2/ssimulacra2_device.cu": 2,
+        "core/src/feature/cuda/ssimulacra2_cuda.c": 2,
+        "core/src/feature/cuda/ssimulacra2_cuda.h": 1,
+        "core/src/feature/ssimulacra2_eotf_lut.h": 1,
+        "core/src/feature/ssimulacra2_math.h": 1,
+        "core/src/feature/ssimulacra2_score.h": 1,
+        "core/src/meson.build": 2,
+        "core/test/test_cuda_ssimulacra2_parity.c": 3,
+        "scripts/gen_ssimulacra2_eotf_lut.py": 1
+      },
+      "target": "1391-cuda-ssimulacra2-device-resident.md"
     },
     "1392": {
       "sites": {

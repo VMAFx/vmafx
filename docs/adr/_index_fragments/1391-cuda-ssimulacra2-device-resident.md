@@ -1,0 +1,1 @@
+| [ADR-1391](1391-cuda-ssimulacra2-device-resident.md) | `ssimulacra2_cuda` runs the whole frame on the device (YUV, XYB, tiled blurs, fp64 SSIM/edge sums over a fixed tree, downsample) with one 864-byte readback, within about 1e-12 of the CPU | Accepted | cuda, gpu, ssimulacra2, performance, numerics, rc3, fork-local |

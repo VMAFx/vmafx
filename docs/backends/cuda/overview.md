@@ -390,17 +390,26 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   CPU extractor's own `float` sum sets the difference to the CPU; see
   [the psnr_hvs page](../../metrics/psnr-hvs.md#difference-to-the-cpu-extractor-at-large-frame-sizes).
 - **SSIMULACRA 2** — `ssimulacra2_cuda` shipped per
-  [ADR-0206](../../adr/0206-ssimulacra2-cuda-sycl.md) (hybrid
-  host/GPU pipeline, IIR fatbin pinned with `--fmad=false`). The
-  2026-05-09 cuda-reviewer pass tightened the lifecycle path
-  (paired `cuModuleUnload` for both PTX modules, pre-allocated
-  pinned downsample scratch in place of a per-scale `malloc`,
-  per-plane H2D/D2H byte counts shrunk to the valid sub-region,
-  `__launch_bounds__(64, 32)` on the blur kernels) — see
-  [ADR-0356](../../adr/0410-ssimulacra2-cuda-leaks-perf.md). The
-  H-pass non-coalesced reads and V-pass L1 pressure remain known
-  architectural ceilings (require a shared-memory tile-transpose
-  rewrite).
+  [ADR-0206](../../adr/0206-ssimulacra2-cuda-sycl.md) and has run the
+  whole frame on the device since
+  [ADR-1391](../../adr/1391-cuda-ssimulacra2-device-resident.md): it
+  reads the planes of the device pictures directly (the twin makes no
+  copy of its own), converts YUV to
+  linear RGB and XYB, runs the five blurs of each scale in one
+  horizontal and one vertical launch, sums the per-pixel SSIM and
+  edge-difference terms in fp64 over a fixed tree, downsamples, and
+  copies one 864-byte block of per-scale sums to the host, where
+  `collect()` waits once and pools the score. The device kernels
+  build with `--fmad=false`, so everything up to the sums matches the
+  CPU bit for bit, and each per-frame score is within 1e-9 of
+  `--backend cpu` (1.5e-12 at worst on the tested content). On an
+  RTX 4090 a 3840x2160 frame takes about 7 ms instead of about
+  720 ms. Check and time it with
+  `python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature
+  ssimulacra2 --max-abs-diff 1e-9 --vmaf "$PWD/build/tools/vmaf"
+  --netflix-dir python/test/resource/yuv --bbb-dir testdata/bbb`
+  (the script wants an absolute `--vmaf` path). 4:0:0 input and
+  frames below 8x8 go to the CPU extractor.
 - **CUDA graph capture dispatch fallback** — While `VMAF_CUDA_DISPATCH` parses
   the `graph` strategy token, CUDA graph capture (`cuGraphCreate`, `cuGraphLaunch`)
   is not implemented for the CUDA feature extractors. Setting `VMAF_CUDA_DISPATCH=graph`

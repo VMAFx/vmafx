@@ -38,7 +38,7 @@ EXPECTED_MODULES = {
     # ADR-1380: both SpEED extractors share one pipeline, which owns the module.
     "speed_cuda_pipeline.c": {"module"},
     "ssim_cuda.c": {"module"},
-    "ssimulacra2_cuda.c": {"module_blur", "module_mul"},
+    "ssimulacra2_cuda.c": {"module_blur", "module_device"},
 }
 
 EXPECTED_BUFFER_OWNERS = {

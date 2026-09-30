@@ -208,6 +208,10 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             source,
         )
         self.assertIn(
+            "'ssimulacra2_device' : vmaf_cuda_host_strict_fp_args + ['--fmad=false']",
+            source,
+        )
+        self.assertIn(
             "'float_adm_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false']",
             source,
         )

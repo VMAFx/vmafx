@@ -15,9 +15,16 @@
 
 #define SS2_EOTF_LUT_SIZE 1024
 
+/* Storage of the table. Host code keeps the default; the CUDA twin defines
+ * this as `static __device__ const` before including the header, which
+ * compiles the same values into device memory (ADR-1391). */
+#ifndef VMAF_SS2_EOTF_LUT_STORAGE
+#define VMAF_SS2_EOTF_LUT_STORAGE static const
+#endif
+
 /* LUT[i] = srgb_eotf(i / (SS2_EOTF_LUT_SIZE - 1)) for i in [0, N-1],
  * where srgb_eotf(v) = v/12.92 if v<=0.04045 else ((v+0.055)/1.055)^2.4. */
-static const float vmaf_ss2_eotf_lut[SS2_EOTF_LUT_SIZE] = {
+VMAF_SS2_EOTF_LUT_STORAGE float vmaf_ss2_eotf_lut[SS2_EOTF_LUT_SIZE] = {
     0x0.0p+0f,              /* x=0.000000, v=0.00000000e+00 */
     0x1.3d56780000000p-14f, /* x=0.000978, v=7.56592199e-05 */
     0x1.3d56780000000p-13f, /* x=0.001955, v=1.51318440e-04 */

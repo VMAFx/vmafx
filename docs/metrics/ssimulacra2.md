@@ -64,9 +64,10 @@ vmaf ... --feature ssimulacra2=yuv_matrix=2
 - GPU twins: `ssimulacra2_cuda`, `ssimulacra2_sycl`, and
   `ssimulacra2_hip`. (The Vulkan backend was removed in ADR-0726.)
 
-The CPU scalar/SIMD path is bit-exact across the fork's host matrix. The CUDA,
-HIP and Metal twins offload the pyramid blur and per-pixel multiply stages while
+The CPU scalar/SIMD path is bit-exact across the fork's host matrix. The HIP
+and Metal twins offload the pyramid blur and per-pixel multiply stages while
 keeping the colour conversion, XYB, downsample and final combine on the host.
+The CUDA and SYCL twins run the whole frame on the device (below).
 
 ### SYCL: device-resident, one readback per frame
 
@@ -100,6 +101,39 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
 ```
 
 `ssimulacra2_sycl` rejects 4:0:0 (luma-only) input at init.
+
+### CUDA: device-resident, one readback per frame
+
+`ssimulacra2_cuda` runs the same chain on NVIDIA GPUs (ADR-1391). It reads the
+Y/U/V planes that the CUDA picture pipeline uploads once for every CUDA
+extractor, so the twin makes no copy of its own; its only transfer is one
+864-byte block of per-scale sums per frame. Name it, or pass
+`--backend cuda --feature ssimulacra2`, which
+maps to the twin for inputs it can run and to the CPU extractor otherwise
+(4:0:0 input and frames below 8x8):
+
+```shell
+vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 \
+    --backend cuda --no_prediction --feature ssimulacra2_cuda -o out.json --json
+```
+
+Colour conversion, XYB, blurs and downsample match the CPU bit for bit. CUDA
+devices have double precision, so the per-pixel SSIM and edge terms are the
+CPU's own double expressions; only the order in which they are added differs (a
+fixed tree instead of one after another). The per-frame score is within 1e-9
+of `--backend cpu` (1.5e-12 at worst at 3840x2160) and the same on every run.
+Before ADR-1391 the twin matched the CPU exactly but copied every scale between
+device and host. Check and time it with (`--vmaf` takes an absolute path):
+
+```shell
+python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2 \
+    --max-abs-diff 1e-9 --vmaf "$PWD/build/tools/vmaf" \
+    --netflix-dir python/test/resource/yuv --bbb-dir testdata/bbb
+```
+
+The twin keeps the equivalent of 14.5 full-size three-plane float buffers in
+device memory (the linear-RGB pyramid, XYB, and the two passes of the five
+blurs): about 1.4 GB at 3840x2160.
 
 ### Cross-compiler bit-exactness (FMA unification)
 

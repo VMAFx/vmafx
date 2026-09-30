@@ -10,7 +10,13 @@
 
 #include <math.h>
 
-static inline int vmaf_ss2_score_is_finite(double score)
+/* See ssimulacra2_math.h: the CUDA twin calls these from device code and
+ * defines the qualifier before including this header (ADR-1391). */
+#ifndef VMAF_SS2_FUNC
+#define VMAF_SS2_FUNC static inline
+#endif
+
+VMAF_SS2_FUNC int vmaf_ss2_score_is_finite(double score)
 {
     return isfinite(score);
 }
@@ -18,7 +24,7 @@ static inline int vmaf_ss2_score_is_finite(double score)
 /* The CPU and GPU host twins all perform these two ordered comparisons.
  * Keeping them here prevents one backend from silently choosing different
  * NaN behaviour while preserving the exact finite arithmetic. */
-static inline void vmaf_ss2_split_edge_difference(double difference, double *artifact,
+VMAF_SS2_FUNC void vmaf_ss2_split_edge_difference(double difference, double *artifact,
                                                   double *detail)
 {
     /* Both ordered comparisons below are false for NaN. Preserve a failed
@@ -34,7 +40,7 @@ static inline void vmaf_ss2_split_edge_difference(double difference, double *art
 }
 
 /* Final SSIMULACRA 2 polynomial mapping shared by every host twin. */
-static inline double vmaf_ss2_finalize_score(double score)
+VMAF_SS2_FUNC double vmaf_ss2_finalize_score(double score)
 {
     /* NaN and -Inf both fail `score > 0.0` and used to become 100.0, the
      * metric's perfect score. Keep every non-finite input visible so the

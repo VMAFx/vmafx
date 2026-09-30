@@ -1498,6 +1498,7 @@ nav:
         - "ADR-1383: state-md-three-way-conflict-resolver": adr/1383-state-md-three-way-conflict-resolver.md
         - "ADR-1384: hip-speed-device-resident": adr/1384-hip-speed-device-resident.md
         - "ADR-1386: rc3-home-gpu-retest-kit": adr/1386-rc3-home-gpu-retest-kit.md
+        - "ADR-1391: cuda-ssimulacra2-device-resident": adr/1391-cuda-ssimulacra2-device-resident.md
         - "ADR-1392: cuda-integer-reductions-one-atomic-per-block": adr/1392-cuda-integer-reductions-one-atomic-per-block.md
         - "ADR-1393: cambi-clip-window-to-frame": adr/1393-cambi-clip-window-to-frame.md
         - "ADR-1396: vmaf-init-output-only-handle": adr/1396-vmaf-init-output-only-handle.md

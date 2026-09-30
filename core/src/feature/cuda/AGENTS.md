@@ -430,15 +430,36 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   ceil(N/BLOCK_AREA) passes, `__syncthreads()`, then read from SLM.
   Omitting tile for such kernels = performance regression; the
   parity-gate alone does not catch it.
-- **`ssimulacra2/ssimulacra2_blur.cu` blur kernels with per-channel loops must
-  fuse via `gridDim.z`** (ADR-0456). Fused kernels `ssimulacra2_blur_h3`,
-  `ssimulacra2_transpose`, and `ssimulacra2_blur_v3_transposed` all take
-  `plane_stride` argument, use `blockIdx.z` to select XYB channel.
-  V-pass operates on column-major transposed buffer to convert stride-`width`
-  per-thread access to stride-1 sequential reads. Any future blur kernel
-  iterating over columns (V-direction IIR) requires preceding transpose for
-  coalescing; do not skip transpose to save one launch — V-pass
-  performance benefit outweighs launch cost at all resolutions ≥ 480p.
+- **`ssimulacra2_cuda` is device-resident** (ADR-1391, the CUDA port of the
+  ADR-1363 SYCL chain). `submit()` enqueues the whole frame on the picture
+  stream (YUV -> linear RGB from the device planes, then per scale XYB, five
+  blurs, per-pixel SSIM / edge sums, downsample) and one 864-byte copy of the
+  per-scale sums; `collect()` waits once and pools on the host. Invariants:
+  - No host compute and no host wait inside a frame: no `cuStreamSynchronize`,
+    no DtoH / HtoD of planes. `core/test/test_cuda_ssimulacra2_parity.c` holds
+    the twin to 1e-9 of the CPU on every frame.
+  - `ssimulacra2_blur` and `ssimulacra2_device` build with `--fmad=false`
+    (`cuda_cu_extra_flags` in `core/src/meson.build`); products that feed an
+    add stay in their own expressions; the cube root divides through
+    `VMAF_SS2_FDIV` = `__fdiv_rn`; the YUV matrix uses `__fmaf_rn` in the
+    ADR-0891 order. That keeps YUV, XYB, blurs and downsample bit-identical
+    to `ssimulacra2.c`.
+  - `ssimulacra2_device.cu` compiles the shared helpers of
+    `feature/ssimulacra2_math.h`, `ssimulacra2_score.h` and
+    `ssimulacra2_eotf_lut.h` into device code through the `VMAF_SS2_FUNC` /
+    `VMAF_SS2_EOTF_LUT_STORAGE` hooks. A change to those headers changes the
+    CUDA twin; keep them valid device code.
+  - The per-pixel terms are the CPU's fp64 expressions; the sums use a fixed
+    tree whose shape depends on the plane size only (`SS2C_REDUCE_BLOCK`,
+    `SS2C_MAX_GROUPS`, `SS2C_PIXELS_PER_ITEM`). Never switch them to atomics:
+    the score must be deterministic and device-independent.
+  - Blur layout: the horizontal pass stages 32-row x 32-column tiles through
+    shared memory with one warp per block and forms `ref^2`, `dis^2` and
+    `ref*dis` on load (radius at most `SS2C_BLUR_MAX_RADIUS` = 16); the
+    vertical pass walks one column per thread on the row-major output, which
+    is already coalesced. The ADR-0456 transpose and separate multiply kernel
+    are gone: that layout measured about 2x slower
+    ([Research-1391](../../../../docs/research/1391-cuda-ssimulacra2-device-resident.md)).
 
 - **`ssim_cuda.c` and `integer_ssim_cuda.c` provide different features — do not
   conflate them** (ADR-0564). `ssim_cuda.c` registers `vmaf_fex_integer_ssim_cuda`,

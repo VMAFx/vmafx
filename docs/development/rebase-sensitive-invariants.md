@@ -146,6 +146,20 @@ linked AGENTS.md before resolving conflicts.
   `cambi.c`'s (`cambi_internal.h`) and `speed_internal_gpu_configure()`,
   shared with SYCL. `core/test/test_hip_device_resident_contract.py` guards
   the layout. See [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
+- **CUDA ssimulacra2 single readback ([ADR-1391](../adr/1391-cuda-ssimulacra2-device-resident.md))**:
+  `ssimulacra2_cuda.c` enqueues the whole frame in `submit()` on the picture
+  stream and reads one block of per-scale sums in `collect()`; no host compute
+  or host wait mid-frame. The device TUs `ssimulacra2_device` and
+  `ssimulacra2_blur` build with `--fmad=false` (`cuda_cu_extra_flags`), and
+  `ssimulacra2_device.cu` compiles the shared `feature/ssimulacra2_math.h`,
+  `ssimulacra2_score.h` and `ssimulacra2_eotf_lut.h` into device code through
+  the `VMAF_SS2_FUNC` / `VMAF_SS2_EOTF_LUT_STORAGE` hooks, so an upstream change
+  to those helpers must stay valid CUDA device code. The per-pixel SSIM / edge
+  terms are fp64 summed over a fixed tree (within about 1e-12 of the CPU).
+  `core/test/test_cuda_ssimulacra2_parity.c` (1e-9) and
+  `scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2
+  --max-abs-diff 1e-9` re-check parity. See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

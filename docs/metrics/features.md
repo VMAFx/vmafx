@@ -887,27 +887,28 @@ compiler noise.
 
 **GPU twins** — `ssimulacra2_cuda`, `ssimulacra2_sycl`
 ([ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md)), and
-`ssimulacra2_hip`. (The Vulkan backend was removed in ADR-0726.) All
-backends share a hybrid host/GPU pipeline: host runs YUV →
-linear-RGB, 2×2 pyramid downsample, linear-RGB → XYB (bit-exact
-port of CPU `linear_rgb_to_xyb`), and the per-pixel SSIM +
-EdgeDiff combine in double precision; GPU runs the 3-plane
-elementwise multiplies (`ssimulacra2_mul3`)
-and the 5 separable IIR blurs across 6 scales
-(`ssimulacra2_blur_h` + `ssimulacra2_blur_v`). The host-side XYB +
-SSIM combine is required for `places=4` parity — GPU `cbrtf` differs
-from libm by up to 42 ULP and that drift cascaded to a 1.59e-2
-pooled-score drift on a GPU first iteration; running XYB on the host
-collapses the drift to ~1e-7. Min input dimension: 8×8 (host loop
-early-exits at each scale that drops below). The CUDA fatbin for
-the IIR kernel is built with `--fmad=false` so the recursive
-expression `n2*sum - d1*prev1 - prev2` keeps its CPU
-FMUL/FSUB ordering; SYCL gets the same from its strict FP line,
-which turns contraction off in every SYCL feature TU
-([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md)).
-Cross-backend gate: CUDA on RTX 4070 lands at
-`1.0e-6` on the normal pair and bit-exact (0.0) on both
-checkerboard pairs.
+`ssimulacra2_hip`. (The Vulkan backend was removed in ADR-0726.) The
+CUDA and SYCL twins run the whole frame on the device
+([ADR-1391](../adr/1391-cuda-ssimulacra2-device-resident.md),
+[ADR-1363](../adr/1363-sycl-ssimulacra2-msssim-device-resident.md)):
+YUV → linear RGB, XYB, the 5 separable IIR blurs, the per-pixel SSIM +
+EdgeDiff terms with their per-channel sums, and the 2×2 downsample, with
+one small readback of the per-scale sums per frame. Their YUV, XYB, blur
+and downsample stages match the CPU bit for bit (contraction off, the
+shared cube root with a correctly rounded division); only the summation
+order of the per-pixel terms differs (fp64 on CUDA, exact fp32 pairs on
+SYCL, a fixed tree on both), so their per-frame scores are within about
+1e-11 of the CPU and the same on every run. The HIP (and Metal)
+twins still run a hybrid host/GPU pipeline: the host does YUV →
+linear-RGB, XYB, the downsample and the fp64 combine, the GPU does the
+3-plane multiplies (`ssimulacra2_mul3`) and the blurs. GPU `cbrtf`
+differs from libm by up to 42 ULP; that drift cascaded to a 1.59e-2
+pooled-score drift on a first GPU iteration, which is why every path
+uses the shared `vmaf_ss2_cbrtf`. Min input dimension: 8×8 (the loop
+stops at the first scale that drops below). The IIR kernels are built
+without contraction (`--fmad=false` on CUDA, `-fp-model=precise` or
+contraction off on SYCL) so the recursive expression
+`n2*sum - d1*prev1 - prev2` keeps its CPU FMUL/FSUB ordering.
 
 Invocation: `--feature ssimulacra2_cuda` /
 `--feature ssimulacra2_sycl` / `--feature ssimulacra2_hip`

@@ -260,19 +260,18 @@ cuda/
 - `cuda_cu_extra_flags` map in `core/src/meson.build` routes
   per-kernel nvcc flags. Currently inhabited by `float_adm_score`
   (added in PR #157,
-  [ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)) and
+  [ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)),
   `ssimulacra2_blur` (added in
-  [ADR-0206](../../../docs/adr/0206-ssimulacra2-cuda-sycl.md)). Both
-  pass `-Xcompiler=-ffp-contract=off --fmad=false` so recursive /
-  cross-band float reductions keep their CPU-port FMUL/FSUB
+  [ADR-0206](../../../docs/adr/0206-ssimulacra2-cuda-sycl.md)) and
+  `ssimulacra2_device` (added in
+  [ADR-1391](../../../docs/adr/1391-cuda-ssimulacra2-device-resident.md)).
+  All three pass `vmaf_cuda_host_strict_fp_args` plus `--fmad=false` so
+  recursive / cross-band float reductions keep their CPU-port FMUL/FSUB
   ordering. **On rebase**: never drop these per-kernel entries —
-  without them, `float_adm` drifts past `places=4` at scale 3,
-  `ssimulacra2`'s pooled score drifts past `places=2` through IIR +
-  6-scale pyramid.
-- Matching `ssimulacra2_mul` fatbin = single FMUL with no fused-add
-  candidate. Intentionally does **not** carry flag — keeping FMA on
-  kernels where it isn't precision risk preserves whatever
-  optimisation NVCC can apply.
+  without them, `float_adm` drifts past `places=4` at scale 3, and
+  `ssimulacra2_cuda` loses its bit-exact YUV / XYB / blur / downsample
+  stages and its 1e-9 contract with the CPU (ADR-1391).
+  `core/test/test_strict_fp_compiler_args.py` asserts the three entries.
 
 ## Lifecycle invariants
 

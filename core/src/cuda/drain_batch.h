@@ -101,8 +101,7 @@ int vmaf_cuda_drain_batch_register(struct VmafCudaKernelLifecycle *lc);
  *
  * Companion to ``vmaf_cuda_drain_batch_register`` for legacy
  * extractors that pre-date ``VmafCudaKernelLifecycle`` (currently
- * ``integer_motion_cuda``, ``integer_adm_cuda``, ``integer_vif_cuda``,
- * ``ssimulacra2_cuda``). They each carry their own ``s->finished``
+ * ``integer_adm_cuda`` and ``integer_vif_cuda``). They each carry their own ``s->finished``
  * CUevent + ``s->str`` private stream; this entry-point accepts the
  * event directly + a pointer to a ``bool`` the extractor's
  * ``collect()`` checks to decide whether to skip its

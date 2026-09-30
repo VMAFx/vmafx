@@ -1204,7 +1204,7 @@ if is_cuda_enabled
         'float_motion_score' : [feature_src_dir + 'cuda/float_motion/float_motion_score.cu'],
         'float_vif_score' : [feature_src_dir + 'cuda/float_vif/float_vif_score.cu'],
         'ssimulacra2_blur' : [feature_src_dir + 'cuda/ssimulacra2/ssimulacra2_blur.cu'],
-        'ssimulacra2_mul' : [feature_src_dir + 'cuda/ssimulacra2/ssimulacra2_mul.cu'],
+        'ssimulacra2_device' : [feature_src_dir + 'cuda/ssimulacra2/ssimulacra2_device.cu'],
         'float_adm_score' : [feature_src_dir + 'cuda/float_adm/float_adm_score.cu'],
         # T3-15 / ADR-0360: cambi CUDA twin, device-resident since ADR-1379
         # (every per-frame stage, one 88-byte readback per frame).
@@ -1222,9 +1222,13 @@ if is_cuda_enabled
     # FMUL/FSUB ordering — without it, NVCC fuses the multiply + subtract
     # pair into FMAs and the recursive Gaussian's per-step rounding
     # compounds across radius * 6-scale pyramid into a places=2 drift
-    # versus CPU. The per-pixel multiply kernel does not need it
-    # (single FMUL, no fused-add candidate). Mirrors GLSL `precise` /
-    # `NoContraction` decorations on ssimulacra2_blur.comp.
+    # versus CPU. Since ADR-1391 the horizontal pass also forms the products
+    # ref^2, dis^2 and ref*dis as it loads them; each stays one rounded FMUL.
+    #
+    # `ssimulacra2_device` (ADR-1391) needs `--fmad=false` for the same
+    # reason as the blur: its YUV conversion, XYB, per-pixel SSIM / edge
+    # terms and downsample reproduce ssimulacra2.c bit for bit only with every
+    # product rounded before the add that follows it.
     #
     # `float_adm_score` needs `--fmad=false` so the angle-flag and cube
     # reductions in stage 2/3 keep IEEE-754 add/mul ordering — matches
@@ -1248,6 +1252,7 @@ if is_cuda_enabled
         # `--fmad=false` keeps any plain `*` / `+` in the TU unfused as well.
         'speed_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
         'ssimulacra2_blur' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
+        'ssimulacra2_device' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
         'float_adm_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
         'integer_ssim_score' : vmaf_cuda_host_strict_fp_args + ['--fmad=false'],
     }
@@ -1497,6 +1502,9 @@ if is_cuda_enabled
         'feature/cuda/float_motion_cuda.h',
         'feature/cuda/float_vif_cuda.h',
         'feature/cuda/ssimulacra2_cuda.h',
+        'feature/ssimulacra2_eotf_lut.h',
+        'feature/ssimulacra2_math.h',
+        'feature/ssimulacra2_score.h',
         'feature/cuda/float_adm_cuda.h',
         'feature/cuda/integer_cambi_cuda.h',
         'feature/cuda/speed_chroma_cuda.h',
