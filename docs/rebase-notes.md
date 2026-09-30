@@ -249,6 +249,23 @@
 - `docs/getting-started/building-on-windows.md`: manual MSYS2 prerequisite command
   updated to install `mingw-w64-ucrt-x86_64-*` packages under UCRT64.
 - No Netflix golden-data, public C API or FFmpeg patch impact.
+## ci/release-pat-mode-gate-exemption — PAT-mode release PR authoring gate exemption (ADR-1388) (2026-09-30)
+
+- `scripts/ci/release-pr-exempt.sh`: added `--diff`, `--diff-file`, `--base`,
+  `--head`, and `--pat-user` options and corresponding environment variables
+  `DIFF_FILE`, `BASE_SHA`, `HEAD_SHA`, and `RELEASE_BOT_PAT_USER`. Evaluates PR diff
+  against the approved release file set (manifest, config, changelog, changelog.d,
+  and dynamically parsed `extra-files` version markers) when the PR author matches
+  the designated PAT user (`lusoris`). Non-release diffs or unauthorized authors fail closed.
+- `.github/workflows/rule-enforcement.yml`: exported `BASE_SHA: ${{ github.event.pull_request.base.sha }}`
+  and `HEAD_SHA: ${{ github.event.pull_request.head.sha }}` to `steps.release_pr`
+  across all five authoring-discipline jobs (`deliverables-check`, `doc-substance-check`,
+  `state-md-check`, `silent-revert-check`, `ffmpeg-patches-surface-check`).
+- `scripts/git-hooks/pre-push-pr-body-lint.sh`: generates diff against `origin/master`
+  when pushing a `release-please--*` branch so local pre-push evaluation mirrors CI.
+- `docs/adr/1388-release-pat-mode-gate-exemption.md`: documents dual-path exemption
+  protocol (bot author vs PAT author with verified release-only diff).
+- No impact on Netflix golden data, SIMD/GPU kernels, public API or FFmpeg patches.
 
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 

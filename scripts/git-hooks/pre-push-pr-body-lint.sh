@@ -223,12 +223,13 @@ release_pr_exempt() {
   local input_path="$1"
   local predicate="$2"
   local local_branch="$3"
+  local diff_file="${4:-}"
   local identity=()
   local verdict
 
   mapfile -t identity < <(release_pr_identity "${input_path}" 2>/dev/null || true)
   verdict="$(HEAD_REF="${identity[0]:-}" PR_AUTHOR="${identity[1]:-}" \
-    PR_AUTHOR_TYPE="${identity[2]:-}" GITHUB_OUTPUT="" bash "${predicate}")" || return 1
+    PR_AUTHOR_TYPE="${identity[2]:-}" DIFF_FILE="${diff_file}" GITHUB_OUTPUT="" bash "${predicate}")" || return 1
   printf 'pre-push-pr-body-lint: %s\n' "${verdict}" >&2
   case "${verdict}" in
     'release-pr-exempt: exempt=true '*) ;;
@@ -309,8 +310,20 @@ if [ "${is_draft}" = "true" ]; then
   exit 0
 fi
 
+tmp_diff="${temporary_directory}/changed-files.txt"
+if git rev-parse --verify origin/master >/dev/null 2>&1; then
+  base="$(git merge-base origin/master HEAD 2>/dev/null || true)"
+  if [ -n "${base}" ]; then
+    git diff --name-only "${base}..HEAD" >"${tmp_diff}" 2>/dev/null || : >"${tmp_diff}"
+  else
+    : >"${tmp_diff}"
+  fi
+else
+  : >"${tmp_diff}"
+fi
+
 # Release PR: CI's deep-dive-checklist consults scripts/ci/release-pr-exempt.sh
-# (ADR-1151) and skips the deliverables check for the release-please PR, whose
+# (ADR-1151, ADR-1388) and skips the deliverables check for the release-please PR, whose
 # body is a rendered changelog (or a link to one) with no ADR-0108 checklist.
 # Consult the same predicate so the release-branch changelog cut can be pushed.
 # The public-page fallback has no author identity, so it cannot prove the bot
@@ -321,7 +334,7 @@ if [ "${metadata_source}" != "gh" ]; then
   echo "pre-push-pr-body-lint: public PR pages carry no author identity; the release-PR exemption (ADR-1151) does not apply." >&2
 elif [ ! -f "${exemption_predicate}" ]; then
   echo "pre-push-pr-body-lint: scripts/ci/release-pr-exempt.sh not found (branch predates ADR-1151); the release-PR exemption does not apply." >&2
-elif release_pr_exempt "${pr_path}" "${exemption_predicate}" "${branch}"; then
+elif release_pr_exempt "${pr_path}" "${exemption_predicate}" "${branch}" "${tmp_diff}"; then
   echo "pre-push-pr-body-lint: machine-generated release PR — skipping (CI's deliverables checklist exempts it too)." >&2
   exit 0
 fi
@@ -336,10 +349,6 @@ if ! git rev-parse --verify origin/master >/dev/null 2>&1; then
   echo "pre-push-pr-body-lint: origin/master missing locally — run 'git fetch origin master'. Skipping." >&2
   exit 0
 fi
-
-tmp_diff="${temporary_directory}/changed-files.txt"
-base="$(git merge-base origin/master HEAD)"
-git diff --name-only "${base}..HEAD" >"${tmp_diff}"
 
 echo "pre-push-pr-body-lint: validating PR body against ADR-0108 deliverables gate..."
 if ! printf '%s' "${body}" | "${validator}" --diff "${tmp_diff}"; then

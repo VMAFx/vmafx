@@ -575,6 +575,15 @@
   development container uses, all pinned in `build-config.env` (ADR-1368).
 
 
+- `scripts/ci/release-pr-exempt.sh` and pre-push hooks now exempt PAT-mode
+  `release-please` pull requests (`RELEASE_BOT_TOKEN`, author `lusoris`, `type: User`)
+  from authoring-discipline CI gates (ADR-1388, closes #1608). The exemption is
+  fail-closed: it requires the designated PAT author and verifies that 100% of the
+  files in the PR diff belong strictly to the approved release file set
+  (`.release-please-manifest.json`, `release-please-config.json`, `CHANGELOG.md`,
+  `changelog.d/*`, `docs/changelog-archive/*`, and coordinated version markers).
+
+
 - Release provenance for the native Linux files and the `vmaf-mcp` wheel and
   sdist is a GitHub build-provenance attestation (SLSA v1 provenance
   predicate, signed through Sigstore) instead of `slsa-github-generator`

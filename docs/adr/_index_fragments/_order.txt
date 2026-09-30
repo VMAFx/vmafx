@@ -1096,3 +1096,5 @@
 1384-hip-speed-device-resident
 1391-cuda-ssimulacra2-device-resident
 1387-mingw-ucrt64-migration
+1247-scorecard-exact-head-gates
+1388-release-pat-mode-gate-exemption

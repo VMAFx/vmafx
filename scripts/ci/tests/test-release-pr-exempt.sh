@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Test harness for scripts/ci/release-pr-exempt.sh (ADR-1151).
+# Test harness for scripts/ci/release-pr-exempt.sh (ADR-1151, ADR-1388).
 #
-# Runs the predicate with every combination of head ref and author identity
-# that the release pipeline can produce, and asserts the emitted `exempt=`
-# value. Hermetic: only `mktemp -d` is written.
+# Runs the predicate with every combination of head ref, author identity,
+# and diff content that the release pipeline can produce, and asserts the
+# emitted `exempt=` value. Hermetic: only `mktemp -d` is written.
 #
 # Usage: bash scripts/ci/tests/test-release-pr-exempt.sh
 #
@@ -31,9 +31,11 @@ trap cleanup EXIT
 pass=0
 fail=0
 
-# expect <label> <want-exempt> <head-ref> <author> <author-type>
+# expect <label> <want-exempt> <head-ref> <author> <author-type> [diff-file] [pat-user]
 expect() {
   local label="$1" want="$2" head_ref="$3" author="$4" author_type="$5"
+  local diff_file="${6:-}"
+  local pat_user="${7:-lusoris}"
   local out_file="$TMPDIR_TESTS/out"
   local log_file="$TMPDIR_TESTS/log"
   : >"$out_file"
@@ -41,6 +43,8 @@ expect() {
   HEAD_REF="$head_ref" \
     PR_AUTHOR="$author" \
     PR_AUTHOR_TYPE="$author_type" \
+    DIFF_FILE="$diff_file" \
+    RELEASE_BOT_PAT_USER="$pat_user" \
     GITHUB_OUTPUT="$out_file" \
     bash "$GATE" >"$log_file" 2>&1 || rc=$?
   if [[ $rc -ne 0 ]]; then
@@ -69,7 +73,7 @@ expect() {
 
 RP_REF="release-please--branches--master--components--vmafx"
 
-# The real release PR, both before and after the release-bot App exists.
+# The real release PR, both before and after the release-bot App exists (ADR-1151).
 expect "release branch, github-actions bot" true \
   "$RP_REF" "github-actions[bot]" "Bot"
 expect "release branch, release-bot App" true \
@@ -80,8 +84,8 @@ expect "release branch, release-bot App" true \
 expect "release branch, bot login without user.type" true \
   "$RP_REF" "github-actions[bot]" ""
 
-# Branch name alone must never disarm a required gate.
-expect "release-shaped branch, human author" false \
+# Branch name alone without verified diff must never disarm a required gate.
+expect "release-shaped branch, human author without diff" false \
   "$RP_REF" "lusoris" "User"
 expect "release-shaped branch, no author info" false \
   "$RP_REF" "" ""
@@ -96,6 +100,47 @@ expect "branch merely containing the prefix" false \
 
 # Non-pull_request events hand the workflow an empty head ref.
 expect "empty head ref" false "" "" ""
+
+# PAT fallback release PRs (ADR-1388):
+DIFF_VALID="$TMPDIR_TESTS/diff_valid.txt"
+cat <<'EOF' >"$DIFF_VALID"
+.release-please-manifest.json
+core/meson.build
+mcp-server/vmaf-mcp/pyproject.toml
+CHANGELOG.md
+EOF
+
+DIFF_CUT="$TMPDIR_TESTS/diff_cut.txt"
+cat <<'EOF' >"$DIFF_CUT"
+CHANGELOG.md
+changelog.d/releases/1.0.0-rc.2.json
+docs/changelog-archive/1.0.0-rc.1.md
+release-please-config.json
+EOF
+
+DIFF_DIRTY="$TMPDIR_TESTS/diff_dirty.txt"
+cat <<'EOF' >"$DIFF_DIRTY"
+.release-please-manifest.json
+core/src/feature/vif.c
+EOF
+
+DIFF_EMPTY="$TMPDIR_TESTS/diff_empty.txt"
+: >"$DIFF_EMPTY"
+
+expect "release branch, PAT author with valid release diff" true \
+  "$RP_REF" "lusoris" "User" "$DIFF_VALID"
+expect "release branch, PAT author with changelog cut diff" true \
+  "$RP_REF" "lusoris" "User" "$DIFF_CUT"
+expect "release branch, PAT author with dirty non-release diff" false \
+  "$RP_REF" "lusoris" "User" "$DIFF_DIRTY"
+expect "release branch, PAT author with empty diff" false \
+  "$RP_REF" "lusoris" "User" "$DIFF_EMPTY"
+expect "release branch, non-PAT stranger with valid release diff" false \
+  "$RP_REF" "attacker" "User" "$DIFF_VALID"
+expect "ordinary branch, PAT author with valid release diff" false \
+  "fix/release-please-setup" "lusoris" "User" "$DIFF_VALID"
+expect "release branch, custom PAT user with valid release diff" true \
+  "$RP_REF" "custom-bot" "User" "$DIFF_VALID" "custom-bot"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

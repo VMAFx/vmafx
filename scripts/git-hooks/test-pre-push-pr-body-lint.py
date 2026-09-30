@@ -253,6 +253,32 @@ class ReleasePullRequestExemption(HookFixture):
             " but author 'lusoris' is not a bot",
         )
 
+    def test_pat_release_pr_with_release_diff_is_exempt(self) -> None:
+        self.open_pull(RELEASE_REF, author=HUMAN)
+        (self.root / ".release-please-manifest.json").write_text(
+            '{"packages": {".": "1.0.0-rc.2"}}\n'
+        )
+        self.git("add", ".release-please-manifest.json")
+        self.git("commit", "-m", "chore(master): release 1.0.0-rc.2")
+
+        result = self.run_hook()
+
+        self.assert_exempt(result)
+
+    def test_pat_release_pr_with_dirty_diff_is_validated(self) -> None:
+        self.open_pull(RELEASE_REF, author=HUMAN)
+        (self.root / "core").mkdir(exist_ok=True)
+        (self.root / "core/libvmaf.c").write_text("int x = 1;\n")
+        self.git("add", "core/libvmaf.c")
+        self.git("commit", "-m", "feat: sneak in code")
+
+        result = self.run_hook()
+
+        self.assert_validated(
+            result,
+            "PAT release diff not satisfied: touches non-release file 'core/libvmaf.c'",
+        )
+
     def test_release_looking_pr_from_non_bot_author_is_validated(self) -> None:
         # Same head ref, same stub body; only the author identity differs.
         # None of these may be read as a bot.
