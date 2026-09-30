@@ -1476,15 +1476,13 @@ nav:
         - "ADR-1360: sycl-aot-compile-time-device-codegen": adr/1360-sycl-aot-compile-time-device-codegen.md
         - "ADR-1361: psnr-hvs-area-scaled-parity-tolerance": adr/1361-psnr-hvs-area-scaled-parity-tolerance.md
         - "ADR-1362: sycl-integer-adm-aim-device-pass": adr/1362-sycl-integer-adm-aim-device-pass.md
+        - "ADR-1363: sycl-ssimulacra2-msssim-device-resident": adr/1363-sycl-ssimulacra2-msssim-device-resident.md
         - "ADR-1364: windows-sycl-msvc-device-link": adr/1364-windows-sycl-msvc-device-link.md
         - "ADR-1365: sycl-twin-cpu-option-parity": adr/1365-sycl-twin-cpu-option-parity.md
         - "ADR-1366: cli-frame-readahead": adr/1366-cli-frame-readahead.md
         - "ADR-1368: oneapi-release-image-debian13": adr/1368-oneapi-release-image-debian13.md
         - "ADR-1369: sycl-shared-planes-light-twins": adr/1369-sycl-shared-planes-light-twins.md
         - "ADR-1370: sycl-float-ssim-device-decimation": adr/1370-sycl-float-ssim-device-decimation.md
-        - "ADR-1371: sycl-motion-diff-first-pipeline": adr/1371-sycl-motion-diff-first-pipeline.md
-        - "ADR-1363: sycl-ssimulacra2-msssim-device-resident": adr/1363-sycl-ssimulacra2-msssim-device-resident.md
-        - "ADR-1365: sycl-twin-cpu-option-parity": adr/1365-sycl-twin-cpu-option-parity.md
         - "ADR-1371: sycl-motion-diff-first-pipeline": adr/1371-sycl-motion-diff-first-pipeline.md
       - "By tag":
         - Overview: adr/by-tag/index.md
