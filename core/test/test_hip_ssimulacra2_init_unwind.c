@@ -7,7 +7,8 @@
 
 /* Regression gate for the HIP SSIMULACRA2 init failure paths (T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22).
  *
- * `init_fex_hip()` creates a stream, loads two HSACO modules, then calls
+ * `init_fex_hip()` creates a stream, loads its HSACO module (one since
+ * ADR-1390; two before), then calls
  * `ss2h_alloc_device()` and `ss2h_alloc_pinned()`. Both report a negative
  * errno of their own, but the two failure branches used to hand the unwind
  * ladder a `hipError_t` that still held the `hipSuccess` left by the last
@@ -187,7 +188,7 @@ hipError_t hipModuleGetFunction(hipFunction_t *function, hipModule_t module, con
     return hipSuccess;
 }
 
-/* Referenced only by extract, which this target never calls. */
+/* Referenced only by submit / collect, which this target never calls. */
 hipError_t hipMemcpyAsync(void *dst, const void *src, size_t size, hipMemcpyKind kind,
                           hipStream_t stream)
 {
@@ -228,8 +229,7 @@ hipError_t hipStreamSynchronize(hipStream_t stream)
 /* libvmaf stubs                                                        */
 /* ------------------------------------------------------------------ */
 
-const unsigned char ssimulacra2_blur_hsaco[1] = {0};
-const unsigned char ssimulacra2_mul_hsaco[1] = {0};
+const unsigned char ssimulacra2_device_hsaco[1] = {0};
 
 int vmaf_feature_collector_append(VmafFeatureCollector *fc, const char *name, double score,
                                   unsigned index)
@@ -301,7 +301,8 @@ static char *test_device_alloc_failure_reports_error_and_unwinds(void)
     mu_assert("a failed device allocation must fail init, not report success", err != 0);
     mu_assert("a hipMalloc OOM must surface as -ENOMEM", err == -ENOMEM);
     mu_assert("every surviving allocation must be released", ledger_outstanding() == 0u);
-    mu_assert("both HSACO modules must be unloaded", g_modules_unloaded == g_modules_loaded);
+    mu_assert("every loaded HSACO module must be unloaded",
+              g_modules_loaded > 0u && g_modules_unloaded == g_modules_loaded);
     mu_assert("the private stream must be destroyed", g_streams_destroyed == g_streams_created);
     return (char *)0;
 }
@@ -317,7 +318,8 @@ static char *test_pinned_alloc_failure_reports_error_and_unwinds(void)
     mu_assert("a hipHostMalloc OOM must surface as -ENOMEM", err == -ENOMEM);
     mu_assert("init must have claimed device memory before the fault", g_dev_calls > 0u);
     mu_assert("every surviving allocation must be released", ledger_outstanding() == 0u);
-    mu_assert("both HSACO modules must be unloaded", g_modules_unloaded == g_modules_loaded);
+    mu_assert("every loaded HSACO module must be unloaded",
+              g_modules_loaded > 0u && g_modules_unloaded == g_modules_loaded);
     mu_assert("the private stream must be destroyed", g_streams_destroyed == g_streams_created);
     return (char *)0;
 }

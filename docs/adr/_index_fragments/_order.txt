@@ -1115,3 +1115,4 @@
 1411-sycl-float-motion-cpu-float-sum
 1401-psnr-hvs-sycl-hip-exact-twins
 1415-x86-simd-libraries-strict-fp
+1390-hip-ssimulacra2-device-resident

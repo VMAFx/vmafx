@@ -259,7 +259,9 @@ if is_hipcc_enabled and is_hip_enabled
     # Batch-2 (ADR-0373): float_motion_score (temporal Gaussian SAD).
     # Batch-3 (ADR-0375): moment_score, ssim_score.
     # Batch-4 (ADR-0377): ciede_score (CIEDE2000), motion_v2_score (integer SAD ping-pong).
-    # Batch-5: ssimulacra2_blur, ssimulacra2_mul (IIR blur + elementwise mul).
+    # Batch-5: ssimulacra2 (ADR-1390: one module holding the whole
+    #   device-resident frame chain; it replaced ssimulacra2_blur and
+    #   ssimulacra2_mul).
     hip_kernel_sources = {
         'psnr_score' : feature_src_dir + 'hip/integer_psnr/psnr_score.hip',
         'float_psnr_score' : feature_src_dir + 'hip/float_psnr/float_psnr_score.hip',
@@ -285,8 +287,7 @@ if is_hipcc_enabled and is_hip_enabled
         'psnr_hvs_score' : feature_src_dir + 'hip/integer_psnr_hvs/psnr_hvs_score.hip',
         'integer_ssim_score' : feature_src_dir + 'hip/integer_ssim/integer_ssim_score.hip',
         'float_vif_score' : feature_src_dir + 'hip/float_vif/float_vif_score.hip',
-        'ssimulacra2_blur' : feature_src_dir + 'hip/ssimulacra2/ssimulacra2_blur.hip',
-        'ssimulacra2_mul' : feature_src_dir + 'hip/ssimulacra2/ssimulacra2_mul.hip',
+        'ssimulacra2_device' : feature_src_dir + 'hip/ssimulacra2/ssimulacra2_device.hip',
         # integer_adm_hip ADM kernels (ADR-0539) — the 4 .hip files port the
         # CUDA twins under cuda/integer_adm/ to HIP. The CUDA twin's
         # `warp_reduce` (warpSize=32 `__shfl_down_sync`) is replaced by a
@@ -355,6 +356,8 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/float_motion_hip.h',
         'feature/hip/float_vif_hip.h',
         'feature/hip/ssimulacra2_hip.h',
+        'feature/ssimulacra2_math.h',
+        'feature/ssimulacra2_eotf_lut.h',
         'feature/hip/float_adm_hip.h',
         'feature/hip/integer_cambi_hip.h',
         'feature/hip/integer_cambi/cambi_hip_device.h',

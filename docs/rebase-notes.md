@@ -901,6 +901,14 @@ fork's tree already carries these fixes.
   functions are internal, and the two environment variables are documented in
   `docs/backends/sycl/overview.md`.
 
+## perf/hip-ssimulacra2-device-resident — device-resident SSIMULACRA2 on HIP (ADR-1390) (2026-09-30)
+
+- `core/src/feature/hip/ssimulacra2_hip.c`, `core/src/feature/hip/ssimulacra2/ssimulacra2_device.hip`: fork-only (upstream Netflix/vmaf has no HIP backend).
+- `ssimulacra2_hip` runs the complete frame on the device with one raw plane upload in `submit()`, on-device YUV-to-linear, XYB, IIR Gaussian blurs with a tiled shared-memory row pass (`SS2H_ROW_TILE` rows, single-wave blocks, two-slot ring, register prefetch), exact fp32-pair per-pixel SSIM and edge sums over a deterministic LDS reduction tree, 2x2 downsampling, and one 864-byte readback in `collect()`.
+- Built with `-ffp-contract=off` in `core/src/meson.build` to preserve bit-level agreement.
+- Numerical contract: within 1e-9 of CPU reference at `--precision max` (Netflix 576x324: 1.123e-12, BBB 4K: 5.826e-13).
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 
 - `scripts/dev/resolve-state-md-conflict.py`: fork-only (upstream Netflix/vmaf

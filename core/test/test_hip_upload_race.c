@@ -122,6 +122,8 @@ static const RaceCase race_cases[] = {
      {"VMAF_integer_feature_vif_scale0_score", "VMAF_integer_feature_vif_scale1_score",
       "VMAF_integer_feature_vif_scale2_score", "VMAF_integer_feature_vif_scale3_score"}},
     {"integer_ssim_hip", "ssim", NULL, NULL, 1e-4, {"ssim"}},
+    /* Stages both pictures into pinned buffers in submit() (ADR-1390). */
+    {"ssimulacra2_hip", "ssimulacra2", NULL, NULL, 1e-9, {"ssimulacra2"}},
 };
 #define N_CASES (sizeof(race_cases) / sizeof(race_cases[0]))
 

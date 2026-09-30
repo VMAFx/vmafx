@@ -265,7 +265,7 @@ core/src/feature/hip/          # per-feature kernels
   integer_adm_hip.c               # ADM DWT2 + CSF + CM + decouple pipeline
   integer_vif_hip.c               # multi-scale VIF integer pyramid
   integer_cambi_hip.c             # CAMBI banding detection
-  ssimulacra2_hip.c               # SSIMULACRA2 (host YUV->XYB + GPU IIR blur)
+  ssimulacra2_hip.c               # SSIMULACRA2 (whole frame on the device, ADR-1390)
   adm_hip.c                       # stub — returns -ENOSYS (legacy API)
   vif_hip.c                       # stub — returns -ENOSYS (legacy API)
   motion_hip.c                    # stub — returns -ENOSYS (legacy API)
@@ -330,8 +330,11 @@ core/src/feature/hip/          # per-feature kernels
   `vif_skip_scale0` (PR #1063) and `vif_enhn_gain_limit`. Emits `vif_scale0..3`.
 - **`integer_cambi_hip`** — CAMBI banding detection; full HIP port per PR #996
   (ADR-0345 Phase 3). Emits `cambi`.
-- **`ssimulacra2_hip`** — host-side YUV→XYB + GPU IIR blur + host double-precision
-  combine; mirrors the CUDA twin. Emits `ssimulacra2`.
+- **`ssimulacra2_hip`** — runs the whole frame on the device (ADR-1390, the
+  HIP port of the SYCL chain of ADR-1363): one upload of the raw Y/U/V planes,
+  one 864-byte readback of per-scale sums. Within about 1e-12 of the CPU
+  extractor and equal to `ssimulacra2_sycl` for the same input; see
+  [ssimulacra2](../../metrics/ssimulacra2.md). Emits `ssimulacra2`.
 - **`float_adm_hip`** — ADM float pipeline, ninth kernel-template consumer
   (ADR-0468). Mirrors `float_adm_cuda.c`. Emits `float_adm2`.
 - **`float_vif_hip`** — multi-scale VIF float pipeline; respects

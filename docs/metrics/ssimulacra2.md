@@ -64,10 +64,11 @@ vmaf ... --feature ssimulacra2=yuv_matrix=2
 - GPU twins: `ssimulacra2_cuda`, `ssimulacra2_sycl`, and
   `ssimulacra2_hip`. (The Vulkan backend was removed in ADR-0726.)
 
-The CPU scalar/SIMD path is bit-exact across the fork's host matrix. The HIP
-and Metal twins offload the pyramid blur and per-pixel multiply stages while
-keeping the colour conversion, XYB, downsample and final combine on the host.
-The CUDA and SYCL twins run the whole frame on the device (below).
+The CPU scalar/SIMD path is bit-exact across the fork's host matrix. The Metal
+twin offloads the pyramid blur and per-pixel multiply stages while keeping the
+colour conversion, XYB, downsample and final combine on the host. The SYCL
+twin (ADR-1363), CUDA twin (ADR-1391), and HIP twin (ADR-1390) run the whole
+frame on the device (below).
 
 ### SYCL: device-resident, one readback per frame
 
@@ -134,6 +135,34 @@ python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2 \
 The twin keeps the equivalent of 14.5 full-size three-plane float buffers in
 device memory (the linear-RGB pyramid, XYB, and the two passes of the five
 blurs): about 1.4 GB at 3840x2160.
+
+### HIP: device-resident, tiled row pass
+
+`ssimulacra2_hip` runs the whole frame on the device (ADR-1390): it uploads
+the raw Y/U/V planes once into pinned staging in `submit()`, converts to
+linear RGB and XYB, executes IIR blurs with a tiled shared-memory row pass
+(`SS2H_ROW_TILE` rows per wavefront, single-wave blocks, two-slot ring, register
+prefetch), accumulates per-pixel SSIM and edge terms in exact fp32 pairs over an
+LDS reduction tree, and downsamples on the device. A single 864-byte readback
+of per-scale sums occurs in `collect()`. Name it, or pass
+`--backend hip --feature ssimulacra2` (ADR-1359):
+
+```shell
+vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 \
+    --backend hip --no_prediction --feature ssimulacra2_hip -o out.json --json
+```
+
+Scores match CPU reference within 1e-9 at `--precision max`: max abs diff is
+`1.123e-12` on 576x324 and `5.826e-13` at 3840x2160. On AMD gfx1036, a 4K frame
+takes 234.30 ms, eliminating all mid-frame host roundtrips. Check and time with:
+
+```shell
+python3 scripts/dev/speed_gpu_parity.py --backend hip --feature ssimulacra2 \
+    --max-abs-diff 1e-9 --vmaf "$PWD/build/tools/vmaf" \
+    --netflix-dir python/test/resource/yuv --bbb-dir testdata/bbb
+```
+
+`ssimulacra2_hip` rejects 4:0:0 input at init.
 
 ### Cross-compiler bit-exactness (FMA unification)
 
