@@ -32,6 +32,8 @@
 
 #include "libvmaf/picture.h"
 
+#include "feature/speed_gpu_common.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -344,6 +346,27 @@ void speed_internal_report_singular(const SpeedInternalSingularTally *tally, con
  */
 int speed_internal_clamp_score(double score, double max_val, unsigned index, const char *who,
                                const char *feature, double *out);
+
+/* ------------------------------------------------------------------ */
+/* Device-resident pipelines: init-time setup                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Fill the geometry, filter taps and scoring constants of a device-resident
+ * SpEED pipeline (speed_gpu_common.h) from the SpEED dimensions and options,
+ * validating the kernelscale, the prescale method and the weighting mode
+ * exactly as speed.c's speed_init() does. The SYCL (ADR-1358) and HIP
+ * (ADR-1384) twins both call this one routine at init.
+ *
+ * @param dim     Dimensions from speed_internal_init_dimensions().
+ * @param opt     Extractor options (speed_weight_var_mode 0 for speed_temporal).
+ * @param bpc     Bits per component of the input pictures.
+ * @param config  Output.
+ * @return 0, or -EINVAL for an invalid option or a NULL argument.
+ */
+int speed_internal_gpu_configure(const SpeedInternalDimensions *dim,
+                                 const SpeedInternalOptions *opt, unsigned bpc,
+                                 SpeedGpuConfig *config);
 
 #ifdef __cplusplus
 } /* extern "C" */

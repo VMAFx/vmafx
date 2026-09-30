@@ -122,13 +122,14 @@ hip_sources += files(
     '../feature/hip/integer_psnr_hvs_hip.c',
     '../feature/hip/integer_ssim_hip.c',
     '../feature/hip/ssimulacra2_hip.c',
-    # ADR-0964: speed_chroma_hip + speed_temporal_hip — HIP GPU twins.
-    # Mirror the CUDA twins' hybrid GPU/CPU split: device-side means /
-    # covariance / indterm / score, CPU-side eigendecomp + QR + Q^T
-    # multiply via feature/speed_internal.c.  Without enable_hipcc=true
+    # ADR-0964 / ADR-1384: speed_chroma_hip + speed_temporal_hip — HIP GPU
+    # twins, device-resident since ADR-1384: both run the one SpEED chain of
+    # speed_hip_pipeline.c (kernels: feature/hip/speed/speed_pipeline.hip),
+    # with no host stage and one wait per frame. Without enable_hipcc=true
     # init() returns -ENOSYS (scaffold posture).
     '../feature/hip/speed_chroma_hip.c',
     '../feature/hip/speed_temporal_hip.c',
+    '../feature/hip/speed_hip_pipeline.c',
     # ADR-0537: weak fallback definitions for HSACO blob symbols whose
     # .hip kernel sources don't yet build standalone via `hipcc --genco`
     # (currently the four integer_adm kernels). Keeps the link succeed

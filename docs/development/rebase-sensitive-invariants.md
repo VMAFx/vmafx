@@ -111,6 +111,15 @@ linked AGENTS.md before resolving conflicts.
   partials span and waits once. `core/test/test_sycl_kernel_source_contract.py`
   guards all of it; `scripts/dev/speed_gpu_parity.py --backend sycl --feature
   ssimulacra2 --max-abs-diff 1e-9` re-checks parity.
+- **HIP CAMBI and SpEED device-resident pipelines ([ADR-1378](../adr/1378-hip-cambi-device-resident.md), [ADR-1384](../adr/1384-hip-speed-device-resident.md))**:
+  no host stage of `cambi.c` / `speed.c` and no mid-frame wait; one staged
+  upload, one readback, the wait in `collect()`. Per-work-item math lives in
+  `integer_cambi/cambi_hip_device.h` and `speed/speed_hip_device.h`, which the
+  host replay tests compile; the SpEED kernel TU keeps `-ffp-contract=off
+  -fhip-fp32-correctly-rounded-divide-sqrt`. The init-time helpers are
+  `cambi.c`'s (`cambi_internal.h`) and `speed_internal_gpu_configure()`,
+  shared with SYCL. `core/test/test_hip_device_resident_contract.py` guards
+  the layout. See [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

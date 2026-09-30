@@ -3,157 +3,284 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  HIP compute kernels for the CAMBI banding-detection feature extractor.
- *  Direct port of `core/src/feature/cuda/integer_cambi/cambi_score.cu`
- *  (T3-15 / ADR-0360) to the HIP backend.
+ *  HIP kernels of the device-resident CAMBI extractor (ADR-1378, the HIP
+ *  port of the SYCL design of ADR-1357).
  *
- *  HIP adaptation notes vs. CUDA twin:
- *  - `.cu` → `.hip`; `cuda_helper.cuh` / `integer_cambi_cuda.h` includes
- *    replaced by `<hip/hip_runtime.h>` (self-contained).
- *  - `__global__`, `blockIdx`, `threadIdx`, `blockDim`, `__device__`,
- *    `__forceinline__`, `extern "C"` are identical in HIP.
- *  - No warp-shuffle or shared memory is used in these kernels, so there
- *    is no HIP warp-size (64 on GCN/RDNA vs. 32 on CUDA) adaptation.
- *  - All three kernels are integer-only (uint16_t), so the score is
- *    bit-exact with both the CUDA twin and the CPU reference.
+ *  Every stage of cambi.c runs here, in the order integer_cambi_hip.c
+ *  enqueues it on one stream per frame: input validation and preprocessing,
+ *  the tiled 7x7 spatial mask, and per scale decimation, the horizontal and
+ *  vertical mode filter (the vertical pass also writes the level map), the
+ *  run / change bit masks, the c-values with top-K pass 0, the radix select
+ *  passes 1 and 2 and the exact top-K sum. The host reads back one
+ *  CambiHipResults block per frame.
  *
- *  Kernel inventory (mirrors CUDA twin exactly):
- *    cambi_spatial_mask_kernel  — 7×7 flat derivative mask.
- *    cambi_decimate_kernel      — 2× stride-2 subsample.
- *    cambi_filter_mode_kernel   — separable 3-tap mode filter (H + V).
+ *  The per-work-item arithmetic lives in cambi_hip_device.h, shared with the
+ *  host unit test that replays these kernels; the kernels below add only the
+ *  work decomposition, shared memory, barriers and atomics. Every reduction is
+ *  over integers, so its order cannot change a result, and no kernel uses
+ *  fp64. Every kernel takes (const CambiHipParams *, int scale, int pass).
  */
 
 #include <hip/hip_runtime.h>
 #include <stdint.h>
 
-/* ------------------------------------------------------------------
- * Kernel 1: Spatial mask
- *
- * Input:  `image`  — flat uint16 array, stride_words columns per row.
- * Output: `mask`   — flat uint16 array, same layout; 1 = edge, 0 = flat.
- *
- * Algorithm (bit-exact with cambi.c::get_spatial_mask_for_index):
- *   For each pixel (x,y):
- *     zero_deriv = (image[y][x] == image[y][x+1]) && (image[y][x] == image[y+1][x])
- *   Compute 7×7 box sum of zero_deriv around each pixel.
- *   mask[y][x] = (box_sum > mask_index) ? 1 : 0.
- * ------------------------------------------------------------------ */
+#include "cambi_hip_device.h"
+
+/* The work-item's 2-D position inside a 16x16-block grid. */
+__device__ static inline uint32_t cambi_gx(void)
+{
+    return blockIdx.x * blockDim.x + threadIdx.x;
+}
+
+__device__ static inline uint32_t cambi_gy(void)
+{
+    return blockIdx.y * blockDim.y + threadIdx.y;
+}
+
+/* Sum of one uint64 per work-item over the whole work-group; `lanes` is the
+ * work-group size, a power of two. Integer addition, so the tree order does
+ * not matter and the result is the same on wave32 and wave64 devices. */
+__device__ static uint64_t cambi_group_sum(uint64_t value, uint64_t *shared, uint32_t lanes)
+{
+    const uint32_t lid = threadIdx.x;
+    shared[lid] = value;
+    __syncthreads();
+    for (uint32_t span = lanes / 2u; span > 0u; span >>= 1u) {
+        if (lid < span)
+            shared[lid] += shared[lid + span];
+        __syncthreads();
+    }
+    return shared[0];
+}
+
 extern "C" {
 
-__global__ void cambi_spatial_mask_kernel(const uint16_t *image, uint16_t *mask, unsigned width,
-                                          unsigned height, unsigned stride_words,
-                                          unsigned mask_index)
+/* cambi.c::validate_image, for bit depths other than 8 and 16. */
+__global__ void cambi_hip_validate(const CambiHipParams *p, int scale, int pass)
 {
-    const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
-    const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
-    if (x >= (int)width || y >= (int)height)
+    (void)scale;
+    (void)pass;
+    const uint32_t x = cambi_gx();
+    const uint32_t y = cambi_gy();
+    if (x >= p->src_width || y >= p->src_height)
         return;
+    if (cambi_hd_sample_invalid(p, x, y))
+        atomicOr(&p->frame->results.status, CAMBI_HIP_STATUS_INVALID_INPUT);
+}
 
-    /* 7×7 box sum — each thread computes its own window independently.
-     * 49 global reads per thread; warp-parallel at 64-lane GCN/RDNA.
-     *
-     * Taps outside the image contribute ZERO; they are NOT clamped to the
-     * border pixel. cambi.c::get_spatial_mask_for_index builds a zero-padded
-     * summed-area table (`memset(dp, 0, ...)`, `dp_width = width + 2*pad_size
-     * + 1`, and `deriv_valid = (i < height)` for the row dimension), so an
-     * out-of-range tap adds nothing to the count. Clamping instead counted the
-     * border pixel's zero-derivative flag up to three extra times per axis,
-     * which flipped `box_sum > mask_index` on a band of border pixels and
-     * moved the pooled score. The CUDA twin already zero-pads. ADR-1219. */
-    const int HALF = 3; /* (MASK_FILTER_SIZE=7) >> 1 */
-    unsigned box_sum = 0u;
-    for (int dy = -HALF; dy <= HALF; dy++) {
-        const int ry = y + dy;
-        if (ry < 0 || ry >= (int)height)
-            continue;
-        for (int dx = -HALF; dx <= HALF; dx++) {
-            const int rx = x + dx;
-            if (rx < 0 || rx >= (int)width)
-                continue;
-            const uint16_t p = image[(size_t)ry * stride_words + (unsigned)rx];
-            const uint16_t r =
-                image[(size_t)ry * stride_words +
-                      (unsigned)(rx == (int)width - 1 ? rx : rx + 1)];
-            const uint16_t b =
-                image[(size_t)(ry == (int)height - 1 ? ry : ry + 1) * stride_words +
-                      (unsigned)rx];
-            const int eq_right = (rx == (int)width - 1) || (p == r);
-            const int eq_below = (ry == (int)height - 1) || (p == b);
-            box_sum += (unsigned)(eq_right && eq_below);
+/* cambi.c::cambi_preprocessing: 10-bit conversion, resize, anti-dither. */
+__global__ void cambi_hip_preprocess(const CambiHipParams *p, int scale, int pass)
+{
+    (void)scale;
+    (void)pass;
+    const uint32_t x = cambi_gx();
+    const uint32_t y = cambi_gy();
+    if (x < p->proc_width && y < p->proc_height)
+        p->preproc[y * p->proc_width + x] = cambi_hd_preproc_pixel(p, y, x);
+}
+
+/* cambi.c::get_spatial_mask on one CAMBI_HIP_TILE^2 tile. */
+__global__ void cambi_hip_spatial_mask(const CambiHipParams *p, int scale, int pass)
+{
+    (void)scale;
+    (void)pass;
+    __shared__ uint32_t pixels[CAMBI_HIP_MASK_PIXELS];
+    __shared__ uint8_t flags[CAMBI_HIP_MASK_FLAGS];
+    __shared__ uint8_t row_sums[CAMBI_HIP_MASK_ROW_SUMS];
+    const uint32_t lid = threadIdx.y * CAMBI_HIP_TILE + threadIdx.x;
+    const uint32_t lanes = CAMBI_HIP_TILE * CAMBI_HIP_TILE;
+    const int y0 = (int)(blockIdx.y * CAMBI_HIP_TILE) - (int)CAMBI_HIP_MASK_HALO;
+    const int x0 = (int)(blockIdx.x * CAMBI_HIP_TILE) - (int)CAMBI_HIP_MASK_HALO;
+    for (uint32_t i = lid; i < CAMBI_HIP_MASK_PIXELS; i += lanes)
+        pixels[i] = cambi_hd_mask_tile_pixel(p, y0, x0, i);
+    __syncthreads();
+    for (uint32_t i = lid; i < CAMBI_HIP_MASK_FLAGS; i += lanes)
+        flags[i] = cambi_hd_mask_tile_flag(pixels, i);
+    __syncthreads();
+    for (uint32_t i = lid; i < CAMBI_HIP_MASK_ROW_SUMS; i += lanes)
+        row_sums[i] = cambi_hd_mask_tile_row_sum(flags, i);
+    __syncthreads();
+    const uint32_t x = cambi_gx();
+    const uint32_t y = cambi_gy();
+    if (x < p->proc_width && y < p->proc_height)
+        p->mask[y * p->proc_width + x] =
+            cambi_hd_mask_tile_out(row_sums, threadIdx.y, threadIdx.x, p->mask_index);
+}
+
+/* cambi.c::decimate of the previous scale's filtered image. */
+__global__ void cambi_hip_decimate(const CambiHipParams *p, int scale, int pass)
+{
+    (void)pass;
+    const CambiHipScale *sc = &p->scale[scale];
+    const uint32_t x = cambi_gx();
+    const uint32_t y = cambi_gy();
+    if (x < sc->width && y < sc->height)
+        cambi_hd_decimate_pixel(sc, x, y);
+}
+
+/* cambi.c::filter_mode, horizontal pass. */
+__global__ void cambi_hip_filter_h(const CambiHipParams *p, int scale, int pass)
+{
+    (void)pass;
+    const CambiHipScale *sc = &p->scale[scale];
+    const uint32_t x = cambi_gx();
+    const uint32_t y = cambi_gy();
+    if (x < sc->width && y < sc->height)
+        cambi_hd_filter_h_pixel(sc, x, y);
+}
+
+/* cambi.c::filter_mode, vertical pass, plus the level map. */
+__global__ void cambi_hip_filter_v(const CambiHipParams *p, int scale, int pass)
+{
+    (void)pass;
+    const CambiHipScale *sc = &p->scale[scale];
+    const uint32_t x = cambi_gx();
+    const uint32_t y = cambi_gy();
+    if (x < sc->width && y < sc->height)
+        cambi_hd_filter_v_pixel(p, sc, x, y);
+}
+
+/* Run / change bit masks: a 32 x CAMBI_HIP_ROWMASK_ROWS work-group, one
+ * column per work-item; the first item of each row ORs the row's 32 bits. */
+__global__ void cambi_hip_row_masks(const CambiHipParams *p, int scale, int pass)
+{
+    (void)pass;
+    __shared__ uint32_t run_bits[CAMBI_HIP_ROWMASK_ROWS * 32u];
+    __shared__ uint32_t change_bits[CAMBI_HIP_ROWMASK_ROWS * 32u];
+    const CambiHipScale *sc = &p->scale[scale];
+    const uint32_t x = cambi_gx();
+    const uint32_t y = cambi_gy();
+    const uint32_t slot = threadIdx.y * 32u + threadIdx.x;
+    uint32_t run = 0u;
+    uint32_t change = 0u;
+    if (x < sc->width && y < sc->height)
+        cambi_hd_row_mask_bits(p->q, sc->width, sc->height, p->pad, x, y, &run, &change);
+    run_bits[slot] = run << threadIdx.x;
+    change_bits[slot] = change << threadIdx.x;
+    __syncthreads();
+    if (threadIdx.x != 0u || y >= sc->height)
+        return;
+    uint32_t run_word = 0u;
+    uint32_t change_word = 0u;
+    for (uint32_t b = 0u; b < 32u; ++b) {
+        run_word |= run_bits[slot + b];
+        change_word |= change_bits[slot + b];
+    }
+    p->runs[y * sc->words + blockIdx.x] = run_word;
+    p->change[y * sc->words + blockIdx.x] = change_word;
+}
+
+/* c-values of one histogram column per work-item, radix pass 0 and the sum
+ * of every c-value (the whole top-K sum when the threshold resolves to 0). */
+__global__ void cambi_hip_cvals(const CambiHipParams *p, int scale, int pass)
+{
+    (void)pass;
+    __shared__ uint64_t sums[CAMBI_HIP_CVALS_BLOCK];
+    const CambiHdCvals a = cambi_hd_cvals_args(p, scale);
+    CambiHdTally tally = {0u, 0u, 0u};
+    cambi_hd_cvals_column(&a, blockIdx.y, cambi_gx(), &tally);
+    cambi_hd_tally_flush(a.radix_hist, &tally);
+    const uint64_t sum = cambi_group_sum(tally.sum, sums, CAMBI_HIP_CVALS_BLOCK);
+    CambiHipSelect *sel = &p->frame->select[scale];
+    if (threadIdx.x == 0u)
+        cambi_hd_add_split(&sel->all_lo, &sel->all_hi, sum);
+}
+
+/* Radix histogram of passes 1 and 2 over the bucket the earlier passes
+ * chose: a local histogram per work-group, then one atomic per non-empty
+ * bin. The resolved flag was written by an earlier kernel, so either every
+ * item of the group returns here or none does. */
+__global__ void cambi_hip_radix_hist(const CambiHipParams *p, int scale, int pass)
+{
+    __shared__ uint32_t local_hist[CAMBI_HIP_RADIX_BINS];
+    const CambiHipScale *sc = &p->scale[scale];
+    CambiHipSelect *sel = &p->frame->select[scale];
+    if (sel->resolved != 0u)
+        return;
+    for (uint32_t b = threadIdx.x; b < CAMBI_HIP_RADIX_BINS; b += CAMBI_HIP_POOL_BLOCK)
+        local_hist[b] = 0u;
+    __syncthreads();
+    uint32_t begin = 0u;
+    uint32_t end = 0u;
+    cambi_hd_pool_block(sc->width * sc->height, sc->pool_groups, blockIdx.x, &begin, &end);
+    for (uint32_t i = begin + threadIdx.x; i < end; i += CAMBI_HIP_POOL_BLOCK) {
+        uint32_t bin = 0u;
+        if (cambi_hd_radix_match(cambi_hd_float_bits(p->cvals[i]), sel->prefix, pass, &bin))
+            atomicAdd(&local_hist[bin], 1u);
+    }
+    __syncthreads();
+    for (uint32_t b = threadIdx.x; b < CAMBI_HIP_RADIX_BINS; b += CAMBI_HIP_POOL_BLOCK) {
+        if (local_hist[b] != 0u)
+            atomicAdd(&sel->hist[b], local_hist[b]);
+    }
+}
+
+/* Bucket scan of pass `pass` in one work-group: lane l owns bins
+ * [2047 - 8l - 7, 2047 - 8l]; the lane holding the rank-th largest element
+ * records its bin, then every lane clears its own bins for the next pass. */
+__global__ void cambi_hip_radix_scan(const CambiHipParams *p, int scale, int pass)
+{
+    __shared__ uint32_t counts[CAMBI_HIP_POOL_BLOCK];
+    CambiHipSelect *sel = &p->frame->select[scale];
+    if (sel->resolved != 0u)
+        return;
+    const uint32_t lane = threadIdx.x;
+    const uint32_t top = CAMBI_HIP_RADIX_BINS - 1u - lane * CAMBI_HIP_BINS_PER_LANE;
+    const uint32_t k = cambi_hd_pass_rank(&p->scale[scale], sel, pass);
+    uint32_t mine = 0u;
+    for (uint32_t j = 0u; j < CAMBI_HIP_BINS_PER_LANE; ++j)
+        mine += sel->hist[top - j];
+    counts[lane] = mine;
+    __syncthreads();
+    if (lane == 0u) {
+        uint32_t running = 0u;
+        for (uint32_t l = 0u; l < CAMBI_HIP_POOL_BLOCK; ++l) {
+            const uint32_t count = counts[l];
+            counts[l] = running;
+            running += count;
         }
     }
-    mask[(size_t)y * stride_words + (unsigned)x] = (uint16_t)(box_sum > mask_index ? 1u : 0u);
+    __syncthreads();
+    const uint32_t before = counts[lane];
+    if (before < k && k <= before + mine)
+        cambi_hd_scan_pick(sel, top, CAMBI_HIP_BINS_PER_LANE, k, before, pass);
+    for (uint32_t j = 0u; j < CAMBI_HIP_BINS_PER_LANE; ++j)
+        sel->hist[top - j] = 0u;
 }
 
-/* ------------------------------------------------------------------
- * Kernel 2: 2× decimate
- *
- * Output pixel (x,y) samples input pixel (2x, 2y). Matches
- * cambi.c::decimate (strict even-pixel subsample, no filtering).
- * ------------------------------------------------------------------ */
-__global__ void cambi_decimate_kernel(const uint16_t *src, uint16_t *dst, unsigned out_width,
-                                      unsigned out_height, unsigned src_stride_words,
-                                      unsigned dst_stride_words)
+/* Fixed-point sum of every c-value strictly above the threshold. Not needed
+ * when the threshold resolved to 0: the c-values kernel summed everything. */
+__global__ void cambi_hip_topk_sum(const CambiHipParams *p, int scale, int pass)
 {
-    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= out_width || y >= out_height)
+    (void)pass;
+    __shared__ uint64_t sums[CAMBI_HIP_POOL_BLOCK];
+    const CambiHipScale *sc = &p->scale[scale];
+    CambiHipSelect *sel = &p->frame->select[scale];
+    if (sel->resolved != 0u)
         return;
-
-    dst[(size_t)y * dst_stride_words + x] = src[(size_t)(y * 2u) * src_stride_words + x * 2u];
-}
-
-/* ------------------------------------------------------------------
- * Kernel 3: Separable 3-tap mode filter
- *
- * axis=0 → horizontal pass; axis=1 → vertical pass.
- * mode3(a,b,c): value appearing at least twice, or min of all three
- * when all distinct. Matches cambi.c::mode3 / cambi.c::filter_mode.
- * ------------------------------------------------------------------ */
-__device__ static __forceinline__ uint16_t mode3_dev(uint16_t a, uint16_t b, uint16_t c)
-{
-    if (a == b || a == c)
-        return a;
-    if (b == c)
-        return b;
-    return (a < b) ? ((a < c) ? a : c) : ((b < c) ? b : c);
-}
-
-__global__ void cambi_filter_mode_kernel(const uint16_t *in, uint16_t *out, unsigned width,
-                                         unsigned height, unsigned stride_words, int axis)
-{
-    const int x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
-    const int y = (int)(blockIdx.y * blockDim.y + threadIdx.y);
-    if (x >= (int)width || y >= (int)height)
-        return;
-
-    /* Vertical pass mirrors cambi.c::filter_mode: its `if (i > 1)` writeback
-     * covers output rows 1 .. height-2 only, so rows 0 and height-1 keep the
-     * ORIGINAL pre-filter pixels — not the horizontally-filtered ones, which
-     * live in the CPU's 3-row ring buffer and are never written back for those
-     * rows. `out` still holds the pre-filter image here, so returning early
-     * reproduces that exactly. The CUDA and SYCL twins already carry this
-     * guard; this one was missing. ADR-1219. */
-    if (axis == 1 && (y == 0 || y >= (int)height - 1))
-        return;
-
-    uint16_t a, b, c;
-    if (axis == 0) {
-        /* Horizontal: neighbours in x. */
-        const int xl = (x > 0) ? x - 1 : 0;
-        const int xr = (x < (int)width - 1) ? x + 1 : (int)width - 1;
-        a = in[(size_t)y * stride_words + (unsigned)xl];
-        b = in[(size_t)y * stride_words + (unsigned)x];
-        c = in[(size_t)y * stride_words + (unsigned)xr];
-    } else {
-        /* Vertical: neighbours in y. */
-        const int yu = (y > 0) ? y - 1 : 0;
-        const int yd = (y < (int)height - 1) ? y + 1 : (int)height - 1;
-        a = in[(size_t)(unsigned)yu * stride_words + (unsigned)x];
-        b = in[(size_t)(unsigned)y * stride_words + (unsigned)x];
-        c = in[(size_t)(unsigned)yd * stride_words + (unsigned)x];
+    uint32_t begin = 0u;
+    uint32_t end = 0u;
+    cambi_hd_pool_block(sc->width * sc->height, sc->pool_groups, blockIdx.x, &begin, &end);
+    const uint32_t threshold = sel->prefix;
+    uint64_t sum = 0u;
+    for (uint32_t i = begin + threadIdx.x; i < end; i += CAMBI_HIP_POOL_BLOCK) {
+        const float value = p->cvals[i];
+        sum += cambi_hd_float_bits(value) > threshold ? cambi_hd_fixed(value) : 0u;
     }
-    out[(size_t)(unsigned)y * stride_words + (unsigned)x] = mode3_dev(a, b, c);
+    const uint64_t total = cambi_group_sum(sum, sums, CAMBI_HIP_POOL_BLOCK);
+    if (threadIdx.x == 0u)
+        cambi_hd_add_split(&sel->gt_lo, &sel->gt_hi, total);
+}
+
+/* The exact 128-bit top-K sum of the scale into the readback block. */
+__global__ void cambi_hip_topk_final(const CambiHipParams *p, int scale, int pass)
+{
+    (void)pass;
+    if (threadIdx.x != 0u)
+        return;
+    const CambiHdU128 total = cambi_hd_topk_total(&p->frame->select[scale]);
+    p->frame->results.sum_lo[scale] = total.lo;
+    p->frame->results.sum_hi[scale] = total.hi;
 }
 
 } /* extern "C" */

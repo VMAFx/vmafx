@@ -1082,3 +1082,5 @@
 1377-hip-motion-diff-first
 1381-hip-integer-tiny-frame-guards
 1382-hip-twin-cpu-option-parity
+1378-hip-cambi-device-resident
+1384-hip-speed-device-resident
