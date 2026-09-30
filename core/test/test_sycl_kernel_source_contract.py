@@ -183,11 +183,6 @@ def _motion_sources() -> dict[str, str]:
     }
 
 
-def _function_body(source: str, name: str) -> str:
-    match = re.search(rf"^static [^\n]*\b{name}\(.*?^}}$", source, re.S | re.M)
-    return match.group(0) if match else ""
-
-
 MOTION_WAIT = re.compile(r"\bvmaf_sycl_(?:queue_wait|memcpy_h2d_async)\(|\.wait(?:_and_throw)?\(")
 
 
