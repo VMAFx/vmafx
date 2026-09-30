@@ -151,6 +151,7 @@ static const VmafOption options_chroma[] = {
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
+#ifdef HAVE_HIPCC
 /* The init-time part of speed_init() for the chroma planes; the device
  * pipeline is created from it. */
 static int sc_configure(SpeedChromaHipState *s, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -178,10 +179,20 @@ static int sc_configure(SpeedChromaHipState *s, enum VmafPixelFormat pix_fmt, un
     config->staged = SC_CHANNELS;
     return err;
 }
+#endif /* HAVE_HIPCC */
 
 static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                            unsigned w, unsigned h)
 {
+#ifndef HAVE_HIPCC
+    /* Scaffold posture: -ENOSYS and nothing else (ADR-1264). */
+    (void)fex;
+    (void)pix_fmt;
+    (void)bpc;
+    (void)w;
+    (void)h;
+    return -ENOSYS;
+#else
     SpeedChromaHipState *s = fex->priv;
     SpeedHipConfig config;
     int err = sc_configure(s, pix_fmt, bpc, w, h, &config);
@@ -200,6 +211,7 @@ static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_f
         return -ENOMEM;
     }
     return 0;
+#endif /* HAVE_HIPCC */
 }
 
 static int submit_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
