@@ -99,7 +99,9 @@ SSIM_REQUIRED = {
     # and rounds the mean to fp32 like the CPU before emitting it (ADR-1373).
     "cuda/integer_ssim_cuda.c": "vmaf_ssim_emit_score_named(",
     "cuda/ssim_cuda.c": "vmaf_ssim_emit_ratio_score_named(",
-    "hip/float_ssim_hip.c": "vmaf_ssim_emit_ratio_score_named(",
+    # ADR-1382: the twin rounds the validated ratio to fp32 like iqa_ssim()
+    # (vmaf_feature_finite_ratio_named()), then emits the CPU's score.
+    "hip/float_ssim_hip.c": "vmaf_ssim_emit_score_named(",
     "hip/integer_ssim_hip.c": "vmaf_ssim_emit_ratio_score_named(",
     "sycl/integer_ssim_sycl.cpp": "vmaf_ssim_emit_ratio_score_named(",
     "metal/float_ssim_metal.mm": "vmaf_ssim_emit_scores_named(",

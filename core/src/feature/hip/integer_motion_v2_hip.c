@@ -323,6 +323,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #ifdef HAVE_HIPCC
     return mv2_hip_launch(s, ref_pic, index);
 #else
+    (void)ref_pic;
     return -ENOSYS;
 #endif /* HAVE_HIPCC */
 }
