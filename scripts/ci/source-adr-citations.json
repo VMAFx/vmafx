@@ -7847,6 +7847,15 @@
       },
       "target": "1365-sycl-twin-cpu-option-parity.md"
     },
+    "1366": {
+      "sites": {
+        "core/tools/meson.build": 1,
+        "core/tools/test/meson.build": 1,
+        "core/tools/test/test_vmaf_frame_readahead.sh": 1,
+        "core/tools/vmaf.cpp": 7
+      },
+      "target": "1366-cli-frame-readahead.md"
+    },
     "1368": {
       "sites": {
         ".github/workflows/docker-publish-production.yml": 2,
