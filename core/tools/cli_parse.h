@@ -131,6 +131,10 @@ bool detect_vmafx_mode(const char *argv0);
 
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings);
 
+/* Release the option buffers and every option dictionary the settings still
+ * own. A caller that passes an `opts_dict` to a libvmaf call that takes it
+ * (vmaf_use_feature(), vmaf_model_feature_overload(),
+ * vmaf_model_collection_feature_overload()) clears the pointer here first. */
 void cli_free(CLISettings *settings);
 
 #ifdef __cplusplus

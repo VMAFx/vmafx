@@ -1494,10 +1494,24 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     validate_cli_settings(argv[0], settings);
 }
 
+/* Release what the settings still own. An option dictionary handed to
+ * libvmaf was cleared from the settings at the hand-off (vmaf.cpp), so every
+ * dictionary left here is one no libvmaf call took: the run stopped before
+ * registering its feature or overloading its model. The frees cannot fail
+ * (their argument is never NULL) and clear each pointer. */
 void cli_free(CLISettings *const settings)
 {
-    for (unsigned i = 0; i < settings->model_cnt; i++)
-        free(settings->model_config[i].buf);
-    for (unsigned i = 0; i < settings->feature_cnt; i++)
-        free(settings->feature_cfg[i].buf);
+    for (unsigned i = 0; i < settings->model_cnt; i++) {
+        CLIModelConfig &model = settings->model_config[i];
+        for (unsigned j = 0; j < model.overload_cnt; j++)
+            (void)vmaf_feature_dictionary_free(&model.feature_overload[j].opts_dict);
+        free(model.buf);
+        model.buf = nullptr;
+    }
+    for (unsigned i = 0; i < settings->feature_cnt; i++) {
+        CLIFeatureConfig &feature = settings->feature_cfg[i];
+        (void)vmaf_feature_dictionary_free(&feature.opts_dict);
+        free(feature.buf);
+        feature.buf = nullptr;
+    }
 }

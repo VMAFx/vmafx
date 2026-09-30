@@ -6169,7 +6169,7 @@
         "core/test/test_ciede_neon.c": 1,
         "core/test/test_ciede_simd_parity.c": 1,
         "core/test/test_cjson.c": 1,
-        "core/test/test_cli_parse.c": 27,
+        "core/test/test_cli_parse.c": 28,
         "core/test/test_cli_parse_long_only_args.c": 1,
         "core/test/test_compat_clz.c": 1,
         "core/test/test_convolution_edge_small.c": 1,
@@ -7724,7 +7724,7 @@
     "1355": {
       "sites": {
         "core/test/fuzz/fuzz_cli_parse.c": 1,
-        "core/test/test_cli_parse.c": 21,
+        "core/test/test_cli_parse.c": 20,
         "core/tools/cli_parse.cpp": 2,
         "pkg/cliopt/escape.go": 2,
         "pkg/cliopt/escape_test.go": 1

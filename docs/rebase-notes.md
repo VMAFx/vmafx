@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cli-pre-registration-opts-leak — the CLI releases its option dictionaries on every exit path (2026-09-30)
+
+- `core/tools/cli_parse.cpp` `cli_free()` (upstream-mirror function, fork
+  body): it frees every `feature_cfg[i].opts_dict` and every
+  `model_config[i].feature_overload[j].opts_dict` still in `CLISettings`, as
+  well as the option buffers. Upstream Netflix/vmaf frees only the buffers and
+  leaks the dictionaries on every early exit; do not take its version back.
+- `core/tools/vmaf.cpp`: every hand-off of an `opts_dict` to libvmaf
+  (`use_cli_feature()` → `vmaf_use_feature()`,
+  `vmaf_model_feature_overload()`, `vmaf_model_collection_feature_overload()`)
+  clears the settings' pointer with `std::exchange` first, so `cli_free()`
+  never frees a dictionary libvmaf took. A new call site that passes an
+  `opts_dict` to one of those calls must do the same, or the run double-frees.
+  `use_cli_feature()` puts the options back only when a second
+  `vmaf_use_feature()` without options also returns `-EINVAL` (unknown
+  extractor name, the one path on which libvmaf hands them back).
+- `core/test/test_cli_parse.c` `release_parsed()`, `core/test/fuzz/fuzz_cli_parse.c`
+  and `core/tools/test/test_vmaf_option_dict_ownership.sh` depend on that
+  contract; the test and the fuzz harness no longer free dictionaries themselves.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 
 - `scripts/dev/resolve-state-md-conflict.py`: fork-only (upstream Netflix/vmaf

@@ -37,7 +37,6 @@
 #include <string.h>
 
 #include "cli_parse.h"
-#include "libvmaf/feature.h"
 
 /* Hard cap on input size: a real argv fits in tens of bytes; we
  * give the fuzzer 16 KiB of headroom to splice many tokens. Past
@@ -55,11 +54,9 @@
  * enough for the CI matrix. */
 extern int optind;
 
-/* Disable AddressSanitizer's leak detector for this harness. The
- * upstream-mirror `cli_free` (core/tools/cli_parse.cpp) is known
- * to leave the per-feature / per-model `VmafFeatureDictionary`
- * allocations behind on the success path; we mirror an audited
- * cleanup at the bottom of `LLVMFuzzerTestOneInput`, but the
+/* Disable AddressSanitizer's leak detector for this harness.
+ * `cli_free` (core/tools/cli_parse.cpp) releases every buffer and
+ * option dictionary that reached `CLISettings`, but the
  * `usage()` -> `exit()` -> longjmp path can land mid-parse and
  * leave a partially-allocated dict that the harness has no
  * pointer to free. Letting libFuzzer abort on those would pin
@@ -163,30 +160,10 @@ static unsigned tokenise_argv(uint8_t *buf, size_t size, char **argv, unsigned a
     return argc;
 }
 
-/* Free the per-feature / per-model `VmafFeatureDictionary`
- * allocations that `cli_free` does not release. Pre-existing
- * cli_parse.c fork-mirror leak; mirroring an audited cleanup
- * here keeps libFuzzer's leak detector quiet (when enabled). */
-static void free_settings_dicts(CLISettings *settings)
-{
-    for (unsigned i = 0u; i < settings->feature_cnt; i++) {
-        if (settings->feature_cfg[i].opts_dict != NULL)
-            (void)vmaf_feature_dictionary_free(&settings->feature_cfg[i].opts_dict);
-    }
-    for (unsigned i = 0u; i < settings->model_cnt; i++) {
-        for (unsigned j = 0u; j < settings->model_config[i].overload_cnt; j++) {
-            if (settings->model_config[i].feature_overload[j].opts_dict != NULL) {
-                (void)vmaf_feature_dictionary_free(
-                    &settings->model_config[i].feature_overload[j].opts_dict);
-            }
-        }
-    }
-}
-
 /* Drive one parse cycle: arm the longjmp shim, reset getopt
- * state, call `cli_parse`, then release every allocation it
- * may have made — both the cli_free-handled argv buffers and
- * the dict allocations cli_free leaks. */
+ * state, call `cli_parse`, then release every allocation that
+ * reached `CLISettings` — `cli_free` owns both the argv buffers
+ * and the option dictionaries. */
 static void drive_parse(int argc, char **argv)
 {
     /* Reset getopt's global state. `optind = 0` is the glibc
@@ -202,7 +179,6 @@ static void drive_parse(int argc, char **argv)
     }
     g_exit_jmp_armed = 0;
 
-    free_settings_dicts(&settings);
     cli_free(&settings);
 }
 

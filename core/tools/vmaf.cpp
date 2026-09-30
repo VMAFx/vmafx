@@ -37,6 +37,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <sys/stat.h>
 #include <sys/types.h>
 #ifdef _WIN32
@@ -506,9 +507,12 @@ namespace
                                                      ModelArrays &arrays, unsigned slot)
 {
     for (unsigned j = 0; j < c->model_config[i].overload_cnt; j++) {
+        auto &overload = c->model_config[i].feature_overload[j];
+        /* Takes the options on every path but its NULL-argument guards, none
+         * of which can fire here, so the settings stop owning them. */
         const int err = vmaf_model_collection_feature_overload(
-            arrays.model[i], &arrays.collection[slot], c->model_config[i].feature_overload[j].name,
-            c->model_config[i].feature_overload[j].opts_dict);
+            arrays.model[i], &arrays.collection[slot], overload.name,
+            std::exchange(overload.opts_dict, nullptr));
         if (err) {
             (void)fprintf(stderr,
                           "problem overloading feature extractors from model collection: %s\n",
@@ -621,9 +625,10 @@ namespace
     }
 
     for (unsigned j = 0; j < c->model_config[i].overload_cnt; j++) {
-        err = vmaf_model_feature_overload(arrays.model[i],
-                                          c->model_config[i].feature_overload[j].name,
-                                          c->model_config[i].feature_overload[j].opts_dict);
+        auto &overload = c->model_config[i].feature_overload[j];
+        /* Same ownership rule as the model-collection overload above. */
+        err = vmaf_model_feature_overload(arrays.model[i], overload.name,
+                                          std::exchange(overload.opts_dict, nullptr));
         if (err) {
             (void)fprintf(stderr, "problem overloading feature extractors from model: %s\n",
                           model_label(c, i));
@@ -2282,9 +2287,28 @@ namespace
 namespace
 {
 
+/* Register one --feature entry. The options move to vmaf_use_feature(), which
+ * takes them on every path except its argument guards: an -EINVAL for an
+ * unknown extractor name hands them back. An option it rejects returns -EINVAL
+ * too, after it has freed them, so on -EINVAL the second call (without
+ * options) tells the two apart: it fails again only for an unknown name. Any
+ * options that stay in the settings are released by cli_free(). */
+[[nodiscard]] int use_cli_feature(CliRunState *state, CLIFeatureConfig &feature,
+                                  const char *extractor)
+{
+    VmafFeatureDictionary *opts_dict = std::exchange(feature.opts_dict, nullptr);
+    const int err = vmaf_use_feature(state->vmaf, extractor, opts_dict);
+    if (!err)
+        return 0;
+    if (err == -EINVAL && opts_dict && vmaf_use_feature(state->vmaf, extractor, nullptr) == -EINVAL)
+        feature.opts_dict = opts_dict;
+    (void)fprintf(stderr, "problem loading feature extractor: %s\n", extractor);
+    return -1;
+}
+
 [[nodiscard]] int register_cli_feature(CliRunState *state, unsigned index)
 {
-    const auto &feature = state->c.feature_cfg[index];
+    auto &feature = state->c.feature_cfg[index];
     char dimension_error[256] = {0};
     if (vmaf_validate_feature_dimensions(
             feature.name, state->pic_cfg.pic_params.w, state->pic_cfg.pic_params.h,
@@ -2303,11 +2327,7 @@ namespace
     }
     const char *extractor =
         cli_feature_extractor(state, feature.name, feature.opts_dict, requested_backend != nullptr);
-    if (vmaf_use_feature(state->vmaf, extractor, feature.opts_dict)) {
-        (void)fprintf(stderr, "problem loading feature extractor: %s\n", extractor);
-        return -1;
-    }
-    return 0;
+    return use_cli_feature(state, feature, extractor);
 }
 
 [[nodiscard]] int register_cli_features(CliRunState *state)

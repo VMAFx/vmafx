@@ -34,12 +34,24 @@
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
-static int cli_free_dicts(CLISettings *settings)
+/* Release everything cli_parse() allocated. cli_free() releases every option
+ * dictionary the settings still own
+ * (T-CLI-PRE-REGISTRATION-OPTS-DICT-LEAK-2026-09-30), so one left behind is a
+ * leak; non-zero then. */
+static int release_parsed(CLISettings *settings)
 {
+    cli_free(settings);
     for (unsigned i = 0; i < settings->feature_cnt; i++) {
-        int err = vmaf_feature_dictionary_free(&(settings->feature_cfg[i].opts_dict));
-        if (err)
-            return err;
+        if (settings->feature_cfg[i].opts_dict || settings->feature_cfg[i].buf)
+            return -1;
+    }
+    for (unsigned i = 0; i < settings->model_cnt; i++) {
+        for (unsigned j = 0; j < settings->model_config[i].overload_cnt; j++) {
+            if (settings->model_config[i].feature_overload[j].opts_dict)
+                return -1;
+        }
+        if (settings->model_config[i].buf)
+            return -1;
     }
     return 0;
 }
@@ -57,8 +69,7 @@ static char *test_aom_ctc_v1_0()
               settings.feature_cnt == 5);
     mu_assert("cli_parse: --aom_ctc v1.0 provided but number of models is not 2",
               settings.model_cnt == 2);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
 
     return NULL;
 }
@@ -76,8 +87,7 @@ static char *test_aom_ctc_v2_0()
               settings.feature_cnt == 5);
     mu_assert("cli_parse: --aom_ctc v2.0 provided but number of models is not 2",
               settings.model_cnt == 2);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
 
     return NULL;
 }
@@ -95,8 +105,7 @@ static char *test_aom_ctc_v3_0()
               settings.feature_cnt == 6);
     mu_assert("cli_parse: --aom_ctc v3.0 provided but number of models is not 2",
               settings.model_cnt == 2);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
 
     return NULL;
 }
@@ -114,8 +123,7 @@ static char *test_aom_ctc_v4_0()
               settings.feature_cnt == 6);
     mu_assert("cli_parse: --aom_ctc v4.0 provided but number of models is not 2",
               settings.model_cnt == 2);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
 
     return NULL;
 }
@@ -133,8 +141,7 @@ static char *test_aom_ctc_v5_0()
               settings.feature_cnt == 6);
     mu_assert("cli_parse: --aom_ctc v5.0 provided but number of models is not 2",
               settings.model_cnt == 2);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
 
     return NULL;
 }
@@ -152,8 +159,7 @@ static char *test_aom_ctc_v6_0()
               settings.feature_cnt == 6);
     mu_assert("cli_parse: --aom_ctc v6.0 provided but number of models is not 2",
               settings.model_cnt == 2);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
 
     return NULL;
 }
@@ -171,8 +177,7 @@ static char *test_nflx_ctc_v1_0()
               settings.feature_cnt == 3);
     mu_assert("cli_parse: --nflx_ctc v1.0 provided but number of models is not 2",
               settings.model_cnt == 2);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
 
     return NULL;
 }
@@ -199,8 +204,7 @@ static char *test_backend_cuda_engages_cuda()
     mu_assert("cli_parse: --backend cuda must set no_hip = true", settings.no_hip);
     mu_assert("cli_parse: --backend cuda must set no_metal = true", settings.no_metal);
     mu_assert("cli_parse: --backend cuda must NOT set no_cuda", !settings.no_cuda);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -215,8 +219,7 @@ static char *test_backend_cpu()
     mu_assert("cli_parse: --backend cpu must set no_sycl = true", settings.no_sycl);
     mu_assert("cli_parse: --backend cpu must set no_hip = true", settings.no_hip);
     mu_assert("cli_parse: --backend cpu must set no_metal = true", settings.no_metal);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -231,8 +234,7 @@ static char *test_backend_sycl()
     mu_assert("cli_parse: --backend sycl must set no_hip = true", settings.no_hip);
     mu_assert("cli_parse: --backend sycl must set no_metal = true", settings.no_metal);
     mu_assert("cli_parse: --backend sycl must default sycl_device to 0", settings.sycl_device == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -250,8 +252,7 @@ static char *test_backend_hip()
     mu_assert("cli_parse: --backend hip must set no_metal = true", settings.no_metal);
     mu_assert("cli_parse: --backend hip must NOT set no_hip", !settings.no_hip);
     mu_assert("cli_parse: --backend hip must default hip_device to 0", settings.hip_device == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -268,8 +269,7 @@ static char *test_backend_metal()
     mu_assert("cli_parse: --backend metal must NOT set no_metal", !settings.no_metal);
     mu_assert("cli_parse: --backend metal must default metal_device to 0",
               settings.metal_device == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -282,8 +282,7 @@ static char *test_hip_device_explicit()
     cli_parse(argc, argv, &settings);
     mu_assert("cli_parse: --hip_device 2 must set hip_device = 2", settings.hip_device == 2);
     mu_assert("cli_parse: --hip_device must not engage no_hip", !settings.no_hip);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -296,8 +295,7 @@ static char *test_metal_device_explicit()
     cli_parse(argc, argv, &settings);
     mu_assert("cli_parse: --metal_device 1 must set metal_device = 1", settings.metal_device == 1);
     mu_assert("cli_parse: --metal_device must not engage no_metal", !settings.no_metal);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -310,8 +308,7 @@ static char *test_sycl_device_explicit(void)
     cli_parse(argc, argv, &settings);
     mu_assert("cli_parse: --sycl_device 3 must select device 3", settings.sycl_device == 3);
     mu_assert("cli_parse: --sycl_device must not disable SYCL", !settings.no_sycl);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -327,8 +324,7 @@ static char *test_no_hip_no_metal_flags()
     mu_assert("cli_parse: --no_hip must leave hip_device at default -1", settings.hip_device == -1);
     mu_assert("cli_parse: --no_metal must leave metal_device at default -1",
               settings.metal_device == -1);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -347,8 +343,7 @@ static char *test_cpumask_short_opt()
     cli_parse(argc, argv, &settings);
     mu_assert("cli_parse: -c 0xff must set cpumask = 255 (was silently dropped before ADR-0438)",
               settings.cpumask == 255);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
 
     /* Decimal value: -c 3 */
     char *argv2[9] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "-c", "3"};
@@ -357,8 +352,7 @@ static char *test_cpumask_short_opt()
     optind = 1;
     cli_parse(argc2, argv2, &settings2);
     mu_assert("cli_parse: -c 3 must set cpumask = 3", settings2.cpumask == 3);
-    cli_free(&settings2);
-    cli_free_dicts(&settings2);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings2) == 0);
 
     return NULL;
 }
@@ -376,8 +370,7 @@ static char *test_backend_cuda_preserves_explicit_gpumask()
               settings.gpumask == 2);
     mu_assert("cli_parse: --gpumask=2 --backend cuda must keep use_gpumask = true",
               settings.use_gpumask);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -395,8 +388,7 @@ static char *test_precision_max(void)
               settings.precision_n == -1);
     mu_assert("cli_parse: --precision=max must use %.17g",
               strcmp(settings.precision_fmt, "%.17g") == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -415,8 +407,7 @@ static char *test_precision_legacy(void)
               settings.precision_n == -1);
     mu_assert("cli_parse: --precision=legacy must use %.6f",
               strcmp(settings.precision_fmt, "%.6f") == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -434,8 +425,7 @@ static char *test_precision_numeric(void)
               !settings.precision_legacy);
     mu_assert("cli_parse: --precision=6 must use %.6g",
               strcmp(settings.precision_fmt, "%.6g") == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -521,8 +511,7 @@ static char *test_no_reference_with_tiny_model_passes_parse(void)
               settings.model_cnt == 0);
     mu_assert("ADR-0519: --tiny-model path must be captured", settings.tiny_model_path != NULL);
     mu_assert("ADR-0520: --no-reference must allow path_ref to be NULL", settings.path_ref == NULL);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -543,8 +532,7 @@ static char *test_no_reference_underscore_alias_parses(void)
     mu_assert("ADR-0520: --no_reference (underscore alias) must be recorded",
               settings.no_reference);
     mu_assert("ADR-0519: underscore alias must also force no_prediction", settings.no_prediction);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     return NULL;
 }
 
@@ -589,8 +577,7 @@ static char *test_vmafx_mode_defaults(void)
     mu_assert("ADR-0690: vmafx must default to 1 model", settings.model_cnt == 1);
     mu_assert("ADR-0690: vmafx must default to VMAF_DEFAULT_MODEL_VERSION",
               strcmp(settings.model_config[0].version, VMAF_DEFAULT_MODEL_VERSION) == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -614,8 +601,7 @@ static char *test_netflix_compat_flag_precision(void)
     mu_assert("ADR-0696: netflix_compat must force precision_max = false", !settings.precision_max);
     mu_assert("ADR-0696: netflix_compat must use %.6f precision",
               strcmp(settings.precision_fmt, "%.6f") == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -630,8 +616,7 @@ static char *test_netflix_compat_flag_backend_and_model(void)
     mu_assert("ADR-0696: netflix_compat must disable Metal", settings.no_metal);
     mu_assert("ADR-0696: netflix_compat must default to VMAF_NETFLIX_COMPAT_MODEL_VERSION (v0.6.1)",
               strcmp(settings.model_config[0].version, VMAF_NETFLIX_COMPAT_MODEL_VERSION) == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -652,8 +637,7 @@ static char *test_netflix_compat_underscore_override(void)
               settings.no_cuda && settings.no_sycl && settings.no_hip && settings.no_metal);
     mu_assert("ADR-0696: netflix_compat model must be VMAF_NETFLIX_COMPAT_MODEL_VERSION",
               strcmp(settings.model_config[0].version, VMAF_NETFLIX_COMPAT_MODEL_VERSION) == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -717,8 +701,7 @@ static char *test_model_path_keeps_inner_equals(void)
     mu_assert("T-UPSTREAM-766: everything after the FIRST unescaped '=' is the value; "
               "`path=/a/dir=eq/m.json` used to be truncated to \"/a/dir\"",
               str_eq(settings.model_config[0].path, "/a/dir=eq/m.json"));
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -730,8 +713,7 @@ static char *test_model_path_windows_drive_letter(void)
     mu_assert("ADR-1190: a drive-letter ':' is data, and a backslash that does not "
               "escape a delimiter is data too, so `path=C:\\models\\...` round-trips",
               str_eq(settings.model_config[0].path, "C:\\models\\vmaf_v0.6.1.json"));
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -742,8 +724,7 @@ static char *test_model_path_escaped_colon(void)
     parse_one_opt("-m", "path=/a/dir\\:colon/m.json", &settings);
     mu_assert("ADR-1190: `\\:` is a literal colon, not the key/value separator",
               str_eq(settings.model_config[0].path, "/a/dir:colon/m.json"));
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -757,8 +738,7 @@ static char *test_model_escaped_equals_and_backslash(void)
               str_eq(settings.model_config[0].cfg.name, "a=b\\\\c"));
     mu_assert("ADR-1190: the preceding key/value pair is unaffected",
               str_eq(settings.model_config[0].version, "vmaf_v0.6.1"));
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -774,8 +754,7 @@ static char *test_model_plain_options_unchanged(void)
               str_eq(settings.model_config[0].cfg.name, "custom"));
     mu_assert("ADR-1190: the valueless disable_clip flag must still set its bit",
               (settings.model_config[0].cfg.flags & VMAF_MODEL_FLAG_DISABLE_CLIP) != 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -791,9 +770,7 @@ static char *test_model_feature_overload_unchanged(void)
               str_eq(opt_value(settings.model_config[0].feature_overload[0].opts_dict,
                                "adm_enhn_gain_limit"),
                      "1.2"));
-    vmaf_feature_dictionary_free(&settings.model_config[0].feature_overload[0].opts_dict);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -807,8 +784,7 @@ static char *test_feature_value_keeps_windows_path(void)
     mu_assert("T-UPSTREAM-766: `some_path=C:\\x` used to abort with "
               "`bad option string \"\\x\"`",
               str_eq(opt_value(settings.feature_cfg[0].opts_dict, "some_path"), "C:\\x"));
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -825,8 +801,36 @@ static char *test_feature_plain_options_unchanged(void)
     mu_assert("ADR-1190: every pair must still land in the dictionary",
               str_eq(opt_value(settings.feature_cfg[0].opts_dict, "enable_apsnr"), "true") &&
                   str_eq(opt_value(settings.feature_cfg[0].opts_dict, "min_sse"), "0.5"));
-    cli_free(&settings);
-    cli_free_dicts(&settings);
+    mu_assert("cli_free must release every option dictionary", release_parsed(&settings) == 0);
+    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
+    return NULL;
+}
+
+/* T-CLI-PRE-REGISTRATION-OPTS-DICT-LEAK-2026-09-30: a run that stops before
+ * vmaf_use_feature() / vmaf_model_feature_overload() leaves both kinds of
+ * option dictionary in the settings, and cli_free() used to free only the
+ * option buffers. */
+static char *test_cli_free_releases_option_dictionaries(void)
+{
+    char *argv[9] = {"vmaf",
+                     "-r",
+                     "ref.y4m",
+                     "-d",
+                     "dis.y4m",
+                     "--feature",
+                     "psnr=enable_chroma=true",
+                     "-m",
+                     "version=vmaf_v0.6.1:vif.vif_enhn_gain_limit=1.0"};
+    CLISettings settings;
+    optind = 1;
+    cli_parse(9, argv, &settings);
+    mu_assert("the feature options must be in a dictionary the settings own",
+              settings.feature_cnt == 1 && settings.feature_cfg[0].opts_dict);
+    mu_assert("the model overload must be in a dictionary the settings own",
+              settings.model_cnt == 1 && settings.model_config[0].overload_cnt == 1 &&
+                  settings.model_config[0].feature_overload[0].opts_dict);
+    mu_assert("cli_free must release the feature and the overload dictionary",
+              release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
@@ -840,14 +844,6 @@ static char *test_feature_plain_options_unchanged(void)
  * `....\models\m.json`, `\\server\share\m.json` became `\server\share\m.json`
  * and `C:\models\.cache\m.json` became `C:\models.cache\m.json`.
  * ------------------------------------------------------------------------- */
-
-/* Release everything parse_one_opt() allocated; non-zero when a feature
- * dictionary refused to free. */
-static int release_parsed(CLISettings *settings)
-{
-    cli_free(settings);
-    return cli_free_dicts(settings);
-}
 
 static char *test_value_relative_parent_path(void)
 {
@@ -908,7 +904,6 @@ static char *test_key_escaped_dot_overload(void)
                   str_eq(settings.model_config[0].feature_overload[0].name, "my.feat"));
     mu_assert("ADR-1355: the option half of the key is unescaped, its value is not",
               str_eq(opt_value(*dict, "my.opt"), "v\\.1"));
-    mu_assert("ADR-1355: overload dictionary release", vmaf_feature_dictionary_free(dict) == 0);
     mu_assert("ADR-1355: release", release_parsed(&settings) == 0);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
@@ -972,6 +967,7 @@ static char *run_feature_delimiter_tests(void)
     mu_run_test(test_model_feature_overload_unchanged);
     mu_run_test(test_feature_value_keeps_windows_path);
     mu_run_test(test_feature_plain_options_unchanged);
+    mu_run_test(test_cli_free_releases_option_dictionaries);
     // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }

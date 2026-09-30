@@ -56,6 +56,18 @@ tools/
   opposite picture when only one side read successfully. Otherwise
   CLI can finish writing output, then hang forever in `vmaf_close()`
   while picture pool waits for leaked unread slot.
+- **Option dictionaries belong to `CLISettings` until libvmaf takes
+  them.** `cli_free()` releases every `feature_cfg[i].opts_dict` and
+  `model_config[i].feature_overload[j].opts_dict` still set, so a run that
+  stops early (unopenable input, bad geometry, a model or feature that does
+  not fit, an unknown extractor) leaks nothing. Each hand-off in
+  [vmaf.cpp](vmaf.cpp) — `vmaf_use_feature()`, `vmaf_model_feature_overload()`,
+  `vmaf_model_collection_feature_overload()` — clears the settings' pointer
+  with `std::exchange` first; a new call site must too, or the run
+  double-frees. `use_cli_feature()` restores the options only for an unknown
+  extractor name, the one `-EINVAL` on which libvmaf hands them back.
+  Regression tests: `test_vmaf_option_dict_ownership` (run it in an ASan
+  build) and `test_cli_parse` (`release_parsed()`).
 - **`vmaf_roi` sidecar contract** (T6-2b / ADR-0247) is
   **rebase-sensitive** — encoder drivers depend on exact byte
   layouts:

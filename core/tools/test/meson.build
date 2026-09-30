@@ -158,6 +158,20 @@ test('test_vmaf_read_error_exit', test_vmaf_read_error_exit,
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
 
+# T-CLI-PRE-REGISTRATION-OPTS-DICT-LEAK-2026-09-30 — every way a run stops
+# releases the --feature and --model overload option dictionaries exactly once.
+# Pure CPU, 64x64 x 2 frames: fast suite. The leak half of each check needs a
+# LeakSanitizer build (the sanitizer CI jobs run it with -Db_sanitize=address).
+test_vmaf_option_dict_ownership = find_program('test_vmaf_option_dict_ownership.sh')
+test('test_vmaf_option_dict_ownership', test_vmaf_option_dict_ownership,
+     suite : ['fast'],
+     depends : [vmaf],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ])
+
 # ADR-1366 — frame read-ahead keeps frame order, pairing, --frame_cnt (no
 # reader reads past it), the frame-skip pre-loops and the end-of-stream /
 # read-error exits unchanged, on the threaded path (distinct files) and the
