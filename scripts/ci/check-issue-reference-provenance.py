@@ -169,26 +169,6 @@ CONTRACTS = (
         ("lusoris/vmaf#857", "lusoris/vmaf#870"),
     ),
     ProvenanceContract(
-        "core/src/feature/cuda/integer_cambi_cuda.c",
-        "dispatch_mask — GPU spatial-mask kernel",
-        ("lusoris/vmaf#857",),
-    ),
-    ProvenanceContract(
-        "core/src/feature/cuda/integer_cambi_cuda.c",
-        "dispatch_decimate — GPU",
-        ("lusoris/vmaf#857",),
-    ),
-    ProvenanceContract(
-        "core/src/feature/cuda/integer_cambi_cuda.c",
-        "dispatch_filter_mode — GPU 3-tap mode filter",
-        ("lusoris/vmaf#857",),
-    ),
-    ProvenanceContract(
-        "core/src/feature/cuda/integer_cambi_cuda.c",
-        "Step 0: download dist_pic GPU→host",
-        ("lusoris/vmaf#857",),
-    ),
-    ProvenanceContract(
         "docs/metrics/cambi.md",
         "**Implementation note",
         ("lusoris/vmaf#870",),
