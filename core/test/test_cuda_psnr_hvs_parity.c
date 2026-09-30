@@ -171,9 +171,82 @@ static char *test_psnr_hvs_cpu_cuda_parity(void)
     return NULL;
 }
 
+/* 9- and 11-bit input: calc_psnrhvs() uses the raw sample at every depth. The
+ * twin used to convert only 10- and 12-bit samples back exactly and scored
+ * 9 / 11 bits on 16 times the sample (-1.57 against 22.47 dB at 9 bits). */
+static int fill_deep_pic(VmafPicture *pic, unsigned bpc, unsigned salt)
+{
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, 64u, 48u);
+    if (err)
+        return err;
+    const unsigned range = 1u << bpc;
+    for (unsigned p = 0; p < 3u; p++) {
+        uint16_t *data = (uint16_t *)pic->data[p];
+        const size_t stride = (size_t)pic->stride[p] / sizeof(uint16_t);
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            for (unsigned col = 0; col < pic->w[p]; col++) {
+                data[row * stride + col] =
+                    (uint16_t)(((col * 37u + row * 11u + p * 5u) ^ (salt * 91u)) % range);
+            }
+        }
+    }
+    return 0;
+}
+
+static char *open_deep(VmafCudaState *cuda_state, VmafContext **vmaf)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    mu_assert("vmaf_init failed", !vmaf_init(vmaf, cfg));
+    if (cuda_state)
+        mu_assert("vmaf_cuda_import_state failed", !vmaf_cuda_import_state(*vmaf, cuda_state));
+    mu_assert("vmaf_use_feature failed",
+              !vmaf_use_feature(*vmaf, cuda_state ? "psnr_hvs_cuda" : "psnr_hvs", NULL));
+    return NULL;
+}
+
+static char *score_deep(VmafCudaState *cuda_state, unsigned bpc, double *score)
+{
+    VmafContext *vmaf = NULL;
+    mu_assert_msg(open_deep(cuda_state, &vmaf));
+    VmafPicture ref;
+    VmafPicture dist;
+    mu_assert("ref alloc", !fill_deep_pic(&ref, bpc, 0u));
+    mu_assert("dist alloc", !fill_deep_pic(&dist, bpc, 1u));
+    mu_assert("read", !vmaf_read_pictures(vmaf, &ref, &dist, 0u));
+    mu_assert("flush", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
+    mu_assert("score", !vmaf_feature_score_at_index(vmaf, "psnr_hvs", score, 0u));
+    mu_assert("vmaf_close failed", !vmaf_close(vmaf));
+    return NULL;
+}
+
+static char *test_psnr_hvs_odd_depth_parity(void)
+{
+    char *msg = NULL;
+    for (unsigned bpc = 9u; bpc <= 11u && !msg; bpc += 2u) {
+        VmafCudaState *cuda_state = NULL;
+        VmafCudaConfiguration cuda_cfg = {0};
+        if (vmaf_cuda_state_init(&cuda_state, cuda_cfg) != 0 || cuda_state == NULL) {
+            (void)fprintf(stderr, "[skip: no CUDA device] ");
+            return NULL;
+        }
+        double cpu = 0.0;
+        double gpu = NAN;
+        msg = score_deep(NULL, bpc, &cpu);
+        if (!msg)
+            msg = score_deep(cuda_state, bpc, &gpu);
+        if (!msg && !(fabs(cpu - gpu) <= PARITY_TOL)) {
+            (void)fprintf(stderr, "\n%u-bit psnr_hvs: cpu=%.8f cuda=%.8f\n", bpc, cpu, gpu);
+            msg = "psnr_hvs at 9 / 11 bits must score the raw sample like the CPU";
+        }
+        vmaf_cuda_state_free(cuda_state);
+    }
+    return msg;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_psnr_hvs_cuda_registered);
     mu_run_test(test_psnr_hvs_cpu_cuda_parity);
+    mu_run_test(test_psnr_hvs_odd_depth_parity);
     return NULL;
 }

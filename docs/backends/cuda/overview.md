@@ -184,7 +184,7 @@ Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/ski
   per-scale partials buffers so all DtoH copies could enqueue back-to-back
   on the same stream ([ADR-0271](../../adr/0271-cuda-drain-batch-ms-ssim.md));
   PSNR-HVS follows the same submit-side readback + `lc.finished` registration
-  pattern for its three plane partial buffers.
+  pattern for its unified partial buffer.
   Bit-exactness is preserved (same kernels, same stream order — only the
   host wait point moves).
   **Note**: `motion_cuda` no longer participates in the drain batch (ADR-0845).
@@ -363,13 +363,17 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   passes `0` for the new trailing `channel` argument (Y-plane only,
   preserving CUDA pre-port behaviour). UV-plane motion on GPU is a
   follow-up tracked in [docs/state.md](../../state.md).
-- **`psnr_hvs_cuda` DCT scheduling** — the backend keeps the
-  established places=3 cross-backend contract by leaving the float
-  means, variances, masking, and masked-error accumulation in
-  thread-0 CPU scan order. The 8×8 integer DCT itself is parallelised
-  across the first eight CUDA threads inside each block; this is a
-  scheduling optimisation only and does not change emitted feature
-  names or CLI/API usage.
+- **`psnr_hvs_cuda` on-device conversion and cooperative DCT** (closes
+  `T-CUDA-PSNR-HVS-HOST-ROUNDTRIP-2026-09-29`, porting ADR-1369) — the
+  extractor converts raw integer samples on-device directly from pitched
+  `VmafPicture` device planes across all bit depths (fixing odd bit depths),
+  eliminating host D2H downloads, CPU float conversions, and H2D uploads. In
+  the kernel, each 8×8 block is processed cooperatively by two threads
+  (reference and distorted) using warp shuffle exchange (`__shfl_xor_sync`),
+  in-place 8×8 DCT in shared memory, and a single launch across all planes into
+  one unified partials buffer. Bit-identity against the previous CUDA twin is
+  exact (max absolute difference 0.0), with an area-scaled contract vs CPU
+  (ADR-1361).
 - **SSIMULACRA 2** — `ssimulacra2_cuda` shipped per
   [ADR-0206](../../adr/0206-ssimulacra2-cuda-sycl.md) (hybrid
   host/GPU pipeline, IIR fatbin pinned with `--fmad=false`). The

@@ -58,6 +58,18 @@ CPU / CUDA / HIP / SYCL on odd-dimension frames. (The SYCL path previously
 floored the chroma dimensions, dropping the last chroma column/row on odd
 inputs and diverging from the other backends.)
 
+## Backend implementation details
+
+### On-device sample conversion (CUDA and SYCL)
+
+The CUDA (`psnr_hvs_cuda`, closing `T-CUDA-PSNR-HVS-HOST-ROUNDTRIP-2026-09-29`) and
+SYCL (`psnr_hvs_sycl`, [ADR-1369](../adr/1369-sycl-shared-planes-light-twins.md))
+extractors read raw integer samples directly from device pictures on-device across
+all supported bit depths (8, 9, 10, 11, 12, 16 bpc) without host staging, D2H download,
+or CPU float conversion. Both backends process 8×8 blocks with two cooperating threads
+per block and in-place DCT in shared/local memory, emitting block partials in a single
+launch across all planes.
+
 ## See also
 
 - [Features](features.md) - full feature extractor reference

@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## perf/cuda-psnr-hvs-device-convert — psnr_hvs_cuda on-device sample conversion (porting ADR-1369) (2026-09-30)
+
+- `core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu`, `core/src/feature/cuda/integer_psnr_hvs_cuda.c`, `core/src/feature/cuda/integer_psnr_hvs_cuda.h`: fork-only (upstream Netflix/vmaf has no CUDA PSNR-HVS twin).
+  `psnr_hvs_cuda` reads raw integer samples directly from pitched `VmafPicture` buffers on the device (`hvs_load_block`), across all bit depths (8, 9, 10, 11, 12, 16 bpc, also fixing odd-depth scaling on 9-bit and 11-bit inputs).
+  All host roundtrips (`issue_d2h_plane`, CPU float conversion, `issue_h2d_plane`), plane-private device float buffers, and host uint buffers are eliminated.
+- In the kernel, each 8×8 block is processed cooperatively by two threads (reference and distorted) using warp shuffle exchange (`__shfl_xor_sync`) and in-place DCT in shared memory (`s_block`), launching a single grid across all active planes into one partials buffer read back via `VmafCudaKernelReadback`.
+- Every float reduction expression and constant matches the CPU and SYCL twins bit-identically. Output vs pre-port CUDA twin is bit-identical (max absolute difference 0.0) across 576x324 and 4K BBB. CPU parity is within the ADR-1361 area-scaled tolerance (8.37e-05 dB at 576x324).
+- `core/test/test_cuda_module_lifecycle_contract.py`: `integer_psnr_hvs_cuda.c` removed from `EXPECTED_BUFFER_OWNERS` because it uses unified `VmafCudaKernelReadback` and no longer owns private `VmafCudaBuffer` allocations.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## fix/state-md-three-way-resolver — three-way docs/state.md conflict resolver (ADR-1383) (2026-09-30)
 
 - `scripts/dev/resolve-state-md-conflict.py`: fork-only (upstream Netflix/vmaf
