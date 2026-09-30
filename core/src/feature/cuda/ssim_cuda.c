@@ -40,10 +40,18 @@
  *      formulas as the CPU.
  *    - The final double arithmetic is the same formula.
  *    Target: places=6 vs CPU on the Netflix golden fixture (576×324 8bpc).
+ *
+ *  Options: the CPU table, `enable_db` and `clip_db`, applied on the host to
+ *  the device-reduced score through the nonfinite_score.h emitter the CPU
+ *  extractor uses (ADR-1373). The kernel builds with --fmad=false, so the
+ *  per-pixel combine is the CPU expression operand for operand; at 8 and 10
+ *  bits the moments and their products are exact in double, so identical
+ *  frames give num == den and report the CPU's +inf / clip_db ceiling.
  */
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -99,6 +107,12 @@ typedef struct IssimStateCuda {
     unsigned block_count;
 
     unsigned index;
+    /* CPU integer_ssim.c options, applied on the host to the device-reduced
+     * score with the shared nonfinite_score.h emitter (ADR-1373). `max_db`
+     * is vmaf_ssim_max_db() of `clip_db` and the frame geometry. */
+    bool enable_db;
+    bool clip_db;
+    double max_db;
     /* PTX module backing the SSIM kernels — owned here so
      * `close_fex_cuda` can unload it. Skipping the unload leaks
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
@@ -106,7 +120,22 @@ typedef struct IssimStateCuda {
     VmafDictionary *feature_name_dict;
 } IssimStateCuda;
 
+/* The CPU integer_ssim.c table: same names and defaults. */
 static const VmafOption options[] = {
+    {
+        .name = "enable_db",
+        .help = "write SSIM values as dB: -10*log10(1-ssim)",
+        .offset = offsetof(IssimStateCuda, enable_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "clip_db",
+        .help = "clip dB scores to a peak-derived ceiling",
+        .offset = offsetof(IssimStateCuda, clip_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
     {0},
 };
 
@@ -222,6 +251,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_cuda: zero-dimension input %ux%u\n", w, h);
         return -EINVAL;
     }
+    s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
@@ -356,7 +386,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     }
     return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
                                             "integer_ssim_cuda", "ssim", total_ssim,
-                                            (double)total_wgt, 0, 0.0, index);
+                                            (double)total_wgt, s->enable_db, s->max_db, index);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)

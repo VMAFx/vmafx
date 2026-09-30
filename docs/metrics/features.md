@@ -656,10 +656,10 @@ at once. See [PSNR](psnr.md) for the full comparison.
 extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /
 `psnr_cr` identically to the CPU path when enabled. Pass
 `enable_chroma=false` for luma-only operation on any backend. `uncapped` is
-mirrored on every GPU twin under the same name and default. `psnr_sycl` also
-implements `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and `min_sse`,
-bit-exact with the CPU; on CUDA, HIP and Metal these four keep `psnr` on the
-CPU (see [PSNR](psnr.md#options)).
+mirrored on every GPU twin under the same name and default. `psnr_sycl` and
+`psnr_cuda` also implement `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and
+`min_sse`, bit-exact with the CPU; on HIP and Metal these four keep `psnr` on
+the CPU (see [PSNR](psnr.md#options)).
 `float_psnr` adds CUDA / SYCL / HIP / Metal twins on the float pipeline and
 accepts `uncapped` on all of them. (The Vulkan backend was removed in
 ADR-0726.)
@@ -756,8 +756,11 @@ decimates on the device at the automatic scale and every explicit one, with
 the CPU's reduced planes bit for bit, so 1080p and 4K `float_ssim` run on
 SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)); the CUDA,
 HIP and Metal `float_ssim` twins compute scale 1 only and leave larger
-scales to the CPU extractor. The CUDA twins lack
-`enable_db` / `clip_db` (and `float_ssim_cuda` `enable_lcs`), and
+scales to the CPU extractor. The CUDA twins
+`integer_ssim_cuda` and `float_ssim_cuda` implement the same options, with
+the same identical-frame behaviour
+([ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md)); `float_ssim_cuda`
+no longer declares the `enable_chroma` the CPU `float_ssim` never had.
 `float_ssim_hip` lacks `enable_db` / `clip_db`; a model setting one of them
 computes that feature on the CPU.
 

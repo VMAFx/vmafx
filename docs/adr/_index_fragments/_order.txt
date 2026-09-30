@@ -1078,3 +1078,6 @@
 1369-sycl-shared-planes-light-twins
 1366-cli-frame-readahead
 1363-sycl-ssimulacra2-msssim-device-resident
+1372-cuda-motion-diff-first-pipeline
+1373-cuda-twin-cpu-option-parity
+1374-cuda-integer-tiny-frame-guards

@@ -1,0 +1,1 @@
+| [ADR-1374](1374-cuda-integer-tiny-frame-guards.md) | The CUDA integer ADM DWT row and tap arithmetic moves into a header a device-free test replays for every plane height, with the scale-0 load clamped into the plane; `vif_cuda` declares its 16-pixel minimum through the ADR-1324 gate and falls back to the CPU `vif`. | Accepted | cuda, gpu-parity, adm, vif, fork-local |
