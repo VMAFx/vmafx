@@ -546,9 +546,42 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   `context_fallback_name = "vif"`), derived from `vif_filter1d_width` in
   `vif_cuda_min_dim()`. `init()` refuses below it BEFORE reading
   `fex->cu_state` (device-free tests pass none).
+- **`float_motion_cuda` emits CPU `motion3`**
+  (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`): `motion_blend_clip()` =
+  CPU `float_motion.c::motion_blend_clip` (fps weight, blend, cap) of
+  `motion2`; frame 0 from the first SAD at index 1, tail from `flush`, `0`
+  for a one-frame input. `motion_blend_factor` / `motion_blend_offset`
+  declared in CPU table order (order spells feature names, e.g.
+  `motion3_mbf_0.5_mbo_2`). `flush` appends through
+  `motion_append_once()` (probe, then append) because the pending collect
+  may already have written the tail.
 - Guards: `test_cuda_kernel_source_contract.py` (planted regression per
   rule above), `test_cuda_motion_tiny_frames`, `test_cuda_vif_min_dim`,
-  `test_cuda_twin_option_parity`, `test_cuda_adm_dwt2_rows`.
+  `test_cuda_twin_option_parity`, `test_cuda_adm_dwt2_rows`,
+  `test_cuda_float_motion_parity` (every frame, all three scores).
+
+## Integer reductions: one atomic per block (ADR-1392)
+
+- **`motion_v2_score.cu` and `psnr_score.cu` add ONE `atomicAdd` per
+  block** to the frame's single 64-bit accumulator: warp shuffle, warp
+  sums through `__shared__`, first warp sums them. Per-warp atomics to one
+  address serialised the kernels on the L2 atomic unit (PSNR spent most of
+  its GPU time there). Sums are integers, so any order is exact; never
+  return to per-warp or per-thread atomics on a single address.
+- **Motion SAD vertical pass once per block** into `VTile s_v` (16 output
+  rows x 20 tile columns, CPU `>> bpc` rounding), then 5 horizontal taps
+  (`>> 16`) per output: same integers as the per-output nested loop.
+  `__launch_bounds__(256, 6)`: 6 x 256 = the 1536 threads of an sm_86 /
+  89 / 120 SM (8 exceeded it: ptxas ignored the hint with
+  `.minnctapersm` and capped sm_80 / 90 at 32 registers).
+- **PSNR geometry lives in `integer_psnr_cuda.h`** (`PSNR_BLOCK_X` x
+  `PSNR_BLOCK_Y` threads, `PSNR_COLS_PER_THREAD` columns per thread,
+  `PSNR_BLOCK_X` apart so warp loads stay contiguous); kernel and
+  `psnr_cuda_dispatch()` must both read it.
+- **Never index a by-value `VmafPicture` kernel parameter with a runtime
+  plane** (`pic.data[plane]`): nvcc copies both pictures (192 bytes) to
+  every thread's stack. `psnr_score.cu::plane_row()` selects with constant
+  indices; `cuobjdump --dump-resource-usage` must show `STACK:0`.
 
 ## Stencil/convolution kernel invariant (ADR-0454)
 

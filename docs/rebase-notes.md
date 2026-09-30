@@ -82,7 +82,7 @@
   and in `scripts/ci/test_git_fixture_isolation.py`. It scrubs every `GIT_*`
   variable before it creates a repository; keep it that way.
 - No Netflix golden-data, public API or FFmpeg patch impact.
-## fix/cuda-rc3-parity — CUDA motion order, CPU option tables, tiny-frame guards (ADR-1372, ADR-1373, ADR-1374) (2026-09-30)
+## fix/cuda-rc3-parity — CUDA motion order, CPU option tables, tiny-frame guards, one atomic per block (ADR-1372, ADR-1373, ADR-1374, ADR-1392) (2026-09-30)
 
 - `core/src/feature/cuda/integer_motion_sad_cuda.{h,c}` (new, fork-only): the
   one host path to the motion SAD kernel of
@@ -142,6 +142,28 @@
   must keep the init ahead of the decision; `test_cuda_kernel_source_contract.py`
   pins the order, and `test_cuda_motion_tiny_frames` / `test_cuda_twin_option_parity`
   run `motion_force_zero` on a device.
+- `float_motion_cuda.c` (found by the RTX 4090 run,
+  `T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`): provides
+  `VMAF_feature_motion3_score` and declares `motion_blend_factor` /
+  `motion_blend_offset` in the CPU table's order; `motion_blend_clip()` is
+  `float_motion.c::motion_blend_clip`. If upstream changes the CPU motion3
+  (blend, index-0 or flush emission), change the twin in the same PR;
+  `test_cuda_float_motion_parity` compares every frame of all three scores.
+- ADR-1392 (kernel reductions): `integer_motion_v2/motion_v2_score.cu` computes
+  the vertical pass once per block (`vertical_pass()` into `s_v`) and adds one
+  atomic per block (`add_block_sad()`); `integer_psnr/psnr_score.cu` sums
+  eight pixels per thread (geometry in `integer_psnr_cuda.h`, shared with
+  `psnr_cuda_dispatch()`), adds one atomic per block (`add_block_sse()`) and
+  selects the plane with constant indices (`plane_row()`). Keep all three on
+  a sync of these upstream-derived NVIDIA kernels: per-warp atomics to the
+  single accumulator serialise the kernels, and `pic.data[plane]` on the
+  by-value kernel parameter puts both pictures on every thread's stack.
+- clang-tidy clean-up of touched CUDA hosts (HISS-04, no behaviour change):
+  `integer_vif_cuda.c` gained `vif_submit_plane()` / `vif_submit_scales()`
+  and a kernel-name table in `vif_get_filter1d_functions()`;
+  `integer_ssim_cuda.c` split `init_fex_cuda()` into
+  `float_ssim_check_geometry()` / `float_ssim_load_kernels()`. On a conflict
+  keep the helpers and move the upstream statement into them in order.
 
 No public C API, CLI syntax or FFmpeg patch impact. CPU scores are
 bit-identical (no CPU extractor changed; the engine change only moves the
@@ -153,7 +175,9 @@ moves towards the CPU's by an fp32 rounding; default `integer_ssim_cuda`
 per-pixel terms move to the CPU's (no fused `c1`, `c2`, `y2 * w`; the CPU's
 grouping); `psnr_cuda`, `float_motion_cuda` and `motion_v2_cuda` default
 scores are unchanged (`motion_v2_cuda` moves only with a non-default
-`motion_fps_weight` / `motion_max_val` or a one-frame input).
+`motion_fps_weight` / `motion_max_val` or a one-frame input);
+`float_motion_cuda` output gains `motion3`, and the ADR-1392 kernels return
+the same integers as before.
 
 ## perf/sycl-adm-aim-device — AIM pass on the SYCL integer ADM twin (ADR-1362) (2026-09-29)
 

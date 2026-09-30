@@ -103,6 +103,20 @@
   the CPU extractor differs from every GPU twin by up to 1.1e-2 dB at 3840x2160.
 
 
+- **`psnr_cuda` and the CUDA motion SAD kernel spend far less GPU time per
+  frame (ADR-1392).** Both kernels added one atomic per warp to a single
+  64-bit accumulator, which serialised them in the L2; they now add one per
+  block. PSNR threads sum eight coalesced pixels each and select their plane
+  without copying both pictures to their stack, and the motion SAD kernel
+  (shared by `motion_cuda` and `motion_v2_cuda`) computes its vertical filter
+  pass once per block. On an RTX 4090 with 3840x2160 8-bit frames the PSNR
+  kernel drops from 1,750.5 to 17.7 us per frame and the motion SAD kernel
+  from 136.5 to 59.6 us (CUPTI, median of three traces); scores are
+  unchanged and still equal the CPU's. The whole-frame time barely moves,
+  because copying each 4K frame to the device takes about 2.1 ms on that
+  host's PCIe link, far longer than either kernel now runs.
+
+
 - **The CUDA SpEED twins run entirely on the device (ADR-1380).**
   `speed_chroma_cuda` and `speed_temporal_cuda` no longer copy their planes to
   the host to filter them or solve the 25x25 eigenvalue problem and QR system
@@ -312,6 +326,18 @@
   releases every dictionary the settings still own, and each hand-off to
   libvmaf clears the settings' copy first. Exit codes and output are
   unchanged.
+
+
+- **`float_motion_cuda` emits `motion3`, like the CPU `float_motion`.** The
+  CUDA twin wrote `motion` and `motion2` only, so `--backend cuda --feature
+  float_motion` lost `VMAF_feature_motion3_score` without a warning. It now
+  publishes the CPU's `motion3` (the fps-weighted `motion2`, blended by
+  `motion_blend_factor` / `motion_blend_offset` and capped at
+  `motion_max_val`; frame 0 from the first SAD, `0` for a one-frame input)
+  and accepts both blend options (aliases `mbf` / `mbo`). On an RTX 4090 it
+  stays within 2.8e-6 of the CPU on the Netflix pair, like `motion2`. The
+  SYCL, HIP and Metal twins still write no `motion3`
+  (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`).
 
 
 - **`motion_cuda` computes the CPU `motion` arithmetic.** The CUDA twin blurred

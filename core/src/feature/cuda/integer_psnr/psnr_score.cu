@@ -12,26 +12,97 @@
  *      sse  += diff * diff;             // per-pixel
  *
  *  Reduction strategy:
- *    1. Each thread computes one pixel's squared error (uint64).
- *    2. Warp shuffle reduction collapses 32 threads → 1.
- *    3. Lane 0 of each warp atomicAdd's to a single global uint64
- *       counter. (Same pattern as the motion SAD reduction in
- *       integer_motion_v2/motion_v2_score.cu.)
+ *    1. Each thread sums the squared errors of PSNR_COLS_PER_THREAD pixels
+ *       of one row (uint64), PSNR_BLOCK_X apart, so a warp's loads are
+ *       contiguous.
+ *    2. Warp shuffle reduction collapses 32 threads -> 1, the warp sums go
+ *       through shared memory, and the first warp adds them up.
+ *    3. One atomicAdd per block to the plane's uint64 accumulator. One
+ *       atomic per warp, one pixel per thread, serialised the kernel on
+ *       the L2 atomic unit: about 390,000 atomics to one address per 4K
+ *       4:2:0 frame, against about 6,200 now.
  *
  *  Bit-exactness contract: byte-equal int64 SSE accumulation with the
  *  scalar reference ⇒ places=4 cross-backend gate clears trivially.
  *
- *  v1: luma-only ("psnr_y" output), matching psnr_vulkan.c's scope.
- *      Chroma is a focused follow-up (the picture_cuda upload path
- *      is luma-only today).
+ *  The host launches the kernel once per plane (Y, Cb, Cr) with that
+ *  plane's size; `plane` selects data[] and stride[].
  */
 
 #include "cuda_helper.cuh"
 #include "cuda/integer_psnr_cuda.h"
 #include "common.h"
 
-#define BLOCK_X 16
-#define BLOCK_Y 16
+namespace
+{
+
+/* Sum `se` over the block and add it to *sse with one atomic. Every thread
+ * of the block reaches this point, so the full masks are exact; the sum is
+ * integer, so its order cannot change the result. */
+__device__ __forceinline__ void add_block_sse(uint64_t se, unsigned long long *__restrict__ sse)
+{
+    constexpr unsigned warps = (PSNR_BLOCK_X * PSNR_BLOCK_Y) / 32u;
+    __shared__ unsigned long long s_warp[warps];
+    unsigned long long v = static_cast<unsigned long long>(se);
+    for (int off = 16; off > 0; off >>= 1)
+        v += __shfl_down_sync(0xffffffffu, v, off);
+    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
+    if ((lid & 31u) == 0u)
+        s_warp[lid >> 5] = v;
+    __syncthreads();
+    if (lid < 32u) {
+        v = (lid < warps) ? s_warp[lid] : 0ull;
+        for (int off = 16; off > 0; off >>= 1)
+            v += __shfl_down_sync(0xffffffffu, v, off);
+        if (lid == 0u)
+            atomicAdd(sse, v);
+    }
+}
+
+/* Row `y` of `plane` of `pic` as T samples. The plane is selected with
+ * constant indices: indexing the by-value VmafPicture kernel parameter with
+ * the runtime `plane` made nvcc copy both pictures (192 bytes) to each
+ * thread's stack. */
+template <typename T>
+__device__ __forceinline__ const T *plane_row(const VmafPicture &pic, unsigned plane, unsigned y)
+{
+    const void *data = pic.data[0];
+    ptrdiff_t stride = pic.stride[0];
+    if (plane == 1u) {
+        data = pic.data[1];
+        stride = pic.stride[1];
+    } else if (plane == 2u) {
+        data = pic.data[2];
+        stride = pic.stride[2];
+    }
+    return reinterpret_cast<const T *>(static_cast<const uint8_t *>(data) + (size_t)y * stride);
+}
+
+/* Squared error of this thread's pixels of `plane`; T is the sample type.
+ * (int64)ref - (int64)dis, squared, as integer_psnr.c::sse_line_{8,16}. */
+template <typename T>
+__device__ __forceinline__ uint64_t thread_sse(const VmafPicture &ref, const VmafPicture &dis,
+                                               unsigned width, unsigned height, unsigned plane)
+{
+    const unsigned y = blockIdx.y * PSNR_BLOCK_Y + threadIdx.y;
+    if (y >= height)
+        return 0;
+    const T *ref_row = plane_row<T>(ref, plane, y);
+    const T *dis_row = plane_row<T>(dis, plane, y);
+    const unsigned x0 = blockIdx.x * PSNR_BLOCK_COLS + threadIdx.x;
+    uint64_t se = 0;
+#pragma unroll
+    for (unsigned k = 0; k < PSNR_COLS_PER_THREAD; k++) {
+        const unsigned x = x0 + k * PSNR_BLOCK_X;
+        if (x < width) {
+            const int64_t diff = (int64_t)__ldg(&ref_row[x]) - (int64_t)__ldg(&dis_row[x]);
+            se += (uint64_t)(diff * diff);
+        }
+    }
+    return se;
+}
+
+} // namespace
 
 extern "C" {
 
@@ -39,38 +110,8 @@ __global__ void calculate_psnr_kernel_8bpc(const VmafPicture ref, const VmafPict
                                            VmafCudaBuffer sse, unsigned width, unsigned height,
                                            unsigned plane)
 {
-    const int x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    uint64_t my_se = 0;
-    if (x < (int)width && y < (int)height) {
-        const uint8_t *ref_row =
-            reinterpret_cast<const uint8_t *>(ref.data[plane]) + y * ref.stride[plane];
-        const uint8_t *dis_row =
-            reinterpret_cast<const uint8_t *>(dis.data[plane]) + y * dis.stride[plane];
-        const int64_t diff = (int64_t)ref_row[x] - (int64_t)dis_row[x];
-        my_se = (uint64_t)(diff * diff);
-    }
-
-    /* Warp-reduce my_se (uint64 via two uint32 shuffles). */
-    uint32_t lo = (uint32_t)my_se;
-    uint32_t hi = (uint32_t)(my_se >> 32);
-    for (int off = 16; off > 0; off >>= 1) {
-        uint32_t tlo = __shfl_down_sync(0xffffffff, lo, off);
-        uint32_t thi = __shfl_down_sync(0xffffffff, hi, off);
-        uint64_t other = ((uint64_t)thi << 32) | tlo;
-        uint64_t self = ((uint64_t)hi << 32) | lo;
-        uint64_t sum = self + other;
-        lo = (uint32_t)sum;
-        hi = (uint32_t)(sum >> 32);
-    }
-
-    const int lane = (threadIdx.y * blockDim.x + threadIdx.x) % 32;
-    if (lane == 0) {
-        const uint64_t warp_sum = ((uint64_t)hi << 32) | lo;
-        atomicAdd(reinterpret_cast<unsigned long long *>(sse.data),
-                  static_cast<unsigned long long>(warp_sum));
-    }
+    add_block_sse(thread_sse<uint8_t>(ref, dis, width, height, plane),
+                  reinterpret_cast<unsigned long long *>(sse.data));
 }
 
 /* ADR-1215: `plane` selects the Y/Cb/Cr plane exactly as in the 8-bpc kernel.
@@ -82,37 +123,8 @@ __global__ void calculate_psnr_kernel_16bpc(const VmafPicture ref, const VmafPic
                                             VmafCudaBuffer sse, unsigned width, unsigned height,
                                             unsigned plane)
 {
-    const int x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    uint64_t my_se = 0;
-    if (x < (int)width && y < (int)height) {
-        const uint16_t *ref_row = reinterpret_cast<const uint16_t *>(
-            reinterpret_cast<const uint8_t *>(ref.data[plane]) + y * ref.stride[plane]);
-        const uint16_t *dis_row = reinterpret_cast<const uint16_t *>(
-            reinterpret_cast<const uint8_t *>(dis.data[plane]) + y * dis.stride[plane]);
-        const int64_t diff = (int64_t)ref_row[x] - (int64_t)dis_row[x];
-        my_se = (uint64_t)(diff * diff);
-    }
-
-    uint32_t lo = (uint32_t)my_se;
-    uint32_t hi = (uint32_t)(my_se >> 32);
-    for (int off = 16; off > 0; off >>= 1) {
-        uint32_t tlo = __shfl_down_sync(0xffffffff, lo, off);
-        uint32_t thi = __shfl_down_sync(0xffffffff, hi, off);
-        uint64_t other = ((uint64_t)thi << 32) | tlo;
-        uint64_t self = ((uint64_t)hi << 32) | lo;
-        uint64_t sum = self + other;
-        lo = (uint32_t)sum;
-        hi = (uint32_t)(sum >> 32);
-    }
-
-    const int lane = (threadIdx.y * blockDim.x + threadIdx.x) % 32;
-    if (lane == 0) {
-        const uint64_t warp_sum = ((uint64_t)hi << 32) | lo;
-        atomicAdd(reinterpret_cast<unsigned long long *>(sse.data),
-                  static_cast<unsigned long long>(warp_sum));
-    }
+    add_block_sse(thread_sse<uint16_t>(ref, dis, width, height, plane),
+                  reinterpret_cast<unsigned long long *>(sse.data));
 }
 
 } /* extern "C" */

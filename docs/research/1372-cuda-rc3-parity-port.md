@@ -2,8 +2,8 @@
 # Research-1372: CUDA RC3 parity port — motion order, CPU options, tiny-frame guards
 
 - **Status**: Active
-- **Workstream**: RC3 CUDA; `T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`, `T-CUDA-HIP-ADM-DWT-VERT-TINY-HEIGHT-OOB-2026-09-29` (CUDA half), `T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29` (CUDA half), `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26` (CUDA part); decisions in [ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md), [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md), [ADR-1374](../adr/1374-cuda-integer-tiny-frame-guards.md)
-- **Last updated**: 2026-09-30
+- **Workstream**: RC3 CUDA; `T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`, `T-CUDA-HIP-ADM-DWT-VERT-TINY-HEIGHT-OOB-2026-09-29` (CUDA half), `T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29` (CUDA half), `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26` (CUDA part), `T-GPU-FLOAT-MOTION3-MISSING-2026-09-30` (CUDA part), `T-CUDA-PSNR-MOTION-PER-WARP-ATOMICS-2026-09-30`; decisions in [ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md), [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md), [ADR-1374](../adr/1374-cuda-integer-tiny-frame-guards.md), [ADR-1392](../adr/1392-cuda-integer-reductions-one-atomic-per-block.md)
+- **Last updated**: 2026-10-01
 
 ## Question
 
@@ -88,31 +88,61 @@ That host could not check any CUDA score, the absence of device faults under `co
 
 ## Measured on an RTX 4090 (2026-09-30)
 
-Host `ryzen-4090-arc`: RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4), host build with nvcc 13.4.92 and gcc (`meson setup build-cuda core -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled --buildtype=release`) of this branch rebased on `origin/master` 10f27efe2; the same build of `master` 10f27efe2 gives the before numbers. Eight other agents were building and testing on the host at the time (load average 7 to 27), so the timings bound the cost of the change, they do not benchmark it. Every device run held the host's CUDA lock, so no other job shared the GPU.
+Host `ryzen-4090-arc`: RTX 4090 (sm_89, driver 615.71.09, CUDA 13.4, on a PCIe Gen4 x8 link), host build with nvcc 13.4.92 and gcc (`meson setup build-cuda core -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false -Denable_hip=false -Denable_dnn=disabled --buildtype=release -Db_lto=false`) of this branch rebased on `origin/master` 10f27efe2; the same build of `master` 10f27efe2 gives the before numbers. The first device runs were on 2026-09-30; every row below was re-run on the final head on 2026-10-01 and matches them. Other agents were building and testing on the host throughout (load average 7 to 33), so the wall times bound the cost of the change, they do not benchmark it. Every device run held the host's CUDA lock, so no other job shared the GPU.
 
 | Check | Result |
 |---|---|
 | `motion`: `integer_motion2` / `integer_motion3` against the CPU, Netflix pair, 48 frames | 0.0 (`master`: 1.2600536372531224e-05) |
 | the same on bbb 3840x2160, 50 frames | 0.0 (`master`: 6.9334713029611805e-05) |
+| `motion`, `motion_v2` and `psnr` at 10 and 16 bits (576x324, 24 frames), `psnr` and `motion_v2` on 50 frames at 4K | 0.0 on every score |
+| `meson test --suite gpu` / the rest of the suite | 55 of 55 pass; 206 pass and `test_cli` skips (exit 77: this build has no DNN support) |
 | `test_cuda_motion_tiny_frames`, `test_cuda_motion_v2_parity`, `test_cuda_motion3_parity` | pass, none skipped |
-| SAD kernels as loaded on the device (`cuFuncGetAttribute`, `cuOccupancyMaxActiveBlocksPerMultiprocessor`) | 28 registers (8-bit) and 40 (16-bit), 0 bytes local memory, 6 blocks of 256 threads per SM; `cuobjdump --dump-resource-usage` reads the same from the sm_89 cubin |
+| SAD and PSNR kernels, `cuobjdump --dump-resource-usage` on the sm_89 cubin and `-Xptxas -v` on all six targets | SAD 26 registers (8-bit) and 40 (16-bit), PSNR 44 and 38; `STACK:0`, `LOCAL:0`, no spill, no `.minnctapersm` advisory |
 | `psnr` with `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse=0.5`, with and without `--subsample 2` | `psnr_*`, `mse_*`, `apsnr_*` identical |
 | `ssim` with `enable_db` / `clip_db` | at most 7.3e-13 dB (2.3e-14 linear) |
 | `float_ssim` with `enable_lcs` / `enable_db` | at most 6.9e-6 dB (1.8e-7 linear); `l` 0, `c` 4.8e-7, `s` 6.0e-7 |
 | both SSIM twins with `-d` equal to `-r` (Netflix clip) | 104 dB with `clip_db`, `+inf` without, on both sides; `float_ssim_l/c/s` 1 |
 | identical flat 64x64 frames, `float_ssim` with `enable_db` | 72.247198959355487 dB on both sides, as the host replay predicted |
-| `motion_v2` and `float_motion` with `motion_fps_weight=2`, `motion_max_val=4` | identical |
-| `compute-sanitizer --tool memcheck` on `test_cuda_adm_tiny_frames` and `test_cuda_vif_min_dim` | `ERROR SUMMARY: 0 errors`, every case passing |
+| `motion_v2` and `float_motion` with `motion_fps_weight=2`, `motion_max_val=4` | identical, `motion3` included |
+| `float_motion` `motion3`: defaults, `motion_blend_factor=0.5:motion_blend_offset=2`, all four options set | 2.8e-6, 1.4e-6 and 1.4e-6 from the CPU (as `motion2`, 2.8e-6); one frame and `motion_force_zero` identical |
+| `compute-sanitizer --tool memcheck` on eleven CUDA tests (ADM tiny frames, VIF minimum, option parity, PSNR, SSIM, motion) | `ERROR SUMMARY: 0 errors`, no leak, every case passing |
+| `racecheck` / `synccheck` on the PSNR, motion and float-motion tests | 0 hazards, 0 errors |
 | parity gate cells `adm`, `vif`, `psnr`, `float_ssim`, `float_motion`, `motion_v2` | 1.0e-6, 0.0, 0.0, 1.0e-6, 3.0e-6, 0.0 (tolerance 5e-5); `adm` reads 1.0e-6 on `master` too |
-| `vif` below 16 pixels | computed by the CPU `vif` (0.0 from the CPU); `--feature vif_cuda` fails `init()` |
+| `vif` below 16 pixels (14x14 4:2:0, 15x15 4:4:4) | computed by the CPU `vif` (0.0 from the CPU); `--feature vif_cuda` fails `init()` |
 
-4K time per frame, (t(200) - t(2)) / 198, median of 5, each feature interleaved with the `master` build: `motion_cuda` 5.1 against 4.8 ms, `motion_v2_cuda` 5.5 against 4.9, `psnr_cuda` 3.0 against 3.1, `integer_ssim_cuda` 5.3 against 5.5, `float_motion_cuda` 3.2 against 3.1, `adm_cuda` 3.7 against 3.7, `vif_cuda` 3.1 against 3.1; `float_ssim_cuda=scale=1` 4.2 against 4.6, and 4.1 with `enable_lcs` (median of 7, three-way interleaved). Reading and uploading two 12.4 MB frames dominate every one of these, so the differences are within the noise of the shared host; in particular the fp64 SSIM combine does not show.
+### Kernel time: one atomic per block (ADR-1392)
+
+A CUPTI activity trace (a small `CUDA_INJECTION64_PATH` library that records every kernel, memcpy and memset) of the CLI on the 4K clip showed where the device time went. Median of three traces and the range, per 3840x2160 frame, `master` against this branch:
+
+| Kernel | 8 bits (50 frames) | 10 bits (12 frames) |
+|---|---|---|
+| `calculate_psnr_kernel_*` (three plane launches) | 1,750.5 (1,165.0 to 2,043.6) to 17.7 us (17.7 to 33.1) | 1,166.7 to 53.6 us |
+| motion SAD, `motion_v2_cuda` | 136.5 (135.7 to 137.7) to 59.6 us (58.8 to 59.8) | 133.4 to 63.8 us |
+| `motion_cuda` (`master`: its blur kernel) | 145.9 (144.2 to 169.5) to 58.8 us (58.8 to 65.6) | 151.0 to 63.7 us |
+| `memcpy HtoD`, both frames | 2.1 to 2.2 ms either way | 4.1 to 4.8 ms either way |
+
+Both kernels used to add each warp's sum to the frame's single accumulator with its own atomic, which the L2 serialises (about 389,000 atomics per 4K frame for PSNR); the PSNR kernels also copied both by-value pictures to each thread's stack (`STACK:192`), because they indexed them with the runtime plane. An intermediate build with one atomic per block and eight pixels per thread, but still the runtime index, took 163.2 us for PSNR (2026-09-30), so the constant plane indices are worth the rest. The 10-bit pair is the 8-bit clip shifted left by two bits with deterministic random low bits.
+
+The copies dominate the frame: 24.9 MB per 8-bit frame over the host's PCIe Gen4 x8 link. A loop of 100 `cudaMemcpyAsync` copies of one 12,441,600-byte frame, timed with CUDA events, moved 12.9 to 13.1 GB/s from `malloc` memory and 13.3 GB/s from `cudaHostAlloc` memory in four of five runs at load averages of 15 to 26; in the fifth the pageable copies fell to 4.75 GB/s while the pinned ones held 13.3 GB/s. The CLI's picture pool is pageable (`T-CUDA-PAGEABLE-UPLOAD-4K-2026-09-30`). `float_moment_cuda` keeps the per-warp atomics: 573.8 us per 4K frame in one trace (`T-CUDA-MOMENT-PER-WARP-ATOMICS-2026-10-01`).
+
+Wall time per 4K frame on the final head, the state rows' (t(22) - t(2)) / 20 and a (t(200) - t(2)) / 198 variant, median of 3, interleaved with the `master` build at a load average of 16 to 29 (`master` first):
+
+| Twin | (t(22) - t(2)) / 20 | (t(200) - t(2)) / 198 |
+|---|---|---|
+| `psnr_cuda` | 3.91 against 4.62 ms | 4.77 against 4.53 ms |
+| `motion_cuda` | 6.47 against 4.07 | 4.22 against 4.06 |
+| `motion_v2_cuda` | 6.29 against 4.98 | 4.77 against 5.42 |
+| `integer_ssim_cuda` | 5.16 against 3.67 | 4.38 against 4.04 |
+| `float_ssim_cuda=scale=1` | 4.78 against 4.83 | 3.82 against 4.04 |
+| `float_motion_cuda` | 5.33 against 4.21 | 4.89 against 4.19 |
+
+Single repetitions spread from -0.02 to 11.75 ms at 22 frames and from 3.69 to 7.75 ms at 200 frames, so none of these differences is resolved: the upload and the host load decide the frame time, not the kernels. At 576x324, (t(48) - t(2)) / 46 stays below 0.5 ms per frame for every twin on both builds.
 
 The device run found three things the porting host could not:
 
 - **`motion_force_zero` crashed the first frame** of `motion_cuda` and `float_motion_cuda` (SIGSEGV; a `master` build does the same). The twins' `init()` swaps `submit()` / `collect()` for a synchronous `extract()`, but the engine had already chosen the asynchronous path and `vmaf_feature_extractor_context_submit()`, which initialises lazily, then called the `submit()` its `init()` had cleared. `core/src/libvmaf.c` now initialises such an extractor before it chooses (`init_before_dispatch()`); `test_cuda_motion_tiny_frames` gained a `motion_force_zero` case that crashes without it, and the contract test pins the order (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`). The HIP and Metal motion twins make the same switch.
-- **`float_motion_cuda` writes no `motion3`**, which the CPU `float_motion` emits (48 of 48 frames missing with `--backend cuda --feature float_motion`); none of the GPU `float_motion` twins provides it (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`).
-- **Four verify commands in the state rows could not run as written**: the parity gate's `motion` cell stops with `KeyError: 'integer_motion'` because neither the CPU `motion` nor `motion_cuda` writes the debug score by default (`T-CI-PARITY-GATE-MOTION-DEBUG-DEFAULT-2026-09-29`); the CLI rejects the odd 15x15 4:2:0 VIF frame (14x14 4:2:0 and 15x15 4:4:4 were used); `float_ssim_cuda` refuses 4K without `scale=1`; and the host has neither `/usr/bin/time` (the shell's `time` was used) nor `ncu` (the driver API gave the register and occupancy numbers above). Its scale error also suggested `--feature float_ssim_cuda:scale=1`, which the CLI rejects; it now reads `float_ssim_cuda=scale=1`.
+- **`float_motion_cuda` wrote no `motion3`**, which the CPU `float_motion` emits (48 of 48 frames missing with `--backend cuda --feature float_motion`); none of the GPU `float_motion` twins provided it (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`). The CUDA twin now emits the CPU's `motion3` (`motion_blend_clip()` of `motion2`, frame 0 from the first SAD, the tail from the flush) and takes both blend options; the SYCL, HIP and Metal twins remain.
+- **Four verify commands in the state rows could not run as written**: the parity gate's `motion` cell stops with `KeyError: 'integer_motion'` because neither the CPU `motion` nor `motion_cuda` writes the debug score by default (`T-CI-PARITY-GATE-MOTION-DEBUG-DEFAULT-2026-09-29`; the CPU also writes `VMAF_integer_feature_motion_sad_score`, which `motion_cuda` does not); the CLI rejects the odd 15x15 4:2:0 VIF frame (14x14 4:2:0 and 15x15 4:4:4 were used); `float_ssim_cuda` refuses 4K without `scale=1`; and the host has neither `/usr/bin/time` (the shell's `time` and Python's `perf_counter` were used) nor `ncu` (`cuobjdump`, `-Xptxas -v` and CUPTI gave the numbers above). Its scale error also suggested `--feature float_ssim_cuda:scale=1`, which the CLI rejects; it now reads `float_ssim_cuda=scale=1`.
 
 ## References
 

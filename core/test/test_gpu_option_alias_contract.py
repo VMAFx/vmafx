@@ -20,6 +20,8 @@ EXPECTED_ALIASES = (
     ("hip/float_adm_hip.c", "adm_csf_diag_scale", "scfd"),
     ("cuda/float_motion_cuda.c", "motion_force_zero", "force_0"),
     ("cuda/float_motion_cuda.c", "motion_max_val", "mmxv"),
+    ("cuda/float_motion_cuda.c", "motion_blend_factor", "mbf"),
+    ("cuda/float_motion_cuda.c", "motion_blend_offset", "mbo"),
     ("sycl/float_motion_sycl.cpp", "motion_max_val", "mmxv"),
     ("sycl/float_motion_sycl.cpp", "motion_force_zero", "force_0"),
     ("hip/float_motion_hip.c", "motion_force_zero", "force_0"),
